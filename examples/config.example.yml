@@ -1,0 +1,29 @@
+skillRoots:
+  - ~/context/skills
+extraSkillRoots: []
+
+# Optional rule directories. If omitted, context-broker/rules next to this config is used.
+ruleRoots: []
+
+discoveryCatalogs:
+  - ~/context/catalogs/workspace.yaml
+extraDiscoveryCatalogs: []
+
+# Rule-based injection requires autoload.enabled by default.
+# Explicit $name lookup can still discover configured skills.
+requireAutoload: true
+
+# Path privacy for payload/session/log metadata.
+# absolute | home-relative | basename | hash
+pathMode: home-relative
+logPaths: false
+
+scan:
+  maxDepth: 8
+  maxSkillBytes: 65536
+  ignore:
+    - .git
+    - node_modules
+    - dist
+    - build
+    - coverage

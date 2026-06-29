@@ -1,0 +1,75 @@
+{
+  "name": "pi-context-broker",
+  "version": "0.0.1",
+  "description": "Pi/OMP context broker that injects discoverable skills and lightweight bundles via explicit user commands.",
+  "type": "module",
+  "license": "MIT",
+  "packageManager": "bun@1.2.17",
+  "keywords": [
+    "pi-package",
+    "omp-package",
+    "pi",
+    "omp",
+    "context-broker",
+    "skill",
+    "bundle",
+    "autoload"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yoyooyooo/pi-context-broker.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yoyooyooo/pi-context-broker/issues"
+  },
+  "homepage": "https://github.com/yoyooyooo/pi-context-broker#readme",
+  "files": [
+    "src",
+    "examples",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CHANGELOG.md",
+    "package.json"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "omp": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun scripts/context-broker-smoke.mjs && tsc -p tsconfig.json --noEmit",
+    "test:host": "bun scripts/context-broker-host-e2e.mjs",
+    "test:global-config": "bun scripts/context-broker-global-config-e2e.mjs",
+    "check": "bun run test",
+    "pack:dry": "npm pack --dry-run --json",
+    "release": "bun scripts/release.ts",
+    "release:check": "bun scripts/release.ts --precheck"
+  },
+  "dependencies": {
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@oh-my-pi/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    },
+    "@oh-my-pi/pi-coding-agent": {
+      "optional": true
+    }
+  }
+}

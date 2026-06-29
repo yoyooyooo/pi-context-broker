@@ -1,0 +1,13 @@
+id: architecture-review
+inject:
+  - design-review
+match:
+  - exact:
+      - review this design
+  - regex:
+      - '^design review:'
+  - contains:
+      - architecture
+    not:
+      - contains:
+          - no context

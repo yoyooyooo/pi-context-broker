@@ -1,0 +1,217 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish or repair, for example v0.1.2
+        required: true
+        type: string
+
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.17
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Validate release metadata
+        run: |
+          release_tag="${{ github.event.inputs.tag }}"
+          if [ -z "$release_tag" ]; then
+            release_tag="${GITHUB_REF_NAME}"
+          fi
+          package_name="$(node -p "require('./package.json').name")"
+          package_version="$(node -p "require('./package.json').version")"
+          expected_tag="v${package_version}"
+          if [ "$package_name" != "pi-context-broker" ]; then
+            echo "Expected package name pi-context-broker, got: $package_name" >&2
+            exit 1
+          fi
+          if [ "$release_tag" != "$expected_tag" ]; then
+            echo "Release tag must match package version. tag=$release_tag expected=$expected_tag" >&2
+            exit 1
+          fi
+          echo "PACKAGE_NAME=$package_name" >> "$GITHUB_ENV"
+          echo "PACKAGE_VERSION=$package_version" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
+          if npm view "${package_name}@${package_version}" version --registry https://registry.npmjs.org >/dev/null 2>&1; then
+            echo "NPM_ALREADY_PUBLISHED=true" >> "$GITHUB_ENV"
+            echo "${package_name}@${package_version} already exists on npm."
+          else
+            echo "NPM_ALREADY_PUBLISHED=false" >> "$GITHUB_ENV"
+          fi
+      - name: Check
+        run: bun run check
+      - name: Package dry run
+        run: npm pack --dry-run --json
+      - name: Publish
+        run: |
+          if [ "${NPM_ALREADY_PUBLISHED:-false}" = "true" ]; then
+            echo "${PACKAGE_NAME}@${PACKAGE_VERSION} is already on npm; skipping npm publish."
+            exit 0
+          fi
+          npm publish --registry https://registry.npmjs.org --access public --provenance
+      - name: Verify npm package
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if published_version="$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --registry https://registry.npmjs.org 2>/tmp/npm-view.err)"; then
+              if [ "$published_version" = "$PACKAGE_VERSION" ]; then
+                exit 0
+              fi
+              echo "npm registry version mismatch. got=$published_version expected=$PACKAGE_VERSION" >&2
+              exit 1
+            fi
+            if [ "$attempt" = "6" ]; then
+              cat /tmp/npm-view.err >&2
+              exit 1
+            fi
+            sleep "$((attempt * 5))"
+          done
+      - name: Generate release notes
+        run: |
+          git fetch --tags --force
+          node <<'NODE'
+          const { execFileSync } = require("node:child_process");
+          const { writeFileSync } = require("node:fs");
+
+          const packageName = process.env.PACKAGE_NAME;
+          const currentVersion = process.env.PACKAGE_VERSION;
+          const currentTag = process.env.RELEASE_TAG;
+
+          function run(command, args) {
+            return execFileSync(command, args, { encoding: "utf8" }).trim();
+          }
+
+          function stable(value) {
+            return /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value);
+          }
+
+          function parts(value) {
+            return value.split(".").map(Number);
+          }
+
+          function compare(left, right) {
+            const l = parts(left);
+            const r = parts(right);
+            return l[0] - r[0] || l[1] - r[1] || l[2] - r[2];
+          }
+
+          function tagExists(tag) {
+            try {
+              execFileSync("git", ["rev-parse", "-q", "--verify", `refs/tags/${tag}`], { stdio: "ignore" });
+              return true;
+            } catch {
+              return false;
+            }
+          }
+
+          const rawVersions = run("npm", ["view", packageName, "versions", "--json", "--registry", "https://registry.npmjs.org"]);
+          const parsed = JSON.parse(rawVersions || "[]");
+          const versions = (Array.isArray(parsed) ? parsed : [parsed]).filter((value) => typeof value === "string" && stable(value));
+          const previousVersion = versions.filter((version) => compare(version, currentVersion) < 0).sort(compare).at(-1);
+          const previousTag = previousVersion && tagExists(`v${previousVersion}`) ? `v${previousVersion}` : "";
+          const range = previousTag ? `${previousTag}..${currentTag}` : currentTag;
+
+          let rawLog = "";
+          try {
+            rawLog = run("git", ["log", "--format=%H%x1f%s%x1f%b%x1e", range]);
+          } catch {
+            rawLog = "";
+          }
+
+          const sections = [
+            ["breaking", "Breaking Changes"],
+            ["feat", "Features"],
+            ["fix", "Fixes"],
+            ["perf", "Performance"],
+            ["refactor", "Refactors"],
+            ["docs", "Docs"],
+            ["test", "Tests"],
+            ["maintenance", "Maintenance"],
+            ["other", "Other"],
+          ];
+          const groups = Object.fromEntries(sections.map(([key]) => [key, []]));
+          const typeMap = new Map([
+            ["feat", "feat"],
+            ["fix", "fix"],
+            ["perf", "perf"],
+            ["refactor", "refactor"],
+            ["docs", "docs"],
+            ["test", "test"],
+            ["chore", "maintenance"],
+            ["build", "maintenance"],
+            ["ci", "maintenance"],
+          ]);
+
+          for (const entry of rawLog.split("\x1e")) {
+            const trimmed = entry.trim();
+            if (!trimmed) continue;
+            const [sha = "", subject = "", body = ""] = trimmed.split("\x1f");
+            if (/^chore: release v\d+\.\d+\.\d+$/.test(subject)) continue;
+            const match = subject.match(/^([a-zA-Z]+)(?:\(([^)]+)\))?(!)?:\s+(.+)$/);
+            const breaking = Boolean(match?.[3]) || /(^|\n)BREAKING CHANGE:/m.test(body);
+            const type = match?.[1]?.toLowerCase() ?? "";
+            const scope = match?.[2] ? `**${match[2]}:** ` : "";
+            const summary = match?.[4] ?? subject;
+            const item = `${scope}${summary} (${sha.slice(0, 7)})`;
+            if (breaking) {
+              groups.breaking.push(item);
+              continue;
+            }
+            groups[typeMap.get(type) ?? "other"].push(item);
+          }
+
+          const lines = [`# ${currentTag}`, ""];
+          if (previousTag) {
+            lines.push(`Changes since ${previousTag}.`, "");
+          }
+          let wroteSection = false;
+          for (const [key, title] of sections) {
+            const items = groups[key];
+            if (items.length === 0) continue;
+            wroteSection = true;
+            lines.push(`## ${title}`, "");
+            for (const item of items) lines.push(`- ${item}`);
+            lines.push("");
+          }
+          if (!wroteSection) {
+            lines.push("No user-facing changes.", "");
+          }
+          writeFileSync("release-notes.md", lines.join("\n"));
+          NODE
+      - name: Create GitHub Release
+        run: |
+          export GH_TOKEN="${{ github.token }}"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file release-notes.md
+          else
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file release-notes.md --verify-tag
+          fi

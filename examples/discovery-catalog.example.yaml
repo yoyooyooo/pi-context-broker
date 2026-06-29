@@ -1,0 +1,25 @@
+version: 1
+records:
+  - kind: bundle
+    name: workspace-collab
+    description: Collaboration contexts for documents, chat, and tasks.
+    aliases:
+      - collab
+      - teamwork
+    render:
+      type: member-index
+      rules:
+        - This is a context bundle index, not a concrete skill.
+        - Select the needed member before acting.
+        - Read the selected member file before using member-specific details.
+    policy:
+      memberBody: read-before-use
+      scope: members-only
+      prerequisites:
+        - auth
+      fallback:
+        - api-explorer
+    members:
+      include:
+        - auth
+        - docs
