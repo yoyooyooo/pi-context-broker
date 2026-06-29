@@ -1,12 +1,45 @@
 # pi-context-broker
 
-`pi-context-broker` is a standalone Pi/OMP package for explicit, lightweight context discovery and injection.
+[English](./README.md) | [中文](./README.zh-CN.md)
 
-It provides one interaction model:
+`pi-context-broker` lets you pull local agent context into Pi or OMP with a plain `$name` in your prompt.
 
-- `$name` in the user prompt resolves a discoverable record.
-- `/context-broker ...` inspects configured roots, catalogs, and namespace health.
-- Matched records are injected as `customType: "context-broker"` messages using `<context-broker-record ...>` payloads.
+```text
+$design-review review this API boundary
+```
+
+The plugin finds `design-review`, injects the matching local `SKILL.md` or bundle index, and skips duplicate injections in the same active session branch.
+
+## The problem
+
+Agent setups collect useful context over time: review checklists, project runbooks, team workflows, provider notes, debugging recipes, and personal skills. Loading all of them at startup makes the prompt noisy. Asking the model to remember the right file is unreliable. Opening files by hand breaks flow.
+
+Context Broker adds a small routing layer between your prompt and your local context library. You name the context you want. The plugin resolves it and injects it once.
+
+It does not run a remote indexer, guess from embeddings, or load everything in the background. The user stays in control.
+
+## What you get
+
+- `$name` lookup for local skills and catalog records.
+- Pi interactive autocomplete for `$...` entries.
+- Rule-based injection, such as `review this design` loading `design-review`.
+- Bundle records for large context areas where the model should see an index before choosing a member.
+- `/context-broker` commands for setup checks and lookup debugging.
+- Namespace collision checks for names and aliases.
+- Duplicate-injection protection for the active session branch.
+- Path privacy controls for model payloads, session metadata, and JSONL logs.
+- Bounded scanning defaults so a bad root does not read the world.
+
+## How it works
+
+Context Broker has two record types.
+
+| Record | Comes from | What gets injected |
+| --- | --- | --- |
+| `skill` | A discovered `SKILL.md` file | The full skill body |
+| `bundle` | A YAML or JSON catalog | The bundle description, policy, and member list |
+
+A skill is for concrete operating instructions. A bundle is for routing. Use a bundle when you have a group of related skills and want the model to choose the right member instead of receiving every member body up front.
 
 ## Install
 
@@ -22,39 +55,47 @@ OMP:
 omp install npm:pi-context-broker
 ```
 
-Local development:
+Try a local checkout without installing:
 
 ```bash
 pi -e ./src/index.ts
 omp -e ./src/index.ts
 ```
 
-## Quickstart
+## Quick start
 
-Create a config file:
+### 1. Add a config file
+
+Pi reads:
+
+```text
+~/.pi/agent/context-broker/config.yml
+```
+
+OMP reads:
+
+```text
+~/.omp/agent/context-broker/config.yml
+```
+
+Minimal config:
 
 ```yaml
-# ~/.pi/agent/context-broker/config.yml
 skillRoots:
   - ~/context/skills
-
-discoveryCatalogs:
-  - ~/context/catalogs/workspace.yaml
 
 requireAutoload: false
 pathMode: home-relative
 logPaths: false
-scan:
-  maxDepth: 8
-  maxSkillBytes: 65536
-  ignore:
-    - .git
-    - node_modules
-    - dist
-    - build
 ```
 
-Create a skill:
+### 2. Add a skill
+
+Create:
+
+```text
+~/context/skills/design-review/SKILL.md
+```
 
 ```markdown
 ---
@@ -66,16 +107,18 @@ autoload:
     - architecture-review
 ---
 
-Use this context when reviewing design decisions.
+Review the design for ownership, boundaries, failure modes, and migration cost.
 ```
 
-Use it:
+### 3. Use it
 
 ```text
 $design-review review this API boundary
 ```
 
-Inspect health:
+The next model turn receives your prompt plus the `design-review` skill body.
+
+### 4. Check what the broker sees
 
 ```text
 /context-broker doctor
@@ -83,92 +126,9 @@ Inspect health:
 /context-broker explain design-review
 ```
 
-## Record kinds
+## Skills
 
-Context Broker treats context as discoverable records, not only skills.
-
-- `skill` — a `SKILL.md` file discovered from configured skill roots. The full file body is injected.
-- `bundle` — a lightweight catalog record that injects a member index and routing rules, not member file bodies.
-
-All record names and aliases share one namespace. Collisions fail closed.
-
-## Config resolution
-
-Config is single-track and current-name only:
-
-1. `CONTEXT_BROKER_CONFIG`
-2. `<agentDir>/context-broker/config.yml`
-3. `<agentDir>/context-broker/config.yaml`
-4. `<agentDir>/context-broker/config.json`
-
-`agentDir` is resolved from `PI_CODING_AGENT_DIR` when set. Otherwise Context Broker uses host defaults:
-
-- Pi: `~/.pi/agent`
-- OMP: `~/${PI_CONFIG_DIR:-.omp}/agent`
-
-### Config fields
-
-```yaml
-skillRoots:
-  - ~/context/skills
-extraSkillRoots:
-  - ./.agents/skills
-
-ruleRoots:
-  - ./context-broker/rules
-
-discoveryCatalogs:
-  - ~/context/catalogs/workspace.yaml
-extraDiscoveryCatalogs:
-  - ./context/catalogs/project.yaml
-
-requireAutoload: true
-pathMode: home-relative   # absolute | home-relative | basename | hash
-logPaths: false
-scan:
-  maxDepth: 8
-  maxSkillBytes: 65536
-  ignore:
-    - .git
-    - node_modules
-    - dist
-    - build
-```
-
-Environment overrides:
-
-- `CONTEXT_BROKER_CONFIG` — explicit config path.
-- `CONTEXT_BROKER_ROOTS` — path-list of skill roots that replaces `skillRoots`.
-- `CONTEXT_BROKER_EXTRA_ROOTS` — path-list of skill roots appended after configured roots.
-- `CONTEXT_BROKER_DISCOVERY_CATALOGS` — path-list of discovery catalogs that replaces `discoveryCatalogs`.
-- `CONTEXT_BROKER_EXTRA_DISCOVERY_CATALOGS` — path-list of discovery catalogs appended after configured catalogs.
-- `CONTEXT_BROKER_REQUIRE_ENABLED=0` — allow all discovered skills even without `autoload.enabled: true`.
-- `CONTEXT_BROKER_REQUIRE_ENABLED=1` — require `autoload.enabled: true`.
-- `CONTEXT_BROKER_LOG_FILE` — append JSONL decisions/injections.
-- `CONTEXT_BROKER_HOST=pi|omp` — force host default resolution.
-
-Path-list separators follow the platform path delimiter (`:` on macOS/Linux, `;` on Windows).
-
-## Rule files
-
-Rule files live under `context-broker/rules/*.yml` by default. Each file describes one invocation profile:
-
-```yaml
-id: architecture-review
-inject:
-  - design-review
-match:
-  - exact:
-      - review this design
-  - regex:
-      - '^design review:'
-```
-
-If `ruleRoots` is set in config, those roots replace the default rule directory.
-
-## Skill records
-
-A skill is any `SKILL.md` discovered under a configured root.
+Context Broker discovers every `SKILL.md` under `skillRoots`.
 
 ```markdown
 ---
@@ -180,14 +140,14 @@ autoload:
     - architecture-review
 ---
 
-Use this context when reviewing design decisions.
+Skill body goes here.
 ```
 
-With `requireAutoload: true` or the default autoload gate, only skills with `autoload.enabled: true` are injected through rule matching. `$` discovery includes configured skills so explicit user selection can still find them.
+`autoload.enabled` affects rule-based injection by default. Explicit `$name` lookup can still find configured skills unless you force the autoload gate through config or environment variables.
 
-## Discovery catalogs
+## Bundles
 
-A discovery catalog is a resolved, standalone YAML or JSON contract. YAML is the recommended default because catalogs are usually reviewed by humans.
+Bundles live in discovery catalogs. They inject an index, not the full member files.
 
 ```yaml
 version: 1
@@ -200,6 +160,8 @@ records:
     render:
       type: member-index
       rules:
+        - This is a context bundle index, not a concrete skill.
+        - Select the needed member before acting.
         - Read the selected member file before using member-specific details.
     policy:
       memberBody: read-before-use
@@ -210,19 +172,119 @@ records:
         - chat
 ```
 
-Relative member paths are resolved against the catalog file.
+When you type `$workspace-collab`, the model sees the bundle description, policy, and member list. It does not receive `docs` and `chat` bodies unless a later step reads them.
 
-Catalog member shape is resolved by path. `name` and `description` are optional when the path points at a `SKILL.md`; Context Broker reads frontmatter as fallback:
+## Configuration
+
+Config resolution order:
+
+1. `CONTEXT_BROKER_CONFIG`
+2. `<agentDir>/context-broker/config.yml`
+3. `<agentDir>/context-broker/config.yaml`
+4. `<agentDir>/context-broker/config.json`
+
+`PI_CODING_AGENT_DIR` sets `agentDir` when present. Otherwise the plugin uses the host default:
+
+- Pi: `~/.pi/agent`
+- OMP: `~/${PI_CONFIG_DIR:-.omp}/agent`
+
+Full config example:
 
 ```yaml
-path: ./members/docs/SKILL.md
+skillRoots:
+  - ~/context/skills
+extraSkillRoots:
+  - ./.agents/skills
+
+# If omitted, the broker uses context-broker/rules next to the config file.
+ruleRoots:
+  - ./context-broker/rules
+
+discoveryCatalogs:
+  - ~/context/catalogs/workspace.yaml
+extraDiscoveryCatalogs:
+  - ./context/catalogs/project.yaml
+
+requireAutoload: true
+
+# absolute | home-relative | basename | hash
+pathMode: home-relative
+logPaths: false
+
+scan:
+  maxDepth: 8
+  maxSkillBytes: 65536
+  ignore:
+    - .git
+    - node_modules
+    - dist
+    - build
+    - coverage
 ```
 
-Use `members.include` when the member is a skill name or alias discoverable from `skillRoots`; `*` globs are supported against skill name, directory name, and aliases, for example `docs-*`. Use explicit `path` entries only for catalog members outside the configured skill registry. Use explicit `name` or `description` only when overriding frontmatter or when the target file has no readable frontmatter.
+### Environment variables
 
-A fuller field-usage example lives at `examples/discovery-catalog.example.yaml`.
+| Variable | Effect |
+| --- | --- |
+| `CONTEXT_BROKER_CONFIG` | Use one explicit config file |
+| `CONTEXT_BROKER_ROOTS` | Replace `skillRoots` with a path-list |
+| `CONTEXT_BROKER_EXTRA_ROOTS` | Append skill roots |
+| `CONTEXT_BROKER_DISCOVERY_CATALOGS` | Replace `discoveryCatalogs` with a path-list |
+| `CONTEXT_BROKER_EXTRA_DISCOVERY_CATALOGS` | Append discovery catalogs |
+| `CONTEXT_BROKER_REQUIRE_ENABLED=0` | Allow all discovered skills for rule matching |
+| `CONTEXT_BROKER_REQUIRE_ENABLED=1` | Require `autoload.enabled: true` |
+| `CONTEXT_BROKER_LOG_FILE` | Write JSONL decisions and injections |
+| `CONTEXT_BROKER_HOST=pi\|omp` | Force host default resolution |
 
-## Injection shape
+Path-list separators follow the platform delimiter: `:` on macOS/Linux, `;` on Windows.
+
+## Rule files
+
+Rule files live under `context-broker/rules/*.yml` by default. Each file describes one trigger profile.
+
+```yaml
+id: architecture-review
+inject:
+  - design-review
+match:
+  - exact:
+      - review this design
+  - regex:
+      - '^design review:'
+  - contains:
+      - architecture
+    not:
+      - contains:
+          - no context
+```
+
+Set `ruleRoots` if you want a different rule directory.
+
+## Discovery catalogs
+
+Catalogs are standalone YAML or JSON files. YAML is easier to review and is the recommended format.
+
+A member can reference a discovered skill by name:
+
+```yaml
+members:
+  include:
+    - docs
+    - chat
+```
+
+A member can also point to a file relative to the catalog:
+
+```yaml
+members:
+  - path: ./members/docs/SKILL.md
+```
+
+When the file is a `SKILL.md`, Context Broker can read `name` and `description` from frontmatter. Set them manually only when you want to override that metadata.
+
+See [`examples/discovery-catalog.example.yaml`](./examples/discovery-catalog.example.yaml) for a fuller example.
+
+## Injected payloads
 
 Skill injection:
 
@@ -249,11 +311,7 @@ Bundle injection:
 </context-broker-record>
 ```
 
-Bundle injection intentionally sends only the index. The agent reads the specific member file if needed.
-
 ## Commands
-
-Use one slash command with subcommands:
 
 ```text
 /context-broker status
@@ -264,27 +322,30 @@ Use one slash command with subcommands:
 /context-broker explain <record>
 ```
 
-Do not use colon-style command names for subcommands; Pi reserves colon suffixes for command conflict disambiguation.
+Use subcommands, not colon-style command names. Pi uses colon suffixes for command conflict disambiguation.
 
 ## Security and privacy
 
-This package runs locally with the permissions of the host agent process. Install only from sources you trust.
+This package runs inside the host agent process and has the same local permissions. Install it only from sources you trust.
 
-Context Broker intentionally sends selected context to the model. Treat every configured root and catalog as a trusted boundary:
+Context Broker sends selected context to the model by design:
 
-- A matched `skill` injects the full `SKILL.md` body into the model context and session history.
-- A matched `bundle` injects member names, descriptions, policies, and member paths, but not member file bodies.
-- Session JSONL files persist injected content.
-- `CONTEXT_BROKER_LOG_FILE` writes matched queries and record names; paths are omitted unless `logPaths: true`.
-- `pathMode: home-relative` is the default to avoid sending `/Users/<name>/...` paths when possible.
+- A matched `skill` sends the full `SKILL.md` body to the model and stores it in local session history.
+- A matched `bundle` sends member names, descriptions, policies, and member paths, but not member bodies.
+- Session JSONL files store injected content.
+- `CONTEXT_BROKER_LOG_FILE` records matched queries and record names. It omits paths unless `logPaths: true` is set.
+- `pathMode: home-relative` avoids full home-directory paths when possible.
+- `pathMode: hash` gives stronger path redaction.
 
 Do not point `skillRoots` at untrusted repositories. A skill is prompt content and can instruct the model.
 
 ## Platform support
 
-Tested on macOS with Pi and OMP. Linux should work. Windows uses platform path-list separators but is best-effort until covered by CI.
+The package is tested on macOS with Pi and OMP. Linux should work. Windows path-list separators are supported, but Windows is best-effort until CI covers it.
 
-## Development
+## Maintainers and contributors
+
+### Local development
 
 ```bash
 bun install
@@ -294,11 +355,24 @@ bun run test:global-config
 npm pack --dry-run --json
 ```
 
-Release flow:
+### Release flow
+
+After npm Trusted Publishing is configured, create releases through the tag script:
 
 ```bash
 bun run release:check patch --no-push
 bun run release patch
 ```
 
-The local release script creates a temporary release branch, commits version files, tags that commit, pushes the tag, and lets GitHub Actions publish from the tag.
+The script creates a temporary local release branch, updates version files, commits, creates a tag, pushes the tag, and lets GitHub Actions publish from that tag.
+
+### First manual publish
+
+Before Trusted Publishing exists, publish from a real TTY so npm can complete 2FA or web authentication:
+
+```bash
+npm login --auth-type=web --registry https://registry.npmjs.org
+npm publish --access public --registry https://registry.npmjs.org --auth-type=web
+```
+
+Agent shell tools are usually not a TTY and may fail with `EOTP`.
