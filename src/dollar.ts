@@ -154,11 +154,23 @@ function autocompleteDescription(record: DiscoveryRecord): string | undefined {
   return label ? `${label} · ${description}` : description;
 }
 
+function matchedBundleNameOrAlias(record: DiscoveryRecord, query: string): boolean {
+  if (recordKind(record) !== "bundle") return false;
+  const normalizedQuery = normalizeKey(query);
+  if (!normalizedQuery) return false;
+  return [recordNormalizedName(record), ...recordNormalizedAliases(record)]
+    .some((value) => value === normalizedQuery || value.startsWith(normalizedQuery) || value.includes(normalizedQuery));
+}
+
 export function dollarAutocompleteItems(registry: DiscoveryRecord[], query: string): AutocompleteItem[] {
   return registry
     .map((record) => ({ record, score: scoreDollarSuggestion(record, query) }))
     .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score || recordName(a.record).localeCompare(recordName(b.record)))
+    .sort((a, b) =>
+      b.score - a.score ||
+      Number(matchedBundleNameOrAlias(b.record, query)) - Number(matchedBundleNameOrAlias(a.record, query)) ||
+      recordName(a.record).localeCompare(recordName(b.record))
+    )
     .slice(0, 50)
     .map(({ record }) => ({
       value: `$${recordName(record)}`,

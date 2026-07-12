@@ -58,12 +58,19 @@ export function normalizeDiscoveryRecord(record: DiscoveryRecord): DiscoveryReco
 }
 
 export function dedupeDiscoveryRecordsByNormalizedName(records: DiscoveryRecord[]): DiscoveryRecord[] {
-  const seen = new Set<string>();
+  const indexes = new Map<string, number>();
   const result: DiscoveryRecord[] = [];
   for (const record of records) {
     const key = recordNormalizedName(record);
-    if (seen.has(key)) continue;
-    seen.add(key);
+    const existingIndex = indexes.get(key);
+    if (existingIndex !== undefined) {
+      const existing = result[existingIndex];
+      if (recordKind(existing) === "skill" && recordKind(record) === "bundle") {
+        result[existingIndex] = record;
+      }
+      continue;
+    }
+    indexes.set(key, result.length);
     result.push(record);
   }
   return result;
@@ -81,7 +88,11 @@ export function validateDiscoveryRecords(records: DiscoveryRecord[]): string[] {
     }
     const existing = byName.get(name);
     if (existing) {
-      errors.push(`name collision: ${recordKind(existing)} "${recordName(existing)}" conflicts with ${recordKind(record)} "${recordName(record)}"`);
+      const kinds = new Set([recordKind(existing), recordKind(record)]);
+      if (!(kinds.has("skill") && kinds.has("bundle"))) {
+        errors.push(`name collision: ${recordKind(existing)} "${recordName(existing)}" conflicts with ${recordKind(record)} "${recordName(record)}"`);
+      }
+      if (recordKind(record) === "bundle") byName.set(name, record);
     } else {
       byName.set(name, record);
     }

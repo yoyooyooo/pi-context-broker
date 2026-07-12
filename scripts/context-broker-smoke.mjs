@@ -7,6 +7,8 @@ import YAML from "yaml";
 const mod = await import("../src/index.ts");
 const editorMod = await import("../src/pi-dollar-editor.ts");
 const diagnosticsMod = await import("../src/diagnostics.ts");
+const discoveryMod = await import("../src/discovery-records.ts");
+const dollarMod = await import("../src/dollar.ts");
 
 async function listTextFiles(root) {
   const result = [];
@@ -164,6 +166,12 @@ try {
         policy: { memberBody: "read-before-use", scope: "members-only", prerequisites: ["docs-context"], fallback: ["chat-context"] },
         members: { include: ["docs-context", "chat-context"] },
       },
+      {
+        kind: "bundle",
+        name: "docs-context",
+        description: "Bundle intentionally shadows the same-name skill for $ lookup",
+        members: { include: ["docs-context", "chat-context"] },
+      },
     ],
   }));
 
@@ -211,6 +219,32 @@ try {
   const collabItems = mod.discoveryAutocompleteItems(discoveryRegistry, "collab");
   assert.equal(collabItems[0].label, "$collab-bundle [bundle]", "$ autocomplete must distinguish bundles from skills");
   assert.match(collabItems[0].description, /2 members/);
+  const docsDollarRegistry = await dollarMod.buildDollarRegistryForContext(
+    { getSystemPrompt: () => "" },
+    Promise.resolve(discoveryRegistry),
+  );
+  assert.deepEqual(
+    docsDollarRegistry.filter((record) => record.name === "docs-context").map((record) => record.kind),
+    ["bundle"],
+    "same-name bundle must shadow skill in $ lookup",
+  );
+  assert.equal(
+    discoveryMod.validateDiscoveryRecords(discoveryRegistry).some((error) => error.includes('name collision: skill "docs-context"')),
+    false,
+    "intentional bundle-over-skill overlay must not fail namespace validation",
+  );
+  const opencliBundle = { ...collabBundle, name: "opencli", normalizedName: "opencli" };
+  const openclawSkill = {
+    ...registryWithoutAutoloadGate.find((record) => record.name === "plain"),
+    kind: "skill",
+    name: "openclaw-docs-search",
+    normalizedName: "openclaw-docs-search",
+  };
+  assert.equal(
+    mod.discoveryAutocompleteItems([openclawSkill, opencliBundle], "opencl")[0].label,
+    "$opencli [bundle]",
+    "matching bundle must win score ties over skills",
+  );
   const rootDiagnostics = await diagnosticsMod.collectRootDiagnostics([temp, join(temp, "missing-root")]);
   const rootText = diagnosticsMod.formatRootDiagnostics(rootDiagnostics);
   assert.match(rootText, /context-broker roots:/);
