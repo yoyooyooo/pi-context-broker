@@ -10,6 +10,20 @@
     "discoveryCatalogs": { "$ref": "#/$defs/stringArray" },
     "extraDiscoveryCatalogs": { "$ref": "#/$defs/stringArray" },
     "requireAutoload": { "type": "boolean" },
+    "exposeBundlesAsSkills": {
+      "default": false,
+      "oneOf": [
+        { "type": "boolean" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["include"],
+          "properties": {
+            "include": { "$ref": "#/$defs/stringArray" }
+          }
+        }
+      ]
+    },
     "pathMode": { "enum": ["absolute", "home-relative", "basename", "hash"] },
     "logPaths": { "type": "boolean" },
     "debug": { "type": "boolean" },

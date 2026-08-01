@@ -21,10 +21,22 @@ export type ContextResult = {
 
 export type BeforeAgentStartEvent = {
   prompt: string;
+  systemPrompt?: string | string[];
 };
 
 export type BeforeAgentStartResult = {
   message?: Omit<AgentMessage, "role" | "timestamp">;
+  systemPrompt?: string | string[];
+};
+
+export type ResourcesDiscoverEvent = {
+  type: "resources_discover";
+  cwd: string;
+  reason: "startup" | "reload";
+};
+
+export type ResourcesDiscoverResult = {
+  skillPaths?: string[];
 };
 
 export type AutocompleteItem = {
@@ -103,6 +115,13 @@ export type ExtensionAPI = {
     handler: (event: { type: "session_start"; reason?: string }, ctx: ExtensionContext) => void | Promise<void>,
   ): void;
   on(
+    event: "resources_discover",
+    handler: (
+      event: ResourcesDiscoverEvent,
+      ctx: ExtensionContext,
+    ) => ResourcesDiscoverResult | Promise<ResourcesDiscoverResult | undefined> | undefined,
+  ): void;
+  on(
     event: "context",
     handler: (event: ContextEvent) => ContextResult | Promise<ContextResult | undefined> | undefined,
   ): void;
@@ -146,6 +165,10 @@ export type ScanConfig = {
   maxSkillBytes?: number;
 };
 
+export type BundleSkillExposureConfig = {
+  include: string[];
+};
+
 export type ConfigFile = {
   skillRoots?: string[];
   extraSkillRoots?: string[];
@@ -154,6 +177,7 @@ export type ConfigFile = {
   extraDiscoveryCatalogs?: string[];
   rules?: InvocationRule[];
   requireAutoload?: boolean;
+  exposeBundlesAsSkills?: boolean | BundleSkillExposureConfig;
   pathMode?: PathMode;
   logPaths?: boolean;
   scan?: ScanConfig;

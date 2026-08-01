@@ -13,6 +13,12 @@ extraDiscoveryCatalogs: []
 # Explicit $name lookup can still discover configured skills.
 requireAutoload: true
 
+# Off by default. Select Bundle names to project as generated host skills.
+# Set this to true only when every configured Bundle should be advertised.
+exposeBundlesAsSkills:
+  include:
+    - workspace-collab
+
 # Path privacy for payload/session/log metadata.
 # absolute | home-relative | basename | hash
 pathMode: home-relative

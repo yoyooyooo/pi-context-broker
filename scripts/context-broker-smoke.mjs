@@ -257,7 +257,7 @@ try {
   const configAgentDir = join(temp, "agent-dir");
   const configDir = join(configAgentDir, "context-broker");
   await mkdir(join(configDir, "rules"), { recursive: true });
-  await writeFile(join(configDir, "config.yml"), `skillRoots:\n  - ${JSON.stringify(temp)}\nrequireAutoload: false\n`);
+  await writeFile(join(configDir, "config.yml"), `skillRoots:\n  - ${JSON.stringify(temp)}\nrequireAutoload: false\nexposeBundlesAsSkills:\n  include:\n    - collab-bundle\n`);
   await writeFile(join(configDir, "rules", "design-context.yml"), [
     "id: design-context",
     "inject: design-context",
@@ -285,12 +285,46 @@ try {
   assert.equal(mod.resolveConfigPath(), join(configDir, "config.yml"));
   assert.deepEqual(mod.readConfig().skillRoots, [temp]);
   assert.equal(mod.readConfig().requireAutoload, false);
+  assert.deepEqual(mod.readConfig().exposeBundlesAsSkills, { include: ["collab-bundle"] });
   assert.deepEqual(mod.ruleRootsForConfig(join(configDir, "config.yml"), {}), [join(configDir, "rules")]);
   assert.deepEqual(mod.listRuleConfigFiles([join(configDir, "rules")]), [
     join(configDir, "rules", "design-context.yml"),
   ]);
   const configWithRuleDir = mod.readConfig();
   assert.deepEqual(configWithRuleDir.rules.find((rule) => rule.id === "design-context")?.inject, ["design-context"]);
+
+  assert.deepEqual(
+    await mod.materializeDiscoveredBundleSkills({ discoveryCatalogs: [discoveryCatalogPath] }, temp),
+    [],
+    "Bundle host discovery must remain disabled unless explicitly enabled",
+  );
+  const generatedBundleSkillPaths = await mod.materializeDiscoveredBundleSkills({
+    skillRoots: [temp],
+    discoveryCatalogs: [discoveryCatalogPath],
+    exposeBundlesAsSkills: true,
+  }, temp);
+  assert.equal(generatedBundleSkillPaths.length, 2, "true Bundle host discovery must generate one Skill index per Bundle");
+  const allowlistedBundleSkillPaths = await mod.materializeDiscoveredBundleSkills({
+    skillRoots: [temp],
+    discoveryCatalogs: [discoveryCatalogPath],
+    exposeBundlesAsSkills: { include: ["collab-bundle"] },
+  }, temp);
+  assert.equal(allowlistedBundleSkillPaths.length, 1, "Bundle host discovery include must generate only selected Bundle indexes");
+  assert.match(await readFile(allowlistedBundleSkillPaths[0], "utf8"), /name: "collab-bundle"/);
+  assert.ok(
+    generatedBundleSkillPaths.every((path) => path.startsWith(join(configDir, "generated-skills"))),
+    "generated Bundle Skills must stay under the host context-broker directory",
+  );
+  const generatedCollabSkill = await readFile(generatedBundleSkillPaths[0], "utf8");
+  assert.match(generatedCollabSkill, /description: "collab协作上下文包"/);
+  assert.match(generatedCollabSkill, /<context-broker-record kind="bundle" name="collab-bundle"/);
+  assert.match(generatedCollabSkill, /<member name="docs-context"/);
+  assert.doesNotMatch(generatedCollabSkill, /Docs context full body must not be injected by bundle/);
+  assert.equal(
+    mod.renderGeneratedBundleSkill(collabBundle).includes("disable-model-invocation"),
+    false,
+    "generated Bundle Skills must remain visible to model discovery",
+  );
   assert.equal(configWithRuleDir.rules.find((rule) => rule.id === "design-context")?.match.length, 3);
 
   await writeFile(join(configDir, "rules", "scene-bundles.yml"), [
@@ -802,13 +836,21 @@ try {
   ].join("\n"));
   process.env.CONTEXT_BROKER_CONFIG = commandConfigPath;
   const registeredCommands = new Map();
+  const registeredHandlers = new Map();
   mod.default({
-    on() {},
+    on(event, handler) {
+      registeredHandlers.set(event, handler);
+    },
     registerCommand(name, command) {
       registeredCommands.set(name, command);
     },
   });
   assert.ok(registeredCommands.has("context-broker"), "/context-broker command must be registered");
+  assert.equal(
+    await registeredHandlers.get("resources_discover")({ type: "resources_discover", cwd: temp, reason: "startup" }, { ui: {} }),
+    undefined,
+    "default config must not advertise Bundles through host Skill discovery",
+  );
   const commandNotifications = [];
   await registeredCommands.get("context-broker").handler("doctor", {
     cwd: temp,
@@ -1034,5 +1076,9 @@ try {
   console.log("context-broker smoke ok");
 } finally {
   restoreEnv();
-  await rm(temp, { recursive: true, force: true });
+  if (process.env.CONTEXT_BROKER_KEEP_TEST_TEMP === "1") {
+    console.log(`kept temp: ${temp}`);
+  } else {
+    await rm(temp, { recursive: true, force: true });
+  }
 }

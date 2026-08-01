@@ -175,6 +175,18 @@ records:
 
 When you type `$workspace-collab`, the model sees the bundle description, policy, and member list. It does not receive `docs` and `chat` bodies unless a later step reads them.
 
+Bundle discovery remains manual by default. To advertise Bundle names and descriptions through the host's normal Skill discovery, enable:
+
+```yaml
+exposeBundlesAsSkills:
+  include:
+    - workspace-collab
+```
+
+Use `exposeBundlesAsSkills: true` only when every configured Bundle should be advertised. The default is `false`.
+
+The plugin then materializes lightweight generated `SKILL.md` indexes under the host agent directory. It uses native resource discovery where the host wires that event into Skill loading, with an equivalent metadata-only system-prompt advertisement as the compatibility path. Only Bundle metadata is present in the system prompt; the generated index body remains on-demand, like a normal Skill. `$workspace-collab` and rule-based loading continue to work unchanged.
+
 Rules can inject the same lightweight index without loading member bodies:
 
 ```yaml
@@ -220,6 +232,9 @@ extraDiscoveryCatalogs:
   - ./context/catalogs/project.yaml
 
 requireAutoload: true
+
+# Off by default. Advertise generated Bundle indexes as host Skills.
+exposeBundlesAsSkills: false
 
 # absolute | home-relative | basename | hash
 pathMode: home-relative
@@ -368,6 +383,7 @@ Context Broker sends selected context to the model by design:
 
 - A matched `skill` sends the full `SKILL.md` body to the model and stores it in local session history.
 - A matched `bundle` sends member names, descriptions, policies, and member paths, but not member bodies.
+- With `exposeBundlesAsSkills.include` (or the all-Bundle shorthand `true`), selected Bundle names, descriptions, and generated index locations are advertised in the system prompt; generated files are stored under the host agent directory.
 - Session JSONL files store injected content.
 - `CONTEXT_BROKER_LOG_FILE` records matched queries and record names. It omits paths unless `logPaths: true` is set.
 - `pathMode: home-relative` avoids full home-directory paths when possible.

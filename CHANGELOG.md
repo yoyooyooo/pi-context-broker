@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add opt-in, allowlisted `exposeBundlesAsSkills` host discovery while preserving manual `$name` Bundle loading as the default; `true` remains the explicit all-Bundle shorthand.
 - Support multiple keyword trigger profiles in one rule file through a top-level `rules` array, enabling generated scene-to-Bundle rule projections while preserving legacy single-profile files.
 - Allow keyword rules to inject catalog bundle indexes with explicit `bundle:<name>` targets.
 - Keep unprefixed rule targets Skill-only and make Bundle rule lookup exact and fail-closed.

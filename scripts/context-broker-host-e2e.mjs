@@ -97,6 +97,14 @@ function makeStream(model, context) {
 }
 
 export default function fakeProvider(pi) {
+  pi.on("before_agent_start", (event) => {
+    if (process.env.CONTEXT_BROKER_E2E_SYSTEM_PROMPT_FILE) {
+      appendFileSync(
+        process.env.CONTEXT_BROKER_E2E_SYSTEM_PROMPT_FILE,
+        JSON.stringify({ systemPrompt: event.systemPrompt }) + "\\n",
+      );
+    }
+  });
   pi.registerProvider("context-broker-e2e", {
     name: "Context Broker E2E Fake Provider",
     api: "context-broker-e2e-api",
@@ -180,12 +188,33 @@ async function runHost(host, tempRoot, fakeProviderPath) {
   const sessionDir = join(base, "sessions");
   const logFile = join(base, "decisions.jsonl");
   const providerContextFile = join(base, "provider-context.jsonl");
+  const systemPromptFile = join(base, "system-prompts.jsonl");
   const configDir = join(base, "context-broker");
   const configFile = join(configDir, "config.yml");
   await mkdir(sessionDir, { recursive: true });
   await mkdir(join(configDir, "rules"), { recursive: true });
   await writeSkill(skillRoot);
-  await writeFile(configFile, `skillRoots:\n  - ${JSON.stringify(skillRoot)}\n`);
+  const catalogPath = join(base, "bundle-catalog.yml");
+  await writeFile(catalogPath, [
+    "version: 1",
+    "records:",
+    "  - kind: bundle",
+    "    name: review-bundle",
+    "    description: E2E discoverable review Bundle",
+    "    members:",
+    "      include:",
+    "        - design-context",
+    "        - review-context",
+  ].join("\n"));
+  await writeFile(configFile, [
+    "skillRoots:",
+    `  - ${JSON.stringify(skillRoot)}`,
+    "discoveryCatalogs:",
+    `  - ${JSON.stringify(catalogPath)}`,
+    "exposeBundlesAsSkills:",
+    "  include:",
+    "    - review-bundle",
+  ].join("\n"));
   await writeFile(join(configDir, "rules", "architecture.yml"), [
     "id: architecture-high-level-review",
     "inject:",
@@ -200,32 +229,31 @@ async function runHost(host, tempRoot, fakeProviderPath) {
     "-p",
     "--session-dir",
     sessionDir,
-    "--no-tools",
-    "--extension",
-    fakeProviderPath,
     "--extension",
     extensionPath,
+    "--extension",
+    fakeProviderPath,
     "--model",
     "context-broker-e2e/fake",
-    "--system-prompt",
-    "Only output OK.",
   ];
-  if (host === "omp") commonArgs.splice(4, 0, "--no-title");
+  if (host === "omp") commonArgs.splice(1, 0, "--no-title");
 
   const env = {
     ...process.env,
+    HOME: base,
     PI_CODING_AGENT_DIR: agentDir,
     CONTEXT_BROKER_ROOTS: skillRoot,
     CONTEXT_BROKER_CONFIG: configFile,
     CONTEXT_BROKER_LOG_FILE: logFile,
     CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: providerContextFile,
+    CONTEXT_BROKER_E2E_SYSTEM_PROMPT_FILE: systemPromptFile,
   };
 
   const prompt = "$design-context，$review-context。请一起评审";
-  const first = await runCommand(host, [...commonArgs, prompt], { cwd: repoRoot, env });
+  const first = await runCommand(host, [...commonArgs, prompt], { cwd: base, env });
   assert.match(first.stdout, /OK/, `${host}: first turn did not return OK`);
 
-  const second = await runCommand(host, [...commonArgs, "--continue", prompt], { cwd: repoRoot, env });
+  const second = await runCommand(host, [...commonArgs, "--continue", prompt], { cwd: base, env });
   assert.match(second.stdout, /OK/, `${host}: second turn did not return OK`);
 
   const logText = await readFile(logFile, "utf8");
@@ -250,6 +278,17 @@ async function runHost(host, tempRoot, fakeProviderPath) {
   assert.equal(reviewMarkerMatches.length, 1, `${host}: expected one injected review skill marker`);
   assert.match(sessionText, /"records":\[/, `${host}: expected multi-record details`);
 
+  const systemPromptText = await readFile(systemPromptFile, "utf8");
+  const systemPrompts = systemPromptText.trim().split("\n").map(line => JSON.stringify(JSON.parse(line).systemPrompt));
+  assert.equal(systemPrompts.length, 2, `${host}: expected two system prompt captures`);
+  assert.match(systemPrompts[0], /review-bundle/, `${host}: generated Bundle Skill name must be advertised`);
+  assert.match(systemPrompts[0], /E2E discoverable review Bundle/, `${host}: generated Bundle Skill description must be advertised`);
+  assert.doesNotMatch(
+    systemPrompts[0],
+    /<context-broker-record kind=\\?"bundle\\?"/,
+    `${host}: Bundle discovery must advertise metadata without eagerly injecting the generated index body`,
+  );
+
   const providerContextText = await readFile(providerContextFile, "utf8");
   const providerContexts = providerContextText.trim().split("\n").map(line => JSON.parse(line).context);
   assert.equal(providerContexts.length, 2, `${host}: expected two provider context captures`);
@@ -264,7 +303,7 @@ async function runHost(host, tempRoot, fakeProviderPath) {
     `${host}: provider context must include review skill body`,
   );
 
-  return { host, sessionFile: sessionFiles[0], logFile, providerContextFile };
+  return { host, sessionFile: sessionFiles[0], logFile, providerContextFile, systemPromptFile };
 }
 
 const tempRoot = await mkdtemp(join(tmpdir(), "context-broker-host-e2e-"));

@@ -175,6 +175,18 @@ records:
 
 输入 `$workspace-collab` 时，模型会看到 bundle 描述、policy 和成员列表。它不会自动收到 `docs` 和 `chat` 的正文，除非后续步骤读取它们。
 
+Bundle 默认仍然只支持手动按需发现。若希望宿主通过正常的 Skill 发现机制暴露 Bundle 的名称和描述，可开启：
+
+```yaml
+exposeBundlesAsSkills:
+  include:
+    - workspace-collab
+```
+
+只有需要暴露全部已配置 Bundle 时才使用 `exposeBundlesAsSkills: true`；默认值为 `false`。
+
+插件会在宿主 agent 目录下生成轻量 `SKILL.md` 索引。宿主若已将资源发现事件接入 Skill 加载，就使用原生发现；否则通过等价的系统提示元数据索引兼容。系统提示只常驻 Bundle 元数据；生成索引的正文仍像普通 Skill 一样按需加载。原有 `$workspace-collab` 和规则加载行为保持不变。
+
 规则也可以注入同一份轻量索引，而不加载成员正文：
 
 ```yaml
@@ -220,6 +232,9 @@ extraDiscoveryCatalogs:
   - ./context/catalogs/project.yaml
 
 requireAutoload: true
+
+# 默认关闭。将生成的 Bundle 索引作为宿主 Skill 暴露。
+exposeBundlesAsSkills: false
 
 # absolute | home-relative | basename | hash
 pathMode: home-relative
@@ -368,6 +383,7 @@ Context Broker 的设计目标就是把你选中的上下文发给模型：
 
 - 匹配到 `skill` 时，完整 `SKILL.md` body 会发送给模型，并写入本地 session history。
 - 匹配到 `bundle` 时，只发送成员 name、description、policy 和 member path，不发送成员 body。
+- 配置 `exposeBundlesAsSkills.include`（或使用暴露全部 Bundle 的简写 `true`）后，选中 Bundle 的名称、描述和生成索引位置会进入系统提示；生成文件保存在宿主 agent 目录下。
 - Session JSONL 会保存注入内容。
 - `CONTEXT_BROKER_LOG_FILE` 会记录匹配 query 和 record name。除非设置 `logPaths: true`，否则不会记录路径。
 - `pathMode: home-relative` 会尽量避免暴露完整 home 目录路径。

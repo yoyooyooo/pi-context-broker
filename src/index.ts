@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -42,6 +42,7 @@ import type {
   AgentMessage,
   BeforeAgentStartEvent,
   BeforeAgentStartResult,
+  BundleSkillExposureConfig,
   ConfigFile,
   ContextEvent,
   ContextInjection,
@@ -68,6 +69,7 @@ const CONFIG_DIR_BASENAME = "context-broker";
 const DEFAULT_CONFIG_FILE_BASENAME = "config";
 const DEFAULT_CONFIG_EXTENSIONS = [".yml", ".yaml", ".json"];
 const DEFAULT_RULE_ROOT_BASENAME = "rules";
+const GENERATED_SKILL_ROOT_BASENAME = "generated-skills";
 const RULE_FILE_EXTENSIONS = new Set(DEFAULT_CONFIG_EXTENSIONS);
 const DEFAULT_PATH_MODE: PathMode = "home-relative";
 const DOLLAR_SKILL_PATTERN = "(?:^|[\\s,，。.!！？?；;、:：([{（【])\\$(?<query>[^\\s$]+?)(?=$|[\\s,，。.!！？?；;、:：)）\\]】}])";
@@ -171,6 +173,9 @@ function mergeConfigs(configs: ConfigFile[]): ConfigFile {
   const requireAutoloadValues = configs
     .map((config) => config.requireAutoload)
     .filter((value): value is boolean => typeof value === "boolean");
+  const exposeBundlesAsSkillsValues = configs
+    .map((config) => config.exposeBundlesAsSkills)
+    .filter((value): value is boolean | BundleSkillExposureConfig => value !== undefined);
   const pathModes = configs.map((config) => config.pathMode).filter((value): value is PathMode => Boolean(value));
   const logPathValues = configs.map((config) => config.logPaths).filter((value): value is boolean => typeof value === "boolean");
   return {
@@ -181,6 +186,7 @@ function mergeConfigs(configs: ConfigFile[]): ConfigFile {
     extraDiscoveryCatalogs: uniqueStrings(configs.flatMap((config) => config.extraDiscoveryCatalogs ?? [])),
     rules: uniqueRules(configs.flatMap((config) => config.rules ?? [])),
     requireAutoload: requireAutoloadValues.length > 0 ? requireAutoloadValues.at(-1) : undefined,
+    exposeBundlesAsSkills: exposeBundlesAsSkillsValues.length > 0 ? exposeBundlesAsSkillsValues.at(-1) : undefined,
     pathMode: pathModes.at(-1),
     logPaths: logPathValues.length > 0 ? logPathValues.at(-1) : undefined,
     scan: mergeScanConfigs(configs.map((config) => config.scan)),
@@ -265,6 +271,12 @@ function normalizeScanConfig(value: unknown): ScanConfig | undefined {
     maxSkillBytes: normalizePositiveInteger(value.maxSkillBytes),
   };
   return scan.maxDepth !== undefined || ignore.length > 0 || scan.maxSkillBytes !== undefined ? scan : undefined;
+}
+
+function normalizeBundleSkillExposure(value: unknown): boolean | BundleSkillExposureConfig | undefined {
+  if (typeof value === "boolean") return value;
+  if (!isRecord(value) || !("include" in value)) return undefined;
+  return { include: normalizeStringList(value.include) };
 }
 
 function normalizeRegexPattern(value: unknown): RegexPattern | undefined {
@@ -367,6 +379,7 @@ function normalizeMainConfig(parsed: unknown): ConfigFile {
     discoveryCatalogs: stringArray(parsed.discoveryCatalogs),
     extraDiscoveryCatalogs: stringArray(parsed.extraDiscoveryCatalogs),
     requireAutoload: typeof parsed.requireAutoload === "boolean" ? parsed.requireAutoload : undefined,
+    exposeBundlesAsSkills: normalizeBundleSkillExposure(parsed.exposeBundlesAsSkills),
     pathMode: normalizePathMode(parsed.pathMode),
     logPaths: typeof parsed.logPaths === "boolean" ? parsed.logPaths : undefined,
     scan: normalizeScanConfig(parsed.scan),
@@ -792,6 +805,130 @@ function renderBundleRecord(injection: ContextInjection, config: ConfigFile): st
   ];
 }
 
+function generatedBundleSkillRoot(): string {
+  const agentDir = defaultAgentDir();
+  if (agentDir) return join(agentDir, CONFIG_DIR_BASENAME, GENERATED_SKILL_ROOT_BASENAME);
+  const configPath = resolveConfigPath();
+  if (configPath) return join(dirname(configPath), GENERATED_SKILL_ROOT_BASENAME);
+  return join(homeDir(), ".cache", CONFIG_DIR_BASENAME, GENERATED_SKILL_ROOT_BASENAME);
+}
+
+function generatedBundleSkillPath(bundle: Extract<DiscoveryRecord, { kind: "bundle" }>, cwd: string): string {
+  const key = createHash("sha256")
+    .update(resolve(cwd))
+    .update("\0")
+    .update(resolve(bundle.path))
+    .update("\0")
+    .update(bundle.name)
+    .digest("hex")
+    .slice(0, 24);
+  return join(generatedBundleSkillRoot(), `bundle-${key}.md`);
+}
+
+function renderGeneratedBundleSkill(bundle: Extract<DiscoveryRecord, { kind: "bundle" }>, config: ConfigFile = {}): string {
+  const description = bundle.description || `Context bundle index for ${bundle.name} with ${bundle.members.length} members.`;
+  const body = renderBundleRecord({
+    record: bundle,
+    query: bundle.name,
+    ruleIds: ["host-skill-discovery"],
+  }, config).join("\n");
+  return [
+    "---",
+    `name: ${JSON.stringify(bundle.name)}`,
+    `description: ${JSON.stringify(description)}`,
+    "metadata:",
+    "  context-broker-kind: bundle",
+    "---",
+    "",
+    `# Context bundle: ${bundle.name}`,
+    "",
+    "This generated skill is a lightweight Context Broker bundle index. Select the relevant member before acting and load that member's instructions when its source is readable.",
+    "",
+    body,
+    "",
+  ].join("\n");
+}
+
+function bundleSkillDiscoveryIncludes(config: ConfigFile): string[] | undefined {
+  const exposure = config.exposeBundlesAsSkills;
+  return typeof exposure === "object" && exposure !== null ? exposure.include : undefined;
+}
+
+function bundleSkillDiscoveryEnabled(config: ConfigFile): boolean {
+  return config.exposeBundlesAsSkills === true || (bundleSkillDiscoveryIncludes(config)?.length ?? 0) > 0;
+}
+
+function bundleSkillDiscoveryLabel(config: ConfigFile): string {
+  if (config.exposeBundlesAsSkills === true) return "enabled (all)";
+  const include = bundleSkillDiscoveryIncludes(config);
+  return include && include.length > 0 ? `enabled (${include.join(", ")})` : "disabled";
+}
+
+function selectExposedBundles(
+  bundles: Array<Extract<DiscoveryRecord, { kind: "bundle" }>>,
+  config: ConfigFile,
+): Array<Extract<DiscoveryRecord, { kind: "bundle" }>> {
+  if (config.exposeBundlesAsSkills === true) return bundles;
+  const include = bundleSkillDiscoveryIncludes(config);
+  if (!include) return [];
+  const included = new Set(include.map(normalizeKey));
+  return bundles.filter((bundle) => (
+    included.has(recordNormalizedName(bundle)) || recordNormalizedAliases(bundle).some((alias) => included.has(alias))
+  ));
+}
+
+async function discoverBundles(config: ConfigFile, cwd: string): Promise<Array<Extract<DiscoveryRecord, { kind: "bundle" }>>> {
+  const bundles = (await buildDiscoveryRegistry(config, cwd))
+    .filter((record): record is Extract<DiscoveryRecord, { kind: "bundle" }> => recordKind(record) === "bundle")
+    .sort((left, right) => left.name.localeCompare(right.name));
+  return selectExposedBundles(bundles, config);
+}
+
+function materializeBundleRecords(
+  bundles: Array<Extract<DiscoveryRecord, { kind: "bundle" }>>,
+  config: ConfigFile,
+  cwd: string,
+): string[] {
+  if (bundles.length === 0) return [];
+  const root = generatedBundleSkillRoot();
+  mkdirSync(root, { recursive: true, mode: 0o700 });
+  return bundles.map((bundle) => {
+    const path = generatedBundleSkillPath(bundle, cwd);
+    const content = renderGeneratedBundleSkill(bundle, config);
+    let current: string | undefined;
+    try {
+      current = readFileSync(path, "utf8");
+    } catch {
+      current = undefined;
+    }
+    if (current !== content) writeFileSync(path, content, { encoding: "utf8", mode: 0o600 });
+    return path;
+  });
+}
+
+async function materializeDiscoveredBundleSkills(config: ConfigFile = readConfig(), cwd = process.cwd()): Promise<string[]> {
+  if (!bundleSkillDiscoveryEnabled(config)) return [];
+  return materializeBundleRecords(await discoverBundles(config, cwd), config, cwd);
+}
+
+async function buildBundleSkillDiscoverySection(config: ConfigFile, cwd: string): Promise<string | undefined> {
+  if (!bundleSkillDiscoveryEnabled(config)) return undefined;
+  const bundles = await discoverBundles(config, cwd);
+  const paths = materializeBundleRecords(bundles, config, cwd);
+  if (paths.length === 0) return undefined;
+  return [
+    "<available_skills>",
+    ...bundles.flatMap((bundle, index) => [
+      "<skill>",
+      `<name>${escapeText(bundle.name)}</name>`,
+      `<description>${escapeText(bundle.description || `Context bundle index with ${bundle.members.length} members.`)}</description>`,
+      `<location>${escapeText(formatPathForPayload(paths[index], config))}</location>`,
+      "</skill>",
+    ]),
+    "</available_skills>",
+  ].join("\n");
+}
+
 function renderSkillRecord(injection: ContextInjection, config: ConfigFile): string[] {
   const skill = injection.record as SkillRecord;
   return [
@@ -1012,6 +1149,11 @@ async function formatContextBrokerDoctor(config: ConfigFile, cwd = process.cwd()
   const diagnostics = collectConfigDiagnostics();
   const bundles = rawRegistry.filter((record) => recordKind(record) === "bundle");
   const skills = rawRegistry.filter((record) => recordKind(record) === "skill");
+  const exposedIncludes = bundleSkillDiscoveryIncludes(config) ?? [];
+  const bundleLookupKeys = new Set(bundles.flatMap((bundle) => [recordNormalizedName(bundle), ...recordNormalizedAliases(bundle)]));
+  for (const included of exposedIncludes) {
+    if (!bundleLookupKeys.has(normalizeKey(included))) diagnostics.push(`bundle skill discovery includes unknown bundle: ${included}`);
+  }
   for (const catalog of catalogs) {
     try {
       readDiscoveryCatalog(catalog, skills as SkillRecord[], scanOptions(config));
@@ -1025,6 +1167,7 @@ async function formatContextBrokerDoctor(config: ConfigFile, cwd = process.cwd()
     `Config: ${resolveConfigPath() ?? "none"}`,
     `Path mode: ${configuredPathMode(config)}`,
     `Log paths: ${config.logPaths === true ? "enabled" : "disabled"}`,
+    `Bundle skill discovery: ${bundleSkillDiscoveryLabel(config)}`,
     `Scan: maxDepth=${config.scan?.maxDepth ?? 8}, maxSkillBytes=${config.scan?.maxSkillBytes ?? 65536}`,
     `Skill roots: ${roots.length}`,
     `Discovery catalogs: ${catalogs.length}`,
@@ -1102,6 +1245,7 @@ export default function contextBroker(pi: ExtensionAPI): void {
   const config = readConfig();
   const registryPromise = buildRegistry(config);
   const dollarRegistryByCwd = new Map<string, Promise<DiscoveryRecord[]>>();
+  let hostResourceDiscoveryActive = false;
   const getDollarRegistry = (cwd = process.cwd()) => {
     const key = resolve(cwd);
     let promise = dollarRegistryByCwd.get(key);
@@ -1118,7 +1262,29 @@ export default function contextBroker(pi: ExtensionAPI): void {
       buildDollarRegistryForContext(ctx, getDollarRegistry(ctx.cwd)),
     ));
   });
-  pi.on("before_agent_start", (event, ctx) => invokeBeforeAgentStart(event, ctx, registryPromise, config, getDollarRegistry(ctx.cwd)));
+  pi.on("resources_discover", async (event, ctx) => {
+    if (!bundleSkillDiscoveryEnabled(config)) return undefined;
+    hostResourceDiscoveryActive = true;
+    try {
+      const skillPaths = await materializeDiscoveredBundleSkills(config, event.cwd);
+      return skillPaths.length > 0 ? { skillPaths } : undefined;
+    } catch (error) {
+      ctx.ui?.notify?.(`context-broker: bundle skill discovery failed: ${errorMessage(error)}`, "warning");
+      return undefined;
+    }
+  });
+  pi.on("before_agent_start", async (event, ctx) => {
+    const injection = await invokeBeforeAgentStart(event, ctx, registryPromise, config, getDollarRegistry(ctx.cwd));
+    if (hostResourceDiscoveryActive || !Array.isArray(event.systemPrompt) || !bundleSkillDiscoveryEnabled(config)) return injection;
+    try {
+      const section = await buildBundleSkillDiscoverySection(config, ctx.cwd ?? process.cwd());
+      if (!section) return injection;
+      return { ...injection, systemPrompt: [...event.systemPrompt, section] };
+    } catch (error) {
+      ctx.ui?.notify?.(`context-broker: bundle skill discovery failed: ${errorMessage(error)}`, "warning");
+      return injection;
+    }
+  });
   const command = {
     description: "Inspect context-broker discovery records, bundles, catalogs, and config health",
     getArgumentCompletions: contextBrokerCommandCompletions,
@@ -1130,6 +1296,7 @@ export default function contextBroker(pi: ExtensionAPI): void {
 export {
   CUSTOM_TYPE,
   BUILTIN_SKILL_PROMPT_TYPE,
+  buildBundleSkillDiscoverySection,
   buildInjectedContextMessage,
   buildInjectedPayload,
   buildDiscoveryRegistry,
@@ -1152,6 +1319,7 @@ export {
   invokeForContext,
   matchDiscoveryRecord,
   matchSkill,
+  materializeDiscoveredBundleSkills,
   messagesFromSessionEntries,
   normalizeKey,
   normalizeRuleConfigFile,
@@ -1161,6 +1329,7 @@ export {
   parseInvocation,
   parseInvocations,
   readConfig,
+  renderGeneratedBundleSkill,
   resolveConfigPath,
   resolveConfigPaths,
   configuredRules,
