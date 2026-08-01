@@ -1,6 +1,6 @@
 {
   "defaultBranch": "main",
-  "remote": "git@github.com:yoyooyooo/pi-context-broker.git",
+  "remote": "origin",
   "tagPrefix": "v",
   "versionFiles": [
     "package.json"
