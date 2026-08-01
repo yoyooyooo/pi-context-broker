@@ -23,6 +23,7 @@ Context Broker 在你的 prompt 和本地上下文库之间加了一层很小的
 - 用 `$name` 查找本地 skill 和 catalog 记录。
 - Pi 交互模式下支持 `$...` 自动补全。
 - 支持规则注入，比如 `review this design` 加载 `design-review`。
+- 支持显式 `bundle:<name>` 规则目标，用关键词触发 Bundle 索引。
 - 支持 bundle，适合大型上下文区域先给模型一个索引。
 - 提供 `/context-broker` 命令检查配置和调试查找结果。
 - 检查 name 和 alias 的命名空间冲突。
@@ -174,6 +175,19 @@ records:
 
 输入 `$workspace-collab` 时，模型会看到 bundle 描述、policy 和成员列表。它不会自动收到 `docs` 和 `chat` 的正文，除非后续步骤读取它们。
 
+规则也可以注入同一份轻量索引，而不加载成员正文：
+
+```yaml
+id: collaboration-keywords
+inject:
+  - bundle:workspace-collab
+match:
+  - contains:
+      - 团队协作
+```
+
+规则目标必须显式使用 `bundle:` 前缀；不带前缀的目标保持原有的 Skill-only 行为。Bundle 规则只按已配置 discovery catalog 中的精确 name 或 alias 匹配，不做模糊匹配。
+
 ## 配置
 
 配置解析顺序：
@@ -246,6 +260,7 @@ Rule files 默认放在 `context-broker/rules/*.yml`。每个文件描述一个�
 id: architecture-review
 inject:
   - design-review
+  - bundle:workspace-collab
 match:
   - exact:
       - review this design
@@ -257,6 +272,27 @@ match:
       - contains:
           - no context
 ```
+
+一个生成文件也可以通过顶层 `rules` 数组声明多个 profile；这适合由同一份场景配置投影一组 Bundle 触发规则：
+
+```yaml
+version: 1
+rules:
+  - id: scene-coding
+    inject:
+      - bundle:scene-coding
+    match:
+      - contains:
+          - 编码场景
+  - id: scene-research
+    inject:
+      - bundle:scene-research
+    match:
+      - contains:
+          - 深度研究
+```
+
+旧的单 profile 文件格式继续兼容。若顶层 `rules` 非空，插件以其中的有效规则为准。
 
 如果想换 rule 目录，设置 `ruleRoots`。
 

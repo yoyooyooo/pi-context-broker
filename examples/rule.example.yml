@@ -1,6 +1,8 @@
 id: architecture-review
 inject:
   - design-review
+  # Prefix a catalog Bundle explicitly; unprefixed targets remain Skills.
+  - bundle:architecture-review
 match:
   - exact:
       - review this design

@@ -323,15 +323,27 @@ function normalizeMatchList(value: unknown): MatchPredicate[] {
 
 function normalizeRuleConfigFile(parsed: unknown, filePath: string): ConfigFile {
   if (!isRecord(parsed) || parsed.enabled === false) return {};
-  const fileId = typeof parsed.id === "string" && parsed.id.trim() ? parsed.id.trim() : basename(filePath, extname(filePath));
-  const inject = normalizeInject(parsed.inject);
-  const match = normalizeMatchList(parsed.match);
-  const rules: InvocationRule[] = inject.length > 0 && match.length > 0 ? [{ id: fileId, inject, match }] : [];
+  const fileId = basename(filePath, extname(filePath));
+  const declaredRules = Array.isArray(parsed.rules)
+    ? parsed.rules
+      .map((value, index) => normalizeInvocationRule(value, `${fileId}-${index + 1}`))
+      .filter((rule): rule is InvocationRule => rule !== undefined)
+    : [];
+  const legacyRule = declaredRules.length === 0 ? normalizeInvocationRule(parsed, fileId) : undefined;
+  const rules = declaredRules.length > 0 ? declaredRules : legacyRule ? [legacyRule] : [];
 
   return {
     rules: rules.length > 0 ? rules : undefined,
     debug: parsed.debug === true || undefined,
   };
+}
+
+function normalizeInvocationRule(value: unknown, fallbackId: string): InvocationRule | undefined {
+  if (!isRecord(value) || value.enabled === false) return undefined;
+  const id = typeof value.id === "string" && value.id.trim() ? value.id.trim() : fallbackId;
+  const inject = normalizeInject(value.inject);
+  const match = normalizeMatchList(value.match);
+  return inject.length > 0 && match.length > 0 ? { id, inject, match } : undefined;
 }
 
 function readRuleConfigs(configPath: string, config: ConfigFile): ConfigFile[] {
@@ -535,13 +547,17 @@ function parseInvocations(text: string, rules: InvocationRule[]): SkillRequest[]
       if (results.length === 0) continue;
       for (const result of results) {
         const queries = rule.inject && rule.inject.length > 0 ? rule.inject : result.query ? [result.query] : [];
-        for (const query of queries) {
-          if (!query.trim()) continue;
+        for (const rawQuery of queries) {
+          const trimmedQuery = rawQuery.trim();
+          if (!trimmedQuery) continue;
+          const explicitBundle = rule.id !== "dollar-skill" && trimmedQuery.startsWith("bundle:");
+          const query = explicitBundle ? trimmedQuery.slice("bundle:".length).trim() : trimmedQuery;
+          if (!query) continue;
           requests.push({
-            query: query.trim(),
+            query,
             ruleId: rule.id,
             matchIndex: index,
-            scope: rule.id === "dollar-skill" ? "global" : "configured",
+            scope: explicitBundle ? "catalog" : rule.id === "dollar-skill" ? "global" : "configured",
           });
         }
       }
@@ -603,7 +619,13 @@ function resolveSkillRequests(
   for (const request of requests) {
     const decision = request.scope === "global"
       ? matchDiscoveryRecord(request.query, globalRegistry, true)
-      : matchSkill(request.query, registry, false);
+      : request.scope === "catalog"
+        ? matchDiscoveryRecord(
+          request.query,
+          globalRegistry.filter((record) => recordKind(record) === "bundle"),
+          false,
+        )
+        : matchSkill(request.query, registry, false);
     if (decision.decision !== "inject") {
       logDecision(decision, { ...logExtra, ruleId: request.ruleId, matchIndex: request.matchIndex }, config);
       continue;
@@ -901,7 +923,7 @@ async function invokeForContext(
   const requests = parseInvocations(prompt, configuredRules(config));
   if (requests.length === 0) return undefined;
   const registry = await registryPromise;
-  const dollarRegistry = requests.some((request) => request.scope === "global") ? await dollarRegistryPromise : [];
+  const dollarRegistry = requests.some((request) => request.scope === "global" || request.scope === "catalog") ? await dollarRegistryPromise : [];
   const injections = resolveSkillRequests(requests, registry, {}, dollarRegistry, config);
   const unloaded = injections.filter((injection) => {
     if (!hasLoadedRecord(event.messages, injection.record)) return true;
@@ -930,7 +952,7 @@ async function invokeBeforeAgentStart(
   const requests = parseInvocations(event.prompt, configuredRules(config));
   if (requests.length === 0) return undefined;
   const registry = await registryPromise;
-  const dollarRegistry = requests.some((request) => request.scope === "global")
+  const dollarRegistry = requests.some((request) => request.scope === "global" || request.scope === "catalog")
     ? await buildDollarRegistryForContext(ctx, dollarRegistryPromise)
     : [];
   const injections = resolveSkillRequests(requests, registry, { phase: "before_agent_start" }, dollarRegistry, config);

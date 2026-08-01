@@ -23,6 +23,7 @@ It does not run a remote indexer, guess from embeddings, or load everything in t
 - `$name` lookup for local skills and catalog records.
 - Pi interactive autocomplete for `$...` entries.
 - Rule-based injection, such as `review this design` loading `design-review`.
+- Explicit `bundle:<name>` rule targets for keyword-triggered bundle indexes.
 - Bundle records for large context areas where the model should see an index before choosing a member.
 - `/context-broker` commands for setup checks and lookup debugging.
 - Namespace collision checks for names and aliases.
@@ -174,6 +175,19 @@ records:
 
 When you type `$workspace-collab`, the model sees the bundle description, policy, and member list. It does not receive `docs` and `chat` bodies unless a later step reads them.
 
+Rules can inject the same lightweight index without loading member bodies:
+
+```yaml
+id: collaboration-keywords
+inject:
+  - bundle:workspace-collab
+match:
+  - contains:
+      - team workspace
+```
+
+The `bundle:` prefix is required for rule targets. Unprefixed rule targets keep the existing Skill-only behavior. Bundle rule lookup uses exact names or aliases from configured discovery catalogs and does not fuzzy-match.
+
 ## Configuration
 
 Config resolution order:
@@ -246,6 +260,7 @@ Rule files live under `context-broker/rules/*.yml` by default. Each file describ
 id: architecture-review
 inject:
   - design-review
+  - bundle:workspace-collab
 match:
   - exact:
       - review this design
@@ -257,6 +272,27 @@ match:
       - contains:
           - no context
 ```
+
+A generated file can declare multiple profiles through a top-level `rules` array. This is useful when one scene configuration projects keyword rules for several Bundle indexes:
+
+```yaml
+version: 1
+rules:
+  - id: scene-coding
+    inject:
+      - bundle:scene-coding
+    match:
+      - contains:
+          - coding context
+  - id: scene-research
+    inject:
+      - bundle:scene-research
+    match:
+      - contains:
+          - deep research
+```
+
+The legacy single-profile file remains supported. When a non-empty top-level `rules` array is present, its valid entries are used.
 
 Set `ruleRoots` if you want a different rule directory.
 

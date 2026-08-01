@@ -207,7 +207,7 @@ export type SkillRequest = {
   query: string;
   ruleId: string;
   matchIndex: number;
-  scope?: "configured" | "global";
+  scope?: "configured" | "catalog" | "global";
 };
 
 export type ContextInjection = {

@@ -293,6 +293,41 @@ try {
   assert.deepEqual(configWithRuleDir.rules.find((rule) => rule.id === "design-context")?.inject, ["design-context"]);
   assert.equal(configWithRuleDir.rules.find((rule) => rule.id === "design-context")?.match.length, 3);
 
+  await writeFile(join(configDir, "rules", "scene-bundles.yml"), [
+    "version: 1",
+    "rules:",
+    "  - id: scene-coding",
+    "    inject:",
+    "      - bundle:scene-coding",
+    "    match:",
+    "      - contains:",
+    "          - 编码场景",
+    "  - id: scene-research",
+    "    inject:",
+    "      - bundle:scene-research",
+    "    match:",
+    "      - exact:",
+    "          - 加载研究上下文",
+  ].join("\n"));
+  const configWithMultiRuleFile = mod.readConfig();
+  assert.deepEqual(
+    configWithMultiRuleFile.rules.filter((rule) => rule.id.startsWith("scene-")).map((rule) => rule.id),
+    ["scene-coding", "scene-research"],
+    "one generated rule file must load every declared scene rule",
+  );
+
+  const bundleRule = {
+    id: "collab-keywords",
+    inject: ["bundle:collab-bundle"],
+    match: [{ exact: ["打开协作上下文"] }],
+  };
+  assert.deepEqual(mod.parseInvocations("打开协作上下文", [bundleRule]), [{
+    query: "collab-bundle",
+    ruleId: "collab-keywords",
+    matchIndex: 0,
+    scope: "catalog",
+  }]);
+
   const jsonOnlyAgentDir = join(temp, "json-agent-dir");
   await mkdir(join(jsonOnlyAgentDir, "context-broker"), { recursive: true });
   await writeFile(join(jsonOnlyAgentDir, "context-broker", "config.json"), JSON.stringify({ skillRoots: [join(temp, "json-only-root")] }));
@@ -572,6 +607,70 @@ try {
   assert.match(String(bundleMessage.content), /<member name="chat-context"/);
   assert.doesNotMatch(String(bundleMessage.content), /Docs context full body must not be injected by bundle/);
   assert.deepEqual(bundleMessage.details.records.map((record) => [record.kind, record.name]), [["bundle", "collab-bundle"]]);
+
+  const bundleRuleInjected = await mod.invokeForContext(
+    { messages: [{ role: "user", content: "打开协作上下文" }] },
+    Promise.resolve(registry),
+    { rules: [bundleRule], discoveryCatalogs: [discoveryCatalogPath] },
+    Promise.resolve(discoveryRegistry),
+  );
+  assert.ok(bundleRuleInjected?.messages, "bundle:<name> rule target must inject a catalog bundle index");
+  assert.match(String(bundleRuleInjected.messages.at(-1).content), /<context-broker-record kind="bundle" name="collab-bundle"/);
+  assert.doesNotMatch(String(bundleRuleInjected.messages.at(-1).content), /Docs context full body must not be injected by bundle/);
+
+  const sameNameBundleRuleInjected = await mod.invokeForContext(
+    { messages: [{ role: "user", content: "打开同名协作上下文" }] },
+    Promise.resolve(registryWithoutAutoloadGate),
+    {
+      rules: [{ id: "same-name-bundle", inject: ["bundle:docs-context"], match: [{ exact: ["打开同名协作上下文"] }] }],
+      discoveryCatalogs: [discoveryCatalogPath],
+    },
+    Promise.resolve(discoveryRegistry),
+  );
+  assert.deepEqual(
+    sameNameBundleRuleInjected?.messages?.at(-1)?.details?.records?.map((record) => [record.kind, record.name]),
+    [["bundle", "docs-context"]],
+    "bundle:<name> must select the bundle when a skill has the same name",
+  );
+
+  const duplicateBundleRulesInjected = await mod.invokeForContext(
+    { messages: [{ role: "user", content: "打开重复协作上下文" }] },
+    Promise.resolve(registry),
+    {
+      rules: [
+        { id: "bundle-one", inject: ["bundle:collab-bundle"], match: [{ contains: ["重复协作"] }] },
+        { id: "bundle-two", inject: ["bundle:collab-bundle"], match: [{ contains: ["重复协作"] }] },
+      ],
+    },
+    Promise.resolve(discoveryRegistry),
+  );
+  assert.equal(duplicateBundleRulesInjected?.messages?.at(-1)?.details?.records?.length, 1, "duplicate bundle matches must dedupe to one injection");
+  assert.deepEqual(duplicateBundleRulesInjected?.messages?.at(-1)?.details?.records?.[0]?.ruleIds, ["bundle-one", "bundle-two"]);
+
+  const unknownBundleRuleInjected = await mod.invokeForContext(
+    { messages: [{ role: "user", content: "打开未知上下文" }] },
+    Promise.resolve(registry),
+    { rules: [{ id: "unknown-bundle", inject: ["bundle:missing-bundle"], match: [{ exact: ["打开未知上下文"] }] }] },
+    Promise.resolve(discoveryRegistry),
+  );
+  assert.equal(unknownBundleRuleInjected, undefined, "unknown bundle rule target must fail closed");
+
+  const alreadyBundleLoaded = await mod.invokeForContext(
+    { messages: [...bundleRuleInjected.messages, { role: "user", content: "打开协作上下文" }] },
+    Promise.resolve(registry),
+    { rules: [bundleRule] },
+    Promise.resolve(discoveryRegistry),
+  );
+  assert.equal(alreadyBundleLoaded, undefined, "loaded bundle marker must prevent rule reinjection");
+
+  const hashedBundleRuleInjected = await mod.invokeForContext(
+    { messages: [{ role: "user", content: "打开协作上下文" }] },
+    Promise.resolve(registry),
+    { rules: [bundleRule], pathMode: "hash" },
+    Promise.resolve(discoveryRegistry),
+  );
+  assert.match(String(hashedBundleRuleInjected?.messages?.at(-1)?.content), /path="sha256:[a-f0-9]{16}"/);
+  assert.doesNotMatch(String(hashedBundleRuleInjected?.messages?.at(-1)?.content), new RegExp(temp.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "bundle rule injection must preserve path privacy");
 
   const pastedDollarInjected = await mod.invokeForContext(
     { messages: [{ role: "user", content: "$plain，$design-context。请一起使用" }] },
