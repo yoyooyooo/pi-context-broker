@@ -15,6 +15,7 @@ Configured `skillRoots`, `ruleRoots`, and discovery catalogs are trusted inputs.
 - Matched skill bodies are sent to the configured model provider and persisted in the local session history.
 - Bundle records send only index metadata and member paths, not member bodies.
 - With `exposeBundlesAsSkills.include` (or the all-Bundle shorthand `true`), selected Bundle names, descriptions, and generated index locations are advertised in the system prompt. Generated `SKILL.md` indexes are stored under the host agent directory and contain Bundle metadata, policies, member descriptions, and path representations, but not member bodies.
+- Generated indexes carry an explicit owner marker and are tracked by an owner manifest. Reconciliation only moves marker-proven stale indexes inside the controlled generated root into a sibling quarantine directory; unknown or truncated files are preserved and nothing is permanently deleted.
 - Paths are home-relative by default where possible. Use `pathMode: hash` for stronger path redaction.
 - JSONL decision logs omit paths unless `logPaths: true` is configured.
 

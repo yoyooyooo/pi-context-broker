@@ -187,6 +187,8 @@ Use `exposeBundlesAsSkills: true` only when every configured Bundle should be ad
 
 The plugin then materializes lightweight generated `SKILL.md` indexes under the host agent directory. It uses native resource discovery where the host wires that event into Skill loading, with an equivalent metadata-only system-prompt advertisement as the compatibility path. Only Bundle metadata is present in the system prompt; the generated index body remains on-demand, like a normal Skill. `$workspace-collab` and rule-based loading continue to work unchanged.
 
+Generated index identity is stable for one host agent directory, canonical catalog path, and normalized Bundle name; caller cwd is not part of the identity. Context Broker records the active set and content digests in an owner manifest. During reconciliation it moves only marker-proven stale Bundle indexes into `context-broker/generated-skills-quarantine/`; unknown, markerless, or truncated files are preserved.
+
 Rules can inject the same lightweight index without loading member bodies:
 
 ```yaml
@@ -384,6 +386,7 @@ Context Broker sends selected context to the model by design:
 - A matched `skill` sends the full `SKILL.md` body to the model and stores it in local session history.
 - A matched `bundle` sends member names, descriptions, policies, and member paths, but not member bodies.
 - With `exposeBundlesAsSkills.include` (or the all-Bundle shorthand `true`), selected Bundle names, descriptions, and generated index locations are advertised in the system prompt; generated files are stored under the host agent directory.
+- Generated-index reconciliation is owner-scoped. Stale owned indexes and invalid owner manifests are quarantined rather than permanently deleted; unowned files are not modified.
 - Session JSONL files store injected content.
 - `CONTEXT_BROKER_LOG_FILE` records matched queries and record names. It omits paths unless `logPaths: true` is set.
 - `pathMode: home-relative` avoids full home-directory paths when possible.

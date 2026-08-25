@@ -187,6 +187,8 @@ exposeBundlesAsSkills:
 
 插件会在宿主 agent 目录下生成轻量 `SKILL.md` 索引。宿主若已将资源发现事件接入 Skill 加载，就使用原生发现；否则通过等价的系统提示元数据索引兼容。系统提示只常驻 Bundle 元数据；生成索引的正文仍像普通 Skill 一样按需加载。原有 `$workspace-collab` 和规则加载行为保持不变。
 
+同一宿主 agent 目录、canonical catalog path 与规范化 Bundle name 对应稳定的生成索引 identity；调用方 cwd 不再参与 identity。Context Broker 用 owner manifest 记录 active set 和 content digest。Reconcile 只会把有明确 owner marker 的 stale Bundle 索引移动到 `context-broker/generated-skills-quarantine/`；未知、无 marker 或截断文件均保留。
+
 规则也可以注入同一份轻量索引，而不加载成员正文：
 
 ```yaml
@@ -384,6 +386,7 @@ Context Broker 的设计目标就是把你选中的上下文发给模型：
 - 匹配到 `skill` 时，完整 `SKILL.md` body 会发送给模型，并写入本地 session history。
 - 匹配到 `bundle` 时，只发送成员 name、description、policy 和 member path，不发送成员 body。
 - 配置 `exposeBundlesAsSkills.include`（或使用暴露全部 Bundle 的简写 `true`）后，选中 Bundle 的名称、描述和生成索引位置会进入系统提示；生成文件保存在宿主 agent 目录下。
+- 生成索引 reconcile 受 owner scope 约束：stale owned index 与 invalid owner manifest 进入 quarantine，不永久删除；不修改 unowned file。
 - Session JSONL 会保存注入内容。
 - `CONTEXT_BROKER_LOG_FILE` 会记录匹配 query 和 record name。除非设置 `logPaths: true`，否则不会记录路径。
 - `pathMode: home-relative` 会尽量避免暴露完整 home 目录路径。

@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const repoRoot = resolve(import.meta.dirname, "..");
 const extensionPath = join(repoRoot, "src/index.ts");
@@ -160,6 +160,7 @@ async function waitForJsonlFiles(dir, count, timeoutMs = 1500) {
 function cleanEnv(agentDir, logFile) {
   const env = {
     ...process.env,
+    HOME: dirname(agentDir),
     PI_CODING_AGENT_DIR: agentDir,
     CONTEXT_BROKER_LOG_FILE: logFile,
   };
@@ -222,14 +223,14 @@ async function runHost(host, tempRoot, fakeProviderPath) {
   if (host === "omp") commonArgs.splice(4, 0, "--no-title");
 
   const env = cleanEnv(agentDir, logFile);
-  const first = await runCommand(host, [...commonArgs, "load first"], { cwd: repoRoot, env });
+  const first = await runCommand(host, [...commonArgs, "load first"], { cwd: base, env });
   assert.match(first.stdout, /OK/, `${host}: configured rule turn did not return OK`);
-  const second = await runCommand(host, [...commonArgs, "--continue", "$second-context"], { cwd: repoRoot, env });
+  const second = await runCommand(host, [...commonArgs, "--continue", "$second-context"], { cwd: base, env });
   assert.match(second.stdout, /OK/, `${host}: dollar turn did not return OK`);
 
   assert.equal(existsSync(logFile), true, `${host}: missing decision log`);
   const logLines = (await readFile(logFile, "utf8")).trim().split("\n").map(line => JSON.parse(line));
-  assert.equal(logLines.length, 2, `${host}: expected two injection decisions`);
+  assert.equal(logLines.length, 2, `${host}: expected two injection decisions; got ${JSON.stringify(logLines)}`);
   assert.equal(logLines[0].decision, "inject", `${host}: first decision should inject`);
   assert.equal(logLines[0].record?.name, "first-context", `${host}: first decision target mismatch`);
   assert.equal(logLines[1].decision, "inject", `${host}: second decision should inject`);
@@ -247,8 +248,8 @@ async function runHost(host, tempRoot, fakeProviderPath) {
   assert.match(injectedContent, /SECOND_CONTEXT_MARKER/, `${host}: missing second marker`);
   const firstDetails = entries[0].details ?? entries[0].message?.details ?? {};
   const secondDetails = entries[1].details ?? entries[1].message?.details ?? {};
-  assert.equal(firstDetails.path, firstPath, `${host}: first path mismatch`);
-  assert.equal(secondDetails.path, secondPath, `${host}: second path mismatch`);
+  assert.equal(firstDetails.path, "~/skills/first/SKILL.md", `${host}: first path mismatch`);
+  assert.equal(secondDetails.path, "~/skills/second/SKILL.md", `${host}: second path mismatch`);
 
   return { host, sessionFile: sessionFiles[0] };
 }

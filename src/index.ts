@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -37,6 +37,10 @@ import {
   formatFindDiagnostics,
   formatRootDiagnostics,
 } from "./diagnostics";
+import {
+  GENERATED_BUNDLE_OWNER,
+  materializeGeneratedBundleSkills,
+} from "./generated-bundle-skills";
 import { installPiDollarAutocompleteEditor } from "./pi-dollar-editor";
 import type {
   AgentMessage,
@@ -813,19 +817,11 @@ function generatedBundleSkillRoot(): string {
   return join(homeDir(), ".cache", CONFIG_DIR_BASENAME, GENERATED_SKILL_ROOT_BASENAME);
 }
 
-function generatedBundleSkillPath(bundle: Extract<DiscoveryRecord, { kind: "bundle" }>, cwd: string): string {
-  const key = createHash("sha256")
-    .update(resolve(cwd))
-    .update("\0")
-    .update(resolve(bundle.path))
-    .update("\0")
-    .update(bundle.name)
-    .digest("hex")
-    .slice(0, 24);
-  return join(generatedBundleSkillRoot(), `bundle-${key}.md`);
-}
-
-function renderGeneratedBundleSkill(bundle: Extract<DiscoveryRecord, { kind: "bundle" }>, config: ConfigFile = {}): string {
+function renderGeneratedBundleSkill(
+  bundle: Extract<DiscoveryRecord, { kind: "bundle" }>,
+  config: ConfigFile = {},
+  recordIdentity?: string,
+): string {
   const description = bundle.description || `Context bundle index for ${bundle.name} with ${bundle.members.length} members.`;
   const body = renderBundleRecord({
     record: bundle,
@@ -838,6 +834,8 @@ function renderGeneratedBundleSkill(bundle: Extract<DiscoveryRecord, { kind: "bu
     `description: ${JSON.stringify(description)}`,
     "metadata:",
     "  context-broker-kind: bundle",
+    `  context-broker-owner: ${GENERATED_BUNDLE_OWNER}`,
+    ...(recordIdentity ? [`  context-broker-record-id: ${recordIdentity}`] : []),
     "---",
     "",
     `# Context bundle: ${bundle.name}`,
@@ -887,34 +885,23 @@ async function discoverBundles(config: ConfigFile, cwd: string): Promise<Array<E
 function materializeBundleRecords(
   bundles: Array<Extract<DiscoveryRecord, { kind: "bundle" }>>,
   config: ConfigFile,
-  cwd: string,
 ): string[] {
-  if (bundles.length === 0) return [];
-  const root = generatedBundleSkillRoot();
-  mkdirSync(root, { recursive: true, mode: 0o700 });
-  return bundles.map((bundle) => {
-    const path = generatedBundleSkillPath(bundle, cwd);
-    const content = renderGeneratedBundleSkill(bundle, config);
-    let current: string | undefined;
-    try {
-      current = readFileSync(path, "utf8");
-    } catch {
-      current = undefined;
-    }
-    if (current !== content) writeFileSync(path, content, { encoding: "utf8", mode: 0o600 });
-    return path;
+  return materializeGeneratedBundleSkills({
+    root: generatedBundleSkillRoot(),
+    bundles,
+    render: (bundle, recordIdentity) => renderGeneratedBundleSkill(bundle, config, recordIdentity),
   });
 }
 
 async function materializeDiscoveredBundleSkills(config: ConfigFile = readConfig(), cwd = process.cwd()): Promise<string[]> {
   if (!bundleSkillDiscoveryEnabled(config)) return [];
-  return materializeBundleRecords(await discoverBundles(config, cwd), config, cwd);
+  return materializeBundleRecords(await discoverBundles(config, cwd), config);
 }
 
 async function buildBundleSkillDiscoverySection(config: ConfigFile, cwd: string): Promise<string | undefined> {
   if (!bundleSkillDiscoveryEnabled(config)) return undefined;
   const bundles = await discoverBundles(config, cwd);
-  const paths = materializeBundleRecords(bundles, config, cwd);
+  const paths = materializeBundleRecords(bundles, config);
   if (paths.length === 0) return undefined;
   return [
     "<available_skills>",
