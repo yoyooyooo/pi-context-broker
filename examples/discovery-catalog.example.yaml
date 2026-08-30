@@ -2,16 +2,33 @@ version: 1
 records:
   - kind: bundle
     name: workspace-collab
-    description: Collaboration contexts for documents, chat, and tasks.
+    description: Collaboration Skill router; load for document or chat work.
     aliases:
       - collab
       - teamwork
-    render:
-      type: member-index
+    routing:
+      overview: Choose by resource; add auth only for identity or permission work.
       rules:
-        - This is a context bundle index, not a concrete skill.
-        - Select the needed member before acting.
-        - Read the selected member file before using member-specific details.
+        - Select the smallest member set
+      groups:
+        - id: content
+          label: Content
+          hint: Documents and conversations
+      members:
+        auth:
+          group: content
+          hint: Identity, authorization, and scopes
+        docs:
+          group: content
+          hint: Document body read/write
+      combinations:
+        - auth + docs: authorize, then edit
+      requireHints: true
+      limits:
+        descriptionChars: 80
+        overviewChars: 120
+        groupHintChars: 48
+        memberHintChars: 40
     policy:
       memberBody: read-before-use
       scope: members-only

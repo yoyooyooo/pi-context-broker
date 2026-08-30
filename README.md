@@ -148,22 +148,39 @@ Skill body goes here.
 
 ## Bundles
 
-Bundles live in discovery catalogs. They inject an index, not the full member files.
+Bundles live in discovery catalogs. They inject a routing index, not the full member files. Optional authored `routing` metadata keeps materialized entities compact and contrastive instead of copying member descriptions.
 
 ```yaml
 version: 1
 records:
   - kind: bundle
     name: workspace-collab
-    description: Collaboration contexts for documents, chat, and tasks.
+    description: Collaboration Skill router; load for document or chat work.
     aliases:
       - collab
-    render:
-      type: member-index
+    routing:
+      overview: Choose by resource; add auth only for identity or permission work.
       rules:
-        - This is a context bundle index, not a concrete skill.
-        - Select the needed member before acting.
-        - Read the selected member file before using member-specific details.
+        - Select the smallest member set
+      groups:
+        - id: content
+          label: Content
+          hint: Documents and conversations
+      members:
+        docs:
+          group: content
+          hint: Document body read/write
+        chat:
+          group: content
+          hint: Messages and channels
+      combinations:
+        - docs + chat: prepare content, then send it
+      requireHints: true
+      limits:
+        descriptionChars: 80
+        overviewChars: 120
+        groupHintChars: 48
+        memberHintChars: 32
     policy:
       memberBody: read-before-use
       scope: members-only
@@ -173,7 +190,9 @@ records:
         - chat
 ```
 
-When you type `$workspace-collab`, the model sees the bundle description, policy, and member list. It does not receive `docs` and `chat` bodies unless a later step reads them.
+When you type `$workspace-collab`, the model sees the compact overview, selection rules, groups, member hints, and policy. It does not receive the original member descriptions or bodies. `description` is reserved for host-level discovery; `routing.overview` explains the decision model after opening the Bundle; each member `hint` should state only how that member differs from its siblings.
+
+`requireHints: true` fails materialization when a discovered member has no authored hint. Limits count Unicode code points and prevent default descriptions or routing prose from growing silently. The compact renderer factors common member path roots, prints only path exceptions, and excludes the generated Bundle entity from its own member set. Catalogs without `routing` keep the compatible member-description rendering.
 
 Bundle discovery remains manual by default. To materialize selected Bundles as lightweight Skill entities, enable:
 

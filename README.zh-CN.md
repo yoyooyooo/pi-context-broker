@@ -148,22 +148,39 @@ Skill body goes here.
 
 ## Bundles
 
-Bundle 写在 discovery catalog 里。它注入索引，不注入完整成员文件。
+Bundle 写在 discovery catalog 里。它注入路由索引，不注入完整成员文件。可选的人工 `routing` 元数据让实体只表达成员差异，不再复制成员 description。
 
 ```yaml
 version: 1
 records:
   - kind: bundle
     name: workspace-collab
-    description: Collaboration contexts for documents, chat, and tasks.
+    description: 协作 Skill 选路入口；文档或消息任务时读取。
     aliases:
       - collab
-    render:
-      type: member-index
+    routing:
+      overview: 按资源选主 Skill；仅在身份或权限问题时叠加认证能力。
       rules:
-        - This is a context bundle index, not a concrete skill.
-        - Select the needed member before acting.
-        - Read the selected member file before using member-specific details.
+        - 选择最小成员集合
+      groups:
+        - id: content
+          label: 内容
+          hint: 文档与会话
+      members:
+        docs:
+          group: content
+          hint: 文档正文读写
+        chat:
+          group: content
+          hint: 消息与群聊
+      combinations:
+        - docs + chat：整理内容后发送
+      requireHints: true
+      limits:
+        descriptionChars: 70
+        overviewChars: 100
+        groupHintChars: 40
+        memberHintChars: 28
     policy:
       memberBody: read-before-use
       scope: members-only
@@ -173,7 +190,9 @@ records:
         - chat
 ```
 
-输入 `$workspace-collab` 时，模型会看到 bundle 描述、policy 和成员列表。它不会自动收到 `docs` 和 `chat` 的正文，除非后续步骤读取它们。
+输入 `$workspace-collab` 时，模型只会看到紧凑的总体说明、选择规则、分组、成员 hint 与 policy，不会收到成员原始 description 或正文。`description` 只负责宿主级发现；`routing.overview` 负责打开 Bundle 后的总体决策模型；成员 `hint` 只表达它与兄弟成员的差异。
+
+`requireHints: true` 会在新增成员缺少人工 hint 时阻止物化。limits 按 Unicode code point 计数，避免默认 description 或路由文本静默膨胀。紧凑渲染器会提取成员公共路径根、只显示路径例外，并从成员集合中排除生成出来的 Bundle 实体本身。没有 `routing` 的旧 catalog 保持兼容的成员 description 渲染。
 
 Bundle 默认仍然只支持手动按需发现。若希望把 Bundle 实体化为宿主可发现的轻量 Skill，可开启：
 

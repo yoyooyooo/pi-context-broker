@@ -684,11 +684,15 @@ function escapedPattern(value: string): string {
 function messageTextIncludesRecordBlock(message: AgentMessage, record: DiscoveryRecord): boolean {
   const text = textFromContent(message.content);
   if (!text) return false;
+  const kind = recordKind(record);
   const namePatterns = [recordName(record), ...recordAliases(record)]
     .map(escapedPattern)
     .filter(Boolean);
   if (namePatterns.length === 0) return false;
-  return namePatterns.some((name) => new RegExp(`<context-broker-record\\s+[^>]*name="${name}"`, "i").test(text));
+  return namePatterns.some((name) => (
+    new RegExp(`<context-broker-record\\s+[^>]*name="${name}"`, "i").test(text)
+    || new RegExp(`<!--\\s*context-broker:${kind}:${name}(?::[^>]*)?\\s*-->`, "i").test(text)
+  ));
 }
 
 function messageTextIncludesSkillBlock(message: AgentMessage, skill: SkillRecord): boolean {
@@ -802,12 +806,91 @@ function renderBundlePolicy(bundle: Extract<DiscoveryRecord, { kind: "bundle" }>
   ];
 }
 
+function commonFormattedMemberRoot(paths: string[]): string | undefined {
+  if (paths.length === 0 || paths.some((path) => !path.includes("/"))) return undefined;
+  const absolute = paths.every((path) => path.replaceAll("\\", "/").startsWith("/"));
+  const directories = paths.map((path) => path.replaceAll("\\", "/").replace(/^\/+/, "").split("/").slice(0, -1));
+  const first = directories[0] ?? [];
+  let length = first.length;
+  for (const directory of directories.slice(1)) {
+    length = Math.min(length, directory.length);
+    for (let index = 0; index < length; index += 1) {
+      if (directory[index] !== first[index]) {
+        length = index;
+        break;
+      }
+    }
+  }
+  if (length === 0) return absolute ? "/" : ".";
+  const root = first.slice(0, length).join("/");
+  return absolute ? `/${root}` : root;
+}
+
+function renderCompactBundleRouting(
+  bundle: Extract<DiscoveryRecord, { kind: "bundle" }>,
+  formatPath: (path: string) => string,
+): string[] {
+  const routing = bundle.routing!;
+  const routeByMember = new Map(Object.entries(routing.members ?? {}).map(([name, route]) => [normalizeKey(name), route]));
+  const formattedPaths = bundle.members.map((member) => formatPath(member.path).replaceAll("\\", "/"));
+  const commonRoot = commonFormattedMemberRoot(formattedPaths);
+  const groups = routing.groups ?? [];
+  const grouped = new Map<string, typeof bundle.members>();
+  const ungrouped: typeof bundle.members = [];
+
+  for (const member of bundle.members) {
+    const route = routeByMember.get(normalizeKey(member.name));
+    const group = route?.group ? normalizeKey(route.group) : "";
+    if (!group) {
+      ungrouped.push(member);
+      continue;
+    }
+    const members = grouped.get(group) ?? [];
+    members.push(member);
+    grouped.set(group, members);
+  }
+
+  const memberLine = (member: typeof bundle.members[number]): string => {
+    const route = routeByMember.get(normalizeKey(member.name));
+    const formattedPath = formatPath(member.path).replaceAll("\\", "/");
+    const relativePath = commonRoot && formattedPath.startsWith(`${commonRoot}/`)
+      ? formattedPath.slice(commonRoot.length + 1)
+      : formattedPath;
+    const expectedPath = `${member.name}/SKILL.md`;
+    const pathSuffix = relativePath === expectedPath ? "" : `（${relativePath}）`;
+    return `- \`${member.name}\`${pathSuffix}：${route?.hint ?? member.description ?? ""}`;
+  };
+
+  const lines = [
+    `<!-- context-broker:bundle:${bundle.normalizedName} -->`,
+    `# ${bundle.name} 路由`,
+    ...(routing.overview ? ["", routing.overview] : []),
+    ...(routing.rules?.length ? ["", `规则：${routing.rules.join("；")}`] : []),
+    ...(commonRoot ? ["", `路径根：\`${commonRoot}\`；默认 \`<name>/SKILL.md\`，括号标例外。`] : []),
+  ];
+
+  for (const group of groups) {
+    const members = grouped.get(normalizeKey(group.id)) ?? [];
+    if (members.length === 0) continue;
+    lines.push("", `## ${group.label ?? group.id}${group.hint ? `：${group.hint}` : ""}`, ...members.map(memberLine));
+  }
+  if (ungrouped.length > 0) lines.push("", "## 成员", ...ungrouped.map(memberLine));
+
+  const prerequisites = bundle.policy?.prerequisites ?? [];
+  const fallback = bundle.policy?.fallback ?? [];
+  if (prerequisites.length > 0) lines.push("", `前置：${prerequisites.map((name) => `\`${name}\``).join(" + ")}`);
+  if (fallback.length > 0) lines.push("", `兜底：${fallback.map((name) => `\`${name}\``).join(" / ")}`);
+  if (routing.combinations?.length) lines.push("", `组合：${routing.combinations.join("；")}`);
+  return lines;
+}
+
 function renderBundleRecord(
   injection: ContextInjection,
   config: ConfigFile,
   formatPath: (path: string) => string = (path) => formatPathForPayload(path, config),
 ): string[] {
   const bundle = injection.record as Extract<DiscoveryRecord, { kind: "bundle" }>;
+  if (bundle.routing) return renderCompactBundleRouting(bundle, formatPath);
   const defaultRules = [
     "This is a context bundle index, not a concrete skill.",
     "Select the needed member by name/description before acting.",
@@ -875,6 +958,7 @@ function renderGeneratedBundleSkill(
     query: bundle.name,
     ruleIds: ["host-skill-discovery"],
   }, config, memberPathFormatter).join("\n");
+  const compactRouting = Boolean(bundle.routing);
   return [
     "---",
     `name: ${JSON.stringify(skillName)}`,
@@ -886,12 +970,14 @@ function renderGeneratedBundleSkill(
     ...(recordIdentity ? [`  context-broker-record-id: ${recordIdentity}`] : []),
     "---",
     "",
-    `# Context bundle: ${bundle.name}`,
-    "",
-    "This generated skill is a lightweight Context Broker bundle index. Select the relevant member before acting and load that member's instructions when its source is readable.",
-    ...(memberPathFormatter ? ["Member paths are relative to the configured memberPathRoot and must be resolved against that source checkout."] : []),
-    "",
-    body,
+    ...(compactRouting ? [body] : [
+      `# Context bundle: ${bundle.name}`,
+      "",
+      "This generated skill is a lightweight Context Broker bundle index. Select the relevant member before acting and load that member's instructions when its source is readable.",
+      ...(memberPathFormatter ? ["Member paths are relative to the configured memberPathRoot and must be resolved against that source checkout."] : []),
+      "",
+      body,
+    ]),
     "",
   ].join("\n");
 }
@@ -933,7 +1019,11 @@ async function discoverBundles(config: ConfigFile, cwd: string): Promise<Array<E
   const bundles = (await buildDiscoveryRegistry(config, cwd))
     .filter((record): record is Extract<DiscoveryRecord, { kind: "bundle" }> => recordKind(record) === "bundle")
     .sort((left, right) => left.name.localeCompare(right.name));
-  const selected = selectExposedBundles(bundles, config);
+  const selected = selectExposedBundles(bundles, config).map((bundle) => {
+    const generatedName = normalizeKey(generatedBundleSkillName(bundle, config));
+    const members = bundle.members.filter((member) => normalizeKey(member.name) !== generatedName);
+    return members.length === bundle.members.length ? bundle : { ...bundle, members };
+  });
   const errors = validateDiscoveryRecords(selected);
   if (errors.length > 0) {
     throw new Error(`Cannot materialize invalid Bundle Skills:\n${errors.map((error) => `- ${error}`).join("\n")}`);

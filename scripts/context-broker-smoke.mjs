@@ -163,8 +163,20 @@ try {
         description: "collab协作上下文包",
         aliases: ["collab", "teamwork"],
         render: { type: "member-index" },
+        routing: {
+          overview: "按资源类型选择协作能力。",
+          rules: ["默认选择最小成员集合"],
+          groups: [{ id: "content", label: "内容", hint: "文档与会话" }],
+          members: {
+            "docs-context": { group: "content", hint: "文档正文读写" },
+            "chat-context": { group: "content", hint: "消息与群聊" },
+          },
+          combinations: ["docs-context + chat-context：整理后发送"],
+          requireHints: true,
+          limits: { descriptionChars: 30, overviewChars: 30, groupHintChars: 20, memberHintChars: 20 },
+        },
         policy: { memberBody: "read-before-use", scope: "members-only", prerequisites: ["docs-context"], fallback: ["chat-context"] },
-        members: { include: ["docs-context", "chat-context"] },
+        members: { include: ["docs-context", "chat-context", "collab-*"] },
       },
       {
         kind: "bundle",
@@ -211,10 +223,59 @@ try {
     "catalog reader must reject invalid member shortcut objects",
   );
 
+  const invalidRoutingCatalogPath = join(temp, "invalid-routing-catalog.yaml");
+  await writeFile(invalidRoutingCatalogPath, YAML.stringify({
+    version: 1,
+    records: [{
+      kind: "bundle",
+      name: "invalid-routing",
+      description: "Invalid routing fixture",
+      members: [],
+      routing: { rules: "not-an-array", limits: { memberHintChars: 0 } },
+    }],
+  }));
+  assert.throws(
+    () => mod.readDiscoveryCatalog(invalidRoutingCatalogPath),
+    /routing\.rules must be an array of non-empty strings/,
+    "catalog reader must reject malformed routing fields instead of dropping them",
+  );
+
+  const invalidRoutingLimitCatalogPath = join(temp, "invalid-routing-limit-catalog.yaml");
+  await writeFile(invalidRoutingLimitCatalogPath, YAML.stringify({
+    version: 1,
+    records: [{
+      kind: "bundle",
+      name: "invalid-routing-limit",
+      description: "Invalid routing limit fixture",
+      members: [],
+      routing: { limits: { memberHintChars: 0 } },
+    }],
+  }));
+  assert.throws(
+    () => mod.readDiscoveryCatalog(invalidRoutingLimitCatalogPath),
+    /routing\.limits\.memberHintChars must be a positive integer/,
+    "catalog reader must reject disabled token budgets",
+  );
+
+  await writeSkill(
+    temp,
+    "collab-bundle-entity",
+    [
+      "name: collab-bundle-entity",
+      "description: Generated collab Bundle entity",
+      "metadata:",
+      "  context-broker-kind: bundle",
+      "  context-broker-owner: pi-context-broker",
+      '  context-broker-source-bundle: "collab-bundle"',
+    ].join("\n"),
+    "Generated self entity must not re-enter its source Bundle",
+  );
+
   const discoveryRegistry = await mod.buildDiscoveryRegistry({ skillRoots: [temp], discoveryCatalogs: [discoveryCatalogPath] });
   const collabBundle = discoveryRegistry.find((record) => record.kind === "bundle" && record.name === "collab-bundle");
   assert.ok(collabBundle, "discovery registry must include bundle records from configured catalogs");
   assert.equal(collabBundle.members.length, 2);
+  assert.equal(collabBundle.members.some((member) => member.name === "collab-bundle-entity"), false);
   assert.ok(discoveryRegistry.some((record) => record.kind === "skill" && record.name === "design-context"));
   const collabItems = mod.discoveryAutocompleteItems(discoveryRegistry, "collab");
   assert.equal(collabItems[0].label, "$collab-bundle [bundle]", "$ autocomplete must distinguish bundles from skills");
@@ -324,8 +385,12 @@ try {
   );
   const generatedCollabSkill = await readFile(generatedBundleSkillPaths[0], "utf8");
   assert.match(generatedCollabSkill, /description: "collab协作上下文包"/);
-  assert.match(generatedCollabSkill, /<context-broker-record kind="bundle" name="collab-bundle"/);
-  assert.match(generatedCollabSkill, /<member name="docs-context"/);
+  assert.match(generatedCollabSkill, /# collab-bundle 路由/);
+  assert.match(generatedCollabSkill, /## 内容：文档与会话/);
+  assert.match(generatedCollabSkill, /`docs-context`：文档正文读写/);
+  assert.match(generatedCollabSkill, /前置：`docs-context`/);
+  assert.match(generatedCollabSkill, /兜底：`chat-context`/);
+  assert.doesNotMatch(generatedCollabSkill, /collab云文档：读取和编辑collab文档内容/);
   assert.doesNotMatch(generatedCollabSkill, /Docs context full body must not be injected by bundle/);
 
   const entityOutputRoot = join(temp, "entity-bundles");
@@ -345,7 +410,8 @@ try {
   const entityBundleSkill = await readFile(entityBundleSkillPaths[0], "utf8");
   assert.match(entityBundleSkill, /name: "collab-bundle-index"/);
   assert.match(entityBundleSkill, /context-broker-source-bundle: "collab-bundle"/);
-  assert.match(entityBundleSkill, /<member name="docs-context" path="docs-context\/SKILL.md"/);
+  assert.match(entityBundleSkill, /`docs-context`：文档正文读写/);
+  assert.match(entityBundleSkill, /路径根：`\.`/);
 
   const invalidBundleRoot = join(temp, "invalid-bundle-root");
   await writeSkill(
@@ -372,6 +438,30 @@ try {
     }, invalidBundleRoot),
     /bundle "invalid-bundle" member "empty-description" has empty description/,
     "Bundle materialization must fail closed on unroutable members",
+  );
+
+  const missingHintCatalog = join(temp, "missing-hint-catalog.yaml");
+  await writeFile(missingHintCatalog, YAML.stringify({
+    version: 1,
+    records: [{
+      kind: "bundle",
+      name: "missing-hint-bundle",
+      description: "Missing routing hint fixture",
+      members: { include: ["docs-context", "chat-context"] },
+      routing: {
+        requireHints: true,
+        members: { "docs-context": { hint: "文档" } },
+      },
+    }],
+  }));
+  await assert.rejects(
+    () => mod.materializeDiscoveredBundleSkills({
+      skillRoots: [temp],
+      discoveryCatalogs: [missingHintCatalog],
+      exposeBundlesAsSkills: true,
+    }, temp),
+    /routing member "chat-context" is missing required hint/,
+    "strict routing must fail closed when a discovered member lacks a hint",
   );
 
   assert.equal(
@@ -703,11 +793,11 @@ try {
   );
   assert.ok(bundleDollarInjected?.messages, "bundle dollar trigger must inject member index");
   const bundleMessage = bundleDollarInjected.messages.at(-1);
-  assert.match(String(bundleMessage.content), /<context-broker-record kind="bundle" name="collab-bundle"/);
-  assert.match(String(bundleMessage.content), /<policy memberBody="read-before-use" scope="members-only">/);
-  assert.match(String(bundleMessage.content), /<prerequisites>\n<member>docs-context<\/member>\n<\/prerequisites>/);
-  assert.match(String(bundleMessage.content), /<member name="docs-context"/);
-  assert.match(String(bundleMessage.content), /<member name="chat-context"/);
+  assert.match(String(bundleMessage.content), /# collab-bundle 路由/);
+  assert.match(String(bundleMessage.content), /前置：`docs-context`/);
+  assert.match(String(bundleMessage.content), /兜底：`chat-context`/);
+  assert.match(String(bundleMessage.content), /`docs-context`：文档正文读写/);
+  assert.match(String(bundleMessage.content), /`chat-context`：消息与群聊/);
   assert.doesNotMatch(String(bundleMessage.content), /Docs context full body must not be injected by bundle/);
   assert.deepEqual(bundleMessage.details.records.map((record) => [record.kind, record.name]), [["bundle", "collab-bundle"]]);
 
@@ -718,7 +808,7 @@ try {
     Promise.resolve(discoveryRegistry),
   );
   assert.ok(bundleRuleInjected?.messages, "bundle:<name> rule target must inject a catalog bundle index");
-  assert.match(String(bundleRuleInjected.messages.at(-1).content), /<context-broker-record kind="bundle" name="collab-bundle"/);
+  assert.match(String(bundleRuleInjected.messages.at(-1).content), /# collab-bundle 路由/);
   assert.doesNotMatch(String(bundleRuleInjected.messages.at(-1).content), /Docs context full body must not be injected by bundle/);
 
   const sameNameBundleRuleInjected = await mod.invokeForContext(
@@ -772,7 +862,7 @@ try {
     { rules: [bundleRule], pathMode: "hash" },
     Promise.resolve(discoveryRegistry),
   );
-  assert.match(String(hashedBundleRuleInjected?.messages?.at(-1)?.content), /path="sha256:[a-f0-9]{16}"/);
+  assert.match(String(hashedBundleRuleInjected?.messages?.at(-1)?.content), /（sha256:[a-f0-9]{16}）/);
   assert.doesNotMatch(String(hashedBundleRuleInjected?.messages?.at(-1)?.content), new RegExp(temp.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "bundle rule injection must preserve path privacy");
 
   const pastedDollarInjected = await mod.invokeForContext(
