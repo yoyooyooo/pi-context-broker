@@ -175,7 +175,7 @@ records:
 
 输入 `$workspace-collab` 时，模型会看到 bundle 描述、policy 和成员列表。它不会自动收到 `docs` 和 `chat` 的正文，除非后续步骤读取它们。
 
-Bundle 默认仍然只支持手动按需发现。若希望宿主通过正常的 Skill 发现机制暴露 Bundle 的名称和描述，可开启：
+Bundle 默认仍然只支持手动按需发现。若希望把 Bundle 实体化为宿主可发现的轻量 Skill，可开启：
 
 ```yaml
 exposeBundlesAsSkills:
@@ -183,11 +183,24 @@ exposeBundlesAsSkills:
     - workspace-collab
 ```
 
-只有需要暴露全部已配置 Bundle 时才使用 `exposeBundlesAsSkills: true`；默认值为 `false`。
+只有需要暴露全部已配置 Bundle 时才使用 `exposeBundlesAsSkills: true`；默认值为 `false`。未配置输出选项时，插件继续在宿主 agent 目录下生成兼容的 flat-file 索引，并通过宿主资源发现注册。
 
-插件会在宿主 agent 目录下生成轻量 `SKILL.md` 索引。宿主若已将资源发现事件接入 Skill 加载，就使用原生发现；否则通过等价的系统提示元数据索引兼容。系统提示只常驻 Bundle 元数据；生成索引的正文仍像普通 Skill 一样按需加载。原有 `$workspace-collab` 和规则加载行为保持不变。
+若要让其他分发系统消费稳定的普通 Skill 目录，可以显式配置实体输出：
 
-同一宿主 agent 目录、canonical catalog path 与规范化 Bundle name 对应稳定的生成索引 identity；调用方 cwd 不再参与 identity。Context Broker 用 owner manifest 记录 active set 和 content digest。Reconcile 只会把有明确 owner marker 的 stale Bundle 索引移动到 `context-broker/generated-skills-quarantine/`；未知、无 marker 或截断文件均保留。
+```yaml
+exposeBundlesAsSkills:
+  include:
+    - workspace-collab
+  outputRoot: ~/context/bundles
+  layout: skill-dir
+  nameTemplate: "{name}-bundle"
+  memberPathRoot: ~/context
+  registerWithHost: false
+```
+
+这会确定性生成 `~/context/bundles/workspace-collab-bundle/SKILL.md`。`outputRoot` 和 `memberPathRoot` 支持 `~`；相对路径按配置文件所在目录解析。`memberPathRoot` 让生成索引保存可移植的 source-relative 成员路径，而不是生成机器的绝对路径。`nameTemplate` 必须包含 `{name}`。`registerWithHost: false` 表示只生成文件，不再把同一索引直接注册到当前 Pi/OMP；适合由其他工具把实体 Skill 分发到全局发现目录。
+
+Context Broker 用 owner manifest 记录 active set、源 Bundle identity 和 content digest。Reconcile 只会把有明确 owner marker 的 stale Bundle 索引移动到 quarantine；未知、无 marker 或截断文件均保留。公开实体目录可以保持稳定，hash 与时间戳只用于 manifest、临时文件和 quarantine。
 
 规则也可以注入同一份轻量索引，而不加载成员正文：
 
@@ -235,8 +248,16 @@ extraDiscoveryCatalogs:
 
 requireAutoload: true
 
-# 默认关闭。将生成的 Bundle 索引作为宿主 Skill 暴露。
-exposeBundlesAsSkills: false
+# 默认关闭。选择需要实体化的 Bundle；以下配置生成稳定 Skill 目录，
+# 但不在当前宿主重复注册，便于交给外部分发系统。
+exposeBundlesAsSkills:
+  include:
+    - workspace-collab
+  outputRoot: ~/context/bundles
+  layout: skill-dir
+  nameTemplate: "{name}-bundle"
+  memberPathRoot: ~/context
+  registerWithHost: false
 
 # absolute | home-relative | basename | hash
 pathMode: home-relative
@@ -371,6 +392,7 @@ Bundle 注入：
 /context-broker doctor
 /context-broker roots
 /context-broker catalogs
+/context-broker materialize
 /context-broker find <query>
 /context-broker explain <record>
 ```
@@ -385,7 +407,8 @@ Context Broker 的设计目标就是把你选中的上下文发给模型：
 
 - 匹配到 `skill` 时，完整 `SKILL.md` body 会发送给模型，并写入本地 session history。
 - 匹配到 `bundle` 时，只发送成员 name、description、policy 和 member path，不发送成员 body。
-- 配置 `exposeBundlesAsSkills.include`（或使用暴露全部 Bundle 的简写 `true`）后，选中 Bundle 的名称、描述和生成索引位置会进入系统提示；生成文件保存在宿主 agent 目录下。
+- 配置 `exposeBundlesAsSkills.include` 后，选中的 Bundle 会实体化为轻量索引；`registerWithHost` 开启时才把名称、描述和位置直接注册到当前宿主。
+- `outputRoot`、`layout: skill-dir` 与 `nameTemplate` 可以生成供外部分发系统消费的稳定 `<name>/SKILL.md`；相对 `outputRoot` 按配置文件目录解析。
 - 生成索引 reconcile 受 owner scope 约束：stale owned index 与 invalid owner manifest 进入 quarantine，不永久删除；不修改 unowned file。
 - Session JSONL 会保存注入内容。
 - `CONTEXT_BROKER_LOG_FILE` 会记录匹配 query 和 record name。除非设置 `logPaths: true`，否则不会记录路径。

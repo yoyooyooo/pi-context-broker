@@ -175,7 +175,7 @@ records:
 
 When you type `$workspace-collab`, the model sees the bundle description, policy, and member list. It does not receive `docs` and `chat` bodies unless a later step reads them.
 
-Bundle discovery remains manual by default. To advertise Bundle names and descriptions through the host's normal Skill discovery, enable:
+Bundle discovery remains manual by default. To materialize selected Bundles as lightweight Skill entities, enable:
 
 ```yaml
 exposeBundlesAsSkills:
@@ -183,11 +183,24 @@ exposeBundlesAsSkills:
     - workspace-collab
 ```
 
-Use `exposeBundlesAsSkills: true` only when every configured Bundle should be advertised. The default is `false`.
+Use `exposeBundlesAsSkills: true` only when every configured Bundle should be materialized. The default is `false`. Without output options, the plugin preserves the compatible host-local flat-file indexes and registers them through host resource discovery.
 
-The plugin then materializes lightweight generated `SKILL.md` indexes under the host agent directory. It uses native resource discovery where the host wires that event into Skill loading, with an equivalent metadata-only system-prompt advertisement as the compatibility path. Only Bundle metadata is present in the system prompt; the generated index body remains on-demand, like a normal Skill. `$workspace-collab` and rule-based loading continue to work unchanged.
+To expose stable Skill directories to another distribution system, configure an explicit entity output:
 
-Generated index identity is stable for one host agent directory, canonical catalog path, and normalized Bundle name; caller cwd is not part of the identity. Context Broker records the active set and content digests in an owner manifest. During reconciliation it moves only marker-proven stale Bundle indexes into `context-broker/generated-skills-quarantine/`; unknown, markerless, or truncated files are preserved.
+```yaml
+exposeBundlesAsSkills:
+  include:
+    - workspace-collab
+  outputRoot: ~/context/bundles
+  layout: skill-dir
+  nameTemplate: "{name}-bundle"
+  memberPathRoot: ~/context
+  registerWithHost: false
+```
+
+This deterministically writes `~/context/bundles/workspace-collab-bundle/SKILL.md`. `outputRoot` and `memberPathRoot` expand `~`; relative paths resolve from the config file directory. `memberPathRoot` keeps source-relative member paths in the generated index instead of embedding generator-host absolute paths. `nameTemplate` must contain `{name}`. With `registerWithHost: false`, Context Broker only materializes the files and does not register the same indexes directly with the current Pi/OMP host, which lets another tool distribute them globally.
+
+Context Broker records the active set, source Bundle identity, and content digest in an owner manifest. Reconciliation quarantines only marker-proven stale indexes and preserves unknown, markerless, or truncated files. Public entity directories stay stable; hashes and timestamps remain internal to manifests, temporary files, and quarantine paths.
 
 Rules can inject the same lightweight index without loading member bodies:
 
@@ -235,8 +248,16 @@ extraDiscoveryCatalogs:
 
 requireAutoload: true
 
-# Off by default. Advertise generated Bundle indexes as host Skills.
-exposeBundlesAsSkills: false
+# Off by default. Select Bundles to materialize. This example writes stable
+# Skill directories but leaves host registration to an external distributor.
+exposeBundlesAsSkills:
+  include:
+    - workspace-collab
+  outputRoot: ~/context/bundles
+  layout: skill-dir
+  nameTemplate: "{name}-bundle"
+  memberPathRoot: ~/context
+  registerWithHost: false
 
 # absolute | home-relative | basename | hash
 pathMode: home-relative
@@ -371,6 +392,7 @@ Bundle injection:
 /context-broker doctor
 /context-broker roots
 /context-broker catalogs
+/context-broker materialize
 /context-broker find <query>
 /context-broker explain <record>
 ```
@@ -385,7 +407,8 @@ Context Broker sends selected context to the model by design:
 
 - A matched `skill` sends the full `SKILL.md` body to the model and stores it in local session history.
 - A matched `bundle` sends member names, descriptions, policies, and member paths, but not member bodies.
-- With `exposeBundlesAsSkills.include` (or the all-Bundle shorthand `true`), selected Bundle names, descriptions, and generated index locations are advertised in the system prompt; generated files are stored under the host agent directory.
+- With `exposeBundlesAsSkills.include`, selected Bundles are materialized as lightweight indexes; names, descriptions, and locations are registered with the current host only when `registerWithHost` is enabled.
+- `outputRoot`, `layout: skill-dir`, and `nameTemplate` can produce stable `<name>/SKILL.md` entities for an external distribution system. Relative output roots resolve from the config file directory.
 - Generated-index reconciliation is owner-scoped. Stale owned indexes and invalid owner manifests are quarantined rather than permanently deleted; unowned files are not modified.
 - Session JSONL files store injected content.
 - `CONTEXT_BROKER_LOG_FILE` records matched queries and record names. It omits paths unless `logPaths: true` is set.

@@ -110,6 +110,36 @@ try {
   assert.equal(manifest.entries[0].path, basename(narrowed[0]));
   assert.match(manifest.entries[0].contentDigest, /^[a-f0-9]{64}$/);
 
+  const entityRoot = join(temp, "repo", "skills", "bundles");
+  const entityPaths = materializeGeneratedBundleSkills({
+    root: entityRoot,
+    bundles: [bundleA, bundleB],
+    layout: "skill-dir",
+    skillName: (bundle) => `${bundle.name}-bundle`,
+    render: render("entity-v1"),
+  });
+  assert.deepEqual(entityPaths, [
+    join(entityRoot, "suite-a-bundle", "SKILL.md"),
+    join(entityRoot, "suite-b-bundle", "SKILL.md"),
+  ]);
+  assert.equal(
+    generatedBundleSkillPath(entityRoot, bundleA, "skill-dir", "suite-a-bundle"),
+    entityPaths[0],
+    "skill-dir layout must use a stable public directory name",
+  );
+  const entityManifest = JSON.parse(await readFile(join(entityRoot, GENERATED_BUNDLE_MANIFEST), "utf8"));
+  assert.equal(entityManifest.entries[0].path, join("suite-a-bundle", "SKILL.md"));
+  await assert.rejects(
+    async () => materializeGeneratedBundleSkills({
+      root: entityRoot,
+      bundles: [bundleA],
+      layout: "skill-dir",
+      skillName: () => "../escape",
+      render: render("invalid"),
+    }),
+    /not a safe directory name/,
+  );
+
   console.log("context-broker generated bundle lifecycle: ok");
 } finally {
   await rm(temp, { recursive: true, force: true });

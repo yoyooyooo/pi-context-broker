@@ -167,6 +167,11 @@ export type ScanConfig = {
 
 export type BundleSkillExposureConfig = {
   include: string[];
+  outputRoot?: string;
+  layout?: "flat-file" | "skill-dir";
+  nameTemplate?: string;
+  memberPathRoot?: string;
+  registerWithHost?: boolean;
 };
 
 export type ConfigFile = {

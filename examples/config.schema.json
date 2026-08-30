@@ -19,7 +19,12 @@
           "additionalProperties": false,
           "required": ["include"],
           "properties": {
-            "include": { "$ref": "#/$defs/stringArray" }
+            "include": { "$ref": "#/$defs/stringArray" },
+            "outputRoot": { "type": "string", "minLength": 1 },
+            "layout": { "enum": ["flat-file", "skill-dir"] },
+            "nameTemplate": { "type": "string", "pattern": "\\{name\\}" },
+            "memberPathRoot": { "type": "string", "minLength": 1 },
+            "registerWithHost": { "type": "boolean", "default": true }
           }
         }
       ]

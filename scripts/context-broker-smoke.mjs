@@ -257,7 +257,7 @@ try {
   const configAgentDir = join(temp, "agent-dir");
   const configDir = join(configAgentDir, "context-broker");
   await mkdir(join(configDir, "rules"), { recursive: true });
-  await writeFile(join(configDir, "config.yml"), `skillRoots:\n  - ${JSON.stringify(temp)}\nrequireAutoload: false\nexposeBundlesAsSkills:\n  include:\n    - collab-bundle\n`);
+  await writeFile(join(configDir, "config.yml"), `skillRoots:\n  - ${JSON.stringify(temp)}\nrequireAutoload: false\nexposeBundlesAsSkills:\n  include:\n    - collab-bundle\n  outputRoot: ./bundle-entities\n  layout: skill-dir\n  nameTemplate: "{name}-bundle"\n  memberPathRoot: ../..\n  registerWithHost: false\n`);
   await writeFile(join(configDir, "rules", "design-context.yml"), [
     "id: design-context",
     "inject: design-context",
@@ -285,7 +285,14 @@ try {
   assert.equal(mod.resolveConfigPath(), join(configDir, "config.yml"));
   assert.deepEqual(mod.readConfig().skillRoots, [temp]);
   assert.equal(mod.readConfig().requireAutoload, false);
-  assert.deepEqual(mod.readConfig().exposeBundlesAsSkills, { include: ["collab-bundle"] });
+  assert.deepEqual(mod.readConfig().exposeBundlesAsSkills, {
+    include: ["collab-bundle"],
+    outputRoot: join(configDir, "bundle-entities"),
+    layout: "skill-dir",
+    nameTemplate: "{name}-bundle",
+    memberPathRoot: temp,
+    registerWithHost: false,
+  });
   assert.deepEqual(mod.ruleRootsForConfig(join(configDir, "config.yml"), {}), [join(configDir, "rules")]);
   assert.deepEqual(mod.listRuleConfigFiles([join(configDir, "rules")]), [
     join(configDir, "rules", "design-context.yml"),
@@ -320,6 +327,68 @@ try {
   assert.match(generatedCollabSkill, /<context-broker-record kind="bundle" name="collab-bundle"/);
   assert.match(generatedCollabSkill, /<member name="docs-context"/);
   assert.doesNotMatch(generatedCollabSkill, /Docs context full body must not be injected by bundle/);
+
+  const entityOutputRoot = join(temp, "entity-bundles");
+  const entityBundleSkillPaths = await mod.materializeDiscoveredBundleSkills({
+    skillRoots: [temp],
+    discoveryCatalogs: [discoveryCatalogPath],
+    exposeBundlesAsSkills: {
+      include: ["collab-bundle"],
+      outputRoot: entityOutputRoot,
+      layout: "skill-dir",
+      nameTemplate: "{name}-index",
+      memberPathRoot: temp,
+      registerWithHost: false,
+    },
+  }, temp);
+  assert.deepEqual(entityBundleSkillPaths, [join(entityOutputRoot, "collab-bundle-index", "SKILL.md")]);
+  const entityBundleSkill = await readFile(entityBundleSkillPaths[0], "utf8");
+  assert.match(entityBundleSkill, /name: "collab-bundle-index"/);
+  assert.match(entityBundleSkill, /context-broker-source-bundle: "collab-bundle"/);
+  assert.match(entityBundleSkill, /<member name="docs-context" path="docs-context\/SKILL.md"/);
+
+  const invalidBundleRoot = join(temp, "invalid-bundle-root");
+  await writeSkill(
+    invalidBundleRoot,
+    "empty-description",
+    ["name: empty-description", 'description: ""'].join("\n"),
+    "Invalid Bundle member fixture",
+  );
+  const invalidBundleCatalog = join(invalidBundleRoot, "catalog.yaml");
+  await writeFile(invalidBundleCatalog, YAML.stringify({
+    version: 1,
+    records: [{
+      kind: "bundle",
+      name: "invalid-bundle",
+      description: "Invalid Bundle fixture",
+      members: { include: ["empty-description"] },
+    }],
+  }));
+  await assert.rejects(
+    () => mod.materializeDiscoveredBundleSkills({
+      skillRoots: [invalidBundleRoot],
+      discoveryCatalogs: [invalidBundleCatalog],
+      exposeBundlesAsSkills: true,
+    }, invalidBundleRoot),
+    /bundle "invalid-bundle" member "empty-description" has empty description/,
+    "Bundle materialization must fail closed on unroutable members",
+  );
+
+  assert.equal(
+    await mod.buildBundleSkillDiscoverySection({
+      skillRoots: [temp],
+      discoveryCatalogs: [discoveryCatalogPath],
+      exposeBundlesAsSkills: {
+        include: ["collab-bundle"],
+        outputRoot: entityOutputRoot,
+        layout: "skill-dir",
+        nameTemplate: "{name}-index",
+        registerWithHost: false,
+      },
+    }, temp),
+    undefined,
+    "materialize-only Bundle Skills must not be registered with the current host",
+  );
   assert.equal(
     mod.renderGeneratedBundleSkill(collabBundle).includes("disable-model-invocation"),
     false,

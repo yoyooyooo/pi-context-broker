@@ -7,7 +7,7 @@ import {
   renameSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 export const GENERATED_BUNDLE_OWNER = "pi-context-broker";
 export const GENERATED_BUNDLE_MANIFEST = "manifest.json";
@@ -42,8 +42,12 @@ type MaterializeOptions<T extends BundleIdentity> = {
   root: string;
   bundles: T[];
   render: (bundle: T, recordIdentity: string) => string;
+  layout?: GeneratedBundleSkillLayout;
+  skillName?: (bundle: T) => string;
   now?: Date;
 };
+
+export type GeneratedBundleSkillLayout = "flat-file" | "skill-dir";
 
 function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -59,14 +63,35 @@ export function generatedBundleRecordIdentity(root: string, bundle: BundleIdenti
     .digest("hex");
 }
 
-export function generatedBundleSkillPath(root: string, bundle: BundleIdentity): string {
+export function generatedBundleSkillPath(
+  root: string,
+  bundle: BundleIdentity,
+  layout: GeneratedBundleSkillLayout = "flat-file",
+  skillName = bundle.name,
+): string {
+  if (layout === "skill-dir") return join(root, safeSkillDirectoryName(skillName), "SKILL.md");
   return join(root, `bundle-${generatedBundleRecordIdentity(root, bundle).slice(0, 24)}.md`);
 }
 
 function atomicWrite(path: string, content: string, mode: number): void {
+  mkdirSync(dirname(path), { recursive: true, mode: mode === 0o644 ? 0o755 : 0o700 });
   const tempPath = join(dirname(path), `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`);
   writeFileSync(tempPath, content, { encoding: "utf8", mode });
   renameSync(tempPath, path);
+}
+
+function safeSkillDirectoryName(value: string): string {
+  const name = value.trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) || name === "." || name === "..") {
+    throw new Error(`generated Bundle Skill name is not a safe directory name: ${value}`);
+  }
+  return name;
+}
+
+function safeRelativePath(root: string, path: string): string | undefined {
+  const rel = relative(resolve(root), resolve(path));
+  if (!rel || isAbsolute(rel) || rel === ".." || rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)) return undefined;
+  return rel;
 }
 
 function isOwnedGeneratedBundle(content: string): boolean {
@@ -87,7 +112,7 @@ function readManifest(path: string): GeneratedBundleManifest | undefined {
       && typeof entry.bundleName === "string"
       && typeof entry.catalogPathDigest === "string"
       && typeof entry.path === "string"
-      && basename(entry.path) === entry.path
+      && safeRelativePath(dirname(path), join(dirname(path), entry.path)) === entry.path
       && typeof entry.contentDigest === "string"
     ))) return undefined;
     return parsed as GeneratedBundleManifest;
@@ -108,7 +133,7 @@ function quarantinePath(root: string, fileName: string, now: Date): string {
 
 function quarantineOwnedFile(root: string, path: string, now: Date): void {
   const fileName = basename(path);
-  if (dirname(resolve(path)) !== resolve(root) || fileName !== basename(path)) return;
+  if (!safeRelativePath(root, path) || fileName !== basename(path)) return;
   let content: string;
   try {
     content = readFileSync(path, "utf8");
@@ -126,14 +151,17 @@ function quarantineInvalidManifest(root: string, manifestPath: string, now: Date
 
 export function materializeGeneratedBundleSkills<T extends BundleIdentity>(options: MaterializeOptions<T>): string[] {
   const root = resolve(options.root);
+  const layout = options.layout ?? "flat-file";
   const now = options.now ?? new Date();
-  mkdirSync(root, { recursive: true, mode: 0o700 });
+  mkdirSync(root, { recursive: true, mode: layout === "skill-dir" ? 0o755 : 0o700 });
 
   const entries: ManifestEntry[] = [];
   const activePaths = new Set<string>();
   for (const bundle of options.bundles) {
     const recordIdentity = generatedBundleRecordIdentity(root, bundle);
-    const path = generatedBundleSkillPath(root, bundle);
+    const skillName = options.skillName?.(bundle) ?? bundle.name;
+    const path = generatedBundleSkillPath(root, bundle, layout, skillName);
+    if (activePaths.has(resolve(path))) throw new Error(`generated Bundle Skill path collision: ${path}`);
     const content = options.render(bundle, recordIdentity);
     let current: string | undefined;
     try {
@@ -141,20 +169,20 @@ export function materializeGeneratedBundleSkills<T extends BundleIdentity>(optio
     } catch {
       current = undefined;
     }
-    if (current !== content) atomicWrite(path, content, 0o600);
+    if (current !== content) atomicWrite(path, content, layout === "skill-dir" ? 0o644 : 0o600);
     activePaths.add(resolve(path));
+    const manifestPath = safeRelativePath(root, path);
+    if (!manifestPath) throw new Error(`generated Bundle Skill escaped output root: ${path}`);
     entries.push({
       recordIdentity,
       bundleName: bundle.name,
       catalogPathDigest: digest(resolve(bundle.path)),
-      path: basename(path),
+      path: manifestPath,
       contentDigest: digest(content),
     });
   }
 
-  for (const entry of readdirSync(root, { withFileTypes: true })) {
-    if (!entry.isFile() || !/^bundle-[a-f0-9]{24}\.md$/.test(entry.name)) continue;
-    const path = resolve(root, entry.name);
+  for (const path of generatedBundleCandidatePaths(root)) {
     if (!activePaths.has(path)) quarantineOwnedFile(root, path, now);
   }
 
@@ -172,4 +200,18 @@ export function materializeGeneratedBundleSkills<T extends BundleIdentity>(optio
   }
 
   return entries.map((entry) => join(root, entry.path));
+}
+
+function generatedBundleCandidatePaths(root: string): string[] {
+  const paths: string[] = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (entry.isFile() && /^bundle-[a-f0-9]{24}\.md$/.test(entry.name)) {
+      paths.push(resolve(root, entry.name));
+      continue;
+    }
+    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+    const skillPath = resolve(root, entry.name, "SKILL.md");
+    if (existsSync(skillPath)) paths.push(skillPath);
+  }
+  return paths;
 }
