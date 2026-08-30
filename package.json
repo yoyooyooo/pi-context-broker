@@ -1,6 +1,6 @@
 {
   "name": "pi-context-broker",
-  "version": "0.0.2",
+  "version": "0.0.7",
   "description": "Pi/OMP context broker that injects discoverable skills and lightweight bundles via explicit user commands.",
   "type": "module",
   "license": "MIT",
