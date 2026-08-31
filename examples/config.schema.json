@@ -24,7 +24,11 @@
             "layout": { "enum": ["flat-file", "skill-dir"] },
             "nameTemplate": { "type": "string", "pattern": "\\{name\\}" },
             "memberPathRoot": { "type": "string", "minLength": 1 },
+            "memberPathAnchor": { "type": "string", "minLength": 1, "pattern": "^[^`\\r\\n]+$" },
             "registerWithHost": { "type": "boolean", "default": true }
+          },
+          "dependentRequired": {
+            "memberPathAnchor": ["memberPathRoot"]
           }
         }
       ]

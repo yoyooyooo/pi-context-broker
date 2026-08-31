@@ -192,7 +192,7 @@ records:
 
 输入 `$workspace-collab` 时，模型只会看到紧凑的总体说明、选择规则、分组、成员 hint 与 policy，不会收到成员原始 description 或正文。`description` 只负责宿主级发现；`routing.overview` 负责打开 Bundle 后的总体决策模型；成员 `hint` 只表达它与兄弟成员的差异。
 
-`requireHints: true` 会在新增成员缺少人工 hint 时阻止物化。limits 按 Unicode code point 计数，避免默认 description 或路由文本静默膨胀。紧凑渲染器会提取成员公共路径根、只显示路径例外，并从成员集合中排除生成出来的 Bundle 实体本身。没有 `routing` 的旧 catalog 保持兼容的成员 description 渲染。
+`requireHints: true` 会在新增成员缺少人工 hint 时阻止物化。limits 按 Unicode code point 计数，避免默认 description 或路由文本静默膨胀。未配置消费路径锚点时，紧凑渲染器保持兼容的公共路径压缩。配置 `memberPathAnchor` 后，它只输出一个稳定成员根；只有严格多数成员符合 `<prefix>/<name>/SKILL.md` 时才推导默认规则，其余例外显示完整的根相对路径。生成的 Bundle 实体会从自己的成员集合中排除。没有 `routing` 的旧 catalog 保持兼容的成员 description 渲染。
 
 Bundle 默认仍然只支持手动按需发现。若希望把 Bundle 实体化为宿主可发现的轻量 Skill，可开启：
 
@@ -214,10 +214,11 @@ exposeBundlesAsSkills:
   layout: skill-dir
   nameTemplate: "{name}-bundle"
   memberPathRoot: ~/context
+  memberPathAnchor: ~/.agents/sources/context
   registerWithHost: false
 ```
 
-这会确定性生成 `~/context/bundles/workspace-collab-bundle/SKILL.md`。`outputRoot` 和 `memberPathRoot` 支持 `~`；相对路径按配置文件所在目录解析。`memberPathRoot` 让生成索引保存可移植的 source-relative 成员路径，而不是生成机器的绝对路径。`nameTemplate` 必须包含 `{name}`。`registerWithHost: false` 表示只生成文件，不再把同一索引直接注册到当前 Pi/OMP；适合由其他工具把实体 Skill 分发到全局发现目录。
+这会确定性生成 `~/context/bundles/workspace-collab-bundle/SKILL.md`。`outputRoot` 和 `memberPathRoot` 支持 `~`；相对路径按配置文件所在目录解析。`memberPathRoot` 是生成时用于推导可移植成员路径的文件系统基准。`memberPathAnchor` 依赖 `memberPathRoot`，会原样写成消费 Agent 可见的成员根；它必须是无反引号的单行文本，生成时不会展开其中的 `~`。固定渲染器只输出成员根、可推导时的严格多数默认规则，以及完整的例外路径，不提供任意模板。`nameTemplate` 必须包含 `{name}`。`registerWithHost: false` 表示只生成文件，不再把同一索引直接注册到当前 Pi/OMP；适合由其他工具把实体 Skill 分发到全局发现目录。
 
 Context Broker 用 owner manifest 记录 active set、源 Bundle identity 和 content digest。Reconcile 只会把有明确 owner marker 的 stale Bundle 索引移动到 quarantine；未知、无 marker 或截断文件均保留。公开实体目录可以保持稳定，hash 与时间戳只用于 manifest、临时文件和 quarantine。
 
@@ -276,6 +277,7 @@ exposeBundlesAsSkills:
   layout: skill-dir
   nameTemplate: "{name}-bundle"
   memberPathRoot: ~/context
+  memberPathAnchor: ~/.agents/sources/context
   registerWithHost: false
 
 # absolute | home-relative | basename | hash

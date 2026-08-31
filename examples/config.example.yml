@@ -22,6 +22,7 @@ exposeBundlesAsSkills:
   layout: skill-dir
   nameTemplate: "{name}-bundle"
   memberPathRoot: ~/context
+  memberPathAnchor: ~/.agents/sources/context
   registerWithHost: false
 
 # Path privacy for payload/session/log metadata.

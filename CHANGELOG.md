@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `memberPathAnchor` for consumer-visible Bundle roots, with strict-majority default path inference and full root-relative paths only for exceptions.
 - Add authored Bundle routing maps with compact overview/rules/groups/member hints/combinations, strict Unicode character budgets, required-hint validation, common-path compression, and generated-self exclusion; routing-enabled entities and `$bundle` injection no longer copy member descriptions.
 
 - Add configurable Bundle Skill entity output with stable `skill-dir` names, config-relative `outputRoot`, `{name}` templates, portable `memberPathRoot`, materialize-only operation, and `/context-broker materialize` while preserving the existing host-local flat-file default.

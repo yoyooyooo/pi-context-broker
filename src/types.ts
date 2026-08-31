@@ -171,6 +171,7 @@ export type BundleSkillExposureConfig = {
   layout?: "flat-file" | "skill-dir";
   nameTemplate?: string;
   memberPathRoot?: string;
+  memberPathAnchor?: string;
   registerWithHost?: boolean;
 };
 

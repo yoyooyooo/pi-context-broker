@@ -318,7 +318,7 @@ try {
   const configAgentDir = join(temp, "agent-dir");
   const configDir = join(configAgentDir, "context-broker");
   await mkdir(join(configDir, "rules"), { recursive: true });
-  await writeFile(join(configDir, "config.yml"), `skillRoots:\n  - ${JSON.stringify(temp)}\nrequireAutoload: false\nexposeBundlesAsSkills:\n  include:\n    - collab-bundle\n  outputRoot: ./bundle-entities\n  layout: skill-dir\n  nameTemplate: "{name}-bundle"\n  memberPathRoot: ../..\n  registerWithHost: false\n`);
+  await writeFile(join(configDir, "config.yml"), `skillRoots:\n  - ${JSON.stringify(temp)}\nrequireAutoload: false\nexposeBundlesAsSkills:\n  include:\n    - collab-bundle\n  outputRoot: ./bundle-entities\n  layout: skill-dir\n  nameTemplate: "{name}-bundle"\n  memberPathRoot: ../..\n  memberPathAnchor: ~/.agents/sources/source-repo\n  registerWithHost: false\n`);
   await writeFile(join(configDir, "rules", "design-context.yml"), [
     "id: design-context",
     "inject: design-context",
@@ -352,6 +352,7 @@ try {
     layout: "skill-dir",
     nameTemplate: "{name}-bundle",
     memberPathRoot: temp,
+    memberPathAnchor: "~/.agents/sources/source-repo",
     registerWithHost: false,
   });
   assert.deepEqual(mod.ruleRootsForConfig(join(configDir, "config.yml"), {}), [join(configDir, "rules")]);
@@ -403,6 +404,7 @@ try {
       layout: "skill-dir",
       nameTemplate: "{name}-index",
       memberPathRoot: temp,
+      memberPathAnchor: "~/.agents/sources/source-repo",
       registerWithHost: false,
     },
   }, temp);
@@ -411,7 +413,45 @@ try {
   assert.match(entityBundleSkill, /name: "collab-bundle-index"/);
   assert.match(entityBundleSkill, /context-broker-source-bundle: "collab-bundle"/);
   assert.match(entityBundleSkill, /`docs-context`：文档正文读写/);
-  assert.match(entityBundleSkill, /路径根：`\.`/);
+  assert.match(entityBundleSkill, /成员根：`~\/\.agents\/sources\/source-repo`/);
+  assert.match(entityBundleSkill, /默认：`<name>\/SKILL\.md`；括号标例外。/);
+  assert.doesNotMatch(entityBundleSkill, /路径根：/);
+
+  const exceptionBundleSkill = mod.renderGeneratedBundleSkill({
+    ...collabBundle,
+    members: [
+      ...collabBundle.members,
+      { ...collabBundle.members.find((member) => member.name === "chat-context"), name: "legacy-chat" },
+    ],
+    routing: {
+      ...collabBundle.routing,
+      members: {
+        ...collabBundle.routing.members,
+        "legacy-chat": { group: "content", hint: "旧聊天入口" },
+      },
+    },
+  }, {
+    exposeBundlesAsSkills: {
+      include: ["collab-bundle"],
+      memberPathRoot: temp,
+      memberPathAnchor: "~/.agents/sources/source-repo",
+    },
+  }, "fixture-record", "collab-bundle-index");
+  assert.match(exceptionBundleSkill, /`legacy-chat`（`chat-context\/SKILL\.md`）：旧聊天入口/);
+  assert.doesNotMatch(exceptionBundleSkill, /`docs-context`（/);
+
+  await assert.rejects(
+    () => mod.materializeDiscoveredBundleSkills({
+      skillRoots: [temp],
+      discoveryCatalogs: [discoveryCatalogPath],
+      exposeBundlesAsSkills: {
+        include: ["collab-bundle"],
+        memberPathAnchor: "~/.agents/sources/source-repo",
+      },
+    }, temp),
+    /memberPathAnchor requires memberPathRoot/,
+    "consumer path anchors must fail closed without a source-relative member root",
+  );
 
   const invalidBundleRoot = join(temp, "invalid-bundle-root");
   await writeSkill(

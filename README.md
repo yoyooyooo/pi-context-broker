@@ -192,7 +192,7 @@ records:
 
 When you type `$workspace-collab`, the model sees the compact overview, selection rules, groups, member hints, and policy. It does not receive the original member descriptions or bodies. `description` is reserved for host-level discovery; `routing.overview` explains the decision model after opening the Bundle; each member `hint` should state only how that member differs from its siblings.
 
-`requireHints: true` fails materialization when a discovered member has no authored hint. Limits count Unicode code points and prevent default descriptions or routing prose from growing silently. The compact renderer factors common member path roots, prints only path exceptions, and excludes the generated Bundle entity from its own member set. Catalogs without `routing` keep the compatible member-description rendering.
+`requireHints: true` fails materialization when a discovered member has no authored hint. Limits count Unicode code points and prevent default descriptions or routing prose from growing silently. Without a consumer path anchor, the compact renderer keeps the compatible common-root compression. With `memberPathAnchor`, it prints one stable member root, derives a default `<prefix>/<name>/SKILL.md` rule only when that shape covers a strict majority of members, and prints full root-relative paths only for exceptions. The generated Bundle entity is excluded from its own member set. Catalogs without `routing` keep the compatible member-description rendering.
 
 Bundle discovery remains manual by default. To materialize selected Bundles as lightweight Skill entities, enable:
 
@@ -214,10 +214,11 @@ exposeBundlesAsSkills:
   layout: skill-dir
   nameTemplate: "{name}-bundle"
   memberPathRoot: ~/context
+  memberPathAnchor: ~/.agents/sources/context
   registerWithHost: false
 ```
 
-This deterministically writes `~/context/bundles/workspace-collab-bundle/SKILL.md`. `outputRoot` and `memberPathRoot` expand `~`; relative paths resolve from the config file directory. `memberPathRoot` keeps source-relative member paths in the generated index instead of embedding generator-host absolute paths. `nameTemplate` must contain `{name}`. With `registerWithHost: false`, Context Broker only materializes the files and does not register the same indexes directly with the current Pi/OMP host, which lets another tool distribute them globally.
+This deterministically writes `~/context/bundles/workspace-collab-bundle/SKILL.md`. `outputRoot` and `memberPathRoot` expand `~`; relative paths resolve from the config file directory. `memberPathRoot` is the generation-time filesystem base used to derive portable member paths. `memberPathAnchor` requires `memberPathRoot` and is preserved verbatim as the consumer-visible root; it must be one line without backticks and is not `~`-expanded during generation. The fixed renderer emits the root, an inferred strict-majority default when available, and explicit exception paths without supporting arbitrary templates. `nameTemplate` must contain `{name}`. With `registerWithHost: false`, Context Broker only materializes the files and does not register the same indexes directly with the current Pi/OMP host, which lets another tool distribute them globally.
 
 Context Broker records the active set, source Bundle identity, and content digest in an owner manifest. Reconciliation quarantines only marker-proven stale indexes and preserves unknown, markerless, or truncated files. Public entity directories stay stable; hashes and timestamps remain internal to manifests, temporary files, and quarantine paths.
 
@@ -276,6 +277,7 @@ exposeBundlesAsSkills:
   layout: skill-dir
   nameTemplate: "{name}-bundle"
   memberPathRoot: ~/context
+  memberPathAnchor: ~/.agents/sources/context
   registerWithHost: false
 
 # absolute | home-relative | basename | hash

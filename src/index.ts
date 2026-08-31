@@ -290,12 +290,21 @@ function normalizeBundleSkillExposure(value: unknown, baseDir = process.cwd()): 
   const memberPathRoot = typeof value.memberPathRoot === "string" && value.memberPathRoot.trim()
     ? expandPath(value.memberPathRoot.trim(), baseDir)
     : undefined;
+  let memberPathAnchor: string | undefined;
+  if (value.memberPathAnchor !== undefined) {
+    if (typeof value.memberPathAnchor !== "string" || !value.memberPathAnchor.trim() || /[\r\n`]/.test(value.memberPathAnchor)) {
+      throw new Error("exposeBundlesAsSkills.memberPathAnchor must be a non-empty single-line string without backticks");
+    }
+    if (!memberPathRoot) throw new Error("exposeBundlesAsSkills.memberPathAnchor requires memberPathRoot");
+    memberPathAnchor = value.memberPathAnchor.trim();
+  }
   return {
     include: normalizeStringList(value.include),
     ...(outputRoot ? { outputRoot } : {}),
     ...(layout ? { layout } : {}),
     ...(nameTemplate ? { nameTemplate } : {}),
     ...(memberPathRoot ? { memberPathRoot } : {}),
+    ...(memberPathAnchor ? { memberPathAnchor } : {}),
     ...(typeof value.registerWithHost === "boolean" ? { registerWithHost: value.registerWithHost } : {}),
   };
 }
@@ -826,14 +835,37 @@ function commonFormattedMemberRoot(paths: string[]): string | undefined {
   return absolute ? `/${root}` : root;
 }
 
+function defaultFormattedMemberPrefix(
+  bundle: Extract<DiscoveryRecord, { kind: "bundle" }>,
+  formatPath: (path: string) => string,
+): string | undefined {
+  const counts = new Map<string, number>();
+  for (const member of bundle.members) {
+    const path = formatPath(member.path).replaceAll("\\", "/");
+    const expectedTail = `${member.name}/SKILL.md`;
+    const prefix = path === expectedTail
+      ? ""
+      : path.endsWith(`/${expectedTail}`)
+        ? path.slice(0, -(expectedTail.length + 1))
+        : undefined;
+    if (prefix !== undefined) counts.set(prefix, (counts.get(prefix) ?? 0) + 1);
+  }
+  const winner = [...counts.entries()].sort(([leftPrefix, leftCount], [rightPrefix, rightCount]) => (
+    rightCount - leftCount || leftPrefix.localeCompare(rightPrefix)
+  ))[0];
+  return winner && winner[1] * 2 > bundle.members.length ? winner[0] : undefined;
+}
+
 function renderCompactBundleRouting(
   bundle: Extract<DiscoveryRecord, { kind: "bundle" }>,
   formatPath: (path: string) => string,
+  memberPathAnchor?: string,
 ): string[] {
   const routing = bundle.routing!;
   const routeByMember = new Map(Object.entries(routing.members ?? {}).map(([name, route]) => [normalizeKey(name), route]));
   const formattedPaths = bundle.members.map((member) => formatPath(member.path).replaceAll("\\", "/"));
-  const commonRoot = commonFormattedMemberRoot(formattedPaths);
+  const commonRoot = memberPathAnchor ? undefined : commonFormattedMemberRoot(formattedPaths);
+  const defaultPrefix = memberPathAnchor ? defaultFormattedMemberPrefix(bundle, formatPath) : undefined;
   const groups = routing.groups ?? [];
   const grouped = new Map<string, typeof bundle.members>();
   const ungrouped: typeof bundle.members = [];
@@ -853,6 +885,13 @@ function renderCompactBundleRouting(
   const memberLine = (member: typeof bundle.members[number]): string => {
     const route = routeByMember.get(normalizeKey(member.name));
     const formattedPath = formatPath(member.path).replaceAll("\\", "/");
+    if (memberPathAnchor) {
+      const expectedPath = defaultPrefix === undefined
+        ? undefined
+        : `${defaultPrefix ? `${defaultPrefix}/` : ""}${member.name}/SKILL.md`;
+      const pathSuffix = formattedPath === expectedPath ? "" : `（\`${formattedPath}\`）`;
+      return `- \`${member.name}\`${pathSuffix}：${route?.hint ?? member.description ?? ""}`;
+    }
     const relativePath = commonRoot && formattedPath.startsWith(`${commonRoot}/`)
       ? formattedPath.slice(commonRoot.length + 1)
       : formattedPath;
@@ -866,6 +905,10 @@ function renderCompactBundleRouting(
     `# ${bundle.name} 路由`,
     ...(routing.overview ? ["", routing.overview] : []),
     ...(routing.rules?.length ? ["", `规则：${routing.rules.join("；")}`] : []),
+    ...(memberPathAnchor ? ["", `成员根：\`${memberPathAnchor}\``] : []),
+    ...(memberPathAnchor && defaultPrefix !== undefined ? [
+      `默认：\`${defaultPrefix ? `${defaultPrefix}/` : ""}<name>/SKILL.md\`；括号标例外。`,
+    ] : []),
     ...(commonRoot ? ["", `路径根：\`${commonRoot}\`；默认 \`<name>/SKILL.md\`，括号标例外。`] : []),
   ];
 
@@ -890,7 +933,15 @@ function renderBundleRecord(
   formatPath: (path: string) => string = (path) => formatPathForPayload(path, config),
 ): string[] {
   const bundle = injection.record as Extract<DiscoveryRecord, { kind: "bundle" }>;
-  if (bundle.routing) return renderCompactBundleRouting(bundle, formatPath);
+  if (bundle.routing) {
+    const memberPathAnchor = bundleSkillExposureConfig(config)?.memberPathAnchor;
+    if (memberPathAnchor) {
+      const anchoredFormatter = generatedBundlePathFormatter(config);
+      if (!anchoredFormatter) throw new Error("generated Bundle memberPathAnchor requires memberPathRoot");
+      return renderCompactBundleRouting(bundle, anchoredFormatter, memberPathAnchor);
+    }
+    return renderCompactBundleRouting(bundle, formatPath);
+  }
   const defaultRules = [
     "This is a context bundle index, not a concrete skill.",
     "Select the needed member by name/description before acting.",
