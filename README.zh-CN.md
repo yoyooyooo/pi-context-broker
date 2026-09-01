@@ -40,7 +40,9 @@ Context Broker 有两类记录。
 | `skill` | 发现到的 `SKILL.md` 文件 | 完整 skill body |
 | `bundle` | YAML 或 JSON catalog | bundle 描述、policy 和成员列表 |
 
-Skill 适合具体操作说明。Bundle 适合做路由。当一组相关 skill 很多时，先给模型成员索引，比一次性塞进所有成员正文更稳。
+Skill 适合具体操作说明。Bundle 适合运行时路由。当一组相关 skill 很多时，先给模型成员索引，比一次性塞进所有成员正文更稳。
+
+Context Broker 不物化持久化的 Bundle 或 Router Skill。需要全局分发路由入口的仓库，应把它作为普通 `SKILL.md` 自己管理；Context Broker 会像发现其他 Skill 一样通过 `skillRoots` 发现它。
 
 ## 安装
 
@@ -148,39 +150,22 @@ Skill body goes here.
 
 ## Bundles
 
-Bundle 写在 discovery catalog 里。它注入路由索引，不注入完整成员文件。可选的人工 `routing` 元数据让实体只表达成员差异，不再复制成员 description。
+Bundle 写在 discovery catalog 里。它注入索引，不注入完整成员文件。
 
 ```yaml
 version: 1
 records:
   - kind: bundle
     name: workspace-collab
-    description: 协作 Skill 选路入口；文档或消息任务时读取。
+    description: Collaboration contexts for documents, chat, and tasks.
     aliases:
       - collab
-    routing:
-      overview: 按资源选主 Skill；仅在身份或权限问题时叠加认证能力。
+    render:
+      type: member-index
       rules:
-        - 选择最小成员集合
-      groups:
-        - id: content
-          label: 内容
-          hint: 文档与会话
-      members:
-        docs:
-          group: content
-          hint: 文档正文读写
-        chat:
-          group: content
-          hint: 消息与群聊
-      combinations:
-        - docs + chat：整理内容后发送
-      requireHints: true
-      limits:
-        descriptionChars: 70
-        overviewChars: 100
-        groupHintChars: 40
-        memberHintChars: 28
+        - This is a context bundle index, not a concrete skill.
+        - Select the needed member before acting.
+        - Read the selected member file before using member-specific details.
     policy:
       memberBody: read-before-use
       scope: members-only
@@ -190,37 +175,7 @@ records:
         - chat
 ```
 
-输入 `$workspace-collab` 时，模型只会看到紧凑的总体说明、选择规则、分组、成员 hint 与 policy，不会收到成员原始 description 或正文。`description` 只负责宿主级发现；`routing.overview` 负责打开 Bundle 后的总体决策模型；成员 `hint` 只表达它与兄弟成员的差异。
-
-`requireHints: true` 会在新增成员缺少人工 hint 时阻止物化。limits 按 Unicode code point 计数，避免默认 description 或路由文本静默膨胀。未配置消费路径锚点时，紧凑渲染器保持兼容的公共路径压缩。配置 `memberPathAnchor` 后，它只输出一个稳定成员根；只有严格多数成员符合 `<prefix>/<name>/SKILL.md` 时才推导默认规则，其余例外显示完整的根相对路径。生成的 Bundle 实体会从自己的成员集合中排除。没有 `routing` 的旧 catalog 保持兼容的成员 description 渲染。
-
-Bundle 默认仍然只支持手动按需发现。若希望把 Bundle 实体化为宿主可发现的轻量 Skill，可开启：
-
-```yaml
-exposeBundlesAsSkills:
-  include:
-    - workspace-collab
-```
-
-只有需要暴露全部已配置 Bundle 时才使用 `exposeBundlesAsSkills: true`；默认值为 `false`。未配置输出选项时，插件继续在宿主 agent 目录下生成兼容的 flat-file 索引，并通过宿主资源发现注册。
-
-若要让其他分发系统消费稳定的普通 Skill 目录，可以显式配置实体输出：
-
-```yaml
-exposeBundlesAsSkills:
-  include:
-    - workspace-collab
-  outputRoot: ~/context/bundles
-  layout: skill-dir
-  nameTemplate: "{name}-bundle"
-  memberPathRoot: ~/context
-  memberPathAnchor: ~/.agents/sources/context
-  registerWithHost: false
-```
-
-这会确定性生成 `~/context/bundles/workspace-collab-bundle/SKILL.md`。`outputRoot` 和 `memberPathRoot` 支持 `~`；相对路径按配置文件所在目录解析。`memberPathRoot` 是生成时用于推导可移植成员路径的文件系统基准。`memberPathAnchor` 依赖 `memberPathRoot`，会原样写成消费 Agent 可见的成员根；它必须是无反引号的单行文本，生成时不会展开其中的 `~`。固定渲染器只输出成员根、可推导时的严格多数默认规则，以及完整的例外路径，不提供任意模板。`nameTemplate` 必须包含 `{name}`。`registerWithHost: false` 表示只生成文件，不再把同一索引直接注册到当前 Pi/OMP；适合由其他工具把实体 Skill 分发到全局发现目录。
-
-Context Broker 用 owner manifest 记录 active set、源 Bundle identity 和 content digest。Reconcile 只会把有明确 owner marker 的 stale Bundle 索引移动到 quarantine；未知、无 marker 或截断文件均保留。公开实体目录可以保持稳定，hash 与时间戳只用于 manifest、临时文件和 quarantine。
+输入 `$workspace-collab` 时，模型会看到 bundle 描述、policy 和成员列表。它不会自动收到 `docs` 和 `chat` 的正文，除非后续步骤读取它们。
 
 规则也可以注入同一份轻量索引，而不加载成员正文：
 
@@ -267,18 +222,6 @@ extraDiscoveryCatalogs:
   - ./context/catalogs/project.yaml
 
 requireAutoload: true
-
-# 默认关闭。选择需要实体化的 Bundle；以下配置生成稳定 Skill 目录，
-# 但不在当前宿主重复注册，便于交给外部分发系统。
-exposeBundlesAsSkills:
-  include:
-    - workspace-collab
-  outputRoot: ~/context/bundles
-  layout: skill-dir
-  nameTemplate: "{name}-bundle"
-  memberPathRoot: ~/context
-  memberPathAnchor: ~/.agents/sources/context
-  registerWithHost: false
 
 # absolute | home-relative | basename | hash
 pathMode: home-relative
@@ -413,7 +356,6 @@ Bundle 注入：
 /context-broker doctor
 /context-broker roots
 /context-broker catalogs
-/context-broker materialize
 /context-broker find <query>
 /context-broker explain <record>
 ```
@@ -428,9 +370,6 @@ Context Broker 的设计目标就是把你选中的上下文发给模型：
 
 - 匹配到 `skill` 时，完整 `SKILL.md` body 会发送给模型，并写入本地 session history。
 - 匹配到 `bundle` 时，只发送成员 name、description、policy 和 member path，不发送成员 body。
-- 配置 `exposeBundlesAsSkills.include` 后，选中的 Bundle 会实体化为轻量索引；`registerWithHost` 开启时才把名称、描述和位置直接注册到当前宿主。
-- `outputRoot`、`layout: skill-dir` 与 `nameTemplate` 可以生成供外部分发系统消费的稳定 `<name>/SKILL.md`；相对 `outputRoot` 按配置文件目录解析。
-- 生成索引 reconcile 受 owner scope 约束：stale owned index 与 invalid owner manifest 进入 quarantine，不永久删除；不修改 unowned file。
 - Session JSONL 会保存注入内容。
 - `CONTEXT_BROKER_LOG_FILE` 会记录匹配 query 和 record name。除非设置 `logPaths: true`，否则不会记录路径。
 - `pathMode: home-relative` 会尽量避免暴露完整 home 目录路径。

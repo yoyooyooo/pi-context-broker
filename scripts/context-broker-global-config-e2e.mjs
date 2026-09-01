@@ -230,7 +230,7 @@ async function runHost(host, tempRoot, fakeProviderPath) {
 
   assert.equal(existsSync(logFile), true, `${host}: missing decision log`);
   const logLines = (await readFile(logFile, "utf8")).trim().split("\n").map(line => JSON.parse(line));
-  assert.equal(logLines.length, 2, `${host}: expected two injection decisions; got ${JSON.stringify(logLines)}`);
+  assert.equal(logLines.length, 2, `${host}: expected two injection decisions`);
   assert.equal(logLines[0].decision, "inject", `${host}: first decision should inject`);
   assert.equal(logLines[0].record?.name, "first-context", `${host}: first decision target mismatch`);
   assert.equal(logLines[1].decision, "inject", `${host}: second decision should inject`);

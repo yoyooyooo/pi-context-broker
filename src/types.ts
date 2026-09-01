@@ -21,22 +21,10 @@ export type ContextResult = {
 
 export type BeforeAgentStartEvent = {
   prompt: string;
-  systemPrompt?: string | string[];
 };
 
 export type BeforeAgentStartResult = {
   message?: Omit<AgentMessage, "role" | "timestamp">;
-  systemPrompt?: string | string[];
-};
-
-export type ResourcesDiscoverEvent = {
-  type: "resources_discover";
-  cwd: string;
-  reason: "startup" | "reload";
-};
-
-export type ResourcesDiscoverResult = {
-  skillPaths?: string[];
 };
 
 export type AutocompleteItem = {
@@ -115,13 +103,6 @@ export type ExtensionAPI = {
     handler: (event: { type: "session_start"; reason?: string }, ctx: ExtensionContext) => void | Promise<void>,
   ): void;
   on(
-    event: "resources_discover",
-    handler: (
-      event: ResourcesDiscoverEvent,
-      ctx: ExtensionContext,
-    ) => ResourcesDiscoverResult | Promise<ResourcesDiscoverResult | undefined> | undefined,
-  ): void;
-  on(
     event: "context",
     handler: (event: ContextEvent) => ContextResult | Promise<ContextResult | undefined> | undefined,
   ): void;
@@ -165,16 +146,6 @@ export type ScanConfig = {
   maxSkillBytes?: number;
 };
 
-export type BundleSkillExposureConfig = {
-  include: string[];
-  outputRoot?: string;
-  layout?: "flat-file" | "skill-dir";
-  nameTemplate?: string;
-  memberPathRoot?: string;
-  memberPathAnchor?: string;
-  registerWithHost?: boolean;
-};
-
 export type ConfigFile = {
   skillRoots?: string[];
   extraSkillRoots?: string[];
@@ -183,7 +154,6 @@ export type ConfigFile = {
   extraDiscoveryCatalogs?: string[];
   rules?: InvocationRule[];
   requireAutoload?: boolean;
-  exposeBundlesAsSkills?: boolean | BundleSkillExposureConfig;
   pathMode?: PathMode;
   logPaths?: boolean;
   scan?: ScanConfig;
@@ -206,34 +176,6 @@ export type SkillRecord = SkillMetadata & {
   body: string;
 };
 
-export type BundleRoutingLimits = {
-  descriptionChars?: number;
-  overviewChars?: number;
-  groupHintChars?: number;
-  memberHintChars?: number;
-};
-
-export type BundleRoutingGroup = {
-  id: string;
-  label?: string;
-  hint?: string;
-};
-
-export type BundleRoutingMember = {
-  group?: string;
-  hint: string;
-};
-
-export type BundleRouting = {
-  overview?: string;
-  rules?: string[];
-  groups?: BundleRoutingGroup[];
-  members?: Record<string, BundleRoutingMember>;
-  combinations?: string[];
-  requireHints?: boolean;
-  limits?: BundleRoutingLimits;
-};
-
 export type DiscoveryMember = {
   name: string;
   description?: string;
@@ -251,7 +193,6 @@ export type BundleDiscoveryRecord = {
   normalizedAliases: string[];
   normalizedDescription: string;
   render?: { type?: "member-index"; rules?: string[]; [key: string]: unknown };
-  routing?: BundleRouting;
   policy?: { memberBody?: "read-before-use"; scope?: "members-only" | "open"; prerequisites?: string[]; fallback?: string[]; [key: string]: unknown };
   members: DiscoveryMember[];
 };

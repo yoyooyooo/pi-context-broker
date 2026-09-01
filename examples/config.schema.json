@@ -10,29 +10,6 @@
     "discoveryCatalogs": { "$ref": "#/$defs/stringArray" },
     "extraDiscoveryCatalogs": { "$ref": "#/$defs/stringArray" },
     "requireAutoload": { "type": "boolean" },
-    "exposeBundlesAsSkills": {
-      "default": false,
-      "oneOf": [
-        { "type": "boolean" },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["include"],
-          "properties": {
-            "include": { "$ref": "#/$defs/stringArray" },
-            "outputRoot": { "type": "string", "minLength": 1 },
-            "layout": { "enum": ["flat-file", "skill-dir"] },
-            "nameTemplate": { "type": "string", "pattern": "\\{name\\}" },
-            "memberPathRoot": { "type": "string", "minLength": 1 },
-            "memberPathAnchor": { "type": "string", "minLength": 1, "pattern": "^[^`\\r\\n]+$" },
-            "registerWithHost": { "type": "boolean", "default": true }
-          },
-          "dependentRequired": {
-            "memberPathAnchor": ["memberPathRoot"]
-          }
-        }
-      ]
-    },
     "pathMode": { "enum": ["absolute", "home-relative", "basename", "hash"] },
     "logPaths": { "type": "boolean" },
     "debug": { "type": "boolean" },

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import type { BundleDiscoveryRecord, BundleRouting, ConfigFile, DiscoveryMember, DiscoveryRecord, ScanConfig, SkillRecord } from "./types";
+import type { BundleDiscoveryRecord, ConfigFile, DiscoveryMember, DiscoveryRecord, ScanConfig, SkillRecord } from "./types";
 import { dedupeRegistryByNormalizedName, normalizeKey, skillRecordFromFile, uniqueStrings } from "./skill-records";
 
 export function recordKind(record: DiscoveryRecord): "skill" | "bundle" {
@@ -76,73 +76,6 @@ export function dedupeDiscoveryRecordsByNormalizedName(records: DiscoveryRecord[
   return result;
 }
 
-function textLength(value: string): number {
-  return [...value].length;
-}
-
-function comparableText(value: string): string {
-  return value.replace(/\s+/g, "").toLocaleLowerCase();
-}
-
-function validateBundleRouting(bundle: BundleDiscoveryRecord): string[] {
-  const routing = bundle.routing;
-  if (!routing) return [];
-  const errors: string[] = [];
-  const limits = routing.limits ?? {};
-  const memberByName = new Map(bundle.members.map((member) => [normalizeKey(member.name), member]));
-  const groups = routing.groups ?? [];
-  const groupIds = new Set<string>();
-
-  if (!bundle.description.trim()) errors.push(`bundle "${bundle.name}" routing requires a non-empty description`);
-  if (limits.descriptionChars && textLength(bundle.description) > limits.descriptionChars) {
-    errors.push(`bundle "${bundle.name}" description exceeds ${limits.descriptionChars} characters`);
-  }
-  if (limits.overviewChars && routing.overview && textLength(routing.overview) > limits.overviewChars) {
-    errors.push(`bundle "${bundle.name}" routing overview exceeds ${limits.overviewChars} characters`);
-  }
-  if (routing.overview && comparableText(routing.overview) === comparableText(bundle.description)) {
-    errors.push(`bundle "${bundle.name}" routing overview must not duplicate description`);
-  }
-
-  for (const group of groups) {
-    const id = normalizeKey(group.id);
-    if (groupIds.has(id)) errors.push(`bundle "${bundle.name}" routing group duplicate: ${group.id}`);
-    groupIds.add(id);
-    if (limits.groupHintChars && group.hint && textLength(group.hint) > limits.groupHintChars) {
-      errors.push(`bundle "${bundle.name}" routing group "${group.id}" hint exceeds ${limits.groupHintChars} characters`);
-    }
-  }
-
-  const routedNames = new Set<string>();
-  for (const [memberName, route] of Object.entries(routing.members ?? {})) {
-    const normalizedName = normalizeKey(memberName);
-    const member = memberByName.get(normalizedName);
-    if (!member) {
-      errors.push(`bundle "${bundle.name}" routing references unknown member: ${memberName}`);
-      continue;
-    }
-    routedNames.add(normalizedName);
-    if (route.group && !groupIds.has(normalizeKey(route.group))) {
-      errors.push(`bundle "${bundle.name}" routing member "${memberName}" references unknown group: ${route.group}`);
-    }
-    if (limits.memberHintChars && textLength(route.hint) > limits.memberHintChars) {
-      errors.push(`bundle "${bundle.name}" routing member "${memberName}" hint exceeds ${limits.memberHintChars} characters`);
-    }
-    if (comparableText(route.hint) === comparableText(member.description ?? "")) {
-      errors.push(`bundle "${bundle.name}" routing member "${memberName}" hint must not duplicate description`);
-    }
-  }
-
-  if (routing.requireHints) {
-    for (const member of bundle.members) {
-      if (!routedNames.has(normalizeKey(member.name))) {
-        errors.push(`bundle "${bundle.name}" routing member "${member.name}" is missing required hint`);
-      }
-    }
-  }
-  return errors;
-}
-
 export function validateDiscoveryRecords(records: DiscoveryRecord[]): string[] {
   const errors: string[] = [];
   const byName = new Map<string, DiscoveryRecord>();
@@ -186,7 +119,6 @@ export function validateDiscoveryRecords(records: DiscoveryRecord[]): string[] {
         if (!member.path.trim()) errors.push(`bundle "${bundle.name}" member "${member.name}" has empty path`);
         else if (!existsSync(member.path)) errors.push(`bundle "${bundle.name}" member "${member.name}" path missing: ${member.path}`);
       }
-      errors.push(...validateBundleRouting(bundle));
     }
   }
   return errors;
@@ -200,95 +132,6 @@ function stringArray(value: unknown): string[] {
   if (typeof value === "string") return value.trim() ? [value.trim()] : [];
   if (!Array.isArray(value)) return [];
   return uniqueStrings(value.map((item) => typeof item === "string" ? item.trim() : "").filter(Boolean));
-}
-
-function routingText(value: unknown, field: string, recordName: string): string | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error(`context-broker catalog bundle "${recordName}" ${field} must be a non-empty string`);
-  }
-  return value.trim();
-}
-
-function routingStringArray(value: unknown, field: string, recordName: string): string[] | undefined {
-  if (value === undefined) return undefined;
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) {
-    throw new Error(`context-broker catalog bundle "${recordName}" ${field} must be an array of non-empty strings`);
-  }
-  return uniqueStrings(value.map((item) => item.trim()));
-}
-
-function routingLimit(value: unknown, field: string, recordName: string): number | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
-    throw new Error(`context-broker catalog bundle "${recordName}" routing.limits.${field} must be a positive integer`);
-  }
-  return value;
-}
-
-function routingFromRaw(value: unknown, recordName: string): BundleRouting | undefined {
-  if (value === undefined) return undefined;
-  if (!isRecord(value)) throw new Error(`context-broker catalog bundle "${recordName}" routing must be an object`);
-
-  const overview = routingText(value.overview, "routing.overview", recordName);
-  const rules = routingStringArray(value.rules, "routing.rules", recordName);
-  const combinations = routingStringArray(value.combinations, "routing.combinations", recordName);
-  if (value.requireHints !== undefined && typeof value.requireHints !== "boolean") {
-    throw new Error(`context-broker catalog bundle "${recordName}" routing.requireHints must be a boolean`);
-  }
-
-  const groups = value.groups === undefined ? undefined : (() => {
-    if (!Array.isArray(value.groups)) throw new Error(`context-broker catalog bundle "${recordName}" routing.groups must be an array`);
-    return value.groups.map((group, index) => {
-      if (!isRecord(group) || typeof group.id !== "string" || !group.id.trim()) {
-        throw new Error(`context-broker catalog bundle "${recordName}" routing.groups[${index}] requires id`);
-      }
-      const label = routingText(group.label, `routing.groups[${index}].label`, recordName);
-      const hint = routingText(group.hint, `routing.groups[${index}].hint`, recordName);
-      return {
-        id: group.id.trim(),
-        ...(label ? { label } : {}),
-        ...(hint ? { hint } : {}),
-      };
-    });
-  })();
-
-  const members = value.members === undefined ? undefined : (() => {
-    if (!isRecord(value.members)) throw new Error(`context-broker catalog bundle "${recordName}" routing.members must be an object`);
-    return Object.fromEntries(Object.entries(value.members).map(([memberName, member]) => {
-      if (!memberName.trim() || !isRecord(member)) {
-        throw new Error(`context-broker catalog bundle "${recordName}" routing member "${memberName}" must be an object`);
-      }
-      const hint = routingText(member.hint, `routing member "${memberName}" hint`, recordName);
-      if (!hint) throw new Error(`context-broker catalog bundle "${recordName}" routing member "${memberName}" requires hint`);
-      const group = routingText(member.group, `routing member "${memberName}" group`, recordName);
-      return [memberName.trim(), { hint, ...(group ? { group } : {}) }];
-    }));
-  })();
-
-  const limits = value.limits === undefined ? undefined : (() => {
-    if (!isRecord(value.limits)) throw new Error(`context-broker catalog bundle "${recordName}" routing.limits must be an object`);
-    const descriptionChars = routingLimit(value.limits.descriptionChars, "descriptionChars", recordName);
-    const overviewChars = routingLimit(value.limits.overviewChars, "overviewChars", recordName);
-    const groupHintChars = routingLimit(value.limits.groupHintChars, "groupHintChars", recordName);
-    const memberHintChars = routingLimit(value.limits.memberHintChars, "memberHintChars", recordName);
-    return {
-      ...(descriptionChars ? { descriptionChars } : {}),
-      ...(overviewChars ? { overviewChars } : {}),
-      ...(groupHintChars ? { groupHintChars } : {}),
-      ...(memberHintChars ? { memberHintChars } : {}),
-    };
-  })();
-
-  return {
-    ...(overview ? { overview } : {}),
-    ...(rules ? { rules } : {}),
-    ...(groups ? { groups } : {}),
-    ...(members ? { members } : {}),
-    ...(combinations ? { combinations } : {}),
-    ...(typeof value.requireHints === "boolean" ? { requireHints: value.requireHints } : {}),
-    ...(limits ? { limits } : {}),
-  };
 }
 
 function resolveCatalogPath(path: string, catalogDir: string): string {
@@ -342,25 +185,6 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function generatedBundleSource(path: string): string | undefined {
-  if (!path || !existsSync(path)) return undefined;
-  const frontmatter = readFileSync(path, "utf8").match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!frontmatter?.[1]) return undefined;
-  try {
-    const parsed = parseYaml(frontmatter[1]);
-    if (!isRecord(parsed) || !isRecord(parsed.metadata)) return undefined;
-    if (parsed.metadata["context-broker-owner"] !== "pi-context-broker") return undefined;
-    const source = parsed.metadata["context-broker-source-bundle"];
-    return typeof source === "string" && source.trim() ? source.trim() : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function isGeneratedBundleSelf(path: string, recordName: string): boolean {
-  return normalizeKey(generatedBundleSource(path) ?? "") === normalizeKey(recordName);
-}
-
 function membersFromInclude(include: string[], skillLookup: Map<string, SkillRecord>, skills: SkillRecord[], recordName: string): DiscoveryMember[] {
   const members: SkillRecord[] = [];
   const seen = new Set<string>();
@@ -370,7 +194,7 @@ function membersFromInclude(include: string[], skillLookup: Map<string, SkillRec
       : [skillLookup.get(normalizeKey(memberName))].filter((skill): skill is SkillRecord => Boolean(skill));
     if (matched.length === 0) throw new Error(`context-broker catalog bundle "${recordName}" includes unknown skill: ${memberName}`);
     for (const skill of matched) {
-      if (isGeneratedBundleSelf(skill.path, recordName) || seen.has(skill.path)) continue;
+      if (seen.has(skill.path)) continue;
       seen.add(skill.path);
       members.push(skill);
     }
@@ -407,7 +231,6 @@ function bundleFromRaw(name: string | undefined, value: unknown, catalogPath: st
   } else if ("members" in value) {
     throw new Error(`context-broker catalog bundle "${recordName}" members must be an array or { include: string[] }`);
   }
-  members = members.filter((member) => !isGeneratedBundleSelf(member.path, recordName));
   return normalizeDiscoveryRecord({
     kind: "bundle",
     name: recordName,
@@ -418,7 +241,6 @@ function bundleFromRaw(name: string | undefined, value: unknown, catalogPath: st
     normalizedAliases: [],
     normalizedDescription: "",
     render: isRecord(value.render) ? value.render as BundleDiscoveryRecord["render"] : { type: "member-index" },
-    routing: routingFromRaw(value.routing, recordName),
     policy: isRecord(value.policy) ? value.policy as BundleDiscoveryRecord["policy"] : undefined,
     members,
   }) as BundleDiscoveryRecord;

@@ -46,7 +46,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun scripts/context-broker-smoke.mjs && bun scripts/generated-bundle-lifecycle-smoke.mjs && tsc -p tsconfig.json --noEmit",
+    "test": "bun scripts/context-broker-smoke.mjs && tsc -p tsconfig.json --noEmit",
     "test:host": "bun scripts/context-broker-host-e2e.mjs",
     "test:global-config": "bun scripts/context-broker-global-config-e2e.mjs",
     "check": "bun run test",

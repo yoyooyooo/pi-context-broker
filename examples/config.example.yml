@@ -13,18 +13,6 @@ extraDiscoveryCatalogs: []
 # Explicit $name lookup can still discover configured skills.
 requireAutoload: true
 
-# Off by default. Select Bundles to materialize as generated Skills.
-# This example writes stable Skill directories for an external distributor.
-exposeBundlesAsSkills:
-  include:
-    - workspace-collab
-  outputRoot: ~/context/bundles
-  layout: skill-dir
-  nameTemplate: "{name}-bundle"
-  memberPathRoot: ~/context
-  memberPathAnchor: ~/.agents/sources/context
-  registerWithHost: false
-
 # Path privacy for payload/session/log metadata.
 # absolute | home-relative | basename | hash
 pathMode: home-relative

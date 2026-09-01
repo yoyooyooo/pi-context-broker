@@ -40,7 +40,9 @@ Context Broker has two record types.
 | `skill` | A discovered `SKILL.md` file | The full skill body |
 | `bundle` | A YAML or JSON catalog | The bundle description, policy, and member list |
 
-A skill is for concrete operating instructions. A bundle is for routing. Use a bundle when you have a group of related skills and want the model to choose the right member instead of receiving every member body up front.
+A skill is for concrete operating instructions. A bundle is for runtime routing. Use a bundle when you have a group of related skills and want the model to choose the right member instead of receiving every member body up front.
+
+Context Broker does not materialize durable Bundle or Router Skills. Repositories that need a globally distributed routing entry should own it as an ordinary `SKILL.md`; Context Broker will discover it through `skillRoots` like any other skill.
 
 ## Install
 
@@ -148,39 +150,22 @@ Skill body goes here.
 
 ## Bundles
 
-Bundles live in discovery catalogs. They inject a routing index, not the full member files. Optional authored `routing` metadata keeps materialized entities compact and contrastive instead of copying member descriptions.
+Bundles live in discovery catalogs. They inject an index, not the full member files.
 
 ```yaml
 version: 1
 records:
   - kind: bundle
     name: workspace-collab
-    description: Collaboration Skill router; load for document or chat work.
+    description: Collaboration contexts for documents, chat, and tasks.
     aliases:
       - collab
-    routing:
-      overview: Choose by resource; add auth only for identity or permission work.
+    render:
+      type: member-index
       rules:
-        - Select the smallest member set
-      groups:
-        - id: content
-          label: Content
-          hint: Documents and conversations
-      members:
-        docs:
-          group: content
-          hint: Document body read/write
-        chat:
-          group: content
-          hint: Messages and channels
-      combinations:
-        - docs + chat: prepare content, then send it
-      requireHints: true
-      limits:
-        descriptionChars: 80
-        overviewChars: 120
-        groupHintChars: 48
-        memberHintChars: 32
+        - This is a context bundle index, not a concrete skill.
+        - Select the needed member before acting.
+        - Read the selected member file before using member-specific details.
     policy:
       memberBody: read-before-use
       scope: members-only
@@ -190,37 +175,7 @@ records:
         - chat
 ```
 
-When you type `$workspace-collab`, the model sees the compact overview, selection rules, groups, member hints, and policy. It does not receive the original member descriptions or bodies. `description` is reserved for host-level discovery; `routing.overview` explains the decision model after opening the Bundle; each member `hint` should state only how that member differs from its siblings.
-
-`requireHints: true` fails materialization when a discovered member has no authored hint. Limits count Unicode code points and prevent default descriptions or routing prose from growing silently. Without a consumer path anchor, the compact renderer keeps the compatible common-root compression. With `memberPathAnchor`, it prints one stable member root, derives a default `<prefix>/<name>/SKILL.md` rule only when that shape covers a strict majority of members, and prints full root-relative paths only for exceptions. The generated Bundle entity is excluded from its own member set. Catalogs without `routing` keep the compatible member-description rendering.
-
-Bundle discovery remains manual by default. To materialize selected Bundles as lightweight Skill entities, enable:
-
-```yaml
-exposeBundlesAsSkills:
-  include:
-    - workspace-collab
-```
-
-Use `exposeBundlesAsSkills: true` only when every configured Bundle should be materialized. The default is `false`. Without output options, the plugin preserves the compatible host-local flat-file indexes and registers them through host resource discovery.
-
-To expose stable Skill directories to another distribution system, configure an explicit entity output:
-
-```yaml
-exposeBundlesAsSkills:
-  include:
-    - workspace-collab
-  outputRoot: ~/context/bundles
-  layout: skill-dir
-  nameTemplate: "{name}-bundle"
-  memberPathRoot: ~/context
-  memberPathAnchor: ~/.agents/sources/context
-  registerWithHost: false
-```
-
-This deterministically writes `~/context/bundles/workspace-collab-bundle/SKILL.md`. `outputRoot` and `memberPathRoot` expand `~`; relative paths resolve from the config file directory. `memberPathRoot` is the generation-time filesystem base used to derive portable member paths. `memberPathAnchor` requires `memberPathRoot` and is preserved verbatim as the consumer-visible root; it must be one line without backticks and is not `~`-expanded during generation. The fixed renderer emits the root, an inferred strict-majority default when available, and explicit exception paths without supporting arbitrary templates. `nameTemplate` must contain `{name}`. With `registerWithHost: false`, Context Broker only materializes the files and does not register the same indexes directly with the current Pi/OMP host, which lets another tool distribute them globally.
-
-Context Broker records the active set, source Bundle identity, and content digest in an owner manifest. Reconciliation quarantines only marker-proven stale indexes and preserves unknown, markerless, or truncated files. Public entity directories stay stable; hashes and timestamps remain internal to manifests, temporary files, and quarantine paths.
+When you type `$workspace-collab`, the model sees the bundle description, policy, and member list. It does not receive `docs` and `chat` bodies unless a later step reads them.
 
 Rules can inject the same lightweight index without loading member bodies:
 
@@ -267,18 +222,6 @@ extraDiscoveryCatalogs:
   - ./context/catalogs/project.yaml
 
 requireAutoload: true
-
-# Off by default. Select Bundles to materialize. This example writes stable
-# Skill directories but leaves host registration to an external distributor.
-exposeBundlesAsSkills:
-  include:
-    - workspace-collab
-  outputRoot: ~/context/bundles
-  layout: skill-dir
-  nameTemplate: "{name}-bundle"
-  memberPathRoot: ~/context
-  memberPathAnchor: ~/.agents/sources/context
-  registerWithHost: false
 
 # absolute | home-relative | basename | hash
 pathMode: home-relative
@@ -413,7 +356,6 @@ Bundle injection:
 /context-broker doctor
 /context-broker roots
 /context-broker catalogs
-/context-broker materialize
 /context-broker find <query>
 /context-broker explain <record>
 ```
@@ -428,9 +370,6 @@ Context Broker sends selected context to the model by design:
 
 - A matched `skill` sends the full `SKILL.md` body to the model and stores it in local session history.
 - A matched `bundle` sends member names, descriptions, policies, and member paths, but not member bodies.
-- With `exposeBundlesAsSkills.include`, selected Bundles are materialized as lightweight indexes; names, descriptions, and locations are registered with the current host only when `registerWithHost` is enabled.
-- `outputRoot`, `layout: skill-dir`, and `nameTemplate` can produce stable `<name>/SKILL.md` entities for an external distribution system. Relative output roots resolve from the config file directory.
-- Generated-index reconciliation is owner-scoped. Stale owned indexes and invalid owner manifests are quarantined rather than permanently deleted; unowned files are not modified.
 - Session JSONL files store injected content.
 - `CONTEXT_BROKER_LOG_FILE` records matched queries and record names. It omits paths unless `logPaths: true` is set.
 - `pathMode: home-relative` avoids full home-directory paths when possible.
