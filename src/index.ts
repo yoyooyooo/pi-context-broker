@@ -14,6 +14,7 @@ import {
 } from "./dollar";
 import {
   buildRegistryFromRoots,
+  dedupeRegistryByNormalizedName,
   normalizeKey,
   stringArray,
   uniqueStrings,
@@ -462,7 +463,7 @@ function scanOptions(config: ConfigFile): ScanConfig {
 }
 
 async function buildRegistry(config = readConfig()): Promise<SkillRecord[]> {
-  return buildRegistryFromRoots(configuredRoots(config), shouldRequireAutoload(config), scanOptions(config));
+  return dedupeRegistryByNormalizedName(await buildRegistryFromRoots(configuredRoots(config), shouldRequireAutoload(config), scanOptions(config)));
 }
 
 function discoverUsableSkillRoots(config: ConfigFile = readConfig(), cwd = process.cwd()): string[] {

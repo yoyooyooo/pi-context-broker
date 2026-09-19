@@ -1062,6 +1062,13 @@ try {
   );
   assert.equal(linkInjection?.messages.at(-1)?.details.path, join(globalRoot, "linked/SKILL.md"));
   assert.equal(dollarMod.dollarAutocompleteItems(linkedRegistry, "linked").filter((item) => item.value === "$linked").length, 1);
+  const configuredLinks = await mod.buildRegistry({ skillRoots: [globalRoot, sourceRoot], requireAutoload: false });
+  assert.equal(configuredLinks.filter((skill) => skill.name === "linked").length, 1);
+  const configuredInjection = await mod.invokeForContext(
+    { messages: [{ role: "user", content: "skill: linked" }] },
+    Promise.resolve(configuredLinks), { pathMode: "absolute" },
+  );
+  assert.equal(configuredInjection?.messages.at(-1)?.details.path, join(globalRoot, "linked/SKILL.md"));
 
   console.log("context-broker smoke ok");
 } finally {

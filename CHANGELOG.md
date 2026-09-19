@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Apply first-root normalized-name precedence to configured skill invocations as well as `$` discovery, so overlapping runtime and source roots do not make `skill:` and keyword-rule targets ambiguous.
+
 - Follow directory and `SKILL.md` symlinks during discovery while preserving the discovered path for relative references. Skip broken links and ancestor cycles, retain scan limits, and cover first-root precedence through autocomplete and injection.
 
 - Remove entity Bundle Skill materialization (`exposeBundlesAsSkills`, `/context-broker materialize`, generated lifecycle, compact entity routing, and member path anchors). Context Broker now keeps runtime virtual Bundle discovery/injection separate from durable Router Skills owned by the distributing Skill repository.

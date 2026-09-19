@@ -133,7 +133,7 @@ The next model turn receives your prompt plus the `design-review` skill body.
 
 Context Broker discovers every `SKILL.md` under `skillRoots`.
 
-For `$` discovery, roots are scanned in configured order and the first normalized
+For `$` discovery and configured skill invocations, roots are scanned in configured order and the first normalized
 skill name wins. Put a distributed runtime root before a source catalog when the
 installed copy should take precedence. Directory and `SKILL.md` symlinks are
 followed, but the discovered path is preserved for relative references. Broken
