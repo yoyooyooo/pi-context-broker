@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile, rm, readFile, readdir } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, readFile, readdir, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
@@ -1031,8 +1031,41 @@ try {
   assert.equal(ambiguous.decision, "skip");
   assert.equal(ambiguous.reason, "ambiguous");
 
+  delete process.env.CONTEXT_BROKER_ROOTS;
+  const linkFixtures = join(temp, "link-fixtures");
+  const sourceRoot = join(linkFixtures, "source");
+  const globalRoot = join(linkFixtures, "global");
+  const sourceSkill = await writeSkill(sourceRoot, "group/linked", "name: linked\ndescription: Linked skill\nautoload:\n  enabled: true");
+  await mkdir(globalRoot, { recursive: true });
+  await symlink(join(sourceRoot, "group/linked"), join(globalRoot, "linked"), "dir");
+  await symlink(globalRoot, join(sourceRoot, "group/linked", "cycle"), "dir");
+  await symlink(join(linkFixtures, "absent"), join(globalRoot, "dangling"), "dir");
+  await mkdir(join(globalRoot, "file-link"));
+  await writeFile(join(linkFixtures, "file-skill.md"), "---\nname: file-linked\n---\nFile linked body\n");
+  await symlink(join(linkFixtures, "file-skill.md"), join(globalRoot, "file-link/SKILL.md"), "file");
+
+  const linkedRegistry = await mod.buildDollarRegistry({ skillRoots: [globalRoot, sourceRoot] });
+  assert.equal(linkedRegistry.filter((skill) => skill.name === "linked").length, 1);
+  assert.equal(linkedRegistry.find((skill) => skill.name === "linked")?.path, join(globalRoot, "linked/SKILL.md"));
+  assert.equal(linkedRegistry.find((skill) => skill.name === "file-linked")?.path, join(globalRoot, "file-link/SKILL.md"));
+  const sourceFirst = await mod.buildDollarRegistry({ skillRoots: [sourceRoot, globalRoot] });
+  assert.equal(sourceFirst.find((skill) => skill.name === "linked")?.path, sourceSkill);
+  const boundedLinks = await mod.buildRegistry({ skillRoots: [globalRoot], requireAutoload: false, scan: { maxDepth: 20 } });
+  assert.equal(boundedLinks.length, 2, "cycle must not re-scan ancestor directories");
+  assert.equal((await mod.buildDollarRegistry({ skillRoots: [globalRoot], scan: { maxDepth: 0 } })).length, 0);
+  assert.equal((await mod.buildDollarRegistry({ skillRoots: [globalRoot], scan: { ignore: ["linked", "file-link"] } })).length, 0);
+  assert.equal((await mod.buildDollarRegistry({ skillRoots: [globalRoot], scan: { maxSkillBytes: 1 } })).length, 0);
+  assert.deepEqual((await mod.buildRegistry({ skillRoots: [globalRoot], requireAutoload: true })).map((skill) => skill.name), ["linked"]);
+  const linkInjection = await mod.invokeForContext(
+    { messages: [{ role: "user", content: "$linked" }] },
+    Promise.resolve([]), { pathMode: "absolute" }, Promise.resolve(linkedRegistry),
+  );
+  assert.equal(linkInjection?.messages.at(-1)?.details.path, join(globalRoot, "linked/SKILL.md"));
+  assert.equal(dollarMod.dollarAutocompleteItems(linkedRegistry, "linked").filter((item) => item.value === "$linked").length, 1);
+
   console.log("context-broker smoke ok");
 } finally {
   restoreEnv();
-  await rm(temp, { recursive: true, force: true });
+  if (process.env.CONTEXT_BROKER_KEEP_TEST_ARTIFACTS === "1") console.log(`Test artifacts retained: ${temp}`);
+  else await rm(temp, { recursive: true, force: true });
 }

@@ -1,5 +1,5 @@
 import { readFileSync, statSync } from "node:fs";
-import { readdir } from "node:fs/promises";
+import { readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -81,26 +81,33 @@ async function findSkillFiles(root: string, options: ScanConfig = {}): Promise<s
   const files: string[] = [];
   const ignored = scanIgnoreSet(options);
   const maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH;
-  async function walk(dir: string, depth: number): Promise<void> {
+  async function walk(dir: string, depth: number, ancestors: Set<string>): Promise<void> {
     if (depth > maxDepth) return;
     let entries;
+    let physicalPath: string;
     try {
+      physicalPath = await realpath(dir);
+      if (ancestors.has(physicalPath)) return;
       entries = await readdir(dir, { withFileTypes: true });
     } catch {
       return;
     }
+    const nextAncestors = new Set(ancestors).add(physicalPath);
     for (const entry of entries) {
       if (entry.name.startsWith(".") && ignored.has(entry.name)) continue;
       if (ignored.has(entry.name)) continue;
       const path = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        await walk(path, depth + 1);
-      } else if (entry.isFile() && entry.name === "SKILL.md") {
+      const target = entry.isSymbolicLink() ? await stat(path).catch(() => undefined) : entry;
+      if (!target) continue;
+      // Keep the discovered path for relative references; realpath only guards cycles.
+      if (target.isDirectory()) {
+        await walk(path, depth + 1, nextAncestors);
+      } else if (target.isFile() && entry.name === "SKILL.md") {
         files.push(path);
       }
     }
   }
-  await walk(root, 0);
+  await walk(root, 0, new Set());
   return files.sort();
 }
 
