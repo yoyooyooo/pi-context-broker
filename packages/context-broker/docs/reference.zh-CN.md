@@ -223,7 +223,7 @@ Source id 与 namespace 内部的点保留为选择器的一部分，例如 `$ui
 
 Pi 与 OMP 默认追加轻量的 `<ntn-skills-guidance>` 自定义消息，无需 `$` 调用或安装 builtin。实际命令 argv 复用宿主命令的 CLI resolver，并保留每个已启用 Notion source 的 id 与可选 database；多 source 分别列出，不隐式选中一个。每个 source 都提供含实际数据库范围的 `list-args`、`read-args`、`files-args` 和 `resource-read-args` 参数数组，追加到 executable argv 并替换任务占位值。发现优先使用已有元数据或短关键词，选中合适记录后再读正文；`files SNAPSHOT` 列出资源，`read SNAPSHOT --path RELATIVE` 读取指定资源，避免 shell 工具把 `skill://` 参数当文件路径解析。保留 JSON 输出以核对 `ok`/`error` 和快照身份，语法失败查看子命令 help。指引自身不发现内容或激活 Skill。
 
-宿主观察配置中真实 CLI argv 返回的完整成功 JSON。已验证的内容创建/更新、upstream 成员变更和 local sync push，只让对应内容数据库与来源命令的目录在下一次选择时刷新；保留来源的 offline 策略。Read/status/plan/check、dry run、reuse、unchanged 和失败都不触发刷新。OMP 截断 stdout 时，沿其公布的 `artifact://` 读取保留原 CLI 调用归属，取得完整结果后才处理。复合 shell 命令、宿主工具之外的写入或始终不完整的输出，继续依赖目录正常时效或 `/context-broker refresh`。写后自动刷新不取消已接受草稿，不替换会话已经加载的快照。
+宿主观察配置中真实 CLI argv 返回的完整成功 JSON。已验证的内容创建/更新、upstream 成员变更和 local sync push，只让对应内容数据库与来源命令的目录在下一次选择时刷新。`operation resume ID` 返回已验证的 publication 或 upstream 终态时，必须与参数中的 canonical operation ID 一致；恢复结果未给 source 范围时，同一配置 CLI 的来源在下一次发现时重读。重复恢复已完成操作也可触发这次保守重读，不据此推断发生了新写入。保留来源的 offline 策略。Read/status/plan/check、operation show/list/reconcile、dry run、普通 mutation 的 reuse/unchanged 和失败都不触发刷新。OMP 截断 stdout 时，沿其公布的 `artifact://` 读取保留原 CLI 调用归属，取得完整结果后才处理。复合 shell 命令、宿主工具之外的写入或始终不完整的输出，继续依赖目录正常时效或 `/context-broker refresh`。自动刷新不取消已接受草稿，不替换会话已经加载的快照。
 
 CLI 成功读取返回顶层 `content`（正文）、pinned `ref`（相对 `read --from` 的基准）和 `snapshot_id`（`files` 的目标）；`record` 是元数据。资源使用清单返回的文件 ref/path。介绍与摘要只描述工作流，不执行其准备、仓库检查或运行步骤。
 

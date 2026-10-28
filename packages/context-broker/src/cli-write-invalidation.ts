@@ -3,7 +3,8 @@ import type { ExtensionAPI, ExtensionContext, MessageContent, SkillRecord, Sourc
 
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
 type WriteKind = "content" | "upstream" | "local";
-type Invocation = { kind: WriteKind; sources: NotionSource[]; database?: string; consumed: boolean; progress: boolean; progressOperationId?: string };
+type Invocation = { sources: NotionSource[]; consumed: boolean; progress: boolean; progressOperationId?: string }
+  & ({ kind: WriteKind; database?: string } | { kind: "resume"; operationId: string });
 type ChangedTarget = { database: string; scope: string };
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const uuid = (value: unknown): string | undefined => typeof value === "string" && /^(?:[a-f\d]{32}|[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12})$/i.test(value) ? value.replaceAll("-", "").toLowerCase() : undefined;
@@ -54,6 +55,11 @@ function invocation(command: string, sources: NotionSource[]): Invocation | unde
   if (!matching.length || new Set(matching.map(item => item.length)).size !== 1) return undefined;
   const args = argv.slice(matching[0]!.length);
   if (args.some(arg => ["--dry-run", "--help", "-h"].includes(arg))) return undefined;
+  if (args[0] === "operation" && args[1] === "resume") {
+    const ids = args.slice(2).filter(arg => !["--progress", "--new-artifact", "--retry-metadata"].includes(arg));
+    if (ids.length !== 1 || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(ids[0]!)) return undefined;
+    return { kind: "resume", operationId: ids[0]!, sources: matching.map(item => item.source), consumed: false, progress: argv.includes("--progress") };
+  }
   const kind: WriteKind | undefined = ["create", "apply", "write", "update"].includes(args[0] ?? "") ? "content"
     : args[0] === "sync" && args[1] === "upstream" && ["run", "connect"].includes(args[2] ?? "") ? "upstream"
     : args[0] === "sync" && args[1] === "local" && ["run", "connect", "apply"].includes(args[2] ?? "") ? "local" : undefined;
@@ -113,6 +119,15 @@ function changedTargets(value: unknown, kind: WriteKind): ChangedTarget[] {
 }
 
 function affectedSources(call: Invocation, result: unknown, records: SkillRecord[]): string[] {
+  if (call.kind === "resume") {
+    const value = object(result);
+    const state = value.domain === "publication" ? "completed"
+      : typeof value.domain === "string" && ["sync_upstream", "subscription_add", "subscription_update", "subscription_remove", "upstream_fork", "upstream_track"].includes(value.domain) ? "verified" : undefined;
+    if (!state || value.ok !== true || value.dry_run === true || value.verified !== true || value.state !== state || value.operation_id !== call.operationId) return [];
+    // Public recovery may omit source scope. Re-read matching CLI sources conservatively;
+    // even an already completed resume can recover visibility of an earlier write.
+    return call.sources.map(source => source.id);
+  }
   const targets = changedTargets(result, call.kind);
   const selectedDatabase = uuid(call.database);
   return call.sources.filter(source => targets.some(target => {

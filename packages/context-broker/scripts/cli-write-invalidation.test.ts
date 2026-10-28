@@ -96,6 +96,38 @@ for (const ending of [{ ...progressedReceipt, reused: true, action: "reuse" }, {
 }
 assert.equal(changed.length, 0, "No unknown/mixed operation, extra final, noise, truncation or unsuccessful outcome becomes a change");
 
+// A public resume result confirms recovery, without claiming another content mutation.
+const resumeResult = { ok: true, domain: "publication", operation_id: publication, state: "completed", verified: true,
+  resume_supported: true, next: { argv: ["ntn-skills", "operation", "resume", publication], reason: "Continue the retained publication under its original guards." },
+  result: { operation: "replace", page_id: page, effects: [], creation_recovery: [], creation_discovery: [], upload_recovery: [] } };
+const resumeCommand = command("operation", "resume", publication, "--progress");
+for (const output of [resumeResult, resumeResult, jsonl(progress(), resumeResult)]) {
+  await result(resumeCommand, output);
+  assert.deepEqual(changed.pop(), ["personal", "second", "alias"], "Verified recovery rereads only sources using this CLI, including a repeated completed operation with no source scope");
+}
+await result(command("operation", "resume", "--progress", publication), resumeResult);
+assert.deepEqual(changed.pop(), ["personal", "second", "alias"]);
+for (const domain of ["sync_upstream", "subscription_add", "subscription_update", "subscription_remove", "upstream_fork", "upstream_track"]) {
+  await result(resumeCommand, { ...resumeResult, domain, state: "verified" });
+  assert.deepEqual(changed.pop(), ["personal", "second", "alias"], "Public upstream recovery uses its existing verified terminal state");
+}
+for (const cmd of [
+  command("operation", "show", publication), command("operation", "reconcile", publication), command("operation", "list"),
+  command("operation", "resume"), command("operation", "resume", publication, "another-id"),
+  command("operation", "resume", publication, "--database", db), command("operation", "resume", publication, "--dry-run"),
+  command("operation", "resume", publication) + " && echo done", "/other-cli operation resume " + publication,
+]) await result(cmd, resumeResult);
+for (const value of [
+  { ...resumeResult, ok: false }, { ...resumeResult, verified: false }, { ...resumeResult, dry_run: true },
+  { ...resumeResult, operation_id: "p_other" }, { ...resumeResult, state: "unknown" }, { ...resumeResult, state: "running" },
+  { ...resumeResult, state: "failed" }, { ...resumeResult, state: "verified" },
+  { ...resumeResult, domain: "sync_upstream" }, { ...resumeResult, domain: "sync_local" },
+  { ...resumeResult, domain: "database_init" }, { ...resumeResult, domain: ["publication"] },
+  { ...resumeResult, state: ["completed"] },
+]) await result(resumeCommand, value);
+await result(resumeCommand, resumeResult, true);
+assert.equal(changed.length, 0, "Only the exact resumed operation and its allowed verified terminal state can request a conservative reread");
+
 const { action: _action, reused: _reused, ...baseUpdate } = receipt;
 const updateReceipt = { ...baseUpdate, operation: "update", effects: { properties: ["default-context"] } };
 await result(command("update", page, "--default-context"), updateReceipt);
@@ -197,6 +229,17 @@ else throw Error('Unexpected command');
   assert.equal(callsAfter.length, 1, "An unrelated source reuses its existing directory cache");
   assert.ok(callsAfter[0]!.includes(db));
   assert.ok(callsAfter[0]!.includes("--refresh"), "A verified write bypasses the affected source's stale disk directory");
+  const beforeResume = await fullCatalogCalls();
+  await writeFile(state, JSON.stringify({ [db]: "after-recovery", [otherDb]: "untouched" }));
+  await dispatch("tool_call", { toolName: "bash", toolCallId: "resume", input: { command: [...runtimePrefix, "operation", "resume", publication].map(quote).join(" ") } });
+  await dispatch("tool_result", { toolName: "bash", toolCallId: "resume", input: {}, content: JSON.stringify(resumeResult), isError: false });
+  const recovered = await selections();
+  assert.ok(recovered.includes("$after-recovery@notion"), "Verified original-operation recovery refreshes the next selection without manual intervention");
+  assert.ok(!recovered.includes("$after-write@notion"));
+  assert.ok(recovered.includes("$untouched@second"));
+  const resumedCalls = (await fullCatalogCalls()).slice(beforeResume.length);
+  assert.equal(resumedCalls.length, 2, "Recovery without source scope conservatively rereads this CLI's configured sources");
+  assert.ok(resumedCalls.every(args => args.includes("--refresh")));
   await dispatch("session_shutdown", { type: "session_shutdown" });
 } finally {
   process.chdir(previousCwd);
