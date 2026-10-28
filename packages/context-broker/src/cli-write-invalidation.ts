@@ -181,7 +181,7 @@ export function decodeCliWriteOutput(body: string, options: { progress?: boolean
     }
     if (options.progress !== true || Object.keys(item).length !== progressFields.size || !Object.keys(item).every(key => progressFields.has(key)) ||
         typeof item.operation_id !== "string" || !item.operation_id.trim() || typeof item.stage !== "string" || !item.stage.trim() ||
-        !["started", "completed", "failed"].includes(String(item.status)) ||
+        typeof item.status !== "string" || !["started", "completed", "failed"].includes(item.status) ||
         typeof item.elapsed_ms !== "number" || !Number.isFinite(item.elapsed_ms) || item.elapsed_ms < 0 ||
         typeof item.stage_ms !== "number" || !Number.isFinite(item.stage_ms) || item.stage_ms < 0) return { status: "invalid" };
     if (operationId !== undefined && operationId !== item.operation_id) return { status: "invalid" };

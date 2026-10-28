@@ -80,6 +80,7 @@ for (const output of [
   jsonl({ ...progress(), elapsed_ms: -1 }, progressedReceipt),
   jsonl({ ...progress(), stage_ms: null }, progressedReceipt),
   jsonl(progress("unknown"), progressedReceipt),
+  jsonl({ ...progress(), status: ["started"] }, progressedReceipt),
   jsonl({ ...progress(), stage: "" }, progressedReceipt),
   jsonl({ message: "other JSON" }, progressedReceipt),
   jsonl("Unrecognized stderr text", progressedReceipt),
