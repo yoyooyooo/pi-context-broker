@@ -1,6 +1,6 @@
 {
   "name": "pi-context-broker",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "description": "Pi/OMP context broker that injects Skills, Routers and per-submission Prompts via explicit user commands.",
   "type": "module",
   "license": "MIT",
