@@ -33,7 +33,10 @@ function checkSteps(steps, label) {
     const required = { type: 'text', key: 'key', candidate: 'identity', click: 'selector', palette: 'query', expect: 'text', draft: 'text', requests: 'count', provider: null, events: 'phase', shot: null, control: 'command', 'tool-read': 'path' };
     assert.ok(Object.hasOwn(required, step.op), `${label}/${step.id}: unsupported operation ${step.op}`);
     if (required[step.op]) assert.ok(Object.hasOwn(step, required[step.op]), `${label}/${step.id}: missing ${required[step.op]}`);
-    if (step.op === 'provider') assert.ok(step.markers && Object.keys(step.markers).length || step.minImages !== undefined || step.sameImagesFrom !== undefined, `${label}/${step.id}: provider assertion must check delivery content`);
+    if (step.op === 'provider') {
+      assert.ok(step.markers && Object.keys(step.markers).length || step.minImages !== undefined || step.imageCount !== undefined || step.sameImagesFrom !== undefined, `${label}/${step.id}: provider assertion must check delivery content`);
+      if (step.imageCount !== undefined) assert.ok(Number.isSafeInteger(step.imageCount) && step.imageCount >= 0, `${label}/${step.id}: imageCount must be a non-negative safe integer`);
+    }
     if (['type', 'key', 'expect', 'draft', 'tool-read'].includes(step.op)) assert.ok(typeof step[required[step.op]] === 'string' && step[required[step.op]].length > 0, `${label}/${step.id}: concrete ${required[step.op]} required`);
     if (step.op === 'expect' && step.match !== undefined) assert.equal(step.match, 'contains', `${label}/${step.id}: only explicit contains matching is supported`);
     if (step.op === 'draft' && step.token !== undefined) {

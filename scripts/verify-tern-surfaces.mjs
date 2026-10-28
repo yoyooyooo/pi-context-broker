@@ -464,6 +464,10 @@ async function step(item, scenario, index) {
       assert.ok(event, 'Missing actual provider event');
       for (const [marker, count] of Object.entries(item.markers ?? {})) assert.equal(event.markers?.[marker], count, marker);
       if (item.minImages !== undefined) assert.ok(event.imageHashes.length >= item.minImages, 'Image missing from actual request/context');
+      if (item.imageCount !== undefined) {
+        assert.ok(Number.isSafeInteger(item.imageCount) && item.imageCount >= 0, 'imageCount must be a non-negative safe integer');
+        assert.equal(event.imageHashes.length, item.imageCount, 'Image count differs in the actual request/context');
+      }
       if (item.sameImagesFrom !== undefined) assert.deepEqual(event.imageHashes, requests[item.sameImagesFrom]?.imageHashes, 'Attachment identity changed');
       break;
     }
@@ -474,14 +478,16 @@ async function step(item, scenario, index) {
     }
     case 'tool-read': {
       assert.ok(typeof item.path === 'string' && item.path.length);
+      const selectedPath = item.path === '$IMAGE' ? manifest.image.path : item.path;
       await until(label, async () => {
         const events = await rows();
         const calls = events.filter(event => event.phase === 'tool').slice(caseBaseline.tool ?? 0);
-        const call = calls.find(event => event.name === 'read' && event.input?.path === item.path);
+        const call = calls.find(event => event.name === 'read' && event.input?.path === selectedPath);
         if (!call) return false;
         const results = events.filter(event => event.phase === 'tool-result').slice(caseBaseline['tool-result'] ?? 0);
-        const result = results.find(event => event.name === 'read' && (event.file?.path === item.path || (call.requestId && event.requestId === call.requestId)));
+        const result = results.find(event => event.name === 'read' && (event.file?.path === selectedPath || (call.requestId && event.requestId === call.requestId)));
         if (!result) return false;
+        if (item.path === '$IMAGE') assert.equal(result.file?.sha256, manifest.image.sha256, 'Image read differs from the owned input file');
         if (item.sha256) assert.equal(result.file?.sha256, item.sha256);
         if (item.snapshotSha256) assert.equal(result.sha256, item.snapshotSha256);
         await save(join(output, `${label}.read.json`), { call, result });
@@ -579,8 +585,8 @@ try {
     manifest.config = { path: spec.config, sha256: sha(await readFile(spec.config)), agentDir: spec.agentDir };
     if (action === 'run') for (const id of requiredScenarios(surface)) assert.ok(spec.scenarios.some(item => item.id === id), `Missing scenario or explicit gate: ${id}`);
   }
-  // Real 2x2 RGBA PNG, decoded by file/sips in smoke; fixture is local and has no network target.
-  const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR4nGP4z8Dwn4GBgYGJAQoAHhgCAfW7vs0AAAAASUVORK5CYII=', 'base64');
+  // 2x2 RGBA PNG with valid zlib data and PNG checksums; no network target.
+  const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR4nGP4z8DwHwyBNBgAAEnICff5q7YNAAAAAElFTkSuQmCC', 'base64');
   const imagePath = join(output, 'attachment.png');
   await writeFile(imagePath, image, { mode: 0o600 });
   manifest.image = { path: imagePath, sha256: sha(image), bytes: image.length };
@@ -604,6 +610,7 @@ try {
     assert.ok(process.env[name] !== undefined, `Missing required environment variable ${name}`);
     hostEnv[name] = process.env[name];
   }
+  if (action === 'controlled') hostEnv.CONTEXT_BROKER_E2E_IMAGE_FILE = imagePath;
   manifest.hostEnvironment = { explicitNames: Object.keys(hostEnv).sort(), inheritedNames: spec?.hostEnvNames ?? [] };
   runtimeSpec = spec; runtimeHostEnv = hostEnv;
   if (action === 'controlled') assert.ok(typeof hostEnv.CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE === 'string' && isAbsolute(hostEnv.CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE), 'Controlled requests require the actual provider capture path');
