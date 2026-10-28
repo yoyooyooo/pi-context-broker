@@ -16,6 +16,7 @@
     "test:release": "node --test scripts/release.test.mjs",
     "test:ui": "node scripts/verify-native-ui.mjs",
     "test:model": "node scripts/verify-real-model.mjs",
+    "test:source-dependencies": "node scripts/verify-source-dependencies.mjs",
     "pack:dry": "bun scripts/pack.mjs --dry-run",
     "release": "bun scripts/release.ts",
     "release:check": "bun scripts/release.ts --precheck"

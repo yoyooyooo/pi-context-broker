@@ -1,15 +1,62 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import type { BundleDiscoveryRecord, ConfigFile, DiscoveryMember, DiscoveryRecord, ScanConfig, SkillRecord } from "./types";
-import { dedupeRegistryByNormalizedName, normalizeKey, skillRecordFromFile, uniqueStrings } from "./skill-records";
+import type { RouterDiscoveryRecord, ConfigFile, DiscoveryMember, DiscoveryRecord, ScanConfig, SkillRecord, RawCatalogMember, CatalogRemoteReference, CatalogResolutionContext } from "./types";
+import { normalizeKey, skillRecordFromFile, uniqueStrings } from "./skill-records";
+import { isBundledBuiltin, isBundledBuiltinToken } from "./bundled-builtins";
 
-export function recordKind(record: DiscoveryRecord): "skill" | "bundle" {
-  return "kind" in record && record.kind === "bundle" ? "bundle" : "skill";
+export function recordKind(record: DiscoveryRecord): "skill" | "router" | "prompt" {
+  return record.kind ?? "skill";
 }
 
 export function recordName(record: DiscoveryRecord): string {
   return record.name;
+}
+
+export function recordToken(record: DiscoveryRecord): string {
+  return record.selectionToken ?? record.token ?? record.alias ?? normalizeKey(record.name);
+}
+
+function encodeSelectionId(id: string): string {
+  return encodeURIComponent(id).replace(/[!'()*]/g, character => "%" + character.charCodeAt(0).toString(16).toUpperCase());
+}
+function preciseSelector(record: DiscoveryRecord): string {
+  return record.locator?.type === "notion_page" ? record.locator.page_id.replaceAll("-", "")
+    : record.locator?.type === "notion_subscription" ? record.locator.subscription_id.replaceAll("-", "")
+    : encodeSelectionId(record.id ?? "local:" + resolve(record.path));
+}
+function recordNamespace(record: DiscoveryRecord): string {
+  return record.sourceId ? record.token?.split("/")[0] ?? record.sourceId : "local";
+}
+
+/** The same identity-qualified syntax already used for colliding catalog entries. */
+export function preciseRecordToken(record: DiscoveryRecord): string {
+  if (isBundledBuiltin(record)) return recordToken(record);
+  return `${record.alias ?? recordNormalizedName(record)}@${preciseSelector(record)}@${recordNamespace(record)}`;
+}
+function parsePreciseSelection(query: string): { selector: string; namespace: string } | undefined {
+  if (/[\p{Cc}\p{Cf}\p{Cs}]/u.test(query)) return undefined;
+  const parts = query.split("@");
+  if (parts.length !== 3 || !parts[0] || /[\s/]/u.test(parts[0]) || !/^[\p{L}\p{N}._-]+$/u.test(parts[2]!)) return undefined;
+  const selector = parts[1]!;
+  if (/^[0-9a-f]{32}$/i.test(selector)) return { selector: selector.toLowerCase(), namespace: parts[2]! };
+  try {
+    const id = decodeURIComponent(selector);
+    if (id.startsWith("local:") && isAbsolute(id.slice(6)) && encodeSelectionId(id) === selector) return { selector, namespace: parts[2]! };
+  } catch { /* Malformed text is not an identity-qualified reference. */ }
+  return undefined;
+}
+export function isPreciseSelectionToken(query: string): boolean {
+  return isBundledBuiltinToken(query) || parsePreciseSelection(query) !== undefined;
+}
+export function matchesPreciseRecordToken(query: string, record: DiscoveryRecord): boolean {
+  const selection = parsePreciseSelection(query);
+  return Boolean(selection && !isBundledBuiltin(record) && selection.selector === preciseSelector(record) && selection.namespace === recordNamespace(record));
+}
+
+export function recordIdentity(record: DiscoveryRecord): string {
+  const locator = record.locator ?? { type: "local", id: resolve(record.path), entry: record.path };
+  return JSON.stringify([record.sourceId ?? "local", record.sourceScope ?? "", recordKind(record), locator.type, record.id ?? "local:" + (locator.type === "local" ? locator.id : record.path)]);
 }
 
 export function recordAliases(record: DiscoveryRecord): string[] {
@@ -21,11 +68,11 @@ export function recordDescription(record: DiscoveryRecord): string {
 }
 
 export function recordPath(record: DiscoveryRecord): string {
-  return recordKind(record) === "bundle" ? (record as BundleDiscoveryRecord).path : (record as SkillRecord).path;
+  return recordKind(record) === "router" ? (record as RouterDiscoveryRecord).path : (record as SkillRecord).path;
 }
 
 export function recordNormalizedName(record: DiscoveryRecord): string {
-  return record.normalizedName || normalizeKey(record.name);
+  return record.alias ?? (record.normalizedName || normalizeKey(record.name));
 }
 
 export function recordNormalizedAliases(record: DiscoveryRecord): string[] {
@@ -41,39 +88,88 @@ export function skillDiscoveryRecord(skill: SkillRecord): SkillRecord & { kind: 
 }
 
 export function normalizeDiscoveryRecord(record: DiscoveryRecord): DiscoveryRecord {
-  if (recordKind(record) === "skill") return skillDiscoveryRecord(record as SkillRecord);
-  const bundle = record as BundleDiscoveryRecord;
+  if (recordKind(record) !== "router" || !record.members) return { ...record, kind: recordKind(record) };
+  const router = record as RouterDiscoveryRecord;
   return {
-    ...bundle,
-    kind: "bundle",
-    aliases: uniqueStrings(bundle.aliases ?? []),
-    normalizedName: normalizeKey(bundle.name),
-    normalizedAliases: uniqueStrings((bundle.aliases ?? []).map(normalizeKey).filter(Boolean)),
-    normalizedDescription: normalizeKey(bundle.description),
-    members: bundle.members.map((member) => ({
+    ...router,
+    kind: "router",
+    aliases: uniqueStrings(router.aliases ?? []),
+    normalizedName: router.source === "notion" ? router.alias! : normalizeKey(router.name),
+    normalizedAliases: uniqueStrings((router.aliases ?? []).map(normalizeKey).filter(Boolean)),
+    normalizedDescription: normalizeKey(router.description),
+    members: router.members.map((member) => ({
       ...member,
       aliases: uniqueStrings(member.aliases ?? []),
     })),
   };
 }
 
-export function dedupeDiscoveryRecordsByNormalizedName(records: DiscoveryRecord[]): DiscoveryRecord[] {
+export function dedupeDiscoveryRecords<T extends DiscoveryRecord>(records: T[]): T[] {
   const indexes = new Map<string, number>();
-  const result: DiscoveryRecord[] = [];
+  const result: T[] = [];
   for (const record of records) {
-    const key = recordNormalizedName(record);
+    const key = recordKind(record) === "skill" && !record.sourceId && !isBundledBuiltin(record)
+      ? JSON.stringify(["local-skill", recordNormalizedName(record)])
+      : recordIdentity(record);
     const existingIndex = indexes.get(key);
     if (existingIndex !== undefined) {
-      const existing = result[existingIndex];
-      if (recordKind(existing) === "skill" && recordKind(record) === "bundle") {
-        result[existingIndex] = record;
-      }
       continue;
     }
     indexes.set(key, result.length);
     result.push(record);
   }
-  return result;
+  const byName = new Map<string, DiscoveryRecord[]>();
+  for (const record of result) {
+    const name = recordNormalizedName(record);
+    const group = byName.get(name);
+    if (group) group.push(record);
+    else byName.set(name, [record]);
+  }
+  const conflicted = new Set<DiscoveryRecord>();
+  for (const source of result) {
+    
+    const keys = [recordNormalizedName(source), ...recordNormalizedAliases(source), recordNormalizedDescription(source)];
+    for (const key of keys) {
+      if (!key) continue;
+      for (const other of byName.get(key) ?? []) {
+        if (other === source) continue;
+        conflicted.add(source);
+        conflicted.add(other);
+      }
+    }
+  }
+  const selectors = new Map<DiscoveryRecord, string>();
+  const counts = new Map<string, number>();
+  for (const record of conflicted) {
+    const skill = record as SkillRecord;
+    const origin = isBundledBuiltin(skill) ? "builtin" : skill.sourceId ? skill.token?.split("/")[0] ?? skill.sourceId : "local";
+    const selector = `${record.alias ?? normalizeKey(record.name)}@${origin}`;
+    selectors.set(record, selector);
+    const key = selector;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return result.map((record) => {
+    const skill = record as SkillRecord;
+    const stableSelection = skill.source === "notion" || isBundledBuiltin(skill) ? record.selectionToken : undefined;
+    let selectionToken = stableSelection ?? selectors.get(record);
+    if (!isBundledBuiltin(skill) && selectionToken && counts.get(selectionToken)! > 1) {
+      selectionToken = preciseRecordToken(record);
+    }
+    return selectionToken === record.selectionToken ? record : { ...record, selectionToken };
+  });
+}
+
+export class InvocationError extends Error {
+  readonly code: string;
+  constructor(query: string, reason: string, candidates: DiscoveryRecord[] = []) {
+    const tokens = candidates.map((record) => recordToken(record));
+    const hint = tokens.length === 0 ? "" : new Set(tokens).size === tokens.length
+      ? `; choose ${tokens.map((token) => `$${token}`).join(", ")}`
+      : `; run /context-broker find ${query.split("@")[0]!.split("/")[0]!}`;
+    super(`context-broker: $${query}: ${reason}${hint}`);
+    this.name = "InvocationError";
+    this.code = reason === "ambiguous" ? "INVOCATION_AMBIGUOUS" : "INVOCATION_NOT_FOUND";
+  }
 }
 
 export function validateDiscoveryRecords(records: DiscoveryRecord[]): string[] {
@@ -81,7 +177,7 @@ export function validateDiscoveryRecords(records: DiscoveryRecord[]): string[] {
   const byName = new Map<string, DiscoveryRecord>();
   const byAlias = new Map<string, DiscoveryRecord>();
   for (const record of records) {
-    const name = recordNormalizedName(record);
+    const name = normalizeKey(recordToken(record));
     if (!name) {
       errors.push(`record has empty name: ${recordKind(record)}`);
       continue;
@@ -89,10 +185,10 @@ export function validateDiscoveryRecords(records: DiscoveryRecord[]): string[] {
     const existing = byName.get(name);
     if (existing) {
       const kinds = new Set([recordKind(existing), recordKind(record)]);
-      if (!(kinds.has("skill") && kinds.has("bundle"))) {
+      {
         errors.push(`name collision: ${recordKind(existing)} "${recordName(existing)}" conflicts with ${recordKind(record)} "${recordName(record)}"`);
       }
-      if (recordKind(record) === "bundle") byName.set(name, record);
+
     } else {
       byName.set(name, record);
     }
@@ -110,14 +206,16 @@ export function validateDiscoveryRecords(records: DiscoveryRecord[]): string[] {
         byAlias.set(alias, record);
       }
     }
-    if (recordKind(record) === "bundle") {
-      const bundle = record as BundleDiscoveryRecord;
-      if (bundle.members.length === 0) errors.push(`bundle "${bundle.name}" has no members`);
-      for (const member of bundle.members) {
-        if (!member.name.trim()) errors.push(`bundle "${bundle.name}" has member with empty name`);
-        if (!(member.description ?? "").trim()) errors.push(`bundle "${bundle.name}" member "${member.name}" has empty description`);
-        if (!member.path.trim()) errors.push(`bundle "${bundle.name}" member "${member.name}" has empty path`);
-        else if (!existsSync(member.path)) errors.push(`bundle "${bundle.name}" member "${member.name}" path missing: ${member.path}`);
+    if (recordKind(record) === "router" && record.members) {
+      const router = record as RouterDiscoveryRecord;
+      if (router.members.length === 0) errors.push(`router "${router.name}" has no members`);
+      for (const member of router.members) {
+        if (!member.name.trim()) errors.push(`router "${router.name}" has member with empty name`);
+        if (!(member.description ?? "").trim()) errors.push(`router "${router.name}" member "${member.name}" has empty description`);
+        if (member.unavailable) {
+          errors.push(`router "${router.name}" member "${member.name}" unavailable (${member.unavailable.code}): ${member.unavailable.message}`);
+        } else if (member.type === "local" && !member.path.trim()) errors.push(`router "${router.name}" member "${member.name}" has empty path`);
+        else if (member.type === "local" && !existsSync(member.path)) errors.push(`router "${router.name}" member "${member.name}" path missing: ${member.path}`);
       }
     }
   }
@@ -146,6 +244,10 @@ function readCatalogFile(path: string): unknown {
 
 function memberFromSkill(skill: SkillRecord): DiscoveryMember {
   return {
+    type: "local",
+    id: skill.id,
+    kind: "skill",
+    ref: skill.ref ?? skill.path,
     name: skill.name,
     description: skill.description,
     path: skill.path,
@@ -157,11 +259,13 @@ function skillLookupKeys(skill: SkillRecord): string[] {
   return [skill.normalizedName, normalizeKey(basename(dirname(skill.path))), ...skill.normalizedAliases].filter(Boolean);
 }
 
-function buildSkillLookup(skills: SkillRecord[]): Map<string, SkillRecord> {
-  const lookup = new Map<string, SkillRecord>();
+function buildSkillLookup(skills: SkillRecord[]): Map<string, SkillRecord[]> {
+  const lookup = new Map<string, SkillRecord[]>();
   for (const skill of skills) {
     for (const key of skillLookupKeys(skill)) {
-      if (!lookup.has(key)) lookup.set(key, skill);
+      const group = lookup.get(key) ?? [];
+      if (!group.some(previous => recordIdentity(previous) === recordIdentity(skill))) group.push(skill);
+      lookup.set(key, group);
     }
   }
   return lookup;
@@ -185,54 +289,154 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function membersFromInclude(include: string[], skillLookup: Map<string, SkillRecord>, skills: SkillRecord[], recordName: string): DiscoveryMember[] {
+function membersFromInclude(include: string[], skillLookup: Map<string, SkillRecord[]>, skills: SkillRecord[], recordName: string): DiscoveryMember[] {
   const members: SkillRecord[] = [];
   const seen = new Set<string>();
   for (const memberName of include) {
     const matched = includePatternHasGlob(memberName)
       ? skills.filter((skill) => includePatternMatches(memberName, skill)).sort((left, right) => left.name.localeCompare(right.name))
-      : [skillLookup.get(normalizeKey(memberName))].filter((skill): skill is SkillRecord => Boolean(skill));
-    if (matched.length === 0) throw new Error(`context-broker catalog bundle "${recordName}" includes unknown skill: ${memberName}`);
+      : skillLookup.get(normalizeKey(memberName)) ?? [];
+    if (!includePatternHasGlob(memberName) && matched.length > 1) throw new Error(`Ambiguous Router member: ${memberName}; select an exact member path`);
+    if (matched.length === 0) throw new Error(`context-broker catalog router "${recordName}" includes unknown skill: ${memberName}`);
     for (const skill of matched) {
-      if (seen.has(skill.path)) continue;
-      seen.add(skill.path);
+      if (seen.has(recordIdentity(skill))) continue;
+      seen.add(recordIdentity(skill));
       members.push(skill);
     }
   }
-  return members.map(memberFromSkill);
+  return members.sort((a, b) => recordIdentity(a).localeCompare(recordIdentity(b))).map(memberFromSkill);
 }
 
-function memberFromRaw(value: unknown, catalogDir: string, scan: ScanConfig = {}): DiscoveryMember | undefined {
-  if (!isRecord(value)) return undefined;
-  const path = typeof value.path === "string" ? resolveCatalogPath(value.path, catalogDir) : "";
-  const parsed = path ? skillRecordFromFile(path, false, undefined, scan) : undefined;
-  const name = typeof value.name === "string" && value.name.trim() ? value.name.trim() : parsed?.name;
-  if (!name) return undefined;
-  return {
-    name,
-    description: typeof value.description === "string" && value.description.trim() ? value.description.trim() : parsed?.description ?? "",
-    path,
-    aliases: uniqueStrings([...(parsed?.aliases ?? []), ...stringArray(value.aliases)]),
-  };
+function exactKeys(value: Record<string, unknown>, keys: string[]): void {
+  if (Object.keys(value).some(key => !keys.includes(key))) throw new Error("Unknown catalog member field");
 }
 
-function bundleFromRaw(name: string | undefined, value: unknown, catalogPath: string, skills: SkillRecord[] = [], skillLookup = buildSkillLookup(skills), scan: ScanConfig = {}): BundleDiscoveryRecord | undefined {
+/** Catalogs declare identities; only the current configured source catalog grants candidates. */
+export function parseCatalogMember(value: unknown): RawCatalogMember {
+  if (!isRecord(value)) throw new Error("Invalid Router member");
+  if (value.type === "local") {
+    exactKeys(value, ["type", "path", "name", "description", "aliases"]);
+    if (typeof value.path !== "string" || !value.path.trim()) throw new Error("Router members require an exact Skill entry path");
+    if ([value.name, value.description].some(item => item !== undefined && typeof item !== "string") || value.aliases !== undefined && (!Array.isArray(value.aliases) || !value.aliases.every(item => typeof item === "string"))) throw new Error("Invalid local Router member metadata");
+    return value as RawCatalogMember;
+  }
+  if (value.type !== "remote") throw new Error("Router member type must be local or remote");
+  exactKeys(value, ["type", "source", "id", "locator", "ref"]);
+  if (!isRecord(value.source) || typeof value.source.namespace !== "string" || !/^[\p{L}\p{N}._-]+$/u.test(value.source.namespace)) throw new Error("Remote member requires configured source namespace");
+  exactKeys(value.source, ["namespace"]);
+  if (!isRecord(value.locator)) throw new Error("Remote member requires stable locator");
+  const locator = value.locator;
+  const subscription = locator.type === "notion_subscription";
+  if (locator.type !== "notion_page" && !subscription) throw new Error("Invalid remote member locator");
+  const keys = subscription ? ["type", "subscription_id", "database_id", "data_source_id", "target_database_id"] : ["type", "page_id", "database_id", "data_source_id"];
+  exactKeys(locator, keys);
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  if (keys.filter(key => key !== "type").some(key => typeof locator[key] !== "string" || !uuid.test(locator[key] as string))) throw new Error("Invalid remote member stable identity");
+  const id = subscription ? locator.subscription_id : locator.page_id;
+  const selector = subscription ? `upstream:${id}` : id;
+  const prefix = `skill://${encodeURIComponent(selector as string)}/`;
+  if (value.id !== `${locator.type}:${id}` || typeof value.ref !== "string" || !value.ref.startsWith(prefix) || !/^(SKILL|ROUTER|PROMPT)\.md(?:\?snapshot=s_[0-9a-f]{64})?$/.test(value.ref.slice(prefix.length))) throw new Error("Remote member ref/identity mismatch");
+  return value as CatalogRemoteReference;
+}
+
+export function resolveCatalogReference(reference: CatalogRemoteReference, context: CatalogResolutionContext, kind: "skill" | "router"): SkillRecord {
+  const sources = (context.sources ?? []).filter(source => source.enabled !== false && source.type === "notion" && (source.namespace ?? source.id) === reference.source.namespace);
+  const observedCandidates = (context.records ?? []).filter(record => record.source === "notion" && sources.some(source => source.id === record.sourceId) && record.id === reference.id);
+  const candidates = observedCandidates.filter(record => record.locator && Object.entries(reference.locator).every(([key, value]) => record.locator![key as keyof typeof record.locator] === value) && Object.keys(record.locator).length === Object.keys(reference.locator).length);
+  const candidateLabels = observedCandidates.map(record => `${record.sourceId}:${record.id}:${JSON.stringify(record.locator)}`);
+  const fail = (code: string, message: string): never => { throw new CatalogReferenceError(code, message, candidateLabels); };
+  if (!sources.length) fail("SOURCE_UNAVAILABLE", `No enabled configured Notion source for namespace ${reference.source.namespace}`);
+  const failures = (context.failures ?? []).filter(failure => sources.some(source => source.id === failure.sourceId));
+  if (failures.length) fail(failures[0]!.code, `Source unavailable: ${failures.map(failure => `${failure.sourceId} (${failure.code})`).join(", ")}`);
+  if (candidates.length > 1) fail("CATALOG_MEMBER_AMBIGUOUS", `Multiple current source records: ${candidateLabels.join(", ")}`);
+  const record = candidates[0];
+  if (!record) fail(observedCandidates.length ? "SOURCE_IDENTITY_MISMATCH" : "CATALOG_MEMBER_UNAVAILABLE", `Record ${reference.id} with the declared locator absent from current credential-scoped catalog for ${reference.source.namespace}`);
+  const observed = record!;
+  const locator = observed.locator;
+  if (!observed.sourceScope || !/^[0-9a-f]{64}$/.test(observed.sourceScope) || !locator || observed.kind !== kind || observed.ref !== reference.ref.split("?")[0]) fail("SOURCE_IDENTITY_MISMATCH", `Reference does not match current ${kind} record ${reference.id}`);
+  return observed;
+}
+
+export class CatalogReferenceError extends Error {
+  constructor(readonly code: string, message: string, readonly candidates: string[] = []) { super(message); this.name = "CatalogReferenceError"; }
+}
+
+function unavailableLocalMember(path: string, raw: Extract<RawCatalogMember, { type: "local" }>, scan: ScanConfig): DiscoveryMember | undefined {
+  let code: string;
+  let message: string;
+  try {
+    const size = statSync(path).size;
+    const maxBytes = scan.maxSkillBytes ?? 64 * 1024;
+    if (maxBytes <= 0 || size <= maxBytes) return undefined;
+    code = "LOCAL_ENTRY_TOO_LARGE";
+    message = `scan_size_limit: Declared local Skill entry exceeds scan limit: ${path} (${size} bytes; maxSkillBytes=${maxBytes})`;
+  } catch (error) {
+    const missingCode = (error as NodeJS.ErrnoException).code;
+    if (missingCode !== "ENOENT" && missingCode !== "ENOTDIR") throw error;
+    code = missingCode;
+    message = `Declared local Skill entry unavailable (${code}): ${path}`;
+  }
+  return { type: "local", kind: "skill", id: `local:${path}`, ref: path, path, name: raw.name?.trim() || basename(dirname(path)), description: raw.description?.trim() || message, aliases: uniqueStrings(raw.aliases ?? []), unavailable: { code, message, candidates: [] } };
+}
+
+function memberFromRaw(value: unknown, catalogDir: string, scan: ScanConfig, context: CatalogResolutionContext): DiscoveryMember {
+  const raw = parseCatalogMember(value);
+  if (raw.type === "remote") {
+    try {
+      const record = resolveCatalogReference(raw, context, "skill");
+      return { type: "remote", source: raw.source, sourceId: record.sourceId, sourceScope: record.sourceScope, id: record.id, locator: raw.locator, kind: "skill", ref: raw.ref, name: record.name, description: record.description, aliases: record.aliases };
+    } catch (error) {
+      if (!(error instanceof CatalogReferenceError)) throw error;
+      return { ...raw, kind: "skill", name: raw.id, description: `Unavailable: ${error.message}`, unavailable: { code: error.code, message: error.message, candidates: error.candidates } };
+    }
+  }
+  const path = resolveCatalogPath(raw.path, catalogDir);
+  if (basename(path) !== "SKILL.md") throw new Error("Router members require an exact Skill entry path");
+  const missing = unavailableLocalMember(path, raw, scan);
+  if (missing) return missing;
+  const parsed = skillRecordFromFile(path, false, undefined, scan);
+  if (!parsed) {
+    const missing = unavailableLocalMember(path, raw, scan);
+    if (missing) return missing;
+    throw new Error(`Router member unavailable: ${path}`);
+  }
+  return { ...memberFromSkill(parsed), name: raw.name?.trim() || parsed.name, description: raw.description?.trim() || parsed.description, aliases: uniqueStrings([...parsed.aliases, ...(raw.aliases ?? [])]) };
+}
+
+function routerFromRaw(name: string | undefined, value: unknown, catalogPath: string, skills: SkillRecord[] = [], skillLookup = buildSkillLookup(skills), scan: ScanConfig = {}, context: CatalogResolutionContext = {}): DiscoveryRecord | undefined {
   if (!isRecord(value)) return undefined;
+  if (value.type === "remote") {
+    const { kind, ...reference } = value;
+    if (kind !== undefined && kind !== "router") throw new Error("Remote catalog record kind must be router");
+    const parsed = parseCatalogMember(reference);
+    if (parsed.type !== "remote") throw new Error("Remote catalog Router requires remote reference");
+    const record = resolveCatalogReference(parsed, context, "router");
+    if (parsed.ref !== record.ref) throw new CatalogReferenceError("SOURCE_IDENTITY_MISMATCH", "Direct remote Router catalog records require the canonical unpinned entry ref");
+    return record;
+  }
   const catalogDir = dirname(catalogPath);
-  const recordName = typeof value.name === "string" && value.name.trim() ? value.name.trim() : name;
-  if (!recordName) return undefined;
+  const recordName = typeof value.name === "string" && value.name.trim() ? value.name : name;
+  if (!recordName || !normalizeKey(recordName)) return undefined;
   let members: DiscoveryMember[] = [];
   if (Array.isArray(value.members)) {
-    members = value.members
-      .map((member) => memberFromRaw(member, catalogDir, scan))
-      .filter((member): member is DiscoveryMember => member !== undefined);
+    members = value.members.map((member) => memberFromRaw(member, catalogDir, scan, context));
+    const identity = (member: DiscoveryMember) => member.type === "remote"
+      ? JSON.stringify([member.sourceId ?? member.source.namespace, member.sourceScope ?? "", member.id, member.locator])
+      : member.id ?? member.path;
+    members = [...new Map(members.map(member => [identity(member), member])).values()].sort((a, b) => identity(a).localeCompare(identity(b)));
   } else if (isRecord(value.members) && Array.isArray(value.members.include)) {
     members = membersFromInclude(stringArray(value.members.include), skillLookup, skills, recordName);
   } else if ("members" in value) {
-    throw new Error(`context-broker catalog bundle "${recordName}" members must be an array or { include: string[] }`);
+    throw new Error(`context-broker catalog router "${recordName}" members must be an array or { include: string[] }`);
   }
   return normalizeDiscoveryRecord({
-    kind: "bundle",
+    kind: "router",
+    id: `local:${catalogPath}#${recordName}`,
+    locator: { type: "local", id: `${catalogPath}#${recordName}`, entry: catalogPath },
+    source: "local",
+    autoloadEnabled: true,
+    entrypoint: "ROUTER.md",
+    ref: `local:${catalogPath}#${recordName}`,
     name: recordName,
     description: typeof value.description === "string" ? value.description.trim() : "",
     aliases: stringArray(value.aliases),
@@ -240,31 +444,33 @@ function bundleFromRaw(name: string | undefined, value: unknown, catalogPath: st
     normalizedName: "",
     normalizedAliases: [],
     normalizedDescription: "",
-    render: isRecord(value.render) ? value.render as BundleDiscoveryRecord["render"] : { type: "member-index" },
-    policy: isRecord(value.policy) ? value.policy as BundleDiscoveryRecord["policy"] : undefined,
+    render: isRecord(value.render) ? value.render as RouterDiscoveryRecord["render"] : { type: "member-index" },
+    policy: isRecord(value.policy) ? value.policy as RouterDiscoveryRecord["policy"] : undefined,
     members,
-  }) as BundleDiscoveryRecord;
+  }) as RouterDiscoveryRecord;
 }
 
-export function readDiscoveryCatalog(path: string, skills: SkillRecord[] = [], scan: ScanConfig = {}): DiscoveryRecord[] {
+export function readDiscoveryCatalog(path: string, skills: SkillRecord[] = [], scan: ScanConfig = {}, context: CatalogResolutionContext = {}): DiscoveryRecord[] {
   const absolutePath = resolve(path);
   if (!existsSync(absolutePath)) return [];
   const raw = readCatalogFile(absolutePath);
   if (!isRecord(raw)) return [];
+  if ("bundles" in raw || Array.isArray(raw.records) && raw.records.some(record => isRecord(record) && record.kind === "bundle")) throw new Error("Historical Bundle catalog requires scripts/migrate-content-assets.mjs");
   const records: DiscoveryRecord[] = [];
   const skillLookup = buildSkillLookup(skills);
   const rawRecords = Array.isArray(raw.records) ? raw.records : [];
   for (const rawRecord of rawRecords) {
-    if (!isRecord(rawRecord)) continue;
-    if (rawRecord.kind === "bundle") {
-      const bundle = bundleFromRaw(undefined, rawRecord, absolutePath, skills, skillLookup, scan);
-      if (bundle) records.push(bundle);
+    if (!isRecord(rawRecord)) throw new Error("Invalid Router catalog record");
+    if (rawRecord.kind !== "router") throw new Error("Catalog kind must be router");
+    if (rawRecord.kind === "router") {
+      const router = routerFromRaw(undefined, rawRecord, absolutePath, skills, skillLookup, scan, context);
+      if (router) records.push(router);
     }
   }
-  if (isRecord(raw.bundles)) {
-    for (const [name, value] of Object.entries(raw.bundles)) {
-      const bundle = bundleFromRaw(name, value, absolutePath, skills, skillLookup, scan);
-      if (bundle) records.push(bundle);
+  if (isRecord(raw.routers)) {
+    for (const [name, value] of Object.entries(raw.routers)) {
+      const router = routerFromRaw(name, value, absolutePath, skills, skillLookup, scan, context);
+      if (router) records.push(router);
     }
   }
   return records;
@@ -281,9 +487,9 @@ export function configuredDiscoveryCatalogs(config: ConfigFile, cwd = process.cw
   return uniqueStrings(paths.map((path) => resolveCatalogPath(path, cwd)));
 }
 
-export async function buildDiscoveryRegistryFromParts(skills: SkillRecord[], catalogs: string[], scan: ScanConfig = {}): Promise<DiscoveryRecord[]> {
+export async function buildDiscoveryRegistryFromParts(skills: SkillRecord[], catalogs: string[], scan: ScanConfig = {}, context: CatalogResolutionContext = {}): Promise<DiscoveryRecord[]> {
   return [
-    ...dedupeRegistryByNormalizedName(skills).map(skillDiscoveryRecord),
-    ...catalogs.flatMap((catalog) => readDiscoveryCatalog(catalog, skills, scan)),
+    ...skills.map(skillDiscoveryRecord),
+    ...catalogs.flatMap((catalog) => readDiscoveryCatalog(catalog, skills, scan, context)),
   ].map(normalizeDiscoveryRecord);
 }

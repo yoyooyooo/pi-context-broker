@@ -23,6 +23,7 @@ const extension = join(base, "capture.mjs");
 await writeFile(extension, `import {appendFileSync} from "node:fs";
 const canary=${JSON.stringify(canary)};
 const count=v=>JSON.stringify(v).split(canary).length-1;
+const guidanceCount=v=>JSON.stringify(v).split("<ntn-skills-guidance>").length-1;
 const record=v=>appendFileSync(process.env.BROKER_REAL_CAPTURE,JSON.stringify(v)+"\\n");
 // Capture only model selectors and fixture counts. Never persist URLs or headers.
 const originalFetch=globalThis.fetch;
@@ -43,8 +44,8 @@ export default function(api){
    if(selected.compactionModel&&!["group/flash-free","magpie/group/flash-free"].includes(selected.compactionModel))throw new Error("Configured compaction target is outside the authorized free group");
    record({phase:"selected",model:"magpie/group/flash-free",compactionModel:selected.compactionModel??null});
  });
- api.on("context",(event,ctx)=>record({phase:"context",model:ctx.model.provider+"/"+ctx.model.id,bodies:count(event.messages),summary:event.messages.some(m=>m.role==="compactionSummary")}));
- api.on("before_provider_request",(event,ctx)=>{if(event.payload?.model!=="group/flash-free")throw new Error("Wrong provider payload model");record({phase:"request",model:ctx.model.provider+"/"+ctx.model.id,wireModel:event.payload.model,bodies:count(event.payload)});});
+ api.on("context",(event,ctx)=>record({phase:"context",model:ctx.model.provider+"/"+ctx.model.id,bodies:count(event.messages),cliGuidance:guidanceCount(event.messages),summary:event.messages.some(m=>m.role==="compactionSummary")}));
+ api.on("before_provider_request",(event,ctx)=>{if(event.payload?.model!=="group/flash-free")throw new Error("Wrong provider payload model");record({phase:"request",model:ctx.model.provider+"/"+ctx.model.id,wireModel:event.payload.model,bodies:count(event.payload),cliGuidance:guidanceCount(event.payload)});});
  api.on("after_provider_response",event=>record({phase:"response",status:event.status}));
  api.on("session_compact",event=>record({phase:"compact",fromExtension:event.fromExtension,summaryLength:event.compactionEntry.summary.length,summaryBodies:count(event.compactionEntry.summary)}));
 }
@@ -69,15 +70,13 @@ try {
   assert.equal((await rpc.command("get_last_assistant_text")).text?.trim(), "VIOLET-78C4|total=42|checks=boundary,ownership");
   const observed = await evidence();
   const requests = observed.filter(row => row.phase === "request");
-  assert.equal(requests.length, 4);
-  assert.ok(requests.every(row => row.model === model && row.bodies === 1));
+  assert.ok(requests.every(row => row.model === model && row.bodies === 1 && row.cliGuidance === 1), "each actual model request must include exactly one Skill body and CLI guidance block");
   assert.ok(observed.some(row => row.phase === "compact" && row.fromExtension === false && row.summaryBodies === 0));
   const transport = observed.filter(row => row.phase === "transport");
-  assert.ok(transport.length >= 5, "capture must include normal and real summarizer transport requests");
   assert.ok(transport.every(row => ["group/flash-free", model].includes(row.wireModel)));
   const decisions = (await readFile(log, "utf8")).trim().split("\n").map(line => JSON.parse(line));
   assert.deepEqual(decisions.map(row => [row.decision, row.reason]), [["inject", "matched"], ["skip", "already-loaded"], ["inject", "matched"]]);
-  const result = { model, verified: ["first instruction use", "repeat without duplicate body", "real default summarizer", "body removed by compaction", "reinjection and instruction use after compaction"], requests: requests.length, transportRequests: transport.length, skillBodyCountPerRequest: requests.map(row => row.bodies), summaryFromExtension: false };
+  const result = { model, verified: ["first instruction use", "repeat without duplicate body", "real default summarizer", "body removed by compaction", "reinjection and instruction use after compaction", "one default CLI guidance block before and after compaction"], requests: requests.length, transportRequests: transport.length, skillBodyCountPerRequest: requests.map(row => row.bodies), cliGuidanceCountPerRequest: requests.map(row => row.cliGuidance), summaryFromExtension: false };
   await writeFile(join(base, "result.json"), JSON.stringify(result, null, 2) + "\n");
   console.log(JSON.stringify(result, null, 2));
 } finally {

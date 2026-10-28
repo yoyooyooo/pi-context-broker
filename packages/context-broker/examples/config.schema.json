@@ -4,6 +4,11 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "sources": {
+      "type": "array",
+      "items": { "oneOf": [{ "$ref": "#/$defs/filesystemSource" }, { "$ref": "#/$defs/notionSource" }] },
+      "description": "Source ids must be unique; the broker checks uniqueness at runtime. Legacy roots and catalogs remain supported."
+    },
     "skillRoots": { "$ref": "#/$defs/stringArray" },
     "extraSkillRoots": { "$ref": "#/$defs/stringArray" },
     "ruleRoots": { "$ref": "#/$defs/stringArray" },
@@ -28,6 +33,70 @@
       "type": "array",
       "items": { "type": "string", "minLength": 1 },
       "uniqueItems": true
+    },
+    "nonemptyString": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![\\s\\S]*\\u0000)(?=[\\s\\S]*\\S)[\\s\\S]+$"
+    },
+    "sourceName": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[\\p{L}\\p{N}._-]+$"
+    },
+    "sourcePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxAge": { "type": "string", "pattern": "^(?:0|[0-9]+[smhd])$" },
+        "offline": { "type": "boolean", "default": false }
+      }
+    },
+    "sourceScan": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxDepth": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "maxSkillBytes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "ignore": { "type": "array", "items": { "$ref": "#/$defs/nonemptyString" } }
+      }
+    },
+    "filesystemSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "roots"],
+      "properties": {
+        "id": { "$ref": "#/$defs/sourceName" },
+        "type": { "const": "filesystem" },
+        "enabled": { "type": "boolean", "default": true },
+        "namespace": { "$ref": "#/$defs/sourceName", "description": "Defaults to id." },
+        "roots": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/nonemptyString" } },
+        "scan": { "$ref": "#/$defs/sourceScan" },
+        "requireAutoload": { "type": "boolean", "description": "Defaults to the top-level requireAutoload value, then true." }
+      }
+    },
+    "notionSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type"],
+      "properties": {
+        "id": { "$ref": "#/$defs/sourceName" },
+        "type": { "const": "notion" },
+        "enabled": { "type": "boolean", "default": true },
+        "namespace": { "$ref": "#/$defs/sourceName", "description": "Defaults to id." },
+        "command": {
+          "oneOf": [
+            { "$ref": "#/$defs/nonemptyString" },
+            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/nonemptyString" } }
+          ],
+          "description": "Omit to use the packaged ntn-skills CLI. Override with an executable or executable plus fixed arguments; no shell expansion."
+        },
+        "database": { "$ref": "#/$defs/nonemptyString" },
+        "cacheDir": { "$ref": "#/$defs/nonemptyString" },
+        "discovery": { "$ref": "#/$defs/sourcePolicy" },
+        "activation": { "$ref": "#/$defs/sourcePolicy" },
+        "requestTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 2147483647, "default": 30000, "description": "Timeout for each network attempt in the source CLI; not a total command deadline." }
+      }
     }
   }
 }

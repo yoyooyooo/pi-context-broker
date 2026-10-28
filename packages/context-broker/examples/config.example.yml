@@ -1,3 +1,35 @@
+# Built-in sources share discovery, host skills, $ completion and activation.
+# Configure ntn-skills authentication separately; never put a token here.
+sources:
+  - id: local
+    type: filesystem
+    enabled: true
+    namespace: local
+    roots:
+      - ~/context/source-skills
+    requireAutoload: false
+    scan:
+      maxDepth: 8
+      maxSkillBytes: 65536
+      ignore: [.git, node_modules, dist, build, coverage]
+  - id: notion
+    type: notion
+    enabled: true
+    namespace: notion
+    # Omit command to use the packaged ntn-skills CLI.
+    # Custom CLI: command: [node, /absolute/path/to/ntn-skills/dist/ntn-skills.js]
+    # Replace with your skills database id or unambiguous CLI database selector.
+    database: 00000000-0000-0000-0000-000000000000
+    cacheDir: ~/.cache/context-broker/notion
+    discovery:
+      maxAge: 5m
+      offline: false
+    activation:
+      maxAge: 5m
+      offline: false
+    requestTimeoutMs: 30000
+
+# Existing roots/catalogs remain supported alongside sources; no migration required.
 skillRoots:
   - ~/context/skills
 extraSkillRoots: []

@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { buildDollarRegistry, readConfig } from "./index";
 import { dollarAutocompleteItems, extractDollarAutocompletePrefix } from "./dollar";
-import type { AutocompleteItem, ConfigFile } from "./types";
+import type { AutocompleteItem, ConfigFile, ContentKind, HostPathOptions, SourceFailure } from "./types";
 
 export type CompletionRequest = {
   version: 1;
@@ -10,10 +10,12 @@ export type CompletionRequest = {
   cwd: string;
   config?: string;
 };
+export type ContentCompletionItem = AutocompleteItem & { identity: string; kind: ContentKind; source: "local" | "notion"; ref: string };
 export type CompletionResponse = {
   version: 1;
   edit: { from: number; to: number; len: number; prefix: string } | null;
-  items: AutocompleteItem[];
+  items: ContentCompletionItem[];
+  failures?: SourceFailure[];
 };
 
 export function parseCompletionRequest(value: unknown): CompletionRequest {
@@ -34,14 +36,16 @@ export function parseCompletionRequest(value: unknown): CompletionRequest {
   };
 }
 
-export async function completeDollarRequest(request: CompletionRequest, config: ConfigFile = readConfig()): Promise<CompletionResponse> {
+export async function completeDollarRequest(request: CompletionRequest, config?: ConfigFile, paths: HostPathOptions = {}): Promise<CompletionResponse> {
+  config ??= readConfig({ ...paths, configPath: request.config ?? paths.configPath });
   const beforeCursor = request.text.slice(0, request.cursor);
   const prefix = extractDollarAutocompletePrefix(beforeCursor.slice(beforeCursor.lastIndexOf("\n") + 1));
   if (prefix === undefined) return { version: 1, edit: null, items: [] };
-  const registry = await buildDollarRegistry(config, resolve(request.cwd));
+  const { records: registry, failures } = await buildDollarRegistry(config, resolve(request.cwd), paths);
   return {
     version: 1,
     edit: { from: request.cursor - prefix.length, to: request.cursor, len: request.text.length, prefix },
-    items: dollarAutocompleteItems(registry, prefix.slice(1)),
+    items: dollarAutocompleteItems(registry, prefix.slice(1), { precise: true }),
+    ...(failures.length ? { failures } : {}),
   };
 }

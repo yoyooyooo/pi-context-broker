@@ -79,7 +79,7 @@ async function loadPiCustomEditor(): Promise<PiModule["CustomEditor"] | undefine
   }
 }
 
-export async function installPiDollarAutocompleteEditor(ctx: ExtensionContext): Promise<boolean> {
+export async function installPiDollarAutocompleteEditor(ctx: ExtensionContext, bind: (editor: EditorLike) => EditorLike): Promise<boolean> {
   const ui = ctx.ui;
   if (!ui?.setEditorComponent || !ui.getEditorComponent) return false;
   const existingFactory = ui.getEditorComponent();
@@ -90,7 +90,7 @@ export async function installPiDollarAutocompleteEditor(ctx: ExtensionContext): 
     const editor = existingFactory
       ? existingFactory(tui, theme, keybindings)
       : new CustomEditor!(tui, theme, keybindings);
-    return wrapDollarAutocompleteEditor(editor);
+    return bind(wrapDollarAutocompleteEditor(editor));
   });
   ui.setEditorComponent(factory);
   return true;

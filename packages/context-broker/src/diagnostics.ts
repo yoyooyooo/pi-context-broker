@@ -3,11 +3,9 @@ import { dollarAutocompleteItems } from "./dollar";
 import {
   buildRegistryFromRoots,
   compactPath,
-  normalizeKey,
-  skillSourceLabel,
 } from "./skill-records";
 import type { DiscoveryRecord, SkillRecord } from "./types";
-import { recordDescription, recordKind, recordName, recordNormalizedName, recordPath } from "./discovery-records";
+import { recordDescription, recordIdentity, recordKind, recordPath, recordToken } from "./discovery-records";
 
 type RootDiagnostic = {
   root: string;
@@ -117,44 +115,37 @@ export function formatRootDiagnostics(roots: RootDiagnostic[], limit = 24): stri
   return lines.join("\n");
 }
 
-function compactDescription(value: string, maxColumns: number): string {
-  const compact = value.replace(/\s+/g, " ").trim();
-  return truncateEndColumns(compact, maxColumns);
-}
-
-function skillLine(skill: DiscoveryRecord, duplicateCount: number): string {
-  const kind = recordKind(skill);
-  const label = kind === "bundle" ? `bundle ${(skill as any).members?.length ?? 0}m` : skillSourceLabel(recordPath(skill)) ?? "custom";
-  const name = truncateEndColumns(`$${recordName(skill)}`, 26);
-  const metadata = truncateEndColumns(duplicateCount > 1 ? `${label} d${duplicateCount}` : label, 16);
-  const path = truncateMiddle(compactPath(recordPath(skill)), 18);
-  const prefix = `${name} [${metadata}] ${path}`;
-  const descriptionColumns = 78 - displayWidth(prefix) - 3;
-  const description = descriptionColumns >= 8 ? compactDescription(recordDescription(skill), descriptionColumns) : "";
-  const detail = description ? ` - ${description}` : "";
-  return truncateEndColumns(`${prefix}${detail}`, 78);
+function findLines(skill: DiscoveryRecord): string[] {
+  const locator = (skill as SkillRecord).locator;
+  const page = locator?.type === "notion_page" ? locator.page_id : locator?.type === "notion_subscription" ? locator.subscription_id : undefined;
+  const description = recordDescription(skill).replace(/\s+/g, " ").trim();
+  return [
+    `$${recordToken(skill)}`,
+    `  kind: ${recordKind(skill)}`,
+    `  source: ${(skill as SkillRecord).source ?? "local"}`,
+    ...(page ? [`  page: ${page}`] : []),
+    `  path: ${recordPath(skill)}`,
+    ...(description ? [`  description: ${description}`] : []),
+  ];
 }
 
 export function formatFindDiagnostics(
   query: string,
   registry: DiscoveryRecord[],
-  rawRegistry: DiscoveryRecord[] = registry,
-  limit = 8,
+  _rawRegistry: DiscoveryRecord[] = registry,
+  limit = 20,
 ): string {
   const cleanQuery = query.replace(/^\$/, "").trim();
   if (!cleanQuery) return "context-broker find: query required";
-  const byName = new Map(registry.map((skill) => [recordNormalizedName(skill), skill]));
-  const duplicateCounts = new Map<string, number>();
-  for (const skill of rawRegistry) {
-    duplicateCounts.set(recordNormalizedName(skill), (duplicateCounts.get(recordNormalizedName(skill)) ?? 0) + 1);
-  }
-  const matches = dollarAutocompleteItems(registry, cleanQuery)
-    .map((item) => byName.get(normalizeKey(item.value.slice(1))))
-    .filter((skill): skill is DiscoveryRecord => skill !== undefined)
-    .slice(0, limit);
+  const byIdentity = new Map(registry.map((skill) => [recordIdentity(skill), skill]));
+  const ranked = dollarAutocompleteItems(registry, cleanQuery)
+    .map((item) => byIdentity.get(item.identity))
+    .filter((skill): skill is DiscoveryRecord => skill !== undefined);
+  const matches = ranked.slice(0, limit);
   if (matches.length === 0) return `context-broker find: no match for ${cleanQuery}`;
   return [
-    `context-broker find: ${cleanQuery} -> ${matches.length}/${registry.length}`,
-    ...matches.map((skill) => skillLine(skill, duplicateCounts.get(recordNormalizedName(skill)) ?? 1)),
+    `context-broker find: ${cleanQuery} -> ${matches.length}/${ranked.length}`,
+    ...matches.flatMap(findLines),
+    ...(ranked.length > matches.length ? [`... ${ranked.length - matches.length} more`] : []),
   ].join("\n");
 }

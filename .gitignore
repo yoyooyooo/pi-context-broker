@@ -12,6 +12,11 @@ packages/context-broker/CONTRIBUTING.md
 packages/context-broker/LICENSE
 packages/context-broker/SECURITY.md
 packages/context-broker/CHANGELOG.md
+packages/tern-context-broker/query/NOTICES.txt
+packages/tern-context-broker/query/ntn-skills.mjs
+packages/tern-context-broker/query/package.json
+packages/tern-context-broker/query/package-lock.json
+packages/tern-context-broker/query/builtin-skills/
 target/
 
 # Test / coverage
@@ -38,6 +43,7 @@ pnpm-debug.log*
 .vscode/
 *.swp
 *.swo
+__pycache__/
 
 # Runtime temp
 .tmp/

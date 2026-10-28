@@ -2,5 +2,5 @@ schema = 1
 id = "context-broker"
 name = "Context Broker"
 version = "0.1.0"
-description = "Choose configured Skills and Bundles and complete the OMP draft."
+description = "Select local, Notion and bundled Skills in the OMP native draft."
 window = "window.luau"

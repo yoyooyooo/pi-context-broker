@@ -1,7 +1,7 @@
 {
   "name": "pi-context-broker",
   "version": "0.0.2",
-  "description": "Pi/OMP context broker that injects discoverable skills and lightweight bundles via explicit user commands.",
+  "description": "Pi/OMP context broker that injects Skills, Routers and per-submission Prompts via explicit user commands.",
   "type": "module",
   "license": "MIT",
   "packageManager": "bun@1.2.17",
@@ -12,7 +12,8 @@
     "omp",
     "context-broker",
     "skill",
-    "bundle",
+    "router",
+    "prompt",
     "autoload"
   ],
   "repository": {
@@ -51,21 +52,26 @@
     "context-broker-complete": "./dist/completion.mjs"
   },
   "engines": {
-    "node": ">=22"
+    "node": "^22.22.3 || >=24.20.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && bun ../../scripts/build-tern.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun scripts/context-broker-smoke.mjs && tsc -p tsconfig.json --noEmit",
+    "test": "bun scripts/context-broker-smoke.mjs && bun scripts/input-guard.test.ts && bun scripts/source-runtime.test.ts && bun scripts/cli-write-invalidation.test.ts && bun scripts/remote-catalog.test.ts && bun scripts/local-token.test.ts && bun scripts/bundled-builtins.test.ts && bun scripts/accepted-selections.test.ts && bun scripts/catalog-menu.test.ts && bun scripts/catalog-cache.test.ts && bun test scripts/view-discovery.test.ts && tsc -p tsconfig.json --noEmit",
     "test:host": "node scripts/context-broker-host-e2e.mjs",
     "test:global-config": "node scripts/context-broker-global-config-e2e.mjs",
     "check": "bun run test",
     "pack:dry": "npm pack --dry-run --json"
   },
   "dependencies": {
+    "effect": "4.0.5",
+    "@effect/platform-node": "4.0.5",
+    "@effect/platform-node-shared": "4.0.5",
+    "@effect/sql-sqlite-node": "4.0.5",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "ntn-skills": "0.1.0",
     "@types/node": "^22.15.0",
     "typescript": "^5.9.3"
   },

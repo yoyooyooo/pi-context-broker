@@ -13,6 +13,7 @@ const filler = "The conversation contains ordinary notes without any skill body.
 const tempRoot = await mkdtemp(join(tmpdir(), "context-broker-lifecycle-e2e-"));
 const fakeProvider = await writeFakeProvider(tempRoot);
 const bodyCount = (messages) => JSON.stringify(messages).split(canary).length - 1;
+const guidanceCount = messages => messages.filter(message => message.role === "custom" && message.customType === "ntn-skills-guidance").length;
 
 async function fixture(name) {
   const base = join(tempRoot, name);
@@ -66,6 +67,7 @@ async function fixture(name) {
     try { return (await readFile(logFile, "utf8")).trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)); }
     catch (error) { if (error.code === "ENOENT") return []; throw error; }
   };
+  let guidance;
   const turn = async (rpc, message, expectedBodies, label, expectedDecision) => {
     const before = (await captures()).length;
     const beforeDecisions = (await decisions()).length;
@@ -76,6 +78,10 @@ async function fixture(name) {
     const context = contexts.at(-1);
     assert.ok(Array.isArray(context.messages), `${name}/${label}: missing actual provider messages`);
     assert.equal(bodyCount(context.messages), expectedBodies, `${name}/${label}: provider body canary count`);
+    const active = await rpc.command("get_messages");
+    assert.equal(guidanceCount(active.messages), 1, `${name}/${label}: active context must retain exactly one CLI guidance message`);
+    guidance ??= active.messages.find(message => message.customType === "ntn-skills-guidance").content;
+    assert.equal(JSON.stringify(context.messages).split(JSON.stringify(guidance).slice(1, -1)).length - 1, 1, `${name}/${label}: provider must receive the complete CLI guidance exactly once`);
     if (expectedDecision) {
       const delta = (await decisions()).slice(beforeDecisions);
       assert.equal(delta.length, 1, `${name}/${label}: expected one broker decision`);
@@ -145,6 +151,8 @@ async function compaction(mode) {
     }
     const after = await rpc.command("get_messages");
     assert.equal(bodyCount(after.messages), mode === "keep" ? 1 : 0, `${mode}: native compaction body retention`);
+    assert.equal(guidanceCount(after.messages), mode === "keep" ? 1 : 0, `${mode}: native compaction guidance retention`);
+    await f.turn(rpc, "Continue the current conversation without selecting a Skill.", mode === "keep" ? 1 : 0, "post-compaction guidance without invocation");
     await f.turn(rpc, invocation, 1, "post-compaction invocation", mode === "keep" ? "skip" : "inject");
   } finally { await rpc.stop(); }
   console.log(`OMP lifecycle: compaction ${mode} ok`);

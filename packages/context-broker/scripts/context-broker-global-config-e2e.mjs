@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { isolatedEnv, preserveTemp, runCommand, writeFakeProvider } from "./context-broker-e2e-fixture.mjs";
+import { startRpc } from "./context-broker-rpc-harness.mjs";
 
 const repoRoot = resolve(import.meta.dirname, "..");
 const extensionPath = join(repoRoot, "src/index.ts");
@@ -81,6 +82,7 @@ async function runHost(host, tempRoot, fakeProviderPath) {
   const agentDir = join(base, "agent");
   const configDir = join(agentDir, "context-broker");
   const skillRoot = join(base, "skills");
+  const shadowedRoot = join(base, "source-skills");
   const sessionDir = join(base, "sessions");
   const logFile = join(base, "decisions.jsonl");
   const providerContextFile = join(base, "provider-context.jsonl");
@@ -89,7 +91,9 @@ async function runHost(host, tempRoot, fakeProviderPath) {
 
   const firstPath = await writeSkill(skillRoot, "first", "first-context", "first fixture context", "FIRST_CONTEXT_MARKER");
   const secondPath = await writeSkill(skillRoot, "second", "second-context", "second fixture context", "SECOND_CONTEXT_MARKER");
-  await writeFile(join(configDir, "config.yml"), `skillRoots:\n  - ${JSON.stringify(skillRoot)}\n`);
+  await writeSkill(shadowedRoot, "first", "first-context", "shadowed first context", "SHADOWED_FIRST_MARKER");
+  await writeSkill(shadowedRoot, "second", "second-context", "shadowed second context", "SHADOWED_SECOND_MARKER");
+  await writeFile(join(configDir, "config.yml"), `skillRoots:\n  - ${JSON.stringify(skillRoot)}\n  - ${JSON.stringify(shadowedRoot)}\n`);
   await writeFile(join(configDir, "rules", "first.yml"), [
     "id: first-rule",
     "inject:",
@@ -118,11 +122,22 @@ async function runHost(host, tempRoot, fakeProviderPath) {
   if (host === "omp") commonArgs.push("--no-title", "--no-rules");
 
   const env = cleanEnv(agentDir, logFile, providerContextFile);
-  console.log(`${host} config e2e: configured rule print turn`);
-  const first = await runCommand(host, [...commonArgs, "load first"], { cwd: base, env });
+  // A directory override must not switch this process's native prompt protocol.
+  env.CONTEXT_BROKER_HOST = host === "pi" ? "omp" : "pi";
+  const run = async (prompt, continued = false) => {
+    const resume = continued ? ["--continue"] : [];
+    if (host === "pi") return runCommand(host, [...commonArgs, ...resume, prompt], { cwd: base, env });
+    const rpc = await startRpc({ host, args: [...commonArgs.filter(arg => arg !== "-p"), "--no-ui", ...resume], cwd: base, env });
+    try {
+      await rpc.prompt(prompt);
+      return { stdout: (await rpc.command("get_last_assistant_text")).text ?? "" };
+    } finally { await rpc.stop(); }
+  };
+  console.log(`${host} config e2e: configured rule user turn`);
+  const first = await run("load first");
   assert.match(first.stdout, /OK/, `${host}: configured rule turn did not return OK`);
-  console.log(`${host} config e2e: continued dollar print turn`);
-  const second = await runCommand(host, [...commonArgs, "--continue", "$second-context"], { cwd: base, env });
+  console.log(`${host} config e2e: continued dollar user turn`);
+  const second = await run("$second-context@local", true);
   assert.match(second.stdout, /OK/, `${host}: dollar turn did not return OK`);
 
   assert.equal(existsSync(logFile), true, `${host}: missing decision log`);
@@ -154,6 +169,7 @@ async function runHost(host, tempRoot, fakeProviderPath) {
     const messages = JSON.stringify(context.messages);
     assert.equal(messages.split("FIRST_CONTEXT_MARKER").length - 1, 1, `${host}: turn ${index + 1} must include first body exactly once`);
     assert.equal(messages.split("SECOND_CONTEXT_MARKER").length - 1, index, `${host}: turn ${index + 1} second body count`);
+    assert.doesNotMatch(messages, /SHADOWED_(FIRST|SECOND)_MARKER/, `${host}: a later root must not supply either Skill body`);
   }
 
   return { host, sessionFile: sessionFiles[0] };

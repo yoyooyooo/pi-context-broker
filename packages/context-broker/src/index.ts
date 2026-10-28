@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -11,11 +11,14 @@ import {
   dollarAutocompleteItems,
   extractDollarAutocompletePrefix,
   scoreDollarSuggestion,
+  type DollarMenu,
 } from "./dollar";
+import { notionCatalogAction, notionCatalogRetryGapMs } from "./catalog-menu";
 import {
   buildRegistryFromRoots,
-  dedupeRegistryByNormalizedName,
+  dedupeLocalSkillPaths,
   normalizeKey,
+  skillRecordFromFile,
   stringArray,
   uniqueStrings,
 } from "./skill-records";
@@ -32,13 +35,31 @@ import {
   recordNormalizedDescription,
   recordNormalizedName,
   recordPath,
+  recordIdentity,
+  recordToken,
+  isPreciseSelectionToken,
+  matchesPreciseRecordToken,
+  dedupeDiscoveryRecords,
+  InvocationError,
 } from "./discovery-records";
+import { discoverSourceCatalog, loadSourceSkill, normalizeSources, formatSourceFailures } from "./sources";
+import { diagnoseNotionSource, sourceFailureMessage, SourceError, ReferenceMiss } from "./notion-source";
+import { installHostSkills } from "./host-skills";
+import { resolveViewDiscovery, createViewCommands } from "./view-discovery";
+import { createSourceRuntime } from "./source-runtime";
+import { installCliWriteInvalidation } from "./cli-write-invalidation";
+import { createOmpHostAdapter } from "./omp-host-adapter";
+import { createPiHostAdapter } from "./pi-host-adapter";
+import { hostCliScope } from "./host-command";
+import { bundledBuiltinRecords, isBundledBuiltin, isBundledBuiltinToken } from "./bundled-builtins";
+import { createAcceptedSelections } from "./accepted-selections";
+import { notifyUnavailableReferences, renderUnavailableReferences, unavailableReferenceDetails, type UnavailableReference } from "./unavailable-references";
 import {
   collectRootDiagnostics,
   formatFindDiagnostics,
   formatRootDiagnostics,
 } from "./diagnostics";
-import { installPiDollarAutocompleteEditor } from "./pi-dollar-editor";
+import type { HostCapabilities } from "./host-adapter";
 import type {
   AgentMessage,
   BeforeAgentStartEvent,
@@ -47,31 +68,38 @@ import type {
   ContextEvent,
   ContextInjection,
   ContextResult,
+  DiscoveryResult,
   DiscoveryRecord,
   ExtensionAPI,
   ExtensionContext,
+  HostPathOptions,
   InvocationRule,
   MatchDecision,
   MatchPredicate,
   MessageContent,
   PathMode,
   RegexPattern,
+  RouterDiscoveryRecord,
   ScanConfig,
+  SourceConfig,
   SessionEntry,
   SkillRecord,
   SkillRequest,
   TextContent,
 } from "./types";
 
+import { invocationText } from "./invocation-text";
+
 const CUSTOM_TYPE = "context-broker";
 const BUILTIN_SKILL_PROMPT_TYPE = "skill-prompt";
+const CLI_GUIDANCE_TYPE = "ntn-skills-guidance";
 const CONFIG_DIR_BASENAME = "context-broker";
 const DEFAULT_CONFIG_FILE_BASENAME = "config";
 const DEFAULT_CONFIG_EXTENSIONS = [".yml", ".yaml", ".json"];
 const DEFAULT_RULE_ROOT_BASENAME = "rules";
 const RULE_FILE_EXTENSIONS = new Set(DEFAULT_CONFIG_EXTENSIONS);
 const DEFAULT_PATH_MODE: PathMode = "home-relative";
-const DOLLAR_SKILL_PATTERN = "\\$(?<query>[^\\s$]+?)(?=$|[\\s,，。.!！？?；;、:：)）\\]】}])";
+const DOLLAR_SKILL_PATTERN = "(?:^|[^\\w\\\\$])\\$(?<query>[^\\s$]+?)(?=$|[\\s,，。!！？?；;、:：)）\\]】}]|\\.+(?=$|[\\s,，。!！？?；;、:：)）\\]】}]))";
 const DEFAULT_RULES: InvocationRule[] = [
   { id: "dollar-skill", match: [{ regex: [{ pattern: DOLLAR_SKILL_PATTERN, flags: "g" }] }] },
   { id: "skill-colon", match: [{ regex: [{ pattern: "^\\s*skill[:：]\\s*(?<query>.+?)\\s*$" }] }] },
@@ -95,26 +123,20 @@ function expandPath(path: string, cwd = process.cwd()): string {
   return isAbsolute(expanded) ? resolve(expanded) : resolve(cwd, expanded);
 }
 
-type HostName = "pi" | "omp";
-
-function detectHost(): HostName | undefined {
-  const override = process.env.CONTEXT_BROKER_HOST?.trim().toLowerCase();
-  if (override === "pi" || override === "omp") return override;
-  const argv = [process.execPath, ...process.argv].map((part) => basename(part).toLowerCase());
-  if (argv.some((part) => part === "omp" || part.includes("oh-my-pi"))) return "omp";
-  if (argv.some((part) => part === "pi" || part.includes("earendil-works"))) return "pi";
-  if (process.env.PI_CONFIG_DIR) return "omp";
-  return undefined;
+function defaultAgentDir(options: HostPathOptions = {}): string | undefined {
+  return defaultAgentDirs(options)[0];
 }
 
-function defaultAgentDir(): string | undefined {
-  return defaultAgentDirs()[0];
-}
-
-function defaultAgentDirs(): string[] {
+function defaultAgentDirs(options: HostPathOptions = {}): string[] {
+  if (options.agentDir) return [expandPath(options.agentDir)];
   const envAgentDir = process.env.PI_CODING_AGENT_DIR;
   if (envAgentDir) return [expandPath(envAgentDir)];
-  const host = detectHost();
+  const override = process.env.CONTEXT_BROKER_HOST?.trim().toLowerCase();
+  const argv = [process.execPath, ...process.argv].map((part) => basename(part).toLowerCase());
+  const host = override === "pi" || override === "omp" ? override : options.host
+    ?? (argv.some(part => part === "omp" || part.startsWith("omp-") || part.includes("oh-my-pi")) ? "omp"
+      : argv.some(part => part === "pi" || part.includes("earendil-works")) ? "pi"
+      : process.env.PI_CONFIG_DIR ? "omp" : undefined);
   const home = homeDir();
   if (host === "omp") return [join(home, process.env.PI_CONFIG_DIR || ".omp", "agent")];
   if (host === "pi") return [join(home, ".pi", "agent")];
@@ -132,8 +154,8 @@ function firstExistingConfigPath(agentDir: string): string | undefined {
   return candidateConfigPaths(agentDir).find((path) => existsSync(path));
 }
 
-function defaultConfigPath(): string | undefined {
-  const agentDirs = defaultAgentDirs();
+function defaultConfigPath(options: HostPathOptions = {}): string | undefined {
+  const agentDirs = defaultAgentDirs(options);
   for (const agentDir of agentDirs) {
     const path = firstExistingConfigPath(agentDir);
     if (path) return path;
@@ -142,19 +164,17 @@ function defaultConfigPath(): string | undefined {
   return agentDir ? join(agentDir, CONFIG_DIR_BASENAME, `${DEFAULT_CONFIG_FILE_BASENAME}${DEFAULT_CONFIG_EXTENSIONS[0]}`) : undefined;
 }
 
-function resolveConfigPaths(): string[] {
-  const explicit = process.env.CONTEXT_BROKER_CONFIG;
+function resolveConfigPaths(options: HostPathOptions = {}): string[] {
+  const explicit = options.configPath ?? process.env.CONTEXT_BROKER_CONFIG;
   if (explicit) return [expandPath(explicit)];
-  const paths = defaultAgentDirs()
+  const paths = defaultAgentDirs(options)
     .map(firstExistingConfigPath)
     .filter((path): path is string => path !== undefined);
   return uniqueStrings(paths);
 }
 
-function resolveConfigPath(): string | undefined {
-  const explicit = process.env.CONTEXT_BROKER_CONFIG;
-  if (explicit) return expandPath(explicit);
-  return resolveConfigPaths()[0];
+function resolveConfigPath(options: HostPathOptions = {}): string | undefined {
+  return resolveConfigPaths(options)[0];
 }
 
 function parseConfigFile(configPath: string): unknown {
@@ -181,6 +201,7 @@ function mergeConfigs(configs: ConfigFile[]): ConfigFile {
     discoveryCatalogs: uniqueStrings(configs.flatMap((config) => config.discoveryCatalogs ?? [])),
     extraDiscoveryCatalogs: uniqueStrings(configs.flatMap((config) => config.extraDiscoveryCatalogs ?? [])),
     rules: uniqueRules(configs.flatMap((config) => config.rules ?? [])),
+    sources: normalizeSources(configs.flatMap(config => config.sources ?? [])),
     requireAutoload: requireAutoloadValues.length > 0 ? requireAutoloadValues.at(-1) : undefined,
     pathMode: pathModes.at(-1),
     logPaths: logPathValues.length > 0 ? logPathValues.at(-1) : undefined,
@@ -363,6 +384,7 @@ function normalizeMainConfig(parsed: unknown): ConfigFile {
   if (!isRecord(parsed)) return {};
   return {
     skillRoots: stringArray(parsed.skillRoots),
+    sources: normalizeSources(parsed.sources),
     extraSkillRoots: stringArray(parsed.extraSkillRoots),
     ruleRoots: stringArray(parsed.ruleRoots),
     discoveryCatalogs: stringArray(parsed.discoveryCatalogs),
@@ -375,16 +397,16 @@ function normalizeMainConfig(parsed: unknown): ConfigFile {
   };
 }
 
-function readConfig(): ConfigFile {
+function readConfig(options: HostPathOptions = {}): ConfigFile {
   const configs: ConfigFile[] = [];
-  for (const configPath of resolveConfigPaths()) {
+  for (const configPath of resolveConfigPaths(options)) {
     try {
       const parsed = parseConfigFile(configPath);
       const config = normalizeMainConfig(parsed);
       configs.push(config);
       configs.push(...readRuleConfigs(configPath, config));
-    } catch {
-      continue;
+    } catch (error) {
+      throw new Error(`context-broker config failed: ${configPath}: ${errorMessage(error)}`);
     }
   }
   if (configs.length === 0) return {};
@@ -396,9 +418,9 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function collectConfigDiagnostics(): string[] {
+function collectConfigDiagnostics(options: HostPathOptions): string[] {
   const diagnostics: string[] = [];
-  for (const configPath of resolveConfigPaths()) {
+  for (const configPath of resolveConfigPaths(options)) {
     try {
       const parsed = parseConfigFile(configPath);
       const config = normalizeMainConfig(parsed);
@@ -462,35 +484,47 @@ function scanOptions(config: ConfigFile): ScanConfig {
   return config.scan ?? {};
 }
 
-async function buildRegistry(config = readConfig()): Promise<SkillRecord[]> {
-  return dedupeRegistryByNormalizedName(await buildRegistryFromRoots(configuredRoots(config), shouldRequireAutoload(config), scanOptions(config)));
+async function buildRegistry(config?: ConfigFile, paths: HostPathOptions = {}): Promise<SkillRecord[]> {
+  config ??= readConfig(paths);
+  const requireAutoload = shouldRequireAutoload(config);
+  return dedupeDiscoveryRecords(dedupeLocalSkillPaths([
+    ...bundledBuiltinRecords(requireAutoload, scanOptions(config)),
+    ...await buildRegistryFromRoots(configuredRoots(config), requireAutoload, scanOptions(config)),
+  ]));
 }
 
 function discoverUsableSkillRoots(config: ConfigFile = readConfig(), cwd = process.cwd()): string[] {
   return uniqueStrings(configuredRoots(config).map((root) => expandPath(root, cwd)));
 }
 
-async function buildDiscoveryRegistry(config: ConfigFile = readConfig(), cwd = process.cwd()): Promise<DiscoveryRecord[]> {
-  const skills = await buildRegistryFromRoots(discoverUsableSkillRoots(config, cwd), false, scanOptions(config));
-  return await buildDiscoveryRegistryFromParts(skills, configuredDiscoveryCatalogs(config, cwd), scanOptions(config));
+async function buildDiscoveryRegistry(config: ConfigFile = readConfig(), cwd = process.cwd(), options: { refresh?: boolean; stale?: boolean; refreshSourceIds?: readonly string[]; paths?: HostPathOptions } = {}): Promise<DiscoveryResult> {
+  const skills = dedupeLocalSkillPaths([
+    ...bundledBuiltinRecords(false, scanOptions(config)),
+    ...await buildRegistryFromRoots(discoverUsableSkillRoots(config, cwd), false, scanOptions(config)),
+  ]);
+  const sources = await discoverSourceCatalog(config, cwd, options);
+  return { records: dedupeDiscoveryRecords([
+    ...await buildDiscoveryRegistryFromParts(skills, configuredDiscoveryCatalogs(config, cwd), scanOptions(config), { sources: config.sources, records: sources.records, failures: sources.failures }),
+    ...sources.records,
+  ]), failures: sources.failures, lists: sources.lists };
 }
 
-async function buildDollarRegistry(config: ConfigFile = readConfig(), cwd = process.cwd()): Promise<DiscoveryRecord[]> {
-  return await buildDiscoveryRegistry(config, cwd);
+async function buildDollarRegistry(config?: ConfigFile, cwd = process.cwd(), paths: HostPathOptions = {}): Promise<DiscoveryResult> {
+  return buildDiscoveryRegistry(config ?? readConfig(paths), cwd, { paths });
 }
 
-async function buildRawDollarRegistry(config: ConfigFile = readConfig(), cwd = process.cwd()): Promise<DiscoveryRecord[]> {
-  const skills = await buildRegistryFromRoots(discoverUsableSkillRoots(config, cwd), false, scanOptions(config));
-  return [
-    ...skills.map((skill) => ({ ...skill, kind: "skill" as const })),
-    ...configuredDiscoveryCatalogs(config, cwd).flatMap((catalog) => {
-      try {
-        return readDiscoveryCatalog(catalog, skills, scanOptions(config));
-      } catch {
-        return [] as DiscoveryRecord[];
-      }
-    }),
-  ];
+async function buildRawDollarRegistry(config: ConfigFile = readConfig(), cwd = process.cwd(), paths: HostPathOptions = {}): Promise<DiscoveryResult> {
+  const skills = dedupeDiscoveryRecords(dedupeLocalSkillPaths([
+    ...bundledBuiltinRecords(false, scanOptions(config)),
+    ...await buildRegistryFromRoots(discoverUsableSkillRoots(config, cwd), false, scanOptions(config)),
+  ]));
+  const sources = await discoverSourceCatalog(config, cwd);
+  const catalogRecords = configuredDiscoveryCatalogs(config, cwd).flatMap(catalog => readDiscoveryCatalog(catalog, skills, scanOptions(config), { sources: config.sources, records: sources.records, failures: sources.failures }));
+  return { records: [
+    ...skills.map(skill => ({ ...skill, kind: "skill" as const })),
+    ...catalogRecords,
+    ...sources.records.filter(record => !catalogRecords.some(catalogRecord => recordIdentity(catalogRecord) === recordIdentity(record))),
+  ], failures: sources.failures, lists: sources.lists };
 }
 
 function compileRegex(pattern: RegexPattern): RegExp | undefined {
@@ -541,6 +575,7 @@ function predicateMatchResults(text: string, predicate: MatchPredicate): Array<{
 }
 
 function parseInvocations(text: string, rules: InvocationRule[]): SkillRequest[] {
+  text = invocationText(text);
   const requests: SkillRequest[] = [];
   for (const rule of rules) {
     for (let index = 0; index < rule.match.length; index += 1) {
@@ -551,14 +586,14 @@ function parseInvocations(text: string, rules: InvocationRule[]): SkillRequest[]
         for (const rawQuery of queries) {
           const trimmedQuery = rawQuery.trim();
           if (!trimmedQuery) continue;
-          const explicitBundle = rule.id !== "dollar-skill" && trimmedQuery.startsWith("bundle:");
-          const query = explicitBundle ? trimmedQuery.slice("bundle:".length).trim() : trimmedQuery;
+          const explicitRouter = rule.id !== "dollar-skill" && trimmedQuery.startsWith("router:");
+          const query = explicitRouter ? trimmedQuery.slice("router:".length).trim() : trimmedQuery;
           if (!query) continue;
           requests.push({
             query,
             ruleId: rule.id,
             matchIndex: index,
-            scope: explicitBundle ? "catalog" : rule.id === "dollar-skill" ? "global" : "configured",
+            scope: explicitRouter ? "catalog" : rule.id === "dollar-skill" ? "global" : "configured",
           });
         }
       }
@@ -573,23 +608,33 @@ function parseInvocation(text: string, rules: InvocationRule[]): { query: string
 }
 
 function matchDiscoveryRecord(query: string, registry: DiscoveryRecord[], allowFuzzy = false): MatchDecision {
+  if (/[\p{Cc}\p{Cf}\p{Cs}]/u.test(query)) return { decision: "skip", reason: "invalid-query", query };
   const normalized = normalizeKey(query);
   if (!normalized) return { decision: "skip", reason: "empty-query", query };
-  const candidates = registry.filter((record) => (
-    recordNormalizedName(record) === normalized ||
-    recordNormalizedDescription(record) === normalized ||
-    recordNormalizedAliases(record).includes(normalized)
-  ));
+  if (isBundledBuiltinToken(query)) registry = registry.filter(isBundledBuiltin);
+  const qualified = query.includes("/") || query.includes("@");
+  const exact = registry.filter(record => recordToken(record) === query || record.token === query || matchesPreciseRecordToken(query, record)
+    || (!record.sourceId && !isBundledBuiltin(record) && query === `${recordNormalizedName(record)}@local`));
+  const candidates = exact.length ? exact : registry.filter(record => (record.sourceId && query === `${record.alias ?? recordNormalizedName(record)}@${record.token?.split("/")[0] ?? record.sourceId}`) || (!qualified && (
+    record.source === "notion"
+      ? record.alias === query || record.name === query
+      : recordNormalizedName(record) === normalized || recordNormalizedName(record) === query || recordNormalizedAliases(record).includes(normalized) || recordDescription(record) && normalizeKey(recordDescription(record)) === normalized
+  )));
   if (candidates.length === 1) {
     const record = candidates[0];
+    const coverage = (record as SkillRecord).coverage;
+    if (!exact.length && record.source === "notion" && coverage && typeof coverage === "object" && "exhaustive" in coverage && coverage.exhaustive === false) {
+      throw new SourceError("CATALOG_INCOMPLETE", record.sourceId ?? "notion");
+    }
     return { decision: "inject", reason: "unique-name-or-alias", query, record };
   }
   if (candidates.length > 1) {
     return { decision: "skip", reason: "ambiguous", query, candidates };
   }
 
-  if (allowFuzzy) {
+  if (allowFuzzy && !qualified) {
     const fuzzy = registry
+      .filter(record => !(record as SkillRecord).sourceId)
       .map((record) => ({ record, score: scoreDollarSuggestion(record, query) }))
       .filter((item) => item.score >= 110)
       .sort((a, b) => b.score - a.score || recordName(a.record).localeCompare(recordName(b.record)));
@@ -614,24 +659,34 @@ function resolveSkillRequests(
   logExtra: Record<string, unknown> = {},
   globalRegistry: DiscoveryRecord[] = [],
   config: ConfigFile = {},
-): ContextInjection[] {
+  accepted: ReadonlyMap<string, DiscoveryRecord> = new Map(),
+): { injections: ContextInjection[]; unavailable: UnavailableReference[] } {
   const injections: ContextInjection[] = [];
+  const unavailable: UnavailableReference[] = [];
   const byRecordKey = new Map<string, ContextInjection>();
   for (const request of requests) {
-    const decision = request.scope === "global"
+    const selected = request.scope === "global" ? accepted.get(request.query) : undefined;
+    const decision: MatchDecision = selected
+      ? { decision: "inject", reason: "accepted-selection", query: request.query, record: selected }
+      : request.scope === "global"
       ? matchDiscoveryRecord(request.query, globalRegistry, true)
       : request.scope === "catalog"
         ? matchDiscoveryRecord(
           request.query,
-          globalRegistry.filter((record) => recordKind(record) === "bundle"),
+          globalRegistry.filter((record) => recordKind(record) === "router"),
           false,
         )
-        : matchSkill(request.query, registry, false);
+        : matchSkill(request.query, registry.filter(record => recordKind(record) === "skill"), false);
     if (decision.decision !== "inject") {
       logDecision(decision, { ...logExtra, ruleId: request.ruleId, matchIndex: request.matchIndex }, config);
+      if (request.scope === "global" && decision.reason === "not-found" && isPreciseSelectionToken(request.query) && !unavailable.some(item => item.query === request.query)) {
+        unavailable.push({ query: request.query, reason: "catalog-unavailable" });
+      }
+      if (request.scope === "global" && decision.reason === "ambiguous" && (request.query.includes("/") || request.query.includes("@") || decision.candidates?.some(record => Boolean(record.sourceId) || isBundledBuiltin(record)))) throw new InvocationError(request.query, decision.reason, decision.candidates);
       continue;
     }
-    const recordKey = `${recordKind(decision.record)}:${resolve(recordPath(decision.record))}:${recordNormalizedName(decision.record)}`;
+    if (recordKind(decision.record) === "prompt" && request.ruleId !== "dollar-skill") continue;
+    const recordKey = recordIdentity(decision.record);
     const existing = byRecordKey.get(recordKey);
     if (existing) {
       existing.ruleIds = uniqueStrings([...existing.ruleIds, request.ruleId]);
@@ -641,7 +696,7 @@ function resolveSkillRequests(
     byRecordKey.set(recordKey, injection);
     injections.push(injection);
   }
-  return injections;
+  return { injections, unavailable };
 }
 
 function escapedPattern(value: string): string {
@@ -650,6 +705,7 @@ function escapedPattern(value: string): string {
 
 function messageTextIncludesRecordBlock(message: AgentMessage, record: DiscoveryRecord): boolean {
   if (message.role !== "custom" || message.customType !== CUSTOM_TYPE) return false;
+  if ((record as SkillRecord).sourceId) return false;
   const text = textFromContent(message.content);
   if (!text) return false;
   const namePatterns = [recordName(record), ...recordAliases(record)]
@@ -664,9 +720,25 @@ function messageTextIncludesSkillBlock(message: AgentMessage, skill: SkillRecord
 }
 
 function hasLoadedRecord(messages: AgentMessage[], record: DiscoveryRecord): boolean {
+  if (recordKind(record) === "prompt") return false;
   const normalizedPath = resolve(recordPath(record));
   const normalizedName = recordNormalizedName(record);
   const kind = recordKind(record);
+  const sourceSkill = record as SkillRecord;
+  if (sourceSkill.sourceId) {
+    const identity = recordIdentity(record);
+    return messages.some(message => {
+      if (message.role !== "custom") return false;
+      const details = isRecord(message.details) ? message.details : {};
+      if (message.customType === BUILTIN_SKILL_PROMPT_TYPE) {
+        return typeof details.path === "string" && resolve(details.path) === resolve(sourceSkill.metadataIndexPath ?? sourceSkill.path);
+      }
+      if (message.customType !== CUSTOM_TYPE && message.customType !== "skill-prompt-message") return false;
+      if (typeof details.nativePromptSha256 === "string" && !messages.some(candidate => candidate.role === "user" && createHash("sha256").update(textFromContent(candidate.content)).digest("hex") === details.nativePromptSha256)) return false;
+      const records = Array.isArray(details.records) ? details.records : [details];
+      return records.some(item => isRecord(item) && item.identity === identity && (item.loaded === true || typeof item.snapshotId === "string"));
+    });
+  }
   for (const message of messages) {
     const details = message.details && typeof message.details === "object" ? message.details as Record<string, unknown> : {};
     const detailName = typeof details.name === "string" ? normalizeKey(details.name) : "";
@@ -681,16 +753,16 @@ function hasLoadedRecord(messages: AgentMessage[], record: DiscoveryRecord): boo
         const itemKind = typeof item.kind === "string" ? item.kind : "skill";
         const itemPath = typeof item.path === "string" ? resolve(item.path) : "";
         const itemSourcePath = typeof item.sourcePath === "string" ? resolve(item.sourcePath) : "";
-        return itemKind === kind && (itemName === normalizedName || itemPath === normalizedPath || itemSourcePath === normalizedPath);
+        return item.identity === recordIdentity(record) || itemKind === kind && (itemPath === normalizedPath || itemSourcePath === normalizedPath);
       })) {
         return true;
       }
-      if (detailKind === kind && (detailName === normalizedName || detailPath === normalizedPath || detailSourcePath === normalizedPath)) return true;
+      if (details.identity === recordIdentity(record) || detailKind === kind && (detailPath === normalizedPath || detailSourcePath === normalizedPath)) return true;
     }
     if (kind === "skill" && message.role === "custom" && message.customType === BUILTIN_SKILL_PROMPT_TYPE) {
-      if (detailName === normalizedName || detailPath === normalizedPath) return true;
+      if (detailPath === normalizedPath) return true;
     }
-    if (messageTextIncludesRecordBlock(message, record)) return true;
+
   }
   return false;
 }
@@ -723,6 +795,39 @@ function messagesFromActiveSessionContext(ctx: ExtensionContext): AgentMessage[]
   return messagesFromSessionEntries(ctx.sessionManager?.getEntries?.());
 }
 
+function buildCliGuidance(config: ConfigFile): Omit<AgentMessage, "role" | "timestamp"> {
+  const sources = (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false);
+  const scopes = sources.length ? sources.map(source => hostCliScope([source])) : [hostCliScope()];
+  const content = [
+    "<ntn-skills-guidance>",
+    "Use ntn-skills to discover, read, maintain and sync Skills when requested by the user.",
+    ...scopes.map(scope => {
+      const database = scope.database ? ["--database", scope.database] : [];
+      return [
+        `<cli${scope.sourceId ? ` source="${escapeAttribute(scope.sourceId)}"` : ""}${scope.database ? ` database="${escapeAttribute(scope.database)}"` : ""}>${escapeText(JSON.stringify(scope.command))}`,
+        `<list-args>${escapeText(JSON.stringify(["list", ...database, "--query", "TERM"]))}</list-args>`,
+        `<read-args>${escapeText(JSON.stringify(["read", "EXACT_REF", ...database]))}</read-args>`,
+        `<files-args>${escapeText(JSON.stringify(["files", "SNAPSHOT", ...database]))}</files-args>`,
+        `<resource-read-args>${escapeText(JSON.stringify(["read", "SNAPSHOT", "--path", "RELATIVE", ...database]))}</resource-read-args>`,
+        "</cli>",
+      ].join("\n");
+    }),
+    "Append an argument array to its cli executable argv, replacing TERM/EXACT_REF/SNAPSHOT/RELATIVE with task values. Keep the supplied database scope on list/read/files.",
+    "Each cli scope belongs to the named source and database. Use the scope matching the selected content or explicitly requested target; never choose the first source implicitly. For writes, follow the ordinary bundled maintenance or sync Skill and the same CLI scope.",
+    "A successful read returns top-level content (the body), pinned ref, and snapshot_id (the files/resource-read target). The record field is metadata. Keep JSON output so ok/error and snapshot identity can be checked.",
+    "Choose from supplied metadata; otherwise search with a short name or keyword, broadening an empty query. Select one suitable record before reading its body. Discover through metadata or the CLI, not cache directories.",
+    "A complete Skill body supplied by the host/Broker or a successful read is already read. Use it directly. For introductions and summaries, do not reread the entry, list its cache directory, or inspect package/agent metadata.",
+    "Read referenced resources only when the current task needs their contents. Resolve a requested relative file directly from a visible Skill directory, without first listing directories or searching the cwd. For CLI resources, use resource-read-args: read SNAPSHOT --path RELATIVE reads the named file on the selected version; files SNAPSHOT lists its inventory when needed. Snapshot arguments avoid shell tools interpreting skill:// URI arguments as filesystem paths. Keep the selected snapshot and supplied database scope.",
+    "Check CLI ok/error before using results. Use COMMAND --help for syntax details or an invalid option. When asked to inspect, introduce or summarize a Skill, describe its instructions as content; do not adopt its workflow, style, prerequisite discovery, repository checks or delegation steps unless the user asks to perform them.",
+    "</ntn-skills-guidance>",
+  ].join("\n");
+  return { customType: CLI_GUIDANCE_TYPE, content, display: false };
+}
+
+function hasCliGuidance(messages: AgentMessage[], guidance: Omit<AgentMessage, "role" | "timestamp">): boolean {
+  return messages.some(message => message.role === "custom" && message.customType === CLI_GUIDANCE_TYPE && textFromContent(message.content) === guidance.content);
+}
+
 function configuredPathMode(config: ConfigFile): PathMode {
   return config.pathMode ?? DEFAULT_PATH_MODE;
 }
@@ -744,6 +849,16 @@ function formatPathForPayload(path: string, config: ConfigFile): string {
 function recordDetail(injection: ContextInjection, config: ConfigFile): Record<string, unknown> {
   return {
     kind: recordKind(injection.record),
+    identity: recordIdentity(injection.record),
+    loaded: true,
+    ...({
+      sourceId: (injection.record as SkillRecord).sourceId,
+      recordId: injection.record.id,
+      snapshotId: (injection.record as SkillRecord).snapshotId,
+      versionId: (injection.record as SkillRecord).versionId,
+      freshness: (injection.record as SkillRecord).freshness,
+      token: recordToken(injection.record),
+    }),
     name: recordName(injection.record),
     path: formatPathForPayload(recordPath(injection.record), config),
     query: injection.query,
@@ -751,8 +866,8 @@ function recordDetail(injection: ContextInjection, config: ConfigFile): Record<s
   };
 }
 
-function renderBundlePolicy(bundle: Extract<DiscoveryRecord, { kind: "bundle" }>): string[] {
-  const policy = bundle.policy;
+function renderRouterPolicy(router: RouterDiscoveryRecord): string[] {
+  const policy = router.policy;
   if (!policy) return [];
   return [
     `<policy${policy.memberBody ? ` memberBody="${escapeAttribute(String(policy.memberBody))}"` : ""}${policy.scope ? ` scope="${escapeAttribute(String(policy.scope))}"` : ""}>`,
@@ -770,35 +885,48 @@ function renderBundlePolicy(bundle: Extract<DiscoveryRecord, { kind: "bundle" }>
   ];
 }
 
-function renderBundleRecord(injection: ContextInjection, config: ConfigFile): string[] {
-  const bundle = injection.record as Extract<DiscoveryRecord, { kind: "bundle" }>;
+function renderRouterRecord(injection: ContextInjection, config: ConfigFile): string[] {
+  const router = injection.record as RouterDiscoveryRecord;
+  if (router.sourceId) return renderSkillRecord(injection, config, {});
   const defaultRules = [
-    "This is a context bundle index, not a concrete skill.",
+    "This is a context router index, not a concrete skill.",
     "Select the needed member by name/description before acting.",
     "Read the selected member SKILL.md before using that member capability.",
     "Member descriptions are routing metadata, not full operating instructions.",
   ];
-  const rules = bundle.render?.rules && bundle.render.rules.length > 0 ? bundle.render.rules : defaultRules;
+  const rules = router.render?.rules && router.render.rules.length > 0 ? router.render.rules : defaultRules;
   return [
-    `<!-- context-broker:${recordKind(bundle)}:${bundle.normalizedName}:${formatPathForPayload(bundle.path, config)} -->`,
-    `<context-broker-record kind="bundle" name="${escapeAttribute(bundle.name)}" path="${escapeAttribute(formatPathForPayload(bundle.path, config))}">`,
-    `<description>${escapeText(bundle.description)}</description>`,
+    `<!-- context-broker:${recordKind(router)}:${router.normalizedName}:${formatPathForPayload(router.path, config)} -->`,
+    `<context-broker-record kind="router" name="${escapeAttribute(router.name)}" path="${escapeAttribute(formatPathForPayload(router.path, config))}">`,
+    `<description>${escapeText(router.description)}</description>`,
     "<rules>",
     ...rules.map((rule) => `<rule>${escapeText(rule)}</rule>`),
     "</rules>",
-    ...renderBundlePolicy(bundle),
+    ...renderRouterPolicy(router),
     "<members>",
-    ...bundle.members.map((member) => `<member name="${escapeAttribute(member.name)}" path="${escapeAttribute(formatPathForPayload(member.path, config))}">${escapeText(member.description ?? "")}</member>`),
+    ...(router.members ?? []).map((member) => member.type === "remote"
+      ? `<member name="${escapeAttribute(member.name)}" source="${escapeAttribute(member.source.namespace)}" id="${escapeAttribute(member.id ?? "")}" ref="${escapeAttribute(member.ref ?? "")}"${member.unavailable ? ` unavailable="${escapeAttribute(member.unavailable.code)}" reason="${escapeAttribute(member.unavailable.message)}"` : ""}>${escapeText(member.description ?? "")}</member>`
+      : `<member name="${escapeAttribute(member.name)}" path="${escapeAttribute(formatPathForPayload(member.path, config))}"${member.unavailable ? ` unavailable="${escapeAttribute(member.unavailable.code)}" reason="${escapeAttribute(member.unavailable.message)}"` : ""}>${escapeText(member.description ?? "")}</member>`),
     "</members>",
     "</context-broker-record>",
   ];
 }
 
-function renderSkillRecord(injection: ContextInjection, config: ConfigFile): string[] {
+function renderSkillRecord(injection: ContextInjection, config: ConfigFile, presentation: Pick<HostCapabilities, "skillInstructions">): string[] {
   const skill = injection.record as SkillRecord;
+  if (typeof skill.body !== "string") throw new Error(`context-broker: skill ${recordToken(skill)} has not been loaded`);
   return [
-    `<!-- context-broker:skill:${skill.normalizedName}:${formatPathForPayload(skill.path, config)} -->`,
-    `<context-broker-record kind="skill" name="${escapeAttribute(skill.name)}" path="${escapeAttribute(formatPathForPayload(skill.path, config))}">`,
+    `<!-- context-broker:${recordKind(skill)}:${skill.normalizedName}:${formatPathForPayload(skill.path, config)} -->`,
+    `<context-broker-record kind="${recordKind(skill)}" name="${escapeAttribute(skill.name)}" path="${escapeAttribute(formatPathForPayload(skill.path, config))}">`,
+    ...(skill.sourceId && skill.ref && skill.snapshotId ? [
+      `<skill-ref>${escapeText(`${skill.ref}?snapshot=${skill.snapshotId}`)}</skill-ref>`,
+      `<snapshot-id>${escapeText(skill.snapshotId)}</snapshot-id>`,
+    ] : []),
+    ...((recordKind(skill) === "skill" ? presentation.skillInstructions?.(skill, {
+      query: injection.query,
+      directory: formatPathForPayload(dirname(skill.path), config),
+      directoryRedacted: configuredPathMode(config) === "hash" || configuredPathMode(config) === "basename",
+    }) : []) ?? []),
     "<body>",
     escapeText(skill.body),
     "</body>",
@@ -806,35 +934,36 @@ function renderSkillRecord(injection: ContextInjection, config: ConfigFile): str
   ];
 }
 
-function buildInjectedPayloadFromInjections(injections: ContextInjection[], config: ConfigFile = {}): Omit<AgentMessage, "role" | "timestamp"> {
+function buildInjectedPayloadFromInjections(injections: ContextInjection[], config: ConfigFile = {}, presentation: Pick<HostCapabilities, "skillInstructions"> = {}, unavailable: UnavailableReference[] = []): Omit<AgentMessage, "role" | "timestamp"> {
   const records = injections.map((injection) => recordDetail(injection, config));
   return {
     customType: CUSTOM_TYPE,
-    content: injections.flatMap((injection) => recordKind(injection.record) === "bundle" ? renderBundleRecord(injection, config) : renderSkillRecord(injection, config)).join("\n"),
+    content: [...injections.flatMap((injection) => recordKind(injection.record) === "router" ? renderRouterRecord(injection, config) : renderSkillRecord(injection, config, presentation)), renderUnavailableReferences(unavailable)].filter(Boolean).join("\n"),
     display: false,
     details: {
       ...(records.length === 1 ? records[0] : {}),
       records,
+      ...(unavailable.length ? { unavailable: unavailableReferenceDetails(unavailable) } : {}),
       injectedBy: CUSTOM_TYPE,
       version: 3,
     },
   };
 }
 
-function buildInjectedPayload(skill: SkillRecord, query: string, config: ConfigFile = {}): Omit<AgentMessage, "role" | "timestamp"> {
-  return buildInjectedPayloadFromInjections([{ record: skill, query, ruleIds: [] }], config);
+function buildInjectedPayload(skill: SkillRecord, query: string, config: ConfigFile = {}, presentation: Pick<HostCapabilities, "skillInstructions"> = {}): Omit<AgentMessage, "role" | "timestamp"> {
+  return buildInjectedPayloadFromInjections([{ record: skill, query, ruleIds: [] }], config, presentation);
 }
 
-function buildInjectedContextMessageFromInjections(injections: ContextInjection[], config: ConfigFile = {}): AgentMessage {
+function buildInjectedContextMessageFromInjections(injections: ContextInjection[], config: ConfigFile = {}, presentation: Pick<HostCapabilities, "skillInstructions"> = {}, unavailable: UnavailableReference[] = []): AgentMessage {
   return {
     role: "custom",
-    ...buildInjectedPayloadFromInjections(injections, config),
+    ...buildInjectedPayloadFromInjections(injections, config, presentation, unavailable),
     timestamp: Date.now(),
   };
 }
 
-function buildInjectedContextMessage(skill: SkillRecord, query: string, config: ConfigFile = {}): AgentMessage {
-  return buildInjectedContextMessageFromInjections([{ record: skill, query, ruleIds: [] }], config);
+function buildInjectedContextMessage(skill: SkillRecord, query: string, config: ConfigFile = {}, presentation: Pick<HostCapabilities, "skillInstructions"> = {}): AgentMessage {
+  return buildInjectedContextMessageFromInjections([{ record: skill, query, ruleIds: [] }], config, presentation);
 }
 
 function escapeAttribute(value: string): string {
@@ -899,6 +1028,8 @@ function notifyInjectedSkill(ctx: ExtensionContext, skill: SkillRecord): void {
 
 function notifyInjectedRecords(ctx: ExtensionContext, records: DiscoveryRecord[], alreadyLoaded: DiscoveryRecord[] = []): void {
   if (!ctx.hasUI) return;
+  records = records.filter((record) => !(recordKind(record) === "skill" && (record as SkillRecord).sourceId));
+  alreadyLoaded = alreadyLoaded.filter((record) => !(recordKind(record) === "skill" && (record as SkillRecord).sourceId));
   const parts = [];
   if (records.length > 0) parts.push(`injected ${records.map((record) => recordName(record)).join(", ")}`);
   if (alreadyLoaded.length > 0) parts.push(`already loaded ${alreadyLoaded.map((record) => recordName(record)).join(", ")}`);
@@ -914,6 +1045,31 @@ function notifyInjectedSkills(ctx: ExtensionContext, skills: SkillRecord[], alre
   notifyInjectedRecords(ctx, skills, alreadyLoaded);
 }
 
+async function loadAvailableInjections(injections: ContextInjection[], load: (record: SkillRecord) => Promise<SkillRecord>): Promise<{ loaded: ContextInjection[]; unavailable: ContextInjection[] }> {
+  const loaded: ContextInjection[] = [];
+  const unavailable: ContextInjection[] = [];
+  for (const injection of injections) {
+    try {
+      const record = injection.record.sourceId || recordKind(injection.record) !== "router" ? await load(injection.record) : injection.record;
+      loaded.push({ ...injection, record });
+    } catch (error) {
+      if (!(error instanceof ReferenceMiss)) throw error;
+      unavailable.push(injection);
+    }
+  }
+  return { loaded, unavailable };
+}
+
+function unavailableInCurrentSubmission(messages: AgentMessage[], selection: UnavailableReference): boolean {
+  const start = messages.findLastIndex(message => message.role === "user") + 1;
+  return messages.slice(start).some(message => {
+    if (message.role !== "custom" || message.customType !== CUSTOM_TYPE || !isRecord(message.details)) return false;
+    const details = message.details.unavailable;
+    return Array.isArray(details) && details.some(item => isRecord(item) && item.state === "not-loaded"
+      && (selection.record ? item.identity === recordIdentity(selection.record) : item.query === selection.query));
+  });
+}
+
 async function invokeForContext(
   event: ContextEvent,
   registryPromise: Promise<SkillRecord[]>,
@@ -926,7 +1082,9 @@ async function invokeForContext(
   if (requests.length === 0) return undefined;
   const registry = await registryPromise;
   const dollarRegistry = requests.some((request) => request.scope === "global" || request.scope === "catalog") ? await dollarRegistryPromise : [];
-  const injections = resolveSkillRequests(requests, registry, {}, dollarRegistry, config);
+  const resolved = resolveSkillRequests(requests, registry, {}, dollarRegistry, config);
+  const injections = resolved.injections.filter(injection => !unavailableInCurrentSubmission(event.messages, injection));
+  const unresolved = resolved.unavailable.filter(selection => !unavailableInCurrentSubmission(event.messages, selection));
   const unloaded = injections.filter((injection) => {
     if (!hasLoadedRecord(event.messages, injection.record)) return true;
     logDecision(
@@ -936,12 +1094,23 @@ async function invokeForContext(
     );
     return false;
   });
-  if (unloaded.length === 0) {
-    return undefined;
+  if (unloaded.length === 0 && unresolved.length === 0) return undefined;
+  const { loaded, unavailable: missing } = await loadAvailableInjections(unloaded, record => loadSourceSkill(record, config));
+  const unavailable: UnavailableReference[] = [...missing, ...unresolved];
+  if (!loaded.length && !unavailable.length) return undefined;
+  const tasks = loaded.filter(injection => recordKind(injection.record) === "prompt");
+  const messages = event.messages.slice();
+  if (tasks.length) {
+    const last = messages.findLastIndex(message => message.role === "user");
+    const original = messages[last]!;
+    const text = tasks.map(injection => injection.record.body ?? "").join("\n\n");
+    const content = typeof original.content === "string" ? original.content + "\n\n" + text : [...(original.content ?? []), { type: "text" as const, text }];
+    messages[last] = { ...original, content };
   }
-  const message = buildInjectedContextMessageFromInjections(unloaded, config);
-  logInjection(unloaded, { action: "inject" }, config);
-  return { messages: [...event.messages, message] };
+  const context = loaded.filter(injection => recordKind(injection.record) !== "prompt");
+  if (context.length || unavailable.length) messages.push(buildInjectedContextMessageFromInjections(context, config, {}, unavailable));
+  logInjection(loaded, { action: "inject" }, config);
+  return { messages };
 }
 
 async function invokeBeforeAgentStart(
@@ -950,6 +1119,10 @@ async function invokeBeforeAgentStart(
   registryPromise: Promise<SkillRecord[]>,
   config: ConfigFile,
   dollarRegistryPromise: Promise<DiscoveryRecord[]> = Promise.resolve([]),
+  loadRecord: (record: SkillRecord) => Promise<SkillRecord> = record => loadSourceSkill(record, config, ctx.cwd),
+  isLoaded: (messages: AgentMessage[], record: DiscoveryRecord) => boolean = hasLoadedRecord,
+  presentation: Pick<HostCapabilities, "skillInstructions"> = {},
+  accepted: ReadonlyMap<string, DiscoveryRecord> = new Map(),
 ): Promise<BeforeAgentStartResult | undefined> {
   const requests = parseInvocations(event.prompt, configuredRules(config));
   if (requests.length === 0) return undefined;
@@ -957,11 +1130,12 @@ async function invokeBeforeAgentStart(
   const dollarRegistry = requests.some((request) => request.scope === "global" || request.scope === "catalog")
     ? await buildDollarRegistryForContext(ctx, dollarRegistryPromise)
     : [];
-  const injections = resolveSkillRequests(requests, registry, { phase: "before_agent_start" }, dollarRegistry, config);
+  const resolved = resolveSkillRequests(requests, registry, { phase: "before_agent_start" }, dollarRegistry, config, accepted);
+  const injections = resolved.injections.filter(injection => recordKind(injection.record) !== "prompt");
   const sessionMessages = messagesFromActiveSessionContext(ctx);
   const alreadyLoaded: ContextInjection[] = [];
   const unloaded = injections.filter((injection) => {
-    if (!hasLoadedRecord(sessionMessages, injection.record)) return true;
+    if (!isLoaded(sessionMessages, injection.record)) return true;
     alreadyLoaded.push(injection);
     logDecision(
       { decision: "skip", reason: "already-loaded", query: injection.query, candidates: [injection.record] },
@@ -970,15 +1144,19 @@ async function invokeBeforeAgentStart(
     );
     return false;
   });
-  if (unloaded.length === 0) {
+  if (unloaded.length === 0 && resolved.unavailable.length === 0) {
     notifyInjectedRecords(ctx, [], alreadyLoaded.map((injection) => injection.record));
     return undefined;
   }
-  const message = buildInjectedPayloadFromInjections(unloaded, config);
-  logInjection(unloaded, { phase: "before_agent_start", action: "inject" }, config);
+  const { loaded, unavailable: missing } = await loadAvailableInjections(unloaded, loadRecord);
+  const unavailable: UnavailableReference[] = [...missing, ...resolved.unavailable];
+  if (!loaded.length && !unavailable.length) return undefined;
+  notifyUnavailableReferences(ctx, unavailable);
+  const message = buildInjectedPayloadFromInjections(loaded, config, presentation, unavailable);
+  logInjection(loaded, { phase: "before_agent_start", action: "inject" }, config);
   notifyInjectedRecords(
     ctx,
-    unloaded.map((injection) => injection.record),
+    loaded.map((injection) => injection.record),
     alreadyLoaded.map((injection) => injection.record),
   );
   return { message };
@@ -987,7 +1165,11 @@ async function invokeBeforeAgentStart(
 function contextBrokerCommandCompletions(argumentPrefix: string) {
   const commands = [
     { value: "status", label: "status", description: "Show loaded discovery record summary" },
-    { value: "doctor", label: "doctor", description: "Diagnose config, catalogs, names, aliases, and bundles" },
+    { value: "doctor", label: "doctor", description: "Diagnose config, catalogs, names, aliases, and routers" },
+    { value: "refresh", label: "refresh", description: "Refresh metadata and prepare default source snapshots in background" },
+    { value: "sources", label: "sources", description: "Show local source preparation state and freshness" },
+    { value: "views", label: "views", description: "List Notion Views in API order with exact selection commands" },
+    { value: "view", label: "view", description: "Show current View or select [source-id] <view-id|URL|default> for this session" },
     { value: "roots", label: "roots", description: "Show skill roots" },
     { value: "catalogs", label: "catalogs", description: "Show discovery catalogs" },
     { value: "find ", label: "find", description: "Explain lookup for a query" },
@@ -1006,17 +1188,29 @@ function formatCatalogs(config: ConfigFile, cwd = process.cwd()): string {
   ].join("\n");
 }
 
-async function formatContextBrokerDoctor(config: ConfigFile, cwd = process.cwd()): Promise<string> {
+async function formatContextBrokerDoctor(config: ConfigFile, cwd = process.cwd(), paths: HostPathOptions = {}): Promise<string> {
   const roots = discoverUsableSkillRoots(config, cwd);
   const catalogs = configuredDiscoveryCatalogs(config, cwd);
-  const rawRegistry = await buildRawDollarRegistry(config, cwd);
+  const { records: rawRegistry, failures } = await buildRawDollarRegistry(config, cwd, paths);
   const errors = validateDiscoveryRecords(rawRegistry);
-  const diagnostics = collectConfigDiagnostics();
-  const bundles = rawRegistry.filter((record) => recordKind(record) === "bundle");
+  const diagnostics = collectConfigDiagnostics(paths);
+  const sourceHealth: string[] = [];
+  diagnostics.push(...formatSourceFailures(failures));
+  for (const source of normalizeSources(config.sources) ?? []) {
+    if (source.enabled === false || source.type !== "notion" || source.command || failures.some(failure => failure.sourceId === source.id)) continue;
+    try {
+      const health = await diagnoseNotionSource(source, cwd);
+      sourceHealth.push(`Source ${source.id}: ntn ${health.version}, authentication available`);
+    } catch (error) {
+      const code = error instanceof SourceError ? error.code : "SOURCE_DIAGNOSTIC_FAILED";
+      diagnostics.push(`Source ${source.id}: unavailable (${code}). ${sourceFailureMessage(code)}`);
+    }
+  }
+  const routers = rawRegistry.filter((record) => recordKind(record) === "router");
   const skills = rawRegistry.filter((record) => recordKind(record) === "skill");
   for (const catalog of catalogs) {
     try {
-      readDiscoveryCatalog(catalog, skills as SkillRecord[], scanOptions(config));
+      readDiscoveryCatalog(catalog, skills.filter(skill => skill.source !== "notion"), scanOptions(config), { sources: config.sources, records: rawRegistry.filter(record => record.source === "notion"), failures });
     } catch (error) {
       diagnostics.push(`catalog read failed: ${catalog}: ${errorMessage(error)}`);
     }
@@ -1024,37 +1218,40 @@ async function formatContextBrokerDoctor(config: ConfigFile, cwd = process.cwd()
   return [
     "Context Broker Doctor",
     "",
-    `Config: ${resolveConfigPath() ?? "none"}`,
+    `Config: ${resolveConfigPath(paths) ?? "none"}`,
     `Path mode: ${configuredPathMode(config)}`,
     `Log paths: ${config.logPaths === true ? "enabled" : "disabled"}`,
     `Scan: maxDepth=${config.scan?.maxDepth ?? 8}, maxSkillBytes=${config.scan?.maxSkillBytes ?? 65536}`,
     `Skill roots: ${roots.length}`,
     `Discovery catalogs: ${catalogs.length}`,
     ...catalogs.map((catalog) => `  ${existsSync(catalog) ? "ok" : "missing"} ${catalog}`),
-    `Records: ${skills.length} skills, ${bundles.length} bundles`,
+    `Records: ${skills.length} skills, ${routers.length} routers`,
     diagnostics.length === 0 ? "Config diagnostics: ok" : "Config diagnostics: failed",
     ...diagnostics.map((diagnostic) => `  fail ${diagnostic}`),
+    ...sourceHealth,
     errors.length === 0 ? "Namespace: ok no discovery namespace collisions" : "Namespace: failed",
     ...errors.map((error) => `  fail ${error}`),
-    "Bundles:",
-    ...(bundles.length > 0 ? bundles.map((record) => `  ${recordName(record)}: ${(record as any).members?.length ?? 0} members`) : ["  none"]),
+    "Routers:",
+    ...(routers.length > 0 ? routers.map((record) => `  ${recordName(record)}: ${(record as any).members?.length ?? 0} members`) : ["  none"]),
   ].join("\n");
 }
 
 function formatExplainRecord(record: DiscoveryRecord): string {
-  if (recordKind(record) === "bundle") {
-    const bundle = record as Extract<DiscoveryRecord, { kind: "bundle" }>;
+  if (recordKind(record) === "router") {
+    const router = record as RouterDiscoveryRecord;
     return [
-      `record: ${bundle.name}`,
-      "kind: bundle",
+      `record: ${router.name}`,
+      `select: $${recordToken(router)}`,
+      "kind: router",
       "inject: member-index",
-      `members: ${bundle.members.length}`,
-      `path: ${bundle.path}`,
-      bundle.description ? `description: ${bundle.description}` : undefined,
+      `members: ${(router.members?.length ?? 0)}`,
+      `path: ${router.path}`,
+      router.description ? `description: ${router.description}` : undefined,
     ].filter(Boolean).join("\n");
   }
   return [
     `record: ${recordName(record)}`,
+    `select: $${recordToken(record)}`,
     "kind: skill",
     "inject: full-file",
     `path: ${recordPath(record)}`,
@@ -1062,8 +1259,12 @@ function formatExplainRecord(record: DiscoveryRecord): string {
   ].filter(Boolean).join("\n");
 }
 
-async function dispatchContextBrokerCommand(args: string, ctx: ExtensionContext, config: ConfigFile, getDollarRegistry: (cwd?: string) => Promise<DiscoveryRecord[]>, registryPromise: Promise<SkillRecord[]>): Promise<void> {
+async function dispatchContextBrokerCommand(args: string, ctx: ExtensionContext, config: ConfigFile, getDollarRegistry: (cwd?: string) => Promise<DiscoveryRecord[]>, registryPromise: Promise<SkillRecord[]>, refresh: (ctx: ExtensionContext) => Promise<void>, paths: HostPathOptions): Promise<void> {
   const [command = "status", ...rest] = args.trim().split(/\s+/).filter(Boolean);
+  if (command === "refresh" && refresh) {
+    await refresh(ctx);
+    return;
+  }
   if (command === "roots") {
     const roots = discoverUsableSkillRoots(config, ctx.cwd);
     ctx.ui?.notify?.(formatRootDiagnostics(await collectRootDiagnostics(roots)), "info");
@@ -1074,13 +1275,13 @@ async function dispatchContextBrokerCommand(args: string, ctx: ExtensionContext,
     return;
   }
   if (command === "doctor") {
-    ctx.ui?.notify?.(await formatContextBrokerDoctor(config, ctx.cwd), "info");
+    ctx.ui?.notify?.(await formatContextBrokerDoctor(config, ctx.cwd, paths), "info");
     return;
   }
   if (command === "find") {
     const query = rest.join(" ");
     const registry = await buildDollarRegistryForContext(ctx, getDollarRegistry(ctx.cwd));
-    const rawRegistry = await buildRawDollarRegistry(config, ctx.cwd);
+    const { records: rawRegistry } = await buildRawDollarRegistry(config, ctx.cwd, paths);
     ctx.ui?.notify?.(formatFindDiagnostics(query, registry, rawRegistry), "info");
     return;
   }
@@ -1093,46 +1294,279 @@ async function dispatchContextBrokerCommand(args: string, ctx: ExtensionContext,
   }
   const registry = await registryPromise;
   const dollarRegistry = await getDollarRegistry(ctx.cwd);
-  const bundles = dollarRegistry.filter((record) => recordKind(record) === "bundle").length;
+  const routers = dollarRegistry.filter((record) => recordKind(record) === "router").length;
   ctx.ui?.notify?.(
-    `context-broker status: ${registry.length} configured skills, ${dollarRegistry.length} $ records, ${bundles} bundles\ncommands: doctor, roots, catalogs, find <query>, explain <name>`,
+    `context-broker status: ${registry.length} configured skills, ${dollarRegistry.length} $ records, ${routers} routers\ncommands: doctor, refresh, roots, catalogs, find <query>, explain <name>`,
     registry.length > 0 || dollarRegistry.length > 0 ? "info" : "warning",
   );
 }
 
-export default function contextBroker(pi: ExtensionAPI): void {
-  const config = readConfig();
-  const registryPromise = buildRegistry(config);
-  const dollarRegistryByCwd = new Map<string, Promise<DiscoveryRecord[]>>();
-  const getDollarRegistry = (cwd = process.cwd()) => {
-    const key = resolve(cwd);
-    let promise = dollarRegistryByCwd.get(key);
-    if (!promise) {
-      promise = buildDollarRegistry(config, key);
-      dollarRegistryByCwd.set(key, promise);
+export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
+  const adapter = pi.pi !== undefined ? createOmpHostAdapter(pi) : createPiHostAdapter(pi);
+  const paths = adapter.paths;
+  const config = readConfig(paths);
+  const acceptedSelections = createAcceptedSelections();
+  for (const event of ["session_shutdown", "session_before_switch", "session_before_branch", "session_before_tree"] as const) {
+    pi.on(event, (_event, ctx) => acceptedSelections.clear(ctx));
+  }
+  const cliGuidance = buildCliGuidance(config);
+  pi.on("before_agent_start", (_event, ctx) => {
+    if (!hasCliGuidance(messagesFromActiveSessionContext(ctx), cliGuidance)) return { message: cliGuidance };
+    return undefined;
+  });
+  pi.on("context", event => {
+    if (!hasCliGuidance(event.messages, cliGuidance)) {
+      return { messages: [...event.messages, { ...cliGuidance, role: "custom", timestamp: Date.now() }] };
     }
+    return undefined;
+  });
+  const sourceRuntime = createSourceRuntime((record, signal) => loadSourceSkill(record, config, process.cwd(), { signal }));
+  pi.on("session_shutdown", () => sourceRuntime.dispose());
+  let registryPromise = buildRegistry(config, paths);
+  let refreshGeneration = 0;
+  type CatalogState = { status: "pending"; promise: Promise<DiscoveryResult> }
+    | { status: "ready"; promise: Promise<DiscoveryResult>; result: DiscoveryResult }
+    | { status: "failed"; promise: Promise<DiscoveryResult>; error: unknown };
+  const dollarRegistryByCwd = new Map<string, CatalogState>();
+  const sourceChanges = new Map<string, number>();
+  const observedChangesByCwd = new Map<string, Map<string, number>>();
+  const notionRefresh = new Map<string, Promise<DiscoveryResult>>();
+  const notionRetryAt = new Map<string, number>();
+  const autocompleteUis = new WeakSet<object>();
+  const catalogCwd = (cwd: string) => { try { return realpathSync(cwd); } catch { return resolve(cwd); } };
+  const unseenChanges = (cwd: string) => new Map([...sourceChanges].filter(([id, version]) => (observedChangesByCwd.get(cwd)?.get(id) ?? 0) < version));
+  const publishCatalog = (cwd: string, promise: Promise<DiscoveryResult>, changes = new Map<string, number>()) => {
+    const entry: CatalogState = { status: "pending", promise };
+    dollarRegistryByCwd.set(cwd, entry);
+    void promise.then(result => {
+      if (dollarRegistryByCwd.get(cwd) !== entry) return;
+      const observed = observedChangesByCwd.get(cwd) ?? new Map<string, number>();
+      for (const [id, version] of changes) if (!result.failures.some(failure => failure.sourceId === id)) observed.set(id, version);
+      observedChangesByCwd.set(cwd, observed);
+      if (changes.size && unseenChanges(cwd).size) notionRetryAt.set(cwd, Date.now() + notionCatalogRetryGapMs);
+      dollarRegistryByCwd.set(cwd, { status: "ready", promise, result });
+    }, error => {
+      if (dollarRegistryByCwd.get(cwd) === entry) {
+        if (changes.size) notionRetryAt.set(cwd, Date.now() + notionCatalogRetryGapMs);
+        dollarRegistryByCwd.set(cwd, { status: "failed", promise, error });
+      }
+    });
     return promise;
   };
-  pi.on("session_start", async (_event, ctx) => {
-    if (ctx.hasUI && (detectHost() === "omp" || !ctx.ui?.getEditorComponent)) {
-      // Platform-only adapter: Pi and the Node query cannot resolve OMP's host exports.
-      const { installOmpDollarAutocompleteEditor } = await import("./omp-dollar-editor");
-      await installOmpDollarAutocompleteEditor(ctx);
-    } else {
-      await installPiDollarAutocompleteEditor(ctx);
-    }
-    ctx.ui?.addAutocompleteProvider?.((current) => createDollarSkillAutocompleteProvider(
-      current,
-      buildDollarRegistryForContext(ctx, getDollarRegistry(ctx.cwd)),
-    ));
+  const getCatalog = (cwd = process.cwd()) => {
+    const key = catalogCwd(cwd);
+    const entry = dollarRegistryByCwd.get(key);
+    const changes = unseenChanges(key);
+    if (entry && (entry.status === "pending" || !changes.size || Date.now() < (notionRetryAt.get(key) ?? 0))) return entry.promise;
+    return publishCatalog(key, buildDiscoveryRegistry(config, key, { paths, stale: true, refreshSourceIds: [...changes.keys()] }), changes);
+  };
+  installCliWriteInvalidation(pi, {
+    sources: config.sources ?? [],
+    records: () => [...dollarRegistryByCwd.values()].flatMap(entry => entry.status === "ready"
+      ? entry.result.records.filter((record): record is SkillRecord => Boolean(record.sourceId)) : []),
+    changed(sourceIds, ctx) {
+      // Publication generations fence old directory requests without cancelling an accepted draft.
+      refreshGeneration++;
+      for (const id of sourceIds) sourceChanges.set(id, refreshGeneration);
+      for (const cwd of new Set([...dollarRegistryByCwd.keys(), catalogCwd(ctx.cwd ?? process.cwd())])) {
+        dollarRegistryByCwd.delete(cwd);
+        notionRefresh.delete(cwd);
+        notionRetryAt.delete(cwd);
+      }
+      sourceRuntime.forgetSources(sourceIds);
+    },
   });
-  pi.on("before_agent_start", (event, ctx) => invokeBeforeAgentStart(event, ctx, registryPromise, config, getDollarRegistry(ctx.cwd)));
+  const getDollarRegistry = async (cwd?: string) => (await getCatalog(cwd)).records;
+  const notionSources = () => (config.sources ?? []).filter((source): source is Extract<SourceConfig, { type: "notion" }> => source.type === "notion" && source.enabled !== false);
+  const catalogError = (error: unknown) => error instanceof Error ? error.message : "context-broker source discovery failed";
+  const dollarMenu = async (ctx: ExtensionContext): Promise<DollarMenu> => {
+    const systemPrompt = ctx.getSystemPrompt?.() ?? "";
+    const registryContext: ExtensionContext = { getSystemPrompt: () => systemPrompt };
+    const cwd = catalogCwd(ctx.cwd ?? process.cwd());
+    const pendingCatalog = getCatalog(cwd);
+    const state = dollarRegistryByCwd.get(cwd)!;
+    if (state.status === "failed") return { records: [], notice: catalogError(state.error) };
+    if (state.status === "pending") return {
+      // Source collisions can change local selection tokens; do not offer an unqualified guess.
+      records: config.sources?.some(source => source.enabled !== false) ? [] : await buildDollarRegistryForContext(registryContext, registryPromise),
+      notice: notionSources().length ? "Reading Notion catalog" : "Reading source catalog",
+      followUp: pendingCatalog.then(async result => ({
+        records: await buildDollarRegistryForContext(registryContext, Promise.resolve(result.records)),
+        notice: formatSourceFailures(result.failures).join("\n") || undefined,
+      })).catch(error => ({ records: [], notice: catalogError(error) })),
+    };
+    const current = state.result;
+    const records = await buildDollarRegistryForContext(registryContext, Promise.resolve(current.records));
+    const sources = notionSources();
+    const sourceIds = sources.map((source) => source.id);
+    const offline = sources.length > 0 && sources.every((source) => source.discovery?.offline);
+    const action = notionCatalogAction({
+      offline,
+      sourceIds,
+      observations: current.lists ?? [],
+      failedSourceIds: current.failures.map((failure) => failure.sourceId),
+      now: Date.now(),
+      retryAt: notionRetryAt.get(cwd),
+    });
+    const failureNotice = formatSourceFailures(current.failures.filter((failure) => sourceIds.includes(failure.sourceId))).join("\n");
+    if (action !== "refresh") return { records, notice: action === "wait" && failureNotice ? failureNotice : undefined };
+    let pending = notionRefresh.get(cwd);
+    if (!pending) {
+      const generation = refreshGeneration;
+      const changes = unseenChanges(cwd);
+      pending = (async () => {
+        try {
+          const next = await buildDiscoveryRegistry(config, cwd, { paths, refreshSourceIds: [...changes.keys()] });
+          if (generation !== refreshGeneration) return await getCatalog(cwd);
+          const failed = next.failures.some((failure) => failure.blocking !== false && sourceIds.includes(failure.sourceId));
+          const unsafe = next.failures.some(failure => sourceIds.includes(failure.sourceId) && ["AUTH_REQUIRED", "ACCESS_DENIED", "CACHE_SCOPE_UNAVAILABLE", "SOURCE_IDENTITY_MISMATCH"].includes(failure.code));
+          const published = failed && !unsafe && current.records.some((record) => record.source === "notion")
+            ? { records: current.records, failures: next.failures, lists: current.lists }
+            : next;
+          const stillStale = notionCatalogAction({
+            offline: false,
+            sourceIds,
+            observations: published.lists ?? [],
+            failedSourceIds: published.failures.map((failure) => failure.sourceId),
+            now: Date.now(),
+          }) === "refresh";
+          if (failed || stillStale) notionRetryAt.set(cwd, Date.now() + notionCatalogRetryGapMs);
+          else notionRetryAt.delete(cwd);
+          publishCatalog(cwd, Promise.resolve(published), changes);
+          return published;
+        } finally {
+          if (notionRefresh.get(cwd) === pending) notionRefresh.delete(cwd);
+        }
+      })();
+      notionRefresh.set(cwd, pending);
+    }
+    const hasNotion = current.records.some((record) => record.source === "notion");
+    return {
+      records,
+      notice: hasNotion ? "Updating Notion catalog" : failureNotice || "Reading Notion catalog",
+      followUp: pending.then(async (next) => ({
+        records: await buildDollarRegistryForContext(registryContext, Promise.resolve(next.records)),
+        notice: formatSourceFailures(next.failures.filter((failure) => sourceIds.includes(failure.sourceId))).join("\n") || undefined,
+      })).catch(error => ({ records, notice: catalogError(error) })),
+    };
+  };
+  let menuContext: ExtensionContext | undefined;
+  let menuGeneration = 0;
+  const retireMenuContext = () => { menuGeneration++; menuContext = undefined; };
+  pi.on("session_shutdown", retireMenuContext);
+  for (const event of ["session_switch", "session_branch", "session_tree"] as const) pi.on(event, (_event, ctx) => { menuGeneration++; menuContext = ctx; });
+  pi.on("session_start", (_event, ctx) => {
+    const generation = ++menuGeneration;
+    menuContext = ctx;
+    const ui = ctx.ui;
+    if (ui?.addAutocompleteProvider && !autocompleteUis.has(ui)) {
+      ui.addAutocompleteProvider((current) => createDollarSkillAutocompleteProvider(current, () => menuContext ? dollarMenu(menuContext) : Promise.resolve({ records: [] }), record => { if (menuContext) acceptedSelections.remember(menuContext, record); }));
+      autocompleteUis.add(ui);
+    }
+    // The editor and provider become usable while the owned catalog request continues.
+    void getCatalog(ctx.cwd).then(async ({ failures }) => {
+      if (generation !== menuGeneration) return;
+      for (const message of formatSourceFailures(failures)) ui?.notify?.(message, "warning");
+      const menu = await dollarMenu(ctx);
+      await menu.followUp;
+    }).catch(error => { if (generation === menuGeneration) ui?.notify?.(catalogError(error), "error"); });
+  });
+  const host = await installHostSkills(pi, {
+    config,
+    getRecords: async (ctx, signal) => {
+      const result = await getCatalog(ctx?.cwd);
+      return resolveViewDiscovery(config, { records: result.records.filter((record): record is SkillRecord => Boolean(record.sourceId)), failures: result.failures }, ctx, signal);
+    },
+    loadRecord: (record, signal) => sourceRuntime.load(record, signal),
+    isLoaded: (record, ctx) => hasLoadedRecord(messagesFromActiveSessionContext(ctx), record),
+    onMetadata: records => sourceRuntime.prepare(records.filter(record => recordKind(record) !== "prompt" && record.defaultDiscovery === true && config.sources?.some(source => source.id === record.sourceId && source.type === "notion"))),
+    needsPreflightPrompt: text => parseInvocations(text, configuredRules(config)).length > 0,
+    onPreparation: entry => acceptedSelections.capture(entry.ctx, entry.controller.signal,
+      parseInvocations(entry.event.text ?? "", configuredRules(config)).filter(request => request.scope === "global").map(request => request.query)),
+    taskPrompt: async (text, ctx, signal, invocation) => {
+      const requests = parseInvocations(text, configuredRules(config));
+      const { injections } = resolveSkillRequests(requests, await registryPromise, {}, await buildDollarRegistryForContext(ctx, getDollarRegistry(ctx.cwd)), config, acceptedSelections.forSubmission(signal));
+      const tasks: string[] = [];
+      for (const injection of injections) {
+        if (recordKind(injection.record) !== "prompt") continue;
+        const prepared = await host.prepare(injection.record, ctx, signal);
+        if (prepared.status === "miss") {
+          notifyUnavailableReferences(ctx, [injection]);
+          tasks.push(renderUnavailableReferences([injection]));
+          continue;
+        }
+        const record = prepared.record;
+        tasks.push(`<prompt-task invocation="${escapeAttribute(invocation?.id ?? "")}" session="${escapeAttribute(invocation?.sessionId ?? "")}" generation="${invocation?.generation ?? 0}" identity="${escapeAttribute(recordIdentity(record))}" snapshot="${escapeAttribute(record.snapshotId ?? "")}" version="${escapeAttribute(record.versionId ?? "")}">\n${record.body}\n</prompt-task>`);
+      }
+      return tasks.length ? text + "\n\n" + tasks.join("\n\n") : text;
+    },
+    preflightPrompt: async (text, ctx, signal) => {
+      const requests = parseInvocations(text, configuredRules(config));
+      if (requests.length === 0) return;
+      const registry = await registryPromise;
+      const dollarRegistry = requests.some(request => request.scope === "global" || request.scope === "catalog")
+        ? await buildDollarRegistryForContext(ctx, getDollarRegistry(ctx.cwd)) : [];
+      const { injections } = resolveSkillRequests(requests, registry, { phase: "input" }, dollarRegistry, config, acceptedSelections.forSubmission(signal));
+      for (const injection of injections) {
+        if (signal?.aborted) throw Object.assign(new Error("Skill preparation cancelled"), { code: "SOURCE_ACTIVATION_CANCELLED" });
+        if (injection.record.sourceId) await host.prepare(injection.record, ctx, signal);
+      }
+    },
+  }, adapter);
+  const refresh = async (ctx: ExtensionContext) => {
+    const selectedGeneration = ++refreshGeneration;
+    host.invalidate();
+    sourceRuntime.invalidate();
+    registryPromise = buildRegistry(config, paths);
+    const result = await buildDiscoveryRegistry(config, ctx.cwd, { refresh: true, paths });
+    if (selectedGeneration !== refreshGeneration) return;
+    dollarRegistryByCwd.clear();
+    notionRetryAt.delete(catalogCwd(ctx.cwd ?? process.cwd()));
+    publishCatalog(catalogCwd(ctx.cwd ?? process.cwd()), Promise.resolve(result), new Map(sourceChanges));
+    await host.refresh(ctx);
+  };
+  pi.on("before_agent_start", async (event, ctx) => {
+    try {
+      const result = await host.withPreparedPrompt(event.prompt, ctx, async (signal, native, original) => {
+        if (original === undefined) return undefined;
+        const submission = { ...event, prompt: original ?? event.prompt };
+        if (!parseInvocations(submission.prompt, configuredRules(config)).length) return undefined;
+        return invokeBeforeAgentStart(
+          submission, ctx, registryPromise, config, getDollarRegistry(ctx.cwd),
+          async record => {
+            if (!record.sourceId) return loadSourceSkill(record, config, ctx.cwd, { signal });
+            const prepared = await host.prepare(record, ctx, signal);
+            if (prepared.status === "miss") throw new ReferenceMiss(record.sourceId);
+            return prepared.record;
+          },
+          (messages, record) => hasLoadedRecord(messages, record) || (recordKind(record) === "skill" && (
+            (native !== undefined && recordIdentity(native) === recordIdentity(record)) || host.isNativeLoaded(messages, record as SkillRecord)
+          )),
+          adapter,
+          acceptedSelections.forSubmission(signal),
+        );
+      });
+      return result;
+    } catch (error) {
+      ctx.ui?.notify?.(error instanceof Error ? error.message : "Skill preparation failed.", "error");
+      return undefined;
+    }
+  });
+  const viewCommand = createViewCommands(pi, config, ctx => host.refresh(ctx), () => host.viewStatus());
   const command = {
-    description: "Inspect context-broker discovery records, bundles, catalogs, and config health",
+    description: "Inspect context-broker discovery records, routers, catalogs, and config health",
     getArgumentCompletions: contextBrokerCommandCompletions,
-    handler: (args: string, ctx: ExtensionContext) => dispatchContextBrokerCommand(args, ctx, config, getDollarRegistry, registryPromise),
+    handler: async (args: string, ctx: ExtensionContext) => {
+      if (await viewCommand(args, ctx)) return;
+      if (args.trim() === "sources") {
+        ctx.ui?.notify?.(`context-broker sources: ${JSON.stringify({ prefetch: sourceRuntime.diagnostics() })}`, "info");
+        return;
+      }
+      return dispatchContextBrokerCommand(args, ctx, config, getDollarRegistry, registryPromise, refresh, paths);
+    },
   };
   pi.registerCommand?.("context-broker", command);
+
 }
 
 export {
@@ -1140,6 +1574,7 @@ export {
   BUILTIN_SKILL_PROMPT_TYPE,
   buildInjectedContextMessage,
   buildInjectedPayload,
+  buildCliGuidance,
   buildDiscoveryRegistry,
   buildDollarRegistry,
   buildRawDollarRegistry,
@@ -1150,7 +1585,6 @@ export {
   defaultAgentDirs,
   discoverUsableSkillRoots,
   defaultConfigPath,
-  detectHost,
   discoveryAutocompleteItems,
   dollarAutocompleteItems,
   extractDollarAutocompletePrefix,
@@ -1175,3 +1609,6 @@ export {
   ruleRootsForConfig,
   listRuleConfigFiles,
 };
+
+export { parseCatalogMember, resolveCatalogReference, CatalogReferenceError } from "./discovery-records";
+export type { RawCatalogMember, CatalogRemoteReference, CatalogResolutionContext } from "./types";

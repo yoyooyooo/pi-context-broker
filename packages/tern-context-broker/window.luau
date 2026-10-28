@@ -1,27 +1,26 @@
 --!strict
 local composer = require("./composer")
-local pending = false
+
+-- Scope layout changes to the broker's dollar menu; keep native completion styling.
+tern.css("completion", [[
+.sf-overlay.at-caret[data-role="omp.autocomplete"][aria-label="Context Broker completions"] > .sf-ov-card {
+  box-sizing: border-box;
+  width: min(720px, calc(100% - 32px));
+  min-width: 0;
+  max-width: calc(100% - 32px) !important;
+}
+.sf-overlay.at-caret[data-role="omp.autocomplete"][aria-label="Context Broker completions"] .sf-item-label {
+  flex: 0 1 auto;
+  max-width: 60%;
+}
+]])
 
 local function complete(cx)
-    if pending then return end
     local pane = cx.session:focused()
     if not pane then return end
     local saved = composer.snapshot(cx, pane)
-    if not saved then
-      cx:toast("info", "Context Broker", "Place the cursor after $ or a $name prefix in the OMP draft.")
-      return
-    end
-    for _, host in cx.hosts:list() do
-      for _, id in host.panes do
-        if id == pane and host.kind ~= "local" then
-          cx:toast("error", "Context Broker", "Completion queries currently require a local OMP pane.")
-          return
-        end
-      end
-    end
-    local info = cx.session:pane(pane)
-    if not info or not info.cwd or info.cwd == "" then
-      cx:toast("error", "Context Broker", "The pane working directory is unavailable.")
+    if not saved or not saved.prefix then
+      cx:toast("info", "Context Broker", "Manual completion requires a local OMP native draft with the cursor after $ or a $name prefix. Terminal completion belongs to the Broker editor.")
       return
     end
     local settingsPath = tern.plugin.data .. "/config.json"
@@ -45,22 +44,25 @@ local function complete(cx)
       cx:toast("error", "Context Broker", "Missing bundled query. Install a release package or run bun run build before linking.")
       return
     end
-    local request = { version = 1, text = saved.text, cursor = saved.cursor, cwd = info.cwd, config = settings.config }
+    local request = { version = 1, text = saved.text, cursor = saved.cursor, cwd = saved.cwd, config = settings.config }
     local env = { CONTEXT_BROKER_HOST = "omp" }
     if settings.agentDir then env.PI_CODING_AGENT_DIR = settings.agentDir end
-    pending = true
+    if not composer.acquire(saved) then
+      cx:toast("info", "Context Broker", "A native Context Broker operation is already open.")
+      return
+    end
     local started, failure = pcall(function()
       tern.process.run({ settings.node or "node", queryPath }, {
-        cwd = info.cwd, env = env, stdin = tern.json.encode(request), timeout_ms = 10000,
+        cwd = saved.cwd, env = env, stdin = tern.json.encode(request), timeout_ms = 10000,
       }, function(result, queryCx)
-        pending = false
+        if not composer.owns(saved) then return end
+        composer.release(saved)
         if not queryCx then return end
-        if result.status ~= 0 then
-          queryCx:toast("error", "Context Broker query failed", string.sub(result.stderr, 1, 500))
+        if queryCx.session:focused() ~= saved.pane or not composer.unchanged(queryCx, saved) then
           return
         end
-        if queryCx.session:focused() ~= saved.pane or not composer.unchanged(queryCx, saved) then
-          queryCx:toast("info", "Context Broker", "Draft or focus changed; completion cancelled.")
+        if result.status ~= 0 then
+          queryCx:toast("error", "Context Broker query failed", string.sub(result.stderr, 1, 500))
           return
         end
         local ok, response = pcall(function() return tern.json.decode(result.stdout) end)
@@ -68,6 +70,14 @@ local function complete(cx)
           or type(response.edit) ~= "table" or type(response.items) ~= "table" then
           queryCx:toast("error", "Context Broker", "Invalid completion query response.")
           return
+        end
+        if type(response.failures) == "table" then
+          for _, failure in response.failures do
+            if type(failure) == "table" and type(failure.sourceId) == "string"
+              and type(failure.code) == "string" and type(failure.message) == "string" then
+              queryCx:toast("info", "Context Broker source unavailable", failure.sourceId .. " (" .. failure.code .. "): " .. failure.message)
+            end
+          end
         end
         local edit = response.edit
         if edit.prefix ~= saved.prefix or edit.to ~= saved.cursor
@@ -80,49 +90,61 @@ local function complete(cx)
         for _, item in response.items do
           if type(item) ~= "table" or type(item.value) ~= "string" or type(item.label) ~= "string"
             or string.sub(item.value, 1, 1) ~= "$" or string.find(item.value, "%s")
+            or type(item.identity) ~= "string" or item.identity == "" or type(item.ref) ~= "string" or item.ref == ""
+            or (item.kind ~= "skill" and item.kind ~= "router" and item.kind ~= "prompt")
+            or (item.source ~= "local" and item.source ~= "notion")
             or (item.description ~= nil and type(item.description) ~= "string") then
             queryCx:toast("error", "Context Broker", "Invalid completion candidate.")
             return
           end
-          table.insert(items, { label = item.label, detail = item.description, value = item.value })
+          table.insert(items, { label = item.label, detail = item.source .. " · " .. item.kind .. "\n" .. (item.description or ""),
+            value = item.value, identity = item.identity, kind = item.kind, source = item.source, ref = item.ref })
         end
         if #items == 0 then
-          queryCx:toast("info", "Context Broker", "No configured Skill or Bundle matches " .. saved.prefix .. ".")
+          queryCx:toast("info", "Context Broker", "No configured content matches " .. saved.prefix .. ".")
           return
         end
-        pending = true
-        queryCx:pick({ items = items, placeholder = "Search Context Broker Skills and Bundles", action = "insert" })
+        if not composer.acquire(saved) then return end
+        queryCx:pick({ items = items, placeholder = "Search Context Broker content (insert token only)", action = "insert" })
           :next(function(item, err, pickCx)
-            pending = false
-            if not pickCx then return end
-            if err then pickCx:toast("error", "Context Broker", err) return end
-            if not item then return end
+            if not composer.owns(saved) then return end
+            if not pickCx then composer.release(saved) return end
             if pickCx.session:focused() ~= saved.pane or not composer.unchanged(pickCx, saved) then
-              pickCx:toast("info", "Context Broker", "Draft or focus changed; completion cancelled.")
+              composer.release(saved)
               return
             end
+            if err then composer.release(saved) pickCx:toast("error", "Context Broker", err) return end
+            if not item then composer.release(saved) return end
             local byte = composer.byte_offset(saved.text, saved.cursor)
-            if byte == nil then return end
+            if byte == nil then composer.release(saved) return end
             local suffix = if string.sub(saved.text, byte + 1, byte + 1) == " " then "" else " "
             local replacement = item.value .. suffix
-            pickCx.session:event(saved.pane, {
-              ev = "edit", id = saved.id, from = edit.from, to = edit.to,
-              text = replacement, cursor = edit.from + composer.utf16_length(replacement), len = edit.len,
-            })
+            composer.edit(pickCx, saved, edit.from, edit.to, replacement)
+            composer.release(saved)
           end)
       end)
     end)
     if not started then
-      pending = false
-      cx:toast("error", "Context Broker", "Cannot start Node.js 22+: " .. tostring(failure))
+      composer.release(saved)
+      cx:toast("error", "Context Broker", "Cannot start Node.js 22.22.3+ within 22.x or 24.20.0+: " .. tostring(failure))
     end
 end
 
 tern.command({
   id = "complete",
-  title = "Complete Context Broker Skill or Bundle",
+  title = "Complete Context Broker content (OMP native)",
   icon = "puzzle",
   keys = { "ctrl+alt+shift+k" },
   run = complete,
+})
+
+tern.command({
+  id = "cancel",
+  title = "Cancel pending Context Broker native operation",
+  icon = "puzzle",
+  run = function(cx)
+    composer.cancel()
+    cx:toast("info", "Context Broker", "Pending completion cancelled. Your draft is unchanged. Close any open picker with Esc.")
+  end,
 })
 

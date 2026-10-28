@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { isolatedEnv, preserveTemp, runCommand, writeFakeProvider } from "./context-broker-e2e-fixture.mjs";
+import { startRpc } from "./context-broker-rpc-harness.mjs";
 
 const repoRoot = resolve(import.meta.dirname, "..");
 const extensionPath = join(repoRoot, "src/index.ts");
@@ -112,14 +113,23 @@ async function runHost(host, tempRoot, fakeProviderPath) {
     CONTEXT_BROKER_LOG_FILE: logFile,
     CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: providerContextFile,
   });
+  const run = async (prompt, continued = false) => {
+    const resume = continued ? ["--continue"] : [];
+    if (host === "pi") return runCommand(host, [...commonArgs, ...resume, prompt], { cwd: base, env });
+    const rpc = await startRpc({ host, args: [...commonArgs.filter(arg => arg !== "-p"), "--no-ui", ...resume], cwd: base, env });
+    try {
+      await rpc.prompt(prompt);
+      return { stdout: (await rpc.command("get_last_assistant_text")).text ?? "" };
+    } finally { await rpc.stop(); }
+  };
 
   const prompt = "中文😀先使用$design-context，再用$review-context。请一起评审";
-  console.log(`${host} host e2e: first print turn`);
-  const first = await runCommand(host, [...commonArgs, prompt], { cwd: base, env });
+  console.log(`${host} host e2e: first user turn`);
+  const first = await run(prompt);
   assert.match(first.stdout, /OK/, `${host}: first turn did not return OK`);
 
-  console.log(`${host} host e2e: continued print turn`);
-  const second = await runCommand(host, [...commonArgs, "--continue", prompt], { cwd: base, env });
+  console.log(`${host} host e2e: continued user turn`);
+  const second = await run(prompt, true);
   assert.match(second.stdout, /OK/, `${host}: second turn did not return OK`);
 
   const logText = await readFile(logFile, "utf8");
@@ -136,6 +146,9 @@ async function runHost(host, tempRoot, fakeProviderPath) {
   const sessionFiles = await findJsonlFiles(sessionDir);
   assert.equal(sessionFiles.length, 1, `${host}: expected one session file`);
   const sessionText = await readFile(sessionFiles[0], "utf8");
+  const guidanceEntries = sessionText.trim().split("\n").map(line => JSON.parse(line)).filter(entry => entry.type === "custom_message" && entry.customType === "ntn-skills-guidance");
+  assert.equal(guidanceEntries.length, 1, `${host}: continued session must retain one CLI guidance message`);
+  const guidance = JSON.stringify(guidanceEntries[0].content).slice(1, -1);
   const customMatches = sessionText.match(/"customType":"context-broker"/g) ?? [];
   const markerMatches = sessionText.match(/CONTEXT_BROKER_E2E_MARKER/g) ?? [];
   const reviewMarkerMatches = sessionText.match(/CONTEXT_BROKER_E2E_REVIEW_MARKER/g) ?? [];
@@ -149,6 +162,7 @@ async function runHost(host, tempRoot, fakeProviderPath) {
   assert.equal(providerContexts.length, 2, `${host}: expected two provider context captures`);
   for (const [turn, context] of providerContexts.entries()) {
     const messages = JSON.stringify(context.messages);
+    assert.equal(messages.split(guidance).length - 1, 1, `${host}: turn ${turn + 1} must contain the complete CLI guidance exactly once`);
     for (const marker of ["CONTEXT_BROKER_E2E_MARKER", "CONTEXT_BROKER_E2E_REVIEW_MARKER"]) {
       assert.equal(messages.split(marker).length - 1, 1, `${host}: turn ${turn + 1} provider messages must contain exactly one ${marker} body`);
     }

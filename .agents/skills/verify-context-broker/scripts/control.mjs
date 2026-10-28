@@ -15,10 +15,18 @@ const routes = {
   lifecycle: { tools: ["bun", "omp"], scripts: ["packages/context-broker/scripts/context-broker-lifecycle-e2e.mjs"] },
   model: { tools: ["bun", "omp"], scripts: ["scripts/verify-real-model.mjs"] },
   distribution: { tools: ["bun", "omp", "npm", "git", "tar"], scripts: ["scripts/verify-artifacts.mjs", "scripts/release.test.mjs"] },
+  source: { tools: ["bun", "omp", "pi"], scripts: ["scripts/verify-notion-integration.mjs"] },
+  "notion-editor": { tools: ["bun", "omp", "tern", "tar"], scripts: ["scripts/verify-native-ui.mjs --notion"], artifacts: ["packages/tern-context-broker/query/completion.mjs"] },
+  'tern-pi': { tools: ['node', 'pi', 'tern'], scripts: ['scripts/verify-tern-surfaces.mjs probe --surface pi-terminal'] },
+  'tern-omp-terminal': { tools: ['node', 'omp', 'tern'], scripts: ['scripts/verify-tern-surfaces.mjs probe --surface omp-terminal'] },
+  'tern-omp-native': { tools: ['node', 'omp', 'tern'], scripts: ['scripts/verify-tern-surfaces.mjs probe --surface omp-native'] },
 };
 const [action, target] = process.argv.slice(2);
-const usage = "Usage: node .agents/skills/verify-context-broker/scripts/control.mjs doctor|run injection|editor|lifecycle|model|distribution\n       node .agents/skills/verify-context-broker/scripts/control.mjs evidence /absolute/run-directory";
-if (process.versions.bun || Number(process.versions.node.split(".")[0]) < 22) throw new Error("Run this helper with Node.js 22+.");
+const usage = "Usage: node .agents/skills/verify-context-broker/scripts/control.mjs doctor|run injection|editor|lifecycle|model|distribution|source|notion-editor|tern-pi|tern-omp-terminal|tern-omp-native\n       node .agents/skills/verify-context-broker/scripts/control.mjs evidence /absolute/run-directory\nTern routes perform no-product renderer probes. Frozen acceptance: node scripts/verify-tern-surfaces.mjs run --surface SURFACE --spec /absolute/owned-run.json";
+if (["help", "--help", "-h"].includes(action)) { console.log(usage); process.exit(0); }
+const [nodeMajor, nodeMinor, nodePatch] = process.versions.node.split(".").map(Number);
+const supportedNode = (nodeMajor === 22 && (nodeMinor > 22 || (nodeMinor === 22 && nodePatch >= 3))) || nodeMajor > 24 || (nodeMajor === 24 && nodeMinor >= 20);
+if (process.versions.bun || !supportedNode) throw new Error("Run this helper with Node.js 22.22.3+ within 22.x or 24.20.0+; Bun is build-only.");
 if (process.argv.length !== 4 || !["doctor", "run", "evidence"].includes(action) || (action !== "evidence" && !routes[target])) throw new Error(usage);
 
 async function executable(name) {
@@ -33,7 +41,7 @@ async function executable(name) {
 async function version(name) {
   const host = name === "omp" || name === "pi";
   const child = host
-    ? await spawnHost(name, ["--version"], { cwd: root, env: isolatedEnv({ base: tmpdir(), agentDir: join(tmpdir(), "broker-doctor-unused-agent") }), stdio: ["ignore", "pipe", "pipe"] })
+    ? await spawnHost(name, ["--version"], { cwd: root, env: isolatedEnv({ base: doctorBase, agentDir: join(doctorBase, "agent") }), stdio: ["ignore", "pipe", "pipe"] })
     : spawn(await executable(name), ["--version"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
   return await new Promise((accept, reject) => {
     let stdout = "";
@@ -55,27 +63,31 @@ async function version(name) {
   });
 }
 
+let doctorBase;
 async function doctor(feature) {
   const report = { feature, root, platform: process.platform, node: { file: process.execPath, version: process.versions.node }, tools: [], artifacts: [], failures: [], authentication: feature === "model" ? "not probed; existing magpie login is required by the run" : feature === "editor" ? "existing Tern OS sign-in; fixture provider requires no model credentials" : "not required for fake-provider CLI runs" };
+  doctorBase = await mkdtemp(join(tmpdir(), "broker-doctor-"));
+  report.scratch = doctorBase;
+  report.scratchDisposition = "retained; move this owned directory to system Trash after reviewing doctor output";
   for (const name of routes[feature].tools) {
     try { report.tools.push(await version(name)); }
     catch (error) { report.failures.push(error.message); }
   }
   for (const path of routes[feature].artifacts ?? []) {
     try {
-      await access(join(root, path), constants.X_OK);
+      await access(join(root, path), path.endsWith("/ntn-skills.mjs") ? constants.R_OK : constants.X_OK);
       const body = await readFile(join(root, path));
       report.artifacts.push({ path, bytes: body.length, sha256: createHash("sha256").update(body).digest("hex") });
     } catch { report.failures.push(`${path} is missing or not executable; run bun run build`); }
   }
-  if (feature === "editor" && process.platform !== "darwin") report.failures.push("The native editor runner currently requires macOS.");
+  if (["editor", "notion-editor"].includes(feature) && process.platform !== "darwin") report.failures.push("The native editor runner currently requires macOS.");
   report.status = report.failures.length ? "blocked" : "ready";
   return report;
 }
 
-const retainedPattern = /(?:E2E evidence retained: |Native UI fixtures retained: |Real-model evidence retained: |Artifact workspace retained: |Release fixture retained at )([^\r\n]+)/g;
+const retainedPattern = /(?:E2E evidence retained: |Native UI fixtures retained: |Real-model evidence retained: |Artifact workspace retained: |Release fixture retained at |Notion integration evidence retained: |Builtin management evidence retained: |Builtin UI evidence retained: |Tern surface evidence retained: )([^\r\n]+)/g;
 async function runScript(script, directory, index) {
-  const args = script === "scripts/release.test.mjs" ? ["--test", script] : [script];
+  const args = script === "scripts/release.test.mjs" ? ["--test", script] : script.split(" ");
   const transcript = `${index + 1}-${script.split("/").at(-1)}.log`;
   const log = join(directory, transcript);
   await writeFile(log, "");
@@ -140,6 +152,7 @@ if (action === "doctor") {
       manifest.status = "failed";
       manifest.error = error.message;
       process.exitCode = 1;
+      manifest.failureDoctor = await doctor(target);
     } finally {
       manifest.finishedAt = new Date().toISOString();
       await writeFile(join(directory, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");

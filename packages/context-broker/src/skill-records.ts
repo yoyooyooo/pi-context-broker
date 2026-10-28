@@ -1,7 +1,7 @@
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, realpathSync, statSync } from "node:fs";
 import { readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { ScanConfig, SkillMetadata, SkillRecord } from "./types";
 
@@ -13,15 +13,15 @@ export function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
 }
 
+/** Local names use the CLI display-name/alias contract; remote aliases stay opaque. */
 export function normalizeKey(value: string): string {
-  return value
-    .trim()
-    .replace(/^[`"'([{（【]+|[`"',，。.!！？?；;、:：)）\]】}]+$/gu, "")
-    .replace(/\s+(?:skill|技能)$/iu, "")
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[\s_-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  if (!/\S/u.test(value) || /[\p{Cc}\p{Cf}\p{Cs}]/u.test(value)) return "";
+  const normalized = value.normalize("NFC").toLowerCase().trim().replace(/\s+/gu, "-");
+  return Array.from(normalized, (character, index) =>
+    /^[\p{L}\p{M}\p{N}_-]$/u.test(character) && !(index === 0 && character === "-")
+      ? character
+      : encodeURIComponent(character).replace(/[!'()*-]/g, value => `%${value.charCodeAt(0).toString(16).toUpperCase()}`),
+  ).join("");
 }
 
 export function compactPath(path: string): string {
@@ -62,7 +62,7 @@ export function stringArray(value: unknown): string[] {
 
 export function metadataFromSkill(path: string, body: string): SkillMetadata | undefined {
   const frontmatter = parseFrontmatter(body);
-  const name = typeof frontmatter.name === "string" && frontmatter.name.trim() ? frontmatter.name.trim() : basename(dirname(path));
+  const name = typeof frontmatter.name === "string" && frontmatter.name.trim() ? frontmatter.name : basename(dirname(path));
   const description = typeof frontmatter.description === "string" ? frontmatter.description.trim() : "";
   const autoload = frontmatter.autoload && typeof frontmatter.autoload === "object" ? frontmatter.autoload as Record<string, unknown> : {};
   const autoloadEnabled = autoload.enabled === true || process.env.CONTEXT_BROKER_REQUIRE_ENABLED === "0";
@@ -133,8 +133,16 @@ export function skillRecordFromFile(
     aliases: uniqueStrings([...(parsedMetadata.aliases ?? []), ...(metadataOverride?.aliases ?? [])]),
   };
   if (requireAutoload && !metadata.autoloadEnabled) return undefined;
+  if (!normalizeKey(metadata.name)) return undefined;
   return {
     ...metadata,
+    kind: "skill",
+    id: `local:${resolve(path)}`,
+    locator: { type: "local", id: resolve(path), entry: path },
+    source: "local",
+    alias: normalizeKey(metadata.name),
+    entrypoint: "SKILL.md",
+    ref: path,
     path,
     body,
     normalizedName: normalizeKey(metadata.name),
@@ -155,13 +163,17 @@ export async function buildRegistryFromRoots(roots: string[], requireAutoload: b
   return records;
 }
 
-export function dedupeRegistryByNormalizedName(registry: SkillRecord[]): SkillRecord[] {
-  const seen = new Set<string>();
-  const result: SkillRecord[] = [];
-  for (const skill of registry) {
-    if (seen.has(skill.normalizedName)) continue;
-    seen.add(skill.normalizedName);
-    result.push(skill);
-  }
-  return result;
+/** Local symlink aliases share one physical Skill; source identities stay independent. */
+export function dedupeLocalSkillPaths<T extends SkillRecord>(records: T[]): T[] {
+  const paths = new Set<string>();
+  return records.filter(record => {
+    if (record.sourceId) return true;
+    let path: string;
+    try { path = realpathSync(record.path); }
+    catch { path = resolve(record.path); }
+    if (paths.has(path)) return false;
+    paths.add(path);
+    return true;
+  });
 }
+

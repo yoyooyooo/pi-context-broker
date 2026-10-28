@@ -61,7 +61,7 @@ export async function startRpc({ host = "omp", args = [], cwd, env = process.env
       if (!stopping || !expectedStop) {
         fail(new Error(`${host}: RPC exited (code=${code}, signal=${signal})${diagnostic()}`));
       }
-      resolve();
+      resolve({ code, signal });
     });
   });
   const withDeadline = (label, install) => new Promise((resolve, reject) => {
@@ -98,7 +98,7 @@ export async function startRpc({ host = "omp", args = [], cwd, env = process.env
     // Attach both rejection handlers before either promise can reject.
     try {
       const acknowledged = command("prompt", { message }).then((data) => {
-        if (data?.agentInvoked === false && eventWaiters.delete(completionWaiter)) {
+        if ((data?.agentInvoked === false || data?.disposition === "handled") && eventWaiters.delete(completionWaiter)) {
           completionWaiter.resolve({ type: "prompt_result", agentInvoked: false, status: "completed", sessionSettled: true });
         }
         return data;
@@ -134,7 +134,22 @@ export async function startRpc({ host = "omp", args = [], cwd, env = process.env
     }
     if (failure) throw failure;
   };
+  const closeInput = async () => {
+    if (stopped || stopping) throw new Error(`${host}: RPC is stopped`);
+    stopping = true;
+    child.stdin.end();
+    // Both native RPC loops dispose their session on EOF. A timeout is a failure,
+    // never a successful substitute with process-group termination.
+    let timer;
+    try {
+      const result = await Promise.race([exited, new Promise((_, reject) => {
+        timer = setTimeout(() => { terminate(); reject(new Error(`${host}: graceful EOF shutdown timed out`)); }, 10000);
+      })]);
+      if (result.code !== 0 || result.signal) throw new Error(`${host}: graceful EOF exited (code=${result.code}, signal=${result.signal})`);
+      if (failure) throw failure;
+    } finally { clearTimeout(timer); }
+  };
   try { await command("get_state"); }
   catch (error) { await stop().catch(() => {}); throw error; }
-  return { command, prompt, stop, frames };
+  return { command, prompt, stop, closeInput, frames };
 }

@@ -1,0 +1,31 @@
+{
+  "provenance": {
+    "catalog_path": "control/release-e2e/pro-native-basic/env/ntn-config/list.json",
+    "catalog_sha256": "16c4b0ad85301033dd4684564221cb5bebc64736ee8cbce218b3d97632e4b876",
+    "router_path": "control/release-e2e/upstream-runner/raw/v2-cold-router.1.json",
+    "router_sha256": "193f34dcf1256cc1b1581e4ddb64a9e10754fae6465f692c6ed3040b08a713bf",
+    "projection": "Retained target content database and catalog envelope; inserted exact captured Router record. Tests explicitly add corrected producer upstream role/queried coverage. This is a regression projection, not a new live receipt."
+  },
+  "catalog": {
+    "ok": true,
+    "scope": "5a163d388fb831806a56ba23889f425eaf974d98fae86ad3bb883d40ca956938",
+    "fetched_at": 1792283523797,
+    "databases": [{"alias":"content-d9091165","database_id":"d9091165-4e39-42af-a8d1-86f886d38827","title":"AH258 Content Scoped","data_source_ids":["829459df-b39a-4f03-b031-7eb251589908"],"role":"content"}],
+    "coverage": {"method":"search_and_registered","exhaustive":false,"queried_data_sources":["829459df-b39a-4f03-b031-7eb251589908"],"failed_sources":[],"search_index_limited":true},
+    "freshness": {"policy":"default","validated_at":"2026-10-18T00:32:03.797Z","age_ms":13872,"max_age_ms":60000,"stale":false}
+  },
+  "routerRead": {
+    "ok": true,
+    "record": {
+      "id":"notion_subscription:3fd5636c-236e-81b9-9da8-dad8c705f36b","kind":"router",
+      "locator":{"type":"notion_subscription","subscription_id":"3fd5636c-236e-81b9-9da8-dad8c705f36b","database_id":"af1eb768-3e4c-40e8-9741-bdfba8fe1534","data_source_id":"4568df18-ac6e-49fc-b020-5f85bb63a2ae","target_database_id":"d9091165-4e39-42af-a8d1-86f886d38827"},
+      "name":"Upstream Proof Pkglpdgfpegigpga","alias":"upstream-proof-pkglpdgfpegigpga","description":"Owned real upstream proof pkglpdgfpegigpga","default_context":true,"entrypoint":"ROUTER.md","ref":"skill://upstream%3A3fd5636c-236e-81b9-9da8-dad8c705f36b/ROUTER.md"
+    },
+    "entrypoint":"ROUTER.md","scope":"5a163d388fb831806a56ba23889f425eaf974d98fae86ad3bb883d40ca956938",
+    "snapshot_id":"s_f399fdf46bf2cffe99e5658d84d5e96dc13ae58599c4b2e5420c2543796f632f","version_id":"a29939836075d20ca29ca94d0172a6674d37f33a01d28f2b994eeaf5a1b4023d",
+    "path":"ROUTER.md","ref":"skill://upstream%3A3fd5636c-236e-81b9-9da8-dad8c705f36b/ROUTER.md?snapshot=s_f399fdf46bf2cffe99e5658d84d5e96dc13ae58599c4b2e5420c2543796f632f",
+    "source":"notion","freshness":{"policy":"refresh","validated_at":"2026-10-18T00:28:17.575Z","age_ms":2,"max_age_ms":300000,"stale":false},
+    "content":"---\n\"description\": \"Owned real upstream proof pkglpdgfpegigpga\"\n\"name\": \"upstream-proof-pkglpdgfpegigpga\"\n---\n\nOwned real upstream proof pkglpdgfpegigpga\n\n## Members\n\n- [Upstream Proof Pkglpdgfpegigpga](skill://3fd5636c-236e-8140-8afd-cd19f89e2b9f/SKILL.md) — Real upstream proof with reference and binary asset.\n",
+    "range":{"start":1,"end":11,"total_lines":11},"has_more":false
+  }
+}

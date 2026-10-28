@@ -1,6 +1,6 @@
 version: 1
 records:
-  - kind: bundle
+  - kind: router
     name: workspace-collab
     description: Collaboration contexts for documents, chat, and tasks.
     aliases:
@@ -9,7 +9,7 @@ records:
     render:
       type: member-index
       rules:
-        - This is a context bundle index, not a concrete skill.
+        - This is a context router index, not a concrete skill.
         - Select the needed member before acting.
         - Read the selected member file before using member-specific details.
     policy:
