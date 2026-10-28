@@ -98,7 +98,7 @@ The release script creates a temporary local release branch, writes version file
 
 Planning still fetches/prunes tags and queries npm, so do not treat `--dry-run` or `release:check` as completely side-effect free. The repository permits reusing a failed version only while that version remains unpublished; published npm versions cannot be replaced. See [release configuration](https://github.com/yoyooyooo/pi-context-broker/blob/main/.github/release.config.json) for the current policy.
 
-Publication builds both artifacts, publishes npm from `packages/context-broker`, and attaches an optional `tern-context-broker.tar.gz` to the GitHub Release. The Tern version is owned by its package and manifest and may differ from the broker's npm version. `bun scripts/pack.mjs` rehearses both artifact formats locally; Tern users install the extracted release directory; source checkouts are a development input.
+Publication builds both artifacts, publishes npm from `packages/context-broker`, and attaches `tern-context-broker.tar.gz` to the GitHub Release. The Tern version is owned by its package and manifest and may differ from the broker's npm version. `bun scripts/pack.mjs` rehearses both artifact formats locally; Tern users install the extracted release directory; source checkouts are a development input.
 
 Before npm Trusted Publishing is configured, a maintainer can publish manually from a real TTY:
 
