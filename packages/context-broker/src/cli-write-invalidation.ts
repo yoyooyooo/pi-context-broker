@@ -3,7 +3,7 @@ import type { ExtensionAPI, ExtensionContext, MessageContent, SkillRecord, Sourc
 
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
 type WriteKind = "content" | "upstream" | "local";
-type Invocation = { kind: WriteKind; sources: NotionSource[]; database?: string; consumed: boolean };
+type Invocation = { kind: WriteKind; sources: NotionSource[]; database?: string; consumed: boolean; progress: boolean; progressOperationId?: string };
 type ChangedTarget = { database: string; scope: string };
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const uuid = (value: unknown): string | undefined => typeof value === "string" && /^(?:[a-f\d]{32}|[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12})$/i.test(value) ? value.replaceAll("-", "").toLowerCase() : undefined;
@@ -66,7 +66,7 @@ function invocation(command: string, sources: NotionSource[]): Invocation | unde
     database = arg === "--database" ? args[++index] : arg.slice("--database=".length);
     if (!database || database.startsWith("--")) return undefined;
   }
-  return { kind, sources: matching.map(item => item.source), database, consumed: false };
+  return { kind, sources: matching.map(item => item.source), database, consumed: false, progress: argv.includes("--progress") };
 }
 
 function changedTargets(value: unknown, kind: WriteKind): ChangedTarget[] {
@@ -133,6 +133,68 @@ function text(content: MessageContent | undefined): string {
   return typeof content === "string" ? content : (content ?? []).filter(part => part.type === "text").map(part => (part as { text: string }).text).join("\n");
 }
 
+export type CliOutput = { status: "complete"; result: Record<string, unknown> }
+  | { status: "pending"; operationId?: string; artifact?: string }
+  | { status: "invalid" };
+
+/** CLI stdout is one final JSON object; --progress stderr is PublicationProgress JSONL. */
+export function decodeCliWriteOutput(body: string, options: { progress?: boolean; operationId?: string } = {}): CliOutput {
+  const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const progressFields = new Set(["operation_id", "stage", "status", "elapsed_ms", "stage_ms"]);
+  const sqliteWarning = /^\(node:\d+\) ExperimentalWarning: SQLite is an experimental feature and might change at any time$/;
+  const sqliteHint = "(Use `node --trace-warnings ...` to show where the warning was created)";
+  const complete = (result: Record<string, unknown>, operationId?: string): CliOutput => operationId !== undefined && result.operation_id !== operationId
+    ? { status: "invalid" } : { status: "complete", result };
+  try {
+    const result = object(JSON.parse(body));
+    if (typeof result.ok === "boolean") return complete(result, options.operationId);
+  } catch { /* A host can merge stdout with progress and Node's SQLite warning. */ }
+  const footer = /\n\n\[Some lines truncated to \d+ bytes\. Use (artifact:\/\/[a-z\d_-]+):raw:\d+-\d+ to read lines? \d+(?:-\d+)? whole\]\s*$/i.exec(body);
+  const lines = (footer ? body.slice(0, footer.index) : body).split(/\r?\n/);
+  let final: Record<string, unknown> | undefined;
+  let operationId = options.operationId;
+  let truncated = 0;
+  let warningHint = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (sqliteWarning.test(line)) { warningHint = true; continue; }
+    if (line === sqliteHint) {
+      if (!warningHint) return { status: "invalid" };
+      warningHint = false;
+      continue;
+    }
+    warningHint = false;
+    let value: unknown;
+    try { value = JSON.parse(line); }
+    catch {
+      // Only the host's observed truncation footer can authorize an artifact follow-up.
+      // The prefix itself never proves that the operation completed.
+      if (footer && line.startsWith("{") && line.endsWith("…")) { truncated++; continue; }
+      return { status: "invalid" };
+    }
+    const item = object(value);
+    if (typeof item.ok === "boolean") {
+      if (final) return { status: "invalid" };
+      final = item;
+      continue;
+    }
+    if (options.progress !== true || Object.keys(item).length !== progressFields.size || !Object.keys(item).every(key => progressFields.has(key)) ||
+        typeof item.operation_id !== "string" || !item.operation_id.trim() || typeof item.stage !== "string" || !item.stage.trim() ||
+        !["started", "completed", "failed"].includes(String(item.status)) ||
+        typeof item.elapsed_ms !== "number" || !Number.isFinite(item.elapsed_ms) || item.elapsed_ms < 0 ||
+        typeof item.stage_ms !== "number" || !Number.isFinite(item.stage_ms) || item.stage_ms < 0) return { status: "invalid" };
+    if (operationId !== undefined && operationId !== item.operation_id) return { status: "invalid" };
+    operationId = item.operation_id;
+  }
+  if (footer) {
+    // Multiple truncated objects or an additional final object cannot establish one final receipt.
+    if (truncated !== 1 || final) return { status: "invalid" };
+    return { status: "pending", operationId, artifact: footer[1] };
+  }
+  return final ? complete(final, operationId) : { status: "pending", operationId };
+}
+
 /** Observe existing host tools; never execute CLI commands or invalidate an active submission. */
 export function installCliWriteInvalidation(api: ExtensionAPI, options: {
   sources: SourceConfig[];
@@ -162,19 +224,16 @@ export function installCliWriteInvalidation(api: ExtensionAPI, options: {
     const id = key(event.toolCallId, ctx), call = calls.get(id);
     calls.delete(id);
     if (!call || call.consumed || event.isError) return;
-    const body = text(event.content);
-    let result: unknown;
-    try { result = JSON.parse(body); }
-    catch {
-      // OMP truncates long stdout and exposes the complete line through read(artifact://id:raw:...).
-      // Only a later complete JSON receipt can mark a source dirty.
-      const artifact = /\n\n\[Some lines truncated to \d+ bytes\. Use (artifact:\/\/[a-z\d_-]+):raw:\d+-\d+ to read lines? \d+(?:-\d+)? whole\]\s*$/i.exec(body)?.[1];
-      if (artifact) retain(artifacts, key(artifact, ctx), call);
+    const output = decodeCliWriteOutput(text(event.content), { progress: call.progress, operationId: call.progressOperationId });
+    if (output.status === "pending") {
+      call.progressOperationId = output.operationId;
+      if (output.artifact) retain(artifacts, key(output.artifact, ctx), call);
       return;
     }
     call.consumed = true;
     for (const [artifact, owner] of artifacts) if (owner === call) artifacts.delete(artifact);
-    const ids = affectedSources(call, result, options.records());
+    if (output.status !== "complete") return;
+    const ids = affectedSources(call, output.result, options.records());
     if (ids.length) options.changed(ids, ctx);
   });
   for (const event of ["session_shutdown", "session_switch", "session_tree", "session_branch"] as const) api.on(event, () => { calls.clear(); artifacts.clear(); });

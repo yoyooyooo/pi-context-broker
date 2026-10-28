@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { installCliWriteInvalidation } from "../src/cli-write-invalidation";
+import { decodeCliWriteOutput, installCliWriteInvalidation } from "../src/cli-write-invalidation";
 import contextBroker from "../src/index";
 import type { AutocompleteProvider, ExtensionAPI, ExtensionContext, SkillRecord, SourceConfig } from "../src/types";
 
@@ -50,6 +50,51 @@ for (const value of [
 await result(command("apply", "s_baseline"), receipt, true);
 assert.equal(changed.length, 0, "Reads, previews, unchanged/failed writes, mismatched scope and compound shell output cannot mark a source dirty");
 
+// Hosts merge CLI stdout with the exact PublicationProgress JSONL written to stderr.
+const publication = "p_44444444-4444-4444-8444-444444444444";
+const progressedReceipt = { ...receipt, operation_id: publication };
+const progress = (status = "completed", operation_id = publication) => ({ operation_id, stage: "verify", status, elapsed_ms: 15.25, stage_ms: 2.5 });
+const jsonl = (...lines: unknown[]) => lines.map(line => typeof line === "string" ? line : JSON.stringify(line)).join("\n");
+const sqliteWarning = "(node:7778) ExperimentalWarning: SQLite is an experimental feature and might change at any time";
+const sqliteHint = "(Use `node --trace-warnings ...` to show where the warning was created)";
+const progressCommand = command("apply", "s_baseline", "--progress", "--database", db);
+for (const output of [
+  jsonl(progress("started"), progress(), progressedReceipt),
+  jsonl(sqliteWarning, sqliteHint, progress(), progressedReceipt),
+  jsonl(progressedReceipt, progress(), sqliteWarning, sqliteHint),
+]) {
+  await result(progressCommand, output);
+  assert.deepEqual(changed.pop(), ["personal", "alias"], "One complete same-operation receipt survives known stderr progress/warnings");
+}
+await result(command("apply", "s_baseline"), jsonl(sqliteWarning, sqliteHint, receipt));
+assert.deepEqual(changed.pop(), ["personal", "alias"], "The precise Node SQLite warning does not require --progress");
+assert.deepEqual(decodeCliWriteOutput(JSON.stringify(receipt, null, 2)), { status: "complete", result: receipt }, "Pure JSON keeps its original whitespace-tolerant fast path");
+await result(command("apply", "s_baseline"), jsonl(progress(), progressedReceipt));
+assert.equal(changed.length, 0, "JSONL progress requires the actual literal --progress argv");
+for (const output of [
+  jsonl(progress("completed", "p_another"), progressedReceipt),
+  jsonl(progress(), progress("completed", "p_another"), progressedReceipt),
+  jsonl(progress(), receipt),
+  jsonl(progress(), progressedReceipt, progressedReceipt),
+  jsonl({ ...progress(), extra: "unknown" }, progressedReceipt),
+  jsonl({ ...progress(), elapsed_ms: -1 }, progressedReceipt),
+  jsonl({ ...progress(), stage_ms: null }, progressedReceipt),
+  jsonl(progress("unknown"), progressedReceipt),
+  jsonl({ ...progress(), stage: "" }, progressedReceipt),
+  jsonl({ message: "other JSON" }, progressedReceipt),
+  jsonl("Unrecognized stderr text", progressedReceipt),
+  jsonl("(node:7778) ExperimentalWarning: Another experimental feature", progressedReceipt),
+  jsonl(sqliteHint, progressedReceipt),
+  jsonl(progress(), '{"ok":true,"operation":"replace",…'),
+]) {
+  assert.equal(decodeCliWriteOutput(output, { progress: true }).status, "invalid");
+  await result(progressCommand, output);
+}
+for (const ending of [{ ...progressedReceipt, reused: true, action: "reuse" }, { ...progressedReceipt, verified: false }, { ok: false, error: { code: "WRITE_OUTCOME_UNKNOWN" } }]) {
+  await result(progressCommand, jsonl(progress(), ending));
+}
+assert.equal(changed.length, 0, "No unknown/mixed operation, extra final, noise, truncation or unsuccessful outcome becomes a change");
+
 const { action: _action, reused: _reused, ...baseUpdate } = receipt;
 const updateReceipt = { ...baseUpdate, operation: "update", effects: { properties: ["default-context"] } };
 await result(command("update", page, "--default-context"), updateReceipt);
@@ -70,6 +115,22 @@ for (const [toolCallId, path] of [["wrong", "artifact://2:raw:1-1"], ["complete"
   if (toolCallId === "wrong") assert.equal(changed.length, 0, "An authored artifact-looking string does not grant the tool result an output owner");
 }
 assert.deepEqual(changed.splice(0), [["personal", "alias"]], "Only the linked complete receipt invalidates, exactly once");
+
+for (const [id, original, completed, expected] of [
+  ["progress-artifact", jsonl(progress(), '{"ok":true,"operation":"replace",…'), progressedReceipt, 1],
+  ["wrong-operation-artifact", jsonl(progress("completed", "p_another"), '{"ok":true,"operation":"replace",…'), progressedReceipt, 0],
+  ["unknown-output-artifact", jsonl({ unexpected: true }, '{"ok":true,"operation":"replace",…'), progressedReceipt, 0],
+  ["extra-final-artifact", jsonl(progressedReceipt, '{"ok":true,"operation":"replace",…'), progressedReceipt, 0],
+] as const) {
+  const path = `artifact://${id}:raw:2-2`;
+  await emit("tool_call", { toolName: "bash", toolCallId: id, input: { command: progressCommand } });
+  await emit("tool_result", { toolName: "bash", toolCallId: id, input: {}, content: original + `\n\n[Some lines truncated to 768 bytes. Use ${path} to read line 2 whole]`, isError: false });
+  assert.equal(changed.length, 0, "A truncated receipt never marks a source dirty");
+  await emit("tool_call", { toolName: "read", toolCallId: id + "-read", input: { path } });
+  await emit("tool_result", { toolName: "read", toolCallId: id + "-read", input: { path }, content: JSON.stringify(completed), isError: false });
+  assert.equal(changed.length, expected, "Artifact completion retains the original call's known progress identity and rejects earlier noise");
+  changed.length = 0;
+}
 
 const upstream = (created: number) => ({ ok: true, verified: true, results: [{ operation: { state: "verified", database_id: otherDb, target_database_id: db, scope: auth }, members: { created, updated: 0, restored: 0, unchanged: 3 } }] });
 await result(command("sync", "upstream", "run"), upstream(0));
