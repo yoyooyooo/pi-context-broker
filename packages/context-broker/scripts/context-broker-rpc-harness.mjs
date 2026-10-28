@@ -2,8 +2,8 @@ import { signalHost, spawnHost } from "./context-broker-e2e-fixture.mjs";
 import { createInterface } from "node:readline";
 
 // Native host RPC uses newline-delimited JSON. readline has no 64 KiB frame limit.
-export async function startRpc({ host = "omp", args = [], cwd, env = process.env }) {
-  const timeoutMs = 120_000;
+export async function startRpc({ host = "omp", args = [], cwd, env = process.env, timeoutMs = 120_000 }) {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2_147_483_647) throw new Error("RPC timeoutMs must be a positive timer duration");
   const secretValues = Object.entries(env)
     .filter(([key, value]) => /(?:KEY|TOKEN|SECRET|PASSWORD|COOKIE|CREDENTIAL)/i.test(key) && typeof value === "string" && value.length >= 4)
     .map(([, value]) => value);
