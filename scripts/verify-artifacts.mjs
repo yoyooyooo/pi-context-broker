@@ -87,10 +87,15 @@ const localSkillPath = join(skillRoot, "design-review/SKILL.md");
 await writeFile(localSkillPath, `---\nname: design-review\ndescription: Artifact review\nautoload:\n  enabled: true\n  aliases: [架构评审]\n---\n${marker}\n`);
 const config = join(base, "config.yml");
 await writeFile(config, `skillRoots:\n  - ${JSON.stringify(skillRoot)}\nsources: []\n`);
+const enabledConfig = join(base, "notion-enabled-config.json");
+await writeFile(enabledConfig, JSON.stringify({
+  skillRoots: [skillRoot],
+  sources: [{ id: "notion-setup", type: "notion", command: join(base, "missing-notion-cli") }],
+}));
 const agentDir = join(base, "agent");
 await mkdir(agentDir);
 const capture = join(base, "provider.jsonl");
-const env = isolatedEnv({ base, agentDir, CONTEXT_BROKER_CONFIG: config, CONTEXT_BROKER_ROOTS: skillRoot, CONTEXT_BROKER_HOST: "omp", CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: capture, NTN_SKILLS_NTN_BIN: join(base, "absent-ntn") });
+const env = isolatedEnv({ base, agentDir, CONTEXT_BROKER_CONFIG: enabledConfig, CONTEXT_BROKER_ROOTS: skillRoot, CONTEXT_BROKER_HOST: "omp", CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: capture, NTN_SKILLS_NTN_BIN: join(base, "absent-ntn") });
 function localChoice(response) {
   const item = response.items.find(item => item.ref === localSkillPath && item.source === "local");
   assert.ok(item, "Packaged query must retain the exact configured local identity");
@@ -114,10 +119,16 @@ for (const [label, executable, directory] of [
   ["tern", ternQuery, closure.builtins.ternRoot],
 ]) {
   const text = "$ntn-skills";
-  const response = JSON.parse(run(process.execPath, [executable], {
+  const disabled = JSON.parse(run(process.execPath, [executable], {
     input: JSON.stringify({ version: 1, text, cursor: text.length, cwd: base, config }), env,
   }));
-  assert.deepEqual(response.failures ?? [], [], `${label}: offline package discovery must not require a provider`);
+  assert.deepEqual(disabled.failures ?? [], [], `${label}: no Notion source must not attempt remote discovery`);
+  assert.ok(!disabled.items.some(item => closure.builtins.names.some(name => item.value === "$" + name + "@builtin")),
+    `${label}: do not advertise bundled Notion workflows before an enabled source is configured`);
+  const response = JSON.parse(run(process.execPath, [executable], {
+    input: JSON.stringify({ version: 1, text, cursor: text.length, cwd: base, config: enabledConfig }), env,
+  }));
+  assert.equal(response.failures?.[0]?.code, "SOURCE_COMMAND_UNAVAILABLE", `${label}: the Notion source is explicitly enabled but unavailable`);
   for (const name of closure.builtins.names) {
     const expectedPath = await runtimePath(directory, name + "/SKILL.md");
     const item = response.items.find(item => item.value === "$" + name + "@builtin");
