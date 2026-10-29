@@ -61,7 +61,7 @@ $ntn-skills-maintain@builtin Save the reusable method from this conversation to 
 $ntn-skills-sync@builtin Preview the synchronization I requested.
 ```
 
-These Skill bodies and references work offline with zero Notion sources and no global `ntn-skills`. They ship privately with the package; no publication or manual installation is needed. The current Agent uses the Broker's actual CLI argv and source/database scope. Multiple sources require an explicit choice. The three `@builtin` identities stay distinct from same-name local files or Notion pages.
+The package always contains these Skill bodies and references, but `$` completion offers them only with an enabled `type: notion` source. They remain readable offline if Notion is not yet connected or authenticated and need no global `ntn-skills`, publication or manual installation. With no enabled Notion source, the three builtin candidates are hidden. The current Agent uses the Broker's actual CLI argv and source/database scope. Multiple sources require an explicit choice. The three `@builtin` identities stay distinct from same-name local files or Notion pages.
 
 The companion contains no CLI command mirror, save wrapper, management reader or install/publish palette. `/context-broker` in the host retains View selection, refresh and diagnostics. Upgrade Broker/companion packages to update the bundled workflows.
 

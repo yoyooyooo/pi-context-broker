@@ -35,11 +35,11 @@ Review the design for ownership, boundaries, failure modes, and migration cost.
 
 ## Bundled Skills
 
-`$ntn-skills@builtin`, `$ntn-skills-maintain@builtin` and `$ntn-skills-sync@builtin` are ordinary local Skills shipped with the Broker and standalone Tern query. Their entrypoints and relative reference files are available offline immediately after installation, including with zero configured Notion sources and no global `ntn-skills` executable. Choosing them follows the same discovery, draft and loading path as any other `$` Skill.
+`$ntn-skills@builtin`, `$ntn-skills-maintain@builtin` and `$ntn-skills-sync@builtin` are ordinary local Skills shipped with the Broker and standalone Tern query. They appear in `$` discovery only when at least one configured `type: notion` source is enabled (`enabled` is not `false`); without enabled Notion sources they remain packaged but are hidden from discovery. The installed entrypoints and relative references are readable offline even before Notion authentication succeeds and without a global `ntn-skills` executable. Choosing them follows the same discovery, draft and loading path as any other `$` Skill.
 
 Use maintenance for Notion content editing, synchronization for connected upstream/local workflows, and the entry Skill for CLI and resource usage. The current Agent uses the `<ntn-skills-guidance>` argv and selected source/database. Each configured Notion source retains its own executable and scope; multiple sources require an explicit target choice. With no Notion source, guidance points to the packaged Node CLI, whose own configuration supplies its defaults.
 
-Private package content has a `builtin:<name>` identity and a fixed `@builtin` selector. A same-name filesystem or Notion entry remains independent and receives its own selector. A configured source named `builtin` cannot claim these official tokens. Physical aliases of the same bundled entry are deduplicated before local name precedence.
+Private package content has a `builtin:<name>` identity and a fixed `@builtin` selector when enabled. A same-name filesystem or Notion entry remains independent and receives its own selector. A configured source named `builtin` cannot claim these official tokens. Physical aliases of the same bundled entry are deduplicated before local name precedence.
 
 Upgrading the Broker/companion upgrades these workflows and resources. Restart the host after changing extension code. There is no prior publish/install step and no scan of old central installation receipts. User-managed copies remain regular files and can still be selected through explicitly configured roots.
 

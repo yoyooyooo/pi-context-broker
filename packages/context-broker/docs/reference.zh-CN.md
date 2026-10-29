@@ -29,11 +29,11 @@ Review the design for ownership, boundaries, failure modes, and migration cost.
 
 ## 随包 Skills
 
-`$ntn-skills@builtin`、`$ntn-skills-maintain@builtin` 和 `$ntn-skills-sync@builtin` 是 Broker 与独立 Tern query 随包提供的普通本地 Skill。入口与相对参考文件在安装后即可离线读取，零 Notion source、没有全局 `ntn-skills` executable 时同样可用。选择、草稿与加载均使用普通 `$` 链路。
+`$ntn-skills@builtin`、`$ntn-skills-maintain@builtin` 和 `$ntn-skills-sync@builtin` 是 Broker 与独立 Tern query 随包提供的普通本地 Skill。只有配置了至少一个未禁用的 `type: notion` source，才会在 `$` 发现与补全中出现；零已启用 Notion source 时文件仍随包保留，但不会显示候选。即使尚未完成 Notion 连接/认证、没有全局 `ntn-skills` executable，已启用时也能离线读取随包入口与相对参考文件。选择、草稿与加载均使用普通 `$` 链路。
 
 Notion 正文编辑使用 maintain，已连接 upstream/local 的维护使用 sync，CLI 命令及资源用法使用入口 Skill。当前 Agent 按 `<ntn-skills-guidance>` 中的真实 argv 和所选 source/database 执行。每个已配置 Notion source 保留自己的 executable 与 scope；多个 source 须明确选择目标。零 source 时使用随包 Node CLI，由 CLI 自己的配置提供默认范围。
 
-私有随包内容使用 `builtin:<name>` 身份和固定 `@builtin` 选择器。同名 filesystem 或 Notion 条目保持独立身份与选择器；namespace 为 `builtin` 的配置来源也不能冒用这三个官方 token。指向同一随包文件的物理别名先去重，再处理本地名字优先级。
+私有随包内容使用 `builtin:<name>` 身份，启用后使用固定 `@builtin` 选择器。同名 filesystem 或 Notion 条目保持独立身份与选择器；namespace 为 `builtin` 的配置来源也不能冒用这三个官方 token。指向同一随包文件的物理别名先去重，再处理本地名字优先级。
 
 升级 Broker/配套插件即可升级工作流与资源，扩展代码变化后重启宿主。使用前无需 publish/install，也不扫描旧中央安装回执。用户自行维护的副本仍是普通文件，可以通过显式配置 roots 发现。
 

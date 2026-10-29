@@ -61,7 +61,7 @@ $ntn-skills-maintain@builtin 把这段对话中的可复用方法保存到 Notio
 $ntn-skills-sync@builtin 预览这次要求的同步。
 ```
 
-零 Notion source、没有全局 `ntn-skills` 时，正文及参考文件仍可离线读取。它们作为私有内容随包提供，无需先发布或手动安装。当前 Agent 使用 Broker 提供的实际 CLI argv 与 source/database 范围，多个来源须明确选择。三个 `@builtin` 身份与同名本地文件、Notion 页面相互独立。
+三份 Skill 的正文及参考文件始终随包提供，但只有配置了至少一个未禁用的 `type: notion` source，才会在 `$` 补全中显示。即使 Notion 尚未连接或认证，启用后仍可离线读取，且无需全局 `ntn-skills`、事先发布或手动安装；没有启用 Notion source 时不显示这三条 builtin 候选。当前 Agent 使用 Broker 提供的实际 CLI argv 与 source/database 范围，多个来源须明确选择。三个 `@builtin` 身份与同名本地文件、Notion 页面相互独立。
 
 配套插件不再提供 CLI 命令镜像、save 包装、管理 reader 或 install/publish 面板。宿主中的 `/context-broker` 保留 View 选择、刷新与诊断。升级 Broker/配套插件即可更新随包工作流。
 

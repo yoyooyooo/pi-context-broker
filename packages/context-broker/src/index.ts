@@ -51,7 +51,7 @@ import { installCliWriteInvalidation } from "./cli-write-invalidation";
 import { createOmpHostAdapter } from "./omp-host-adapter";
 import { createPiHostAdapter } from "./pi-host-adapter";
 import { hostCliScope } from "./host-command";
-import { bundledBuiltinRecords, isBundledBuiltin, isBundledBuiltinToken } from "./bundled-builtins";
+import { configuredBundledBuiltinRecords, isBundledBuiltin, isBundledBuiltinToken } from "./bundled-builtins";
 import { createAcceptedSelections } from "./accepted-selections";
 import { notifyUnavailableReferences, renderUnavailableReferences, unavailableReferenceDetails, type UnavailableReference } from "./unavailable-references";
 import {
@@ -488,7 +488,7 @@ async function buildRegistry(config?: ConfigFile, paths: HostPathOptions = {}): 
   config ??= readConfig(paths);
   const requireAutoload = shouldRequireAutoload(config);
   return dedupeDiscoveryRecords(dedupeLocalSkillPaths([
-    ...bundledBuiltinRecords(requireAutoload, scanOptions(config)),
+    ...configuredBundledBuiltinRecords(config, requireAutoload),
     ...await buildRegistryFromRoots(configuredRoots(config), requireAutoload, scanOptions(config)),
   ]));
 }
@@ -499,7 +499,7 @@ function discoverUsableSkillRoots(config: ConfigFile = readConfig(), cwd = proce
 
 async function buildDiscoveryRegistry(config: ConfigFile = readConfig(), cwd = process.cwd(), options: { refresh?: boolean; stale?: boolean; refreshSourceIds?: readonly string[]; paths?: HostPathOptions } = {}): Promise<DiscoveryResult> {
   const skills = dedupeLocalSkillPaths([
-    ...bundledBuiltinRecords(false, scanOptions(config)),
+    ...configuredBundledBuiltinRecords(config),
     ...await buildRegistryFromRoots(discoverUsableSkillRoots(config, cwd), false, scanOptions(config)),
   ]);
   const sources = await discoverSourceCatalog(config, cwd, options);
@@ -515,7 +515,7 @@ async function buildDollarRegistry(config?: ConfigFile, cwd = process.cwd(), pat
 
 async function buildRawDollarRegistry(config: ConfigFile = readConfig(), cwd = process.cwd(), paths: HostPathOptions = {}): Promise<DiscoveryResult> {
   const skills = dedupeDiscoveryRecords(dedupeLocalSkillPaths([
-    ...bundledBuiltinRecords(false, scanOptions(config)),
+    ...configuredBundledBuiltinRecords(config),
     ...await buildRegistryFromRoots(discoverUsableSkillRoots(config, cwd), false, scanOptions(config)),
   ]));
   const sources = await discoverSourceCatalog(config, cwd);

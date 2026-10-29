@@ -4,10 +4,10 @@ Broker 与 Tern 分发三份完整的本地 Skill，经普通发现、选择与�
 
 | ID | 用户动作 | 必须观察的结果 |
 | --- | --- | --- |
-| NS-BUILTIN-01 | 冷安装后输入 `$`，选择 `$ntn-skills@builtin` | 出现精确内建身份；选择只改草稿；提交加载完整正文 |
-| NS-BUILTIN-02 | 选择 `$ntn-skills-maintain@builtin` 或 `$ntn-skills-sync@builtin` | 正文及相对 references 可读取；操作指引对应实际安装 CLI |
+| NS-BUILTIN-01 | 冷安装并启用 Notion source 后输入 `$`，选择 `$ntn-skills@builtin` | 出现精确内建身份；选择只改草稿；提交加载完整正文 |
+| NS-BUILTIN-02 | 启用 Notion source 后选择 `$ntn-skills-maintain@builtin` 或 `$ntn-skills-sync@builtin` | 正文及相对 references 可读取；操作指引对应实际安装 CLI |
 | NS-BUILTIN-03 | 配置同名本地/Notion Skill | 每个来源有独立身份；`@builtin` 指向包内内容，精确选择不串源 |
-| NS-BUILTIN-04 | 零 Notion source、没有全局 CLI，随后配置多个 source | 包内消费可离线；CLI 指引给出随包 argv；多来源保留各自 command/database，不隐式选首项 |
+| NS-BUILTIN-04 | 零 Notion source、禁用 Notion source、仅启用 filesystem source，再启用尚未连通的 Notion source，之后配置多个 source | 前三种不出现三条 `@builtin` 补全，普通 local/filesystem 候选保留；已启用 Notion 即使连接不可用也出现 builtin，包内资源可离线读取；多来源保留各自 command/database，不隐式选首项 |
 | NS-BUILTIN-05 | 独立 npm 和 Tern 归档 | 三份正文和完整资源相同；不借用 checkout 或旧中央目录；升级包后新会话消费新版本 |
 
 ## 执行路线

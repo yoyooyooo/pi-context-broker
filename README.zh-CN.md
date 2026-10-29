@@ -39,7 +39,7 @@ CLI 目录只返回 `records`，每条必须包含 `id/kind/locator/name/alias/d
 
 ## 用随包 Skill 维护与同步
 
-安装后即可在普通 `$` 候选中使用三份 Skill：`$ntn-skills@builtin`、`$ntn-skills-maintain@builtin` 和 `$ntn-skills-sync@builtin`，参考文件随包提供。即使没有 Notion source 或全局 `ntn-skills` executable，也能发现并读取；不需要先发布到 Notion 或另行安装 Skill 副本。
+安装包始终携带三份 Skill：`$ntn-skills@builtin`、`$ntn-skills-maintain@builtin` 和 `$ntn-skills-sync@builtin`，以及完整的参考文件。只有配置了至少一个未禁用的 `type: notion` source，才会在普通 `$` 候选中显示它们；尚未连通 Notion 或完成认证也能离线读取包内正文与资源，无需先发布到 Notion 或另行安装。没有启用 Notion source 时不显示这三条 builtin 补全。
 
 ```text
 $ntn-skills-maintain@builtin 把这段对话中可复用的方法整理为 Skill，保存到我的 Notion 库。

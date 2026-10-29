@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { skillRecordFromFile } from "./skill-records";
-import type { ScanConfig, SkillRecord } from "./types";
+import type { ConfigFile, ScanConfig, SkillRecord } from "./types";
 
 export const BUNDLED_SKILL_NAMES: readonly string[] = [
   "ntn-skills",
@@ -47,4 +47,12 @@ export function readBundledBuiltinRecords(root: string, requireAutoload = false,
 export function bundledBuiltinRecords(requireAutoload = false, options: ScanConfig = {}): SkillRecord[] {
   const root = bundledBuiltinRoot();
   return root ? readBundledBuiltinRecords(root, requireAutoload, options) : [];
+}
+
+/** Notion workflows are discoverable only after the user enables a Notion source.
+ * The source need not be reachable yet: the bundled instructions work offline.
+ */
+export function configuredBundledBuiltinRecords(config: ConfigFile, requireAutoload = false): SkillRecord[] {
+  const enabled = config.sources?.some(source => source.type === "notion" && source.enabled !== false);
+  return enabled ? bundledBuiltinRecords(requireAutoload, config.scan ?? {}) : [];
 }

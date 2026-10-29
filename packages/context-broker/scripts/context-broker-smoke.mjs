@@ -1292,14 +1292,14 @@ else if (mode === 'secret') {
     assert.throws(() => process.kill(descendant, 0), { code: "ESRCH" }, "cancellation closes only the owned process group, including descendants");
   }
 
-  const bundledDiscovery = await mod.buildDollarRegistry({ skillRoots: [] });
+  const bundledDiscovery = await mod.buildDollarRegistry({ skillRoots: [], sources: [{ type: "notion", id: "offline-builtin", command: join(temp, "missing-notion-cli") }] });
   const bundledRecords = bundledDiscovery.records.filter(builtinMod.isBundledBuiltin);
   assert.deepEqual(bundledRecords.map(record => record.alias).sort(), [...builtinMod.BUNDLED_SKILL_NAMES].sort());
   const sharedRoot = join(temp, "builtin-shared");
   await mkdir(sharedRoot);
   const builtin = bundledRecords[0];
   await symlink(join(builtin.path, ".."), join(sharedRoot, builtin.alias), "dir");
-  const configuredDiscovery = await mod.buildRawDollarRegistry({ skillRoots: [sharedRoot] });
+  const configuredDiscovery = await mod.buildRawDollarRegistry({ skillRoots: [sharedRoot], sources: [{ type: "notion", id: "offline-builtin", command: join(temp, "missing-notion-cli") }] });
   assert.equal(configuredDiscovery.records.filter(record => record.name === builtin.name).length, 1, "A configured physical alias retains one official bundled identity");
   assert.ok(configuredDiscovery.records.some(record => record.id === builtin.id));
   const nativePrompt = `<skill><name>native-builtin-alias</name><description>Native alias</description><location>${join(sharedRoot, builtin.alias, "SKILL.md")}</location></skill>`;
