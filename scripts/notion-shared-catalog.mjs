@@ -11,13 +11,26 @@ export async function runSharedCatalog({ scratch, evidence, fixture, extension, 
   await symlink(fixture.command[0], alternate);
   const peers = [];
   const revision = 'SHARED_NOTION_REVISION_B_8CA2';
-  const result = { host: 'pi+omp', mode: 'shared-catalog', status: 'running', cases: [], files: ['shared-catalog-result.json'] };
+  const result = { host: 'pi+omp', mode: 'shared-catalog', status: 'running', cases: [], files: ['shared-catalog-result.json'],
+    measurement: { unit: 'fixture-cli-invocations', remoteRequests: 'not-measured' }, measurements: [] };
   const rows = async path => (await readFile(path, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse);
   const calls = () => rows(fixture.callsPath);
-  const counts = async () => {
+  const counts = async stage => {
     const entries = await calls();
-    return { list: entries.filter(row => row.command === 'list').length, export: entries.filter(row => row.command === 'export' && row.phase === 'completed').length };
+    // View selection belongs to the CLI and deliberately bypasses the Broker's
+    // full-library catalog cache. These are CLI calls, not Notion request counts.
+    for (const row of entries.filter(row => row.command === 'list')) assert.ok(Array.isArray(row.args), 'List trace must retain its actual flags');
+    const invoked = entries.filter(row => row.phase === undefined && Array.isArray(row.args));
+    const listed = invoked.filter(row => row.command === 'list');
+    const view = listed.filter(row => row.args.includes('--view') || row.args.includes('--default-view'));
+    const observed = { cliInvocations: invoked.length, list: listed.length, catalogList: listed.length - view.length, viewList: view.length,
+      viewListing: invoked.filter(row => row.command === 'views').length, read: invoked.filter(row => row.command === 'read').length,
+      exportInvocations: invoked.filter(row => row.command === 'export').length,
+      export: entries.filter(row => row.command === 'export' && row.phase === 'completed').length };
+    result.measurements.push({ stage, ...observed });
+    return observed;
   };
+  const reusable = observed => ({ catalogList: observed.catalogList, exportInvocations: observed.exportInvocations, export: observed.export });
   const catalogs = async () => {
     const keys = await readdir(join(cache, 'catalogs-v4'));
     assert.equal(keys.length, 1, 'Both hosts must use one remote catalog identity');
@@ -63,39 +76,45 @@ export async function runSharedCatalog({ scratch, evidence, fixture, extension, 
     await fixture.setScenario('normal', { cacheIdentity: true, defaultContext: false });
     const pi = await open('pi', 'shared-pi-a');
     await consume(pi, false);
-    const first = await counts(), catalogA = await catalogs(), exportsA = await snapshots();
-    assert.equal(first.list, 1);
+    const first = await counts('first-pi'), catalogA = await catalogs(), exportsA = await snapshots();
+    assert.equal(first.catalogList, 1, 'The first host fetches one complete catalog; View calls are reported separately');
+    assert.equal(first.exportInvocations, 1);
     assert.equal(first.export, 1);
     assert.equal(exportsA.length, 1);
     const omp = await open('omp', 'shared-omp-a');
     await consume(omp, false);
-    assert.deepEqual(await counts(), first, 'A different cwd, host, namespace, command and database spelling reuse the catalog and immutable export');
+    const warm = await counts('warm-omp');
+    assert.deepEqual(reusable(warm), reusable(first), 'A different cwd, host, namespace, command and database spelling reuse the complete catalog and immutable export');
     const catalogWarm = await catalogs();
     assert.equal(catalogWarm.indexId, catalogA.indexId);
     assert.equal(catalogWarm.result.freshness.validated_at, catalogA.result.freshness.validated_at);
     result.cases.push({ name: 'cross-project-host-reuse', status: 'passed', cwd: [pi.base, omp.base], indexId: catalogA.indexId,
-      validatedAt: catalogA.result.freshness.validated_at, snapshot: exportsA[0].snapshot, calls: first });
+      validatedAt: catalogA.result.freshness.validated_at, snapshot: exportsA[0].snapshot, calls: { first, warm } });
 
     await fixture.setScenario('normal', { cacheIdentity: true, defaultContext: false, revision });
     await omp.rpc.prompt('/context-broker refresh');
     const catalogB = await catalogs();
     assert.notEqual(catalogB.indexId, catalogA.indexId, 'Explicit refresh replaces the same catalog pointer');
-    assert.equal((await counts()).list, first.list + 1);
+    const refreshed = await counts('explicit-refresh');
+    assert.equal(refreshed.catalogList, first.catalogList + 1);
     await consume(omp, false);
     await consume(pi, false);
-    result.cases.push({ name: 'shared-refresh-keeps-active-sessions', status: 'passed', indexId: catalogB.indexId });
+    result.cases.push({ name: 'shared-refresh-keeps-active-sessions', status: 'passed', indexId: catalogB.indexId, calls: await counts('active-sessions-after-refresh') });
 
     const ompNew = await open('omp', 'shared-omp-b');
     await consume(ompNew, true);
-    const afterUpdate = await counts(), exportsB = await snapshots();
+    const afterUpdate = await counts('fresh-omp'), exportsB = await snapshots();
+    assert.equal(afterUpdate.catalogList, refreshed.catalogList);
+    assert.equal(afterUpdate.exportInvocations, first.exportInvocations + 1);
     assert.equal(afterUpdate.export, first.export + 1);
     assert.equal(exportsB.length, 2);
     assert.equal(exportsB.filter(snapshot => snapshot.body.includes(revision)).length, 1);
     assert.equal((await catalogs()).indexId, catalogB.indexId);
     const piNew = await open('pi', 'shared-pi-b');
     await consume(piNew, true);
-    assert.deepEqual(await counts(), afterUpdate, 'The other host reuses the newly exported revision without another list/export');
-    result.cases.push({ name: 'fresh-sessions-share-new-revision', status: 'passed', snapshots: exportsB.map(snapshot => snapshot.snapshot), calls: afterUpdate });
+    const afterPeer = await counts('fresh-pi');
+    assert.deepEqual(reusable(afterPeer), reusable(afterUpdate), 'The other host reuses the new revision without another complete catalog list or export');
+    result.cases.push({ name: 'fresh-sessions-share-new-revision', status: 'passed', snapshots: exportsB.map(snapshot => snapshot.snapshot), calls: { firstFresh: afterUpdate, secondFresh: afterPeer } });
     result.status = 'passed';
   } catch (error) {
     result.status = 'failed'; result.error = error.message;
@@ -106,6 +125,7 @@ export async function runSharedCatalog({ scratch, evidence, fixture, extension, 
       await writeFile(join(evidence, peer.label + '-rpc.json'), JSON.stringify(peer.rpc.frames, null, 2));
       await peer.rpc.stop();
     }
+    try { await counts('final'); } catch (error) { result.measurementError = error.message; }
     await writeFile(join(evidence, 'shared-catalog-result.json'), JSON.stringify(result, null, 2) + '\n');
   }
   return result;
