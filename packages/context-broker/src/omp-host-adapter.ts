@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { HostCapabilities } from "./host-adapter";
 import type { ExtensionAPI } from "./types";
 
@@ -22,6 +23,48 @@ export function createOmpHostAdapter(api: ExtensionAPI): HostCapabilities {
     paths: { host: "omp", agentDir: native.getAgentDir?.() },
     submission: { mode: "command", receipt: "handoff" },
     headlessActivationTimeoutMs: 25_000,
+    registerReadExecutor(execute) {
+      const ReadTool = native.ReadTool;
+      const register = api.registerTool, allTools = api.getAllTools, activeTools = api.getActiveTools;
+      if (!ReadTool || !native.settings || !register || !allTools || !activeTools) return undefined;
+      const sourcePath = fileURLToPath(import.meta.url);
+      let installed = false;
+      api.on("session_start", (_event, ctx) => {
+        if (installed) return;
+        const original = allTools().find(tool => tool.name === "read");
+        const manager = ctx.sessionManager;
+        if (original?.sourceInfo.source !== "builtin" || !manager?.getCwd) return;
+        const cwd = manager.getCwd.bind(manager);
+        // This instance supplies the SDK's exact metadata and approval functions only.
+        // Its executor is never exposed: native reads retain the host's real ToolSession.
+        const metadata = new ReadTool({
+          get cwd() { return cwd(); },
+          hasUI: Boolean(ctx.hasUI),
+          get hasEditTool() { return activeTools().includes("edit"); },
+          settings: native.settings,
+          getSessionFile: () => manager.getSessionFile?.() ?? null,
+          getSessionSpawns: () => null,
+        });
+        register({
+          name: "read", label: metadata.label, sourcePath,
+          get description() { return metadata.description; },
+          parameters: original.parameters, strict: metadata.strict,
+          readsSkillUris: metadata.readsSkillUris, loadMode: metadata.loadMode,
+          approval: metadata.approval, approvalCacheTargets: metadata.approvalCacheTargets,
+          defaultInactive: !activeTools().includes("read"),
+          async execute(_id, input, signal, onUpdate, context) {
+            const invoke = context.invokeTool;
+            if (!invoke) throw Object.assign(new Error("HOST_NATIVE_READ_API_UNAVAILABLE"), { code: "HOST_NATIVE_READ_API_UNAVAILABLE" });
+            signal?.throwIfAborted();
+            return execute(input, context, signal, (updated, preparedSignal) => invoke(updated, { signal: preparedSignal ?? signal, onUpdate }));
+          },
+        });
+        installed = true;
+      });
+      // Late registration is flushed by OMP after session_start. Do not bypass the old
+      // hook if a restricted host rejected it or another extension owns this name.
+      return () => installed && allTools().some(tool => tool.name === "read" && tool.sourceInfo.source === "extension" && tool.sourceInfo.path === sourcePath);
+    },
     metadataDiscovery: "deferred",
     handledInput: { handled: true }, continuedInput: undefined,
     transformInput(text, images) { return { text, ...(images ? { images } : {}) }; },

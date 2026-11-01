@@ -42,6 +42,27 @@ export type InputResult =
 export type ToolCallEvent = { toolName: string; toolCallId?: string; input: Record<string, unknown> };
 export type ToolCallResult = { block: true; reason: string } | { input: Record<string, unknown> };
 export type ToolResultEvent = { toolName: string; toolCallId?: string; input: Record<string, unknown>; content?: MessageContent; isError?: boolean };
+/** Opaque native tool output: the adapter forwards every field without rewriting it. */
+export type NativeReadResult = { content: Array<TextContent | ImageContent>; details?: unknown; isError?: boolean; [key: string]: unknown };
+export type NativeReadUpdate = (result: NativeReadResult) => void;
+export type NativeReadDelegate = (input: Record<string, unknown>, signal?: AbortSignal) => Promise<NativeReadResult>;
+export type NativeReadExecutor = (input: Record<string, unknown>, ctx: ExtensionContext, signal: AbortSignal | undefined, read: NativeReadDelegate) => Promise<NativeReadResult>;
+export type NativeReadMetadata = {
+  label: string;
+  description: string;
+  parameters: unknown;
+  strict: boolean;
+  readsSkillUris: boolean;
+  loadMode: "essential" | "discoverable";
+  approval(args: unknown): "read" | "write" | "exec";
+  approvalCacheTargets(args: unknown): readonly string[] | undefined;
+};
+export type NativeReadDefinition = NativeReadMetadata & {
+  name: "read";
+  sourcePath: string;
+  defaultInactive: boolean;
+  execute(id: string, input: Record<string, unknown>, signal: AbortSignal | undefined, onUpdate: NativeReadUpdate | undefined, ctx: ExtensionContext): Promise<NativeReadResult>;
+};
 type SessionBoundary = "session_before_switch" | "session_before_branch" | "session_before_tree"
   | "session_switch" | "session_tree" | "session_branch" | "session_shutdown" | "agent_start" | "agent_end";
 type ExtensionEvents = {
@@ -144,11 +165,15 @@ export type ExtensionContext = {
   reload?(): Promise<void>;
   getSystemPrompt?(): string | string[];
   sessionManager?: {
+    getCwd?(): string;
+    getSessionFile?(): string | undefined;
     getSessionId?(): string;
     getBranch?(): SessionEntry[];
     getEntries?(): SessionEntry[];
     buildSessionContext?(): { messages?: AgentMessage[] };
   };
+  /** OMP's same-name native delegation, supplied only during a registered tool's execute. */
+  invokeTool?(input: Record<string, unknown>, options?: { signal?: AbortSignal; onUpdate?: NativeReadUpdate }): Promise<NativeReadResult>;
 };
 
 export type EditorLike = {
@@ -176,12 +201,17 @@ export type ExtensionAPI = {
     settings?: unknown;
     buildSkillPromptMessage?(skill: { name: string; filePath: string; baseDir: string }, input: { args: string; prompt: string }): Promise<{ message: string }>;
     Text?: new (text: string, paddingX: number, paddingY: number) => { render(width: number): string[]; invalidate(): void };
+    /** Only metadata is exposed here; actual execution uses ctx.invokeTool with the host's session. */
+    ReadTool?: new (session: { cwd: string; hasUI: boolean; hasEditTool?: boolean; settings: unknown; getSessionFile(): string | null; getSessionSpawns(): string | null }) => NativeReadMetadata;
   };
   on<K extends keyof ExtensionEvents>(
     event: K,
     handler: (event: ExtensionEvents[K]["event"], ctx: ExtensionContext) => ExtensionEvents[K]["result"] | undefined | Promise<ExtensionEvents[K]["result"] | undefined>,
   ): void;
   sendUserMessage?(content: MessageContent): void;
+  getAllTools?(): Array<{ name: string; description: string; parameters: unknown; sourceInfo: { source: string; path: string } }>;
+  getActiveTools?(): string[];
+  registerTool?(tool: NativeReadDefinition): void;
   registerMessageRenderer?(customType: string, renderer: (message: AgentMessage, options: { expanded: boolean }, theme: unknown) => ExtensionWidgetComponent | undefined): void;
   sendMessage?(message: { customType: string; content: MessageContent; details: unknown; display: boolean }, options: { triggerTurn: boolean }): void;
   appendEntry?(customType: string, data?: unknown): void;

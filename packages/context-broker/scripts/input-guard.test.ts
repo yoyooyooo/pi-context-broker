@@ -5,8 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import contextBroker, { configuredRules, parseInvocations, matchDiscoveryRecord } from "../src/index";
 import { installHostSkills, type HostSkills } from "../src/host-skills";
+import { createOmpHostAdapter } from "../src/omp-host-adapter";
 import { softMissRegressions } from "./soft-miss-regressions.test";
-import type { ExtensionAPI, ExtensionContext, SkillRecord, MessageContent } from "../src/types";
+import type { ExtensionAPI, ExtensionContext, SkillRecord, MessageContent, NativeReadDefinition, NativeReadMetadata, NativeReadResult } from "../src/types";
 import type { HostCapabilities } from "../src/host-adapter";
 
 type Listener = (event: never, ctx: ExtensionContext) => unknown;
@@ -19,6 +20,178 @@ function textOf(value: unknown): string {
   const text = object(value).text;
   assert.equal(typeof text, "string");
   return text as string;
+}
+
+async function coldOmpReadRegressions(root: string): Promise<void> {
+  type MetadataSession = ConstructorParameters<NonNullable<NonNullable<ExtensionAPI["pi"]>["ReadTool"]>>[0];
+  const schema = { type: "object", properties: { path: { type: "string" }, offset: { type: "number" }, limit: { type: "number" } } };
+  const record: SkillRecord = {
+    kind: "skill", id: "cold-native", sourceId: "fixture", source: "notion", sourceScope: "scope",
+    name: "cold-native", token: "fixture/cold-native", path: join(root, "metadata-native/SKILL.md"),
+    description: "Cold native read", aliases: [], normalizedName: "cold-native", normalizedAliases: [],
+    normalizedDescription: "cold native read", autoloadEnabled: false, defaultDiscovery: false,
+  };
+  const snapshot: SkillRecord = { ...record, body: "COMPLETE_COLD_BODY", snapshotId: "s-cold", path: join(root, "fixed-native/SKILL.md") };
+  const delay = () => new Promise<void>(resolve => setTimeout(resolve, 20));
+  async function fixture({ wrap = true, active = true, source = "builtin" } = {}) {
+    const settings = { style: "hashline" };
+    let cwd = root;
+    class Metadata implements NativeReadMetadata {
+      readonly label = "Read";
+      readonly parameters = schema;
+      readonly strict = true;
+      readonly readsSkillUris = true;
+      readonly loadMode = "essential";
+      readonly #session: MetadataSession;
+      constructor(session: MetadataSession) { this.#session = session; }
+      get description() { return `Native read ${object(this.#session.settings).style}`; }
+      readonly approval = (args: unknown) => String(object(args).path).startsWith("exec://") ? "exec" : "read";
+      readonly approvalCacheTargets = (args: unknown) => [this.#session.cwd + ":" + String(object(args).path)];
+    }
+    const events = new Map<string, Listener[]>(), commands = new Map<string, Command>();
+    const activeNames = new Set(active ? ["read"] : []);
+    let registered: NativeReadDefinition | undefined;
+    const sends: MessageContent[] = [], notices: string[] = [];
+    const calls: Array<{ input: Record<string, unknown>; signal?: AbortSignal }> = [];
+    const nativeResult: NativeReadResult = { content: [{ type: "text", text: "native-formatted bytes" }, { type: "image", data: "image-bytes", mimeType: "image/png" }], details: { native: true }, hostField: "preserved" };
+    const api: ExtensionAPI = {
+      pi: { settings, ...(wrap ? { ReadTool: Metadata } : {}) },
+      on(name, handler) { events.set(name, [...(events.get(name) ?? []), handler as unknown as Listener]); },
+      registerCommand(name, command) { commands.set(name, command); },
+      sendUserMessage(content) { sends.push(content); },
+      getAllTools: () => [{ name: "read", description: registered?.description ?? "Native read", parameters: schema, sourceInfo: registered ? { source: "extension", path: registered.sourcePath } : { source, path: "<builtin:read>" } }],
+      getActiveTools: () => [...activeNames],
+      registerTool(tool) { registered = tool; if (!tool.defaultInactive) activeNames.add(tool.name); },
+    };
+    const ctx: ExtensionContext = {
+      mode: "rpc", hasUI: false, cwd: root,
+      sessionManager: { getCwd: () => cwd, getSessionId: () => "cold-native-session", getEntries: () => [] },
+      ui: { notify: text => notices.push(text) },
+      invokeTool: async (input, options) => { calls.push({ input, signal: options?.signal }); options?.onUpdate?.(nativeResult); return nativeResult; },
+    };
+    const adapter = createOmpHostAdapter(api);
+    adapter.headlessActivationTimeoutMs = 5;
+    adapter.registerCatalog = async () => true;
+    let load: (signal?: AbortSignal) => Promise<SkillRecord> = async () => snapshot;
+    let loads = 0;
+    let host: HostSkills;
+    host = await installHostSkills(api, {
+      config: {}, getRecords: async () => ({ records: [record], failures: [] }),
+      loadRecord: (_record, signal) => { loads++; return load(signal); },
+      needsPreflightPrompt: text => text.startsWith("$fixture/"),
+      preflightPrompt: async (_text, context, signal) => { await host.activate(record, context, signal); },
+    }, adapter);
+    const emit = async (name: string, event: unknown = {}) => {
+      const result = [];
+      for (const handler of events.get(name) ?? []) result.push(await handler(event as never, ctx));
+      return result;
+    };
+    await emit("session_start");
+    await host.refresh();
+    return {
+      ctx, emit, commands, sends, calls, notices, nativeResult, settings, host,
+      activeNames, registered: () => registered, loads: () => loads,
+      move: (next: string) => { cwd = next; }, setLoad: (next: typeof load) => { load = next; },
+      read: () => { assert.ok(registered, "OMP must register the supported native read wrapper"); return registered; },
+    };
+  }
+  {
+    const f = await fixture();
+    const read = f.read();
+    assert.equal(read.approval({ path: "exec://native-target" }), "exec", "Wrapper must retain the native target-dependent tier");
+    assert.equal(read.approval({ path: "ordinary.txt" }), "read");
+    f.move(join(root, "moved"));
+    assert.deepEqual(read.approvalCacheTargets({ path: "ordinary.txt" }), [join(root, "moved") + ":ordinary.txt"], "Remembered approvals use the current session cwd");
+    f.settings.style = "plain";
+    assert.equal(read.description, "Native read plain", "Native description follows live host settings");
+    const params = { path: join(root, "ordinary-image.png"), offset: 2, limit: 3, i: "Reading image" };
+    const updates: NativeReadResult[] = [];
+    const result = await read.execute("ordinary-read", params, undefined, value => updates.push(value), f.ctx);
+    assert.equal(f.loads(), 0, "An unrelated read must not load a source body");
+    assert.equal(f.calls[0]?.input, params, "Unrelated native parameters remain untouched");
+    assert.equal(result, f.nativeResult, "Native images, details and additional fields are preserved");
+    assert.deepEqual(updates, [f.nativeResult]);
+    await assert.rejects(read.execute("no-native", params, undefined, undefined, { ...f.ctx, invokeTool: undefined }), /HOST_NATIVE_READ_API_UNAVAILABLE/);
+    assert.equal(f.calls.length, 1, "Missing delegation must not synthesize a native read result");
+    await f.emit("session_shutdown");
+  }
+  {
+    const f = await fixture();
+    const started = Promise.withResolvers<void>(), pending = Promise.withResolvers<SkillRecord>();
+    f.setLoad(async () => { started.resolve(); return pending.promise; });
+    const input = { path: record.path, offset: 2, limit: 3 };
+    assert.deepEqual(await f.emit("tool_call", { toolName: "read", input }), [undefined]);
+    assert.equal(f.loads(), 0, "The bounded tool_call hook must not start cold preparation");
+    const execution = f.read().execute("cold-read", input, undefined, undefined, f.ctx).then(value => ({ value }), error => ({ error }));
+    await started.promise;
+    await delay();
+    assert.equal(f.calls.length, 0, "Native read waits for complete source preparation");
+    pending.resolve(snapshot);
+    const outcome = await execution;
+    assert.ok("value" in outcome, "Tool execution may outlast the event-hook budget");
+    assert.equal(outcome.value, f.nativeResult);
+    assert.deepEqual(f.calls.map(call => call.input), [{ ...input, path: snapshot.path }]);
+    assert.equal(input.path, record.path, "The original call is not rewritten while execution is pending");
+    await f.emit("session_shutdown");
+  }
+  for (const boundary of ["abort", "session_before_switch"] as const) {
+    const f = await fixture();
+    const started = Promise.withResolvers<void>(), pending = Promise.withResolvers<SkillRecord>();
+    let preparationSignal: AbortSignal | undefined;
+    f.setLoad(async signal => { preparationSignal = signal; started.resolve(); return pending.promise; });
+    const controller = new AbortController();
+    const execution = f.read().execute("cancel-read", { path: record.path }, controller.signal, undefined, f.ctx).then(value => ({ value }), error => ({ error }));
+    await started.promise;
+    if (boundary === "abort") controller.abort();
+    else await f.emit(boundary);
+    assert.equal(preparationSignal?.aborted, true, `${boundary} reaches pending source work`);
+    pending.resolve(snapshot);
+    assert.ok("error" in await execution, "A late prepared snapshot cannot revive cancelled native execution");
+    assert.equal(f.calls.length, 0);
+    await f.emit("session_shutdown");
+  }
+  {
+    const f = await fixture();
+    f.setLoad(async () => { throw Object.assign(new Error("Denied"), { code: "ACCESS_DENIED" }); });
+    await assert.rejects(f.read().execute("denied", { path: record.path }, undefined, undefined, f.ctx), /ACCESS_DENIED/);
+    assert.equal(f.calls.length, 0, "Source failure must not read a metadata stub or delegate an unverified path");
+    await f.emit("session_shutdown");
+  }
+  {
+    const f = await fixture();
+    const started = Promise.withResolvers<void>(), pending = Promise.withResolvers<SkillRecord>();
+    f.setLoad(async () => { started.resolve(); return pending.promise; });
+    const [transformed] = await f.emit("input", { source: "rpc", text: "$fixture/cold-native original material" });
+    const command = f.commands.get("context-broker-submit");
+    assert.ok(command);
+    const preparing = command.handler(textOf(transformed).split(" ")[1] ?? "", f.ctx);
+    await started.promise;
+    await delay();
+    assert.deepEqual(f.sends, [], "The command must not dispatch while the source is queued or reading");
+    pending.resolve(snapshot);
+    await preparing;
+    assert.deepEqual(f.sends, ["$fixture/cold-native original material"], "A command outside the event hook dispatches once after long preparation");
+    assert.deepEqual(f.notices, []);
+    await f.emit("session_shutdown");
+  }
+  {
+    const f = await fixture({ wrap: false });
+    let preparationSignal: AbortSignal | undefined;
+    f.setLoad(signal => { preparationSignal = signal; return new Promise((_resolve, reject) => signal?.addEventListener("abort", () => reject(new Error("Cancelled")), { once: true })); });
+    const [result] = await f.emit("tool_call", { toolName: "read", input: { path: record.path } });
+    assert.equal(object(result).block, true);
+    assert.match(String(object(result).reason), /SOURCE_ACTIVATION_TIMEOUT/, "The fallback event hook keeps its finite budget");
+    assert.equal(preparationSignal?.aborted, true);
+    await f.emit("session_shutdown");
+  }
+  for (const options of [{ active: false }, { source: "extension" }]) {
+    const f = await fixture(options);
+    if (options.active === false) {
+      assert.equal(f.read().defaultInactive, true);
+      assert.equal(f.activeNames.has("read"), false, "Wrapping must not enable a user-disabled native tool");
+    } else assert.equal(f.registered(), undefined, "A third-party read must not be replaced");
+    await f.emit("session_shutdown");
+  }
 }
 
 const root = await mkdtemp(join(tmpdir(), "broker-input-guard-"));
@@ -198,6 +371,7 @@ try {
       assert.deepEqual(published, [], "Shutdown must fence the pending metadata publication");
     }
   }
+  await coldOmpReadRegressions(root);
   await softMissRegressions(root);
   console.log("input guard behavior ok: public input receipts, literal/bootstrap and qualified pass-through, images, Prompt s1/s2");
 } finally {

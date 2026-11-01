@@ -8,7 +8,7 @@ import { assertSourceAvailable, formatSourceFailures } from "./sources";
 import { SourceError, ReferenceMiss, sourceFailureMessage } from "./notion-source";
 import { createActivationFeedback, ACTIVATION_MESSAGE } from "./activation-feedback";
 import { checkPreparationSignal, createPreparationGate, preparationCancelled, type ActivePreparation } from "./skill-preparation";
-import type { AgentMessage, ConfigFile, ExtensionAPI, ExtensionContext, ImageContent, SkillRecord, DiscoveryResult, SourceFailure, NotionViewState } from "./types";
+import type { AgentMessage, ConfigFile, ExtensionAPI, ExtensionContext, ImageContent, SkillRecord, DiscoveryResult, SourceFailure, NotionViewState, ToolCallEvent, ToolCallResult } from "./types";
 import type { HostCapabilities } from "./host-adapter";
 import { invocationText } from "./invocation-text";
 import { viewSystemPrompt } from "./view-prompt";
@@ -104,6 +104,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   const nativeInputs = new Map<string, SkillRecord>();
   const printTurns = new Set<() => void>();
   const gate = createPreparationGate();
+  const commandPreparations = new WeakSet<ActivePreparation>();
   const misses = new WeakMap<ActivePreparation, Set<string>>();
   function beginPreparation(event: { text?: string; images?: ImageContent[] }, ctx: ExtensionContext): ActivePreparation {
     const entry = gate.begin(event, ctx);
@@ -202,7 +203,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
   }
 
-  async function activate(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal, waitForTool = false): Promise<SkillRecord> {
+  async function activate(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal, waitForTool = false, readPhase: "hook" | "execute" = "hook"): Promise<SkillRecord> {
     signal = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
     checkPreparationSignal(signal);
     await ready(signal);
@@ -228,7 +229,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const cancelled = () => finish?.({ error: "Cancelled." });
     signal?.addEventListener("abort", cancelled, { once: true });
     const operation = reusable ? pending!.operation : (async () => {
-      let result = adapter.headlessActivationTimeoutMs !== undefined && ctx?.mode !== "tui"
+      // Commands and native tool execution are outside OMP's short event-hook budget.
+      // A command keeps this ownership across source queueing and its nested preflight.
+      const outsideHook = readPhase === "execute" || Boolean(preparationOwner && commandPreparations.has(preparationOwner));
+      let result = !outsideHook && adapter.headlessActivationTimeoutMs !== undefined && ctx?.mode !== "tui"
         ? await headlessActivation(child => options.loadRecord(record, child), adapter.headlessActivationTimeoutMs, signal)
         : await options.loadRecord(record, signal);
       checkPreparationSignal(signal);
@@ -260,7 +264,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (!reusable) loading.set(key, owner);
     try {
       // Real read has its own native row. Only pause its hook budget, never add a display row.
-      const outcome = waitForTool && ctx?.hasUI && ctx.mode === "tui" && ctx.ui?.custom
+      const outcome = waitForTool && readPhase === "hook" && ctx?.hasUI && ctx.mode === "tui" && ctx.ui?.custom
         ? await ctx.ui.custom<ActivationOutcome<SkillRecord>>((_tui, _theme, _keys, done) => {
           void operation.then(done);
           return { render: () => [], invalidate() {} };
@@ -327,6 +331,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         accepted ??= continuation;
         if (gate.active && gate.active !== accepted) { ctx.ui?.notify?.("A Skill submission is still preparing.", "info"); return; }
         const entry = accepted ?? beginPreparation({ text, images }, ctx);
+        const ownsCommandPreparation = !commandPreparations.has(entry);
+        if (ownsCommandPreparation) commandPreparations.add(entry);
         images ??= entry.event.images;
         if (continuation) continuation.forwarded = true;
         try {
@@ -370,6 +376,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
             if (complete) printTurns.delete(complete);
           }
         } catch (error) { const restore = gate.active === entry && !entry.controller.signal.aborted; gate.release(entry); if (restore) ctx.ui?.setEditorText?.(entry.event.text ?? text); notify(ctx, error); }
+        finally { if (ownsCommandPreparation) commandPreparations.delete(entry); }
       };
       nativeCommands.set(name, handler);
       host.registerCommand(`skill:${name}`, { description: record.description, handler });
@@ -460,6 +467,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     async handler(id, ctx) {
       const entry = gate.active;
       if (!entry || entry.id !== id) return;
+      const ownsCommandPreparation = !commandPreparations.has(entry);
+      if (ownsCommandPreparation) commandPreparations.add(entry);
       try {
         gate.assertCurrent(entry, ctx);
         const original = entry.event.text ?? "";
@@ -478,6 +487,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
           host.sendUserMessage(entry.event.images?.length ? [{ type: "text", text }, ...entry.event.images] : text);
         }
       } catch (error) { const restore = gate.active === entry && !entry.controller.signal.aborted; gate.release(entry); if (restore) ctx.ui?.setEditorText?.(entry.event.text ?? ""); notify(ctx, error); }
+      finally { if (ownsCommandPreparation) commandPreparations.delete(entry); }
     },
   });
   for (const event of ["session_before_switch", "session_before_branch", "session_before_tree"] as const) host.on(event, () => {
@@ -628,10 +638,9 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const systemPrompt = viewSystemPrompt(event.systemPrompt, records, defaultRouters, new Set(readRecords.keys()), views, ctx.cwd);
     return { ...(message ? { message } : {}), systemPrompt: adapter.systemPrompt?.(systemPrompt) ?? systemPrompt };
   });
-  host.on("tool_call", async (event, ctx) => {
+  async function prepareRead(event: ToolCallEvent, ctx: ExtensionContext, signal: AbortSignal, readPhase: "hook" | "execute"): Promise<ToolCallResult | undefined> {
     if (event.toolName !== "read" || !event.input || typeof event.input.path !== "string") return undefined;
     const requested = event.input.path;
-    const signal = lifecycleController.signal;
     try { await ready(signal); }
     catch (error) { return { block: true, reason: failure(error) }; }
     let selected: SkillRecord | undefined;
@@ -696,7 +705,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       reference = path ?? "";
     }
     try {
-      const snapshot = gate.active?.prepared.get(recordIdentity(selected)) ?? (turnPrompts?.signal.aborted ? undefined : turnPrompts?.snapshots.get(recordIdentity(selected))) ?? loaded.get(recordIdentity(selected))?.record ?? await activate(selected, ctx, signal, true);
+      const snapshot = gate.active?.prepared.get(recordIdentity(selected)) ?? (turnPrompts?.signal.aborted ? undefined : turnPrompts?.snapshots.get(recordIdentity(selected))) ?? loaded.get(recordIdentity(selected))?.record ?? await activate(selected, ctx, signal, true, readPhase);
       let path = reference && reference !== (selected.entrypoint ?? "SKILL.md") ? resolve(dirname(snapshot.path), reference) : snapshot.path;
       if (explicit) {
         const entrypoint = selected.entrypoint ?? "SKILL.md";
@@ -709,10 +718,27 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         const within = relative(actualRoot, path);
         if (!within || within === ".." || within.startsWith(`..${sep}`) || isAbsolute(within) || !(await lstat(path)).isFile()) throw hostError("SOURCE_REFERENCE_INVALID");
       }
+      checkPreparationSignal(signal);
       const updated = { ...event.input, path: path + suffix };
-      Object.assign(event.input, updated);
-      return adapter.updatedRead(updated);
+      return { input: updated };
     } catch (error) { return { block: true, reason: failure(error) }; }
+  }
+  const readRunsInTool = adapter.registerReadExecutor?.(async (input, ctx, signal, read) => {
+    const executionSignal = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
+    checkPreparationSignal(executionSignal);
+    const prepared = await prepareRead({ toolName: "read", input }, ctx, executionSignal, "execute");
+    if (prepared && "block" in prepared) throw new Error(prepared.reason);
+    checkPreparationSignal(executionSignal);
+    const result = await read(prepared?.input ?? input, executionSignal);
+    checkPreparationSignal(executionSignal);
+    return result;
+  });
+  host.on("tool_call", async (event, ctx) => {
+    if (event.toolName === "read" && readRunsInTool?.()) return undefined;
+    const prepared = await prepareRead(event, ctx, lifecycleController.signal, "hook");
+    if (!prepared || "block" in prepared) return prepared;
+    Object.assign(event.input, prepared.input);
+    return adapter.updatedRead(prepared.input);
   });
 
   const initialMetadata = refresh();
