@@ -40,6 +40,8 @@ node scripts/verify-notion-integration.mjs run --mode deterministic --default-co
 node scripts/verify-notion-integration.mjs doctor --mode live --database DB --skill-ref skill://PAGE/SKILL.md
 node scripts/verify-notion-integration.mjs run --mode live --database DB --skill-ref skill://PAGE/SKILL.md
 node scripts/verify-notion-integration.mjs run --mode live --database DB --skill-ref skill://PAGE/SKILL.md --command-json '["/path/ntn-skills"]'
+node scripts/verify-notion-integration.mjs doctor --mode live --database DB --native-kinds /absolute/native-kinds.json --extension /absolute/installed/broker/index.ts --command-json '["/absolute/node","/absolute/installed/ntn-skills.js"]'
+node scripts/verify-notion-integration.mjs run --mode live --database DB --native-kinds /absolute/native-kinds.json --extension /absolute/installed/broker/index.ts --command-json '["/absolute/node","/absolute/installed/ntn-skills.js"]' --evidence-root /absolute/evidence
 node scripts/verify-notion-integration.mjs doctor --mode live-fixture --database UUID
 node scripts/verify-notion-integration.mjs run --mode live-fixture --database UUID --command-json '["/path/ntn-skills"]'
 node scripts/verify-notion-integration.mjs run --mode live-fixture --default-context true --database UUID --command-json '["node","/absolute/ntn-skills/dist/ntn-skills.js"]'
@@ -62,6 +64,8 @@ node scripts/verify-notion-integration.mjs run --mode installed --package /absol
 
 示例中的 DB、PAGE、TEXT、模型与包路径须替换为当前任务的实际值；`--command-json` 是 JSON argv 数组，不是 shell 命令串。live/model 使用现有授权配置；不要求用户提供 token、不显示凭据、不改登录或用户 CLI 配置。model 必须已有任务授权覆盖实际模型调用。
 
+`--native-kinds` 是 `live` 的独立只读分支，必须显式选择实际安装的 extension 与 CLI。配置文件为 `{"version":1,"refs":{"skill":"PUBLIC_SKILL_REF","prompt":"PUBLIC_PROMPT_REF","router":"PUBLIC_ROUTER_REF"}}`；三个值取既有、启用的共享记录的完整未固定快照 `record.ref`，保留 `shared_skill:` 逻辑 ID 的编码，不能替换成物理 page UUID。Router 正文须包含所选 Skill 的公共 member ref，且不内嵌其完整正文。选择 Router 不得触发 member 正文读取、准备或注入；独立 View 供给规则已触发的预取须有可单独归因的来源证据。此分支不创建或修改 Notion fixture，不能与 `--skill-ref`、`--view`、模型或其它专项选项组合。它以 fresh public read 与完整固定 snapshot export 建立消费 oracle，再在实际 Pi/OMP RPC 中验证 Prompt 双轮、Router 后显式选择 member、混合三 Kind 与同一 session 的 `--continue`；完整步骤、证据与未覆盖范围见[会话地图](features/session-cache-recovery.md#native-kinds-rpc)。本分支的 provider 断言不单独证明 Router 无 member I/O，按需读取仍由既有 CLI/source trace 与 Router gate 证明。受控 provider 不证明真实模型，独立运行配置也不证明本机 Profile 绑定；已安装 Broker/CLI 不代替 Tern companion 或发行产物验收。
+
 `--view-discovery true` 的 deterministic 专项使用真实 Pi/OMP 和受控 CLI/LLM，验证首条消息前零 provider、View 替换、显式配置/首项兜底、空/失效区别、会话恢复/分支及并行会话。见 [默认目录验收地图](features/default-context-prefetch.md)。`--default-context true` 旧专项仅测试一个采用 checkbox 筛选的 View 的预取，不再表示 checkbox 是独立全局开关。真实 live/model 使用 `--view VIEW_ID` 或默认首项，并确认目标实际在该 View；不得为验收修改用户页面。
 
 `--consumer-isolation true` 是 model 的显式 `$` 消费分支，接受未勾选的现有页；要求命令为 PATH 上的 `ntn-skills`，使用仓库外空 cwd、独立各根、正常工具和隐藏本地路径的 payload。介绍要求零工具调用；`--consumer-resource RELATIVE_FILE` 要求真实模型经公共 CLI 读取选中快照中的资源，并匹配原件 hash。逐宿主观察实际 provider 请求和工具交互是否暴露实现或缓存路径。完整边界及证据字段见[真实模型地图](../verify-context-broker/features/model.md#隐藏实现路径的消费回归)；不替代默认的自主发现/native-read recipe，不是文件系统沙箱。
@@ -76,6 +80,7 @@ node scripts/verify-notion-integration.mjs run --mode installed --package /absol
 
 
 Adapter、输入事件或回执调整继续使用现有 host、selection、activation 与 default-context 地图。目录覆盖另复用[注入地图](../verify-context-broker/features/injection.md)；编辑器分别验收 Tern/OMP 与[Pi 独立终端](features/dollar-completion-selection.md#pi-独立终端)。运行通过只证明实际执行的入口，不从一种宿主协议推断另一种。
+OMP 18.14.2 的 native-read execute 与注册命令预算回归复用[宿主地图](features/host-skill-discovery-read.md#omp-冷读取与命令预算)和现有 `input-guard.test.ts`，再分别执行标准 live 与 native-kinds；受控测试不代替真实冷读取或完整 Prompt 派发。
 真实 Pi 输入现有可执行入口为 `node scripts/verify-pi-pty.mjs doctor` / `run`，支持 `--extension ABSOLUTE_INSTALLED_ENTRY`。两次冷 PTY 覆盖候选、Tab 接受草稿、Enter 提交及 `$`/native 双向切换；受控 CLI/provider 仅证明终端投递。Tern/OMP 继续使用 `verify-native-ui.mjs --notion`，不从 RPC 推断输入 UI。
 
 
@@ -86,7 +91,7 @@ Adapter、输入事件或回执调整继续使用现有 host、selection、activ
 | Mode | 实际路径与边界 |
 | --- | --- |
 | deterministic | 双 Pi/OMP 原生 extension/provider 捕获；Notion 与 filesystem source 的 metadata/read/native RPC+print/`$`/resource；Notion native cold print；metadata 后注入、repeat、continue；重名歧义拒绝、两个 qualified native 独立正文、错误/超时/cold-warm；主 run 调用 OMP source lifecycle helper 覆盖真实 fork/branch/compact-remove+refresh。fixture 不证明真实 Notion 或模型效果。 |
-| live | 必须指定 database 与 skill-ref；只读既有页的 list/read/export，再双宿主 provider 捕获，不创建或修改远端页；不能替代 live-fixture 端到端。 |
+| live | 必须指定 database，并选择 skill-ref 或独立的 native-kinds 配置；只读既有页的 list/read/export，再双宿主受控 provider 捕获，不创建或修改远端页；两分支分别报告，不能替代 live-fixture 端到端或真实模型。 |
 | live-fixture | 必须指定 database UUID，可提供 command-json；以唯一动态 name 创建独立真实测试页与 `references/guide.md`，list/read/export 后双宿主消费；finally 通过 ntn 官方 API 仅 archive 本次页与 child pages，并 GET 确认。当前任务已授权，禁止永久删除或触碰无关页。`live-fixture-create.json` 与 `live-fixture-cleanup.json` 保存无 token 回执。 |
 | model | 必须指定 database、skill-ref、model 与 model-prompt；默认分别执行 Pi 与 OMP，可用 `--host pi` 或 `--host omp` 只执行一个宿主。Doctor 同样只检查选定宿主。使用继承的现有授权配置、独立临时 broker/cache/session，要求模型从 metadata 自主选择 native read、读取入口与关联资源、正文进入 provider、成功 HTTP 响应，以及非空且以 stop 或 length 成功结束的 assistant final 回复；不得由确定性 provider 或另一宿主结果推断通过。非 model mode 拒绝 `--host`，live-fixture 附加 model 仍执行两宿主。 |
 | installed | 必须给绝对 tgz 路径；实际 `npm install --prefix scratch` 后，在安装产物上完成双宿主与 deterministic 相同消费路径。checkout 结果不能替代。 |

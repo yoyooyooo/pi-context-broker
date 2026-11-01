@@ -54,7 +54,7 @@ node scripts/verify-notion-integration.mjs doctor --mode live-fixture --cache-li
 node scripts/verify-notion-integration.mjs run --mode live-fixture --cache-lifecycle true --database UUID --command-json '["/absolute/ntn-skills"]'
 ```
 
-该专项要求实际 Tern/OMP 与 Pi，使用现有认证和三组独立 CLI config/state/cache/data、Broker cache 与 sessions。默认有效期来自实际 CLI freshness。`cache-lifecycle-result.json` 逐宿主记录 A/B snapshot、完整正文 digest/bytes、验证时间、每阶段正文请求/export/provider 增量；`cache-HOST/safe-source-requests.jsonl` 记录实际 CLI 和官方 ntn method/path，排除 header、payload 与凭据。终端 `uiEvidence` 保留 PTY 原始字节、解析 screen、自然退出 PID 回执；解析器不支持的终端控制序列明确记录，不将其称为截图。Tern 的独立 `uiEvidence` 包含原生截图及 cleanup 回执；deterministic provider 捕获不证明真实模型效果。OMP RPC 的 25 秒保护早于宿主 30 秒事件限时，该专项使用实际交互终端，不修改保护或用预热掩盖首次下载。创建与 finally archive 沿用 owned fixture 回执；失败保留阶段，部分宿主通过不能计为全量通过。专项不替代既有超时、continue/fork/branch 或正常日常安装验收。
+该专项要求实际 Tern/OMP 与 Pi，使用现有认证和三组独立 CLI config/state/cache/data、Broker cache 与 sessions。默认有效期来自实际 CLI freshness。`cache-lifecycle-result.json` 逐宿主记录 A/B snapshot、完整正文 digest/bytes、验证时间、每阶段正文请求/export/provider 增量；`cache-HOST/safe-source-requests.jsonl` 记录实际 CLI 和官方 ntn method/path，排除 header、payload 与凭据。终端 `uiEvidence` 保留 PTY 原始字节、解析 screen、自然退出 PID 回执；解析器不支持的终端控制序列明确记录，不将其称为截图。Tern 的独立 `uiEvidence` 包含原生截图及 cleanup 回执；deterministic provider 捕获不证明真实模型效果。OMP 的 25 秒保护属于短事件 hook，native-read execute 与注册命令的长准备按[宿主预算回归](host-skill-discovery-read.md#omp-冷读取与命令预算)另验；本专项仍使用实际交互终端，不以预热掩盖首次下载。创建与 finally archive 沿用 owned fixture 回执；失败保留阶段，部分宿主通过不能计为全量通过。专项不替代既有超时、continue/fork/branch 或正常日常安装验收。
 
 本 fixture 由 CLI 发布，直接修改原生段落后须沿产品已有的 `operation inspect-edit` → `operation accept-edit --expected-version` 接受精确版本。`remoteEdit.inspection` 保存接受前 `PUBLICATION_DIVERGED`、检查的 version/snapshot/content hash；`remoteEdit.acceptance` 保存接受与验证回执。检查和接受仅使用父控的独立 CLI 根，不预热三端内容缓存；不手工清空或替换 Publication 字段。未接受的修改不能写成“过期后自动可读”，人工维护页和 editable-file 不由此 fixture 推断。
 
@@ -129,3 +129,23 @@ Run two explicit Prompt submissions with different materials in one session for 
 
 No execution is claimed by this map update; final owner runs and retains the evidence.
 
+
+## Native kinds RPC
+
+复用 integration 的 `--mode live --native-kinds /absolute/native-kinds.json`，完整 Doctor/run 命令与配置合同见[Skill 入口](../SKILL.md#doctor-与入口)。该分支使用既有 Skill、Prompt、Router 共享记录、实际安装的 CLI/extension 和两个真实宿主，provider 为受控边界。父控先用公开 list、逐项 `read --refresh`、同 snapshot 的 offline files/export 校验完整树与 SHA-256；这只定义本次消费原件，不替代作者预期或远端写入验证。各宿主 CLI config/state/cache 独立，父控预读不使宿主缓存变暖。
+
+每宿主按三个独立 recipe 执行七次 provider 请求，不新增 feature ID 或独立控制器：
+
+| Recipe | 实际动作 | 必须观察到的结果 |
+| --- | --- | --- |
+| Prompt | 同一 session 连续两次显式提交，当前材料 marker 不同 | 每次当前 user message 有且仅有一份完整 prompt-task，identity、snapshot/version 与正文 SHA 匹配，invocation 非空且不重复；Prompt 不产生持久 loaded 回执。历史 user message 的 Prompt 不计为本轮重复。 |
+| Router/member | 先只提交 Router，再显式提交其所列 Skill | 第一请求只有 Router 正文，没有 member 完整正文；第二请求保留 Router 并加入所选 Skill。本行只断言 provider 投递，member I/O 另按下述来源证据判定。 |
+| Mixed/continue | 同 session 两次混合三 Kind，停止 owned host 后以 `--continue` 恢复同一 session，再提交第三次 | sessionFile 精确一致且旧材料 marker 保留；当前 Prompt 每轮重新注入，Skill/Router 完整正文在全部 provider messages 中各一份，raw/XML 转义副本合计计数；原生 get_messages 中 Skill/Router loaded 回执各一份、Prompt 为零。 |
+
+产品边界仍是：选择 Router 不得触发 member 正文读取、准备或注入。独立 View 供给规则已触发的预取必须有单独来源证据；不能仅凭存在 View 就把 Router 引发的读取归为预取。native-kinds 当前没有断言 member source I/O，因而不能单独证明 Router 的按需读取边界；仍须由既有 CLI/source trace 与 Router gate 区分父控 oracle 读取、View 预取和 Router 激活。模型未见 member 正文不证明正文未被读取，metadata-only 也不证明磁盘冷。
+
+审阅 `native-kinds-selection.json`、`native-kinds-catalog.json`、`native-kinds-oracles/` 的 read/files/export/完整树及各 `HOST-native-kinds-result.json`。provider、RPC、messages 与 decisions 文件按该 result 的实际 `files` 清单定位；失败保留 `HOST-native-kinds-failed-rpc.json` 及进程 ledger。`safe-source-requests.jsonl` 计量 CLI invocations，不等于真实 Notion HTTP 请求总数；实际请求指标读取留存的公共 `request_metrics`。沿用 integration evidence/cleanup，不把 preserved 改写为 passed。
+
+本分支未覆盖真实 RPC 图片附件、准备期间的原生 composer Stop 或真实模型自主选择/指令效果；这些仍需各自已有入口与证据。它不替代实际 `magpie/group/flash-free`、Tern/Pi UI、Profile 本机绑定或发行包 gate。
+
+AH-498 的旧候选记录：Pi 1.4.0 七次请求全部通过；OMP 18.14.2 首个 Prompt 返回 `agentInvoked:false`，provider 零请求，source 在约 25 秒准备预算到期时取消，因此该宿主失败且后续步骤未运行。RPC 已收口，不能靠增加 harness 等待或删除 provider 单次派发断言解释为成功。原失败保持不变；[execute/command 预算修复](host-skill-discovery-read.md#omp-冷读取与命令预算)后的新候选结果另行取得，本文不预报通过。

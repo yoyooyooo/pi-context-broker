@@ -28,4 +28,20 @@ deterministic 与 installed 执行这些双 source 路径。审阅 `pi-fs-`/`omp
 
 model 使用当前已有授权与模型配置，不索取 token、不改 CLI 配置。默认执行 Pi 与 OMP；仅 model 可传 `--host pi|omp`，Doctor 按选定宿主检查，未执行宿主记入 `manifest.notRun`。NS-HOST-04 必须逐宿主审阅 `HOST-real-model-observer.jsonl` 与 `HOST-real-model-result.json`（HOST 为 pi 或 omp）：metadata 无正文、模型自主 native read、选定正文与关联资源成功读取、内容进入真实 provider、HTTP 响应成功，以及非空且 stopReason 为 stop 或 length 的成功 assistant final 回复。失败也保留 result。observer 保存 selector、计数、脱敏 source read 结果及 `assistant_final` 的 bytes、textSha256、脱敏 text、stopReason 和 success，不保留 raw provider payload 或凭据。普通确定性路径使用 `pi-rpc.json`、`omp-rpc.json` 与对应 provider/decisions；这些不证明真实模型行为，一个宿主不能代替另一个。
 
+## OMP 冷读取与命令预算
+
+OMP 18.14.2 的 `tool_call` active-work 默认预算为 30 秒，合同来源为[该版本 runner](https://github.com/can1357/oh-my-pi/blob/7efd77219374ca4e8767979809835e4aa90666ba/packages/coding-agent/src/extensibility/extensions/runner.ts)。Broker 的 25 秒短 hook 保护不能承担完整冷读取。适配器通过同名 `read` 的公开注册入口，在 execute 阶段准备并校验固定快照，再用 `ctx.invokeTool` 调用原生 read；注册命令也在命令执行阶段等待队列与正文。fallback hook 仍保留有限预算，source 自身超时、取消与会话代际边界继续生效。不得提高用户全局设置、提前预热或放宽正文断言来通过冷读取。
+
+先在现有入口核对受控回归，再以实际安装的候选执行标准 live 与 [native-kinds](session-cache-recovery.md#native-kinds-rpc)：
+
+```bash
+bun packages/context-broker/scripts/input-guard.test.ts
+bun run --cwd packages/context-broker typecheck
+node scripts/verify-notion-integration.mjs run --mode live --database DB --skill-ref "$SKILL_REF" --extension /absolute/installed/broker/index.ts --command-json '["/absolute/node","/absolute/installed/ntn-skills.js"]' --evidence-root /absolute/evidence
+```
+
+`input-guard.test.ts` 用较短的受控 hook 预算验证长 prepare 成功后只委托一次原生 read、注册命令只派发一次、abort/切会话后迟到完成不能委托，以及 fallback hook 超时仍取消 source。另核对原生动态说明、依目标变化的 approval、当前 cwd 的 approval cache targets、禁用/第三方 read 的边界；普通 read 的参数、图片、progress 与结果继续由原生工具提供。这些受控图片结果不表示已运行真实 RPC 附件提交。
+
+AH-498 旧候选在 Pi 1.4.0 的标准 live 冷读完成约 34.5 秒；OMP 18.14.2 同路径在约 25 秒返回 `SOURCE_ACTIVATION_TIMEOUT`，完整正文断言失败。该失败和原始 source/RPC/provider/进程退出证据保留。execute/command 预算修复后的候选必须另存新的标准 live 与 native-kinds 结果；旧 Pi 通过、代码检查通过及本文更新均不证明新候选 OMP 通过。
+
 运行后执行 `node scripts/verify-notion-integration.mjs evidence --evidence /absolute/evidenceDIR`。审阅后执行同入口的 `cleanup --evidence /absolute/evidenceDIR`，再执行 evidence；只将 manifest 关联的独立 `/tmp` scratch 移到系统 Trash，不删 evidence。每个 ID 与宿主分别记录 pass/failed/未运行；本文未运行验证。

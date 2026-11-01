@@ -42,7 +42,9 @@ model 默认分别执行 Pi 与 OMP；只有 model mode 可用 `--host pi|omp` �
 
 ## AH258–260 shared content acceptance
 
-For a mixed Skill/Router/Prompt submission preserve text/images and retain one prepared snapshot per identity across preflight/task/dispatch. Negative fixtures must reject mismatched scope, full record identity/kind/locator, snapshot/version and entrypoint, unsafe main_path, incomplete inventory and unequal read/export entry bytes. No stale-cache or same-name fallback. Router exports include only their own assets and member metadata; no member-body preparation.
+For a mixed Skill/Router/Prompt submission preserve text/images and retain one prepared snapshot per identity across preflight/task/dispatch. Negative fixtures must reject mismatched scope, full record identity/kind/locator, snapshot/version and entrypoint, unsafe main_path, incomplete inventory and unequal read/export entry bytes. No stale-cache or same-name fallback. Router exports include only their own assets and member metadata. Selecting a Router must not trigger reads or preparation of member bodies, and must not inject them. Prefetch already triggered by independent View supply rules requires separate source evidence; it cannot be attributed to Router selection.
+
+既有三种共享记录的实际 RPC 消费复用 [native-kinds 分支](session-cache-recovery.md#native-kinds-rpc)：逐宿主核对 Router 后显式 member、混合双轮和 continue 中的完整固定正文与回执。该分支仅使用受控 provider，其断言不单独证明 Router 无 member I/O；按需读取仍由既有 CLI/source trace 与 Router gate 证明，不能从模型未见正文推断未读取正文。图片、取消与真实模型仍由各自证据证明，不从三 Kind 文本通过推断。
 
 No execution is claimed by this map update; final owner runs and retains the evidence.
 
