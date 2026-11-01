@@ -146,6 +146,25 @@ export function observe(api, settings) {
     }
     if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return undefined;
     const absolute = resolve(settings.cwd, path);
+    // OMP runs observers before the native read wrapper maps a host-advertised
+    // resource alias to its pinned export. The alias need not exist on disk.
+    // Only a previously verified entry read can bind this exact scope/snapshot;
+    // neither an advertised directory nor a matching filename is sufficient.
+    if (activeScope && activeSnapshot) {
+      const requested = isAbsolute(path) ? path : settings.cwd + sep + path;
+      const entries = [...advertisedEntries].flatMap(advertised => {
+        const parent = resolve(advertised, '..') + sep;
+        if (!requested.startsWith(parent)) return [];
+        const entry = requested.slice(parent.length).split(sep).join('/');
+        return portable(entry) && !/[:?#]/.test(entry) && entry !== selected.entry ? [entry] : [];
+      });
+      if (entries.length) {
+        const candidates = exportedFiles().filter(item => item.receipt.scope === activeScope && item.receipt.snapshot === activeSnapshot);
+        if (candidates.length !== 1) return undefined;
+        const targets = new Map(entries.map(entry => targetFor(candidates[0], entry)).filter(Boolean).map(target => [target.path, target]));
+        return targets.size === 1 ? targets.values().next().value : undefined;
+      }
+    }
     let file;
     try { file = realpathSync(absolute); } catch { return undefined; }
     // Default metadata is owned by the live host, outside the source export cache.

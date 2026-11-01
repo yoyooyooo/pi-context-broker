@@ -343,7 +343,9 @@ async function modelObserverFixture(options: {
   record?: unknown;
   tamperedResource?: string;
   extraFile?: boolean;
-  requests?: (paths: { entry: string; resource: string; directory: string; body: string; resourceBody: string }) => ModelObserverRequest[];
+  advertiseEntry?: boolean;
+  changeAfterFirstRead?: "scope" | "snapshot" | "missing-receipt" | "resource-bytes";
+  requests?: (paths: { entry: string; resource: string; directory: string; body: string; resourceBody: string; advertisedEntry: string; advertisedResource: string }) => ModelObserverRequest[];
 } = {}) {
   const root = await mkdtemp(join(await realpath(tmpdir()), "broker-shared-model-observer-"));
   // Run the existing observer in its own Node process, retaining these real files
@@ -368,7 +370,13 @@ async function modelObserverFixture(options: {
   if (options.extraFile) await writeFile(join(directory, "undeclared.txt"), "not in the complete manifest", { mode: 0o600 });
   const entry = `${record.ref}?snapshot=${snapshot}`;
   const resource = record.ref.replace(/\/SKILL\.md$/, "/references/fixed.md") + `?snapshot=${snapshot}`;
-  const requests = options.requests?.({ entry, resource, directory, body, resourceBody }) ?? [{ path: entry, content: body }, { path: resource, content: resourceBody }];
+  const advertisedEntry = join(root, "host", "skills", record.alias, "SKILL.md");
+  const advertisedResource = join(dirname(advertisedEntry), "references/fixed.md");
+  await mkdir(dirname(advertisedEntry), { recursive: true, mode: 0o700 });
+  await writeFile(advertisedEntry, "# Metadata only\n", { mode: 0o600 });
+  // No host resource file exists: only the native wrapper can resolve this alias.
+  const requests = options.requests?.({ entry, resource, directory, body, resourceBody, advertisedEntry, advertisedResource })
+    ?? [{ path: options.advertiseEntry ? advertisedEntry : entry, content: body }, { path: options.advertiseEntry ? advertisedResource : resource, content: resourceBody }];
   const settings = { model: "controlled/observer", provider: "controlled", id: "observer", marker: "Shared model body", alias: record.alias,
     selected: { selector: record.id, physicalSelector: record.locator.page_id, locator: record.locator, id: record.id, kind: record.kind, entry: record.entrypoint, ref: record.ref },
     cache, cwd: root, output };
@@ -379,11 +387,26 @@ import * as path from 'node:path';
 import { observe } from ${JSON.stringify(import.meta.resolve("../../../scripts/notion-integration-model.mjs"))};
 const handlers=new Map(),decisions=[];
 observe({on(name,handler){handlers.set(name,handler)}},{...${JSON.stringify(settings)},fs,crypto,path});
+if(${Boolean(options.advertiseEntry)})handlers.get('before_agent_start')({systemPrompt:${JSON.stringify(`<skill><name>${record.alias}</name><location>${advertisedEntry}</location></skill>`)}},{model:{provider:'controlled',id:'observer'}});
 for(const [index,request] of ${JSON.stringify(requests)}.entries()){
  const event={toolName:'read',toolCallId:'controlled-'+index,input:{path:request.path}};
  const decision=handlers.get('tool_call')(event);
  decisions.push(decision??{allowed:true});
  if(!decision?.block)handlers.get('tool_result')({...event,isError:request.isError??false,content:[{type:'text',text:request.content}]});
+ if(index===0){
+  const change=${JSON.stringify(options.changeAfterFirstRead ?? null)},directory=${JSON.stringify(directory)},receiptPath=path.join(directory,'.broker-snapshot.json');
+  if(change==='scope'||change==='snapshot'){
+   const receipt=JSON.parse(fs.readFileSync(receiptPath,'utf8'));
+   receipt[change]=change==='scope'?'f'.repeat(64):'s_'+'f'.repeat(64);
+   const next=path.join(${JSON.stringify(cache)},'scopes',receipt.scope,'records',${JSON.stringify(digest(record.id))},'snapshots',receipt.snapshot);
+   fs.mkdirSync(path.dirname(next),{recursive:true,mode:0o700});fs.renameSync(directory,next);
+   fs.writeFileSync(path.join(next,'.broker-snapshot.json'),JSON.stringify(receipt),{mode:0o600});
+  }else if(change==='missing-receipt')fs.renameSync(receiptPath,${JSON.stringify(join(root, "retained-original-receipt.json"))});
+  else if(change==='resource-bytes'){
+   const resource=path.join(directory,'references/fixed.md');fs.renameSync(resource,${JSON.stringify(join(root, "retained-original-resource.md"))});
+   fs.writeFileSync(resource,'Changed after entry validation',{mode:0o600});
+  }
+ }
 }
 process.stdout.write(JSON.stringify({decisions,events:fs.readFileSync(${JSON.stringify(output)},'utf8').split('\\n').filter(Boolean).map(JSON.parse)}));
 `;
@@ -401,6 +424,54 @@ test("the existing model observer validates canonical shared refs and actual com
     { kind: "resource", role: "resource", recordId: sharedRecord().id, receiptValidated: true, bodyMatchesFile: true, resourceSuccess: true },
   ]);
   expect(observed.events.some(event => ["transport", "request", "response", "assistant_final"].includes(String(event.phase)))).toBe(false);
+});
+
+test("the model observer accepts an advertised resource alias before OMP rewrites it only after a verified entry read", async () => {
+  const observed = await modelObserverFixture({ advertiseEntry: true });
+  expect(observed.decisions).toEqual([{ allowed: true }, { allowed: true }]);
+  expect(observed.events.filter(event => event.phase === "tool_result")).toMatchObject([
+    { kind: "skill", requestedRole: "index", scope, snapshot, receiptValidated: true, bodyMatchesFile: true },
+    { kind: "resource", role: "resource", scope, snapshot, entry: "references/fixed.md", receiptValidated: true, bodyMatchesFile: true, resourceSuccess: true },
+  ]);
+  expect(observed.events.some(event => ["transport", "request", "response", "assistant_final"].includes(String(event.phase)))).toBe(false);
+});
+
+test("advertised directories do not authorize early, traversing, undeclared or unrelated resource paths", async () => {
+  const observed = await modelObserverFixture({ advertiseEntry: true, requests: ({ advertisedEntry, advertisedResource, body, resourceBody }) => [
+    { path: advertisedResource, content: resourceBody },
+    { path: advertisedEntry, content: body },
+    { path: dirname(advertisedEntry) + "/references/../references/fixed.md", content: resourceBody },
+    { path: dirname(advertisedEntry) + "/references/undeclared.md", content: resourceBody },
+    { path: dirname(advertisedEntry) + "-other/references/fixed.md", content: resourceBody },
+    { path: advertisedResource, content: resourceBody },
+  ] });
+  expect(observed.decisions.map(decision => decision.block === true)).toEqual([true, false, true, true, true, false]);
+  expect(observed.events.filter(event => event.phase === "tool_result" && event.resourceSuccess)).toHaveLength(1);
+  const unadvertised = await modelObserverFixture({ requests: ({ entry, advertisedResource, body, resourceBody }) => [
+    { path: entry, content: body }, { path: advertisedResource, content: resourceBody },
+  ] });
+  expect(unadvertised.decisions.map(decision => decision.block === true)).toEqual([false, true]);
+});
+
+test("an advertised alias cannot switch active scope or snapshot or survive a missing receipt or changed resource bytes", async () => {
+  for (const changeAfterFirstRead of ["scope", "snapshot", "missing-receipt", "resource-bytes"] as const) {
+    const observed = await modelObserverFixture({ advertiseEntry: true, changeAfterFirstRead });
+    expect(observed.decisions.map(decision => decision.block === true)).toEqual([false, true]);
+    expect(observed.events.filter(event => event.phase === "tool_result")).toHaveLength(1);
+    expect(observed.events.some(event => event.resourceSuccess)).toBe(false);
+  }
+});
+
+test("an alias match does not excuse incomplete entry or resource results", async () => {
+  const entry = await modelObserverFixture({ advertiseEntry: true, requests: ({ advertisedEntry, advertisedResource, resourceBody }) => [
+    { path: advertisedEntry, content: "Shared model body" }, { path: advertisedResource, content: resourceBody },
+  ] });
+  expect(entry.decisions.map(decision => decision.block === true)).toEqual([false, true]);
+  const resource = await modelObserverFixture({ advertiseEntry: true, requests: ({ advertisedEntry, advertisedResource, body }) => [
+    { path: advertisedEntry, content: body }, { path: advertisedResource, content: "Changed result 48." },
+  ] });
+  expect(resource.decisions).toEqual([{ allowed: true }, { allowed: true }]);
+  expect(resource.events.filter(event => event.phase === "tool_result")[1]).toMatchObject({ receiptValidated: true, bodyMatchesFile: false, resourceSuccess: false });
 });
 
 const invalidModelRecords: [string, (record: ContentRecord) => unknown][] = [
