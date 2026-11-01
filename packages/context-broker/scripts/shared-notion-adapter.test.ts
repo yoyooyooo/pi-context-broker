@@ -453,3 +453,72 @@ test("a cold shared URI may activate but cannot claim verified snapshot bytes fr
   expect(observed.decisions).toEqual([{ allowed: true }]);
   expect(observed.events.filter(event => event.phase === "tool_result")).toMatchObject([{ kind: "skill-uri", bodyMatchesFile: false, resourceSuccess: false }]);
 });
+
+// The native-kind acceptance assertions run under the same Node runtime as the
+// real RPC recipe. These are observer regressions, not host/model acceptance.
+async function nativeKindsObserverCase(selected: string) {
+  const root = await mkdtemp(join(await realpath(tmpdir()), "broker-native-kinds-observer-"));
+  const script = join(root, "observer-case.mjs");
+  await writeFile(script, `
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { inspectNativeKindsContext, inspectNativeKindsReceipts, validateNativeKindsConfig } from ${JSON.stringify(import.meta.resolve("../../../scripts/notion-native-kinds.mjs"))};
+const hash = value => createHash('sha256').update(value).digest('hex');
+const xml = value => value.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+const attribute = value => xml(value).replaceAll('"','&quot;');
+const fixtures = Object.fromEntries(['skill','prompt','router'].map(kind => {
+  const id = 'shared_skill:controlled:' + kind, snapshotId = 's_' + hash(kind), body = 'Complete ' + kind + ' body with <code>literal</code>.';
+  return [kind, { record: { id, kind }, scope: 'a'.repeat(64), snapshotId, versionId: hash('version-' + kind), ref: 'skill://' + encodeURIComponent(id) + '/' + kind.toUpperCase() + '.md?snapshot=' + snapshotId, body, bodySha256: hash(body), escapedBodySha256: hash(xml(body)) }];
+}));
+const identity = kind => JSON.stringify(['notion', fixtures[kind].scope, kind, 'shared_skill', fixtures[kind].record.id]);
+const task = (id, body = fixtures.prompt.body) => '<prompt-task invocation="' + id + '" session="session-1" generation="1" identity="' + attribute(identity('prompt')) + '" snapshot="' + fixtures.prompt.snapshotId + '" version="' + fixtures.prompt.versionId + '">\\n' + body + '\\n</prompt-task>';
+const block = kind => '<context-broker-record kind="' + kind + '" name="controlled"><skill-ref>' + xml(fixtures[kind].ref) + '</skill-ref><snapshot-id>' + fixtures[kind].snapshotId + '</snapshot-id><body>\\n' + xml(fixtures[kind].body) + '\\n</body></context-broker-record>';
+const receipt = kind => ({ kind, sourceId: 'notion', identity: identity(kind), loaded: true, recordId: fixtures[kind].record.id, snapshotId: fixtures[kind].snapshotId, versionId: fixtures[kind].versionId });
+const loaded = records => [{ role: 'custom', customType: 'context-broker', details: { records } }];
+const user = content => ({ role: 'user', content });
+const inspect = (messages, marker, prompt, persistent) => inspectNativeKindsContext({ messages }, fixtures, { marker, prompt, persistent });
+const selected = process.argv[2];
+if (selected === 'prompt-history') {
+  const first = user('TURN_ONE\\n' + task('invocation-1')), second = user('TURN_TWO\\n' + task('invocation-2'));
+  const a = inspect([first], 'TURN_ONE', true, []);
+  const b = inspect([first, { role:'assistant', content:'OK' }, second], 'TURN_TWO', true, []);
+  assert.notEqual(a.invocation, b.invocation);
+  assert.equal(b.currentPromptTasks, 1);
+  inspectNativeKindsReceipts([first, second], fixtures, []);
+  assert.throws(() => inspect([first, second, second], 'TURN_TWO', true, []), /one provider user message/);
+} else if (selected === 'prompt-rejects') {
+  assert.throws(() => inspect([user('TURN\\n' + task('i', 'Complete prompt body'))], 'TURN', true, []), /complete frozen public body/);
+  assert.throws(() => inspect([user('TURN\\n' + task('i') + task('j'))], 'TURN', true, []), /exactly once/);
+  assert.throws(() => inspect([user('TURN\\n' + task('i').replace(fixtures.prompt.snapshotId, 's_' + 'f'.repeat(64)))], 'TURN', true, []));
+  assert.throws(() => inspectNativeKindsReceipts(loaded([receipt('prompt')]), fixtures, []), /Prompt must never/);
+} else if (selected === 'router-member') {
+  inspect([user(block('router')), user('ROUTER_TURN')], 'ROUTER_TURN', false, ['router']);
+  inspectNativeKindsReceipts(loaded([receipt('router')]), fixtures, ['router']);
+  assert.throws(() => inspect([user(block('router')), user('ROUTER_TURN\\n' + fixtures.skill.body)], 'ROUTER_TURN', false, ['router']), /unselected member body leaked/);
+  inspect([user(block('router') + block('skill')), user('MEMBER_TURN')], 'MEMBER_TURN', false, ['router','skill']);
+  inspectNativeKindsReceipts(loaded([receipt('router'), receipt('skill')]), fixtures, ['router','skill']);
+  assert.throws(() => inspectNativeKindsReceipts(loaded([{ ...receipt('skill'), loaded: false }]), fixtures, ['skill']));
+} else if (selected === 'mixed-resume') {
+  const history = [user(block('skill') + block('router')), user('MIXED_ONE\\n' + task('i'))];
+  const current = user('MIXED_TWO\\n' + task('j'));
+  inspect([...history.slice(1), current, history[0]], 'MIXED_TWO', true, ['skill','router']);
+  inspectNativeKindsReceipts(loaded([receipt('skill'), receipt('router')]), fixtures, ['skill','router']);
+  assert.throws(() => inspect([...history, user(block('skill')), current], 'MIXED_TWO', true, ['skill','router']), /Only selected/);
+  for (const duplicate of [fixtures.skill.body, xml(fixtures.skill.body)])
+    assert.throws(() => inspect([...history, user(duplicate), current], 'MIXED_TWO', true, ['skill','router']), /exactly once across all provider messages/);
+  assert.throws(() => inspectNativeKindsReceipts(loaded([receipt('skill'), { ...receipt('router'), versionId: 'f'.repeat(64) }]), fixtures, ['skill','router']));
+  const config = { version:1, refs: Object.fromEntries(Object.entries(fixtures).map(([kind, fixture]) => [kind, fixture.ref.split('?')[0]])) };
+  validateNativeKindsConfig(config);
+  assert.throws(() => validateNativeKindsConfig({ ...config, refs: { ...config.refs, prompt: config.refs.skill } }));
+  assert.throws(() => validateNativeKindsConfig({ ...config, refs: { ...config.refs, prompt: fixtures.prompt.ref } }));
+} else throw new Error('Unexpected observer regression');
+process.stdout.write(JSON.stringify({ selected, status:'passed' }));
+`, { mode: 0o600 });
+  return JSON.parse(execFileSync(node, [script, selected], { encoding: "utf8" }));
+}
+
+for (const selected of ["prompt-history", "prompt-rejects", "router-member", "mixed-resume"]) {
+  test(`native kind acceptance observer: ${selected}`, async () => {
+    expect(await nativeKindsObserverCase(selected)).toEqual({ selected, status: "passed" });
+  });
+}
