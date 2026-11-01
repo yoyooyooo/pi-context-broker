@@ -115,16 +115,22 @@ async function hostRun(host,context) {
  }
  const args=['--no-extensions','--session-dir',sessions,'--tools','read','-e',provider,'-e',extension,'--model','context-broker-e2e/fake',...(host==='omp'?['--no-title','--no-rules']:[])];
  let rpc;const observations=[];try {
+  // Metadata-only provider context does not imply cold preparation. Arm the
+  // body failure before startup so default-View prefetch cannot win this race.
+  let failureReadStart=0;
+  if(fixture.setScenario){assert.ok(fixture.callsPath,'Controlled activation failures require a source-call ledger');failureReadStart=(await rows(fixture.callsPath)).length;await fixture.setScenario('denied',{activationOnly:true});}
   rpc=await startRpc({host,cwd:base,env,args});await rpc.prompt('Describe available ledger skill names without opening a file.');let captures=await rows(providerFile);assert.ok(captures.length);const initial=JSON.stringify(captures[0].context);assert.ok(initial.includes(fixture.alias),'Default host catalog must advertise the remote alias');assert.equal(count(captures[0].context,fixture.marker),0,'Metadata must not contain skill body');
   const nativeName=(namespace+'-'+fixture.alias).replace(/[^a-z0-9-]/g,'-');
   const selected=nativeEntries(host,captures[0].context).find(skill=>skill.name===nativeName);
   const location=selected?.filePath;assert.ok(location,'Host skill catalog must expose the selected native read entry');observations.push('metadata-only default host catalog');
   if(fixture.setScenario){
    for(const scenario of ['denied','malformed','timeout']){
-    await fixture.setScenario(scenario);const before=(await rows(providerFile)).length;let failure;
+    if(scenario!=='denied')await fixture.setScenario(scenario,{activationOnly:true});const before=(await rows(providerFile)).length;let failure;
     try{await rpc.prompt(`/skill:${nativeName}`);}catch(error){failure=error.message;}
     assert.equal((await rows(providerFile)).length,before,`${scenario} activation must block provider invocation`);
-    observations.push({scenario,providerRequests:0,reportedFailure:failure??'host handled blocked command'});
+    const failedReads=(await rows(fixture.callsPath)).slice(failureReadStart).filter(call=>call.command==='read'&&call.scenario===scenario&&call.failure_scope==='activation');
+    assert.ok(failedReads.length,`${scenario} activation must reach a body read under the armed failure; warm prepared bytes are not a negative test`);
+    observations.push({scenario,providerRequests:0,sourceReads:failedReads.length,reportedFailure:failure??'host handled blocked command'});
    }
    await fixture.setScenario('normal');
   }

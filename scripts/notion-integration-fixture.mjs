@@ -32,7 +32,10 @@ async function main() {
   if (args[0] !== '--state' || !args[1]) throw new Error('Fixture requires --state FILE');
   const state = JSON.parse(await readFile(args[1], 'utf8'));
   const [command, ...flags] = args.slice(2);
-  await appendFile(state.callsPath, JSON.stringify({ command, args: flags, scenario: state.scenario, at: new Date().toISOString() }) + '\n');
+  // Keep metadata discoverable while failure tests forbid all successful body
+  // preparation, including the host's startup/default-View background reads.
+  const scenario = state.activationOnly === true && !['read', 'export'].includes(command) ? 'normal' : state.scenario;
+  await appendFile(state.callsPath, JSON.stringify({ command, args: flags, scenario, ...(state.activationOnly === true ? { configured_scenario: state.scenario, failure_scope: 'activation' } : {}), at: new Date().toISOString() }) + '\n');
   const out = value => console.log(JSON.stringify(value));
   const views = state.noViews ? [] : [firstViewId, secondViewId].map((id, index) => ({ id, name: index ? 'Beta work' : 'Default work', type: 'table', database_id: database, data_source_id: '44444444-4444-4444-8444-444444444444', url: `https://notion.so/${database}?v=${id}` }));
   if (command === 'views') { out({ ok: true, views, count: views.length }); return; }
@@ -47,12 +50,12 @@ async function main() {
     await appendFile(state.callsPath, JSON.stringify({ command: 'catalog-failed', at: new Date().toISOString() }) + '\n');
     out({ ok: false, error: { code: 'NOTION_REQUEST_FAILED' } }); process.exitCode = 1; return;
   }
-  if (state.scenario === 'timeout') {
+  if (scenario === 'timeout') {
     await new Promise(resolve => setTimeout(resolve, Number(process.env.NTN_SKILLS_REQUEST_TIMEOUT_MS ?? 30000)));
     out({ ok: false, error: { code: 'NTN_UNAVAILABLE', details: { reason: 'timeout' } } }); process.exitCode = 1; return;
   }
-  if (state.scenario === 'malformed') { console.log('invalid-json'); return; }
-  if (state.scenario === 'denied') { out({ ok: false, error: { code: 'ACCESS_DENIED', message: 'Controlled fixture access denied' } }); process.exitCode = 1; return; }
+  if (scenario === 'malformed') { console.log('invalid-json'); return; }
+  if (scenario === 'denied') { out({ ok: false, error: { code: 'ACCESS_DENIED', message: 'Controlled fixture access denied' } }); process.exitCode = 1; return; }
   if (state.scenario === 'slow-read' && command === 'read') await new Promise(resolve => setTimeout(resolve, 32_000));
   if (state.scenario === 'controlled-read' && command === 'read') await new Promise(resolve => setTimeout(resolve, state.delayMs ?? 4_000));
   if (state.failRead && command === 'read') { out({ ok: false, error: { code: 'ACCESS_DENIED', message: 'Controlled prefetch failure' } }); process.exitCode = 1; return; }
