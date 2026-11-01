@@ -231,6 +231,7 @@ export type SourceConfig = {
       command?: string | string[];
       database?: string;
       default_view_id?: string;
+      profile_id?: string;
       cacheDir?: string;
       discovery?: SourcePolicy;
       activation?: SourcePolicy;
@@ -249,9 +250,9 @@ export type SourceFailure = {
 };
 export type NotionView = { id: string; name: string; type: string; database_id: string; data_source_id: string; url: string };
 export type NotionViewState =
-  | { sourceId: string; origin: "session" | "configured" | "first"; status: "ready"; view: NotionView; count: number; partial: boolean }
-  | { sourceId: string; origin: "session" | "configured" | "first"; status: "empty" }
-  | { sourceId: string; origin: "session" | "configured" | "first"; status: "error"; code: string };
+  | { sourceId: string; origin: "session" | "configured" | "profile" | "first"; status: "ready"; view: NotionView; count: number; partial: boolean }
+  | { sourceId: string; origin: "session" | "configured" | "profile" | "first"; status: "empty" }
+  | { sourceId: string; origin: "session" | "configured" | "profile" | "first"; status: "error"; code: string };
 export type NotionListObservation = {
   sourceId: string;
   policy: "default" | "max_age" | "refresh" | "offline" | "pinned";
@@ -286,6 +287,7 @@ export type SkillMetadata = {
 
 export type ContentKind = "skill" | "router" | "prompt";
 export type ContentLocator =
+  | { type: "shared_skill"; page_id: string; database_id: string; data_source_id: string; library_id: string; skill_id: string }
   | { type: "notion_page"; page_id: string; database_id: string; data_source_id: string }
   | { type: "notion_subscription"; subscription_id: string; database_id: string; data_source_id: string; target_database_id: string }
   | { type: "local"; id: string; entry: string };
@@ -299,6 +301,7 @@ export type ContentRecord = {
   alias: string;
   description: string;
   default_context: boolean;
+  enabled?: boolean;
   entrypoint: string;
   ref: string;
   upstream?: { repo: string };
@@ -343,6 +346,7 @@ export type SkillRecord = SkillMetadata & {
   entrypoint?: string;
   ref?: string;
   default_context?: boolean;
+  enabled?: boolean;
   upstream?: ContentRecord["upstream"];
   source?: "local" | "notion";
   path: string;

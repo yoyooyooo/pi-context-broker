@@ -1,4 +1,5 @@
 import { recordIdentity } from "./discovery-records";
+import { isDeepStrictEqual } from "node:util";
 import { discoverNotionSource, listNotionViews, SourceError } from "./notion-source";
 import type { ConfigFile, DiscoveryResult, ExtensionAPI, ExtensionContext, NotionViewState, SkillRecord, SourceConfig } from "./types";
 
@@ -29,7 +30,7 @@ export async function resolveViewDiscovery(config: ConfigFile, catalog: Discover
   for (const source of enabledSources(config)) {
     signal?.throwIfAborted();
     const selector = overrides.get(source.id) ?? source.default_view_id;
-    const origin = overrides.has(source.id) ? "session" : source.default_view_id !== undefined ? "configured" : "first";
+    const origin = overrides.has(source.id) ? "session" : source.default_view_id !== undefined ? "configured" : source.profile_id !== undefined ? "profile" : "first";
     try {
       const selected = await discoverNotionSource(source, ctx?.cwd ?? process.cwd(), { signal, ...(selector === undefined ? { defaultView: true } : { view: selector }) });
       signal?.throwIfAborted();
@@ -37,14 +38,20 @@ export async function resolveViewDiscovery(config: ConfigFile, catalog: Discover
       const scopes = new Set(catalog.records.filter(record => record.sourceId === source.id).map(record => record.sourceScope));
       if (scopes.size && selected.some(record => !scopes.has(record.sourceScope))) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
       for (const record of selected) {
+        const existing = records.get(recordIdentity(record));
+        if (record.locator?.type === "shared_skill" && existing !== undefined && !isDeepStrictEqual(existing.locator, record.locator)) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+      }
+      for (const record of selected) {
         const identity = recordIdentity(record);
-        records.set(identity, { ...(records.get(identity) ?? record), defaultDiscovery: record.kind !== "prompt" });
+        const existing = records.get(identity);
+        records.set(identity, { ...(existing ?? record), defaultDiscovery: record.kind !== "prompt" });
       }
       // A complete View can still deliver exact records when full-library discovery
       // has unrelated failures. Retain the warning; do not turn it into an ACL.
       for (const failure of failures) if (failure.sourceId === source.id) failure.blocking = false;
       failures.push(...selected.failures);
-      views.push(selected.view ? { sourceId: source.id, origin, status: "ready", view: selected.view, count: selected.filter(record => record.kind !== "prompt").length, partial: selected.failures.length > 0 } : { sourceId: source.id, origin, status: "empty" });
+      const selectedOrigin = selector === undefined && selected.profileId !== undefined ? "profile" : origin;
+      views.push(selected.view ? { sourceId: source.id, origin: selectedOrigin, status: "ready", view: selected.view, count: selected.filter(record => record.kind !== "prompt").length, partial: selected.failures.length > 0 } : { sourceId: source.id, origin: selectedOrigin, status: "empty" });
     } catch (error) {
       if (signal?.aborted) throw error;
       const code = error instanceof SourceError ? error.code : "SOURCE_VIEW_UNAVAILABLE";

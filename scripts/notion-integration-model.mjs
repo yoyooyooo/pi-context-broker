@@ -9,7 +9,7 @@ const inside = (parent, child) => { const path = relative(parent, child); return
 
 // Executed only by the inherited, authorized Pi or OMP host. Provider and source
 // bodies stay in memory; evidence retains metadata and sanitized assistant text.
-function observe(api, settings) {
+export function observe(api, settings) {
   const { appendFileSync, readFileSync, readdirSync, realpathSync, statSync } = settings.fs;
   const { createHash } = settings.crypto;
   const { isAbsolute, join, relative, resolve, sep } = settings.path;
@@ -41,12 +41,14 @@ function observe(api, settings) {
   const calls = new Map();
   const hash = bytes => createHash('sha256').update(bytes).digest('hex');
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  const sharedId = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/;
   const digest = /^[0-9a-f]{64}$/;
   const snapshotId = /^s_[0-9a-f]{64}$/;
   const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
   const portable = path => typeof path === 'string' && path.length > 0 && !path.includes('\0') && !path.includes('\\') && !isAbsolute(path) && !/^[A-Za-z]:/.test(path) && path.split('/').every(part => part && part !== '.' && part !== '..');
   const keys = (value, expected) => object(value) && Object.keys(value).sort().join('|') === expected.split(' ').sort().join('|');
-  const allowedNames = new Set([alias, ('notion/' + alias).replace(/[^a-z0-9-]/g, '-'), ('notion/' + alias + '@' + selected.selector.replaceAll('-', '')).replace(/[^a-z0-9-]/g, '-'), selected.selector]);
+  const allowedNames = new Set([alias, ('notion/' + alias).replace(/[^a-z0-9-]/g, '-'), ('notion/' + alias + '@' + selected.physicalSelector.replaceAll('-', '')).replace(/[^a-z0-9-]/g, '-'), selected.selector]);
+  if (selected.locator?.type === 'shared_skill') allowedNames.add(selected.physicalSelector);
   let activeSnapshot;
   let activeScope;
   const sourceCache = cache;
@@ -61,13 +63,19 @@ function observe(api, settings) {
         const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
         if (!keys(receipt, 'version projection scope record snapshot notionVersion contentId entry files') || receipt.version !== 3 || receipt.projection !== 'snapshot' || !digest.test(receipt.scope) || !snapshotId.test(receipt.snapshot) || typeof receipt.notionVersion !== 'string' || !receipt.notionVersion || receipt.notionVersion.includes('\0') || !digest.test(receipt.contentId)) return;
         const record = receipt.record;
-        if (!keys(record, 'id kind locator name alias description default_context entrypoint ref') || !object(record.locator)) return;
+        if (!object(record) || !object(record.locator)) return;
         const locator = record.locator;
         const subscription = locator.type === 'notion_subscription';
-        if (!keys(locator, subscription ? 'type subscription_id database_id data_source_id target_database_id' : 'type page_id database_id data_source_id')) return;
+        const shared = locator.type === 'shared_skill';
+        if (!keys(record, 'id kind locator name alias description default_context entrypoint ref' + (shared || record.enabled !== undefined ? ' enabled' : '') + (record.upstream !== undefined ? ' upstream' : ''))) return;
+        if ((shared && record.enabled !== true) || (!shared && record.enabled !== undefined && record.enabled !== true)) return;
+        if (!keys(locator, subscription ? 'type subscription_id database_id data_source_id target_database_id' : 'type page_id database_id data_source_id' + (shared ? ' library_id skill_id' : ''))) return;
         const identity = subscription ? locator.subscription_id : locator.page_id;
-        if (!['notion_page', 'notion_subscription'].includes(locator.type) || !uuid.test(identity) || !uuid.test(locator.database_id) || !uuid.test(locator.data_source_id) || (subscription && (!uuid.test(locator.target_database_id) || record.kind !== 'router'))) return;
-        if (record.id !== locator.type + ':' + identity || record.id !== selected.id || record.kind !== selected.kind || record.entrypoint !== selected.entry || record.ref !== selected.ref || record.alias !== alias || typeof record.name !== 'string' || !/\S/u.test(record.name) || typeof record.description !== 'string' || typeof record.default_context !== 'boolean') return;
+        if (!['notion_page', 'notion_subscription', 'shared_skill'].includes(locator.type) || !uuid.test(identity) || !uuid.test(locator.database_id) || !uuid.test(locator.data_source_id) || (subscription && (!uuid.test(locator.target_database_id) || record.kind !== 'router'))) return;
+        if (shared && (typeof locator.library_id !== 'string' || !sharedId.test(locator.library_id) || typeof locator.skill_id !== 'string' || !sharedId.test(locator.skill_id) || !selected.locator || Object.entries(selected.locator).some(([key, value]) => locator[key] !== value))) return;
+        const stableIdentity = shared ? 'shared_skill:' + encodeURIComponent(locator.library_id) + ':' + encodeURIComponent(locator.skill_id) : locator.type + ':' + identity;
+        if (record.id !== stableIdentity || record.id !== selected.id || record.kind !== selected.kind || record.entrypoint !== selected.entry || record.ref !== selected.ref || record.alias !== alias || typeof record.name !== 'string' || !/\S/u.test(record.name) || typeof record.description !== 'string' || typeof record.default_context !== 'boolean') return;
+        if (record.upstream !== undefined && (!keys(record.upstream, 'repo') || locator.type !== 'notion_page' || record.kind !== 'skill' || typeof record.upstream.repo !== 'string' || !/\S/u.test(record.upstream.repo) || /[/\\\p{Cc}\p{Cf}\p{Cs}]/u.test(record.upstream.repo))) return;
         if (/[\p{Cc}\p{Cf}\p{Cs}]/u.test(record.name) || Object.values(record).some(value => typeof value === 'string' && value.includes('\0'))) return;
         const expectedDirectory = join(sourceCache, 'scopes', receipt.scope, 'records', hash(record.id), 'snapshots', receipt.snapshot);
         if (directory !== expectedDirectory || realpathSync(expectedDirectory) !== expectedDirectory || receipt.entry !== record.entrypoint || !Array.isArray(receipt.files)) return;
@@ -122,7 +130,10 @@ function observe(api, settings) {
         reference[0] = decodeURIComponent(reference[0]);
         if (reference[1] !== undefined) decodeURIComponent(reference[1]);
       } catch { return undefined; }
-      if (!allowedNames.has(target) || /[/?#:]/.test(target.replace(/^upstream:/, ''))) return undefined;
+      if (!allowedNames.has(target)) return undefined;
+      if (target === selected.selector) {
+        if (match[1] !== encodeURIComponent(target)) return undefined;
+      } else if (/[/?#:]/.test(target.replace(/^upstream:/, ''))) return undefined;
       const entry = reference[0] || selected.entry;
       if (!portable(entry) || /[:?#]/.test(entry) || entry === '.broker-snapshot.json') return undefined;
       const query = new URLSearchParams(reference[1]);
@@ -253,9 +264,18 @@ async function runHostModel(host, { root, scratch, evidence, fixture, options, e
   assert.ok(reference, 'Model mode requires a canonical current ContentRecord reference');
   const selector = decodeURIComponent(reference[1]);
   const subscription = selector.startsWith('upstream:');
-  const identity = subscription ? selector.slice('upstream:'.length) : selector;
+  const shared = selector.startsWith('shared_skill:');
+  const locator = shared ? fixture.record?.locator : undefined;
+  if (shared) {
+    assert.ok(locator?.type === 'shared_skill' && Object.keys(locator).sort().join('|') === 'data_source_id|database_id|library_id|page_id|skill_id|type', 'Shared model mode requires its exact discovered physical locator');
+    assert.ok([locator.database_id, locator.data_source_id].every(value => typeof value === 'string' && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(value)), 'Shared model locator must have canonical Notion parent identities');
+    assert.ok([locator.library_id, locator.skill_id].every(value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/.test(value)), 'Shared model logical identities must match the public bounded form');
+    assert.equal(selector, 'shared_skill:' + encodeURIComponent(locator.library_id) + ':' + encodeURIComponent(locator.skill_id), 'Shared ref must encode each exact logical identity component');
+    assert.ok(fixture.record.id === selector && fixture.record.enabled === true && fixture.record.kind === reference[2].toLowerCase() && fixture.record.entrypoint === reference[2] + '.md' && fixture.record.ref === fixture.skillRef, 'Shared model selection must name the exact enabled discovered record');
+  }
+  const identity = subscription ? selector.slice('upstream:'.length) : shared ? locator.page_id : selector;
   assert.ok(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(identity) && (!subscription || reference[2] === 'ROUTER'), 'Model mode requires a canonical ContentRecord locator');
-  const selected = { selector, id: (subscription ? 'notion_subscription:' : 'notion_page:') + identity, kind: reference[2].toLowerCase(), entry: reference[2] + '.md', ref: 'skill://' + encodeURIComponent(selector) + '/' + reference[2] + '.md' };
+  const selected = { selector, physicalSelector: identity, ...(shared ? { locator } : {}), id: shared ? selector : (subscription ? 'notion_subscription:' : 'notion_page:') + identity, kind: reference[2].toLowerCase(), entry: reference[2] + '.md', ref: 'skill://' + encodeURIComponent(selector) + '/' + reference[2] + '.md' };
   assert.equal(fixture.skillRef, selected.ref, 'Model mode requires the canonical ContentRecord reference');
   await save(config, { sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: fixture.command, database: options.database, ...(options.view ? { default_view_id: options.view } : {}), cacheDir: cache, requestTimeoutMs: 30000 }] });
   if (host === 'omp') await writeFile(overlay, 'startup:\n  setupWizard: false\n  checkUpdate: false\ncompaction:\n  enabled: false\n', { mode: 0o600 });

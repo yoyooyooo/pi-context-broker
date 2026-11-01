@@ -1,4 +1,5 @@
 import { hostCliScope } from "./host-command";
+import { sharedSkillId } from "./shared-skill-identity";
 import type { ExtensionAPI, ExtensionContext, MessageContent, SkillRecord, SourceConfig } from "./types";
 
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
@@ -84,14 +85,38 @@ function changedTargets(value: unknown, kind: WriteKind): ChangedTarget[] {
   };
   if (kind === "content") {
     if (result.verified !== true || result.reused === true || ["unchanged", "reuse"].includes(String(result.action))) return [];
+    const record = object(result.record), locator = object(record.locator);
+    if (locator.type === "shared_skill") {
+      const identity = typeof locator.library_id === "string" && typeof locator.skill_id === "string" ? sharedSkillId(locator.library_id, locator.skill_id) : undefined;
+      const entrypoint = record.kind === "skill" ? "SKILL.md" : record.kind === "router" ? "ROUTER.md" : record.kind === "prompt" ? "PROMPT.md" : undefined;
+      const canonical = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
+      if (identity === undefined || record.id !== identity || typeof record.enabled !== "boolean" || entrypoint === undefined ||
+        record.entrypoint !== entrypoint || record.ref !== `skill://${encodeURIComponent(identity)}/${entrypoint}` ||
+        [locator.page_id, locator.database_id, locator.data_source_id].some(value => typeof value !== "string" || !canonical.test(value)) ||
+        Object.keys(locator).some(key => !["type", "page_id", "database_id", "data_source_id", "library_id", "skill_id"].includes(key))) return [];
+    }
     const properties = object(result.effects).properties;
-    const written = result.operation === "update"
+    const sharedMetadata = locator.type === "shared_skill" && result.status === "applied" && result.action === "updated" &&
+      typeof result.metadata_operation_id === "string" && /^metadata-write-[a-f0-9]{64}$/.test(result.metadata_operation_id) &&
+      result.operation_id === result.metadata_operation_id && Array.isArray(result.changed_fields) && result.changed_fields.length > 0 &&
+      result.changed_fields.every(field => ["Name", "Description", "Default Context", "Members", "Source"].includes(String(field)));
+    const sharedSnapshot = locator.type === "shared_skill" && typeof result.snapshot_id === "string" && /^s_[a-f0-9]{64}$/.test(result.snapshot_id) && typeof result.version_id === "string" && result.version_id.length > 0;
+    const sharedWrite = sharedSnapshot && result.operation === "write" && result.action === "updated" && result.unchanged === false && result.status === undefined &&
+      typeof result.body_write_operation_id === "string" && /^body-write-adopt-[a-f0-9]{64}\.[a-f0-9]{64}$/.test(result.body_write_operation_id) &&
+      typeof result.candidate_sha256 === "string" && /^[a-f0-9]{64}$/.test(result.candidate_sha256);
+    const changes = object(result.changes);
+    const sharedApply = sharedSnapshot && ["apply", "replace"].includes(String(result.operation)) && result.status === "applied" &&
+      typeof result.apply_operation_id === "string" && /^(?:skill-apply|file-management-(?:add|delete))-[a-f0-9]{64}\.[a-f0-9]{64}$/.test(result.apply_operation_id) &&
+      Array.isArray(changes.files) && changes.files.every(path => typeof path === "string" && path.length > 0) &&
+      Array.isArray(changes.removed) && changes.removed.every(path => typeof path === "string" && path.length > 0);
+    const sharedCreate = locator.type === "shared_skill" && result.operation === "create" && result.action === "create" && result.reused === false &&
+      typeof result.create_operation_id === "string" && /^skill-create-[a-f0-9]{64}$/.test(result.create_operation_id);
+    const written = locator.type === "shared_skill" ? sharedMetadata || sharedWrite || sharedApply || sharedCreate : result.operation === "update"
       // update reports the property PATCH that actually ran; it currently has no semantic no-op branch.
       ? Array.isArray(properties) && properties.length > 0 && properties.every(value => typeof value === "string" && value.length > 0)
       : result.reused === false && ["create", "replace", "write"].includes(String(result.operation)) && ["create", "update"].includes(String(result.action));
     if (!written) return [];
-    const locator = object(object(result.record).locator);
-    return locator.type === "notion_page" && uuid(locator.page_id) ? target(locator.database_id, result.scope) : [];
+    return (locator.type === "notion_page" || locator.type === "shared_skill") && uuid(locator.page_id) ? target(locator.database_id, result.scope) : [];
   }
   if (kind === "upstream") {
     if (result.verified !== true || !Array.isArray(result.results)) return [];

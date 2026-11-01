@@ -30,7 +30,7 @@ Preconditions:
 - **文档导航。** 解包后从 npm 的双语 README、双语参考和贡献指南、Tern 的双语 README 递归检查本地链接与标题锚点，防止下沉文档漏包或投影仍指向 workspace。线上链接与实际 Markdown 呈现需另行核对，不由文件存在替代。
 - **发布行为。** 同一命令执行 `node --test scripts/release.test.mjs`。它创建临时 repo 与本地 bare remote、受控 registry 回复及检查命令，观察 commit count、tag、remote refs、拒绝 push 的 hook。检查失败无发布 refs；成功 `--no-push` 有正确版本的 annotated tag，原 main 不变；规划模式未执行 gate。
 - **证据。** manifest 指向 `broker-artifacts-*`，含 `archives`、`npm/package`、`tern`、`provider.jsonl` 和 session；release tests 的各个 `pi-context-broker-release-*` 保存 repo/remote.git 与 gate.json。transcript 保留所有断言结果，完成后执行 `control.mjs evidence`。
-- **桌面安装。** 本路径仅检查 Tern 文件完整与查询能力；需要证明真实插件装入窗口并能交互时再执行 `run editor`。
+- **桌面安装。** 本路径仅检查 Tern 文件完整与查询能力；需要证明真实插件装入窗口并能交互时再执行 `run editor`。`verify-native-ui.mjs` 的 `BROKER_UI_EXTENSION` 只选择 Broker 扩展，companion 仍从当前已构建 checkout 重新归档；不能称为直接消费此前冻结的同一 Tern tar。日常 UI runner 使用日常 installed companion，是另一条来源边界。
 
 - **随包消费。** 未配置 source 的冷安装可发现三份 `@builtin` 候选；选择正文并读取相对参考文件。两份产物的 Skill 库存一致，同名本地/Notion 内容可以精确消歧。复用现有包/宿主检查。
 
@@ -38,7 +38,7 @@ Preconditions:
 
 - 本脚本只驱动解包后的 OMP；Pi package 安装运行未被它覆盖。Pi 源码 host 回归通过不等价于 Pi 独立安装通过。
 - 正式 Tern 归档必须自带 query/runtime/Skill 资源；冷安装不得借用 checkout、全局 CLI 或旧中央 Skill 目录补齐缺失内容。
-- artifact runner 会重建当前查询和文档投影；不要与源码/构建更新并行，让版本归属明确。
+- artifact runner 默认会重建当前查询和文档投影；给 `CONTEXT_BROKER_CANDIDATE_DIR=/absolute/candidates` 时复用该目录中的 npm/Tern 候选包，不重新打包。记录实际包与安装入口 hash；不要与源码/构建更新并行，让版本归属明确。
 - `release --dry-run` 与 `--precheck` 在返回计划前仍会 fetch/prune tags 和查询 npm；`--no-push` 仍会创建本地 release commit/tag。只用临时测试 repo 验证发布行为。
 - 本地测试不是 npm Trusted Publishing、线上 release 或远端 CI 成功的证明；需分别回读对应真实结果。
 - 保留证据仓库，不执行永久删除、git clean/reset 来清理。

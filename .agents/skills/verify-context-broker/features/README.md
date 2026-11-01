@@ -35,7 +35,7 @@
 | 指令效果与默认摘要器 | `model` | [真实模型](model.md) |
 | 安装产物与发布门禁 | `distribution` | [分发和发布](distribution.md) |
 | Notion source与默认宿主Skill、持久 Read 记录与 preparation 提交锁 | `source` | [Source发现与激活](source.md) |
-| Notion 勾选项默认目录与后台预取 | 独立 `verify-notion-integration.mjs --default-context true` | [默认上下文与后台预取](../../verify-notion-skills-integration/features/default-context-prefetch.md) |
+| Notion 默认 View 目录与后台准备 | 独立 `verify-notion-integration.mjs --view-discovery true`；旧预取 fixture 用 `--default-context true` | [默认上下文与后台预取](../../verify-notion-skills-integration/features/default-context-prefetch.md) |
 | Notion CLI 正文缓存、跨会话/进程复用与远端修改 | 独立 `verify-notion-integration.mjs --mode live-fixture --cache-lifecycle true` | [会话缓存与恢复 NS-SESSION-09～12](../../verify-notion-skills-integration/features/session-cache-recovery.md) |
 | Notion 跨项目/宿主共用目录与导出、共享刷新与会话固定版本 | 独立 `verify-notion-integration.mjs --mode deterministic --shared-catalog true` | [共享缓存 NS-SESSION-13～15](../../verify-notion-skills-integration/features/session-cache-recovery.md#共享-notion-缓存)；真实 Pi/OMP + 受控 source/provider |
 | Notion原生补全与手动选择 | `notion-editor` | [跨仓补全地图](../../verify-notion-skills-integration/features/dollar-completion-selection.md) |

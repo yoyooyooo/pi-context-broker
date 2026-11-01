@@ -117,7 +117,7 @@ export function formatRootDiagnostics(roots: RootDiagnostic[], limit = 24): stri
 
 function findLines(skill: DiscoveryRecord): string[] {
   const locator = (skill as SkillRecord).locator;
-  const page = locator?.type === "notion_page" ? locator.page_id : locator?.type === "notion_subscription" ? locator.subscription_id : undefined;
+  const page = locator?.type === "notion_page" || locator?.type === "shared_skill" ? locator.page_id : locator?.type === "notion_subscription" ? locator.subscription_id : undefined;
   const description = recordDescription(skill).replace(/\s+/g, " ").trim();
   return [
     `$${recordToken(skill)}`,

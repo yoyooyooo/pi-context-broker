@@ -1,6 +1,8 @@
 # Source 配置、默认目录与激活
 
-修改 sources、Notion CLI contract、host metadata 或 activation 时使用此地图。用户启用 Notion source 后，Pi/OMP 默认目录只公布勾选 `Default Context` 的 Skill；完整目录继续用于显式调用、搜索与补全。启动完成元数据注册后后台预取勾选项，预取不向会话加载指令；原生 read、`/skill:notion-ui-alpha` 或 `$ui-alpha@notion` 选择后才消费完整 snapshot 及资源。Notion 自动补全和手动搜索始终返回 `$alias@namespace`，重名时返回 `$alias@page-id@namespace`。默认使用包内 `ntn-skills`，外部前置为 Node.js 22.x 中的 22.22.3+，或 24.20.0+、官方 `ntn` 0.22.12+ 及其认证；自定义 `command` 覆盖默认入口。
+修改 sources、Notion CLI contract、host metadata 或 activation 时使用此地图。用户启用 Notion source 后，Pi/OMP 默认目录公布当前 View 中的 Skill/Router，Profile 及选择优先级见[默认目录地图](../../verify-notion-skills-integration/features/default-context-prefetch.md)；完整目录继续用于显式调用、搜索与补全。启动完成元数据注册后可后台准备 View 成员，预取不向会话加载指令；原生 read、`/skill:notion-ui-alpha` 或 `$ui-alpha@notion` 选择后才消费完整 snapshot 及资源。Notion 自动补全和手动搜索始终返回 `$alias@namespace`，重名时返回 `$alias@page-id@namespace`。默认使用包内 `ntn-skills`，外部前置为 Node.js 22.x 中的 22.22.3+，或 24.20.0+、官方 `ntn` 0.22.12+ 及其认证；自定义 `command` 覆盖默认入口。
+
+文中 `SKILL_REF` 从本次 CLI 回执的 `record.ref` 原样取得；共享身份的编码与物理定位区别见下方 shared content 合同，不从 page UUID 或显示名重拼。
 
 ## Drive
 
@@ -14,7 +16,7 @@
 - `source-error-recovery`：fixture切换denied、malformed、timeout、duplicate，错误不能变空body成功；刷新后恢复。精确范围和证据见[联动恢复地图](../../verify-notion-skills-integration/features/session-cache-recovery.md)。
 - `source-submission`：Adapter 或输入事件类型变化时，复用上述 cold native、双向 `$` 切换、资源及失败恢复；OMP 命令 handoff 和 Pi 输入 digest 分别核对，不只直接调用 Adapter。取消后的旧 handoff 不得派发 provider，也不能误取消下一条提交。后台及会话边界按下方 NS-DEFAULT 地图，实际 Stop 与草稿恢复按 loading 路径，避免另建 Adapter 验证框架。
 
-默认目录筛选、未勾选项显式调用、后台预取、取消隔离与缓存新鲜度另按 [NS-DEFAULT-01～08](../../verify-notion-skills-integration/features/default-context-prefetch.md) 运行 `node scripts/verify-notion-integration.mjs run --mode deterministic --default-context true`。真实页与安装产物分别使用 live-fixture 与 installed，不由确定性路径推断。
+默认目录解析与会话 View 选择按[默认目录地图](../../verify-notion-skills-integration/features/default-context-prefetch.md)运行 `node scripts/verify-notion-integration.mjs run --mode deterministic --view-discovery true`。旧 `--default-context true` 通过 View 的 checkbox 筛选运行预取、取消隔离与新鲜度 fixture，checkbox 不是独立全局门禁。这些受控路径不证明真实 Profile 机器绑定；真实页与安装产物分别使用 live-fixture 与 installed，不由确定性路径推断。
 
 真实 CLI 冷缓存、跨会话/进程复用、Notion 正文/资源修改与默认五分钟过期使用 `node scripts/verify-notion-integration.mjs run --mode live-fixture --cache-lifecycle true --database UUID --command-json '["/absolute/ntn-skills"]'`，按 [NS-SESSION-09～12](../../verify-notion-skills-integration/features/session-cache-recovery.md) 分别核对实际 Pi/OMP 终端与 Tern/OMP 菜单/胶囊。有效会话固定 A、新会话未过期复用 A、过期新会话取得 B 为不同断言；既有受控 cold/warm 不替代真实 Notion 编辑与 CLI 空缓存。
 
@@ -25,11 +27,11 @@
 
 真实 Notion 生命周期 fixture 由 CLI 发布为原生页；先验证未接受的直接编辑返回 `PUBLICATION_DIVERGED`，再用 `operation inspect-edit` 与带精确 `--expected-version` 的 `operation accept-edit` 接受自建页版本，随后验证过期刷新。不手工改发布标记、不预热三端缓存。
 
-原生UI另运行 `node .agents/skills/verify-context-broker/scripts/control.mjs run notion-editor`。真实只读Notion运行 `node scripts/verify-notion-integration.mjs run live --database DB --skill-ref skill://PAGE/SKILL.md`；可以 `--command-json '["/absolute/ntn-skills"]'` 选安装命令。已授权独立测试页的create到archive路径见[联动Skill](../../verify-notion-skills-integration/SKILL.md)。live/model/installed均不由deterministic通过推导。
+原生UI另运行 `node .agents/skills/verify-context-broker/scripts/control.mjs run notion-editor`。真实只读Notion运行 `node scripts/verify-notion-integration.mjs run live --database DB --skill-ref "$SKILL_REF"`；可以 `--command-json '["/absolute/ntn-skills"]'` 选安装命令。已授权独立测试页的create到archive路径见[联动Skill](../../verify-notion-skills-integration/SKILL.md)。live/model/installed均不由deterministic通过推导。
 
-真实模型消费使用 `node scripts/verify-notion-integration.mjs run --mode model --database DB --skill-ref skill://PAGE/SKILL.md --model magpie/group/flash-free --model-prompt TEXT`，默认双宿主；`--host pi|omp` 只运行指定宿主并保留另一宿主未运行状态。选择实际包含参考资源的页，检查 metadata 无正文、模型自主读取入口与资源、内容进入 provider、HTTP 成功及非空成功 final 回复。Pi 终端补全另按[独立终端规程](../../verify-notion-skills-integration/features/dollar-completion-selection.md#pi-独立终端)验收；Tern UI runner 不覆盖 Pi。
+真实模型消费使用 `node scripts/verify-notion-integration.mjs run --mode model --database DB --skill-ref "$SKILL_REF" --model magpie/group/flash-free --model-prompt TEXT`，默认双宿主；`--host pi|omp` 只运行指定宿主并保留另一宿主未运行状态。选择实际包含参考资源的页，检查 metadata 无正文、模型自主读取入口与资源、内容进入 provider、HTTP 成功及非空成功 final 回复。Pi 终端补全另按[独立终端规程](../../verify-notion-skills-integration/features/dollar-completion-selection.md#pi-独立终端)验收；Tern UI runner 不覆盖 Pi。
 
-加载界面回归另运行 `node scripts/verify-native-ui.mjs --notion-loading`。首项从原生 `$` 补全接受 cold Skill，等待 65 秒，跨过已移除的 60 秒命令总时限；断言 Enter 立即开始 preparation、原生 running/Stop 可见、草稿可编辑，期间 Enter 不二次提交。provider 前会话显示唯一持久 `Read ntn-skills://<alias>` 记录，目标没有 namespace 前缀，展开/收起详情后，done 或 error 终态均保留。首个 provider 请求必须含原 prompt 与完整正文 canary 一份；随后单独提交编辑后的 draft 并核对顺序。覆盖暖读取、受控 4 秒 cold `/skill:`、36 秒单请求失败 `NTN_UNAVAILABLE` 后恢复、Escape 与真实 native Stop 取消及重试；Stop 使用 32 秒受控读取。长 CLI 场景验证 Broker 无总时限，单次网络预算另由 CLI transport 测试验证，不把受控等待解释成真实 Notion HTTP。覆盖模型真实 `read skill://`，以及同 pane 精确 JSONL 会话 quit/resume。图片与 session switch 另由 RPC 验证，不计为 UI 覆盖。用 `BROKER_UI_EXTENSION=/absolute/installed/pi-context-broker/src/index.ts` 可验证已安装扩展入口，source/provider 仍是隔离 fixture。完整步骤与证据边界见[激活快照地图](../../verify-notion-skills-integration/features/activation-snapshot-resources.md)。
+加载界面回归另运行 `node scripts/verify-native-ui.mjs --notion-loading`。首项从原生 `$` 补全接受 cold Skill，等待 65 秒，跨过已移除的 60 秒命令总时限；断言 Enter 立即开始 preparation、原生 running/Stop 可见、草稿可编辑，期间 Enter 不二次提交。provider 前会话显示唯一持久 `Read ntn-skills://<alias>` 记录，目标没有 namespace 前缀，展开/收起详情后，done 或 error 终态均保留。首个 provider 请求必须含原 prompt 与完整正文 canary 一份；随后单独提交编辑后的 draft 并核对顺序。覆盖暖读取、受控 4 秒 cold `/skill:`、36 秒单请求失败 `NTN_UNAVAILABLE` 后恢复、Escape 与真实 native Stop 取消及重试；Stop 使用 32 秒受控读取。长 CLI 场景验证 Broker 无总时限，单次网络预算另由 CLI transport 测试验证，不把受控等待解释成真实 Notion HTTP。覆盖受控 provider 发起的真实工具 `read skill://`，以及同 pane 精确 JSONL 会话 quit/resume。图片与 session switch 另由 RPC 验证，不计为 UI 覆盖。用 `BROKER_UI_EXTENSION=/absolute/installed/pi-context-broker/src/index.ts` 可验证已安装扩展入口，source/provider 仍是隔离 fixture。完整步骤与证据边界见[激活快照地图](../../verify-notion-skills-integration/features/activation-snapshot-resources.md)。
 
 依赖故障另运行 `bun run test:source-dependencies`：双宿主实际启动，覆盖缺 source command、缺 `ntn`、版本过低、缺 `--notion-version` 和未认证；普通聊天、本地与正常 source 继续，选择不可用 source 时不发 provider，修复 command 后 refresh 恢复。`node scripts/verify-native-ui.mjs --source-dependencies` 覆盖真实 Tern/OMP 启动提示、普通聊天、本地自动补全、失败 namespace 中未知引用原样透传，以及真实 Tab 接受另一 source 的已知候选后 read 失败阻断 provider；手动 picker 继续可用。`node scripts/verify-artifacts.mjs` 在独立生产安装上重跑双宿主依赖场景，并检查 npm/Tern query 随附的 CLI 与 notices；CLI fixture 不证明远端认证成功。
 
@@ -43,7 +45,9 @@ runner输出独立 `/tmp/broker-notion-evidence-*`，manifest记录mode、各hos
 
 ## AH258–260 shared content acceptance
 
-Shared CLI boundary accepts records only and read/export record plus entrypoint. Validate JSON tuple identity [sourceId,sourceScope,kind,locator.type,id], canonical typed locator, fixed snapshot/version/scope, portable v2 kind/main and full inventory. Reject malformed/legacy wire and mismatch without fallback. Subscription refs encode upstream:UUID and never act as content page UUID.
+Shared CLI boundary accepts records only and read/export record plus entrypoint. Validate JSON tuple identity [sourceId,sourceScope,kind,locator.type,id], canonical typed locator, fixed snapshot/version/scope, portable v2 kind/main and full inventory. Reject malformed wire (including `skills` in place of `records`) and identity mismatches without fallback. Subscription refs encode upstream:UUID and never act as content page UUID.
+
+`shared_skill` locator 含 `page_id`、`database_id`、`data_source_id`、`library_id`、`skill_id`；前三项是物理 UUID，后两项是逻辑 ID。`record.id` 为 `shared_skill:${encodeURIComponent(library_id)}:${encodeURIComponent(skill_id)}`，公共 ref 为 `skill://${encodeURIComponent(record.id)}/${entrypoint}`。保持 CLI 返回的完整编码；公共 ref 不等于 `skill://<page_id>/...`，菜单消歧和精确页失效仍取 locator 的物理 page UUID。共享记录的 `enabled` 必须为 boolean；缺字段拒绝，disabled 记录不进入可消费目录。原 `notion_page` / `upstream_subscription` locator 的有效合同继续保留。
 
 No execution is claimed by this map update; final owner runs and retains the evidence.
 

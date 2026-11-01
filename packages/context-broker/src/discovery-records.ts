@@ -4,6 +4,7 @@ import { parse as parseYaml } from "yaml";
 import type { RouterDiscoveryRecord, ConfigFile, DiscoveryMember, DiscoveryRecord, ScanConfig, SkillRecord, RawCatalogMember, CatalogRemoteReference, CatalogResolutionContext } from "./types";
 import { normalizeKey, skillRecordFromFile, uniqueStrings } from "./skill-records";
 import { isBundledBuiltin, isBundledBuiltinToken } from "./bundled-builtins";
+import { sharedSkillId } from "./shared-skill-identity";
 
 export function recordKind(record: DiscoveryRecord): "skill" | "router" | "prompt" {
   return record.kind ?? "skill";
@@ -21,7 +22,7 @@ function encodeSelectionId(id: string): string {
   return encodeURIComponent(id).replace(/[!'()*]/g, character => "%" + character.charCodeAt(0).toString(16).toUpperCase());
 }
 function preciseSelector(record: DiscoveryRecord): string {
-  return record.locator?.type === "notion_page" ? record.locator.page_id.replaceAll("-", "")
+  return record.locator?.type === "notion_page" || record.locator?.type === "shared_skill" ? record.locator.page_id.replaceAll("-", "")
     : record.locator?.type === "notion_subscription" ? record.locator.subscription_id.replaceAll("-", "")
     : encodeSelectionId(record.id ?? "local:" + resolve(record.path));
 }
@@ -327,21 +328,25 @@ export function parseCatalogMember(value: unknown): RawCatalogMember {
   if (!isRecord(value.locator)) throw new Error("Remote member requires stable locator");
   const locator = value.locator;
   const subscription = locator.type === "notion_subscription";
-  if (locator.type !== "notion_page" && !subscription) throw new Error("Invalid remote member locator");
-  const keys = subscription ? ["type", "subscription_id", "database_id", "data_source_id", "target_database_id"] : ["type", "page_id", "database_id", "data_source_id"];
+  const shared = locator.type === "shared_skill";
+  if (locator.type !== "notion_page" && !subscription && !shared) throw new Error("Invalid remote member locator");
+  const keys = subscription ? ["type", "subscription_id", "database_id", "data_source_id", "target_database_id"] : ["type", "page_id", "database_id", "data_source_id", ...(shared ? ["library_id", "skill_id"] : [])];
   exactKeys(locator, keys);
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-  if (keys.filter(key => key !== "type").some(key => typeof locator[key] !== "string" || !uuid.test(locator[key] as string))) throw new Error("Invalid remote member stable identity");
+  if (keys.filter(key => !["type", "library_id", "skill_id"].includes(key)).some(key => typeof locator[key] !== "string" || !uuid.test(locator[key] as string))) throw new Error("Invalid remote member stable identity");
   const id = subscription ? locator.subscription_id : locator.page_id;
-  const selector = subscription ? `upstream:${id}` : id;
+  const identity = shared && typeof locator.library_id === "string" && typeof locator.skill_id === "string"
+    ? sharedSkillId(locator.library_id, locator.skill_id) : shared ? undefined : `${locator.type}:${id}`;
+  if (identity === undefined) throw new Error("Invalid shared member identity");
+  const selector = shared ? identity : subscription ? `upstream:${id}` : id;
   const prefix = `skill://${encodeURIComponent(selector as string)}/`;
-  if (value.id !== `${locator.type}:${id}` || typeof value.ref !== "string" || !value.ref.startsWith(prefix) || !/^(SKILL|ROUTER|PROMPT)\.md(?:\?snapshot=s_[0-9a-f]{64})?$/.test(value.ref.slice(prefix.length))) throw new Error("Remote member ref/identity mismatch");
+  if (value.id !== identity || typeof value.ref !== "string" || !value.ref.startsWith(prefix) || !/^(SKILL|ROUTER|PROMPT)\.md(?:\?snapshot=s_[0-9a-f]{64})?$/.test(value.ref.slice(prefix.length))) throw new Error("Remote member ref/identity mismatch");
   return value as CatalogRemoteReference;
 }
 
 export function resolveCatalogReference(reference: CatalogRemoteReference, context: CatalogResolutionContext, kind: "skill" | "router"): SkillRecord {
   const sources = (context.sources ?? []).filter(source => source.enabled !== false && source.type === "notion" && (source.namespace ?? source.id) === reference.source.namespace);
-  const observedCandidates = (context.records ?? []).filter(record => record.source === "notion" && sources.some(source => source.id === record.sourceId) && record.id === reference.id);
+  const observedCandidates = (context.records ?? []).filter(record => record.source === "notion" && record.enabled !== false && sources.some(source => source.id === record.sourceId) && record.id === reference.id);
   const candidates = observedCandidates.filter(record => record.locator && Object.entries(reference.locator).every(([key, value]) => record.locator![key as keyof typeof record.locator] === value) && Object.keys(record.locator).length === Object.keys(reference.locator).length);
   const candidateLabels = observedCandidates.map(record => `${record.sourceId}:${record.id}:${JSON.stringify(record.locator)}`);
   const fail = (code: string, message: string): never => { throw new CatalogReferenceError(code, message, candidateLabels); };

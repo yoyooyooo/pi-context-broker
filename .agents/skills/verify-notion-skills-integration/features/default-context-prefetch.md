@@ -11,6 +11,10 @@ node scripts/verify-notion-integration.mjs cleanup --evidence /absolute/run
 
 使用实际安装的 Pi / OMP、公开扩展/RPC 入口和 provider payload 捕获。Notion CLI 与 LLM 是受控 fixture，不代表真实 Notion 或真实 LLM。传入 `--extension /absolute/installed/src/index.ts` 可验证冻结安装产物。
 
+Source 的可选 `profile_id` 必须同时配置显式 `database`。默认目录优先级为当前会话 View → source `default_view_id` → 显式 `profile_id` 或与该库匹配的 CLI 机器 Profile 绑定 → 无绑定时的首项 View；Profile 本身选择其共享配置指定的 View 或首项策略。显式 View 不带 `--profile`，完整目录发现不受默认目录过滤结果污染。
+
+`verify-notion-integration.mjs` 没有 `--profile` 选项，且每次 run 新建 CLI config/state/cache/data；它不会继承日常机器的 Profile 绑定。`--view-discovery true` 使用受控 View fixture，不能证明实际绑定读取。source 参数、响应身份、优先级及缓存隔离属于现有 adapter/CLI 回归的契约；真实机器绑定须另有实际配置和读取证据，未运行时不得由 View 或单元结果代填。
+
 ## 必须检查的行为
 
 | 场景 | 可观察结果 |
@@ -21,17 +25,17 @@ node scripts/verify-notion-integration.mjs cleanup --evidence /absolute/run
 | 从 A 切换 B | 下一轮目录替换；B 内未勾选 checkbox 的 Skill 可见，A 外条目不再默认公布 |
 | 显式调用 View 外的 Skill | 完整 `$` 选择有效，正文只加载一次 |
 | 再次切换 View | 已读正文和固定资源版本保留，不复制、不声称撤回 |
-| 无配置 / 显式配置 / default reset | 首项兜底 / 配置 ID 优先 / 恢复默认解析分别可见 |
+| 无配置 / 显式配置 / default reset | 无 Profile 绑定时首项兜底 / 配置 ID 优先 / 恢复默认解析分别可见 |
 | 错误 ID / 零 Views | 前者报告错误而不改选，后者为空目录；普通任务和精确显式调用仍可用 |
 | 进程重开续接 / fork 到旧分支 | 根据有效分支恢复选择，不拿进程内状态充当持久化 |
-| 同 profile 两个活跃会话 | 切换互不串选，未配置时各自解析首项 |
+| 两个活跃会话 | 切换互不串选；无 Profile 绑定的 fixture 未配置 View 时各自解析首项 |
 | 本地 Skill | 不是 Broker 所有的 metadata 仍保留 |
 
 证据为 `*-view-provider.jsonl`、`*-view-rpc.json`、`*-view-result.json`、manifest 与自有进程退出回执。检查实际 provider 中的目录，不只检查配置对象或 UI 提示。
 
 ## 真实内容与模型
 
-使用已有只读授权的库和 View。模型模式需明确 `--model provider/model`、自然任务和 `--view VIEW_ID`。要求模型选择入口、成功读取正文及同快照支持文件，实际网络成功并把两份内容送入后续请求。当前任务可用 `magpie/group/flash`；不修改全局模型选择。记录失败，不把受控 provider 或 HTTP 200 单独算作完成。原生目录 stub 可能位于宿主临时索引；允许该真实广告入口后，仍须核验完整导出回执、文件 SHA 和返回字节。
+使用已有只读授权的库和 View。模型模式需明确 `--model provider/model`、自然任务和 `--view VIEW_ID`。要求模型选择入口、成功读取正文及同快照支持文件，实际网络成功并把两份内容送入后续请求。当前任务可用 `magpie/group/flash-free`；不修改全局模型选择。记录失败，不把受控 provider 或 HTTP 200 单独算作完成。原生目录 stub 可能位于宿主临时索引；允许该真实广告入口后，仍须核验完整导出回执、文件 SHA 和返回字节。
 
 ## 预取与压缩
 

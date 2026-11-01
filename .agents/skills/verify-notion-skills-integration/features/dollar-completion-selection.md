@@ -6,7 +6,7 @@ UI fixture 原生 Skill 命令为 `/skill:notion-ui-alpha`。真实远端消费�
 
 deterministic/installed 对 Notion 与 filesystem source 均执行 `$` 消费；重名 fixture 提交歧义 `$ui-alpha@notion` 必须无 provider 请求（计数 0），再分别调用两个 qualified native，捕获独立 page body。审阅 `*-duplicates-rpc.json` 与各 provider；不能把歧义拒绝算成整体 run 失败，也不能把错误目标正文算成成功选择。远端 live-fixture 可按 SKILL 中的 `--resume-evidence` 归属/canary 校验恢复，不重新 create。
 
-所有 Notion 候选始终使用 `$alias@namespace`，默认如 `$ui-alpha@notion`，无冲突条目也遵循该格式。同一 source 的 alias 重名时使用 `$alias@page-id@namespace`。本地 Skill/Bundle 与 source 同名时，本地使用 `$name@local`；filesystem source 内部重名保留 canonical token 的路径消歧。裸名存在歧义时仍拒绝。`bun run check` 验证自动补全与独立 query 的引用实际注入所选本地/source 正文且不串选，覆盖无冲突 Notion、同库重名、自定义 namespace、Bundle、未知后缀及 namespace 为 local。`node scripts/verify-native-ui.mjs --name-collision` 在自建 Tern/OMP 中依次接受本地胶囊、提交本地正文且 source 无 read/export、接受 Notion 胶囊并提交远端 fixture 正文，再提交裸名，要求无新增 provider 请求且错误含 `ambiguous` 和两种完整引用。证据为 `collision-result.json`、provider/source calls、`collision-*` 截图及 cleanup 回执；fixture 不证明真实 Notion 网络。
+所有 Notion 候选始终使用 `$alias@namespace`，默认如 `$ui-alpha@notion`，无冲突条目也遵循该格式。同一 source 的 alias 重名时使用 `$alias@page-id@namespace`。对 `shared_skill`，此 page selector 取 `locator.page_id` 的去连字符 UUID；编码后的共享 `record.id` / 公共 `record.ref` 用于内容身份，不能替代物理页 selector。本地 Skill/Bundle 与 source 同名时，本地使用 `$name@local`；filesystem source 内部重名保留 canonical token 的路径消歧。裸名存在歧义时仍拒绝。`bun run check` 验证自动补全与独立 query 的引用实际注入所选本地/source 正文且不串选，覆盖无冲突 Notion、同库重名、自定义 namespace、Bundle、未知后缀及 namespace 为 local。`node scripts/verify-native-ui.mjs --name-collision` 在自建 Tern/OMP 中依次接受本地胶囊、提交本地正文且 source 无 read/export、接受 Notion 胶囊并提交远端 fixture 正文，再提交裸名，要求无新增 provider 请求且错误含 `ambiguous` 和两种完整引用。证据为 `collision-result.json`、provider/source calls、`collision-*` 截图及 cleanup 回执；fixture 不证明真实 Notion 网络。
 
 本地 `skillRoots` 按配置顺序、规范化 Skill 名称保留首个命中项，后置源码副本和 system-prompt fallback 不得重新引入同名候选。`bun run check` 的 local-token 回归交换两个 roots，检查补全、普通 `$name`、已有 `$name@local` 与 `skill:` 均消费当前首项正文，并保留独立 filesystem source 的选择身份；`$` 后有空格的错误说明保持普通文字。真实双宿主的配置规则与 `@local` 提交见[注入地图](../../verify-context-broker/features/injection.md)。
 
@@ -70,7 +70,7 @@ Adapter 装配变化时用现有 `writeFakeProvider` 配合隔离 filesystem sou
 2. 自建 PTY 可用 Python `pty.openpty()`，先设 `TIOCSWINSZ`，将 slave 接到 Node 启动器的 stdin/stdout/stderr；master 用 `os.write` 发送实际字符、Tab (`\t`) 与 Enter (`\r`)，用 `select` 持续读取。`spawnHost` 可沿用现有真实入口解析，fixture HOME 不直接运行 Volta shim。输入先只发前缀并观察候选；会自动附加换行的进程输入接口不能用于证明接受前的候选。不要把原始 stdin 转发给模型当作终端验收。
 3. 输入 `$` 与目标前缀，观察实际候选；按 Tab 接受后核对草稿中的规范引用（例如 filesystem source 的 `$fs/arg-skill` 或 Notion 的 `$alias@namespace`），再追加任务并 Enter。保存候选、接受后的草稿和提交结果画面。
 4. 输入 `/skill:` 与该条目的 qualified 原生名前缀，观察原生候选并按 Tab 接受、Enter 提交；另起独立冷会话验证首次原生调用再切换 `$`。两次冷会话的 provider 分别核对 `$`→native→`$` 和 native→`$`；每次目标正文一份，system catalog 无正文。两个方向均不能由同一暖会话推断。
-5. UI 可用受控 provider 验证选中与投递；真实模型使用本轮授权 `magpie/group/e2e`，只通过测试会话 argv/config selector，不修改全局模型。检查冷 `$` 介绍直接响应、没有为加载身份重复读取入口，并按 `host-skill-discovery-read.md` 的 model route 验证必要资源。受控 `OK` 不证明模型使用指令。
+5. UI 可用受控 provider 验证选中与投递；真实模型使用本轮授权 `magpie/group/flash-free`，只通过测试会话 argv/config selector，不修改全局模型。检查冷 `$` 介绍直接响应、没有为加载身份重复读取入口，并按 `host-skill-discovery-read.md` 的 model route 验证必要资源。受控 `OK` 不证明模型使用指令。
 6. 保留原始终端转义序列、实际按键动作、候选/接受/提交画面、provider 捕获、逐次正文计数与退出回执。PNG 若由捕获字符栅格渲染须明示；处理 UTF-8 与终端控制序列，不把源码或手工重写画面充作证据。空草稿 Ctrl+D 正常退出后等待 launcher 和宿主关闭，主动终止另记。仅终止持有的进程，禁止 `pkill`、按名称批量清理。缺少 PTY 能力时报告该入口未运行，不能反复试运行其他模型或弱化断言。
 
 该规程不声称某次 Pi 日常安装已经通过；隔离 checkout 验收与实际安装配置分别报告。

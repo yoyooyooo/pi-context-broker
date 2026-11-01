@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { buildRegistryFromRoots, normalizeKey } from "./skill-records";
 import { discoverNotionSource, loadNotionSkill, SourceError, ReferenceMiss, sourceFailureMessage } from "./notion-source";
+import { validSharedIdentity } from "./shared-skill-identity";
 import type { ConfigFile, NotionListObservation, SkillRecord, SourceConfig, SourcePolicy, ScanConfig, DiscoveryResult, SourceFailure } from "./types";
 
 export { SourceError } from "./notion-source";
@@ -67,9 +68,11 @@ export function normalizeSources(value: unknown): SourceConfig[] | undefined {
       if (Array.isArray(command) && command.length === 0) invalid();
     }
     if (raw.requestTimeoutMs !== undefined && (!Number.isSafeInteger(raw.requestTimeoutMs) || (raw.requestTimeoutMs as number) <= 0 || (raw.requestTimeoutMs as number) > 2_147_483_647)) invalid();
+    const database = optionalString(raw.database), profileId = optionalString(raw.profile_id);
+    if (profileId !== undefined && (!database || !validSharedIdentity(profileId))) invalid();
     return {
       ...common, type: "notion", command,
-      database: optionalString(raw.database), default_view_id: optionalString(raw.default_view_id), cacheDir: optionalString(raw.cacheDir),
+      database, default_view_id: optionalString(raw.default_view_id), ...(profileId === undefined ? {} : { profile_id: profileId }), cacheDir: optionalString(raw.cacheDir),
       discovery: policy(raw.discovery), activation: policy(raw.activation), requestTimeoutMs: raw.requestTimeoutMs as number | undefined,
     };
   });

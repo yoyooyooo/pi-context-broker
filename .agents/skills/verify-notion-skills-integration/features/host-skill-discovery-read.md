@@ -1,12 +1,12 @@
 # 宿主 Skill 发现与读取
 
-前置条件：Pi 与 OMP 的实际原生 extension 可加载，harness 提供可定位的 fixture Skill。metadata、host read、原生 Skill 调用分别审阅；尚未实现或未观察到的宿主路径必须记为 failed/未运行，不能用伪正文替代。
+前置条件：Pi 与 OMP 的实际原生 extension 可加载，harness 提供可定位的 fixture Skill。`SKILL_REF` 从实际 CLI 的完整 `record.ref` 取得，共享逻辑 ref 不替换为物理 page UUID。metadata、host read、原生 Skill 调用分别审阅；尚未实现或未观察到的宿主路径必须记为 failed/未运行，不能用伪正文替代。
 
 真实端到端使用 `node scripts/verify-notion-integration.mjs doctor --mode live-fixture --database UUID` 与 `node scripts/verify-notion-integration.mjs run --mode live-fixture --database UUID`；创建唯一测试页与 `references/guide.md` 后双宿主消费，finally 仅 archive 自建页及 child pages 并 GET 确认，审阅两个 live-fixture 回执。只读 live 不替代此路径。UI fixture 的原生命令为 `/skill:notion-ui-alpha`，不能以伪正文替代。
 
 | ID | 用户入口与动作 | 可观察 assertion |
 | --- | --- | --- |
-| NS-HOST-01 | 在 Pi/OMP 请求 Notion 与 filesystem source metadata | Filesystem 与已勾选 `Default Context` 的 Notion 记录由原生宿主发现名称、说明与读取入口；未勾选项仍可显式调用；metadata 与预取完成均不等于正文已加载。 |
+| NS-HOST-01 | 在 Pi/OMP 请求 Notion 与 filesystem source metadata | Filesystem 与当前 View 中的 Notion Skill/Router 由宿主发现名称、说明与读取入口；View 外的可消费记录仍可显式调用；metadata 与预取完成均不等于正文已加载。 |
 | NS-HOST-02 | 经双宿主 read 与 resource 读取目标 | 完整正文和关联资源与各自 source 一致，filesystem 与 Notion 分别留证，不能仅直接调用 CLI。 |
 | NS-HOST-03 | 两宿主分别通过 native RPC、print 与 Notion cold print 消费目标 | 实际 provider 收到目标正文；cold native 的参数同时含所选 `$` 引用，仍须完整保留参数且正文只有一份。Pi 另以 Tab、换行分隔参数，逐次核对首词和其余参数均保留。Cold print 独立记录，不由暖 RPC 推断。重名场景两个 qualified native 各读取独立 page body，不用占位 body。 |
 | NS-HOST-04 | 使用真实模型 prompt 要求读取目标 Skill 与关联资源 | 实际模型产生 read/resources 行为并消费对应内容；只有提示词提及 URI 或助手声称读过均不满足。 |
@@ -18,10 +18,10 @@ OMP 冷启动不等待 Notion `list` 才显示编辑器或注册 `$` provider。
 ```bash
 node scripts/verify-notion-integration.mjs doctor --mode deterministic
 node scripts/verify-notion-integration.mjs run --mode deterministic
-node scripts/verify-notion-integration.mjs doctor --mode model --database DB --skill-ref skill://PAGE/SKILL.md --model provider/model --model-prompt TEXT
-node scripts/verify-notion-integration.mjs run --mode model --database DB --skill-ref skill://PAGE/SKILL.md --model provider/model --model-prompt TEXT
-node scripts/verify-notion-integration.mjs run --mode model --host pi --database DB --skill-ref skill://PAGE/SKILL.md --model magpie/group/flash-free --model-prompt TEXT
-node scripts/verify-notion-integration.mjs run --mode model --host omp --database DB --skill-ref skill://PAGE/SKILL.md --model magpie/group/flash-free --model-prompt TEXT
+node scripts/verify-notion-integration.mjs doctor --mode model --database DB --skill-ref "$SKILL_REF" --model provider/model --model-prompt TEXT
+node scripts/verify-notion-integration.mjs run --mode model --database DB --skill-ref "$SKILL_REF" --model provider/model --model-prompt TEXT
+node scripts/verify-notion-integration.mjs run --mode model --host pi --database DB --skill-ref "$SKILL_REF" --model magpie/group/flash-free --model-prompt TEXT
+node scripts/verify-notion-integration.mjs run --mode model --host omp --database DB --skill-ref "$SKILL_REF" --model magpie/group/flash-free --model-prompt TEXT
 ```
 
 deterministic 与 installed 执行这些双 source 路径。审阅 `pi-fs-`/`omp-fs-` 系列、`*-cold-print-provider.jsonl`、`*-duplicates-rpc.json` 及实际 manifest。live-fixture 可加 `--model provider/model --model-prompt TEXT`，同页模型消费后 archive；失败恢复使用 `--resume-evidence /absolute/FAILED_EVIDENCE`，必须通过 ownership/input name、catalog exactname 唯一匹配和 read canary 校验，不能重新 create 冒充恢复。

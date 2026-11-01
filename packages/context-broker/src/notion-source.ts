@@ -8,19 +8,21 @@ import { lstat, mkdir, readFile, readdir, realpath, rename, writeFile } from "no
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { normalizeKey } from "./skill-records";
+import { sharedSkillId, validSharedIdentity } from "./shared-skill-identity";
 import type { ContentRecord, NotionListObservation, NotionView, SkillRecord, SourceConfig, SourcePolicy, SourceFailure } from "./types";
 
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
 type Options = { signal?: AbortSignal; refresh?: boolean; stale?: boolean; view?: string; defaultView?: boolean };
-type NotionDirectory = SkillRecord[] & { list: NotionListObservation; failures: SourceFailure[]; view?: NotionView | null };
+type NotionDirectory = SkillRecord[] & { list: NotionListObservation; failures: SourceFailure[]; view?: NotionView | null; profileId?: string };
 type Json = Record<string, unknown>;
 const PageLocator = Schema.Struct({ type: Schema.Literal("notion_page"), page_id: Schema.String, database_id: Schema.String, data_source_id: Schema.String });
 const SubscriptionLocator = Schema.Struct({ type: Schema.Literal("notion_subscription"), subscription_id: Schema.String, database_id: Schema.String, data_source_id: Schema.String, target_database_id: Schema.String });
-const ContentSchema = Schema.Struct({ id: Schema.String, kind: Schema.Literals(["skill", "router", "prompt"]), locator: Schema.Union([PageLocator, SubscriptionLocator]), name: Schema.String, alias: Schema.String, description: Schema.String, default_context: Schema.Boolean, entrypoint: Schema.String, ref: Schema.String, upstream: Schema.optional(Schema.Struct({ repo: Schema.String })) });
+const SharedLocator = Schema.Struct({ type: Schema.Literal("shared_skill"), page_id: Schema.String, database_id: Schema.String, data_source_id: Schema.String, library_id: Schema.String, skill_id: Schema.String });
+const ContentSchema = Schema.Struct({ id: Schema.String, kind: Schema.Literals(["skill", "router", "prompt"]), locator: Schema.Union([PageLocator, SubscriptionLocator, SharedLocator]), name: Schema.String, alias: Schema.String, description: Schema.String, default_context: Schema.Boolean, enabled: Schema.optional(Schema.Boolean), entrypoint: Schema.String, ref: Schema.String, upstream: Schema.optional(Schema.Struct({ repo: Schema.String })) });
 const UUID = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
 const HASH = /^[0-9a-f]{64}$/;
 const SNAPSHOT = /^s_[0-9a-f]{64}$/;
-const CLI_CODES: Record<string, true | undefined> = Object.fromEntries("SKILL_NOT_FOUND SKILL_AMBIGUOUS INVALID_SKILL_NAME CATALOG_INCOMPLETE AUTH_REQUIRED ACCESS_DENIED NTN_UNAVAILABLE NOTION_REQUEST_FAILED RATE_LIMITED SNAPSHOT_MISSING SNAPSHOT_CONFLICT DATABASE_NOT_FOUND DATABASE_AMBIGUOUS OUTPUT_CONFLICT MARKDOWN_INCOMPLETE INVALID_REFERENCES REFERENCE_PATH_CONFLICT REFERENCE_NOT_FOUND UNSUPPORTED_FILE INPUT_FAILED INVALID_INPUT FILE_TOO_LARGE FILE_NOT_FOUND BINARY_FILE INVALID_REF INVALID_PATH INVALID_RANGE INVALID_ARGUMENT INVALID_ARCHIVE INVALID_SKILL ARCHIVE_TOO_LARGE STATE_CORRUPT STORAGE_ERROR OUTPUT_FAILED CACHE_MISSING CACHE_SCOPE_UNAVAILABLE CACHE_INCOMPLETE INVALID_SNAPSHOT INVALID_RESPONSE NOT_SKILLS_DATABASE DOWNLOAD_FAILED CRYPTO_ERROR INVALID_SOURCE SOURCE_AMBIGUOUS INTERNAL_ERROR INVALID_VIEW VIEW_SCOPE_MISMATCH VIEW_INCOMPLETE VIEW_QUERY_EXPIRED VIEW_MEMBER_UNAVAILABLE NOT_FOUND".split(" ").map((code) => [code, true as const]));
+const CLI_CODES: Record<string, true | undefined> = Object.fromEntries("SKILL_NOT_FOUND SKILL_AMBIGUOUS INVALID_SKILL_NAME CATALOG_INCOMPLETE AUTH_REQUIRED ACCESS_DENIED NTN_UNAVAILABLE NOTION_REQUEST_FAILED RATE_LIMITED SNAPSHOT_MISSING SNAPSHOT_CONFLICT DATABASE_NOT_FOUND DATABASE_AMBIGUOUS OUTPUT_CONFLICT MARKDOWN_INCOMPLETE INVALID_REFERENCES REFERENCE_PATH_CONFLICT REFERENCE_NOT_FOUND UNSUPPORTED_FILE INPUT_FAILED INVALID_INPUT FILE_TOO_LARGE FILE_NOT_FOUND BINARY_FILE INVALID_REF INVALID_PATH INVALID_RANGE INVALID_ARGUMENT INVALID_ARCHIVE INVALID_SKILL ARCHIVE_TOO_LARGE STATE_CORRUPT STORAGE_ERROR OUTPUT_FAILED CACHE_MISSING CACHE_SCOPE_UNAVAILABLE CACHE_INCOMPLETE INVALID_SNAPSHOT INVALID_RESPONSE NOT_SKILLS_DATABASE DOWNLOAD_FAILED CRYPTO_ERROR INVALID_SOURCE SOURCE_AMBIGUOUS INTERNAL_ERROR INVALID_VIEW VIEW_SCOPE_MISMATCH VIEW_INCOMPLETE VIEW_QUERY_EXPIRED VIEW_MEMBER_UNAVAILABLE NOT_FOUND CONTENT_DISABLED SHARED_PROFILE_INVALID SHARED_PROFILE_SCOPE SHARED_PROFILE_NOT_FOUND SHARED_PROFILE_BASELINE_MISSING SHARED_PROFILE_CONFLICT SHARED_PROFILE_PENDING SHARED_PROFILE_PENDING_CONFLICT SHARED_PROFILE_UNRESOLVED SHARED_PROFILE_STALE SHARED_PROFILE_DISABLED".split(" ").map((code) => [code, true as const]));
 
 export class SourceError extends Error {
   readonly code: string;
@@ -58,11 +60,13 @@ function contentRecord(value: unknown, source: NotionSource): ContentRecord {
   catch { return decodeError(source); }
   const locator = item.locator;
   if (locator.type === "local") return decodeError(source);
-  const page = locator.type === "notion_page" ? locator.page_id : locator.subscription_id;
+  const page = locator.type === "notion_subscription" ? locator.subscription_id : locator.page_id;
   const canonical = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   const entrypoint = { skill: "SKILL.md", router: "ROUTER.md", prompt: "PROMPT.md" }[item.kind];
-  const selector = locator.type === "notion_page" ? page : "upstream:" + page;
-  if (!canonical.test(page) || !canonical.test(locator.database_id) || !canonical.test(locator.data_source_id) || (locator.type === "notion_subscription" && (!canonical.test(locator.target_database_id) || item.kind !== "router")) || item.id !== locator.type + ":" + page || item.entrypoint !== entrypoint || item.ref !== "skill://" + encodeURIComponent(selector) + "/" + entrypoint || !/\S/u.test(item.name) || /[\p{Cc}\p{Cf}\p{Cs}]/u.test(item.name) || !validAlias(item.alias) || Object.values(item).some(value => typeof value === "string" && value.includes("\0"))) decodeError(source);
+  const identity = locator.type === "shared_skill" ? sharedSkillId(locator.library_id, locator.skill_id) : locator.type + ":" + page;
+  if (identity === undefined || locator.type === "shared_skill" && typeof item.enabled !== "boolean") decodeError(source);
+  const selector = locator.type === "shared_skill" ? identity : locator.type === "notion_page" ? page : "upstream:" + page;
+  if (!canonical.test(page) || !canonical.test(locator.database_id) || !canonical.test(locator.data_source_id) || (locator.type === "notion_subscription" && (!canonical.test(locator.target_database_id) || item.kind !== "router")) || item.id !== identity || item.entrypoint !== entrypoint || item.ref !== "skill://" + encodeURIComponent(selector) + "/" + entrypoint || !/\S/u.test(item.name) || /[\p{Cc}\p{Cf}\p{Cs}]/u.test(item.name) || !validAlias(item.alias) || Object.values(item).some(value => typeof value === "string" && value.includes("\0"))) decodeError(source);
   if (item.upstream && (item.kind !== "skill" || locator.type !== "notion_page" || !/\S/u.test(item.upstream.repo) || /[/\\\p{Cc}\p{Cf}\p{Cs}]/u.test(item.upstream.repo))) decodeError(source);
   return item;
 }
@@ -268,7 +272,10 @@ async function readCatalog(cache: CatalogCache, source: NotionSource): Promise<J
 }
 
 export async function discoverNotionSource(source: NotionSource, cwd: string, options: Options = {}): Promise<NotionDirectory> {
+  if (source.profile_id !== undefined && (!validSharedIdentity(source.profile_id) || !source.database)) throw new SourceError("SOURCE_CONFIG_INVALID", source.id);
+  if (options.view !== undefined && options.defaultView) throw new SourceError("SOURCE_CONFIG_INVALID", source.id);
   const selectedView = options.view !== undefined || options.defaultView === true;
+  const selectedProfile = options.defaultView === true && options.view === undefined ? source.profile_id : undefined;
   // The CLI owns View observations. Never store a filtered directory under the full-library key.
   const cache = selectedView ? undefined : await catalogCache(source, cwd, options.signal);
   let saved: { result: Json; indexId: string } | undefined;
@@ -292,7 +299,7 @@ export async function discoverNotionSource(source: NotionSource, cwd: string, op
   }
   const order = !saved && cache ? await reserveCatalogOrder(cache, source, options.signal) : undefined;
   if (!saved && !source.command && !source.discovery?.offline) await checkNtn(source, cwd, options.signal);
-  const result = saved?.result ?? await run(source, cwd, ["list", ...(source.database ? ["--database", source.database] : []), ...(options.view ? ["--view", options.view] : options.defaultView ? ["--default-view"] : []), ...policyArgs(source.discovery, options.refresh)], options.signal);
+  const result = saved?.result ?? await run(source, cwd, ["list", ...(source.database ? ["--database", source.database] : []), ...(options.view !== undefined ? ["--view", options.view] : options.defaultView ? ["--default-view"] : []), ...(selectedProfile === undefined ? [] : ["--profile", selectedProfile]), ...policyArgs(source.discovery, options.refresh)], options.signal);
   const scope = text(result.scope, source);
   if (!HASH.test(scope) || "skills" in result || !Array.isArray(result.records) || !Array.isArray(result.databases) || result.count !== result.records.length || typeof result.fetched_at !== "number" || !Number.isSafeInteger(result.fetched_at) || result.fetched_at < 0) decodeError(source);
   const observedFreshness = freshness(result.freshness, source);
@@ -310,15 +317,39 @@ export async function discoverNotionSource(source: NotionSource, cwd: string, op
     ? [source.database.replaceAll("-", "").toLowerCase()]
     : databases.filter(database => database.role === "content" && database.alias === source.database).map(database => database.id.replaceAll("-", "").toLowerCase());
   if (selectedDatabases && selectedDatabases.length !== 1) decodeError(source);
+  if (selected && (coverage.method !== "explicit_view" ||
+    !databases.some(database => database.role === "content" && database.id === selected.database_id && database.sources.includes(selected.data_source_id)) ||
+    !coverage.queried_data_sources.includes(selected.data_source_id) ||
+    selectedDatabases !== undefined && !selectedDatabases.includes(selected.database_id.replaceAll("-", "").toLowerCase()))) decodeError(source);
+  if (!selectedView && (result.profile !== undefined || result.capability_directory === true || result.view !== undefined || coverage.method === "explicit_view")) decodeError(source);
+  if (selectedProfile !== undefined || result.profile !== undefined) {
+    const profile = result.profile;
+    if (!options.defaultView || !object(profile) || !validSharedIdentity(profile.library_id) || !validSharedIdentity(profile.profile_id) ||
+      selectedProfile !== undefined && profile.profile_id !== selectedProfile ||
+      typeof profile.library_entry !== "string" || !UUID.test(profile.library_entry) ||
+      !databases.some(database => database.role === "content" && database.id.replaceAll("-", "").toLowerCase() === (profile.library_entry as string).replaceAll("-", "").toLowerCase()) ||
+      selectedDatabases !== undefined && !selectedDatabases.includes(profile.library_entry.replaceAll("-", "").toLowerCase()) ||
+      typeof profile.revision_id !== "string" || !/^profile-[a-f0-9]{64}$/u.test(profile.revision_id) ||
+      !["profile", "first"].includes(String(profile.selection)) || !["notion", "local_cache"].includes(String(profile.source)) ||
+      result.capability_directory !== true) decodeError(source);
+    freshness(profile.freshness, source);
+  }
   const skills = result.records.map((value) => contentRecord(value, source));
   const seen = new Set<string>();
+  const sharedPages = new Set<string>();
   const counts = new Map<string, number>();
   for (const item of skills) {
     const page = createHash("sha256").update(item.id).digest("hex");
     const locator = item.locator;
     if (locator.type === "local") decodeError(source);
+    if (locator.type === "shared_skill") {
+      if (sharedPages.has(locator.page_id)) decodeError(source);
+      sharedPages.add(locator.page_id);
+    }
+    if (object(result.profile) && (locator.type !== "shared_skill" || locator.library_id !== result.profile.library_id || locator.database_id.replaceAll("-", "").toLowerCase() !== String(result.profile.library_entry).replaceAll("-", "").toLowerCase())) decodeError(source);
     const role = locator.type === "notion_subscription" ? "upstream" : "content";
     const target = locator.type === "notion_subscription" ? locator.target_database_id : locator.database_id;
+    if (selected && (locator.database_id !== selected.database_id || locator.data_source_id !== selected.data_source_id)) decodeError(source);
     if (seen.has(page) || !coverage.queried_data_sources.includes(locator.data_source_id) || !databases.some(database => database.id === locator.database_id && database.role === role && database.sources.includes(locator.data_source_id)) || (selectedDatabases && !selectedDatabases.includes(target.replaceAll("-", "").toLowerCase()))) decodeError(source);
     seen.add(page);
     counts.set(item.alias, (counts.get(item.alias) ?? 0) + 1);
@@ -331,12 +362,13 @@ export async function discoverNotionSource(source: NotionSource, cwd: string, op
   } else await privateDirectory(index, source);
   const records: SkillRecord[] = [];
   for (const item of skills) {
+    if (item.enabled === false) continue;
     const page = createHash("sha256").update(item.id).digest("hex");
     const dir = join(index, page);
     if (!saved) await privateDirectory(dir, source);
     const path = join(dir, item.entrypoint);
     const namespace = source.namespace ?? source.id;
-    const selector = item.locator.type === "notion_page" ? item.locator.page_id : item.locator.type === "notion_subscription" ? item.locator.subscription_id : item.id;
+    const selector = item.locator.type === "notion_page" || item.locator.type === "shared_skill" ? item.locator.page_id : item.locator.type === "notion_subscription" ? item.locator.subscription_id : item.id;
     const name = `${item.alias}${counts.get(item.alias)! > 1 || !coverage.exhaustive ? `@${selector.replaceAll("-", "")}` : ""}`;
     const token = `${namespace}/${name}`;
     const hostName = name.replace(/[^a-z0-9-]/g, "-");
@@ -356,7 +388,7 @@ export async function discoverNotionSource(source: NotionSource, cwd: string, op
     await rename(pending, join(published, order));
   }
   if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-  return Object.assign(attachList(records, source, observedFreshness), { failures, ...(selectedView ? { view: selected ?? null } : {}) });
+  return Object.assign(attachList(records, source, observedFreshness), { failures, ...(selectedView ? { view: selected ?? null } : {}), ...(object(result.profile) ? { profileId: String(result.profile.profile_id) } : {}) });
 }
 
 const ViewMetadataSchema = Schema.Struct({ id: Schema.String, name: Schema.String, type: Schema.String, database_id: Schema.String, data_source_id: Schema.String, url: Schema.String });
@@ -412,11 +444,13 @@ async function inventory(directory: string, source: NotionSource): Promise<Array
 
 export async function loadNotionSkill(record: SkillRecord, source: NotionSource, cwd: string, options: Options = {}): Promise<SkillRecord> {
   if (record.sourceId !== source.id || !record.id || !record.ref || !record.locator || record.locator.type === "local" || !record.sourceScope || !HASH.test(record.sourceScope)) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
-  const selected = contentRecord({ id: record.id, kind: record.kind, locator: record.locator, name: record.name, alias: record.alias, description: record.description, default_context: record.default_context, entrypoint: record.entrypoint, ref: record.ref }, source);
+  const selected = contentRecord({ id: record.id, kind: record.kind, locator: record.locator, name: record.name, alias: record.alias, description: record.description, default_context: record.default_context, ...(record.enabled === undefined ? {} : { enabled: record.enabled }), entrypoint: record.entrypoint, ref: record.ref }, source);
+  if (selected.enabled === false) throw new SourceError("CONTENT_DISABLED", source.id);
   const sameIdentity = (item: ContentRecord) => item.id === selected.id && item.kind === selected.kind && isDeepStrictEqual(item.locator, selected.locator) && item.entrypoint === selected.entrypoint && item.ref === selected.ref;
-  const read = await run(source, cwd, ["read", record.ref, ...(source.database ? ["--database", source.database] : []), ...policyArgs(source.activation)], options.signal, undefined, record.locator.type === "notion_page" ? record.locator.page_id : undefined);
+  const read = await run(source, cwd, ["read", record.ref, ...(source.database ? ["--database", source.database] : []), ...policyArgs(source.activation)], options.signal, undefined, record.locator.type === "notion_page" || record.locator.type === "shared_skill" ? record.locator.page_id : undefined);
   if ("skill" in read || "skill_name" in read) decodeError(source);
   const current = contentRecord(read.record, source);
+  if (current.enabled === false) throw new SourceError("CONTENT_DISABLED", source.id);
   const snapshot = text(read.snapshot_id, source);
   const version = text(read.version_id, source);
   // Names and aliases may change after selection; the exact page, scope and entry remain authoritative.
