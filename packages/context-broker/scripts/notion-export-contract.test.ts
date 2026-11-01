@@ -77,6 +77,7 @@ for (const ref of refs) {
     assert.ok(typeof pinned.ref === "string" && pinned.ref.includes(`?snapshot=${read.snapshot_id}`));
     const output = resolve(pinnedRoot, pinned.path);
     assert.ok(output.startsWith(pinnedRoot + sep), "Pinned read output stays inside this owned fixture directory");
+    await mkdir(dirname(output), { recursive: true });
     // Obtain the independent expected bytes through the installed CLI's fixed
     // public reference, including binary resources. No private state layout is read.
     const observed = await command(["read", pinned.ref, "--output", output]);
