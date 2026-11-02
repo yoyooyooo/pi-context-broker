@@ -1,3 +1,4 @@
+import { selectIntegrationPrefetch } from './notion-integration-hosts.mjs';
 import assert from 'node:assert/strict';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { delimiter, isAbsolute, join, relative, sep } from 'node:path';
@@ -105,7 +106,7 @@ export async function runConsumerModel(host, { root, scratch, evidence, fixture,
   await writeFile(shim, '#!/bin/sh\nexec ' + [cli.file, ...cli.prefix].map(quote).join(' ') + ' "$@"\n', { mode: 0o700 });
   await chmod(shim, 0o700);
   const config = join(base, 'broker.json');
-  await save(config, { pathMode: 'hash', logPaths: false, sources: [{ id: 'notion', type: 'notion', command: ['ntn-skills'], database: options.database, cacheDir: cache }] });
+  await save(config, { pathMode: 'hash', logPaths: false, sources: [{ id: 'notion', type: 'notion', command: ['ntn-skills'], database: options.database, prefetch: selectIntegrationPrefetch(options.prefetch), cacheDir: cache }] });
   const files = [`${host}-consumer-model-observer.jsonl`, `${host}-consumer-model-result.json`];
   const capture = join(evidence, files[0]);
   await writeFile(capture, '', { mode: 0o600 });

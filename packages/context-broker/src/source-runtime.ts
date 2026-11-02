@@ -1,6 +1,12 @@
 import { SourceError, ReferenceMiss } from "./notion-source";
 import { recordIdentity } from "./discovery-records";
-import type { SkillRecord } from "./types";
+import type { SkillRecord, SourceConfig } from "./types";
+
+/** Discovery registration and lazy native reads never require eager body I/O. */
+export function selectPrefetchRecords(records: readonly SkillRecord[], sources: readonly SourceConfig[] = []): SkillRecord[] {
+  return records.filter(record => record.kind !== "prompt" && record.defaultDiscovery === true &&
+    sources.some(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false && source.prefetch !== false));
+}
 
 export type PreparationState = "queued" | "running" | "ready" | "missing" | "error" | "cancelled";
 export type PreparationDiagnostic = {

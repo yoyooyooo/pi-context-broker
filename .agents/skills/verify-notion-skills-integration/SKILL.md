@@ -37,6 +37,8 @@ live 是真实 Notion、真实 Pi、受控 provider；另跑 `--mode model --hos
 
 CLI 创建、直接 Notion 编辑、旧 pin、空缓存读取各保留自己的回执，不能由宿主输出倒推出管理能力通过。OMP/Tern 延期不阻塞该条主线，也不算通过。
 
+普通 live/model 可附加 `--prefetch false`，用与日用配置一致的 metadata-only 发现，只有选中条目才读取正文。省略时保留原行为；true/false 以外拒绝。该选项不用于 default-context、跨宿主或 native-kinds 专项，不把延后预取当成其通过。公开 helper 的 source、模型和 consumer-isolation 路径均记录实际配置；没有替换 Notion transport 或模型结果。
+
 ## Doctor 与入口
 安全发现：`node scripts/verify-notion-integration.mjs --help` 在解析 run 前退出，不创建目录或启动宿主。Doctor 的版本探测使用独立 owned HOME/XDG/application roots，并返回该次 probe scratch；审阅后进系统 Trash。Doctor 不读取远端或证明认证。
 

@@ -150,6 +150,7 @@ sources:
     database: 00000000-0000-0000-0000-000000000000
     discovery: {maxAge: 5m, offline: false}
     activation: {maxAge: 5m, offline: false}
+    prefetch: false
 ```
 
 Keep credentials out of this config. An optional `default_view_id` on each Notion source fixes its default View; omit it to use the first View in API order. An invalid configured ID is reported, not replaced; a verified empty View list means no default Notion entries. OMP keeps its composer available while discovery runs; the first user submission waits for the selected metadata before the model request. At `before_agent_start`, the Broker replaces its own directory with current metadata, preserving local Skills and already loaded bodies. A checked page outside the View is not advertised; an unchecked page inside it is. Native reads and `$` activate only the selected record. Detached completion stays full-library and metadata-only. Code or configuration changes require a host restart; a session View switch does not.
@@ -222,3 +223,5 @@ Report bugs through [GitHub Issues](https://github.com/yoyooyooo/pi-context-brok
 ```
 
 `views` lists API-ordered choices with exact selection commands. `view` without arguments reports name, ID, source, selection origin and count. Multiple sources require the source ID. Selecting a View changes only the active session; `default` resets to configured selection or first-View fallback. These commands do not call the LLM. The next ordinary user submission receives the new names/descriptions; full Skill bodies remain on demand. A source may set `default_view_id: VIEW_UUID` beside `database` in YAML. Names are never special and API order is not promised to match UI tab order.
+
+For a large Notion library, `prefetch: false` keeps startup and View discovery metadata-only. Explicit selections still load the complete pinned Skill and resources; it does not disable the source. [Source options](packages/context-broker/docs/reference.md#built-in-sources).

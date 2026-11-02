@@ -163,6 +163,7 @@ sources:
     cacheDir: ~/.cache/context-broker/notion
     discovery: {maxAge: 5m, offline: false}
     activation: {maxAge: 5m, offline: false}
+    prefetch: false
     requestTimeoutMs: 30000
 ```
 
@@ -180,6 +181,7 @@ sources:
 | `cacheDir` | Notion | 默认 `~/.cache/context-broker/notion`；保存 broker 元数据与导出 snapshot |
 | `discovery` | Notion | 元数据 `list` 策略：`maxAge`、`offline` |
 | `activation` | Notion | 选中记录 `read` 策略：`maxAge`、`offline` |
+| `prefetch` | Notion | 默认 `true`；设为 `false` 时启动/切换 View 只准备元数据，原生 `read`、`/skill:` 和 `$` 仍在选中时读取完整固定快照 |
 | `requestTimeoutMs` | Notion | 以 `NTN_SKILLS_REQUEST_TIMEOUT_MS` 传给 CLI 的单次网络尝试超时；正整数且 ≤ 2147483647；CLI 默认 30000 |
 
 `maxAge` 接受 `0`，或整数加 `s`、`m`、`h`、`d`。省略策略时使用 CLI 默认值。`offline: true` 优先于 `maxAge`，只使用已有 CLI 缓存；缓存不存在或不完整时失败，不悄然联网。[schema](../examples/config.schema.json) 拒绝未知 source 字段和类型不匹配的配置；source id 唯一性由 broker 运行时检查。
@@ -484,3 +486,7 @@ Notion source 可选 `default_view_id` 稳定 ID；当前会话选择优先，�
 The active-branch custom entry `ntn-skills-view-selection` records version, source ID and canonical View ID. A null View ID resets the session override. It contains no instructions and is not a model message. Resume and branch navigation replay their own entries; parallel sessions never share mutable choice state. Validate a requested View before persisting it. Stale asynchronous callbacks are fenced at session boundaries. View selection does not modify source configuration files, withdraw previously loaded bodies or re-execute the extension.
 
 The CLI must support `views`, `list --view` and `list --default-view`. A custom old CLI reports a default-View capability failure instead of silently reverting to checkbox-based discovery. Explicit list/read remain usable when supported.
+
+### 大型远程库的按需读取
+
+给 Notion source 设置 `prefetch: false`，可停止默认 View 的后台正文预取，避免仅打开 Pi 就为几百份 Skill 分别启动 read/export。元数据目录、完整 `$` 补全、显式原生读取与会话固定版本保持不变；它不会禁用 source，也不会跳过选中时的内容完整性验证。省略时保留原有预取行为。

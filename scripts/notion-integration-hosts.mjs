@@ -11,3 +11,11 @@ export function selectIntegrationHosts({ host, sharedCatalog = false, cacheLifec
   }
   return host === undefined ? ['pi', 'omp'] : [host];
 }
+
+/** Preserve the default policy unless a run explicitly selects the daily mode. */
+export function selectIntegrationPrefetch(value) {
+  if (value === undefined) return undefined;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new Error('--prefetch must be true or false');
+}

@@ -1,11 +1,29 @@
 import assert from "node:assert/strict";
-import { createSourceRuntime } from "../src/source-runtime";
+import { createSourceRuntime, selectPrefetchRecords } from "../src/source-runtime";
+import { normalizeSources } from "../src/sources";
 import { ReferenceMiss, SourceError } from "../src/notion-source";
 import type { SkillRecord } from "../src/types";
 
 const record: SkillRecord = { name: "remote", description: "metadata", aliases: [], autoloadEnabled: true, normalizedName: "remote", normalizedDescription: "metadata", normalizedAliases: [], path: "/metadata/SKILL.md", sourceId: "notion", sourceScope: "scope", id: "page", defaultDiscovery: true };
 const snapshot = { ...record, body: "complete body", path: "/snapshot/SKILL.md", snapshotId: "snapshot", versionId: "version", freshness: { policy: "max_age", validated_at: "2026-01-01T00:00:00.000Z", age_ms: 0, max_age_ms: 1, stale: false } };
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
+
+const lazySources = normalizeSources([{ type: "notion", id: "notion", prefetch: false }])!;
+assert.equal(lazySources[0]?.type === "notion" && lazySources[0].prefetch, false);
+for (const prefetch of [0, "false", {}, null]) assert.throws(() => normalizeSources([{ type: "notion", id: "notion", prefetch }]));
+assert.deepEqual(selectPrefetchRecords([record], lazySources), []);
+assert.deepEqual(selectPrefetchRecords([record], [{ type: "notion", id: "notion" }]), [record]);
+assert.deepEqual(selectPrefetchRecords([record], [{ type: "notion", id: "notion", enabled: false }]), []);
+assert.deepEqual(selectPrefetchRecords([{ ...record, kind: "prompt" }, { ...record, defaultDiscovery: false }], [{ type: "notion", id: "notion" }]), []);
+let lazyCalls = 0;
+const lazyRuntime = createSourceRuntime(async () => { lazyCalls++; return snapshot; });
+lazyRuntime.prepare(selectPrefetchRecords([record], lazySources));
+await tick();
+assert.equal(lazyCalls, 0, "Metadata-only discovery must not cause a source read/export");
+assert.equal(lazyRuntime.diagnostics().length, 0);
+assert.deepEqual(await lazyRuntime.load(record), snapshot);
+assert.equal(lazyCalls, 1, "Explicit selection still loads the same complete snapshot");
+lazyRuntime.dispose();
 
 // Two foreground consumers and a background owner share one real download.
 let calls = 0;

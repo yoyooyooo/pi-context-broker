@@ -265,6 +265,8 @@ export type SourceConfig = {
       cacheDir?: string;
       discovery?: SourcePolicy;
       activation?: SourcePolicy;
+      /** False keeps discovery metadata-only; selected reads still load normally. */
+      prefetch?: boolean;
       requestTimeoutMs?: number;
     }
 );

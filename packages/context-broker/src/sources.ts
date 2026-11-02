@@ -74,6 +74,7 @@ export function normalizeSources(value: unknown): SourceConfig[] | undefined {
       ...common, type: "notion", command,
       database, default_view_id: optionalString(raw.default_view_id), ...(profileId === undefined ? {} : { profile_id: profileId }), cacheDir: optionalString(raw.cacheDir),
       discovery: policy(raw.discovery), activation: policy(raw.activation), requestTimeoutMs: raw.requestTimeoutMs as number | undefined,
+      prefetch: boolean(raw.prefetch),
     };
   });
 }

@@ -46,7 +46,7 @@ import { discoverSourceCatalog, loadSourceSkill, normalizeSources, formatSourceF
 import { diagnoseNotionSource, sourceFailureMessage, SourceError, ReferenceMiss } from "./notion-source";
 import { installHostSkills } from "./host-skills";
 import { resolveViewDiscovery, createViewCommands } from "./view-discovery";
-import { createSourceRuntime } from "./source-runtime";
+import { createSourceRuntime, selectPrefetchRecords } from "./source-runtime";
 import { installCliWriteInvalidation } from "./cli-write-invalidation";
 import { createOmpHostAdapter } from "./omp-host-adapter";
 import { createPiHostAdapter } from "./pi-host-adapter";
@@ -1479,7 +1479,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     },
     loadRecord: (record, signal) => sourceRuntime.load(record, signal),
     isLoaded: (record, ctx) => hasLoadedRecord(messagesFromActiveSessionContext(ctx), record),
-    onMetadata: records => sourceRuntime.prepare(records.filter(record => recordKind(record) !== "prompt" && record.defaultDiscovery === true && config.sources?.some(source => source.id === record.sourceId && source.type === "notion"))),
+    onMetadata: records => sourceRuntime.prepare(selectPrefetchRecords(records, config.sources)),
     needsPreflightPrompt: text => parseInvocations(text, configuredRules(config)).length > 0,
     onPreparation: entry => acceptedSelections.capture(entry.ctx, entry.controller.signal,
       parseInvocations(entry.event.text ?? "", configuredRules(config)).filter(request => request.scope === "global").map(request => request.query)),

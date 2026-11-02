@@ -95,6 +95,7 @@
         "cacheDir": { "$ref": "#/$defs/nonemptyString" },
         "discovery": { "$ref": "#/$defs/sourcePolicy" },
         "activation": { "$ref": "#/$defs/sourcePolicy" },
+        "prefetch": { "type": "boolean", "default": true, "description": "Set false for metadata-only discovery; explicit selection still loads the complete snapshot." },
         "requestTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 2147483647, "default": 30000, "description": "Timeout for each network attempt in the source CLI; not a total command deadline." }
       }
     }

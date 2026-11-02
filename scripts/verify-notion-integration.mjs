@@ -9,7 +9,7 @@ import { isolatedEnv, resolveHost, runCommand, spawnHost, signalHost, writeFakeP
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { createNotionFixture, database as fixtureDatabase, secondCanary } from './notion-integration-fixture.mjs';
 import { runNotionModel } from './notion-integration-model.mjs';
-import { selectIntegrationHosts } from './notion-integration-hosts.mjs';
+import { selectIntegrationHosts, selectIntegrationPrefetch } from './notion-integration-hosts.mjs';
 import { runConsumerModel } from './notion-consumer-model.mjs';
 import { prepareNativeKinds, runNativeKinds, validateNativeKindsConfig } from './notion-native-kinds.mjs';
 import { createLiveFixture } from './notion-live-fixture.mjs';
@@ -23,7 +23,7 @@ import { entryIdentity, verifyEntryIdentity } from './verification-entry.mjs';
 import { invokeJson } from './verification-command.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
-const usage = 'Usage: node scripts/verify-notion-integration.mjs doctor|run [--mode deterministic|live|live-fixture|model|installed] [--native-kinds ABSOLUTE_JSON (live only; existing Skill/Prompt/Router refs, installed --extension and --command-json; controlled provider, no fixture creation)] [--view-discovery true (deterministic only)] [--view VIEW_ID (live/model)] [--shared-catalog true (deterministic only)] [--cache-lifecycle true (live-fixture only)] [--consumer-isolation true (model only; explicit dollar selection, normal tools, hidden local paths)] [--consumer-resource RELATIVE_FILE --upstream-database UUID (with consumer-isolation)] [--database UUID --skill-ref skill://PAGE/SKILL.md --command-json JSON --extension ABSOLUTE_INSTALLED_ENTRY --package TGZ --model PROVIDER/MODEL --model-prompt TEXT --host pi|omp --evidence-root ABSOLUTE_DIRECTORY]; evidence|cleanup --evidence DIR. Single-host selection applies to ordinary deterministic/live/installed/model, default-context, view-discovery and native-kinds runs; shared-catalog/cache-lifecycle remain multi-host. Native kinds JSON: {"version":1,"refs":{"skill":"PUBLIC_SKILL_REF","prompt":"PUBLIC_PROMPT_REF","router":"PUBLIC_ROUTER_REF"}}. It checks Prompt submissions, Router/member selection, mixed kinds and session continue; images and native composer Stop remain separate.';
+const usage = 'Usage: node scripts/verify-notion-integration.mjs doctor|run [--mode deterministic|live|live-fixture|model|installed] [--native-kinds ABSOLUTE_JSON (live only; existing Skill/Prompt/Router refs, installed --extension and --command-json; controlled provider, no fixture creation)] [--view-discovery true (deterministic only)] [--view VIEW_ID (live/model)] [--prefetch true|false (ordinary live/model)] [--shared-catalog true (deterministic only)] [--cache-lifecycle true (live-fixture only)] [--consumer-isolation true (model only; explicit dollar selection, normal tools, hidden local paths)] [--consumer-resource RELATIVE_FILE --upstream-database UUID (with consumer-isolation)] [--database UUID --skill-ref skill://PAGE/SKILL.md --command-json JSON --extension ABSOLUTE_INSTALLED_ENTRY --package TGZ --model PROVIDER/MODEL --model-prompt TEXT --host pi|omp --evidence-root ABSOLUTE_DIRECTORY]; evidence|cleanup --evidence DIR. Single-host selection applies to ordinary deterministic/live/installed/model, default-context, view-discovery and native-kinds runs; shared-catalog/cache-lifecycle remain multi-host. Native kinds JSON: {"version":1,"refs":{"skill":"PUBLIC_SKILL_REF","prompt":"PUBLIC_PROMPT_REF","router":"PUBLIC_ROUTER_REF"}}. It checks Prompt submissions, Router/member selection, mixed kinds and session continue; images and native composer Stop remain separate.';
 if (argv.some(arg => ['--help','-h','help'].includes(arg))) { console.log(usage); process.exit(0); }
 const action = argv.shift() ?? 'run';
 let mode = argv[0] && !argv[0].startsWith('--') ? argv.shift() : 'deterministic';
@@ -43,6 +43,8 @@ if (options['cache-lifecycle'] !== undefined && (!cacheLifecycle || mode !== 'li
 const sharedCatalog = options['shared-catalog'] === 'true';
 if (options['shared-catalog'] !== undefined && (!sharedCatalog || mode !== 'deterministic' || defaultContext || cacheLifecycle)) throw new Error('--shared-catalog requires true, deterministic, and no other acceptance branch');
 const selectedHosts = selectIntegrationHosts({ host: options.host, sharedCatalog, cacheLifecycle });
+const selectedPrefetch = selectIntegrationPrefetch(options.prefetch);
+if (options.prefetch !== undefined && (!['live','model'].includes(mode) || defaultContext || cacheLifecycle || sharedCatalog || viewDiscovery || options['native-kinds'])) throw new Error('--prefetch requires an ordinary live/model run');
 const consumerIsolation = options['consumer-isolation'] === 'true';
 if (options['consumer-isolation'] !== undefined && (!consumerIsolation || mode !== 'model')) throw new Error('--consumer-isolation requires true and model mode');
 if (options['consumer-resource'] !== undefined && !consumerIsolation) throw new Error('--consumer-resource requires --consumer-isolation true');
@@ -107,7 +109,7 @@ async function scriptedProvider(directory) {
 }
 async function hostRun(host,context) {
  const {scratch,evidence,fixture,extension}=context;const namespace=fixture.namespace??'notion';const label=namespace==='notion'?host:host+'-'+namespace;const base=join(scratch,label);await mkdir(base,{recursive:true});const agentDir=join(base,'agent');await mkdir(join(agentDir,'context-broker'),{recursive:true});const sessions=join(base,'sessions');await mkdir(sessions);
- const source=fixture.source??{type:'notion',id:'notion',namespace:'notion',command:fixture.command,database:options.database??fixtureDatabase,cacheDir:join(base,'source-cache'),requestTimeoutMs:fixture.live?30000:1500};const config=join(agentDir,'context-broker','config.yml');await writeFile(config,JSON.stringify({sources:[source]}));
+ const source=fixture.source??{type:'notion',id:'notion',namespace:'notion',command:fixture.command,database:options.database??fixtureDatabase,prefetch:selectedPrefetch,cacheDir:join(base,'source-cache'),requestTimeoutMs:fixture.live?30000:1500};const config=join(agentDir,'context-broker','config.yml');await writeFile(config,JSON.stringify({sources:[source]}));
  const selection=source.type==='notion'?`${fixture.alias}@${namespace}`:`${namespace}/${fixture.alias}`;
  const provider=await scriptedProvider(base);const providerFile=join(evidence,label+'-provider.jsonl');const plan=join(base,'tool-plan.json');await save(plan,{trigger:'NEVER',id:'notion-read-1',path:'/nonexistent'});
  const env=isolatedEnv({base,agentDir,CONTEXT_BROKER_HOST:host,CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE:providerFile,CONTEXT_BROKER_LOG_FILE:join(evidence,label+'-decisions.jsonl'),BROKER_NOTION_TOOL_PLAN:plan});

@@ -3,6 +3,7 @@ import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
+import { selectIntegrationPrefetch } from './notion-integration-hosts.mjs';
 
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
 const inside = (parent, child) => { const path = relative(parent, child); return path !== '..' && !path.startsWith('..' + sep) && !isAbsolute(path); };
@@ -300,7 +301,7 @@ async function runHostModel(host, { root, scratch, evidence, fixture, options, e
   assert.ok(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(identity) && (!subscription || reference[2] === 'ROUTER'), 'Model mode requires a canonical ContentRecord locator');
   const selected = { selector, physicalSelector: identity, ...(shared ? { locator } : {}), id: shared ? selector : (subscription ? 'notion_subscription:' : 'notion_page:') + identity, kind: reference[2].toLowerCase(), entry: reference[2] + '.md', ref: 'skill://' + encodeURIComponent(selector) + '/' + reference[2] + '.md' };
   assert.equal(fixture.skillRef, selected.ref, 'Model mode requires the canonical ContentRecord reference');
-  await save(config, { sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: fixture.command, database: options.database, ...(options.view ? { default_view_id: options.view } : {}), cacheDir: cache, requestTimeoutMs: 30000 }] });
+  await save(config, { sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: fixture.command, database: options.database, ...(options.view ? { default_view_id: options.view } : {}), prefetch: selectIntegrationPrefetch(options.prefetch), cacheDir: cache, requestTimeoutMs: 30000 }] });
   if (host === 'omp') await writeFile(overlay, 'startup:\n  setupWizard: false\n  checkUpdate: false\ncompaction:\n  enabled: false\n', { mode: 0o600 });
   const settings = { model: options.model, provider, id, marker: fixture.marker, alias: fixture.alias, selected, cache: await realpath(cache), cwd: base, output: capture };
   await writeFile(observer, `import * as fs from 'node:fs';\nimport * as crypto from 'node:crypto';\nimport * as path from 'node:path';\nexport default function(api) { (${observe.toString()})(api, {...${JSON.stringify(settings)}, fs, crypto, path}); }\n`, { mode: 0o600 });

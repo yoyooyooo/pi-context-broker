@@ -48,3 +48,7 @@ For a mixed Skill/Router/Prompt submission preserve text/images and retain one p
 
 No execution is claimed by this map update; final owner runs and retains the evidence.
 
+
+## Metadata-only startup policy
+
+For the Pi-only consolidated library, set the source `prefetch: false`. Verify ordinary metadata discovery schedules no source read/export, then invoke a default-View Skill through cold native read and `$` and require the same full snapshot/resource checks. The original prefetch cases remain opt-in/default coverage; do not replace their cancellation/shared-owner assertions with a lazy test. `source-runtime.test.ts` covers source-specific selection, strict boolean configuration, zero startup loads and an explicit successful on-demand load.

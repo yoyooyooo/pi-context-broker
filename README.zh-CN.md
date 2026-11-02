@@ -150,6 +150,7 @@ sources:
     database: 00000000-0000-0000-0000-000000000000
     discovery: {maxAge: 5m, offline: false}
     activation: {maxAge: 5m, offline: false}
+    prefetch: false
 ```
 
 不要将凭据写进这份配置。每个 Notion source 可选配 `default_view_id`；不配置就用 API 返回的第一个 View。显式 ID 失效会提示，不静默改选；确认没有 View 时默认远程目录为空。OMP 查询期间编辑器照常可用；用户首次发送后，在模型请求发出前等候并注入当前目录。每轮 `before_agent_start` 只替换 Broker 自己的目录，保留本地技能和已读正文。View 内未勾选 Default Context 的技能可默认发现，View 外已勾选的也不会越过筛选。完整 `$` 与 CLI 仍可显式使用所有已发现记录。代码或配置文件改变需要重启宿主，会话内切换 View 不需要。
@@ -222,3 +223,5 @@ Bug 请提交到 [GitHub Issues](https://github.com/yoyooyooo/pi-context-broker/
 ```
 
 `views` 按 API 顺序列出候选和可复制的选择命令。`view` 不带参数显示当前名称、ID、来源、选择原因及数量。多个来源时明确写 source ID。选择只影响当前会话；`default` 恢复配置值或首项兜底。这些命令不调用 LLM。下一条普通用户消息发送后，当前名称和描述才随请求交给模型，正文仍按需读取。固定默认值时，在 Notion source 的 `database` 旁填写 `default_view_id: VIEW_UUID`；不按 View 名字约定，也不保证 API 首项就是界面最左项。
+
+大型 Notion 库建议设置 `prefetch: false`：启动和 View 发现仅取元数据，选中后再读取完整固定 Skill 与资源；它不会禁用来源。[Source 配置](packages/context-broker/docs/reference.zh-CN.md#内置-sources)。

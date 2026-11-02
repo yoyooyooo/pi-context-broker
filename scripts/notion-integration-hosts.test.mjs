@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { selectIntegrationHosts } from './notion-integration-hosts.mjs';
+import { selectIntegrationHosts, selectIntegrationPrefetch } from './notion-integration-hosts.mjs';
 
 test('default verification keeps the existing two-host contract', () => {
   assert.deepEqual(selectIntegrationHosts({}), ['pi', 'omp']);
@@ -48,4 +48,19 @@ test('real model has a separately recorded bounded multi-step budget', async () 
   assert.ok(source.includes('result.failureKind'));
   const rpc = await readFile(new URL('../packages/context-broker/scripts/context-broker-rpc-harness.mjs', import.meta.url), 'utf8');
   assert.ok(rpc.includes('timeoutMs = 120_000'));
+});
+
+test('verification prefetch is explicit and preserves the default policy', () => {
+  assert.equal(selectIntegrationPrefetch(undefined), undefined);
+  assert.equal(selectIntegrationPrefetch('false'), false);
+  assert.equal(selectIntegrationPrefetch('true'), true);
+  for (const value of ['', 'FALSE', false, 0, null]) assert.throws(() => selectIntegrationPrefetch(value), /--prefetch/);
+});
+test('ordinary live and both model routes use the selected real-source prefetch policy', async () => {
+  const normal = await readFile(new URL('./verify-notion-integration.mjs', import.meta.url), 'utf8');
+  assert.ok(normal.includes('prefetch:selectedPrefetch'));
+  for (const file of ['notion-integration-model.mjs', 'notion-consumer-model.mjs']) {
+    const source = await readFile(new URL('./' + file, import.meta.url), 'utf8');
+    assert.ok(source.includes('prefetch: selectIntegrationPrefetch(options.prefetch)'));
+  }
 });
