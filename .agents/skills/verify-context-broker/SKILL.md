@@ -18,6 +18,8 @@ bun run build
 
 构建成功应输出 `Built standalone broker query and Tern plugin query`，产物包括 `packages/context-broker/dist/completion.mjs` 与 `packages/tern-context-broker/query/completion.mjs`。依赖已安装且当前改动已构建时不重复安装或构建。构建会更新根 README/CONTRIBUTING/SECURITY/CHANGELOG 的 npm 分发投影，不把生成副本当成另一个文档来源；broker 双语参考在 `packages/context-broker/docs` 直接维护，Tern 双语指南随 GitHub 目录与归档分发。
 
+仅交付 Pi 主线时，使用 `NTN_SKILLS_BUILD_ENTRY=ABSOLUTE_CLI bun run build:broker`，不构建或安装 Tern；打包对应 `bun scripts/pack.mjs --target broker --out-dir ABSOLUTE_OUTPUT`。Notion integration 的普通 run/doctor 支持 `--host pi`，未选宿主明确未运行。跨宿主缓存专项仍要求其完整矩阵，不能用 Pi 结果替代。
+
 跨仓开发先构建 CLI，再以 `NTN_SKILLS_BUILD_ENTRY=/absolute/notion-skills-cli/packages/cli/dist/ntn-skills.js bun run build` 构建 Broker。产物内含独立 CLI 与三份完整 Skill/参考资源；正式发布使用依赖中固定的已发布 CLI。无需安装回执、中央 Skill 目录或宿主命令镜像。
 
 本项目没有独立常驻服务器。CLI harness 每次创建临时 HOME、agentDir、sessionDir，加载仓库扩展，在 Pi/OMP 的 print 或 RPC 模式提交真实 prompt。启动器会在 HOME 隔离前解析 Volta 的真实入口，再用 Node 执行 Node CLI；不要把 HOME 改回用户目录来绕过启动问题。

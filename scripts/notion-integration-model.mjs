@@ -258,6 +258,10 @@ export function observe(api, settings) {
 }
 
 async function runHostModel(host, { root, scratch, evidence, fixture, options, extension }) {
+  // A real turn includes multiple sequential provider calls and source reads.
+  // Keep the deterministic RPC default unchanged; retain this model-only budget.
+  const promptTimeoutMs = 300_000;
+  const startedAt = Date.now();
   assert.ok(typeof options.model === 'string' && /^[^/\s]+\/[^\s]+$/.test(options.model), 'Model mode requires an explicit authorized provider/model');
   const slash = options.model.indexOf('/');
   const provider = options.model.slice(0, slash);
@@ -305,13 +309,13 @@ async function runHostModel(host, { root, scratch, evidence, fixture, options, e
     brokerConfiguration: `Explicit temporary CONTEXT_BROKER_CONFIG; temporary source cache and session directory${host === 'omp' ? ', plus an OMP host overlay' : ''}; no global configuration writes by the runner.`,
     evidence: 'Provider model selectors and metadata/body counts, sanitized selected-source read paths and assistant text, identity, roles, byte counts and hashes; no source bodies, raw provider payload, RPC frames, headers, URLs or credentials.',
   };
-  const result = { host, mode: 'model', model: options.model, files, boundary, observations: [], status: 'running' };
+  const result = { host, mode: 'model', model: options.model, promptTimeoutMs, files, boundary, observations: [], status: 'running' };
   let rpc;
   try {
     const args = ['--no-extensions', '--session-dir', sessions, '--tools', 'read', '-e', extension ?? join(root, 'packages/context-broker/src/index.ts'), '-e', observer, '--model', options.model];
     if (host === 'omp') args.push('--no-ui', '--no-rules', '--no-title', '--config', overlay, '--smol', options.model, '--slow', options.model, '--plan', options.model);
     else args.push('--no-mcp', '--no-context-files', '--no-prompt-templates');
-    rpc = await startRpc({ host, cwd: base, env: { ...process.env, CONTEXT_BROKER_CONFIG: config, CONTEXT_BROKER_HOST: host, CONTEXT_BROKER_LOG_FILE: join(base, 'broker-decisions.jsonl') }, args });
+    rpc = await startRpc({ host, cwd: base, env: { ...process.env, CONTEXT_BROKER_CONFIG: config, CONTEXT_BROKER_HOST: host, CONTEXT_BROKER_LOG_FILE: join(base, 'broker-decisions.jsonl') }, args, timeoutMs: promptTimeoutMs });
     await rpc.prompt(prompt);
     const rows = (await readFile(capture, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse);
     const requests = rows.filter(row => row.phase === 'request');
@@ -330,12 +334,14 @@ async function runHostModel(host, { root, scratch, evidence, fixture, options, e
     Object.assign(result, { status: 'passed', observations: [`real authorized ${host} provider`, 'metadata-only default skill catalog', 'model-selected native read activation', 'successful exported resource read', 'skill and resource bodies consumed by provider', 'nonempty successful final assistant reply'], providerRequests: requests.length, transportRequests: rows.filter(row => row.phase === 'transport').length, skillReads: skillReads.length, resourceReads: resourceReads.length });
   } catch (error) {
     result.status = 'failed';
+    result.failureKind = error?.code === 'ERR_ASSERTION' ? 'assertion' : /timed out after \d+ms/.test(String(error?.message)) ? 'rpc_deadline' : 'host_or_provider';
     // RPC diagnostics can contain provider URLs or secrets stored in host config.
     result.error = error?.code === 'ERR_ASSERTION' ? error.message : `Authorized ${host} model observation did not complete; raw host diagnostics withheld`;
   } finally {
     if (rpc) {
       try { await rpc.stop(); } catch { result.status = 'failed'; result.error ??= `${host} model RPC shutdown failed; raw host diagnostics withheld`; }
     }
+    result.elapsedMs = Date.now() - startedAt;
     await save(join(evidence, files[1]), result);
   }
   return result;

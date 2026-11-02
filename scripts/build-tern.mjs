@@ -5,6 +5,11 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
+const args = process.argv.slice(2);
+if (args.length !== 0 && !(args.length === 2 && args[0] === "--target" && ["all", "broker"].includes(args[1]))) {
+  throw new Error("Usage: bun scripts/build-tern.mjs [--target all|broker]");
+}
+const buildTern = args[1] !== "broker";
 const broker = join(root, "packages/context-broker");
 const tern = join(root, "packages/tern-context-broker");
 const require = createRequire(join(broker, "package.json"));
@@ -90,25 +95,27 @@ async function collectLicenses(name, from) {
 }
 await collectLicenses("ntn-skills", join(broker, "package.json"));
 const query = join(tern, "query");
-await mkdir(query, { recursive: true });
-await writeFile(join(query, "package.json"), `${JSON.stringify({
-  name: "tern-context-broker-query-runtime", private: true, type: "module",
-  dependencies: runtimeDependencies,
-}, null, 2)}\n`);
-// npm reconciles the generated production tree and prunes extraneous packages.
-const install = spawnSync("npm", ["install", "--prefix", query, "--workspaces=false", "--install-strategy=hoisted", "--package-lock=true", "--omit=dev", "--no-audit", "--no-fund"], {
-  cwd: root, stdio: "inherit",
-});
-if (install.status !== 0) throw new Error(`Tern production runtime install failed (${install.status ?? install.error?.message ?? "no exit status"})`);
-const queryRequire = createRequire(join(query, "package.json"));
-for (const name of runtimeNames) {
-  const installed = JSON.parse(await readFile(queryRequire.resolve(`${name}/package.json`), "utf8"));
-  if (installed.version !== runtimeDependencies[name]) throw new Error(`Tern ${name} ${installed.version} differs from selected CLI ${runtimeDependencies[name]}`);
+if (buildTern) {
+  await mkdir(query, { recursive: true });
+  await writeFile(join(query, "package.json"), `${JSON.stringify({
+    name: "tern-context-broker-query-runtime", private: true, type: "module",
+    dependencies: runtimeDependencies,
+  }, null, 2)}\n`);
+  // npm reconciles the generated production tree and prunes extraneous packages.
+  const install = spawnSync("npm", ["install", "--prefix", query, "--workspaces=false", "--install-strategy=hoisted", "--package-lock=true", "--omit=dev", "--no-audit", "--no-fund"], {
+    cwd: root, stdio: "inherit",
+  });
+  if (install.status !== 0) throw new Error(`Tern production runtime install failed (${install.status ?? install.error?.message ?? "no exit status"})`);
+  const queryRequire = createRequire(join(query, "package.json"));
+  for (const name of runtimeNames) {
+    const installed = JSON.parse(await readFile(queryRequire.resolve(`${name}/package.json`), "utf8"));
+    if (installed.version !== runtimeDependencies[name]) throw new Error(`Tern ${name} ${installed.version} differs from selected CLI ${runtimeDependencies[name]}`);
+  }
+  const queryPlatformRequire = createRequire(queryRequire.resolve("@effect/platform-node/package.json"));
+  const queryShared = JSON.parse(await readFile(queryPlatformRequire.resolve(`${sharedRuntime}/package.json`), "utf8"));
+  if (queryShared.version !== "4.0.5") throw new Error(`Tern ${sharedRuntime} must be 4.0.5 (installed: ${queryShared.version})`);
 }
-const queryPlatformRequire = createRequire(queryRequire.resolve("@effect/platform-node/package.json"));
-const queryShared = JSON.parse(await readFile(queryPlatformRequire.resolve(`${sharedRuntime}/package.json`), "utf8"));
-if (queryShared.version !== "4.0.5") throw new Error(`Tern ${sharedRuntime} must be 4.0.5 (installed: ${queryShared.version})`);
-for (const directory of [join(broker, "dist"), join(tern, "query")]) {
+for (const directory of [join(broker, "dist"), ...(buildTern ? [query] : [])]) {
   await mkdir(directory, { recursive: true });
   await writeFile(join(directory, "ntn-skills.mjs"), cliCode);
   await writeFile(join(directory, "NOTICES.txt"), [...licenseFiles].map(([name, license]) => `Bundled dependency: ${name}\n${license.trim()}\n`).join("\n"));
@@ -134,7 +141,7 @@ const yamlLicense = await readFile(join(dirname(createRequire(join(broker, "pack
 const program = await output.text();
 const prefixEnd = program.startsWith("#!") ? program.indexOf("\n") + 1 : 0;
 const code = `${program.slice(0, prefixEnd)}/*\nBundled dependency: yaml (ISC)\n${yamlLicense.trim()}\n*/\n${program.slice(prefixEnd)}`;
-for (const path of [join(broker, "dist/completion.mjs"), join(tern, "query/completion.mjs")]) {
+for (const path of [join(broker, "dist/completion.mjs"), ...(buildTern ? [join(query, "completion.mjs")] : [])]) {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, code);
   await chmod(path, 0o755);
@@ -150,8 +157,10 @@ for (const name of ["README.md", "README.zh-CN.md", "CONTRIBUTING.md", "LICENSE"
     .replaceAll("(.agents/skills/verify-context-broker/SKILL.md)", "(https://github.com/yoyooyooo/pi-context-broker/tree/main/.agents/skills/verify-context-broker/SKILL.md)");
   await writeFile(join(broker, name), projected);
 }
-await copyFile(join(root, "LICENSE"), join(tern, "LICENSE"));
-const manifest = await readFile(join(tern, "plugin.toml"), "utf8");
-const metadata = JSON.parse(await readFile(join(tern, "package.json"), "utf8"));
-if (!manifest.includes(`version = "${metadata.version}"`)) throw new Error("Tern package and manifest versions differ");
-console.log("Built standalone broker query and Tern plugin query");
+if (buildTern) {
+  await copyFile(join(root, "LICENSE"), join(tern, "LICENSE"));
+  const manifest = await readFile(join(tern, "plugin.toml"), "utf8");
+  const metadata = JSON.parse(await readFile(join(tern, "package.json"), "utf8"));
+  if (!manifest.includes(`version = "${metadata.version}"`)) throw new Error("Tern package and manifest versions differ");
+}
+console.log(buildTern ? "Built standalone broker query and Tern plugin query" : "Built standalone broker package; Tern unchanged");

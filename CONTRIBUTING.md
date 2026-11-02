@@ -57,6 +57,22 @@ A case blocked by an unavailable public API or missing fixture remains blocked i
 
 ## Bundling CLI and Skills
 
+### Pi-first delivery
+
+The npm Broker can be built and packed without constructing the deferred Tern companion:
+
+```bash
+NTN_SKILLS_BUILD_ENTRY=/actual/notion-skills-cli/packages/cli/dist/ntn-skills.js bun run build:broker
+NTN_SKILLS_BUILD_ENTRY=/actual/notion-skills-cli/packages/cli/dist/ntn-skills.js bun scripts/pack.mjs --target broker --out-dir /absolute/output
+node --test scripts/notion-integration-hosts.test.mjs
+node scripts/verify-notion-integration.mjs run --mode live --host pi --database DB --skill-ref REF --extension INSTALLED_EXTENSION --command-json '["node","INSTALLED_CLI"]'
+```
+
+`--target broker` does not install Tern dependencies or write Tern files. Ordinary builds and packs still default to both products. Integration Doctor and ordinary deterministic/live/installed/model runs honor `--host pi|omp`; unselected hosts are recorded as unrun. Explicit cross-host cache/editor scenarios reject host narrowing rather than silently dropping coverage. A separate authorized model run proves actual instruction/resource use. None of these options publishes a release or rewrites user configuration.
+
+`bun run test:verification` checks host/pack routing; it is part of the default check. `bun run check:broker` adds the Broker-only build, package regressions, shared Notion adapter and completion tests without building Tern. The real-model runner records a separate 300-second multi-step prompt budget and elapsed time; deterministic RPC retains its 120-second default. A successful final answer and receipt-validated entry/resource reads remain required, including after an earlier timed-out run.
+
+
 Build against the released `ntn-skills` dependency declared in the Broker package. For an intentional cross-repository development build, first build the CLI checkout, then select its built entry explicitly:
 
 ```bash

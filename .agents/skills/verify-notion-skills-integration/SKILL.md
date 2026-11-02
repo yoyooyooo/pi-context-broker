@@ -21,6 +21,22 @@ description: "验证 Notion Skills source 与随包 Skill在 Pi/OMP、Tern 中�
 | [日常安装与真实原生菜单](features/daily-installation-ui.md) | NS-DAILY-01～08 |
 | [随包 Skill](features/builtin-management.md) | NS-BUILTIN-01～05 |
 
+## Pi 单宿主主线
+
+`--host pi` 可用于普通 deterministic、live、live-fixture、installed、model，以及 default-context、view-discovery、native-kinds 分支。Doctor 只探测选定宿主，run 只启动该宿主；manifest 记录 `selectedHosts`，OMP 标为未选，不要求安装 OMP/Tern。默认不传仍为双宿主。`--shared-catalog` 和 `--cache-lifecycle` 本身验证跨宿主/原生编辑器，拒绝单宿主筛选，不能降级后宣称通过。仅 Pi 时不会启动 OMP 的 source-lifecycle helper。
+
+先构建 CLI，然后用 `NTN_SKILLS_BUILD_ENTRY=ABSOLUTE_CLI bun run build:broker` 只构建 npm Broker，或 `NTN_SKILLS_BUILD_ENTRY=ABSOLUTE_CLI bun scripts/pack.mjs --target broker --out-dir ABSOLUTE_OUTPUT` 打包。此路径不安装 Tern 运行时，也不修改 Tern 产物；默认 build/pack 仍包含两种产物。
+
+```bash
+node --test scripts/notion-integration-hosts.test.mjs
+node scripts/verify-notion-integration.mjs doctor --mode live --host pi --database DB --skill-ref REF --extension INSTALLED_EXTENSION --command-json '["node","INSTALLED_CLI"]'
+node scripts/verify-notion-integration.mjs run --mode live --host pi --database DB --skill-ref REF --extension INSTALLED_EXTENSION --command-json '["node","INSTALLED_CLI"]' --evidence-root ABSOLUTE_EVIDENCE
+```
+
+live 是真实 Notion、真实 Pi、受控 provider；另跑 `--mode model --host pi --model magpie/group/flash-free --model-prompt TEXT` 验证真实模型自主读取入口和固定资源。真实模型单轮可能包含多次顺序模型请求与工具读取，因此使用独立的 300 秒 prompt deadline；普通受控 RPC 仍为 120 秒，Notion 单请求预算保持不变。结果保留 `promptTimeoutMs`、`elapsedMs` 和失败类别；HTTP 200 或成功读资源仍不能替代非空成功 final。超时失败保留，换预算后的运行单独记录，不覆盖旧结论。
+
+CLI 创建、直接 Notion 编辑、旧 pin、空缓存读取各保留自己的回执，不能由宿主输出倒推出管理能力通过。OMP/Tern 延期不阻塞该条主线，也不算通过。
+
 ## Doctor 与入口
 安全发现：`node scripts/verify-notion-integration.mjs --help` 在解析 run 前退出，不创建目录或启动宿主。Doctor 的版本探测使用独立 owned HOME/XDG/application roots，并返回该次 probe scratch；审阅后进系统 Trash。Doctor 不读取远端或证明认证。
 
@@ -93,7 +109,7 @@ OMP 18.14.2 的 native-read execute 与注册命令预算回归复用[宿主地�
 | deterministic | 双 Pi/OMP 原生 extension/provider 捕获；Notion 与 filesystem source 的 metadata/read/native RPC+print/`$`/resource；Notion native cold print；metadata 后注入、repeat、continue；重名歧义拒绝、两个 qualified native 独立正文、错误/超时/cold-warm；主 run 调用 OMP source lifecycle helper 覆盖真实 fork/branch/compact-remove+refresh。fixture 不证明真实 Notion 或模型效果。 |
 | live | 必须指定 database，并选择 skill-ref 或独立的 native-kinds 配置；只读既有页的 list/read/export，再双宿主受控 provider 捕获，不创建或修改远端页；两分支分别报告，不能替代 live-fixture 端到端或真实模型。 |
 | live-fixture | 必须指定 database UUID，可提供 command-json；以唯一动态 name 创建独立真实测试页与 `references/guide.md`，list/read/export 后双宿主消费；finally 通过 ntn 官方 API 仅 archive 本次页与 child pages，并 GET 确认。当前任务已授权，禁止永久删除或触碰无关页。`live-fixture-create.json` 与 `live-fixture-cleanup.json` 保存无 token 回执。 |
-| model | 必须指定 database、skill-ref、model 与 model-prompt；默认分别执行 Pi 与 OMP，可用 `--host pi` 或 `--host omp` 只执行一个宿主。Doctor 同样只检查选定宿主。使用继承的现有授权配置、独立临时 broker/cache/session，要求模型从 metadata 自主选择 native read、读取入口与关联资源、正文进入 provider、成功 HTTP 响应，以及非空且以 stop 或 length 成功结束的 assistant final 回复；不得由确定性 provider 或另一宿主结果推断通过。非 model mode 拒绝 `--host`，live-fixture 附加 model 仍执行两宿主。 |
+| model | 必须指定 database、skill-ref、model 与 model-prompt；默认分别执行 Pi 与 OMP，可用 `--host pi` 或 `--host omp` 只执行一个宿主。Doctor 同样只检查选定宿主。使用继承的现有授权配置、独立临时 broker/cache/session，要求模型从 metadata 自主选择 native read、读取入口与关联资源、正文进入 provider、成功 HTTP 响应，以及非空且以 stop 或 length 成功结束的 assistant final 回复；不得由确定性 provider 或另一宿主结果推断通过。其它普通 mode 同样支持 `--host`；live-fixture 附加 model 继承所选宿主。 |
 | installed | 必须给绝对 tgz 路径；实际 `npm install --prefix scratch` 后，在安装产物上完成双宿主与 deterministic 相同消费路径。checkout 结果不能替代。 |
 
 live-fixture 创建 deadline 为 15 分钟，`intent.json` 保存 create-started/unknown。失败后不得盲目重建：`--resume-evidence` 指向原失败证据绝对目录，先校验旧 scratch ownership/input 的唯一 fixture name，再 catalog exactname 唯一匹配并 read canary；确认归属后本次不 create，消费完成最终 archive。可同时指定 `--model` 与 `--model-prompt`，对同一真实页执行模型路径后 archive；实际模型授权与凭据规则仍适用。

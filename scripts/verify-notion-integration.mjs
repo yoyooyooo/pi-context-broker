@@ -9,6 +9,7 @@ import { isolatedEnv, resolveHost, runCommand, spawnHost, signalHost, writeFakeP
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { createNotionFixture, database as fixtureDatabase, secondCanary } from './notion-integration-fixture.mjs';
 import { runNotionModel } from './notion-integration-model.mjs';
+import { selectIntegrationHosts } from './notion-integration-hosts.mjs';
 import { runConsumerModel } from './notion-consumer-model.mjs';
 import { prepareNativeKinds, runNativeKinds, validateNativeKindsConfig } from './notion-native-kinds.mjs';
 import { createLiveFixture } from './notion-live-fixture.mjs';
@@ -22,14 +23,14 @@ import { entryIdentity, verifyEntryIdentity } from './verification-entry.mjs';
 import { invokeJson } from './verification-command.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
-const usage = 'Usage: node scripts/verify-notion-integration.mjs doctor|run [--mode deterministic|live|live-fixture|model|installed] [--native-kinds ABSOLUTE_JSON (live only; existing Skill/Prompt/Router refs, installed --extension and --command-json; controlled provider, no fixture creation)] [--view-discovery true (deterministic only)] [--view VIEW_ID (live/model)] [--shared-catalog true (deterministic only)] [--cache-lifecycle true (live-fixture only)] [--consumer-isolation true (model only; explicit dollar selection, normal tools, hidden local paths)] [--consumer-resource RELATIVE_FILE --upstream-database UUID (with consumer-isolation)] [--database UUID --skill-ref skill://PAGE/SKILL.md --command-json JSON --extension ABSOLUTE_INSTALLED_ENTRY --package TGZ --model PROVIDER/MODEL --model-prompt TEXT --host pi|omp --evidence-root ABSOLUTE_DIRECTORY]; evidence|cleanup --evidence DIR. Native kinds JSON: {"version":1,"refs":{"skill":"PUBLIC_SKILL_REF","prompt":"PUBLIC_PROMPT_REF","router":"PUBLIC_ROUTER_REF"}}. It checks Prompt submissions, Router/member selection, mixed kinds and session continue; images and native composer Stop remain separate.';
+const usage = 'Usage: node scripts/verify-notion-integration.mjs doctor|run [--mode deterministic|live|live-fixture|model|installed] [--native-kinds ABSOLUTE_JSON (live only; existing Skill/Prompt/Router refs, installed --extension and --command-json; controlled provider, no fixture creation)] [--view-discovery true (deterministic only)] [--view VIEW_ID (live/model)] [--shared-catalog true (deterministic only)] [--cache-lifecycle true (live-fixture only)] [--consumer-isolation true (model only; explicit dollar selection, normal tools, hidden local paths)] [--consumer-resource RELATIVE_FILE --upstream-database UUID (with consumer-isolation)] [--database UUID --skill-ref skill://PAGE/SKILL.md --command-json JSON --extension ABSOLUTE_INSTALLED_ENTRY --package TGZ --model PROVIDER/MODEL --model-prompt TEXT --host pi|omp --evidence-root ABSOLUTE_DIRECTORY]; evidence|cleanup --evidence DIR. Single-host selection applies to ordinary deterministic/live/installed/model, default-context, view-discovery and native-kinds runs; shared-catalog/cache-lifecycle remain multi-host. Native kinds JSON: {"version":1,"refs":{"skill":"PUBLIC_SKILL_REF","prompt":"PUBLIC_PROMPT_REF","router":"PUBLIC_ROUTER_REF"}}. It checks Prompt submissions, Router/member selection, mixed kinds and session continue; images and native composer Stop remain separate.';
 if (argv.some(arg => ['--help','-h','help'].includes(arg))) { console.log(usage); process.exit(0); }
 const action = argv.shift() ?? 'run';
 let mode = argv[0] && !argv[0].startsWith('--') ? argv.shift() : 'deterministic';
 const options = {};
 while (argv.length) { const key = argv.shift(); if (!key?.startsWith('--') || !argv.length) throw new Error('Options require --name VALUE'); options[key.slice(2)] = argv.shift(); }
 if(options.mode)mode=options.mode;
-if (!['doctor','run','evidence','cleanup'].includes(action) || !['deterministic','live','live-fixture','model','installed'].includes(mode)) throw new Error('Usage: node scripts/verify-notion-integration.mjs doctor|run [deterministic|live|live-fixture|model|installed] [--default-context true (deterministic/live-fixture/installed) --database DB --skill-ref REF --command-json JSON --package TGZ --model PROVIDER/MODEL --model-prompt TEXT --host pi|omp (model only; default both)]; evidence|cleanup --evidence DIR');
+if (!['doctor','run','evidence','cleanup'].includes(action) || !['deterministic','live','live-fixture','model','installed'].includes(mode)) throw new Error('Usage: node scripts/verify-notion-integration.mjs doctor|run [deterministic|live|live-fixture|model|installed] [--default-context true (deterministic/live-fixture/installed) --database DB --skill-ref REF --command-json JSON --package TGZ --model PROVIDER/MODEL --model-prompt TEXT --host pi|omp (default both)]; evidence|cleanup --evidence DIR');
 // Dedicated Default Context acceptance retains the existing modes/entrypoints.
 // It requires actual dual-host catalogs, session-neutral prefetch diagnostics,
 // explicit-dollar unchecked pages, lifecycle and safe source request ledgers.
@@ -41,14 +42,14 @@ const cacheLifecycle = options['cache-lifecycle'] === 'true';
 if (options['cache-lifecycle'] !== undefined && (!cacheLifecycle || mode !== 'live-fixture' || defaultContext)) throw new Error('--cache-lifecycle requires true, live-fixture, and no --default-context');
 const sharedCatalog = options['shared-catalog'] === 'true';
 if (options['shared-catalog'] !== undefined && (!sharedCatalog || mode !== 'deterministic' || defaultContext || cacheLifecycle)) throw new Error('--shared-catalog requires true, deterministic, and no other acceptance branch');
-if (options.host !== undefined && (mode !== 'model' || !['pi','omp'].includes(options.host))) throw new Error('--host accepts pi or omp only in model mode; omit it to run both hosts');
+const selectedHosts = selectIntegrationHosts({ host: options.host, sharedCatalog, cacheLifecycle });
 const consumerIsolation = options['consumer-isolation'] === 'true';
 if (options['consumer-isolation'] !== undefined && (!consumerIsolation || mode !== 'model')) throw new Error('--consumer-isolation requires true and model mode');
 if (options['consumer-resource'] !== undefined && !consumerIsolation) throw new Error('--consumer-resource requires --consumer-isolation true');
 if (options['upstream-database'] !== undefined && !consumerIsolation) throw new Error('--upstream-database requires --consumer-isolation true');
 const nativeKinds = options['native-kinds'];
 if (nativeKinds !== undefined && (!isAbsolute(nativeKinds) || mode !== 'live' || defaultContext || cacheLifecycle || sharedCatalog || viewDiscovery || consumerIsolation || options.view || options['skill-ref'] || options.model || options['model-prompt'] || !options.extension || !options['command-json'])) throw new Error('--native-kinds requires an absolute private config, live mode, explicit installed --extension/--command-json and no other acceptance branch, view, skill-ref or model options');
-const modelHosts = options.host ? [options.host] : ['pi','omp'];
+const modelHosts = selectedHosts;
 const [nodeMajor, nodeMinor, nodePatch] = process.versions.node.split('.').map(Number);
 const supportedNode = (nodeMajor === 22 && (nodeMinor > 22 || (nodeMinor === 22 && nodePatch >= 3))) || nodeMajor > 24 || (nodeMajor === 24 && nodeMinor >= 20);
 if (!supportedNode || process.versions.bun) throw new Error('Use Node.js 22.22.3+ within 22.x or 24.20.0+; Bun is build-only');
@@ -64,9 +65,9 @@ async function capture(file,args,{cwd,env=process.env,timeout=60000}={}) {
 }
 function command() { const value=options['command-json']?JSON.parse(options['command-json']):['ntn-skills']; assert.ok(Array.isArray(value)&&value.length&&value.every(v=>typeof v==='string'),'--command-json must be a nonempty argument array'); return value; }
 async function doctor() {
- const result={mode,node:process.versions.node,tools:[],failures:[],authentication:'not probed',status:'ready'};
+ const result={mode,selectedHosts,node:process.versions.node,tools:[],failures:[],authentication:'not probed',status:'ready'};
  const probe = await mkdtemp(join(await systemTempRoot(),'broker-notion-doctor-'));result.scratch=probe;result.scratchDisposition='retained; move owned scratch to system Trash after review';
- for(const host of mode==='model'?modelHosts:['pi','omp',...(cacheLifecycle?['tern','python3']:[])]) { try {const output=await runCommand(host,['--version'],{cwd:probe,env:isolatedEnv({base:probe,agentDir:join(probe,'agent'),TMPDIR:await systemTempRoot()}),timeoutMs:10000}); result.tools.push({host,version:output.stdout.trim()});} catch(e){result.failures.push(e.message);} }
+ for(const host of [...selectedHosts,...(cacheLifecycle?['tern','python3']:[])]) { try {const output=await runCommand(host,['--version'],{cwd:probe,env:isolatedEnv({base:probe,agentDir:join(probe,'agent'),TMPDIR:await systemTempRoot()}),timeoutMs:10000}); result.tools.push({host,version:output.stdout.trim()});} catch(e){result.failures.push(e.message);} }
  if(['live','live-fixture','model'].includes(mode)){ if(!options.database||(mode!=='live-fixture'&&!nativeKinds&&!options['skill-ref']?.startsWith('skill://')))result.failures.push('Require --database and (except live-fixture/native-kinds) explicit --skill-ref skill://PAGE/SKILL.md');try{result.tools.push({notionCommand:await executable(command()[0])});if(mode==='live-fixture')result.tools.push({notionApi:await executable('ntn')});if(nativeKinds)validateNativeKindsConfig(await json(nativeKinds));}catch(e){result.failures.push(e.message);} }
  if(mode==='model'&&(!options.model||!options['model-prompt']))result.failures.push('model requires authorized --model provider/model and a natural --model-prompt (do not prompt token or CLI names)');
  try {
@@ -217,7 +218,7 @@ else if(action==='cleanup'){
 }
 else {
  const report=await doctor();if(report.status!=='ready'){console.log(JSON.stringify(report,null,2));process.exitCode=1;}else{
-  const temporaryRoot=await systemTempRoot();const evidence=await mkdtemp(join(await evidenceRoot(options['evidence-root'],temporaryRoot),'broker-notion-evidence-'));const scratch=await mkdtemp(join(temporaryRoot,'broker-notion-scratch-'));await save(join(scratch,'ownership.json'),{evidence});const manifest={mode,defaultContext,status:'running',scratch,temporaryRoot,doctor:report,branches:[],files:[],notRun:['native UI (separate --notion runner)', ...['pi','omp'].map(host=>`${host} real model`)]};console.log(`Notion integration evidence retained: ${evidence}`);
+  const temporaryRoot=await systemTempRoot();const evidence=await mkdtemp(join(await evidenceRoot(options['evidence-root'],temporaryRoot),'broker-notion-evidence-'));const scratch=await mkdtemp(join(temporaryRoot,'broker-notion-scratch-'));await save(join(scratch,'ownership.json'),{evidence});const manifest={mode,selectedHosts,defaultContext,status:'running',scratch,temporaryRoot,doctor:report,branches:[],files:[],notRun:['native UI (separate --notion runner)', ...['pi','omp'].map(host=>`${host} real model`), ...['pi','omp'].filter(host=>!selectedHosts.includes(host)).map(host=>`${host} host integration (not selected)`)]};console.log(`Notion integration evidence retained: ${evidence}`);
   process.env.BROKER_E2E_PROCESS_LEDGER=join(evidence,'owned-processes.jsonl');
   await writeFile(process.env.BROKER_E2E_PROCESS_LEDGER,'');
   manifest.files.push('owned-processes.jsonl');
@@ -246,17 +247,17 @@ else {
    const consumedEntry=await entryIdentity(extension);extension=consumedEntry.path;report.extension=consumedEntry;manifest.extension=consumedEntry;
    manifest.extensionReadback=await verifyEntryIdentity(extension,manifest.extension);
    await save(join(evidence,'manifest.json'),manifest);
-   if(nativeKinds)for(const host of ['pi','omp'])manifest.branches.push(await runNativeKinds({host,scratch,evidence,fixture,extension,database:options.database,command:requestLedger.command}));
-   else if(viewDiscovery)for(const host of ['pi','omp'])manifest.branches.push(await runViewDiscovery({host,scratch,evidence,fixture,extension,scriptedProvider}));
+   if(nativeKinds)for(const host of selectedHosts)manifest.branches.push(await runNativeKinds({host,scratch,evidence,fixture,extension,database:options.database,command:requestLedger.command}));
+   else if(viewDiscovery)for(const host of selectedHosts)manifest.branches.push(await runViewDiscovery({host,scratch,evidence,fixture,extension,scriptedProvider}));
    else if(sharedCatalog)manifest.branches.push(await runSharedCatalog({scratch,evidence,fixture,extension,scriptedProvider}));
    else if(cacheLifecycle){manifest.files.push('cache-lifecycle-result.json');manifest.branches.push(await runCacheLifecycle({root,scratch,evidence,fixture,extension,database:options.database,command:command(),scriptedProvider}));manifest.notRun=manifest.notRun.filter(item=>!item.startsWith('native UI'));}
    else if(mode==='model'){const branches=consumerIsolation?await Promise.all(modelHosts.map(host=>runConsumerModel(host,{root,scratch,evidence,fixture,options,extension}))):await runNotionModel({root,scratch,evidence,fixture,options,extension});manifest.branches.push(...branches);for(const branch of branches)manifest.files.push(...(branch.files??[]));assert.ok(branches.every(branch=>branch.status==='passed'),'Consumer model verification failed; see retained per-host results');}
-   else for(const host of ['pi','omp'])manifest.branches.push(defaultContext?await runDefaultContext({host,root,scratch,evidence,fixture,extension,database:options.database,ledger:requestLedger.ledger,scriptedProvider}):await hostRun(host,{scratch,evidence,fixture,extension}));
+   else for(const host of selectedHosts)manifest.branches.push(defaultContext?await runDefaultContext({host,root,scratch,evidence,fixture,extension,database:options.database,ledger:requestLedger.ledger,scriptedProvider}):await hostRun(host,{scratch,evidence,fixture,extension}));
    if(['deterministic','installed'].includes(mode)&&!sharedCatalog&&!viewDiscovery){
     if(defaultContext)await fixture.setScenario('normal');
     const filesystemRoot=join(scratch,'filesystem-source');await mkdir(join(filesystemRoot,'ui-alpha','references'),{recursive:true});const marker='FILESYSTEM_SOURCE_BODY_61C9';const resourceCanary='FILESYSTEM_SOURCE_RESOURCE_61C9';await writeFile(join(filesystemRoot,'ui-alpha','SKILL.md'),`---\nname: ui-alpha\ndescription: Filesystem ledger verification\n---\n${marker}\nRead references/ledger.md\n`);await writeFile(join(filesystemRoot,'ui-alpha','references','ledger.md'),resourceCanary+'\n');const localFixture={namespace:'fs',alias:'ui-alpha',marker,resourceCanary,source:{type:'filesystem',id:'fs',namespace:'fs',roots:[filesystemRoot],requireAutoload:false}};
-    for(const host of ['pi','omp'])manifest.branches.push(await hostRun(host,{scratch,evidence,fixture:localFixture,extension}));
-    manifest.branches.push(await runSourceLifecycle({root,scratch,evidence,fixture,extension}));
+    for(const host of selectedHosts)manifest.branches.push(await hostRun(host,{scratch,evidence,fixture:localFixture,extension}));
+    if(selectedHosts.includes('omp'))manifest.branches.push(await runSourceLifecycle({root,scratch,evidence,fixture,extension}));
    }
    if(mode==='live-fixture'&&options.model){assert.ok(options['model-prompt'],'--model-prompt required with --model');const branches=await runNotionModel({root,scratch,evidence,fixture,options,extension});manifest.branches.push(...branches);for(const branch of branches)manifest.files.push(...(branch.files??[]));}
    if(fixture.live)manifest.live=fixture.live;else{await writeFile(join(evidence,'source-cli-calls.jsonl'),await readFile(fixture.callsPath));manifest.files.push('source-cli-calls.jsonl');}
