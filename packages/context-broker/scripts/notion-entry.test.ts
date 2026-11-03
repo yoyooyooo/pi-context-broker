@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { publishNotionEntry, materializeNotionEntryFile } from "../src/notion-entry";
 import { installHostSkills } from "../src/host-skills";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
@@ -124,4 +124,60 @@ test("a nested main can read a sibling-directory resource from its exact immutab
   for (const listener of events.get("tool_call") ?? []) await listener({ toolName: "read", toolCallId: "sibling", input } as never, ctx);
   expect(requested).toEqual([f.resource]);
   expect(await readFile(input.path)).toEqual(f.bytes.get(f.resource)!);
+});
+
+async function aliasedEntryHost() {
+  const f = await entry();
+  const alias = join(f.root, "os-alias");
+  await symlink(f.root, alias, "dir");
+  const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
+  const api = { on(name: string, listener: (event: never, ctx: ExtensionContext) => unknown) { events.set(name, [...events.get(name) ?? [], listener]); } } as ExtensionAPI;
+  const ctx: ExtensionContext = { cwd: f.root, hasUI: false, mode: "rpc" }, requested: string[] = [];
+  const host = await installHostSkills(api, { config: {}, getRecords: async () => ({ records: [f.metadata], failures: [] }),
+    loadRecord: async () => f.selected,
+    loadResource: async (record, path, _ctx, signal) => {
+      requested.push(path);
+      return materializeNotionEntryFile(record, path, ensure, async (file, output) => { await writeFile(output, f.bytes.get(file.path)!); }, signal);
+    },
+  }, createPiHostAdapter(api));
+  await host.activate(f.metadata, ctx);
+  const aliasedRoot = join(alias, relative(f.root, f.selected.entryManifest!.root));
+  return { ...f, aliasedRoot, requested, async read(path: string) {
+    const input = { path }, results = [];
+    for (const listener of events.get("tool_call") ?? []) results.push(await listener({ toolName: "read", toolCallId: "aliased", input } as never, ctx));
+    return { input, results };
+  } };
+}
+
+test("an outer filesystem alias resolves an unmaterialized declared resource and preserves read suffixes", async () => {
+  const f = await aliasedEntryHost();
+  const destination = join(f.selected.entryManifest!.root, f.resource);
+  expect(await stat(destination).then(() => true, () => false)).toBe(false);
+  const first = await f.read(join(f.aliasedRoot, f.resource));
+  expect(first.input.path).toBe(destination);
+  expect(f.requested).toEqual([f.resource]);
+  expect(await readFile(first.input.path)).toEqual(f.bytes.get(f.resource)!);
+  const ranged = await f.read(join(f.aliasedRoot, f.resource) + "?snapshot=" + f.selected.snapshotId + ":2");
+  expect(ranged.input.path).toBe(destination + ":2");
+});
+
+test("an outer alias cannot authorize an undeclared file or a path escaping the immutable tree", async () => {
+  const f = await aliasedEntryHost();
+  for (const path of [f.aliasedRoot + "/not-in-manifest.md", f.aliasedRoot + "/../outside.md"]) {
+    const result = await f.read(path);
+    expect(JSON.stringify(result.results)).toContain("FILE_NOT_FOUND");
+  }
+  expect(f.requested).toEqual([]);
+});
+
+test("an outer alias never hides a symlink below the verified entry root", async () => {
+  const f = await aliasedEntryHost();
+  const outside = join(f.root, "outside");
+  await mkdir(outside);
+  await writeFile(join(outside, "guide.md"), f.bytes.get(f.resource)!);
+  await symlink(outside, join(f.selected.entryManifest!.root, "references"), "dir");
+  const result = await f.read(join(f.aliasedRoot, f.resource));
+  expect(JSON.stringify(result.results)).toContain("SOURCE_CACHE_UNSAFE");
+  expect(f.requested).toEqual([]);
+  expect(await readFile(join(outside, "guide.md"))).toEqual(f.bytes.get(f.resource)!);
 });

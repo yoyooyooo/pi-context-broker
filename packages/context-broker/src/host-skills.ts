@@ -67,6 +67,42 @@ function xml(value: string): string {
 function expandPath(path: string, cwd?: string): string {
   return resolve(cwd ?? process.cwd(), path === "~" ? homedir() : path.startsWith("~/") ? join(homedir(), path.slice(2)) : path);
 }
+
+async function canonicalEntryPath(path: string, roots: ReadonlySet<string>, signal: AbortSignal): Promise<string> {
+  checkPreparationSignal(signal);
+  if (!roots.size || [...roots].some(root => path.startsWith(root + sep))) return path;
+  // Resolve aliases above the verified tree, retaining every spelling below it.
+  // Resolving the whole file would hide an internal symlink and cannot handle a
+  // resource whose declared parent/file has not been materialized yet.
+  for (let ancestor = path; ; ancestor = dirname(ancestor)) {
+    checkPreparationSignal(signal);
+    let actual: string | undefined;
+    try { actual = await realpath(ancestor); } catch { /* Probe the next existing ancestor; an unmatched ordinary read stays native. */ }
+    checkPreparationSignal(signal);
+    if (actual && roots.has(actual)) return actual + path.slice(ancestor.length);
+    if (dirname(ancestor) === ancestor) return path;
+  }
+}
+
+async function assertEntryFilePath(record: SkillRecord, path: string | undefined, signal: AbortSignal): Promise<void> {
+  const manifest = record.entryManifest;
+  if (!manifest) return;
+  const file = manifest.files.find(file => file.path === path);
+  if (!file) throw hostError("FILE_NOT_FOUND");
+  const parts = file.path.split("/");
+  let cursor = manifest.root;
+  for (let index = 0; index <= parts.length; index++) {
+    checkPreparationSignal(signal);
+    if (index) cursor = join(cursor, parts[index - 1]!);
+    let metadata;
+    try { metadata = await lstat(cursor); }
+    catch (error) {
+      if (index > 0 && error && typeof error === "object" && "code" in error && error.code === "ENOENT") return;
+      throw error;
+    }
+    if (metadata.isSymbolicLink() || (index < parts.length ? !metadata.isDirectory() : !metadata.isFile())) throw hostError("SOURCE_CACHE_UNSAFE");
+  }
+}
 type ActivationOutcome<T> = { ok: true; value: T } | { ok: false; error: unknown };
 async function headlessActivation<T>(start: (signal: AbortSignal) => Promise<T>, timeoutMs: number, parent?: AbortSignal): Promise<T> {
   const controller = new AbortController();
@@ -955,13 +991,17 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         reference = exactReference.path;
       } catch (error) { return { block: true, reason: failure(error) }; }
     } else {
+      const raw = isAbsolute(requested) || requested.startsWith("~/") ? requested : join(ctx.cwd ?? process.cwd(), requested);
+      let expanded = raw.startsWith("~/") ? join(homedir(), raw.slice(2)) : raw;
+      try {
+        const roots = new Set([...readRecords.values()].flatMap(record => record.entryManifest ? [record.entryManifest.root] : []));
+        expanded = await canonicalEntryPath(expanded, roots, signal);
+      } catch (error) { return { block: true, reason: failure(error) }; }
       for (const [index, record] of readRecords) {
         const spellings = [index, index.startsWith(homedir() + sep) ? `~${index.slice(homedir().length)}` : index];
         const exact = spellings.find((path) => requested === path || requested.startsWith(`${path}:`));
         if (exact) { selected = record; suffix = requested.slice(exact.length); break; }
         const directory = dirname(index);
-        const raw = isAbsolute(requested) || requested.startsWith("~/") ? requested : join(ctx.cwd ?? process.cwd(), requested);
-        const expanded = raw.startsWith("~/") ? join(homedir(), raw.slice(2)) : raw;
         if (record.entryManifest && expanded.startsWith(record.entryManifest.root + sep)) {
           selected = record;
           rootRelative = true;
@@ -1003,6 +1043,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         const root = snapshot.entryManifest.root;
         reference = relative(root, resolve(root, dirname(snapshot.entrypoint ?? "SKILL.md"), reference)).split(sep).join("/");
       }
+      await assertEntryFilePath(snapshot, reference || snapshot.entrypoint, signal);
       let path = reference && reference !== (selected.entrypoint ?? "SKILL.md") ? resolve(dirname(snapshot.path), reference) : snapshot.path;
       if (snapshot.entryManifest && reference && reference !== snapshot.entrypoint) {
         if (!options.loadResource) throw hostError("SOURCE_RESOURCE_UNAVAILABLE");
