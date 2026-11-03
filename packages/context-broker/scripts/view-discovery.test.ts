@@ -38,6 +38,17 @@ test("metadata is escaped and cannot close the owned catalog wrapper", () => {
   expect(prompt).toContain("/owned/a&amp;b");
 });
 
+test("default Notion metadata retains both the advertised native path and exact public reference", () => {
+  const ref = "skill://shared_skill%3Alibrary%3Aowner/SKILL.md?snapshot=selected&file_id=main";
+  const selected = { ...record("shared", "/cache/selected/SKILL.md"), metadataIndexPath: "/native/shared/SKILL.md", ref };
+  const prompt = viewSystemPrompt("", [selected, record("local", "/local/SKILL.md")], [], new Set(), []);
+  expect(prompt).toContain("<location>/native/shared/SKILL.md</location>");
+  expect(prompt).toContain("<ref>skill://shared_skill%3Alibrary%3Aowner/SKILL.md?snapshot=selected&amp;file_id=main</ref>");
+  expect(prompt).not.toContain("<location>/cache/selected/SKILL.md</location>");
+  expect(prompt.match(/<ref>/g)).toHaveLength(1);
+  expect(prompt).toContain("<location>/local/SKILL.md</location></skill>");
+});
+
 test("default_view_id is an optional per-source selection, never a mutable global scene", () => {
   const sources = normalizeSources([{ type: "notion", id: "one", default_view_id: "A" }, { type: "notion", id: "two" }]);
   expect(sources?.[0]).toMatchObject({ default_view_id: "A" });
