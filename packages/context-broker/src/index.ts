@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { nativeReadSnapshot, sessionSourceSnapshot } from "./session-source-snapshot";
+import { sessionSourceSnapshot, sessionSourceBindings, sourceContentIdentity, sourceDeliveryReceipt, sourceBodyLoaded, projectSelectedSourceMessages } from "./session-source-snapshot";
+import { sessionSelection, selectedBinding, persistSessionSelection, exportSessionSelection } from "./session-graph";
+import { checkPreparationSignal, isPreparationCancelled } from "./skill-preparation";
 import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, resolve } from "node:path";
@@ -44,10 +46,11 @@ import {
   InvocationError,
 } from "./discovery-records";
 import { discoverSourceCatalog, loadSourceSkill, normalizeSources, formatSourceFailures } from "./sources";
-import { diagnoseNotionSource, sourceFailureMessage, SourceError, ReferenceMiss } from "./notion-source";
+import { diagnoseNotionSource, sourceFailureMessage, SourceError, ReferenceMiss, prepareNotionSkills, prefetchNotionSkills, loadNotionResource } from "./notion-source";
 import { installHostSkills } from "./host-skills";
 import { resolveViewDiscovery, createViewCommands } from "./view-discovery";
-import { createSourceRuntime, selectPrefetchRecords } from "./source-runtime";
+import { createSourceRuntime } from "./source-runtime";
+import { selectPrefetchPlans } from "./prefetch-policy";
 import { installCliWriteInvalidation } from "./cli-write-invalidation";
 import { createOmpHostAdapter } from "./omp-host-adapter";
 import { createPiHostAdapter } from "./pi-host-adapter";
@@ -727,19 +730,7 @@ function hasLoadedRecord(messages: AgentMessage[], record: DiscoveryRecord): boo
   const kind = recordKind(record);
   const sourceSkill = record as SkillRecord;
   if (sourceSkill.sourceId) {
-    if (nativeReadSnapshot(messages, sourceSkill)) return true;
-    const identity = recordIdentity(record);
-    return messages.some(message => {
-      if (message.role !== "custom") return false;
-      const details = isRecord(message.details) ? message.details : {};
-      if (message.customType === BUILTIN_SKILL_PROMPT_TYPE) {
-        return typeof details.path === "string" && resolve(details.path) === resolve(sourceSkill.metadataIndexPath ?? sourceSkill.path);
-      }
-      if (message.customType !== CUSTOM_TYPE && message.customType !== "skill-prompt-message") return false;
-      if (typeof details.nativePromptSha256 === "string" && !messages.some(candidate => candidate.role === "user" && createHash("sha256").update(textFromContent(candidate.content)).digest("hex") === details.nativePromptSha256)) return false;
-      const records = Array.isArray(details.records) ? details.records : [details];
-      return records.some(item => isRecord(item) && item.identity === identity && (item.loaded === true || typeof item.snapshotId === "string"));
-    });
+    return sourceBodyLoaded(messages, sourceSkill);
   }
   for (const message of messages) {
     const details = message.details && typeof message.details === "object" ? message.details as Record<string, unknown> : {};
@@ -803,6 +794,10 @@ function buildCliGuidance(config: ConfigFile): Omit<AgentMessage, "role" | "time
   const content = [
     "<ntn-skills-guidance>",
     "Use ntn-skills to discover, read, maintain and sync Skills when requested by the user.",
+    "Use the native skill_search tool for metadata discovery and the native read tool with an exact skill:// reference to read a selected Skill or resource. These operations work without shell access. The default View controls presentation; authorized exact references outside that View remain readable.",
+    "Native read inspects a selected entry or file. Before using a workflow, call skill_prepare with exact root refs and purpose use; it supplies the complete Required closure. For inspection or explanation, choose purpose inspect. References alone do not authorize execution; Members remain candidates until selected.",
+    "This branch keeps selected versions across compaction and restart. skill_graph exports its identity and delivery evidence. An explicit skill_prepare refresh:true with unfixed roots creates a new selection after complete preparation; it preserves the original tool history and replaces only verified old instructions in the provider context.",
+    "Keep the supplied owner, snapshot and file_id in each reference. Do not guess names, replace an owner, use stale aliases, or search local cache directories. A resource File ID is resolved within its selected owner and snapshot.",
     ...scopes.map(scope => {
       const database = scope.database ? ["--database", scope.database] : [];
       return [
@@ -937,10 +932,18 @@ function renderSkillRecord(injection: ContextInjection, config: ConfigFile, pres
 }
 
 function buildInjectedPayloadFromInjections(injections: ContextInjection[], config: ConfigFile = {}, presentation: Pick<HostCapabilities, "skillInstructions"> = {}, unavailable: UnavailableReference[] = []): Omit<AgentMessage, "role" | "timestamp"> {
-  const records = injections.map((injection) => recordDetail(injection, config));
+  const segments = injections.map(injection => (recordKind(injection.record) === "router" ? renderRouterRecord(injection, config) : renderSkillRecord(injection, config, presentation)).join("\n"));
+  const content = [...segments, renderUnavailableReferences(unavailable)].filter(Boolean).join("\n");
+  let offset = 0;
+  const records = injections.map((injection, index) => {
+    const segment = segments[index]!, start = segment.indexOf("<body>\n");
+    const proof = start < 0 ? undefined : sourceDeliveryReceipt(injection.record, content, "xml", offset + start + "<body>\n".length);
+    offset += segment.length + 1;
+    return { ...recordDetail(injection, config), ...proof };
+  });
   return {
     customType: CUSTOM_TYPE,
-    content: [...injections.flatMap((injection) => recordKind(injection.record) === "router" ? renderRouterRecord(injection, config) : renderSkillRecord(injection, config, presentation)), renderUnavailableReferences(unavailable)].filter(Boolean).join("\n"),
+    content,
     display: false,
     details: {
       ...(records.length === 1 ? records[0] : {}),
@@ -1125,15 +1128,23 @@ async function invokeBeforeAgentStart(
   isLoaded: (messages: AgentMessage[], record: DiscoveryRecord) => boolean = hasLoadedRecord,
   presentation: Pick<HostCapabilities, "skillInstructions"> = {},
   accepted: ReadonlyMap<string, DiscoveryRecord> = new Map(),
+  prepared: readonly SkillRecord[] = [],
 ): Promise<BeforeAgentStartResult | undefined> {
   const requests = parseInvocations(event.prompt, configuredRules(config));
-  if (requests.length === 0) return undefined;
+  if (requests.length === 0 && prepared.length === 0) return undefined;
   const registry = await registryPromise;
   const dollarRegistry = requests.some((request) => request.scope === "global" || request.scope === "catalog")
     ? await buildDollarRegistryForContext(ctx, dollarRegistryPromise)
     : [];
   const resolved = resolveSkillRequests(requests, registry, { phase: "before_agent_start" }, dollarRegistry, config, accepted);
-  const injections = resolved.injections.filter(injection => recordKind(injection.record) !== "prompt");
+  const injections = [...new Map(resolved.injections.filter(injection => recordKind(injection.record) !== "prompt")
+    .map(injection => [sourceContentIdentity(injection.record), injection])).values()];
+  const selected = new Set(injections.map(injection => sourceContentIdentity(injection.record)));
+  for (const record of prepared) {
+    if (record.kind === "prompt" || selected.has(sourceContentIdentity(record))) continue;
+    selected.add(sourceContentIdentity(record));
+    injections.push({ record, query: record.token ?? record.name, ruleIds: [] });
+  }
   const sessionMessages = messagesFromActiveSessionContext(ctx);
   const alreadyLoaded: ContextInjection[] = [];
   const unloaded = injections.filter((injection) => {
@@ -1202,7 +1213,7 @@ async function formatContextBrokerDoctor(config: ConfigFile, cwd = process.cwd()
     if (source.enabled === false || source.type !== "notion" || source.command || failures.some(failure => failure.sourceId === source.id)) continue;
     try {
       const health = await diagnoseNotionSource(source, cwd);
-      sourceHealth.push(`Source ${source.id}: ntn ${health.version}, authentication available`);
+      sourceHealth.push(`Source ${source.id}: direct Notion API ${health.version}, authentication available`);
     } catch (error) {
       const code = error instanceof SourceError ? error.code : "SOURCE_DIAGNOSTIC_FAILED";
       diagnostics.push(`Source ${source.id}: unavailable (${code}). ${sourceFailureMessage(code)}`);
@@ -1322,8 +1333,12 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     }
     return undefined;
   });
-  const sourceRuntime = createSourceRuntime((record, signal) => loadSourceSkill(record, config, process.cwd(), { signal }));
-  pi.on("session_shutdown", () => sourceRuntime.dispose());
+  const sourceRuntime = createSourceRuntime(
+    (record, signal) => loadSourceSkill(record, config, process.cwd(), { signal }), 2, 32,
+    (plan, signal) => prefetchNotionSkills(plan, process.cwd(), signal),
+  );
+  for (const event of ["session_shutdown", "session_before_switch", "session_before_branch", "session_before_tree"] as const)
+    pi.on(event, () => sourceRuntime.invalidate());
   let registryPromise = buildRegistry(config, paths);
   let refreshGeneration = 0;
   type CatalogState = { status: "pending"; promise: Promise<DiscoveryResult> }
@@ -1479,15 +1494,65 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       const result = await getCatalog(ctx?.cwd);
       return resolveViewDiscovery(config, { records: result.records.filter((record): record is SkillRecord => Boolean(record.sourceId)), failures: result.failures }, ctx, signal);
     },
+    lookupReference: (ctx, signal) => discoverSourceCatalog({ ...config, sources: config.sources?.filter(source => source.type === "notion") }, ctx.cwd, { signal, refreshSourceIds: config.sources?.filter(source => source.type === "notion" && !source.discovery?.offline).map(source => source.id) }),
     loadRecord: (record, signal, snapshotId) => snapshotId
-      ? loadSourceSkill(record, config, undefined, { signal, snapshotId })
+      ? sourceRuntime.foreground(() => loadSourceSkill(record, config, undefined, { signal, snapshotId }))
       : sourceRuntime.load(record, signal),
-    isLoaded: (record, ctx) => hasLoadedRecord(messagesFromActiveSessionContext(ctx), record),
-    sessionSnapshot: (record, ctx) => sessionSourceSnapshot(messagesFromActiveSessionContext(ctx), record),
-    onMetadata: records => sourceRuntime.prepare(selectPrefetchRecords(records, config.sources)),
+    loadResource: (record, path, ctx, signal) => sourceRuntime.foreground(async () => {
+      const source = normalizeSources(config.sources)?.find(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false);
+      if (!source || source.type !== "notion") throw new SourceError("SOURCE_UNAVAILABLE", record.sourceId ?? "notion");
+      return loadNotionResource(record, path, source, ctx.cwd ?? process.cwd(), signal);
+    }),
+    prepareGraph: (records, ctx, signal, purpose, pins, pendingBindings, mode) => sourceRuntime.foreground(async () => {
+      const groups = new Map<string, SkillRecord[]>();
+      for (const record of records) {
+        if (!record.sourceId) throw new SourceError("SOURCE_IDENTITY_MISMATCH", "selection");
+        groups.set(record.sourceId, [...groups.get(record.sourceId) ?? [], record]);
+      }
+      const prepared = [];
+      for (const [sourceId, roots] of groups) {
+        checkPreparationSignal(signal);
+        const source = normalizeSources(config.sources)?.find(source => source.id === sourceId);
+        if (!source || source.type !== "notion" || source.enabled === false) throw new SourceError("SOURCE_UNAVAILABLE", sourceId);
+        const messages = ctx ? messagesFromActiveSessionContext(ctx) : [];
+        const selection = ctx ? sessionSelection(ctx) : undefined;
+        const selectedScope = selection?.scopes.get(roots[0]!.sourceScope!);
+        const rootPins = new Map(pins);
+        for (const root of roots) {
+          const pin = mode === "replace" ? undefined : selectedScope ? selectedScope.bindings.get(root.id!)?.snapshot_id : sessionSourceSnapshot(messages, root);
+          if (pin && root.id) {
+            if (rootPins.has(root.id) && rootPins.get(root.id) !== pin) throw new SourceError("SOURCE_SESSION_CONFLICT", sourceId);
+            rootPins.set(root.id, pin);
+          }
+        }
+        const bindings = new Map((mode === "replace" ? [] : selectedScope ? [...selectedScope.bindings.values()] : sessionSourceBindings(messages, roots[0]!.sourceScope!)).map(binding => [binding.record.id, binding]));
+        for (const binding of pendingBindings ?? []) {
+          if (binding.scope !== roots[0]!.sourceScope) continue;
+          const previous = bindings.get(binding.record.id);
+          if (previous && (previous.snapshot_id !== binding.snapshot_id || previous.body_sha256 !== binding.body_sha256)) throw new SourceError("SOURCE_SESSION_CONFLICT", sourceId);
+          bindings.set(binding.record.id, binding);
+        }
+        prepared.push(await prepareNotionSkills(roots, source, ctx?.cwd ?? process.cwd(), {
+          purpose, signal, rootPins, sessionBindings: [...bindings.values()], refresh: mode === "replace",
+        }));
+      }
+      return prepared;
+    }),
+    persistGraphs: (graphs, ctx, mode) => persistSessionSelection(pi, ctx, graphs, mode),
+    sessionGraph: ctx => exportSessionSelection(ctx, projectSelectedSourceMessages(messagesFromActiveSessionContext(ctx), sessionSelection(ctx))),
+    projectContext: (messages, ctx) => projectSelectedSourceMessages(messages, sessionSelection(ctx)),
+    isLoaded: (record, ctx) => hasLoadedRecord(projectSelectedSourceMessages(messagesFromActiveSessionContext(ctx), sessionSelection(ctx)), record),
+    sessionSnapshot: (record, ctx) => {
+      const selection = sessionSelection(ctx);
+      return record.sourceScope && selection.scopes.has(record.sourceScope) ? selectedBinding(selection, record)?.snapshot_id : sessionSourceSnapshot(messagesFromActiveSessionContext(ctx), record);
+    },
+    onMetadata: records => sourceRuntime.prefetch(selectPrefetchPlans(records, normalizeSources(config.sources))),
     needsPreflightPrompt: text => parseInvocations(text, configuredRules(config)).length > 0,
-    onPreparation: entry => acceptedSelections.capture(entry.ctx, entry.controller.signal,
-      parseInvocations(entry.event.text ?? "", configuredRules(config)).filter(request => request.scope === "global").map(request => request.query)),
+    onPreparation: entry => {
+      sourceRuntime.pausePrefetch("foreground");
+      acceptedSelections.capture(entry.ctx, entry.controller.signal,
+        parseInvocations(entry.event.text ?? "", configuredRules(config)).filter(request => request.scope === "global").map(request => request.query));
+    },
     taskPrompt: async (text, ctx, signal, invocation) => {
       const requests = parseInvocations(text, configuredRules(config));
       const { injections } = resolveSkillRequests(requests, await registryPromise, {}, await buildDollarRegistryForContext(ctx, getDollarRegistry(ctx.cwd)), config, acceptedSelections.forSubmission(signal));
@@ -1512,10 +1577,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       const dollarRegistry = requests.some(request => request.scope === "global" || request.scope === "catalog")
         ? await buildDollarRegistryForContext(ctx, getDollarRegistry(ctx.cwd)) : [];
       const { injections } = resolveSkillRequests(requests, registry, { phase: "input" }, dollarRegistry, config, acceptedSelections.forSubmission(signal));
-      for (const injection of injections) {
-        if (signal?.aborted) throw Object.assign(new Error("Skill preparation cancelled"), { code: "SOURCE_ACTIVATION_CANCELLED" });
-        if (injection.record.sourceId) await host.prepare(injection.record, ctx, signal);
-      }
+      await host.prepareMany(injections.map(injection => injection.record).filter(record => record.sourceId), ctx, signal);
     },
   }, adapter);
   const refresh = async (ctx: ExtensionContext) => {
@@ -1532,10 +1594,9 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   };
   pi.on("before_agent_start", async (event, ctx) => {
     try {
-      const result = await host.withPreparedPrompt(event.prompt, ctx, async (signal, native, original) => {
+      const result = await host.withPreparedPrompt(event.prompt, ctx, async (signal, native, original, prepared) => {
         if (original === undefined) return undefined;
         const submission = { ...event, prompt: original ?? event.prompt };
-        if (!parseInvocations(submission.prompt, configuredRules(config)).length) return undefined;
         return invokeBeforeAgentStart(
           submission, ctx, registryPromise, config, getDollarRegistry(ctx.cwd),
           async record => {
@@ -1544,15 +1605,17 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
             if (prepared.status === "miss") throw new ReferenceMiss(record.sourceId);
             return prepared.record;
           },
-          (messages, record) => hasLoadedRecord(messages, record) || (recordKind(record) === "skill" && (
+          (messages, record) => hasLoadedRecord(projectSelectedSourceMessages(messages, sessionSelection(ctx)), record) || (recordKind(record) === "skill" && (
             (native !== undefined && recordIdentity(native) === recordIdentity(record)) || host.isNativeLoaded(messages, record as SkillRecord)
           )),
           adapter,
           acceptedSelections.forSubmission(signal),
+          prepared,
         );
       });
       return result;
     } catch (error) {
+      if (isPreparationCancelled(error)) return undefined;
       ctx.ui?.notify?.(error instanceof Error ? error.message : "Skill preparation failed.", "error");
       return undefined;
     }

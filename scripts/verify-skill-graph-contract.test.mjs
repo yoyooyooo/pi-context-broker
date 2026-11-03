@@ -1,10 +1,24 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CONTRACT_VERSION, EVIDENCE_COLUMNS, NEGATIVE_CASES, contractFixture, evaluateGraphTrace, frozenPrompt, selfTest } from './verify-skill-graph-contract.mjs';
+import { CONTRACT_VERSION, PROMPT_VERSION, TASK, TASK_V1, EVIDENCE_COLUMNS, NEGATIVE_CASES, contractFixture, evaluateGraphTrace, frozenPrompt, selfTest } from './verify-skill-graph-contract.mjs';
+
+test('prompt v2 clarifies complete file delivery while preserving v1 and the trace/oracle schema', () => {
+  assert.equal(CONTRACT_VERSION, 1); assert.equal(PROMPT_VERSION, 2);
+  const old = frozenPrompt('A', '$pstack@notion', 1), current = frozenPrompt('A', '$pstack@notion');
+  assert.equal(old.text, '$pstack@notion ' + TASK_V1);
+  assert.equal(current.text, '$pstack@notion ' + TASK);
+  assert.notEqual(old.sha256, current.sha256);
+  assert.equal(frozenPrompt('B', '$poteto-mode@notion').text.split(' ').slice(1).join(' '), TASK);
+  assert.ok(!/create-verification-skill|skill:\/\/|feature-map|README/.test(TASK));
+  const historical = contractFixture('A'); historical.trace.prompt = old;
+  assert.equal(historical.oracle.version, 1); assert.equal(historical.trace.version, 1);
+  assert.equal(evaluateGraphTrace(historical.trace, historical.oracle).status, 'contract-valid');
+  assert.throws(() => frozenPrompt('A', '$pstack@notion', 3), { code: 'PROMPT_VERSION' });
+});
 
 test('Gate A and B freeze only their own root and the same natural task', () => {
   const a = frozenPrompt('A', '$pstack@notion'), b = frozenPrompt('B', '$poteto-mode@notion');
-  assert.equal(a.version, CONTRACT_VERSION);
+  assert.equal(a.version, PROMPT_VERSION);
   assert.ok(!a.text.includes('poteto-mode'));
   assert.ok(!b.text.toLowerCase().includes('pstack'));
   for (const value of [a, b]) assert.ok(!value.text.includes('create-verification-skill') && !value.text.includes('skill://'));

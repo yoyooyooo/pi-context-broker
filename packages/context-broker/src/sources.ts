@@ -29,6 +29,34 @@ function policy(value: unknown): SourcePolicy | undefined {
   if (maxAge !== undefined && !/^(?:0|\d+[smhd])$/.test(maxAge)) invalid();
   return { maxAge, offline: boolean(value.offline) };
 }
+function preparation(value: unknown): Extract<SourceConfig, { type: "notion" }>["preparation"] {
+  if (value === undefined) return undefined;
+  if (!object(value) || Object.keys(value).some(key => !["maxNodes", "maxDepth", "maxInstructionBytes", "maxContextBytes"].includes(key))) invalid();
+  const result: NonNullable<Extract<SourceConfig, { type: "notion" }>["preparation"]> = {};
+  for (const key of ["maxNodes", "maxDepth", "maxInstructionBytes", "maxContextBytes"] as const) {
+    const number = value[key];
+    if (number === undefined) continue;
+    if (typeof number !== "number" || !Number.isSafeInteger(number) || number < (key === "maxDepth" ? 0 : 1)) invalid();
+    result[key] = number;
+  }
+  return result;
+}
+function prefetch(value: unknown): Extract<SourceConfig, { type: "notion" }>["prefetch"] {
+  if (value === undefined || typeof value === "boolean") return value;
+  if (!object(value) || Object.keys(value).some(key => !["maxNodes", "maxBytes", "maxDepth", "maxTimeMs", "rateShare"].includes(key))) invalid();
+  const result = { maxNodes: 0, maxBytes: 0, maxDepth: 0, maxTimeMs: 0, rateShare: 0 };
+  for (const key of ["maxNodes", "maxBytes", "maxDepth", "maxTimeMs"] as const) {
+    const number = value[key];
+    if (number === undefined) continue;
+    if (typeof number !== "number" || !Number.isSafeInteger(number) || number < 0 || key === "maxTimeMs" && number > 2_147_483_647) invalid();
+    result[key] = number;
+  }
+  if (value.rateShare !== undefined) {
+    if (typeof value.rateShare !== "number" || !Number.isFinite(value.rateShare) || value.rateShare < 0 || value.rateShare > 1) invalid();
+    result.rateShare = value.rateShare;
+  }
+  return result;
+}
 function scan(value: unknown): ScanConfig | undefined {
   if (value === undefined) return undefined;
   if (!object(value)) invalid();
@@ -74,7 +102,8 @@ export function normalizeSources(value: unknown): SourceConfig[] | undefined {
       ...common, type: "notion", command,
       database, default_view_id: optionalString(raw.default_view_id), ...(profileId === undefined ? {} : { profile_id: profileId }), cacheDir: optionalString(raw.cacheDir),
       discovery: policy(raw.discovery), activation: policy(raw.activation), requestTimeoutMs: raw.requestTimeoutMs as number | undefined,
-      prefetch: boolean(raw.prefetch),
+      preparation: preparation(raw.preparation),
+      prefetch: prefetch(raw.prefetch),
     };
   });
 }

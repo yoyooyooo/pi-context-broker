@@ -95,7 +95,7 @@ await writeFile(enabledConfig, JSON.stringify({
 const agentDir = join(base, "agent");
 await mkdir(agentDir);
 const capture = join(base, "provider.jsonl");
-const env = isolatedEnv({ base, agentDir, CONTEXT_BROKER_CONFIG: enabledConfig, CONTEXT_BROKER_ROOTS: skillRoot, CONTEXT_BROKER_HOST: "omp", CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: capture, NTN_SKILLS_NTN_BIN: join(base, "absent-ntn") });
+const env = isolatedEnv({ base, agentDir, CONTEXT_BROKER_CONFIG: enabledConfig, CONTEXT_BROKER_ROOTS: skillRoot, CONTEXT_BROKER_HOST: "omp", CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: capture, NOTION_API_TOKEN: "" });
 function localChoice(response) {
   const item = response.items.find(item => item.ref === localSkillPath && item.source === "local");
   assert.ok(item, "Packaged query must retain the exact configured local identity");
@@ -208,12 +208,12 @@ await writeFile(failingConfig, JSON.stringify({ skillRoots: [skillRoot], sources
 for (const executable of [npmQuery, ternQuery]) {
   const response = JSON.parse(run(process.execPath, [executable], {
     input: JSON.stringify({ version: 1, text: "$design", cursor: 7, cwd: base, config: failingConfig }),
-    env: { ...env, NTN_SKILLS_NTN_BIN: join(base, "absent-ntn") },
+    env: { ...env, NOTION_API_TOKEN: "" },
   }));
   const item = localChoice(response);
   assert.equal(item.identity, localSelection.identity);
   assert.equal(item.value, localSelection.value);
-  assert.equal(response.failures[0].code, "NTN_UNAVAILABLE");
+  assert.equal(response.failures[0].code, "AUTH_REQUIRED");
 }
 run(process.execPath, [join(root, "scripts/verify-source-dependencies.mjs")], { env: { ...process.env, BROKER_DEPENDENCY_EXTENSION: resolve(installed, manifest.omp.extensions[0]) }, stdio: "inherit", timeout: 360_000 });
 const text = "中文😀\n使用 $架构 tail";

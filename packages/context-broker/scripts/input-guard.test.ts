@@ -61,7 +61,7 @@ async function coldOmpReadRegressions(root: string): Promise<void> {
       sendUserMessage(content) { sends.push(content); },
       getAllTools: () => [{ name: "read", description: registered?.description ?? "Native read", parameters: schema, sourceInfo: registered ? { source: "extension", path: registered.sourcePath } : { source, path: "<builtin:read>" } }],
       getActiveTools: () => [...activeNames],
-      registerTool(tool) { registered = tool; if (!tool.defaultInactive) activeNames.add(tool.name); },
+      registerTool(tool) { if (tool.name === "read") registered = tool; if (!tool.defaultInactive) activeNames.add(tool.name); },
     };
     const ctx: ExtensionContext = {
       mode: "rpc", hasUI: false, cwd: root,

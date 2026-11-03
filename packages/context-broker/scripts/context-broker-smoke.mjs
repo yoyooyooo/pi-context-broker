@@ -15,6 +15,7 @@ const configuredOnly = records => records.filter(record => !builtinMod.isBundled
 const hostSkillsMod = await import("../src/host-skills.ts");
 const ompAdapterMod = await import("../src/omp-host-adapter.ts");
 const piAdapterMod = await import("../src/pi-host-adapter.ts");
+const sessionSourceMod = await import("../src/session-source-snapshot.ts");
 
 
 async function writeSkill(root, dir, frontmatter, body = "Skill body") {
@@ -1120,7 +1121,7 @@ if (mode === 'read-locator' && args[0] === 'read') item.locator.data_source_id =
 const fresh = {policy:'default',validated_at:new Date(0).toISOString(),age_ms:0,max_age_ms:60000,stale:false};
 if (mode === 'timeout') {
   await new Promise(resolve => setTimeout(resolve, Number(process.env.NTN_SKILLS_REQUEST_TIMEOUT_MS ?? 30000)));
-  console.log(JSON.stringify({ok:false,error:{code:'NTN_UNAVAILABLE',details:{reason:'timeout'}}}));
+  console.log(JSON.stringify({ok:false,error:{code:'NOTION_UNAVAILABLE',details:{reason:'timeout'}}}));
   process.exitCode = 1;
 } else if (mode === 'cancel') {
   const descendant = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {stdio:'ignore'});
@@ -1229,15 +1230,17 @@ else if (mode === 'secret') {
   assert.equal(sourceLoaded.alias, "source-skill", "A later renamed read cannot change an already selected snapshot");
   const priorReceipt = JSON.parse(await readFile(join(sourceLoaded.path, "../.broker-snapshot.json"), "utf8"));
   assert.equal(priorReceipt.record.alias, "source-skill");
-  const nativeSourceMessages = [{ role: "custom", customType: mod.BUILTIN_SKILL_PROMPT_TYPE, content: sourceLoaded.body, details: { name: "fixture-source-skill", path: sourceMetadata.path } }];
+  const legacySourceMessages = [{ role: "custom", customType: mod.BUILTIN_SKILL_PROMPT_TYPE, content: sourceLoaded.body, details: { name: "fixture-source-skill", path: sourceMetadata.path } }];
+  assert.equal(mod.hasLoadedSkill(legacySourceMessages, sourceMetadata), false, "A legacy path marker without immutable identity and body evidence cannot suppress reloading");
+  const nativeSourceMessages = [{ role: "custom", customType: mod.CUSTOM_TYPE, content: sourceLoaded.body, details: { records: [sessionSourceMod.sourceDeliveryReceipt(sourceLoaded, sourceLoaded.body)] } }];
   const nativeSourceContext = { sessionManager: { buildSessionContext: () => ({ messages: nativeSourceMessages }) } };
   const afterNativeSource = await mod.invokeBeforeAgentStart({ prompt: `$${discoveryMod.recordToken(sourceMetadata)} Use the selected source again.` }, nativeSourceContext, Promise.resolve([]), sourceGoodConfig, Promise.resolve([sourceMetadata]), async () => { throw new Error("Native source body must not be reloaded"); });
   assert.equal(afterNativeSource, undefined, "A dollar selection after native skill consumption must retain one body");
-  const otherSourceContext = { sessionManager: { buildSessionContext: () => ({ messages: [{ ...nativeSourceMessages[0], details: { name: "fixture-source-skill", path: join(temp, "another-source", "SKILL.md") } }] }) } };
+  const otherSourceContext = { sessionManager: { buildSessionContext: () => ({ messages: [{ ...nativeSourceMessages[0], details: { records: [sessionSourceMod.sourceDeliveryReceipt({ ...sourceLoaded, sourceScope: "another-scope" }, sourceLoaded.body)] } }] }) } };
   const afterOtherSource = await mod.invokeBeforeAgentStart({ prompt: `$${discoveryMod.recordToken(sourceMetadata)} Use this source.` }, otherSourceContext, Promise.resolve([]), sourceGoodConfig, Promise.resolve([sourceMetadata]), async () => sourceLoaded);
   assert.match(String(afterOtherSource?.message?.content), /portable body/, "A same-name native skill from another source must not suppress activation");
   const piNativeText = `<skill name="fixture-source-skill" location="${sourceMetadata.path}">\n${sourceLoaded.body}\n</skill>`;
-  const piNativeMarker = { role: "custom", customType: mod.CUSTOM_TYPE, content: [], details: { nativePromptSha256: createHash("sha256").update(piNativeText).digest("hex"), records: [{ identity: discoveryMod.recordIdentity(sourceMetadata), loaded: true }] } };
+  const piNativeMarker = { role: "custom", customType: mod.CUSTOM_TYPE, content: [], details: { nativePromptSha256: createHash("sha256").update(piNativeText).digest("hex"), records: [sessionSourceMod.sourceDeliveryReceipt(sourceLoaded, piNativeText)] } };
   assert.equal(mod.hasLoadedSkill([{ role: "user", content: piNativeText }, piNativeMarker], sourceMetadata), true, "Trusted native receipt must retain its matching body");
   assert.equal(mod.hasLoadedSkill([piNativeMarker], sourceMetadata), false, "A receipt retained after compaction removes the body must not suppress activation");
   assert.equal(mod.hasLoadedSkill([{ role: "user", content: piNativeText }], sourceMetadata), false, "User XML alone must not suppress source activation");
@@ -1280,7 +1283,7 @@ else if (mode === 'secret') {
   await writeFile(sourceLoaded.path, "tampered immutable cache");
   await assert.rejects(sourcesMod.loadSourceSkill(sourceMetadata, sourceGoodConfig), { code: "SOURCE_OUTPUT_CONFLICT" });
   assert.equal(await readFile(sourceLoaded.path, "utf8"), "tampered immutable cache", "a conflict never replaces existing snapshot bytes");
-  await assert.rejects(sourcesMod.discoverSources(adapterConfig("timeout", 1000)), { code: "NTN_UNAVAILABLE" });
+  await assert.rejects(sourcesMod.discoverSources(adapterConfig("timeout", 1000)), { code: "NOTION_UNAVAILABLE" });
   const sourceAbort = new AbortController();
   const sourceCancelled = sourcesMod.discoverSources(adapterConfig("cancel"), process.cwd(), { signal: sourceAbort.signal });
   setTimeout(() => sourceAbort.abort(), 1000);

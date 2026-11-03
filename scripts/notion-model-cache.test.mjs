@@ -5,26 +5,28 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { verificationCliEnvironment } from './verification-paths.mjs';
 import { invokeJson } from './verification-command.mjs';
-import { assertModelCase, requestCounts, cacheCaseDirectory } from './verify-pi-notion-model-cache.mjs';
+import { assertModelCase, requestCounts, cacheCaseDirectory, modelAvailabilityFailure } from './verify-pi-notion-model-cache.mjs';
 import { observe } from './notion-integration-model.mjs';
 import * as crypto from 'node:crypto';
 import * as path from 'node:path';
 
 const expected = ['WORKFLOW-A', 'CHECKLIST-A', 'HOLD', 'CODE-1'];
 const good = () => [
-  { phase: 'request', skillBodies: 0, resourceBodies: 0 },
+  { phase: 'request', skillBodies: 0, resourceBodies: 0, completeContents: [] },
   { phase: 'response', status: 200 },
   { phase: 'tool_result', kind: 'skill', role: 'entrypoint', bodyMatchesFile: true, receiptValidated: true, snapshot: 's_fixture' },
   { phase: 'tool_result', kind: 'resource', resourceSuccess: true, snapshot: 's_fixture' },
-  { phase: 'request', skillBodies: 1, resourceBodies: 1 },
+  { phase: 'request', skillBodies: 1, resourceBodies: 1, completeContents: ['entrypoint', 'resource'].map(role => ({ role, snapshot: 's_fixture', copies: 1, materialization: 'snapshot', manifestComplete: true })) },
   { phase: 'assistant_final', success: true, bytes: 100, stopReason: 'stop', text: expected.join(' ') },
 ];
 const sourceRequests = [
-  { kind: 'cli', phase: 'started', command: 'read' },
-  { kind: 'ntn', phase: 'started', command: 'api', method: 'GET', path: 'v1/pages/page/markdown' },
-  { kind: 'ntn', phase: 'started', command: 'api', method: 'POST', path: 'v1/data_sources/files/query' },
-  { kind: 'ntn', phase: 'started', command: 'api', method: 'POST', path: 'v1/views/owned-view/queries' },
-  { kind: 'cli', phase: 'started', command: 'export' },
+  { kind: 'cli', phase: 'started', command: 'read', requestId: 'read' },
+  { kind: 'http', phase: 'attempt', request_kind: 'notion_body', method: 'GET', requestId: 'read' },
+  { kind: 'http', phase: 'attempt', request_kind: 'notion_metadata', method: 'POST', requestId: 'read' },
+  { kind: 'http', phase: 'attempt', request_kind: 'notion_metadata', method: 'POST', requestId: 'read' },
+  { kind: 'metrics', phase: 'metrics', observed: true, complete: true, requestId: 'read' },
+  { kind: 'cli', phase: 'started', command: 'export', requestId: 'export' },
+  { kind: 'metrics', phase: 'metrics', observed: true, complete: true, requestId: 'export' },
 ];
 
 test('oracle and consumer roots are disjoint without copying or changing inherited credentials', () => {
@@ -39,15 +41,28 @@ test('invocation executes inside the explicitly selected mutable environment', a
   const value = await invokeJson([process.execPath], ['-e', 'console.log(JSON.stringify({ok:true,state:process.env.NTN_SKILLS_HOME}))'], { cwd: root, env: verificationCliEnvironment(join(root, 'oracle')) });
   assert.equal(value.state, join(root, 'oracle', 'state'));
 });
-test('autonomous cold evidence requires actual native read, body I/O, complete export and model content', () => {
+test('autonomous cold evidence requires actual native read, body I/O, verified materialization and complete model content', () => {
   assert.equal(assertModelCase(good(), expected, { native: true, cold: true, requestEvents: sourceRequests }).providerRequests, 2);
+});
+test('entry materialization preserves full provider byte receipts without claiming a complete export', () => {
+  const events = good(); events[4].completeContents.forEach(file => { file.materialization = 'entry'; });
+  const requests = sourceRequests.filter(row => row.requestId !== 'export');
+  assert.equal(assertModelCase(events, expected, { native: true, cold: true, requestEvents: requests }).requests.exports, 0);
+  const partial = good(); partial[4].completeContents = [];
+  assert.throws(() => assertModelCase(partial, expected), /complete verified main/);
 });
 test('HTTP success and a Premium license message cannot be counted as model acceptance', () => {
   const events = good(); events.at(-1).text = 'This model requires a Premium license.';
   assert.throws(() => assertModelCase(events, expected), /selected source value/);
 });
+test('only an actual provider availability response permits model fallback, not an assertion or tool-chain failure', () => {
+  assert.equal(modelAvailabilityFailure(good()), false);
+  assert.equal(modelAvailabilityFailure([{ phase: 'response', status: 403 }]), true);
+  assert.equal(modelAvailabilityFailure([{ phase: 'response', status: 200 }, { phase: 'assistant_final', text: 'This model requires a Premium license.' }]), true);
+  assert.equal(modelAvailabilityFailure([{ phase: 'response', status: 200 }, { phase: 'tool_call', allowed: false }, { phase: 'assistant_final', text: 'The task could not read the selected resource.' }]), false);
+});
 test('a prewarmed CLI is not evidence for a cold body path', () => {
-  assert.throws(() => assertModelCase(good(), expected, { cold: true, requestEvents: sourceRequests.filter(event => event.kind !== 'ntn') }), /actual Notion body read/);
+  assert.throws(() => assertModelCase(good(), expected, { cold: true, requestEvents: sourceRequests.filter(event => event.kind !== 'http') }), /actual Notion body read/);
 });
 test('warm loading fails if it secretly downloads native bodies', () => {
   assert.throws(() => assertModelCase(good(), expected, { warm: true, requestEvents: sourceRequests }), /must not download/);
@@ -60,7 +75,7 @@ test('duplicated instruction bodies and hidden resource read errors are rejected
 });
 test('query POSTs are metadata but authoring POSTs/PATCHs remain writes', () => {
   assert.equal(requestCounts(sourceRequests).notionWrites, 0);
-  const writing = [...sourceRequests, { kind: 'ntn', phase: 'started', command: 'api', method: 'POST', path: 'v1/pages' }];
+  const writing = [...sourceRequests, { kind: 'http', phase: 'attempt', request_kind: 'notion_write', method: 'POST', requestId: 'read' }];
   assert.throws(() => assertModelCase(good(), expected, { requestEvents: writing }), /must not mutate/);
 });
 test('ordinary model entry point isolates its source oracle before the real host launches', async () => {

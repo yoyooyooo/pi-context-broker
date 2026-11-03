@@ -173,7 +173,7 @@ if (catalogCacheMode) {
 const hostLauncher = join(base, "start.mjs");
 const hostExit = join(base, "omp-exit.json");
 const hostPid = join(base, "omp-pid.json");
-const cacheAuthEnvironment = cacheSpec ? ", ...Object.fromEntries(['NOTION_API_TOKEN','NTN_API_TOKEN'].filter(key => process.env[key]).map(key => [key, process.env[key]]))" : '';
+const cacheAuthEnvironment = cacheSpec ? ", ...Object.fromEntries(['NOTION_API_TOKEN'].filter(key => process.env[key]).map(key => [key, process.env[key]]))" : '';
 await writeFile(hostLauncher, `import {spawnHost,signalHost} from ${JSON.stringify(new URL("../packages/context-broker/scripts/context-broker-e2e-fixture.mjs", import.meta.url).href)};\nimport {writeFileSync} from 'node:fs';\nconst child=await spawnHost(${JSON.stringify(omp)},[...${JSON.stringify(launchArgs.slice(1))},...process.argv.slice(2)],{cwd:${JSON.stringify(base)},env:{...${JSON.stringify(hostLaunchEnv)}${cacheAuthEnvironment}},stdio:'inherit'});\nwriteFileSync(${JSON.stringify(hostPid)},JSON.stringify({pid:child.pid,launcherPid:process.pid}));\nprocess.on('SIGTERM',()=>signalHost(child,'SIGTERM'));\nprocess.on('SIGINT',()=>signalHost(child,'SIGINT'));\nchild.on('close',(code,signal)=>{writeFileSync(${JSON.stringify(hostExit)},JSON.stringify({pid:child.pid,code,signal,observedExit:true}));process.exit(code??1);});\n`, { mode: 0o700 });
 await writeFile(launcher, `#!/bin/sh\nexec ${[process.execPath, hostLauncher].map(shellQuote).join(" ")}\n`, { mode: 0o755 });
 let tern;
@@ -498,7 +498,7 @@ try {
       const cards = loadingCards().length;
       await draft(`$${skillToken} Time out before dispatch.`); key("enter");
       await waitForRead("timeout-loading", cards);
-      await until("request timeout error", () => texts(ctl("tree")).some(text => text.includes("NTN_UNAVAILABLE")), 45_000);
+      await until("request timeout error", () => texts(ctl("tree")).some(text => text.includes("NOTION_UNAVAILABLE")), 45_000);
       await terminalRecord("error", cards, "timeout-error");
       await assertNoDispatch(before, "Timeout must never dispatch a provider request");
       await notionFixture.setScenario("normal");

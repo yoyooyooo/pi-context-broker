@@ -21,7 +21,7 @@ from terminal_screen import TerminalScreen
 out = Path(spec['channel'])
 host = spec.get('host', 'omp')
 env = spec['env']
-for name in ['NOTION_API_TOKEN', 'NTN_API_TOKEN']:
+for name in ['NOTION_API_TOKEN']:
     if os.environ.get(name):
         env[name] = os.environ[name]
 env.update(TERM='xterm-256color', COLORTERM='truecolor')

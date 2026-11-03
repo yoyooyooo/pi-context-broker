@@ -13,7 +13,7 @@ An optional Tern window plugin for selecting context in a local **OMP native GUI
 - Node.js 22.22.3+ within 22.x or 24.20.0+ on Tern's PATH, or an explicit `node` setting.
 - A local OMP native pane with a known working directory. Terminal panes use their host's Broker editor; remote panes and the web client are unsupported by manual search.
 
-Install the Broker following the [project quick start](https://github.com/yoyooyooo/pi-context-broker#quick-start). The companion includes its query, CLI and workflow Skills. Online Notion sources use official `ntn` 0.22.12+ with `api --notion-version` and existing authentication. An unavailable source leaves local and healthy source candidates available.
+Install the Broker following the [project quick start](https://github.com/yoyooyooo/pi-context-broker#quick-start). The companion includes its query, CLI and workflow Skills. Online Notion sources use the bundled CLI's direct HTTP engine and existing project token. An unavailable source leaves local and healthy source candidates available.
 
 ## Install
 

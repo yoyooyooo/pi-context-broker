@@ -211,8 +211,7 @@ export async function runNativeKinds({ host, scratch, evidence, fixture, extensi
   const env = isolatedEnv({ base, agentDir, HOME: process.env.HOME, CONTEXT_BROKER_CONFIG: config, CONTEXT_BROKER_HOST: host,
     CONTEXT_BROKER_LOG_FILE: join(evidence, host + '-native-kinds-decisions.jsonl') });
   await writeFile(env.CONTEXT_BROKER_LOG_FILE, '', { mode: 0o600 });
-  for (const key of ['NOTION_API_TOKEN', 'NTN_API_TOKEN']) if (process.env[key]) env[key] = process.env[key];
-  delete env.NTN_SKILLS_NTN_BIN;
+  for (const key of ['NOTION_API_TOKEN']) if (process.env[key]) env[key] = process.env[key];
   const result = { host, mode: 'live', recipe: 'native-kinds', status: 'running', provider: 'controlled', realModel: false,
     files: [host + '-native-kinds-result.json', host + '-native-kinds-decisions.jsonl'], observations: [],
     boundary: 'Actual host RPC and existing native Notion fixtures with explicit extension/CLI identities frozen in the parent manifest; provider output is controlled. Fresh read/export defines consumption bytes, not an authoring expectation.',

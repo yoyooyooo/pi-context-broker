@@ -140,7 +140,7 @@ OMP（包括 Tern 中运行的 OMP）将有效上下文中的完整 Skill 正文
 
 ### 添加 Notion source
 
-插件已包含 `ntn-skills`，无需全局安装。安装支持 `api --notion-version` 的[官方 Notion CLI](https://developers.notion.com/cli) `ntn`（0.22.12+），通过 `ntn login` 或 CLI 既有 token 完成认证，再向同一份 broker config 添加 source：
+插件已包含 `ntn-skills`，无需全局安装。项目 HTTP 引擎直接使用已有 token，优先选择 `config.token`，再选择 `NOTION_API_TOKEN`。向同一份 broker config 添加 source：
 
 ```yaml
 sources:

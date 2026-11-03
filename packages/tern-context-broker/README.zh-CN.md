@@ -13,7 +13,7 @@
 - Tern 的 PATH 中有 Node.js 22.x 中的 22.22.3+，或 24.20.0+，或显式配置 `node`。
 - 工作目录已知的本地 OMP native pane。Terminal pane 使用各宿主的 Broker editor；手动搜索不支持远程 pane 和 web client。
 
-Broker 安装见[项目快速开始](https://github.com/yoyooyooo/pi-context-broker/blob/main/README.zh-CN.md#快速开始)。配套插件包含 query、CLI 和工作流 Skill；在线 Notion source 使用官方 `ntn` 0.22.12+（支持 `api --notion-version`）与既有认证。一个 source 不可用时，本地及其他正常来源仍可选择。
+Broker 安装见[项目快速开始](https://github.com/yoyooyooo/pi-context-broker/blob/main/README.zh-CN.md#快速开始)。配套插件包含 query、CLI 和工作流 Skill；在线 Notion source 使用随包 CLI 的 HTTP 引擎与项目已有 token。一个 source 不可用时，本地及其他正常来源仍可选择。
 
 ## 安装
 

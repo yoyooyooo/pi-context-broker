@@ -34,9 +34,10 @@ async function main() {
   const [command, ...flags] = args.slice(2);
   // Keep metadata discoverable while failure tests forbid all successful body
   // preparation, including the host's startup/default-View background reads.
-  const scenario = state.activationOnly === true && !['read', 'export'].includes(command) ? 'normal' : state.scenario;
+  const scenario = state.activationOnly === true && !['prepare', 'read', 'export'].includes(command) ? 'normal' : state.scenario;
   await appendFile(state.callsPath, JSON.stringify({ command, args: flags, scenario, ...(state.activationOnly === true ? { configured_scenario: state.scenario, failure_scope: 'activation' } : {}), at: new Date().toISOString() }) + '\n');
   const out = value => console.log(JSON.stringify(value));
+  if (command === 'ctl' && flags[0] === 'doctor') { out({ ok: true, transport: 'direct_http', notion_api_version: '2026-03-11', authentication: 'available' }); return; }
   const views = state.noViews ? [] : [firstViewId, secondViewId].map((id, index) => ({ id, name: index ? 'Beta work' : 'Default work', type: 'table', database_id: database, data_source_id: '44444444-4444-4444-8444-444444444444', url: `https://notion.so/${database}?v=${id}` }));
   if (command === 'views') { out({ ok: true, views, count: views.length }); return; }
   if (command === 'ctl' && flags[0] === 'cache' && flags[1] === 'identity' && state.cacheIdentity) {
@@ -52,14 +53,14 @@ async function main() {
   }
   if (scenario === 'timeout') {
     await new Promise(resolve => setTimeout(resolve, Number(process.env.NTN_SKILLS_REQUEST_TIMEOUT_MS ?? 30000)));
-    out({ ok: false, error: { code: 'NTN_UNAVAILABLE', details: { reason: 'timeout' } } }); process.exitCode = 1; return;
+    out({ ok: false, error: { code: 'NOTION_UNAVAILABLE', details: { reason: 'timeout' } } }); process.exitCode = 1; return;
   }
   if (scenario === 'malformed') { console.log('invalid-json'); return; }
   if (scenario === 'denied') { out({ ok: false, error: { code: 'ACCESS_DENIED', message: 'Controlled fixture access denied' } }); process.exitCode = 1; return; }
-  if (state.scenario === 'slow-read' && command === 'read') await new Promise(resolve => setTimeout(resolve, 32_000));
-  if (state.scenario === 'controlled-read' && command === 'read') await new Promise(resolve => setTimeout(resolve, state.delayMs ?? 4_000));
-  if (state.failRead && command === 'read') { out({ ok: false, error: { code: 'ACCESS_DENIED', message: 'Controlled prefetch failure' } }); process.exitCode = 1; return; }
-  if (state.delayMs && state.scenario !== 'controlled-read' && command === 'read') await new Promise(resolve => setTimeout(resolve, state.delayMs));
+  if (state.scenario === 'slow-read' && ['prepare', 'read'].includes(command)) await new Promise(resolve => setTimeout(resolve, 32_000));
+  if (state.scenario === 'controlled-read' && ['prepare', 'read'].includes(command)) await new Promise(resolve => setTimeout(resolve, state.delayMs ?? 4_000));
+  if (state.failRead && ['prepare', 'read'].includes(command)) { out({ ok: false, error: { code: 'ACCESS_DENIED', message: 'Controlled prefetch failure' } }); process.exitCode = 1; return; }
+  if (state.delayMs && state.scenario !== 'controlled-read' && ['prepare', 'read'].includes(command)) await new Promise(resolve => setTimeout(resolve, state.delayMs));
   const kind = state.kind ?? 'skill';
   const snapshotFor = seed => kind === 'skill' && !state.revision && state.defaultContext !== false
     ? 's_' + seed.repeat(64)
@@ -78,9 +79,71 @@ async function main() {
   let content = `---\nname: ${selectedAlias}\ndescription: ${skill.description}\n---\n${unflagged ? unflaggedCanary : missing ? missingCanary : second ? secondCanary : canary}\n${state.revision ?? ''}\nRead [the ledger resource](references/ledger.md) when applying this skill.\n`;
   let version = kind === 'skill' && !state.revision && state.defaultContext !== false ? (second ? 'fixture-version-2' : 'fixture-version-1') : 'fixture-version-' + selectedSnapshot.slice(2);
   const snapshots = args[1] + '.snapshots';
+  const hash = value => createHash('sha256').update(value).digest('hex');
+  const canonical = value => value === null || typeof value !== 'object' ? JSON.stringify(value) : Array.isArray(value) ? '[' + value.map(canonical).join(',') + ']' : '{' + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => JSON.stringify(key) + ':' + canonical(item)).join(',') + '}';
+  const pin = target => /[?&]snapshot=(s_[a-f0-9]{64})(?:&|$)/.exec(target ?? '')?.[1];
+  const reject = (code, message) => { out({ ok: false, error: { code, message } }); process.exitCode = 1; };
+  // This legacy fixture supplies a frozen wire receipt for adapter tests only.
+  // The dedicated graph runner delegates prepare/read/export to Node + SQLite.
+  if (command === 'prepare') {
+    const firstOption = flags.findIndex(flag => flag.startsWith('--'));
+    const roots = flags.slice(0, firstOption < 0 ? flags.length : firstOption);
+    const option = (name, fallback) => flags.includes(name) ? flags[flags.indexOf(name) + 1] : fallback;
+    const purpose = option('--purpose', 'use');
+    if (!roots.length || !['use', 'inspect'].includes(purpose)) { reject('INVALID_ARGUMENT', 'Explicit roots and purpose are required'); return; }
+    const session = flags.includes('--session-bindings') ? JSON.parse(await readFile(option('--session-bindings'), 'utf8')) : [];
+    if (!Array.isArray(session) || session.some(binding => binding.scope !== scope)) { reject('PREPARE_SCOPE_CONFLICT', 'Session binding scope differs'); return; }
+    const nodes = [];
+    const observedRoots = [];
+    await mkdir(snapshots, { recursive: true });
+    for (const target of roots) {
+      const page = target.split('/')[2];
+      const rootRef = `skill://${page}/${entrypoint}`;
+      const rootSecond = page === '22222222-2222-4222-8222-222222222222';
+      const rootUnflagged = page === unflaggedRef.split('/')[2];
+      const rootMissing = page === missingRef.split('/')[2];
+      if (![skillRef, unflaggedRef, missingRef, 'skill://22222222-2222-4222-8222-222222222222/SKILL.md'].some(ref => ref.split('/')[2] === page)) { reject('NOT_FOUND', 'The exact root is absent'); return; }
+      const rootAlias = rootUnflagged ? unflaggedAlias : rootMissing ? missingAlias : alias;
+      let frozen = {
+        skill: { ...skill, id: 'notion_page:' + page, locator: { ...locator, page_id: page }, name: rootUnflagged ? 'UI Beta' : rootMissing ? 'UI Gamma' : state.name ?? 'UI Alpha', alias: state.alias ?? rootAlias, ref: rootRef, default_context: !rootMissing && !rootUnflagged && state.defaultContext !== false },
+        entrypoint,
+        content: `---\nname: ${rootAlias}\ndescription: ${skill.description}\n---\n${rootUnflagged ? unflaggedCanary : rootMissing ? missingCanary : rootSecond ? secondCanary : canary}\n${state.revision ?? ''}\nRead [the ledger resource](references/ledger.md) when applying this skill.\n`,
+        version: kind === 'skill' && !state.revision && state.defaultContext !== false ? (rootSecond ? 'fixture-version-2' : 'fixture-version-1') : 'fixture-version-' + snapshotFor(rootUnflagged ? 'f' : rootMissing ? '1' : rootSecond ? 'd' : 'a').slice(2),
+      };
+      const current = snapshotFor(rootUnflagged ? 'f' : rootMissing ? '1' : rootSecond ? 'd' : 'a');
+      const binding = session.find(item => item.record?.id === frozen.skill.id);
+      if (pin(target) && binding && pin(target) !== binding.snapshot_id) { reject('PREPARE_VERSION_CONFLICT', 'Root pin differs from session binding'); return; }
+      const selected = pin(target) ?? binding?.snapshot_id ?? current;
+      if (selected !== current) {
+        try { frozen = JSON.parse(await readFile(join(snapshots, selected + '.json'), 'utf8')); }
+        catch (error) { if (error.code !== 'ENOENT') throw error; reject('SNAPSHOT_MISSING', 'Pinned fixture snapshot is absent'); return; }
+      } else await writeFile(join(snapshots, selected + '.json'), JSON.stringify(frozen));
+      if (frozen.skill.id !== 'notion_page:' + page) { reject('SNAPSHOT_CONFLICT', 'Pinned fixture snapshot belongs to another root'); return; }
+      const exactRef = `${frozen.skill.ref}?snapshot=${selected}`;
+      const bound = { record: frozen.skill, scope, snapshot_id: selected, version_id: frozen.version, body_sha256: hash(frozen.content), ref: exactRef };
+      if (binding && canonical(binding) !== canonical(bound)) { reject('PREPARE_BINDING_CONFLICT', 'Frozen fixture binding differs'); return; }
+      observedRoots.push({ target, id: frozen.skill.id, ref: exactRef, readiness: 'ready' });
+      if (!nodes.some(node => node.id === frozen.skill.id)) nodes.push({ state: 'prepared', id: frozen.skill.id, ref: exactRef, roles: ['root'], kind: frozen.skill.kind, record: frozen.skill, binding: bound, path: frozen.entrypoint, content: frozen.content, bytes: Buffer.byteLength(frozen.content), body_sha256: bound.body_sha256, files: [{ path: frozen.entrypoint, bytes: Buffer.byteLength(frozen.content), sha256: bound.body_sha256, ref: exactRef }, { path: 'references/ledger.md', bytes: Buffer.byteLength(resourceCanary + '\n'), sha256: hash(resourceCanary + '\n'), ref: `skill://${page}/references/ledger.md?snapshot=${selected}` }], required: [], candidates: [], references: [], unresolved_references: [], source: 'local_snapshot', freshness: { policy: 'pinned' } });
+    }
+    nodes.sort((a, b) => a.id.localeCompare(b.id));
+    const bindings = nodes.map(node => node.binding);
+    const budget = { maxNodes: Number(option('--max-nodes', 64)), maxDepth: Number(option('--max-depth', 16)), maxInstructionBytes: Number(option('--max-instruction-bytes', 1048576)), maxContextBytes: Number(option('--max-context-bytes', 262144)) };
+    if (nodes.length > budget.maxNodes || nodes.some(node => node.bytes > budget.maxInstructionBytes)) { reject('PREPARE_NODE_BUDGET', 'Controlled fixture preparation exceeds its budget'); return; }
+    const vector = { version: 1, kind: 'observed_version_vector', purpose, scope, roots: nodes.map(node => node.id).sort(), required: [], bindings };
+    const ready = { ok: true, version: 1, status: 'ready', purpose, scope, roots: observedRoots, nodes, required: [], required_closure: purpose === 'use' ? nodes.map(node => node.id) : [], session_bindings: bindings, graph_lock: { ...vector, sha256: hash(canonical(vector)) }, budget, usage: { prepared_nodes: nodes.length, instruction_bytes: nodes.reduce((sum, node) => sum + node.bytes, 0), context_bytes: 0, max_depth: 0 } };
+    for (let previous = -1; previous !== ready.usage.context_bytes;) { previous = ready.usage.context_bytes; ready.usage.context_bytes = Buffer.byteLength(JSON.stringify(ready)); }
+    if (ready.usage.context_bytes > budget.maxContextBytes) { reject('PREPARE_CONTEXT_BUDGET', 'Controlled fixture context exceeds its budget'); return; }
+    out(ready); return;
+  }
   if (command === 'read') {
     await mkdir(snapshots, { recursive: true });
-    await writeFile(join(snapshots, selectedSnapshot + '.json'), JSON.stringify({ skill, entrypoint, content, version }));
+    const requested = pin(flags[0]);
+    if (requested && requested !== selectedSnapshot) {
+      try { ({ skill, entrypoint, content, version } = JSON.parse(await readFile(join(snapshots, requested + '.json'), 'utf8'))); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; reject('SNAPSHOT_MISSING', 'Pinned fixture snapshot is absent'); return; }
+      if (skill.ref.split('/')[2] !== flags[0].split('/')[2]) { reject('SNAPSHOT_CONFLICT', 'Pinned fixture snapshot belongs to another root'); return; }
+      selectedSnapshot = requested;
+    } else await writeFile(join(snapshots, selectedSnapshot + '.json'), JSON.stringify({ skill, entrypoint, content, version }));
   } else if (command === 'export') {
     selectedSnapshot = flags[0];
     ({ skill, entrypoint, content, version } = JSON.parse(await readFile(join(snapshots, selectedSnapshot + '.json'), 'utf8')));
@@ -102,7 +165,22 @@ async function main() {
     out({ ok: true, scope, source: 'notion', fetched_at: Date.now(), databases: [{ database_id: skill.locator.database_id, title: 'Fixture', alias: 'fixture', data_source_ids: [skill.locator.data_source_id] }], records, count: records.length, coverage: { method: selectedView ? 'explicit_view' : 'explicit_database', exhaustive: true, queried_data_sources: [skill.locator.data_source_id], failed_sources: [], search_index_limited: false }, freshness, ...(selectedView ? { view: view ?? null, view_selection: view ? requestedView ? 'explicit' : 'first' : 'none', view_query: null } : {}) });
     if (state.cacheIdentity) await appendFile(state.callsPath, JSON.stringify({ command: 'catalog-ready', at: new Date().toISOString() }) + '\n');
   } else if (command === 'read') {
-    out({ ok: true, scope, record: skill, entrypoint, snapshot_id: selectedSnapshot, version_id: version, path: entrypoint, ref: `${skill.ref}?snapshot=${selectedSnapshot}`, source: 'notion', content, range: { start: 1, end: content.split('\n').length, total_lines: content.split('\n').length }, has_more: false, freshness });
+    const path = decodeURIComponent(new URL(flags[0]).pathname.slice(1));
+    if (![entrypoint, 'references/ledger.md'].includes(path)) { reject('FILE_NOT_FOUND', 'The exact fixture file is absent'); return; }
+    const bytes = Buffer.from(path === entrypoint ? content : resourceCanary + '\n');
+    const ref = `skill://${skill.ref.split('/')[2]}/${path}?snapshot=${selectedSnapshot}`;
+    const observedFreshness = pin(flags[0]) ? { policy: 'pinned', stale: false } : freshness;
+    if (flags.includes('--output')) {
+      const output = resolve(flags[flags.indexOf('--output') + 1]);
+      await mkdir(dirname(output), { recursive: true });
+      await writeFile(output, bytes, { flag: 'wx' });
+      out({ ok: true, scope, record: skill, entrypoint, snapshot_id: selectedSnapshot, version_id: version,
+        path, ref, source: 'local_snapshot', output, reused: false, bytes: bytes.length, freshness: observedFreshness });
+    } else {
+      const text = bytes.toString('utf8');
+      out({ ok: true, scope, record: skill, entrypoint, snapshot_id: selectedSnapshot, version_id: version,
+        path, ref, source: 'notion', content: text, range: { start: 1, end: text.split('\n').length, total_lines: text.split('\n').length }, has_more: false, freshness: observedFreshness });
+    }
   } else if (command === 'export') {
     const position = flags.indexOf('--output');
     if (flags[flags.indexOf('--projection') + 1] !== 'snapshot') throw new Error('Broker fixture export requires explicit snapshot projection');

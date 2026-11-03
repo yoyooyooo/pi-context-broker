@@ -8,7 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { systemTempRoot, verificationCliEnvironment } from './verification-paths.mjs';
 
 export const CONTRACT_VERSION = 1;
-export const TASK = '请为这个项目建立一套可重复执行的验收流程，覆盖用户入口、正常路径、失败反例、证据保存与清理边界。先读取已选择能力提供的目录和所需参考，再说明怎样证明功能真的完成；只输出方案，不执行项目或远端写入。';
+export const PROMPT_VERSION = 2;
+export const TASK_V1 = '请为这个项目建立一套可重复执行的验收流程，覆盖用户入口、正常路径、失败反例、证据保存与清理边界。先读取已选择能力提供的目录和所需参考，再说明怎样证明功能真的完成；只输出方案，不执行项目或远端写入。';
+export const TASK = '请为这个项目建立一套可重复执行的验收流程，覆盖用户入口、正常路径、失败反例、证据保存与清理边界。先读取已选择能力提供的目录和所需参考，再说明怎样证明功能真的完成。方案包含可直接保存的完整验收规程文件内容，用文件路径标注代码块；只输出方案，不执行项目或远端写入。';
 export const EVIDENCE_COLUMNS = ['controlled', 'real_service', 'real_model', 'real_ui', 'installed_package'];
 const brokerRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sha = value => createHash('sha256').update(value).digest('hex');
@@ -20,13 +22,14 @@ const nonempty = value => typeof value === 'string' && value.trim().length > 0;
 const fail = (code, message) => { const error = new Error(message); error.code = code; throw error; };
 const check = (condition, code, message) => { if (!condition) fail(code, message); };
 
-export function frozenPrompt(gate, selection) {
+export function frozenPrompt(gate, selection, version = PROMPT_VERSION) {
+  check(version === 1 || version === PROMPT_VERSION, 'PROMPT_VERSION', 'Unknown frozen prompt version');
   check(gate === 'A' || gate === 'B', 'GATE', 'Gate must be A or B');
   check(/^\$[A-Za-z0-9][A-Za-z0-9_@.:-]*$/.test(selection ?? ''), 'ROOT_SELECTION', 'Pass exactly one native root selection');
   check(gate !== 'A' || !/poteto/i.test(selection), 'ROOT_SELECTION', 'Gate A cannot select the ordinary Skill');
   check(gate !== 'B' || !/pstack/i.test(selection), 'ROOT_SELECTION', 'Gate B cannot select the Router');
-  const text = selection + ' ' + TASK;
-  return { version: CONTRACT_VERSION, gate, selection, text, sha256: sha(text) };
+  const text = selection + ' ' + (version === 1 ? TASK_V1 : TASK);
+  return { version, gate, selection, text, sha256: sha(text) };
 }
 
 // This validates an observer contract. A valid document is never by itself a
@@ -37,7 +40,8 @@ export function evaluateGraphTrace(trace, oracle) {
   check(trace.host === 'pi' && trace.nativeEntry === true, 'NATIVE_ENTRY', 'A real Pi native entry receipt is required');
   const root = oracle.roots?.[trace.gate];
   check(root && root.kind === (trace.gate === 'A' ? 'router' : 'skill'), 'ROOT_KIND', 'The selected root kind must match the gate');
-  const prompt = frozenPrompt(trace.gate, root.selection);
+  check(trace.prompt?.version === 1 || trace.prompt?.version === PROMPT_VERSION, 'PROMPT_VERSION', 'The trace must name its independently frozen prompt version');
+  const prompt = frozenPrompt(trace.gate, root.selection, trace.prompt?.version);
   check(trace.prompt?.text === prompt.text && trace.prompt?.sha256 === prompt.sha256, 'PROMPT_CHANGED', 'The root-only task must remain frozen');
   check(trace.selectedRoots?.length === 1 && trace.selectedRoots[0] === root.ref, 'ROOT_SELECTION', 'Only the intended root may be selected');
   const target = oracle.target;
@@ -70,7 +74,18 @@ export function evaluateGraphTrace(trace, oracle) {
   check(trace.candidates.some(row => row.ref === target.ref && row.logicalId === target.logicalId && row.scope === target.scope && row.available === true), 'CANDIDATE_IDENTITY', 'The target must be discovered with an exact readable identity');
   check(trace.memberBodyReadsBeforeSelection === 0, 'EAGER_MEMBERS', 'Unselected member bodies must remain unread');
   check(Array.isArray(trace.reads) && trace.reads.length > 0, 'READ_MISSING', 'Retain native tool calls and full read receipts');
-  const expected = [{ ref: target.ref, logicalId: target.logicalId, scope: target.scope, snapshot: target.snapshot, sha256: target.bodySha256, bytes: target.bodyBytes }, ...(oracle.resources ?? [])];
+  const alternatives = oracle.resourceAlternatives ?? [];
+  check(Array.isArray(alternatives) && alternatives.every(group => Array.isArray(group) && group.length > 0), 'ORACLE_INCOMPLETE', 'Each optional resource choice group must contain exact candidate identities');
+  const selectedAlternatives = alternatives.map((group, index) => {
+    check(new Set(group.map(item => item.logicalId)).size === group.length, 'ORACLE_INCOMPLETE', 'A resource choice group must use distinct stable identities');
+    const selected = group.filter(item => trace.reads.some(row => row.ref === item.ref || row.logicalId === item.logicalId));
+    check(selected.length > 0, 'READ_MISSING', 'The model must actually read at least one full resource from every choice group');
+    return { group: index, resources: selected };
+  });
+  const required = [{ ref: target.ref, logicalId: target.logicalId, scope: target.scope, snapshot: target.snapshot, sha256: target.bodySha256, bytes: target.bodyBytes }, ...(oracle.resources ?? [])];
+  const allCandidates = [...required, ...alternatives.flat()];
+  for (const item of allCandidates) check(nonempty(item.ref) && nonempty(item.logicalId) && nonempty(item.scope) && nonempty(item.snapshot) && nonempty(item.sha256) && Number.isInteger(item.bytes) && item.bytes > 0, 'ORACLE_INCOMPLETE', 'Every fixed or alternative resource needs an exact identity and bytes/hash');
+  const expected = [...new Map([...required, ...selectedAlternatives.flatMap(group => group.resources)].map(item => [item.ref, item])).values()];
   check(expected.length > 1, 'ORACLE_INCOMPLETE', 'The oracle must include a feature-map resource');
   for (const item of expected) {
     check(nonempty(item.ref) && nonempty(item.sha256) && Number.isInteger(item.bytes) && item.bytes > 0, 'ORACLE_INCOMPLETE', 'Every expected node needs exact bytes/hash');
@@ -84,7 +99,7 @@ export function evaluateGraphTrace(trace, oracle) {
   check(!trace.reads.some(row => row.error), 'HIDDEN_FAILURE', 'Selected read failures cannot disappear from the trace');
   check(Array.isArray(trace.providerRequests) && trace.providerRequests.length >= 2, 'PROVIDER_MISSING', 'Retain provider inputs before and after model reads');
   const first = trace.providerRequests[0];
-  check(!first.contents?.some(row => expected.some(item => item.ref === row.ref || sha(row.content ?? '') === item.sha256)), 'FORCED_LEAF', 'The target/resource cannot be preloaded into the first model request');
+  check(!first.contents?.some(row => allCandidates.some(item => item.ref === row.ref || sha(row.content ?? '') === item.sha256)), 'FORCED_LEAF', 'The target/resource, including an unchosen alternative, cannot be preloaded into the first model request');
   for (const item of expected) {
     check(trace.providerRequests.some(request => request.contents?.some(row => row.ref === item.ref && sha(row.content ?? '') === item.sha256 && Buffer.byteLength(row.content ?? '') === item.bytes)), 'PROVIDER_CONTENT', 'Actual provider input must contain the verified read bytes');
     check(trace.providerRequests.every(request => (request.contents ?? []).filter(row => row.ref === item.ref).length <= 1), 'DUPLICATE_BODY', 'Do not inject the same body twice in one provider request');
@@ -102,7 +117,7 @@ export function evaluateGraphTrace(trace, oracle) {
   check(!/(?:insufficient (?:permission|quota)|not authorized|api key.*(?:invalid|denied)|please upgrade|无权限使用|额度不足|账户.*(?:无权|欠费))/i.test(final.text), 'MODEL_PERMISSION', 'HTTP 200 permission or quota messages do not prove model consumption');
   check(trace.processes?.length > 0 && trace.processes.every(row => row.owned === true && row.closed === true && row.spawnObserved === true && row.closeObserved === true), 'PROCESS_EVIDENCE', 'Owned host processes need observed spawn and close receipts');
   check(trace.unknownWrites?.length === 0 && trace.replayedUnknownWrites === false, 'UNKNOWN_WRITE', 'Preserve unknown write receipts and never replay them');
-  return { status: 'contract-valid', version: CONTRACT_VERSION, gate: trace.gate, evidenceKind: trace.evidenceKind, observedNodes: expected.length, productAcceptance: 'not-inferred', proofBoundary: 'Validate this trace against the originating native runner artifacts before claiming a live gate pass.' };
+  return { status: 'contract-valid', version: CONTRACT_VERSION, gate: trace.gate, evidenceKind: trace.evidenceKind, observedNodes: expected.length, selectedResourceAlternatives: selectedAlternatives.map(group => ({ group: group.group, resources: group.resources.map(item => ({ ref: item.ref, logicalId: item.logicalId, scope: item.scope, snapshot: item.snapshot, sha256: item.sha256, bytes: item.bytes })) })), productAcceptance: 'not-inferred', proofBoundary: 'Validate this trace against the originating native runner artifacts before claiming a live gate pass.' };
 }
 
 export function contractFixture(gate = 'A') {

@@ -21,6 +21,9 @@ export function preparationCancelled(): Error {
 export function checkPreparationSignal(signal?: AbortSignal): void {
   if (signal?.aborted) throw preparationCancelled();
 }
+export function isPreparationCancelled(error: unknown): boolean {
+  return error !== null && typeof error === "object" && "code" in error && error.code === "SOURCE_ACTIVATION_CANCELLED";
+}
 
 export function createPreparationGate() {
   let active: ActivePreparation | undefined;
@@ -35,13 +38,13 @@ export function createPreparationGate() {
     if (editor) editor.disableSubmit = priorDisabled;
     repaint();
   };
-  const cancel = () => {
+  const cancel = (abortHost = true) => {
     generation++;
     const entry = active;
     if (!entry) return;
     entry.controller.abort();
     if (entry.phase === "dispatching") {
-      entry.ctx.abort?.();
+      if (abortHost) entry.ctx.abort?.();
       // A void send may not have entered host setup yet. Its consumer must reject it
       // before a new submission can replace this sole receipt.
       repaint();

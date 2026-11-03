@@ -140,7 +140,7 @@ OMP, including Tern-hosted OMP, treats a complete Skill body in the active conte
 
 ### Add a Notion source
 
-The plugin includes `ntn-skills`; no global `ntn-skills` installation is needed. Install the [official Notion CLI](https://developers.notion.com/cli) `ntn` with `api --notion-version` support (0.22.12+), authenticate with `ntn login` or the existing CLI token, then add a source to the same broker config:
+The plugin includes `ntn-skills`; no global `ntn-skills` installation is needed. Its direct HTTP engine uses the existing project token (`config.token`, then `NOTION_API_TOKEN`). Add a source to the same broker config:
 
 ```yaml
 sources:
@@ -224,4 +224,4 @@ Report bugs through [GitHub Issues](https://github.com/yoyooyooo/pi-context-brok
 
 `views` lists API-ordered choices with exact selection commands. `view` without arguments reports name, ID, source, selection origin and count. Multiple sources require the source ID. Selecting a View changes only the active session; `default` resets to configured selection or first-View fallback. These commands do not call the LLM. The next ordinary user submission receives the new names/descriptions; full Skill bodies remain on demand. A source may set `default_view_id: VIEW_UUID` beside `database` in YAML. Names are never special and API order is not promised to match UI tab order.
 
-For a large Notion library, `prefetch: false` keeps startup and View discovery metadata-only. Explicit selections still load the complete pinned Skill and resources; it does not disable the source. [Source options](packages/context-broker/docs/reference.md#built-in-sources).
+Notion prefetch defaults to a zero budget, so startup and View discovery read metadata only. Explicit Skill selection prepares the complete pinned main instructions and, for use, the Required closure. Resources stay in a verified complete manifest and are fetched individually when read. `prefetch: false` keeps this behavior explicit; optional warming requires a node, byte, time and rate budget. [Source options](packages/context-broker/docs/reference.md#built-in-sources).

@@ -65,6 +65,25 @@ def providers():
         return []
     return [json.loads(line) for line in path.read_text().splitlines() if line]
 
+def ledger_rows(path):
+    try:
+        text = Path(path).read_text()
+    except FileNotFoundError:
+        return []
+    return [json.loads(line) for line in text.splitlines(keepends=True)
+            if line.endswith('\n') and line.strip()]
+
+def observed_rows(expected):
+    return [row for row in ledger_rows(expected['path'])
+            if all(row.get(key) == value for key, value in expected.get('where', {}).items())]
+
+def exited(pid):
+    try:
+        os.kill(pid, 0)
+        return False
+    except ProcessLookupError:
+        return True
+
 try:
     child = subprocess.Popen(spec['command'], cwd=spec['cwd'], env=spec['env'],
                              stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
@@ -76,6 +95,14 @@ try:
         action = {'index': index, 'label': step['label'], 'at': time.time(), 'rawStart': start}
         actions.append(action)
         save('actions.json', actions)
+        if 'fixtureState' in step:
+            path = Path(step['fixtureState']['path']).resolve()
+            if not path.is_relative_to(Path(spec['cwd']).resolve()):
+                raise RuntimeError('Fixture control escaped the owned scratch directory')
+            value = json.loads(path.read_text())
+            value.update(step['fixtureState']['changes'])
+            path.write_text(json.dumps(value) + '\n')
+            action['fixtureState'] = step['fixtureState']['changes']
         if 'source' in step:
             def source_ready():
                 action['source'] = source_readiness(step['source'])
@@ -86,6 +113,23 @@ try:
             action['sent'] = step['send']
         if 'screen' in step:
             wait_for(step['label'], lambda: ('source' not in step or source_ready()) and len(raw) > start and matches(screen, step['screen']))
+        if 'screenContains' in step:
+            wait_for(step['label'], lambda: all(text in '\n'.join(screen.snapshot()['lines']) for text in step['screenContains']))
+        if 'ledger' in step:
+            action['ledgers'] = []
+            for expected in step['ledger']:
+                wait_for(step['label'], lambda: len(observed_rows(expected)) >= expected.get('minimum', 1))
+                observed = observed_rows(expected)
+                if expected.get('nonzeroExit') and any(row.get('code') == 0 and row.get('signal') is None for row in observed):
+                    raise RuntimeError('Cancelled preparation was reported as successful')
+                if expected.get('exited'):
+                    fields = expected['exited']
+                    wait_for(step['label'], lambda: all(exited(row[field]) for row in observed for field in fields))
+                action['ledgers'].append({'path': expected['path'], 'rows': observed})
+        if 'providerCount' in step:
+            action['providerRequests'] = len(providers())
+            if action['providerRequests'] != step['providerCount']:
+                raise RuntimeError('Unexpected provider request before the selected action completed')
         if 'requests' in step:
             wait_for(step['label'], lambda: len(providers()) >= step['requests'])
             rows = providers()

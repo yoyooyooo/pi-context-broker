@@ -48,7 +48,7 @@ if (args[0] === 'read' && fault === 'delayed-miss') {
  socket.on('error', error => { throw error; });
  await Promise.withResolvers().promise;
 }
-if ((args[0] === 'read' && fault && fault !== 'incomplete' && fault !== 'export-miss' && fault !== 'removed') || (args[0] === 'export' && fault === 'export-miss')) {
+if ((args[0] === 'read' && fault && fault !== 'incomplete' && fault !== 'entry-incomplete' && fault !== 'export-miss' && fault !== 'removed') || (args[0] === 'export' && fault === 'export-miss')) {
  const code = fault === 'denied' ? 'ACCESS_DENIED' : 'NOT_FOUND';
  const path = fault === 'child-miss' ? 'v1/blocks/77777777-7777-4777-8777-777777777777/children' : fault === 'other-page' ? 'v1/pages/99999999-9999-4999-8999-999999999999' : 'v1/pages/' + (page ?? '11111111-1111-4111-8111-111111111111');
  const details = fault === 'generic-notfound' ? {} : { notion_code: 'object_not_found', path };
@@ -59,6 +59,7 @@ const result = spawnSync(command[0], [...command.slice(1), ...args], { encoding:
 if (result.status !== 0) { process.stdout.write(result.stdout ?? ''); process.exit(result.status ?? 1); }
 const receipt = JSON.parse(result.stdout);
 if (args[0] === 'list' && fault === 'removed') { receipt.records = []; receipt.count = 0; }
+if (args[0] === 'read' && fault === 'entry-incomplete') { receipt.has_more = true; receipt.range.end = Math.max(1, receipt.range.total_lines - 1); }
 if (args[0] === 'export' && fault === 'incomplete') unlinkSync(join(receipt.output, 'references/ledger.md'));
 console.log(JSON.stringify(receipt));
 `);
@@ -234,7 +235,7 @@ console.log(JSON.stringify(receipt));
       assert.deepEqual(drafts, []);
       assert.deepEqual(notices, [], "Soft misses do not emit failure notices");
       assert.deepEqual(runnerErrors, []);
-      for (const [fault, code] of [["denied", "ACCESS_DENIED"], ["incomplete", "SOURCE_EXPORT_INCOMPLETE"]]) {
+      for (const [fault, code] of [["denied", "ACCESS_DENIED"], ["entry-incomplete", "SOURCE_PREPARATION_INVALID"]]) {
         await setFault({ skill: fault! });
         await commands.get("context-broker")!.handler("refresh", ctx);
         notices.length = 0;

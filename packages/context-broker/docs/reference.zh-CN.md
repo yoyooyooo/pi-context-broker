@@ -190,9 +190,9 @@ Source CLI 命令不设总时限。每次网络尝试独立计时；分页、重
 
 发现时，broker 在 command 前缀后追加 `list [--database <selector>]`；选中激活时追加 `read skill://<page-id>/<entrypoint> [--database <selector>]`；固定资源时调用 `export <snapshot-id> --projection snapshot --format directory --output <broker-stage-directory>`。Discovery 与 activation 分别追加自己的 `--max-age <duration>` 或 `--offline`；显式元数据刷新使用 `list --refresh`。Export 使用 read 返回的不可变 snapshot id，不再次读取未固定的最新正文。
 
-认证沿用 `ntn-skills`，例如通过可信秘密输入管道执行 `ntn-skills ctl config set-token --stdin`，或使用 `ntn login`。CLI 优先级为已有 saved token、非空 `NOTION_API_TOKEN`、`ntn` login。Broker 和 Tern 配置没有 token 字段。自定义 `command` 必须遵守相同 CLI JSON 合同。
+认证沿用 `ntn-skills` 项目已有 token；需要显式配置时，通过可信秘密输入管道执行 `ntn-skills ctl config set-token --stdin`。CLI 优先选择 saved token，再选择非空 `NOTION_API_TOKEN`；缺少凭据返回 `AUTH_REQUIRED`。Broker 和 Tern 配置没有 token 字段。自定义 `command` 必须遵守相同 CLI JSON 合同。
 
-构建把独立 `ntn-skills` CLI、三份工作流 Skill、运行依赖与许可声明随两个产品分发，具体版本由[构建输入](../CONTRIBUTING.md#bundling-cli-and-skills)决定。在线 Notion source 另外需要官方 `ntn` 0.22.12+，支持 `api --notion-version`；`NTN_SKILLS_NTN_BIN` 可指定 executable。元数据校验使用既有认证，`/context-broker doctor` 检查所选 source 并可能填充缓存。Offline Notion 发现要求已有完整缓存，随包 Skill 则无需 Notion 访问或这些缓存。自定义 source `command` 保持 list/read/export JSON 合同，并自行负责其依赖检查。
+构建把独立 `ntn-skills` CLI、三份工作流 Skill、运行依赖与许可声明随两个产品分发，具体版本由[构建输入](../CONTRIBUTING.md#bundling-cli-and-skills)决定。在线 Notion source 使用项目自己的 HTTP 引擎。`/context-broker doctor` 调用所选 command 的 `ctl doctor --database ID`，要求 `transport: direct_http`、`notion_api_version: 2026-03-11` 及有效认证，可能填充缓存。无 database 的 CLI doctor 只检查认证。Offline Notion 发现要求已有完整缓存，随包 Skill 则无需 Notion 访问或这些缓存。自定义 source `command` 保持 doctor 与 list/read/export JSON 合同。
 
 来源失败保留脱敏的 source/code/message。认证、网络和响应格式失败仍使该来源不可用；合法的部分目录则保留精确记录，附带非阻断的 `CATALOG_INCOMPLETE` 提示，并使用页面限定 token，不能据此证明无结果或名字唯一。默认 View 失败时，默认目录为空且显示修复方法，完整目录中的精确显式选择仍可用。实际正文交付仍检查选中记录的权限和快照完整性。本地 Skill 和普通聊天继续工作，不把失效的显式 View 偷换为其他 View 或全库。
 

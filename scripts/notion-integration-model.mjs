@@ -25,6 +25,12 @@ export function observe(api, settings) {
     const target = normalize(needle);
     return target ? sourceStrings(value).reduce((sum, text) => sum + normalize(text).split(target).length - 1, 0) : 0;
   };
+  const completeCopies = (value, body) => {
+    if (!body) return 0;
+    const escaped = body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+    const choices = [...new Set([body, escaped, JSON.stringify(body).slice(1, -1)])].sort((a, b) => b.length - a.length).map(text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    return sourceStrings(value).reduce((sum, text) => sum + [...text.matchAll(new RegExp(choices.join('|'), 'g'))].length, 0);
+  };
   const within = (parent, child) => { const path = relative(parent, child); return path !== '..' && !path.startsWith('..' + sep) && !isAbsolute(path); };
   const secretValues = Object.entries(process.env).filter(([key, value]) => /KEY|TOKEN|SECRET|PASSWORD|COOKIE|CREDENTIAL/i.test(key) && typeof value === 'string' && value.length >= 4).map(([, value]) => value);
   const sanitize = text => {
@@ -61,6 +67,43 @@ export function observe(api, settings) {
   const sourceCache = cache;
   const exportedFiles = () => {
     const exports = [];
+    const validateEntry = directory => {
+      try {
+        if (realpathSync(directory) !== directory || !within(cache, directory)) return;
+        const receiptPath = join(directory, '.broker-entry.json');
+        if (realpathSync(receiptPath) !== receiptPath) return;
+        const raw = JSON.parse(readFileSync(receiptPath, 'utf8'));
+        if (!keys(raw, 'version projection manifest_complete scope id snapshot_id version_id entrypoint ref files' + (raw.file_bindings !== undefined ? ' file_bindings' : '')) || raw.version !== 1 || raw.projection !== 'entry' || raw.manifest_complete !== true || raw.id !== selected.id || raw.entrypoint !== selected.entry || !digest.test(raw.scope) || !snapshotId.test(raw.snapshot_id) || typeof raw.version_id !== 'string' || !raw.version_id || !Array.isArray(raw.files)) return;
+        const expected = join(sourceCache, 'scopes', raw.scope, 'records', hash(raw.id), 'entries', raw.snapshot_id);
+        const tree = join(directory, 'tree');
+        if (directory !== expected || realpathSync(tree) !== tree) return;
+        const bindings = raw.file_bindings ?? [], paths = new Set(), ids = new Set(), pages = new Set();
+        if (!Array.isArray(bindings)) return;
+        for (const file of bindings) {
+          if (!keys(file, 'file_id page_id path') || !portable(file.path) || !sharedId.test(file.file_id) || !uuid.test(file.page_id) || paths.has(file.path) || ids.has(file.file_id) || pages.has(file.page_id)) return;
+          paths.add(file.path); ids.add(file.file_id); pages.add(file.page_id);
+        }
+        const files = new Map(), declaredFiles = new Map();
+        for (const item of raw.files) {
+          if (!keys(item, 'path bytes sha256 ref') || !portable(item.path) || declaredFiles.has(item.path) || !Number.isSafeInteger(item.bytes) || item.bytes < 0 || !digest.test(item.sha256)) return;
+          const binding = bindings.find(file => file.path === item.path);
+          const ref = `skill://${encodeURIComponent(raw.id)}/${item.path.split('/').map(encodeURIComponent).join('/')}?snapshot=${raw.snapshot_id}${binding ? '&file_id=' + encodeURIComponent(binding.file_id) : ''}`;
+          if (item.ref !== ref) return;
+          const path = join(tree, item.path);
+          declaredFiles.set(item.path, { ...item, path, fileId: binding?.file_id });
+          try {
+            if (realpathSync(path) !== path || !statSync(path).isFile()) return;
+            const bytes = readFileSync(path);
+            if (bytes.length !== item.bytes || hash(bytes) !== item.sha256) return;
+            files.set(item.path, { ...item, path, fileId: binding?.file_id, bytes });
+          } catch (error) { if (error.code !== 'ENOENT' || item.path === raw.entrypoint) return; }
+        }
+        if (!files.has(raw.entrypoint) || [...paths].some(path => !declaredFiles.has(path)) || raw.ref !== declaredFiles.get(raw.entrypoint)?.ref) return;
+        const inventory = dir => readdirSync(dir, { withFileTypes: true }).every(entry => { const path = join(dir, entry.name); return entry.isDirectory() ? inventory(path) : entry.isFile() && declaredFiles.has(relative(tree, path).split(sep).join('/')); });
+        if (!inventory(tree)) return;
+        exports.push({ directory: tree, receipt: { projection: 'entry', manifest_complete: true, scope: raw.scope, snapshot: raw.snapshot_id, notionVersion: raw.version_id, entry: raw.entrypoint, record: { id: raw.id } }, files, declaredFiles, partial: true, receiptSha256: hash(readFileSync(receiptPath)) });
+      } catch { /* An unverified entry manifest does not authorize any read. */ }
+    };
     const validate = directory => {
       try {
         directory = realpathSync(directory);
@@ -110,16 +153,17 @@ export function observe(api, settings) {
         const path = join(directory, entry.name);
         if (entry.isDirectory()) walk(path);
         else if (entry.isFile() && entry.name === '.broker-snapshot.json') validate(directory);
+        else if (entry.isFile() && entry.name === '.broker-entry.json') validateEntry(directory);
       }
     };
     walk(cache);
     return exports;
   };
   const targetFor = (exported, entry) => {
-    const file = exported.files.get(entry);
+    const file = exported.files.get(entry) ?? exported.declaredFiles?.get(entry);
     if (!file) return undefined;
     const role = entry === exported.receipt.entry ? 'entrypoint' : entry === '.ntn-skills.json' ? 'manifest' : entry === 'ntn-skills-source.zip' ? 'source_bundle' : 'resource';
-    return { kind: role === 'entrypoint' ? 'skill' : role === 'manifest' ? 'metadata' : role === 'source_bundle' ? 'source-bundle' : 'resource', role, path: file.path, snapshot: exported.receipt.snapshot, scope: exported.receipt.scope, recordId: exported.receipt.record.id, entry, fileBody: file.bytes.toString('utf8') };
+    return { kind: role === 'entrypoint' ? 'skill' : role === 'manifest' ? 'metadata' : role === 'source_bundle' ? 'source-bundle' : 'resource', role, path: file.path, snapshot: exported.receipt.snapshot, scope: exported.receipt.scope, recordId: exported.receipt.record.id, entry, fileBody: Buffer.isBuffer(file.bytes) ? file.bytes.toString('utf8') : undefined, fileId: file.fileId, materialization: exported.receipt.projection, manifestComplete: exported.partial ? exported.receipt.manifest_complete === true : true };
   };
   const receiptFor = input => {
     if (typeof input !== 'string') return undefined;
@@ -144,12 +188,17 @@ export function observe(api, settings) {
       const entry = reference[0] || selected.entry;
       if (!portable(entry) || /[:?#]/.test(entry) || entry === '.broker-snapshot.json') return undefined;
       const query = new URLSearchParams(reference[1]);
-      if ([...query.keys()].some(key => key !== 'snapshot') || query.getAll('snapshot').length > 1) return undefined;
+      if ([...query.keys()].some(key => !['snapshot', 'file_id'].includes(key)) || query.getAll('snapshot').length > 1 || query.getAll('file_id').length > 1) return undefined;
       const snapshot = query.get('snapshot');
+      const fileId = query.get('file_id');
+      if (fileId !== null && !sharedId.test(fileId)) return undefined;
       if (snapshot !== null && (!snapshotId.test(snapshot) || (activeSnapshot && snapshot !== activeSnapshot))) return undefined;
       const candidates = exportedFiles().filter(item => (!snapshot || item.receipt.snapshot === snapshot) && (!activeSnapshot || item.receipt.snapshot === activeSnapshot) && (!activeScope || item.receipt.scope === activeScope));
-      if (candidates.length === 1) return targetFor(candidates[0], entry);
-      return !snapshot && entry === selected.entry && candidates.length === 0 ? { kind: 'skill-uri', path } : undefined;
+      if (candidates.length === 1) {
+        const actualEntry = fileId ? [...(candidates[0].declaredFiles?.entries() ?? [])].find(([, file]) => file.fileId === fileId)?.[0] : entry;
+        return actualEntry ? targetFor(candidates[0], actualEntry) : undefined;
+      }
+      return !snapshot && !fileId && entry === selected.entry && candidates.length === 0 ? { kind: 'skill-uri', path } : undefined;
     }
     if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return undefined;
     const absolute = resolve(settings.cwd, path);
@@ -170,6 +219,10 @@ export function observe(api, settings) {
         if (candidates.length !== 1) return undefined;
         const targets = new Map(entries.map(entry => targetFor(candidates[0], entry)).filter(Boolean).map(target => [target.path, target]));
         return targets.size === 1 ? targets.values().next().value : undefined;
+      }
+      for (const exported of exportedFiles()) if (exported.partial && exported.receipt.scope === activeScope && exported.receipt.snapshot === activeSnapshot && within(exported.directory, absolute)) {
+        const target = targetFor(exported, relative(exported.directory, absolute).split(sep).join('/'));
+        if (target) return target;
       }
     }
     let file;
@@ -196,7 +249,9 @@ export function observe(api, settings) {
       if (!wireAllowed(body.model)) throw new Error('Notion model route rejected unauthorized transport model');
       record({ phase: 'transport', model, wireModel: body.model, skillBodies: occurrences(body, marker) });
     }
-    return originalFetch.call(this, input, init);
+    const response = await originalFetch.call(this, input, init);
+    if (body && typeof body.model === 'string') record({ phase: 'response', status: response.status, source: 'actual provider fetch' });
+    return response;
   };
   api.on('session_start', async (_event, ctx) => {
     assertModel(ctx);
@@ -220,7 +275,18 @@ export function observe(api, settings) {
     assertModel(ctx);
     const wireModel = event.payload?.model;
     if (wireModel !== undefined && !wireAllowed(wireModel)) throw new Error('Notion model route rejected unauthorized provider model');
-    record({ phase: 'request', model, wireModel: wireModel ?? null, aliases: occurrences(event.payload, alias), skillBodies: occurrences(event.payload, marker), resourceBodies: resourceBodies().reduce((sum, body) => sum + occurrences(event.payload, body), 0) });
+    const completeContents = [];
+    for (const exported of exportedFiles()) for (const [entry, file] of exported.files) {
+      if (entry === '.ntn-skills.json' || entry === 'ntn-skills-source.zip' || file.bytes.includes(0)) continue;
+      const copies = completeCopies(event.payload, file.bytes.toString('utf8'));
+      if (!copies) continue;
+      const target = targetFor(exported, entry);
+      const proof = { role: target.role, recordId: target.recordId, scope: target.scope, snapshot: target.snapshot, path: entry, sha256: hash(file.bytes), bytes: file.bytes.length, copies, materialization: target.materialization, manifestComplete: target.manifestComplete };
+      if (!completeContents.some(item => item.scope === proof.scope && item.recordId === proof.recordId && item.snapshot === proof.snapshot && item.path === proof.path)) completeContents.push(proof);
+    }
+    const mains = completeContents.filter(item => item.role === 'entrypoint');
+    if (mains.length === 1 && mains[0].copies === 1) { activeSnapshot = mains[0].snapshot; activeScope = mains[0].scope; }
+    record({ phase: 'request', model, wireModel: wireModel ?? null, aliases: occurrences(event.payload, alias), skillBodies: occurrences(event.payload, marker), resourceBodies: resourceBodies().reduce((sum, body) => sum + occurrences(event.payload, body), 0), completeContents });
   });
   api.on('after_provider_response', event => record({ phase: 'response', status: typeof event.status === 'number' ? event.status : null }));
   api.on('message_end', event => {
@@ -253,14 +319,14 @@ export function observe(api, settings) {
       const candidates = exportedFiles().filter(item => (validated.scope === undefined || item.receipt.scope === validated.scope) && (!activeScope || item.receipt.scope === activeScope) && (!activeSnapshot || item.receipt.snapshot === activeSnapshot));
       if (candidates.length === 1) target = { ...targetFor(candidates[0], selected.entry), requestedRole: 'index' };
     }
-    const bodyMatchesFile = Boolean(target.fileBody?.trim()) && occurrences(body, target.fileBody) > 0;
+    const bodyMatchesFile = Boolean(target.fileBody?.trim()) && body === target.fileBody;
     const resourceSuccess = target.kind === 'resource' && !event.isError && bodyMatchesFile;
     if (!event.isError && target.kind === 'skill' && bodyMatchesFile) {
       activeSnapshot = target.snapshot;
       activeScope = target.scope;
     }
     if (resourceSuccess) resources.set(target.path, target.fileBody);
-    record({ phase: 'tool_result', tool: 'read', path: sanitize(target.path), kind: target.kind, role: target.role ?? null, requestedRole: target.requestedRole ?? null, recordId: target.recordId ?? null, scope: target.scope ?? null, entry: target.entry ?? null, snapshot: target.snapshot ?? null, receiptValidated: Boolean(validated), isError: Boolean(event.isError), skillBodies, bodyMatchesFile, resourceSuccess, bytes: Buffer.byteLength(body), bodySha256: createHash('sha256').update(body).digest('hex') });
+    record({ phase: 'tool_result', tool: 'read', path: sanitize(target.path), kind: target.kind, role: target.role ?? null, requestedRole: target.requestedRole ?? null, recordId: target.recordId ?? null, scope: target.scope ?? null, entry: target.entry ?? null, snapshot: target.snapshot ?? null, receiptValidated: Boolean(validated) && Boolean(target.fileBody), materialization: target.materialization ?? null, manifestComplete: target.manifestComplete ?? false, isError: Boolean(event.isError), skillBodies, bodyMatchesFile, resourceSuccess, bytes: Buffer.byteLength(body), bodySha256: createHash('sha256').update(body).digest('hex') });
   });
 }
 

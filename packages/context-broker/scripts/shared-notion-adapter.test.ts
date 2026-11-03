@@ -133,6 +133,23 @@ test("selected shared records retain Enabled through read and exact snapshot exp
   expect((await f.calls()).filter(args => args[0] === "export")).toHaveLength(1);
 });
 
+test("new native snapshots retain stable main and resource File bindings through public read/export", async () => {
+  const f = await fixture();
+  const fileBindings = [
+    { file_id: "main-id", page_id: page, path: "SKILL.md" },
+    { file_id: "resource-id", page_id: uuid(41), path: "scripts/fixed.bin" },
+  ];
+  f.state.read = { ...f.read, ref: f.read.ref + "&file_id=main-id", file_bindings: fileBindings };
+  await f.save();
+  const selected = (await discoverNotionSource(f.source, f.root))[0]!;
+  const loaded = await loadNotionSkill(selected, f.source, f.root);
+  expect(loaded.snapshotId).toBe(snapshot);
+  expect(loaded.body).toBe(f.content);
+  expect(loaded).toHaveProperty("fileBindings", fileBindings);
+  const pinned = await loadNotionSkill(selected, f.source, f.root, { snapshotId: snapshot });
+  expect(pinned).toHaveProperty("fileBindings", fileBindings);
+});
+
 test("a shared selected-page miss uses the physical page UUID; a missing resource stays a source error", async () => {
   const f = await fixture();
   f.state.read = { ok: false, error: { code: "NOT_FOUND", details: { notion_code: "object_not_found", path: `v1/pages/${page}` } } };

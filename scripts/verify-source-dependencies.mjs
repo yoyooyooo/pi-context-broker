@@ -13,19 +13,13 @@ const provider = await writeFakeProvider(base);
 const skillRoot = join(base, "skills");
 await mkdir(join(skillRoot, "local-one"), { recursive: true });
 await writeFile(join(skillRoot, "local-one/SKILL.md"), "---\nname: local-one\ndescription: Local dependency isolation\nautoload:\n  enabled: true\n---\nLOCAL_DEPENDENCY_ISOLATION_BODY\n");
-const fakeNtn = join(base, "ntn");
-const ntnState = join(base, "ntn-state.json");
-await writeFile(fakeNtn, `#!${process.execPath}\nimport {readFileSync} from 'node:fs';\nconst state=JSON.parse(readFileSync(${JSON.stringify(ntnState)},'utf8'));\nif(process.argv[2]==='--version')console.log(state.version);\nelse if(process.argv[2]==='api'&&process.argv[3]==='--help')console.log(state.help);\nelse console.log(JSON.stringify({object:'error',code:'unauthorized',message:'fixture auth required'}));\n`);
-await chmod(fakeNtn, 0o755);
-const setNtn = (version = "ntn 0.22.12", help = "--notion-version") => writeFile(ntnState, JSON.stringify({ version, help }));
-await setNtn();
 const captures = async file => {
   try { return (await readFile(file, "utf8")).trim().split("\n").filter(Boolean).map(JSON.parse); }
   catch (error) { if (error.code === "ENOENT") return []; throw error; }
 };
 const results = [];
 for (const host of ["omp", "pi"]) {
-  for (const scenario of ["missing-command", "missing-ntn", "old-ntn", "missing-capability", "auth-required"]) {
+  for (const scenario of ["missing-command", "api-unavailable", "unsupported-protocol", "malformed-doctor", "auth-required"]) {
     const directory = join(base, host, scenario);
     const agentDir = join(directory, "agent");
     await mkdir(agentDir, { recursive: true });
@@ -33,18 +27,20 @@ for (const host of ["omp", "pi"]) {
     const config = join(directory, "config.json");
     const capture = join(directory, "provider.jsonl");
     const missingCommand = join(directory, "source-cli");
-    const source = { id: "remote", type: "notion", ...(scenario === "missing-command" ? { command: [process.execPath, missingCommand] } : {}) };
+    const source = { id: "remote", type: "notion", command: [missingCommand] };
     // A missing executable yields SOURCE_COMMAND_UNAVAILABLE rather than Node's non-JSON exit.
     if (scenario === "missing-command") source.command = [missingCommand];
     await writeFile(config, JSON.stringify({ skillRoots: [skillRoot], sources: [source, { id: "local", type: "filesystem", roots: [skillRoot] }, { id: "healthy", type: "notion", command: fixture.command, cacheDir: join(directory, "cache") }] }));
-    await setNtn(scenario === "old-ntn" ? "ntn 0.21.0" : "ntn 0.22.12", scenario === "missing-capability" ? "api help without override" : "--notion-version");
+    if (scenario !== "missing-command") {
+      await writeFile(missingCommand, `#!${process.execPath}\nconst scenario=${JSON.stringify(scenario)};const doctor=process.argv[2]==='ctl'&&process.argv[3]==='doctor';if(doctor&&scenario==='malformed-doctor'){console.log('invalid-json');}else if(doctor&&scenario==='unsupported-protocol'){console.log(JSON.stringify({ok:true,transport:'unsupported',notion_api_version:'2026-03-11',authentication:'available'}));}else{console.log(JSON.stringify({ok:false,error:{code:scenario==='api-unavailable'?'NOTION_UNAVAILABLE':'AUTH_REQUIRED'}}));process.exitCode=1;}\n`);
+      await chmod(missingCommand, 0o700);
+    }
     const env = isolatedEnv({ base: directory, agentDir, CONTEXT_BROKER_HOST: host, CONTEXT_BROKER_CONFIG: config, CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: capture,
       // Resolve nested bundled-CLI Node before HOME isolation can activate a Volta shim.
       PATH: [dirname(process.execPath), process.env.PATH].filter(Boolean).join(delimiter),
-      NTN_SKILLS_NTN_BIN: scenario === "missing-ntn" ? join(base, "absent-ntn") : fakeNtn,
       NTN_SKILLS_HOME: join(directory, "state"), NTN_SKILLS_CONFIG_HOME: join(directory, "cli-config"), NTN_SKILLS_CACHE_HOME: join(directory, "cli-cache") });
     const args = ["--no-extensions", "--no-skills", "--no-tools", "--session-dir", join(directory, "sessions"), "-e", provider, "-e", extension, "--model", "context-broker-e2e/fake", "--system-prompt", "Only output OK.", ...(host === "omp" ? ["--no-title", "--no-rules"] : [])];
-    const expectedCode = { "missing-command": "SOURCE_COMMAND_UNAVAILABLE", "missing-ntn": "NTN_UNAVAILABLE", "old-ntn": "NTN_VERSION_UNSUPPORTED", "missing-capability": "NTN_VERSION_UNSUPPORTED", "auth-required": "AUTH_REQUIRED" }[scenario];
+    const expectedCode = { "missing-command": "SOURCE_COMMAND_UNAVAILABLE", "api-unavailable": "NOTION_UNAVAILABLE", "unsupported-protocol": "SOURCE_PROTOCOL_UNSUPPORTED", "malformed-doctor": "SOURCE_RESPONSE_INVALID", "auth-required": "AUTH_REQUIRED" }[scenario];
     const rpc = await startRpc({ host, cwd: directory, env, args });
     try {
       await rpc.prompt("Reply OK.");
@@ -90,4 +86,4 @@ for (const host of ["omp", "pi"]) {
   }
 }
 await writeFile(join(base, "results.json"), JSON.stringify(results, null, 2));
-console.log(`Source dependency verification passed: missing command/ntn/version/capability/auth, local and healthy sources, unknown literal pass-through without activation, refresh recovery and ordinary print. Evidence: ${base}`);
+console.log(`Source dependency verification passed: missing command/API/protocol/doctor/auth, local and healthy sources, unknown literal pass-through without activation, refresh recovery and ordinary print. Evidence: ${base}`);

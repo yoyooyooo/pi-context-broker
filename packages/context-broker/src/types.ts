@@ -66,6 +66,9 @@ export type NativeReadDefinition = NativeReadMetadata & {
   defaultInactive: boolean;
   execute(id: string, input: Record<string, unknown>, signal: AbortSignal | undefined, onUpdate: NativeReadUpdate | undefined, ctx: ExtensionContext): Promise<NativeReadResult>;
 };
+export type NativeSkillSearchDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_search" };
+export type NativeSkillPrepareDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_prepare" };
+export type NativeSkillGraphDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_graph" };
 type SessionBoundary = "session_before_switch" | "session_before_branch" | "session_before_tree"
   | "session_switch" | "session_tree" | "session_branch" | "session_shutdown" | "agent_start" | "agent_end";
 type ExtensionEvents = {
@@ -214,7 +217,7 @@ export type ExtensionAPI = {
   sendUserMessage?(content: MessageContent): void;
   getAllTools?(): Array<{ name: string; description: string; parameters: unknown; sourceInfo: { source: string; path: string } }>;
   getActiveTools?(): string[];
-  registerTool?(tool: NativeReadDefinition): void;
+  registerTool?(tool: NativeReadDefinition | NativeSkillSearchDefinition | NativeSkillPrepareDefinition | NativeSkillGraphDefinition): void;
   registerMessageRenderer?(customType: string, renderer: (message: AgentMessage, options: { expanded: boolean }, theme: unknown) => ExtensionWidgetComponent | undefined): void;
   sendMessage?(message: { customType: string; content: MessageContent; details: unknown; display: boolean }, options: { triggerTurn: boolean }): void;
   appendEntry?(customType: string, data?: unknown): void;
@@ -268,8 +271,9 @@ export type SourceConfig = {
       cacheDir?: string;
       discovery?: SourcePolicy;
       activation?: SourcePolicy;
-      /** False keeps discovery metadata-only; selected reads still load normally. */
-      prefetch?: boolean;
+      preparation?: import("./prepare-protocol").PreparationBudget;
+      /** Missing/boolean values keep a zero budget. Body prefetch requires an explicit bounded object. */
+      prefetch?: boolean | import("./prefetch-policy").PrefetchBudget;
       requestTimeoutMs?: number;
     }
 );
@@ -399,6 +403,10 @@ export type SkillRecord = SkillMetadata & {
   coverage?: unknown;
   sourceScope?: string;
   metadataIndexPath?: string;
+  fileBindings?: readonly { file_id: string; page_id: string; path: string }[];
+  preparationBinding?: import("./prepare-protocol").PreparationBinding;
+  preparationDirectory?: import("./prepare-protocol").PreparationDirectory;
+  entryManifest?: import("./notion-entry").EntryManifest;
   render?: { type?: "member-index"; rules?: string[]; [key: string]: unknown };
   policy?: { memberBody?: "read-before-use"; scope?: "members-only" | "open"; prerequisites?: string[]; fallback?: string[]; [key: string]: unknown };
   members?: DiscoveryMember[];

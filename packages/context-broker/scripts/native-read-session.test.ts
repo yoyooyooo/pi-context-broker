@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { deduplicateSourceReads, nativeReadReceipt, nativeReadSnapshot, sessionSourceSnapshot } from "../src/session-source-snapshot";
+import { mkdtemp, mkdir, realpath, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { parseNativeReference } from "../src/native-reference";
+import { deduplicateSourceReads, nativeReadReceipt, nativeReadSnapshot, sessionSourceSnapshot, sourceDeliveryReceipt } from "../src/session-source-snapshot";
 import { hasLoadedSkill } from "../src/index";
 import { installHostSkills } from "../src/host-skills";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
@@ -28,7 +32,7 @@ test("the pinned snapshot comes from effective tool bytes rather than today's me
   expect(() => sessionSourceSnapshot([result(), second], record)).toThrow("Conflicting");
 });
 test("native command receipts require their actual user body, and dollar receipts require their content", () => {
-  const text = "<skill>Exact original instructions</skill>", proof = { role: "custom", customType: "context-broker", content: [], details: { nativePromptSha256: createHash("sha256").update(text).digest("hex"), records: [{ identity: recordIdentity(record), loaded: true, snapshotId: a }] } } as AgentMessage;
+  const text = "<skill>" + record.body + "</skill>", proof = { role: "custom", customType: "context-broker", content: [], details: { nativePromptSha256: createHash("sha256").update(text).digest("hex"), records: [sourceDeliveryReceipt(record, text)] } } as AgentMessage;
   expect(sessionSourceSnapshot([proof], record)).toBeUndefined();
   expect(sessionSourceSnapshot([{ role: "user", content: text }, proof], record)).toBe(a);
   expect(sessionSourceSnapshot([{ ...proof, details: { records: proof.details && (proof.details as Record<string, unknown>).records } }], record)).toBeUndefined();
@@ -53,12 +57,16 @@ test("repeated actual native reads keep one provider body without mutating store
   expect(deduplicateSourceReads([second])[0]).toBe(second);
 });
 test("trusted native or dollar injection coalesces rereads, never user XML or foreign scope", () => {
-  const injected: AgentMessage = { role: "custom", customType: "context-broker", content: record.body, details: { records: [{ identity: recordIdentity(record), snapshotId: a, loaded: true }] } };
+  const injected: AgentMessage = { role: "custom", customType: "context-broker", content: record.body, details: { records: [sourceDeliveryReceipt(record, record.body)] } };
   expect(JSON.stringify(deduplicateSourceReads([injected, result()])).split("Exact native instructions.").length - 1).toBe(1);
   const user: AgentMessage = { role: "user", content: record.body };
   expect(deduplicateSourceReads([user, result()])[1]?.content).toEqual(result().content);
   const foreign = { ...result(), details: { contextBrokerRead: nativeReadReceipt({ ...record, sourceScope: "different" }, "read-1", record.body) } };
   expect(deduplicateSourceReads([injected, foreign])[1]).toBe(foreign);
+  expect(hasLoadedSkill([{ ...injected, content: record.body.slice(5) }], record)).toBe(false);
+  expect(hasLoadedSkill([{ ...injected, content: "Compacted instructions." }], record)).toBe(false);
+  expect(hasLoadedSkill([injected], { ...record, sourceId: "other-namespace" })).toBe(true);
+  expect(hasLoadedSkill([injected], { ...record, body: record.body + "changed" })).toBe(false);
 });
 test("real hook sequence marks only the completed entry result and reuses its active pin", async () => {
   const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>(), messages: AgentMessage[] = [], loads: Array<string | undefined> = [];
@@ -83,4 +91,39 @@ test("real hook sequence marks only the completed entry result and reuses its ac
   await emit("session_switch", { type: "session_switch" }); await host.refresh(ctx);
   await host.activate(metadata, ctx);
   expect(loads).toEqual([undefined, a, undefined]);
+});
+
+test("cold native refs select an outside-View owner and resolve stable File ID in the requested snapshot", async () => {
+  const root = await mkdtemp(join(tmpdir(), "broker-exact-read-"));
+  await mkdir(join(root, "moved"));
+  await writeFile(join(root, "SKILL.md"), record.body);
+  await writeFile(join(root, "moved/resource.md"), "RESOURCE");
+  const owner = { ...record, id: "shared_skill:lib:skill", ref: "skill://shared_skill%3Alib%3Askill/SKILL.md", path: join(root, "SKILL.md"), metadataIndexPath: undefined, defaultDiscovery: false, fileBindings: [
+    { file_id: "main", page_id: "p", path: "SKILL.md" },
+    { file_id: "resource", page_id: "r", path: "moved/resource.md" },
+  ] };
+  const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
+  const api = { on(name: string, listener: (event: never, ctx: ExtensionContext) => unknown) { events.set(name, [...events.get(name) ?? [], listener]); } } as ExtensionAPI;
+  const pins: Array<string | undefined> = [];
+  const ctx: ExtensionContext = { cwd: root, hasUI: false, mode: "rpc" };
+  await installHostSkills(api, {
+    config: {}, getRecords: async () => ({ records: [{ ...owner, body: undefined }], failures: [] }),
+    loadRecord: async (_record, _signal, pin) => { pins.push(pin); return owner; },
+  }, createPiHostAdapter(api));
+  async function read(path: string) {
+    const input = { path };
+    const values = [];
+    for (const listener of events.get("tool_call") ?? []) values.push(await listener({ toolName: "read", toolCallId: "exact", input } as never, ctx));
+    return { input, values };
+  }
+  const cold = await read("skill://shared_skill%3Alib%3Askill/old.md?snapshot=" + a + "&file_id=resource");
+  expect(cold.input.path).toBe(await realpath(join(root, "moved/resource.md")));
+  expect(pins).toEqual([a]);
+  const missing = await read("skill://shared_skill%3Alib%3Askill/SKILL.md?snapshot=" + a + "&file_id=foreign");
+  expect(JSON.stringify(missing.values)).toContain("SHARED_FILE_BINDING_UNAVAILABLE");
+  const unknown = await read("skill://shared_skill%3Alib%3Askill/SKILL.md?scope=other");
+  expect(JSON.stringify(unknown.values)).toContain("SOURCE_REFERENCE_INVALID");
+  const oldAlias = await read("skill://same-name/SKILL.md");
+  expect(JSON.stringify(oldAlias.values)).toContain("SOURCE_REFERENCE_MISSING");
+  expect(() => parseNativeReference(owner.ref + "?snapshot=" + a + "&snapshot=" + b)).toThrow();
 });

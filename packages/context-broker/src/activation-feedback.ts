@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { hostTextComponent } from "./host-text";
-import type { ExtensionAPI, ExtensionContext, ExtensionWidgetNode, SkillRecord } from "./types";
+import type { ExtensionAPI, ExtensionContext, ExtensionWidgetNode, SkillRecord, SourceConfig } from "./types";
 
 export const ACTIVATION_MESSAGE = "context-broker-source-read";
 const ACTIVATION_RESULT = "context-broker-source-read-result";
@@ -31,7 +31,7 @@ export async function createActivationFeedback(api: ExtensionAPI, repaint: () =>
     return {
       render(width) {
         const state = current();
-        return new Text([`Read ${state.target} · ${state.status}`, ...(collapsed ? [] : [detail(state)])].join("\n"), 0, 0).render(width);
+        return new Text([`Read ${state.target} · ${state.status}`, ...(collapsed ? state.status === "running" ? [state.note] : [] : [detail(state)])].join("\n"), 0, 0).render(width);
       },
       invalidate() {},
       describe(surface) {
@@ -61,11 +61,13 @@ export async function createActivationFeedback(api: ExtensionAPI, repaint: () =>
       }
       repaint();
     },
-    begin(record: SkillRecord, ctx?: ExtensionContext): ((result: { value: SkillRecord } | { error: string } | { skipped: true }) => void) | undefined {
+    begin(record: SkillRecord, ctx?: ExtensionContext, purpose?: "use" | "inspect", source?: SourceConfig): ((result: { value: SkillRecord } | { error: string } | { skipped: true }) => void) | undefined {
       if (!ctx?.hasUI || !api.sendMessage || !api.registerMessageRenderer) return undefined;
       const session = ctx.sessionManager?.getSessionId?.();
       const token = record.token ?? record.name;
-      const state: ReadState = { id: randomUUID(), target: `ntn-skills://${token.slice(token.indexOf("/") + 1)}`, source: record.sourceId ?? "source", status: "running", started: Date.now(), note: "Fetching the selected Skill and its resources." };
+      const budget = source?.type === "notion" ? source.preparation : undefined;
+      const note = purpose ? `Preparing ${purpose}: up to ${budget?.maxNodes ?? 64} nodes, depth ${budget?.maxDepth ?? 16}, ${budget?.maxInstructionBytes ?? 1048576} instruction bytes, ${budget?.maxContextBytes ?? 262144} context bytes. Stop cancels preparation.` : "Fetching the selected Skill and its resources.";
+      const state: ReadState = { id: randomUUID(), target: `ntn-skills://${token.slice(token.indexOf("/") + 1)}`, source: record.sourceId ?? "source", status: "running", started: Date.now(), note };
       states.set(state.id, state);
       api.sendMessage({ customType: ACTIVATION_MESSAGE, content: [], details: { ...state }, display: true }, { triggerTurn: false });
       repaint();
@@ -75,7 +77,7 @@ export async function createActivationFeedback(api: ExtensionAPI, repaint: () =>
         state.took = Date.now() - state.started;
         state.note = "value" in result ? "Skill and resources ready." : "error" in result ? result.error : "Reference unavailable; original message retained.";
         if ("value" in result) { state.version = result.value.versionId; state.snapshot = result.value.snapshotId; }
-        if (session === ctx.sessionManager?.getSessionId?.() && states.get(state.id) === state) {
+        if (states.get(state.id) === state && session === ctx.sessionManager?.getSessionId?.()) {
           api.appendEntry?.(ACTIVATION_RESULT, { ...state });
           repaint();
         }

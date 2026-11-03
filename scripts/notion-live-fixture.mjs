@@ -5,19 +5,18 @@ import { randomUUID } from 'node:crypto';
 const save=(path,value)=>writeFile(path,JSON.stringify(value,null,2)+'\n');
 import { invokeJson } from './verification-command.mjs';
 import { archiveOwnedFixture } from './notion-fixture-cleanup.mjs';
-export async function createLiveFixture({scratch,evidence,command,database,onOwned,resumeEvidence,ntnCommand=['ntn']}) {
+export async function createLiveFixture({scratch,evidence,command,database,onOwned,resumeEvidence}) {
  let directory,name,alias,canary,resourceCanary,created;
  if(!resumeEvidence){let prior;try{prior=JSON.parse(await readFile(join(evidence,'live-fixture-intent.json'),'utf8'));}catch(error){if(error.code!=='ENOENT')throw error;}assert.ok(!prior,'Existing fixture intent must be reconciled by exact ID; create will not be repeated');}
  const invoke = (cmd, args, input) => invokeJson(cmd, args, { input, cwd: scratch, evidence: join(evidence, 'command-receipts.jsonl'), category: 'live-fixture', deadline: args[0] === 'create' ? 900000 : 120000 });
- const listedDatabase=await invoke(ntnCommand,['api',`v1/databases/${database}`,'--notion-version','2026-03-11']);
+ const readApi=async path=>(await invoke(command,['ctl','api',path])).response;
+ const listedDatabase=await readApi(`v1/databases/${database}`);
  const dataSources=listedDatabase.data_sources??[];assert.ok(dataSources.length,'Live fixture requires database data source metadata');
  const schemaReceipts=[];
  for(const source of dataSources){
-  const schema=await invoke(ntnCommand,['api',`v1/data_sources/${source.id}`,'--notion-version','2026-03-11']);
-  const existing=schema.properties?.['Default Context'];assert.ok(!existing||existing.type==='checkbox','Default Context property must be a checkbox');
-  if(!existing)await invoke(ntnCommand,['api',`v1/data_sources/${source.id}`,'--notion-version','2026-03-11','-X','PATCH','--data','@-'],{properties:{'Default Context':{checkbox:{}}}});
-  const observed=await invoke(ntnCommand,['api',`v1/data_sources/${source.id}`,'--notion-version','2026-03-11']);assert.equal(observed.properties?.['Default Context']?.type,'checkbox');
-  schemaReceipts.push({dataSourceId:source.id,property:'Default Context',type:'checkbox',added:!existing});
+  const schema=await readApi(`v1/data_sources/${source.id}`);
+  assert.equal(schema.properties?.['Default Context']?.type,'checkbox','Fixture database must already define Default Context as a checkbox; the helper never modifies schema');
+  schemaReceipts.push({dataSourceId:source.id,property:'Default Context',type:'checkbox',added:false});
  }
  await save(join(evidence,'live-fixture-schema.json'),schemaReceipts);
  if(resumeEvidence){
@@ -37,17 +36,19 @@ export async function createLiveFixture({scratch,evidence,command,database,onOwn
   }
  }
  assert.ok(created.record?.locator?.page_id,'Create or recovery must return owned page id');const pageId=created.record.locator.page_id;
+ created.operation_id??=created.create_operation_id;
+ assert.ok(created.operation_id,'Create or recovery must retain the original operation ID');
  await save(join(evidence,'live-fixture-create.json'),{pageId,operationId:created.operation_id,name,alias,database,snapshotId:created.snapshot_id,versionId:created.version_id,owned:true,status:'created',...(resumeEvidence?{recoveredFrom:resumeEvidence}: {})});
- const archive=()=>archiveOwnedFixture({evidence,invoke:(args,input)=>invoke(ntnCommand,args,input)});
+ const archive=()=>archiveOwnedFixture({evidence,invoke:(args,input)=>invoke(command,args,input)});
  const flagReceipts=[];
  const setDefaultContext=async checked=>{
   assert.equal(typeof checked,'boolean');
-  await invoke(ntnCommand,['api',`v1/pages/${pageId}`,'--notion-version','2026-03-11','-X','PATCH','--data','@-'],{properties:{'Default Context':{checkbox:checked}}});
-  const observed=await invoke(ntnCommand,['api',`v1/pages/${pageId}`,'--notion-version','2026-03-11']);assert.equal(observed.properties?.['Default Context']?.checkbox,checked);
+  await invoke(command,['update',created.record.ref??`skill://${pageId}/SKILL.md`,'--database',database,'--default-context',String(checked)]);
+  const observed=await readApi(`v1/pages/${pageId}`);assert.equal(observed.properties?.['Default Context']?.checkbox,checked);
   flagReceipts.push({pageId,checked,readback:true,at:new Date().toISOString()});await save(join(evidence,'live-fixture-default-context.json'),flagReceipts);
   const listed=await invoke(command,['list','--database',database,'--refresh']);const item=listed.records?.find(skill=>skill.locator?.page_id===pageId);assert.equal(item?.default_context,checked,'CLI must expose checked value from owned page');
  };
- const fixture={alias,canary,resourceCanary,resourcePath:'references/guide.md',skillRef:`skill://${pageId}/SKILL.md`,archive,setDefaultContext};
+ const fixture={alias,canary,resourceCanary,resourcePath:'references/guide.md',skillRef:created.record.ref??`skill://${pageId}/SKILL.md`,archive,setDefaultContext};
  onOwned?.(fixture);
  await setDefaultContext(true);
  return fixture;

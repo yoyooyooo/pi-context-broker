@@ -19,7 +19,7 @@ async function until(label, probe, timeout = 120000) {
   assert.fail(`Cache lifecycle timed out: ${label}`);
 }
 const starts = requests => requests.filter(row => row.phase === 'started');
-const bodyRequests = requests => starts(requests).filter(row => row.kind === 'ntn' && row.method === 'GET' && /(?:^|\/)(?:blocks\/|ai\/skills\/|pages\/[^/]+\/markdown(?:$|\/))/.test(row.path ?? ''));
+const bodyRequests = requests => requests.filter(row => row.kind === 'http' && row.phase === 'attempt' && row.request_kind === 'notion_body');
 const exportsStarted = requests => starts(requests).filter(row => row.kind === 'cli' && row.command === 'export');
 
 // The UI process accepts automation instructions, then uses actual composer keys.
@@ -78,7 +78,6 @@ export async function runCacheLifecycle({ root, scratch, evidence, fixture, exte
   const resultFile = join(evidence, result.files[0]);
   const consumers = [];
   const persist = () => save(resultFile, result);
-  const ownerInvoke = (args, input) => invokeJson(['ntn'], ['api', ...args, '--notion-version', '2026-03-11', ...(input ? ['--data', '@-'] : [])], { input, cwd: scratch, evidence: join(evidence, 'command-receipts.jsonl'), category: 'owned-cache-edit' });
   const ownerCli = args => invokeJson(fixture.command ?? command, args, { cwd: scratch, evidence: join(evidence, 'command-receipts.jsonl'), category: 'owned-cache-edit' });
   const a = fixture.canary, ar = fixture.resourceCanary;
   const b = a + '_REVISION_B', br = ar + '_REVISION_B';
@@ -91,13 +90,13 @@ export async function runCacheLifecycle({ root, scratch, evidence, fixture, exte
       await mkdir(join(base, 'agent', 'context-broker'), { recursive: true });
       await mkdir(join(base, 'sessions'), { recursive: true });
       await mkdir(out, { recursive: true });
-      const ledger = await createRequestLedger({ scratch: base, evidence: out, command, ntnCommand: ['ntn'] });
+      const ledger = await createRequestLedger({ scratch: base, evidence: out, command });
       const source = { type: 'notion', id: 'notion', namespace: 'notion', command: ledger.command, database, cacheDir: join(base, 'source-cache'), requestTimeoutMs: 30000 };
       const config = join(base, 'agent', 'context-broker', 'config.yml');
       await save(config, { sources: [source] });
       const providerFile = join(out, 'provider.jsonl'), plan = join(base, 'tool-plan.json');
       const env = isolatedEnv({ base, agentDir: join(base, 'agent'), HOME: process.env.HOME, CONTEXT_BROKER_CONFIG: config, CONTEXT_BROKER_HOST: host === 'pi' ? 'pi' : 'omp', CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: providerFile, CONTEXT_BROKER_LOG_FILE: join(out, 'decisions.jsonl'), BROKER_NOTION_TOOL_PLAN: plan });
-      for (const name of ['NOTION_API_TOKEN', 'NTN_API_TOKEN']) if (process.env[name]) env[name] = process.env[name];
+      for (const name of ['NOTION_API_TOKEN']) if (process.env[name]) env[name] = process.env[name];
       const record = { host, status: 'running', observations: [], roots: { broker: source.cacheDir, cliState: env.NTN_SKILLS_HOME, cliCache: env.NTN_SKILLS_CACHE_HOME } };
       const consumer = { host, base, out, source, env, ledger, plan, providerFile, record };
       consumers.push(consumer); result.surfaces.push(record);
@@ -204,55 +203,35 @@ export async function runCacheLifecycle({ root, scratch, evidence, fixture, exte
       record.revisionA = { snapshot: consumer.a.snapshot_id, validatedAt: consumer.a.freshness.validated_at };
       console.log(`Cache lifecycle ${host}: cold download and warm session/process reuse passed`);
     }
-    phase = 'direct Notion edit'; result.phase = phase; await persist();
-    const pageId = fixture.skillRef.split('/')[2];
-    const children = async id => { const value = await ownerInvoke([`v1/blocks/${id}/children`]); assert.equal(value.has_more, false, 'Owned fixture block inventory must be complete'); return value.results; };
-    const rootBlocks = await children(pageId);
-    const guidePages = rootBlocks.filter(block => block.type === 'child_page' && block.child_page.title.includes('guide'));
-    assert.equal(guidePages.length, 1, 'Edit only the exact owned guide page');
+    phase = 'publish owned revision B through pinned apply'; result.phase = phase; await persist();
+    const current = await ownerCli(['read', fixture.skillRef, '--database', database, '--refresh']);
+    const input = join(scratch, 'cache-revision-b-input');
+    const exported = await ownerCli(['export', current.ref, '--format', 'directory', '--projection', 'source', '--output', input]);
     const edits = [];
-    for (const [blocks, oldMarker, newMarker] of [[rootBlocks, a, b], [await children(guidePages[0].id), ar, br]]) {
-      const matches = blocks.filter(block => block.type === 'paragraph' && block.paragraph.rich_text.some(text => text.text?.content.includes(oldMarker)));
-      assert.equal(matches.length, 1, 'Locate exactly one owned authored paragraph');
-      const block = matches[0];
-      const richText = block.paragraph.rich_text.map(text => { assert.equal(text.type, 'text'); return { type: 'text', text: { ...text.text, content: text.text.content.replace(oldMarker, newMarker) }, annotations: text.annotations }; });
-      await ownerInvoke([`v1/blocks/${block.id}`, '-X', 'PATCH'], { paragraph: { rich_text: richText } });
-      const observed = await ownerInvoke([`v1/blocks/${block.id}`]);
-      assert.ok(observed.paragraph.rich_text.some(text => text.text?.content.includes(newMarker)));
-      edits.push({ blockId: block.id, readback: true });
+    for (const [path, oldMarker, newMarker] of [[exported.main_path, a, b], [fixture.resourcePath, ar, br]]) {
+      const location = join(input, path), original = await readFile(location, 'utf8');
+      assert.equal(original.split(oldMarker).length - 1, 1, 'Change exactly one canary in the owned frozen input');
+      await writeFile(location, original.replace(oldMarker, newMarker));
+      edits.push({ path, marker: newMarker });
     }
-    result.remoteEdit = { pageId, guidePageId: guidePages[0].id, edits, at: new Date().toISOString() };
+    const published = await ownerCli(['apply', current.ref, '--input', input]);
+    const observed = await ownerCli(['read', fixture.skillRef, '--database', database, '--refresh']);
+    assert.ok(observed.content.includes(b));
+    const resource = await ownerCli(['read', fixture.resourcePath, '--from', observed.ref]);
+    assert.ok(resource.content.includes(br));
+    result.publication = { method: 'public-pinned-apply', originalSnapshot: current.snapshot_id, snapshot: observed.snapshot_id, operationId: published.operation_id ?? published.create_operation_id ?? published.metadata_operation_id, edits, readback: true, at: new Date().toISOString() };
+    result.notRun.push('external-editor unpublished-change inspection and acceptance; use the separate owned native-editor recipe');
     for (const consumer of consumers) {
-      await consumer.observe('edited-same-session-a', 'activate', a, b, false);
+      await consumer.observe('published-same-session-a', 'activate', a, b, false);
       await consumer.action('new');
-      await consumer.observe('edited-fresh-cache-a', 'activate', a, b, false);
+      await consumer.observe('published-fresh-cache-a', 'activate', a, b, false);
     }
-    phase = 'inspect and accept owned Notion edit'; result.phase = phase; await persist();
-    let rejected;
-    try { await ownerCli(['read', fixture.skillRef, '--database', database, '--refresh']); }
-    catch (error) { rejected = error.recovery?.error?.code; }
-    assert.equal(rejected, 'PUBLICATION_DIVERGED', 'Managed native edits must be refused until explicitly accepted');
-    const inspected = await ownerCli(['operation', 'inspect-edit', pageId]);
-    assert.equal(inspected.record.locator.page_id, pageId);
-    assert.equal(inspected.requires_acceptance, true);
-    assert.equal(inspected.publication.state, 'committed');
-    for (const [path, marker] of [['SKILL.md', b], [fixture.resourcePath, br]]) {
-      const file = inspected.files.find(file => file.path === path);
-      assert.ok(file && Buffer.from(file.base64, 'base64').toString('utf8').includes(marker), 'Inspect the exact changed owned body and resource before acceptance');
-    }
-    result.remoteEdit.inspection = { rejectedBeforeAcceptance: rejected, version: inspected.version_id, snapshot: inspected.snapshot_id, contentHash: inspected.content_hash };
-    await persist();
-    const accepted = await ownerCli(['operation', 'accept-edit', pageId, '--expected-version', inspected.version_id]);
-    assert.equal(accepted.record.locator.page_id, pageId);
-    assert.equal(accepted.accepted, true);
-    assert.equal(accepted.verified, true);
-    result.remoteEdit.acceptance = { operationId: accepted.operation_id, expectedVersion: inspected.version_id, accepted: true, verified: true, at: new Date().toISOString() };
     await persist();
     // Use elapsed real time, never mutate timestamps or shorten the configured TTL.
     const expiresAt = Math.max(...consumers.map(consumer => Date.parse(consumer.a.freshness.validated_at))) + 300001;
     result.expiry = { notBefore: new Date(expiresAt).toISOString(), method: 'real elapsed time; default five-minute TTL' };
     result.phase = 'waiting for actual default cache expiry'; await persist();
-    console.log(`Cache lifecycle: direct Notion edits verified; waiting until ${result.expiry.notBefore}`);
+    console.log(`Cache lifecycle: published revision B verified; waiting until ${result.expiry.notBefore}`);
     while (Date.now() < expiresAt) await pause(Math.min(1000, expiresAt - Date.now()));
     for (const consumer of consumers) {
       await consumer.observe('expired-same-session-a', 'activate', a, b, false);

@@ -17,7 +17,7 @@ node scripts/verify-notion-integration.mjs run --mode live-fixture --database "$
 `FIXTURE_DATABASE` 必须来自当前独立 fixture receipt；`INSTALLED_CLI_ARGV` 为真实 npm 安装 bin 的 JSON argv（例如 Node 绝对路径与安装后 JS entry），`INSTALLED_BROKER_ENTRY` 来自安装包的 pi/omp extension metadata。Node 参数须为真实 Node executable，不使用 Bun 或宿主二进制；共享 `--skill-ref` 仍原样使用 CLI 返回的 `record.ref`。Doctor hash 实际入口，run 全部 mutable CLI/XDG 根在 scratch；现有 integration 没有 `--profile`，不继承机器 Profile 绑定，具体边界见[默认目录地图](default-context-prefetch.md)。该路径把安装 CLI→官方 Notion→pinned export→安装 broker 的 Pi/OMP native read/`$`/resource 连接在同一组 identities 上；仍以实际 branch assertion/产物hash为准。模型与实际输入 UI 单独验收，不能由 provider 捕获替代。
 
 
-包内 CLI 与前置依赖隔离另运行 `node scripts/verify-artifacts.mjs`：在解包目录执行生产依赖安装，实际启动 npm/Tern 两份 `ntn-skills.mjs`；两份 query 在缺 `ntn` 时仍返回本地候选与 `NTN_UNAVAILABLE`，安装后的 extension 重跑双宿主缺 command/ntn/version/capability/auth、选择阻断与 refresh 恢复。该入口不替代下表 installed mode 的完整 snapshot/会话验收，也不证明真实 Notion 认证。
+包内 CLI 与前置依赖隔离另运行 `node scripts/verify-artifacts.mjs`：在解包目录执行生产依赖安装，实际启动 npm/Tern 两份 `ntn-skills.mjs`；两份 query 在无凭据时仍返回本地候选与 `AUTH_REQUIRED`，安装后的 extension 重跑双宿主缺 command、API 不可达、doctor 协议不支持/格式错误、未认证、选择阻断与 refresh 恢复。该入口不替代下表 installed mode 的完整 snapshot/会话验收，也不证明真实 Notion 认证。
 
 | ID | 用户入口与动作 | 可观察 assertion |
 | --- | --- | --- |

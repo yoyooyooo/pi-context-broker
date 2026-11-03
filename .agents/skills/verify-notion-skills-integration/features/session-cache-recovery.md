@@ -8,7 +8,7 @@
 
 live-fixture 恢复 recipe：`node scripts/verify-notion-integration.mjs run --mode live-fixture --database UUID --resume-evidence /absolute/FAILED_EVIDENCE`。创建 deadline 15 分钟；成功与失败均保存 `live-fixture-create.json`，失败包含 allowlist 投影的 operation/page/receipt/stage，不保存任意 stdout。unknown 不得再次 create；先检查原 operation receipt，需要继续发布时仅用产品 `resume OPERATION_ID`。旧 scratch ownership/input、原 create 回执的精确 pageId、catalog 的该 ID/name/database 与 read canary 均通过后本次不 create，最后 archive。不能只凭同名重建或清理。
 
-只恢复 cleanup 时运行 `node scripts/notion-fixture-cleanup.mjs /absolute/EVIDENCE`（可选第二参数为官方 ntn command JSON）。它读取原 `live-fixture-create.json` 的 owned pageId、枚举 child IDs，先 GET；仅 GET 确认尚未 inTrash 才对该对象一次 PATCH 后 GET，unknown 不 PATCH，不 create、不自动重试；GET 确认 true 才 archived。`live-fixture-cleanup.json` 在请求前及 finally 保存每对象 attempt/result/unknown/failure，未完成为 failed/blocked。再次显式运行按同一组已知 ID reconcile，保留 previousAttempts；原失败 run manifest 不会变 pass。父页 inventory 不完整时阻止父页归档。服务复验只使用已核实 owned 对象，不在线上注入故障。
+只恢复 cleanup 时运行 `node scripts/notion-fixture-cleanup.mjs /absolute/EVIDENCE`（可选第二参数为项目 CLI command JSON）。它读取原 create 回执中的 owned pageId 和 operation ID，以 `ctl archive PAGE_ID --operation ORIGINAL_ID --dry-run` 取得可证明归属的完整页集合，再通过同一正式归档入口逐页处理。该入口在派发前保存 intent；unknown 先 GET reconcile，未确认已归档时不重放不明 PATCH，不重新 create。每个目标只有 GET 确认 inTrash=true 才记 archived。`live-fixture-cleanup.json` 在请求前及 finally 保存结果，保留 previousAttempts；未完成为 failed/blocked，原失败 run 不会变 pass。父页 inventory 不完整或存在无法证明归属的 child 时阻止归档。旧 shared create 没有持久 ownership 回执时明确拒绝。
 
 | ID | 用户入口与动作 | 可观察 assertion |
 | --- | --- | --- |
@@ -22,8 +22,8 @@ live-fixture 恢复 recipe：`node scripts/verify-notion-integration.mjs run --m
 | NS-SESSION-08 | Tern/OMP 新进程首个 `$`、同进程 `/new`、保留 conversation 的 `/restart`、退出后新进程 | 运行既有 daily runner 的 `--mode captured --invocation dollar --lifecycle --lifecycle-selection alias@namespace`，重名时 selection 包含 page ID 并与既有真实候选一致。首个草稿恰好是一个 `$`，先于 gate 后真实 list 成功；放行后不重输即可出现实际候选，再追加目标前缀。无启动前 list/read/query、无 session_start metadata 等待；各项真实菜单/胶囊直到提交前 provider+0，完整固定正文一次。PID/session file 与 user/assistant turn 证明新会话、保留会话、新进程的区别。失败截图和阶段保留，不换 alias、重复输入或先 restart 掩盖；完整证据规程见[日常安装地图](daily-installation-ui.md)。 |
 | NS-SESSION-09 | `live-fixture --cache-lifecycle true`，独立空 CLI/Broker 根分别启动实际 Pi 终端、OMP 终端、Tern/OMP 原生窗口 | 未勾选的 owned 页在首次激活前无 read/export；首次 `$` 实际下载 Notion 正文、导出固定 snapshot，provider 中经 XML 转义的完整正文含 frontmatter 恰好一份。终端保留真实 PTY 输入、ANSI 与解析 screen；Tern 另保存实际菜单、Tab 胶囊及提交截图。 |
 | NS-SESSION-10 | 首次 `$` 后同会话重复、`/new` 和退出后的新进程 | provider 正文一份；后两者复用完整 immutable export，Notion 正文请求为零，CLI `validated_at` 不前移。CLI 进程调用与实际 Notion HTTP 分开计数。 |
-| NS-SESSION-11 | 直接 PATCH 自建 Notion 页和自建 guide 的 authored paragraph，GET 确认 B | 有效旧会话继续 A；新会话在默认五分钟有效期内仍 A。仅修改唯一 owned block，不重发未知写入、不手工修改 publication marker 或既有业务页。 |
-| NS-SESSION-12 | 验证直接编辑的发布检查、接受精确 owned 版本，按实际 `validated_at` 等待默认 300000 ms 过期后再次使用 | 未接受的 managed 原生页 `read --refresh` 返回 `PUBLICATION_DIVERGED`；`inspect-edit` 核对 B 正文和 guide，再以其精确 version 执行 `accept-edit`。过期后已加载旧会话仍 A；新会话实际请求 Notion 并导出不同的 B snapshot；真实 read 工具消费同一 B snapshot 的 guide，资源读取不再请求 Notion。使用真实时钟和默认策略。 |
+| NS-SESSION-11 | 父控用公开 `read --refresh`、固定 ref 的 source export、公开 pinned `apply` 发布自建正文和 guide 的 B，再强读回验 | 有效旧会话继续 A；新会话在各自默认五分钟有效期内仍 A。只修改 create 回执所属对象；不重发未知写入、不手工改 marker。此分支证明正式发布后的缓存行为，不计 external-editor 验收。 |
+| NS-SESSION-12 | 按每端实际 `validated_at` 等待默认 300000 ms 过期后再次使用 | 已加载旧会话仍 A；新会话实际请求 Notion 并导出不同的 B snapshot；真实 read 工具消费同一 B snapshot 的 guide，资源读取不再请求 Notion。使用真实时钟、默认策略和完整 HTTP 账本。原生编辑的未发布修改另按下方独立 recipe 取证。 |
 | NS-SESSION-13 | `--mode deterministic --shared-catalog true`：不同 cwd、Pi/OMP、source ID/namespace、命令拼写和等价 database selector | 两个真实宿主首次 `$` 均消费正确完整正文；只建立一份 catalog/index 和一次 immutable export，第二端不新增 list/export，不推进原始 `validated_at`。独立宿主会话与 provider 捕获分别保留。 |
 | NS-SESSION-14 | 同一 shared-catalog run 在一端 `/context-broker refresh`，保留两个已加载会话，再分别启动两个新进程 | 共享 catalog 选择新的不可变观察；两端旧会话仍 A，新会话读取 B，另一宿主复用同一 B export，正文各一份。此处 Notion transport/provider 为受控 fixture，不宣称真实远端编辑或真实模型通过。 |
 | NS-SESSION-15 | CLI identity 回归与 Broker catalog-cache 回归 | 等价数据库 selector 共用身份；凭据和远端查询范围变化隔离；本地 TTL、创建偏好、namespace、项目路径、命令拼写不分区；按当前策略从原始校验时间重算 TTL，过期/强制刷新在另一端可见，旧格式和损坏目录重建。 |
@@ -54,9 +54,15 @@ node scripts/verify-notion-integration.mjs doctor --mode live-fixture --cache-li
 node scripts/verify-notion-integration.mjs run --mode live-fixture --cache-lifecycle true --database UUID --command-json '["/absolute/ntn-skills"]'
 ```
 
-该专项要求实际 Tern/OMP 与 Pi，使用现有认证和三组独立 CLI config/state/cache/data、Broker cache 与 sessions。默认有效期来自实际 CLI freshness。`cache-lifecycle-result.json` 逐宿主记录 A/B snapshot、完整正文 digest/bytes、验证时间、每阶段正文请求/export/provider 增量；`cache-HOST/safe-source-requests.jsonl` 记录实际 CLI 和官方 ntn method/path，排除 header、payload 与凭据。终端 `uiEvidence` 保留 PTY 原始字节、解析 screen、自然退出 PID 回执；解析器不支持的终端控制序列明确记录，不将其称为截图。Tern 的独立 `uiEvidence` 包含原生截图及 cleanup 回执；deterministic provider 捕获不证明真实模型效果。OMP 的 25 秒保护属于短事件 hook，native-read execute 与注册命令的长准备按[宿主预算回归](host-skill-discovery-read.md#omp-冷读取与命令预算)另验；本专项仍使用实际交互终端，不以预热掩盖首次下载。创建与 finally archive 沿用 owned fixture 回执；失败保留阶段，部分宿主通过不能计为全量通过。专项不替代既有超时、continue/fork/branch 或正常日常安装验收。
+该专项要求实际 Tern/OMP 与 Pi，使用现有项目 token 和三组独立 CLI config/state/cache/data、Broker cache 与 sessions。默认有效期来自实际 CLI freshness。`cache-lifecycle-result.json` 逐宿主记录 A/B snapshot、完整正文 digest/bytes、验证时间、每阶段正文请求/export/provider 增量；`cache-HOST/safe-source-requests.jsonl` 记录 CLI 生命周期及项目引擎实际 HTTP attempts/waits，只保留分类、方法、耗时、字节数和安全响应元数据，不含 endpoint、路径、header、payload 或凭据。缺失/截断账本不能推断零请求；完整显式空账本才证明零请求。终端 uiEvidence 保留 PTY 字节、解析 screen 和退出回执；Tern 独立 uiEvidence 包含截图及 cleanup 回执。deterministic provider 不证明真实模型效果。创建与 finally archive 沿用 owned fixture 回执；失败保留阶段，部分宿主通过不能计为全量通过。专项不替代既有超时、continue/fork/branch 或正常日常安装验收。
 
-本 fixture 由 CLI 发布，直接修改原生段落后须沿产品已有的 `operation inspect-edit` → `operation accept-edit --expected-version` 接受精确版本。`remoteEdit.inspection` 保存接受前 `PUBLICATION_DIVERGED`、检查的 version/snapshot/content hash；`remoteEdit.acceptance` 保存接受与验证回执。检查和接受仅使用父控的独立 CLI 根，不预热三端内容缓存；不手工清空或替换 Publication 字段。未接受的修改不能写成“过期后自动可读”，人工维护页和 editable-file 不由此 fixture 推断。
+自动 runner 的 `publication` 回执保存公开 pinned apply 的原 ref、操作 ID、结果与 B 读回；`notRun` 明确列出独立 external-editor 分支。不能用它证明未发布原生修改的检查或接受。
+
+### 独立原生编辑分支
+
+先用原 create 回执确认 owned 页和可编辑 reference，并保存 A 的 pin、文件 hash 与原发布状态。通过原生 Notion UI 只编辑已批准的 owned 正文或 reference，记录实际页面、前后文字和界面证据。不得使用通用 PATCH、改写 Publication 字段或修改其它页来模拟外部作者。
+
+从父控独立 CLI 根执行公开 `read PAGE_ID --refresh`，保存当前版本/正文或实际返回的发布冲突；稳定原生修改可能已经可读，不强制伪造 `PUBLICATION_DIVERGED`。需接受既有 managed publication 的精确编辑时，使用独立安装的 `ntn-skills-operator operation inspect-edit PAGE_ID`，核对完整正文、reference 集合与 version，再执行 `ntn-skills-operator operation accept-edit PAGE_ID --expected-version EXACT_VERSION`。这两个命令属于 operator 工件，不属于日常 CLI。检查、接受及强读回验分别留证；任何未知写入沿原 operation reconcile，不重试原请求。保持三端缓存隔离，单独标注此分支实际完成范围；未执行不得记 pass。
 
 ## 共享 Notion 缓存
 

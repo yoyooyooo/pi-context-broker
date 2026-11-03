@@ -19,10 +19,11 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 export function requestCounts(events) {
   const starts = events.filter(row => row.phase === 'started');
-  const remote = starts.filter(row => row.kind === 'ntn' && row.command === 'api');
-  const body = remote.filter(row => /\/pages\/[^/]+\/markdown/.test(row.path ?? '') || /\/blocks\//.test(row.path ?? ''));
-  const writes = remote.filter(row => row.method !== 'GET' && !/(?:\/query$|^v1\/views\/[^/]+\/queries$)/.test(row.path ?? '') && row.path !== 'v1/search');
-  return { cli: starts.filter(row => row.kind === 'cli').length, reads: starts.filter(row => row.kind === 'cli' && row.command === 'read').length, exports: starts.filter(row => row.kind === 'cli' && row.command === 'export').length, notion: remote.length, notionBody: body.length, notionWrites: writes.length };
+  const remote = events.filter(row => row.kind === 'http' && row.phase === 'attempt' && row.request_kind !== 'provider');
+  const body = remote.filter(row => row.request_kind === 'notion_body');
+  const writes = remote.filter(row => row.request_kind === 'notion_write');
+  const complete = starts.filter(row => row.kind === 'cli').every(row => events.some(receipt => receipt.kind === 'metrics' && receipt.phase === 'metrics' && receipt.requestId === row.requestId && receipt.observed === true && receipt.complete === true));
+  return { complete, cli: starts.filter(row => row.kind === 'cli').length, reads: starts.filter(row => row.kind === 'cli' && row.command === 'read').length, exports: starts.filter(row => row.kind === 'cli' && row.command === 'export').length, notion: remote.length, notionBody: body.length, notionWrites: writes.length };
 }
 
 export function cacheCaseDirectory(scratch, evidence, name) {
@@ -30,11 +31,20 @@ export function cacheCaseDirectory(scratch, evidence, name) {
   return join(scratch, 'runs', basename(evidence), name);
 }
 
+export function modelAvailabilityFailure(events) {
+  const responses = events.filter(event => event.phase === 'response');
+  const final = events.filter(event => event.phase === 'assistant_final').at(-1);
+  const status = responses.find(event => [401, 402, 403, 404, 429, 503].includes(event.status))?.status;
+  const notice = final?.text && /(?:requires? (?:a )?premium|premium (?:license|subscription)|license (?:is )?required|insufficient (?:credits|quota)|model (?:is )?(?:unavailable|not available|not found)|模型.{0,16}(?:不可用|无权限)|余额不足)/i.test(final.text);
+  return Boolean(status || notice && !events.some(event => event.phase === 'tool_call'));
+}
+
 export function assertModelCase(events, expected, { native = false, explicit = false, cold = false, warm = false, coldCli = false, warmBroker = false, revalidated = false, expectedSnapshot, requestEvents = [] } = {}) {
   const requests = events.filter(row => row.phase === 'request');
   const finals = events.filter(row => row.phase === 'assistant_final' && row.success && row.bytes > 0);
   const toolResults = events.filter(row => row.phase === 'tool_result');
   const counts = requestCounts(requestEvents);
+  assert.equal(counts.complete, true, 'Every driven CLI operation must retain a complete HTTP attempt ledger; missing metrics do not prove zero requests');
   assert.ok(requests.length && events.some(row => row.phase === 'response' && row.status >= 200 && row.status < 300), 'Actual provider request and HTTP success required');
   assert.ok(finals.length, 'Successful nonempty real-model final required');
   const final = finals.at(-1);
@@ -42,9 +52,16 @@ export function assertModelCase(events, expected, { native = false, explicit = f
   assert.ok(requests.every(row => row.skillBodies <= 1), 'Repeated loading must never duplicate the instruction body');
   assert.ok(requests.some(row => row.skillBodies === 1), 'Provider must receive the selected instruction body');
   assert.ok(requests.some(row => row.resourceBodies > 0), 'Provider must consume actual resource bytes, including a retained prior tool result');
+  assert.ok(requests.every(row => Array.isArray(row.completeContents)), 'Every actual provider request must retain complete-file byte/hash receipts');
+  assert.ok(requests.every(row => row.completeContents.filter(item => item.role === 'entrypoint').reduce((sum, item) => sum + item.copies, 0) <= 1), 'Complete main instruction bytes must remain a single provider copy');
+  assert.ok(requests.some(row => row.completeContents.some(item => item.role === 'entrypoint' && item.copies === 1 && item.manifestComplete)), 'Provider must receive the complete verified main, not only its marker');
+  assert.ok(requests.some(row => row.completeContents.some(item => item.role === 'resource' && item.copies > 0 && item.manifestComplete)), 'Provider must receive a complete verified resource file');
   assert.ok(!toolResults.some(row => row.isError), 'A claimed pass cannot hide a failed selected-resource read');
   assert.ok(!events.some(row => row.phase === 'tool_call' && row.allowed === false), 'A claimed pass cannot hide a blocked out-of-scope read');
-  if (expectedSnapshot) assert.ok(toolResults.filter(row => row.receiptValidated).every(row => row.snapshot === expectedSnapshot), 'Entry and resources must use the expected fixed snapshot, regardless of the final answer');
+  if (expectedSnapshot) {
+    assert.ok(toolResults.filter(row => row.receiptValidated).every(row => row.snapshot === expectedSnapshot), 'Entry and resources must use the expected fixed snapshot, regardless of the final answer');
+    assert.ok(requests.flatMap(row => row.completeContents).every(row => row.snapshot === expectedSnapshot), 'Complete provider files must use the expected fixed snapshot');
+  }
   if (native) {
     assert.equal(requests[0].skillBodies, 0, 'Autonomous first request must see metadata, not a pre-injected body');
     assert.ok(toolResults.some(row => row.kind === 'skill' && row.role === 'entrypoint' && row.bodyMatchesFile && row.receiptValidated), 'Model must choose and successfully read the exact native entry');
@@ -52,27 +69,35 @@ export function assertModelCase(events, expected, { native = false, explicit = f
   if (explicit) assert.equal(requests[0].skillBodies, 1, 'Explicit dollar/native activation must finish before the first provider request');
   if (cold) {
     assert.ok(counts.notionBody > 0, 'Empty CLI/Broker caches must produce an actual Notion body read');
-    assert.ok(counts.exports > 0, 'Cold selected content must materialize its complete export');
+    assert.ok(counts.exports > 0 || requests.some(row => row.completeContents.some(item => item.materialization === 'entry' && item.manifestComplete)), 'Cold content needs a verified complete export or an explicit complete-manifest entry materialization');
   }
   if (warm) assert.equal(counts.notionBody, 0, 'Warm content reuse must not download Notion bodies');
   if (coldCli) assert.ok(counts.notionBody > 0, 'An empty CLI cannot claim a verified current body from a Broker directory alone');
   if (warmBroker) assert.equal(counts.exports, 0, 'An already verified immutable Broker export should not be exported again');
   if (revalidated) assert.ok(counts.notion > 0, 'Expired current state must actually revalidate Notion');
   assert.equal(counts.notionWrites, 0, 'Ordinary host loading must not mutate the pre-initialized fixture');
-  return { requests: counts, providerRequests: requests.length, skillReads: toolResults.filter(row => row.kind === 'skill' && row.bodyMatchesFile).length, resourceReads: toolResults.filter(row => row.resourceSuccess).length, snapshots: [...new Set(toolResults.map(row => row.snapshot).filter(Boolean))], final: { text: final.text, textSha256: final.textSha256, stopReason: final.stopReason, usage: final.usage } };
+  return { requests: counts, providerRequests: requests.length, completeProviderContents: requests.map(row => row.completeContents), skillReads: toolResults.filter(row => row.kind === 'skill' && row.bodyMatchesFile).length, resourceReads: toolResults.filter(row => row.resourceSuccess).length, snapshots: [...new Set([...toolResults.map(row => row.snapshot), ...requests.flatMap(row => row.completeContents.map(item => item.snapshot))].filter(Boolean))], final: { text: final.text, textSha256: final.textSha256, stopReason: final.stopReason, usage: final.usage } };
 }
 
 export async function runMatrix(options) {
   const fixture = await json(options.fixture);
   assert.ok(['magpie/group/flash-free', 'magpie/group/worker'].includes(options.model), 'Use one of the explicitly authorized model selectors');
   for (const key of ['fixture', 'extension', 'cli', 'evidence-root']) assert.ok(isAbsolute(options[key] ?? ''), `${key} must be absolute`);
+  let previousFailure;
+  if (options.model === 'magpie/group/worker') {
+    assert.ok(isAbsolute(options['previous-failure'] ?? ''), 'Worker requires this final package\'s retained actual flash-free availability failure');
+    const prior = await json(options['previous-failure']);
+    assert.equal(prior.model, 'magpie/group/flash-free'); assert.equal(prior.status, 'failed'); assert.equal(prior.availabilityFailure, true);
+    assert.equal(prior.extensionSha256, hash(await readFile(options.extension))); assert.equal(prior.cliSha256, hash(await readFile(options.cli)));
+    previousFailure = { path: await realpath(options['previous-failure']), sha256: hash(await readFile(options['previous-failure'])) };
+  } else assert.equal(options['previous-failure'], undefined, 'Flash-free runs do not inherit a fallback failure');
   assert.ok(fixture.record?.locator?.type === 'shared_skill' && fixture.record.enabled && fixture.expected?.length === 4 && fixture.resourceContent && fixture.marker);
   const evidence = await mkdtemp(join(options['evidence-root'], 'pi-cache-evidence-'));
   const scratch = options.resume ? (await json(join(options.resume, 'manifest.json'))).scratch : await mkdtemp(join(await realpath(tmpdir()), 'pi-model-cache-'));
   const phase = options.resume ? 'updated' : 'initial';
   if (!options.resume) await save(join(scratch, 'ownership.json'), { evidence });
   else assert.equal((await json(join(scratch, 'ownership.json'))).evidence, options.resume);
-  const manifest = { version: 1, status: 'running', phase, evidence, scratch, resumeCase: options['resume-case'] ?? 'cold-autonomous-native', model: options.model, fixture: options.fixture, runnerSha256: hash(await readFile(fileURLToPath(import.meta.url))), extension: options.extension, extensionSha256: hash(await readFile(options.extension)), cli: options.cli, cliSha256: hash(await readFile(options.cli)), cases: [], notRun: ['OMP/Tern', 'native visual composer interactions', 'provider server-side cache control'], boundary: 'Real installed Pi and Broker, official Notion CLI pass-through, real model; source/model credentials consumed in place and never copied. Oracle roots are never used as consumer roots.' };
+  const manifest = { version: 1, status: 'running', phase, evidence, scratch, resumeCase: options['resume-case'] ?? 'cold-autonomous-native', model: options.model, previousFailure, availabilityFailure: false, fixture: options.fixture, runnerSha256: hash(await readFile(fileURLToPath(import.meta.url))), extension: options.extension, extensionSha256: hash(await readFile(options.extension)), cli: options.cli, cliSha256: hash(await readFile(options.cli)), cases: [], notRun: ['OMP/Tern', 'native visual composer interactions', 'provider server-side cache control'], boundary: 'Real installed Pi and Broker, project direct HTTP attempt ledger, real model; source/model credentials consumed in place and never copied. Oracle roots are never used as consumer roots.' };
   await save(join(evidence, 'manifest.json'), manifest);
   console.log(JSON.stringify({ evidence, scratch, phase, model: options.model }));
   const ledgerFile = join(evidence, 'owned-processes.jsonl');
@@ -96,8 +121,7 @@ export async function runMatrix(options) {
     ledger = { command: originalCommand, ledger: cfg.ledger };
   } else {
     await mkdir(requestsRoot, { recursive: true, mode: 0o700 });
-    const officialNtn = await resolveHost('ntn');
-    ledger = await createRequestLedger({ scratch: requestsRoot, evidence, command: [process.execPath, options.cli], ntnCommand: [officialNtn.file, ...officialNtn.prefix] });
+    ledger = await createRequestLedger({ scratch: requestsRoot, evidence, command: [process.execPath, options.cli] });
   }
   const phaseLedgerStart = (await rows(ledger.ledger)).length;
   manifest.requestLedger = { path: ledger.ledger, firstRow: phaseLedgerStart, stableCommand: ledger.command };
@@ -126,7 +150,6 @@ export async function runMatrix(options) {
     const observer = join(base, 'model-observer-' + phase + '.mjs');
     await writeFile(observer, `import * as fs from 'node:fs';import * as crypto from 'node:crypto';import * as path from 'node:path';export default api=>(${observe.toString()})(api,{...${JSON.stringify(settings)},fs,crypto,path});\n`, { mode: 0o600 });
     const env = { ...verificationCliEnvironment(cliRoot), CONTEXT_BROKER_CONFIG: config, CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_LOG_FILE: join(evidence, name + '-decisions.jsonl'), BROKER_E2E_PROCESS_LEDGER: ledgerFile };
-    delete env.NTN_SKILLS_NTN_BIN;
     const args = ['--no-extensions', '--session-dir', sessionDir, '--no-mcp', '--no-context-files', '--no-prompt-templates', '--tools', 'read', '-e', options.extension, '-e', observer, '--model', options.model, ...(session ? ['--session', session] : [])];
     const startupAt = Date.now();
     const rpc = await startRpc({ host: 'pi', cwd: base, env, args, timeoutMs: 300000 });
@@ -151,12 +174,15 @@ export async function runMatrix(options) {
       await save(join(evidence, 'states.json'), states);
     } catch (error) {
       result.status = 'failed'; result.error = error?.code === 'ERR_ASSERTION' ? error.message : 'Real host/provider execution failed; raw diagnostic withheld';
-      result.failureKind = error?.code === 'ERR_ASSERTION' ? 'assertion' : 'host_or_provider';
+      result.availabilityFailure = modelAvailabilityFailure((await rows(active.capture)).slice(obsBefore));
+      result.failureKind = result.availabilityFailure ? 'model_availability' : error?.code === 'ERR_ASSERTION' ? 'assertion' : 'host_or_provider';
+      if (result.availabilityFailure) manifest.availabilityFailure = true;
     }
     result.elapsedMs = Date.now() - started; result.startupAndTurnMs = result.elapsedMs + result.startupMs; active.firstTurn = false;
     result.hostDiagnostics = active.rpc.frames.slice(frameBefore).filter(frame => ['extension_error', 'error'].includes(frame.type)).map(frame => ({ type: frame.type, code: typeof frame.code === 'string' && /^[A-Z_]+$/.test(frame.code) ? frame.code : undefined }));
     await save(join(evidence, name + '-result.json'), result); await save(join(evidence, 'manifest.json'), manifest);
     console.log(JSON.stringify(result));
+    if (result.availabilityFailure) throw Object.assign(new Error('Actual authorized model is unavailable; preserve this failed sample before considering the permitted fallback'), { code: 'MODEL_UNAVAILABLE' });
     return result.status === 'passed';
   }
   try {
@@ -223,9 +249,9 @@ export async function runMatrix(options) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2), options = {};
-  if (args.includes('--help')) console.log('Usage: node scripts/verify-pi-notion-model-cache.mjs --fixture ABSOLUTE_JSON --extension INSTALLED_EXTENSION --cli INSTALLED_CLI --model magpie/group/flash-free|magpie/group/worker --evidence-root ABSOLUTE_DIRECTORY [--resume INITIAL_EVIDENCE --resume-case ORIGINAL_CASE]. Initial phase uses separate empty CLI/Broker roots; resume phase verifies a separately approved owned remote edit without changing user configuration.');
+  if (args.includes('--help')) console.log('Usage: node scripts/verify-pi-notion-model-cache.mjs --fixture ABSOLUTE_JSON --extension INSTALLED_EXTENSION --cli INSTALLED_CLI --model magpie/group/flash-free|magpie/group/worker --evidence-root ABSOLUTE_DIRECTORY [--previous-failure ABSOLUTE_FLASH_FREE_MANIFEST (required for worker)] [--resume INITIAL_EVIDENCE --resume-case ORIGINAL_CASE]. Initial phase uses separate empty CLI/Broker roots; resume phase verifies a separately approved owned remote edit without changing user configuration. An actual model availability failure stops that matrix and remains retained; assertions never authorize fallback.');
   else {
-    while (args.length) { const key = args.shift(); assert.ok(['--fixture', '--extension', '--cli', '--model', '--evidence-root', '--resume', '--resume-case'].includes(key) && args.length, 'Unknown option or missing value'); assert.ok(options[key.slice(2)] === undefined, 'Repeated option'); options[key.slice(2)] = args.shift(); }
+    while (args.length) { const key = args.shift(); assert.ok(['--fixture', '--extension', '--cli', '--model', '--evidence-root', '--previous-failure', '--resume', '--resume-case'].includes(key) && args.length, 'Unknown option or missing value'); assert.ok(options[key.slice(2)] === undefined, 'Repeated option'); options[key.slice(2)] = args.shift(); }
     const result = await runMatrix(options); console.log(JSON.stringify({ status: result.status, evidence: result.evidence, passed: result.cases.filter(item => item.status === 'passed').length, total: result.cases.length })); if (result.status !== 'passed') process.exitCode = 1;
   }
 }

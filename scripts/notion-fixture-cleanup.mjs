@@ -10,6 +10,7 @@ export async function archiveOwnedFixture({ evidence, invoke }) {
   assert.equal(owned.owned, true, 'Cleanup requires the original owned fixture receipt');
   const pageId = owned.pageId;
   assert.match(pageId, /^[0-9a-f-]{32,36}$/i);
+  assert.match(owned.operationId, /^(?:p_[A-Za-z0-9-]{1,100}|skill-create-[a-f0-9]{64})$/);
   const path = join(evidence, 'live-fixture-cleanup.json');
   let previous;
   try { previous = JSON.parse(await readFile(path, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -20,8 +21,15 @@ export async function archiveOwnedFixture({ evidence, invoke }) {
   const save = () => writeFile(path, JSON.stringify(state, null, 2) + '\n', { mode: 0o600 });
   await save();
   try {
+    const ownership = await invoke(['ctl', 'archive', pageId, '--operation', owned.operationId, '--dry-run']);
+    assert.equal(ownership.dry_run, true);
+    assert.ok(Array.isArray(ownership.owned_page_ids) && ownership.owned_page_ids.includes(pageId), 'Cleanup requires a complete original creation ownership inventory');
+    for (const id of ownership.owned_page_ids) assert.match(id, /^[0-9a-f-]{32,36}$/i);
+    assert.ok(state.knownIds.every(id => ownership.owned_page_ids.includes(id)), 'Previous cleanup inventory must belong to the same creation');
+    state.knownIds = [...new Set(ownership.owned_page_ids)];
+    state.ownership = { operationId: owned.operationId, verified: true, knownIds: [...state.knownIds] };
     const readPage = async id => {
-      const observed = await invoke(['api', `v1/pages/${id}`, '--notion-version', '2026-03-11']);
+      const observed = (await invoke(['ctl', 'api', `v1/pages/${id}`])).response;
       assert.equal(observed.id, id, 'Cleanup readback must match the exact owned ID');
       const inTrash = observed.in_trash ?? observed.archived;
       assert.equal(typeof inTrash, 'boolean', 'Cleanup requires an explicit page archive state');
@@ -47,14 +55,17 @@ export async function archiveOwnedFixture({ evidence, invoke }) {
         state.knownIds = [...new Set([...state.knownIds, ...prior.knownIds])];
         inventoryComplete = true;
         state.inventory = { complete: true, source: 'previous-attempt', attempt: prior.attempt, knownIds: [...state.knownIds] };
-      } else state.inventoryError = 'Archived owner has no prior complete owned child inventory';
+      } else {
+        inventoryComplete = true;
+        state.inventory = { complete: true, source: 'original-creation-ownership', knownIds: [...state.knownIds] };
+      }
     } else if (ownerReadback.inTrash === false) {
       try {
-        const blocks = await invoke(['api', `v1/blocks/${pageId}/children`, '--notion-version', '2026-03-11']);
+        const blocks = (await invoke(['ctl', 'api', `v1/blocks/${pageId}/children`])).response;
         assert.ok(Array.isArray(blocks.results), 'Fixture cleanup requires an explicit child inventory');
         const children = blocks.results.filter(block => block.type === 'child_page').map(block => block.id);
         for (const id of children) assert.match(id, /^[0-9a-f-]{32,36}$/i);
-        state.knownIds = [...new Set([...state.knownIds, ...children])];
+        assert.ok(children.every(id => state.knownIds.includes(id)), 'Cleanup refuses a child page not owned by the original creation');
         assert.equal(blocks.has_more, false, 'Fixture cleanup refuses an unpaginated child inventory');
         inventoryComplete = true;
         state.inventory = { complete: true, source: 'observed', knownIds: [...state.knownIds] };
@@ -71,7 +82,7 @@ export async function archiveOwnedFixture({ evidence, invoke }) {
       if (id === pageId && !inventoryComplete) { receipt.status = 'blocked'; receipt.reason = 'Child inventory incomplete'; await save(); continue; }
       receipt.patch = { attempted: true, result: 'unknown' };
       await save();
-      try { await invoke(['api', `v1/pages/${id}`, '--notion-version', '2026-03-11', '-X', 'PATCH', '--data', '@-'], { in_trash: true }); receipt.patch.result = 'accepted'; }
+      try { await invoke(['ctl', 'archive', id, '--operation', owned.operationId]); receipt.patch.result = 'accepted'; }
       catch (error) { receipt.patch.error = error.message; receipt.patch.recovery = error.recovery; }
       receipt.readback = { attempted: true, result: 'unknown' };
       await save();
@@ -89,8 +100,8 @@ export async function archiveOwnedFixture({ evidence, invoke }) {
 }
 
 if (process.argv[1] && await realpath(process.argv[1]) === await realpath(fileURLToPath(import.meta.url))) {
-  const [evidence, commandJson = '["ntn"]'] = process.argv.slice(2);
-  assert.ok(evidence, 'Usage: node scripts/notion-fixture-cleanup.mjs /absolute/EVIDENCE [ntn-command-json]');
+  const [evidence, commandJson = '["ntn-skills"]'] = process.argv.slice(2);
+  assert.ok(evidence, 'Usage: node scripts/notion-fixture-cleanup.mjs /absolute/EVIDENCE [project-cli-command-json]');
   const command = JSON.parse(commandJson);
   assert.ok(Array.isArray(command) && command.length && command.every(item => typeof item === 'string'));
   await archiveOwnedFixture({ evidence, invoke: (args, input) => invokeJson(command, args, { input, evidence: join(evidence, 'command-receipts.jsonl'), category: 'fixture-reconcile' }) });
