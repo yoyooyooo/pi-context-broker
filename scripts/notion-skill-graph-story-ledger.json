@@ -2,7 +2,7 @@
   "version": 1,
   "issue": "AH-561",
   "source": "https://linear.app/yoyooyooo/issue/AH-561",
-  "asOf": "2026-11-03T14:53:57.964Z；CLI9/Broker8 产品包保持；H7 验证器冻结；H6 A 与 H7 B 真实 Gate 未通过；legacy 17 项要求分层覆盖；owned 清理、生产 census、六文档发布及独立读回完成（5 页 byte exact，05 页接受 3 项 Markdown 转义，原 strict 失败保留）；日用未激活。",
+  "asOf": "2026-11-03T15:14:20.211Z；保留 E62 原六页发布截点（5 页 byte exact、05 页接受 3 项转义）；后续 05 限定措辞勘误为 WRITE_OUTCOME_UNKNOWN，独立读回仍观察到原基线，远端纠正未证实；A/B 失败、五票与父票未完成、日用未激活。",
   "policy": "Every result remains bound to its actual package, harness, cohort and evidence layer. Original failures, unknown operations, observation errors and notRun cases remain visible. Seventeen legacy requirements are covered across preserved H6 initial cases, one H7 targeted case and H7 updated6, not a single new all-pass cohort. H6 A and H7 B remain failed and do not permit daily activation. This ledger records six-document publication/readback, but does not self-reference its eventual Git commit/push.",
   "stories": [
     {
@@ -36,9 +36,10 @@
         "E56",
         "E58",
         "E59",
-        "E62"
+        "E62",
+        "E63"
       ],
-      "observed": "历史基线：CLI9原冷logical refresh同命令已修复并实测通过，29请求/1,245,827响应字节/0写；原CLI8 65请求/206,985,388字节失败保留。最终包内CLI9与Broker7运行门通过，无官方ntn路径。H5/H6 检查点：当前产品仍为CLI9/Broker8。H5与H6真实运行已实际发生，不能继续写“H5仅准备/尚未启动”；产品安装身份、受控SDK、真实模型任务分别记账。。本轮最终：最终CLI9/Broker8安装与真实单Skill17项要求已有分层证据；六文档按冻结计划发布并独立读回。产品包身份与后续harness/文档Git提交分开。A/B自然任务仍未过，日用未激活。 文档最终读回为 5 页 byte exact 与 05 页接受 3 项 Markdown 转义；05 对原候选仍不逐字相同。",
+      "observed": "历史基线：CLI9原冷logical refresh同命令已修复并实测通过，29请求/1,245,827响应字节/0写；原CLI8 65请求/206,985,388字节失败保留。最终包内CLI9与Broker7运行门通过，无官方ntn路径。H5/H6 检查点：当前产品仍为CLI9/Broker8。H5与H6真实运行已实际发生，不能继续写“H5仅准备/尚未启动”；产品安装身份、受控SDK、真实模型任务分别记账。。本轮最终：最终CLI9/Broker8安装与真实单Skill17项要求已有分层证据；六文档按冻结计划发布并独立读回。产品包身份与后续harness/文档Git提交分开。A/B自然任务仍未过，日用未激活。 文档最终读回为 5 页 byte exact 与 05 页接受 3 项 Markdown 转义；05 对原候选仍不逐字相同。。E63 后续限定勘误：上述 5+1 读回结论属于 E62 原六页发布截点；05 的资源要求措辞修正另发一次新 operation，结果 WRITE_OUTCOME_UNKNOWN。独立 CLI9 两次 GET 仍观察到 f5 基线，不能据此判定原操作未派发或未应用；远端纠正尚未证实，无重放。",
       "remainingFinal": "本轮产品安装与文档交付完成；AH-582所需A/B及日用终验未完成。",
       "finalPackageResult": "installed_package_and_docs_delivered_activation_blocked"
     },
@@ -159,7 +160,8 @@
         "E59",
         "E60",
         "E61",
-        "E62"
+        "E62",
+        "E63"
       ],
       "observed": "历史基线：CLI9完整3208pass、Broker7完整门与实际Pi七阶段保留；Broker8 H4受控SDK78项及legacy20通过。真实原15 H4初始2pass1fail8skip，主文已精确读取、合法index资源被observer误拦；所有原结果保留。H5/H6 检查点：H5原A/B均timeout且顶层OBSERVATION_INCOMPLETE；独立metadata补证后归属完整但仍失败。H6A假EAGER时点已独立派生为READ_MISSING，真实资源缺口仍在；H6B裸owner prepare与legacy已广告主文的observer误拦单独诊断。。本轮最终：最终证据覆盖受控96项、两组实际SDK、H6A和H7B真实失败、legacy17项分层覆盖、清理、生产census与六文档读回。模型失败、观察器修复、离线派生与未运行样本分别保留。",
       "remainingFinal": "A/B Gate及完整生成Skill驱动未通过；不得将可独立交付项或legacy覆盖写成33/33验收通过。",
@@ -251,7 +253,8 @@
         "E50",
         "E51",
         "E53",
-        "E57"
+        "E57",
+        "E63"
       ],
       "observed": "历史基线：root-only View/oracle/TASKv2冻结；H3 A原EAGER_MEMBERS保留，H4补完整retained归属后离线仍READ_MISSING，78回归/实际SDK只证明观察器受控链。H5/H6 检查点：H6A root-only自主读对create-verification-skill主文6837B，6次后续provider上下文含匹配正文；成功stop final22070B。required feature-map README及两例资源均0native read/0provider内容，独立派生仍READ_MISSING；原EAGER11保留。。本轮最终：A最终采用H6真实结果：已读对6837B目标主文且成功final22070B；required README与示例选择组资源均未实际native read/provider消费。原EAGER11保留，独立时点派生为0后仍READ_MISSING；没有完整Skill或执行。",
       "remainingFinal": "Gate A未通过；后续4样本notRun，本轮不再追加A cohort或替模型补资源/文件。",
@@ -830,10 +833,11 @@
         "E55",
         "E57",
         "E60",
-        "E62"
+        "E62",
+        "E63"
       ],
       "observed": "历史基线：CLI9与Broker8候选包已独立核对；同日用候选路径用于H4 actual SDK及两真实模型显式场景，日用配置仍未激活。H5/H6 检查点：CLI9/Broker8是经独立安装验证的候选；H6A仍未满足资源消费和完整Skill产物。任何H7B/legacy成功都不覆盖A的原失败。。本轮最终：候选产品和harness/文档已按各自source身份交付，但日用保持未激活。H6A真实资源/完整Skill缺口与H7B真实读取/产物缺口均保留；legacy覆盖成功不能覆盖A/B失败。",
-      "remainingFinal": "AH-582日用新会话终验仍未执行；本轮不切换日用配置、不追加模型cohort。",
+      "remainingFinal": "AH-582日用新会话终验仍未执行；本轮不切换日用配置、不追加模型cohort。 05 限定勘误操作仍为 unknown，远端措辞纠正待核对。",
       "finalPackageResult": "blocked_daily_activation"
     },
     {
@@ -1911,6 +1915,45 @@
           "sha256": "994fc9782a4a28004ed444a7bf5340b28f763652d89b5a343bcc19b84638b6b2"
         }
       ]
+    },
+    {
+      "id": "E63",
+      "title": "Notion05限定勘误结果未知与独立基线读回",
+      "layer": "One explicit subsequent wording-correction PATCH returned WRITE_OUTCOME_UNKNOWN. Independent CLI9 metadata/body GETs observed the original f5 baseline; they do not establish that the unknown write was undispatched or not applied. Remote correction is not confirmed, no replay or accept-current occurred. E62 remains the earlier six-page cutoff with seven known-successful updates and zero unresolved dispatches; this subsequent operation adds one unresolved outcome. No model task or acceptance requirement changed.",
+      "files": [
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication-resource-erratum-JnpptS/terminal-receipt.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication-resource-erratum-JnpptS/response.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication-resource-erratum-JnpptS/failure-1793718495515.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication-resource-erratum-JnpptS/plan.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication-resource-erratum-JnpptS/independent-cli9-readback-SlZ4gH/result.json"
+      ],
+      "fileIdentities": [
+        {
+          "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication-resource-erratum-JnpptS/terminal-receipt.json",
+          "bytes": 4578,
+          "sha256": "dd5a569e87867666ec84c947bc769f237e1f8fecac6d9c601df82e50943d8d87"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication-resource-erratum-JnpptS/response.json",
+          "bytes": 405,
+          "sha256": "85a76fcac1ad398740943651a966150a0ad83fae7913e53ef1a11a0235778717"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication-resource-erratum-JnpptS/failure-1793718495515.json",
+          "bytes": 1220,
+          "sha256": "49da8326d45819abddecdd1f4c94ad925ce77d1360842aac7a69429c7142e0d6"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication-resource-erratum-JnpptS/plan.json",
+          "bytes": 169909,
+          "sha256": "5a117e49c3ab075d9d86fe5ff3fb6f92957eab61fbc8ecffd39ae0e18f3d8ed3"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication-resource-erratum-JnpptS/independent-cli9-readback-SlZ4gH/result.json",
+          "bytes": 4205,
+          "sha256": "61e00375830e8f8b8e8307b39d65b14a4e8a15edd679eb241f744b98263f3c93"
+        }
+      ]
     }
   ],
   "original15Index": "scripts/notion-skill-graph-acceptance.md#original-ah-560-cases",
@@ -2027,7 +2070,7 @@
       "AH-573": "H6 A retains real required-resource and complete-Skill/execution gaps.",
       "AH-576": "H7 B retains real target/resource/project-read and complete-Skill/execution gaps.",
       "AH-581": "Owned cleanup and production census are complete; the remaining required end-to-end A/B acceptance is not complete.",
-      "AH-582": "Daily activation/new-session acceptance was not performed because A/B remain failed."
+      "AH-582": "Daily activation/new-session acceptance was not performed because A/B remain failed. The subsequent Notion05 wording-correction operation also remains WRITE_OUTCOME_UNKNOWN; remote correction is not confirmed."
     },
     "publicationIssue": "AH-566",
     "publicationDisposition": "Publication/readback complete; root authorized to mark Done, this writer does not assert a live Linear transition.",
@@ -2297,5 +2340,161 @@
     ],
     "removedView": "40d5636c-236e-80da-b51d-000cf22b6b45",
     "actualDefaultView": "b6c7bb99-ae7c-4be7-b98b-5703b09e8913"
-  }
+  },
+  "postPublicationErrata": [
+    {
+      "evidence": "E63",
+      "recordedAt": "2026-11-03T15:14:20.211Z",
+      "receipt": {
+        "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication-resource-erratum-JnpptS/terminal-receipt.json",
+        "bytes": 4578,
+        "sha256": "dd5a569e87867666ec84c947bc769f237e1f8fecac6d9c601df82e50943d8d87"
+      },
+      "scope": "Only the wording of README required plus one of two examples in Notion 05. No test or model behavior changed.",
+      "operationId": "ah561-doc-resource-erratum-9379695c85bfee27bbdadce8708d5b23862122eb102ddaaead9b758f1445ea40",
+      "pageId": "40d5636c-236e-813b-8b22-cb63e2f7d0b5",
+      "intendedWordingCorrection": {
+        "from": "目标主文有 1 次 native read、6 次 provider 上下文，三份所需资源均为 0。",
+        "to": "目标主文有 1 次 native read、6 次 provider 上下文，必读 README 与示例二选一组的实际读取和 provider 内容均为 0。"
+      },
+      "originalOutcome": "WRITE_OUTCOME_UNKNOWN",
+      "remoteCorrectionConfirmed": false,
+      "knownSuccessfulErratumUpdates": 0,
+      "unresolvedErratumDispatches": 1,
+      "mutationAttempts": 1,
+      "originalUnknownReclassified": false,
+      "replayPerformed": false,
+      "acceptCurrentPerformed": false,
+      "baseline": {
+        "sha256": "f5f3a2975ea3826f54083cd14c432e0d043b2d17ef51a73ef1bfd6c27ce162eb",
+        "bytes": 33445
+      },
+      "candidate": {
+        "sha256": "143e20437fd0dee788a2ff2e4ce44673d352328d2e0b791654b693b2b67ba977",
+        "bytes": 33496
+      },
+      "independentReadback": {
+        "receipt": {
+          "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication-resource-erratum-JnpptS/independent-cli9-readback-SlZ4gH/result.json",
+          "bytes": 4205,
+          "sha256": "61e00375830e8f8b8e8307b39d65b14a4e8a15edd679eb241f744b98263f3c93"
+        },
+        "status": "current_matches_before",
+        "observedSha256": "f5f3a2975ea3826f54083cd14c432e0d043b2d17ef51a73ef1bfd6c27ce162eb",
+        "observedBytes": 33445,
+        "byteExactToBefore": true,
+        "byteExactToCandidate": false,
+        "parentUnchanged": true,
+        "propertiesUnchanged": true,
+        "historicalOriginalPreserved": true,
+        "interpretation": "This readback establishes only the observed baseline at its observation time; it does not classify the original unknown operation as undispatched or not-applied."
+      },
+      "publisherMetrics": {
+        "total_requests": 3,
+        "requests": {
+          "notion_metadata": 1,
+          "notion_body": 1,
+          "notion_write": 1,
+          "provider": 0
+        },
+        "body_requests": {
+          "current_body": 1,
+          "retained_body": 0,
+          "unclassified_body": 0
+        },
+        "request_bytes": 67517,
+        "response_bytes": 34780,
+        "unknown_request_bytes": 0,
+        "unknown_response_bytes": 1,
+        "outcomes": {
+          "success": 2,
+          "failure": 1,
+          "cancelled": 0
+        },
+        "provider_requests": {
+          "notion": 3
+        }
+      },
+      "readerMetrics": [
+        {
+          "total_requests": 1,
+          "requests": {
+            "notion_metadata": 1,
+            "notion_body": 0,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "body_requests": {
+            "current_body": 0,
+            "retained_body": 0,
+            "unclassified_body": 0
+          },
+          "request_bytes": 0,
+          "response_bytes": 928,
+          "unknown_request_bytes": 0,
+          "unknown_response_bytes": 0,
+          "outcomes": {
+            "success": 1,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "provider_requests": {
+            "notion": 1
+          }
+        },
+        {
+          "total_requests": 1,
+          "requests": {
+            "notion_metadata": 0,
+            "notion_body": 1,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "body_requests": {
+            "current_body": 1,
+            "retained_body": 0,
+            "unclassified_body": 0
+          },
+          "request_bytes": 0,
+          "response_bytes": 33852,
+          "unknown_request_bytes": 0,
+          "unknown_response_bytes": 0,
+          "outcomes": {
+            "success": 1,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "provider_requests": {
+            "notion": 1
+          }
+        }
+      ],
+      "metricsInterpretation": "requests.provider=0 means zero model-provider requests. provider_requests.notion is a service map. unknown_response_bytes=1 records one unknown-response-byte observation, not a known one-byte response. The first E62 publisher HTTP total remains unknown; these E63 costs are separate.",
+      "originalPublicationCutoff": {
+        "evidence": "E62",
+        "knownSuccessfulPageUpdates": 7,
+        "unresolvedPageDispatches": 0,
+        "originalEvidenceUnchanged": true
+      },
+      "latestKnownPageOperationAccounting": {
+        "knownSuccessfulPageUpdates": 7,
+        "unresolvedPageDispatches": 1,
+        "meaning": "Seven successes belong to E62; one later E63 operation remains unknown. This is operation accounting, not a reconstruction of total HTTP attempts."
+      },
+      "issueImpact": {
+        "AH566": "Done as confirmed by parent; the original no-ntn scope is unaffected by this resource-requirement sentence.",
+        "AH582": "Daily activation remains blocked; this subsequent Notion05 wording-correction operation also remains unresolved.",
+        "parentAndFiveOpenIssuesUnchanged": true
+      },
+      "runtime": {
+        "startedAt": "2026-11-03T15:07:46.250Z",
+        "finishedAt": "2026-11-03T15:08:15.536Z",
+        "pid": 35122,
+        "exitCode": 1,
+        "signal": null,
+        "stdoutSha256": "e4512993be93c2c13397cc2deafe738be518c096c61442310485322c6469bb32",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ]
 }
