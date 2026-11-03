@@ -2,8 +2,8 @@
   "version": 1,
   "issue": "AH-561",
   "source": "https://linear.app/yoyooyooo/issue/AH-561",
-  "asOf": "2026-11-03 before final CLI/Broker freeze",
-  "policy": "Actual evidence is scoped to its run/package/layer. No final Gate, final-package pass, original15 rerun, or daily delivery is inferred.",
+  "asOf": "2026-11-03T14:53:57.964Z；CLI9/Broker8 产品包保持；H7 验证器冻结；H6 A 与 H7 B 真实 Gate 未通过；legacy 17 项要求分层覆盖；owned 清理、生产 census、六文档发布及独立读回完成（5 页 byte exact，05 页接受 3 项 Markdown 转义，原 strict 失败保留）；日用未激活。",
+  "policy": "Every result remains bound to its actual package, harness, cohort and evidence layer. Original failures, unknown operations, observation errors and notRun cases remain visible. Seventeen legacy requirements are covered across preserved H6 initial cases, one H7 targeted case and H7 updated6, not a single new all-pass cohort. H6 A and H7 B remain failed and do not permit daily activation. This ledger records six-document publication/readback, but does not self-reference its eventual Git commit/push.",
   "stories": [
     {
       "id": "US01",
@@ -16,11 +16,31 @@
       "publicPath": "ctl doctor；list/read/files/export；安装包默认CLI解析",
       "evidence": [
         "E02",
-        "E18"
+        "E18",
+        "E26",
+        "E29",
+        "E35",
+        "E38",
+        "E40",
+        "E42",
+        "E43",
+        "E46",
+        "E47",
+        "E48",
+        "E49",
+        "E50",
+        "E52",
+        "E53",
+        "E54",
+        "E55",
+        "E56",
+        "E58",
+        "E59",
+        "E62"
       ],
-      "observed": "早包直连与官方ntn poison探针已留证",
-      "remainingFinal": "最终默认随包CLI、doctor/helper/cleanup及日用路径重验；旧官方CLI历史不算当前证据",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：CLI9原冷logical refresh同命令已修复并实测通过，29请求/1,245,827响应字节/0写；原CLI8 65请求/206,985,388字节失败保留。最终包内CLI9与Broker7运行门通过，无官方ntn路径。H5/H6 检查点：当前产品仍为CLI9/Broker8。H5与H6真实运行已实际发生，不能继续写“H5仅准备/尚未启动”；产品安装身份、受控SDK、真实模型任务分别记账。。本轮最终：最终CLI9/Broker8安装与真实单Skill17项要求已有分层证据；六文档按冻结计划发布并独立读回。产品包身份与后续harness/文档Git提交分开。A/B自然任务仍未过，日用未激活。 文档最终读回为 5 页 byte exact 与 05 页接受 3 项 Markdown 转义；05 对原候选仍不逐字相同。",
+      "remainingFinal": "本轮产品安装与文档交付完成；AH-582所需A/B及日用终验未完成。",
+      "finalPackageResult": "installed_package_and_docs_delivered_activation_blocked"
     },
     {
       "id": "US02",
@@ -31,11 +51,26 @@
       "publicPath": "自有CredentialProvider；分离CLI/XDG roots；scope身份核对",
       "evidence": [
         "E02",
-        "E04"
+        "E04",
+        "E26",
+        "E30",
+        "E31",
+        "E38",
+        "E40",
+        "E42",
+        "E43",
+        "E48",
+        "E51",
+        "E53",
+        "E54",
+        "E55",
+        "E56",
+        "E59",
+        "E61"
       ],
-      "observed": "实际认证scope及多根配额身份分离",
-      "remainingFinal": "最终包独立根认证/读取；不复制凭据，不用旧缓存授权",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：实际自有认证scope隔离、多进程调度及Mini8独立自身认证通过；无token/SQLite复制。H5/H6 检查点：H5补证独立oracle与原consumer根分离；scope固定5a163d388fb831806a56ba23889f425eaf974d98fae86ad3bb883d40ca956938。H6A/B与单Skill继续各自隔离根，未复制token或consumer缓存。。本轮最终：H7所有真实消费继续使用独立consumer根与同一已验证scope；补证和生产census均使用独立oracle/state根，未复制token或consumer缓存。",
+      "remainingFinal": "本条原认证/隔离范围无新增待项；不由scope一致推定日用激活。",
+      "finalPackageResult": "original_scope_verified"
     },
     {
       "id": "US03",
@@ -48,11 +83,21 @@
       "evidence": [
         "E03",
         "E04",
-        "E25"
+        "E25",
+        "E30",
+        "E34",
+        "E35",
+        "E41",
+        "E43",
+        "E49",
+        "E50",
+        "E55",
+        "E59",
+        "E60"
       ],
-      "observed": "真实body/属性/附件及受控重试；生产unknown保持unknown",
-      "remainingFinal": "最终owned单Skill create/A→B/归档；任何unknown保原op、不重放",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：掉响应后按原native-create journal核对、不重复创建已有12pass/154assert受控直接证明。旧A2 main独立accept-current不完成父aggregate，unknown/fence保留；旧两页已按create-op归档；新owner两次单文件write验证完整B。H5/H6 检查点：H5旧失败和unknown/fence不改写。H6单Skill初始11项实际10pass/1fail；此检查点尚未做updated6，不能用初始通过代替B→A后的分支/更新验证。。本轮最终：两精确文件B→A各经唯一公开write及独立readback；随后两owned页各一次archive并GET确认。原unknown父操作、fence和历史失败仍按原状态保留，未aggregate重放。",
+      "remainingFinal": "本轮唯一文件更新与owned清理完成；原unknown不被后验接受改判为父aggregate完成。",
+      "finalPackageResult": "scoped_operations_verified_original_unknown_preserved"
     },
     {
       "id": "US04",
@@ -62,11 +107,13 @@
       ],
       "publicPath": "实际Node CLI跨内容根调度",
       "evidence": [
-        "E04"
+        "E04",
+        "E26",
+        "E38"
       ],
-      "observed": "14项Node/SQLite含多进程、共享额度、租约和前台优先",
-      "remainingFinal": "最终引擎回归与冻结身份汇入；不是跨机器中心协调",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：14项Node/SQLite含跨根多进程额度/租约/前台优先；最终CLI9完整3208pass/26736assertions/229files，types/package通过；旧CLI7/8的3203单列保留。本轮最终：原跨内容根调度、真实CLI9运行门及保护证据保留；本轮未新增跨机器协调承诺。",
+      "remainingFinal": "无新增调度功能待项；不宣称跨机器中心协调。",
+      "finalPackageResult": "original_scope_verified"
     },
     {
       "id": "US05",
@@ -80,11 +127,43 @@
         "E01",
         "E19",
         "E20",
-        "E23"
+        "E23",
+        "E26",
+        "E27",
+        "E28",
+        "E34",
+        "E35",
+        "E36",
+        "E37",
+        "E38",
+        "E39",
+        "E40",
+        "E41",
+        "E42",
+        "E43",
+        "E44",
+        "E45",
+        "E46",
+        "E47",
+        "E48",
+        "E49",
+        "E50",
+        "E51",
+        "E52",
+        "E53",
+        "E54",
+        "E55",
+        "E56",
+        "E57",
+        "E58",
+        "E59",
+        "E60",
+        "E61",
+        "E62"
       ],
-      "observed": "基线、元数据预检和各证据层已区分",
-      "remainingFinal": "原15+额外2、Gate A/B、最终包完整索引与失败台账",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：CLI9完整3208pass、Broker7完整门与实际Pi七阶段保留；Broker8 H4受控SDK78项及legacy20通过。真实原15 H4初始2pass1fail8skip，主文已精确读取、合法index资源被observer误拦；所有原结果保留。H5/H6 检查点：H5原A/B均timeout且顶层OBSERVATION_INCOMPLETE；独立metadata补证后归属完整但仍失败。H6A假EAGER时点已独立派生为READ_MISSING，真实资源缺口仍在；H6B裸owner prepare与legacy已广告主文的observer误拦单独诊断。。本轮最终：最终证据覆盖受控96项、两组实际SDK、H6A和H7B真实失败、legacy17项分层覆盖、清理、生产census与六文档读回。模型失败、观察器修复、离线派生与未运行样本分别保留。",
+      "remainingFinal": "A/B Gate及完整生成Skill驱动未通过；不得将可独立交付项或legacy覆盖写成33/33验收通过。",
+      "finalPackageResult": "evidence_complete_real_model_gates_failed"
     },
     {
       "id": "US06",
@@ -96,11 +175,24 @@
       "publicPath": "Notion原生Members/Requires；普通链接、mention、Link to page",
       "evidence": [
         "E06",
-        "E07"
+        "E07",
+        "E26",
+        "E27",
+        "E28",
+        "E38",
+        "E42",
+        "E47",
+        "E48",
+        "E52",
+        "E53",
+        "E54",
+        "E55",
+        "E56",
+        "E58"
       ],
-      "observed": "三链接形式、准确File ref与生产关系真实回读",
-      "remainingFinal": "最终owner域编译/公开读回归；不把metadata当正文",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：实际UI三链接、FileID与旧pin通过；最终core owner域正负例及Broker4/5资源链、Broker6别名SDK已通过。H5/H6 检查点：H6已验证省略可选snapshot/FileID与已发现稳定FileID旧显示路径；88项受控回归、两次实际安装SDK各10对wire/payload。H6单Skill自主native read已通过；余下native主文wrapper与B省略/SKILL.md为两处已证实observer合同误拦。。本轮最终：H7以实际installed parser、已发现metadata主入口及完整native wrapper delivery绑定修复观察误拦。受控96/96、两组实际SDK各10对与真实cold-native-command 1/1已通过；未放宽身份/路径边界。",
+      "remainingFinal": "原链接/资源合同范围无新增待项；Graph自然任务的资源消费不足另列。",
+      "finalPackageResult": "original_scope_verified"
     },
     {
       "id": "US07",
@@ -110,11 +202,14 @@
       ],
       "publicPath": "source refresh plan/dry-run/apply；portable导出/导入",
       "evidence": [
-        "E05"
+        "E05",
+        "E26",
+        "E38",
+        "E61"
       ],
-      "observed": "受控A→B→C保人工增删、显式空集、自定义字段与旧pin",
-      "remainingFinal": "最终包相应回归汇入；现证据不声称生产Source刷新",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：受控A→B→C保人工增删/显式空集/未知字段/旧pin；最终CLI9 3208完整suite覆盖相关回归。本轮最终：最终57页复核确认Origin、Selected Version和作者字段保护；仅附件下载签名/expiry轮换，稳定附件身份逐项相同。未执行新的生产Source刷新。",
+      "remainingFinal": "无新增上游保护功能待项；受控刷新结果不冒称本轮生产Source刷新。",
+      "finalPackageResult": "original_scope_verified"
     },
     {
       "id": "US08",
@@ -124,11 +219,19 @@
       ],
       "publicPath": "Pstack精确57绑定census；公开关系读回",
       "evidence": [
-        "E07"
+        "E07",
+        "E26",
+        "E38",
+        "E45",
+        "E47",
+        "E51",
+        "E53",
+        "E57",
+        "E61"
       ],
-      "observed": "Router56、poteto Skill Members55/Requires unslop；architect Requires arena",
-      "remainingFinal": "Gate模型读在最终包复验；数据治理不代替模型自主选择",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：生产57个指定记录逐一census；Router56、poteto普通Skill Members55/Requires unslop、architect Requires arena；4主文22链接已治理。H5/H6 检查点：Pstack生产关系治理与模型任务分开。H5独立补证A18/18、B6/6正文均归属且选择前成员计数0；H6A原11来自后注册observer时点，四个模型已选owner的5+2+2+2请求离线纠正后为0，原计数/文件保留。。本轮最终：最终生产census精确57页及logical IDs全部保留；root Members56、poteto Members55、全部Members/Requires完整，来源pin/Origin/Kind/Enabled/Main File ID和作者字段无未解释变化。",
+      "remainingFinal": "Pstack生产关系治理与最终复核完成；真实A/B失败不改判为治理通过后的自然任务成功。",
+      "finalPackageResult": "production_governance_and_census_verified"
     },
     {
       "id": "US09",
@@ -139,11 +242,20 @@
       "publicPath": "Gate A root-only installed Pi native read",
       "evidence": [
         "E19",
-        "E20"
+        "E20",
+        "E28",
+        "E35",
+        "E44",
+        "E45",
+        "E47",
+        "E50",
+        "E51",
+        "E53",
+        "E57"
       ],
-      "observed": "真实单根View/token与独立oracle已就绪；受控observer通过",
-      "remainingFinal": "最终prompt v2五样本真实模型+完整生成文件+至少一条实际规程执行",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：root-only View/oracle/TASKv2冻结；H3 A原EAGER_MEMBERS保留，H4补完整retained归属后离线仍READ_MISSING，78回归/实际SDK只证明观察器受控链。H5/H6 检查点：H6A root-only自主读对create-verification-skill主文6837B，6次后续provider上下文含匹配正文；成功stop final22070B。required feature-map README及两例资源均0native read/0provider内容，独立派生仍READ_MISSING；原EAGER11保留。。本轮最终：A最终采用H6真实结果：已读对6837B目标主文且成功final22070B；required README与示例选择组资源均未实际native read/provider消费。原EAGER11保留，独立时点派生为0后仍READ_MISSING；没有完整Skill或执行。",
+      "remainingFinal": "Gate A未通过；后续4样本notRun，本轮不再追加A cohort或替模型补资源/文件。",
+      "finalPackageResult": "real_model_gate_failed"
     },
     {
       "id": "US10",
@@ -154,11 +266,20 @@
       "publicPath": "Gate B普通Skill root-only installed Pi native read",
       "evidence": [
         "E19",
-        "E20"
+        "E20",
+        "E28",
+        "E44",
+        "E45",
+        "E47",
+        "E50",
+        "E51",
+        "E54",
+        "E56",
+        "E57"
       ],
-      "observed": "真实普通Skill单根View/token；必读unslop关系已治理",
-      "remainingFinal": "最终prompt v2五样本真实模型；目标保持optional、不改Router",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：普通Skill root-only View与Requires仅unslop已实证；H3 B原CANDIDATE_IDENTITY及路径误拦保留，H4修观察器后离线仍READ_MISSING。H5/H6 检查点：H6B原READ_MISSING。已发现poteto/unslop owner的skill_prepare roots省略可选/SKILL.md被observer误拦，产品解析支持且源码/installed hash一致。成功stop final22213B，但目标/资源未读、无完整生成Skill或执行。。本轮最终：H7B实际READ_MISSING；9 provider全200、无observer/availability/eager错误。模型有成功final23643B，但native目标/资源和owned项目读取均0；5个项目路径漏前导斜线被正确拒绝。仅保留2个文件，无SKILL.md或规程执行。",
+      "remainingFinal": "Gate B未通过；warm-new-process与continued-session共4样本notRun，不用成功final替代目标/资源/产物证明。",
+      "finalPackageResult": "real_model_gate_failed"
     },
     {
       "id": "US11",
@@ -169,11 +290,27 @@
       "publicPath": "read；skill_search；skill_prepare公开工具",
       "evidence": [
         "E09",
-        "E12"
+        "E12",
+        "E27",
+        "E28",
+        "E42",
+        "E44",
+        "E46",
+        "E47",
+        "E48",
+        "E49",
+        "E52",
+        "E53",
+        "E54",
+        "E55",
+        "E56",
+        "E57",
+        "E58",
+        "E59"
       ],
-      "observed": "shell关闭native目录→Member→stable FileID资源链",
-      "remainingFinal": "最终580部分物化包native-chain/冷pin重新安装验证",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：Broker8 H4真实read-only case1已自主读取438B精确主文，但随后已广告index目录的manifest内relative资源被Graph误拦；两显式场景均完整主文/资源通过，错误归因有只读receipt。H5/H6 检查点：H6已验证省略可选snapshot/FileID与已发现稳定FileID旧显示路径；88项受控回归、两次实际安装SDK各10对wire/payload。H6单Skill自主native read已通过；余下native主文wrapper与B省略/SKILL.md为两处已证实observer合同误拦。。本轮最终：正常read/skill_search/skill_prepare公开工具面及窄发现边界已受控和真实legacy验证。H7B无新的observer误拦；错误模型路径仍拒绝。AH-572所需真实A/B整体目标均未通过。",
+      "remainingFinal": "保留无shell公开工具功能证据；AH-572的A/B自然任务验收仍未满足。",
+      "finalPackageResult": "tool_surface_verified_end_to_end_gate_failed"
     },
     {
       "id": "US12",
@@ -185,11 +322,26 @@
       "publicPath": "prepare --purpose use；$和/skill前置完成",
       "evidence": [
         "E08",
-        "E09"
+        "E09",
+        "E26",
+        "E27",
+        "E28",
+        "E37",
+        "E38",
+        "E39",
+        "E42",
+        "E47",
+        "E48",
+        "E52",
+        "E54",
+        "E55",
+        "E56",
+        "E57",
+        "E58"
       ],
-      "observed": "完整Required闭包、hash/pin、失败阻断首provider",
-      "remainingFinal": "最终包root+Required首provider各完整一次",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：use根+Requires闭包、首provider完整hash各一次及失败阻断在core和独立Pi通过；Broker6SDK根+3Required各一次；最终Broker7/CLI9七阶段每个root/Required全文及pin真实provider核对通过。H5/H6 检查点：独立use/Required与去重既有功能证据保留。H6B首次provider已完整包含41537B根及5938B unslop；H6单Skill初始10项通过含cold-dollar/同session/跨进程与TTL路径，但cold-native-command误拦保留。。本轮最终：Required/use首provider完整闭包的原功能证据保留；H7真实native-command入口通过。Graph B已完成root/Required提供，但模型未继续读目标和必需资源，不能改写为任务通过。",
+      "remainingFinal": "原use/Required功能范围完成；AH-574按原AC与tar delta已完成，Graph自然任务缺口独立保留。",
+      "finalPackageResult": "original_scope_verified"
     },
     {
       "id": "US13",
@@ -201,11 +353,26 @@
       "publicPath": "prepare --purpose inspect；native read默认inspect",
       "evidence": [
         "E08",
-        "E09"
+        "E09",
+        "E26",
+        "E27",
+        "E28",
+        "E37",
+        "E38",
+        "E39",
+        "E42",
+        "E47",
+        "E48",
+        "E52",
+        "E53",
+        "E54",
+        "E55",
+        "E56",
+        "E58"
       ],
-      "observed": "inspect仅根；Required/Member目录不自动采用",
-      "remainingFinal": "最终580 native read只有选中文件，目录不冒充ready",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：inspect只根、不递归Requires/Members；Broker4真实Pi与CLI8同JS、580entry/fullmanifest独立适配通过。H5/H6 检查点：H6已验证省略可选snapshot/FileID与已发现稳定FileID旧显示路径；88项受控回归、两次实际安装SDK各10对wire/payload。H6单Skill自主native read已通过；余下native主文wrapper与B省略/SKILL.md为两处已证实observer合同误拦。。本轮最终：实际产品URI parser与已验证metadata入口用于inspect读取；native wrapper仅凭真实provider完整主文、receipt与immutable身份发现。无需执行许可即可查看，原use/inspect区分保留。",
+      "remainingFinal": "原inspect语义无新增待项；任何观察器纠正均不为模型补造资源读取。",
+      "finalPackageResult": "original_scope_verified"
     },
     {
       "id": "US14",
@@ -218,11 +385,20 @@
       "evidence": [
         "E07",
         "E08",
-        "E19"
+        "E19",
+        "E27",
+        "E28",
+        "E45",
+        "E47",
+        "E51",
+        "E53",
+        "E56",
+        "E57",
+        "E61"
       ],
-      "observed": "分页完整目录、root-only配置；候选正文未自动注入",
-      "remainingFinal": "最终A Gate自主选择前0候选正文的实际HTTP归因",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：root-only目录与完整分页通过；H4受控SDK首provider根+Required各一、Member0；H3 A未归属retained请求已有完整来源证明，离线仍因目标资源未读不达标。H5/H6 检查点：Pstack生产关系治理与模型任务分开。H5独立补证A18/18、B6/6正文均归属且选择前成员计数0；H6A原11来自后注册observer时点，四个模型已选owner的5+2+2+2请求离线纠正后为0，原计数/文件保留。。本轮最终：H6A的11次正文请求均由后注册observer时点造成假提前分类，四条因果链离线纠正后为0；原结果不改。H7B实际选择前member正文计数0，最终57页轻量目录与关系完整。",
+      "remainingFinal": "目录和按需选择边界已分层核实；模型缺读取仍使A/B不通过。",
+      "finalPackageResult": "scoped_discovery_boundary_verified"
     },
     {
       "id": "US15",
@@ -233,11 +409,23 @@
       "publicPath": "prepare确定版本、Required环、预算错误",
       "evidence": [
         "E08",
-        "E12"
+        "E12",
+        "E26",
+        "E27",
+        "E38",
+        "E42",
+        "E43",
+        "E45",
+        "E50",
+        "E51",
+        "E53",
+        "E54",
+        "E56",
+        "E57"
       ],
-      "observed": "受控环/版本/深度/字节/类型失败不截断成ready",
-      "remainingFinal": "最终核心负例汇入；缺资源/历史负例不能被模型final掩盖",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：环/确定版本冲突/深度/bytes/节点/Required类型失败在最终core与独立Pi负例明确阻断，非截断ready。H5/H6 检查点：错误分类保留原结果与独立归因两层：H5未知归属/睡眠/模型坏输入分列；H6A晚时点假EAGER纠正后真实READ_MISSING仍在；H6B裸owner合法输入误拦单列。。本轮最终：最终保留真实typed失败及来源：H5超时/未知观察、H6假EAGER时点和合法输入误拦、H7B真实READ_MISSING分列；成功final与原unknown均不覆盖失败边界。",
+      "remainingFinal": "无新增typed错误功能待项；历史失败和unknown继续保留。",
+      "finalPackageResult": "original_scope_verified"
     },
     {
       "id": "US16",
@@ -251,11 +439,27 @@
       "evidence": [
         "E08",
         "E09",
-        "E14"
+        "E14",
+        "E26",
+        "E27",
+        "E31",
+        "E37",
+        "E38",
+        "E39",
+        "E42",
+        "E47",
+        "E48",
+        "E52",
+        "E54",
+        "E55",
+        "E56",
+        "E57",
+        "E58",
+        "E59"
       ],
-      "observed": "一graph请求、共同依赖一份正文；批量受控实测",
-      "remainingFinal": "最终575/580安装包去重/请求统计复验",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：多根菱形共同依赖一次准备/一次正文；修正n3 cold请求菱形32→16、101节点810→115，锁/文件绑定逐项同。H5/H6 检查点：独立use/Required与去重既有功能证据保留。H6B首次provider已完整包含41537B根及5938B unslop；H6单Skill初始10项通过含cold-dollar/同session/跨进程与TTL路径，但cold-native-command误拦保留。。本轮最终：原共享Required去重、批量准备及受控SDK证据保留；H7 SDK实际根/Required完整身份通过。真实legacy17项按原cohort来源覆盖，Graph A/B未被拼接成通过。",
+      "remainingFinal": "原共享依赖去重范围无新增待项；自然任务未过不增加额外吞吐/跨cohort结论。",
+      "finalPackageResult": "original_scope_verified"
     },
     {
       "id": "US17",
@@ -269,11 +473,25 @@
       "evidence": [
         "E06",
         "E08",
-        "E12"
+        "E12",
+        "E26",
+        "E27",
+        "E38",
+        "E42",
+        "E44",
+        "E47",
+        "E48",
+        "E49",
+        "E52",
+        "E53",
+        "E54",
+        "E55",
+        "E56",
+        "E57"
       ],
-      "observed": "准确身份失败及Required种类边界；更名重ID独立用例",
-      "remainingFinal": "最终权限/同名/复制回归链接；禁止替换其他内容",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：核心权限/同名/复制/ownerFileID冲突均过；Broker4更名重ID及RequiredRouter/Prompt独立反例通过。H5/H6 检查点：H6已验证省略可选snapshot/FileID与已发现稳定FileID旧显示路径；88项受控回归、两次实际安装SDK各10对wire/payload。H6单Skill自主native read已通过；余下native主文wrapper与B省略/SKILL.md为两处已证实observer合同误拦。。本轮最终：H7仍拒绝未知路径、越界、未发现owner、错scope/pin/File ID和改变参数。B的错误项目路径按实际assistant authored输入拒绝；无同名替换或observer假放行。",
+      "remainingFinal": "精确身份与失败边界验证完成；真实模型错误输入原样保留。",
+      "finalPackageResult": "original_scope_verified"
     },
     {
       "id": "US18",
@@ -285,11 +503,24 @@
       "evidence": [
         "E13",
         "E15",
-        "E23"
+        "E23",
+        "E30",
+        "E34",
+        "E36",
+        "E37",
+        "E39",
+        "E42",
+        "E43",
+        "E48",
+        "E49",
+        "E50",
+        "E55",
+        "E58",
+        "E59"
       ],
-      "observed": "实际SessionManager/独立Node、历史pin；原15仅历史",
-      "remainingFinal": "最终原15 A/B及graph session回归；不以CLI恢复代替宿主",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：真实SessionManager/分支/压缩与Mini8历史pin证据保留。Broker6/CLI8及最终Broker7/CLI9实际Pi七阶段都7/7：旧root+Required A、新会话B、resume A、首次optional B、refresh全B、resume B；tool/provider全文hash和选择锁逐节点验证。H5/H6 检查点：H5旧失败和unknown/fence不改写。H6单Skill初始11项实际10pass/1fail；此检查点尚未做updated6，不能用初始通过代替B→A后的分支/更新验证。。本轮最终：H7 updated6全部通过：真正续接H6 autonomous旧会话仍固定B s_404384…2b95，其余5项消费独立写回后的A s_0deb9c…8700。原case名称中的-b后缀保留，实际snapshot以回执为准；H6原10/1未改。",
+      "remainingFinal": "本轮原长会话/更新6项范围已验证；不将其替代Graph自然任务或日用激活。",
+      "finalPackageResult": "final_package_original_scope_verified"
     },
     {
       "id": "US19",
@@ -299,11 +530,13 @@
       ],
       "publicPath": "ctl library graph plan/save/inspect/restore",
       "evidence": [
-        "E15"
+        "E15",
+        "E30",
+        "E59"
       ],
-      "observed": "真实Pro→Mini空根恢复A，current已B，3nodes6files",
-      "remainingFinal": "最终包恢复及artifact身份汇入；具体scope授权仍实时核对",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：最终Mini8自身认证/空四根，从Pro固定图恢复当前B之前的3节点6文件A，所有bytes/hash/版本向量一致。本轮最终：原CLI固定图/Mini独立恢复证据继续保留；本轮legacy会话更新与精确历史pin证明单列，不扩大已验证宿主或跨机器恢复范围。",
+      "remainingFinal": "原CLI固定图恢复范围无新增待项；其他宿主/新范围未运行仍明确列出。",
+      "finalPackageResult": "original_scope_verified"
     },
     {
       "id": "US20",
@@ -313,11 +546,16 @@
       ],
       "publicPath": "同库prepare inventory；选中Files/Records有界批量",
       "evidence": [
-        "E14"
+        "E14",
+        "E26",
+        "E31",
+        "E38",
+        "E40",
+        "E56"
       ],
-      "observed": "真实Node HTTPS 3进程61断言；基线fixture修正另留失败",
-      "remainingFinal": "最终修正矩阵/包内批量数据；不引用已否定warm64→1",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：固定同fixture n3菱形32→16、101节点810→115，warm1→1；公共CLI61断言与真实NotionB cold26/warm1/revalidate19分层保留。本轮最终：既有批量查询和CLI9冷logical原命令修复成本按原回执保留；H7只修验证观察边界，没有重新发明性能矩阵或把失败成本移除。",
+      "remainingFinal": "无新增批量查询功能待项；不从本轮单样本推出普遍性能收益。",
+      "finalPackageResult": "original_scope_verified"
     },
     {
       "id": "US21",
@@ -327,11 +565,13 @@
       ],
       "publicPath": "显式prefetch预算；--priority prefetch等公开执行策略",
       "evidence": [
-        "E17"
+        "E17",
+        "E33",
+        "E60"
       ],
-      "observed": "默认无预算；受控限流/取消/不抢前台",
-      "remainingFinal": "最终CLI/Broker owned on/off实际请求及取消回执",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：真实owned off前台4.832s/9请求/37730B；on前台3.999s但预取+前台9.782s/13请求/52821B；预算默认0、未用预取正文0。本轮最终：原预算预取受控与owned on/off证据保留，n=1限制不变；本轮模型及owned进程终态与清理已记录，不新增未经授权的预取或日用配置。",
+      "remainingFinal": "原预算预取范围无新增待项；不扩张样本量、性能结论或日用激活。",
+      "finalPackageResult": "original_scope_verified_with_sample_limit"
     },
     {
       "id": "US22",
@@ -343,11 +583,17 @@
       "publicPath": "parent/body/relation/parser派生索引与缓存",
       "evidence": [
         "E06",
-        "E14"
+        "E14",
+        "E26",
+        "E31",
+        "E38",
+        "E40",
+        "E56",
+        "E61"
       ],
-      "observed": "索引依赖身份与受控精确失效；固定pin不借current facts",
-      "remainingFinal": "最终批量/缓存回归与失效命中实账",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：parent/body/relation/parser精确派生失效及真实Notion derive miss3→hit3→hit3；到期17metadata+2retained/0current，原错误要求0body失败保留。本轮最终：原精确派生索引与CLI9发现修复证据保留；最终生产57页metadata复核无未解释变化，H7观察器修复未改变产品引用索引或扩大授权。",
+      "remainingFinal": "原精确失效范围无新增待项。",
+      "finalPackageResult": "original_scope_verified"
     },
     {
       "id": "US23",
@@ -358,11 +604,25 @@
       "publicPath": "固定完整manifest；files/read exact；export完整",
       "evidence": [
         "E15",
-        "E16"
+        "E16",
+        "E27",
+        "E28",
+        "E30",
+        "E32",
+        "E42",
+        "E43",
+        "E47",
+        "E48",
+        "E52",
+        "E53",
+        "E55",
+        "E57",
+        "E58",
+        "E59"
       ],
-      "observed": "真实Mini按需chunk与full export；Broker4Node/18host边界",
-      "remainingFinal": "最终installed Pi部分物化和资源hash，未选文件不下载",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：Mini8 entry420B→resource516B→full1106B精确A；公开CLI指定39200B两chunk、完整再补17B，Broker6lazyalias SDK实际完整read通过。H5/H6 检查点：H6单Skill自主native read实际完整读取438B主文及201B资源并到provider。H6A目标prepare内抓取了自身三页资源用于物化，但模型未做这些资源的native read、provider未收到资源正文；两者不能混记。。本轮最终：单Skill真实main438B/resource201B与固定版本完整provider证据按原case保留；Graph A仅物化资源而未消费，Graph B缺目标/资源native read。物化、工具读取、provider消费和完整导出分开计。",
+      "remainingFinal": "原按需/完整导出功能证据保留；A/B资源消费缺口仍未满足。",
+      "finalPackageResult": "original_scope_verified_graph_resource_gate_failed"
     },
     {
       "id": "US24",
@@ -374,11 +634,28 @@
       "publicPath": "独立npm安装；随包CLI默认resolver",
       "evidence": [
         "E18",
-        "E09"
+        "E09",
+        "E26",
+        "E28",
+        "E38",
+        "E40",
+        "E46",
+        "E47",
+        "E48",
+        "E49",
+        "E50",
+        "E52",
+        "E53",
+        "E54",
+        "E55",
+        "E56",
+        "E58",
+        "E59",
+        "E62"
       ],
-      "observed": "多版独立安装Pi已跑；外置同版CLI不冒充默认resolver",
-      "remainingFinal": "最终嵌入CLI包、未显式command路径和doctor/check复验",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：CLI9独立30文件及Broker8 exact archive/runtime48已核；H4 actual SDK及真实两显式场景均使用同日用候选路径；H4自主alias误拦属于observer，不借安装身份推定完成。H5/H6 检查点：当前产品仍为CLI9/Broker8。H5与H6真实运行已实际发生，不能继续写“H5仅准备/尚未启动”；产品安装身份、受控SDK、真实模型任务分别记账。。本轮最终：实际产品包保持CLI9/Broker8：CLI9 JS及Broker8 tar身份冻结，后续H7/文档提交另计。H7验证器96项及真实legacy17项分层覆盖完成，六文档有独立读回；自然任务失败不改变包身份。",
+      "remainingFinal": "安装包/合同与文档可独立交付；日用激活仍被A/B Gate阻断。",
+      "finalPackageResult": "packaged_contract_delivered_activation_blocked"
     },
     {
       "id": "US25",
@@ -390,11 +667,16 @@
       "publicPath": "独立进程exact ref/session binding/graph lock恢复",
       "evidence": [
         "E15",
-        "E13"
+        "E13",
+        "E30",
+        "E36",
+        "E37",
+        "E39",
+        "E59"
       ],
-      "observed": "Mini空根历史恢复不靠Pro内存；实际Node会话恢复",
-      "remainingFinal": "最终独立Agent/宿主按锁读取及scope校验，loaded必须真投递",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：Mini8空根跨物理机exact图恢复，真实SessionManager及最终Broker7/CLI9实际Pi多进程恢复均通过；每个root/Required/optional的scope、pin、完整bytes/hash由正常public CLI和真实tool/provider产生，无私写消费缓存。本轮最终：updated6的独立新进程与真实resume按精确snapshot验证；旧会话B和5项新A分开。既有独立上下文/graph-lock恢复范围保留，未以父进程隐式内存补证明。",
+      "remainingFinal": "已验证独立读取/历史pin范围无新增待项；Graph自然任务仍独立失败。",
+      "finalPackageResult": "original_scope_verified"
     },
     {
       "id": "US26",
@@ -408,11 +690,15 @@
       "evidence": [
         "E10",
         "E11",
-        "E17"
+        "E17",
+        "E27",
+        "E33",
+        "E39",
+        "E60"
       ],
-      "observed": "Escape与new_session真取消；RPC abort未取消明确保留",
-      "remainingFinal": "最终580/579包重验；不把RPC清理冒称Stop",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：v4实际PTY SF1Awi：Tab选择、预算可见、Escape→CLI130/provider0/子进程关闭与重试；RPCabort未取消及new_session/EOF分别保留；Broker7七阶段EOF四host均实际0退出，最后一条后台list无close/metrics回执但两owned PID及所有后代检查均已不存在。本轮最终：本轮所有模型和精确owned进程已闭合；18个已审本地目录移至Trash，完整sessions/prefix另存并复核。旧终端final EOF单条观察缺口仍保留，进程闭合不冒充终端Stop实证。",
+      "remainingFinal": "无新增终端cohort；旧final EOF单条观察缺口不被RPC/清理补造。",
+      "finalPackageResult": "original_scope_evidence_retained_with_known_observation_limit"
     },
     {
       "id": "US27",
@@ -424,11 +710,24 @@
       "evidence": [
         "E21",
         "E22",
-        "E25"
+        "E25",
+        "E30",
+        "E34",
+        "E35",
+        "E41",
+        "E43",
+        "E48",
+        "E49",
+        "E50",
+        "E55",
+        "E59",
+        "E60",
+        "E61",
+        "E62"
       ],
-      "observed": "owned原失败与unknown保留；归档可恢复；1615/Tern保护",
-      "remainingFinal": "新单Skill与第三View清理+生产目录权限复查；最终commit/push保护",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：原A2父/子unknown、独立accept-current及fence均保留；旧两页原create-op归档，8meta2archivePATCH0body/provider；新owner两次单文件write/readback到完整B，生产Pstack未改。H5/H6 检查点：H5旧失败和unknown/fence不改写。H6单Skill初始11项实际10pass/1fail；此检查点尚未做updated6，不能用初始通过代替B→A后的分支/更新验证。。本轮最终：两原生owned页唯一归档并独立GET true，第三single View删除且census证实缺失；A/B Views刻意保留。18个精确本地目录Trash，旧session/失败/原证据hash保留；CLI1615与Broker恢复时index/工作字节保护有回执。",
+      "remainingFinal": "本批owned数据/本地目录清理与生产复核完成；不声称全机/tmp零残留，原unknown和模型失败保留。",
+      "finalPackageResult": "owned_cleanup_and_production_census_verified"
     },
     {
       "id": "US28",
@@ -442,11 +741,30 @@
       "evidence": [
         "E04",
         "E14",
-        "E20"
+        "E20",
+        "E31",
+        "E32",
+        "E33",
+        "E34",
+        "E42",
+        "E45",
+        "E47",
+        "E48",
+        "E50",
+        "E51",
+        "E53",
+        "E54",
+        "E55",
+        "E56",
+        "E57",
+        "E58",
+        "E59",
+        "E60",
+        "E61"
       ],
-      "observed": "HTTP真实target归因与受控五样本；缺归属失败",
-      "remainingFinal": "最终A/B各cold1/warm2/continued2，原值+中位数，无p95",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：HTTP真实attempt/EntityIDs/bytes、n3受控请求优化、n1真实on/off与Mini8成本齐全；并行真实模型原值不作吞吐提升。H5/H6 检查点：H5补证额外11metadata/0body/write/provider、8024请求B/56968响应B、7452.536ms单列。H6A为1冷样本、9provider全200，task-final192378ms；四个后续样本notRun，不报告p95。原失败成本和全部原HTTP保留。 H6单Skill实际21provider全200；181Notion attempts含180HTTP200与1metadata transport failure，0write，70条public metrics完整；不能漏掉失败case成本。。本轮最终：真实运行成本逐cohort保留：H7B9provider200，consumer33Notion+独立collector4metadata；targeted28Notion/2provider，updated116Notion/10provider。census44HTTP全200，raw42metadata+2unclassified关系页，实际current/retained正文/写/provider均0；失败原统计不改。",
+      "remainingFinal": "A/B各仅原冷样本，后4样本notRun；不报告p95、普遍吞吐或将不同cohort拼成性能矩阵。",
+      "finalPackageResult": "measured_costs_complete_real_model_matrix_incomplete"
     },
     {
       "id": "US29",
@@ -459,11 +777,15 @@
       "evidence": [
         "E05",
         "E07",
-        "E25"
+        "E25",
+        "E26",
+        "E38",
+        "E61",
+        "E62"
       ],
-      "observed": "4主文18映射22处链接；资源/来源字段保留；unknown独立接受当前",
-      "remainingFinal": "最终正确回读与包身份；不全量迁移正文",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：生产四主文18目标映射22处链接，57绑定来源/Kind/Enabled/稳定身份census全过；architect原unknown保留且独立接受当前。本轮最终：现有Pstack治理原字节/历史pin证据保留；本轮只复核57精确页和完整关系，没有搬运或刷新上游正文。六文档发布保留AH558/AH560历史suffix全文。",
+      "remainingFinal": "原治理与最终metadata复核完成；不新增全量正文迁移。",
+      "finalPackageResult": "production_governance_and_docs_verified"
     },
     {
       "id": "US30",
@@ -474,11 +796,17 @@
       "publicPath": "renamed-identities；Required Router/Prompt异构反例",
       "evidence": [
         "E12",
-        "E15"
+        "E15",
+        "E27",
+        "E30",
+        "E36",
+        "E37",
+        "E39",
+        "E56"
       ],
-      "observed": "全名称/ID/库/路径更换仍通过；非Pstack owned图也已恢复",
-      "remainingFinal": "最终同反例通过后维持不引入Matt生产图的coverage决定",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：Broker4独立全名称/ID/库/路径更换和Required异构反例通过；非Pstack3节点6文件Mini8恢复，HTTP会话fixture另证；Broker6非Pstack三节点七阶段实际Pi消费通过；最终Broker7/CLI9同非Pstack三节点七阶段全部通过。本轮最终：原独立更名、更ID与Required Router/Prompt异构反例继续进入最终证据索引；H7修复复用产品解析和immutable身份，没有Pstack特例grammar。",
+      "remainingFinal": "原泛化反例范围无新增待项；未另改Matt生产图。",
+      "finalPackageResult": "original_scope_verified"
     },
     {
       "id": "US31",
@@ -489,11 +817,24 @@
       "publicPath": "日用Pi安装选择与新会话实际加载",
       "evidence": [
         "E18",
-        "E21"
+        "E21",
+        "E26",
+        "E28",
+        "E38",
+        "E46",
+        "E47",
+        "E48",
+        "E49",
+        "E53",
+        "E54",
+        "E55",
+        "E57",
+        "E60",
+        "E62"
       ],
-      "observed": "候选包身份/保护已保留，尚未宣称日用切换",
-      "remainingFinal": "所有Gate完成后切到同一通过包，新会话验证并保旧安装",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：CLI9与Broker8候选包已独立核对；同日用候选路径用于H4 actual SDK及两真实模型显式场景，日用配置仍未激活。H5/H6 检查点：CLI9/Broker8是经独立安装验证的候选；H6A仍未满足资源消费和完整Skill产物。任何H7B/legacy成功都不覆盖A的原失败。。本轮最终：候选产品和harness/文档已按各自source身份交付，但日用保持未激活。H6A真实资源/完整Skill缺口与H7B真实读取/产物缺口均保留；legacy覆盖成功不能覆盖A/B失败。",
+      "remainingFinal": "AH-582日用新会话终验仍未执行；本轮不切换日用配置、不追加模型cohort。",
+      "finalPackageResult": "blocked_daily_activation"
     },
     {
       "id": "US32",
@@ -506,11 +847,28 @@
       "evidence": [
         "E09",
         "E16",
-        "E17"
+        "E17",
+        "E27",
+        "E28",
+        "E33",
+        "E37",
+        "E39",
+        "E42",
+        "E47",
+        "E48",
+        "E51",
+        "E53",
+        "E54",
+        "E55",
+        "E56",
+        "E57",
+        "E59",
+        "E60",
+        "E61"
       ],
-      "observed": "prefetch不可写、不创建sessionLoaded；资源loaded:false",
-      "remainingFinal": "最终provider0/readonly/取消与真实文件投递回执",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：只读transport/prefetch不锁版本不投递，resource loaded:false；真实SDK无shell/旧ntn trap0，预取真实owned0write/provider。H5/H6 检查点：独立补证新增body/write/provider均0；H6A诊断新增HTTP/model均0。原模型只读工具面、scope/owner/snapshot和原HTTP保持，离线纠正没有为模型补读资源或补生成文件。。本轮最终：H7只修已证明的发现/时点和显式文件标签识别；工具允许集合、scope/pin/full hash与执行边界不放宽。模型输出中的PASS模板不算真实执行。census只读路由与独立成本全部保留。",
+      "remainingFinal": "原授权边界无新增待项；没有以加载、元数据关系或输出文本取得隐式执行许可。",
+      "finalPackageResult": "original_scope_verified"
     },
     {
       "id": "US33",
@@ -522,11 +880,16 @@
       "publicPath": "Members/Requires类型约束；prepare明确拒Prompt/Router Required",
       "evidence": [
         "E08",
-        "E12"
+        "E12",
+        "E26",
+        "E27",
+        "E38",
+        "E56",
+        "E61"
       ],
-      "observed": "v3两独立异构拓扑首provider前PREPARE_REQUIRED_KIND",
-      "remainingFinal": "最终包同步核心/installed Pi类型反例；保exact failure path",
-      "finalPackageResult": "not_claimed"
+      "observed": "历史基线：最终core类型合同与Broker4独立RequiredRouter/Prompt异构拓扑在provider0时拒绝PREPARE_REQUIRED_KIND；更名不影响失败路径。本轮最终：原Members/Requires typed约束与异构反例保留在最终回归；生产57页关系复核不把Prompt或嵌套Router自动改为必读指令。",
+      "remainingFinal": "原内容类型约束范围无新增待项。",
+      "finalPackageResult": "original_scope_verified"
     }
   ],
   "evidence": [
@@ -560,7 +923,8 @@
         "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng03/live-installed-02/09-native-field-write.stdout",
         "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng03/live-installed-02/10-native-readback.stdout",
         "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng03/live-installed-02/native-reference-api-result.json",
-        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng03/live-installed-02/attachment-final-result.json"
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng03/live-installed-02/attachment-final-result.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng03/final-controlled-yDW8f1/controlled.log"
       ]
     },
     {
@@ -629,9 +993,10 @@
     {
       "id": "E11",
       "title": "终端选择和Escape Stop",
-      "layer": "actual Pi PTY / Broker v3",
+      "layer": "actual Pi PTY / Broker3 historical and Broker4; Broker5 runtime equivalence",
       "files": [
-        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng15/broker-pi-graph-pty-QFA9Nc/manifest.json"
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng15/broker-pi-graph-pty-QFA9Nc/manifest.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng15/broker-pi-graph-pty-SF1Awi/manifest.json"
       ]
     },
     {
@@ -767,8 +1132,1170 @@
         "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng09/apply-01/architect-body-result.json",
         "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng09/apply-01/bodies-result.json"
       ]
+    },
+    {
+      "id": "E26",
+      "title": "CLI8与Broker完整回归、冻结安装身份",
+      "layer": "final CLI8 / earlier Broker4-5 equivalent runtime / complete suites",
+      "files": [
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/final-checks/cli-final-unit.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/final-checks/cli-final-types.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng19/broker-full-source-check.log",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng02-installed-1C3lIQ/manifest.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng18/broker-v5-n6LhcK/installed-equivalence.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng18/broker-v4-tyjIGw/adapter-cli7.log"
+      ]
+    },
+    {
+      "id": "E27",
+      "title": "Broker4真实Pi十六图场景与Broker5字节等价",
+      "layer": "installed Pi / controlled provider / Broker4 with explicit Broker5 equivalence",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/broker-notion-evidence-l27VCB/pi-skill-graph/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/broker-notion-evidence-s1bZ8E/pi-skill-graph/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/graph-observer-http-V6XkFD/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/final-package-checkpoint.json"
+      ]
+    },
+    {
+      "id": "E28",
+      "title": "Broker6正常三工具、SDK真实传输与缺失资源别名",
+      "layer": "actual installed SDK HTTP / controlled provider / Broker6",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v2/graph-observer-http-M4pV6s/result.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng18/native-path-alias/fix-result.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng18/broker-v6-ff353lls/installed-identity.json"
+      ]
+    },
+    {
+      "id": "E29",
+      "title": "当前直连包静态无官方ntn审计",
+      "layer": "CLI8/Broker5 package/static audit with explicit historical exceptions",
+      "files": [
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/no-ntn-audit/final-audit.json"
+      ]
+    },
+    {
+      "id": "E30",
+      "title": "Mini8按需到完整A恢复、六页可恢复归档",
+      "layer": "physical Mini / real Notion / final CLI8 / owned cleanup",
+      "files": [
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng17/owned-graph-1793688210678/mini-partial8-verified.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng17/owned-graph-1793688210678/mini-partial8-result.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng17/owned-graph-1793688210678/cleanup/result.json"
+      ]
+    },
+    {
+      "id": "E31",
+      "title": "修正fixture的批量矩阵与实际Notion三节点成本",
+      "layer": "controlled n=3 per condition plus real Notion n=1 per condition / CLI7 bytes equal CLI8",
+      "files": [
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng16/controlled/handoff.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng16/controlled/corrected/comparison.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng16/production-readonly/installed-1793694337009/verification-result.json"
+      ]
+    },
+    {
+      "id": "E32",
+      "title": "按需物化完整成本回执",
+      "layer": "independent public CLI / core binary fixture / physical Mini; wire and content bytes separated",
+      "files": [
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng18/lazy-materialization-costs/receipt.json"
+      ]
+    },
+    {
+      "id": "E33",
+      "title": "预算预取真实owned on/off",
+      "layer": "real Notion / isolated CLI7-8-equivalent roots / n=1 per arm",
+      "files": [
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng19/retained-prefetch-MnBaye/manifest.json"
+      ]
+    },
+    {
+      "id": "E34",
+      "title": "原十五例当前真实模型失败与独立A→B回执",
+      "layer": "real flash-free / Broker5 / failed samples retained; not final acceptance",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-LZOyAZ/manifest.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-X8Dfhw/manifest.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-Qe8hg2/manifest.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-ANVtV1/create-a.result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-ANVtV1/apply-b-actual.result.json"
+      ]
+    },
+    {
+      "id": "E35",
+      "title": "当前版本读取失败与首个Graph Gate失败",
+      "layer": "actual public CLI8 failure and actual Broker5 real-model failure; not availability",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-ANVtV1/v6-current-b.result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-ANVtV1/v6-current-b.stdout",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/final-package/graph-model-A-SQ1pSW/result.json"
+      ]
+    },
+    {
+      "id": "E36",
+      "title": "无缓存seed的原生HTTPS服务与完整会话链准备",
+      "layer": "controlled HTTPS / actual public CLI8 / no Pi completion claim",
+      "files": [
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng15/native-service-smoke-h4qtur6s/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng15/graph-session-ew8UZ7/manifest.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng15/graph-session-koAXlN/manifest.json"
+      ]
+    },
+    {
+      "id": "E37",
+      "title": "Broker6真实Pi多节点A/B会话完整链",
+      "layer": "installed Pi RPC + public CLI8 Node/SQLite + controlled HTTPS/provider; seven stages passed, no cache seed",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng15/graph-session-CkKuDu/manifest.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng15/graph-session-CkKuDu/process-verification.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng15/graph-session-CkKuDu/oracle-a.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng15/graph-session-CkKuDu/oracle-b.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng15/graph-session-CkKuDu/service/http.jsonl"
+      ]
+    },
+    {
+      "id": "E38",
+      "title": "CLI9与Broker7最终运行门",
+      "layer": "final source/full package + independently installed Node/SQLite adapter; not real-model task acceptance",
+      "files": [
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/final-checks/cli9-final-unit.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/final-checks/cli9-final-unit.log",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/final-checks/cli9-final-types.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/final-checks/cli9-final-package.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng18/broker7-package-check-l63yfjdj/result.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng18/broker7-package-check-after-61e_lus3/result.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng18/broker7-package-check-after-61e_lus3/check.log",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng18/broker7-node-adapter-7jbjy743/adapter-cli9.log"
+      ]
+    },
+    {
+      "id": "E39",
+      "title": "Broker7/CLI9真实Pi七阶段A/B会话终验",
+      "layer": "actual installed Pi RPC + CLI9 public Node/SQLite + controlled HTTPS/provider; 7/7 functional pass, one late EOF list close/metrics gap and all owned PIDs absent",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng15/graph-session-5DdQKn/manifest.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng15/graph-session-5DdQKn/process-verification.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng15/graph-session-5DdQKn/oracle-a.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng15/graph-session-5DdQKn/oracle-b.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng15/graph-session-5DdQKn/service/http.jsonl"
+      ]
+    },
+    {
+      "id": "E40",
+      "title": "CLI9冷logical管理表误识别修复原命令实证",
+      "layer": "real Notion / final independently installed CLI9 / original read --refresh without added database; CLI8 failure retained",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-ANVtV1/cli9-current-b-verified.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-ANVtV1/cli9-current-b.stdout",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-ANVtV1/cli9-current-b.command.json"
+      ]
+    },
+    {
+      "id": "E41",
+      "title": "Owned A2原unknown与独立当前接受决定",
+      "layer": "real public CLI9 write and original-operation review; main accepted_current separately, original parent unresolved and resource still B",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-ANVtV1/cli9-restore-a2-actual.stdout",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-ANVtV1/cli9-a2-original-current-check.stdout",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-ANVtV1/cli9-a2-accept-current-plan.stdout",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-ANVtV1/cli9-a2-review-markdown-version-correction.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-ANVtV1/cli9-a2-native-v2-verified.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-ANVtV1/cli9-a2-accept-current-v2-plan.stdout",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-ANVtV1/cli9-a2-accept-current-v2-actual.stdout",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-ANVtV1/cli9-a2-accept-current-v2-reconcile.stdout",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-ANVtV1/cli9-a2-accepted-current-main.stdout"
+      ]
+    },
+    {
+      "id": "E42",
+      "title": "Broker7原15初始真实模型结果与精确提示诊断",
+      "layer": "real flash-free / Broker7 + H3; 1 passed, 2 failed and 8 prerequisite-skipped initial cases; case7 has both invalid URI attempts and one H3 false rejection",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-wJfEnl/manifest.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-wJfEnl/initial-coverage-result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-wJfEnl/failure-diagnosis-v2.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-wJfEnl/failure-diagnosis-path-supplement.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-wJfEnl/autonomous-actual-system-verified.txt",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-wJfEnl/cold-native-command-actual-system-verified.txt",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-wJfEnl/autonomous-public-tool-observer.jsonl",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-wJfEnl/cold-dollar-result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-wJfEnl/cold-native-command-public-tool-observer.jsonl",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-wJfEnl/owned-processes.jsonl",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-wJfEnl/public-cli-processes.jsonl"
+      ]
+    },
+    {
+      "id": "E43",
+      "title": "旧fenced owned fixture可恢复归档与新owner完整B",
+      "layer": "actual CLI9 Notion writes and readback; old unknown/fence retained, independent new owner create and two single-file writes verified; no aggregate replay",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-ANVtV1/retirement-execution-1793701037401/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/create-a-actual.stdout",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/owned-record.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/view-a-verified.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/a-content-verified.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/write-b-main-plan.stdout",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/write-b-main-actual.stdout",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/write-b-main-verified.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/write-b-resource-plan.stdout",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/write-b-resource-actual.stdout",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/read-b-main.stdout",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/read-b-resource.stdout",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/b-content-verified.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/fixture-b.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/broker8-baseline-configuration-review.json"
+      ]
+    },
+    {
+      "id": "E44",
+      "title": "H3观察器冻结、大正文实际SDK与历史失败分类",
+      "layer": "17 controlled Node tests plus actual installed Broker7 SDK provider; 56,423-byte root and matched wire hashes; H4 revision pending",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v3/freeze.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v3/prior-attempts.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v3/graph-observer-http-RJRIM3/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/legacy-final-harness-ready.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/legacy-final-literal-surface-tests.log"
+      ]
+    },
+    {
+      "id": "E45",
+      "title": "Broker7 H3真实A/B Gates原失败",
+      "layer": "real flash-free / Broker7 / H3; original EAGER_MEMBERS and CANDIDATE_IDENTITY outcomes retained, H4 observation corrections pending; no generated procedure execution claimed",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/final-h3/graph-model-A-8Plbzx/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/final-h3/graph-model-B-TPJVgb/result.json"
+      ]
+    },
+    {
+      "id": "E46",
+      "title": "Broker8独立安装身份与下一轮数据配置",
+      "layer": "read-only package identity checkpoint; 48 runtime files matched exact tgz; later actual Broker8 H4 SDK/models are recorded separately in E47/E48",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/broker8-installed-identity.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/broker8-config.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/broker8-baseline-configuration-review.json"
+      ]
+    },
+    {
+      "id": "E47",
+      "title": "Broker8 H4共享观察器冻结与实际SDK",
+      "layer": "controlled actual installed Broker8/embedded CLI9 SDK; 78 related checks plus legacy20, exact provider wire hashes, host-help separately measured; this is not real-model task acceptance",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v4/freeze.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v4/graph-observer-http-ejGbJE/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/legacy-h4-help-home/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v4/file-extraction/actual-plan-recheck.json"
+      ]
+    },
+    {
+      "id": "E48",
+      "title": "Broker8 H4原15初始实际模型与合法资源alias误拦",
+      "layer": "real flash-free, Broker8/CLI9, frozen H4; 2 pass / 1 fail / 8 prerequisite-skipped; read-only diagnosis proves a legal manifest-bound host-index resource was blocked; original failure is retained, no fallback or result rewriting",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-y6izS4/manifest.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-y6izS4/initial-coverage-result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/broker8-initial-flash-free.result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v4/host-index-resource-readonly-6s0pddit/result.json"
+      ]
+    },
+    {
+      "id": "E49",
+      "title": "H5单次后续cohort准备与当前完整B",
+      "layer": "configuration and existing public-read proof only; no H5 real model or fixture restore started; before B / planned after A, unchanged task, budget, markers, tools and 15+2 assertions",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/b-current-after-h4.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/broker8-h5-config.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v5/fixture-root-resource/verification-result.json"
+      ]
+    },
+    {
+      "id": "E50",
+      "title": "H5真实A/B与单Skill原失败及独立诊断",
+      "layer": "real flash-free, Broker8/CLI9, H5; original outcomes and later observation-only diagnoses remain separate",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/final-h5/graph-model-A-G3kOyT/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/final-h5/graph-model-B-ti3uRk/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-DmSpCQ/manifest.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h5-gate-diagnosis/diagnosis.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h5-legacy-diagnosis/diagnosis.json"
+      ],
+      "fileIdentities": [
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/final-h5/graph-model-A-G3kOyT/result.json",
+          "bytes": 33714,
+          "sha256": "f12890a448d51c5ca165cb3947ecf7422b32f1c7ff70c7a873307a72f6a32219"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/final-h5/graph-model-B-ti3uRk/result.json",
+          "bytes": 33660,
+          "sha256": "f0021abd083c85f5f91f45e73446f31acee8f7520eb5158580a1465317af8940"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-DmSpCQ/manifest.json",
+          "bytes": 17587,
+          "sha256": "614111303dcfc079892dc58c10735371bb0d59988691cc3cf69634e88c3a44ac"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h5-gate-diagnosis/diagnosis.json",
+          "bytes": 98414,
+          "sha256": "4af6fbf11d33ccaae569691b6920b28c59687b29671176a06c3b487b1ef20741"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h5-legacy-diagnosis/diagnosis.json",
+          "bytes": 17873,
+          "sha256": "d15d49f72657d4595f6fdabaf5c976f83edb26d33222ded1d9bc0a3524aba761"
+        }
+      ]
+    },
+    {
+      "id": "E51",
+      "title": "H5独立retained-source归属补证",
+      "layer": "independent real metadata only plus pure offline attribution; 11 metadata, no new body/write/provider; original model failures stay failed",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/h5-supplementary-source-proof-BJqcCf/oracle/proof.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/h5-supplementary-source-proof-BJqcCf/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/h5-supplementary-source-proof-BJqcCf/cost.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/h5-supplementary-source-proof-BJqcCf/derivation.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/h5-supplementary-source-proof-BJqcCf/final-observation.json"
+      ],
+      "fileIdentities": [
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/h5-supplementary-source-proof-BJqcCf/oracle/proof.json",
+          "bytes": 66095,
+          "sha256": "19da83e92f37b0456dfe91693db9a982250bba8e889917aba950da2a223e273e"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/h5-supplementary-source-proof-BJqcCf/result.json",
+          "bytes": 16503,
+          "sha256": "78b08005a06fab8145fc1cd02a039d0b5874adf15ae37fbae51288295b33fd1f"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/h5-supplementary-source-proof-BJqcCf/cost.json",
+          "bytes": 1178,
+          "sha256": "699e3788317e1e13fac7a29b5b89ada1983dfffaf96a84e0bb46e28929939e68"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/h5-supplementary-source-proof-BJqcCf/derivation.json",
+          "bytes": 17593,
+          "sha256": "ffa2801e61c9c73b5d27daf1666bc36574569017f01adbc5863a6d810b351f5e"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/h5-supplementary-source-proof-BJqcCf/final-observation.json",
+          "bytes": 1430,
+          "sha256": "f09a01a574a02154dcc1468ddd14381e5d77bfcdb20835421a90cd12f39b51ef"
+        }
+      ]
+    },
+    {
+      "id": "E52",
+      "title": "H6共享观察器88项回归和两个实际SDK",
+      "layer": "controlled regression and real installed SDK with controlled provider, not a real-model task pass",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v6/freeze.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v6/graph-observer-http-NGwP8n/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v6/graph-observer-http-Hgm7jA/result.json"
+      ],
+      "fileIdentities": [
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v6/freeze.json",
+          "bytes": 19801,
+          "sha256": "b4e28f3bdc6720d87ed155dbb28ebec18663263ad14f954b9ed297f1ee85d48c"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v6/graph-observer-http-NGwP8n/result.json",
+          "bytes": 12238,
+          "sha256": "8926a6532d188828327ebafde54c4c0025352af0953a86ec9b62d2c4ddc50c09"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v6/graph-observer-http-Hgm7jA/result.json",
+          "bytes": 12208,
+          "sha256": "190567d3c9cbd39e00b5c5b04659d9898d8b548884c0c5008793823b5788bef3"
+        }
+      ]
+    },
+    {
+      "id": "E53",
+      "title": "H6A原失败与选择时点独立派生",
+      "layer": "real flash-free H6A remains failed; independent causal attribution changes only false timing classification from 11 to 0, evaluator remains READ_MISSING, artifact plan-only",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/final-h6/graph-model-A-NFvEez/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/final-h6/graph-matrix-A-DA0j0c/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h6-a-eager-review-JuV3Ra/diagnosis.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h6-a-eager-review-JuV3Ra/source-chains.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h6-a-eager-review-JuV3Ra/derived-selection.trace.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h6-a-eager-review-JuV3Ra/power-window.json"
+      ],
+      "fileIdentities": [
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/final-h6/graph-model-A-NFvEez/result.json",
+          "bytes": 36568,
+          "sha256": "edfe1cc6090750cb370ef7738b34cab9685ea4d416e16531ebd855f7fe8b1a46"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/final-h6/graph-matrix-A-DA0j0c/result.json",
+          "bytes": 6681,
+          "sha256": "bac39ca43554e131d8a5807579c7e78d062ff065466a79aa6b6f618f00a20919"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h6-a-eager-review-JuV3Ra/diagnosis.json",
+          "bytes": 23252,
+          "sha256": "00d1f71e0f71eb2e14a06695190db4cd886a742f7096ab62c5812205d007f90b"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h6-a-eager-review-JuV3Ra/source-chains.json",
+          "bytes": 28407,
+          "sha256": "5ebb7e3df2114d620209f21e282fa612f77cacad97af4e935ca71134d10e1f0b"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h6-a-eager-review-JuV3Ra/derived-selection.trace.json",
+          "bytes": 612399,
+          "sha256": "ad787a08cf4c29ac420eb0fc6c0d1ef57e1301d8951b1213852ae69423bd544f"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h6-a-eager-review-JuV3Ra/power-window.json",
+          "bytes": 4483,
+          "sha256": "e738419104625bb56862a1f70c6576a470899719c621e4b07e4a6a0dc871b60b"
+        }
+      ]
+    },
+    {
+      "id": "E54",
+      "title": "H6B合法裸owner准备输入的观察器误拦",
+      "layer": "real flash-free H6B original READ_MISSING and independent public-contract diagnosis; no target/resource read or complete generated Skill inferred",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/final-h6/graph-model-B-xoGFQs/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/final-h6/graph-matrix-B-7GTgCn/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h6-gate-diagnosis/b-and-native-location.json"
+      ],
+      "fileIdentities": [
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/final-h6/graph-model-B-xoGFQs/result.json",
+          "bytes": 32879,
+          "sha256": "83c43d21316816076bc1d50fb01a2fd68ff6f7efc0a46e72a9f7a93d1c36ec57"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/final-h6/graph-matrix-B-7GTgCn/result.json",
+          "bytes": 6697,
+          "sha256": "b4ad7959eba59c2c03f01c9590247dcd5e07eaf8b6040d62ac453667ee878971"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h6-gate-diagnosis/b-and-native-location.json",
+          "bytes": 35315,
+          "sha256": "4d5e3e9d1e0d672eb1473f25dea6caafb6d3264d07ba70a50227b3bc501b6e7e"
+        }
+      ]
+    },
+    {
+      "id": "E55",
+      "title": "H6单Skill初始10pass/1fail与原生主文wrapper误拦",
+      "layer": "real flash-free H6 initial11 cases, 10 passed and cold-native-command failed; updated6 not yet observed at this checkpoint, original case numbering retained",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-HEjb03/manifest.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-HEjb03/cold-autonomous-native-result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-HEjb03/cold-native-command-result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h6-gate-diagnosis/b-and-native-location.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h6-legacy-diagnosis/native-location-failure.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h6-legacy-diagnosis/initial-coverage-result.json"
+      ],
+      "fileIdentities": [
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-HEjb03/manifest.json",
+          "bytes": 55294,
+          "sha256": "bf41b8e2824fce41c9285e536beaf67f540387610f6752ace868f0916ad63a65"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-HEjb03/cold-autonomous-native-result.json",
+          "bytes": 3727,
+          "sha256": "7a6359b2929bda56690071cfc3694a3afe7548b4429c721843f1818d7e0efe58"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-HEjb03/cold-native-command-result.json",
+          "bytes": 1068,
+          "sha256": "2fa9d13eb8791c625ed386f405638431b70d3b6c0aa2d50d5e1dd9832fbc9548"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h6-gate-diagnosis/b-and-native-location.json",
+          "bytes": 35315,
+          "sha256": "4d5e3e9d1e0d672eb1473f25dea6caafb6d3264d07ba70a50227b3bc501b6e7e"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h6-legacy-diagnosis/native-location-failure.json",
+          "bytes": 24293,
+          "sha256": "d4b308c1e344ee1676055bc6b01a27b7feadbccd2fe6db51c0063f55dd18235b"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h6-legacy-diagnosis/initial-coverage-result.json",
+          "bytes": 56324,
+          "sha256": "4c0de92c65e1d1006a26670166842798ff586cfb4cf1b00555525e70094de275"
+        }
+      ]
+    },
+    {
+      "id": "E56",
+      "title": "H7三处观察器修复、窄产物识别与最终冻结",
+      "layer": "96/96 controlled regressions; two real installed SDK runs with controlled provider, 10 wire pairs each. SDK original aggregate is retained; unchanged project creation/inspection functions bridge the narrow later artifact extractor change. Not a real-model task pass.",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v7/freeze.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v7/regression-final.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v7/graph-observer-http-PUEbMb/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v7/graph-observer-http-wutwR7/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v7/sdk-project-boundary-final.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v7/independent-observer-review-k0bcKg/review.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v7/independent-project-review-t13uPM/review.json"
+      ],
+      "fileIdentities": [
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v7/freeze.json",
+          "bytes": 34070,
+          "sha256": "92c369b047339eb1388cb7081890212e539616d074dada0fdb90427849155cd4"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v7/regression-final.json",
+          "bytes": 1931,
+          "sha256": "4a0f3ebe681a901bf05ba54cb7315c73c0d7f75ae00558ccf911dea7c8f7d6ab"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v7/graph-observer-http-PUEbMb/result.json",
+          "bytes": 14539,
+          "sha256": "6cc74e198e2937799ef3cbb7e4a74ddcd49a347d32878118ce975f720586e3fb"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v7/graph-observer-http-wutwR7/result.json",
+          "bytes": 12622,
+          "sha256": "374023c60ff6be8e36113e0d68e87405539b4ccebae57d8227c3c30097fe7a16"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v7/sdk-project-boundary-final.json",
+          "bytes": 3124,
+          "sha256": "555926dd0024f767e8943ac8c246932666467a1c57285e3f7c4b0cd6d74c2f51"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v7/independent-observer-review-k0bcKg/review.json",
+          "bytes": 10007,
+          "sha256": "b3e46098eb1ef546edbdc9c8c16748d8f28ebb28c2e77dfbc922ee15e095e70e"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/harness-v7/independent-project-review-t13uPM/review.json",
+          "bytes": 4689,
+          "sha256": "f1ccf27dd30d521c8b27ed2ff4d2603aa1bfc867f3ea360670d9eead1712c08c"
+        }
+      ]
+    },
+    {
+      "id": "E57",
+      "title": "H7B真实模型最终READ_MISSING与原失败保存",
+      "layer": "Real flash-free/Broker8/CLI9/H7, one cold failed and four later samples notRun. Nine provider responses all HTTP200, successful final, no availability/observer/eager failure; missing native target/resource/project reads and incomplete generated files remain real failures.",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/final-h7/graph-model-B-FUJa9C/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/final-h7/graph-matrix-B-sOq1iM/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h7-b-diagnosis-vmBDYI/diagnosis.json"
+      ],
+      "fileIdentities": [
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/final-h7/graph-model-B-FUJa9C/result.json",
+          "bytes": 34134,
+          "sha256": "e6ef4f89a2e0f0570c4e09079a88ae9fdd4dee939109bb95f2dabfd93bc87994"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng14/final-h7/graph-matrix-B-sOq1iM/result.json",
+          "bytes": 6714,
+          "sha256": "51ccd442d1ae9d77d3afedc3f1fc1112fe390344ed6e53efe68e7164625fb4d1"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h7-b-diagnosis-vmBDYI/diagnosis.json",
+          "bytes": 70806,
+          "sha256": "293c36c6f0bf188ac4a0ae79a51f43b84391032b2efd91636f1c6c27d8e1c292"
+        }
+      ]
+    },
+    {
+      "id": "E58",
+      "title": "H7原生入口必要复验与11项分层覆盖",
+      "layer": "Real H7 cold-native-command targeted 1/1 pass; initial requirement coverage combines ten individually retained H6 successes with one H7 targeted success. The original H6 10-pass/1-fail manifest is unchanged; not a new all-pass cohort.",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-Y9H1QF/manifest.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-Y9H1QF/cold-native-command-result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/broker8-h7-initial-coverage.json"
+      ],
+      "fileIdentities": [
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-Y9H1QF/manifest.json",
+          "bytes": 15450,
+          "sha256": "52402219c2d9b81fe9c38117ce50158f10a75ed6e41daa7d51823ffa757b7e72"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-Y9H1QF/cold-native-command-result.json",
+          "bytes": 3712,
+          "sha256": "e43a48b0526cc3f9a3f8bbcaa825692f61a5dd8529f2c926316ea5c1f2e33eb4"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/broker8-h7-initial-coverage.json",
+          "bytes": 53786,
+          "sha256": "05248539256372d63569b4259eb26badf30d1a0f6994c6936d997257cdeb2c6b"
+        }
+      ]
+    },
+    {
+      "id": "E59",
+      "title": "两精确文件B到A、updated6与17项终态分层覆盖",
+      "layer": "Two original public file writes with independent readback; H7 updated6 all pass, genuinely resuming the retained H6 autonomous B session while five newer cases use A. Original case labels including -b suffix are preserved; snapshot identity determines actual version. 17 requirement coverage across H6 initial/H7 targeted/H7 updated is not one new matrix.",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/restored-a-content-verified.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/fixture-restored-a.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-tTddSZ/manifest.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/broker8-h7-terminal-receipt.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/legacy-h6-h7-session-retention.json"
+      ],
+      "fileIdentities": [
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/restored-a-content-verified.json",
+          "bytes": 4357,
+          "sha256": "97160c04b8cd226266d5e117ca4c690a613eaab803af1e1a153ca722e890bb5e"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/fixture-restored-a.json",
+          "bytes": 2714,
+          "sha256": "dccb856faeeab12023743f56658ba70e4c582e61c315148f05d24eb6e75f0dc0"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-tTddSZ/manifest.json",
+          "bytes": 34180,
+          "sha256": "a798e564c922c3330da79c4028b4651ccb5f3c1154a0394392997f8d7c37eb13"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/broker8-h7-terminal-receipt.json",
+          "bytes": 137740,
+          "sha256": "9a5168db218dcd5f448e770523693054793bed89c55fd3e3afdf97cd2d11ec55"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/legacy-h6-h7-session-retention.json",
+          "bytes": 998107,
+          "sha256": "5783224642d2e4028e2827116f18e45f61e4f182b83a958f1cf5ada8e5b625b5"
+        }
+      ]
+    },
+    {
+      "id": "E60",
+      "title": "两owned页、第三临时View、18个精确目录清理与原改动保护",
+      "layer": "Two exact original-create pages archived once and independently retrieved in_trash; third single View deleted through actual UI and confirmed by final census. Eighteen scoped local directories moved to Trash; sessions/prefixes and original failures retained. Deliberate A/B Views remain, and no global /tmp-clean claim is made.",
+      "files": [
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/cleanup-h7-complete.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/cleanup-h7-audit.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/legacy-h6-h7-scratch-trash-complete.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h7-b-diagnosis-vmBDYI/cleanup-execution-6CsYI1/result.json",
+        "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/closed-graph-scratch-plan-KMtlaO/execution-tPpHCO/result.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/single-view-cleanup-ntWJId/after-ui.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/final-protection-FnM8Ik/result.json"
+      ],
+      "fileIdentities": [
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/cleanup-h7-complete.json",
+          "bytes": 4285,
+          "sha256": "881d2b064ebd302c4824bf0a7fb3a16a2258769080b30f8372513971186bcc07"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/cleanup-h7-audit.json",
+          "bytes": 20173,
+          "sha256": "b52f5873cd27ca28a8bc7706d74ed9acc8b06a1a32fb58f68fa7674fa6a852b5"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/legacy-h6-h7-scratch-trash-complete.json",
+          "bytes": 4204,
+          "sha256": "6b9933e3276ddd56b9568a8ce0dde5c3e9a8140a3c1ad38fb79462ed1ee21c02"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h7-b-diagnosis-vmBDYI/cleanup-execution-6CsYI1/result.json",
+          "bytes": 1607,
+          "sha256": "83c81a2fccf470853bb42b4528453d303b5c358e737a5d4735487ca14eb16ee2"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/closed-graph-scratch-plan-KMtlaO/execution-tPpHCO/result.json",
+          "bytes": 4060,
+          "sha256": "f257743d7345f2ef7c74b92186f00f6d1274c0711de3e30c0805bd4cdbca0f67"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/single-view-cleanup-ntWJId/after-ui.json",
+          "bytes": 23376,
+          "sha256": "8aa3f4a5e93898fed2f32a9808517a37661a2300fcbda976fea386a49b56f651"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/final-protection-FnM8Ik/result.json",
+          "bytes": 2028,
+          "sha256": "f65217b64962a26957db42f41fd7ede6f7d41439ec52aa9026accad1991aa792"
+        }
+      ]
+    },
+    {
+      "id": "E61",
+      "title": "最终生产metadata census与独立语义结论",
+      "layer": "First phase freezes complete schemas/Skills/Files/Sources/catalog; one separately authorized narrow continuation reads only missing relation/View/cleanup metadata. Raw 42 metadata + 2 unclassified_body counters and both original non-pass statuses are preserved. Two relation responses contain only property IDs/pagination; 48 rotated attachment signing fields are independently normalized only after stable object identity/all non-signing fields match. No new body-content proof, write, Records scan or model request.",
+      "files": [
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/final-production-census-preparation/plan.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/final-production-census-43ef191a/result.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/final-production-census-runner-k2YR4v/launcher-result.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/final-census-continuation-9e5d4b00/result.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/final-census-continuation-runner-61Mz8b/launcher-result.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/final-census-conclusion-JkSnne/result.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/final-census-conclusion-JkSnne/receipt.json"
+      ],
+      "fileIdentities": [
+        {
+          "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/final-production-census-preparation/plan.json",
+          "bytes": 10532,
+          "sha256": "b9c045899842d62e8f2880dd8bcc54299f828e8e168c0dab05d34896b5e05f9d"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/final-production-census-43ef191a/result.json",
+          "bytes": 51979,
+          "sha256": "b1cbcea81523b2bd6134f6ebb1bde217c18881d1a342f61d76f58334c197bf5a"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/final-production-census-runner-k2YR4v/launcher-result.json",
+          "bytes": 1158,
+          "sha256": "bcf69eee4199e92e63e24a96cc1ad86f6ac0d4afa7fabf0932dfe758da4f9603"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/final-census-continuation-9e5d4b00/result.json",
+          "bytes": 286589,
+          "sha256": "4818b5828c1cf897322cd7d34880f6816c8148765f68dc11a618f75e8f7e860f"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/final-census-continuation-runner-61Mz8b/launcher-result.json",
+          "bytes": 1179,
+          "sha256": "fdc7f3f1221a2ae3b4108155e7a4ead1573fa776d273abc83a997cd782526bae"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/final-census-conclusion-JkSnne/result.json",
+          "bytes": 51904,
+          "sha256": "7f55c7120a7b75aa9f8bb5291fec26eac5316006e5f68dbb66a28dec6cfcaf39"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/final-census-conclusion-JkSnne/receipt.json",
+          "bytes": 630,
+          "sha256": "7cdc8620ef173e72682108816debcd897cce2d695340a8baa62a959ba6aa1dd0"
+        }
+      ]
+    },
+    {
+      "id": "E62",
+      "title": "六文档实际发布、5页逐字读回与05页独立接受3项转义",
+      "layer": "Six unique pages independently read through installed CLI9; five byte-exact to final candidates, page 05 matches only the explicitly reviewed three-escape Markdown serialization and remains byteExact=false to its original candidate. Two complete AH-558/AH-560 historical suffixes unchanged. Seven page updates have Success responses and zero page dispatches are unresolved. Original strict failures and incomplete first-publisher HTTP totals remain preserved; this is documentation delivery, not A/B task acceptance.",
+      "files": [
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication-complete-TCdBv3/result.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication/independent-cli9-readback-VEUfV9/result.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication/accepted-current-serialization-1793717247785.json",
+        "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication/plans-final-1793716191920.json"
+      ],
+      "fileIdentities": [
+        {
+          "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication-complete-TCdBv3/result.json",
+          "bytes": 10553,
+          "sha256": "0b6b59f9e980ec677f30c52679862331b13103b1afcee9413ab278a601ad84bf"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication/independent-cli9-readback-VEUfV9/result.json",
+          "bytes": 27021,
+          "sha256": "354cb080c95dee3953bbed9e548eeb8c5d89826357034e32f2532ca0846f8fa5"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication/accepted-current-serialization-1793717247785.json",
+          "bytes": 1963,
+          "sha256": "3dfc6a08236b0c0af789944da8b6bab6a4126b1230aa7721a8a493b86d2a3628"
+        },
+        {
+          "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication/plans-final-1793716191920.json",
+          "bytes": 2985,
+          "sha256": "994fc9782a4a28004ed444a7bf5340b28f763652d89b5a343bcc19b84638b6b2"
+        }
+      ]
     }
   ],
-  "original15Index": "scripts/notion-skill-graph-acceptance.md#original-ah-560-cases"
+  "original15Index": "scripts/notion-skill-graph-acceptance.md#original-ah-560-cases",
+  "latestOriginal15": {
+    "candidate": "Broker8/CLI9; H6 initial + H7 targeted + H7 updated, separately retained",
+    "evidence": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/broker8-h7-terminal-receipt.json",
+    "executedInitial": 11,
+    "passedInitial": 10,
+    "failedInitial": 1,
+    "prerequisiteSkippedInitial": 0,
+    "failedCase": "cold-native-command (original H6 result retained)",
+    "targeted": {
+      "harness": "H7",
+      "case": "cold-native-command",
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "evidence": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-Y9H1QF/manifest.json"
+    },
+    "initialRequirementCoverage": {
+      "requirements": 11,
+      "covered": 11,
+      "kind": "ten preserved H6 case successes plus one H7 targeted case; not a new cohort",
+      "evidence": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/owned-single-final-ybVxon/broker8-h7-initial-coverage.json"
+    },
+    "updatedSix": {
+      "harness": "H7",
+      "executed": 6,
+      "passed": 6,
+      "failed": 0,
+      "evidence": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/pi-cache-evidence-tTddSZ/manifest.json",
+      "realResumedBaseline": "H6 cold-autonomous-native original retained session",
+      "oldSessionSnapshot": "s_404384d7cd62c8f360c531d7c8c194a3ed6bc5bd8366cc6020dd9f432c302b95",
+      "newFiveSnapshot": "s_0deb9cf838ab8b7a25e10d09ba5154191dbd10c426c5f1174932342d50018700",
+      "caseNameRule": "Historical names including -b are preserved even though this update direction is B to A; immutable snapshot receipts define the actual version."
+    },
+    "requirementCoverage": {
+      "requirements": 17,
+      "covered": 17,
+      "kind": "cross-cohort individual requirement coverage; original failures remain"
+    },
+    "diagnosis": "/Users/yoyo/Library/Logs/pi-context-broker/AH-561-20261103/ng20/h6-gate-diagnosis/b-and-native-location.json",
+    "nextCandidate": "none authorized; no additional A/B cohort; daily activation stays blocked",
+    "notRun": [
+      "OMP/Tern",
+      "native visual composer interactions",
+      "provider server-side cache control"
+    ]
+  },
+  "productPackageIdentity": {
+    "cli": {
+      "candidate": "CLI9",
+      "sourceCommit": "dd801c17026d9a289c4359c7bfbbf3286cf1ae9d",
+      "javascriptSha256": "8c034f9d0808b7d09a014ed8affdfbe89946d7de498f143a13ab5eacac65f869",
+      "archiveSha256": "19168be88a6c62b14a48710030cfd940ba241614a53971593d258be7815cc73f"
+    },
+    "broker": {
+      "candidate": "Broker8",
+      "sourceCommit": "1809fd7106b2d376e1642b3a29d12c6ee1f07b0a",
+      "archiveSha256": "bf2edda0f60f78244214dd72d4b255ef829b6345e05bddd58e95fcb86b2b664a"
+    },
+    "harness": {
+      "version": 7,
+      "sha256": "b43eeaef8f76b5bf5c97eab4fd10de3367321d1fa5282dde423119e1958910f2",
+      "checkpointSourceCommit": "dfb64d8b31c81c6d3a4413a696a6ab0207a26672"
+    },
+    "rule": "Product package source commits differ from later harness/documentation repository commits. The ledger-containing final Git commit/push is deliberately not a prerequisite or self-reference."
+  },
+  "finalGateBoundary": {
+    "A": {
+      "cohort": "H6",
+      "status": "failed",
+      "originalError": "EAGER_MEMBERS",
+      "originalCount": 11,
+      "independentTimingDerivation": {
+        "count": 0,
+        "error": "READ_MISSING"
+      },
+      "resourceConsumptionMissing": true,
+      "completeGeneratedSkill": false,
+      "procedureExecuted": false,
+      "remainingMatrixSamplesNotRun": 4
+    },
+    "B": {
+      "cohort": "H7",
+      "status": "failed",
+      "error": "READ_MISSING",
+      "providerHttp200": 9,
+      "availabilityFailure": false,
+      "observerErrors": 0,
+      "eagerMemberBodyReads": 0,
+      "nativeTargetResourceReads": 0,
+      "projectReads": 0,
+      "completeGeneratedSkill": false,
+      "retainedFiles": 2,
+      "procedureExecuted": false,
+      "remainingMatrixSamplesNotRun": 4
+    },
+    "dailyActivation": "not performed"
+  },
+  "issueDisposition": {
+    "source": "Parent final GO after publication/readback; no Linear request performed by this writer",
+    "parent": "AH-561",
+    "parentDisposition": "In Progress",
+    "remainInProgress": [
+      "AH-572",
+      "AH-573",
+      "AH-576",
+      "AH-581",
+      "AH-582"
+    ],
+    "reasons": {
+      "AH-572": "Public tool surface has evidence; required A/B natural-task acceptance remains unmet.",
+      "AH-573": "H6 A retains real required-resource and complete-Skill/execution gaps.",
+      "AH-576": "H7 B retains real target/resource/project-read and complete-Skill/execution gaps.",
+      "AH-581": "Owned cleanup and production census are complete; the remaining required end-to-end A/B acceptance is not complete.",
+      "AH-582": "Daily activation/new-session acceptance was not performed because A/B remain failed."
+    },
+    "publicationIssue": "AH-566",
+    "publicationDisposition": "Publication/readback complete; root authorized to mark Done, this writer does not assert a live Linear transition.",
+    "dailyActivation": "not performed"
+  },
+  "finalWriteCutoff": {
+    "completedAt": "2026-11-03T14:53:57.964Z",
+    "actualEvidenceThrough": [
+      "H7 B and legacy terminal results",
+      "Owned cleanup and final production census",
+      "Six-document publication and independent CLI9 readback"
+    ],
+    "publication": {
+      "status": "six_pages_published_and_independently_verified",
+      "readback": {
+        "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication/independent-cli9-readback-VEUfV9/result.json",
+        "sha256": "354cb080c95dee3953bbed9e548eeb8c5d89826357034e32f2532ca0846f8fa5",
+        "commands": 12,
+        "metrics": {
+          "totalRequests": 12,
+          "requestBytes": 0,
+          "responseBytes": 69128,
+          "requests": {
+            "notion_metadata": 6,
+            "notion_body": 6,
+            "notion_write": 0,
+            "provider": 0
+          }
+        }
+      },
+      "pages": [
+        {
+          "id": "40c5636c-236e-8118-ace7-cf318f985e39",
+          "url": "https://app.notion.com/p/04-Sources-40c5636c236e8118ace7cf318f985e39",
+          "operationId": "ah561-doc-7755794645ff002c5b8946ce31fd42582d85a7120af89bf558d168940f87d1f0",
+          "sha256": "baf96d6efa9a79e129092272c570b6704d60cbf08ae9d1b4651faac985f953df",
+          "bytes": 5341,
+          "originalCandidateSha256": "baf96d6efa9a79e129092272c570b6704d60cbf08ae9d1b4651faac985f953df",
+          "byteExactToOriginalCandidate": true,
+          "acceptedSerialization": null,
+          "historicalOriginalPreserved": null,
+          "truncated": false,
+          "unknownBlockIds": [],
+          "parentUnchanged": true,
+          "propertiesUnchanged": true,
+          "status": "independently_readback_verified"
+        },
+        {
+          "id": "40c5636c-236e-8196-9ba8-f77eb650d171",
+          "url": "https://app.notion.com/p/00-40c5636c236e81969ba8f77eb650d171",
+          "operationId": "ah561-doc-923e778dced10cefcc520f2b3e59a19959c38e99c7d9ca49532b33af308e6840",
+          "sha256": "059f172c8d843e7d213166ebff10fc7aee1ab34ac07a1e1b46d750828b157961",
+          "bytes": 3713,
+          "originalCandidateSha256": "059f172c8d843e7d213166ebff10fc7aee1ab34ac07a1e1b46d750828b157961",
+          "byteExactToOriginalCandidate": true,
+          "acceptedSerialization": null,
+          "historicalOriginalPreserved": null,
+          "truncated": false,
+          "unknownBlockIds": [],
+          "parentUnchanged": true,
+          "propertiesUnchanged": true,
+          "status": "independently_readback_verified"
+        },
+        {
+          "id": "40c5636c-236e-81aa-bf70-f6d2ab41eaa8",
+          "url": "https://app.notion.com/p/03-40c5636c236e81aabf70f6d2ab41eaa8",
+          "operationId": "ah561-doc-3dc7c7580d82ba7d7b45407606ee4834ba61a338bf35344b886100dd7ac284d0",
+          "sha256": "61323ed0d1dd0bad49e4c2df5a951cbafe18c27c79232a8539963e332e8a8d6a",
+          "bytes": 7897,
+          "originalCandidateSha256": "61323ed0d1dd0bad49e4c2df5a951cbafe18c27c79232a8539963e332e8a8d6a",
+          "byteExactToOriginalCandidate": true,
+          "acceptedSerialization": null,
+          "historicalOriginalPreserved": true,
+          "truncated": false,
+          "unknownBlockIds": [],
+          "parentUnchanged": true,
+          "propertiesUnchanged": true,
+          "status": "independently_readback_verified"
+        },
+        {
+          "id": "40c5636c-236e-81be-a195-da74acc3ded0",
+          "url": "https://app.notion.com/p/01-40c5636c236e81bea195da74acc3ded0",
+          "operationId": "ah561-doc-7fe21a601240a47e0844d6d749194391331f92c5f1cd30850f9896541e599a1c",
+          "sha256": "b7fe6e4edaf433e27a2549276a0c78fc62890dde80b4e3bf048a4f19900ef429",
+          "bytes": 5943,
+          "originalCandidateSha256": "b7fe6e4edaf433e27a2549276a0c78fc62890dde80b4e3bf048a4f19900ef429",
+          "byteExactToOriginalCandidate": true,
+          "acceptedSerialization": null,
+          "historicalOriginalPreserved": null,
+          "truncated": false,
+          "unknownBlockIds": [],
+          "parentUnchanged": true,
+          "propertiesUnchanged": true,
+          "status": "independently_readback_verified"
+        },
+        {
+          "id": "40c5636c-236e-81fd-b1f7-f33e52acea02",
+          "url": "https://app.notion.com/p/02-Skill-Pi-40c5636c236e81fdb1f7f33e52acea02",
+          "operationId": "ah561-doc-format-88525cef4cc8a059bead2c248831ba04a2e0ae530f4acefafd11e42f050fc9dc",
+          "sha256": "56287d1efb73d9eaa1e8da8066363209830dd78ce45d986d9e6017c323193654",
+          "bytes": 5494,
+          "originalCandidateSha256": "56287d1efb73d9eaa1e8da8066363209830dd78ce45d986d9e6017c323193654",
+          "byteExactToOriginalCandidate": true,
+          "acceptedSerialization": null,
+          "historicalOriginalPreserved": null,
+          "truncated": false,
+          "unknownBlockIds": [],
+          "parentUnchanged": true,
+          "propertiesUnchanged": true,
+          "status": "independently_readback_verified"
+        },
+        {
+          "id": "40d5636c-236e-813b-8b22-cb63e2f7d0b5",
+          "url": "https://app.notion.com/p/05-Pi-40d5636c236e813b8b22cb63e2f7d0b5",
+          "operationId": "ah561-doc-format-3aadfd03887e376b058b81ee185f639c7426e65cbfa81db34b4820908234b1c7",
+          "sha256": "f5f3a2975ea3826f54083cd14c432e0d043b2d17ef51a73ef1bfd6c27ce162eb",
+          "bytes": 33445,
+          "originalCandidateSha256": "7910b57cbee3ba96db0df4d285d7664a9bbb98ac9b6a80607751920767ef7254",
+          "byteExactToOriginalCandidate": false,
+          "acceptedSerialization": {
+            "kind": "reviewed_markdown_escape_serialization",
+            "transformations": 3
+          },
+          "historicalOriginalPreserved": true,
+          "truncated": false,
+          "unknownBlockIds": [],
+          "parentUnchanged": true,
+          "propertiesUnchanged": true,
+          "status": "independently_verified_with_reviewed_serialization"
+        }
+      ],
+      "strictCandidatePages": 5,
+      "reviewedSerializationPages": 1,
+      "knownConfirmedPageUpdates": 7,
+      "unresolvedPageDispatches": 0,
+      "historicalOriginals": [
+        {
+          "pageId": "40c5636c-236e-81aa-bf70-f6d2ab41eaa8",
+          "bytes": 2774,
+          "sha256": "c929f25bf545078673e01e1d0bd5d5a4e76cf50aad82e92182cd0fa3ec2263e4",
+          "preserved": true
+        },
+        {
+          "pageId": "40d5636c-236e-813b-8b22-cb63e2f7d0b5",
+          "bytes": 7292,
+          "sha256": "ce1979985249ee384de19ee268da655b9b85ac0366064c5815cc3b605de211be",
+          "preserved": true
+        }
+      ],
+      "finalTwoPublisherMetrics": {
+        "requests": {
+          "notion_metadata": 4,
+          "notion_body": 4,
+          "notion_write": 2,
+          "provider": 0
+        },
+        "body_requests": {
+          "current_body": 4,
+          "retained_body": 0,
+          "unclassified_body": 0
+        },
+        "total_requests": 10,
+        "provider_requests": {
+          "notion": 10
+        },
+        "request_bytes": 52344,
+        "response_bytes": 96193,
+        "unknown_request_bytes": 0,
+        "unknown_response_bytes": 0,
+        "in_flight": 0,
+        "peak_concurrency": 1,
+        "duplicate_requests": 4,
+        "requests_without_identity": 0,
+        "coalesced_requests": 0,
+        "queue_wait_ms": 174.91524900000002,
+        "retry_wait_ms": 0,
+        "outcomes": {
+          "success": 10,
+          "failure": 0,
+          "cancelled": 0
+        },
+        "request_duration": {
+          "samples": 10,
+          "p50_ms": 394.34270899999956,
+          "p95_ms": 1373.7870000000003
+        },
+        "operation_duration": {
+          "samples": 0,
+          "p50_ms": null,
+          "p95_ms": null
+        },
+        "trace": [],
+        "trace_enabled": false,
+        "trace_dropped": 0
+      },
+      "acceptCurrentDecision": {
+        "path": "/Users/yoyo/Library/Logs/ntn-skills/AH-561-20261103/ng21/publication/accepted-current-serialization-1793717247785.json",
+        "sha256": "3dfc6a08236b0c0af789944da8b6bab6a4126b1230aa7721a8a493b86d2a3628"
+      }
+    },
+    "publicationLimitations": {
+      "originalStrictFailuresPreserved": true,
+      "originalPublisherMetricsComplete": false,
+      "initialFailureCostLimitation": "Bun runtime rejection and the first Node publisher did not persist complete HTTP metrics; no total attempts are reconstructed for those runs.",
+      "original05CandidateSha256": "7910b57cbee3ba96db0df4d285d7664a9bbb98ac9b6a80607751920767ef7254",
+      "original05ByteExact": false,
+      "current05Sha256": "f5f3a2975ea3826f54083cd14c432e0d043b2d17ef51a73ef1bfd6c27ce162eb",
+      "reviewedSerializationTransformations": 3
+    },
+    "excludedSelfReference": "The later Git commit/push containing these ledger files is recorded separately in external Logs and Linear."
+  },
+  "finalProductionCensus": {
+    "evidence": "E61",
+    "conclusionSha256": "7f55c7120a7b75aa9f8bb5291fec26eac5316006e5f68dbb66a28dec6cfcaf39",
+    "inventory": {
+      "skills": 300,
+      "publicCatalog": 298,
+      "files": 818,
+      "sources": 59,
+      "records": "not scanned"
+    },
+    "catalogDifference": "Two Enabled=false Skills excluded by public catalog; full raw inventory includes them.",
+    "disabledCatalogRows": [
+      {
+        "id": "4095636c-236e-8139-9199-ee4cd5313dfa",
+        "name": "Topic Map Governance"
+      },
+      {
+        "id": "3f85636c-236e-811a-ab0d-d5b9dce8dfc5",
+        "name": "Resource Tag Governance"
+      }
+    ],
+    "nativeViews": 6,
+    "actualDefaultQueryRows": 74,
+    "actualDefaultCapabilityCatalogRows": 74,
+    "observationWindow": {
+      "inventory": "2026-11-03T14:13:34.681Z through 2026-11-03T14:14:08.895Z",
+      "narrowContinuation": "2026-11-03T14:24:14.288Z through 2026-11-03T14:24:23.826Z",
+      "rule": "Frozen schema/inventory/catalog reused exactly; only missing relation and current View/cleanup metadata read during continuation."
+    },
+    "protectedPstackOwners": 57,
+    "rootMembers": 56,
+    "potetoMembers": 55,
+    "protectedFields": "Exact page/logical IDs, Origin, Selected Version, Kind, Enabled, Main File ID, complete Members/Requires and authored custom fields unchanged.",
+    "independentSemanticConclusion": "passed",
+    "originalCollectorStatuses": [
+      "incomplete",
+      "differences-or-incomplete-proof"
+    ],
+    "rawCosts": {
+      "attempts": 44,
+      "metadata": 42,
+      "unclassifiedBody": 2,
+      "http200": 44,
+      "requestBytes": 1422,
+      "responseBytes": 7771834,
+      "currentBody": 0,
+      "retainedBody": 0,
+      "writes": 0,
+      "modelProvider": 0
+    },
+    "semanticCosts": "All 44 responses are metadata; the two generic unclassified_body responses contain relation property-item IDs and pagination only. Raw counters remain unchanged.",
+    "attachmentDifference": "48 native attachment signing URL/expiry rotations; exact object origin/path and every non-signing field matched. No body-byte equality inferred.",
+    "retainedViews": [
+      "40d5636c-236e-80fb-8af2-000c98cc7fb4",
+      "40d5636c-236e-8078-9300-000c08542ff5"
+    ],
+    "removedView": "40d5636c-236e-80da-b51d-000cf22b6b45",
+    "actualDefaultView": "b6c7bb99-ae7c-4be7-b98b-5703b09e8913"
+  }
 }
-
