@@ -13,16 +13,18 @@ import type { HostCapabilities } from "./host-adapter";
 import { invocationText } from "./invocation-text";
 import { viewSystemPrompt } from "./view-prompt";
 import { notifyUnavailableReferences, renderUnavailableReferences } from "./unavailable-references";
+import { deduplicateSourceReads, nativeReadReceipt } from "./session-source-snapshot";
 
 export type HostSkillOptions = {
   config: ConfigFile;
   getRecords(ctx?: ExtensionContext, signal?: AbortSignal): Promise<DiscoveryResult<SkillRecord>>;
-  loadRecord(record: SkillRecord, signal?: AbortSignal): Promise<SkillRecord>;
+  loadRecord(record: SkillRecord, signal?: AbortSignal, snapshotId?: string): Promise<SkillRecord>;
   needsPreflightPrompt?(text: string): boolean;
   onPreparation?(entry: ActivePreparation): void;
   preflightPrompt?(text: string, ctx: ExtensionContext, signal?: AbortSignal): Promise<void>;
   taskPrompt?(text: string, ctx: ExtensionContext, signal?: AbortSignal, invocation?: ActivePreparation): Promise<string>;
   isLoaded?(record: SkillRecord, ctx: ExtensionContext): boolean;
+  sessionSnapshot?(record: SkillRecord, ctx: ExtensionContext): string | undefined;
   onMetadata?(records: SkillRecord[]): void;
 };
 export type PreparedReference = { status: "ready"; record: SkillRecord } | { status: "miss" };
@@ -102,6 +104,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   const publishing = new Map<string, Promise<void>>();
   const registeredCommands = new Set<string>();
   const nativeInputs = new Map<string, SkillRecord>();
+  const pendingNativeReads = new Map<string, { record: SkillRecord; generation: number }>();
   const printTurns = new Set<() => void>();
   const gate = createPreparationGate();
   const commandPreparations = new WeakSet<ActivePreparation>();
@@ -117,6 +120,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   const nativeCommands = new Map<string, (args: string, ctx: ExtensionContext, images?: ImageContent[], entry?: ActivePreparation) => Promise<void>>();
   host.on("agent_end", () => {
     turnPrompts = undefined;
+    pendingNativeReads.clear();
     for (const complete of printTurns) complete();
     printTurns.clear();
   });
@@ -220,7 +224,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const selectedGeneration = generation;
     const preparationOwner = gate.active;
     const pinned = loaded.get(key);
-    const existing = record.kind !== "prompt" && pinned && ((ctx && options.isLoaded?.(pinned.record, ctx)) || (gate.active && pinned.owner === gate.active)) ? pinned.record : undefined;
+    const sessionSnapshot = ctx ? options.sessionSnapshot?.(record, ctx) : undefined;
+    const existing = record.kind !== "prompt" && pinned && (!sessionSnapshot || pinned.record.snapshotId === sessionSnapshot) && ((ctx && options.isLoaded?.(pinned.record, ctx)) || (gate.active && pinned.owner === gate.active)) ? pinned.record : undefined;
     if (existing) { await publish(record, existing, signal); checkPreparationSignal(signal); return existing; }
     // A preparation owns its signal. Unrelated consumers never inherit its cancellation.
     const pending = loading.get(key);
@@ -233,8 +238,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       // A command keeps this ownership across source queueing and its nested preflight.
       const outsideHook = readPhase === "execute" || Boolean(preparationOwner && commandPreparations.has(preparationOwner));
       let result = !outsideHook && adapter.headlessActivationTimeoutMs !== undefined && ctx?.mode !== "tui"
-        ? await headlessActivation(child => options.loadRecord(record, child), adapter.headlessActivationTimeoutMs, signal)
-        : await options.loadRecord(record, signal);
+        ? await headlessActivation(child => options.loadRecord(record, child, sessionSnapshot), adapter.headlessActivationTimeoutMs, signal)
+        : await options.loadRecord(record, signal, sessionSnapshot);
       checkPreparationSignal(signal);
       if (typeof result.body !== "string" || !result.body.trim()) throw hostError("SOURCE_BODY_MISSING");
       if (recordIdentity(result) !== key) throw hostError("SOURCE_IDENTITY_MISMATCH");
@@ -509,6 +514,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     handoff = undefined;
     turnPrompts = undefined;
     nativeInputs.clear();
+    pendingNativeReads.clear();
+    loaded.clear();
     feedback.restore(ctx);
     await adapter.installEditor(ctx, gate.bindEditor);
     const ready = refresh(ctx, false);
@@ -541,7 +548,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       catch { ctx.abort?.(); gate.cancel(); }
     }
   });
-  api.on("context", event => ({ messages: event.messages.filter(message => message.customType !== ACTIVATION_MESSAGE) }));
+  api.on("context", event => ({ messages: deduplicateSourceReads(event.messages.filter(message => message.customType !== ACTIVATION_MESSAGE)) }));
   host.on("input", async (event, ctx) => {
     const text = event.text ?? "";
     const current = gate.active;
@@ -736,9 +743,26 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   host.on("tool_call", async (event, ctx) => {
     if (event.toolName === "read" && readRunsInTool?.()) return undefined;
     const prepared = await prepareRead(event, ctx, lifecycleController.signal, "hook");
-    if (!prepared || "block" in prepared) return prepared;
-    Object.assign(event.input, prepared.input);
-    return adapter.updatedRead(prepared.input);
+    if (prepared && "block" in prepared) return prepared;
+    if (prepared) Object.assign(event.input, prepared.input);
+    // Only this broker's successful whole-entry read can create a persisted
+    // loaded receipt. Resource reads, user text and nested tool activity cannot.
+    if (adapter.paths.host === "pi" && event.toolName === "read" && event.toolCallId && typeof event.input.path === "string") {
+      const path = expandPath(event.input.path, ctx.cwd);
+      const record = [...loaded.values()].map(value => value.record).find(value => resolve(value.path) === path);
+      if (record?.kind !== "prompt" && record?.sourceId && record.snapshotId) pendingNativeReads.set(event.toolCallId, { record, generation });
+    }
+    return prepared ? adapter.updatedRead(prepared.input) : undefined;
+  });
+  host.on("tool_result", (event) => {
+    if (event.toolName !== "read" || !event.toolCallId) return undefined;
+    const pending = pendingNativeReads.get(event.toolCallId);
+    pendingNativeReads.delete(event.toolCallId);
+    if (!pending || pending.generation !== generation || event.isError || event.parentToolCallId) return undefined;
+    const proof = nativeReadReceipt(pending.record, event.toolCallId, event.content);
+    if (!proof) return undefined;
+    const existing = event.details && typeof event.details === "object" && !Array.isArray(event.details) ? event.details as Record<string, unknown> : {};
+    return { details: { ...existing, contextBrokerRead: proof } };
   });
 
   const initialMetadata = refresh();

@@ -21,3 +21,11 @@ export async function evidenceRoot(option, fallback) {
   await mkdir(option, { recursive: true, mode: 0o700 });
   return realpath(option);
 }
+
+/** Keep authentication in the inherited host environment, while giving oracle
+ * preparation and the actual consumer disjoint mutable CLI/XDG roots. */
+export function verificationCliEnvironment(base, inherited = process.env) {
+  assert.ok(isAbsolute(base), 'Verification CLI root must be absolute');
+  const roots = { NTN_SKILLS_CONFIG_HOME: 'config', NTN_SKILLS_HOME: 'state', NTN_SKILLS_CACHE_HOME: 'cache', NTN_SKILLS_DATA_HOME: 'data', XDG_CONFIG_HOME: 'xdg/config', XDG_STATE_HOME: 'xdg/state', XDG_CACHE_HOME: 'xdg/cache', XDG_DATA_HOME: 'xdg/data' };
+  return { ...inherited, ...Object.fromEntries(Object.entries(roots).map(([key, path]) => [key, join(base, path)])) };
+}

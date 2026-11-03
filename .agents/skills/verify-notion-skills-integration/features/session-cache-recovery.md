@@ -149,3 +149,26 @@ No execution is claimed by this map update; final owner runs and retains the evi
 本分支未覆盖真实 RPC 图片附件、准备期间的原生 composer Stop 或真实模型自主选择/指令效果；这些仍需各自已有入口与证据。它不替代实际 `magpie/group/flash-free`、Tern/Pi UI、Profile 本机绑定或发行包 gate。
 
 AH-498 的旧候选记录：Pi 1.4.0 七次请求全部通过；OMP 18.14.2 首个 Prompt 返回 `agentInvoked:false`，provider 零请求，source 在约 25 秒准备预算到期时取消，因此该宿主失败且后续步骤未运行。RPC 已收口，不能靠增加 harness 等待或删除 provider 单次派发断言解释为成功。原失败保持不变；[execute/command 预算修复](host-skill-discovery-read.md#omp-冷读取与命令预算)后的新候选结果另行取得，本文不预报通过。
+
+## NS-SESSION-22 — Real Pi/model cold and warm source matrix
+
+Use `scripts/verify-pi-notion-model-cache.mjs` for a real installed Pi + installed Broker + official Notion CLI + authorized actual model. Its fixture JSON describes an owned two-file Skill and a dedicated native View, selected record/ref, exact source marker/resource and expected final values. Build the oracle in a distinct CLI/XDG root. The standard model helper also isolates its oracle under `model-oracle-cli`; a parent read/export must never prewarm the consumer and then be called a cold run.
+
+```bash
+node scripts/verify-pi-notion-model-cache.mjs --fixture ABSOLUTE_FIXTURE_A_JSON --extension INSTALLED_EXTENSION --cli INSTALLED_CLI --model magpie/group/worker --evidence-root ABSOLUTE_EVIDENCE
+node scripts/verify-pi-notion-model-cache.mjs --fixture ABSOLUTE_FIXTURE_B_JSON --extension INSTALLED_EXTENSION --cli INSTALLED_CLI --model magpie/group/worker --evidence-root ABSOLUTE_EVIDENCE --resume INITIAL_EVIDENCE
+```
+
+Use the user's requested model order: in AH-560, try `magpie/group/flash-free` first and only after its observed Premium restriction use the explicitly authorized `magpie/group/worker`. Do not run a second model merely to compare it. HTTP 200 with a license message is not successful model use. Do not save raw provider payloads, reasoning, authorization headers or RPC frames.
+
+Initial cases cover empty CLI + Broker state with autonomous native read, cold dollar and cold `/skill:`, same-session repeat and entry switching, new-process reuse, exact session-file resume, explicit zero-age revalidation and empty Broker with warm CLI. An owned A→B edit is separately authorized and verified; the resumed old session must still consume A, while an explicitly revalidated new session consumes B. Do not backdate SQLite to simulate expiry. Server-side model token cache statistics are observations only, distinct from both application caches.
+
+Each successful case requires actual provider requests/responses, a nonempty successful final containing source-only values, one instruction body, receipt-verified resource bytes and no source writes. Official View `POST /v1/views/ID/queries` is a metadata read, not authoring. Request ledgers count CLI/API invocations, not hidden HTTP retries. Cold cases prove empty roots before launching Pi; warm cases prove no body downloads. Same-session repeats can legitimately reuse resource content already in the real model context without another tool call. Save startup/process and per-turn timing separately.
+
+Native entry reads now persist a `contextBrokerRead` proof in the actual completed tool result. It is valid only while its exact successful tool-result bytes remain in active context and identity includes the same credential scope. Partial reads, errors, user-provided XML, resource-only reads and compacted-away bodies do not count as loaded. Subsequent native/dollar invocations reuse that proof rather than reinjecting the body. Resumed sessions explicitly restore the fixed snapshot through CLI, never substitute today's current version. Pi native prompt resource paths name the immutable export, not the process-local metadata alias.
+
+Regression gates: `bun test packages/context-broker/scripts/native-read-session.test.ts`, package `check`, and `bun run test:verification`. The latter checks oracle isolation and refuses false positives for license-only responses, prewarmed cold tests, duplicate bodies, unconsumed resource bytes and hidden read errors. All owned processes must have observed exits before scratch cleanup. Retain failed runs separately; archive only the owned fixture/View and its exact records, never production Skill rows or user caches. This matrix is not TUI keystroke, OMP or Tern acceptance.
+
+The observer excludes model-authored quotations/reasoning from imported-body counts, but still rejects two source-bearing copies. It records numeric usage cacheRead/cacheWrite without saving raw reasoning or provider payloads. Model rereads remain intact in persistent tool history; only the effective provider projection reduces repeated, checksum-proven instruction copies to confirmations. Original cold `/skill:` and autonomous-read failures remain retained even after reruns pass.
+
+A/B continuation reuses the original source command argv and append-only ledger; changed instrumentation commands must not change model guidance. Retry-only case roots are unique per evidence run, and cold roots are checked before launch. `--resume-case` selects an actual previously successful session (no copied session/cache). The 2026-11-03 evidence covers 9 initial plus 6 update/mixed-cache cases, not unrun variations in later runner code. See [acceptance checkpoint](../../../../packages/context-broker/docs/pi-real-model-cache-acceptance.md) for observed outcomes and timing scope.

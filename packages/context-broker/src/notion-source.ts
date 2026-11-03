@@ -12,7 +12,7 @@ import { sharedSkillId, validSharedIdentity } from "./shared-skill-identity";
 import type { ContentRecord, NotionListObservation, NotionView, SkillRecord, SourceConfig, SourcePolicy, SourceFailure } from "./types";
 
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
-type Options = { signal?: AbortSignal; refresh?: boolean; stale?: boolean; view?: string; defaultView?: boolean };
+type Options = { signal?: AbortSignal; refresh?: boolean; stale?: boolean; view?: string; defaultView?: boolean; snapshotId?: string };
 type NotionDirectory = SkillRecord[] & { list: NotionListObservation; failures: SourceFailure[]; view?: NotionView | null; profileId?: string };
 type Json = Record<string, unknown>;
 const PageLocator = Schema.Struct({ type: Schema.Literal("notion_page"), page_id: Schema.String, database_id: Schema.String, data_source_id: Schema.String });
@@ -447,11 +447,13 @@ export async function loadNotionSkill(record: SkillRecord, source: NotionSource,
   const selected = contentRecord({ id: record.id, kind: record.kind, locator: record.locator, name: record.name, alias: record.alias, description: record.description, default_context: record.default_context, ...(record.enabled === undefined ? {} : { enabled: record.enabled }), entrypoint: record.entrypoint, ref: record.ref }, source);
   if (selected.enabled === false) throw new SourceError("CONTENT_DISABLED", source.id);
   const sameIdentity = (item: ContentRecord) => item.id === selected.id && item.kind === selected.kind && isDeepStrictEqual(item.locator, selected.locator) && item.entrypoint === selected.entrypoint && item.ref === selected.ref;
-  const read = await run(source, cwd, ["read", record.ref, ...(source.database ? ["--database", source.database] : []), ...policyArgs(source.activation)], options.signal, undefined, record.locator.type === "notion_page" || record.locator.type === "shared_skill" ? record.locator.page_id : undefined);
+  if (options.snapshotId !== undefined && !SNAPSHOT.test(options.snapshotId)) throw new SourceError("SOURCE_REFERENCE_INVALID", source.id);
+  const read = await run(source, cwd, ["read", options.snapshotId ? `${record.ref}?snapshot=${options.snapshotId}` : record.ref, ...(source.database ? ["--database", source.database] : []), ...(options.snapshotId ? [] : policyArgs(source.activation))], options.signal, undefined, record.locator.type === "notion_page" || record.locator.type === "shared_skill" ? record.locator.page_id : undefined);
   if ("skill" in read || "skill_name" in read) decodeError(source);
   const current = contentRecord(read.record, source);
   if (current.enabled === false) throw new SourceError("CONTENT_DISABLED", source.id);
   const snapshot = text(read.snapshot_id, source);
+  if (options.snapshotId && snapshot !== options.snapshotId) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
   const version = text(read.version_id, source);
   // Names and aliases may change after selection; the exact page, scope and entry remain authoritative.
   if (!sameIdentity(current) || !SNAPSHOT.test(snapshot) || read.scope !== record.sourceScope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);

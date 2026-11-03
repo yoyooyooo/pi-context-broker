@@ -4,6 +4,9 @@ export type MessageContent = string | Array<TextContent | ImageContent>;
 
 export type AgentMessage = {
   role: string;
+  toolName?: string;
+  toolCallId?: string;
+  isError?: boolean;
   content?: MessageContent;
   customType?: string;
   details?: unknown;
@@ -41,7 +44,7 @@ export type InputResult =
   | { action: "transform"; text: string; images?: ImageContent[] };
 export type ToolCallEvent = { toolName: string; toolCallId?: string; input: Record<string, unknown> };
 export type ToolCallResult = { block: true; reason: string } | { input: Record<string, unknown> };
-export type ToolResultEvent = { toolName: string; toolCallId?: string; input: Record<string, unknown>; content?: MessageContent; isError?: boolean };
+export type ToolResultEvent = { toolName: string; toolCallId?: string; parentToolCallId?: string; input: Record<string, unknown>; content?: MessageContent; isError?: boolean; details?: unknown };
 /** Opaque native tool output: the adapter forwards every field without rewriting it. */
 export type NativeReadResult = { content: Array<TextContent | ImageContent>; details?: unknown; isError?: boolean; [key: string]: unknown };
 export type NativeReadUpdate = (result: NativeReadResult) => void;
@@ -71,7 +74,7 @@ type ExtensionEvents = {
   before_agent_start: { event: BeforeAgentStartEvent; result: BeforeAgentStartResult };
   input: { event: InputEvent; result: InputResult };
   tool_call: { event: ToolCallEvent; result: ToolCallResult };
-  tool_result: { event: ToolResultEvent; result: void };
+  tool_result: { event: ToolResultEvent; result: void | { details: unknown } };
   resources_discover: { event: { type: "resources_discover" }; result: { skillPaths: string[] } };
 } & { [K in SessionBoundary]: { event: { type: K }; result: void } };
 

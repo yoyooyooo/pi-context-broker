@@ -15,12 +15,15 @@ export function observe(api, settings) {
   const { createHash } = settings.crypto;
   const { isAbsolute, join, relative, resolve, sep } = settings.path;
   const { model, provider, id, marker, alias, selected, cache, output } = settings;
-  const record = value => appendFileSync(output, JSON.stringify(value) + '\n', { mode: 0o600 });
+  const record = value => appendFileSync(output, JSON.stringify({ at: new Date().toISOString(), ...value }) + '\n', { mode: 0o600 });
   const normalize = text => text.replace(/^\s*\d+[:|]\s?/gm, '').replace(/\s+/g, ' ').trim();
   const strings = value => typeof value === 'string' ? [value] : Array.isArray(value) ? value.flatMap(strings) : value && typeof value === 'object' ? Object.values(value).flatMap(strings) : [];
+  // A model-authored quotation (including reasoning) is not a second imported
+  // Skill. Keep it out of source-copy counts without retaining its text.
+  const sourceStrings = value => typeof value === 'string' ? [value] : Array.isArray(value) ? value.flatMap(sourceStrings) : value && typeof value === 'object' ? ['assistant', 'model'].includes(value.role) ? [] : Object.values(value).flatMap(sourceStrings) : [];
   const occurrences = (value, needle) => {
     const target = normalize(needle);
-    return target ? strings(value).reduce((sum, text) => sum + normalize(text).split(target).length - 1, 0) : 0;
+    return target ? sourceStrings(value).reduce((sum, text) => sum + normalize(text).split(target).length - 1, 0) : 0;
   };
   const within = (parent, child) => { const path = relative(parent, child); return path !== '..' && !path.startsWith('..' + sep) && !isAbsolute(path); };
   const secretValues = Object.entries(process.env).filter(([key, value]) => /KEY|TOKEN|SECRET|PASSWORD|COOKIE|CREDENTIAL/i.test(key) && typeof value === 'string' && value.length >= 4).map(([, value]) => value);
@@ -38,6 +41,9 @@ export function observe(api, settings) {
     if (ctx.model.compactionModel && !wireAllowed(ctx.model.compactionModel)) throw new Error('Notion model route rejected unauthorized compaction model');
   };
   const resources = new Map();
+  // A resumed real session may already contain a verified resource tool result.
+  // These oracle bytes are used only for observation, never injected into Pi.
+  const resourceBodies = () => [...new Set([...(settings.expectedResourceBodies ?? []), ...resources.values()])];
   const advertisedEntries = new Set();
   const calls = new Map();
   const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -208,13 +214,13 @@ export function observe(api, settings) {
   });
   api.on('context', (event, ctx) => {
     assertModel(ctx);
-    record({ phase: 'context', model, skillBodies: occurrences(event.messages, marker), resourceBodies: [...resources.values()].reduce((sum, body) => sum + occurrences(event.messages, body), 0) });
+    record({ phase: 'context', model, skillBodies: occurrences(event.messages, marker), resourceBodies: resourceBodies().reduce((sum, body) => sum + occurrences(event.messages, body), 0) });
   });
   api.on('before_provider_request', (event, ctx) => {
     assertModel(ctx);
     const wireModel = event.payload?.model;
     if (wireModel !== undefined && !wireAllowed(wireModel)) throw new Error('Notion model route rejected unauthorized provider model');
-    record({ phase: 'request', model, wireModel: wireModel ?? null, aliases: occurrences(event.payload, alias), skillBodies: occurrences(event.payload, marker), resourceBodies: [...resources.values()].reduce((sum, body) => sum + occurrences(event.payload, body), 0) });
+    record({ phase: 'request', model, wireModel: wireModel ?? null, aliases: occurrences(event.payload, alias), skillBodies: occurrences(event.payload, marker), resourceBodies: resourceBodies().reduce((sum, body) => sum + occurrences(event.payload, body), 0) });
   });
   api.on('after_provider_response', event => record({ phase: 'response', status: typeof event.status === 'number' ? event.status : null }));
   api.on('message_end', event => {
@@ -222,7 +228,7 @@ export function observe(api, settings) {
     if (message?.role !== 'assistant') return;
     const text = (message.content ?? []).filter(item => item.type === 'text' && typeof item.text === 'string').map(item => item.text).join('\n');
     if (!text.trim()) return;
-    record({ phase: 'assistant_final', success: ['stop', 'length'].includes(message.stopReason), stopReason: message.stopReason ?? null, bytes: Buffer.byteLength(text), textSha256: createHash('sha256').update(text).digest('hex'), text: sanitize(text) });
+    record({ phase: 'assistant_final', success: ['stop', 'length'].includes(message.stopReason), stopReason: message.stopReason ?? null, bytes: Buffer.byteLength(text), textSha256: createHash('sha256').update(text).digest('hex'), text: sanitize(text), usage: Object.fromEntries(Object.entries(message.usage ?? {}).filter(([key, value]) => ['input', 'output', 'cacheRead', 'cacheWrite', 'totalTokens'].includes(key) && typeof value === 'number' && Number.isFinite(value))) });
   });
   api.on('tool_call', event => {
     if (event.toolName !== 'read') return { block: true, reason: 'Notion model route permits only read' };

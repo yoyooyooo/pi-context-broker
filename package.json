@@ -10,7 +10,7 @@
     "pack:broker": "bun scripts/pack.mjs --target broker",
     "typecheck": "bun run --cwd packages/context-broker typecheck",
     "check": "bun run test:verification && bun run build && bun run --cwd packages/context-broker check && bun packages/context-broker/scripts/completion.test.ts",
-    "test:verification": "node --test scripts/notion-integration-hosts.test.mjs scripts/pack-target.test.mjs",
+    "test:verification": "node --test scripts/notion-integration-hosts.test.mjs scripts/pack-target.test.mjs scripts/notion-model-cache.test.mjs",
     "check:broker": "bun run test:verification && bun run build:broker && bun run --cwd packages/context-broker check && bun packages/context-broker/scripts/completion.test.ts",
     "test": "bun run check",
     "test:host": "bun run --cwd packages/context-broker test:host",

@@ -52,3 +52,9 @@ No execution is claimed by this map update; final owner runs and retains the evi
 ## Metadata-only startup policy
 
 For the Pi-only consolidated library, set the source `prefetch: false`. Verify ordinary metadata discovery schedules no source read/export, then invoke a default-View Skill through cold native read and `$` and require the same full snapshot/resource checks. The original prefetch cases remain opt-in/default coverage; do not replace their cancellation/shared-owner assertions with a lazy test. `source-runtime.test.ts` covers source-specific selection, strict boolean configuration, zero startup loads and an explicit successful on-demand load.
+
+### Complete native read receipts and resumed fixed resources
+
+Pi can discover and read a native Skill without an explicit dollar or slash invocation. A successful complete entry result is annotated with its stable content identity, scope, snapshot, tool-call ID and byte hash. This is the original tool result, not an extra injected message. Later `/skill:` and `$` use the same loaded-body decision. Only matching active tool bytes count; partial or compacted content cannot suppress a required load.
+
+Session restart restores that snapshot using a pinned public CLI read before preparing resources. No active-source refresh silently replaces the selected version. Native Pi prompt paths use the immutable exported directory rather than temporary registration aliases. Verify this with `native-read-session.test.ts` and the real-model cold/warm matrix; exact source reads and final answers remain separate from provider availability and native UI evidence.

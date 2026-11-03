@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { nativeReadSnapshot, sessionSourceSnapshot } from "./session-source-snapshot";
 import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, resolve } from "node:path";
@@ -726,6 +727,7 @@ function hasLoadedRecord(messages: AgentMessage[], record: DiscoveryRecord): boo
   const kind = recordKind(record);
   const sourceSkill = record as SkillRecord;
   if (sourceSkill.sourceId) {
+    if (nativeReadSnapshot(messages, sourceSkill)) return true;
     const identity = recordIdentity(record);
     return messages.some(message => {
       if (message.role !== "custom") return false;
@@ -1477,8 +1479,11 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       const result = await getCatalog(ctx?.cwd);
       return resolveViewDiscovery(config, { records: result.records.filter((record): record is SkillRecord => Boolean(record.sourceId)), failures: result.failures }, ctx, signal);
     },
-    loadRecord: (record, signal) => sourceRuntime.load(record, signal),
+    loadRecord: (record, signal, snapshotId) => snapshotId
+      ? loadSourceSkill(record, config, undefined, { signal, snapshotId })
+      : sourceRuntime.load(record, signal),
     isLoaded: (record, ctx) => hasLoadedRecord(messagesFromActiveSessionContext(ctx), record),
+    sessionSnapshot: (record, ctx) => sessionSourceSnapshot(messagesFromActiveSessionContext(ctx), record),
     onMetadata: records => sourceRuntime.prepare(selectPrefetchRecords(records, config.sources)),
     needsPreflightPrompt: text => parseInvocations(text, configuredRules(config)).length > 0,
     onPreparation: entry => acceptedSelections.capture(entry.ctx, entry.controller.signal,

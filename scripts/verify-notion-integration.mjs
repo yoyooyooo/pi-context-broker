@@ -18,7 +18,7 @@ import { createRequestLedger, nativeEntries, runDefaultContext } from './notion-
 import { runCacheLifecycle } from './notion-cache-lifecycle.mjs';
 import { runSharedCatalog } from './notion-shared-catalog.mjs';
 import { runViewDiscovery } from './notion-view-discovery.mjs';
-import { systemTempRoot, evidenceRoot } from './verification-paths.mjs';
+import { systemTempRoot, evidenceRoot, verificationCliEnvironment } from './verification-paths.mjs';
 import { entryIdentity, verifyEntryIdentity } from './verification-entry.mjs';
 import { invokeJson } from './verification-command.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -84,7 +84,8 @@ async function doctor() {
  result.status=result.failures.length?'blocked':'ready';return result;
 }
 async function sourceLive(scratch,{metadataOnly=false,commandOverride,evidence}={}) {
- const cmd=commandOverride??command();const resolved=await executable(cmd[0]);const invoke=async args=>invokeJson([resolved.file,...resolved.prefix,...cmd.slice(1)],args,{cwd:scratch,evidence:join(evidence,'command-receipts.jsonl'),category:'source-live',deadline:consumerIsolation?180000:60000});
+ const oracleEnv=mode==='model'?verificationCliEnvironment(join(scratch,'model-oracle-cli')):process.env;
+ const cmd=commandOverride??command();const resolved=await executable(cmd[0]);const invoke=async args=>invokeJson([resolved.file,...resolved.prefix,...cmd.slice(1)],args,{cwd:scratch,env:oracleEnv,evidence:join(evidence,'command-receipts.jsonl'),category:mode==='model'?'source-live-isolated-oracle':'source-live',deadline:consumerIsolation?180000:60000});
  const listed=await invoke(['list','--database',options.database,...(!consumerIsolation ? options.view ? ['--view',options.view] : ['--default-view'] : [])]);assert.deepEqual(listed.coverage?.failed_sources,[],'Live list must not hide failed sources');assert.equal(listed.coverage?.exhaustive,true,'Explicit database catalog must be exhaustive');assert.ok(listed.coverage?.queried_data_sources?.length,'Live list must cover a data source');const target=options['skill-ref'].split('/')[2];const item=listed.records.find(s=>s.locator?.page_id===target||s.ref===options['skill-ref']);assert.ok(item,'Requested real skill must belong to selected database');
  if(!consumerIsolation)assert.ok(listed.view?.id,'Native live/model recipe requires a selected View containing the requested record');
  if(metadataOnly)return {command:cmd,alias:item.alias??item.name,record:item,skillRef:options['skill-ref'],live:{scope:listed.scope,skillId:item.id,metadataOnly:true}};

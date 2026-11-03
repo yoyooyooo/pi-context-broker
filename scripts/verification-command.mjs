@@ -25,13 +25,13 @@ export function recoveryProjection(value) {
   return project(value);
 }
 
-export async function invokeJson(command, args, { input, evidence, cwd, deadline = 120000, category = 'cli' } = {}) {
+export async function invokeJson(command, args, { input, evidence, cwd, env = process.env, deadline = 120000, category = 'cli' } = {}) {
   const receipt = { category, operation: args[0], startedAt: new Date().toISOString(), stage: 'started' };
   const record = async value => { if (evidence) await appendFile(evidence, JSON.stringify(value) + '\n', { mode: 0o600 }); };
   await record(receipt);
   const stdout = [], stderr = [];
   let expired = false;
-  const child = spawn(command[0], [...command.slice(1), ...args], { cwd, env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(command[0], [...command.slice(1), ...args], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
   child.stdout.on('data', chunk => stdout.push(chunk));
   child.stderr.on('data', chunk => stderr.push(chunk));
   child.stdin.on('error', () => {}); // EPIPE is diagnosed by the observed process exit below.

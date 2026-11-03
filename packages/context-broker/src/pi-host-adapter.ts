@@ -22,7 +22,9 @@ export function createPiHostAdapter(api: ExtensionAPI): HostCapabilities {
       ];
     },
     async buildPrompt(snapshot, args, _prompt, metadata = snapshot) {
-      const path = metadata.metadataIndexPath ?? metadata.path;
+      // The selected immutable directory survives host-index re-registration.
+      // A persisted native invocation must not point at an ephemeral index alias.
+      const path = snapshot.path;
       const name = (metadata.token ?? metadata.name).replace(/[^a-z0-9-]/g, "-");
       const body = snapshot.body!.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "").trim();
       const block = `<skill name="${name}" location="${path}">\nReferences are relative to ${dirname(path)}.\n\n${body}\n</skill>`;

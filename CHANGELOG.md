@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Pi native-read and session cache correctness
+
+- Preserve a verified complete native Skill read in its actual tool-result details, so later dollar/native activation does not duplicate the instructions.
+- Resume the selected immutable Notion snapshot rather than today's current version; use immutable resource directories in Pi native prompts and clear in-memory ownership at real session boundaries.
+- Keep repeated native reads in the audit transcript while coalescing checksum-proven duplicate instruction bodies in the effective model context.
+- Separate the real-model oracle's CLI state from consumer state. Add a real installed Pi/model cold/warm, mixed-cache, resume and owned A/B matrix, with explicit model authorization and source request evidence.
+
+
 ## Unreleased
 
 - Gate the three packaged `ntn-skills*@builtin` completion candidates on at least one enabled Notion source. Keep bundled bodies and references offline-available for initial setup even when that source cannot connect; leave ordinary local/filesystem discovery unchanged.

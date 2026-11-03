@@ -102,7 +102,7 @@ OMP 18.14.2 的 native-read execute 与注册命令预算回归复用[宿主地�
 真实 Pi 输入现有可执行入口为 `node scripts/verify-pi-pty.mjs doctor` / `run`，支持 `--extension ABSOLUTE_INSTALLED_ENTRY`。两次冷 PTY 覆盖候选、Tab 接受草稿、Enter 提交及 `$`/native 双向切换；受控 CLI/provider 仅证明终端投递。Tern/OMP 继续使用 `verify-native-ui.mjs --notion`，不从 RPC 推断输入 UI。
 
 
-当前用户指定后续真实模型 E2E 使用 `magpie/group/flash-free`。日常 model recipe 的 `--model` 使用该 selector；OMP 的 smol/slow/plan 角色与主模型一致，Pi 只传主模型 selector。其它真实模型 helper 也应显式指定该 selector，不继承未指定的角色模型。
+真实模型以当前任务的明确授权为准。AH-560 的指定顺序是 `magpie/group/flash-free`，实际不可用后才使用 `magpie/group/worker`；保留首个模型的失败证据，不能仅因 HTTP 200 就判为可用，也不擅自增加其它 fallback。Pi 只传明确的主模型 selector。冷／热 CLI、Broker、会话与更新后 pin 的真实矩阵使用 [NS-SESSION-22](features/session-cache-recovery.md#ns-session-22--real-pimodel-cold-and-warm-source-matrix)。
 
 ## 执行与证明边界
 

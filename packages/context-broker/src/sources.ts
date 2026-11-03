@@ -7,7 +7,7 @@ import { validSharedIdentity } from "./shared-skill-identity";
 import type { ConfigFile, NotionListObservation, SkillRecord, SourceConfig, SourcePolicy, ScanConfig, DiscoveryResult, SourceFailure } from "./types";
 
 export { SourceError } from "./notion-source";
-export type SourceOptions = { signal?: AbortSignal; stale?: boolean; refreshSourceIds?: readonly string[] };
+export type SourceOptions = { signal?: AbortSignal; stale?: boolean; refreshSourceIds?: readonly string[]; snapshotId?: string };
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -189,6 +189,7 @@ export async function loadSourceSkill(record: SkillRecord, config: ConfigFile, c
       throw new SourceError("SOURCE_STORAGE_ERROR", source.id);
     }
   }
+  if (options.snapshotId) throw new SourceError("SOURCE_PIN_UNSUPPORTED", source.id);
   const path = await selectedFile(record.path, source.id, () => realpath(record.path));
   if (record.locator?.type !== "local" || record.locator.id !== path) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
   // Re-discovery also verifies that the record still belongs to the configured roots.
