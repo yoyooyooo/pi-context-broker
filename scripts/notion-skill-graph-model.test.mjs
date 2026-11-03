@@ -597,3 +597,124 @@ test('one verbatim generated procedure drives the unchanged real owned project; 
   assert.equal(execution.status, 'passed'); assert.equal(execution.closeObserved, true); assert.equal(execution.planSha256, generatedPlan.sha256);
   assert.match(await readFile(path.join(evidence, 'generated-procedure.stdout.log'), 'utf8'), /(?:#|ℹ) fail 0/);
 });
+
+test('matrix status retains a final run failure even when all five graph samples passed', () => {
+  const passed = {
+    runs: [{ status: 'passed' }, { status: 'passed' }, { status: 'passed' }],
+    samples: ['cold', 'warm-new-process', 'warm-new-process', 'continued-session', 'continued-session'].map(mode => ({ mode, status: 'passed' })),
+  };
+  assert.equal(graphModel.matrixStatus(passed), 'passed');
+  const failedRun = structuredClone(passed);
+  failedRun.runs[2] = { status: 'failed', error: { code: 'ERR_ASSERTION', message: 'A post-sample read boundary failed' } };
+  const before = JSON.stringify(failedRun);
+  assert.equal(graphModel.matrixStatus(failedRun), 'failed');
+  assert.equal(JSON.stringify(failedRun), before, 'Graph samples and the run failure remain unchanged');
+  const failedSample = structuredClone(passed); failedSample.samples[4].status = 'failed';
+  assert.equal(graphModel.matrixStatus(failedSample), 'failed');
+  assert.equal(graphModel.matrixStatus({ ...passed, samples: passed.samples.slice(0, 4) }), 'failed');
+  assert.equal(graphModel.matrixStatus({ ...passed, runs: passed.runs.slice(0, 2) }), 'failed');
+});
+
+async function addLiteralResource(fixture, relative, content) {
+  const actual = path.join(fixture.root, relative);
+  await mkdir(path.dirname(actual), { recursive: true }); await writeFile(actual, content);
+  const manifestPath = path.join(fixture.root, '.broker-snapshot.json');
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  manifest.files.push({ path: relative, bytes: Buffer.byteLength(content), hash: hash(content) });
+  await save(manifestPath, manifest);
+  return actual;
+}
+
+function authoredRead(fixture, id, input) {
+  fixture.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: 'read', arguments: { path: input } }] } });
+  return fixture.handlers.get('tool_call')({ toolName: 'read', toolCallId: id, input: { path: input } });
+}
+
+for (const format of ['html', 'native-wrapper', 'escaped-html', 'markdown']) {
+  test('verified resource discovery admits the explicit ' + format + ' path without loading other manifest files', async () => {
+    const relative = 'playbooks/authoring-a-skill.md', content = 'Controlled resource body.\n';
+    const annotation = format === 'escaped-html' ? '&lt;code&gt;' + relative + '&lt;/code&gt;'
+      : format === 'markdown' ? '[Authoring](' + relative + ')' : '<code>' + relative + '</code>';
+    const body = 'Controlled complete main.\nFile: ' + annotation + '.\n';
+    const fixture = await literalObserverFixture(body);
+    try {
+      const actual = await addLiteralResource(fixture, relative, content);
+      const hidden = await addLiteralResource(fixture, 'playbooks/unmentioned.md', 'Unmentioned resource.\n');
+      const encoded = body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+      const supplied = format === 'native-wrapper'
+        ? '<context-broker-record path="' + path.join(fixture.root, 'SKILL.md') + '"><skill-ref>skill://' + encodeURIComponent(fixture.owner) + '/SKILL.md?snapshot=' + fixture.snapshot + '</skill-ref>\n' + encoded + '</context-broker-record>'
+        : body;
+      fixture.handlers.get('before_provider_request')({ payload: fixture.payload(supplied) }, fixture.ctx);
+      assert.equal(authoredRead(fixture, 'explicit-resource', actual), undefined);
+      fixture.handlers.get('tool_result')({ toolName: 'read', toolCallId: 'explicit-resource', content: [{ type: 'text', text: content }], isError: false });
+      const event = (await fixture.events()).find(event => event.phase === 'tool-result' && event.toolCallId === 'explicit-resource');
+      assert.equal(event.complete, true);
+      assert.equal(event.scope, fixture.scope); assert.equal(event.ownerId, fixture.owner);
+      assert.equal(event.snapshot, fixture.snapshot); assert.equal(event.path, relative);
+      assert.equal(event.logicalId, fixture.owner + '/' + relative, 'Historical manifest resources keep their existing owner/path identity');
+      assert.equal(event.sha256, hash(content)); assert.equal(event.bytes, Buffer.byteLength(content));
+      assert.equal(authoredRead(fixture, 'unmentioned-resource', hidden).block, true);
+    } finally { fixture.close(); }
+  });
+}
+
+test('HTML path text cannot authorize reads through partial bodies, unrelated context or assistant quotations', async () => {
+  const relative = 'playbooks/authoring-a-skill.md', annotated = 'Controlled complete main.\nFile: <code>' + relative + '</code>.\n';
+  for (const mode of ['partial', 'unrelated-context', 'assistant-only']) {
+    const body = mode === 'unrelated-context' ? 'Controlled complete main without a resource reference.\n' : annotated;
+    const fixture = await literalObserverFixture(body);
+    try {
+      const actual = await addLiteralResource(fixture, relative, 'Controlled resource.\n');
+      const payload = fixture.payload(mode === 'partial' ? body.slice(0, -2) : mode === 'unrelated-context' ? body + '\n' + annotated : 'No verified source body here.');
+      if (mode === 'assistant-only') payload.messages.push({ role: 'assistant', content: body });
+      fixture.handlers.get('before_provider_request')({ payload }, fixture.ctx);
+      assert.equal(authoredRead(fixture, mode, actual).block, true);
+    } finally { fixture.close(); }
+  }
+});
+
+test('HTML resource discovery stays within the current scope owner snapshot and relative path', async () => {
+  const relative = 'playbooks/authoring-a-skill.md';
+  for (const changed of ['owner', 'scope', 'snapshot', 'traversal', 'absolute']) {
+    const annotation = changed === 'traversal' ? '../../' + relative : changed === 'absolute' ? '/' + relative : relative;
+    const body = 'Controlled complete main.\nFile: <code>' + annotation + '</code>.\n';
+    const fixture = await literalObserverFixture(body);
+    try {
+      let actual;
+      if (['traversal', 'absolute'].includes(changed)) actual = await addLiteralResource(fixture, relative, 'Controlled resource.\n');
+      else {
+        const owner = changed === 'owner' ? fixture.owner + ':other' : fixture.owner;
+        const scope = changed === 'scope' ? 'b'.repeat(64) : fixture.scope;
+        const snapshot = changed === 'snapshot' ? 's_' + hash('different snapshot') : fixture.snapshot;
+        const otherRoot = path.join(fixture.directory, 'cache', 'scopes', scope, 'records', hash(owner), 'snapshots', snapshot);
+        const main = 'A different unprovided main.\n', content = 'Different resource.\n';
+        actual = path.join(otherRoot, relative);
+        await mkdir(path.dirname(actual), { recursive: true }); await writeFile(actual, content);
+        await writeFile(path.join(otherRoot, 'SKILL.md'), main);
+        await save(path.join(otherRoot, '.broker-snapshot.json'), { version: 3, projection: 'snapshot', scope, snapshot, entry: 'SKILL.md', record: { id: owner, kind: 'skill' },
+          files: [{ path: 'SKILL.md', bytes: Buffer.byteLength(main), hash: hash(main) }, { path: relative, bytes: Buffer.byteLength(content), hash: hash(content) }] });
+        await save(path.join(fixture.directory, 'responses', 'other-read.json'), { command: 'read', code: 0, response: { ok: true, scope, snapshot_id: snapshot, version_id: hash(main), path: 'SKILL.md', record: { id: owner, kind: 'skill' }, content: main } });
+      }
+      fixture.handlers.get('before_provider_request')({ payload: fixture.payload(body) }, fixture.ctx);
+      assert.equal(authoredRead(fixture, changed, actual).block, true);
+    } finally { fixture.close(); }
+  }
+});
+
+test('HTML discovery preserves the immutable resource byte and symlink guards', async () => {
+  for (const changed of ['bytes', 'symlink']) {
+    const body = 'Controlled main.\nFile: <code>references/guide.md</code>.\n';
+    const fixture = await literalObserverFixture(body);
+    try {
+      const actual = await addLiteralResource(fixture, 'references/guide.md', 'Original resource.\n');
+      if (changed === 'bytes') await writeFile(actual, 'Changed resource.\n');
+      else {
+        const outside = path.join(fixture.directory, 'outside.md'); await writeFile(outside, 'Original resource.\n');
+        fs.unlinkSync(actual); await symlink(outside, actual);
+      }
+      assert.throws(() => fixture.handlers.get('before_provider_request')({ payload: fixture.payload(body) }, fixture.ctx),
+        /Snapshot resource bytes differ|Snapshot resource is not a verified regular file/);
+      assert.equal((await fixture.events()).filter(event => event.phase === 'tool-call' && event.allowed).length, 0);
+    } finally { fixture.close(); }
+  }
+});

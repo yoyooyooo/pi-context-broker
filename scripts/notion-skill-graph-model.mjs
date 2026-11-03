@@ -25,7 +25,7 @@ const within = (base, target) => { const value = relative(base, target); return 
 const disjoint = (a, b) => !within(a, b) && !within(b, a);
 const modelSelectors = ['magpie/group/flash-free', 'magpie/group/worker'];
 const permissionFailure = text => /insufficient (?:permission|quota)|not authorized|api key.*(?:invalid|denied)|please upgrade|无权限使用|额度不足|账户.*(?:无权|欠费)/i.test(text);
-export const GRAPH_GATE_HARNESS_VERSION = 10;
+export const GRAPH_GATE_HARNESS_VERSION = 11;
 export const GRAPH_GATE_TOOLS = Object.freeze(['read', 'skill_search', 'skill_prepare']);
 export async function graphHarnessIdentity() {
   const files = await Promise.all(['notion-skill-graph-model.mjs', 'verify-skill-graph-contract.mjs', 'notion-skill-graph-project.mjs', 'notion-skill-graph-observer-smoke.mjs', 'notion-skill-retained-proof.mjs', 'notion-skill-source-proof.ts', 'notion-pi-help.mjs', 'notion-skill-graph.mjs', 'verify-pi-notion-model-cache.mjs'].map(async name => {
@@ -333,8 +333,10 @@ export function observeGraphGate(api, settings) {
       const ref = unescape(match[0]);
       if (parseRef(ref) && !discovered.has(ref)) discovered.set(ref, { sequence, source });
     }
-    if (file) for (const match of value.matchAll(/\[[^\]]*\]\(([^\s)]+)\)/g)) {
-      const raw = match[1];
+    if (file) for (const raw of [
+      ...[...value.matchAll(/\[[^\]]*\]\(([^\s)]+)\)/g)].map(match => match[1]),
+      ...[...value.matchAll(/<code>([^<>\r\n]+)<\/code>|&lt;code&gt;([^<>\r\n]+?)&lt;\/code&gt;/g)].map(match => unescape(match[1] ?? match[2]).trim()),
+    ]) {
       if (/^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.startsWith('/') || raw.includes('#') || raw.includes('?')) continue;
       const parent = file.path.split('/').slice(0, -1);
       const parts = [...parent];
@@ -342,7 +344,8 @@ export function observeGraphGate(api, settings) {
       for (const part of raw.split('/')) { if (part === '..') { if (!parts.length) { escaped = true; break; } parts.pop(); } else if (part !== '.' && part) parts.push(part); }
       if (escaped) continue;
       const targetPath = parts.join('/');
-      const target = exportedFiles({ includePending: true }).find(item => item.ownerId === file.ownerId && item.scope === file.scope && item.snapshot === file.snapshot && item.path === targetPath);
+      const targets = exportedFiles({ includePending: true }).filter(item => item.ownerId === file.ownerId && item.scope === file.scope && item.snapshot === file.snapshot && item.path === targetPath);
+      const target = targets.length === 1 ? targets[0] : undefined;
       if (target) {
         discovered.set(target.ref, { sequence, source, scope: target.scope }); for (const actual of target.actuals) discovered.set(actual, { sequence, source, scope: target.scope });
         if (hostIndex && !raw.includes('\\')) {
@@ -1264,6 +1267,11 @@ export function unstartedMatrixSamples(result) {
   return result.notRun.length ? result.notRun : result.design.order.slice(result.samples.length).map(mode => ({ mode, reason: 'The live run ended before this scheduled sample started; observed samples are retained' }));
 }
 
+export function matrixStatus(result) {
+  return result.runs.length === 3 && result.runs.every(run => run.status === 'passed')
+    && result.samples.length === 5 && result.samples.every(sample => sample.status === 'passed') ? 'passed' : 'failed';
+}
+
 async function runMatrix(config) {
   await mkdir(config.evidenceRoot, { recursive: true });
   const evidence = await mkdtemp(join(await realpath(config.evidenceRoot), `graph-matrix-${config.gate}-`));
@@ -1281,8 +1289,8 @@ async function runMatrix(config) {
   }
   result.notRun = unstartedMatrixSamples(result);
   result.summary = summarizeSamples(result.samples);
-  result.status = result.samples.length === 5 && result.samples.every(sample => sample.status === 'passed') ? 'passed' : 'failed';
-  result.proof = 'Fixed five-sample design; each failure remains an observed sample, with raw timings and medians only. Continued samples retain the live session and cumulative original discovery/read receipts.';
+  result.status = matrixStatus(result);
+  result.proof = 'Fixed five-sample design; graph samples and run-level failures are retained, with raw timings and medians only. Every run and sample must pass. Continued samples retain the live session and cumulative original discovery/read receipts.';
   await save(join(evidence, 'result.json'), result); return result;
 }
 

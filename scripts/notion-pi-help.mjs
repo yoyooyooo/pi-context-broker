@@ -47,7 +47,7 @@ export function createPiHelpBoundary({ fs, path, crypto, executable }) {
   };
   const text = value => typeof value === 'string' ? [value] : Array.isArray(value) ? value.flatMap(item => typeof item === 'string' ? [item] : typeof item?.text === 'string' ? [item.text] : []) : [];
   const observeProvider = payload => {
-    const strings = [...(payload?.messages ?? []).filter(message => message.role === 'system').flatMap(message => text(message.content)),
+    const strings = [...(payload?.messages ?? []).filter(message => message.role === 'system' || message.role === 'developer').flatMap(message => text(message.content)),
       ...text(payload?.system), ...text(payload?.systemInstruction?.parts)];
     const added = [];
     for (const value of strings) for (const match of value.matchAll(/<docs>([\s\S]*?)<\/docs>/g)) {

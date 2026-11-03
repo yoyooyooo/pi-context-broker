@@ -56,3 +56,35 @@ test('only a complete successful help read can discover its in-package markdown 
   const outside = path.join(path.dirname(root), 'outside.md'); await writeFile(outside, 'Outside.');
   assert.equal(boundary.target(outside), undefined);
 });
+
+test('SDK developer instructions advertise the same installed help in string and text-part forms', async () => {
+  for (const textParts of [false, true]) {
+    const { root, system, files, boundary } = await fixture();
+    const main = path.join(root, 'README.md');
+    assert.equal(boundary.target(main), undefined);
+    const content = textParts ? [{ type: 'text', text: system }] : system;
+    assert.equal(boundary.observeProvider({ messages: [{ role: 'developer', content }] }).length, 3);
+    const target = boundary.target(main);
+    assert.equal(target.role, 'host-help');
+    assert.equal(target.path, main);
+    assert.equal(target.sha256, crypto.createHash('sha256').update(files['README.md']).digest('hex'));
+    assert.equal(target.bytes, Buffer.byteLength(files['README.md']));
+    assert.equal(boundary.consumed().length, 0, 'An advertisement is not a successful native read');
+  }
+});
+
+test('developer support keeps lower-priority messages and wrong package or docs advertisements blocked', async () => {
+  const { root, system, boundary } = await fixture();
+  const main = path.join(root, 'README.md');
+  for (const role of ['user', 'assistant', 'tool']) {
+    assert.deepEqual(boundary.observeProvider({ messages: [{ role, content: system }] }), []);
+  }
+  for (const content of [
+    system.replace(root + '/README.md', root + '/not-the-package-readme.md'),
+    system.replace('- Additional docs: ' + root + '/docs', '- Additional docs: ' + path.dirname(root)),
+    system.replaceAll('@earendil-works', '@different-package'),
+  ]) {
+    assert.deepEqual(boundary.observeProvider({ messages: [{ role: 'developer', content }] }), []);
+  }
+  assert.equal(boundary.target(main), undefined);
+});
