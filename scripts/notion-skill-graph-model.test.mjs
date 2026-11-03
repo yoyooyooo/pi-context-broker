@@ -718,3 +718,101 @@ test('HTML discovery preserves the immutable resource byte and symlink guards', 
     } finally { fixture.close(); }
   }
 });
+
+
+async function partialReadFixture() {
+  const relative = 'references/guide.md', body = 'Controlled main.\n[Guide](' + relative + ')\n';
+  const resource = 'First line.\nSecond line.\nThird line.\nFourth line.\nFifth line.\n';
+  const fixture = await literalObserverFixture(body);
+  const actual = await addLiteralResource(fixture, relative, resource);
+  fixture.handlers.get('before_provider_request')({ payload: fixture.payload(body) }, fixture.ctx);
+  const author = (id, args) => {
+    fixture.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: 'read', arguments: args }] } });
+    return fixture.handlers.get('tool_call')({ toolName: 'read', toolCallId: id, input: args });
+  };
+  const result = (id, content, isError = false) => fixture.handlers.get('tool_result')({ toolName: 'read', toolCallId: id, content: [{ type: 'text', text: content }], isError });
+  return { ...fixture, relative, body, resource, actual, author, result };
+}
+
+test('a complete native resource read followed by an exact authored page keeps both observations without inventing an error', async () => {
+  const f = await partialReadFixture();
+  try {
+    assert.equal(f.author('full-resource', { path: f.actual }), undefined); f.result('full-resource', f.resource);
+    const page = 'First line.\nSecond line.\n\n[4 more lines in file. Use offset=3 to continue.]';
+    assert.equal(f.author('partial-resource', { path: f.actual, offset: 1, limit: 2 }), undefined); f.result('partial-resource', page);
+    const events = await f.events(), full = events.find(e => e.phase === 'tool-result' && e.toolCallId === 'full-resource');
+    const partial = events.find(e => e.phase === 'tool-result' && e.toolCallId === 'partial-resource');
+    assert.equal(full.complete, true); assert.equal(full.error, null);
+    assert.equal(partial.complete, false); assert.equal(partial.error, null);
+    assert.equal(partial.ref, undefined, 'A page cannot stand in for a complete immutable body receipt');
+    assert.equal(partial.content, undefined);
+    assert.deepEqual(partial.partialRead.source, { ref: full.ref, scope: f.scope, ownerId: f.owner, path: f.relative,
+      snapshot: f.snapshot, sha256: hash(f.resource), bytes: Buffer.byteLength(f.resource) });
+    assert.equal(partial.partialRead.offset, 1); assert.equal(partial.partialRead.limit, 2);
+    assert.equal(partial.partialRead.sliceSha256, hash('First line.\nSecond line.'));
+    const payload = f.payload(f.body); payload.messages.push({ role: 'tool', tool_call_id: 'full-resource', content: f.resource },
+      { role: 'tool', tool_call_id: 'partial-resource', content: page });
+    f.handlers.get('before_provider_request')({ payload }, f.ctx);
+    const provider = (await f.events()).filter(e => e.phase === 'provider-request').at(-1);
+    assert.equal(provider.contents.filter(e => e.ref === full.ref).length, 1);
+    const deliveredPage = provider.toolResults.find(e => e.toolCallId === 'partial-resource');
+    assert.equal(deliveredPage.sha256, hash(page)); assert.equal(deliveredPage.exactToolOutputCopies, 1);
+    assert.deepEqual(deliveredPage.records, []);
+  } finally { f.close(); }
+});
+
+test('verified pages before any complete read remain partial, including an exact final page without a footer', async () => {
+  const f = await partialReadFixture();
+  try {
+    const first = 'First line.\nSecond line.\n\n[4 more lines in file. Use offset=3 to continue.]';
+    assert.equal(f.author('first-page', { path: f.actual, limit: 2 }), undefined); f.result('first-page', first);
+    assert.equal(f.author('final-page', { path: f.actual, offset: 5, limit: 2 }), undefined); f.result('final-page', 'Fifth line.\n');
+    const results = (await f.events()).filter(e => e.phase === 'tool-result');
+    assert.equal(results.length, 2);
+    for (const result of results) { assert.equal(result.complete, false); assert.equal(result.error, null); assert.equal(result.ref, undefined); }
+    assert.equal(results[1].partialRead.footer, '');
+    assert.equal(results[1].partialRead.startLine, 5);
+    assert.equal(results[1].partialRead.endLine, 6);
+  } finally { f.close(); }
+});
+
+test('native errors, incorrect page bytes or footer, and a page that differs from the authored range remain read failures', async () => {
+  const f = await partialReadFixture();
+  try {
+    const page = 'First line.\nSecond line.\n\n[4 more lines in file. Use offset=3 to continue.]';
+    const cases = [
+      { name: 'native-error', args: { offset: 1, limit: 2 }, content: page, isError: true },
+      { name: 'wrong-slice', args: { offset: 1, limit: 2 }, content: page.replace('First', 'Other') },
+      { name: 'wrong-footer', args: { offset: 1, limit: 2 }, content: page.replace('4 more', '3 more') },
+      { name: 'wrong-offset', args: { offset: 2, limit: 2 }, content: page },
+      { name: 'wrong-limit', args: { offset: 1, limit: 3 }, content: page },
+      { name: 'unrequested-page', args: {}, content: page },
+      { name: 'negative-offset', args: { offset: -1, limit: 2 }, content: page },
+      { name: 'fractional-limit', args: { offset: 1, limit: 2.5 }, content: page },
+      { name: 'out-of-range', args: { offset: 100, limit: 2 }, content: page },
+    ];
+    for (const value of cases) {
+      assert.equal(f.author(value.name, { path: f.actual, ...value.args }), undefined);
+      f.result(value.name, value.content, value.isError ?? false);
+    }
+    for (const event of (await f.events()).filter(e => e.phase === 'tool-result')) {
+      assert.equal(event.complete, false); assert.match(event.error, /did not match one complete immutable file/);
+      assert.equal(event.partialRead, undefined);
+    }
+  } finally { f.close(); }
+});
+
+test('a successful page cannot cross an immutable file identity changed after admission', async () => {
+  const f = await partialReadFixture();
+  try {
+    const responsePath = path.join(f.directory, 'responses', 'read.json');
+    const receipt = JSON.parse(await readFile(responsePath, 'utf8'));
+    receipt.response.file_bindings = [{ file_id: 'file-one', page_id: uuid, path: f.relative }]; await save(responsePath, receipt);
+    assert.equal(f.author('changed-identity', { path: f.actual, offset: 1, limit: 2 }), undefined);
+    receipt.response.file_bindings[0].file_id = 'file-two'; await save(responsePath, receipt);
+    f.result('changed-identity', 'First line.\nSecond line.\n\n[4 more lines in file. Use offset=3 to continue.]');
+    const result = (await f.events()).find(e => e.phase === 'tool-result');
+    assert.equal(result.complete, false); assert.match(result.error, /did not match one complete immutable file/);
+    assert.equal(result.partialRead, undefined);
+  } finally { f.close(); }
+});

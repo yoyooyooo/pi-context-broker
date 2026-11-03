@@ -25,7 +25,7 @@ const within = (base, target) => { const value = relative(base, target); return 
 const disjoint = (a, b) => !within(a, b) && !within(b, a);
 const modelSelectors = ['magpie/group/flash-free', 'magpie/group/worker'];
 const permissionFailure = text => /insufficient (?:permission|quota)|not authorized|api key.*(?:invalid|denied)|please upgrade|无权限使用|额度不足|账户.*(?:无权|欠费)/i.test(text);
-export const GRAPH_GATE_HARNESS_VERSION = 11;
+export const GRAPH_GATE_HARNESS_VERSION = 12;
 export const GRAPH_GATE_TOOLS = Object.freeze(['read', 'skill_search', 'skill_prepare']);
 export async function graphHarnessIdentity() {
   const files = await Promise.all(['notion-skill-graph-model.mjs', 'verify-skill-graph-contract.mjs', 'notion-skill-graph-project.mjs', 'notion-skill-graph-observer-smoke.mjs', 'notion-skill-retained-proof.mjs', 'notion-skill-source-proof.ts', 'notion-pi-help.mjs', 'notion-skill-graph.mjs', 'verify-pi-notion-model-cache.mjs'].map(async name => {
@@ -418,6 +418,27 @@ export function observeGraphGate(api, settings) {
     if (body !== undefined) available = available.filter(file => file.content === body);
     return available.length === 1 ? available[0] : undefined;
   };
+  const verifiedPartialRead = (call, content) => {
+    const authored = assistantCalls.get(call?.toolCallId), input = authored?.input;
+    if (!call?.allowed || !call.discovered || call.origin !== 'model' || authored?.tool !== 'read'
+      || authored.sequence !== call.authoredSequence || authored.argumentsSha256 !== call.argumentsSha256
+      || !input || input.path !== call.input || digest(JSON.stringify(input)) !== call.argumentsSha256
+      || Object.keys(input).some(key => !['path', 'offset', 'limit'].includes(key))) return undefined;
+    const offset = input.offset ?? 1, limit = input.limit;
+    if (!Number.isSafeInteger(offset) || offset < 1 || !Number.isSafeInteger(limit) || limit < 1) return undefined;
+    const source = call.expected ? targetFor(call.input, undefined, { expected: call.expected }) : undefined;
+    if (!source) return undefined;
+    const lines = source.content.split('\n'), start = offset - 1, end = Math.min(start + limit, lines.length);
+    if (start >= lines.length) return undefined;
+    const slice = lines.slice(start, end).join('\n');
+    // Match the installed Pi reader's explicit user-limit branch, without automatic line/byte truncation.
+    const countedLines = slice === '' ? 0 : slice.split('\n').length - Number(slice.endsWith('\n'));
+    if (slice === source.content || countedLines > 2000 || Buffer.byteLength(slice) > 50 * 1024) return undefined;
+    const footer = end < lines.length ? '\n\n[' + (lines.length - end) + ' more lines in file. Use offset=' + (end + 1) + ' to continue.]' : '';
+    if (content !== slice + footer) return undefined;
+    return { source: { ref: source.ref, ...fileIdentity(source) }, offset, limit, startLine: offset, endLine: end,
+      totalLines: lines.length, sliceSha256: digest(slice), sliceBytes: Buffer.byteLength(slice), footer };
+  };
   const discoveredReadIdentity = input => {
     const raw = parseRef(input), parsed = resolveMainReference(raw);
     if (raw && !parsed) return undefined;
@@ -685,7 +706,9 @@ export function observeGraphGate(api, settings) {
     if (call?.category === 'blocked') { record({ phase: 'blocked-read-result', toolCallId: event.toolCallId, requested: call.input, returnedSha256: digest(content), error: event.isError }); return; }
     const target = call?.expected ? targetFor(call.input, content, { expected: call.expected }) : undefined;
     const complete = Boolean(target && !event.isError && call?.allowed);
-    record({ phase: 'tool-result', toolCallId: event.toolCallId, tool: 'read', origin: call?.origin ?? 'unknown', discovered: call?.discovered ?? false, callSequence: call?.sequence, requested: call?.input, complete, error: event.isError || !target ? 'native read did not match one complete immutable file' : null, ...(target ? { ref: target.ref, logicalId: target.logicalId, ownerId: target.ownerId, scope: target.scope, snapshot: target.snapshot, sha256: digest(content), bytes: Buffer.byteLength(content), role: target.role, path: target.path, content } : { sha256: digest(content), bytes: Buffer.byteLength(content) }) });
+    const partialRead = !complete && !event.isError ? verifiedPartialRead(call, content) : undefined;
+    record({ phase: 'tool-result', toolCallId: event.toolCallId, tool: 'read', origin: call?.origin ?? 'unknown', discovered: call?.discovered ?? false, callSequence: call?.sequence, requested: call?.input, complete, error: event.isError || !target && !partialRead ? 'native read did not match one complete immutable file' : null, ...(partialRead ? { partialRead } : {}), ...(target ? { ref: target.ref, logicalId: target.logicalId, ownerId: target.ownerId, scope: target.scope, snapshot: target.snapshot, sha256: digest(content), bytes: Buffer.byteLength(content), role: target.role, path: target.path, content } : { sha256: digest(content), bytes: Buffer.byteLength(content) }) });
+    if (partialRead) deliveredTools.set(event.toolCallId, { toolCallId: event.toolCallId, tool: event.toolName, content });
     if (complete) {
       discover(content, 'successful native read', target, bindHostIndex(call.input, target));
       deliveredTools.set(event.toolCallId, { toolCallId: event.toolCallId, tool: event.toolName, content, records: [target] });
