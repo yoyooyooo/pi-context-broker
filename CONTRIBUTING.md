@@ -18,7 +18,7 @@ bun run test:release
 bun run test:artifacts
 ```
 
-For source dependency or packaging changes, run `bun run test:source-dependencies` and `node scripts/verify-native-ui.mjs --source-dependencies`. The first starts both real hosts with controlled missing command/`ntn`/version/capability/authentication failures, preserves local and healthy sources, blocks unavailable selections, and repairs a command through refresh. The second checks the startup warning, ordinary chat, local completion and Tern manual picker in an owned native window. Artifact verification repeats the host scenarios against the unpacked npm extension and starts both bundled CLIs without a global `ntn-skills` installation.
+For source dependency or packaging changes, run `bun run test:source-dependencies` and `node scripts/verify-native-ui.mjs --source-dependencies`. The first starts both real hosts with controlled missing project command, API capability and authentication failures, preserves local and healthy sources, blocks unavailable selections, and repairs a command through refresh. The second checks the startup warning, ordinary chat, local completion and Tern manual picker in an owned native window. Artifact verification repeats the host scenarios against the unpacked npm extension and starts both bundled CLIs without a global `ntn-skills` installation.
 
 Host runners resolve Volta shims before isolating HOME and invoke Node host entries directly. Fake-provider runs do not inherit developer credentials or runtime configuration; timeout cleanup targets only their own process groups.
 
