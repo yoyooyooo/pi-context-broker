@@ -8,11 +8,12 @@ import { installHostSkills } from "../src/host-skills";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { hasLoadedSkill } from "../src/index";
 import { sessionSourceSnapshot, sourceMessageText } from "../src/session-source-snapshot";
+import { parseNativeReference } from "../src/native-reference";
 import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, SkillRecord } from "../src/types";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 const ensure = async (path: string) => { await mkdir(path, { recursive: true }); };
-async function entry(nested = false) {
+async function entry(nested = false, resourceHasFileId = true) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "broker-entry-boundary-")));
   const id = "shared_skill:entry-test:owner", snapshot = "s_" + hash("entry snapshot"), scope = hash("entry scope");
   const main = nested ? "instructions/SKILL.md" : "SKILL.md", resource = "references/guide.md";
@@ -25,14 +26,14 @@ async function entry(nested = false) {
   };
   const bytes = new Map([[main, Buffer.from("---\nname: owner\n---\nExact main instructions.\n")], [resource, Buffer.from("Exact resource bytes.\n")]]);
   const files = [...bytes].map(([path, bytes]) => ({ path, bytes: bytes.length, sha256: hash(bytes),
-    ref: ref + path + "?snapshot=" + snapshot + "&file_id=" + (path === main ? "main" : "guide") }));
+    ref: ref + path + "?snapshot=" + snapshot + (path === main ? "&file_id=main" : resourceHasFileId ? "&file_id=guide" : "") }));
   const metadata: SkillRecord = { ...content, sourceId: "notion", source: "notion", sourceScope: scope,
     path: join(root, "metadata", "SKILL.md"), aliases: [], normalizedAliases: [], normalizedName: "owner", normalizedDescription: "Entry boundary", autoloadEnabled: false };
   const selected: SkillRecord = { ...metadata, body: bytes.get(main)!.toString("utf8"), snapshotId: snapshot, versionId: hash("version"),
     preparationBinding: { record: content, scope, snapshot_id: snapshot, version_id: hash("version"), body_sha256: hash(bytes.get(main)!), ref: files[0]!.ref },
     fileBindings: [
       { path: main, file_id: "main", page_id: content.locator.type === "shared_skill" ? content.locator.page_id : "" },
-      { path: resource, file_id: "guide", page_id: "00000000-0000-4000-8000-000000000002" },
+      ...(resourceHasFileId ? [{ path: resource, file_id: "guide", page_id: "00000000-0000-4000-8000-000000000002" }] : []),
     ],
   };
   const published = await publishNotionEntry(selected, files, join(root, "cache"), ensure);
@@ -108,8 +109,8 @@ test("native resource tools resolve stable File ID and report materialization wi
   expect(await emit("tool_result", { toolName: "read", toolCallId: "old", content, isError: false })).toEqual([undefined]);
 });
 
-for (const scheduling of ["sequential", "concurrent"] as const) test(`${scheduling} resource reads through an exact ref and advertised tree path deliver one provider body`, async () => {
-  const f = await entry();
+for (const resourceHasFileId of [true, false]) for (const scheduling of ["sequential", "concurrent"] as const) test(`${resourceHasFileId ? "File ID" : "owner path"} ${scheduling} resource reads through an exact ref and advertised tree path deliver one provider body`, async () => {
+  const f = await entry(false, resourceHasFileId);
   const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
   const api = { on(name: string, listener: (event: never, ctx: ExtensionContext) => unknown) { events.set(name, [...events.get(name) ?? [], listener]); } } as ExtensionAPI;
   const ctx: ExtensionContext = { cwd: f.root, hasUI: false, mode: "rpc" }, requested: string[] = [];
@@ -142,6 +143,13 @@ for (const scheduling of ["sequential", "concurrent"] as const) test(`${scheduli
   const history = scheduling === "concurrent"
     ? await Promise.all([read(reference, "resource-ref"), read(advertisedPath, "resource-path")])
     : [await read(reference, "resource-ref"), await read(advertisedPath, "resource-path")];
+  for (const message of history) {
+    const proof = (message.details as { contextBrokerResource: Record<string, unknown> }).contextBrokerResource;
+    expect(proof).toMatchObject({ ref: reference, path: f.resource, delivered_complete_text: true, loaded: false });
+    expect(proof.file_id).toBe(resourceHasFileId ? "guide" : undefined);
+    expect(parseNativeReference(String(proof.ref)).fileId).toBe(resourceHasFileId ? "guide" : undefined);
+    expect(Object.hasOwn(JSON.parse(JSON.stringify(proof)), "file_id")).toBe(resourceHasFileId);
+  }
   const stored = JSON.stringify(history);
   const context = (await emit("context", { messages: history })).find((value): value is { messages: AgentMessage[] } => !!value && typeof value === "object" && "messages" in value)!;
   expect(requested).toEqual([f.resource, f.resource]);

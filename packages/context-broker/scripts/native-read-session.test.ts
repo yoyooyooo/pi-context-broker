@@ -127,6 +127,64 @@ test("incomplete or mismatched resource receipts never suppress a read", () => {
   }
 });
 
+
+function pathResourceResult(toolCallId: string, identity: { scope?: string; id?: string; snapshotId?: string; path?: string; body?: string } = {}) {
+  const result = resourceResult(toolCallId, identity), proof = result.details.contextBrokerResource;
+  const path = identity.path ?? proof.path;
+  return { ...result, details: { contextBrokerResource: { ...proof, file_id: undefined, path,
+    ref: "skill://" + encodeURIComponent(proof.id) + "/" + path + "?snapshot=" + proof.snapshot_id,
+  } } };
+}
+
+test("verified resources without File IDs deduplicate by exact owner, snapshot and path without loading the main", () => {
+  const messages = [pathResourceResult("path-1"), pathResourceResult("path-2"), pathResourceResult("path-3")];
+  const stored = JSON.stringify(messages), body = sourceMessageText(messages[0]!.content);
+  for (const history of [messages, JSON.parse(stored) as AgentMessage[]]) {
+    const projected = deduplicateSourceReads(history);
+    expect(projected.filter(message => sourceMessageText(message.content) === body)).toHaveLength(1);
+    expect(projected.map(message => message.toolCallId)).toEqual(["path-1", "path-2", "path-3"]);
+    expect(projected[1]?.details).toEqual(history[1]?.details);
+    expect(deduplicateSourceReads(projected)).toBe(projected);
+    expect(deduplicateSourceReads([history[2]!])[0]).toBe(history[2]);
+    const owner = { ...record, id: "shared_skill:lib:skill" };
+    expect(hasLoadedSkill(projected, owner)).toBe(false);
+    expect(sessionSourceSnapshot(projected, owner)).toBeUndefined();
+    expect(sessionSourceBindings(projected, "scope")).toEqual([]);
+  }
+  expect(JSON.stringify(messages)).toBe(stored);
+});
+
+test("path-only resource identity keeps scopes, owners, snapshots, paths, hashes and explicit File IDs separate", () => {
+  for (const identity of [{ scope: "other" }, { id: "shared_skill:lib:other" }, { snapshotId: b }, { path: "references/other.md" }, { body: "Changed resource.\n" }]) {
+    const messages = [pathResourceResult("first"), pathResourceResult("second", identity)];
+    expect(deduplicateSourceReads(messages)).toBe(messages);
+  }
+  const messages = [pathResourceResult("path"), resourceResult("file", { fileId: "references/guide.md" })];
+  expect(deduplicateSourceReads(messages)).toBe(messages);
+  const reverse = [...messages].reverse();
+  expect(deduplicateSourceReads(reverse)).toBe(reverse);
+});
+
+test("path fallback rejects null, invalid and mismatched File IDs and incomplete resource proofs", () => {
+  const first = pathResourceResult("first"), second = pathResourceResult("second"), proof = second.details.contextBrokerResource;
+  const changed = (fields: Record<string, unknown>): AgentMessage => ({ ...second, details: { contextBrokerResource: { ...proof, ...fields } } });
+  const invalid: AgentMessage[] = [
+    ...[null, "", 0, false, [], {}].map(file_id => changed({ file_id })),
+    changed({ file_id: "guide" }), changed({ ref: proof.ref + "&file_id=guide" }),
+    changed({ file_id: null, ref: proof.ref + "&file_id=null" }),
+    changed({ path: "", ref: "skill://" + encodeURIComponent(proof.id) + "/?snapshot=" + proof.snapshot_id }),
+    changed({ path: "references/other.md" }), changed({ ref: proof.ref.replace(a, b) }),
+    changed({ ref: proof.ref.replace("lib%3Askill", "lib%3Aforeign") }),
+    changed({ delivered_complete_text: false }), changed({ loaded: true }),
+    changed({ bytes: proof.bytes + 1 }), changed({ sha256: "0".repeat(64) }),
+    { ...second, content: "partial" }, { ...second, isError: true }, { ...second, toolCallId: "detached" },
+  ];
+  for (const value of invalid) {
+    const messages = [first, value];
+    expect(deduplicateSourceReads(messages)).toBe(messages);
+  }
+});
+
 test("real hook sequence marks only the completed entry result and reuses its active pin", async () => {
   const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>(), messages: AgentMessage[] = [], loads: Array<string | undefined> = [];
   const api = { on(name: string, listener: (event: never, ctx: ExtensionContext) => unknown) { events.set(name, [...events.get(name) ?? [], listener]); } } as ExtensionAPI;

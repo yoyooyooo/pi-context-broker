@@ -60,8 +60,8 @@ function verifiedResourceReadProof(message: AgentMessage) {
   if (!object(proof) || proof.version !== 1 || proof.delivered_complete_text !== true || proof.loaded !== false
     || typeof proof.toolCallId !== "string" || !proof.toolCallId || proof.toolCallId !== message.toolCallId
     || typeof proof.scope !== "string" || !proof.scope || typeof proof.id !== "string" || !proof.id
-    || !snapshot(proof.snapshot_id) || typeof proof.file_id !== "string" || !proof.file_id
-    || typeof proof.ref !== "string" || typeof proof.path !== "string") return undefined;
+    || !snapshot(proof.snapshot_id) || proof.file_id !== undefined && (typeof proof.file_id !== "string" || !proof.file_id)
+    || typeof proof.ref !== "string" || typeof proof.path !== "string" || !proof.path) return undefined;
   try {
     const reference = parseNativeReference(proof.ref);
     if (reference.selector !== proof.id || reference.snapshot !== proof.snapshot_id
@@ -196,7 +196,8 @@ export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[]
   messages.forEach((message, index) => {
     const proof = verifiedResourceReadProof(message);
     if (!proof) return;
-    const key = JSON.stringify([proof.scope, proof.id, proof.snapshot_id, proof.file_id, proof.sha256]);
+    const fileIdentity = proof.file_id === undefined ? ["path", proof.path] : ["file_id", proof.file_id];
+    const key = JSON.stringify([proof.scope, proof.id, proof.snapshot_id, fileIdentity, proof.sha256]);
     if (!resources.has(key)) { resources.add(key); return; }
     replace(index, 0, sourceMessageText(message.content).length,
       `The complete Skill resource ${proof.path} for snapshot ${proof.snapshot_id} is already present in this active context. This successful repeated read verified the same resource bytes.`);
