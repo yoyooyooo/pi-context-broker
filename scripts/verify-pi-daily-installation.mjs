@@ -5,6 +5,7 @@ import { access, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from '
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 
@@ -22,15 +23,17 @@ const inside = (root, path) => { const local = relative(root, path); return loca
 
 function plan(config) {
   return {
-    version: 1, kind: 'pi-daily-installation-metadata-only', status: 'prepared_not_executed',
+    version: 1, kind: 'pi-daily-installation-readonly-diagnostics', status: 'prepared_not_executed',
     settings: join(homedir(), '.pi/agent/settings.json'), expected_package_index: config.packageIndex ?? 1,
     expected_package_count: config.packageCount ?? 21, broker_root: config.brokerRoot ?? null,
     cli_root: config.cliRoot ?? null, required_artifacts: ['brokerRoot', 'brokerArchive', 'brokerArchiveSha256', 'embeddedCliSha256', 'cliRoot', 'cliArchive', 'cliArchiveSha256', 'cliEntrySha256'],
     pi_arguments: ['--mode', 'rpc', '--session-dir', '<new owned directory>'],
     rpc_commands: ['get_state', 'get_commands', '/context-broker find ' + (config.findQuery ?? 'pstack'), '/context-broker doctor', 'get_state'],
-    observation: 'Actual get_commands.sourceInfo, published-file SHA closure, passive child_process spawn/exit and fetch metadata in the owned process tree. No source.command substitution or target -e argument.',
+    expected_find_record: config.expectedFindRecord ?? null,
+    reviewed_external_namespace_diagnostics: config.namespaceDiagnosticsReview ?? null,
+    observation: 'Actual get_commands.sourceInfo, published-file SHA closure and passive process/HTTP observation. Startup/find remain metadata-only; the explicit doctor --database may probe one current Skill as documented by the public CLI. No source.command substitution or target -e argument.',
     preserved: ['HOME and normal agent directory', 'all settings packages and extensions', 'source/auth/model configuration', 'existing sessions', 'PATH and source.command'],
-    forbidden: ['provider or tool execution', 'current body loading', 'remote writes', 'official ntn invocation', 'Tern execution', 'user-session restart'],
+    forbidden: ['provider or tool execution', 'Notion writes or body loading outside the explicit doctor process', 'official ntn invocation', 'Tern execution', 'user-session restart'],
     execution: 'Run only after root activates the final immutable package and CLI shim. Supply final package paths/hashes; run refuses an old settings package before launching Pi.',
   };
 }
@@ -69,7 +72,7 @@ function installPassiveObserver(config) {
       if (bundled && outputBytes <= 16 * 1024 * 1024) {
         try {
           const value = JSON.parse(Buffer.concat(output).toString('utf8'));
-          receipt = { ok: value.ok, error_code: value.error?.code, transport: value.transport, notion_api_version: value.notion_api_version, authentication: ['available', 'missing', 'unavailable'].includes(value.authentication) ? value.authentication : undefined, record_count: Array.isArray(value.records) ? value.records.length : undefined, view_count: Array.isArray(value.views) ? value.views.length : undefined };
+          receipt = { ok: value.ok, error_code: value.error?.code, transport: value.transport, notion_api_version: value.notion_api_version, authentication: ['available', 'missing', 'unavailable'].includes(value.authentication) ? value.authentication : undefined, record_count: Array.isArray(value.records) ? value.records.length : undefined, view_count: Array.isArray(value.views) ? value.views.length : undefined, skill_read: value.skill_read ? { checked: value.skill_read.checked, available: value.skill_read.available, storage: value.skill_read.storage } : undefined };
         } catch { receipt = { json_parse_failed: true }; }
       }
       write({ event: 'child_close', ...meta, code, signal, ...(bundled ? { stdout_bytes: outputBytes, stdout_sha256: outputBytes <= 16 * 1024 * 1024 ? digest(Buffer.concat(output)) : undefined, receipt } : {}) });
@@ -157,7 +160,87 @@ async function observedRows(directory) {
 const safeCommand = command => ({ name: command.name, source: command.source, sourceInfo: command.sourceInfo ? { path: command.sourceInfo.path, scope: command.sourceInfo.scope, origin: command.sourceInfo.origin, baseDir: command.sourceInfo.baseDir, source_sha256: hash(String(command.sourceInfo.source)) } : undefined });
 const safeState = state => ({ sessionId: state.sessionId, sessionFile: state.sessionFile, messageCount: state.messageCount, isStreaming: state.isStreaming, isCompacting: state.isCompacting });
 const notifications = frames => frames.filter(frame => frame.type === 'extension_ui_request' && frame.method === 'notify').flatMap(strings);
-const safeDiagnostic = text => ({ sha256: hash(text), bytes: Buffer.byteLength(text), lines: text.split('\n').filter(line => /^(?:Context Broker Doctor|Config:|Path mode:|Log paths:|Scan:|Skill roots:|Discovery catalogs:|Records:|Config diagnostics:|Namespace:|Source [\w-]+: direct Notion API |context-broker find:|\$|\s*(?:kind|source|page|select|path):)/u.test(line)) });
+const safeDiagnostic = text => ({ sha256: hash(text), bytes: Buffer.byteLength(text), lines: text.split('\n').filter(line => /^(?:Context Broker Doctor|Config:|Path mode:|Log paths:|Scan:|Skill roots:|Discovery catalogs:|Records:|Config diagnostics:|Namespace:|Source [\w-]+: direct Notion API |context-broker find:|\$|\s+fail |\s*(?:kind|source|page|select|path):)/u.test(line)) });
+
+export function validateDailyFind(reports, expected) {
+  assert.ok(expected && typeof expected.selection === 'string', 'Bind the required daily selection identity');
+  const records = [];
+  for (const report of reports) {
+    let record;
+    for (const line of report.split('\n')) {
+      const selection = /^\$(\S+)$/u.exec(line);
+      if (selection) { record = { selection: selection[1] }; records.push(record); continue; }
+      const field = /^\s+(kind|source|page): (.+)$/u.exec(line);
+      if (field && record) record[field[1]] = field[2];
+    }
+  }
+  const matched = records.filter(record => record.selection === expected.selection);
+  assert.equal(matched.length, 1, 'The required qualified daily selection must exist exactly once');
+  assert.deepEqual(matched[0], expected, 'The daily selection identity must match the reviewed source');
+  return matched[0];
+}
+
+export function validateDailyDoctor(reports, review, sourceDatabaseIds, requiredSelection) {
+  const lines = reports.flatMap(report => report.split('\n'));
+  assert.ok(lines.includes('Config diagnostics: ok'), 'The actual source/config diagnostics must pass');
+  assert.ok(!lines.includes('Config diagnostics: failed'), 'Config errors cannot be accepted as external catalog diagnostics');
+  const failures = lines.filter(line => /^\s+fail /u.test(line));
+  if (lines.includes('Namespace: ok no discovery namespace collisions')) {
+    assert.ok(!lines.includes('Namespace: failed'));
+    assert.equal(failures.length, 0);
+    return { status: 'ok', failures: [] };
+  }
+  assert.ok(lines.includes('Namespace: failed'), 'Missing actual namespace result');
+  assert.equal(review?.kind, 'reviewed-external-catalog-diagnostics');
+  assert.equal(review.status, 'outside-delivery-scope');
+  assert.ok(sourceDatabaseIds.includes(review.sourceDatabaseId));
+  assert.ok(review.declaredDatabaseIds.length > 0);
+  assert.ok(review.declaredDatabaseIds.every(id => !sourceDatabaseIds.includes(id)), 'A current-source catalog failure remains in delivery scope');
+  assert.ok(review.namespaceDiagnostics.length > 0);
+  assert.deepEqual([...failures].sort(), [...review.namespaceDiagnostics].sort(), 'New or changed namespace failures must be reviewed');
+  for (const line of failures) {
+    const match = /^\s+fail router "([^"]+)" member "notion_page:[0-9a-f-]+" unavailable \(CATALOG_MEMBER_UNAVAILABLE\): /u.exec(line);
+    assert.ok(match && review.routerNames.includes(match[1]), 'Only the reviewed external catalog member failures are permitted');
+    assert.notEqual(match[1], requiredSelection.split('@')[0], 'The required daily route cannot be excluded');
+  }
+  return { status: 'retained-external-catalog-diagnostics', failures, catalog: review.catalog, reason: review.reason };
+}
+
+export function classifyDailyHttp(observed, sourcePids, hostPids) {
+  const parents = new Map();
+  for (const row of observed) {
+    if (row.event === 'process_start' && Number.isInteger(row.ppid)) parents.set(row.pid, row.ppid);
+    if (row.event === 'spawn' && Number.isInteger(row.child_pid)) parents.set(row.child_pid, row.pid);
+  }
+  const source = [], otherPlugins = [];
+  for (const request of observed.filter(row => row.event === 'http_start')) {
+    let pid = request.pid, role;
+    const visited = new Set();
+    while (Number.isInteger(pid) && !visited.has(pid)) {
+      visited.add(pid);
+      if (sourcePids.has(pid)) { role = 'source'; break; }
+      if (hostPids.has(pid)) { role = pid === request.pid ? 'host' : 'other-plugin'; break; }
+      pid = parents.get(pid);
+    }
+    assert.ok(role === 'source' || role === 'other-plugin', 'HTTP without a verified source or other-plugin process ancestry');
+    (role === 'source' ? source : otherPlugins).push(request);
+  }
+  return { source, otherPlugins };
+}
+
+export function classifyDailyNotionRequest(request, doctorPid) {
+  assert.equal(request.origin, 'https://api.notion.com', 'Unexpected provider/external HTTP in the verified Notion consumer');
+  const body = /\/(?:markdown|children)$/u.test(request.path);
+  if (body) {
+    assert.equal(request.pid, doctorPid, 'Startup/find must not load current Skill bodies');
+    assert.equal(request.method, 'GET', 'The explicit doctor probe is read-only');
+    assert.ok(/^\/v1\/(?:pages\/[0-9a-f-]+\/markdown|blocks\/[0-9a-f-]+\/children)$/u.test(request.path));
+    return 'doctor-body';
+  }
+  const readonly = ['GET', 'HEAD'].includes(request.method) || request.method === 'POST' && (/^\/v1\/(?:data_sources|databases)\/[^/]+\/query$/u.test(request.path) || /^\/v1\/views\/[^/]+\/queries$/u.test(request.path) || request.path === '/v1/search');
+  assert.ok(readonly, 'A remote mutation was observed in the Notion consumer');
+  return 'metadata';
+}
 
 async function run(config) {
   for (const key of ['brokerRoot', 'brokerArchive', 'embeddedCliSha256', 'brokerArchiveSha256', 'cliRoot', 'cliArchive', 'cliArchiveSha256', 'cliEntrySha256', 'evidenceRoot']) assert.equal(typeof config[key], 'string', `Missing final artifact: ${key}`);
@@ -167,10 +250,20 @@ async function run(config) {
   const evidence = await mkdtemp(join(config.evidenceRoot, 'daily-pi-'));
   const sessions = join(evidence, 'sessions'), cwd = join(evidence, 'workspace'), observerDir = join(evidence, 'observation');
   await Promise.all([sessions, cwd, observerDir].map(path => mkdir(path)));
-  const result = { version: 1, kind: 'actual-daily-pi-autoload-metadata', status: 'running', evidence, plan: plan(config), modifications: { user_settings: 0, source_config: 0, harness_model_credential_files_read: 0, old_sessions_read: 0, target_extensions_injected: 0, source_command_overrides: 0 }, phases: [] };
+  const result = { version: 1, kind: 'actual-daily-pi-autoload-and-diagnostics', status: 'running', evidence, plan: plan(config), harness: await fileIdentity(fileURLToPath(import.meta.url)), modifications: { user_settings: 0, source_config: 0, harness_model_credential_files_read: 0, old_sessions_read: 0, target_extensions_injected: 0, source_command_overrides: 0 }, phases: [] };
   let rpc, before, broker;
   try {
     before = await configurationSnapshot(config);
+    let namespaceReview;
+    if (config.namespaceDiagnosticsReview) {
+      const receipt = await readFile(config.namespaceDiagnosticsReview.path);
+      assert.equal(hash(receipt), config.namespaceDiagnosticsReview.sha256);
+      namespaceReview = JSON.parse(receipt);
+      const catalog = await fileIdentity(namespaceReview.catalog.path);
+      assert.equal(catalog.sha256, namespaceReview.catalog.sha256);
+      assert.equal(catalog.bytes, namespaceReview.catalog.bytes);
+      result.namespace_diagnostics_review = { ...config.namespaceDiagnosticsReview, catalog };
+    }
     broker = await packageClosure(config.brokerRoot, config.brokerArchive, config.brokerArchiveSha256);
     const cli = await packageClosure(config.cliRoot, config.cliArchive, config.cliArchiveSha256);
     await save(join(evidence, 'installed-broker-files.json'), broker); await save(join(evidence, 'installed-cli-files.json'), cli);
@@ -211,15 +304,17 @@ async function run(config) {
     result.autoload = { registration: registered, actual_entry: loadedEntry, injected_by_cli: false };
     for (const message of ['/context-broker find ' + findQuery, '/context-broker doctor']) {
       const start = rpc.frames.length;
+      const startedAt = new Date().toISOString();
       const acknowledgment = await rpc.command('prompt', { message });
       assert.equal(acknowledgment?.disposition, 'handled', 'A metadata slash command must never dispatch to the model');
       const reports = notifications(rpc.frames.slice(start)).filter(text => /^(?:context-broker find:|Context Broker Doctor)/u.test(text));
+      result.phases.push({ command: message, startedAt, disposition: acknowledgment.disposition, diagnostics: reports.map(safeDiagnostic) });
       assert.ok(reports.length, 'The actual metadata command did not produce its notification');
+      if (message.startsWith('/context-broker find ')) result.required_selection = validateDailyFind(reports, config.expectedFindRecord);
       if (message.endsWith('doctor')) {
         assert.ok(reports.some(text => text.includes('direct Notion API 2026-03-11, authentication available')));
-        assert.ok(reports.every(text => !text.includes('Config diagnostics: failed') && !text.includes('Namespace: failed')));
+        result.namespace_diagnostics = validateDailyDoctor(reports, namespaceReview, before.source.sources.map(source => source.database), config.expectedFindRecord.selection);
       }
-      result.phases.push({ command: message, disposition: acknowledgment.disposition, diagnostics: reports.map(safeDiagnostic) });
     }
     const final = safeState(await rpc.command('get_state'));
     assert.equal(final.sessionId, initial.sessionId); assert.equal(final.isStreaming, false); assert.equal(final.isCompacting, false);
@@ -237,19 +332,31 @@ async function run(config) {
       assert.ok(['list', 'views'].includes(child.cli_args[0]) || child.cli_args[0] === 'ctl' && (child.cli_args[1] === 'doctor' || child.cli_args[1] === 'cache' && child.cli_args[2] === 'identity'), 'A non-metadata CLI command ran');
       assert.ok(observed.some(row => row.event === 'process_start' && row.pid === child.child_pid && row.real_entry === embedded.realpath && row.entry_sha256 === embedded.sha256), 'The real CLI child did not independently observe its installed entry');
     }
-    const doctor = observed.find(row => row.event === 'child_close' && row.bundled_cli && row.cli_args[0] === 'ctl' && row.cli_args[1] === 'doctor' && row.receipt?.ok === true && row.receipt.transport === 'direct_http' && row.receipt.notion_api_version === '2026-03-11');
+    const doctors = spawned.filter(row => row.cli_args[0] === 'ctl' && row.cli_args[1] === 'doctor');
+    assert.equal(doctors.length, 1, 'One explicit source doctor probe is expected');
+    assert.ok(doctors[0].at >= result.phases.find(phase => phase.command.endsWith('doctor')).startedAt, 'The doctor body probe must follow its explicit command');
+    const doctor = observed.find(row => row.event === 'child_close' && row.child_pid === doctors[0].child_pid && row.bundled_cli && row.receipt?.ok === true && row.receipt.transport === 'direct_http' && row.receipt.notion_api_version === '2026-03-11');
     assert.ok(doctor, 'No actual successful direct-HTTP doctor receipt');
-    const http = observed.filter(row => row.event === 'http_start');
+    assert.equal(doctor.receipt.skill_read?.checked, true);
+    assert.equal(doctor.receipt.skill_read?.available, true);
+    const owned = (await readFile(processLedger, 'utf8')).split('\n').filter(Boolean).map(JSON.parse);
+    const partition = classifyDailyHttp(observed, new Set(spawned.map(row => row.child_pid)), new Set(owned.filter(row => row.event === 'spawn').map(row => row.pid)));
+    const http = partition.source;
+    result.other_plugin_http = partition.otherPlugins.map(request => ({ ...request, process: observed.find(row => row.event === 'process_start' && row.pid === request.pid), outcome: observed.find(row => ['http_end', 'http_error'].includes(row.event) && row.id === request.id) }));
+    result.http_accounting_scope = 'The verified default bundled CLI process tree is the Notion consumer. Other configured plugin startup/shutdown HTTP is retained separately; host or unattributed HTTP is rejected.';
     assert.ok(http.length, 'No real HTTP metadata request was observed');
+    const diagnosticBodyRequests = [];
     for (const request of http) {
-      assert.equal(request.origin, 'https://api.notion.com', 'Unexpected provider/external HTTP during metadata verification');
-      const readonly = ['GET', 'HEAD'].includes(request.method) || request.method === 'POST' && (/^\/v1\/(?:data_sources|databases)\/[^/]+\/query$/u.test(request.path) || /^\/v1\/views\/[^/]+\/queries$/u.test(request.path) || request.path === '/v1/search');
-      assert.ok(readonly && !/\/(?:markdown|children)$/u.test(request.path), 'A body read or remote mutation was observed');
-      assert.ok(observed.some(row => row.event === 'http_end' && row.id === request.id && row.status >= 200 && row.status < 400), 'An observed metadata request did not complete successfully');
+      if (classifyDailyNotionRequest(request, doctor.child_pid) === 'doctor-body') diagnosticBodyRequests.push(request);
+      assert.ok(observed.some(row => row.event === 'http_end' && row.id === request.id && row.status >= 200 && row.status < 300), 'An observed Notion request did not complete with HTTP 2xx');
     }
     assert.ok(!observed.some(row => row.event === 'spawn' && basename(row.executable ?? '') === 'ntn'), 'Official ntn was invoked');
     result.actual_default_cli = { entry: embedded.realpath, sha256: embedded.sha256, processes: spawned.map(row => ({ parent_pid: row.pid, pid: row.child_pid, executable: row.executable, script: row.script, args: row.cli_args })), doctor: doctor.receipt, source_command_overridden: false, path_cli_used_for_default_source: false };
-    result.metadata_http_requests = http.length; result.provider_invocations = 0; result.tool_invocations = 0; result.remote_mutations = 0; result.current_body_reads = 0;
+    result.metadata_http_requests = http.length - diagnosticBodyRequests.length;
+    result.diagnostic_body_requests = diagnosticBodyRequests;
+    result.startup_and_find_body_reads = 0;
+    result.provider_invocations = 0; result.tool_invocations = 0; result.remote_mutations = 0;
+    result.current_body_reads = diagnosticBodyRequests.length;
     result.status = 'passed';
   } catch (error) {
     result.status = 'failed'; result.error = { code: error.code ?? 'DAILY_VERIFICATION_FAILED', message: error.message };
@@ -268,6 +375,11 @@ async function run(config) {
       result.cli_shim_unchanged = hash(await readFile(result.artifacts.cli_shim.path)) === result.artifacts.cli_shim.sha256;
       if (!result.cli_shim_unchanged) result.status = 'failed';
     }
+    if (result.namespace_diagnostics_review) {
+      const reviewed = result.namespace_diagnostics_review;
+      result.reviewed_external_catalog_unchanged = hash(await readFile(reviewed.catalog.path)) === reviewed.catalog.sha256 && hash(await readFile(reviewed.path)) === reviewed.sha256;
+      if (!result.reviewed_external_catalog_unchanged) result.status = 'failed';
+    }
     const ownedPath = join(evidence, 'owned-processes.jsonl');
     if (await exists(ownedPath)) {
       const owned = (await readFile(ownedPath, 'utf8')).split('\n').filter(Boolean).map(JSON.parse);
@@ -279,13 +391,15 @@ async function run(config) {
   return result;
 }
 
-const [action, flag, input, ...extra] = process.argv.slice(2);
-assert.ok(['plan', 'run'].includes(action) && flag === '--config' && input && !extra.length, 'Usage: node scripts/verify-pi-daily-installation.mjs plan|run --config ABSOLUTE_CONFIG.json');
-const config = await json(resolve(input));
-assert.equal(config.version, 1);
-if (action === 'plan') console.log(JSON.stringify(plan(config), null, 2));
-else {
-  const result = await run(config);
-  console.log(JSON.stringify({ status: result.status, evidence: result.evidence, error: result.error }));
-  if (result.status !== 'passed') process.exitCode = 1;
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const [action, flag, input, ...extra] = process.argv.slice(2);
+  assert.ok(['plan', 'run'].includes(action) && flag === '--config' && input && !extra.length, 'Usage: node scripts/verify-pi-daily-installation.mjs plan|run --config ABSOLUTE_CONFIG.json');
+  const config = await json(resolve(input));
+  assert.equal(config.version, 1);
+  if (action === 'plan') console.log(JSON.stringify(plan(config), null, 2));
+  else {
+    const result = await run(config);
+    console.log(JSON.stringify({ status: result.status, evidence: result.evidence, error: result.error }));
+    if (result.status !== 'passed') process.exitCode = 1;
+  }
 }
