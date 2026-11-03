@@ -1,4 +1,5 @@
 import test from 'node:test';
+import * as graphModel from './notion-skill-graph-model.mjs';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as crypto from 'node:crypto';
@@ -80,6 +81,57 @@ test('explicit worker authorization rejects changed bytes, wrong scope, another 
   await assert.rejects(readGateConfig(value.configPath));
   await value.write(); value.config.model = 'another/model'; await save(value.configPath, value.config);
   await assert.rejects(readGateConfig(value.configPath), /No third model/);
+});
+
+
+
+test('prompt timeout defaults to the original budget and explicit default preserves cache identity', async () => {
+  const value = await workerConfigFixture(), implicit = await readGateConfig(value.configPath);
+  assert.equal(implicit.promptTimeoutMs, 300000);
+  value.config.promptTimeoutMs = 300000; await value.write();
+  const explicit = await readGateConfig(value.configPath);
+  const doctor = { harness: { sha256: hash('harness') }, cli: { sha256: hash('cli') }, extension: { sha256: hash('extension') }, package: { sha256: hash('package') } };
+  assert.equal(graphModel.runFingerprint(implicit, doctor, hash('oracle'), hash('project')),
+    graphModel.runFingerprint(explicit, doctor, hash('oracle'), hash('project')));
+});
+
+test('an explicit prompt timeout is frozen without changing the task or worker authorization and changes cache identity', async () => {
+  const value = await workerConfigFixture(), original = await readGateConfig(value.configPath);
+  value.config.promptTimeoutMs = 600000; await value.write();
+  const parsed = await readGateConfig(value.configPath);
+  assert.equal(parsed.promptTimeoutMs, 600000);
+  assert.deepEqual(parsed.prompt, original.prompt);
+  assert.deepEqual(parsed.workerAuthorization, original.workerAuthorization);
+  const doctor = { harness: { sha256: hash('harness') }, cli: { sha256: hash('cli') }, extension: { sha256: hash('extension') }, package: { sha256: hash('package') } };
+  assert.notEqual(graphModel.runFingerprint(parsed, doctor, hash('oracle'), hash('project')),
+    graphModel.runFingerprint(original, doctor, hash('oracle'), hash('project')));
+});
+
+test('prompt timeout rejects invalid timer values instead of silently selecting a different budget', async () => {
+  const value = await workerConfigFixture();
+  for (const timeout of [null, 0, -1, 1.5, 2147483648, Number.MAX_SAFE_INTEGER, '600000', true]) {
+    value.config.promptTimeoutMs = timeout; await value.write();
+    await assert.rejects(readGateConfig(value.configPath), /promptTimeoutMs must be a positive safe timer integer/);
+  }
+  for (const timeout of [1, 2147483647]) {
+    value.config.promptTimeoutMs = timeout; await value.write();
+    assert.equal((await readGateConfig(value.configPath)).promptTimeoutMs, timeout);
+  }
+});
+
+test('matrix accounting retains a timed-out continued sample and records the remaining unstarted design', () => {
+  const design = { order: ['cold', 'warm-new-process', 'warm-new-process', 'continued-session', 'continued-session'] };
+  const samples = design.order.slice(0, 4).map((mode, index) => ({ mode, status: index === 3 ? 'failed' : 'passed',
+    ...(index === 3 ? { error: { code: 'NATIVE_SUBMISSION_FAILED', message: 'pi: prompt completion timed out after 300000ms' } } : {}) }));
+  const before = JSON.stringify(samples);
+  const unstarted = graphModel.unstartedMatrixSamples({ design, samples, notRun: [] });
+  assert.equal(unstarted.length, 1);
+  assert.equal(unstarted[0].mode, 'continued-session');
+  assert.match(unstarted[0].reason, /before this scheduled sample started/);
+  assert.equal(JSON.stringify(samples), before);
+  assert.deepEqual(graphModel.unstartedMatrixSamples({ design, samples: [...samples, { mode: 'continued-session', status: 'failed' }], notRun: [] }), []);
+  const previous = [{ mode: 'warm-new-process', reason: 'No complete successful prior consumer cache receipt exists' }];
+  assert.equal(graphModel.unstartedMatrixSamples({ design, samples: samples.slice(0, 1), notRun: previous }), previous);
 });
 
 test('the safe transport ledger retains bounded target identity and fails closed on raw or ambiguous fields', () => {

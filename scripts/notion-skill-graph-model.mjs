@@ -25,7 +25,7 @@ const within = (base, target) => { const value = relative(base, target); return 
 const disjoint = (a, b) => !within(a, b) && !within(b, a);
 const modelSelectors = ['magpie/group/flash-free', 'magpie/group/worker'];
 const permissionFailure = text => /insufficient (?:permission|quota)|not authorized|api key.*(?:invalid|denied)|please upgrade|无权限使用|额度不足|账户.*(?:无权|欠费)/i.test(text);
-export const GRAPH_GATE_HARNESS_VERSION = 9;
+export const GRAPH_GATE_HARNESS_VERSION = 10;
 export const GRAPH_GATE_TOOLS = Object.freeze(['read', 'skill_search', 'skill_prepare']);
 export async function graphHarnessIdentity() {
   const files = await Promise.all(['notion-skill-graph-model.mjs', 'verify-skill-graph-contract.mjs', 'notion-skill-graph-project.mjs', 'notion-skill-graph-observer-smoke.mjs', 'notion-skill-retained-proof.mjs', 'notion-skill-source-proof.ts', 'notion-pi-help.mjs', 'notion-skill-graph.mjs', 'verify-pi-notion-model-cache.mjs'].map(async name => {
@@ -694,9 +694,11 @@ export function observeGraphGate(api, settings) {
 export async function readGateConfig(path) {
   assert.ok(isAbsolute(path), '--config must be absolute');
   const input = await json(path);
-  const allowed = ['version', 'gate', 'selection', 'rootRef', 'database', 'viewId', 'profileId', 'extension', 'packagePath', 'cliCommand', 'oraclePath', 'evidenceRoot', 'model', 'previousFailures', 'workerAuthorization', 'preparation', 'mode', 'reuseReceipt', 'selectionReceipt', 'retainedSourceProofRepo'];
+  const allowed = ['version', 'gate', 'selection', 'rootRef', 'database', 'viewId', 'profileId', 'extension', 'packagePath', 'cliCommand', 'oraclePath', 'evidenceRoot', 'model', 'promptTimeoutMs', 'previousFailures', 'workerAuthorization', 'preparation', 'mode', 'reuseReceipt', 'selectionReceipt', 'retainedSourceProofRepo'];
   assert.ok(input && Object.keys(input).every(key => allowed.includes(key)), 'Unknown graph-model configuration field');
   assert.equal(input.version, 1);
+  const promptTimeoutMs = input.promptTimeoutMs === undefined ? 300000 : input.promptTimeoutMs;
+  assert.ok(Number.isSafeInteger(promptTimeoutMs) && promptTimeoutMs > 0 && promptTimeoutMs <= 2147483647, 'promptTimeoutMs must be a positive safe timer integer no greater than 2147483647');
   const prompt = frozenPrompt(input.gate, input.selection);
   assert.match(input.rootRef ?? '', /^skill:\/\/[^/?#]+\/(?:SKILL|ROUTER)\.md$/);
   assert.equal(input.rootRef.endsWith('/ROUTER.md'), input.gate === 'A', 'Gate A selects a Router; Gate B selects a Skill');
@@ -732,7 +734,7 @@ export async function readGateConfig(path) {
   assert.ok(mode === 'warm-new-process' ? isAbsolute(input.reuseReceipt ?? '') : input.reuseReceipt === undefined, 'Only warm-new-process may name a previous complete cache receipt');
   if (input.selectionReceipt !== undefined) assert.ok(isAbsolute(input.selectionReceipt));
   if (input.retainedSourceProofRepo !== undefined) assert.ok(isAbsolute(input.retainedSourceProofRepo));
-  return { ...input, model, mode, previousFailures, ...(workerAuthorization ? { workerAuthorization } : {}), prompt };
+  return { ...input, model, mode, promptTimeoutMs, previousFailures, ...(workerAuthorization ? { workerAuthorization } : {}), prompt };
 }
 
 const brokerConfiguration = (config, command, cacheDir) => ({ skillRoots: [], extraSkillRoots: [], sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command, database: config.database, ...(config.viewId ? { default_view_id: config.viewId } : { profile_id: config.profileId }), prefetch: false, cacheDir, requestTimeoutMs: 60000, ...(config.preparation ? { preparation: config.preparation } : {}) }] });
@@ -743,7 +745,7 @@ function gateEnvironment(cliPaths, brokerConfig, evidence, owned) {
   return env;
 }
 
-const runFingerprint = (config, doctor, oracleSha256, projectSha256) => hash(JSON.stringify({ version: 2, harness: doctor.harness.sha256, gate: config.gate, rootRef: config.rootRef, selection: config.selection, database: config.database, viewId: config.viewId, profileId: config.profileId, prompt: config.prompt.sha256, model: config.model, ...(config.workerAuthorization ? { workerAuthorizationSha256: config.workerAuthorization.sha256 } : {}), cli: doctor.cli.sha256, extension: doctor.extension.sha256, package: doctor.package.sha256, oracleSha256, projectSha256, preparation: config.preparation ?? null }));
+export const runFingerprint = (config, doctor, oracleSha256, projectSha256) => hash(JSON.stringify({ version: 2, harness: doctor.harness.sha256, gate: config.gate, rootRef: config.rootRef, selection: config.selection, database: config.database, viewId: config.viewId, profileId: config.profileId, prompt: config.prompt.sha256, model: config.model, promptTimeoutMs: config.promptTimeoutMs, ...(config.workerAuthorization ? { workerAuthorizationSha256: config.workerAuthorization.sha256 } : {}), cli: doctor.cli.sha256, extension: doctor.extension.sha256, package: doctor.package.sha256, oracleSha256, projectSha256, preparation: config.preparation ?? null }));
 
 export function summarizeSamples(samples) {
   const summary = {};
@@ -885,7 +887,7 @@ export async function graphModelDoctor(config) {
   }
   const probe = await mkdtemp(join(await systemTempRoot(), 'broker-graph-model-doctor-'));
   const pi = await runCommand('pi', ['--version'], { cwd: probe, env: process.env, timeoutMs: 10000 });
-  return { status: 'ready', gate: config.gate, model: config.model, prompt: config.prompt, ...artifacts, harness: await graphHarnessIdentity(), cli: { command: config.cliCommand, sha256: hash(await readFile(config.cliCommand[1])) }, node: process.version, pi: pi.stdout.trim(), authentication: 'existing credentials reused in place; not probed or copied', scratch: probe, proof: 'Doctor inspects artifacts and contract only; no real model or Notion request' };
+  return { status: 'ready', gate: config.gate, model: config.model, promptTimeoutMs: config.promptTimeoutMs, prompt: config.prompt, ...artifacts, harness: await graphHarnessIdentity(), cli: { command: config.cliCommand, sha256: hash(await readFile(config.cliCommand[1])) }, node: process.version, pi: pi.stdout.trim(), authentication: 'existing credentials reused in place; not probed or copied', scratch: probe, proof: 'Doctor inspects artifacts and contract only; no real model or Notion request' };
 }
 
 async function collectResponses(directory) {
@@ -1149,7 +1151,7 @@ async function runGate(config) {
   await writeFile(inputObserver, "import { appendFileSync } from 'node:fs'; import { createHash } from 'node:crypto';\nexport default function(api) { api.on('input', event => { const text = event.text ?? ''; appendFileSync(" + JSON.stringify(output) + ", JSON.stringify({ phase: 'native-input', at: new Date().toISOString(), source: event.source, textSha256: createHash('sha256').update(text).digest('hex'), bytes: Buffer.byteLength(text), frozenPromptMatched: text === " + JSON.stringify(config.prompt.text) + " }) + '\\n', { mode: 0o600 }); }); }\n", { mode: 0o600 });
   const traps = await createGraphFallbackTraps(control, evidence);
   const isolation = { oracleRoots, consumerRoots: resolved, resolved: true, oracleObserverOnly: true, inventoryComplete: false, localSkillInventory: [], shellEnabled: false, contextFiles: false, promptTemplates: false, autoExtensions: false, tools: GRAPH_GATE_TOOLS, prelaunch, discoveryPolicy: 'Pi --no-skills plus explicit installed Broker/observer only; actual native read/search/prepare are advertised; undiscovered reads, shell and outside project files are blocked', credentialPolicy: 'Inherited host authentication read in place; no credential file is read or copied by the driver', legacyFallback: { directory: traps.directory, ledger: traps.ledger, checks: traps.checks } };
-  const result = { version: 1, harness: doctor.harness, gate: config.gate, mode: config.mode, model: config.model, status: 'running', evidence, scratch, doctor, isolation, project, prompt: config.prompt, availabilityFailure: false, samples: [], files: ['doctor.json', 'isolation.json', 'project.json', 'ownership.json', 'observer.jsonl', 'source-processes.jsonl', 'owned-processes.jsonl', 'legacy-fallback-calls.jsonl', 'result.json'], notRun: ['Native composer Stop/TUI', 'Generated procedure execution until the explicit exercise action'] };
+  const result = { version: 1, harness: doctor.harness, gate: config.gate, mode: config.mode, model: config.model, promptTimeoutMs: config.promptTimeoutMs, status: 'running', evidence, scratch, doctor, isolation, project, prompt: config.prompt, availabilityFailure: false, samples: [], files: ['doctor.json', 'isolation.json', 'project.json', 'ownership.json', 'observer.jsonl', 'source-processes.jsonl', 'owned-processes.jsonl', 'legacy-fallback-calls.jsonl', 'result.json'], notRun: ['Native composer Stop/TUI', 'Generated procedure execution until the explicit exercise action'] };
   await save(join(scratch, 'ownership.json'), { evidence, purpose: 'native-graph-model', runId: randomUUID() });
   await save(join(evidence, 'ownership.json'), await json(join(scratch, 'ownership.json')));
   await save(join(evidence, 'doctor.json'), doctor);
@@ -1162,7 +1164,7 @@ async function runGate(config) {
   let rpc, launchError;
   let startupMs = null;
   try {
-    const start = performance.now(); rpc = await startRpc({ host: 'pi', cwd, env, args, timeoutMs: 300000 }); startupMs = performance.now() - start;
+    const start = performance.now(); rpc = await startRpc({ host: 'pi', cwd, env, args, timeoutMs: config.promptTimeoutMs }); startupMs = performance.now() - start;
     for (let index = 0; index <= (config.continuedSamples ?? 0); index++) {
       const sample = { index, mode: index === 0 ? config.mode : 'continued-session', startedAt: new Date().toISOString(), promptSha256: config.prompt.sha256, status: 'running' };
       result.samples.push(sample);
@@ -1248,7 +1250,7 @@ async function runGate(config) {
   if (result.status === 'passed' && result.samples.every(sample => sample.status === 'passed')) {
     const receiptPath = join(evidence, 'cache-reuse.json');
     const responseFiles = [...new Map([...priorResponseFiles, ...await Promise.all(responsesObserved.map(async receipt => { const path = join(responses, receipt.requestId + '.json'); return { path, sha256: hash(await readFile(path)) }; }))].map(file => [file.path, file])).values()];
-    await save(receiptPath, { version: 1, status: 'complete', fingerprint, evidence, cliRoot: resolved[0], brokerRoot: resolved[1], projectSha256: project.sha256, taskSha256: config.prompt.sha256, responseFiles, graphLockSha256: result.preparation.graph_lock.sha256, prior: config.reuseReceipt ?? null });
+    await save(receiptPath, { version: 1, status: 'complete', fingerprint, evidence, cliRoot: resolved[0], brokerRoot: resolved[1], projectSha256: project.sha256, taskSha256: config.prompt.sha256, promptTimeoutMs: config.promptTimeoutMs, responseFiles, graphLockSha256: result.preparation.graph_lock.sha256, prior: config.reuseReceipt ?? null });
     result.cacheReceipt = { path: receiptPath, sha256: hash(await readFile(receiptPath)) }; result.files.push('cache-reuse.json');
   } else if (result.samples.some(sample => sample.status === 'failed')) result.status = 'failed';
   await save(join(evidence, 'isolation.json'), isolation);
@@ -1258,10 +1260,14 @@ async function runGate(config) {
   return result;
 }
 
+export function unstartedMatrixSamples(result) {
+  return result.notRun.length ? result.notRun : result.design.order.slice(result.samples.length).map(mode => ({ mode, reason: 'The live run ended before this scheduled sample started; observed samples are retained' }));
+}
+
 async function runMatrix(config) {
   await mkdir(config.evidenceRoot, { recursive: true });
   const evidence = await mkdtemp(join(await realpath(config.evidenceRoot), `graph-matrix-${config.gate}-`));
-  const result = { version: 1, gate: config.gate, mode: 'matrix', evidence, status: 'running', prompt: config.prompt, design: { cold: 1, warm_new_process: 2, continued_session: 2, order: ['cold', 'warm-new-process', 'warm-new-process', 'continued-session', 'continued-session'] }, runs: [], samples: [], notRun: [], files: ['result.json'] };
+  const result = { version: 1, gate: config.gate, mode: 'matrix', evidence, status: 'running', prompt: config.prompt, promptTimeoutMs: config.promptTimeoutMs, design: { cold: 1, warm_new_process: 2, continued_session: 2, order: ['cold', 'warm-new-process', 'warm-new-process', 'continued-session', 'continued-session'] }, runs: [], samples: [], notRun: [], files: ['result.json'] };
   await save(join(evidence, 'result.json'), result); console.log(JSON.stringify({ status: 'running', action: 'matrix', evidence }));
   for (let index = 0; index < 3; index++) {
     const previous = result.runs.at(-1);
@@ -1273,6 +1279,7 @@ async function runMatrix(config) {
     result.samples.push(...run.samples.map(sample => ({ ...sample, evidence: run.evidence })));
     await save(join(evidence, 'result.json'), result);
   }
+  result.notRun = unstartedMatrixSamples(result);
   result.summary = summarizeSamples(result.samples);
   result.status = result.samples.length === 5 && result.samples.every(sample => sample.status === 'passed') ? 'passed' : 'failed';
   result.proof = 'Fixed five-sample design; each failure remains an observed sample, with raw timings and medians only. Continued samples retain the live session and cumulative original discovery/read receipts.';
@@ -1293,7 +1300,8 @@ async function main(args) {
   const action = args.shift();
   if (!action || action === '--help' || action === 'help') return {
     usage: ['node scripts/notion-skill-graph-model.mjs doctor|selection --config ABSOLUTE_JSON', 'node scripts/notion-skill-graph-model.mjs run --config ABSOLUTE_JSON', 'node scripts/notion-skill-graph-model.mjs exercise --evidence ABSOLUTE_RUN --command-json \'["npm","test"]\'', 'node scripts/notion-skill-graph-model.mjs evidence|cleanup --evidence ABSOLUTE_RUN'],
-    config: { version: 1, gate: 'A or B', selection: 'Use exact token returned by the independent selection preflight', selectionReceipt: 'absolute successful selection result.json; required for run', rootRef: 'exact unpinned shared record.ref', database: 'UUID', viewId: 'existing root-only View UUID; alternatively profileId', extension: 'absolute installed Pi entry', packagePath: 'absolute frozen tgz', cliCommand: ['absolute Node', 'absolute installed ntn-skills entry'], oraclePath: 'absolute private oracle JSON, kept outside consumer roots; not opened by selection preflight', evidenceRoot: 'absolute retained directory', model: modelSelectors[0], previousFailures: [], mode: 'cold (default), warm-new-process or matrix', reuseReceipt: 'absolute complete cache-reuse.json for warm-new-process only' },
+    config: { version: 1, gate: 'A or B', selection: 'Use exact token returned by the independent selection preflight', selectionReceipt: 'absolute successful selection result.json; required for run', rootRef: 'exact unpinned shared record.ref', database: 'UUID', viewId: 'existing root-only View UUID; alternatively profileId', extension: 'absolute installed Pi entry', packagePath: 'absolute frozen tgz', cliCommand: ['absolute Node', 'absolute installed ntn-skills entry'], oraclePath: 'absolute private oracle JSON, kept outside consumer roots; not opened by selection preflight', evidenceRoot: 'absolute retained directory', model: modelSelectors[0], promptTimeoutMs: 300000, previousFailures: [], mode: 'cold (default), warm-new-process or matrix', reuseReceipt: 'absolute complete cache-reuse.json for warm-new-process only' },
+    promptTimeout: 'Optional config.promptTimeoutMs freezes the model-run RPC deadline before launch; default 300000 ms, positive safe timer integer up to 2147483647. The value is retained in doctor/run/matrix/cache evidence and the cache fingerprint. It never changes task or graph assertions.',
     workerAuthorization: 'Optional config.workerAuthorization is {path, sha256} for a retained explicit user approval of worker for the exact gate/root/frozen prompt. It remains observer-only evidence; absent authorization preserves the flash-free availability-failure requirement. No receipt can substitute for actual user approval.',
     sampling: 'matrix runs 1 cold process, 2 warm new processes on the same complete CLI/Broker caches, then 2 more frozen submissions in the second warm live session; failures remain samples; raw values and medians, no p95',
     artifacts: 'Retain the actual final verbatim. Extract only complete fenced files with explicit relative filenames; a valid SKILL.md and all local links must be present. Prose alone remains plan-only. exercise accepts an exact test command from a retained generated file and drives the unchanged owned application with PID, exit, stdout and hash evidence. Graph pass alone is not generated-Skill acceptance.',

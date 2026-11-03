@@ -67,6 +67,11 @@ function scanGeneratedFiles(text, { projectRoot } = {}) {
       ?? cleanPath(/(?:file|path|title)\s*=\s*["']?([^\s"']+)/i.exec(info)?.[1] ?? '')
       ?? cleanPath(/^\S+\s+path\s*:\s*["']?([^\s"']+)/i.exec(info)?.[1] ?? '');
     if (!file) for (let previous = index - 1; previous >= Math.max(0, index - 4); previous--) { if (!lines[previous].text.trim()) continue; file = cleanPath(lines[previous].text); break; }
+    let bodyStart = lines[index].end;
+    if (!file) {
+      file = cleanPath(lines[index + 1]?.text ?? '');
+      if (file) bodyStart = lines[index + 1].end;
+    }
     let end = index + 1;
     for (; end < lines.length; end++) {
       const boundary = fenceLine(lines[end].text);
@@ -85,10 +90,10 @@ function scanGeneratedFiles(text, { projectRoot } = {}) {
       break;
     }
     if (file) {
-      const content = text.slice(lines[index].end, lines[end].start);
+      const content = text.slice(bodyStart, lines[end].start);
       assert.ok(content.trim(), 'A named generated file cannot be empty');
       assert.ok(!files.has(file) || files.get(file).content === content, 'A generated file has conflicting complete definitions');
-      files.set(file, { path: file, content, sha256: hash(content), bytes: Buffer.byteLength(content), sourceSpan: { start: lines[index].end, end: lines[end].start } });
+      files.set(file, { path: file, content, sha256: hash(content), bytes: Buffer.byteLength(content), sourceSpan: { start: bodyStart, end: lines[end].start } });
     }
     index = end;
   }

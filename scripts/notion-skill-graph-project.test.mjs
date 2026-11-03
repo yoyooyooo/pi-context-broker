@@ -168,3 +168,97 @@ test('language-prefixed path labels do not promote incomplete Skills', async () 
     assert.equal(await readFile(receipt.path, 'utf8'), text);
   }
 });
+
+
+test('a first body-line path retains exact Skill and resource bytes and spans', async () => {
+  const skillPath = '.cursor/skills/verify-owned/SKILL.md', resourcePath = '.cursor/skills/verify-owned/features/README.md';
+  const skill = '---\r\nname: verify-owned\r\ndescription: Verify the owned project.\r\n---\r\n\r\n# 验证\r\n\r\nRead [the case](features/README.md).\r\n\r\n```sh\r\nnpm test\r\n```\r\n';
+  const resource = '# Case\r\n\r\nVerify the response.\r\n';
+  const text = '````markdown\r\n' + skillPath + '\r\n' + skill + '````\r\n\r\n~~~text\r\npath: ' + resourcePath + '\r\n' + resource + '~~~\r\n';
+  const files = extractGeneratedFiles(text);
+  assert.deepEqual(files.map(file => file.path), [skillPath, resourcePath]);
+  for (const [index, content] of [skill, resource].entries()) {
+    assert.equal(files[index].content, content);
+    assert.equal(files[index].bytes, Buffer.byteLength(content));
+    assert.equal(files[index].sha256, hash(content));
+    assert.deepEqual(files[index].sourceSpan, { start: text.indexOf(content), end: text.indexOf(content) + content.length });
+    assert.equal(text.slice(files[index].sourceSpan.start, files[index].sourceSpan.end), content);
+  }
+  const directory = await evidence();
+  const receipt = await retainGeneratedPlan({ evidence: directory, final: { success: true, text }, prompt, project });
+  assert.equal(receipt.artifactStatus, 'complete-skill-files-retained');
+  assert.deepEqual(receipt.skillFiles, [skillPath]);
+  assert.deepEqual(receipt.fileExtractionIssues, []);
+  assert.deepEqual(receipt.unresolvedReferences, []);
+  for (const file of files) assert.equal(await readFile(join(directory, 'generated-files', file.path), 'utf8'), file.content);
+  assert.equal(await readFile(receipt.path, 'utf8'), text);
+});
+
+test('existing info and preceding paths outrank a path-shaped first body line', () => {
+  const content = 'docs/literal-first-line.md\nKeep this exact first body line.\n';
+  for (const [expectedPath, text] of [
+    ['docs/from-info.md', '```text path=docs/from-info.md\n' + content + '```\n'],
+    ['docs/from-heading.md', '### `docs/from-heading.md`\n\n```text\n' + content + '```\n'],
+  ]) {
+    const [file] = extractGeneratedFiles(text);
+    assert.equal(file.path, expectedPath);
+    assert.equal(file.content, content);
+    assert.equal(text.slice(file.sourceSpan.start, file.sourceSpan.end), content);
+  }
+  assert.deepEqual(extractGeneratedFiles('```text\n\ndocs/not-the-first-line.md\nNot a path annotation.\n```\n'), []);
+});
+
+test('first body-line paths retain the exact owned root and unsafe path boundaries', () => {
+  const root = '/owned/project', block = path => '```text\n' + path + '\nExact model bytes.\n```\n';
+  const accepted = root + '/docs/acceptance.md';
+  assert.deepEqual(extractGeneratedFiles(block(accepted)), []);
+  assert.equal(extractGeneratedFiles(block(accepted), { projectRoot: root })[0]?.path, 'docs/acceptance.md');
+  for (const path of [
+    '/outside/docs/acceptance.md', root + '-other/docs/acceptance.md', root + '/../escape/acceptance.md',
+    root + '/docs/../acceptance.md', root + '//docs/acceptance.md', '../escape/acceptance.md',
+    'docs/../acceptance.md', 'docs/./acceptance.md', 'docs//acceptance.md',
+  ]) assert.deepEqual(extractGeneratedFiles(block(path), { projectRoot: root }), [], path);
+});
+
+test('first body-line paths preserve ambiguous and unclosed fence failures', async () => {
+  for (const [text, issue] of [
+    ['```markdown\ndocs/acceptance.md\nNo closing fence.\n', { code: 'UNCLOSED_FILE_FENCE', path: 'docs/acceptance.md', openingLine: 1 }],
+    ['```markdown\ndocs/acceptance.md\nRun:\n```sh\nnpm test\n```\nTrailing content.\n```\n', { code: 'AMBIGUOUS_FILE_FENCE', path: 'docs/acceptance.md', openingLine: 1, line: 4 }],
+  ]) {
+    const directory = await evidence();
+    const receipt = await retainGeneratedPlan({ evidence: directory, final: { success: true, text }, prompt, project });
+    assert.equal(receipt.artifactStatus, 'plan-only');
+    assert.deepEqual(receipt.files, []);
+    assert.deepEqual(receipt.skillFiles, []);
+    assert.deepEqual(receipt.fileExtractionIssues, [issue]);
+    assert.equal(await readFile(receipt.path, 'utf8'), text);
+    assert.equal((await readdir(directory)).includes('generated-files'), false);
+  }
+});
+
+test('first body-line paths reject empty and conflicting definitions', () => {
+  const block = content => '```text\ndocs/acceptance.md\n' + content + '```\n';
+  assert.throws(() => extractGeneratedFiles(block('')), /cannot be empty/);
+  assert.equal(extractGeneratedFiles(block('Same bytes.\n') + block('Same bytes.\n')).length, 1);
+  assert.throws(() => extractGeneratedFiles(block('First bytes.\n') + block('Different bytes.\n')), /conflicting complete definitions/);
+});
+
+test('first body-line paths do not promote incomplete Skills or missing references', async () => {
+  const skillPath = '.cursor/skills/verify-owned/SKILL.md';
+  for (const [content, skillFiles, unresolvedReferences] of [
+    ['# No frontmatter\n\nRun the procedure.\n', [], []],
+    ['---\nname: verify-owned\n---\n\nRun the procedure.\n', [], []],
+    ['---\nname: verify-owned\ndescription: Verify the owned project.\n---\n', [], []],
+    ['---\nname: verify-owned\ndescription: Verify the owned project.\n---\n\nRead [the case](references/missing.md).\n', [skillPath], [{ from: skillPath, href: 'references/missing.md' }]],
+  ]) {
+    const text = '```markdown\n' + skillPath + '\n' + content + '```\n';
+    const directory = await evidence();
+    const receipt = await retainGeneratedPlan({ evidence: directory, final: { success: true, text }, prompt, project });
+    assert.equal(receipt.artifactStatus, 'incomplete-generated-files');
+    assert.equal(receipt.files.length, 1);
+    assert.deepEqual(receipt.skillFiles, skillFiles);
+    assert.deepEqual(receipt.fileExtractionIssues, []);
+    assert.deepEqual(receipt.unresolvedReferences, unresolvedReferences);
+    assert.equal(await readFile(receipt.path, 'utf8'), text);
+  }
+});
