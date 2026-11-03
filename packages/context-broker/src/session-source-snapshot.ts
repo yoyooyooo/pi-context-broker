@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { recordIdentity } from "./discovery-records";
+import { parseNativeReference } from "./native-reference";
 import type { AgentMessage, MessageContent, SkillRecord } from "./types";
 import { isPreparationBinding, type PreparationBinding } from "./prepare-protocol";
 import type { SessionSelection } from "./session-graph";
@@ -50,6 +51,24 @@ function verifiedReadProof(message: AgentMessage) {
   if (!object(proof) || ![1, 2].includes(Number(proof.version)) || typeof proof.identity !== "string" || proof.toolCallId !== message.toolCallId || !snapshot(proof.snapshotId)) return undefined;
   const text = sourceMessageText(message.content);
   return text && hash(text) === proof.bodySha256 && Buffer.byteLength(text) === proof.bytes ? proof : undefined;
+}
+
+function verifiedResourceReadProof(message: AgentMessage) {
+  if (message.role !== "toolResult" || message.toolName !== "read" || message.isError === true || !object(message.details)
+    || Array.isArray(message.content) && message.content.some(part => part.type !== "text")) return undefined;
+  const proof = message.details.contextBrokerResource;
+  if (!object(proof) || proof.version !== 1 || proof.delivered_complete_text !== true || proof.loaded !== false
+    || typeof proof.toolCallId !== "string" || !proof.toolCallId || proof.toolCallId !== message.toolCallId
+    || typeof proof.scope !== "string" || !proof.scope || typeof proof.id !== "string" || !proof.id
+    || !snapshot(proof.snapshot_id) || typeof proof.file_id !== "string" || !proof.file_id
+    || typeof proof.ref !== "string" || typeof proof.path !== "string") return undefined;
+  try {
+    const reference = parseNativeReference(proof.ref);
+    if (reference.selector !== proof.id || reference.snapshot !== proof.snapshot_id
+      || reference.fileId !== proof.file_id || reference.path !== proof.path) return undefined;
+  } catch { return undefined; }
+  const text = sourceMessageText(message.content);
+  return hash(text) === proof.sha256 && Buffer.byteLength(text) === proof.bytes ? proof : undefined;
 }
 
 function injectedSnapshots(messages: AgentMessage[], visit?: (proof: Record<string, unknown>, contentIndex: number) => void): Record<string, unknown>[] {
@@ -142,7 +161,7 @@ function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number
 }
 
 /** Preserve every actual tool result and tool-call ID in session history. Only
- * the provider projection replaces an already available exact entry copy with
+ * the provider projection replaces an already available exact entry or resource copy with
  * a receipt-sized confirmation. Different snapshots/scopes and partial or
  * failed reads are never coalesced. */
 export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[] {
@@ -172,6 +191,15 @@ export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[]
     const key = JSON.stringify([proof.contentIdentity ?? proof.identity, proof.snapshotId, proof.bodySha256]);
     if (!seen.has(key)) { seen.set(key, String(index)); return; }
     replace(index, 0, sourceMessageText(message.content).length, confirmation(proof));
+  });
+  const resources = new Set<string>();
+  messages.forEach((message, index) => {
+    const proof = verifiedResourceReadProof(message);
+    if (!proof) return;
+    const key = JSON.stringify([proof.scope, proof.id, proof.snapshot_id, proof.file_id, proof.sha256]);
+    if (!resources.has(key)) { resources.add(key); return; }
+    replace(index, 0, sourceMessageText(message.content).length,
+      `The complete Skill resource ${proof.path} for snapshot ${proof.snapshot_id} is already present in this active context. This successful repeated read verified the same resource bytes.`);
   });
   return replacements.size ? projectDeliverySpans(messages, replacements) : messages;
 }

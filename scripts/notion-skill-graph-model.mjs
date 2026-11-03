@@ -25,7 +25,7 @@ const within = (base, target) => { const value = relative(base, target); return 
 const disjoint = (a, b) => !within(a, b) && !within(b, a);
 const modelSelectors = ['magpie/group/flash-free', 'magpie/group/worker'];
 const permissionFailure = text => /insufficient (?:permission|quota)|not authorized|api key.*(?:invalid|denied)|please upgrade|无权限使用|额度不足|账户.*(?:无权|欠费)/i.test(text);
-export const GRAPH_GATE_HARNESS_VERSION = 8;
+export const GRAPH_GATE_HARNESS_VERSION = 9;
 export const GRAPH_GATE_TOOLS = Object.freeze(['read', 'skill_search', 'skill_prepare']);
 export async function graphHarnessIdentity() {
   const files = await Promise.all(['notion-skill-graph-model.mjs', 'verify-skill-graph-contract.mjs', 'notion-skill-graph-project.mjs', 'notion-skill-graph-observer-smoke.mjs', 'notion-skill-retained-proof.mjs', 'notion-skill-source-proof.ts', 'notion-pi-help.mjs', 'notion-skill-graph.mjs', 'verify-pi-notion-model-cache.mjs'].map(async name => {

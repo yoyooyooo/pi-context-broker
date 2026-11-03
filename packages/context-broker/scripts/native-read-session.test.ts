@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseNativeReference } from "../src/native-reference";
-import { deduplicateSourceReads, nativeReadReceipt, nativeReadSnapshot, sessionSourceSnapshot, sourceDeliveryReceipt } from "../src/session-source-snapshot";
+import { deduplicateSourceReads, nativeReadReceipt, nativeReadSnapshot, sessionSourceSnapshot, sourceDeliveryReceipt, sourceMessageText, sessionSourceBindings } from "../src/session-source-snapshot";
 import { hasLoadedSkill } from "../src/index";
 import { installHostSkills } from "../src/host-skills";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
@@ -68,6 +68,65 @@ test("trusted native or dollar injection coalesces rereads, never user XML or fo
   expect(hasLoadedSkill([injected], { ...record, sourceId: "other-namespace" })).toBe(true);
   expect(hasLoadedSkill([injected], { ...record, body: record.body + "changed" })).toBe(false);
 });
+
+function resourceResult(toolCallId: string, { scope = "scope", id = "shared_skill:lib:skill", snapshotId = a, fileId = "guide", body = "Exact supporting resource.\n" } = {}) {
+  const path = "references/guide.md";
+  return {
+    role: "toolResult", toolName: "read", toolCallId, isError: false, content: [{ type: "text", text: body }],
+    details: { contextBrokerResource: {
+      version: 1, toolCallId, id, scope, snapshot_id: snapshotId, file_id: fileId, path,
+      ref: "skill://" + encodeURIComponent(id) + "/" + path + "?snapshot=" + snapshotId + "&file_id=" + encodeURIComponent(fileId),
+      bytes: Buffer.byteLength(body), sha256: createHash("sha256").update(body).digest("hex"),
+      delivered_complete_text: true, loaded: false,
+    } },
+  } satisfies AgentMessage;
+}
+
+test("repeated complete resource reads retain one provider body and every stored tool result", () => {
+  const messages = [resourceResult("resource-1"), resourceResult("resource-2"), resourceResult("resource-3")];
+  const stored = JSON.stringify(messages), body = sourceMessageText(messages[0]!.content);
+  const projected = deduplicateSourceReads(messages);
+  expect(projected.filter(message => sourceMessageText(message.content) === body)).toHaveLength(1);
+  expect(projected.map(message => message.toolCallId)).toEqual(["resource-1", "resource-2", "resource-3"]);
+  expect(projected[1]?.details).toEqual(messages[1]?.details);
+  expect(JSON.stringify(messages)).toBe(stored);
+  expect(deduplicateSourceReads(projected)).toBe(projected);
+  // Compaction can discard earlier copies; the remaining real read still owns its full body.
+  expect(deduplicateSourceReads([messages[2]!])[0]).toBe(messages[2]);
+  const owner = { ...record, id: "shared_skill:lib:skill" };
+  for (const active of [messages, projected]) {
+    expect(hasLoadedSkill(active, owner)).toBe(false);
+    expect(sessionSourceSnapshot(active, owner)).toBeUndefined();
+    expect(sessionSourceBindings(active, "scope")).toEqual([]);
+  }
+});
+
+test("resource deduplication preserves different scopes, owners, snapshots, File IDs and bodies", () => {
+  for (const identity of [{ scope: "other" }, { id: "shared_skill:lib:other" }, { snapshotId: b }, { fileId: "other" }, { body: "Changed resource.\n" }]) {
+    const messages = [resourceResult("first"), resourceResult("second", identity)];
+    expect(deduplicateSourceReads(messages)).toBe(messages);
+  }
+});
+
+test("incomplete or mismatched resource receipts never suppress a read", () => {
+  const first = resourceResult("first"), second = resourceResult("second"), proof = second.details.contextBrokerResource;
+  const changedProof = (changes: Record<string, unknown>): AgentMessage => ({ ...second, details: { contextBrokerResource: { ...proof, ...changes } } });
+  const invalid: AgentMessage[] = [
+    { ...second, content: "partial" }, { ...second, isError: true }, { ...second, role: "user" },
+    { ...second, toolName: "other" }, { ...second, toolCallId: "different" }, { ...second, details: undefined },
+    { ...second, content: [...second.content, { type: "image", data: "AA==" }] },
+    changedProof({ delivered_complete_text: false }), changedProof({ loaded: true }), changedProof({ version: 2 }),
+    changedProof({ scope: "" }), changedProof({ bytes: proof.bytes + 1 }), changedProof({ sha256: "0".repeat(64) }),
+    changedProof({ ref: proof.ref.replace("lib%3Askill", "lib%3Aforeign") }),
+    changedProof({ ref: proof.ref.replace(a, b) }), changedProof({ ref: proof.ref.replace("file_id=guide", "file_id=foreign") }),
+    changedProof({ path: "references/other.md" }),
+  ];
+  for (const message of invalid) {
+    const messages = [first, message];
+    expect(deduplicateSourceReads(messages)).toBe(messages);
+  }
+});
+
 test("real hook sequence marks only the completed entry result and reuses its active pin", async () => {
   const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>(), messages: AgentMessage[] = [], loads: Array<string | undefined> = [];
   const api = { on(name: string, listener: (event: never, ctx: ExtensionContext) => unknown) { events.set(name, [...events.get(name) ?? [], listener]); } } as ExtensionAPI;

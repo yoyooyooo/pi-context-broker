@@ -63,7 +63,9 @@ function scanGeneratedFiles(text, { projectRoot } = {}) {
   for (let index = 0; index < lines.length; index++) {
     const opening = fenceLine(lines[index].text); if (!opening) continue;
     const fence = opening[1], info = opening[2].trim();
-    let file = cleanPath(info) ?? cleanPath(/(?:file|path|title)\s*=\s*["']?([^\s"']+)/i.exec(info)?.[1] ?? '');
+    let file = cleanPath(info)
+      ?? cleanPath(/(?:file|path|title)\s*=\s*["']?([^\s"']+)/i.exec(info)?.[1] ?? '')
+      ?? cleanPath(/^\S+\s+path\s*:\s*["']?([^\s"']+)/i.exec(info)?.[1] ?? '');
     if (!file) for (let previous = index - 1; previous >= Math.max(0, index - 4); previous--) { if (!lines[previous].text.trim()) continue; file = cleanPath(lines[previous].text); break; }
     let end = index + 1;
     for (; end < lines.length; end++) {

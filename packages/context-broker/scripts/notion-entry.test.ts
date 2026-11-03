@@ -7,6 +7,7 @@ import { publishNotionEntry, materializeNotionEntryFile } from "../src/notion-en
 import { installHostSkills } from "../src/host-skills";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { hasLoadedSkill } from "../src/index";
+import { sessionSourceSnapshot, sourceMessageText } from "../src/session-source-snapshot";
 import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, SkillRecord } from "../src/types";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
@@ -105,6 +106,50 @@ test("native resource tools resolve stable File ID and report materialization wi
   await emit("tool_call", { toolName: "read", toolCallId: "old", input: { path: f.files[1]!.ref } });
   await emit("session_switch", { type: "session_switch" });
   expect(await emit("tool_result", { toolName: "read", toolCallId: "old", content, isError: false })).toEqual([undefined]);
+});
+
+for (const scheduling of ["sequential", "concurrent"] as const) test(`${scheduling} resource reads through an exact ref and advertised tree path deliver one provider body`, async () => {
+  const f = await entry();
+  const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
+  const api = { on(name: string, listener: (event: never, ctx: ExtensionContext) => unknown) { events.set(name, [...events.get(name) ?? [], listener]); } } as ExtensionAPI;
+  const ctx: ExtensionContext = { cwd: f.root, hasUI: false, mode: "rpc" }, requested: string[] = [];
+  let release!: () => void;
+  const bothEntered = new Promise<void>(resolve => { release = resolve; });
+  const host = await installHostSkills(api, { config: {}, getRecords: async () => ({ records: [f.metadata], failures: [] }),
+    loadRecord: async () => f.selected,
+    loadResource: async (record, path, _ctx, signal) => {
+      requested.push(path);
+      if (scheduling === "concurrent") {
+        if (requested.length === 2) release();
+        await bothEntered;
+      }
+      return materializeNotionEntryFile(record, path, ensure, async (file, output) => { await writeFile(output, f.bytes.get(file.path)!); }, signal);
+    },
+  }, createPiHostAdapter(api));
+  await host.activate(f.metadata, ctx);
+  const emit = async (name: string, event: unknown) => { const values = []; for (const listener of events.get(name) ?? []) values.push(await listener(event as never, ctx)); return values; };
+  const read = async (path: string, toolCallId: string): Promise<AgentMessage> => {
+    const input = { path };
+    const admission = await emit("tool_call", { toolName: "read", toolCallId, input });
+    expect(admission.some(value => value && typeof value === "object" && "block" in value)).toBe(false);
+    const content = [{ type: "text" as const, text: await readFile(input.path, "utf8") }];
+    const returned = await emit("tool_result", { toolName: "read", toolCallId, input, content, isError: false });
+    const annotated = returned.find((value): value is { details: unknown } => !!value && typeof value === "object" && "details" in value)!;
+    expect(annotated).toBeDefined();
+    return { role: "toolResult", toolName: "read", toolCallId, isError: false, content, details: annotated.details };
+  };
+  const reference = f.files[1]!.ref, advertisedPath = join(f.selected.entryManifest!.root, f.resource);
+  const history = scheduling === "concurrent"
+    ? await Promise.all([read(reference, "resource-ref"), read(advertisedPath, "resource-path")])
+    : [await read(reference, "resource-ref"), await read(advertisedPath, "resource-path")];
+  const stored = JSON.stringify(history);
+  const context = (await emit("context", { messages: history })).find((value): value is { messages: AgentMessage[] } => !!value && typeof value === "object" && "messages" in value)!;
+  expect(requested).toEqual([f.resource, f.resource]);
+  expect(context.messages.filter(message => sourceMessageText(message.content) === f.bytes.get(f.resource)!.toString("utf8"))).toHaveLength(1);
+  expect(context.messages.map(message => message.toolCallId)).toEqual(["resource-ref", "resource-path"]);
+  expect(JSON.stringify(history)).toBe(stored);
+  expect(hasLoadedSkill(context.messages, f.selected)).toBe(false);
+  expect(sessionSourceSnapshot(context.messages, f.selected)).toBeUndefined();
 });
 
 test("a nested main can read a sibling-directory resource from its exact immutable tree path", async () => {
