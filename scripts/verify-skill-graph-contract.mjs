@@ -32,6 +32,28 @@ export function frozenPrompt(gate, selection, version = PROMPT_VERSION) {
   return { version, gate, selection, text, sha256: sha(text) };
 }
 
+// This records an authorization already supplied by the user; a receipt is not
+// a substitute for that approval and must never become model prompt content.
+export function verifyWorkerAuthorization(evidence, scope) {
+  const exactKeys = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).sort().join(',') === [...keys].sort().join(',');
+  check(exactKeys(evidence, ['path', 'sha256', 'raw']) && nonempty(evidence.path) && isAbsolute(evidence.path),
+    'MODEL_AUTHORIZATION', 'Worker authorization needs an absolute retained receipt and its exact source bytes');
+  check(typeof evidence.raw === 'string' && /^[a-f0-9]{64}$/.test(evidence.sha256 ?? '') && sha(evidence.raw) === evidence.sha256,
+    'MODEL_AUTHORIZATION', 'Worker authorization receipt bytes do not match their frozen SHA-256');
+  let receipt;
+  try { receipt = JSON.parse(evidence.raw); } catch { fail('MODEL_AUTHORIZATION', 'Worker authorization receipt must be JSON'); }
+  check(exactKeys(receipt, ['version', 'kind', 'model', 'scope', 'authorizationQuestion', 'userReply'])
+    && receipt.version === 1 && receipt.kind === 'explicit-user-worker-authorization' && receipt.model === 'magpie/group/worker',
+  'MODEL_AUTHORIZATION', 'Worker authorization must explicitly name the allowed model and known receipt fields');
+  check(exactKeys(receipt.scope, ['gate', 'rootRef', 'promptSha256'])
+    && receipt.scope.gate === scope.gate && receipt.scope.rootRef === scope.rootRef && receipt.scope.promptSha256 === scope.promptSha256,
+  'MODEL_AUTHORIZATION', 'Worker authorization must bind this exact gate, selected root and frozen prompt');
+  check(nonempty(receipt.authorizationQuestion) && nonempty(receipt.userReply),
+    'MODEL_AUTHORIZATION', 'Retain the actual authorization question and user reply');
+  return receipt;
+}
+
 // This validates an observer contract. A valid document is never by itself a
 // live feature pass; the owning runner must retain its native action artifacts.
 export function evaluateGraphTrace(trace, oracle) {
@@ -141,7 +163,11 @@ export function evaluateGraphTrace(trace, oracle) {
   check(!trace.httpAttempts.some(row => row.kind === 'write'), 'UNAUTHORIZED_WRITE', 'This read-only gate cannot mutate remote data');
   if (trace.cacheMode === 'cold') check(trace.httpAttempts.some(row => row.kind === 'body'), 'FALSE_COLD', 'An empty consumer must observe a real body request');
   check(['magpie/group/flash-free', 'magpie/group/worker'].includes(trace.model?.selector), 'MODEL_SELECTOR', 'Only the authorized model sequence is valid');
-  if (trace.model.selector.endsWith('/worker')) check(trace.model.previousFailures?.some(row => row.selector === 'magpie/group/flash-free' && row.status === 'failed' && nonempty(row.evidenceSha256)), 'MODEL_FALLBACK', 'Worker requires retained failure evidence for flash-free');
+  if (trace.model.workerAuthorization !== undefined) {
+    check(trace.model.selector === 'magpie/group/worker', 'MODEL_AUTHORIZATION', 'Worker authorization cannot authorize another model');
+    verifyWorkerAuthorization(trace.model.workerAuthorization, { gate: trace.gate, rootRef: trace.selectedRoots[0], promptSha256: trace.prompt.sha256 });
+  }
+  if (trace.model.selector.endsWith('/worker')) check(trace.model.previousFailures?.some(row => row.selector === 'magpie/group/flash-free' && row.status === 'failed' && nonempty(row.evidenceSha256)) || trace.model.workerAuthorization !== undefined, 'MODEL_FALLBACK', 'Worker requires retained flash-free failure evidence or explicit user authorization');
   check(trace.model.responseStatus >= 200 && trace.model.responseStatus < 300, 'MODEL_HTTP', 'The provider must return a successful HTTP response');
   const final = trace.model.final;
   check(final?.success === true && ['stop', 'length'].includes(final.stopReason) && nonempty(final.text), 'MODEL_FINAL', 'HTTP success alone does not prove a successful model final');

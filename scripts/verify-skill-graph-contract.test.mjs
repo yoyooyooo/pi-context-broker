@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { CONTRACT_VERSION, PROMPT_VERSION, TASK, TASK_V1, EVIDENCE_COLUMNS, NEGATIVE_CASES, contractFixture, evaluateGraphTrace, frozenPrompt, selfTest } from './verify-skill-graph-contract.mjs';
 
@@ -73,6 +74,43 @@ test('worker requires retained flash-free failure evidence', () => {
   fixture.trace.model.selector = 'magpie/group/worker';
   fixture.trace.model.previousFailures = [{ selector: 'magpie/group/flash-free', status: 'failed', evidenceSha256: 'retained-fixture-hash' }];
   assert.equal(evaluateGraphTrace(fixture.trace, fixture.oracle).status, 'contract-valid');
+});
+
+function explicitWorkerAuthorization(trace, mutate = () => {}) {
+  const receipt = { version: 1, kind: 'explicit-user-worker-authorization', model: 'magpie/group/worker',
+    scope: { gate: trace.gate, rootRef: trace.selectedRoots[0], promptSha256: trace.prompt.sha256 },
+    authorizationQuestion: 'Controlled fixture: authorize worker after task failure?', userReply: 'Controlled fixture: continue.' };
+  mutate(receipt);
+  const raw = JSON.stringify(receipt, null, 2) + '\n';
+  return { path: '/private/tmp/controlled-worker-authorization.json', sha256: createHash('sha256').update(raw).digest('hex'), raw };
+}
+
+test('explicit worker authorization is independently checked without relaxing graph consumption', () => {
+  for (const gate of ['A', 'B']) {
+    const fixture = contractFixture(gate);
+    fixture.trace.model.selector = 'magpie/group/worker';
+    fixture.trace.model.workerAuthorization = explicitWorkerAuthorization(fixture.trace);
+    assert.equal(evaluateGraphTrace(fixture.trace, fixture.oracle).status, 'contract-valid');
+    fixture.trace.reads.pop();
+    assert.throws(() => evaluateGraphTrace(fixture.trace, fixture.oracle), { code: 'READ_MISSING' });
+  }
+});
+
+test('explicit worker authorization in a trace rejects tampering and authorization for another scope or model', () => {
+  for (const mutate of [receipt => { receipt.model = 'another/model'; }, receipt => { receipt.scope.gate = 'B'; },
+    receipt => { receipt.scope.rootRef += '-different'; }, receipt => { receipt.scope.promptSha256 = 'a'.repeat(64); },
+    receipt => { receipt.extra = true; }, receipt => { receipt.scope.extra = true; }]) {
+    const fixture = contractFixture(); fixture.trace.model.selector = 'magpie/group/worker';
+    fixture.trace.model.workerAuthorization = explicitWorkerAuthorization(fixture.trace, mutate);
+    assert.throws(() => evaluateGraphTrace(fixture.trace, fixture.oracle), { code: 'MODEL_AUTHORIZATION' });
+  }
+  const changed = contractFixture(); changed.trace.model.selector = 'magpie/group/worker';
+  changed.trace.model.workerAuthorization = explicitWorkerAuthorization(changed.trace);
+  changed.trace.model.workerAuthorization.raw += ' ';
+  assert.throws(() => evaluateGraphTrace(changed.trace, changed.oracle), { code: 'MODEL_AUTHORIZATION' });
+  const third = contractFixture(); third.trace.model.selector = 'another/model';
+  third.trace.model.workerAuthorization = explicitWorkerAuthorization(third.trace);
+  assert.throws(() => evaluateGraphTrace(third.trace, third.oracle), { code: 'MODEL_SELECTOR' });
 });
 
 test('warm verified reuse permits an observed empty HTTP ledger', () => {

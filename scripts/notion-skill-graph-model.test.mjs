@@ -5,16 +5,82 @@ import * as crypto from 'node:crypto';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, writeFile, symlink } from 'node:fs/promises';
-import { graphTrace, observeGraphGate, summarizeSamples, GRAPH_GATE_TOOLS, createGraphFallbackTraps, retainedSourceProofInput } from './notion-skill-graph-model.mjs';
+import { graphTrace, observeGraphGate, summarizeSamples, GRAPH_GATE_TOOLS, createGraphFallbackTraps, retainedSourceProofInput, readGateConfig } from './notion-skill-graph-model.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { createOwnedGraphProject, exerciseGeneratedProcedure, retainGeneratedPlan } from './notion-skill-graph-project.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
-import { contractFixture, evaluateGraphTrace, selfTest } from './verify-skill-graph-contract.mjs';
+import { contractFixture, evaluateGraphTrace, frozenPrompt, selfTest } from './verify-skill-graph-contract.mjs';
 import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const save = (file, value) => writeFile(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
 const uuid = '11111111-2222-4333-8444-555555555555';
+
+async function workerConfigFixture() {
+  const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-worker-authorization-'));
+  const config = { version: 1, gate: 'B', selection: '$poteto-mode@notion', rootRef: 'skill://controlled-ordinary/SKILL.md', database: uuid, viewId: uuid,
+    extension: path.join(base, 'installed/index.ts'), packagePath: path.join(base, 'package.tgz'), cliCommand: [process.execPath, path.join(base, 'installed/cli.mjs')],
+    oraclePath: path.join(base, 'oracle.json'), evidenceRoot: path.join(base, 'evidence'), model: 'magpie/group/worker', previousFailures: [], mode: 'matrix' };
+  const receipt = { version: 1, kind: 'explicit-user-worker-authorization', model: 'magpie/group/worker',
+    scope: { gate: config.gate, rootRef: config.rootRef, promptSha256: frozenPrompt(config.gate, config.selection).sha256 },
+    authorizationQuestion: 'Controlled fixture: authorize worker after a flash-free task failure without changing the contract?', userReply: 'Controlled fixture: continue.' };
+  const configPath = path.join(base, 'config.json'), authorizationPath = path.join(base, 'authorization.json');
+  const write = async () => {
+    await save(authorizationPath, receipt);
+    config.workerAuthorization = { path: authorizationPath, sha256: hash(await readFile(authorizationPath)) };
+    await save(configPath, config);
+  };
+  await write();
+  return { base, config, receipt, configPath, authorizationPath, write };
+}
+
+test('explicit worker authorization retains exact scope and evidence without inventing an availability failure', async () => {
+  const value = await workerConfigFixture(), parsed = await readGateConfig(value.configPath);
+  assert.equal(parsed.model, 'magpie/group/worker');
+  assert.deepEqual(parsed.previousFailures, []);
+  assert.equal(parsed.workerAuthorization.raw, await readFile(value.authorizationPath, 'utf8'));
+  assert.equal(parsed.workerAuthorization.sha256, value.config.workerAuthorization.sha256);
+  assert.deepEqual(parsed.prompt, frozenPrompt(value.config.gate, value.config.selection));
+  assert.ok(!parsed.prompt.text.includes(value.receipt.authorizationQuestion));
+  const fixture = attributionFixture(['file-root']);
+  fixture.config.workerAuthorization = parsed.workerAuthorization;
+  const trace = graphTrace(fixture);
+  assert.deepEqual(trace.model.workerAuthorization, parsed.workerAuthorization);
+  assert.ok(!JSON.stringify(trace.providerRequests).includes(value.receipt.authorizationQuestion));
+});
+
+test('worker authorization does not turn a task failure into an availability failure', async () => {
+  const value = await workerConfigFixture(), prior = path.join(value.base, 'prior.json');
+  await save(prior, { model: 'magpie/group/flash-free', status: 'failed', availabilityFailure: false });
+  delete value.config.workerAuthorization; value.config.previousFailures = [prior]; await save(value.configPath, value.config);
+  await assert.rejects(readGateConfig(value.configPath), /task\/assertion failure does not authorize model fallback/);
+  await value.write();
+  await assert.rejects(readGateConfig(value.configPath), /task\/assertion failure does not authorize model fallback/);
+  delete value.config.workerAuthorization; value.config.previousFailures = []; await save(value.configPath, value.config);
+  await assert.rejects(readGateConfig(value.configPath), /Worker requires/);
+  await save(prior, { model: 'magpie/group/flash-free', status: 'failed', availabilityFailure: true });
+  value.config.previousFailures = [prior]; await save(value.configPath, value.config);
+  assert.equal((await readGateConfig(value.configPath)).previousFailures.length, 1);
+});
+
+test('explicit worker authorization rejects changed bytes, wrong scope, another model and unknown fields', async () => {
+  const value = await workerConfigFixture();
+  const original = structuredClone(value.receipt);
+  for (const mutate of [receipt => { receipt.model = 'another/model'; }, receipt => { receipt.scope.gate = 'A'; },
+    receipt => { receipt.scope.rootRef = 'skill://another-root/SKILL.md'; }, receipt => { receipt.scope.promptSha256 = 'a'.repeat(64); },
+    receipt => { receipt.allowAnything = true; }, receipt => { receipt.scope.allRoots = true; }, receipt => { receipt.userReply = ''; }]) {
+    for (const key of Object.keys(value.receipt)) delete value.receipt[key]; Object.assign(value.receipt, structuredClone(original));
+    mutate(value.receipt); await value.write();
+    await assert.rejects(readGateConfig(value.configPath), { code: 'MODEL_AUTHORIZATION' });
+  }
+  for (const key of Object.keys(value.receipt)) delete value.receipt[key]; Object.assign(value.receipt, original); await value.write();
+  await writeFile(value.authorizationPath, (await readFile(value.authorizationPath, 'utf8')) + ' ');
+  await assert.rejects(readGateConfig(value.configPath), { code: 'MODEL_AUTHORIZATION' });
+  await value.write(); value.config.workerAuthorization.extra = true; await save(value.configPath, value.config);
+  await assert.rejects(readGateConfig(value.configPath));
+  await value.write(); value.config.model = 'another/model'; await save(value.configPath, value.config);
+  await assert.rejects(readGateConfig(value.configPath), /No third model/);
+});
 
 test('the safe transport ledger retains bounded target identity and fails closed on raw or ambiguous fields', () => {
   const attempt = { event: 'attempt', attempt: 1, kind: 'notion_body', method: 'POST', body_kind: 'retained_body', started_ms: 0, duration_ms: 1, outcome: 'success', request_bytes: 10, response_bytes: 20, http_status: 200, retry_after_seconds: null, request_id: 'request-1', rate_limit_reason: null, target: { data_source_id: uuid, entity_ids: ['file-a', 'file-b'] } };

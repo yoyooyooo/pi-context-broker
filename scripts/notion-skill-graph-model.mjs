@@ -10,7 +10,7 @@ import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { entryIdentity, verifyEntryIdentity } from './verification-entry.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
-import { evaluateGraphTrace, frozenPrompt } from './verify-skill-graph-contract.mjs';
+import { evaluateGraphTrace, frozenPrompt, verifyWorkerAuthorization } from './verify-skill-graph-contract.mjs';
 import { createOwnedGraphProject, inspectOwnedGraphProject, retainGeneratedPlan, exerciseGeneratedProcedure } from './notion-skill-graph-project.mjs';
 import { verifyRetainedSourceProof } from './notion-skill-retained-proof.mjs';
 import { createPiHelpBoundary } from './notion-pi-help.mjs';
@@ -25,7 +25,7 @@ const within = (base, target) => { const value = relative(base, target); return 
 const disjoint = (a, b) => !within(a, b) && !within(b, a);
 const modelSelectors = ['magpie/group/flash-free', 'magpie/group/worker'];
 const permissionFailure = text => /insufficient (?:permission|quota)|not authorized|api key.*(?:invalid|denied)|please upgrade|无权限使用|额度不足|账户.*(?:无权|欠费)/i.test(text);
-export const GRAPH_GATE_HARNESS_VERSION = 7;
+export const GRAPH_GATE_HARNESS_VERSION = 8;
 export const GRAPH_GATE_TOOLS = Object.freeze(['read', 'skill_search', 'skill_prepare']);
 export async function graphHarnessIdentity() {
   const files = await Promise.all(['notion-skill-graph-model.mjs', 'verify-skill-graph-contract.mjs', 'notion-skill-graph-project.mjs', 'notion-skill-graph-observer-smoke.mjs', 'notion-skill-retained-proof.mjs', 'notion-skill-source-proof.ts', 'notion-pi-help.mjs', 'notion-skill-graph.mjs', 'verify-pi-notion-model-cache.mjs'].map(async name => {
@@ -694,7 +694,7 @@ export function observeGraphGate(api, settings) {
 export async function readGateConfig(path) {
   assert.ok(isAbsolute(path), '--config must be absolute');
   const input = await json(path);
-  const allowed = ['version', 'gate', 'selection', 'rootRef', 'database', 'viewId', 'profileId', 'extension', 'packagePath', 'cliCommand', 'oraclePath', 'evidenceRoot', 'model', 'previousFailures', 'preparation', 'mode', 'reuseReceipt', 'selectionReceipt', 'retainedSourceProofRepo'];
+  const allowed = ['version', 'gate', 'selection', 'rootRef', 'database', 'viewId', 'profileId', 'extension', 'packagePath', 'cliCommand', 'oraclePath', 'evidenceRoot', 'model', 'previousFailures', 'workerAuthorization', 'preparation', 'mode', 'reuseReceipt', 'selectionReceipt', 'retainedSourceProofRepo'];
   assert.ok(input && Object.keys(input).every(key => allowed.includes(key)), 'Unknown graph-model configuration field');
   assert.equal(input.version, 1);
   const prompt = frozenPrompt(input.gate, input.selection);
@@ -717,13 +717,22 @@ export async function readGateConfig(path) {
     assert.equal(previous.availabilityFailure, true, 'A task/assertion failure does not authorize model fallback');
     previousFailures.push({ selector: previous.model, status: 'failed', evidence: await realpath(file), evidenceSha256: hash(await readFile(file)) });
   }
-  assert.ok(model === modelSelectors[0] || previousFailures.length, 'Worker requires a retained actual flash-free availability failure');
+  let workerAuthorization;
+  if (input.workerAuthorization !== undefined) {
+    assert.equal(model, modelSelectors[1], 'Explicit worker authorization cannot authorize another model');
+    assert.deepEqual(Object.keys(input.workerAuthorization).sort(), ['path', 'sha256']);
+    assert.ok(isAbsolute(input.workerAuthorization.path ?? ''), 'Worker authorization path must be absolute');
+    const raw = await readFile(input.workerAuthorization.path, 'utf8');
+    workerAuthorization = { path: await realpath(input.workerAuthorization.path), sha256: input.workerAuthorization.sha256, raw };
+    verifyWorkerAuthorization(workerAuthorization, { gate: input.gate, rootRef: input.rootRef, promptSha256: prompt.sha256 });
+  }
+  assert.ok(model === modelSelectors[0] || previousFailures.length || workerAuthorization, 'Worker requires a retained actual flash-free availability failure or explicit user authorization');
   const mode = input.mode ?? 'cold';
   assert.ok(['cold', 'warm-new-process', 'matrix'].includes(mode), 'Use cold, warm-new-process, or the fixed matrix (which includes two live continued-session samples)');
   assert.ok(mode === 'warm-new-process' ? isAbsolute(input.reuseReceipt ?? '') : input.reuseReceipt === undefined, 'Only warm-new-process may name a previous complete cache receipt');
   if (input.selectionReceipt !== undefined) assert.ok(isAbsolute(input.selectionReceipt));
   if (input.retainedSourceProofRepo !== undefined) assert.ok(isAbsolute(input.retainedSourceProofRepo));
-  return { ...input, model, mode, previousFailures, prompt };
+  return { ...input, model, mode, previousFailures, ...(workerAuthorization ? { workerAuthorization } : {}), prompt };
 }
 
 const brokerConfiguration = (config, command, cacheDir) => ({ skillRoots: [], extraSkillRoots: [], sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command, database: config.database, ...(config.viewId ? { default_view_id: config.viewId } : { profile_id: config.profileId }), prefetch: false, cacheDir, requestTimeoutMs: 60000, ...(config.preparation ? { preparation: config.preparation } : {}) }] });
@@ -734,7 +743,7 @@ function gateEnvironment(cliPaths, brokerConfig, evidence, owned) {
   return env;
 }
 
-const runFingerprint = (config, doctor, oracleSha256, projectSha256) => hash(JSON.stringify({ version: 2, harness: doctor.harness.sha256, gate: config.gate, rootRef: config.rootRef, selection: config.selection, database: config.database, viewId: config.viewId, profileId: config.profileId, prompt: config.prompt.sha256, model: config.model, cli: doctor.cli.sha256, extension: doctor.extension.sha256, package: doctor.package.sha256, oracleSha256, projectSha256, preparation: config.preparation ?? null }));
+const runFingerprint = (config, doctor, oracleSha256, projectSha256) => hash(JSON.stringify({ version: 2, harness: doctor.harness.sha256, gate: config.gate, rootRef: config.rootRef, selection: config.selection, database: config.database, viewId: config.viewId, profileId: config.profileId, prompt: config.prompt.sha256, model: config.model, ...(config.workerAuthorization ? { workerAuthorizationSha256: config.workerAuthorization.sha256 } : {}), cli: doctor.cli.sha256, extension: doctor.extension.sha256, package: doctor.package.sha256, oracleSha256, projectSha256, preparation: config.preparation ?? null }));
 
 export function summarizeSamples(samples) {
   const summary = {};
@@ -1024,7 +1033,7 @@ export function graphTrace({ config, oracle, observation, responses, sourceLedge
   for (const event of sourceLedger.filter(event => event.phase === 'spawn')) processes.push({ owned: true, pid: event.childPid, spawnObserved: true, closeObserved: closes.has(event.requestId), closed: closes.has(event.requestId) });
   const final = observation.filter(event => event.phase === 'assistant-final').at(-1);
   const statuses = observation.filter(event => ['provider-response', 'provider-transport-response'].includes(event.phase)).map(event => event.status).filter(status => typeof status === 'number');
-  const trace = { version: 1, evidenceKind: 'real_model', host: 'pi', nativeEntry: true, gate: config.gate, prompt: config.prompt, selectedRoots: [config.rootRef], requiredRefs: rootPreparation.required.map(edge => edge.ref), toolChoice: 'auto', forcedToolArguments: false, cacheMode: config.mode === 'cold' || !config.mode ? 'cold' : 'warm', isolation, candidates, memberBodyReadsBeforeSelection: unattributedBeforeSelection || missingMetrics ? null : memberBodyReadsBeforeSelection, directorySequence, reads, providerRequests, httpLedgerObserved: !missingMetrics, httpAttempts: attempts, model: { selector: config.model, previousFailures: config.previousFailures, responseStatus: statuses.find(status => status >= 200 && status < 300) ?? statuses.at(-1) ?? null, final }, processes, unknownWrites: [], replayedUnknownWrites: false, preparation: { roots: rootPreparation.roots, required: rootPreparation.required, graph_lock: rootPreparation.graph_lock, usage: rootPreparation.usage }, attribution: { unattributedBeforeSelection, missingMetrics, rule: 'Every actual body target must map without ambiguity to a prepared root/Required or an earlier model-selected owner; missing targets never imply zero' } };
+  const trace = { version: 1, evidenceKind: 'real_model', host: 'pi', nativeEntry: true, gate: config.gate, prompt: config.prompt, selectedRoots: [config.rootRef], requiredRefs: rootPreparation.required.map(edge => edge.ref), toolChoice: 'auto', forcedToolArguments: false, cacheMode: config.mode === 'cold' || !config.mode ? 'cold' : 'warm', isolation, candidates, memberBodyReadsBeforeSelection: unattributedBeforeSelection || missingMetrics ? null : memberBodyReadsBeforeSelection, directorySequence, reads, providerRequests, httpLedgerObserved: !missingMetrics, httpAttempts: attempts, model: { selector: config.model, previousFailures: config.previousFailures, ...(config.workerAuthorization ? { workerAuthorization: config.workerAuthorization } : {}), responseStatus: statuses.find(status => status >= 200 && status < 300) ?? statuses.at(-1) ?? null, final }, processes, unknownWrites: [], replayedUnknownWrites: false, preparation: { roots: rootPreparation.roots, required: rootPreparation.required, graph_lock: rootPreparation.graph_lock, usage: rootPreparation.usage }, attribution: { unattributedBeforeSelection, missingMetrics, rule: 'Every actual body target must map without ambiguity to a prepared root/Required or an earlier model-selected owner; missing targets never imply zero' } };
   const targetRead = reads.find(read => read.logicalId === oracle.target.logicalId && read.scope === oracle.target.scope);
   if (targetRead) assert.equal(targetRead.ref, oracle.target.ref, 'The oracle must use the observed canonical snapshot/file_id ref');
   return trace;
@@ -1285,6 +1294,7 @@ async function main(args) {
   if (!action || action === '--help' || action === 'help') return {
     usage: ['node scripts/notion-skill-graph-model.mjs doctor|selection --config ABSOLUTE_JSON', 'node scripts/notion-skill-graph-model.mjs run --config ABSOLUTE_JSON', 'node scripts/notion-skill-graph-model.mjs exercise --evidence ABSOLUTE_RUN --command-json \'["npm","test"]\'', 'node scripts/notion-skill-graph-model.mjs evidence|cleanup --evidence ABSOLUTE_RUN'],
     config: { version: 1, gate: 'A or B', selection: 'Use exact token returned by the independent selection preflight', selectionReceipt: 'absolute successful selection result.json; required for run', rootRef: 'exact unpinned shared record.ref', database: 'UUID', viewId: 'existing root-only View UUID; alternatively profileId', extension: 'absolute installed Pi entry', packagePath: 'absolute frozen tgz', cliCommand: ['absolute Node', 'absolute installed ntn-skills entry'], oraclePath: 'absolute private oracle JSON, kept outside consumer roots; not opened by selection preflight', evidenceRoot: 'absolute retained directory', model: modelSelectors[0], previousFailures: [], mode: 'cold (default), warm-new-process or matrix', reuseReceipt: 'absolute complete cache-reuse.json for warm-new-process only' },
+    workerAuthorization: 'Optional config.workerAuthorization is {path, sha256} for a retained explicit user approval of worker for the exact gate/root/frozen prompt. It remains observer-only evidence; absent authorization preserves the flash-free availability-failure requirement. No receipt can substitute for actual user approval.',
     sampling: 'matrix runs 1 cold process, 2 warm new processes on the same complete CLI/Broker caches, then 2 more frozen submissions in the second warm live session; failures remain samples; raw values and medians, no p95',
     artifacts: 'Retain the actual final verbatim. Extract only complete fenced files with explicit relative filenames; a valid SKILL.md and all local links must be present. Prose alone remains plan-only. exercise accepts an exact test command from a retained generated file and drives the unchanged owned application with PID, exit, stdout and hash evidence. Graph pass alone is not generated-Skill acceptance.',
     retainedSourceProof: 'Optional config.retainedSourceProofRepo names the absolute frozen CLI source tree. After Pi closes, only unresolved retained chunks with actual observed bundle IDs trigger the independent Effect collector. Its immutable metadata proof, process ledger and HTTP costs are retained separately; it cannot add model reads, resources or loaded state. Missing proof remains observation-incomplete.',
