@@ -5,6 +5,8 @@ description: "验证 Context Broker 的 Pi/OMP 注入、会话生命周期、随
 
 # Verify Context Broker
 
+Notion 请求引擎和多 Skill 图变更同时读取 [直连请求地图](../verify-notion-skills-integration/features/request-engine.md) 与 [依赖图地图](../verify-notion-skills-integration/features/skill-dependency-graph.md)。NG-VC-01 复用一份 `scripts/verify-skill-graph-contract.mjs`，先记录原生 CLI fail-before 和反例自检，再逐层取得真实服务、模型、UI、安装证据。图 Gate A/B 不复用 AH-560 单 Skill 成功结论；尚有官方 ntn 依赖的旧线上 helper 必须完成迁移后才可重跑。
+
 面向首次接手本仓库的 agent。所有命令从仓库根目录执行；先读 [功能地图](features/README.md)，按改动选择功能，使用已有 harness 驱动真实宿主。Skill 和地图在 `.agents` 下维护，不修改全局 Skill 或用户的运行配置。
 
 缺失引用改动按 [injection 的 Missing-reference regression route](features/injection.md#missing-reference-regression-route) 验收：普通未知文本原样透传；明确接受的引用失效时向用户与模型说明未加载，不能写 loaded 回执；权限、网络与完整性失败仍明确阻断。

@@ -5,12 +5,16 @@ description: "验证 Notion Skills source 与随包 Skill在 Pi/OMP、Tern 中�
 
 # Verify Notion Skills Integration
 
+AH-561 的直连请求和跨 Skill 图先走 [request-engine](features/request-engine.md) 与 [skill-dependency-graph](features/skill-dependency-graph.md)，复用 `scripts/verify-skill-graph-contract.mjs` 的离线反例与 fail-before。该入口保存两条根选择提示、私有 oracle/trace 合同、三层缓存边界与五类证据；`contract-valid` 不代表真实模型通过。旧 live/model/helper 中涉及官方 ntn 的路径在 NG-RE-05 清除依赖前禁止执行，既有历史回执保持原状。
+
 从本仓库根目录执行命令。先按变更选择下列地图；使用真实 Pi/OMP extension 与 provider 边界捕获，不把直接调用 adapter 或 CLI 当成宿主消费通过。此 Skill 的维护目录在 `.agents`，不修改用户全局配置。
 
 缺失引用按 [selection 的 Missing-reference regression route](features/dollar-completion-selection.md#missing-reference-regression-route) 验收。未知名字/source/alias 与限定引用及选中目标明确 typed not-found 原样透传；真实已选记录故障仍失败。双轮混合三种 Kind、图片、单次派发及取消/切会话需独立证据，不修改历史冻结结论。
 
 | 功能地图 | Feature IDs |
 | --- | --- |
+| [直连请求引擎](features/request-engine.md) | NG-VC-01、NG-RE-02～05/21 |
+| [Skill 依赖图](features/skill-dependency-graph.md) | NG-SG-06～20 |
 | [配置与发现](features/source-configuration-discovery.md) | NS-CFG-01～07 |
 | [宿主 Skill 发现与读取](features/host-skill-discovery-read.md) | NS-HOST-01～04 |
 | [默认上下文与后台预取](features/default-context-prefetch.md) | NS-DEFAULT-01～08 |
