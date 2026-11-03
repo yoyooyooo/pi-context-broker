@@ -26,8 +26,10 @@ const fileRef = (id, path, snapshot, fileId) => `skill://${encodeURIComponent(id
 
 // These frozen manifests are fixture input, not a dependency resolver. The
 // installed CLI performs all graph traversal, pin checks, budgets and hashing.
-function frozenGraph(scope, { broken = false, renamed = false, invalidRequiredKind } = {}) {
+function frozenGraph(scope, { broken = false, renamed = false, invalidRequiredKind, rootBodySuffix = '', rootResource = false } = {}) {
   assert.ok(invalidRequiredKind === undefined || ['router', 'prompt'].includes(invalidRequiredKind));
+  assert.equal(typeof rootBodySuffix, 'string');
+  assert.equal(typeof rootResource, 'boolean');
   const libraryId = renamed ? 'cobalt-library-73' : 'controlled-graph';
   const pageId = number => uuid(number + (renamed ? 50000 : 0));
   const database = pageId(100), dataSource = pageId(101);
@@ -62,16 +64,17 @@ function frozenGraph(scope, { broken = false, renamed = false, invalidRequiredKi
   // resource path; neither the provider nor the runner guesses that path.
   const member = make('graph-member', 4, { body: `# ${memberIdentity.name}\nGRAPH_MEMBER_OPTIONAL_BODY\nRead [the ledger evidence](${fileRef(memberId, renamed ? 'references/former-copper.md' : 'references/previous-ledger.md', undefined, memberIdentity.fileId(1))}) to explain the entry.\n`, resources: [resource] });
   const memberRef = fileRef(member.record.id, member.entrypoint, member.snapshot_id, memberIdentity.fileId(0));
-  const rootBody = `# ${identity('graph-root', 5).name}\nGRAPH_ROOT_WORKFLOW_COMPLETE\nApply the prerequisite instructions. The Members directory contains an optional reference for a separate explanation.\n\n## Members\n\n- [${memberIdentity.name}](${memberRef}) — Optional ledger explanation\n`;
+  const rootResourceFile = rootResource ? { path: 'references/root-ledger.md', content: 'GRAPH_ROOT_RESOURCE_COMPLETE\nEntry: 41\nRoot ledger belongs to this workflow.\n' } : undefined;
+  const rootBody = `# ${identity('graph-root', 5).name}\nGRAPH_ROOT_WORKFLOW_COMPLETE\nApply the prerequisite instructions. The Members directory contains an optional reference for a separate explanation.\n\n## Members\n\n- [${memberIdentity.name}](${memberRef}) — Optional ledger explanation\n` + rootBodySuffix + (rootResourceFile ? `\nRead [the root ledger](${rootResourceFile.path}).\n` : '');
   const invalidRequired = invalidRequiredKind ? make('graph-invalid', 8, { kind: invalidRequiredKind, required: [base], members: [member] }) : undefined;
   const required = broken ? [`shared_skill:${libraryId}:missing`] : invalidRequired ? [left, invalidRequired] : [left, right];
-  const root = make('graph-root', 5, { required, members: [member], body: rootBody });
+  const root = make('graph-root', 5, { required, members: [member], body: rootBody, resources: rootResourceFile ? [rootResourceFile] : [] });
   const oldRoot = root;
-  const changedRoot = make('graph-root', 5, { required, members: [member], body: rootBody.replace('GRAPH_ROOT_WORKFLOW_COMPLETE', 'GRAPH_ROOT_WORKFLOW_REVISION_TWO'), revision: 2 });
+  const changedRoot = make('graph-root', 5, { required, members: [member], body: rootBody.replace('GRAPH_ROOT_WORKFLOW_COMPLETE', 'GRAPH_ROOT_WORKFLOW_REVISION_TWO'), resources: rootResourceFile ? [rootResourceFile] : [], revision: 2 });
   nodes.set('graph-root', root);
   const secondary = make('graph-secondary', 6, { required: [base] });
   const bom = make('graph-bom', 7, { body: '\ufeff# graph-bom\r\nPreserve UTF-8 BOM, CRLF and 雪 exactly.\r\n' });
-  return { nodes: [...nodes.values()], oldRoot, changedRoot, root, secondary, base, left, right, member, bom, resource, invalidRequired, database, dataSource, view, identityVariant: renamed ? 'cobalt-independent-names-and-identities' : 'baseline', useIds: [root, left, base, right].map(node => node.record.id) };
+  return { nodes: [...nodes.values()], oldRoot, changedRoot, root, secondary, base, left, right, member, bom, resource, ...(rootResourceFile ? { rootResource: rootResourceFile } : {}), invalidRequired, database, dataSource, view, identityVariant: renamed ? 'cobalt-independent-names-and-identities' : 'baseline', useIds: [root, left, base, right].map(node => node.record.id) };
 }
 
 async function runChild(command, args, { env, cwd, callsPath, receipts, category, passthrough = false } = {}) {
@@ -122,7 +125,7 @@ async function seedSqlite(statePath) {
   console.log(JSON.stringify({ ok: true, storage: 'Node SQLite StoreLive', snapshots: all.length, current_records: current.length, revision: state.revision, scope: state.scope }));
 }
 
-export async function createGraphFixture({ directory, evidence, cliCommand, cliSource, broken = false, revision = 1, renamed = false, invalidRequiredKind }) {
+export async function createGraphFixture({ directory, evidence, cliCommand, cliSource, broken = false, revision = 1, renamed = false, invalidRequiredKind, rootBodySuffix = '', rootResource = false }) {
   assert.ok(isAbsolute(cliSource), 'The controlled seed requires an absolute CLI source checkout');
   assert.ok(Array.isArray(cliCommand) && cliCommand.length > 1 && cliCommand.every(value => typeof value === 'string'), 'The consumer requires an explicit installed Node CLI argument array');
   await mkdir(directory, { recursive: true });
@@ -144,7 +147,7 @@ export async function createGraphFixture({ directory, evidence, cliCommand, cliS
   server.unref();
   const origin = `http://127.0.0.1:${server.address().port}`;
   const scope = sha(JSON.stringify(['controlled-graph', '', origin, sha(token)]));
-  const graph = frozenGraph(scope, { broken, renamed, invalidRequiredKind });
+  const graph = frozenGraph(scope, { broken, renamed, invalidRequiredKind, rootBodySuffix, rootResource });
   const frozenPath = join(evidence, 'frozen-input.json');
   await save(frozenPath, graph);
   const statePath = join(directory, 'graph-source-state.json');

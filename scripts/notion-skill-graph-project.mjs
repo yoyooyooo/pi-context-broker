@@ -42,23 +42,46 @@ export async function inspectOwnedGraphProject(directory) {
   return { version: 1, root, files, sha256: hash(JSON.stringify(files)), source: 'fixed owned local application; no Skill or private oracle material' };
 }
 
-export function extractGeneratedFiles(text) {
+function scanGeneratedFiles(text, { projectRoot } = {}) {
   const lines = [...text.matchAll(/[^\r\n]*(?:\r\n|\n|$)/g)].filter(match => match[0].length).map(match => ({ text: match[0].replace(/\r?\n$/, ''), start: match.index, end: match.index + match[0].length }));
   const cleanPath = value => {
-    let path = value.trim().replace(/^#{1,6}\s+/, '').replace(/^\d+[.)]\s+/, '').replace(/^(?:file|path|文件|路径)\s*[:：]\s*/i, '').trim();
+    let path = value.trim().replace(/^#{1,6}\s+/, '').replace(/^\d+(?:\.\d+)*[.)]?\s+/, '');
+    if (/^\*\*.*\*\*$/.test(path)) path = path.slice(2, -2);
+    path = path.replace(/^(?:\*\*)?(?:file(?:\s+path)?|path|文件路径|文件|路径)\s*[:：](?:\*\*)?\s*/i, '').trim();
     if (/^\*\*.*\*\*$/.test(path)) path = path.slice(2, -2);
     if (/^`[^`]+`$/.test(path)) path = path.slice(1, -1);
+    if (path.includes('//') || path.split('/').some(part => ['.', '..'].includes(part))) return undefined;
+    if (path.startsWith('/')) {
+      if (typeof projectRoot !== 'string' || !projectRoot.startsWith('/')) return undefined;
+      path = relative(projectRoot, path);
+    }
     return /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+$/.test(path) && !path.split('/').some(part => ['.', '..'].includes(part)) ? path : undefined;
   };
   const files = new Map();
+  const issues = [];
+  const fenceLine = line => /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
   for (let index = 0; index < lines.length; index++) {
-    const opening = /^\s*(`{3,}|~{3,})(.*)$/.exec(lines[index].text); if (!opening) continue;
+    const opening = fenceLine(lines[index].text); if (!opening) continue;
     const fence = opening[1], info = opening[2].trim();
     let file = cleanPath(info) ?? cleanPath(/(?:file|path|title)\s*=\s*["']?([^\s"']+)/i.exec(info)?.[1] ?? '');
     if (!file) for (let previous = index - 1; previous >= Math.max(0, index - 4); previous--) { if (!lines[previous].text.trim()) continue; file = cleanPath(lines[previous].text); break; }
-    const close = new RegExp('^\\s*' + fence[0] + '{' + fence.length + ',}\\s*$');
-    let end = index + 1; while (end < lines.length && !close.test(lines[end].text)) end++;
-    if (end === lines.length) continue;
+    let end = index + 1;
+    for (; end < lines.length; end++) {
+      const boundary = fenceLine(lines[end].text);
+      if (!boundary || boundary[1][0] !== fence[0] || boundary[1].length < fence.length) continue;
+      if (!boundary[2].trim()) break;
+      if (file) {
+        issues.push({ code: 'AMBIGUOUS_FILE_FENCE', path: file, openingLine: index + 1, line: end + 1 });
+        // A same-length nested opening makes the later closing boundary
+        // ambiguous. Preserve the raw plan instead of extracting a prefix or
+        // guessing where another top-level file begins.
+        return { files: [...files.values()], issues };
+      }
+    }
+    if (end === lines.length) {
+      if (file) issues.push({ code: 'UNCLOSED_FILE_FENCE', path: file, openingLine: index + 1 });
+      break;
+    }
     if (file) {
       const content = text.slice(lines[index].end, lines[end].start);
       assert.ok(content.trim(), 'A named generated file cannot be empty');
@@ -67,14 +90,18 @@ export function extractGeneratedFiles(text) {
     }
     index = end;
   }
-  return [...files.values()];
+  return { files: [...files.values()], issues };
+}
+
+export function extractGeneratedFiles(text, options) {
+  return scanGeneratedFiles(text, options).files;
 }
 
 export async function retainGeneratedPlan({ evidence, final, prompt, project }) {
   if (!final?.success || !final.text?.trim()) return { status: 'missing', executed: false };
   const path = join(evidence, 'generated-acceptance-plan.md');
   await writeFile(path, final.text, { mode: 0o600 });
-  const files = extractGeneratedFiles(final.text);
+  const { files, issues: fileExtractionIssues } = scanGeneratedFiles(final.text, { projectRoot: project.root });
   const skillFiles = files.filter(file => {
     if (!file.path.endsWith('/SKILL.md')) return false;
     const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(file.content);
@@ -87,8 +114,8 @@ export async function retainGeneratedPlan({ evidence, final, prompt, project }) 
     if (target.startsWith('../') || !available.has(target)) unresolvedReferences.push({ from: file.path, href });
   }
   for (const file of files) { const output = join(evidence, 'generated-files', file.path); await mkdir(dirname(output), { recursive: true }); await writeFile(output, file.content, { mode: 0o600 }); }
-  const artifactStatus = skillFiles.length > 0 && unresolvedReferences.length === 0 ? 'complete-skill-files-retained' : files.length ? 'incomplete-generated-files' : 'plan-only';
-  const receipt = { version: 1, status: 'plan-retained', artifactStatus, path, sha256: hash(final.text), bytes: Buffer.byteLength(final.text), promptSha256: prompt.sha256, projectSha256: project.sha256, files: files.map(({ content, ...file }) => ({ ...file, evidencePath: 'generated-files/' + file.path })), skillFiles: skillFiles.map(file => file.path), unresolvedReferences, executed: false, proof: 'Exact model final and explicitly named complete file blocks only; prose alone is not accepted as a generated Skill, and no execution is inferred' };
+  const artifactStatus = skillFiles.length > 0 && unresolvedReferences.length === 0 && fileExtractionIssues.length === 0 ? 'complete-skill-files-retained' : files.length ? 'incomplete-generated-files' : 'plan-only';
+  const receipt = { version: 1, status: 'plan-retained', artifactStatus, path, sha256: hash(final.text), bytes: Buffer.byteLength(final.text), promptSha256: prompt.sha256, projectSha256: project.sha256, files: files.map(({ content, ...file }) => ({ ...file, evidencePath: 'generated-files/' + file.path })), skillFiles: skillFiles.map(file => file.path), unresolvedReferences, fileExtractionIssues, executed: false, proof: 'Exact model final and explicitly named complete file blocks only; prose alone is not accepted as a generated Skill, and no execution is inferred' };
   await save(join(evidence, 'generated-plan.json'), receipt);
   return receipt;
 }

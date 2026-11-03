@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { appendFile, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolveHost, runCommand } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
@@ -12,6 +12,8 @@ import { entryIdentity, verifyEntryIdentity } from './verification-entry.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
 import { evaluateGraphTrace, frozenPrompt } from './verify-skill-graph-contract.mjs';
 import { createOwnedGraphProject, inspectOwnedGraphProject, retainGeneratedPlan, exerciseGeneratedProcedure } from './notion-skill-graph-project.mjs';
+import { verifyRetainedSourceProof } from './notion-skill-retained-proof.mjs';
+import { createPiHelpBoundary } from './notion-pi-help.mjs';
 
 const helper = fileURLToPath(import.meta.url);
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -23,6 +25,24 @@ const within = (base, target) => { const value = relative(base, target); return 
 const disjoint = (a, b) => !within(a, b) && !within(b, a);
 const modelSelectors = ['magpie/group/flash-free', 'magpie/group/worker'];
 const permissionFailure = text => /insufficient (?:permission|quota)|not authorized|api key.*(?:invalid|denied)|please upgrade|无权限使用|额度不足|账户.*(?:无权|欠费)/i.test(text);
+export const GRAPH_GATE_HARNESS_VERSION = 7;
+export const GRAPH_GATE_TOOLS = Object.freeze(['read', 'skill_search', 'skill_prepare']);
+export async function graphHarnessIdentity() {
+  const files = await Promise.all(['notion-skill-graph-model.mjs', 'verify-skill-graph-contract.mjs', 'notion-skill-graph-project.mjs', 'notion-skill-graph-observer-smoke.mjs', 'notion-skill-retained-proof.mjs', 'notion-skill-source-proof.ts', 'notion-pi-help.mjs', 'notion-skill-graph.mjs', 'verify-pi-notion-model-cache.mjs'].map(async name => {
+    const path = fileURLToPath(new URL('./' + name, import.meta.url)), bytes = await readFile(path);
+    return { path, bytes: bytes.length, sha256: hash(bytes) };
+  }));
+  return { version: GRAPH_GATE_HARNESS_VERSION, tools: GRAPH_GATE_TOOLS, files, sha256: hash(JSON.stringify(files)) };
+}
+
+export async function createGraphFallbackTraps(control, evidence) {
+  const directory = join(control, 'poison-bin'), ledger = join(evidence, 'legacy-fallback-calls.jsonl');
+  await mkdir(directory, { recursive: true }); await writeFile(ledger, '', { flag: 'wx', mode: 0o600 });
+  const code = '#!' + process.execPath + '\nimport { appendFileSync } from "node:fs";\nimport { basename } from "node:path";\n'
+    + 'appendFileSync(' + JSON.stringify(ledger) + ', JSON.stringify({at:new Date().toISOString(),executable:basename(process.argv[1]),operation:["login","auth","doctor","whoami"].includes(process.argv[2])?process.argv[2]:"other",argumentCount:process.argv.length-2})+"\\n",{mode:0o600});\nprocess.exit(97);\n';
+  for (const name of ['ntn', 'legacy-ntn']) await writeFile(join(directory, name), code, { flag: 'wx', mode: 0o755 });
+  return { directory, ledger, environment: { PATH: directory + ':' + (process.env.PATH ?? ''), NTN_SKILLS_NTN_BIN: join(directory, 'legacy-ntn') }, checks: ['PATH ntn including login/auth', 'legacy NTN_SKILLS_NTN_BIN override'] };
+}
 
 // Called by the source adapter inside Pi. Only public read-only CLI operations
 // and snapshot export are admitted; stdout is forwarded without changing pins.
@@ -63,20 +83,53 @@ export function observeGraphGate(api, settings) {
   const { join, relative, resolve, isAbsolute } = settings.path;
   const digest = value => createHash('sha256').update(value).digest('hex');
   let sequence = 0;
-  const record = value => appendFileSync(settings.output, JSON.stringify({ sequence: ++sequence, at: new Date().toISOString(), ...value }) + '\n', { mode: 0o600 });
+  const record = value => { const event = { sequence: ++sequence, at: new Date().toISOString(), ...value }; appendFileSync(settings.output, JSON.stringify(event) + '\n', { mode: 0o600 }); return event; };
   const text = content => typeof content === 'string' ? content : (content ?? []).filter(item => item.type === 'text').map(item => String(item.text ?? '')).join('\n');
   const unescape = value => value.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
   const inside = (parent, child) => { const value = relative(parent, child); return value === '' || (!value.startsWith('../') && value !== '..' && !isAbsolute(value)); };
+  const canonical = value => value === null || typeof value !== 'object' ? JSON.stringify(value) : Array.isArray(value) ? '[' + value.map(canonical).join(',') + ']' : '{' + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => JSON.stringify(key) + ':' + canonical(item)).join(',') + '}';
+  const same = (a, b) => canonical(a) === canonical(b);
+  const tools = ['read', 'skill_search', 'skill_prepare'];
+  const hostIndexBindings = new Map();
+  let contextDeliveries = [];
+  const toolSurface = () => {
+    const surface = settings.toolSurfaceFile ? JSON.parse(readFileSync(settings.toolSurfaceFile, 'utf8')).surface : 'public-tools';
+    if (!['native-read-only', 'public-tools'].includes(surface)) throw new Error('Unknown frozen graph tool surface');
+    return { surface, tools: surface === 'native-read-only' ? ['read'] : tools };
+  };
+  const canonicalReadPath = input => {
+    if (typeof input !== 'string' || input.split(/[\\/]/).includes('..')) return undefined;
+    const nativeHome = settings.nativeHome ?? process.env.HOME;
+    const expanded = input.startsWith('~/') && typeof nativeHome === 'string' && isAbsolute(nativeHome) ? join(nativeHome, input.slice(2)) : input;
+    const absolute = resolve(settings.cwd, expanded);
+    let current = absolute, normalized;
+    const tail = [];
+    for (;;) {
+      try { normalized = resolve(realpathSync(current), ...tail); break; }
+      catch (error) {
+        if (error.code !== 'ENOENT') return undefined;
+        const parent = settings.path.dirname(current);
+        if (parent === current) return undefined;
+        tail.unshift(relative(parent, current)); current = parent;
+      }
+    }
+    // OS aliases may precede the owned root. Symlinks within that root may not
+    // substitute an undeclared path for a verified manifest entry.
+    for (let ancestor = absolute;;) {
+      try {
+        const actual = realpathSync(ancestor);
+        if ([settings.cache, settings.cwd, ...[...hostIndexBindings.values()].map(binding => binding.root)].includes(actual) && resolve(actual, relative(ancestor, absolute)) !== normalized) return undefined;
+      } catch (error) { if (error.code !== 'ENOENT') return undefined; }
+      const parent = settings.path.dirname(ancestor);
+      if (parent === ancestor) return normalized;
+      ancestor = parent;
+    }
+  };
   const makeRef = (id, path, snapshot, fileId) => `skill://${encodeURIComponent(id)}/${path.split('/').map(encodeURIComponent).join('/')}?snapshot=${snapshot}${fileId ? '&file_id=' + encodeURIComponent(fileId) : ''}`;
+  if (typeof settings.parseNativeReference !== 'function') throw new Error('Graph observation requires the installed product reference parser');
   const parseRef = value => {
     if (typeof value !== 'string') return undefined;
-    const match = /^skill:\/\/([^/?#]+)\/([^?#]+)(?:\?([^#]*))?$/.exec(value);
-    if (!match) return undefined;
-    try {
-      const query = new URLSearchParams(match[3]);
-      if ([...query.keys()].some(key => !['snapshot', 'file_id'].includes(key)) || query.getAll('snapshot').length > 1 || query.getAll('file_id').length > 1) return undefined;
-      return { selector: decodeURIComponent(match[1]), path: match[2].split('/').map(decodeURIComponent).join('/'), snapshot: query.get('snapshot') ?? undefined, fileId: query.get('file_id') ?? undefined };
-    } catch { return undefined; }
+    try { return settings.parseNativeReference(value); } catch { return undefined; }
   };
   const root = parseRef(settings.rootRef);
   const discovered = new Map([[settings.rootRef, { sequence: 0, source: 'explicit selected root' }]]);
@@ -84,23 +137,82 @@ export function observeGraphGate(api, settings) {
   const projectFiles = new Map((settings.project?.files ?? []).map(file => [resolve(settings.cwd, file.path), file]));
   const calls = new Map();
   const assistantCalls = new Map();
+  const deliveredTools = new Map();
   const wireAllowed = model => model === settings.model || model === settings.model.slice(settings.model.indexOf('/') + 1);
   const assertModel = ctx => {
     if (ctx.model?.provider + '/' + ctx.model?.id !== settings.model) throw new Error('Graph gate rejected an unauthorized model');
   };
   const sourceStrings = value => typeof value === 'string' ? [value] : Array.isArray(value) ? value.flatMap(sourceStrings) : value && typeof value === 'object' ? ['assistant', 'model'].includes(value.role) ? [] : Object.values(value).flatMap(sourceStrings) : [];
-  const escapePattern = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const copies = (payload, body) => {
+    if (!body) return 0;
     const encoded = body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-    const choices = [...new Set([body, encoded, JSON.stringify(body).slice(1, -1)])].sort((a, b) => b.length - a.length).map(escapePattern);
-    if (!body || !choices.length) return 0;
-    return sourceStrings(payload).reduce((sum, value) => sum + [...value.matchAll(new RegExp(choices.join('|'), 'g'))].length, 0);
+    const choices = [...new Set([body, encoded, JSON.stringify(body).slice(1, -1)])].sort((a, b) => b.length - a.length);
+    return sourceStrings(payload).reduce((sum, value) => {
+      let cursor = 0, count = 0;
+      for (;;) {
+        let start = -1, length = 0;
+        for (const choice of choices) {
+          const found = value.indexOf(choice, cursor);
+          if (found !== -1 && (start === -1 || found < start)) { start = found; length = choice.length; }
+        }
+        if (start === -1) return sum + count;
+        count++; cursor = start + length;
+      }
+    }, 0);
+  };
+  let verifiedPayloadHash;
+  const observerFault = (stage, error, payload) => {
+    verifiedPayloadHash = undefined;
+    const message = String(error?.message ?? error).slice(0, 512);
+    let payloadSha256;
+    try { payloadSha256 = digest(JSON.stringify(payload)); } catch { /* An unserializable payload cannot authorize transport. */ }
+    record({ phase: 'observer-error', stage, code: 'GRAPH_OBSERVER_INVALID', name: error?.name ?? 'Error', message, ...(payloadSha256 ? { payloadSha256 } : {}) });
+    return Object.assign(new Error('Graph observation failed: ' + message), { code: 'GRAPH_OBSERVER_INVALID' });
+  };
+  const providerToolOutputs = (payload, toolCallId) => {
+    const found = [];
+    const visit = value => {
+      if (Array.isArray(value)) { for (const item of value) visit(item); return; }
+      if (!value || typeof value !== 'object') return;
+      if (value.role === 'tool' && value.tool_call_id === toolCallId
+        || value.role === 'toolResult' && value.toolCallId === toolCallId
+        || value.type === 'tool_result' && value.tool_use_id === toolCallId
+        || value.type === 'function_call_output' && value.call_id === toolCallId) {
+        found.push(text(value.content ?? value.output)); return;
+      }
+      for (const item of Object.values(value)) visit(item);
+    };
+    visit(payload); return found;
   };
   const sourceResponses = () => [...readdirSync(settings.responses).filter(name => name.endsWith('.json')).map(name => ({ path: join(settings.responses, name) })), ...(settings.priorResponseFiles ?? [])].flatMap(file => {
     const bytes = readFileSync(file.path);
     if (file.sha256 !== undefined && digest(bytes) !== file.sha256) throw new Error('A prior owned consumer response differs from its cache reuse receipt');
     try { const item = JSON.parse(bytes.toString('utf8')); return item.code === 0 && item.response?.ok === true ? [item] : []; } catch { return []; }
   });
+  const resolveMainReference = parsed => {
+    if (!parsed || parsed.path) return parsed;
+    const candidates = sourceResponses().flatMap(item => {
+      const value = item.response;
+      const records = item.command === 'list' ? value.records ?? [] : item.command === 'read' ? [value.record] : item.command === 'prepare' ? (value.nodes ?? []).map(node => node.record) : [];
+      return records.flatMap(record => {
+        const ref = parseRef(record?.ref), entrypoint = record?.entrypoint ?? ref?.path;
+        if (!ref?.path || !['skill', 'router'].includes(record.kind) || record.id !== parsed.selector || ref.selector !== record.id
+          || entrypoint !== ref.path || typeof value.scope !== 'string') return [];
+        const pin = item.command === 'read' ? value.snapshot_id : item.command === 'prepare'
+          ? value.nodes.find(node => node.id === record.id)?.binding?.snapshot_id : undefined;
+        return [{ ownerId: record.id, scope: value.scope, path: entrypoint, pin }];
+      });
+    });
+    const matched = candidates.filter(candidate => [...discovered].some(([ref, proof]) => {
+      const prior = parseRef(ref);
+      return prior?.selector === candidate.ownerId && prior.path === candidate.path
+        && (proof.scope === undefined || proof.scope === candidate.scope)
+        && (parsed.snapshot === undefined || prior.snapshot === parsed.snapshot || candidates.some(other => other.ownerId === candidate.ownerId
+          && other.scope === candidate.scope && other.path === candidate.path && other.pin === parsed.snapshot));
+    }));
+    const unique = [...new Map(matched.map(candidate => [JSON.stringify([candidate.scope, candidate.ownerId, candidate.path]), candidate])).values()];
+    return unique.length === 1 ? { ...parsed, path: unique[0].path, scope: unique[0].scope } : undefined;
+  };
   const exportedFiles = ({ includePending = false } = {}) => {
     const outputs = sourceResponses();
     const files = [];
@@ -109,7 +221,8 @@ export function observeGraphGate(api, settings) {
         const path = join(directory, entry.name);
         if (entry.isDirectory()) walk(path);
         else if (entry.isFile() && ['.broker-snapshot.json', '.broker-entry.json'].includes(entry.name)) {
-          const receipt = JSON.parse(readFileSync(path, 'utf8'));
+          const receiptBytes = readFileSync(path);
+          const receipt = JSON.parse(receiptBytes.toString('utf8'));
           const partial = entry.name === '.broker-entry.json';
           const ownerId = partial ? receipt.id : receipt.record?.id, snapshot = partial ? receipt.snapshot_id : receipt.snapshot, mainPath = partial ? receipt.entrypoint : receipt.entry;
           if ((partial ? receipt.version !== 1 || receipt.projection !== 'entry' || receipt.manifest_complete !== true : receipt.version !== 3 || receipt.projection !== 'snapshot') || typeof ownerId !== 'string' || !Array.isArray(receipt.files) || realpathSync(directory) !== directory || !inside(settings.cache, directory)) throw new Error('Unverified Broker materialization receipt in graph observation');
@@ -132,7 +245,7 @@ export function observeGraphGate(api, settings) {
             const binding = publicRead.file_bindings?.find(binding => binding.path === item.path);
             const main = item.path === mainPath, ref = makeRef(ownerId, item.path, snapshot, binding?.file_id);
             if (partial && item.ref !== ref) throw new Error('Entry file ref differs from its scope/owner/snapshot binding');
-            const declared = { ref, logicalId: main ? ownerId : binding?.file_id ?? ownerId + '/' + item.path, ownerId, scope: receipt.scope, snapshot, sha256: hash, bytes: item.bytes, path: item.path, actual, actuals: [actual], fileId: binding?.file_id, role: main ? 'entrypoint' : 'resource', kind: publicRead.record.kind, projection: receipt.projection };
+            const declared = { ref, logicalId: main ? ownerId : binding?.file_id ?? ownerId + '/' + item.path, ownerId, scope: receipt.scope, snapshot, version: publicRead.version_id, sha256: hash, bytes: item.bytes, path: item.path, actual, actuals: [actual], fileId: binding?.file_id, role: main ? 'entrypoint' : 'resource', kind: publicRead.record.kind, projection: receipt.projection, manifestSha256: digest(receiptBytes) };
             let bytes;
             try {
               if (realpathSync(actual) !== actual || !statSync(actual).isFile()) throw new Error('Snapshot resource is not a verified regular file');
@@ -162,7 +275,60 @@ export function observeGraphGate(api, settings) {
     }
     return [...unique.values()];
   };
-  const discover = (value, source, file) => {
+  const hostIndexProof = (input, source) => {
+    if (source.role !== 'entrypoint' || source.projection !== 'entry' || !source.fileId) return undefined;
+    const main = canonicalReadPath(input);
+    if (!main || ![...advertisedPaths].some(path => canonicalReadPath(path) === main)) return undefined;
+    let directory = settings.path.dirname(main);
+    for (let level = 0; level < 6; level++, directory = settings.path.dirname(directory)) {
+      try {
+        const receiptPath = join(directory, '.broker-host-index.json');
+        if (!settings.fs.lstatSync(receiptPath).isFile()) return undefined;
+        const raw = readFileSync(receiptPath), receipt = JSON.parse(raw.toString('utf8'));
+        const published = receipt.published?.path;
+        if (receipt.version !== 1 || receipt.projection !== 'host_index' || receipt.loaded !== false
+          || receipt.scope !== source.scope || receipt.id !== source.ownerId || receipt.snapshot_id !== source.snapshot
+          || receipt.version_id !== source.version || receipt.ref !== source.ref || receipt.entrypoint !== source.path
+          || receipt.source?.sha256 !== source.sha256 || receipt.source?.bytes !== source.bytes
+          || typeof published !== 'string' || published.includes('\\') || published.split('/').some(part => !part || part === '.' || part === '..')
+          || main !== join(directory, published) || realpathSync(directory) !== directory) return undefined;
+        let part = directory;
+        for (const name of published.split('/')) { part = join(part, name); if (settings.fs.lstatSync(part).isSymbolicLink()) return undefined; }
+        if (!statSync(main).isFile()) return undefined;
+        const bytes = readFileSync(main);
+        if (receipt.published.bytes !== bytes.length || receipt.published.sha256 !== digest(bytes)) return undefined;
+        const manifestPath = join(settings.cache, 'scopes', source.scope, 'records', digest(source.ownerId), 'entries', source.snapshot, '.broker-entry.json');
+        if (!settings.fs.lstatSync(manifestPath).isFile() || realpathSync(manifestPath) !== manifestPath) return undefined;
+        const manifest = readFileSync(manifestPath);
+        if (digest(manifest) !== source.manifestSha256 || receipt.manifest_id !== digest(JSON.stringify(JSON.parse(manifest.toString('utf8'))))) return undefined;
+        return { root: directory, main, receiptPath, receiptSha256: digest(raw), manifestPath, manifestSha256: digest(manifest), manifestId: receipt.manifest_id, publishedSha256: digest(bytes) };
+      } catch (error) { if (error.code !== 'ENOENT') return undefined; }
+    }
+    return undefined;
+  };
+  const bindHostIndex = (input, source) => {
+    const proof = hostIndexProof(input, source);
+    if (!proof) return undefined;
+    const binding = { ...proof, input, source, aliases: new Map() };
+    hostIndexBindings.set(proof.main, binding);
+    record({ phase: 'host-index-binding', ...proof, ref: source.ref, scope: source.scope, ownerId: source.ownerId,
+      snapshot: source.snapshot, fileId: source.fileId, sha256: source.sha256, bytes: source.bytes });
+    return binding;
+  };
+  const hostIndexAlias = input => {
+    const actual = canonicalReadPath(input);
+    if (!actual) return undefined;
+    const matches = [];
+    for (const binding of hostIndexBindings.values()) {
+      const alias = binding.aliases.get(actual);
+      if (!alias) continue;
+      const proof = hostIndexProof(binding.input, binding.source);
+      if (proof && proof.receiptSha256 === binding.receiptSha256 && proof.manifestSha256 === binding.manifestSha256
+        && proof.publishedSha256 === binding.publishedSha256) matches.push(alias);
+    }
+    return matches.length === 1 ? matches[0] : undefined;
+  };
+  const discover = (value, source, file, hostIndex) => {
     for (const match of value.matchAll(/skill:\/\/[^\s)<>"\]]+/g)) {
       const ref = unescape(match[0]);
       if (parseRef(ref) && !discovered.has(ref)) discovered.set(ref, { sequence, source });
@@ -177,36 +343,175 @@ export function observeGraphGate(api, settings) {
       if (escaped) continue;
       const targetPath = parts.join('/');
       const target = exportedFiles({ includePending: true }).find(item => item.ownerId === file.ownerId && item.scope === file.scope && item.snapshot === file.snapshot && item.path === targetPath);
-      if (target) { discovered.set(target.ref, { sequence, source }); for (const actual of target.actuals) discovered.set(actual, { sequence, source }); }
+      if (target) {
+        discovered.set(target.ref, { sequence, source, scope: target.scope }); for (const actual of target.actuals) discovered.set(actual, { sequence, source, scope: target.scope });
+        if (hostIndex && !raw.includes('\\')) {
+          const alias = resolve(settings.path.dirname(hostIndex.main), raw);
+          if (inside(hostIndex.root, alias)) hostIndex.aliases.set(alias, { ref: target.ref, scope: target.scope, ownerId: target.ownerId,
+            snapshot: target.snapshot, path: target.path, fileId: target.fileId, sha256: target.sha256, bytes: target.bytes });
+        }
+      }
     }
   };
   const wasDiscovered = input => {
+    const raw = parseRef(input), parsed = resolveMainReference(raw);
+    if (raw && !parsed) return false;
     if (discovered.has(input) || advertisedPaths.has(input)) return true;
-    const parsed = parseRef(input);
-    return parsed && [...discovered.keys()].some(ref => { const old = parseRef(ref); return old && old.selector === parsed.selector && old.path === parsed.path && old.fileId === parsed.fileId && (!parsed.snapshot || old.snapshot === parsed.snapshot); });
+    if (parsed) return [...discovered].some(([ref, proof]) => { const old = parseRef(ref); return old && old.selector === parsed.selector && old.path === parsed.path
+      && (parsed.fileId === undefined || old.fileId === parsed.fileId) && (parsed.scope === undefined || proof.scope === undefined || proof.scope === parsed.scope)
+      && (parsed.snapshot === undefined || old.snapshot === parsed.snapshot || !raw.path && parsed.scope !== undefined); });
+    const actual = canonicalReadPath(input);
+    return actual && (Boolean(hostIndexAlias(input)) || [...discovered.keys(), ...advertisedPaths].some(path => !parseRef(path) && canonicalReadPath(path) === actual)
+      || exportedFiles({ includePending: true }).some(file => file.actuals.includes(actual) && wasDiscovered(file.ref)));
   };
-  const targetFor = (input, body) => {
-    const parsed = parseRef(input);
-    let available = exportedFiles();
-    if (parsed) available = available.filter(file => file.ownerId === parsed.selector && (!parsed.snapshot || parsed.snapshot === file.snapshot) && (parsed.fileId ? file.fileId === parsed.fileId : file.path === parsed.path));
-    else if (advertisedPaths.has(input)) available = available.filter(file => file.ownerId === root.selector && file.role === 'entrypoint');
-    else available = available.filter(file => file.actuals.includes(resolve(settings.cwd, input)));
+  const discoverProvidedPaths = (payload, files, contents) => {
+    for (const value of sourceStrings(payload)) for (const match of value.matchAll(/<context-broker-record\b([^>]*)>([\s\S]*?)<\/context-broker-record>/g)) {
+      const location = unescape(/\bpath="([^"]+)"/.exec(match[1])?.[1] ?? '');
+      const suppliedRef = parseRef(unescape(/<skill-ref>\s*([^<]+)\s*<\/skill-ref>/.exec(match[2])?.[1]?.trim() ?? ''));
+      const actual = canonicalReadPath(location);
+      if (!actual || !suppliedRef) continue;
+      const matches = files.filter(file => file.actuals.includes(actual) && file.ownerId === suppliedRef.selector
+        && file.path === suppliedRef.path && file.snapshot === suppliedRef.snapshot
+        && (suppliedRef.fileId === undefined || suppliedRef.fileId === file.fileId)
+        && contents.some(content => content.ref === file.ref && content.scope === file.scope && content.sha256 === file.sha256));
+      if (matches.length !== 1) continue;
+      const file = matches[0];
+      const proof = { sequence, source: 'actual provider advertised verified file', ref: file.ref, scope: file.scope, snapshot: file.snapshot, sha256: file.sha256 };
+      if (!discovered.has(location)) record({ phase: 'provided-native-path', path: location, ref: file.ref, scope: file.scope, snapshot: file.snapshot, sha256: file.sha256, bytes: file.bytes });
+      discovered.set(location, proof); discovered.set(actual, proof); discovered.set(file.ref, proof);
+    }
+    for (const value of sourceStrings(payload)) for (const match of value.matchAll(/<skill\b([^>]*)>([\s\S]*?)<\/skill>/g)) {
+      const location = unescape(/\blocation="([^"]+)"/.exec(match[1])?.[1] ?? ''), actual = canonicalReadPath(location);
+      if (!actual) continue;
+      const matches = files.filter(file => file.role === 'entrypoint' && file.actuals.includes(actual) && copies(match[2], file.content) === 1
+        && contents.some(content => content.ref === file.ref && content.scope === file.scope && content.sha256 === file.sha256)
+        && contextDeliveries.some(delivery => delivery.messageSha256 === digest(value) && delivery.receipt.binding?.record?.id === file.ownerId
+          && delivery.receipt.binding.scope === file.scope && delivery.receipt.binding.snapshot_id === file.snapshot
+          && delivery.receipt.binding.version_id === file.version && delivery.receipt.binding.ref === file.ref
+          && delivery.receipt.snapshotId === file.snapshot && delivery.receipt.bodySha256 === file.sha256 && delivery.receipt.bytes === file.bytes));
+      if (matches.length !== 1) continue;
+      const file = matches[0], proof = { sequence, source: 'actual Pi native wrapper', ref: file.ref, scope: file.scope, snapshot: file.snapshot, sha256: file.sha256 };
+      if (!discovered.has(location)) record({ phase: 'provided-native-path', source: proof.source, path: location, ref: file.ref, scope: file.scope, snapshot: file.snapshot, sha256: file.sha256, bytes: file.bytes });
+      discovered.set(location, proof); discovered.set(actual, proof); discovered.set(file.ref, proof);
+    }
+  };
+  const fileIdentity = file => ({ scope: file.scope, ownerId: file.ownerId, path: file.path, snapshot: file.snapshot,
+    fileId: file.fileId, sha256: file.sha256, bytes: file.bytes });
+  const refMatchesFile = (parsed, file, allowFileAlias = false) => parsed.selector === file.ownerId
+    && (parsed.path === file.path || allowFileAlias && parsed.fileId !== undefined)
+    && (parsed.scope === undefined || parsed.scope === file.scope)
+    && (parsed.snapshot === undefined || parsed.snapshot === file.snapshot)
+    && (parsed.fileId === undefined || parsed.fileId === file.fileId);
+  const targetFor = (input, body, { expected, includePending = false } = {}) => {
+    const parsed = resolveMainReference(parseRef(input));
+    const alias = parsed ? undefined : hostIndexAlias(input);
+    let available = exportedFiles({ includePending });
+    if (parsed) available = available.filter(file => refMatchesFile(parsed, file, true));
+    else if (alias) available = available.filter(file => file.ref === alias.ref && file.scope === alias.scope && file.ownerId === alias.ownerId
+      && file.snapshot === alias.snapshot && file.fileId === alias.fileId && file.path === alias.path && file.sha256 === alias.sha256 && file.bytes === alias.bytes);
+    else if ([...advertisedPaths].some(path => canonicalReadPath(path) === canonicalReadPath(input))) available = available.filter(file => file.ownerId === root.selector && file.role === 'entrypoint');
+    else available = available.filter(file => file.actuals.includes(canonicalReadPath(input)));
+    if (expected) available = available.filter(file => same(fileIdentity(file), expected));
     if (body !== undefined) available = available.filter(file => file.content === body);
     return available.length === 1 ? available[0] : undefined;
   };
+  const discoveredReadIdentity = input => {
+    const raw = parseRef(input), parsed = resolveMainReference(raw);
+    if (raw && !parsed) return undefined;
+    if (!parsed) {
+      const target = wasDiscovered(input) ? targetFor(input, undefined, { includePending: true }) : undefined;
+      return target ? fileIdentity(target) : undefined;
+    }
+    const available = exportedFiles({ includePending: true }).filter(file => refMatchesFile(parsed, file, true)
+      && [...discovered].some(([ref, proof]) => {
+        const prior = parseRef(ref);
+        return prior && prior.selector === parsed.selector && prior.path === parsed.path
+          && (parsed.fileId === undefined || prior.fileId === parsed.fileId)
+          && refMatchesFile(prior, file, parsed.fileId !== undefined) && (proof.scope === undefined || proof.scope === file.scope);
+      }));
+    return available.length === 1 ? fileIdentity(available[0]) : undefined;
+  };
+  const checkedMetadata = content => {
+    const value = JSON.parse(content), outputs = sourceResponses();
+    const keys = ['id', 'ref', 'kind', 'name', 'description', 'source', 'scope', 'in_default_view', 'availability'];
+    if (value.ok !== true || value.state !== 'known' || !Array.isArray(value.records)
+      || !Number.isSafeInteger(value.count) || value.count < value.records.length
+      || value.has_more !== (value.count > value.records.length)
+      || Object.keys(value).some(key => !['ok', 'state', 'count', 'has_more', 'records', 'failures'].includes(key))) throw new Error('Metadata search did not return its public directory contract');
+    for (const item of value.records) {
+      const matches = outputs.filter(output => output.command === 'list' && output.response.scope === item.scope)
+        .flatMap(output => output.response.records ?? []).filter(record => record.id === item.id && record.ref === item.ref);
+      if (!matches.length || Object.keys(item).some(key => !keys.includes(key))
+        || !parseRef(item.ref) || !matches.some(record => ['id', 'ref', 'kind', 'name', 'description'].every(key => record[key] === item[key])
+          && item.availability === (record.enabled === false ? 'disabled' : 'available'))) throw new Error('Metadata search identity differs from the actual authorized CLI directory');
+    }
+    return value;
+  };
+  const checkedPreparation = (content, call, details) => {
+    const value = JSON.parse(content), outputs = sourceResponses(), files = exportedFiles();
+    if (value.ok !== true || value.status !== 'ready' || value.purpose !== call.input.purpose
+      || !Array.isArray(value.graphs) || !value.graphs.length || !Array.isArray(value.records) || !value.records.length
+      || details?.version !== 1 || details.toolCallId !== call.toolCallId || details.purpose !== value.purpose
+      || !same(details.graphs, value.graphs) || details.records?.length !== value.records.length) throw new Error('Prepare result has no complete native delivery receipt');
+    const graphs = value.graphs.map(graph => {
+      const publicReceipt = outputs.find(output => output.command === 'prepare' && output.response.status === 'ready'
+        && output.response.purpose === value.purpose && output.response.scope === graph.scope
+        && same(output.response.graph_lock, graph.graph_lock) && same(output.response.budget, graph.budget)
+        && same(output.response.usage, graph.usage) && same(output.response.roots.map(root => root.id), graph.roots));
+      const { sha256, ...vector } = graph.graph_lock ?? {};
+      if (!publicReceipt || digest(canonical(vector)) !== sha256) throw new Error('Prepare graph differs from its actual public version vector');
+      return { ...graph, publicReceipt };
+    });
+    const explicitIds = [...new Set(call.input.roots.map(ref => parseRef(ref).selector))].sort();
+    if (!same([...new Set(graphs.flatMap(graph => graph.roots))].sort(), explicitIds)) throw new Error('Prepare silently changed the model-selected roots');
+    const expected = graphs.flatMap(graph => graph.publicReceipt.response.nodes.filter(node => node.state === 'prepared').map(node => graph.scope + '/' + node.id)).sort();
+    if (!same(value.records.map(record => record.scope + '/' + record.id).sort(), expected)) throw new Error('Prepare output omitted or added a prepared instruction');
+    const records = value.records.map((item, index) => {
+      const graph = graphs.find(graph => graph.scope === item.scope && graph.publicReceipt.response.nodes.some(node => node.state === 'prepared' && node.id === item.id));
+      const node = graph?.publicReceipt.response.nodes.find(node => node.id === item.id && node.state === 'prepared');
+      const file = files.find(file => file.role === 'entrypoint' && file.scope === item.scope && file.ownerId === item.id && file.snapshot === item.snapshot_id && file.ref === item.ref);
+      const proof = details.records[index];
+      const span = proof?.delivery;
+      let delivered;
+      try { if (span?.encoding === 'json' && Number.isSafeInteger(span.start) && Number.isSafeInteger(span.end) && span.start >= 0 && span.end > span.start && span.end <= content.length) delivered = JSON.parse('"' + content.slice(span.start, span.end) + '"'); } catch { /* Invalid delivery stays unverified. */ }
+      if (!node || !file || item.content !== file.content || item.body_sha256 !== file.sha256 || item.bytes !== file.bytes
+        || item.version_id !== file.version || canonicalReadPath(item.path) !== file.actual
+        || proof.version !== 2 || proof.loaded !== true || delivered !== file.content || proof.bodySha256 !== file.sha256
+        || proof.bytes !== file.bytes || proof.snapshotId !== file.snapshot || !same(proof.binding, node.binding)
+        || !same(item.directory?.files, node.files)
+        || !['required', 'candidates', 'references'].every(key => same(item.directory?.[key], node[key].map(({ id, ref, kind, name, description, availability }) => ({ id, ref, kind, name, description, availability }))))) throw new Error('Prepared main differs from its fixed read, manifest or delivery span');
+      const explicitRoot = graph.roots.includes(item.id);
+      for (const ref of call.input.roots.filter(ref => parseRef(ref).selector === item.id)) {
+        const parsed = resolveMainReference(parseRef(ref));
+        if (!parsed || parsed.path !== file.path || parsed.scope && parsed.scope !== file.scope || parsed.snapshot && parsed.snapshot !== file.snapshot || parsed.fileId && parsed.fileId !== file.fileId) throw new Error('Prepared main changed an explicit pin or File ID');
+      }
+      return { ...file, preparationProof: { purpose: value.purpose, explicitRoot, roots: call.input.roots,
+        publicRequestId: graph.publicReceipt.requestId, graphLockSha256: graph.graph_lock.sha256,
+        manifestSha256: file.manifestSha256, publicRef: node.binding.ref, scope: file.scope, ownerId: file.ownerId,
+        snapshot: file.snapshot, sha256: file.sha256, bytes: file.bytes,
+        toolResultSha256: digest(content), toolResultBytes: Buffer.byteLength(content), deliveryVerified: true } };
+    });
+    return { value, records };
+  };
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async function(input, init) {
-    let body;
-    try { const raw = init?.body ?? (input instanceof Request ? await input.clone().text() : undefined); if (typeof raw === 'string') body = JSON.parse(raw); } catch { /* Non-model authentication transport. */ }
+    let body, serialized;
+    try { const raw = init?.body ?? (input instanceof Request ? await input.clone().text() : undefined); if (typeof raw === 'string') { serialized = raw; body = JSON.parse(raw); } } catch { /* Non-model authentication transport. */ }
     if (body && typeof body.model === 'string') {
       if (!wireAllowed(body.model)) throw new Error('Graph gate rejected an unauthorized transport model');
-      record({ phase: 'provider-transport-start', model: settings.model, wireModel: body.model });
+      const observedPayloadSha256 = digest(canonical(body));
+      if (verifiedPayloadHash !== observedPayloadSha256) {
+        const error = observerFault('provider-transport', new Error('Provider transport has no matching verified observation payload.'), body);
+        record({ phase: 'provider-transport-blocked', reason: 'unverified_observer_payload', model: settings.model, wireModel: body.model, observedPayloadSha256 });
+        throw error;
+      }
+      record({ phase: 'provider-transport-start', model: settings.model, wireModel: body.model, observedPayloadSha256, wireBodySha256: digest(serialized) });
       try { const response = await originalFetch.call(this, input, init); record({ phase: 'provider-transport-response', status: response.status }); return response; }
       catch (error) { record({ phase: 'provider-transport-error', name: error.name, code: typeof error.code === 'string' ? error.code : null }); throw error; }
     }
     return originalFetch.call(this, input, init);
   };
-  api.on('session_start', async (_event, ctx) => { assertModel(ctx); await api.setActiveTools(['read']); record({ phase: 'selected', model: settings.model, tools: ['read'], fallbackTools: false }); });
+  api.on('session_start', async (_event, ctx) => { assertModel(ctx); const selected = toolSurface(); await api.setActiveTools(selected.tools); record({ phase: 'selected', model: settings.model, tools: selected.tools, toolSurface: selected.surface, fallbackTools: false }); });
   api.on('before_agent_start', (event, ctx) => {
     assertModel(ctx);
     const prompt = typeof event.systemPrompt === 'string' ? event.systemPrompt : (event.systemPrompt ?? []).join('\n');
@@ -246,41 +551,127 @@ export function observeGraphGate(api, settings) {
     record({ phase: 'catalog', submittedPromptSha256: digest(event.prompt), frozenPromptMatched: event.prompt === settings.prompt, skills, routers, systemPromptSha256: digest(prompt), systemPromptBytes: Buffer.byteLength(prompt), localDiscoveryDisabled: true });
     if (projectFiles.size) return { systemPrompt: prompt + '\n\nCurrent owned project files (paths only; read the actual source when needed):\n' + [...projectFiles.values()].map(file => '- ' + file.path).join('\n') + '\n' };
   });
-  api.on('context', (event, ctx) => { assertModel(ctx); record({ phase: 'agent-context', messages: event.messages.map(message => ({ role: message.role, customType: message.customType, toolName: message.toolName, toolCallId: message.toolCallId, isError: message.isError, contentSha256: digest(text(message.content)), contentBytes: Buffer.byteLength(text(message.content)), ...(message.details?.records ? { records: message.details.records } : {}), ...(message.details?.contextBrokerRead ? { read: message.details.contextBrokerRead } : {}), ...(message.details?.contextBrokerPreparation ? { preparation: message.details.contextBrokerPreparation } : {}) })) }); });
+  api.on('context', (event, ctx) => {
+    assertModel(ctx);
+    const visible = event.messages.filter(message => !['assistant', 'model'].includes(message.role)), texts = visible.map(message => text(message.content));
+    contextDeliveries = visible.flatMap(message => message.details?.records ?? []).flatMap(receipt => {
+      const span = receipt.delivery;
+      if (receipt.version !== 2 || receipt.loaded !== true || !receipt.binding || !span || !Number.isSafeInteger(span.start)
+        || !Number.isSafeInteger(span.end) || span.start < 0 || span.end <= span.start || !['raw', 'xml', 'json'].includes(span.encoding)) return [];
+      return texts.flatMap(value => {
+        if (span.end > value.length) return [];
+        try {
+          const raw = value.slice(span.start, span.end), body = span.encoding === 'xml' ? unescape(raw) : span.encoding === 'json' ? JSON.parse('"' + raw + '"') : raw;
+          return digest(body) === receipt.bodySha256 && Buffer.byteLength(body) === receipt.bytes ? [{ receipt, messageSha256: digest(value) }] : [];
+        } catch { return []; }
+      });
+    });
+    record({ phase: 'agent-context', messages: event.messages.map(message => ({ role: message.role, customType: message.customType, toolName: message.toolName, toolCallId: message.toolCallId, isError: message.isError, contentSha256: digest(text(message.content)), contentBytes: Buffer.byteLength(text(message.content)), ...(message.details?.records ? { records: message.details.records } : {}), ...(message.details?.contextBrokerRead ? { read: message.details.contextBrokerRead } : {}), ...(message.details?.contextBrokerPreparation ? { preparation: message.details.contextBrokerPreparation } : {}) })) });
+  });
   api.on('before_provider_request', (event, ctx) => {
+    verifiedPayloadHash = undefined;
+    try {
     assertModel(ctx);
     if (event.payload?.model !== undefined && !wireAllowed(event.payload.model)) throw new Error('Graph gate rejected an unauthorized provider model');
     const toolChoice = event.payload?.tool_choice ?? event.payload?.toolChoice;
     if (toolChoice !== undefined && toolChoice !== 'auto' && toolChoice?.type !== 'auto') throw new Error('Graph gate requires autonomous tool selection');
+    const advertisedTools = (event.payload?.tools ?? []).map(tool => tool.function?.name ?? tool.name).sort();
+    const selected = toolSurface();
+    if (!same(advertisedTools, [...selected.tools].sort())) throw new Error('Graph gate must advertise exactly the frozen native tool surface without shell');
     const files = exportedFiles();
     const contents = files.flatMap(file => Array.from({ length: copies(event.payload, file.content) }, () => ({ ref: file.ref, logicalId: file.logicalId, ownerId: file.ownerId, scope: file.scope, snapshot: file.snapshot, sha256: file.sha256, bytes: file.bytes, role: file.role, content: file.content })));
+    for (const { content, ...file } of settings.piHelpBoundary?.observeProvider(event.payload) ?? []) record({ phase: 'host-help-advertised', ...file });
+    const hostHelp = (settings.piHelpBoundary?.consumed() ?? []).map(({ content, ...file }) => ({ ...file, copies: copies(event.payload, content) })).filter(file => file.copies > 0);
+    discoverProvidedPaths(event.payload, files, contents);
     for (const file of files) if (contents.some(item => item.ref === file.ref)) discover(file.content, 'actual provider source body', file);
     for (const value of sourceStrings(event.payload)) discover(value, 'actual provider context');
-    record({ phase: 'provider-request', model: settings.model, toolChoice: 'auto', forcedToolArguments: false, payloadSha256: digest(JSON.stringify(event.payload)), contents, sourceTextHashes: sourceStrings(event.payload).map(value => ({ sha256: digest(value), bytes: Buffer.byteLength(value) })) });
+    const toolResults = [...deliveredTools.values()].map(result => ({ toolCallId: result.toolCallId, tool: result.tool, sha256: digest(result.content), bytes: Buffer.byteLength(result.content), copies: copies(event.payload, result.content),
+      exactToolOutputCopies: providerToolOutputs(event.payload, result.toolCallId).filter(content => content === result.content).length,
+      records: (result.records ?? []).map(file => ({ ref: file.ref, scope: file.scope, snapshot: file.snapshot, sha256: file.sha256, bytes: file.bytes, providerCopies: contents.filter(item => item.ref === file.ref && item.scope === file.scope && item.sha256 === file.sha256).length })) }));
+    const serialized = JSON.stringify(event.payload);
+    const observedPayloadSha256 = digest(canonical(JSON.parse(serialized)));
+    record({ phase: 'provider-request', model: settings.model, tools: advertisedTools, toolSurface: selected.surface, toolDefinitionsSha256: digest(JSON.stringify(event.payload?.tools)), toolChoice: 'auto', forcedToolArguments: false, payloadSha256: digest(serialized), observedPayloadSha256, contents, hostHelp, toolResults, sourceTextHashes: sourceStrings(event.payload).map(value => ({ sha256: digest(value), bytes: Buffer.byteLength(value) })) });
+    verifiedPayloadHash = observedPayloadSha256;
+    } catch (error) { throw observerFault('before_provider_request', error, event.payload); }
   });
   api.on('after_provider_response', event => record({ phase: 'provider-response', status: typeof event.status === 'number' ? event.status : null }));
   api.on('message_end', event => {
     const message = event.message;
     if (message?.role !== 'assistant') return;
-    for (const part of message.content ?? []) if (part.type === 'toolCall') assistantCalls.set(part.id, { tool: part.name, input: part.arguments });
+    for (const part of message.content ?? []) if (part.type === 'toolCall') {
+      const input = JSON.parse(JSON.stringify(part.arguments)), selected = part.name === 'read' ? input?.path : input;
+      const discovered = part.name === 'skill_prepare' ? Array.isArray(selected?.roots) && selected.roots.length > 0 && selected.roots.every(ref => wasDiscovered(ref))
+        : part.name === 'read' && typeof selected === 'string' && wasDiscovered(selected);
+      const observed = record({ phase: 'authored-tool-call', source: 'assistant-message-end', toolCallId: part.id, tool: part.name, input,
+        argumentsSha256: digest(JSON.stringify(input)), discovered });
+      assistantCalls.set(part.id, { tool: part.name, input, sequence: observed.sequence, at: observed.at, argumentsSha256: observed.argumentsSha256 });
+    }
     const value = text(message.content);
     if (value.trim()) record({ phase: 'assistant-final', success: ['stop', 'length'].includes(message.stopReason), stopReason: message.stopReason ?? null, text: value, sha256: digest(value), bytes: Buffer.byteLength(value) });
   });
   api.on('tool_call', event => {
     const authored = assistantCalls.get(event.toolCallId);
-    const input = authored?.input?.path ?? event.input?.path;
-    const discoveredBefore = typeof input === 'string' && Boolean(wasDiscovered(input));
-    const projectPath = typeof input === 'string' && !parseRef(input) ? resolve(settings.cwd, input) : undefined;
+    const payload = authored?.input ?? event.input;
+    const input = event.toolName === 'read' ? payload?.path : payload;
+    const expected = event.toolName === 'read' && typeof input === 'string' ? discoveredReadIdentity(input) : undefined;
+    const discoveredBefore = event.toolName === 'skill_prepare'
+      ? Array.isArray(input?.roots) && input.roots.length > 0 && input.roots.every(ref => typeof ref === 'string' && parseRef(ref) && wasDiscovered(ref))
+      : Boolean(expected);
+    const projectPath = typeof input === 'string' && !parseRef(input) ? canonicalReadPath(input) : undefined;
     const project = projectFiles.get(projectPath);
-    const category = project ? 'project' : discoveredBefore ? 'skill' : 'blocked';
-    const allowed = event.toolName === 'read' && (discoveredBefore || Boolean(project)) && authored?.tool === 'read';
-    calls.set(event.toolCallId, { input, projectPath, category, discovered: discoveredBefore, origin: authored ? 'model' : 'unknown', sequence: sequence + 1, allowed });
-    record({ phase: 'tool-call', toolCallId: event.toolCallId, tool: event.toolName, input, category, allowed, discovered: discoveredBefore, origin: authored ? 'model' : 'unknown' });
-    if (!allowed) return { block: true, reason: 'This read-only gate permits the advertised owned project files and references discovered from the selected root or a successful read.' };
+    let help;
+    try { if (event.toolName === 'read' && typeof input === 'string') help = settings.piHelpBoundary?.target(input); }
+    catch (error) { observerFault('host-help-read', error); return { block: true, reason: 'The advertised host documentation changed or could not be verified.' }; }
+    const metadata = event.toolName === 'skill_search' && input && typeof input.query === 'string' && input.query.length <= 512
+      && (input.source === undefined || typeof input.source === 'string')
+      && (input.limit === undefined || Number.isSafeInteger(input.limit) && input.limit >= 1 && input.limit <= 100)
+      && Object.keys(input).every(key => ['query', 'source', 'limit'].includes(key));
+    const preparation = event.toolName === 'skill_prepare' && discoveredBefore && input.roots.length <= 64
+      && ['use', 'inspect'].includes(input.purpose) && (input.refresh === undefined || typeof input.refresh === 'boolean')
+      && Object.keys(input).every(key => ['roots', 'purpose', 'refresh'].includes(key));
+    const allowed = toolSurface().tools.includes(event.toolName) && authored?.tool === event.toolName && (event.toolName === 'read' && (discoveredBefore || Boolean(project) || Boolean(help)) || metadata || preparation);
+    const category = !allowed ? 'blocked' : help ? 'host-help' : project ? 'project' : metadata ? 'metadata' : preparation ? 'preparation' : 'skill';
+    const authoredProof = authored ? { authoredSequence: authored.sequence, authoredAt: authored.at, argumentsSha256: authored.argumentsSha256 } : {};
+    calls.set(event.toolCallId, { toolCallId: event.toolCallId, input, projectPath, category, discovered: discoveredBefore, expected, ...authoredProof, origin: authored ? 'model' : 'unknown', sequence: sequence + 1, allowed });
+    record({ phase: 'tool-call', toolCallId: event.toolCallId, tool: event.toolName, input, category, allowed, discovered: discoveredBefore, expected, ...authoredProof, origin: authored ? 'model' : 'unknown' });
+    if (!allowed) return { block: true, reason: 'This gate permits owned project reads, actual advertised installed Pi help, authorized metadata search and exact read/prepare references discovered from the selected root or successful tool results.' };
   });
   api.on('tool_result', event => {
-    if (event.toolName !== 'read') return;
     const call = calls.get(event.toolCallId), content = text(event.content);
+    if (event.toolName === 'skill_search' && call?.allowed) {
+      try {
+        if (event.isError) throw new Error('Metadata search failed');
+        const result = checkedMetadata(content);
+        record({ phase: 'metadata-result', toolCallId: event.toolCallId, tool: event.toolName, origin: call.origin, complete: true, sha256: digest(content), bytes: Buffer.byteLength(content), records: result.records, content, callSequence: call.sequence });
+        for (const item of result.records) if (item.availability === 'available') discovered.set(item.ref, { sequence, source: 'actual authorized metadata search', id: item.id, scope: item.scope });
+        deliveredTools.set(event.toolCallId, { toolCallId: event.toolCallId, tool: event.toolName, content });
+      } catch (error) { record({ phase: 'metadata-result', toolCallId: event.toolCallId, complete: false, error: error.message, sha256: digest(content), bytes: Buffer.byteLength(content) }); }
+      return;
+    }
+    if (event.toolName === 'skill_prepare' && call?.allowed) {
+      try {
+        if (event.isError) throw new Error('Explicit preparation failed');
+        const result = checkedPreparation(content, call, event.details?.contextBrokerPreparation);
+        record({ phase: 'preparation-result', toolCallId: event.toolCallId, tool: event.toolName, purpose: result.value.purpose, roots: call.input.roots, complete: true, sha256: digest(content), bytes: Buffer.byteLength(content), content, callSequence: call.sequence });
+        for (const target of result.records) {
+          record({ phase: 'tool-result', toolCallId: event.toolCallId, tool: 'skill_prepare', origin: call.origin, discovered: call.discovered && target.preparationProof.explicitRoot, callSequence: call.sequence, requested: call.input.roots, complete: true, error: null,
+            ref: target.ref, logicalId: target.logicalId, ownerId: target.ownerId, scope: target.scope, snapshot: target.snapshot, sha256: target.sha256, bytes: target.bytes, role: target.role, path: target.path, content: target.content, preparationProof: target.preparationProof });
+          discover(target.content, 'successful explicit preparation', target);
+        }
+        discover(content, 'successful explicit preparation directory');
+        deliveredTools.set(event.toolCallId, { toolCallId: event.toolCallId, tool: event.toolName, content, records: result.records });
+      } catch (error) { record({ phase: 'tool-result', toolCallId: event.toolCallId, tool: 'skill_prepare', origin: call.origin, complete: false, error: error.message, sha256: digest(content), bytes: Buffer.byteLength(content), callSequence: call.sequence }); }
+      return;
+    }
+    if (event.toolName !== 'read') { record({ phase: 'blocked-tool-result', toolCallId: event.toolCallId, tool: event.toolName, error: event.isError, sha256: digest(content), bytes: Buffer.byteLength(content) }); return; }
+    if (call?.category === 'host-help') {
+      try {
+        const proof = settings.piHelpBoundary.verifyRead(call.input, content, event.isError);
+        record({ phase: 'host-help-read-result', toolCallId: event.toolCallId, origin: call.origin, callSequence: call.sequence, ...proof });
+        if (proof?.complete) deliveredTools.set(event.toolCallId, { toolCallId: event.toolCallId, tool: event.toolName, content });
+      } catch (error) { observerFault('host-help-result', error); }
+      return;
+    }
     if (call?.category === 'project') {
       const file = projectFiles.get(call.projectPath);
       const actual = readFileSync(call.projectPath);
@@ -289,10 +680,13 @@ export function observeGraphGate(api, settings) {
       return;
     }
     if (call?.category === 'blocked') { record({ phase: 'blocked-read-result', toolCallId: event.toolCallId, requested: call.input, returnedSha256: digest(content), error: event.isError }); return; }
-    const target = typeof call?.input === 'string' ? targetFor(call.input, content) : undefined;
+    const target = call?.expected ? targetFor(call.input, content, { expected: call.expected }) : undefined;
     const complete = Boolean(target && !event.isError && call?.allowed);
     record({ phase: 'tool-result', toolCallId: event.toolCallId, tool: 'read', origin: call?.origin ?? 'unknown', discovered: call?.discovered ?? false, callSequence: call?.sequence, requested: call?.input, complete, error: event.isError || !target ? 'native read did not match one complete immutable file' : null, ...(target ? { ref: target.ref, logicalId: target.logicalId, ownerId: target.ownerId, scope: target.scope, snapshot: target.snapshot, sha256: digest(content), bytes: Buffer.byteLength(content), role: target.role, path: target.path, content } : { sha256: digest(content), bytes: Buffer.byteLength(content) }) });
-    if (complete) discover(content, 'successful native read', target);
+    if (complete) {
+      discover(content, 'successful native read', target, bindHostIndex(call.input, target));
+      deliveredTools.set(event.toolCallId, { toolCallId: event.toolCallId, tool: event.toolName, content, records: [target] });
+    }
   });
   api.on('session_shutdown', () => record({ phase: 'session-shutdown' }));
 }
@@ -300,7 +694,7 @@ export function observeGraphGate(api, settings) {
 export async function readGateConfig(path) {
   assert.ok(isAbsolute(path), '--config must be absolute');
   const input = await json(path);
-  const allowed = ['version', 'gate', 'selection', 'rootRef', 'database', 'viewId', 'profileId', 'extension', 'packagePath', 'cliCommand', 'oraclePath', 'evidenceRoot', 'model', 'previousFailures', 'preparation', 'mode', 'reuseReceipt', 'selectionReceipt'];
+  const allowed = ['version', 'gate', 'selection', 'rootRef', 'database', 'viewId', 'profileId', 'extension', 'packagePath', 'cliCommand', 'oraclePath', 'evidenceRoot', 'model', 'previousFailures', 'preparation', 'mode', 'reuseReceipt', 'selectionReceipt', 'retainedSourceProofRepo'];
   assert.ok(input && Object.keys(input).every(key => allowed.includes(key)), 'Unknown graph-model configuration field');
   assert.equal(input.version, 1);
   const prompt = frozenPrompt(input.gate, input.selection);
@@ -328,6 +722,7 @@ export async function readGateConfig(path) {
   assert.ok(['cold', 'warm-new-process', 'matrix'].includes(mode), 'Use cold, warm-new-process, or the fixed matrix (which includes two live continued-session samples)');
   assert.ok(mode === 'warm-new-process' ? isAbsolute(input.reuseReceipt ?? '') : input.reuseReceipt === undefined, 'Only warm-new-process may name a previous complete cache receipt');
   if (input.selectionReceipt !== undefined) assert.ok(isAbsolute(input.selectionReceipt));
+  if (input.retainedSourceProofRepo !== undefined) assert.ok(isAbsolute(input.retainedSourceProofRepo));
   return { ...input, model, mode, previousFailures, prompt };
 }
 
@@ -339,7 +734,7 @@ function gateEnvironment(cliPaths, brokerConfig, evidence, owned) {
   return env;
 }
 
-const runFingerprint = (config, doctor, oracleSha256, projectSha256) => hash(JSON.stringify({ version: 1, gate: config.gate, rootRef: config.rootRef, selection: config.selection, database: config.database, viewId: config.viewId, profileId: config.profileId, prompt: config.prompt.sha256, model: config.model, cli: doctor.cli.sha256, extension: doctor.extension.sha256, package: doctor.package.sha256, oracleSha256, projectSha256, preparation: config.preparation ?? null }));
+const runFingerprint = (config, doctor, oracleSha256, projectSha256) => hash(JSON.stringify({ version: 2, harness: doctor.harness.sha256, gate: config.gate, rootRef: config.rootRef, selection: config.selection, database: config.database, viewId: config.viewId, profileId: config.profileId, prompt: config.prompt.sha256, model: config.model, cli: doctor.cli.sha256, extension: doctor.extension.sha256, package: doctor.package.sha256, oracleSha256, projectSha256, preparation: config.preparation ?? null }));
 
 export function summarizeSamples(samples) {
   const summary = {};
@@ -436,7 +831,7 @@ export async function graphSelectionPreflight(config) {
   await save(join(evidence, 'result.json'), result); return result;
 }
 
-async function packageIdentity(config) {
+export async function packageIdentity(config) {
   const extension = await entryIdentity(config.extension), pkg = await entryIdentity(config.packagePath);
   assert.ok(extension.path.includes('/node_modules/pi-context-broker/'), 'Consume an actual installed package entry');
   const packageRoot = extension.path.slice(0, extension.path.indexOf('/node_modules/pi-context-broker/') + '/node_modules/pi-context-broker'.length);
@@ -445,7 +840,27 @@ async function packageIdentity(config) {
   assert.ok(declared && await realpath(resolve(packageRoot, declared)) === extension.path, 'The entry must be declared by the installed Pi package');
   const packed = await runCommand('/usr/bin/tar', ['-xOf', pkg.path, 'package/' + declared.replace(/^\.\//, '')], { cwd: packageRoot, env: process.env, timeoutMs: 10000 });
   assert.equal(hash(packed.stdout), extension.sha256, 'Installed extension bytes differ from the frozen package');
-  return { extension, package: pkg, packageRoot, bundledSkills: metadata.pi?.skills ?? [] };
+  const listing = await runCommand('/usr/bin/tar', ['-tzf', pkg.path], { cwd: packageRoot, env: process.env, timeoutMs: 10000 });
+  const archived = listing.stdout.trim().split('\n').filter(file => /^package\/(?:src|dist)\//.test(file) && !file.endsWith('/') || file === 'package/package.json').map(file => file.slice('package/'.length)).sort();
+  assert.ok(archived.length > 1 && new Set(archived).size === archived.length);
+  assert.ok(archived.every(file => file.split('/').every(part => part && part !== '.' && part !== '..')));
+  const installed = ['package.json'];
+  const walk = async directory => {
+    for (const entry of await readdir(join(packageRoot, directory), { withFileTypes: true })) {
+      const file = directory + '/' + entry.name;
+      assert.equal(entry.isSymbolicLink(), false, 'Frozen runtime files cannot be replaced with local symlinks');
+      if (entry.isDirectory()) await walk(file); else if (entry.isFile()) installed.push(file);
+    }
+  };
+  await Promise.all(['src', 'dist'].map(walk));
+  assert.deepEqual(installed.sort(), archived, 'Installed runtime inventory differs from the selected archive');
+  const runtimeFiles = [];
+  for (let offset = 0; offset < archived.length; offset += 8) runtimeFiles.push(...await Promise.all(archived.slice(offset, offset + 8).map(async file => {
+    const [actual, packed] = await Promise.all([readFile(join(packageRoot, file)), runCommand('/usr/bin/tar', ['-xOf', pkg.path, 'package/' + file], { cwd: packageRoot, env: process.env, timeoutMs: 10000 })]);
+    assert.equal(hash(packed.stdout), hash(actual), 'Installed runtime file differs from the selected archive: ' + file);
+    return { path: file, bytes: actual.length, sha256: hash(actual) };
+  })));
+  return { extension, package: pkg, packageRoot, bundledSkills: metadata.pi?.skills ?? [], runtimeFiles, runtimeSha256: hash(JSON.stringify(runtimeFiles)) };
 }
 
 export async function graphModelDoctor(config) {
@@ -461,19 +876,28 @@ export async function graphModelDoctor(config) {
   }
   const probe = await mkdtemp(join(await systemTempRoot(), 'broker-graph-model-doctor-'));
   const pi = await runCommand('pi', ['--version'], { cwd: probe, env: process.env, timeoutMs: 10000 });
-  return { status: 'ready', gate: config.gate, model: config.model, prompt: config.prompt, ...artifacts, cli: { command: config.cliCommand, sha256: hash(await readFile(config.cliCommand[1])) }, node: process.version, pi: pi.stdout.trim(), authentication: 'existing credentials reused in place; not probed or copied', scratch: probe, proof: 'Doctor inspects artifacts and contract only; no real model or Notion request' };
+  return { status: 'ready', gate: config.gate, model: config.model, prompt: config.prompt, ...artifacts, harness: await graphHarnessIdentity(), cli: { command: config.cliCommand, sha256: hash(await readFile(config.cliCommand[1])) }, node: process.version, pi: pi.stdout.trim(), authentication: 'existing credentials reused in place; not probed or copied', scratch: probe, proof: 'Doctor inspects artifacts and contract only; no real model or Notion request' };
 }
 
 async function collectResponses(directory) {
   return Promise.all((await readdir(directory)).filter(name => name.endsWith('.json')).map(name => json(join(directory, name))));
 }
 
-export function graphTrace({ config, oracle, observation, responses, sourceLedger, hostLedger, isolation, ownershipResponses = responses }) {
+export function graphTrace({ config, oracle, observation, responses, sourceLedger, hostLedger, isolation, ownershipResponses = responses, retainedSourceProofs = [] }) {
   const providerRequests = observation.filter(event => event.phase === 'provider-request');
   const firstProvider = providerRequests[0];
-  assert.ok(firstProvider, 'No actual provider request was observed');
+  const transportAttempts = observation.filter(event => event.phase === 'provider-transport-start').length;
+  if (observation.some(event => event.phase === 'observer-error') || !firstProvider && transportAttempts > 0)
+    throw Object.assign(new Error('Provider observation is invalid; actual transport attempts: ' + transportAttempts + '. Missing verified payload evidence cannot be reconstructed from context or response events.'), { code: 'GRAPH_OBSERVER_INVALID' });
+  assert.ok(firstProvider, 'No verified provider payload or actual provider transport was observed');
   const directorySequence = firstProvider.sequence;
   const reads = observation.filter(event => event.phase === 'tool-result').map(event => ({ ...event, sequence: event.callSequence ?? event.sequence }));
+  for (const delivery of observation.filter(event => ['metadata-result', 'preparation-result'].includes(event.phase) && event.complete)) {
+    const observed = providerRequests.some(request => request.sequence > delivery.sequence && request.toolResults?.some(result => result.toolCallId === delivery.toolCallId
+      && result.sha256 === delivery.sha256 && result.bytes === delivery.bytes
+      && (delivery.phase === 'metadata-result' ? result.exactToolOutputCopies >= 1 : result.exactToolOutputCopies >= 1 || result.records?.length > 0 && result.records.every(record => record.providerCopies === 1))));
+    assert.ok(observed, 'A successful discovery/preparation tool output must reach an actual provider with matching output or verified body hashes');
+  }
   if (config.gate === 'A' && oracle.roots?.B?.ref) assert.ok(!reads.some(read => read.ownerId === decodeURIComponent(oracle.roots.B.ref.split('/')[2])), 'Gate A cannot read the ordinary root as a bridge, including a pinned ref');
   const actualPrepare = responses.filter(item => item.command === 'prepare' && item.response?.status === 'ready').map(item => item.response);
   const rootPreparation = actualPrepare.find(value => value.purpose === 'use' && value.roots?.some(root => root.id === decodeURIComponent(config.rootRef.split('/')[2])));
@@ -493,6 +917,11 @@ export function graphTrace({ config, oracle, observation, responses, sourceLedge
     assert.equal(copies[0].bytes, node.bytes);
     assert.equal(copies[0].snapshot, node.binding.snapshot_id);
     assert.equal(copies[0].scope, rootPreparation.scope);
+    for (const request of providerRequests) {
+      const retained = request.contents.filter(file => file.ownerId === node.id && file.role === 'entrypoint');
+      assert.ok(retained.length <= 1 && retained.every(file => file.sha256 === node.body_sha256 && file.bytes === node.bytes
+        && file.snapshot === node.binding.snapshot_id && file.scope === rootPreparation.scope), 'Root/Required bodies must remain unique and on the selected version in every provider request');
+    }
   }
   const rootNode = selected.find(node => node.record.ref === config.rootRef);
   assert.ok(rootNode);
@@ -514,27 +943,81 @@ export function graphTrace({ config, oracle, observation, responses, sourceLedge
     if (value.record.locator?.skill_id) remember(entityOwners, value.record.locator.skill_id, owner);
     remember(entityOwners, value.record.id, owner);
   }
+  const retainedRecords = retainedSourceProofs.flatMap(proof => verifyRetainedSourceProof(proof, {
+    scope: rootPreparation.scope,
+    libraryId: rootNode.record.locator?.library_id,
+    recordsDataSourceId: proof.records_data_source_id,
+  }).map(record => ({ record, scope: proof.scope, dataSourceId: proof.records_data_source_id, libraryId: proof.library_id })));
   const closes = new Map(sourceLedger.filter(event => event.phase === 'close').map(event => [event.requestId, event]));
   const attempts = [];
   let missingMetrics = false, unattributedBeforeSelection = 0, memberBodyReadsBeforeSelection = 0;
   const selectedIds = new Set(selected.map(node => node.id));
   const calls = new Map(observation.filter(event => event.phase === 'tool-call').map(event => [event.toolCallId, event]));
+  const authoredCalls = new Map(observation.filter(event => event.phase === 'authored-tool-call').map(event => [event.sequence, event]));
+  const selectionTime = (read, owner) => {
+    const call = calls.get(read.toolCallId);
+    if (!call?.allowed || call.origin !== 'model' || read.callSequence !== call.sequence) return Infinity;
+    const admittedAt = Date.parse(call.at), authored = authoredCalls.get(call.authoredSequence);
+    // Historical observations retain their original admission time. An earlier
+    // time needs a received assistant event, exact original arguments, and the
+    // immutable identity later verified by the actual read/prepare result.
+    if (!authored || authored.source !== 'assistant-message-end' || authored.discovered !== true
+      || authored.toolCallId !== call.toolCallId || authored.tool !== call.tool
+      || authored.sequence >= call.sequence || Date.parse(authored.at) > admittedAt
+      || hash(JSON.stringify(authored.input)) !== authored.argumentsSha256
+      || authored.argumentsSha256 !== call.argumentsSha256
+      || (call.tool === 'read' ? authored.input?.path !== call.input : JSON.stringify(authored.input) !== JSON.stringify(call.input))
+      || owner.snapshot !== undefined && read.snapshot !== owner.snapshot) return admittedAt;
+    if (call.tool === 'read') {
+      let fileId = read.fileId;
+      try { fileId ??= new URL(read.ref).searchParams.get('file_id') ?? undefined; } catch { return admittedAt; }
+      const expected = call.expected;
+      if (!expected || expected.scope !== read.scope || expected.ownerId !== read.ownerId || expected.path !== read.path
+        || expected.snapshot !== read.snapshot || expected.fileId !== fileId || expected.sha256 !== read.sha256 || expected.bytes !== read.bytes) return admittedAt;
+    } else if (call.tool === 'skill_prepare') {
+      const proof = read.preparationProof;
+      if (!proof?.deliveryVerified || proof.scope !== read.scope || proof.ownerId !== read.ownerId || proof.snapshot !== read.snapshot
+        || proof.sha256 !== read.sha256 || proof.bytes !== read.bytes) return admittedAt;
+    } else return admittedAt;
+    return Date.parse(authored.at);
+  };
   const starts = new Map(sourceLedger.filter(event => event.phase === 'spawn').map(event => [event.requestId, Date.parse(event.at)]));
   for (const receipt of responses) {
     if (!receipt.metrics?.complete) { missingMetrics = true; continue; }
+    // A chunk belongs to a source only when this very CLI request observed the
+    // immutable bundle ID. A shared prepare batch or a later cache entry is not
+    // ownership evidence. Independent metadata proves membership, not a read.
+    const observedBundles = new Set(receipt.metrics.trace.filter(event => event.event === 'attempt' && event.request_kind === 'notion_metadata')
+      .flatMap(event => (event.target?.entity_ids ?? []).filter(id => /^bundle-[a-f0-9]{64}$/.test(id)).map(id => event.target.data_source_id + '/' + id)));
+    const retainedOwners = new Map(), retainedMembership = new Map();
+    for (const { record, scope, dataSourceId, libraryId } of retainedRecords) {
+      if (!observedBundles.has(dataSourceId + '/' + record.entity_id)) continue;
+      const ownerReads = ownershipResponses.filter(item => item.command === 'read' && item.response?.ok === true
+        && item.response.scope === scope && item.response.record?.locator?.library_id === libraryId
+        && item.response.record.locator.page_id === record.skill_page_id);
+      for (const item of ownerReads) for (const chunk of record.payload.archive.chunks) {
+        const key = dataSourceId + '/' + chunk.object_id;
+        remember(retainedOwners, key, { id: item.response.record.id, scope, snapshot: item.response.snapshot_id });
+        retainedMembership.set(key, [...new Set([...(retainedMembership.get(key) ?? []), record.record_id])]);
+      }
+    }
     for (const event of receipt.metrics.trace.filter(event => event.event === 'attempt')) {
       const target = event.target;
       const page = target?.page_id ?? target?.block_id;
-      const identities = page ? [pageOwners.get(page.replaceAll('-', '').toLowerCase())] : target?.entity_ids?.map(id => entityOwners.get(id)) ?? [];
+      const identities = page ? [pageOwners.get(page.replaceAll('-', '').toLowerCase())] : target?.entity_ids?.map(id => {
+        const values = new Map([...(entityOwners.get(id) ?? []), ...(retainedOwners.get(target.data_source_id + '/' + id) ?? [])]);
+        return values.size ? values : undefined;
+      }) ?? [];
       const attributed = identities.length > 0 && identities.every(values => values?.size === 1);
       const owners = [...new Map(identities.filter(Boolean).flatMap(values => [...values]).map(([key, owner]) => [key, owner])).values()];
-      const selectedBefore = owner => owner.scope === rootPreparation.scope && (selectedIds.has(owner.id) || reads.some(read => read.ownerId === owner.id && read.scope === owner.scope && read.complete && calls.get(read.toolCallId)?.origin === 'model' && calls.get(read.toolCallId)?.allowed && Date.parse(calls.get(read.toolCallId).at) <= starts.get(receipt.requestId)));
+      const selectedBefore = owner => owner.scope === rootPreparation.scope && (selectedIds.has(owner.id) || reads.some(read => read.ownerId === owner.id && read.scope === owner.scope && read.complete && selectionTime(read, owner) <= starts.get(receipt.requestId)));
       const beforeSelection = !attributed || owners.some(owner => !selectedBefore(owner));
       if (event.request_kind === 'notion_body') {
         if (!attributed) unattributedBeforeSelection++;
         if (owners.some(owner => !selectedBefore(owner))) memberBodyReadsBeforeSelection++;
       }
-      attempts.push({ transport: 'direct_http', kind: event.request_kind === 'notion_body' ? 'body' : event.request_kind === 'notion_write' ? 'write' : event.request_kind === 'provider' ? 'provider' : 'metadata', status: event.http_status, requestIdAvailable: event.request_id !== null, requestId: event.request_id, ...(event.http_status === null ? { networkError: event.outcome } : {}), target: target ?? null, owners, attributed, beforeSelection, requestBytes: event.request_bytes, responseBytes: event.response_bytes, bodyKind: event.body_kind, command: receipt.command, requestReceipt: receipt.requestId });
+      const sourceProofs = [...new Set((target?.entity_ids ?? []).flatMap(id => retainedMembership.get(target.data_source_id + '/' + id) ?? []))];
+      attempts.push({ transport: 'direct_http', kind: event.request_kind === 'notion_body' ? 'body' : event.request_kind === 'notion_write' ? 'write' : event.request_kind === 'provider' ? 'provider' : 'metadata', status: event.http_status, requestIdAvailable: event.request_id !== null, requestId: event.request_id, ...(event.http_status === null ? { networkError: event.outcome } : {}), target: target ?? null, owners, attributed, beforeSelection, ...(sourceProofs.length ? { retainedSourceProofs: sourceProofs } : {}), requestBytes: event.request_bytes, responseBytes: event.response_bytes, bodyKind: event.body_kind, command: receipt.command, requestReceipt: receipt.requestId });
     }
   }
   const processes = hostLedger.filter(event => event.event === 'spawn').map(event => ({ owned: true, pid: event.pid, spawnObserved: true, closeObserved: hostLedger.some(end => end.event === 'close' && end.pid === event.pid && end.observedExit), closed: hostLedger.some(end => end.event === 'close' && end.pid === event.pid && end.observedExit) }));
@@ -547,6 +1030,59 @@ export function graphTrace({ config, oracle, observation, responses, sourceLedge
   return trace;
 }
 
+export function retainedSourceProofInput({ gate, evidence, trace, responses, ownershipResponses = responses }) {
+  const attempts = trace.httpAttempts.filter(attempt => attempt.kind === 'body' && attempt.bodyKind === 'retained_body'
+    && !attempt.attributed && attempt.status === 200 && attempt.target?.entity_ids?.length
+    && attempt.target.entity_ids.every(id => /^chunk-[a-f0-9]{64}$/.test(id)));
+  if (!attempts.length) return undefined;
+  const requests = new Set(attempts.map(attempt => attempt.requestReceipt));
+  const sources = [...new Set(attempts.map(attempt => attempt.target.data_source_id))];
+  if (sources.length !== 1) return undefined;
+  const bundles = [...new Set(responses.filter(receipt => requests.has(receipt.requestId)).flatMap(receipt => receipt.metrics?.trace ?? [])
+    .filter(event => event.event === 'attempt' && event.request_kind === 'notion_metadata' && event.target?.data_source_id === sources[0])
+    .flatMap(event => (event.target.entity_ids ?? []).filter(id => /^bundle-[a-f0-9]{64}$/.test(id))))].sort();
+  if (!bundles.length) return undefined;
+  const owners = [...new Map(ownershipResponses.filter(receipt => receipt.command === 'read' && receipt.response?.ok === true
+    && receipt.response.record?.locator?.type === 'shared_skill').map(receipt => {
+      const { record, scope, snapshot_id } = receipt.response, locator = record.locator;
+      return [scope + '/' + record.id, { id: record.id, name: record.name, page_id: locator.page_id, database_id: locator.database_id,
+        library_id: locator.library_id, scope, snapshot_id }];
+    })).values()];
+  if (!owners.length) return undefined;
+  return { version: 1, runs: [{ gate, directory: evidence, records_data_source_ids: sources, bundle_ids: bundles,
+    owners, unattributed_retained_attempts: attempts }] };
+}
+
+async function collectSupplementaryRetainedProof({ config, evidence, trace, responses, ownershipResponses }) {
+  const input = retainedSourceProofInput({ gate: config.gate, evidence, trace, responses, ownershipResponses });
+  if (!input) return { receipt: { status: 'not-needed-or-unresolved', accounting: 'No additional HTTP; unknown ownership remains unknown' } };
+  if (!config.retainedSourceProofRepo) return { receipt: { status: 'not-configured', accounting: 'No additional HTTP; retained chunk ownership remains unknown' } };
+  const inputPath = join(evidence, 'retained-source-input.json'), output = join(evidence, 'retained-source-oracle');
+  const proofPath = join(output, 'proof.json'), collector = fileURLToPath(new URL('./notion-skill-source-proof.ts', import.meta.url));
+  await save(inputPath, input);
+  const receipt = { version: 1, status: 'running', phase: 'after-consumer-closed', input: { path: inputPath, sha256: hash(await readFile(inputPath)) },
+    collector: { path: collector, sha256: hash(await readFile(collector)) }, cliSource: config.retainedSourceProofRepo,
+    command: [process.execPath, collector, 'collect', '--input', inputPath, '--output', output, '--cli-repo', config.retainedSourceProofRepo],
+    accounting: 'Supplementary exact immutable source metadata only. Its HTTP/process costs are separate from consumer metrics; bundle membership does not establish native read, provider delivery, or loaded state.', startedAt: new Date().toISOString() };
+  let proof;
+  try {
+    const execution = await runCommand(receipt.command[0], receipt.command.slice(1), { cwd: dirname(helper),
+      env: { ...process.env, BROKER_E2E_PROCESS_LEDGER: join(evidence, 'retained-source-processes.jsonl') }, timeoutMs: 120000 });
+    await writeFile(join(evidence, 'retained-source-collector.stdout'), execution.stdout, { mode: 0o600 });
+    await writeFile(join(evidence, 'retained-source-collector.stderr'), execution.stderr, { mode: 0o600 });
+    const bytes = await readFile(proofPath); proof = JSON.parse(bytes.toString('utf8'));
+    verifyRetainedSourceProof(proof, { scope: input.runs[0].owners[0].scope, libraryId: input.runs[0].owners[0].library_id, recordsDataSourceId: input.runs[0].records_data_source_ids[0] });
+    receipt.status = 'verified'; receipt.exit_code = 0; receipt.proof = { path: proofPath, bytes: bytes.length, sha256: hash(bytes) };
+    receipt.request_metrics = proof.request_metrics;
+  } catch (error) {
+    proof = undefined; receipt.status = 'unknown'; receipt.error = { code: error.code ?? 'RETAINED_SOURCE_PROOF_UNRESOLVED', message: error.message };
+    try { const bytes = await readFile(proofPath); receipt.proof = { path: proofPath, bytes: bytes.length, sha256: hash(bytes) }; receipt.request_metrics = JSON.parse(bytes.toString('utf8')).request_metrics; } catch { /* The missing proof remains explicit. */ }
+  }
+  receipt.finishedAt = new Date().toISOString();
+  await save(join(evidence, 'retained-source-observation.json'), receipt);
+  return { proof, receipt };
+}
+
 async function runGate(config) {
   const doctor = await graphModelDoctor(config);
   assert.ok(config.selectionReceipt, 'Run the public metadata-only selection preflight first');
@@ -554,6 +1090,8 @@ async function runGate(config) {
   assert.equal(selection.status, 'passed'); assert.equal(selection.kind, 'installed-pi-selection-preflight');
   assert.equal(selection.selection, config.selection); assert.equal(selection.rootRef, config.rootRef); assert.equal(selection.database, config.database); assert.equal(selection.viewId, config.viewId); assert.equal(selection.profileId, config.profileId);
   assert.equal(selection.artifacts.extension.sha256, doctor.extension.sha256); assert.equal(selection.cliSha256, doctor.cli.sha256, 'Selection preflight must use the same installed artifacts');
+  assert.equal(selection.artifacts.package.sha256, doctor.package.sha256, 'Selection preflight must use the selected package archive');
+  assert.equal(selection.artifacts.runtimeSha256, doctor.runtimeSha256, 'Selection preflight must use the same complete installed runtime');
   const oraclePath = await realpath(config.oraclePath), oracle = await json(oraclePath);
   await mkdir(config.evidenceRoot, { recursive: true });
   const evidence = await mkdtemp(join(await realpath(config.evidenceRoot), `graph-model-${config.gate}-`));
@@ -595,12 +1133,14 @@ async function runGate(config) {
   const brokerConfig = join(control, 'broker.json');
   await save(brokerConfig, brokerConfiguration(config, [process.execPath, helper, '--source', statePath], resolved[1]));
   const observer = join(control, 'observer.mjs');
-  const settings = { rootRef: config.rootRef, model: config.model, prompt: config.prompt.text, cache: resolved[1], cwd, responses, output, project, priorResponseFiles };
-  await writeFile(observer, "import * as fs from 'node:fs';\nimport * as crypto from 'node:crypto';\nimport * as path from 'node:path';\nexport default function(api) { (" + observeGraphGate.toString() + ')(api, { ...' + JSON.stringify(settings) + ', fs, crypto, path }); }\n', { mode: 0o600 });
+  const settings = { rootRef: config.rootRef, model: config.model, prompt: config.prompt.text, cache: resolved[1], cwd, responses, output, project, priorResponseFiles, piExecutable: (await resolveHost('pi')).identity };
+  const referenceParser = pathToFileURL(join(dirname(config.extension), 'native-reference.ts')).href;
+  await writeFile(observer, "import * as fs from 'node:fs';\nimport * as crypto from 'node:crypto';\nimport * as path from 'node:path';\nimport { parseNativeReference } from " + JSON.stringify(referenceParser) + ";\nexport default function(api) { const settings = " + JSON.stringify(settings) + '; const piHelpBoundary = (' + createPiHelpBoundary.toString() + ' )({fs,crypto,path,executable:settings.piExecutable}); (' + observeGraphGate.toString() + ')(api, { ...settings, fs, crypto, path, piHelpBoundary, parseNativeReference }); }\n', { mode: 0o600 });
   const inputObserver = join(control, 'input-observer.mjs');
   await writeFile(inputObserver, "import { appendFileSync } from 'node:fs'; import { createHash } from 'node:crypto';\nexport default function(api) { api.on('input', event => { const text = event.text ?? ''; appendFileSync(" + JSON.stringify(output) + ", JSON.stringify({ phase: 'native-input', at: new Date().toISOString(), source: event.source, textSha256: createHash('sha256').update(text).digest('hex'), bytes: Buffer.byteLength(text), frozenPromptMatched: text === " + JSON.stringify(config.prompt.text) + " }) + '\\n', { mode: 0o600 }); }); }\n", { mode: 0o600 });
-  const isolation = { oracleRoots, consumerRoots: resolved, resolved: true, oracleObserverOnly: true, inventoryComplete: false, localSkillInventory: [], shellEnabled: false, contextFiles: false, promptTemplates: false, autoExtensions: false, prelaunch, discoveryPolicy: 'Pi --no-skills plus explicit installed Broker/observer only; native catalog inventory is captured; unobserved local reads are blocked', credentialPolicy: 'Inherited host authentication read in place; no credential file is read or copied by the driver' };
-  const result = { version: 1, gate: config.gate, mode: config.mode, model: config.model, status: 'running', evidence, scratch, doctor, isolation, project, prompt: config.prompt, availabilityFailure: false, samples: [], files: ['doctor.json', 'isolation.json', 'project.json', 'ownership.json', 'observer.jsonl', 'source-processes.jsonl', 'owned-processes.jsonl', 'result.json'], notRun: ['Native composer Stop/TUI', 'Generated procedure execution until the explicit exercise action'] };
+  const traps = await createGraphFallbackTraps(control, evidence);
+  const isolation = { oracleRoots, consumerRoots: resolved, resolved: true, oracleObserverOnly: true, inventoryComplete: false, localSkillInventory: [], shellEnabled: false, contextFiles: false, promptTemplates: false, autoExtensions: false, tools: GRAPH_GATE_TOOLS, prelaunch, discoveryPolicy: 'Pi --no-skills plus explicit installed Broker/observer only; actual native read/search/prepare are advertised; undiscovered reads, shell and outside project files are blocked', credentialPolicy: 'Inherited host authentication read in place; no credential file is read or copied by the driver', legacyFallback: { directory: traps.directory, ledger: traps.ledger, checks: traps.checks } };
+  const result = { version: 1, harness: doctor.harness, gate: config.gate, mode: config.mode, model: config.model, status: 'running', evidence, scratch, doctor, isolation, project, prompt: config.prompt, availabilityFailure: false, samples: [], files: ['doctor.json', 'isolation.json', 'project.json', 'ownership.json', 'observer.jsonl', 'source-processes.jsonl', 'owned-processes.jsonl', 'legacy-fallback-calls.jsonl', 'result.json'], notRun: ['Native composer Stop/TUI', 'Generated procedure execution until the explicit exercise action'] };
   await save(join(scratch, 'ownership.json'), { evidence, purpose: 'native-graph-model', runId: randomUUID() });
   await save(join(evidence, 'ownership.json'), await json(join(scratch, 'ownership.json')));
   await save(join(evidence, 'doctor.json'), doctor);
@@ -608,8 +1148,8 @@ async function runGate(config) {
   await save(join(evidence, 'project.json'), project);
   await save(join(evidence, 'result.json'), result);
   console.log(JSON.stringify({ status: 'running', gate: config.gate, evidence, scratch }));
-  const env = gateEnvironment(cliPaths, brokerConfig, evidence, owned);
-  const args = ['--no-extensions', '--no-skills', '--no-mcp', '--no-context-files', '--no-prompt-templates', '--session-dir', resolved[2], '--tools', 'read', '-e', inputObserver, '-e', doctor.extension.path, '-e', observer, '--model', config.model];
+  const env = { ...gateEnvironment(cliPaths, brokerConfig, evidence, owned), ...traps.environment };
+  const args = ['--no-extensions', '--no-skills', '--no-mcp', '--no-context-files', '--no-prompt-templates', '--session-dir', resolved[2], '--tools', GRAPH_GATE_TOOLS.join(','), '-e', inputObserver, '-e', doctor.extension.path, '-e', observer, '--model', config.model];
   let rpc, launchError;
   let startupMs = null;
   try {
@@ -636,7 +1176,11 @@ async function runGate(config) {
   const responsesObserved = await collectResponses(responses), sourceLedger = await rows(ledger), hostLedger = await rows(owned);
   const final = observation.filter(event => event.phase === 'assistant-final').at(-1);
   const responseStatuses = observation.filter(event => ['provider-response', 'provider-transport-response'].includes(event.phase)).map(event => event.status);
-  result.availabilityFailure = (!final?.success && (observation.some(event => event.phase === 'provider-transport-error') || responseStatuses.some(status => [401, 403, 404, 408, 429].includes(status) || status >= 500))) || Boolean(final && permissionFailure(final.text));
+  const observerErrors = observation.filter(event => event.phase === 'observer-error');
+  result.providerObservation = { verifiedPayloads: observation.filter(event => event.phase === 'provider-request').length, transportAttempts: observation.filter(event => event.phase === 'provider-transport-start').length, transportResponses: observation.filter(event => event.phase === 'provider-transport-response').length, blockedUnverifiedPayloads: observation.filter(event => event.phase === 'provider-transport-blocked').length, observerErrors: observerErrors.length };
+  result.legacyFallback = { checks: traps.checks, calls: (await rows(traps.ledger)).length };
+  result.availabilityFailure = observerErrors.length === 0 && ((!final?.success && (observation.some(event => event.phase === 'provider-transport-error') || responseStatuses.some(status => [401, 403, 404, 408, 429].includes(status) || status >= 500))) || Boolean(final && permissionFailure(final.text)));
+  let retainedSourceProofs = [];
   try {
     const catalog = observation.find(event => event.phase === 'catalog');
     assert.ok(observation.some(event => event.phase === 'native-input' && event.frozenPromptMatched && event.textSha256 === config.prompt.sha256), 'The actual native input did not contain the frozen root-only task');
@@ -647,19 +1191,33 @@ async function runGate(config) {
     isolation.localSkillInventory = catalog.skills.filter(item => !['verified-notion-host-snapshot', 'verified-notion-host-index'].includes(item.provenance?.source));
     assert.ok(catalog.skills.every(item => item.provenance?.ownerId === decodeURIComponent(config.rootRef.split('/')[2])), 'Every advertised native Skill must be bound to the actual selected Notion snapshot');
     isolation.nativeCatalog = catalog;
-    const trace = graphTrace({ config, oracle, observation, responses: responsesObserved, sourceLedger, hostLedger, isolation, ownershipResponses: [...responsesObserved, ...priorResponses] });
+    const traceInput = { config, oracle, observation, responses: responsesObserved, sourceLedger, hostLedger, isolation, ownershipResponses: [...responsesObserved, ...priorResponses] };
+    let trace = graphTrace(traceInput);
+    const supplementary = await collectSupplementaryRetainedProof({ config, evidence, trace, responses: responsesObserved, ownershipResponses: traceInput.ownershipResponses });
+    result.retainedSourceObservation = supplementary.receipt;
+    if (supplementary.proof) {
+      await save(join(evidence, 'trace-before-retained-proof.json'), trace); result.files.push('trace-before-retained-proof.json');
+      retainedSourceProofs = [supplementary.proof]; trace = graphTrace({ ...traceInput, retainedSourceProofs });
+    }
+    if (supplementary.receipt.input) result.files.push('retained-source-input.json', 'retained-source-observation.json');
     await save(join(evidence, 'trace.json'), trace); result.files.push('trace.json');
     result.contract = evaluateGraphTrace(trace, oracle);
     result.preparation = trace.preparation;
     assert.ok(observation.some(event => event.phase === 'project-read-result' && event.complete && event.path.startsWith('src/')), 'The generated workflow must be grounded in an actual owned project source read');
     assert.ok(!observation.some(event => event.phase === 'tool-call' && !event.allowed), 'An unobserved local or shell fallback was attempted');
+    assert.ok(!observation.some(event => event.phase === 'metadata-result' && !event.complete), 'Metadata discovery failure cannot disappear from the trace');
+    assert.equal(result.legacyFallback.calls, 0, 'An old ntn/login fallback was invoked');
     await inspectOwnedGraphProject(cwd);
     if (launchError) throw launchError;
     assert.equal(result.availabilityFailure, false, 'HTTP success with a permission/quota answer is unavailable');
     await verifyEntryIdentity(doctor.extension.path, doctor.extension);
     result.status = 'passed';
     result.proof = 'Actual native Pi/provider/source artifacts checked against the independent oracle; contract alone is not counted as product proof';
-  } catch (error) { result.status = 'failed'; result.error = { code: error.code ?? 'GRAPH_GATE_FAILED', message: error.code === 'ERR_ASSERTION' || error.code ? error.message : 'Native graph gate did not complete; retained observer and source artifacts identify the boundary' }; }
+  } catch (error) {
+    result.status = 'failed'; result.error = { code: error.code ?? 'GRAPH_GATE_FAILED', message: error.code === 'ERR_ASSERTION' || error.code ? error.message : 'Native graph gate did not complete; retained observer and source artifacts identify the boundary' };
+    if (error.code === 'GRAPH_OBSERVER_INVALID' || observerErrors.length) { result.failureClass = 'harness-invalid'; result.availabilityFailure = false; }
+    else if (error.code === 'OBSERVATION_INCOMPLETE') { result.failureClass = 'observation-incomplete'; result.availabilityFailure = false; }
+  }
   for (const sample of result.samples) {
     sample.timings = observedTimings(sample, observation, responsesObserved, sourceLedger, startupMs);
     try {
@@ -668,7 +1226,7 @@ async function runGate(config) {
       assert.ok(through.some(event => event.phase === 'native-input' && event.frozenPromptMatched && Date.parse(event.at) >= Date.parse(sample.startedAt)), 'This sample lacks its own native frozen input');
       assert.ok(through.some(event => event.phase === 'assistant-final' && event.success && Date.parse(event.at) >= Date.parse(sample.startedAt)), 'This sample lacks its own successful final');
       const available = responsesObserved.filter(receipt => sourceLedger.some(event => event.phase === 'close' && event.requestId === receipt.requestId && Date.parse(event.at) <= Date.parse(sample.finishedAt)));
-      const trace = graphTrace({ config, oracle, observation: through, responses: available, sourceLedger, hostLedger, isolation, ownershipResponses: [...available, ...priorResponses] });
+      const trace = graphTrace({ config, oracle, observation: through, responses: available, sourceLedger, hostLedger, isolation, ownershipResponses: [...available, ...priorResponses], retainedSourceProofs });
       sample.contract = evaluateGraphTrace(trace, oracle);
       sample.status = 'passed';
     } catch (error) { sample.status = 'failed'; sample.error = { code: error.code ?? 'SAMPLE_FAILED', message: error.message }; }
@@ -729,6 +1287,7 @@ async function main(args) {
     config: { version: 1, gate: 'A or B', selection: 'Use exact token returned by the independent selection preflight', selectionReceipt: 'absolute successful selection result.json; required for run', rootRef: 'exact unpinned shared record.ref', database: 'UUID', viewId: 'existing root-only View UUID; alternatively profileId', extension: 'absolute installed Pi entry', packagePath: 'absolute frozen tgz', cliCommand: ['absolute Node', 'absolute installed ntn-skills entry'], oraclePath: 'absolute private oracle JSON, kept outside consumer roots; not opened by selection preflight', evidenceRoot: 'absolute retained directory', model: modelSelectors[0], previousFailures: [], mode: 'cold (default), warm-new-process or matrix', reuseReceipt: 'absolute complete cache-reuse.json for warm-new-process only' },
     sampling: 'matrix runs 1 cold process, 2 warm new processes on the same complete CLI/Broker caches, then 2 more frozen submissions in the second warm live session; failures remain samples; raw values and medians, no p95',
     artifacts: 'Retain the actual final verbatim. Extract only complete fenced files with explicit relative filenames; a valid SKILL.md and all local links must be present. Prose alone remains plan-only. exercise accepts an exact test command from a retained generated file and drives the unchanged owned application with PID, exit, stdout and hash evidence. Graph pass alone is not generated-Skill acceptance.',
+    retainedSourceProof: 'Optional config.retainedSourceProofRepo names the absolute frozen CLI source tree. After Pi closes, only unresolved retained chunks with actual observed bundle IDs trigger the independent Effect collector. Its immutable metadata proof, process ledger and HTTP costs are retained separately; it cannot add model reads, resources or loaded state. Missing proof remains observation-incomplete.',
     oracleIdentity: 'Target logicalId is the full public record.id (shared_skill:library:skill_id); resource logicalId is its observed stable file_id (fallback owner/path only for historical snapshots without file IDs). All refs are canonical actual read refs including snapshot and available file_id.',
   };
   if (action === '--source') { await sourceCommand(args.shift(), args); return; }

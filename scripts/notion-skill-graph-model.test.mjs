@@ -3,12 +3,14 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as crypto from 'node:crypto';
 import * as path from 'node:path';
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { graphTrace, observeGraphGate, summarizeSamples } from './notion-skill-graph-model.mjs';
+import { spawnSync } from 'node:child_process';
+import { mkdtemp, mkdir, readFile, writeFile, symlink } from 'node:fs/promises';
+import { graphTrace, observeGraphGate, summarizeSamples, GRAPH_GATE_TOOLS, createGraphFallbackTraps, retainedSourceProofInput } from './notion-skill-graph-model.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { createOwnedGraphProject, exerciseGeneratedProcedure, retainGeneratedPlan } from './notion-skill-graph-project.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
 import { contractFixture, evaluateGraphTrace, selfTest } from './verify-skill-graph-contract.mjs';
+import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const save = (file, value) => writeFile(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
@@ -56,6 +58,99 @@ test('a model selection authorizes only its observed owner and must precede the 
   assert.equal(graphTrace(value).memberBodyReadsBeforeSelection, 1);
 });
 
+function authoredSelectionFixture() {
+  const value = attributionFixture(['file-member']), owner = value.oracle.target.logicalId, scope = value.oracle.target.scope;
+  const input = { path: value.oracle.target.ref }, argumentsSha256 = hash(JSON.stringify(input));
+  const identity = { scope, ownerId: owner, path: 'SKILL.md', snapshot: 'snapshot-member', fileId: 'file-member', sha256: hash('member'), bytes: 6 };
+  const author = { phase: 'authored-tool-call', source: 'assistant-message-end', at: '2026-01-01T00:00:00.050Z', sequence: 2,
+    toolCallId: 'native-read', tool: 'read', input, argumentsSha256, discovered: true };
+  const admission = { phase: 'tool-call', at: '2026-01-01T00:00:00.950Z', sequence: 3, toolCallId: author.toolCallId, tool: 'read',
+    input: input.path, argumentsSha256, authoredSequence: author.sequence, origin: 'model', allowed: true, expected: identity };
+  const read = { phase: 'tool-result', at: '2026-01-01T00:00:01.050Z', sequence: 4, callSequence: admission.sequence, toolCallId: author.toolCallId,
+    tool: 'read', logicalId: owner, ...identity, complete: true, ref: value.oracle.target.ref, content: 'member' };
+  value.observation.push(author, admission, read);
+  return { value, author, admission, read };
+}
+
+test('H6 A: selection uses the observed authored call before Broker awaits source reads, while preserving later admission', () => {
+  const { value, author, admission } = authoredSelectionFixture();
+  const trace = graphTrace(value);
+  assert.equal(trace.memberBodyReadsBeforeSelection, 0);
+  assert.equal(trace.httpAttempts.find(attempt => attempt.kind === 'body').beforeSelection, false);
+  assert.ok(Date.parse(author.at) < Date.parse(value.sourceLedger[0].at));
+  assert.ok(Date.parse(admission.at) > Date.parse(value.sourceLedger[0].at));
+  assert.equal(value.observation.find(event => event.phase === 'tool-call').at, admission.at);
+});
+
+test('authored timing cannot authorize an undiscovered, changed, mismatched or genuinely early source read', () => {
+  for (const mutate of [f => { f.author.discovered = false; }, f => { f.author.toolCallId = 'another-call'; },
+    f => { f.author.tool = 'skill_prepare'; }, f => { f.author.input.path = 'skill://another-owner/SKILL.md'; },
+    f => { f.author.argumentsSha256 = 'a'.repeat(64); }, f => { f.admission.authoredSequence = 99; },
+    f => { f.admission.expected.scope = 'another-scope'; }, f => { f.admission.expected.fileId = 'another-file'; },
+    f => { f.admission.allowed = false; }, f => { f.value.sourceLedger[0].at = '2026-01-01T00:00:00.010Z'; }]) {
+    const f = authoredSelectionFixture(); mutate(f);
+    assert.equal(graphTrace(f.value).memberBodyReadsBeforeSelection, 1);
+  }
+});
+
+test('retained ownership requires a verified manifest and its bundle in the same actual receipt, without inventing consumption', () => {
+  const scope = 'a'.repeat(64), libraryId = 'library-992754f7-01c1-4ad1-a492-81f6f35d4ed6';
+  const archive = 'controlled immutable archive', digest = hash(archive), chunkId = 'chunk-' + digest;
+  const value = attributionFixture([chunkId]);
+  const ownerPage = uuid.replace('11111111', '33333333');
+  for (const receipt of value.responses) {
+    receipt.response.scope = scope;
+    if (receipt.command === 'read') Object.assign(receipt.response.record.locator, { type: 'shared_skill', library_id: libraryId,
+      page_id: receipt.response.file_bindings[0].page_id, database_id: uuid });
+  }
+  for (const node of value.responses[0].response.nodes) node.record.locator.library_id = libraryId;
+  value.oracle.target.scope = scope;
+  for (const item of value.oracle.preparations.B) item.scope = scope;
+  for (const item of value.observation[0].contents) item.scope = scope;
+  const canonical = value => value === null || typeof value !== 'object' ? JSON.stringify(value) : Array.isArray(value)
+    ? '[' + value.map(canonical).join(',') + ']' : '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonical(value[key])).join(',') + '}';
+  const payload = { version: 1, kind: 'retained_bundle', library_id: libraryId, skill_page_id: ownerPage, entrypoint: 'SKILL.md',
+    files: [{ path: 'SKILL.md', bytes: 6, sha256: hash('member') }], archive: { format: 'zip', bytes: Buffer.byteLength(archive), sha256: digest,
+      chunks: [{ object_id: chunkId, sha256: digest, bytes: Buffer.byteLength(archive) }] } };
+  const bundle = 'bundle-' + hash(canonical(payload)), operation = 'retain-' + bundle;
+  const proof = { version: 1, kind: 'retained-source-ownership', status: 'verified', scope, library_id: libraryId,
+    records_data_source_id: uuid, records: [{ page_id: uuid.replace('11111111', '44444444'), record_id: bundle, operation_id: operation,
+      kind: 'source', entity_id: bundle, hash: hash(canonical({ version: 1, operation_id: operation, payload })), payload, skill_page_id: ownerPage }] };
+  value.retainedSourceProofs = [proof];
+  assert.equal(graphTrace(value).memberBodyReadsBeforeSelection, null, 'A global proof alone cannot attribute this request');
+  const metadata = { event: 'attempt', request_kind: 'notion_metadata', http_status: 200, request_id: 'actual-bundle',
+    request_bytes: 1, response_bytes: 1, target: { data_source_id: uuid, entity_ids: [bundle] } };
+  value.responses[1].metrics.trace.push(metadata);
+  assert.equal(graphTrace(value).memberBodyReadsBeforeSelection, null, 'Another CLI receipt cannot lend its bundle observation');
+  value.responses[0].metrics.trace.unshift(metadata);
+  const early = graphTrace(value);
+  assert.equal(early.memberBodyReadsBeforeSelection, 1);
+  assert.equal(early.reads.length, 0, 'Retained ZIP membership is not a model native read');
+  assert.equal(early.providerRequests[0].contents.length, 2, 'Supplementary ownership cannot add provider bodies');
+  assert.deepEqual(early.httpAttempts.find(attempt => attempt.kind === 'body').retainedSourceProofs, [bundle]);
+  const unproven = graphTrace({ ...value, retainedSourceProofs: [] });
+  const input = retainedSourceProofInput({ gate: 'B', evidence: '/owned/evidence', trace: unproven, responses: value.responses });
+  assert.deepEqual(input.runs[0].bundle_ids, [bundle]);
+  assert.deepEqual(input.runs[0].unattributed_retained_attempts[0].target.entity_ids, [chunkId]);
+  value.observation.push({ phase: 'tool-call', toolCallId: 'selected', at: '2026-01-01T00:00:00.050Z', sequence: 2, origin: 'model', allowed: true },
+    { phase: 'tool-result', toolCallId: 'selected', sequence: 3, callSequence: 2, ownerId: value.oracle.target.logicalId,
+      logicalId: value.oracle.target.logicalId, scope, ref: value.oracle.target.ref, complete: true });
+  assert.equal(graphTrace(value).memberBodyReadsBeforeSelection, 0);
+  value.responses[0].metrics.trace[0] = { ...metadata, target: { ...metadata.target, data_source_id: uuid.replace('11111111', '99999999') } };
+  assert.equal(graphTrace(value).memberBodyReadsBeforeSelection, null, 'A bundle from another Records source must remain unknown');
+});
+
+test('later provider requests cannot duplicate or change an already selected Required body', () => {
+  const value = attributionFixture(['file-root']);
+  const next = structuredClone(value.observation[0]); next.sequence = 4;
+  value.observation.push(next);
+  assert.equal(graphTrace(value).memberBodyReadsBeforeSelection, 0);
+  next.contents.push(structuredClone(next.contents[1]));
+  assert.throws(() => graphTrace(value), /unique and on the selected version/);
+  next.contents.pop(); next.contents[1].snapshot = 'unselected-version';
+  assert.throws(() => graphTrace(value), /unique and on the selected version/);
+});
+
 test('the installed observer policy admits actual owned source reads and blocks undiscovered local paths', async () => {
   const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-observer-policy-'));
   const project = await createOwnedGraphProject(path.join(base, 'project'));
@@ -63,17 +158,264 @@ test('the installed observer policy admits actual owned source reads and blocks 
   await mkdir(responses); await mkdir(cache); await writeFile(output, '');
   const handlers = new Map(), originalFetch = globalThis.fetch;
   try {
-    observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} }, { fs, crypto, path, project, cwd: project.root, responses, cache, output, rootRef: 'skill://controlled-root/SKILL.md', model: 'controlled/fake', prompt: 'controlled task' });
+    observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} }, { fs, crypto, path, parseNativeReference, project, cwd: project.root, responses, cache, output, rootRef: 'skill://controlled-root/SKILL.md', model: 'controlled/fake', prompt: 'controlled task' });
     handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id: 'project', name: 'read', arguments: { path: 'src/tickets.mjs' } }] } });
     assert.equal(handlers.get('tool_call')({ toolName: 'read', toolCallId: 'project', input: { path: 'src/tickets.mjs' } }), undefined);
     const content = await readFile(path.join(project.root, 'src/tickets.mjs'), 'utf8');
     handlers.get('tool_result')({ toolName: 'read', toolCallId: 'project', content: [{ type: 'text', text: content }] });
+    const alias = path.join(base, 'os-alias');
+    await symlink(project.root, alias, 'dir');
+    const aliasPath = path.join(alias, 'src/tickets.mjs');
+    handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id: 'alias', name: 'read', arguments: { path: aliasPath } }] } });
+    assert.equal(handlers.get('tool_call')({ toolName: 'read', toolCallId: 'alias', input: { path: aliasPath } }), undefined);
+    handlers.get('tool_result')({ toolName: 'read', toolCallId: 'alias', content: [{ type: 'text', text: content }] });
+    await symlink(path.join(project.root, 'src/tickets.mjs'), path.join(project.root, 'internal-link.mjs'));
+    handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id: 'internal-link', name: 'read', arguments: { path: 'internal-link.mjs' } }] } });
+    assert.equal(handlers.get('tool_call')({ toolName: 'read', toolCallId: 'internal-link', input: { path: 'internal-link.mjs' } }).block, true);
     handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id: 'outside', name: 'read', arguments: { path: path.join(base, 'private-oracle.json') } }] } });
     assert.equal(handlers.get('tool_call')({ toolName: 'read', toolCallId: 'outside', input: { path: path.join(base, 'private-oracle.json') } }).block, true);
     const events = (await readFile(output, 'utf8')).trim().split('\n').map(JSON.parse);
     assert.ok(events.some(event => event.phase === 'project-read-result' && event.complete && event.sourceSha256 === hash(content)));
     assert.ok(events.some(event => event.phase === 'tool-call' && event.category === 'blocked' && !event.allowed));
   } finally { globalThis.fetch = originalFetch; }
+});
+
+test('actual metadata may introduce an exact ref while guessed roots, forged results and shell stay blocked', async () => {
+  const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-observer-tools-'));
+  const project = await createOwnedGraphProject(path.join(base, 'project'));
+  const responses = path.join(base, 'responses'), cache = path.join(base, 'cache'), output = path.join(base, 'observer.jsonl');
+  await mkdir(responses); await mkdir(cache); await writeFile(output, '');
+  const record = { id: 'shared_skill:controlled:member', ref: 'skill://shared_skill%3Acontrolled%3Amember/SKILL.md', kind: 'skill', name: 'member', description: 'Controlled metadata', enabled: true };
+  const scope = 'a'.repeat(64);
+  await save(path.join(responses, 'list.json'), { command: 'list', code: 0, response: { ok: true, scope, records: [record] } });
+  const handlers = new Map(), originalFetch = globalThis.fetch;
+  let active;
+  try {
+    const model = { model: { provider: 'controlled', id: 'fake' } };
+    observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async tools => { active = tools; } }, { fs, crypto, path, parseNativeReference, project, cwd: project.root, responses, cache, output, rootRef: 'skill://controlled-root/SKILL.md', model: 'controlled/fake', prompt: 'controlled task' });
+    await handlers.get('session_start')({}, model);
+    assert.deepEqual(active, GRAPH_GATE_TOOLS);
+    const invoke = (id, name, arguments_) => {
+      handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name, arguments: arguments_ }] } });
+      return handlers.get('tool_call')({ toolName: name, toolCallId: id, input: arguments_ });
+    };
+    assert.equal(invoke('unknown', 'skill_prepare', { roots: [record.ref], purpose: 'use' }).block, true);
+    assert.equal(invoke('search', 'skill_search', { query: 'member' }), undefined);
+    const result = { ok: true, state: 'known', count: 1, has_more: false, records: [{ ...record, source: 'notion', scope, in_default_view: false, availability: 'available' }], failures: [] };
+    delete result.records[0].enabled;
+    const content = JSON.stringify(result);
+    handlers.get('tool_result')({ toolName: 'skill_search', toolCallId: 'search', content: [{ type: 'text', text: content }], isError: false });
+    assert.equal(invoke('prepare', 'skill_prepare', { roots: [record.ref], purpose: 'inspect' }), undefined);
+    assert.equal(invoke('guessed', 'skill_prepare', { roots: ['member'], purpose: 'use' }).block, true);
+    assert.equal(invoke('shell', 'bash', { command: 'echo should-never-run' }).block, true);
+    assert.equal(handlers.get('tool_call')({ toolName: 'skill_search', toolCallId: 'unattributed', input: { query: '' } }).block, true);
+    const tools = GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } }));
+    handlers.get('before_provider_request')({ payload: { tools, messages: [{ role: 'tool', tool_call_id: 'search', content }] } }, model);
+    assert.throws(() => handlers.get('before_provider_request')({ payload: { tools: tools.slice(0, 1), messages: [] } }, model), /advertise/);
+    assert.equal(invoke('forged', 'skill_search', { query: 'forged' }), undefined);
+    const forgedRef = 'skill://shared_skill%3Acontrolled%3Aforged/SKILL.md';
+    const forged = { ...result, records: [{ ...result.records[0], ref: forgedRef, id: 'shared_skill:controlled:forged' }] };
+    handlers.get('tool_result')({ toolName: 'skill_search', toolCallId: 'forged', content: [{ type: 'text', text: JSON.stringify(forged) }] });
+    assert.equal(invoke('forged-prepare', 'skill_prepare', { roots: [forgedRef], purpose: 'use' }).block, true);
+    const events = (await readFile(output, 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.ok(events.some(event => event.phase === 'metadata-result' && event.toolCallId === 'forged' && event.complete === false));
+    assert.ok(events.some(event => event.phase === 'provider-request' && event.toolResults.some(result => result.toolCallId === 'search' && result.exactToolOutputCopies === 1 && result.sha256 === hash(content))));
+    assert.equal(events.filter(event => event.phase === 'tool-result' && event.complete).length, 0, 'Metadata discovery does not count as a body load');
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('only explicitly selected prepared mains with full public and provider proofs satisfy the same read contract', () => {
+  const value = contractFixture('B'), main = value.trace.reads[0];
+  main.tool = 'skill_prepare'; main.toolCallId = 'explicit-main'; main.role = 'entrypoint'; main.bytes = Buffer.byteLength(main.content);
+  main.preparationProof = { purpose: 'use', explicitRoot: true, roots: ['skill://' + encodeURIComponent(main.logicalId) + '/SKILL.md'], publicRequestId: 'actual-public-request',
+    graphLockSha256: hash('lock'), manifestSha256: hash('manifest'), publicRef: main.ref, scope: main.scope,
+    ownerId: main.logicalId, snapshot: main.snapshot, sha256: main.sha256, bytes: main.bytes,
+    toolResultSha256: hash('complete-json-result'), toolResultBytes: main.bytes + 1000, deliveryVerified: true };
+  value.trace.providerRequests.at(-1).toolResults = [{ toolCallId: main.toolCallId, tool: main.tool,
+    sha256: main.preparationProof.toolResultSha256, bytes: main.preparationProof.toolResultBytes,
+    records: [{ ref: main.ref, scope: main.scope, snapshot: main.snapshot, sha256: main.sha256, bytes: main.bytes, providerCopies: 1 }] }];
+  assert.equal(evaluateGraphTrace(value.trace, value.oracle).status, 'contract-valid');
+  for (const mutate of [
+    v => { v.trace.reads[0].preparationProof.explicitRoot = false; },
+    v => { v.trace.reads[0].preparationProof.graphLockSha256 = ''; },
+    v => { v.trace.reads[0].preparationProof.snapshot = 'other'; },
+    v => { v.trace.providerRequests.at(-1).toolResults[0].records[0].providerCopies = 0; },
+    v => { v.trace.reads[1].tool = 'skill_prepare'; },
+  ]) {
+    const changed = structuredClone(value); mutate(changed);
+    assert.throws(() => evaluateGraphTrace(changed.trace, changed.oracle), error => error.code === 'NAME_GUESSING');
+  }
+});
+
+async function literalObserverFixture(body, transport, selectedSurface, fileId) {
+  const directory = await mkdtemp(path.join(await systemTempRoot(), 'graph-literal-observer-'));
+  const cache = path.join(directory, 'cache'), responses = path.join(directory, 'responses'), output = path.join(directory, 'observer.jsonl');
+  const owner = 'shared_skill:controlled:literal-root', scope = 'a'.repeat(64), snapshot = 's_' + hash(body);
+  const root = path.join(cache, 'scopes', scope, 'records', hash(owner), 'snapshots', snapshot);
+  await mkdir(root, { recursive: true }); await mkdir(responses); await writeFile(output, '');
+  await writeFile(path.join(root, 'SKILL.md'), body);
+  await save(path.join(root, '.broker-snapshot.json'), { version: 3, projection: 'snapshot', scope, snapshot, entry: 'SKILL.md', record: { id: owner, kind: 'skill' }, files: [{ path: 'SKILL.md', bytes: Buffer.byteLength(body), hash: hash(body) }] });
+  await save(path.join(responses, 'read.json'), { command: 'read', code: 0, response: { ok: true, scope, snapshot_id: snapshot, version_id: hash(body), path: 'SKILL.md', record: { id: owner, kind: 'skill' }, content: body, ...(fileId ? { file_bindings: [{ file_id: fileId, page_id: uuid, path: 'SKILL.md' }] } : {}) } });
+  const toolSurfaceFile = selectedSurface ? path.join(directory, 'frozen-surface.json') : undefined;
+  if (toolSurfaceFile) await save(toolSurfaceFile, { surface: selectedSurface });
+  const handlers = new Map(), originalFetch = globalThis.fetch;
+  if (transport) globalThis.fetch = transport;
+  observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} }, { fs, crypto, path, parseNativeReference, cwd: directory, nativeHome: directory, responses, cache, output, rootRef: 'skill://' + encodeURIComponent(owner) + '/SKILL.md', model: 'controlled/fake', prompt: 'controlled task', ...(toolSurfaceFile ? { toolSurfaceFile } : {}) });
+  const tools = GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } }));
+  const payload = content => ({ model: 'fake', tools, messages: [{ role: 'user', content }] });
+  return { handlers, payload, toolSurfaceFile, directory, root, owner, scope, snapshot, ctx: { model: { provider: 'controlled', id: 'fake' } },
+    events: async () => (await readFile(output, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse),
+    close: () => { globalThis.fetch = originalFetch; } };
+}
+
+test('the exact provided native path resolves through its verified manifest when the wrapper omits File ID', async () => {
+  const body = 'Controlled complete main.\n', fixture = await literalObserverFixture(body, undefined, undefined, 'stable-main');
+  const actual = path.join(fixture.root, 'SKILL.md');
+  const ref = 'skill://' + encodeURIComponent(fixture.owner) + '/SKILL.md?snapshot=' + fixture.snapshot;
+  const invoke = (id, value) => {
+    fixture.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: 'read', arguments: { path: value } }] } });
+    return fixture.handlers.get('tool_call')({ toolName: 'read', toolCallId: id, input: { path: value } });
+  };
+  try {
+    fixture.handlers.get('before_provider_request')({ payload: fixture.payload(body) }, fixture.ctx);
+    assert.equal(invoke('not-advertised', actual).block, true, 'body bytes alone do not advertise a local path');
+    const wrapper = '<context-broker-record kind="skill" path="' + actual + '">\n<skill-ref>' + ref + '</skill-ref>\n' + body + '</context-broker-record>';
+    fixture.handlers.get('before_provider_request')({ payload: fixture.payload(wrapper) }, fixture.ctx);
+    assert.equal(invoke('provided-path', actual), undefined);
+    assert.equal(invoke('canonical-ref', ref + '&file_id=stable-main'), undefined);
+    fixture.handlers.get('tool_result')({ toolName: 'read', toolCallId: 'provided-path', content: [{ type: 'text', text: body }] });
+    assert.ok((await fixture.events()).some(event => event.phase === 'tool-result' && event.toolCallId === 'provided-path' && event.complete && event.ref.endsWith('&file_id=stable-main')));
+  } finally { fixture.close(); }
+});
+
+test('an exact advertised home-relative native path resolves to the same verified manifest without rewriting the tool input', async () => {
+  const body = 'Controlled home-relative main.\n', fixture = await literalObserverFixture(body, undefined, undefined, 'stable-main');
+  const advertised = '~/' + path.relative(fixture.directory, path.join(fixture.root, 'SKILL.md'));
+  const ref = 'skill://' + encodeURIComponent(fixture.owner) + '/SKILL.md?snapshot=' + fixture.snapshot;
+  try {
+    const wrapper = '<context-broker-record path="' + advertised + '"><skill-ref>' + ref + '</skill-ref>\n' + body + '</context-broker-record>';
+    fixture.handlers.get('before_provider_request')({ payload: fixture.payload(wrapper) }, fixture.ctx);
+    fixture.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id: 'home-read', name: 'read', arguments: { path: advertised } }] } });
+    assert.equal(fixture.handlers.get('tool_call')({ toolName: 'read', toolCallId: 'home-read', input: { path: advertised } }), undefined);
+    fixture.handlers.get('tool_result')({ toolName: 'read', toolCallId: 'home-read', content: [{ type: 'text', text: body }] });
+    const events = await fixture.events();
+    assert.ok(events.some(event => event.phase === 'tool-call' && event.input === advertised && event.allowed));
+    assert.ok(events.some(event => event.phase === 'tool-result' && event.toolCallId === 'home-read' && event.complete && event.ref.endsWith('&file_id=stable-main')));
+  } finally { fixture.close(); }
+});
+
+test('provided-path observation rejects changed owner, pin, File ID, traversal and assistant-only advertisements', async () => {
+  const body = 'Controlled protected main.\n', fixture = await literalObserverFixture(body, undefined, undefined, 'stable-main');
+  const actual = path.join(fixture.root, 'SKILL.md');
+  const ref = 'skill://' + encodeURIComponent(fixture.owner) + '/SKILL.md?snapshot=' + fixture.snapshot;
+  const wrapper = (location, identity) => '<context-broker-record path="' + location + '"><skill-ref>' + identity + '</skill-ref>\n' + body + '</context-broker-record>';
+  const invoke = (id, location) => {
+    fixture.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: 'read', arguments: { path: location } }] } });
+    return fixture.handlers.get('tool_call')({ toolName: 'read', toolCallId: id, input: { path: location } });
+  };
+  try {
+    const invalid = [
+      wrapper(actual, ref.replace(encodeURIComponent(fixture.owner), 'different-owner')),
+      wrapper(actual, ref.replace(fixture.snapshot, 'different-snapshot')),
+      wrapper(actual, ref + '&file_id=different-file'),
+      wrapper(fixture.root + '/../' + path.basename(fixture.root) + '/SKILL.md', ref),
+    ];
+    for (const [index, content] of invalid.entries()) {
+      fixture.handlers.get('before_provider_request')({ payload: fixture.payload(content) }, fixture.ctx);
+      assert.equal(invoke('invalid-' + index, actual).block, true);
+    }
+    const payload = fixture.payload(body); payload.messages.push({ role: 'assistant', content: wrapper(actual, ref) });
+    fixture.handlers.get('before_provider_request')({ payload }, fixture.ctx);
+    assert.equal(invoke('assistant-only', actual).block, true);
+  } finally { fixture.close(); }
+});
+
+test('large exact bodies and their HTML/JSON forms count without compiling a body-sized regular expression', async () => {
+  const body = 'Literal <b>evidence & detail</b> [x](y) "quoted" \\ value.\n'.repeat(1500);
+  const encoded = body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  const quoted = JSON.stringify(body).slice(1, -1);
+  assert.ok(body.length + encoded.length + quoted.length > 128 * 1024);
+  const fixture = await literalObserverFixture(body);
+  try {
+    for (const value of [body, encoded, quoted, body + '\n' + encoded]) fixture.handlers.get('before_provider_request')({ payload: fixture.payload(value) }, fixture.ctx);
+    const providers = (await fixture.events()).filter(event => event.phase === 'provider-request');
+    assert.deepEqual(providers.map(event => event.contents.length), [1, 1, 1, 2]);
+    assert.ok(providers.every(event => event.contents.every(file => file.sha256 === hash(body) && file.bytes === Buffer.byteLength(body))));
+  } finally { fixture.close(); }
+});
+
+test('literal copy counting chooses the longest match at one position and excludes assistant/model quotations', async () => {
+  const fixture = await literalObserverFixture('&');
+  try {
+    const payload = fixture.payload('&&amp;&amp;');
+    payload.messages.push({ role: 'assistant', content: '&&amp;' }, { role: 'model', content: '&amp;' });
+    fixture.handlers.get('before_provider_request')({ payload }, fixture.ctx);
+    fixture.handlers.get('before_provider_request')({ payload: { ...payload, messages: payload.messages.slice(1) } }, fixture.ctx);
+    assert.deepEqual((await fixture.events()).filter(event => event.phase === 'provider-request').map(event => event.contents.length), [3, 0]);
+  } finally { fixture.close(); }
+});
+
+test('an observer fault or changed unverified payload is recorded and cannot reach the provider transport', async () => {
+  let dispatched = 0;
+  const fixture = await literalObserverFixture('Controlled complete body.\n', async () => { dispatched++; return new Response('{}', { status: 200 }); });
+  const send = payload => globalThis.fetch('http://127.0.0.1/controlled-provider', { method: 'POST', body: JSON.stringify(payload) });
+  try {
+    const payload = fixture.payload('Controlled complete body.\n');
+    fixture.handlers.get('before_provider_request')({ payload }, fixture.ctx);
+    await send(payload);
+    assert.equal(dispatched, 1);
+    const invalid = { ...payload, tools: payload.tools.slice(0, 1) };
+    assert.throws(() => fixture.handlers.get('before_provider_request')({ payload: invalid }, fixture.ctx), /advertise/);
+    await assert.rejects(send(invalid), /unverified|observation/i);
+    fixture.handlers.get('before_provider_request')({ payload }, fixture.ctx);
+    await assert.rejects(send({ ...payload, messages: [] }), /unverified|observation/i);
+    assert.equal(dispatched, 1);
+    const events = await fixture.events();
+    assert.ok(events.some(event => event.phase === 'observer-error' && event.stage === 'before_provider_request'));
+    assert.equal(events.filter(event => event.phase === 'provider-transport-blocked').length, 2);
+    assert.equal(events.filter(event => event.phase === 'provider-transport-start').length, 1);
+  } finally { fixture.close(); }
+});
+
+test('graph evidence distinguishes observer failure from absent transport or model task failure', () => {
+  const value = attributionFixture(['file-root']);
+  value.observation.push({ phase: 'observer-error', stage: 'before_provider_request', code: 'GRAPH_OBSERVER_INVALID' });
+  assert.throws(() => graphTrace(value), error => error.code === 'GRAPH_OBSERVER_INVALID');
+  value.observation = [{ phase: 'provider-transport-start' }, { phase: 'provider-transport-response', status: 200 }];
+  assert.throws(() => graphTrace(value), error => error.code === 'GRAPH_OBSERVER_INVALID' && /transport/.test(error.message));
+});
+
+test('the frozen legacy read-only surface retains provider proof and transitions explicitly to the public tools', async () => {
+  let dispatched = 0;
+  const fixture = await literalObserverFixture('Controlled complete body.\n', async () => { dispatched++; return new Response('{}', { status: 200 }); }, 'native-read-only');
+  try {
+    const payload = fixture.payload('Controlled complete body.\n'), readOnly = { ...payload, tools: payload.tools.slice(0, 1) };
+    fixture.handlers.get('before_provider_request')({ payload: readOnly }, fixture.ctx);
+    await globalThis.fetch('http://127.0.0.1/controlled-provider', { method: 'POST', body: JSON.stringify(readOnly) });
+    fixture.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id: 'unadvertised-search', name: 'skill_search', arguments: { query: '' } }] } });
+    assert.equal(fixture.handlers.get('tool_call')({ toolName: 'skill_search', toolCallId: 'unadvertised-search', input: { query: '' } }).block, true);
+    await save(fixture.toolSurfaceFile, { surface: 'public-tools' });
+    fixture.handlers.get('before_provider_request')({ payload }, fixture.ctx);
+    await globalThis.fetch('http://127.0.0.1/controlled-provider', { method: 'POST', body: JSON.stringify(payload) });
+    assert.equal(dispatched, 2);
+    const proofs = (await fixture.events()).filter(event => event.phase === 'provider-request');
+    assert.deepEqual(proofs.map(event => [event.toolSurface, event.tools, event.contents.length]), [['native-read-only', ['read'], 1], ['public-tools', [...GRAPH_GATE_TOOLS].sort(), 1]]);
+    assert.throws(() => fixture.handlers.get('before_provider_request')({ payload: readOnly }, fixture.ctx), /frozen native tool surface/);
+    await save(fixture.toolSurfaceFile, { surface: 'unrecognized' });
+    assert.throws(() => fixture.handlers.get('before_provider_request')({ payload }, fixture.ctx), /Unknown frozen graph tool surface/);
+  } finally { fixture.close(); }
+});
+
+test('owned fallback traps record PATH login and the old override without changing the parent environment', async () => {
+  const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-no-ntn-'));
+  const originalPath = process.env.PATH, originalOverride = process.env.NTN_SKILLS_NTN_BIN;
+  const traps = await createGraphFallbackTraps(path.join(base, 'control'), base);
+  const env = { ...process.env, ...traps.environment };
+  assert.equal(spawnSync('ntn', ['login'], { env, encoding: 'utf8' }).status, 97);
+  assert.equal(spawnSync(env.NTN_SKILLS_NTN_BIN, ['doctor'], { env, encoding: 'utf8' }).status, 97);
+  const recorded = (await readFile(traps.ledger, 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.deepEqual(recorded.map(event => [event.executable, event.operation]), [['ntn', 'login'], ['legacy-ntn', 'doctor']]);
+  assert.equal(process.env.PATH, originalPath); assert.equal(process.env.NTN_SKILLS_NTN_BIN, originalOverride);
 });
 
 test('fixed sample summaries retain failures and expose raw values and medians without p95', () => {

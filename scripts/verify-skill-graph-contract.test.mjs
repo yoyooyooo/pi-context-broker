@@ -48,6 +48,26 @@ test('warm mode keeps oracle isolation and can reuse verified content', () => {
   assert.throws(() => evaluateGraphTrace(fixture.trace, fixture.oracle), { code: 'ORACLE_WARMING' });
 });
 
+test('an unpinned directory proves stable candidate identity while final consumption still requires the oracle pin', () => {
+  const fixture = contractFixture();
+  fixture.trace.candidates[0].ref = fixture.oracle.target.ref.split('?')[0];
+  assert.equal(evaluateGraphTrace(fixture.trace, fixture.oracle).status, 'contract-valid');
+  const wrongOwner = structuredClone(fixture); wrongOwner.trace.candidates[0].ref = 'skill://different-owner/SKILL.md';
+  assert.throws(() => evaluateGraphTrace(wrongOwner.trace, wrongOwner.oracle), { code: 'CANDIDATE_IDENTITY' });
+  const resource = structuredClone(fixture); resource.trace.candidates[0].ref = fixture.trace.candidates[0].ref.replace('/SKILL.md', '/references/other.md');
+  assert.throws(() => evaluateGraphTrace(resource.trace, resource.oracle), { code: 'CANDIDATE_IDENTITY' });
+  const wrongPin = structuredClone(fixture); wrongPin.trace.reads[0].snapshot = 'other-version';
+  assert.throws(() => evaluateGraphTrace(wrongPin.trace, wrongPin.oracle), { code: 'IDENTITY_MISMATCH' });
+});
+
+test('unknown body attribution is an observation gap, while an observed early member remains eager', () => {
+  const fixture = contractFixture();
+  fixture.trace.memberBodyReadsBeforeSelection = null;
+  assert.throws(() => evaluateGraphTrace(fixture.trace, fixture.oracle), { code: 'OBSERVATION_INCOMPLETE' });
+  fixture.trace.memberBodyReadsBeforeSelection = 1;
+  assert.throws(() => evaluateGraphTrace(fixture.trace, fixture.oracle), { code: 'EAGER_MEMBERS' });
+});
+
 test('worker requires retained flash-free failure evidence', () => {
   const fixture = contractFixture();
   fixture.trace.model.selector = 'magpie/group/worker';

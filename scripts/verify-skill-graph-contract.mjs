@@ -71,7 +71,24 @@ export function evaluateGraphTrace(trace, oracle) {
   if (trace.cacheMode === 'cold') check(isolation.prelaunch.every(row => row.entries === 0), 'ORACLE_WARMING', 'A cold run must start with three empty consumer layers');
 
   check(Array.isArray(trace.candidates) && trace.candidates.length > 0, 'CATALOG_MISSING', 'The actual root member directory must be observed');
-  check(trace.candidates.some(row => row.ref === target.ref && row.logicalId === target.logicalId && row.scope === target.scope && row.available === true), 'CANDIDATE_IDENTITY', 'The target must be discovered with an exact readable identity');
+  const entryIdentity = value => {
+    const match = typeof value === 'string' && /^skill:\/\/([^/?#]+)\/([^?#]+)(?:\?([^#]*))?$/.exec(value);
+    if (!match) return undefined;
+    try {
+      const query = new URLSearchParams(match[3]);
+      if ([...query.keys()].some(key => !['snapshot', 'file_id'].includes(key)) || query.getAll('snapshot').length > 1 || query.getAll('file_id').length > 1) return undefined;
+      const parts = match[2].split('/').map(decodeURIComponent);
+      if (parts.some(part => !part || part === '.' || part === '..' || part.includes('/'))) return undefined;
+      return { owner: decodeURIComponent(match[1]), path: parts.join('/') };
+    } catch { return undefined; }
+  };
+  const targetEntry = entryIdentity(target.ref);
+  check(targetEntry && trace.candidates.some(row => {
+    const entry = entryIdentity(row.observedRef ?? row.ref);
+    return entry?.owner === target.logicalId && entry.path === targetEntry.path
+      && row.logicalId === target.logicalId && row.scope === target.scope && row.available === true;
+  }), 'CANDIDATE_IDENTITY', 'The target directory entry must expose its stable owner, scope and entrypoint');
+  check(Number.isSafeInteger(trace.memberBodyReadsBeforeSelection) && trace.memberBodyReadsBeforeSelection >= 0, 'OBSERVATION_INCOMPLETE', 'Body ownership attribution is incomplete; unknown requests cannot prove eager members or zero reads');
   check(trace.memberBodyReadsBeforeSelection === 0, 'EAGER_MEMBERS', 'Unselected member bodies must remain unread');
   check(Array.isArray(trace.reads) && trace.reads.length > 0, 'READ_MISSING', 'Retain native tool calls and full read receipts');
   const alternatives = oracle.resourceAlternatives ?? [];
@@ -91,7 +108,21 @@ export function evaluateGraphTrace(trace, oracle) {
     check(nonempty(item.ref) && nonempty(item.sha256) && Number.isInteger(item.bytes) && item.bytes > 0, 'ORACLE_INCOMPLETE', 'Every expected node needs exact bytes/hash');
     const read = trace.reads.find(row => row.ref === item.ref);
     check(read, 'READ_MISSING', 'The model must actually read every expected node');
-    check(read.origin === 'model' && read.tool === 'read' && read.discovered === true && read.sequence > trace.directorySequence, 'NAME_GUESSING', 'Read targets must come from the observed directory or exact links');
+    const proof = read.preparationProof;
+    const preparedMain = read.tool === 'skill_prepare' && item.logicalId === target.logicalId && read.role === 'entrypoint'
+      && proof?.explicitRoot === true && ['use', 'inspect'].includes(proof.purpose) && proof.deliveryVerified === true
+      && Array.isArray(proof.roots) && proof.roots.some(ref => {
+        try { return decodeURIComponent(/^skill:\/\/([^/?#]+)\//.exec(ref)?.[1] ?? '') === item.logicalId; } catch { return false; }
+      }) && nonempty(proof.publicRequestId) && /^[a-f0-9]{64}$/.test(proof.graphLockSha256 ?? '')
+      && /^[a-f0-9]{64}$/.test(proof.manifestSha256 ?? '') && proof.publicRef === item.ref
+      && proof.scope === item.scope && proof.ownerId === item.logicalId && proof.snapshot === item.snapshot
+      && proof.sha256 === item.sha256 && proof.bytes === item.bytes && /^[a-f0-9]{64}$/.test(proof.toolResultSha256 ?? '')
+      && Number.isSafeInteger(proof.toolResultBytes) && proof.toolResultBytes > item.bytes
+      && trace.providerRequests?.some(request => request.toolResults?.some(result => result.toolCallId === read.toolCallId
+        && result.tool === 'skill_prepare' && result.sha256 === proof.toolResultSha256 && result.bytes === proof.toolResultBytes
+        && result.records?.some(record => record.ref === item.ref && record.scope === item.scope && record.snapshot === item.snapshot
+          && record.sha256 === item.sha256 && record.bytes === item.bytes && record.providerCopies === 1)));
+    check(read.origin === 'model' && (read.tool === 'read' || preparedMain) && read.discovered === true && read.sequence > trace.directorySequence, 'NAME_GUESSING', 'Main instructions must come from an exact native read or fully verified explicit preparation; resources require native read');
     check(read.scope === item.scope && read.logicalId === item.logicalId && read.snapshot === item.snapshot, 'IDENTITY_MISMATCH', 'Scope, stable ID and snapshot must match the private oracle');
     check(read.complete === true && typeof read.content === 'string' && !read.error, 'INCOMPLETE_CONTENT', 'A complete successful body receipt is required');
     check(Buffer.byteLength(read.content) === item.bytes && sha(read.content) === item.sha256 && read.sha256 === item.sha256, 'CONTENT_MISMATCH', 'Observed bytes must match both the receipt and independent oracle');

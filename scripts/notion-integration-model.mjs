@@ -15,6 +15,12 @@ export function observe(api, settings) {
   const { createHash } = settings.crypto;
   const { isAbsolute, join, relative, resolve, sep } = settings.path;
   const { model, provider, id, marker, alias, selected, cache, output } = settings;
+  const allowedTools = () => {
+    if (!settings.publicGraph) return ['read'];
+    const surface = settings.surfaceFile ? JSON.parse(readFileSync(settings.surfaceFile, 'utf8')).surface : 'public-tools';
+    if (!['native-read-only', 'public-tools'].includes(surface)) throw new Error('Unknown frozen tool surface');
+    return surface === 'native-read-only' ? ['read'] : ['read', 'skill_search', 'skill_prepare'];
+  };
   const record = value => appendFileSync(output, JSON.stringify({ at: new Date().toISOString(), ...value }) + '\n', { mode: 0o600 });
   const normalize = text => text.replace(/^\s*\d+[:|]\s?/gm, '').replace(/\s+/g, ' ').trim();
   const strings = value => typeof value === 'string' ? [value] : Array.isArray(value) ? value.flatMap(strings) : value && typeof value === 'object' ? Object.values(value).flatMap(strings) : [];
@@ -28,10 +34,40 @@ export function observe(api, settings) {
   const completeCopies = (value, body) => {
     if (!body) return 0;
     const escaped = body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-    const choices = [...new Set([body, escaped, JSON.stringify(body).slice(1, -1)])].sort((a, b) => b.length - a.length).map(text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    return sourceStrings(value).reduce((sum, text) => sum + [...text.matchAll(new RegExp(choices.join('|'), 'g'))].length, 0);
+    const choices = [...new Set([body, escaped, JSON.stringify(body).slice(1, -1)])].sort((a, b) => b.length - a.length);
+    return sourceStrings(value).reduce((sum, text) => {
+      let offset = 0, count = 0;
+      for (;;) {
+        let start = -1, length = 0;
+        for (const choice of choices) {
+          const found = text.indexOf(choice, offset);
+          if (found !== -1 && (start === -1 || found < start)) { start = found; length = choice.length; }
+        }
+        if (start === -1) return sum + count;
+        count++; offset = start + length;
+      }
+    }, 0);
   };
   const within = (parent, child) => { const path = relative(parent, child); return path !== '..' && !path.startsWith('..' + sep) && !isAbsolute(path); };
+  // Hosts and models may use different OS spellings for the same cache root
+  // (for example /tmp and /private/tmp). Resolve the existing ancestor first;
+  // a declared resource can still be absent until the native read materializes it.
+  // This only normalizes a location. The immutable receipt still authorizes it.
+  const canonicalReadPath = input => {
+    if (input.split(/[\\/]/).includes('..')) return undefined;
+    const expanded = input.startsWith('~/') && process.env.HOME ? resolve(process.env.HOME, input.slice(2)) : input;
+    let current = resolve(settings.cwd, expanded);
+    const tail = [];
+    for (;;) {
+      try { return resolve(realpathSync(current), ...tail); }
+      catch (error) {
+        if (error.code !== 'ENOENT') return undefined;
+        const parent = resolve(current, '..');
+        if (parent === current) return undefined;
+        tail.unshift(relative(parent, current)); current = parent;
+      }
+    }
+  };
   const secretValues = Object.entries(process.env).filter(([key, value]) => /KEY|TOKEN|SECRET|PASSWORD|COOKIE|CREDENTIAL/i.test(key) && typeof value === 'string' && value.length >= 4).map(([, value]) => value);
   const sanitize = text => {
     let result = String(text);
@@ -201,13 +237,14 @@ export function observe(api, settings) {
       return !snapshot && !fileId && entry === selected.entry && candidates.length === 0 ? { kind: 'skill-uri', path } : undefined;
     }
     if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return undefined;
-    const absolute = resolve(settings.cwd, path);
+    const absolute = canonicalReadPath(path);
+    if (!absolute) return undefined;
     // OMP runs observers before the native read wrapper maps a host-advertised
     // resource alias to its pinned export. The alias need not exist on disk.
     // Only a previously verified entry read can bind this exact scope/snapshot;
     // neither an advertised directory nor a matching filename is sufficient.
     if (activeScope && activeSnapshot) {
-      const requested = isAbsolute(path) ? path : settings.cwd + sep + path;
+      const requested = absolute;
       const entries = [...advertisedEntries].flatMap(advertised => {
         const parent = resolve(advertised, '..') + sep;
         if (!requested.startsWith(parent)) return [];
@@ -255,15 +292,19 @@ export function observe(api, settings) {
   };
   api.on('session_start', async (_event, ctx) => {
     assertModel(ctx);
-    await api.setActiveTools(['read']);
-    record({ phase: 'selected', model, tools: ['read'] });
+    await api.setActiveTools(allowedTools());
+    record({ phase: 'selected', model, tools: allowedTools() });
   });
-  api.on('before_agent_start', (event, ctx) => {
+  api.on('before_agent_start', async (event, ctx) => {
     assertModel(ctx);
+    if (settings.publicGraph) await api.setActiveTools(allowedTools());
     for (const entry of strings(event.systemPrompt).join('\n').matchAll(/<skill>[\s\S]*?<\/skill>/g)) {
       const name = /<name>\s*([^<]+)\s*<\/name>/.exec(entry[0])?.[1]?.trim();
       const location = /<location>\s*([^<]+)\s*<\/location>/.exec(entry[0])?.[1]?.trim();
-      if (name && allowedNames.has(name) && location) advertisedEntries.add(resolve(settings.cwd, location.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&')));
+      if (name && allowedNames.has(name) && location) {
+        const advertised = canonicalReadPath(location.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&'));
+        if (advertised) advertisedEntries.add(advertised);
+      }
     }
     record({ phase: 'metadata', model, aliases: occurrences(event.systemPrompt, alias), skillBodies: occurrences(event.systemPrompt, marker), advertisedEntries: advertisedEntries.size, catalogLocations: strings(event.systemPrompt).join('\n').match(/<location>/g)?.length ?? 0 });
   });
@@ -275,6 +316,8 @@ export function observe(api, settings) {
     assertModel(ctx);
     const wireModel = event.payload?.model;
     if (wireModel !== undefined && !wireAllowed(wireModel)) throw new Error('Notion model route rejected unauthorized provider model');
+    const advertisedTools = (event.payload?.tools ?? []).map(tool => tool.function?.name ?? tool.name).filter(Boolean).sort();
+    if (settings.publicGraph && JSON.stringify(advertisedTools) !== JSON.stringify(allowedTools().sort())) throw new Error('Actual provider tools differ from the frozen case surface');
     const completeContents = [];
     for (const exported of exportedFiles()) for (const [entry, file] of exported.files) {
       if (entry === '.ntn-skills.json' || entry === 'ntn-skills-source.zip' || file.bytes.includes(0)) continue;
@@ -286,7 +329,7 @@ export function observe(api, settings) {
     }
     const mains = completeContents.filter(item => item.role === 'entrypoint');
     if (mains.length === 1 && mains[0].copies === 1) { activeSnapshot = mains[0].snapshot; activeScope = mains[0].scope; }
-    record({ phase: 'request', model, wireModel: wireModel ?? null, aliases: occurrences(event.payload, alias), skillBodies: occurrences(event.payload, marker), resourceBodies: resourceBodies().reduce((sum, body) => sum + occurrences(event.payload, body), 0), completeContents });
+    record({ phase: 'request', model, wireModel: wireModel ?? null, tools: advertisedTools, aliases: occurrences(event.payload, alias), skillBodies: occurrences(event.payload, marker), resourceBodies: resourceBodies().reduce((sum, body) => sum + occurrences(event.payload, body), 0), completeContents });
   });
   api.on('after_provider_response', event => record({ phase: 'response', status: typeof event.status === 'number' ? event.status : null }));
   api.on('message_end', event => {
@@ -297,8 +340,29 @@ export function observe(api, settings) {
     record({ phase: 'assistant_final', success: ['stop', 'length'].includes(message.stopReason), stopReason: message.stopReason ?? null, bytes: Buffer.byteLength(text), textSha256: createHash('sha256').update(text).digest('hex'), text: sanitize(text), usage: Object.fromEntries(Object.entries(message.usage ?? {}).filter(([key, value]) => ['input', 'output', 'cacheRead', 'cacheWrite', 'totalTokens'].includes(key) && typeof value === 'number' && Number.isFinite(value))) });
   });
   api.on('tool_call', event => {
+    // The paired graph observer verifies actual metadata/prepare responses,
+    // immutable CLI reads, manifests and delivery spans. This older single-Skill
+    // matrix keeps its additional owner restriction and native resource proof.
+    if (settings.publicGraph && allowedTools().includes('skill_search') && event.toolName === 'skill_search') return;
+    if (settings.publicGraph && allowedTools().includes('skill_prepare') && event.toolName === 'skill_prepare') {
+      const roots = event.input?.roots;
+      const allowed = Array.isArray(roots) && roots.length > 0 && roots.every(value => {
+        if (typeof value !== 'string') return false;
+        const match = /^skill:\/\/([^/?#]+)\/([^?#]+)(?:\?([^#]*))?$/.exec(value);
+        try {
+          if (!match || decodeURIComponent(match[1]) !== selected.id || match[1] !== encodeURIComponent(selected.id) || decodeURIComponent(match[2]) !== selected.entry) return false;
+          const query = new URLSearchParams(match[3]);
+          return [...query.keys()].every(key => ['snapshot', 'file_id'].includes(key)) && query.getAll('snapshot').length <= 1 && query.getAll('file_id').length <= 1;
+        } catch { return false; }
+      });
+      record({ phase: 'tool_call', tool: event.toolName, allowed, kind: 'preparation' });
+      if (!allowed) return { block: true, reason: 'This single-Skill acceptance permits only the selected exact owner and main entry' };
+      return;
+    }
     if (event.toolName !== 'read') return { block: true, reason: 'Notion model route permits only read' };
-    const target = receiptFor(event.input?.path);
+    const selectedTarget = receiptFor(event.input?.path);
+    const helpTarget = !selectedTarget && settings.piHelpBoundary?.target(event.input?.path);
+    const target = selectedTarget ?? (helpTarget && { ...helpTarget, kind: 'host-help' });
     if (!target) {
       record({ phase: 'tool_call', tool: 'read', allowed: false, path: sanitize(event.input?.path ?? '') });
       return { block: true, reason: 'Read only the available Notion skill and its exported resources' };
@@ -310,6 +374,12 @@ export function observe(api, settings) {
     if (event.toolName !== 'read') return;
     const previous = calls.get(event.toolCallId);
     calls.delete(event.toolCallId);
+    if (previous?.kind === 'host-help') {
+      const body = (event.content ?? []).filter(item => item.type === 'text').map(item => item.text).join('\n');
+      const proof = settings.piHelpBoundary?.verifyRead(event.input?.path, body, Boolean(event.isError));
+      record({ phase: 'tool_result', tool: 'read', kind: 'host-help', role: 'host-help', path: sanitize(proof?.path ?? previous.path), isError: Boolean(event.isError) || !proof, helpVerified: Boolean(proof?.complete), helpProof: proof ?? null, receiptValidated: false, skillBodies: 0, bodyMatchesFile: Boolean(proof?.complete), resourceSuccess: false, bytes: Buffer.byteLength(body), bodySha256: createHash('sha256').update(body).digest('hex') });
+      return;
+    }
     const validated = receiptFor(event.input?.path);
     let target = validated ?? (previous && { ...previous, fileBody: undefined });
     if (!target) return;
