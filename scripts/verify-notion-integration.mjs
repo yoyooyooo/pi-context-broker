@@ -127,6 +127,7 @@ async function hostRun(host,context) {
   env.HOME=process.env.HOME;
  }
  const args=['--no-extensions','--session-dir',sessions,'--tools','read','-e',provider,'-e',extension,'--model','context-broker-e2e/fake',...(host==='omp'?['--no-title','--no-rules']:[])];
+ const sourceCallStart=fixture.callsPath?(await rows(fixture.callsPath)).length:0;
  let rpc;const observations=[];try {
   // Metadata-only provider context does not imply cold preparation. Arm the
   // body failure before startup so default-View prefetch cannot win this race.
@@ -172,7 +173,17 @@ async function hostRun(host,context) {
   rpc=await startRpc({host,cwd:base,env,args});
   await rpc.prompt(`$${selection} Apply the ledger contract.`);let dollarCaptures=await rows(providerFile);const firstCount=count(dollarCaptures.at(-1).context.messages,fixture.marker);assert.equal(firstCount,1,'Cold dollar must inject exactly one body');await rpc.prompt(`$${selection} Apply it once more.`);captures=await rows(providerFile);assert.equal(count(captures.at(-1).context.messages,fixture.marker),1,'Warm dollar must retain one body');observations.push('cold dollar activation and warm repeat');
   await rpc.prompt(`/skill:${nativeName}`);captures=await rows(providerFile);assert.equal(count(captures.at(-1).context.messages,fixture.marker),1,'Native skill after dollar must retain exactly one source body');observations.push('dollar-to-native retains one body');
-  if(fixture.resourceCanary){await save(plan,{trigger:'OPEN_LINKED_LEDGER',id:'notion-resource-2',path:join(dirname(location),fixture.resourcePath??'references/ledger.md')});await rpc.prompt('OPEN_LINKED_LEDGER: read the linked ledger resource.');captures=await rows(providerFile);assert.ok(JSON.stringify(captures.at(-1).context.messages).includes(fixture.resourceCanary),'Real host read must return linked resource bytes');observations.push('native resource read');}
+  if(fixture.resourceCanary){
+   // Host catalog locations belong to the current process. Earlier RPC hosts
+   // above have closed; their discovery paths are not portable resource refs.
+   const currentEntry=nativeEntries(host,captures.at(-1).context).find(skill=>skill.name===nativeName);
+   assert.ok(currentEntry?.filePath,'Current provider catalog must advertise the selected resource owner');
+   const resourceLocation=join(dirname(currentEntry.filePath),fixture.resourcePath??'references/ledger.md');
+   await save(plan,{trigger:'OPEN_LINKED_LEDGER',id:'notion-resource-2',path:resourceLocation});
+   await rpc.prompt('OPEN_LINKED_LEDGER: read the linked ledger resource.');captures=await rows(providerFile);
+   assert.ok(JSON.stringify(captures.at(-1).context.messages).includes(fixture.resourceCanary),'Real host read must return linked resource bytes');
+   observations.push({scenario:'native resource read',ownerLocation:currentEntry.filePath,resourceLocation});
+  }
   await save(join(evidence,label+'-rpc.json'),rpc.frames);await rpc.stop();rpc=undefined;
   const continueBefore=(await rows(providerFile)).length;
   const continueTask=`$${selection} Continue using this skill.`;
@@ -192,7 +203,14 @@ async function hostRun(host,context) {
    for(const entry of selectedPages){const start=(await rows(duplicateCapture)).length;await rpc.prompt(`/skill:${entry.name}`);const contexts=(await rows(duplicateCapture)).slice(start);const expected=entry.filePath.includes('22222222')?secondCanary:fixture.marker;assert.ok(contexts.some(row=>JSON.stringify(row.context.messages).includes(expected)),'Qualified native page must load its own distinct body');}
    await save(join(evidence,label+'-duplicates-rpc.json'),rpc.frames);await rpc.stop();rpc=undefined;await fixture.setScenario('normal');observations.push('ambiguous alias blocked and two qualified pages selected');
   }
-  if(fixture.callsPath){const calls=await rows(fixture.callsPath);assert.ok(calls.some(c=>c.command==='export'));}
+  if(fixture.callsPath){
+   const calls=(await rows(fixture.callsPath)).slice(sourceCallStart);
+   const prepared=calls.filter(call=>call.command==='prepare');
+   const pinnedMainReads=calls.filter(call=>call.command==='read'&&call.args?.[0]?.startsWith(fixture.skillRef+'?snapshot='));
+   assert.ok(prepared.length,'Explicit host activation must use public graph preparation');
+   assert.ok(pinnedMainReads.length,'Prepared main bytes must be verified through their fixed snapshot');
+   observations.push({scenario:'public source preparation and fixed content',prepareCalls:prepared.length,pinnedMainReads:pinnedMainReads.length,exports:calls.filter(call=>call.command==='export').length});
+  }
   return {host,namespace,observations,providerRequests:(await rows(providerFile)).length,files:[label+'-provider.jsonl',label+'-decisions.jsonl',label+'-rpc.json',label+'-cold-read-rpc.json',label+'-cold-native-rpc.json',label+'-cold-print-provider.jsonl']};
  } finally {if(rpc){await save(join(evidence,label+'-rpc.json'),rpc.frames);await rpc.stop();}}
 }
@@ -239,13 +257,13 @@ else {
   });
   manifest.isolation={cliConfig:process.env.NTN_SKILLS_CONFIG_HOME,cliState:process.env.NTN_SKILLS_HOME,cliCache:process.env.NTN_SKILLS_CACHE_HOME,cliData:process.env.NTN_SKILLS_DATA_HOME,authentication:'Inherited project token; no credentials copied'};
   let ownedLive;
+  let fixture;
   let requestLedger;
   try{
    await save(join(evidence,'manifest.json'),manifest);
    if(consumerIsolation&&options['upstream-database']){await mkdir(process.env.NTN_SKILLS_CONFIG_HOME,{recursive:true,mode:0o700});await save(join(process.env.NTN_SKILLS_CONFIG_HOME,'config.json'),{upstream_database:options['upstream-database']});manifest.isolation.upstreamDatabase=options['upstream-database'];}
    if((defaultContext||cacheLifecycle)&&mode==='live-fixture'){requestLedger=await createRequestLedger({scratch,evidence,command:command()});}
    if(mode==='live-fixture'){ownedLive=await createLiveFixture({scratch,evidence,command:requestLedger?.command??command(),database:options.database,resumeEvidence:options['resume-evidence'],onOwned:fixture=>{ownedLive=fixture;}});options['skill-ref']=ownedLive.skillRef;manifest.files.push('live-fixture-intent.json','live-fixture-create.json','live-fixture-cleanup.json','live-fixture-schema.json','live-fixture-default-context.json');if(options['resume-evidence']){manifest.files=manifest.files.filter(file=>file!=='live-fixture-intent.json');manifest.files.push('live-fixture-recovery.json');}}
-   let fixture;
    if(skillGraph)fixture={live:{controlled:true,source:'frozen SQLite fixtures with real installed CLI prepare/read/export'}};
    else if(nativeKinds){requestLedger=await createRequestLedger({scratch,evidence,command:command()});fixture=await prepareNativeKinds({config:await json(nativeKinds),database:options.database,evidence,invoke:args=>invokeJson(requestLedger.command,args,{cwd:scratch,evidence:join(evidence,'command-receipts.jsonl'),category:'native-kinds-oracle',deadline:180000})});manifest.files.push('safe-source-requests.jsonl',...fixture.files);}
    else if(cacheLifecycle)fixture={...ownedLive,command:requestLedger.command,live:{owned:true}};
@@ -270,8 +288,16 @@ else {
     if(selectedHosts.includes('omp'))manifest.branches.push(await runSourceLifecycle({root,scratch,evidence,fixture,extension}));
    }
    if(mode==='live-fixture'&&options.model){assert.ok(options['model-prompt'],'--model-prompt required with --model');const branches=await runNotionModel({root,scratch,evidence,fixture,options,extension});manifest.branches.push(...branches);for(const branch of branches)manifest.files.push(...(branch.files??[]));}
-   if(fixture.live)manifest.live=fixture.live;else{await writeFile(join(evidence,'source-cli-calls.jsonl'),await readFile(fixture.callsPath));manifest.files.push('source-cli-calls.jsonl');}
+   if(fixture.live)manifest.live=fixture.live;
    for(const branch of manifest.branches)manifest.files.push(...(branch.files??[]));manifest.files=[...new Set(manifest.files)];manifest.status='passed';
-  }catch(error){if(error.results)manifest.branches.push(...error.results);manifest.status='failed';manifest.error=error.message;process.exitCode=1;}finally{for(const branch of manifest.branches){manifest.files.push(...(branch.files??[]));if(branch.mode==='model')manifest.notRun=manifest.notRun.filter(item=>item!==`${branch.host} real model`);}manifest.files=[...new Set(manifest.files)];if(ownedLive)try{await ownedLive.archive();}catch(error){manifest.status='failed';manifest.cleanupError=error.message;process.exitCode=1;}manifest.finishedAt=new Date().toISOString();await save(join(evidence,'manifest.json'),manifest);console.log(JSON.stringify({status:manifest.status,evidence,error:manifest.error,cleanupError:manifest.cleanupError},null,2));}
+  }catch(error){if(error.results)manifest.branches.push(...error.results);manifest.status='failed';manifest.error=error.message;process.exitCode=1;}finally{
+   // A failed host branch still needs its source-call ledger after scratch
+   // retirement. Do not make successful completion a condition for retention.
+   if(fixture?.callsPath)try{await writeFile(join(evidence,'source-cli-calls.jsonl'),await readFile(fixture.callsPath));manifest.files.push('source-cli-calls.jsonl');}catch(error){if(error.code!=='ENOENT'){manifest.status='failed';manifest.retentionError=error.message;process.exitCode=1;}}
+   for(const branch of manifest.branches){manifest.files.push(...(branch.files??[]));if(branch.mode==='model')manifest.notRun=manifest.notRun.filter(item=>item!==`${branch.host} real model`);}
+   manifest.files=[...new Set(manifest.files)];
+   if(ownedLive)try{await ownedLive.archive();}catch(error){manifest.status='failed';manifest.cleanupError=error.message;process.exitCode=1;}
+   manifest.finishedAt=new Date().toISOString();await save(join(evidence,'manifest.json'),manifest);console.log(JSON.stringify({status:manifest.status,evidence,error:manifest.error,cleanupError:manifest.cleanupError},null,2));
+  }
  }
 }

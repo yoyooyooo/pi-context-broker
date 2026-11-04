@@ -1,0 +1,553 @@
+{
+  "schema": "skill-consumption-map/v1",
+  "parent": "AH-617",
+  "tasks": [
+    {
+      "id": "SC01",
+      "issue": "AH-618",
+      "name": "验证地图与反例",
+      "featurePrefix": "SC-VERIFY",
+      "recipeStatus": "draft",
+      "journeys": []
+    },
+    {
+      "id": "SC02",
+      "issue": "AH-619",
+      "name": "成本基线",
+      "featurePrefix": "SC-COST",
+      "recipeStatus": "draft",
+      "journeys": []
+    },
+    {
+      "id": "SC03",
+      "issue": "AH-620",
+      "name": "一次消费合同",
+      "featurePrefix": "SC-CONTRACT",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J18"
+      ]
+    },
+    {
+      "id": "SC04",
+      "issue": "AH-621",
+      "name": "稳定短引用",
+      "featurePrefix": "SC-REF",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J12",
+        "J18"
+      ]
+    },
+    {
+      "id": "SC05",
+      "issue": "AH-622",
+      "name": "最小模型投影",
+      "featurePrefix": "SC-PROJECTION",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J03"
+      ]
+    },
+    {
+      "id": "SC06",
+      "issue": "AH-623",
+      "name": "目录与自主发现",
+      "featurePrefix": "SC-DISCOVERY",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J02",
+        "J06",
+        "J07"
+      ]
+    },
+    {
+      "id": "SC07",
+      "issue": "AH-626",
+      "name": "inspect/use及资源批读",
+      "featurePrefix": "SC-TOOLS",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J05",
+        "J06"
+      ]
+    },
+    {
+      "id": "SC08",
+      "issue": "AH-627",
+      "name": "会话有效指令",
+      "featurePrefix": "SC-SESSION",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J10",
+        "J11",
+        "J12"
+      ]
+    },
+    {
+      "id": "SC09",
+      "issue": "AH-624",
+      "name": "普通消息非阻塞",
+      "featurePrefix": "SC-STARTUP",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J01",
+        "J02"
+      ]
+    },
+    {
+      "id": "SC10",
+      "issue": "AH-625",
+      "name": "稳定SDK",
+      "featurePrefix": "SC-SDK",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J03",
+        "J04"
+      ]
+    },
+    {
+      "id": "SC11",
+      "issue": "AH-628",
+      "name": "字段与批量元数据",
+      "featurePrefix": "SC-METADATA",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J04",
+        "J13",
+        "J14",
+        "J18"
+      ]
+    },
+    {
+      "id": "SC12",
+      "issue": "AH-629",
+      "name": "分层缓存",
+      "featurePrefix": "SC-CACHE",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J02",
+        "J03",
+        "J10",
+        "J11",
+        "J13",
+        "J14",
+        "J17"
+      ]
+    },
+    {
+      "id": "SC13",
+      "issue": "AH-630",
+      "name": "按需物化",
+      "featurePrefix": "SC-MATERIALIZE",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J04",
+        "J14",
+        "J15",
+        "J18"
+      ]
+    },
+    {
+      "id": "SC14",
+      "issue": "AH-631",
+      "name": "Records事实读取",
+      "featurePrefix": "SC-RECORDS",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J13",
+        "J20"
+      ]
+    },
+    {
+      "id": "SC15",
+      "issue": "AH-632",
+      "name": "同机只读合并",
+      "featurePrefix": "SC-SCHEDULER",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J17"
+      ]
+    },
+    {
+      "id": "SC16",
+      "issue": "AH-633",
+      "name": "历史检查点",
+      "featurePrefix": "SC-CHECKPOINT",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J20"
+      ]
+    },
+    {
+      "id": "SC17",
+      "issue": "AH-634",
+      "name": "附件与内联",
+      "featurePrefix": "SC-STORAGE",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J19"
+      ]
+    },
+    {
+      "id": "SC18",
+      "issue": "AH-635",
+      "name": "文件级来源迁移",
+      "featurePrefix": "SC-MIGRATION",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J15",
+        "J16",
+        "J19"
+      ]
+    },
+    {
+      "id": "SC19",
+      "issue": "AH-636",
+      "name": "poteto内容",
+      "featurePrefix": "SC-AUTHORING",
+      "recipeStatus": "draft",
+      "journeys": []
+    },
+    {
+      "id": "SC20",
+      "issue": "AH-638",
+      "name": "全场景成本矩阵",
+      "featurePrefix": "SC-MATRIX",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J01",
+        "J13"
+      ]
+    },
+    {
+      "id": "SC21",
+      "issue": "AH-639",
+      "name": "真实Agent",
+      "featurePrefix": "SC-AGENT",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J05",
+        "J06",
+        "J07",
+        "J08",
+        "J09"
+      ]
+    },
+    {
+      "id": "SC22",
+      "issue": "AH-637",
+      "name": "独立安装双机",
+      "featurePrefix": "SC-INSTALL",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J16"
+      ]
+    },
+    {
+      "id": "SC23",
+      "issue": "AH-640",
+      "name": "调用者与回滚",
+      "featurePrefix": "SC-CALLERS",
+      "recipeStatus": "draft",
+      "journeys": []
+    },
+    {
+      "id": "SC24",
+      "issue": "AH-641",
+      "name": "日用切换",
+      "featurePrefix": "SC-DAILY",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J21"
+      ]
+    }
+  ],
+  "journeys": [
+    {
+      "id": "J01",
+      "name": "全冷普通消息与慢目录",
+      "tasks": [
+        "SC09",
+        "SC20"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J02",
+      "name": "暖目录普通消息",
+      "tasks": [
+        "SC06",
+        "SC09",
+        "SC12"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J03",
+      "name": "暖缓存显式激活",
+      "tasks": [
+        "SC05",
+        "SC10",
+        "SC12"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J04",
+      "name": "冷缓存根与Requires",
+      "tasks": [
+        "SC10",
+        "SC11",
+        "SC13"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J05",
+      "name": "用户原句介绍",
+      "tasks": [
+        "SC07",
+        "SC21"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J06",
+      "name": "无美元明确名称介绍",
+      "tasks": [
+        "SC06",
+        "SC07",
+        "SC21"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J07",
+      "name": "无美元自然选路",
+      "tasks": [
+        "SC06",
+        "SC21"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J08",
+      "name": "Router-only自主选叶子",
+      "tasks": [
+        "SC21"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J09",
+      "name": "poteto-only自主选叶子",
+      "tasks": [
+        "SC21"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J10",
+      "name": "重复激活与后续普通消息",
+      "tasks": [
+        "SC08",
+        "SC12"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J11",
+      "name": "编辑、旧锁与显式刷新",
+      "tasks": [
+        "SC08",
+        "SC12"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J12",
+      "name": "恢复、分支、回退与压缩",
+      "tasks": [
+        "SC04",
+        "SC08"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J13",
+      "name": "过期未变复验",
+      "tasks": [
+        "SC11",
+        "SC12",
+        "SC14",
+        "SC20"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J14",
+      "name": "局部变化与关系变化",
+      "tasks": [
+        "SC11",
+        "SC12",
+        "SC13"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J15",
+      "name": "单资源缺失与custom覆盖",
+      "tasks": [
+        "SC13",
+        "SC18"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J16",
+      "name": "空pro/mini固定历史恢复",
+      "tasks": [
+        "SC18",
+        "SC22"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J17",
+      "name": "并发、取消、崩溃及clear",
+      "tasks": [
+        "SC12",
+        "SC15"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J18",
+      "name": "权限、hash、scope及不完整数据",
+      "tasks": [
+        "SC03",
+        "SC04",
+        "SC11",
+        "SC13"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J19",
+      "name": "附件过期与unknown上传",
+      "tasks": [
+        "SC17",
+        "SC18"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J20",
+      "name": "检查点、冲突与未决操作",
+      "tasks": [
+        "SC14",
+        "SC16"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J21",
+      "name": "正常日用新Pi",
+      "tasks": [
+        "SC24"
+      ],
+      "required": true,
+      "status": "not_run"
+    }
+  ],
+  "axes": {
+    "cache": [
+      "cold",
+      "warm",
+      "expired-unchanged",
+      "expired-changed",
+      "partial"
+    ],
+    "session": [
+      "new",
+      "existing",
+      "restart",
+      "resume",
+      "fork",
+      "rewind",
+      "compacted"
+    ],
+    "entry": [
+      "ordinary",
+      "dollar",
+      "native",
+      "search",
+      "prepare",
+      "read",
+      "cli",
+      "sdk"
+    ],
+    "intent": [
+      "none",
+      "discover",
+      "inspect",
+      "use"
+    ]
+  },
+  "coveragePolicy": {
+    "default": "not_run",
+    "highRisk": "All cache/session variants of activation, refresh, permission, compaction and cancellation are required. No unexecuted tuple becomes passed through pairwise inference.",
+    "notApplicable": [
+      {
+        "rule": "intent=none requires entry=ordinary",
+        "reason": "No Skill intent has no explicit Skill entry."
+      },
+      {
+        "rule": "entry=search requires intent=discover",
+        "reason": "Search returns candidates; it does not inspect or activate."
+      },
+      {
+        "rule": "entry=ordinary cannot explicitly inspect/use",
+        "reason": "Natural requests discover before an explicit inspection/activation; record the subsequent tool entry separately."
+      },
+      {
+        "rule": "entry=dollar/native requires intent=use",
+        "reason": "Explicit host activation prepares Required closure; inspection is a separate tool intent."
+      },
+      {
+        "rule": "entry=cli/sdk with resumed host session",
+        "reason": "Direct clients have no Pi lifecycle. Test bindings through their host caller separately."
+      }
+    ]
+  },
+  "proofLayers": [
+    "controlled",
+    "real_service",
+    "real_model",
+    "real_ui",
+    "installed_package",
+    "cross_machine",
+    "daily"
+  ]
+}

@@ -29,6 +29,7 @@
 
 | 功能 | 参数 | 功能地图 |
 | --- | --- | --- |
+| AH-617 消费链验证与场景索引 | `skill-consumption-contract.mjs self-test/check-map`；既有 Pi integration | [skill-consumption](../../verify-notion-skills-integration/features/skill-consumption.md)，SC-VERIFY-01～03；新产品路线仍为 draft |
 | Notion 直连请求与离线失败基线 | `verify-skill-graph-contract.mjs self-test/doctor/baseline` | [request-engine](../../verify-notion-skills-integration/features/request-engine.md)，NG-VC-01、NG-RE-02～05/21 |
 | Router 与普通 Skill 两条独立图消费 | `verify-skill-graph-contract.mjs evaluate`，只检查原始 observer 合同 | [skill-dependency-graph](../../verify-notion-skills-integration/features/skill-dependency-graph.md)，NG-SG-06～20；contract-valid 不替代真实运行 |
 | 发现、规则、默认 CLI XML 指引和注入 | `injection` | [上下文注入](injection.md) |

@@ -5,6 +5,8 @@ description: "验证 Notion Skills source 与随包 Skill在 Pi/OMP、Tern 中�
 
 # Verify Notion Skills Integration
 
+AH-617 消费链重构先读 [消费链验证地图](features/skill-consumption.md)。SC01 复用既有 Pi harness，统一 SC01–24、J01–21、反例与证据保留；未执行的路线保持 draft/not_run，不能由旧 Gate 推断新产物通过。
+
 AH-561 的直连请求和跨 Skill 图先走 [request-engine](features/request-engine.md) 与 [skill-dependency-graph](features/skill-dependency-graph.md)，复用 `scripts/verify-skill-graph-contract.mjs` 的离线反例与 fail-before。该入口保存两条根选择提示、私有 oracle/trace 合同、三层缓存边界与五类证据；`contract-valid` 不代表真实模型通过。当前 live/model/helper 使用项目直连引擎和安全请求账本；每次交付必须重新取得真实服务、宿主和安装证据，既有历史回执保持原状。
 
 从本仓库根目录执行命令。先按变更选择下列地图；使用真实 Pi/OMP extension 与 provider 边界捕获，不把直接调用 adapter 或 CLI 当成宿主消费通过。此 Skill 的维护目录在 `.agents`，不修改用户全局配置。
@@ -13,6 +15,7 @@ AH-561 的直连请求和跨 Skill 图先走 [request-engine](features/request-e
 
 | 功能地图 | Feature IDs |
 | --- | --- |
+| [消费链验证、场景与成本边界](features/skill-consumption.md) | SC-VERIFY-01～03；SC01–24 / J01–21 |
 | [直连请求引擎](features/request-engine.md) | NG-VC-01、NG-RE-02～05/21 |
 | [Skill 依赖图](features/skill-dependency-graph.md) | NG-SG-06～20 |
 | [配置与发现](features/source-configuration-discovery.md) | NS-CFG-01～07 |
