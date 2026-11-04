@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createServer } from "node:net";
@@ -34,7 +35,7 @@ export async function softMissRegressions(parentRoot: string): Promise<void> {
       await writeFile(adapter, `
 import { spawnSync } from 'node:child_process';
 import { connect } from 'node:net';
-import { appendFileSync, readFileSync, unlinkSync } from 'node:fs';
+import { appendFileSync, readFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 const args = process.argv.slice(2), source = ${JSON.stringify(kind)};
 appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ source, command: args[0], args }) + '\\n');
@@ -60,7 +61,7 @@ if (result.status !== 0) { process.stdout.write(result.stdout ?? ''); process.ex
 const receipt = JSON.parse(result.stdout);
 if (args[0] === 'list' && fault === 'removed') { receipt.records = []; receipt.count = 0; }
 if (args[0] === 'read' && fault === 'entry-incomplete') { receipt.has_more = true; receipt.range.end = Math.max(1, receipt.range.total_lines - 1); }
-if (args[0] === 'export' && fault === 'incomplete') unlinkSync(join(receipt.output, 'references/ledger.md'));
+if (args[0] === 'export' && fault === 'incomplete') renameSync(join(receipt.output, 'references/ledger.md'), join(receipt.output, 'references/ledger.md.fixture-hidden-' + process.pid));
 console.log(JSON.stringify(receipt));
 `);
       sources.push({ id: kind, type: "notion" as const, command: [process.execPath, adapter], cacheDir: join(root, kind + "-cache") });
@@ -111,8 +112,8 @@ console.log(JSON.stringify(receipt));
       delete process.env.CONTEXT_BROKER_ROOTS;
       const listeners = new Map<string, Listener[]>(), commands = new Map<string, Command>();
       const sent: MessageContent[] = [], notices: string[] = [], drafts: string[] = [];
-      let aborts = 0, nativeExpansions = 0;
-      const ctx: ExtensionContext = { cwd: root, mode: "tui", hasUI: false, sessionManager: { getSessionId: () => host + "-soft-miss", getEntries: () => [] }, ui: { notify: text => notices.push(text), setEditorText: text => drafts.push(text) }, abort: () => { aborts++; } };
+      let aborts = 0, nativeExpansions = 0, operation: AbortController | undefined;
+      const ctx: ExtensionContext = { cwd: root, mode: "tui", hasUI: false, sessionManager: { getSessionId: () => host + "-soft-miss", getEntries: () => [] }, ui: { notify: text => notices.push(text), setEditorText: text => drafts.push(text) }, abort: () => { aborts++; operation?.abort(); } };
       const api: ExtensionAPI = {
         ...(host === "omp" ? { pi: { buildSkillPromptMessage: async () => { nativeExpansions++; throw Error("A missing native Skill must not expand"); } } } : {}),
         on(name, handler) { listeners.set(name, [...(listeners.get(name) ?? []), handler as unknown as Listener]); },
@@ -130,6 +131,16 @@ console.log(JSON.stringify(receipt));
       const runnerModule = host === "pi" && hostRoot ? await import(pathToFileURL(join(hostRoot, "dist/core/extensions/runner.js")).href) : undefined;
       const runnerErrors: unknown[] = [];
       const runner = { extensions: [{ path: "soft-miss-plugin", handlers: listeners }], createContext: () => ctx, emitError: (error: unknown) => runnerErrors.push(error) };
+      const projectPi = async (submitted: string) => {
+        operation = new AbortController(); ctx.signal = operation.signal;
+        await emit("agent_start", {});
+        try {
+          const results = await emit("context", { messages: [{ role: "user", content: [{ type: "text", text: submitted }, image] }] });
+          await emit("before_provider_request", { type: "before_provider_request", payload: {} });
+          await emit("after_provider_response", { type: "after_provider_response", status: 200, headers: {} });
+          return results;
+        } finally { await emit("agent_end", {}); ctx.signal = undefined; operation = undefined; }
+      };
       const submit = async (text: string) => {
         const before = sent.length;
         const input = runnerModule
@@ -152,16 +163,24 @@ console.log(JSON.stringify(receipt));
           } else if (host === "pi") assert.equal(object(input).action, "continue");
         }
         const results = await emit("before_agent_start", { prompt: submitted, systemPrompt: "base" });
-        await emit("agent_start", {});
-        await emit("agent_end", {});
-        return { submitted, results };
+        let task = submitted;
+        if (host === "pi") {
+          const contexts = await projectPi(submitted);
+          const messages = object(contexts.at(-1)).messages as Array<{ role: string; content: MessageContent; customType?: string }>;
+          const user = messages.find(message => message.role === "user")!;
+          assert.ok(Array.isArray(user.content)); assert.deepEqual(user.content[1], image);
+          submitted = String(object(user.content[0]).text);
+          task = messages.filter(message => message.customType === "context-broker-task").map(message => message.content).join("\n");
+          results.push(...contexts);
+        } else { await emit("agent_start", {}); await emit("agent_end", {}); }
+        return { submitted, results, task };
       };
       for (const round of ["FIRST", "SECOND"]) {
         const before = (await calls()).length;
         const text = `$unknown@elsewhere $ui-alpha@skill $ui-alpha@skill $ui-alpha@prompt $ui-alpha@prompt $ui-alpha@router ${round}`;
-        const { submitted, results } = await submit(text);
+        const { submitted, results, task } = await submit(text);
         assert.ok(submitted.startsWith(text), "Original material and missing refs remain intact");
-        assert.equal(submitted.split(canary).length - 1, 1, "One Prompt body per submission");
+        assert.equal(task.split(canary).length - 1, 1, "One Prompt body per submission in the actual task projection");
         assert.match(JSON.stringify(results), /kind=\\?"router/);
         assert.doesNotMatch(JSON.stringify(results), /kind=\\?"skill/);
         const turn = (await calls()).slice(before);
@@ -193,7 +212,7 @@ console.log(JSON.stringify(receipt));
       const native = "/" + nativeName + " $ui-alpha@prompt $ui-alpha@router native material";
       const typedNative = await submit(native);
       assert.ok(typedNative.submitted.startsWith(native), "Typed missing native selection retains its invocation and valid arguments");
-      assert.match(typedNative.submitted, new RegExp(canary));
+      assert.match(typedNative.task, new RegExp(canary));
       assert.match(JSON.stringify(typedNative.results), /kind=\\?"router/);
       if (host === "omp") {
         assert.ok(commands.has(nativeName));
@@ -221,7 +240,7 @@ console.log(JSON.stringify(receipt));
         const before = (await calls()).length;
         const result = await submit(text);
         assert.ok(result.submitted.startsWith(text), "An unmatched ref in an unavailable namespace remains user material");
-        assert.equal(result.submitted.split(canary).length - 1, 1, "The valid Prompt still expands once beside an unavailable namespace");
+        assert.equal(result.task.split(canary).length - 1, 1, "The valid Prompt still expands once beside an unavailable namespace");
         const turn = (await calls()).slice(before);
         assert.equal(turn.filter(call => call.source === "skill" && ["read", "export"].includes(call.command)).length, 0);
         assert.equal(turn.filter(call => call.source === "prompt" && call.command === "read").length, 1);
@@ -243,10 +262,16 @@ console.log(JSON.stringify(receipt));
         const text = "$ui-alpha@skill keep this failed draft";
         const [input] = await emit("input", { text, images: [image], source: "rpc" });
         if (host === "omp") await commands.get("context-broker-submit")!.handler((object(input).text as string).split(" ")[1]!, ctx);
-        else assert.equal(object(input).action, "handled");
+        else {
+          assert.equal(object(input).action, "continue");
+          await emit("before_agent_start", { prompt: text, systemPrompt: "base" });
+          await assert.rejects(projectPi(text), new RegExp(code!));
+        }
         assert.equal(sent.length, before, "Known failure cannot dispatch a submission");
-        assert.equal(drafts.at(-1), text);
-        assert.ok(notices.some(notice => notice.includes(code!)), fault + " stays a visible failure");
+        if (host === "omp") {
+          assert.equal(drafts.at(-1), text);
+          assert.ok(notices.some(notice => notice.includes(code!)), fault + " stays a visible failure");
+        }
       }
       const socket = join("/tmp", basename(root) + host + ".sock");
       const ready = Promise.withResolvers<void>();
@@ -256,17 +281,21 @@ console.log(JSON.stringify(receipt));
       await commands.get("context-broker")!.handler("refresh", ctx);
       const sendsBeforeCancel = sent.length;
       const input = emit("input", { text: "$ui-alpha@skill delayed material", images: [image], source: "rpc" });
-      const pending = host === "omp" ? input.then(([result]) => commands.get("context-broker-submit")!.handler((object(result).text as string).split(" ")[1]!, ctx)) : input;
+      const pending = host === "omp" ? input.then(([result]) => commands.get("context-broker-submit")!.handler((object(result).text as string).split(" ")[1]!, ctx)) : input.then(async () => {
+        await emit("before_agent_start", { prompt: "$ui-alpha@skill delayed material", systemPrompt: "base" });
+        await projectPi("$ui-alpha@skill delayed material");
+      });
+      const settled = host === "pi" ? assert.rejects(pending, /cancelled/i) : pending;
       await ready.promise;
       server.close();
       await emit("session_before_switch", {});
-      await pending;
+      await settled;
       assert.equal(sent.length, sendsBeforeCancel, "An old miss cannot dispatch after the session changes");
       await emit("session_shutdown", {});
     }
   } finally {
     for (const key of Object.keys(process.env)) if (!(key in previous)) delete process.env[key];
     Object.assign(process.env, previous);
-    await rm(root, { recursive: true, force: true });
+    execFileSync("/usr/bin/trash", [await realpath(root)]);
   }
 }

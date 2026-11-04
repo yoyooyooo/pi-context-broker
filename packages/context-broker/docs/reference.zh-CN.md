@@ -85,7 +85,7 @@ match:
 
 ## 内容生命周期
 
-CLI 目录只返回 `records`，每条必须包含 `id/kind/locator/name/alias/description/default_context/entrypoint/ref`。Broker 拒绝未知 kind、错误 locator 和旧 `skills/skill` 字段。read/export 共享 `record/entrypoint/scope/snapshot_id/version_id/ref`；export 固定 read 选中的快照，核对 portable v2 和完整文件清单。身份为 `JSON.stringify([sourceId,sourceScope,kind,locator.type,id])`，来源独立为 local/notion。
+CLI 目录只返回 `records`，每条必须包含 `id/kind/locator/name/alias/description/default_context/entrypoint/ref`。Broker 拒绝未知 kind、错误 locator 和旧 `skills/skill` 字段。选中消费将完整主文与文件清单绑定到同一 source、scope、record 和不可变快照；兼容路径的完整导出还核对 portable manifest v2 与每个文件。入口文件为 `SKILL.md`、`ROUTER.md` 和 `PROMPT.md`。
 
 用 `$alias@notion` 显式选择 Prompt。每次提交新建 invocation、会话 generation 与 prepared 集合，同轮预检和派发共用固定快照；下一轮再次引用会完整加入本轮用户任务，保留原文与图片。Prompt 不进入原生 Skill、默认发现、后台预取、关键词自动激活或 system prompt。取消、超时和切会话阻止旧轮派发。双宿主及 detached 补全在 v1 中共享 `identity/kind/source/ref` 与原 UTF-16 编辑范围；接受候选只改草稿。
 
@@ -176,29 +176,32 @@ sources:
 | `roots` | Filesystem，必填 | 非空路径数组，指向包含 Skill 的目录 |
 | `scan` | Filesystem | `maxDepth`、`maxSkillBytes` 为非负安全整数，`ignore` 为字符串数组；默认顶层 `scan` |
 | `requireAutoload` | Filesystem | 默认顶层 `requireAutoload`，再默认 `true`；为 true 时，该 source 的发现按 `autoload.enabled` 过滤 |
-| `command` | Notion | 默认用 Node.js 启动包内 `ntn-skills`，不查找全局 CLI；字符串覆盖为单个 executable，数组覆盖为 executable 和固定参数；不启动 shell、不做 shell 展开 |
-| `database` | Notion | 可选 CLI database id/selector；传给 `list` 与选中后的 `read` |
-| `cacheDir` | Notion | 默认 `~/.cache/context-broker/notion`；保存 broker 元数据与导出 snapshot |
+| `command` | Notion | 省略时，Pi 通过随包 SDK 消费选中的 Skill/Router 图及资源，CLI 操作由 Node.js 启动包内 CLI。显式字符串指定 executable，数组指定 executable 和固定参数，并保留 CLI 消费路径。不查全局 CLI、不启动 shell、不做 shell 展开 |
+| `database` | Notion | 可选 database id/selector；限定发现与选中 SDK/CLI 消费的范围 |
+| `default_view_id` | Notion | 可选稳定 View ID；会话选择优先，未配置时使用 API 顺序中的第一个 View |
+| `cacheDir` | Notion | 默认 `~/.cache/context-broker/notion`；保存 broker 元数据、准备入口、资源与兼容路径的完整快照 |
 | `discovery` | Notion | 元数据 `list` 策略：`maxAge`、`offline` |
-| `activation` | Notion | 选中记录 `read` 策略：`maxAge`、`offline` |
-| `prefetch` | Notion | 默认 `true`；设为 `false` 时启动/切换 View 只准备元数据，原生 `read`、`/skill:` 和 `$` 仍在选中时读取完整固定快照 |
+| `activation` | Notion | 选中消费策略：`maxAge`、`offline`；SDK 与 CLI 路径共用 |
+| `prefetch` | Notion | 默认预算为零；省略、`false` 和旧值 `true` 均不预热正文。显式对象可设置 `maxNodes`、`maxBytes`、`maxDepth`、`maxTimeMs` 和 `rateShare`；必要的非零限额启用有界预取，depth 可为零。显式选择仍可用 |
 | `requestTimeoutMs` | Notion | 以 `NTN_SKILLS_REQUEST_TIMEOUT_MS` 传给 CLI 的单次网络尝试超时；正整数且 ≤ 2147483647；CLI 默认 30000 |
 
 `maxAge` 接受 `0`，或整数加 `s`、`m`、`h`、`d`。省略策略时使用 CLI 默认值。`offline: true` 优先于 `maxAge`，只使用已有 CLI 缓存；缓存不存在或不完整时失败，不悄然联网。[schema](../examples/config.schema.json) 拒绝未知 source 字段和类型不匹配的配置；source id 唯一性由 broker 运行时检查。
 
-Source CLI 命令不设总时限。每次网络尝试独立计时；分页、重试和限流等待可以使完整 Skill 加载超过一分钟。显式 `requestTimeoutMs` 覆盖子进程环境，省略时沿用 CLI 环境及默认值；自定义 command 须自行实现该环境契约。Escape、Stop 和切换会话仍会终止本次 source 进程树。可选的本地 cache identity 探测单独保留五秒上限。
+Source 操作不设总时限。每次网络尝试独立计时；分页、重试和限流等待可以使完整 Skill 加载超过一分钟。显式 `requestTimeoutMs` 覆盖 SDK 本次操作的环境或 CLI 子进程环境，省略时沿用引擎环境及默认值；自定义 command 须自行实现该环境契约。Escape、Stop 和会话取消会中止所属 SDK 操作或终止所属 CLI 进程树。可选的本地 cache identity 探测单独保留五秒上限。
 
-发现时，broker 在 command 前缀后追加 `list [--database <selector>]`；选中激活时追加 `read skill://<page-id>/<entrypoint> [--database <selector>]`；固定资源时调用 `export <snapshot-id> --projection snapshot --format directory --output <broker-stage-directory>`。Discovery 与 activation 分别追加自己的 `--max-age <duration>` 或 `--offline`；显式元数据刷新使用 `list --refresh`。Export 使用 read 返回的不可变 snapshot id，不再次读取未固定的最新正文。
+发现时，在 command 前缀后追加 `list [--database <selector>]`；显式元数据刷新使用 `list --refresh`。未配置 `source.command` 的 Pi 通过 SDK `consume` 准备选中的 Skill/Router 图，通过 SDK `readSkill` 按需读取资源。OMP 和显式 custom command 保留公开 CLI `prepare` 后逐主文固定 `read` 的路径，资源使用固定 `read --output`。Prompt 等兼容直接加载仍使用固定 `read` 加 `export --projection snapshot`；已配置预取仍走有预算限制的 CLI 准备。SDK 与 CLI 消费共用 activation 新鲜度策略，discovery 保留独立策略。
 
 认证沿用 `ntn-skills` 项目已有 token；需要显式配置时，通过可信秘密输入管道执行 `ntn-skills ctl config set-token --stdin`。CLI 优先选择 saved token，再选择非空 `NOTION_API_TOKEN`；缺少凭据返回 `AUTH_REQUIRED`。Broker 和 Tern 配置没有 token 字段。自定义 `command` 必须遵守相同 CLI JSON 合同。
 
-构建把独立 `ntn-skills` CLI、三份工作流 Skill、运行依赖与许可声明随两个产品分发，具体版本由[构建输入](../CONTRIBUTING.md#bundling-cli-and-skills)决定。在线 Notion source 使用项目自己的 HTTP 引擎。`/context-broker doctor` 调用所选 command 的 `ctl doctor --database ID`，要求 `transport: direct_http`、`notion_api_version: 2026-03-11` 及有效认证，可能填充缓存。无 database 的 CLI doctor 只检查认证。Offline Notion 发现要求已有完整缓存，随包 Skill 则无需 Notion 访问或这些缓存。自定义 source `command` 保持 doctor 与 list/read/export JSON 合同。
+构建把独立 `ntn-skills` CLI、三份工作流 Skill、运行依赖与许可声明随两个产品分发。Pi 的 SDK 与 CLI 来自同一份选定的 `ntn-skills` 包，具体版本由[构建输入](../CONTRIBUTING.md#bundling-cli-and-skills)决定。在线 Notion source 使用项目自己的 HTTP 引擎。`/context-broker doctor` 调用所选 command 的 `ctl doctor --database ID`，要求 `transport: direct_http`、`notion_api_version: 2026-03-11` 及有效认证，可能填充缓存。无 database 的 CLI doctor 只检查认证。Offline Notion 发现要求已有完整缓存，随包 Skill 则无需 Notion 访问或这些缓存。自定义 source `command` 保持 doctor 与 list/prepare/read/export JSON 合同。
 
 来源失败保留脱敏的 source/code/message。认证、网络和响应格式失败仍使该来源不可用；合法的部分目录则保留精确记录，附带非阻断的 `CATALOG_INCOMPLETE` 提示，并使用页面限定 token，不能据此证明无结果或名字唯一。默认 View 失败时，默认目录为空且显示修复方法，完整目录中的精确显式选择仍可用。实际正文交付仍检查选中记录的权限和快照完整性。本地 Skill 和普通聊天继续工作，不把失效的显式 View 偷换为其他 View 或全库。
 
 Pi 注册扩展和编辑器后在后台发现元数据。普通输入和无关的原生文件读取不等待冷目录、慢请求或发现失败。系统提示明确标记目录仍在等待或暂不可用，并提供 `skill_search` 入口；pending 不表示目录为空。后台目录请求仍会发生，需单独计入发现成本。显式 `$`、精确 `/skill:` 输入、`skill_search`、`skill_prepare` 和选中 Skill 的读取继续等待所需目录，并检查权限、身份和固定快照。选择失败阻断部分指令派发，已替换会话的旧准备不能迟到发布。普通续接保留已经 active 的指令及其选中快照。
 
-Pi 1.4 RPC 有一项已复现的限制：input preflight 阶段尚无 active-run signal，`abort` 可能返回 success，而等待 metadata 的精确选择随后仍调用 provider。交互 Escape/Stop、模型原生 read 取消和切换会话各有独立通过证据，不能替代这项 RPC 取消验收。[AH-624 因此仍未关闭](skill-consumption-startup-checkpoint.md)。
+Pi 在 input 边界锁定选中提交，待 `agent_start` 提供本次操作的 signal 后，在 `context` hook 内获取目录、图与正文。待提交记录保留原文、图片和已接受的身份。**Stop**、Escape、RPC `abort` 及切换会话都会取消这项获取。准备出错会中止宿主操作，失败或已失效的准备不能继续调用 provider。
+
+Pi 仅在当前请求未取消，且 `after_provider_response` 返回 2xx 状态时记录 active 指令。写入 `context-broker-active-sources` 前，会核对本次请求中的完整正文；Notion 记录还须匹配固定的 `use` 图。该事件发生在收到响应头时，早于响应流结束；它确认请求已被接收，不代表模型完成。缓存文件、`ready` 结果、选中图、摘要和仅展示的 loaded 日志都不能单独证明 active。[Skill 消费运行时](skill-consumption-runtime.md) 说明这些独立状态与兼容路径。
 
 Pi 1.4 只在启动或 reload 时通过 `resources_discover` 收集扩展资源路径，没有提供目录晚到后刷新原生 Skill 菜单的扩展 API。Broker 将晚到元数据放入当前请求的 `<ntn-skills-view-catalog>`，精确 `/skill:` 输入仍经过准备门控。`$` 补全是独立入口，不能证明原生菜单已经刷新。Broker 不为更新菜单自动 reload 当前会话。
 
@@ -227,6 +230,20 @@ Source id 与 namespace 内部的点保留为选择器的一部分，例如 `$ui
 
 未知裸名 `$name`、简单 `$name@namespace`、金额、`$bunfs/root/chunks/cli-nxfh2cp0.js` 等路径、转义与 Markdown 示例继续按普通文字处理。缺失选择旁的其他有效引用、原文与图片仍只派发一次。歧义以及实际已选记录的权限、网络、source、目录或完整性错误仍阻断派发，不悄然改选其他来源。
 
+### Pi 会话短引用
+
+Pi 为 Notion 记录提供归属当前会话分支的不透明引用。它们是定位符，不是凭据或文件系统路径。
+
+| 前缀 | 绑定内容 | 返回入口 |
+| --- | --- | --- |
+| `sr:C` | 已授权目录候选，尚未固定选中快照 | `skill_search` 与 View 元数据 |
+| `sr:S` | 选中主文的确切 scope、record、snapshot、version、File 和正文 hash | `skill_prepare` 与完整原生主文 read |
+| `sr:R` | 属于某个 `sr:S` 的资源，固定 owner、path、File、bytes 和 hash | 准备结果的目录或原生 read 的 `skill-directory` 尾部 |
+
+`skill_prepare` 的 `roots` 接受返回的 `sr:C`、`sr:S` 或 canonical 主入口 `skill://` ref，并要求明确 `purpose: use|inspect`。`use` 准备根及 Requires 闭包，`inspect` 只读取根，不激活工作流。原生 `read` 接受返回的主文或资源引用。`skill_graph` 的 `refs` 参数可导出固定 `sr:S`、`sr:R` 的 canonical 证明，未固定的 `sr:C` 不能提供该证明。
+
+绑定先写入分支记录，再对外显示，并在 resume 时重放。当前分支没有的引用明确失败。每次使用仍校验当前授权来源、完整 owner 身份及固定快照。未知、格式错误、scope 不符或 owner 不匹配的引用不能回退为文件系统读取或当前内容。分配引用本身不读取或激活正文；`sr:S`、`sr:R` 也不证明已经投递。
+
 ### 宿主发现与选中激活
 
 Pi 与 OMP 默认追加轻量的 `<ntn-skills-guidance>` 自定义消息，无需 `$` 调用或安装 builtin。实际命令 argv 复用宿主命令的 CLI resolver，并保留每个已启用 Notion source 的 id 与可选 database；多 source 分别列出，不隐式选中一个。每个 source 都提供含实际数据库范围的 `list-args`、`read-args`、`files-args` 和 `resource-read-args` 参数数组，追加到 executable argv 并替换任务占位值。发现优先使用已有元数据或短关键词，选中合适记录后再读正文；`files SNAPSHOT` 列出资源，`read SNAPSHOT --path RELATIVE` 读取指定资源，避免 shell 工具把 `skill://` 参数当文件路径解析。保留 JSON 输出以核对 `ok`/`error` 和快照身份，语法失败查看子命令 help。指引自身不发现内容或激活 Skill。
@@ -243,19 +260,21 @@ Pi 与 OMP 的选中 Skill payload 在完整正文旁提供经过转义的 `skil
 
 Filesystem source 将只有元数据的 Skill 入口加入宿主默认技能目录。Notion source 默认发布所选 View 中的 Skill 和独立 Router 元数据；`default_context` 只是页面属性，不再做额外交集。Prompt 保持仅显式调用。完整 Notion 目录仍保留所有记录，供显式 `$` 选择、搜索、补全与 qualified read 使用。模型原生 `read`、原生 `/skill:` 和显式 `$` 都只激活选中的记录。`$ui-alpha@notion` 选择 `/skill:notion-ui-alpha`：宿主 frontmatter name 从内部 `notion/ui-alpha` token 派生，将小写 `a-z`、`0-9`、`-` 以外的字符替换为 `-`，source alias 本身不改名。OMP `skill://notion-ui-alpha` 与目录公布的 metadata 路径走同一激活，路径上的 read selector 保留。
 
-目录注册后，共享 source runtime 以有界并发后台预取所选 View 的 Notion 记录。预取完整读取并导出快照，不向会话发布正文、加载提示或 loaded 回执。同一 scope/page 的前台与后台消费共享正在执行的工作；取消一个消费端不终止其他消费端。后续激活仍由 CLI read 策略校验缓存资格，正文默认五分钟，校验失败不隐式回退旧内容。已预取不代表正文已在有效上下文中。Refresh 取消旧代际后台工作并应用 View 成员变化，退出取消所属任务。移出 View 不移除当前会话已加载的指令。插件保持一个包，在扩展启动时选定 OMP 或 Pi adapter，发现、预取与快照归共同 runtime 管理。
+目录注册后，显式配置的预取预算可对初始 View 中最多 `maxNodes` 个可用 Skill/Router 根发起一次公开 `prepare --purpose inspect --priority prefetch`。预取不展开 Members、不准备 Requires 闭包、不读取 Prompt、不导出宿主目录、不追加会话锁，也不投递正文。`maxBytes` 限制完整成功 preparation JSON 与每份主文，不是网络传输配额；`maxTimeMs` 限制任务生命周期，`rateShare` 使用同一 CLI 调度器的独立低优先级通道。前台选择或资源读取会取消预热，不等其迟到回调；服务压力推迟预热，不增加后台重试。前台等待者独立持有取消状态。激活仍校验 CLI 缓存资格，正文默认五分钟，失败不隐式回退旧内容。切会话取消所属工作；移出 View 不移除当前会话已加载的指令。
 
-默认激活策略下，Skill 正文仍在当前有效会话中时，Notion 修改或缓存过期都不替换该会话已选快照。新会话（包括在另一进程中新建的会话）重新检查 CLI 缓存资格：五分钟内复用同一快照和完整导出，命中不推进 `validated_at`；过期后读取 Notion，内容变化时导出新快照。相对资源始终跟随选中快照。真实终端与原生编辑器的验收入口见 [NS-SESSION-09～12](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/session-cache-recovery.md)。
+默认激活策略下，Notion 修改或缓存过期都不替换当前分支已选的确切 Skill 快照。新会话（包括在另一进程中新建的会话）重新检查引擎缓存资格：可用快照直接复用，命中不推进 `validated_at`；当前观察过期后，先重新校验再选择版本。选中图绑定可跨重启和压缩保留，与正文投递状态分别管理。相对资源始终跟随选中快照。
+
+Pi 在下一次 provider 请求前恢复有效上下文中缺失的已确认 active 指令，包括压缩或进程 resume 后的普通续接。恢复读取当前分支已确认的快照向量，核对完整字节与 hash，并保留原图；不会沿新变化的 Requires 边扩展，也不会替换为当前内容。固定内容缺失或无效时阻断请求。回退或切换分支只使用该分支的确认记录；仅选中的绑定和未确认的准备不能激活指令。真实终端与原生编辑器的验收入口见 [NS-SESSION-09～12](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/session-cache-recovery.md) 与[依赖图验证地图](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/skill-dependency-graph.md)。
 
 当前完整、稳定的 Notion 页面在缓存校验后可直接读取人工编辑，显式刷新使用 `read CURRENT_REF_OR_PAGE --refresh`，不再要求先 inspect/accept-edit。旧 pinned snapshot 保持不可变。读取不推进 upstream 版本，不改变归属。Tracked 内容可读，但通过 CLI 修改其正文、资源、Name/Description 须修改源或显式 fork；Default Context 等组织属性可独立编辑。Publication 尚未完成、读取时图发生变化、资源权限/缺失和完整性错误仍明确失败；同步继续将本地手改视作冲突。
 
-扩展根据当前宿主 API 选择 Adapter。Adapter 负责原生目录注册、提示词呈现、编辑器装配、输入返回值及提交协议。OMP 使用命令提交与 handoff 回执，Pi 使用输入转换与展开后输入的 digest 回执。共享 preparation gate 持有取消状态，直到待处理消费者确认取消后才允许下一次提交。`CONTEXT_BROKER_HOST` 只选择配置和独立补全的备用默认路径，不切换当前宿主的提示词、编辑器或提交协议；显式 agentDir 优先。
+扩展根据当前宿主 API 选择 Adapter。Adapter 负责原生目录注册、提示词呈现、编辑器装配、输入返回值及提交协议。OMP 使用命令提交与 handoff 回执；Pi 保留已接受的输入，在可取消的 context 阶段准备，并在 provider 响应边界确认投递。共享 preparation gate 持有取消状态，直到待处理消费者确认取消后才允许下一次提交。`CONTEXT_BROKER_HOST` 只选择配置和独立补全的备用默认路径，不切换当前宿主的提示词、编辑器或提交协议；显式 agentDir 优先。
 
 OMP 的 print/json 模式执行原生 source `/skill:` 命令时，命令等待触发的 agent turn 结束后返回，确保进程不会在 provider 请求开始前退出。交互与 RPC 模式仍由宿主管理 turn。
 
 交互激活在会话中追加持久、可折叠的 `Read ntn-skills://<alias>` 记录，显示来源、耗时及 `running`、`done` 或 `error` 状态。展示目标省略 namespace 前缀，重名时保留页面后缀。展开详情包含选中的版本与快照（如有）。终态记录保留，不按计时器清除。resume 恢复终态记录，并将旧 `running` 记录标为中断。自定义消息的 `content` 为空，展示元数据放在 `details`。记录及展开详情仅用于展示，不进入 provider 消息、上下文、压缩或 branch 摘要。`ntn-skills://` 是展示标识，不是可解析 URI 或模型工具调用。真实读取仍使用 `skill://`；模型原生 `read` 是真实工具调用。目录始终只有元数据；后台预取不会在选择前把正文加入目录或会话。其他终端使用文字渲染。同一实例已选中的快照直接复用，不新增激活记录。
 
-按 Enter 同步开始 preparation 并锁定提交，草稿仍可编辑。原生编辑器显示 running 与 **Stop**。期间再按 Enter 不会提交第二条 prompt；点击 **Stop** 或按 Escape 可取消 preparation。preflight 成功后，首个 provider 请求一次性包含原提示词、图片附件及完整选中 Skill 正文。阻断型激活错误、超时或取消不产生 provider 请求；已明确报告未加载的缺失目标可随其他用户材料继续。取消或切换会话会使待完成的 preparation 失效，迟到的 source 结果不会派发。
+按 Enter 同步锁定本次准备与提交，草稿仍可编辑。原生编辑器显示 running 与 **Stop**。期间再按 Enter 不会提交第二条 prompt；点击 **Stop** 或按 Escape 可取消准备。Pi 在可取消的 `context` 阶段获取选中内容，OMP 保留通过命令执行的 preflight。准备成功后，首个 provider 请求包含原提示词、图片附件及完整选中正文。准备失败、超时或取消会阻止该请求；已明确报告未加载的缺失目标可随其他用户材料继续。取消或切换会话会使待完成的准备失效，迟到的 source 结果不会派发。
 
 OMP 在每轮系统提示中说明：宿主或 broker 提供、且仍在有效上下文中的完整 Skill 正文已满足“使用前读取”要求。Broker Skill payload 标明调用引用、source 的 qualified 原生宿主名、完整入口已加载状态与入口资源目录。模型应直接使用正文，无需仅为重新加载或确认身份再次读取入口、列缓存目录或检查包清单。任务需要的参考资源仍可读取；相对路径从该目录解析，`~` 展开为用户目录。`pathMode: hash|basename` 继续隐藏目录；source 资源仍可使用 qualified `skill://` URI。目录描述与 Router 索引不代表成员正文已加载，压缩或回退移除正文后仍须重新读取。Tern 自动胶囊和手动搜索沿用这条 OMP 提交合同。该提示规则仅用于 OMP。Pi 保留宿主原有提示；真实 Notion 发现、入口与资源消费独立使用联动 Skill 的 `--mode model --host pi` 路径验收，终端选择使用[Pi 独立终端规程](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/dollar-completion-selection.md#pi-独立终端)。
 
@@ -267,17 +286,23 @@ OMP 原生 Skill 消息的完整 metadata 入口路径通过 broker 持有的 in
 
 Source 正文仍在当前有效上下文时，OMP 原生 `/skill:` 复用已有正文，只发送调用参数和图片，不再追加正文或新的 loaded 回执。回退或压缩移除原正文后，可再次完整激活。
 
-Pi 原生 `/skill:` 首次调用会展开为用户消息。Broker 只在观察到实际命令输入并核对展开正文后添加不含正文的身份回执；后续 `$` 去重还需回执 digest 对应的用户消息留在当前有效上下文。选中的正文已由 `$` 或原生命令加载时，Pi input transform 保留调用参数与图片，直接复用正文，不再次展开或新增 loaded 回执。压缩移除正文后，单独留下回执不会抑制再次激活；普通用户 XML 也不构成回执。
+Pi 保留已接受的原生 `/skill:` 输入与图片，不由宿主提前执行不可取消的正文读取。Context 准备解析选中记录，将完整正文与调用参数一起提供。复用检查归属本扩展的投递证据和有效上下文；完整原生主文 read 还附带回执与固定引用目录。缺少正文的标记和用户编写的 XML 都不能证明投递。压缩后缺失的已确认 active 内容按前述固定快照路径恢复。
 
-原生命令参数包含所选 `$` 引用时，同一轮也只发送一份正文。匹配的 native 回执在会话持久化前提供当次选中身份。Pi 首次激活与复用均完整保留空格、Tab 或换行分隔后的参数。
+原生命令参数包含所选 `$` 引用时，同一轮也只发送一份正文。Pi 首次激活与复用均完整保留空格、Tab 或换行分隔后的参数。
 
-Notion 准备读取 canonical record ref，再用显式 `snapshot` projection 完整导出该确切快照，保留 Router 生成索引及所有资源。View 成员可在选择前准备，其他项在选中时准备。导出入口必须与固定 CLI `read` 字节一致；每文件 SHA-256、字节数、角色必须符合导出回执，portable manifest 只接受 v2。CLI 默认 `source` 导出保留 authored portable 原字节，是独立视图。入口和资源指向同一 pinned 目录，保持相对路径及跨成员稳定 ref。缓存回执 v3 记录 snapshot projection；v2 目录一次改名保留在 `.invalidated-*`，通过固定快照重拉；未知版本明确失败。缓存按凭据 scope、record、snapshot 保存，宿主/source 标签仅留在消费端元数据中，metadata index 使用独立 generation。Scope、identity、snapshot、导出清单或 source 错误阻断激活，不把记录标为 loaded。诊断只暴露安全错误码与退出状态，不回显 subprocess 原始 stderr 或秘密。
+Pi 默认 Notion Skill/Router 路径对每个来源图调用一次随包 SDK `consume`。SDK 从同次准备返回已校验的图、完整主文与不可变 manifest；Broker 核对已接受的根、scope、物理 owner 和文件绑定后发布入口。该路径不逐节点启动 CLI read，也不在 SDK 内重复这些读取。每次 SDK 操作独立持有 environment、cwd、runtime 与 abort signal。SDK 缺失或版本不兼容分别返回 `SOURCE_SDK_UNAVAILABLE`、`SOURCE_SDK_INCOMPATIBLE`，不回退 CLI。OMP 和显式 custom command 保留公开 CLI `prepare` 后逐主文精确固定 `read` 的校验。
+
+完整文件 manifest 带有确切 ref、File ID、hash 与字节数，宿主初始只保存主文。`entries/SNAPSHOT/.broker-entry.json` 的 `entry` 回执与兼容完整快照的 `snapshots/SNAPSHOT/.broker-snapshot.json` 分开管理。Pi 默认资源路径通过 SDK `readSkill` 读取 manifest 中固定的 File ref，并写入自有 output；CLI 兼容路径使用 `read --output`。两条路径都核对 scope、owner、snapshot、version、File ID 和完整 bytes/hash，只发布所请求文件。二进制资源保持字节。未知路径、中断输出和不匹配结果不能变为 ready，也不能回退当前内容。
+
+公开准备结果分别报告 `manifest_complete`、`local_files_ready`、`materialized_paths` 和 `loaded`。成功的原生资源结果携带 `contextBrokerResource`，包含确切文件身份与 hash；仅当实际返回文本包含完整预期字节时，`delivered_complete_text` 才为 true。资源回执不是主指令 loaded 回执。即使没有下载资源分块，当前元数据或权限校验仍可能发起请求。
+
+Prompt 等兼容直接加载仍要求完整固定快照导出：入口必须与固定 `read` 的字节一致，每文件 hash、长度和角色必须匹配完整清单，portable manifest 只接受 v2。缓存回执 v3 保留完整导出合同；v2 目录改名保留在 `.invalidated-*`，然后重建一次。仅入口 ready 的回执不能满足该合同。CLI `export --projection snapshot` 仍要求所有文件；默认 `source` 导出保留 authored portable 字节，是独立视图。所有缓存形式都隔离凭据 scope、record 和 snapshot。诊断只暴露安全错误码与退出状态，不回显 subprocess 原始 stderr 或秘密。
 
 Filesystem source 扫描本地文件以提取 frontmatter，只将元数据发布到进程私有的临时 index；metadata-only 目录不表示 scanner 不读取原文件字节。首次选中激活会将完整 Skill 目录复制为进程 snapshot，保留资源；原生 read、原生命令与 `$` 共用这份选中副本。该 filesystem snapshot 不要求 Notion export receipt，selection 也不跨进程持久化。
 
-激活后的原生宿主发现使用独立 alias view，包含选中 snapshot 的完整目录树，也保留嵌套入口目录之外的资源。View 入口 frontmatter 的 `name` 改为 qualified 宿主名；portable main 没有 frontmatter 时，view 添加 qualified name/description header，正文原样保留。Canonical snapshot 的名字与内容保持原样。公布的 metadata 目录指向 view 入口所在目录，让宿主重新发现时保持 qualified 名字与相对资源；broker 的 read 拦截返回 canonical snapshot 路径/内容。发布 alias view 不刷新选中的 snapshot。
+激活后的原生宿主发现发布独立 alias 主文，frontmatter 的 `name` 改为 qualified 宿主名；没有 frontmatter 时，添加 name/description header，正文保持原样。兼容完整快照保留复制的资源树；仅入口 ready 的快照只发布主文和 `host_index` 身份回执，其中分别记录原始与发布字节的 hash，并明确 `loaded:false`。资源通过已校验的不可变 manifest 解析，包括嵌套主文目录之外的资源。公布的 metadata 目录指向 alias 入口目录，Broker read 拦截返回 canonical snapshot 路径或内容。发布 alias 不刷新或加载选中快照。
 
-修改配置或扩展代码后重启宿主（OMP 用 `/restart`）。选中正文仍在有效上下文时，原生 read、原生 `/skill:` 与 `$` 复用该 pinned snapshot。Branch 或压缩移除正文后，下次激活先按 CLI read 策略重新校验准备结果；进程内映射不延长 freshness，也不代表上下文已加载。`/context-broker refresh` 刷新元数据、取消旧代际准备、发布新宿主 discovery generation 并清除选中激活映射，不重新执行扩展代码或替换已注入的会话内容。新实例或进程遵循当前 activation 策略。Discovery freshness、准备结果 freshness、pinned resources 与会话已加载上下文是独立状态。
+修改配置或扩展代码后重启宿主（OMP 用 `/restart`）。选中正文仍在有效上下文时，原生 read、原生 `/skill:` 与 `$` 复用该 pinned snapshot。Pi 按需从固定快照恢复已确认 active 内容；没有 active 确认的选择仍遵循 activation 策略。OMP 在正文离开上下文后，复用准备字节前仍检查 read 策略。进程内映射不延长 freshness，也不代表上下文已加载。`/context-broker refresh` 刷新元数据、取消旧代际准备、发布新宿主 discovery generation 并清除进程内激活映射，不重新执行扩展代码、替换会话内容或推进已确认 active 的快照。新会话遵循当前 activation 策略。Discovery freshness、准备结果 freshness、pinned resources 与 active 会话上下文是独立状态。
 
 本 checkout 的验证入口：[broker verification](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-context-broker/SKILL.md)、[Notion integration verification](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/SKILL.md)，以及 CLI 仓库 `.cursor/skills/verify-ntn-skills/SKILL.md`（[仓库](https://github.com/yoyooyooo/notion-skills-cli)）。这些是操作规程，不代表某个版本或环境已经通过验收。在 broker checkout 运行 `node scripts/verify-notion-integration.mjs doctor` 检查前置条件；按 Skill 使用 deterministic、live、授权的 create/archive、model 与 installed-package 模式。原生 UI 路由是 `node scripts/verify-native-ui.mjs --notion`。
 

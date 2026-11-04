@@ -13,6 +13,7 @@ import { decodePreparedGraph, preparationFailureDetails, type PreparationPurpose
 import { sharedSkillId, validSharedIdentity } from "./shared-skill-identity";
 import type { PrefetchBudget, PrefetchOutcome, PrefetchPlan } from "./prefetch-policy";
 import { publishNotionEntry, materializeNotionEntryFile } from "./notion-entry";
+import { consumeNotionSdk, readNotionSdk, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
 import type { ContentRecord, NotionListObservation, NotionView, SkillRecord, SourceConfig, SourcePolicy, SourceFailure } from "./types";
 
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
@@ -89,6 +90,38 @@ function policyArgs(policy: SourcePolicy | undefined, refresh?: boolean): string
   return policy?.maxAge !== undefined ? ["--max-age", policy.maxAge] : [];
 }
 
+async function sdkFreshness(source: NotionSource, refresh?: boolean) {
+  if (refresh) return { policy: "refresh" };
+  if (source.activation?.offline) return { policy: "offline" };
+  const duration = source.activation?.maxAge;
+  if (duration === undefined) return { policy: "default" };
+  let max_age_ms: number;
+  try { max_age_ms = await parseNotionSdkDuration(duration); }
+  catch (error) { throw sdkFailure(error, source, "prepare"); }
+  return { policy: "max_age", max_age_ms };
+}
+function sdkOptions(source: NotionSource, cwd: string, signal?: AbortSignal) {
+  return { database: source.database, cwd, signal, env: { ...process.env,
+    ...(source.requestTimeoutMs === undefined ? {} : { NTN_SKILLS_REQUEST_TIMEOUT_MS: String(source.requestTimeoutMs) }) } };
+}
+function sdkFailure(error: unknown, source: NotionSource, operation: "prepare" | "read", signal?: AbortSignal, selected?: SkillRecord): Error {
+  if (signal?.aborted || object(error) && error.code === "CANCELLED") return new SourceError("SOURCE_CANCELLED", source.id);
+  if (error instanceof NotionSdkError) return new SourceError(error.code, source.id);
+  if (!object(error)) return new SourceError("SOURCE_SDK_FAILED", source.id);
+  const details = object(error.details) ? error.details : undefined;
+  const preparation = object(details?.preparation) ? details.preparation : undefined;
+  const rootOnlyFailure = operation === "prepare" && preparation?.status === "failed" && Array.isArray(preparation.required) && preparation.required.length === 0
+    && Array.isArray(preparation.nodes) && preparation.nodes.length === 1 && preparation.nodes.every(node => object(node) && node.state === "failed"
+      && Array.isArray(node.roles) && node.roles.length === 1 && node.roles[0] === "root");
+  const missingPage = typeof details?.path === "string" ? /^v1\/pages\/([0-9a-f-]+)$/i.exec(details.path)?.[1] : undefined;
+  const selectedPage = selected?.locator?.type === "shared_skill" || selected?.locator?.type === "notion_page" ? selected.locator.page_id : undefined;
+  if ((operation === "read" || rootOnlyFailure) && error.code === "NOT_FOUND" && details?.notion_code === "object_not_found"
+    && selectedPage && missingPage?.replaceAll("-", "").toLowerCase() === selectedPage.replaceAll("-", "").toLowerCase()) return new ReferenceMiss(source.id, selected?.id);
+  const code = typeof error.code === "string" && (CLI_CODES[error.code] === true
+    || operation === "prepare" && /^(?:PREPARE_[A-Z_]+|CONSUME_[A-Z_]+|SHARED_[A-Z_]+|NOTION_PREFETCH_(?:DEFERRED|WRITE_FORBIDDEN))$/.test(error.code)) ? error.code : "SOURCE_SDK_FAILED";
+  return new SourceError(code, source.id, undefined, operation === "prepare" ? preparationFailureDetails(details) : undefined);
+}
+
 function sourceCommand(source: NotionSource): string[] {
   if (source.command) return typeof source.command === "string" ? [source.command] : source.command;
   const bundled = fileURLToPath(new URL("./ntn-skills.mjs", import.meta.url));
@@ -102,6 +135,8 @@ function sourceCommand(source: NotionSource): string[] {
 export function sourceFailureMessage(code: string): string {
   switch (code) {
     case "SOURCE_COMMAND_UNAVAILABLE": return "Cannot start the source CLI. Reinstall pi-context-broker or check the configured command and Node.js 22.22.3+ within 22.x or 24.20.0+.";
+    case "SOURCE_SDK_UNAVAILABLE":
+    case "SOURCE_SDK_INCOMPATIBLE": return "The bundled ntn-skills SDK is missing or incompatible. Reinstall the complete pi-context-broker package.";
     case "NOTION_UNAVAILABLE": return "The direct Notion API request could not complete. Check the connection and run /context-broker doctor.";
     case "SOURCE_PROTOCOL_UNSUPPORTED": return "Update the source CLI to a build with the direct Notion API doctor contract.";
     case "AUTH_REQUIRED": return "Configure the ntn-skills token with ctl config set-token --stdin or NOTION_API_TOKEN; grant access to the selected Notion database.";
@@ -549,7 +584,7 @@ export async function loadNotionSkill(record: SkillRecord, source: NotionSource,
 
 type GraphRequest = {
   purpose: PreparationPurpose; sessionBindings?: readonly PreparationBinding[]; signal?: AbortSignal; rootPins?: ReadonlyMap<string, string>; refresh?: boolean;
-  prefetch?: PrefetchBudget;
+  prefetch?: PrefetchBudget; transport?: "sdk";
 };
 type PreparedNode = ReturnType<typeof decodePreparedGraph>["nodes"][number];
 async function loadPreparedEntry(metadata: SkillRecord, node: PreparedNode, source: NotionSource, cwd: string, signal?: AbortSignal): Promise<SkillRecord> {
@@ -579,11 +614,40 @@ async function loadPreparedEntry(metadata: SkillRecord, node: PreparedNode, sour
   return publishNotionEntry(record, node.files, await cacheRoot(source, cwd), path => privateDirectory(path, source), signal);
 }
 
-export async function loadNotionResource(record: SkillRecord, path: string, source: NotionSource, cwd: string, signal?: AbortSignal): Promise<string> {
+/** consume already proves complete source bytes and File bindings; no second CLI read is needed. */
+async function loadConsumedEntry(metadata: SkillRecord, node: PreparedNode, entry: Json, source: NotionSource, cwd: string, signal?: AbortSignal): Promise<SkillRecord> {
+  if (!object(entry.manifest) || !object(entry.source_body)) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
+  const manifest = entry.manifest, body = entry.source_body;
+  const current = contentRecord(manifest.record, source);
+  const fileBindings = nativeBindings(manifest.file_bindings, source);
+  const mainBinding = fileBindings?.find(binding => binding.path === current.entrypoint);
+  if (entry.id !== node.id || manifest.complete !== true || !isDeepStrictEqual(current, node.record) || current.enabled === false
+    || manifest.scope !== node.binding.scope || manifest.snapshot_id !== node.binding.snapshot_id || manifest.version_id !== node.binding.version_id
+    || manifest.entrypoint !== current.entrypoint || body.ref !== node.binding.ref || body.path !== current.entrypoint || body.sha256 !== node.body_sha256
+    || body.bytes !== node.bytes || body.has_more !== false || !object(body.range) || body.range.start !== 1
+    || body.range.end !== body.range.total_lines || !Number.isSafeInteger(body.range.total_lines) || Number(body.range.total_lines) < 1
+    || mainBinding && (current.locator.type !== "shared_skill" || mainBinding.page_id !== current.locator.page_id)
+    || fileBindings && !mainBinding || parseNativeReference(node.binding.ref).fileId !== mainBinding?.file_id) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
+  const record: SkillRecord = { ...metadata, ...current, path: node.path, body: node.content,
+    snapshotId: node.binding.snapshot_id, versionId: node.binding.version_id, freshness: { policy: "pinned" },
+    preparationBinding: node.binding, preparationDirectory: { files: node.files, required: node.required, candidates: node.candidates, references: node.references },
+    ...(fileBindings === undefined ? {} : { fileBindings }),
+  };
+  return publishNotionEntry(record, node.files, await cacheRoot(source, cwd), path => privateDirectory(path, source), signal);
+}
+
+export async function loadNotionResource(record: SkillRecord, path: string, source: NotionSource, cwd: string, signal?: AbortSignal, transport?: "sdk"): Promise<string> {
   if (record.sourceId !== source.id || !record.entryManifest || !record.snapshotId || !record.sourceScope || !record.preparationBinding)
     throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
   return materializeNotionEntryFile(record, path, target => privateDirectory(target, source), async (file, output) => {
-    const response = await run(source, cwd, ["read", file.ref, "--output", output, ...(source.database ? ["--database", source.database] : [])], signal);
+    let response: Json;
+    if (transport === "sdk" && !source.command) {
+      let value: unknown;
+      try { value = await readNotionSdk(file.ref, { ...sdkOptions(source, cwd, signal), output }); }
+      catch (error) { throw sdkFailure(error, source, "read", signal); }
+      if (!object(value)) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
+      response = value;
+    } else response = await run(source, cwd, ["read", file.ref, "--output", output, ...(source.database ? ["--database", source.database] : [])], signal);
     const current = contentRecord(response.record, source);
     if (!isDeepStrictEqual(current, record.preparationBinding!.record) || response.scope !== record.sourceScope ||
       response.snapshot_id !== record.snapshotId || response.version_id !== record.versionId ||
@@ -596,7 +660,31 @@ export async function loadNotionResource(record: SkillRecord, path: string, sour
 }
 async function requestPreparedGraph(records: readonly SkillRecord[], source: NotionSource, cwd: string, input: GraphRequest) {
   if (!records.length || records.some(record => record.sourceId !== source.id || !record.id || !record.ref || !record.sourceScope)) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
-  const args = ["prepare", ...records.map(record => input.rootPins?.has(record.id!) ? record.ref! + "?snapshot=" + input.rootPins.get(record.id!) : record.ref!), "--purpose", input.purpose,
+  const targets = records.map(record => input.rootPins?.has(record.id!) ? record.ref! + "?snapshot=" + input.rootPins.get(record.id!) : record.ref!);
+  if (input.transport === "sdk" && !source.command) {
+    if (input.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
+    const request = { version: 1, targets, purpose: input.purpose, freshness: await sdkFreshness(source, input.refresh),
+      ...(input.sessionBindings?.length ? { sessionBindings: input.sessionBindings } : {}),
+      ...(source.preparation ? { budget: source.preparation } : {}) };
+    let response: unknown;
+    try { response = await consumeNotionSdk(request, { ...sdkOptions(source, cwd, input.signal), ...(input.prefetch ? { execution: { priority: "prefetch",
+      timeBudgetMs: input.prefetch.maxTimeMs, queueBudgetMs: Math.min(1000, input.prefetch.maxTimeMs), rateShare: input.prefetch.rateShare } } : {}) }); }
+    catch (error) { throw sdkFailure(error, source, "prepare", input.signal, records.length === 1 ? records[0] : undefined); }
+    if (input.signal?.aborted || object(response) && response.status === "cancelled") throw new SourceError("SOURCE_CANCELLED", source.id);
+    if (object(response) && response.status === "failed") throw sdkFailure(response.error, source, "prepare", input.signal, records.length === 1 ? records[0] : undefined);
+    if (!object(response) || response.version !== 1 || response.status !== "ready" || !object(response.preparation) || !Array.isArray(response.entries)) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
+    let ready: ReturnType<typeof decodePreparedGraph>;
+    try { ready = decodePreparedGraph({ ...response.preparation, ok: true }, { purpose: input.purpose, roots: records }, value => contentRecord(value, source)); }
+    catch (error) { if (error instanceof SourceError) throw error; throw new SourceError("SOURCE_PREPARATION_INVALID", source.id); }
+    const entries = new Map<string, Json>();
+    for (const entry of response.entries) {
+      if (!object(entry) || typeof entry.id !== "string" || entries.has(entry.id)) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
+      entries.set(entry.id, entry);
+    }
+    if (entries.size !== ready.nodes.length || ready.nodes.some(node => !entries.has(node.id))) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
+    return { ready, entries };
+  }
+  const args = ["prepare", ...targets, "--purpose", input.purpose,
     ...(source.database ? ["--database", source.database] : []), ...policyArgs(source.activation, input.refresh)];
   if (input.prefetch) args.push("--priority", "prefetch", "--time-budget-ms", String(input.prefetch.maxTimeMs),
     "--queue-budget-ms", String(Math.min(1000, input.prefetch.maxTimeMs)), "--rate-share", String(input.prefetch.rateShare));
@@ -624,12 +712,12 @@ async function requestPreparedGraph(records: readonly SkillRecord[], source: Not
     throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
   }
   if (input.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-  return ready;
+  return { ready, entries: undefined };
 }
 
 /** Warm the CLI's verified cache only. No host directory, session lock or delivery is published. */
 export async function prefetchNotionSkills(plan: PrefetchPlan, cwd: string, signal: AbortSignal): Promise<PrefetchOutcome> {
-  const ready = await requestPreparedGraph(plan.records, {
+  const { ready } = await requestPreparedGraph(plan.records, {
     ...plan.source,
     preparation: { maxNodes: plan.budget.maxNodes, maxDepth: plan.budget.maxDepth,
       maxInstructionBytes: plan.budget.maxBytes, maxContextBytes: plan.budget.maxBytes },
@@ -640,9 +728,9 @@ export async function prefetchNotionSkills(plan: PrefetchPlan, cwd: string, sign
   };
 }
 
-/** The CLI prepares the graph; the host verifies and materializes its immutable entries. */
+/** The selected transport prepares the graph; the host publishes only verified immutable entries. */
 export async function prepareNotionSkills(records: readonly SkillRecord[], source: NotionSource, cwd: string, input: Omit<GraphRequest, "prefetch">): Promise<PreparedHostGraph> {
-  const ready = await requestPreparedGraph(records, source, cwd, input);
+  const { ready, entries } = await requestPreparedGraph(records, source, cwd, input);
   const prepared: SkillRecord[] = [];
   for (const node of ready.nodes) {
     if (input.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
@@ -654,7 +742,7 @@ export async function prepareNotionSkills(records: readonly SkillRecord[], sourc
       defaultDiscovery: selected?.defaultDiscovery ?? false,
     };
     let loaded: SkillRecord;
-    try { loaded = await loadPreparedEntry(metadata, node, source, cwd, input.signal); }
+    try { loaded = entries ? await loadConsumedEntry(metadata, node, entries.get(node.id)!, source, cwd, input.signal) : await loadPreparedEntry(metadata, node, source, cwd, input.signal); }
     catch (error) {
       if (!(error instanceof ReferenceMiss)) throw error;
       if (records.some(record => record.id === node.id) && !ready.required.some(edge => edge.to === node.id)) throw new ReferenceMiss(source.id, node.id);

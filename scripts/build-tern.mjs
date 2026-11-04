@@ -1,16 +1,25 @@
 import { build } from "bun";
-import { chmod, copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { dirname, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
-const args = process.argv.slice(2);
-if (args.length !== 0 && !(args.length === 2 && args[0] === "--target" && ["all", "broker"].includes(args[1]))) {
-  throw new Error("Usage: bun scripts/build-tern.mjs [--target all|broker]");
+const args = process.argv.slice(2), options = new Map();
+for (let index = 0; index < args.length; index += 2) {
+  const key = args[index], value = args[index + 1];
+  if (!["--target", "--package-out"].includes(key) || !value || options.has(key)) throw new Error("Usage: bun scripts/build-tern.mjs [--target all|broker] [--package-out /new/absolute/directory]");
+  options.set(key, value);
 }
-const buildTern = args[1] !== "broker";
+const target = options.get("--target") ?? "all";
+if (!["all", "broker"].includes(target)) throw new Error("--target must be all or broker");
+const buildTern = target !== "broker";
 const broker = join(root, "packages/context-broker");
+const requestedOutput = options.get("--package-out");
+if (requestedOutput !== undefined && (buildTern || !isAbsolute(requestedOutput))) throw new Error("--package-out requires --target broker and a new absolute directory");
+const brokerOutput = requestedOutput === undefined ? broker : resolve(requestedOutput);
 const tern = join(root, "packages/tern-context-broker");
 const require = createRequire(join(broker, "package.json"));
 const ntnEntry = process.env.NTN_SKILLS_BUILD_ENTRY
@@ -33,6 +42,12 @@ async function findPackage(name, entry) {
 }
 const selectedCli = await findPackage("ntn-skills", ntnEntry);
 const selectedRequire = createRequire(selectedCli.manifest);
+const sdkExport = selectedCli.metadata.exports?.["./sdk"];
+const sdkImport = typeof sdkExport === "string" ? sdkExport : sdkExport?.import;
+if (typeof sdkImport !== "string" || !sdkImport.startsWith("./")) throw new Error("The selected ntn-skills package must include the Node ESM ntn-skills/sdk export; select a complete compatible package with NTN_SKILLS_BUILD_ENTRY");
+const sdkEntry = resolve(selectedCli.directory, sdkImport);
+const selectedSdk = await findPackage("ntn-skills", sdkEntry);
+if (await realpath(selectedSdk.directory) !== await realpath(selectedCli.directory)) throw new Error("CLI and SDK must come from the same selected ntn-skills package");
 const brokerMetadata = JSON.parse(await readFile(join(broker, "package.json"), "utf8"));
 const runtimeNames = ["effect", "@effect/platform-node", "@effect/sql-sqlite-node"];
 const runtimeDependencies = {};
@@ -72,6 +87,15 @@ const cliResult = await build({
 });
 if (!cliResult.success || !cliResult.outputs[0]) throw new AggregateError(cliResult.logs, "Notion CLI build failed");
 const cliCode = await cliResult.outputs[0].text();
+const sdkResult = await build({
+  entrypoints: [sdkEntry], target: "node", format: "esm", packages: "bundle", minify: true,
+  external: runtimeNames.flatMap(name => [name, `${name}/*`]),
+});
+if (!sdkResult.success || !sdkResult.outputs[0]) throw new AggregateError(sdkResult.logs, "Notion SDK build failed");
+const sdkCode = await sdkResult.outputs[0].text();
+const runtimeManifest = { version: 1, package: "ntn-skills", package_version: selectedCli.metadata.version,
+  sdk_version: 1, consumer_contract_version: 1,
+  cli_sha256: createHash("sha256").update(cliCode).digest("hex"), sdk_sha256: createHash("sha256").update(sdkCode).digest("hex") };
 const licenseFiles = new Map();
 async function collectLicenses(name, from) {
   if (licenseFiles.has(name)) return;
@@ -94,6 +118,16 @@ async function collectLicenses(name, from) {
   for (const dependency of Object.keys(metadata.dependencies ?? {})) await collectLicenses(dependency, join(directory, "package.json"));
 }
 await collectLicenses("ntn-skills", join(broker, "package.json"));
+if (brokerOutput !== broker) {
+  await mkdir(dirname(brokerOutput), { recursive: true });
+  // A separate package build never overwrites a prior artifact or checkout output.
+  await mkdir(brokerOutput);
+  for (const name of brokerMetadata.files) {
+    if (name === "dist") continue;
+    try { await cp(join(broker, name), join(brokerOutput, name), { recursive: true, errorOnExist: true, force: false }); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+  }
+}
 const query = join(tern, "query");
 if (buildTern) {
   await mkdir(query, { recursive: true });
@@ -115,12 +149,20 @@ if (buildTern) {
   const queryShared = JSON.parse(await readFile(queryPlatformRequire.resolve(`${sharedRuntime}/package.json`), "utf8"));
   if (queryShared.version !== "4.0.5") throw new Error(`Tern ${sharedRuntime} must be 4.0.5 (installed: ${queryShared.version})`);
 }
-for (const directory of [join(broker, "dist"), ...(buildTern ? [query] : [])]) {
+for (const directory of [join(brokerOutput, "dist"), ...(buildTern ? [query] : [])]) {
   await mkdir(directory, { recursive: true });
   await writeFile(join(directory, "ntn-skills.mjs"), cliCode);
+  if (directory === join(brokerOutput, "dist")) {
+    await writeFile(join(directory, "ntn-skills-sdk.mjs"), sdkCode);
+    await writeFile(join(directory, "ntn-skills-runtime.json"), JSON.stringify(runtimeManifest, null, 2) + "\n");
+  }
   await writeFile(join(directory, "NOTICES.txt"), [...licenseFiles].map(([name, license]) => `Bundled dependency: ${name}\n${license.trim()}\n`).join("\n"));
   const builtinRoot = join(directory, "builtin-skills");
-  await rm(builtinRoot, { recursive: true, force: true });
+  try {
+    await readdir(builtinRoot);
+    const retained = await mkdtemp(join(tmpdir(), "broker-build-builtins-"));
+    await rename(builtinRoot, join(retained, "builtin-skills"));
+  } catch (error) { if (error.code !== "ENOENT") throw error; }
   await mkdir(builtinRoot, { recursive: true });
   for (const [name, source] of builtinSkills) {
     await cp(join(selectedCli.directory, source), join(builtinRoot, name), { recursive: true });
@@ -141,7 +183,7 @@ const yamlLicense = await readFile(join(dirname(createRequire(join(broker, "pack
 const program = await output.text();
 const prefixEnd = program.startsWith("#!") ? program.indexOf("\n") + 1 : 0;
 const code = `${program.slice(0, prefixEnd)}/*\nBundled dependency: yaml (ISC)\n${yamlLicense.trim()}\n*/\n${program.slice(prefixEnd)}`;
-for (const path of [join(broker, "dist/completion.mjs"), ...(buildTern ? [join(query, "completion.mjs")] : [])]) {
+for (const path of [join(brokerOutput, "dist/completion.mjs"), ...(buildTern ? [join(query, "completion.mjs")] : [])]) {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, code);
   await chmod(path, 0o755);
@@ -155,7 +197,7 @@ for (const name of ["README.md", "README.zh-CN.md", "CONTRIBUTING.md", "LICENSE"
     .replaceAll("./packages/tern-context-broker/README.zh-CN.md", "https://github.com/yoyooyooo/pi-context-broker/blob/main/packages/tern-context-broker/README.zh-CN.md")
     .replaceAll("(./.agents/", "(https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/")
     .replaceAll("(.agents/skills/verify-context-broker/SKILL.md)", "(https://github.com/yoyooyooo/pi-context-broker/tree/main/.agents/skills/verify-context-broker/SKILL.md)");
-  await writeFile(join(broker, name), projected);
+  await writeFile(join(brokerOutput, name), projected);
 }
 if (buildTern) {
   await copyFile(join(root, "LICENSE"), join(tern, "LICENSE"));
@@ -163,4 +205,4 @@ if (buildTern) {
   const metadata = JSON.parse(await readFile(join(tern, "package.json"), "utf8"));
   if (!manifest.includes(`version = "${metadata.version}"`)) throw new Error("Tern package and manifest versions differ");
 }
-console.log(buildTern ? "Built standalone broker query and Tern plugin query" : "Built standalone broker package; Tern unchanged");
+console.log(buildTern ? "Built standalone broker query and Tern plugin query" : `Built standalone broker package at ${brokerOutput}`);

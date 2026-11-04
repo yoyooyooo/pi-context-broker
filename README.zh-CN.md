@@ -30,7 +30,7 @@ Tern/OMP 加载选中的 source Skill 时，在会话中追加持久、可折叠
 
 ## 内容生命周期
 
-CLI 目录只返回 `records`，每条必须包含 `id/kind/locator/name/alias/description/default_context/entrypoint/ref`。Broker 拒绝未知 kind、错误 locator 和旧 `skills/skill` 字段。read/export 共享 `record/entrypoint/scope/snapshot_id/version_id/ref`；export 固定 read 选中的快照，核对 portable v2 和完整文件清单。身份为 `JSON.stringify([sourceId,sourceScope,kind,locator.type,id])`，来源独立为 local/notion。
+CLI 目录只返回 `records`，每条必须包含 `id/kind/locator/name/alias/description/default_context/entrypoint/ref`。Broker 拒绝未知 kind、错误 locator 和旧 `skills/skill` 字段。选中消费将完整主文与文件清单绑定到同一 source、scope、record 和不可变快照；兼容路径的完整导出还核对 portable manifest v2 与每个文件。入口文件为 `SKILL.md`、`ROUTER.md` 和 `PROMPT.md`。
 
 用 `$alias@notion` 显式选择 Prompt。每次提交新建 invocation、会话 generation 与 prepared 集合，同轮预检和派发共用固定快照；下一轮再次引用会完整加入本轮用户任务，保留原文与图片。Prompt 不进入原生 Skill、默认发现、后台预取、关键词自动激活或 system prompt。取消、超时和切会话阻止旧轮派发。双宿主及 detached 补全在 v1 中共享 `identity/kind/source/ref` 与原 UTF-16 编辑范围；接受候选只改草稿。
 
@@ -130,11 +130,13 @@ Review the design for ownership, boundaries, failure modes, and migration cost.
 $design-review review this API boundary
 ```
 
-按 Enter 立即开始 preparation 并锁定提交，草稿仍可编辑。原生编辑器显示 running 与 **Stop**；点击 **Stop** 或按 Escape 可取消 preparation。期间再按 Enter 不会提交编辑后的草稿。成功后，首个 provider 请求一次性包含原提示词、图片及完整选中 Skill 正文。阻断型激活错误、超时或取消不产生 provider 请求；切换会话也会阻止迟到结果派发。
+按 Enter 即锁定本次提交，草稿仍可编辑。原生编辑器显示 running 与 **Stop**；点击 **Stop** 或按 Escape 可取消准备。期间再按 Enter 不会提交编辑后的草稿。Pi 在宿主创建 agent operation 后，于可取消的 `context` 阶段准备选中内容，RPC `abort` 也会取消这项工作。准备成功后，首个 provider 请求包含原提示词、图片及完整选中 Skill 正文。准备失败或取消会阻止该请求，切换会话也会阻止迟到结果派发。
+
+Pi 仅在 `after_provider_response` 收到 2xx 响应头，且完整正文与本次请求的固定选择匹配后，才确认 Skill 为 active。这表示请求已被接收，不表示模型响应已经完成。缓存字节和 ready 准备结果都不能单独证明 active。
 
 未知简单 `$name`、`$name@namespace`、金额和 `$bunfs/root/chunks/cli-nxfh2cp0.js` 等路径保持普通文本，不产生失败提示。之前已接受的选择或完整身份 token 不可用时，用户与模型都会收到明确的“未加载”反馈；其他有效 Skill/Prompt/Router、原文与图片仍只派发一次。歧义及实际已选记录的权限、网络、目录或完整性错误仍阻断，不悄然改选其他来源。
 
-下一次模型请求会包含 Skill 内容。正文仍在有效上下文时，通过 `$` 或 OMP 原生 `/skill:` 再次提交同一记录会复用已有正文。回退或压缩移除正文后可以重新加载；去重不会从后续请求中移除已经存在的上下文。
+下一次模型请求会包含 Skill 内容。正文仍在有效上下文时，通过 `$` 或 OMP 原生 `/skill:` 再次提交同一记录会复用已有正文。Pi 会在下一次请求前，从当前分支的确切快照恢复缺失的已确认 active 正文，包括压缩或 resume 后的普通续接。分支中没有该确认记录时，不继承激活状态。去重不会从后续请求中移除已经存在的上下文。
 
 OMP（包括 Tern 中运行的 OMP）将有效上下文中的完整 Skill 正文视为已读。`$` 注入标明调用引用、source 的原生宿主名与资源目录，模型可直接使用正文，仅在需要时读取附加资源。目录路径继续遵守 `pathMode` 隐私设置。详见[宿主消费合同](./packages/context-broker/docs/reference.zh-CN.md#宿主发现与选中激活)。
 
@@ -152,6 +154,10 @@ sources:
     activation: {maxAge: 5m, offline: false}
     prefetch: false
 ```
+
+本 checkout 的 Pi 在省略 `source.command` 时使用随包的进程内 `ntn-skills` SDK。每个来源的一次 `consume` 准备选中的 Skill/Router 图，不再启动 `prepare` 后逐节点启动 `read`。按需资源通过 SDK `readSkill` 读取固定 File 引用。发现与诊断仍使用包内 CLI；显式 custom command、OMP、Prompt 加载及已配置预取保留 CLI 路径。SDK 缺失或不兼容时明确失败，不回退 CLI。
+
+Pi 通过 `skill_search`、`skill_prepare` 与原生 `read` 提供会话引用：`sr:C` 表示目录候选，`sr:S` 表示固定的选中主文，`sr:R` 表示属于该选择的资源。原样复制返回的引用。这些引用属于当前会话分支，使用时仍检查来源授权和身份。准备、投递与恢复边界见 [Skill 消费运行时](./packages/context-broker/docs/skill-consumption-runtime.md)。
 
 不要将凭据写进这份配置。每个 Notion source 可选配 `default_view_id`；不配置就用 API 返回的第一个 View。显式 ID 失效会提示，不静默改选；确认没有 View 时默认远程目录为空。OMP 查询期间编辑器照常可用；用户首次发送后，在模型请求发出前等候并注入当前目录。每轮 `before_agent_start` 只替换 Broker 自己的目录，保留本地技能和已读正文。View 内未勾选 Default Context 的技能可默认发现，View 外已勾选的也不会越过筛选。完整 `$` 与 CLI 仍可显式使用所有已发现记录。代码或配置文件改变需要重启宿主，会话内切换 View 不需要。
 
@@ -198,6 +204,7 @@ tern plugin list --json
 
 - [文档导航](./packages/context-broker/docs/README.md)：双语合同、示例与验证入口。
 - [Broker 参考](./packages/context-broker/docs/reference.zh-CN.md)：sources、宿主 Skill 目录/read、canonical tokens、snapshots、Skill 优先级、Router、配置、规则、payload 和补全 CLI。
+- [Skill 消费运行时](./packages/context-broker/docs/skill-consumption-runtime.md)：Pi SDK 路径、会话引用、可取消准备、active 确认与固定快照恢复。
 - [Tern 子包指南](./packages/tern-context-broker/README.zh-CN.md)：手动搜索、profile、草稿保护，以及 GitHub 与本地构建切换。
 - [配置示例](./packages/context-broker/examples/config.example.yml)和 [catalog 示例](./packages/context-broker/examples/discovery-catalog.example.yaml)。
 - [Broker verification Skill](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-context-broker/SKILL.md) 与 [Notion integration verification Skill](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/SKILL.md)：checkout 操作规程与 feature maps；[日常安装与原生菜单](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/daily-installation-ui.md) 单独验证实际安装、斜杠菜单、真实 Notion 与模型消费。CLI consumption 验证位于 [CLI 仓库](https://github.com/yoyooyooo/notion-skills-cli)的 `.cursor/skills/verify-ntn-skills/SKILL.md`。这些路由不表示已经通过验收。

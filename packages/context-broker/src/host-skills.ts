@@ -18,6 +18,7 @@ import { parseNativeReference, nativeResourcePath, type ExactNativeReference } f
 import type { PreparedHostGraph, PreparationPurpose, PreparationBinding } from "./prepare-protocol";
 import type { SelectionMode } from "./session-graph";
 import { publicEntryMaterialization, type EntryFile } from "./notion-entry";
+import { createSessionShortRefHost, isSessionShortRefInput, matchesShortRefSource, assertShortRefSource, assertShortRefSnapshot, type HostShortRefResolution } from "./session-short-ref-host";
 
 export type HostSkillOptions = {
   config: ConfigFile;
@@ -28,11 +29,15 @@ export type HostSkillOptions = {
   prepareGraph?(records: readonly SkillRecord[], ctx: ExtensionContext | undefined, signal: AbortSignal | undefined, purpose: PreparationPurpose, pins?: ReadonlyMap<string, string>, bindings?: readonly PreparationBinding[], mode?: SelectionMode): Promise<PreparedHostGraph[]>;
   persistGraphs?(graphs: readonly PreparedHostGraph[], ctx: ExtensionContext, mode: SelectionMode): void;
   sessionGraph?(ctx: ExtensionContext): unknown;
-  projectContext?(messages: AgentMessage[], ctx: ExtensionContext): AgentMessage[];
+  projectContext?(messages: AgentMessage[], ctx: ExtensionContext, pending?: readonly { graphs: PreparedHostGraph[]; mode: SelectionMode }[]): AgentMessage[];
+  restoreActive?(messages: AgentMessage[], ctx: ExtensionContext, signal: AbortSignal, pending: readonly { graphs: PreparedHostGraph[]; mode: SelectionMode }[]): Promise<Omit<AgentMessage, "role" | "timestamp"> | undefined>;
+  confirmDelivery?(records: readonly SkillRecord[], messages: AgentMessage[], ctx: ExtensionContext): void;
   needsPreflightPrompt?(text: string): boolean;
   onPreparation?(entry: ActivePreparation): void;
   preflightPrompt?(text: string, ctx: ExtensionContext, signal?: AbortSignal): Promise<void>;
   taskPrompt?(text: string, ctx: ExtensionContext, signal?: AbortSignal, invocation?: ActivePreparation): Promise<string>;
+  /** Pi acquires only after the host has created its cancellable agent operation. */
+  buildPreparedPrompt?(text: string, ctx: ExtensionContext, signal: AbortSignal, prepared: readonly SkillRecord[]): Promise<Omit<AgentMessage, "role" | "timestamp"> | undefined>;
   isLoaded?(record: SkillRecord, ctx: ExtensionContext): boolean;
   sessionSnapshot?(record: SkillRecord, ctx: ExtensionContext): string | undefined;
   onMetadata?(records: SkillRecord[]): void;
@@ -131,6 +136,16 @@ async function headlessActivation<T>(start: (signal: AbortSignal) => Promise<T>,
 export async function installHostSkills(api: ExtensionAPI, options: HostSkillOptions, adapter: HostCapabilities): Promise<HostSkills> {
   const host = api;
   const deferredPiDiscovery = adapter.paths.host === "pi" && adapter.metadataDiscovery === "deferred";
+  const shortRefs = createSessionShortRefHost(api);
+  function modelReference(record: SkillRecord, ctx: ExtensionContext, fixed = false): string | undefined {
+    if (adapter.paths.host !== "pi" || record.source !== "notion" || !shortRefs.canBind(ctx)) return undefined;
+    return fixed && record.preparationBinding ? shortRefs.selected(ctx, record) : shortRefs.candidate(ctx, record);
+  }
+  function resolveReference(value: string, ctx: ExtensionContext): { reference: ExactNativeReference; short?: HostShortRefResolution } {
+    if (!isSessionShortRefInput(value)) return { reference: parseNativeReference(value) };
+    const short = shortRefs.resolve(ctx, value);
+    return { reference: parseNativeReference(short.canonicalRef), short };
+  }
   let records: SkillRecord[] = [];
   let defaultRouters: SkillRecord[] = [];
   let views: NotionViewState[] = [];
@@ -168,9 +183,26 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   }
   let turnPrompts: { snapshots: Map<string, SkillRecord>; signal: AbortSignal } | undefined;
   const feedback = await createActivationFeedback(api, gate.repaint);
-  let handoff: { entry: ActivePreparation; prompts: string[]; consumed: boolean; native?: { snapshot: SkillRecord; promptSha256: string } } | undefined;
+  let handoff: { entry: ActivePreparation; prompts: string[]; consumed: boolean; selectedNative?: SkillRecord; native?: { snapshot: SkillRecord; promptSha256: string } } | undefined;
+  type PiRun = {
+    generation: number; sessionId: string | undefined; signal: AbortSignal; entry?: ActivePreparation;
+    selectedNative?: SkillRecord; submitted?: string; projection?: AgentMessage[];
+    prepared: boolean; requestPending: boolean; confirmed: boolean; persisted: number;
+    candidates: Map<string, SkillRecord>; graphs: Array<{ graphs: PreparedHostGraph[]; mode: SelectionMode }>;
+    contextMessages?: AgentMessage[];
+  };
+  let piRun: PiRun | undefined;
+  const pendingGraphs = new WeakMap<ActivePreparation, Array<{ graphs: PreparedHostGraph[]; mode: SelectionMode }>>();
+  function assertPiRun(run: PiRun, ctx: ExtensionContext): void {
+    checkPreparationSignal(run.signal);
+    checkPreparationSignal(run.entry?.controller.signal);
+    if (piRun !== run || generation !== run.generation || run.sessionId !== ctx.sessionManager?.getSessionId?.()) throw preparationCancelled();
+  }
   const nativeCommands = new Map<string, (args: string, ctx: ExtensionContext, images?: ImageContent[], entry?: ActivePreparation) => Promise<void>>();
   host.on("agent_end", () => {
+    if (piRun?.entry) gate.release(piRun.entry);
+    piRun = undefined;
+    if (deferredPiDiscovery) handoff = undefined;
     turnPrompts = undefined;
     pendingNativeReads.clear();
     pendingResourceReads.clear();
@@ -215,7 +247,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const result = {
         ok: true, state: "known", count: matches.length, has_more: matches.length > Number(input.limit ?? 20),
         records: matches.slice(0, Number(input.limit ?? 20)).map(record => ({
-          id: record.id, ref: record.ref, kind: record.kind, name: record.name, description: record.description,
+          id: record.id, ref: modelReference(record, ctx) ?? record.ref, kind: record.kind, name: record.name, description: record.description,
           source: record.sourceId, scope: record.sourceScope, in_default_view: record.defaultDiscovery === true,
           availability: record.enabled === false ? "disabled" : "available",
         })),
@@ -343,7 +375,14 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (owner) gate.assertCurrent(owner, ctx ?? owner.ctx);
       // Exact root/File identity and response budgets are checked by the caller
       // before this transition. A failed refresh cannot replace the prior lock.
-      if (ctx) options.persistGraphs?.(graphs, ctx, mode);
+      if (deferredPiDiscovery && owner) {
+        const staged = pendingGraphs.get(owner) ?? [];
+        staged.push({ graphs, mode }); pendingGraphs.set(owner, staged);
+      } else if (ctx) options.persistGraphs?.(graphs, ctx, mode);
+      if (deferredPiDiscovery && piRun && purpose === "use") {
+        piRun.graphs.push({ graphs, mode });
+        for (const record of values) piRun.candidates.set(recordIdentity(record), record);
+      }
       if (mode === "replace" && owner) { owner.prepared.clear(); preparedForUse.delete(owner); }
       for (const record of values) {
         const key = recordIdentity(record), metadata = hostRecords.get(key) ?? record;
@@ -749,6 +788,23 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   });
   host.on("agent_start", (_event, ctx) => {
     const entry = gate.active;
+    if (deferredPiDiscovery) {
+      // This is the first public boundary with Pi's actual operation signal.
+      // Preserve the accepted submission's controller: accepted choices use it as
+      // their identity, and cancellation must revoke those choices as well.
+      const receipt = entry && handoff?.entry === entry && handoff.consumed ? handoff : undefined;
+      const signal = ctx.signal ?? lifecycleController.signal;
+      if (receipt) {
+        const abort = () => receipt.entry.controller.abort();
+        signal.addEventListener("abort", abort, { once: true });
+        if (signal.aborted) abort();
+      }
+      piRun = { generation, sessionId: ctx.sessionManager?.getSessionId?.(), signal,
+        entry: receipt?.entry, selectedNative: receipt?.selectedNative,
+        submitted: receipt?.prompts.at(-1), prepared: false, requestPending: false, confirmed: false, persisted: 0,
+        candidates: new Map(), graphs: [] };
+      return;
+    }
     if (entry?.phase === "dispatching" && handoff?.entry === entry && handoff.consumed) {
       try {
         gate.assertCurrent(entry, ctx);
@@ -759,10 +815,101 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       catch { ctx.abort?.(); gate.cancel(); }
     }
   });
-  api.on("context", (event, ctx) => {
-    try { return { messages: deduplicateSourceReads(options.projectContext?.(event.messages.filter(message => message.customType !== ACTIVATION_MESSAGE), ctx) ?? event.messages.filter(message => message.customType !== ACTIVATION_MESSAGE)) }; }
-    catch (error) { ctx.abort?.(); throw error; }
+  api.on("context", async (event, ctx) => {
+    const run = deferredPiDiscovery ? piRun : undefined;
+    try {
+      if (run) {
+        assertPiRun(run, ctx);
+        if (!run.prepared && run.entry) {
+          const entry = run.entry, text = entry.event.text ?? "", signal = entry.controller.signal;
+          gate.assertCurrent(entry, ctx);
+          await preflight(text, ctx, signal, run.selectedNative);
+          assertPiRun(run, ctx);
+          const task = await options.taskPrompt?.(text, ctx, signal, entry) ?? text;
+          assertPiRun(run, ctx);
+          const message = await options.buildPreparedPrompt?.(text, ctx, signal, [...entry.prepared.values()]);
+          assertPiRun(run, ctx);
+          for (const record of entry.prepared.values()) if (record.kind !== "prompt") run.candidates.set(recordIdentity(record), record);
+          run.projection = message ? [{ ...message, role: "custom", timestamp: Date.now() }] : [];
+          if (task !== text) run.projection.push({ role: "custom", customType: "context-broker-task",
+            content: task.startsWith(text) ? task.slice(text.length).trimStart() : task, display: false,
+            details: { version: 1, invocation: entry.id }, timestamp: Date.now() });
+          turnPrompts = { snapshots: new Map([...entry.prepared].filter(([, record]) => record.kind === "prompt")), signal };
+        }
+        if (run) run.prepared = true;
+      }
+      let messages = event.messages.filter(message => message.customType !== ACTIVATION_MESSAGE);
+      // Only this run's accepted receipt authorizes removing our neutralizing
+      // newline. Historical text/markers never create a new invocation.
+      if (run?.entry && run.submitted !== run.entry.event.text) {
+        for (let index = messages.length - 1; index >= 0; index--) {
+          const message = messages[index]!;
+          if (message.role !== "user") continue;
+          const original = run.entry.event.text ?? "";
+          if (message.content === run.submitted) messages = messages.map((value, position) => position === index ? { ...message, content: original } : value);
+          else if (Array.isArray(message.content) && message.content.some(part => part.type === "text" && part.text === run.submitted)) {
+            const content = message.content.map(part => part.type === "text" && part.text === run.submitted ? { ...part, text: original } : part);
+            messages = messages.map((value, position) => position === index ? { ...message, content } : value);
+          }
+          break;
+        }
+      }
+      if (run?.projection?.length) messages = [...messages, ...run.projection.filter(projected => {
+        const details = projected.details;
+        if (projected.customType !== "context-broker-task" || !details || typeof details !== "object" || Array.isArray(details)
+          || !("invocation" in details) || typeof details.invocation !== "string") return true;
+        return !messages.some(existing => existing.role === "custom" && existing.customType === projected.customType
+          && existing.details && typeof existing.details === "object" && !Array.isArray(existing.details)
+          && "invocation" in existing.details && existing.details.invocation === details.invocation
+          && JSON.stringify(existing.content) === JSON.stringify(projected.content));
+      })];
+      messages = options.projectContext?.(messages, ctx, run?.graphs) ?? messages;
+      if (run && options.restoreActive) {
+        const restored = await options.restoreActive(messages, ctx, run.signal, run.graphs);
+        assertPiRun(run, ctx);
+        if (restored) {
+          const message = { ...restored, role: "custom", timestamp: Date.now() };
+          (run.projection ??= []).push(message); messages = [...messages, message];
+        }
+      }
+      messages = deduplicateSourceReads(messages);
+      if (run) { assertPiRun(run, ctx); run.contextMessages = messages; }
+      return { messages };
+    } catch (error) {
+      // Pi reports extension errors and continues; aborting the current operation
+      // is what actually prevents provider dispatch after failed acquisition.
+      if (!run || !run.signal.aborted && piRun === run && generation === run.generation) ctx.abort?.();
+      throw error;
+    }
   });
+  if (deferredPiDiscovery) {
+    host.on("before_provider_request", (_event, ctx) => {
+      const run = piRun;
+      if (!run) return;
+      try { assertPiRun(run, ctx); run.requestPending = true; }
+      catch (error) { if (piRun === run && generation === run.generation) ctx.abort?.(); throw error; }
+    });
+    host.on("after_provider_response", (event, ctx) => {
+      const run = piRun;
+      if (!run?.requestPending || event.status < 200 || event.status >= 300) return;
+      try {
+        assertPiRun(run, ctx);
+        if (!run.confirmed && run.entry) for (const staged of pendingGraphs.get(run.entry) ?? []) options.persistGraphs?.(staged.graphs, ctx, staged.mode);
+        options.confirmDelivery?.([...run.candidates.values()], run.contextMessages ?? [], ctx);
+        // onResponse means headers received, before consuming the stream. It
+        // confirms this request was accepted; it does not claim model completion.
+        for (const message of (run.projection ?? []).slice(run.persisted)) if (message.customType && message.content !== undefined) host.sendMessage?.({
+          customType: message.customType, content: message.content, details: message.details, display: message.display ?? false,
+        }, { triggerTurn: false });
+        run.confirmed = true;
+        run.requestPending = false;
+        run.persisted = run.projection?.length ?? 0;
+        if (run.entry) gate.release(run.entry);
+      } catch (error) {
+        if (!run.signal.aborted && piRun === run && generation === run.generation) { ctx.abort?.(); throw error; }
+      }
+    });
+  }
   host.on("input", async (event, ctx) => {
     const text = event.text ?? "";
     const current = gate.active;
@@ -786,6 +933,15 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const submissionSignal = entry?.controller.signal ?? lifecycleController.signal;
     const submissionGeneration = generation;
     try {
+      if (deferredPiDiscovery) {
+        if (!entry) return adapter.continuedInput;
+        // Pi expands /skill before it creates an agent operation. Keep the raw
+        // input and images in our receipt, and suppress that uncancellable read.
+        const submitted = text.startsWith("/skill:") ? "\n" + text : text;
+        entry.phase = "dispatching";
+        handoff = { entry, prompts: [text, submitted], consumed: false, selectedNative };
+        return submitted === text ? adapter.continuedInput : adapter.transformInput(submitted, event.images);
+      }
       // Cold preparation belongs to the registered command, outside the input hook budget.
       if (entry && adapter.submission.mode === "command") return adapter.transformInput(`/context-broker-submit ${entry.id}`);
       await preflight(text, ctx, submissionSignal, selectedNative);
@@ -875,7 +1031,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       details: { nativePromptSha256: promptHash, records: [sourceDeliveryReceipt(native, event.prompt ?? "")].filter(Boolean) },
     } : undefined;
     if (native && adapter.submission.receipt === "input-digest") nativeInputs.delete(promptHash);
-    let systemPrompt = viewSystemPrompt(event.systemPrompt, records, defaultRouters, new Set(readRecords.keys()), views, ctx.cwd);
+    let systemPrompt = viewSystemPrompt(event.systemPrompt, records, defaultRouters, new Set(readRecords.keys()), views, ctx.cwd,
+      record => modelReference(record, ctx));
     if (deferredPiDiscovery) {
       systemPrompt = systemPrompt.replace(/\n*<ntn-skills-discovery\b[^>]*>[\s\S]*?<\/ntn-skills-discovery>/g, "");
       if (metadataPending || discoveryError || sourceFailures.some(failure => failure.blocking !== false)) {
@@ -885,17 +1042,18 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
     return { ...(message ? { message } : {}), systemPrompt: adapter.systemPrompt?.(systemPrompt) ?? systemPrompt };
   });
-  async function exactRecord(reference: ExactNativeReference, ctx: ExtensionContext, signal: AbortSignal): Promise<SkillRecord> {
+  async function exactRecord(reference: ExactNativeReference, ctx: ExtensionContext, signal: AbortSignal, short?: HostShortRefResolution): Promise<SkillRecord> {
     const selector = reference.selector;
     assertSourceAvailable(selector, sourceFailures, true);
-    let candidates = [...hostRecords.values()].filter(record => record.ref?.startsWith("skill://") && parseNativeReference(record.ref).selector === selector);
+    const matches = (record: SkillRecord) => record.ref?.startsWith("skill://") && parseNativeReference(record.ref).selector === selector
+      && (!short || matchesShortRefSource(short.assertion, record));
+    let candidates = [...hostRecords.values()].filter(matches);
     if (!candidates.length && options.lookupReference) {
       const observedGeneration = generation;
       const fresh = await options.lookupReference(ctx, signal);
       checkPreparationSignal(signal);
       if (observedGeneration !== generation) throw preparationCancelled();
-      candidates = fresh.records.filter(record => record.source === "notion" && record.ref
-        && parseNativeReference(record.ref).selector === selector);
+      candidates = fresh.records.filter(record => record.source === "notion" && matches(record));
       if (!candidates.length && fresh.failures.some(item => item.blocking !== false)) {
         const failed = fresh.failures.find(item => item.blocking !== false)!;
         throw new SourceError(failed.code, failed.sourceId);
@@ -903,18 +1061,50 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
     const active = gate.active?.prepared ?? (turnPrompts?.signal.aborted ? undefined : turnPrompts?.snapshots);
     const scopes = [...(active?.values() ?? [])].filter(record => record.sourceScope !== undefined);
-    if (scopes.length) candidates = candidates.filter(record => scopes.some(scope => scope.sourceId === record.sourceId && scope.sourceScope === record.sourceScope));
+    if (!short && scopes.length) candidates = candidates.filter(record => scopes.some(scope => scope.sourceId === record.sourceId && scope.sourceScope === record.sourceScope));
     if (candidates.length > 1) throw new InvocationError(selector, "ambiguous", candidates);
     const selected = candidates[0];
     if (!selected) throw hostError("SOURCE_REFERENCE_MISSING");
+    if (short) assertShortRefSource(short, selected);
     hostRecords.set(recordIdentity(selected), selected);
     return selected;
+  }
+  function modelDirectory(record: SkillRecord, prepared: readonly SkillRecord[], ctx: ExtensionContext) {
+    const directory = record.preparationDirectory;
+    if (!directory || adapter.paths.host !== "pi" || record.source !== "notion" || !shortRefs.canBind(ctx)) return directory;
+    const related = (entry: typeof directory.required[number]) => {
+      const fixed = prepared.find(value => value.id === entry.id && value.sourceScope === record.sourceScope);
+      const candidates = fixed ? [fixed] : [...hostRecords.values()].filter(value => value.id === entry.id
+        && value.sourceScope === record.sourceScope && value.sourceId === record.sourceId);
+      const target = candidates.length === 1 ? candidates[0] : undefined;
+      if (!target?.ref) return entry;
+      let reference: ExactNativeReference;
+      try { reference = parseNativeReference(entry.ref); }
+      catch { return entry; }
+      if (reference.selector !== parseNativeReference(target.ref).selector) return entry;
+      if (reference.snapshot !== undefined) {
+        // A fixed relation may name an older version or a resource. It must never
+        // be replaced with the current main entry merely because the owner ID matches.
+        if (!fixed?.preparationBinding || reference.snapshot !== fixed.snapshotId) return entry;
+        const main = parseNativeReference(fixed.preparationBinding.ref);
+        if ((!reference.path || reference.path === fixed.entrypoint) && (reference.fileId === undefined || reference.fileId === main.fileId))
+          return { ...entry, ref: shortRefs.selected(ctx, fixed) };
+        const file = fixed.entryManifest?.files.find(file => file.path === reference.path
+          && (reference.fileId === undefined || parseNativeReference(file.ref).fileId === reference.fileId));
+        return file ? { ...entry, ref: shortRefs.resource(ctx, fixed, file.ref) } : entry;
+      }
+      if (reference.fileId !== undefined || reference.path && reference.path !== target.entrypoint) return entry;
+      return { ...entry, ref: modelReference(target, ctx) ?? entry.ref };
+    };
+    return { files: directory.files.map(file => ({ ...file, ref: file.path === record.entrypoint
+      ? shortRefs.selected(ctx, record) : shortRefs.resource(ctx, record, file.ref) })),
+      required: directory.required.map(related), candidates: directory.candidates.map(related), references: directory.references.map(related) };
   }
   if (options.prepareGraph) host.registerTool?.({
     name: "skill_prepare", label: "Prepare Skills",
     description: "Prepare exact Skill roots. Use purpose use to load complete root and Required instructions before executing a workflow; inspect reads only roots and does not activate their dependencies. Members and ordinary references remain directories.",
     parameters: { type: "object", properties: {
-      roots: { type: "array", minItems: 1, maxItems: 64, items: { type: "string" }, description: "Exact skill:// main-entry references from metadata or a previous result." },
+      roots: { type: "array", minItems: 1, maxItems: 64, items: { type: "string" }, description: "Copy exact session sr:C/sr:S references or canonical skill:// main-entry references from metadata or a previous result." },
       purpose: { type: "string", enum: ["use", "inspect"], description: "Explicit operation intent; inspection does not authorize workflow execution." },
       refresh: { type: "boolean", description: "Explicitly begin a new selection for these scopes after successful online preparation. Requires unfixed root refs; existing versions remain in history." },
     }, required: ["roots", "purpose"], additionalProperties: false },
@@ -927,11 +1117,11 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (!["use", "inspect"].includes(String(input.purpose)) || !Array.isArray(input.roots) || !input.roots.length || input.roots.length > 64
         || input.roots.some(value => typeof value !== "string") || input.refresh !== undefined && typeof input.refresh !== "boolean"
         || Object.keys(input).some(key => !["roots", "purpose", "refresh"].includes(key))) throw hostError("INVALID_ARGUMENT");
-      const roots: SkillRecord[] = [], pins = new Map<string, string>();
-      for (const raw of input.roots) {
-        const reference = parseNativeReference(String(raw));
+      const roots: SkillRecord[] = [], pins = new Map<string, string>(), resolved = input.roots.map(raw => resolveReference(String(raw), ctx));
+      for (const { reference, short } of resolved) {
+        if (short?.kind === "resource") throw hostError("PREPARE_ROOT_NOT_MAIN");
         if (input.refresh === true && reference.snapshot) throw hostError("PREPARE_VERSION_CONFLICT");
-        const record = await exactRecord(reference, ctx, combined);
+        const record = await exactRecord(reference, ctx, combined, short);
         if (reference.path && reference.path !== record.entrypoint || record.kind === "prompt") throw hostError("PREPARE_ROOT_NOT_MAIN");
         if (reference.snapshot && record.id) {
           if (pins.has(record.id) && pins.get(record.id) !== reference.snapshot) throw hostError("SOURCE_SESSION_CONFLICT");
@@ -942,20 +1132,23 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const purpose = input.purpose === "use" ? "use" : "inspect";
       const prepared = await graphPreparation(roots, ctx, combined, purpose, pins, input.refresh === true ? "replace" : "extend", false);
       for (let index = 0; index < input.roots.length; index++) {
-        const reference = parseNativeReference(String(input.roots[index]));
+        const { reference, short } = resolved[index]!;
         const record = prepared.records.find(record => recordIdentity(record) === recordIdentity(roots[index]!));
         if (!record || nativeResourcePath(reference, record) !== record.entrypoint) throw hostError("PREPARE_ROOT_NOT_MAIN");
+        if (short) assertShortRefSnapshot(short, record);
       }
       const unique = [...new Map(prepared.records.map(record => [JSON.stringify([record.sourceScope, record.id]), record])).values()];
       const result = {
         ok: true, status: "ready", purpose,
         graphs: prepared.graphs.map(graph => ({ scope: graph.scope, roots: graph.roots, graph_lock: graph.lock, budget: graph.budget, usage: graph.usage })),
-        records: unique.map(record => ({
-          id: record.id, scope: record.sourceScope, ref: record.preparationBinding!.ref, snapshot_id: record.snapshotId,
+        records: unique.map(record => {
+          const ref = modelReference(record, ctx, true);
+          return {
+          id: record.id, scope: record.sourceScope, ref: ref ?? record.preparationBinding!.ref, snapshot_id: record.snapshotId,
           version_id: record.versionId, body_sha256: record.preparationBinding!.body_sha256, bytes: Buffer.byteLength(record.body!),
-          content: record.body!, path: record.path, directory: record.preparationDirectory,
+          content: record.body!, ...(ref ? {} : { path: record.path }), directory: modelDirectory(record, unique, ctx),
           ...(record.entryManifest ? { materialization: publicEntryMaterialization(record) } : {}),
-        })),
+        }; }),
       };
       const content = JSON.stringify(result);
       if (Buffer.byteLength(content) > Math.min(...prepared.graphs.map(graph => graph.budget.maxContextBytes))) throw hostError("PREPARE_CONTEXT_BUDGET");
@@ -981,13 +1174,17 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   if (options.sessionGraph) host.registerTool?.({
     name: "skill_graph", label: "Selected Skill graph",
     description: "Export this branch's selected immutable Skill graph and current body-delivery state. Includes identity, version and relation proofs; no credentials, machine paths or conversation text.",
-    parameters: { type: "object", properties: {}, additionalProperties: false },
+    parameters: { type: "object", properties: {
+      refs: { type: "array", maxItems: 64, items: { type: "string" }, description: "Optional fixed sr:S/sr:R references to export as canonical identity and exact version proofs for independent validation." },
+    }, additionalProperties: false },
     strict: true, readsSkillUris: false, loadMode: "essential", approval: () => "read", approvalCacheTargets: () => undefined,
     sourcePath: import.meta.url, defaultInactive: false,
     async execute(_id, input, signal, _update, ctx) {
       checkPreparationSignal(signal);
-      if (Object.keys(input).length) throw hostError("INVALID_ARGUMENT");
-      const result = options.sessionGraph!(ctx);
+      if (Object.keys(input).some(key => key !== "refs") || input.refs !== undefined && (!Array.isArray(input.refs) || input.refs.length > 64
+        || input.refs.some(value => typeof value !== "string"))) throw hostError("INVALID_ARGUMENT");
+      const graph = options.sessionGraph!(ctx);
+      const result = Array.isArray(input.refs) ? { graph, references: input.refs.map(ref => shortRefs.export(ctx, ref)) } : graph;
       return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
     },
   });
@@ -995,7 +1192,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   async function prepareRead(event: ToolCallEvent, ctx: ExtensionContext, signal: AbortSignal, readPhase: "hook" | "execute"): Promise<ToolCallResult | undefined> {
     if (event.toolName !== "read" || !event.input || typeof event.input.path !== "string") return undefined;
     const requested = event.input.path;
-    const explicit = requested.startsWith("skill://");
+    const explicit = requested.startsWith("skill://") || isSessionShortRefInput(requested);
     // A plain file read does not acquire a remote Skill dependency. Published
     // broker locations are matched below and activate() retains their gate.
     try { if (!deferredPiDiscovery || explicit) await ready(signal); }
@@ -1005,11 +1202,13 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     let reference = "";
     let rootRelative = false;
     let exactReference: ExactNativeReference | undefined;
+    let short: HostShortRefResolution | undefined;
     if (explicit && discoveryError) return { block: true, reason: failure(discoveryError) };
     if (explicit) {
       try {
-        exactReference = parseNativeReference(requested);
-        selected = await exactRecord(exactReference, ctx, signal);
+        const resolved = resolveReference(requested, ctx);
+        exactReference = resolved.reference; short = resolved.short;
+        selected = await exactRecord(exactReference, ctx, signal, short);
         reference = exactReference.path;
       } catch (error) { return { block: true, reason: failure(error) }; }
     } else {
@@ -1060,6 +1259,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     try {
       const snapshot = retained ?? await activate(selected, ctx, signal, true, readPhase,
         exactReference?.snapshot ?? (selected.entryManifest ? selected.snapshotId : undefined));
+      if (short) assertShortRefSnapshot(short, snapshot);
       if (exactReference) reference = nativeResourcePath(exactReference, snapshot);
       else if (snapshot.entryManifest && reference && !rootRelative) {
         const root = snapshot.entryManifest.root;
@@ -1088,6 +1288,13 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         const file = snapshot.entryManifest.files.find(file => file.path === reference);
         if (!file) throw hostError("FILE_NOT_FOUND");
         pendingResourceReads.set(event.toolCallId, { record: snapshot, file, generation });
+      } else if ((!reference || reference === (snapshot.entrypoint ?? "SKILL.md")) && adapter.paths.host === "pi"
+        && event.toolCallId && snapshot.kind !== "prompt" && snapshot.sourceId && snapshot.snapshotId) {
+        // Bind the authorized snapshot before exposing its resolved path. The
+        // native reader may use a canonical parent (/private/tmp on macOS),
+        // while the same immutable entry retains its original /tmp spelling.
+        // The result hook still requires exact complete source bytes.
+        pendingNativeReads.set(event.toolCallId, { record: snapshot, generation });
       }
       const updated = { ...event.input, path: path + suffix };
       return { input: updated };
@@ -1103,7 +1310,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     checkPreparationSignal(executionSignal);
     return result;
   });
-  host.on("tool_call", async (event, ctx) => {
+  host.on("tool_call", async (event, ctx): Promise<ToolCallResult | undefined> => {
     if (event.toolName === "read" && readRunsInTool?.()) return undefined;
     const operationSignal = deferredPiDiscovery && event.toolName === "read" ? ctx.signal : undefined;
     const readSignal = operationSignal ? AbortSignal.any([operationSignal, lifecycleController.signal]) : lifecycleController.signal;
@@ -1111,16 +1318,9 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (prepared && "block" in prepared) return prepared;
     if (event.toolName === "read" && readSignal.aborted) return { block: true, reason: failure(preparationCancelled()) };
     if (prepared) Object.assign(event.input, prepared.input);
-    // Only this broker's successful whole-entry read can create a persisted
-    // loaded receipt. Resource reads, user text and nested tool activity cannot.
-    if (adapter.paths.host === "pi" && event.toolName === "read" && event.toolCallId && typeof event.input.path === "string") {
-      const path = expandPath(event.input.path, ctx.cwd);
-      const record = [...loaded.values()].map(value => value.record).find(value => resolve(value.path) === path);
-      if (record?.kind !== "prompt" && record?.sourceId && record.snapshotId) pendingNativeReads.set(event.toolCallId, { record, generation });
-    }
     return prepared ? adapter.updatedRead(prepared.input) : undefined;
   });
-  host.on("tool_result", (event) => {
+  host.on("tool_result", (event, ctx) => {
     if (event.toolName !== "read" || !event.toolCallId) return undefined;
     const resource = pendingResourceReads.get(event.toolCallId);
     pendingResourceReads.delete(event.toolCallId);
@@ -1143,6 +1343,16 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const proof = nativeReadReceipt(pending.record, event.toolCallId, event.content);
     if (!proof) return undefined;
     const existing = event.details && typeof event.details === "object" && !Array.isArray(event.details) ? event.details as Record<string, unknown> : {};
+    const ref = modelReference(pending.record, ctx, true);
+    if (ref) {
+      // The original native result has already proved a complete main read. Keep
+      // those exact bytes as the prefix and append only a directory of fixed refs.
+      const footer = "\n\n<skill-directory>\n" + JSON.stringify({ ref, directory: modelDirectory(pending.record, [pending.record], ctx) }) + "\n</skill-directory>";
+      const content = typeof event.content === "string" ? event.content + footer : [...event.content ?? [], { type: "text" as const, text: footer }];
+      const delivered = nativeReadReceipt(pending.record, event.toolCallId, content);
+      if (!delivered) throw hostError("SOURCE_PREPARATION_INVALID");
+      return { content, details: { ...existing, contextBrokerRead: delivered } };
+    }
     return { details: { ...existing, contextBrokerRead: proof } };
   });
 

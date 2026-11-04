@@ -136,9 +136,21 @@ export async function writeFakeProvider(base) {
 import { appendFileSync } from "node:fs";
 
 function stream(model, context) {
+  const options = arguments[2];
   const captureFile = process.env.CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE;
   if (!captureFile) throw new Error("Missing isolated provider context capture path");
-  appendFileSync(captureFile, JSON.stringify({ model: model.id, context }) + "\\n");
+  let providerRequestPromise;
+  function request() {
+    return providerRequestPromise ??= (async () => {
+      options?.signal?.throwIfAborted();
+      const payload = await options?.onPayload?.({ model: model.id, context }, model);
+      options?.signal?.throwIfAborted();
+      if (payload?.context) context = payload.context;
+      appendFileSync(captureFile, JSON.stringify({ model: model.id, context }) + "\\n");
+      await options?.onResponse?.({ status: 200, headers: { "x-fixture": "deterministic" } }, model);
+      options?.signal?.throwIfAborted();
+    })();
+  }
   const output = {
     role: "assistant", content: [{ type: "text", text: "OK" }],
     api: model.api, provider: model.provider, model: model.id,
@@ -154,10 +166,11 @@ function stream(model, context) {
     { type: "done", reason: "stop", message: output },
   ];
   let sent = false;
-  return { push() {}, end() {}, result: async () => output,
+  return { push() {}, end() {}, result: async () => { await request(); return output; },
     async *[Symbol.asyncIterator]() {
       if (sent) return;
       sent = true;
+      await request();
       for (const event of events) yield event;
     },
   };

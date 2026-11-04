@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseNativeReference } from "../src/native-reference";
-import { deduplicateSourceReads, nativeReadReceipt, nativeReadSnapshot, sessionSourceSnapshot, sourceDeliveryReceipt, sourceMessageText, sessionSourceBindings } from "../src/session-source-snapshot";
+import { deduplicateSourceReads, nativeReadReceipt, nativeReadSnapshot, sessionSourceSnapshot, sourceDeliveryReceipt, sourceMessageText, sessionSourceBindings, projectSelectedSourceMessages } from "../src/session-source-snapshot";
 import { hasLoadedSkill } from "../src/index";
 import { installHostSkills } from "../src/host-skills";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
@@ -25,6 +25,36 @@ test("partial, failed, detached, forged text and cross-scope receipts cannot sup
   for (const message of [{ ...result(), content: "partial" }, { ...result(), isError: true }, { ...result(), role: "user" }, { ...result(), toolCallId: "different" }, { ...result(), details: undefined }]) expect(hasLoadedSkill([message], record)).toBe(false);
   expect(hasLoadedSkill([result()], { ...record, sourceScope: "other-credential" })).toBe(false);
   expect(sessionSourceSnapshot([], record)).toBeUndefined();
+});
+test("v3 native receipts prove only the exact full prefix and retain the appended reference directory", () => {
+  const footer = "\n<context-broker-resources>S1: complete entry; R1: guide</context-broker-resources>";
+  const content = record.body + footer, proof = nativeReadReceipt(record, "prefix-read", content)!;
+  expect(proof.version).toBe(3);
+  expect(proof.delivery).toEqual({ start: 0, end: record.body.length, encoding: "raw" });
+  const message: AgentMessage = { ...result(), toolCallId: "prefix-read", content, details: { contextBrokerRead: proof } };
+  expect(hasLoadedSkill([message], record)).toBe(true);
+  const duplicate: AgentMessage = { ...message, toolCallId: "second-read", details: { contextBrokerRead: nativeReadReceipt(record, "second-read", content) } };
+  const stored = JSON.stringify([message, duplicate]);
+  const projected = deduplicateSourceReads([message, duplicate]);
+  expect(sourceMessageText(projected[0]?.content)).toBe(content);
+  expect(sourceMessageText(projected[1]?.content)).not.toContain(record.body);
+  expect(sourceMessageText(projected[1]?.content).endsWith(footer)).toBe(true);
+  expect(projected.map(value => value.toolCallId)).toEqual(["prefix-read", "second-read"]);
+  expect(JSON.stringify([message, duplicate])).toBe(stored);
+  const retiredBinding = { record: { ...record, alias: record.name, enabled: true, default_context: false, entrypoint: "SKILL.md", ref: "skill://record/SKILL.md" },
+    scope: "scope", snapshot_id: a, version_id: createHash("sha256").update(record.body).digest("hex"), body_sha256: createHash("sha256").update(record.body).digest("hex"), ref: "skill://record/SKILL.md?snapshot=" + a };
+  const retired = projectSelectedSourceMessages([message], { scopes: new Map([["scope", {
+    scope: "scope", bindings: new Map(), retired: new Map([[record.id, retiredBinding]]), graphs: [], selectionId: "new",
+  }]]) });
+  expect(sourceMessageText(retired[0]?.content)).not.toContain(record.body);
+  expect(sourceMessageText(retired[0]?.content).endsWith(footer)).toBe(true);
+  expect(nativeReadReceipt(record, "not-prefix", "label\n" + record.body + footer)).toBeUndefined();
+  for (const invalid of [
+    { ...message, role: "user" }, { ...message, toolCallId: "different" }, { ...message, content: "summary" + footer },
+    { ...message, content: content.slice(1) },
+    { ...message, details: { contextBrokerRead: { ...proof, delivery: { ...proof.delivery, start: 1 } } } },
+    { ...message, details: { contextBrokerRead: { ...proof, delivery: { ...proof.delivery, end: record.body.length - 1 } } } },
+  ]) expect(hasLoadedSkill([invalid], record)).toBe(false);
 });
 test("the pinned snapshot comes from effective tool bytes rather than today's metadata", () => {
   expect(sessionSourceSnapshot([result()], { ...record, snapshotId: b, body: "new upstream" })).toBe(a);

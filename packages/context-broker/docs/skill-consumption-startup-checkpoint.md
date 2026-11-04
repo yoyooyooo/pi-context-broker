@@ -1,5 +1,7 @@
 # SC09 / AH-624：普通 Pi 非阻塞检查点
 
+> 历史检查点：下文保留当时的 input-preflight RPC abort 失败和不完整候选，原证据未改判。后续 context 准备/运行信号修复、真实 RPC/PTY 10/10 与完整 31 样本启动对照见 [Pi 消费运行时记录](skill-consumption-runtime.md)。本页中的“当前”指该历史检查点。
+
 [AH-624](https://linear.app/yoyooyooo/issue/AH-624) 保持 **In Progress**。当前源码已验证普通输入可先于 metadata discovery 进入 provider；精确选择仍保持固定身份与完整正文门控。实际 Pi RPC 的输入预检取消仍失败，本检查点不关闭该验收项，也没有切换日用安装。
 
 ## 实现与功能证据

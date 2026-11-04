@@ -75,6 +75,8 @@ type ExtensionEvents = {
   session_start: { event: { type: "session_start"; reason?: string }; result: void };
   context: { event: ContextEvent; result: ContextResult };
   before_agent_start: { event: BeforeAgentStartEvent; result: BeforeAgentStartResult };
+  before_provider_request: { event: { type: "before_provider_request"; payload: unknown }; result: void };
+  after_provider_response: { event: { type: "after_provider_response"; status: number; headers: Record<string, string> }; result: void };
   input: { event: InputEvent; result: InputResult };
   tool_call: { event: ToolCallEvent; result: ToolCallResult };
   tool_result: { event: ToolResultEvent; result: void | { details: unknown } };

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { sessionSourceSnapshot, sessionSourceBindings, sourceContentIdentity, sourceDeliveryReceipt, sourceBodyLoaded, projectSelectedSourceMessages } from "./session-source-snapshot";
 import { sessionSelection, selectedBinding, persistSessionSelection, exportSessionSelection } from "./session-graph";
+import { activeSelection, activeSources, missingActiveSources, assertRestoredSource, confirmActiveSources } from "./session-active";
 import { checkPreparationSignal, isPreparationCancelled } from "./skill-preparation";
 import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
@@ -1141,7 +1142,12 @@ async function invokeBeforeAgentStart(
     .map(injection => [sourceContentIdentity(injection.record), injection])).values()];
   const selected = new Set(injections.map(injection => sourceContentIdentity(injection.record)));
   for (const record of prepared) {
-    if (record.kind === "prompt" || selected.has(sourceContentIdentity(record))) continue;
+    if (record.kind === "prompt") continue;
+    if (selected.has(sourceContentIdentity(record))) {
+      const injection = injections.find(value => sourceContentIdentity(value.record) === sourceContentIdentity(record));
+      if (injection) injection.record = record;
+      continue;
+    }
     selected.add(sourceContentIdentity(record));
     injections.push({ record, query: record.token ?? record.name, ruleIds: [] });
   }
@@ -1501,7 +1507,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     loadResource: (record, path, ctx, signal) => sourceRuntime.foreground(async () => {
       const source = normalizeSources(config.sources)?.find(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false);
       if (!source || source.type !== "notion") throw new SourceError("SOURCE_UNAVAILABLE", record.sourceId ?? "notion");
-      return loadNotionResource(record, path, source, ctx.cwd ?? process.cwd(), signal);
+      return loadNotionResource(record, path, source, ctx.cwd ?? process.cwd(), signal, paths.host === "pi" ? "sdk" : undefined);
     }),
     prepareGraph: (records, ctx, signal, purpose, pins, pendingBindings, mode) => sourceRuntime.foreground(async () => {
       const groups = new Map<string, SkillRecord[]>();
@@ -1533,14 +1539,54 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
           bindings.set(binding.record.id, binding);
         }
         prepared.push(await prepareNotionSkills(roots, source, ctx?.cwd ?? process.cwd(), {
-          purpose, signal, rootPins, sessionBindings: [...bindings.values()], refresh: mode === "replace",
+          purpose, signal, rootPins, sessionBindings: [...bindings.values()], refresh: mode === "replace", transport: paths.host === "pi" ? "sdk" : undefined,
         }));
       }
       return prepared;
     }),
     persistGraphs: (graphs, ctx, mode) => persistSessionSelection(pi, ctx, graphs, mode),
     sessionGraph: ctx => exportSessionSelection(ctx, projectSelectedSourceMessages(messagesFromActiveSessionContext(ctx), sessionSelection(ctx))),
-    projectContext: (messages, ctx) => projectSelectedSourceMessages(messages, sessionSelection(ctx)),
+    projectContext: (messages, ctx, pending) => projectSelectedSourceMessages(messages, paths.host === "pi" ? activeSelection(ctx, pending) : sessionSelection(ctx)),
+    restoreActive: paths.host === "pi" ? async (messages, ctx, signal, pending) => {
+      const missing = missingActiveSources(ctx, messages, pending);
+      if (!missing.length) return undefined;
+      const restored: SkillRecord[] = [];
+      const groups = new Map<string, typeof missing>();
+      for (const source of missing) {
+        checkPreparationSignal(signal);
+        if (source.record.source === "notion") {
+          const key = JSON.stringify([source.record.sourceId, source.record.sourceScope]);
+          groups.set(key, [...groups.get(key) ?? [], source]);
+          continue;
+        }
+        const record = { ...source.record, body: readFileSync(source.record.path, "utf8") };
+        checkPreparationSignal(signal);
+        restored.push(assertRestoredSource(source, record));
+      }
+      const active = activeSources(ctx);
+      for (const group of groups.values()) {
+        const first = group[0]!, sourceId = first.record.sourceId!;
+        const source = normalizeSources(config.sources)?.find(value => value.id === sourceId && value.type === "notion" && value.enabled !== false);
+        if (!source || source.type !== "notion") throw new SourceError("SOURCE_UNAVAILABLE", sourceId);
+        const fixed = [...active.sources.values()].filter(value => value.record.sourceId === sourceId && value.record.sourceScope === first.record.sourceScope);
+        // A restore observes exactly the confirmed vector. Inspect keeps every
+        // fixed node as a root; it cannot traverse a newly changed Required edge.
+        // Its graph is deliberately never installed as the active use graph.
+        const compiled = await sourceRuntime.foreground(() => prepareNotionSkills(fixed.map(value => value.record), source, ctx.cwd ?? process.cwd(), {
+          purpose: "inspect", signal, transport: "sdk",
+          rootPins: new Map(fixed.map(value => [value.record.id!, value.snapshotId])),
+          sessionBindings: fixed.map(value => value.record.preparationBinding!),
+        }));
+        checkPreparationSignal(signal);
+        for (const expected of group) {
+          const record = compiled.records.find(value => sourceContentIdentity(value) === expected.contentIdentity);
+          if (!record) throw new SourceError("SOURCE_IDENTITY_MISMATCH", sourceId);
+          restored.push(assertRestoredSource(expected, record));
+        }
+      }
+      return buildInjectedPayloadFromInjections(restored.map(record => ({ record, query: record.token ?? record.name, ruleIds: [] })), config, adapter);
+    } : undefined,
+    confirmDelivery: paths.host === "pi" ? (records, messages, ctx) => confirmActiveSources(pi, ctx, records, messages) : undefined,
     isLoaded: (record, ctx) => hasLoadedRecord(projectSelectedSourceMessages(messagesFromActiveSessionContext(ctx), sessionSelection(ctx)), record),
     sessionSnapshot: (record, ctx) => {
       const selection = sessionSelection(ctx);
@@ -1552,6 +1598,20 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       sourceRuntime.pausePrefetch("foreground");
       acceptedSelections.capture(entry.ctx, entry.controller.signal,
         parseInvocations(entry.event.text ?? "", configuredRules(config)).filter(request => request.scope === "global").map(request => request.query));
+    },
+    buildPreparedPrompt: async (text, ctx, signal, prepared) => {
+      const result = await invokeBeforeAgentStart(
+        { prompt: text }, ctx, registryPromise, config, getDollarRegistry(ctx.cwd),
+        async record => {
+          if (!record.sourceId) return loadSourceSkill(record, config, ctx.cwd, { signal });
+          const value = await host.prepare(record, ctx, signal);
+          if (value.status === "miss") throw new ReferenceMiss(record.sourceId);
+          return value.record;
+        },
+        (messages, record) => hasLoadedRecord(projectSelectedSourceMessages(messages, sessionSelection(ctx)), record),
+        adapter, acceptedSelections.forSubmission(signal), prepared,
+      );
+      return result?.message;
     },
     taskPrompt: async (text, ctx, signal, invocation) => {
       const requests = parseInvocations(text, configuredRules(config));
@@ -1593,6 +1653,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     await host.refresh(ctx);
   };
   pi.on("before_agent_start", async (event, ctx) => {
+    if (paths.host === "pi" && adapter.metadataDiscovery === "deferred") return undefined;
     try {
       const result = await host.withPreparedPrompt(event.prompt, ctx, async (signal, native, original, prepared) => {
         if (original === undefined) return undefined;

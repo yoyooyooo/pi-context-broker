@@ -24,8 +24,11 @@ export function sourceMessageText(content: MessageContent | undefined): string {
  * Stored in the actual tool result, not a second model-visible body message. */
 export function nativeReadReceipt(record: SkillRecord, toolCallId: string, content: MessageContent | undefined) {
   const text = sourceMessageText(content);
-  if (!record.sourceId || !snapshot(record.snapshotId) || !toolCallId || !record.body || text !== record.body || (Array.isArray(content) && content.some(part => part.type !== "text"))) return undefined;
-  return { version: 2, identity: recordIdentity(record), contentIdentity: sourceContentIdentity(record), toolCallId, snapshotId: record.snapshotId, bodySha256: hash(text), bytes: Buffer.byteLength(text), ...(record.preparationBinding ? { binding: record.preparationBinding } : {}) };
+  if (!record.sourceId || !snapshot(record.snapshotId) || !toolCallId || !record.body || !text.startsWith(record.body) || (Array.isArray(content) && content.some(part => part.type !== "text"))) return undefined;
+  return { version: text === record.body ? 2 : 3, identity: recordIdentity(record), contentIdentity: sourceContentIdentity(record), toolCallId, snapshotId: record.snapshotId,
+    bodySha256: hash(record.body), bytes: Buffer.byteLength(record.body),
+    ...(text === record.body ? {} : { delivery: { start: 0, end: record.body.length, encoding: "raw" } }),
+    ...(record.preparationBinding ? { binding: record.preparationBinding } : {}) };
 }
 
 /** Link the receipt to an actual complete body span in the provider-visible message. */
@@ -48,9 +51,20 @@ export function sourceDeliveryReceipt(record: SkillRecord, content: string, enco
 function verifiedReadProof(message: AgentMessage) {
   if (message.role !== "toolResult" || message.toolName !== "read" || message.isError === true || !object(message.details)) return undefined;
   const proof = message.details.contextBrokerRead;
-  if (!object(proof) || ![1, 2].includes(Number(proof.version)) || typeof proof.identity !== "string" || proof.toolCallId !== message.toolCallId || !snapshot(proof.snapshotId)) return undefined;
+  if (!object(proof) || ![1, 2, 3].includes(Number(proof.version)) || typeof proof.identity !== "string" || proof.toolCallId !== message.toolCallId || !snapshot(proof.snapshotId)) return undefined;
   const text = sourceMessageText(message.content);
+  if (proof.version === 3) {
+    const delivery = proof.delivery;
+    if (!object(delivery) || delivery.start !== 0 || delivery.encoding !== "raw" || !Number.isSafeInteger(delivery.end)
+      || Number(delivery.end) <= 0 || Number(delivery.end) > text.length
+      || Array.isArray(message.content) && message.content.some(part => part.type !== "text")) return undefined;
+    const body = text.slice(0, Number(delivery.end));
+    return hash(body) === proof.bodySha256 && Buffer.byteLength(body) === proof.bytes ? proof : undefined;
+  }
   return text && hash(text) === proof.bodySha256 && Buffer.byteLength(text) === proof.bytes ? proof : undefined;
+}
+function readProofEnd(proof: Record<string, unknown>, message: AgentMessage): number {
+  return proof.version === 3 && object(proof.delivery) ? Number(proof.delivery.end) : sourceMessageText(message.content).length;
 }
 
 function verifiedResourceReadProof(message: AgentMessage) {
@@ -190,7 +204,7 @@ export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[]
     if (!proof) return;
     const key = JSON.stringify([proof.contentIdentity ?? proof.identity, proof.snapshotId, proof.bodySha256]);
     if (!seen.has(key)) { seen.set(key, String(index)); return; }
-    replace(index, 0, sourceMessageText(message.content).length, confirmation(proof));
+    replace(index, 0, readProofEnd(proof, message), confirmation(proof));
   });
   const resources = new Set<string>();
   messages.forEach((message, index) => {
@@ -238,6 +252,14 @@ export function sourceBodyLoaded(messages: AgentMessage[], record: SkillRecord):
     && (record.body === undefined || proof.bytes === Buffer.byteLength(record.body)));
 }
 
+/** A persistent activation receipt is useful only when the effective context
+ * still contains the exact complete bytes it confirmed. */
+export function sourceDeliveryLoaded(messages: AgentMessage[], expected: { identity: string; contentIdentity: string; snapshotId: string; bodySha256: string; bytes: number }): boolean {
+  const proofs = [...injectedSnapshots(messages), ...messages.flatMap(message => { const proof = verifiedReadProof(message); return proof ? [proof] : []; })];
+  return proofs.some(proof => (proof.contentIdentity === expected.contentIdentity || proof.identity === expected.identity)
+    && proof.snapshotId === expected.snapshotId && proof.bodySha256 === expected.bodySha256 && proof.bytes === expected.bytes);
+}
+
 export function sessionSourceBindings(messages: AgentMessage[], scope: string): PreparationBinding[] {
   const proofs = [...injectedSnapshots(messages), ...messages.flatMap(message => { const proof = verifiedReadProof(message); return proof ? [proof] : []; })];
   const bindings = new Map<string, PreparationBinding>();
@@ -283,7 +305,7 @@ export function projectSelectedSourceMessages(messages: AgentMessage[], selectio
   });
   for (const [index, message] of messages.entries()) {
     const proof = verifiedReadProof(message);
-    if (proof && retired(proof)) add(index, 0, sourceMessageText(message.content).length, "raw");
+    if (proof && retired(proof)) add(index, 0, readProofEnd(proof, message), "raw");
   }
   return replacements.size ? projectDeliverySpans(messages, replacements) : messages;
 }

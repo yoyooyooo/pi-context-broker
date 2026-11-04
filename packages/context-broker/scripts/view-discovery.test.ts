@@ -49,6 +49,52 @@ test("default Notion metadata retains both the advertised native path and exact 
   expect(prompt).toContain("<location>/local/SKILL.md</location></skill>");
 });
 
+test("short Notion references occur once and replace only broker-owned native metadata paths", () => {
+  const remote: SkillRecord = { ...record("remote", "/private/long-cache/SKILL.md"), source: "notion", metadataIndexPath: "/private/metadata/SKILL.md",
+    ref: "skill://shared_skill%3Alibrary%3Aremote/SKILL.md", body: "SOURCE BODY MUST STAY OUT OF THE CATALOG" };
+  const router: SkillRecord = { ...record("router", "/private/router/ROUTER.md"), source: "notion", kind: "router", ref: "skill://long-router/ROUTER.md" };
+  const local = { ...record("local", "/local/SKILL.md"), source: "local" as const };
+  const native = '<available_skills><skill><name>other-extension</name><location>/other-extension/SKILL.md</location></skill><skill><name>remote-native</name><location>/private/metadata/SKILL.md</location></skill></available_skills>';
+  const rendered: string[] = [], before = JSON.stringify([remote, router, local]);
+  const shortSkill = "sr:CAAAAAAAAAAAAAAAAAAAAAA", shortRouter = "sr:CBBBBBBBBBBBBBBBBBBBBBA";
+  const prompt = viewSystemPrompt(native, [remote, local], [router], new Set([remote.metadataIndexPath!]), [], "/cwd", value => {
+    rendered.push(value.name); return value === remote ? shortSkill : shortRouter;
+  });
+  expect(prompt.split(shortSkill)).toHaveLength(2);
+  expect(prompt.split(shortRouter)).toHaveLength(2);
+  expect(prompt).toContain(`<location>${shortSkill}</location></skill>`);
+  expect(prompt).toContain(`<router ref="${shortRouter}">`);
+  expect(prompt).not.toContain("/private/");
+  expect(prompt).not.toContain("skill://");
+  expect(prompt).not.toContain("SOURCE BODY MUST STAY OUT OF THE CATALOG");
+  expect(prompt).not.toContain("remote-native");
+  expect(prompt).toContain("<name>other-extension</name><location>/other-extension/SKILL.md</location>");
+  expect(prompt).toContain("<location>/local/SKILL.md</location>");
+  expect(rendered).toEqual(["remote", "router"]);
+  expect(JSON.stringify([remote, router, local])).toBe(before);
+});
+
+test("undefined short refs retain the exact legacy format, including local refs", () => {
+  const remote: SkillRecord = { ...record("remote", "/cache/SKILL.md"), source: "notion", metadataIndexPath: "/metadata/SKILL.md", ref: "skill://remote/SKILL.md" };
+  const local: SkillRecord = { ...record("local", "/local/SKILL.md"), source: "local", ref: "existing-local-ref" };
+  const router: SkillRecord = { ...record("router", "/router/ROUTER.md"), source: "notion", kind: "router", ref: "skill://router/ROUTER.md" };
+  const legacy = viewSystemPrompt("Base", [remote, local], [router], new Set(), [], "/cwd");
+  expect(viewSystemPrompt("Base", [remote, local], [router], new Set(), [], "/cwd", () => undefined)).toBe(legacy);
+  expect(legacy).toContain("<location>/metadata/SKILL.md</location><ref>skill://remote/SKILL.md</ref>");
+  expect(legacy).toContain("<location>/local/SKILL.md</location><ref>existing-local-ref</ref>");
+});
+
+test("short-reference callbacks are XML-escaped in skill locations and router attributes", () => {
+  const remote: SkillRecord = { ...record("remote", "/private/SKILL.md"), source: "notion" };
+  const router: SkillRecord = { ...record("router", "/private/ROUTER.md"), source: "notion", kind: "router" };
+  const unsafe = 'sr:S<&"injected>';
+  const prompt = viewSystemPrompt("", [remote], [router], new Set(), [], "/cwd", () => unsafe);
+  expect(prompt).toContain("<location>sr:S&lt;&amp;&quot;injected&gt;</location>");
+  expect(prompt).toContain('<router ref="sr:S&lt;&amp;&quot;injected&gt;">');
+  expect(prompt).not.toContain(unsafe);
+  expect(prompt.match(/<router ref=/g)).toHaveLength(1);
+});
+
 test("default_view_id is an optional per-source selection, never a mutable global scene", () => {
   const sources = normalizeSources([{ type: "notion", id: "one", default_view_id: "A" }, { type: "notion", id: "two" }]);
   expect(sources?.[0]).toMatchObject({ default_view_id: "A" });

@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { appendFileSync, readFileSync } from 'node:fs';
-import { access, mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+import { access, cp, mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isolatedEnv, resolveHost, runCommand, writeFakeProvider } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { createNotionFixture, database, canary, skillRef } from './notion-integration-fixture.mjs';
@@ -76,6 +76,15 @@ async function observedProvider(base) {
   let code = await readFile(path, 'utf8');
   code = code.replace('import { appendFileSync }', 'import { appendFileSync, readFileSync }');
   code = code.replace('JSON.stringify({ model: model.id, context })', 'JSON.stringify({ model: model.id, context, monotonicNs: process.hrtime.bigint().toString() })');
+  code = code.replace('const captureFile = process.env.CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE;', `const captureFile = process.env.CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE;
+  const callback = event => appendFileSync(process.env.BROKER_STARTUP_CALLBACK_FILE, JSON.stringify({ event, monotonicNs: process.hrtime.bigint().toString(), aborted: options?.signal?.aborted }) + '\\n');
+  options?.signal?.addEventListener('abort', () => callback('signal-aborted'), { once: true });`);
+  code = code.replace('await options?.onResponse?.({ status: 200, headers: { "x-fixture": "deterministic" } }, model);', `if (JSON.parse(readFileSync(process.env.BROKER_STARTUP_PLAN, 'utf8')).holdResponse) {
+        callback('response-held');
+        while (JSON.parse(readFileSync(process.env.BROKER_STARTUP_PLAN, 'utf8')).holdResponse) await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      callback('response-callback');
+      await options?.onResponse?.({ status: 200, headers: { "x-fixture": "deterministic" } }, model);`);
   code = code.replace('const output = {', `const plan = JSON.parse(readFileSync(process.env.BROKER_STARTUP_PLAN, 'utf8'));
   const requested = plan.trigger && context.messages.some(message => message.role === 'user' && JSON.stringify(message).includes(plan.trigger));
   const completed = context.messages.some(message => message.role === 'toolResult' && message.toolCallId === plan.id);
@@ -104,6 +113,7 @@ async function fixture(name, scratch, evidence, extension, control = { holdList:
   const config = join(agentDir, 'context-broker', 'config.yml');
   await save(config, { sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: [process.execPath, script, 'source', spec], database, prefetch: false, cacheDir: join(base, 'source-cache') }] });
   const provider = await observedProvider(base), providerFile = join(output, 'provider.jsonl'), plan = join(base, 'plan.json');
+  await writeFile(join(output, 'provider-extension.mjs'), await readFile(provider));
   await save(plan, {});
   const observers = [];
   for (const phase of ['before-broker', 'after-broker']) {
@@ -118,7 +128,7 @@ export default function observe(api) {
     observers.push(path);
   }
   const env = isolatedEnv({ base, agentDir, TMPDIR: await systemTempRoot(), TERM: 'xterm-256color', COLORTERM: 'truecolor', CONTEXT_BROKER_CONFIG: config,
-    CONTEXT_BROKER_HOST: 'omp', CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: providerFile, BROKER_STARTUP_PLAN: plan,
+    CONTEXT_BROKER_HOST: 'omp', CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: providerFile, BROKER_STARTUP_PLAN: plan, BROKER_STARTUP_CALLBACK_FILE: join(output, 'provider-callbacks.jsonl'),
     BROKER_E2E_PROCESS_LEDGER: join(output, 'host-processes.jsonl'), CONTEXT_BROKER_LOG_FILE: join(output, 'decisions.jsonl') });
   const args = ['--no-extensions','--no-mcp','--no-context-files','--no-prompt-templates','--approve','--offline','--session-dir',join(base,'sessions'),'--tools','read',
     '-e',observers[0],'-e',provider,'-e',extension,'-e',observers[1],'--provider','context-broker-e2e','--model','fake'];
@@ -179,9 +189,10 @@ async function rpcCase(name, f) {
       assert.equal((await f.calls()).some(row => ['prepare','read','export'].includes(row.command)), false);
     } else if (name === 'rpc-selection-failure') {
       await f.change({ holdList: false, failBody: 'ACCESS_DENIED' });
-      const outcome = await rpc.prompt('/skill:notion-ui-alpha SC09_SELECTED_DENIED');
+      const outcome = await rpc.prompt('/skill:notion-ui-alpha SC09_SELECTED_DENIED').then(value => ({ value }), error => ({ error: error.message }));
       assert.equal((await f.capture()).length, 0, 'A failed exact native selection must not start the provider');
       assert.ok((await f.calls()).some(row => row.event === 'failure' && row.code === 'ACCESS_DENIED' && row.command === 'prepare'));
+      assert.ok(rpc.frames.some(frame => JSON.stringify(frame).includes('ACCESS_DENIED')), 'The source failure must remain accurate at the host boundary');
       result.outcome = outcome;
       await rpc.prompt('SC09_ORDINARY_AFTER_SELECTED_FAILURE');
       assert.equal((await f.capture()).length, 1);
@@ -198,6 +209,26 @@ async function rpcCase(name, f) {
       assert.equal((await f.capture()).length, 1);
       assert.equal(bodyCount((await f.capture())[0]), 0);
       if (name === 'rpc-new-session') { await rpc.prompt('/skill:notion-ui-alpha SC09_NEW_SESSION_NATIVE'); assert.equal(bodyCount((await f.capture()).at(-1)), 1); }
+    } else if (name === 'rpc-late-response') {
+      await f.change({ holdList: false });
+      await save(f.plan, { holdResponse: true });
+      const pending = rpc.prompt('/skill:notion-ui-alpha SC08_CANCEL_BEFORE_RESPONSE').then(value => ({ value }), error => ({ error: error.message }));
+      const callbackPath = join(f.output, 'provider-callbacks.jsonl');
+      await waitFor('actual provider awaiting response headers', async () => (await rows(callbackPath)).some(row => row.event === 'response-held'));
+      assert.equal((await f.capture()).length, 1);
+      const stopping = rpc.command('abort');
+      await waitFor('real operation signal aborted', async () => (await rows(callbackPath)).some(row => row.event === 'signal-aborted'));
+      await save(f.plan, { holdResponse: false });
+      result.boundary = await stopping; result.oldPrompt = await pending;
+      const state = await rpc.command('get_state');
+      const entries = await rows(state.sessionFile);
+      assert.equal(entries.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-active-sources').length, 0, 'A late response after Stop cannot activate the candidate');
+      assert.equal(entries.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-selected-graph').length, 0, 'Cancelled input acquisition must not commit its graph');
+      await rpc.prompt('SC08_ORDINARY_AFTER_LATE_RESPONSE');
+      assert.equal((await f.capture()).length, 2);
+      assert.equal(bodyCount((await f.capture()).at(-1)), 0);
+      await writeFile(join(f.output, 'session-after-late-response.jsonl'), await readFile(state.sessionFile));
+      result.responseEvents = await rows(callbackPath);
     } else if (name === 'rpc-tool-stop') {
       await save(f.plan, { trigger: 'SC09_MODEL_READ', id: 'sc09-cancelled-read', name: 'read', input: { path: skillRef } });
       const pending = rpc.prompt('SC09_MODEL_READ').then(value => ({ value }), error => ({ error: error.message }));
@@ -270,7 +301,79 @@ async function ptyCase(name, f) {
   return { providerRequests: captures.length, terminalStatus: (await json(join(f.output, 'result.json'))).status, cleanup: await json(join(f.output, 'cleanup.json')) };
 }
 
-const caseNames = ['rpc-pending','rpc-failure-RATE_LIMITED','rpc-failure-NOTION_UNAVAILABLE','rpc-failure-ACCESS_DENIED','rpc-selection-failure','rpc-abort','rpc-new-session','rpc-tool-stop','rpc-eof','pty-pending','pty-stop'];
+async function rpcRecoveryCase(f) {
+  const allFrames = [], allLifecycle = [], observations = [];
+  let rpc;
+  async function boot(session) {
+    rpc = await startRpc({ host: 'pi', cwd: f.base, env: f.env, args: [...f.args, ...(session ? ['--session', session] : [])], waitForState: false, timeoutMs: 30_000 });
+  }
+  async function close() {
+    if (!rpc) return;
+    const current = rpc; rpc = undefined;
+    try { await current.closeInput(); }
+    finally {
+      await current.stop().catch(() => {});
+      allFrames.push(...current.frames); allLifecycle.push(...current.lifecycle);
+      await save(join(f.output, 'rpc.json'), allFrames); await save(join(f.output, 'rpc-lifecycle.json'), allLifecycle);
+    }
+  }
+  try {
+    await boot();
+    await waitFor('held directory', async () => (await f.calls()).some(row => row.event === 'waiting' && row.command === 'list'));
+    await f.change({ holdList: false });
+    await rpc.prompt('/skill:notion-ui-alpha SC08_ACTIVATE_A');
+    assert.equal(bodyCount((await f.capture()).at(-1)), 1, 'First provider request must receive one complete selected body');
+    const state = await rpc.command('get_state'), session = state.sessionFile;
+    assert.ok(isAbsolute(session ?? ''), 'Pi must expose the real persisted session file');
+    await rpc.prompt('SC08_ORDINARY_A');
+    assert.equal(bodyCount((await f.capture()).at(-1)), 1);
+    await close();
+    const original = await rows(session), receipts = original.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-active-sources');
+    assert.equal(receipts.length, 1, 'Only the accepted full delivery may create active state');
+    assert.equal(receipts[0].data.sources.length, 1);
+    const fixed = receipts[0].data.sources[0];
+    assert.equal(fixed.record.kind, 'skill');
+    await writeFile(join(f.output, 'session-before-compaction.jsonl'), await readFile(session));
+    const installed = await resolveHost('pi'), sessionModule = resolve(dirname(installed.identity), '../core/session-manager.js');
+    const { SessionManager } = await import(pathToFileURL(sessionModule).href);
+    const manager = SessionManager.open(session);
+    manager.appendCompaction('Controlled compaction removed the Skill body; the label alone is insufficient.', null, 0);
+    const compacted = manager.buildSessionContext().messages;
+    assert.ok(!JSON.stringify(compacted).includes(canary));
+    assert.equal(manager.getBranch().filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-active-sources').length, 1);
+    await writeFile(join(f.output, 'session-after-compaction.jsonl'), await readFile(session));
+    const preparedBefore = (await f.calls()).filter(row => row.event === 'start' && row.command === 'prepare').length;
+    const readsBefore = (await f.calls()).filter(row => row.event === 'start' && row.command === 'read').length;
+    await f.change({ failList: 'RATE_LIMITED' });
+    await boot(session);
+    await rpc.prompt('SC08_RESTORE_WITHOUT_SELECTION');
+    const restored = (await f.capture()).at(-1);
+    assert.equal(bodyCount(restored), 1, 'An ordinary resumed prompt must restore the active exact body once');
+    assert.ok(!systemText(restored).includes(canary));
+    const calls = (await f.calls()).filter(row => row.event === 'start');
+    const restorePreparations = calls.filter(row => row.command === 'prepare').slice(preparedBefore);
+    assert.equal(restorePreparations.length, 1, 'All active bindings share one fixed-vector restore acquisition');
+    assert.ok(restorePreparations.every(row => row.args.includes('inspect') && row.args.some(arg => String(arg).includes(fixed.snapshotId))), 'Restore must inspect fixed roots; it cannot recompile the latest Required graph');
+    const restoredReads = calls.filter(row => row.command === 'read').slice(readsBefore);
+    assert.ok(restoredReads.length >= 1);
+    assert.ok(restoredReads.every(row => row.args.some(arg => String(arg).includes(fixed.snapshotId))), 'Every restore read must pin the confirmed snapshot');
+    await rpc.prompt('SC08_RESTORED_ORDINARY_AGAIN');
+    assert.equal(bodyCount((await f.capture()).at(-1)), 1);
+    assert.equal((await f.calls()).filter(row => row.event === 'start' && row.command === 'read').length, readsBefore + restoredReads.length, 'A persisted full restore must not be reread each ordinary turn');
+    assert.equal((await f.calls()).filter(row => row.event === 'start' && row.command === 'prepare').length, preparedBefore + restorePreparations.length);
+    await close();
+    const restoredSession = await rows(session);
+    assert.equal(restoredSession.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-active-sources').length, 1);
+    await writeFile(join(f.output, 'session-restored.jsonl'), await readFile(session));
+    observations.push({ sessionModule, sessionModuleSha256: hash(await readFile(sessionModule)), snapshotId: fixed.snapshotId,
+      bodySha256: fixed.bodySha256, bytes: fixed.bytes, prepareBefore: preparedBefore, restoreReads: restoredReads.length,
+      boundary: 'Actual Pi RPC resume after actual installed SessionManager.appendCompaction; controlled compaction, not a real-model summary' });
+    await save(join(f.output, 'recovery.json'), observations);
+    return { status: 'passed', ...observations[0] };
+  } finally { await close(); }
+}
+
+const caseNames = ['rpc-pending','rpc-failure-RATE_LIMITED','rpc-failure-NOTION_UNAVAILABLE','rpc-failure-ACCESS_DENIED','rpc-selection-failure','rpc-abort','rpc-new-session','rpc-tool-stop','rpc-eof','rpc-active-recovery','rpc-late-response','pty-pending','pty-stop'];
 async function retained(directory) {
   const manifest = await json(join(directory, 'manifest.json'));
   for (const item of manifest.cases) {
@@ -318,10 +421,12 @@ async function main(args) {
     const f = await fixture(name, scratch, evidence, extension, { holdList: true, holdBody: false, ...(name.startsWith('rpc-failure-') ? { failList: name.slice('rpc-failure-'.length) } : {}) });
     const item = { name, status: 'running', startedNs: now() }; manifest.cases.push(item); await save(join(evidence, 'manifest.json'), manifest);
     console.log('Running ' + name);
-    try { item.result = name.startsWith('rpc-') ? await rpcCase(name, f) : await ptyCase(name, f); item.status = 'passed'; }
+    try { item.result = name === 'rpc-active-recovery' ? await rpcRecoveryCase(f) : name.startsWith('rpc-') ? await rpcCase(name, f) : await ptyCase(name, f); item.status = 'passed'; }
     catch (error) { item.status = 'failed'; item.error = error.message; item.stack = error.stack; }
     finally {
       try { await f.settleSources(); item.sourcesExited = true; } catch (error) { item.status = 'failed'; item.cleanupError = error.message; }
+      try { await cp(join(f.base, 'sessions'), join(f.output, 'sessions'), { recursive: true, errorOnExist: true, force: false }); }
+      catch (error) { if (error.code !== 'ENOENT') { item.status = 'failed'; item.sessionEvidenceError = error.message; } }
       item.endedNs = now();
       item.sourceCalls = (await f.calls()).filter(row => row.event === 'start').map(({ command, args, pid }) => ({ command, args, pid }));
       await save(join(f.output, 'case-result.json'), item); await save(join(evidence, 'manifest.json'), manifest);

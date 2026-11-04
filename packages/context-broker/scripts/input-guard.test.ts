@@ -50,7 +50,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
     const events = new Map<string, Listener[]>(), tools = new Map<string, NativeReadDefinition>();
     const requests: Array<ReturnType<typeof Promise.withResolvers<DiscoveryResult<SkillRecord>>>> = [];
     const published: SkillRecord[][] = [], notices: string[] = [], loads: SkillRecord[] = [];
-    let session = "startup-session", aborts = 0, entry: ActivePreparation | undefined, loaded = false;
+    let session = "startup-session", aborts = 0, entry: ActivePreparation | undefined, loaded = false, operation: AbortController | undefined;
     let load = async (selected: SkillRecord): Promise<SkillRecord> => ({ ...selected, body, snapshotId: "startup-v1" });
     const api: ExtensionAPI = {
       pi: {},
@@ -59,7 +59,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
     };
     const ctx: ExtensionContext = {
       mode: "rpc", hasUI: false, cwd: root, sessionManager: { getSessionId: () => session, getEntries: () => [] },
-      ui: { notify: text => notices.push(text) }, abort: () => { aborts++; },
+      ui: { notify: text => notices.push(text) }, abort: () => { aborts++; operation?.abort(); },
     };
     const adapter = kind === "pi" ? createPiHostAdapter(api) : createOmpHostAdapter(api);
     if (kind === "omp") adapter.registerCatalog = async () => false;
@@ -72,6 +72,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       preflightPrompt: async (text, context, signal) => {
         if (parseInvocations(text, rules).some(request => request.query === "startup@fixture")) await host.prepare(record, context, signal);
       },
+      buildPreparedPrompt: async (_text, _ctx, _signal, prepared) => ({ customType: "context-broker", content: prepared.map(record => record.body).join("\n"), display: false }),
       isLoaded: () => loaded,
       sessionSnapshot: () => loaded ? "startup-v1" : undefined,
       projectContext: messages => messages,
@@ -82,8 +83,18 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       return results;
     };
     const search = (signal?: AbortSignal) => tools.get("skill_search")!.execute("startup-search", { query: "startup" }, signal, undefined, ctx);
+    const begin = async (text: string) => {
+      const [result] = await emit("input", { source: "rpc", text });
+      const submitted = result && object(result).action === "transform" ? textOf(result) : text;
+      await emit("before_agent_start", { prompt: submitted, systemPrompt: "base" });
+      operation = new AbortController(); ctx.signal = operation.signal;
+      await emit("agent_start");
+      return { result, submitted, project: () => emit("context", { messages: [{ role: "user", content: submitted }] }) };
+    };
     return {
-      installed, emit, requests, published, notices, loads, search, adapter, ctx,
+      installed, emit, requests, published, notices, loads, search, adapter, ctx, begin,
+      stop: () => operation?.abort(),
+      async end() { await emit("agent_end"); ctx.signal = undefined; operation = undefined; },
       entry: () => entry, aborts: () => aborts, host: () => host,
       setLoad: (next: typeof load) => { load = next; }, setLoaded: () => { loaded = true; },
       move: () => { session = "replacement-session"; },
@@ -117,25 +128,25 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
     const f = fixture();
     try {
       await f.installed;
+      const accepted = await bounded(f.begin(text), "Explicit input and before_agent_start must not wait for metadata");
       let finished = false;
-      const input = f.emit("input", { source: "rpc", text }).then(value => { finished = true; return value; });
+      const context = accepted.project().then(value => { finished = true; return value; });
       await turn();
-      assert.equal(finished, false, "An explicit selection waits for its directory");
+      assert.equal(finished, false, "Explicit acquisition waits inside the cancellable context boundary");
       assert.deepEqual(f.loads, []);
       assert.deepEqual(await f.emit("input", { source: "rpc", text }), [{ action: "handled" }], "A quick second Enter cannot acquire a second submission");
       f.resolve();
-      const [result] = await bounded(input, "Selected input must finish after metadata");
+      const [projection] = await bounded(context, "Selected context must finish after metadata");
       assert.equal(f.loads.length, 1);
       assert.equal(f.loads[0]?.id, record.id);
-      const submitted = result && object(result).action === "transform" ? textOf(result) : text;
-      if (text.startsWith("/skill:")) assert.match(submitted, /STARTUP_SELECTED_BODY_V1[\s\S]*task/);
-      await f.emit("before_agent_start", { prompt: submitted, systemPrompt: "base" });
+      const submitted = accepted.submitted;
+      if (text.startsWith("/skill:")) assert.equal(submitted, "\n" + text, "The original native input is neutralized without loading a body");
+      assert.equal(JSON.stringify(projection).split(body).length - 1, 1, "The first provider context has the complete body once");
       await f.host().withPreparedPrompt(submitted, f.ctx, async (_signal, _native, original, prepared) => {
         assert.equal(original, text);
         assert.deepEqual(prepared?.map(value => [value.id, value.snapshotId]), [[record.id, "startup-v1"]]);
       });
-      await f.emit("agent_start");
-      await f.emit("agent_end");
+      await f.end();
       f.setLoaded();
       const refreshing = f.host().refresh(f.ctx);
       assert.deepEqual(await bounded(f.emit("input", { source: "rpc", text: "continue with the active rules" }), "Active rules do not make ordinary input wait for a refresh"), [{ action: "continue" }]);
@@ -157,14 +168,16 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       const [before] = await bounded(f.emit("before_agent_start", { prompt: "ordinary after failure", systemPrompt: "base" }), "Failed discovery must not block provider setup");
       assert.match(String(object(before).systemPrompt), /status="unavailable"/);
       for (const text of ["$startup@fixture task", "/skill:fixture-startup task"]) {
-        assert.deepEqual(await f.emit("input", { source: "rpc", text }), [{ action: "handled" }]);
-        assert.match(f.notices.at(-1)!, new RegExp(code));
+        const accepted = await bounded(f.begin(text), "Failed metadata cannot block input acceptance");
+        await assert.rejects(accepted.project(), new RegExp(code));
+        assert.equal(f.ctx.signal?.aborted, true, "An accurate acquisition failure must abort before provider dispatch");
+        await f.end();
       }
       const [read] = await f.emit("tool_call", { toolName: "read", input: { path: record.ref } });
       assert.equal(object(read).block, true);
       assert.match(String(object(read).reason), new RegExp(code));
       assert.deepEqual(f.loads, []);
-      assert.equal(f.aborts(), 0);
+      assert.equal(f.aborts(), 2, "Both failed selected operations were stopped at context");
     } finally { await f.close(); }
   }
   {
@@ -174,13 +187,14 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       f.resolve();
       await f.search();
       const refreshing = f.host().refresh(f.ctx);
-      const input = f.emit("input", { source: "rpc", text: "/skill:fixture-startup accepted identity" });
+      const accepted = await f.begin("/skill:fixture-startup accepted identity");
+      const context = accepted.project();
       await turn();
       assert.deepEqual(f.loads, []);
       f.resolve(1, [{ ...record, id: "22222222-2222-4222-8222-222222222222", ref: "skill://22222222-2222-4222-8222-222222222222/SKILL.md" }]);
       await refreshing;
-      const [result] = await input;
-      assert.match(textOf(result), /accepted identity/);
+      await context;
+      assert.match(accepted.submitted, /accepted identity/);
       assert.deepEqual(f.loads.map(value => value.id), [record.id], "A late same-name record cannot replace the identity selected before discovery finished");
     } finally { await f.close(); }
   }
@@ -217,11 +231,13 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
     const f = fixture();
     try {
       await f.installed;
-      const input = f.emit("input", { source: "rpc", text: "/skill:fixture-startup cancelled" });
+      const accepted = await f.begin("/skill:fixture-startup cancelled");
+      const context = accepted.project();
+      const settled = assert.rejects(context, /cancelled/i);
       await turn();
-      if (boundary === "cancel") f.entry()!.controller.abort();
+      if (boundary === "cancel") f.stop();
       else { f.move(); await f.emit(boundary); }
-      assert.deepEqual(await bounded(input, "Cancellation must settle without waiting for metadata"), [{ action: "handled" }]);
+      await bounded(settled, "Cancellation must settle without waiting for metadata");
       f.resolve(0);
       await turn();
       if (boundary !== "cancel") assert.deepEqual(f.published, [], "An old session cannot publish late metadata");
@@ -266,8 +282,9 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       const search = await f.search();
       assert.deepEqual(object(search.details).failures, [{ source: "fixture", code: "ACCESS_DENIED" }]);
       assert.deepEqual(await f.emit("input", { source: "rpc", text: "ordinary with a failed source" }), [{ action: "continue" }]);
-      assert.deepEqual(await f.emit("input", { source: "rpc", text: "/skill:fixture-startup forbidden" }), [{ action: "handled" }]);
-      assert.match(f.notices.at(-1)!, /ACCESS_DENIED/);
+      const accepted = await f.begin("/skill:fixture-startup forbidden");
+      await assert.rejects(accepted.project(), /ACCESS_DENIED/);
+      assert.equal(f.ctx.signal?.aborted, true);
       assert.deepEqual(f.loads, [], "A known candidate cannot bypass current source permission failure");
     } finally { await f.close(); }
   }

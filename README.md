@@ -30,7 +30,7 @@ Use `$name` or an alias to select a record. Keyword rules can load Skills or exp
 
 ## Content lifecycle
 
-Every CLI catalog exposes `records` with required `id/kind/locator/name/alias/description/default_context/entrypoint/ref`. The broker rejects unknown kinds, malformed locators and legacy `skills/skill` responses. Read and export share `record/entrypoint/scope/snapshot_id/version_id/ref`; export is pinned to the selected read snapshot and checked against portable manifest v2 and the complete inventory. Entry files are `SKILL.md`, `ROUTER.md` and `PROMPT.md`.
+Every CLI catalog exposes `records` with required `id/kind/locator/name/alias/description/default_context/entrypoint/ref`. The broker rejects unknown kinds, malformed locators and legacy `skills/skill` responses. Selected consumption binds the complete main body and file manifest to one source, scope, record and immutable snapshot. Legacy complete exports also verify portable manifest v2 and every file. Entry files are `SKILL.md`, `ROUTER.md` and `PROMPT.md`.
 
 Select a Prompt explicitly with `$alias@notion`. Each submission owns a new invocation, session generation and prepared snapshot set; preflight and dispatch reuse that exact snapshot. Repeating the same Prompt on the next submission appends its full requirements again at user-task level, preserving original text and images. Prompt never enters native Skills, default discovery, background preparation, keyword activation or system prompts. Stop, timeout and session changes invalidate pending dispatch. Completion acceptance changes only the draft; all hosts and detached completion share `identity/kind/source/ref` and existing UTF-16 edit ranges in protocol v1.
 
@@ -130,11 +130,13 @@ Then submit:
 $design-review review this API boundary
 ```
 
-Enter starts preparation immediately and locks submission while leaving the draft editable. The native composer shows running and **Stop**; **Stop** or Escape cancels preparation. Enter during preparation does not submit the edited draft. Successful preparation sends the original prompt, images, and complete selected Skill body once in the first provider request. Blocking activation errors, timeout, or cancellation send no provider request; a session switch also prevents late dispatch.
+Enter reserves the submission while leaving the draft editable. The native composer shows running and **Stop**; **Stop** or Escape cancels preparation. Enter during preparation does not submit the edited draft. In Pi, selected content is prepared in the cancellable `context` stage, after the host creates the agent operation. RPC `abort` also cancels that work. Successful preparation includes the original prompt, images, and complete selected Skill bodies in the first provider request. Preparation failure or cancellation prevents that request; a session switch also prevents late dispatch.
+
+Pi confirms a selected Skill as active when `after_provider_response` receives 2xx response headers and the complete body matches the request's fixed selection. This confirms request acceptance, not completion of the model's response. Cached bytes and a ready preparation result do not establish active state.
 
 Unknown simple `$name` and `$name@namespace`, amounts and paths such as `$bunfs/root/chunks/cli-nxfh2cp0.js` remain ordinary text without a failure notification. A previously accepted choice or full identity token that is unavailable produces explicit user/model **not loaded** feedback. Other valid Skill/Prompt/Router references, original text and images still proceed once. Ambiguity and actual selected-record permission, network, catalog or integrity errors block activation; no other source is selected silently.
 
-The next model request includes the Skill content. Submitting the same record through `$` or OMP native `/skill:` reuses the body while it remains in the active context. A rewind or compaction that removes the body allows it to load again; deduplication does not remove existing context from subsequent requests.
+The next model request includes the Skill content. Submitting the same record through `$` or OMP native `/skill:` reuses the body while it remains in the active context. Pi restores missing confirmed-active bodies from the branch's exact snapshots before the next request, including ordinary follow-ups after compaction or resume. A branch without that confirmation does not inherit activation. Deduplication does not remove existing context from subsequent requests.
 
 OMP, including Tern-hosted OMP, treats a complete Skill body in the active context as already read. Dollar injection identifies the invocation, native source Skill name and resource directory, so the model can use the body directly and read additional resources only when needed. Directory paths retain `pathMode` redaction. See the [host consumption contract](./packages/context-broker/docs/reference.md#host-discovery-and-selected-activation).
 
@@ -152,6 +154,10 @@ sources:
     activation: {maxAge: 5m, offline: false}
     prefetch: false
 ```
+
+In this checkout, Pi uses the bundled in-process `ntn-skills` SDK when `source.command` is omitted. One `consume` call prepares the selected Skill/Router graph for each source; it does not spawn `prepare` followed by one `read` per node. A requested resource uses SDK `readSkill` with its fixed File reference. Discovery and diagnostics still use the packaged CLI. An explicit custom command, OMP, Prompt loading and configured prefetch retain their CLI paths. A missing or incompatible SDK fails explicitly without a CLI fallback.
+
+Pi exposes session references through `skill_search`, `skill_prepare` and native `read`: `sr:C` identifies a catalog candidate, `sr:S` a fixed selected main, and `sr:R` a resource belonging to that selection. Copy the returned reference unchanged. These references belong to the current session branch and still require source authorization and identity checks. See the [Skill consumption runtime](./packages/context-broker/docs/skill-consumption-runtime.md) for preparation, delivery and restoration boundaries.
 
 Keep credentials out of this config. An optional `default_view_id` on each Notion source fixes its default View; omit it to use the first View in API order. An invalid configured ID is reported, not replaced; a verified empty View list means no default Notion entries. OMP keeps its composer available while discovery runs; the first user submission waits for the selected metadata before the model request. At `before_agent_start`, the Broker replaces its own directory with current metadata, preserving local Skills and already loaded bodies. A checked page outside the View is not advertised; an unchecked page inside it is. Native reads and `$` activate only the selected record. Detached completion stays full-library and metadata-only. Code or configuration changes require a host restart; a session View switch does not.
 
@@ -198,6 +204,7 @@ See the [Tern package guide](./packages/tern-context-broker/README.md) for confi
 
 - [Documentation index](./packages/context-broker/docs/README.md): bilingual contract, examples and verification routes.
 - [Broker reference](./packages/context-broker/docs/reference.md): sources, host Skill discovery/read, canonical tokens, snapshots, Skill precedence, Routers, configuration, rules, payloads and completion CLI.
+- [Skill consumption runtime](./packages/context-broker/docs/skill-consumption-runtime.md): Pi SDK transport, session references, cancellable preparation, confirmed active instructions and fixed-snapshot restoration.
 - [Tern package guide](./packages/tern-context-broker/README.md): manual search, profiles, draft safety and release installation and local development.
 - [Configuration examples](./packages/context-broker/examples/config.example.yml) and [catalog example](./packages/context-broker/examples/discovery-catalog.example.yaml).
 - [Broker verification Skill](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-context-broker/SKILL.md) and [Notion integration verification Skill](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/SKILL.md): checkout procedures and feature maps. The [daily installation and native menu map](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/daily-installation-ui.md) separately covers actual installations, slash menus, live Notion and model consumption. CLI consumption verification lives in `.cursor/skills/verify-ntn-skills/SKILL.md` in the [CLI repository](https://github.com/yoyooyooo/notion-skills-cli). These routes do not imply completed acceptance.
