@@ -196,7 +196,13 @@ Source CLI 命令不设总时限。每次网络尝试独立计时；分页、重
 
 来源失败保留脱敏的 source/code/message。认证、网络和响应格式失败仍使该来源不可用；合法的部分目录则保留精确记录，附带非阻断的 `CATALOG_INCOMPLETE` 提示，并使用页面限定 token，不能据此证明无结果或名字唯一。默认 View 失败时，默认目录为空且显示修复方法，完整目录中的精确显式选择仍可用。实际正文交付仍检查选中记录的权限和快照完整性。本地 Skill 和普通聊天继续工作，不把失效的显式 View 偷换为其他 View 或全库。
 
-OMP 查询目录时不阻塞编辑器；首次普通提交会在调用 provider 前等待当前 View。Pi 在启动阶段准备元数据。每轮 `before_agent_start` 生成一份 `<ntn-skills-view-catalog>`，按精确路径移除 Broker 自己的旧目录项，保留其他本地条目和会话正文。新建会话、列举或切换 View 均不自行调用模型。所选 View 的快照可独立后台准备，不构成激活。完整目录和 View 查询各自保留覆盖范围，新鲜度或某个页面可读都不能补成完整覆盖。
+Pi 注册扩展和编辑器后在后台发现元数据。普通输入和无关的原生文件读取不等待冷目录、慢请求或发现失败。系统提示明确标记目录仍在等待或暂不可用，并提供 `skill_search` 入口；pending 不表示目录为空。后台目录请求仍会发生，需单独计入发现成本。显式 `$`、精确 `/skill:` 输入、`skill_search`、`skill_prepare` 和选中 Skill 的读取继续等待所需目录，并检查权限、身份和固定快照。选择失败阻断部分指令派发，已替换会话的旧准备不能迟到发布。普通续接保留已经 active 的指令及其选中快照。
+
+Pi 1.4 RPC 有一项已复现的限制：input preflight 阶段尚无 active-run signal，`abort` 可能返回 success，而等待 metadata 的精确选择随后仍调用 provider。交互 Escape/Stop、模型原生 read 取消和切换会话各有独立通过证据，不能替代这项 RPC 取消验收。[AH-624 因此仍未关闭](skill-consumption-startup-checkpoint.md)。
+
+Pi 1.4 只在启动或 reload 时通过 `resources_discover` 收集扩展资源路径，没有提供目录晚到后刷新原生 Skill 菜单的扩展 API。Broker 将晚到元数据放入当前请求的 `<ntn-skills-view-catalog>`，精确 `/skill:` 输入仍经过准备门控。`$` 补全是独立入口，不能证明原生菜单已经刷新。Broker 不为更新菜单自动 reload 当前会话。
+
+OMP 保留原行为：查询目录时不阻塞编辑器，首次普通提交会在调用 provider 前等待当前 View。每轮 `before_agent_start` 生成一份 `<ntn-skills-view-catalog>`，按精确路径移除 Broker 自己的旧目录项，保留其他本地条目和会话正文。新建会话、列举或切换 View 均不自行调用模型。默认零预取预算不会在注册或切换目录时准备正文；显式预算可以在后台准备所选 View 的有限子集，不构成选择或激活。完整目录和 View 查询各自保留覆盖范围，新鲜度或某个页面可读都不能补成完整覆盖。
 
 Notion 元数据 index 持久保存在 `cacheDir`，按 `ctl cache identity [--database SELECTOR]` 返回的凭据与远端目录身份共用。Pi/OMP、不同项目、命令写法、source ID/namespace、activation 策略和请求超时不会为同一远端目录另建分区；CLI 在本地将等价 database alias、ID、URL 解析为同一选择。不同凭据或远端查询范围继续隔离。`cacheDir` 显式选择存储位置，默认全局共用；显式相对路径仍按 cwd 解析。command 不支持 identity 能力时沿正常发现路径读取。新进程按原始 `validated_at` 和当前 discovery 策略重新计算年龄，不重置 TTL，也不沿用另一消费端策略算出的 stale 标志。新鲜目录沿用 CLI catalog TTL，默认 60 秒；过期目录先显示，同时只运行一次后台刷新。支持 partial 回调的菜单按 identity 保留位置，新增候选追加，消失候选禁用，提示行不能改草稿。OMP 强制文件补全保留当前候选，下一次编辑器请求采用刷新结果。旧请求取消后立即结束。暂时性刷新失败保留上一份目录、显示原因，5 秒内不重复请求；认证、权限或 scope 失败撤下旧 source 候选。`discovery.offline` 不访问网络。目录刷新不读取正文，选中激活仍校验 scope 与固定快照；`/context-broker refresh` 更新同一份共享目录观察，已加载会话保留其选中快照。
 

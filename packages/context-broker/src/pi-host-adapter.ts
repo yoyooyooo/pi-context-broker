@@ -7,13 +7,25 @@ const escapeText = (value: string) => value.replaceAll("&", "&amp;").replaceAll(
 
 export function createPiHostAdapter(api: ExtensionAPI): HostCapabilities {
   let records: SkillRecord[] = [];
-  api.on("resources_discover", () => ({ skillPaths: records.map(record => record.metadataIndexPath ?? record.path) }));
+  let discoveredPaths: string[] | undefined;
+  api.on("resources_discover", () => {
+    discoveredPaths = records.map(record => record.metadataIndexPath ?? record.path);
+    return { skillPaths: discoveredPaths };
+  });
   return {
     paths: { host: "pi" },
     submission: { mode: "transform", receipt: "input-digest" },
+    metadataDiscovery: "deferred",
     handledInput: { action: "handled" }, continuedInput: { action: "continue" },
     transformInput(text, images) { return { action: "transform", text, images }; },
-    async registerCatalog(next) { records = next.filter(record => record.kind === undefined || record.kind === "skill"); return true; },
+    async registerCatalog(next, signal) {
+      signal?.throwIfAborted();
+      records = next.filter(record => record.kind === undefined || record.kind === "skill");
+      const paths = records.map(record => record.metadataIndexPath ?? record.path);
+      // Pi 1.4 collects these paths only at startup/reload. Late metadata is
+      // available through the broker prompt/read/input gates, not its native menu.
+      return discoveredPaths === undefined || paths.length === discoveredPaths.length && paths.every((path, index) => path === discoveredPaths![index]);
+    },
     skillInstructions(_record, { directory, directoryRedacted }) {
       return [
         "<instructions>The complete Skill entry is loaded below. Use it directly for the current task; no further entry read or directory inspection is needed to load it.</instructions>",

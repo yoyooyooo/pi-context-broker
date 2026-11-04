@@ -24,7 +24,7 @@
 | SC06 | AH-623 | 目录、search、自然任务 | view-discovery / model；另补两种目录的真实选路比较 |
 | SC07 | AH-626 | inspect、use、资源 | installed --skill-graph true；另补一次目标消费和批读 |
 | SC08 | AH-627 | 重复、resume、压缩 | integration / lifecycle；另补 active 与当前 visible 的区分 |
-| SC09 | AH-624 | 普通消息、显式选择 | integration / Pi PTY；另补目录未完成时的首次 provider 顺序 |
+| SC09 | AH-624 | 普通消息、显式选择 | [RPC/PTY 检查点](../../../../packages/context-broker/docs/skill-consumption-startup-checkpoint.md)；非阻塞和完整消费通过，input-preflight RPC abort 未通过 |
 | SC10 | AH-625 | SDK、公开 CLI | installed 图入口；另补独立 SDK 与单次返回 |
 | SC11 | AH-628 | 目录、依赖选择 | CLI control / request-engine；另补需求范围与字段字节 |
 | SC12 | AH-629 | 暖、过期、clear | session-cache-recovery；另补五层缓存和权限期限 |

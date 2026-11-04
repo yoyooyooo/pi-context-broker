@@ -167,6 +167,8 @@ export type ExtensionContext = {
   };
   cwd?: string;
   mode?: "tui" | "rpc" | "print" | "json";
+  /** Pi's current agent-operation signal, exposed in event and tool contexts. */
+  signal?: AbortSignal;
   abort?(): void;
   reload?(): Promise<void>;
   getSystemPrompt?(): string | string[];

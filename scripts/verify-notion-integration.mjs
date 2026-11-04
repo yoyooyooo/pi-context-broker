@@ -129,11 +129,22 @@ async function hostRun(host,context) {
  const args=['--no-extensions','--session-dir',sessions,'--tools','read','-e',provider,'-e',extension,'--model','context-broker-e2e/fake',...(host==='omp'?['--no-title','--no-rules']:[])];
  const sourceCallStart=fixture.callsPath?(await rows(fixture.callsPath)).length:0;
  let rpc;const observations=[];try {
+  const waitForCatalog = async capturePath => {
+   if(host!=='pi')return;
+   // These scenarios assert a completed metadata catalog. Pi ordinary input
+   // intentionally does not await startup discovery; use the public refresh
+   // command as an explicit readiness barrier without making a provider call.
+   const before=(await rows(capturePath)).length, frameStart=rpc.frames.length;
+   await rpc.prompt('/context-broker refresh');
+   assert.equal((await rows(capturePath)).length,before,'Metadata readiness must not invoke the provider');
+   assert.ok(rpc.frames.slice(frameStart).some(frame=>frame.type==='extension_ui_request'&&frame.method==='notify'&&frame.message==='context-broker: source metadata refreshed'),'Metadata readiness requires the completed host catalog publication');
+   observations.push({scenario:'explicit catalog readiness before metadata assertions',command:'/context-broker refresh',providerRequests:0});
+  };
   // Metadata-only provider context does not imply cold preparation. Arm the
   // body failure before startup so default-View prefetch cannot win this race.
   let failureReadStart=0;
   if(fixture.setScenario){assert.ok(fixture.callsPath,'Controlled activation failures require a source-call ledger');failureReadStart=(await rows(fixture.callsPath)).length;await fixture.setScenario('denied',{activationOnly:true});}
-  rpc=await startRpc({host,cwd:base,env,args});await rpc.prompt('Describe available ledger skill names without opening a file.');let captures=await rows(providerFile);assert.ok(captures.length);const initial=JSON.stringify(captures[0].context);assert.ok(initial.includes(fixture.alias),'Default host catalog must advertise the remote alias');assert.equal(count(captures[0].context,fixture.marker),0,'Metadata must not contain skill body');
+  rpc=await startRpc({host,cwd:base,env,args});await waitForCatalog(providerFile);await rpc.prompt('Describe available ledger skill names without opening a file.');let captures=await rows(providerFile);assert.ok(captures.length);const initial=JSON.stringify(captures[0].context);assert.ok(initial.includes(fixture.alias),'Default host catalog must advertise the remote alias');assert.equal(count(captures[0].context,fixture.marker),0,'Metadata must not contain skill body');
   const nativeName=(namespace+'-'+fixture.alias).replace(/[^a-z0-9-]/g,'-');
   const selected=nativeEntries(host,captures[0].context).find(skill=>skill.name===nativeName);
   const location=selected?.filePath;assert.ok(location,'Host skill catalog must expose the selected native read entry');observations.push('metadata-only default host catalog');
@@ -196,7 +207,7 @@ async function hostRun(host,context) {
   observations.push('persisted continuation with one selected body');
   if(fixture.setScenario){
    await fixture.setScenario('duplicates');const duplicateBase=join(base,'duplicates');await mkdir(duplicateBase);const duplicateCapture=join(evidence,label+'-duplicates-provider.jsonl');const duplicateEnv={...env,CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE:duplicateCapture};
-   rpc=await startRpc({host,cwd:base,env:duplicateEnv,args:[...args,'--session-dir',duplicateBase]});await rpc.prompt('List available skill names only.');const catalog=(await rows(duplicateCapture))[0].context;
+   rpc=await startRpc({host,cwd:base,env:duplicateEnv,args:[...args,'--session-dir',duplicateBase]});await waitForCatalog(duplicateCapture);await rpc.prompt('List available skill names only.');const catalog=(await rows(duplicateCapture))[0].context;
    const entries=nativeEntries(host,catalog);
    const selectedPages=entries.filter(entry=>entry.name.startsWith(nativeName+'-'));assert.equal(selectedPages.length,2,'Same alias pages must retain two qualified native names');assert.equal(count(catalog,fixture.marker),0);
    const before=(await rows(duplicateCapture)).length;await rpc.prompt(`$${fixture.alias}@${namespace} Apply this skill.`);assert.equal((await rows(duplicateCapture)).length,before,'Ambiguous alias must block provider request');

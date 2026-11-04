@@ -6,8 +6,11 @@ import { join } from "node:path";
 import contextBroker, { configuredRules, parseInvocations, matchDiscoveryRecord } from "../src/index";
 import { installHostSkills, type HostSkills } from "../src/host-skills";
 import { createOmpHostAdapter } from "../src/omp-host-adapter";
+import { createPiHostAdapter } from "../src/pi-host-adapter";
+import { SourceError } from "../src/notion-source";
+import type { ActivePreparation } from "../src/skill-preparation";
 import { softMissRegressions } from "./soft-miss-regressions.test";
-import type { ExtensionAPI, ExtensionContext, SkillRecord, MessageContent, NativeReadDefinition, NativeReadMetadata, NativeReadResult } from "../src/types";
+import type { ExtensionAPI, ExtensionContext, SkillRecord, DiscoveryResult, MessageContent, NativeReadDefinition, NativeReadMetadata, NativeReadResult } from "../src/types";
 import type { HostCapabilities } from "../src/host-adapter";
 
 type Listener = (event: never, ctx: ExtensionContext) => unknown;
@@ -20,6 +23,266 @@ function textOf(value: unknown): string {
   const text = object(value).text;
   assert.equal(typeof text, "string");
   return text as string;
+}
+
+async function pendingMetadataRegressions(root: string): Promise<void> {
+  const path = join(root, "startup-fixed", "SKILL.md");
+  await mkdir(join(root, "startup-fixed"));
+  const body = "STARTUP_SELECTED_BODY_V1";
+  await writeFile(path, body);
+  const record: SkillRecord = {
+    kind: "skill", id: "11111111-1111-4111-8111-111111111111", sourceId: "fixture", source: "notion", sourceScope: "startup-scope",
+    ref: "skill://11111111-1111-4111-8111-111111111111/SKILL.md", entrypoint: "SKILL.md",
+    name: "startup", token: "fixture/startup", path, description: "Startup fixture", aliases: [],
+    normalizedName: "startup", normalizedAliases: [], normalizedDescription: "startup fixture", autoloadEnabled: false, defaultDiscovery: false,
+  };
+  const rules = configuredRules({});
+  const turn = () => new Promise<void>(resolve => setImmediate(resolve));
+  async function bounded<T>(operation: Promise<T>, message: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([operation, new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), 1_000);
+      })]);
+    } finally { clearTimeout(timer); }
+  }
+  function fixture(kind: "pi" | "omp" = "pi") {
+    const events = new Map<string, Listener[]>(), tools = new Map<string, NativeReadDefinition>();
+    const requests: Array<ReturnType<typeof Promise.withResolvers<DiscoveryResult<SkillRecord>>>> = [];
+    const published: SkillRecord[][] = [], notices: string[] = [], loads: SkillRecord[] = [];
+    let session = "startup-session", aborts = 0, entry: ActivePreparation | undefined, loaded = false;
+    let load = async (selected: SkillRecord): Promise<SkillRecord> => ({ ...selected, body, snapshotId: "startup-v1" });
+    const api: ExtensionAPI = {
+      pi: {},
+      on(name, handler) { events.set(name, [...events.get(name) ?? [], handler as unknown as Listener]); },
+      registerTool(tool) { tools.set(tool.name, tool); }, registerCommand() {},
+    };
+    const ctx: ExtensionContext = {
+      mode: "rpc", hasUI: false, cwd: root, sessionManager: { getSessionId: () => session, getEntries: () => [] },
+      ui: { notify: text => notices.push(text) }, abort: () => { aborts++; },
+    };
+    const adapter = kind === "pi" ? createPiHostAdapter(api) : createOmpHostAdapter(api);
+    if (kind === "omp") adapter.registerCatalog = async () => false;
+    let host: HostSkills;
+    const installed = installHostSkills(api, {
+      config: {}, getRecords: () => { const pending = Promise.withResolvers<DiscoveryResult<SkillRecord>>(); requests.push(pending); return pending.promise; },
+      loadRecord: selected => { loads.push(selected); return load(selected); },
+      onMetadata: records => published.push(records), onPreparation: value => { entry = value; },
+      needsPreflightPrompt: text => parseInvocations(text, rules).length > 0,
+      preflightPrompt: async (text, context, signal) => {
+        if (parseInvocations(text, rules).some(request => request.query === "startup@fixture")) await host.prepare(record, context, signal);
+      },
+      isLoaded: () => loaded,
+      sessionSnapshot: () => loaded ? "startup-v1" : undefined,
+      projectContext: messages => messages,
+    }, adapter).then(value => { host = value; return value; });
+    const emit = async (name: string, event: unknown = {}) => {
+      const results = [];
+      for (const handler of events.get(name) ?? []) results.push(await handler(event as never, ctx));
+      return results;
+    };
+    const search = (signal?: AbortSignal) => tools.get("skill_search")!.execute("startup-search", { query: "startup" }, signal, undefined, ctx);
+    return {
+      installed, emit, requests, published, notices, loads, search, adapter, ctx,
+      entry: () => entry, aborts: () => aborts, host: () => host,
+      setLoad: (next: typeof load) => { load = next; }, setLoaded: () => { loaded = true; },
+      move: () => { session = "replacement-session"; },
+      resolve: (index = requests.length - 1, records = [record]) => requests[index]!.resolve({ records, failures: [] }),
+      async close() { await emit("session_shutdown"); for (const pending of requests) pending.resolve({ records: [], failures: [] }); await installed; },
+    };
+  }
+  {
+    const f = fixture();
+    try {
+      await bounded(f.installed, "Pi registration must finish while metadata is unresolved");
+      assert.equal(f.requests.length, 1);
+      assert.deepEqual(await f.emit("resources_discover"), [{ skillPaths: [] }]);
+      for (const text of ["ordinary first turn", "Code: `$startup@fixture`", "```text\n$startup@fixture\n```", "\\$startup@fixture", "Amounts 10 and variable `$HOME`"]) {
+        assert.deepEqual(await bounded(f.emit("input", { source: "rpc", text }), `Ordinary Pi input must not await metadata: ${text}`), [{ action: "continue" }]);
+        const [before] = await bounded(f.emit("before_agent_start", { prompt: text, systemPrompt: "base" }), "Ordinary Pi provider setup must not await metadata");
+        assert.match(String(object(before).systemPrompt), /status="pending"/);
+        assert.match(String(object(before).systemPrompt), /skill_search/);
+      }
+      assert.deepEqual(await bounded(f.emit("tool_call", { toolName: "read", input: { path: join(root, "ordinary.txt") } }), "An unrelated Pi read must not await Skill discovery"), [undefined]);
+      assert.equal(f.requests.length, 1, "Ordinary input does not restart background directory maintenance");
+      assert.deepEqual(f.loads, [], "No ordinary message or literal example reads a Skill body");
+      f.resolve();
+      await f.search();
+      assert.equal(await f.adapter.registerCatalog([record]), false, "Late paths are not a refreshed Pi native catalog");
+      assert.deepEqual(await f.emit("input", { source: "rpc", text: "$missing@unknownsource unchanged" }), [{ action: "continue" }], "An unresolved literal reference retains soft-miss pass-through after discovery");
+      assert.deepEqual(f.loads, []);
+    } finally { await f.close(); }
+  }
+  for (const text of ["$startup@fixture task", "/skill:fixture-startup task"]) {
+    const f = fixture();
+    try {
+      await f.installed;
+      let finished = false;
+      const input = f.emit("input", { source: "rpc", text }).then(value => { finished = true; return value; });
+      await turn();
+      assert.equal(finished, false, "An explicit selection waits for its directory");
+      assert.deepEqual(f.loads, []);
+      assert.deepEqual(await f.emit("input", { source: "rpc", text }), [{ action: "handled" }], "A quick second Enter cannot acquire a second submission");
+      f.resolve();
+      const [result] = await bounded(input, "Selected input must finish after metadata");
+      assert.equal(f.loads.length, 1);
+      assert.equal(f.loads[0]?.id, record.id);
+      const submitted = result && object(result).action === "transform" ? textOf(result) : text;
+      if (text.startsWith("/skill:")) assert.match(submitted, /STARTUP_SELECTED_BODY_V1[\s\S]*task/);
+      await f.emit("before_agent_start", { prompt: submitted, systemPrompt: "base" });
+      await f.host().withPreparedPrompt(submitted, f.ctx, async (_signal, _native, original, prepared) => {
+        assert.equal(original, text);
+        assert.deepEqual(prepared?.map(value => [value.id, value.snapshotId]), [[record.id, "startup-v1"]]);
+      });
+      await f.emit("agent_start");
+      await f.emit("agent_end");
+      f.setLoaded();
+      const refreshing = f.host().refresh(f.ctx);
+      assert.deepEqual(await bounded(f.emit("input", { source: "rpc", text: "continue with the active rules" }), "Active rules do not make ordinary input wait for a refresh"), [{ action: "continue" }]);
+      await bounded(f.emit("before_agent_start", { prompt: "continue with the active rules", systemPrompt: "base" }), "Active ordinary provider setup stays nonblocking");
+      const messages = [{ role: "user" as const, content: body }];
+      assert.deepEqual(await f.emit("context", { messages }), [{ messages }], "Ordinary input preserves already active conversation bodies");
+      assert.equal(f.loads.length, 1);
+      f.resolve();
+      await refreshing;
+    } finally { await f.close(); }
+  }
+  for (const code of ["RATE_LIMITED", "NOTION_UNAVAILABLE", "ACCESS_DENIED"]) {
+    const f = fixture();
+    try {
+      await f.installed;
+      f.requests[0]!.reject(new SourceError(code, "fixture"));
+      await assert.rejects(f.search(), new RegExp(code));
+      assert.deepEqual(await bounded(f.emit("input", { source: "rpc", text: "ordinary after failure" }), "Failed discovery must not block ordinary input"), [{ action: "continue" }]);
+      const [before] = await bounded(f.emit("before_agent_start", { prompt: "ordinary after failure", systemPrompt: "base" }), "Failed discovery must not block provider setup");
+      assert.match(String(object(before).systemPrompt), /status="unavailable"/);
+      for (const text of ["$startup@fixture task", "/skill:fixture-startup task"]) {
+        assert.deepEqual(await f.emit("input", { source: "rpc", text }), [{ action: "handled" }]);
+        assert.match(f.notices.at(-1)!, new RegExp(code));
+      }
+      const [read] = await f.emit("tool_call", { toolName: "read", input: { path: record.ref } });
+      assert.equal(object(read).block, true);
+      assert.match(String(object(read).reason), new RegExp(code));
+      assert.deepEqual(f.loads, []);
+      assert.equal(f.aborts(), 0);
+    } finally { await f.close(); }
+  }
+  {
+    const f = fixture();
+    try {
+      await f.installed;
+      f.resolve();
+      await f.search();
+      const refreshing = f.host().refresh(f.ctx);
+      const input = f.emit("input", { source: "rpc", text: "/skill:fixture-startup accepted identity" });
+      await turn();
+      assert.deepEqual(f.loads, []);
+      f.resolve(1, [{ ...record, id: "22222222-2222-4222-8222-222222222222", ref: "skill://22222222-2222-4222-8222-222222222222/SKILL.md" }]);
+      await refreshing;
+      const [result] = await input;
+      assert.match(textOf(result), /accepted identity/);
+      assert.deepEqual(f.loads.map(value => value.id), [record.id], "A late same-name record cannot replace the identity selected before discovery finished");
+    } finally { await f.close(); }
+  }
+  for (const operation of ["search", "read"] as const) {
+    const f = fixture();
+    try {
+      await f.installed;
+      let finished = false;
+      const pending = (operation === "search" ? f.search() : f.emit("tool_call", { toolName: "read", input: { path: record.ref } }))
+        .then(value => { finished = true; return value; });
+      await turn();
+      assert.equal(finished, false, `${operation} waits for exact authorized metadata`);
+      assert.deepEqual(f.loads, []);
+      f.resolve();
+      const result = await pending;
+      if (operation === "search") assert.equal(object(object(result).details).count, 1);
+      else assert.deepEqual(f.loads.map(value => value.id), [record.id]);
+    } finally { await f.close(); }
+  }
+  {
+    const f = fixture();
+    try {
+      await f.installed;
+      const controller = new AbortController();
+      const pending = f.search(controller.signal);
+      controller.abort();
+      await assert.rejects(bounded(pending, "Cancelled search must not wait for metadata"), /cancelled/i);
+      f.resolve();
+      await f.search();
+      assert.deepEqual(f.loads, [], "A cancelled metadata search cannot acquire a Skill body");
+    } finally { await f.close(); }
+  }
+  for (const boundary of ["cancel", "session_start", "session_shutdown"] as const) {
+    const f = fixture();
+    try {
+      await f.installed;
+      const input = f.emit("input", { source: "rpc", text: "/skill:fixture-startup cancelled" });
+      await turn();
+      if (boundary === "cancel") f.entry()!.controller.abort();
+      else { f.move(); await f.emit(boundary); }
+      assert.deepEqual(await bounded(input, "Cancellation must settle without waiting for metadata"), [{ action: "handled" }]);
+      f.resolve(0);
+      await turn();
+      if (boundary !== "cancel") assert.deepEqual(f.published, [], "An old session cannot publish late metadata");
+      if (boundary === "session_start") {
+        assert.deepEqual(await bounded(f.emit("input", { source: "rpc", text: "new session ordinary" }), "The new session cannot inherit the old wait"), [{ action: "continue" }]);
+        f.resolve(1, [{ ...record, name: "replacement", token: "fixture/replacement" }]);
+        await f.search();
+        assert.equal(f.published.length, 1);
+        assert.equal(f.published[0]?.[0]?.name, "replacement");
+      }
+      assert.deepEqual(f.loads, [], "A cancelled selection cannot load or dispatch after discovery finishes");
+      assert.equal(f.aborts(), 0, "An old input cannot abort a new session or turn");
+    } finally { await f.close(); }
+  }
+  {
+    const f = fixture();
+    try {
+      await f.installed;
+      const controller = new AbortController();
+      f.ctx.signal = controller.signal;
+      const input = { path: record.ref };
+      const pending = f.emit("tool_call", { toolName: "read", toolCallId: "stopped-native-read", input });
+      await turn();
+      controller.abort();
+      const [result] = await bounded(pending, "Pi Stop must settle a selected native read while metadata is unresolved");
+      assert.equal(object(result).block, true);
+      assert.match(String(object(result).reason), /SOURCE_ACTIVATION_CANCELLED/);
+      f.ctx.signal = undefined;
+      f.resolve();
+      await f.search();
+      assert.equal(input.path, record.ref, "Late discovery cannot rewrite a stopped native read");
+      assert.deepEqual(f.loads, [], "Late discovery cannot prepare or publish a stopped read's body");
+      assert.deepEqual(await f.emit("input", { source: "rpc", text: "next ordinary turn" }), [{ action: "continue" }]);
+      assert.equal(f.aborts(), 0);
+    } finally { await f.close(); }
+  }
+  {
+    const f = fixture();
+    try {
+      await f.installed;
+      f.requests[0]!.resolve({ records: [record], failures: [{ sourceId: "fixture", namespace: "fixture", type: "notion", code: "ACCESS_DENIED", message: "Denied fixture" }] });
+      const search = await f.search();
+      assert.deepEqual(object(search.details).failures, [{ source: "fixture", code: "ACCESS_DENIED" }]);
+      assert.deepEqual(await f.emit("input", { source: "rpc", text: "ordinary with a failed source" }), [{ action: "continue" }]);
+      assert.deepEqual(await f.emit("input", { source: "rpc", text: "/skill:fixture-startup forbidden" }), [{ action: "handled" }]);
+      assert.match(f.notices.at(-1)!, /ACCESS_DENIED/);
+      assert.deepEqual(f.loads, [], "A known candidate cannot bypass current source permission failure");
+    } finally { await f.close(); }
+  }
+  {
+    const f = fixture("omp");
+    try {
+      await f.installed;
+      let finished = false;
+      const before = f.emit("before_agent_start", { prompt: "ordinary OMP", systemPrompt: "base" }).then(value => { finished = true; return value; });
+      await turn();
+      assert.equal(finished, false, "OMP retains its existing directory wait");
+      f.resolve();
+      await bounded(before, "OMP still completes after discovery");
+    } finally { await f.close(); }
+  }
 }
 
 async function coldOmpReadRegressions(root: string): Promise<void> {
@@ -197,6 +460,7 @@ async function coldOmpReadRegressions(root: string): Promise<void> {
 const root = await mkdtemp(join(tmpdir(), "broker-input-guard-"));
 const previous = { ...process.env };
 try {
+  await pendingMetadataRegressions(root);
   const rules = configuredRules({});
   for (const text of ["`$missing@unknownsource`", "```text\n$missing@unknownsource\n```", "~~~\n$missing@unknownsource\n~~~", "\\$missing@unknownsource", "prefix$missing@unknownsource", "``a `$missing@unknownsource` b``"]) {
     assert.deepEqual(parseInvocations(text, rules), [], `Literal example must not execute: ${text}`);

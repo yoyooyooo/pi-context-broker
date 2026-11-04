@@ -130,6 +130,7 @@ async function headlessActivation<T>(start: (signal: AbortSignal) => Promise<T>,
 
 export async function installHostSkills(api: ExtensionAPI, options: HostSkillOptions, adapter: HostCapabilities): Promise<HostSkills> {
   const host = api;
+  const deferredPiDiscovery = adapter.paths.host === "pi" && adapter.metadataDiscovery === "deferred";
   let records: SkillRecord[] = [];
   let defaultRouters: SkillRecord[] = [];
   let views: NotionViewState[] = [];
@@ -137,6 +138,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   let metadataGeneration = 0;
   let metadataController = new AbortController();
   let metadataReadiness: Promise<void> = Promise.resolve();
+  let metadataPending = false;
   let lifecycleController = new AbortController();
   let discoveryError: unknown;
   let sourceFailures: SourceFailure[] = [];
@@ -514,12 +516,16 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const match = /^\s*\/skill:([^\s]+)/.exec(invocationText(text));
     return match ? nativeNames.get(match[1]!) : undefined;
   }
-  async function preflight(text: string, ctx: ExtensionContext, signal?: AbortSignal): Promise<void> {
+  function needsPreparation(text: string): boolean {
+    return Boolean(/^\s*\/skill:[^\s]+/.test(text) || options.needsPreflightPrompt?.(text));
+  }
+  async function preflight(text: string, ctx: ExtensionContext, signal?: AbortSignal, selectedNative?: SkillRecord): Promise<void> {
     checkPreparationSignal(signal);
-    await ready(signal);
+    const selection = needsPreparation(text);
+    if (!deferredPiDiscovery || selection) await ready(signal);
     text = invocationText(text);
-    if (discoveryError && /(?:^|\s)(?:\$[^\s]+|\/skill:[^\s]+)/.test(text)) throw discoveryError;
-    const record = nativeRecord(text);
+    if (discoveryError && (deferredPiDiscovery ? selection : /(?:^|\s)(?:\$[^\s]+|\/skill:[^\s]+)/.test(text))) throw discoveryError;
+    const record = selectedNative ?? nativeRecord(text);
     if (record) await prepare(record, ctx, signal);
     await options.preflightPrompt?.(text, ctx, signal);
     checkPreparationSignal(signal);
@@ -599,6 +605,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     metadataController.abort();
     metadataController = new AbortController();
     const metadataSignal = metadataController.signal;
+    metadataPending = true;
     generation++;
     lifecycleController.abort();
     lifecycleController = new AbortController();
@@ -607,7 +614,6 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     try {
       const result = await options.getRecords(ctx, metadataSignal);
       if (metadataGeneration !== selectedGeneration) return;
-      sourceFailures = result.failures;
       // Shared Notion metadata indexes stay immutable; published native views belong to this host process.
       const next = result.records.filter(record => record.sourceId !== undefined).map(record => record.source === "notion" ? { ...record, metadataIndexPath: undefined } : record);
       const missing = next.filter(record => (record.kind === undefined || record.kind === "skill") && !record.metadataIndexPath && (record.source !== "notion" || record.defaultDiscovery === true));
@@ -636,6 +642,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       await previous;
       try {
         if (metadataGeneration !== selectedGeneration) return;
+        sourceFailures = result.failures;
         views = result.views ?? [];
         defaultRouters = next.filter(record => record.kind === "router" && record.defaultDiscovery === true);
         records = next.filter(record => (record.kind === undefined || record.kind === "skill") && (!options.config.sources?.some(source => source.id === record.sourceId && source.type === "notion") || record.defaultDiscovery === true));
@@ -662,6 +669,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         // Reconcile the prompt at before_agent_start; View switches do not reload the session.
       } finally { release(); }
     } catch (error) { if (metadataGeneration === selectedGeneration) { discoveryError = error; if (ctx) notify(ctx, error); } }
+    finally { if (metadataGeneration === selectedGeneration) metadataPending = false; }
   }
 
   function refresh(ctx?: ExtensionContext, announce = true): Promise<void> {
@@ -723,8 +731,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     await adapter.installEditor(ctx, gate.bindEditor);
     const ready = refresh(ctx, false);
     // Session navigation must remain usable while metadata is in flight.
-    // Pi's initial factory discovery stays synchronous; every actual submission
-    // still awaits metadataReadiness before publishing its selected directory.
+    // Pi ordinary submissions use the available observation without joining this
+    // work. Explicit selections still await metadataReadiness before preparation.
     void ready.catch(() => undefined);
   });
   host.on("session_shutdown", () => {
@@ -770,19 +778,21 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     // Only the host input boundary grants invocation authority. Extension messages
     // and before-agent bootstrap text are context unless they match our handoff.
     if (event.source !== "interactive" && event.source !== "rpc") return adapter.continuedInput;
-    const needsPreparation = Boolean(/^\s*\/skill:[^\s]+/.test(text) || options.needsPreflightPrompt?.(text));
+    // A known native choice belongs to the observation visible at acceptance.
+    // A directory arriving during preparation must not retarget its name.
+    const selectedNative = deferredPiDiscovery ? nativeRecord(text) : undefined;
     // Synchronous ownership closes the second-Enter gap before this hook's first await.
-    const entry = needsPreparation ? beginPreparation(event, ctx) : undefined;
+    const entry = needsPreparation(text) ? beginPreparation(event, ctx) : undefined;
     const submissionSignal = entry?.controller.signal ?? lifecycleController.signal;
     const submissionGeneration = generation;
     try {
       // Cold preparation belongs to the registered command, outside the input hook budget.
       if (entry && adapter.submission.mode === "command") return adapter.transformInput(`/context-broker-submit ${entry.id}`);
-      await preflight(text, ctx, submissionSignal);
+      await preflight(text, ctx, submissionSignal, selectedNative);
       checkPreparationSignal(submissionSignal);
       if (submissionGeneration !== generation) throw preparationCancelled();
       if (entry) gate.assertCurrent(entry, ctx);
-      const record = adapter.submission.mode === "transform" && text.startsWith("/skill:") ? nativeRecord(text) : undefined;
+      const record = adapter.submission.mode === "transform" && text.startsWith("/skill:") ? selectedNative ?? nativeRecord(text) : undefined;
       if (record) {
         const prepared = await prepare(record, ctx, entry?.controller.signal);
         const snapshot = prepared.status === "ready" ? prepared.record : undefined;
@@ -833,7 +843,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     // before_agent_start has no input provenance; only a matching current receipt
     // may activate content. Delegated/bootstrap text is passed through unchanged.
     const beforeSignal = lifecycleController.signal, beforeGeneration = generation;
-    try { await ready(beforeSignal); }
+    try {
+      if (!deferredPiDiscovery) await ready(beforeSignal);
+      checkPreparationSignal(beforeSignal);
+    }
     catch (error) { if (!beforeSignal.aborted && beforeGeneration === generation) { ctx.abort?.(); notify(ctx, error); } return undefined; }
     const receipt = handoff;
     const matches = receipt?.prompts.includes(event.prompt ?? "");
@@ -862,7 +875,14 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       details: { nativePromptSha256: promptHash, records: [sourceDeliveryReceipt(native, event.prompt ?? "")].filter(Boolean) },
     } : undefined;
     if (native && adapter.submission.receipt === "input-digest") nativeInputs.delete(promptHash);
-    const systemPrompt = viewSystemPrompt(event.systemPrompt, records, defaultRouters, new Set(readRecords.keys()), views, ctx.cwd);
+    let systemPrompt = viewSystemPrompt(event.systemPrompt, records, defaultRouters, new Set(readRecords.keys()), views, ctx.cwd);
+    if (deferredPiDiscovery) {
+      systemPrompt = systemPrompt.replace(/\n*<ntn-skills-discovery\b[^>]*>[\s\S]*?<\/ntn-skills-discovery>/g, "");
+      if (metadataPending || discoveryError || sourceFailures.some(failure => failure.blocking !== false)) {
+        const state = metadataPending ? "pending" : "unavailable";
+        systemPrompt += `\n\n<ntn-skills-discovery status="${state}">Skill metadata discovery is ${state}; this does not mean the directory is empty. Use skill_search when the task needs Skill metadata. It waits for the current directory and reports source failures. Visible entries may come from the previous observation; explicit selections still require preparation. Previously loaded instructions keep their selected snapshots.</ntn-skills-discovery>`;
+      }
+    }
     return { ...(message ? { message } : {}), systemPrompt: adapter.systemPrompt?.(systemPrompt) ?? systemPrompt };
   });
   async function exactRecord(reference: ExactNativeReference, ctx: ExtensionContext, signal: AbortSignal): Promise<SkillRecord> {
@@ -975,14 +995,16 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   async function prepareRead(event: ToolCallEvent, ctx: ExtensionContext, signal: AbortSignal, readPhase: "hook" | "execute"): Promise<ToolCallResult | undefined> {
     if (event.toolName !== "read" || !event.input || typeof event.input.path !== "string") return undefined;
     const requested = event.input.path;
-    try { await ready(signal); }
+    const explicit = requested.startsWith("skill://");
+    // A plain file read does not acquire a remote Skill dependency. Published
+    // broker locations are matched below and activate() retains their gate.
+    try { if (!deferredPiDiscovery || explicit) await ready(signal); }
     catch (error) { return { block: true, reason: failure(error) }; }
     let selected: SkillRecord | undefined;
     let suffix = "";
     let reference = "";
     let rootRelative = false;
     let exactReference: ExactNativeReference | undefined;
-    const explicit = requested.startsWith("skill://");
     if (explicit && discoveryError) return { block: true, reason: failure(discoveryError) };
     if (explicit) {
       try {
@@ -1083,8 +1105,11 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   });
   host.on("tool_call", async (event, ctx) => {
     if (event.toolName === "read" && readRunsInTool?.()) return undefined;
-    const prepared = await prepareRead(event, ctx, lifecycleController.signal, "hook");
+    const operationSignal = deferredPiDiscovery && event.toolName === "read" ? ctx.signal : undefined;
+    const readSignal = operationSignal ? AbortSignal.any([operationSignal, lifecycleController.signal]) : lifecycleController.signal;
+    const prepared = await prepareRead(event, ctx, readSignal, "hook");
     if (prepared && "block" in prepared) return prepared;
+    if (event.toolName === "read" && readSignal.aborted) return { block: true, reason: failure(preparationCancelled()) };
     if (prepared) Object.assign(event.input, prepared.input);
     // Only this broker's successful whole-entry read can create a persisted
     // loaded receipt. Resource reads, user text and nested tool activity cannot.
