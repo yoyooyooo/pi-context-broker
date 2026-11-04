@@ -19,13 +19,13 @@
 | SC01 | AH-618 | 验证规程 | 本页完整流程；反例及清理后证据 |
 | SC02 | AH-619 | 全部消费入口 | [只观察的成本规程](skill-consumption-cost.md)；真实模型、source 初态与单资源基线，旧 graph observer 不作为纯观察器 |
 | SC03 | AH-620 | CLI、SDK、Pi | CLI core 的 version 1 consume 合同与等价证明已提交；独立 SDK 打包和 Broker 迁移继续归 SC10 |
-| SC04 | AH-621 | 短引用、原生 read | integration / graph；另补分支固定短引用与错 scope |
+| SC04 | AH-621 | 短引用、原生 read | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：C/S/R 分支表、真实 SessionManager 13 项与 5 次独立 resume、实际 Pi search/prepare/read；74 候选批量投影经同目录 13 点真实对照，跨机重新授权和正式模型 Gate 仍分列 |
 | SC05 | AH-622 | provider 输入 | graph observer；另补已冻结编译器和源/投影双 hash |
 | SC06 | AH-623 | 目录、search、自然任务 | view-discovery / model；另补两种目录的真实选路比较 |
-| SC07 | AH-626 | inspect、use、资源 | installed --skill-graph true；另补一次目标消费和批读 |
-| SC08 | AH-627 | 重复、resume、压缩 | integration / lifecycle；另补 active 与当前 visible 的区分 |
-| SC09 | AH-624 | 普通消息、显式选择 | [RPC/PTY 检查点](../../../../packages/context-broker/docs/skill-consumption-startup-checkpoint.md)；非阻塞和完整消费通过，input-preflight RPC abort 未通过 |
-| SC10 | AH-625 | SDK、公开 CLI | installed 图入口；另补独立 SDK 与单次返回 |
+| SC07 | AH-626 | inspect、use、资源 | installed --skill-graph true；另补一次目标消费和批读；本轮真实介绍任务正文完整却额外 bash 探测、健康入口回答错误，保留语义失败 |
+| SC08 | AH-627 | 重复、resume、压缩 | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：selected/visible/active 分离、状态层 14/14、实际 Pi 压缩后固定恢复；默认模型摘要另验 |
+| SC09 | AH-624 | 普通消息、显式选择 | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：context 准备与运行信号，RPC/PTY 10/10、完整启动 31/31；[历史失败](../../../../packages/context-broker/docs/skill-consumption-startup-checkpoint.md)保留 |
+| SC10 | AH-625 | SDK、公开 CLI | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：独立 npm/Node SDK 11/11、Broker 等价 9/9、实际 Pi 默认 SDK 3/3；目录 CLI 和 custom command 明确单列 |
 | SC11 | AH-628 | 目录、依赖选择 | CLI control / request-engine；另补需求范围与字段字节 |
 | SC12 | AH-629 | 暖、过期、clear | session-cache-recovery；另补五层缓存和权限期限 |
 | SC13 | AH-630 | 单资源、export | CLI control / integration；另补先归属后物化 |
@@ -36,12 +36,12 @@
 | SC18 | AH-635 | 固定来源、旧pin | CLI / installed / mini；另补文件级迁移与回滚 |
 | SC19 | AH-636 | poteto任务 | graph model A/B；内容规则去向需独立审阅 |
 | SC20 | AH-638 | 完整矩阵 | 本页机器矩阵及各功能harness；全样本保留 |
-| SC21 | AH-639 | A/B/C/D真实Agent | graph model / integration model；新投影合同冻结后执行 |
+| SC21 | AH-639 | A/B/C/D真实Agent | graph model / integration model；新投影合同冻结后执行；额外介绍案例 `7gd44M` 的机器弱谓词成功不等于语义通过，原 report 仍 incomplete |
 | SC22 | AH-637 | 独立npm、pro/mini | installed / Pi PTY；双机各自新包证据 |
 | SC23 | AH-640 | 所有受影响调用者 | CLI / package / integration；迁移清单与回滚实驱 |
 | SC24 | AH-641 | 正常日用Pi | verify-pi-daily-installation；实际安装与新会话证据 |
 
-上述未来功能的完整规程仍为 draft。SC01 只验证地图、证据反例与下方既有 Pi 路径；后续任务补齐对应驱动后更新状态。不得把矩阵项标 passed 来消除 blocker。
+尚未实施功能的完整规程仍为 draft。SC01 只验证地图、证据反例与下方既有 Pi 路径；上表本轮分层证据只覆盖其实际执行范围，不批量更改 1,120 个矩阵项。不得把矩阵项标 passed 来消除 blocker。
 
 ### 必跑用户旅程
 
@@ -171,6 +171,8 @@ cleanup 新增自己的回执不影响原文件比对。若原文件改变，保
 - SourceBody：源 bytes/hash。ModelProjection：绑定源 hash、关系摘要、编译器版本及投影 bytes/hash；raw/export 保持源语义。
 - delivered：本次实际 provider 输入的完整 span，而非 loaded 日志、hash、摘要或历史回执。当前输入同身份/版本完整正文至多一份。
 - active：会话已启用的规则；压缩后正文不在输入中时需从固定版本恢复。inspect 不自动产生 active。
+
+Pi 的短引用与 active 可复跑入口见 [运行时记录](../../../../packages/context-broker/docs/skill-consumption-runtime.md)。`before_provider_request` 仅 pending，未取消的同代 2xx `after_provider_response` 确认已完整投递的 active；该事件只是 headers，不等于 stream 或任务成功。SDK 默认准备直接使用已验证 consume 主文，目录仍有真实 CLI 成本。新旧首请求时间必须与同时发生的所有 list/ctl、HTTP 和进程终局一起报告。
 
 ### 证据反例
 

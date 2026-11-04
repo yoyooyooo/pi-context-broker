@@ -18,8 +18,10 @@ const input = ({ providerAt = 2030, endAt = 2032, directoryAt = 2020, failedList
   observerEvents: [{ phase: 'message_update', firstEffectiveText: true, monotonicNs: ns(providerAt + 1) },
     { phase: 'agent_end', monotonicNs: ns(endAt) }, { phase: 'observer_end', complete: true, monotonicNs: ns(2400) }],
   providerCalls: [{ monotonicNs: ns(providerAt), context: { bytes: 100 }, skillBodyMarkerCount: 0, resourceMarkerCount: 0 }],
-  sourceCalls: [{ id: 's', command: 'list', phase: 'source-start', monotonicNs: ns(20) },
-    { id: 's', command: 'list', phase: 'source-close', monotonicNs: ns(directoryAt), code: failedList ? 1 : 0, signal: null, stdoutBytes: 90, stderrBytes: 0 }],
+  sourceCalls: [{ id: 's', command: 'list', phase: 'source-start', monotonicNs: ns(20), pid: 21, proxyExitVersion: 1 },
+    { id: 's', command: 'list', phase: 'source-close', monotonicNs: ns(directoryAt), code: failedList ? 1 : 0, signal: null, stdoutBytes: 90, stderrBytes: 0 },
+    { id: 's', command: 'list', phase: 'source-proxy-exit', monotonicNs: ns(directoryAt + 1), pid: 21,
+      proxyExitVersion: 1, boundary: 'node-process-exit-event', code: failedList ? 1 : 0 }],
   lifecycle: [{ event: 'spawn', boundary: 'spawnHost-return', pid: 1, monotonicNs: ns(1) },
     { event: 'close', boundary: 'child-close-event', pid: 1, code: 0, signal: null, monotonicNs: ns(2400) }],
   rpcFrames: [{ type: 'agent_end', messages: [{ role: 'assistant', content: [{ type: 'text', text: 'OK' }] }] }],
@@ -42,10 +44,11 @@ test('directory failures remain measured and missing close/end evidence cannot m
   const failed = summarizeStartupSample(input({ failedList: true }));
   assert.equal(failed.taskStatus, 'completed'); assert.equal(failed.directory.failedListCalls, 1);
   assert.equal(failed.status, 'observed');
-  const missing = input(); missing.sourceCalls.pop(); missing.lifecycle.pop(); missing.observerEvents.pop();
+  const missing = input(); missing.sourceCalls = missing.sourceCalls.filter(event => event.phase === 'source-start'); missing.lifecycle.pop(); missing.observerEvents.pop();
   const incomplete = summarizeStartupSample(missing);
   assert.equal(incomplete.status, 'incomplete'); assert.equal(incomplete.timings.submitToFirstProviderMs, 2020);
   assert.ok(incomplete.errors.includes('STARTUP_SOURCE_CLOSE_MISSING'));
+  assert.ok(incomplete.errors.includes('STARTUP_SOURCE_PROXY_EXIT_MISSING'));
   assert.ok(incomplete.errors.includes('STARTUP_PROCESS_CLOSE_INCOMPLETE'));
   assert.ok(incomplete.errors.includes('STARTUP_OBSERVER_INCOMPLETE'));
   assert.equal(incomplete.consumption.sourceStdoutBytes, null);
@@ -67,6 +70,7 @@ function batchFixture(name, { noSource = false, failList = false, legacyObserved
     { ...captured.sourceCalls[0], sampleId: 'case', pid: 2147483601 },
     { sampleId: 'case', id: 's', command: 'list', phase: 'source-child-spawn-return', pid: 2147483601, childPid: 2147483602, monotonicNs: ns(21) },
     { ...captured.sourceCalls[1], sampleId: 'case', childPid: 2147483602 },
+    { ...captured.sourceCalls[2], sampleId: 'case', pid: 2147483601 },
   ];
   const sample = summarizeStartupSample(captured);
   // Reproduce the old warm-6 result, which called a zero-observation snapshot complete.
@@ -84,13 +88,13 @@ test('batch reread catches an orphan source starting after host close without re
   const f = batchFixture('late-orphan', { noSource: true, legacyObserved: true });
   const original = readFileSync(join(f.directory, 'result.json'));
   appendFileSync(f.ledger, f.jsonl([
-    { sampleId: 'case', id: 'late', command: 'ctl', phase: 'source-start', pid: 2147483601, monotonicNs: ns(2500) },
+    { sampleId: 'case', id: 'late', command: 'ctl', phase: 'source-start', pid: 2147483601, monotonicNs: ns(2500), proxyExitVersion: 1 },
     { sampleId: 'case', id: 'late', command: 'ctl', phase: 'source-child-spawn-return', pid: 2147483601, childPid: 2147483602, monotonicNs: ns(2501) },
   ]));
   const result = await reconcileStartupBatch(f.evidence, [f.sample]), final = result.samples[0];
   assert.equal(result.status, 'incomplete'); assert.equal(final.taskStatus, 'completed');
   assert.equal(result.sourceStarts, 1); assert.equal(result.sourceCloses, 0);
-  for (const error of ['STARTUP_SOURCE_LATE_OBSERVATION', 'STARTUP_SOURCE_AFTER_HOST_CLOSE', 'STARTUP_SOURCE_CLOSE_MISSING']) assert.ok(final.errors.includes(error));
+  for (const error of ['STARTUP_SOURCE_LATE_OBSERVATION', 'STARTUP_SOURCE_AFTER_HOST_CLOSE', 'STARTUP_SOURCE_CLOSE_MISSING', 'STARTUP_SOURCE_PROXY_EXIT_MISSING']) assert.ok(final.errors.includes(error));
   assert.equal(final.calls[0].completedNs, null); assert.equal(final.calls[0].code, null);
   assert.equal(final.consumption.sourceStdoutBytes, null); assert.equal(final.consumption.backgroundCallsStartedAfterCompletion, 1);
   assert.ok(result.ownedProcesses.every(process => process.present === false));
@@ -124,7 +128,31 @@ test('recorded PID presence and unknown sample activity cannot be silently exclu
   assert.equal(unassigned.sourceStarts, 2);
 });
 
-test('source proxy forwards the fixture command and response while recording successful and failed child closes', async () => {
+test('child close and absent PID cannot supply a missing, legacy or invalid proxy terminal', async () => {
+  const f = batchFixture('proxy-terminal');
+  const original = readFileSync(join(f.directory, 'result.json'));
+  const observed = await reconcileStartupBatch(f.evidence, [f.sample]);
+  assert.equal(observed.status, 'observed'); assert.equal(observed.sourceCloses, 1); assert.equal(observed.sourceProxyExits, 1);
+  assert.equal(observed.samples[0].calls[0].proxyExitCode, 0);
+  const without = f.captured.sourceCalls.filter(event => event.phase !== 'source-proxy-exit');
+  const cases = [
+    [without, 'STARTUP_SOURCE_PROXY_EXIT_MISSING'],
+    [without.map(event => { const { proxyExitVersion, ...legacy } = event; return legacy; }), 'STARTUP_SOURCE_PROXY_EXIT_LEGACY_UNKNOWN'],
+    [[...f.captured.sourceCalls, f.captured.sourceCalls.at(-1)], 'STARTUP_SOURCE_PROXY_EXIT_INVALID'],
+    [f.captured.sourceCalls.map(event => event.phase === 'source-proxy-exit' ? { ...event, pid: 2147483603 } : event), 'STARTUP_SOURCE_PROXY_EXIT_INVALID'],
+  ];
+  for (const [events, expected] of cases) {
+    writeFileSync(f.ledger, f.jsonl(events));
+    const result = await reconcileStartupBatch(f.evidence, [f.sample]);
+    assert.equal(result.status, 'incomplete'); assert.ok(result.samples[0].errors.includes(expected));
+    assert.equal(result.sourceCloses, 1); assert.equal(result.samples[0].calls[0].code, 0);
+    assert.equal(result.samples[0].calls[0].proxyExitCode, null); assert.equal(result.samples[0].proxyLifecycle.complete, false);
+    assert.ok(result.ownedProcesses.every(process => process.present === false));
+    assert.deepEqual(readFileSync(join(f.directory, 'result.json')), original);
+  }
+});
+
+test('source proxy forwards command and response while recording child close and its own real process exit independently', async () => {
   const fixture = await createNotionFixture(join(scratch, 'fixture'));
   const config = join(scratch, 'proxy.json'), ledger = join(scratch, 'calls.jsonl');
   writeFileSync(config, JSON.stringify({ command: fixture.command, ledger }), { mode: 0o600 });
@@ -136,8 +164,11 @@ test('source proxy forwards the fixture command and response while recording suc
   const calls = readFileSync(fixture.callsPath, 'utf8').trim().split('\n').map(JSON.parse);
   assert.deepEqual(calls.find(call => call.command === 'list').args, args.slice(1));
   let events = readFileSync(ledger, 'utf8').trim().split('\n').map(JSON.parse);
-  assert.deepEqual(events.map(event => event.phase), ['source-start', 'source-child-spawn-return', 'source-close']);
-  assert.equal(events.at(-1).stdoutBytes, output.length); assert.equal(events.at(-1).code, 0);
+  assert.deepEqual(events.map(event => event.phase), ['source-start', 'source-child-spawn-return', 'source-close', 'source-proxy-exit']);
+  assert.equal(events.at(-2).stdoutBytes, output.length); assert.equal(events.at(-2).code, 0);
+  assert.equal(events.at(-1).pid, events[0].pid); assert.equal(events.at(-1).id, events[0].id); assert.equal(events.at(-1).code, 0);
+  assert.equal(events.at(-1).boundary, 'node-process-exit-event'); assert.equal(events[0].proxyExitVersion, 1);
+  assert.ok(BigInt(events.at(-1).monotonicNs) >= BigInt(events.at(-2).monotonicNs));
   assert.ok(BigInt(events.at(-1).monotonicNs) - BigInt(events[0].monotonicNs) >= 30000000n);
   assert.equal(statSync(ledger).mode & 0o777, 0o600);
   await fixture.setScenario('normal', { failList: true });
@@ -146,6 +177,8 @@ test('source proxy forwards the fixture command and response while recording suc
   });
   events = readFileSync(ledger, 'utf8').trim().split('\n').map(JSON.parse);
   assert.equal(events.filter(event => event.phase === 'source-close').length, 2);
+  assert.equal(events.filter(event => event.phase === 'source-proxy-exit').length, 2);
+  assert.equal(events.at(-1).phase, 'source-proxy-exit');
   assert.equal(events.at(-1).code, 1);
 });
 

@@ -76,13 +76,15 @@ node scripts/verify-notion-integration.mjs run --mode installed --host pi --pack
 
 实际参数以入口 help / doctor 为准；不得将另一个源 checkout 或临时产物替换 manifest 中已冻结的安装包。正式 Graph Gate 与显式自定义工具场景的 Pi allowlist 包含 `read,skill_search,skill_prepare`；controlled native-chain 另保留单 `read` 专项。observer 逐请求核对真实工具定义，metadata-only search 的结果须匹配实际 CLI 目录，prepare 只接受已发现的精确 refs，自动 Required 不冒充 Agent 自主选中的 Member。所有场景保持 shell 禁用和三层冷目录；来源身份必须带 scope、canonical ID、snapshot、主文 bytes/hash 与 stable File ID。不可从裸名、同名替身、另一库或本地副本补齐。
 
-当前 graph bridge 为每次公开 CLI prepare 后逐 prepared node 固定 read 主文，并保存完整清单；资源按下文 NG18 通过固定 ref 的 public read --output 单独物化。它不重复拓扑解析，但会启动额外本地 CLI 进程，不能计为单进程。旧直接加载与 Prompt 仍用严格的完整 export receipt；partial 不得放宽或冒充该完整性合同。
+Pi 默认 graph bridge 使用随包公开 SDK `consume`，同一内核验证完整清单、主文范围、身份、固定版本与 hash，Broker 核对选中身份后直接物化，不再逐节点启动 CLI read。资源通过同包 SDK 固定 `readSkill` 单独物化。显式 `source.command` 与 OMP 保留公开 CLI prepare + 逐 prepared node 固定 read 的兼容边界；上述 `--command-json` 命令验证的是该边界，不能代表默认 SDK。目录发现仍有 CLI 子进程，旧直接加载与 Prompt 的完整 export receipt 不放宽。本轮独立 Node / Pi 路线与 hash 见 [运行时记录](../../../../packages/context-broker/docs/skill-consumption-runtime.md)。
 
 安装 Pi + 受控 provider 的首次请求应含 root / Required 完整正文各一份、Members 正文零份。记录实际 tool input/output、完整 body hash、目录 ref、provider context 和源请求账本。native read 的资源 ref 必须来自公开目录/正文，旧路径带稳定 File ID 应解析到固定 owner snapshot 的正确路径。missing Required / budget / cancellation 时 provider 数量为零；RPC abort、new_session、EOF 与真正终端 Escape Stop 分开记录。
 
 ## NG15 分支选择图与正文回执
 
 分支上的 `context-broker-selected-graph` custom entry 保存版本化 CLI graph lock，包含实际根、Required edges、scope 和精确 binding。已知目录、候选和后台预取不写该 entry。optional 第一次实际选择时才加入；正文是否仍在当前上下文由完整 hash/bytes/实际消息跨度证明，不能用选择锁或缓存存在推断 loaded。
+
+SC04 的 branch-local C/S/R 表独立于 graph lock；已固定短引用不改绑，刷新创建新 S/R，兄弟分支不可互用。固定旧 pin 或非主文关系不能因 ID 相同而替换为当前候选。`skill_graph({refs:[...]})` 导出 S/R 的 canonical 精确证明，消费端仍重新授权。SC08 另保存版本化 active receipt：完整 visible 证明加同轮未取消的 2xx headers 确认后才激活，inspect/ready 不激活；压缩移除正文后普通消息从固定 roots 恢复一次，不改写原始 JSONL。实际 SessionManager、RPC/PTY 与 SDK-Pi 证据均见运行时记录，状态层成功不等于真实模型成功。
 
 ~~~bash
 CONTEXT_BROKER_PI_SESSION_MODULE=/absolute/installed/pi/dist/core/session-manager.js \
@@ -112,9 +114,9 @@ node scripts/verify-pi-graph-pty.mjs evidence --evidence /absolute/retained-run
 
 ## NG18 宿主清单与按需资源
 
-完整 prepare 清单的每项必须含 path、bytes、sha256 和准确固定 ref；shared Files 还需同 owner 的稳定 File ID/page 绑定。主文 fixed read 必须与 prepare 的完整正文、scope、record、snapshot、version、ref 和 hash 一致。初始宿主只保存 main 到 entries/SNAPSHOT/tree，外部 .broker-entry.json 明确 projection=entry、manifest_complete=true；它不能被旧完整 .broker-snapshot.json 消费。local_files_ready 与 materialized_paths 只反映逐文件验证结果，不等于 loaded。
+完整 prepare / consume 清单的每项必须含 path、bytes、sha256 和准确固定 ref；shared Files 还需同 owner 的稳定 File ID/page 绑定。Pi 默认 consume 的主文范围、scope、record、snapshot、version、ref 和 hash 由共享合同严格验证；custom command / OMP 的主文 fixed read 继续逐项与 prepare 比对。初始宿主只保存 main 到 entries/SNAPSHOT/tree，外部 .broker-entry.json 明确 projection=entry、manifest_complete=true；它不能被旧完整 .broker-snapshot.json 消费。local_files_ready 与 materialized_paths 只反映逐文件验证结果，不等于 loaded。
 
-原生资源 read 从清单选确切项，通过同一自有 CLI read REF --output NEW_STAGE 取得字节；比较完整公开回执与真实文件 SHA/bytes 后再发布。未选大资源不出现；二进制保持原字节。错误 File ID、跨 scope、旧路径无身份、坏 hash、取消和不完整输出必须失败，不猜名或退回 current。嵌套 main 可读同一树中其他目录的文件；仅有清单不能绕过 native read 的当前授权边界。目录和缓存命中仍可能产生权限 Metadata 请求，零 resource chunks 不等于零 HTTP。
+原生资源 read 从清单选确切项，Pi 默认由同包 SDK `readSkill` 取得字节；custom command / OMP 仍为自有 CLI `read REF --output NEW_STAGE`。两者比较同一完整公开回执与真实文件 SHA/bytes 后再发布。未选大资源不出现；二进制保持原字节，物化成功不自动等于完整文本进入 provider。错误 File ID、跨 scope、旧路径无身份、坏 hash、取消和不完整输出必须失败，不猜名或退回 current。嵌套 main 可读同一树中其他目录的文件；仅有清单不能绕过 native read 的当前授权边界。目录和缓存命中仍可能产生权限 Metadata 请求，零 resource chunks 不等于零 HTTP。
 
 实际 tool result.details.contextBrokerResource 保留准确 ref、id、scope、snapshot_id、version_id、path、file_id、bytes、sha256、materialization 与 delivered_complete_text。只有完整工具文本匹配字节/hash 才能标 delivered_complete_text；资源回执始终 loaded:false，不代替主文 contextBrokerRead。会话替换后晚到结果不留 receipt。host alias 旁的 .broker-host-index.json 只证明原始/发布 main 的身份和 hash，projection=host_index、loaded=false，不能作完整快照或上下文投递证明。
 

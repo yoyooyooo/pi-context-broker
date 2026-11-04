@@ -1,6 +1,6 @@
 # 会话去重与生命周期
 
-同一有效上下文中避免重复正文；fork 保留正文时跳过，回退/压缩移除正文后重新加载，保存并续接保持相同判断。
+同一有效上下文中避免重复正文；fork 保留正文时跳过，回退/压缩移除必要正文后从对应固定版本恢复，保存并续接保持分支判断。Pi 的 selected、visible 与 active 分别验证；下方旧 OMP runner 的范围保持不变。
 
 ## Sub-features
 
@@ -11,6 +11,13 @@
 - `session-xml`：普通消息中的 XML 示例不能抑制首次加载。
 - `session-cli-guidance`：普通 baseline 即收到默认 CLI XML，重复/fork/回退/续接的实际 provider 请求均完整且恰好一份。压缩保留时复用；移除或仅剩标记摘要时，在不含 Skill 引用的下一条普通消息上恢复。
 - `session-source`：source的正文加载、export snapshot和host metadata index有独立生命周期；执行 `node .agents/skills/verify-context-broker/scripts/control.mjs run source` 观察双宿主续接。CLI错误/超时/coldwarm恢复见[联动会话地图](../../verify-notion-skills-integration/features/session-cache-recovery.md)。本地图旧lifecycle runner不证明Notion source的fork/compact分支。
+- `session-pi-active`：实际 Pi 分支存储 active receipt 与 C/S/R；inspect/ready 不激活，完整 visible 加同轮未取消的 2xx headers 才确认。普通消息保留 active；全文缺失时合并固定 roots 恢复一次，之后普通消息不重复准备。Prompt 按每次显式调用处理，不按 Skill 常驻去重。
+
+## Pi 的分支与实际 provider 验证
+
+[本轮运行时记录](../../../../packages/context-broker/docs/skill-consumption-runtime.md)给出冻结包与逐层证据。实际 SessionManager 的 `packages/context-broker/scripts/session-active-session.mjs` 通过 14 项，`session-short-ref-session.mjs` 通过 13 项及 5 个独立 resume；这些证明状态，不独立证明 provider 内容。`scripts/notion-startup-flow.mjs` 的实际 RPC/PTY 10 项包含 compaction 后独立 resume、固定 inspect 恢复、下一轮无额外准备，以及取消后迟到 2xx 不发布 active。
+
+完整原生 main read 的 v3 receipt 证明源文本是准确完整前缀，允许保留随后的 body-free S/R 目录；部分 read、资源回执、摘要与伪标签不能替代主文。去重只变换当前 provider 投影中的已验证正文跨度，保留原始 JSONL、toolCallId 与 metadata footer。2xx headers 不是响应流完成；默认模型摘要和正式真实 Agent 任务另留证，不能从受控 compaction 推断。
 
 ## How to get to it (user POV)
 

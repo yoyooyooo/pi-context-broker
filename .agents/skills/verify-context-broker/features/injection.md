@@ -11,6 +11,7 @@
 - `inject-source`：配置source后默认宿主目录只含metadata；首次read、native /skill或$触发完整snapshot，provider可见正文。执行 `node .agents/skills/verify-context-broker/scripts/control.mjs run source`；CLI fixture不证明真实Notion，live走[source地图](source.md)。
 - `inject-loaded-omp`：OMP/Tern 的完整 Skill 正文满足使用前读取要求；自然的技能介绍不应再次列缓存目录、读入口或包清单，资源任务仍可按提供目录读取参考文件。日常真实 `$` 入口使用[日常安装地图](../../verify-notion-skills-integration/features/daily-installation-ui.md)的 model dollar 路径，观察实际工具行为；仅检查 payload 文案不能证明模型行为。Pi 保留宿主原有提示，真实发现与资源消费走[source 地图](source.md)的独立 model 路径，终端选择另走[Pi 终端规程](../../verify-notion-skills-integration/features/dollar-completion-selection.md#pi-独立终端)。
 - `inject-cli-guidance`：Pi/OMP 默认加入 `<ntn-skills-guidance>`；包含真实 CLI argv、精确读取与固定版本子文件/help 入口，不预加载正文。同一有效上下文及跨进程续接仅一份；host runner 同时检查实际 provider 与持久消息。
+- `inject-pi-consumption`：Pi 在 input 同步冻结选择/text/images，context 在真实运行信号下完成准备；默认 Notion Skill/Router 走随包 SDK。C/S/R 短引用继续核对 scope、物理身份、固定版本和权限；完整 source bytes 与 body-free 目录分开。实际 RPC/PTY、独立安装 SDK-Pi 与完整启动证据见[运行时记录](../../../../packages/context-broker/docs/skill-consumption-runtime.md)。
 
 ## How to get to it (user POV)
 
@@ -48,6 +49,8 @@ Router cleanly replaces domain Router in config/types/catalog/UI/payload/session
 No execution is claimed by this map update; final owner runs and retains the evidence.
 
 ## Missing-reference regression route
+
+Pi 的受控延迟/失败/Stop/压缩恢复另从 `node scripts/notion-startup-flow.mjs --help`、`run --extension ABSOLUTE_ENTRY --evidence-root ABSOLUTE_PARENT` 驱动；默认 SDK 入口为 `node scripts/notion-sdk-pi.mjs --help`。记录 source.command 是否真正缺省、SDK 与目录 CLI 的独立数量；自定义 command 的成功不能代替默认路径。RPC abort 已在 context 准备路径验证 provider=0，历史 input-preflight 失败仍保留在原 run。provider 2xx headers、完整正文投递与最终模型成功分别报告。
 
 Use the existing dual-host injection/source routes above and the integration [selection map](../../verify-notion-skills-integration/features/dollar-completion-selection.md#missing-reference-regression-route); extend owned fixtures rather than inventing a runner flag. In each Pi/OMP surface submit literal `$bunfs/root/chunks/cli-nxfh2cp0.js`, unknown bare alias, `$unknown@notion`, `$unknown@unknown-source` and `$unknown-source/unknown` both alone and mixed with valid Skill/Prompt/Router selectors. Preserve exact Unicode text and real images. Submit two rounds: one provider dispatch per accepted round, valid records prepared once per round, Skill/Router active-context deduplication and fresh Prompt task content on the second round; Router member bodies remain absent.
 

@@ -114,7 +114,13 @@ export async function runStartupSourceProxy(configPath, args) {
   const command = ['list', 'views', 'ctl', 'read', 'prepare', 'files', 'export'].includes(args[0]) ? args[0] : 'other';
   const log = (phase, details = {}) => appendFileSync(config.ledger, JSON.stringify({ sampleId, id, command,
     argumentsSha256: hash(JSON.stringify(args)), phase, monotonicNs: now(), ...details }) + '\n', { mode: 0o600 });
-  log('source-start', { pid: process.pid });
+  log('source-start', { pid: process.pid, proxyExitVersion: 1 });
+  // Only the real Node exit event supplies the proxy terminal. Child close and
+  // PID disappearance cannot substitute for it; signals may leave it missing.
+  process.once('exit', code => {
+    try { log('source-proxy-exit', { pid: process.pid, code, proxyExitVersion: 1, boundary: 'node-process-exit-event' }); }
+    catch { /* A missing terminal remains incomplete evidence. */ }
+  });
   const child = spawn(config.command[0], [...config.command.slice(1), ...args], { env: process.env, stdio: ['inherit', 'pipe', 'pipe'] });
   let stdoutBytes = 0, stderrBytes = 0, spawnError = null;
   child.stdout.on('data', chunk => { stdoutBytes += chunk.length; process.stdout.write(chunk); });
@@ -152,18 +158,36 @@ async function provider(base) {
 
 function summarizeSourceCalls(sourceCalls, completion, providerNs) {
   const sourceStart = sourceCalls.filter(event => event.phase === 'source-start'), sourceEnd = sourceCalls.filter(event => event.phase === 'source-close');
+  const proxyEnds = sourceCalls.filter(event => event.phase === 'source-proxy-exit');
   const calls = sourceStart.map(event => {
     const end = sourceEnd.find(candidate => candidate.id === event.id);
+    const terminals = proxyEnds.filter(candidate => candidate.id === event.id), terminal = terminals[0];
+    const validTerminal = terminals.length === 1 && sourceStart.filter(candidate => candidate.id === event.id).length === 1
+      && terminal.proxyExitVersion === 1 && terminal.boundary === 'node-process-exit-event'
+      && Number.isSafeInteger(event.pid) && event.pid > 0 && terminal.pid === event.pid
+      && Number.isSafeInteger(terminal.code) && terminal.code >= 0 && terminal.code <= 255
+      && elapsed(event.monotonicNs, terminal.monotonicNs) !== null && (!end || elapsed(end.monotonicNs, terminal.monotonicNs) !== null);
+    const proxyExitStatus = event.proxyExitVersion !== 1 ? 'legacy-unknown' : terminals.length === 0 ? 'missing' : validTerminal ? 'observed' : 'invalid';
     return { id: event.id, command: event.command, startedNs: event.monotonicNs, completedNs: end?.monotonicNs ?? null,
       durationMs: elapsed(event.monotonicNs, end?.monotonicNs), code: end?.code ?? null, signal: end?.signal ?? null,
+      proxyPid: event.pid ?? null, proxyExitStatus, proxyExitNs: proxyExitStatus === 'observed' ? terminal.monotonicNs : null,
+      proxyExitCode: proxyExitStatus === 'observed' ? terminal.code : null,
       stdoutBytes: end?.stdoutBytes ?? null, stderrBytes: end?.stderrBytes ?? null,
       startedAfterCompletion: completion ? BigInt(event.monotonicNs) > BigInt(completion.monotonicNs) : null,
       activeAtCompletion: completion ? BigInt(event.monotonicNs) <= BigInt(completion.monotonicNs)
         && (!end || BigInt(end.monotonicNs) > BigInt(completion.monotonicNs)) : null };
   });
+  const errors = [];
+  if (calls.some(call => call.proxyExitStatus === 'legacy-unknown')) errors.push('STARTUP_SOURCE_PROXY_EXIT_LEGACY_UNKNOWN');
+  if (calls.some(call => call.proxyExitStatus === 'missing')) errors.push('STARTUP_SOURCE_PROXY_EXIT_MISSING');
+  if (calls.some(call => call.proxyExitStatus === 'invalid') || proxyEnds.some(event => !sourceStart.some(start => start.id === event.id))) errors.push('STARTUP_SOURCE_PROXY_EXIT_INVALID');
+  const proxyLifecycle = { version: 1, starts: sourceStart.length, rawExitEvents: proxyEnds.length,
+    observedExits: calls.filter(call => call.proxyExitStatus === 'observed').length,
+    legacyStarts: calls.filter(call => call.proxyExitStatus === 'legacy-unknown').length,
+    complete: calls.length > 0 && errors.length === 0 };
   const lists = calls.filter(call => call.command === 'list'), bodies = calls.filter(call => ['read', 'prepare', 'export'].includes(call.command));
   const latestListCompletion = lists.filter(call => call.completedNs).map(call => BigInt(call.completedNs)).sort((a, b) => a < b ? -1 : a > b ? 1 : 0).at(-1)?.toString();
-  return { calls, lists, bodies, latestListCompletion,
+  return { calls, lists, bodies, latestListCompletion, proxyLifecycle, errors,
     directory: { listCalls: lists.length, failedListCalls: lists.filter(call => call.code !== null && call.code !== 0).length,
       providerAfterAllObservedListCompletions: providerNs && latestListCompletion ? BigInt(providerNs) >= BigInt(latestListCompletion) : null },
     consumption: { sourceCalls: calls.length, bodyCalls: bodies.length,
@@ -186,6 +210,7 @@ export function summarizeStartupSample({ scenario, submission, observerEvents = 
   if (!first || !effective || !completion || finalText.trim() !== 'OK') errors.push('STARTUP_ORDINARY_TURN_INCOMPLETE');
   if (!source.calls.length) errors.push('STARTUP_SOURCE_NOT_OBSERVED');
   if (source.calls.some(call => call.completedNs === null)) errors.push('STARTUP_SOURCE_CLOSE_MISSING');
+  errors.push(...source.errors);
   if (source.bodies.length || providerCalls.some(call => call.skillBodyMarkerCount || call.resourceMarkerCount)) errors.push('STARTUP_UNEXPECTED_BODY_CONSUMPTION');
   if (scenario.cache === 'cold' && !source.lists.length) errors.push('STARTUP_COLD_DIRECTORY_NOT_OBSERVED');
   return { id: scenario.id, group: scenario.group, scenario, status: errors.length ? 'incomplete' : 'observed', errors,
@@ -195,7 +220,7 @@ export function summarizeStartupSample({ scenario, submission, observerEvents = 
       submitToCompletionMs: elapsed(submission.monotonicNs, completion?.monotonicNs),
       submitToLastDirectoryCompletionMs: elapsed(submission.monotonicNs, source.latestListCompletion),
       submitToProcessCloseMs: elapsed(submission.monotonicNs, close?.monotonicNs) },
-    directory: source.directory,
+    directory: source.directory, proxyLifecycle: source.proxyLifecycle,
     consumption: { controlledProviderCalls: providerCalls.length, beforeProviderHookEvents: observerEvents.filter(event => event.phase === 'provider_request').length,
       firstProviderContextJsonBytes: first?.context?.bytes ?? null, totalProviderContextJsonBytes: providerCalls.reduce((total, call) => total + call.context.bytes, 0),
       ...source.consumption,
@@ -250,6 +275,7 @@ export async function reconcileStartupBatch(evidence, samples, { allowLegacyLife
     if (afterHostClose.length) errors.push('STARTUP_SOURCE_AFTER_HOST_CLOSE');
     if (!source.calls.length) errors.push('STARTUP_SOURCE_NOT_OBSERVED');
     if (source.calls.some(call => call.completedNs === null)) errors.push('STARTUP_SOURCE_CLOSE_MISSING');
+    errors.push(...source.errors);
     if (sample.calls.some(previous => !source.calls.some(call => call.id === previous.id))) errors.push('STARTUP_SOURCE_SNAPSHOT_LOST');
     if (source.bodies.length) errors.push('STARTUP_UNEXPECTED_BODY_CONSUMPTION');
     const processes = [
@@ -268,16 +294,18 @@ export async function reconcileStartupBatch(evidence, samples, { allowLegacyLife
       if (present !== false) errors.push('STARTUP_RECORDED_PID_UNRESOLVED');
     }
     finalized.push({ ...sample, status: errors.length ? 'incomplete' : 'observed', errors: [...new Set(errors)], lifecycle,
-      directory: source.directory, consumption: { ...sample.consumption, ...source.consumption }, calls: source.calls,
+      directory: source.directory, proxyLifecycle: source.proxyLifecycle, consumption: { ...sample.consumption, ...source.consumption }, calls: source.calls,
       timings: { ...sample.timings, submitToLastDirectoryCompletionMs: elapsed(sample.submission.monotonicNs, source.latestListCompletion) },
       reconciliation: { lifecycleMethod, originalStatus: sample.status, originalCallCount: sample.calls.length,
         newCallIds, afterHostClose: [...new Set(afterHostClose)], originalSnapshot: sample.id + '/result.json' } });
   }
   return { version: 1, checkedAtMonotonicNs: now(), status: batchErrors.length || finalized.some(sample => sample.status !== 'observed') ? 'incomplete' : 'observed',
     errors: batchErrors, artifacts, ownedProcesses, sourceStarts: sourceEvents.filter(event => event.phase === 'source-start').length,
-    sourceCloses: sourceEvents.filter(event => event.phase === 'source-close').length, samples: finalized,
+    sourceCloses: sourceEvents.filter(event => event.phase === 'source-close').length,
+    sourceProxyExits: sourceEvents.filter(event => event.phase === 'source-proxy-exit').length, samples: finalized,
     limitations: ['This is an observed ledger cutoff, not a guarantee that an unrecorded process cannot start later.',
-      'A missing PID does not repair a missing close receipt; a present PID may have been reused and is never signalled beyond signal 0.',
+      'Child close and proxy exit are independent receipts. Legacy source starts without proxy-exit observation remain unknown.',
+      'A missing PID does not repair a missing close or proxy-exit receipt; a present PID may have been reused and is never signalled beyond signal 0.',
       'No RPC input, provider, source arguments, response values or timeout are changed by reconciliation.'] };
 }
 
@@ -385,6 +413,7 @@ export async function collectStartupBaseline(options) {
     const plan = { version: 1, createdAt: new Date().toISOString(), clockId, options, prompt, promptSha256: hash(prompt),
       model: 'context-broker-e2e/fake', modelMethod: 'existing-controlled-provider-with-passive-capture-only', prefetch: false,
       submissionMethod: 'native-prompt-before-get-state-handshake', source: 'createNotionFixture-listDelayMs-failList',
+      sourceProxyExitVersion: 1,
       interpretation: 'No real Notion/model HTTP. Fixture stdout and provider context JSON are not wire bytes or tokens.', doctor, scenarios };
     await save(join(evidence, 'plan.json'), plan);
     let samples = [];
@@ -423,9 +452,9 @@ export async function collectStartupBaseline(options) {
       status: samples.every(sample => sample.status === 'observed') && finalIdentity.runtimeSha256 === doctor.identity.runtimeSha256 ? 'baseline-observed' : 'baseline-incomplete',
       runtimeUnchanged: finalIdentity.runtimeSha256 === doctor.identity.runtimeSha256, initialRuntimeSha256: doctor.identity.runtimeSha256,
       finalRuntimeSha256: finalIdentity.runtimeSha256, reconciliation: { file: 'batch-reconciliation.json', status: reconciliation.status,
-        sourceStarts: reconciliation.sourceStarts, sourceCloses: reconciliation.sourceCloses }, groups, samples,
+        sourceStarts: reconciliation.sourceStarts, sourceCloses: reconciliation.sourceCloses, sourceProxyExits: reconciliation.sourceProxyExits }, groups, samples,
       limitations: ['Controlled provider always replies OK; this establishes dispatch/latency, not model task quality.',
-        'The fake provider does not invoke the SDK onPayload callback; its stream boundary is recorded separately from before_provider_request.',
+        'The controlled provider invokes onPayload before its capture; the capture and before_provider_request hook remain separate observation boundaries, neither is real HTTP.',
         'No real HTTP attempts, wire bytes or model tokens are inferred from fixture execution or JSON size.',
         'Every planned sample and failed observation remains in the report; warm priming is retained as its own sample.',
         'Per-sample result.json and samples.json are collection snapshots; final samples include an independent reread of source and owned-process evidence.',

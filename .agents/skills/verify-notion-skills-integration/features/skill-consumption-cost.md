@@ -9,12 +9,13 @@
 | Pi 用户提交与 provider | `skill-consumption-cost.mjs` / observer JSONL | 同机单调时间、实际 provider hook 的 JSON bytes/hash、tool schema/目录/正文/资源/历史的分项字节与模型报告 usage |
 | 模型 HTTP | `skill-consumption-provider.mjs` / transport JSONL | Node Undici diagnostics 的实际 request body hash/bytes、response entity chunks、真实尝试；不替换 fetch、不消费响应、不注入工具参数 |
 | Source CLI | `skill-consumption-source-baseline.mjs` / 每个 child 的 receipt、stdout、lifecycle | prepare 后逐节点固定 read，或独立单资源 read；request_metrics 中的 metadata/body/retained-body/write/provider、retry、queue 与响应解码字节 |
+| Pi 默认 Source SDK / bundled CLI | `skill-consumption-source-observer.mjs` / safe-source-requests JSONL | 进程内 SDK 的公开 start/end 与安全 request_metrics；默认 bundled CLI 的真实 spawn/close 和完整 stdout 中的 request_metrics。SDK 操作、CLI 子进程与 HTTP attempt 分别计数 |
 | 普通启动顺序 | `skill-consumption-startup.mjs` | 实际 Pi，受控 source/provider；原生 RPC 提交先于目录完成。受控 stream 不等于真实模型 HTTP 或 token |
-| 真实普通模型任务 | `skill-consumption-model-baseline.mjs` | 固定 magpie/group/flash-free；正常工具、同一任务；独立 cold 进程和最后一个进程中的 existing-session warm 续接 |
+| 真实模型成本任务 | `skill-consumption-model-baseline.mjs` | 固定 magpie/group/flash-free；正常工具、冻结的普通或 Skill 任务；独立 cold 进程和最后一个进程中的 existing-session warm 续接。任务类型分组记录，成本 driver 不替代 Skill 完整消费断言 |
 
-两个被动 observer 的 JSONL 使用私有权限、逐事件 hash 链和同机 monotonic clock。日志不保存认证头、token、签名 URL 或完整 provider 正文。实际 payload 的 hash 必须与 transport 发送 body 对齐；hash/摘要本身不证明 Skill 正文投递，后者仍由消费链的完整 span 断言负责。
+三个被动 observer 的 JSONL 使用 0600 权限、逐事件 hash 链和同机 monotonic clock。日志不保存认证头、token、签名 URL、原始 CLI stdout 或完整 provider 正文；独立 Source CLI driver 的原件保留规则另按该 driver 执行。实际 payload 的 hash 必须与 transport 发送 body 对齐；hash/摘要本身不证明 Skill 正文投递，后者仍由消费链的完整 span 断言负责。
 
-未知值用 null。provider hook JSON、CLI 解码 JSON、压缩后的 HTTP entity、ZIP 文件和 TCP/TLS wire 是不同单位。只有 identity content-encoding 才将 entity bytes 作为 decoded response bytes；wire bytes 始终不可从这些 hooks 推得。usage 的 input、output、cacheRead、cacheWrite、totalTokens 分开记录，不用字符数估计 token。SDK 内部重试/队列等待不可见时也为 null。
+未知值用 null。provider hook JSON、CLI 解码 JSON、压缩后的 HTTP entity、ZIP 文件和 TCP/TLS wire 是不同单位。模型 HTTP observer 只有 identity content-encoding 才将 entity bytes 作为 decoded response bytes；wire bytes 始终不可从这些 hooks 推得。usage 的 input、output、cacheRead、cacheWrite、totalTokens 分开记录，不用字符数估计 token。Notion SDK / CLI 的重试和队列等待沿用公开 request_metrics；模型 SDK 内部等待或其它未观察字段仍为 null。
 
 ## Launch 与 Doctor
 
@@ -67,17 +68,50 @@ node scripts/skill-consumption-startup.mjs run \
 
 ### 真实模型配置
 
-配置为 `{version:1,extension,command:[absoluteNode,absoluteCLI],database,prompt,expectedAnswers,counts:{cold:5,warm:20},packagePath?}`。模型固定为 `magpie/group/flash-free`，不回退；prefetch false，保持正常 read/bash/edit/write/grep/find/ls 和 Broker 工具。observer 不规定模型工具选择。
+共同配置为 `{version:1,extension,database,prompt,expectedAnswers,counts:{cold:5,warm:20},packagePath?}`，路径均为绝对路径。模型固定为 `magpie/group/flash-free`，不回退；prefetch false，保持正常 read/bash/edit/write/grep/find/ls 和 Broker 工具。observer 不规定模型工具选择，不追加任务指令，也不替换返回值。
+
+两种 Source 入口独立冻结，已有 CLI 配置与历史结果继续有效：
+
+| 配置 | 实际入口与方法 |
+| --- | --- |
+| 省略 `transport`，或 `transport: "cli"`；必须有 `command: [absoluteNode, absoluteCLI]` | 保留既有显式 CLI 账本 wrapper，Broker source.command 指向它；按原方法复现旧 CLI 基线 |
+| `transport: "sdk"`；必须完全省略 `command` 属性 | Broker source.command 缺省，走实际包的默认入口：目录通过 bundled CLI，支持的正文/资源消费通过进程内 SDK。不能传 `null`、空数组或 wrapper 冒充缺省 |
+
+SDK 模式的 Doctor 记录实际扩展树、`ntn-skills.mjs`、`ntn-skills-sdk.mjs`、`ntn-skills-runtime.json`、Pi executable 和可选 archive 的 hash；执行结束再次读取以检查运行期间是否变化。它不调用 SDK 业务方法，也不探测模型或 Notion 认证。配置文件中的 `extension` 应指向本次冻结包的实际入口；checkout source-tree 结果不表示独立安装包通过。
+
+普通任务和 Skill 任务使用各自冻结的配置与证据目录，按下列真实 driver 命令串行执行。示例的 `sc10-model` 路径替换为本次创建的绝对目录；SDK 配置只增加 `"transport":"sdk"`，删除原 `command`，其余冻结条件保持明确记录。
 
 ```bash
-node scripts/skill-consumption-model-baseline.mjs doctor --config /absolute/model-config.json
+node scripts/skill-consumption-model-baseline.mjs doctor \
+  --config /absolute/sc10-model/ordinary-config.json
 node scripts/skill-consumption-model-baseline.mjs run \
-  --config /absolute/model-config.json --evidence-root /absolute/model-evidence
+  --config /absolute/sc10-model/ordinary-config.json \
+  --evidence-root /absolute/sc10-model/ordinary-evidence
+
+node scripts/skill-consumption-model-baseline.mjs doctor \
+  --config /absolute/sc10-model/skill-config.json
+node scripts/skill-consumption-model-baseline.mjs run \
+  --config /absolute/sc10-model/skill-config.json \
+  --evidence-root /absolute/sc10-model/skill-evidence
 ```
 
 前 5 个 cold 为独立进程和缓存；20 个 warm 是最后一进程内的普通续接，保留历史并计入 payload。答案谓词在 plan 中冻结；正常 stop、非空文本、预期答案子串且非许可提示是机器检查，语义正确性仍需审阅。length、aborted、error、空 final 和许可提示都不能算成功。首次失败后保留其余 planned 样本为 not_run，不换模型、任务、工具、TTL 或样本。
 
+SDK 观测由 driver 为自有 Pi 进程安装 Node preload；父 PID、实际入口和主线程共同限定作用范围，CLI 继承 preload 环境时不会重复安装。它订阅公开的 `context-broker.notion-sdk` 与 Node child_process diagnostics，不替换 spawn/fetch/SDK，不改变 CLI argv。现有 `NTN_SKILLS_REQUEST_TRACE_LIMIT=10000` 已让默认 bundled CLI 在 JSON 结果中附加 request_metrics，无须追加 `--metrics`。stdout 只在已有消费者、已经 flowing 且尚未读过数据时旁听；不调用 read/resume/pipe。最多在内存保留 16 MiB 以解析完整 JSON，写出的只有安全 metrics、字节/hash 和生命周期；未观察、溢出、非 JSON、缺 metrics 或缺 end/close 都保留未知。
+
+成本报告按下列字段分别解释，不能相加成一个“调用次数”：
+
+| 字段 / 层 | 口径 |
+| --- | --- |
+| `sdkStarts` / `sdkCloses` | SDK 桥公开 start/end 的数量；失败、取消和 pending 也保留。`sdkEntered` 只统计 end 明确回报 `sdk_started:true` 的调用，未结束不能据此推断没有执行 |
+| `cliStarts` / `cliSpawnEvents` / `cliCloses` | 分别为默认 CLI spawn 调用开始、真实 child spawn 事件和 child close。退出码、signal、stdout 完整性单列；一次子进程可包含零次或多次 HTTP |
+| `observedHttpAttempts` / `httpAttempts` | 前者为已记录 attempt 数；后者仅在所有相关 metrics、进程边界和最终复核完整时给出总数，否则为 null。缺 child、零 SDK starts 或空账本都不证明零 HTTP |
+| Source bytes / waits | 沿用 request_metrics 的 request bytes、decoded response bytes、metadata/body/retained-body/write/provider 分类及 queue/retry 等待；缺字段不估算。TCP/TLS wire 始终为 null |
+| Provider payload / usage / 模型 HTTP | hook 的 JSON bytes/hash、真实发送 entity 和模型报告 tokens 分开；首轮与总任务分别报告，包含后续 tool rounds 和 existing-session 历史 |
+
 真实模型 driver 也在全批结束后重新读 source 与 owned host 账本，另存 reconciliation；没有任何 source 启动证据、EOF 前边界之外的 late start、缺失/重复 close 或缺 metrics 均不能成为完整零成本。sourceComplete 只描述已观察操作至最终复核的闭合；700ms quiet 不证明 metadata producer 已完成，不能用这个字段代替独立后台终态证据。
+
+SDK 模式还要求被动 source observer 的真实 exit 终界、完整 hash 链与一一配对的操作/metrics。`sourceObserverComplete` 只证明这份观察器的生命周期闭合，不单独证明 HTTP trace 完整。无法归属到默认 bundled CLI 的子进程保持 unknown；不为使样本通过而屏蔽正常工具。SIGTERM 等未产生 exit 终界的情况照实记 incomplete，不补造结束事件。CLI 显式 command 与 SDK 默认入口必须在 plan 和比较报告中标明，不能只给旧结果改名便视为 SDK 基线。
 
 ## Evidence 与比较
 
