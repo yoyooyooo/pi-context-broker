@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { assertNativeGuidance, assertScopedCommand, reconcile, sourceFinality } from './notion-sdk-pi.mjs';
+import { assertNativeGuidance, assertScopedCommand, assertPreparedHttpRequest, bodyCount, reconcile, sourceFinality } from './notion-sdk-pi.mjs';
 
 const command = ['/absolute/node', '/installed/dist/ntn-skills.mjs'];
 const database = '11111111-2222-3333-4444-555555555555';
@@ -24,6 +24,50 @@ function scopeFixture() {
   return { captures: [{ context: first }, { context: second }], frames };
 }
 const expected = { command, database };
+
+test('body evidence counts only visible content, including JSON bodies, never details or tool schemas', () => {
+  const body = '\ufeff中文😀\r\n<body>author text</body>\\"quoted"\r\n';
+  const input = { messages: [{ role: 'system', content: 'System', toolsAdded: [{ name: 'x', description: body }] },
+    { role: 'toolResult', content: [{ type: 'text', text: JSON.stringify({ records: [{ content: body }] }) }], details: { hiddenBody: body } }] };
+  assert.equal(bodyCount(input, body), 1);
+  input.messages[1].content = [{ type: 'text', text: 'Only a summary.' }];
+  assert.equal(bodyCount(input, body), 0);
+  const jsonBody = '{"content":"this entire JSON document is the source"}';
+  assert.equal(bodyCount({ messages: [{ role: 'toolResult', content: [{ type: 'text', text: JSON.stringify({ content: jsonBody }) }] }] }, jsonBody), 1);
+  assert.equal(bodyCount({ messages: [{ role: 'toolResult', content: jsonBody }] }, jsonBody), 1);
+});
+
+function httpFixture() {
+  const content = JSON.stringify({ ok: true, records: [{ content: 'An author may mention {"details":"literal source example"}.' }] });
+  const context = { messages: [{ role: 'toolResult', toolName: 'skill_prepare', toolCallId: 'prepare-1',
+    content: [{ type: 'text', text: content }], details: { contextBrokerPreparation: { machineProof: 'host-only-proof' } }, isError: false }] };
+  const payload = { model: 'local-fixture', messages: [{ role: 'tool', tool_call_id: 'prepare-1', content }] };
+  return { context, payload, body: Buffer.from(JSON.stringify(payload)) };
+}
+test('actual serialized tool content is paired by toolCallId and kept separate from host details', () => {
+  const value = httpFixture(), before = JSON.stringify(value);
+  const result = assertPreparedHttpRequest(value.payload, value.body, value.context);
+  assert.equal(result.payload_matches_http, true); assert.equal(result.details_in_tool_messages, false);
+  assert.equal(result.delivered.length, 1); assert.ok(result.delivered[0].host_details_bytes > 0);
+  assert.equal(value.body.includes('host-only-proof'), false);
+  assert.equal(JSON.stringify(value), before);
+});
+test('capture objects, wrong HTTP bytes, missing tool calls and leaked proof fields fail serializer evidence', () => {
+  const capture = httpFixture();
+  assert.throws(() => assertPreparedHttpRequest({ context: capture.context }, Buffer.from(JSON.stringify({ context: capture.context })), capture.context));
+  const changedBytes = httpFixture();
+  assert.throws(() => assertPreparedHttpRequest(changedBytes.payload, Buffer.concat([changedBytes.body, Buffer.from('\n')]), changedBytes.context));
+  for (const mutate of [
+    payload => { payload.messages[0].content = 'A summary replaces the full tool result'; },
+    payload => { payload.messages[0].tool_call_id = 'another-call'; },
+    payload => { payload.messages.push({ ...payload.messages[0] }); },
+    payload => { payload.messages[0].details = { leaked: true }; },
+    payload => { payload.messages[0].graph_lock = { leaked: true }; },
+  ]) {
+    const value = httpFixture(); mutate(value.payload);
+    assert.throws(() => assertPreparedHttpRequest(value.payload, Buffer.from(JSON.stringify(value.payload)), value.context));
+  }
+});
 
 test('native-guidance evidence checks only host guidance and preserves complete author text', () => {
   const input = context();

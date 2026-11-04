@@ -72,40 +72,98 @@ export function observeConsumptionCost(api, settings) {
       stopReason: ['stop', 'length', 'toolUse', 'error', 'aborted'].includes(message?.stopReason) ? message.stopReason : null,
       usage: usage(message?.usage) };
   };
+  const nonempty = value => typeof value === 'string' && value.length > 0;
+  const pinned = (value, source) => typeof value === 'string' && (/^s_[a-f0-9]{64}$/.test(value)
+    || source === 'filesystem' && /^local_[a-f0-9]{64}$/.test(value));
+  const bodyAt = (text, span) => {
+    if (!span || !Number.isSafeInteger(span.start) || !Number.isSafeInteger(span.end)
+      || span.start < 0 || span.end <= span.start || span.end > text.length) return undefined;
+    const encoded = text.slice(span.start, span.end);
+    try { return span.encoding === 'raw' ? encoded : span.encoding === 'xml' ? encoded.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&')
+      : span.encoding === 'json' ? JSON.parse('"' + encoded + '"') : undefined; } catch { return undefined; }
+  };
+  const rememberBody = (body, proof, kind) => {
+    const expected = proof.bodySha256 ?? proof.sha256;
+    if (nonempty(body) && sha(body) === expected && bytes(body) === proof.bytes)
+      knownBodies.set(expected, { body, bytes: proof.bytes, kind, firstObservedTurn: knownBodies.get(expected)?.firstObservedTurn ?? turn });
+  };
+  // These receipts establish bytes for diagnostics, not graph activation. The
+  // broker independently validates canonical graphs and source authorization.
+  const projectedRecords = (group, text) => {
+    if (group.version === 1) return Object.hasOwn(group, 'projection') ? [] : group.records;
+    const projection = group.projection;
+    if (group.version !== 2 || projection?.version !== 1 || projection.compiler !== 'context-broker/skill-prepare/v1'
+      || projection.sourceProjection !== 'source-identity/v1' || projection.rendered?.sha256 !== sha(text)
+      || projection.rendered?.bytes !== bytes(text) || !Array.isArray(group.records) || !Array.isArray(projection.records)
+      || group.records.length !== projection.records.length) return [];
+    let model;
+    try { model = JSON.parse(text); } catch { return []; }
+    if (model?.ok !== true || model.status !== 'ready' || model.purpose !== group.purpose
+      || !Array.isArray(model.records) || model.records.length !== group.records.length) return [];
+    return group.records.filter((proof, index) => {
+      const mapping = projection.records[index], record = model.records[index];
+      if (typeof bodyAt(text, mapping?.delivery) !== 'string') return false;
+      const rendered = text.slice(mapping.delivery.start, mapping.delivery.end);
+      return mapping?.index === index && mapping.state === 'source' && mapping.ref === record?.ref
+        && mapping.source?.identity === proof?.identity && mapping.source?.sha256 === proof?.bodySha256 && mapping.source?.bytes === proof?.bytes
+        && mapping.rendered?.sha256 === sha(rendered) && mapping.rendered?.bytes === bytes(rendered)
+        && mapping.delivery?.start === proof?.delivery?.start && mapping.delivery?.end === proof?.delivery?.end
+        && mapping.delivery?.encoding === proof?.delivery?.encoding;
+    });
+  };
   const remember = messages => {
     for (const message of messages ?? []) {
       const details = message?.details;
       if (!details || message.isError === true) continue;
       let text = textContent(message.content);
-      if (details.nativePromptSha256) text = textContent(messages.find(item => item.role === 'user'
+      const ownedCustom = message.role === 'custom' && ['context-broker', 'skill-prompt-message'].includes(message.customType);
+      const preparation = message.role === 'toolResult' && message.toolName === 'skill_prepare' && nonempty(message.toolCallId)
+        && details.contextBrokerPreparation?.toolCallId === message.toolCallId ? details.contextBrokerPreparation : undefined;
+      if (ownedCustom && details.nativePromptSha256) text = textContent(messages.find(item => item.role === 'user'
         && sha(textContent(item.content)) === details.nativePromptSha256)?.content);
-      const records = details.contextBrokerPreparation?.records ?? details.records ?? [];
+      const records = preparation ? projectedRecords(preparation, text) : ownedCustom ? details.records ?? [details] : [];
       for (const proof of Array.isArray(records) ? records : []) {
-        const span = proof?.delivery;
-        if (!span || !Number.isSafeInteger(span.start) || !Number.isSafeInteger(span.end) || span.start < 0 || span.end <= span.start || span.end > text.length) continue;
-        const encoded = text.slice(span.start, span.end);
-        let body;
-        try { body = span.encoding === 'raw' ? encoded : span.encoding === 'xml' ? encoded.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&')
-          : span.encoding === 'json' ? JSON.parse('"' + encoded + '"') : undefined; } catch { continue; }
-        if (typeof body === 'string' && sha(body) === proof.bodySha256 && bytes(body) === proof.bytes)
-          knownBodies.set(proof.bodySha256, { body, bytes: proof.bytes, kind: 'skill-body', firstObservedTurn: knownBodies.get(proof.bodySha256)?.firstObservedTurn ?? turn });
+        if (proof?.version !== 2 || proof.loaded !== true || !nonempty(proof.identity) || !pinned(proof.snapshotId, proof.source)) continue;
+        rememberBody(bodyAt(text, proof.delivery), proof, 'skill-body');
       }
+      if (message.role !== 'toolResult' || message.toolName !== 'read' || !nonempty(message.toolCallId)
+        || Array.isArray(message.content) && message.content.some(part => part?.type !== 'text')) continue;
       for (const [kind, proof] of [['skill-body', details.contextBrokerRead], ['resource', details.contextBrokerResource]]) {
-        if (!proof || proof.toolCallId !== message.toolCallId || kind === 'resource' && proof.delivered_complete_text !== true) continue;
-        const expected = proof.bodySha256 ?? proof.sha256;
-        if (text && sha(text) === expected && bytes(text) === proof.bytes)
-          knownBodies.set(expected, { body: text, bytes: proof.bytes, kind, firstObservedTurn: knownBodies.get(expected)?.firstObservedTurn ?? turn });
+        if (!proof || proof.toolCallId !== message.toolCallId) continue;
+        if (kind === 'resource') {
+          if (proof.version !== 1 || proof.delivered_complete_text !== true || proof.loaded !== false
+            || ![proof.scope, proof.id, proof.ref, proof.path].every(nonempty) || !pinned(proof.snapshot_id)) continue;
+        } else if (![1, 2, 3].includes(proof.version) || !nonempty(proof.identity) || !pinned(proof.snapshotId)
+          || proof.version === 3 && (proof.delivery?.start !== 0 || proof.delivery?.encoding !== 'raw')) continue;
+        rememberBody(kind === 'skill-body' && proof.version === 3 ? bodyAt(text, proof.delivery) : text, proof, kind);
       }
     }
   };
   const payload = value => {
     const measured = jsonMeasure(value), strings = [];
-    const visit = item => {
+    const content = item => {
       if (typeof item === 'string') strings.push(item);
-      else if (Array.isArray(item)) item.forEach(visit);
-      else if (item && typeof item === 'object') Object.values(item).forEach(visit);
+      else if (Array.isArray(item)) item.forEach(content);
+      else if (item && typeof item === 'object') {
+        if ((item.type === undefined || ['text', 'input_text', 'output_text'].includes(item.type)) && typeof item.text === 'string') strings.push(item.text);
+        else if (item.type === 'tool_result') content(item.content);
+        else if (Array.isArray(item.parts)) content(item.parts);
+      }
     };
-    visit(value);
+    const message = item => {
+      if (!item || typeof item !== 'object') return;
+      content(item.content); content(item.parts);
+      if (item.type === 'function_call_output') content(item.output);
+    };
+    const requestContent = item => {
+      if (!item || typeof item !== 'object') return;
+      for (const key of ['messages', 'contents']) if (Array.isArray(item[key])) item[key].forEach(message);
+      if (typeof item.input === 'string') content(item.input);
+      else if (Array.isArray(item.input)) item.input.forEach(message);
+      for (const key of ['system', 'system_instruction', 'systemInstruction', 'instructions', 'systemPrompt']) content(item[key]);
+      if (item.context && typeof item.context === 'object') requestContent(item.context);
+    };
+    requestContent(value);
     const components = Object.entries(value && typeof value === 'object' && !Array.isArray(value) ? value : {}).map(([key, item]) => ({
       keySha256: sha(key), group: ['tools', 'functions', 'tool_choice', 'function_call'].includes(key) ? 'tools'
         : ['messages', 'input'].includes(key) ? 'messages' : ['system', 'system_instruction', 'instructions'].includes(key) ? 'system' : 'other', ...jsonMeasure(item) }));
@@ -115,14 +173,26 @@ export function observeConsumptionCost(api, settings) {
       for (const string of strings) for (const match of string.matchAll(new RegExp('<' + tag + '>[\\s\\S]*?</' + tag + '>', 'g')))
         spans.push({ kind, ...textMeasure(match[0]) });
     const bodies = [...knownBodies].map(([sha256, body]) => {
-      const encodings = [...new Set([body.body, body.body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')])];
+      const xml = body.body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+      const encodings = [...new Set([body.body, xml, JSON.stringify(body.body).slice(1, -1), JSON.stringify(xml).slice(1, -1)])];
+      const occurrences = strings.reduce((total, string) => {
+        const matches = [];
+        for (const encoded of encodings) {
+          let start = string.indexOf(encoded);
+          while (start >= 0) { matches.push({ start, end: start + encoded.length }); start = string.indexOf(encoded, start + encoded.length); }
+        }
+        matches.sort((a, b) => a.start - b.start || b.end - a.end);
+        let end = -1, count = 0;
+        for (const span of matches) if (span.start >= end) { count++; end = span.end; }
+        return total + count;
+      }, 0);
       return { sha256, kind: body.kind, bytes: body.bytes, firstObservedTurn: body.firstObservedTurn,
-        occurrences: strings.reduce((total, string) => total + Math.max(...encodings.map(encoded => string.split(encoded).length - 1)), 0) };
+        occurrences };
     });
     return { ...measured, method: 'utf8-json-stringify-of-extension-hook-payload', wireBytes: null,
       wireMethod: 'not-observable-at-extension-hook', components,
       jsonStructureBytes: measured.bytes - components.reduce((total, item) => total + item.bytes, 0),
-      diagnosticSpans: spans, verifiedBodyOccurrences: bodies, diagnosticMethod: 'nonadditive-text-spans-and-receipt-verified-exact-matches', tokens: null,
+      diagnosticSpans: spans, verifiedBodyOccurrences: bodies, diagnosticMethod: 'nonadditive-content-spans-and-receipt-verified-exact-matches', tokens: null,
       tokenMethod: 'per-component-tokenization-unavailable-use-reported-request-usage' };
   };
   const on = (phase, handle) => api.on(phase, event => {
@@ -157,7 +227,7 @@ export function observeConsumptionCost(api, settings) {
   on('tool_call', event => append('tool_call', { turn, request, toolCallIdSha256: sha(String(event.toolCallId ?? '')),
     toolNameSha256: sha(String(event.toolName ?? '')), input: jsonMeasure(event.input) }));
   on('tool_result', event => {
-    remember([event]); append('tool_result', { turn, request, toolCallIdSha256: sha(String(event.toolCallId ?? '')),
+    remember([{ ...event, role: 'toolResult' }]); append('tool_result', { turn, request, toolCallIdSha256: sha(String(event.toolCallId ?? '')),
       isError: event.isError === true, content: jsonMeasure(event.content), usage: usage(event.usage) });
   });
   on('message_update', event => {

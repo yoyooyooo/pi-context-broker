@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isolatedEnv, writeFakeProvider } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { createRequestLedger, nativeEntries } from './notion-default-context.mjs';
+import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
 
 const helper = fileURLToPath(import.meta.url);
 const sha = text => createHash('sha256').update(text).digest('hex');
@@ -321,22 +322,48 @@ function verifyNoShell(context) {
   assert.ok(!names.some(name => /^(?:bash|exec|shell|execute|terminal)$/i.test(name)), 'The controlled Agent has no shell execution tool');
   return names;
 }
-function verifySessionReceipts(messages, nodes) {
+export function verifySessionReceipts(messages, nodes) {
   const verified = [];
   for (const message of messages) {
     const details = message.details;
     if (!details) continue;
-    const group = details.contextBrokerPreparation ?? details;
+    const preparation = details.contextBrokerPreparation;
+    const group = preparation ?? details;
     let content = textContent(message.content);
+    if (preparation !== undefined) {
+      assert.equal(message.role, 'toolResult', 'Preparation evidence belongs to an actual tool result');
+      assert.equal(message.toolName, 'skill_prepare'); assert.notEqual(message.isError, true);
+      assert.ok(typeof message.toolCallId === 'string' && message.toolCallId.length > 0);
+      assert.ok(group && typeof group === 'object' && !Array.isArray(group));
+      assert.equal(group.toolCallId, message.toolCallId);
+      if (group.version === 2) verifyPreparationEvidence(content, group, message.toolCallId);
+      else {
+        assert.equal(group.version, 1, 'Unknown preparation receipt version');
+        assert.equal(Object.hasOwn(group, 'projection'), false, 'A compiled receipt cannot enter the legacy version-one path');
+      }
+    } else if (details.contextBrokerRead) {
+      assert.equal(message.role, 'toolResult'); assert.equal(message.toolName, 'read'); assert.notEqual(message.isError, true);
+      assert.ok(typeof message.toolCallId === 'string' && message.toolCallId.length > 0);
+      assert.equal(details.contextBrokerRead.toolCallId, message.toolCallId);
+    } else if (message.role !== 'custom' || !['context-broker', 'skill-prompt-message'].includes(message.customType)) continue;
     if (typeof group.nativePromptSha256 === 'string') content = textContent(messages.find(candidate => candidate.role === 'user' && sha(textContent(candidate.content)) === group.nativePromptSha256)?.content);
     const candidates = Array.isArray(group.records) ? group.records : details.contextBrokerRead ? [details.contextBrokerRead] : [];
     for (const receipt of candidates) {
-      if (receipt.version !== 2 || !receipt.contentIdentity) continue;
+      if (receipt.loaded === false || ![2, ...(details.contextBrokerRead ? [3] : [])].includes(receipt.version) || !receipt.contentIdentity) continue;
+      if (!details.contextBrokerRead) assert.equal(receipt.loaded, true);
+      else if (receipt.version === 3) { assert.equal(receipt.delivery?.start, 0); assert.equal(receipt.delivery?.encoding, 'raw'); }
+      else assert.equal(receipt.delivery, undefined, 'A version-two native read proves its entire result');
       const identity = JSON.parse(receipt.contentIdentity);
       const node = nodes.find(node => identity[0] === node.scope && identity[1] === node.record.id);
       if (!node) continue;
       let body = content;
-      if (receipt.delivery) { const span = content.slice(receipt.delivery.start, receipt.delivery.end); body = receipt.delivery.encoding === 'xml' ? unescapeXml(span) : receipt.delivery.encoding === 'json' ? JSON.parse('"' + span + '"') : span; }
+      if (receipt.delivery) {
+        const { start, end, encoding } = receipt.delivery;
+        assert.ok(Number.isSafeInteger(start) && Number.isSafeInteger(end) && start >= 0 && end > start && end <= content.length);
+        assert.ok(['raw', 'xml', 'json'].includes(encoding));
+        const span = content.slice(start, end);
+        body = encoding === 'xml' ? unescapeXml(span) : encoding === 'json' ? JSON.parse('"' + span + '"') : span;
+      }
       assert.equal(body, node.body, 'Receipt must name an actual full body span');
       assert.equal(receipt.bodySha256, sha(body));
       assert.equal(receipt.bytes, Buffer.byteLength(body));
@@ -345,7 +372,7 @@ function verifySessionReceipts(messages, nodes) {
       verified.push({ id: node.record.id, scope: node.scope, snapshot_id: node.snapshot_id, body_sha256: receipt.bodySha256, bytes: receipt.bytes, encoding: receipt.delivery?.encoding ?? 'raw' });
     }
   }
-  for (const node of nodes) assert.ok(verified.some(receipt => receipt.id === node.record.id), `Session needs a verified complete body receipt for ${node.record.id}`);
+  for (const node of nodes) assert.ok(verified.some(receipt => receipt.id === node.record.id && receipt.scope === node.scope && receipt.snapshot_id === node.snapshot_id), `Session needs a verified complete body receipt for ${node.record.id}`);
   return verified;
 }
 async function filesWithin(directory, prefix = '') {

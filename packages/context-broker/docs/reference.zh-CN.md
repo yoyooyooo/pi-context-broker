@@ -242,13 +242,15 @@ Pi 为 Notion 记录提供归属当前会话分支的不透明引用。它们是
 
 `skill_prepare` 的 `roots` 接受返回的 `sr:C`、`sr:S` 或 canonical 主入口 `skill://` ref，并要求明确 `purpose: use|inspect`。`use` 准备根及 Requires 闭包，`inspect` 只读取根，不激活工作流。原生 `read` 接受返回的主文或资源引用。`skill_graph` 的 `refs` 参数可导出固定 `sr:S`、`sr:R` 的 canonical 证明，未固定的 `sr:C` 不能提供该证明。
 
+Pi 的正常 prepare 结果只呈现目的、所选根引用、完整正文和精简资源/关系目录。完整 hash、graph lock、规范身份与物化证明保留在工具 details 和显式证明导出中。确定性编译器逐字保留作者正文，用版本化回执将源 hash、渲染 hash 与实际内容位置绑定；重复读取和显式新选择只派生新的 provider 投影，不编辑会话原件。OMP 保留既有结果形状。详见 [prepare 投影合同与证据](skill-consumption-projection.md)。
+
 `skill_graph({cli_source:"SOURCE_ID"})` 单独请求一个已启用 Notion source 在当前机器上的 CLI 调用元数据，与 `refs` 互斥，且要求 `bash` 和 `skill_graph` 实际启用。返回 `{kind:"host_cli_scope", sourceId, command, database?, executed:false}`，解析真实配置命令或随包入口，不假设全局 CLI 已安装，不访问网络或执行命令。未知或禁用来源明确失败，不换另一个来源。取得元数据不授予执行权限，也不证明连通性。默认 graph 与 `refs` 导出继续保持不含机器路径的可移植证明合同。
 
 绑定先写入分支记录，再对外显示，并在 resume 时重放。当前分支没有的引用明确失败。每次使用仍校验当前授权来源、完整 owner 身份及固定快照。未知、格式错误、scope 不符或 owner 不匹配的引用不能回退为文件系统读取或当前内容。分配引用本身不读取或激活正文；`sr:S`、`sr:R` 也不证明已经投递。
 
 ### 宿主发现与选中激活
 
-Pi 在 provider 派发前根据公开的 active-tool 列表生成 `<ntn-skills-guidance>`，只说明实际可用的 `skill_search`、`skill_prepare`、原生 `read` 和证明导出。原生读取接受目录给出的精确 `sr:C`、`sr:S`、`sr:R` 和 canonical `skill://` 引用。原生发现与读取齐全时，不再附上重复 CLI argv 和 shell 参数模板。缺少发现或读取能力时，仅在 `bash` 实际启用的情况下给出对应来源的 CLI 后备说明；指引不会启用任何工具。维护或同步任务需要真实命令时，通过上面的 `cli_source` 显式取得。介绍与检查使用已有正文，不采用其中的工作流或前置检查。
+Pi 在 provider 派发前根据公开的 active-tool 列表生成 `<ntn-skills-guidance>`，只说明实际可用的 `skill_search`、`skill_prepare`、原生 `read` 和证明导出。原生读取接受目录给出的精确 `sr:C`、`sr:S`、`sr:R` 和 canonical `skill://` 引用。原生发现与读取齐全时，不再附上重复 CLI argv 和 shell 参数模板。缺少发现或读取能力时，仅在 `bash` 实际启用的情况下给出对应来源的 CLI 后备说明；指引不会启用任何工具。维护或同步任务需要真实命令时，通过上面的 `cli_source` 显式取得。普通续问复用已有正文；当前用户明确要求 discovery/read/inspect/use 操作时，仍通过可用且已授权的入口执行，已有 preparation 不代替明确要求的 `skill_prepare`。介绍与检查把 Skill 当作内容，不采用其中的工作流或前置检查。
 
 OMP 与没有公开工具能力 API 的宿主保留既有 CLI 指引。argv 与宿主命令使用同一 resolver，保留各已启用来源的 id 与可选 database，`list-args`、`read-args`、`files-args`、`resource-read-args` 提供带范围的后备语法。保留 JSON 输出核对 `ok`/`error` 和快照身份，语法失败查看子命令 help。两种指引本身均不发现内容、执行命令或激活 Skill。
 

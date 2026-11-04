@@ -18,7 +18,7 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
 const rows = async path => { try { return (await readFile(path, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const usage = 'Usage: node scripts/skill-consumption-model-baseline.mjs doctor|run --config ABSOLUTE_JSON [--evidence-root ABSOLUTE_DIR]; evidence|cleanup --evidence ABSOLUTE_DIR. Real model is restricted to magpie/group/flash-free. Read-only source, normal Pi tools, no generated task guidance or tool constraints. Config: {version:1,extension,transport?:"cli"|"sdk",command?:[absoluteNode,absoluteCLI],database,prompt,expectedAnswers:[string],counts:{cold:5,warm:20},packagePath?}. Missing transport preserves legacy CLI mode and requires command. Explicit sdk forbids command and observes the unchanged default bundled source through a Node preload. Cold=new isolated process/cache; warm=ordinary turns in the final cold process, with existing session context retained. All attempts and unrun planned samples remain recorded.';
+const usage = 'Usage: node scripts/skill-consumption-model-baseline.mjs doctor|run --config ABSOLUTE_JSON [--evidence-root ABSOLUTE_DIR]; evidence|cleanup --evidence ABSOLUTE_DIR. Real model is restricted to magpie/group/flash-free. Read-only source, normal Pi tools, no generated task guidance or forced tool choices. Config: {version:1,extension,transport?:"cli"|"sdk",command?:[absoluteNode,absoluteCLI],database,prompt,expectedAnswers:[string],counts:{cold:5,warm:20},packagePath?,toolProfile?:"standard"|"native-skills"}. Standard preserves the original seven tools; native-skills adds skill_search/skill_prepare/skill_graph without removing normal tools. Missing transport preserves legacy CLI mode and requires command. Explicit sdk forbids command and observes the unchanged default bundled source through a Node preload. Cold=new isolated process/cache; warm=ordinary turns in the final cold process, with existing session context retained. All attempts and unrun planned samples remain recorded.';
 
 async function tree(directory) {
   const output = {};
@@ -34,7 +34,7 @@ async function tree(directory) {
 }
 export function validateModelBaselineConfig(config) {
   assert.equal(config.version, 1);
-  assert.ok(Object.keys(config).every(key => ['version','extension','transport','command','database','prompt','expectedAnswers','counts','packagePath'].includes(key)));
+  assert.ok(Object.keys(config).every(key => ['version','extension','transport','command','database','prompt','expectedAnswers','counts','packagePath','toolProfile'].includes(key)));
   assert.ok(isAbsolute(config.extension));
   assert.ok(config.transport === undefined || ['cli','sdk'].includes(config.transport));
   if(config.transport==='sdk') assert.equal(Object.hasOwn(config,'command'),false,'SDK mode must omit command, not wrap the default source');
@@ -43,7 +43,14 @@ export function validateModelBaselineConfig(config) {
   assert.ok(typeof config.prompt === 'string' && config.prompt.trim() && Array.isArray(config.expectedAnswers) && config.expectedAnswers.length
     && config.expectedAnswers.every(value => typeof value === 'string' && value.trim()));
   assert.ok(['cold','warm'].every(key => Number.isSafeInteger(config.counts?.[key]) && config.counts[key] >= 1 && config.counts[key] <= 20));
+  modelBaselineTools(config);
   return config;
+}
+export function modelBaselineTools(config) {
+  const profile=config.toolProfile===undefined?'standard':config.toolProfile;
+  assert.ok(['standard','native-skills'].includes(profile),'Unsupported model tool profile');
+  const tools=['read','bash','edit','write','grep','find','ls'];
+  return profile==='native-skills'?[...tools,'skill_search','skill_prepare','skill_graph']:tools;
 }
 async function configAt(path) {
   assert.ok(isAbsolute(path ?? ''), 'Config path must be absolute');
@@ -85,7 +92,7 @@ async function doctor(config) {
     sourceTransport:config.transport??'cli',bundledRuntime,
     cliSha256:bundledRuntime?.cli.sha256??hash(await readFile(config.command[1])),
     packageSha256:config.packagePath ? hash(await readFile(config.packagePath)) : null,
-    model:'magpie/group/flash-free', authentication:'not-probed' };
+    model:'magpie/group/flash-free',toolProfile:config.toolProfile??'standard',tools:modelBaselineTools(config), authentication:'not-probed' };
 }
 function textOf(frame) {
   const message = [...(frame?.messages ?? [])].reverse().find(message => message.role === 'assistant');
@@ -192,7 +199,7 @@ async function run(config, parent) {
     warmCondition:'same process and existing session after final cold task; context history is retained and counted',
     answerPredicate:'normal stop, nonblank final text, no permission-only reply, and a frozen expected-answer substring; semantic correctness still requires review',
     earlyStop:'after first failed task/availability/owned-process failure; preserve remaining not-run entries',
-    tools:['read','bash','edit','write','grep','find','ls'], observer:'passive hooks plus Node Undici diagnostics',sourceTransport:config.transport??'cli',
+    toolProfile:config.toolProfile??'standard',tools:modelBaselineTools(config), observer:'passive hooks plus Node Undici diagnostics',sourceTransport:config.transport??'cli',
     driverSha256:hash(await readFile(fileURLToPath(import.meta.url))),
     networkCondition:'same machine; run real service batches serially; ambient network is measured rather than controlled',
     observerSha256:hash(await readFile(join(root,'scripts/skill-consumption-cost.mjs'))),

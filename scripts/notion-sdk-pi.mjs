@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { createServer } from 'node:http';
 import { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isolatedEnv, resolveHost, runCommand, writeFakeProvider } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
+import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
 
 const usage = 'Usage: node scripts/notion-sdk-pi.mjs doctor|run --package ABSOLUTE_INSTALLED_BROKER --fixture ABSOLUTE_FIXTURE_JSON [--expect-short-refs true|false] [--out NEW_ABSOLUTE_EVIDENCE]; evidence|cleanup --evidence ABSOLUTE_EVIDENCE. Real Pi 1.4 RPC, controlled provider with public onPayload/onResponse hooks, offline source, default bundled SDK (source.command is absent). Default View, native menu, live Notion and real model are not claimed.';
 const scenarioNames = ['dollar', 'native', 'prepare', 'scoped-command'];
@@ -31,7 +33,164 @@ function strings(value) {
   if (Array.isArray(value)) return value.flatMap(strings);
   return value && typeof value === 'object' ? Object.values(value).flatMap(strings) : [];
 }
-function bodyCount(context, body) { return strings(context.messages).reduce((total, text) => total + text.split(body).length - 1, 0); }
+function jsonTextValues(value) {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(jsonTextValues);
+  return value && typeof value === 'object' ? Object.values(value).flatMap(jsonTextValues) : [];
+}
+export function bodyCount(context, body) {
+  assert.ok(typeof body === 'string' && body.length > 0);
+  const escaped = body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  return (context.messages ?? []).reduce((total, message) => {
+    // Only message content is model text. Receipts, schemas and tool arguments
+    // are not a substitute for delivering a source body in that content.
+    const text = textContent(message.content);
+    let decoded = [];
+    try { decoded = jsonTextValues(JSON.parse(text)); } catch { /* Ordinary content need not be JSON. */ }
+    return total + Math.max(text.split(body).length - 1, text.split(escaped).length - 1,
+      decoded.reduce((count, value) => count + value.split(body).length - 1, 0));
+  }, 0);
+}
+function exactKeys(value, expected, label) {
+  assert.ok(value && typeof value === 'object' && !Array.isArray(value), label);
+  assert.deepEqual(Object.keys(value).sort(), [...expected].sort(), label);
+}
+
+/** Independent evidence check against the original fixture bytes. It does not
+ * call the production compiler or verifier to certify their own output. */
+export function assertPreparedProjection(message, { snapshots, bodies, roots = ['a', 'b', 'c'], state = 'source' }) {
+  assert.equal(message?.role, 'toolResult'); assert.equal(message.toolName, 'skill_prepare');
+  assert.equal(message.isError, false);
+  assert.ok(Array.isArray(message.content) && message.content.length === 1 && message.content[0].type === 'text');
+  const content = textContent(message.content);
+  const proof = message.details?.contextBrokerPreparation;
+  const validated = verifyPreparationEvidence(content, proof, message.toolCallId), { model, projection } = validated;
+  assert.equal(model.purpose, 'use'); assert.equal(model.records.length, bodies.size);
+  const ids = new Set(), references = new Map();
+  const verified = validated.records.map(({ model: record, receipt, mapping }) => {
+    const source = snapshots.find(snapshot => snapshot.record.id === receipt?.binding?.record?.id && snapshot.scope === receipt.binding.scope);
+    assert.ok(source && bodies.has(source.record.name), 'The canonical receipt must identify an original selected source');
+    const body = bodies.get(source.record.name);
+    assert.equal(ids.has(source.record.id), false, 'Shared Required must appear once'); ids.add(source.record.id);
+    assert.equal(record.name, source.record.name); assert.equal(record.kind, source.record.kind);
+    assert.match(record.ref, /^sr:S[A-Za-z0-9_-]{22}$/u); references.set(record.name, record.ref);
+    assert.equal(receipt.snapshotId, source.snapshot_id);
+    assert.equal(receipt.binding.snapshot_id, source.snapshot_id); assert.equal(receipt.binding.version_id, source.version_id);
+    assert.equal(receipt.bodySha256, hash(body)); assert.equal(receipt.bytes, Buffer.byteLength(body));
+    assert.equal(receipt.binding.body_sha256, hash(body));
+    assert.equal(mapping.state, state);
+    assert.deepEqual(mapping.source, { identity: receipt.identity, sha256: hash(body), bytes: Buffer.byteLength(body) });
+    if (state === 'source') {
+      assert.equal(record.content, body, 'The complete author bytes must survive JSON encoding');
+    } else {
+      assert.equal(state, 'replaced'); assert.equal(receipt.loaded, false);
+      assert.notEqual(record.content, body, 'The repeated source span is replaced only in provider projection');
+      assert.equal(projection.derived?.reason, 'deduplicate');
+    }
+    const directory = receipt.directory;
+    if (directory !== undefined) {
+      for (const [index, actual] of record.directory.files.entries()) {
+        const original = source.files.find(file => file.path === actual.path);
+        assert.ok(original, 'Each advertised resource is owned by this selected snapshot');
+        assert.equal(actual.bytes, original.bytes); assert.equal(directory.files[index].sha256, original.sha256);
+        assert.match(actual.ref, actual.path === source.entrypoint ? /^sr:S[A-Za-z0-9_-]{22}$/u : /^sr:R[A-Za-z0-9_-]{22}$/u);
+        if (actual.path === source.entrypoint) assert.equal(actual.ref, record.ref);
+      }
+    }
+    return { name: record.name, ref: record.ref, source_sha256: hash(body), source_bytes: Buffer.byteLength(body),
+      source_identity: receipt.identity, snapshot_id: source.snapshot_id, state, delivery: mapping.delivery };
+  });
+  assert.deepEqual(model.roots, roots.map(name => references.get(name)), 'Roots identify the fixed model references in request order');
+  assert.ok(model.roots.every(ref => typeof ref === 'string'));
+  assert.equal(proof.graphs.length, 1, 'The fixture has one source scope');
+  const graph = proof.graphs[0];
+  assert.equal(graph.scope, snapshots[0].scope);
+  assert.deepEqual(graph.roots, roots.map(name => snapshots.find(snapshot => snapshot.record.name === name).record.id));
+  assert.deepEqual(graph.graph_lock.roots, graph.roots);
+  assert.deepEqual(new Set(graph.graph_lock.bindings.map(binding => binding.record.id)), ids);
+  for (const binding of graph.graph_lock.bindings) {
+    const original = snapshots.find(snapshot => snapshot.record.id === binding.record.id && snapshot.scope === binding.scope);
+    assert.ok(original); assert.equal(binding.snapshot_id, original.snapshot_id); assert.equal(binding.version_id, original.version_id);
+    assert.match(binding.ref, /^skill:\/\//u); assert.equal(binding.body_sha256, hash(bodies.get(original.record.name)));
+  }
+  return { tool_call_id: message.toolCallId, compiler: projection.compiler, source_projection: projection.sourceProjection,
+    content: { bytes: Buffer.byteLength(content), sha256: hash(content) },
+    details: { bytes: Buffer.byteLength(JSON.stringify(message.details)), sha256: hash(JSON.stringify(message.details)) },
+    records: verified, state, measurement: 'Pi tool content and host-only details measured separately; not model HTTP bytes' };
+}
+
+export function assertPreparedHttpRequest(payload, body, context) {
+  const encoded = Buffer.from(JSON.stringify(payload));
+  assert.deepEqual(body, encoded, 'The public serializer hook must match the actual HTTP request bytes');
+  assert.ok(Array.isArray(payload.messages));
+  const preparations = (context.messages ?? []).filter(message => message.role === 'toolResult' && message.toolName === 'skill_prepare');
+  assert.ok(preparations.length > 0, 'Replay requires an actual captured preparation result');
+  for (const message of payload.messages) assert.equal(Object.hasOwn(message, 'details'), false, 'Host details must not become API message fields');
+  const delivered = preparations.map(message => {
+    const matches = payload.messages.filter(item => item.role === 'tool' && item.tool_call_id === message.toolCallId);
+    assert.equal(matches.length, 1, 'The emitted API request must contain one result for this exact tool call');
+    const emitted = matches[0];
+    exactKeys(emitted, ['role', 'content', 'tool_call_id', ...(emitted.name === undefined ? [] : ['name'])], 'No machine proof fields may be added to a tool message');
+    assert.equal(emitted.content, textContent(message.content), 'The actual serializer must preserve the provider-projected tool content');
+    assert.ok(message.details?.contextBrokerPreparation, 'The replay must retain the separate original host proof');
+    return { tool_call_id: message.toolCallId, content_bytes: Buffer.byteLength(emitted.content), content_sha256: hash(emitted.content),
+      host_details_bytes: Buffer.byteLength(JSON.stringify(message.details)), host_details_sha256: hash(JSON.stringify(message.details)) };
+  });
+  return { request_bytes: body.length, request_sha256: hash(body), payload_matches_http: true, details_in_tool_messages: false, delivered };
+}
+
+async function replayPreparationHttp(context, info, output) {
+  const modulePath = await realpath(join(info.piPackageRoot, 'node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js'));
+  const packagePath = resolve(dirname(modulePath), '../../package.json'), packageInfo = await json(packagePath);
+  assert.equal(packageInfo.name, '@earendil-works/pi-ai'); assert.equal(packageInfo.version, info.pi.version);
+  const { stream } = await import(pathToFileURL(modulePath).href);
+  const requests = [], serverErrors = [];
+  const server = createServer((request, response) => {
+    const chunks = []; let bytes = 0;
+    request.on('error', error => serverErrors.push(error.message));
+    request.on('data', chunk => {
+      bytes += chunk.length;
+      if (bytes > 16 * 1024 * 1024) { serverErrors.push('SERIALIZER_REQUEST_TOO_LARGE'); request.destroy(); }
+      else chunks.push(chunk);
+    });
+    request.on('end', () => {
+      requests.push({ method: request.method, path: request.url, body: Buffer.concat(chunks) });
+      response.writeHead(200, { 'content-type': 'text/event-stream', connection: 'close' });
+      const chunk = { id: 'sc05-local-serializer', object: 'chat.completion.chunk', created: 1, model: 'sc05-local-serializer' };
+      response.write('data: ' + JSON.stringify({ ...chunk, choices: [{ index: 0, delta: { role: 'assistant', content: 'Controlled serializer replay.' }, finish_reason: null }] }) + '\n\n');
+      response.write('data: ' + JSON.stringify({ ...chunk, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } }) + '\n\n');
+      response.end('data: [DONE]\n\n');
+    });
+  });
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  let payload, responses = 0, final;
+  const original = JSON.stringify(context);
+  try {
+    const address = server.address(); assert.ok(address && typeof address === 'object');
+    const model = { id: 'sc05-local-serializer', name: 'Controlled serializer replay', api: 'openai-completions', provider: 'openai',
+      baseUrl: `http://127.0.0.1:${address.port}/v1`, reasoning: false, input: ['text', 'image'],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1_000_000, maxTokens: 128 };
+    final = await stream(model, context, { apiKey: 'fixture-no-secret', env: {}, cacheRetention: 'none', maxTokens: 32,
+      signal: AbortSignal.timeout(10000),
+      onPayload(value) { assert.equal(payload, undefined, 'One serializer request is expected'); payload = structuredClone(value); },
+      onResponse(response) { assert.equal(response.status, 200); responses++; },
+    }).result();
+    assert.equal(final.stopReason, 'stop'); assert.equal(responses, 1);
+    assert.deepEqual(serverErrors, []); assert.equal(requests.length, 1);
+    assert.equal(requests[0].method, 'POST'); assert.equal(requests[0].path, '/v1/chat/completions');
+    const verification = assertPreparedHttpRequest(payload, requests[0].body, context);
+    assert.equal(JSON.stringify(context), original, 'Replaying the provider serializer must not mutate the captured transcript');
+    await writeFile(join(output, 'prepare-serializer-request.json'), requests[0].body, { mode: 0o600 });
+    const result = { status: 'passed', boundary: 'Actual Pi capture replayed through installed pi-ai serializer and localhost HTTP; no real model or production API call',
+      api_package: { name: packageInfo.name, version: packageInfo.version, path: packagePath },
+      serializer: { path: modulePath, sha256: hash(await readFile(modulePath)) }, ...verification,
+      response: { status: 200, stop_reason: final.stopReason, source: 'controlled local SSE', usage: 'not_real_model_usage' } };
+    await save(join(output, 'prepare-serializer.json'), result);
+    return result;
+  } finally {
+    await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  }
+}
 
 function currentProviderTools(context) {
   // Pi 1.4 passes TranscriptContext: replay system tool deltas as pi-ai getCurrentTools does.
@@ -96,6 +255,24 @@ async function inventory(root, relative = '') {
 async function productInventory(root) {
   return [...await inventory(root, 'src'), ...await inventory(root, 'dist')].sort((a, b) => a.path.localeCompare(b.path));
 }
+async function archiveSessions(root, output) {
+  const entries = await inventory(root), messages = [];
+  for (const entry of entries) {
+    const original = await readFile(join(root, entry.path)), target = join(output, 'sessions', entry.path);
+    assert.equal(hash(original), entry.sha256);
+    await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+    await writeFile(target, original, { mode: 0o600, flag: 'wx' });
+    assert.equal(hash(await readFile(target)), entry.sha256);
+    if (entry.path.endsWith('.jsonl')) {
+      for (const line of original.toString('utf8').split('\n').filter(Boolean)) {
+        const entry = JSON.parse(line);
+        if (entry.message) messages.push(entry.message);
+      }
+    }
+  }
+  await save(join(output, 'session-archives.json'), { files: entries, preserved: true });
+  return { files: entries, messages };
+}
 async function inspect(options) {
   assert.ok(options['--package'] && options['--fixture'], usage);
   const packageRoot = await realpath(options['--package']);
@@ -130,7 +307,7 @@ async function inspect(options) {
     assert.equal(bytes.length, file.bytes); assert.equal(hash(bytes), file.sha256);
     bodies.set(snapshot.record.name, new TextDecoder('utf8', { fatal: true, ignoreBOM: true }).decode(bytes));
   }
-  return { packageRoot, manifest, extension, runtime, host, pi, fixture, fixtureEnv, bodies };
+  return { packageRoot, manifest, extension, runtime, host, pi, piPackageRoot: current, fixture, fixtureEnv, bodies };
 }
 
 function selectProviderCall(context) {
@@ -155,8 +332,9 @@ function selectProviderCall(context) {
     return matches[0];
   };
   if (plan.mode === 'search') return null;
-  if (plan.mode === 'prepare') {
-    if (!find('sc10-prepare')) return call('sc10-prepare', 'skill_prepare', { roots: ['a', 'b', 'c'].map(name => selected(name).ref), purpose: 'use' });
+  if (plan.mode === 'prepare' || plan.mode === 'prepare-repeat') {
+    const id = plan.mode === 'prepare' ? 'sc10-prepare' : 'sc05-prepare-repeat';
+    if (!find(id)) return call(id, 'skill_prepare', { roots: ['a', 'b', 'c'].map(name => selected(name).ref), purpose: 'use' });
     return null;
   }
   if (plan.mode !== 'native') throw new Error('CONTROLLED_PLAN_INVALID');
@@ -169,7 +347,9 @@ function selectProviderCall(context) {
   else {
     const inspected = find('sc10-resource-directory');
     if (!inspected) return call('sc10-resource-directory', 'skill_prepare', { roots: [selected('a').ref], purpose: 'inspect' });
-    files = parsed(inspected).records.find(record => record.id === selected('a').id).directory.files;
+    const prepared = parsed(inspected);
+    if (prepared.roots.length !== 1) throw new Error('CONTROLLED_INSPECT_ROOT_NOT_UNIQUE');
+    files = prepared.records.find(record => record.ref === prepared.roots[0]).directory.files;
   }
   const resources = files.filter(file => file.path !== 'SKILL.md');
   if (resources.length !== 1) throw new Error('CONTROLLED_RESOURCE_SELECTION_NOT_UNIQUE');
@@ -364,7 +544,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs) {
   const argv = ['--no-extensions', '--session-dir', sessions, '--tools', activeTools.join(','), '-e', fakeProvider, '-e', info.extension, '--model', 'context-broker-e2e/fake'];
   await save(join(output, 'launch.json'), { host: info.host, argv, cwd: base, source_command_configured: false,
     source_state: 'cloned warm controlled snapshots/current catalog; fresh Broker cache and Pi session', expect_short_refs: expectShortRefs, active_tools: activeTools });
-  let rpc, failed, last, discovery, beforeClose, finality;
+  let rpc, failed, last, discovery, beforeClose, finality, preparation, serializerContext, archive;
   try {
     rpc = await startRpc({ host: 'pi', args: argv, cwd: base, env, timeoutMs: 60000 });
     await rpc.prompt(name === 'dollar' ? 'Discover the authorized Skill directory for the controlled task.' : name === 'native' ? 'Inspect the available a Skill and read its advertised resource.' : name === 'prepare' ? 'Use the available a, b and c Skills together, preparing their required instructions.' : 'For the sdk-fixture source, obtain the host-local command prefix and database scope for a possible maintenance action. Return that metadata only; do not execute commands or read Skill bodies.');
@@ -411,10 +591,35 @@ async function scenario(name, info, scratch, evidence, expectShortRefs) {
     } else if (name === 'prepare') {
       const prepared = parsedResult(toolResult(last, 'sc10-prepare'));
       assert.equal(prepared.status, 'ready'); assert.equal(prepared.records.length, 4);
-      assert.equal(prepared.records.filter(record => record.id.endsWith(':base')).length, 1);
       for (const [key, body] of info.bodies) assert.equal(bodyCount(last, body), 1, `${key}: complete prepared text once`);
       if (expectShortRefs) for (const record of prepared.records) assert.match(record.ref, /^sr:S/u);
+      const oracle = { snapshots: info.fixture.snapshots.slice(0, 4), bodies: info.bodies };
+      const fromFrame = id => {
+        const frames = rpc.frames.filter(frame => frame.type === 'tool_execution_end' && frame.toolCallId === id);
+        assert.equal(frames.length, 1);
+        const frame = frames[0];
+        return { ...frame.result, role: 'toolResult', toolName: frame.toolName, toolCallId: id, isError: frame.isError };
+      };
+      const first = toolResult(last, 'sc10-prepare'), firstRaw = fromFrame('sc10-prepare');
+      const firstProof = assertPreparedProjection(first, oracle), rawFirstProof = assertPreparedProjection(firstRaw, oracle);
+      assert.equal(firstProof.content.sha256, rawFirstProof.content.sha256);
+      assert.equal(firstProof.records.filter(record => record.name === 'base').length, 1);
       await save(join(output, 'prepared.json'), prepared);
+      const requestsBeforeRepeat = captures.length;
+      assert.equal(requestsBeforeRepeat, 3, 'Search and first preparation produce two tool rounds');
+      await save(toolPlan, { mode: 'prepare-repeat' });
+      await rpc.prompt('Prepare the same a, b and c Skills again with purpose use, keeping their selected versions.');
+      captures = await rows(providerFile); last = captures.at(-1).context;
+      const repeated = toolResult(last, 'sc05-prepare-repeat'), repeatedRaw = fromFrame('sc05-prepare-repeat');
+      const rawRepeatedProof = assertPreparedProjection(repeatedRaw, oracle);
+      const repeatedProof = assertPreparedProjection(repeated, { ...oracle, state: 'replaced' });
+      assert.equal(repeated.details.contextBrokerPreparation.projection.derived.parentSha256, rawRepeatedProof.content.sha256);
+      assert.equal(textContent(toolResult(last, 'sc10-prepare').content), textContent(firstRaw.content), 'The first complete copy remains available');
+      for (const [key, body] of info.bodies) assert.equal(bodyCount(last, body), 1, `${key}: one visible complete body after repeated preparation`);
+      preparation = { first: firstProof, repeated_raw: rawRepeatedProof, repeated_provider: repeatedProof,
+        requests_before_repeat: requestsBeforeRepeat, requests_after_repeat: captures.length, originalToolResults: [firstRaw, repeatedRaw] };
+      assert.equal(captures.length, 5, 'Repeated preparation adds one tool round in the existing session');
+      serializerContext = last;
     } else {
       const hostStart = (await rows(ledger)).find(event => event.kind === 'observer_start' && event.observer_pid === rpc.lifecycle[0].pid);
       assert.ok(hostStart, 'Actual owned Pi executable must be observed independently');
@@ -441,10 +646,23 @@ async function scenario(name, info, scratch, evidence, expectShortRefs) {
         failed ??= { code: 'OBSERVER_TERMINAL_INCOMPLETE', message: 'Owned source/observer terminal remains unresolved; live ledger is not sealed.' };
       }
       await save(join(output, 'rpc.json'), rpc.frames); await save(join(output, 'rpc-lifecycle.json'), rpc.lifecycle);
+      archive = await archiveSessions(sessions, output);
     }
   }
   try {
     if (failed) throw new Error(failed.message);
+    let serializer;
+    if (preparation) {
+      for (const original of preparation.originalToolResults) {
+        const messages = archive.messages.filter(message => message.role === 'toolResult' && message.toolName === 'skill_prepare' && message.toolCallId === original.toolCallId);
+        assert.equal(messages.length, 1, 'The original session retains each actual tool result');
+        assert.equal(textContent(messages[0].content), textContent(original.content));
+        assert.deepEqual(messages[0].details, original.details, 'Provider deduplication cannot rewrite the persisted source/projection proof');
+      }
+      const { originalToolResults: _original, ...publicEvidence } = preparation;
+      await save(join(output, 'prepare-projection.json'), { ...publicEvidence, original_session_preserved: true });
+      serializer = await replayPreparationHttp(serializerContext, info, output);
+    }
     const captures = await rows(providerFile), hooks = await rows(hookFile);
     for (const capture of captures) assert.deepEqual(hooks.filter(hook => hook.requestId === capture.requestId).map(hook => hook.phase), ['payload_start', 'payload_end', 'response_end']);
     assert.equal(new Set(captures.map(capture => capture.requestId)).size, captures.length);
@@ -453,7 +671,10 @@ async function scenario(name, info, scratch, evidence, expectShortRefs) {
     const observations = reconcile(await rows(ledger), rpc.lifecycle, { bodyTransportRequired: name !== 'scoped-command' });
     const result = { name, status: 'passed', provider_requests: captures.length, public_provider_hooks: true,
       source_command_configured: false, short_refs: name === 'scoped-command' ? 'not_applicable_metadata_query' : expectShortRefs ? 'verified' : 'not_required_for_baseline',
-      discovery_failures: discovery?.failures ?? null, native_guidance_without_cli_templates: true, observer_finality: finality?.complete === true, default_view: 'not_verified', ...observations };
+      discovery_failures: discovery?.failures ?? null, native_guidance_without_cli_templates: true, observer_finality: finality?.complete === true,
+      session_archive_files: archive?.files.length ?? 0, preparation_projection: preparation ? 'verified' : 'not_applicable',
+      serializer_http_replay: serializer ? { status: serializer.status, request_bytes: serializer.request_bytes, requests: 1, production_network: false } : null,
+      default_view: 'not_verified', ...observations };
     await save(join(output, 'result.json'), result); return result;
   } catch (error) {
     const result = { name, status: 'failed', observer_finality: finality?.complete === true, error: failed ?? { code: error.code ?? error.name, message: String(error.message) } };

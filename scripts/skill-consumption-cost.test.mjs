@@ -83,6 +83,130 @@ const sample = (observed, overrides = {}) => summarizeConsumptionSample({ id: 'a
   events: observed.events, submission: observed.submission, source: source(), outcome, ...overrides });
 const run = samples => ({ plan: freezeConsumptionPlan({ conditions, samples: samples.map(item => item.scenario) }), samples });
 
+function preparedBody(body, version = 1) {
+  const record = { name: 'controlled', kind: 'skill', ref: 'sr:S' + 'a'.repeat(22), content: body,
+    directory: { files: [], required: [], candidates: [], references: [] } };
+  const value = { ok: true, status: 'ready', purpose: 'inspect', roots: [record.ref], records: [record] };
+  const content = JSON.stringify(value), encoded = JSON.stringify(body).slice(1, -1);
+  const start = content.indexOf('"content":"') + '"content":"'.length;
+  const proof = { version: 2, identity: JSON.stringify(['controlled', 'f'.repeat(64), 'skill', 'shared_skill', 'owner']),
+    contentIdentity: JSON.stringify(['f'.repeat(64), 'owner']), snapshotId: 's_' + sha(body), loaded: true,
+    bodySha256: sha(body), bytes: Buffer.byteLength(body), delivery: { start, end: start + encoded.length, encoding: 'json' } };
+  const group = { version, toolCallId: 'prepare-body', purpose: 'inspect', records: [proof], graphs: [] };
+  if (version === 2) group.projection = { version: 1, compiler: 'context-broker/skill-prepare/v1', sourceProjection: 'source-identity/v1',
+    rendered: { sha256: sha(content), bytes: Buffer.byteLength(content) }, records: [{ index: 0, ref: record.ref, state: 'source',
+      source: { identity: proof.identity, sha256: proof.bodySha256, bytes: proof.bytes },
+      rendered: { sha256: sha(encoded), bytes: Buffer.byteLength(encoded) }, delivery: { ...proof.delivery } }] };
+  return { role: 'toolResult', toolName: 'skill_prepare', toolCallId: group.toolCallId, content: [{ type: 'text', text: content }], details: { contextBrokerPreparation: group } };
+}
+
+async function bodyObservation({ messages = [], payload, toolResult, serialized = false }) {
+  const handlers = new Map(), file = output();
+  const api = { on: (name, callback) => handlers.set(name, callback) };
+  const settings = { output: file, checkoutRoot: root, runId: 'body-run', sampleId: 'body', clockId: 'body-clock' };
+  if (serialized) {
+    const extension = path.join(scratch, 'body-observer-' + serial + '.mjs');
+    fs.writeFileSync(extension, consumptionCostExtensionSource(settings), { mode: 0o600 });
+    (await import(pathToFileURL(extension).href)).default(api);
+  } else observeConsumptionCost(api, { fs, crypto, path, ...settings });
+  const emit = (name, event) => {
+    const before = copy(event); deepFreeze(event);
+    assert.equal(handlers.get(name)(event), undefined);
+    assert.deepEqual(event, before);
+  };
+  if (toolResult) emit('tool_result', toolResult);
+  emit('context', { messages }); emit('context_with_system', { messages });
+  emit('before_provider_request', { payload }); emit('session_shutdown', {});
+  const observed = await readConsumptionCostEvents(file);
+  assert.equal(observed.events.at(-1).complete, true);
+  const raw = fs.readFileSync(file, 'utf8');
+  return { ...observed.events.find(event => event.phase === 'provider_request').payload, raw };
+}
+
+test('prepare JSON body occurrences use actual content, preserving Unicode/BOM/CRLF and serialized observers', async () => {
+  const body = '\uFEFF# Members\r\n作者 <body> & "quoted" \\ resource\r\n```json\r\n{"content":"example"}\r\n```\r\n';
+  for (const version of [1, 2]) {
+    const message = preparedBody(body, version);
+    const measured = await bodyObservation({ messages: [message], payload: { model: 'controlled', context: { messages: [message] } }, serialized: version === 2 });
+    assert.deepEqual(measured.verifiedBodyOccurrences.map(item => [item.sha256, item.bytes, item.occurrences]), [[sha(body), Buffer.byteLength(body), 1]]);
+    assert.ok(!measured.raw.includes('quoted') && !measured.raw.includes('作者'));
+  }
+});
+
+test('raw, XML and JSON representations count distinct spans and never count one span twice', async () => {
+  for (const body of ['plain-complete-body', 'full "body"\n& <tag>']) {
+    const message = preparedBody(body), xml = body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+    const content = [body, xml, JSON.stringify(body).slice(1, -1)].join('\n---\n');
+    const measured = await bodyObservation({ messages: [message], payload: { messages: [{ role: 'tool', content }] } });
+    assert.equal(measured.verifiedBodyOccurrences[0].occurrences, 3);
+  }
+  const message = preparedBody('one-complete-body');
+  const measured = await bodyObservation({ messages: [message], payload: { messages: [{ role: 'tool', content: 'one-complete-body' }] } });
+  assert.equal(measured.verifiedBodyOccurrences[0].occurrences, 1);
+});
+
+test('details, schemas and tool arguments cannot inflate content counts, including details-only fake delivery', async () => {
+  const body = 'complete "private"\nSkill body', message = preparedBody(body);
+  const hidden = { messages: [{ role: 'tool', content: 'receipt only', details: { body, nested: [body] },
+    tool_calls: [{ function: { name: 'example', arguments: JSON.stringify({ body }) } }] }],
+    tools: [{ name: 'example', description: body, parameters: { example: body } }], metadata: { body } };
+  const absent = await bodyObservation({ messages: [message], payload: hidden });
+  assert.equal(absent.verifiedBodyOccurrences[0].occurrences, 0);
+  const visible = copy(hidden); visible.messages[0].content = message.content;
+  const present = await bodyObservation({ messages: [message], payload: visible });
+  assert.equal(present.verifiedBodyOccurrences[0].occurrences, 1);
+});
+
+test('owned messages and matching tool-call IDs are required before a body becomes known', async () => {
+  const body = 'author <body> complete bytes', original = preparedBody(body);
+  const changes = [
+    message => { message.role = 'user'; },
+    message => { message.role = 'assistant'; },
+    message => { message.toolName = 'other'; },
+    message => { message.toolCallId = 'foreign-call'; },
+    message => { delete message.toolCallId; delete message.details.contextBrokerPreparation.toolCallId; },
+    message => { message.isError = true; },
+    message => { message.details.contextBrokerPreparation.records[0].loaded = false; },
+    message => { message.details.contextBrokerPreparation.records[0].bodySha256 = sha('partial'); },
+    message => { message.details.contextBrokerPreparation.records[0].delivery.end--; },
+  ];
+  for (const change of changes) {
+    const message = copy(original); change(message);
+    const measured = await bodyObservation({ messages: [message], payload: { messages: [{ role: 'tool', content: body }] } });
+    assert.deepEqual(measured.verifiedBodyOccurrences, []);
+  }
+  const author = await bodyObservation({ messages: [{ role: 'user', content: '<body>' + body + '</body>' }],
+    payload: { messages: [{ role: 'user', content: '<body>' + body + '</body>' }] } });
+  assert.deepEqual(author.verifiedBodyOccurrences, []);
+});
+
+test('v2 prepare observations reject unknown compiler, mismatched render hashes and detached record spans', async () => {
+  const body = 'versioned "body"\nbytes';
+  for (const change of [
+    group => { group.version = 1; },
+    group => { group.projection.compiler = 'unknown/v1'; },
+    group => { group.projection.rendered.sha256 = sha('different'); },
+    group => { group.projection.records[0].delivery.start++; },
+    group => { group.projection.records[0].source.identity = 'another owner'; },
+    group => { group.projection.records[0].state = 'replaced'; },
+  ]) {
+    const message = preparedBody(body, 2); change(message.details.contextBrokerPreparation);
+    const measured = await bodyObservation({ messages: [message], payload: { messages: [{ role: 'tool', content: message.content }] } });
+    assert.deepEqual(measured.verifiedBodyOccurrences, []);
+  }
+});
+
+test('read tool event receipts keep their call binding and repeated scoped content stays two visible copies', async () => {
+  const body = 'native "read"\nbytes';
+  const result = { toolName: 'read', toolCallId: 'read-body', content: [{ type: 'text', text: body }],
+    details: { contextBrokerRead: { version: 2, identity: 'controlled-identity', snapshotId: 's_' + sha(body), toolCallId: 'read-body', bodySha256: sha(body), bytes: Buffer.byteLength(body) } } };
+  const measured = await bodyObservation({ toolResult: result, payload: { messages: [{ role: 'tool', content: body }, { role: 'tool', content: body }] } });
+  assert.equal(measured.verifiedBodyOccurrences[0].occurrences, 2);
+  const wrong = copy(result); wrong.details.contextBrokerRead.toolCallId = 'wrong';
+  const mismatched = await bodyObservation({ toolResult: wrong, payload: { messages: [{ role: 'tool', content: body }] } });
+  assert.deepEqual(mismatched.verifiedBodyOccurrences, []);
+});
+
 test('observing real hook shapes is neutral, private, byte-exact, and uses actual usage', async () => {
   const payload = { messages: [{ content: '<ntn-skills-view-catalog>目录</ntn-skills-view-catalog> https://secret.invalid/path?token=hidden' }],
     tools: [{ name: 'read', parameters: { key: 'secret-value' } }], arbitraryPrivateKey: 'Bearer secret-value' };

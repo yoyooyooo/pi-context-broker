@@ -23,6 +23,8 @@ test("a complete successful native read counts as loaded without injecting a sec
 test("partial, failed, detached, forged text and cross-scope receipts cannot suppress activation", () => {
   expect(nativeReadReceipt(record, "id", record.body.slice(0, 10))).toBeUndefined();
   for (const message of [{ ...result(), content: "partial" }, { ...result(), isError: true }, { ...result(), role: "user" }, { ...result(), toolCallId: "different" }, { ...result(), details: undefined }]) expect(hasLoadedSkill([message], record)).toBe(false);
+  for (const toolCallId of [undefined, ""]) expect(hasLoadedSkill([{ ...result(), toolCallId,
+    details: { contextBrokerRead: { ...nativeReadReceipt(record, "read-1", record.body), toolCallId } } }], record)).toBe(false);
   expect(hasLoadedSkill([result()], { ...record, sourceScope: "other-credential" })).toBe(false);
   expect(sessionSourceSnapshot([], record)).toBeUndefined();
 });

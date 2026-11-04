@@ -20,6 +20,7 @@ import type { PreparedHostGraph, PreparationPurpose, PreparationBinding } from "
 import type { SelectionMode } from "./session-graph";
 import { publicEntryMaterialization, type EntryFile } from "./notion-entry";
 import { createSessionShortRefHost, isSessionShortRefInput, matchesShortRefSource, assertShortRefSource, assertShortRefSnapshot, type HostShortRefResolution } from "./session-short-ref-host";
+import { compileSkillPreparation } from "./skill-context-projection";
 
 export type HostSkillOptions = {
   config: ConfigFile;
@@ -1147,9 +1148,20 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         if (short) assertShortRefSnapshot(short, record);
       }
       const unique = [...new Map(prepared.records.map(record => [JSON.stringify([record.sourceScope, record.id]), record])).values()];
-      const result = {
+      const graphs = prepared.graphs.map(graph => ({ scope: graph.scope, roots: graph.roots, graph_lock: graph.lock, budget: graph.budget, usage: graph.usage }));
+      const compilation = adapter.paths.host === "pi" ? (() => {
+        const records = unique.map(record => ({
+          name: record.name, kind: record.kind ?? "skill", ref: modelReference(record, ctx, true) ?? record.preparationBinding!.ref,
+          content: record.body!, source: { identity: recordIdentity(record), sha256: record.preparationBinding!.body_sha256, bytes: Buffer.byteLength(record.body!) },
+          directory: modelDirectory(record, unique, ctx),
+        }));
+        const selected = roots.map(root => unique.findIndex(record => record.sourceScope === root.sourceScope && record.id === root.id));
+        if (selected.some(index => index < 0)) throw hostError("SOURCE_PREPARATION_INVALID");
+        return compileSkillPreparation({ purpose, roots: [...new Set(selected.map(index => records[index]!.ref))], records });
+      })() : undefined;
+      const legacy = compilation ? undefined : {
         ok: true, status: "ready", purpose,
-        graphs: prepared.graphs.map(graph => ({ scope: graph.scope, roots: graph.roots, graph_lock: graph.lock, budget: graph.budget, usage: graph.usage })),
+        graphs,
         records: unique.map(record => {
           const ref = modelReference(record, ctx, true);
           return {
@@ -1159,24 +1171,30 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
           ...(record.entryManifest ? { materialization: publicEntryMaterialization(record) } : {}),
         }; }),
       };
-      const content = JSON.stringify(result);
+      const content = compilation?.content ?? JSON.stringify(legacy);
       if (Buffer.byteLength(content) > Math.min(...prepared.graphs.map(graph => graph.budget.maxContextBytes))) throw hostError("PREPARE_CONTEXT_BUDGET");
       checkPreparationSignal(combined);
-      let recordOffset = content.indexOf('"records":[');
+      let recordOffset = compilation ? 0 : content.indexOf('"records":[');
       const receipts = unique.map((record, index) => {
-        const serialized = JSON.stringify(result.records[index]);
-        recordOffset = content.indexOf(serialized, recordOffset);
-        const start = recordOffset + serialized.indexOf('"content":' + JSON.stringify(record.body)) + '"content":"'.length;
-        recordOffset += serialized.length;
-        return sourceDeliveryReceipt(record, content, "json", start);
+        let start: number;
+        if (compilation) start = compilation.bodySpans[index]!.start;
+        else {
+          const serialized = JSON.stringify(legacy!.records[index]);
+          recordOffset = content.indexOf(serialized, recordOffset);
+          start = recordOffset + serialized.indexOf('"content":' + JSON.stringify(record.body)) + '"content":"'.length;
+          recordOffset += serialized.length;
+        }
+        const proof = sourceDeliveryReceipt(record, content, "json", start);
+        if (!proof) throw hostError("SOURCE_PREPARATION_INVALID");
+        return compilation ? { ...proof, directory: record.preparationDirectory,
+          ...(record.entryManifest ? { materialization: publicEntryMaterialization(record) } : {}) } : proof;
       });
-      if (receipts.some(receipt => receipt === undefined)) throw hostError("SOURCE_PREPARATION_INVALID");
       checkPreparationSignal(combined);
       prepared.commit();
       return {
         content: [{ type: "text", text: content }],
-        details: { contextBrokerPreparation: { version: 1, toolCallId: id, purpose,
-          records: receipts, graphs: result.graphs } },
+        details: { contextBrokerPreparation: { version: compilation ? 2 : 1, toolCallId: id, purpose,
+          records: receipts, graphs, ...(compilation ? { projection: compilation.projection } : {}) } },
       };
     },
   });

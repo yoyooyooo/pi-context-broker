@@ -96,6 +96,8 @@ node packages/context-broker/scripts/session-selected-graph.mjs
 
 显式 `skill_prepare refresh:true` 在完整准备、确切 File ID 与宿主输出预算全部通过后提交新的 scope 选择。失败保留旧锁。只在 provider 投影中替换已验证的过时/重复正文，原 native tool result、toolCallId、用户消息和 JSONL 不重写；修改跨度后仍保留其余有效回执的准确位置。`skill_graph` 导出当前选择和真实 delivery 状态，不包含凭据、机器缓存路径或对话正文。未知 schema/compiler 版本与被篡改的版本向量必须报错。
 
+Pi 的正常 prepare 模型结果使用[确定性投影](../../../../packages/context-broker/docs/skill-consumption-projection.md)，canonical graph、目录 hash、版本和物化证明在 `details.contextBrokerPreparation` v2 中。通用 graph/session 验收以独立 `skill-preparation-evidence.mjs` 校验 compiler、整份 content hash 及各源 span，再与原 CLI oracle 对照；不能从内部 details 的正文或空 loaded 标记证明模型收到内容。旧 v1 只按原格式读取，含新版 projection 的降级 v1 拒绝。正式真实 graph model gate 仍需整体迁移既有 canonical-only search/prepare 与 CLI source ledger 假设；当前对 v2 会拒绝，不能用受控路线替它报通过。
+
 会话替换撤销旧 ctx：pending input 必须以 handled 结束，不能在 catch 中通知旧 UI 导致 Pi 回退为普通 prompt。生命周期取消不得调用已撤销 ctx 的 abort，也不能取消后一个提交；dispatch receipt 在真正 session 边界或原 consumer 确认前仍拦住重复提交。受控 Proxy 回归与实际 installed Pi new_session / EOF 结果分别保留，真正 TUI Stop 仍需独立终端证据。
 
 ### 实际 Pi 终端选择与 Stop

@@ -20,7 +20,7 @@
 | SC02 | AH-619 | 全部消费入口 | [只观察的成本规程](skill-consumption-cost.md)；真实模型、source 初态与单资源基线，旧 graph observer 不作为纯观察器 |
 | SC03 | AH-620 | CLI、SDK、Pi | CLI core 的 version 1 consume 合同与等价证明已提交；独立 SDK 打包和 Broker 迁移继续归 SC10 |
 | SC04 | AH-621 | 短引用、原生 read | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：C/S/R 分支表、真实 SessionManager 13 项与 5 次独立 resume、实际 Pi search/prepare/read；74 候选批量投影经同目录 13 点真实对照，跨机重新授权和正式模型 Gate 仍分列 |
-| SC05 | AH-622 | provider 输入 | [能力化指引切片](../../../../packages/context-broker/docs/skill-consumption-guidance.md)：按真实 active tools 呈现原生消费，维护 CLI scope 显式请求；完整编译器及源/投影双 hash 仍需各自验收 |
+| SC05 | AH-622 | provider 输入 | [能力化指引](../../../../packages/context-broker/docs/skill-consumption-guidance.md)与[prepare 编译投影](../../../../packages/context-broker/docs/skill-consumption-projection.md)：完整作者正文、模型短引用和机器证明分离，versioned source/rendered hash 绑定实际 span；普通复用不代替当前用户明确要求的操作；其他入口统一编译及正式 Gate 仍分列 |
 | SC06 | AH-623 | 目录、search、自然任务 | view-discovery / model；另补两种目录的真实选路比较 |
 | SC07 | AH-626 | inspect、use、资源 | installed --skill-graph true；一次目标消费和批读仍开放；[指引回归](../../../../packages/context-broker/docs/skill-consumption-guidance.md)消除额外 bash 探测并纠正 doctor 含义，仍保留版本范围与 resume 条件两处语义缺陷，旧失败不覆盖 |
 | SC08 | AH-627 | 重复、resume、压缩 | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：selected/visible/active 分离、状态层 14/14、实际 Pi 压缩后固定恢复；默认模型摘要另验 |

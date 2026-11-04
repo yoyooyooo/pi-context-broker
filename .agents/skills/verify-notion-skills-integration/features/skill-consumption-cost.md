@@ -15,6 +15,8 @@
 
 三个被动 observer 的 JSONL 使用 0600 权限、逐事件 hash 链和同机 monotonic clock。日志不保存认证头、token、签名 URL、原始 CLI stdout 或完整 provider 正文；独立 Source CLI driver 的原件保留规则另按该 driver 执行。实际 payload 的 hash 必须与 transport 发送 body 对齐；hash/摘要本身不证明 Skill 正文投递，后者仍由消费链的完整 span 断言负责。
 
+正文观察只扫描实际 message content（包含 JSON 编码的 prepare 正文），排除 details、tool schema 和 assistant tool arguments；raw/XML/JSON 的同一物理片段不重复计数。known body 必须来自 owned receipt 和匹配的非空 toolCallId，v2 compiler/hash/span 也要匹配。该统计仍不替代完整功能投递判断。真实 Pi 的 TranscriptContext 可带内部 details，受控捕获的总 JSON 大小不能当模型 HTTP body；serializer/localhost HTTP 的字节和真实模型 HTTP/token 分开报告。
+
 未知值用 null。provider hook JSON、CLI 解码 JSON、压缩后的 HTTP entity、ZIP 文件和 TCP/TLS wire 是不同单位。模型 HTTP observer 只有 identity content-encoding 才将 entity bytes 作为 decoded response bytes；wire bytes 始终不可从这些 hooks 推得。usage 的 input、output、cacheRead、cacheWrite、totalTokens 分开记录，不用字符数估计 token。Notion SDK / CLI 的重试和队列等待沿用公开 request_metrics；模型 SDK 内部等待或其它未观察字段仍为 null。
 
 ## Launch 与 Doctor
@@ -68,7 +70,7 @@ node scripts/skill-consumption-startup.mjs run \
 
 ### 真实模型配置
 
-共同配置为 `{version:1,extension,database,prompt,expectedAnswers,counts:{cold:5,warm:20},packagePath?}`，路径均为绝对路径。模型固定为 `magpie/group/flash-free`，不回退；prefetch false，driver 的 `--tools` 固定为 read/bash/edit/write/grep/find/ls 七项。Broker 扩展照常加载，但已注册工具不代表已经 active；以实际 provider 工具声明核对能力，不能把此路线称为原生 Broker 工具全部启用。observer 不规定模型工具选择，不追加任务指令，也不替换返回值。
+共同配置为 `{version:1,extension,database,prompt,expectedAnswers,counts:{cold:5,warm:20},packagePath?,toolProfile?}`，路径均为绝对路径。模型固定为 `magpie/group/flash-free`，不回退；prefetch false。`toolProfile` 缺省或 `standard` 时保持原 read/bash/edit/write/grep/find/ls 七项；显式 `native-skills` 在这七项上增加 skill_search/skill_prepare/skill_graph，不移除正常工具，也不规定模型调用顺序。拒绝未知或自定义工具组合。已注册工具不代表已经 active，仍须核对实际 provider 声明；不同 profile 的历史样本不能混成同条件比较。observer 不追加任务指令，也不替换返回值。
 
 两种 Source 入口独立冻结，已有 CLI 配置与历史结果继续有效：
 

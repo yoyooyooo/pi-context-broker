@@ -12,6 +12,7 @@
 - `inject-loaded-omp`：OMP/Tern 的完整 Skill 正文满足使用前读取要求；自然的技能介绍不应再次列缓存目录、读入口或包清单，资源任务仍可按提供目录读取参考文件。日常真实 `$` 入口使用[日常安装地图](../../verify-notion-skills-integration/features/daily-installation-ui.md)的 model dollar 路径，观察实际工具行为；仅检查 payload 文案不能证明模型行为。Pi 保留宿主原有提示，真实发现与资源消费走[source 地图](source.md)的独立 model 路径，终端选择另走[Pi 终端规程](../../verify-notion-skills-integration/features/dollar-completion-selection.md#pi-独立终端)。
 - `inject-cli-guidance`：Pi 按真实 active tools 生成 `<ntn-skills-guidance>`；原生消费齐全时不注入 CLI argv 模板，缺失操作仅在 bash 可用时给对应后备路径。维护命令通过 `skill_graph({cli_source:"SOURCE_ID"})` 显式取得，要求两个工具均启用、来源确切且未禁用，与 refs 证明导出互斥。默认导出继续不含机器路径；命令元数据不执行任何操作。工具切换时仅替换 provider 投影中的旧 owned guidance，历史 JSONL 不变。OMP/未知能力保留原合同。host runner 分别检查实际 provider、能力变化与持久原件，不预加载正文。
 - `inject-pi-consumption`：Pi 在 input 同步冻结选择/text/images，context 在真实运行信号下完成准备；默认 Notion Skill/Router 走随包 SDK。C/S/R 短引用继续核对 scope、物理身份、固定版本和权限；完整 source bytes 与 body-free 目录分开。实际 RPC/PTY、独立安装 SDK-Pi 与完整启动证据见[运行时记录](../../../../packages/context-broker/docs/skill-consumption-runtime.md)。
+- `inject-prepare-projection`：Pi 的 `skill_prepare` 用确定性 compiler 输出完整正文与精简资源/关系目录；完整 canonical graph/hash/materialization 留 details。v2 回执核对实际 content、toolCallId、source/rendered hash、UTF-16 span 与 UTF-8 bytes；未知 compiler、partial、假 details 和降级到 v1 均不能成为完整投递。重复/retire 只从已验证父投影派生，剩余正文仍可验证，原 JSONL 不改。用消费专项与独立安装 SDK-Pi 的重复 prepare、真实 provider serializer/HTTP 路线验收，见[投影记录](../../../../packages/context-broker/docs/skill-consumption-projection.md)。
 
 ## How to get to it (user POV)
 

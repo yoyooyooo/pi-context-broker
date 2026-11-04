@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installHostSkills, type HostSkills } from "../src/host-skills";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
+import { createOmpHostAdapter } from "../src/omp-host-adapter";
 import { deduplicateSourceReads, sourceDeliveryReceipt, sourceBodyLoaded, sourceMessageText, sessionSourceBindings } from "../src/session-source-snapshot";
 import { materializeNotionEntryFile, publishNotionEntry } from "../src/notion-entry";
 import type { PreparedHostGraph, PreparationPurpose } from "../src/prepare-protocol";
@@ -17,7 +18,14 @@ function canonical(value: unknown): string {
   return "{" + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
 }
 const scope = "a".repeat(64);
-async function fixture(withShortRefs = false, withDirectoryAlias = false) {
+function preparationDetails(result: { details?: unknown }): Record<string, unknown> {
+  const details = result.details;
+  if (!details || typeof details !== "object" || Array.isArray(details) || !("contextBrokerPreparation" in details)) throw new Error("Expected preparation details");
+  const preparation = details.contextBrokerPreparation;
+  if (!preparation || typeof preparation !== "object" || Array.isArray(preparation)) throw new Error("Expected preparation proof");
+  return Object.fromEntries(Object.entries(preparation));
+}
+async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKind: "pi" | "omp" = "pi") {
   const owned = await mkdtemp(join(tmpdir(), "broker-host-prepare-"));
   const directory = withDirectoryAlias ? join(owned, "alias") : owned;
   if (withDirectoryAlias) {
@@ -70,7 +78,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false) {
   const persisted: SelectionMode[] = [];
   const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
   let search: NativeSkillSearchDefinition | undefined, tool: NativeSkillPrepareDefinition | undefined, graphTool: NativeSkillGraphDefinition | undefined;
-  const api: ExtensionAPI = { on(name, listener) { events.set(name, [...events.get(name) ?? [], listener]); },
+  const api: ExtensionAPI = { ...(hostKind === "omp" ? { pi: {} } : {}), on(name, listener) { events.set(name, [...events.get(name) ?? [], listener]); },
     appendEntry(customType, data) { session.entries.push({ type: "custom", customType, data }); },
     registerTool(value) { if (value.name === "skill_search") search = value; if (value.name === "skill_prepare") tool = value; if (value.name === "skill_graph") graphTool = value; } };
   function graph(purpose: PreparationPurpose): PreparedHostGraph {
@@ -99,7 +107,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false) {
       ...(withShortRefs ? { sessionGraph: () => ({ kind: "controlled-selected-graph", scope }) } : {}),
       needsPreflightPrompt: text => text.includes("$root"),
       preflightPrompt: async (text, ctx, signal) => { if (text.includes("$root")) await host.prepareMany([root!], ctx, signal); },
-    }, createPiHostAdapter(api));
+    }, hostKind === "omp" ? createOmpHostAdapter(api) : createPiHostAdapter(api));
     if (!search || !tool) throw new Error("Expected native graph tools");
     return { search, tool, graphTool, host };
   };
@@ -122,7 +130,14 @@ test("native metadata search stays known; explicit inspect and use deliver compl
   expect(inspection.records[0].directory.candidates[0].ref).toBe(f.member.ref);
   const used = await tool.execute("use", { roots: [f.root.ref], purpose: "use" }, undefined, undefined, f.ctx);
   const usage = JSON.parse(String(used.content[0]?.type === "text" ? used.content[0].text : ""));
-  expect(usage.records.map((record: { id: string }) => record.id)).toEqual([f.root.id, f.required.id]);
+  expect(usage.records.map((record: { name: string }) => record.name)).toEqual([f.root.name, f.required.name]);
+  expect(usage.roots).toEqual([f.root.preparationBinding!.ref]);
+  expect(preparationDetails(used)).toMatchObject({ version: 2, records: [
+    { binding: { record: { id: f.root.id } } }, { binding: { record: { id: f.required.id } } },
+  ] });
+  expect(usage.graphs).toBeUndefined();
+  expect(usage.records[0].body_sha256).toBeUndefined();
+  expect(usage.records[0].snapshot_id).toBeUndefined();
   expect(f.calls).toEqual(["inspect", "use"]);
   expect(sourceBodyLoaded([], f.root)).toBe(false);
   const result = { role: "toolResult", toolName: "skill_prepare", toolCallId: "use", content: used.content, details: used.details, isError: false };
@@ -234,15 +249,20 @@ test("short-ref directory projection preserves older pins, non-main references a
   const originalDirectory = JSON.stringify(f.root.preparationDirectory), originalLock = JSON.stringify(f.graph("use").lock);
   const { tool } = await f.install();
   const result = await tool.execute("relations", { roots: [f.root.ref], purpose: "use" }, undefined, undefined, f.ctx);
-  const output = JSON.parse(sourceMessageText(result.content)), root = output.records.find((item: { id: string }) => item.id === f.root.id);
+  const output = JSON.parse(sourceMessageText(result.content)), root = output.records.find((item: { name: string }) => item.name === f.root.name);
   for (const item of unchanged) expect(root.directory.references.find((value: { name: string }) => value.name === item.name).ref).toBe(item.ref);
   expect(root.directory.references.find((item: { name: string }) => item.name === "fixed-main").ref).toBe(root.ref);
   expect(root.directory.references.find((item: { name: string }) => item.name === "fixed-resource").ref).toMatch(/^sr:R[A-Za-z0-9_-]{22}$/);
-  expect(root.directory.required[0].ref).toBe(output.records.find((item: { id: string }) => item.id === f.required.id).ref);
+  expect(root.directory.required[0].ref).toBe(output.records.find((item: { name: string }) => item.name === f.required.name).ref);
   expect(root.directory.candidates[0].ref).toMatch(/^sr:C[A-Za-z0-9_-]{22}$/);
   expect(JSON.stringify(f.root.preparationDirectory)).toBe(originalDirectory);
-  expect(JSON.stringify(output.graphs[0].graph_lock)).toBe(originalLock);
-  expect(JSON.stringify(output.graphs[0].graph_lock)).not.toContain("sr:");
+  const details = preparationDetails(result);
+  expect(details.graphs).toMatchObject([{ graph_lock: JSON.parse(originalLock) }]);
+  expect(JSON.stringify(details.graphs)).not.toContain("sr:");
+  expect(details.records).toEqual(expect.arrayContaining([expect.objectContaining({ directory: JSON.parse(originalDirectory) })]));
+  expect(output.graphs).toBeUndefined();
+  expect(root.directory.files.every((file: object) => !Object.hasOwn(file, "sha256"))).toBe(true);
+  expect(root.directory.references.every((reference: object) => !Object.hasOwn(reference, "id"))).toBe(true);
   expect(f.resourceReads).toEqual([]);
 });
 
@@ -261,7 +281,8 @@ test("registered search to prepare to native read keeps one scope/version and ex
   expect(prepared.records[0].content).toBe(f.root.body);
   expect(prepared.records[0].path).toBeUndefined();
   expect(JSON.stringify(prepared)).not.toContain(f.ctx.cwd!);
-  expect(prepared.records[0].materialization).toMatchObject({ local_files_ready: false, materialized_paths: ["SKILL.md"], loaded: false });
+  expect(prepared.records[0].materialization).toBeUndefined();
+  expect(preparationDetails(preparedResult).records).toMatchObject([{ materialization: { local_files_ready: false, materialized_paths: ["SKILL.md"], loaded: false } }]);
   const memberSearch = JSON.parse(sourceMessageText((await search.execute("search-member", { query: "member" }, undefined, undefined, f.ctx)).content));
   expect(memberSearch.records[0].ref).toBe(prepared.records[0].directory.candidates[0].ref);
   const entries = f.session.entries.length;
@@ -299,6 +320,27 @@ test("registered search to prepare to native read keeps one scope/version and ex
   expect(JSON.stringify(exported.references)).not.toContain("sr:");
   expect(exported.references[1]).toMatchObject({ owner: { identity: { scope, locator: f.root.locator }, snapshot_id: f.root.snapshotId, version_id: f.root.versionId }, file: { file_id: "guide-root" } });
   await expect(graphTool.execute("candidate-export", { refs: [candidate] }, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "SHORT_REF_NOT_PINNED" });
+});
+
+test("OMP keeps its version-one complete preparation output and machine receipt", async () => {
+  const f = await fixture(true, false, "omp"), { tool } = await f.install();
+  const result = await tool.execute("omp-use", { roots: [f.root.ref], purpose: "use" }, undefined, undefined, f.ctx);
+  const output = JSON.parse(sourceMessageText(result.content)), details = preparationDetails(result);
+  expect(output.records.map((record: { id: string }) => record.id)).toEqual([f.root.id, f.required.id]);
+  expect(output.records[0].ref).toBe(f.root.preparationBinding!.ref);
+  expect(output.records[0].scope).toBe(scope);
+  expect(output.records[0].snapshot_id).toBe(f.root.snapshotId);
+  expect(output.records[0].body_sha256).toBe(f.root.preparationBinding!.body_sha256);
+  expect(output.records[0].content).toBe(f.root.body);
+  expect(output.records[0].directory).toEqual(f.root.preparationDirectory);
+  expect(output.records[0].materialization).toMatchObject({ local_files_ready: false, materialized_paths: ["SKILL.md"], loaded: false });
+  expect(output.graphs[0].graph_lock).toEqual(f.graph("use").lock);
+  expect(details.version).toBe(1);
+  expect(details.projection).toBeUndefined();
+  expect(details.graphs).toEqual(output.graphs);
+  const message: AgentMessage = { role: "toolResult", toolName: "skill_prepare", toolCallId: "omp-use", content: result.content, details: result.details, isError: false };
+  expect(sourceBodyLoaded([message], f.root)).toBe(true);
+  expect(sourceBodyLoaded([message], f.required)).toBe(true);
 });
 
 test("short-ref tool admission cannot turn a saved locator into authority or a different scope", async () => {

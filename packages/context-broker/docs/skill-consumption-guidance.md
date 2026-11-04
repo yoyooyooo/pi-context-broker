@@ -2,6 +2,8 @@
 
 归属 [AH-617](https://linear.app/yoyooyooo/issue/AH-617) 的 [SC05 / AH-622](https://linear.app/yoyooyooo/issue/AH-622)。本切片承接 [SDK、短引用与会话运行时记录](skill-consumption-runtime.md)，处理模型指引与实际工具能力不一致的问题。它不宣称完整 context compiler、批量资源读取或 SC21 四条正式 Agent 路线已经完成。
 
+后续 `skill_prepare` 的正文、模型投影与机器证明分离见 [prepare 投影记录](skill-consumption-projection.md)；本文保留本轮原包和原样本的历史结论。
+
 ## 已有失败揭示的输入问题
 
 原 `sc10-model/skill-model-cost-7gd44M` 使用真实 Notion、默认 SDK 与 `magpie/group/flash-free`，原句为：

@@ -21,7 +21,10 @@ test("native consumption keeps exact references and operation intent without mac
   for (const token of ["purpose inspect", "purpose use", "Required", "Members", "cli_source", '"alpha"', '"beta"']) expect(guidance).toContain(token);
   for (const token of ["<cli", "<list-args>", "<read-args>", "/configured", "/must-not-appear", "doctor"]) expect(guidance).not.toContain(token);
   expect(guidance).toContain("does not authorize executing");
-  expect(guidance).toContain("without rereading it or probing packages");
+  expect(guidance).toContain("for ordinary follow-up questions, without rereading it or probing packages");
+  expect(guidance).toContain("Still perform discovery, read, inspect or use operations explicitly requested by the current user through an available, authorized route.");
+  expect(guidance).toContain("An existing preparation does not replace a skill_prepare operation explicitly requested by the current user.");
+  expect(guidance).not.toContain("An already supplied host preparation satisfies that step.");
   expect(guidance).toContain("do not assume a global ntn-skills command");
 });
 

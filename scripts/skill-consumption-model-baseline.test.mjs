@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { modelBaselineSource, validateModelBaselineConfig, summarizeSource, verifyModelAnswer } from './skill-consumption-model-baseline.mjs';
+import { modelBaselineSource, modelBaselineTools, validateModelBaselineConfig, summarizeSource, verifyModelAnswer } from './skill-consumption-model-baseline.mjs';
 
 test('ordinary task acceptance rejects permission-only replies containing the expected answer', () => {
   assert.equal(verifyModelAnswer({ stopReason: 'stop', text: '请先确认授权，我才能回答 12 加 7 是否等于 19。' }, ['19', '十九']), false);
@@ -62,6 +62,21 @@ test('SDK mode requires an absent command and emits the unchanged default source
   assert.throws(() => validateModelBaselineConfig(config));
   assert.throws(() => validateModelBaselineConfig({ ...legacy, transport: 'alternate' }));
   assert.throws(() => validateModelBaselineConfig({ ...sdk, model: 'another-provider/model' }));
+});
+
+test('native Skill profiling preserves every original tool and rejects undeclared or narrowed profiles', () => {
+  const config={version:1,extension:'/fixture/index.mjs',transport:'sdk',database:'12345678-1234-1234-1234-123456789012',
+    prompt:'Use the public preparation entry and explain the selected Skill.',expectedAnswers:['doctor'],counts:{cold:1,warm:1}};
+  const standard=['read','bash','edit','write','grep','find','ls'];
+  assert.deepEqual(modelBaselineTools(config),standard);
+  assert.deepEqual(modelBaselineTools({...config,toolProfile:'standard'}),standard);
+  const native={...config,toolProfile:'native-skills'};
+  assert.equal(validateModelBaselineConfig(native),native);
+  assert.deepEqual(modelBaselineTools(native),[...standard,'skill_search','skill_prepare','skill_graph']);
+  for(const toolProfile of [null,'prepare-only','native',[],{tools:['skill_prepare']}])
+    assert.throws(()=>validateModelBaselineConfig({...config,toolProfile}),/Unsupported model tool profile/);
+  assert.throws(()=>validateModelBaselineConfig({...native,tools:['skill_prepare']}));
+  assert.deepEqual(modelBaselineTools(config),standard);
 });
 
 test('SDK, CLI and HTTP counts stay distinct; missing, late and unmatched observations cannot prove zero cost', () => {

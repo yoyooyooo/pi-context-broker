@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { recordIdentity } from "./discovery-records";
 import { parseNativeReference } from "./native-reference";
 import type { AgentMessage, MessageContent, SkillRecord } from "./types";
-import { isPreparationBinding, type PreparationBinding } from "./prepare-protocol";
+import { decodePreparationLock, isPreparationBinding, type PreparationBinding } from "./prepare-protocol";
 import type { SessionSelection } from "./session-graph";
+import { deriveSkillPrepareProjection, validateSkillPrepareProjection } from "./skill-context-projection-proof";
 
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -51,7 +53,8 @@ export function sourceDeliveryReceipt(record: SkillRecord, content: string, enco
 function verifiedReadProof(message: AgentMessage) {
   if (message.role !== "toolResult" || message.toolName !== "read" || message.isError === true || !object(message.details)) return undefined;
   const proof = message.details.contextBrokerRead;
-  if (!object(proof) || ![1, 2, 3].includes(Number(proof.version)) || typeof proof.identity !== "string" || proof.toolCallId !== message.toolCallId || !snapshot(proof.snapshotId)) return undefined;
+  if (!object(proof) || ![1, 2, 3].includes(Number(proof.version)) || typeof proof.identity !== "string"
+    || typeof proof.toolCallId !== "string" || !proof.toolCallId || proof.toolCallId !== message.toolCallId || !snapshot(proof.snapshotId)) return undefined;
   const text = sourceMessageText(message.content);
   if (proof.version === 3) {
     const delivery = proof.delivery;
@@ -85,13 +88,65 @@ function verifiedResourceReadProof(message: AgentMessage) {
   return hash(text) === proof.sha256 && Buffer.byteLength(text) === proof.bytes ? proof : undefined;
 }
 
+function verifiedPreparationProjection(message: AgentMessage, proof: Record<string, unknown>) {
+  if (Array.isArray(message.content) && message.content.some(part => part.type !== "text")) return undefined;
+  const text = sourceMessageText(message.content), projection = validateSkillPrepareProjection(text, proof.projection);
+  if (!projection || !Array.isArray(proof.records) || proof.records.length !== projection.records.length
+    || !Array.isArray(proof.graphs) || !proof.graphs.length) return undefined;
+  const model = JSON.parse(text);
+  if (proof.purpose !== model.purpose) return undefined;
+  const bindings = new Map<string, PreparationBinding>(), roots = new Set<string>();
+  try {
+    for (const graph of proof.graphs) {
+      if (!object(graph)) return undefined;
+      const lock = decodePreparationLock(graph.graph_lock);
+      if (lock.purpose !== proof.purpose || graph.scope !== lock.scope || !Array.isArray(graph.roots)
+        || graph.roots.some(root => typeof root !== "string")
+        || !isDeepStrictEqual([...new Set(graph.roots)].sort(), [...new Set(lock.roots)].sort())) return undefined;
+      for (const binding of lock.bindings) {
+        const key = JSON.stringify([binding.scope, binding.record.id]), previous = bindings.get(key);
+        if (previous && !isDeepStrictEqual(previous, binding)) return undefined;
+        bindings.set(key, binding);
+      }
+      for (const id of lock.roots) roots.add(JSON.stringify([lock.scope, id]));
+    }
+  } catch { return undefined; }
+  if (bindings.size !== proof.records.length) return undefined;
+  const rootRefs = new Set<string>(), seen = new Set<string>();
+  for (const [index, item] of proof.records.entries()) {
+    const mapping = projection.records[index]!, record = model.records[index];
+    if (!object(item) || item.version !== 2 || item.identity !== mapping.source.identity
+      || item.bodySha256 !== mapping.source.sha256 || item.bytes !== mapping.source.bytes
+      || item.loaded !== (mapping.state === "source") || !isDeepStrictEqual(item.delivery, mapping.delivery)
+      || !isPreparationBinding(item.binding)) return undefined;
+    const binding = item.binding, key = JSON.stringify([binding.scope, binding.record.id]);
+    if (seen.has(key) || item.contentIdentity !== key || item.snapshotId !== binding.snapshot_id
+      || item.bodySha256 !== binding.body_sha256 || !isDeepStrictEqual(bindings.get(key), binding)
+      || record.name !== binding.record.name || record.kind !== binding.record.kind) return undefined;
+    let identity: unknown;
+    try { identity = JSON.parse(String(item.identity)); } catch { return undefined; }
+    if (!Array.isArray(identity) || identity.length !== 5 || typeof identity[0] !== "string" || !identity[0]
+      || identity[1] !== binding.scope || identity[2] !== binding.record.kind || identity[3] !== binding.record.locator.type
+      || identity[4] !== binding.record.id) return undefined;
+    if (record.ref.startsWith("sr:")) {
+      if (!/^sr:S[A-Za-z0-9_-]{22}$/.test(record.ref)) return undefined;
+    } else if (record.ref !== binding.ref) return undefined;
+    seen.add(key);
+    if (roots.has(key)) rootRefs.add(record.ref);
+  }
+  if (model.roots.length !== rootRefs.size || model.roots.some((ref: string) => !rootRefs.has(ref))) return undefined;
+  return projection;
+}
+
 function injectedSnapshots(messages: AgentMessage[], visit?: (proof: Record<string, unknown>, contentIndex: number) => void): Record<string, unknown>[] {
   const result: Record<string, unknown>[] = [];
   for (const [messageIndex, message] of messages.entries()) {
     if (!object(message.details)) continue;
     const toolProof = message.details.contextBrokerPreparation;
     const tool = message.role === "toolResult" && message.toolName === "skill_prepare" && message.isError !== true
-      && object(toolProof) && toolProof.version === 1 && toolProof.toolCallId === message.toolCallId;
+      && object(toolProof) && typeof toolProof.toolCallId === "string" && toolProof.toolCallId.length > 0
+      && toolProof.toolCallId === message.toolCallId && (toolProof.version === 1 && !Object.hasOwn(toolProof, "projection")
+        || toolProof.version === 2 && verifiedPreparationProjection(message, toolProof) !== undefined);
     if (!tool && (message.role !== "custom" || !["context-broker", "skill-prompt-message"].includes(message.customType ?? ""))) continue;
     const details = tool && object(toolProof) ? toolProof : message.details;
     let content = sourceMessageText(message.content);
@@ -118,7 +173,7 @@ function injectedSnapshots(messages: AgentMessage[], visit?: (proof: Record<stri
 }
 
 type Replacement = { start: number; end: number; text: string };
-function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number, Replacement[]>): AgentMessage[] {
+function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number, Replacement[]>, reason: "deduplicate" | "supersede"): AgentMessage[] {
   const adjusted = new Map<Record<string, unknown>, Record<string, unknown> | null>();
   injectedSnapshots(messages, (proof, index) => {
     const spans = replacements.get(index);
@@ -168,8 +223,25 @@ function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number
       ...(nested ? { contextBrokerPreparation: nested } : {}),
       ...(movedPrompt ? { nativePromptSha256: hash(sourceMessageText(projected[user]?.content)) } : {}) };
   }
-  return projected.map(message => {
+  return projected.map((message, index) => {
     const next = details(message.details);
+    const original = messages[index]!;
+    const preparation = object(original.details) ? original.details.contextBrokerPreparation : undefined;
+    if (projected[index] !== original && object(preparation) && preparation.version === 2) {
+      const verified = verifiedPreparationProjection(original, preparation);
+      if (!verified || !object(next) || !object(next.contextBrokerPreparation)) return { ...message, details: next };
+      const changes = replacements.get(index) ?? [];
+      const changedIndices = verified.records.flatMap((record, recordIndex) => changes.some(change =>
+        change.start < record.delivery.end && change.end > record.delivery.start) ? [recordIndex] : []);
+      const derived = deriveSkillPrepareProjection(sourceMessageText(original.content), sourceMessageText(message.content),
+        verified, changedIndices, reason);
+      // A new content digest must never bless an invalid old receipt or an
+      // unrelated metadata edit. Failed derivation keeps evidence invalid.
+      if (!derived || !Array.isArray(preparation.records)) return { ...message, details: next };
+      const records = preparation.records.map((record, recordIndex) => object(record) ? { ...record,
+        delivery: derived.records[recordIndex]!.delivery, loaded: derived.records[recordIndex]!.state === "source" } : record);
+      return { ...message, details: { ...next, contextBrokerPreparation: { ...next.contextBrokerPreparation, records, projection: derived } } };
+    }
     return next === message.details ? message : { ...message, details: next };
   });
 }
@@ -196,7 +268,10 @@ export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[]
     const location = JSON.stringify([index, proof.delivery.start, proof.delivery.end]);
     if (!seen.has(key)) { seen.set(key, location); return; }
     if (seen.get(key) === location) return;
-    const text = confirmation(proof);
+    const message = messages[index]!;
+    const preparation = object(message.details) ? message.details.contextBrokerPreparation : undefined;
+    const text = message.role === "toolResult" && message.toolName === "skill_prepare" && object(preparation) && preparation.version === 2
+      ? "Already loaded." : confirmation(proof);
     replace(index, Number(proof.delivery.start), Number(proof.delivery.end), proof.delivery.encoding === "json" ? JSON.stringify(text).slice(1, -1) : text);
   });
   messages.forEach((message, index) => {
@@ -216,7 +291,7 @@ export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[]
     replace(index, 0, sourceMessageText(message.content).length,
       `The complete Skill resource ${proof.path} for snapshot ${proof.snapshot_id} is already present in this active context. This successful repeated read verified the same resource bytes.`);
   });
-  return replacements.size ? projectDeliverySpans(messages, replacements) : messages;
+  return replacements.size ? projectDeliverySpans(messages, replacements, "deduplicate") : messages;
 }
 
 export function nativeReadSnapshot(messages: AgentMessage[], record: SkillRecord): string | undefined {
@@ -307,5 +382,5 @@ export function projectSelectedSourceMessages(messages: AgentMessage[], selectio
     const proof = verifiedReadProof(message);
     if (proof && retired(proof)) add(index, 0, readProofEnd(proof, message), "raw");
   }
-  return replacements.size ? projectDeliverySpans(messages, replacements) : messages;
+  return replacements.size ? projectDeliverySpans(messages, replacements, "supersede") : messages;
 }

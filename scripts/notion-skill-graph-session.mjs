@@ -9,6 +9,7 @@ import { isolatedEnv, writeFakeProvider } from '../packages/context-broker/scrip
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { packageIdentity } from './notion-skill-graph-model.mjs';
+import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
 
 const helper = fileURLToPath(import.meta.url);
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -117,22 +118,38 @@ export function bodyEvidence(context, all, expected) {
 }
 
 export function deliveryEvidence(messages, expected, stage) {
-  const selected = new Map(expected.map(node => [node.id + '/' + node.binding.snapshot_id, node]));
+  const selected = new Map(expected.map(node => [node.binding.scope + '/' + node.id + '/' + node.binding.snapshot_id, node]));
   const found = [];
   for (const message of messages.filter(message => message.role === 'toolResult' && message.toolCallId?.startsWith(stage + ':'))) {
     assert.equal(message.isError === true, false, 'A claimed session pass cannot hide a failed native tool');
     const group = message.details?.contextBrokerPreparation;
     const proofs = group?.records ?? (message.details?.contextBrokerRead ? [message.details.contextBrokerRead] : []);
     const content = text(message.content);
+    if (group !== undefined) {
+      assert.equal(message.toolName, 'skill_prepare'); assert.equal(group.toolCallId, message.toolCallId);
+      if (group.version === 2) verifyPreparationEvidence(content, group, message.toolCallId);
+      else {
+        assert.equal(group.version, 1, 'Unknown preparation receipt version');
+        assert.equal(Object.hasOwn(group, 'projection'), false, 'A compiled receipt cannot enter the legacy version-one path');
+      }
+    }
     for (const proof of proofs) {
-      assert.equal(proof.version, 2);
+      if (proof.loaded === false) continue;
+      assert.ok(proof.version === 2 || !group && proof.version === 3, 'Unknown complete-body receipt version');
       if (group) assert.equal(proof.loaded, true);
-      else { assert.equal(message.toolName, 'read'); assert.equal(proof.toolCallId, message.toolCallId); }
-      const identity = JSON.parse(proof.contentIdentity), node = selected.get(identity[1] + '/' + proof.snapshotId);
+      else {
+        assert.equal(message.toolName, 'read'); assert.equal(proof.toolCallId, message.toolCallId);
+        if (proof.version === 3) { assert.equal(proof.delivery?.start, 0); assert.equal(proof.delivery?.encoding, 'raw'); }
+        else assert.equal(proof.delivery, undefined, 'A version-two native read proves its entire result');
+      }
+      const identity = JSON.parse(proof.contentIdentity), node = selected.get(identity[0] + '/' + identity[1] + '/' + proof.snapshotId);
       assert.ok(node, 'A delivered source has an unexpected node/version identity');
       assert.equal(identity[0], node.binding.scope);
       assert.deepEqual(proof.binding, node.binding, 'Delivery must bind the exact public CLI observation');
-      if (group) assert.ok(proof.delivery && Number.isSafeInteger(proof.delivery.start) && Number.isSafeInteger(proof.delivery.end));
+      if (group) assert.ok(proof.delivery);
+      if (proof.delivery) assert.ok(Number.isSafeInteger(proof.delivery.start) && Number.isSafeInteger(proof.delivery.end)
+        && proof.delivery.start >= 0 && proof.delivery.end > proof.delivery.start && proof.delivery.end <= content.length
+        && ['raw', 'xml', 'json'].includes(proof.delivery.encoding), 'Only an exact bounded source span proves delivery');
       // Native read proves its entire unmodified tool result. Explicit prepare
       // proves one escaped content span inside its public JSON result.
       const span = proof.delivery ? content.slice(proof.delivery.start, proof.delivery.end) : content;
