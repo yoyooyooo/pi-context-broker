@@ -6,6 +6,7 @@ import {
   type ResolvedSessionShortRef, type SessionShortRef, type SessionShortRefState, type ShortRefBindingPlan, type ShortRefBatchPlan, type ShortRefIdentity,
 } from "./session-short-ref";
 import type { ContentRecord, ExtensionAPI, ExtensionContext, SkillRecord } from "./types";
+import type { ResourceReadBatch, ResourceReadFile } from "./resource-read-types";
 
 export type HostShortRefResolution = ResolvedSessionShortRef & Readonly<{
   shortRef: SessionShortRef;
@@ -80,6 +81,24 @@ export function assertShortRefSnapshot(value: HostShortRefResolution, snapshot: 
   try {
     if (!isDeepStrictEqual(parseNativeReference(files[0]!.ref), parseNativeReference(expectedFile.ref))) fail("SHORT_REF_OWNER_MISMATCH");
   } catch { fail("SHORT_REF_OWNER_MISMATCH"); }
+}
+
+/** Verify a resource against its selected owner without constructing or loading
+ * a prepared Skill body. The SDK owns permission and complete manifest checks. */
+export function assertShortRefResource(value: HostShortRefResolution, source: SkillRecord, batch: ResourceReadBatch, file: ResourceReadFile): void {
+  assertShortRefSource(value, source);
+  if (value.kind !== "resource") fail("SHORT_REF_OWNER_MISMATCH");
+  const owner = value.owner, binding = batch.ownerBinding, selection = batch.selection;
+  if (selection.scope !== owner.identity.scope || selection.owner !== owner.identity.id || selection.snapshot_id !== owner.snapshot_id
+    || selection.version_id !== owner.version_id || binding.scope !== owner.identity.scope || binding.snapshot_id !== owner.snapshot_id
+    || binding.version_id !== owner.version_id || binding.body_sha256 !== owner.body_sha256 || binding.record.entrypoint !== owner.entrypoint
+    || binding.record.id !== owner.identity.id || binding.record.kind !== owner.identity.kind
+    || !isDeepStrictEqual(binding.record.locator, owner.identity.locator)) fail("SHORT_REF_OWNER_MISMATCH");
+  try {
+    if (!isDeepStrictEqual(parseNativeReference(binding.ref), parseNativeReference(owner.ref))
+      || !isDeepStrictEqual(parseNativeReference(file.ref), parseNativeReference(value.file.ref))) fail("SHORT_REF_OWNER_MISMATCH");
+  } catch { fail("SHORT_REF_OWNER_MISMATCH"); }
+  if (file.path !== value.file.path || file.bytes !== value.file.bytes || file.sha256 !== value.file.sha256 || file.file_id !== value.file.file_id) fail("SHORT_REF_OWNER_MISMATCH");
 }
 
 /**

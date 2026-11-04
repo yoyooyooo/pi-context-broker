@@ -133,6 +133,35 @@ test('prepare JSON body occurrences use actual content, preserving Unicode/BOM/C
   }
 });
 
+test('resource batch cost observes actual nonempty text spans and never binary or detached machine content', async () => {
+  const bodies = ['普通资源正文\n', '\uFEFFBOM 中文\r\n', ''];
+  const files = bodies.map((content, index) => ({ kind: 'text', ref: 'sr:R' + String(index).repeat(22), path: 'references/' + index + '.md', content }));
+  files.push({ kind: 'binary', ref: 'sr:R' + 'b'.repeat(22), path: 'assets/data.bin', bytes: 7, sha256: sha('binary'), output: '/owned/data.bin' });
+  const text = JSON.stringify({ status: 'ready', files }), offsets = [];
+  let cursor = 0;
+  for (const body of bodies) {
+    const start = text.indexOf('"content":"', cursor) + '"content":"'.length;
+    const end = start + JSON.stringify(body).slice(1, -1).length;
+    offsets.push({ start, end, encoding: 'json' }); cursor = end + 1;
+  }
+  const proof = { version: 2, toolCallId: 'resource-batch', loaded: false,
+    selection: { scope: 'scope', owner: 'shared_skill:lib:resource', snapshot_id: 's_' + 'a'.repeat(64), version_id: 'b'.repeat(64) },
+    files: files.map((file, index) => ({ index, model_ref: file.ref, ref: 'skill://owner/' + file.path, path: file.path, loaded: false,
+      ...(file.kind === 'text' ? { state: 'source', encoding: 'utf8', delivered_complete_text: true, sha256: sha(bodies[index]), bytes: Buffer.byteLength(bodies[index]), delivery: offsets[index] }
+        : { state: 'binary', encoding: 'base64', delivered_complete_text: false, sha256: file.sha256, bytes: file.bytes }) })),
+    projection: { version: 1, compiler: 'context-broker/resource-read/v1', rendered: { sha256: sha(text), bytes: Buffer.byteLength(text) } } };
+  const message = { role: 'toolResult', toolName: 'read', toolCallId: proof.toolCallId, isError: false,
+    content: [{ type: 'text', text }], details: { contextBrokerResource: proof } };
+  const measured = await bodyObservation({ messages: [message], payload: { messages: [{ role: 'tool', content: text }] }, serialized: true });
+  assert.deepEqual(measured.verifiedBodyOccurrences.map(item => [item.kind, item.sha256, item.bytes, item.occurrences]),
+    bodies.slice(0, 2).map(body => ['resource', sha(body), Buffer.byteLength(body), 1]));
+  assert.equal(measured.raw.includes('普通资源'), false);
+  for (const invalid of [{ ...message, toolCallId: 'other' }, { ...message, content: 'receipt only' }, { ...message, isError: true }]) {
+    const absent = await bodyObservation({ messages: [invalid], payload: { messages: [{ role: 'tool', content: text }] } });
+    assert.deepEqual(absent.verifiedBodyOccurrences, []);
+  }
+});
+
 test('raw, XML and JSON representations count distinct spans and never count one span twice', async () => {
   for (const body of ['plain-complete-body', 'full "body"\n& <tag>']) {
     const message = preparedBody(body), xml = body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');

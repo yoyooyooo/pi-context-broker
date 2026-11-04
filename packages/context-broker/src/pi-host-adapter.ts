@@ -1,11 +1,30 @@
 import { dirname } from "node:path";
 import type { HostCapabilities } from "./host-adapter";
-import type { ExtensionAPI, SkillRecord } from "./types";
+import type { ExtensionAPI, PiReadDefinition, SkillRecord } from "./types";
 import { installPiDollarAutocompleteEditor } from "./pi-dollar-editor";
+import { DEFAULT_RESOURCE_READ_BUDGET } from "./resource-read-types";
 
 const escapeText = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+const PI_PACKAGE_NAME = "@earendil-works/pi-coding-agent";
+type PiReadFactory = (cwd: string, options?: { autoResizeImages?: boolean }) => PiReadDefinition;
+type ReadFactoryLoader = () => Promise<PiReadFactory | undefined>;
+async function loadPiReadFactory(): Promise<PiReadFactory | undefined> {
+  try { return (await import(PI_PACKAGE_NAME) as { createReadToolDefinition?: PiReadFactory }).createReadToolDefinition; }
+  catch { return undefined; }
+}
+const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
+const resourceOutputSchema = {
+  type: "object", properties: {
+    status: { const: "ready" }, files: { type: "array", items: { anyOf: [
+      { type: "object", properties: { kind: { const: "text" }, ref: { type: "string" }, path: { type: "string" }, content: { type: "string" } },
+        required: ["kind", "ref", "path", "content"], additionalProperties: false },
+      { type: "object", properties: { kind: { const: "binary" }, ref: { type: "string" }, path: { type: "string" }, bytes: { type: "integer", minimum: 0 }, sha256: { type: "string" }, output: { type: "string" } },
+        required: ["kind", "ref", "path", "bytes", "sha256", "output"], additionalProperties: false },
+    ] } },
+  }, required: ["status", "files"], additionalProperties: false,
+};
 
-export function createPiHostAdapter(api: ExtensionAPI): HostCapabilities {
+export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFactoryLoader = loadPiReadFactory): HostCapabilities {
   let records: SkillRecord[] = [];
   let discoveredPaths: string[] | undefined;
   api.on("resources_discover", () => {
@@ -16,6 +35,52 @@ export function createPiHostAdapter(api: ExtensionAPI): HostCapabilities {
     paths: { host: "pi" },
     submission: { mode: "transform", receipt: "input-digest" },
     metadataDiscovery: "deferred",
+    registerReadExecutor(execute) {
+      const register = api.registerTool, allTools = api.getAllTools, activeTools = api.getActiveTools;
+      if (!register || !allTools || !activeTools) return undefined;
+      let installedParameters: Record<string, unknown> | undefined;
+      api.on("session_start", async (_event, ctx) => {
+        if (installedParameters) return;
+        const original = allTools().find(tool => tool.name === "read");
+        if (original?.sourceInfo.source !== "builtin") return;
+        const createRead = await loadReadFactory();
+        if (!createRead || allTools().find(tool => tool.name === "read")?.parameters !== original.parameters) return;
+        const native = createRead(ctx.cwd ?? process.cwd(), { autoResizeImages: api.getSettings?.().images?.autoResize ?? true });
+        if (!object(native.parameters) || !object(native.parameters.properties) || typeof native.execute !== "function") return;
+        const paths = { type: "array", minItems: 1, maxItems: DEFAULT_RESOURCE_READ_BUDGET.maxFiles,
+          items: { type: "string", pattern: "^(?:sr:R[A-Za-z0-9_-]{22}|skill://.+)$" },
+          description: "Copy complete resource refs verbatim from the selected Skill snapshot's resource directory. Every ref must identify a file in the same owner and snapshot. Reads all selected files in one operation without preparing the main body." };
+        const parameters: Record<string, unknown> = {
+          type: "object", properties: { ...native.parameters.properties, paths },
+          oneOf: [
+            { ...native.parameters, not: { required: ["paths"] } },
+            { type: "object", properties: { paths }, required: ["paths"], additionalProperties: false },
+          ],
+        };
+        const definition: PiReadDefinition = {
+          ...native,
+          description: native.description + " Alternatively, use paths for a fixed set of Skill resources belonging to the same owner and snapshot. Choose either path or paths. Batch resource reads do not accept offset/limit or the main entrypoint.",
+          parameters, defaultActive: activeTools().includes("read"),
+          ...(native.outputSchema ? { outputSchema: { anyOf: [native.outputSchema, resourceOutputSchema] } } : {}),
+          async execute(id, input, signal, onUpdate, context) {
+            const hasPath = Object.hasOwn(input, "path"), hasPaths = Object.hasOwn(input, "paths");
+            if (hasPath === hasPaths || hasPaths && (Object.keys(input).some(key => key !== "paths") || !Array.isArray(input.paths))) {
+              throw Object.assign(new Error("Choose one file path or an explicit resource paths array"), { code: "INVALID_ARGUMENT" });
+            }
+            return execute(input, context, signal,
+              (updated, preparedSignal) => native.execute(id, updated, preparedSignal ?? signal, onUpdate, context), id);
+          },
+          ...(native.renderCall ? { renderCall: (input, theme, context) => native.renderCall!(
+            Array.isArray(input.paths) ? { path: input.paths.join(", ") } : input, theme, context) } : {}),
+        };
+        register(definition);
+        installedParameters = parameters;
+      });
+      // Pi retains the public schema object in getAllTools. This identity also
+      // detects a later override without relying on the bundled source pathname.
+      return () => installedParameters !== undefined && allTools().some(tool => tool.name === "read"
+        && tool.parameters === installedParameters);
+    },
     handledInput: { action: "handled" }, continuedInput: { action: "continue" },
     transformInput(text, images) { return { action: "transform", text, images }; },
     async registerCatalog(next, signal) {

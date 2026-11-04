@@ -6,6 +6,7 @@ import type { AgentMessage, MessageContent, SkillRecord } from "./types";
 import { decodePreparationLock, isPreparationBinding, type PreparationBinding } from "./prepare-protocol";
 import type { SessionSelection } from "./session-graph";
 import { deriveSkillPrepareProjection, validateSkillPrepareProjection } from "./skill-context-projection-proof";
+import { deriveResourceReadProjection, validateResourceReadProjection } from "./resource-read-projection";
 
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -86,6 +87,13 @@ function verifiedResourceReadProof(message: AgentMessage) {
   } catch { return undefined; }
   const text = sourceMessageText(message.content);
   return hash(text) === proof.sha256 && Buffer.byteLength(text) === proof.bytes ? proof : undefined;
+}
+
+function verifiedResourceBatchProof(message: AgentMessage) {
+  if (message.role !== "toolResult" || message.toolName !== "read" || message.isError === true || !object(message.details)
+    || Array.isArray(message.content) && message.content.some(part => part.type !== "text")) return undefined;
+  const proof = validateResourceReadProjection(sourceMessageText(message.content), message.details.contextBrokerResource);
+  return proof && proof.toolCallId === message.toolCallId ? proof : undefined;
 }
 
 function verifiedPreparationProjection(message: AgentMessage, proof: Record<string, unknown>) {
@@ -242,6 +250,17 @@ function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number
         delivery: derived.records[recordIndex]!.delivery, loaded: derived.records[recordIndex]!.state === "source" } : record);
       return { ...message, details: { ...next, contextBrokerPreparation: { ...next.contextBrokerPreparation, records, projection: derived } } };
     }
+    if (projected[index] !== original && reason === "deduplicate") {
+      const batch = verifiedResourceBatchProof(original);
+      if (batch && object(next)) {
+        const changes = replacements.get(index) ?? [];
+        const changedIndices = batch.files.flatMap((file, fileIndex) => file.delivery && changes.some(change =>
+          change.start === file.delivery!.start && change.end === file.delivery!.end) ? [fileIndex] : []);
+        const derived = deriveResourceReadProjection(sourceMessageText(original.content), sourceMessageText(message.content), batch, changedIndices);
+        if (derived) return { ...message, details: { ...next, contextBrokerResource: derived },
+          ...(Object.hasOwn(message, "structuredContent") ? { structuredContent: JSON.parse(sourceMessageText(message.content)) } : {}) };
+      }
+    }
     return next === message.details ? message : { ...message, details: next };
   });
 }
@@ -284,12 +303,25 @@ export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[]
   const resources = new Set<string>();
   messages.forEach((message, index) => {
     const proof = verifiedResourceReadProof(message);
-    if (!proof) return;
-    const fileIdentity = proof.file_id === undefined ? ["path", proof.path] : ["file_id", proof.file_id];
-    const key = JSON.stringify([proof.scope, proof.id, proof.snapshot_id, fileIdentity, proof.sha256]);
-    if (!resources.has(key)) { resources.add(key); return; }
-    replace(index, 0, sourceMessageText(message.content).length,
-      `The complete Skill resource ${proof.path} for snapshot ${proof.snapshot_id} is already present in this active context. This successful repeated read verified the same resource bytes.`);
+    if (proof) {
+      const fileIdentity = proof.file_id === undefined ? ["path", proof.path] : ["file_id", proof.file_id];
+      const key = JSON.stringify([proof.scope, proof.id, proof.snapshot_id, fileIdentity, proof.sha256]);
+      if (!resources.has(key)) resources.add(key);
+      else if (proof.bytes !== 0) replace(index, 0, sourceMessageText(message.content).length,
+        `The complete Skill resource ${proof.path} for snapshot ${proof.snapshot_id} is already present in this active context. This successful repeated read verified the same resource bytes.`);
+      return;
+    }
+    const batch = verifiedResourceBatchProof(message);
+    if (!batch) return;
+    for (const file of batch.files) {
+      if (!file.delivered_complete_text || !file.delivery) continue;
+      const fileIdentity = file.file_id === undefined ? ["path", file.path] : ["file_id", file.file_id];
+      const key = JSON.stringify([batch.selection.scope, batch.selection.owner, batch.selection.snapshot_id, fileIdentity, file.sha256]);
+      if (!resources.has(key)) { resources.add(key); continue; }
+      // An empty source is already minimal. Its zero-length span is still fully
+      // proved; adding a confirmation would only increase model context.
+      if (file.bytes !== 0) replace(index, file.delivery.start, file.delivery.end, JSON.stringify("Already available.").slice(1, -1));
+    }
   });
   return replacements.size ? projectDeliverySpans(messages, replacements, "deduplicate") : messages;
 }

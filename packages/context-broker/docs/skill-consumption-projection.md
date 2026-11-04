@@ -132,6 +132,6 @@ Pi03 经独立审阅后已完成 `evidence → cleanup → evidence`，只回收
 
 ## 尚未覆盖的范围
 
-本切片不实现 requestedFiles 批读。当前 SDK 对非空 requestedFiles 仍明确拒绝，后续需增加文件预算、一次 manifest/owner 校验和整体完整性结果，复用已有多路径物化内核。
+上述 prepare 编译切片没有实现 requestedFiles 批读。后续 SC07 通过独立 [固定资源批读合同](fixed-resource-batches.md) 增加 SDK `readResources` 与 Pi `read(paths)`；consumer v1 的非空 requestedFiles 继续明确拒绝。两个版本的证据和覆盖范围分别保留。
 
 作者内容或旧生成 Members 目录的进一步精简，须先建立可靠来源标记；本轮保留完整正文。其他投递入口的统一编译、正式 A/B/C/D、跨机恢复与日用安装继续按对应任务验收。旧真实 graph gate 还需完成短引用、SDK 来源与新模型形状的整体迁移，不能把它的旧成功记录称为新 compiler 通过。

@@ -111,6 +111,23 @@ export function observeConsumptionCost(api, settings) {
         && mapping.delivery?.encoding === proof?.delivery?.encoding;
     });
   };
+  const resourceBatchFiles = (group, text) => {
+    if (group.version !== 2 || group.loaded !== false || !nonempty(group.selection?.scope) || !nonempty(group.selection?.owner)
+      || !pinned(group.selection?.snapshot_id) || group.projection?.version !== 1
+      || group.projection.compiler !== 'context-broker/resource-read/v1' || group.projection.rendered?.sha256 !== sha(text)
+      || group.projection.rendered?.bytes !== bytes(text) || !Array.isArray(group.files)) return [];
+    let model;
+    try { model = JSON.parse(text); } catch { return []; }
+    if (model?.status !== 'ready' || !Array.isArray(model.files) || model.files.length !== group.files.length) return [];
+    return group.files.filter((proof, index) => {
+      const file = model.files[index], body = bodyAt(text, proof?.delivery);
+      return proof?.index === index && proof.loaded === false && proof.state === 'source' && proof.encoding === 'utf8'
+        && proof.delivered_complete_text === true && proof.delivery?.encoding === 'json'
+        && [proof.ref, proof.path, proof.model_ref].every(nonempty) && file?.kind === 'text'
+        && file.ref === proof.model_ref && file.path === proof.path && typeof body === 'string' && body === file.content
+        && sha(body) === proof.sha256 && bytes(body) === proof.bytes;
+    });
+  };
   const remember = messages => {
     for (const message of messages ?? []) {
       const details = message?.details;
@@ -131,6 +148,10 @@ export function observeConsumptionCost(api, settings) {
       for (const [kind, proof] of [['skill-body', details.contextBrokerRead], ['resource', details.contextBrokerResource]]) {
         if (!proof || proof.toolCallId !== message.toolCallId) continue;
         if (kind === 'resource') {
+          if (proof.version === 2) {
+            for (const file of resourceBatchFiles(proof, text)) rememberBody(bodyAt(text, file.delivery), file, kind);
+            continue;
+          }
           if (proof.version !== 1 || proof.delivered_complete_text !== true || proof.loaded !== false
             || ![proof.scope, proof.id, proof.ref, proof.path].every(nonempty) || !pinned(proof.snapshot_id)) continue;
         } else if (![1, 2, 3].includes(proof.version) || !nonempty(proof.identity) || !pinned(proof.snapshotId)

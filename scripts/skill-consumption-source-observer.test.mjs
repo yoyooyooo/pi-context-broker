@@ -115,6 +115,21 @@ test('SDK observations retain explicit zero-attempt metrics and failed or pendin
   assert.equal(trace.events.at(-1).sdkStarts, 3); assert.equal(trace.events.at(-1).cliStarts, 0);
 });
 
+test('one resource batch is one observed SDK operation with its complete request ledger', async t => {
+  const item = fixture(), observer = observe(item); t.after(observer.finish);
+  const id = crypto.randomUUID();
+  publishSdk(id, 'start', { operation: 'read-resources' });
+  publishSdk(id, 'end', { operation: 'read-resources', elapsed_ms: 4, status: 'completed', sdk_started: true,
+    metrics_observed: true, request_metrics: requestMetrics() });
+  observer.finish();
+  const trace = await readSourceObservation(item.output);
+  assert.equal(trace.complete, true); assert.deepEqual(trace.errors, []);
+  assert.equal(trace.events.at(-1).sdkStarts, 1); assert.equal(trace.events.at(-1).operations, 1);
+  assert.deepEqual(trace.events.filter(row => ['started', 'completed'].includes(row.phase)).map(row => row.operation), ['read-resources', 'read-resources']);
+  assert.equal(trace.events.filter(row => row.phase === 'attempt').length, 2);
+  assert.equal(trace.events.find(row => row.phase === 'metrics').total_requests, 2);
+});
+
 test('evidence write failure cannot escape a source event or change host exit behavior', async () => {
   const item = fixture(); let writes = 0;
   const observer = observe(item, { fs: { ...fs, writeSync(...args) {

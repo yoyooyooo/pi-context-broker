@@ -18,6 +18,8 @@ Context Broker 先提供技能名称和描述，再按任务加载选中的正�
 
 Pi 按当前启用的工具生成精简 `<ntn-skills-guidance>`。原生发现和读取使用实际可用的 Skill 工具，不再同时附上整套 shell 参数模板。维护任务需要真实 CLI 命令时，可在 `bash` 和 `skill_graph` 均启用的情况下显式调用 `skill_graph({cli_source:"SOURCE_ID"})`。缺少原生消费工具的宿主保留其可用 CLI 后备路径；OMP 与没有工具能力 API 的宿主保留既有指引。每次 provider 输入只有一份当前指引，压缩和工具切换后同样更新。该指引与 Skill 正文、远端目录发现分别管理。
 
+Pi 可用一次 `read({ paths: [...] })` 读取同一 Skill 快照中最多 16 个选中资源，输入使用固定 `sr:R` 句柄或带 snapshot 的 `skill://` 文件引用。文本完整交付；二进制返回已验证的文件信息与本地路径。普通 `read({ path, offset?, limit? })` 保持 Pi 原生行为。选择、预算和投递语义见[固定资源批读](./packages/context-broker/docs/fixed-resource-batches.md)。
+
 Tern/OMP 加载选中的 source Skill 时，在会话中追加持久、可折叠的 `Read ntn-skills://<alias>` 记录，显示来源、耗时及 `running`、`done` 或 `error` 状态。展示目标省略 namespace，重名时保留页面后缀。终态记录完成后保留，resume 时恢复；未完成的旧记录标为中断。`ntn-skills://` 仅为展示标识，真实读取仍使用 `skill://`。记录及展开详情不进入 provider 消息、压缩或 branch 摘要。其他终端使用文字反馈。启用 Notion source 即可发现和使用，无需安装 builtin。详见[激活合同](./packages/context-broker/docs/reference.zh-CN.md#内置-sources)。
 
 | 记录 | 来源 | 模型收到的内容 |

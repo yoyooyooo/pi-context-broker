@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
-import { publishNotionEntry, materializeNotionEntryFile } from "../src/notion-entry";
+import { publishNotionEntry, materializeNotionEntryFile, materializeNotionResourceBatch } from "../src/notion-entry";
 import { installHostSkills } from "../src/host-skills";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { hasLoadedSkill } from "../src/index";
@@ -13,6 +13,37 @@ import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, Skill
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 const ensure = async (path: string) => { await mkdir(path, { recursive: true }); };
+
+test("binary batch projection materializes only selected bytes and reuses fixed verified paths without a main entry", async () => {
+  const f = await entry(), bytes = Buffer.from([0, 255, 1, 254, 2, 253, 3]);
+  const resource = { requested_ref: f.files[1]!.ref, ref: f.files[1]!.ref, path: "assets/data.bin", file_id: "binary",
+    bytes: bytes.length, sha256: hash(bytes), encoding: "base64" as const, content: bytes.toString("base64") };
+  const metadata = { ...f.metadata, snapshotId: f.selected.snapshotId }, cache = join(f.root, "resources-only");
+  const result = await materializeNotionResourceBatch(metadata, [resource], cache, ensure);
+  expect(result[0]?.encoding).toBe("base64");
+  const output = result[0]!.encoding === "base64" ? result[0]!.output : "";
+  expect(await readFile(output)).toEqual(bytes);
+  expect(await stat(join(dirname(output), "SKILL.md")).then(() => true, () => false)).toBe(false);
+  expect(metadata.body).toBeUndefined(); expect(metadata.entryManifest).toBeUndefined();
+  const files = await readdir(dirname(output));
+  expect(await materializeNotionResourceBatch(metadata, [resource], cache, ensure)).toEqual(result);
+  expect(await readdir(dirname(output))).toEqual(files);
+  await writeFile(output, "corrupt");
+  await expect(materializeNotionResourceBatch(metadata, [resource], cache, ensure)).rejects.toMatchObject({ code: "SOURCE_OUTPUT_CONFLICT" });
+});
+
+test("binary batch rejects invalid bytes, traversal, symlinks and cancellation without a ready result", async () => {
+  const f = await entry(), bytes = Buffer.from([0, 255]);
+  const record = { ...f.metadata, snapshotId: f.selected.snapshotId }, cache = join(f.root, "resource-errors");
+  const file = { requested_ref: f.files[1]!.ref, ref: f.files[1]!.ref, path: "data.bin", bytes: bytes.length, sha256: hash(bytes), encoding: "base64" as const, content: bytes.toString("base64") };
+  await expect(materializeNotionResourceBatch(record, [{ ...file, content: "corrupt" }], cache, ensure)).rejects.toMatchObject({ code: "SOURCE_RESPONSE_INVALID" });
+  await expect(materializeNotionResourceBatch(record, [{ ...file, path: "../outside" }], cache, ensure)).rejects.toMatchObject({ code: "SOURCE_REFERENCE_INVALID" });
+  const destination = join(cache, "scopes", record.sourceScope!, "records", hash(record.id!), "resources", record.snapshotId!, "tree", file.path);
+  await symlink(f.selected.path, destination);
+  await expect(materializeNotionResourceBatch(record, [file], cache, ensure)).rejects.toMatchObject({ code: "SOURCE_CACHE_UNSAFE" });
+  const signal = new AbortController(); signal.abort();
+  await expect(materializeNotionResourceBatch(record, [file], cache, ensure, signal.signal)).rejects.toMatchObject({ code: "SOURCE_CANCELLED" });
+});
 async function entry(nested = false, resourceHasFileId = true) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "broker-entry-boundary-")));
   const id = "shared_skill:entry-test:owner", snapshot = "s_" + hash("entry snapshot"), scope = hash("entry scope");

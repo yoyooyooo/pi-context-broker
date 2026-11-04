@@ -34,10 +34,14 @@ type Sdk = {
   consume: (input: unknown, options?: RuntimeOptions) => Promise<unknown>;
   decodeConsumeResult: (value: unknown, expected?: unknown) => Promise<unknown>;
   readSkill: (target: string, options?: RuntimeOptions) => Promise<unknown>;
+  RESOURCE_READ_CONTRACT_VERSION?: number;
+  readResources?: (input: unknown, options?: RuntimeOptions) => Promise<unknown>;
+  decodeResourceReadResult?: (value: unknown, expected?: unknown) => Promise<unknown>;
   parseDuration: (input: string) => number;
 };
 const observations = channel("context-broker.notion-sdk");
 let bundledSdk: Promise<Sdk> | undefined;
+let resourceContractVersion: unknown;
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -61,6 +65,7 @@ async function loadBundledSdk(): Promise<Sdk> {
     catch { throw new NotionSdkError("SOURCE_SDK_UNAVAILABLE"); }
     if (!object(manifest) || manifest.version !== 1 || manifest.package !== "ntn-skills" || manifest.package_version !== sdk.PACKAGE_VERSION
       || manifest.sdk_version !== sdk.SDK_VERSION || manifest.consumer_contract_version !== sdk.CONSUMER_CONTRACT_VERSION) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
+    resourceContractVersion = manifest.resource_read_contract_version;
     return sdk;
   })();
   try { return await bundledSdk; }
@@ -68,7 +73,7 @@ async function loadBundledSdk(): Promise<Sdk> {
 }
 
 /** Code is shared; every operation still creates and closes its own SDK runtime. */
-async function observed(operation: "consume" | "read", options: Options, run: (sdk: Sdk, options: RuntimeOptions) => Promise<unknown>): Promise<unknown> {
+async function observed(operation: "consume" | "read" | "read-resources", options: Options, run: (sdk: Sdk, options: RuntimeOptions) => Promise<unknown>): Promise<unknown> {
   const enabled = observations.hasSubscribers;
   const id = enabled ? randomUUID() : undefined;
   const started = process.hrtime.bigint();
@@ -79,6 +84,8 @@ async function observed(operation: "consume" | "read", options: Options, run: (s
   if (enabled) observations.publish({ version: 1, event: "start", id, operation, pid: process.pid, monotonic_ns: started.toString() });
   try {
     const sdk = await loadBundledSdk();
+    if (operation === "read-resources" && (sdk.RESOURCE_READ_CONTRACT_VERSION !== 1 || resourceContractVersion !== 1
+      || typeof sdk.readResources !== "function" || typeof sdk.decodeResourceReadResult !== "function")) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     sdkStarted = true;
     const value = await run(sdk, { ...options, ...(enabled ? { metrics: true, onRequestMetrics: (snapshot: unknown) => {
       metricsObserved = true;
@@ -106,6 +113,11 @@ export function consumeNotionSdk(input: unknown, options: Options): Promise<unkn
 }
 export function readNotionSdk(target: string, options: Options): Promise<unknown> {
   return observed("read", options, (sdk, runtime) => sdk.readSkill(target, runtime));
+}
+export function readNotionResourcesSdk(input: unknown, options: Options): Promise<unknown> {
+  // This additive capability is checked only when used. The SDK has already
+  // decoded and verified the full result; older SDKs still support scalar read.
+  return observed("read-resources", options, (sdk, runtime) => sdk.readResources!(input, runtime));
 }
 export async function parseNotionSdkDuration(input: string): Promise<number> {
   return (await loadBundledSdk()).parseDuration(input);

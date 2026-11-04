@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { assertNativeGuidance, assertScopedCommand, assertPreparedHttpRequest, bodyCount, reconcile, sourceFinality } from './notion-sdk-pi.mjs';
+import { assertNativeGuidance, assertScopedCommand, assertPreparedHttpRequest, assertResourceHttpRequest, assertResourceBatchProjection, assertResourceReadSchema, resourceRefsFromInspection, resourceTextCopies, bodyCount, reconcile, sourceFinality } from './notion-sdk-pi.mjs';
 
 const command = ['/absolute/node', '/installed/dist/ntn-skills.mjs'];
 const database = '11111111-2222-3333-4444-555555555555';
@@ -24,6 +24,146 @@ function scopeFixture() {
   return { captures: [{ context: first }, { context: second }], frames };
 }
 const expected = { command, database };
+
+function resourceFixture(state = 'source') {
+  const hash = value => createHash('sha256').update(value).digest('hex');
+  const snapshot = { scope: 'scope', record: { id: 'shared_skill:fixture:resources' }, snapshot_id: 's_' + 'a'.repeat(64), version_id: 'b'.repeat(64) };
+  const source = [
+    ['references/utf8.txt', 'UTF-8 完整 😀.\n', 'utf8'],
+    ['references/bom.txt', '\ufeffBOM\r\n完整正文.\r\n', 'utf8'],
+    ['references/empty.txt', '', 'utf8'],
+    ['assets/binary.bin', Buffer.from([0, 255, 1, 2, 128, 13, 10]).toString('base64'), 'base64'],
+  ];
+  const files = source.map(([path, content, encoding], index) => {
+    const bytes = Buffer.from(content, encoding === 'base64' ? 'base64' : 'utf8'), file_id = 'resource-' + index;
+    return { ref: 'skill://' + encodeURIComponent(snapshot.record.id) + '/' + path + '?snapshot=' + snapshot.snapshot_id + '&file_id=' + file_id,
+      path, file_id, bytes: bytes.length, sha256: hash(bytes), encoding, content };
+  });
+  const model = { status: 'ready', files: files.map(file => file.encoding === 'base64'
+    ? { kind: 'binary', ref: file.ref, path: file.path, bytes: file.bytes, sha256: file.sha256, output: '/owned/cache/' + file.path }
+    : { kind: 'text', ref: file.ref, path: file.path, content: state === 'replaced' && file.content.length ? 'Already available.' : file.content }) };
+  const text = JSON.stringify(model);
+  const proof = { version: 2, toolCallId: 'resources-' + state, loaded: false,
+    selection: { scope: snapshot.scope, owner: snapshot.record.id, snapshot_id: snapshot.snapshot_id, version_id: snapshot.version_id },
+    files: files.map(({ content: original, ...file }, index) => {
+      const visible = model.files[index], binary = file.encoding === 'base64', replaced = state === 'replaced' && original.length > 0;
+      const prefix = '"content":', serialized = JSON.stringify(visible), offset = text.indexOf(serialized), property = serialized.indexOf(prefix);
+      const start = offset + property + prefix.length + 1;
+      return { ...file, requested_ref: file.ref, index, model_ref: file.ref, loaded: false, delivered_complete_text: !binary && !replaced,
+        state: binary ? 'binary' : replaced ? 'replaced' : 'source',
+        ...(binary ? { output: visible.output } : { delivery: { start, end: start + JSON.stringify(visible.content).length - 2, encoding: 'json' } }) };
+    }),
+    projection: { version: 1, compiler: 'context-broker/resource-read/v1', rendered: { sha256: hash(text), bytes: Buffer.byteLength(text) },
+      ...(state === 'replaced' ? { derived: { reason: 'deduplicate', parentSha256: 'c'.repeat(64) } } : {}) },
+  };
+  return { batch: { files, snapshot }, message: { role: 'toolResult', toolName: 'read', toolCallId: proof.toolCallId, isError: false,
+    content: [{ type: 'text', text }], structuredContent: model, details: { contextBrokerResource: proof } } };
+}
+
+test('resource evidence verifies actual UTF-8, BOM/CRLF, zero-length spans and binary materialization metadata', () => {
+  const { batch, message } = resourceFixture(), before = JSON.stringify(message);
+  const result = assertResourceBatchProjection(message, { batch });
+  assert.equal(result.files.length, 4);
+  assert.equal(result.files[2].delivery.start, result.files[2].delivery.end);
+  assert.equal(result.files[2].delivered_complete_text, true);
+  assert.equal(result.files[3].delivered_complete_text, false);
+  assert.equal(result.files[3].delivery, undefined);
+  assert.equal(JSON.stringify(message), before);
+});
+
+test('resource evidence rejects partial sets, forged identity, wrong spans and leaking binary content', () => {
+  for (const mutate of [
+    value => { value.message.content[0].text += ' '; },
+    value => { value.message.structuredContent.files.pop(); },
+    value => { value.message.details.contextBrokerResource.toolCallId = 'another-call'; },
+    value => { value.message.details.contextBrokerResource.loaded = true; },
+    value => { value.message.details.contextBrokerResource.selection.owner = 'foreign-owner'; },
+    value => { value.message.details.contextBrokerResource.selection.scope = 'foreign-scope'; },
+    value => { value.message.details.contextBrokerResource.selection.snapshot_id = 's_' + 'd'.repeat(64); },
+    value => { value.message.details.contextBrokerResource.files[0].file_id = 'another-file'; },
+    value => { value.message.details.contextBrokerResource.files[0].sha256 = '0'.repeat(64); },
+    value => { value.message.details.contextBrokerResource.files[0].delivery.start++; },
+    value => { value.message.details.contextBrokerResource.files[2].delivery.end++; },
+    value => { value.message.details.contextBrokerResource.files[3].delivered_complete_text = true; },
+    value => { value.message.details.contextBrokerResource.files[3].content = 'not a text delivery'; },
+    value => { value.message.details.contextBrokerRead = { loaded: true }; },
+  ]) {
+    const value = resourceFixture(); mutate(value);
+    assert.throws(() => assertResourceBatchProjection(value.message, { batch: value.batch }));
+  }
+  const forged = resourceFixture(), model = forged.message.structuredContent;
+  model.files[0].content = 'A fabricated replacement';
+  forged.message.content[0].text = JSON.stringify(model);
+  const receipt = forged.message.details.contextBrokerResource;
+  receipt.projection.rendered = { bytes: Buffer.byteLength(forged.message.content[0].text), sha256: createHash('sha256').update(forged.message.content[0].text).digest('hex') };
+  receipt.files[0].sha256 = createHash('sha256').update(model.files[0].content).digest('hex');
+  receipt.files[0].bytes = Buffer.byteLength(model.files[0].content);
+  assert.throws(() => assertResourceBatchProjection(forged.message, { batch: forged.batch }), 'Self-consistent fabricated receipts cannot replace independent source bytes');
+});
+
+test('resource provider repeats replace only nonempty text and preserve empty and binary facts', () => {
+  const first = resourceFixture(), repeated = resourceFixture('replaced');
+  const result = assertResourceBatchProjection(repeated.message, { batch: repeated.batch, state: 'replaced' });
+  assert.deepEqual(result.files.map(file => file.state), ['replaced', 'replaced', 'source', 'binary']);
+  const context = { messages: [first.message, repeated.message] };
+  assert.equal(resourceTextCopies(context, first.batch.files[0]), 1);
+  assert.equal(resourceTextCopies(context, first.batch.files[2]), 2);
+  assert.equal(bodyCount(context, first.batch.files[0].content), 1);
+  const missingParent = resourceFixture('replaced'); delete missingParent.message.details.contextBrokerResource.projection.derived;
+  assert.throws(() => assertResourceBatchProjection(missingParent.message, { batch: missingParent.batch, state: 'replaced' }));
+});
+
+function resourceSchemaContext() {
+  const value = context(), paths = { type: 'array', minItems: 1, maxItems: 16, items: { type: 'string' } };
+  value.messages[0].toolsAdded.find(tool => tool.name === 'read').parameters = { type: 'object', properties: { path: { type: 'string' }, paths }, oneOf: [
+    { type: 'object', properties: { path: { type: 'string' } }, required: ['path'], not: { required: ['paths'] } },
+    { type: 'object', properties: { paths }, required: ['paths'], additionalProperties: false },
+  ] };
+  return value;
+}
+test('actual provider schema must express a bounded paths branch exclusive with native path', () => {
+  assert.equal(assertResourceReadSchema(resourceSchemaContext()).paths_supported, true);
+  for (const mutate of [
+    schema => { delete schema.oneOf; },
+    schema => { schema.oneOf[0].not.required = ['unrelated']; },
+    schema => { schema.oneOf[1].additionalProperties = true; },
+    schema => { schema.oneOf[1].properties.offset = { type: 'number' }; },
+    schema => { schema.properties.paths.items.type = 'number'; },
+    schema => { schema.properties.paths.minItems = 0; },
+  ]) {
+    const value = resourceSchemaContext(); mutate(value.messages[0].toolsAdded.find(tool => tool.name === 'read').parameters);
+    assert.throws(() => assertResourceReadSchema(value));
+  }
+});
+
+function inspectedResourceFixture() {
+  const paths = ['references/utf8.txt', 'references/bom.txt', 'references/empty.txt', 'assets/binary.bin'];
+  const files = paths.map((path, index) => ({ path, ref: 'sr:R' + String(index + 1).repeat(22) }));
+  const root = 'sr:S' + 'a'.repeat(22);
+  return { paths, prepared: { status: 'ready', purpose: 'inspect', roots: [root], records: [{ name: 'resources', ref: root,
+    directory: { files: [...files, { path: 'SKILL.md', ref: root }, { path: 'unselected.txt', ref: 'sr:R' + 'z'.repeat(22) }] } }] } };
+}
+test('short resource handles come from one actual inspected owner in explicit requested path order', () => {
+  const { prepared, paths } = inspectedResourceFixture(), order = [paths[1], paths[3], paths[0], paths[2]];
+  const before = JSON.stringify(prepared);
+  assert.deepEqual(resourceRefsFromInspection(prepared, 'resources', order), [2, 4, 1, 3].map(index => 'sr:R' + String(index).repeat(22)));
+  assert.equal(JSON.stringify(prepared), before);
+});
+test('short handle selection rejects missing or duplicate files, foreign owners, main handles and non-inspection results', () => {
+  for (const mutate of [
+    value => { value.prepared.purpose = 'use'; },
+    value => { value.prepared.records[0].name = 'another-owner'; },
+    value => { value.prepared.roots.push(value.prepared.roots[0]); },
+    value => { value.prepared.records[0].directory.files.shift(); },
+    value => { value.prepared.records[0].directory.files.push({ ...value.prepared.records[0].directory.files[0] }); },
+    value => { value.prepared.records[0].directory.files[0].ref = value.prepared.roots[0]; },
+    value => { value.prepared.records[0].directory.files[1].ref = value.prepared.records[0].directory.files[0].ref; },
+    value => { value.paths.push(value.paths[0]); },
+  ]) {
+    const value = inspectedResourceFixture(); mutate(value);
+    assert.throws(() => resourceRefsFromInspection(value.prepared, 'resources', value.paths));
+  }
+});
 
 test('body evidence counts only visible content, including JSON bodies, never details or tool schemas', () => {
   const body = '\ufeff中文😀\r\n<body>author text</body>\\"quoted"\r\n';
@@ -51,6 +191,19 @@ test('actual serialized tool content is paired by toolCallId and kept separate f
   assert.equal(result.delivered.length, 1); assert.ok(result.delivered[0].host_details_bytes > 0);
   assert.equal(value.body.includes('host-only-proof'), false);
   assert.equal(JSON.stringify(value), before);
+});
+test('resource serializer evidence uses actual emitted text, including empty resource content, without exposing the byte proof', () => {
+  const { batch, message } = resourceFixture();
+  const context = { messages: [message] }, payload = { model: 'local-fixture', messages: [{ role: 'tool', tool_call_id: message.toolCallId, content: message.content[0].text }] };
+  const body = Buffer.from(JSON.stringify(payload));
+  assertResourceBatchProjection(message, { batch });
+  const result = assertResourceHttpRequest(payload, body, context);
+  assert.equal(result.payload_matches_http, true); assert.equal(result.delivered.length, 1);
+  assert.equal(body.includes('contextBrokerResource'), false);
+  const leaked = structuredClone(payload); leaked.messages[0].details = message.details;
+  assert.throws(() => assertResourceHttpRequest(leaked, Buffer.from(JSON.stringify(leaked)), context));
+  const partial = structuredClone(payload); partial.messages[0].content = 'Only one resource.';
+  assert.throws(() => assertResourceHttpRequest(partial, Buffer.from(JSON.stringify(partial)), context));
 });
 test('capture objects, wrong HTTP bytes, missing tool calls and leaked proof fields fail serializer evidence', () => {
   const capture = httpFixture();

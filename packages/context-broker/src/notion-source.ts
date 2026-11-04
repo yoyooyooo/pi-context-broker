@@ -12,8 +12,9 @@ import { parseNativeReference, type NativeFileBinding } from "./native-reference
 import { decodePreparedGraph, preparationFailureDetails, type PreparationPurpose, type PreparationBinding, type PreparedHostGraph } from "./prepare-protocol";
 import { sharedSkillId, validSharedIdentity } from "./shared-skill-identity";
 import type { PrefetchBudget, PrefetchOutcome, PrefetchPlan } from "./prefetch-policy";
-import { publishNotionEntry, materializeNotionEntryFile } from "./notion-entry";
-import { consumeNotionSdk, readNotionSdk, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
+import { publishNotionEntry, materializeNotionEntryFile, materializeNotionResourceBatch } from "./notion-entry";
+import { consumeNotionSdk, readNotionSdk, readNotionResourcesSdk, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
+import { DEFAULT_RESOURCE_READ_BUDGET, type ResourceReadBatch, type ResourceReadWireFile } from "./resource-read-types";
 import type { ContentRecord, NotionListObservation, NotionView, SkillRecord, SourceConfig, SourcePolicy, SourceFailure } from "./types";
 
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
@@ -118,6 +119,7 @@ function sdkFailure(error: unknown, source: NotionSource, operation: "prepare" |
   if ((operation === "read" || rootOnlyFailure) && error.code === "NOT_FOUND" && details?.notion_code === "object_not_found"
     && selectedPage && missingPage?.replaceAll("-", "").toLowerCase() === selectedPage.replaceAll("-", "").toLowerCase()) return new ReferenceMiss(source.id, selected?.id);
   const code = typeof error.code === "string" && (CLI_CODES[error.code] === true
+    || /^RESOURCE_[A-Z_]+$/.test(error.code) || error.code === "SNAPSHOT_NOT_MATERIALIZED"
     || operation === "prepare" && /^(?:PREPARE_[A-Z_]+|CONSUME_[A-Z_]+|SHARED_[A-Z_]+|NOTION_PREFETCH_(?:DEFERRED|WRITE_FORBIDDEN))$/.test(error.code)) ? error.code : "SOURCE_SDK_FAILED";
   return new SourceError(code, source.id, undefined, operation === "prepare" ? preparationFailureDetails(details) : undefined);
 }
@@ -657,6 +659,66 @@ export async function loadNotionResource(record: SkillRecord, path: string, sour
       response.materialization !== undefined && (!object(response.materialization) || response.materialization.manifest_complete !== true) ||
       freshness(response.freshness, source).policy !== "pinned") throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
   }, signal);
+}
+
+/** One SDK operation verifies the owner manifest and reads only the selected
+ * resources. This path never prepares, opens or publishes the main Skill body. */
+export async function readNotionResources(record: SkillRecord, refs: readonly string[], source: NotionSource, cwd: string, signal?: AbortSignal): Promise<ResourceReadBatch> {
+  if (record.source !== "notion" || record.sourceId !== source.id || !record.id || !record.ref || !record.sourceScope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+  // A custom source command owns its transport. Do not silently switch its data
+  // or credentials to the bundled SDK when it has no resource-batch contract.
+  if (source.command) throw new SourceError("SOURCE_RESOURCE_BATCH_UNAVAILABLE", source.id);
+  if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
+  const request = { version: 1, refs: [...refs], budget: DEFAULT_RESOURCE_READ_BUDGET };
+  let value: unknown;
+  try { value = await readNotionResourcesSdk(request, { ...sdkOptions(source, cwd, signal), ...(source.activation?.offline ? { offline: true } : {}) }); }
+  catch (error) { throw sdkFailure(error, source, "read", signal, record); }
+  if (signal?.aborted || object(value) && value.status === "cancelled") throw new SourceError("SOURCE_CANCELLED", source.id);
+  if (object(value) && value.status === "failed") throw sdkFailure(value.error, source, "read", signal, record);
+  if (!object(value) || value.version !== 1 || value.status !== "ready" || !object(value.manifest) || !object(value.selection)
+    || !Array.isArray(value.files) || value.files.length !== refs.length || !object(value.budget)
+    || !isDeepStrictEqual(value.budget, DEFAULT_RESOURCE_READ_BUDGET) || typeof value.manifest_sha256 !== "string" || !HASH.test(value.manifest_sha256)) decodeError(source);
+  const manifest = value.manifest, selection = value.selection, current = contentRecord(manifest.record, source);
+  if (manifest.complete !== true || manifest.scope !== record.sourceScope || current.id !== record.id || current.kind !== record.kind
+    || !isDeepStrictEqual(current.locator, record.locator) || manifest.entrypoint !== current.entrypoint
+    || typeof manifest.snapshot_id !== "string" || !SNAPSHOT.test(manifest.snapshot_id) || typeof manifest.version_id !== "string" || !manifest.version_id
+    || selection.scope !== manifest.scope || selection.owner !== current.id || selection.snapshot_id !== manifest.snapshot_id || selection.version_id !== manifest.version_id
+    || !Array.isArray(manifest.files)) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+  const manifestFiles = manifest.files;
+  const bindings = nativeBindings(manifest.file_bindings, source), main = manifestFiles.find(file => object(file) && file.path === current.entrypoint);
+  if (!object(main) || typeof main.sha256 !== "string" || !HASH.test(main.sha256)) decodeError(source);
+  const canonicalOwner = parseNativeReference(current.ref), snapshotId = manifest.snapshot_id;
+  const mainQuery = new URLSearchParams({ snapshot: snapshotId });
+  const mainFile = bindings?.find(file => file.path === current.entrypoint);
+  if (mainFile) mainQuery.set("file_id", mainFile.file_id);
+  const ownerBinding: PreparationBinding = {
+    record: current, scope: record.sourceScope, snapshot_id: snapshotId, version_id: manifest.version_id,
+    body_sha256: main.sha256,
+    ref: "skill://" + encodeURIComponent(canonicalOwner.selector) + "/" + current.entrypoint.split("/").map(encodeURIComponent).join("/") + "?" + mainQuery.toString(),
+  };
+  const seen = new Set<string>();
+  const selected: ResourceReadWireFile[] = value.files.map((raw, index) => {
+    if (!object(raw) || raw.requested_ref !== refs[index] || typeof raw.ref !== "string" || typeof raw.path !== "string"
+      || typeof raw.content !== "string" || !["utf8", "base64"].includes(String(raw.encoding))
+      || !Number.isSafeInteger(raw.bytes) || Number(raw.bytes) < 0 || typeof raw.sha256 !== "string" || !HASH.test(raw.sha256)) return decodeError(source);
+    const ref = parseNativeReference(raw.ref), requested = parseNativeReference(refs[index]!);
+    const bound = bindings?.find(file => file.path === raw.path);
+    const declared = manifestFiles.find(file => object(file) && file.path === raw.path);
+    if (ref.selector !== canonicalOwner.selector || requested.selector !== canonicalOwner.selector || ref.snapshot !== snapshotId || requested.snapshot !== snapshotId
+      || ref.path !== raw.path || ref.fileId !== raw.file_id || ref.fileId !== bound?.file_id || raw.path === current.entrypoint
+      || requested.fileId !== undefined && requested.fileId !== ref.fileId || requested.fileId === undefined && requested.path !== ref.path
+      || !object(declared) || declared.bytes !== raw.bytes || declared.sha256 !== raw.sha256) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+    const key = ref.fileId === undefined ? "path:" + ref.path : "file:" + ref.fileId;
+    if (seen.has(key)) throw new SourceError("RESOURCE_SELECTION_CONFLICT", source.id);
+    seen.add(key);
+    return { requested_ref: refs[index]!, ref: raw.ref, path: raw.path, bytes: Number(raw.bytes), sha256: raw.sha256,
+      ...(ref.fileId === undefined ? {} : { file_id: ref.fileId }), encoding: raw.encoding as "utf8" | "base64", content: raw.content };
+  });
+  const resourceRecord: SkillRecord = { ...record, snapshotId, versionId: manifest.version_id, entrypoint: current.entrypoint, fileBindings: bindings };
+  const files = await materializeNotionResourceBatch(resourceRecord, selected, await cacheRoot(source, cwd), target => privateDirectory(target, source), signal);
+  if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
+  return { selection: { scope: record.sourceScope, owner: current.id, snapshot_id: snapshotId, version_id: manifest.version_id },
+    ownerBinding, manifest, manifest_sha256: value.manifest_sha256, files, budget: { ...DEFAULT_RESOURCE_READ_BUDGET }, machine: value };
 }
 async function requestPreparedGraph(records: readonly SkillRecord[], source: NotionSource, cwd: string, input: GraphRequest) {
   if (!records.length || records.some(record => record.sourceId !== source.id || !record.id || !record.ref || !record.sourceScope)) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);

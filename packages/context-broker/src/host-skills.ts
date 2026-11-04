@@ -19,8 +19,10 @@ import { parseNativeReference, nativeResourcePath, type ExactNativeReference } f
 import type { PreparedHostGraph, PreparationPurpose, PreparationBinding } from "./prepare-protocol";
 import type { SelectionMode } from "./session-graph";
 import { publicEntryMaterialization, type EntryFile } from "./notion-entry";
-import { createSessionShortRefHost, isSessionShortRefInput, matchesShortRefSource, assertShortRefSource, assertShortRefSnapshot, type HostShortRefResolution } from "./session-short-ref-host";
+import { createSessionShortRefHost, isSessionShortRefInput, matchesShortRefSource, assertShortRefSource, assertShortRefSnapshot, assertShortRefResource, type HostShortRefResolution } from "./session-short-ref-host";
 import { compileSkillPreparation } from "./skill-context-projection";
+import { compileResourceRead } from "./resource-read-projection";
+import { DEFAULT_RESOURCE_READ_BUDGET, RESOURCE_READ_MAX_CONTEXT_BYTES, type ResourceReadBatch } from "./resource-read-types";
 
 export type HostSkillOptions = {
   config: ConfigFile;
@@ -28,6 +30,7 @@ export type HostSkillOptions = {
   lookupReference?(ctx: ExtensionContext, signal?: AbortSignal): Promise<DiscoveryResult<SkillRecord>>;
   loadRecord(record: SkillRecord, signal?: AbortSignal, snapshotId?: string): Promise<SkillRecord>;
   loadResource?(record: SkillRecord, path: string, ctx: ExtensionContext, signal?: AbortSignal): Promise<string>;
+  readResources?(record: SkillRecord, refs: readonly string[], ctx: ExtensionContext, signal?: AbortSignal): Promise<ResourceReadBatch>;
   prepareGraph?(records: readonly SkillRecord[], ctx: ExtensionContext | undefined, signal: AbortSignal | undefined, purpose: PreparationPurpose, pins?: ReadonlyMap<string, string>, bindings?: readonly PreparationBinding[], mode?: SelectionMode): Promise<PreparedHostGraph[]>;
   persistGraphs?(graphs: readonly PreparedHostGraph[], ctx: ExtensionContext, mode: SelectionMode): void;
   sessionGraph?(ctx: ExtensionContext): unknown;
@@ -1338,10 +1341,81 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       return { input: updated };
     } catch (error) { return { block: true, reason: failure(error) }; }
   }
-  const readRunsInTool = adapter.registerReadExecutor?.(async (input, ctx, signal, read) => {
+  async function readResourceBatch(input: Record<string, unknown>, ctx: ExtensionContext, signal: AbortSignal, toolCallId: string) {
+    if (adapter.paths.host !== "pi" || !options.readResources) throw hostError("SOURCE_RESOURCE_BATCH_UNAVAILABLE");
+    if (Object.keys(input).some(key => key !== "paths") || !Array.isArray(input.paths) || !input.paths.length
+      || input.paths.some(value => typeof value !== "string" || !value)) throw hostError("INVALID_ARGUMENT");
+    if (input.paths.length > DEFAULT_RESOURCE_READ_BUDGET.maxFiles) throw hostError("RESOURCE_FILE_BUDGET");
+    const requested = input.paths as string[], observedGeneration = generation;
+    const sessionId = ctx.sessionManager?.getSessionId?.(), sessionFile = ctx.sessionManager?.getSessionFile?.();
+    const current = () => {
+      if (signal.aborted || observedGeneration !== generation || sessionId !== ctx.sessionManager?.getSessionId?.() || sessionFile !== ctx.sessionManager?.getSessionFile?.()) throw hostError("SOURCE_CANCELLED");
+    };
+    current();
+    const resolved = requested.map(value => {
+      if (!value.startsWith("skill://") && !isSessionShortRefInput(value)) throw hostError("SOURCE_REFERENCE_INVALID");
+      const selected = resolveReference(value, ctx);
+      if (selected.short && selected.short.kind !== "resource" || !selected.reference.snapshot || !selected.reference.path) throw hostError("SOURCE_REFERENCE_INVALID");
+      return selected;
+    });
+    const first = resolved[0]!.reference, identities = new Set<string>(), rawRefs = new Set<string>();
+    for (const [index, value] of resolved.entries()) {
+      const reference = value.reference;
+      if (reference.selector !== first.selector || reference.snapshot !== first.snapshot) throw hostError("RESOURCE_SELECTION_CONFLICT");
+      const identity = reference.fileId === undefined ? "path:" + reference.path : "file:" + reference.fileId;
+      if (rawRefs.has(requested[index]!) || identities.has(identity)) throw hostError("RESOURCE_SELECTION_CONFLICT");
+      rawRefs.add(requested[index]!); identities.add(identity);
+    }
+    await ready(signal); current();
+    if (discoveryError) throw discoveryError;
+    const asserted = resolved.find(value => value.short)?.short;
+    const record = await exactRecord(first, ctx, signal, asserted); current();
+    if (record.source !== "notion" || !record.sourceScope || !record.id) throw hostError("SOURCE_IDENTITY_MISMATCH");
+    for (const value of resolved) {
+      if (value.short) assertShortRefSource(value.short, record);
+      if (value.reference.fileId === undefined && value.reference.path === record.entrypoint) throw hostError("RESOURCE_MAIN_NOT_ALLOWED");
+    }
+    const refs = resolved.map((value, index) => value.short?.canonicalRef ?? requested[index]!);
+    const batch = await options.readResources(record, refs, ctx, signal); current();
+    if (batch.selection.scope !== record.sourceScope || batch.selection.owner !== record.id || batch.selection.snapshot_id !== first.snapshot
+      || batch.files.length !== resolved.length) throw hostError("SOURCE_IDENTITY_MISMATCH");
+    const files = new Set<string>(), filePaths = new Set<string>();
+    const modelRefs = resolved.map((value, index) => {
+      const file = batch.files[index]!;
+      const actual = parseNativeReference(file.ref);
+      if (file.requested_ref !== refs[index] || actual.selector !== first.selector || actual.snapshot !== first.snapshot
+        || actual.path !== file.path || actual.fileId !== file.file_id || file.path === record.entrypoint
+        || value.reference.fileId !== undefined && value.reference.fileId !== actual.fileId
+        || value.reference.fileId === undefined && value.reference.path !== actual.path) throw hostError("SOURCE_IDENTITY_MISMATCH");
+      const identity = file.file_id === undefined ? "path:" + file.path : "file:" + file.file_id;
+      if (files.has(identity) || filePaths.has(file.path)) throw hostError("RESOURCE_SELECTION_CONFLICT");
+      files.add(identity); filePaths.add(file.path);
+      if (value.short) {
+        // Re-resolve from the current branch after I/O; persisted claims alone
+        // never authorize a late result from a different session branch.
+        assertShortRefResource(shortRefs.resolve(ctx, value.short.shortRef), record, batch, file);
+        return value.short.shortRef;
+      }
+      return file.ref;
+    });
+    const result = compileResourceRead({ toolCallId, batch, modelRefs, maxContextBytes: RESOURCE_READ_MAX_CONTEXT_BYTES });
+    current();
+    return { ...result, details: { ...(result.details && typeof result.details === "object" ? result.details : {}),
+      contextBrokerResourceSource: { source_id: record.sourceId, result: batch.machine } } };
+  }
+  const readRunsInTool = adapter.registerReadExecutor?.(async (input, ctx, signal, read, toolCallId) => {
     const executionSignal = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
+    if (Object.hasOwn(input, "paths")) {
+      const deadline = AbortSignal.timeout(DEFAULT_RESOURCE_READ_BUDGET.timeBudgetMs);
+      try { return await readResourceBatch(input, ctx, AbortSignal.any([executionSignal, deadline]), toolCallId); }
+      catch (error) {
+        if (executionSignal.aborted) throw hostError("SOURCE_CANCELLED");
+        if (deadline.aborted) throw hostError("RESOURCE_TIME_BUDGET");
+        throw error;
+      }
+    }
     checkPreparationSignal(executionSignal);
-    const prepared = await prepareRead({ toolName: "read", input }, ctx, executionSignal, "execute");
+    const prepared = await prepareRead({ toolName: "read", toolCallId, input }, ctx, executionSignal, "execute");
     if (prepared && "block" in prepared) throw new Error(prepared.reason);
     checkPreparationSignal(executionSignal);
     const result = await read(prepared?.input ?? input, executionSignal);

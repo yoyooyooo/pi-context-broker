@@ -52,11 +52,11 @@ export function createOmpHostAdapter(api: ExtensionAPI): HostCapabilities {
           readsSkillUris: metadata.readsSkillUris, loadMode: metadata.loadMode,
           approval: metadata.approval, approvalCacheTargets: metadata.approvalCacheTargets,
           defaultInactive: !activeTools().includes("read"),
-          async execute(_id, input, signal, onUpdate, context) {
+          async execute(id, input, signal, onUpdate, context) {
             const invoke = context.invokeTool;
             if (!invoke) throw Object.assign(new Error("HOST_NATIVE_READ_API_UNAVAILABLE"), { code: "HOST_NATIVE_READ_API_UNAVAILABLE" });
             signal?.throwIfAborted();
-            return execute(input, context, signal, (updated, preparedSignal) => invoke(updated, { signal: preparedSignal ?? signal, onUpdate }));
+            return execute(input, context, signal, (updated, preparedSignal) => invoke(updated, { signal: preparedSignal ?? signal, onUpdate }), id);
           },
         });
         installed = true;

@@ -9,6 +9,7 @@ import { hasLoadedSkill } from "../src/index";
 import { installHostSkills } from "../src/host-skills";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { recordIdentity } from "../src/discovery-records";
+import { compileResourceRead } from "../src/resource-read-projection";
 import type { AgentMessage, ExtensionAPI, ExtensionContext, SkillRecord } from "../src/types";
 const a = "s_" + "a".repeat(64), b = "s_" + "b".repeat(64);
 const record = { kind: "skill", sourceId: "notion", sourceScope: "scope", source: "notion", id: "record", name: "example", token: "notion/example", path: "/immutable/SKILL.md", metadataIndexPath: "/metadata/SKILL.md", description: "Example", aliases: [], normalizedName: "example", normalizedDescription: "example", normalizedAliases: [], autoloadEnabled: false, body: "---\nname: example\n---\nExact native instructions.\n", snapshotId: a, locator: { type: "shared_skill", library_id: "lib", skill_id: "skill", page_id: "p", database_id: "d", data_source_id: "ds" } } satisfies SkillRecord;
@@ -137,6 +138,21 @@ test("resource deduplication preserves different scopes, owners, snapshots, File
   for (const identity of [{ scope: "other" }, { id: "shared_skill:lib:other" }, { snapshotId: b }, { fileId: "other" }, { body: "Changed resource.\n" }]) {
     const messages = [resourceResult("first"), resourceResult("second", identity)];
     expect(deduplicateSourceReads(messages)).toBe(messages);
+  }
+});
+
+test("batch resource receipts never load or rebind a main even when the resource contains identical instructions", () => {
+  const owner = { ...record, id: "shared_skill:lib:skill" }, body = record.body, path = "references/instructions.md";
+  const ref = "skill://" + encodeURIComponent(owner.id) + "/" + path + "?snapshot=" + a + "&file_id=instructions";
+  const batch = { selection: { scope: "scope", owner: owner.id, snapshot_id: a, version_id: "a".repeat(64) },
+    files: [{ requested_ref: ref, ref, file_id: "instructions", path, bytes: Buffer.byteLength(body),
+      sha256: createHash("sha256").update(body).digest("hex"), encoding: "utf8" as const, content: body }] };
+  const messages = ["batch-1", "batch-2"].map(toolCallId => ({ role: "toolResult", toolName: "read", toolCallId,
+    ...compileResourceRead({ toolCallId, batch, modelRefs: [ref], maxContextBytes: 1048576 }) } satisfies AgentMessage));
+  for (const history of [messages, deduplicateSourceReads(messages)]) {
+    expect(hasLoadedSkill(history, owner)).toBe(false);
+    expect(sessionSourceSnapshot(history, owner)).toBeUndefined();
+    expect(sessionSourceBindings(history, "scope")).toEqual([]);
   }
 });
 

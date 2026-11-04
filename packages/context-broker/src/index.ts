@@ -47,7 +47,7 @@ import {
   InvocationError,
 } from "./discovery-records";
 import { discoverSourceCatalog, loadSourceSkill, normalizeSources, formatSourceFailures } from "./sources";
-import { diagnoseNotionSource, sourceFailureMessage, SourceError, ReferenceMiss, prepareNotionSkills, prefetchNotionSkills, loadNotionResource } from "./notion-source";
+import { diagnoseNotionSource, sourceFailureMessage, SourceError, ReferenceMiss, prepareNotionSkills, prefetchNotionSkills, loadNotionResource, readNotionResources } from "./notion-source";
 import { installHostSkills } from "./host-skills";
 import { resolveViewDiscovery, createViewCommands } from "./view-discovery";
 import { createSourceRuntime } from "./source-runtime";
@@ -1577,6 +1577,11 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       const source = normalizeSources(config.sources)?.find(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false);
       if (!source || source.type !== "notion") throw new SourceError("SOURCE_UNAVAILABLE", record.sourceId ?? "notion");
       return loadNotionResource(record, path, source, ctx.cwd ?? process.cwd(), signal, paths.host === "pi" ? "sdk" : undefined);
+    }),
+    readResources: (record, refs, ctx, signal) => sourceRuntime.foreground(async () => {
+      const source = normalizeSources(config.sources)?.find(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false);
+      if (paths.host !== "pi" || !source || source.type !== "notion") throw new SourceError("SOURCE_RESOURCE_BATCH_UNAVAILABLE", record.sourceId ?? "notion");
+      return readNotionResources(record, refs, source, ctx.cwd ?? process.cwd(), signal);
     }),
     prepareGraph: (records, ctx, signal, purpose, pins, pendingBindings, mode) => sourceRuntime.foreground(async () => {
       const groups = new Map<string, SkillRecord[]>();

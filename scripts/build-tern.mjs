@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const root = resolve(import.meta.dirname, "..");
 const args = process.argv.slice(2), options = new Map();
@@ -46,6 +47,11 @@ const sdkExport = selectedCli.metadata.exports?.["./sdk"];
 const sdkImport = typeof sdkExport === "string" ? sdkExport : sdkExport?.import;
 if (typeof sdkImport !== "string" || !sdkImport.startsWith("./")) throw new Error("The selected ntn-skills package must include the Node ESM ntn-skills/sdk export; select a complete compatible package with NTN_SKILLS_BUILD_ENTRY");
 const sdkEntry = resolve(selectedCli.directory, sdkImport);
+const selectedSdkApi = await import(pathToFileURL(sdkEntry).href);
+const resourceReadVersion = selectedSdkApi.RESOURCE_READ_CONTRACT_VERSION;
+if (resourceReadVersion !== undefined && (resourceReadVersion !== 1 || typeof selectedSdkApi.readResources !== "function" || typeof selectedSdkApi.decodeResourceReadResult !== "function")) {
+  throw new Error("The selected ntn-skills SDK resource-read capability is incompatible");
+}
 const selectedSdk = await findPackage("ntn-skills", sdkEntry);
 if (await realpath(selectedSdk.directory) !== await realpath(selectedCli.directory)) throw new Error("CLI and SDK must come from the same selected ntn-skills package");
 const brokerMetadata = JSON.parse(await readFile(join(broker, "package.json"), "utf8"));
@@ -94,7 +100,7 @@ const sdkResult = await build({
 if (!sdkResult.success || !sdkResult.outputs[0]) throw new AggregateError(sdkResult.logs, "Notion SDK build failed");
 const sdkCode = await sdkResult.outputs[0].text();
 const runtimeManifest = { version: 1, package: "ntn-skills", package_version: selectedCli.metadata.version,
-  sdk_version: 1, consumer_contract_version: 1,
+  sdk_version: 1, consumer_contract_version: 1, ...(resourceReadVersion === undefined ? {} : { resource_read_contract_version: resourceReadVersion }),
   cli_sha256: createHash("sha256").update(cliCode).digest("hex"), sdk_sha256: createHash("sha256").update(sdkCode).digest("hex") };
 const licenseFiles = new Map();
 async function collectLicenses(name, from) {

@@ -22,7 +22,7 @@
 | SC04 | AH-621 | 短引用、原生 read | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：C/S/R 分支表、真实 SessionManager 13 项与 5 次独立 resume、实际 Pi search/prepare/read；74 候选批量投影经同目录 13 点真实对照，跨机重新授权和正式模型 Gate 仍分列 |
 | SC05 | AH-622 | provider 输入 | [能力化指引](../../../../packages/context-broker/docs/skill-consumption-guidance.md)与[prepare 编译投影](../../../../packages/context-broker/docs/skill-consumption-projection.md)：完整作者正文、模型短引用和机器证明分离，versioned source/rendered hash 绑定实际 span；普通复用不代替当前用户明确要求的操作；其他入口统一编译及正式 Gate 仍分列 |
 | SC06 | AH-623 | 目录、search、自然任务 | view-discovery / model；另补两种目录的真实选路比较 |
-| SC07 | AH-626 | inspect、use、资源 | installed --skill-graph true；一次目标消费和批读仍开放；[指引回归](../../../../packages/context-broker/docs/skill-consumption-guidance.md)消除额外 bash 探测并纠正 doctor 含义，仍保留版本范围与 resume 条件两处语义缺陷，旧失败不覆盖 |
+| SC07 | AH-626 | inspect、use、资源 | installed --skill-graph true；固定资源批读使用下方 `resource-batch` 路线及[合同](../../../../packages/context-broker/docs/fixed-resource-batches.md)；[最终包、真实模型与新会话记录](../../../../packages/context-broker/docs/fixed-resource-batches-verification-2026-11-04.md)。原句介绍/执行与正式模型 Gate 分别验收；[指引历史](../../../../packages/context-broker/docs/skill-consumption-guidance.md)的失败继续保留 |
 | SC08 | AH-627 | 重复、resume、压缩 | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：selected/visible/active 分离、状态层 14/14、实际 Pi 压缩后固定恢复；默认模型摘要另验 |
 | SC09 | AH-624 | 普通消息、显式选择 | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：context 准备与运行信号，RPC/PTY 10/10、完整启动 31/31；[历史失败](../../../../packages/context-broker/docs/skill-consumption-startup-checkpoint.md)保留 |
 | SC10 | AH-625 | SDK、公开 CLI | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：独立 npm/Node SDK 11/11、Broker 等价 9/9、实际 Pi 默认 SDK 3/3；目录 CLI 和 custom command 明确单列 |
@@ -158,6 +158,39 @@ PY
 ```
 
 cleanup 新增自己的回执不影响原文件比对。若原文件改变，保留失败现场并修复规程，不能排除该文件掩盖错误。禁止按进程名称 kill、永久删除或触碰他人会话。真实网络、真实模型是否运行要单列；此次完整路径的两者均为 not_run。
+
+### Drive：SC07 固定资源批读
+
+复用 `scripts/notion-sdk-pi.mjs`，不新增顶层验证器。先在 CLI 仓按对应消费链地图构建、打包并独立安装 SDK，运行 `sdk-package-smoke.mjs`。Broker 只从该**已安装 CLI package**选择 `NTN_SKILLS_BUILD_ENTRY`，使用 `bun scripts/build-tern.mjs --target broker --package-out ABS_NEW_PACKAGE`，随后在隔离产物目录 `npm pack --ignore-scripts` 并安装到新 consumer。包目录必须包含相邻 SDK/CLI/runtime 清单，`source.command` 缺省；checkout import 或显式 command 不代替默认 bundled SDK。
+
+以下变量均使用本次实际绝对路径：`RESOURCE_PACKAGE` 是独立安装的 Broker 目录，`RESOURCE_FIXTURE` 是 CLI fixture.json，`RESOURCE_EVIDENCE` 是新的仓外证据目录。`sdk-fixture.ts --catalog` 生成的独立 `resources` Skill 包含普通 UTF-8、BOM/CRLF、空文件、binary 和未选资源，旧 `a` 单 binary 场景保留。
+
+```bash
+node scripts/notion-sdk-pi.mjs doctor --package "$RESOURCE_PACKAGE" --fixture "$RESOURCE_FIXTURE" --scenario resource-batch
+node scripts/notion-sdk-pi.mjs run --package "$RESOURCE_PACKAGE" --fixture "$RESOURCE_FIXTURE" --scenario resource-batch --out "$RESOURCE_EVIDENCE"
+node scripts/notion-sdk-pi.mjs evidence --evidence "$RESOURCE_EVIDENCE"
+node scripts/notion-sdk-pi.mjs cleanup --evidence "$RESOURCE_EVIDENCE"
+node scripts/notion-sdk-pi.mjs evidence --evidence "$RESOURCE_EVIDENCE"
+```
+
+Doctor 是只读前置检查，Drive 使用真实 installed Pi 和受控 provider。原始 tool result、provider payload、session、source 观察和二进制文件复制必须在 cleanup 前封存；已有 evidence/cleanup helper 只回收确认归属的 scratch 并保留原件。失败样本另存新目录修复重跑，不能覆盖。缺 SDK 新能力或实际 Pi factory 时标 blocked/failed，不切换另一宿主。
+
+helper 输出中的 `cleanup` 布尔值表示本次命令是否请求清理；再次运行 evidence 时的 `cleanup: false` 不表示清理回退。实际清理状态核对 `cleanup.json` 的 `status: trashed`、owned scratch 已不存在，以及清理前后的原始证据 hash 一致。
+
+独立验收要逐项核对：实际 `read` schema 能表达互斥 `path/paths` 且最多16个文件；每批一次 `read-resources`、无 `consume` 和逐文件 `read`；实际 JSON text 的完整 UTF-8/BOM/CRLF/empty bytes/hash；binary 由实际落盘文件复核且不标完整文本；每个 v2 receipt 的 toolCallId、owner/pin/File、整体 digest 与 JSON span一致；repeat 只在 provider 投影替换非空重复正文，原始会话结果仍完整，empty 保持空字符串，binary 元数据不变；没有主文 active/graph 绑定。
+
+`resource-batch` 故意直接输入canonical固定引用，所以它只证明批读与发现的短引用分别可用。实际 `sr:R[]` 用独立 variant 验证：
+
+```bash
+node scripts/notion-sdk-pi.mjs run --package "$RESOURCE_PACKAGE" --fixture "$RESOURCE_FIXTURE" --scenario resource-batch-short-refs --out "$RESOURCE_SHORT_EVIDENCE"
+node scripts/notion-sdk-pi.mjs evidence --evidence "$RESOURCE_SHORT_EVIDENCE"
+node scripts/notion-sdk-pi.mjs cleanup --evidence "$RESOURCE_SHORT_EVIDENCE"
+node scripts/notion-sdk-pi.mjs evidence --evidence "$RESOURCE_SHORT_EVIDENCE"
+```
+
+`RESOURCE_SHORT_EVIDENCE` 必须是另一个新目录。该variant先search并显式 `skill_prepare inspect` 取得四个真实资源句柄，再一次 `read(paths)` 及同会话repeat；SDK总账应为1次consume加2次read-resources，主文只来自前面的显式inspect。核对实际RPC参数确实是四个对应路径的 `sr:R`，不能用canonical成功推断。两个场景保持独立的成本和主文投递结论。
+
+全 warm fixture 的 0 HTTP 只说明本场景离线消费。Core 受控 retained tests 另用请求 object ID 集合证明冷选中物化、共享 chunk 去重、未选主文/资源零下载。SDK abort/header/body、预算、混 pin/owner、重复 alias、坏 proof 的反例沿现有 SDK smoke 和定向测试。旧 `native`、`prepare` 场景用于实际 Pi scalar 工厂与主文 receipt 回归。真实 Notion、真实模型、pro/mini 和日用安装仍单列；本路径不关闭整个 SC07/SC21。
 
 ## Gotchas
 

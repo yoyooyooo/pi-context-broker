@@ -49,7 +49,7 @@ export type ToolResultEvent = { toolName: string; toolCallId?: string; parentToo
 export type NativeReadResult = { content: Array<TextContent | ImageContent>; details?: unknown; isError?: boolean; [key: string]: unknown };
 export type NativeReadUpdate = (result: NativeReadResult) => void;
 export type NativeReadDelegate = (input: Record<string, unknown>, signal?: AbortSignal) => Promise<NativeReadResult>;
-export type NativeReadExecutor = (input: Record<string, unknown>, ctx: ExtensionContext, signal: AbortSignal | undefined, read: NativeReadDelegate) => Promise<NativeReadResult>;
+export type NativeReadExecutor = (input: Record<string, unknown>, ctx: ExtensionContext, signal: AbortSignal | undefined, read: NativeReadDelegate, toolCallId: string) => Promise<NativeReadResult>;
 export type NativeReadMetadata = {
   label: string;
   description: string;
@@ -65,6 +65,16 @@ export type NativeReadDefinition = NativeReadMetadata & {
   sourcePath: string;
   defaultInactive: boolean;
   execute(id: string, input: Record<string, unknown>, signal: AbortSignal | undefined, onUpdate: NativeReadUpdate | undefined, ctx: ExtensionContext): Promise<NativeReadResult>;
+};
+/** Pi exposes its built-in definition through createReadToolDefinition. Keep its
+ * renderers, output schema and native executor when extending the read surface. */
+export type PiReadDefinition = {
+  name: "read"; label: string; description: string; parameters: Record<string, unknown>;
+  outputSchema?: unknown; promptSnippet?: string; promptGuidelines?: string[];
+  defaultActive?: boolean; constrainedSampling?: unknown;
+  execute(id: string, input: Record<string, unknown>, signal: AbortSignal | undefined, onUpdate: NativeReadUpdate | undefined, ctx: ExtensionContext): Promise<NativeReadResult>;
+  renderCall?: (args: Record<string, unknown>, theme: unknown, context: unknown) => unknown;
+  renderResult?: (result: NativeReadResult, options: unknown, theme: unknown, context: unknown) => unknown;
 };
 export type NativeSkillSearchDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_search" };
 export type NativeSkillPrepareDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_prepare" };
@@ -222,7 +232,8 @@ export type ExtensionAPI = {
   sendUserMessage?(content: MessageContent): void;
   getAllTools?(): Array<{ name: string; description: string; parameters: unknown; sourceInfo: { source: string; path: string } }>;
   getActiveTools?(): string[];
-  registerTool?(tool: NativeReadDefinition | NativeSkillSearchDefinition | NativeSkillPrepareDefinition | NativeSkillGraphDefinition): void;
+  getSettings?(): { images?: { autoResize?: boolean } };
+  registerTool?(tool: NativeReadDefinition | PiReadDefinition | NativeSkillSearchDefinition | NativeSkillPrepareDefinition | NativeSkillGraphDefinition): void;
   registerMessageRenderer?(customType: string, renderer: (message: AgentMessage, options: { expanded: boolean }, theme: unknown) => ExtensionWidgetComponent | undefined): void;
   sendMessage?(message: { customType: string; content: MessageContent; details: unknown; display: boolean }, options: { triggerTurn: boolean }): void;
   appendEntry?(customType: string, data?: unknown): void;
