@@ -141,6 +141,13 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (adapter.paths.host !== "pi" || record.source !== "notion" || !shortRefs.canBind(ctx)) return undefined;
     return fixed && record.preparationBinding ? shortRefs.selected(ctx, record) : shortRefs.candidate(ctx, record);
   }
+  function modelCandidateReferences(values: readonly SkillRecord[], ctx: ExtensionContext): ReadonlyMap<SkillRecord, string> {
+    if (adapter.paths.host !== "pi" || !shortRefs.canBind(ctx)) return new Map();
+    const candidates = values.filter(record => record.source === "notion");
+    if (!candidates.length) return new Map();
+    const refs = shortRefs.candidates(ctx, candidates);
+    return new Map(candidates.map((record, index) => [record, refs[index]!]));
+  }
   function resolveReference(value: string, ctx: ExtensionContext): { reference: ExactNativeReference; short?: HostShortRefResolution } {
     if (!isSessionShortRefInput(value)) return { reference: parseNativeReference(value) };
     const short = shortRefs.resolve(ctx, value);
@@ -1031,8 +1038,9 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       details: { nativePromptSha256: promptHash, records: [sourceDeliveryReceipt(native, event.prompt ?? "")].filter(Boolean) },
     } : undefined;
     if (native && adapter.submission.receipt === "input-digest") nativeInputs.delete(promptHash);
+    const candidateRefs = modelCandidateReferences([...records, ...defaultRouters], ctx);
     let systemPrompt = viewSystemPrompt(event.systemPrompt, records, defaultRouters, new Set(readRecords.keys()), views, ctx.cwd,
-      record => modelReference(record, ctx));
+      record => candidateRefs.get(record));
     if (deferredPiDiscovery) {
       systemPrompt = systemPrompt.replace(/\n*<ntn-skills-discovery\b[^>]*>[\s\S]*?<\/ntn-skills-discovery>/g, "");
       if (metadataPending || discoveryError || sourceFailures.some(failure => failure.blocking !== false)) {

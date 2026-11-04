@@ -1,9 +1,9 @@
 import { isDeepStrictEqual } from "node:util";
 import { nativeResourcePath, parseNativeReference } from "./native-reference";
 import {
-  SESSION_SHORT_REF_ENTRY, SESSION_SHORT_REF_PREFIX, bindCandidate, bindSelected, bindResource,
+  SESSION_SHORT_REF_ENTRY, SESSION_SHORT_REF_PREFIX, bindCandidate, bindCandidates, bindSelected, bindResource,
   reduceSessionShortRefs, resolveSessionShortRef, exportSessionShortRef,
-  type ResolvedSessionShortRef, type SessionShortRef, type SessionShortRefState, type ShortRefBindingPlan, type ShortRefIdentity,
+  type ResolvedSessionShortRef, type SessionShortRef, type SessionShortRefState, type ShortRefBindingPlan, type ShortRefBatchPlan, type ShortRefIdentity,
 } from "./session-short-ref";
 import type { ContentRecord, ExtensionAPI, ExtensionContext, SkillRecord } from "./types";
 
@@ -88,12 +88,9 @@ export function assertShortRefSnapshot(value: HostShortRefResolution, snapshot: 
  * The host's existing lifecycle guard still owns cancellation across asynchronous I/O.
  */
 export function createSessionShortRefHost(api: ExtensionAPI) {
-  function persist(ctx: ExtensionContext, before: ReturnType<typeof branch>, plans: readonly ShortRefBindingPlan[]): SessionShortRef {
-    const result = plans.at(-1);
-    if (!result) fail();
-    const events = plans.flatMap(plan => plan.event ? [plan.event] : []);
-    if (events.length && !api.appendEntry) fail("SHORT_REF_SESSION_UNAVAILABLE");
-    for (const event of events) {
+  function persistBatch(ctx: ExtensionContext, before: ReturnType<typeof branch>, plan: ShortRefBatchPlan): readonly SessionShortRef[] {
+    if (plan.events.length && !api.appendEntry) fail("SHORT_REF_SESSION_UNAVAILABLE");
+    for (const event of plan.events) {
       try { api.appendEntry!(SESSION_SHORT_REF_ENTRY, event); }
       catch { fail("SHORT_REF_PERSIST_FAILED"); }
     }
@@ -103,7 +100,15 @@ export function createSessionShortRefHost(api: ExtensionAPI) {
       if (!isDeepStrictEqual(after.state.bindings.get(ref), target)) fail("SHORT_REF_SESSION_CHANGED");
     }
     // A void append that failed to persist cannot produce a usable advertised handle.
-    if (!isDeepStrictEqual(after.state.bindings.get(result.ref), result.state.bindings.get(result.ref))) fail("SHORT_REF_PERSIST_FAILED");
+    for (const ref of plan.refs) {
+      if (!isDeepStrictEqual(after.state.bindings.get(ref), plan.state.bindings.get(ref))) fail("SHORT_REF_PERSIST_FAILED");
+    }
+    return plan.refs;
+  }
+  function persist(ctx: ExtensionContext, before: ReturnType<typeof branch>, plans: readonly ShortRefBindingPlan[]): SessionShortRef {
+    const result = plans.at(-1);
+    if (!result) fail();
+    persistBatch(ctx, before, { refs: plans.map(plan => plan.ref), events: plans.flatMap(plan => plan.event ? [plan.event] : []), state: result.state });
     return result.ref;
   }
   return Object.freeze({
@@ -112,6 +117,13 @@ export function createSessionShortRefHost(api: ExtensionAPI) {
       const before = branch(ctx);
       const plan = bindCandidate(before.state, { record: sourceRecord(record), scope: record.sourceScope ?? "" });
       return persist(ctx, before, [plan]);
+    },
+    candidates(ctx: ExtensionContext, records: readonly SkillRecord[]): readonly SessionShortRef[] {
+      const before = branch(ctx);
+      const plan = bindCandidates(before.state, records.map(record => ({ record: sourceRecord(record), scope: record.sourceScope ?? "" })));
+      // No await or mutable host API runs during planning. Existing refs already
+      // belong to this freshly read branch; only new writes require readback.
+      return plan.events.length ? persistBatch(ctx, before, plan) : plan.refs;
     },
     selected(ctx: ExtensionContext, snapshot: SkillRecord): SessionShortRef {
       const before = branch(ctx);

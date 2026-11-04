@@ -29,6 +29,9 @@ export type SessionShortRefState = Readonly<{ bindings: ReadonlyMap<SessionShort
 export type ShortRefBindingPlan = Readonly<{
   ref: SessionShortRef; event?: SessionShortRefEvent; state: SessionShortRefState;
 }>;
+export type ShortRefBatchPlan = Readonly<{
+  refs: readonly SessionShortRef[]; events: readonly SessionShortRefEvent[]; state: SessionShortRefState;
+}>;
 export type ResolvedSessionShortRef =
   | Readonly<{ kind: "candidate"; identity: ShortRefIdentity; canonicalRef: string }>
   | Readonly<{ kind: "selected"; selection: SelectedShortRefTarget; canonicalRef: string }>
@@ -182,25 +185,37 @@ export function reduceSessionShortRefs(branch: readonly SessionEntry[]): Session
   }
   return Object.freeze({ bindings });
 }
-function bind(state: SessionShortRefState, value: SessionShortRefTarget): ShortRefBindingPlan {
-  validateOwner(state.bindings, value);
-  const key = targetKey(value), byTarget = new Map<string, SessionShortRef>();
-  for (const [ref, previous] of state.bindings) {
-    const previousKey = targetKey(previous);
-    byTarget.set(previousKey, ref);
-    if (previousKey !== key) continue;
-    if (!isDeepStrictEqual(previous, value)) fail("SHORT_REF_CONFLICT");
-    return Object.freeze({ ref, state });
+function bindTargets(state: SessionShortRefState, values: readonly SessionShortRefTarget[]): ShortRefBatchPlan {
+  // This index and working map belong to one synchronous plan, never a session cache.
+  const bindings = new Map(state.bindings), byTarget = new Map<string, SessionShortRef>();
+  for (const [ref, previous] of bindings) byTarget.set(targetKey(previous), ref);
+  const refs: SessionShortRef[] = [], events: SessionShortRefEvent[] = [];
+  for (const value of values) {
+    validateOwner(bindings, value);
+    const previousRef = byTarget.get(targetKey(value));
+    if (previousRef !== undefined) {
+      if (!isDeepStrictEqual(bindings.get(previousRef), value)) fail("SHORT_REF_CONFLICT");
+      refs.push(previousRef);
+      continue;
+    }
+    // A fresh allocation has no rewindable counter. It is a locator, never an access token.
+    const ref = `sr:${{ candidate: "C", selected: "S", resource: "R" }[value.kind]}${randomBytes(16).toString("base64url")}` as SessionShortRef;
+    events.push(add(bindings, byTarget, { version: 1, ref, target: value }));
+    refs.push(ref);
   }
-  // A fresh allocation has no rewindable counter. It is a locator, never an access token.
-  const ref = `sr:${{ candidate: "C", selected: "S", resource: "R" }[value.kind]}${randomBytes(16).toString("base64url")}` as SessionShortRef;
-  const bindings = new Map(state.bindings);
-  const event = add(bindings, byTarget, { version: 1, ref, target: value });
-  return Object.freeze({ ref, event, state: Object.freeze({ bindings }) });
+  return Object.freeze({ refs: Object.freeze(refs), events: Object.freeze(events), state: events.length ? Object.freeze({ bindings }) : state });
+}
+function bind(state: SessionShortRefState, value: SessionShortRefTarget): ShortRefBindingPlan {
+  const plan = bindTargets(state, [value]);
+  return Object.freeze({ ref: plan.refs[0]!, ...(plan.events[0] ? { event: plan.events[0] } : {}), state: plan.state });
 }
 /** Input must come from the current authorized catalog; no selection or activation occurs. */
 export function bindCandidate(state: SessionShortRefState, input: { record: ContentRecord; scope: string }): ShortRefBindingPlan {
   return bind(state, Object.freeze({ kind: "candidate", identity: recordIdentity(input.record, input.scope) }));
+}
+/** Plan a complete directory with one reverse index, preserving input order and immutable bindings. */
+export function bindCandidates(state: SessionShortRefState, inputs: readonly { record: ContentRecord; scope: string }[]): ShortRefBatchPlan {
+  return bindTargets(state, inputs.map(input => Object.freeze({ kind: "candidate" as const, identity: recordIdentity(input.record, input.scope) })));
 }
 /** Call only after normal prepare/consume validation. A C is never overwritten by an S. */
 export function bindSelected(state: SessionShortRefState, binding: PreparationBinding): ShortRefBindingPlan {

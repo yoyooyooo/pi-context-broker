@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createHash, randomBytes } from "node:crypto";
 import {
-  SESSION_SHORT_REF_ENTRY, bindCandidate, bindSelected, bindResource, reduceSessionShortRefs,
+  SESSION_SHORT_REF_ENTRY, bindCandidate, bindCandidates, bindSelected, bindResource, reduceSessionShortRefs,
   resolveSessionShortRef, exportSessionShortRef,
   type SessionShortRefEvent, type SessionShortRefState, type ShortRefBindingPlan,
 } from "../src/session-short-ref";
@@ -52,6 +52,58 @@ function selectedResource(f = fixture(), state: SessionShortRefState = empty()) 
   const resource = bindResource(selected.state, selected.ref, f.snapshot, f.files[1]!.ref);
   return { ...f, selected, resource, state: resource.state };
 }
+
+test("candidate batches reuse duplicate identities, preserve order and separate scope and library", () => {
+  const initial = empty(), f = fixture();
+  const inputs = [{ record: f.record, scope }, { record: f.record, scope: otherScope },
+    { record: fixture({ library: "another-library" }).record, scope },
+    { record: { ...f.record, name: "Renamed display", description: "Changed display" }, scope }];
+  const planned = bindCandidates(initial, inputs);
+  expect(initial.bindings.size).toBe(0);
+  expect(planned.refs).toHaveLength(4);
+  expect(planned.events).toHaveLength(3);
+  expect(planned.refs[0]).toBe(planned.refs[3]);
+  expect(new Set(planned.refs).size).toBe(3);
+  const replayed = reduceSessionShortRefs(planned.events.map(entry));
+  expect([...replayed.bindings]).toEqual([...planned.state.bindings]);
+  const repeated = bindCandidates(replayed, [...inputs].reverse());
+  expect(repeated.refs).toEqual([...planned.refs].reverse());
+  expect(repeated.events).toEqual([]);
+  expect(repeated.state).toBe(replayed);
+});
+
+test("a warm 74-candidate batch visits existing binding keys linearly", () => {
+  const inputs = Array.from({ length: 74 }, (_, index) => ({ record: fixture({ skill: "member-" + index }).record, scope }));
+  const initial = bindCandidates(empty(), inputs);
+  const observed = new Map(initial.state.bindings);
+  let bindingReads = 0;
+  for (const [ref, target] of observed) {
+    observed.set(ref, new Proxy(target, { get(value, key, receiver) {
+      if (key === "kind") bindingReads++;
+      return Reflect.get(value, key, receiver);
+    } }));
+  }
+  const state: SessionShortRefState = { bindings: observed };
+  const repeated = bindCandidates(state, inputs);
+  // Count existing-key work, not wall time. Repeated full scans exceed this by an order of magnitude.
+  expect(bindingReads).toBeGreaterThan(0);
+  expect(bindingReads).toBeLessThanOrEqual(inputs.length * 8);
+  expect(repeated.refs).toEqual(initial.refs);
+  expect(repeated.events).toEqual([]);
+  expect(repeated.state).toBe(state);
+});
+
+test("candidate batch allocation leaves old selected and resource bindings unchanged", () => {
+  const f = selectedResource(), saved = [...f.state.bindings];
+  const plan = bindCandidates(f.state, [{ record: f.record, scope }, { record: fixture({ version: "two" }).record, scope }]);
+  expect(plan.events).toHaveLength(1);
+  expect(plan.refs[0]).toBe(plan.refs[1]);
+  expect([...f.state.bindings]).toEqual(saved);
+  expect(resolveSessionShortRef(plan.state, f.selected.ref, scope).canonicalRef).toBe(f.binding.ref);
+  expect(resolveSessionShortRef(plan.state, f.resource.ref, scope).canonicalRef).toBe(f.files[1]!.ref);
+  code(() => bindCandidates(f.state, [{ record: f.record, scope }, { record: f.record, scope: "invalid" }]), "SHORT_REF_INVALID");
+  expect([...f.state.bindings]).toEqual(saved);
+});
 
 test("directory, Members and search reuse one candidate despite display metadata changes", () => {
   const f = fixture(), directory = bindCandidate(empty(), { record: f.record, scope });

@@ -25,16 +25,94 @@ function fixture(version = "one") {
   return { record, metadata, selected, files };
 }
 function session() {
-  const state = { branch: [] as SessionEntry[], id: "session-one", file: "/sessions/one.jsonl", writes: 0, allEntriesCalls: 0, subscriptions: 0 };
+  const state = { branch: [] as SessionEntry[], id: "session-one", file: "/sessions/one.jsonl", writes: 0, branchReads: 0, allEntriesCalls: 0, subscriptions: 0 };
   const api: ExtensionAPI = { on() { state.subscriptions++; }, appendEntry(customType, data) {
     state.writes++; state.branch.push({ type: "custom", customType, data });
   } };
   const ctx: ExtensionContext = { sessionManager: {
-    getBranch: () => state.branch, getSessionId: () => state.id, getSessionFile: () => state.file,
+    getBranch() { state.branchReads++; return state.branch; }, getSessionId: () => state.id, getSessionFile: () => state.file,
     getEntries() { state.allEntriesCalls++; throw new Error("All entries must never supply short refs"); },
   } };
   return { state, api, ctx, host: createSessionShortRefHost(api) };
 }
+function directoryRecords(count: number): SkillRecord[] {
+  const f = fixture();
+  return Array.from({ length: count }, (_, index): SkillRecord => {
+    const skill = "member-" + index, id = "shared_skill:bridge:" + skill;
+    return { ...f.metadata, id, ref: "skill://" + encodeURIComponent(id) + "/SKILL.md",
+      locator: { type: "shared_skill", library_id: "bridge", skill_id: skill, page_id: uuid(index + 100), database_id: uuid(10), data_source_id: uuid(11) } };
+  });
+}
+
+test("candidate batch publishes 74 directory refs with two cold branch reads and one per warm projection", () => {
+  const h = session(), records = directoryRecords(74);
+  const refs = h.host.candidates(h.ctx, records);
+  expect(refs).toHaveLength(74);
+  expect(new Set(refs).size).toBe(74);
+  expect(h.state.writes).toBe(74);
+  expect(h.state.branchReads).toBe(2);
+  const saved = JSON.stringify(h.state.branch), reads = h.state.branchReads;
+  for (let index = 0; index < 3; index++) {
+    expect(h.host.candidates(h.ctx, records.map(record => ({ ...record, description: "Updated display metadata" })))).toEqual(refs);
+  }
+  expect(h.state.branchReads - reads).toBe(3);
+  expect(h.state.writes).toBe(74);
+  expect(JSON.stringify(h.state.branch)).toBe(saved);
+  expect(h.state.allEntriesCalls).toBe(0);
+});
+
+test("candidate batch validates every input before appending any binding", () => {
+  const h = session(), records = directoryRecords(2);
+  code(() => h.host.candidates(h.ctx, [records[0]!, { ...records[1]!, sourceScope: "invalid" }]), "SHORT_REF_INVALID");
+  expect(h.state.writes).toBe(0);
+  expect(h.state.branch).toEqual([]);
+});
+
+test("candidate batch checks every persisted ref even when the last append succeeds", () => {
+  const h = session(), records = directoryRecords(2), append = h.api.appendEntry!;
+  let calls = 0;
+  h.api.appendEntry = (kind, data) => { if (++calls === 2) append(kind, data); };
+  code(() => h.host.candidates(h.ctx, records), "SHORT_REF_PERSIST_FAILED");
+  expect(calls).toBe(2);
+  expect(h.state.branch).toHaveLength(1);
+});
+
+test("candidate batch follows same-session rewind and independent external appends without losing fixed pins", () => {
+  const h = session(), f = fixture(), records = directoryRecords(2);
+  const old = h.host.selected(h.ctx, f.selected), original = structuredClone(h.state.branch);
+  const refs = h.host.candidates(h.ctx, records);
+  const complete = JSON.parse(JSON.stringify(h.state.branch));
+  h.state.branch = structuredClone(original);
+  code(() => h.host.resolve(h.ctx, refs[0]!), "SHORT_REF_UNKNOWN");
+  const replacement = h.host.candidates(h.ctx, records);
+  expect(replacement[0]).not.toBe(refs[0]);
+  expect(h.host.resolve(h.ctx, old).canonicalRef).toBe(f.files[0]!.ref);
+  h.state.branch = complete;
+  const independent = createSessionShortRefHost(h.api), foreign = { ...records[0]!, sourceScope: foreignScope };
+  const foreignRef = independent.candidate(h.ctx, foreign), writes = h.state.writes;
+  expect(h.host.candidates(h.ctx, [records[0]!, foreign])).toEqual([refs[0], foreignRef]);
+  expect(h.state.writes).toBe(writes);
+  expect(h.host.resolve(h.ctx, old).canonicalRef).toBe(f.files[0]!.ref);
+});
+
+test("candidate batch preserves missing-append, no-op, partial-failure and branch-change rejection", () => {
+  const records = directoryRecords(2);
+  const missing = session();
+  code(() => createSessionShortRefHost({ on() {} }).candidates(missing.ctx, records), "SHORT_REF_SESSION_UNAVAILABLE");
+  code(() => createSessionShortRefHost({ on() {}, appendEntry() {} }).candidates(missing.ctx, records), "SHORT_REF_PERSIST_FAILED");
+  expect(missing.state.branch).toEqual([]);
+  const failed = session(), append = failed.api.appendEntry!;
+  failed.api.appendEntry = (kind, data) => { if (failed.state.writes === 1) throw new Error("Private append error"); append(kind, data); };
+  code(() => failed.host.candidates(failed.ctx, records), "SHORT_REF_PERSIST_FAILED");
+  expect(failed.state.branch).toHaveLength(1);
+  const switched = session(), changedAppend = switched.api.appendEntry!;
+  switched.api.appendEntry = (kind, data) => { changedAppend(kind, data); switched.state.id = "changed"; };
+  code(() => switched.host.candidates(switched.ctx, records), "SHORT_REF_SESSION_CHANGED");
+  const rewound = session(), retained = rewound.host.selected(rewound.ctx, fixture().selected), rewindAppend = rewound.api.appendEntry!;
+  rewound.api.appendEntry = (kind, data) => { rewound.state.branch = []; rewindAppend(kind, data); };
+  code(() => rewound.host.candidates(rewound.ctx, records), "SHORT_REF_SESSION_CHANGED");
+  code(() => rewound.host.resolve(rewound.ctx, retained), "SHORT_REF_UNKNOWN");
+});
 
 test("directory, prepared main and resource display persist before returning and repeat without growth", () => {
   const h = session(), f = fixture();
