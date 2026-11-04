@@ -16,7 +16,7 @@ Broker 找到 `design-review`，将对应上下文发送给模型；只要正文
 
 Context Broker 先提供技能名称和描述，再按任务加载选中的正文。Notion 来源依次使用会话选择的 View、配置的 `default_view_id`、API 返回的第一个 View。`Default Context` 只是普通属性，由 View 筛选决定是否使用它。完整 `$`、搜索和显式读取仍能使用 View 外的技能。启动可以准备元数据和快照，不发起模型请求，也不激活正文。
 
-Pi 与 OMP 默认收到精简的 `<ntn-skills-guidance>`，包含实际命令 argv、来源/数据库范围、发现/读取/子文件命令与 help 入口。同一有效上下文只保留一份；压缩或回退移除后，在下一次模型请求前补回。该指引与 Skill 正文、远端目录发现分别管理。
+Pi 按当前启用的工具生成精简 `<ntn-skills-guidance>`。原生发现和读取使用实际可用的 Skill 工具，不再同时附上整套 shell 参数模板。维护任务需要真实 CLI 命令时，可在 `bash` 和 `skill_graph` 均启用的情况下显式调用 `skill_graph({cli_source:"SOURCE_ID"})`。缺少原生消费工具的宿主保留其可用 CLI 后备路径；OMP 与没有工具能力 API 的宿主保留既有指引。每次 provider 输入只有一份当前指引，压缩和工具切换后同样更新。该指引与 Skill 正文、远端目录发现分别管理。
 
 Tern/OMP 加载选中的 source Skill 时，在会话中追加持久、可折叠的 `Read ntn-skills://<alias>` 记录，显示来源、耗时及 `running`、`done` 或 `error` 状态。展示目标省略 namespace，重名时保留页面后缀。终态记录完成后保留，resume 时恢复；未完成的旧记录标为中断。`ntn-skills://` 仅为展示标识，真实读取仍使用 `skill://`。记录及展开详情不进入 provider 消息、压缩或 branch 摘要。其他终端使用文字反馈。启用 Notion source 即可发现和使用，无需安装 builtin。详见[激活合同](./packages/context-broker/docs/reference.zh-CN.md#内置-sources)。
 
@@ -46,7 +46,7 @@ $ntn-skills-maintain@builtin 把这段对话中可复用的方法整理为 Skill
 $ntn-skills-sync@builtin 检查已连接来源，预览这次需要执行的同步。
 ```
 
-当前 Agent 读取选中的工作流，使用 Broker 给出的真实 CLI argv 与数据库范围。配置多个 Notion source 时须明确选择目标 source 或 database，不隐式取第一个。命令和资源用法由 `$ntn-skills@builtin` 提供。Notion 写入与同步沿用 CLI 自身的预览、精确目标和操作结果合同。通过配置的 CLI 观察到已验证的真实写入后，Broker 在下一次普通选择时刷新对应来源目录，新建或改名后的 Skill 无需人工刷新即可发现。已加载快照和已接受草稿保持原有归属。
+当前 Agent 读取选中的工作流，取得目标来源的真实 CLI argv 与数据库范围。Pi 在 `bash` 和 `skill_graph` 均启用时，通过 `skill_graph({cli_source:"SOURCE_ID"})` 按需返回当前机器的调用元数据；取得该信息不会执行命令或授予工作流权限。配置多个 Notion source 时须明确选择目标，不隐式取第一个。命令和资源用法由 `$ntn-skills@builtin` 提供。Notion 写入与同步沿用 CLI 自身的预览、精确目标和操作结果合同。通过配置的 CLI 观察到已验证的真实写入后，Broker 在下一次普通选择时刷新对应来源目录，新建或改名后的 Skill 无需人工刷新即可发现。已加载快照和已接受草稿保持原有归属。
 
 `/context-broker` 保留 View 选择、元数据刷新与诊断。旧 `/ntn-skills` 命令镜像、专用 `save` 和 Tern 管理面板已退役。把自然语言要求与附件留在普通 prompt 中；选择 Skill 只编辑草稿。
 

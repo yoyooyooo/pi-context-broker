@@ -68,7 +68,7 @@ node scripts/skill-consumption-startup.mjs run \
 
 ### 真实模型配置
 
-共同配置为 `{version:1,extension,database,prompt,expectedAnswers,counts:{cold:5,warm:20},packagePath?}`，路径均为绝对路径。模型固定为 `magpie/group/flash-free`，不回退；prefetch false，保持正常 read/bash/edit/write/grep/find/ls 和 Broker 工具。observer 不规定模型工具选择，不追加任务指令，也不替换返回值。
+共同配置为 `{version:1,extension,database,prompt,expectedAnswers,counts:{cold:5,warm:20},packagePath?}`，路径均为绝对路径。模型固定为 `magpie/group/flash-free`，不回退；prefetch false，driver 的 `--tools` 固定为 read/bash/edit/write/grep/find/ls 七项。Broker 扩展照常加载，但已注册工具不代表已经 active；以实际 provider 工具声明核对能力，不能把此路线称为原生 Broker 工具全部启用。observer 不规定模型工具选择，不追加任务指令，也不替换返回值。
 
 两种 Source 入口独立冻结，已有 CLI 配置与历史结果继续有效：
 
@@ -112,6 +112,8 @@ SDK 观测由 driver 为自有 Pi 进程安装 Node preload；父 PID、实际�
 真实模型 driver 也在全批结束后重新读 source 与 owned host 账本，另存 reconciliation；没有任何 source 启动证据、EOF 前边界之外的 late start、缺失/重复 close 或缺 metrics 均不能成为完整零成本。sourceComplete 只描述已观察操作至最终复核的闭合；700ms quiet 不证明 metadata producer 已完成，不能用这个字段代替独立后台终态证据。
 
 SDK 模式还要求被动 source observer 的真实 exit 终界、完整 hash 链与一一配对的操作/metrics。`sourceObserverComplete` 只证明这份观察器的生命周期闭合，不单独证明 HTTP trace 完整。无法归属到默认 bundled CLI 的子进程保持 unknown；不为使样本通过而屏蔽正常工具。SIGTERM 等未产生 exit 终界的情况照实记 incomplete，不补造结束事件。CLI 显式 command 与 SDK 默认入口必须在 plan 和比较报告中标明，不能只给旧结果改名便视为 SDK 基线。
+
+未识别 child 的生命周期与其网络覆盖分开：记录稳定 child 身份、参数 hash、真实 spawn/error/exit/close，并验证配对；不记录 argv 明文或借 stdout 推断终局。直接 child 退出不证明后代网络为零，也不能把未知 source 费用改成完整。旧版只有 unmatched start 的 run 保持原 incomplete，不用新版观察逻辑回填。详见 [SC05 切片记录](../../../../packages/context-broker/docs/skill-consumption-guidance.md)。
 
 ## Evidence 与比较
 

@@ -12,6 +12,7 @@ import type { AgentMessage, ConfigFile, ExtensionAPI, ExtensionContext, ImageCon
 import type { HostCapabilities } from "./host-adapter";
 import { invocationText } from "./invocation-text";
 import { viewSystemPrompt } from "./view-prompt";
+import { hostCliScope } from "./host-command";
 import { notifyUnavailableReferences, renderUnavailableReferences } from "./unavailable-references";
 import { deduplicateSourceReads, nativeReadReceipt, sourceDeliveryReceipt } from "./session-source-snapshot";
 import { parseNativeReference, nativeResourcePath, type ExactNativeReference } from "./native-reference";
@@ -1181,16 +1182,27 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   });
   if (options.sessionGraph) host.registerTool?.({
     name: "skill_graph", label: "Selected Skill graph",
-    description: "Export this branch's selected immutable Skill graph and current body-delivery state. Includes identity, version and relation proofs; no credentials, machine paths or conversation text.",
+    description: "Export this branch's immutable Skill graph and delivery proofs without machine paths. Alternatively, request cli_source for one exact configured Notion source's host-local CLI command prefix and database scope when an authorized maintenance/sync action needs it. This metadata query does not execute commands or grant authorization; cli_source requires active bash and cannot be combined with refs.",
     parameters: { type: "object", properties: {
       refs: { type: "array", maxItems: 64, items: { type: "string" }, description: "Optional fixed sr:S/sr:R references to export as canonical identity and exact version proofs for independent validation." },
+      cli_source: { type: "string", minLength: 1, description: "Exact enabled Notion source ID from host guidance. Return its host-local command prefix without execution; do not select a source implicitly." },
     }, additionalProperties: false },
     strict: true, readsSkillUris: false, loadMode: "essential", approval: () => "read", approvalCacheTargets: () => undefined,
     sourcePath: import.meta.url, defaultInactive: false,
     async execute(_id, input, signal, _update, ctx) {
       checkPreparationSignal(signal);
-      if (Object.keys(input).some(key => key !== "refs") || input.refs !== undefined && (!Array.isArray(input.refs) || input.refs.length > 64
+      if (Object.keys(input).some(key => key !== "refs" && key !== "cli_source") || input.refs !== undefined && (!Array.isArray(input.refs) || input.refs.length > 64
         || input.refs.some(value => typeof value !== "string"))) throw hostError("INVALID_ARGUMENT");
+      if (input.cli_source !== undefined) {
+        if (typeof input.cli_source !== "string" || !input.cli_source.length || input.refs !== undefined) throw hostError("INVALID_ARGUMENT");
+        const active = host.getActiveTools?.();
+        if (!active?.includes("bash") || !active.includes("skill_graph")) throw hostError("HOST_CLI_TOOL_UNAVAILABLE");
+        const sources = (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false && source.id === input.cli_source);
+        if (!sources.length) throw hostError("HOST_SOURCE_UNAVAILABLE");
+        if (sources.length !== 1) throw hostError("HOST_SOURCE_AMBIGUOUS");
+        const result = { kind: "host_cli_scope", ...hostCliScope(sources), executed: false };
+        return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
+      }
       const graph = options.sessionGraph!(ctx);
       const result = Array.isArray(input.refs) ? { graph, references: input.refs.map(ref => shortRefs.export(ctx, ref)) } : graph;
       return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };

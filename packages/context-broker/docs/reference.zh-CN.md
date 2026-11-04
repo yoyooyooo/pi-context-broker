@@ -31,7 +31,7 @@ Review the design for ownership, boundaries, failure modes, and migration cost.
 
 `$ntn-skills@builtin`、`$ntn-skills-maintain@builtin` 和 `$ntn-skills-sync@builtin` 是 Broker 与独立 Tern query 随包提供的普通本地 Skill。只有配置了至少一个未禁用的 `type: notion` source，才会在 `$` 发现与补全中出现；零已启用 Notion source 时文件仍随包保留，但不会显示候选。即使尚未完成 Notion 连接/认证、没有全局 `ntn-skills` executable，已启用时也能离线读取随包入口与相对参考文件。选择、草稿与加载均使用普通 `$` 链路。
 
-Notion 正文编辑使用 maintain，已连接 upstream/local 的维护使用 sync，CLI 命令及资源用法使用入口 Skill。当前 Agent 按 `<ntn-skills-guidance>` 中的真实 argv 和所选 source/database 执行。每个已配置 Notion source 保留自己的 executable 与 scope；多个 source 须明确选择目标。零 source 时使用随包 Node CLI，由 CLI 自己的配置提供默认范围。
+Notion 正文编辑使用 maintain，已连接 upstream/local 的维护使用 sync，CLI 命令及资源用法使用入口 Skill。Pi 中需要执行已授权 CLI 操作时，Agent 用 `skill_graph({cli_source:"SOURCE_ID"})` 取得明确来源的调用元数据，要求 `bash` 和 `skill_graph` 均已启用。每个已配置 Notion source 保留自己的 executable 与 scope，不隐式选择来源。OMP 和无法查询工具能力的兼容路径保留原 argv 指引；该兼容路径在零 source 时使用随包 Node CLI 的默认配置。
 
 私有随包内容使用 `builtin:<name>` 身份，启用后使用固定 `@builtin` 选择器。同名 filesystem 或 Notion 条目保持独立身份与选择器；namespace 为 `builtin` 的配置来源也不能冒用这三个官方 token。指向同一随包文件的物理别名先去重，再处理本地名字优先级。
 
@@ -242,21 +242,27 @@ Pi 为 Notion 记录提供归属当前会话分支的不透明引用。它们是
 
 `skill_prepare` 的 `roots` 接受返回的 `sr:C`、`sr:S` 或 canonical 主入口 `skill://` ref，并要求明确 `purpose: use|inspect`。`use` 准备根及 Requires 闭包，`inspect` 只读取根，不激活工作流。原生 `read` 接受返回的主文或资源引用。`skill_graph` 的 `refs` 参数可导出固定 `sr:S`、`sr:R` 的 canonical 证明，未固定的 `sr:C` 不能提供该证明。
 
+`skill_graph({cli_source:"SOURCE_ID"})` 单独请求一个已启用 Notion source 在当前机器上的 CLI 调用元数据，与 `refs` 互斥，且要求 `bash` 和 `skill_graph` 实际启用。返回 `{kind:"host_cli_scope", sourceId, command, database?, executed:false}`，解析真实配置命令或随包入口，不假设全局 CLI 已安装，不访问网络或执行命令。未知或禁用来源明确失败，不换另一个来源。取得元数据不授予执行权限，也不证明连通性。默认 graph 与 `refs` 导出继续保持不含机器路径的可移植证明合同。
+
 绑定先写入分支记录，再对外显示，并在 resume 时重放。当前分支没有的引用明确失败。每次使用仍校验当前授权来源、完整 owner 身份及固定快照。未知、格式错误、scope 不符或 owner 不匹配的引用不能回退为文件系统读取或当前内容。分配引用本身不读取或激活正文；`sr:S`、`sr:R` 也不证明已经投递。
 
 ### 宿主发现与选中激活
 
-Pi 与 OMP 默认追加轻量的 `<ntn-skills-guidance>` 自定义消息，无需 `$` 调用或安装 builtin。实际命令 argv 复用宿主命令的 CLI resolver，并保留每个已启用 Notion source 的 id 与可选 database；多 source 分别列出，不隐式选中一个。每个 source 都提供含实际数据库范围的 `list-args`、`read-args`、`files-args` 和 `resource-read-args` 参数数组，追加到 executable argv 并替换任务占位值。发现优先使用已有元数据或短关键词，选中合适记录后再读正文；`files SNAPSHOT` 列出资源，`read SNAPSHOT --path RELATIVE` 读取指定资源，避免 shell 工具把 `skill://` 参数当文件路径解析。保留 JSON 输出以核对 `ok`/`error` 和快照身份，语法失败查看子命令 help。指引自身不发现内容或激活 Skill。
+Pi 在 provider 派发前根据公开的 active-tool 列表生成 `<ntn-skills-guidance>`，只说明实际可用的 `skill_search`、`skill_prepare`、原生 `read` 和证明导出。原生读取接受目录给出的精确 `sr:C`、`sr:S`、`sr:R` 和 canonical `skill://` 引用。原生发现与读取齐全时，不再附上重复 CLI argv 和 shell 参数模板。缺少发现或读取能力时，仅在 `bash` 实际启用的情况下给出对应来源的 CLI 后备说明；指引不会启用任何工具。维护或同步任务需要真实命令时，通过上面的 `cli_source` 显式取得。介绍与检查使用已有正文，不采用其中的工作流或前置检查。
+
+OMP 与没有公开工具能力 API 的宿主保留既有 CLI 指引。argv 与宿主命令使用同一 resolver，保留各已启用来源的 id 与可选 database，`list-args`、`read-args`、`files-args`、`resource-read-args` 提供带范围的后备语法。保留 JSON 输出核对 `ok`/`error` 和快照身份，语法失败查看子命令 help。两种指引本身均不发现内容、执行命令或激活 Skill。
+
+会话 `sr:` 句柄由 Broker 工具解释，独立 CLI 不接受它们。CLI 后备路径使用 canonical 引用或已选 snapshot/path；原生 `read` 与 `skill_prepare` 均未启用时，即使元数据搜索仍可用，也提供带来源的 CLI `list`，按确切 record 身份取得同一候选的 canonical 引用后再读，不由名称猜引用。
 
 宿主观察配置中真实 CLI argv 返回的完整成功 JSON。已验证的内容创建/更新、upstream 成员变更和 local sync push，只让对应内容数据库与来源命令的目录在下一次选择时刷新。`operation resume ID` 返回已验证的 publication 或 upstream 终态时，必须与参数中的 canonical operation ID 一致；恢复结果未给 source 范围时，同一配置 CLI 的来源在下一次发现时重读。重复恢复已完成操作也可触发这次保守重读，不据此推断发生了新写入。保留来源的 offline 策略。Read/status/plan/check、operation show/list/reconcile、dry run、普通 mutation 的 reuse/unchanged 和失败都不触发刷新。OMP 截断 stdout 时，沿其公布的 `artifact://` 读取保留原 CLI 调用归属，取得完整结果后才处理。复合 shell 命令、宿主工具之外的写入或始终不完整的输出，继续依赖目录正常时效或 `/context-broker refresh`。自动刷新不取消已接受草稿，不替换会话已经加载的快照。
 
 CLI 成功读取返回顶层 `content`（正文）、pinned `ref`（相对 `read --from` 的基准）和 `snapshot_id`（`files` 的目标）；`record` 是元数据。资源使用清单返回的文件 ref/path。介绍与摘要只描述工作流，不执行其准备、仓库检查或运行步骤。
 
-防重复用 Skill 的有效上下文读取方式，检查完整且归本扩展所有的引导消息。重复、fork 与持久续接保持一份；压缩或回退移除后，下一轮即使不选择 Skill 也补回。context hook 还在模型请求前缺失时补入，覆盖轮内压缩后的请求。用户/助手/工具示例及仅含标记的摘要不能抑制恢复。每次模型请求只含一份 XML；会话文件可以保留压缩前的历史副本。
+Pi 只在 provider 投影中替换本扩展拥有的旧指引，不重写原始 JSONL。工具变更、重复、fork、持久续接、压缩和回退后都提供一份当前指引；公开 `context_with_system` handler 在 conversation context handlers 完成后复核当时的工具列表，并保留原 leading system 消息。用户/助手/工具中的示例和仅含标记的摘要保持普通内容，不能压掉扩展自己的指引。OMP 保留原有效上下文去重与恢复方式。
 
 宿主/Broker 提供的完整 Skill 正文或成功读取返回的正文可以直接使用。介绍、摘要无需再次读入口、列缓存目录、查包清单或代理界面元数据；只有当前任务确实需要资源内容时才读取支持文件。任务已给出相对文件路径时，直接从 Skill 入口所在目录解析并读取，无需先列目录或查找 cwd；CLI 读取保持选中快照。此规则同时适用于 Pi 与 OMP，不通过禁用工具实现，也不把目录 description 当成正文。
 
-Pi 与 OMP 的选中 Skill payload 在完整正文旁提供经过转义的 `skill-directory` 和按任务读取资源的指引。Notion 记录还提供选中版本的 pinned `skill-ref` 与 `snapshot-id`。`hash`、`basename` 路径模式继续隐藏目录：使用提供的 CLI/database scope 执行 `files SNAPSHOT` 或 `read SNAPSHOT --path RELATIVE`，无需暴露本地快照目录即可读取资源。介绍只描述 Skill 的工作流、风格和前置条件，不将其作为当前任务执行。
+Pi 与 OMP 的选中 Skill payload 在完整正文旁提供经过转义的 `skill-directory` 和按任务读取资源的指引。Notion 记录还提供选中版本的 pinned `skill-ref` 与 `snapshot-id`。Pi 的 `hash`、`basename` 模式隐藏本地目录后，原生工具仍可使用公开的固定引用及准备结果中的资源目录。使用 CLI 后备路径的宿主继续保留来源/数据库范围，执行 `files SNAPSHOT` 或 `read SNAPSHOT --path RELATIVE`。已加载正文的提示明确保留用户任务边界：加载不授权执行工作流、环境探测或前置动作；介绍只把这些指令作为内容说明。
 
 Filesystem source 将只有元数据的 Skill 入口加入宿主默认技能目录。Notion source 默认发布所选 View 中的 Skill 和独立 Router 元数据；`default_context` 只是页面属性，不再做额外交集。Prompt 保持仅显式调用。完整 Notion 目录仍保留所有记录，供显式 `$` 选择、搜索、补全与 qualified read 使用。模型原生 `read`、原生 `/skill:` 和显式 `$` 都只激活选中的记录。`$ui-alpha@notion` 选择 `/skill:notion-ui-alpha`：宿主 frontmatter name 从内部 `notion/ui-alpha` token 派生，将小写 `a-z`、`0-9`、`-` 以外的字符替换为 `-`，source alias 本身不改名。OMP `skill://notion-ui-alpha` 与目录公布的 metadata 路径走同一激活，路径上的 read selector 保留。
 

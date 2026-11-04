@@ -5,10 +5,12 @@ import * as fs from 'node:fs';
 import * as crypto from 'node:crypto';
 import * as path from 'node:path';
 import * as cp from 'node:child_process';
+import { errorMonitor } from 'node:events';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { observeSourceTransport, sourceObserverPreloadSource, readSourceObservation } from './skill-consumption-source-observer.mjs';
+import { settleSource } from './skill-consumption-model-baseline.mjs';
 
 const secret = 'private-source-marker', privateUrl = 'https://private.example/secret-source';
 function requestMetrics() {
@@ -30,7 +32,7 @@ function fixture({ metrics = requestMetrics(), body = secret, code = 7 } = {}) {
 }
 function observe(item, extra = {}) {
   return observeSourceTransport({ diagnostics, fs, crypto, path, output: item.output, cliPath: item.cli,
-    checkoutRoot: process.cwd(), clockId: 'source-test', safeRequestMetrics, ...extra });
+    checkoutRoot: process.cwd(), clockId: 'source-test', safeRequestMetrics, errorMonitor, ...extra });
 }
 function consume(file, args, env = process.env) {
   const child = cp.spawn(process.execPath, [file, ...args], { env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -171,4 +173,166 @@ test('partial, malformed, missing-attempt and missing-close ledgers remain avail
   const missing = await readSourceObservation(path.join(item.base, 'never-started.jsonl'));
   assert.equal(missing.complete, false); assert.deepEqual(missing.events, []);
   assert.throws(() => observe(item, { output: path.join(item.base, 'rejected.jsonl'), checkoutRoot: item.base }), /OUTSIDE_CHECKOUT/);
+});
+
+function localChild(file, args, options = {}) {
+  const child = cp.spawn(file, args, { stdio: ['ignore', 'pipe', 'pipe'], ...options });
+  const stdout = [], stderr = [], errors = [];
+  child.stdout?.on('data', chunk => stdout.push(Buffer.from(chunk)));
+  child.stderr?.on('data', chunk => stderr.push(Buffer.from(chunk)));
+  child.on('error', error => errors.push(error.code));
+  const closed = new Promise(resolve => child.once('close', (code, signal) => resolve({
+    code, signal, errors, stdout: Buffer.concat(stdout).toString(), stderr: Buffer.concat(stderr).toString(),
+  })));
+  return { child, closed };
+}
+
+test('unmatched direct children retain identity and natural lifecycle without observing their transport or changing execution', async t => {
+  const item = fixture(), args = ['-e', 'process.stdout.write(process.argv[1]); process.stderr.write(process.env.SOURCE_TEST_SECRET); process.exitCode=7', privateUrl];
+  const env = { ...process.env, SOURCE_TEST_SECRET: secret }, expected = await localChild(process.execPath, args, { env }).closed;
+  const spawn = cp.spawn, observer = observe(item); t.after(observer.finish);
+  const child = localChild(process.execPath, args, { env }), actual = await child.closed; observer.finish();
+  assert.deepEqual(actual, expected); assert.equal(cp.spawn, spawn);
+  const trace = await readSourceObservation(item.output), start = trace.events.find(row => row.phase === 'unmatched_child_start');
+  assert.equal(trace.complete, true); assert.deepEqual(trace.errors, []);
+  assert.equal(start.parentPid, process.pid); assert.equal(start.transport, 'unknown');
+  assert.equal(start.argvSha256, crypto.createHash('sha256').update(JSON.stringify(child.child.spawnargs)).digest('hex'));
+  assert.equal(start.argumentCount, child.child.spawnargs.length);
+  const lifecycle = trace.events.filter(row => row.childId === start.childId);
+  assert.deepEqual(lifecycle.map(row => row.phase), ['unmatched_child_start', 'unmatched_child_spawn', 'unmatched_child_exit', 'unmatched_child_close']);
+  assert.ok(lifecycle.slice(1).every(row => row.parentPid === process.pid && row.childPid === child.child.pid));
+  assert.equal(lifecycle.at(-1).code, 7); assert.equal(lifecycle.at(-1).signal, null);
+  assert.equal(trace.unmatchedChildLifecycle.complete, true); assert.equal(trace.unmatchedChildLifecycle.closes, 1);
+  assert.equal(trace.events.at(-1).unmatchedChildren, 1); assert.deepEqual(trace.events.at(-1).pendingChildIds, []);
+  assert.equal(trace.events.filter(row => ['started','metrics','completed'].includes(row.phase)).length, 0);
+  const raw = fs.readFileSync(item.output, 'utf8');
+  for (const value of [secret, privateUrl, args[1], process.execPath]) assert.equal(raw.includes(value), false);
+});
+
+test('an unmatched spawn failure has an error and close, no invented PID, spawn or exit', async t => {
+  const item = fixture(), observer = observe(item); t.after(observer.finish);
+  const actual = await localChild(path.join(item.base, 'missing-executable'), []).closed; observer.finish();
+  assert.deepEqual(actual.errors, ['ENOENT']);
+  const trace = await readSourceObservation(item.output), lifecycle = trace.events.filter(row => row.childId);
+  assert.deepEqual(lifecycle.map(row => row.phase), ['unmatched_child_start','unmatched_child_error','unmatched_child_close']);
+  assert.equal(lifecycle[1].code, 'ENOENT'); assert.equal(lifecycle[1].childPid, null); assert.equal(lifecycle[2].childPid, null);
+  assert.equal(lifecycle[2].code, actual.code); assert.equal(trace.complete, true);
+  assert.equal(trace.unmatchedChildLifecycle.spawns, 0); assert.equal(trace.unmatchedChildLifecycle.exits, 0);
+  assert.equal(trace.unmatchedChildLifecycle.errors, 1); assert.equal(trace.unmatchedChildLifecycle.closes, 1);
+});
+
+test('real AbortSignal cancellation records error, exit and close without treating them as duplicate completion', async t => {
+  const item = fixture(), controller = new AbortController(), observer = observe(item); t.after(observer.finish);
+  const value = localChild(process.execPath, ['-e', 'setTimeout(()=>{},10000)'], { signal: controller.signal });
+  await new Promise(resolve => value.child.once('spawn', resolve)); controller.abort();
+  const actual = await value.closed; observer.finish();
+  assert.deepEqual(actual.errors, ['ABORT_ERR']); assert.equal(actual.signal, 'SIGTERM');
+  const trace = await readSourceObservation(item.output);
+  assert.equal(trace.complete, true); assert.deepEqual(trace.errors, []);
+  assert.deepEqual(trace.events.filter(row => row.childId).map(row => row.phase),
+    ['unmatched_child_start','unmatched_child_spawn','unmatched_child_error','unmatched_child_exit','unmatched_child_close']);
+  assert.equal(trace.unmatchedChildLifecycle.errors, 1); assert.equal(trace.unmatchedChildLifecycle.closes, 1);
+});
+
+test('direct-child exit does not stand in for close while a descendant still holds stdio', async t => {
+  const item = fixture(), observer = observe(item); t.after(observer.finish);
+  const script = 'const {spawn}=require("node:child_process"); spawn(process.execPath,["-e",\'setTimeout(()=>process.stdout.write("tail"),250)\'],{stdio:["ignore",1,2]}).unref()';
+  const value = localChild(process.execPath, ['-e', script]);
+  await new Promise(resolve => value.child.once('exit', resolve));
+  const during = await readSourceObservation(item.output, { final: false });
+  assert.equal(during.unmatchedChildLifecycle.exits, 1); assert.equal(during.unmatchedChildLifecycle.closes, 0);
+  assert.equal(during.unmatchedChildLifecycle.complete, false); assert.equal(during.unmatchedChildLifecycle.pendingChildIds.length, 1);
+  const actual = await value.closed; observer.finish();
+  assert.equal(actual.stdout, 'tail');
+  const after = await readSourceObservation(item.output);
+  assert.equal(after.complete, true); assert.equal(after.unmatchedChildLifecycle.starts, 1);
+  assert.equal(after.unmatchedChildLifecycle.closes, 1); assert.equal(after.unmatchedChildLifecycle.descendants, 'unobserved');
+});
+
+test('unknown-child observation does not resume stdout and a premature owner finish retains pending identity', async t => {
+  const item = fixture(), observer = observe(item); t.after(observer.finish);
+  const child = cp.spawn(process.execPath, ['-e', 'setTimeout(()=>process.stdout.write("late"),100)'], { stdio:['ignore','pipe','ignore'] });
+  const closed = new Promise(resolve => child.once('close', resolve));
+  await new Promise(resolve => child.once('spawn', resolve));
+  assert.equal(child.stdout.listenerCount('data'), 0); assert.equal(child.stdout.readableFlowing, null);
+  observer.finish(); child.stdout.resume(); await closed;
+  const trace = await readSourceObservation(item.output);
+  assert.equal(trace.complete, false); assert.deepEqual(trace.errors, []);
+  assert.equal(trace.unmatchedChildLifecycle.closes, 0); assert.equal(trace.unmatchedChildLifecycle.pendingChildIds.length, 1);
+  assert.deepEqual(trace.events.at(-1).pendingChildIds, trace.unmatchedChildLifecycle.pendingChildIds);
+});
+
+test('error monitoring preserves an otherwise unhandled child error and owner failure', async () => {
+  const item = fixture(), owner = path.join(item.base, 'unhandled-owner.mjs'), preload = path.join(item.base, 'unhandled-preload.mjs');
+  fs.writeFileSync(owner, 'import {spawn} from "node:child_process"; spawn(' + JSON.stringify(path.join(item.base, 'missing-executable')) + ',[],{stdio:"ignore"});\n');
+  fs.writeFileSync(preload, sourceObserverPreloadSource({ output:item.output, checkoutRoot:process.cwd(), clockId:'unhandled-test',
+    cliPath:item.cli, ownerEntry:owner, ownerParentPid:process.pid }));
+  const actual = await localChild(process.execPath, [owner], { env:{...process.env,NODE_OPTIONS:'--import='+pathToFileURL(preload).href} }).closed;
+  assert.equal(actual.code, 1); assert.match(actual.stderr, /Unhandled 'error' event/);
+  const trace = await readSourceObservation(item.output);
+  assert.equal(trace.complete, false); assert.deepEqual(trace.errors, []);
+  assert.equal(trace.unmatchedChildLifecycle.errors, 1); assert.equal(trace.unmatchedChildLifecycle.closes, 0);
+});
+
+test('missing, duplicate, cross-parent and inconsistent unknown-child terminal records are rejected', async t => {
+  const item = fixture(), observer = observe(item); await localChild(process.execPath, ['-e','process.exitCode=0']).closed; observer.finish();
+  const trace = (await readSourceObservation(item.output)).events;
+  const cases = [
+    ['missing-spawn', trace.filter(row => row.phase !== 'unmatched_child_spawn')],
+    ['missing-exit', trace.filter(row => row.phase !== 'unmatched_child_exit')],
+    ['missing-close', trace.filter(row => row.phase !== 'unmatched_child_close')],
+    ['duplicate-close', trace.flatMap(row => row.phase === 'unmatched_child_close' ? [row,row] : [row])],
+    ['cross-parent', trace.map(row => row.phase === 'unmatched_child_close' ? {...row,parentPid:row.parentPid+1} : row)],
+    ['wrong-child-pid', trace.map(row => row.phase === 'unmatched_child_close' ? {...row,childPid:row.childPid+1} : row)],
+    ['changed-exit-code', trace.map(row => row.phase === 'unmatched_child_close' ? {...row,code:7} : row)],
+    ['wrong-close-count', trace.map(row => row.phase === 'source_observer_end' ? {...row,unmatchedChildCloses:0} : row)],
+    ['unknown-contract', trace.map(row => row.phase === 'source_observer_start' ? {...row,unmatchedChildLifecycleVersion:2} : row)],
+  ];
+  for (const [name, rows] of cases) await t.test(name, async () => {
+    const file = path.join(item.base, name+'.jsonl'), raw = reseal(rows).map(row=>JSON.stringify(row)).join('\n')+'\n';
+    fs.writeFileSync(file,raw); const actual = await readSourceObservation(file);
+    assert.equal(actual.complete,false); assert.ok(actual.errors.length>0); assert.equal(fs.readFileSync(file,'utf8'),raw);
+  });
+});
+
+test('a real detached bash child closes normally but retains unknown transport', { skip:process.platform==='win32' }, async t => {
+  const item=fixture(),observer=observe(item);t.after(observer.finish);
+  const value=localChild('/bin/bash',['-c','printf "%s" "$1"','_',secret],{detached:true});
+  const actual=await value.closed;observer.finish();
+  assert.equal(actual.code,0);assert.equal(actual.stdout,secret);
+  const trace=await readSourceObservation(item.output),start=trace.events.find(row=>row.phase==='unmatched_child_start');
+  assert.equal(trace.complete,true);assert.equal(start.detached,true);assert.equal(start.transport,'unknown');
+  assert.equal(trace.unmatchedChildLifecycle.closes,1);assert.equal(trace.unmatchedChildLifecycle.descendants,'unobserved');
+  assert.equal(trace.events.filter(row=>row.phase==='metrics'||row.phase==='attempt').length,0);
+  assert.equal(fs.readFileSync(item.output,'utf8').includes(secret),false);
+});
+
+test('source quiet boundary waits for the observed unknown child close and records its identity', async t => {
+  const item=fixture(),observer=observe(item);t.after(observer.finish);
+  const value=localChild(process.execPath,['-e','setTimeout(()=>{},1000)']);
+  let closed=false;value.closed.then(()=>{closed=true});
+  const boundary=await settleSource(item.output,'sdk'),closedAtBoundary=closed;
+  await value.closed;observer.finish();
+  const trace=await readSourceObservation(item.output),start=trace.events.find(row=>row.phase==='unmatched_child_start');
+  assert.equal(closedAtBoundary,true);assert.equal(boundary.quiet,true);assert.deepEqual(boundary.childIds,[start.childId]);
+  assert.equal(trace.unmatchedChildLifecycle.complete,true);
+});
+
+test('legacy unmatched starts remain readable without inventing lifecycle receipts', async () => {
+  const item=fixture(),observer=observe(item);await localChild(process.execPath,['-e','process.exitCode=0']).closed;observer.finish();
+  const events=(await readSourceObservation(item.output)).events;
+  const legacy=events.filter(row=>['source_observer_start','unmatched_child_start','source_observer_end'].includes(row.phase)).map(row=>{
+    const value={...row};
+    if(value.phase==='source_observer_start')delete value.unmatchedChildLifecycleVersion;
+    if(value.phase==='unmatched_child_start') {
+      for(const key of ['childId','parentPid','childPid','argvSha256','detached'])delete value[key];
+      value.kind='observer';
+    }
+    if(value.phase==='source_observer_end') {delete value.unmatchedChildCloses;delete value.pendingChildIds;}
+    return value;
+  });
+  const file=path.join(item.base,'legacy.jsonl');fs.writeFileSync(file,reseal(legacy).map(row=>JSON.stringify(row)).join('\n')+'\n');
+  const actual=await readSourceObservation(file);
+  assert.equal(actual.complete,true);assert.deepEqual(actual.errors,[]);assert.equal(actual.unmatchedChildLifecycle,null);
+  assert.equal(actual.events.at(-1).unmatchedChildren,1);
 });

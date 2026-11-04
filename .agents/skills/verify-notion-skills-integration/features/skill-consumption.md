@@ -20,9 +20,9 @@
 | SC02 | AH-619 | 全部消费入口 | [只观察的成本规程](skill-consumption-cost.md)；真实模型、source 初态与单资源基线，旧 graph observer 不作为纯观察器 |
 | SC03 | AH-620 | CLI、SDK、Pi | CLI core 的 version 1 consume 合同与等价证明已提交；独立 SDK 打包和 Broker 迁移继续归 SC10 |
 | SC04 | AH-621 | 短引用、原生 read | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：C/S/R 分支表、真实 SessionManager 13 项与 5 次独立 resume、实际 Pi search/prepare/read；74 候选批量投影经同目录 13 点真实对照，跨机重新授权和正式模型 Gate 仍分列 |
-| SC05 | AH-622 | provider 输入 | graph observer；另补已冻结编译器和源/投影双 hash |
+| SC05 | AH-622 | provider 输入 | [能力化指引切片](../../../../packages/context-broker/docs/skill-consumption-guidance.md)：按真实 active tools 呈现原生消费，维护 CLI scope 显式请求；完整编译器及源/投影双 hash 仍需各自验收 |
 | SC06 | AH-623 | 目录、search、自然任务 | view-discovery / model；另补两种目录的真实选路比较 |
-| SC07 | AH-626 | inspect、use、资源 | installed --skill-graph true；另补一次目标消费和批读；本轮真实介绍任务正文完整却额外 bash 探测、健康入口回答错误，保留语义失败 |
+| SC07 | AH-626 | inspect、use、资源 | installed --skill-graph true；一次目标消费和批读仍开放；[指引回归](../../../../packages/context-broker/docs/skill-consumption-guidance.md)消除额外 bash 探测并纠正 doctor 含义，仍保留版本范围与 resume 条件两处语义缺陷，旧失败不覆盖 |
 | SC08 | AH-627 | 重复、resume、压缩 | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：selected/visible/active 分离、状态层 14/14、实际 Pi 压缩后固定恢复；默认模型摘要另验 |
 | SC09 | AH-624 | 普通消息、显式选择 | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：context 准备与运行信号，RPC/PTY 10/10、完整启动 31/31；[历史失败](../../../../packages/context-broker/docs/skill-consumption-startup-checkpoint.md)保留 |
 | SC10 | AH-625 | SDK、公开 CLI | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：独立 npm/Node SDK 11/11、Broker 等价 9/9、实际 Pi 默认 SDK 3/3；目录 CLI 和 custom command 明确单列 |
@@ -36,7 +36,7 @@
 | SC18 | AH-635 | 固定来源、旧pin | CLI / installed / mini；另补文件级迁移与回滚 |
 | SC19 | AH-636 | poteto任务 | graph model A/B；内容规则去向需独立审阅 |
 | SC20 | AH-638 | 完整矩阵 | 本页机器矩阵及各功能harness；全样本保留 |
-| SC21 | AH-639 | A/B/C/D真实Agent | graph model / integration model；新投影合同冻结后执行；额外介绍案例 `7gd44M` 的机器弱谓词成功不等于语义通过，原 report 仍 incomplete |
+| SC21 | AH-639 | A/B/C/D真实Agent | graph model / integration model；正式 A/B/C/D 另验；额外介绍案例 `7gd44M` 保留 incomplete，`9W6HlD` 为同原句一次 cold/warm 回归，0 工具仍有两处语义缺陷，不替代正式 C |
 | SC22 | AH-637 | 独立npm、pro/mini | installed / Pi PTY；双机各自新包证据 |
 | SC23 | AH-640 | 所有受影响调用者 | CLI / package / integration；迁移清单与回滚实驱 |
 | SC24 | AH-641 | 正常日用Pi | verify-pi-daily-installation；实际安装与新会话证据 |

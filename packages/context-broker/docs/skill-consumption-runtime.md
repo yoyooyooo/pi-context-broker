@@ -2,6 +2,8 @@
 
 本记录承接 [AH-617](https://linear.app/yoyooyooo/issue/AH-617)，覆盖 SC04 / AH-621、SC08 / AH-627、SC09 / AH-624、SC10 / AH-625 的本轮实现与证据。历史 [启动检查点](skill-consumption-startup-checkpoint.md) 和 [成本基线](skill-consumption-baseline-2026-11-04.md) 的失败原件保留；本页不把受控 provider、状态层或单元测试升级为真实模型验收。
 
+后续 SC05 的能力化指引、显式 CLI 范围与介绍任务回归另见[消费指引记录](skill-consumption-guidance.md)。本页 package-03/04 的结果与原失败保持原有产物边界。
+
 ## 已接通的产品路径
 
 Pi 的默认 Notion Skill / Router 准备通过随 Broker 包交付的 `ntn-skills/sdk` 执行一次 `consume`。返回的完整 manifest、主文范围、scope、物理 owner、snapshot、版本、File 绑定和 hash 通过同一个公开消费内核验证，Broker 再核对宿主选中身份并直接物化主文。它不再为每个准备节点启动一次固定 CLI read。固定资源使用同包 SDK `readSkill`，仍核对完整公开回执与实际文件 bytes / SHA。

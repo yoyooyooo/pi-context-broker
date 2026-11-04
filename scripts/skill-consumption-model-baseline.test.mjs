@@ -91,3 +91,23 @@ test('SDK, CLI and HTTP counts stay distinct; missing, late and unmatched observ
     assert.equal(result.complete, false); assert.equal(result.httpAttempts, null); assert.equal(result.decodedResponseBytes, null);
   }
 });
+
+test('a closed unknown child proves its direct lifecycle only; total source and descendant network cost remain unknown', () => {
+  const childId='child:123:1', childLifecycle={version:1,starts:1,spawns:1,exits:1,closes:1,errors:0,pendingChildIds:[],complete:true,descendants:'unobserved'};
+  const ledger=[...completedSource('a'),{phase:'unmatched_child_start',childId,parentPid:123},
+    {phase:'unmatched_child_spawn',childId,parentPid:123,childPid:456},
+    {phase:'unmatched_child_exit',childId,parentPid:123,childPid:456,code:0,signal:null},
+    {phase:'unmatched_child_close',childId,parentPid:123,childPid:456,code:0,signal:null}];
+  const options={transport:'sdk',sourceObservation:{complete:true,errors:[],unmatchedChildLifecycle:childLifecycle},
+    ownedLifecycle:hostClosed,beforeCloseRequestIds:['a'],beforeCloseChildIds:[childId]};
+  const actual=summarizeSource(ledger,options);
+  assert.equal(actual.sourceObserverComplete,true); assert.deepEqual(actual.unmatchedChildLifecycle,childLifecycle);
+  assert.equal(actual.complete,false); assert.equal(actual.unmatchedChildren,1); assert.equal(actual.observedHttpAttempts,0);
+  assert.equal(actual.httpAttempts,null); assert.equal(actual.requestBodyBytes,null); assert.equal(actual.decodedResponseBytes,null);
+  assert.deepEqual(actual.lateChildStarts,[]);
+  const late=summarizeSource(ledger,{...options,beforeCloseChildIds:[]});
+  assert.deepEqual(late.lateChildStarts,[childId]); assert.equal(late.complete,false);
+  const legacy=summarizeSource([...completedSource('a'),{phase:'unmatched_child_start'}],
+    {...options,sourceObservation:{complete:true,errors:[]},beforeCloseChildIds:undefined});
+  assert.equal(legacy.unmatchedChildLifecycle,null); assert.equal(legacy.complete,false); assert.equal(legacy.httpAttempts,null);
+});

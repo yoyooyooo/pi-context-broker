@@ -123,7 +123,7 @@ function summarizeTurn(sample, events, transport) {
       && transport.at(-1)?.complete === true && transport.at(-1)?.selectedModel === hash('magpie/group/flash-free')
       && payloadsMatch && active.length === completed.length };
 }
-export function summarizeSource(ledger, { beforeCloseRequestIds, ownedLifecycle = [], transport = 'cli', sourceObservation } = {}) {
+export function summarizeSource(ledger, { beforeCloseRequestIds, beforeCloseChildIds, ownedLifecycle = [], transport = 'cli', sourceObservation } = {}) {
   const starts=ledger.filter(row=>row.phase==='started'), ends=ledger.filter(row=>row.phase==='completed');
   const metrics=ledger.filter(row=>row.phase==='metrics'), attempts=ledger.filter(row=>row.phase==='attempt'), waits=ledger.filter(row=>row.phase==='wait');
   const ids=starts.map(row=>row.requestId), hostStarts=ownedLifecycle.filter(row=>row.event==='spawn'), hostEnds=ownedLifecycle.filter(row=>row.event==='close');
@@ -133,7 +133,8 @@ export function summarizeSource(ledger, { beforeCloseRequestIds, ownedLifecycle 
   const lateStarts=boundaryObserved?ids.filter(id=>!beforeCloseRequestIds.includes(id)):null;
   const sdkStarts=starts.filter(row=>row.kind==='sdk'),sdkEnds=ends.filter(row=>row.kind==='sdk');
   const cliStarts=starts.filter(row=>row.kind!=='sdk'),cliEnds=ends.filter(row=>row.kind!=='sdk');
-  const unmatchedChildren=ledger.filter(row=>row.phase==='unmatched_child_start').length;
+  const unmatchedStarts=ledger.filter(row=>row.phase==='unmatched_child_start'),unmatchedChildren=unmatchedStarts.length;
+  const lateChildStarts=Array.isArray(beforeCloseChildIds)?unmatchedStarts.map(row=>row.childId).filter(id=>!beforeCloseChildIds.includes(id)):null;
   const complete=starts.length>0&&new Set(ids).size===ids.length&&boundaryObserved&&lateStarts.length===0&&hostClosed
     &&(transport!=='sdk'||sourceObservation?.complete===true&&unmatchedChildren===0)
     &&starts.every(row=>ends.filter(end=>end.requestId===row.requestId).length===1
@@ -143,6 +144,7 @@ export function summarizeSource(ledger, { beforeCloseRequestIds, ownedLifecycle 
   return {complete,transport,cliStarts:cliStarts.length,cliCloses:cliEnds.length,sdkStarts:sdkStarts.length,sdkCloses:sdkEnds.length,
     cliSpawnEvents:ledger.filter(row=>row.phase==='child-started').length,sdkEntered:sdkEnds.filter(row=>row.sdkStarted===true).length,
     operationStarts:starts.length,operationCloses:ends.length,unmatchedChildren,
+    unmatchedChildLifecycle:sourceObservation?.unmatchedChildLifecycle??null,lateChildStarts,
     sourceObserverComplete:transport==='sdk'?sourceObservation?.complete===true:null,
     sourceObserverErrors:transport==='sdk'?(sourceObservation?.errors??['missing-observer']):[],
     httpAttempts:complete?attempts.length:null,observedHttpAttempts:attempts.length,
@@ -158,19 +160,24 @@ export function summarizeSource(ledger, { beforeCloseRequestIds, ownedLifecycle 
 async function sourceRows(path,transport,final=false) {
   return transport==='sdk'?readSourceObservation(path,{final}):{events:await rows(path),complete:null,errors:[]};
 }
-async function settleSource(path,transport='cli') {
+export async function settleSource(path,transport='cli') {
   let last = -1, quietSince = process.hrtime.bigint();
   const started = process.hrtime.bigint();
   while (Number(process.hrtime.bigint()-started)/1e6 < 120000) {
-    const ledger = (await sourceRows(path,transport)).events, pending = new Set();
+    const observation=await sourceRows(path,transport),ledger=observation.events,pending=new Set(),pendingChildren=new Set();
     for (const row of ledger) { if (row.phase === 'started') pending.add(row.requestId); if (row.phase === 'completed') pending.delete(row.requestId); }
+    const childStarts=ledger.filter(row=>row.phase==='unmatched_child_start');
+    for (const row of ledger) {
+      if (row.phase==='unmatched_child_start') pendingChildren.add(row.childId);
+      if (row.phase==='unmatched_child_close') pendingChildren.delete(row.childId);
+    }
     if (ledger.length !== last) { last=ledger.length; quietSince=process.hrtime.bigint(); }
-    if (!pending.size && Number(process.hrtime.bigint()-quietSince)/1e6 >= 700) return {
+    if (!pending.size&&!pendingChildren.size&&!(observation.errors?.length) && Number(process.hrtime.bigint()-quietSince)/1e6 >= 700) return {
       quiet:true, observed:ledger.some(row=>row.phase==='started'), rows:ledger.length,
-      requestIds:ledger.filter(row=>row.phase==='started').map(row=>row.requestId) };
+      requestIds:ledger.filter(row=>row.phase==='started').map(row=>row.requestId),childIds:childStarts.map(row=>row.childId) };
     await sleep(50);
   }
-  return { quiet:false, observed:false, rows:(await sourceRows(path,transport)).events.length, requestIds:[] };
+  return { quiet:false, observed:false, rows:(await sourceRows(path,transport)).events.length, requestIds:[],childIds:[] };
 }
 async function run(config, parent) {
   const preflight = await doctor(config);
@@ -258,6 +265,7 @@ async function run(config, parent) {
       const sourceObservation=await sourceRows(ledger.ledger,config.transport,true);
       processResult.source=summarizeSource(sourceObservation.events,{
         beforeCloseRequestIds:processResult.sourceBoundary?.requestIds,
+        beforeCloseChildIds:processResult.sourceBoundary?.childIds,
         transport:config.transport??'cli',sourceObservation,
         ownedLifecycle:await rows(join(processEvidence,'owned-processes.jsonl')) });
       processResult.sourceLedger=ledger.ledger;
@@ -272,6 +280,7 @@ async function run(config, parent) {
     const sourceObservation=await sourceRows(item.sourceLedger,item.sourceTransport,true);
     item.source=summarizeSource(sourceObservation.events,{
       beforeCloseRequestIds:item.sourceBoundary?.requestIds,
+      beforeCloseChildIds:item.sourceBoundary?.childIds,
       transport:item.sourceTransport,sourceObservation,
       ownedLifecycle:await rows(join(evidence,item.id,'owned-processes.jsonl')) });
     item.sourceReconciledAt=new Date().toISOString();
@@ -314,7 +323,7 @@ async function evidence(path,cleanup=false) {
       assert.ok(spawned.length>0&&spawned.every(row=>ledger.filter(end=>end.event==='close'&&end.pid===row.pid&&end.observedExit).length===1),'Missing or unclosed owned process');
       if((item.sourceTransport??'cli')==='sdk') {
         assert.equal(item.source.sourceObserverComplete,true,'Missing passive source terminal cannot prove safe cleanup');
-        assert.equal(item.source.unmatchedChildren,0,'Unmatched child lifecycle remains unknown');
+        assert.equal(item.source.unmatchedChildren,0,'Unmatched child descendant transport remains unknown');
         assert.equal(item.source.sdkStarts,item.source.sdkCloses,'Unclosed source SDK operation');
       } else assert.ok(item.source.cliStarts>0,'Missing source lifecycle cannot prove safe cleanup');
       assert.equal(item.source.cliStarts,item.source.cliCloses,'Unclosed source CLI');

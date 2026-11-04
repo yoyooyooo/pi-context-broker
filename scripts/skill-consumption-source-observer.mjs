@@ -6,7 +6,7 @@ import { safeRequestMetrics } from './notion-default-context.mjs';
  * method is replaced. Raw CLI stdout is retained only in bounded memory, parsed
  * after an actual close, and discarded; only public safe metrics are written. */
 export function observeSourceTransport(settings) {
-  const { diagnostics, fs, crypto, path, output, checkoutRoot, clockId, cliPath, safeRequestMetrics: decodeMetrics } = settings;
+  const { diagnostics, fs, crypto, path, errorMonitor, output, checkoutRoot, clockId, cliPath, safeRequestMetrics: decodeMetrics } = settings;
   const root = fs.realpathSync(checkoutRoot), parent = fs.realpathSync(path.dirname(output));
   const within = path.relative(root, parent);
   if (!path.isAbsolute(output) || within === '' || within !== '..' && !within.startsWith('..' + path.sep) && !path.isAbsolute(within))
@@ -16,7 +16,7 @@ export function observeSourceTransport(settings) {
   const fd = fs.openSync(output, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW ?? 0), 0o600);
   fs.fchmodSync(fd, 0o600);
   const hash = value => crypto.createHash('sha256').update(value).digest('hex');
-  const operations = new Map(), children = new Map(), subscriptions = [];
+  const operations = new Map(), children = new Map(), unmatched = new Map(), subscriptions = [];
   let sequence = 0, previous = null, nextChild = 0, errors = 0, closed = false, unmatchedChildren = 0;
   const record = (phase, details = {}) => {
     const row = { version: 1, sequence: ++sequence, previousSha256: previous, clockId,
@@ -49,7 +49,8 @@ export function observeSourceTransport(settings) {
   record('source_observer_start', { kind: 'observer', pid: process.pid, node: process.versions.node,
     method: 'public-diagnostics-sdk-and-direct-bundled-cli', cliPathSha256: hash(canonicalCli), maxStdoutBytes: maxBytes,
     stdoutMethod: 'data-events-only-after-an-existing-flowing-consumer; no read/resume/pipe',
-    coverage: 'owned Pi SDK operations and direct bundled CLI; unmatched child transport remains unknown', wireBytes: null });
+    unmatchedChildLifecycleVersion: 1,
+    coverage: 'owned Pi SDK operations and direct bundled CLI; direct unmatched child lifecycle only, descendant transport remains unknown', wireBytes: null });
   subscribe('context-broker.notion-sdk', event => {
     if (!event || event.version !== 1 || !['start', 'end'].includes(event.event) || !['consume', 'read'].includes(event.operation)
       || typeof event.id !== 'string' || !/^[a-f0-9-]{36}$/i.test(event.id) || event.pid !== process.pid
@@ -77,9 +78,31 @@ export function observeSourceTransport(settings) {
       try { matched = fs.realpathSync(args[1]) === canonicalCli; } catch {}
     }
     if (!matched) {
-      unmatchedChildren++;
-      record('unmatched_child_start', { kind: 'observer', argumentCount: Array.isArray(args) ? args.length : null,
+      if (unmatched.has(child)) throw new Error('CHILD_DUPLICATE_START');
+      const childId = 'child:' + process.pid + ':' + (++unmatchedChildren);
+      const entry = { childId, childPid: null, closed: false };
+      unmatched.set(child, entry);
+      const identity = () => ({ kind: 'child', childId, parentPid: process.pid, childPid: entry.childPid });
+      const hasArgs = Array.isArray(args) && args.every(value => typeof value === 'string');
+      record('unmatched_child_start', { ...identity(), argumentCount: hasArgs ? args.length : null,
+        argvSha256: hasArgs ? hash(JSON.stringify(args)) : null, detached: options?.detached === true,
         executableSha256: typeof options?.file === 'string' ? hash(options.file) : null, transport: 'unknown' });
+      child.once('spawn', guarded('unmatched_child_spawn', () => {
+        entry.childPid = Number.isSafeInteger(child.pid) ? child.pid : null;
+        record('unmatched_child_spawn', { ...identity(), boundary: 'child-spawn-event' });
+      }));
+      // errorMonitor observes the error without installing an error handler that
+      // would turn an otherwise fatal unhandled error into a successful host.
+      child.on(errorMonitor, guarded('unmatched_child_error', error => {
+        record('unmatched_child_error', { ...identity(), code: safeCode(error?.code), boundary: 'child-error-monitor' });
+      }));
+      child.once('exit', guarded('unmatched_child_exit', (code, signal) => {
+        record('unmatched_child_exit', { ...identity(), code, signal, boundary: 'child-exit-event' });
+      }));
+      child.once('close', guarded('unmatched_child_close', (code, signal) => {
+        entry.closed = true;
+        record('unmatched_child_close', { ...identity(), code, signal, boundary: 'child-close-event' });
+      }));
       return;
     }
     if (children.has(child)) throw new Error('CLI_DUPLICATE_START');
@@ -130,9 +153,11 @@ export function observeSourceTransport(settings) {
     try {
       for (const [name, handle] of subscriptions) diagnostics.unsubscribe(name, handle);
       const pending = [...operations].filter(([, value]) => !value.ended).map(([id]) => id);
-      record('source_observer_end', { kind: 'observer', errors, complete: errors === 0 && pending.length === 0,
+      const pendingChildIds = [...unmatched.values()].filter(value => !value.closed).map(value => value.childId);
+      record('source_observer_end', { kind: 'observer', errors, complete: errors === 0 && pending.length === 0 && pendingChildIds.length === 0,
         operations: operations.size, sdkStarts: [...operations.values()].filter(value => value.kind === 'sdk').length,
-        cliStarts: children.size, unmatchedChildren, pendingRequestIds: pending, wireBytes: null });
+        cliStarts: children.size, unmatchedChildren, unmatchedChildCloses: unmatched.size - pendingChildIds.length,
+        pendingChildIds, pendingRequestIds: pending, wireBytes: null });
     } catch { /* A failed evidence write stays a missing terminal, not a host failure. */ }
     finally { closed = true; process.off('exit', finish); try { fs.closeSync(fd); } catch {} }
   };
@@ -143,10 +168,10 @@ export function observeSourceTransport(settings) {
 /** NODE_OPTIONS is inherited by CLI children; PID/entry/thread guards keep the
  * observer in this driver-owned Pi process without changing child environment. */
 export function sourceObserverPreloadSource(settings) {
-  return "import diagnostics from 'node:diagnostics_channel';\nimport fs from 'node:fs';\nimport crypto from 'node:crypto';\nimport path from 'node:path';\nimport {isMainThread} from 'node:worker_threads';\n"
+  return "import diagnostics from 'node:diagnostics_channel';\nimport fs from 'node:fs';\nimport crypto from 'node:crypto';\nimport path from 'node:path';\nimport {errorMonitor} from 'node:events';\nimport {isMainThread} from 'node:worker_threads';\n"
     + 'const settings = ' + JSON.stringify(settings) + ';\n'
     + 'let owned=false; try { owned=isMainThread && process.ppid===settings.ownerParentPid && fs.realpathSync(process.argv[1])===fs.realpathSync(settings.ownerEntry); } catch {}\n'
-    + 'if(owned) { try { const safeRequestMetrics = (' + safeRequestMetrics.toString() + '); (' + observeSourceTransport.toString() + ')( {...settings,diagnostics,fs,crypto,path,safeRequestMetrics} ); } catch { /* Missing observation is reported by the driver. */ } }\n';
+    + 'if(owned) { try { const safeRequestMetrics = (' + safeRequestMetrics.toString() + '); (' + observeSourceTransport.toString() + ')( {...settings,diagnostics,fs,crypto,path,errorMonitor,safeRequestMetrics} ); } catch { /* Missing observation is reported by the driver. */ } }\n';
 }
 
 /** Invalid or partial observations remain available to the driver, but never
@@ -165,7 +190,13 @@ export async function readSourceObservation(file, { final = true } = {}) {
     } catch { errors.push('invalid-json'); }
   }
   let previous = null, last = -1n, clock;
-  const operations = new Map();
+  const operations = new Map(), unmatched = new Map();
+  const childVersion = events[0]?.unmatchedChildLifecycleVersion, tracksChildren = childVersion === 1;
+  if (childVersion !== undefined && !tracksChildren) errors.push('unknown-child-lifecycle-version');
+  const validPid = value => Number.isSafeInteger(value) && value > 0;
+  const validHash = value => value === null || typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+  const validExit = event => Number.isInteger(event.code) && event.signal === null
+    || event.code === null && typeof event.signal === 'string' && /^SIG[A-Z0-9]+$/.test(event.signal);
   for (const [index, event] of events.entries()) {
     const { eventSha256, ...body } = event;
     if (event.version !== 1 || event.sequence !== index + 1 || event.previousSha256 !== previous
@@ -175,7 +206,42 @@ export async function readSourceObservation(file, { final = true } = {}) {
     clock ??= event.clockId;
     if (typeof event.monotonicNs !== 'string' || !/^\d+$/.test(event.monotonicNs) || BigInt(event.monotonicNs) < last) errors.push('invalid-time');
     else last = BigInt(event.monotonicNs);
-    if (event.phase === 'started') {
+    if (event.phase === 'unmatched_child_start' && tracksChildren) {
+      if (event.kind !== 'child' || typeof event.childId !== 'string' || !/^child:\d+:\d+$/.test(event.childId)
+        || unmatched.has(event.childId) || !validPid(event.parentPid) || event.parentPid !== events[0]?.pid
+        || event.childPid !== null || event.transport !== 'unknown' || typeof event.detached !== 'boolean'
+        || !validHash(event.executableSha256) || !validHash(event.argvSha256)
+        || !(event.argumentCount === null && event.argvSha256 === null
+          || Number.isSafeInteger(event.argumentCount) && event.argumentCount >= 0 && event.argvSha256 !== null)) {
+        errors.push('invalid-child-start'); continue;
+      }
+      unmatched.set(event.childId, { parentPid: event.parentPid, childPid: null, spawned: false, exited: false, closed: false, errors: 0 });
+    } else if (['unmatched_child_spawn','unmatched_child_error','unmatched_child_exit','unmatched_child_close'].includes(event.phase)) {
+      const child = unmatched.get(event.childId);
+      if (!tracksChildren || !child || child.closed || event.kind !== 'child' || event.parentPid !== child.parentPid) {
+        errors.push('unpaired-child-event'); continue;
+      }
+      if (event.phase === 'unmatched_child_spawn') {
+        if (child.spawned || child.exited || !validPid(event.childPid)) errors.push('invalid-child-spawn');
+        child.spawned = true; child.childPid = event.childPid;
+      } else {
+        if (event.childPid !== child.childPid) errors.push('changed-child-pid');
+        if (event.phase === 'unmatched_child_error') {
+          if (event.code !== null && (typeof event.code !== 'string' || !/^[A-Z0-9_]{1,80}$/i.test(event.code))) errors.push('invalid-child-error');
+          child.errors++;
+        } else {
+          if (!validExit(event)) errors.push('invalid-child-exit-status');
+          if (event.phase === 'unmatched_child_exit') {
+            if (!child.spawned || child.exited) errors.push('invalid-child-exit');
+            child.exited = true; child.code = event.code; child.signal = event.signal;
+          } else {
+            if (child.spawned ? !child.exited || event.code !== child.code || event.signal !== child.signal : child.errors === 0)
+              errors.push('invalid-child-close');
+            child.closed = true;
+          }
+        }
+      }
+    } else if (event.phase === 'started') {
       if (!['cli', 'sdk'].includes(event.kind) || typeof event.requestId !== 'string' || operations.has(event.requestId)) errors.push('duplicate-or-invalid-start');
       operations.set(event.requestId, { kind: event.kind, completed: 0, metrics: 0, attempts: new Set() });
     } else if (['metrics', 'completed', 'attempt', 'wait', 'child-started', 'stdout_unobserved', 'spawn_error'].includes(event.phase)) {
@@ -196,6 +262,7 @@ export async function readSourceObservation(file, { final = true } = {}) {
   }
   if (events[0]?.phase !== 'source_observer_start' || events.filter(event => event.phase === 'source_observer_start').length !== 1) errors.push('missing-or-duplicate-start-boundary');
   const end = events.at(-1), terminal = end?.phase === 'source_observer_end';
+  const pendingChildIds = [...unmatched].filter(([, value]) => !value.closed).map(([id]) => id);
   if (final && !terminal) errors.push('missing-end-boundary');
   if (events.filter(event => event.phase === 'source_observer_end').length > Number(terminal)) errors.push('misplaced-end-boundary');
   if (terminal) {
@@ -206,8 +273,18 @@ export async function readSourceObservation(file, { final = true } = {}) {
       || end.errors !== events.filter(event => event.phase === 'observer_error').length
       || !Array.isArray(end.pendingRequestIds) || end.pendingRequestIds.length !== pending.length
       || new Set(end.pendingRequestIds).size !== pending.length || end.pendingRequestIds.some(id => !pending.includes(id))
-      || end.complete !== (end.errors === 0 && pending.length === 0)) errors.push('terminal-inconsistent');
+      || end.complete !== (end.errors === 0 && pending.length === 0 && (!tracksChildren || pendingChildIds.length === 0))) errors.push('terminal-inconsistent');
+    if (tracksChildren && (end.unmatchedChildCloses !== unmatched.size - pendingChildIds.length
+      || !Array.isArray(end.pendingChildIds) || end.pendingChildIds.length !== pendingChildIds.length
+      || new Set(end.pendingChildIds).size !== pendingChildIds.length || end.pendingChildIds.some(id => !pendingChildIds.includes(id))))
+      errors.push('child-terminal-inconsistent');
     if ([...operations.values()].some(value => value.completed && value.metrics !== 1)) errors.push('missing-or-duplicate-metrics');
   }
-  return { events, complete: errors.length === 0 && terminal && end.complete === true, errors: [...new Set(errors)] };
+  const unmatchedChildLifecycle = tracksChildren ? {
+    version: 1, starts: unmatched.size, spawns: [...unmatched.values()].filter(value => value.spawned).length,
+    exits: [...unmatched.values()].filter(value => value.exited).length, closes: unmatched.size - pendingChildIds.length,
+    errors: [...unmatched.values()].reduce((sum, value) => sum + value.errors, 0), pendingChildIds,
+    complete: errors.length === 0 && terminal && end.errors === 0 && pendingChildIds.length === 0, descendants: 'unobserved',
+  } : null;
+  return { events, complete: errors.length === 0 && terminal && end.complete === true, errors: [...new Set(errors)], unmatchedChildLifecycle };
 }
