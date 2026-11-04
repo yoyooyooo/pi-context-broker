@@ -2,13 +2,15 @@ import { signalHost, spawnHost } from "./context-broker-e2e-fixture.mjs";
 import { createInterface } from "node:readline";
 
 // Native host RPC uses newline-delimited JSON. readline has no 64 KiB frame limit.
-export async function startRpc({ host = "omp", args = [], cwd, env = process.env, timeoutMs = 120_000 }) {
+export async function startRpc({ host = "omp", args = [], cwd, env = process.env, timeoutMs = 120_000, waitForState = true }) {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2_147_483_647) throw new Error("RPC timeoutMs must be a positive timer duration");
+  if (typeof waitForState !== "boolean") throw new Error("waitForState must be a boolean");
   const secretValues = Object.entries(env)
     .filter(([key, value]) => /(?:KEY|TOKEN|SECRET|PASSWORD|COOKIE|CREDENTIAL)/i.test(key) && typeof value === "string" && value.length >= 4)
     .map(([, value]) => value);
   const redact = (text) => secretValues.reduce((result, value) => result.split(value).join("[redacted]"), String(text));
   const child = await spawnHost(host, ["--mode", "rpc", ...args], { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
+  const lifecycle = [{ event: "spawn", boundary: "spawnHost-return", pid: child.pid, monotonicNs: process.hrtime.bigint().toString() }];
   const frames = [];
   const pending = new Map();
   const eventWaiters = new Set();
@@ -54,6 +56,7 @@ export async function startRpc({ host = "omp", args = [], cwd, env = process.env
   child.on("error", (error) => fail(new Error(`${host}: cannot start RPC: ${redact(error.message)}${diagnostic()}`)));
   const exited = new Promise((resolve) => {
     child.on("close", (code, signal) => {
+      lifecycle.push({ event: "close", boundary: "child-close-event", pid: child.pid, code, signal, monotonicNs: process.hrtime.bigint().toString() });
       stopped = true;
       clearTimeout(escalation);
       lines.close();
@@ -149,7 +152,11 @@ export async function startRpc({ host = "omp", args = [], cwd, env = process.env
       if (failure) throw failure;
     } finally { clearTimeout(timer); }
   };
-  try { await command("get_state"); }
-  catch (error) { await stop().catch(() => {}); throw error; }
-  return { command, prompt, stop, closeInput, frames };
+  // Startup latency cases must be able to send native input while extension
+  // discovery is pending. Ordinary scenarios keep the existing handshake.
+  if (waitForState) {
+    try { await command("get_state"); }
+    catch (error) { await stop().catch(() => {}); throw error; }
+  }
+  return { command, prompt, stop, closeInput, frames, lifecycle };
 }

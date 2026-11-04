@@ -17,8 +17,8 @@
 | 任务 | Issue | 用户入口 | 已有驱动及尚需补齐的证明 |
 | --- | --- | --- | --- |
 | SC01 | AH-618 | 验证规程 | 本页完整流程；反例及清理后证据 |
-| SC02 | AH-619 | 全部消费入口 | graph observer / request_metrics；另补只观察的成本记录，旧 observer 会控制工具 |
-| SC03 | AH-620 | CLI、SDK、Pi | 图合同与 installed 图夹具；另补一次消费协议及等价证明 |
+| SC02 | AH-619 | 全部消费入口 | [只观察的成本规程](skill-consumption-cost.md)；真实模型、source 初态与单资源基线，旧 graph observer 不作为纯观察器 |
+| SC03 | AH-620 | CLI、SDK、Pi | CLI core 的 version 1 consume 合同与等价证明已提交；独立 SDK 打包和 Broker 迁移继续归 SC10 |
 | SC04 | AH-621 | 短引用、原生 read | integration / graph；另补分支固定短引用与错 scope |
 | SC05 | AH-622 | provider 输入 | graph observer；另补已冻结编译器和源/投影双 hash |
 | SC06 | AH-623 | 目录、search、自然任务 | view-discovery / model；另补两种目录的真实选路比较 |
@@ -182,6 +182,6 @@ cleanup 新增自己的回执不影响原文件比对。若原文件改变，保
 
 Notion metadata/current-body/retained-body/write、附件与模型 HTTP 分开；attempt、重试、队列、预取、SDK/CLI启动均计入。无观察器、trace 截断、scope 未知不能写0。解码 JSON bytes 不等于压缩后 wire bytes；未知保留 null/unknown。只减少首轮文本但增加工具轮次不能称总成本降低。
 
-原图 observer 会约束工具和任务文件，不能直接冒充 SC02 的纯成本 observer。实际 provider messages/usage、首个有效文本、总输入、首个 provider 与总完成时间的新增观察须保持工具和输入不变。
+原图 observer 会约束工具和任务文件，不能直接冒充 SC02 的纯成本 observer。[成本规程](skill-consumption-cost.md) 使用被动 provider hooks、Undici diagnostics 与 source request_metrics，保持工具和输入不变；失败与未知值不参与有效改善结论。
 
 每次报告 passed、failed、blocked、not_run、not_applicable；后者必须有理由。失败不会因 cleanup 成功变为 passed，历史 Gate 也不能代替新包。规程本身由独立新会话读取后执行同一路径，提交该会话的真实命令与清理后证据，才完成 SC-VERIFY-03。
