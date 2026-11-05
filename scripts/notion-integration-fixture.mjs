@@ -32,16 +32,20 @@ async function main() {
   const args = process.argv.slice(2);
   if (args[0] !== '--state' || !args[1]) throw new Error('Fixture requires --state FILE');
   const state = JSON.parse(await readFile(args[1], 'utf8'));
-  const [command, ...flags] = args.slice(2);
+  const [invokedCommand, ...invokedFlags] = args.slice(2);
+  // Current ctl callers and the explicit legacy aliases share this controlled
+  // implementation. Keep the public argv in the ledger so a migration cannot
+  // be claimed from a normalized command name alone.
+  const [command, ...flags] = invokedCommand === 'ctl' ? invokedFlags : [invokedCommand, ...invokedFlags];
   // Keep metadata discoverable while failure tests forbid all successful body
   // preparation, including the host's startup/default-View background reads.
   const scenario = state.activationOnly === true && !['prepare', 'read', 'export'].includes(command) ? 'normal' : state.scenario;
-  await appendFile(state.callsPath, JSON.stringify({ command, args: flags, scenario, ...(state.activationOnly === true ? { configured_scenario: state.scenario, failure_scope: 'activation' } : {}), at: new Date().toISOString() }) + '\n');
+  await appendFile(state.callsPath, JSON.stringify({ command: invokedCommand, args: invokedFlags, operation: command, scenario, ...(state.activationOnly === true ? { configured_scenario: state.scenario, failure_scope: 'activation' } : {}), at: new Date().toISOString() }) + '\n');
   const out = value => console.log(JSON.stringify(value));
-  if (command === 'ctl' && flags[0] === 'doctor') { out({ ok: true, transport: 'direct_http', notion_api_version: '2026-03-11', authentication: 'available' }); return; }
+  if (command === 'doctor') { out({ ok: true, transport: 'direct_http', notion_api_version: '2026-03-11', authentication: 'available' }); return; }
   const views = state.noViews ? [] : [firstViewId, secondViewId].map((id, index) => ({ id, name: index ? 'Beta work' : 'Default work', type: 'table', database_id: database, data_source_id: '44444444-4444-4444-8444-444444444444', url: `https://notion.so/${database}?v=${id}` }));
   if (command === 'views') { out({ ok: true, views, count: views.length }); return; }
-  if (command === 'ctl' && flags[0] === 'cache' && flags[1] === 'identity' && state.cacheIdentity) {
+  if (command === 'cache' && flags[0] === 'identity' && state.cacheIdentity) {
     const selector = flags[flags.indexOf('--database') + 1];
     const selected = flags.includes('--database') ? selector === 'fixture' ? database : selector.replaceAll('-', '').toLowerCase() : null;
     out({ ok: true, identity: createHash('sha256').update(JSON.stringify([state.account ?? 'default', state.configVersion ?? 0, selected === database.replaceAll('-', '') ? database : selected])).digest('hex'), catalog_max_age_ms: state.catalogTtlMs ?? 60_000 });

@@ -528,7 +528,7 @@ Notion source 可选 `default_view_id` 稳定 ID；当前会话选择优先，�
 
 The active-branch custom entry `ntn-skills-view-selection` records version, source ID and canonical View ID. A null View ID resets the session override. It contains no instructions and is not a model message. Resume and branch navigation replay their own entries; parallel sessions never share mutable choice state. Validate a requested View before persisting it. Stale asynchronous callbacks are fenced at session boundaries. View selection does not modify source configuration files, withdraw previously loaded bodies or re-execute the extension.
 
-The CLI must support `views`, `list --view` and `list --default-view`. A custom old CLI reports a default-View capability failure instead of silently reverting to checkbox-based discovery. Explicit list/read remain usable when supported.
+View 管理调用 `ctl views`；发现使用 `list --view`、`list --default-view` 或默认 SDK 的对应入口。显式 custom CLI 须实现这些路线。CLI 保留历史 `views` alias，当前 Broker 调用方使用 `ctl`。缺少 View 能力时明确报错，不静默退回 checkbox 发现；受支持的显式 list/read 仍可用。
 
 ### 大型远程库的按需读取
 

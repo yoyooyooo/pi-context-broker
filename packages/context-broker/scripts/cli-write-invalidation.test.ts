@@ -178,6 +178,29 @@ assert.deepEqual(changed.pop(), ["personal", "alias"]);
 await result(command("sync", "local", "connect", page, "--from", "local"), { ...local("push"), binding: { page_id: page } });
 assert.deepEqual(changed.pop(), ["personal", "alias"], "Connect forwards the same verified run result; only a push changes Notion");
 
+const migratedCalls: [string, string, unknown, string[][]][] = [
+  ["replace", command("replace", "s_baseline", "--input", "/staged", "--database", db), receipt, [["personal", "alias"]]],
+  ["ctl operation resume", command("ctl", "operation", "resume", publication), resumeResult, [["personal", "second", "alias"]]],
+  ["ctl sync upstream", command("ctl", "sync", "upstream", "run"), upstream(1), [["personal", "alias"]]],
+  ["ctl sync local", command("ctl", "sync", "local", "run", "binding"), local("push"), [["personal", "alias"]]],
+  ["ctl resume unknown", command("ctl", "operation", "resume", publication), { ...resumeResult, state: "unknown" }, []],
+  ["ctl resume other operation", command("ctl", "operation", "resume", "p_other"), resumeResult, []],
+  ["ctl resume dry run", command("ctl", "operation", "resume", publication, "--dry-run"), resumeResult, []],
+  ["ctl status", command("ctl", "sync", "upstream", "status"), upstream(1), []],
+  ["ctl local read", command("ctl", "sync", "local", "run", "binding"), local("pull"), []],
+  ["replace dry run", command("replace", "s_baseline", "--dry-run"), receipt, []],
+  ["replace reused", command("replace", "s_baseline"), { ...receipt, reused: true }, []],
+  ["invalid ctl author", command("ctl", "replace", "s_baseline"), receipt, []],
+  ["nested ctl", command("ctl", "ctl", "operation", "resume", publication), resumeResult, []],
+];
+const migratedChanges: [string, string[][]][] = [];
+for (const [label, cmd, value] of migratedCalls) {
+  await result(cmd, value);
+  migratedChanges.push([label, changed.splice(0)]);
+}
+assert.deepEqual(migratedChanges, migratedCalls.map(([label, _cmd, _value, expected]) => [label, expected]),
+  "New ctl callers and replace refresh the exact source only after verified changes; unknown and read-only outcomes remain inert");
+
 // Exercise the real directory owner and its on-disk cache, not just receipt classification.
 const root = await mkdtemp(join(tmpdir(), "broker-write-invalidation-"));
 const previous = { ...process.env };
@@ -219,7 +242,7 @@ else throw Error('Unexpected command');
   assert.ok((await selections()).includes("$before-write@notion"));
   const callsBefore = await fullCatalogCalls();
   await writeFile(state, JSON.stringify({ [db]: "after-write", [otherDb]: "untouched" }));
-  await dispatch("tool_call", { toolName: "bash", toolCallId: "write", input: { command: [...runtimePrefix, "apply", "s_baseline", "--database", db].map(quote).join(" ") } });
+  await dispatch("tool_call", { toolName: "bash", toolCallId: "write", input: { command: [...runtimePrefix, "replace", "s_baseline", "--database", db].map(quote).join(" ") } });
   await dispatch("tool_result", { toolName: "bash", toolCallId: "write", input: {}, content: JSON.stringify(receipt), isError: false });
   const next = await selections();
   assert.ok(next.includes("$after-write@notion"), "The next ordinary selection sees the renamed Skill without manual refresh");
@@ -231,7 +254,7 @@ else throw Error('Unexpected command');
   assert.ok(callsAfter[0]!.includes("--refresh"), "A verified write bypasses the affected source's stale disk directory");
   const beforeResume = await fullCatalogCalls();
   await writeFile(state, JSON.stringify({ [db]: "after-recovery", [otherDb]: "untouched" }));
-  await dispatch("tool_call", { toolName: "bash", toolCallId: "resume", input: { command: [...runtimePrefix, "operation", "resume", publication].map(quote).join(" ") } });
+  await dispatch("tool_call", { toolName: "bash", toolCallId: "resume", input: { command: [...runtimePrefix, "ctl", "operation", "resume", publication].map(quote).join(" ") } });
   await dispatch("tool_result", { toolName: "bash", toolCallId: "resume", input: {}, content: JSON.stringify(resumeResult), isError: false });
   const recovered = await selections();
   assert.ok(recovered.includes("$after-recovery@notion"), "Verified original-operation recovery refreshes the next selection without manual intervention");

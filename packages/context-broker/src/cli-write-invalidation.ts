@@ -54,14 +54,16 @@ function invocation(command: string, sources: NotionSource[]): Invocation | unde
     } catch { return []; }
   });
   if (!matching.length || new Set(matching.map(item => item.length)).size !== 1) return undefined;
-  const args = argv.slice(matching[0]!.length);
+  const commandArgs = argv.slice(matching[0]!.length);
+  if (commandArgs[0] === "ctl" && !["operation", "sync"].includes(commandArgs[1] ?? "")) return undefined;
+  const args = commandArgs[0] === "ctl" ? commandArgs.slice(1) : commandArgs;
   if (args.some(arg => ["--dry-run", "--help", "-h"].includes(arg))) return undefined;
   if (args[0] === "operation" && args[1] === "resume") {
     const ids = args.slice(2).filter(arg => !["--progress", "--new-artifact", "--retry-metadata"].includes(arg));
     if (ids.length !== 1 || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(ids[0]!)) return undefined;
     return { kind: "resume", operationId: ids[0]!, sources: matching.map(item => item.source), consumed: false, progress: argv.includes("--progress") };
   }
-  const kind: WriteKind | undefined = ["create", "apply", "write", "update"].includes(args[0] ?? "") ? "content"
+  const kind: WriteKind | undefined = ["create", "apply", "replace", "write", "update"].includes(args[0] ?? "") ? "content"
     : args[0] === "sync" && args[1] === "upstream" && ["run", "connect"].includes(args[2] ?? "") ? "upstream"
     : args[0] === "sync" && args[1] === "local" && ["run", "connect", "apply"].includes(args[2] ?? "") ? "local" : undefined;
   if (!kind) return undefined;

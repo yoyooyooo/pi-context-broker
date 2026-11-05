@@ -1,6 +1,6 @@
 # Source 配置、默认目录与激活
 
-修改 sources、Notion CLI contract、host metadata 或 activation 时使用此地图。用户启用 Notion source 后，Pi/OMP 默认目录公布当前 View 中的 Skill/Router，Profile 及选择优先级见[默认目录地图](../../verify-notion-skills-integration/features/default-context-prefetch.md)；完整目录继续用于显式调用、搜索与补全。启动完成元数据注册后可后台准备 View 成员，预取不向会话加载指令；原生 read、`/skill:notion-ui-alpha` 或 `$ui-alpha@notion` 选择后才消费完整 snapshot 及资源。Notion 自动补全和手动搜索始终返回 `$alias@namespace`，重名时返回 `$alias@page-id@namespace`。默认使用包内 `ntn-skills`，外部前置为 Node.js 22.x 中的 22.22.3+，或 24.20.0+及项目自己的有效 Notion token；自定义 `command` 覆盖默认入口。
+修改 sources、Notion CLI contract、host metadata 或 activation 时使用此地图。Notion 默认目录公布当前 View 的 Skill/Router，Profile 及选择优先级见[默认目录地图](../../verify-notion-skills-integration/features/default-context-prefetch.md)；完整目录继续用于显式调用、搜索与补全。Pi 默认使用 SDK 发现和消费，日常工具为 notion_list/read/notion_use，本地 Skill 保留原生读取；OMP 与显式 custom command 保留兼容 CLI 路线。预取默认零预算，只有显式有界预算才预热，且不向会话投递指令。read 检查所请求内容，use、`/skill:` 或 `$` 才准备所选根与完整 Requires，资源按需读取。复制实际宿主公布的名称、来源和准确引用，不把 OMP 的 notion-* alias 当 Pi 显示名。外部前置为 Node.js 22.x 中的 22.22.3+，或 24.20.0+及项目自己的有效 Notion token；自定义 command 不作为默认 SDK 失败的静默回退。
 
 文中 `SKILL_REF` 从本次 CLI 回执的 `record.ref` 原样取得；共享身份的编码与物理定位区别见下方 shared content 合同，不从 page UUID 或显示名重拼。
 
@@ -11,7 +11,7 @@
 - `source-metadata`：首个provider请求可见原生目录name/location，正文marker为零。
 - `source-native-read`：受控provider请求真实read工具读取该location，后续provider消息含完整正文。
 - `source-dollar-native`：两个宿主分别提交 `$ui-alpha@notion` 并重复，再执行 host 原生命令；反向从冷原生命令切换 `$`。另由同一 runner 在 cold native 参数中加入自身 `$` 引用，确认同轮正文一份且参数完整；Pi 冷调用用 Tab，暖调用再覆盖 Tab/换行分隔。每次核对实际 provider，不因 Pi 路径仅包含正文就判通过。
-- `source-resources`：host read读取导出目录的references资源，返回固定resource marker。
+- `source-resources`：Pi 从实际交付目录取得固定资源 ref，OMP 保留实际目录路径读取；两者返回完整固定 resource marker，不从会话 sr: 句柄拼接文件路径。
 - `source-session`：停止RPC后print `--continue`，同一source仍可消费。
 - `source-error-recovery`：fixture切换denied、malformed、timeout、duplicate，错误不能变空body成功；刷新后恢复。精确范围和证据见[联动恢复地图](../../verify-notion-skills-integration/features/session-cache-recovery.md)。
 - `source-submission`：Adapter 或输入事件类型变化时，复用上述 cold native、双向 `$` 切换、资源及失败恢复；OMP 命令 handoff 和 Pi 输入 digest 分别核对，不只直接调用 Adapter。取消后的旧 handoff 不得派发 provider，也不能误取消下一条提交。后台及会话边界按下方 NS-DEFAULT 地图，实际 Stop 与草稿恢复按 loading 路径，避免另建 Adapter 验证框架。
@@ -36,6 +36,14 @@
 依赖故障另运行 `bun run test:source-dependencies`，或用 `node scripts/verify-source-dependencies.mjs --host pi` 单列 Pi：实际宿主覆盖缺 source command、API 不可达、正常 list 入口的不兼容目录结构、非 JSON 输出和未认证。普通聊天、本地与正常 source 继续，失败 namespace 中未知字面引用仍派发且不读正文；修复 command 后 refresh 恢复。不兼容目录由真实 list 返回带禁止旧 `skills` 字段的完整结构，实际 decoder 必须拒绝；同进程只移除该字段后 refresh/doctor 必须恢复，保留正反例与实际 argv。显式 custom command 不承诺实现 bundled CLI 的 doctor，所以不能用它冒充默认协议探测。默认 SDK/CLI 版本和文件字节错配另由安装边界与 SDK 负例验证。`node scripts/verify-native-ui.mjs --source-dependencies` 覆盖真实 Tern/OMP 启动提示、普通聊天、本地自动补全、失败 namespace 中未知引用原样透传，以及真实 Tab 接受另一 source 的已知候选后 read 失败阻断 provider；手动 picker 继续可用。`node scripts/verify-artifacts.mjs --host pi` 在独立生产安装上重跑 Pi 依赖场景并检查随附 CLI/SDK identity；OMP/Tern 用独立 `--host omp` 结果。CLI fixture 不证明远端认证成功。
 
 ## Evidence 与清理
+
+### SC23 管理调用与写后目录刷新
+
+原 `view-discovery.test.ts` 通过真实受控 CLI 子进程核对 `listNotionViews` 发出的 `ctl views --database …` 及 discovery policy；实际宿主入口继续复用 `--view-discovery true` 的 `/context-broker views`，不能用函数级成功冒充安装态菜单。fixture 同一实现接受旧 alias，但 ledger 保留调用时的 command/args，不能把规范化后的名字当已迁移证据。
+
+原 `cli-write-invalidation.test.ts` 覆盖新的 `ctl operation resume`、`ctl sync upstream/local` 和 `replace`，以及历史 alias。只有配置中真实 CLI 的完整成功回执、原 operation 和已验证目标才刷新相应来源；unknown、错误/混合 operation、dry-run、status/plan、只读 pull、reused 与非法 ctl 嵌套均不刷新，也不重放写入。原磁盘目录场景必须通过工具事件执行 replace 与 ctl resume 后看到新目录，其他 source 不被普通写入刷新；缺 scope 的已验证历史恢复只保守重读同 CLI 的配置来源。
+
+改前原件 `~/Library/Logs/pi-context-broker/AH-617-20261105/sc23-ctl-callers-syfo5ol8/fail-before.log`，SHA256 `17db82a3bdb2c7427ba740310491373f16133d7bab3f9922f7cdbc455efcddbe`：四种新调用均未触发应有目录更新。该驱动在常规 package check 中执行。它证明回执到目录缓存的接线；真实作者写入/unknown 恢复继续复用 CLI 原独立 package smoke，实际安装 Pi 和真实 Notion 分别记录，不由本地事件断言外推。
 
 runner输出独立 `/tmp/broker-notion-evidence-*`，manifest记录mode、各host分支和未运行入口；provider/RPC/decision transcripts保留，scratch在另一个目录。`node scripts/verify-notion-integration.mjs evidence --evidence /absolute/run` 核对通过和文件存在；`cleanup --evidence /absolute/run` 只将ownership证明属于本次的scratch移入系统Trash，不删除证据。control自身证据再用 `control.mjs evidence /absolute/control-run` 核对。
 

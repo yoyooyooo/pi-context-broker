@@ -480,7 +480,7 @@ function parseViewSelection(result: Json, source: NotionSource): NotionView | nu
   return parseView(result.view, source);
 }
 export async function listNotionViews(source: NotionSource, cwd: string, signal?: AbortSignal): Promise<NotionView[]> {
-  const result = await run(source, cwd, ["views", ...(source.database ? ["--database", source.database] : []), ...policyArgs(source.discovery)], signal);
+  const result = await run(source, cwd, ["ctl", "views", ...(source.database ? ["--database", source.database] : []), ...policyArgs(source.discovery)], signal);
   if (!Array.isArray(result.views) || result.count !== result.views.length) decodeError(source);
   return result.views.map(view => parseView(view, source));
 }

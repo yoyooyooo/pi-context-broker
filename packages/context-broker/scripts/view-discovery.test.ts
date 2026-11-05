@@ -1,4 +1,9 @@
 import { expect, test } from "bun:test";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createNotionFixture, database, firstViewId, secondViewId } from "../../../scripts/notion-integration-fixture.mjs";
+import { listNotionViews } from "../src/notion-source";
 import { sessionViews, VIEW_SELECTION_ENTRY } from "../src/view-discovery";
 import { viewSystemPrompt } from "../src/view-prompt";
 import { normalizeSources } from "../src/sources";
@@ -7,6 +12,16 @@ import type { ExtensionContext, SessionEntry, SkillRecord } from "../src/types";
 const choice = (sourceId: string, viewId: string | null): SessionEntry => ({ type: "custom", customType: VIEW_SELECTION_ENTRY, data: { version: 1, sourceId, viewId } });
 const context = (entries: SessionEntry[]): ExtensionContext => ({ sessionManager: { getBranch: () => entries } });
 const record = (name: string, path: string): SkillRecord => ({ name, path, aliases: [], description: `${name} description`, normalizedName: name, normalizedAliases: [], normalizedDescription: `${name} description`, autoloadEnabled: true });
+
+test("source View listing calls the public ctl route with its exact scope and policy", async () => {
+  const root = await mkdtemp(join(tmpdir(), "broker-ctl-views-"));
+  const fixture = await createNotionFixture(root);
+  const views = await listNotionViews({ id: "controlled", type: "notion", command: fixture.command, database, discovery: { offline: true } }, root);
+  expect(views.map(view => view.id)).toEqual([firstViewId, secondViewId]);
+  const calls = (await readFile(fixture.callsPath, "utf8")).trim().split("\n").map(JSON.parse);
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toMatchObject({ command: "ctl", args: ["views", "--database", database, "--offline"], operation: "views" });
+});
 
 test("session choices inherit only the active branch, reset independently and do not leak to another session", () => {
   const branch = [choice("one", "A"), choice("two", "X"), choice("one", "B")];
