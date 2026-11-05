@@ -460,14 +460,17 @@ try {
       hasUI: true,
       ui: { notify: (message, type) => notifications.push({ message, type }) },
       sessionManager: {
-        getEntries: () => [
-          {
+        buildSessionProjection: () => {
+          const sourceEntry = {
+            id: "retained-design-context",
             type: "custom_message",
             customType: mod.CUSTOM_TYPE,
             content: "already loaded",
             details: { name: "design-context", path: designContextPath },
-          },
-        ],
+          };
+          const message = { role: "custom", customType: sourceEntry.customType, content: sourceEntry.content, details: sourceEntry.details };
+          return { entries: [{ sourceEntry, messages: [message] }], messages: [message] };
+        },
       },
     },
     Promise.resolve(registry),
@@ -981,9 +984,9 @@ try {
       hasUI: true,
       ui: { notify: (message, type) => multiTurnNotifications.push({ message, type }) },
       sessionManager: {
-        getEntries: () => [
+        buildSessionContext: () => ({ messages: [
           {
-            type: "custom_message",
+            role: "custom",
             customType: mod.CUSTOM_TYPE,
             content: "already loaded",
             details: {
@@ -994,7 +997,7 @@ try {
               injectedBy: mod.CUSTOM_TYPE,
             },
           },
-        ],
+        ] }),
       },
     },
     Promise.resolve(registry),
@@ -1013,8 +1016,9 @@ try {
       hasUI: true,
       ui: { notify: (message, type) => partialMultiTurnNotifications.push({ message, type }) },
       sessionManager: {
-        getEntries: () => [
-          {
+        buildSessionProjection: () => {
+          const sourceEntry = {
+            id: "retained-partial-design-context",
             type: "custom_message",
             customType: mod.CUSTOM_TYPE,
             content: "already loaded design-context",
@@ -1022,8 +1026,10 @@ try {
               records: [{ kind: "skill", name: "design-context", path: designContextPath, sourcePath: designContextPath }],
               injectedBy: mod.CUSTOM_TYPE,
             },
-          },
-        ],
+          };
+          const message = { role: "custom", customType: sourceEntry.customType, content: sourceEntry.content, details: sourceEntry.details };
+          return { entries: [{ sourceEntry, messages: [message] }], messages: [message] };
+        },
       },
     },
     Promise.resolve(registry),

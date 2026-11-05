@@ -24,6 +24,10 @@
 
 恢复读取只使用当前分支、经过 compaction 的公开 projection／context，不能从 `getEntries()` 全历史找回已移除正文。machine proof 仅在对应完整 user 投影仍在当前上下文时生效，且不会进入 provider 输入。已取消、错误、未收到成功响应、迟到或回退到其他分支的边界不写入；后续 source 恢复继续依据已有 active 固定版本，Prompt 仍按显式调用处理。`notion_use` 与 native read 的原生 tool result 不走此延迟持久化路径。
 
+原 `context-broker-smoke.mjs` 的历史加载正例也必须提供该合同：单记录与部分已加载场景使用 Pi `buildSessionProjection()` 的对应 `entries`／`messages`，多记录场景保留 OMP `buildSessionContext()` 路径。原 skip／部分注入断言不变；sibling 负例仍以空有效 context 加其他分支的 `getEntries()` 证明全历史不能抑制加载。2026-11-05 统一 C4 检查已保留旧夹具失败：`unified-c4-e1f7-m585ghan/check.log`（位于 `~/Library/Logs/pi-context-broker/AH-617-20261105/`），SHA256 `876761f87b7ef91507cec857df802362c6e0a2aca9be3799f28c51fa2b093f79`；该次检查的后续消费／安装门禁未执行。
+
+同一提交的远端 CI run `42072328437`／job `127403934820` 也在第一个旧正例 `smoke:476` 失败；完整原日志 `unified-c4-e1f7-m585ghan/ci-e1f7-job-127403934820.log` 共 95,647 bytes，SHA256 `1e9fa4eb8923f7d8cda1669869750c179f95dece3f0a6e7d552ca756233c89da`。三个夹具迁移后仅重跑原 smoke，`smoke-fixture-fix/smoke.log` SHA256 `724d681727082bfd88c9d81ebd5915d3ce1df4ea575f5a553ddab2a7868c945f` 通过；完整 check 和独立候选在该修复提交后继续，不能把此单项结果填成安装通过。
+
 ## How to get to it (user POV)
 
 - 重复提交同一个 `$name`。
