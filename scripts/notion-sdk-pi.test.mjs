@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
+import { systemTempRoot } from './verification-paths.mjs';
+import { resolveInstalledPiSerializer } from './notion-sdk-pi.mjs';
 import { assertNativeGuidance, assertScopedCommand, assertPreparedHttpRequest, assertResourceHttpRequest, assertResourceBatchProjection, assertResourceReadSchema, resourceRefsFromNative, resourceTextCopies, bodyCount, reconcile, sourceFinality, observeOwnedObjectReads, assertObjectReadEvidence, assertProviderHttpRequest, assertProviderToolSequence, assertSearchProjection, assertDefaultViewProjection, assertDollarProjection, assertNativeProjection, resourceScalarCalls, selectScalarProviderCall, assertResourceScalarResult, resourceScalarSelectedFixture, assertResourceScalarSession, assertResourceScalarCost, selectNativeRepeatCall, assertNativeRepeatProjection, assertScalarReadObjectIntervals } from './notion-sdk-pi.mjs';
 
 const command = ['/absolute/node', '/installed/dist/ntn-skills.mjs'];
@@ -11,6 +15,41 @@ const context = () => ({ messages: [
   { role: 'system', content: 'Controlled system instructions.', toolsAdded: toolNames.map(name => ({ name })) },
   { role: 'user', content: guidance },
 ] });
+
+async function serializerFixture(t, { nested = false, name = '@earendil-works/pi-ai', version = '1.4.0', exported = true } = {}) {
+  const root = await mkdtemp(join(await systemTempRoot(), 'pi-serializer-resolution-'));
+  t.after(() => console.log('Serializer resolution fixture retained: ' + root));
+  const piRoot = join(root, 'node_modules/@earendil-works/pi-coding-agent');
+  const apiRoot = join(nested ? piRoot : root, 'node_modules/@earendil-works/pi-ai');
+  const modulePath = join(apiRoot, 'lib/serializer.mjs'), packagePath = join(apiRoot, 'package.json');
+  await mkdir(piRoot, { recursive: true }); await mkdir(dirname(modulePath), { recursive: true });
+  await writeFile(join(piRoot, 'package.json'), JSON.stringify({ name: '@earendil-works/pi-coding-agent', version: '1.4.0', type: 'module' }));
+  await writeFile(packagePath, JSON.stringify({ name, version, type: 'module', exports: {
+    [exported ? './api/openai-completions' : '.']: { import: './lib/serializer.mjs' },
+  } }));
+  await writeFile(modulePath, 'throw new Error("Resolution must not execute the serializer");\n');
+  return { piRoot, modulePath: await realpath(modulePath), packagePath: await realpath(packagePath) };
+}
+
+for (const nested of [false, true]) test(`installed Pi serializer resolves ${nested ? 'nested' : 'hoisted'} import-only exports`, async t => {
+  const fixture = await serializerFixture(t, { nested });
+  const identity = await resolveInstalledPiSerializer(fixture.piRoot, '1.4.0');
+  const sha = bytes => createHash('sha256').update(bytes).digest('hex');
+  assert.equal(identity.resolution.base, await realpath(fixture.piRoot));
+  assert.equal(identity.serializer.path, fixture.modulePath);
+  assert.equal(identity.serializer.sha256, sha(await readFile(fixture.modulePath)));
+  assert.deepEqual(identity.api_package, { name: '@earendil-works/pi-ai', version: '1.4.0', path: fixture.packagePath,
+    sha256: sha(await readFile(fixture.packagePath)) });
+});
+
+for (const [options, error] of [
+  [{ version: '1.3.0' }, /must match the installed Pi version/u],
+  [{ name: 'different-package' }, /must belong to pi-ai/u],
+  [{ exported: false }, /ERR_PACKAGE_PATH_NOT_EXPORTED/u],
+]) test(`installed Pi serializer rejects ${JSON.stringify(options)}`, async t => {
+  const fixture = await serializerFixture(t, options);
+  await assert.rejects(resolveInstalledPiSerializer(fixture.piRoot, '1.4.0'), error);
+});
 
 function scopeFixture() {
   const result = { kind: 'host_cli_scope', command, database, sourceId: 'sdk-fixture', executed: false };

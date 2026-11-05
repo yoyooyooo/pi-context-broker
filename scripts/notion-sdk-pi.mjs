@@ -726,10 +726,38 @@ export function assertScalarReadObjectIntervals(events, { calls, requiredPid }) 
     sdk_reads: intervals.length, object_reads: assigned, intervals };
 }
 
+export async function resolveInstalledPiSerializer(piPackageRoot, piVersion) {
+  const base = await realpath(piPackageRoot);
+  const specifier = '@earendil-works/pi-ai/api/openai-completions';
+  // An ESM evaluation rooted at the installed host respects import-only exports
+  // and Node's actual nested or hoisted dependency resolution. It imports no code.
+  const resolved = await runCommand(process.execPath, ['--input-type=module', '--eval',
+    `process.stdout.write(JSON.stringify(import.meta.resolve(${JSON.stringify(specifier)})))`],
+  { cwd: base, env: { PATH: process.env.PATH ?? '' }, timeoutMs: 30000 });
+  const moduleUrl = new URL(JSON.parse(resolved.stdout));
+  assert.equal(moduleUrl.protocol, 'file:', 'The installed serializer must resolve to a local file');
+  const modulePath = await realpath(fileURLToPath(moduleUrl));
+  let current = dirname(modulePath), packagePath, packageBytes, packageInfo;
+  for (;;) {
+    packagePath = join(current, 'package.json');
+    try { packageBytes = await readFile(packagePath); packageInfo = JSON.parse(packageBytes.toString('utf8')); break; }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    assert.notEqual(current, dirname(current), 'Cannot identify the installed serializer owning package');
+    current = dirname(current);
+  }
+  assert.equal(packageInfo.name, '@earendil-works/pi-ai', 'The resolved serializer must belong to pi-ai');
+  assert.equal(packageInfo.version, piVersion, 'The resolved serializer must match the installed Pi version');
+  return {
+    resolution: { method: 'node-esm-import-exports', specifier, base, node: process.execPath },
+    api_package: { name: packageInfo.name, version: packageInfo.version, path: packagePath, sha256: hash(packageBytes) },
+    serializer: { path: modulePath, sha256: hash(await readFile(modulePath)) },
+  };
+}
+
 async function replayPreparationHttp(context, info, output, kind = 'prepare', verify) {
-  const modulePath = await realpath(join(info.piPackageRoot, 'node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js'));
-  const packagePath = resolve(dirname(modulePath), '../../package.json'), packageInfo = await json(packagePath);
-  assert.equal(packageInfo.name, '@earendil-works/pi-ai'); assert.equal(packageInfo.version, info.pi.version);
+  const identity = info.serializerIdentity, modulePath = identity.serializer.path;
+  assert.equal(hash(await readFile(modulePath)), identity.serializer.sha256, 'The resolved serializer changed after preflight');
+  assert.equal(hash(await readFile(identity.api_package.path)), identity.api_package.sha256, 'The serializer owning package changed after preflight');
   const { stream } = await import(pathToFileURL(modulePath).href);
   const requests = [], serverErrors = [];
   const server = createServer((request, response) => {
@@ -769,8 +797,7 @@ async function replayPreparationHttp(context, info, output, kind = 'prepare', ve
     assert.equal(JSON.stringify(context), original, 'Replaying the provider serializer must not mutate the captured transcript');
     await writeFile(join(output, kind + '-serializer-request.json'), requests[0].body, { mode: 0o600 });
     const result = { status: 'passed', boundary: 'Actual Pi capture replayed through installed pi-ai serializer and localhost HTTP; no real model or production API call',
-      api_package: { name: packageInfo.name, version: packageInfo.version, path: packagePath },
-      serializer: { path: modulePath, sha256: hash(await readFile(modulePath)) }, ...verification,
+      ...identity, ...verification,
       response: { status: 200, stop_reason: final.stopReason, source: 'controlled local SSE', usage: 'not_real_model_usage' } };
     await save(join(output, kind + '-serializer.json'), result);
     return result;
@@ -943,6 +970,7 @@ async function inspect(options) {
     assert.notEqual(current, dirname(current), 'Cannot identify installed Pi package'); current = dirname(current);
   }
   assert.match(pi.version, /^1\.4\./u, 'This controlled route is frozen for Pi 1.4');
+  const serializerIdentity = await resolveInstalledPiSerializer(current, pi.version);
   const fixture = await json(options['--fixture']);
   assert.equal(fixture.version, 1); assert.equal(fixture.catalog, true);
   const fixtureEnv = await json(fixture.env);
@@ -996,7 +1024,7 @@ async function inspect(options) {
     }
     entrypoint = { ...sample, snapshot, main_file: main, main: new TextDecoder('utf8', { fatal: true, ignoreBOM: true }).decode(bytes) };
   }
-  return { packageRoot, manifest, extension, runtime, host, pi, piPackageRoot: current, fixture, fixtureEnv, bodies, resourceBatch, entrypoint };
+  return { packageRoot, manifest, extension, runtime, host, pi, piPackageRoot: current, serializerIdentity, fixture, fixtureEnv, bodies, resourceBatch, entrypoint };
 }
 
 export function resourceRefsFromNative(message, paths) {
@@ -2347,7 +2375,7 @@ if (action === 'evidence' || action === 'cleanup') {
   assert.ok(options['--evidence'], usage); await retained(await realpath(options['--evidence']), action === 'cleanup');
 } else {
   const info = await inspect(options);
-  if (action === 'doctor') console.log(JSON.stringify({ status: 'ready', node: process.version, pi: info.pi.version, host: info.host, extension: info.extension, runtime: info.runtime,
+  if (action === 'doctor') console.log(JSON.stringify({ status: 'ready', node: process.version, pi: info.pi.version, host: info.host, extension: info.extension, runtime: info.runtime, serializer: info.serializerIdentity,
     fixture: options['--fixture'], authentication: 'not_probed', source: 'controlled offline catalog and snapshots', default_view: 'not_verified' }, null, 2));
   else {
     assert.ok(options['--out'], usage);
@@ -2362,7 +2390,7 @@ if (action === 'evidence' || action === 'cleanup') {
     const expectDirectScalar = options['--expect-direct-scalar'] !== 'false';
     const expectShortConfirmations = options['--expect-short-confirmations'] !== 'false';
     const scenarios = options['--scenario'] && options['--scenario'] !== 'all' ? [options['--scenario']] : scenarioNames;
-    await save(join(evidence, 'plan.json'), { version: 1, node: process.version, pi: info.pi.version, package: info.packageRoot, runtime: info.runtime, extension: info.extension,
+    await save(join(evidence, 'plan.json'), { version: 1, node: process.version, pi: info.pi.version, package: info.packageRoot, runtime: info.runtime, extension: info.extension, serializer: info.serializerIdentity,
       fixture: options['--fixture'], driver_sha256: hash(await readFile(fileURLToPath(import.meta.url))), source_command_configured: false,
       scenarios, expect_short_refs: expectShortRefs, expect_compact_context: expectCompactContext, expect_direct_scalar: expectDirectScalar, expect_short_confirmations: expectShortConfirmations,
       comparison_scope: 'Installed Broker plus bundled CLI/SDK; a changed runtime manifest or bundle hash is a changed comparison input',

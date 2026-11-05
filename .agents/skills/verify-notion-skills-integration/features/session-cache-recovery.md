@@ -6,6 +6,8 @@
 
 当前 Pi 合同使用同一 `scripts/notion-sdk-pi.mjs --scenario session-lifecycle`。`SDK_PACKAGE` 为独立安装的 Broker 根，`SDK_FIXTURE` 为 CLI 原 `sdk-fixture.ts --catalog` 输出，`SDK_LIFECYCLE_EVIDENCE` 为新的仓外绝对目录。fixture 为离线暖 source，Broker cache、agent 设置与会话从 owned 空目录开始；不借用用户 session 或日用设置。先冻结包、CLI/SDK/runtime 清单和 fixture，后运行：
 
+`doctor` 从实际 Pi package 根执行一次 Node ESM 解析，按 `pi-ai` 的公开 `import` exports 定位 serializer，兼容嵌套或提升到上层的依赖安装。解析阶段不执行 serializer；核对最近 owning package 的名称与 Pi 版本，记录模块和 package.json 的真实路径、SHA256。`doctor`、`plan.json` 和逐请求 serializer 记录保存同一身份；HTTP 重放前再次核对文件未变。版本不匹配、包归属错误或未导出入口必须拒绝，不能添加依赖 symlink 或退回猜测路径。此本地 Node preflight 与 Agent 工具、source CLI 子进程分别计账。
+
 ```bash
 node scripts/notion-sdk-pi.mjs doctor --package "$SDK_PACKAGE" --fixture "$SDK_FIXTURE" --scenario session-lifecycle
 node scripts/notion-sdk-pi.mjs run --package "$SDK_PACKAGE" --fixture "$SDK_FIXTURE" --scenario session-lifecycle --out "$SDK_LIFECYCLE_EVIDENCE"
@@ -23,6 +25,8 @@ node scripts/notion-sdk-pi.mjs evidence --evidence "$SDK_LIFECYCLE_EVIDENCE"
 | 新会话 `$a` 已派发 provider 后 RPC `abort`，再释放晚到响应 | 必须观察 `response_held → signal_aborted → response_callback(aborted=true)`、SDK/进程终局和后续普通 turn 正文为零。此次已派发输入单独计为 1，不写成 provider=0；prepared a/base 短引用可留作元数据，但 active/selected graph 为零。 |
 
 审阅 `lifecycle-launch.json`、`lifecycle-steps.json`、逐阶段 `*-branch.json`、`fixed-restore.json`、`messages-after-compact-before-restore.json`、两进程 `rpc-frames*.json` / `rpc-lifecycle*.json`、`native-session-events.jsonl` 和 `observer*.jsonl`。每进程独立 SDK hash-chain 与 terminal，全部关闭才封存和 cleanup；四个真实 session 文件原样归档。所有 provider capture 均通过已安装 pi-ai 序列化并向本地 HTTP 发出，schema、正文、历史、工具与字节累计在 `provider-http.json` 中；受控摘要质量、真实模型、真实 Notion、冷 source 与双机恢复仍分别验收。
+
+2026-11-05 的 `66a64e3b` 候选首轮 all14 保存在 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/unified-c4-0f0b02-wj9ya_hr/sdk-all-pi14`：scoped-command 通过，其余 13 景的 RPC 已执行，但 HTTP 重放因旧驱动假定嵌套 pi-ai 路径而失败，不能记为场景通过。原件、终局与失败状态保留；修复解析后使用新证据目录重跑同包。用户日用 Pi 此时为 1.5.0，冻结合同的 1.4.0 来自 owned 官方独立安装，后者的验收不覆盖 1.5 日用兼容。
 
 2026-11-05 的 b40126dc 独立包样本 `/private/tmp/ah627-sdk-native-2ocefldg/evidence`：2 个实际 Pi 进程、4 个 session、16 次 provider 输入、3 次工具调用（含预期旧引用拒绝）、10 次 SDK list、3 次 consume、0 CLI 子进程、0 source HTTP；实际序列化累计 157590 B。run log SHA256 为 `382779a547f0d086eb1efebf8870aad3c4aac9d161090695cca87d6fb060ae75`。新增 inspect/固定 target 断言另对已封存原始 observer 回读通过，记录在相邻 `fixed-restore-review.json`，未改写原证据。三个 harness 校准失败同样保留；四次 evidence → cleanup → evidence 全通过，196 个原件 hash 未变，receipt 为 `/private/tmp/ah627-sdk-cleanup-d6c8ilz1/receipt.json`。此样本不包含后续 SC04/schema 修复，正式候选必须重新取得自身记录。
 
