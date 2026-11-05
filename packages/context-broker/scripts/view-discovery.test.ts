@@ -101,3 +101,22 @@ test("default_view_id is an optional per-source selection, never a mutable globa
   expect(sources?.[1]).toMatchObject({ default_view_id: undefined });
   expect(() => normalizeSources([{ type: "notion", id: "one", default_view_id: 1 }])).toThrow();
 });
+
+test("Pi Notion directory keeps authored names and explicit sources without renaming local Skills or command aliases", () => {
+  const first: SkillRecord = { ...record("Review Rules", "/private/one/SKILL.md"), source: "notion", sourceId: "team-one", token: "notion-one-review-rules", ref: "skill://one/SKILL.md" };
+  const second: SkillRecord = { ...first, sourceId: "team-two", token: "notion-two-review-rules", ref: "skill://two/SKILL.md" };
+  const local = '<available_skills><skill><name>native-local</name><description>Local rules</description><location>/local/SKILL.md</location></skill></available_skills>';
+  const before = JSON.stringify([first, second]);
+  const prompt = viewSystemPrompt(local, [first, second], [], new Set(), [], "/cwd", value => value.ref, "notion_list", true);
+  expect(prompt.match(/<name>Review Rules<\/name>/g)).toHaveLength(2);
+  expect(prompt).toContain("<source>team-one</source>");
+  expect(prompt).toContain("<source>team-two</source>");
+  expect(prompt).toContain("<location>skill://one/SKILL.md</location>");
+  expect(prompt).toContain("<location>skill://two/SKILL.md</location>");
+  expect(prompt).toContain(local);
+  expect(prompt).not.toContain("notion-one-review-rules");
+  expect(JSON.stringify([first, second])).toBe(before);
+  const legacy = viewSystemPrompt(local, [first, second], [], new Set(), []);
+  expect(legacy).toContain("<name>notion-one-review-rules</name>");
+  expect(legacy).not.toContain("<source>");
+});

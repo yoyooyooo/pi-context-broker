@@ -1102,7 +1102,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (native && adapter.submission.receipt === "input-digest") nativeInputs.delete(promptHash);
     const candidateRefs = modelCandidateReferences([...records, ...defaultRouters], ctx);
     let systemPrompt = viewSystemPrompt(event.systemPrompt, records, defaultRouters, new Set(readRecords.keys()), views, ctx.cwd,
-      record => candidateRefs.get(record), listToolName);
+      record => candidateRefs.get(record), listToolName, piConsumption);
     if (deferredPiDiscovery) {
       systemPrompt = systemPrompt.replace(/\n*<ntn-skills-discovery\b[^>]*>[\s\S]*?<\/ntn-skills-discovery>/g, "");
       if (metadataPending || discoveryError || sourceFailures.some(failure => failure.blocking !== false)) {
@@ -1130,6 +1130,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         throw new SourceError(failed.code, failed.sourceId);
       }
     }
+    // Without an independent lookup, failed discovery cannot establish absence.
+    if (!candidates.length && !options.lookupReference && discoveryError) throw discoveryError;
     const active = gate.active?.prepared ?? (turnPrompts?.signal.aborted ? undefined : turnPrompts?.snapshots);
     const scopes = [...(active?.values() ?? [])].filter(record => record.sourceScope !== undefined);
     if (!short && scopes.length) candidates = candidates.filter(record => scopes.some(scope => scope.sourceId === record.sourceId && scope.sourceScope === record.sourceScope));

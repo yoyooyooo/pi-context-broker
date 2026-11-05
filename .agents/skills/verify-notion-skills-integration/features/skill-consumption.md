@@ -106,6 +106,14 @@ bun test packages/context-broker/scripts/host-prepare.test.ts packages/context-b
 
 正例同时保持发现入口失败，并证明精确 use 返回根和完整 Requires、未选 Member 未加载；反例分别注入目录和 exact lookup 的选中来源错误，确认正文准备为零。单个 native read 另验证冷态 View 外入口。它们是源码 host 集成证据，实际 Pi 和独立安装候选仍须单列。
 
+没有已知候选且没有独立 lookup 时，目录失败不能改判“引用不存在”。原 `bun packages/context-broker/scripts/input-guard.test.ts` 验证 RATE_LIMITED、NOTION_UNAVAILABLE、ACCESS_DENIED 均保持准确失败且不读正文；这条基础门禁与精确引用正例同时运行。
+
+### Pi 目录名称与可复制的读取入口
+
+Default View 的 Pi Notion 条目展示实际名称、完整描述、来源与精确入口；内部 command token 不代替显示名称，同名不同来源保留各自 ref。本地原生目录、补全 alias 和 OMP 兼容形式另核对，不能为同条件对照改写作者 frontmatter。
+
+读取验收同时检查真实 provider 的 `read.path` 顶层与 scalar 分支 schema：明确接受本地路径和系统已返回的 `skill://` / `sr:` 引用，并要求原样复制。资源目录的 path 是资源名称，不能据此猜测 Pi 安装目录；检查用 read，采用根与 Requires 用 notion_use。定向源码门禁为 `bun test packages/context-broker/scripts/pi-read-adapter.test.ts packages/context-broker/scripts/view-discovery.test.ts`。下一独立候选的原 SDK/Pi driver 须核对实际 schema、名称与资源续读；描述纠正不能代替模型自主选路或任务完成证明。
+
 ### Doctor
 
 以下命令全部离线，不创建生产数据、不调用模型：

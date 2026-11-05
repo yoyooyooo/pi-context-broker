@@ -4,7 +4,7 @@ import type { ExtensionAPI, ExtensionContext, NativeReadResult, PiReadDefinition
 
 function fixture(owner = "builtin", enabled = true) {
   const handlers: Array<(event: never, ctx: ExtensionContext) => unknown> = [];
-  const parameters = { type: "object", properties: { path: { type: "string" }, offset: { type: "number" }, limit: { type: "number" } }, required: ["path"] };
+  const parameters = { type: "object", properties: { path: { type: "string", description: "Path to the file to read (relative or absolute)" }, offset: { type: "number" }, limit: { type: "number" } }, required: ["path"] };
   const calls: unknown[] = [], factories: unknown[] = [];
   const content: NativeReadResult = { content: [{ type: "image", data: "native-image", mimeType: "image/png" }], details: { native: true }, structuredContent: { type: "image", data: "native-image", mimeType: "image/png", note: "native" } };
   const native: PiReadDefinition = { name: "read", label: "read", description: "native", parameters, outputSchema: { type: "string" }, promptSnippet: "native snippet", promptGuidelines: ["native guideline"],
@@ -66,6 +66,21 @@ test("Pi resource schema distinguishes complete issued handles from category pre
   for (const value of ["sr:R", "sr:S", "sr:C" + "a".repeat(22), "sr:R" + "a".repeat(21), "sr:R" + "a".repeat(23), "references/example.md"]) {
     expect(accepts.test(value)).toBe(false);
   }
+});
+
+test("Pi scalar read advertises issued Skill refs in both provider schema branches without changing the native definition", async () => {
+  const f = fixture(), before = JSON.stringify(f.native.parameters);
+  f.adapter.registerReadExecutor!((_input, _ctx, _signal, read) => read({ path: "unused" }));
+  await f.start();
+  const schema = f.current().parameters as { properties: { path: { description: string } }; oneOf: Array<{ properties: { path?: { description: string } } }> };
+  for (const description of [schema.properties.path.description, schema.oneOf[0]!.properties.path!.description]) {
+    expect(description).toContain("relative or absolute");
+    expect(description).toContain("skill://");
+    expect(description).toContain("sr:");
+    expect(description).toContain("verbatim");
+  }
+  expect(f.current().description).toContain("notion_use");
+  expect(JSON.stringify(f.native.parameters)).toBe(before);
 });
 
 test("Pi preserves disabled read and never replaces a third-party read", async () => {

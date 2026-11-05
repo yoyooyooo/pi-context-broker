@@ -7,7 +7,7 @@ const unescape = (value: string) => value.replaceAll("&quot;", '"').replaceAll("
 const hostName = (record: SkillRecord) => (record.token ?? record.name).replace(/[^a-z0-9-]/g, "-");
 
 /** Rebuild only broker-owned metadata for this request, never conversation bodies. */
-export function viewSystemPrompt(input: string | string[] | undefined, skills: readonly SkillRecord[], routers: readonly SkillRecord[], ownedPaths: ReadonlySet<string>, views: readonly NotionViewState[], cwd = process.cwd(), renderRef?: (record: SkillRecord) => string | undefined, listTool = "skill_search"): string {
+export function viewSystemPrompt(input: string | string[] | undefined, skills: readonly SkillRecord[], routers: readonly SkillRecord[], ownedPaths: ReadonlySet<string>, views: readonly NotionViewState[], cwd = process.cwd(), renderRef?: (record: SkillRecord) => string | undefined, listTool = "skill_search", notionNames = false): string {
   const prompt = (Array.isArray(input) ? input.join("\n\n") : input ?? "")
     .replace(/\n*<ntn-skills-view-catalog>[\s\S]*?<\/ntn-skills-view-catalog>/g, "")
     .replace(/<available_skills>[\s\S]*?<\/available_skills>/g, block => block.replace(/<skill>[\s\S]*?<\/skill>/g, entry => {
@@ -23,7 +23,8 @@ export function viewSystemPrompt(input: string | string[] | undefined, skills: r
     : `<view source="${xml(state.sourceId)}" origin="${state.origin}" status="${state.status}"${state.status === "error" ? ` code="${xml(state.code)}"` : ""}/>`).join("\n");
   const entries = skills.map(record => {
     const shortRef = record.source === "notion" ? renderRef?.(record) : undefined;
-    return `<skill><name>${xml(hostName(record))}</name><description>${xml(record.description)}</description><location>${xml(shortRef || (record.metadataIndexPath ?? record.path))}</location>${!shortRef && record.ref ? `<ref>${xml(record.ref)}</ref>` : ""}</skill>`;
+    const namedSource = notionNames && record.source === "notion";
+    return `<skill><name>${xml(namedSource ? record.name : hostName(record))}</name><description>${xml(record.description)}</description>${namedSource && record.sourceId ? `<source>${xml(record.sourceId)}</source>` : ""}<location>${xml(shortRef || (record.metadataIndexPath ?? record.path))}</location>${!shortRef && record.ref ? `<ref>${xml(record.ref)}</ref>` : ""}</skill>`;
   }).join("\n");
   const routes = routers.map(record => {
     const shortRef = record.source === "notion" ? renderRef?.(record) : undefined;

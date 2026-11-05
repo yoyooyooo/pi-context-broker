@@ -25,6 +25,8 @@ CLI 构建输入固定为 [23991457c51b9f1255367a1545be00ef8c1a84bb](https://git
 
 默认目录只列名称、描述及可复制入口。普通提交不等待后台目录完成；pending/unavailable 明确显示状态，不能被解释为空目录。显式发现可以等待其所需目录，后续普通轮次使用完成的 Default View。
 
+Pi 的 Notion 条目使用记录本名，来源另列；内部 command token、补全 alias 与精确身份保持。普通本地目录和 OMP 的既有形式不随此显示修正改变。`read.path` 的实际 schema 明确接受本地相对/绝对路径或系统给出的 `skill://` / `sr:` 引用，要求原样复制；资源目录里的名称不应转换成猜测的物理路径。
+
 `notion_use` 是 Pi `model-only` 且默认激活的工具。它直接向模型返回根和完整 Requires；Code mode 内部无法调用它来提前发布 use 状态。Code mode 内部执行原生 read 后，如果外层未打印正文或只打印片段，不能据内部成功确认完整正文已送达或成为 active。
 
 原始作者正文不裁切。宿主保存 owner、scope、pin、manifest 和交付证明，模型投影使用会话短引用。通过 `$` 选择的 Notion 主文不再附带物理缓存目录；其支持文件列出可复制的精确资源引用，后续读取延续相同绑定。恢复或无法建立短引用时保留 canonical 引用。
@@ -42,6 +44,7 @@ Router 的 Members 是待选择目录。通用指引要求按任务选择 Member
 | `$` 包装暴露缓存目录，实际模型随后尝试读目录 | 移除模型侧物理目录，展示已验证支持文件的短引用/canonical ref | 原失败完整保留；单元测试实际沿包装给出的引用续读相同资源 |
 | 实际 Pi 已送达 filesystem 来源正文却在确认时报错 | 发现层的 `source: local` 与回执只接受 filesystem 不一致；回执支持真实 local 值并保留历史 filesystem | 不接管 Pi 原生本地 Skill；真实安装复测另记 |
 | 初次真实 Gate A 读取 Pi 帮助、目录并生成泛化方案，未选择所需 Member | 保留原 prompt/model/oracle，不将完整根正文送达等同于任务完成；修正包装和通用 Router 指引 | 原次 Gate A 明确失败，不执行其泛化产物 |
+| b401 的真实 Gate B 已收到完整资源短引用，仍反复猜测 Pi 安装路径；实际 read.path schema 仅描述文件路径 | 修正 scalar schema 的两处参数说明，保留 native 执行与资源批读；默认目录显示记录本名及来源 | 说明缺口有原始 provider 请求证明，但尚不能证明它是模型失败的唯一原因；A/B 原失败不改判 |
 
 ## 验证接线与实际证据
 
@@ -64,6 +67,10 @@ Router 的 Members 是待选择目录。通用指引要求按任务选择 Member
 原失败保留在 `/private/tmp/ah621-exact-ref-before-xr3s0bue` 与 `/private/tmp/ah621-use-before-to8bsvy_`；修复后两组原 host harness 共 33 项、374 断言通过，日志 `/private/tmp/ah621-exact-ref-after-yfatqb01/test.log`，SHA256 `010869151ba556f496c771fc3708edca2097fcfebfa76cbfccef3681b2720a2d`。此增量不在已有 `b40126dc5ce2` 安装包内，必须随下一固定候选实际复验；不能据源码通过宣称 SC04 全部完成。
 
 该增量的完整消费专项为 169 项、1696 断言，全部通过；typecheck 通过。结果清单 `/private/tmp/ah621-final-hhybqs7g/results.json`，消费日志 SHA256 `6b6bb5dcd69c6e3125be3f226b5748e4900032ed0ef9047c4d9b3ed17be90c00`。
+
+目录名称与 scalar schema 的 fail-before 为 `/private/tmp/ah623-read-schema-before-6jchna24`（12 通过、2 失败，日志 SHA256 `3fa694b09a07cfd0d92c7d03257e1c4d2aedaa1b55a55d8fe0117a808e2ae94d`）。修复后定向 14 项、完整消费 171 项及 typecheck 通过，结果 `/private/tmp/ah623-read-schema-after-a__ygb4y/results.json`。对应真实失败原件位于 `~/Library/Logs/pi-context-broker/AH-617-20261105/graph-sdk-driver-283ltczo/candidate-b40126dc5ce2/evidence/graph-model-B-8Dpc5G`。新说明和名称必须在下一独立候选检查实际 provider 请求，再运行明确登记的模型样本；旧 b401 证据不承担这一增量的安装验收。
+
+基础 input-guard 随后发现：既无候选也无独立 lookup 时，SC04 增量把目录 RATE_LIMITED 错报为 SOURCE_REFERENCE_MISSING。原失败日志 `/private/tmp/ah676-linux-cleanup-ik_qz75_/input-guard.log`（SHA256 `fa94e05b335c649a27f87b0a8c4759dbe2dabb2a50b773f3dbf41f7183433f75`）保留；该分支恢复准确原错误，已找到 exact owner 的正例不受影响。原 input-guard 实跑通过（`/private/tmp/ah621-unresolved-after-pm7x6mp8/input-guard.log`，SHA256 `0b1f1ded737249250faf1b2020a1ca5559064bf2810d70ad4723a0504dde8cd5`）；最终 typecheck 与 171 项消费测试通过，`/private/tmp/ah623-final-90xajqe1/results.json`。
 
 继续检查完整生命周期下的权限、取消、预算和缓存隔离。已有成功样本不能补齐尚未运行的样本。
 

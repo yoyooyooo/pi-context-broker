@@ -50,16 +50,20 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
         const paths = { type: "array", minItems: 1, maxItems: DEFAULT_RESOURCE_READ_BUDGET.maxFiles,
           items: { type: "string", pattern: "^(?:sr:R[A-Za-z0-9_-]{22}|skill://.+)$" },
           description: "Copy complete resource refs verbatim from the selected Skill snapshot's resource directory. Every ref must identify a file in the same owner and snapshot. Reads all selected files in one operation without preparing the main body." };
+        const scalarProperties = { ...native.parameters.properties, path: {
+          ...(object(native.parameters.properties.path) ? native.parameters.properties.path : { type: "string" }),
+          description: "Local file path (relative or absolute), or a supplied Skill/resource ref (skill://... or sr:...). Copy issued refs verbatim; do not turn a resource path into a guessed filesystem path.",
+        } };
         const parameters: Record<string, unknown> = {
-          type: "object", properties: { ...native.parameters.properties, paths },
+          type: "object", properties: { ...scalarProperties, paths },
           oneOf: [
-            { ...native.parameters, not: { required: ["paths"] } },
+            { ...native.parameters, properties: scalarProperties, not: { required: ["paths"] } },
             { type: "object", properties: { paths }, required: ["paths"], additionalProperties: false },
           ],
         };
         const definition: PiReadDefinition = {
           ...native,
-          description: native.description + " Alternatively, use paths for a fixed set of Skill resources belonging to the same owner and snapshot. Choose either path or paths. Batch resource reads do not accept offset/limit or the main entrypoint.",
+          description: native.description + " For a Notion Skill or resource, copy its supplied ref into path to inspect it. Use notion_use to apply a Skill with its Requires. Alternatively, paths reads fixed resources of one owner and snapshot together; choose path or paths. Batch reads exclude offset/limit and the main entrypoint.",
           parameters, defaultActive: activeTools().includes("read"),
           ...(native.outputSchema ? { outputSchema: { anyOf: [native.outputSchema, resourceOutputSchema] } } : {}),
           async execute(id, input, signal, onUpdate, context) {
