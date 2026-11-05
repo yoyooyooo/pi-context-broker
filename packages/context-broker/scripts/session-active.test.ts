@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { activeSources, activeSelection, missingActiveSources, assertRestoredSource, confirmActiveSources, SESSION_ACTIVE_ENTRY } from "../src/session-active";
 import { persistSessionSelection } from "../src/session-graph";
-import { sourceDeliveryReceipt, projectSelectedSourceMessages, deferredSourceEntries, sourceBodyLoaded, sourceMessageText, withSessionSourceReceipts } from "../src/session-source-snapshot";
-import { installHostSkills } from "../src/host-skills";
+import { sourceDeliveryReceipt, projectSelectedSourceMessages, deferredSourceEntries, nativeReadReceipt, sourceBodyLoaded, sourceMessageText, withSessionSourceReceipts } from "../src/session-source-snapshot";
+import { installHostSkills, type HostSkillOptions } from "../src/host-skills";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { discoverSourceCatalog, loadSourceSkill } from "../src/sources";
 import type { PreparedHostGraph, PreparationPurpose } from "../src/prepare-protocol";
@@ -127,39 +127,70 @@ test("unknown receipt versions and tampered bodies fail closed instead of fallin
   expect(activeSources(other).sources.size).toBe(0);
 });
 
-async function deferredFixture() {
+async function deferredFixture(prepared?: PreparedHostGraph) {
   const listeners = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
   const queued: AgentMessage[] = [], controller = new AbortController(), entries: ProjectedSessionEntry[] = [];
+  const restored: string[][] = [];
   const state = { sessionId: "prompt-run" };
   const api: ExtensionAPI = {
     on(name, handler) { listeners.set(name, [...listeners.get(name) ?? [], handler]); },
     sendMessage(message) { queued.push({ ...message, role: "custom" }); },
+    appendEntry(customType, data) { entries.push({ sourceEntry: { type: "custom", customType, data, id: "custom-" + entries.length }, messages: [] }); },
   };
   const messages = () => entries.flatMap(entry => entry.messages);
   const ctx: ExtensionContext = { signal: controller.signal, abort: () => controller.abort(), sessionManager: {
     getSessionId: () => state.sessionId, buildSessionProjection: () => ({ entries, messages: messages() }),
+    getBranch: () => entries.map(entry => entry.sourceEntry),
     getEntries() { throw new Error("Deferred delivery must not read all session history"); },
   } };
-  await installHostSkills(api, { config: {}, getRecords: async () => ({ records: [], failures: [] }), loadRecord: async record => record,
-    needsPreflightPrompt: text => text.includes("$task"), taskPrompt: async text => text + "\n\nTASK_BODY_ONCE" }, createPiHostAdapter(api));
+  const sourceMessage = (records: readonly SkillRecord[]) => {
+    const content = records.map(record => record.body!).join("\n\n");
+    return { customType: "context-broker", content, display: false,
+      details: { records: records.map(record => sourceDeliveryReceipt(record, content)) } };
+  };
+  await installHostSkills(api, { config: {}, getRecords: async () => ({ records: prepared?.records ?? [], failures: [] }), loadRecord: async record => record,
+    needsPreflightPrompt: text => text.includes("$task"), taskPrompt: async text => prepared ? text : text + "\n\nTASK_BODY_ONCE",
+    ...(prepared ? {
+      prepareGraph: async () => [prepared],
+      buildPreparedPrompt: async (_text, _ctx, _signal, records) => sourceMessage(records),
+      persistGraphs: (graphs, context, mode) => persistSessionSelection(api, context, graphs, mode),
+      confirmDelivery: (records, deliveredMessages, context) => confirmActiveSources(api, context, records, deliveredMessages),
+      restoreActive: async (deliveredMessages, context, _signal, pending) => {
+        const missing = missingActiveSources(context, deliveredMessages, pending);
+        if (!missing.length) return undefined;
+        restored.push(missing.map(source => source.record.id!));
+        return sourceMessage(missing.map(source => {
+          const record = prepared.records.find(record => record.id === source.record.id);
+          if (!record) throw new Error("Expected the fixed fixture owner");
+          return assertRestoredSource(source, record);
+        }));
+      },
+    } satisfies Pick<HostSkillOptions, "prepareGraph" | "buildPreparedPrompt" | "persistGraphs" | "confirmDelivery" | "restoreActive"> : {}),
+  }, createPiHostAdapter(api));
   const emit = async (name: string, event: unknown = {}) => {
     const results = [];
     for (const handler of listeners.get(name) ?? []) results.push(await handler(event as never, ctx));
     return results;
   };
-  const user: AgentMessage = { role: "user", content: [{ type: "text", text: "$task keep the task" }, { type: "image", data: "preserved", mimeType: "image/png" }] };
-  await emit("input", { source: "rpc", text: "$task keep the task" });
-  await emit("before_agent_start", { prompt: "$task keep the task", systemPrompt: "base" });
+  const input = prepared ? "/skill:root keep the task" : "$task keep the task";
+  const submitted = prepared ? "\n" + input : input;
+  const user: AgentMessage = { role: "user", content: [{ type: "text", text: submitted }, { type: "image", data: "preserved", mimeType: "image/png" }] };
+  const accepted = await emit("input", { source: "rpc", text: input });
+  if (prepared) expect(accepted).toContainEqual({ action: "transform", text: submitted, images: undefined });
+  await emit("before_agent_start", { prompt: submitted, systemPrompt: "base" });
   await emit("agent_start");
   // Pi persists the actual user after agent_start and before the first context.
   entries.push({ sourceEntry: { type: "message", id: "user", message: user }, messages: [user] });
   let turn = 0;
-  const request = async (status: number | null = 200) => {
+  const request = async (status: number | null = 200, nativeRead?: SkillRecord) => {
     const contexts = await emit("context", { messages: messages() });
     await emit("before_provider_request", { type: "before_provider_request", payload: {} });
     if (status !== null) await emit("after_provider_response", { type: "after_provider_response", status, headers: {} });
     const assistant: AgentMessage = { role: "assistant", content: "OK" };
-    const tool: AgentMessage = { role: "toolResult", toolName: "read", toolCallId: "ordinary-" + turn, content: "resource" };
+    const toolCallId = "ordinary-" + turn;
+    const content = nativeRead ? nativeRead.body + "\nReference directory stays." : "resource";
+    const tool: AgentMessage = { role: "toolResult", toolName: "read", toolCallId, content,
+      ...(nativeRead ? { details: { contextBrokerRead: nativeReadReceipt(nativeRead, toolCallId, content) } } : {}) };
     entries.push({ sourceEntry: { type: "message", id: "assistant-" + turn, message: assistant }, messages: [assistant] },
       { sourceEntry: { type: "message", id: "tool-" + turn, message: tool }, messages: [tool] });
     turn++;
@@ -180,7 +211,7 @@ async function deferredFixture() {
     }
   };
   const close = async () => { await emit("agent_end"); await emit("session_shutdown"); };
-  return { entries, user, queued, state, controller, emit, request, boundary, apply, close };
+  return { entries, user, queued, restored, state, controller, emit, request, boundary, apply, close };
 }
 
 test("deferred Prompt persistence preserves images, current edits and tool ordering without a queued custom message", async () => {
@@ -207,6 +238,43 @@ test("deferred Prompt persistence preserves images, current edits and tool order
   expect(await f.boundary()).toBeUndefined();
   expect(f.queued).toEqual([]);
   await f.close();
+});
+
+test("deferred slash selection preserves root and Requires receipts across native read and later provider turns", async () => {
+  const prepared = graph(), f = await deferredFixture(prepared);
+  try {
+    const originalUser = JSON.stringify(f.user);
+    const projectedContent = [...(Array.isArray(f.user.content) ? f.user.content : []), { type: "text" as const, text: "Earlier context edit." }];
+    f.entries[0]!.messages = [{ ...f.user, content: projectedContent }];
+    await f.request(200, prepared.records[0]);
+    const rawTool = JSON.stringify(f.entries.find(entry => entry.sourceEntry.id === "tool-0")!.sourceEntry);
+    const first = await f.boundary();
+    expect(first?.entries).toHaveLength(2);
+    f.apply(first!.entries!);
+    const persisted = JSON.stringify(f.entries[0]!.messages[0]);
+    const proof = JSON.stringify(first!.entries![1]);
+    for (let index = 0; index < 2; index++) {
+      const result = (await f.request()).find((value): value is { messages: AgentMessage[] } =>
+        !!value && typeof value === "object" && "messages" in value && Array.isArray(value.messages));
+      if (!result) throw new Error("Expected the provider context");
+      expect(f.restored).toEqual([]);
+      for (const record of prepared.records) {
+        const copies = result.messages.reduce((count, message) => count + sourceMessageText(message.content).split(record.body!).length - 1, 0);
+        expect(copies).toBe(1);
+      }
+      expect(sourceMessageText(result.messages.find(message => message.toolCallId === "ordinary-0")?.content)).toBe("Already loaded.\nReference directory stays.");
+      expect(await f.boundary()).toBeUndefined();
+      expect(JSON.stringify(f.entries[0]!.messages[0])).toBe(persisted);
+      expect(JSON.stringify(first!.entries![1])).toBe(proof);
+      expect(JSON.stringify(f.entries.find(entry => entry.sourceEntry.id === "tool-0")!.sourceEntry)).toBe(rawTool);
+    }
+    expect(JSON.stringify(f.user)).toBe(originalUser);
+    expect(f.entries[0]!.messages[0]!.content).toEqual([...projectedContent, { type: "text", text: prepared.records.map(record => record.body!).join("\n\n") }]);
+    expect(f.entries.filter(entry => entry.sourceEntry.type === "message").map(entry => entry.sourceEntry.id)).toEqual([
+      "user", "assistant-0", "tool-0", "assistant-1", "tool-1", "assistant-2", "tool-2",
+    ]);
+    expect(f.queued).toEqual([]);
+  } finally { await f.close(); }
 });
 
 test("discarded boundary drafts do not falsely mark a deferred Prompt persisted", async () => {

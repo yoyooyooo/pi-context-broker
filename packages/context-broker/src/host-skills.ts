@@ -216,7 +216,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   let handoff: { entry: ActivePreparation; prompts: string[]; consumed: boolean; selectedNative?: SkillRecord; native?: { snapshot: SkillRecord; promptSha256: string } } | undefined;
   type PiRun = {
     generation: number; sessionId: string | undefined; signal: AbortSignal; entry?: ActivePreparation;
-    selectedNative?: SkillRecord; submitted?: string; projection?: AgentMessage[];
+    selectedNative?: SkillRecord; projection?: AgentMessage[];
     prepared: boolean; requestPending: boolean; confirmed: boolean; persisted: number;
     userEntryId?: string;
     requestProjection?: { count: number; messages: AgentMessage[] };
@@ -886,7 +886,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       }
       piRun = { generation, sessionId: ctx.sessionManager?.getSessionId?.(), signal,
         entry: receipt?.entry, selectedNative: receipt?.selectedNative,
-        submitted: receipt?.prompts.at(-1), prepared: false, requestPending: false, confirmed: false, persisted: 0,
+        prepared: false, requestPending: false, confirmed: false, persisted: 0,
         candidates: new Map(), graphs: [] };
       return;
     }
@@ -928,21 +928,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         if (run) run.prepared = true;
       }
       let messages = withSessionSourceReceipts(event.messages.filter(message => message.customType !== ACTIVATION_MESSAGE), contextEntries);
-      // Only this run's accepted receipt authorizes removing our neutralizing
-      // newline. Historical text/markers never create a new invocation.
-      if (run?.entry && run.submitted !== run.entry.event.text) {
-        for (let index = messages.length - 1; index >= 0; index--) {
-          const message = messages[index]!;
-          if (message.role !== "user") continue;
-          const original = run.entry.event.text ?? "";
-          if (message.content === run.submitted) messages = messages.map((value, position) => position === index ? { ...message, content: original } : value);
-          else if (Array.isArray(message.content) && message.content.some(part => part.type === "text" && part.text === run.submitted)) {
-            const content = message.content.map(part => part.type === "text" && part.text === run.submitted ? { ...part, text: original } : part);
-            messages = messages.map((value, position) => position === index ? { ...message, content } : value);
-          }
-          break;
-        }
-      }
+      // Keep the submitted user content, including /skill's protection newline,
+      // identical to the projection bound by persisted source delivery receipts.
       const projectionIndices: number[] = [];
       for (const projected of run?.projection?.slice(run.persisted) ?? []) {
         projectionIndices.push(messages.length);

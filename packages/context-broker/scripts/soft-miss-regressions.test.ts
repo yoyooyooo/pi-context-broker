@@ -211,7 +211,8 @@ console.log(JSON.stringify(receipt));
       const nativeName = "skill:" + hostSkillName(skill);
       const native = "/" + nativeName + " $ui-alpha@prompt $ui-alpha@router native material";
       const typedNative = await submit(native);
-      assert.ok(typedNative.submitted.startsWith(native), "Typed missing native selection retains its invocation and valid arguments");
+      if (host === "pi") assert.equal(typedNative.submitted, "\n" + native, "Pi retains exactly the protected invocation and valid arguments");
+      else assert.ok(typedNative.submitted.startsWith(native), "Typed missing native selection retains its invocation and valid arguments");
       assert.match(typedNative.task, new RegExp(canary));
       assert.match(JSON.stringify(typedNative.results), /kind=\\?"router/);
       if (host === "omp") {
@@ -239,7 +240,8 @@ console.log(JSON.stringify(receipt));
       for (const text of ["$missing@skill $skill/missing $ui-alpha@prompt unavailable namespace material", "/skill:skill-missing $ui-alpha@prompt unavailable native namespace material"]) {
         const before = (await calls()).length;
         const result = await submit(text);
-        assert.ok(result.submitted.startsWith(text), "An unmatched ref in an unavailable namespace remains user material");
+        if (host === "pi") assert.equal(result.submitted, text.startsWith("/skill:") ? "\n" + text : text, "Pi preserves unmatched user material with only the native invocation protection newline");
+        else assert.ok(result.submitted.startsWith(text), "An unmatched ref in an unavailable namespace remains user material");
         assert.equal(result.task.split(canary).length - 1, 1, "The valid Prompt still expands once beside an unavailable namespace");
         const turn = (await calls()).slice(before);
         assert.equal(turn.filter(call => call.source === "skill" && ["read", "export"].includes(call.command)).length, 0);

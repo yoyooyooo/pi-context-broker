@@ -30,6 +30,18 @@ node scripts/notion-sdk-pi.mjs evidence --evidence "$SDK_LIFECYCLE_EVIDENCE"
 
 目录 owner 回归复用 `bun packages/context-broker/scripts/catalog-menu.test.ts` 内的 `catalog-menu-session.test.ts`：原暖目录、旧 context 退休、新会话菜单与取消切换断言不变；追加真实阻塞 command catalogue 子进程，`session_shutdown` 返回前该 PID 必须已关闭，不能通过释放读屏障让其自然完成。host metadata generation 先退休，随后 owner abort/await；旧 promise 不得发布目录、通知已退休的 session 或从旧菜单重启请求。command 子进程门禁与上述默认 SDK／真实 Pi 门禁分别保留。
 
+### 原生 `/skill` 的逐轮交付
+
+NS-SESSION-02 的原生 `/skill:` 必须跨过第一次 provider：完整根与 Requires 首轮送达，执行一次完整根 native read，并经 `turn_end` 持久化后，后续至少两个 provider turn 仍各只含一份正文。已完整交付的 Requires 不得因一次本地投影编辑被重复恢复。根 read 的实际工具回执保留，provider 可用 `Already loaded.` 替换重复正文，但其资源目录、toolCallId、原始工具消息与顺序不变。
+
+Pi input hook 保留用于阻止提前展开 `/skill:` 的保护换行。有效 user 投影、`nativePromptSha256` 与正文 span 必须使用同一份文本；不得在接回 machine proof 后只删除模型文本中的换行。图片、其他扩展已有的 context edit、原始 user 和 assistant/tool 消息均保留。普通 `$`、取消、分支退休与压缩后的固定恢复仍跑原用例，不能以修复重复为由接受失效证明。
+
+原 `input-guard.test.ts` 所调用的 `soft-miss-regressions.test.ts` 同步检查两条公开输入路径：匹配但正文缺失的 `/skill:` 和不可用 namespace 中的未知引用。Pi 的 user 投影必须精确等于原文，仅 `/skill:` 前有一个保护换行；不得用 `trimStart` 或包含关系掩盖额外文本。OMP 保留原调用及任务展开合同。相邻图片、有效 Prompt／Router、未匹配目标零读取和取消断言不变；旧要求模型文本直接以 `/skill:` 开头的失败日志保留。
+
+本地定向入口为 `bun test packages/context-broker/scripts/session-active.test.ts --test-name-pattern 'deferred slash selection'`，复用该文件的图和原会话夹具；同时审阅 `native-read-session.test.ts` 的完整/局部/伪造回执反例。真实安装路径复用原 `notion-skill-graph-observer-smoke.mjs --public-boundaries true`，按其现有参数绑定独立 installed extension、CLI 和 source。逐请求核对 `provider-http.jsonl`、`run-0/observer.jsonl` 与保留的 native session，根和各 Requires 的完整正文 copies 始终为 1。仅检查首次 provider 或 source prepare 成功不足以验收。
+
+2026-11-05 的 `4d3ba0bfc6ee` 原 public-boundaries 失败保留在 `~/Library/Logs/pi-context-broker/AH-617-20261105/sc06-graph-sections-bu8z7s6o/graph-smoke-public-final/graph-observer-http-AuDn6P`：10 次实际受控 HTTP 请求中，第二次起根为 2 份，三个 Requires 到第十次各为 10 份。原 session 经 Pi public `buildSessionProjection` 和 4d3／646 两个已安装包的原证明函数离线回放，均复现保护换行删除后的 hash/span 失效；回放位于相邻日期目录 `sc06-slash-receipt-tmeixkir`。两包相关 context/turn_end 段及证明模块字节相同，因此它是既有 `/skill` 缺陷。离线回放不算新安装宿主通过；旧失败原件不改写，修复后的真实安装结论须绑定新包。
+
 2026-11-05 的 `85888eeda468`／Pi 1.5.0 确定性负例保存在 `~/Library/Logs/pi-context-broker/AH-617-20261105/catalog-shutdown-aogzipc4/pi-before`：普通回答期间一条 SDK list pending，实际 EOF 已释放原 config callback，宿主自然 exit0，但 observer end 仍 `active_sdk=1`，没有 SDK end／metrics，故不能封存或 cleanup。run log SHA256 `4c446f029c1e314d68c204a9c1d6168f098bb011ee6995df899dad6a3cee8cf4`。同目录 `menu-before.log` SHA256 `63998ca9d5054a7915ac5a9f72ae6376a814ca59a531e87a302dfa15ff63b47f` 保留 command source 在 shutdown 返回后 PID 仍存活的负例。原真实模型 D-chat 的 unknown 账本仍保留在 `cd-early-feedback-10ot7qk8/pi-intent-evidence-henERH/D-chat`；受控修复后的新样本不能改写其状态。
 
 新 `6464469dff1b` 独立归档绑定 C6 CLI／同 C5 SDK，Pro Pi 1.5.0 在上述目录的 `pi-after-02` 通过完整生命周期：3 个实际进程、5 个 session、17 次 provider 输入经已安装 serializer 发出本地 HTTP，累计 171471 B；3 次工具调用、14 次 SDK 操作（11 list，其中 2 次取消；3 consume）、0 CLI 子进程、0 source HTTP，全部自然 EOF exit0。新会话切换和快回答退出均有真实 shutdown、完整取消 metrics／trace 和观察终局，第三进程没有 completed list，不记为目录 ready。run log SHA256 `095e78ecc91e3c436f86084fbaaa4f4f6cf39d92933f57abaa866a024ef29ffd`。同包首轮 `pi-after` 已闭合 source 终局，但旧观察器在 Broker 之后才记录 resumed 进程 shutdown，晚于 SDK end 325667 ns，因此严格失败；原件保留，后续只修观察点顺序，没有时间容差或产品重包。此运行不包含真实 Notion／模型质量验收，也不将旧候选数字直接相减计算收益。
