@@ -83,21 +83,22 @@ const sample = (observed, overrides = {}) => summarizeConsumptionSample({ id: 'a
   events: observed.events, submission: observed.submission, source: source(), outcome, ...overrides });
 const run = samples => ({ plan: freezeConsumptionPlan({ conditions, samples: samples.map(item => item.scenario) }), samples });
 
-function preparedBody(body, version = 1) {
+function preparedBody(body, version = 2, toolName = version === 1 ? 'skill_prepare' : 'notion_use') {
   const record = { name: 'controlled', kind: 'skill', ref: 'sr:S' + 'a'.repeat(22), content: body,
     directory: { files: [], required: [], candidates: [], references: [] } };
-  const value = { ok: true, status: 'ready', purpose: 'inspect', roots: [record.ref], records: [record] };
+  const purpose = toolName === 'notion_use' ? 'use' : 'inspect';
+  const value = { ok: true, status: 'ready', purpose, roots: [record.ref], records: [record] };
   const content = JSON.stringify(value), encoded = JSON.stringify(body).slice(1, -1);
   const start = content.indexOf('"content":"') + '"content":"'.length;
   const proof = { version: 2, identity: JSON.stringify(['controlled', 'f'.repeat(64), 'skill', 'shared_skill', 'owner']),
     contentIdentity: JSON.stringify(['f'.repeat(64), 'owner']), snapshotId: 's_' + sha(body), loaded: true,
     bodySha256: sha(body), bytes: Buffer.byteLength(body), delivery: { start, end: start + encoded.length, encoding: 'json' } };
-  const group = { version, toolCallId: 'prepare-body', purpose: 'inspect', records: [proof], graphs: [] };
+  const group = { version, toolCallId: 'prepare-body', purpose, records: [proof], graphs: [] };
   if (version === 2) group.projection = { version: 1, compiler: 'context-broker/skill-prepare/v1', sourceProjection: 'source-identity/v1',
     rendered: { sha256: sha(content), bytes: Buffer.byteLength(content) }, records: [{ index: 0, ref: record.ref, state: 'source',
       source: { identity: proof.identity, sha256: proof.bodySha256, bytes: proof.bytes },
       rendered: { sha256: sha(encoded), bytes: Buffer.byteLength(encoded) }, delivery: { ...proof.delivery } }] };
-  return { role: 'toolResult', toolName: 'skill_prepare', toolCallId: group.toolCallId, content: [{ type: 'text', text: content }], details: { contextBrokerPreparation: group } };
+  return { role: 'toolResult', toolName, toolCallId: group.toolCallId, content: [{ type: 'text', text: content }], details: { contextBrokerPreparation: group } };
 }
 
 async function bodyObservation({ messages = [], payload, toolResult, serialized = false }) {
@@ -130,6 +131,24 @@ test('prepare JSON body occurrences use actual content, preserving Unicode/BOM/C
     const measured = await bodyObservation({ messages: [message], payload: { model: 'controlled', context: { messages: [message] } }, serialized: version === 2 });
     assert.deepEqual(measured.verifiedBodyOccurrences.map(item => [item.sha256, item.bytes, item.occurrences]), [[sha(body), Buffer.byteLength(body), 1]]);
     assert.ok(!measured.raw.includes('quoted') && !measured.raw.includes('作者'));
+  }
+});
+
+test('current use and legacy prepare receipts stay explicit; nested, printed and truncated code results prove no delivery', async () => {
+  const body = 'Complete root and Requires instruction bytes';
+  for (const toolName of ['notion_use', 'skill_prepare']) {
+    const message = preparedBody(body, 2, toolName);
+    const complete = await bodyObservation({ messages: [message], payload: { messages: [{ role: 'tool', content: message.content }] } });
+    assert.equal(complete.verifiedBodyOccurrences[0].occurrences, 1);
+    for (const content of ['Internal tool succeeded', body.slice(0, -1), 'printed receipt: ' + JSON.stringify(message.details)]) {
+      const hidden = await bodyObservation({ messages: [message], payload: { messages: [{ role: 'tool', content }] } });
+      assert.equal(hidden.verifiedBodyOccurrences[0].occurrences, 0);
+    }
+    for (const content of [message.content, [{ type: 'text', text: body }]]) {
+      const nested = { ...message, toolName: 'code', content };
+      const hidden = await bodyObservation({ messages: [nested], payload: { messages: [{ role: 'tool', content }] } });
+      assert.deepEqual(hidden.verifiedBodyOccurrences, []);
+    }
   }
 });
 

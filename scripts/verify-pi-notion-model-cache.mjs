@@ -9,7 +9,7 @@ import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-
 import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { createRequestLedger } from './notion-default-context.mjs';
 import { observe } from './notion-integration-model.mjs';
-import { observeGraphGate } from './notion-skill-graph-model.mjs';
+import { graphObserverModule } from './notion-skill-graph-model.mjs';
 import { createPiHelpBoundary } from './notion-pi-help.mjs';
 import { installedBrokerIdentity } from './notion-skill-graph-session.mjs';
 import { verificationCliEnvironment } from './verification-paths.mjs';
@@ -42,7 +42,9 @@ export function modelAvailabilityFailure(events) {
   return Boolean(status || notice && !events.some(event => event.phase === 'tool_call'));
 }
 
-export function assertModelCase(events, expected, { native = false, explicit = false, cold = false, warm = false, coldCli = false, warmBroker = false, revalidated = false, expectedSnapshot, requestEvents = [], graphEvents, surface = 'public-tools' } = {}) {
+export function assertModelCase(events, expected, { native = false, explicit = false, cold = false, warm = false, coldCli = false, warmBroker = false, revalidated = false, expectedSnapshot, requestEvents = [], graphEvents, surface = 'public-tools', toolContract = 'agent-cli-ref-20261105' } = {}) {
+  assert.ok(['agent-cli-ref-20261105', 'legacy-pi-tools'].includes(toolContract), 'Unknown model cache tool contract');
+  assert.ok(['native-read-only', 'public-tools'].includes(surface), 'Unknown frozen model cache surface');
   const requests = events.filter(row => row.phase === 'request');
   const finals = events.filter(row => row.phase === 'assistant_final' && row.success && row.bytes > 0);
   const toolResults = events.filter(row => row.phase === 'tool_result');
@@ -60,18 +62,22 @@ export function assertModelCase(events, expected, { native = false, explicit = f
   assert.ok(requests.some(row => row.completeContents.some(item => item.role === 'entrypoint' && item.copies === 1 && item.manifestComplete)), 'Provider must receive the complete verified main, not only its marker');
   assert.ok(requests.some(row => row.completeContents.some(item => item.role === 'resource' && item.copies > 0 && item.manifestComplete)), 'Provider must receive a complete verified resource file');
   assert.ok(!toolResults.some(row => row.isError), 'A claimed pass cannot hide a failed selected-resource read');
+  assert.ok(!toolResults.some(row => row.proofMismatch), 'A claimed pass cannot hide a mismatched source delivery proof');
   assert.ok(!events.some(row => row.phase === 'tool_call' && row.allowed === false), 'A claimed pass cannot hide a blocked out-of-scope read');
   if (graphEvents !== undefined) {
     const provider = graphEvents.filter(row => row.phase === 'provider-request');
     assert.ok(!graphEvents.some(row => row.phase === 'observer-error'), 'The paired public-tool observer contract must not fail');
     assert.equal(provider.length, requests.length, 'Every provider request needs the paired public-tool observer');
-    assert.ok(requests.every(row => JSON.stringify([...row.tools].sort()) === JSON.stringify(surface === 'native-read-only' ? ['read'] : ['read', 'skill_prepare', 'skill_search'])), 'Actual provider tools must match the predeclared case surface');
-    assert.ok(provider.every(row => JSON.stringify([...row.tools].sort()) === JSON.stringify(surface === 'native-read-only' ? ['read'] : ['read', 'skill_prepare', 'skill_search'])), 'The actual provider must advertise the frozen legal read-only tools');
+    const expectedTools = surface === 'native-read-only' ? ['read'] : toolContract === 'legacy-pi-tools' ? ['read', 'skill_prepare', 'skill_search'] : ['notion_list', 'notion_use', 'read'];
+    assert.ok(requests.every(row => JSON.stringify([...row.tools].sort()) === JSON.stringify(expectedTools)), 'Actual provider tools must match the predeclared case surface');
+    assert.ok(provider.every(row => JSON.stringify([...row.tools].sort()) === JSON.stringify(expectedTools)), 'The actual provider must advertise the frozen legal read-only tools');
     assert.ok(!graphEvents.some(row => row.phase === 'tool-call' && row.allowed !== true), 'A claimed pass cannot hide a blocked or unauthored public tool');
     const returned = graphEvents.filter(row => ['metadata-result', 'preparation-result', 'tool-result'].includes(row.phase));
     assert.ok(returned.every(row => row.complete === true), 'Every public tool result must pass its actual CLI/manifest/delivery proof');
     for (const result of returned.filter(row => row.phase === 'metadata-result')) assert.ok(provider.some(row => row.toolResults.some(tool => tool.toolCallId === result.toolCallId && tool.sha256 === result.sha256 && tool.bytes === result.bytes && tool.exactToolOutputCopies === 1)), 'Metadata must reach the provider as one complete actual native tool output');
-    for (const result of returned.filter(row => row.tool === 'skill_prepare' && row.phase === 'tool-result')) {
+    const useTool = toolContract === 'legacy-pi-tools' ? 'skill_prepare' : 'notion_use';
+    for (const result of returned.filter(row => row.phase === 'tool-result' && ['skill_prepare', 'notion_use'].includes(row.tool))) {
+      assert.equal(result.tool, useTool, 'Fresh and historical tool contracts cannot be mixed');
       assert.equal(result.origin, 'model'); assert.equal(result.preparationProof?.deliveryVerified, true); assert.equal(result.preparationProof.explicitRoot, true);
       assert.ok(provider.some(row => row.toolResults.some(tool => tool.toolCallId === result.toolCallId && tool.records.some(record => record.ref === result.ref && record.scope === result.scope && record.sha256 === result.sha256 && record.bytes === result.bytes && record.providerCopies === 1))), 'A prepared root must reach the actual provider as one complete verified body');
     }
@@ -121,7 +127,7 @@ export async function runMatrix(options) {
   const phase = options.resume ? 'updated' : targetedCase ? 'targeted' : 'initial';
   if (!options.resume) await save(join(scratch, 'ownership.json'), { evidence });
   else assert.equal((await json(join(scratch, 'ownership.json'))).evidence, options.resume);
-  const manifest = { version: 1, status: 'running', phase, ...(targetedCase ? { targeted: { case: targetedCase, expectedCases: 1, initialSuiteCases: 11 } } : {}), evidence, scratch, resumeCase: options['resume-case'] ?? 'cold-autonomous-native', model: options.model, previousFailure, availabilityFailure: false, fixture: options.fixture, runnerSha256: hash(await readFile(fileURLToPath(import.meta.url))), extension: options.extension, extensionSha256: hash(await readFile(options.extension)), cli: options.cli, cliSha256: hash(await readFile(options.cli)), cases: [], notRun: ['OMP/Tern', 'native visual composer interactions', 'provider server-side cache control'], boundary: 'Real installed Pi and Broker, project direct HTTP attempt ledger, real model; source/model credentials consumed in place and never copied. Oracle roots are never used as consumer roots.' };
+  const manifest = { version: 1, status: 'running', sourceMode: 'command', toolContract: 'agent-cli-ref-20261105', phase, ...(targetedCase ? { targeted: { case: targetedCase, expectedCases: 1, initialSuiteCases: 11 } } : {}), evidence, scratch, resumeCase: options['resume-case'] ?? 'cold-autonomous-native', model: options.model, previousFailure, availabilityFailure: false, fixture: options.fixture, runnerSha256: hash(await readFile(fileURLToPath(import.meta.url))), extension: options.extension, extensionSha256: hash(await readFile(options.extension)), cli: options.cli, cliSha256: hash(await readFile(options.cli)), cases: [], notRun: ['Default bundled SDK source transport', 'OMP/Tern', 'native visual composer interactions', 'provider server-side cache control'], boundary: 'Real installed Pi and Broker with an explicit custom CLI source command, project direct HTTP attempt ledger, real model; source/model credentials consumed in place and never copied. Oracle roots are never used as consumer roots.' };
   manifest.installedBroker = await installedBrokerIdentity(options.extension, options['package-path']);
   const piExecutable = (await resolveHost('pi')).identity;
   manifest.piHelpBoundary = { executable: piExecutable, helperSha256: hash(await readFile(new URL('./notion-pi-help.mjs', import.meta.url))) };
@@ -185,10 +191,12 @@ export async function runMatrix(options) {
     const settings = { model: options.model, provider: options.model.slice(0, slash), id: options.model.slice(slash + 1), marker: bodyMarker, alias: fixture.alias, selected, cache: await realpath(cache), cwd: base, output: capture, expectedResourceBodies: [fixture.resourceContent], publicGraph: true, surfaceFile };
     if (options.resume) settings.expectedResourceBodies.push((await json((await json(join(options.resume, 'manifest.json'))).fixture)).resourceContent);
     const observer = join(base, 'model-observer-' + phase + '.mjs');
-    const graphSettings = { model: options.model, rootRef: selected.ref, cache: settings.cache, cwd: base, responses: publicResponses, output: graphCapture, toolSurfaceFile: surfaceFile };
-    await writeFile(observer, `import * as fs from 'node:fs';import * as crypto from 'node:crypto';import * as path from 'node:path';import { parseNativeReference } from ${JSON.stringify(pathToFileURL(join(dirname(options.extension), 'native-reference.ts')).href)};export default api=>{const piHelpBoundary=(${createPiHelpBoundary.toString()})({fs,path,crypto,executable:${JSON.stringify(piExecutable)}});(${observeGraphGate.toString()})(api,{...${JSON.stringify(graphSettings)},fs,crypto,path,piHelpBoundary,parseNativeReference});(${observe.toString()})(api,{...${JSON.stringify(settings)},fs,crypto,path,piHelpBoundary});};\n`, { mode: 0o600 });
+    const graphSettings = { sourceMode: 'command', model: options.model, rootRef: selected.ref, cache: settings.cache, cwd: base, responses: publicResponses, output: graphCapture, toolSurfaceFile: surfaceFile, piExecutable };
+    const graphObserver = join(base, 'public-tool-observer-' + phase + '.mjs');
+    await writeFile(graphObserver, graphObserverModule(graphSettings, pathToFileURL(join(dirname(options.extension), 'native-reference.ts')).href), { mode: 0o600 });
+    await writeFile(observer, `import * as fs from 'node:fs';import * as crypto from 'node:crypto';import * as path from 'node:path';import observePublicTools from ${JSON.stringify(pathToFileURL(graphObserver).href)};export default api=>{const piHelpBoundary=(${createPiHelpBoundary.toString()})({fs,path,crypto,executable:${JSON.stringify(piExecutable)}});observePublicTools(api);(${observe.toString()})(api,{...${JSON.stringify(settings)},fs,crypto,path,piHelpBoundary});};\n`, { mode: 0o600 });
     const env = { ...verificationCliEnvironment(cliRoot), CONTEXT_BROKER_CONFIG: config, CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_LOG_FILE: join(evidence, name + '-decisions.jsonl'), BROKER_E2E_PROCESS_LEDGER: ledgerFile };
-    const args = ['--no-extensions', '--no-skills', '--session-dir', sessionDir, '--no-mcp', '--no-context-files', '--no-prompt-templates', '--tools', 'read,skill_search,skill_prepare', '-e', options.extension, '-e', observer, '--model', options.model, ...(session ? ['--session', session] : [])];
+    const args = ['--no-extensions', '--no-skills', '--session-dir', sessionDir, '--no-mcp', '--no-context-files', '--no-prompt-templates', '--tools', 'read,notion_list,notion_use', '-e', options.extension, '-e', observer, '--model', options.model, ...(session ? ['--session', session] : [])];
     const startupAt = Date.now();
     const rpc = await startRpc({ host: 'pi', cwd: base, env, args, timeoutMs: 300000 });
     const state = await rpc.command('get_state');
@@ -293,7 +301,7 @@ export async function runMatrix(options) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2), options = {};
-  if (args.includes('--help')) console.log('Usage: node scripts/verify-pi-notion-model-cache.mjs --fixture ABSOLUTE_JSON --extension INSTALLED_EXTENSION --package-path EXACT_INSTALLED_TGZ --cli INSTALLED_CLI --model magpie/group/flash-free|magpie/group/worker --evidence-root ABSOLUTE_DIRECTORY [--previous-failure ABSOLUTE_FLASH_FREE_MANIFEST (required for worker)] [--case cold-native-command | --resume INITIAL_EVIDENCE --resume-case ORIGINAL_CASE]. --case runs one independent cold case with phase targeted, not the initial eleven-case suite, and cannot be combined with resume options. Original case 1 freezes the native-read-only degraded entry; every other case enables read, skill_search and skill_prepare. Initial phase uses separate empty CLI/Broker roots; resume phase verifies a separately approved owned remote edit without changing user configuration. An actual model availability failure stops that matrix and remains retained; assertions never authorize fallback.');
+  if (args.includes('--help')) console.log('Usage: node scripts/verify-pi-notion-model-cache.mjs --fixture ABSOLUTE_JSON --extension INSTALLED_EXTENSION --package-path EXACT_INSTALLED_TGZ --cli INSTALLED_CLI --model magpie/group/flash-free|magpie/group/worker --evidence-root ABSOLUTE_DIRECTORY [--previous-failure ABSOLUTE_FLASH_FREE_MANIFEST (required for worker)] [--case cold-native-command | --resume INITIAL_EVIDENCE --resume-case ORIGINAL_CASE]. --case runs one independent cold case with phase targeted, not the initial eleven-case suite, and cannot be combined with resume options. Original case 1 freezes the native-read-only degraded entry; every other case enables read, notion_list and notion_use under agent-cli-ref-20261105. This retained matrix explicitly uses a custom CLI command source and does not certify default bundled SDK transport. Initial phase uses separate empty CLI/Broker roots; resume phase verifies a separately approved owned remote edit without changing user configuration. An actual model availability failure stops that matrix and remains retained; assertions never authorize fallback.');
   else {
     while (args.length) { const key = args.shift(); assert.ok(['--fixture', '--extension', '--package-path', '--cli', '--model', '--evidence-root', '--previous-failure', '--case', '--resume', '--resume-case'].includes(key) && args.length, 'Unknown option or missing value'); assert.ok(options[key.slice(2)] === undefined, 'Repeated option'); options[key.slice(2)] = args.shift(); }
     const result = await runMatrix(options); console.log(JSON.stringify({ status: result.status, evidence: result.evidence, passed: result.cases.filter(item => item.status === 'passed').length, total: result.cases.length })); if (result.status !== 'passed') process.exitCode = 1;

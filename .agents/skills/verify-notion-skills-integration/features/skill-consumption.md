@@ -1,10 +1,10 @@
 # Skill 消费链：验证地图与证据合同
 
-归属 [AH-617](https://linear.app/yoyooyooo/issue/AH-617)。本页维护 SC01–24 的执行导航，机器索引在 [skill-consumption-scenarios.json](../../../../scripts/skill-consumption-scenarios.json)。规程状态与产品结果分开：未执行的路线为 draft，样本为 not_run；不能从本文存在推断产品已通过。
+归属 [AH-617](https://linear.app/yoyooyooo/issue/AH-617)，当前合同 `agent-cli-ref-20261105`。本页维护 SC01–26 的执行导航，机器索引在 [skill-consumption-scenarios.json](../../../../scripts/skill-consumption-scenarios.json)。规程状态与产品结果分开：未执行的路线为 draft，样本为 not_run；不能从本文存在推断产品已通过。历史报告保持原工具名、原始预算与结果，不改写为新合同已通过。
 
 ## Sub-features
 
-- SC-VERIFY-01：24 项任务、21 条必跑用户旅程及缓存×会话×入口×intent 的完整组合索引。
+- SC-VERIFY-01：26 项任务、26 条用户旅程及缓存×会话×入口×intent 的组合索引。
 - SC-VERIFY-02：复用原图验收反例，补观察缺失、投影/源混淆、假投递和失败证据丢失反例。
 - SC-VERIFY-03：从真实 Pi 入口运行、核对原始记录、清理自有 scratch 后再次验证证据；独立新会话按同一规程重跑。
 
@@ -12,7 +12,7 @@
 
 ## How to get to it (user POV)
 
-普通消息、`$name@notion`、原生 `/skill:`、模型自主 search、inspect/use、read 资源与直接 CLI 是不同入口。检查目标内容不激活工作流；use 必须准备 Requires，Members 仅是候选。以下每一行都需保留自己的结果，不能用方便的入口替代。
+普通消息、`$name@notion`、原生 `/skill:`、`notion_list`、原生 `read` 检查主文/资源、`notion_use` 与直接 CLI 是不同入口。CLI 日常合同为 `list [--query TEXT]`、`read REF`、`use REF`，主引用为单数 `skill://`。use 必须取得根与完整 Requires；Members 保持候选。Pi 的 `notion_use({ref:string|string[],refresh?:boolean})` 只支持已验证的顶层模型工具交付，Code mode 内部成功不能激活；`notion_ctl` 按需发现。OMP 旧工具与历史 receipt 单列，不在 Pi 默认同时注册。
 
 | 任务 | Issue | 用户入口 | 已有驱动及尚需补齐的证明 |
 | --- | --- | --- | --- |
@@ -27,19 +27,21 @@
 | SC09 | AH-624 | 普通消息、显式选择 | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：context 准备与运行信号，RPC/PTY 10/10、完整启动 31/31；[历史失败](../../../../packages/context-broker/docs/skill-consumption-startup-checkpoint.md)保留 |
 | SC10 | AH-625 | SDK、公开 CLI | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：独立 npm/Node SDK 11/11、Broker 等价 9/9、实际 Pi 默认 SDK 3/3；目录 CLI 和 custom command 明确单列 |
 | SC11 | AH-628 | 目录、依赖选择 | CLI 的 scalar inventory SDK/CLI smoke 及[完整目录复用记录](../../../../packages/context-broker/docs/shared-metadata-consumption-verification-2026-11-05.md)；同次 logical selector / native-reference 编译复用六属性观察，真实 source driver 单独计量；需求批次、其他投影与关系范围继续补齐 |
-| SC12 | AH-629 | 暖、过期、clear | session-cache-recovery；另补五层缓存和权限期限 |
+| SC12 | AH-629 | 暖、过期、clear | session-cache-recovery；验 freshness、scope、权限、恢复，不要求额外物理缓存全部落地 |
 | SC13 | AH-630 | 主文、单资源、export | CLI 独立 SDK smoke 与下方 `partial-entrypoint`；[固定快照记录](../../../../packages/context-broker/docs/selected-snapshot-consumption-verification-2026-11-05.md)、[来源所有权、最终包与真实来源记录](../../../../packages/context-broker/docs/source-ownership-consumption-verification-2026-11-05.md)、[固定单资源直读](../../../../packages/context-broker/docs/scalar-resource-consumption-verification-2026-11-05.md)及[同次目标 bytes 复用](../../../../packages/context-broker/docs/repeat-read-consumption-verification-2026-11-05.md)；完整目录、先判归属后取字节与 full export 各自验收；首次 current 全树观察、Git 隐私回退与 legacy ZIP 成本仍单列 |
 | SC14 | AH-631 | 过期 Records | CLI request_metrics；另补事实计划复用与Payload归因 |
-| SC15 | AH-632 | 并发、取消、崩溃 | request-engine / cache-concurrency；另补跨进程只读 owner 终局 |
-| SC16 | AH-633 | 历史重算 | shared SSOT CLI；另补 checkpoint 与冲突/unknown |
-| SC17 | AH-634 | 附件存取 | CLI真实服务；另补附件账本、过期与unknown上传 |
-| SC18 | AH-635 | 固定来源、旧pin | CLI / installed / mini；另补文件级迁移与回滚 |
-| SC19 | AH-636 | poteto任务 | graph model A/B；内容规则去向需独立审阅 |
-| SC20 | AH-638 | 完整矩阵 | 本页机器矩阵及各功能harness；全样本保留 |
+| SC15 | AH-632 | 并发、取消、崩溃 | 现有 request-engine / cache-concurrency 的取消、预算、隔离是硬门槛；新增合并/预取先作成本裁决 |
+| SC16 | AH-633 | 历史重算 | 先验现有 replay 与成本；采用 checkpoint 时另验冲突/unknown，不无条件阻塞消费接口 |
+| SC17 | AH-634 | 大对象存取 | 以现有真实账本比较承载策略；附件过期/unknown 专项仅适用于已选 backend |
+| SC18 | AH-635 | 固定来源、旧pin | 根据已选策略验迁移与回滚；所有已承诺旧 pin 仍要独立恢复 |
+| SC19 | AH-636 | poteto任务 | 审阅完整规则；作者优化需实际任务收益与独立内容 hash，不运行时摘要 |
+| SC20 | AH-638 | 完整矩阵 | 旧Broker→新候选、Pi原生本地Skill→新候选分开；累计全部provider输入及请求，不相加切片百分比 |
 | SC21 | AH-639 | A/B/C/D真实Agent | graph model / integration model；正式 A/B/C/D 另验；额外介绍案例 `7gd44M` 保留 incomplete，`9W6HlD` 为同原句一次 cold/warm 回归，0 工具仍有两处语义缺陷，不替代正式 C |
 | SC22 | AH-637 | 独立npm、pro/mini | installed / Pi PTY；双机各自新包证据 |
 | SC23 | AH-640 | 所有受影响调用者 | CLI / package / integration；迁移清单与回滚实驱 |
-| SC24 | AH-641 | 正常日用Pi | verify-pi-daily-installation；实际安装与新会话证据 |
+| SC24 | AH-641 | 正常日用Pi | verify-pi-daily-installation 仅核安装身份；另留真实日用新会话、provider、工具调用与任务结果证据 |
+| SC25 | AH-675 | CLI list/read/use、默认目录 SDK | 公共单 ref、根/Requires、精确资源、Default View 与稳定机器输出；作者/ctl 按需 |
+| SC26 | AH-676 | 常规 check、CI、独立 Pi | 下方门禁接线、语义 oracle、默认 SDK 目录、成本对照 manifest 与独立新会话 |
 
 尚未实施功能的完整规程仍为 draft。SC01 只验证地图、证据反例与下方既有 Pi 路径；上表本轮分层证据只覆盖其实际执行范围，不批量更改 1,120 个矩阵项。不得把矩阵项标 passed 来消除 blocker。
 
@@ -68,12 +70,19 @@
 | J19 | 附件轮换、过期、断流、unknown | 稳定内容身份；原操作核对 |
 | J20 | 旧检查点、同mtime、冲突、未决操作 | 不能遮蔽事实；完整重算计成本 |
 | J21 | 正常日用新Pi与资源续读 | 自动加载新包；非目标配置保持 |
+| J22 | CLI list→read/use→固定资源 | 单数公共 ref；固定资源不重备主文；files/export/作者/ctl 可达 |
+| J23 | 同条件Pi原生本地Skill对照 | 同正文/候选/任务；完整schema/guidance/每轮provider成本与实际native入口 |
+| J24 | Code mode off/on及顶层/嵌套 | 内部success、print、摘要或截断不等于delivered/active；不支持的嵌套明确失败 |
+| J25 | check/CI、独立Pi、默认SDK Default View | 必要测试实际运行且能失败；source.command absent的成功目录与分页/缺失反例 |
+| J26 | 旧命令/配置/会话工具/ref/operation | 明确兼容范围；不回退current、不重放unknown mutation |
+
+J19 的附件专属分支、J20 的 checkpoint 专属分支依候选实际采用能力裁决；未测不得写 N/A。现有读取/历史/权限正确性始终必验。正式收口顺序为 SC23 → SC22 → SC20 → SC21 → SC24。
 
 ### 完整组合与合法不适用项
 
-`coverage` 实际输出 5 种缓存 × 7 种会话 × 8 种入口 × 4 种 intent，共 1,120 个元组。缓存为 cold、warm、expired-unchanged、expired-changed、partial；会话为 new、existing、restart、resume、fork、rewind、compacted；入口为 ordinary、dollar、native、search、prepare、read、cli、sdk；intent 为 none、discover、inspect、use。
+`coverage` 实际输出 5 种缓存 × 7 种会话 × 8 种入口 × 4 种 intent，共 1,120 个元组。缓存为 cold、warm、expired-unchanged、expired-changed、partial；会话为 new、existing、restart、resume、fork、rewind、compacted；入口为 ordinary、dollar、native、list、use、read、cli、sdk；intent 为 none、discover、inspect、use。
 
-每个元组默认 not_run。只允许以下不适用理由：none 没有显式 Skill 入口；search 只发现候选；普通自然任务的 inspect/use 记在后续实际工具入口；显式美元/native 为 use；直接 CLI/SDK 没有 Pi 会话生命周期，绑定由宿主调用路径验证。所有不适用元组均附理由。
+每个元组默认 not_run。只允许以下不适用理由：none 没有显式 Skill 入口；list 只发现候选；use 交付 Requires；普通自然任务的 inspect/use 记在后续实际工具入口；显式美元/native 为 use；直接 CLI/SDK 没有 Pi 会话生命周期，绑定由宿主调用路径验证。所有不适用元组均附理由。
 
 激活/刷新/权限/压缩/取消的高风险组合逐项运行，其他组合可在 SC02 开跑前冻结覆盖策略。未执行元组不得被 pairwise 覆盖自动提升为 passed。缓存五层分别记录初态，不能只清 Broker 目录便称全冷；保持真实机器级调度，不能清空用户缓存。
 
@@ -92,6 +101,7 @@
 ```bash
 node scripts/skill-consumption-contract.mjs --help
 node scripts/skill-consumption-contract.mjs check-map
+node scripts/skill-consumption-contract.mjs check-gates
 node scripts/skill-consumption-contract.mjs self-test
 node scripts/verify-notion-integration.mjs --help
 node scripts/verify-notion-integration.mjs doctor --mode deterministic --host pi
@@ -100,6 +110,40 @@ node scripts/verify-notion-integration.mjs doctor --mode deterministic --host pi
 最后一条会保留 owned probe scratch，输出真实 Node/Pi 版本、扩展路径/hash。它不认证、不访问 Notion；status=ready 只证明前置可用。缺前置记 blocked，不能换另一宿主或跳过后写 pass。审阅完该次 Doctor 后只把输出的 probe scratch 移到系统回收站。
 
 ### Drive：SC01 的完整既有用户路径
+
+SC26 的常规门禁先跑 `NTN_SKILLS_BUILD_ENTRY=ABSOLUTE_INSTALLED_CLI bun run check:broker`。其实际 package check 必须输出 `test:consumption` 的完整测试结果；`check-gates` 拒绝漏接、旧 Pi pin、缺失安装门禁和没有冻结 SDK 构建输入的 workflow，但不能代替执行日志。CI / publish 从同一精确 CLI commit checkout 后 frozen install/build，不依赖尚未发布的 npm 能力或本机另一隐式 checkout。验证门禁会传播失败时，在 owned 普通副本中将 Pi use 的 `exposure` 从 `model-only` 改为 `direct`，保留完整 check 的非零退出和命中断言；正常候选须跑同一入口通过。不修改用户工作树制造失败。
+
+独立 Pi 安装沿原 control 入口执行 `node .agents/skills/verify-context-broker/scripts/control.mjs doctor distribution-pi`，再 `run distribution-pi`。该路径要求 Pi 1.4.0，使用 `verify-artifacts.mjs --host pi` 打包 Broker 并在空 consumer 中 npm install，保留 package/CLI/SDK/实际Pi identity、RPC、provider 和进程终局。`CONTEXT_BROKER_CANDIDATE_DIR` 可指向一个已冻结的绝对包目录；未给时打包当前完整源码。它不构建 Tern、不验真实 Notion或模型，OMP 由独立 `--host omp` 结果负责。私有 evidence 保存在输出目录，后续原件hash与回收规则相同。
+
+正常默认目录必须在 source.command absent 下通过 SDK list 获取完整 View 元数据，未选正文读取为零；custom command、CACHE_MISSING、pending 或非零子进程只各自证明对应分支。非阻塞冷启动允许第一任务的 provider 保留 pending，`notion_list` 等待并交付真实目录；下一普通用户 turn 重建 ready 默认目录。每个 turn 单独记录，不把第一轮 pending 当作 Default View 成功。额外 list 允许已授权范围，默认 View 不变成永久搜索边界。live 驱动不主动编辑不等于产品 current read 永不写入；首次 adoption/retention、稳定未变、真实 notion_write 分组记录，unknown 操作不重放。
+
+### Drive：SC25 / SC26 默认 SDK、Code mode 与精确资源
+
+先在 CLI 仓沿已有 `scripts/sdk-fixture.ts --outdir ABS_NEW_FIXTURE --catalog` 创建 owned fixture；它的 `default_view.records` 为 a、b，完整目录另含 c、base 与资源场景。Default View 只写元数据，Requires base 不在默认目录。独立包与 fixture 的绝对路径来自本次输出，`SDK_EVIDENCE` 必须是新目录：
+
+```bash
+node scripts/notion-sdk-pi.mjs doctor --package "$SDK_PACKAGE" --fixture "$SDK_FIXTURE" --scenario all
+node scripts/notion-sdk-pi.mjs run --package "$SDK_PACKAGE" --fixture "$SDK_FIXTURE" --scenario all --out "$SDK_EVIDENCE"
+node scripts/notion-sdk-pi.mjs evidence --evidence "$SDK_EVIDENCE"
+node scripts/notion-sdk-pi.mjs cleanup --evidence "$SDK_EVIDENCE"
+node scripts/notion-sdk-pi.mjs evidence --evidence "$SDK_EVIDENCE"
+```
+
+此既有 driver 的 13 个场景使用实际 Pi 1.4、独立安装 Broker、随包 CLI/SDK、受控 source/provider。`default-view` 留下 pending → list → 普通续接 ready 的三次请求；核对 a、b 的名称、描述、短入口以及只有一份默认目录，SDK 完整元数据和失败状态独立核对。`prepare` 的场景名保留历史入口，但实际调用为 `notion_use({ref:[...]})`，共享 Requires 只交付一次。native、批读、固定 scalar、恢复短引用和 partial-cache 场景继续复用原证据与实际对象读取正控制。
+
+资源使用的 scalar `read.path` 和 batch `read.paths` 都是当前入口。逐文件的完整 provider span、固定 owner/snapshot/File ID/hash 与外层 toolCallId 独立核对；资源数与外层工具调用数分列，不能把一次 batch 记成多次 Agent 往返。实际图模型 observer 同样检查原始 SDK 结果与完整外层输出，details-only、部分正文、未发现或错 pin 的资源不计完成。
+
+`dollar` 逐字校验完整 root / Requires 正文，同时验证注入 wrapper 的 supporting files：仅展示所选 snapshot 的 path 和准确 `sr:R`，不再把物理 cache 目录当作资源读取入口。无 supporting files 时不生成空资源块；资源路径、handle 类型、重复机器字段与正文摘要均有拒绝例。实际资源续读须复制 wrapper 返回的 ref，通过原 native read 验固定文件与版本；仅 wrapper 字符串正确不算读成功。产品红例保存在 `/tmp/ah622-source-files-before-smw_v3n5`，旧 driver 拒绝新合法 wrapper 的红例在 `/private/tmp/ah676-dollar-oracle-before-i13w67t1`；两类失败分开保留，当前 driver 与产品测试同步维护。
+
+`codemode-hidden` / `codemode-truncated` 显式加载实际 Pi 安装内的 codemode 扩展，因为 `--no-extensions` 不会替 driver 加载它。先证明 nested notion_use 不可调用，再实际 native read 完整正文，分别不转发或只 print 16 字符；provider 此时不能被标完整正文。随后顶层 notion_use 必须交付根与完整 Requires，active custom entry 只能出现在这份结果之后。外层工具轮、内部 read、SDK 操作与 provider schema/正文累计字节分别报告；code 内成功和 print 摘要不折算为完成交付。
+
+Default View 的正反例必须使用不同 owned fixture：在 CLI 原入口额外指定 `--default-view-cache missing` 或 `--default-view-cache incomplete`，随后对该 fixture 运行同一 `--scenario default-view`。预期 runner 非零、report failed；真实 provider 目录分别为 CACHE_MISSING / STATE_CORRUPT，失败 SDK list 的终界和零离线 HTTP仍保留。不能把非零状态、失败目录或旧缓存降级为正例。失败原件也先 evidence → cleanup → evidence；只回收 driver 的 owned scratch，原 fixture 与 retained evidence 不删除。
+
+这些结果证明真实 Pi 和安装边界，真实 Notion、真实模型、双机恢复及日用安装分别验收。SC20 的冻结比较 manifest 必须声明 previous-broker、notion-candidate、pi-native-local 三个角色；本地臂须用同字节/版本的普通全局 Skill，由 Pi 原生发现/read，不加载 Broker。记录相同任务、模型、工具 profile、缓存/会话初态和完整 provider 输入，未跑本地臂不能推算对照收益。
+
+SC23 当前 C3 的管理入口为 `ctl operation list/show/reconcile/resume`，旧顶层 `operation` 继续作为同一 handler 的显式兼容入口；新 `next.argv` 使用 `ctl`，历史 receipt 的原始 bytes/hash 不改写。验收须核对候选自身 schema，维护原 operation ID、unknown 状态与旧调用者的明确兼容范围。此前 C1 不支持 `ctl operation` 的失败原件保留为迁移前证据，不能套用到 C3。旧包回滚仍需从该包支持的 `operation show` 获取下一步，不直接执行新包生成的 ctl argv。
+
+### Drive：既有受控宿主路径
 
 以下路径无需生产 Notion 或真实模型授权。它实际启动 Pi 和 Broker，驱动原生 read、显式选择、资源、失败与持久会话；source 与 provider 明确为受控 fixture。它不证明真实模型能力或新的低延迟目标。
 
@@ -226,7 +270,7 @@ node scripts/notion-sdk-pi.mjs cleanup --evidence "$RESOURCE_SHORT_EVIDENCE"
 node scripts/notion-sdk-pi.mjs evidence --evidence "$RESOURCE_SHORT_EVIDENCE"
 ```
 
-`RESOURCE_SHORT_EVIDENCE` 必须是另一个新目录。该variant先search并显式 `skill_prepare inspect` 取得四个真实资源句柄，再一次 `read(paths)` 及同会话repeat；SDK总账应为1次consume加2次read-resources，主文只来自前面的显式inspect。核对实际RPC参数确实是四个对应路径的 `sr:R`，不能用canonical成功推断。两个场景保持独立的成本和主文投递结论。
+`RESOURCE_SHORT_EVIDENCE` 必须是另一个新目录。该 variant 先 `notion_list`，再原生 `read` 主文取得四个真实资源句柄，随后一次 `read(paths)` 及同会话 repeat；主文只来自前面的显式原生读取，SDK 总账须逐项列出目录、主文与两次 read-resources。核对实际 RPC 参数确实是四个对应路径的 `sr:R`，不能用 canonical 成功推断。两个场景保持独立的成本和主文投递结论。
 
 全 warm fixture 的 0 HTTP 只说明本场景离线消费。Core 受控 retained tests 另用请求 object ID 集合证明冷选中物化、共享 chunk 去重、未选主文/资源零下载。SDK abort/header/body、预算、混 pin/owner、重复 alias、坏 proof 的反例沿现有 SDK smoke 和定向测试。旧 `native`、`prepare` 场景用于实际 Pi scalar 工厂与主文 receipt 回归。真实 Notion、真实模型、pro/mini 和日用安装仍单列；本路径不关闭整个 SC07/SC21。
 
@@ -263,7 +307,7 @@ node scripts/notion-sdk-pi.mjs cleanup --evidence "$ENTRYPOINT_EVIDENCE"
 node scripts/notion-sdk-pi.mjs evidence --evidence "$ENTRYPOINT_EVIDENCE"
 ```
 
-该场景使用真实 Pi、默认 bundled SDK 与受控 provider。自有缓存先经本次安装 SDK 的公开 current consume 完成完整验证，随后才移出一个约 2 MiB 的未选对象并损坏另一个；不得手写验证记录。固定主文 native read、显式 current inspect、小资源 native read 必须保留完整源字节和对应 proof。`warm-current-validation.json` 与 `partial-entrypoint-evidence.json` 应明确受控 warm 初态、选择、完整清单和实际对象读取；`observer.jsonl` 的 `object_read` 事件需有真实主文读取的正控制，未选大对象不得读取、修复或下载。
+该场景使用真实 Pi、默认 bundled SDK 与受控 provider。自有缓存先经本次安装 SDK 的公开 current consume 完成完整验证，随后才移出一个约 2 MiB 的未选对象并损坏另一个；不得手写验证记录。`notion_list` 后固定主文 native read 直接返回完整目录，小资源 native read 复制该目录引用；三次工具调用须保留完整源字节和对应 proof，不再次准备主文。`warm-current-validation.json` 与 `partial-entrypoint-evidence.json` 应明确受控 warm 初态、选择、完整清单和实际对象读取；`observer.jsonl` 的 `object_read` 事件需有真实主文读取的正控制，未选大对象不得读取、修复或下载。
 
 缺失/坏 hash 对象被选中时的明确失败、partial export 拒绝、完整 clone 逐文件 export 在独立 SDK smoke 验证；同 pin retained 缺失主文恢复由 CLI Core 的真实请求集合验证。不要让预算错误替代缺失对象负例，也不要由文件目录或旧验证记录推断所有 bytes 当前完整。current 的 TTL、正文期限、scope、失效和 pending 条件仍独立生效。
 

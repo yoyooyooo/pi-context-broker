@@ -54,7 +54,7 @@ const [statePath,logPath,...args]=process.argv.slice(2),state=JSON.parse(readFil
 appendFileSync(logPath,JSON.stringify(args)+'\\n');
 let value;
 if(args[0]==='ctl'&&args[1]==='cache'&&args[2]==='identity')value={ok:true,identity:'a'.repeat(64),catalog_max_age_ms:3600000};
-else if(args[0]==='list')value=args.includes('--view')?state.explicit:args.includes('--default-view')?state.profile:state.catalog;
+else if(args[0]==='list')value=state.pages?state.pages[args.includes('--cursor')?args[args.indexOf('--cursor')+1]:'first']:args.includes('--view')?state.explicit:args.includes('--default-view')?state.profile:state.catalog;
 else if(args[0]==='read')value=state.read;
 else if(args[0]==='export'){
  const read=state.read,output=args[args.indexOf('--output')+1];
@@ -82,6 +82,37 @@ test("shared identities encode each logical component and retain the actual page
   expect(result[0]).toMatchObject({ id: "shared_skill:lib%3Ateam:skill%3Aone", enabled: true, locator: { page_id: page }, ref: "skill://shared_skill%3Alib%253Ateam%3Askill%253Aone/SKILL.md" });
   expect((await f.calls()).some(args => ["read", "export", "files"].includes(args[0]!))).toBe(false);
   expect(await readFile(result[0]!.path, "utf8")).not.toContain("Fixed shared body");
+});
+
+test("custom-command discovery follows bounded pages before publishing complete metadata", async () => {
+  const f = await fixture(), first = sharedRecord("first"), second = sharedRecord("second", { page: uuid(9) });
+  const initial = listing([first]);
+  f.state.pages = { first: { ...initial, total_count: 2, has_more: true, next_cursor: "second-page" },
+    "second-page": { ...initial, records: [second], total_count: 2, has_more: false, next_cursor: null } };
+  await f.save();
+  const records = await discoverNotionSource(f.source, f.root, { refresh: true });
+  expect(records.map(record => record.id)).toEqual([first.id, second.id]);
+  expect(records.list.exhaustive).toBe(true);
+  const calls = await f.calls(), pages = calls.filter(args => args[0] === "list");
+  expect(pages).toHaveLength(2);
+  expect(pages[0]).toContain("--refresh");
+  expect(pages[1]).toContain("--offline");
+  expect(pages[1]).not.toContain("--refresh");
+  expect(pages[1].slice(-2)).toEqual(["--cursor", "second-page"]);
+  expect(calls.some(args => ["read", "prepare", "export", "files"].includes(args[0]!))).toBe(false);
+  expect((await discoverNotionSource(f.source, f.root)).map(record => record.id)).toEqual([first.id, second.id]);
+  expect((await f.calls()).filter(args => args[0] === "list")).toHaveLength(2);
+});
+
+test("custom-command pagination cannot bless missing cursors, changing scopes or incomplete totals", async () => {
+  for (const defect of ["missing-cursor", "scope", "incomplete-total", "repeated-cursor"]) {
+    const f = await fixture(), initial = listing([f.record]);
+    f.state.pages = { first: { ...initial, total_count: 2, has_more: true, next_cursor: defect === "missing-cursor" ? null : "next" },
+      next: { ...initial, ...(defect === "scope" ? { scope: "b".repeat(64) } : {}), records: [], count: 0, total_count: 2,
+        has_more: defect === "repeated-cursor", next_cursor: defect === "repeated-cursor" ? "next" : null } };
+    await f.save();
+    await expect(discoverNotionSource(f.source, f.root)).rejects.toMatchObject({ code: defect === "scope" ? "SOURCE_IDENTITY_MISMATCH" : "SOURCE_RESPONSE_INVALID" });
+  }
 });
 
 const invalidRecords: [string, (record: ContentRecord) => unknown][] = [

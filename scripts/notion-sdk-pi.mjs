@@ -14,10 +14,10 @@ import { safeRequestMetrics } from './notion-default-context.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
 import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
 
-const usage = 'Usage: node scripts/notion-sdk-pi.mjs doctor|run --package ABSOLUTE_INSTALLED_BROKER --fixture ABSOLUTE_FIXTURE_JSON [--expect-short-refs true|false] [--expect-compact-context true|false] [--expect-direct-scalar true|false] [--expect-short-confirmations true|false] [--scenario all|dollar|native|native-repeat|prepare|scoped-command|resource-batch|resource-batch-short-refs|resource-scalar|resource-scalar-short-refs|partial-entrypoint] [--out NEW_ABSOLUTE_EVIDENCE]; evidence|cleanup --evidence ABSOLUTE_EVIDENCE. Real Pi 1.4 RPC, controlled provider with public onPayload/onResponse hooks, offline source, default bundled SDK (source.command is absent). Compact context, direct scalar and short confirmation checks default to true; false observes a baseline without certifying that contract. Comparisons include the installed Broker and bundled CLI/SDK identities. Default View, native menu, live Notion and real model are not claimed.';
-const scenarioNames = ['dollar', 'native', 'native-repeat', 'prepare', 'scoped-command', 'resource-batch', 'resource-batch-short-refs', 'resource-scalar', 'resource-scalar-short-refs', 'partial-entrypoint'];
-const nativeTools = ['read', 'skill_search', 'skill_prepare'];
-const scopedCommandTools = [...nativeTools, 'bash', 'skill_graph'];
+const usage = 'Usage: node scripts/notion-sdk-pi.mjs doctor|run --package ABSOLUTE_INSTALLED_BROKER --fixture ABSOLUTE_FIXTURE_JSON [--expect-short-refs true|false] [--expect-compact-context true|false] [--expect-direct-scalar true|false] [--expect-short-confirmations true|false] [--scenario all|default-view|codemode-hidden|codemode-truncated|dollar|native|native-repeat|prepare|scoped-command|resource-batch|resource-batch-short-refs|resource-scalar|resource-scalar-short-refs|partial-entrypoint] [--out NEW_ABSOLUTE_EVIDENCE]; evidence|cleanup --evidence ABSOLUTE_EVIDENCE. Real Pi 1.4 RPC, controlled provider with public onPayload/onResponse hooks, offline source, default bundled SDK (source.command is absent). Compact context, direct scalar and short confirmation checks default to true; false observes a baseline without certifying that contract. Comparisons include the installed Broker and bundled CLI/SDK identities. default-view observes pending startup plus ready metadata on an ordinary continuation. Native menu, live Notion and real model are not claimed.';
+const scenarioNames = ['default-view', 'codemode-hidden', 'codemode-truncated', 'dollar', 'native', 'native-repeat', 'prepare', 'scoped-command', 'resource-batch', 'resource-batch-short-refs', 'resource-scalar', 'resource-scalar-short-refs', 'partial-entrypoint'];
+const nativeTools = ['read', 'notion_list', 'notion_use'];
+const scopedCommandTools = [...nativeTools, 'bash', 'notion_ctl'];
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const json = async path => JSON.parse(await readFile(path, 'utf8'));
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
@@ -62,7 +62,7 @@ function exactKeys(value, expected, label) {
 /** Independent evidence check against the original fixture bytes. It does not
  * call the production compiler or verifier to certify their own output. */
 export function assertPreparedProjection(message, { snapshots, bodies, roots = ['a', 'b', 'c'], purpose = 'use', state = 'source' }) {
-  assert.equal(message?.role, 'toolResult'); assert.equal(message.toolName, 'skill_prepare');
+  assert.equal(message?.role, 'toolResult'); assert.equal(message.toolName, 'notion_use');
   assert.equal(message.isError, false);
   assert.ok(Array.isArray(message.content) && message.content.length === 1 && message.content[0].type === 'text');
   const content = textContent(message.content);
@@ -123,7 +123,7 @@ export function assertPreparedProjection(message, { snapshots, bodies, roots = [
 }
 
 export function assertPreparedHttpRequest(payload, body, context) {
-  return assertToolHttpRequest(payload, body, context, 'skill_prepare', 'contextBrokerPreparation');
+  return assertToolHttpRequest(payload, body, context, 'notion_use', 'contextBrokerPreparation');
 }
 
 export function assertResourceHttpRequest(payload, body, context) {
@@ -134,7 +134,7 @@ function assertToolHttpRequest(payload, body, context, toolName, proofField) {
   const encoded = Buffer.from(JSON.stringify(payload));
   assert.deepEqual(body, encoded, 'The public serializer hook must match the actual HTTP request bytes');
   assert.ok(Array.isArray(payload.messages));
-  const preparations = (context.messages ?? []).filter(message => message.role === 'toolResult' && message.toolName === toolName);
+  const preparations = (context.messages ?? []).filter(message => message.role === 'toolResult' && message.toolName === toolName && message.details?.[proofField] !== undefined);
   assert.ok(preparations.length > 0, 'Replay requires an actual captured tool result');
   for (const message of payload.messages) assert.equal(Object.hasOwn(message, 'details'), false, 'Host details must not become API message fields');
   const delivered = preparations.map(message => {
@@ -243,7 +243,46 @@ export function assertSearchProjection(message, { expectCompact = true, scope } 
     compact_contract: expectCompact ? 'verified' : 'not_required_for_baseline' };
 }
 
-export function assertDollarProjection(context, { bodies, expectCompact = true }) {
+/** The actual default catalog must agree with the independent metadata fixture. */
+export function assertDefaultViewProjection(captures, discovery, events, fixture, bodies) {
+  const expected = fixture.default_view;
+  assert.ok(expected?.records?.length, 'Default View fixture metadata is required');
+  const results = events.filter(event => event.kind === 'sdk_catalog' && event.value?.view?.id === expected.id);
+  assert.ok(results.length > 0, 'An actual default listCatalog SDK result is required');
+  for (const { value } of results) {
+    assert.equal(value.view_selection, 'first'); assert.equal(value.coverage?.exhaustive, true);
+    assert.deepEqual(value.coverage.failed_sources, []);
+    assert.deepEqual(value.records.map(record => record.id).sort(), expected.records.map(record => record.id).sort());
+    assert.equal(value.count, expected.records.length);
+  }
+  assert.deepEqual(discovery.records.filter(record => record.in_default_view).map(record => record.name).sort(), expected.records.map(record => record.name).sort());
+  const observations = captures.map(capture => {
+    const texts = capture.context.messages.map(message => textContent(message.content));
+    const catalogs = texts.flatMap(text => [...text.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)]);
+    assert.ok(catalogs.length <= 1, 'Default directory must not be duplicated in a provider request');
+    for (const body of bodies.values()) assert.equal(bodyCount(capture.context, body), 0, 'Default discovery never delivers Skill bodies');
+    if (!catalogs.length) return { request_id: capture.requestId, state: 'not_ready' };
+    const catalog = catalogs[0][1], views = [...catalog.matchAll(/<view\b([^>]*)>/gu)];
+    const attributes = views.map(view => Object.fromEntries([...view[1].matchAll(/([a-z_]+)="([^"]*)"/gu)].map(match => [match[1], match[2]])));
+    const view = attributes.find(value => value.source === 'sdk-fixture');
+    if (!view?.id) return { request_id: capture.requestId, state: view?.status ?? 'not_ready', code: view?.code ?? null };
+    assert.equal(view.id, expected.id); assert.equal(view.partial, 'false');
+    const entries = [...catalog.matchAll(/<skill><name>([^<]+)<\/name><description>([^<]*)<\/description><location>([^<]+)<\/location><\/skill>/gu)];
+    assert.equal(entries.length, expected.records.length);
+    for (const record of expected.records) {
+      const matches = entries.filter(entry => entry[1] === 'sdk-fixture-' + record.name);
+      assert.equal(matches.length, 1); assert.ok(matches[0][2].length > 0); assert.match(matches[0][3], /^sr:C[A-Za-z0-9_-]{22}$/u);
+      assert.equal(matches[0][3], discovery.records.find(value => value.name === record.name && value.source === 'sdk-fixture').ref);
+      assert.equal(texts.reduce((count, text) => count + text.split('<skill><name>' + matches[0][1] + '</name>').length - 1, 0), 1);
+    }
+    return { request_id: capture.requestId, state: 'ready', records: entries.length, catalog_bytes: Buffer.byteLength(catalogs[0][0]) };
+  });
+  assert.equal(observations.at(-1)?.state, 'ready', 'Missing or incomplete Default View cannot pass as an empty successful directory');
+  return { status: 'verified', view_id: expected.id, source_command_configured: false, sdk_catalog_results: results.length,
+    default_names: expected.records.map(record => record.name), provider_requests: observations, body_delivery: false };
+}
+
+export function assertDollarProjection(context, { bodies, snapshots, expectCompact = true }) {
   const texts = context.messages.map(message => textContent(message.content));
   const records = texts.flatMap(text => [...text.matchAll(/<context-broker-record\b([^>]*)>([\s\S]*?)<\/context-broker-record>/gu)]);
   assert.equal(records.length, 2, 'Dollar activation delivers only the selected root and its Required body');
@@ -257,10 +296,18 @@ export function assertDollarProjection(context, { bodies, expectCompact = true }
     if (expectCompact) {
       exactKeys(attributes, ['kind', 'name', 'ref'], 'Compact record identity uses one fixed ref');
       assert.match(attributes.ref, /^sr:S[A-Za-z0-9_-]{22}$/u);
-      assert.doesNotMatch(envelope, /<(?:instructions|resources|skill-ref|snapshot-id)(?:\s|>)/u, 'Per-record generic instructions and machine identity fields must not repeat');
-      const directories = [...envelope.matchAll(/<skill-directory>([^<]+)<\/skill-directory>/gu)];
-      assert.equal(directories.length, 1, 'The default visible directory remains usable once per record');
-      assert.match(directories[0][1], /^(?:~?\/)/u);
+      assert.doesNotMatch(envelope, /<(?:instructions|skill-directory|skill-ref|snapshot-id)(?:\s|>)/u, 'Generated wrappers must not advertise cache directories or repeated generic instructions');
+      const snapshot = snapshots?.find(value => value.record.name === attributes.name);
+      assert.ok(snapshot, 'Supporting resources must be checked against the independently selected snapshot');
+      const expectedFiles = snapshot.files.filter(file => file.path !== snapshot.entrypoint);
+      const resources = [...envelope.matchAll(/<resources>([\s\S]*?)<\/resources>/gu)];
+      assert.equal(resources.length, expectedFiles.length ? 1 : 0, 'Only actual supporting files require a resource block');
+      if (resources.length) {
+        const decoded = resources[0][1].replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
+        const files = JSON.parse(decoded);
+        assert.deepEqual(files.map(file => file.path), expectedFiles.map(file => file.path), 'Every supporting path belongs to this selected snapshot');
+        for (const file of files) { exactKeys(file, ['path', 'ref'], 'Supporting file cards contain only an exact path and copied ref'); assert.match(file.ref, /^sr:R[A-Za-z0-9_-]{22}$/u); }
+      }
     }
     return { name: attributes.name, ref: attributes.ref ?? null, source_bytes: Buffer.byteLength(source), source_sha256: hash(source),
       envelope_bytes: Buffer.byteLength(match[0]) - Buffer.byteLength(body[1]), source_complete: true };
@@ -609,10 +656,13 @@ export function assertResourceScalarCost(events, materialized, observations, { b
   const mainReads = events.filter(event => event.kind === 'object_read' && event.event === 'end' && event.object_sha256 === main.sha256);
   if (expectDirect) {
     assert.equal(observations.sdk_reads, 5); assert.equal(observations.sdk_consumes, 0); assert.equal(observations.sdk_resource_batches, 0);
-    assert.equal(observations.sdk_calls, 5); assert.equal(mainFiles.length, 0); assert.equal(mainReads.length, 0);
+    assert.equal(observations.sdk_body_calls, 5);
+    assert.equal(observations.sdk_calls, observations.sdk_body_calls + observations.sdk_lists);
+    assert.equal(mainFiles.length, 0); assert.equal(mainReads.length, 0);
   }
   return { expectation: expectDirect ? 'direct_scalar_verified' : 'baseline_observation_only',
-    sdk_calls: observations.sdk_calls, sdk_reads: observations.sdk_reads, sdk_consumes: observations.sdk_consumes,
+    sdk_calls: observations.sdk_calls, sdk_body_calls: observations.sdk_body_calls, sdk_lists: observations.sdk_lists,
+    sdk_reads: observations.sdk_reads, sdk_consumes: observations.sdk_consumes,
     sdk_resource_batches: observations.sdk_resource_batches, object_reads: objectReads, resources, metadata_index_files: metadataIndexFiles,
     main: { bytes: main.bytes, sha256: main.sha256, object_reads: mainReads.length,
       returned_object_bytes: mainReads.reduce((total, event) => total + (event.bytes ?? 0), 0), materialized_files: mainFiles },
@@ -805,7 +855,7 @@ export function assertScopedCommand(captures, frames, { command, database, sourc
   assert.ok(!strings(captures[0].context).some(text => text.includes(command[1])), 'First provider request must not contain the host-local CLI path');
   const starts = frames.filter(frame => frame.type === 'tool_execution_start');
   assert.equal(starts.length, 1, 'The controlled provider may query the scope only; no bash or body read');
-  assert.equal(starts[0].toolName, 'skill_graph');
+  assert.equal(starts[0].toolName, 'notion_ctl');
   assert.equal(starts[0].toolCallId, 'sc05-source-command');
   assert.deepEqual(starts[0].args, { cli_source: sourceId });
   const ends = frames.filter(frame => frame.type === 'tool_execution_end');
@@ -931,14 +981,17 @@ async function inspect(options) {
   return { packageRoot, manifest, extension, runtime, host, pi, piPackageRoot: current, fixture, fixtureEnv, bodies, resourceBatch, entrypoint };
 }
 
-export function resourceRefsFromInspection(prepared, owner, paths) {
-  if (prepared?.status !== 'ready' || prepared.purpose !== 'inspect' || !Array.isArray(prepared.roots) || prepared.roots.length !== 1
-    || !Array.isArray(prepared.records) || !Array.isArray(paths) || !paths.length || new Set(paths).size !== paths.length)
+export function resourceRefsFromNative(message, paths) {
+  if (message?.role !== 'toolResult' || message.toolName !== 'read' || message.isError
+    || !Array.isArray(paths) || !paths.length || new Set(paths).size !== paths.length)
     throw new Error('CONTROLLED_RESOURCE_INSPECTION_INVALID');
-  const records = prepared.records.filter(record => record.name === owner && record.ref === prepared.roots[0]);
-  if (records.length !== 1 || !Array.isArray(records[0].directory?.files)) throw new Error('CONTROLLED_RESOURCE_OWNER_NOT_UNIQUE');
+  const text = typeof message.content === 'string' ? message.content : (message.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
+  const footers = [...text.matchAll(/<skill-directory>\s*([\s\S]*?)\s*<\/skill-directory>/gu)];
+  if (footers.length !== 1) throw new Error('CONTROLLED_RESOURCE_DIRECTORY_NOT_UNIQUE');
+  const model = JSON.parse(footers[0][1]);
+  if (!/^sr:S[A-Za-z0-9_-]{22}$/u.test(model.ref) || !Array.isArray(model.directory?.files)) throw new Error('CONTROLLED_RESOURCE_OWNER_NOT_UNIQUE');
   const refs = paths.map(path => {
-    const files = records[0].directory.files.filter(file => file.path === path);
+    const files = model.directory.files.filter(file => file.path === path);
     if (files.length !== 1 || !/^sr:R[A-Za-z0-9_-]{22}$/u.test(files[0].ref)) throw new Error('CONTROLLED_RESOURCE_HANDLE_NOT_UNIQUE');
     return files[0].ref;
   });
@@ -956,12 +1009,12 @@ function selectProviderCall(context) {
   if (['resource-scalar', 'resource-scalar-short-refs'].includes(plan.mode)) return selectScalarProviderCall(context, plan.calls);
   if (plan.mode === 'scoped-command') {
     const scope = find('sc05-source-command');
-    if (!scope) return call('sc05-source-command', 'skill_graph', { cli_source: 'sdk-fixture' });
+    if (!scope) return call('sc05-source-command', 'notion_ctl', { cli_source: 'sdk-fixture' });
     parsed(scope);
     return null;
   }
   const search = find('sc10-search');
-  if (!search) return call('sc10-search', 'skill_search', { query: '', source: 'sdk-fixture', limit: 20 });
+  if (!search) return call('sc10-search', 'notion_list', { query: '', source: 'sdk-fixture', limit: 20 });
   const directory = parsed(search);
   const selected = name => {
     const matches = directory.records.filter(record => record.name === name && record.source === 'sdk-fixture' && record.availability === 'available');
@@ -969,15 +1022,24 @@ function selectProviderCall(context) {
     return matches[0];
   };
   if (plan.mode === 'search') return null;
+  if (['codemode-hidden', 'codemode-truncated'].includes(plan.mode)) {
+    const code = find('sc26-code'), refs = ['a', 'b', 'c'].map(name => selected(name).ref);
+    if (!code) return call('sc26-code', 'codemode', { code: [
+      'try { await tools.notion_use(' + JSON.stringify({ ref: refs }) + '); throw new Error("UNEXPECTED_NESTED_USE"); } catch (error) { if (String(error).includes("UNEXPECTED_NESTED_USE")) throw error; text("TOP_LEVEL_USE_REQUIRED"); }',
+      'const result = await tools.read(' + JSON.stringify({ path: selected('a').ref }) + ');',
+      plan.mode === 'codemode-hidden' ? 'text("INTERNAL_READ_COMPLETED");' : 'text((typeof result === "string" ? result : JSON.stringify(result)).slice(0, 16));',
+    ].join('\n') });
+    if (code.isError) throw new Error('CONTROLLED_CODEMODE_FAILED');
+    if (!find('sc26-use')) return call('sc26-use', 'notion_use', { ref: refs });
+    return null;
+  }
   if (plan.mode === 'native-repeat') return selectNativeRepeatCall(context, { mainRef: selected(plan.owner).ref, resourcePath: plan.resource_path });
   if (plan.mode === 'partial-entrypoint') {
-    const owner = selected(plan.owner);
+    selected(plan.owner);
     const main = find('sc13-main');
     if (!main) return call('sc13-main', 'read', { path: plan.fixed_main_ref });
     if (main.isError) throw new Error('CONTROLLED_MAIN_READ_FAILED');
-    const inspected = find('sc13-inspect');
-    if (!inspected) return call('sc13-inspect', 'skill_prepare', { roots: [owner.ref], purpose: 'inspect' });
-    const refs = resourceRefsFromInspection(parsed(inspected), plan.owner, [plan.selected_path]);
+    const refs = resourceRefsFromNative(main, [plan.selected_path]);
     const resource = find('sc13-resource');
     if (!resource) return call('sc13-resource', 'read', { path: refs[0] });
     if (resource.isError) throw new Error('CONTROLLED_RESOURCE_READ_FAILED');
@@ -988,8 +1050,8 @@ function selectProviderCall(context) {
     let refs = plan.refs;
     if (plan.short_refs) {
       const inspected = find('sc07-resource-inspect');
-      if (!inspected) return call('sc07-resource-inspect', 'skill_prepare', { roots: [selected(plan.owner).ref], purpose: 'inspect' });
-      refs = resourceRefsFromInspection(parsed(inspected), plan.owner, plan.paths);
+      if (!inspected) return call('sc07-resource-inspect', 'read', { path: selected(plan.owner).ref });
+      refs = resourceRefsFromNative(inspected, plan.paths);
     }
     const id = plan.mode === 'resource-batch-repeat' ? 'sc07-resources-repeat' : 'sc07-resources';
     if (!find(id)) return call(id, 'read', { paths: refs });
@@ -998,23 +1060,16 @@ function selectProviderCall(context) {
   }
   if (plan.mode === 'prepare' || plan.mode === 'prepare-repeat') {
     const id = plan.mode === 'prepare' ? 'sc10-prepare' : 'sc05-prepare-repeat';
-    if (!find(id)) return call(id, 'skill_prepare', { roots: ['a', 'b', 'c'].map(name => selected(name).ref), purpose: 'use' });
+    if (!find(id)) return call(id, 'notion_use', { ref: ['a', 'b', 'c'].map(name => selected(name).ref) });
     return null;
   }
   if (plan.mode !== 'native') throw new Error('CONTROLLED_PLAN_INVALID');
   const main = find('sc10-main');
   if (!main) return call('sc10-main', 'read', { path: selected('a').ref });
   if (main.isError) throw new Error('CONTROLLED_MAIN_READ_FAILED');
-  let files;
   const footer = /<skill-directory>\s*([\s\S]*?)\s*<\/skill-directory>/u.exec(text(main.content));
-  if (footer) files = JSON.parse(footer[1]).directory.files;
-  else {
-    const inspected = find('sc10-resource-directory');
-    if (!inspected) return call('sc10-resource-directory', 'skill_prepare', { roots: [selected('a').ref], purpose: 'inspect' });
-    const prepared = parsed(inspected);
-    if (prepared.roots.length !== 1) throw new Error('CONTROLLED_INSPECT_ROOT_NOT_UNIQUE');
-    files = prepared.records.find(record => record.ref === prepared.roots[0]).directory.files;
-  }
+  if (!footer) throw new Error('CONTROLLED_RESOURCE_DIRECTORY_MISSING');
+  const files = JSON.parse(footer[1]).directory.files;
   const resources = files.filter(file => file.path !== 'SKILL.md');
   if (resources.length !== 1) throw new Error('CONTROLLED_RESOURCE_SELECTION_NOT_UNIQUE');
   if (!find('sc10-resource')) return call('sc10-resource', 'read', { path: resources[0].ref });
@@ -1025,7 +1080,7 @@ async function provider(base) {
   let source = await readFile(path, 'utf8');
   const replace = (before, after) => { assert.equal(source.split(before).length, 2, 'Provider fixture shape changed'); source = source.replace(before, after); };
   replace('import { appendFileSync }', 'import { appendFileSync, readFileSync }');
-  replace('function stream(model, context) {', `${resourceRefsFromInspection.toString()}\n${selectScalarProviderCall.toString()}\n${selectNativeRepeatCall.toString()}\n${selectProviderCall.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
+  replace('function stream(model, context) {', `${resourceRefsFromNative.toString()}\n${selectScalarProviderCall.toString()}\n${selectNativeRepeatCall.toString()}\n${selectProviderCall.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
   replace('const payload = await options?.onPayload?.({ model: model.id, context }, model);', 'if (typeof options?.onPayload !== "function" || typeof options?.onResponse !== "function") throw new Error("PUBLIC_PROVIDER_HOOKS_REQUIRED");\n      hook("payload_start");\n      const payload = await options.onPayload({ model: model.id, context }, model);\n      hook("payload_end");');
   replace('JSON.stringify({ model: model.id, context })', 'JSON.stringify({ requestId, model: model.id, context })');
   replace('await options?.onResponse?.({ status: 200, headers: { "x-fixture": "deterministic" } }, model);', 'await options.onResponse({ status: 200, headers: { "x-fixture": "deterministic" } }, model);\n      hook("response_end");');
@@ -1129,6 +1184,9 @@ function observe() {
     const { request_metrics, ...safe } = event;
     record({ kind: 'sdk', ...safe, request_metrics: request_metrics === undefined ? undefined : safeRequestMetrics(request_metrics) ?? null });
   });
+  channel('context-broker.notion-sdk-result').subscribe(event => {
+    if (event.operation === 'list') record({ kind: 'sdk_catalog', id: event.id, value: event.value });
+  });
   const originalSpawn = childProcess.spawn;
   childProcess.spawn = function(...values) {
     const argv = Array.isArray(values[1]) ? values[1] : [];
@@ -1165,7 +1223,7 @@ function observe() {
   });
 }
 async function observer(path) {
-  await writeFile(path, `import childProcess from 'node:child_process';\nimport { createHash } from 'node:crypto';\nimport { channel } from 'node:diagnostics_channel';\nimport fs, { appendFileSync } from 'node:fs';\nimport fsPromises from 'node:fs/promises';\nimport { syncBuiltinESMExports } from 'node:module';\n${safeRequestMetrics.toString()}\n${observeOwnedObjectReads.toString()}\n(${observe.toString()})();\n`, { mode: 0o600 });
+  await writeFile(path, `import { isMainThread } from 'node:worker_threads';\nimport childProcess from 'node:child_process';\nimport { createHash } from 'node:crypto';\nimport { channel } from 'node:diagnostics_channel';\nimport fs, { appendFileSync } from 'node:fs';\nimport fsPromises from 'node:fs/promises';\nimport { syncBuiltinESMExports } from 'node:module';\n${safeRequestMetrics.toString()}\n${observeOwnedObjectReads.toString()}\nif (isMainThread) (${observe.toString()})();\n`, { mode: 0o600 });
 }
 
 export function sourceFinality(events, hostPid, { hostClosed = false } = {}) {
@@ -1228,18 +1286,16 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true } = 
   assert.equal(lifecycle.at(-1).code, 0); assert.equal(lifecycle.at(-1).signal, null);
   assert.ok(chains.has(lifecycle[0].pid), 'Owned Pi must have an observer chain');
   const starts = events.filter(event => event.kind === 'child_start');
-  if (bodyTransportRequired) assert.ok(starts.some(event => event.bundled && event.operation === 'list'), 'Actual bundled catalog CLI must be observed');
-  else for (const start of starts) {
-    const ctl = start.argv.indexOf('ctl');
-    assert.ok(start.bundled && (start.operation === 'list' || start.operation === 'ctl' && start.argv[ctl + 1] === 'cache' && start.argv[ctl + 2] === 'identity'),
-      'A scope metadata query may only coexist with the separately accounted background catalog/identity commands');
-  }
   for (const start of starts) assert.equal(events.filter(event => event.kind === 'child_close' && event.id === start.id).length, 1);
   assert.equal(events.filter(event => event.kind === 'alternate_child_api').length, 0, 'Unexpected child APIs require explicit accounting');
-  assert.equal(starts.filter(event => ['prepare', 'read', 'export'].includes(event.operation)).length, 0, 'Default preparation/resource path must not spawn CLI children');
+  assert.equal(starts.length, 0, 'Default bundled SDK directory and body consumption must not spawn CLI children');
   const sdk = events.filter(event => event.kind === 'sdk' && event.event === 'start');
-  if (bodyTransportRequired) assert.ok(sdk.length > 0, 'An empty SDK observation cannot establish default transport');
-  else assert.equal(sdk.length, 0, 'A host-local command metadata query must not consume source bodies');
+  assert.ok(sdk.every(event => ['list', 'consume', 'read', 'read-resources'].includes(event.operation)), 'Unknown SDK operations require explicit accounting');
+  const catalog = sdk.filter(event => event.operation === 'list'), bodies = sdk.filter(event => event.operation !== 'list');
+  if (bodyTransportRequired) {
+    assert.ok(catalog.length > 0, 'Actual default catalog SDK must be observed');
+    assert.ok(bodies.length > 0, 'An empty body SDK observation cannot establish default transport');
+  } else assert.equal(bodies.length, 0, 'A host-local command metadata query must not consume source bodies');
   let http = 0;
   for (const start of sdk) {
     const ends = events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.id === start.id);
@@ -1249,12 +1305,14 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true } = 
   }
   assert.equal(http, 0, 'The controlled SDK source must stay offline');
   const cliCloses = events.filter(event => event.kind === 'child_close');
-  return { sdk_calls: sdk.length, sdk_consumes: sdk.filter(event => event.operation === 'consume').length,
+  return { sdk_calls: sdk.length, sdk_body_calls: bodies.length, sdk_lists: catalog.length,
+    sdk_consumes: sdk.filter(event => event.operation === 'consume').length,
     sdk_reads: sdk.filter(event => event.operation === 'read').length, sdk_http: http,
     sdk_resource_batches: sdk.filter(event => event.operation === 'read-resources').length,
     cli_catalog_children: starts.filter(event => event.bundled && event.operation === 'list').length,
     cli_prepare_read_export_children: 0, cli_http: cliCloses.every(event => event.request_metrics?.complete) ? cliCloses.reduce((total, event) => total + event.request_metrics.total_requests, 0) : null,
     observer_processes: chains.size, source_children_closed: starts.length, eof_closed: true,
+    default_catalog_transport: catalog.length ? 'verified_sdk' : 'not_exercised',
     default_body_transport: bodyTransportRequired ? 'verified_sdk' : 'not_applicable_metadata_query' };
 }
 
@@ -1344,6 +1402,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
   const scalarShortRefs = name === 'resource-scalar-short-refs', scalarScenario = name === 'resource-scalar' || scalarShortRefs;
   const nativeRepeat = name === 'native-repeat';
   const partialEntrypoint = name === 'partial-entrypoint';
+  const codemode = ['codemode-hidden', 'codemode-truncated'].includes(name);
   const base = join(scratch, name), output = join(evidence, name);
   await mkdir(base); await mkdir(output, { mode: 0o700 });
   const localSource = join(base, 'source');
@@ -1372,7 +1431,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
   if (partialEntrypoint) assert.ok(info.entrypoint, 'The fixture must provide the complete entrypoint scenario');
   const entrypointPlan = partialEntrypoint ? { owner: info.entrypoint.name, fixed_main_ref: info.entrypoint.ref,
     selected_path: info.entrypoint.files.find(file => file.role === 'selected').path } : {};
-  await save(toolPlan, { mode: name === 'dollar' ? 'search' : name, ...resourcePlan, ...entrypointPlan, ...repeatPlan,
+  await save(toolPlan, { mode: ['dollar', 'default-view'].includes(name) ? 'search' : name, ...resourcePlan, ...entrypointPlan, ...repeatPlan,
     ...(scalarScenario ? { calls: scalarCalls.map(({ id, args }) => ({ id, args })) } : {}) });
   const fakeProvider = await provider(base), preload = join(base, 'observer.mjs');
   await observer(preload);
@@ -1391,19 +1450,23 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     ...(entrypointSetup ? { SC13_PI_OBJECT_ROOT: entrypointSetup.partial.objects }
       : scalarScenario ? { SC13_PI_OBJECT_ROOT: join(fixtureEnv.NTN_SKILLS_HOME, 'objects') } : {}),
     SC10_PI_BUNDLED_CLI: join(info.packageRoot, 'dist/ntn-skills.mjs'), NODE_OPTIONS: `--import=${preload}` });
-  const activeTools = name === 'scoped-command' ? scopedCommandTools : nativeTools;
+  const activeTools = name === 'scoped-command' ? scopedCommandTools : codemode ? [...nativeTools, 'codemode'] : nativeTools;
   const argv = ['--no-extensions', '--session-dir', sessions, ...(scalarSeed ? ['--session', scalarSeed.path] : []),
-    '--tools', activeTools.join(','), '-e', fakeProvider, '-e', info.extension, '--model', 'context-broker-e2e/fake'];
+    '--tools', activeTools.join(','), '-e', fakeProvider, '-e', info.extension,
+    ...(codemode ? ['-e', join(info.piPackageRoot, 'dist/extensions/codemode/index.js')] : []), '--model', 'context-broker-e2e/fake'];
   await save(join(output, 'launch.json'), { host: info.host, argv, cwd: base, source_command_configured: false,
     source_state: partialEntrypoint ? 'complete controlled current validated by installed SDK, then owned partial cache; fresh Broker cache and Pi session'
       : scalarSeed ? 'cloned warm controlled source; fresh Broker cache and new Pi process restoring a metadata-only short-reference session'
       : 'cloned warm controlled snapshots/current catalog; fresh Broker cache and Pi session', expect_short_refs: expectShortRefs,
     expect_compact_context: expectCompactContext, expect_direct_scalar: expectDirectScalar, expect_short_confirmations: expectShortConfirmations, active_tools: activeTools,
     ...(scalarSeed ? { seed_evidence: 'resource-scalar-seed.json', seed_sha256: scalarSeed.evidence.session_sha256 } : {}) });
-  let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, resourceScalarEvidence, nativeRepeatEvidence, entrypointEvidence, serializerContext, archive, dollarProjection, nativeProjection;
+  let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, resourceScalarEvidence, nativeRepeatEvidence, entrypointEvidence, defaultViewEvidence, serializerContext, archive, dollarProjection, nativeProjection;
   try {
     rpc = await startRpc({ host: 'pi', args: argv, cwd: base, env, timeoutMs: 60000 });
     const prompts = {
+      'codemode-hidden': 'Inspect the selected main inside code mode without forwarding it, then load the full a, b and c closure through the top-level use tool.',
+      'codemode-truncated': 'Inspect the selected main inside code mode and forward only a short prefix, then load the full a, b and c closure through the top-level use tool.',
+      'default-view': 'Discover the authorized Skill directory and retain the default Notion Skill metadata without reading any Skill body.',
       dollar: 'Discover the authorized Skill directory for the controlled task.',
       native: 'Inspect the available a Skill and read its advertised resource.',
       'native-repeat': 'Read the resources Skill main, then its advertised references/guide.md resource. Read the same fixed main and resource again using the handles from that first native directory. Preserve the selected owner and snapshot.',
@@ -1423,7 +1486,35 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       assert.equal(discovery.ok, true); assert.equal(discovery.count, info.fixture.catalog_records?.length ?? 4);
       for (const record of discovery.records) if (expectShortRefs) assert.match(record.ref, /^sr:C/u);
     }
-    if (name === 'dollar') {
+    if (name === 'default-view') {
+      assert.equal(captures.length, 2);
+      await save(toolPlan, { mode: 'complete' });
+      await rpc.prompt('Continue the ordinary task using the now available default directory metadata. Do not read any Skill body.');
+      captures = await rows(providerFile); last = captures.at(-1).context;
+      assert.equal(captures.length, 3, 'Nonblocking startup and one ordinary continuation are both retained');
+      defaultViewEvidence = assertDefaultViewProjection(captures, discovery, await rows(ledger), info.fixture, info.bodies);
+      await save(join(output, 'default-view.json'), defaultViewEvidence);
+    } else if (codemode) {
+      assert.equal(captures.length, 4);
+      const topCalls = rpc.frames.filter(frame => frame.type === 'tool_execution_start' && !frame.parentToolCallId);
+      assert.deepEqual(topCalls.map(call => [call.toolCallId, call.toolName]), [['sc10-search', 'notion_list'], ['sc26-code', 'codemode'], ['sc26-use', 'notion_use']]);
+      const nested = rpc.frames.filter(frame => frame.type === 'tool_execution_end' && frame.parentToolCallId === 'sc26-code');
+      const reads = nested.filter(frame => frame.toolName === 'read'); assert.equal(reads.length, 1); assert.equal(reads[0].isError, false);
+      assert.ok(textContent(reads[0].result.content).startsWith(info.bodies.get('a')), 'The hidden internal read really returned complete bytes');
+      assert.ok(nested.every(frame => frame.toolName === 'read' || frame.toolName === 'notion_use' && frame.isError), 'No successful nested use is allowed');
+      const code = toolResult(captures[2].context, 'sc26-code'); assert.ok(code && !code.isError);
+      assert.match(textContent(code.content), /TOP_LEVEL_USE_REQUIRED/u);
+      for (const capture of captures.slice(0, 3)) for (const body of info.bodies.values()) assert.equal(bodyCount(capture.context, body), 0,
+        'Internal success and printed/truncated code output cannot count as complete model delivery');
+      for (const [key, body] of info.bodies) assert.equal(bodyCount(last, body), 1, key + ': top-level use delivers every complete root/Required once');
+      const frame = rpc.frames.find(frame => frame.type === 'tool_execution_end' && frame.toolCallId === 'sc26-use'); assert.ok(frame);
+      const raw = { ...frame.result, role: 'toolResult', toolName: frame.toolName, toolCallId: frame.toolCallId, isError: frame.isError };
+      const oracle = { snapshots: info.fixture.snapshots.slice(0, 4), bodies: info.bodies };
+      const first = assertPreparedProjection(toolResult(last, 'sc26-use'), oracle), original = assertPreparedProjection(raw, oracle);
+      assert.deepEqual(first.content, original.content);
+      preparation = { first, originalToolResults: [raw], code_mode: { mode: name, nested_reads: 1, internal_complete_body: true,
+        before_top_level_complete_bodies: 0, after_top_level_complete_bodies: info.bodies.size } };
+    } else if (name === 'dollar') {
       for (const body of info.bodies.values()) assert.equal(bodyCount(last, body), 0, 'Metadata-only discovery must not deliver bodies');
       const selected = discovery.records.filter(record => record.name === 'a' && record.source === source.id);
       assert.equal(selected.length, 1);
@@ -1432,7 +1523,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       captures = await rows(providerFile); last = captures.at(-1).context;
       for (const key of ['a', 'base']) assert.equal(bodyCount(last, info.bodies.get(key)), 1, `${key}: full source body exactly once`);
       for (const key of ['b', 'c']) assert.equal(bodyCount(last, info.bodies.get(key)), 0);
-      dollarProjection = assertDollarProjection(last, { bodies: info.bodies, expectCompact: expectCompactContext });
+      dollarProjection = assertDollarProjection(last, { bodies: info.bodies, snapshots: info.fixture.snapshots, expectCompact: expectCompactContext });
     } else if (scalarScenario) {
       const batch = info.resourceBatch, calls = rpc.frames.filter(frame => frame.type === 'tool_execution_start');
       assert.equal(captures.length, 6, 'Five direct scalar calls require exactly six provider requests');
@@ -1463,7 +1554,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     } else if (nativeRepeat) {
       const starts = rpc.frames.filter(frame => frame.type === 'tool_execution_start');
       assert.deepEqual(starts.map(frame => frame.toolCallId), ['sc10-search', 'sc15-main', 'sc15-resource', 'sc15-main-repeat', 'sc15-resource-repeat']);
-      assert.deepEqual(starts.map(frame => frame.toolName), ['skill_search', 'read', 'read', 'read', 'read']);
+      assert.deepEqual(starts.map(frame => frame.toolName), ['notion_list', 'read', 'read', 'read', 'read']);
       const originalToolResults = starts.slice(1).map(start => {
         const frames = rpc.frames.filter(frame => frame.type === 'tool_execution_end' && frame.toolCallId === start.toolCallId); assert.equal(frames.length, 1);
         return { ...frames[0].result, role: 'toolResult', toolName: frames[0].toolName, toolCallId: start.toolCallId, isError: frames[0].isError };
@@ -1499,19 +1590,10 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       assert.ok(footer, 'The native main must advertise the complete fixed directory');
       const nativeDirectory = JSON.parse(footer[1]).directory;
       assert.deepEqual(nativeDirectory.files.map(file => file.path), sample.snapshot.files.map(file => file.path));
-      const inspected = toolResult(last, 'sc13-inspect'), inspectedRaw = fromFrame('sc13-inspect');
-      const oracle = { snapshots: [sample.snapshot], bodies: new Map([[sample.name, sample.main]]), roots: [sample.name], purpose: 'inspect' };
-      const inspection = assertPreparedProjection(inspectedRaw, oracle);
-      const providerInspection = assertPreparedProjection(inspected, oracle);
-      // Explicit complete instruction deliveries take priority over native read copies.
-      assert.deepEqual(inspected.content, inspectedRaw.content);
-      assert.deepEqual(inspected.details.contextBrokerPreparation.projection, inspectedRaw.details.contextBrokerPreparation.projection);
-      assert.equal(bodyCount({ messages: [main] }, sample.main), 0, 'The native provider copy is replaced after explicit inspection');
-      assert.ok(textContent(main.content).endsWith(textContent(mainRaw.content).slice(mainProof.delivery.end)), 'The native fixed directory is preserved');
-      const prepared = parsedResult(inspectedRaw), receipt = inspectedRaw.details.contextBrokerPreparation.records[0];
-      assert.deepEqual(prepared.records[0].directory.files.map(file => file.path), sample.snapshot.files.map(file => file.path));
-      assert.deepEqual(receipt.materialization, { manifest_complete: true, local_files_ready: false,
-        materialized_paths: [sample.snapshot.entrypoint], loaded: false });
+      const inspection = assertNativeProjection(mainRaw, { snapshot: sample.snapshot, body: sample.main });
+      const providerInspection = assertNativeProjection(main, { snapshot: sample.snapshot, body: sample.main });
+      assert.deepEqual(main.content, mainRaw.content, 'The single native inspection remains complete in the following provider request');
+      assert.equal(bodyCount({ messages: [main] }, sample.main), 1);
       const resource = toolResult(last, 'sc13-resource'), resourceRaw = fromFrame('sc13-resource');
       assert.equal(resourceRaw.isError, false); assert.equal(resource.isError, false);
       const resourceProof = resourceRaw.details?.contextBrokerResource;
@@ -1520,15 +1602,15 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       assert.equal(resourceProof.version_id, sample.snapshot.version_id); assert.equal(resourceProof.file_id, selected.file_id);
       assert.equal(resourceProof.path, selected.path); assert.equal(resourceProof.bytes, selected.bytes); assert.equal(resourceProof.sha256, selected.sha256);
       assert.equal(resourceProof.delivered_complete_text, true); assert.equal(textContent(resourceRaw.content), selected.content);
-      assert.deepEqual(resourceProof.materialization, { manifest_complete: true, local_files_ready: false,
+      if (resourceProof.materialization !== undefined) assert.deepEqual(resourceProof.materialization, { manifest_complete: true, local_files_ready: false,
         materialized_paths: [sample.snapshot.entrypoint, selected.path].sort(), loaded: false });
       assert.equal(bodyCount(last, sample.main), 1); assert.equal(bodyCount(last, selected.content), 1);
       const calls = rpc.frames.filter(frame => frame.type === 'tool_execution_start');
-      assert.deepEqual(calls.map(call => call.toolCallId), ['sc10-search', 'sc13-main', 'sc13-inspect', 'sc13-resource']);
+      assert.deepEqual(calls.map(call => call.toolCallId), ['sc10-search', 'sc13-main', 'sc13-resource']);
       assert.deepEqual(calls[1].args, { path: sample.ref });
       const candidate = discovery.records.find(record => record.name === sample.name && record.source === source.id);
-      assert.deepEqual(calls[2].args, { roots: [candidate.ref], purpose: 'inspect' });
-      assert.deepEqual(calls[3].args, { path: resourceRefsFromInspection(parsedResult(inspected), sample.name, [selected.path])[0] });
+      assert.deepEqual(calls[2].args, { path: resourceRefsFromNative(main, [selected.path])[0] });
+      assert.equal(captures.length, 4, 'List, one fixed main inspection and one resource read need exactly three tool rounds');
       const materialized = await inventory(source.cacheDir);
       for (const file of [sample.main_file, selected]) assert.ok(materialized.some(item => item.path.endsWith('/' + file.path)
         && item.bytes === file.bytes && item.sha256 === file.sha256), file.path + ': exact native materialization');
@@ -1538,9 +1620,11 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       entrypointEvidence = { snapshot_id: sample.snapshot.snapshot_id, main: { bytes: mainProof.bytes, sha256: mainProof.bodySha256 },
         source_state: 'controlled complete validation followed by owned partial cache; no cold-source claim',
         fixed_main_argument: calls[1].args.path, inspected_candidate: candidate.ref,
-        directory_files: prepared.records[0].directory.files.length, host_materialization: receipt.materialization,
+        directory_files: nativeDirectory.files.length, host_materialization: { manifest_complete: true, local_files_ready: false,
+          materialized_paths: [sample.snapshot.entrypoint, selected.path].sort(),
+          method: 'independent native main directory and exact cache file inventory', source_receipt: resourceProof.materialization ?? null },
         inspection, provider_inspection: providerInspection, selected_resource: resourceProof, partial_state: partialState,
-        originalToolResults: [mainRaw, inspectedRaw, resourceRaw] };
+        originalToolResults: [mainRaw, resourceRaw] };
     } else if (name === 'native') {
       const main = toolResult(last, 'sc10-main'), resource = toolResult(last, 'sc10-resource');
       assert.ok(main && !main.isError); assert.ok(resource && !resource.isError);
@@ -1590,13 +1674,13 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       let inspection, inspectedRaw, requestedRefs = batch.refs;
       if (shortResourceRefs) {
         const inspected = toolResult(last, 'sc07-resource-inspect'); inspectedRaw = fromFrame('sc07-resource-inspect');
-        const oracle = { snapshots: [batch.snapshot], bodies: new Map([[batch.name, batch.main]]), roots: [batch.name], purpose: 'inspect' };
-        inspection = assertPreparedProjection(inspected, oracle);
-        assert.deepEqual(inspection.content, assertPreparedProjection(inspectedRaw, oracle).content);
-        requestedRefs = resourceRefsFromInspection(parsedResult(inspected), batch.name, batch.files.map(file => file.path));
+        const oracle = { snapshot: batch.snapshot, body: batch.main };
+        inspection = assertNativeProjection(inspected, oracle);
+        assert.deepEqual(inspection, assertNativeProjection(inspectedRaw, oracle));
+        requestedRefs = resourceRefsFromNative(inspected, batch.files.map(file => file.path));
         for (const file of firstProof.files) assert.match(file.ref, /^sr:R[A-Za-z0-9_-]{22}$/u);
       }
-      const firstCalls = rpc.frames.filter(frame => frame.type === 'tool_execution_start' && frame.toolName === 'read');
+      const firstCalls = rpc.frames.filter(frame => frame.type === 'tool_execution_start' && frame.toolCallId === 'sc07-resources');
       assert.equal(firstCalls.length, 1); assert.deepEqual(firstCalls[0].args, { paths: requestedRefs });
       assert.equal((await rows(ledger)).filter(event => event.kind === 'sdk' && event.event === 'start' && event.operation === 'read-resources').length, 1);
       for (const file of batch.files.filter(file => file.encoding === 'utf8')) {
@@ -1634,11 +1718,14 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       if (inspectedRaw) assert.equal(textContent(toolResult(last, 'sc07-resource-inspect').content), textContent(inspectedRaw.content));
       for (const file of batch.unselected) assert.equal(bodyCount(last, file.content), 0);
       assert.equal(captures.length, shortResourceRefs ? 6 : 5);
-      assert.deepEqual(rpc.frames.filter(frame => frame.type === 'tool_execution_start' && frame.toolName === 'read').map(frame => frame.args),
+      assert.deepEqual(rpc.frames.filter(frame => frame.type === 'tool_execution_start' && ['sc07-resources', 'sc07-resources-repeat'].includes(frame.toolCallId)).map(frame => frame.args),
         [{ paths: requestedRefs }, { paths: requestedRefs }], 'The repeated native read retains the exact requested resource set');
-      const inspectionCalls = rpc.frames.filter(frame => frame.type === 'tool_execution_start' && frame.toolName === 'skill_prepare');
+      const inspectionCalls = rpc.frames.filter(frame => frame.type === 'tool_execution_start' && frame.toolCallId === 'sc07-resource-inspect');
       assert.equal(inspectionCalls.length, shortResourceRefs ? 1 : 0);
-      if (shortResourceRefs) assert.equal(inspectionCalls[0].args.purpose, 'inspect');
+      if (shortResourceRefs) {
+        assert.equal(inspectionCalls[0].toolName, 'read');
+        assert.deepEqual(inspectionCalls[0].args, { path: discovery.records.find(record => record.name === batch.name && record.source === source.id).ref });
+      }
       resourceBatchEvidence = { first: firstProof, repeated_raw: rawRepeatedProof, repeated_provider: repeatedProof,
         selected_files: batch.files.length, source_cache: 'warm', main_delivered: shortResourceRefs, main_delivery_reason: shortResourceRefs ? 'explicit_inspect' : 'not_requested', unselected_delivered: false,
         requested_refs: requestedRefs, ...(inspection ? { explicit_inspection: inspection } : {}),
@@ -1665,7 +1752,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       const requestsBeforeRepeat = captures.length;
       assert.equal(requestsBeforeRepeat, 3, 'Search and first preparation produce two tool rounds');
       await save(toolPlan, { mode: 'prepare-repeat' });
-      await rpc.prompt('Prepare the same a, b and c Skills again with purpose use, keeping their selected versions.');
+      await rpc.prompt('Use the same a, b and c Skills again, keeping their selected versions.');
       captures = await rows(providerFile); last = captures.at(-1).context;
       const repeated = toolResult(last, 'sc05-prepare-repeat'), repeatedRaw = fromFrame('sc05-prepare-repeat');
       const rawRepeatedProof = assertPreparedProjection(repeatedRaw, oracle);
@@ -1711,10 +1798,17 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     let serializer;
     if (preparation) {
       for (const original of preparation.originalToolResults) {
-        const messages = archive.messages.filter(message => message.role === 'toolResult' && message.toolName === 'skill_prepare' && message.toolCallId === original.toolCallId);
+        const messages = archive.messages.filter(message => message.role === 'toolResult' && message.toolName === 'notion_use' && message.toolCallId === original.toolCallId);
         assert.equal(messages.length, 1, 'The original session retains each actual tool result');
         assert.equal(textContent(messages[0].content), textContent(original.content));
         assert.deepEqual(messages[0].details, original.details, 'Provider deduplication cannot rewrite the persisted source/projection proof');
+      }
+      if (codemode) {
+        const delivered = archive.entries.findIndex(entry => entry.type === 'message' && entry.message?.toolCallId === 'sc26-use');
+        assert.ok(delivered >= 0);
+        const active = archive.entries.flatMap((entry, index) => entry.type === 'custom' && entry.customType === 'context-broker-active-sources' ? [index] : []);
+        assert.ok(active.length > 0 && active.every(index => index > delivered), 'Actual active state is created only after top-level use has delivered its complete closure');
+        preparation.code_mode.active_only_after_top_level_delivery = true;
       }
       const { originalToolResults: _original, ...publicEvidence } = preparation;
       await save(join(output, 'prepare-projection.json'), { ...publicEvidence, original_session_preserved: true });
@@ -1726,6 +1820,8 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
         assert.equal(textContent(messages[0].content), textContent(original.content));
         assert.deepEqual(messages[0].details, original.details, 'Provider deduplication must preserve the original stored byte proof');
       }
+      assert.equal(archive.entries.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-active-sources').length, 0,
+        'Native inspection and resource batches cannot activate a use graph');
       const { originalToolResults: _original, ...publicEvidence } = resourceBatchEvidence;
       await save(join(output, 'resource-batch-projection.json'), { ...publicEvidence, original_session_preserved: true });
       serializer = await replayPreparationHttp(serializerContext, info, output, 'resource-batch');
@@ -1765,6 +1861,8 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
         assert.equal(textContent(messages[0].content), textContent(original.content));
         assert.deepEqual(messages[0].details, original.details);
       }
+      assert.equal(archive.entries.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-active-sources').length, 0,
+        'A fixed main inspection and its resource read cannot activate a use graph');
       const sample = info.entrypoint, selected = sample.files.find(file => file.role === 'selected');
       const objectReads = assertObjectReadEvidence(await rows(ledger), { selected: [sample.main_file, selected],
         forbidden: sample.files.filter(file => file.role !== 'selected'), requiredPid: rpc.lifecycle[0].pid });
@@ -1777,7 +1875,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     assert.equal(new Set(captures.map(capture => capture.requestId)).size, captures.length);
     const guidance = captures.map(capture => ({ request_id: capture.requestId, ...assertNativeGuidance(capture.context, env.SC10_PI_BUNDLED_CLI) }));
     await save(join(output, 'guidance.json'), guidance);
-    const compactScenarios = ['dollar', 'native', 'native-repeat', 'prepare'];
+    const compactScenarios = ['default-view', 'codemode-hidden', 'codemode-truncated', 'dollar', 'native', 'native-repeat', 'prepare', 'resource-batch', 'resource-batch-short-refs', 'partial-entrypoint'];
     if (compactScenarios.includes(name)) {
       const search = captures.flatMap(capture => {
         const message = toolResult(capture.context, 'sc10-search');
@@ -1788,7 +1886,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
         status: expectCompactContext ? 'verified' : 'not_required_for_baseline', search,
         ...(dollarProjection ? { dollar: dollarProjection } : {}), ...(nativeProjection ? { native: nativeProjection } : {}),
         restart_restore: 'not_exercised_by_this_scenario' });
-      serializer = await replayScenarioHttp(captures, rpc.frames, info, output, { preparation: Boolean(preparation) });
+      serializer = await replayScenarioHttp(captures, codemode ? rpc.frames.filter(frame => !frame.parentToolCallId) : rpc.frames, info, output, { preparation: Boolean(preparation) });
       if (name === 'dollar') {
         assert.deepEqual(serializer.sequence.map(call => call.tool_call_id), ['sc10-search']);
         assert.equal(captures.length, 3, 'Metadata discovery and dollar activation retain the original two-prompt scenario');
@@ -1799,13 +1897,13 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       assert.equal(serializer.provider_requests, 6); assert.equal(serializer.tool_rounds, 5); assert.equal(serializer.tool_calls, 5);
       assert.deepEqual(serializer.sequence.map(call => call.tool_call_id), scalarCalls.map(call => call.id));
     }
-    const observations = reconcile(await rows(ledger), rpc.lifecycle, { bodyTransportRequired: name !== 'scoped-command' });
+    const observations = reconcile(await rows(ledger), rpc.lifecycle, { bodyTransportRequired: !['scoped-command', 'default-view'].includes(name) });
     if (nativeRepeatEvidence) {
       assert.equal(serializer.provider_requests, 6); assert.equal(serializer.tool_rounds, 5); assert.equal(serializer.tool_calls, 5);
       assert.equal(observations.sdk_resource_batches, 0);
     }
     if (resourceBatchEvidence) {
-      assert.equal(observations.sdk_calls, shortResourceRefs ? 3 : 2); assert.equal(observations.sdk_resource_batches, 2);
+      assert.equal(observations.sdk_body_calls, shortResourceRefs ? 3 : 2); assert.equal(observations.sdk_resource_batches, 2);
       assert.equal(observations.sdk_consumes, shortResourceRefs ? 1 : 0); assert.equal(observations.sdk_reads, 0);
     }
     if (resourceScalarEvidence) {
@@ -1840,6 +1938,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
         read_output_proof_version: info.runtime.read_output_proof_version ?? null, scalar_evidence: 'resource-scalar-evidence.json' } : {}),
       discovery_failures: discovery?.failures ?? null, native_guidance_without_cli_templates: true, observer_finality: finality?.complete === true,
       session_archive_files: archive?.files.length ?? 0, preparation_projection: preparation ? 'verified' : 'not_applicable',
+      code_mode: preparation?.code_mode ?? null,
       resource_batch_projection: resourceBatchEvidence ? 'verified' : 'not_applicable',
       native_repeat_projection: nativeRepeatEvidence ? expectShortConfirmations ? 'short_confirmations_verified' : 'baseline_long_confirmations_recorded' : 'not_applicable',
       partial_entrypoint: entrypointEvidence ? 'verified_selected_bytes_with_full_directory' : 'not_applicable',
@@ -1847,7 +1946,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       serializer_http_replay: serializer ? { status: serializer.status, request_bytes: serializer.request_bytes,
         requests: serializer.provider_requests ?? 1, ...(serializer.sequence ? { tool_rounds: serializer.tool_rounds, tool_calls: serializer.tool_calls,
           all_provider_requests_serialized: serializer.all_provider_requests_serialized, evidence: 'provider-http.json' } : {}), production_network: false } : null,
-      default_view: 'not_verified', ...observations };
+      default_view: defaultViewEvidence ? 'verified' : 'not_exercised', ...observations };
     await save(join(output, 'result.json'), result); return result;
   } catch (error) {
     const result = { name, status: 'failed', observer_finality: finality?.complete === true, error: failed ?? { code: error.code ?? error.name, message: String(error.message) } };
@@ -1861,7 +1960,7 @@ async function retained(evidence, cleanup) {
   const before = await json(join(evidence, 'retained.json'));
   for (const entry of before) assert.equal(hash(await readFile(join(evidence, entry.path))), entry.sha256, entry.path);
   if (cleanup) {
-    assert.equal(report.scratch, ownership.scratch); assert.equal(ownership.evidence, evidence);
+    assert.equal(report.scratch, ownership.scratch); assert.equal(await realpath(ownership.evidence), evidence);
     assert.ok(ownership.scratch.startsWith(await systemTempRoot() + '/notion-sdk-pi-'));
     const plan = await json(join(evidence, 'plan.json'));
     assert.ok(Array.isArray(plan.scenarios) && plan.scenarios.length > 0 && plan.scenarios.every(name => scenarioNames.includes(name)));
@@ -1903,7 +2002,8 @@ if (action === 'evidence' || action === 'cleanup') {
     fixture: options['--fixture'], authentication: 'not_probed', source: 'controlled offline catalog and snapshots', default_view: 'not_verified' }, null, 2));
   else {
     assert.ok(options['--out'], usage);
-    const evidence = options['--out']; await mkdir(evidence, { mode: 0o700 });
+    await mkdir(options['--out'], { mode: 0o700 });
+    const evidence = await realpath(options['--out']);
     const scratch = await mkdtemp(join(await systemTempRoot(), 'notion-sdk-pi-'));
     await save(join(evidence, 'ownership.json'), { version: 1, evidence, scratch });
     const before = await productInventory(info.packageRoot);
@@ -1928,7 +2028,7 @@ if (action === 'evidence' || action === 'cleanup') {
     const unchanged = JSON.stringify(after) === JSON.stringify(before);
     const stable = results.every(result => result.observer_finality === true);
     const report = { version: 1, status: unchanged && results.every(result => result.status === 'passed') ? 'passed' : 'failed', package_unchanged: unchanged, evidence_stable: stable, scratch, evidence, results,
-      not_claimed: ['Live Notion', 'Real model', 'Default View/menu', 'Cold source cache', 'Binary resource as complete text delivery', 'OMP/Tern'] };
+      not_claimed: ['Live Notion', 'Real model', 'Native menu', ...(results.some(result => result.default_view === 'verified') ? [] : ['Default View']), 'Cold source cache', 'Binary resource as complete text delivery', 'OMP/Tern'] };
     await save(join(evidence, 'report.json'), report);
     await save(join(evidence, stable ? 'retained.json' : 'retained-incomplete.json'), await inventory(evidence));
     console.log(JSON.stringify({ status: report.status, evidence, scratch })); process.exitCode = report.status === 'passed' ? 0 : 1;

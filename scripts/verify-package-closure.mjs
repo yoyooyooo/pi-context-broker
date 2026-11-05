@@ -1,12 +1,21 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const official = ["effect", "@effect/platform-node", "@effect/platform-node-shared", "@effect/sql-sqlite-node"];
+export function verifyBundledRuntime({ manifest, cliBytes, sdkBytes, expectedVersion }) {
+  assert.equal(manifest.version, 1, "Unknown bundled runtime manifest");
+  assert.equal(manifest.package, "ntn-skills", "Unexpected bundled package identity");
+  assert.equal(manifest.package_version, expectedVersion, "Bundled runtime must match its frozen build input version");
+  const hashes = { cli: createHash("sha256").update(cliBytes).digest("hex"), sdk: createHash("sha256").update(sdkBytes).digest("hex") };
+  assert.equal(manifest.cli_sha256, hashes.cli, "Bundled CLI bytes do not match its frozen runtime manifest");
+  assert.equal(manifest.sdk_sha256, hashes.sdk, "Bundled SDK bytes do not match its frozen runtime manifest");
+  return hashes;
+}
 export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerManifest, base }) {
   base ??= await mkdtemp(join(tmpdir(), "broker-strict-closure-"));
   await mkdir(base, { recursive: true });
@@ -28,8 +37,8 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
   await run(["npm", "config", "get", "registry"], base);
   const consumer = join(base, "consumer");
   const staged = join(base, "staged");
-  const tern = join(base, "tern");
-  for (const directory of [consumer, staged, tern]) await mkdir(directory);
+  const tern = ternArchive ? join(base, "tern") : undefined;
+  for (const directory of [consumer, staged, ...(tern ? [tern] : [])]) await mkdir(directory);
   await run(["tar", "-xzf", resolve(brokerArchive), "-C", staged], base);
   if (brokerManifest) {
     // Dependency-only diagnostic: preserve all frozen executable/resource bytes.
@@ -44,17 +53,22 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
     assert.equal(JSON.parse(await readFile(join(installed, "package.json"), "utf8")).peerDependenciesMeta[host].optional, true);
     await assert.rejects(readFile(join(consumer, "node_modules", host, "package.json")), { code: "ENOENT" });
   }
-  await run(["tar", "-xzf", resolve(ternArchive), "-C", tern], base);
-  const query = join(tern, "query");
-  // Reconcile from declarations, not prepopulated node_modules or the frozen override lock.
-  const metadata = JSON.parse(await readFile(join(query, "package.json"), "utf8"));
-  delete metadata.overrides;
-  await writeFile(join(query, "package.json"), JSON.stringify(metadata, null, 2));
-  await rm(join(query, "node_modules"), { recursive: true, force: true });
-  await rm(join(query, "package-lock.json"), { force: true });
-  await run(["npm", "install", "--omit=dev", "--no-audit", "--no-fund"], query);
+  const query = tern ? join(tern, "query") : undefined;
+  if (tern) {
+    await run(["tar", "-xzf", resolve(ternArchive), "-C", tern], base);
+    // Reconcile declarations in the owned extraction while retaining its originals.
+    const metadata = JSON.parse(await readFile(join(query, "package.json"), "utf8"));
+    delete metadata.overrides;
+    await cp(join(query, "package.json"), join(query, "package.before-install.json"));
+    await writeFile(join(query, "package.json"), JSON.stringify(metadata, null, 2));
+    for (const name of ["node_modules", "package-lock.json"]) {
+      try { await rename(join(query, name), join(query, name + ".before-install")); }
+      catch (error) { if (error.code !== "ENOENT") throw error; }
+    }
+    await run(["npm", "install", "--omit=dev", "--no-audit", "--no-fund"], query);
+  }
   await run(["npm", "ls", "--all", "--omit=dev", "--json"], consumer);
-  await run(["npm", "ls", "--all", "--omit=dev", "--json"], query);
+  if (query) await run(["npm", "ls", "--all", "--omit=dev", "--json"], query);
   async function inventory(root) {
     const files = {};
     async function visit(directory, prefix = "") {
@@ -70,34 +84,37 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
   const inventories = {};
   for (const name of official) {
     const npmRoot = join(consumer, "node_modules", name);
-    const ternRoot = join(query, "node_modules", name);
     const npmVersion = JSON.parse(await readFile(join(npmRoot, "package.json"), "utf8")).version;
-    const ternVersion = JSON.parse(await readFile(join(ternRoot, "package.json"), "utf8")).version;
     assert.equal(npmVersion, "4.0.5");
-    assert.equal(ternVersion, npmVersion);
     const npmFiles = await inventory(npmRoot);
-    const ternFiles = await inventory(ternRoot);
-    assert.deepEqual(ternFiles, npmFiles, `${name}: official package byte mismatch`);
+    if (query) {
+      const ternRoot = join(query, "node_modules", name);
+      const ternVersion = JSON.parse(await readFile(join(ternRoot, "package.json"), "utf8")).version;
+      assert.equal(ternVersion, npmVersion);
+      assert.deepEqual(await inventory(ternRoot), npmFiles, `${name}: official package byte mismatch`);
+    }
     inventories[name] = { version: npmVersion, files: npmFiles };
   }
   await writeFile(join(base, "official-inventory.json"), JSON.stringify(inventories, null, 2) + "\n");
-  assert.deepEqual(await readFile(join(installed, "dist/ntn-skills.mjs")), await readFile(join(query, "ntn-skills.mjs")));
+  if (query) assert.deepEqual(await readFile(join(installed, "dist/ntn-skills.mjs")), await readFile(join(query, "ntn-skills.mjs")));
   const npmBuiltins = join(installed, "dist/builtin-skills");
-  const ternBuiltins = join(query, "builtin-skills");
+  const ternBuiltins = query ? join(query, "builtin-skills") : undefined;
   const builtinNames = ["ntn-skills", "ntn-skills-maintain", "ntn-skills-sync"];
   assert.deepEqual((await readdir(npmBuiltins)).sort(), builtinNames);
-  assert.deepEqual((await readdir(ternBuiltins)).sort(), builtinNames);
-  assert.deepEqual(await inventory(npmBuiltins), await inventory(ternBuiltins), "Broker and Tern must carry identical builtin instructions and resources");
+  if (ternBuiltins) {
+    assert.deepEqual((await readdir(ternBuiltins)).sort(), builtinNames);
+    assert.deepEqual(await inventory(npmBuiltins), await inventory(ternBuiltins), "Broker and Tern must carry identical builtin instructions and resources");
+  }
   for (const name of builtinNames) {
     assert.match(await readFile(join(npmBuiltins, name, "SKILL.md"), "utf8"), /^---\n/);
     assert.ok((await readdir(join(npmBuiltins, name, "references"))).length > 0, `${name}: bundled references are missing`);
   }
-  for (const retired of [join(installed, "src/save-workflow/SKILL.md"), join(tern, "builtin.luau"), join(tern, "src/save-workflow/SKILL.md")]) {
+  for (const retired of [join(installed, "src/save-workflow/SKILL.md"), ...(tern ? [join(tern, "builtin.luau"), join(tern, "src/save-workflow/SKILL.md")] : [])]) {
     await assert.rejects(readFile(retired), { code: "ENOENT" });
   }
   for (const [label, entry, builtinRoot] of [
     ["npm", join(installed, "dist/ntn-skills.mjs"), npmBuiltins],
-    ["tern", join(query, "ntn-skills.mjs"), ternBuiltins],
+    ...(query ? [["tern", join(query, "ntn-skills.mjs"), ternBuiltins]] : []),
   ]) {
     const cwd = join(base, label + "-cwd");
     await mkdir(cwd);
@@ -125,10 +142,11 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
     assert.ok((await cli(["ctl", "builtin", "list"])).skills.every(skill => skill.installation.state === "not_installed"), `${label}: reading packaged resources must not install central Skills`);
     assert.equal((await cli(["ctl", "config", "set", "cache_policy.read_max_age_ms", "0"])).ok, true);
     assert.equal((await cli(["ctl", "config", "show"])).config.cache_policy.read_max_age_ms, 0);
+    // The frozen CLI still exposes its retained operation journal at this public path.
     assert.equal((await cli(["operation", "list"])).ok, true);
     assert.equal((await cli(["ctl", "backup", "--output", join(base, label + "-backup")])).verified, true);
   }
-  console.log(`Strict default-peer Broker/Tern closure verified: ${base}`);
+  console.log(`Strict default-peer ${tern ? "Broker/Tern" : "Broker"} closure verified: ${base}`);
   return { base, installed, tern, builtins: { names: builtinNames, npmRoot: npmBuiltins, ternRoot: ternBuiltins } };
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

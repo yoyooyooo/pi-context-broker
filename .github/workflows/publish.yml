@@ -24,16 +24,25 @@ jobs:
   main:
     runs-on: ubuntu-latest
     environment: npm-publish
+    env:
+      NTN_SKILLS_BUILD_ENTRY: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/cli/dist/ntn-skills.js
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ inputs.tag || github.ref }}
+      - name: Checkout pinned CLI SDK
+        uses: actions/checkout@v4
+        with:
+          repository: yoyooyooo/notion-skills-cli
+          ref: 23991457c51b9f1255367a1545be00ef8c1a84bb
+          path: .verification/ntn-skills-cli
+          persist-credentials: false
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.3
       - name: Set up Node
         uses: actions/setup-node@v6
         with:
@@ -42,8 +51,13 @@ jobs:
           package-manager-cache: false
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      - name: Build pinned CLI SDK
+        working-directory: .verification/ntn-skills-cli
+        run: |
+          bun install --frozen-lockfile
+          bun run build
       - name: Install pinned CLI hosts
-        run: npm install --global @oh-my-pi/pi-coding-agent@18.10.3 @earendil-works/pi-coding-agent@1.2.0
+        run: npm install --global @oh-my-pi/pi-coding-agent@18.10.3 @earendil-works/pi-coding-agent@1.4.0
       - name: Validate release metadata
         run: |
           release_tag="${{ github.event.inputs.tag }}"
@@ -79,7 +93,9 @@ jobs:
           node packages/context-broker/scripts/context-broker-host-e2e.mjs
           node packages/context-broker/scripts/context-broker-global-config-e2e.mjs
           node packages/context-broker/scripts/context-broker-lifecycle-e2e.mjs
-      - name: Installed artifact regression
+      - name: Installed Pi artifact regression
+        run: node scripts/verify-artifacts.mjs --host pi
+      - name: Installed OMP and Tern artifact regression
         run: node scripts/verify-artifacts.mjs --host omp
       - name: Package release artifacts
         run: bun scripts/pack.mjs

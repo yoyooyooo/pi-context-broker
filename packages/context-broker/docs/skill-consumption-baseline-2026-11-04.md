@@ -1,6 +1,6 @@
 # AH-617 / SC02 消费成本基线（2026-11-04）
 
-本报告对应 [AH-619](https://linear.app/yoyooyooo/issue/AH-619)，可复跑入口见 [成本规程](../../../.agents/skills/verify-notion-skills-integration/features/skill-consumption-cost.md)。结论是测量工具与旧路径基线已经建立；表中的失败仍为失败，后续重构、全矩阵、双机和日用安装不由本报告推断。
+本报告对应 [AH-619](https://linear.app/yoyooyooo/issue/AH-619)，可复跑入口见 [成本规程](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/skill-consumption-cost.md)。结论是测量工具与旧路径基线已经建立；表中的失败仍为失败，后续重构、全矩阵、双机和日用安装不由本报告推断。
 
 ## 固定条件与原件
 

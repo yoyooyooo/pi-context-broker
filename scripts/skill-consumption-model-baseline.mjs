@@ -18,7 +18,7 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
 const rows = async path => { try { return (await readFile(path, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const usage = 'Usage: node scripts/skill-consumption-model-baseline.mjs doctor|run --config ABSOLUTE_JSON [--evidence-root ABSOLUTE_DIR]; evidence|cleanup --evidence ABSOLUTE_DIR. Real model is restricted to magpie/group/flash-free. Read-only source, normal Pi tools, no generated task guidance or forced tool choices. Config: {version:1,extension,transport?:"cli"|"sdk",command?:[absoluteNode,absoluteCLI],database,prompt,expectedAnswers:[string],counts:{cold:5,warm:20},packagePath?,toolProfile?:"standard"|"native-skills"}. Standard preserves the original seven tools; native-skills adds skill_search/skill_prepare/skill_graph without removing normal tools. Missing transport preserves legacy CLI mode and requires command. Explicit sdk forbids command and observes the unchanged default bundled source through a Node preload. Cold=new isolated process/cache; warm=ordinary turns in the final cold process, with existing session context retained. All attempts and unrun planned samples remain recorded.';
+const usage = 'Usage: node scripts/skill-consumption-model-baseline.mjs doctor|run --config ABSOLUTE_JSON [--evidence-root ABSOLUTE_DIR]; evidence|cleanup --evidence ABSOLUTE_DIR. Real model is restricted to magpie/group/flash-free. Normal Pi tools; source consumption may perform adoption/Records writes, no generated task guidance or forced tool choices. Config: {version:1,extension,transport?:"cli"|"sdk",command?:[absoluteNode,absoluteCLI],database,prompt,expectedAnswers:[string],counts:{cold:5,warm:20},packagePath?,toolProfile?:"standard"|"native-skills"|"legacy-skills"}. Standard preserves the original seven tools; native-skills adds notion_list/notion_use without removing normal tools; legacy-skills is an explicit historical profile. Deferred notion_ctl is not loaded by default. Missing transport preserves legacy CLI mode and requires command. Explicit sdk forbids command and observes the unchanged default bundled source through a Node preload. Cold=new isolated process/cache; warm=ordinary turns in the final cold process, with existing session context retained. All attempts and unrun planned samples remain recorded.';
 
 async function tree(directory) {
   const output = {};
@@ -48,9 +48,11 @@ export function validateModelBaselineConfig(config) {
 }
 export function modelBaselineTools(config) {
   const profile=config.toolProfile===undefined?'standard':config.toolProfile;
-  assert.ok(['standard','native-skills'].includes(profile),'Unsupported model tool profile');
+  assert.ok(['standard','native-skills','legacy-skills'].includes(profile),'Unsupported model tool profile');
   const tools=['read','bash','edit','write','grep','find','ls'];
-  return profile==='native-skills'?[...tools,'skill_search','skill_prepare','skill_graph']:tools;
+  if(profile==='native-skills') return [...tools,'notion_list','notion_use'];
+  if(profile==='legacy-skills') return [...tools,'skill_search','skill_prepare','skill_graph'];
+  return tools;
 }
 async function configAt(path) {
   assert.ok(isAbsolute(path ?? ''), 'Config path must be absolute');

@@ -57,6 +57,8 @@ export type NativeReadMetadata = {
   strict: boolean;
   readsSkillUris: boolean;
   loadMode: "essential" | "discoverable";
+  exposure?: "direct" | "model-only" | "codemode" | "deferred" | "hidden";
+  defaultActive?: boolean;
   approval(args: unknown): "read" | "write" | "exec";
   approvalCacheTargets(args: unknown): readonly string[] | undefined;
 };
@@ -76,9 +78,9 @@ export type PiReadDefinition = {
   renderCall?: (args: Record<string, unknown>, theme: unknown, context: unknown) => unknown;
   renderResult?: (result: NativeReadResult, options: unknown, theme: unknown, context: unknown) => unknown;
 };
-export type NativeSkillSearchDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_search" };
-export type NativeSkillPrepareDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_prepare" };
-export type NativeSkillGraphDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_graph" };
+export type NativeSkillSearchDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_search" | "notion_list" };
+export type NativeSkillPrepareDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_prepare" | "notion_use" };
+export type NativeSkillGraphDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_graph" | "notion_ctl" };
 type SessionBoundary = "session_before_switch" | "session_before_branch" | "session_before_tree"
   | "session_switch" | "session_tree" | "session_branch" | "session_shutdown" | "agent_start" | "agent_end";
 type ExtensionEvents = {
@@ -310,6 +312,7 @@ export type NotionViewState =
   | { sourceId: string; origin: "session" | "configured" | "profile" | "first"; status: "error"; code: string };
 export type NotionListObservation = {
   sourceId: string;
+  exhaustive?: boolean;
   policy: "default" | "max_age" | "refresh" | "offline" | "pinned";
   validatedAt?: string;
   ageMs?: number;

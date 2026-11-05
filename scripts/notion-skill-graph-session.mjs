@@ -22,7 +22,8 @@ const text = content => typeof content === 'string' ? content : (content ?? []).
 const unescapeXml = value => value.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
 const canonical = value => value === null || typeof value !== 'object' ? JSON.stringify(value) : Array.isArray(value) ? '[' + value.map(canonical).join(',') + ']' : '{' + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => JSON.stringify(key) + ':' + canonical(item)).join(',') + '}';
 const testToken = 'controlled-ah577-graph-token';
-const tools = ['read', 'skill_search', 'skill_prepare', 'skill_graph'];
+const tools = ['read', 'notion_list', 'notion_use'];
+const managementTools = [...tools, 'notion_ctl'];
 
 export async function installedBrokerIdentity(entry, packagePath) {
   assert.ok(isAbsolute(packagePath ?? ''), 'The exact independently installed archive is required');
@@ -104,7 +105,7 @@ function visibleBodies(context) {
   });
 }
 
-export function bodyEvidence(context, all, expected) {
+export function bodyEvidence(context, all, expected, { management = false } = {}) {
   const visible = visibleBodies(context), selected = new Set(expected.map(node => node.binding.scope + '/' + node.id + '/' + node.binding.snapshot_id));
   const evidence = all.map(node => {
     const key = node.binding.scope + '/' + node.id + '/' + node.binding.snapshot_id;
@@ -113,11 +114,11 @@ export function bodyEvidence(context, all, expected) {
     return { id: node.id, scope: node.binding.scope, snapshot_id: node.binding.snapshot_id, version_id: node.binding.version_id, ref: node.binding.ref, bytes: node.bytes, body_sha256: node.body_sha256, copies };
   });
   const advertised = [...new Set([...(context.tools ?? []), ...context.messages.flatMap(message => message.toolsAdded ?? [])].map(tool => tool.name ?? tool.tool?.name).filter(Boolean))].sort();
-  assert.deepEqual(advertised, [...tools].sort(), 'The actual controlled provider must have only the four public read/selection tools');
+  assert.deepEqual(advertised, [...(management ? managementTools : tools)].sort(), 'The actual controlled provider must expose only consumption tools until an explicit graph-management step');
   return { completeBodies: evidence, advertisedTools: advertised };
 }
 
-export function deliveryEvidence(messages, expected, stage) {
+export function deliveryEvidence(messages, expected, stage, { historicalSkillPrepare = false } = {}) {
   const selected = new Map(expected.map(node => [node.binding.scope + '/' + node.id + '/' + node.binding.snapshot_id, node]));
   const found = [];
   for (const message of messages.filter(message => message.role === 'toolResult' && message.toolCallId?.startsWith(stage + ':'))) {
@@ -126,7 +127,7 @@ export function deliveryEvidence(messages, expected, stage) {
     const proofs = group?.records ?? (message.details?.contextBrokerRead ? [message.details.contextBrokerRead] : []);
     const content = text(message.content);
     if (group !== undefined) {
-      assert.equal(message.toolName, 'skill_prepare'); assert.equal(group.toolCallId, message.toolCallId);
+      assert.equal(message.toolName, historicalSkillPrepare ? 'skill_prepare' : 'notion_use'); assert.equal(group.toolCallId, message.toolCallId);
       if (group.version === 2) verifyPreparationEvidence(content, group, message.toolCallId);
       else {
         assert.equal(group.version, 1, 'Unknown preparation receipt version');
@@ -163,7 +164,7 @@ export function deliveryEvidence(messages, expected, stage) {
 
 export function graphEvidence(messages, expected, stage) {
   const result = messages.find(message => message.role === 'toolResult' && message.toolCallId === stage + ':graph');
-  assert.ok(result && !result.isError, 'Actual skill_graph tool must complete');
+  assert.ok(result && !result.isError && result.toolName === 'notion_ctl', 'The explicitly enabled notion_ctl graph export must complete');
   const graph = JSON.parse(text(result.content));
   assert.equal(graph.kind, 'selected_graph'); assert.equal(graph.version, 1);
   const actual = graph.scopes.flatMap(scope => scope.nodes.map(node => ({ ...node, scope: scope.scope })));
@@ -210,7 +211,7 @@ export async function runGraphSession(options) {
   const scratch = await mkdtemp(join(await realpath(tmpdir()), 'graph-session-'));
   const processLedger = join(evidence, 'processes.jsonl'), probe = join(evidence, 'official-ntn-probe.jsonl');
   await Promise.all([writeFile(processLedger, ''), writeFile(probe, '')]);
-  const manifest = { version: 1, status: 'running', evidence, scratch, extension: options.extension, extensionSha256: hash(await readFile(options.extension)), cli: options['cli-entry'], cliSha256: hash(await readFile(options['cli-entry'])), harnessSha256: hash(await readFile(helper)), cases: [], boundary: 'Actual installed Pi RPC and CLI public commands with Node/SQLite; controlled HTTPS Notion service and controlled provider. No cache/session/Store setters. No real-model or production-Notion claim.', notRun: ['fork/rewind/compaction matrix (covered by the separate actual SessionManager suite)', 'TUI Stop (covered by the separate native terminal runner)'] };
+  const manifest = { version: 1, sourceMode: 'command', toolContract: 'agent-cli-ref-20261105', status: 'running', evidence, scratch, extension: options.extension, extensionSha256: hash(await readFile(options.extension)), cli: options['cli-entry'], cliSha256: hash(await readFile(options['cli-entry'])), harnessSha256: hash(await readFile(helper)), cases: [], boundary: 'Actual installed Pi RPC and explicit custom-command CLI comparison with Node/SQLite; controlled HTTPS Notion service and controlled provider. No cache/session/Store setters. No default SDK, real-model or production-Notion claim.', notRun: ['fork/rewind/compaction matrix (covered by the separate actual SessionManager suite)', 'TUI Stop (covered by the separate native terminal runner)'] };
   manifest.installedBroker = await installedBrokerIdentity(options.extension, options['package-path']);
   await save(join(evidence, 'manifest.json'), manifest);
   console.log(JSON.stringify({ evidence, scratch, status: 'running' }));
@@ -248,14 +249,16 @@ export async function runGraphSession(options) {
     await save(plan, { stage: 'initial', steps: [] });
     await save(config, { sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: [process.execPath, helper, '--source', join(consumer.cwd, 'source-state.json')], database: info.database, default_view_id: info.view, cacheDir: cache, prefetch: false, activation: { maxAge: '0' }, discovery: { maxAge: '0' }, requestTimeoutMs: 30000 }] });
     const guard = join(base, 'tools.mjs');
-    await writeFile(guard, 'export default api=>{const tools=' + JSON.stringify(tools) + ';api.on("session_start",()=>api.setActiveTools?.(tools));api.on("before_agent_start",()=>api.setActiveTools?.(tools));api.on("tool_call",e=>tools.includes(e.toolName)?undefined:{block:true,reason:"Controlled session permits public read/selection tools only"});};\n');
+    await writeFile(guard, 'import { readFileSync } from "node:fs"; export default api=>{const tools=' + JSON.stringify(tools) + ',management=' + JSON.stringify(managementTools) + ',plan=' + JSON.stringify(plan) + ';let active=tools;const set=value=>{active=value;api.setActiveTools?.(value);};api.on("session_start",()=>set(tools));api.on("before_agent_start",()=>{const value=JSON.parse(readFileSync(plan,"utf8"));set(value.steps[0]?.name==="notion_ctl"?management:tools);});api.on("tool_result",event=>{const value=JSON.parse(readFileSync(plan,"utf8"));if(!event.isError&&event.toolCallId===value.stage+":"+(value.steps.length-2))set(management);});api.on("tool_call",e=>active.includes(e.toolName)?undefined:{block:true,reason:"Controlled session enables graph management only for its explicit audit step"});};\n');
     const boot = async (name, session) => {
       await stopHost();
       assert.deepEqual(await installedBrokerIdentity(options.extension, options['package-path']), manifest.installedBroker, 'Installed runtime changed during the session acceptance');
       const capture = join(evidence, name + '-provider.jsonl'); await writeFile(capture, '');
       const agentDir = join(base, name + '-agent'); await mkdir(agentDir);
       const env = isolatedEnv({ base, agentDir, CONTEXT_BROKER_CONFIG: config, CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: capture, CONTEXT_BROKER_LOG_FILE: join(evidence, name + '-decisions.jsonl'), BROKER_SESSION_PLAN: plan, BROKER_E2E_PROCESS_LEDGER: processLedger, PATH: poison + ':' + process.env.PATH });
-      const args = ['--no-extensions', '--no-skills', '--no-mcp', '--no-context-files', '--no-prompt-templates', '--session-dir', sessions, '--tools', tools.join(','), '-e', provider, '-e', options.extension, '-e', guard, '--model', 'context-broker-e2e/fake', ...(session ? ['--session', session] : [])];
+      // Pi filters registration through --tools. Keep management registered,
+      // while the guard exposes it only at the explicit graph-audit step.
+      const args = ['--no-extensions', '--no-skills', '--no-mcp', '--no-context-files', '--no-prompt-templates', '--session-dir', sessions, '--tools', managementTools.join(','), '-e', provider, '-e', options.extension, '-e', guard, '--model', 'context-broker-e2e/fake', ...(session ? ['--session', session] : [])];
       const rpc = await startRpc({ host: 'pi', cwd: base, env, args, timeoutMs: 120000 });
       active = { name, rpc, capture, state: await rpc.command('get_state') };
       return active;
@@ -264,7 +267,7 @@ export async function runGraphSession(options) {
     const stage = async (name, steps, expected, delivered) => {
       // The final graph call uses a stable suffix so its complete native output
       // can be located independently of any preceding tool count.
-      const actualSteps = [...steps, { name: 'skill_graph', arguments: {} }];
+      const actualSteps = [...steps, { name: 'notion_ctl', arguments: {} }];
       await save(plan, { stage: name, steps: actualSteps });
       const before = (await rows(active.capture)).length, frameStart = active.rpc.frames.length;
       const priorResponses = new Set(await readdir(consumer.responses));
@@ -277,7 +280,7 @@ export async function runGraphSession(options) {
         const messages = (await active.rpc.command('get_messages')).messages;
         const graphCall = messages.find(message => message.role === 'toolResult' && message.toolCallId === name + ':' + steps.length);
         assert.ok(graphCall); const graphMessages = messages.map(message => message === graphCall ? { ...message, toolCallId: name + ':graph' } : message);
-        const body = bodyEvidence(captures.at(-1).context, allNodes, expected);
+        const body = bodyEvidence(captures.at(-1).context, allNodes, expected, { management: true });
         const receipts = deliveryEvidence(messages, expected, name);
         for (const node of delivered) assert.ok(receipts.some(receipt => receipt.id === node.id && receipt.snapshot_id === node.binding.snapshot_id), 'The requested node needs an actual complete native delivery receipt');
         const selectedGraph = graphEvidence(graphMessages, expected, name);
@@ -295,7 +298,7 @@ export async function runGraphSession(options) {
       console.log(JSON.stringify({ stage: name, status: observation.status, providerRequests: observation.providerRequests }));
       return observation;
     };
-    const prepare = (roots, refresh = false) => ({ name: 'skill_prepare', arguments: { roots, purpose: 'use', ...(refresh ? { refresh: true } : {}) } });
+    const prepare = (roots, refresh = false) => ({ name: 'notion_use', arguments: { ref: roots, ...(refresh ? { refresh: true } : {}) } });
     const aRequired = ['root', 'required'].map(role => byRole(a, role));
     assert.equal((await readdir(consumer.cwd)).length, 1, 'Consumer starts with only its command descriptor; no CLI cache/config was seeded');
     assert.equal((await readdir(cache)).length, 0); assert.equal((await readdir(sessions)).length, 0);

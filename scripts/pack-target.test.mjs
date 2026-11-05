@@ -1,9 +1,28 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmod, copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { verifyBundledRuntime } from './verify-package-closure.mjs';
+
+test('a selected source build accepts its frozen version and rejects wrong packages or altered bundle bytes', () => {
+  const hash = value => createHash('sha256').update(value).digest('hex');
+  const fixture = { expectedVersion: '0.1.0', cliBytes: Buffer.from('frozen-cli'), sdkBytes: Buffer.from('frozen-sdk'),
+    manifest: { version: 1, package: 'ntn-skills', package_version: '0.1.0', cli_sha256: hash('frozen-cli'), sdk_sha256: hash('frozen-sdk') } };
+  assert.deepEqual(verifyBundledRuntime(fixture), { cli: fixture.manifest.cli_sha256, sdk: fixture.manifest.sdk_sha256 });
+  for (const change of [
+    value => { value.expectedVersion = '0.3.0'; },
+    value => { value.manifest.package = 'other-package'; },
+    value => { value.manifest.version = 2; },
+    value => { value.cliBytes = Buffer.from('other-cli'); },
+    value => { value.sdkBytes = Buffer.from('other-sdk'); },
+  ]) {
+    const value = structuredClone(fixture); change(value);
+    assert.throws(() => verifyBundledRuntime(value));
+  }
+});
 
 // Only the packaging dispatcher is under test. Actual build/install/host proof
 // is separate; these stub commands never contact npm or start a host.

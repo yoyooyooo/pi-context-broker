@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
-import { verifySessionReceipts } from './notion-skill-graph.mjs';
+import { verifySessionReceipts, nextGraphTool } from './notion-skill-graph.mjs';
 import { deliveryEvidence } from './notion-skill-graph-session.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -55,15 +55,29 @@ function fixture({ version = 2, sameIdentityAcrossScopes = false } = {}) {
   const content = JSON.stringify(model);
   const projection = { version: 1, compiler: 'context-broker/skill-prepare/v1', sourceProjection: 'source-identity/v1', rendered: measure(content), records: records.map((record, index) =>
     ({ index, ref: modelRecords[index].ref, source: { identity: record.identity, sha256: record.bodySha256, bytes: record.bytes }, state: 'source' })) };
-  const message = { role: 'toolResult', toolName: 'skill_prepare', toolCallId: 'stage:0', isError: false, content: [{ type: 'text', text: content }],
+  const message = { role: 'toolResult', toolName: version === 1 ? 'skill_prepare' : 'notion_use', toolCallId: 'stage:0', isError: false, content: [{ type: 'text', text: content }],
     details: { contextBrokerPreparation: { version, toolCallId: 'stage:0', purpose: 'use', records, graphs, ...(version === 2 ? { projection } : {}) } } };
   rendered(message);
   return { message, nodes };
 }
 
-function verifyBoth(value) {
-  return [verifySessionReceipts([value.message], value.nodes), deliveryEvidence([value.message], value.nodes, 'stage')];
+function verifyBoth(value, options) {
+  return [verifySessionReceipts([value.message], value.nodes, options), deliveryEvidence([value.message], value.nodes, 'stage', options)];
 }
+
+test('current graph selectors use list/use and native inspection while old tool receipts require explicit historical mode', () => {
+  const empty = { messages: [] };
+  assert.equal(nextGraphTool(empty, { mode: 'prepare-use' }).name, 'notion_list');
+  const root = 'sr:C' + 'a'.repeat(22);
+  const context = { messages: [{ role: 'toolResult', toolCallId: 'graph-search', content: JSON.stringify({ records: [{ ref: root, in_default_view: true }] }) }] };
+  assert.deepEqual(nextGraphTool(context, { mode: 'prepare-use' }).arguments, { ref: root });
+  assert.equal(nextGraphTool(context, { mode: 'prepare-use' }).name, 'notion_use');
+  assert.deepEqual(nextGraphTool(context, { mode: 'prepare-inspect' }).arguments, { path: root });
+  assert.equal(nextGraphTool(context, { mode: 'prepare-inspect' }).name, 'read');
+  const old = fixture(); old.message.toolName = 'skill_prepare';
+  assert.throws(() => verifyBoth(old), /notion_use/);
+  for (const proof of verifyBoth(old, { historicalSkillPrepare: true })) assert.equal(proof.length, 2);
+});
 
 test('existing graph and session callers verify v2 projection against their independent source nodes', () => {
   const value = fixture(), before = JSON.stringify(value);
@@ -76,7 +90,7 @@ test('existing graph and session callers verify v2 projection against their inde
 
 test('legacy v1 preparation remains valid but cannot carry a compiled projection', () => {
   const legacy = fixture({ version: 1 });
-  for (const result of verifyBoth(legacy)) assert.equal(result.length, 2);
+  for (const result of verifyBoth(legacy, { historicalSkillPrepare: true })) assert.equal(result.length, 2);
   const downgraded = fixture(); downgraded.message.details.contextBrokerPreparation.version = 1;
   assert.throws(() => verifyBoth(downgraded), /legacy version-one/);
   assert.throws(() => deliveryEvidence([downgraded.message], downgraded.nodes, 'stage'), /legacy version-one/);

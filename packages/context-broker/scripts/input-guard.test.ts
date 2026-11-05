@@ -65,7 +65,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
     if (kind === "omp") adapter.registerCatalog = async () => false;
     let host: HostSkills;
     const installed = installHostSkills(api, {
-      config: {}, getRecords: () => { const pending = Promise.withResolvers<DiscoveryResult<SkillRecord>>(); requests.push(pending); return pending.promise; },
+      config: { sources: [{ id: "fixture", type: "notion", prefetch: false }] }, getRecords: () => { const pending = Promise.withResolvers<DiscoveryResult<SkillRecord>>(); requests.push(pending); return pending.promise; },
       loadRecord: selected => { loads.push(selected); return load(selected); },
       onMetadata: records => published.push(records), onPreparation: value => { entry = value; },
       needsPreflightPrompt: text => parseInvocations(text, rules).length > 0,
@@ -82,7 +82,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       for (const handler of events.get(name) ?? []) results.push(await handler(event as never, ctx));
       return results;
     };
-    const search = (signal?: AbortSignal) => tools.get("skill_search")!.execute("startup-search", { query: "startup" }, signal, undefined, ctx);
+    const search = (signal?: AbortSignal) => tools.get(kind === "pi" ? "notion_list" : "skill_search")!.execute("startup-search", { query: "startup" }, signal, undefined, ctx);
     const begin = async (text: string) => {
       const [result] = await emit("input", { source: "rpc", text });
       const submitted = result && object(result).action === "transform" ? textOf(result) : text;
@@ -112,7 +112,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
         assert.deepEqual(await bounded(f.emit("input", { source: "rpc", text }), `Ordinary Pi input must not await metadata: ${text}`), [{ action: "continue" }]);
         const [before] = await bounded(f.emit("before_agent_start", { prompt: text, systemPrompt: "base" }), "Ordinary Pi provider setup must not await metadata");
         assert.match(String(object(before).systemPrompt), /status="pending"/);
-        assert.match(String(object(before).systemPrompt), /skill_search/);
+        assert.match(String(object(before).systemPrompt), /notion_list/);
       }
       assert.deepEqual(await bounded(f.emit("tool_call", { toolName: "read", input: { path: join(root, "ordinary.txt") } }), "An unrelated Pi read must not await Skill discovery"), [undefined]);
       assert.equal(f.requests.length, 1, "Ordinary input does not restart background directory maintenance");

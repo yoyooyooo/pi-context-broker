@@ -72,7 +72,8 @@ test('native Skill profiling preserves every original tool and rejects undeclare
   assert.deepEqual(modelBaselineTools({...config,toolProfile:'standard'}),standard);
   const native={...config,toolProfile:'native-skills'};
   assert.equal(validateModelBaselineConfig(native),native);
-  assert.deepEqual(modelBaselineTools(native),[...standard,'skill_search','skill_prepare','skill_graph']);
+  assert.deepEqual(modelBaselineTools(native),[...standard,'notion_list','notion_use']);
+  assert.deepEqual(modelBaselineTools({...config,toolProfile:'legacy-skills'}),[...standard,'skill_search','skill_prepare','skill_graph']);
   for(const toolProfile of [null,'prepare-only','native',[],{tools:['skill_prepare']}])
     assert.throws(()=>validateModelBaselineConfig({...config,toolProfile}),/Unsupported model tool profile/);
   assert.throws(()=>validateModelBaselineConfig({...native,tools:['skill_prepare']}));

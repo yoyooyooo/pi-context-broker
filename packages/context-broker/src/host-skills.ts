@@ -17,7 +17,7 @@ import { hostCliScope } from "./host-command";
 import { notifyUnavailableReferences, renderUnavailableReferences } from "./unavailable-references";
 import { deduplicateSourceReads, nativeReadReceipt, sourceDeliveryReceipt } from "./session-source-snapshot";
 import { parseNativeReference, nativeResourcePath, type ExactNativeReference } from "./native-reference";
-import type { PreparedHostGraph, PreparationPurpose, PreparationBinding } from "./prepare-protocol";
+import type { PreparedHostGraph, PreparationPurpose, PreparationBinding, PreparationDirectory } from "./prepare-protocol";
 import type { SelectionMode } from "./session-graph";
 import { publicEntryMaterialization } from "./notion-entry";
 import { createSessionShortRefHost, isSessionShortRefInput, matchesShortRefSource, assertShortRefSource, assertShortRefSnapshot, assertShortRefResource, type HostShortRefResolution } from "./session-short-ref-host";
@@ -60,6 +60,7 @@ export type HostSkills = {
   withPreparedPrompt<T>(prompt: string, ctx: ExtensionContext, build: (signal?: AbortSignal, native?: SkillRecord, original?: string, prepared?: readonly SkillRecord[]) => Promise<T>): Promise<T>;
   isNativeLoaded(messages: AgentMessage[], record: SkillRecord): boolean;
   selectedModelReference(record: SkillRecord, ctx: ExtensionContext): string | undefined;
+  selectedModelFiles(record: SkillRecord, ctx: ExtensionContext): PreparationDirectory["files"] | undefined;
   viewStatus(): readonly NotionViewState[];
 };
 
@@ -152,6 +153,10 @@ async function headlessActivation<T>(start: (signal: AbortSignal) => Promise<T>,
 
 export async function installHostSkills(api: ExtensionAPI, options: HostSkillOptions, adapter: HostCapabilities): Promise<HostSkills> {
   const host = api;
+  const piConsumption = adapter.paths.host === "pi";
+  const listToolName = piConsumption ? "notion_list" : "skill_search";
+  const useToolName = piConsumption ? "notion_use" : "skill_prepare";
+  const controlToolName = piConsumption ? "notion_ctl" : "skill_graph";
   const deferredPiDiscovery = adapter.paths.host === "pi" && adapter.metadataDiscovery === "deferred";
   const shortRefs = createSessionShortRefHost(api);
   function modelReference(record: SkillRecord, ctx: ExtensionContext, fixed = false): string | undefined {
@@ -181,6 +186,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   let lifecycleController = new AbortController();
   let discoveryError: unknown;
   let sourceFailures: SourceFailure[] = [];
+  let catalogCoverage = new Map<string, boolean>();
   let metadataFallback = false;
   let filesystemCache: string | undefined;
   const hostRecords = new Map<string, SkillRecord>();
@@ -246,13 +252,14 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   }
 
   host.registerTool?.({
-    name: "skill_search", label: "Skill search",
+    name: listToolName, label: piConsumption ? "List Notion Skills" : "Skill search",
     description: "Search the authorized Skill metadata directory, including items outside the default View. Returns exact read references only; it does not load instructions or activate workflows.",
     parameters: { type: "object", properties: {
       query: { type: "string", description: "A short name or description keyword; empty lists the directory." },
       source: { type: "string", description: "Optional configured source ID to disambiguate directories." },
       limit: { type: "integer", minimum: 1, maximum: 100, description: "Maximum metadata entries, default 20." },
-    }, required: ["query"], additionalProperties: false },
+      ...(piConsumption ? { cursor: { type: "string", description: "Copy next_cursor from the previous result to continue the same query." } } : {}),
+    }, required: piConsumption ? [] : ["query"], additionalProperties: false },
     strict: true, readsSkillUris: false, loadMode: "essential",
     approval: () => "read", approvalCacheTargets: () => undefined,
     sourcePath: import.meta.url, defaultInactive: false,
@@ -260,28 +267,46 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const readSignal = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
       await ready(readSignal);
       if (discoveryError) throw discoveryError;
-      if (typeof input.query !== "string" || input.query.length > 512
+      if ((input.query !== undefined || !piConsumption) && (typeof input.query !== "string" || input.query.length > 512)
         || input.source !== undefined && typeof input.source !== "string"
         || input.limit !== undefined && (!Number.isSafeInteger(input.limit) || Number(input.limit) < 1 || Number(input.limit) > 100)
-        || Object.keys(input).some(key => !["query", "source", "limit"].includes(key))) throw hostError("INVALID_ARGUMENT");
-      const query = input.query.trim().toLocaleLowerCase();
+        || input.cursor !== undefined && (typeof input.cursor !== "string" || !piConsumption)
+        || Object.keys(input).some(key => !["query", "source", "limit", ...(piConsumption ? ["cursor"] : [])].includes(key))) throw hostError("INVALID_ARGUMENT");
+      const query = String(input.query ?? "").trim().toLocaleLowerCase();
+      const sourceIds = (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false).map(source => source.id);
+      if (piConsumption && input.source !== undefined && !sourceIds.includes(String(input.source))) throw hostError("SOURCE_UNAVAILABLE");
+      const selectedSources = input.source === undefined ? sourceIds : [String(input.source)];
+      const failures = sourceFailures.filter(failure => selectedSources.includes(failure.sourceId));
+      const coverage = selectedSources.map(source => ({ source, exhaustive: catalogCoverage.get(source) ?? null }));
       const matches = [...hostRecords.values()].filter(record => record.ref && record.source === "notion"
         && (input.source === undefined || record.sourceId === input.source)
         && (!query || [record.name, record.alias, record.description].some(value => value?.toLocaleLowerCase().includes(query))));
-      const selected = matches.slice(0, Number(input.limit ?? 20));
+      const catalogKey = createHash("sha256").update(JSON.stringify([query, input.source ?? null,
+        matches.map(record => [recordIdentity(record), record.ref, record.name, record.description, record.enabled]), coverage, failures])).digest("hex");
+      let offset = 0;
+      if (typeof input.cursor === "string") {
+        const cursor = /^(0|[1-9][0-9]*)\.([a-f0-9]{64})$/.exec(input.cursor);
+        if (!cursor || cursor[2] !== catalogKey || !Number.isSafeInteger(Number(cursor[1])) || Number(cursor[1]) > matches.length) throw hostError("CATALOG_CURSOR_INVALID");
+        offset = Number(cursor[1]);
+      }
+      const limit = Number(input.limit ?? 20), selected = matches.slice(offset, offset + limit);
       const references = modelCandidateReferences(selected, ctx);
       const result = {
-        ok: true, state: "known", count: matches.length, has_more: matches.length > Number(input.limit ?? 20),
+        ok: true, state: "known", count: piConsumption ? selected.length : matches.length, has_more: matches.length > offset + selected.length,
+        ...(piConsumption ? { total_count: matches.length,
+          next_cursor: matches.length > offset + selected.length ? `${offset + selected.length}.${catalogKey}` : null,
+          coverage: { exhaustive: failures.length || coverage.some(source => source.exhaustive === false) ? false
+            : coverage.some(source => source.exhaustive === null) ? null : true, sources: coverage } } : {}),
         records: selected.map(record => ({
           id: record.id, ref: references.get(record) ?? record.ref, kind: record.kind, name: record.name, description: record.description,
           source: record.sourceId, scope: record.sourceScope, in_default_view: record.defaultDiscovery === true,
           availability: record.enabled === false ? "disabled" : "available",
         })),
-        failures: sourceFailures.map(({ sourceId, code }) => ({ source: sourceId, code })),
+        failures: (piConsumption ? failures : sourceFailures).map(({ sourceId, code }) => ({ source: sourceId, code })),
       };
       checkPreparationSignal(readSignal);
       const active = host.getActiveTools?.();
-      const model = adapter.paths.host === "pi" && active?.some(name => name === "read" || name === "skill_prepare")
+      const model = adapter.paths.host === "pi" && active?.some(name => name === "read" || name === useToolName)
         ? { ...result, records: result.records.map(({ id: _id, scope: _scope, ...record }) => record) }
         : result;
       return { content: [{ type: "text", text: JSON.stringify(model) }], details: result };
@@ -722,6 +747,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       try {
         if (metadataGeneration !== selectedGeneration) return;
         sourceFailures = result.failures;
+        catalogCoverage = new Map((result.lists ?? []).flatMap(list => typeof list.exhaustive === "boolean" ? [[list.sourceId, list.exhaustive]] : []));
         views = result.views ?? [];
         defaultRouters = next.filter(record => record.kind === "router" && record.defaultDiscovery === true);
         records = next.filter(record => (record.kind === undefined || record.kind === "skill") && (!options.config.sources?.some(source => source.id === record.sourceId && source.type === "notion") || record.defaultDiscovery === true));
@@ -1073,12 +1099,12 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (native && adapter.submission.receipt === "input-digest") nativeInputs.delete(promptHash);
     const candidateRefs = modelCandidateReferences([...records, ...defaultRouters], ctx);
     let systemPrompt = viewSystemPrompt(event.systemPrompt, records, defaultRouters, new Set(readRecords.keys()), views, ctx.cwd,
-      record => candidateRefs.get(record));
+      record => candidateRefs.get(record), listToolName);
     if (deferredPiDiscovery) {
       systemPrompt = systemPrompt.replace(/\n*<ntn-skills-discovery\b[^>]*>[\s\S]*?<\/ntn-skills-discovery>/g, "");
       if (metadataPending || discoveryError || sourceFailures.some(failure => failure.blocking !== false)) {
         const state = metadataPending ? "pending" : "unavailable";
-        systemPrompt += `\n\n<ntn-skills-discovery status="${state}">Skill metadata discovery is ${state}; this does not mean the directory is empty. Use skill_search when the task needs Skill metadata. It waits for the current directory and reports source failures. Visible entries may come from the previous observation; explicit selections still require preparation. Previously loaded instructions keep their selected snapshots.</ntn-skills-discovery>`;
+        systemPrompt += `\n\n<ntn-skills-discovery status="${state}">Notion metadata is ${state}; this does not mean the directory is empty. Use ${listToolName} when the task needs discovery. It reports source failures. Visible entries may come from a previous observation. Previously loaded instructions keep their selected versions.</ntn-skills-discovery>`;
       }
     }
     return { ...(message ? { message } : {}), systemPrompt: adapter.systemPrompt?.(systemPrompt) ?? systemPrompt };
@@ -1110,6 +1136,12 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     hostRecords.set(recordIdentity(selected), selected);
     return selected;
   }
+  function modelFiles(record: SkillRecord, ctx: ExtensionContext) {
+    const files = record.preparationDirectory?.files;
+    if (!files || adapter.paths.host !== "pi" || record.source !== "notion" || !shortRefs.canBind(ctx)) return files;
+    return files.map(file => ({ ...file, ref: file.path === record.entrypoint
+      ? shortRefs.selected(ctx, record) : record.entryManifest?.manifest_complete ? shortRefs.resource(ctx, record, file.ref) : file.ref }));
+  }
   function modelDirectory(record: SkillRecord, prepared: readonly SkillRecord[], ctx: ExtensionContext) {
     const directory = record.preparationDirectory;
     if (!directory || adapter.paths.host !== "pi" || record.source !== "notion" || !shortRefs.canBind(ctx)) return directory;
@@ -1137,28 +1169,34 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (reference.fileId !== undefined || reference.path && reference.path !== target.entrypoint) return entry;
       return { ...entry, ref: modelReference(target, ctx) ?? entry.ref };
     };
-    return { files: directory.files.map(file => ({ ...file, ref: file.path === record.entrypoint
-      ? shortRefs.selected(ctx, record) : shortRefs.resource(ctx, record, file.ref) })),
+    return { files: modelFiles(record, ctx)!,
       required: directory.required.map(related), candidates: directory.candidates.map(related), references: directory.references.map(related) };
   }
   if (options.prepareGraph) host.registerTool?.({
-    name: "skill_prepare", label: "Prepare Skills",
-    description: "Prepare exact Skill roots. Use purpose use to load complete root and Required instructions before executing a workflow; inspect reads only roots and does not activate their dependencies. Members and ordinary references remain directories.",
-    parameters: { type: "object", properties: {
+    name: useToolName, label: piConsumption ? "Use Notion Skills" : "Prepare Skills",
+    description: piConsumption
+      ? "Load complete Notion Skill instructions and their Requires for the current task. Copy a supplied ref, or pass several refs together. Members remain candidates. For an introduction or inspection, use read instead. Loading does not authorize executing a workflow."
+      : "Prepare exact Skill roots. Use purpose use to load complete root and Required instructions before executing a workflow; inspect reads only roots and does not activate their dependencies. Members and ordinary references remain directories.",
+    parameters: piConsumption ? { type: "object", properties: {
+      ref: { anyOf: [{ type: "string" }, { type: "array", minItems: 1, maxItems: 64, items: { type: "string" } }], description: "A supplied sr:C/sr:S or canonical skill:// main ref, or several refs needed together." },
+      refresh: { type: "boolean", description: "Explicitly select current versions after a complete successful load. Requires unfixed refs; failure keeps the previous selection." },
+    }, required: ["ref"], additionalProperties: false } : { type: "object", properties: {
       roots: { type: "array", minItems: 1, maxItems: 64, items: { type: "string" }, description: "Copy exact session sr:C/sr:S references or canonical skill:// main-entry references from metadata or a previous result." },
       purpose: { type: "string", enum: ["use", "inspect"], description: "Explicit operation intent; inspection does not authorize workflow execution." },
       refresh: { type: "boolean", description: "Explicitly begin a new selection for these scopes after successful online preparation. Requires unfixed root refs; existing versions remain in history." },
     }, required: ["roots", "purpose"], additionalProperties: false },
     strict: true, readsSkillUris: true, loadMode: "essential", approval: () => "read", approvalCacheTargets: () => undefined,
     sourcePath: import.meta.url, defaultInactive: false,
+    ...(piConsumption ? { exposure: "model-only" as const, defaultActive: true } : {}),
     async execute(id, input, signal, _onUpdate, ctx) {
       const combined = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
       await ready(combined);
       if (discoveryError) throw discoveryError;
-      if (!["use", "inspect"].includes(String(input.purpose)) || !Array.isArray(input.roots) || !input.roots.length || input.roots.length > 64
-        || input.roots.some(value => typeof value !== "string") || input.refresh !== undefined && typeof input.refresh !== "boolean"
-        || Object.keys(input).some(key => !["roots", "purpose", "refresh"].includes(key))) throw hostError("INVALID_ARGUMENT");
-      const roots: SkillRecord[] = [], pins = new Map<string, string>(), resolved = input.roots.map(raw => resolveReference(String(raw), ctx));
+      const requested = piConsumption ? typeof input.ref === "string" ? [input.ref] : input.ref : input.roots;
+      if ((!piConsumption && !["use", "inspect"].includes(String(input.purpose))) || !Array.isArray(requested) || !requested.length || requested.length > 64
+        || requested.some(value => typeof value !== "string") || input.refresh !== undefined && typeof input.refresh !== "boolean"
+        || Object.keys(input).some(key => !(piConsumption ? ["ref", "refresh"] : ["roots", "purpose", "refresh"]).includes(key))) throw hostError("INVALID_ARGUMENT");
+      const roots: SkillRecord[] = [], pins = new Map<string, string>(), resolved = requested.map(raw => resolveReference(String(raw), ctx));
       for (const { reference, short } of resolved) {
         if (short?.kind === "resource") throw hostError("PREPARE_ROOT_NOT_MAIN");
         if (input.refresh === true && reference.snapshot) throw hostError("PREPARE_VERSION_CONFLICT");
@@ -1170,9 +1208,9 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         }
         roots.push(record);
       }
-      const purpose = input.purpose === "use" ? "use" : "inspect";
+      const purpose = piConsumption || input.purpose === "use" ? "use" : "inspect";
       const prepared = await graphPreparation(roots, ctx, combined, purpose, pins, input.refresh === true ? "replace" : "extend", false);
-      for (let index = 0; index < input.roots.length; index++) {
+      for (let index = 0; index < requested.length; index++) {
         const { reference, short } = resolved[index]!;
         const record = prepared.records.find(record => recordIdentity(record) === recordIdentity(roots[index]!));
         if (!record || nativeResourcePath(reference, record) !== record.entrypoint) throw hostError("PREPARE_ROOT_NOT_MAIN");
@@ -1230,14 +1268,15 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     },
   });
   if (options.sessionGraph) host.registerTool?.({
-    name: "skill_graph", label: "Selected Skill graph",
+    name: controlToolName, label: piConsumption ? "Notion management" : "Selected Skill graph",
     description: "Export this branch's immutable Skill graph and delivery proofs without machine paths. Alternatively, request cli_source for one exact configured Notion source's host-local CLI command prefix and database scope when an authorized maintenance/sync action needs it. This metadata query does not execute commands or grant authorization; cli_source requires active bash and cannot be combined with refs.",
     parameters: { type: "object", properties: {
       refs: { type: "array", maxItems: 64, items: { type: "string" }, description: "Optional fixed sr:S/sr:R references to export as canonical identity and exact version proofs for independent validation." },
       cli_source: { type: "string", minLength: 1, description: "Exact enabled Notion source ID from host guidance. Return its host-local command prefix without execution; do not select a source implicitly." },
     }, additionalProperties: false },
-    strict: true, readsSkillUris: false, loadMode: "essential", approval: () => "read", approvalCacheTargets: () => undefined,
-    sourcePath: import.meta.url, defaultInactive: false,
+    strict: true, readsSkillUris: false, loadMode: piConsumption ? "discoverable" : "essential", approval: () => "read", approvalCacheTargets: () => undefined,
+    sourcePath: import.meta.url, defaultInactive: piConsumption,
+    ...(piConsumption ? { exposure: "deferred" as const, defaultActive: false } : {}),
     async execute(_id, input, signal, _update, ctx) {
       checkPreparationSignal(signal);
       if (Object.keys(input).some(key => key !== "refs" && key !== "cli_source") || input.refs !== undefined && (!Array.isArray(input.refs) || input.refs.length > 64
@@ -1245,7 +1284,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (input.cli_source !== undefined) {
         if (typeof input.cli_source !== "string" || !input.cli_source.length || input.refs !== undefined) throw hostError("INVALID_ARGUMENT");
         const active = host.getActiveTools?.();
-        if (!active?.includes("bash") || !active.includes("skill_graph")) throw hostError("HOST_CLI_TOOL_UNAVAILABLE");
+        if (!active?.includes("bash") || !piConsumption && !active.includes(controlToolName)) throw hostError("HOST_CLI_TOOL_UNAVAILABLE");
         const sources = (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false && source.id === input.cli_source);
         if (!sources.length) throw hostError("HOST_SOURCE_UNAVAILABLE");
         if (sources.length !== 1) throw hostError("HOST_SOURCE_AMBIGUOUS");
@@ -1599,6 +1638,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       throw error;
     }
   }, selectedModelReference: (record, ctx) => record.preparationBinding ? modelReference(record, ctx, true) : undefined,
+  selectedModelFiles: modelFiles,
   viewStatus: () => views, isNativeLoaded: (messages, record) => messages.some(message => {
     if (record.source === "notion") return false;
     if (message.role !== "custom" || message.customType !== "skill-prompt" || !message.details || typeof message.details !== "object") return false;

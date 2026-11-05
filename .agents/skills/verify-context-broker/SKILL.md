@@ -5,7 +5,7 @@ description: "验证 Context Broker 的 Pi/OMP 注入、会话生命周期、随
 
 # Verify Context Broker
 
-AH-617 消费链重构先读 [消费链验证地图](../verify-notion-skills-integration/features/skill-consumption.md)。复用现有 Pi 入口，保留源/投影/投递/active 与各证明层的区别；新场景未跑时不得继承旧 Gate 的通过结论。
+AH-617 消费链重构先读 [消费链验证地图](../verify-notion-skills-integration/features/skill-consumption.md)。当前合同为 `agent-cli-ref-20261105`，覆盖 SC01–26、J01–26。复用现有 Pi 入口，保留源/投影/投递/active 与各证明层的区别；新场景未跑时不得继承旧 Gate 的通过结论。
 
 Notion 请求引擎和多 Skill 图变更同时读取 [直连请求地图](../verify-notion-skills-integration/features/request-engine.md) 与 [依赖图地图](../verify-notion-skills-integration/features/skill-dependency-graph.md)。NG-VC-01 复用一份 `scripts/verify-skill-graph-contract.mjs`，先记录原生 CLI fail-before 和反例自检，再逐层取得真实服务、模型、UI、安装证据。图 Gate A/B 不复用 AH-560 单 Skill 成功结论；当前 helper 只消费项目 HTTP 引擎和显式安全账本。
 
@@ -17,14 +17,16 @@ Notion 请求引擎和多 Skill 图变更同时读取 [直连请求地图](../ve
 
 ```bash
 bun install --frozen-lockfile
-bun run build
+NTN_SKILLS_BUILD_ENTRY=ABSOLUTE_INSTALLED_CLI bun run build:broker
 ```
 
-构建成功应输出 `Built standalone broker query and Tern plugin query`，产物包括 `packages/context-broker/dist/completion.mjs` 与 `packages/tern-context-broker/query/completion.mjs`。依赖已安装且当前改动已构建时不重复安装或构建。构建会更新根 README/CONTRIBUTING/SECURITY/CHANGELOG 的 npm 分发投影，不把生成副本当成另一个文档来源；broker 双语参考在 `packages/context-broker/docs` 直接维护，Tern 双语指南随 GitHub 目录与归档分发。
+Pi 主线构建成功应输出 `Built standalone broker package`，产物包括 `packages/context-broker/dist/completion.mjs` 和相邻 CLI/SDK/runtime 清单。只有任务明确涉及全宿主时才运行 `bun run build`，它还会更新 Tern query。依赖已安装且当前改动已构建时不重复安装或构建。构建会更新根 README/CONTRIBUTING/SECURITY/CHANGELOG 的 npm 分发投影，不把生成副本当成另一个文档来源；broker 双语参考在 `packages/context-broker/docs` 直接维护，Tern 双语指南随 GitHub 目录与归档分发。
 
 仅交付 Pi 主线时，使用 `NTN_SKILLS_BUILD_ENTRY=ABSOLUTE_CLI bun run build:broker`，不构建或安装 Tern；打包对应 `bun scripts/pack.mjs --target broker --out-dir ABSOLUTE_OUTPUT`。Notion integration 的普通 run/doctor 支持 `--host pi`，未选宿主明确未运行。跨宿主缓存专项仍要求其完整矩阵，不能用 Pi 结果替代。
 
-跨仓开发先构建 CLI，再以 `NTN_SKILLS_BUILD_ENTRY=/absolute/notion-skills-cli/packages/cli/dist/ntn-skills.js bun run build` 构建 Broker。产物内含独立 CLI 与三份完整 Skill/参考资源；正式发布使用依赖中固定的已发布 CLI。无需安装回执、中央 Skill 目录或宿主命令镜像。
+跨仓开发先构建 CLI，再以 `NTN_SKILLS_BUILD_ENTRY=/absolute/notion-skills-cli/packages/cli/dist/ntn-skills.js bun run build:broker` 构建 Broker；正式验收优先选择独立安装 CLI entry。产物内含独立 CLI/SDK 与三份完整 Skill/参考资源；当前 CI / publish 从精确 commit 构建同一 CLI 输入，两个 workflow 的 ref 必须一致。已有 npm 版本没有新 SDK 能力时不得静默用它代替。无需中央 Skill 目录或宿主命令镜像。
+
+安装门禁记录显式 CLI 输入的 package manifest、CLI 与 SDK SHA，核对打包前后未变化，再验证独立安装 runtime manifest 中的版本与两个 bundle 的实际 SHA。显式源码候选的版本可以不同于 devDependency 中已发布的旧 CLI，但不得跳过输入绑定或字节校验；未指定输入时仍要求声明的发布依赖版本。错包、错版本与改字节均有负例。Artifact 还实查 `list/read/use` schema、`ctl` 运维入口、包内说明链接及真实 Pi 的普通选择；该层不宣称真实 Notion 或模型任务成功。
 
 本项目没有独立常驻服务器。CLI harness 每次创建临时 HOME、agentDir、sessionDir，加载仓库扩展，在 Pi/OMP 的 print 或 RPC 模式提交真实 prompt。启动器会在 HOME 隔离前解析 Volta 的真实入口，再用 Node 执行 Node CLI；不要把 HOME 改回用户目录来绕过启动问题。
 
@@ -42,9 +44,11 @@ Harness help is safe before setup: `node .agents/skills/verify-context-broker/sc
 node .agents/skills/verify-context-broker/scripts/control.mjs doctor editor
 ```
 
-最后一个参数可为 `injection`、`editor`、`lifecycle`、`model`、`distribution`、`source`、`notion-editor`。Doctor 输出 Node 版本、实际 host executable/arguments、宿主版本、所需工具、平台以及构建产物 hash。要求 `status: ready` 和退出码 0。它不启动会话、不调用模型、不证明认证或功能成功。
+最后一个参数可为 `injection`、`editor`、`lifecycle`、`model`、`distribution`、`distribution-pi`、`source`、`notion-editor`。Doctor 输出 Node 版本、实际 host executable/arguments、宿主版本、所需工具、平台以及构建产物 hash。要求 `status: ready` 和退出码 0。它不启动会话、不调用模型、不证明认证或功能成功。
 
-CLI/RPC helpers 只用 Node.js 22.x 中的 22.22.3+，或 24.20.0+ 启动；Bun 仅用于构建。CI 使用 Node.js 24.20.0，宿主版本当前为 OMP 18.10.3、Pi 1.2.0、Bun 1.3.14；Doctor 记录本机实际版本，不能把本机通过当成另一版本或远端 CI 的通过。版本不同可做本机验证，但报告差异；宿主升级要重验对应路径。编辑器缺产物先 `bun run build`，缺宿主明确报告，不用别的入口冒充。
+CLI/RPC helpers 只用 Node.js 22.x 中的 22.22.3+，或 24.20.0+ 启动；Bun 用于构建和已有单元测试。CI 使用 Node.js 24.20.0、OMP 18.10.3、Pi 1.4.0、Bun 1.4.3。Pi 安装门禁冻结为 1.4.0；Doctor 记录本机实际版本，版本不符为 blocked。其他本机专项可记录差异独立运行，不能替代所声明的候选与远端 CI 结果。
+
+先运行 `node scripts/skill-consumption-contract.mjs check-gates` 检查常规 check、CI/publish、Pi 版本与必要 consumption 集的接线。再运行 `bun run check:broker` 实际执行；接线检查本身不证明测试通过。`test:consumption` 从 package check 进入，原 test 中重复的 native-read/session、host-prepare 和 view-discovery 已归到这一处。
 
 ## Drive
 
@@ -60,13 +64,14 @@ node .agents/skills/verify-context-broker/scripts/control.mjs run editor
 | `editor` | verify-native-ui | 长名称宽下拉与窄窗口边界、自动胶囊、胶囊内点击不弹下拉、删除/撤销、Skill/Router 混合提交与重复、手动 Unicode 替换/取消/焦点变化 |
 | `lifecycle` | lifecycle-e2e | 同进程、fork、回退、续接、压缩保留/移除正文与仅标记摘要、XML 示例后首次加载；普通消息上的默认 CLI 引导恢复 |
 | `model` | verify-real-model | Skill 指令效果、真实默认摘要器、压缩后再次注入、每个普通请求的一份 CLI XML、实际请求 model selector |
-| `distribution` | verify-artifacts + release.test | 安装后运行、独立查询程序与 Luau 依赖完整性、发布检查阻止 commit/tag/push |
+| `distribution` | verify-artifacts --host pi、--host omp + release.test | 两宿主分别实际安装消费，另验 Tern 依赖与发布边界 |
+| `distribution-pi` | verify-artifacts --host pi | 只打包与独立安装 Broker，实际 Pi RPC、完整正文/provider、CLI/SDK 身份及 source 失败隔离；不构建 Tern |
 | `source` | verify-notion-integration deterministic | source metadata、默认宿主Skill目录、真实read/native /skill、延迟activation、资源与持久续接；受控CLI不证明远端Notion |
 | `notion-editor` | verify-native-ui --notion | `$alias@namespace` 的原生自动补全、chip、手动选择与 provider 正文 |
 
 `model` 发起真实网络请求；只在当前任务需要且已有授权覆盖此模型时执行。无授权或登录缺失时完成其余可达路径并记录未运行。`distribution` 的生产依赖安装需要 npm 网络；发布行为只在测试创建的临时 Git 仓库运行。
 
-Notion/source 改动还需读取 [source地图](features/source.md) 和 [跨仓联动Skill](../verify-notion-skills-integration/SKILL.md)。`source` 使用无凭据CLI executable fixture并实际启动双宿主；真实Notion只读、真实模型和独立安装有单独mode，必须分别报告执行情况。
+Notion/source 改动还需读取 [source地图](features/source.md) 和 [跨仓联动Skill](../verify-notion-skills-integration/SKILL.md)。`source` 使用无凭据CLI executable fixture并实际启动双宿主；真实 Notion、真实模型和独立安装有单独 mode，必须分别报告。live 驱动不额外创建 fixture 或主动编辑；current read 仍可能首次 retention/adoption 并写 Records，必须记录权限和实际写入，不能把消费一概称为远端只读。
 
 随包内容按 [随包 Skill 地图](../verify-notion-skills-integration/features/builtin-management.md) 复用 `distribution`、`source` 与 `editor`。安装后直接从 `$` 选择三份 `ntn-skills` Skill，明确内建身份使用 `@builtin`。检查完整正文、相对资源、同名来源消歧及实际 CLI/source 指引。
 

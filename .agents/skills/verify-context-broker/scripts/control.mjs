@@ -14,7 +14,8 @@ const routes = {
   editor: { tools: ["bun", "omp", "tern", "tar"], scripts: ["scripts/verify-native-ui.mjs"], artifacts: ["packages/tern-context-broker/query/completion.mjs"] },
   lifecycle: { tools: ["bun", "omp"], scripts: ["packages/context-broker/scripts/context-broker-lifecycle-e2e.mjs"] },
   model: { tools: ["bun", "omp"], scripts: ["scripts/verify-real-model.mjs"] },
-  distribution: { tools: ["bun", "omp", "npm", "git", "tar"], scripts: ["scripts/verify-artifacts.mjs", "scripts/release.test.mjs"] },
+  distribution: { tools: ["bun", "pi", "omp", "npm", "git", "tar"], scripts: ["scripts/verify-artifacts.mjs --host pi", "scripts/verify-artifacts.mjs --host omp", "scripts/release.test.mjs"] },
+  "distribution-pi": { tools: ["bun", "pi", "npm", "tar"], scripts: ["scripts/verify-artifacts.mjs --host pi"] },
   source: { tools: ["bun", "omp", "pi"], scripts: ["scripts/verify-notion-integration.mjs"] },
   "notion-editor": { tools: ["bun", "omp", "tern", "tar"], scripts: ["scripts/verify-native-ui.mjs --notion"], artifacts: ["packages/tern-context-broker/query/completion.mjs"] },
   'tern-pi': { tools: ['node', 'pi', 'tern'], scripts: ['scripts/verify-tern-surfaces.mjs probe --surface pi-terminal'] },
@@ -22,7 +23,7 @@ const routes = {
   'tern-omp-native': { tools: ['node', 'omp', 'tern'], scripts: ['scripts/verify-tern-surfaces.mjs probe --surface omp-native'] },
 };
 const [action, target] = process.argv.slice(2);
-const usage = "Usage: node .agents/skills/verify-context-broker/scripts/control.mjs doctor|run injection|editor|lifecycle|model|distribution|source|notion-editor|tern-pi|tern-omp-terminal|tern-omp-native\n       node .agents/skills/verify-context-broker/scripts/control.mjs evidence /absolute/run-directory\nTern routes perform no-product renderer probes. Frozen acceptance: node scripts/verify-tern-surfaces.mjs run --surface SURFACE --spec /absolute/owned-run.json";
+const usage = "Usage: node .agents/skills/verify-context-broker/scripts/control.mjs doctor|run injection|editor|lifecycle|model|distribution|distribution-pi|source|notion-editor|tern-pi|tern-omp-terminal|tern-omp-native\n       node .agents/skills/verify-context-broker/scripts/control.mjs evidence /absolute/run-directory\nTern routes perform no-product renderer probes. Frozen acceptance: node scripts/verify-tern-surfaces.mjs run --surface SURFACE --spec /absolute/owned-run.json";
 if (["help", "--help", "-h"].includes(action)) { console.log(usage); process.exit(0); }
 const [nodeMajor, nodeMinor, nodePatch] = process.versions.node.split(".").map(Number);
 const supportedNode = (nodeMajor === 22 && (nodeMinor > 22 || (nodeMinor === 22 && nodePatch >= 3))) || nodeMajor > 24 || (nodeMajor === 24 && nodeMinor >= 20);
@@ -70,7 +71,12 @@ async function doctor(feature) {
   report.scratch = doctorBase;
   report.scratchDisposition = "retained; move this owned directory to system Trash after reviewing doctor output";
   for (const name of routes[feature].tools) {
-    try { report.tools.push(await version(name)); }
+    try {
+      const tool = await version(name);
+      report.tools.push(tool);
+      if (["distribution", "distribution-pi"].includes(feature) && name === "pi" && tool.version !== "1.4.0")
+        report.failures.push("Installed artifact acceptance requires the supported Pi 1.4.0.");
+    }
     catch (error) { report.failures.push(error.message); }
   }
   for (const path of routes[feature].artifacts ?? []) {

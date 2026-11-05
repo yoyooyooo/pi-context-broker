@@ -134,8 +134,10 @@ export function observeConsumptionCost(api, settings) {
       if (!details || message.isError === true) continue;
       let text = textContent(message.content);
       const ownedCustom = message.role === 'custom' && ['context-broker', 'skill-prompt-message'].includes(message.customType);
-      const preparation = message.role === 'toolResult' && message.toolName === 'skill_prepare' && nonempty(message.toolCallId)
-        && details.contextBrokerPreparation?.toolCallId === message.toolCallId ? details.contextBrokerPreparation : undefined;
+      const preparation = message.role === 'toolResult' && ['notion_use', 'skill_prepare'].includes(message.toolName) && nonempty(message.toolCallId)
+        && details.contextBrokerPreparation?.toolCallId === message.toolCallId
+        && (message.toolName === 'skill_prepare' || details.contextBrokerPreparation.version === 2 && details.contextBrokerPreparation.purpose === 'use')
+        ? details.contextBrokerPreparation : undefined;
       if (ownedCustom && details.nativePromptSha256) text = textContent(messages.find(item => item.role === 'user'
         && sha(textContent(item.content)) === details.nativePromptSha256)?.content);
       const records = preparation ? projectedRecords(preparation, text) : ownedCustom ? details.records ?? [details] : [];

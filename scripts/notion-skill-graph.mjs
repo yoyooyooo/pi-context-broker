@@ -239,7 +239,7 @@ export async function smokeGraphFixture(options) {
 // This function is copied into the controlled provider. Every read target is
 // derived from the visible catalog or preceding tool result. Only the explicit
 // historical-pin case supplies a public root ref in its fixture plan.
-function nextGraphTool(context, plan) {
+export function nextGraphTool(context, plan) {
   const text = content => typeof content === 'string' ? content : (content ?? []).filter(part => part.type === 'text').map(part => String(part.text ?? '')).join('\n');
   const result = id => context.messages.find(message => message.role === 'toolResult' && message.toolCallId === id);
   const call = (id, name, args) => ({ type: 'toolCall', id, name, arguments: args });
@@ -249,15 +249,24 @@ function nextGraphTool(context, plan) {
     if (!root) {
       const metadata = [typeof context.systemPrompt === 'string' ? context.systemPrompt : (context.systemPrompt ?? []).join('\n'), ...context.messages.filter(message => message.role === 'system').map(message => text(message.content) + '\n' + String(message.sections?.skills ?? ''))].join('\n');
       const advertised = [...metadata.matchAll(/<skill>\s*<name>\s*[^<]+\s*<\/name>[\s\S]*?<location>\s*([^<]+)\s*<\/location>/g)];
-      if (advertised.length !== 1) throw new Error('The visible native catalog must advertise exactly one root');
-      const location = advertised[0]?.[1]?.trim();
+      let location = advertised[0]?.[1]?.trim();
+      if (advertised.length !== 1) {
+        if (!/<ntn-skills-discovery\b[^>]*status="pending"/.test(metadata)) throw new Error('The visible native catalog must advertise exactly one root');
+        const listed = result('graph-search');
+        if (!listed) return call('graph-search', 'notion_list', { query: '', limit: 100 });
+        if (listed.isError) throw new Error('Metadata discovery failed while the default catalog was pending');
+        const roots = JSON.parse(text(listed.content)).records.filter(record => record.in_default_view === true);
+        if (roots.length !== 1) throw new Error('Metadata discovery must bind one default root');
+        location = roots[0].ref;
+      }
       if (!location) throw new Error('The visible native catalog did not advertise the graph root');
       return call('graph-root-read', 'read', { path: location });
     }
     if (root.isError) throw new Error('The native root read failed');
     const member = result('graph-member-read');
     if (!member) {
-      const ref = [...text(root.content).matchAll(/skill:\/\/[^\s)<>"\]]+/g)].map(match => match[0].replaceAll('&amp;', '&')).find(ref => ref.split('?')[0].endsWith('/SKILL.md'));
+      const content = text(root.content), members = content.includes('## Members') ? content.slice(content.indexOf('## Members')) : content;
+      const ref = [...members.matchAll(/skill:\/\/[^\s)<>"\]]+/g)].map(match => match[0].replaceAll('&amp;', '&')).find(ref => ref.split('?')[0].endsWith('/SKILL.md'));
       if (!ref) throw new Error('The visible root result did not provide an exact Member ref');
       return call('graph-member-read', 'read', { path: ref });
     }
@@ -272,12 +281,15 @@ function nextGraphTool(context, plan) {
     return null;
   }
   const searched = result('graph-search');
-  if (!searched) return call('graph-search', 'skill_search', { query: '', limit: 100 });
+  if (!searched) return call('graph-search', 'notion_list', { query: '', limit: 100 });
   if (searched.isError) throw new Error('Metadata search failed');
+  if (plan.mode === 'metadata') return null;
   const catalog = JSON.parse(text(searched.content));
   const root = catalog.records.find(record => record.in_default_view === true);
   if (!root?.ref) throw new Error('The visible search result has no default View root');
-  if (!result('graph-prepare')) return call('graph-prepare', 'skill_prepare', { roots: [plan.rootPin ?? root.ref], purpose: plan.mode === 'prepare-inspect' ? 'inspect' : 'use' });
+  if (!result('graph-prepare')) return plan.mode === 'prepare-inspect'
+    ? call('graph-prepare', 'read', { path: plan.rootPin ?? root.ref })
+    : call('graph-prepare', 'notion_use', { ref: plan.rootPin ?? root.ref });
   if (result('graph-prepare').isError) throw new Error('Explicit graph preparation failed');
   return null;
 }
@@ -322,7 +334,7 @@ function verifyNoShell(context) {
   assert.ok(!names.some(name => /^(?:bash|exec|shell|execute|terminal)$/i.test(name)), 'The controlled Agent has no shell execution tool');
   return names;
 }
-export function verifySessionReceipts(messages, nodes) {
+export function verifySessionReceipts(messages, nodes, { historicalSkillPrepare = false } = {}) {
   const verified = [];
   for (const message of messages) {
     const details = message.details;
@@ -332,7 +344,7 @@ export function verifySessionReceipts(messages, nodes) {
     let content = textContent(message.content);
     if (preparation !== undefined) {
       assert.equal(message.role, 'toolResult', 'Preparation evidence belongs to an actual tool result');
-      assert.equal(message.toolName, 'skill_prepare'); assert.notEqual(message.isError, true);
+      assert.equal(message.toolName, historicalSkillPrepare ? 'skill_prepare' : 'notion_use'); assert.notEqual(message.isError, true);
       assert.ok(typeof message.toolCallId === 'string' && message.toolCallId.length > 0);
       assert.ok(group && typeof group === 'object' && !Array.isArray(group));
       assert.equal(group.toolCallId, message.toolCallId);
@@ -398,7 +410,7 @@ export async function runSkillGraph({ host, root, scratch, evidence, extension, 
   const label = 'pi-skill-graph';
   const output = join(evidence, label);
   await mkdir(output);
-  const result = { host, mode: 'skill-graph', status: 'running', consumer: 'installed extension + actual Pi RPC + controlled provider', source: 'real installed Node CLI with isolated SQLite frozen fixtures; metadata wrapper only', cases: [], files: [], notRun: ['Real Notion graph creation and remote cold-cache acceptance', 'Real model selection', 'Native composer Stop/TUI; RPC abort is measured separately', ...graphCaseNames.filter(name => !cases.includes(name)).map(name => 'Unselected graph case: ' + name)] };
+  const result = { host, mode: 'skill-graph', sourceMode: 'command', toolContract: 'agent-cli-ref-20261105', status: 'running', consumer: 'installed extension + actual Pi RPC + controlled provider', source: 'explicit custom-command comparison with real installed Node CLI and isolated SQLite frozen fixtures; not the default bundled SDK path', cases: [], files: [], notRun: ['Real Notion graph creation and remote cold-cache acceptance', 'Real model selection', 'Native composer Stop/TUI; RPC abort is measured separately', ...graphCaseNames.filter(name => !cases.includes(name)).map(name => 'Unselected graph case: ' + name)] };
   try {
     for (const name of cases) {
       const base = join(scratch, label, name), retained = join(output, name), agentDir = join(base, 'agent');
@@ -411,12 +423,12 @@ export async function runSkillGraph({ host, root, scratch, evidence, extension, 
       const providerFile = join(retained, 'pi-provider.jsonl'), decisionsFile = join(retained, 'pi-decisions.jsonl'), lifecycleFile = join(retained, 'pi-lifecycle.jsonl');
       await Promise.all([writeFile(providerFile, ''), writeFile(decisionsFile, ''), writeFile(lifecycleFile, '')]);
       const provider = await graphProvider(base), planPath = join(base, 'graph-plan.json');
-      await save(planPath, { mode: name === 'native-chain' ? 'native-chain' : name === 'tool-inspect' ? 'prepare-inspect' : ['tool-use', 'cold-pin'].includes(name) ? 'prepare-use' : 'none', ...(name === 'cold-pin' ? { rootPin: fileRef(fixture.graph.root.record.id, fixture.graph.root.entrypoint, fixture.graph.root.snapshot_id, 'main-graph-root') } : {}) });
+      await save(planPath, { mode: name === 'metadata' ? 'metadata' : name === 'native-chain' ? 'native-chain' : name === 'tool-inspect' ? 'prepare-inspect' : ['tool-use', 'cold-pin'].includes(name) ? 'prepare-use' : 'none', ...(name === 'cold-pin' ? { rootPin: fileRef(fixture.graph.root.record.id, fixture.graph.root.entrypoint, fixture.graph.root.snapshot_id, 'main-graph-root') } : {}) });
       await save(join(agentDir, 'context-broker', 'config.yml'), { sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: ledger.command, database: fixture.graph.database, cacheDir: join(base, 'broker-cache'), prefetch: false, activation: { offline: true }, requestTimeoutMs: 45000, ...(name === 'budget' ? { preparation: { maxNodes: 2 } } : {}) }] });
       const compactMode = join(base, 'compaction-mode.txt');
       await writeFile(compactMode, 'remove');
       const env = isolatedEnv({ base, agentDir, CONTEXT_BROKER_HOST: host, CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: providerFile, CONTEXT_BROKER_LOG_FILE: decisionsFile, BROKER_GRAPH_PLAN: planPath, CONTEXT_BROKER_E2E_LIFECYCLE_FILE: lifecycleFile, CONTEXT_BROKER_E2E_COMPACTION_MODE_FILE: compactMode });
-      const activeTools = ['tool-use', 'tool-inspect', 'cold-pin'].includes(name) ? 'read,skill_search,skill_prepare' : 'read';
+      const activeTools = 'read,notion_list,notion_use';
       const args = ['--no-extensions', '--session-dir', join(base, 'sessions'), '--tools', activeTools, '-e', provider, '-e', join(root, 'packages/context-broker/scripts/context-broker-lifecycle-fixture.mjs'), '-e', extension, '--model', 'context-broker-e2e/fake'];
       const observation = { name, status: 'running', isolation: { host: 'fresh', broker: 'fresh', cli: 'separate seeded immutable SQLite fixture, no prior prepare/read/export', prefetch: false }, observations: [] };
       result.cases.push(observation);
@@ -483,7 +495,13 @@ export async function runSkillGraph({ host, root, scratch, evidence, extension, 
           assert.ok(captures.length);
           observation.tool_names = verifyNoShell(captures[0].context);
           const entries = nativeEntries(host, captures[0].context);
-          assert.deepEqual(entries.map(entry => entry.name), [nativeName], 'The default native View presents only the root');
+          const firstSystem = [typeof captures[0].context.systemPrompt === 'string' ? captures[0].context.systemPrompt : (captures[0].context.systemPrompt ?? []).join('\n'), ...captures[0].context.messages.filter(message => message.role === 'system').map(message => textContent(message.content))].join('\n');
+          if (!/<ntn-skills-discovery\b[^>]*status="pending"/.test(firstSystem)) assert.deepEqual(entries.map(entry => entry.name), [nativeName], 'The ready default native View presents only the root');
+          await rpc.prompt('Continue with the current default directory.');
+          const continued = (await rows(providerFile)).slice(captures.length);
+          assert.equal(continued.length, 1, 'The ordinary continuation must not repeat a completed selection or resource read');
+          assert.deepEqual(nativeEntries(host, continued[0].context).map(entry => entry.name), [nativeName], 'An ordinary continuation must expose the ready root-only default View');
+          observation.defaultDiscovery = { first: entries.length ? 'ready' : 'pending', ordinaryContinuation: 'ready', setupProviderRequests: 1 };
           const firstUse = ['cold-dollar', 'cold-native', 'multi-root', 'renamed-identities'].includes(name);
           observation.first_provider = verifyBodies(captures[0].context, fixture.graph, firstUse ? name === 'multi-root' ? [...fixture.graph.useIds, fixture.graph.secondary.record.id] : fixture.graph.useIds : []);
           if (name === 'metadata') {
@@ -496,8 +514,9 @@ export async function runSkillGraph({ host, root, scratch, evidence, extension, 
             observation.receipts = verifySessionReceipts(messages, fixture.graph.nodes.filter(node => expected.includes(node.record.id)));
             if (name === 'native-chain') {
               const calls = messages.filter(message => message.role === 'assistant').flatMap(message => (message.content ?? []).filter(part => part.type === 'toolCall'));
-              assert.deepEqual(calls.map(call => call.name), ['read', 'read', 'read']);
-              assert.ok(calls[1].arguments.path.startsWith('skill://') && calls[2].arguments.path.includes('file_id=resource-graph-member-1'));
+              const reads = calls.filter(call => call.name === 'read');
+              assert.ok(calls.every(call => ['read', 'notion_list'].includes(call.name))); assert.equal(reads.length, 3);
+              assert.ok(reads[1].arguments.path.startsWith('skill://') && reads[2].arguments.path.includes('file_id=resource-graph-member-1'));
               observation.observations.push({ directory_target: 'derived from actual root read', resource_target: 'derived from actual Member read; stable file_id resolves renamed path', requires_bodies: 0 });
             }
             if (['cold-dollar', 'multi-root', 'renamed-identities'].includes(name)) {
@@ -519,14 +538,15 @@ export async function runSkillGraph({ host, root, scratch, evidence, extension, 
               await save(join(retained, 'renamed-native-session-messages.json'), renamedMessages);
               observation.renamed_native.receipts = verifySessionReceipts(renamedMessages, fixture.graph.nodes.filter(node => selected.includes(node.record.id)));
               const calls = renamedMessages.filter(message => message.role === 'assistant').flatMap(message => (message.content ?? []).filter(part => part.type === 'toolCall'));
-              assert.deepEqual(calls.map(call => call.name), ['read', 'read', 'read']);
+              const reads = calls.filter(call => call.name === 'read');
+              assert.ok(calls.every(call => ['read', 'notion_list'].includes(call.name))); assert.equal(reads.length, 3);
               const resourceId = fixture.graph.member.file_bindings.find(file => file.path === fixture.graph.resource.path).file_id;
-              assert.equal(new URL(calls[2].arguments.path).searchParams.get('file_id'), resourceId);
+              assert.equal(new URL(reads[2].arguments.path).searchParams.get('file_id'), resourceId);
               observation.observations.push({ identity_variant: fixture.graph.identityVariant, changed: ['names', 'aliases', 'library_id', 'skill_ids', 'page_ids', 'database_id', 'data_source_id', 'view_id', 'file_ids', 'resource_paths'], first_use: 'complete deduplicated closure', later_native_selection: 'public catalog and body links only; no target in provider plan', required_bodies_in_inspect: 0 });
             }
           }
           assert.equal((await rows(fixture.httpPath)).length, 0, 'Offline graph consumer must not contact the loopback HTTP probe');
-          observation.provider_requests = captures.length;
+          observation.provider_requests = captures.length + continued.length;
         }
         observation.status = 'passed';
       } catch (error) { observation.status = 'failed'; observation.error = error.stack ?? error.message; throw error; }

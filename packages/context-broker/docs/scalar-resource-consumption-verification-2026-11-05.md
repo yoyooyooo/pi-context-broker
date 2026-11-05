@@ -109,4 +109,4 @@ Native 只收到替换后的 `path`，其余参数和返回对象不变。直接
 
 七个 Pi run 已逐个执行 evidence → cleanup → evidence，21 条命令均 exit 0，271 份原件 bytes/SHA 不变，七个原 scratch 经系统 Trash 回收。归档 session、HTTP、observer、资源 bytes、包及终局回执均保留。正式单元测试使用独占临时根；早期 Agent 探查没有逐路径 ownership receipt 的默认临时目录保留，不按名称或时间推定归属。
 
-复跑命令与分层边界见[消费地图](../../../.agents/skills/verify-notion-skills-integration/features/skill-consumption.md)及[资源合同](fixed-resource-batches.md)。本切片不关闭整个 AH-617、SC07、SC13 或正式真实模型/双机/日用安装门槛。
+复跑命令与分层边界见[消费地图](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/skill-consumption.md)及[资源合同](fixed-resource-batches.md)。本切片不关闭整个 AH-617、SC07、SC13 或正式真实模型/双机/日用安装门槛。

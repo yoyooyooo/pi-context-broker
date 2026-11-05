@@ -35,6 +35,7 @@
       "featurePrefix": "SC-REF",
       "recipeStatus": "draft",
       "journeys": [
+        "J06",
         "J12",
         "J18"
       ]
@@ -64,12 +65,17 @@
     {
       "id": "SC07",
       "issue": "AH-626",
-      "name": "inspect/use及资源批读",
+      "name": "Notion薄工具与固定资源",
       "featurePrefix": "SC-TOOLS",
       "recipeStatus": "draft",
       "journeys": [
+        "J03",
+        "J04",
         "J05",
-        "J06"
+        "J06",
+        "J07",
+        "J15",
+        "J24"
       ]
     },
     {
@@ -79,9 +85,11 @@
       "featurePrefix": "SC-SESSION",
       "recipeStatus": "draft",
       "journeys": [
+        "J05",
         "J10",
         "J11",
-        "J12"
+        "J12",
+        "J24"
       ]
     },
     {
@@ -91,8 +99,7 @@
       "featurePrefix": "SC-STARTUP",
       "recipeStatus": "draft",
       "journeys": [
-        "J01",
-        "J02"
+        "J01"
       ]
     },
     {
@@ -102,14 +109,13 @@
       "featurePrefix": "SC-SDK",
       "recipeStatus": "draft",
       "journeys": [
-        "J03",
         "J04"
       ]
     },
     {
       "id": "SC11",
       "issue": "AH-628",
-      "name": "字段与批量元数据",
+      "name": "元数据复用与按收益投影",
       "featurePrefix": "SC-METADATA",
       "recipeStatus": "draft",
       "journeys": [
@@ -122,7 +128,7 @@
     {
       "id": "SC12",
       "issue": "AH-629",
-      "name": "分层缓存",
+      "name": "缓存freshness与隔离",
       "featurePrefix": "SC-CACHE",
       "recipeStatus": "draft",
       "journeys": [
@@ -132,6 +138,7 @@
         "J11",
         "J13",
         "J14",
+        "J16",
         "J17"
       ]
     },
@@ -162,7 +169,7 @@
     {
       "id": "SC15",
       "issue": "AH-632",
-      "name": "同机只读合并",
+      "name": "取消、预算与按收益合并",
       "featurePrefix": "SC-SCHEDULER",
       "recipeStatus": "draft",
       "journeys": [
@@ -172,7 +179,7 @@
     {
       "id": "SC16",
       "issue": "AH-633",
-      "name": "历史检查点",
+      "name": "历史重算与按需检查点",
       "featurePrefix": "SC-CHECKPOINT",
       "recipeStatus": "draft",
       "journeys": [
@@ -182,7 +189,7 @@
     {
       "id": "SC17",
       "issue": "AH-634",
-      "name": "附件与内联",
+      "name": "大对象存储策略裁决",
       "featurePrefix": "SC-STORAGE",
       "recipeStatus": "draft",
       "journeys": [
@@ -192,7 +199,7 @@
     {
       "id": "SC18",
       "issue": "AH-635",
-      "name": "文件级来源迁移",
+      "name": "选定策略迁移与旧pin恢复",
       "featurePrefix": "SC-MIGRATION",
       "recipeStatus": "draft",
       "journeys": [
@@ -204,7 +211,7 @@
     {
       "id": "SC19",
       "issue": "AH-636",
-      "name": "poteto内容",
+      "name": "poteto完整性与按收益优化",
       "featurePrefix": "SC-AUTHORING",
       "recipeStatus": "draft",
       "journeys": []
@@ -212,12 +219,14 @@
     {
       "id": "SC20",
       "issue": "AH-638",
-      "name": "全场景成本矩阵",
+      "name": "纯本地对照与全任务成本",
       "featurePrefix": "SC-MATRIX",
       "recipeStatus": "draft",
       "journeys": [
         "J01",
-        "J13"
+        "J02",
+        "J13",
+        "J23"
       ]
     },
     {
@@ -231,26 +240,33 @@
         "J06",
         "J07",
         "J08",
-        "J09"
+        "J09",
+        "J23"
       ]
     },
     {
       "id": "SC22",
       "issue": "AH-637",
-      "name": "独立安装双机",
+      "name": "独立Pi候选与双机恢复",
       "featurePrefix": "SC-INSTALL",
       "recipeStatus": "draft",
       "journeys": [
-        "J16"
+        "J16",
+        "J19",
+        "J25",
+        "J26"
       ]
     },
     {
       "id": "SC23",
       "issue": "AH-640",
-      "name": "调用者与回滚",
+      "name": "调用者迁移与冗余协议清理",
       "featurePrefix": "SC-CALLERS",
       "recipeStatus": "draft",
-      "journeys": []
+      "journeys": [
+        "J22",
+        "J26"
+      ]
     },
     {
       "id": "SC24",
@@ -259,7 +275,30 @@
       "featurePrefix": "SC-DAILY",
       "recipeStatus": "draft",
       "journeys": [
-        "J21"
+        "J21",
+        "J26"
+      ]
+    },
+    {
+      "id": "SC25",
+      "issue": "AH-675",
+      "name": "CLI list/read/use与目录SDK",
+      "featurePrefix": "SC-CLI",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J22",
+        "J25"
+      ]
+    },
+    {
+      "id": "SC26",
+      "issue": "AH-676",
+      "name": "验证Skill、真实Pi与CI接线",
+      "featurePrefix": "SC-GATES",
+      "recipeStatus": "draft",
+      "journeys": [
+        "J24",
+        "J25"
       ]
     }
   ],
@@ -279,8 +318,8 @@
       "name": "暖目录普通消息",
       "tasks": [
         "SC06",
-        "SC09",
-        "SC12"
+        "SC12",
+        "SC20"
       ],
       "required": true,
       "status": "not_run"
@@ -290,7 +329,7 @@
       "name": "暖缓存显式激活",
       "tasks": [
         "SC05",
-        "SC10",
+        "SC07",
         "SC12"
       ],
       "required": true,
@@ -300,6 +339,7 @@
       "id": "J04",
       "name": "冷缓存根与Requires",
       "tasks": [
+        "SC07",
         "SC10",
         "SC11",
         "SC13"
@@ -312,6 +352,7 @@
       "name": "用户原句介绍",
       "tasks": [
         "SC07",
+        "SC08",
         "SC21"
       ],
       "required": true,
@@ -321,6 +362,7 @@
       "id": "J06",
       "name": "无美元明确名称介绍",
       "tasks": [
+        "SC04",
         "SC06",
         "SC07",
         "SC21"
@@ -333,6 +375,7 @@
       "name": "无美元自然选路",
       "tasks": [
         "SC06",
+        "SC07",
         "SC21"
       ],
       "required": true,
@@ -413,6 +456,7 @@
       "id": "J15",
       "name": "单资源缺失与custom覆盖",
       "tasks": [
+        "SC07",
         "SC13",
         "SC18"
       ],
@@ -423,6 +467,7 @@
       "id": "J16",
       "name": "空pro/mini固定历史恢复",
       "tasks": [
+        "SC12",
         "SC18",
         "SC22"
       ],
@@ -456,7 +501,8 @@
       "name": "附件过期与unknown上传",
       "tasks": [
         "SC17",
-        "SC18"
+        "SC18",
+        "SC22"
       ],
       "required": true,
       "status": "not_run"
@@ -475,6 +521,59 @@
       "id": "J21",
       "name": "正常日用新Pi",
       "tasks": [
+        "SC24"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J22",
+      "name": "独立CLI list/read/use与固定资源",
+      "tasks": [
+        "SC25",
+        "SC23"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J23",
+      "name": "同条件Pi原生本地Skill对照",
+      "tasks": [
+        "SC20",
+        "SC21"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J24",
+      "name": "Code mode与实际外层交付",
+      "tasks": [
+        "SC07",
+        "SC08",
+        "SC26"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J25",
+      "name": "常规CI、独立Pi与默认SDK目录",
+      "tasks": [
+        "SC25",
+        "SC26",
+        "SC22"
+      ],
+      "required": true,
+      "status": "not_run"
+    },
+    {
+      "id": "J26",
+      "name": "旧命令、配置、会话与operation恢复",
+      "tasks": [
+        "SC23",
+        "SC22",
         "SC24"
       ],
       "required": true,
@@ -502,8 +601,8 @@
       "ordinary",
       "dollar",
       "native",
-      "search",
-      "prepare",
+      "list",
+      "use",
       "read",
       "cli",
       "sdk"
@@ -524,8 +623,8 @@
         "reason": "No Skill intent has no explicit Skill entry."
       },
       {
-        "rule": "entry=search requires intent=discover",
-        "reason": "Search returns candidates; it does not inspect or activate."
+        "rule": "entry=list requires intent=discover",
+        "reason": "List returns candidates; it does not inspect or activate."
       },
       {
         "rule": "entry=ordinary cannot explicitly inspect/use",
@@ -538,8 +637,16 @@
       {
         "rule": "entry=cli/sdk with resumed host session",
         "reason": "Direct clients have no Pi lifecycle. Test bindings through their host caller separately."
+      },
+      {
+        "rule": "entry=use requires intent=use",
+        "reason": "Use returns the complete Required closure; read inspects content separately."
       }
-    ]
+    ],
+    "conditionalMechanisms": {
+      "J19": "Attachment-specific cases apply only if the candidate adopts that backend; existing retained format and old pins still require proof.",
+      "J20": "Checkpoint-specific cases apply only if adopted; current replay correctness and cost remain required."
+    }
   },
   "proofLayers": [
     "controlled",
@@ -549,5 +656,18 @@
     "installed_package",
     "cross_machine",
     "daily"
+  ],
+  "contract": "agent-cli-ref-20261105",
+  "comparisonRoles": [
+    "previous-broker",
+    "notion-candidate",
+    "pi-native-local"
+  ],
+  "finalAcceptanceOrder": [
+    "SC23",
+    "SC22",
+    "SC20",
+    "SC21",
+    "SC24"
   ]
 }

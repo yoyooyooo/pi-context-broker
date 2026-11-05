@@ -52,7 +52,7 @@ export function observeSourceTransport(settings) {
     unmatchedChildLifecycleVersion: 1,
     coverage: 'owned Pi SDK operations and direct bundled CLI; direct unmatched child lifecycle only, descendant transport remains unknown', wireBytes: null });
   subscribe('context-broker.notion-sdk', event => {
-    if (!event || event.version !== 1 || !['start', 'end'].includes(event.event) || !['consume', 'read', 'read-resources'].includes(event.operation)
+    if (!event || event.version !== 1 || !['start', 'end'].includes(event.event) || !['list', 'consume', 'read', 'read-resources'].includes(event.operation)
       || typeof event.id !== 'string' || !/^[a-f0-9-]{36}$/i.test(event.id) || event.pid !== process.pid
       || typeof event.monotonic_ns !== 'string' || !/^\d+$/.test(event.monotonic_ns)) throw new Error('SDK_EVENT_INVALID');
     const requestId = 'sdk:' + process.pid + ':' + event.id;
@@ -107,7 +107,7 @@ export function observeSourceTransport(settings) {
     }
     if (children.has(child)) throw new Error('CLI_DUPLICATE_START');
     const requestId = 'cli:' + process.pid + ':' + (++nextChild);
-    const command = ['ctl', 'list', 'prepare', 'read', 'files', 'export'].includes(args[2]) ? args[2] : 'other';
+    const command = ['ctl', 'list', 'use', 'prepare', 'read', 'files', 'export'].includes(args[2]) ? args[2] : 'other';
     const policy = args.includes('--refresh') ? 'refresh' : args.includes('--offline') ? 'offline' : args.includes('--max-age') ? 'max_age' : 'default';
     const operation = { kind: 'cli', requestId, ended: false, stdoutObserved: false, stdoutEnded: false,
       stdoutBytes: 0, overflow: false, chunks: [], stdoutHash: crypto.createHash('sha256'), childPid: null };

@@ -154,4 +154,4 @@ native-repeat 有 12 组绑定（6 C、1 S、5 R），canonical 为 0，恢复�
 
 后续可核查 `graph-prepare.ts` 在 entrypoint 获取后再次读取 main 的结构；本轮仅记录静态线索，没有实现或计入收益。AH-617 与相关子任务继续保持 In Progress。
 
-复现入口见[消费链验证地图](../../../.agents/skills/verify-notion-skills-integration/features/skill-consumption.md)的 SC05 / SC08 重复 native 与 SC07 / SC13 固定 scalar 路线。最终报告与导航是本轮提交的一部分，运行源码身份、安装包与原始测量以冻结回执为准。
+复现入口见[消费链验证地图](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/skill-consumption.md)的 SC05 / SC08 重复 native 与 SC07 / SC13 固定 scalar 路线。最终报告与导航是本轮提交的一部分，运行源码身份、安装包与原始测量以冻结回执为准。

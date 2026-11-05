@@ -19,7 +19,7 @@ export function observe(api, settings) {
     if (!settings.publicGraph) return ['read'];
     const surface = settings.surfaceFile ? JSON.parse(readFileSync(settings.surfaceFile, 'utf8')).surface : 'public-tools';
     if (!['native-read-only', 'public-tools'].includes(surface)) throw new Error('Unknown frozen tool surface');
-    return surface === 'native-read-only' ? ['read'] : ['read', 'skill_search', 'skill_prepare'];
+    return surface === 'native-read-only' ? ['read'] : ['read', 'notion_list', 'notion_use'];
   };
   const record = value => appendFileSync(output, JSON.stringify({ at: new Date().toISOString(), ...value }) + '\n', { mode: 0o600 });
   const normalize = text => text.replace(/^\s*\d+[:|]\s?/gm, '').replace(/\s+/g, ' ').trim();
@@ -78,7 +78,9 @@ export function observe(api, settings) {
       .replace(/-----BEGIN [^-]*(?:PRIVATE KEY|CERTIFICATE)-----[\s\S]*?-----END [^-]+-----/g, '[credential withheld]');
   };
   const wireAllowed = value => value === id || value === model;
+  let currentContext;
   const assertModel = ctx => {
+    currentContext = ctx;
     if (ctx.model?.provider !== provider || ctx.model?.id !== id) throw new Error('Notion model route rejected unauthorized model');
     if (ctx.model.compactionModel && !wireAllowed(ctx.model.compactionModel)) throw new Error('Notion model route rejected unauthorized compaction model');
   };
@@ -87,6 +89,10 @@ export function observe(api, settings) {
   // These oracle bytes are used only for observation, never injected into Pi.
   const resourceBodies = () => [...new Set([...(settings.expectedResourceBodies ?? []), ...resources.values()])];
   const advertisedEntries = new Set();
+  const advertisedShortRefs = new Set();
+  const observeShortRefs = value => {
+    for (const text of sourceStrings(value)) for (const match of text.matchAll(/sr:[CSR][A-Za-z0-9_-]{22}(?![A-Za-z0-9_-])/g)) advertisedShortRefs.add(match[0]);
+  };
   const calls = new Map();
   const hash = bytes => createHash('sha256').update(bytes).digest('hex');
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -199,10 +205,46 @@ export function observe(api, settings) {
     const file = exported.files.get(entry) ?? exported.declaredFiles?.get(entry);
     if (!file) return undefined;
     const role = entry === exported.receipt.entry ? 'entrypoint' : entry === '.ntn-skills.json' ? 'manifest' : entry === 'ntn-skills-source.zip' ? 'source_bundle' : 'resource';
-    return { kind: role === 'entrypoint' ? 'skill' : role === 'manifest' ? 'metadata' : role === 'source_bundle' ? 'source-bundle' : 'resource', role, path: file.path, snapshot: exported.receipt.snapshot, scope: exported.receipt.scope, recordId: exported.receipt.record.id, entry, fileBody: Buffer.isBuffer(file.bytes) ? file.bytes.toString('utf8') : undefined, fileId: file.fileId, materialization: exported.receipt.projection, manifestComplete: exported.partial ? exported.receipt.manifest_complete === true : true };
+    return { kind: role === 'entrypoint' ? 'skill' : role === 'manifest' ? 'metadata' : role === 'source_bundle' ? 'source-bundle' : 'resource', role, path: file.path, snapshot: exported.receipt.snapshot, version: exported.receipt.notionVersion, scope: exported.receipt.scope, recordId: exported.receipt.record.id, entry, fileBody: Buffer.isBuffer(file.bytes) ? file.bytes.toString('utf8') : undefined, fileId: file.fileId, materialization: exported.receipt.projection, manifestComplete: exported.partial ? exported.receipt.manifest_complete === true : true };
+  };
+  const shortReference = input => {
+    if (!/^sr:[CSR][A-Za-z0-9_-]{22}$/.test(input) || !advertisedShortRefs.has(input)) return undefined;
+    const bindings = new Map();
+    for (const entry of currentContext?.sessionManager?.getBranch?.() ?? []) {
+      if (entry.type !== 'custom' || entry.customType !== 'context-broker-short-ref') continue;
+      const event = entry.data;
+      if (event?.version !== 1 || !/^sr:[CSR][A-Za-z0-9_-]{22}$/.test(event.ref)
+        || bindings.has(event.ref) && JSON.stringify(bindings.get(event.ref)) !== JSON.stringify(event.target)) return undefined;
+      bindings.set(event.ref, event.target);
+    }
+    const target = bindings.get(input), owner = target?.kind === 'resource' ? bindings.get(target.owner) : target;
+    const identity = owner?.identity;
+    const currentRef = selected.ref ?? `skill://${encodeURIComponent(selected.selector)}/${selected.entry}`;
+    if (!target || !identity || identity.source !== 'notion' || identity.id !== selected.id || !digest.test(identity.scope)
+      || input[3] !== ({ candidate: 'C', selected: 'S', resource: 'R' })[target.kind]
+      || identity.ref + '/' + selected.entry !== currentRef
+      || selected.locator && Object.entries(selected.locator).some(([key, value]) => identity.locator?.[key] !== value)) return undefined;
+    if (target.kind === 'candidate') return { ref: currentRef, scope: identity.scope };
+    if (owner.kind !== 'selected' || owner.entrypoint !== selected.entry) return undefined;
+    const candidates = exportedFiles().filter(item => item.receipt.scope === identity.scope && item.receipt.snapshot === owner.snapshot_id && item.receipt.notionVersion === owner.version_id);
+    if (candidates.length !== 1) return undefined;
+    const declared = candidates[0].declaredFiles;
+    const main = declared?.get(owner.entrypoint);
+    if (!main || main.ref !== owner.ref || main.sha256 !== owner.body_sha256 || main.fileId !== owner.file_id) return undefined;
+    if (target.kind === 'resource') {
+      const file = declared.get(target.path);
+      if (!file || target.path === owner.entrypoint || file.ref !== target.ref || file.bytes !== target.bytes || file.sha256 !== target.sha256 || file.fileId !== target.file_id) return undefined;
+    }
+    return { ref: target.ref, scope: identity.scope, snapshot: owner.snapshot_id };
   };
   const receiptFor = input => {
     if (typeof input !== 'string') return undefined;
+    if (input.startsWith('sr:')) {
+      const reference = shortReference(input);
+      const target = reference && receiptFor(reference.ref);
+      return target && (target.scope === undefined || target.scope === reference.scope)
+        && (reference.snapshot === undefined || target.snapshot === reference.snapshot) ? { ...target, scope: reference.scope } : undefined;
+    }
     const path = input.replace(/:(?:raw(?::.*)?|img|\d.*|-[0-9].*)$/, '');
     if (/^skill:\/\//.test(path)) {
       const match = /^skill:\/\/([^/?#:]+)(.*)$/.exec(path);
@@ -297,11 +339,13 @@ export function observe(api, settings) {
   });
   api.on('before_agent_start', async (event, ctx) => {
     assertModel(ctx);
+    observeShortRefs(event.systemPrompt);
     if (settings.publicGraph) await api.setActiveTools(allowedTools());
     for (const entry of strings(event.systemPrompt).join('\n').matchAll(/<skill>[\s\S]*?<\/skill>/g)) {
       const name = /<name>\s*([^<]+)\s*<\/name>/.exec(entry[0])?.[1]?.trim();
       const location = /<location>\s*([^<]+)\s*<\/location>/.exec(entry[0])?.[1]?.trim();
       if (name && allowedNames.has(name) && location) {
+        if (/^sr:[CSR][A-Za-z0-9_-]{22}$/.test(location)) { advertisedShortRefs.add(location); continue; }
         const advertised = canonicalReadPath(location.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&'));
         if (advertised) advertisedEntries.add(advertised);
       }
@@ -314,6 +358,7 @@ export function observe(api, settings) {
   });
   api.on('before_provider_request', (event, ctx) => {
     assertModel(ctx);
+    observeShortRefs(event.payload?.messages ?? []);
     const wireModel = event.payload?.model;
     if (wireModel !== undefined && !wireAllowed(wireModel)) throw new Error('Notion model route rejected unauthorized provider model');
     const advertisedTools = (event.payload?.tools ?? []).map(tool => tool.function?.name ?? tool.name).filter(Boolean).sort();
@@ -339,15 +384,23 @@ export function observe(api, settings) {
     if (!text.trim()) return;
     record({ phase: 'assistant_final', success: ['stop', 'length'].includes(message.stopReason), stopReason: message.stopReason ?? null, bytes: Buffer.byteLength(text), textSha256: createHash('sha256').update(text).digest('hex'), text: sanitize(text), usage: Object.fromEntries(Object.entries(message.usage ?? {}).filter(([key, value]) => ['input', 'output', 'cacheRead', 'cacheWrite', 'totalTokens'].includes(key) && typeof value === 'number' && Number.isFinite(value))) });
   });
-  api.on('tool_call', event => {
+  api.on('tool_call', (event, ctx) => {
+    if (ctx) currentContext = ctx;
     // The paired graph observer verifies actual metadata/prepare responses,
     // immutable CLI reads, manifests and delivery spans. This older single-Skill
     // matrix keeps its additional owner restriction and native resource proof.
-    if (settings.publicGraph && allowedTools().includes('skill_search') && event.toolName === 'skill_search') return;
-    if (settings.publicGraph && allowedTools().includes('skill_prepare') && event.toolName === 'skill_prepare') {
-      const roots = event.input?.roots;
-      const allowed = Array.isArray(roots) && roots.length > 0 && roots.every(value => {
+    if (settings.publicGraph && allowedTools().includes('notion_list') && event.toolName === 'notion_list') return;
+    if (settings.publicGraph && allowedTools().includes('notion_use') && event.toolName === 'notion_use') {
+      const roots = typeof event.input?.ref === 'string' ? [event.input.ref] : event.input?.ref;
+      const allowed = Object.keys(event.input ?? {}).every(key => ['ref', 'refresh'].includes(key))
+        && (event.input.refresh === undefined || typeof event.input.refresh === 'boolean')
+        && Array.isArray(roots) && roots.length > 0 && roots.length <= 64 && roots.every(value => {
         if (typeof value !== 'string') return false;
+        if (value.startsWith('sr:')) {
+          if (value.startsWith('sr:R')) return false;
+          value = shortReference(value)?.ref;
+          if (!value) return false;
+        }
         const match = /^skill:\/\/([^/?#]+)\/([^?#]+)(?:\?([^#]*))?$/.exec(value);
         try {
           if (!match || decodeURIComponent(match[1]) !== selected.id || match[1] !== encodeURIComponent(selected.id) || decodeURIComponent(match[2]) !== selected.entry) return false;
@@ -370,7 +423,8 @@ export function observe(api, settings) {
     calls.set(event.toolCallId, target);
     record({ phase: 'tool_call', tool: 'read', path: sanitize(target.path), kind: target.kind, role: target.role ?? null, allowed: true });
   });
-  api.on('tool_result', event => {
+  api.on('tool_result', (event, ctx) => {
+    if (ctx) currentContext = ctx;
     if (event.toolName !== 'read') return;
     const previous = calls.get(event.toolCallId);
     calls.delete(event.toolCallId);
@@ -389,14 +443,21 @@ export function observe(api, settings) {
       const candidates = exportedFiles().filter(item => (validated.scope === undefined || item.receipt.scope === validated.scope) && (!activeScope || item.receipt.scope === activeScope) && (!activeSnapshot || item.receipt.snapshot === activeSnapshot));
       if (candidates.length === 1) target = { ...targetFor(candidates[0], selected.entry), requestedRole: 'index' };
     }
-    const bodyMatchesFile = Boolean(target.fileBody?.trim()) && body === target.fileBody;
+    const nativeProof = event.details?.contextBrokerRead;
+    const validNativeProof = nativeProof?.version === 3 && target.role === 'entrypoint'
+      && nativeProof.snapshotId === target.snapshot && nativeProof.binding?.scope === target.scope
+      && nativeProof.binding?.record?.id === target.recordId && nativeProof.binding?.version_id === target.version
+      && nativeProof.bodySha256 === hash(target.fileBody ?? '') && nativeProof.bytes === Buffer.byteLength(target.fileBody ?? '');
+    const nativePrefix = validNativeProof && body.startsWith(target.fileBody + '\n\n<skill-directory>') && body.endsWith('</skill-directory>');
+    const bodyMatchesFile = Boolean(target.fileBody?.trim()) && (nativeProof !== undefined ? validNativeProof && (body === target.fileBody || nativePrefix) : body === target.fileBody);
+    const proofMismatch = nativeProof !== undefined && !bodyMatchesFile;
     const resourceSuccess = target.kind === 'resource' && !event.isError && bodyMatchesFile;
     if (!event.isError && target.kind === 'skill' && bodyMatchesFile) {
       activeSnapshot = target.snapshot;
       activeScope = target.scope;
     }
     if (resourceSuccess) resources.set(target.path, target.fileBody);
-    record({ phase: 'tool_result', tool: 'read', path: sanitize(target.path), kind: target.kind, role: target.role ?? null, requestedRole: target.requestedRole ?? null, recordId: target.recordId ?? null, scope: target.scope ?? null, entry: target.entry ?? null, snapshot: target.snapshot ?? null, receiptValidated: Boolean(validated) && Boolean(target.fileBody), materialization: target.materialization ?? null, manifestComplete: target.manifestComplete ?? false, isError: Boolean(event.isError), skillBodies, bodyMatchesFile, resourceSuccess, bytes: Buffer.byteLength(body), bodySha256: createHash('sha256').update(body).digest('hex') });
+    record({ phase: 'tool_result', tool: 'read', path: sanitize(target.path), kind: target.kind, role: target.role ?? null, requestedRole: target.requestedRole ?? null, recordId: target.recordId ?? null, scope: target.scope ?? null, entry: target.entry ?? null, snapshot: target.snapshot ?? null, receiptValidated: Boolean(validated) && Boolean(target.fileBody) && !proofMismatch, proofMismatch, materialization: target.materialization ?? null, manifestComplete: target.manifestComplete ?? false, isError: Boolean(event.isError), skillBodies, bodyMatchesFile, resourceSuccess, bytes: Buffer.byteLength(body), bodySha256: createHash('sha256').update(body).digest('hex') });
   });
 }
 
@@ -452,7 +513,7 @@ async function runHostModel(host, { root, scratch, evidence, fixture, options, e
     brokerConfiguration: `Explicit temporary CONTEXT_BROKER_CONFIG; temporary source cache and session directory${host === 'omp' ? ', plus an OMP host overlay' : ''}; no global configuration writes by the runner.`,
     evidence: 'Provider model selectors and metadata/body counts, sanitized selected-source read paths and assistant text, identity, roles, byte counts and hashes; no source bodies, raw provider payload, RPC frames, headers, URLs or credentials.',
   };
-  const result = { host, mode: 'model', model: options.model, promptTimeoutMs, files, boundary, observations: [], status: 'running' };
+  const result = { host, mode: 'model', sourceMode: 'command', toolSurface: 'native-read-only', model: options.model, promptTimeoutMs, files, boundary, observations: [], status: 'running' };
   let rpc;
   try {
     const args = ['--no-extensions', '--session-dir', sessions, '--tools', 'read', '-e', extension ?? join(root, 'packages/context-broker/src/index.ts'), '-e', observer, '--model', options.model];
@@ -465,6 +526,7 @@ async function runHostModel(host, { root, scratch, evidence, fixture, options, e
     const metadata = rows.find(row => row.phase === 'metadata');
     const skillReads = rows.filter(row => row.phase === 'tool_result' && !row.isError && row.skillBodies > 0 && row.kind === 'skill' && row.role === 'entrypoint' && row.receiptValidated && row.bodyMatchesFile);
     const resourceReads = rows.filter(row => row.phase === 'tool_result' && row.resourceSuccess);
+    assert.ok(!rows.some(row => row.phase === 'tool_result' && row.proofMismatch), 'A successful task cannot hide a mismatched source delivery proof');
     assert.ok(rows.some(row => row.phase === 'selected' && row.model === options.model), `${host} must select the explicitly authorized model`);
     assert.ok(requests.length > 0 && rows.some(row => row.phase === 'response' && row.status >= 200 && row.status < 300), 'A real authorized provider request and successful response must be observed');
     assert.ok(metadata?.aliases > 0 && metadata.skillBodies === 0, 'Default host catalog must advertise the selected skill without its full body');

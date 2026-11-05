@@ -1,10 +1,14 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { activeSources, activeSelection, missingActiveSources, assertRestoredSource, confirmActiveSources, SESSION_ACTIVE_ENTRY } from "../src/session-active";
 import { persistSessionSelection } from "../src/session-graph";
 import { sourceDeliveryReceipt, projectSelectedSourceMessages } from "../src/session-source-snapshot";
 import { installHostSkills } from "../src/host-skills";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
+import { discoverSourceCatalog, loadSourceSkill } from "../src/sources";
 import type { PreparedHostGraph, PreparationPurpose } from "../src/prepare-protocol";
 import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, SessionEntry, SkillRecord } from "../src/types";
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -55,6 +59,28 @@ test("inspection is not activated even when its full bytes reach a provider", ()
   persistSessionSelection(f.api, f.ctx, [prepared], "extend");
   confirmActiveSources(f.api, f.ctx, prepared.records, delivered(prepared.records));
   expect(activeSources(f.ctx).sources.size).toBe(0);
+});
+test("a real filesystem source can confirm complete delivery and resume without a Notion graph", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "broker-active-local-"));
+  await mkdir(join(directory, "local-skill"));
+  await writeFile(join(directory, "local-skill", "SKILL.md"), "---\nname: local-skill\ndescription: Local source instructions\nautoload:\n  enabled: true\n---\nComplete local instructions.\n");
+  const config = { sources: [{ id: "local", type: "filesystem" as const, roots: [directory] }] };
+  const discovered = await discoverSourceCatalog(config, directory);
+  expect(discovered.failures).toEqual([]);
+  expect(discovered.records).toHaveLength(1);
+  const record = await loadSourceSkill(discovered.records[0]!, config, directory);
+  expect(record.source).toBe("local");
+  const f = fixture();
+  confirmActiveSources(f.api, f.ctx, [record], delivered([record]));
+  expect(activeSources(f.ctx).sources.size).toBe(1);
+  expect(activeSources(f.ctx).selection.scopes.size).toBe(0);
+  expect(missingActiveSources(f.ctx, delivered([record]))).toEqual([]);
+  const resumed: ExtensionContext = { sessionManager: { getBranch: () => JSON.parse(JSON.stringify(f.branch)) } };
+  const missing = missingActiveSources(resumed, []);
+  expect(missing).toHaveLength(1);
+  expect(missing[0]!.snapshotId).toBe("local_" + hash(record.body!));
+  expect(assertRestoredSource(missing[0]!, record)).toBe(record);
+  expect(() => assertRestoredSource(missing[0]!, { ...record, body: "Changed local instructions." })).toThrow("fixed delivery");
 });
 test("compaction, detached summaries and user-spoofed bodies restore only the confirmed fixed vector", () => {
   const f = fixture(), prepared = graph();

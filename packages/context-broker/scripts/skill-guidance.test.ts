@@ -122,14 +122,14 @@ async function graphHarness(settings: ConfigFile = config, known = true) {
   let active = [...full], graphReads = 0, loads = 0, appends = 0;
   let graphTool: NativeSkillGraphDefinition | undefined;
   const api: ExtensionAPI = { on() {}, ...(known ? { getActiveTools: () => [...active] } : {}),
-    appendEntry() { appends++; }, registerTool(tool) { if (tool.name === "skill_graph") graphTool = tool; } };
+    appendEntry() { appends++; }, registerTool(tool) { if (tool.name === "notion_ctl") graphTool = tool; } };
   const host = await installHostSkills(api, { config: settings,
     getRecords: async () => ({ records: [], failures: [] }),
     loadRecord: async () => { loads++; throw new Error("No body loads permitted"); },
     sessionGraph: () => { graphReads++; return { portable: true }; },
   }, createPiHostAdapter(api));
   await host.refresh(undefined, false);
-  if (!graphTool) throw new Error("skill_graph must be registered");
+  if (!graphTool) throw new Error("notion_ctl must be registered");
   const ctx: ExtensionContext = { cwd: "/unused-guidance-test", hasUI: false };
   const invoke = (input: Record<string, unknown>, signal?: AbortSignal) => graphTool!.execute("controlled", input, signal, undefined, ctx);
   return { invoke, tools: (names: string[]) => { active = names; }, counts: () => ({ graphReads, loads, appends }) };
@@ -160,7 +160,7 @@ test("cli_source rejects ambiguous/disabled/foreign scopes, inactive tools and m
     await expect(h.invoke({ cli_source })).rejects.toThrow("HOST_SOURCE_UNAVAILABLE");
   for (const request of [{ cli_source: "" }, { cli_source: null }, { cli_source: "beta", refs: [] }, { cli_source: "beta", command: "override" }])
     await expect(h.invoke(request)).rejects.toThrow("INVALID_ARGUMENT");
-  for (const names of [["skill_graph"], ["bash"], []]) {
+  for (const names of [["notion_ctl"], []]) {
     h.tools(names); await expect(h.invoke({ cli_source: "beta" })).rejects.toThrow("HOST_CLI_TOOL_UNAVAILABLE");
   }
   const unknown = await graphHarness(config, false);

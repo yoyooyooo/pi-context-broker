@@ -5,7 +5,7 @@ description: "验证 Notion Skills source 与随包 Skill在 Pi/OMP、Tern 中�
 
 # Verify Notion Skills Integration
 
-AH-617 消费链重构先读 [消费链验证地图](features/skill-consumption.md)。SC01 复用既有 Pi harness，统一 SC01–24、J01–21、反例与证据保留；未执行的路线保持 draft/not_run，不能由旧 Gate 推断新产物通过。
+AH-617 消费链重构先读 [消费链验证地图](features/skill-consumption.md)。按 `agent-cli-ref-20261105` 复用既有 Pi harness，统一 SC01–26、J01–26、反例与证据保留；未执行的路线保持 draft/not_run，不能由旧 Gate 推断新产物通过。Pi 默认工具为 `notion_list`、`notion_use` 与原生 `read`；`notion_ctl` 按需发现，OMP 历史工具单列。
 
 AH-561 的直连请求和跨 Skill 图先走 [request-engine](features/request-engine.md) 与 [skill-dependency-graph](features/skill-dependency-graph.md)，复用 `scripts/verify-skill-graph-contract.mjs` 的离线反例与 fail-before。该入口保存两条根选择提示、私有 oracle/trace 合同、三层缓存边界与五类证据；`contract-valid` 不代表真实模型通过。当前 live/model/helper 使用项目直连引擎和安全请求账本；每次交付必须重新取得真实服务、宿主和安装证据，既有历史回执保持原状。
 
@@ -15,7 +15,7 @@ AH-561 的直连请求和跨 Skill 图先走 [request-engine](features/request-e
 
 | 功能地图 | Feature IDs |
 | --- | --- |
-| [消费链验证、场景与成本边界](features/skill-consumption.md) | SC-VERIFY-01～03；SC01–24 / J01–21 |
+| [消费链验证、场景与成本边界](features/skill-consumption.md) | SC-VERIFY-01～03；SC01–26 / J01–26 |
 | [直连请求引擎](features/request-engine.md) | NG-VC-01、NG-RE-02～05/21 |
 | [Skill 依赖图](features/skill-dependency-graph.md) | NG-SG-06～20 |
 | [配置与发现](features/source-configuration-discovery.md) | NS-CFG-01～07 |
@@ -116,7 +116,7 @@ OMP 18.14.2 的 native-read execute 与注册命令预算回归复用[宿主地�
 | Mode | 实际路径与边界 |
 | --- | --- |
 | deterministic | 双 Pi/OMP 原生 extension/provider 捕获；Notion 与 filesystem source 的 metadata/read/native RPC+print/`$`/resource；Notion native cold print；metadata 后注入、repeat、continue；重名歧义拒绝、两个 qualified native 独立正文、错误/超时/cold-warm；主 run 调用 OMP source lifecycle helper 覆盖真实 fork/branch/compact-remove+refresh。fixture 不证明真实 Notion 或模型效果。 |
-| live | 必须指定 database，并选择 skill-ref 或独立的 native-kinds 配置；只读既有页的 list/read/export，再双宿主受控 provider 捕获，不创建或修改远端页；两分支分别报告，不能替代 live-fixture 端到端或真实模型。 |
+| live | 必须指定 database，并选择 skill-ref 或独立的 native-kinds 配置；驱动既有内容的 list/read/export，再捕获所选宿主 provider。驱动不额外创建 fixture 或主动编辑，但 current read 可产生 retention/adoption 与 Records 写入，按 request_metrics 单列；两分支分别报告，不替代 live-fixture 或真实模型。 |
 | live-fixture | 必须指定 database UUID，可提供 command-json；以唯一动态 name 创建独立真实测试页与 `references/guide.md`，list/read/export 后双宿主消费。Default Context 必须已为 checkbox；helper 不自动补 schema。finally 使用同一项目 CLI 的 `ctl archive PAGE_ID --operation ORIGINAL_CREATE_ID`，只处理原回执证明属于该 create 的页，并逐页 GET 确认。当前任务已授权，禁止永久删除或触碰无关页。`live-fixture-create.json` 与 `live-fixture-cleanup.json` 保存无 token 回执。 |
 | model | 必须指定 database、skill-ref、model 与 model-prompt；默认分别执行 Pi 与 OMP，可用 `--host pi` 或 `--host omp` 只执行一个宿主。Doctor 同样只检查选定宿主。使用继承的现有授权配置、独立临时 broker/cache/session，要求模型从 metadata 自主选择 native read、读取入口与关联资源、正文进入 provider、成功 HTTP 响应，以及非空且以 stop 或 length 成功结束的 assistant final 回复；不得由确定性 provider 或另一宿主结果推断通过。其它普通 mode 同样支持 `--host`；live-fixture 附加 model 继承所选宿主。 |
 | installed | 必须给绝对 tgz 路径；实际 `npm install --prefix scratch` 后，在安装产物上完成双宿主与 deterministic 相同消费路径。checkout 结果不能替代。 |

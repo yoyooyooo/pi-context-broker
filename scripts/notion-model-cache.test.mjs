@@ -75,6 +75,8 @@ test('duplicated instruction bodies and hidden resource read errors are rejected
   assert.throws(() => assertModelCase(duplicate, expected), /duplicate/);
   const failed = good(); failed[3].isError = true;
   assert.throws(() => assertModelCase(failed, expected), /failed selected-resource/);
+  const proof = good(); proof[2].proofMismatch = true;
+  assert.throws(() => assertModelCase(proof, expected), /mismatched source delivery proof/);
 });
 test('query POSTs are metadata but authoring POSTs/PATCHs remain writes', () => {
   assert.equal(requestCounts(sourceRequests).notionWrites, 0);
@@ -113,8 +115,8 @@ test('the original native-read case and normal public-tool cases retain distinct
   assert.equal(assertModelCase(events, expected, { native: true, surface: 'native-read-only', graphEvents: nativeGraphEvents }).providerRequests, 2);
   assert.throws(() => assertModelCase(events, expected, { native: true, surface: 'native-read-only', graphEvents: [] }), /paired public-tool observer/);
   assert.throws(() => assertModelCase(events, expected, { graphEvents: [] }), /paired public-tool observer/);
-  for (const event of events.filter(row => row.phase === 'request')) event.tools = ['read', 'skill_search', 'skill_prepare'];
-  const graphEvents = [0, 1].map(() => ({ phase: 'provider-request', tools: ['read', 'skill_search', 'skill_prepare'], toolResults: [] }));
+  for (const event of events.filter(row => row.phase === 'request')) event.tools = ['read', 'notion_list', 'notion_use'];
+  const graphEvents = [0, 1].map(() => ({ phase: 'provider-request', tools: ['read', 'notion_list', 'notion_use'], toolResults: [] }));
   assert.equal(assertModelCase(events, expected, { graphEvents }).providerRequests, 2);
   const rejected = [...graphEvents, { phase: 'metadata-result', toolCallId: 'metadata', complete: false }];
   assert.throws(() => assertModelCase(events, expected, { graphEvents: rejected }), /actual CLI\/manifest\/delivery proof/);
@@ -124,17 +126,26 @@ test('the original native-read case and normal public-tool cases retain distinct
 
 test('metadata and explicit preparation require actual provider delivery in addition to successful tool receipts', () => {
   const events = good();
-  for (const event of events.filter(row => row.phase === 'request')) event.tools = ['read', 'skill_search', 'skill_prepare'];
-  const graphEvents = [0, 1].map(() => ({ phase: 'provider-request', tools: ['read', 'skill_search', 'skill_prepare'], toolResults: [] }));
+  for (const event of events.filter(row => row.phase === 'request')) event.tools = ['read', 'notion_list', 'notion_use'];
+  const graphEvents = [0, 1].map(() => ({ phase: 'provider-request', tools: ['read', 'notion_list', 'notion_use'], toolResults: [] }));
   const metadata = { phase: 'metadata-result', toolCallId: 'metadata', sha256: 'directory-hash', bytes: 12, complete: true };
   assert.throws(() => assertModelCase(events, expected, { graphEvents: [...graphEvents, metadata] }), /one complete actual native tool output/);
   graphEvents[1].toolResults.push({ toolCallId: 'metadata', sha256: metadata.sha256, bytes: 12, exactToolOutputCopies: 1 });
   assert.equal(assertModelCase(events, expected, { graphEvents: [...graphEvents, metadata] }).providerRequests, 2);
-  const prepared = { phase: 'tool-result', tool: 'skill_prepare', toolCallId: 'prepared', origin: 'model', complete: true, ref: 'skill://owned/SKILL.md?snapshot=s_a', scope: 'owned-scope', sha256: 'body-sha', bytes: 10, preparationProof: { deliveryVerified: true, explicitRoot: true } };
+  const prepared = { phase: 'tool-result', tool: 'notion_use', toolCallId: 'prepared', origin: 'model', complete: true, ref: 'skill://owned/SKILL.md?snapshot=s_a', scope: 'owned-scope', sha256: 'body-sha', bytes: 10, preparationProof: { deliveryVerified: true, explicitRoot: true } };
   assert.throws(() => assertModelCase(events, expected, { graphEvents: [...graphEvents, prepared] }), /one complete verified body/);
   graphEvents[1].toolResults.push({ toolCallId: 'prepared', records: [{ ref: prepared.ref, scope: prepared.scope, sha256: prepared.sha256, bytes: 10, providerCopies: 1 }] });
   assert.equal(assertModelCase(events, expected, { graphEvents: [...graphEvents, prepared] }).providerRequests, 2);
   assert.throws(() => assertModelCase(events, expected, { graphEvents: [...graphEvents, { ...prepared, preparationProof: { deliveryVerified: true, explicitRoot: false } }] }), /false !== true/);
+  assert.throws(() => assertModelCase(events, expected, { graphEvents: [...graphEvents, { ...prepared, tool: 'skill_prepare' }] }), /cannot be mixed/);
+});
+
+test('old Pi model evidence requires an explicit historical tool contract', () => {
+  const events = good(); for (const event of events.filter(row => row.phase === 'request')) event.tools = ['read', 'skill_search', 'skill_prepare'];
+  const graphEvents = [0, 1].map(() => ({ phase: 'provider-request', tools: ['read', 'skill_search', 'skill_prepare'], toolResults: [] }));
+  assert.throws(() => assertModelCase(events, expected, { graphEvents }), /predeclared case surface/);
+  assert.equal(assertModelCase(events, expected, { graphEvents, toolContract: 'legacy-pi-tools' }).providerRequests, 2);
+  assert.throws(() => assertModelCase(events, expected, { graphEvents, toolContract: 'automatic-legacy-fallback' }), /Unknown model cache tool contract/);
 });
 
 test('a fixed surface control changes the same session from native-read degradation to normal registered tools', async () => {
@@ -147,12 +158,16 @@ test('a fixed surface control changes the same session from native-read degradat
     await handlers.get('before_agent_start')({ systemPrompt: '' }, ctx);
     assert.deepEqual(active.at(-1), ['read']);
     handlers.get('before_provider_request')({ payload: { model: 'group/flash-free', tools: [{ function: { name: 'read' } }], messages: [] } }, ctx);
-    assert.equal(handlers.get('tool_call')({ toolName: 'skill_prepare', input: { roots: ['skill://shared_skill%3Alib%3Aowned/SKILL.md'], purpose: 'use' } }).block, true);
+    assert.equal(handlers.get('tool_call')({ toolName: 'notion_use', input: { ref: ['skill://shared_skill%3Alib%3Aowned/SKILL.md'] } }).block, true);
     await writeFile(surfaceFile, JSON.stringify({ surface: 'public-tools' }));
     await handlers.get('before_agent_start')({ systemPrompt: '' }, ctx);
-    assert.deepEqual(active.at(-1), ['read', 'skill_search', 'skill_prepare']);
+    assert.deepEqual(active.at(-1), ['read', 'notion_list', 'notion_use']);
     assert.throws(() => handlers.get('before_provider_request')({ payload: { model: 'group/flash-free', tools: [{ function: { name: 'read' } }] } }, ctx), /frozen case surface/);
-    assert.equal(handlers.get('tool_call')({ toolName: 'skill_prepare', input: { roots: ['skill://shared_skill%3Alib%3Aother/SKILL.md'], purpose: 'use' } }).block, true);
+    assert.equal(handlers.get('tool_call')({ toolName: 'notion_use', input: { ref: ['skill://shared_skill%3Alib%3Aother/SKILL.md'] } }).block, true);
+    assert.equal(handlers.get('tool_call')({ toolName: 'notion_use', input: { ref: 'skill://shared_skill%3Alib%3Aowned/SKILL.md' } }), undefined);
+    assert.equal(handlers.get('tool_call')({ toolName: 'notion_use', input: { ref: ['skill://shared_skill%3Alib%3Aowned/SKILL.md'] } }), undefined);
+    assert.equal(handlers.get('tool_call')({ toolName: 'skill_prepare', input: { roots: ['skill://shared_skill%3Alib%3Aowned/SKILL.md'], purpose: 'use' } }).block, true);
+    assert.equal(handlers.get('tool_call')({ toolName: 'notion_use', input: { ref: 'skill://shared_skill%3Alib%3Aowned/SKILL.md', purpose: 'inspect' } }).block, true);
     await writeFile(surfaceFile, JSON.stringify({ surface: 'unknown' }));
     await assert.rejects(() => handlers.get('before_agent_start')({ systemPrompt: '' }, ctx), /Unknown frozen tool surface/);
   } finally { globalThis.fetch = originalFetch; }
@@ -184,6 +199,34 @@ test('the observer accepts OS aliases only through verified entry receipts, incl
     await mkdir(join(tree, 'references')); await writeFile(join(tree, 'references/checklist.md'), resource);
     handlers.get('tool_result')({ toolName: 'read', toolCallId: 'resource', input: { path: resourceAlias }, content: [{ type: 'text', text: resource }], isError: false });
     assert.equal(events.at(-1).receiptValidated, true); assert.equal(events.at(-1).resourceSuccess, true);
+    const shortMain = 'sr:S' + 's'.repeat(22), shortResource = 'sr:R' + 'r'.repeat(22), shortCandidate = 'sr:C' + 'c'.repeat(22);
+    const identity = { source: 'notion', scope, id, kind: 'skill', ref: `skill://${encodeURIComponent(id)}` };
+    const selectedTarget = { kind: 'selected', identity, snapshot_id: snapshot, version_id: 'owned-version', body_sha256: digest(main), entrypoint: 'SKILL.md', ref: ref(bindings[0]), file_id: 'main-file' };
+    const shortEntries = [
+      { version: 1, ref: shortCandidate, target: { kind: 'candidate', identity } },
+      { version: 1, ref: shortMain, target: selectedTarget },
+      { version: 1, ref: shortResource, target: { kind: 'resource', owner: shortMain, path: bindings[1].path, ref: ref(bindings[1]), bytes: Buffer.byteLength(resource), sha256: digest(resource), file_id: bindings[1].file_id } },
+    ].map(data => ({ type: 'custom', customType: 'context-broker-short-ref', data }));
+    const ctx = { model: { provider: 'magpie', id: 'group/flash-free' }, sessionManager: { getBranch: () => shortEntries } };
+    handlers.get('before_provider_request')({ payload: { model: 'group/flash-free', messages: [{ role: 'user', content: main + shortCandidate + ' ' + shortMain + ' ' + shortResource }] } }, ctx);
+    assert.equal(call('short-main', shortMain), undefined);
+    assert.equal(call('short-resource', shortResource), undefined);
+    assert.equal(call('unknown-handle', 'sr:R' + 'x'.repeat(22)).block, true);
+    const nativeContent = main + '\n\n<skill-directory>\n' + JSON.stringify({ ref: shortMain, directory: { files: bindings.map((file, index) => ({ path: file.path, ref: index ? shortResource : shortMain, bytes: Buffer.byteLength(index ? resource : main) })), required: [], candidates: [], references: [] } }) + '\n</skill-directory>';
+    const nativeProof = { version: 3, snapshotId: snapshot, bodySha256: digest(main), bytes: Buffer.byteLength(main), binding: { record: { id }, scope, version_id: 'owned-version' } };
+    handlers.get('tool_result')({ toolName: 'read', toolCallId: 'short-main', input: { path: shortMain }, content: [{ type: 'text', text: nativeContent }], details: { contextBrokerRead: nativeProof }, isError: false });
+    assert.equal(events.at(-1).bodyMatchesFile, true, 'A verified native footer preserves the complete source prefix');
+    assert.equal(events.at(-1).receiptValidated, true);
+    assert.equal(call('bad-proof', shortMain), undefined);
+    handlers.get('tool_result')({ toolName: 'read', toolCallId: 'bad-proof', input: { path: shortMain }, content: [{ type: 'text', text: nativeContent }], details: { contextBrokerRead: { ...nativeProof, bodySha256: '0'.repeat(64) } }, isError: false });
+    assert.equal(events.at(-1).bodyMatchesFile, false, 'A native prefix with a forged delivery hash cannot certify a complete read');
+    assert.equal(events.at(-1).receiptValidated, false); assert.equal(events.at(-1).proofMismatch, true);
+    selectedTarget.identity = { ...identity, scope: 'd'.repeat(64) };
+    assert.equal(call('changed-owner-scope', shortResource).block, true);
+    selectedTarget.identity = identity;
+    shortEntries.push({ ...shortEntries[1], data: { ...shortEntries[1].data, target: { ...selectedTarget, ref: 'skill://another/SKILL.md' } } });
+    assert.equal(call('conflicting-handle', shortMain).block, true);
+    shortEntries.pop();
     const outside = join(root, 'unrelated.md'); await writeFile(outside, resource);
     assert.equal(call('outside', outside).block, true, 'Matching body bytes outside the authorized cache cannot authorize a read');
     assert.equal(call('unknown', join(alias, path.relative(cache, tree), 'references/unknown.md')).block, true);

@@ -1,5 +1,19 @@
 # Pi Skill 消费运行时：SDK、短引用与有效指令
 
+## 当前入口合同：agent-cli-ref-20261105
+
+本次调用者对照、已保留失败及分层验证见[新消费入口迁移记录](notion-consumption-contract-2026-11-05.md)。
+
+Pi 1.4 注册 `notion_list({query?, source?, limit?, cursor?})`、`notion_use({ref, refresh?})` 和原生 `read`。list 只返回候选元数据，`count`/`has_more` 表示当前查询分页，`coverage` 单独报告来源完整性；未知覆盖为 null，不把空页解释为完整空目录。`ref` 可为一个返回引用或一起需要的多个根。use 一次准备根与完整 Requires，read 只检查主文或精确资源，未选 Members 不读正文。普通本地 Skill 保留 Pi 原生路径。
+
+默认来源的完整目录与 Default View 都通过随包 `listCatalog` SDK 复用 core 查询和缓存，不启动目录 CLI，也不新增 Broker 缓存权威。显式 `source.command` 继续使用旧 CLI 合同及其派生目录缓存；管理命令、OMP 和其他明确兼容路径分别计量。不能据此宣称整个会话没有子进程或网络。
+
+`notion_use` 使用 Pi 的 `exposure: model-only`、`defaultActive: true`，只允许模型顶层调用。`notion_ctl` 为 `deferred`、默认不激活，按需导出固定 canonical ref 或显式 CLI source。旧 `skill_prepare` 会话回执仍按原验证规则读取，历史 toolName 和正文不重写。内部返回、摘要、截断和只落盘不形成完整外层交付；正式边界仍由实际 provider 的完整正文和有效证明决定。
+
+被动 `context-broker.notion-sdk` 观察目录/正文操作及安全请求指标；私有验证驱动可显式订阅 `context-broker.notion-sdk-result` 取得同一调用 ID 的实际返回值。默认运行不订阅原文结果，metrics 不含凭据或正文。现有消费专项包含新工具、分页/覆盖、旧版本回执和 SDK 缺导出反例；安装态、真实 Notion/模型与双机验收另留每次产物身份，以下历史结果不自动升级为新合同结果。
+
+## 以下为此前产物的历史实现与证据
+
 本记录承接 [AH-617](https://linear.app/yoyooyooo/issue/AH-617)，覆盖 SC04 / AH-621、SC08 / AH-627、SC09 / AH-624、SC10 / AH-625 的本轮实现与证据。历史 [启动检查点](skill-consumption-startup-checkpoint.md) 和 [成本基线](skill-consumption-baseline-2026-11-04.md) 的失败原件保留；本页不把受控 provider、状态层或单元测试升级为真实模型验收。
 
 后续 SC05 的能力化指引、显式 CLI 范围与介绍任务回归另见[消费指引记录](skill-consumption-guidance.md)。本页 package-03/04 的结果与原失败保持原有产物边界。

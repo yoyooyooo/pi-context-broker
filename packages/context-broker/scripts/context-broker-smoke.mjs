@@ -1193,6 +1193,8 @@ else if (mode === 'secret') {
     const adapter = kind === "omp" ? ompAdapterMod.createOmpHostAdapter(api) : piAdapterMod.createPiHostAdapter(api);
     let prepared;
     const native = await hostSkillsMod.installHostSkills(api, { config: sourceGoodConfig, getRecords: async () => ({ records: selected, failures: [] }), loadRecord: async record => ({ ...record, body: "Explicit complete body" }), onMetadata: records => { prepared = records; } }, adapter);
+    // Pi metadata discovery is asynchronous; inspect the settled catalog here.
+    await native.refresh();
     const catalog = async () => {
       if (kind === "pi") return (await nativeEvents.get("resources_discover")[0]()).skillPaths.join("\n");
       let result;

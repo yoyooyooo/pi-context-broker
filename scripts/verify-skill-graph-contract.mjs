@@ -131,8 +131,10 @@ export function evaluateGraphTrace(trace, oracle) {
     const read = trace.reads.find(row => row.ref === item.ref);
     check(read, 'READ_MISSING', 'The model must actually read every expected node');
     const proof = read.preparationProof;
-    const preparedMain = read.tool === 'skill_prepare' && item.logicalId === target.logicalId && read.role === 'entrypoint'
-      && proof?.explicitRoot === true && ['use', 'inspect'].includes(proof.purpose) && proof.deliveryVerified === true
+    const currentUse = read.tool === 'notion_use';
+    const historicalPrepare = trace.toolContract === undefined && read.tool === 'skill_prepare';
+    const preparedMain = (currentUse || historicalPrepare) && item.logicalId === target.logicalId && read.role === 'entrypoint'
+      && proof?.explicitRoot === true && (currentUse ? proof.purpose === 'use' : ['use', 'inspect'].includes(proof.purpose)) && proof.deliveryVerified === true
       && Array.isArray(proof.roots) && proof.roots.some(ref => {
         try { return decodeURIComponent(/^skill:\/\/([^/?#]+)\//.exec(ref)?.[1] ?? '') === item.logicalId; } catch { return false; }
       }) && nonempty(proof.publicRequestId) && /^[a-f0-9]{64}$/.test(proof.graphLockSha256 ?? '')
@@ -141,13 +143,28 @@ export function evaluateGraphTrace(trace, oracle) {
       && proof.sha256 === item.sha256 && proof.bytes === item.bytes && /^[a-f0-9]{64}$/.test(proof.toolResultSha256 ?? '')
       && Number.isSafeInteger(proof.toolResultBytes) && proof.toolResultBytes > item.bytes
       && trace.providerRequests?.some(request => request.toolResults?.some(result => result.toolCallId === read.toolCallId
-        && result.tool === 'skill_prepare' && result.sha256 === proof.toolResultSha256 && result.bytes === proof.toolResultBytes
+        && result.tool === read.tool && result.sha256 === proof.toolResultSha256 && result.bytes === proof.toolResultBytes
         && result.records?.some(record => record.ref === item.ref && record.scope === item.scope && record.snapshot === item.snapshot
           && record.sha256 === item.sha256 && record.bytes === item.bytes && record.providerCopies === 1)));
     check(read.origin === 'model' && (read.tool === 'read' || preparedMain) && read.discovered === true && read.sequence > trace.directorySequence, 'NAME_GUESSING', 'Main instructions must come from an exact native read or fully verified explicit preparation; resources require native read');
     check(read.scope === item.scope && read.logicalId === item.logicalId && read.snapshot === item.snapshot, 'IDENTITY_MISMATCH', 'Scope, stable ID and snapshot must match the private oracle');
     check(read.complete === true && typeof read.content === 'string' && !read.error, 'INCOMPLETE_CONTENT', 'A complete successful body receipt is required');
     check(Buffer.byteLength(read.content) === item.bytes && sha(read.content) === item.sha256 && read.sha256 === item.sha256, 'CONTENT_MISMATCH', 'Observed bytes must match both the receipt and independent oracle');
+    if (read.resourceBatchProof) {
+      const batch = read.resourceBatchProof;
+      check(read.tool === 'read' && read.role === 'resource' && batch.deliveryVerified === true
+        && Number.isSafeInteger(batch.index) && batch.index >= 0 && nonempty(batch.publicRequestId)
+        && batch.selection?.scope === item.scope && batch.selection?.snapshot_id === item.snapshot
+        && batch.selection?.owner === entryIdentity(item.ref)?.owner
+        && batch.delivery?.encoding === 'json' && Number.isSafeInteger(batch.delivery.start) && batch.delivery.start >= 0
+        && Number.isSafeInteger(batch.delivery.end) && batch.delivery.end >= batch.delivery.start
+        && trace.providerRequests?.some(request => request.toolResults?.some(result => result.toolCallId === read.toolCallId
+          && result.tool === 'read' && result.exactToolOutputCopies === 1
+          && result.sha256 === batch.toolResultSha256 && result.bytes === batch.toolResultBytes
+          && result.records?.some(record => record.ref === item.ref && record.scope === item.scope && record.snapshot === item.snapshot
+            && record.sha256 === item.sha256 && record.bytes === item.bytes && record.providerCopies === 1))),
+      'PROVIDER_CONTENT', 'Every complete batch resource must reach the provider inside the same verified outer tool result');
+    }
   }
   check(!trace.reads.some(row => row.error), 'HIDDEN_FAILURE', 'Selected read failures cannot disappear from the trace');
   check(Array.isArray(trace.providerRequests) && trace.providerRequests.length >= 2, 'PROVIDER_MISSING', 'Retain provider inputs before and after model reads');

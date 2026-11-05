@@ -10,7 +10,7 @@ current 缓存先判断原有 TTL、正文期限、pending、失效和数据库�
 
 materialized_paths 表示本次实际验证的选择。只有选择覆盖整个清单时才报告所有文件 ready。SDK/consumer 版本仍为 1，resource-read 仍为独立 v1。合法带冒号的 shared identity 和稳定 File ID 的旧 path hint 同时按已有身份合同修正。CLI 包补入资源合同和按需快照合同。
 
-合同见相邻 CLI 仓库的 docs/selected-snapshot-consumption.md；可复跑入口仍是现有两仓验证 Skill 与本仓[消费地图](../../../.agents/skills/verify-notion-skills-integration/features/skill-consumption.md)。没有第三套总入口。
+合同见相邻 CLI 仓库的 docs/selected-snapshot-consumption.md；可复跑入口仍是现有两仓验证 Skill 与本仓[消费地图](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/skill-consumption.md)。没有第三套总入口。
 
 ## 冻结产物
 

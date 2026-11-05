@@ -7,7 +7,7 @@ import { channel } from "node:diagnostics_channel";
 
 // These fixtures exercise the loading/observation boundary only. Actual SDK
 // runtime, package and Pi proofs use independently installed ntn-skills builds.
-async function fixture(options: { sdk?: boolean; sdkVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number; readProofVersion?: number; readProofManifestVersion?: number } = {}) {
+async function fixture(options: { sdk?: boolean; sdkVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number; readProofVersion?: number; readProofManifestVersion?: number; catalog?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "broker-sdk-boundary-"));
   await mkdir(join(root, "src")); await mkdir(join(root, "dist"));
   await copyFile(new URL("../src/notion-sdk.ts", import.meta.url), join(root, "src/notion-sdk.ts"));
@@ -31,6 +31,13 @@ export async function readSkill(target, options) {
   options.onRequestMetrics?.({ total_requests: 0, trace: [] });
   return { target, output: options.output };
 }
+${options.catalog ? `
+export async function listCatalog(options) {
+  calls.push({ operation: 'list', options });
+  options.onRequestMetrics?.({ total_requests: 0, trace: [] });
+  return { records: [], count: 0, view: options.view, scope: options.env?.SDK_TEST_ID };
+}
+` : ""}
 ${options.resourceVersion === undefined ? "" : `
 export const RESOURCE_READ_CONTRACT_VERSION = ${options.resourceVersion};
 export function decodeResourceReadResult() { throw new Error('resource read already decoded'); }
@@ -102,6 +109,38 @@ test("the shared public duration parser is used without acquiring an operation r
   expect(await boundary.parseNotionSdkDuration("1s")).toBe(1000);
   expect((await import(pathToFileURL(module).href)).calls).toHaveLength(0);
   expect(JSON.parse(await readFile(join(root, "dist/ntn-skills-runtime.json"), "utf8")).package).toBe("ntn-skills");
+});
+
+test("catalog discovery uses one SDK call and never silently falls back when the export is absent", async () => {
+  const old = await fixture();
+  await expect(old.boundary.listNotionCatalogSdk({})).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+  expect((await import(pathToFileURL(old.module).href)).calls).toHaveLength(0);
+  const current = await fixture({ catalog: true });
+  const options = { database: "selected", view: "view-id", maxAge: 1000, cwd: "/selected", env: { SDK_TEST_ID: "authorized-scope" } };
+  expect(await current.boundary.listNotionCatalogSdk(options)).toEqual({ records: [], count: 0, view: "view-id", scope: "authorized-scope" });
+  const calls = (await import(pathToFileURL(current.module).href)).calls;
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toMatchObject({ operation: "list", options });
+});
+
+test("raw result evidence is opt-in and correlates with body-free operation metrics", async () => {
+  const { boundary } = await fixture();
+  const metrics: unknown[] = [], results: unknown[] = [];
+  const metricTopic = channel("context-broker.notion-sdk"), resultTopic = channel("context-broker.notion-sdk-result");
+  const metricObserver = (event: unknown) => metrics.push(event), resultObserver = (event: unknown) => results.push(event);
+  metricTopic.subscribe(metricObserver); resultTopic.subscribe(resultObserver);
+  try {
+    const value = await boundary.consumeNotionSdk({ source: "PRIVATE_SOURCE_BYTES" }, {});
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ version: 1, operation: "consume", value });
+    const event = results[0];
+    if (!event || typeof event !== "object" || !("id" in event) || !("value" in event)) throw new Error("Expected correlated actual SDK result");
+    expect(event.value).toBe(value);
+    expect(metrics).toEqual(expect.arrayContaining([expect.objectContaining({ id: event.id, event: "end", operation: "consume" })]));
+    expect(JSON.stringify(metrics)).not.toContain("PRIVATE_SOURCE_BYTES");
+  } finally { metricTopic.unsubscribe(metricObserver); resultTopic.unsubscribe(resultObserver); }
+  await boundary.consumeNotionSdk({ source: "NO_SUBSCRIBER" }, {});
+  expect(results).toHaveLength(1);
 });
 
 test("resource capability is additive and checked before entering an older SDK runtime", async () => {

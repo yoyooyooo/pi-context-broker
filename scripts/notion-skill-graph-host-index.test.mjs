@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { mkdtemp, mkdir, writeFile, readFile, symlink } from 'node:fs/promises';
-import { observeGraphGate } from './notion-skill-graph-model.mjs';
+import { observeGraphGate, GRAPH_GATE_TOOLS } from './notion-skill-graph-model.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
 import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 
@@ -20,7 +20,7 @@ async function fixture(mutate, options = {}) {
   const files = definitions
     .map(([file, content, id]) => ({ path: file, bytes: Buffer.byteLength(content), sha256: hash(content), ref: ref(file, id) }));
   const bindings = files.map((file, index) => ({ file_id: definitions[index][2], page_id: `${index + 1}1111111-2222-4333-8444-555555555555`, path: file.path }));
-  const record = { id: owner, kind: 'skill', ref: 'skill://' + encodeURIComponent(owner) + '/SKILL.md' };
+  const record = { id: owner, kind: 'skill', entrypoint: 'SKILL.md', ref: 'skill://' + encodeURIComponent(owner) + '/SKILL.md' };
   const entry = path.join(cache, 'scopes', scope, 'records', hash(owner), 'entries', snapshot), tree = path.join(entry, 'tree');
   await mkdir(tree, { recursive: true }); await mkdir(responses); await writeFile(output, ''); await writeFile(path.join(tree, 'SKILL.md'), body);
   const manifest = { version: 1, projection: 'entry', manifest_complete: true, scope, id: owner, snapshot_id: snapshot, version_id: version,
@@ -28,7 +28,7 @@ async function fixture(mutate, options = {}) {
   await save(path.join(entry, '.broker-entry.json'), manifest);
   await save(path.join(responses, 'read.json'), { code: 0, command: 'read', response: { ok: true, record, scope, snapshot_id: snapshot,
     version_id: version, ref: files[0].ref, path: 'SKILL.md', content: body, file_bindings: bindings } });
-  await save(path.join(responses, 'prepare.json'), { code: 0, command: 'prepare', response: { ok: true, scope, nodes: [{ id: owner,
+  await save(path.join(responses, 'prepare.json'), { code: 0, command: 'prepare', response: { ok: true, status: 'ready', purpose: 'use', scope, nodes: [{ id: owner,
     state: 'prepared', path: 'SKILL.md', body_sha256: hash(body), binding: { snapshot_id: snapshot, ref: files[0].ref }, files }] } });
   const index = path.join(directory, 'host-index', 'source', 'record'), main = path.join(index, 'SKILL.md'), published = '# Published catalog projection\n';
   await mkdir(index, { recursive: true }); await writeFile(main, published);
@@ -129,9 +129,9 @@ async function writeVariant(f, { scope = f.scope, snapshot = f.snapshot, fileId 
   await mkdir(path.join(entry, 'tree'), { recursive: true }); await writeFile(path.join(entry, 'tree/SKILL.md'), f.body);
   await save(path.join(entry, '.broker-entry.json'), manifest);
   await save(path.join(f.responses, 'read' + (suffix ? '-' + suffix : '') + '.json'), { code: 0, command: 'read', response: {
-    ok: true, record: { id: f.owner, kind: 'skill' }, scope, snapshot_id: snapshot, version_id: f.version,
+    ok: true, record: { id: f.owner, kind: 'skill', entrypoint: 'SKILL.md', ref: bareRef(f.owner, 'SKILL.md') }, scope, snapshot_id: snapshot, version_id: f.version,
     ref: manifest.ref, path: 'SKILL.md', content: f.body, file_bindings: manifest.file_bindings } });
-  await save(path.join(f.responses, 'prepare' + (suffix ? '-' + suffix : '') + '.json'), { code: 0, command: 'prepare', response: { ok: true, scope,
+  await save(path.join(f.responses, 'prepare' + (suffix ? '-' + suffix : '') + '.json'), { code: 0, command: 'prepare', response: { ok: true, status: 'ready', purpose: 'use', scope,
     nodes: [{ id: f.owner, state: 'prepared', path: 'SKILL.md', body_sha256: hash(f.body), binding: { snapshot_id: snapshot, ref: manifest.ref }, files: manifest.files }] } });
 }
 
@@ -187,14 +187,14 @@ test('H6 B: public main references may omit their path after exact owner discove
   try {
     readMain(f);
     for (const [index, ref] of [owner, owner + '/', owner + '?snapshot=' + f.snapshot, owner.replaceAll('%3A', '%3a')].entries()) {
-      assert.equal(authoredTool(f, 'prepare-' + index, 'skill_prepare', { roots: [ref], purpose: 'use' }), undefined, ref);
+      assert.equal(authoredTool(f, 'prepare-' + index, 'notion_use', { ref }), undefined, ref);
       assert.equal(f.call('read-' + index, ref), undefined, ref);
       f.result('read-' + index, f.body);
     }
     assert.equal((await f.events()).filter(event => event.phase === 'tool-result' && event.toolCallId.startsWith('read-') && event.complete).length, 4);
     for (const ref of [owner + '?snapshot=s_' + 'b'.repeat(64), 'skill://undiscovered-owner', owner + '?file_id=main-file',
       owner + '?extra=field', owner + '/%2e%2e/SKILL.md', owner + '?snapshot=' + f.snapshot + '&snapshot=' + f.snapshot]) {
-      assert.equal(authoredTool(f, 'invalid-' + ref, 'skill_prepare', { roots: [ref], purpose: 'use' }).block, true, ref);
+      assert.equal(authoredTool(f, 'invalid-' + ref, 'notion_use', { ref }).block, true, ref);
     }
   } finally { f.close(); }
 });
@@ -205,13 +205,14 @@ test('a discovered unmaterialized metadata owner resolves its declared main path
   try {
     await save(path.join(f.responses, 'list.json'), { code: 0, command: 'list', response: { ok: true, scope: f.scope,
       records: [record, { ...record, id: 'shared_skill:controlled:unseen', ref: bareRef('shared_skill:controlled:unseen', 'WORKFLOW.md') }] } });
-    const result = { ok: true, state: 'known', count: 1, has_more: false, failures: [], records: [{ id: owner, ref, kind: 'skill',
+    const result = { ok: true, state: 'known', count: 1, total_count: 1, has_more: false, next_cursor: null, coverage: { exhaustive: true, sources: [] }, failures: [], records: [{ id: owner, ref, kind: 'skill',
       name: 'member', description: record.description, source: 'notion', scope: f.scope, in_default_view: false, availability: 'available' }] };
-    assert.equal(authoredTool(f, 'search', 'skill_search', { query: 'member' }), undefined);
-    f.handlers.get('tool_result')({ toolName: 'skill_search', toolCallId: 'search', content: [{ type: 'text', text: JSON.stringify(result) }] });
-    assert.equal(authoredTool(f, 'prepare', 'skill_prepare', { roots: ['skill://' + encodeURIComponent(owner)], purpose: 'inspect' }), undefined);
-    assert.equal(authoredTool(f, 'unseen', 'skill_prepare', { roots: ['skill://' + encodeURIComponent('shared_skill:controlled:unseen')], purpose: 'inspect' }).block, true);
-    assert.equal(authoredTool(f, 'guessed-main', 'skill_prepare', { roots: [bareRef(owner, 'SKILL.md')], purpose: 'inspect' }).block, true);
+    const model = { ...result, records: result.records.map(({ id, scope, ...record }) => record) };
+    assert.equal(authoredTool(f, 'search', 'notion_list', { query: 'member' }), undefined);
+    f.handlers.get('tool_result')({ toolName: 'notion_list', toolCallId: 'search', content: [{ type: 'text', text: JSON.stringify(model) }], details: result });
+    assert.equal(f.call('inspect', 'skill://' + encodeURIComponent(owner)), undefined);
+    assert.equal(f.call('unseen', 'skill://' + encodeURIComponent('shared_skill:controlled:unseen')).block, true);
+    assert.equal(f.call('guessed-main', bareRef(owner, 'SKILL.md')).block, true);
   } finally { f.close(); }
 });
 
@@ -225,7 +226,7 @@ function nativeProvider(f, { location = path.join(f.tree, 'SKILL.md'), body = f.
   const messages = [{ role: assistant ? 'assistant' : 'user', content: [{ type: 'text', text: content }] },
     ...(proof ? [{ role: 'custom', customType: 'context-broker', content: [], details: { records: [receipt] } }] : [])];
   f.handlers.get('context')({ messages }, f.ctx);
-  f.handlers.get('before_provider_request')({ payload: { model: 'fake', tools: ['read', 'skill_search', 'skill_prepare'].map(name => ({ type: 'function', function: { name } })),
+  f.handlers.get('before_provider_request')({ payload: { model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })),
     messages: [{ role: assistant ? 'assistant' : 'user', content }] } }, f.ctx);
   return content;
 }

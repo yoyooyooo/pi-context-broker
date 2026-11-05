@@ -17,6 +17,77 @@ const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const save = (file, value) => writeFile(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
 const uuid = '11111111-2222-4333-8444-555555555555';
 
+test('first pending catalog is explicit and only a later verified catalog proves default discovery', () => {
+  const config = { gate: 'A', rootRef: 'skill://root/ROUTER.md' };
+  const pending = { phase: 'catalog', sequence: 1, state: 'pending', skills: [], routers: [], localDiscoveryDisabled: true };
+  const ready = { phase: 'catalog', sequence: 5, state: 'ready', skills: [], routers: [{ ref: 'sr:C' + 'a'.repeat(22), canonicalRef: config.rootRef, provenance: { source: 'verified-notion-metadata', ownerId: 'root', loaded: false } }], localDiscoveryDisabled: true };
+  assert.equal(graphModel.graphCatalogEvidence([pending], config).status, 'pending');
+  assert.equal(graphModel.graphCatalogEvidence([pending, { phase: 'provider-request', contents: [{ role: 'entrypoint', ownerId: 'root' }] }], config).status, 'pending');
+  assert.equal(graphModel.graphCatalogEvidence([pending, ready], config).status, 'ready');
+  assert.throws(() => graphModel.graphCatalogEvidence([{ ...pending, state: 'unavailable' }], config), /unavailable/);
+  assert.throws(() => graphModel.graphCatalogEvidence([{ ...ready, routers: [] }], config), /selected root/);
+  assert.throws(() => graphModel.graphCatalogEvidence([{ ...ready, routers: [{ ...ready.routers[0], canonicalRef: 'skill://wrong/ROUTER.md' }] }], config), /selected root/);
+  assert.throws(() => graphModel.graphCatalogEvidence([{ ...ready, routers: [{ ...ready.routers[0], provenance: null }] }], config), /metadata/);
+});
+
+test('task evidence records actual project and selected-resource reads independently of final claims', () => {
+  const claimed = { phase: 'assistant-final', success: true, text: '已读取项目源码。' };
+  const missing = graphModel.graphTaskEvidence([claimed]);
+  assert.equal(missing.projectSourceReadCount, 0); assert.equal(missing.projectSourceReadStatus, 'missing');
+  assert.equal(missing.finalTextSha256, hash(claimed.text));
+  const observed = graphModel.graphTaskEvidence([claimed, { phase: 'project-read-result', complete: true, path: 'src/tickets.mjs', toolCallId: 'p' }, { phase: 'tool-result', complete: true, role: 'resource', toolCallId: 'r', ref: 'skill://member/README.md' }]);
+  assert.equal(observed.projectSourceReadCount, 1); assert.equal(observed.projectSourceReadStatus, 'observed');
+  assert.equal(observed.resourceReadCount, 1);
+  const batch = graphModel.graphTaskEvidence([{ phase: 'tool-result', complete: true, role: 'resource', toolCallId: 'batch', ref: 'one' },
+    { phase: 'tool-result', complete: true, role: 'resource', toolCallId: 'batch', ref: 'two' }]);
+  assert.equal(batch.resourceReadCount, 2); assert.equal(batch.resourceToolCallCount, 1);
+});
+
+test('batch resources retain one exact outer provider output and cannot pass on standalone body copies or details', () => {
+  const value = contractFixture('B'), resource = value.trace.reads[1];
+  resource.role = 'resource'; resource.toolCallId = 'batch';
+  resource.resourceBatchProof = { index: 0, publicRequestId: 'actual-sdk-batch', deliveryVerified: true,
+    selection: { owner: 'fixture-leaf', scope: resource.scope, snapshot_id: resource.snapshot },
+    delivery: { encoding: 'json', start: 10, end: 10 + resource.content.length },
+    toolResultSha256: hash('complete-batch-output'), toolResultBytes: 1000 };
+  value.trace.providerRequests.at(-1).toolResults = [{ toolCallId: 'batch', tool: 'read', exactToolOutputCopies: 1,
+    sha256: resource.resourceBatchProof.toolResultSha256, bytes: 1000,
+    records: [{ ref: resource.ref, scope: resource.scope, snapshot: resource.snapshot, sha256: resource.sha256, bytes: resource.bytes, providerCopies: 1 }] }];
+  assert.equal(evaluateGraphTrace(value.trace, value.oracle).status, 'contract-valid');
+  for (const mutate of [v => { v.trace.providerRequests.at(-1).toolResults = []; },
+    v => { v.trace.providerRequests.at(-1).toolResults[0].exactToolOutputCopies = 0; },
+    v => { v.trace.providerRequests.at(-1).toolResults[0].toolCallId = 'another'; },
+    v => { v.trace.providerRequests.at(-1).toolResults[0].records[0].providerCopies = 0; },
+    v => { v.trace.reads[1].resourceBatchProof.deliveryVerified = false; },
+    v => { v.trace.reads[1].resourceBatchProof.selection.owner = 'another'; }]) {
+    const changed = structuredClone(value); mutate(changed);
+    assert.throws(() => evaluateGraphTrace(changed.trace, changed.oracle), error => error.code === 'PROVIDER_CONTENT');
+  }
+});
+
+test('agent-cli-ref-20261105 freezes Notion model tools and defaults to bundled SDK', async () => {
+  assert.deepEqual(GRAPH_GATE_TOOLS, ['read', 'notion_list', 'notion_use']);
+  const fixture = await workerConfigFixture();
+  const config = await readGateConfig(fixture.configPath);
+  assert.equal(config.sourceMode, 'sdk');
+  const source = graphModel.brokerConfiguration(config, ['/owned/observed-command'], '/owned/cache').sources[0];
+  assert.equal(Object.hasOwn(source, 'command'), false);
+  assert.equal(source.default_view_id, uuid);
+  fixture.config.sourceMode = 'command'; await fixture.write();
+  const legacy = await readGateConfig(fixture.configPath);
+  assert.deepEqual(graphModel.brokerConfiguration(legacy, ['/owned/observed-command'], '/owned/cache').sources[0].command, ['/owned/observed-command']);
+});
+
+test('default SDK cannot silently accept a profile-only source or unknown transport', async () => {
+  const fixture = await workerConfigFixture();
+  delete fixture.config.viewId; fixture.config.profileId = 'legacy-profile'; await fixture.write();
+  await assert.rejects(readGateConfig(fixture.configPath), /Profile.*explicit.*command/);
+  fixture.config.sourceMode = 'command'; await fixture.write();
+  assert.equal((await readGateConfig(fixture.configPath)).sourceMode, 'command');
+  fixture.config.sourceMode = 'automatic-fallback'; await fixture.write();
+  await assert.rejects(readGateConfig(fixture.configPath), /sourceMode/);
+});
+
 async function workerConfigFixture() {
   const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-worker-authorization-'));
   const config = { version: 1, gate: 'B', selection: '$poteto-mode@notion', rootRef: 'skill://controlled-ordinary/SKILL.md', database: uuid, viewId: uuid,
@@ -317,24 +388,32 @@ test('actual metadata may introduce an exact ref while guessed roots, forged res
       handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name, arguments: arguments_ }] } });
       return handlers.get('tool_call')({ toolName: name, toolCallId: id, input: arguments_ });
     };
-    assert.equal(invoke('unknown', 'skill_prepare', { roots: [record.ref], purpose: 'use' }).block, true);
-    assert.equal(invoke('search', 'skill_search', { query: 'member' }), undefined);
-    const result = { ok: true, state: 'known', count: 1, has_more: false, records: [{ ...record, source: 'notion', scope, in_default_view: false, availability: 'available' }], failures: [] };
+    assert.equal(invoke('unknown', 'notion_use', { ref: record.ref }).block, true);
+    assert.equal(invoke('legacy-search', 'skill_search', { query: 'member' }).block, true);
+    assert.equal(invoke('legacy-prepare', 'skill_prepare', { roots: [record.ref], purpose: 'use' }).block, true);
+    assert.equal(invoke('search', 'notion_list', { query: 'member' }), undefined);
+    const result = { ok: true, state: 'known', count: 1, total_count: 1, has_more: false, next_cursor: null,
+      coverage: { exhaustive: true, sources: ['notion'] }, records: [{ ...record, source: 'notion', scope, in_default_view: false, availability: 'available' }], failures: [] };
     delete result.records[0].enabled;
-    const content = JSON.stringify(result);
-    handlers.get('tool_result')({ toolName: 'skill_search', toolCallId: 'search', content: [{ type: 'text', text: content }], isError: false });
-    assert.equal(invoke('prepare', 'skill_prepare', { roots: [record.ref], purpose: 'inspect' }), undefined);
-    assert.equal(invoke('guessed', 'skill_prepare', { roots: ['member'], purpose: 'use' }).block, true);
+    const projection = result => ({ ...result, records: result.records.map(({ id, scope, ...row }) => row) });
+    const content = JSON.stringify(projection(result));
+    handlers.get('tool_result')({ toolName: 'notion_list', toolCallId: 'search', content: [{ type: 'text', text: content }], details: result, isError: false });
+    assert.equal(invoke('prepare', 'notion_use', { ref: record.ref }), undefined);
+    assert.equal(invoke('multiple', 'notion_use', { ref: [record.ref] }), undefined);
+    assert.equal(invoke('inspect', 'read', { path: record.ref }), undefined);
+    assert.equal(invoke('hidden-inspect', 'notion_use', { ref: record.ref, purpose: 'inspect' }).block, true);
+    assert.equal(invoke('guessed', 'notion_use', { ref: 'member' }).block, true);
+    assert.equal(invoke('guessed-cursor', 'notion_list', { cursor: '1.' + hash('unobserved') }).block, true);
     assert.equal(invoke('shell', 'bash', { command: 'echo should-never-run' }).block, true);
-    assert.equal(handlers.get('tool_call')({ toolName: 'skill_search', toolCallId: 'unattributed', input: { query: '' } }).block, true);
+    assert.equal(handlers.get('tool_call')({ toolName: 'notion_list', toolCallId: 'unattributed', input: { query: '' } }).block, true);
     const tools = GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } }));
     handlers.get('before_provider_request')({ payload: { tools, messages: [{ role: 'tool', tool_call_id: 'search', content }] } }, model);
     assert.throws(() => handlers.get('before_provider_request')({ payload: { tools: tools.slice(0, 1), messages: [] } }, model), /advertise/);
-    assert.equal(invoke('forged', 'skill_search', { query: 'forged' }), undefined);
+    assert.equal(invoke('forged', 'notion_list', { query: 'forged' }), undefined);
     const forgedRef = 'skill://shared_skill%3Acontrolled%3Aforged/SKILL.md';
     const forged = { ...result, records: [{ ...result.records[0], ref: forgedRef, id: 'shared_skill:controlled:forged' }] };
-    handlers.get('tool_result')({ toolName: 'skill_search', toolCallId: 'forged', content: [{ type: 'text', text: JSON.stringify(forged) }] });
-    assert.equal(invoke('forged-prepare', 'skill_prepare', { roots: [forgedRef], purpose: 'use' }).block, true);
+    handlers.get('tool_result')({ toolName: 'notion_list', toolCallId: 'forged', content: [{ type: 'text', text: JSON.stringify(projection(forged)) }], details: forged });
+    assert.equal(invoke('forged-prepare', 'notion_use', { ref: forgedRef }).block, true);
     const events = (await readFile(output, 'utf8')).trim().split('\n').map(JSON.parse);
     assert.ok(events.some(event => event.phase === 'metadata-result' && event.toolCallId === 'forged' && event.complete === false));
     assert.ok(events.some(event => event.phase === 'provider-request' && event.toolResults.some(result => result.toolCallId === 'search' && result.exactToolOutputCopies === 1 && result.sha256 === hash(content))));
@@ -344,7 +423,8 @@ test('actual metadata may introduce an exact ref while guessed roots, forged res
 
 test('only explicitly selected prepared mains with full public and provider proofs satisfy the same read contract', () => {
   const value = contractFixture('B'), main = value.trace.reads[0];
-  main.tool = 'skill_prepare'; main.toolCallId = 'explicit-main'; main.role = 'entrypoint'; main.bytes = Buffer.byteLength(main.content);
+  value.trace.toolContract = 'agent-cli-ref-20261105';
+  main.tool = 'notion_use'; main.toolCallId = 'explicit-main'; main.role = 'entrypoint'; main.bytes = Buffer.byteLength(main.content);
   main.preparationProof = { purpose: 'use', explicitRoot: true, roots: ['skill://' + encodeURIComponent(main.logicalId) + '/SKILL.md'], publicRequestId: 'actual-public-request',
     graphLockSha256: hash('lock'), manifestSha256: hash('manifest'), publicRef: main.ref, scope: main.scope,
     ownerId: main.logicalId, snapshot: main.snapshot, sha256: main.sha256, bytes: main.bytes,
@@ -358,7 +438,9 @@ test('only explicitly selected prepared mains with full public and provider proo
     v => { v.trace.reads[0].preparationProof.graphLockSha256 = ''; },
     v => { v.trace.reads[0].preparationProof.snapshot = 'other'; },
     v => { v.trace.providerRequests.at(-1).toolResults[0].records[0].providerCopies = 0; },
-    v => { v.trace.reads[1].tool = 'skill_prepare'; },
+    v => { v.trace.reads[1].tool = 'notion_use'; },
+    v => { v.trace.reads[0].preparationProof.purpose = 'inspect'; },
+    v => { v.trace.reads[0].tool = 'skill_prepare'; v.trace.providerRequests.at(-1).toolResults[0].tool = 'skill_prepare'; },
   ]) {
     const changed = structuredClone(value); mutate(changed);
     assert.throws(() => evaluateGraphTrace(changed.trace, changed.oracle), error => error.code === 'NAME_GUESSING');

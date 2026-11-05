@@ -7,7 +7,7 @@ const unescape = (value: string) => value.replaceAll("&quot;", '"').replaceAll("
 const hostName = (record: SkillRecord) => (record.token ?? record.name).replace(/[^a-z0-9-]/g, "-");
 
 /** Rebuild only broker-owned metadata for this request, never conversation bodies. */
-export function viewSystemPrompt(input: string | string[] | undefined, skills: readonly SkillRecord[], routers: readonly SkillRecord[], ownedPaths: ReadonlySet<string>, views: readonly NotionViewState[], cwd = process.cwd(), renderRef?: (record: SkillRecord) => string | undefined): string {
+export function viewSystemPrompt(input: string | string[] | undefined, skills: readonly SkillRecord[], routers: readonly SkillRecord[], ownedPaths: ReadonlySet<string>, views: readonly NotionViewState[], cwd = process.cwd(), renderRef?: (record: SkillRecord) => string | undefined, listTool = "skill_search"): string {
   const prompt = (Array.isArray(input) ? input.join("\n\n") : input ?? "")
     .replace(/\n*<ntn-skills-view-catalog>[\s\S]*?<\/ntn-skills-view-catalog>/g, "")
     .replace(/<available_skills>[\s\S]*?<\/available_skills>/g, block => block.replace(/<skill>[\s\S]*?<\/skill>/g, entry => {
@@ -29,5 +29,5 @@ export function viewSystemPrompt(input: string | string[] | undefined, skills: r
     const shortRef = record.source === "notion" ? renderRef?.(record) : undefined;
     return `<router ref="${xml(shortRef || (record.ref ?? record.path))}"><name>${xml(record.name)}</name><description>${xml(record.description)}</description></router>`;
   }).join("\n");
-  return `${prompt}\n\n<ntn-skills-view-catalog>\nThese are the current default discovery entries, not loaded Skill bodies. Read a selected entry by copying its exact location path or ref into the native read tool. Use skill_search for other metadata when that tool is available; a View is not an access restriction. Previously loaded bodies keep their selected snapshots.\n${states}${entries ? `\n<available_skills>\n${entries}\n</available_skills>` : ""}${routes ? `\n<available_routers>\n${routes}\n</available_routers>` : ""}\n</ntn-skills-view-catalog>`;
+  return `${prompt}\n\n<ntn-skills-view-catalog>\nDefault Notion candidates. Inspect with read; use a Skill through the available use tool. Discover other authorized entries with ${listTool}. Previously loaded bodies keep their selected versions.\n${states}${entries ? `\n<available_skills>\n${entries}\n</available_skills>` : ""}${routes ? `\n<available_routers>\n${routes}\n</available_routers>` : ""}\n</ntn-skills-view-catalog>`;
 }

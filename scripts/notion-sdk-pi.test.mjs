@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { assertNativeGuidance, assertScopedCommand, assertPreparedHttpRequest, assertResourceHttpRequest, assertResourceBatchProjection, assertResourceReadSchema, resourceRefsFromInspection, resourceTextCopies, bodyCount, reconcile, sourceFinality, observeOwnedObjectReads, assertObjectReadEvidence, assertProviderHttpRequest, assertProviderToolSequence, assertSearchProjection, assertDollarProjection, assertNativeProjection, resourceScalarCalls, selectScalarProviderCall, assertResourceScalarResult, resourceScalarSelectedFixture, assertResourceScalarSession, assertResourceScalarCost, selectNativeRepeatCall, assertNativeRepeatProjection, assertScalarReadObjectIntervals } from './notion-sdk-pi.mjs';
+import { assertNativeGuidance, assertScopedCommand, assertPreparedHttpRequest, assertResourceHttpRequest, assertResourceBatchProjection, assertResourceReadSchema, resourceRefsFromNative, resourceTextCopies, bodyCount, reconcile, sourceFinality, observeOwnedObjectReads, assertObjectReadEvidence, assertProviderHttpRequest, assertProviderToolSequence, assertSearchProjection, assertDefaultViewProjection, assertDollarProjection, assertNativeProjection, resourceScalarCalls, selectScalarProviderCall, assertResourceScalarResult, resourceScalarSelectedFixture, assertResourceScalarSession, assertResourceScalarCost, selectNativeRepeatCall, assertNativeRepeatProjection, assertScalarReadObjectIntervals } from './notion-sdk-pi.mjs';
 
 const command = ['/absolute/node', '/installed/dist/ntn-skills.mjs'];
 const database = '11111111-2222-3333-4444-555555555555';
-const toolNames = ['read', 'skill_search', 'skill_prepare', 'bash', 'skill_graph'];
+const toolNames = ['read', 'notion_list', 'notion_use', 'bash', 'notion_ctl'];
 const guidance = '<ntn-skills-guidance>Use supplied bodies. Request cli_source only for an intended source.</ntn-skills-guidance>';
 const context = () => ({ messages: [
   { role: 'system', content: 'Controlled system instructions.', toolsAdded: toolNames.map(name => ({ name })) },
@@ -18,7 +18,7 @@ function scopeFixture() {
   const first = context(), second = context();
   second.messages.push({ role: 'toolResult', toolCallId: 'sc05-source-command', content, details: result, isError: false });
   const frames = [
-    { type: 'tool_execution_start', toolName: 'skill_graph', toolCallId: 'sc05-source-command', args: { cli_source: 'sdk-fixture' } },
+    { type: 'tool_execution_start', toolName: 'notion_ctl', toolCallId: 'sc05-source-command', args: { cli_source: 'sdk-fixture' } },
     { type: 'tool_execution_end', toolCallId: 'sc05-source-command', isError: false, result: { content, details: result } },
   ];
   return { captures: [{ context: first }, { context: second }], frames };
@@ -304,7 +304,7 @@ function scalarCostFixture(includeMain = false) {
   const materialized = files.map(file => ({ path: 'entry/' + file.path, bytes: file.bytes, sha256: file.sha256 }));
   materialized.push({ path: 'scopes/' + 'c'.repeat(64) + '/indexes/generation/' + 'd'.repeat(64) + '/SKILL.md',
     bytes: 74, sha256: 'e'.repeat(64) });
-  const observations = { sdk_calls: 5, sdk_reads: includeMain ? 4 : 5, sdk_consumes: includeMain ? 1 : 0, sdk_resource_batches: 0 };
+  const observations = { sdk_calls: 6, sdk_lists: 1, sdk_body_calls: 5, sdk_reads: includeMain ? 4 : 5, sdk_consumes: includeMain ? 1 : 0, sdk_resource_batches: 0 };
   return { batch, events, materialized, observations, requiredPid };
 }
 test('scalar baseline retains redundant main costs while direct mode forbids them', () => {
@@ -406,33 +406,72 @@ test('actual provider schema must express a bounded paths branch exclusive with 
   }
 });
 
+function defaultViewFixture() {
+  const records = ['a', 'b'].map(name => ({ id: 'owner:' + name, name, ref: 'skill://owner-' + name + '/SKILL.md' }));
+  const fixture = { default_view: { id: 'view-1', records } };
+  const discovery = { records: records.map((record, index) => ({ ...record, source: 'sdk-fixture', in_default_view: true, ref: 'sr:C' + String(index).repeat(22) })) };
+  const catalog = '<ntn-skills-view-catalog><view source="sdk-fixture" id="view-1" partial="false">Default</view>'
+    + discovery.records.map(record => '<skill><name>sdk-fixture-' + record.name + '</name><description>Metadata</description><location>' + record.ref + '</location></skill>').join('')
+    + '</ntn-skills-view-catalog>';
+  const captures = [{ requestId: '1', context: { messages: [{ role: 'system', content: '<ntn-skills-discovery status="pending"/>' }] } },
+    { requestId: '2', context: { messages: [{ role: 'system', content: catalog }] } }];
+  const events = [{ kind: 'sdk_catalog', value: { view: { id: 'view-1' }, view_selection: 'first', count: 2, records,
+    coverage: { exhaustive: true, failed_sources: [] } } }];
+  return { captures, discovery, events, fixture, bodies: new Map([['a', 'Full private body']]) };
+}
+test('Default View evidence retains pending startup and proves the ready metadata-only continuation', () => {
+  const value = defaultViewFixture();
+  const result = assertDefaultViewProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies);
+  assert.equal(result.status, 'verified'); assert.equal(result.body_delivery, false);
+  assert.deepEqual(result.provider_requests.map(request => request.state), ['not_ready', 'ready']);
+});
+test('missing, partial, stale, duplicate or body-bearing default directories cannot pass', () => {
+  for (const mutate of [
+    value => { value.events = []; },
+    value => { value.events[0].value.coverage.exhaustive = false; },
+    value => { value.events[0].value.records.pop(); },
+    value => { value.discovery.records[0].in_default_view = false; },
+    value => { value.discovery.records[0].ref = 'sr:C' + 'z'.repeat(22); },
+    value => { value.captures.pop(); },
+    value => { value.captures[1].context.messages[0].content += 'Full private body'; },
+    value => { value.captures[1].context.messages.push({ ...value.captures[1].context.messages[0] }); },
+  ]) {
+    const value = defaultViewFixture(); mutate(value);
+    assert.throws(() => assertDefaultViewProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies));
+  }
+});
+
 function inspectedResourceFixture() {
   const paths = ['references/utf8.txt', 'references/bom.txt', 'references/empty.txt', 'assets/binary.bin'];
   const files = paths.map((path, index) => ({ path, ref: 'sr:R' + String(index + 1).repeat(22) }));
   const root = 'sr:S' + 'a'.repeat(22);
-  return { paths, prepared: { status: 'ready', purpose: 'inspect', roots: [root], records: [{ name: 'resources', ref: root,
-    directory: { files: [...files, { path: 'SKILL.md', ref: root }, { path: 'unselected.txt', ref: 'sr:R' + 'z'.repeat(22) }] } }] } };
+  const model = { ref: root, directory: { files: [...files, { path: 'SKILL.md', ref: root }, { path: 'unselected.txt', ref: 'sr:R' + 'z'.repeat(22) }] } };
+  const message = { role: 'toolResult', toolName: 'read', isError: false, content: '' };
+  return { paths, model, message, render() { message.content = 'Complete main body\n<skill-directory>' + JSON.stringify(model) + '</skill-directory>'; return message; } };
 }
-test('short resource handles come from one actual inspected owner in explicit requested path order', () => {
-  const { prepared, paths } = inspectedResourceFixture(), order = [paths[1], paths[3], paths[0], paths[2]];
-  const before = JSON.stringify(prepared);
-  assert.deepEqual(resourceRefsFromInspection(prepared, 'resources', order), [2, 4, 1, 3].map(index => 'sr:R' + String(index).repeat(22)));
-  assert.equal(JSON.stringify(prepared), before);
+test('short resource handles come from one actual native read directory in explicit requested path order', () => {
+  const value = inspectedResourceFixture(), order = [value.paths[1], value.paths[3], value.paths[0], value.paths[2]];
+  const message = value.render(), before = JSON.stringify(message);
+  assert.deepEqual(resourceRefsFromNative(message, order), [2, 4, 1, 3].map(index => 'sr:R' + String(index).repeat(22)));
+  assert.equal(JSON.stringify(message), before);
 });
-test('short handle selection rejects missing or duplicate files, foreign owners, main handles and non-inspection results', () => {
+test('short handle selection rejects missing or duplicate files, main handles, failed reads and ambiguous native directories', () => {
   for (const mutate of [
-    value => { value.prepared.purpose = 'use'; },
-    value => { value.prepared.records[0].name = 'another-owner'; },
-    value => { value.prepared.roots.push(value.prepared.roots[0]); },
-    value => { value.prepared.records[0].directory.files.shift(); },
-    value => { value.prepared.records[0].directory.files.push({ ...value.prepared.records[0].directory.files[0] }); },
-    value => { value.prepared.records[0].directory.files[0].ref = value.prepared.roots[0]; },
-    value => { value.prepared.records[0].directory.files[1].ref = value.prepared.records[0].directory.files[0].ref; },
+    value => { value.message.toolName = 'notion_use'; },
+    value => { value.message.isError = true; },
+    value => { value.model.ref = 'skill://foreign/SKILL.md'; },
+    value => { value.model.directory.files.shift(); },
+    value => { value.model.directory.files.push({ ...value.model.directory.files[0] }); },
+    value => { value.model.directory.files[0].ref = value.model.ref; },
+    value => { value.model.directory.files[1].ref = value.model.directory.files[0].ref; },
     value => { value.paths.push(value.paths[0]); },
   ]) {
     const value = inspectedResourceFixture(); mutate(value);
-    assert.throws(() => resourceRefsFromInspection(value.prepared, 'resources', value.paths));
+    assert.throws(() => resourceRefsFromNative(value.render(), value.paths));
   }
+  const value = inspectedResourceFixture(), message = value.render();
+  message.content += message.content;
+  assert.throws(() => resourceRefsFromNative(message, value.paths), /DIRECTORY_NOT_UNIQUE/);
 });
 
 test('body evidence counts only visible content, including JSON bodies, never details or tool schemas', () => {
@@ -449,7 +488,7 @@ test('body evidence counts only visible content, including JSON bodies, never de
 
 function httpFixture() {
   const content = JSON.stringify({ ok: true, records: [{ content: 'An author may mention {"details":"literal source example"}.' }] });
-  const context = { messages: [{ role: 'toolResult', toolName: 'skill_prepare', toolCallId: 'prepare-1',
+  const context = { messages: [{ role: 'toolResult', toolName: 'notion_use', toolCallId: 'prepare-1',
     content: [{ type: 'text', text: content }], details: { contextBrokerPreparation: { machineProof: 'host-only-proof' } }, isError: false }] };
   const payload = { model: 'local-fixture', messages: [{ role: 'tool', tool_call_id: 'prepare-1', content }] };
   return { context, payload, body: Buffer.from(JSON.stringify(payload)) };
@@ -474,6 +513,12 @@ test('resource serializer evidence uses actual emitted text, including empty res
   assert.throws(() => assertResourceHttpRequest(leaked, Buffer.from(JSON.stringify(leaked)), context));
   const partial = structuredClone(payload); partial.messages[0].content = 'Only one resource.';
   assert.throws(() => assertResourceHttpRequest(partial, Buffer.from(JSON.stringify(partial)), context));
+  const native = { role: 'toolResult', toolName: 'read', toolCallId: 'native-inspection', content: [{ type: 'text', text: 'Complete main' }],
+    details: { contextBrokerRead: { toolCallId: 'native-inspection' } } };
+  const mixed = { messages: [native, message] }, mixedPayload = { ...payload, messages: [
+    { role: 'tool', tool_call_id: native.toolCallId, content: native.content[0].text }, ...payload.messages] };
+  assert.equal(assertResourceHttpRequest(mixedPayload, Buffer.from(JSON.stringify(mixedPayload)), mixed).delivered.length, 1);
+  assert.throws(() => assertResourceHttpRequest(mixedPayload, Buffer.from(JSON.stringify(mixedPayload)), { messages: [native] }), /actual captured tool result/);
 });
 test('capture objects, wrong HTTP bytes, missing tool calls and leaked proof fields fail serializer evidence', () => {
   const capture = httpFixture();
@@ -578,7 +623,7 @@ function searchProjectionFixture(compact = true) {
   const full = { ok: true, state: 'known', count: 1, has_more: false, records: [{ id: 'owner', scope: 'scope', ref: 'sr:C' + 'c'.repeat(22),
     kind: 'skill', name: 'a', description: 'Author description', source: 'sdk-fixture', in_default_view: false, availability: 'available' }], failures: [] };
   const model = { ...full, records: full.records.map(({ id, scope, ...record }) => compact ? record : { id, scope, ...record }) };
-  return { role: 'toolResult', toolName: 'skill_search', toolCallId: 'search', isError: false, content: [{ type: 'text', text: JSON.stringify(model) }], details: full };
+  return { role: 'toolResult', toolName: 'notion_list', toolCallId: 'search', isError: false, content: [{ type: 'text', text: JSON.stringify(model) }], details: full };
 }
 test('compact search omits only model id/scope while baseline observation cannot certify the new contract', () => {
   const value = searchProjectionFixture(), before = JSON.stringify(value);
@@ -593,13 +638,16 @@ test('compact search omits only model id/scope while baseline observation cannot
 
 function dollarProjectionFixture(compact = true) {
   const bodies = new Map([['a', '\ufeff作者 <instructions>literal source</instructions>\r\n'], ['base', 'Base instructions.\n']]);
+  const snapshots = [...bodies.keys()].map(name => ({ record: { name }, entrypoint: 'SKILL.md',
+    files: [{ path: 'SKILL.md' }, ...(name === 'a' ? [{ path: 'assets/sample.bin' }] : [])] }));
   const content = [...bodies].map(([name, body]) => {
     const encoded = body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
     return `<context-broker-record kind="skill" name="${name}" ${compact ? 'ref="sr:S' + name[0].repeat(22) + '"' : 'path="~/cache/main"'}>\n`
-      + (compact ? '' : '<instructions>Generic repeated wrapper</instructions>\n<resources>Generic resource guidance</resources>\n')
-      + '<skill-directory>~/cache/' + name + '</skill-directory>\n<body>\n' + encoded + '\n</body>\n</context-broker-record>';
+      + (compact ? name === 'a' ? '<resources>' + JSON.stringify([{ path: 'assets/sample.bin', ref: 'sr:R' + 'r'.repeat(22) }]) + '</resources>\n' : ''
+        : '<instructions>Generic repeated wrapper</instructions>\n<resources>Generic resource guidance</resources>\n<skill-directory>~/cache/' + name + '</skill-directory>\n')
+      + '<body>\n' + encoded + '\n</body>\n</context-broker-record>';
   }).join('\n');
-  return { bodies, context: { messages: [{ role: 'user', content }] } };
+  return { bodies, snapshots, context: { messages: [{ role: 'user', content }] } };
 }
 test('compact dollar checks only generated envelopes and preserves every escaped author byte', () => {
   const value = dollarProjectionFixture(), before = JSON.stringify(value.context);
@@ -610,6 +658,18 @@ test('compact dollar checks only generated envelopes and preserves every escaped
   assert.throws(() => assertDollarProjection(baseline.context, baseline));
   value.context.messages[0].content = value.context.messages[0].content.replace('作者', 'Summary');
   assert.throws(() => assertDollarProjection(value.context, value), 'A smaller summary cannot replace complete source bytes');
+});
+
+test('dollar resource entries require exact selected paths and copied resource handles instead of cache directories', () => {
+  for (const mutate of [
+    text => text.replace(/<resources>[\s\S]*?<\/resources>/u, '<skill-directory>/cache/entry</skill-directory>'),
+    text => text.replace('assets/sample.bin', 'other-owner.bin'),
+    text => text.replace('sr:R', 'sr:S'),
+    text => text.replace('"path":"assets/sample.bin"', '"path":"assets/sample.bin","sha256":"machine-proof"'),
+  ]) {
+    const value = dollarProjectionFixture(); value.context.messages[0].content = mutate(value.context.messages[0].content);
+    assert.throws(() => assertDollarProjection(value.context, value));
+  }
 });
 
 function nativeProjectionFixture(compact = true) {
@@ -683,7 +743,7 @@ function nativeRepeatFixture({ expectShort = true, structured = true, splitMain 
     projected[3].details.contextBrokerResource.delivered_complete_text = false;
   }
   if (!structured) for (const message of projected) delete message.structuredContent;
-  const search = { role: 'toolResult', toolName: 'skill_search', toolCallId: 'sc15-search', isError: false,
+  const search = { role: 'toolResult', toolName: 'notion_list', toolCallId: 'sc15-search', isError: false,
     content: [{ type: 'text', text: JSON.stringify({ matches: [{ name: batch.name, ref: mainRef }] }) }] };
   const captures = Array.from({ length: 6 }, (_, index) => ({ requestId: index + 1,
     context: { messages: [...context().messages, ...(index ? [structuredClone(search)] : []),
@@ -788,7 +848,7 @@ test('native repeat projection rejects lost source, changed directories, forged 
     ['missing result', value => { value.captures[5].context.messages = value.captures[5].context.messages.filter(message => message.toolCallId !== 'sc15-resource-repeat'); }],
     ['duplicate result', value => { value.captures[5].context.messages.push(structuredClone(at(value, 5, 'sc15-resource-repeat'))); }],
     ['failed tool result', value => { at(value, 5, 'sc15-resource-repeat').isError = true; }],
-    ['wrong tool', value => { at(value, 5, 'sc15-resource-repeat').toolName = 'skill_prepare'; }],
+    ['wrong tool', value => { at(value, 5, 'sc15-resource-repeat').toolName = 'notion_use'; }],
     ['unrequested body leaked', value => { value.captures[5].context.messages.push({ role: 'user', content: value.batch.unselected[0].content }); }],
   ]) {
     const value = nativeRepeatFixture(); mutate(value);
@@ -810,7 +870,7 @@ test('native-guidance evidence checks only host guidance and preserves complete 
 });
 
 test('missing actual capabilities and duplicate or missing host guidance cannot pass', () => {
-  const noPrepare = context(); noPrepare.messages[0].toolsAdded = noPrepare.messages[0].toolsAdded.filter(tool => tool.name !== 'skill_prepare');
+  const noPrepare = context(); noPrepare.messages[0].toolsAdded = noPrepare.messages[0].toolsAdded.filter(tool => tool.name !== 'notion_use');
   assert.throws(() => assertNativeGuidance(noPrepare, command[1]), /Actual provider/);
   const duplicate = context(); duplicate.messages.push({ role: 'user', content: guidance });
   assert.throws(() => assertNativeGuidance(duplicate, command[1]), /one current host guidance/);
@@ -876,20 +936,23 @@ function observed(fields) {
 const lifecycle = [{ event: 'spawn', pid: 42 }, { event: 'close', pid: 42, code: 0, signal: null }];
 const catalog = [
   { kind: 'observer_start', exec_path: command[0] },
-  { kind: 'child_start', id: '42:1', bundled: true, operation: 'list', argv: [command[1], 'list'] },
-  { kind: 'child_close', id: '42:1', code: 0, signal: null, request_metrics: { complete: true, total_requests: 0 } },
+  { kind: 'sdk', event: 'start', id: '42:1', operation: 'list' },
+  { kind: 'sdk', event: 'end', id: '42:1', operation: 'list', status: 'completed', sdk_started: true, metrics_observed: true,
+    request_metrics: { complete: true, total_requests: 0 } },
   { kind: 'observer_end', code: 0, active_sdk: 0, active_children: 0 },
 ];
 
 test('metadata-only scope does not weaken the existing mandatory SDK transport assertion', () => {
-  assert.throws(() => reconcile(observed(catalog), lifecycle), /empty SDK observation/);
+  assert.throws(() => reconcile(observed(catalog), lifecycle), /empty body SDK observation/);
   const scope = reconcile(observed(catalog), lifecycle, { bodyTransportRequired: false });
   assert.equal(scope.default_body_transport, 'not_applicable_metadata_query');
-  assert.equal(scope.sdk_calls, 0);
-  assert.equal(scope.source_children_closed, 1);
-  const doctor = structuredClone(catalog); doctor[1].operation = 'ctl'; doctor[1].argv = [command[1], 'ctl', 'doctor'];
-  assert.throws(() => reconcile(observed(doctor), lifecycle, { bodyTransportRequired: false }), /background catalog\/identity/);
-  assert.throws(() => reconcile(observed(catalog.filter(item => item.kind !== 'child_close')), lifecycle, { bodyTransportRequired: false }));
+  assert.equal(scope.sdk_calls, 1); assert.equal(scope.sdk_lists, 1); assert.equal(scope.sdk_body_calls, 0);
+  assert.equal(scope.source_children_closed, 0);
+  const child = structuredClone(catalog);
+  child.splice(1, 0, { kind: 'child_start', id: '42:2', bundled: true, operation: 'list', argv: [command[1], 'list'] },
+    { kind: 'child_close', id: '42:2', code: 0, signal: null, request_metrics: { complete: true, total_requests: 0 } });
+  assert.throws(() => reconcile(observed(child), lifecycle, { bodyTransportRequired: false }), /must not spawn CLI children/);
+  assert.throws(() => reconcile(observed(catalog.filter(item => item.event !== 'end')), lifecycle, { bodyTransportRequired: false }));
 });
 
 const childTerminal = [

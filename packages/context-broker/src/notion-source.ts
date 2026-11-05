@@ -13,7 +13,7 @@ import { decodePreparedGraph, preparationFailureDetails, type PreparationPurpose
 import { sharedSkillId, validSharedIdentity } from "./shared-skill-identity";
 import type { PrefetchBudget, PrefetchOutcome, PrefetchPlan } from "./prefetch-policy";
 import { publishNotionEntry, materializeNotionEntryFile, materializeNotionResourceBatch, publishNotionResourceFile } from "./notion-entry";
-import { consumeNotionSdk, readNotionSdk, readNotionResourcesSdk, supportsNotionSdkReadOutputProof, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
+import { consumeNotionSdk, readNotionSdk, readNotionResourcesSdk, listNotionCatalogSdk, supportsNotionSdkReadOutputProof, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
 import { DEFAULT_RESOURCE_READ_BUDGET, type FixedResourceRead, type ResourceReadBatch, type ResourceReadFileIdentity, type ResourceReadWireFile } from "./resource-read-types";
 import type { ContentRecord, NotionListObservation, NotionView, SkillRecord, SourceConfig, SourcePolicy, SourceFailure } from "./types";
 
@@ -105,7 +105,7 @@ function sdkOptions(source: NotionSource, cwd: string, signal?: AbortSignal) {
   return { database: source.database, cwd, signal, env: { ...process.env,
     ...(source.requestTimeoutMs === undefined ? {} : { NTN_SKILLS_REQUEST_TIMEOUT_MS: String(source.requestTimeoutMs) }) } };
 }
-function sdkFailure(error: unknown, source: NotionSource, operation: "prepare" | "read", signal?: AbortSignal, selected?: SkillRecord): Error {
+function sdkFailure(error: unknown, source: NotionSource, operation: "prepare" | "read" | "list", signal?: AbortSignal, selected?: SkillRecord): Error {
   if (signal?.aborted || object(error) && error.code === "CANCELLED") return new SourceError("SOURCE_CANCELLED", source.id);
   if (error instanceof NotionSdkError) return new SourceError(error.code, source.id);
   if (!object(error)) return new SourceError("SOURCE_SDK_FAILED", source.id);
@@ -241,6 +241,7 @@ const CATALOG_CACHE_VERSION = 4;
 const CATALOG_ORDER = /^[0-9]{20}$/;
 const MAX_CATALOG_ORDER = "18446744073709551615";
 type CatalogCache = { key: string; path: string; maxAgeMs: number };
+CLI_CODES.LIST_CURSOR_STALE = true;
 async function catalogCache(source: NotionSource, cwd: string, signal?: AbortSignal): Promise<CatalogCache | undefined> {
   if (source.discovery?.offline) return undefined;
   try {
@@ -299,13 +300,48 @@ async function readCatalog(cache: CatalogCache, source: NotionSource): Promise<J
   return object(value) && value.version === CATALOG_CACHE_VERSION && value.key === cache.key && value.order === order && object(value.result) && typeof value.indexId === "string" && UUID.test(value.indexId) ? value : undefined;
 }
 
+async function commandCatalog(source: NotionSource, cwd: string, selectors: string[], options: Options): Promise<Json> {
+  const first = await run(source, cwd, ["list", ...selectors, ...policyArgs(source.discovery, options.refresh)], options.signal);
+  // Older explicit commands return one full directory. New bounded lists must
+  // finish their continuation before they can become a full-library cache entry.
+  if (first.has_more === undefined) {
+    if (first.total_count !== undefined || first.next_cursor !== undefined) decodeError(source);
+    return first;
+  }
+  const records: unknown[] = [], cursors = new Set<string>();
+  let page = first, bytes = 0;
+  const identity = (value: Json) => [value.fetched_at, value.databases, value.coverage, value.view, value.view_selection,
+    value.capability_directory, object(value.profile) ? [value.profile.library_id, value.profile.library_entry,
+      value.profile.profile_id, value.profile.revision_id, value.profile.selection] : value.profile];
+  while (true) {
+    if (page.scope !== first.scope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+    if (!isDeepStrictEqual(identity(page), identity(first)) || !Array.isArray(page.records) || page.count !== page.records.length
+      || !Number.isSafeInteger(page.total_count) || Number(page.total_count) < 0 || page.total_count !== first.total_count
+      || typeof page.has_more !== "boolean") decodeError(source);
+    bytes += Buffer.byteLength(JSON.stringify(page.records));
+    if (bytes > 16 * 1024 * 1024) throw new SourceError("SOURCE_RESPONSE_TOO_LARGE", source.id);
+    records.push(...page.records);
+    if (records.length > Number(first.total_count)) decodeError(source);
+    if (!page.has_more) {
+      if (records.length !== first.total_count || page.next_cursor !== null) decodeError(source);
+      return { ...first, records, count: records.length, has_more: false, next_cursor: null };
+    }
+    if (!page.records.length || records.length >= Number(first.total_count) || typeof page.next_cursor !== "string"
+      || !page.next_cursor || page.next_cursor.length > 4096 || page.next_cursor.includes("\0") || cursors.has(page.next_cursor)) decodeError(source);
+    cursors.add(page.next_cursor);
+    // Continue the same core observation. Refreshing every page can mix versions.
+    page = await run(source, cwd, ["list", ...selectors, "--offline", "--cursor", page.next_cursor], options.signal);
+  }
+}
+
 export async function discoverNotionSource(source: NotionSource, cwd: string, options: Options = {}): Promise<NotionDirectory> {
   if (source.profile_id !== undefined && (!validSharedIdentity(source.profile_id) || !source.database)) throw new SourceError("SOURCE_CONFIG_INVALID", source.id);
   if (options.view !== undefined && options.defaultView) throw new SourceError("SOURCE_CONFIG_INVALID", source.id);
   const selectedView = options.view !== undefined || options.defaultView === true;
   const selectedProfile = options.defaultView === true && options.view === undefined ? source.profile_id : undefined;
-  // The CLI owns View observations. Never store a filtered directory under the full-library key.
-  const cache = selectedView ? undefined : await catalogCache(source, cwd, options.signal);
+  // SDK discovery uses the core cache directly. The derived cache remains only
+  // for explicit legacy commands; never put a filtered View under its full-library key.
+  const cache = selectedView || !source.command ? undefined : await catalogCache(source, cwd, options.signal);
   let saved: { result: Json; indexId: string } | undefined;
   if (cache && !options.refresh) {
     try {
@@ -326,7 +362,20 @@ export async function discoverNotionSource(source: NotionSource, cwd: string, op
     }
   }
   const order = !saved && cache ? await reserveCatalogOrder(cache, source, options.signal) : undefined;
-  const result = saved?.result ?? await run(source, cwd, ["list", ...(source.database ? ["--database", source.database] : []), ...(options.view !== undefined ? ["--view", options.view] : options.defaultView ? ["--default-view"] : []), ...(selectedProfile === undefined ? [] : ["--profile", selectedProfile]), ...policyArgs(source.discovery, options.refresh)], options.signal);
+  const result = saved?.result ?? await (async () => {
+    if (source.command) return commandCatalog(source, cwd, [...(source.database ? ["--database", source.database] : []), ...(options.view !== undefined ? ["--view", options.view] : options.defaultView ? ["--default-view"] : []), ...(selectedProfile === undefined ? [] : ["--profile", selectedProfile])], options);
+    let value: unknown;
+    try {
+      const policy = options.refresh ? { refresh: true } : source.discovery?.offline ? { offline: true }
+        : source.discovery?.maxAge === undefined ? {} : { maxAge: await parseNotionSdkDuration(source.discovery.maxAge) };
+      value = await listNotionCatalogSdk({ ...sdkOptions(source, cwd, options.signal), ...policy,
+        ...(options.view !== undefined ? { view: options.view } : options.defaultView ? { defaultView: true } : {}),
+        ...(selectedProfile === undefined ? {} : { profile: selectedProfile }) });
+    } catch (error) { throw sdkFailure(error, source, "list", options.signal); }
+    if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
+    if (!object(value)) return decodeError(source);
+    return value;
+  })();
   const scope = text(result.scope, source);
   if (!HASH.test(scope) || "skills" in result || !Array.isArray(result.records) || !Array.isArray(result.databases) || result.count !== result.records.length || typeof result.fetched_at !== "number" || !Number.isSafeInteger(result.fetched_at) || result.fetched_at < 0) decodeError(source);
   const observedFreshness = freshness(result.freshness, source);
@@ -415,7 +464,7 @@ export async function discoverNotionSource(source: NotionSource, cwd: string, op
     await rename(pending, join(published, order));
   }
   if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-  return Object.assign(attachList(records, source, observedFreshness), { failures, ...(selectedView ? { view: selected ?? null } : {}), ...(object(result.profile) ? { profileId: String(result.profile.profile_id) } : {}) });
+  return Object.assign(attachList(records, source, observedFreshness, coverage.exhaustive), { failures, ...(selectedView ? { view: selected ?? null } : {}), ...(object(result.profile) ? { profileId: String(result.profile.profile_id) } : {}) });
 }
 
 const ViewMetadataSchema = Schema.Struct({ id: Schema.String, name: Schema.String, type: Schema.String, database_id: Schema.String, data_source_id: Schema.String, url: Schema.String });
@@ -436,11 +485,11 @@ export async function listNotionViews(source: NotionSource, cwd: string, signal?
   return result.views.map(view => parseView(view, source));
 }
 
-function attachList(records: SkillRecord[], source: NotionSource, value: Json): SkillRecord[] & { list: NotionListObservation } {
+function attachList(records: SkillRecord[], source: NotionSource, value: Json, exhaustive: boolean): SkillRecord[] & { list: NotionListObservation } {
   const policy = String(value.policy) as NotionListObservation["policy"];
   const list: NotionListObservation = policy === "pinned"
-    ? { sourceId: source.id, policy }
-    : { sourceId: source.id, policy, validatedAt: String(value.validated_at), ageMs: Number(value.age_ms), maxAgeMs: Number(value.max_age_ms), stale: value.stale === true };
+    ? { sourceId: source.id, policy, exhaustive }
+    : { sourceId: source.id, policy, exhaustive, validatedAt: String(value.validated_at), ageMs: Number(value.age_ms), maxAgeMs: Number(value.max_age_ms), stale: value.stale === true };
   Object.defineProperty(records, "list", { value: list });
   return records as SkillRecord[] & { list: NotionListObservation };
 }

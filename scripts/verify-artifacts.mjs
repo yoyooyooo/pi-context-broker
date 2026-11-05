@@ -1,19 +1,25 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { access, mkdir, mkdtemp, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { startRpc } from "../packages/context-broker/scripts/context-broker-rpc-harness.mjs";
-import { writeFakeProvider, isolatedEnv } from "../packages/context-broker/scripts/context-broker-e2e-fixture.mjs";
-import { verifyPackageClosure } from "./verify-package-closure.mjs";
+import { writeFakeProvider, isolatedEnv, resolveHost, runCommand } from "../packages/context-broker/scripts/context-broker-e2e-fixture.mjs";
+import { verifyPackageClosure, verifyBundledRuntime } from "./verify-package-closure.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const args = process.argv.slice(2);
-if (args.length && (args.length !== 2 || args[0] !== "--host" || args[1] !== "omp")) throw new Error("Usage: node scripts/verify-artifacts.mjs [--host omp]");
+if (args.length && (args.length !== 2 || args[0] !== "--host" || !["pi", "omp"].includes(args[1]))) throw new Error("Usage: node scripts/verify-artifacts.mjs [--host pi|omp]");
 const host = args[1] ?? "omp";
+const brokerOnly = host === "pi";
 const base = await mkdtemp(join(tmpdir(), "broker-artifacts-"));
 console.log(`Artifact workspace retained: ${base}`);
+const report = { version: 1, host, status: "running", startedAt: new Date().toISOString(), notRun: brokerOnly ? ["OMP", "Tern"] : ["Pi"] };
+const saveReport = () => writeFile(join(base, "manifest.json"), JSON.stringify(report, null, 2) + "\n");
+await saveReport();
+try {
 function run(command, argv, options = {}) {
   const result = spawnSync(command, argv, { cwd: base, encoding: "utf8", timeout: 180_000, maxBuffer: 16 * 1024 * 1024, ...options });
   if (result.error || result.status !== 0) throw new Error(`${command} ${argv.join(" ")} failed: ${result.error?.message ?? result.status}\n${result.stdout ?? ""}\n${result.stderr ?? ""}`);
@@ -27,6 +33,30 @@ async function runtimePath(directory, entry) {
   assert.ok(local && local !== ".." && !local.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`), `Escaping runtime entry: ${entry}`);
   assert.ok((await stat(path)).isFile(), `Runtime entry is not a file: ${entry}`);
   return path;
+}
+const identity = async path => {
+  const bytes = await readFile(path);
+  return { path: await realpath(path), bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+};
+async function selectedBuildInput(entry) {
+  assert.ok(isAbsolute(entry), "Explicit CLI build input must be absolute");
+  let directory = dirname(entry);
+  while (true) {
+    const path = join(directory, "package.json");
+    let metadata;
+    try { metadata = JSON.parse(await readFile(path, "utf8")); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+    if (metadata?.name === "ntn-skills") {
+      const exported = metadata.exports?.["./sdk"];
+      const sdk = typeof exported === "string" ? exported : exported?.import;
+      assert.ok(typeof sdk === "string" && sdk.startsWith("./"), "Frozen CLI input must export its own Node SDK");
+      return { mode: "explicit", package: metadata.name, version: metadata.version,
+        manifest: await identity(path), cli: await identity(entry), sdk: await identity(await runtimePath(directory, sdk)) };
+    }
+    const parent = dirname(directory);
+    assert.notEqual(parent, directory, "Explicit build entry is not inside an ntn-skills package");
+    directory = parent;
+  }
 }
 async function verifyDocumentLinks(directory, entries) {
   const pending = [...entries];
@@ -54,19 +84,22 @@ async function verifyDocumentLinks(directory, entries) {
 }
 const output = join(base, "archives");
 const candidateDirectory = process.env.CONTEXT_BROKER_CANDIDATE_DIR;
+const selectedEntry = process.env.NTN_SKILLS_BUILD_ENTRY;
+const selectedInput = selectedEntry ? await selectedBuildInput(selectedEntry) : undefined;
+if (selectedInput) { report.buildInput = selectedInput; await saveReport(); }
 if (candidateDirectory) {
   assert.ok(isAbsolute(candidateDirectory), "Candidate directory must be absolute");
   await mkdir(output);
   const { copyFile } = await import("node:fs/promises");
   for (const name of await readdir(candidateDirectory))
-    if (name.startsWith("pi-context-broker-") && name.endsWith(".tgz") || name === "tern-context-broker.tar.gz")
+    if (name.startsWith("pi-context-broker-") && name.endsWith(".tgz") || !brokerOnly && name === "tern-context-broker.tar.gz")
       await copyFile(join(candidateDirectory, name), join(output, name));
-} else run(process.execPath, [join(root, "scripts/pack.mjs"), "--out-dir", output], { cwd: root, stdio: "inherit" });
+} else run(process.execPath, [join(root, "scripts/pack.mjs"), "--out-dir", output, "--target", brokerOnly ? "broker" : "all"], { cwd: root, stdio: "inherit" });
 const archives = await readdir(output);
 const npmArchives = archives.filter(name => name.endsWith(".tgz"));
 assert.equal(npmArchives.length, 1);
 let ternExtract;
-const closure = await verifyPackageClosure({ brokerArchive: join(output, npmArchives[0]), ternArchive: join(output, "tern-context-broker.tar.gz"), base: join(base, "strict-closure") });
+const closure = await verifyPackageClosure({ brokerArchive: join(output, npmArchives[0]), ...(brokerOnly ? {} : { ternArchive: join(output, "tern-context-broker.tar.gz") }), base: join(base, "strict-closure") });
 const installed = closure.installed;
 ternExtract = closure.tern;
 const manifest = JSON.parse(await readFile(join(installed, "package.json"), "utf8"));
@@ -74,11 +107,22 @@ assert.ok(manifest.pi?.extensions?.length);
 assert.ok(manifest.omp?.extensions?.length);
 for (const entry of [...manifest.pi.extensions, ...manifest.omp.extensions, ...Object.values(manifest.bin)]) await runtimePath(installed, entry);
 await verifyDocumentLinks(installed, ["README.md", "README.zh-CN.md", "docs/reference.md", "docs/reference.zh-CN.md", "CONTRIBUTING.md"]);
-await verifyDocumentLinks(ternExtract, ["README.md", "README.zh-CN.md"]);
+if (ternExtract) await verifyDocumentLinks(ternExtract, ["README.md", "README.zh-CN.md"]);
 const npmQuery = await runtimePath(installed, manifest.bin["context-broker-complete"]);
-const ternQuery = await runtimePath(ternExtract, "query/completion.mjs");
+const ternQuery = ternExtract ? await runtimePath(ternExtract, "query/completion.mjs") : undefined;
+const queryExecutables = [npmQuery, ...(ternQuery ? [ternQuery] : [])];
 await access(npmQuery, constants.X_OK);
-await access(ternQuery, constants.X_OK);
+if (ternQuery) await access(ternQuery, constants.X_OK);
+report.package = { name: manifest.name, version: manifest.version, archive: await identity(join(output, npmArchives[0])), installed };
+report.runtime = { extension: await identity(resolve(installed, manifest[host].extensions[0])),
+  cli: await identity(join(installed, "dist/ntn-skills.mjs")), sdk: await identity(join(installed, "dist/ntn-skills-sdk.mjs")),
+  manifest: JSON.parse(await readFile(join(installed, "dist/ntn-skills-runtime.json"), "utf8")) };
+if (selectedInput) assert.deepEqual(await selectedBuildInput(selectedEntry), selectedInput, "Frozen CLI/SDK input changed during packaging");
+const expectedCliVersion = selectedInput?.version ?? manifest.devDependencies["ntn-skills"];
+report.buildInput ??= { mode: "declared-release", package: "ntn-skills", version: expectedCliVersion };
+verifyBundledRuntime({ manifest: report.runtime.manifest, expectedVersion: expectedCliVersion,
+  cliBytes: await readFile(report.runtime.cli.path), sdkBytes: await readFile(report.runtime.sdk.path) });
+await saveReport();
 
 const skillRoot = join(base, "skills");
 await mkdir(join(skillRoot, "design-review"), { recursive: true });
@@ -95,7 +139,13 @@ await writeFile(enabledConfig, JSON.stringify({
 const agentDir = join(base, "agent");
 await mkdir(agentDir);
 const capture = join(base, "provider.jsonl");
-const env = isolatedEnv({ base, agentDir, CONTEXT_BROKER_CONFIG: enabledConfig, CONTEXT_BROKER_ROOTS: skillRoot, CONTEXT_BROKER_HOST: "omp", CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: capture, NOTION_API_TOKEN: "" });
+const env = isolatedEnv({ base, agentDir, CONTEXT_BROKER_CONFIG: enabledConfig, CONTEXT_BROKER_ROOTS: skillRoot, CONTEXT_BROKER_HOST: host, CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: capture, NOTION_API_TOKEN: "",
+  BROKER_E2E_PROCESS_LEDGER: join(base, "owned-processes.jsonl") });
+const hostCommand = await resolveHost(host);
+const hostVersion = (await runCommand(host, ["--version"], { cwd: base, env, timeoutMs: 10000 })).stdout.trim();
+if (host === "pi") assert.equal(hostVersion, "1.4.0", "Installed Pi gate is frozen to the CI-supported Pi 1.4.0");
+report.hostIdentity = { ...hostCommand, version: hostVersion, executable: await identity(hostCommand.identity) };
+await saveReport();
 function localChoice(response) {
   const item = response.items.find(item => item.ref === localSkillPath && item.source === "local");
   assert.ok(item, "Packaged query must retain the exact configured local identity");
@@ -116,7 +166,7 @@ const builtinSelections = [];
 const builtinIdentities = new Map();
 for (const [label, executable, directory] of [
   ["npm", npmQuery, closure.builtins.npmRoot],
-  ["tern", ternQuery, closure.builtins.ternRoot],
+  ...(ternQuery ? [["tern", ternQuery, closure.builtins.ternRoot]] : []),
 ]) {
   const text = "$ntn-skills";
   const disabled = JSON.parse(run(process.execPath, [executable], {
@@ -146,7 +196,7 @@ for (const [label, executable, directory] of [
 const provider = await writeFakeProvider(base);
 const sessionDir = join(base, "sessions");
 await mkdir(sessionDir);
-const rpc = await startRpc({ host, cwd: base, env, args: ["--no-extensions", "--no-skills", "--no-rules", "--no-tools", "--no-title", "--session-dir", sessionDir, "-e", provider, ...manifest.omp.extensions.flatMap(entry => ["-e", resolve(installed, entry)]), "--model", "context-broker-e2e/fake", "--system-prompt", "Only output OK."] });
+const rpc = await startRpc({ host, cwd: base, env, args: ["--no-extensions", "--no-skills", "--no-tools", ...(host === "omp" ? ["--no-rules", "--no-title"] : []), "--session-dir", sessionDir, "-e", provider, ...manifest[host].extensions.flatMap(entry => ["-e", resolve(installed, entry)]), "--model", "context-broker-e2e/fake", "--system-prompt", "Only output OK."] });
 try {
   // Explicit $ invocations require a leading whitespace/punctuation boundary.
   await rpc.prompt(`中文😀请使用 ${localSelection.value}。`);
@@ -155,6 +205,9 @@ try {
     await rpc.prompt(`Inspect ${item.value} from the ${item.label} completion without executing its workflow.`);
 } finally {
   await rpc.stop();
+  await writeFile(join(base, "rpc.json"), JSON.stringify(rpc.frames, null, 2) + "\n");
+  report.hostLifecycle = rpc.lifecycle;
+  await saveReport();
 }
 const contexts = (await readFile(capture, "utf8")).trim().split("\n").map(line => JSON.parse(line).context);
 assert.equal(contexts.length, 2 + builtinSelections.length, "Expected one provider request per explicit package selection");
@@ -167,6 +220,7 @@ for (const [index, item] of builtinSelections.entries()) {
 const builtinStatus = JSON.parse(run(process.execPath, [join(installed, "dist/ntn-skills.mjs"), "ctl", "builtin", "list"], { env }));
 assert.ok(builtinStatus.skills.every(skill => skill.installation.state === "not_installed"), "Ordinary builtin selections must not install central Skills");
 
+if (ternExtract) {
 const ternManifest = await readFile(join(ternExtract, "plugin.toml"), "utf8");
 assert.match(ternManifest, /^schema\s*=\s*1\s*$/m);
 const windowEntry = ternManifest.match(/^window\s*=\s*"([^"]+)"\s*$/m)?.[1];
@@ -184,28 +238,36 @@ async function luauClosure(entry) {
   for (const match of source.matchAll(/tern\.plugin\.dir\s*\.\.\s*"\/([^"]+)"/g)) await runtimePath(ternExtract, match[1]);
 }
 await luauClosure(windowEntry);
-for (const directory of [dirname(npmQuery), dirname(ternQuery)]) {
+}
+for (const directory of queryExecutables.map(dirname)) {
   const cli = await runtimePath(directory, "ntn-skills.mjs");
   await runtimePath(directory, "NOTICES.txt");
-  assert.equal(run(process.execPath, [cli, "--version"], { env }).trim(), `ntn-skills v${manifest.devDependencies["ntn-skills"]}`, "Bundled CLI must match the declared release dependency");
+  assert.equal(run(process.execPath, [cli, "--version"], { env }).trim(), `ntn-skills v${expectedCliVersion}`, "Bundled CLI must match its frozen build input");
   const schema = JSON.parse(run(process.execPath, [cli, "schema", "read"], { env }));
   assert.equal(schema.ok, true);
   assert.equal(schema.format, "effect-cli-schema");
   assert.ok(schema.schema.parameters.some(parameter => parameter.name === "target" && parameter.type === "string"));
+  for (const command of ["list", "use"]) {
+    const publicSchema = JSON.parse(run(process.execPath, [cli, "schema", command], { env }));
+    assert.equal(publicSchema.ok, true);
+    assert.deepEqual(publicSchema.command, [command], "Installed consumer must expose the calibrated daily command surface");
+  }
   const configured = JSON.parse(run(process.execPath, [cli, "ctl", "config", "set", "cache_policy.read_max_age_ms", "0"], { env }));
   assert.equal(configured.ok, true);
   const shown = JSON.parse(run(process.execPath, [cli, "ctl", "config", "show"], { env }));
   assert.equal(shown.config.cache_policy.read_max_age_ms, 0);
-  const operations = JSON.parse(run(process.execPath, [cli, "operation", "list"], { env }));
+  const operationSchema = JSON.parse(run(process.execPath, [cli, "schema", "ctl", "operation", "list"], { env }));
+  assert.deepEqual(operationSchema.command, ["ctl", "operation", "list"]);
+  const operations = JSON.parse(run(process.execPath, [cli, "ctl", "operation", "list"], { env }));
   assert.equal(operations.ok, true);
   const backup = JSON.parse(run(process.execPath, [cli, "ctl", "backup", "--output", join(base, directory === dirname(npmQuery) ? "npm-state-backup" : "tern-state-backup")], { env }));
   assert.equal(backup.verified, true);
   assert.ok((await stat(join(env.NTN_SKILLS_HOME, "state.sqlite"))).size > 0);
 }
-assert.deepEqual(await readFile(join(dirname(npmQuery), "ntn-skills.mjs")), await readFile(join(dirname(ternQuery), "ntn-skills.mjs")), "Broker and Tern must ship identical current CLI consumer bytes");
+if (ternQuery) assert.deepEqual(await readFile(join(dirname(npmQuery), "ntn-skills.mjs")), await readFile(join(dirname(ternQuery), "ntn-skills.mjs")), "Broker and Tern must ship identical current CLI consumer bytes");
 const failingConfig = join(base, "missing-notion-config.json");
 await writeFile(failingConfig, JSON.stringify({ skillRoots: [skillRoot], sources: [{ id: "notion", type: "notion" }] }));
-for (const executable of [npmQuery, ternQuery]) {
+for (const executable of queryExecutables) {
   const response = JSON.parse(run(process.execPath, [executable], {
     input: JSON.stringify({ version: 1, text: "$design", cursor: 7, cwd: base, config: failingConfig }),
     env: { ...env, NOTION_API_TOKEN: "" },
@@ -215,11 +277,11 @@ for (const executable of [npmQuery, ternQuery]) {
   assert.equal(item.value, localSelection.value);
   assert.equal(response.failures[0].code, "AUTH_REQUIRED");
 }
-run(process.execPath, [join(root, "scripts/verify-source-dependencies.mjs")], { env: { ...process.env, BROKER_DEPENDENCY_EXTENSION: resolve(installed, manifest.omp.extensions[0]) }, stdio: "inherit", timeout: 360_000 });
+run(process.execPath, [join(root, "scripts/verify-source-dependencies.mjs"), "--host", host], { env: { ...process.env, BROKER_DEPENDENCY_EXTENSION: resolve(installed, manifest[host].extensions[0]) }, stdio: "inherit", timeout: 360_000 });
 const text = "中文😀\n使用 $架构 tail";
 const cursor = text.indexOf(" tail");
 const request = JSON.stringify({ version: 1, text, cursor, cwd: base, config });
-for (const executable of [npmQuery, ternQuery]) {
+for (const executable of queryExecutables) {
   // Each invocation starts an independent Node process outside the checkout.
   const response = JSON.parse(run(process.execPath, [executable], { input: request, env }));
   assert.deepEqual(response.edit, { from: text.indexOf("$"), to: cursor, len: text.length, prefix: "$架构" });
@@ -232,4 +294,15 @@ for (const executable of [npmQuery, ternQuery]) {
   assert.equal(bad.status, 1, "Query must reject a split UTF-16 surrogate pair");
   assert.match(bad.stderr, /surrogate/i);
 }
-console.log(`Artifact verification passed: bilingual documentation navigation, npm production install, unpacked OMP exact selections and complete builtin bodies, npm and Tern independent Node queries and offline builtin/reference reads, Tern runtime closure. Fixtures retained: ${base}`);
+report.status = "passed";
+report.providerRequests = contexts.length;
+report.assertions = ["independent-npm-install", "actual-host-rpc", "complete-local-and-builtin-bodies", "source-failure-isolation", "bundled-cli-sdk-identity", "offline-resources", "metadata-only-completion"];
+console.log(`Artifact verification passed: ${host} actual installed RPC, complete builtin bodies, independent Node queries and offline resources${ternExtract ? ", Tern runtime closure" : ""}. Fixtures retained: ${base}`);
+} catch (error) {
+  report.status = "failed";
+  report.error = { code: error.code ?? error.name, message: error.message };
+  throw error;
+} finally {
+  report.finishedAt = new Date().toISOString();
+  await saveReport();
+}

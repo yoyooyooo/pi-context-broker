@@ -1,11 +1,29 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { consumptionFixture, evaluateConsumptionEvidence, selfTest, validateMap, expandCoverage } from './skill-consumption-contract.mjs';
+import { consumptionFixture, evaluateConsumptionEvidence, selfTest, validateMap, expandCoverage, consumptionGateConfiguration, validateConsumptionGates } from './skill-consumption-contract.mjs';
+
+test('normal checks and both workflows retain consumption and real Pi installation gates', () => {
+  assert.equal(validateConsumptionGates().status, 'gate-wiring-valid');
+  for (const [mutate, code] of [
+    [value => { value.packageScripts.check = 'bun run test'; }, 'GATE_CONSUMPTION_MISSING'],
+    [value => { value.rootScripts['check:broker'] = 'bun run build:broker'; }, 'GATE_PACKAGE_CHECK_MISSING'],
+    [value => { value.packageScripts['test:consumption'] = value.packageScripts['test:consumption'].replace('scripts/session-active.test.ts', ''); }, 'GATE_TEST_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('@earendil-works/pi-coding-agent@1.4.0', '@earendil-works/pi-coding-agent@1.2.0'); }, 'GATE_PI_VERSION'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('NTN_SKILLS_BUILD_ENTRY:', 'UNUSED_CLI_ENTRY:'); }, 'GATE_SDK_BUILD_INPUT_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace(/(repository: yoyooyooo\/notion-skills-cli\s+ref: )[a-f0-9]{40}/u, '$1main'); }, 'GATE_SDK_BUILD_INPUT_MISSING'],
+    [value => { value.workflows[1].text = value.workflows[1].text.replace(/(repository: yoyooyooo\/notion-skills-cli\s+ref: )[a-f0-9]{40}/u, '$1' + 'a'.repeat(40)); }, 'GATE_SDK_BUILD_INPUT_DRIFT'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('bun-version: 1.4.3', 'bun-version: 1.3.14'); }, 'GATE_BUN_VERSION'],
+    [value => { value.workflows[1].text = value.workflows[1].text.replace('run: node scripts/verify-artifacts.mjs --host pi', 'run: true'); }, 'GATE_INSTALLED_HOST_MISSING'],
+  ]) {
+    const config = consumptionGateConfiguration(); mutate(config);
+    assert.throws(() => validateConsumptionGates(config), { code });
+  }
+});
 
 test('SC01 retains the full task and journey map without promoting draft routes', () => {
   const result = validateMap();
-  assert.equal(result.tasks, 24);
-  assert.equal(result.journeys, 21);
+  assert.equal(result.tasks, 26);
+  assert.equal(result.journeys, 26);
   const coverage = expandCoverage();
   assert.ok(coverage.length > 1000);
   assert.ok(coverage.every(row => ['not_run', 'not_applicable'].includes(row.status)));

@@ -118,7 +118,7 @@ The scalar variants and their baseline/candidate source and provider costs are
 recorded separately in [fixed scalar verification](scalar-resource-consumption-verification-2026-11-05.md).
 
 Launch, Doctor, Drive, Evidence and Cleanup remain in the existing
-[consumption map](../../../.agents/skills/verify-notion-skills-integration/features/skill-consumption.md).
+[consumption map](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/skill-consumption.md).
 Controlled provider success, live source behavior, real model choice, pro/mini
 recovery and daily installation remain distinct evidence. The original SC07
 introduction/execution journeys and SC21 gates are not closed by a batch fixture.

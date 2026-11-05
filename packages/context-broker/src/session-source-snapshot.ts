@@ -151,7 +151,7 @@ function injectedSnapshots(messages: AgentMessage[], visit?: (proof: Record<stri
   for (const [messageIndex, message] of messages.entries()) {
     if (!object(message.details)) continue;
     const toolProof = message.details.contextBrokerPreparation;
-    const tool = message.role === "toolResult" && message.toolName === "skill_prepare" && message.isError !== true
+    const tool = message.role === "toolResult" && (message.toolName === "notion_use" || message.toolName === "skill_prepare") && message.isError !== true
       && object(toolProof) && typeof toolProof.toolCallId === "string" && toolProof.toolCallId.length > 0
       && toolProof.toolCallId === message.toolCallId && (toolProof.version === 1 && !Object.hasOwn(toolProof, "projection")
         || toolProof.version === 2 && verifiedPreparationProjection(message, toolProof) !== undefined);

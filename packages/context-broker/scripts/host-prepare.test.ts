@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installHostSkills, type HostSkills } from "../src/host-skills";
+import { buildInjectedContextMessage } from "../src/index";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { createOmpHostAdapter } from "../src/omp-host-adapter";
 import { deduplicateSourceReads, sourceDeliveryReceipt, sourceBodyLoaded, sourceMessageText, sessionSourceBindings } from "../src/session-source-snapshot";
@@ -44,7 +45,8 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
         database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" },
     };
     const body = "\ufeff---\r\nname: " + name + "\r\n---\r\nExact " + name + " <instructions>.\r\n";
-    const snapshotId = "s_" + hash(name), path = join(directory, name + ".md");
+    const snapshotId = "s_" + hash(name), path = join(directory, name, "SKILL.md");
+    await mkdir(join(directory, name), { recursive: true });
     await writeFile(path, body);
     let selected: SkillRecord = {
       ...metadata, source: "notion", sourceId: "controlled", sourceScope: scope, body, path, snapshotId, versionId: hash(body),
@@ -80,7 +82,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
   let search: NativeSkillSearchDefinition | undefined, tool: NativeSkillPrepareDefinition | undefined, graphTool: NativeSkillGraphDefinition | undefined;
   const api: ExtensionAPI = { ...(hostKind === "omp" ? { pi: {} } : {}), on(name, listener) { events.set(name, [...events.get(name) ?? [], listener]); },
     appendEntry(customType, data) { session.entries.push({ type: "custom", customType, data }); },
-    registerTool(value) { if (value.name === "skill_search") search = value; if (value.name === "skill_prepare") tool = value; if (value.name === "skill_graph") graphTool = value; } };
+    registerTool(value) { if (value.name === "skill_search" || value.name === "notion_list") search = value; if (value.name === "skill_prepare" || value.name === "notion_use") tool = value; if (value.name === "skill_graph" || value.name === "notion_ctl") graphTool = value; } };
   function graph(purpose: PreparationPurpose): PreparedHostGraph {
     const selected = purpose === "use" ? [root!, required!] : [root!];
     const vector = { version: 1 as const, kind: "observed_version_vector" as const, purpose, scope, roots: [root!.id!],
@@ -124,11 +126,11 @@ test("native metadata search stays known; explicit inspect and use deliver compl
   const metadata = JSON.parse(String(directory.content[0]?.type === "text" ? directory.content[0].text : ""));
   expect(metadata.state).toBe("known"); expect(metadata.records[0].ref).toBe(f.member.ref);
   expect(JSON.stringify(metadata)).not.toContain("Exact member"); expect(f.calls).toEqual([]);
-  const inspected = await tool.execute("inspect", { roots: [f.root.ref], purpose: "inspect" }, undefined, undefined, f.ctx);
-  const inspection = JSON.parse(String(inspected.content[0]?.type === "text" ? inspected.content[0].text : ""));
-  expect(inspection.records).toHaveLength(1); expect(inspection.records[0].content).toBe(f.root.body);
-  expect(inspection.records[0].directory.candidates[0].ref).toBe(f.member.ref);
-  const used = await tool.execute("use", { roots: [f.root.ref], purpose: "use" }, undefined, undefined, f.ctx);
+  const inspected = await nativeRead(f, f.root.ref!, "inspect");
+  expect(sourceMessageText(inspected.content).startsWith(f.root.body!)).toBe(true);
+  expect(sourceMessageText(inspected.content)).not.toContain(f.required.body!);
+  expect(sourceMessageText(inspected.content)).toBe(f.root.body);
+  const used = await tool.execute("use", { ref: f.root.ref }, undefined, undefined, f.ctx);
   const usage = JSON.parse(String(used.content[0]?.type === "text" ? used.content[0].text : ""));
   expect(usage.records.map((record: { name: string }) => record.name)).toEqual([f.root.name, f.required.name]);
   expect(usage.roots).toEqual([f.root.preparationBinding!.ref]);
@@ -140,7 +142,7 @@ test("native metadata search stays known; explicit inspect and use deliver compl
   expect(usage.records[0].snapshot_id).toBeUndefined();
   expect(f.calls).toEqual(["inspect", "use"]);
   expect(sourceBodyLoaded([], f.root)).toBe(false);
-  const result = { role: "toolResult", toolName: "skill_prepare", toolCallId: "use", content: used.content, details: used.details, isError: false };
+  const result = { role: "toolResult", toolName: "notion_use", toolCallId: "use", content: used.content, details: used.details, isError: false };
   expect(sourceBodyLoaded([result], f.root)).toBe(true); expect(sourceBodyLoaded([result], f.required)).toBe(true);
   expect(sourceBodyLoaded([result], f.member)).toBe(false);
   expect(sessionSourceBindings([result], scope).map(binding => binding.record.id)).toEqual([f.root.id!, f.required.id!]);
@@ -152,8 +154,8 @@ test("one cancelled native preparation cannot cancel another waiter or return la
   const observed: AbortSignal[] = [];
   const { tool } = await f.install(async (purpose, signal) => { if (signal) observed.push(signal); if (observed.length === 2) started.resolve(); await pending.promise; return [f.graph(purpose)]; });
   const first = new AbortController(), second = new AbortController();
-  const one = tool.execute("one", { roots: [f.root.ref], purpose: "use" }, first.signal, undefined, f.ctx).then(() => "ready", () => "cancelled");
-  const two = tool.execute("two", { roots: [f.root.ref], purpose: "use" }, second.signal, undefined, f.ctx);
+  const one = tool.execute("one", { ref: f.root.ref }, first.signal, undefined, f.ctx).then(() => "ready", () => "cancelled");
+  const two = tool.execute("two", { ref: f.root.ref }, second.signal, undefined, f.ctx);
   await started.promise; first.abort();
   expect(observed[0]?.aborted).toBe(true); expect(observed[1]?.aborted).toBe(false);
   pending.resolve();
@@ -163,12 +165,12 @@ test("one cancelled native preparation cannot cancel another waiter or return la
 
 test("failed exact-file validation and output budget do not commit an explicit refreshed selection", async () => {
   const f = await fixture(), { tool } = await f.install();
-  await expect(tool.execute("invalid", { roots: [f.root.ref + "?file_id=foreign"], purpose: "use", refresh: true }, undefined, undefined, f.ctx)).rejects.toThrow();
+  await expect(tool.execute("invalid", { ref: f.root.ref + "?file_id=foreign", refresh: true }, undefined, undefined, f.ctx)).rejects.toThrow();
   expect(f.persisted).toEqual([]);
   const g = await fixture(), tiny = await g.install(async purpose => [{ ...g.graph(purpose), budget: { ...g.graph(purpose).budget, maxContextBytes: 1 } }]);
-  await expect(tiny.tool.execute("budget", { roots: [g.root.ref], purpose: "use", refresh: true }, undefined, undefined, g.ctx)).rejects.toThrow("PREPARE_CONTEXT_BUDGET");
+  await expect(tiny.tool.execute("budget", { ref: g.root.ref, refresh: true }, undefined, undefined, g.ctx)).rejects.toThrow("PREPARE_CONTEXT_BUDGET");
   expect(g.persisted).toEqual([]);
-  await tool.execute("ready", { roots: [f.root.ref], purpose: "use", refresh: true }, undefined, undefined, f.ctx);
+  await tool.execute("ready", { ref: f.root.ref, refresh: true }, undefined, undefined, f.ctx);
   expect(f.persisted).toEqual(["replace"]);
 });
 
@@ -207,8 +209,8 @@ test("session replacement settles a pending Pi input without touching the revoke
 
 test("repeated native prepare bodies deduplicate only the provider projection and keep following receipt offsets valid", async () => {
   const f = await fixture(), { tool } = await f.install();
-  const used = await tool.execute("first", { roots: [f.root.ref], purpose: "use" }, undefined, undefined, f.ctx);
-  const first = { role: "toolResult", toolName: "skill_prepare", toolCallId: "first", content: used.content, details: used.details, isError: false };
+  const used = await tool.execute("first", { ref: f.root.ref }, undefined, undefined, f.ctx);
+  const first = { role: "toolResult", toolName: "notion_use", toolCallId: "first", content: used.content, details: used.details, isError: false };
   const text = JSON.stringify({ records: [{ content: f.root.body }, { content: f.member.body }] });
   const second = { role: "toolResult", toolName: "skill_prepare", toolCallId: "second", content: [{ type: "text" as const, text }],
     details: { contextBrokerPreparation: { version: 1, toolCallId: "second", records: [f.root, f.member].map(record =>
@@ -248,7 +250,7 @@ test("short-ref directory projection preserves older pins, non-main references a
     name: f.required.name, description: f.required.description, availability: "available" }];
   const originalDirectory = JSON.stringify(f.root.preparationDirectory), originalLock = JSON.stringify(f.graph("use").lock);
   const { tool } = await f.install();
-  const result = await tool.execute("relations", { roots: [f.root.ref], purpose: "use" }, undefined, undefined, f.ctx);
+  const result = await tool.execute("relations", { ref: f.root.ref }, undefined, undefined, f.ctx);
   const output = JSON.parse(sourceMessageText(result.content)), root = output.records.find((item: { name: string }) => item.name === f.root.name);
   for (const item of unchanged) expect(root.directory.references.find((value: { name: string }) => value.name === item.name).ref).toBe(item.ref);
   expect(root.directory.references.find((item: { name: string }) => item.name === "fixed-main").ref).toBe(root.ref);
@@ -267,22 +269,33 @@ test("short-ref directory projection preserves older pins, non-main references a
 });
 
 test("registered search to prepare to native read keeps one scope/version and exports fixed canonical resources", async () => {
-  const f = await fixture(true, true), { search, tool, graphTool } = await f.install();
+  const f = await fixture(true, true), { search, tool, graphTool, host } = await f.install();
   expect(await realpath(f.root.path)).not.toBe(f.root.path);
   const known = JSON.parse(sourceMessageText((await search.execute("search-root", { query: "root" }, undefined, undefined, f.ctx)).content));
   const candidate = known.records[0].ref;
   expect(candidate).toMatch(/^sr:C[A-Za-z0-9_-]{22}$/);
   expect(known.state).toBe("known"); expect(f.calls).toEqual([]); expect(f.resourceReads).toEqual([]);
   expect(JSON.stringify(known)).not.toContain(f.root.body!);
-  const preparedResult = await tool.execute("short-prepare", { roots: [candidate], purpose: "inspect" }, undefined, undefined, f.ctx);
+  const preparedResult = await tool.execute("short-prepare", { ref: candidate }, undefined, undefined, f.ctx);
   const prepared = JSON.parse(sourceMessageText(preparedResult.content)), main = prepared.records[0].ref;
   const file = prepared.records[0].directory.files.find((item: { path: string }) => item.path === "resources/guide.md");
   expect(main).toMatch(/^sr:S[A-Za-z0-9_-]{22}$/); expect(file.ref).toMatch(/^sr:R[A-Za-z0-9_-]{22}$/);
   expect(prepared.records[0].content).toBe(f.root.body);
   expect(prepared.records[0].path).toBeUndefined();
   expect(JSON.stringify(prepared)).not.toContain(f.ctx.cwd!);
+  const injected = buildInjectedContextMessage(f.root, "root", {}, {
+    sourceReference: record => host.selectedModelReference(record, f.ctx),
+    sourceFiles: record => host.selectedModelFiles(record, f.ctx),
+  });
+  const wrapper = sourceMessageText(injected.content), advertised = wrapper.match(/<resources>([^<]+)<\/resources>/)?.[1];
+  expect(advertised).toBeDefined();
+  const injectedFiles = JSON.parse(advertised!);
+  expect(injectedFiles).toEqual([{ path: file.path, ref: file.ref }]);
+  expect(wrapper).not.toContain(f.ctx.cwd!);
+  expect(wrapper).not.toContain("<skill-directory>");
+  expect(sourceBodyLoaded([injected], f.root)).toBe(true);
   expect(prepared.records[0].materialization).toBeUndefined();
-  expect(preparationDetails(preparedResult).records).toMatchObject([{ materialization: { local_files_ready: false, materialized_paths: ["SKILL.md"], loaded: false } }]);
+  expect(preparationDetails(preparedResult).records).toEqual(expect.arrayContaining([expect.objectContaining({ materialization: expect.objectContaining({ local_files_ready: false, materialized_paths: ["SKILL.md"], loaded: false }) })]));
   const memberSearch = JSON.parse(sourceMessageText((await search.execute("search-member", { query: "member" }, undefined, undefined, f.ctx)).content));
   expect(memberSearch.records[0].ref).toBe(prepared.records[0].directory.candidates[0].ref);
   const entries = f.session.entries.length;
@@ -303,7 +316,7 @@ test("registered search to prepare to native read keeps one scope/version and ex
   expect(sessionSourceBindings([shortMain], scope).map(binding => binding.snapshot_id)).toEqual([f.root.snapshotId!]);
 
   const canonicalFile = f.root.entryManifest!.files.find(item => item.path === file.path)!.ref;
-  const canonicalResource = await nativeRead(f, canonicalFile, "canonical-resource"), shortResource = await nativeRead(f, file.ref, "short-resource");
+  const canonicalResource = await nativeRead(f, canonicalFile, "canonical-resource"), shortResource = await nativeRead(f, injectedFiles[0].ref, "short-resource");
   expect(sourceMessageText(shortResource.content)).toBe(sourceMessageText(canonicalResource.content));
   expect(sourceMessageText(shortResource.content)).toBe(f.resourceText.get(f.root.id!));
   expect(shortResource.details).toMatchObject({ contextBrokerResource: { ref: canonicalFile, scope, snapshot_id: f.root.snapshotId,
@@ -311,7 +324,7 @@ test("registered search to prepare to native read keeps one scope/version and ex
   expect(sourceBodyLoaded([shortResource], f.root)).toBe(false);
   expect(f.resourceReads).toEqual([canonicalFile, canonicalFile]);
 
-  if (!graphTool) throw new Error("Expected the existing skill_graph export tool");
+  if (!graphTool) throw new Error("Expected the deferred notion_ctl export tool");
   const legacyGraph = JSON.parse(sourceMessageText((await graphTool.execute("legacy-graph", {}, undefined, undefined, f.ctx)).content));
   expect(legacyGraph).toEqual({ kind: "controlled-selected-graph", scope });
   const exported = JSON.parse(sourceMessageText((await graphTool.execute("fixed-graph", { refs: [main, file.ref] }, undefined, undefined, f.ctx)).content));
@@ -351,7 +364,7 @@ test("short-ref tool admission cannot turn a saved locator into authority or a d
     return [f.graph(purpose)];
   });
   const candidate = JSON.parse(sourceMessageText((await search.execute("known", { query: "root" }, undefined, undefined, f.ctx)).content)).records[0].ref;
-  const prepared = JSON.parse(sourceMessageText((await tool.execute("selected", { roots: [candidate], purpose: "inspect" }, undefined, undefined, f.ctx)).content));
+  const prepared = JSON.parse(sourceMessageText((await tool.execute("selected", { ref: candidate }, undefined, undefined, f.ctx)).content));
   const fixed = prepared.records[0].ref, calls = f.calls.length;
   revoked = true;
   const deniedInput = { path: fixed }, denied = await f.emit("tool_call", { toolName: "read", toolCallId: "revoked", input: deniedInput }, f.ctx);
@@ -371,6 +384,6 @@ test("short-ref tool admission cannot turn a saved locator into authority or a d
     expect(input.path).toBe(path);
   }
   const resource = prepared.records[0].directory.files.find((item: { path: string }) => item.path !== "SKILL.md").ref;
-  await expect(tool.execute("resource-root", { roots: [resource], purpose: "use" }, undefined, undefined, f.ctx)).rejects.toThrow("PREPARE_ROOT_NOT_MAIN");
-  await expect(tool.execute("refresh-fixed", { roots: [fixed], purpose: "use", refresh: true }, undefined, undefined, f.ctx)).rejects.toThrow("PREPARE_VERSION_CONFLICT");
+  await expect(tool.execute("resource-root", { ref: resource }, undefined, undefined, f.ctx)).rejects.toThrow("PREPARE_ROOT_NOT_MAIN");
+  await expect(tool.execute("refresh-fixed", { ref: fixed, refresh: true }, undefined, undefined, f.ctx)).rejects.toThrow("PREPARE_VERSION_CONFLICT");
 });

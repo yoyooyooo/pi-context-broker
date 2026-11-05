@@ -13,13 +13,50 @@ const check = (condition, code, message) => {
 };
 const key = value => JSON.stringify([value.scope, value.ref, value.snapshot]);
 
+export function consumptionGateConfiguration() {
+  const json = path => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
+  return { rootScripts: json('../package.json').scripts, packageScripts: json('../packages/context-broker/package.json').scripts,
+    workflows: ['ci', 'publish'].map(name => ({ name, text: readFileSync(new URL('../.github/workflows/' + name + '.yml', import.meta.url), 'utf8') })) };
+}
+
+export function validateConsumptionGates(config = consumptionGateConfiguration()) {
+  for (const name of ['check', 'check:broker']) check(config.rootScripts[name]?.includes('bun run --cwd packages/context-broker check'),
+    'GATE_PACKAGE_CHECK_MISSING', name + ' must reach the actual package check.');
+  check(config.packageScripts.check?.split('&&').map(command => command.trim()).includes('bun run test:consumption'),
+    'GATE_CONSUMPTION_MISSING', 'Normal package check must execute test:consumption and propagate its exit status.');
+  const required = ['notion-consumption-tools', 'pi-read-adapter', 'fixed-resource-source', 'session-short-ref-host', 'session-active',
+    'native-read-session', 'host-prepare', 'view-discovery', 'skill-context-projection', 'skill-context-session', 'skill-model-surfaces'];
+  for (const name of required) check(config.packageScripts['test:consumption']?.split(' ').includes('scripts/' + name + '.test.ts'),
+    'GATE_TEST_MISSING', 'Required consumption regression is absent: ' + name);
+  check(config.workflows.length === 2 && new Set(config.workflows.map(row => row.name)).size === 2,
+    'GATE_WORKFLOW_MISSING', 'Check both CI and publish gates.');
+  const sourceRevisions = [];
+  for (const workflow of config.workflows) {
+    check(workflow.text.includes('run: bun run check'), 'GATE_CHECK_MISSING', workflow.name + ' must execute the normal check.');
+    check(workflow.text.includes('@earendil-works/pi-coding-agent@1.4.0'), 'GATE_PI_VERSION', workflow.name + ' must install supported Pi 1.4.0.');
+    const source = /repository: yoyooyooo\/notion-skills-cli\s+ref: ([a-f0-9]{40})\s+path: \.verification\/ntn-skills-cli/u.exec(workflow.text);
+    check(source && workflow.text.includes('NTN_SKILLS_BUILD_ENTRY: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/cli/dist/ntn-skills.js')
+      && /working-directory: \.verification\/ntn-skills-cli\s+run: \|\s+bun install --frozen-lockfile\s+bun run build/u.test(workflow.text),
+      'GATE_SDK_BUILD_INPUT_MISSING', workflow.name + ' must build its SDK-capable CLI from an explicit immutable checkout.');
+    check(workflow.text.includes('bun-version: 1.4.3'), 'GATE_BUN_VERSION', workflow.name + ' must use the CLI package manager version.');
+    sourceRevisions.push(source[1]);
+    for (const host of ['pi', 'omp']) check(workflow.text.includes('run: node scripts/verify-artifacts.mjs --host ' + host),
+      'GATE_INSTALLED_HOST_MISSING', workflow.name + ' needs the actual installed ' + host + ' gate.');
+  }
+  check(new Set(sourceRevisions).size === 1, 'GATE_SDK_BUILD_INPUT_DRIFT', 'CI and publish must use the same frozen CLI revision.');
+  return { status: 'gate-wiring-valid', supportedPi: '1.4.0', requiredTests: required.length,
+    cliSourceRevision: sourceRevisions[0],
+    runtimeAcceptance: 'not-inferred', boundary: 'Wiring is checked here; actual test logs and installed host runs remain separate evidence.' };
+}
+
 export function validateMap() {
   check(map.schema === 'skill-consumption-map/v1', 'MAP_SCHEMA', 'Unknown scenario map.');
-  check(map.tasks.length === 24 && new Set(map.tasks.map(row => row.id)).size === 24,
-    'TASK_COVERAGE', 'SC01–24 must each occur once.');
-  check(map.journeys.length === 21 && new Set(map.journeys.map(row => row.id)).size === 21,
-    'JOURNEY_COVERAGE', 'J01–21 must each occur once.');
-  for (let i = 1; i <= 24; i++) {
+  check(map.contract === 'agent-cli-ref-20261105', 'MAP_CONTRACT', 'Use the calibrated public consumption contract.');
+  check(map.tasks.length === 26 && new Set(map.tasks.map(row => row.id)).size === 26,
+    'TASK_COVERAGE', 'SC01–26 must each occur once.');
+  check(map.journeys.length === 26 && new Set(map.journeys.map(row => row.id)).size === 26,
+    'JOURNEY_COVERAGE', 'J01–26 must each occur once.');
+  for (let i = 1; i <= 26; i++) {
     const task = map.tasks.find(row => row.id === 'SC' + String(i).padStart(2, '0'));
     check(task && /^AH-\d+$/.test(task.issue) && task.featurePrefix && task.recipeStatus === 'draft',
       'TASK_COVERAGE', 'Every planned feature needs an issue and an explicit draft recipe status.');
@@ -42,7 +79,8 @@ export function expandCoverage() {
     for (const entry of map.axes.entry) for (const intent of map.axes.intent) {
       let reason = null;
       if (intent === 'none' && entry !== 'ordinary') reason = 'No Skill intent has no explicit Skill entry.';
-      else if (entry === 'search' && intent !== 'discover') reason = 'Search returns candidates, not content or active instructions.';
+      else if (entry === 'list' && intent !== 'discover') reason = 'List returns candidates, not content or active instructions.';
+      else if (entry === 'use' && intent !== 'use') reason = 'Use returns the Required closure; read is the inspection entry.';
       else if (entry === 'ordinary' && ['inspect', 'use'].includes(intent)) reason = 'Record the actual subsequent inspection/activation tool separately.';
       else if (['dollar', 'native'].includes(entry) && intent !== 'use') reason = 'Explicit host activation has use intent.';
       else if (['cli', 'sdk'].includes(entry) && session !== 'new') reason = 'Direct clients have no Pi session lifecycle; cover their host caller.';
@@ -155,19 +193,20 @@ export function selfTest() {
     cases.push({ id, status: 'passed', rejectedWith: code, evidenceKind: 'controlled' });
   }
   return { schema: 'skill-consumption-self-test/v1', status: 'passed', productAcceptance: 'not-inferred',
-    map: validateMap(), graph: graphSelfTest(), consumption: { tests: cases.length, cases } };
+    gates: validateConsumptionGates(), map: validateMap(), graph: graphSelfTest(), consumption: { tests: cases.length, cases } };
 }
 
 function main(argv) {
   const [action, path] = argv;
   if (!action || ['-h', '--help', 'help'].includes(action)) {
-    console.log('Usage: node scripts/skill-consumption-contract.mjs self-test | check-map | coverage | evaluate EVIDENCE.json');
+    console.log('Usage: node scripts/skill-consumption-contract.mjs self-test | check-map | check-gates | coverage | evaluate EVIDENCE.json');
     console.log('Offline/read-only. No run directories, production API calls, model calls or product acceptance claims.');
     return;
   }
   let result;
   if (action === 'self-test') result = selfTest();
   else if (action === 'check-map') result = validateMap();
+  else if (action === 'check-gates') result = validateConsumptionGates();
   else if (action === 'coverage') result = { ...validateMap(), cases: expandCoverage() };
   else if (action === 'evaluate' && path) result = evaluateConsumptionEvidence(JSON.parse(readFileSync(path, 'utf8')));
   else throw new Error('Unknown action or missing evidence file; use --help.');

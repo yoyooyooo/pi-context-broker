@@ -34,7 +34,7 @@ function decode(value: unknown): Activation {
       || !Number.isSafeInteger(source.bytes) || Number(source.bytes) <= 0) throw invalid();
     const record = source.record;
     if (record.body !== undefined || typeof record.name !== "string" || typeof record.path !== "string"
-      || typeof record.sourceId !== "string" || !record.sourceId || !["notion", "filesystem"].includes(String(record.source))
+      || typeof record.sourceId !== "string" || !record.sourceId || !["notion", "local", "filesystem"].includes(String(record.source))
       || !Array.isArray(record.aliases) || !record.aliases.every(alias => typeof alias === "string")
       || typeof record.normalizedName !== "string" || !Array.isArray(record.normalizedAliases)
       || typeof record.normalizedDescription !== "string" || typeof record.autoloadEnabled !== "boolean" || record.kind === "prompt") throw invalid();

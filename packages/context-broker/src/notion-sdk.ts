@@ -25,6 +25,9 @@ type Options = {
   refresh?: boolean;
   offline?: boolean;
   maxAge?: number;
+  view?: string;
+  defaultView?: boolean;
+  profile?: string;
 };
 type RuntimeOptions = Options & { metrics?: boolean; onRequestMetrics?: (snapshot: unknown) => void };
 type Sdk = {
@@ -34,6 +37,7 @@ type Sdk = {
   consume: (input: unknown, options?: RuntimeOptions) => Promise<unknown>;
   decodeConsumeResult: (value: unknown, expected?: unknown) => Promise<unknown>;
   readSkill: (target: string, options?: RuntimeOptions) => Promise<unknown>;
+  listCatalog?: (options?: RuntimeOptions) => Promise<unknown>;
   READ_OUTPUT_PROOF_VERSION?: number;
   RESOURCE_READ_CONTRACT_VERSION?: number;
   readResources?: (input: unknown, options?: RuntimeOptions) => Promise<unknown>;
@@ -41,6 +45,8 @@ type Sdk = {
   parseDuration: (input: string) => number;
 };
 const observations = channel("context-broker.notion-sdk");
+// Private verification observers opt in to raw results; normal metrics never contain source bodies.
+const resultObservations = channel("context-broker.notion-sdk-result");
 let bundledSdk: Promise<Sdk> | undefined;
 let resourceContractVersion: unknown;
 let readOutputProofVersion: unknown;
@@ -76,9 +82,9 @@ async function loadBundledSdk(): Promise<Sdk> {
 }
 
 /** Code is shared; every operation still creates and closes its own SDK runtime. */
-async function observed(operation: "consume" | "read" | "read-resources", options: Options, run: (sdk: Sdk, options: RuntimeOptions) => Promise<unknown>): Promise<unknown> {
+async function observed(operation: "consume" | "read" | "read-resources" | "list", options: Options, run: (sdk: Sdk, options: RuntimeOptions) => Promise<unknown>): Promise<unknown> {
   const enabled = observations.hasSubscribers;
-  const id = enabled ? randomUUID() : undefined;
+  const id = enabled || resultObservations.hasSubscribers ? randomUUID() : undefined;
   const started = process.hrtime.bigint();
   let sdkStarted = false;
   let metricsObserved = false;
@@ -87,6 +93,7 @@ async function observed(operation: "consume" | "read" | "read-resources", option
   if (enabled) observations.publish({ version: 1, event: "start", id, operation, pid: process.pid, monotonic_ns: started.toString() });
   try {
     const sdk = await loadBundledSdk();
+    if (operation === "list" && typeof sdk.listCatalog !== "function") throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     if (operation === "read-resources" && (sdk.RESOURCE_READ_CONTRACT_VERSION !== 1 || resourceContractVersion !== 1
       || typeof sdk.readResources !== "function" || typeof sdk.decodeResourceReadResult !== "function")) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     sdkStarted = true;
@@ -96,6 +103,7 @@ async function observed(operation: "consume" | "read" | "read-resources", option
       metrics = snapshot;
     } } : {}) });
     status = object(value) && value.status === "cancelled" ? "cancelled" : object(value) && value.status === "failed" ? "failed" : "completed";
+    if (resultObservations.hasSubscribers) resultObservations.publish({ version: 1, id, operation, value });
     return value;
   } catch (error) {
     if (options.signal?.aborted || object(error) && error.code === "CANCELLED") status = "cancelled";
@@ -116,6 +124,10 @@ export function consumeNotionSdk(input: unknown, options: Options): Promise<unkn
 }
 export function readNotionSdk(target: string, options: Options): Promise<unknown> {
   return observed("read", options, (sdk, runtime) => sdk.readSkill(target, runtime));
+}
+/** Metadata uses the core catalog cache; no CLI subprocess or second discovery authority. */
+export function listNotionCatalogSdk(options: Options): Promise<unknown> {
+  return observed("list", options, (sdk, runtime) => sdk.listCatalog!(runtime));
 }
 /** Feature detection loads code only; an older SDK never starts a speculative read. */
 export async function supportsNotionSdkReadOutputProof(): Promise<boolean> {
