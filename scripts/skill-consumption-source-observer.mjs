@@ -52,7 +52,7 @@ export function observeSourceTransport(settings) {
     unmatchedChildLifecycleVersion: 1,
     coverage: 'owned Pi SDK operations and direct bundled CLI; direct unmatched child lifecycle only, descendant transport remains unknown', wireBytes: null });
   subscribe('context-broker.notion-sdk', event => {
-    if (!event || event.version !== 1 || !['start', 'end'].includes(event.event) || !['list', 'consume', 'read', 'read-resources'].includes(event.operation)
+    if (!event || event.version !== 1 || !['start', 'end'].includes(event.event) || !['list', 'files', 'consume', 'read', 'read-resources'].includes(event.operation)
       || typeof event.id !== 'string' || !/^[a-f0-9-]{36}$/i.test(event.id) || event.pid !== process.pid
       || typeof event.monotonic_ns !== 'string' || !/^\d+$/.test(event.monotonic_ns)) throw new Error('SDK_EVENT_INVALID');
     const requestId = 'sdk:' + process.pid + ':' + event.id;

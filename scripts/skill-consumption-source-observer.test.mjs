@@ -115,7 +115,7 @@ test('SDK observations retain explicit zero-attempt metrics and failed or pendin
   assert.equal(trace.events.at(-1).sdkStarts, 3); assert.equal(trace.events.at(-1).cliStarts, 0);
 });
 
-for (const operation of ['list', 'read-resources']) test('one ' + operation + ' is one observed SDK operation with its complete request ledger', async t => {
+for (const operation of ['list', 'files', 'read-resources']) test('one ' + operation + ' is one observed SDK operation with its complete request ledger', async t => {
   const item = fixture(), observer = observe(item); t.after(observer.finish);
   const id = crypto.randomUUID();
   publishSdk(id, 'start', { operation });
@@ -128,6 +128,20 @@ for (const operation of ['list', 'read-resources']) test('one ' + operation + ' 
   assert.deepEqual(trace.events.filter(row => ['started', 'completed'].includes(row.phase)).map(row => row.operation), [operation, operation]);
   assert.equal(trace.events.filter(row => row.phase === 'attempt').length, 2);
   assert.equal(trace.events.find(row => row.phase === 'metrics').total_requests, 2);
+});
+
+test('an unknown SDK operation remains an observation error instead of a complete zero-cost ledger', async t => {
+  const item = fixture(), observer = observe(item); t.after(observer.finish);
+  const id = crypto.randomUUID(), operation = 'future-operation';
+  publishSdk(id, 'start', { operation });
+  publishSdk(id, 'end', { operation, elapsed_ms: 0, status: 'completed', sdk_started: true,
+    metrics_observed: true, request_metrics: { trace_enabled: true, total_requests: 0, trace_dropped: 0, trace: [] } });
+  observer.finish();
+  const trace = await readSourceObservation(item.output);
+  assert.equal(trace.complete, false);
+  assert.equal(trace.events.filter(row => row.phase === 'observer_error').length, 2);
+  assert.equal(trace.events.at(-1).errors, 2);
+  assert.equal(trace.events.filter(row => row.phase === 'metrics').length, 0);
 });
 
 test('evidence write failure cannot escape a source event or change host exit behavior', async () => {

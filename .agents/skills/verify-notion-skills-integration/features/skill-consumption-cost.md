@@ -9,7 +9,7 @@
 | Pi 用户提交与 provider | `skill-consumption-cost.mjs` / observer JSONL | 同机单调时间、实际 provider hook 的 JSON bytes/hash、tool schema/目录/正文/资源/历史的分项字节与模型报告 usage |
 | 模型 HTTP | `skill-consumption-provider.mjs` / transport JSONL | Node Undici diagnostics 的实际 request body hash/bytes、response entity chunks、真实尝试；不替换 fetch、不消费响应、不注入工具参数 |
 | Source CLI | `skill-consumption-source-baseline.mjs` / 每个 child 的 receipt、stdout、lifecycle | prepare 后逐节点固定 read、独立单资源 read，或单 current inspect；request_metrics 中的 metadata/body/retained-body/write/provider、retry、queue 与响应解码字节 |
-| Pi 默认 Source SDK / 显式兼容 CLI | `skill-consumption-source-observer.mjs` / safe-source-requests JSONL | 进程内 SDK list/consume/read/read-resources 的公开 start/end 与安全 request_metrics；显式兼容 CLI 的真实 spawn/close 和完整 stdout 中的 request_metrics。SDK 操作、CLI 子进程与 HTTP attempt 分别计数 |
+| Pi 默认 Source SDK / 显式兼容 CLI | `skill-consumption-source-observer.mjs` / safe-source-requests JSONL | 进程内 SDK list/files/consume/read/read-resources 的公开 start/end 与安全 request_metrics；显式兼容 CLI 的真实 spawn/close 和完整 stdout 中的 request_metrics。SDK 操作、CLI 子进程与 HTTP attempt 分别计数 |
 | 普通启动顺序 | `skill-consumption-startup.mjs` | 实际 Pi，受控 source/provider；原生 RPC 提交先于目录完成。受控 stream 不等于真实模型 HTTP 或 token |
 | 真实模型成本任务 | `skill-consumption-model-baseline.mjs` | 固定 magpie/group/flash-free；正常工具、冻结的普通或 Skill 任务；独立 cold 进程和最后一个进程中的 existing-session warm 续接。原 driver 的 `pi-native-local` 臂不加载 Broker，使用 Pi 原生发现/read；任务类型分组记录，成本 driver 不替代 Skill 完整消费断言 |
 
@@ -130,6 +130,7 @@ SDK 观测由 driver 为自有 Pi 进程安装 Node preload；父 PID、实际�
 | 字段 / 层 | 口径 |
 | --- | --- |
 | `sdkStarts` / `sdkCloses` | SDK 桥公开 start/end 的数量；失败、取消和 pending 也保留。`sdkEntered` 只统计 end 明确回报 `sdk_started:true` 的调用，未结束不能据此推断没有执行 |
+| SDK `files` | 固定名称解析复用 core manifest-only `listSkill`；独立计一次 SDK 操作，属于文件清单元数据，不能计作主文已读或漏记为零成本。实际 HTTP/bytes 仍取该操作完整 metrics；未知 operation 保持观察错误，不能降级成完整零请求 |
 | `cliStarts` / `cliSpawnEvents` / `cliCloses` | 分别为观察到的 CLI spawn 调用开始、真实 child spawn 事件和 child close。退出码、signal、stdout 完整性单列；一次子进程可包含零次或多次 HTTP |
 | `observedHttpAttempts` / `httpAttempts` | 前者为已记录 attempt 数；后者仅在所有相关 metrics、进程边界和最终复核完整时给出总数，否则为 null。缺 child、零 SDK starts 或空账本都不证明零 HTTP |
 | Source bytes / waits | 沿用 request_metrics 的 request bytes、decoded response bytes、metadata/body/retained-body/write/provider 分类及 queue/retry 等待；缺字段不估算。TCP/TLS wire 始终为 null |
