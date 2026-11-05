@@ -244,6 +244,8 @@ Pi 为 Notion 记录提供归属当前会话分支的不透明引用。它们是
 
 Pi 的正常 prepare 结果只呈现目的、所选根引用、完整正文和精简资源/关系目录。完整 hash、graph lock、规范身份与物化证明保留在工具 details 和显式证明导出中。确定性编译器逐字保留作者正文，用版本化回执将源 hash、渲染 hash 与实际内容位置绑定；重复读取和显式新选择只派生新的 provider 投影，不编辑会话原件。OMP 保留既有结果形状。详见 [prepare 投影合同与证据](skill-consumption-projection.md)。
 
+Pi search 保留完整名称、说明、来源、可用状态和分页；原生消费工具可用时，重复 `id/scope` 留在宿主 details。当前 Notion 选择只注入固定引用、一个可用资源目录和完整正文，通用规则由宿主集中提供。恢复选择使用 canonical 固定引用，不把重启后的目录宣称为已注册资源入口。完整原生主文 read 保留精确正文前缀，并复用 prepare 的精简目录；完整目录留在 `contextBrokerRead.directory`。源内容和 Notion 管理数据保持完整。详见[跨入口投影与实际请求对照](skill-model-surfaces-verification-2026-11-05.md)。
+
 `skill_graph({cli_source:"SOURCE_ID"})` 单独请求一个已启用 Notion source 在当前机器上的 CLI 调用元数据，与 `refs` 互斥，且要求 `bash` 和 `skill_graph` 实际启用。返回 `{kind:"host_cli_scope", sourceId, command, database?, executed:false}`，解析真实配置命令或随包入口，不假设全局 CLI 已安装，不访问网络或执行命令。未知或禁用来源明确失败，不换另一个来源。取得元数据不授予执行权限，也不证明连通性。默认 graph 与 `refs` 导出继续保持不含机器路径的可移植证明合同。
 
 绑定先写入分支记录，再对外显示，并在 resume 时重放。当前分支没有的引用明确失败。每次使用仍校验当前授权来源、完整 owner 身份及固定快照。未知、格式错误、scope 不符或 owner 不匹配的引用不能回退为文件系统读取或当前内容。分配引用本身不读取或激活正文；`sr:S`、`sr:R` 也不证明已经投递。

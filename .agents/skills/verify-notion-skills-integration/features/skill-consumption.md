@@ -20,8 +20,8 @@
 | SC02 | AH-619 | 全部消费入口 | [只观察的成本规程](skill-consumption-cost.md)；真实模型、source 初态与单资源基线，旧 graph observer 不作为纯观察器 |
 | SC03 | AH-620 | CLI、SDK、Pi | CLI core 的 version 1 consume 合同与等价证明已提交；独立 SDK 打包和 Broker 迁移继续归 SC10 |
 | SC04 | AH-621 | 短引用、原生 read | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：C/S/R 分支表、真实 SessionManager 13 项与 5 次独立 resume、实际 Pi search/prepare/read；74 候选批量投影经同目录 13 点真实对照，跨机重新授权和正式模型 Gate 仍分列 |
-| SC05 | AH-622 | provider 输入 | [能力化指引](../../../../packages/context-broker/docs/skill-consumption-guidance.md)与[prepare 编译投影](../../../../packages/context-broker/docs/skill-consumption-projection.md)：完整作者正文、模型短引用和机器证明分离，versioned source/rendered hash 绑定实际 span；普通复用不代替当前用户明确要求的操作；其他入口统一编译及正式 Gate 仍分列 |
-| SC06 | AH-623 | 目录、search、自然任务 | view-discovery / model；另补两种目录的真实选路比较 |
+| SC05 | AH-622 | provider 输入 | [能力化指引](../../../../packages/context-broker/docs/skill-consumption-guidance.md)、[prepare 编译投影](../../../../packages/context-broker/docs/skill-consumption-projection.md)及[搜索/注入/native 呈现](../../../../packages/context-broker/docs/skill-model-surfaces-verification-2026-11-05.md)：完整作者正文与机器证明分离，实际 span、全部 provider HTTP 与工具往返分别验收；正式模型 Gate 仍分列 |
+| SC06 | AH-623 | 目录、search、自然任务 | search 卡片已减少重复 id/scope 并批量登记短引用，完整 UI/机器元数据保留；view-discovery / model 继续验跨入口去重及两种目录的真实选路比较 |
 | SC07 | AH-626 | inspect、use、资源 | installed --skill-graph true；固定资源批读使用下方 `resource-batch` 路线及[合同](../../../../packages/context-broker/docs/fixed-resource-batches.md)；[最终包、真实模型与新会话记录](../../../../packages/context-broker/docs/fixed-resource-batches-verification-2026-11-04.md)。原句介绍/执行与正式模型 Gate 分别验收；[指引历史](../../../../packages/context-broker/docs/skill-consumption-guidance.md)的失败继续保留 |
 | SC08 | AH-627 | 重复、resume、压缩 | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：selected/visible/active 分离、状态层 14/14、实际 Pi 压缩后固定恢复；默认模型摘要另验 |
 | SC09 | AH-624 | 普通消息、显式选择 | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：context 准备与运行信号，RPC/PTY 10/10、完整启动 31/31；[历史失败](../../../../packages/context-broker/docs/skill-consumption-startup-checkpoint.md)保留 |
@@ -158,6 +158,24 @@ PY
 ```
 
 cleanup 新增自己的回执不影响原文件比对。若原文件改变，保留失败现场并修复规程，不能排除该文件掩盖错误。禁止按进程名称 kill、永久删除或触碰他人会话。真实网络、真实模型是否运行要单列；此次完整路径的两者均为 not_run。
+
+### Drive：SC05/06 搜索、注入与原生读取投影
+
+沿用同一已安装 CLI/SDK、同一 fixture，分别构建并独立安装基线与候选 Broker。复用 `scripts/notion-sdk-pi.mjs`，对每臂分别运行 `--scenario dollar`、`native`、`prepare`；`all` 还包含其他四个场景，不等同于本次三路对照。每次使用新的仓外 `--out`。基线传 `--expect-compact-context false`，候选传 true（默认）；false 仅允许观察旧形态，不认证新合同。
+
+```bash
+node scripts/notion-sdk-pi.mjs doctor --package "$CONTEXT_PACKAGE" --fixture "$CONTEXT_FIXTURE"
+node scripts/notion-sdk-pi.mjs run --package "$CONTEXT_PACKAGE" --fixture "$CONTEXT_FIXTURE" --scenario dollar --expect-compact-context true --out "$CONTEXT_EVIDENCE"
+node scripts/notion-sdk-pi.mjs evidence --evidence "$CONTEXT_EVIDENCE"
+node scripts/notion-sdk-pi.mjs cleanup --evidence "$CONTEXT_EVIDENCE"
+node scripts/notion-sdk-pi.mjs evidence --evidence "$CONTEXT_EVIDENCE"
+```
+
+每个实际 provider capture 都有 `provider-requests/NNN-serializer-request.json` 原始 POST 和对应 serializer receipt。独立重算 bytes/hash、核对实际 RPC 工具序列，并汇总 `provider-http.json` 的完整场景成本。原 prepare 最后一轮证据文件是同一请求的保留别名，不能再加一次。TranscriptContext 包含宿主 details，与真实 HTTP 输入分开记账。
+
+候选必须保留完整正文和准确后续入口；native 按实际 footer 的 ref 直接读取资源，不能插入额外 inspect。搜索保留来源消歧、disabled、分页和完整 host details；目录去机器字段不裁剪行。美元当前选择保留短引用与可用目录，恢复用固定 canonical ref，不依赖新进程未登记的旧目录。已有 `notion-startup-flow.mjs --case rpc-active-recovery` 单独验证实际 Pi 固定正文恢复；该场景故意保留目录失败，未执行的恢复后资源 read 不得记通过。
+
+清理前保存原件哈希，核对所有宿主/SDK/child 终局；随后按既有 evidence → cleanup → evidence 流程复查原件。离线 fixture 的 Default View CACHE_MISSING 与 child exit 1 继续单列。本路径只证明 installed Pi 与实际 serializer/localhost HTTP，不证明真实模型 token、选路质量或生产延迟。最近对照见[测量记录](../../../../packages/context-broker/docs/skill-model-surfaces-verification-2026-11-05.md)。
 
 ### Drive：SC07 固定资源批读
 

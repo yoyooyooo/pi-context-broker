@@ -53,7 +53,8 @@ function invalid(): never {
   throw Object.assign(new Error("Skill preparation projection is inconsistent"), { code: "SOURCE_CONTEXT_PROJECTION_INVALID" });
 }
 
-function modelDirectory(value: PreparationDirectory): SkillPreparationModelDirectory {
+export function projectSkillDirectory(value: PreparationDirectory | undefined): SkillPreparationModelDirectory | undefined {
+  if (value === undefined) return undefined;
   const relation = ({ ref, kind, name, description, availability }: PreparationDirectory["required"][number]) =>
     ({ ref, kind, name, description, availability });
   return {
@@ -116,7 +117,7 @@ export function compileSkillPreparation(input: SkillPreparationCompilationInput)
       if (typeof record.source.identity !== "string" || !record.source.identity || !/^[a-f0-9]{64}$/.test(record.source.sha256) || !natural(record.source.bytes)
         || sha256(record.content) !== record.source.sha256 || Buffer.byteLength(record.content) !== record.source.bytes) invalid();
       return { name: record.name, kind: record.kind, ref: record.ref, content: record.content,
-        ...(record.directory === undefined ? {} : { directory: modelDirectory(record.directory) }) };
+        ...(record.directory === undefined ? {} : { directory: projectSkillDirectory(record.directory) }) };
     }),
   };
   const rendered = renderSkillPreparationModel(model);

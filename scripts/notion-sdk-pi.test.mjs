@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { assertNativeGuidance, assertScopedCommand, assertPreparedHttpRequest, assertResourceHttpRequest, assertResourceBatchProjection, assertResourceReadSchema, resourceRefsFromInspection, resourceTextCopies, bodyCount, reconcile, sourceFinality, observeOwnedObjectReads, assertObjectReadEvidence } from './notion-sdk-pi.mjs';
+import { assertNativeGuidance, assertScopedCommand, assertPreparedHttpRequest, assertResourceHttpRequest, assertResourceBatchProjection, assertResourceReadSchema, resourceRefsFromInspection, resourceTextCopies, bodyCount, reconcile, sourceFinality, observeOwnedObjectReads, assertObjectReadEvidence, assertProviderHttpRequest, assertProviderToolSequence, assertSearchProjection, assertDollarProjection, assertNativeProjection } from './notion-sdk-pi.mjs';
 
 const command = ['/absolute/node', '/installed/dist/ntn-skills.mjs'];
 const database = '11111111-2222-3333-4444-555555555555';
@@ -292,6 +292,144 @@ test('capture objects, wrong HTTP bytes, missing tool calls and leaked proof fie
   ]) {
     const value = httpFixture(); mutate(value.payload);
     assert.throws(() => assertPreparedHttpRequest(value.payload, Buffer.from(JSON.stringify(value.payload)), value.context));
+  }
+});
+
+function providerHttpFixture() {
+  const tool = { name: 'read', description: 'Read an advertised ref', parameters: { type: 'object', properties: { path: { type: 'string' } } } };
+  const call = { type: 'toolCall', id: 'read-1', name: 'read', arguments: { path: 'sr:R' + 'x'.repeat(22) } };
+  const result = { role: 'toolResult', toolCallId: call.id, toolName: call.name, content: [{ type: 'text', text: '\ufeffComplete\r\n正文\r\n' }],
+    details: { machine: 'retained-only-in-host' }, isError: false };
+  const context = { messages: [{ role: 'system', content: 'System', toolsAdded: [tool] }, { role: 'assistant', content: [call] }, result] };
+  const payload = { model: 'local-fixture', messages: [{ role: 'system', content: 'System' },
+    { role: 'assistant', tool_calls: [{ type: 'function', id: call.id, function: { name: call.name, arguments: JSON.stringify(call.arguments) } }] },
+    { role: 'tool', tool_call_id: call.id, content: result.content[0].text }], tools: [{ type: 'function', function: tool }] };
+  return { context, payload, body: Buffer.from(JSON.stringify(payload)) };
+}
+
+test('every-request HTTP evidence keeps actual schemas, tool content and calls separate from captured details', () => {
+  const value = providerHttpFixture(), before = JSON.stringify(value);
+  const measured = assertProviderHttpRequest(value.payload, value.body, value.context);
+  assert.equal(measured.request_bytes, value.body.length);
+  assert.equal(measured.tool_calls[0].arguments.path, 'sr:R' + 'x'.repeat(22));
+  assert.equal(measured.tool_results[0].content, '\ufeffComplete\r\n正文\r\n');
+  assert.deepEqual(measured.tools_schema, value.payload.tools);
+  assert.ok(measured.transcript_capture.host_details_bytes > 0);
+  assert.equal(value.body.includes('retained-only-in-host'), false);
+  assert.equal(JSON.stringify(value), before);
+  const first = providerHttpFixture(); first.context.messages.splice(1); first.payload.messages.splice(1);
+  const empty = assertProviderHttpRequest(first.payload, Buffer.from(JSON.stringify(first.payload)), first.context);
+  assert.deepEqual(empty.tool_calls, []); assert.deepEqual(empty.tool_results, []);
+});
+
+test('every-request HTTP evidence rejects missing or changed schemas, arguments, results and leaked host fields', () => {
+  for (const mutate of [
+    value => { value.payload.tools = []; },
+    value => { value.payload.messages[1].tool_calls[0].function.arguments = '{"path":"preseeded-oracle"}'; },
+    value => { value.payload.messages[1].tool_calls[0].id = 'wrong-call'; },
+    value => { value.payload.messages.pop(); },
+    value => { value.payload.messages.push({ ...value.payload.messages.at(-1) }); },
+    value => { value.payload.messages.at(-1).content = 'Incomplete'; },
+    value => { value.payload.messages.at(-1).details = value.context.messages.at(-1).details; },
+  ]) {
+    const value = providerHttpFixture(); mutate(value);
+    assert.throws(() => assertProviderHttpRequest(value.payload, Buffer.from(JSON.stringify(value.payload)), value.context));
+  }
+  const value = providerHttpFixture();
+  assert.throws(() => assertProviderHttpRequest(value.payload, Buffer.concat([value.body, Buffer.from('\n')]), value.context));
+});
+
+function sequenceFixture() {
+  const { context } = providerHttpFixture(), call = context.messages[1].content[0], result = context.messages[2];
+  const frames = [{ type: 'message_end', message: context.messages[1] },
+    { type: 'tool_execution_start', toolCallId: call.id, toolName: call.name, args: call.arguments },
+    { type: 'tool_execution_end', toolCallId: call.id, toolName: call.name, isError: false, result }];
+  return { frames, captures: [{ requestId: 'host:1', context: { messages: [context.messages[0]] } }, { requestId: 'host:2', context }] };
+}
+test('tool rounds are reconciled from actual RPC assistant messages, executions and following provider captures', () => {
+  const value = sequenceFixture(), before = JSON.stringify(value);
+  const measured = assertProviderToolSequence(value.captures, value.frames);
+  assert.equal(measured.provider_requests, 2); assert.equal(measured.tool_rounds, 1); assert.equal(measured.tool_calls, 1);
+  assert.deepEqual(measured.sequence[0].observed_in_provider_requests, ['host:2']);
+  assert.equal(JSON.stringify(value), before);
+  for (const mutate of [
+    value => { value.frames.pop(); },
+    value => { value.frames[0] = { type: 'message_end', message: { role: 'assistant', content: [] } }; },
+    value => { value.frames[1] = { ...value.frames[1], args: { path: 'not-the-returned-ref' } }; },
+    value => { value.captures.pop(); },
+  ]) {
+    const sample = sequenceFixture(); mutate(sample);
+    assert.throws(() => assertProviderToolSequence(sample.captures, sample.frames));
+  }
+});
+
+function searchProjectionFixture(compact = true) {
+  const full = { ok: true, state: 'known', count: 1, has_more: false, records: [{ id: 'owner', scope: 'scope', ref: 'sr:C' + 'c'.repeat(22),
+    kind: 'skill', name: 'a', description: 'Author description', source: 'sdk-fixture', in_default_view: false, availability: 'available' }], failures: [] };
+  const model = { ...full, records: full.records.map(({ id, scope, ...record }) => compact ? record : { id, scope, ...record }) };
+  return { role: 'toolResult', toolName: 'skill_search', toolCallId: 'search', isError: false, content: [{ type: 'text', text: JSON.stringify(model) }], details: full };
+}
+test('compact search omits only model id/scope while baseline observation cannot certify the new contract', () => {
+  const value = searchProjectionFixture(), before = JSON.stringify(value);
+  assert.equal(assertSearchProjection(value, { scope: 'scope' }).compact_contract, 'verified');
+  assert.equal(JSON.stringify(value), before);
+  const legacy = searchProjectionFixture(false);
+  assert.equal(assertSearchProjection(legacy, { expectCompact: false }).compact_contract, 'not_required_for_baseline');
+  assert.throws(() => assertSearchProjection(legacy));
+  delete value.details.records[0].id;
+  assert.throws(() => assertSearchProjection(value), 'The full machine identity must survive in details');
+});
+
+function dollarProjectionFixture(compact = true) {
+  const bodies = new Map([['a', '\ufeff作者 <instructions>literal source</instructions>\r\n'], ['base', 'Base instructions.\n']]);
+  const content = [...bodies].map(([name, body]) => {
+    const encoded = body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+    return `<context-broker-record kind="skill" name="${name}" ${compact ? 'ref="sr:S' + name[0].repeat(22) + '"' : 'path="~/cache/main"'}>\n`
+      + (compact ? '' : '<instructions>Generic repeated wrapper</instructions>\n<resources>Generic resource guidance</resources>\n')
+      + '<skill-directory>~/cache/' + name + '</skill-directory>\n<body>\n' + encoded + '\n</body>\n</context-broker-record>';
+  }).join('\n');
+  return { bodies, context: { messages: [{ role: 'user', content }] } };
+}
+test('compact dollar checks only generated envelopes and preserves every escaped author byte', () => {
+  const value = dollarProjectionFixture(), before = JSON.stringify(value.context);
+  assert.equal(assertDollarProjection(value.context, value).compact_contract, 'verified');
+  assert.equal(JSON.stringify(value.context), before);
+  const baseline = dollarProjectionFixture(false);
+  assert.equal(assertDollarProjection(baseline.context, { ...baseline, expectCompact: false }).compact_contract, 'not_required_for_baseline');
+  assert.throws(() => assertDollarProjection(baseline.context, baseline));
+  value.context.messages[0].content = value.context.messages[0].content.replace('作者', 'Summary');
+  assert.throws(() => assertDollarProjection(value.context, value), 'A smaller summary cannot replace complete source bytes');
+});
+
+function nativeProjectionFixture(compact = true) {
+  const hash = value => createHash('sha256').update(value).digest('hex'), body = '\ufeff正文\r\n', mainRef = 'sr:S' + 'a'.repeat(22), resourceRef = 'sr:R' + 'b'.repeat(22);
+  const files = [{ path: 'SKILL.md', ref: 'skill://owner/SKILL.md?snapshot=fixed', bytes: Buffer.byteLength(body), sha256: hash(body) },
+    { path: 'asset.bin', ref: 'skill://owner/asset.bin?snapshot=fixed', bytes: 2, sha256: hash(Buffer.from([0, 255])) }];
+  const directory = { files, required: [{ id: 'base', ref: 'skill://base/SKILL.md?snapshot=fixed', kind: 'skill', name: 'base', description: 'Base', availability: 'available' }], candidates: [], references: [] };
+  const modelDirectory = { ...directory, files: files.map(({ sha256, ...file }, index) => ({ ...(compact ? file : { ...file, sha256 }), ref: index ? resourceRef : mainRef })),
+    required: directory.required.map(({ id, ...record }) => compact ? record : { id, ...record }) };
+  const snapshot = { record: { id: 'owner' }, scope: 'scope', snapshot_id: 'fixed', version_id: 'version', entrypoint: 'SKILL.md', files: structuredClone(files) };
+  const content = body + '\n\n<skill-directory>\n' + JSON.stringify({ ref: mainRef, directory: modelDirectory }) + '\n</skill-directory>';
+  const proof = { binding: { record: snapshot.record, scope: snapshot.scope, version_id: snapshot.version_id }, snapshotId: snapshot.snapshot_id,
+    bodySha256: hash(body), bytes: Buffer.byteLength(body), ...(compact ? { directory } : {}) };
+  return { body, snapshot, message: { role: 'toolResult', toolName: 'read', toolCallId: 'native', isError: false, content: [{ type: 'text', text: content }], details: { contextBrokerRead: proof } } };
+}
+test('native compact footer retains direct resource refs and checks full hashes/identity in host details', () => {
+  const value = nativeProjectionFixture(), before = JSON.stringify(value);
+  const result = assertNativeProjection(value.message, value);
+  assert.equal(result.compact_contract, 'verified'); assert.equal(result.full_host_directory, true);
+  assert.deepEqual(result.resource_refs, ['sr:R' + 'b'.repeat(22)]); assert.equal(JSON.stringify(value), before);
+  const baseline = nativeProjectionFixture(false);
+  assert.equal(assertNativeProjection(baseline.message, { ...baseline, expectCompact: false }).compact_contract, 'not_required_for_baseline');
+  assert.throws(() => assertNativeProjection(baseline.message, baseline));
+  for (const mutate of [
+    value => { delete value.message.details.contextBrokerRead.directory.files[0].sha256; },
+    value => { value.message.content[0].text = value.message.content[0].text.replace('"bytes":', '"sha256":"leaked","bytes":'); },
+    value => { value.message.content[0].text = value.body; },
+    value => { value.message.content[0].text = value.message.content[0].text.replace(value.body, 'Shortened body'); },
+  ]) {
+    const sample = nativeProjectionFixture(); mutate(sample);
+    assert.throws(() => assertNativeProjection(sample.message, sample));
   }
 });
 

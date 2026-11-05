@@ -14,7 +14,7 @@ Pi 的模型可见结果保留 `ok/status/purpose`、明确根引用及每个已
 | Required、Members 与普通 references | 每行 `ref/kind/name/description/availability`，不裁剪行 | 完整关系身份与依赖锁 |
 | graph lock、预算、usage、机器路径、存储与版本字段 | 不再重复放入正常 prepare 的模型结果 | `details.contextBrokerPreparation` 保留；显式 `skill_graph` 仍可导出证明 |
 
-`inspect` 与 `use` 的准备语义沿用原合同。目录并不加载 Member 正文，短引用也不授予权限。OMP 保持旧版 v1 返回形状；美元注入与原生 read 的正文呈现仍使用各自既有合同。
+`inspect` 与 `use` 的准备语义沿用原合同。目录并不加载 Member 正文，短引用也不授予权限。OMP 保持旧版 v1 返回形状。后续 [Pi 搜索、注入与原生读取投影](skill-model-surfaces-verification-2026-11-05.md) 复用本节目录投影，保留各入口的完整源正文及原投递证明。
 
 ## 确定性编译与投递证明
 

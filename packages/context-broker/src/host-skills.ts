@@ -20,7 +20,7 @@ import type { PreparedHostGraph, PreparationPurpose, PreparationBinding } from "
 import type { SelectionMode } from "./session-graph";
 import { publicEntryMaterialization, type EntryFile } from "./notion-entry";
 import { createSessionShortRefHost, isSessionShortRefInput, matchesShortRefSource, assertShortRefSource, assertShortRefSnapshot, assertShortRefResource, type HostShortRefResolution } from "./session-short-ref-host";
-import { compileSkillPreparation } from "./skill-context-projection";
+import { compileSkillPreparation, projectSkillDirectory } from "./skill-context-projection";
 import { compileResourceRead } from "./resource-read-projection";
 import { DEFAULT_RESOURCE_READ_BUDGET, RESOURCE_READ_MAX_CONTEXT_BYTES, type ResourceReadBatch } from "./resource-read-types";
 
@@ -56,6 +56,7 @@ export type HostSkills = {
   prepareMany(records: readonly SkillRecord[], ctx?: ExtensionContext, signal?: AbortSignal): Promise<void>;
   withPreparedPrompt<T>(prompt: string, ctx: ExtensionContext, build: (signal?: AbortSignal, native?: SkillRecord, original?: string, prepared?: readonly SkillRecord[]) => Promise<T>): Promise<T>;
   isNativeLoaded(messages: AgentMessage[], record: SkillRecord): boolean;
+  selectedModelReference(record: SkillRecord, ctx: ExtensionContext): string | undefined;
   viewStatus(): readonly NotionViewState[];
 };
 
@@ -256,17 +257,23 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const matches = [...hostRecords.values()].filter(record => record.ref && record.source === "notion"
         && (input.source === undefined || record.sourceId === input.source)
         && (!query || [record.name, record.alias, record.description].some(value => value?.toLocaleLowerCase().includes(query))));
+      const selected = matches.slice(0, Number(input.limit ?? 20));
+      const references = modelCandidateReferences(selected, ctx);
       const result = {
         ok: true, state: "known", count: matches.length, has_more: matches.length > Number(input.limit ?? 20),
-        records: matches.slice(0, Number(input.limit ?? 20)).map(record => ({
-          id: record.id, ref: modelReference(record, ctx) ?? record.ref, kind: record.kind, name: record.name, description: record.description,
+        records: selected.map(record => ({
+          id: record.id, ref: references.get(record) ?? record.ref, kind: record.kind, name: record.name, description: record.description,
           source: record.sourceId, scope: record.sourceScope, in_default_view: record.defaultDiscovery === true,
           availability: record.enabled === false ? "disabled" : "available",
         })),
         failures: sourceFailures.map(({ sourceId, code }) => ({ source: sourceId, code })),
       };
       checkPreparationSignal(readSignal);
-      return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
+      const active = host.getActiveTools?.();
+      const model = adapter.paths.host === "pi" && active?.some(name => name === "read" || name === "skill_prepare")
+        ? { ...result, records: result.records.map(({ id: _id, scope: _scope, ...record }) => record) }
+        : result;
+      return { content: [{ type: "text", text: JSON.stringify(model) }], details: result };
     },
   });
 
@@ -1459,13 +1466,13 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (ref) {
       // The original native result has already proved a complete main read. Keep
       // those exact bytes as the prefix and append only a directory of fixed refs.
-      const footer = "\n\n<skill-directory>\n" + JSON.stringify({ ref, directory: modelDirectory(pending.record, [pending.record], ctx) }) + "\n</skill-directory>";
+      const footer = "\n\n<skill-directory>\n" + JSON.stringify({ ref, directory: projectSkillDirectory(modelDirectory(pending.record, [pending.record], ctx)) }) + "\n</skill-directory>";
       const content = typeof event.content === "string" ? event.content + footer : [...event.content ?? [], { type: "text" as const, text: footer }];
       const delivered = nativeReadReceipt(pending.record, event.toolCallId, content);
       if (!delivered) throw hostError("SOURCE_PREPARATION_INVALID");
-      return { content, details: { ...existing, contextBrokerRead: delivered } };
+      return { content, details: { ...existing, contextBrokerRead: { ...delivered, directory: pending.record.preparationDirectory } } };
     }
-    return { details: { ...existing, contextBrokerRead: proof } };
+    return { details: { ...existing, contextBrokerRead: { ...proof, directory: pending.record.preparationDirectory } } };
   });
 
   const initialMetadata = refresh();
@@ -1488,7 +1495,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (cancelled) throw preparationCancelled();
       throw error;
     }
-  }, viewStatus: () => views, isNativeLoaded: (messages, record) => messages.some(message => {
+  }, selectedModelReference: (record, ctx) => record.preparationBinding ? modelReference(record, ctx, true) : undefined,
+  viewStatus: () => views, isNativeLoaded: (messages, record) => messages.some(message => {
     if (record.source === "notion") return false;
     if (message.role !== "custom" || message.customType !== "skill-prompt" || !message.details || typeof message.details !== "object") return false;
     const path = (message.details as Record<string, unknown>).path;
