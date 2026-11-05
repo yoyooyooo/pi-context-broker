@@ -59,7 +59,10 @@ export function projectedResourceRef(context, name, path) {
 }
 
 export function measuredConsumptionArgs(args) {
-  const measured = ['list', 'prepare', 'read', 'files', 'use'].includes(args[0]) || args[0] === 'ctl' && args[1] === 'prepare';
+  const prepare = args[0] === 'prepare' || args[0] === 'ctl' && args[1] === 'prepare';
+  const measured = prepare || ['list', 'read', 'files', 'use'].includes(args[0]);
   if (!measured || args.includes('--raw')) return args;
-  return [...args, ...(args.includes('--json') ? [] : ['--json']), ...(args.includes('--metrics') ? [] : ['--metrics'])];
+  // prepare is already a machine protocol and has no --json flag. use needs
+  // explicit JSON for metrics; the other consumer commands support it as well.
+  return [...args, ...(prepare || args.includes('--json') ? [] : ['--json']), ...(args.includes('--metrics') ? [] : ['--metrics'])];
 }

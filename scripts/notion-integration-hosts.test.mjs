@@ -1,8 +1,88 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { selectIntegrationHosts, selectIntegrationPrefetch, selectLiveCatalogRecord, projectedResourceRef, measuredConsumptionArgs } from './notion-integration-hosts.mjs';
-import { nativeEntries } from './notion-default-context.mjs';
+import { nativeEntries, verifyPreparedDiagnostic, verifyPreparedProviderBody, defaultContextVerificationBudget, defaultContextResourceEntry } from './notion-default-context.mjs';
+import { createNotionFixture } from './notion-integration-fixture.mjs';
+import { confirmedViewActivation } from './notion-view-discovery.mjs';
+
+test('controlled CLI preserves actual ctl argv and explicit legacy aliases', async t => {
+  const base = await mkdtemp(join(tmpdir(), 'broker-ctl-fixture-'));
+  t.after(() => { if (process.platform === 'darwin') assert.equal(spawnSync('/usr/bin/trash', [base]).status, 0); });
+  const fixture = await createNotionFixture(base);
+  await fixture.setScenario('normal', { cacheIdentity: true });
+  const call = args => {
+    const result = spawnSync(fixture.command[0], [...fixture.command.slice(1), ...args], { encoding: 'utf8', timeout: 10000 });
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout);
+  };
+  for (const args of [['views'], ['doctor'], ['cache', 'identity', '--database', 'fixture']]) {
+    const legacy = call(args), current = call(['ctl', ...args]);
+    assert.deepEqual(current, legacy);
+    assert.equal(current.ok, true);
+  }
+  const calls = (await readFile(fixture.callsPath, 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.deepEqual(calls.filter(call => call.command === 'ctl').map(call => [call.command, call.args[0], call.operation]),
+    [['ctl', 'views', 'views'], ['ctl', 'doctor', 'doctor'], ['ctl', 'cache', 'cache']]);
+  const prepared = call(['ctl', 'prepare', fixture.skillRef, '--purpose', 'inspect', '--metrics']);
+  assert.equal(prepared.status, 'ready'); assert.equal(prepared.purpose, 'inspect');
+  const rejected = spawnSync(fixture.command[0], [...fixture.command.slice(1), 'prepare', fixture.skillRef, '--json'], { encoding: 'utf8', timeout: 10000 });
+  assert.equal(rejected.status, 1);
+  assert.equal(JSON.parse(rejected.stdout).error.code, 'INVALID_ARGUMENT', 'The wire fixture must not hide an invalid public prepare argv');
+});
+
+test('bounded prepared diagnostics reject foreground delivery, wrong scope and oversized results', () => {
+  const identity = { id: 'notion_page:owner', scope: 'b'.repeat(64) };
+  const job = { purpose: 'prefetch', state: 'prepared', sourceId: 'notion', loaded: false, epoch: 0,
+    budget: { ...defaultContextVerificationBudget }, preparedNodes: 1, instructionBytes: 17, contextBytes: 1000,
+    records: [{ ...identity, snapshotId: 's_' + 'a'.repeat(64), bodySha256: 'c'.repeat(64), bytes: 17 }] };
+  assert.deepEqual(verifyPreparedDiagnostic(job, identity), job.records[0]);
+  for (const changed of [
+    { ...job, purpose: 'foreground', state: 'ready' }, { ...job, loaded: true }, { ...job, body: 'secret' },
+    { ...job, records: [{ ...job.records[0], scope: 'd'.repeat(64) }] },
+    { ...job, records: [{ ...job.records[0], id: 'notion_page:unselected' }] },
+    { ...job, contextBytes: job.budget.maxBytes + 1 }, { ...job, preparedNodes: 2 },
+  ]) assert.throws(() => verifyPreparedDiagnostic(changed, identity));
+});
+
+test('OMP compatibility derives a resource only from the delivered owner directory', () => {
+  const context = { messages: [{ role: 'user', content: '<context-broker-record name="Skill A"><skill-directory>/private/tmp/owned/root</skill-directory><body>complete</body></context-broker-record>' }] };
+  assert.equal(defaultContextResourceEntry('omp', context, 'Skill A', 'references/ledger.md'), '/private/tmp/owned/root/references/ledger.md');
+  assert.throws(() => defaultContextResourceEntry('omp', context, 'Other', 'references/ledger.md'));
+  assert.throws(() => defaultContextResourceEntry('omp', context, 'Skill A', '../sibling.md'));
+  assert.throws(() => defaultContextResourceEntry('omp', { messages: [{ role: 'user', content: context.messages[0].content.replace('/private/tmp/owned/root', 'redacted') }] }, 'Skill A', 'references/ledger.md'));
+  assert.throws(() => defaultContextResourceEntry('pi', context, 'Skill A', 'references/ledger.md'), /resource directory/);
+});
+
+test('a prepared hash proves delivery only when the full body is in the provider payload', () => {
+  const body = 'Complete & exact source\nRequired trailing line\n';
+  const prepared = { bytes: Buffer.byteLength(body), bodySha256: createHash('sha256').update(body).digest('hex') };
+  const wrap = value => ({ messages: [{ role: 'user', content: '<context-broker-record name="Skill A"><body>\n' + value.replaceAll('&', '&amp;') + '\n</body></context-broker-record>' }] });
+  assert.deepEqual(verifyPreparedProviderBody(wrap(body), 'Skill A', prepared), { bytes: prepared.bytes, sha256: prepared.bodySha256 });
+  assert.throws(() => verifyPreparedProviderBody(wrap('Complete & exact source'), 'Skill A', prepared), /partial body/);
+  assert.throws(() => verifyPreparedProviderBody({ messages: [{ role: 'toolResult', details: prepared, content: [] }] }, 'Skill A', prepared));
+  assert.throws(() => verifyPreparedProviderBody(wrap(body), 'Other', prepared));
+});
+
+test('View compaction restoration requires a confirmation on the current branch and its exact fixed vector', () => {
+  const expected = { id: 'notion_page:owner', scope: 'b'.repeat(64), snapshotId: 's_' + 'a'.repeat(64), bodySha256: 'c'.repeat(64), bytes: 204 };
+  const binding = { record: { id: expected.id }, scope: expected.scope, snapshot_id: expected.snapshotId, body_sha256: expected.bodySha256 };
+  const graph = { purpose: 'use', scope: expected.scope, roots: [expected.id], required: [], bindings: [binding] };
+  const source = { ...expected, record: { id: expected.id, source: 'notion', sourceId: 'notion', sourceScope: expected.scope, preparationBinding: binding } };
+  const start = { id: 'selected', type: 'custom', customType: 'context-broker-selected-graph', data: { graphs: [graph] } };
+  const receipt = { id: 'confirmed', parentId: start.id, type: 'custom', customType: 'context-broker-active-sources', data: { activation_id: 'delivery', graphs: [graph], sources: [source] } };
+  const leaf = { id: 'ordinary', parentId: receipt.id, type: 'message' };
+  assert.equal(confirmedViewActivation([start, receipt, leaf], expected).activationId, 'delivery');
+  assert.throws(() => confirmedViewActivation([start, receipt, { ...leaf, parentId: start.id }], expected), /confirmation/);
+  assert.throws(() => confirmedViewActivation([start, receipt, leaf], { ...expected, snapshotId: 's_' + 'd'.repeat(64) }), /snapshotId/);
+  assert.throws(() => confirmedViewActivation([start, receipt, leaf], { ...expected, scope: 'd'.repeat(64) }));
+  const wrong = structuredClone(receipt); wrong.data.graphs[0].purpose = 'inspect';
+  assert.throws(() => confirmedViewActivation([start, wrong, leaf], expected));
+});
 
 test('default verification keeps the existing two-host contract', () => {
   assert.deepEqual(selectIntegrationHosts({}), ['pi', 'omp']);
@@ -41,9 +121,12 @@ test('resource reads copy the supplied reference of the one selected body', () =
   assert.throws(() => projectedResourceRef({ messages: [...context.messages, ...context.messages] }, 'Skill & A', 'references/a&b.md'), /one actual provider/);
 });
 
-test('the existing CLI ledger measures use and ctl prepare with valid JSON arguments', () => {
-  for (const args of [['use', 'skill://a/SKILL.md'], ['ctl', 'prepare', 'skill://a/SKILL.md'], ['list'], ['read', 'skill://a/SKILL.md'], ['files', 's_fixed']])
+test('the existing CLI ledger respects each public command output contract', () => {
+  for (const args of [['use', 'skill://a/SKILL.md'], ['list'], ['read', 'skill://a/SKILL.md'], ['files', 's_fixed']])
     assert.deepEqual(measuredConsumptionArgs(args), [...args, '--json', '--metrics']);
+  for (const args of [['prepare', 'skill://a/SKILL.md'], ['ctl', 'prepare', 'skill://a/SKILL.md']])
+    assert.deepEqual(measuredConsumptionArgs(args), [...args, '--metrics']);
+  assert.deepEqual(measuredConsumptionArgs(['ctl', 'prepare', 'a', '--metrics']), ['ctl', 'prepare', 'a', '--metrics']);
   assert.deepEqual(measuredConsumptionArgs(['use', 'a', '--json', '--metrics']), ['use', 'a', '--json', '--metrics']);
   assert.deepEqual(measuredConsumptionArgs(['read', 'a', '--raw']), ['read', 'a', '--raw']);
   assert.deepEqual(measuredConsumptionArgs(['ctl', 'doctor']), ['ctl', 'doctor']);

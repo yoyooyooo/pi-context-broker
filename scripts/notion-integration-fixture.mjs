@@ -91,6 +91,7 @@ async function main() {
   // This legacy fixture supplies a frozen wire receipt for adapter tests only.
   // The dedicated graph runner delegates prepare/read/export to Node + SQLite.
   if (command === 'prepare') {
+    if (flags.includes('--json')) { reject('INVALID_ARGUMENT', 'prepare is already JSON and does not accept --json'); return; }
     const firstOption = flags.findIndex(flag => flag.startsWith('--'));
     const roots = flags.slice(0, firstOption < 0 ? flags.length : firstOption);
     const option = (name, fallback) => flags.includes(name) ? flags[flags.indexOf(name) + 1] : fallback;
