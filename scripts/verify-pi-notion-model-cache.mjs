@@ -53,6 +53,27 @@ export function validateIntentConfiguration(config) {
   return config;
 }
 
+export function selectIntentCases(config, selectedCase) {
+  validateIntentConfiguration(config);
+  if (selectedCase !== undefined) assert.equal(selectedCase, 'C-introduce', 'Only the explicitly authorized C-introduce early-feedback selection is supported');
+  const selected = config.cases.filter(item => selectedCase === undefined || item.id === selectedCase);
+  const followups = selected.reduce((count, item) => count + item.followups.length, 0), submissions = selected.length + followups;
+  return { mode: selectedCase === undefined ? 'all' : 'targeted', selectedCaseIds: selected.map(item => item.id),
+    notRunCases: config.cases.filter(item => !selected.includes(item)).map(item => ({ id: item.id, status: 'not_run', reason: 'not_selected_for_early_feedback' })),
+    plannedBudget: { ...config.budget, primaryCases: selected.length, maxFollowupSubmissions: followups,
+      maxSubmissions: submissions, maxScheduledPromptMs: submissions * config.budget.timeoutMsPerSubmission } };
+}
+
+export function intentRunStatus(scope, cases, semanticStatus) {
+  if (semanticStatus !== undefined) assert.ok(['passed', 'failed'].includes(semanticStatus));
+  const ids = cases.map(item => item.id);
+  assert.equal(new Set(ids).size, ids.length, 'A case cannot be counted twice');
+  assert.deepEqual(ids, scope.selectedCaseIds.slice(0, ids.length), 'Only the explicitly selected cases can contribute to this run');
+  if (cases.length !== scope.selectedCaseIds.length || cases.some(item => item.status !== 'passed') || semanticStatus === 'failed') return 'failed';
+  if (semanticStatus === undefined) return 'review_required';
+  return scope.mode === 'all' ? 'passed' : 'partial';
+}
+
 const exactFile = (file, expected) => file.ownerId === expected.logicalId && file.scope === expected.scope
   && file.snapshot === expected.snapshot && file.sha256 === expected.sha256 && file.bytes === expected.bytes
   && (expected.ref === undefined || file.ref === expected.ref);
@@ -173,8 +194,8 @@ async function checkedJson(reference) {
   return JSON.parse(bytes.toString('utf8'));
 }
 
-export async function intentDoctor(path) {
-  assert.ok(isAbsolute(path)); const config = validateIntentConfiguration(await json(path));
+export async function intentDoctor(path, selectedCase) {
+  assert.ok(isAbsolute(path)); const config = await json(path), executionScope = selectIntentCases(config, selectedCase);
   const oracle = await checkedJson(config.privateOracle);
   const semantic = await checkedJson(config.privateOracle.semanticReference);
   const body = await readFile(semantic.sourceBody.path);
@@ -194,7 +215,7 @@ export async function intentDoctor(path) {
   assert.equal(hash(await readFile(host.identity)), config.pi.executableSha256);
   assert.ok(Array.isArray(config.cliCommand) && config.cliCommand.length === 2 && config.cliCommand.every(isAbsolute));
   assert.ok(isAbsolute(config.evidenceRoot)); await mkdir(config.evidenceRoot, { recursive: true });
-  return { config, oracle, semantic, catalog, artifacts, host, report: { status: 'ready', model: config.model,
+  return { config, oracle, semantic, catalog, artifacts, host, executionScope, report: { status: 'ready', model: config.model, executionScope,
     budget: config.budget, sourceMode: 'sdk', productionDefaultCount: 74, pi: { ...host, version },
     artifacts, config: { path, sha256: hash(await readFile(path)) }, privateOracleSha256: config.privateOracle.sha256,
     semanticReferenceSha256: config.privateOracle.semanticReference.sha256,
@@ -215,16 +236,16 @@ async function retainedFileInventory(directory, prefix = '') {
   return result;
 }
 
-export async function runIntentCases(configPath) {
-  const { config, oracle, semantic, catalog, artifacts, host, report: doctor } = await intentDoctor(configPath);
+export async function runIntentCases(configPath, selectedCase) {
+  const { config, oracle, semantic, catalog, artifacts, host, executionScope, report: doctor } = await intentDoctor(configPath, selectedCase);
   const evidence = await mkdtemp(join(await realpath(config.evidenceRoot), 'pi-intent-evidence-'));
   const manifest = { version: 1, kind: 'pi-model-intent-early-feedback', status: 'running', evidence,
-    model: config.model, budget: config.budget, doctor, cases: [], submissions: 0, automaticRetries: 0,
+    model: config.model, budget: config.budget, executionScope, doctor, cases: [], submissions: 0, automaticRetries: 0,
     semanticOracle: { sourceBodySha256: semantic.sourceBody.sha256, reference: config.privateOracle.semanticReference },
     not_claimed: ['Formal SC21 matrix', 'Cost acceptance', 'Daily installation switch', 'Autonomous execution of the generated procedure'] };
   await save(join(evidence, 'config.json'), config); await save(join(evidence, 'manifest.json'), manifest);
-  console.log(JSON.stringify({ evidence, status: 'running', primaryCases: 4, maxSubmissions: 7 }));
-  for (const item of config.cases) {
+  console.log(JSON.stringify({ evidence, status: 'running', executionScope, primaryCases: executionScope.plannedBudget.primaryCases, maxSubmissions: executionScope.plannedBudget.maxSubmissions }));
+  for (const item of config.cases.filter(item => executionScope.selectedCaseIds.includes(item.id))) {
     const output = join(evidence, item.id); await mkdir(output);
     const scratch = await mkdtemp(join(await systemTempRoot(), 'broker-intent-model-'));
     const control = join(scratch, 'control'), cwd = join(scratch, 'workspace'), cliRoot = join(scratch, 'cli');
@@ -248,7 +269,7 @@ export async function runIntentCases(configPath) {
       CONTEXT_BROKER_CONFIG: brokerConfig, CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_LOG_FILE: join(output, 'decisions.jsonl'),
       BROKER_E2E_PROCESS_LEDGER: owned };
     const result = { version: 1, kind: 'pi-model-intent-case', sourceMode: 'sdk', toolContract: config.contract,
-      gate: item.id, model: config.model, evidence: await realpath(output), scratch, project, status: 'running',
+      gate: item.id, model: config.model, evidence: await realpath(output), scratch, project, status: 'running', executionScope,
       acceptance: 'technical_only_until_semantic_review', entryMode: item.entryMode, turns: [], files: [],
       prelaunch: { cli_entries: 0, broker_entries: 0, session_entries: 0, oracle_consumer_disjoint: true },
       sourceCommandConfigured: false, semanticReview: { status: 'pending', referenceSha256: config.privateOracle.semanticReference.sha256 } };
@@ -291,7 +312,7 @@ export async function runIntentCases(configPath) {
         const beforeIds = new Set(priorResponses.map(row => row.requestId)), began = performance.now(), frameStart = rpc.frames.length;
         const receipt = { index, intent: turn.intent, prompt: turn.prompt, mode: turn.mode, status: 'running', processIndex };
         result.turns.push(receipt); manifest.submissions++;
-        assert.ok(manifest.submissions <= 7, 'Frozen maximum submissions exceeded');
+        assert.ok(manifest.submissions <= executionScope.plannedBudget.maxSubmissions, 'Frozen maximum selected submissions exceeded');
         await save(join(evidence, 'manifest.json'), manifest); await save(join(output, 'result.json'), result);
         try {
           await rpc.prompt(turn.prompt.text);
@@ -357,7 +378,7 @@ export async function runIntentCases(configPath) {
     await save(join(evidence, 'manifest.json'), manifest);
     if (availabilityFailure) { manifest.availabilityFailure = true; break; }
   }
-  manifest.status = manifest.cases.length === 4 && manifest.cases.every(item => item.status === 'passed') ? 'review_required' : 'failed';
+  manifest.status = intentRunStatus(executionScope, manifest.cases);
   await save(join(evidence, 'manifest.json'), manifest);
   return manifest;
 }
@@ -397,17 +418,18 @@ export function validateIntentReview(review, manifest, results, semantic) {
     boundary: 'Explicit independent semantic assessment of hash-bound real answers; no regex substitutes for meaning, and review cannot manufacture source delivery or actions' };
 }
 
-export async function reviewIntentCases(configPath, evidence, reviewPath) {
+export async function reviewIntentCases(configPath, evidence, reviewPath, selectedCase) {
   assert.ok(isAbsolute(evidence) && isAbsolute(reviewPath));
-  const { semantic, report: doctor } = await intentDoctor(configPath);
+  const { config, semantic, executionScope, report: doctor } = await intentDoctor(configPath, selectedCase);
   const manifest = await json(join(evidence, 'manifest.json'));
   assert.equal(manifest.doctor.config.sha256, doctor.config.sha256);
+  assert.deepEqual(manifest.executionScope ?? selectIntentCases(config), executionScope, 'Review must bind the original explicit selection');
   const results = await Promise.all(manifest.cases.map(item => json(join(item.evidence, 'result.json'))));
   const review = await json(reviewPath), verdict = validateIntentReview(review, manifest, results, semantic);
   await writeFile(join(evidence, 'manifest-before-review.json'), JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
   await save(join(evidence, 'semantic-review.json'), review);
   manifest.semanticReview = { ...verdict, path: reviewPath, sha256: hash(await readFile(reviewPath)) };
-  manifest.status = manifest.cases.length === 4 && manifest.cases.every(item => item.status === 'passed') && verdict.status === 'passed' ? 'passed' : 'failed';
+  manifest.status = intentRunStatus(executionScope, manifest.cases, verdict.status);
   await save(join(evidence, 'manifest.json'), manifest);
   return manifest;
 }
@@ -693,16 +715,17 @@ export async function runMatrix(options) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2), options = {};
-  if (args.includes('--help')) console.log('Usage: node scripts/verify-pi-notion-model-cache.mjs --fixture ABSOLUTE_JSON --extension INSTALLED_EXTENSION --package-path EXACT_INSTALLED_TGZ --cli INSTALLED_CLI --model magpie/group/flash-free|magpie/group/worker --evidence-root ABSOLUTE_DIRECTORY [--previous-failure ABSOLUTE_FLASH_FREE_MANIFEST (required for worker)] [--case cold-native-command | --resume INITIAL_EVIDENCE --resume-case ORIGINAL_CASE]. --case runs one independent cold case with phase targeted, not the initial eleven-case suite, and cannot be combined with resume options. C/D early feedback: --intent-config ABSOLUTE_FROZEN_JSON [--intent-action doctor|run|review --intent-evidence ABSOLUTE_RUN --intent-review ABSOLUTE_REVIEW_JSON]. Run keeps all four n1 cases and at most three necessary follow-ups; technical success remains review_required until a private hash-bound semantic review. Each case reuses the original graph evidence/cleanup commands. Original case 1 freezes the native-read-only degraded entry; every other case enables read, notion_list and notion_use under agent-cli-ref-20261105. This retained matrix explicitly uses a custom CLI command source and does not certify default bundled SDK transport. Initial phase uses separate empty CLI/Broker roots; resume phase verifies a separately approved owned remote edit without changing user configuration. An actual model availability failure stops that matrix and remains retained; assertions never authorize fallback.');
+  if (args.includes('--help')) console.log('Usage: node scripts/verify-pi-notion-model-cache.mjs --fixture ABSOLUTE_JSON --extension INSTALLED_EXTENSION --package-path EXACT_INSTALLED_TGZ --cli INSTALLED_CLI --model magpie/group/flash-free|magpie/group/worker --evidence-root ABSOLUTE_DIRECTORY [--previous-failure ABSOLUTE_FLASH_FREE_MANIFEST (required for worker)] [--case cold-native-command | --resume INITIAL_EVIDENCE --resume-case ORIGINAL_CASE]. --case runs one independent cold case with phase targeted, not the initial eleven-case suite, and cannot be combined with resume options. C/D early feedback: --intent-config ABSOLUTE_FROZEN_JSON [--intent-case C-introduce] [--intent-action doctor|run|review --intent-evidence ABSOLUTE_RUN --intent-review ABSOLUTE_REVIEW_JSON]. By default run keeps all four n1 cases and at most three necessary follow-ups. Explicit C selection still validates the complete four-case config, keeps its two original conditional follow-ups, and records all D cases as not_run. Technical success remains review_required until a private hash-bound semantic review; a successful selected C remains partial overall. Repeat the same --intent-case for doctor, run and review. Each case reuses the original graph evidence/cleanup commands. Original case 1 freezes the native-read-only degraded entry; every other case enables read, notion_list and notion_use under agent-cli-ref-20261105. This retained matrix explicitly uses a custom CLI command source and does not certify default bundled SDK transport. Initial phase uses separate empty CLI/Broker roots; resume phase verifies a separately approved owned remote edit without changing user configuration. An actual model availability failure stops that matrix and remains retained; assertions never authorize fallback.');
   else {
-    while (args.length) { const key = args.shift(); assert.ok(['--fixture', '--extension', '--package-path', '--cli', '--model', '--evidence-root', '--previous-failure', '--case', '--resume', '--resume-case', '--intent-config', '--intent-action', '--intent-evidence', '--intent-review'].includes(key) && args.length, 'Unknown option or missing value'); assert.ok(options[key.slice(2)] === undefined, 'Repeated option'); options[key.slice(2)] = args.shift(); }
+    while (args.length) { const key = args.shift(); assert.ok(['--fixture', '--extension', '--package-path', '--cli', '--model', '--evidence-root', '--previous-failure', '--case', '--resume', '--resume-case', '--intent-config', '--intent-action', '--intent-evidence', '--intent-review', '--intent-case'].includes(key) && args.length, 'Unknown option or missing value'); assert.ok(options[key.slice(2)] === undefined, 'Repeated option'); options[key.slice(2)] = args.shift(); }
+    if (options['intent-case'] !== undefined) assert.ok(options['intent-config'], '--intent-case requires --intent-config');
     if (options['intent-config']) {
-      assert.ok(Object.keys(options).every(key => ['intent-config', 'intent-action', 'intent-evidence', 'intent-review'].includes(key)), 'Intent and legacy custom-source options cannot be mixed');
+      assert.ok(Object.keys(options).every(key => ['intent-config', 'intent-action', 'intent-evidence', 'intent-review', 'intent-case'].includes(key)), 'Intent and legacy custom-source options cannot be mixed');
       const action = options['intent-action'] ?? 'run'; assert.ok(['doctor', 'run', 'review'].includes(action));
-      const result = action === 'doctor' ? (await intentDoctor(options['intent-config'])).report
-        : action === 'review' ? await reviewIntentCases(options['intent-config'], options['intent-evidence'], options['intent-review'])
-        : await runIntentCases(options['intent-config']);
-      console.log(JSON.stringify({ status: result.status, evidence: result.evidence, doctor: action === 'doctor' ? result : undefined }));
+      const result = action === 'doctor' ? (await intentDoctor(options['intent-config'], options['intent-case'])).report
+        : action === 'review' ? await reviewIntentCases(options['intent-config'], options['intent-evidence'], options['intent-review'], options['intent-case'])
+        : await runIntentCases(options['intent-config'], options['intent-case']);
+      console.log(JSON.stringify({ status: result.status, evidence: result.evidence, executionScope: result.executionScope, doctor: action === 'doctor' ? result : undefined }));
       if (result.status === 'failed') process.exitCode = 1;
     } else {
       const result = await runMatrix(options); console.log(JSON.stringify({ status: result.status, evidence: result.evidence, passed: result.cases.filter(item => item.status === 'passed').length, total: result.cases.length })); if (result.status !== 'passed') process.exitCode = 1;

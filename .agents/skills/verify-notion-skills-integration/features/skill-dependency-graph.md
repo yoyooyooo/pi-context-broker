@@ -85,6 +85,16 @@ node scripts/notion-skill-graph-model.mjs cleanup --evidence /absolute/pi-intent
 node scripts/notion-skill-graph-model.mjs evidence --evidence /absolute/pi-intent-evidence/C-introduce
 ~~~
 
+受明确产品修复影响的 C 可用同一入口显式传 `--intent-case C-introduce`；省略该参数仍执行原四场。选择前仍完整校验原四场配置、全部 prompt hash、来源和总预算，不删除 D 配置来缩小合同。Doctor、manifest 和每场 evidence 都保存 `executionScope`：C 为一首轮加至多两条原有条件续问，最多 3 次 / 900000 ms；另外三场 D 标为 `not_run`，原因是 `not_selected_for_early_feedback`。技术通过仍需原独立语义审阅；C 单场全部通过的总状态为 `partial`，不能成为四场通过或正式 SC21 验收。Doctor、run、review 必须重复同一显式选择，旧四场证据和失败保持原样。
+
+该选择入口的三个红例、原 30 项回归及独立 `4d3ba0b…` 包的 all / C 离线 Doctor 回执在 `AH-617-20261105/sc26-intent-selection-yrqgogaz`。私有来源归属 collector 另用 C6 的 owned git export，内部包别名只指向该导出、外部仅链接已安装依赖；不复制认证或 consumer cache。此处未提交模型或 Notion 请求，不能把选择/身份验证当作新 C 任务通过；真正运行仍需绑定最终候选和新 harness 冻结。
+
+~~~bash
+node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/frozen-cd-config.json --intent-case C-introduce --intent-action doctor
+node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/frozen-cd-config.json --intent-case C-introduce --intent-action run
+node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/frozen-cd-config.json --intent-case C-introduce --intent-action review --intent-evidence /absolute/pi-intent-evidence --intent-review /absolute/independent-review.json
+~~~
+
 对每个已运行 case 分别执行 Evidence→Cleanup→Evidence，保留 raw provider、RPC、source、实际 final、失败和文件 hash。`run` 的技术成功只返回 `review_required`；独立语义评审逐 turn 绑定 final SHA，介绍还绑定准确源正文 SHA 和真实答案片段，检查意思、必要事实和无证据的执行声称。语义评审不能补造缺失的正文交付或动作。模型计划生成与控制器随后执行的 owned exercise 分列，不能声称模型已自主执行。
 
 SDK 取消只沿既有严格断言结算 metadata `list`：被动 native `session_shutdown` 与 SDK 起止同 PID，时间位于同一 monotonic 闭区间，完整 metrics/trace/EOF 均在；该回执不算 ready 目录。缺失账本、null metrics、未知正文归属仍是 observation-incomplete。任何 source write 必须另有 Records retention/adoption 与业务写入归因，不能仅因为 operation 是 use 就放行。

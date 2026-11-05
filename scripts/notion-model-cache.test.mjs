@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { verificationCliEnvironment } from './verification-paths.mjs';
 import { invokeJson } from './verification-command.mjs';
 import { assertModelCase, requestCounts, cacheCaseDirectory, modelAvailabilityFailure, validateIntentConfiguration, assertIntentTurn, assertIntentSource, validateIntentReview } from './verify-pi-notion-model-cache.mjs';
+import * as intentRunner from './verify-pi-notion-model-cache.mjs';
 import { observe } from './notion-integration-model.mjs';
 import { createPiHelpBoundary } from './notion-pi-help.mjs';
 import * as crypto from 'node:crypto';
@@ -39,6 +40,46 @@ test('C/D keeps the approved budget and production default without private disco
     value => { value.cases[2].initial = { text: 'skill://private/SKILL.md', sha256: intentHash('skill://private/SKILL.md') }; },
     value => { value.model = 'magpie/group/worker'; }, value => { value.privateOracle.consumerVisible = true; },
   ]) { const config = intentConfig(); mutate(config); assert.throws(() => validateIntentConfiguration(config)); }
+});
+
+test('intent case selection preserves all frozen cases and budgets while selecting only C explicitly', () => {
+  const config = intentConfig(), original = structuredClone(config), all = intentRunner.selectIntentCases(config);
+  assert.equal(all.mode, 'all'); assert.deepEqual(all.selectedCaseIds, config.cases.map(item => item.id));
+  assert.deepEqual(all.notRunCases, []); assert.equal(all.plannedBudget.maxSubmissions, 7);
+  assert.equal(all.plannedBudget.maxScheduledPromptMs, 2100000);
+  const selected = intentRunner.selectIntentCases(config, 'C-introduce');
+  assert.equal(selected.mode, 'targeted'); assert.deepEqual(selected.selectedCaseIds, ['C-introduce']);
+  assert.deepEqual(selected.notRunCases, config.cases.slice(1).map(item => ({ id: item.id, status: 'not_run', reason: 'not_selected_for_early_feedback' })));
+  assert.deepEqual(selected.plannedBudget, { primarySamplesPerCase: 1, primaryCases: 1, maxFollowupSubmissions: 2, maxSubmissions: 3,
+    timeoutMsPerSubmission: 300000, maxScheduledPromptMs: 900000, automaticRetries: 0, continueAfterFailedPrerequisite: false });
+  assert.deepEqual(config, original, 'Selection must not trim the full contract or rewrite its budgets/prompts');
+  for (const id of ['', 'D-named-introduce', 'unknown', ['C-introduce']]) assert.throws(() => intentRunner.selectIntentCases(config, id));
+  for (const mutate of [value => { value.cases.pop(); }, value => { value.cases[2].initial.text = 'changed unselected D'; },
+    value => { value.budget.automaticRetries = 1; }, value => { value.source.default_view_id = 'private-singleton'; }]) {
+    const invalid = intentConfig(); mutate(invalid); assert.throws(() => intentRunner.selectIntentCases(invalid, 'C-introduce'));
+  }
+});
+
+test('intent case selection never turns a C-only success into full-suite acceptance', () => {
+  const config = intentConfig(), all = intentRunner.selectIntentCases(config), selected = intentRunner.selectIntentCases(config, 'C-introduce');
+  const completed = [{ id: 'C-introduce', status: 'passed' }];
+  assert.equal(intentRunner.intentRunStatus(selected, completed), 'review_required');
+  assert.equal(intentRunner.intentRunStatus(selected, completed, 'passed'), 'partial');
+  assert.equal(intentRunner.intentRunStatus(selected, completed, 'failed'), 'failed');
+  assert.equal(intentRunner.intentRunStatus(selected, [{ id: 'C-introduce', status: 'failed' }], 'passed'), 'failed');
+  assert.equal(intentRunner.intentRunStatus(all, completed, 'passed'), 'failed');
+  const full = config.cases.map(item => ({ id: item.id, status: 'passed' }));
+  assert.equal(intentRunner.intentRunStatus(all, full), 'review_required');
+  assert.equal(intentRunner.intentRunStatus(all, full, 'passed'), 'passed');
+  assert.throws(() => intentRunner.intentRunStatus(selected, [...completed, completed[0]], 'passed'));
+  assert.throws(() => intentRunner.intentRunStatus(selected, [{ id: 'D-chat', status: 'passed' }], 'passed'));
+});
+
+test('intent case selection has an explicit CLI option without entering the legacy custom-source matrix', () => {
+  const result = spawnSync(process.execPath, ['scripts/verify-pi-notion-model-cache.mjs', '--help'], { cwd: path.resolve(import.meta.dirname, '..'), encoding: 'utf8' });
+  assert.equal(result.status, 0); assert.match(result.stdout, /--intent-case C-introduce/);
+  const mixed = spawnSync(process.execPath, ['scripts/verify-pi-notion-model-cache.mjs', '--intent-case', 'C-introduce'], { cwd: path.resolve(import.meta.dirname, '..'), encoding: 'utf8' });
+  assert.notEqual(mixed.status, 0); assert.match(mixed.stderr, /intent-case requires --intent-config/);
 });
 
 const introInput = () => {
