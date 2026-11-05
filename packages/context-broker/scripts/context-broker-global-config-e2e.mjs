@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { isolatedEnv, preserveTemp, runCommand, writeFakeProvider } from "./context-broker-e2e-fixture.mjs";
+import { pathToFileURL } from "node:url";
+import { isolatedEnv, preserveTemp, resolveHost, runCommand, writeFakeProvider } from "./context-broker-e2e-fixture.mjs";
 import { startRpc } from "./context-broker-rpc-harness.mjs";
 
 const repoRoot = resolve(import.meta.dirname, "..");
@@ -151,8 +153,48 @@ async function runHost(host, tempRoot, fakeProviderPath) {
   const sessionFiles = await waitForJsonlFiles(sessionDir, 1);
   assert.equal(sessionFiles.length, 1, `${host}: expected one persistent session file`);
   const sessionText = (await Promise.all(sessionFiles.map((file) => readFile(file, "utf8")))).join("\n");
-  const entries = contextBrokerEntries(parseSessionEntries(sessionText));
-  assert.equal(entries.length, 2, `${host}: expected two context-broker custom messages`);
+  const sessionEntries = parseSessionEntries(sessionText);
+  let entries;
+  if (host === "pi") {
+    const hostIdentity = await resolveHost(host);
+    let packageRoot = dirname(hostIdentity.identity), packageName;
+    while (packageRoot !== dirname(packageRoot)) {
+      try { packageName = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8")).name; }
+      catch (error) { if (error.code !== "ENOENT") throw error; }
+      if (packageName === "@earendil-works/pi-coding-agent") break;
+      packageRoot = dirname(packageRoot);
+    }
+    assert.equal(packageName, "@earendil-works/pi-coding-agent", "Resolve the actual Pi package from its executable");
+    const sessionModule = join(packageRoot, "dist/core/session-manager.js");
+    const { SessionManager } = await import(pathToFileURL(sessionModule).href);
+    const projection = SessionManager.open(sessionFiles[0]).buildSessionProjection();
+    const users = sessionEntries.filter(entry => entry.type === "message" && entry.message.role === "user");
+    const text = content => typeof content === "string" ? content : content.filter(part => part.type === "text").map(part => part.text).join("\n");
+    assert.deepEqual(users.map(entry => text(entry.message.content)), ["load first", "$second-context@local"], "Pi keeps both original user entries");
+    const edits = sessionEntries.filter(entry => entry.type === "context_edit");
+    assert.deepEqual(edits.map(entry => entry.targetId), users.map(entry => entry.id), "Pi persists each deferred body on its actual user entry");
+    const proofs = sessionEntries.filter(entry => entry.type === "custom" && entry.customType === "context-broker");
+    assert.equal(proofs.length, 2, "Pi persists two machine-only delivery proofs");
+    assert.equal(projection.messages.at(-1).role, "assistant", "Pi final native context stays printable");
+    entries = users.map((user, index) => {
+      const projectedUser = projection.entries.find(entry => entry.sourceEntry.id === user.id).messages[0];
+      assert.equal(projectedUser.role, "user", "Pi preserves the role of each projected user");
+      const content = text(projectedUser.content);
+      const digest = createHash("sha256").update(content).digest("hex");
+      const matchingProofs = proofs.filter(entry => entry.data.nativePromptSha256 === digest);
+      assert.equal(matchingProofs.length, 1, "Each actual user projection has one matching delivery proof");
+      assert.equal(matchingProofs[0].data.records.length, 1, "Each user projection retains its original single-record identity");
+      const details = matchingProofs[0].data.records[0];
+      assert.equal(details.name, ["first-context", "second-context"][index]);
+      assert.equal(details.loaded, true);
+      return { content, details };
+    });
+    await writeFile(join(base, "native-projection.json"), JSON.stringify({ hostIdentity, sessionModule,
+      sessionModuleSha256: createHash("sha256").update(await readFile(sessionModule)).digest("hex"), ...projection }, null, 2) + "\n", { mode: 0o600 });
+  } else {
+    entries = contextBrokerEntries(sessionEntries);
+    assert.equal(entries.length, 2, `${host}: expected two context-broker custom messages`);
+  }
   const injectedContent = entries.map((entry) => String(entry.content ?? entry.message?.content ?? "")).join("\n");
   assert.match(injectedContent, /<context-broker-record kind="skill" name="first-context"/, `${host}: missing first injected block`);
   assert.match(injectedContent, /<context-broker-record kind="skill" name="second-context"/, `${host}: missing second injected block`);
@@ -167,6 +209,7 @@ async function runHost(host, tempRoot, fakeProviderPath) {
   assert.equal(contexts.length, 2, `${host}: expected two provider captures`);
   for (const [index, context] of contexts.entries()) {
     const messages = JSON.stringify(context.messages);
+    assert.doesNotMatch(messages, /nativePromptSha256/, `${host}: machine-only delivery proofs must not enter provider input`);
     assert.equal(messages.split("FIRST_CONTEXT_MARKER").length - 1, 1, `${host}: turn ${index + 1} must include first body exactly once`);
     assert.equal(messages.split("SECOND_CONTEXT_MARKER").length - 1, index, `${host}: turn ${index + 1} second body count`);
     assert.doesNotMatch(messages, /SHADOWED_(FIRST|SECOND)_MARKER/, `${host}: a later root must not supply either Skill body`);
