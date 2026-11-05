@@ -6,19 +6,411 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
-import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
+import { resolveHost, runCommand, assertSupportedPiVersion } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { createRequestLedger } from './notion-default-context.mjs';
 import { observe } from './notion-integration-model.mjs';
-import { graphObserverModule } from './notion-skill-graph-model.mjs';
+import { graphObserverModule, sourceObserver, graphSourceAttribution, collectSupplementaryRetainedProof, createGraphFallbackTraps } from './notion-skill-graph-model.mjs';
+import { graphSourceViews, graphSourceAccounting } from './notion-skill-graph-model-evidence.mjs';
+import { createOwnedGraphProject, inspectOwnedGraphProject, retainGeneratedPlan, exerciseGeneratedProcedure } from './notion-skill-graph-project.mjs';
 import { createPiHelpBoundary } from './notion-pi-help.mjs';
 import { installedBrokerIdentity } from './notion-skill-graph-session.mjs';
-import { verificationCliEnvironment } from './verification-paths.mjs';
+import { verificationCliEnvironment, systemTempRoot } from './verification-paths.mjs';
+import { assertCatalogCancellationBoundary } from './notion-sdk-pi.mjs';
 
 const json = async path => JSON.parse(await readFile(path, 'utf8'));
 const rows = async path => { try { return (await readFile(path, 'utf8')).split('\n').filter(Boolean).map(JSON.parse); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } };
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
 const hash = value => createHash('sha256').update(value).digest('hex');
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+export function validateIntentConfiguration(config) {
+  assert.equal(config.version, 1); assert.equal(config.contract, 'agent-cli-ref-20261105');
+  assert.equal(config.phase, 'early-feedback-not-formal-SC21');
+  assert.equal(config.model, 'magpie/group/flash-free'); assert.equal(config.fallback, 'forbidden');
+  assert.equal(config.sampling.codeMode, false);
+  assert.deepEqual(config.sampling.tools, ['read', 'notion_list', 'notion_use']);
+  assert.deepEqual(config.budget, { primarySamplesPerCase: 1, primaryCases: 4, maxFollowupSubmissions: 3,
+    maxSubmissions: 7, timeoutMsPerSubmission: 300000, maxScheduledPromptMs: 2100000,
+    automaticRetries: 0, continueAfterFailedPrerequisite: false });
+  assert.equal(config.source.sourceMode, 'sdk'); assert.equal(config.source.prefetch, false);
+  for (const key of ['command', 'default_view_id', 'profile_id', 'viewId', 'profileId'])
+    assert.equal(config.source[key], undefined, 'The ordinary production default cannot be narrowed for D');
+  assert.equal(config.source.catalogEvidence.count, 74);
+  assert.equal(config.privateOracle.consumerVisible, false); assert.equal(config.privateOracle.noPrivateTargetSeedForD, true);
+  assert.deepEqual(config.cases.map(item => item.id), ['C-introduce', 'D-named-introduce', 'D-natural-task', 'D-chat']);
+  assert.deepEqual(config.cases.map(item => item.entryMode), ['explicit-root', 'discovery-only', 'discovery-only', 'discovery-only']);
+  assert.deepEqual(config.cases.map(item => item.intent), ['introduce', 'introduce', 'produce-and-exercise-artifact', 'chat']);
+  assert.deepEqual(config.cases.map(item => item.followups.length), [2, 1, 0, 0]);
+  for (const item of config.cases) {
+    assert.equal(item.rootRef, undefined, 'Per-case private targets cannot seed discovery');
+    for (const prompt of [item.initial, ...item.followups.map(turn => turn.prompt)]) {
+      assert.equal(typeof prompt.text, 'string'); assert.equal(hash(prompt.text), prompt.sha256);
+      if (item.entryMode === 'discovery-only') assert.ok(!prompt.text.includes('$') && !prompt.text.includes('skill://') && !prompt.text.includes('sr:'), 'D uses its frozen ordinary prompt without reference seeds');
+    }
+  }
+  assert.deepEqual(config.cases[0].followups.map(item => item.intent), ['reuse-introduction', 'explicit-reread']);
+  assert.equal(config.cases[1].followups[0].mode, 'restart-and-resume-same-session');
+  return config;
+}
+
+const exactFile = (file, expected) => file.ownerId === expected.logicalId && file.scope === expected.scope
+  && file.snapshot === expected.snapshot && file.sha256 === expected.sha256 && file.bytes === expected.bytes
+  && (expected.ref === undefined || file.ref === expected.ref);
+
+export function assertIntentTurn({ observation, turnObservation = observation, responses, newResponses = responses,
+  item, intent = item.intent, oracle, catalogRecords, followup = false }) {
+  const providers = turnObservation.filter(event => event.phase === 'provider-request');
+  assert.ok(providers.length, 'Actual verified provider input is required');
+  assert.ok(turnObservation.some(event => event.phase === 'provider-transport-response' && event.status >= 200 && event.status < 300), 'Actual provider HTTP success is required');
+  assert.ok(!turnObservation.some(event => ['observer-error', 'provider-transport-blocked'].includes(event.phase)), 'A failed observer cannot establish delivery');
+  assert.ok(providers.every(event => JSON.stringify([...event.tools].sort()) === JSON.stringify(['notion_list', 'notion_use', 'read'])));
+  assert.ok(!turnObservation.some(event => event.phase === 'tool-call' && event.allowed !== true), 'A blocked or unauthored model call remains a failure');
+  const outputs = turnObservation.filter(event => ['tool-result', 'metadata-result', 'preparation-result', 'project-read-result'].includes(event.phase));
+  assert.ok(outputs.every(event => event.complete === true), 'Every actual selected output must be complete');
+  for (const request of providers) {
+    const keys = request.contents.map(file => JSON.stringify([file.scope, file.ownerId, file.snapshot, file.ref]));
+    assert.equal(new Set(keys).size, keys.length, 'Provider must not receive duplicate complete bodies');
+  }
+  const final = turnObservation.filter(event => event.phase === 'assistant-final').at(-1);
+  assert.ok(final?.success && final.text?.trim(), 'A successful nonempty final is required');
+  if (item.entryMode === 'discovery-only' && !followup) assert.equal(providers[0].contents.length, 0, 'D starts from metadata without preloaded Skill bodies');
+  const views = graphSourceViews(responses);
+  const catalog = turnObservation.filter(event => event.phase === 'catalog');
+  for (const current of catalog) {
+    if (current.state === 'pending') { assert.equal(followup, false, 'An ordinary continuation must expose ready metadata'); continue; }
+    assert.equal(current.state, 'ready');
+    assert.deepEqual(current.skills.map(skill => skill.provenance?.ownerId).sort(), catalogRecords.map(record => record.id).sort(), 'Ready default directory must contain the actual production 74');
+    for (const skill of current.skills) {
+      const record = catalogRecords.find(record => record.id === skill.provenance?.ownerId);
+      assert.equal(skill.provenance.source, 'verified-notion-metadata'); assert.equal(skill.provenance.loaded, false);
+      assert.equal(skill.provenance.scope, oracle.target.scope);
+      const name = skill.name.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
+      assert.equal(name, record.name, 'Display the actual record name, not a command alias');
+    }
+  }
+  const target = { ...oracle.target, sha256: oracle.target.bodySha256, bytes: oracle.target.bodyBytes };
+  const targetReads = observation.filter(event => event.phase === 'tool-result' && event.complete && event.tool === 'read' && exactFile(event, target));
+  const targetUses = views.preparations.filter(row => row.value.purpose === 'use' && row.value.nodes.some(node => node.id === oracle.target.logicalId));
+  if (item.intent === 'chat') {
+    assert.ok(providers.every(request => request.contents.length === 0), 'Chat cannot load Skill or resource bodies');
+    assert.equal(views.entries.length, 0); assert.equal(views.resources.length, 0); assert.equal(views.preparations.length, 0);
+  } else if (item.intent === 'introduce') {
+    assert.ok(targetReads.length, 'Introduction requires an actual native inspect/read of the selected target');
+    assert.ok(providers.some(request => request.contents.some(file => exactFile(file, target))), 'The complete target body must reach the real provider');
+    assert.equal(targetUses.length, 0, 'Introduction must not activate the target workflow');
+    const uses = views.preparations.filter(row => row.value.purpose === 'use');
+    if (item.entryMode === 'discovery-only') assert.equal(uses.length, 0, 'Ordinary introduction inspects rather than activates a workflow');
+    else assert.ok(uses.every(row => row.value.roots.length === 1 && row.value.roots[0].id === oracle.preparations.B.find(body => body.role === 'root').logicalId),
+      'C may activate only its explicitly selected root');
+    if (item.entryMode === 'explicit-root' && !followup) {
+      const expected = oracle.preparations.B;
+      for (const body of expected) assert.equal(providers[0].contents.filter(file => exactFile(file, body)).length, 1, 'C must deliver its root and full Requires before the first provider');
+      assert.ok(views.preparations.some(row => row.value.purpose === 'use' && row.value.roots.some(root => root.id === expected.find(body => body.role === 'root').logicalId)));
+    }
+    if (intent === 'reuse-introduction') assert.equal(newResponses.filter(row => row.operation !== 'list').length, 0, 'Ordinary reuse cannot silently read or prepare bodies again');
+    if (intent === 'explicit-reread') {
+      assert.ok(turnObservation.some(event => event.phase === 'tool-result' && event.tool === 'read' && event.complete && exactFile(event, target)), 'Explicit reread needs its own actual read result');
+    }
+  } else {
+    assert.ok(turnObservation.some(event => event.phase === 'project-read-result' && event.complete && event.path.startsWith('src/')), 'A generated procedure must be grounded in the actual owned project');
+    const uses = views.preparations.filter(row => row.value.purpose === 'use');
+    assert.ok(uses.length, 'The natural task must actually use its chosen Skill');
+    for (const row of uses) for (const node of row.value.nodes.filter(node => node.state === 'prepared')) {
+      const expected = { logicalId: node.id, scope: row.value.scope, snapshot: node.binding.snapshot_id, sha256: node.body_sha256, bytes: node.bytes };
+      assert.ok(providers.some(request => request.contents.some(file => exactFile(file, expected))), 'Every chosen root and Required body must reach an actual provider');
+    }
+  }
+  return { status: 'passed', acceptance: 'technical_only', final: { ...final, sha256: hash(final.text) },
+    provider_requests: providers.length, provider_input_bytes: providers.reduce((sum, item) => sum + item.payloadBytes, 0),
+    tool_calls: turnObservation.filter(event => event.phase === 'tool-call').length,
+    catalog_states: catalog.map(event => event.state), semantic_review: 'required' };
+}
+
+export function assertIntentSource({ observation, responses, sourceLedger, hostLedger, scope, libraryId, catalogRecords,
+  metadataOnly = false, selected = [], retainedSourceProofs = [] }) {
+  const accounting = graphSourceAccounting(sourceLedger, responses, { sourceMode: 'sdk' });
+  const cancelledCatalogs = [];
+  for (const receipt of responses) {
+    assert.equal(receipt.sdk_started, true); assert.equal(receipt.metrics_observed, true);
+    if (receipt.status === 'cancelled') {
+      const start = sourceLedger.find(row => row.phase === 'sdk-start' && row.requestId === receipt.requestId);
+      const end = sourceLedger.find(row => row.phase === 'sdk-end' && row.requestId === receipt.requestId);
+      const boundary = assertCatalogCancellationBoundary({ ...start, observer_pid: start?.pid }, { ...end, observer_pid: end?.pid },
+        sourceLedger.filter(row => row.phase === 'native-session-shutdown').map(row => ({ ...row, type: 'session_shutdown' })));
+      cancelledCatalogs.push({ requestId: receipt.requestId, pid: boundary.pid, monotonic_ns: boundary.monotonic_ns, countedAsReady: false });
+    } else assert.equal(receipt.status, 'completed', 'Source failure remains a failed model observation');
+    const attempts = receipt.metrics.trace.filter(event => event.event === 'attempt');
+    assert.equal(attempts.length, receipt.metrics.total_requests, 'Every actual HTTP attempt must be retained');
+    assert.equal(new Set(attempts.map(event => event.attempt)).size, attempts.length);
+    assert.ok(attempts.every(event => Number.isSafeInteger(event.attempt) && event.attempt >= 1 && event.attempt <= attempts.length));
+  }
+  const attributed = graphSourceAttribution({ observation, responses, sourceLedger, scope, libraryId, selected, retainedSourceProofs });
+  const attempts = attributed.attempts;
+  const directories = graphSourceViews(responses).directories;
+  let defaultCatalog = 'not_observed_before_shutdown';
+  if (catalogRecords) {
+    const shape = records => records.map(record => [record.id, record.name, record.description, record.ref]).sort((a, b) => a[0].localeCompare(b[0]));
+    const matching = directories.find(row => row.value.scope === scope && JSON.stringify(shape(row.value.records)) === JSON.stringify(shape(catalogRecords)));
+    if (matching) defaultCatalog = 'observed_complete_production_default';
+    else assert.ok(metadataOnly && cancelledCatalogs.length > 0 && directories.length === 0, 'Actual default SDK metadata must match the frozen production directory');
+  }
+  assert.equal(attributed.missingMetrics, false);
+  assert.equal(attributed.unattributedBeforeSelection, 0, 'Unknown source-body ownership remains observation-incomplete');
+  assert.equal(attributed.memberBodyReadsBeforeSelection, 0, 'An unselected Member body was read');
+  assert.ok(!attempts.some(event => event.kind === 'write'), 'Observed source writes require separate Records/business attribution; use does not automatically authorize them');
+  const processes = hostLedger.filter(event => event.event === 'spawn');
+  assert.ok(processes.length && processes.every(event => hostLedger.some(end => end.event === 'close' && end.pid === event.pid && end.observedExit)), 'Every actual Pi process must close');
+  const sum = key => attempts.every(item => Number.isSafeInteger(item[key]) && item[key] >= 0)
+    ? attempts.reduce((total, item) => total + item[key], 0) : null;
+  return { ...accounting, httpAttempts: attempts, request_bytes: sum('requestBytes'), response_bytes: sum('responseBytes'),
+    source_writes: attempts.filter(item => item.kind === 'write'), cancelled_catalogs: cancelledCatalogs, default_catalog: defaultCatalog,
+    unselected_body_reads: 0, owned_processes_closed: processes.length };
+}
+
+async function checkedJson(reference) {
+  assert.ok(isAbsolute(reference.path)); const bytes = await readFile(reference.path);
+  assert.equal(hash(bytes), reference.sha256, 'Frozen private/source evidence changed');
+  return JSON.parse(bytes.toString('utf8'));
+}
+
+export async function intentDoctor(path) {
+  assert.ok(isAbsolute(path)); const config = validateIntentConfiguration(await json(path));
+  const oracle = await checkedJson(config.privateOracle);
+  const semantic = await checkedJson(config.privateOracle.semanticReference);
+  const body = await readFile(semantic.sourceBody.path);
+  assert.equal(hash(body), oracle.target.bodySha256); assert.equal(body.length, oracle.target.bodyBytes);
+  assert.equal(semantic.sourceBody.sha256, oracle.target.bodySha256); assert.equal(semantic.sourceBody.bytes, oracle.target.bodyBytes);
+  const catalog = await checkedJson(config.source.catalogEvidence);
+  assert.equal(catalog.scope, config.source.catalogEvidence.scope);
+  assert.equal(catalog.records.length, 74); assert.equal(new Set(catalog.records.map(item => item.id)).size, 74);
+  assert.ok(catalog.records.some(record => record.id === oracle.target.logicalId));
+  const artifacts = await installedBrokerIdentity(config.candidate.extension, config.candidate.packagePath);
+  assert.equal(artifacts.extension.sha256, config.candidate.extensionSha256);
+  assert.equal(artifacts.package.sha256, config.candidate.packageSha256);
+  assert.equal(artifacts.runtimeSha256, config.candidate.runtimeSha256);
+  for (const file of config.harness) assert.equal(hash(await readFile(file.path)), file.sha256, 'Frozen intent harness changed');
+  const host = await resolveHost(config.pi.path), version = (await runCommand(config.pi.path, ['--version'], { cwd: root, env: process.env, timeoutMs: 10000 })).stdout.trim();
+  assertSupportedPiVersion(version); assert.equal(version, config.pi.version);
+  assert.equal(hash(await readFile(host.identity)), config.pi.executableSha256);
+  assert.ok(Array.isArray(config.cliCommand) && config.cliCommand.length === 2 && config.cliCommand.every(isAbsolute));
+  assert.ok(isAbsolute(config.evidenceRoot)); await mkdir(config.evidenceRoot, { recursive: true });
+  return { config, oracle, semantic, catalog, artifacts, host, report: { status: 'ready', model: config.model,
+    budget: config.budget, sourceMode: 'sdk', productionDefaultCount: 74, pi: { ...host, version },
+    artifacts, config: { path, sha256: hash(await readFile(path)) }, privateOracleSha256: config.privateOracle.sha256,
+    semanticReferenceSha256: config.privateOracle.semanticReference.sha256,
+    boundary: 'Read-only installed identity, private source and frozen budget inspection; no Notion or model request' } };
+}
+
+async function collectIntentResponses(directory) {
+  return Promise.all((await readdir(directory)).filter(name => name.endsWith('.json')).map(name => json(join(directory, name))));
+}
+
+async function retainedFileInventory(directory, prefix = '') {
+  const result = [];
+  for (const item of await readdir(join(directory, prefix), { withFileTypes: true })) {
+    const path = join(prefix, item.name);
+    if (item.isDirectory()) result.push(...await retainedFileInventory(directory, path));
+    else result.push(path);
+  }
+  return result;
+}
+
+export async function runIntentCases(configPath) {
+  const { config, oracle, semantic, catalog, artifacts, host, report: doctor } = await intentDoctor(configPath);
+  const evidence = await mkdtemp(join(await realpath(config.evidenceRoot), 'pi-intent-evidence-'));
+  const manifest = { version: 1, kind: 'pi-model-intent-early-feedback', status: 'running', evidence,
+    model: config.model, budget: config.budget, doctor, cases: [], submissions: 0, automaticRetries: 0,
+    semanticOracle: { sourceBodySha256: semantic.sourceBody.sha256, reference: config.privateOracle.semanticReference },
+    not_claimed: ['Formal SC21 matrix', 'Cost acceptance', 'Daily installation switch', 'Autonomous execution of the generated procedure'] };
+  await save(join(evidence, 'config.json'), config); await save(join(evidence, 'manifest.json'), manifest);
+  console.log(JSON.stringify({ evidence, status: 'running', primaryCases: 4, maxSubmissions: 7 }));
+  for (const item of config.cases) {
+    const output = join(evidence, item.id); await mkdir(output);
+    const scratch = await mkdtemp(join(await systemTempRoot(), 'broker-intent-model-'));
+    const control = join(scratch, 'control'), cwd = join(scratch, 'workspace'), cliRoot = join(scratch, 'cli');
+    const cache = join(scratch, 'broker'), sessions = join(scratch, 'sessions'), responsesPath = join(output, 'source-responses');
+    const payloads = join(output, 'provider-requests'), ledger = join(output, 'source-processes.jsonl');
+    const owned = join(output, 'owned-processes.jsonl'), observationPath = join(output, 'observer.jsonl');
+    await Promise.all([control, cliRoot, cache, sessions, responsesPath, payloads].map(path => mkdir(path, { recursive: true })));
+    assert.ok((await Promise.all([cliRoot, cache, sessions].map(path => readdir(path)))).every(items => items.length === 0));
+    const oracleRoot = await realpath(dirname(config.privateOracle.path));
+    assert.ok(!scratch.startsWith(oracleRoot + '/') && !oracleRoot.startsWith(scratch + '/'), 'Private oracle cannot warm a consumer root');
+    const project = await createOwnedGraphProject(cwd); assert.equal(project.sha256, config.project.sha256);
+    await Promise.all([ledger, owned, observationPath].map(path => writeFile(path, '', { mode: 0o600 })));
+    const source = { type: 'notion', id: 'notion', namespace: 'notion', database: config.source.database,
+      prefetch: false, cacheDir: cache, requestTimeoutMs: 60000 };
+    const brokerConfig = join(control, 'broker.json'); await save(brokerConfig, { skillRoots: [], extraSkillRoots: [], sources: [source] });
+    await save(join(output, 'source-config.json'), await json(brokerConfig));
+    const hook = await sourceObserver(control, { ledger, responses: responsesPath, outputRoot: cache,
+      cliEntries: [config.cliCommand[1], join(artifacts.packageRoot, 'dist/ntn-skills.mjs')] });
+    const traps = await createGraphFallbackTraps(control, output);
+    const env = { ...verificationCliEnvironment(cliRoot), ...traps.environment, NODE_OPTIONS: '--import=' + hook,
+      CONTEXT_BROKER_CONFIG: brokerConfig, CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_LOG_FILE: join(output, 'decisions.jsonl'),
+      BROKER_E2E_PROCESS_LEDGER: owned };
+    const result = { version: 1, kind: 'pi-model-intent-case', sourceMode: 'sdk', toolContract: config.contract,
+      gate: item.id, model: config.model, evidence: await realpath(output), scratch, project, status: 'running',
+      acceptance: 'technical_only_until_semantic_review', entryMode: item.entryMode, turns: [], files: [],
+      prelaunch: { cli_entries: 0, broker_entries: 0, session_entries: 0, oracle_consumer_disjoint: true },
+      sourceCommandConfigured: false, semanticReview: { status: 'pending', referenceSha256: config.privateOracle.semanticReference.sha256 } };
+    const owner = { evidence: result.evidence, purpose: 'native-graph-model', kind: 'pi-model-intent-case' };
+    await save(join(scratch, 'ownership.json'), owner); await save(join(output, 'ownership.json'), owner);
+    await save(join(output, 'project.json'), project); await save(join(output, 'result.json'), result);
+    manifest.cases.push({ id: item.id, evidence: result.evidence, status: 'running' });
+    let rpc, processIndex = 0, session, availabilityFailure = false;
+    const stop = async () => {
+      if (!rpc) return;
+      const current = rpc; rpc = undefined;
+      try { await current.stop(); }
+      finally { await save(join(output, 'rpc-' + processIndex + '.json'), current.frames); await save(join(output, 'lifecycle-' + processIndex + '.json'), current.lifecycle); }
+    };
+    const boot = async () => {
+      await stop(); processIndex++;
+      const sequenceOffset = Math.max(0, ...(await rows(observationPath)).map(event => event.sequence ?? 0));
+      const observer = join(control, 'observer-' + processIndex + '.mjs'), module = join(control, 'graph-observer-' + processIndex + '.mjs');
+      const settings = { sourceMode: 'sdk', entryMode: item.entryMode, ...(item.entryMode === 'explicit-root' ? { rootRef: oracle.roots.B.ref } : {}),
+        model: config.model, prompt: item.initial.text, cache, cwd, responses: responsesPath, payloads, output: observationPath,
+        project, piExecutable: host.identity, sequenceOffset };
+      await writeFile(module, graphObserverModule(settings, pathToFileURL(join(dirname(config.candidate.extension), 'native-reference.ts')).href), { mode: 0o600 });
+      await writeFile(observer, "import {appendFileSync} from 'node:fs';import {createHash} from 'node:crypto';export default api=>{api.on('input',event=>appendFileSync(" + JSON.stringify(observationPath)
+        + ",JSON.stringify({phase:'native-input',at:new Date().toISOString(),textSha256:createHash('sha256').update(event.text??'').digest('hex')})+'\\n'));"
+        + "api.on('session_shutdown',()=>appendFileSync(" + JSON.stringify(ledger)
+        + ",JSON.stringify({phase:'native-session-shutdown',pid:process.pid,monotonic_ns:process.hrtime.bigint().toString(),at:new Date().toISOString()})+'\\n'));};\n", { mode: 0o600 });
+      const args = ['--no-extensions', '--no-skills', '--no-mcp', '--no-context-files', '--no-prompt-templates',
+        '--session-dir', sessions, '--tools', 'read,notion_list,notion_use', '-e', observer, '-e', config.candidate.extension,
+        '-e', module, '--model', config.model, ...(session ? ['--session', session] : [])];
+      await save(join(output, 'launch-' + processIndex + '.json'), { host, args, cwd, source, observerSha256: hash(await readFile(observer)), graphObserverSha256: hash(await readFile(module)), sourceHookSha256: hash(await readFile(hook)) });
+      rpc = await startRpc({ host: config.pi.path, cwd, env, args, timeoutMs: 300000 });
+      const state = await rpc.command('get_state'); await save(join(output, 'state-' + processIndex + '.json'), state);
+    };
+    try {
+      await boot();
+      const turns = [{ intent: item.intent, prompt: item.initial, mode: 'initial' }, ...item.followups];
+      for (const [index, turn] of turns.entries()) {
+        if (turn.mode === 'restart-and-resume-same-session') await boot();
+        const before = (await rows(observationPath)).length, priorResponses = await collectIntentResponses(responsesPath);
+        const beforeIds = new Set(priorResponses.map(row => row.requestId)), began = performance.now(), frameStart = rpc.frames.length;
+        const receipt = { index, intent: turn.intent, prompt: turn.prompt, mode: turn.mode, status: 'running', processIndex };
+        result.turns.push(receipt); manifest.submissions++;
+        assert.ok(manifest.submissions <= 7, 'Frozen maximum submissions exceeded');
+        await save(join(evidence, 'manifest.json'), manifest); await save(join(output, 'result.json'), result);
+        try {
+          await rpc.prompt(turn.prompt.text);
+          const observation = await rows(observationPath), turnObservation = observation.slice(before);
+          assert.ok(turnObservation.some(event => event.phase === 'native-input' && event.textSha256 === turn.prompt.sha256), 'Actual native input must match the frozen prompt');
+          const responses = await collectIntentResponses(responsesPath);
+          Object.assign(receipt, assertIntentTurn({ observation, turnObservation, responses,
+            newResponses: responses.filter(row => !beforeIds.has(row.requestId)), item, intent: turn.intent,
+            oracle, catalogRecords: catalog.records, followup: index > 0 }));
+          const state = await rpc.command('get_state'); session = state.sessionFile;
+          assert.ok(session, 'An actual session file is required for continuation');
+          receipt.session = session;
+        } catch (error) {
+          receipt.status = 'failed'; receipt.error = { code: error.code ?? 'INTENT_TURN_FAILED', message: error.message };
+        }
+        receipt.elapsedMs = performance.now() - began;
+        receipt.providerUsage = rpc.frames.slice(frameStart).filter(frame => frame.type === 'message_end' && frame.message?.role === 'assistant').map(frame => frame.message.usage ?? null);
+        const turnEvents = (await rows(observationPath)).slice(before);
+        receipt.availabilityFailure = modelAvailabilityFailure(turnEvents.map(event => ({ ...event,
+          phase: event.phase === 'provider-transport-response' ? 'response' : event.phase === 'assistant-final' ? 'assistant_final'
+            : event.phase === 'tool-call' ? 'tool_call' : event.phase })));
+        availabilityFailure ||= receipt.availabilityFailure;
+        await save(join(output, 'turn-' + index + '.json'), receipt);
+        if (receipt.status !== 'passed') break;
+      }
+    } catch (error) { result.error = { code: error.code ?? 'INTENT_HOST_FAILED', message: error.message }; }
+    finally { try { await stop(); } catch (error) { result.error ??= { code: 'HOST_FINALITY_FAILED', message: error.message }; } }
+    const observation = await rows(observationPath), responses = await collectIntentResponses(responsesPath), sourceLedger = await rows(ledger), hostLedger = await rows(owned);
+    try {
+      const selected = item.entryMode === 'explicit-root' ? oracle.preparations.B.map(row => ({ id: row.logicalId })) : [];
+      const common = { observation, responses, sourceLedger, hostLedger, scope: oracle.target.scope,
+        libraryId: oracle.target.logicalId.split(':')[1], catalogRecords: catalog.records, metadataOnly: item.intent === 'chat', selected };
+      let attribution = graphSourceAttribution(common);
+      await save(join(output, 'source-attribution-before-proof.json'), attribution);
+      const supplementary = await collectSupplementaryRetainedProof({ config: { gate: item.id, retainedSourceProofRepo: config.retainedSourceProofRepo },
+        evidence: output, trace: { httpAttempts: attribution.attempts }, responses, ownershipResponses: responses });
+      result.retainedSourceObservation = supplementary.receipt;
+      result.sourceAccounting = assertIntentSource({ ...common, retainedSourceProofs: supplementary.proof ? [supplementary.proof] : [] });
+      assert.equal((await rows(traps.ledger)).length, 0, 'Legacy fallback was invoked');
+      await inspectOwnedGraphProject(cwd);
+      assert.ok(!result.error && result.turns.length === 1 + item.followups.length && result.turns.every(turn => turn.status === 'passed'));
+      result.status = 'passed';
+      if (item.intent === 'produce-and-exercise-artifact') {
+        result.generatedPlan = await retainGeneratedPlan({ evidence: output, final: result.turns[0].final, prompt: item.initial, project });
+        assert.equal(result.generatedPlan.artifactStatus, 'complete-skill-files-retained', 'Plan-only is not a generated verification Skill');
+        result.files = await retainedFileInventory(output); await save(join(output, 'result.json'), result);
+        const contents = await Promise.all(result.generatedPlan.files.map(file => readFile(join(output, file.evidencePath), 'utf8')));
+        const candidates = [['npm', 'test'], ['npm', 'run', 'test'], ['node', '--test'], ['node', '--test', 'test/tickets.test.mjs']];
+        const words = contents.flatMap(content => [...content.matchAll(/`([^`\n]+)`/g)].map(match => match[1]).concat(content.split('\n').map(line => line.trim().replace(/^\$ /, ''))));
+        const command = candidates.find(command => words.includes(command.join(' ')));
+        assert.ok(command, 'A permitted exact command must occur in a retained complete generated file');
+        result.generatedProcedure = await exerciseGeneratedProcedure(await realpath(output), command);
+        assert.equal(result.generatedProcedure.status, 'passed');
+      }
+    } catch (error) {
+      result.status = 'failed'; result.error = { code: error.code ?? 'INTENT_EVIDENCE_FAILED', message: error.message };
+    }
+    result.semanticReview.status = result.status === 'passed' ? 'pending' : 'blocked_by_technical_failure';
+    result.finishedAt = new Date().toISOString();
+    result.files = [...new Set([...(await retainedFileInventory(output)), 'result.json'])];
+    await save(join(output, 'result.json'), result);
+    Object.assign(manifest.cases.at(-1), { status: result.status, semanticReview: result.semanticReview.status, turns: result.turns.length, error: result.error });
+    await save(join(evidence, 'manifest.json'), manifest);
+    if (availabilityFailure) { manifest.availabilityFailure = true; break; }
+  }
+  manifest.status = manifest.cases.length === 4 && manifest.cases.every(item => item.status === 'passed') ? 'review_required' : 'failed';
+  await save(join(evidence, 'manifest.json'), manifest);
+  return manifest;
+}
+
+export function validateIntentReview(review, manifest, results, semantic) {
+  assert.equal(review.version, 1); assert.equal(review.evidence, manifest.evidence);
+  assert.equal(review.configSha256, manifest.doctor.config.sha256);
+  assert.equal(review.semanticReferenceSha256, manifest.semanticOracle.reference.sha256);
+  assert.ok(typeof review.reviewer === 'string' && review.reviewer.trim());
+  const expected = results.flatMap(result => result.turns.filter(turn => turn.status === 'passed').map(turn => ({ result, turn })));
+  assert.equal(review.turns.length, expected.length, 'Review every technically completed actual final');
+  const keys = new Set();
+  for (const row of review.turns) {
+    const key = row.caseId + '/' + row.index; assert.ok(!keys.has(key)); keys.add(key);
+    const value = expected.find(value => value.result.gate === row.caseId && value.turn.index === row.index);
+    assert.ok(value, 'Review cannot invent a successful model submission');
+    assert.equal(row.finalSha256, value.turn.final.sha256);
+    assert.equal(hash(value.turn.final.text), row.finalSha256);
+    assert.ok(['passed', 'failed'].includes(row.verdict)); assert.ok(typeof row.reason === 'string' && row.reason.trim());
+    for (const field of ['intentRespected', 'sourceSupported', 'noUnsupportedExecutionClaims']) assert.equal(typeof row[field], 'boolean');
+    assert.ok(Array.isArray(row.contradictions) && Array.isArray(row.omittedNecessaryFacts));
+    if (row.caseId === 'C-introduce' || row.caseId === 'D-named-introduce') {
+      assert.equal(row.sourceBodySha256, semantic.sourceBody.sha256);
+      assert.ok(Array.isArray(row.supportingSpans) && row.supportingSpans.length > 0);
+      for (const span of row.supportingSpans) {
+        assert.ok(semantic.facts.some(fact => fact.id === span.fact));
+        assert.ok(Number.isSafeInteger(span.start) && Number.isSafeInteger(span.end) && span.start >= 0 && span.end > span.start);
+        assert.equal(value.turn.final.text.slice(span.start, span.end), span.text, 'Semantic review must point to the actual answer, not a rewritten explanation');
+      }
+    }
+    if (row.verdict === 'passed') {
+      assert.equal(row.intentRespected, true); assert.equal(row.sourceSupported, true); assert.equal(row.noUnsupportedExecutionClaims, true);
+      assert.equal(row.contradictions.length, 0); assert.equal(row.omittedNecessaryFacts.length, 0);
+    }
+  }
+  return { status: review.turns.every(row => row.verdict === 'passed') ? 'passed' : 'failed', reviewedTurns: review.turns.length,
+    boundary: 'Explicit independent semantic assessment of hash-bound real answers; no regex substitutes for meaning, and review cannot manufacture source delivery or actions' };
+}
+
+export async function reviewIntentCases(configPath, evidence, reviewPath) {
+  assert.ok(isAbsolute(evidence) && isAbsolute(reviewPath));
+  const { semantic, report: doctor } = await intentDoctor(configPath);
+  const manifest = await json(join(evidence, 'manifest.json'));
+  assert.equal(manifest.doctor.config.sha256, doctor.config.sha256);
+  const results = await Promise.all(manifest.cases.map(item => json(join(item.evidence, 'result.json'))));
+  const review = await json(reviewPath), verdict = validateIntentReview(review, manifest, results, semantic);
+  await writeFile(join(evidence, 'manifest-before-review.json'), JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
+  await save(join(evidence, 'semantic-review.json'), review);
+  manifest.semanticReview = { ...verdict, path: reviewPath, sha256: hash(await readFile(reviewPath)) };
+  manifest.status = manifest.cases.length === 4 && manifest.cases.every(item => item.status === 'passed') && verdict.status === 'passed' ? 'passed' : 'failed';
+  await save(join(evidence, 'manifest.json'), manifest);
+  return manifest;
+}
 
 export function requestCounts(events) {
   const starts = events.filter(row => row.phase === 'started');
@@ -301,9 +693,19 @@ export async function runMatrix(options) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2), options = {};
-  if (args.includes('--help')) console.log('Usage: node scripts/verify-pi-notion-model-cache.mjs --fixture ABSOLUTE_JSON --extension INSTALLED_EXTENSION --package-path EXACT_INSTALLED_TGZ --cli INSTALLED_CLI --model magpie/group/flash-free|magpie/group/worker --evidence-root ABSOLUTE_DIRECTORY [--previous-failure ABSOLUTE_FLASH_FREE_MANIFEST (required for worker)] [--case cold-native-command | --resume INITIAL_EVIDENCE --resume-case ORIGINAL_CASE]. --case runs one independent cold case with phase targeted, not the initial eleven-case suite, and cannot be combined with resume options. Original case 1 freezes the native-read-only degraded entry; every other case enables read, notion_list and notion_use under agent-cli-ref-20261105. This retained matrix explicitly uses a custom CLI command source and does not certify default bundled SDK transport. Initial phase uses separate empty CLI/Broker roots; resume phase verifies a separately approved owned remote edit without changing user configuration. An actual model availability failure stops that matrix and remains retained; assertions never authorize fallback.');
+  if (args.includes('--help')) console.log('Usage: node scripts/verify-pi-notion-model-cache.mjs --fixture ABSOLUTE_JSON --extension INSTALLED_EXTENSION --package-path EXACT_INSTALLED_TGZ --cli INSTALLED_CLI --model magpie/group/flash-free|magpie/group/worker --evidence-root ABSOLUTE_DIRECTORY [--previous-failure ABSOLUTE_FLASH_FREE_MANIFEST (required for worker)] [--case cold-native-command | --resume INITIAL_EVIDENCE --resume-case ORIGINAL_CASE]. --case runs one independent cold case with phase targeted, not the initial eleven-case suite, and cannot be combined with resume options. C/D early feedback: --intent-config ABSOLUTE_FROZEN_JSON [--intent-action doctor|run|review --intent-evidence ABSOLUTE_RUN --intent-review ABSOLUTE_REVIEW_JSON]. Run keeps all four n1 cases and at most three necessary follow-ups; technical success remains review_required until a private hash-bound semantic review. Each case reuses the original graph evidence/cleanup commands. Original case 1 freezes the native-read-only degraded entry; every other case enables read, notion_list and notion_use under agent-cli-ref-20261105. This retained matrix explicitly uses a custom CLI command source and does not certify default bundled SDK transport. Initial phase uses separate empty CLI/Broker roots; resume phase verifies a separately approved owned remote edit without changing user configuration. An actual model availability failure stops that matrix and remains retained; assertions never authorize fallback.');
   else {
-    while (args.length) { const key = args.shift(); assert.ok(['--fixture', '--extension', '--package-path', '--cli', '--model', '--evidence-root', '--previous-failure', '--case', '--resume', '--resume-case'].includes(key) && args.length, 'Unknown option or missing value'); assert.ok(options[key.slice(2)] === undefined, 'Repeated option'); options[key.slice(2)] = args.shift(); }
-    const result = await runMatrix(options); console.log(JSON.stringify({ status: result.status, evidence: result.evidence, passed: result.cases.filter(item => item.status === 'passed').length, total: result.cases.length })); if (result.status !== 'passed') process.exitCode = 1;
+    while (args.length) { const key = args.shift(); assert.ok(['--fixture', '--extension', '--package-path', '--cli', '--model', '--evidence-root', '--previous-failure', '--case', '--resume', '--resume-case', '--intent-config', '--intent-action', '--intent-evidence', '--intent-review'].includes(key) && args.length, 'Unknown option or missing value'); assert.ok(options[key.slice(2)] === undefined, 'Repeated option'); options[key.slice(2)] = args.shift(); }
+    if (options['intent-config']) {
+      assert.ok(Object.keys(options).every(key => ['intent-config', 'intent-action', 'intent-evidence', 'intent-review'].includes(key)), 'Intent and legacy custom-source options cannot be mixed');
+      const action = options['intent-action'] ?? 'run'; assert.ok(['doctor', 'run', 'review'].includes(action));
+      const result = action === 'doctor' ? (await intentDoctor(options['intent-config'])).report
+        : action === 'review' ? await reviewIntentCases(options['intent-config'], options['intent-evidence'], options['intent-review'])
+        : await runIntentCases(options['intent-config']);
+      console.log(JSON.stringify({ status: result.status, evidence: result.evidence, doctor: action === 'doctor' ? result : undefined }));
+      if (result.status === 'failed') process.exitCode = 1;
+    } else {
+      const result = await runMatrix(options); console.log(JSON.stringify({ status: result.status, evidence: result.evidence, passed: result.cases.filter(item => item.status === 'passed').length, total: result.cases.length })); if (result.status !== 'passed') process.exitCode = 1;
+    }
   }
 }

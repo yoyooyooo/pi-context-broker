@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { verificationCliEnvironment } from './verification-paths.mjs';
 import { invokeJson } from './verification-command.mjs';
-import { assertModelCase, requestCounts, cacheCaseDirectory, modelAvailabilityFailure } from './verify-pi-notion-model-cache.mjs';
+import { assertModelCase, requestCounts, cacheCaseDirectory, modelAvailabilityFailure, validateIntentConfiguration, assertIntentTurn, assertIntentSource, validateIntentReview } from './verify-pi-notion-model-cache.mjs';
 import { observe } from './notion-integration-model.mjs';
 import { createPiHelpBoundary } from './notion-pi-help.mjs';
 import * as crypto from 'node:crypto';
@@ -14,6 +14,117 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 
 const expected = ['WORKFLOW-A', 'CHECKLIST-A', 'HOLD', 'CODE-1'];
+const intentHash = text => crypto.createHash('sha256').update(text).digest('hex');
+const intentConfig = () => {
+  const prompt = text => ({ text, sha256: intentHash(text) });
+  return { version: 1, contract: 'agent-cli-ref-20261105', phase: 'early-feedback-not-formal-SC21', model: 'magpie/group/flash-free', fallback: 'forbidden',
+    sampling: { codeMode: false, tools: ['read', 'notion_list', 'notion_use'] },
+    budget: { primarySamplesPerCase: 1, primaryCases: 4, maxFollowupSubmissions: 3, maxSubmissions: 7, timeoutMsPerSubmission: 300000,
+      maxScheduledPromptMs: 2100000, automaticRetries: 0, continueAfterFailedPrerequisite: false },
+    source: { sourceMode: 'sdk', prefetch: false, catalogEvidence: { count: 74 } }, privateOracle: { consumerVisible: false, noPrivateTargetSeedForD: true },
+    cases: [
+      { id: 'C-introduce', entryMode: 'explicit-root', intent: 'introduce', initial: prompt('$public 介绍'), followups: [{ intent: 'reuse-introduction', prompt: prompt('继续') }, { intent: 'explicit-reread', prompt: prompt('再次读取') }] },
+      { id: 'D-named-introduce', entryMode: 'discovery-only', intent: 'introduce', initial: prompt('介绍能力'), followups: [{ mode: 'restart-and-resume-same-session', intent: 'reuse-introduction', prompt: prompt('继续说明') }] },
+      { id: 'D-natural-task', entryMode: 'discovery-only', intent: 'produce-and-exercise-artifact', initial: prompt('建立验收规程'), followups: [] },
+      { id: 'D-chat', entryMode: 'discovery-only', intent: 'chat', initial: prompt('你好'), followups: [] },
+    ] };
+};
+
+test('C/D keeps the approved budget and production default without private discovery seeds', () => {
+  assert.equal(validateIntentConfiguration(intentConfig()).model, 'magpie/group/flash-free');
+  for (const mutate of [
+    value => { value.budget.automaticRetries = 1; }, value => { value.budget.timeoutMsPerSubmission = 600000; },
+    value => { value.source.default_view_id = 'root-only'; }, value => { value.source.command = ['old-cli']; },
+    value => { value.cases[1].rootRef = 'skill://private/SKILL.md'; },
+    value => { value.cases[2].initial = { text: 'skill://private/SKILL.md', sha256: intentHash('skill://private/SKILL.md') }; },
+    value => { value.model = 'magpie/group/worker'; }, value => { value.privateOracle.consumerVisible = true; },
+  ]) { const config = intentConfig(); mutate(config); assert.throws(() => validateIntentConfiguration(config)); }
+});
+
+const introInput = () => {
+  const target = { logicalId: 'target', scope: 'scope', snapshot: 's_pin', bodySha256: 'b'.repeat(64), bodyBytes: 100, ref: 'skill://target/SKILL.md?snapshot=s_pin' };
+  const file = { ...target, ownerId: target.logicalId, role: 'entrypoint', sha256: target.bodySha256, bytes: target.bodyBytes };
+  const provider = contents => ({ phase: 'provider-request', tools: ['read', 'notion_list', 'notion_use'], payloadBytes: 500, contents });
+  return { item: intentConfig().cases[1], oracle: { target }, catalogRecords: [{ id: 'target', name: 'Target' }], responses: [],
+    observation: [provider([]), { phase: 'provider-transport-response', status: 200 },
+      { phase: 'tool-result', tool: 'read', complete: true, ...file }, provider([file]),
+      { phase: 'assistant-final', success: true, text: 'Creates project verification procedures.' }] };
+};
+
+test('introduction requires complete inspected source and never target activation or hidden preload', () => {
+  assert.equal(assertIntentTurn(introInput()).semantic_review, 'required');
+  for (const mutate of [
+    value => { value.observation[2].snapshot = 's_other'; },
+    value => { value.observation[3].contents[0].bytes = 99; },
+    value => { value.observation[0].contents = value.observation[3].contents; },
+    value => { value.observation[3].contents.push({ ...value.observation[3].contents[0] }); },
+    value => { value.responses = [{ command: 'prepare', code: 0, response: { status: 'ready', purpose: 'use', nodes: [{ id: 'target' }] } }]; },
+    value => { value.observation.push({ phase: 'tool-call', allowed: false }); },
+  ]) { const input = introInput(); mutate(input); assert.throws(() => assertIntentTurn(input)); }
+});
+
+test('ordinary reuse, explicit reread and chat keep different source obligations', () => {
+  const reused = introInput(); reused.followup = true; reused.intent = 'reuse-introduction'; reused.newResponses = [{ operation: 'consume' }];
+  assert.throws(() => assertIntentTurn(reused), /silently read/);
+  const reread = introInput(); reread.followup = true; reread.intent = 'explicit-reread'; reread.newResponses = [];
+  assert.equal(assertIntentTurn(reread).status, 'passed');
+  reread.turnObservation = reread.observation.filter(event => event.phase !== 'tool-result');
+  assert.throws(() => assertIntentTurn(reread), /own actual read result/);
+  const chat = introInput(); chat.item = intentConfig().cases[3];
+  assert.throws(() => assertIntentTurn(chat), /Chat cannot/);
+  chat.observation = [chat.observation[0], chat.observation[1], chat.observation.at(-1)];
+  assert.equal(assertIntentTurn(chat).status, 'passed');
+  const pending = introInput(); pending.observation.unshift({ phase: 'catalog', state: 'pending' });
+  assert.equal(assertIntentTurn(pending).status, 'passed');
+  pending.followup = true; assert.throws(() => assertIntentTurn(pending), /continuation must expose ready/);
+});
+
+const intentSource = () => ({
+  observation: [], responses: [{ transport: 'sdk', operation: 'list', requestId: 'one', status: 'completed',
+    sdk_started: true, metrics_observed: true, resultObserved: true, value: { records: [], scope: 'scope' }, metrics: { complete: true, total_requests: 0, trace: [] } }],
+  sourceLedger: [{ phase: 'sdk-observer-start', pid: 42 }, { phase: 'sdk-start', requestId: 'one', operation: 'list', pid: 42, monotonic_ns: '10' },
+    { phase: 'sdk-end', requestId: 'one', operation: 'list', pid: 42, monotonic_ns: '30' }, { phase: 'sdk-observer-end', pid: 42, pending: 0 }],
+  hostLedger: [{ event: 'spawn', pid: 42 }, { event: 'close', pid: 42, observedExit: true }], scope: 'scope',
+});
+
+test('intent source ledger rejects missing costs, hidden writes, unowned bodies and unfinished processes', () => {
+  assert.equal(assertIntentSource(intentSource()).actual_http_attempts, 0);
+  for (const mutate of [
+    value => { value.responses[0].metrics = null; },
+    value => { value.responses[0].metrics.total_requests = 1; },
+    value => { value.hostLedger.pop(); },
+    value => { value.responses[0].metrics = { complete: true, total_requests: 1, trace: [{ event: 'attempt', attempt: 1, request_kind: 'notion_write', target: null }] }; },
+    value => { value.responses[0].metrics = { complete: true, total_requests: 1, trace: [{ event: 'attempt', attempt: 1, request_kind: 'notion_body', target: null }] }; },
+  ]) { const value = intentSource(); mutate(value); assert.throws(() => assertIntentSource(value)); }
+});
+
+test('ordinary shutdown may cancel metadata only with the same exact native boundary and complete costs', () => {
+  const value = intentSource(); value.responses[0].status = 'cancelled'; value.responses[0].resultObserved = false; value.responses[0].value = null;
+  value.sourceLedger.splice(2, 0, { phase: 'native-session-shutdown', pid: 42, monotonic_ns: '20' });
+  assert.equal(assertIntentSource(value).cancelled_catalogs[0].countedAsReady, false);
+  for (const mutate of [
+    item => { item.sourceLedger[2].pid = 99; }, item => { item.sourceLedger[2].monotonic_ns = '31'; },
+    item => { item.sourceLedger[2].phase = 'guessed-shutdown'; }, item => { item.responses[0].metrics.complete = false; },
+    item => { item.responses[0].operation = item.sourceLedger[1].operation = item.sourceLedger[3].operation = 'consume'; },
+  ]) { const candidate = structuredClone(value); mutate(candidate); assert.throws(() => assertIntentSource(candidate)); }
+});
+
+test('semantic acceptance binds real answer spans and cannot replace missing action evidence', () => {
+  const final = 'Creates project verification procedures.', sha = intentHash(final);
+  const manifest = { evidence: '/owned/evidence', doctor: { config: { sha256: 'config' } }, semanticOracle: { reference: { sha256: 'reference' } } };
+  const results = [{ gate: 'D-named-introduce', turns: [{ index: 0, status: 'passed', final: { text: final, sha256: sha } }] }];
+  const semantic = { sourceBody: { sha256: 'source' }, facts: [{ id: 'purpose' }] };
+  const review = { version: 1, evidence: '/owned/evidence', configSha256: 'config', semanticReferenceSha256: 'reference', reviewer: 'independent reviewer',
+    turns: [{ caseId: 'D-named-introduce', index: 0, finalSha256: sha, sourceBodySha256: 'source', verdict: 'passed', reason: 'Describes the source purpose; no execution asserted.',
+      intentRespected: true, sourceSupported: true, noUnsupportedExecutionClaims: true, contradictions: [], omittedNecessaryFacts: [],
+      supportingSpans: [{ fact: 'purpose', start: 0, end: final.length, text: final }] }] };
+  assert.equal(validateIntentReview(review, manifest, results, semantic).status, 'passed');
+  for (const mutate of [
+    value => { value.turns[0].finalSha256 = 'rewritten'; }, value => { value.turns[0].supportingSpans[0].text = 'Invented answer'; },
+    value => { value.turns[0].noUnsupportedExecutionClaims = false; }, value => { value.turns[0].omittedNecessaryFacts.push('Missing actual purpose'); },
+    value => { value.turns[0].sourceBodySha256 = 'other-source'; },
+  ]) { const candidate = structuredClone(review); mutate(candidate); assert.throws(() => validateIntentReview(candidate, manifest, results, semantic)); }
+});
 const good = () => [
   { phase: 'request', skillBodies: 0, resourceBodies: 0, completeContents: [] },
   { phase: 'response', status: 200 },

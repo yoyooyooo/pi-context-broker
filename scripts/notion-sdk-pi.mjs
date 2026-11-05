@@ -1443,6 +1443,16 @@ async function waitForSourceFinality(path, hostPid, options = {}) {
   }
 }
 
+export function assertCatalogCancellationBoundary(start, end, lifecycle) {
+  assert.equal(start.operation, 'list', 'Only catalogue cancellation can be reconciled at a native session boundary');
+  assert.equal(end.operation, start.operation); assert.equal(end.observer_pid, start.observer_pid);
+  const boundary = lifecycle.find(event => ['session_tree', 'session_shutdown'].includes(event.type)
+    && event.pid === start.observer_pid && typeof event.monotonic_ns === 'string' && /^\d+$/.test(event.monotonic_ns)
+    && BigInt(event.monotonic_ns) >= BigInt(start.monotonic_ns) && BigInt(event.monotonic_ns) <= BigInt(end.monotonic_ns));
+  assert.ok(boundary, 'Cancelled catalogue must match an actual session boundary inside its exact SDK interval');
+  return boundary;
+}
+
 export function reconcile(events, lifecycle, { bodyTransportRequired = true, sourceMode = 'offline', catalogLifecycle = [] } = {}) {
   assert.ok(['offline', 'live'].includes(sourceMode));
   assert.ok(events.length > 0, 'Empty observer ledger cannot establish zero work');
@@ -1483,11 +1493,7 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true, sou
     assert.equal(end.observer_pid, start.observer_pid); assert.equal(end.operation, start.operation);
     let boundary;
     if (end.status === 'cancelled') {
-      assert.equal(start.operation, 'list', 'Only catalogue cancellation can be reconciled at a native session boundary');
-      boundary = catalogLifecycle.find(event => ['session_tree', 'session_shutdown'].includes(event.type)
-        && event.pid === start.observer_pid && typeof event.monotonic_ns === 'string' && /^\d+$/.test(event.monotonic_ns)
-        && BigInt(event.monotonic_ns) >= BigInt(start.monotonic_ns) && BigInt(event.monotonic_ns) <= BigInt(end.monotonic_ns));
-      assert.ok(boundary, 'Cancelled catalogue must match an actual session boundary inside its exact SDK interval');
+      boundary = assertCatalogCancellationBoundary(start, end, catalogLifecycle);
     } else assert.equal(end.status, 'completed');
     assert.equal(end.sdk_started, true); assert.equal(end.metrics_observed, true);
     assert.equal(end.request_metrics?.complete, true, 'Every SDK terminal, including cancellation, requires complete metrics');

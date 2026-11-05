@@ -17,11 +17,13 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 const save = (file, value) => writeFile(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
 const rows = async file => { try { return (await readFile(file, 'utf8')).split('\n').filter(Boolean).map(JSON.parse); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } };
 
-export async function probeGraphObserver({ extension, cliCommand, cliSource, evidenceRoot, matrix = false, resourceLocation = 'ref', largeBody = false, hostIndexResource = false, publicBoundaries = false }) {
+export async function probeGraphObserver({ extension, cliCommand, cliSource, evidenceRoot, matrix = false, resourceLocation = 'ref', largeBody = false, hostIndexResource = false, publicBoundaries = false, discoveryOnly = false }) {
   assert.ok(['ref', 'alias', 'unqualified-ref'].includes(resourceLocation));
   assert.equal(typeof largeBody, 'boolean');
   assert.equal(typeof hostIndexResource, 'boolean');
   assert.equal(typeof publicBoundaries, 'boolean');
+  assert.equal(typeof discoveryOnly, 'boolean');
+  assert.ok(!discoveryOnly || !matrix && !largeBody && !hostIndexResource && !publicBoundaries, 'Discovery-only is one independent three-request controlled probe');
   assert.ok(!publicBoundaries || !matrix && !largeBody && !hostIndexResource, 'The public-boundary probe uses one cold native command within the existing ten-request limit');
   assert.ok(!hostIndexResource || !largeBody, 'The host-index resource probe requires a complete native main read within the existing page limit');
   await mkdir(evidenceRoot, { recursive: true });
@@ -41,7 +43,7 @@ export async function probeGraphObserver({ extension, cliCommand, cliSource, evi
   const outside = join(scratch, 'unadvertised.txt'), outsideBody = 'UNADVERTISED_CONTROLLED_BYTES_MUST_NOT_REACH_PROVIDER';
   await writeFile(outside, outsideBody);
   const traps = await createGraphFallbackTraps(join(scratch, 'control'), evidence);
-  const result = { version: 1, status: 'running', evidence, scratch, resourceLocation, largeBody, hostIndexResource, publicBoundaries, sourceMode: 'command', toolContract: 'agent-cli-ref-20261105', rootMainBytes: Buffer.byteLength(fixture.graph.root.body), nativePathNode: { id: nativePathNode.record.id, bytes: Buffer.byteLength(nativePathNode.body), sha256: hash(nativePathNode.body), role: largeBody ? 'required' : 'root' }, harness: await graphHarnessIdentity(), proofLayer: 'controlled actual HTTP provider + installed Pi + explicit custom-command Node/SQLite source; no default SDK, real model or production Notion proof' };
+  const result = { version: 1, status: 'running', evidence, scratch, resourceLocation, largeBody, hostIndexResource, publicBoundaries, discoveryOnly, sourceMode: 'command', toolContract: 'agent-cli-ref-20261105', rootMainBytes: Buffer.byteLength(fixture.graph.root.body), nativePathNode: { id: nativePathNode.record.id, bytes: Buffer.byteLength(nativePathNode.body), sha256: hash(nativePathNode.body), role: largeBody ? 'required' : 'root' }, harness: await graphHarnessIdentity(), proofLayer: 'controlled actual HTTP provider + installed Pi + explicit custom-command Node/SQLite source; no default SDK, real model or production Notion proof' };
   await save(join(evidence, 'result.json'), result); console.log(JSON.stringify(result));
   let requests = 0, serverError, negativeStep = 0, initialMainRead = false, helpRead = false, indexMainPath, indexMainCall, memberReadCall, activeOutput;
   const server = createServer(async (request, response) => {
@@ -57,7 +59,15 @@ export async function probeGraphObserver({ extension, cliCommand, cliSource, evi
       const parsedResults = texts.flatMap(value => { try { return [JSON.parse(value)]; } catch { return []; } });
       const searches = parsedResults.filter(result => result?.ok === true && result.state === 'known' && Array.isArray(result.records));
       let selected;
-      if (!initialMainRead && publicBoundaries) {
+      if (discoveryOnly) {
+        if (!searches.length) selected = { name: 'notion_list', arguments: { limit: 20 } };
+        else if (!initialMainRead) {
+          const candidate = searches.at(-1).records.find(record => record.availability === 'available' && record.in_default_view);
+          assert.ok(candidate, 'Choose only the actual metadata result, without a private target seed');
+          indexMainPath = candidate.ref; indexMainCall = 'observer-call-' + number; initialMainRead = true;
+          selected = { name: 'read', arguments: { path: candidate.ref } };
+        }
+      } else if (!initialMainRead && publicBoundaries) {
         const wrappers = (body.messages ?? []).filter(message => message.role === 'user').flatMap(message => strings(message.content))
           .flatMap(value => [...value.matchAll(/<skill\b([^>]*)>([\s\S]*?)<\/skill>/g)]);
         const root = wrappers.find(match => match[2].includes(nativePathNode.body));
@@ -151,9 +161,9 @@ export async function probeGraphObserver({ extension, cliCommand, cliSource, evi
   const modelHelper = fileURLToPath(new URL('./notion-skill-graph-model.mjs', import.meta.url));
   await save(config, { skillRoots: [], sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: [process.execPath, modelHelper, '--source', source], database: fixture.graph.root.record.locator.database_id, cacheDir: cache, prefetch: false, activation: { offline: true } }] });
   const prompt = frozenPrompt('B', '$graph-root@notion');
-  const submittedPrompt = publicBoundaries ? prompt.text.replace('$graph-root@notion', '/skill:notion-' + fixture.graph.root.record.alias) : prompt.text;
+  const submittedPrompt = discoveryOnly ? '请查看默认目录并介绍一个可用工作流。' : publicBoundaries ? prompt.text.replace('$graph-root@notion', '/skill:notion-' + fixture.graph.root.record.alias) : prompt.text;
   const observer = join(scratch, 'observer.mjs');
-  const settings = { rootRef: fixture.graph.root.record.ref, model, prompt: submittedPrompt, cache, cwd: project.root, responses, output, project, sourceMode: 'command', piExecutable: (await resolveHost('pi')).identity };
+  const settings = { ...(discoveryOnly ? { entryMode: 'discovery-only' } : { rootRef: fixture.graph.root.record.ref }), model, prompt: submittedPrompt, cache, cwd: project.root, responses, output, project, sourceMode: 'command', piExecutable: (await resolveHost('pi')).identity };
   const parserUrl = pathToFileURL(join(dirname(extension), 'native-reference.ts')).href;
   const observerSource = value => graphObserverModule(value, parserUrl);
   await writeFile(observer, observerSource(settings));
@@ -185,6 +195,22 @@ export async function probeGraphObserver({ extension, cliCommand, cliSource, evi
       for (let index = 0; index < providers.length; index++) {
         assert.equal(providers[index].observedPayloadSha256, transports[index].observedPayloadSha256, 'Only the verified semantic payload may reach transport');
         assert.equal(transports[index].wireBodySha256, transmitted[index].wireBodySha256, 'The observer wire hash must match the actual HTTP body');
+      }
+      if (discoveryOnly) {
+        assert.equal(providers.length, 3); assert.equal(providers[0].contents.length, 0);
+        const metadata = observed.find(event => event.phase === 'metadata-result' && event.complete);
+        const call = observed.find(event => event.phase === 'tool-call' && event.toolCallId === indexMainCall);
+        const read = observed.find(event => event.phase === 'tool-result' && event.toolCallId === indexMainCall && event.complete);
+        assert.ok(metadata && call?.allowed && call.discovered && read?.ownerId === fixture.graph.root.record.id);
+        assert.ok(metadata.sequence < call.sequence && call.sequence < read.sequence);
+        assert.equal(read.sha256, hash(fixture.graph.root.body));
+        assert.ok(providers.some(event => event.sequence > read.sequence && event.contents.some(file => file.ref === read.ref && file.sha256 === read.sha256)));
+        assert.ok(providers.every(event => event.contents.every(file => file.ownerId === fixture.graph.root.record.id)), 'Inspect must not activate Requires or optional Members');
+        assert.equal(observed.filter(event => event.phase === 'preparation-result').length, 0);
+        await save(join(retained, 'pi-rpc.json'), rpc.frames); await rpc.stop(); rpc = undefined;
+        result.sessions.push({ launch, providerRequests: 3, entryMode: 'discovery-only', privateRootSeed: false, metadataSequence: metadata.sequence,
+          read: { ref: read.ref, scope: read.scope, snapshot: read.snapshot, sha256: read.sha256, bytes: read.bytes } });
+        continue;
       }
       assert.ok(providers.length >= 4);
       for (const event of providers) for (const node of fixture.graph.nodes.filter(node => fixture.graph.useIds.includes(node.record.id))) {
@@ -282,7 +308,9 @@ export async function probeGraphObserver({ extension, cliCommand, cliSource, evi
     assert.equal((await rows(fixture.httpPath)).length, 0);
     assert.equal((await rows(traps.ledger)).length, 0);
     result.status = 'passed'; result.providerRequests = requests;
-    result.toolPolicy = { advertised: GRAPH_GATE_TOOLS, initialAdvertisedMainInput: true, hostCatalogResource: hostIndexResource, omittedResourceIdentityFields: resourceLocation === 'unqualified-ref', nativeCommandMainPath: publicBoundaries, omittedMainPath: publicBoundaries, authoredSelectionBeforePrepareRead: publicBoundaries, hostHelpRead: true, metadataList: true, exactUsePreparation: true, outsideReadBlocked: true, shellToolRejected: true, fullToolOutputHashes: true, legacyFallbackCalls: 0 };
+    result.toolPolicy = discoveryOnly ? { advertised: GRAPH_GATE_TOOLS, discoveryOnly: true, privateRootSeed: false, actualMetadataBeforeRead: true,
+      fullProviderBody: true, unselectedRequiresAndMembers: 0, legacyFallbackCalls: 0 }
+      : { advertised: GRAPH_GATE_TOOLS, initialAdvertisedMainInput: true, hostCatalogResource: hostIndexResource, omittedResourceIdentityFields: resourceLocation === 'unqualified-ref', nativeCommandMainPath: publicBoundaries, omittedMainPath: publicBoundaries, authoredSelectionBeforePrepareRead: publicBoundaries, hostHelpRead: true, metadataList: true, exactUsePreparation: true, outsideReadBlocked: true, shellToolRejected: true, fullToolOutputHashes: true, legacyFallbackCalls: 0 };
   } catch (error) { result.status = 'failed'; result.error = { code: error.code ?? 'OBSERVER_PROBE_FAILED', message: error.message }; }
   finally {
     if (rpc) { await save(join(evidence, 'pi-rpc.json'), rpc.frames); try { await rpc.stop(); } catch (error) { result.status = 'failed'; result.error ??= { message: error.message }; } }
@@ -292,7 +320,7 @@ export async function probeGraphObserver({ extension, cliCommand, cliSource, evi
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const options = {}; const args = process.argv.slice(2); while (args.length) { const key = args.shift(); assert.ok(['--extension', '--cli-entry', '--cli-source', '--evidence-root', '--matrix', '--resource-location', '--large-body', '--host-index-resource', '--public-boundaries'].includes(key) && args.length); options[key.slice(2)] = args.shift(); }
-  const result = await probeGraphObserver({ extension: options.extension, cliCommand: [process.execPath, options['cli-entry']], cliSource: options['cli-source'], evidenceRoot: options['evidence-root'], matrix: options.matrix === 'true', resourceLocation: options['resource-location'] ?? 'ref', largeBody: options['large-body'] === 'true', hostIndexResource: options['host-index-resource'] === 'true', publicBoundaries: options['public-boundaries'] === 'true' });
+  const options = {}; const args = process.argv.slice(2); while (args.length) { const key = args.shift(); assert.ok(['--extension', '--cli-entry', '--cli-source', '--evidence-root', '--matrix', '--resource-location', '--large-body', '--host-index-resource', '--public-boundaries', '--discovery-only'].includes(key) && args.length); options[key.slice(2)] = args.shift(); }
+  const result = await probeGraphObserver({ extension: options.extension, cliCommand: [process.execPath, options['cli-entry']], cliSource: options['cli-source'], evidenceRoot: options['evidence-root'], matrix: options.matrix === 'true', resourceLocation: options['resource-location'] ?? 'ref', largeBody: options['large-body'] === 'true', hostIndexResource: options['host-index-resource'] === 'true', publicBoundaries: options['public-boundaries'] === 'true', discoveryOnly: options['discovery-only'] === 'true' });
   console.log(JSON.stringify(result, null, 2)); if (result.status !== 'passed') process.exitCode = 1;
 }

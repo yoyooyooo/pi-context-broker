@@ -17,6 +17,43 @@ const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const save = (file, value) => writeFile(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
 const uuid = '11111111-2222-4333-8444-555555555555';
 
+test('discovery-only observation cannot seed a private root or an unknown entry mode', async () => {
+  const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-discovery-entry-'));
+  const responses = path.join(base, 'responses'), cache = path.join(base, 'cache'), output = path.join(base, 'observer.jsonl');
+  await mkdir(responses); await mkdir(cache); await writeFile(output, '');
+  const originalFetch = globalThis.fetch;
+  const api = { on() {}, setActiveTools: async () => {} };
+  const settings = { fs, crypto, path, parseNativeReference, cwd: base, responses, cache, output, model: 'controlled/fake', prompt: 'Natural task' };
+  try {
+    assert.throws(() => observeGraphGate(api, { ...settings, entryMode: 'discovery-only', rootRef: 'skill://private-target/SKILL.md' }), /cannot seed/);
+    assert.throws(() => observeGraphGate(api, { ...settings, entryMode: 'automatic-private-seed' }), /Unknown graph entry mode/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('discovery-only observation authorizes an entry only after actual visible catalogue metadata', async () => {
+  const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-discovery-visible-'));
+  const responses = path.join(base, 'responses'), cache = path.join(base, 'cache'), output = path.join(base, 'observer.jsonl');
+  await mkdir(responses); await mkdir(cache); await writeFile(output, '');
+  const record = { id: 'shared_skill:controlled:visible', ref: 'skill://shared_skill%3Acontrolled%3Avisible/SKILL.md', kind: 'skill', name: 'visible', description: 'Visible candidate', enabled: true };
+  await save(path.join(responses, 'list.json'), { command: 'list', code: 0, response: { ok: true, scope: 'a'.repeat(64), records: [record] } });
+  const handlers = new Map(), originalFetch = globalThis.fetch;
+  try {
+    observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
+      { fs, crypto, path, parseNativeReference, cwd: base, responses, cache, output, model: 'controlled/fake', prompt: 'Natural task', entryMode: 'discovery-only' });
+    const invoke = id => {
+      const input = { path: record.ref };
+      handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: 'read', arguments: input }] } });
+      return handlers.get('tool_call')({ toolName: 'read', toolCallId: id, input });
+    };
+    assert.equal(invoke('hidden-source-metadata').block, true, 'Observer source receipts alone must not authorize a model reference');
+    handlers.get('before_agent_start')({ prompt: 'Natural task', systemPrompt: '<skill><name>visible</name><description>Visible candidate</description><location>' + record.ref + '</location></skill>' },
+      { model: { provider: 'controlled', id: 'fake' } });
+    assert.equal(invoke('visible-native-entry'), undefined);
+    const events = (await readFile(output, 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.equal(events.find(event => event.phase === 'catalog').skills[0].provenance.ownerId, record.id);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test('first pending catalog is explicit and only a later verified catalog proves default discovery', () => {
   const config = { gate: 'A', rootRef: 'skill://root/ROUTER.md' };
   const pending = { phase: 'catalog', sequence: 1, state: 'pending', skills: [], routers: [], localDiscoveryDisabled: true };

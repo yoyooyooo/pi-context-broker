@@ -63,6 +63,34 @@ node scripts/verify-skill-graph-contract.mjs evaluate --trace "$TRACE_FILE" --or
 
 CLI/source、实际Notion、真实模型、原生UI、安装产物分栏。旧AH-560、受控provider、单纯schema和编译不代替图验收。证据落checkout外，按run追加并校验hash；清理只处理自有scratch/process/fixture，unknown需要的原operation状态不回收。修改实现时同时给上表对应ID补真实命令与观察结果，不把本地图本身当实现完成。
 
+## SC21 C/D 普通意图与介绍
+
+`scripts/verify-pi-notion-model-cache.mjs --intent-config` 复用本 Skill 的 graph observer、RPC、SDK source ledger、完整正文与资源证明、生成文件检查及 owned exercise。旧 A/B 和旧 custom cache 矩阵保持原入口；此分支不新建总 runner。冻结配置绑定独立安装包、runtime、实际 Pi、全部参与的 harness、生产 Default View 元数据和私有正文 oracle。当前早期反馈为四个独立冷入口各 n=1，最多三次必要续问，每次 300000 ms，仅 `magpie/group/flash-free`，无 fallback、自动重试或失败后续问。
+
+| 入口 | 实际动作和成功条件 |
+| --- | --- |
+| C `$poteto-mode@notion 介绍下 create-verification-skill` | 显式根和完整 Requires 在首次 provider 中各一份；目标由 native `read` inspect 后完整进入 provider，不能激活目标工作流。普通续问复用原交付；明确再次读取必须有该 turn 自己的真实完整 read 回执，不强制已有固定正文重新访问来源。 |
+| D 普通命名介绍 | 原句不含 `$`。只能从实际已展示的目录或 `notion_list` 发现引用，observer 不预植私有目标；介绍读正文、不 use 执行工作流。独立重启后恢复同一实际 session 的续问必须复用已交付内容。 |
+| D 自然任务 | 原句不含目标名、准确 ref 或答案。模型实际读项目、自主选择并 use，根与 Requires 完整交付；最终输出须包含路径明确、内容完整的验证 Skill 文件。原生成物 helper 保存文件并单列执行其中一个允许的 owned 应用验证命令；仅计划或模型声称已验证不通过。 |
+| D 闲聊 | 有相关非空回答，Skill/资源正文和激活均为零；允许目录在后台运行，不阻塞首 provider。只有完整 source observer 起止、逐 HTTP attempt、EOF 和 host close 齐备后才能报告成本。 |
+
+四个入口均使用真实生产默认名单，source 省略 `command`、`default_view_id`、`profile_id`，`prefetch:false`；不得换成 A/B root-only View 或删减可选项。冷首轮 `pending` 合法，后续普通 turn 必须验证 ready 的完整 owner/name/description 集合。D 初始 observer 的发现集合为空，实际目录交付才授予可读 ref；私有 oracle 和介绍事实不进入提示、guidance 或 consumer cache。冷启动原生 `/skill` 菜单的宿主边界单列，不作 C/D 就绪条件。
+
+~~~bash
+node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/frozen-cd-config.json --intent-action doctor
+node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/frozen-cd-config.json --intent-action run
+node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/frozen-cd-config.json --intent-action review --intent-evidence /absolute/pi-intent-evidence --intent-review /absolute/independent-review.json
+node scripts/notion-skill-graph-model.mjs evidence --evidence /absolute/pi-intent-evidence/C-introduce
+node scripts/notion-skill-graph-model.mjs cleanup --evidence /absolute/pi-intent-evidence/C-introduce
+node scripts/notion-skill-graph-model.mjs evidence --evidence /absolute/pi-intent-evidence/C-introduce
+~~~
+
+对每个已运行 case 分别执行 Evidence→Cleanup→Evidence，保留 raw provider、RPC、source、实际 final、失败和文件 hash。`run` 的技术成功只返回 `review_required`；独立语义评审逐 turn 绑定 final SHA，介绍还绑定准确源正文 SHA 和真实答案片段，检查意思、必要事实和无证据的执行声称。语义评审不能补造缺失的正文交付或动作。模型计划生成与控制器随后执行的 owned exercise 分列，不能声称模型已自主执行。
+
+SDK 取消只沿既有严格断言结算 metadata `list`：被动 native `session_shutdown` 与 SDK 起止同 PID，时间位于同一 monotonic 闭区间，完整 metrics/trace/EOF 均在；该回执不算 ready 目录。缺失账本、null metrics、未知正文归属仍是 observation-incomplete。任何 source write 必须另有 Records retention/adoption 与业务写入归因，不能仅因为 operation 是 use 就放行。
+
+改前旧入口拒绝 `--intent-config` 和私有 D seed 负例保留。`--discovery-only true` 的原 `notion-skill-graph-observer-smoke.mjs` 实驱实际 Pi、受控 HTTP 和显式 custom source：首请求无正文，真实 list 元数据先于 read、正文全文进入 provider、未读 Requires/Member。该受控证明不能代替生产 SDK、真实模型 C/D 或正式 SC21 全矩阵。
+
 ## NG10 / NG13 原生发现与显式准备
 
 默认 View 只决定初始目录。按 `agent-cli-ref-20261105`，Pi Agent 从根 Members 目录、原生正文中的准确 ref 或 `notion_list` 元数据结果选择 View 外的受管 Skill / File。`notion_list` 不读正文、不注册 loaded；原生 `read` 用于 inspect 和精确资源，顶层 `notion_use({ref:string|string[],refresh?:boolean})` 准备根与完整 Requires 闭包。inspect 不把 Required 正文当已准备。用户显式 `$` 与 `/skill:` 沿同一 prepare use 协议；未匹配的普通用户字面引用保持既有 soft miss，而已选 Required 缺失、预算、权限或版本失败必须阻断 provider。

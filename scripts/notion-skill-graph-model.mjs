@@ -128,7 +128,8 @@ export function observeGraphGate(api, settings) {
   const { createHash } = settings.crypto;
   const { join, relative, resolve, isAbsolute } = settings.path;
   const digest = value => createHash('sha256').update(value).digest('hex');
-  let sequence = 0;
+  let sequence = settings.sequenceOffset ?? 0;
+  if (!Number.isSafeInteger(sequence) || sequence < 0) throw new Error('Invalid observer sequence offset');
   const record = value => { const event = { sequence: ++sequence, at: new Date().toISOString(), ...value }; appendFileSync(settings.output, JSON.stringify(event) + '\n', { mode: 0o600 }); return event; };
   const text = content => typeof content === 'string' ? content : (content ?? []).filter(item => item.type === 'text').map(item => String(item.text ?? '')).join('\n');
   const unescape = value => value.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
@@ -179,8 +180,12 @@ export function observeGraphGate(api, settings) {
     if (typeof value !== 'string') return undefined;
     try { return value.startsWith('sr:') ? shortReference(value) : settings.parseNativeReference(value); } catch { return undefined; }
   };
-  const root = parseRef(settings.rootRef);
-  const discovered = new Map([[settings.rootRef, { sequence: 0, source: 'explicit selected root' }]]);
+  const entryMode = settings.entryMode ?? 'explicit-root';
+  if (!['explicit-root', 'discovery-only'].includes(entryMode)) throw new Error('Unknown graph entry mode');
+  if (entryMode === 'discovery-only' && settings.rootRef !== undefined) throw new Error('Discovery-only observation cannot seed a private root');
+  const root = entryMode === 'explicit-root' ? parseRef(settings.rootRef) : undefined;
+  if (entryMode === 'explicit-root' && !root) throw new Error('An explicitly selected root requires its actual reference');
+  const discovered = new Map(root ? [[settings.rootRef, { sequence: 0, source: 'explicit selected root' }]] : []);
   const advertisedPaths = new Set();
   const projectFiles = new Map((settings.project?.files ?? []).map(file => [resolve(settings.cwd, file.path), file]));
   const calls = new Map();
@@ -533,7 +538,7 @@ export function observeGraphGate(api, settings) {
     if (parsed) available = available.filter(file => refMatchesFile(parsed, file, true));
     else if (alias) available = available.filter(file => file.ref === alias.ref && file.scope === alias.scope && file.ownerId === alias.ownerId
       && file.snapshot === alias.snapshot && file.fileId === alias.fileId && file.path === alias.path && file.sha256 === alias.sha256 && file.bytes === alias.bytes);
-    else if ([...advertisedPaths].some(path => canonicalReadPath(path) === canonicalReadPath(input))) available = available.filter(file => file.ownerId === root.selector && file.role === 'entrypoint');
+    else if (root && [...advertisedPaths].some(path => canonicalReadPath(path) === canonicalReadPath(input))) available = available.filter(file => file.ownerId === root.selector && file.role === 'entrypoint');
     else available = available.filter(file => file.actuals.includes(canonicalReadPath(input)));
     if (expected) available = available.filter(file => same(fileIdentity(file), expected));
     if (body !== undefined) available = available.filter(file => file.content === body);
@@ -742,7 +747,7 @@ export function observeGraphGate(api, settings) {
             const source = exportedFiles().find(item => item.ownerId === receipt.id && item.scope === receipt.scope && item.snapshot === receipt.snapshot_id && item.role === 'entrypoint' && item.projection === 'entry');
             const published = receipt.published?.path;
             const manifest = readFileSync(join(settings.cache, 'scopes', receipt.scope, 'records', digest(receipt.id), 'entries', receipt.snapshot_id, '.broker-entry.json'));
-            if (receipt.version === 1 && receipt.projection === 'host_index' && receipt.loaded === false && receipt.id === root.selector && read && source && receipt.ref === read.ref && receipt.version_id === read.version_id && receipt.source?.bytes === source.bytes && receipt.source?.sha256 === source.sha256 && typeof published === 'string' && published && !published.split('/').some(part => !part || part === '.' || part === '..') && actual === join(directory, published) && receipt.published.bytes === bytes.length && receipt.published.sha256 === digest(bytes) && receipt.manifest_id === digest(JSON.stringify(JSON.parse(manifest.toString('utf8')))))
+            if (root && receipt.version === 1 && receipt.projection === 'host_index' && receipt.loaded === false && receipt.id === root.selector && read && source && receipt.ref === read.ref && receipt.version_id === read.version_id && receipt.source?.bytes === source.bytes && receipt.source?.sha256 === source.sha256 && typeof published === 'string' && published && !published.split('/').some(part => !part || part === '.' || part === '..') && actual === join(directory, published) && receipt.published.bytes === bytes.length && receipt.published.sha256 === digest(bytes) && receipt.manifest_id === digest(JSON.stringify(JSON.parse(manifest.toString('utf8')))))
               provenance = { source: 'verified-notion-host-index', ownerId: receipt.id, scope: receipt.scope, snapshot: receipt.snapshot_id, receiptSha256: digest(raw), manifestSha256: receipt.manifest_id, sourceMainSha256: source.sha256, publishedSha256: digest(bytes), loaded: false };
             break;
           } catch (error) { if (error.code !== 'ENOENT') break; }
@@ -750,7 +755,7 @@ export function observeGraphGate(api, settings) {
             const raw = readFileSync(join(directory, '.broker-snapshot.json'));
             const receipt = JSON.parse(raw.toString('utf8'));
             const read = sourceViews().entries.find(item => item.value.record?.id === receipt.record?.id && item.value.scope === receipt.scope && item.value.snapshot_id === receipt.snapshot)?.value;
-            if (receipt.version === 3 && receipt.projection === 'snapshot' && receipt.record.id === root.selector && read)
+            if (root && receipt.version === 3 && receipt.projection === 'snapshot' && receipt.record.id === root.selector && read)
               provenance = { source: 'verified-notion-host-snapshot', ownerId: receipt.record.id, scope: receipt.scope, snapshot: receipt.snapshot, receiptSha256: digest(raw) };
             break;
           } catch { directory = settings.path.dirname(directory); }
@@ -1041,7 +1046,7 @@ export async function readGateConfig(path) {
 }
 
 export const brokerConfiguration = (config, command, cacheDir) => ({ skillRoots: [], extraSkillRoots: [], sources: [{ type: 'notion', id: 'notion', namespace: 'notion', ...(config.sourceMode === 'command' ? { command } : {}), database: config.database, ...(config.viewId ? { default_view_id: config.viewId } : { profile_id: config.profileId }), prefetch: false, cacheDir, requestTimeoutMs: 60000, ...(config.preparation ? { preparation: config.preparation } : {}) }] });
-async function sourceObserver(control, { ledger, responses, outputRoot, cliEntries }) {
+export async function sourceObserver(control, { ledger, responses, outputRoot, cliEntries }) {
   const file = join(control, 'source-observer.mjs');
   const module = pathToFileURL(fileURLToPath(new URL('./notion-skill-graph-model-evidence.mjs', import.meta.url))).href;
   await writeFile(file, "import * as fs from 'node:fs';\nimport { channel } from 'node:diagnostics_channel';\nimport childProcess from 'node:child_process';\nimport { syncBuiltinESMExports } from 'node:module';\nimport { observeGraphSdk, observeGraphChildren } from " + JSON.stringify(module) + ';\n'
@@ -1282,52 +1287,8 @@ async function collectResponses(directory) {
   return Promise.all((await readdir(directory)).filter(name => name.endsWith('.json')).map(name => json(join(directory, name))));
 }
 
-export function graphTrace({ config, oracle, observation, responses, sourceLedger, hostLedger, isolation, ownershipResponses = responses, retainedSourceProofs = [] }) {
-  const providerRequests = observation.filter(event => event.phase === 'provider-request');
-  const firstProvider = providerRequests[0];
-  const transportAttempts = observation.filter(event => event.phase === 'provider-transport-start').length;
-  if (observation.some(event => event.phase === 'observer-error') || !firstProvider && transportAttempts > 0)
-    throw Object.assign(new Error('Provider observation is invalid; actual transport attempts: ' + transportAttempts + '. Missing verified payload evidence cannot be reconstructed from context or response events.'), { code: 'GRAPH_OBSERVER_INVALID' });
-  assert.ok(firstProvider, 'No verified provider payload or actual provider transport was observed');
-  const directorySequence = firstProvider.sequence;
+export function graphSourceAttribution({ observation, responses, sourceLedger, ownershipResponses = responses, retainedSourceProofs = [], selected = [], scope, libraryId }) {
   const reads = observation.filter(event => event.phase === 'tool-result').map(event => ({ ...event, sequence: event.callSequence ?? event.sequence }));
-  for (const delivery of observation.filter(event => ['metadata-result', 'preparation-result'].includes(event.phase) && event.complete)) {
-    const observed = providerRequests.some(request => request.sequence > delivery.sequence && request.toolResults?.some(result => result.toolCallId === delivery.toolCallId
-      && result.sha256 === delivery.sha256 && result.bytes === delivery.bytes
-      && (delivery.phase === 'metadata-result' ? result.exactToolOutputCopies >= 1 : result.exactToolOutputCopies >= 1 || result.records?.length > 0 && result.records.every(record => record.providerCopies === 1))));
-    assert.ok(observed, 'A successful discovery/preparation tool output must reach an actual provider with matching output or verified body hashes');
-  }
-  if (config.gate === 'A' && oracle.roots?.B?.ref) assert.ok(!reads.some(read => read.ownerId === decodeURIComponent(oracle.roots.B.ref.split('/')[2])), 'Gate A cannot read the ordinary root as a bridge, including a pinned ref');
-  const actualPrepare = graphSourceViews(responses).preparations.filter(item => item.value.status === 'ready').map(item => item.value);
-  const rootPreparation = actualPrepare.find(value => value.purpose === 'use' && value.roots?.some(root => root.id === decodeURIComponent(config.rootRef.split('/')[2])));
-  assert.ok(rootPreparation, 'The selected root must use the actual SDK consume or explicit command preparation');
-  const selected = rootPreparation.nodes.filter(node => node.state === 'prepared');
-  assert.ok(!selected.some(node => node.id === oracle.target.logicalId), 'The optional target cannot be silently promoted into the required closure');
-  const expectedPreparation = oracle.preparations?.[config.gate];
-  assert.ok(Array.isArray(expectedPreparation) && expectedPreparation.length > 0, 'Independent root/Required observations are required');
-  assert.deepEqual(selected.map(node => node.id).sort(), expectedPreparation.map(node => node.logicalId).sort(), 'Observed ready nodes must exactly match the independent root/Required closure');
-  for (const node of selected) {
-    const expected = expectedPreparation.find(item => item.logicalId === node.id);
-    assert.equal(node.body_sha256, expected.sha256); assert.equal(node.bytes, expected.bytes); assert.equal(node.binding.snapshot_id, expected.snapshot); assert.equal(node.binding.ref, expected.ref); assert.equal(rootPreparation.scope, expected.scope);
-    assert.equal(rootPreparation.roots.some(root => root.id === node.id) ? 'root' : 'required', expected.role);
-    const copies = firstProvider.contents.filter(file => file.ownerId === node.id && file.role === 'entrypoint');
-    assert.equal(copies.length, 1, 'Every root/Required body must occur once in the first real provider request');
-    assert.equal(copies[0].sha256, node.body_sha256);
-    assert.equal(copies[0].bytes, node.bytes);
-    assert.equal(copies[0].snapshot, node.binding.snapshot_id);
-    assert.equal(copies[0].scope, rootPreparation.scope);
-    for (const request of providerRequests) {
-      const retained = request.contents.filter(file => file.ownerId === node.id && file.role === 'entrypoint');
-      assert.ok(retained.length <= 1 && retained.every(file => file.sha256 === node.body_sha256 && file.bytes === node.bytes
-        && file.snapshot === node.binding.snapshot_id && file.scope === rootPreparation.scope), 'Root/Required bodies must remain unique and on the selected version in every provider request');
-    }
-  }
-  const rootNode = selected.find(node => node.record.ref === config.rootRef);
-  assert.ok(rootNode);
-  const candidates = (rootNode.candidates ?? []).map(candidate => {
-    const read = reads.find(read => read.logicalId === candidate.id && read.scope === rootPreparation.scope && read.complete);
-    return { ref: read?.ref ?? candidate.ref, observedRef: candidate.ref, logicalId: candidate.id, scope: rootPreparation.scope, available: candidate.availability === 'available', sequence: directorySequence };
-  });
   const pageOwners = new Map(), entityOwners = new Map();
   const remember = (index, key, owner) => { const values = index.get(key) ?? new Map(); values.set(owner.scope + '/' + owner.id, owner); index.set(key, values); };
   const ownershipEntries = graphSourceViews(ownershipResponses).entries;
@@ -1344,8 +1305,8 @@ export function graphTrace({ config, oracle, observation, responses, sourceLedge
     remember(entityOwners, value.record.id, owner);
   }
   const retainedRecords = retainedSourceProofs.flatMap(proof => verifyRetainedSourceProof(proof, {
-    scope: rootPreparation.scope,
-    libraryId: rootNode.record.locator?.library_id,
+    scope: scope,
+    libraryId: libraryId,
     recordsDataSourceId: proof.records_data_source_id,
   }).map(record => ({ record, scope: proof.scope, dataSourceId: proof.records_data_source_id, libraryId: proof.library_id })));
   const closes = new Map(sourceLedger.filter(event => ['close', 'sdk-end'].includes(event.phase)).map(event => [event.requestId, event]));
@@ -1412,7 +1373,7 @@ export function graphTrace({ config, oracle, observation, responses, sourceLedge
       }) ?? [];
       const attributed = identities.length > 0 && identities.every(values => values?.size === 1);
       const owners = [...new Map(identities.filter(Boolean).flatMap(values => [...values]).map(([key, owner]) => [key, owner])).values()];
-      const selectedBefore = owner => owner.scope === rootPreparation.scope && (selectedIds.has(owner.id) || reads.some(read => read.ownerId === owner.id && read.scope === owner.scope && read.complete && selectionTime(read, owner) <= starts.get(receipt.requestId)));
+      const selectedBefore = owner => owner.scope === scope && (selectedIds.has(owner.id) || reads.some(read => read.ownerId === owner.id && read.scope === owner.scope && read.complete && selectionTime(read, owner) <= starts.get(receipt.requestId)));
       const beforeSelection = !attributed || owners.some(owner => !selectedBefore(owner));
       if (event.request_kind === 'notion_body') {
         if (!attributed) unattributedBeforeSelection++;
@@ -1422,6 +1383,57 @@ export function graphTrace({ config, oracle, observation, responses, sourceLedge
       attempts.push({ transport: 'direct_http', sourceTransport: receipt.transport ?? 'command', kind: event.request_kind === 'notion_body' ? 'body' : event.request_kind === 'notion_write' ? 'write' : event.request_kind === 'provider' ? 'provider' : 'metadata', status: event.http_status, requestIdAvailable: event.request_id !== null, requestId: event.request_id, ...(event.http_status === null ? { networkError: event.outcome } : {}), target: target ?? null, owners, attributed, beforeSelection, ...(sourceProofs.length ? { retainedSourceProofs: sourceProofs } : {}), requestBytes: event.request_bytes, responseBytes: event.response_bytes, bodyKind: event.body_kind, operation: receipt.operation ?? receipt.command, ...(receipt.command ? { command: receipt.command } : {}), requestReceipt: receipt.requestId });
     }
   }
+  return { attempts, missingMetrics, unattributedBeforeSelection, memberBodyReadsBeforeSelection, closes };
+}
+
+export function graphTrace({ config, oracle, observation, responses, sourceLedger, hostLedger, isolation, ownershipResponses = responses, retainedSourceProofs = [] }) {
+  const providerRequests = observation.filter(event => event.phase === 'provider-request');
+  const firstProvider = providerRequests[0];
+  const transportAttempts = observation.filter(event => event.phase === 'provider-transport-start').length;
+  if (observation.some(event => event.phase === 'observer-error') || !firstProvider && transportAttempts > 0)
+    throw Object.assign(new Error('Provider observation is invalid; actual transport attempts: ' + transportAttempts + '. Missing verified payload evidence cannot be reconstructed from context or response events.'), { code: 'GRAPH_OBSERVER_INVALID' });
+  assert.ok(firstProvider, 'No verified provider payload or actual provider transport was observed');
+  const directorySequence = firstProvider.sequence;
+  const reads = observation.filter(event => event.phase === 'tool-result').map(event => ({ ...event, sequence: event.callSequence ?? event.sequence }));
+  for (const delivery of observation.filter(event => ['metadata-result', 'preparation-result'].includes(event.phase) && event.complete)) {
+    const observed = providerRequests.some(request => request.sequence > delivery.sequence && request.toolResults?.some(result => result.toolCallId === delivery.toolCallId
+      && result.sha256 === delivery.sha256 && result.bytes === delivery.bytes
+      && (delivery.phase === 'metadata-result' ? result.exactToolOutputCopies >= 1 : result.exactToolOutputCopies >= 1 || result.records?.length > 0 && result.records.every(record => record.providerCopies === 1))));
+    assert.ok(observed, 'A successful discovery/preparation tool output must reach an actual provider with matching output or verified body hashes');
+  }
+  if (config.gate === 'A' && oracle.roots?.B?.ref) assert.ok(!reads.some(read => read.ownerId === decodeURIComponent(oracle.roots.B.ref.split('/')[2])), 'Gate A cannot read the ordinary root as a bridge, including a pinned ref');
+  const actualPrepare = graphSourceViews(responses).preparations.filter(item => item.value.status === 'ready').map(item => item.value);
+  const rootPreparation = actualPrepare.find(value => value.purpose === 'use' && value.roots?.some(root => root.id === decodeURIComponent(config.rootRef.split('/')[2])));
+  assert.ok(rootPreparation, 'The selected root must use the actual SDK consume or explicit command preparation');
+  const selected = rootPreparation.nodes.filter(node => node.state === 'prepared');
+  assert.ok(!selected.some(node => node.id === oracle.target.logicalId), 'The optional target cannot be silently promoted into the required closure');
+  const expectedPreparation = oracle.preparations?.[config.gate];
+  assert.ok(Array.isArray(expectedPreparation) && expectedPreparation.length > 0, 'Independent root/Required observations are required');
+  assert.deepEqual(selected.map(node => node.id).sort(), expectedPreparation.map(node => node.logicalId).sort(), 'Observed ready nodes must exactly match the independent root/Required closure');
+  for (const node of selected) {
+    const expected = expectedPreparation.find(item => item.logicalId === node.id);
+    assert.equal(node.body_sha256, expected.sha256); assert.equal(node.bytes, expected.bytes); assert.equal(node.binding.snapshot_id, expected.snapshot); assert.equal(node.binding.ref, expected.ref); assert.equal(rootPreparation.scope, expected.scope);
+    assert.equal(rootPreparation.roots.some(root => root.id === node.id) ? 'root' : 'required', expected.role);
+    const copies = firstProvider.contents.filter(file => file.ownerId === node.id && file.role === 'entrypoint');
+    assert.equal(copies.length, 1, 'Every root/Required body must occur once in the first real provider request');
+    assert.equal(copies[0].sha256, node.body_sha256);
+    assert.equal(copies[0].bytes, node.bytes);
+    assert.equal(copies[0].snapshot, node.binding.snapshot_id);
+    assert.equal(copies[0].scope, rootPreparation.scope);
+    for (const request of providerRequests) {
+      const retained = request.contents.filter(file => file.ownerId === node.id && file.role === 'entrypoint');
+      assert.ok(retained.length <= 1 && retained.every(file => file.sha256 === node.body_sha256 && file.bytes === node.bytes
+        && file.snapshot === node.binding.snapshot_id && file.scope === rootPreparation.scope), 'Root/Required bodies must remain unique and on the selected version in every provider request');
+    }
+  }
+  const rootNode = selected.find(node => node.record.ref === config.rootRef);
+  assert.ok(rootNode);
+  const candidates = (rootNode.candidates ?? []).map(candidate => {
+    const read = reads.find(read => read.logicalId === candidate.id && read.scope === rootPreparation.scope && read.complete);
+    return { ref: read?.ref ?? candidate.ref, observedRef: candidate.ref, logicalId: candidate.id, scope: rootPreparation.scope, available: candidate.availability === 'available', sequence: directorySequence };
+  });
+  const { attempts, missingMetrics, unattributedBeforeSelection, memberBodyReadsBeforeSelection, closes } = graphSourceAttribution({
+    observation, responses, sourceLedger, ownershipResponses, retainedSourceProofs, selected, scope: rootPreparation.scope, libraryId: rootNode.record.locator?.library_id });
   const processes = hostLedger.filter(event => event.event === 'spawn').map(event => ({ owned: true, pid: event.pid, spawnObserved: true, closeObserved: hostLedger.some(end => end.event === 'close' && end.pid === event.pid && end.observedExit), closed: hostLedger.some(end => end.event === 'close' && end.pid === event.pid && end.observedExit) }));
   for (const event of sourceLedger.filter(event => event.phase === 'spawn')) processes.push({ owned: true, pid: event.childPid, spawnObserved: true, closeObserved: closes.has(event.requestId), closed: closes.has(event.requestId) });
   const final = observation.filter(event => event.phase === 'assistant-final').at(-1);
@@ -1454,7 +1466,7 @@ export function retainedSourceProofInput({ gate, evidence, trace, responses, own
     owners, unattributed_retained_attempts: attempts }] };
 }
 
-async function collectSupplementaryRetainedProof({ config, evidence, trace, responses, ownershipResponses }) {
+export async function collectSupplementaryRetainedProof({ config, evidence, trace, responses, ownershipResponses }) {
   const input = retainedSourceProofInput({ gate: config.gate, evidence, trace, responses, ownershipResponses });
   if (!input) return { receipt: { status: 'not-needed-or-unresolved', accounting: 'No additional HTTP; unknown ownership remains unknown' } };
   if (!config.retainedSourceProofRepo) return { receipt: { status: 'not-configured', accounting: 'No additional HTTP; retained chunk ownership remains unknown' } };
