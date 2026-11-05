@@ -6,7 +6,7 @@ import { constants } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { startRpc } from "../packages/context-broker/scripts/context-broker-rpc-harness.mjs";
-import { writeFakeProvider, isolatedEnv, resolveHost, runCommand } from "../packages/context-broker/scripts/context-broker-e2e-fixture.mjs";
+import { writeFakeProvider, isolatedEnv, resolveHost, runCommand, assertSupportedPiVersion } from "../packages/context-broker/scripts/context-broker-e2e-fixture.mjs";
 import { verifyPackageClosure, verifyBundledRuntime } from "./verify-package-closure.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -158,7 +158,7 @@ const env = isolatedEnv({ base, agentDir, CONTEXT_BROKER_CONFIG: enabledConfig, 
   BROKER_E2E_PROCESS_LEDGER: join(base, "owned-processes.jsonl") });
 const hostCommand = await resolveHost(host);
 const hostVersion = (await runCommand(host, ["--version"], { cwd: base, env, timeoutMs: 10000 })).stdout.trim();
-if (host === "pi") assert.equal(hostVersion, "1.4.0", "Installed Pi gate is frozen to the CI-supported Pi 1.4.0");
+if (host === "pi") assertSupportedPiVersion(hostVersion);
 report.hostIdentity = { ...hostCommand, version: hostVersion, executable: await identity(hostCommand.identity) };
 await saveReport();
 function localChoice(response) {

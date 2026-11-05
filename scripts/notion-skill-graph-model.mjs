@@ -6,7 +6,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { appendFile, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { resolveHost, runCommand } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
+import { resolveHost, runCommand, assertSupportedPiVersion } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { entryIdentity, verifyEntryIdentity } from './verification-entry.mjs';
@@ -1274,7 +1274,7 @@ export async function graphModelDoctor(config) {
   }
   const probe = await mkdtemp(join(await systemTempRoot(), 'broker-graph-model-doctor-'));
   const pi = await runCommand('pi', ['--version'], { cwd: probe, env: process.env, timeoutMs: 10000 });
-  assert.match(pi.stdout.trim(), /^1\.4\./, 'This driver is verified against installed Pi 1.4');
+  assertSupportedPiVersion(pi.stdout.trim());
   return { status: 'ready', gate: config.gate, model: config.model, promptTimeoutMs: config.promptTimeoutMs, prompt: config.prompt, ...artifacts, harness: await graphHarnessIdentity(), cli: { command: config.cliCommand, sha256: hash(await readFile(config.cliCommand[1])) }, node: process.version, pi: pi.stdout.trim(), authentication: 'existing credentials reused in place; not probed or copied', scratch: probe, proof: 'Doctor inspects artifacts and contract only; no real model or Notion request' };
 }
 

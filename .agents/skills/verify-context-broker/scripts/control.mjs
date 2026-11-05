@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isolatedEnv, signalHost, spawnHost } from "../../../../packages/context-broker/scripts/context-broker-e2e-fixture.mjs";
+import { isolatedEnv, signalHost, spawnHost, assertSupportedPiVersion } from "../../../../packages/context-broker/scripts/context-broker-e2e-fixture.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const routes = {
@@ -74,8 +74,7 @@ async function doctor(feature) {
     try {
       const tool = await version(name);
       report.tools.push(tool);
-      if (["distribution", "distribution-pi"].includes(feature) && name === "pi" && tool.version !== "1.4.0")
-        report.failures.push("Installed artifact acceptance requires the supported Pi 1.4.0.");
+      if (["distribution", "distribution-pi"].includes(feature) && name === "pi") assertSupportedPiVersion(tool.version);
     }
     catch (error) { report.failures.push(error.message); }
   }

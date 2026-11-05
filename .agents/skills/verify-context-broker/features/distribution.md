@@ -23,7 +23,7 @@
 
 Preconditions:
 
-- Node.js 22.x 中的 22.22.3+，或 24.20.0+、仅用于构建的 Bun、Pi 1.4.0、npm、tar；完整双宿主路线另需 OMP 和 Git。npm registry 网络可用。
+- Node.js 22.x 中的 22.22.3+，或 24.20.0+、仅用于构建的 Bun、精确 Pi 1.4.0 或 1.5.0、npm、tar；完整双宿主路线另需 OMP 和 Git。其它 patch／预发布／未知版本仍拒绝。npm registry 网络可用。
 - `control.mjs doctor distribution-pi` ready；完整路线用 `doctor distribution`。runner 构建并打包当前 checkout，或消费明确提供的候选目录；不调用仓库的真实 release，不创建线上发布。
 
 - **Pi 安装路径。** 运行 `node .agents/skills/verify-context-broker/scripts/control.mjs run distribution-pi`，对应 `node scripts/verify-artifacts.mjs --host pi`。只构建 Broker npm 包，在独立 prefix 实际安装；核对随包 CLI、SDK 与 runtime manifest 后，用实际 Pi RPC 和 provider 观察连续两次正文交付，重跑安装态 source 故障与恢复场景。manifest 的 host 为 pi，OMP/Tern 记 notRun。未提供 SDK fixture 时，`defaultSdk` 明记 `not_run / fixture_not_provided`，不代表默认 SDK 已验收。
@@ -50,9 +50,13 @@ NTN_SKILLS_BUILD_ENTRY="$CLI_ENTRY" CONTEXT_BROKER_CANDIDATE_DIR="$CANDIDATE_DIR
 
 runner 复用刚刚独立安装的同一个 `installed` 路径，调用原 `notion-sdk-pi.mjs run --scenario all`，不再次打包。`defaultSdk` 保存 fixture/driver、plan/result 路径与 hash、子进程退出和 14 景终局；plan 必须保持同一 package、bundled runtime 和开启的全部断言，result 的每一景都须通过且 observer 已关闭。`default-sdk-pi/` 保留 RPC、provider/HTTP、SDK、session 与逐景结果，stdout/stderr 同在原 `broker-artifacts-*` 目录。两 workflow 无论成功失败都上传该 owned 目录、SDK scratch 和 fixture（含隐藏文件）；Linux 保留 scratch，不调用 macOS Trash。
 
-这条路线使用离线暖 fixture、owned 空 Broker cache/session、实际 Pi 1.4 与受控 provider。它不覆盖真实 Notion、真实模型或用户 Pi 1.5。默认目录与恢复边界详见[原 SDK 恢复地图](../../verify-notion-skills-integration/features/session-cache-recovery.md)。2026-11-05 的漏接线负例保存在 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/unified-c4-0f0b02-wj9ya_hr/ci-sdk-wiring/fail-before.log`，SHA256 `5412df3aa56f96ce512131125b03e00cfccf2d911956b6893c0fb798e4504ecd`；原 workflow 未变时新门禁报 `GATE_SDK_FIXTURE_MISSING`，旧门禁误绿记录同时保留。
+CI／publish 主宿主固定为 Pi 1.5.0，CLI producer/build 同钉 C5 commit `5125f418d51bc59f55ed248a26503403451113e6`。CI 追加 owned npm prefix 的 Pi 1.4.0：先核实际 version，复跑原 native print／continue，再对主 artifact manifest 指向的同一独立安装目录执行原 SDK all14。主步骤使用 Bash pipefail 保留完整日志，并只从唯一成功 manifest 导出 installed 路径；兼容步骤不重新 pack、不重复整个 CLI/check，也不能用源码路径顶替。两宿主 SDK 与 native 原件均 always 上传。Publish 保持单 job，不使用版本 matrix 重复发布。
+
+这条路线使用离线暖 fixture、owned 空 Broker cache/session、实际 Pi 与受控 provider；每个报告必须写明实际版本。允许版本通过 Doctor 只表示可执行，必须保留该版本自己的 artifact/all14、native print／continue 与 PTY Stop／retry 结果，才能证明兼容。旧 Pi 1.4 证据不能替代新 Pi 1.5，旧 `66a64` 包的 1.5 版本拒绝原件继续保留。它不覆盖真实 Notion、真实模型或日用切换。默认目录与恢复边界详见[原 SDK 恢复地图](../../verify-notion-skills-integration/features/session-cache-recovery.md)。2026-11-05 的漏接线负例保存在 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/unified-c4-0f0b02-wj9ya_hr/ci-sdk-wiring/fail-before.log`，SHA256 `5412df3aa56f96ce512131125b03e00cfccf2d911956b6893c0fb798e4504ecd`；原 workflow 未变时新门禁报 `GATE_SDK_FIXTURE_MISSING`，旧门禁误绿记录同时保留。
 
 远端 run `42080157508` 在 workflow 解析阶段拒绝 job env 中的 `runner.temp`，jobs 与 check runs 均为空，安装门禁没有运行。错误 HTML/API 原件保存在同一证据根的 `remote-8c2a7f6/`。按 [GitHub context availability](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability)，runner context 用于 step；生成和消费 fixture 直接使用 runner 提供的 shell 变量，上传 action 的 step with 仍可使用 `runner.temp`。原 `check-gates` 增加 job/全局位置误用 runner context 的负例；本地 gate 通过后仍须回读远端实际 job。
+
+2026-11-05，C5＋e9 候选归档 SHA256 `85888eeda4683ba53c79b84640839220a4162d8902a8ed321d30ba9fd4e42d3e` 已分别通过实际 Pi 1.5.0／owned 官方 Pi 1.4.0 的原 artifact 必跑 SDK 路线，两个 all14 的每景和 observer 终局均通过。证据根 `~/Library/Logs/pi-context-broker/AH-617-20261105/pi15-compat-tyqr9arj/` 的 `actual-artifacts.json` 绑定两个独立安装目录，report hashes 分别为 `ada1c8b8ca5a9980f8c9642a02f418e6f8e3f173b40b2f949f06aa0e1a4887b6` 与 `5008f0942121068064807855fa5ceec437f7813e6d9b638545020cbae1e874cf`；每个原 SDK Evidence → Cleanup → Evidence 已完成。两版本原 native print／continue 均输出两次 OK，Pi 1.5 的原 PTY `escape-stop` 通过实际预算提示、Stop、子进程取消、provider 为零、重试完整交付与自然退出，日志 SHA256 `c3d9f7d402c5be1dfcdcc4a077485a4736881000480f115c05b92ca53b8711ed`。PTY 使用明确 custom command 受控源；不代表默认 SDK 取消或真实模型。此次两个 lifecycle 均未自然命中初始化 list 取消；其终局动作通过不能改写旧 Linux null metrics 失败，仍需保留 C5 SDK 初始化窗口实测与后续 CI 实际结果。此处没有给旧冷启动 native `/skill` 菜单分支补写通过，也没有切换日用安装。
 
 ## Pi 正常日用身份与 SDK 来源归因
 

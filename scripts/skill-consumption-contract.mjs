@@ -35,14 +35,15 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
     check(!/\$\{\{\s*runner\./u.test(workflow.text.split(/^    steps:\s*$/mu)[0]), 'GATE_RUNNER_CONTEXT_SCOPE',
       workflow.name + ' must use runner context only in steps, not workflow or job env.');
     check(workflow.text.includes('run: bun run check'), 'GATE_CHECK_MISSING', workflow.name + ' must execute the normal check.');
-    check(workflow.text.includes('@earendil-works/pi-coding-agent@1.4.0'), 'GATE_PI_VERSION', workflow.name + ' must install supported Pi 1.4.0.');
+    check(workflow.text.includes('run: npm install --global @oh-my-pi/pi-coding-agent@18.10.3 @earendil-works/pi-coding-agent@1.5.0'),
+      'GATE_PI_VERSION', workflow.name + ' must install the primary Pi 1.5.0 exactly.');
     const source = /repository: yoyooyooo\/notion-skills-cli\s+ref: ([a-f0-9]{40})\s+path: \.verification\/ntn-skills-cli/u.exec(workflow.text);
     check(source && workflow.text.includes('NTN_SKILLS_BUILD_ENTRY: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/cli/dist/ntn-skills.js')
       && /working-directory: \.verification\/ntn-skills-cli\s+run: \|\s+bun install --frozen-lockfile\s+bun run build/u.test(workflow.text),
       'GATE_SDK_BUILD_INPUT_MISSING', workflow.name + ' must build its SDK-capable CLI from an explicit immutable checkout.');
     check(workflow.text.includes('bun-version: 1.4.3'), 'GATE_BUN_VERSION', workflow.name + ' must use the CLI package manager version.');
     sourceRevisions.push(source[1]);
-    for (const host of ['pi', 'omp']) check(workflow.text.includes('run: node scripts/verify-artifacts.mjs --host ' + host),
+    for (const host of ['pi', 'omp']) check(workflow.text.includes('node scripts/verify-artifacts.mjs --host ' + host),
       'GATE_INSTALLED_HOST_MISSING', workflow.name + ' needs the actual installed ' + host + ' gate.');
     const steps = workflow.text.split(/(?=^      - name: )/mu);
     const step = name => steps.find(value => value.startsWith('      - name: ' + name + '\n')) ?? '';
@@ -51,16 +52,31 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
     check(fixture.includes('run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-sdk-fixture" --catalog')
       && unconditional(fixture) && workflow.text.indexOf(fixture) < workflow.text.indexOf(installed),
       'GATE_SDK_FIXTURE_MISSING', workflow.name + ' must create the controlled catalog fixture from its pinned CLI source.');
-    check(installed.includes('run: node scripts/verify-artifacts.mjs --host pi --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --require-sdk')
+    check(installed.includes('node scripts/verify-artifacts.mjs --host pi --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --require-sdk')
       && unconditional(installed), 'GATE_INSTALLED_SDK_MISSING', workflow.name + ' must require actual default SDK Pi execution against that fixture.');
     const retained = step('Preserve installed Pi SDK evidence');
     check(retained.includes('if: always()') && retained.includes('uses: actions/upload-artifact@v4')
       && retained.includes('/tmp/broker-artifacts-*/') && retained.includes('/tmp/notion-sdk-pi-*/')
       && retained.includes('${{ runner.temp }}/ntn-skills-sdk-fixture/') && retained.includes('include-hidden-files: true'),
       'GATE_SDK_EVIDENCE_MISSING', workflow.name + ' must always retain owned installation, SDK RPC and fixture evidence.');
+    if (workflow.name === 'ci') {
+      const compatibility = step('Pi 1.4 compatibility');
+      check(unconditional(compatibility) && compatibility.includes('@earendil-works/pi-coding-agent@1.4.0')
+        && compatibility.includes('export PATH="$RUNNER_TEMP/pi14-compat/node_modules/.bin:$PATH"')
+        && compatibility.includes('test "$(pi --version)" = "1.4.0"')
+        && compatibility.includes('BROKER_INSTALLED_PACKAGE: ${{ steps.installed-pi.outputs.package }}')
+        && compatibility.includes('node packages/context-broker/scripts/context-broker-host-e2e.mjs pi\n')
+        && compatibility.includes('node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --scenario all --out "$RUNNER_TEMP/pi14-sdk-evidence"')
+        && installed.includes('shell: bash') && installed.includes('id: installed-pi')
+        && installed.includes("assert.equal(manifest.hostIdentity.version, '1.5.0')")
+        && installed.includes("assert.equal(manifest.defaultSdk.status, 'passed')")
+        && installed.includes("'package=' + manifest.package.installed")
+        && retained.includes('${{ runner.temp }}/pi14-sdk-evidence/') && retained.includes('/tmp/context-broker-host-e2e-*/'),
+        'GATE_PI_COMPATIBILITY_MISSING', 'CI must exercise owned Pi 1.4 native print/continue and SDK all14 using the same independently installed Broker.');
+    } else check(!/^    strategy:/mu.test(workflow.text), 'GATE_PUBLISH_MATRIX', 'Publishing remains a single job, not a host-version matrix.');
   }
   check(new Set(sourceRevisions).size === 1, 'GATE_SDK_BUILD_INPUT_DRIFT', 'CI and publish must use the same frozen CLI revision.');
-  return { status: 'gate-wiring-valid', supportedPi: '1.4.0', requiredTests: required.length,
+  return { status: 'gate-wiring-valid', supportedPi: ['1.4.0', '1.5.0'], primaryPi: '1.5.0', requiredTests: required.length,
     cliSourceRevision: sourceRevisions[0], installedSdk: 'required_all14',
     runtimeAcceptance: 'not-inferred', boundary: 'Wiring is checked here; actual test logs and installed host runs remain separate evidence.' };
 }

@@ -3,6 +3,13 @@ import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { consumptionFixture, evaluateConsumptionEvidence, selfTest, validateMap, expandCoverage, consumptionGateConfiguration, validateConsumptionGates } from './skill-consumption-contract.mjs';
+import { assertSupportedPiVersion } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
+
+test('installed Pi acceptance admits only the two explicitly supported releases', () => {
+  for (const version of ['1.4.0', '1.5.0']) assert.doesNotThrow(() => assertSupportedPiVersion(version));
+  for (const version of ['1.4.1', '1.5.1', '1.6.0', '1.5.0-beta.1', '1.5', 'v1.5.0', '', undefined])
+    assert.throws(() => assertSupportedPiVersion(version), /must be exactly/);
+});
 
 test('normal checks and both workflows retain consumption and real Pi installation gates', () => {
   assert.equal(validateConsumptionGates().status, 'gate-wiring-valid');
@@ -10,7 +17,12 @@ test('normal checks and both workflows retain consumption and real Pi installati
     [value => { value.packageScripts.check = 'bun run test'; }, 'GATE_CONSUMPTION_MISSING'],
     [value => { value.rootScripts['check:broker'] = 'bun run build:broker'; }, 'GATE_PACKAGE_CHECK_MISSING'],
     [value => { value.packageScripts['test:consumption'] = value.packageScripts['test:consumption'].replace('scripts/session-active.test.ts', ''); }, 'GATE_TEST_MISSING'],
-    [value => { value.workflows[0].text = value.workflows[0].text.replace('@earendil-works/pi-coding-agent@1.4.0', '@earendil-works/pi-coding-agent@1.2.0'); }, 'GATE_PI_VERSION'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('@earendil-works/pi-coding-agent@1.5.0', '@earendil-works/pi-coding-agent@1.5.1'); }, 'GATE_PI_VERSION'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('@earendil-works/pi-coding-agent@1.4.0', '@earendil-works/pi-coding-agent@1.4.1'); }, 'GATE_PI_COMPATIBILITY_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('- name: Pi 1.4 compatibility\n', '- name: Pi 1.4 compatibility\n        if: false\n'); }, 'GATE_PI_COMPATIBILITY_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('BROKER_INSTALLED_PACKAGE: ${{ steps.installed-pi.outputs.package }}', 'BROKER_INSTALLED_PACKAGE: packages/context-broker'); }, 'GATE_PI_COMPATIBILITY_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('--scenario all --out "$RUNNER_TEMP/pi14-sdk-evidence"', '--scenario dollar --out "$RUNNER_TEMP/pi14-sdk-evidence"'); }, 'GATE_PI_COMPATIBILITY_MISSING'],
+    [value => { value.workflows[1].text = value.workflows[1].text.replace('    steps:\n', '    strategy:\n      matrix:\n        pi: [1.4.0, 1.5.0]\n    steps:\n'); }, 'GATE_PUBLISH_MATRIX'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('NTN_SKILLS_BUILD_ENTRY:', 'UNUSED_CLI_ENTRY:'); }, 'GATE_SDK_BUILD_INPUT_MISSING'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace(/(repository: yoyooyooo\/notion-skills-cli\s+ref: )[a-f0-9]{40}/u, '$1main'); }, 'GATE_SDK_BUILD_INPUT_MISSING'],
     [value => { value.workflows[1].text = value.workflows[1].text.replace(/(repository: yoyooyooo\/notion-skills-cli\s+ref: )[a-f0-9]{40}/u, '$1' + 'a'.repeat(40)); }, 'GATE_SDK_BUILD_INPUT_DRIFT'],

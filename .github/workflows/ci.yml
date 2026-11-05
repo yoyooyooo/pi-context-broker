@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yoyooyooo/notion-skills-cli
-          ref: ba21e390d52b84200e43c0b247a4adc5d306f6d6
+          ref: 5125f418d51bc59f55ed248a26503403451113e6
           path: .verification/ntn-skills-cli
           persist-credentials: false
       - name: Set up Bun
@@ -44,7 +44,7 @@ jobs:
           bun install --frozen-lockfile
           bun run build
       - name: Install pinned CLI hosts
-        run: npm install --global @oh-my-pi/pi-coding-agent@18.10.3 @earendil-works/pi-coding-agent@1.4.0
+        run: npm install --global @oh-my-pi/pi-coding-agent@18.10.3 @earendil-works/pi-coding-agent@1.5.0
       - name: Check
         run: bun run check
       - name: Release policy regression
@@ -69,7 +69,30 @@ jobs:
       - name: Create controlled SDK fixture
         run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-sdk-fixture" --catalog
       - name: Installed Pi artifact regression
-        run: node scripts/verify-artifacts.mjs --host pi --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --require-sdk
+        id: installed-pi
+        shell: bash
+        run: |
+          node scripts/verify-artifacts.mjs --host pi --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --require-sdk | tee "$RUNNER_TEMP/installed-pi-artifact.log"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, appendFileSync } from 'node:fs';
+          import { join, isAbsolute } from 'node:path';
+          const matches = [...readFileSync(join(process.env.RUNNER_TEMP, 'installed-pi-artifact.log'), 'utf8').matchAll(/^Artifact workspace retained: (.+)$/gm)];
+          assert.equal(matches.length, 1);
+          const manifest = JSON.parse(readFileSync(join(matches[0][1], 'manifest.json'), 'utf8'));
+          assert.equal(manifest.status, 'passed'); assert.equal(manifest.hostIdentity.version, '1.5.0');
+          assert.equal(manifest.defaultSdk.status, 'passed'); assert.ok(isAbsolute(manifest.package.installed));
+          appendFileSync(process.env.GITHUB_OUTPUT, 'package=' + manifest.package.installed + '\n');
+          NODE
+      - name: Pi 1.4 compatibility
+        env:
+          BROKER_INSTALLED_PACKAGE: ${{ steps.installed-pi.outputs.package }}
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pi14-compat" --no-audit --no-fund @earendil-works/pi-coding-agent@1.4.0
+          export PATH="$RUNNER_TEMP/pi14-compat/node_modules/.bin:$PATH"
+          test "$(pi --version)" = "1.4.0"
+          node packages/context-broker/scripts/context-broker-host-e2e.mjs pi
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --scenario all --out "$RUNNER_TEMP/pi14-sdk-evidence"
       - name: Preserve installed Pi SDK evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -78,7 +101,10 @@ jobs:
           path: |
             /tmp/broker-artifacts-*/
             /tmp/notion-sdk-pi-*/
+            /tmp/context-broker-host-e2e-*/
             ${{ runner.temp }}/ntn-skills-sdk-fixture/
+            ${{ runner.temp }}/pi14-sdk-evidence/
+            ${{ runner.temp }}/installed-pi-artifact.log
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7

@@ -36,7 +36,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yoyooyooo/notion-skills-cli
-          ref: ba21e390d52b84200e43c0b247a4adc5d306f6d6
+          ref: 5125f418d51bc59f55ed248a26503403451113e6
           path: .verification/ntn-skills-cli
           persist-credentials: false
       - name: Set up Bun
@@ -57,7 +57,7 @@ jobs:
           bun install --frozen-lockfile
           bun run build
       - name: Install pinned CLI hosts
-        run: npm install --global @oh-my-pi/pi-coding-agent@18.10.3 @earendil-works/pi-coding-agent@1.4.0
+        run: npm install --global @oh-my-pi/pi-coding-agent@18.10.3 @earendil-works/pi-coding-agent@1.5.0
       - name: Validate release metadata
         run: |
           release_tag="${{ github.event.inputs.tag }}"

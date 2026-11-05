@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { access, mkdir, mkdtemp, readFile, realpath, readdir, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isolatedEnv, resolveHost, runCommand, writeFakeProvider } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
+import { isolatedEnv, resolveHost, runCommand, writeFakeProvider, assertSupportedPiVersion } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { createGraphFixture } from './notion-skill-graph.mjs';
 import { createRequestLedger } from './notion-default-context.mjs';
 import { systemTempRoot, evidenceRoot } from './verification-paths.mjs';
@@ -40,6 +40,7 @@ async function doctor() {
     const env = isolatedEnv({base:probe,agentDir:join(probe,'agent')});
     result.scratch = probe;
     result.version = (await runCommand(result.host.file, [...result.host.prefix, '--version'], { cwd: probe, env, timeoutMs: 10000 })).stdout.trim();
+    assertSupportedPiVersion(result.version);
     const help = (await runCommand(result.host.file, [...result.host.prefix, '--help'], { cwd: probe, env, timeoutMs: 10000 })).stdout;
     for (const flag of ['--no-extensions','--no-mcp','--no-context-files','--no-prompt-templates','--approve','--offline','--tui-mode','--tools']) assert.ok(help.includes(flag), 'Installed Pi lacks ' + flag);
     await access(join(options['cli-source'], 'packages/core/src/store.ts')); await access(driver);
