@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { systemTempRoot } from './verification-paths.mjs';
 import { resolveInstalledPiSerializer } from './notion-sdk-pi.mjs';
+import { validateLiveInput, selectLiveProviderCall, liveSourceMetrics } from './notion-sdk-pi.mjs';
 import { assertNativeGuidance, assertScopedCommand, assertPreparedHttpRequest, assertResourceHttpRequest, assertResourceBatchProjection, assertResourceReadSchema, resourceRefsFromNative, resourceTextCopies, bodyCount, reconcile, sourceFinality, observeOwnedObjectReads, assertObjectReadEvidence, assertProviderHttpRequest, assertProviderToolSequence, assertSearchProjection, assertDefaultViewProjection, assertDollarProjection, assertNativeProjection, resourceScalarCalls, selectScalarProviderCall, assertResourceScalarResult, resourceScalarSelectedFixture, assertResourceScalarSession, assertResourceScalarCost, selectNativeRepeatCall, assertNativeRepeatProjection, assertScalarReadObjectIntervals } from './notion-sdk-pi.mjs';
 
 const command = ['/absolute/node', '/installed/dist/ntn-skills.mjs'];
@@ -15,6 +16,77 @@ const context = () => ({ messages: [
   { role: 'system', content: 'Controlled system instructions.', toolsAdded: toolNames.map(name => ({ name })) },
   { role: 'user', content: guidance },
 ] });
+
+const liveInput = () => {
+  const file = path => ({ path, sha256: 'a'.repeat(64) });
+  return { version: 1, kind: 'live_notion_sdk', host: file('/owned/pi'), artifact: file('/owned/broker.tgz'),
+    source: { id: 'mini-live', database }, oracle: { catalog: file('/original/catalog.json'), use: file('/original/use.json'),
+      resource: { ...file('/original/resource.md'), logical_path: 'playbooks/pause-safely.md' } },
+    sentinels: [file('/daily/settings.json')] };
+};
+test('live input requires explicit local identities and never accepts source overrides or duplicate sentinels', () => {
+  const input = liveInput(), before = structuredClone(input);
+  assert.equal(validateLiveInput(input), input); assert.deepEqual(input, before);
+  for (const mutate of [
+    value => { value.kind = 'offline'; },
+    value => { value.version = 2; },
+    value => { value.host.path = 'pi'; },
+    value => { value.artifact.sha256 = 'unknown'; },
+    value => { value.source.command = ['some-cli']; },
+    value => { value.source.database = 'inferred'; },
+    value => { value.oracle.resource.logical_path = '../escape'; },
+    value => { value.oracle.resource.logical_path = '/absolute'; },
+    value => { value.oracle.use.path = 'relative'; },
+    value => { value.sentinels = []; },
+    value => { value.sentinels.push(value.sentinels[0]); },
+    value => { value.oracle.auth = '/private/token'; },
+  ]) { const value = liveInput(); mutate(value); assert.throws(() => validateLiveInput(value)); }
+});
+test('live provider selects only actual model-visible directory and resource references', () => {
+  const plan = { mode: 'live-consume', source: 'mini-live', owner: 'poteto-mode', resource_path: 'playbooks/pause-safely.md' };
+  const captured = { messages: [] };
+  assert.deepEqual(selectLiveProviderCall(captured, plan), { type: 'toolCall', id: 'live-list', name: 'notion_list',
+    arguments: { query: plan.owner, source: plan.source, limit: 20 } });
+  const record = { name: plan.owner, source: plan.source, availability: 'available', ref: 'sr:C' + 'a'.repeat(22) };
+  const result = (id, value) => ({ role: 'toolResult', toolCallId: id, isError: false,
+    content: [{ type: 'text', text: JSON.stringify(value) }], details: { misleading_ref: 'skill://other/SKILL.md' } });
+  captured.messages.push(result('live-list', { records: [record], has_more: false }));
+  assert.deepEqual(selectLiveProviderCall(captured, plan).arguments, { ref: record.ref });
+  const ref = 'sr:R' + 'b'.repeat(22);
+  captured.messages.push(result('live-use', { records: [{ name: plan.owner, directory: { files: [{ path: plan.resource_path, ref }] } }] }));
+  assert.deepEqual(selectLiveProviderCall(captured, plan), { type: 'toolCall', id: 'live-resource', name: 'read', arguments: { path: ref } });
+  captured.messages.push(result('live-resource', {}));
+  assert.equal(selectLiveProviderCall(captured, plan), null);
+  const ambiguous = structuredClone(captured);
+  ambiguous.messages[0].content[0].text = JSON.stringify({ records: [record, record], has_more: false });
+  assert.throws(() => selectLiveProviderCall(ambiguous, plan), /NOT_UNIQUE/u);
+  ambiguous.messages[0].content[0].text = JSON.stringify({ records: [record], has_more: true });
+  assert.throws(() => selectLiveProviderCall(ambiguous, plan), /NOT_UNIQUE/u);
+  const missing = structuredClone(captured);
+  missing.messages[1].content[0].text = JSON.stringify({ records: [{ name: plan.owner, directory: { files: [] } }] });
+  assert.throws(() => selectLiveProviderCall(missing, plan), /RESOURCE_NOT_UNIQUE/u);
+});
+test('live source metrics preserve attempts, bytes, writes and unknowns without treating absence as zero', () => {
+  const events = [{ kind: 'sdk', event: 'end', id: 'sdk1', operation: 'consume', status: 'completed', metrics_observed: true,
+    request_metrics: { complete: true, total_requests: 3, trace: [
+      { event: 'attempt', request_kind: 'notion_metadata', body_kind: null, request_bytes: 3, response_bytes: 5 },
+      { event: 'attempt', request_kind: 'notion_body', body_kind: 'retained_body', request_bytes: 7, response_bytes: 11 },
+      { event: 'attempt', request_kind: 'notion_write', body_kind: null, request_bytes: 13, response_bytes: 17 },
+    ] } }];
+  const result = liveSourceMetrics(events);
+  assert.equal(result.attempts, 3); assert.equal(result.request_bytes, 23); assert.equal(result.response_bytes, 33);
+  assert.deepEqual(result.categories, { notion_metadata: 1, notion_body: 1, notion_write: 1, provider: 0 });
+  assert.equal(result.body_kinds.retained_body, 1);
+  assert.throws(() => liveSourceMetrics([]));
+  const incomplete = structuredClone(events); incomplete[0].request_metrics.complete = false;
+  assert.throws(() => liveSourceMetrics(incomplete));
+  const missingTrace = structuredClone(events); missingTrace[0].request_metrics.total_requests++;
+  assert.throws(() => liveSourceMetrics(missingTrace), /every actual HTTP attempt/u);
+  const unknown = structuredClone(events); unknown[0].request_metrics.trace[0].response_bytes = null;
+  assert.equal(liveSourceMetrics(unknown).response_bytes, null);
+  unknown[0].request_metrics.trace[0].request_kind = 'unobserved';
+  assert.throws(() => liveSourceMetrics(unknown));
+});
 
 async function serializerFixture(t, { nested = false, name = '@earendil-works/pi-ai', version = '1.4.0', exported = true } = {}) {
   const root = await mkdtemp(join(await systemTempRoot(), 'pi-serializer-resolution-'));
@@ -451,13 +523,13 @@ test('actual provider schema must express a bounded paths branch exclusive with 
 });
 
 function defaultViewFixture() {
-  const records = ['a', 'b'].map(name => ({ id: 'owner:' + name, name, ref: 'skill://owner-' + name + '/SKILL.md' }));
+  const records = ['a', 'b'].map(name => ({ id: 'owner:' + name, name, description: 'Metadata', ref: 'skill://owner-' + name + '/SKILL.md' }));
   const fixture = { default_view: { id: 'view-1', records } };
   const discovery = { records: records.map((record, index) => ({ ...record, description: 'Metadata', source: 'sdk-fixture', in_default_view: true, ref: 'sr:C' + String(index).repeat(22) })) };
   const catalog = '<ntn-skills-view-catalog><view source="sdk-fixture" id="view-1" partial="false">Default</view>'
     + discovery.records.map(record => '<skill><name>' + record.name + '</name><description>Metadata</description><source>sdk-fixture</source><location>' + record.ref + '</location></skill>').join('')
     + '</ntn-skills-view-catalog>';
-  const captures = [{ requestId: '1', context: { messages: [{ role: 'system', content: '<ntn-skills-discovery status="pending"/>' }] } },
+  const captures = [{ requestId: '1', context: { messages: [{ role: 'system', content: '<ntn-skills-discovery status="pending">Notion metadata is pending; this does not mean the directory is empty.</ntn-skills-discovery>' }] } },
     { requestId: '2', context: { messages: [{ role: 'system', content: catalog }] } }];
   const events = [{ kind: 'sdk_catalog', value: { view: { id: 'view-1' }, view_selection: 'first', count: 2, records,
     coverage: { exhaustive: true, failed_sources: [] } } }];
@@ -467,7 +539,15 @@ test('Default View evidence retains pending startup and proves the ready metadat
   const value = defaultViewFixture();
   const result = assertDefaultViewProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies);
   assert.equal(result.status, 'verified'); assert.equal(result.body_delivery, false);
-  assert.deepEqual(result.provider_requests.map(request => request.state), ['not_ready', 'ready']);
+  assert.deepEqual(result.provider_requests.map(request => request.state), ['pending', 'ready']);
+});
+test('live Default View matches frozen metadata and actual SDK rows without a discovery tool warmup', () => {
+  const value = defaultViewFixture();
+  value.captures[1].context.messages[0].content = value.captures[1].context.messages[0].content.replaceAll('sdk-fixture', 'mini-live');
+  const result = assertDefaultViewProjection(value.captures, undefined, value.events, value.fixture, value.bodies, { sourceId: 'mini-live' });
+  assert.deepEqual(result.provider_requests.map(request => request.state), ['pending', 'ready']);
+  value.fixture.default_view.records[0].description = 'Different metadata';
+  assert.throws(() => assertDefaultViewProjection(value.captures, undefined, value.events, value.fixture, value.bodies, { sourceId: 'mini-live' }));
 });
 test('missing, partial, stale, duplicate or body-bearing default directories cannot pass', () => {
   for (const mutate of [

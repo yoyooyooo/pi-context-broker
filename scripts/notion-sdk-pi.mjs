@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import fs from 'node:fs';
@@ -14,7 +15,7 @@ import { safeRequestMetrics } from './notion-default-context.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
 import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
 
-const usage = 'Usage: node scripts/notion-sdk-pi.mjs doctor|run --package ABSOLUTE_INSTALLED_BROKER --fixture ABSOLUTE_FIXTURE_JSON [--expect-short-refs true|false] [--expect-compact-context true|false] [--expect-direct-scalar true|false] [--expect-short-confirmations true|false] [--scenario all|default-view|codemode-hidden|codemode-truncated|dollar|native|native-repeat|prepare|scoped-command|resource-batch|resource-batch-short-refs|resource-scalar|resource-scalar-short-refs|partial-entrypoint|session-lifecycle] [--out NEW_ABSOLUTE_EVIDENCE]; evidence|cleanup --evidence ABSOLUTE_EVIDENCE. Real Pi 1.4 RPC, controlled provider with public onPayload/onResponse hooks, offline source, default bundled SDK (source.command is absent). Compact context, direct scalar and short confirmation checks default to true; false observes a baseline without certifying that contract. Comparisons include the installed Broker and bundled CLI/SDK identities. default-view observes pending startup plus ready metadata on an ordinary continuation. session-lifecycle drives native fork/clone/tree/compact/resume and late-response cancellation with a controlled summary. Native menu, live Notion and real model are not claimed.';
+const usage = 'Usage: node scripts/notion-sdk-pi.mjs doctor|run --package ABSOLUTE_INSTALLED_BROKER (--fixture ABSOLUTE_FIXTURE_JSON | --live-input ABSOLUTE_LIVE_INPUT_JSON) [--expect-short-refs true|false] [--expect-compact-context true|false] [--expect-direct-scalar true|false] [--expect-short-confirmations true|false] [--scenario all|default-view|codemode-hidden|codemode-truncated|dollar|native|native-repeat|prepare|scoped-command|resource-batch|resource-batch-short-refs|resource-scalar|resource-scalar-short-refs|partial-entrypoint|session-lifecycle] [--out NEW_ABSOLUTE_EVIDENCE]; evidence|cleanup --evidence ABSOLUTE_EVIDENCE. Real Pi 1.4 RPC, controlled provider with public onPayload/onResponse hooks, offline source, default bundled SDK (source.command is absent). Compact context, direct scalar and short confirmation checks default to true; false observes a baseline without certifying that contract. Comparisons include the installed Broker and bundled CLI/SDK identities. default-view observes pending startup plus ready metadata on an ordinary continuation. session-lifecycle drives native fork/clone/tree/compact/resume and late-response cancellation with a controlled summary. The explicit live-input route selects one separate cold consumer on real Notion, an independently installed package auto-loaded by owned settings, and observer-only frozen local originals. The default offline all remains 14 scenarios. Native menu and real model are not claimed; live retained-body Member exclusion requires separate source attribution.';
 const scenarioNames = ['default-view', 'codemode-hidden', 'codemode-truncated', 'dollar', 'native', 'native-repeat', 'prepare', 'scoped-command', 'resource-batch', 'resource-batch-short-refs', 'resource-scalar', 'resource-scalar-short-refs', 'partial-entrypoint', 'session-lifecycle'];
 const nativeTools = ['read', 'notion_list', 'notion_use'];
 const scopedCommandTools = [...nativeTools, 'bash', 'notion_ctl'];
@@ -251,7 +252,7 @@ export function assertSearchProjection(message, { expectCompact = true, scope } 
 }
 
 /** The actual default catalog must agree with the independent metadata fixture. */
-export function assertDefaultViewProjection(captures, discovery, events, fixture, bodies) {
+export function assertDefaultViewProjection(captures, discovery, events, fixture, bodies, { sourceId = 'sdk-fixture' } = {}) {
   const expected = fixture.default_view;
   assert.ok(expected?.records?.length, 'Default View fixture metadata is required');
   const results = events.filter(event => event.kind === 'sdk_catalog' && event.value?.view?.id === expected.id);
@@ -262,27 +263,29 @@ export function assertDefaultViewProjection(captures, discovery, events, fixture
     assert.deepEqual(value.records.map(record => record.id).sort(), expected.records.map(record => record.id).sort());
     assert.equal(value.count, expected.records.length);
   }
-  assert.deepEqual(discovery.records.filter(record => record.in_default_view).map(record => record.name).sort(), expected.records.map(record => record.name).sort());
+  if (discovery) assert.deepEqual(discovery.records.filter(record => record.in_default_view).map(record => record.name).sort(), expected.records.map(record => record.name).sort());
   const observations = captures.map(capture => {
     const texts = capture.context.messages.map(message => textContent(message.content));
     const catalogs = texts.flatMap(text => [...text.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)]);
     assert.ok(catalogs.length <= 1, 'Default directory must not be duplicated in a provider request');
     for (const body of bodies.values()) assert.equal(bodyCount(capture.context, body), 0, 'Default discovery never delivers Skill bodies');
-    if (!catalogs.length) return { request_id: capture.requestId, state: 'not_ready' };
+    if (!catalogs.length) return { request_id: capture.requestId,
+      state: texts.some(text => /<ntn-skills-discovery status="pending">[\s\S]*?<\/ntn-skills-discovery>/u.test(text)) ? 'pending' : 'not_ready' };
     const catalog = catalogs[0][1], views = [...catalog.matchAll(/<view\b([^>]*)>/gu)];
     const attributes = views.map(view => Object.fromEntries([...view[1].matchAll(/([a-z_]+)="([^"]*)"/gu)].map(match => [match[1], match[2]])));
-    const view = attributes.find(value => value.source === 'sdk-fixture');
+    const view = attributes.find(value => value.source === sourceId);
     if (!view?.id) return { request_id: capture.requestId, state: view?.status ?? 'not_ready', code: view?.code ?? null };
     assert.equal(view.id, expected.id); assert.equal(view.partial, 'false');
     const entries = [...catalog.matchAll(/<skill><name>([^<]+)<\/name><description>([^<]*)<\/description><source>([^<]+)<\/source><location>([^<]+)<\/location><\/skill>/gu)];
     assert.equal(entries.length, expected.records.length);
     const xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
     for (const record of expected.records) {
-      const actual = discovery.records.find(value => value.name === record.name && value.source === 'sdk-fixture');
+      const actual = discovery ? discovery.records.find(value => value.name === record.name && value.source === sourceId)
+        : { name: record.name, description: record.description, source: sourceId };
       assert.ok(actual); const matches = entries.filter(entry => entry[1] === xml(record.name) && entry[3] === actual.source);
       assert.equal(matches.length, 1, 'Display the author name and explicit source, not the sanitized command token');
       assert.equal(matches[0][2], xml(actual.description)); assert.match(matches[0][4], /^sr:C[A-Za-z0-9_-]{22}$/u);
-      assert.equal(matches[0][4], actual.ref);
+      if (discovery) assert.equal(matches[0][4], actual.ref);
       assert.equal(texts.reduce((count, text) => count + text.split(matches[0][0]).length - 1, 0), 1);
     }
     return { request_id: capture.requestId, state: 'ready', records: entries.length, catalog_bytes: Buffer.byteLength(catalogs[0][0]) };
@@ -949,8 +952,93 @@ async function archiveSessions(root, output) {
   await save(join(output, 'session-archives.json'), { files: entries, preserved: true });
   return { files: entries, messages, entries: sessionEntries };
 }
+
+export function validateLiveInput(value) {
+  exactKeys(value, ['version', 'kind', 'host', 'artifact', 'source', 'oracle', 'sentinels'], 'Explicit live input');
+  assert.equal(value.version, 1); assert.equal(value.kind, 'live_notion_sdk');
+  const identity = (item, extra = []) => {
+    exactKeys(item, ['path', 'sha256', ...extra], 'Frozen local identity');
+    assert.ok(typeof item.path === 'string' && isAbsolute(item.path));
+    assert.match(item.sha256, /^[a-f0-9]{64}$/u);
+  };
+  identity(value.host); identity(value.artifact);
+  exactKeys(value.source, ['id', 'database'], 'One explicit live source');
+  assert.match(value.source.id, /^[a-z][a-z0-9-]{0,63}$/u);
+  assert.match(value.source.database, /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u);
+  exactKeys(value.oracle, ['catalog', 'use', 'resource'], 'Observer-only source originals');
+  identity(value.oracle.catalog); identity(value.oracle.use); identity(value.oracle.resource, ['logical_path']);
+  const path = value.oracle.resource.logical_path;
+  assert.ok(typeof path === 'string' && path.length > 0 && !isAbsolute(path) && !path.split('/').some(part => ['', '.', '..'].includes(part)));
+  assert.ok(Array.isArray(value.sentinels) && value.sentinels.length > 0);
+  value.sentinels.forEach(item => identity(item));
+  assert.equal(new Set(value.sentinels.map(item => item.path)).size, value.sentinels.length);
+  return value;
+}
+
+async function frozenBytes(identity) {
+  const bytes = await readFile(identity.path);
+  assert.equal(hash(bytes), identity.sha256, identity.path + ': frozen input changed');
+  return bytes;
+}
+
+async function inspectLiveInput(live, common) {
+  assert.ok(process.env.NOTION_API_TOKEN, 'Live mode uses this machine’s existing NOTION_API_TOKEN');
+  assert.ok(!process.env.NOTION_API_BASE_URL || process.env.NOTION_API_BASE_URL.replace(/\/$/u, '') === 'https://api.notion.com');
+  await frozenBytes(live.host); await frozenBytes(live.artifact);
+  assert.equal(await realpath(live.host.path), common.host.identity);
+  for (const sentinel of live.sentinels) await frozenBytes(sentinel);
+  // Same published-file closure used by the daily installation verifier. The
+  // archive and installed files are read only; no source checkout is loaded.
+  const members = execFileSync('tar', ['-tf', live.artifact.path], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 })
+    .split('\n').filter(path => path && !path.endsWith('/'));
+  const published = [];
+  for (const member of members) {
+    assert.ok(member.startsWith('package/'));
+    const relative = member.slice(8), path = resolve(common.packageRoot, relative);
+    assert.ok(path.startsWith(common.packageRoot + '/') && (await realpath(path)).startsWith(common.packageRoot + '/'));
+    const packed = execFileSync('tar', ['-xOf', live.artifact.path, member], { maxBuffer: 32 * 1024 * 1024 });
+    const actual = await readFile(path); assert.deepEqual(actual, packed, relative + ': installed archive mismatch');
+    published.push({ path: relative, bytes: actual.length, sha256: hash(actual) });
+  }
+  assert.ok(published.some(file => file.path === 'package.json') && published.some(file => file.path === 'dist/ntn-skills-runtime.json'));
+  assert.equal(new Set(published.map(file => file.path)).size, published.length);
+  const catalog = JSON.parse((await frozenBytes(live.oracle.catalog)).toString('utf8'));
+  assert.equal(catalog.ok, true); assert.equal(catalog.coverage?.exhaustive, true);
+  assert.deepEqual(catalog.coverage.failed_sources, []); assert.equal(catalog.has_more, false);
+  assert.equal(catalog.count, catalog.records.length); assert.equal(catalog.total_count, catalog.records.length);
+  assert.equal(catalog.view?.database_id, live.source.database); assert.equal(catalog.view_selection, 'first');
+  const use = JSON.parse((await frozenBytes(live.oracle.use)).toString('utf8'));
+  assert.equal(use.ok, true); assert.equal(use.status, 'ready'); assert.equal(use.preparation?.status, 'ready');
+  assert.equal(use.preparation.purpose, 'use'); assert.equal(use.preparation.roots.length, 1);
+  const snapshots = use.entries.map(entry => entry.manifest), bodies = new Map();
+  assert.deepEqual(snapshots.map(snapshot => snapshot.record.id).sort(), [...use.preparation.required_closure].sort());
+  for (const snapshot of snapshots) {
+    assert.equal(snapshot.complete, true); assert.equal(snapshot.scope, catalog.scope);
+    assert.equal(snapshot.record.locator.database_id, live.source.database);
+    const node = use.preparation.nodes.find(node => node.id === snapshot.record.id);
+    const file = snapshot.files.find(file => file.path === snapshot.entrypoint);
+    assert.ok(node && file && typeof node.content === 'string' && node.content.length);
+    assert.equal(hash(node.content), file.sha256); assert.equal(Buffer.byteLength(node.content), file.bytes);
+    assert.equal(bodies.has(snapshot.record.name), false); bodies.set(snapshot.record.name, node.content);
+  }
+  const root = snapshots.find(snapshot => snapshot.record.id === use.preparation.roots[0].id);
+  assert.ok(root && catalog.records.some(record => record.id === root.record.id));
+  const files = root.files.filter(file => file.path === live.oracle.resource.logical_path); assert.equal(files.length, 1);
+  const bytes = await frozenBytes(live.oracle.resource); assert.equal(bytes.length, files[0].bytes); assert.equal(hash(bytes), files[0].sha256);
+  const binding = root.file_bindings.find(binding => binding.path === files[0].path);
+  const ref = 'skill://' + encodeURIComponent(root.record.id) + '/' + files[0].path + '?snapshot=' + root.snapshot_id
+    + (binding ? '&file_id=' + encodeURIComponent(binding.file_id) : '');
+  const resource = { ...files[0], ref, ...(binding ? { file_id: binding.file_id } : {}),
+    content: new TextDecoder('utf8', { fatal: true, ignoreBOM: true }).decode(bytes) };
+  const selected = new Set(snapshots.map(snapshot => snapshot.record.id));
+  return { live, bodies, snapshots, root, resource, catalog, published,
+    unselected: use.preparation.nodes.filter(node => !selected.has(node.id)).map(node => node.record),
+    fixture: { scope: catalog.scope, snapshots, default_view: { id: catalog.view.id, records: catalog.records } } };
+}
+
 async function inspect(options) {
-  assert.ok(options['--package'] && options['--fixture'], usage);
+  assert.ok(options['--package'] && Boolean(options['--fixture']) !== Boolean(options['--live-input']), usage);
+  const live = options['--live-input'] ? validateLiveInput(await json(options['--live-input'])) : undefined;
   const packageRoot = await realpath(options['--package']);
   const checkout = resolve(import.meta.dirname, '..');
   assert.ok(!packageRoot.startsWith(checkout + '/'), 'Use an independently installed Broker package');
@@ -962,7 +1050,7 @@ async function inspect(options) {
   assert.equal(runtime.sdk_version, 1); assert.equal(runtime.consumer_contract_version, 1);
   for (const [file, field] of [['ntn-skills.mjs', 'cli_sha256'], ['ntn-skills-sdk.mjs', 'sdk_sha256']])
     assert.equal(hash(await readFile(join(packageRoot, 'dist', file))), runtime[field]);
-  const host = await resolveHost('pi');
+  const host = await resolveHost(live?.host.path ?? 'pi');
   let current = dirname(host.identity), pi;
   for (;;) {
     try { const candidate = await json(join(current, 'package.json')); if (candidate.name === '@earendil-works/pi-coding-agent') { pi = candidate; break; } }
@@ -971,6 +1059,8 @@ async function inspect(options) {
   }
   assert.match(pi.version, /^1\.4\./u, 'This controlled route is frozen for Pi 1.4');
   const serializerIdentity = await resolveInstalledPiSerializer(current, pi.version);
+  const common = { packageRoot, manifest, extension, runtime, host, pi, piPackageRoot: current, serializerIdentity };
+  if (live) return { ...common, ...await inspectLiveInput(live, common) };
   const fixture = await json(options['--fixture']);
   assert.equal(fixture.version, 1); assert.equal(fixture.catalog, true);
   const fixtureEnv = await json(fixture.env);
@@ -1052,6 +1142,7 @@ function selectProviderCall(context) {
   const text = value => typeof value === 'string' ? value : (value ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
   const parsed = result => { if (result.isError) throw new Error('CONTROLLED_TOOL_FAILED'); return JSON.parse(text(result.content)); };
   const call = (id, name, args) => ({ type: 'toolCall', id, name, arguments: args });
+  if (plan.mode === 'live-consume') return selectLiveProviderCall(context, plan);
   if (plan.mode === 'lifecycle-probe') return find(plan.id) ? null : call(plan.id, 'read', { path: plan.ref });
   if (['resource-scalar', 'resource-scalar-short-refs'].includes(plan.mode)) return selectScalarProviderCall(context, plan.calls);
   if (plan.mode === 'scoped-command') {
@@ -1122,6 +1213,31 @@ function selectProviderCall(context) {
   if (!find('sc10-resource')) return call('sc10-resource', 'read', { path: resources[0].ref });
   return null;
 }
+
+export function selectLiveProviderCall(context, plan) {
+  const find = id => context.messages.find(message => message.role === 'toolResult' && message.toolCallId === id);
+  const parsed = result => {
+    if (result.isError) throw new Error('LIVE_TOOL_FAILED');
+    const value = typeof result.content === 'string' ? result.content : result.content.filter(block => block.type === 'text').map(block => block.text).join('\n');
+    return JSON.parse(value);
+  };
+  const call = (id, name, args) => ({ type: 'toolCall', id, name, arguments: args });
+  const search = find('live-list');
+  if (!search) return call('live-list', 'notion_list', { query: plan.owner, source: plan.source, limit: 20 });
+  const directory = parsed(search);
+  const records = directory.records.filter(record => record.name === plan.owner && record.source === plan.source && record.availability === 'available');
+  if (records.length !== 1 || directory.has_more) throw new Error('LIVE_DIRECTORY_SELECTION_NOT_UNIQUE');
+  const used = find('live-use');
+  if (!used) return call('live-use', 'notion_use', { ref: records[0].ref });
+  const roots = parsed(used).records.filter(record => record.name === plan.owner);
+  if (roots.length !== 1) throw new Error('LIVE_ROOT_NOT_UNIQUE');
+  const files = roots[0].directory.files.filter(file => file.path === plan.resource_path);
+  if (files.length !== 1 || !/^sr:R[A-Za-z0-9_-]{22}$/u.test(files[0].ref)) throw new Error('LIVE_RESOURCE_NOT_UNIQUE');
+  const read = find('live-resource');
+  if (!read) return call('live-resource', 'read', { path: files[0].ref });
+  if (read.isError) throw new Error('LIVE_RESOURCE_FAILED');
+  return null;
+}
 async function holdLifecycleResponse(options, hook) {
   if (!JSON.parse(readFileSync(process.env.SC10_PI_TOOL_PLAN, 'utf8')).holdResponse) return false;
   hook('response_held');
@@ -1140,7 +1256,7 @@ async function provider(base) {
   let source = await readFile(path, 'utf8');
   const replace = (before, after) => { assert.equal(source.split(before).length, 2, 'Provider fixture shape changed'); source = source.replace(before, after); };
   replace('import { appendFileSync }', 'import { appendFileSync, readFileSync }');
-  replace('function stream(model, context) {', `${resourceRefsFromNative.toString()}\n${selectScalarProviderCall.toString()}\n${selectNativeRepeatCall.toString()}\n${selectProviderCall.toString()}\n${holdLifecycleResponse.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, aborted: Boolean(options?.signal?.aborted), monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
+  replace('function stream(model, context) {', `${resourceRefsFromNative.toString()}\n${selectScalarProviderCall.toString()}\n${selectNativeRepeatCall.toString()}\n${selectLiveProviderCall.toString()}\n${selectProviderCall.toString()}\n${holdLifecycleResponse.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, aborted: Boolean(options?.signal?.aborted), monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
   replace('const payload = await options?.onPayload?.({ model: model.id, context }, model);', 'if (typeof options?.onPayload !== "function" || typeof options?.onResponse !== "function") throw new Error("PUBLIC_PROVIDER_HOOKS_REQUIRED");\n      hook("payload_start");\n      const payload = await options.onPayload({ model: model.id, context }, model);\n      hook("payload_end");');
   replace('JSON.stringify({ model: model.id, context })', 'JSON.stringify({ requestId, model: model.id, context })');
   replace('await options?.onResponse?.({ status: 200, headers: { "x-fixture": "deterministic" } }, model);', 'const held = await holdLifecycleResponse(options, hook);\n      await options.onResponse({ status: 200, headers: { "x-fixture": "deterministic" } }, model);\n      if (held) hook("response_callback");\n      hook("response_end");');
@@ -1327,7 +1443,8 @@ async function waitForSourceFinality(path, hostPid, options = {}) {
   }
 }
 
-export function reconcile(events, lifecycle, { bodyTransportRequired = true } = {}) {
+export function reconcile(events, lifecycle, { bodyTransportRequired = true, sourceMode = 'offline' } = {}) {
+  assert.ok(['offline', 'live'].includes(sourceMode));
   assert.ok(events.length > 0, 'Empty observer ledger cannot establish zero work');
   const chains = new Map();
   for (const item of events) {
@@ -1364,7 +1481,7 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true } = 
     assert.equal(ends[0].metrics_observed, true); assert.equal(ends[0].request_metrics?.complete, true);
     http += ends[0].request_metrics.total_requests;
   }
-  assert.equal(http, 0, 'The controlled SDK source must stay offline');
+  if (sourceMode === 'offline') assert.equal(http, 0, 'The controlled SDK source must stay offline');
   const cliCloses = events.filter(event => event.kind === 'child_close');
   return { sdk_calls: sdk.length, sdk_body_calls: bodies.length, sdk_lists: catalog.length,
     sdk_consumes: sdk.filter(event => event.operation === 'consume').length,
@@ -2324,6 +2441,171 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
   }
 }
 
+export function liveSourceMetrics(events) {
+  const ends = events.filter(event => event.kind === 'sdk' && event.event === 'end');
+  assert.ok(ends.length > 0, 'A live observation cannot infer zero requests from an empty ledger');
+  const attempts = ends.flatMap(event => {
+    assert.equal(event.status, 'completed'); assert.equal(event.metrics_observed, true);
+    assert.equal(event.request_metrics?.complete, true);
+    const attempts = event.request_metrics.trace.filter(item => item.event === 'attempt');
+    assert.equal(attempts.length, event.request_metrics.total_requests, 'Every completed SDK call must account for every actual HTTP attempt');
+    return attempts.map(item => ({ sdk_id: event.id, operation: event.operation, ...item }));
+  });
+  const categories = Object.fromEntries(['notion_metadata', 'notion_body', 'notion_write', 'provider'].map(kind => [kind, attempts.filter(item => item.request_kind === kind).length]));
+  assert.equal(Object.values(categories).reduce((total, count) => total + count, 0), attempts.length);
+  const bytes = key => attempts.every(item => Number.isSafeInteger(item[key]) && item[key] >= 0)
+    ? attempts.reduce((total, item) => total + item[key], 0) : null;
+  return { attempts: attempts.length, request_bytes: bytes('request_bytes'), response_bytes: bytes('response_bytes'), categories,
+    body_kinds: Object.fromEntries(['current_body', 'retained_body', 'unclassified_body'].map(kind => [kind, attempts.filter(item => item.body_kind === kind).length])),
+    trace: attempts, observation: 'Completed installed SDK calls and full actual HTTP attempt traces; retries are counted individually' };
+}
+
+async function liveScenario(info, scratch, evidence) {
+  const name = 'live-notion', base = join(scratch, name), output = join(evidence, name);
+  await mkdir(base); await mkdir(output, { mode: 0o700 });
+  const agentDir = join(base, 'agent'), sessions = join(base, 'sessions');
+  await mkdir(join(agentDir, 'context-broker'), { recursive: true }); await mkdir(sessions);
+  const source = { type: 'notion', ...info.live.source, namespace: info.live.source.id,
+    cacheDir: join(base, 'broker-cache'), prefetch: false };
+  assert.equal(Object.hasOwn(source, 'command'), false);
+  const config = join(agentDir, 'context-broker/config.yml');
+  await save(config, { sources: [source] }); await save(join(output, 'source.json'), source);
+  await save(join(agentDir, 'settings.json'), { packages: [info.packageRoot] });
+  const providerFile = join(output, 'provider.jsonl'), hookFile = join(output, 'provider-hooks.jsonl'), ledger = join(output, 'observer.jsonl');
+  const toolPlan = join(base, 'tool-plan.json'), preload = join(base, 'observer.mjs');
+  await save(toolPlan, { mode: 'complete' });
+  const fakeProvider = await provider(base); await observer(preload);
+  const env = isolatedEnv({ base, agentDir, NOTION_API_TOKEN: process.env.NOTION_API_TOKEN,
+    NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000', CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_CONFIG: config,
+    CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: providerFile, CONTEXT_BROKER_LOG_FILE: join(output, 'decisions.jsonl'),
+    BROKER_E2E_PROCESS_LEDGER: join(output, 'owned-processes.jsonl'), SC10_PI_TOOL_PLAN: toolPlan,
+    SC10_PI_PROVIDER_HOOKS: hookFile, SC10_PI_OBSERVER: ledger, SC08_PI_LIFECYCLE: '1',
+    SC13_PI_OBJECT_ROOT: join(base, 'ntn/state/objects'),
+    SC10_PI_BUNDLED_CLI: join(info.packageRoot, 'dist/ntn-skills.mjs'), NODE_OPTIONS: '--import=' + preload });
+  const roots = [env.NTN_SKILLS_HOME, env.NTN_SKILLS_CONFIG_HOME, env.NTN_SKILLS_CACHE_HOME, env.NTN_SKILLS_DATA_HOME, source.cacheDir];
+  for (const root of roots) await assert.rejects(lstat(root), { code: 'ENOENT' }, 'Live consumer state must start absent');
+  assert.deepEqual(await readdir(sessions), []);
+  const before = await inventory(base);
+  for (const file of before) for (const body of [...info.bodies.values(), info.resource.content])
+    assert.equal((await readFile(join(base, file.path))).includes(Buffer.from(body)), false, 'Observer oracle bytes must never seed the consumer');
+  await save(join(output, 'cold-start.json'), { absent_roots: roots, empty_sessions: sessions, setup_files: before,
+    credentials: 'Inherited local NOTION_API_TOKEN only; no copied auth/config/cache/body', oracle_in_consumer: false });
+  const argv = ['--session-dir', sessions, '--tools', nativeTools.join(','), '-e', fakeProvider, '--model', 'context-broker-e2e/fake'];
+  await save(join(output, 'launch.json'), { host: info.host, argv, cwd: base, settings_packages: [info.packageRoot],
+    source_command_configured: false, target_extension_injected: false, observation_extensions: [fakeProvider, preload] });
+  let rpc, failed, finality, beforeClose, defaultView, preparation, resourceProof, autoload, ordinaryBoundary;
+  try {
+    rpc = await startRpc({ host: info.live.host.path, args: argv, cwd: base, env, timeoutMs: 180000 });
+    const commands = await rpc.command('get_commands'); await save(join(output, 'registered-commands.json'), commands);
+    const registrations = commands.commands.filter(command => command.name === 'context-broker');
+    assert.equal(registrations.length, 1); assert.equal(registrations[0].source, 'extension');
+    assert.equal(registrations[0].sourceInfo.origin, 'package'); assert.equal(registrations[0].sourceInfo.scope, 'user');
+    assert.equal(await realpath(registrations[0].sourceInfo.baseDir), info.packageRoot);
+    assert.equal(await realpath(registrations[0].sourceInfo.source), info.packageRoot);
+    const actual = await realpath(registrations[0].sourceInfo.path), actualHash = hash(await readFile(actual));
+    assert.equal(actual, await realpath(info.extension), 'The auto-loaded Broker must be this independent installed package');
+    assert.ok(info.published.some(file => resolve(info.packageRoot, file.path) === actual && file.sha256 === actualHash));
+    autoload = { registration: registrations[0], actual_entry: actual, sha256: actualHash, injected_by_cli: false };
+    await rpc.prompt('Reply briefly to this ordinary greeting. No Skill is needed.');
+    const deadline = Date.now() + 120000;
+    while (!(await rows(ledger)).some(event => event.kind === 'sdk_catalog' && event.value?.view?.id === info.catalog.view.id)) {
+      assert.ok(Date.now() < deadline, 'Live Default View metadata did not become available');
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    // SDK completion precedes metadata-index publication. The existing public
+    // no-argument view command reads local status without refreshing or selecting.
+    const publication = [];
+    for (;;) {
+      assert.ok(Date.now() < deadline, 'Broker Default View publication did not complete');
+      const start = rpc.frames.length, acknowledgment = await rpc.command('prompt', { message: '/context-broker view' });
+      assert.equal(acknowledgment?.disposition, 'handled');
+      const notifications = rpc.frames.slice(start).filter(frame => frame.type === 'extension_ui_request' && frame.method === 'notify').flatMap(strings);
+      publication.push({ at: new Date().toISOString(), command: '/context-broker view', notifications });
+      assert.equal(notifications.some(text => text.includes('default View failed')), false);
+      if (notifications.some(text => text.startsWith(source.id + ':') && text.includes('(' + info.catalog.view.id + ')')
+        && text.includes(' · ' + info.catalog.count + ' Skill/Router · ') && !text.includes('partial'))) break;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    await save(join(output, 'startup-publication.json'), { boundary: 'Read-only public host status after SDK catalog, before the next provider request', observations: publication });
+    await rpc.prompt('Continue the ordinary conversation. No Skill body is needed.');
+    const ordinary = await rows(providerFile), initialEvents = await rows(ledger);
+    assert.equal(ordinary.length, 2); assert.equal(rpc.frames.filter(frame => frame.type === 'tool_execution_start').length, 0);
+    defaultView = assertDefaultViewProjection(ordinary, undefined, initialEvents, info.fixture, info.bodies, { sourceId: source.id });
+    assert.ok(['pending', 'ready'].includes(defaultView.provider_requests[0].state), 'Startup exposes its actual pending or complete ready state');
+    defaultView.read_schema = assertResourceReadSchema(ordinary.at(-1).context);
+    defaultView.guidance = assertNativeGuidance(ordinary.at(-1).context, env.SC10_PI_BUNDLED_CLI);
+    assert.equal(liveSourceMetrics(initialEvents).categories.notion_body, 0, 'Ordinary startup must not read source bodies');
+    assert.equal(initialEvents.filter(event => event.kind === 'sdk' && event.event === 'start' && event.operation !== 'list').length, 0);
+    ordinaryBoundary = initialEvents.at(-1).sequence;
+    await save(join(output, 'default-view.json'), defaultView);
+    await save(toolPlan, { mode: 'live-consume', owner: info.root.record.name, source: source.id, resource_path: info.resource.path });
+    await rpc.prompt('Find and use ' + info.root.record.name + ' with its complete Requires. Then read the returned ' + info.resource.path + ' resource.');
+    let captures = await rows(providerFile);
+    const used = captures.find(capture => toolResult(capture.context, 'live-use'));
+    const read = captures.find(capture => toolResult(capture.context, 'live-resource'));
+    assert.ok(used && read);
+    preparation = assertPreparedProjection(toolResult(used.context, 'live-use'),
+      { snapshots: info.snapshots, bodies: info.bodies, roots: [info.root.record.name] });
+    for (const body of info.bodies.values()) assert.equal(bodyCount(used.context, body), 1, 'The next actual provider receives every complete root/Requires body');
+    const resourceCall = rpc.frames.find(frame => frame.type === 'tool_execution_start' && frame.toolCallId === 'live-resource');
+    const call = { id: 'live-resource', args: resourceCall.args, expectedText: info.resource.content, completeText: true, file: info.resource };
+    resourceProof = assertResourceScalarResult(toolResult(read.context, call.id), { batch: { snapshot: info.root }, call });
+    assert.equal(bodyCount(read.context, info.resource.content), 1);
+    await save(toolPlan, { mode: 'complete' });
+    await rpc.prompt('Continue the ordinary task using the instructions and resource already delivered.');
+    captures = await rows(providerFile);
+    for (const body of [...info.bodies.values(), info.resource.content]) assert.equal(bodyCount(captures.at(-1).context, body), 1, 'Ordinary continuation retains one complete copy');
+    assert.deepEqual(rpc.frames.filter(frame => frame.type === 'tool_execution_start').map(frame => frame.toolName), ['notion_list', 'notion_use', 'read']);
+    const events = await rows(ledger), reads = events.filter(event => event.kind === 'sdk' && event.operation === 'read');
+    assert.equal(reads.length, 2); assert.equal(reads[1].request_metrics.total_requests, 0, 'A fixed resource must not prepare or fetch the main again');
+    const readInterval = events.filter(event => event.sequence >= reads[0].sequence && event.sequence <= reads[1].sequence);
+    const resourceCost = assertScalarReadObjectIntervals(readInterval, { calls: [call], requiredPid: rpc.lifecycle[0].pid });
+    await save(join(output, 'delivery.json'), { preparation, resource: resourceProof, resource_cost: resourceCost,
+      returned_reference: resourceCall.args.path, fixed_canonical: info.resource.ref, continuation_complete_copies: 1,
+      oracle: info.live.oracle, observer_only: true });
+    beforeClose = await waitForSourceFinality(ledger, rpc.lifecycle[0].pid); assert.ok(beforeClose.complete);
+    await rpc.closeInput();
+  } catch (error) {
+    failed = { code: error.code ?? error.name, message: String(error.message) };
+    if (rpc) { beforeClose ??= await waitForSourceFinality(ledger, rpc.lifecycle[0].pid); await rpc.stop().catch(() => {}); }
+  } finally {
+    if (rpc) {
+      finality = await waitForSourceFinality(ledger, rpc.lifecycle[0].pid, { hostClosed: true });
+      await save(join(output, 'observer-finalization.json'), { before_close: beforeClose, after_close: finality });
+      await save(join(output, 'rpc.json'), rpc.frames); await save(join(output, 'rpc-lifecycle.json'), rpc.lifecycle);
+      await archiveSessions(sessions, output);
+    }
+  }
+  try {
+    if (failed) throw new Error(failed.message);
+    assert.equal(finality?.complete, true);
+    const events = await rows(ledger), captures = await rows(providerFile), hooks = await rows(hookFile);
+    for (const capture of captures) {
+      assert.deepEqual(hooks.filter(hook => hook.requestId === capture.requestId).map(hook => hook.phase), ['payload_start', 'payload_end', 'response_end']);
+      assert.deepEqual(currentProviderTools(capture.context).map(tool => tool.name).sort(), [...nativeTools].sort());
+    }
+    const observations = reconcile(events, rpc.lifecycle, { sourceMode: 'live' });
+    assert.equal(observations.sdk_consumes, 1); assert.equal(observations.sdk_reads, 1); assert.equal(observations.sdk_resource_batches, 0);
+    const metrics = liveSourceMetrics(events); assert.ok(metrics.categories.notion_body > 0);
+    assert.equal(metrics.categories.notion_write, 0); assert.equal(metrics.categories.provider, 0);
+    assert.notEqual(metrics.request_bytes, null); assert.notEqual(metrics.response_bytes, null);
+    await save(join(output, 'source-metrics.json'), { ...metrics, ordinary_end_sequence: ordinaryBoundary });
+    const serializer = await replayScenarioHttp(captures, rpc.frames, info, output, { preparation: true });
+    for (const identity of [...Object.values(info.live.oracle), ...info.live.sentinels]) await frozenBytes(identity);
+    const result = { name, status: 'passed', acceptance: 'partial_until_source_attribution', observer_finality: true, live_notion: 'verified', real_model: 'not_run',
+      default_view: 'verified', default_records: info.catalog.count, source_command_configured: false, prefetch: false,
+      cold_consumer: true, autoload, preparation_projection: 'verified', resource_projection: 'verified',
+      source_metrics: { ...metrics, trace: undefined }, ...observations, provider_requests: captures.length,
+      serializer_http_replay: { status: serializer.status, request_bytes: serializer.request_bytes, requests: serializer.provider_requests },
+      unselected_members: { count: info.unselected.length, source_body_exclusion: 'pending_independent_retained_source_attribution',
+        proof_boundary: 'Provider delivery and fixed identity passed; this route alone does not establish retained chunk ownership' } };
+    await save(join(output, 'result.json'), result); return result;
+  } catch (error) {
+    const result = { name, status: 'failed', observer_finality: finality?.complete === true, error: failed ?? { code: error.code ?? error.name, message: String(error.message) } };
+    await save(join(output, 'result.json'), result); return result;
+  }
+}
+
 async function retained(evidence, cleanup) {
   const report = await json(join(evidence, 'report.json')), ownership = await json(join(evidence, 'ownership.json'));
   assert.notEqual(report.evidence_stable, false, 'Owned observer terminal is unresolved; this evidence is not sealed or eligible for cleanup');
@@ -2333,7 +2615,8 @@ async function retained(evidence, cleanup) {
     assert.equal(report.scratch, ownership.scratch); assert.equal(await realpath(ownership.evidence), evidence);
     assert.ok(ownership.scratch.startsWith(await systemTempRoot() + '/notion-sdk-pi-'));
     const plan = await json(join(evidence, 'plan.json'));
-    assert.ok(Array.isArray(plan.scenarios) && plan.scenarios.length > 0 && plan.scenarios.every(name => scenarioNames.includes(name)));
+    const allowed = plan.input_mode === 'live_notion_sdk' ? ['live-notion'] : scenarioNames;
+    assert.ok(Array.isArray(plan.scenarios) && plan.scenarios.length > 0 && plan.scenarios.every(name => allowed.includes(name)));
     assert.equal(new Set(plan.scenarios).size, plan.scenarios.length);
     for (const name of plan.scenarios) {
       const processes = name === 'session-lifecycle' ? await json(join(evidence, name, 'rpc-processes.json'))
@@ -2365,7 +2648,7 @@ assert.ok(['doctor', 'run', 'evidence', 'cleanup'].includes(action), usage);
 const options = {};
 for (let index = 0; index < args.length; index += 2) {
   const key = args[index], value = args[index + 1];
-  assert.ok(['--package', '--fixture', '--out', '--evidence', '--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar', '--expect-short-confirmations', '--scenario'].includes(key) && value && !Object.hasOwn(options, key), usage);
+  assert.ok(['--package', '--fixture', '--live-input', '--out', '--evidence', '--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar', '--expect-short-confirmations', '--scenario'].includes(key) && value && !Object.hasOwn(options, key), usage);
   if (['--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar', '--expect-short-confirmations'].includes(key)) assert.ok(['true', 'false'].includes(value), usage);
   else if (key === '--scenario') assert.ok(value === 'all' || scenarioNames.includes(value), usage);
   else assert.ok(isAbsolute(value), usage);
@@ -2374,9 +2657,13 @@ for (let index = 0; index < args.length; index += 2) {
 if (action === 'evidence' || action === 'cleanup') {
   assert.ok(options['--evidence'], usage); await retained(await realpath(options['--evidence']), action === 'cleanup');
 } else {
+  if (options['--live-input']) assert.equal(options['--scenario'], undefined, 'Explicit live input selects one separate live-notion route; offline all remains unchanged');
   const info = await inspect(options);
   if (action === 'doctor') console.log(JSON.stringify({ status: 'ready', node: process.version, pi: info.pi.version, host: info.host, extension: info.extension, runtime: info.runtime, serializer: info.serializerIdentity,
-    fixture: options['--fixture'], authentication: 'not_probed', source: 'controlled offline catalog and snapshots', default_view: 'not_verified' }, null, 2));
+    fixture: options['--fixture'], live_input: options['--live-input'], authentication: 'not_probed',
+    source: info.live ? 'Real Notion; local private oracle never seeds the consumer' : 'controlled offline catalog and snapshots',
+    ...(info.live ? { artifact: info.live.artifact, installed_files: info.published, oracle: info.live.oracle, expected_default_records: info.catalog.count } : {}),
+    default_view: 'not_verified' }, null, 2));
   else {
     assert.ok(options['--out'], usage);
     await mkdir(options['--out'], { mode: 0o700 });
@@ -2389,15 +2676,18 @@ if (action === 'evidence' || action === 'cleanup') {
     const expectCompactContext = options['--expect-compact-context'] !== 'false';
     const expectDirectScalar = options['--expect-direct-scalar'] !== 'false';
     const expectShortConfirmations = options['--expect-short-confirmations'] !== 'false';
-    const scenarios = options['--scenario'] && options['--scenario'] !== 'all' ? [options['--scenario']] : scenarioNames;
+    const scenarios = info.live ? ['live-notion'] : options['--scenario'] && options['--scenario'] !== 'all' ? [options['--scenario']] : scenarioNames;
     await save(join(evidence, 'plan.json'), { version: 1, node: process.version, pi: info.pi.version, package: info.packageRoot, runtime: info.runtime, extension: info.extension, serializer: info.serializerIdentity,
       fixture: options['--fixture'], driver_sha256: hash(await readFile(fileURLToPath(import.meta.url))), source_command_configured: false,
       scenarios, expect_short_refs: expectShortRefs, expect_compact_context: expectCompactContext, expect_direct_scalar: expectDirectScalar, expect_short_confirmations: expectShortConfirmations,
       comparison_scope: 'Installed Broker plus bundled CLI/SDK; a changed runtime manifest or bundle hash is a changed comparison input',
-      live_notion: 'not_run', real_model: 'not_run', default_view: 'not_verified' });
+      ...(info.live ? { input_mode: 'live_notion_sdk', live_input: options['--live-input'], live_input_sha256: hash(await readFile(options['--live-input'])),
+        artifact: info.live.artifact, published_files: info.published, oracle: info.live.oracle, host: info.host } : {}),
+      live_notion: info.live ? 'planned' : 'not_run', real_model: 'not_run', default_view: 'not_verified' });
     const results = [];
     for (const name of scenarios) {
-      try { results.push(await scenario(name, info, scratch, evidence, expectShortRefs, expectCompactContext, expectDirectScalar, expectShortConfirmations)); }
+      try { results.push(info.live ? await liveScenario(info, scratch, evidence)
+        : await scenario(name, info, scratch, evidence, expectShortRefs, expectCompactContext, expectDirectScalar, expectShortConfirmations)); }
       catch (error) { results.push({ name, status: 'failed', error: { code: error.code ?? error.name, message: String(error.message) } }); }
       await save(join(evidence, 'progress.json'), results); console.log(JSON.stringify(results.at(-1)));
     }
@@ -2405,7 +2695,9 @@ if (action === 'evidence' || action === 'cleanup') {
     const unchanged = JSON.stringify(after) === JSON.stringify(before);
     const stable = results.every(result => result.observer_finality === true);
     const report = { version: 1, status: unchanged && results.every(result => result.status === 'passed') ? 'passed' : 'failed', package_unchanged: unchanged, evidence_stable: stable, scratch, evidence, results,
-      not_claimed: ['Live Notion', 'Real model', 'Native menu', ...(results.some(result => result.default_view === 'verified') ? [] : ['Default View']), 'Cold source cache', 'Binary resource as complete text delivery', 'OMP/Tern'] };
+      ...(info.live ? { acceptance: 'partial_until_independent_source_attribution' } : {}),
+      not_claimed: [...(info.live ? ['Unselected Member source body exclusion without independent retained-source attribution'] : ['Live Notion', 'Cold source cache']),
+        'Real model', 'Native menu', ...(results.some(result => result.default_view === 'verified') ? [] : ['Default View']), 'Binary resource as complete text delivery', 'OMP/Tern'] };
     await save(join(evidence, 'report.json'), report);
     await save(join(evidence, stable ? 'retained.json' : 'retained-incomplete.json'), await inventory(evidence));
     console.log(JSON.stringify({ status: report.status, evidence, scratch })); process.exitCode = report.status === 'passed' ? 0 : 1;
