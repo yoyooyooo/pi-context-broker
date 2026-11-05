@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { assertNativeGuidance, assertScopedCommand, assertPreparedHttpRequest, assertResourceHttpRequest, assertResourceBatchProjection, assertResourceReadSchema, resourceRefsFromInspection, resourceTextCopies, bodyCount, reconcile, sourceFinality } from './notion-sdk-pi.mjs';
+import { assertNativeGuidance, assertScopedCommand, assertPreparedHttpRequest, assertResourceHttpRequest, assertResourceBatchProjection, assertResourceReadSchema, resourceRefsFromInspection, resourceTextCopies, bodyCount, reconcile, sourceFinality, observeOwnedObjectReads, assertObjectReadEvidence } from './notion-sdk-pi.mjs';
 
 const command = ['/absolute/node', '/installed/dist/ntn-skills.mjs'];
 const database = '11111111-2222-3333-4444-555555555555';
@@ -24,6 +24,79 @@ function scopeFixture() {
   return { captures: [{ context: first }, { context: second }], frames };
 }
 const expected = { command, database };
+
+function objectReadFixture() {
+  const selected = { path: 'SKILL.md', bytes: 4, sha256: 'a'.repeat(64) }, forbidden = { path: 'assets/unselected.bin', bytes: 2 * 1024 * 1024, sha256: 'b'.repeat(64) };
+  const observer_pid = 123, id = '123:object:1', api = 'node:fs.readFile';
+  const events = [
+    { observer_pid, kind: 'object_observer_start', objects: '/owned/objects', coverage: [api, 'node:fs.readFileSync', 'node:fs/promises.readFile'] },
+    { observer_pid, kind: 'object_read', event: 'start', id, api, object_sha256: selected.sha256 },
+    { observer_pid, kind: 'object_read', event: 'end', id, api, object_sha256: selected.sha256, code: null, bytes: selected.bytes, content_sha256: selected.sha256 },
+    { observer_pid, kind: 'object_observer_end', reads: 1, pending_reads: 0, errors: 0 },
+  ];
+  return { events, selected, forbidden, requiredPid: observer_pid };
+}
+test('partial entrypoint evidence needs exact returned main bytes from the actual Store read API', () => {
+  const value = objectReadFixture(), before = JSON.stringify(value);
+  const result = assertObjectReadEvidence(value.events, { selected: [value.selected], forbidden: [value.forbidden], requiredPid: value.requiredPid });
+  assert.equal(result.reads, 1); assert.equal(result.forbidden_object_reads, 0);
+  assert.equal(JSON.stringify(value), before);
+  for (const mutate of [
+    value => { value.events = []; },
+    value => { value.events.splice(1, 2); },
+    value => { value.events[2].content_sha256 = 'c'.repeat(64); },
+    value => { value.events[2].bytes--; },
+    value => { value.events[2].code = 'ENOENT'; },
+    value => { value.events[1].api = value.events[2].api = 'node:fs.readFileSync'; },
+    value => { value.events[2].id = 'unpaired'; },
+    value => { value.events.pop(); },
+    value => { value.events.at(-1).pending_reads = 1; },
+    value => { value.events.at(-1).errors = 1; },
+    value => { value.requiredPid++; },
+    value => { value.events.splice(3, 0, { ...value.events[1], id: 'unselected', object_sha256: value.forbidden.sha256 },
+      { ...value.events[2], id: 'unselected', object_sha256: value.forbidden.sha256, bytes: value.forbidden.bytes, content_sha256: value.forbidden.sha256 }); },
+  ]) {
+    const sample = objectReadFixture(); mutate(sample);
+    assert.throws(() => assertObjectReadEvidence(sample.events, { selected: [sample.selected], forbidden: [sample.forbidden], requiredPid: sample.requiredPid }));
+  }
+});
+
+test('owned object observation preserves callback, promise and sync results and original errors', async () => {
+  const bytes = Buffer.from('main'), hash = value => createHash('sha256').update(value).digest('hex');
+  const path = '/owned/objects/' + hash(bytes), options = { signal: new AbortController().signal };
+  const originalError = Object.assign(new Error('original I/O error'), { code: 'ENOENT' });
+  const receiver = {}, resultToken = {}, events = [];
+  let fail = false;
+  const fs = {
+    readFile(input, passedOptions, callback) {
+      assert.equal(input, path); assert.equal(passedOptions, options);
+      queueMicrotask(() => callback.call(receiver, fail ? originalError : null, fail ? undefined : bytes));
+      return resultToken;
+    },
+    readFileSync(input) { assert.equal(input, path); if (fail) throw originalError; return bytes; },
+  };
+  const fsPromises = { async readFile(input) { assert.equal(input, path); if (fail) throw originalError; return bytes; } };
+  const original = { callback: fs.readFile, sync: fs.readFileSync, promise: fsPromises.readFile };
+  const probe = observeOwnedObjectReads({ fs, fsPromises, objects: '/owned/objects', hash,
+    record: fields => events.push({ observer_pid: process.pid, ...fields }) });
+  await new Promise((resolve, reject) => {
+    assert.equal(fs.readFile(path, options, function(error, actual) {
+      try { assert.equal(this, receiver); assert.equal(error, null); assert.equal(actual, bytes); resolve(); } catch (error) { reject(error); }
+    }), resultToken);
+  });
+  assert.equal(fs.readFileSync(path), bytes); assert.equal(await fsPromises.readFile(path), bytes);
+  fail = true;
+  await new Promise((resolve, reject) => fs.readFile(path, options, function(error, actual) {
+    try { assert.equal(this, receiver); assert.equal(error, originalError); assert.equal(actual, undefined); resolve(); } catch (error) { reject(error); }
+  }));
+  assert.throws(() => fs.readFileSync(path), error => error === originalError);
+  await assert.rejects(fsPromises.readFile(path), error => error === originalError);
+  assert.deepEqual(probe.finish(), { reads: 6, pending_reads: 0, errors: 0 });
+  assert.equal(fs.readFile, original.callback); assert.equal(fs.readFileSync, original.sync); assert.equal(fsPromises.readFile, original.promise);
+  const result = assertObjectReadEvidence(events, { selected: [{ path: 'SKILL.md', bytes: bytes.length, sha256: hash(bytes) }], requiredPid: process.pid });
+  assert.equal(result.reads, 6);
+  assert.equal(events.filter(event => event.kind === 'object_read' && event.event === 'end' && event.code === 'ENOENT').length, 3);
+});
 
 function resourceFixture(state = 'source') {
   const hash = value => createHash('sha256').update(value).digest('hex');

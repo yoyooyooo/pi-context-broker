@@ -28,7 +28,7 @@
 | SC10 | AH-625 | SDK、公开 CLI | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：独立 npm/Node SDK 11/11、Broker 等价 9/9、实际 Pi 默认 SDK 3/3；目录 CLI 和 custom command 明确单列 |
 | SC11 | AH-628 | 目录、依赖选择 | CLI control / request-engine；另补需求范围与字段字节 |
 | SC12 | AH-629 | 暖、过期、clear | session-cache-recovery；另补五层缓存和权限期限 |
-| SC13 | AH-630 | 单资源、export | CLI control / integration；另补先归属后物化 |
+| SC13 | AH-630 | 主文、单资源、export | CLI 独立 SDK smoke 与下方 `partial-entrypoint`；[最终包、独立新会话与真实来源记录](../../../../packages/context-broker/docs/selected-snapshot-consumption-verification-2026-11-05.md)；完整目录、按需对象验证与 full export 各自验收；源归属规划和首次 current 全树观察另保留未完成范围 |
 | SC14 | AH-631 | 过期 Records | CLI request_metrics；另补事实计划复用与Payload归因 |
 | SC15 | AH-632 | 并发、取消、崩溃 | request-engine / cache-concurrency；另补跨进程只读 owner 终局 |
 | SC16 | AH-633 | 历史重算 | shared SSOT CLI；另补 checkpoint 与冲突/unknown |
@@ -191,6 +191,24 @@ node scripts/notion-sdk-pi.mjs evidence --evidence "$RESOURCE_SHORT_EVIDENCE"
 `RESOURCE_SHORT_EVIDENCE` 必须是另一个新目录。该variant先search并显式 `skill_prepare inspect` 取得四个真实资源句柄，再一次 `read(paths)` 及同会话repeat；SDK总账应为1次consume加2次read-resources，主文只来自前面的显式inspect。核对实际RPC参数确实是四个对应路径的 `sr:R`，不能用canonical成功推断。两个场景保持独立的成本和主文投递结论。
 
 全 warm fixture 的 0 HTTP 只说明本场景离线消费。Core 受控 retained tests 另用请求 object ID 集合证明冷选中物化、共享 chunk 去重、未选主文/资源零下载。SDK abort/header/body、预算、混 pin/owner、重复 alias、坏 proof 的反例沿现有 SDK smoke 和定向测试。旧 `native`、`prepare` 场景用于实际 Pi scalar 工厂与主文 receipt 回归。真实 Notion、真实模型、pro/mini 和日用安装仍单列；本路径不关闭整个 SC07/SC21。
+
+### Drive：SC13 固定主文与有效当前缓存
+
+沿上面的独立 CLI → Broker 构建/安装路径，使用本次 `sdk-fixture.ts --catalog` 产生的 fixture。仍运行同一个 `notion-sdk-pi.mjs`；`ENTRYPOINT_PACKAGE` 指已安装 Broker，`ENTRYPOINT_FIXTURE` 指 fixture.json，`ENTRYPOINT_EVIDENCE` 指新的仓外绝对目录：
+
+```bash
+node scripts/notion-sdk-pi.mjs doctor --package "$ENTRYPOINT_PACKAGE" --fixture "$ENTRYPOINT_FIXTURE" --scenario partial-entrypoint
+node scripts/notion-sdk-pi.mjs run --package "$ENTRYPOINT_PACKAGE" --fixture "$ENTRYPOINT_FIXTURE" --scenario partial-entrypoint --out "$ENTRYPOINT_EVIDENCE"
+node scripts/notion-sdk-pi.mjs evidence --evidence "$ENTRYPOINT_EVIDENCE"
+node scripts/notion-sdk-pi.mjs cleanup --evidence "$ENTRYPOINT_EVIDENCE"
+node scripts/notion-sdk-pi.mjs evidence --evidence "$ENTRYPOINT_EVIDENCE"
+```
+
+该场景使用真实 Pi、默认 bundled SDK 与受控 provider。自有缓存先经本次安装 SDK 的公开 current consume 完成完整验证，随后才移出一个约 2 MiB 的未选对象并损坏另一个；不得手写验证记录。固定主文 native read、显式 current inspect、小资源 native read 必须保留完整源字节和对应 proof。`warm-current-validation.json` 与 `partial-entrypoint-evidence.json` 应明确受控 warm 初态、选择、完整清单和实际对象读取；`observer.jsonl` 的 `object_read` 事件需有真实主文读取的正控制，未选大对象不得读取、修复或下载。
+
+缺失/坏 hash 对象被选中时的明确失败、partial export 拒绝、完整 clone 逐文件 export 在独立 SDK smoke 验证；同 pin retained 缺失主文恢复由 CLI Core 的真实请求集合验证。不要让预算错误替代缺失对象负例，也不要由文件目录或旧验证记录推断所有 bytes 当前完整。current 的 TTL、正文期限、scope、失效和 pending 条件仍独立生效。
+
+按上方相同规则封存真实 session、provider、source/object 账本并核对清理前后原件 hash；仅 `status: trashed`、owned scratch 消失且原证据不变才证明清理完成。新会话验证须从本 Skill 和本地图实际完成同一路径，不能只 review 新增文字。全 warm/partial-cache 的 0 HTTP 不证明真实冷源成本；真实 Notion、实际模型和 current/source 尚未完成的范围单独报告。此条通过不关闭整个 SC13/SC21。
 
 ## Gotchas
 

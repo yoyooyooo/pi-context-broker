@@ -2,8 +2,11 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
+import fs from 'node:fs';
+import fsPromises, { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isolatedEnv, resolveHost, runCommand, writeFakeProvider } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
@@ -11,8 +14,8 @@ import { safeRequestMetrics } from './notion-default-context.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
 import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
 
-const usage = 'Usage: node scripts/notion-sdk-pi.mjs doctor|run --package ABSOLUTE_INSTALLED_BROKER --fixture ABSOLUTE_FIXTURE_JSON [--expect-short-refs true|false] [--scenario all|dollar|native|prepare|scoped-command|resource-batch|resource-batch-short-refs] [--out NEW_ABSOLUTE_EVIDENCE]; evidence|cleanup --evidence ABSOLUTE_EVIDENCE. Real Pi 1.4 RPC, controlled provider with public onPayload/onResponse hooks, offline source, default bundled SDK (source.command is absent). Default View, native menu, live Notion and real model are not claimed.';
-const scenarioNames = ['dollar', 'native', 'prepare', 'scoped-command', 'resource-batch', 'resource-batch-short-refs'];
+const usage = 'Usage: node scripts/notion-sdk-pi.mjs doctor|run --package ABSOLUTE_INSTALLED_BROKER --fixture ABSOLUTE_FIXTURE_JSON [--expect-short-refs true|false] [--scenario all|dollar|native|prepare|scoped-command|resource-batch|resource-batch-short-refs|partial-entrypoint] [--out NEW_ABSOLUTE_EVIDENCE]; evidence|cleanup --evidence ABSOLUTE_EVIDENCE. Real Pi 1.4 RPC, controlled provider with public onPayload/onResponse hooks, offline source, default bundled SDK (source.command is absent). Default View, native menu, live Notion and real model are not claimed.';
+const scenarioNames = ['dollar', 'native', 'prepare', 'scoped-command', 'resource-batch', 'resource-batch-short-refs', 'partial-entrypoint'];
 const nativeTools = ['read', 'skill_search', 'skill_prepare'];
 const scopedCommandTools = [...nativeTools, 'bash', 'skill_graph'];
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -425,7 +428,26 @@ async function inspect(options) {
     }
     resourceBatch = { ...batch, snapshot, main: new TextDecoder('utf8', { fatal: true, ignoreBOM: true }).decode(mainBytes) };
   }
-  return { packageRoot, manifest, extension, runtime, host, pi, piPackageRoot: current, fixture, fixtureEnv, bodies, resourceBatch };
+  let entrypoint;
+  if (fixture.entrypoint) {
+    const sample = fixture.entrypoint, snapshot = fixture.snapshots.find(value => value.record.name === sample.name);
+    assert.ok(snapshot); assert.equal(snapshot.scope, fixture.scope);
+    const main = snapshot.files.find(file => file.path === snapshot.entrypoint);
+    const bytes = await readFile(join(stateRoot, 'objects', main.sha256));
+    assert.equal(bytes.length, main.bytes); assert.equal(hash(bytes), main.sha256);
+    assert.deepEqual(sample.files.map(file => file.role).sort(), ['corrupt', 'missing', 'selected']);
+    for (const file of sample.files) {
+      const original = snapshot.files.find(value => value.path === file.path);
+      assert.ok(original); assert.equal(original.bytes, file.bytes); assert.equal(original.sha256, file.sha256);
+      assert.equal(snapshot.file_bindings.find(binding => binding.path === file.path)?.file_id, file.file_id);
+      const bytes = await readFile(join(stateRoot, 'objects', file.sha256));
+      assert.equal(bytes.length, file.bytes); assert.equal(hash(bytes), file.sha256);
+      if (file.role === 'selected') assert.deepEqual(Buffer.from(file.content, 'utf8'), bytes);
+      else assert.ok(file.bytes >= 2 * 1024 * 1024);
+    }
+    entrypoint = { ...sample, snapshot, main_file: main, main: new TextDecoder('utf8', { fatal: true, ignoreBOM: true }).decode(bytes) };
+  }
+  return { packageRoot, manifest, extension, runtime, host, pi, piPackageRoot: current, fixture, fixtureEnv, bodies, resourceBatch, entrypoint };
 }
 
 export function resourceRefsFromInspection(prepared, owner, paths) {
@@ -465,6 +487,19 @@ function selectProviderCall(context) {
     return matches[0];
   };
   if (plan.mode === 'search') return null;
+  if (plan.mode === 'partial-entrypoint') {
+    const owner = selected(plan.owner);
+    const main = find('sc13-main');
+    if (!main) return call('sc13-main', 'read', { path: plan.fixed_main_ref });
+    if (main.isError) throw new Error('CONTROLLED_MAIN_READ_FAILED');
+    const inspected = find('sc13-inspect');
+    if (!inspected) return call('sc13-inspect', 'skill_prepare', { roots: [owner.ref], purpose: 'inspect' });
+    const refs = resourceRefsFromInspection(parsed(inspected), plan.owner, [plan.selected_path]);
+    const resource = find('sc13-resource');
+    if (!resource) return call('sc13-resource', 'read', { path: refs[0] });
+    if (resource.isError) throw new Error('CONTROLLED_RESOURCE_READ_FAILED');
+    return null;
+  }
   if (['resource-batch', 'resource-batch-repeat', 'resource-batch-short-refs'].includes(plan.mode)) {
     selected(plan.owner);
     let refs = plan.refs;
@@ -518,6 +553,80 @@ async function provider(base) {
   return path;
 }
 
+/** Observe owned Store object reads without changing arguments, returned bytes,
+ * callbacks or errors. Node FileSystem uses the callback API; every proof below
+ * requires that actual API as a positive control, with exact source hashes. */
+export function observeOwnedObjectReads({ fs, fsPromises, objects, record, hash }) {
+  let next = 0, pending = 0, errors = 0, ended = false;
+  const emit = fields => { try { record(fields); } catch { errors++; } };
+  const start = (api, path) => {
+    if (ended || typeof path !== 'string' || !path.startsWith(objects + '/')) return;
+    const objectSha256 = path.slice(objects.length + 1), id = String(process.pid) + ':object:' + (++next);
+    pending++;
+    emit({ kind: 'object_read', event: 'start', id, api, object_sha256: objectSha256 });
+    return (error, bytes) => {
+      pending--;
+      const value = bytes === undefined ? undefined : Buffer.from(bytes);
+      emit({ kind: 'object_read', event: 'end', id, api, object_sha256: objectSha256,
+        code: error?.code ?? null, bytes: value?.length ?? null, content_sha256: value ? hash(value) : null });
+    };
+  };
+  const callbackRead = fs.readFile, syncRead = fs.readFileSync, promiseRead = fsPromises.readFile;
+  fs.readFile = function(...args) {
+    const end = start('node:fs.readFile', args[0]);
+    if (!end) return callbackRead.apply(this, args);
+    const callback = args.at(-1);
+    args[args.length - 1] = function(error, bytes) { end(error, bytes); return callback.apply(this, arguments); };
+    try { return callbackRead.apply(this, args); } catch (error) { end(error); throw error; }
+  };
+  fs.readFileSync = function(...args) {
+    const end = start('node:fs.readFileSync', args[0]);
+    try { const bytes = syncRead.apply(this, args); end?.(null, bytes); return bytes; }
+    catch (error) { end?.(error); throw error; }
+  };
+  fsPromises.readFile = function(...args) {
+    const end = start('node:fs/promises.readFile', args[0]);
+    const result = promiseRead.apply(this, args);
+    return !end ? result : result.then(bytes => { end(null, bytes); return bytes; }, error => { end(error); throw error; });
+  };
+  emit({ kind: 'object_observer_start', objects, coverage: ['node:fs.readFile', 'node:fs.readFileSync', 'node:fs/promises.readFile'] });
+  return { finish() {
+    if (!ended) {
+      emit({ kind: 'object_observer_end', reads: next, pending_reads: pending, errors });
+      ended = true; fs.readFile = callbackRead; fs.readFileSync = syncRead; fsPromises.readFile = promiseRead;
+    }
+    return { reads: next, pending_reads: pending, errors };
+  } };
+}
+
+export function assertObjectReadEvidence(events, { selected, forbidden = [], requiredPid }) {
+  const observers = events.filter(event => event.kind === 'object_observer_start');
+  assert.ok(observers.length > 0, 'No observation is not evidence of zero object reads');
+  if (requiredPid !== undefined) assert.equal(observers.filter(event => event.observer_pid === requiredPid).length, 1);
+  for (const observer of observers) {
+    assert.deepEqual(observer.coverage, ['node:fs.readFile', 'node:fs.readFileSync', 'node:fs/promises.readFile']);
+    const ended = events.filter(event => event.kind === 'object_observer_end' && event.observer_pid === observer.observer_pid);
+    assert.equal(ended.length, 1); assert.equal(ended[0].pending_reads, 0); assert.equal(ended[0].errors, 0);
+  }
+  const starts = events.filter(event => event.kind === 'object_read' && event.event === 'start');
+  const ends = events.filter(event => event.kind === 'object_read' && event.event === 'end');
+  assert.equal(starts.length, ends.length);
+  for (const start of starts) {
+    assert.match(start.object_sha256, /^[a-f0-9]{64}$/u);
+    assert.ok(observers.some(observer => observer.observer_pid === start.observer_pid));
+    const completed = ends.filter(end => end.id === start.id && end.observer_pid === start.observer_pid);
+    assert.equal(completed.length, 1);
+    assert.equal(completed[0].api, start.api); assert.equal(completed[0].object_sha256, start.object_sha256);
+  }
+  for (const file of selected) assert.ok(ends.some(event => (requiredPid === undefined || event.observer_pid === requiredPid)
+    && event.api === 'node:fs.readFile' && event.object_sha256 === file.sha256 && event.code === null
+    && event.bytes === file.bytes && event.content_sha256 === file.sha256), file.path + ': actual Store.readBytes positive control');
+  for (const file of forbidden) assert.equal(starts.filter(event => event.object_sha256 === file.sha256).length, 0, file.path + ': unselected source object was read');
+  return { reads: starts.length, object_sha256s: [...new Set(starts.map(event => event.object_sha256))].sort(),
+    positive_control_sha256s: selected.map(file => file.sha256), forbidden_object_reads: 0,
+    coverage: 'owned Store.readBytes through Node readFile APIs; exact returned source bytes are positive controls' };
+}
+
 function observe() {
   const ledger = process.env.SC10_PI_OBSERVER;
   const cli = process.env.SC10_PI_BUNDLED_CLI;
@@ -529,6 +638,8 @@ function observe() {
     appendFileSync(ledger, JSON.stringify({ ...value, sha256: previous }) + '\n', { mode: 0o600 });
   };
   record({ kind: 'observer_start', exec_path: process.execPath, parent_pid: process.ppid });
+  const objectObserver = process.env.SC13_PI_OBJECT_ROOT ? observeOwnedObjectReads({ fs, fsPromises,
+    objects: process.env.SC13_PI_OBJECT_ROOT, record, hash: bytes => createHash('sha256').update(bytes).digest('hex') }) : undefined;
   channel('context-broker.notion-sdk').subscribe(event => {
     if (event.event === 'start') activeSdk.add(event.id);
     if (event.event === 'end') activeSdk.delete(event.id);
@@ -564,10 +675,14 @@ function observe() {
     };
   }
   syncBuiltinESMExports();
-  process.once('exit', code => record({ kind: 'observer_end', code, active_sdk: activeSdk.size, active_children: activeChildren.size }));
+  process.once('exit', code => {
+    const objects = objectObserver?.finish();
+    record({ kind: 'observer_end', code, active_sdk: activeSdk.size, active_children: activeChildren.size,
+      ...(objects ? { active_object_reads: objects.pending_reads, object_read_errors: objects.errors } : {}) });
+  });
 }
 async function observer(path) {
-  await writeFile(path, `import childProcess from 'node:child_process';\nimport { createHash } from 'node:crypto';\nimport { channel } from 'node:diagnostics_channel';\nimport { appendFileSync } from 'node:fs';\nimport { syncBuiltinESMExports } from 'node:module';\n${safeRequestMetrics.toString()}\n(${observe.toString()})();\n`, { mode: 0o600 });
+  await writeFile(path, `import childProcess from 'node:child_process';\nimport { createHash } from 'node:crypto';\nimport { channel } from 'node:diagnostics_channel';\nimport fs, { appendFileSync } from 'node:fs';\nimport fsPromises from 'node:fs/promises';\nimport { syncBuiltinESMExports } from 'node:module';\n${safeRequestMetrics.toString()}\n${observeOwnedObjectReads.toString()}\n(${observe.toString()})();\n`, { mode: 0o600 });
 }
 
 export function sourceFinality(events, hostPid, { hostClosed = false } = {}) {
@@ -587,7 +702,8 @@ export function sourceFinality(events, hostPid, { hostClosed = false } = {}) {
       pending.push({ kind: 'unbound_observer', pid: start.observer_pid });
     if (!hostClosed && start.observer_pid === hostPid) continue;
     const ended = events.filter(event => event.kind === 'observer_end' && event.observer_pid === start.observer_pid);
-    if (ended.length !== 1 || ended[0].active_sdk !== 0 || ended[0].active_children !== 0) pending.push({ kind: 'observer_end', pid: start.observer_pid });
+    if (ended.length !== 1 || ended[0].active_sdk !== 0 || ended[0].active_children !== 0
+      || (ended[0].active_object_reads ?? 0) !== 0 || (ended[0].object_read_errors ?? 0) !== 0) pending.push({ kind: 'observer_end', pid: start.observer_pid });
   }
   for (const start of events.filter(event => event.kind === 'sdk' && event.event === 'start')) {
     if (events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.id === start.id && event.observer_pid === start.observer_pid).length !== 1)
@@ -622,7 +738,8 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true } = 
     if (!before) assert.equal(item.kind, 'observer_start');
     chains.set(item.observer_pid, item);
   }
-  for (const last of chains.values()) { assert.equal(last.kind, 'observer_end'); assert.equal(last.active_sdk, 0); assert.equal(last.active_children, 0); }
+  for (const last of chains.values()) { assert.equal(last.kind, 'observer_end'); assert.equal(last.active_sdk, 0); assert.equal(last.active_children, 0);
+    assert.equal(last.active_object_reads ?? 0, 0); assert.equal(last.object_read_errors ?? 0, 0); }
   assert.equal(lifecycle.filter(event => event.event === 'spawn').length, 1);
   assert.equal(lifecycle.filter(event => event.event === 'close').length, 1);
   assert.equal(lifecycle.at(-1).code, 0); assert.equal(lifecycle.at(-1).signal, null);
@@ -658,9 +775,90 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true } = 
     default_body_transport: bodyTransportRequired ? 'verified_sdk' : 'not_applicable_metadata_query' };
 }
 
+// Fixture setup only. Preserve the actual signed payload and use the existing
+// disposable-cache retirement flag in this owned clone, never a fake receipt.
+function fixtureCurrentReceipt(database, key, retirePayload) {
+  const db = new DatabaseSync(database, { readOnly: retirePayload === undefined });
+  try {
+    const query = db.prepare('SELECT category,payload,retired FROM shared_local_records WHERE key=?');
+    let row = query.get(key);
+    assert.ok(row); assert.equal(row.category, 'cache');
+    if (retirePayload !== undefined) {
+      assert.equal(row.retired, 0); assert.equal(row.payload, retirePayload);
+      const update = db.prepare("UPDATE shared_local_records SET retired=1 WHERE key=? AND category='cache' AND retired=0 AND payload=?").run(key, retirePayload);
+      assert.equal(update.changes, 1);
+      row = query.get(key); assert.equal(row.retired, 1); assert.equal(row.payload, retirePayload);
+    }
+    return { key, ...row, receipt: JSON.parse(row.payload) };
+  } finally { db.close(); }
+}
+
+async function preparePartialEntrypoint(info, localSource, fixtureEnv, output) {
+  const sample = info.entrypoint;
+  assert.ok(sample, 'Generate the complete entrypoint fixture with the selected CLI package');
+  const state = fixtureEnv.NTN_SKILLS_HOME, objects = join(state, 'objects');
+  const retained = join(output, 'partial-object-originals'); await mkdir(retained, { mode: 0o700 });
+  const receiptKey = 'cache/shared-current-tree-validation/' + sample.snapshot.scope + '/' + sample.snapshot.snapshot_id + '.json';
+  const database = join(state, 'state.sqlite'), publishedReceipt = fixtureCurrentReceipt(database, receiptKey);
+  assert.equal(publishedReceipt.retired, 0);
+  assert.equal(publishedReceipt.receipt.scope, sample.snapshot.scope); assert.equal(publishedReceipt.receipt.snapshot_id, sample.snapshot.snapshot_id);
+  await save(join(retained, 'published-current-receipt.json'), publishedReceipt);
+  const retirement = fixtureCurrentReceipt(database, receiptKey, publishedReceipt.payload);
+  await save(join(retained, 'current-receipt-retirement.json'), retirement);
+  const events = [], metrics = [];
+  const record = fields => {
+    const row = { observer_pid: process.pid, sequence: events.length + 1, ...fields };
+    events.push(row); fs.appendFileSync(join(output, 'warm-object-reads.jsonl'), JSON.stringify(row) + '\n', { mode: 0o600 });
+  };
+  const observation = observeOwnedObjectReads({ fs, fsPromises, objects, record, hash });
+  syncBuiltinESMExports();
+  let prepared;
+  try {
+    const sdk = await import(pathToFileURL(join(info.packageRoot, 'dist/ntn-skills-sdk.mjs')).href);
+    prepared = await sdk.consume({ version: 1, targets: [sample.current_ref], purpose: 'inspect', freshness: { policy: 'offline' } },
+      { cwd: localSource, env: fixtureEnv, metrics: true, onRequestMetrics: value => metrics.push(safeRequestMetrics(value)) });
+  } finally { observation.finish(); syncBuiltinESMExports(); }
+  const reads = assertObjectReadEvidence(events, { selected: sample.snapshot.files, requiredPid: process.pid });
+  assert.equal(prepared.status, 'ready', JSON.stringify(prepared)); assert.equal(prepared.entries.length, 1);
+  const entry = prepared.entries[0];
+  assert.equal(entry.manifest.complete, true); assert.equal(entry.manifest.snapshot_id, sample.snapshot.snapshot_id);
+  assert.deepEqual(entry.manifest.files, sample.snapshot.files);
+  assert.deepEqual(entry.materialization, { status: 'entry_ready', paths: [sample.snapshot.entrypoint] });
+  assert.equal(entry.source_body.sha256, sample.main_file.sha256); assert.equal(entry.source_body.bytes, sample.main_file.bytes);
+  const revalidated = fixtureCurrentReceipt(database, receiptKey);
+  assert.equal(revalidated.retired, 0); assert.equal(revalidated.payload, publishedReceipt.payload);
+  const receipt = revalidated.receipt;
+  assert.equal(receipt.scope, sample.snapshot.scope); assert.equal(receipt.snapshot_id, sample.snapshot.snapshot_id);
+  assert.equal(receipt.version_id, sample.snapshot.version_id);
+  assert.equal(metrics.length, 1); assert.equal(metrics[0]?.complete, true); assert.equal(metrics[0]?.total_requests, 0);
+  const warm = { method: 'installed public SDK current consume after preserving the publisher receipt; real complete validation regenerates it',
+    source_state: 'controlled warm fixture; not cold source evidence', sdk_sha256: info.runtime.sdk_sha256,
+    result: prepared, receipt, receipt_storage: 'SQLite shared_local_records', retirement_preserved_payload: true,
+    object_reads: reads, request_metrics: metrics[0] };
+  await save(join(output, 'warm-current-validation.json'), warm);
+  const missing = sample.files.find(file => file.role === 'missing'), corrupt = sample.files.find(file => file.role === 'corrupt');
+  await rename(join(objects, missing.sha256), join(retained, 'missing-source.bin'));
+  await rename(join(objects, corrupt.sha256), join(retained, 'corrupt-source.bin'));
+  const bad = Buffer.alloc(corrupt.bytes, 0xff); assert.notEqual(hash(bad), corrupt.sha256);
+  await writeFile(join(objects, corrupt.sha256), bad, { mode: 0o600, flag: 'wx' });
+  const partial = { objects, missing_sha256: missing.sha256, corrupt_sha256: corrupt.sha256,
+    corrupt_actual_sha256: hash(bad), corrupt_bytes: bad.length };
+  await save(join(output, 'partial-state-before.json'), partial);
+  return { warm, partial };
+}
+
+async function assertPartialObjectState(partial) {
+  await assert.rejects(lstat(join(partial.objects, partial.missing_sha256)), { code: 'ENOENT' });
+  const bytes = await readFile(join(partial.objects, partial.corrupt_sha256));
+  assert.equal(bytes.length, partial.corrupt_bytes); assert.equal(hash(bytes), partial.corrupt_actual_sha256);
+  return { missing_sha256: partial.missing_sha256, corrupt_expected_sha256: partial.corrupt_sha256,
+    corrupt_actual_sha256: hash(bytes), corrupt_bytes: bytes.length, unchanged: true };
+}
+
 async function scenario(name, info, scratch, evidence, expectShortRefs) {
   const shortResourceRefs = name === 'resource-batch-short-refs';
   const resourceScenario = name === 'resource-batch' || shortResourceRefs;
+  const partialEntrypoint = name === 'partial-entrypoint';
   const base = join(scratch, name), output = join(evidence, name);
   await mkdir(base); await mkdir(output, { mode: 0o700 });
   const localSource = join(base, 'source');
@@ -677,7 +875,10 @@ async function scenario(name, info, scratch, evidence, expectShortRefs) {
   const resourcePlan = resourceScenario ? { owner: info.resourceBatch?.name, refs: info.resourceBatch?.refs,
     paths: info.resourceBatch?.files.map(file => file.path), short_refs: shortResourceRefs } : {};
   if (resourceScenario) assert.ok(info.resourceBatch, 'The fixture must provide the resource-batch scenario');
-  await save(toolPlan, { mode: name === 'dollar' ? 'search' : name, ...resourcePlan });
+  if (partialEntrypoint) assert.ok(info.entrypoint, 'The fixture must provide the complete entrypoint scenario');
+  const entrypointPlan = partialEntrypoint ? { owner: info.entrypoint.name, fixed_main_ref: info.entrypoint.ref,
+    selected_path: info.entrypoint.files.find(file => file.role === 'selected').path } : {};
+  await save(toolPlan, { mode: name === 'dollar' ? 'search' : name, ...resourcePlan, ...entrypointPlan });
   const fakeProvider = await provider(base), preload = join(base, 'observer.mjs');
   await observer(preload);
   const fixtureEnv = { ...info.fixtureEnv };
@@ -686,17 +887,20 @@ async function scenario(name, info, scratch, evidence, expectShortRefs) {
     assert.ok(original.startsWith(resolve(info.fixture.cwd) + '/'));
     fixtureEnv[key] = join(localSource, original.slice(resolve(info.fixture.cwd).length + 1));
   }
+  const entrypointSetup = partialEntrypoint ? await preparePartialEntrypoint(info, localSource, fixtureEnv, output) : undefined;
   const env = isolatedEnv({ base, agentDir, ...fixtureEnv, TMPDIR: await systemTempRoot(),
     NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000', CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_CONFIG: config,
     CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: providerFile, CONTEXT_BROKER_LOG_FILE: join(output, 'decisions.jsonl'),
     BROKER_E2E_PROCESS_LEDGER: join(output, 'owned-processes.jsonl'), SC10_PI_TOOL_PLAN: toolPlan,
     SC10_PI_PROVIDER_HOOKS: hookFile, SC10_PI_OBSERVER: ledger,
+    ...(entrypointSetup ? { SC13_PI_OBJECT_ROOT: entrypointSetup.partial.objects } : {}),
     SC10_PI_BUNDLED_CLI: join(info.packageRoot, 'dist/ntn-skills.mjs'), NODE_OPTIONS: `--import=${preload}` });
   const activeTools = name === 'scoped-command' ? scopedCommandTools : nativeTools;
   const argv = ['--no-extensions', '--session-dir', sessions, '--tools', activeTools.join(','), '-e', fakeProvider, '-e', info.extension, '--model', 'context-broker-e2e/fake'];
   await save(join(output, 'launch.json'), { host: info.host, argv, cwd: base, source_command_configured: false,
-    source_state: 'cloned warm controlled snapshots/current catalog; fresh Broker cache and Pi session', expect_short_refs: expectShortRefs, active_tools: activeTools });
-  let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, serializerContext, archive;
+    source_state: partialEntrypoint ? 'complete controlled current validated by installed SDK, then owned partial cache; fresh Broker cache and Pi session'
+      : 'cloned warm controlled snapshots/current catalog; fresh Broker cache and Pi session', expect_short_refs: expectShortRefs, active_tools: activeTools });
+  let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, entrypointEvidence, serializerContext, archive;
   try {
     rpc = await startRpc({ host: 'pi', args: argv, cwd: base, env, timeoutMs: 60000 });
     const prompts = {
@@ -705,6 +909,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs) {
       prepare: 'Use the available a, b and c Skills together, preparing their required instructions.',
       'resource-batch': 'Read this explicit fixed resource set in one read paths call: ' + JSON.stringify(info.resourceBatch?.refs) + '. Read only those resources without loading or activating the Skill main body.',
       'resource-batch-short-refs': 'Explicitly inspect the resources Skill once. Use its four requested resource handles for ' + JSON.stringify(info.resourceBatch?.files.map(file => file.path)) + ' in one read paths call; preserve that selected owner and snapshot.',
+      'partial-entrypoint': 'Read the supplied fixed entrypoint Skill main, inspect its current candidate directory, then read only the advertised selected text resource. Keep the selected owner and snapshot.',
       'scoped-command': 'For the sdk-fixture source, obtain the host-local command prefix and database scope for a possible maintenance action. Return that metadata only; do not execute commands or read Skill bodies.',
     };
     await rpc.prompt(prompts[name]);
@@ -724,6 +929,68 @@ async function scenario(name, info, scratch, evidence, expectShortRefs) {
       captures = await rows(providerFile); last = captures.at(-1).context;
       for (const key of ['a', 'base']) assert.equal(bodyCount(last, info.bodies.get(key)), 1, `${key}: full source body exactly once`);
       for (const key of ['b', 'c']) assert.equal(bodyCount(last, info.bodies.get(key)), 0);
+    } else if (partialEntrypoint) {
+      const sample = info.entrypoint, selected = sample.files.find(file => file.role === 'selected');
+      const fromFrame = id => {
+        const frames = rpc.frames.filter(frame => frame.type === 'tool_execution_end' && frame.toolCallId === id);
+        assert.equal(frames.length, 1);
+        return { ...frames[0].result, role: 'toolResult', toolName: frames[0].toolName, toolCallId: id, isError: frames[0].isError };
+      };
+      const main = toolResult(last, 'sc13-main'), mainRaw = fromFrame('sc13-main');
+      assert.equal(mainRaw.isError, false); assert.equal(main.isError, false);
+      assert.ok(textContent(mainRaw.content).startsWith(sample.main));
+      const mainProof = mainRaw.details?.contextBrokerRead;
+      assert.ok(mainProof); assert.equal(mainProof.toolCallId, 'sc13-main');
+      assert.equal(mainProof.snapshotId, sample.snapshot.snapshot_id);
+      assert.equal(mainProof.bodySha256, sample.main_file.sha256); assert.equal(mainProof.bytes, sample.main_file.bytes);
+      assert.equal(mainProof.binding?.scope, sample.snapshot.scope); assert.equal(mainProof.binding?.record.id, sample.snapshot.record.id);
+      assert.equal(mainProof.binding?.version_id, sample.snapshot.version_id);
+      const footer = /<skill-directory>\s*([\s\S]*?)\s*<\/skill-directory>/u.exec(textContent(mainRaw.content));
+      assert.ok(footer, 'The native main must advertise the complete fixed directory');
+      const nativeDirectory = JSON.parse(footer[1]).directory;
+      assert.deepEqual(nativeDirectory.files.map(file => file.path), sample.snapshot.files.map(file => file.path));
+      const inspected = toolResult(last, 'sc13-inspect'), inspectedRaw = fromFrame('sc13-inspect');
+      const oracle = { snapshots: [sample.snapshot], bodies: new Map([[sample.name, sample.main]]), roots: [sample.name], purpose: 'inspect' };
+      const inspection = assertPreparedProjection(inspectedRaw, oracle);
+      const providerInspection = assertPreparedProjection(inspected, oracle);
+      // Explicit complete instruction deliveries take priority over native read copies.
+      assert.deepEqual(inspected.content, inspectedRaw.content);
+      assert.deepEqual(inspected.details.contextBrokerPreparation.projection, inspectedRaw.details.contextBrokerPreparation.projection);
+      assert.equal(bodyCount({ messages: [main] }, sample.main), 0, 'The native provider copy is replaced after explicit inspection');
+      assert.ok(textContent(main.content).endsWith(textContent(mainRaw.content).slice(mainProof.delivery.end)), 'The native fixed directory is preserved');
+      const prepared = parsedResult(inspectedRaw), receipt = inspectedRaw.details.contextBrokerPreparation.records[0];
+      assert.deepEqual(prepared.records[0].directory.files.map(file => file.path), sample.snapshot.files.map(file => file.path));
+      assert.deepEqual(receipt.materialization, { manifest_complete: true, local_files_ready: false,
+        materialized_paths: [sample.snapshot.entrypoint], loaded: false });
+      const resource = toolResult(last, 'sc13-resource'), resourceRaw = fromFrame('sc13-resource');
+      assert.equal(resourceRaw.isError, false); assert.equal(resource.isError, false);
+      const resourceProof = resourceRaw.details?.contextBrokerResource;
+      assert.ok(resourceProof); assert.equal(resourceProof.id, sample.snapshot.record.id);
+      assert.equal(resourceProof.scope, sample.snapshot.scope); assert.equal(resourceProof.snapshot_id, sample.snapshot.snapshot_id);
+      assert.equal(resourceProof.version_id, sample.snapshot.version_id); assert.equal(resourceProof.file_id, selected.file_id);
+      assert.equal(resourceProof.path, selected.path); assert.equal(resourceProof.bytes, selected.bytes); assert.equal(resourceProof.sha256, selected.sha256);
+      assert.equal(resourceProof.delivered_complete_text, true); assert.equal(textContent(resourceRaw.content), selected.content);
+      assert.deepEqual(resourceProof.materialization, { manifest_complete: true, local_files_ready: false,
+        materialized_paths: [sample.snapshot.entrypoint, selected.path].sort(), loaded: false });
+      assert.equal(bodyCount(last, sample.main), 1); assert.equal(bodyCount(last, selected.content), 1);
+      const calls = rpc.frames.filter(frame => frame.type === 'tool_execution_start');
+      assert.deepEqual(calls.map(call => call.toolCallId), ['sc10-search', 'sc13-main', 'sc13-inspect', 'sc13-resource']);
+      assert.deepEqual(calls[1].args, { path: sample.ref });
+      const candidate = discovery.records.find(record => record.name === sample.name && record.source === source.id);
+      assert.deepEqual(calls[2].args, { roots: [candidate.ref], purpose: 'inspect' });
+      assert.deepEqual(calls[3].args, { path: resourceRefsFromInspection(parsedResult(inspected), sample.name, [selected.path])[0] });
+      const materialized = await inventory(source.cacheDir);
+      for (const file of [sample.main_file, selected]) assert.ok(materialized.some(item => item.path.endsWith('/' + file.path)
+        && item.bytes === file.bytes && item.sha256 === file.sha256), file.path + ': exact native materialization');
+      for (const file of sample.files.filter(file => file.role !== 'selected'))
+        assert.equal(materialized.some(item => item.path.endsWith('/' + file.path)), false, file.path + ': unselected Broker output is absent');
+      const partialState = await assertPartialObjectState(entrypointSetup.partial);
+      entrypointEvidence = { snapshot_id: sample.snapshot.snapshot_id, main: { bytes: mainProof.bytes, sha256: mainProof.bodySha256 },
+        source_state: 'controlled complete validation followed by owned partial cache; no cold-source claim',
+        fixed_main_argument: calls[1].args.path, inspected_candidate: candidate.ref,
+        directory_files: prepared.records[0].directory.files.length, host_materialization: receipt.materialization,
+        inspection, provider_inspection: providerInspection, selected_resource: resourceProof, partial_state: partialState,
+        originalToolResults: [mainRaw, inspectedRaw, resourceRaw] };
     } else if (name === 'native') {
       const main = toolResult(last, 'sc10-main'), resource = toolResult(last, 'sc10-resource');
       assert.ok(main && !main.isError); assert.ok(resource && !resource.isError);
@@ -904,6 +1171,20 @@ async function scenario(name, info, scratch, evidence, expectShortRefs) {
       await save(join(output, 'resource-batch-projection.json'), { ...publicEvidence, original_session_preserved: true });
       serializer = await replayPreparationHttp(serializerContext, info, output, 'resource-batch');
     }
+    if (entrypointEvidence) {
+      for (const original of entrypointEvidence.originalToolResults) {
+        const messages = archive.messages.filter(message => message.role === 'toolResult' && message.toolName === original.toolName && message.toolCallId === original.toolCallId);
+        assert.equal(messages.length, 1, 'The actual Pi session retains each entrypoint/resource result');
+        assert.equal(textContent(messages[0].content), textContent(original.content));
+        assert.deepEqual(messages[0].details, original.details);
+      }
+      const sample = info.entrypoint, selected = sample.files.find(file => file.role === 'selected');
+      const objectReads = assertObjectReadEvidence(await rows(ledger), { selected: [sample.main_file, selected],
+        forbidden: sample.files.filter(file => file.role !== 'selected'), requiredPid: rpc.lifecycle[0].pid });
+      assert.deepEqual(objectReads.object_sha256s, [sample.main_file.sha256, selected.sha256].sort());
+      const { originalToolResults: _original, ...publicEvidence } = entrypointEvidence;
+      await save(join(output, 'partial-entrypoint-evidence.json'), { ...publicEvidence, object_reads: objectReads, original_session_preserved: true });
+    }
     const captures = await rows(providerFile), hooks = await rows(hookFile);
     for (const capture of captures) assert.deepEqual(hooks.filter(hook => hook.requestId === capture.requestId).map(hook => hook.phase), ['payload_start', 'payload_end', 'response_end']);
     assert.equal(new Set(captures.map(capture => capture.requestId)).size, captures.length);
@@ -920,6 +1201,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs) {
       discovery_failures: discovery?.failures ?? null, native_guidance_without_cli_templates: true, observer_finality: finality?.complete === true,
       session_archive_files: archive?.files.length ?? 0, preparation_projection: preparation ? 'verified' : 'not_applicable',
       resource_batch_projection: resourceBatchEvidence ? 'verified' : 'not_applicable',
+      partial_entrypoint: entrypointEvidence ? 'verified_selected_bytes_with_full_directory' : 'not_applicable',
       serializer_http_replay: serializer ? { status: serializer.status, request_bytes: serializer.request_bytes, requests: 1, production_network: false } : null,
       default_view: 'not_verified', ...observations };
     await save(join(output, 'result.json'), result); return result;
