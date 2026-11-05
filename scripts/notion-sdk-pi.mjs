@@ -1726,6 +1726,12 @@ export function assertLifecycleRestore(value, { snapshots, bodies }) {
     boundary: 'Actual bundled SDK result; subsequent provider bytes and response establish delivery separately' };
 }
 
+function catalogShutdownObserver(api) {
+  api.on('session_shutdown', event => appendFileSync(process.env.SC10_PI_NATIVE_EVENTS,
+    JSON.stringify({ type: 'session_shutdown', pid: process.pid, monotonic_ns: process.hrtime.bigint().toString(),
+      reason: event.reason ?? null }) + '\n', { mode: 0o600 }));
+}
+
 function lifecycleControl(api) {
   const control = () => JSON.parse(readFileSync(process.env.SC08_PI_CONTROL, 'utf8'));
   const record = (type, fields = {}) => appendFileSync(process.env.SC08_PI_NATIVE_EVENTS,
@@ -2027,6 +2033,10 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     ...(scalarScenario ? { calls: scalarCalls.map(({ id, args }) => ({ id, args })) } : {}) });
   const fakeProvider = await provider(base), preload = join(base, 'observer.mjs');
   await observer(preload);
+  const nativeEvents = join(output, 'native-session-events.jsonl');
+  const shutdownObserver = name === 'session-lifecycle' ? undefined : join(base, 'catalog-shutdown-observer.mjs');
+  if (shutdownObserver) await writeFile(shutdownObserver,
+    "import { appendFileSync } from 'node:fs';\nexport default " + catalogShutdownObserver.toString() + '\n', { mode: 0o600 });
   const fixtureEnv = { ...info.fixtureEnv };
   for (const key of ['NTN_SKILLS_HOME', 'NTN_SKILLS_CONFIG_HOME', 'NTN_SKILLS_CACHE_HOME']) {
     const original = resolve(info.fixture.cwd, fixtureEnv[key]);
@@ -2039,18 +2049,20 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: providerFile, CONTEXT_BROKER_LOG_FILE: join(output, 'decisions.jsonl'),
     BROKER_E2E_PROCESS_LEDGER: join(output, 'owned-processes.jsonl'), SC10_PI_TOOL_PLAN: toolPlan,
     SC10_PI_PROVIDER_HOOKS: hookFile, SC10_PI_OBSERVER: ledger,
+    SC10_PI_NATIVE_EVENTS: nativeEvents,
     ...(entrypointSetup ? { SC13_PI_OBJECT_ROOT: entrypointSetup.partial.objects }
       : scalarScenario ? { SC13_PI_OBJECT_ROOT: join(fixtureEnv.NTN_SKILLS_HOME, 'objects') } : {}),
     SC10_PI_BUNDLED_CLI: join(info.packageRoot, 'dist/ntn-skills.mjs'), NODE_OPTIONS: `--import=${preload}` });
   const activeTools = name === 'scoped-command' ? scopedCommandTools : codemode ? [...nativeTools, 'codemode'] : nativeTools;
   const argv = ['--no-extensions', '--session-dir', sessions, ...(scalarSeed ? ['--session', scalarSeed.path] : []),
-    '--tools', activeTools.join(','), '-e', fakeProvider, '-e', info.extension,
+    '--tools', activeTools.join(','), '-e', fakeProvider, ...(shutdownObserver ? ['-e', shutdownObserver] : []), '-e', info.extension,
     ...(codemode ? ['-e', join(info.piPackageRoot, 'dist/extensions/codemode/index.js')] : []), '--model', 'context-broker-e2e/fake'];
   await save(join(output, 'launch.json'), { host: info.host, argv, cwd: base, source_command_configured: false,
     source_state: partialEntrypoint ? 'complete controlled current validated by installed SDK, then owned partial cache; fresh Broker cache and Pi session'
       : scalarSeed ? 'cloned warm controlled source; fresh Broker cache and new Pi process restoring a metadata-only short-reference session'
       : 'cloned warm controlled snapshots/current catalog; fresh Broker cache and Pi session', expect_short_refs: expectShortRefs,
     expect_compact_context: expectCompactContext, expect_direct_scalar: expectDirectScalar, expect_short_confirmations: expectShortConfirmations, active_tools: activeTools,
+    ...(shutdownObserver ? { native_shutdown_observer: { extension: shutdownObserver, registration: 'before_broker', events: nativeEvents } } : {}),
     ...(scalarSeed ? { seed_evidence: 'resource-scalar-seed.json', seed_sha256: scalarSeed.evidence.session_sha256 } : {}) });
   if (name === 'session-lifecycle') return runSdkLifecycle({ info, base, output, sessions, providerFile, hookFile, ledger, toolPlan, env, argv });
   let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, resourceScalarEvidence, nativeRepeatEvidence, entrypointEvidence, defaultViewEvidence, serializerContext, archive, dollarProjection, nativeProjection;
@@ -2491,7 +2503,9 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       assert.equal(serializer.provider_requests, 6); assert.equal(serializer.tool_rounds, 5); assert.equal(serializer.tool_calls, 5);
       assert.deepEqual(serializer.sequence.map(call => call.tool_call_id), scalarCalls.map(call => call.id));
     }
-    const observations = reconcile(await rows(ledger), rpc.lifecycle, { bodyTransportRequired: !['scoped-command', 'default-view'].includes(name) });
+    const catalogLifecycle = await rows(nativeEvents);
+    assert.ok(catalogLifecycle.some(event => event.type === 'session_shutdown' && event.pid === rpc.lifecycle[0].pid), 'Actual native shutdown must be observed before Broker termination');
+    const observations = reconcile(await rows(ledger), rpc.lifecycle, { bodyTransportRequired: !['scoped-command', 'default-view'].includes(name), catalogLifecycle });
     if (nativeRepeatEvidence) {
       assert.equal(serializer.provider_requests, 6); assert.equal(serializer.tool_rounds, 5); assert.equal(serializer.tool_calls, 5);
       assert.equal(observations.sdk_resource_batches, 0);
