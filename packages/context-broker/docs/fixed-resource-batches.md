@@ -25,6 +25,32 @@ the real `toolCallId`; existing single-file/main receipts remain linked to their
 actual tool results. A third-party extension that already owns `read` is not
 replaced. OMP receives the call-ID plumbing but this batch slice is Pi-specific.
 
+### Fixed scalar resources
+
+A fixed resource `read({ path: "sr:R…", offset?, limit? })` or canonical fixed
+resource path uses one SDK `readSkill(ref, { output })` when the bundled package
+advertises `READ_OUTPUT_PROOF_VERSION = 1`. The SDK returns the selected-file
+`sha256` and independent manifest `entrypoint_sha256` in its machine result.
+Broker verifies the current source, owner, scope, pin, stable File binding and
+output bytes before handing its immutable resource path to the native tool.
+This path does not prepare, read or materialize the owner's main instructions.
+It retains scalar size support instead of applying the batch budgets below.
+
+The short reference still has to match the independently obtained owner main
+commitment and resource proof. Source completion, native completion and receipt
+attachment each check cancellation, the current session and branch binding.
+Native content, pagination, images and structured results remain native; the
+v1 resource receipt compares the actual returned text with the whole file and
+always has `loaded: false`. A direct resource has no prepared entry manifest.
+
+SDKs that do not advertise this additive capability retain the previous route,
+without a speculative SDK read. Custom commands and non-Pi hosts also retain
+their routes. Canonical paths naming the main entrypoint use the existing main
+route, including when they carry a File ID; this avoids an extra main read.
+A stale main-path hint whose File ID identifies a resource still resolves on
+that existing route. A resource-path hint whose File ID identifies the main
+is recognized by the source and continues through normal main preparation.
+
 One batch enters one source-runtime operation and one SDK `readResources` call.
 It does not loop over `readSkill`, launch a CLI for every file, or invoke
 `skill_prepare`. The default bundled SDK advertises independent
@@ -87,6 +113,9 @@ payloads, local binary bytes, source observations, and repeat projection. The
 separate `resource-batch-short-refs` variant explicitly inspects the owner first,
 then batches the four actual `sr:R` handles from that directory. Its one inspect
 consume is counted separately from the two resource reads.
+
+The scalar variants and their baseline/candidate source and provider costs are
+recorded separately in [fixed scalar verification](scalar-resource-consumption-verification-2026-11-05.md).
 
 Launch, Doctor, Drive, Evidence and Cleanup remain in the existing
 [consumption map](../../../.agents/skills/verify-notion-skills-integration/features/skill-consumption.md).

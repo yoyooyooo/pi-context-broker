@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { assertNativeGuidance, assertScopedCommand, assertPreparedHttpRequest, assertResourceHttpRequest, assertResourceBatchProjection, assertResourceReadSchema, resourceRefsFromInspection, resourceTextCopies, bodyCount, reconcile, sourceFinality, observeOwnedObjectReads, assertObjectReadEvidence, assertProviderHttpRequest, assertProviderToolSequence, assertSearchProjection, assertDollarProjection, assertNativeProjection } from './notion-sdk-pi.mjs';
+import { assertNativeGuidance, assertScopedCommand, assertPreparedHttpRequest, assertResourceHttpRequest, assertResourceBatchProjection, assertResourceReadSchema, resourceRefsFromInspection, resourceTextCopies, bodyCount, reconcile, sourceFinality, observeOwnedObjectReads, assertObjectReadEvidence, assertProviderHttpRequest, assertProviderToolSequence, assertSearchProjection, assertDollarProjection, assertNativeProjection, resourceScalarCalls, selectScalarProviderCall, assertResourceScalarResult, resourceScalarSelectedFixture, assertResourceScalarSession, assertResourceScalarCost } from './notion-sdk-pi.mjs';
 
 const command = ['/absolute/node', '/installed/dist/ntn-skills.mjs'];
 const database = '11111111-2222-3333-4444-555555555555';
@@ -132,6 +132,128 @@ function resourceFixture(state = 'source') {
   return { batch: { files, snapshot }, message: { role: 'toolResult', toolName: 'read', toolCallId: proof.toolCallId, isError: false,
     content: [{ type: 'text', text }], structuredContent: model, details: { contextBrokerResource: proof } } };
 }
+
+function scalarFixture() {
+  const { batch } = resourceFixture(), digest = value => createHash('sha256').update(value).digest('hex');
+  batch.main = 'Scalar main must not be read.\n'; batch.refs = batch.files.map(file => file.ref); batch.name = 'resources';
+  batch.snapshot.entrypoint = 'SKILL.md';
+  Object.assign(batch.snapshot.record, { kind: 'skill', name: batch.name, alias: batch.name, description: 'Controlled scalar source',
+    entrypoint: 'SKILL.md', ref: 'skill://' + encodeURIComponent(batch.snapshot.record.id) + '/SKILL.md', default_context: false });
+  const unselected = 'Unselected scalar file.\n';
+  batch.unselected = [{ path: 'references/unselected.txt', file_id: 'unselected', content: unselected, bytes: Buffer.byteLength(unselected), sha256: digest(unselected) }];
+  batch.snapshot.files = [{ path: 'SKILL.md', bytes: Buffer.byteLength(batch.main), sha256: digest(batch.main) },
+    ...[...batch.files, ...batch.unselected].map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 }))];
+  batch.snapshot.file_bindings = [{ path: 'SKILL.md', file_id: 'main' }, ...[...batch.files, ...batch.unselected].map(({ path, file_id }) => ({ path, file_id }))];
+  const calls = resourceScalarCalls(batch);
+  const messages = calls.map(call => ({ role: 'toolResult', toolName: 'read', toolCallId: call.id, isError: false,
+    content: [{ type: 'text', text: call.expectedText }], structuredContent: call.expectedText,
+    details: { contextBrokerResource: { version: 1, toolCallId: call.id, id: batch.snapshot.record.id, scope: batch.snapshot.scope,
+      snapshot_id: batch.snapshot.snapshot_id, version_id: batch.snapshot.version_id, ref: call.file.ref, path: call.file.path,
+      file_id: call.file.file_id, bytes: call.file.bytes, sha256: call.file.sha256, loaded: false, delivered_complete_text: call.completeText } } }));
+  return { batch, calls, messages };
+}
+
+test('fixed scalar plan starts with read and preserves native pagination, BOM, binary and empty text', () => {
+  const { batch, calls, messages } = scalarFixture(), before = JSON.stringify(batch);
+  assert.deepEqual(calls.map(call => call.id), ['sc14-utf8', 'sc14-page', 'sc14-bom', 'sc14-binary', 'sc14-empty']);
+  assert.deepEqual(calls[1].args, { path: batch.refs[1], offset: 2, limit: 1 });
+  assert.equal(calls[1].expectedText, '完整正文.\r\n\n[1 more lines in file. Use offset=3 to continue.]');
+  assert.equal(calls[2].expectedText, '\ufeffBOM\r\n完整正文.\r\n');
+  assert.equal(calls[3].expectedText, '\0\ufffd\u0001\u0002\ufffd\r\n'); assert.equal(calls[4].expectedText, '');
+  assert.deepEqual(calls.map(call => call.completeText), [true, false, true, false, true]);
+  const context = { messages: [] };
+  for (const [index, call] of calls.entries()) {
+    assert.deepEqual(selectScalarProviderCall(context, calls), { type: 'toolCall', id: call.id, name: 'read', arguments: call.args });
+    context.messages.push(messages[index]);
+  }
+  assert.equal(selectScalarProviderCall(context, calls), null);
+  const refs = batch.refs.map((_, index) => 'sr:R' + String(index).repeat(22));
+  assert.deepEqual(resourceScalarCalls(batch, refs).map(call => call.args.path), [refs[0], refs[1], refs[1], refs[3], refs[2]]);
+  assert.equal(JSON.stringify(batch), before);
+  assert.throws(() => selectScalarProviderCall({ messages: [{ ...messages[0], isError: true }] }, calls));
+});
+
+test('scalar receipts bind exact native results and reject forged identity, full-text and activation claims', () => {
+  const value = scalarFixture();
+  for (const [index, message] of value.messages.entries()) assert.equal(assertResourceScalarResult(message,
+    { batch: value.batch, call: value.calls[index] }).loaded, false);
+  for (const mutate of [
+    value => { value.messages[1].content[0].text = value.batch.files[1].content; },
+    value => { value.messages[1].structuredContent = 'Changed structured output'; },
+    value => { value.messages[1].details.contextBrokerResource.id = 'foreign'; },
+    value => { value.messages[1].details.contextBrokerResource.scope = 'foreign'; },
+    value => { value.messages[1].details.contextBrokerResource.snapshot_id = 's_' + '0'.repeat(64); },
+    value => { value.messages[1].details.contextBrokerResource.file_id = 'main'; },
+    value => { value.messages[1].details.contextBrokerResource.ref = value.batch.refs[0]; },
+    value => { value.messages[1].details.contextBrokerResource.bytes--; },
+    value => { value.messages[1].details.contextBrokerResource.sha256 = '0'.repeat(64); },
+    value => { value.messages[1].details.contextBrokerResource.delivered_complete_text = true; },
+    value => { value.messages[1].details.contextBrokerResource.loaded = true; },
+    value => { value.messages[1].details.contextBrokerRead = { loaded: true }; },
+  ]) {
+    const sample = scalarFixture(); mutate(sample);
+    assert.throws(() => assertResourceScalarResult(sample.messages[1], { batch: sample.batch, call: sample.calls[1] }));
+  }
+});
+
+test('short-reference seed is owner/file metadata and cannot hide main delivery or activation', () => {
+  const { batch } = scalarFixture(), selected = resourceScalarSelectedFixture(batch, '/owned/unmaterialized');
+  assert.equal(Object.hasOwn(selected, 'body'), false); assert.deepEqual(selected.entryManifest.materialized_paths, []);
+  assert.equal(selected.preparationBinding.body_sha256, batch.snapshot.files[0].sha256);
+  assert.deepEqual(selected.entryManifest.files.slice(1, 5).map(file => file.ref), batch.refs);
+  const entries = [{ type: 'custom', customType: 'context-broker-short-ref', data: { target: { kind: 'selected' } } },
+    ...batch.files.map(file => ({ type: 'custom', customType: 'context-broker-short-ref', data: { target: { kind: 'resource', path: file.path } } })),
+    { type: 'message', message: { role: 'user', content: 'Declared metadata-only setup.' } }];
+  const before = JSON.stringify(entries);
+  const state = assertResourceScalarSession(entries, { batch, setupOnly: true });
+  assert.equal(state.main_deliveries, 0); assert.equal(state.active_entries, 0); assert.equal(state.short_resource_bindings, 4);
+  assert.equal(JSON.stringify(entries), before);
+  for (const extra of [
+    { type: 'custom', customType: 'context-broker-active-sources', data: {} },
+    { type: 'message', message: { role: 'toolResult', details: { contextBrokerRead: {} }, content: [] } },
+    { type: 'message', message: { role: 'user', content: batch.main } },
+  ]) assert.throws(() => assertResourceScalarSession([...entries, extra], { batch }));
+  const hidden = structuredClone(entries); hidden[0].data.body = batch.main;
+  assert.throws(() => assertResourceScalarSession(hidden, { batch, setupOnly: true }));
+});
+
+function scalarCostFixture(includeMain = false) {
+  const { batch } = scalarFixture(), files = [...batch.files, ...(includeMain ? [batch.snapshot.files[0]] : [])], requiredPid = 123;
+  const events = [{ observer_pid: requiredPid, kind: 'object_observer_start', objects: '/owned/objects',
+    coverage: ['node:fs.readFile', 'node:fs.readFileSync', 'node:fs/promises.readFile'] }];
+  for (const [index, file] of files.entries()) {
+    const fields = { observer_pid: requiredPid, kind: 'object_read', id: '123:' + index, api: 'node:fs.readFile', object_sha256: file.sha256 };
+    events.push({ ...fields, event: 'start' }, { ...fields, event: 'end', code: null, bytes: file.bytes, content_sha256: file.sha256 });
+  }
+  events.push({ observer_pid: requiredPid, kind: 'object_observer_end', reads: files.length, pending_reads: 0, errors: 0 });
+  const materialized = files.map(file => ({ path: 'entry/' + file.path, bytes: file.bytes, sha256: file.sha256 }));
+  materialized.push({ path: 'scopes/' + 'c'.repeat(64) + '/indexes/generation/' + 'd'.repeat(64) + '/SKILL.md',
+    bytes: 74, sha256: 'e'.repeat(64) });
+  const observations = { sdk_calls: 5, sdk_reads: includeMain ? 4 : 5, sdk_consumes: includeMain ? 1 : 0, sdk_resource_batches: 0 };
+  return { batch, events, materialized, observations, requiredPid };
+}
+test('scalar baseline retains redundant main costs while direct mode forbids them', () => {
+  const direct = scalarCostFixture(), baseline = scalarCostFixture(true);
+  assert.equal(assertResourceScalarCost(direct.events, direct.materialized, direct.observations, direct).expectation, 'direct_scalar_verified');
+  const measured = assertResourceScalarCost(baseline.events, baseline.materialized, baseline.observations, { ...baseline, expectDirect: false });
+  assert.equal(measured.expectation, 'baseline_observation_only'); assert.equal(measured.sdk_consumes, 1);
+  assert.equal(measured.main.object_reads, 1); assert.equal(measured.main.returned_object_bytes, baseline.batch.snapshot.files[0].bytes);
+  assert.equal(measured.main.materialized_files.length, 1);
+  assert.equal(measured.metadata_index_files.length, 1, 'Discovery metadata stubs are reported separately from prepared main bodies');
+  assert.throws(() => assertResourceScalarCost(baseline.events, baseline.materialized, baseline.observations, baseline));
+  const hiddenMain = scalarCostFixture(); hiddenMain.materialized.at(-1).sha256 = hiddenMain.batch.snapshot.files[0].sha256;
+  assert.throws(() => assertResourceScalarCost(hiddenMain.events, hiddenMain.materialized, hiddenMain.observations, hiddenMain),
+    'A complete main body hash is forbidden even inside a metadata index');
+  for (const mutate of [
+    value => { value.materialized[0].sha256 = '0'.repeat(64); },
+    value => { value.events = []; },
+    value => { value.events[2].bytes--; },
+    value => { value.materialized.push({ ...value.batch.unselected[0], path: 'entry/' + value.batch.unselected[0].path }); },
+  ]) {
+    const value = scalarCostFixture(true); mutate(value);
+    assert.throws(() => assertResourceScalarCost(value.events, value.materialized, value.observations, { ...value, expectDirect: false }));
+  }
+});
 
 test('resource evidence verifies actual UTF-8, BOM/CRLF, zero-length spans and binary materialization metadata', () => {
   const { batch, message } = resourceFixture(), before = JSON.stringify(message);
@@ -320,6 +442,20 @@ test('every-request HTTP evidence keeps actual schemas, tool content and calls s
   const first = providerHttpFixture(); first.context.messages.splice(1); first.payload.messages.splice(1);
   const empty = assertProviderHttpRequest(first.payload, Buffer.from(JSON.stringify(first.payload)), first.context);
   assert.deepEqual(empty.tool_calls, []); assert.deepEqual(empty.tool_results, []);
+});
+
+test('empty native text remains empty in capture while installed Pi serializer placeholder bytes are counted', () => {
+  const value = providerHttpFixture(); value.context.messages.at(-1).content[0].text = '';
+  value.payload.messages.at(-1).content = '(no tool output)';
+  const before = JSON.stringify(value.context), body = Buffer.from(JSON.stringify(value.payload));
+  const result = assertProviderHttpRequest(value.payload, body, value.context);
+  assert.equal(result.tool_results[0].captured_content_bytes, 0);
+  assert.equal(result.tool_results[0].serializer_empty_result_placeholder, true);
+  assert.equal(result.tool_results[0].content_bytes, Buffer.byteLength('(no tool output)'));
+  assert.equal(result.tool_content_bytes, Buffer.byteLength('(no tool output)'));
+  assert.equal(JSON.stringify(value.context), before);
+  value.payload.messages.at(-1).content = '';
+  assert.throws(() => assertProviderHttpRequest(value.payload, Buffer.from(JSON.stringify(value.payload)), value.context));
 });
 
 test('every-request HTTP evidence rejects missing or changed schemas, arguments, results and leaked host fields', () => {

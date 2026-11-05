@@ -47,7 +47,7 @@ import {
   InvocationError,
 } from "./discovery-records";
 import { discoverSourceCatalog, loadSourceSkill, normalizeSources, formatSourceFailures } from "./sources";
-import { diagnoseNotionSource, sourceFailureMessage, SourceError, ReferenceMiss, prepareNotionSkills, prefetchNotionSkills, loadNotionResource, readNotionResources } from "./notion-source";
+import { diagnoseNotionSource, sourceFailureMessage, SourceError, ReferenceMiss, prepareNotionSkills, prefetchNotionSkills, loadNotionResource, readNotionResources, readFixedNotionResource } from "./notion-source";
 import { installHostSkills } from "./host-skills";
 import { resolveViewDiscovery, createViewCommands } from "./view-discovery";
 import { createSourceRuntime } from "./source-runtime";
@@ -1610,6 +1610,12 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       if (paths.host !== "pi" || !source || source.type !== "notion") throw new SourceError("SOURCE_RESOURCE_BATCH_UNAVAILABLE", record.sourceId ?? "notion");
       return readNotionResources(record, refs, source, ctx.cwd ?? process.cwd(), signal);
     }),
+    readFixedResource: (record, ref, ctx, signal) => sourceRuntime.foreground(async () => {
+      if (paths.host !== "pi") return undefined;
+      const source = normalizeSources(config.sources)?.find(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false);
+      if (!source || source.type !== "notion") throw new SourceError("SOURCE_UNAVAILABLE", record.sourceId ?? "notion");
+      return readFixedNotionResource(record, ref, source, ctx.cwd ?? process.cwd(), signal, "sdk");
+    }),
     prepareGraph: (records, ctx, signal, purpose, pins, pendingBindings, mode) => sourceRuntime.foreground(async () => {
       const groups = new Map<string, SkillRecord[]>();
       for (const record of records) {
@@ -1692,6 +1698,12 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     sessionSnapshot: (record, ctx) => {
       const selection = sessionSelection(ctx);
       return record.sourceScope && selection.scopes.has(record.sourceScope) ? selectedBinding(selection, record)?.snapshot_id : sessionSourceSnapshot(messagesFromActiveSessionContext(ctx), record);
+    },
+    sessionBinding: (record, ctx) => {
+      if (!record.sourceScope || !record.id) return undefined;
+      const selection = sessionSelection(ctx);
+      return selection.scopes.has(record.sourceScope) ? selectedBinding(selection, record)
+        : sessionSourceBindings(messagesFromActiveSessionContext(ctx), record.sourceScope).find(binding => binding.record.id === record.id);
     },
     onMetadata: records => sourceRuntime.prefetch(selectPrefetchPlans(records, normalizeSources(config.sources))),
     needsPreflightPrompt: text => parseInvocations(text, configuredRules(config)).length > 0,

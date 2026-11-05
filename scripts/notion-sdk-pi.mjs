@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import fs from 'node:fs';
 import fsPromises, { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
-import { syncBuiltinESMExports } from 'node:module';
+import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -14,8 +14,8 @@ import { safeRequestMetrics } from './notion-default-context.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
 import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
 
-const usage = 'Usage: node scripts/notion-sdk-pi.mjs doctor|run --package ABSOLUTE_INSTALLED_BROKER --fixture ABSOLUTE_FIXTURE_JSON [--expect-short-refs true|false] [--expect-compact-context true|false] [--scenario all|dollar|native|prepare|scoped-command|resource-batch|resource-batch-short-refs|partial-entrypoint] [--out NEW_ABSOLUTE_EVIDENCE]; evidence|cleanup --evidence ABSOLUTE_EVIDENCE. Real Pi 1.4 RPC, controlled provider with public onPayload/onResponse hooks, offline source, default bundled SDK (source.command is absent). Compact context defaults to true; false observes a baseline without certifying the compact contract. Default View, native menu, live Notion and real model are not claimed.';
-const scenarioNames = ['dollar', 'native', 'prepare', 'scoped-command', 'resource-batch', 'resource-batch-short-refs', 'partial-entrypoint'];
+const usage = 'Usage: node scripts/notion-sdk-pi.mjs doctor|run --package ABSOLUTE_INSTALLED_BROKER --fixture ABSOLUTE_FIXTURE_JSON [--expect-short-refs true|false] [--expect-compact-context true|false] [--expect-direct-scalar true|false] [--scenario all|dollar|native|prepare|scoped-command|resource-batch|resource-batch-short-refs|resource-scalar|resource-scalar-short-refs|partial-entrypoint] [--out NEW_ABSOLUTE_EVIDENCE]; evidence|cleanup --evidence ABSOLUTE_EVIDENCE. Real Pi 1.4 RPC, controlled provider with public onPayload/onResponse hooks, offline source, default bundled SDK (source.command is absent). Compact context and direct scalar checks default to true; false observes a baseline without certifying that contract. Comparisons include the installed Broker and bundled CLI/SDK identities. Default View, native menu, live Notion and real model are not claimed.';
+const scenarioNames = ['dollar', 'native', 'prepare', 'scoped-command', 'resource-batch', 'resource-batch-short-refs', 'resource-scalar', 'resource-scalar-short-refs', 'partial-entrypoint'];
 const nativeTools = ['read', 'skill_search', 'skill_prepare'];
 const scopedCommandTools = [...nativeTools, 'bash', 'skill_graph'];
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -166,10 +166,16 @@ export function assertProviderHttpRequest(payload, body, context) {
     assert.equal(matches.length, 1);
     const emitted = matches[0];
     exactKeys(emitted, ['role', 'content', 'tool_call_id', ...(emitted.name === undefined ? [] : ['name'])], 'Tool messages contain no host proof fields');
-    assert.equal(emitted.content, textContent(message.content), 'The actual HTTP tool text must preserve all provider-projected content');
+    const originalText = textContent(message.content);
+    // Installed Pi 1.4 uses this placeholder for an empty native read result.
+    // Keep the empty raw/session text separate from the actual API byte count.
+    const expectedText = originalText.trim().length > 0 ? originalText
+      : Array.isArray(message.content) && message.content.some(block => block.type === 'image') ? '(see attached image)' : '(no tool output)';
+    assert.equal(emitted.content, expectedText, 'The actual HTTP tool text must preserve provider content or the native empty-result placeholder');
     const details = message.details === undefined ? undefined : JSON.stringify(message.details);
     return { tool_call_id: message.toolCallId, tool_name: message.toolName, content: emitted.content,
       content_bytes: Buffer.byteLength(emitted.content), content_sha256: hash(emitted.content),
+      captured_content_bytes: Buffer.byteLength(originalText), serializer_empty_result_placeholder: emitted.content !== originalText,
       host_details_bytes: details === undefined ? 0 : Buffer.byteLength(details), host_details_sha256: details === undefined ? null : hash(details) };
   });
   const originalCalls = context.messages.filter(message => message.role === 'assistant')
@@ -381,6 +387,153 @@ export function resourceTextCopies(context, file) {
   }, 0);
 }
 
+/** Five fixed scalar calls exercise native text, pagination, binary and empty
+ * results without discovering or preparing a main body in the measured task. */
+export function resourceScalarCalls(batch, refs = batch.refs) {
+  assert.equal(batch.files.length, 4); assert.equal(refs.length, 4); assert.equal(new Set(refs).size, 4);
+  const one = predicate => { const values = batch.files.filter(predicate); assert.equal(values.length, 1); return values[0]; };
+  const utf8 = one(file => file.encoding === 'utf8' && file.content.length > 0 && !file.content.startsWith('\ufeff'));
+  const bom = one(file => file.encoding === 'utf8' && file.content.startsWith('\ufeff'));
+  const binary = one(file => file.encoding === 'base64'), empty = one(file => file.encoding === 'utf8' && file.content === '');
+  const lines = bom.content.split('\n'); assert.equal(lines.length, 3); assert.equal(lines[2], '');
+  const call = (id, file, extra = {}, expectedText = Buffer.from(file.content, file.encoding === 'base64' ? 'base64' : 'utf8').toString('utf8')) => ({
+    id, args: { path: refs[batch.files.indexOf(file)], ...extra }, file, expectedText,
+    completeText: Buffer.byteLength(expectedText) === file.bytes && hash(expectedText) === file.sha256,
+  });
+  return [call('sc14-utf8', utf8), call('sc14-page', bom, { offset: 2, limit: 1 },
+    lines[1] + '\n\n[1 more lines in file. Use offset=3 to continue.]'),
+  call('sc14-bom', bom), call('sc14-binary', binary), call('sc14-empty', empty)];
+}
+
+export function selectScalarProviderCall(context, calls) {
+  for (const call of calls) {
+    const result = context.messages.find(message => message.role === 'toolResult' && message.toolCallId === call.id);
+    if (!result) return { type: 'toolCall', id: call.id, name: 'read', arguments: call.args };
+    if (result.isError) throw new Error('CONTROLLED_SCALAR_RESOURCE_READ_FAILED');
+  }
+  return null;
+}
+
+export function assertResourceScalarResult(message, { batch, call }) {
+  assert.equal(message?.role, 'toolResult'); assert.equal(message.toolName, 'read'); assert.equal(message.isError, false);
+  assert.equal(message.toolCallId, call.id);
+  assert.deepEqual(message.content, [{ type: 'text', text: call.expectedText }], 'Scalar reads preserve the native result, including BOM, CRLF and pagination');
+  if (message.structuredContent !== undefined) assert.equal(message.structuredContent, call.expectedText, 'Native structured output is preserved');
+  const proof = message.details?.contextBrokerResource, { snapshot } = batch, { file } = call;
+  assert.ok(proof); assert.equal(proof.version, 1); assert.equal(proof.toolCallId, call.id); assert.equal(proof.loaded, false);
+  assert.equal(proof.id, snapshot.record.id); assert.equal(proof.scope, snapshot.scope);
+  assert.equal(proof.snapshot_id, snapshot.snapshot_id); assert.equal(proof.version_id, snapshot.version_id);
+  assert.equal(proof.ref, file.ref); assert.equal(proof.path, file.path); assert.equal(proof.file_id, file.file_id);
+  assert.equal(proof.bytes, file.bytes); assert.equal(proof.sha256, file.sha256);
+  assert.equal(proof.delivered_complete_text, call.completeText);
+  assert.equal(message.details.contextBrokerRead, undefined); assert.equal(message.details.contextBrokerPreparation, undefined);
+  return { tool_call_id: call.id, arguments: call.args, path: file.path, file_id: file.file_id,
+    source_bytes: file.bytes, source_sha256: file.sha256, content_bytes: Buffer.byteLength(call.expectedText), content_sha256: hash(call.expectedText),
+    structured_content_present: message.structuredContent !== undefined, delivered_complete_text: proof.delivered_complete_text,
+    loaded: proof.loaded, ...(proof.materialization === undefined ? {} : { materialization: proof.materialization }) };
+}
+
+/** This is declared session-state fixture setup, not a claim that an agent
+ * obtained an sr:R without inspection. Only frozen manifest metadata is used. */
+export function resourceScalarSelectedFixture(batch, root) {
+  const { snapshot } = batch, main = snapshot.files.find(file => file.path === snapshot.entrypoint);
+  assert.ok(main);
+  const files = snapshot.files.map(file => {
+    const binding = snapshot.file_bindings.find(value => value.path === file.path); assert.ok(binding);
+    return { ...file, ref: 'skill://' + encodeURIComponent(snapshot.record.id) + '/' + file.path
+      + '?snapshot=' + snapshot.snapshot_id + '&file_id=' + encodeURIComponent(binding.file_id) };
+  });
+  return { ...snapshot.record, source: 'notion', sourceId: 'sdk-fixture', sourceScope: snapshot.scope,
+    path: join(root, snapshot.entrypoint), aliases: [], normalizedAliases: [], normalizedName: snapshot.record.name,
+    normalizedDescription: snapshot.record.description, autoloadEnabled: false, snapshotId: snapshot.snapshot_id, versionId: snapshot.version_id,
+    preparationBinding: { record: snapshot.record, scope: snapshot.scope, snapshot_id: snapshot.snapshot_id,
+      version_id: snapshot.version_id, body_sha256: main.sha256, ref: files.find(file => file.path === snapshot.entrypoint).ref },
+    fileBindings: snapshot.file_bindings,
+    entryManifest: { version: 1, root, receipt: join(root, 'fixture-metadata-only.json'), manifest_id: hash(JSON.stringify(files)),
+      files, manifest_complete: true, local_files_ready: false, materialized_paths: [] } };
+}
+
+export function assertResourceScalarSession(entries, { batch, setupOnly = false } = {}) {
+  const messages = entries.flatMap(entry => entry.message ? [entry.message] : []), custom = entries.filter(entry => entry.type === 'custom');
+  const active = custom.filter(entry => entry.customType === 'context-broker-active-sources');
+  const deliveries = messages.filter(message => message.details?.contextBrokerRead || message.details?.contextBrokerPreparation
+    || message.role === 'custom' && ['context-broker', 'skill-prompt-message'].includes(message.customType));
+  assert.equal(active.length, 0, 'Reading resources must not activate their Skill');
+  assert.equal(deliveries.length, 0, 'Reading resources must not create a main delivery receipt');
+  assert.equal(bodyCount({ messages }, batch.main), 0, 'The actual session must not contain the main body');
+  if (setupOnly) {
+    assert.ok(custom.length > 0); assert.ok(custom.every(entry => entry.customType === 'context-broker-short-ref'));
+    assert.ok(messages.length === 1 && messages[0].role === 'user', 'The seed has one declared setup message and no tool/model history');
+    assert.equal(strings(entries).some(value => value.includes(batch.main)), false, 'The seed contains no main body in metadata either');
+    assert.equal(custom.filter(entry => entry.data?.target?.kind === 'selected').length, 1);
+    assert.equal(custom.filter(entry => entry.data?.target?.kind === 'resource').length, batch.files.length);
+  }
+  return { main_deliveries: deliveries.length, active_entries: active.length, main_content_copies: 0,
+    selected_graph_entries: custom.filter(entry => entry.customType === 'context-broker-selected-graph').length,
+    short_resource_bindings: custom.filter(entry => entry.customType === 'context-broker-short-ref' && entry.data?.target?.kind === 'resource').length };
+}
+
+async function seedScalarResourceSession(info, base, sessions, output) {
+  const sessionModule = join(info.piPackageRoot, 'dist/core/session-manager.js'), requirePi = createRequire(sessionModule);
+  const { SessionManager } = await import(pathToFileURL(sessionModule).href);
+  const { createJiti } = requirePi('jiti'), jiti = createJiti(import.meta.url, { fsCache: false, moduleCache: false });
+  const bridgePath = join(info.packageRoot, 'src/session-short-ref-host.ts');
+  const { createSessionShortRefHost } = await jiti.import(bridgePath);
+  const manager = SessionManager.create(base, sessions), ctx = { sessionManager: manager, cwd: base, mode: 'rpc', hasUI: false };
+  const refs = createSessionShortRefHost({ on() { throw new Error('No event loop is used for metadata-only session setup'); },
+    appendEntry: (type, data) => manager.appendCustomEntry(type, data) });
+  const selected = resourceScalarSelectedFixture(info.resourceBatch, join(base, 'unmaterialized-seed'));
+  assert.equal(Object.hasOwn(selected, 'body'), false);
+  const handles = info.resourceBatch.files.map(file => refs.resource(ctx, selected, file.ref));
+  manager.appendMessage({ role: 'user', content: 'Controlled persisted resource-reference setup. Only owner and file metadata was seeded; no source body was read or delivered.', timestamp: Date.now() });
+  const path = manager.getSessionFile(); assert.ok(path);
+  const before = await readFile(path), seedEntries = await rows(path);
+  const state = assertResourceScalarSession(seedEntries, { batch: info.resourceBatch, setupOnly: true });
+  const reopened = SessionManager.open(path, sessions), restored = { ...ctx, sessionManager: reopened };
+  assert.deepEqual(handles.map(ref => refs.resolve(restored, ref).canonicalRef), info.resourceBatch.refs);
+  assert.equal(hash(await readFile(path)), hash(before), 'Read-only reopening preserves the real Pi seed JSONL');
+  await assert.rejects(lstat(selected.entryManifest.root), { code: 'ENOENT' }, 'The seed must not create a prepared main or resource directory');
+  await writeFile(join(output, 'seed-session.jsonl'), before, { mode: 0o600, flag: 'wx' });
+  const evidence = { kind: 'installed_pi_session_manager_metadata_fixture', session_file: path, session_cwd: base,
+    session_bytes: before.length, session_sha256: hash(before), session_module: sessionModule, session_module_sha256: hash(await readFile(sessionModule)),
+    bridge: bridgePath, bridge_sha256: hash(await readFile(bridgePath)), handles, canonical_refs: info.resourceBatch.refs, ...state,
+    source_io: 'No SDK, CLI, object read or materialization is called by seed setup; frozen fixture manifest metadata only',
+    boundary: 'Proves persisted short-reference restoration in a new Pi process; does not claim first-time agent discovery or authorization from the seed' };
+  await save(join(output, 'resource-scalar-seed.json'), evidence);
+  return { path, handles, evidence };
+}
+
+export function assertResourceScalarCost(events, materialized, observations, { batch, requiredPid, expectDirect = true }) {
+  const main = batch.snapshot.files.find(file => file.path === batch.snapshot.entrypoint);
+  const objectReads = assertObjectReadEvidence(events, { selected: batch.files,
+    forbidden: [...batch.unselected, ...(expectDirect ? [main] : [])], requiredPid });
+  const allowed = new Set([...batch.files, ...(expectDirect ? [] : [main])].map(file => file.sha256));
+  assert.ok(objectReads.object_sha256s.every(value => allowed.has(value)), 'Only explicitly read resources and the observed baseline main may be read');
+  const pathMatches = (entry, file) => entry.path === file.path || entry.path.endsWith('/' + file.path);
+  const resources = batch.files.map(file => {
+    const matches = materialized.filter(entry => pathMatches(entry, file)); assert.ok(matches.length > 0, file.path + ': materialized resource is absent');
+    for (const entry of matches) { assert.equal(entry.bytes, file.bytes); assert.equal(entry.sha256, file.sha256); }
+    return { path: file.path, bytes: file.bytes, sha256: file.sha256, materialized_paths: matches.map(entry => entry.path) };
+  });
+  for (const file of batch.unselected) assert.equal(materialized.some(entry => pathMatches(entry, file) || entry.sha256 === file.sha256), false);
+  // Discovery writes metadata-only SKILL.md stubs under indexes. They are not a
+  // prepared main body; still report them, and never exempt an exact body hash.
+  const metadataIndex = entry => /^scopes\/[a-f0-9]{64}\/indexes\/[^/]+\/[a-f0-9]{64}\//u.test(entry.path);
+  const mainFiles = materialized.filter(entry => entry.sha256 === main.sha256 || pathMatches(entry, main) && !metadataIndex(entry));
+  const metadataIndexFiles = materialized.filter(entry => metadataIndex(entry) && pathMatches(entry, main) && entry.sha256 !== main.sha256);
+  const mainReads = events.filter(event => event.kind === 'object_read' && event.event === 'end' && event.object_sha256 === main.sha256);
+  if (expectDirect) {
+    assert.equal(observations.sdk_reads, 5); assert.equal(observations.sdk_consumes, 0); assert.equal(observations.sdk_resource_batches, 0);
+    assert.equal(observations.sdk_calls, 5); assert.equal(mainFiles.length, 0); assert.equal(mainReads.length, 0);
+  }
+  return { expectation: expectDirect ? 'direct_scalar_verified' : 'baseline_observation_only',
+    sdk_calls: observations.sdk_calls, sdk_reads: observations.sdk_reads, sdk_consumes: observations.sdk_consumes,
+    sdk_resource_batches: observations.sdk_resource_batches, object_reads: objectReads, resources, metadata_index_files: metadataIndexFiles,
+    main: { bytes: main.bytes, sha256: main.sha256, object_reads: mainReads.length,
+      returned_object_bytes: mainReads.reduce((total, event) => total + (event.bytes ?? 0), 0), materialized_files: mainFiles },
+    unselected_object_reads: 0, unselected_materialized_files: 0 };
+}
+
 async function replayPreparationHttp(context, info, output, kind = 'prepare', verify) {
   const modulePath = await realpath(join(info.piPackageRoot, 'node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js'));
   const packagePath = resolve(dirname(modulePath), '../../package.json'), packageInfo = await json(packagePath);
@@ -551,7 +704,7 @@ async function productInventory(root) {
   return [...await inventory(root, 'src'), ...await inventory(root, 'dist')].sort((a, b) => a.path.localeCompare(b.path));
 }
 async function archiveSessions(root, output) {
-  const entries = await inventory(root), messages = [];
+  const entries = await inventory(root), messages = [], sessionEntries = [];
   for (const entry of entries) {
     const original = await readFile(join(root, entry.path)), target = join(output, 'sessions', entry.path);
     assert.equal(hash(original), entry.sha256);
@@ -561,12 +714,13 @@ async function archiveSessions(root, output) {
     if (entry.path.endsWith('.jsonl')) {
       for (const line of original.toString('utf8').split('\n').filter(Boolean)) {
         const entry = JSON.parse(line);
+        sessionEntries.push(entry);
         if (entry.message) messages.push(entry.message);
       }
     }
   }
   await save(join(output, 'session-archives.json'), { files: entries, preserved: true });
-  return { files: entries, messages };
+  return { files: entries, messages, entries: sessionEntries };
 }
 async function inspect(options) {
   assert.ok(options['--package'] && options['--fixture'], usage);
@@ -667,6 +821,7 @@ function selectProviderCall(context) {
   const text = value => typeof value === 'string' ? value : (value ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
   const parsed = result => { if (result.isError) throw new Error('CONTROLLED_TOOL_FAILED'); return JSON.parse(text(result.content)); };
   const call = (id, name, args) => ({ type: 'toolCall', id, name, arguments: args });
+  if (['resource-scalar', 'resource-scalar-short-refs'].includes(plan.mode)) return selectScalarProviderCall(context, plan.calls);
   if (plan.mode === 'scoped-command') {
     const scope = find('sc05-source-command');
     if (!scope) return call('sc05-source-command', 'skill_graph', { cli_source: 'sdk-fixture' });
@@ -737,7 +892,7 @@ async function provider(base) {
   let source = await readFile(path, 'utf8');
   const replace = (before, after) => { assert.equal(source.split(before).length, 2, 'Provider fixture shape changed'); source = source.replace(before, after); };
   replace('import { appendFileSync }', 'import { appendFileSync, readFileSync }');
-  replace('function stream(model, context) {', `${resourceRefsFromInspection.toString()}\n${selectProviderCall.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
+  replace('function stream(model, context) {', `${resourceRefsFromInspection.toString()}\n${selectScalarProviderCall.toString()}\n${selectProviderCall.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
   replace('const payload = await options?.onPayload?.({ model: model.id, context }, model);', 'if (typeof options?.onPayload !== "function" || typeof options?.onResponse !== "function") throw new Error("PUBLIC_PROVIDER_HOOKS_REQUIRED");\n      hook("payload_start");\n      const payload = await options.onPayload({ model: model.id, context }, model);\n      hook("payload_end");');
   replace('JSON.stringify({ model: model.id, context })', 'JSON.stringify({ requestId, model: model.id, context })');
   replace('await options?.onResponse?.({ status: 200, headers: { "x-fixture": "deterministic" } }, model);', 'await options.onResponse({ status: 200, headers: { "x-fixture": "deterministic" } }, model);\n      hook("response_end");');
@@ -1050,9 +1205,10 @@ async function assertPartialObjectState(partial) {
     corrupt_actual_sha256: hash(bytes), corrupt_bytes: bytes.length, unchanged: true };
 }
 
-async function scenario(name, info, scratch, evidence, expectShortRefs, expectCompactContext) {
+async function scenario(name, info, scratch, evidence, expectShortRefs, expectCompactContext, expectDirectScalar) {
   const shortResourceRefs = name === 'resource-batch-short-refs';
   const resourceScenario = name === 'resource-batch' || shortResourceRefs;
+  const scalarShortRefs = name === 'resource-scalar-short-refs', scalarScenario = name === 'resource-scalar' || scalarShortRefs;
   const partialEntrypoint = name === 'partial-entrypoint';
   const base = join(scratch, name), output = join(evidence, name);
   await mkdir(base); await mkdir(output, { mode: 0o700 });
@@ -1070,10 +1226,17 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
   const resourcePlan = resourceScenario ? { owner: info.resourceBatch?.name, refs: info.resourceBatch?.refs,
     paths: info.resourceBatch?.files.map(file => file.path), short_refs: shortResourceRefs } : {};
   if (resourceScenario) assert.ok(info.resourceBatch, 'The fixture must provide the resource-batch scenario');
+  if (scalarScenario) {
+    assert.ok(info.resourceBatch, 'The fixture must provide fixed scalar resources');
+    if (expectDirectScalar) assert.equal(info.runtime.read_output_proof_version, 1, 'Direct scalar evidence requires the versioned SDK output proof');
+  }
+  const scalarSeed = scalarShortRefs ? await seedScalarResourceSession(info, base, sessions, output) : undefined;
+  const scalarCalls = scalarScenario ? resourceScalarCalls(info.resourceBatch, scalarSeed?.handles ?? info.resourceBatch.refs) : [];
   if (partialEntrypoint) assert.ok(info.entrypoint, 'The fixture must provide the complete entrypoint scenario');
   const entrypointPlan = partialEntrypoint ? { owner: info.entrypoint.name, fixed_main_ref: info.entrypoint.ref,
     selected_path: info.entrypoint.files.find(file => file.role === 'selected').path } : {};
-  await save(toolPlan, { mode: name === 'dollar' ? 'search' : name, ...resourcePlan, ...entrypointPlan });
+  await save(toolPlan, { mode: name === 'dollar' ? 'search' : name, ...resourcePlan, ...entrypointPlan,
+    ...(scalarScenario ? { calls: scalarCalls.map(({ id, args }) => ({ id, args })) } : {}) });
   const fakeProvider = await provider(base), preload = join(base, 'observer.mjs');
   await observer(preload);
   const fixtureEnv = { ...info.fixtureEnv };
@@ -1088,15 +1251,19 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: providerFile, CONTEXT_BROKER_LOG_FILE: join(output, 'decisions.jsonl'),
     BROKER_E2E_PROCESS_LEDGER: join(output, 'owned-processes.jsonl'), SC10_PI_TOOL_PLAN: toolPlan,
     SC10_PI_PROVIDER_HOOKS: hookFile, SC10_PI_OBSERVER: ledger,
-    ...(entrypointSetup ? { SC13_PI_OBJECT_ROOT: entrypointSetup.partial.objects } : {}),
+    ...(entrypointSetup ? { SC13_PI_OBJECT_ROOT: entrypointSetup.partial.objects }
+      : scalarScenario ? { SC13_PI_OBJECT_ROOT: join(fixtureEnv.NTN_SKILLS_HOME, 'objects') } : {}),
     SC10_PI_BUNDLED_CLI: join(info.packageRoot, 'dist/ntn-skills.mjs'), NODE_OPTIONS: `--import=${preload}` });
   const activeTools = name === 'scoped-command' ? scopedCommandTools : nativeTools;
-  const argv = ['--no-extensions', '--session-dir', sessions, '--tools', activeTools.join(','), '-e', fakeProvider, '-e', info.extension, '--model', 'context-broker-e2e/fake'];
+  const argv = ['--no-extensions', '--session-dir', sessions, ...(scalarSeed ? ['--session', scalarSeed.path] : []),
+    '--tools', activeTools.join(','), '-e', fakeProvider, '-e', info.extension, '--model', 'context-broker-e2e/fake'];
   await save(join(output, 'launch.json'), { host: info.host, argv, cwd: base, source_command_configured: false,
     source_state: partialEntrypoint ? 'complete controlled current validated by installed SDK, then owned partial cache; fresh Broker cache and Pi session'
+      : scalarSeed ? 'cloned warm controlled source; fresh Broker cache and new Pi process restoring a metadata-only short-reference session'
       : 'cloned warm controlled snapshots/current catalog; fresh Broker cache and Pi session', expect_short_refs: expectShortRefs,
-    expect_compact_context: expectCompactContext, active_tools: activeTools });
-  let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, entrypointEvidence, serializerContext, archive, dollarProjection, nativeProjection;
+    expect_compact_context: expectCompactContext, expect_direct_scalar: expectDirectScalar, active_tools: activeTools,
+    ...(scalarSeed ? { seed_evidence: 'resource-scalar-seed.json', seed_sha256: scalarSeed.evidence.session_sha256 } : {}) });
+  let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, resourceScalarEvidence, entrypointEvidence, serializerContext, archive, dollarProjection, nativeProjection;
   try {
     rpc = await startRpc({ host: 'pi', args: argv, cwd: base, env, timeoutMs: 60000 });
     const prompts = {
@@ -1105,13 +1272,15 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       prepare: 'Use the available a, b and c Skills together, preparing their required instructions.',
       'resource-batch': 'Read this explicit fixed resource set in one read paths call: ' + JSON.stringify(info.resourceBatch?.refs) + '. Read only those resources without loading or activating the Skill main body.',
       'resource-batch-short-refs': 'Explicitly inspect the resources Skill once. Use its four requested resource handles for ' + JSON.stringify(info.resourceBatch?.files.map(file => file.path)) + ' in one read paths call; preserve that selected owner and snapshot.',
+      'resource-scalar': 'Read only these fixed resources in the supplied order, using one native read path call per item: ' + JSON.stringify(scalarCalls.map(call => call.args)) + '. Preserve native pagination and file results. Do not prepare or activate the main Skill.',
+      'resource-scalar-short-refs': 'Resume the persisted resource references and read only these fixed resources in the supplied order, using one native read path call per item: ' + JSON.stringify(scalarCalls.map(call => call.args)) + '. Preserve native pagination and file results. Do not prepare or activate the main Skill.',
       'partial-entrypoint': 'Read the supplied fixed entrypoint Skill main, inspect its current candidate directory, then read only the advertised selected text resource. Keep the selected owner and snapshot.',
       'scoped-command': 'For the sdk-fixture source, obtain the host-local command prefix and database scope for a possible maintenance action. Return that metadata only; do not execute commands or read Skill bodies.',
     };
     await rpc.prompt(prompts[name]);
     let captures = await rows(providerFile); assert.ok(captures.length >= 2);
     last = captures.at(-1).context;
-    if (name !== 'scoped-command') {
+    if (name !== 'scoped-command' && !scalarScenario) {
       discovery = parsedResult(toolResult(last, 'sc10-search'));
       assert.equal(discovery.ok, true); assert.equal(discovery.count, info.fixture.catalog_records?.length ?? 4);
       for (const record of discovery.records) if (expectShortRefs) assert.match(record.ref, /^sr:C/u);
@@ -1126,6 +1295,33 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       for (const key of ['a', 'base']) assert.equal(bodyCount(last, info.bodies.get(key)), 1, `${key}: full source body exactly once`);
       for (const key of ['b', 'c']) assert.equal(bodyCount(last, info.bodies.get(key)), 0);
       dollarProjection = assertDollarProjection(last, { bodies: info.bodies, expectCompact: expectCompactContext });
+    } else if (scalarScenario) {
+      const batch = info.resourceBatch, calls = rpc.frames.filter(frame => frame.type === 'tool_execution_start');
+      assert.equal(captures.length, 6, 'Five direct scalar calls require exactly six provider requests');
+      assert.deepEqual(calls.map(frame => ({ id: frame.toolCallId, name: frame.toolName, args: frame.args })),
+        scalarCalls.map(call => ({ id: call.id, name: 'read', args: call.args })), 'The measured task reads fixed resources without discovery or inspection tools');
+      const originalToolResults = scalarCalls.map(call => {
+        const frames = rpc.frames.filter(frame => frame.type === 'tool_execution_end' && frame.toolCallId === call.id); assert.equal(frames.length, 1);
+        return { ...frames[0].result, role: 'toolResult', toolName: frames[0].toolName, toolCallId: call.id, isError: frames[0].isError };
+      });
+      const reads = originalToolResults.map((message, index) => assertResourceScalarResult(message, { batch, call: scalarCalls[index] }));
+      for (const capture of captures) {
+        assert.equal(bodyCount(capture.context, batch.main), 0, 'No provider request receives the main body');
+        for (const file of batch.unselected) assert.equal(bodyCount(capture.context, file.content), 0);
+        for (const [index, call] of scalarCalls.entries()) {
+          const projected = toolResult(capture.context, call.id);
+          if (projected) {
+            assertResourceScalarResult(projected, { batch, call });
+            assert.deepEqual(projected.content, originalToolResults[index].content);
+            assert.deepEqual(projected.details.contextBrokerResource, originalToolResults[index].details.contextBrokerResource);
+          }
+        }
+      }
+      resourceScalarEvidence = { reads, originalToolResults, source_cache: 'warm', source_io_before_first_read: 'catalog discovery only; no setup SDK call',
+        reference_form: scalarShortRefs ? 'persisted_session_short_resource' : 'canonical_fixed',
+        ...(scalarSeed ? { seed: scalarSeed.evidence } : {}), provider_requests: captures.length, main_provider_content_copies: 0,
+        image_boundary: 'Fixture binary is not an image; native image/structuredContent/signal forwarding remains covered by pi-read-adapter tests',
+        installed_runtime: info.runtime, comparison_scope: 'Installed Broker and bundled CLI/SDK; compare bundle hashes and read_output_proof_version between arms' };
     } else if (partialEntrypoint) {
       const sample = info.entrypoint, selected = sample.files.find(file => file.role === 'selected');
       const fromFrame = id => {
@@ -1377,6 +1573,14 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       await save(join(output, 'resource-batch-projection.json'), { ...publicEvidence, original_session_preserved: true });
       serializer = await replayPreparationHttp(serializerContext, info, output, 'resource-batch');
     }
+    if (resourceScalarEvidence) {
+      for (const original of resourceScalarEvidence.originalToolResults) {
+        const messages = archive.messages.filter(message => message.role === 'toolResult' && message.toolCallId === original.toolCallId);
+        assert.equal(messages.length, 1, 'The real resumed/new Pi session retains every scalar result exactly once');
+        assert.deepEqual(messages[0].content, original.content); assert.deepEqual(messages[0].details, original.details);
+      }
+      resourceScalarEvidence.session_state = assertResourceScalarSession(archive.entries, { batch: info.resourceBatch });
+    }
     if (entrypointEvidence) {
       for (const original of entrypointEvidence.originalToolResults) {
         const messages = archive.messages.filter(message => message.role === 'toolResult' && message.toolName === original.toolName && message.toolCallId === original.toolCallId);
@@ -1413,14 +1617,45 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
         assert.equal(captures.length, 3, 'Metadata discovery and dollar activation retain the original two-prompt scenario');
       }
     }
+    if (scalarScenario) {
+      serializer = await replayScenarioHttp(captures, rpc.frames, info, output);
+      assert.equal(serializer.provider_requests, 6); assert.equal(serializer.tool_rounds, 5); assert.equal(serializer.tool_calls, 5);
+      assert.deepEqual(serializer.sequence.map(call => call.tool_call_id), scalarCalls.map(call => call.id));
+    }
     const observations = reconcile(await rows(ledger), rpc.lifecycle, { bodyTransportRequired: name !== 'scoped-command' });
     if (resourceBatchEvidence) {
       assert.equal(observations.sdk_calls, shortResourceRefs ? 3 : 2); assert.equal(observations.sdk_resource_batches, 2);
       assert.equal(observations.sdk_consumes, shortResourceRefs ? 1 : 0); assert.equal(observations.sdk_reads, 0);
     }
+    if (resourceScalarEvidence) {
+      const materialized = await inventory(source.cacheDir);
+      await save(join(output, 'resource-scalar-cache.json'), materialized);
+      const cost = assertResourceScalarCost(await rows(ledger), materialized, observations,
+        { batch: info.resourceBatch, requiredPid: rpc.lifecycle[0].pid, expectDirect: expectDirectScalar });
+      for (const file of cost.metadata_index_files) {
+        const bytes = await readFile(join(source.cacheDir, file.path));
+        assert.equal(bytes.length, file.bytes); assert.equal(hash(bytes), file.sha256);
+        assert.equal(bytes.includes(Buffer.from(info.resourceBatch.main)), false, 'Metadata index stubs must not contain the main instructions');
+      }
+      cost.metadata_index_main_content_copies = 0;
+      for (const file of cost.resources) {
+        const bytes = await readFile(join(source.cacheDir, file.materialized_paths[0]));
+        assert.equal(bytes.length, file.bytes); assert.equal(hash(bytes), file.sha256);
+        const target = join(output, 'resource-scalar-files', file.path); await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+        await writeFile(target, bytes, { mode: 0o600, flag: 'wx' });
+      }
+      const { originalToolResults: _original, ...publicEvidence } = resourceScalarEvidence;
+      await save(join(output, 'resource-scalar-evidence.json'), { ...publicEvidence, cost, original_session_preserved: true,
+        native_resource_files_retained: true, all_provider_requests_serialized: true });
+    }
     const result = { name, status: 'passed', provider_requests: captures.length, public_provider_hooks: true,
-      source_command_configured: false, short_refs: name === 'scoped-command' ? 'not_applicable_metadata_query' : expectShortRefs ? resourceScenario && !shortResourceRefs ? 'verified_discovery_only' : 'verified' : 'not_required_for_baseline',
+      source_command_configured: false, short_refs: name === 'scoped-command' ? 'not_applicable_metadata_query'
+        : scalarScenario ? scalarShortRefs ? 'verified_persisted_resources' : 'not_exercised_canonical_resources'
+        : expectShortRefs ? resourceScenario && !shortResourceRefs ? 'verified_discovery_only' : 'verified' : 'not_required_for_baseline',
       ...(resourceScenario ? { resource_request_refs: shortResourceRefs ? 'session_short_resources' : 'canonical_fixed', short_resource_handles: shortResourceRefs ? 'verified' : 'not_exercised' } : {}),
+      ...(scalarScenario ? { resource_request_refs: scalarShortRefs ? 'persisted_session_short_resources' : 'canonical_fixed',
+        scalar_resource: expectDirectScalar ? 'direct_read_without_main_verified' : 'baseline_costs_recorded',
+        read_output_proof_version: info.runtime.read_output_proof_version ?? null, scalar_evidence: 'resource-scalar-evidence.json' } : {}),
       discovery_failures: discovery?.failures ?? null, native_guidance_without_cli_templates: true, observer_finality: finality?.complete === true,
       session_archive_files: archive?.files.length ?? 0, preparation_projection: preparation ? 'verified' : 'not_applicable',
       resource_batch_projection: resourceBatchEvidence ? 'verified' : 'not_applicable',
@@ -1471,8 +1706,8 @@ assert.ok(['doctor', 'run', 'evidence', 'cleanup'].includes(action), usage);
 const options = {};
 for (let index = 0; index < args.length; index += 2) {
   const key = args[index], value = args[index + 1];
-  assert.ok(['--package', '--fixture', '--out', '--evidence', '--expect-short-refs', '--expect-compact-context', '--scenario'].includes(key) && value && !Object.hasOwn(options, key), usage);
-  if (key === '--expect-short-refs' || key === '--expect-compact-context') assert.ok(['true', 'false'].includes(value), usage);
+  assert.ok(['--package', '--fixture', '--out', '--evidence', '--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar', '--scenario'].includes(key) && value && !Object.hasOwn(options, key), usage);
+  if (['--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar'].includes(key)) assert.ok(['true', 'false'].includes(value), usage);
   else if (key === '--scenario') assert.ok(value === 'all' || scenarioNames.includes(value), usage);
   else assert.ok(isAbsolute(value), usage);
   options[key] = value;
@@ -1492,14 +1727,16 @@ if (action === 'evidence' || action === 'cleanup') {
     await save(join(evidence, 'package-before.json'), before);
     const expectShortRefs = options['--expect-short-refs'] !== 'false';
     const expectCompactContext = options['--expect-compact-context'] !== 'false';
+    const expectDirectScalar = options['--expect-direct-scalar'] !== 'false';
     const scenarios = options['--scenario'] && options['--scenario'] !== 'all' ? [options['--scenario']] : scenarioNames;
     await save(join(evidence, 'plan.json'), { version: 1, node: process.version, pi: info.pi.version, package: info.packageRoot, runtime: info.runtime, extension: info.extension,
       fixture: options['--fixture'], driver_sha256: hash(await readFile(fileURLToPath(import.meta.url))), source_command_configured: false,
-      scenarios, expect_short_refs: expectShortRefs, expect_compact_context: expectCompactContext,
+      scenarios, expect_short_refs: expectShortRefs, expect_compact_context: expectCompactContext, expect_direct_scalar: expectDirectScalar,
+      comparison_scope: 'Installed Broker plus bundled CLI/SDK; a changed runtime manifest or bundle hash is a changed comparison input',
       live_notion: 'not_run', real_model: 'not_run', default_view: 'not_verified' });
     const results = [];
     for (const name of scenarios) {
-      try { results.push(await scenario(name, info, scratch, evidence, expectShortRefs, expectCompactContext)); }
+      try { results.push(await scenario(name, info, scratch, evidence, expectShortRefs, expectCompactContext, expectDirectScalar)); }
       catch (error) { results.push({ name, status: 'failed', error: { code: error.code ?? error.name, message: String(error.message) } }); }
       await save(join(evidence, 'progress.json'), results); console.log(JSON.stringify(results.at(-1)));
     }

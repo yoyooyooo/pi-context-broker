@@ -5,7 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import { SourceError } from "./notion-source";
 import { nativeResourcePath, parseNativeReference } from "./native-reference";
 import type { SkillRecord } from "./types";
-import type { ResourceReadFile, ResourceReadWireFile } from "./resource-read-types";
+import type { ResourceReadFile, ResourceReadFileIdentity, ResourceReadWireFile } from "./resource-read-types";
 
 export type EntryFile = { path: string; bytes: number; sha256: string; ref: string };
 export type EntryManifest = {
@@ -36,7 +36,7 @@ function manifestFiles(record: SkillRecord, files: readonly EntryFile[]) {
   if (!paths.has(record.entrypoint!) || record.fileBindings?.some(binding => !paths.has(binding.path))) fail(record, "SOURCE_PREPARATION_INVALID");
   return files.map(file => ({ ...file })).sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 }
-async function verifiedFile(path: string, file: EntryFile, record: SkillRecord): Promise<void> {
+async function verifiedFile(path: string, file: Pick<EntryFile, "bytes" | "sha256">, record: SkillRecord): Promise<void> {
   const metadata = await lstat(path);
   if (!metadata.isFile() || metadata.isSymbolicLink()) fail(record, "SOURCE_CACHE_UNSAFE");
   const bytes = await readFile(path);
@@ -116,11 +116,30 @@ export async function materializeNotionEntryFile(record: SkillRecord, path: stri
   return destination;
 }
 
-/** Binary resources have their own immutable selected-file projection. It does
+/** Selected resources have their own immutable file projection. It does
  * not require a main entry file and cannot satisfy an entry/full-export receipt. */
-export async function materializeNotionResourceBatch(record: SkillRecord, files: readonly ResourceReadWireFile[], cache: string, ensureDirectory: (path: string) => Promise<void>, signal?: AbortSignal): Promise<ResourceReadFile[]> {
+function resourceRoot(record: SkillRecord, cache: string): string {
   if (!record.sourceScope || !/^[a-f0-9]{64}$/.test(record.sourceScope) || !record.id || !/^s_[a-f0-9]{64}$/.test(record.snapshotId ?? "")) fail(record, "SOURCE_PREPARATION_INVALID");
-  const root = join(cache, "scopes", record.sourceScope, "records", hash(record.id), "resources", record.snapshotId!, "tree");
+  return join(cache, "scopes", record.sourceScope, "records", hash(record.id), "resources", record.snapshotId!, "tree");
+}
+async function publishResourceStage(record: SkillRecord, file: ResourceReadFileIdentity, stage: string, destination: string, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) fail(record, "SOURCE_CANCELLED");
+  try { await link(stage, destination); }
+  catch (error) { if (!object(error) || error.code !== "EEXIST") throw error; }
+  await verifiedFile(destination, file, record);
+  if (signal?.aborted) fail(record, "SOURCE_CANCELLED");
+}
+/** Publish exact SDK output without creating an entry projection or reading a main file. */
+export async function publishNotionResourceFile(record: SkillRecord, file: ResourceReadFileIdentity, stage: string, cache: string, ensureDirectory: (path: string) => Promise<void>, signal?: AbortSignal): Promise<ResourceReadFileIdentity & Readonly<{ output: string }>> {
+  if (signal?.aborted) fail(record, "SOURCE_CANCELLED");
+  const destination = pathWithin(resourceRoot(record, cache), file.path, record);
+  await ensureDirectory(dirname(destination));
+  await verifiedFile(stage, file, record);
+  await publishResourceStage(record, file, stage, destination, signal);
+  return { ...file, output: destination };
+}
+export async function materializeNotionResourceBatch(record: SkillRecord, files: readonly ResourceReadWireFile[], cache: string, ensureDirectory: (path: string) => Promise<void>, signal?: AbortSignal): Promise<ResourceReadFile[]> {
+  const root = resourceRoot(record, cache);
   const result: ResourceReadFile[] = [];
   for (const file of files) {
     if (signal?.aborted) fail(record, "SOURCE_CANCELLED");
@@ -134,11 +153,8 @@ export async function materializeNotionResourceBatch(record: SkillRecord, files:
       if (bytes.toString("base64") !== file.content || bytes.length !== file.bytes || hash(bytes) !== file.sha256) fail(record, "SOURCE_RESPONSE_INVALID");
       const stage = join(dirname(destination), ".resource-stage-" + randomUUID());
       await writeFile(stage, bytes, { mode: 0o600, flag: "wx" });
-      if (signal?.aborted) fail(record, "SOURCE_CANCELLED");
-      try { await link(stage, destination); }
-      catch (error) { if (!object(error) || error.code !== "EEXIST") throw error; }
-    }
-    await verifiedFile(destination, file, record);
+      await publishResourceStage(record, file, stage, destination, signal);
+    } else await verifiedFile(destination, file, record);
     if (signal?.aborted) fail(record, "SOURCE_CANCELLED");
     result.push({ ...file, encoding: "base64", output: destination });
   }

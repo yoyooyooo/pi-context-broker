@@ -6,7 +6,7 @@ import {
   type ResolvedSessionShortRef, type SessionShortRef, type SessionShortRefState, type ShortRefBindingPlan, type ShortRefBatchPlan, type ShortRefIdentity,
 } from "./session-short-ref";
 import type { ContentRecord, ExtensionAPI, ExtensionContext, SkillRecord } from "./types";
-import type { ResourceReadBatch, ResourceReadFile } from "./resource-read-types";
+import type { ResourceReadBatch, ResourceReadFileIdentity } from "./resource-read-types";
 
 export type HostShortRefResolution = ResolvedSessionShortRef & Readonly<{
   shortRef: SessionShortRef;
@@ -84,11 +84,11 @@ export function assertShortRefSnapshot(value: HostShortRefResolution, snapshot: 
 }
 
 /** Verify a resource against its selected owner without constructing or loading
- * a prepared Skill body. The SDK owns permission and complete manifest checks. */
-export function assertShortRefResource(value: HostShortRefResolution, source: SkillRecord, batch: ResourceReadBatch, file: ResourceReadFile): void {
+ * a prepared Skill body. The source owns permission and independent file proofs. */
+export function assertShortRefResource(value: HostShortRefResolution, source: SkillRecord, result: Pick<ResourceReadBatch, "selection" | "ownerBinding">, file: ResourceReadFileIdentity): void {
   assertShortRefSource(value, source);
   if (value.kind !== "resource") fail("SHORT_REF_OWNER_MISMATCH");
-  const owner = value.owner, binding = batch.ownerBinding, selection = batch.selection;
+  const owner = value.owner, binding = result.ownerBinding, selection = result.selection;
   if (selection.scope !== owner.identity.scope || selection.owner !== owner.identity.id || selection.snapshot_id !== owner.snapshot_id
     || selection.version_id !== owner.version_id || binding.scope !== owner.identity.scope || binding.snapshot_id !== owner.snapshot_id
     || binding.version_id !== owner.version_id || binding.body_sha256 !== owner.body_sha256 || binding.record.entrypoint !== owner.entrypoint

@@ -7,7 +7,7 @@ import { channel } from "node:diagnostics_channel";
 
 // These fixtures exercise the loading/observation boundary only. Actual SDK
 // runtime, package and Pi proofs use independently installed ntn-skills builds.
-async function fixture(options: { sdk?: boolean; sdkVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number } = {}) {
+async function fixture(options: { sdk?: boolean; sdkVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number; readProofVersion?: number; readProofManifestVersion?: number } = {}) {
   const root = await mkdtemp(join(tmpdir(), "broker-sdk-boundary-"));
   await mkdir(join(root, "src")); await mkdir(join(root, "dist"));
   await copyFile(new URL("../src/notion-sdk.ts", import.meta.url), join(root, "src/notion-sdk.ts"));
@@ -16,6 +16,7 @@ async function fixture(options: { sdk?: boolean; sdkVersion?: number; packageVer
 export const SDK_VERSION = ${options.sdkVersion ?? 1};
 export const CONSUMER_CONTRACT_VERSION = 1;
 export const PACKAGE_VERSION = ${JSON.stringify(options.packageVersion ?? "fixture-1")};
+${options.readProofVersion === undefined ? "" : `export const READ_OUTPUT_PROOF_VERSION = ${options.readProofVersion};`}
 export const calls = [];
 export function parseDuration(value) { return value === '1s' ? 1000 : 0; }
 export function decodeConsumeResult() { throw new Error('consume already decoded; duplicate decoder invocation'); }
@@ -42,7 +43,8 @@ export async function readResources(input, options) {
 `);
   await writeFile(join(root, "dist/ntn-skills-runtime.json"), JSON.stringify({ version: 1, package: "ntn-skills",
     package_version: options.manifestVersion ?? options.packageVersion ?? "fixture-1", sdk_version: 1, consumer_contract_version: 1,
-    ...(options.resourceVersion === undefined ? {} : { resource_read_contract_version: options.resourceManifestVersion ?? options.resourceVersion }) }));
+    ...(options.resourceVersion === undefined ? {} : { resource_read_contract_version: options.resourceManifestVersion ?? options.resourceVersion }),
+    ...(options.readProofVersion === undefined && options.readProofManifestVersion === undefined ? {} : { read_output_proof_version: options.readProofManifestVersion ?? options.readProofVersion }) }));
   const boundary = await import(pathToFileURL(join(root, "src/notion-sdk.ts")).href);
   return { root, boundary, module };
 }
@@ -128,4 +130,24 @@ test("the resource version must match the adjacent manifest without disabling co
   await expect(boundary.readNotionResourcesSdk({}, {})).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
   expect((await import(pathToFileURL(module).href)).calls).toHaveLength(0);
   expect(await boundary.consumeNotionSdk({}, {})).toMatchObject({ status: "ready" });
+});
+
+test("scalar output proof is detected without entering an older or current SDK runtime", async () => {
+  const older = await fixture();
+  expect(await older.boundary.supportsNotionSdkReadOutputProof()).toBe(false);
+  expect((await import(pathToFileURL(older.module).href)).calls).toHaveLength(0);
+  const current = await fixture({ readProofVersion: 1 });
+  expect(await current.boundary.supportsNotionSdkReadOutputProof()).toBe(true);
+  expect((await import(pathToFileURL(current.module).href)).calls).toHaveLength(0);
+  await current.boundary.readNotionSdk("fixed-resource", { output: "/selected/output" });
+  expect((await import(pathToFileURL(current.module).href)).calls).toHaveLength(1);
+});
+
+test("advertised scalar output proof must agree with its bundled manifest", async () => {
+  for (const options of [{ readProofVersion: 2 }, { readProofVersion: 1, readProofManifestVersion: 2 }, { readProofManifestVersion: 1 }]) {
+    const { boundary, module } = await fixture(options);
+    await expect(boundary.supportsNotionSdkReadOutputProof()).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+    expect((await import(pathToFileURL(module).href)).calls).toHaveLength(0);
+    expect(await boundary.consumeNotionSdk({}, {})).toMatchObject({ status: "ready" });
+  }
 });

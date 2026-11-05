@@ -14,6 +14,15 @@ export type ResourceReadFile = ResourceReadFileIdentity & (
   | Readonly<{ encoding: "base64"; content: string; output: string }>
 );
 
+/** A scalar resource is materialized for the host's native read tool. Its owner
+ * commitment comes from the selected manifest, without reading the main body. */
+export type FixedResourceRead = Readonly<{
+  selection: Readonly<{ scope: string; owner: string; snapshot_id: string; version_id: string }>;
+  ownerBinding: PreparationBinding;
+  entrypoint: string;
+  file: ResourceReadFileIdentity & Readonly<{ output: string }>;
+}>;
+
 /** Independently verified owner metadata and only the explicitly selected file bytes.
  * A resource read never means that the owner's main body has been prepared or delivered. */
 export type ResourceReadBatch = Readonly<{

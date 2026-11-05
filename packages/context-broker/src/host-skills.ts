@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { cp, lstat, mkdir, mkdtemp, readFile, realpath, rename, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { InvocationError, recordIdentity } from "./discovery-records";
 import { assertSourceAvailable, formatSourceFailures } from "./sources";
@@ -18,11 +19,11 @@ import { deduplicateSourceReads, nativeReadReceipt, sourceDeliveryReceipt } from
 import { parseNativeReference, nativeResourcePath, type ExactNativeReference } from "./native-reference";
 import type { PreparedHostGraph, PreparationPurpose, PreparationBinding } from "./prepare-protocol";
 import type { SelectionMode } from "./session-graph";
-import { publicEntryMaterialization, type EntryFile } from "./notion-entry";
+import { publicEntryMaterialization } from "./notion-entry";
 import { createSessionShortRefHost, isSessionShortRefInput, matchesShortRefSource, assertShortRefSource, assertShortRefSnapshot, assertShortRefResource, type HostShortRefResolution } from "./session-short-ref-host";
 import { compileSkillPreparation, projectSkillDirectory } from "./skill-context-projection";
 import { compileResourceRead } from "./resource-read-projection";
-import { DEFAULT_RESOURCE_READ_BUDGET, RESOURCE_READ_MAX_CONTEXT_BYTES, type ResourceReadBatch } from "./resource-read-types";
+import { DEFAULT_RESOURCE_READ_BUDGET, RESOURCE_READ_MAX_CONTEXT_BYTES, type FixedResourceRead, type ResourceReadBatch, type ResourceReadFileIdentity } from "./resource-read-types";
 
 export type HostSkillOptions = {
   config: ConfigFile;
@@ -30,6 +31,7 @@ export type HostSkillOptions = {
   lookupReference?(ctx: ExtensionContext, signal?: AbortSignal): Promise<DiscoveryResult<SkillRecord>>;
   loadRecord(record: SkillRecord, signal?: AbortSignal, snapshotId?: string): Promise<SkillRecord>;
   loadResource?(record: SkillRecord, path: string, ctx: ExtensionContext, signal?: AbortSignal): Promise<string>;
+  readFixedResource?(record: SkillRecord, ref: string, ctx: ExtensionContext, signal?: AbortSignal): Promise<FixedResourceRead | undefined>;
   readResources?(record: SkillRecord, refs: readonly string[], ctx: ExtensionContext, signal?: AbortSignal): Promise<ResourceReadBatch>;
   prepareGraph?(records: readonly SkillRecord[], ctx: ExtensionContext | undefined, signal: AbortSignal | undefined, purpose: PreparationPurpose, pins?: ReadonlyMap<string, string>, bindings?: readonly PreparationBinding[], mode?: SelectionMode): Promise<PreparedHostGraph[]>;
   persistGraphs?(graphs: readonly PreparedHostGraph[], ctx: ExtensionContext, mode: SelectionMode): void;
@@ -45,6 +47,7 @@ export type HostSkillOptions = {
   buildPreparedPrompt?(text: string, ctx: ExtensionContext, signal: AbortSignal, prepared: readonly SkillRecord[]): Promise<Omit<AgentMessage, "role" | "timestamp"> | undefined>;
   isLoaded?(record: SkillRecord, ctx: ExtensionContext): boolean;
   sessionSnapshot?(record: SkillRecord, ctx: ExtensionContext): string | undefined;
+  sessionBinding?(record: SkillRecord, ctx: ExtensionContext): PreparationBinding | undefined;
   onMetadata?(records: SkillRecord[]): void;
 };
 export type PreparedReference = { status: "ready"; record: SkillRecord } | { status: "miss" };
@@ -115,6 +118,14 @@ async function assertEntryFilePath(record: SkillRecord, path: string | undefined
   }
 }
 type ActivationOutcome<T> = { ok: true; value: T } | { ok: false; error: unknown };
+type PreparedReadResult = ToolCallResult & { assertCurrent?: () => void };
+type PendingResourceRead = {
+  generation: number;
+  assertCurrent?: () => void;
+  selection: { owner: SkillRecord["id"]; scope: SkillRecord["sourceScope"]; snapshot_id: SkillRecord["snapshotId"]; version_id: SkillRecord["versionId"] };
+  file: Pick<ResourceReadFileIdentity, "ref" | "path" | "file_id" | "bytes" | "sha256">;
+  materialization?: ReturnType<typeof publicEntryMaterialization>;
+};
 async function headlessActivation<T>(start: (signal: AbortSignal) => Promise<T>, timeoutMs: number, parent?: AbortSignal): Promise<T> {
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -182,7 +193,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   const registeredCommands = new Set<string>();
   const nativeInputs = new Map<string, SkillRecord>();
   const pendingNativeReads = new Map<string, { record: SkillRecord; generation: number }>();
-  const pendingResourceReads = new Map<string, { record: SkillRecord; file: EntryFile; generation: number }>();
+  const pendingResourceReads = new Map<string, PendingResourceRead>();
   const printTurns = new Set<() => void>();
   const gate = createPreparationGate();
   const commandPreparations = new WeakSet<ActivePreparation>();
@@ -453,20 +464,31 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     for (const record of selected) if (!options.prepareGraph || record.source !== "notion" || record.kind === "prompt") await prepare(record, ctx, combined);
   }
 
-  async function activate(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal, waitForTool = false, readPhase: "hook" | "execute" = "hook", requestedSnapshot?: string): Promise<SkillRecord> {
-    signal = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
-    checkPreparationSignal(signal);
-    await ready(signal);
+  function assertSourceSelection(record: SkillRecord, ctx?: ExtensionContext, requestedSnapshot?: string): { snapshot: string | undefined; binding: PreparationBinding | undefined } {
     if (discoveryError) throw discoveryError;
     if (record.sourceId) {
       const unavailable = sourceFailures.find(failure => failure.sourceId === record.sourceId && failure.blocking !== false);
       if (unavailable) throw new SourceError(unavailable.code, unavailable.sourceId);
     }
-    const key = recordIdentity(record);
     if (gate.active) gate.assertCurrent(gate.active, ctx ?? gate.active.ctx);
-    const activeSnapshot = ctx ? options.sessionSnapshot?.(record, ctx) : undefined;
+    const binding = ctx ? options.sessionBinding?.(record, ctx) : undefined;
+    const activeSnapshot = binding?.snapshot_id ?? (ctx ? options.sessionSnapshot?.(record, ctx) : undefined);
     if (requestedSnapshot && activeSnapshot && requestedSnapshot !== activeSnapshot) throw hostError("SOURCE_SESSION_CONFLICT");
-    const sessionSnapshot = requestedSnapshot ?? activeSnapshot;
+    return { snapshot: requestedSnapshot ?? activeSnapshot, binding };
+  }
+
+  function reusableLoadedSnapshot(record: SkillRecord, ctx: ExtensionContext | undefined, snapshot: string | undefined): SkillRecord | undefined {
+    const pinned = loaded.get(recordIdentity(record));
+    return record.kind !== "prompt" && pinned && (!snapshot || pinned.record.snapshotId === snapshot)
+      && ((ctx && options.isLoaded?.(pinned.record, ctx)) || (gate.active && pinned.owner === gate.active)) ? pinned.record : undefined;
+  }
+
+  async function activate(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal, waitForTool = false, readPhase: "hook" | "execute" = "hook", requestedSnapshot?: string): Promise<SkillRecord> {
+    signal = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
+    checkPreparationSignal(signal);
+    await ready(signal);
+    const { snapshot: sessionSnapshot } = assertSourceSelection(record, ctx, requestedSnapshot);
+    const key = recordIdentity(record);
     const prepared = gate.active?.prepared.get(key);
     const graphUse = !waitForTool && options.prepareGraph && record.source === "notion" && record.kind !== "prompt";
     if (prepared && (!graphUse || gate.active && preparedForUse.get(gate.active)?.has(key))) {
@@ -477,8 +499,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     record = hostRecords.get(key) ?? record;
     const selectedGeneration = generation;
     const preparationOwner = gate.active;
-    const pinned = loaded.get(key);
-    const existing = record.kind !== "prompt" && pinned && (!sessionSnapshot || pinned.record.snapshotId === sessionSnapshot) && ((ctx && options.isLoaded?.(pinned.record, ctx)) || (gate.active && pinned.owner === gate.active)) ? pinned.record : undefined;
+    const existing = reusableLoadedSnapshot(record, ctx, sessionSnapshot);
     if (existing && !graphUse) { await publish(record, existing, signal); checkPreparationSignal(signal); return existing; }
     // A preparation owns its signal. Unrelated consumers never inherit its cancellation.
     const pending = loading.get(key);
@@ -1237,7 +1258,73 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     },
   });
 
-  async function prepareRead(event: ToolCallEvent, ctx: ExtensionContext, signal: AbortSignal, readPhase: "hook" | "execute"): Promise<ToolCallResult | undefined> {
+  function assertFixedOwnerBinding(actual: PreparationBinding, expected: PreparationBinding): void {
+    if (!isDeepStrictEqual({ ...actual, ref: parseNativeReference(actual.ref) }, { ...expected, ref: parseNativeReference(expected.ref) }))
+      throw hostError("SOURCE_IDENTITY_MISMATCH");
+  }
+
+  function assertFixedResourceSnapshot(resource: FixedResourceRead, reference: ExactNativeReference, snapshot: SkillRecord): void {
+    if (!snapshot.preparationBinding || !snapshot.entryManifest?.manifest_complete) throw hostError("SOURCE_PREPARATION_INVALID");
+    assertFixedOwnerBinding(resource.ownerBinding, snapshot.preparationBinding);
+    if (resource.selection.scope !== snapshot.sourceScope || resource.selection.owner !== snapshot.id || resource.selection.snapshot_id !== snapshot.snapshotId
+      || resource.selection.version_id !== snapshot.versionId || resource.entrypoint !== snapshot.entrypoint) throw hostError("SOURCE_IDENTITY_MISMATCH");
+    const path = nativeResourcePath(reference, snapshot), files = snapshot.entryManifest.files.filter(file => file.path === path);
+    const expected = files[0], actual = resource.file, fileId = snapshot.fileBindings?.find(binding => binding.path === path)?.file_id;
+    if (files.length !== 1 || !expected || actual.path !== path || actual.bytes !== expected.bytes || actual.sha256 !== expected.sha256 || actual.file_id !== fileId
+      || !isDeepStrictEqual(parseNativeReference(actual.ref), parseNativeReference(expected.ref))) throw hostError("SOURCE_IDENTITY_MISMATCH");
+  }
+
+  async function prepareFixedResourceRead(event: ToolCallEvent, ctx: ExtensionContext, signal: AbortSignal, record: SkillRecord,
+    reference: ExactNativeReference, short?: HostShortRefResolution): Promise<PreparedReadResult | undefined> {
+    if (adapter.paths.host !== "pi" || !options.readFixedResource || record.source !== "notion"
+      || !reference.snapshot || !reference.path || short && short.kind !== "resource") return undefined;
+    // Keep canonical main hints on the normal route so main reads do not first
+    // fetch a speculative resource. That route also resolves their File IDs.
+    if (!short && reference.path === (record.entrypoint ?? "SKILL.md")) return undefined;
+    const observedGeneration = generation, owner = gate.active;
+    const sessionId = ctx.sessionManager?.getSessionId?.(), sessionFile = ctx.sessionManager?.getSessionFile?.();
+    let resource: FixedResourceRead | undefined;
+    let retainedSnapshot: SkillRecord | undefined, retainedBinding: PreparationBinding | undefined;
+    const current = () => {
+      checkPreparationSignal(signal);
+      if (observedGeneration !== generation || owner !== gate.active || sessionId !== ctx.sessionManager?.getSessionId?.()
+        || sessionFile !== ctx.sessionManager?.getSessionFile?.()) throw preparationCancelled();
+      const { snapshot, binding } = assertSourceSelection(record, ctx, reference.snapshot);
+      const key = recordIdentity(record), prepared = owner?.prepared.get(key);
+      if (prepared && snapshot && prepared.snapshotId !== snapshot) throw hostError("SOURCE_SESSION_CONFLICT");
+      const existing = prepared ?? reusableLoadedSnapshot(hostRecords.get(key) ?? record, ctx, snapshot);
+      if (resource) {
+        if (retainedBinding) assertFixedOwnerBinding(resource.ownerBinding, retainedBinding);
+        if (binding && binding !== retainedBinding) assertFixedOwnerBinding(resource.ownerBinding, binding);
+        if (retainedSnapshot) assertFixedResourceSnapshot(resource, reference, retainedSnapshot);
+        if (existing && existing !== retainedSnapshot) assertFixedResourceSnapshot(resource, reference, existing);
+        if (short) assertShortRefResource(shortRefs.resolve(ctx, short.shortRef), record, resource, resource.file);
+      }
+      return { existing, binding };
+    };
+    const initial = current();
+    retainedSnapshot = initial.existing; retainedBinding = initial.binding;
+    // Older prepared records without independent file proof keep their existing
+    // native route; a current manifest can be checked without preparing again.
+    if (retainedSnapshot && (!retainedSnapshot.preparationBinding || !retainedSnapshot.entryManifest?.manifest_complete)) return undefined;
+    const ref = short?.canonicalRef ?? event.input.path as string;
+    resource = await options.readFixedResource(record, ref, ctx, signal);
+    current();
+    // An older SDK, a custom transport, or an actual main File ID retains the
+    // existing preparation path. Source validation failures never fall back.
+    if (!resource) return undefined;
+    const file = resource.file, actual = parseNativeReference(file.ref);
+    if (resource.selection.scope !== record.sourceScope || resource.selection.owner !== record.id || resource.selection.snapshot_id !== reference.snapshot
+      || file.requested_ref !== ref || actual.selector !== reference.selector || actual.snapshot !== reference.snapshot
+      || actual.path !== file.path || actual.fileId !== file.file_id || file.path === resource.entrypoint
+      || reference.fileId !== undefined && reference.fileId !== actual.fileId
+      || reference.fileId === undefined && reference.path !== actual.path) throw hostError("SOURCE_IDENTITY_MISMATCH");
+    if (!isAbsolute(file.output)) throw hostError("SOURCE_OUTPUT_CONFLICT");
+    if (event.toolCallId) pendingResourceReads.set(event.toolCallId, { generation, selection: resource.selection, file, assertCurrent: current });
+    return { input: { ...event.input, path: file.output }, assertCurrent: current };
+  }
+
+  async function prepareRead(event: ToolCallEvent, ctx: ExtensionContext, signal: AbortSignal, readPhase: "hook" | "execute"): Promise<PreparedReadResult | undefined> {
     if (event.toolName !== "read" || !event.input || typeof event.input.path !== "string") return undefined;
     const requested = event.input.path;
     const explicit = requested.startsWith("skill://") || isSessionShortRefInput(requested);
@@ -1305,6 +1392,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       }
     }
     try {
+      if (readPhase === "execute" && exactReference) {
+        const fixed = await prepareFixedResourceRead(event, ctx, signal, selected, exactReference, short);
+        if (fixed) return fixed;
+      }
       const snapshot = retained ?? await activate(selected, ctx, signal, true, readPhase,
         exactReference?.snapshot ?? (selected.entryManifest ? selected.snapshotId : undefined));
       if (short) assertShortRefSnapshot(short, snapshot);
@@ -1335,7 +1426,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (event.toolCallId && snapshot.entryManifest && reference && reference !== snapshot.entrypoint) {
         const file = snapshot.entryManifest.files.find(file => file.path === reference);
         if (!file) throw hostError("FILE_NOT_FOUND");
-        pendingResourceReads.set(event.toolCallId, { record: snapshot, file, generation });
+        pendingResourceReads.set(event.toolCallId, { generation,
+          selection: { owner: snapshot.id, scope: snapshot.sourceScope, snapshot_id: snapshot.snapshotId, version_id: snapshot.versionId },
+          file: { ...file, file_id: snapshot.fileBindings?.find(binding => binding.path === file.path)?.file_id },
+          materialization: publicEntryMaterialization(snapshot) });
       } else if ((!reference || reference === (snapshot.entrypoint ?? "SKILL.md")) && adapter.paths.host === "pi"
         && event.toolCallId && snapshot.kind !== "prompt" && snapshot.sourceId && snapshot.snapshotId) {
         // Bind the authorized snapshot before exposing its resolved path. The
@@ -1425,9 +1519,16 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const prepared = await prepareRead({ toolName: "read", toolCallId, input }, ctx, executionSignal, "execute");
     if (prepared && "block" in prepared) throw new Error(prepared.reason);
     checkPreparationSignal(executionSignal);
-    const result = await read(prepared?.input ?? input, executionSignal);
-    checkPreparationSignal(executionSignal);
-    return result;
+    try {
+      const result = await read(prepared?.input ?? input, executionSignal);
+      checkPreparationSignal(executionSignal);
+      prepared?.assertCurrent?.();
+      return result;
+    } catch (error) {
+      pendingResourceReads.delete(toolCallId);
+      pendingNativeReads.delete(toolCallId);
+      throw error;
+    }
   });
   host.on("tool_call", async (event, ctx): Promise<ToolCallResult | undefined> => {
     if (event.toolName === "read" && readRunsInTool?.()) return undefined;
@@ -1444,16 +1545,18 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const resource = pendingResourceReads.get(event.toolCallId);
     pendingResourceReads.delete(event.toolCallId);
     if (resource && resource.generation === generation && !event.isError && !event.parentToolCallId) {
-      const text = typeof event.content === "string" ? event.content : event.content?.filter(part => part.type === "text").map(part => part.text).join("\n");
+      try { resource.assertCurrent?.(); } catch { return undefined; }
+      const text = typeof event.content === "string" ? event.content
+        : event.content?.every(part => part.type === "text") ? event.content.map(part => part.text).join("\n") : undefined;
       const full = typeof text === "string" && Buffer.byteLength(text) === resource.file.bytes &&
         createHash("sha256").update(text).digest("hex") === resource.file.sha256;
       const existing = event.details && typeof event.details === "object" && !Array.isArray(event.details) ? event.details as Record<string, unknown> : {};
       return { details: { ...existing, contextBrokerResource: {
-        version: 1, toolCallId: event.toolCallId, id: resource.record.id, scope: resource.record.sourceScope,
-        snapshot_id: resource.record.snapshotId, version_id: resource.record.versionId,
+        version: 1, toolCallId: event.toolCallId, id: resource.selection.owner, scope: resource.selection.scope,
+        snapshot_id: resource.selection.snapshot_id, version_id: resource.selection.version_id,
         ref: resource.file.ref, path: resource.file.path, bytes: resource.file.bytes, sha256: resource.file.sha256,
-        file_id: resource.record.fileBindings?.find(binding => binding.path === resource.file.path)?.file_id,
-        materialization: publicEntryMaterialization(resource.record), delivered_complete_text: full, loaded: false,
+        file_id: resource.file.file_id,
+        ...(resource.materialization ? { materialization: resource.materialization } : {}), delivered_complete_text: full, loaded: false,
       } } };
     }
     const pending = pendingNativeReads.get(event.toolCallId);

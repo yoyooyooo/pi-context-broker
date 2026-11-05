@@ -22,13 +22,13 @@
 | SC04 | AH-621 | 短引用、原生 read | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：C/S/R 分支表、真实 SessionManager 13 项与 5 次独立 resume、实际 Pi search/prepare/read；74 候选批量投影经同目录 13 点真实对照，跨机重新授权和正式模型 Gate 仍分列 |
 | SC05 | AH-622 | provider 输入 | [能力化指引](../../../../packages/context-broker/docs/skill-consumption-guidance.md)、[prepare 编译投影](../../../../packages/context-broker/docs/skill-consumption-projection.md)及[搜索/注入/native 呈现](../../../../packages/context-broker/docs/skill-model-surfaces-verification-2026-11-05.md)：完整作者正文与机器证明分离，实际 span、全部 provider HTTP 与工具往返分别验收；正式模型 Gate 仍分列 |
 | SC06 | AH-623 | 目录、search、自然任务 | search 卡片已减少重复 id/scope 并批量登记短引用，完整 UI/机器元数据保留；view-discovery / model 继续验跨入口去重及两种目录的真实选路比较 |
-| SC07 | AH-626 | inspect、use、资源 | installed --skill-graph true；固定资源批读使用下方 `resource-batch` 路线及[合同](../../../../packages/context-broker/docs/fixed-resource-batches.md)；[最终包、真实模型与新会话记录](../../../../packages/context-broker/docs/fixed-resource-batches-verification-2026-11-04.md)。原句介绍/执行与正式模型 Gate 分别验收；[指引历史](../../../../packages/context-broker/docs/skill-consumption-guidance.md)的失败继续保留 |
+| SC07 | AH-626 | inspect、use、资源 | installed --skill-graph true；固定资源批读使用下方 `resource-batch` 路线及[合同](../../../../packages/context-broker/docs/fixed-resource-batches.md)；单文件直读使用 `resource-scalar` / `resource-scalar-short-refs` 与[配对记录](../../../../packages/context-broker/docs/scalar-resource-consumption-verification-2026-11-05.md)；[批读最终包、真实模型与新会话记录](../../../../packages/context-broker/docs/fixed-resource-batches-verification-2026-11-04.md)。原句介绍/执行与正式模型 Gate 分别验收；[指引历史](../../../../packages/context-broker/docs/skill-consumption-guidance.md)的失败继续保留 |
 | SC08 | AH-627 | 重复、resume、压缩 | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：selected/visible/active 分离、状态层 14/14、实际 Pi 压缩后固定恢复；默认模型摘要另验 |
 | SC09 | AH-624 | 普通消息、显式选择 | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：context 准备与运行信号，RPC/PTY 10/10、完整启动 31/31；[历史失败](../../../../packages/context-broker/docs/skill-consumption-startup-checkpoint.md)保留 |
 | SC10 | AH-625 | SDK、公开 CLI | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：独立 npm/Node SDK 11/11、Broker 等价 9/9、实际 Pi 默认 SDK 3/3；目录 CLI 和 custom command 明确单列 |
 | SC11 | AH-628 | 目录、依赖选择 | CLI 的 scalar inventory SDK/CLI smoke 及[完整目录复用记录](../../../../packages/context-broker/docs/shared-metadata-consumption-verification-2026-11-05.md)；同次 logical selector / native-reference 编译复用六属性观察，真实 source driver 单独计量；需求批次、其他投影与关系范围继续补齐 |
 | SC12 | AH-629 | 暖、过期、clear | session-cache-recovery；另补五层缓存和权限期限 |
-| SC13 | AH-630 | 主文、单资源、export | CLI 独立 SDK smoke 与下方 `partial-entrypoint`；[固定快照记录](../../../../packages/context-broker/docs/selected-snapshot-consumption-verification-2026-11-05.md)及[来源所有权、最终包与真实来源记录](../../../../packages/context-broker/docs/source-ownership-consumption-verification-2026-11-05.md)；完整目录、先判归属后取字节与 full export 各自验收；首次 current 全树观察、Git 隐私回退与 legacy ZIP 成本仍单列 |
+| SC13 | AH-630 | 主文、单资源、export | CLI 独立 SDK smoke 与下方 `partial-entrypoint`；[固定快照记录](../../../../packages/context-broker/docs/selected-snapshot-consumption-verification-2026-11-05.md)、[来源所有权、最终包与真实来源记录](../../../../packages/context-broker/docs/source-ownership-consumption-verification-2026-11-05.md)及[固定单资源不准备主文的配对记录](../../../../packages/context-broker/docs/scalar-resource-consumption-verification-2026-11-05.md)；完整目录、先判归属后取字节与 full export 各自验收；首次 current 全树观察、Git 隐私回退与 legacy ZIP 成本仍单列 |
 | SC14 | AH-631 | 过期 Records | CLI request_metrics；另补事实计划复用与Payload归因 |
 | SC15 | AH-632 | 并发、取消、崩溃 | request-engine / cache-concurrency；另补跨进程只读 owner 终局 |
 | SC16 | AH-633 | 历史重算 | shared SSOT CLI；另补 checkpoint 与冲突/unknown |
@@ -161,7 +161,7 @@ cleanup 新增自己的回执不影响原文件比对。若原文件改变，保
 
 ### Drive：SC05/06 搜索、注入与原生读取投影
 
-沿用同一已安装 CLI/SDK、同一 fixture，分别构建并独立安装基线与候选 Broker。复用 `scripts/notion-sdk-pi.mjs`，对每臂分别运行 `--scenario dollar`、`native`、`prepare`；`all` 还包含其他四个场景，不等同于本次三路对照。每次使用新的仓外 `--out`。基线传 `--expect-compact-context false`，候选传 true（默认）；false 仅允许观察旧形态，不认证新合同。
+沿用同一已安装 CLI/SDK、同一 fixture，分别构建并独立安装基线与候选 Broker。复用 `scripts/notion-sdk-pi.mjs`，对每臂分别运行 `--scenario dollar`、`native`、`prepare`；`all` 还包含其他六个场景，不等同于本次三路对照。每次使用新的仓外 `--out`。基线传 `--expect-compact-context false`，候选传 true（默认）；false 仅允许观察旧形态，不认证新合同。
 
 ```bash
 node scripts/notion-sdk-pi.mjs doctor --package "$CONTEXT_PACKAGE" --fixture "$CONTEXT_FIXTURE"
@@ -209,6 +209,25 @@ node scripts/notion-sdk-pi.mjs evidence --evidence "$RESOURCE_SHORT_EVIDENCE"
 `RESOURCE_SHORT_EVIDENCE` 必须是另一个新目录。该variant先search并显式 `skill_prepare inspect` 取得四个真实资源句柄，再一次 `read(paths)` 及同会话repeat；SDK总账应为1次consume加2次read-resources，主文只来自前面的显式inspect。核对实际RPC参数确实是四个对应路径的 `sr:R`，不能用canonical成功推断。两个场景保持独立的成本和主文投递结论。
 
 全 warm fixture 的 0 HTTP 只说明本场景离线消费。Core 受控 retained tests 另用请求 object ID 集合证明冷选中物化、共享 chunk 去重、未选主文/资源零下载。SDK abort/header/body、预算、混 pin/owner、重复 alias、坏 proof 的反例沿现有 SDK smoke 和定向测试。旧 `native`、`prepare` 场景用于实际 Pi scalar 工厂与主文 receipt 回归。真实 Notion、真实模型、pro/mini 和日用安装仍单列；本路径不关闭整个 SC07/SC21。
+
+### Drive：SC07 / SC13 固定单资源直读
+
+沿用同一 runner、fixture 与独立 npm 安装步骤。候选 SDK 需导出 `READ_OUTPUT_PROOF_VERSION = 1`，Broker runtime manifest 需记录 `read_output_proof_version: 1`；`readSkill(..., { output })` 的文件 SHA 和独立主文 commitment 只供机器校验，不进入模型。若比较时同时更换 Broker 与 CLI/SDK，分别保留两者版本和 hashes，不能称为只改变 Broker 的对照。
+
+```bash
+node scripts/notion-sdk-pi.mjs doctor --package "$SCALAR_PACKAGE" --fixture "$SCALAR_FIXTURE" --scenario resource-scalar
+node scripts/notion-sdk-pi.mjs run --package "$SCALAR_PACKAGE" --fixture "$SCALAR_FIXTURE" --scenario resource-scalar --out "$SCALAR_EVIDENCE"
+node scripts/notion-sdk-pi.mjs doctor --package "$SCALAR_PACKAGE" --fixture "$SCALAR_FIXTURE" --scenario resource-scalar-short-refs
+node scripts/notion-sdk-pi.mjs run --package "$SCALAR_PACKAGE" --fixture "$SCALAR_FIXTURE" --scenario resource-scalar-short-refs --out "$SCALAR_SHORT_EVIDENCE"
+```
+
+每个输出须为新的仓外绝对目录。基线 Doctor 和 Drive 均加 `--expect-direct-scalar false`；它只允许保留旧主文读取/物化/consume 成本，仍严格检查资源内容、身份、对象读取正控制和完整终局。候选默认 true，五次 native read 应恰为五次 SDK read、零 consume/read-resources、零主文与未选对象读取、零主文物化/投递/active。
+
+两个场景的第一工具调用直接 read，依次读取 UTF-8 全文、BOM/CRLF 分页、同文件全文、binary、empty。五次工具调用和六轮 provider 请求全部经过真实 installed Pi serializer 与 localhost HTTP 留存。分页与 binary 不得标记为完整 UTF-8；空文件的 native/session 原文仍是空串，Pi 1.4 serializer 的 `(no tool output)` 占位必须按实际 HTTP 字节计数。无真实图片 fixture，不把 binary 当作图像 E2E；图像委托由既有 adapter/host 定向测试验证。
+
+`resource-scalar-short-refs` 先用真实 installed SessionManager 和 Broker short-ref bridge 构建声明过的 metadata-only seed，再在新 Pi 进程恢复。seed 只有固定 owner/File 元数据与 setup 消息，没有主文、物化、delivery 或 active；`resource-scalar-seed.json` 和原始 JSONL 保留模块 hashes、cwd 与句柄。该路径证明持久化短引用恢复消费，不声称真实 Agent 在未 inspect 时首次生成了句柄。
+
+审阅 `resource-scalar-evidence.json`、`resource-scalar-cache.json`、`resource-scalar-files/`、原始 session、object observer 和全部 serializer 请求。main/hash/未选对象检查应相互独立；source 阶段成功不能代替 native 投递。旧 SDK、custom command、主文路径及稳定 File ID 的主文 hint 继续走既有路线；canonical 主文带 File ID 不应新增一次资源预读。全部进程关闭后按既有 evidence → cleanup → evidence 流程保存原件。该对照是受控 warm 源、新 Pi 进程，不能推断生产 Notion 延迟、真实模型选择或日用安装。
 
 ### Drive：SC13 固定主文与有效当前缓存
 

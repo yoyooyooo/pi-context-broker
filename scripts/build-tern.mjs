@@ -52,6 +52,10 @@ const resourceReadVersion = selectedSdkApi.RESOURCE_READ_CONTRACT_VERSION;
 if (resourceReadVersion !== undefined && (resourceReadVersion !== 1 || typeof selectedSdkApi.readResources !== "function" || typeof selectedSdkApi.decodeResourceReadResult !== "function")) {
   throw new Error("The selected ntn-skills SDK resource-read capability is incompatible");
 }
+const readOutputProofVersion = selectedSdkApi.READ_OUTPUT_PROOF_VERSION;
+if (readOutputProofVersion !== undefined && (readOutputProofVersion !== 1 || typeof selectedSdkApi.readSkill !== "function")) {
+  throw new Error("The selected ntn-skills SDK read output proof is incompatible");
+}
 const selectedSdk = await findPackage("ntn-skills", sdkEntry);
 if (await realpath(selectedSdk.directory) !== await realpath(selectedCli.directory)) throw new Error("CLI and SDK must come from the same selected ntn-skills package");
 const brokerMetadata = JSON.parse(await readFile(join(broker, "package.json"), "utf8"));
@@ -101,6 +105,7 @@ if (!sdkResult.success || !sdkResult.outputs[0]) throw new AggregateError(sdkRes
 const sdkCode = await sdkResult.outputs[0].text();
 const runtimeManifest = { version: 1, package: "ntn-skills", package_version: selectedCli.metadata.version,
   sdk_version: 1, consumer_contract_version: 1, ...(resourceReadVersion === undefined ? {} : { resource_read_contract_version: resourceReadVersion }),
+  ...(readOutputProofVersion === undefined ? {} : { read_output_proof_version: readOutputProofVersion }),
   cli_sha256: createHash("sha256").update(cliCode).digest("hex"), sdk_sha256: createHash("sha256").update(sdkCode).digest("hex") };
 const licenseFiles = new Map();
 async function collectLicenses(name, from) {

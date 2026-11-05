@@ -34,6 +34,7 @@ type Sdk = {
   consume: (input: unknown, options?: RuntimeOptions) => Promise<unknown>;
   decodeConsumeResult: (value: unknown, expected?: unknown) => Promise<unknown>;
   readSkill: (target: string, options?: RuntimeOptions) => Promise<unknown>;
+  READ_OUTPUT_PROOF_VERSION?: number;
   RESOURCE_READ_CONTRACT_VERSION?: number;
   readResources?: (input: unknown, options?: RuntimeOptions) => Promise<unknown>;
   decodeResourceReadResult?: (value: unknown, expected?: unknown) => Promise<unknown>;
@@ -42,6 +43,7 @@ type Sdk = {
 const observations = channel("context-broker.notion-sdk");
 let bundledSdk: Promise<Sdk> | undefined;
 let resourceContractVersion: unknown;
+let readOutputProofVersion: unknown;
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -66,6 +68,7 @@ async function loadBundledSdk(): Promise<Sdk> {
     if (!object(manifest) || manifest.version !== 1 || manifest.package !== "ntn-skills" || manifest.package_version !== sdk.PACKAGE_VERSION
       || manifest.sdk_version !== sdk.SDK_VERSION || manifest.consumer_contract_version !== sdk.CONSUMER_CONTRACT_VERSION) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     resourceContractVersion = manifest.resource_read_contract_version;
+    readOutputProofVersion = manifest.read_output_proof_version;
     return sdk;
   })();
   try { return await bundledSdk; }
@@ -113,6 +116,13 @@ export function consumeNotionSdk(input: unknown, options: Options): Promise<unkn
 }
 export function readNotionSdk(target: string, options: Options): Promise<unknown> {
   return observed("read", options, (sdk, runtime) => sdk.readSkill(target, runtime));
+}
+/** Feature detection loads code only; an older SDK never starts a speculative read. */
+export async function supportsNotionSdkReadOutputProof(): Promise<boolean> {
+  const sdk = await loadBundledSdk();
+  if (sdk.READ_OUTPUT_PROOF_VERSION === undefined && readOutputProofVersion === undefined) return false;
+  if (sdk.READ_OUTPUT_PROOF_VERSION !== 1 || readOutputProofVersion !== 1) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
+  return true;
 }
 export function readNotionResourcesSdk(input: unknown, options: Options): Promise<unknown> {
   // This additive capability is checked only when used. The SDK has already
