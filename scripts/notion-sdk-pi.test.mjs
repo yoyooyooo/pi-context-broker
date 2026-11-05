@@ -127,13 +127,25 @@ for (const [options, error] of [
 function scopeFixture() {
   const result = { kind: 'host_cli_scope', command, database, sourceId: 'sdk-fixture', executed: false };
   const content = [{ type: 'text', text: JSON.stringify(result) }];
-  const first = context(), second = context();
-  second.messages.push({ role: 'toolResult', toolCallId: 'sc05-source-command', content, details: result, isError: false });
+  const discovery = [{ type: 'text', text: 'Loaded 1 tool. They are available from your next call:\n- notion_ctl: Inspect Notion maintenance metadata.' }];
+  const first = context();
+  first.messages[0].toolsAdded = first.messages[0].toolsAdded.filter(tool => tool.name !== 'notion_ctl');
+  first.messages[0].toolsAdded.push({ name: 'tool_search', description: 'Find deferred tools.',
+    parameters: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'number' } } } });
+  const second = structuredClone(first);
+  second.messages.push({ role: 'toolResult', toolName: 'tool_search', toolCallId: 'sc05-discover-control', content: discovery,
+    details: { loaded: ['notion_ctl'] }, isError: false });
+  second.messages.push({ role: 'system', content: '', toolsAdded: [{ name: 'notion_ctl', description: 'Inspect Notion maintenance metadata.',
+    parameters: { type: 'object', properties: { cli_source: { type: 'string' } } } }] });
+  const third = structuredClone(second);
+  third.messages.push({ role: 'toolResult', toolName: 'notion_ctl', toolCallId: 'sc05-source-command', content, details: result, isError: false });
   const frames = [
+    { type: 'tool_execution_start', toolName: 'tool_search', toolCallId: 'sc05-discover-control', args: { query: 'Notion CLI source database scope', limit: 1 } },
+    { type: 'tool_execution_end', toolName: 'tool_search', toolCallId: 'sc05-discover-control', isError: false, result: { content: discovery, details: { loaded: ['notion_ctl'] } } },
     { type: 'tool_execution_start', toolName: 'notion_ctl', toolCallId: 'sc05-source-command', args: { cli_source: 'sdk-fixture' } },
-    { type: 'tool_execution_end', toolCallId: 'sc05-source-command', isError: false, result: { content, details: result } },
+    { type: 'tool_execution_end', toolName: 'notion_ctl', toolCallId: 'sc05-source-command', isError: false, result: { content, details: result } },
   ];
-  return { captures: [{ context: first }, { context: second }], frames };
+  return { captures: [{ context: first }, { context: second }, { context: third }], frames };
 }
 const expected = { command, database };
 
@@ -1112,14 +1124,32 @@ test('Pi transcript capabilities apply system removals then additions and ignore
   assert.throws(() => assertNativeGuidance(changed, command[1]), /Actual provider must expose read/);
 });
 
-test('scoped command requires one real graph query and verbatim exact source receipt', () => {
+test('scoped command requires actual deferred discovery before the exact scope receipt', () => {
   const { captures, frames } = scopeFixture();
   const before = JSON.stringify({ captures, frames });
   const verified = assertScopedCommand(captures, frames, expected);
   assert.equal(verified.receipt_delivered_verbatim, true);
+  assert.equal(verified.deferred_discovery, 'verified');
+  assert.equal(verified.control_absent_before_search, true);
+  assert.equal(verified.model_tool_calls, 2);
   assert.equal(verified.model_bash_calls, 0);
   assert.deepEqual(verified.command, command);
   assert.equal(JSON.stringify({ captures, frames }), before);
+});
+
+test('pre-exposed control, a loaded detail without schema, or an unobserved search cannot prove discovery', () => {
+  for (const mutate of [
+    fixture => { fixture.captures[0].context.messages[0].toolsAdded.push({ name: 'notion_ctl' }); },
+    fixture => { fixture.captures[1].context.messages.pop(); },
+    fixture => { delete fixture.captures[1].context.messages.at(-1).toolsAdded[0].parameters; },
+    fixture => { fixture.captures[1].context.messages.at(-2).content = []; },
+    fixture => { fixture.frames[1].result.details.loaded = []; },
+    fixture => { fixture.frames.splice(0, 2); },
+    fixture => { fixture.frames[0].args.query = 'other tool'; },
+  ]) {
+    const fixture = scopeFixture(); mutate(fixture);
+    assert.throws(() => assertScopedCommand(fixture.captures, fixture.frames, expected));
+  }
 });
 
 test('pre-injected executable, missing bash, another query or a bash call fails the scoped route', () => {
@@ -1129,7 +1159,7 @@ test('pre-injected executable, missing bash, another query or a bash call fails 
   const missingBash = scopeFixture();
   missingBash.captures[0].context.messages[0].toolsAdded = missingBash.captures[0].context.messages[0].toolsAdded.filter(tool => tool.name !== 'bash');
   assert.throws(() => assertScopedCommand(missingBash.captures, missingBash.frames, expected));
-  const wrongQuery = scopeFixture(); wrongQuery.frames[0].args.cli_source = 'other-source';
+  const wrongQuery = scopeFixture(); wrongQuery.frames[2].args.cli_source = 'other-source';
   assert.throws(() => assertScopedCommand(wrongQuery.captures, wrongQuery.frames, expected));
   const extraBash = scopeFixture();
   extraBash.frames.push({ type: 'tool_execution_start', toolName: 'bash', toolCallId: 'extra', args: { command: 'true' } });
@@ -1139,13 +1169,13 @@ test('pre-injected executable, missing bash, another query or a bash call fails 
 test('wrong source, database, command or missing receipt content cannot be treated as a scoped result', () => {
   for (const changed of [{ sourceId: 'other-source' }, { database: 'other-database' }, { command: ['node', '/other/cli'] }, { executed: true }]) {
     const fixture = scopeFixture();
-    const message = fixture.captures[1].context.messages.at(-1);
+    const message = fixture.captures[2].context.messages.at(-1);
     message.content = [{ type: 'text', text: JSON.stringify({ ...message.details, ...changed }) }];
     assert.throws(() => assertScopedCommand(fixture.captures, fixture.frames, expected));
   }
-  const missing = scopeFixture(); missing.captures[1].context.messages.pop();
+  const missing = scopeFixture(); missing.captures[2].context.messages.pop();
   assert.throws(() => assertScopedCommand(missing.captures, missing.frames, expected), /Public tool result/);
-  const altered = scopeFixture(); altered.frames[1].result.content = [{ type: 'text', text: '{"different":true}' }];
+  const altered = scopeFixture(); altered.frames[3].result.content = [{ type: 'text', text: '{"different":true}' }];
   assert.throws(() => assertScopedCommand(altered.captures, altered.frames, expected), /complete exact tool receipt/);
 });
 

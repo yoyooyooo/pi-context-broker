@@ -18,7 +18,7 @@ import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
 const usage = 'Usage: node scripts/notion-sdk-pi.mjs doctor|run --package ABSOLUTE_INSTALLED_BROKER (--fixture ABSOLUTE_FIXTURE_JSON | --live-input ABSOLUTE_LIVE_INPUT_JSON) [--expect-short-refs true|false] [--expect-compact-context true|false] [--expect-direct-scalar true|false] [--expect-short-confirmations true|false] [--scenario all|default-view|codemode-hidden|codemode-truncated|dollar|native|native-repeat|prepare|scoped-command|resource-batch|resource-batch-short-refs|resource-scalar|resource-scalar-short-refs|partial-entrypoint|session-lifecycle] [--out NEW_ABSOLUTE_EVIDENCE]; evidence|cleanup --evidence ABSOLUTE_EVIDENCE. Real Pi 1.4.0 or 1.5.0 RPC, controlled provider with public onPayload/onResponse hooks, offline source, default bundled SDK (source.command is absent). Compact context, direct scalar and short confirmation checks default to true; false observes a baseline without certifying that contract. Comparisons include the installed Broker and bundled CLI/SDK identities. default-view observes pending startup plus ready metadata on an ordinary continuation. session-lifecycle drives native fork/clone/tree/compact/resume and late-response cancellation with a controlled summary. The explicit live-input route selects one separate cold consumer on real Notion, an independently installed package auto-loaded by owned settings, and observer-only frozen local originals. The default offline all remains 14 scenarios. Native menu and real model are not claimed; live retained-body Member exclusion requires separate source attribution.';
 const scenarioNames = ['default-view', 'codemode-hidden', 'codemode-truncated', 'dollar', 'native', 'native-repeat', 'prepare', 'scoped-command', 'resource-batch', 'resource-batch-short-refs', 'resource-scalar', 'resource-scalar-short-refs', 'partial-entrypoint', 'session-lifecycle'];
 const nativeTools = ['read', 'notion_list', 'notion_use'];
-const scopedCommandTools = [...nativeTools, 'bash', 'notion_ctl'];
+const scopedCommandTools = [...nativeTools, 'bash', 'tool_search'];
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const json = async path => JSON.parse(await readFile(path, 'utf8'));
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
@@ -893,30 +893,50 @@ export function assertNativeGuidance(context, bundledCli) {
 }
 
 export function assertScopedCommand(captures, frames, { command, database, sourceId = 'sdk-fixture' }) {
-  assert.equal(captures.length, 2, 'One scope query must produce one tool round and two provider requests');
+  assert.equal(captures.length, 3, 'Deferred discovery and scope lookup require two tool rounds and three provider requests');
   assert.equal(command.length, 2);
   for (const value of command) assert.ok(isAbsolute(value), 'The default Node and bundled CLI must be absolute');
-  for (const capture of captures) {
-    assert.deepEqual(currentProviderTools(capture.context).map(tool => tool.name).sort(), [...scopedCommandTools].sort());
+  const declarations = captures.map(capture => currentProviderTools(capture.context));
+  for (const [index, capture] of captures.entries()) {
+    const expectedTools = index === 0 ? scopedCommandTools : [...scopedCommandTools, 'notion_ctl'];
+    assert.deepEqual(declarations[index].map(tool => tool.name).sort(), [...expectedTools].sort(),
+      'Control must be absent before search and declared only in subsequent actual provider inputs');
     assertNativeGuidance(capture.context, command[1]);
   }
   assert.ok(!strings(captures[0].context).some(text => text.includes(command[1])), 'First provider request must not contain the host-local CLI path');
+  assert.ok(!strings(captures[1].context).some(text => text.includes(command[1])), 'Tool discovery must not reveal the host-local CLI path');
+  const control = declarations[1].find(tool => tool.name === 'notion_ctl');
+  assert.ok(typeof control.description === 'string' && control.description.length > 0);
+  assert.equal(control.parameters?.type, 'object');
+  assert.equal(control.parameters.properties?.cli_source?.type, 'string', 'Loaded control must include its callable public schema');
+  assert.deepEqual(declarations[2].find(tool => tool.name === 'notion_ctl'), control);
   const starts = frames.filter(frame => frame.type === 'tool_execution_start');
-  assert.equal(starts.length, 1, 'The controlled provider may query the scope only; no bash or body read');
-  assert.equal(starts[0].toolName, 'notion_ctl');
-  assert.equal(starts[0].toolCallId, 'sc05-source-command');
-  assert.deepEqual(starts[0].args, { cli_source: sourceId });
+  assert.equal(starts.length, 2, 'The controlled provider may discover and query the scope only; no bash or body read');
+  assert.deepEqual(starts.map(call => [call.toolName, call.toolCallId]), [
+    ['tool_search', 'sc05-discover-control'], ['notion_ctl', 'sc05-source-command'],
+  ]);
+  assert.deepEqual(starts[0].args, { query: 'Notion CLI source database scope', limit: 1 });
+  assert.deepEqual(starts[1].args, { cli_source: sourceId });
   const ends = frames.filter(frame => frame.type === 'tool_execution_end');
-  assert.equal(ends.length, 1);
-  assert.equal(ends[0].toolCallId, starts[0].toolCallId);
-  assert.equal(ends[0].isError, false);
-  const delivered = toolResult(captures[1].context, starts[0].toolCallId);
+  assert.equal(ends.length, 2);
+  for (const [index, end] of ends.entries()) {
+    assert.equal(end.toolCallId, starts[index].toolCallId); assert.equal(end.isError, false);
+  }
+  const discovery = toolResult(captures[1].context, starts[0].toolCallId);
+  assert.ok(discovery && !discovery.isError, 'The next provider must receive the actual discovery result');
+  assert.match(textContent(discovery.content), /^- notion_ctl:/mu);
+  assert.equal(textContent(discovery.content), textContent(ends[0].result.content));
+  assert.deepEqual(discovery.details?.loaded, ['notion_ctl']);
+  assert.deepEqual(ends[0].result.details?.loaded, ['notion_ctl']);
+  const delivered = toolResult(captures[2].context, starts[1].toolCallId);
   const expected = { kind: 'host_cli_scope', command, database, sourceId, executed: false };
   assert.deepEqual(parsedResult(delivered), expected);
   assert.deepEqual(delivered.details, expected);
-  assert.equal(textContent(delivered.content), textContent(ends[0].result.content), 'The following provider must receive the complete exact tool receipt');
-  assert.deepEqual(ends[0].result.details, expected);
-  return { ...expected, actual_tools: [...scopedCommandTools], model_tool_calls: 1, model_bash_calls: 0,
+  assert.equal(textContent(delivered.content), textContent(ends[1].result.content), 'The following provider must receive the complete exact tool receipt');
+  assert.deepEqual(ends[1].result.details, expected);
+  return { ...expected, initial_tools: [...scopedCommandTools], actual_tools: [...scopedCommandTools, 'notion_ctl'],
+    deferred_discovery: 'verified', control_absent_before_search: true, declaration: control,
+    declaration_sha256: hash(JSON.stringify(control)), model_tool_calls: 2, model_bash_calls: 0,
     first_request_cli_path_absent: true, receipt_delivered_verbatim: true };
 }
 
@@ -1146,6 +1166,11 @@ function selectProviderCall(context) {
   if (plan.mode === 'lifecycle-probe') return find(plan.id) ? null : call(plan.id, 'read', { path: plan.ref });
   if (['resource-scalar', 'resource-scalar-short-refs'].includes(plan.mode)) return selectScalarProviderCall(context, plan.calls);
   if (plan.mode === 'scoped-command') {
+    const discovery = find('sc05-discover-control');
+    if (!discovery) return call('sc05-discover-control', 'tool_search', { query: 'Notion CLI source database scope', limit: 1 });
+    if (discovery.isError || !/^- notion_ctl:/mu.test(text(discovery.content))) throw new Error('CONTROLLED_DEFERRED_DISCOVERY_FAILED');
+    if (!currentProviderTools(context).some(tool => tool.name === 'notion_ctl' && tool.parameters?.properties?.cli_source?.type === 'string'))
+      throw new Error('CONTROLLED_DEFERRED_SCHEMA_MISSING');
     const scope = find('sc05-source-command');
     if (!scope) return call('sc05-source-command', 'notion_ctl', { cli_source: 'sdk-fixture' });
     parsed(scope);
@@ -1256,7 +1281,7 @@ async function provider(base) {
   let source = await readFile(path, 'utf8');
   const replace = (before, after) => { assert.equal(source.split(before).length, 2, 'Provider fixture shape changed'); source = source.replace(before, after); };
   replace('import { appendFileSync }', 'import { appendFileSync, readFileSync }');
-  replace('function stream(model, context) {', `${resourceRefsFromNative.toString()}\n${selectScalarProviderCall.toString()}\n${selectNativeRepeatCall.toString()}\n${selectLiveProviderCall.toString()}\n${selectProviderCall.toString()}\n${holdLifecycleResponse.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, aborted: Boolean(options?.signal?.aborted), monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
+  replace('function stream(model, context) {', `${currentProviderTools.toString()}\n${resourceRefsFromNative.toString()}\n${selectScalarProviderCall.toString()}\n${selectNativeRepeatCall.toString()}\n${selectLiveProviderCall.toString()}\n${selectProviderCall.toString()}\n${holdLifecycleResponse.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, aborted: Boolean(options?.signal?.aborted), monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
   replace('const payload = await options?.onPayload?.({ model: model.id, context }, model);', 'if (typeof options?.onPayload !== "function" || typeof options?.onResponse !== "function") throw new Error("PUBLIC_PROVIDER_HOOKS_REQUIRED");\n      hook("payload_start");\n      const payload = await options.onPayload({ model: model.id, context }, model);\n      hook("payload_end");');
   replace('JSON.stringify({ model: model.id, context })', 'JSON.stringify({ requestId, model: model.id, context })');
   replace('await options?.onResponse?.({ status: 200, headers: { "x-fixture": "deterministic" } }, model);', 'const held = await holdLifecycleResponse(options, hook);\n      await options.onResponse({ status: 200, headers: { "x-fixture": "deterministic" } }, model);\n      if (held) hook("response_callback");\n      hook("response_end");');
@@ -2054,18 +2079,34 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       : scalarScenario ? { SC13_PI_OBJECT_ROOT: join(fixtureEnv.NTN_SKILLS_HOME, 'objects') } : {}),
     SC10_PI_BUNDLED_CLI: join(info.packageRoot, 'dist/ntn-skills.mjs'), NODE_OPTIONS: `--import=${preload}` });
   const activeTools = name === 'scoped-command' ? scopedCommandTools : codemode ? [...nativeTools, 'codemode'] : nativeTools;
+  let toolDiscovery;
+  if (name === 'scoped-command') {
+    const path = join(info.piPackageRoot, 'dist/extensions/tool-search/index.js');
+    const implementation = join(info.piPackageRoot, 'dist/extensions/tool-search/tool.js');
+    // --tools is a hard registry filter for non-MCP tools. Public defaultTools
+    // selects the initial loadout while keeping deferred control discoverable.
+    const settings = join(agentDir, 'settings.json');
+    await save(settings, { defaultTools: activeTools });
+    toolDiscovery = { extension: { path, sha256: hash(await readFile(path)) },
+      implementation: { path: implementation, sha256: hash(await readFile(implementation)) },
+      settings: { path: settings, sha256: hash(await readFile(settings)) }, initial_tools: activeTools,
+      mechanism: 'Installed official tool_search; owned settings.defaultTools, no hard tool allowlist or manual control activation' };
+  }
   const argv = ['--no-extensions', '--session-dir', sessions, ...(scalarSeed ? ['--session', scalarSeed.path] : []),
-    '--tools', activeTools.join(','), '-e', fakeProvider, ...(shutdownObserver ? ['-e', shutdownObserver] : []), '-e', info.extension,
+    ...(toolDiscovery ? [] : ['--tools', activeTools.join(',')]), '-e', fakeProvider,
+    ...(shutdownObserver ? ['-e', shutdownObserver] : []), '-e', info.extension,
+    ...(toolDiscovery ? ['-e', toolDiscovery.extension.path] : []),
     ...(codemode ? ['-e', join(info.piPackageRoot, 'dist/extensions/codemode/index.js')] : []), '--model', 'context-broker-e2e/fake'];
   await save(join(output, 'launch.json'), { host: info.host, argv, cwd: base, source_command_configured: false,
     source_state: partialEntrypoint ? 'complete controlled current validated by installed SDK, then owned partial cache; fresh Broker cache and Pi session'
       : scalarSeed ? 'cloned warm controlled source; fresh Broker cache and new Pi process restoring a metadata-only short-reference session'
       : 'cloned warm controlled snapshots/current catalog; fresh Broker cache and Pi session', expect_short_refs: expectShortRefs,
     expect_compact_context: expectCompactContext, expect_direct_scalar: expectDirectScalar, expect_short_confirmations: expectShortConfirmations, active_tools: activeTools,
+    ...(toolDiscovery ? { deferred_discovery: toolDiscovery } : {}),
     ...(shutdownObserver ? { native_shutdown_observer: { extension: shutdownObserver, registration: 'before_broker', events: nativeEvents } } : {}),
     ...(scalarSeed ? { seed_evidence: 'resource-scalar-seed.json', seed_sha256: scalarSeed.evidence.session_sha256 } : {}) });
   if (name === 'session-lifecycle') return runSdkLifecycle({ info, base, output, sessions, providerFile, hookFile, ledger, toolPlan, env, argv });
-  let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, resourceScalarEvidence, nativeRepeatEvidence, entrypointEvidence, defaultViewEvidence, serializerContext, archive, dollarProjection, nativeProjection;
+  let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, resourceScalarEvidence, nativeRepeatEvidence, entrypointEvidence, defaultViewEvidence, serializerContext, archive, dollarProjection, nativeProjection, scopedCommandEvidence;
   try {
     rpc = await startRpc({ host: 'pi', args: argv, cwd: base, env, timeoutMs: 60000 });
     const prompts = {
@@ -2081,7 +2122,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       'resource-scalar': 'Read only these fixed resources in the supplied order, using one native read path call per item: ' + JSON.stringify(scalarCalls.map(call => call.args)) + '. Preserve native pagination and file results. Do not prepare or activate the main Skill.',
       'resource-scalar-short-refs': 'Resume the persisted resource references and read only these fixed resources in the supplied order, using one native read path call per item: ' + JSON.stringify(scalarCalls.map(call => call.args)) + '. Preserve native pagination and file results. Do not prepare or activate the main Skill.',
       'partial-entrypoint': 'Read the supplied fixed entrypoint Skill main, inspect its current candidate directory, then read only the advertised selected text resource. Keep the selected owner and snapshot.',
-      'scoped-command': 'For the sdk-fixture source, obtain the host-local command prefix and database scope for a possible maintenance action. Return that metadata only; do not execute commands or read Skill bodies.',
+      'scoped-command': 'Discover the deferred Notion maintenance tool, then obtain the host-local command prefix and database scope for the sdk-fixture source. Return that metadata only; do not execute commands or read Skill bodies.',
     };
     await rpc.prompt(prompts[name]);
     let captures = await rows(providerFile); assert.ok(captures.length >= 2);
@@ -2373,9 +2414,10 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     } else {
       const hostStart = (await rows(ledger)).find(event => event.kind === 'observer_start' && event.observer_pid === rpc.lifecycle[0].pid);
       assert.ok(hostStart, 'Actual owned Pi executable must be observed independently');
-      const scope = assertScopedCommand(captures, rpc.frames, { command: [hostStart.exec_path, env.SC10_PI_BUNDLED_CLI], database: source.database });
-      for (const body of info.bodies.values()) assert.equal(bodyCount(last, body), 0, 'Command scope lookup must not deliver Skill bodies');
-      await save(join(output, 'source-command.json'), scope);
+      scopedCommandEvidence = assertScopedCommand(captures, rpc.frames, { command: [hostStart.exec_path, env.SC10_PI_BUNDLED_CLI], database: source.database });
+      for (const capture of captures) for (const body of info.bodies.values())
+        assert.equal(bodyCount(capture.context, body), 0, 'Discovery and command scope lookup must not deliver Skill bodies');
+      await save(join(output, 'source-command.json'), scopedCommandEvidence);
     }
     beforeClose = await waitForSourceFinality(ledger, rpc.lifecycle[0].pid);
     assert.ok(beforeClose.complete, 'Observed source processes must reach actual close/end before EOF');
@@ -2481,6 +2523,10 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     assert.equal(new Set(captures.map(capture => capture.requestId)).size, captures.length);
     const guidance = captures.map(capture => ({ request_id: capture.requestId, ...assertNativeGuidance(capture.context, env.SC10_PI_BUNDLED_CLI) }));
     await save(join(output, 'guidance.json'), guidance);
+    if (scopedCommandEvidence) {
+      serializer = await replayScenarioHttp(captures, rpc.frames, info, output);
+      assert.equal(serializer.provider_requests, 3); assert.equal(serializer.tool_calls, 2);
+    }
     const compactScenarios = ['default-view', 'codemode-hidden', 'codemode-truncated', 'dollar', 'native', 'native-repeat', 'prepare', 'resource-batch', 'resource-batch-short-refs', 'partial-entrypoint'];
     if (compactScenarios.includes(name)) {
       const search = captures.flatMap(capture => {
@@ -2545,6 +2591,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
         scalar_resource: expectDirectScalar ? 'direct_read_without_main_verified' : 'baseline_costs_recorded',
         read_output_proof_version: info.runtime.read_output_proof_version ?? null, scalar_evidence: 'resource-scalar-evidence.json' } : {}),
       discovery_failures: discovery?.failures ?? null, native_guidance_without_cli_templates: true, observer_finality: finality?.complete === true,
+      ...(scopedCommandEvidence ? { deferred_control_discovery: 'verified', discovery_evidence: 'source-command.json' } : {}),
       session_archive_files: archive?.files.length ?? 0, preparation_projection: preparation ? 'verified' : 'not_applicable',
       code_mode: preparation?.code_mode ?? null,
       resource_batch_projection: resourceBatchEvidence ? 'verified' : 'not_applicable',

@@ -13,11 +13,16 @@ installed 与 deterministic 默认执行双宿主 filesystem source metadata/rea
 | 用户动作 | 原有实际驱动与断言 | 证据边界 |
 | --- | --- | --- |
 | 发现、检查、使用、固定资源 | `notion-sdk-pi.mjs` 的 default-view/prepare/resource 场景；核对实际 provider schema、完整正文和 SDK/HTTP 账本 | 文字或函数导出存在不能代替安装态消费 |
-| 已启用管理工具取得 CLI scope | 原 `scoped-command` 场景请求 `notion_ctl({cli_source})`，核对真实配置命令与 scope，正文/写入零 | 该场景显式启用工具，不证明 `tool_search` 按需发现或真实作者操作 |
-| 按需管理发现 | 实际 Pi 的可选 `tool_search` 发现 deferred `notion_ctl` 后再取 scope；禁用 discovery 时必须明确启用工具 | 未运行时单列；不能将默认隐藏误写为不可调用，也不能冒称发现成功 |
+| 按需管理发现与 CLI scope | 原 `scoped-command` 场景由实际 `tool_search` 发现 deferred `notion_ctl`，下一 provider 收到 schema 后才调用 `notion_ctl({cli_source})`；再核对真实配置命令与 scope，正文/写入零 | 只证明发现与元数据交付，不执行作者操作；禁用 discovery 时须另行明确启用工具 |
 | 作者与 unknown 恢复 | CLI 原独立 package smoke 的作者生命周期、原 operation 恢复及零重放断言 | 受控 Notion 服务与真实 Notion 分别记账 |
 
 2026-11-05 的改前审计保留在 `~/Library/Logs/pi-context-broker/AH-617-20261105/sc23-package-guidance-pr5ux3na/fail-before.json`，SHA256 `0f0e3ffdf607340a848c276dc071326b0ac6005cfca19ec7a61b2ceff4c496c9`：两份 active reference 有16处旧默认工具指导，与当时产品注册和 SDK 目录实现不一致。修订文档不改变作者源正文，也不覆盖历史测量文档。新包须记录这些文件自身的 bytes/hash；已有85888安装结果不自动成为修订包的验收。
+
+按需发现沿用 `node scripts/notion-sdk-pi.mjs run --package ABSOLUTE_INSTALLED_BROKER --fixture ABSOLUTE_FIXTURE_JSON --scenario scoped-command --out NEW_ABSOLUTE_EVIDENCE`。在 owned settings 中用公开 `defaultTools` 配置 `read`、`notion_list`、`notion_use`、`bash`、`tool_search`；不以 `--tools` 硬过滤掉尚未加载的非 MCP 管理工具，也不由 harness 调用 `setActiveTools` 提前启用 `notion_ctl`。隔离的 `--no-extensions` 进程显式加载该宿主实际安装的官方 tool-search extension，`launch.json` 保存模块与设置的 hash。
+
+三个实际 provider 输入依次证明：初始 schema 无 `notion_ctl`；真实 search 回执和完整 `cli_source` schema 已进入模型；真实 scope 回执逐字进入下一输入。`source-command.json`、`rpc.json` 和 `provider-requests/` 的已安装 serializer HTTP 原件须一致；只有 `details.loaded`、只有工具名、预先暴露 schema、缺失 search 调用或错 source/database/command 均失败。两次工具调用不包含 bash/正文操作，所有 SDK/HTTP 及 shutdown 账本仍按原严格规则闭合。场景总数仍是 14，CI 原 all 会执行此路径。
+
+2026-11-05 同 `6464469dff1b` 独立安装包在 Pro Pi 1.5.0 和 owned Pi 1.4.0 均通过该实际路径：每版 3 个 provider 输入、2 次工具调用、0 source HTTP／0 CLI 子进程／0正文读取，全部通过已安装 serializer 发至本地 HTTP。Pi 1.5 累计 33382 B，Pi 1.4 累计 34241 B；这是受控路径原账本，不是模型成本收益比较。证据在 `~/Library/Logs/pi-context-broker/AH-617-20261105/sc23-deferred-uq24ykc8/`，63 项原 driver 测试覆盖正例及拒绝条件，两 run 已完成原 Evidence → Cleanup → Evidence，58 个原件 hash 不变。`baseline.json` 指向先前已通过的显式激活版本，该历史结果仍有效，但不证明按需发现；`gate-before.log` 保留新断言对旧直接激活 oracle 的缺口反馈。未运行真实模型／作者写入，未修改包、日用设置或原失败报告。
 
 live-fixture 可用 `--resume-evidence /absolute/FAILED_EVIDENCE` 恢复：旧 scratch ownership/input unique name、catalog exactname 唯一与 read canary 通过后不 create，最终 archive；可加 `--model provider/model --model-prompt TEXT` 对同页模型消费后 archive。创建 deadline 15 分钟，intent 的 create-started/unknown 不等于成功。这些远端选项不改变 installed 的包验收边界。
 AH-255 可以在同一次真实 fixture run 指定两份已安装产物：
@@ -76,7 +81,9 @@ The ordinary `verify-notion-integration.mjs doctor/run --mode live --host pi` ro
 
 The same driver accepts `doctor|run --package ABSOLUTE_INSTALLED_BROKER --live-input ABSOLUTE_INPUT_JSON`; `run` also requires a new `--out` directory. This is separate from `--fixture` and `--scenario all`: the original 14 offline scenarios remain the default CI route.
 
-The version 1 input has `kind: "live_notion_sdk"`, `host` and `artifact` identities (`path`, `sha256`), one `source` (`id`, `database`), and private `oracle.catalog`, `oracle.use`, and `oracle.resource` identities. Resource also declares `logical_path`. `sentinels` lists the unchanged daily configuration/shim identities. Use full catalog and complete public `use --json` originals obtained on the same machine; resource bytes must match that returned manifest. Doctor verifies Pi 1.4, every archive member against the installed package, the bundled CLI/SDK runtime hashes, and each original. It does not probe authentication.
+The version 1 input has `kind: "live_notion_sdk"`, `host` and `artifact` identities (`path`, `sha256`), one `source` (`id`, `database`), and private `oracle.catalog`, `oracle.use`, and `oracle.resource` identities. Resource also declares `logical_path`. `sentinels` lists the unchanged daily configuration/shim identities. Use same-machine observer-only originals: the full catalog, plus either a complete public `use --json` receipt or a recorded complete SDK consume `wrapper.value` normalized to the public CLI envelope by the pinned CLI's exact `emit({ok:true,...value})` rule. Resource bytes must match the returned fixed manifest.
+
+For a normalized SDK original, retain provenance binding the raw SDK receipt, the pinned conversion rule/source identity, and the normalized expected payload by hash. Independently verify every node, manifest and body identity before freezing it as private expected input. Record this as reuse of an existing SDK observation, with zero new CLI/source requests and no consumer prewarming; keep its original execution outcome, including a failed task, unchanged. The normalized payload itself does not prove a new CLI execution. Doctor verifies the actual supported Pi 1.4.0 or 1.5.0 identity, every archive member against the installed package, the bundled CLI/SDK runtime hashes, and each frozen original. It does not probe authentication or independently certify the normalization provenance.
 
 Run inherits only the local Notion token into an otherwise isolated consumer. CLI state, Broker cache, agent directory and sessions start empty; oracle bodies never seed them. Owned settings auto-load the installed Broker, and actual `get_commands.sourceInfo` must name its installed entry. The target is not passed with `-e`; the controlled provider and passive observer are explicit verification extensions. `source.command` is absent and `prefetch` is false.
 
