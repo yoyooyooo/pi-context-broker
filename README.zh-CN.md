@@ -157,7 +157,7 @@ sources:
     prefetch: false
 ```
 
-本 checkout 的 Pi 在省略 `source.command` 时使用随包的进程内 `ntn-skills` SDK。每个来源的一次 `consume` 准备选中的 Skill/Router 图，不再启动 `prepare` 后逐节点启动 `read`。按需资源通过 SDK `readSkill` 读取固定 File 引用。发现与诊断仍使用包内 CLI；显式 custom command、OMP、Prompt 加载及已配置预取保留 CLI 路径。SDK 缺失或不兼容时明确失败，不回退 CLI。
+本 checkout 的 Pi 在省略 `source.command` 时使用随包的进程内 `ntn-skills` SDK。完整目录与 Default View 使用 SDK `listCatalog`；每个来源的一次 `consume` 准备选中的 Skill/Router 图，不再启动 `prepare` 后逐节点启动 `read`。按需资源通过 SDK `readSkill` 读取固定 File 引用。诊断、显式 custom command、OMP、Prompt 加载及已配置预取保留 CLI 路径。SDK 缺失或不兼容时明确失败，不回退 CLI。
 
 Pi 通过 `notion_list`、`notion_use` 与原生 `read` 提供会话引用：`sr:C` 表示目录候选，`sr:S` 表示固定的选中主文，`sr:R` 表示属于该选择的资源。原样复制返回的引用。`notion_use` 仅向模型顶层开放，不能从 Code mode 内部调用；准备成功与实际完整交付分别验证。这些引用属于当前会话分支，使用时仍检查来源授权和身份。准备、投递与恢复边界见 [Skill 消费运行时](./packages/context-broker/docs/skill-consumption-runtime.md)。
 
