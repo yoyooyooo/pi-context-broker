@@ -62,7 +62,7 @@ async function childProcess(command, args, { cwd, env, ledger, category, passthr
 // unchanged apart from requesting metrics, and never supplies catalog/graph data.
 async function publicCommand(state, args, passthrough = false) {
   assert.ok(['list', 'views', 'prepare', 'read', 'files', 'schema', 'ctl'].includes(args[0]));
-  if (args[0] === 'ctl') assert.ok(args[1] === 'doctor' || args[1] === 'cache' && args[2] === 'identity');
+  if (args[0] === 'ctl') assert.ok(args[1] === 'views' || args[1] === 'doctor' || args[1] === 'cache' && args[2] === 'identity');
   const measured = ['list', 'prepare', 'read', 'files'].includes(args[0]) && !args.includes('--metrics') ? [...args, '--metrics'] : args;
   assert.equal(hash(await readFile(state.cli)), state.cliSha256, 'The installed CLI changed after the run was frozen');
   const result = await childProcess([process.execPath, state.cli], measured, { cwd: state.cwd, env: state.env, ledger: state.ledger, category: 'installed-cli', passthrough });

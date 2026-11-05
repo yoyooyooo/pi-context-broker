@@ -1,11 +1,51 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { verifySessionReceipts, nextGraphTool } from './notion-skill-graph.mjs';
 import { deliveryEvidence } from './notion-skill-graph-session.mjs';
+import { systemTempRoot } from './verification-paths.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const measure = value => ({ sha256: hash(value), bytes: Buffer.byteLength(value) });
+
+// Exercise the original --source subprocess boundary. This fake CLI only
+// observes forwarding; the installed CLI + HTTPS fixture supplies View evidence.
+async function commandFixture(t) {
+  const directory = await mkdtemp(join(await systemTempRoot(), 'graph-session-command-'));
+  t.diagnostic('owned command fixture: ' + directory);
+  const cli = join(directory, 'argv.mjs'), responses = join(directory, 'responses'), ledger = join(directory, 'processes.jsonl');
+  const source = 'process.stdout.write(JSON.stringify({ok:true,argv:process.argv.slice(2)})+"\\n");\n';
+  await mkdir(responses); await writeFile(cli, source); await writeFile(ledger, '');
+  const state = join(directory, 'state.json');
+  await writeFile(state, JSON.stringify({ cli, cliSha256: hash(source), cwd: directory, responses, ledger, env: {} }));
+  const invoke = args => spawnSync(process.execPath, [fileURLToPath(new URL('./notion-skill-graph-session.mjs', import.meta.url)), '--source', state, ...args], { encoding: 'utf8', timeout: 10000 });
+  return { invoke, ledger };
+}
+
+test('session custom command forwards the current ctl views metadata entry unchanged', async t => {
+  const { invoke } = await commandFixture(t), args = ['ctl', 'views', '--database', 'controlled-library', '--max-age', '0'];
+  const result = invoke(args);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout).argv, args);
+});
+
+test('session custom command keeps legacy views and rejects unrelated ctl or author commands before a CLI spawn', async t => {
+  const { invoke, ledger } = await commandFixture(t);
+  for (const args of [['views', '--database', 'controlled-library'], ['ctl', 'doctor'], ['ctl', 'cache', 'identity']]) {
+    const result = invoke(args); assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout).argv, args);
+  }
+  const before = await readFile(ledger, 'utf8');
+  for (const args of [['ctl', 'sync'], ['ctl', 'operation', 'resume', 'unknown'], ['ctl', 'cache', 'clear'], ['create', 'unexpected']]) {
+    const result = invoke(args); assert.notEqual(result.status, 0); assert.match(result.stderr, /AssertionError/);
+  }
+  assert.equal(await readFile(ledger, 'utf8'), before);
+});
+
 const canonical = value => value === null || typeof value !== 'object' ? JSON.stringify(value)
   : Array.isArray(value) ? '[' + value.map(canonical).join(',') + ']'
     : '{' + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, child]) => JSON.stringify(key) + ':' + canonical(child)).join(',') + '}';

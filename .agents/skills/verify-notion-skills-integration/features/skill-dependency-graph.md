@@ -135,6 +135,16 @@ Pi 默认 graph bridge 使用随包公开 SDK `consume`，同一内核验证完�
 
 SC04 的 branch-local C/S/R 表独立于 graph lock；已固定短引用不改绑，刷新创建新 S/R，兄弟分支不可互用。固定旧 pin 或非主文关系不能因 ID 相同而替换为当前候选。按需发现的 Pi `notion_ctl({refs:[...]})` 导出 S/R 的 canonical 精确证明（OMP 仍为 legacy skill_graph），消费端仍重新授权。SC08 另保存版本化 active receipt：完整 visible 证明加同轮未取消的 2xx headers 确认后才激活，inspect/ready 不激活；压缩移除正文后普通消息从固定 roots 恢复一次，不改写原始 JSONL。实际 SessionManager、RPC/PTY 与 SDK-Pi 证据均见运行时记录，状态层成功不等于真实模型成功。
 
+### SC23：会话驱动的 View 元数据调用
+
+`notion-skill-graph-session.mjs --source OWNED_STATE` 是显式 custom-command 的真实进程包装器。它允许当前 `ctl views`，并保留裸 `views` 的旧调用兼容；`ctl doctor`、`ctl cache identity` 的原边界不变，其他管理／作者命令在启动 CLI 前拒绝。包装器不重复实现 CLI 参数解析，多余位置参数仍由独立安装的 CLI 拒绝。此迁移不启用预取，也不把 custom-command 结果算作默认 SDK 验收。
+
+定向回归复用 `node --test scripts/notion-skill-graph-delivery.test.mjs`：实际 `--source` 子进程必须原样转发 View 参数，旧 alias 可用，未知 `ctl sync`、operation、cache clear 和 create 不得启动 CLI。这里的 argv fixture 仅证明包装器协议，实际 View 数据另由安装包验证。
+
+2026-11-05 原件在 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc23-session-views-gd93lzlk`。同一 `6464469d…` 安装包的真实 `listNotionViews` 经该包装器、随包 C6 CLI 和原 `notion-skill-graph-service.mjs` HTTPS fixture：修复前 `SOURCE_COMMAND_FAILED`，0 CLI children／0 HTTP；仅增加 `ctl views` 白名单后返回准确 View ID、name、database 和 data source。实际账本共 4 次 metadata HTTP、2051 响应字节，正文／写入／provider 均为零；裸 alias 返回相同 View，额外 `sync` 位置参数由真实 CLI 返回 `INVALID_ARGUMENT` 且无新增 HTTP。3 个 CLI child 与服务进程均实际退出，安装文件和驱动 hash 未变。11 项定向测试通过，原 10 pass／1 fail 保留。该小切片不声称重跑完整 A/B 会话矩阵或真实 Notion／模型。
+
+### 分支选择与恢复驱动
+
 ~~~bash
 CONTEXT_BROKER_PI_SESSION_MODULE=/absolute/installed/pi/dist/core/session-manager.js \
 CONTEXT_BROKER_SESSION_EVIDENCE=/absolute/evidence/ng15 \
