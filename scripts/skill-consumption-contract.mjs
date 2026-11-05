@@ -32,6 +32,8 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
     'GATE_WORKFLOW_MISSING', 'Check both CI and publish gates.');
   const sourceRevisions = [];
   for (const workflow of config.workflows) {
+    check(!/\$\{\{\s*runner\./u.test(workflow.text.split(/^    steps:\s*$/mu)[0]), 'GATE_RUNNER_CONTEXT_SCOPE',
+      workflow.name + ' must use runner context only in steps, not workflow or job env.');
     check(workflow.text.includes('run: bun run check'), 'GATE_CHECK_MISSING', workflow.name + ' must execute the normal check.');
     check(workflow.text.includes('@earendil-works/pi-coding-agent@1.4.0'), 'GATE_PI_VERSION', workflow.name + ' must install supported Pi 1.4.0.');
     const source = /repository: yoyooyooo\/notion-skills-cli\s+ref: ([a-f0-9]{40})\s+path: \.verification\/ntn-skills-cli/u.exec(workflow.text);
@@ -46,11 +48,10 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
     const step = name => steps.find(value => value.startsWith('      - name: ' + name + '\n')) ?? '';
     const fixture = step('Create controlled SDK fixture'), installed = step('Installed Pi artifact regression');
     const unconditional = value => !/\n        (?:if|continue-on-error):/u.test(value);
-    check(workflow.text.includes('CONTEXT_BROKER_SDK_FIXTURE: ${{ runner.temp }}/ntn-skills-sdk-fixture/fixture.json')
-      && fixture.includes('run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-sdk-fixture" --catalog')
+    check(fixture.includes('run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-sdk-fixture" --catalog')
       && unconditional(fixture) && workflow.text.indexOf(fixture) < workflow.text.indexOf(installed),
       'GATE_SDK_FIXTURE_MISSING', workflow.name + ' must create the controlled catalog fixture from its pinned CLI source.');
-    check(installed.includes('run: node scripts/verify-artifacts.mjs --host pi --fixture "$CONTEXT_BROKER_SDK_FIXTURE" --require-sdk')
+    check(installed.includes('run: node scripts/verify-artifacts.mjs --host pi --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --require-sdk')
       && unconditional(installed), 'GATE_INSTALLED_SDK_MISSING', workflow.name + ' must require actual default SDK Pi execution against that fixture.');
     const retained = step('Preserve installed Pi SDK evidence');
     check(retained.includes('if: always()') && retained.includes('uses: actions/upload-artifact@v4')

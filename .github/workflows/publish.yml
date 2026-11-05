@@ -26,7 +26,6 @@ jobs:
     environment: npm-publish
     env:
       NTN_SKILLS_BUILD_ENTRY: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/cli/dist/ntn-skills.js
-      CONTEXT_BROKER_SDK_FIXTURE: ${{ runner.temp }}/ntn-skills-sdk-fixture/fixture.json
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -109,7 +108,7 @@ jobs:
       - name: Create controlled SDK fixture
         run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-sdk-fixture" --catalog
       - name: Installed Pi artifact regression
-        run: node scripts/verify-artifacts.mjs --host pi --fixture "$CONTEXT_BROKER_SDK_FIXTURE" --require-sdk
+        run: node scripts/verify-artifacts.mjs --host pi --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --require-sdk
       - name: Preserve installed Pi SDK evidence
         if: always()
         uses: actions/upload-artifact@v4

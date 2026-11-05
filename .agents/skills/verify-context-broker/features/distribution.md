@@ -38,7 +38,7 @@ Preconditions:
 
 ## 默认 SDK 的 CI 安装门禁
 
-CI 与 publish 从同一精确 CLI commit frozen install/build，再使用该 checkout 的原 `scripts/sdk-fixture.ts --outdir NEW_ABSOLUTE_DIRECTORY --catalog` 生成受控 fixture。workflow 明确传入 `--fixture "$CONTEXT_BROKER_SDK_FIXTURE" --require-sdk`；缺 fixture 必须在打包或启动宿主前失败，不能退成通用安装路线。普通安装路线的 optional fixture 不改变 CI 的必跑要求，`check-gates` 同时拒绝 producer 漏接、路径漏传、条件跳过、吞掉失败或缺失原件上传。
+CI 与 publish 从同一精确 CLI commit frozen install/build，再使用该 checkout 的原 `scripts/sdk-fixture.ts --outdir NEW_ABSOLUTE_DIRECTORY --catalog` 生成受控 fixture。producer 与 artifact 的 step 命令直接使用同一个 `$RUNNER_TEMP/ntn-skills-sdk-fixture` 路径，后者明确传入 `--fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --require-sdk`；缺 fixture 必须在打包或启动宿主前失败，不能退成通用安装路线。普通安装路线的 optional fixture 不改变 CI 的必跑要求，`check-gates` 同时拒绝 producer 漏接、路径漏传、条件跳过、吞掉失败或缺失原件上传。
 
 人工复跑时，`CLI_CHECKOUT` 指向同一固定版本的 CLI 源码，`CLI_ENTRY` 指向完整 CLI 安装入口，`CANDIDATE_DIR` 只含冻结候选，`SDK_FIXTURE_ROOT` 为新的仓外绝对目录：
 
@@ -51,6 +51,8 @@ NTN_SKILLS_BUILD_ENTRY="$CLI_ENTRY" CONTEXT_BROKER_CANDIDATE_DIR="$CANDIDATE_DIR
 runner 复用刚刚独立安装的同一个 `installed` 路径，调用原 `notion-sdk-pi.mjs run --scenario all`，不再次打包。`defaultSdk` 保存 fixture/driver、plan/result 路径与 hash、子进程退出和 14 景终局；plan 必须保持同一 package、bundled runtime 和开启的全部断言，result 的每一景都须通过且 observer 已关闭。`default-sdk-pi/` 保留 RPC、provider/HTTP、SDK、session 与逐景结果，stdout/stderr 同在原 `broker-artifacts-*` 目录。两 workflow 无论成功失败都上传该 owned 目录、SDK scratch 和 fixture（含隐藏文件）；Linux 保留 scratch，不调用 macOS Trash。
 
 这条路线使用离线暖 fixture、owned 空 Broker cache/session、实际 Pi 1.4 与受控 provider。它不覆盖真实 Notion、真实模型或用户 Pi 1.5。默认目录与恢复边界详见[原 SDK 恢复地图](../../verify-notion-skills-integration/features/session-cache-recovery.md)。2026-11-05 的漏接线负例保存在 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/unified-c4-0f0b02-wj9ya_hr/ci-sdk-wiring/fail-before.log`，SHA256 `5412df3aa56f96ce512131125b03e00cfccf2d911956b6893c0fb798e4504ecd`；原 workflow 未变时新门禁报 `GATE_SDK_FIXTURE_MISSING`，旧门禁误绿记录同时保留。
+
+远端 run `42080157508` 在 workflow 解析阶段拒绝 job env 中的 `runner.temp`，jobs 与 check runs 均为空，安装门禁没有运行。错误 HTML/API 原件保存在同一证据根的 `remote-8c2a7f6/`。按 [GitHub context availability](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability)，runner context 用于 step；生成和消费 fixture 直接使用 runner 提供的 shell 变量，上传 action 的 step with 仍可使用 `runner.temp`。原 `check-gates` 增加 job/全局位置误用 runner context 的负例；本地 gate 通过后仍须回读远端实际 job。
 
 ## Pi 正常日用身份与 SDK 来源归因
 
