@@ -63,7 +63,7 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
         };
         const definition: PiReadDefinition = {
           ...native,
-          description: native.description + " For a Notion Skill or resource, copy its supplied ref into path to inspect it. Use notion_use to apply a Skill with its Requires. Alternatively, paths reads fixed resources of one owner and snapshot together; choose path or paths. Batch reads exclude offset/limit and the main entrypoint.",
+          description: "For Notion introductions, summaries or inspection, copy a supplied Skill/resource ref into path. This reads content without loading Requires or activating its workflow. " + native.description + " Alternatively, paths reads fixed resources of one owner and snapshot together; choose path or paths. Batch reads exclude offset/limit and the main entrypoint.",
           parameters, defaultActive: activeTools().includes("read"),
           ...(native.outputSchema ? { outputSchema: { anyOf: [native.outputSchema, resourceOutputSchema] } } : {}),
           async execute(id, input, signal, onUpdate, context) {

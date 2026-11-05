@@ -79,7 +79,8 @@ test("Pi scalar read advertises issued Skill refs in both provider schema branch
     expect(description).toContain("sr:");
     expect(description).toContain("verbatim");
   }
-  expect(f.current().description).toContain("notion_use");
+  expect(f.current().description).toStartWith("For Notion introductions, summaries or inspection,");
+  expect(f.current().description).toContain("without loading Requires or activating its workflow");
   expect(JSON.stringify(f.native.parameters)).toBe(before);
 });
 

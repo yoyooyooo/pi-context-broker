@@ -91,6 +91,10 @@ SDK 取消只沿既有严格断言结算 metadata `list`：被动 native `sessio
 
 改前旧入口拒绝 `--intent-config` 和私有 D seed 负例保留。`--discovery-only true` 的原 `notion-skill-graph-observer-smoke.mjs` 实驱实际 Pi、受控 HTTP 和显式 custom source：首请求无正文，真实 list 元数据先于 read、正文全文进入 provider、未读 Requires/Member。该受控证明不能代替生产 SDK、真实模型 C/D 或正式 SC21 全矩阵。
 
+2026-11-05 的 `85888`／Pi 1.5／flash-free 实模在 C 与 D 命名介绍均出现 `list → notion_use`，没有目标的 native inspect/read；两个首轮自然终局后的续问均未提交。原件在 `~/Library/Logs/pi-context-broker/AH-617-20261105/cd-early-feedback-10ot7qk8/pi-intent-evidence-henERH/`。实际旧 schema 已明确 `read.path` 支持 Notion ref，旧 use 说明也已要求介绍用 read，不能把失败解释成缺少工具。D 首请求无根正文仍误选，不能只归因于 poteto 长正文或目标作者规则（目标规则在误选后才进入模型）。
+
+这组反馈触发一个独立措辞候选：把 read 的 Notion inspect 能力提到描述首部，将 use 的目的明确为应用所选规则，消除 guidance 中“选择来介绍”和“选择来应用”共用 load/selected 的歧义。仅改三处模型可见说明；不按自然语言关键词拦截或转换 use，不增加工具，不改作者正文、原 prompt、oracle 或旧样本。按原 C/D 入口和新独立安装身份检验实际选路后才能判断是否有收益，同时保留 D 自然任务自主选择并 use、显式 use/read、Requires 完整、普通续问复用、固定资源与本地/batch read 的既有反例。受控回归或文字变清楚不证明模型行为已修复，工具 schema/guidance 的新成本也应实记。
+
 ## NG10 / NG13 原生发现与显式准备
 
 默认 View 只决定初始目录。按 `agent-cli-ref-20261105`，Pi Agent 从根 Members 目录、原生正文中的准确 ref 或 `notion_list` 元数据结果选择 View 外的受管 Skill / File。`notion_list` 不读正文、不注册 loaded；原生 `read` 用于 inspect 和精确资源，顶层 `notion_use({ref:string|string[],refresh?:boolean})` 准备根与完整 Requires 闭包。inspect 不把 Required 正文当已准备。用户显式 `$` 与 `/skill:` 沿同一 prepare use 协议；未匹配的普通用户字面引用保持既有 soft miss，而已选 Required 缺失、预算、权限或版本失败必须阻断 provider。
