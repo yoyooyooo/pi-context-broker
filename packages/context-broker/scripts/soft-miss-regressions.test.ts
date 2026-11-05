@@ -296,6 +296,8 @@ console.log(JSON.stringify(receipt));
   } finally {
     for (const key of Object.keys(process.env)) if (!(key in previous)) delete process.env[key];
     Object.assign(process.env, previous);
-    execFileSync("/usr/bin/trash", [await realpath(root)]);
+    const ownedRoot = await realpath(root);
+    if (process.platform === "darwin") execFileSync("/usr/bin/trash", [ownedRoot]);
+    else console.log(`soft-miss owned scratch retained on ${process.platform}: ${ownedRoot}`);
   }
 }

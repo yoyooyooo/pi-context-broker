@@ -41,4 +41,5 @@ Preconditions:
 - artifact runner 默认会重建当前查询和文档投影；给 `CONTEXT_BROKER_CANDIDATE_DIR=/absolute/candidates` 时复用该目录中的 npm/Tern 候选包，不重新打包。记录实际包与安装入口 hash；不要与源码/构建更新并行，让版本归属明确。
 - `release --dry-run` 与 `--precheck` 在返回计划前仍会 fetch/prune tags 和查询 npm；`--no-push` 仍会创建本地 release commit/tag。只用临时测试 repo 验证发布行为。
 - 本地测试不是 npm Trusted Publishing、线上 release 或远端 CI 成功的证明；需分别回读对应真实结果。
+- Linux CI 的 soft-miss 回归保留明确 owned 的临时目录并打印路径；仅在 macOS 调用系统 Trash。2026-11-05 的 d6c5f490 CI 曾在 cleanup 调用 `/usr/bin/trash` 时因 Linux ENOENT 中止，导致后续 consumption/安装门禁未执行；原日志 `/private/tmp/ah676-d6-ci-job-127356509204.log`（SHA256 `f0121d295af87e9c60c29d71a64ac67979105a1510845e0645b3dc79ff40fa02`）保留。必须回读修复后的远端运行，不能把本地 check 代替它。
 - 保留证据仓库，不执行永久删除、git clean/reset 来清理。
