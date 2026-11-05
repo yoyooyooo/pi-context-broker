@@ -17,6 +17,36 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 const save = (file, value) => writeFile(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
 const rows = async file => { try { return (await readFile(file, 'utf8')).split('\n').filter(Boolean).map(JSON.parse); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } };
 
+export function verifyPublicReadBoundary({ authored, admitted, read, preparation, closed, expected }) {
+  assert.ok(authored?.discovered && admitted?.allowed && read?.complete);
+  assert.equal(admitted.toolCallId, authored.toolCallId); assert.equal(read.toolCallId, authored.toolCallId);
+  assert.equal(admitted.authoredSequence, authored.sequence); assert.equal(read.callSequence, admitted.sequence);
+  assert.equal(hash(JSON.stringify(authored.input)), authored.argumentsSha256); assert.equal(admitted.argumentsSha256, authored.argumentsSha256);
+  assert.equal(admitted.input, authored.input.path);
+  const selected = admitted.expected ?? admitted.claim;
+  assert.ok(selected, 'Actual metadata or fixed-file selection must precede the source read');
+  for (const key of ['scope', 'ownerId', 'path']) assert.equal(selected[key], expected[key]);
+  for (const key of ['snapshot', 'fileId', 'sha256', 'bytes']) if (selected[key] !== undefined) assert.equal(selected[key], expected[key]);
+  for (const [key, value] of Object.entries(expected)) assert.equal(read[key], value, 'The complete read must match the independent fixture ' + key);
+  const resultRef = new URL(read.ref); assert.equal(resultRef.protocol, 'skill:');
+  assert.equal(decodeURIComponent(resultRef.hostname), expected.ownerId); assert.equal(decodeURIComponent(resultRef.pathname.slice(1)), expected.path);
+  assert.equal(resultRef.searchParams.get('snapshot'), expected.snapshot); assert.equal(resultRef.searchParams.get('file_id'), expected.fileId);
+  if (resultRef.searchParams.has('scope')) assert.equal(resultRef.searchParams.get('scope'), expected.scope);
+  assert.ok(preparation && closed && preparation.requestId === closed.requestId && closed.code === 0);
+  assert.equal(preparation.command, preparation.args[0]);
+  const argv = preparation.args[0] === 'ctl' ? preparation.args.slice(1) : preparation.args;
+  assert.equal(argv[0], 'prepare'); assert.equal(argv[argv.indexOf('--purpose') + 1], 'inspect');
+  const ref = new URL(argv[1]); assert.equal(ref.protocol, 'skill:');
+  assert.equal(decodeURIComponent(ref.hostname), expected.ownerId); assert.equal(decodeURIComponent(ref.pathname.slice(1)), expected.path);
+  for (const [parameter, key] of [['snapshot', 'snapshot'], ['file_id', 'fileId']]) if (ref.searchParams.has(parameter)) assert.equal(ref.searchParams.get(parameter), expected[key]);
+  const [authoredAt, admittedAt, preparedAt, closedAt, readAt] = [authored.at, admitted.at, preparation.at, closed.at, read.at].map(Date.parse);
+  assert.ok([authoredAt, admittedAt, preparedAt, closedAt, readAt].every(Number.isFinite));
+  assert.ok(authoredAt <= admittedAt && admittedAt <= readAt && authoredAt <= preparedAt && preparedAt <= closedAt && closedAt <= readAt,
+    'Actual selection and source preparation must precede the complete read; metadata admission does not imply a prepared body');
+  return { toolCallId: authored.toolCallId, authoredAt: authored.at, admittedAt: admitted.at, argumentsSha256: authored.argumentsSha256,
+    publicPrepareRequestId: preparation.requestId, prepareStartedAt: preparation.at, prepareClosedAt: closed.at, selected, expected, resultRef: read.ref };
+}
+
 export async function probeGraphObserver({ extension, cliCommand, cliSource, evidenceRoot, matrix = false, resourceLocation = 'ref', largeBody = false, hostIndexResource = false, publicBoundaries = false, discoveryOnly = false }) {
   assert.ok(['ref', 'alias', 'unqualified-ref'].includes(resourceLocation));
   assert.equal(typeof largeBody, 'boolean');
@@ -30,6 +60,7 @@ export async function probeGraphObserver({ extension, cliCommand, cliSource, evi
   const evidence = await mkdtemp(join(evidenceRoot, 'graph-observer-http-'));
   const scratch = await mkdtemp(join(await systemTempRoot(), 'broker-graph-observer-http-'));
   const project = await createOwnedGraphProject(join(scratch, 'project'));
+  const projectPaths = '\n\nCurrent owned project files (paths only; read the actual source when needed):\n' + project.files.map(file => '- ' + file.path).join('\n') + '\n';
   const rootBodySuffix = largeBody ? '\nCONTROLLED_LARGE_LITERAL_SECTION\n' + '<b>literal evidence & detail</b> [brackets] (group) "quoted" \\ value.\n'.repeat(800) : '';
   const fixture = await createGraphFixture({ directory: join(scratch, 'fixture'), evidence: join(evidence, 'source'), cliCommand, cliSource, rootBodySuffix, rootResource: hostIndexResource });
   // The large root exercises complete preparation/provider delivery. Native
@@ -45,7 +76,7 @@ export async function probeGraphObserver({ extension, cliCommand, cliSource, evi
   const traps = await createGraphFallbackTraps(join(scratch, 'control'), evidence);
   const result = { version: 1, status: 'running', evidence, scratch, resourceLocation, largeBody, hostIndexResource, publicBoundaries, discoveryOnly, sourceMode: 'command', toolContract: 'agent-cli-ref-20261105', rootMainBytes: Buffer.byteLength(fixture.graph.root.body), nativePathNode: { id: nativePathNode.record.id, bytes: Buffer.byteLength(nativePathNode.body), sha256: hash(nativePathNode.body), role: largeBody ? 'required' : 'root' }, harness: await graphHarnessIdentity(), proofLayer: 'controlled actual HTTP provider + installed Pi + explicit custom-command Node/SQLite source; no default SDK, real model or production Notion proof' };
   await save(join(evidence, 'result.json'), result); console.log(JSON.stringify(result));
-  let requests = 0, serverError, negativeStep = 0, initialMainRead = false, helpRead = false, indexMainPath, indexMainCall, memberReadCall, activeOutput;
+  let requests = 0, serverError, negativeStep = 0, initialMainRead = false, helpRead = false, indexMainPath, indexMainCall, indexMainSource, memberReadCall, activeOutput;
   const server = createServer(async (request, response) => {
     try {
       let raw = ''; for await (const chunk of request) raw += chunk;
@@ -53,6 +84,8 @@ export async function probeGraphObserver({ extension, cliCommand, cliSource, evi
       await appendFile(providerFile, JSON.stringify({ number, method: request.method, wireBodySha256: hash(raw), body }) + '\n');
       assert.deepEqual(body.tools.map(tool => tool.function?.name ?? tool.name).sort(), [...GRAPH_GATE_TOOLS].sort(), 'The real SDK must advertise all three product tools and no shell');
       const strings = value => typeof value === 'string' ? [value] : Array.isArray(value) ? value.flatMap(strings) : value && typeof value === 'object' ? Object.values(value).flatMap(strings) : [];
+      const system = strings(body.messages.filter(message => message.role === 'system').map(message => message.content)).join('\n\n');
+      assert.equal(system.split(projectPaths).length - 1, 1, 'The original owned project paths must reach the actual HTTP system prompt exactly once');
       const texts = strings(body.messages).map(value => value.replaceAll('&amp;', '&').replaceAll('&lt;', '<').replaceAll('&gt;', '>'));
       const source = texts.join('\n');
       assert.equal(source.includes(outsideBody), false, 'Blocked outside bytes must never enter a provider request');
@@ -68,13 +101,34 @@ export async function probeGraphObserver({ extension, cliCommand, cliSource, evi
           selected = { name: 'read', arguments: { path: candidate.ref } };
         }
       } else if (!initialMainRead && publicBoundaries) {
-        const wrappers = (body.messages ?? []).filter(message => message.role === 'user').flatMap(message => strings(message.content))
+        const observations = await rows(activeOutput), actualProvider = observations.filter(event => event.phase === 'provider-request').at(-1), transport = observations.filter(event => event.phase === 'provider-transport-start').at(-1);
+        assert.equal(transport?.wireBodySha256, hash(raw));
+        assert.equal(actualProvider?.observedPayloadSha256, transport.observedPayloadSha256);
+        const mains = actualProvider.contents.filter(file => file.ownerId === nativePathNode.record.id && file.scope === fixture.scope
+          && file.snapshot === nativePathNode.snapshot_id && file.sha256 === hash(nativePathNode.body) && file.bytes === Buffer.byteLength(nativePathNode.body));
+        assert.equal(mains.length, 1, 'The actual provider must contain exactly one complete immutable selected main');
+        const userTexts = (body.messages ?? []).filter(message => message.role === 'user').flatMap(message => strings(message.content));
+        const decode = value => value.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
+        const wrappers = userTexts
           .flatMap(value => [...value.matchAll(/<skill\b([^>]*)>([\s\S]*?)<\/skill>/g)]);
-        const root = wrappers.find(match => match[2].includes(nativePathNode.body));
+        const root = wrappers.find(match => decode(match[2]).includes(nativePathNode.body));
         const location = /\blocation="([^"]+)"/.exec(root?.[1] ?? '')?.[1];
-        assert.ok(location, 'Read the actual Pi native command location from its complete user wrapper');
-        indexMainPath = location; indexMainCall = 'observer-call-' + number;
-        initialMainRead = true; selected = { name: 'read', arguments: { path: location } };
+        const sourceWrappers = userTexts.flatMap(value => [...value.matchAll(/<context-broker-record\b([^>]*)>([\s\S]*?)<\/context-broker-record>/g)]);
+        const source = sourceWrappers.find(match => decode(match[2]).includes(nativePathNode.body));
+        const reference = decode(/\bref="([^"]+)"/.exec(source?.[1] ?? '')?.[1] ?? '');
+        if (location) {
+          indexMainPath = decode(location); indexMainSource = 'actual Pi native wrapper';
+          assert.ok(observations.some(event => event.phase === 'provided-native-path' && event.path === indexMainPath && event.ref === mains[0].ref && event.source === indexMainSource));
+        } else {
+          indexMainSource = 'actual Broker source wrapper';
+          assert.ok(reference && observations.some(event => event.phase === 'provided-native-reference' && event.reference === reference
+            && event.providerPayloadSha256 === actualProvider.observedPayloadSha256 && event.ref === mains[0].ref && event.ownerId === mains[0].ownerId
+            && event.scope === mains[0].scope && event.snapshot === mains[0].snapshot && event.sha256 === mains[0].sha256 && event.bytes === mains[0].bytes),
+          'Read only the actual source-wrapper ref with its complete immutable owner and provider proof');
+          indexMainPath = reference;
+        }
+        indexMainCall = 'observer-call-' + number;
+        initialMainRead = true; selected = { name: 'read', arguments: { path: indexMainPath } };
       } else if (!initialMainRead && hostIndexResource) {
         const system = (body.messages ?? []).filter(message => message.role === 'system').flatMap(message => strings(message.content)).join('\n');
         const locations = [...system.matchAll(/<skill>[\s\S]*?<location>\s*([^<]+)\s*<\/location>[\s\S]*?<\/skill>/g)].map(match => match[1].trim());
@@ -179,7 +233,7 @@ export async function probeGraphObserver({ extension, cliCommand, cliSource, evi
       await save(source, { command: fixture.command, cliPaths: {}, ledger: join(evidence, 'source-processes.jsonl'), responses: currentResponses });
       const currentSettings = { ...settings, responses: currentResponses, output: currentOutput, priorResponseFiles };
       await writeFile(observer, observerSource(currentSettings));
-      negativeStep = 0; initialMainRead = false; helpRead = false; indexMainPath = undefined; indexMainCall = undefined; memberReadCall = undefined;
+      negativeStep = 0; initialMainRead = false; helpRead = false; indexMainPath = undefined; indexMainCall = undefined; indexMainSource = undefined; memberReadCall = undefined;
       rpc = await startRpc({ host: 'pi', cwd: project.root, env, timeoutMs: 90000, args: ['--no-extensions', '--no-skills', '--no-mcp', '--no-context-files', '--no-prompt-templates', '--tools', GRAPH_GATE_TOOLS.join(','), '--session-dir', sessionDir, '-e', provider, '-e', extension, '-e', observer, '--model', model] });
       const firstRequest = requests;
       for (let turn = 0; turn < (matrix && launch === 2 ? 3 : 1); turn++) {
@@ -224,9 +278,11 @@ export async function probeGraphObserver({ extension, cliCommand, cliSource, evi
       assert.ok(observed.some(event => event.phase === 'tool-result' && event.tool === 'read' && event.ownerId === nativePathNode.record.id
         && event.complete && event.sha256 === hash(nativePathNode.body)), 'The initial advertised main path must reach native read with its exact manifest identity');
       if (publicBoundaries) {
-        assert.ok(observed.some(event => event.phase === 'provided-native-path' && event.path === indexMainPath && event.source === 'actual Pi native wrapper'));
+        assert.ok(observed.some(event => event.source === indexMainSource
+          && (event.phase === 'provided-native-path' && event.path === indexMainPath || event.phase === 'provided-native-reference' && event.reference === indexMainPath)));
         const main = observed.find(event => event.phase === 'tool-result' && event.toolCallId === indexMainCall && event.complete);
         assert.ok(main?.ownerId === nativePathNode.record.id && main.bytes === Buffer.byteLength(nativePathNode.body));
+        assert.equal(main.scope, fixture.scope); assert.equal(main.snapshot, nativePathNode.snapshot_id); assert.equal(main.sha256, hash(nativePathNode.body));
         assert.ok(providers.some(event => event.sequence > main.sequence && event.contents.filter(file => file.ref === main.ref && file.sha256 === main.sha256).length === 1));
         const prepared = observed.find(event => event.phase === 'preparation-result' && event.complete);
         const prepareCall = observed.find(event => event.phase === 'authored-tool-call' && event.toolCallId === prepared.toolCallId);
@@ -234,20 +290,18 @@ export async function probeGraphObserver({ extension, cliCommand, cliSource, evi
         const authored = observed.find(event => event.phase === 'authored-tool-call' && event.toolCallId === memberReadCall);
         const admitted = observed.find(event => event.phase === 'tool-call' && event.toolCallId === memberReadCall);
         const read = observed.find(event => event.phase === 'tool-result' && event.toolCallId === memberReadCall && event.complete);
-        assert.ok(authored?.discovered && admitted?.allowed && read?.ownerId === fixture.graph.member.record.id);
-        assert.equal(admitted.authoredSequence, authored.sequence); assert.equal(read.callSequence, admitted.sequence);
-        assert.equal(hash(JSON.stringify(authored.input)), authored.argumentsSha256); assert.equal(admitted.argumentsSha256, authored.argumentsSha256);
-        assert.equal(admitted.input, authored.input.path); assert.equal(admitted.expected.scope, read.scope); assert.equal(admitted.expected.sha256, read.sha256);
         const ledger = await rows(join(evidence, 'source-processes.jsonl'));
-        const preparation = ledger.find(event => event.phase === 'spawn' && event.command === 'prepare' && event.args.some(arg => {
+        const preparation = ledger.find(event => event.phase === 'spawn' && ['prepare', 'ctl'].includes(event.command) && event.args.includes('inspect') && event.args.some(arg => {
           try { return new URL(arg).protocol === 'skill:' && decodeURIComponent(new URL(arg).hostname) === read.ownerId; } catch { return false; }
         }));
         const closed = ledger.find(event => event.phase === 'close' && event.requestId === preparation?.requestId && event.code === 0);
-        assert.ok(preparation && closed && Date.parse(authored.at) <= Date.parse(preparation.at) && Date.parse(closed.at) <= Date.parse(admitted.at), 'The actual Broker prepareRead must occur after authored selection and before observer admission');
+        const authoredRead = verifyPublicReadBoundary({ authored, admitted, read, preparation, closed, expected: { ownerId: fixture.graph.member.record.id,
+          scope: fixture.scope, path: 'SKILL.md', snapshot: fixture.graph.member.snapshot_id,
+          fileId: fixture.graph.member.file_bindings.find(file => file.path === 'SKILL.md').file_id,
+          sha256: hash(fixture.graph.member.body), bytes: Buffer.byteLength(fixture.graph.member.body) } });
         result.publicBoundaryProof = { nativeMain: { toolCallId: main.toolCallId, ref: main.ref, scope: main.scope, snapshot: main.snapshot, sha256: main.sha256, bytes: main.bytes },
           omittedMainPath: { toolCallId: prepared.toolCallId, roots: prepared.roots, sha256: prepared.sha256, bytes: prepared.bytes },
-          authoredRead: { toolCallId: memberReadCall, authoredAt: authored.at, admittedAt: admitted.at, argumentsSha256: authored.argumentsSha256,
-            publicPrepareRequestId: preparation.requestId, prepareStartedAt: preparation.at, prepareClosedAt: closed.at, expected: admitted.expected, resultRef: read.ref } };
+          authoredRead };
       }
       if (hostIndexResource) {
         const binding = observed.find(event => event.phase === 'host-index-binding' && event.ownerId === fixture.graph.root.record.id);
@@ -299,18 +353,26 @@ export async function probeGraphObserver({ extension, cliCommand, cliSource, evi
       for (const delivery of observed.filter(event => ['metadata-result', 'preparation-result'].includes(event.phase) && event.complete)) assert.ok(providers.some(event => event.sequence > delivery.sequence && event.toolResults.some(result => result.toolCallId === delivery.toolCallId && result.sha256 === delivery.sha256 && result.bytes === delivery.bytes && result.exactToolOutputCopies === 1)), 'The actual full tool output must reach the SDK provider under the same tool call ID');
       const actualPayloads = (await rows(providerFile)).slice(firstRequest);
       assert.ok(actualPayloads.some(event => JSON.stringify(event.body.messages).includes('Tool bash not found')), 'The actual SDK must reject an unadvertised shell tool');
-      assert.ok(observed.find(event => event.phase === 'catalog').skills.every(skill => skill.provenance?.ownerId === fixture.graph.root.record.id));
+      const catalogs = observed.filter(event => event.phase === 'catalog');
+      assert.equal(catalogs.length, providers.length);
+      for (const [index, catalog] of catalogs.entries()) {
+        assert.equal(catalog.stage, 'before_provider_request');
+        assert.equal(catalog.providerPayloadSha256, providers[index].observedPayloadSha256);
+        assert.ok(catalog.skills.every(skill => skill.provenance?.ownerId === fixture.graph.root.record.id));
+      }
       await save(join(retained, 'pi-rpc.json'), rpc.frames); await rpc.stop(); rpc = undefined;
-      result.sessions.push({ launch, providerRequests: providers.length, catalog: observed.find(event => event.phase === 'catalog'), hostHelp: help, reads: observed.filter(event => ['tool-result', 'project-read-result'].includes(event.phase)).map(({ content, ...receipt }) => receipt) });
+      result.sessions.push({ launch, providerRequests: providers.length, catalog: catalogs.at(-1), catalogSnapshots: catalogs, hostHelp: help, reads: observed.filter(event => ['tool-result', 'project-read-result'].includes(event.phase)).map(({ content, ...receipt }) => receipt) });
       for (const name of await readdir(currentResponses)) { const path = join(currentResponses, name); priorResponseFiles.push({ path, sha256: hash(await readFile(path)) }); }
       await save(join(retained, 'cache-reuse-responses.json'), priorResponseFiles);
     }
     assert.equal((await rows(fixture.httpPath)).length, 0);
     assert.equal((await rows(traps.ledger)).length, 0);
     result.status = 'passed'; result.providerRequests = requests;
+    result.projectPaths = { source: 'public-systemPromptOptions.sections', bytes: Buffer.byteLength(projectPaths), sha256: hash(projectPaths), copiesPerProvider: 1 };
     result.toolPolicy = discoveryOnly ? { advertised: GRAPH_GATE_TOOLS, discoveryOnly: true, privateRootSeed: false, actualMetadataBeforeRead: true,
       fullProviderBody: true, unselectedRequiresAndMembers: 0, legacyFallbackCalls: 0 }
-      : { advertised: GRAPH_GATE_TOOLS, initialAdvertisedMainInput: true, hostCatalogResource: hostIndexResource, omittedResourceIdentityFields: resourceLocation === 'unqualified-ref', nativeCommandMainPath: publicBoundaries, omittedMainPath: publicBoundaries, authoredSelectionBeforePrepareRead: publicBoundaries, hostHelpRead: true, metadataList: true, exactUsePreparation: true, outsideReadBlocked: true, shellToolRejected: true, fullToolOutputHashes: true, legacyFallbackCalls: 0 };
+      : { advertised: GRAPH_GATE_TOOLS, initialAdvertisedMainInput: true, hostCatalogResource: hostIndexResource, omittedResourceIdentityFields: resourceLocation === 'unqualified-ref', nativeCommandMainPath: publicBoundaries && indexMainSource === 'actual Pi native wrapper',
+        ...(publicBoundaries ? { nativeCommandMainReference: true, mainInputSource: indexMainSource } : {}), omittedMainPath: publicBoundaries, authoredSelectionBeforePrepareRead: publicBoundaries, hostHelpRead: true, metadataList: true, exactUsePreparation: true, outsideReadBlocked: true, shellToolRejected: true, fullToolOutputHashes: true, legacyFallbackCalls: 0 };
   } catch (error) { result.status = 'failed'; result.error = { code: error.code ?? 'OBSERVER_PROBE_FAILED', message: error.message }; }
   finally {
     if (rpc) { await save(join(evidence, 'pi-rpc.json'), rpc.frames); try { await rpc.stop(); } catch (error) { result.status = 'failed'; result.error ??= { message: error.message }; } }

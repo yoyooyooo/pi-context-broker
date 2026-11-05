@@ -28,7 +28,7 @@ const within = (base, target) => { const value = relative(base, target); return 
 const disjoint = (a, b) => !within(a, b) && !within(b, a);
 const modelSelectors = ['magpie/group/flash-free', 'magpie/group/worker'];
 const permissionFailure = text => /insufficient (?:permission|quota)|not authorized|api key.*(?:invalid|denied)|please upgrade|无权限使用|额度不足|账户.*(?:无权|欠费)/i.test(text);
-export const GRAPH_GATE_HARNESS_VERSION = 14;
+export const GRAPH_GATE_HARNESS_VERSION = 15;
 export const GRAPH_GATE_TOOLS = Object.freeze(['read', 'notion_list', 'notion_use']);
 export async function graphHarnessIdentity() {
   const files = await Promise.all(['notion-skill-graph-model.mjs', 'notion-skill-graph-model-evidence.mjs', 'skill-preparation-evidence.mjs', 'verify-skill-graph-contract.mjs', 'notion-skill-graph-project.mjs', 'notion-skill-graph-observer-smoke.mjs', 'notion-skill-retained-proof.mjs', 'notion-skill-source-proof.ts', 'notion-pi-help.mjs', 'notion-skill-graph.mjs', 'notion-integration-model.mjs', 'verify-pi-notion-model-cache.mjs'].map(async name => {
@@ -51,6 +51,7 @@ export function graphCatalogEvidence(observation, config) {
   assert.ok(catalogs.length, 'An actual native catalog observation is required');
   const ownerId = decodeURIComponent(config.rootRef.split('/')[2]);
   for (const catalog of catalogs) {
+    assert.equal(catalog.stage, 'before_provider_request', 'Only the actual provider system payload proves catalog visibility');
     assert.ok(['pending', 'ready'].includes(catalog.state), 'An unavailable or unobserved catalog cannot prove discovery');
     assert.equal(catalog.localDiscoveryDisabled, true);
     const visible = [...catalog.skills, ...catalog.routers];
@@ -64,7 +65,7 @@ export function graphCatalogEvidence(observation, config) {
     else assert.equal(catalog.skills.length, 1, 'The ready skill must be the selected root');
   }
   return { status: catalogs.at(-1).state, firstState: catalogs[0].state, snapshots: catalogs.length,
-    readyTurns: catalogs.filter(event => event.state === 'ready').map(event => event.sequence),
+    readyProviderRequests: catalogs.filter(event => event.state === 'ready').map(event => event.sequence),
     meaning: 'Pending is a startup observation, not empty discovery or loaded instructions. Only a verified ready catalog proves default visibility.' };
 }
 
@@ -493,8 +494,25 @@ export function observeGraphGate(api, settings) {
     return actual && (Boolean(hostIndexAlias(input)) || [...discovered.keys(), ...advertisedPaths].some(path => !parseRef(path) && canonicalReadPath(path) === actual)
       || exportedFiles({ includePending: true }).some(file => file.actuals.includes(actual) && wasDiscovered(file.ref)));
   };
-  const discoverProvidedPaths = (payload, files, contents) => {
+  const discoverProvidedPaths = (payload, files, contents, providerPayloadSha256) => {
+    const hasOwnerDelivery = (value, file) => contextDeliveries.some(delivery => delivery.messageSha256 === digest(value)
+      && delivery.receipt.binding?.record?.id === file.ownerId && delivery.receipt.binding.scope === file.scope
+      && delivery.receipt.binding.snapshot_id === file.snapshot && delivery.receipt.binding.version_id === file.version
+      && delivery.receipt.binding.ref === file.ref && delivery.receipt.snapshotId === file.snapshot
+      && delivery.receipt.bodySha256 === file.sha256 && delivery.receipt.bytes === file.bytes);
     for (const value of sourceStrings(payload)) for (const match of value.matchAll(/<context-broker-record\b([^>]*)>([\s\S]*?)<\/context-broker-record>/g)) {
+      const reference = unescape(/\bref="([^"]+)"/.exec(match[1])?.[1] ?? ''), selected = resolveMainReference(parseRef(reference));
+      const delivered = files.filter(file => file.role === 'entrypoint' && selected?.selector === file.ownerId && selected.path === file.path
+        && selected.snapshot === file.snapshot && (selected.scope === undefined || selected.scope === file.scope)
+        && (selected.fileId === undefined || selected.fileId === file.fileId) && copies(match[2], file.content) === 1
+        && contents.filter(content => content.ref === file.ref && content.scope === file.scope && content.sha256 === file.sha256).length === 1
+        && hasOwnerDelivery(value, file));
+      if (delivered.length === 1) {
+        const file = delivered[0], proof = { source: 'actual Broker source wrapper', ref: file.ref,
+          ownerId: file.ownerId, scope: file.scope, snapshot: file.snapshot, sha256: file.sha256, bytes: file.bytes };
+        record({ phase: 'provided-native-reference', reference, ...proof, providerPayloadSha256 });
+        discovered.set(reference, { sequence, ...proof });
+      }
       const location = unescape(/\bpath="([^"]+)"/.exec(match[1])?.[1] ?? '');
       const suppliedRef = parseRef(unescape(/<skill-ref>\s*([^<]+)\s*<\/skill-ref>/.exec(match[2])?.[1]?.trim() ?? ''));
       const actual = canonicalReadPath(location);
@@ -514,10 +532,7 @@ export function observeGraphGate(api, settings) {
       if (!actual) continue;
       const matches = files.filter(file => file.role === 'entrypoint' && file.actuals.includes(actual) && copies(match[2], file.content) === 1
         && contents.some(content => content.ref === file.ref && content.scope === file.scope && content.sha256 === file.sha256)
-        && contextDeliveries.some(delivery => delivery.messageSha256 === digest(value) && delivery.receipt.binding?.record?.id === file.ownerId
-          && delivery.receipt.binding.scope === file.scope && delivery.receipt.binding.snapshot_id === file.snapshot
-          && delivery.receipt.binding.version_id === file.version && delivery.receipt.binding.ref === file.ref
-          && delivery.receipt.snapshotId === file.snapshot && delivery.receipt.bodySha256 === file.sha256 && delivery.receipt.bytes === file.bytes));
+        && hasOwnerDelivery(value, file));
       if (matches.length !== 1) continue;
       const file = matches[0], proof = { sequence, source: 'actual Pi native wrapper', ref: file.ref, scope: file.scope, snapshot: file.snapshot, sha256: file.sha256 };
       if (!discovered.has(location)) record({ phase: 'provided-native-path', source: proof.source, path: location, ref: file.ref, scope: file.scope, snapshot: file.snapshot, sha256: file.sha256, bytes: file.bytes });
@@ -716,12 +731,7 @@ export function observeGraphGate(api, settings) {
     return originalFetch.call(this, input, init);
   };
   api.on('session_start', async (_event, ctx) => { refreshContext(ctx); assertModel(ctx); const selected = toolSurface(); await api.setActiveTools(selected.tools); record({ phase: 'selected', model: settings.model, tools: selected.tools, toolSurface: selected.surface, fallbackTools: false }); });
-  api.on('before_agent_start', (event, ctx) => {
-    refreshContext(ctx);
-    assertModel(ctx);
-    const prompt = typeof event.systemPrompt === 'string' ? event.systemPrompt : (event.systemPrompt ?? []).join('\n');
-    for (const match of prompt.matchAll(/<skill>[\s\S]*?<\/skill>/g)) { const location = /<location>\s*([^<]+)\s*<\/location>/.exec(match[0])?.[1]?.trim(); if (location) advertisedPaths.add(unescape(location)); }
-    discover(prompt, 'actual native catalog');
+  const observeCatalog = (prompt, observation, admit = false) => {
     const skills = [...prompt.matchAll(/<skill>[\s\S]*?<name>\s*([^<]+)\s*<\/name>[\s\S]*?<location>\s*([^<]+)\s*<\/location>[\s\S]*?<\/skill>/g)].map(match => {
       const file = unescape(match[2].trim());
       let provenance = null, sha256 = null;
@@ -732,7 +742,7 @@ export function observeGraphGate(api, settings) {
             && settings.parseNativeReference(item.record.ref).path === selected.path && (selected.scope === undefined || selected.scope === item.scope));
         const unique = [...new Map(matches.map(item => [item.scope + '/' + item.record.id, item])).values()];
         const description = unescape(/<description>\s*([\s\S]*?)\s*<\/description>/.exec(match[0])?.[1] ?? '');
-        if (unique.length === 1 && description === unique[0].record.description) provenance = { source: 'verified-notion-metadata',
+        if (unique.length === 1 && unescape(match[1].trim()) === unique[0].record.name && description === unique[0].record.description) provenance = { source: 'verified-notion-metadata',
           ownerId: unique[0].record.id, scope: unique[0].scope, ref: unique[0].record.ref, loaded: false };
       }
       try {
@@ -776,8 +786,30 @@ export function observeGraphGate(api, settings) {
         ? { canonicalRef: source.record.ref, provenance: { source: 'verified-notion-metadata', ownerId: source.record.id, scope: source.scope, loaded: false } } : {}) };
     });
     const state = /<ntn-skills-discovery\b[^>]*\bstatus="([^"]+)"/.exec(prompt)?.[1] ?? 'ready';
-    record({ phase: 'catalog', state, submittedPromptSha256: digest(event.prompt), frozenPromptMatched: event.prompt === settings.prompt, skills, routers, systemPromptSha256: digest(prompt), systemPromptBytes: Buffer.byteLength(prompt), localDiscoveryDisabled: true });
-    if (projectFiles.size) return { systemPrompt: prompt + '\n\nCurrent owned project files (paths only; read the actual source when needed):\n' + [...projectFiles.values()].map(file => '- ' + file.path).join('\n') + '\n' };
+    if (admit) {
+      for (const skill of skills) if (skill.provenance) { advertisedPaths.add(skill.path); discover(skill.path, 'actual provider catalog'); }
+      for (const router of routers) if (router.provenance) discover(router.ref, 'actual provider catalog');
+    }
+    return record({ ...observation, state, skills, routers, systemPromptSha256: digest(prompt), systemPromptBytes: Buffer.byteLength(prompt), localDiscoveryDisabled: true });
+  };
+  let userTurn = 0;
+  api.on('before_agent_start', (event, ctx) => {
+    refreshContext(ctx); assertModel(ctx);
+    const prompt = typeof event.systemPrompt === 'string' ? event.systemPrompt : (event.systemPrompt ?? []).join('\n');
+    observeCatalog(prompt, { phase: 'catalog-before-agent-start', stage: 'before_agent_start', userTurn: ++userTurn,
+      submittedPromptSha256: digest(event.prompt ?? ''), frozenPromptMatched: event.prompt === settings.prompt });
+    if (projectFiles.size) {
+      if (!event.systemPromptOptions?.sections) throw new Error('Graph project paths require public mutable system prompt sections');
+      event.systemPromptOptions.sections['graph-owned-project-files'] = '\n\nCurrent owned project files (paths only; read the actual source when needed):\n' + [...projectFiles.values()].map(file => '- ' + file.path).join('\n') + '\n';
+    }
+  });
+  api.on('context_with_system', (event, ctx) => {
+    refreshContext(ctx); assertModel(ctx);
+    record({ phase: 'system-context', stage: 'context_with_system', userTurn,
+      messages: event.messages.filter(message => message.role === 'system').map(message => ({
+        contentSha256: digest(text(message.content)), contentBytes: Buffer.byteLength(text(message.content)),
+        sections: Object.fromEntries(Object.entries(message.sections ?? {}).map(([name, value]) => [name,
+          value === null ? null : { sha256: digest(value), bytes: Buffer.byteLength(value) }])) })) });
   });
   api.on('context', (event, ctx) => {
     refreshContext(ctx);
@@ -812,16 +844,21 @@ export function observeGraphGate(api, settings) {
     const contents = files.flatMap(file => Array.from({ length: copies(event.payload, file.content) }, () => ({ ref: file.ref, logicalId: file.logicalId, ownerId: file.ownerId, scope: file.scope, snapshot: file.snapshot, sha256: file.sha256, bytes: file.bytes, role: file.role, content: file.content })));
     for (const { content, ...file } of settings.piHelpBoundary?.observeProvider(event.payload) ?? []) record({ phase: 'host-help-advertised', ...file });
     const hostHelp = (settings.piHelpBoundary?.consumed() ?? []).map(({ content, ...file }) => ({ ...file, copies: copies(event.payload, content) })).filter(file => file.copies > 0);
-    discoverProvidedPaths(event.payload, files, contents);
+    const serialized = JSON.stringify(event.payload);
+    const observedPayloadSha256 = digest(canonical(JSON.parse(serialized)));
+    discoverProvidedPaths(event.payload, files, contents, observedPayloadSha256);
     for (const file of files) if (contents.some(item => item.ref === file.ref)) discover(file.content, 'actual provider source body', file);
-    for (const value of sourceStrings(event.payload)) discover(value, 'actual provider context');
+    for (const value of sourceStrings(event.payload)) if (contextDeliveries.some(delivery => delivery.messageSha256 === digest(value)))
+      discover(value, 'actual provider verified delivery');
+    for (const message of event.payload?.messages ?? []) if (message.role === 'user')
+      for (const value of sourceStrings(message.content)) if (value === settings.prompt) discover(value, 'actual frozen user reference');
     const toolResults = [...deliveredTools.values()].map(result => ({ toolCallId: result.toolCallId, tool: result.tool, sha256: digest(result.content), bytes: Buffer.byteLength(result.content), copies: copies(event.payload, result.content),
       exactToolOutputCopies: providerToolOutputs(event.payload, result.toolCallId).filter(content => content === result.content).length,
       records: (result.records ?? []).map(file => ({ ref: file.ref, scope: file.scope, snapshot: file.snapshot, sha256: file.sha256, bytes: file.bytes, providerCopies: contents.filter(item => item.ref === file.ref && item.scope === file.scope && item.sha256 === file.sha256).length })) }));
-    const serialized = JSON.stringify(event.payload);
     const payloadFile = settings.payloads ? 'payload-' + sequence + '.json' : undefined;
     if (payloadFile) settings.fs.writeFileSync(join(settings.payloads, payloadFile), serialized, { mode: 0o600, flag: 'wx' });
-    const observedPayloadSha256 = digest(canonical(JSON.parse(serialized)));
+    const system = [text(event.payload?.system), ...(event.payload?.messages ?? []).filter(message => message.role === 'system').map(message => text(message.content))].filter(Boolean).join('\n\n');
+    observeCatalog(system, { phase: 'catalog', stage: 'before_provider_request', userTurn, providerPayloadSha256: observedPayloadSha256 }, true);
     record({ phase: 'provider-request', model: settings.model, tools: advertisedTools, toolSurface: selected.surface, toolDefinitionsSha256: digest(JSON.stringify(event.payload?.tools)), toolChoice: 'auto', forcedToolArguments: false, payloadSha256: digest(serialized), payloadBytes: Buffer.byteLength(serialized), ...(payloadFile ? { payloadFile } : {}), observedPayloadSha256, contents, hostHelp, toolResults, sourceTextHashes: sourceStrings(event.payload).map(value => ({ sha256: digest(value), bytes: Buffer.byteLength(value) })) });
     verifiedPayloadHash = observedPayloadSha256;
     } catch (error) { throw observerFault('before_provider_request', error, event.payload); }
@@ -1125,19 +1162,25 @@ async function createCatalogProvider(control, wirePath) {
 function verifyCatalogProvider(observation, wires, config) {
   const catalog = graphCatalogEvidence(observation, config);
   assert.equal(catalog.status, 'ready', 'A separate ordinary continuation must observe the ready default directory');
-  assert.equal(catalog.snapshots, 2, 'Keep both actual ordinary user turns');
+  assert.equal(observation.filter(event => event.phase === 'catalog-before-agent-start').length, 2, 'Keep both actual ordinary user turns separately from final provider input');
   const catalogs = observation.filter(event => event.phase === 'catalog');
   const providers = observation.filter(event => event.phase === 'provider-request');
   const transports = observation.filter(event => event.phase === 'provider-transport-start');
   assert.equal(providers.length, 3); assert.equal(transports.length, providers.length); assert.equal(wires.length, providers.length);
-  const strings = value => typeof value === 'string' ? [value] : Array.isArray(value) ? value.flatMap(strings) : value && typeof value === 'object' ? Object.values(value).flatMap(strings) : [];
+  assert.equal(catalog.snapshots, providers.length, 'Observe the actual system catalog at every provider request');
+  assert.deepEqual(catalogs.map(snapshot => snapshot.userTurn), [1, 1, 2]);
+  const text = value => typeof value === 'string' ? value : (value ?? []).filter(part => part.type === 'text').map(part => String(part.text ?? '')).join('\n');
   for (let index = 0; index < providers.length; index++) {
     assert.equal(providers[index].observedPayloadSha256, transports[index].observedPayloadSha256);
     assert.equal(transports[index].wireBodySha256, wires[index].wireBodySha256, 'The public provider hook must match the actual local HTTP payload');
     assert.equal(providers[index].contents.length, 0, 'Catalog validation cannot load main instructions');
+    const snapshot = catalogs[index], payload = wires[index].body;
+    const system = [text(payload.system), ...(payload.messages ?? []).filter(message => message.role === 'system').map(message => text(message.content))].filter(Boolean).join('\n\n');
+    assert.equal(snapshot.providerPayloadSha256, providers[index].observedPayloadSha256);
+    assert.ok(snapshot.sequence < providers[index].sequence);
+    assert.equal(snapshot.systemPromptSha256, hash(system), 'Only the final actual HTTP system text proves catalog visibility');
+    assert.equal(snapshot.systemPromptBytes, Buffer.byteLength(system));
   }
-  for (const snapshot of catalogs) assert.ok(providers.some((provider, index) => provider.sequence > snapshot.sequence
-    && strings(wires[index].body.messages.filter(message => message.role === 'system')).some(value => hash(value) === snapshot.systemPromptSha256)), 'Each observed catalog must actually reach the provider in its user turn');
   const calls = observation.filter(event => event.phase === 'tool-call');
   assert.equal(calls.length, 1); assert.equal(calls[0].tool, 'notion_list'); assert.equal(calls[0].allowed, true);
   assert.ok(observation.some(event => event.phase === 'metadata-result' && event.complete && event.toolCallId === calls[0].toolCallId));

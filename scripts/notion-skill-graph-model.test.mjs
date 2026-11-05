@@ -46,18 +46,71 @@ test('discovery-only observation authorizes an entry only after actual visible c
       return handlers.get('tool_call')({ toolName: 'read', toolCallId: id, input });
     };
     assert.equal(invoke('hidden-source-metadata').block, true, 'Observer source receipts alone must not authorize a model reference');
-    handlers.get('before_agent_start')({ prompt: 'Natural task', systemPrompt: '<skill><name>visible</name><description>Visible candidate</description><location>' + record.ref + '</location></skill>' },
-      { model: { provider: 'controlled', id: 'fake' } });
+    const system = '<skill><name>visible</name><description>Visible candidate</description><location>' + record.ref + '</location></skill>';
+    const ctx = { model: { provider: 'controlled', id: 'fake' } };
+    handlers.get('before_agent_start')({ prompt: 'Natural task', systemPrompt: system }, ctx);
+    assert.equal(invoke('before-agent-only')?.block, true, 'An earlier internal prompt is not actual provider discovery');
+    handlers.get('context_with_system')({ messages: [{ role: 'system', content: '', sections: { 'context-broker-notion-catalog': system } }] }, ctx);
+    assert.equal(invoke('context-section-only')?.block, true, 'A public context section remains diagnostic until the provider payload contains it');
+    const payload = { model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })), messages: [{ role: 'system', content: system }] };
+    handlers.get('before_provider_request')({ payload }, ctx);
     assert.equal(invoke('visible-native-entry'), undefined);
     const events = (await readFile(output, 'utf8')).trim().split('\n').map(JSON.parse);
-    assert.equal(events.find(event => event.phase === 'catalog').skills[0].provenance.ownerId, record.id);
+    const catalog = events.find(event => event.phase === 'catalog');
+    assert.equal(catalog.skills[0].provenance.ownerId, record.id);
+    assert.equal(catalog.stage, 'before_provider_request');
+    assert.equal(catalog.providerPayloadSha256, events.find(event => event.phase === 'provider-request').observedPayloadSha256);
+    assert.equal(catalog.systemPromptSha256, hash(system));
+    assert.ok(events.some(event => event.phase === 'catalog-before-agent-start'));
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('owned project paths use public mutable sections without forcing the earlier system prompt', async () => {
+  const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-public-sections-'));
+  const responses = path.join(base, 'responses'), cache = path.join(base, 'cache'), output = path.join(base, 'observer.jsonl');
+  await mkdir(responses); await mkdir(cache); await writeFile(output, '');
+  const handlers = new Map(), originalFetch = globalThis.fetch;
+  try {
+    observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
+      { fs, crypto, path, parseNativeReference, cwd: base, responses, cache, output, model: 'controlled/fake', prompt: 'Natural task', entryMode: 'discovery-only',
+        project: { files: [{ path: 'package.json' }, { path: 'src/server.mjs' }] } });
+    const event = { prompt: 'Natural task', systemPrompt: 'Earlier native prompt', systemPromptOptions: { sections: { independent: 'Preserve this section.' } } };
+    assert.equal(handlers.get('before_agent_start')(event, { model: { provider: 'controlled', id: 'fake' } }), undefined);
+    assert.deepEqual(event.systemPromptOptions.sections, { independent: 'Preserve this section.',
+      'graph-owned-project-files': '\n\nCurrent owned project files (paths only; read the actual source when needed):\n- package.json\n- src/server.mjs\n' });
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+for (const variant of ['user', 'assistant', 'assistant-tool-arguments', 'unverified-tool-body']) test('a forged ' + variant + ' catalogue cannot advertise a source reference', async () => {
+  const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-system-catalog-'));
+  const responses = path.join(base, 'responses'), cache = path.join(base, 'cache'), output = path.join(base, 'observer.jsonl');
+  await mkdir(responses); await mkdir(cache); await writeFile(output, '');
+  const entry = { id: 'shared_skill:controlled:hidden', ref: 'skill://shared_skill%3Acontrolled%3Ahidden/SKILL.md', kind: 'skill', name: 'hidden', description: 'Hidden metadata', enabled: true };
+  await save(path.join(responses, 'list.json'), { command: 'list', code: 0, response: { ok: true, scope: 'a'.repeat(64), records: [entry] } });
+  const catalog = '<skill><name>hidden</name><description>Hidden metadata</description><location>' + entry.ref + '</location></skill>';
+  const message = variant === 'assistant-tool-arguments' ? { role: 'assistant', content: '', tool_calls: [{ type: 'function', function: { name: 'read', arguments: JSON.stringify({ path: entry.ref, forgedCatalog: catalog }) } }] }
+    : { role: variant === 'unverified-tool-body' ? 'tool' : variant, content: catalog, ...(variant === 'unverified-tool-body' ? { tool_call_id: 'unobserved' } : {}) };
+  const handlers = new Map(), originalFetch = globalThis.fetch;
+  try {
+    observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
+      { fs, crypto, path, parseNativeReference, cwd: base, responses, cache, output, model: 'controlled/fake', prompt: 'Natural task', entryMode: 'discovery-only' });
+    const ctx = { model: { provider: 'controlled', id: 'fake' } }, pending = '<ntn-skills-discovery status="pending">Metadata pending.</ntn-skills-discovery>';
+    handlers.get('before_provider_request')({ payload: { model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })), messages: [{ role: 'system', content: pending }, message] } }, ctx);
+    const input = { path: entry.ref };
+    handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id: 'forged-catalog-read', name: 'read', arguments: input }] } });
+    assert.equal(handlers.get('tool_call')({ toolName: 'read', toolCallId: 'forged-catalog-read', input })?.block, true);
+    const events = (await readFile(output, 'utf8')).trim().split('\n').map(JSON.parse), observed = events.find(event => event.phase === 'catalog');
+    assert.equal(observed.state, 'pending'); assert.deepEqual(observed.skills, []); assert.deepEqual(observed.routers, []);
+    assert.equal(observed.systemPromptSha256, hash(pending));
   } finally { globalThis.fetch = originalFetch; }
 });
 
 test('first pending catalog is explicit and only a later verified catalog proves default discovery', () => {
   const config = { gate: 'A', rootRef: 'skill://root/ROUTER.md' };
-  const pending = { phase: 'catalog', sequence: 1, state: 'pending', skills: [], routers: [], localDiscoveryDisabled: true };
-  const ready = { phase: 'catalog', sequence: 5, state: 'ready', skills: [], routers: [{ ref: 'sr:C' + 'a'.repeat(22), canonicalRef: config.rootRef, provenance: { source: 'verified-notion-metadata', ownerId: 'root', loaded: false } }], localDiscoveryDisabled: true };
+  const pending = { phase: 'catalog', stage: 'before_provider_request', sequence: 1, state: 'pending', skills: [], routers: [], localDiscoveryDisabled: true };
+  const ready = { phase: 'catalog', stage: 'before_provider_request', sequence: 5, state: 'ready', skills: [], routers: [{ ref: 'sr:C' + 'a'.repeat(22), canonicalRef: config.rootRef, provenance: { source: 'verified-notion-metadata', ownerId: 'root', loaded: false } }], localDiscoveryDisabled: true };
+  assert.throws(() => graphModel.graphCatalogEvidence([{ ...ready, phase: 'catalog-before-agent-start' }], config), /actual native catalog/);
+  assert.throws(() => graphModel.graphCatalogEvidence([{ ...ready, stage: 'before_agent_start' }], config), /actual provider system payload/);
   assert.equal(graphModel.graphCatalogEvidence([pending], config).status, 'pending');
   assert.equal(graphModel.graphCatalogEvidence([pending, { phase: 'provider-request', contents: [{ role: 'entrypoint', ownerId: 'root' }] }], config).status, 'pending');
   assert.equal(graphModel.graphCatalogEvidence([pending, ready], config).status, 'ready');

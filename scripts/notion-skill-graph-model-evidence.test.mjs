@@ -87,6 +87,16 @@ test('one read.paths call proves every complete resource from the selected SDK m
     assert.equal(invoke('undiscovered', { paths: refs }).block, true);
     const tools = GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } }));
     handlers.get('before_provider_request')({ payload: { tools, messages: [{ role: 'user', content: fixture.body + '\n' + refs.join('\n') }] } }, ctx);
+    assert.equal(invoke('user-only-resource-refs', { paths: refs })?.block, true, 'Unverified user refs cannot replace a complete native directory receipt');
+    assert.equal(invoke('root-main', { path: fixture.rootRef }), undefined);
+    const directory = { files: fixture.files, required: [], candidates: [], references: [] };
+    const modelDirectory = { ...directory, files: fixture.files.map(file => ({ path: file.path, bytes: file.bytes, ref: file.ref })) };
+    const mainContent = fixture.body + '\n\n<skill-directory>\n' + JSON.stringify({ ref: fixture.node.ref, directory: modelDirectory }) + '\n</skill-directory>';
+    handlers.get('tool_result')({ toolName: 'read', toolCallId: 'root-main', content: [{ type: 'text', text: mainContent }], details: { contextBrokerRead: {
+      version: 3, toolCallId: 'root-main', snapshotId: fixture.snapshot, bodySha256: hash(fixture.body), bytes: Buffer.byteLength(fixture.body), binding: fixture.binding,
+      delivery: { start: 0, end: fixture.body.length, encoding: 'raw' }, directory } } }, ctx);
+    assert.equal((await lines(output)).find(event => event.phase === 'tool-result' && event.toolCallId === 'root-main')?.complete, true);
+    handlers.get('before_provider_request')({ payload: { tools, messages: [{ role: 'tool', tool_call_id: 'root-main', content: mainContent }] } }, ctx);
     for (const [id, paths] of [['unknown', [refs[0], refs[1].replace('notes.md', 'unseen.md')]],
       ['wrong-owner', [refs[0], refs[1].replace(encodeURIComponent(fixture.id), 'another')]],
       ['wrong-pin', [refs[0], refs[1].replace(fixture.snapshot, 's_' + 'd'.repeat(64))]],
@@ -107,7 +117,7 @@ test('one read.paths call proves every complete resource from the selected SDK m
     assert.equal(complete.length, 2); assert.ok(complete.every(event => event.complete && event.resourceBatchProof?.deliveryVerified));
     assert.equal(new Set(complete.map(event => event.callSequence)).size, 1);
     assert.equal(events.filter(event => event.phase === 'tool-call' && event.toolCallId === 'complete').length, 1);
-    const delivered = events.filter(event => event.phase === 'provider-request').at(-1).toolResults;
+    const delivered = events.filter(event => event.phase === 'provider-request').at(-1).toolResults.filter(result => result.toolCallId === 'complete');
     assert.equal(delivered.length, 1); assert.equal(delivered[0].exactToolOutputCopies, 1);
     assert.deepEqual(delivered[0].records.map(file => file.sha256).sort(), resources.map(file => hash(file.content)).sort());
     const shortCompiled = compileResourceRead({ toolCallId: 'short-handles', batch, modelRefs: shortRefs, maxContextBytes: 10000 });
@@ -129,6 +139,38 @@ test('one read.paths call proves every complete resource from the selected SDK m
       assert.ok((await lines(output)).some(event => event.phase === 'tool-result' && event.toolCallId === id && !event.complete), id);
       assert.equal((await lines(output)).some(event => event.phase === 'tool-result' && event.toolCallId === id && event.complete), false, id);
     }
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('an explicit fixed resource in the actual frozen user prompt supports scalar and batch read without main delivery', async () => {
+  const fixture = sourceFixture(), root = await mkdtemp(path.join(await systemTempRoot(), 'graph-sdk-fixed-direct-'));
+  const cache = path.join(root, 'cache'), responses = path.join(root, 'responses'), output = path.join(root, 'observer.jsonl');
+  await mkdir(responses); await mkdir(cache); await writeFile(output, '');
+  await save(path.join(responses, 'owner.json'), { transport: 'sdk', requestId: 'independent-owner-proof', operation: 'consume', status: 'completed', resultObserved: true, value: fixture.value });
+  const tree = path.join(cache, 'scopes', fixture.scope, 'records', hash(fixture.id), 'entries', fixture.snapshot);
+  await mkdir(path.join(tree, 'tree'), { recursive: true }); await writeFile(path.join(tree, 'tree/SKILL.md'), fixture.body);
+  await save(path.join(tree, '.broker-entry.json'), { version: 1, projection: 'entry', id: fixture.id, scope: fixture.scope,
+    snapshot_id: fixture.snapshot, version_id: fixture.version, entrypoint: 'SKILL.md', ref: fixture.node.ref, manifest_complete: true,
+    files: fixture.files, file_bindings: fixture.bindings });
+  const ref = fixture.files[1].ref, prompt = 'Read this exact resource: ' + ref;
+  const handlers = new Map(), originalFetch = globalThis.fetch, ctx = { model: { provider: 'controlled', id: 'fake' } };
+  try {
+    observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
+      { fs, crypto, path, sourceMode: 'sdk', parseNativeReference, validateResourceReadProjection, cwd: root, responses, cache, output,
+        entryMode: 'discovery-only', model: 'controlled/fake', prompt });
+    const invoke = (id, input) => {
+      handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: 'read', arguments: input }] } }, ctx);
+      return handlers.get('tool_call')({ toolName: 'read', toolCallId: id, input }, ctx);
+    };
+    assert.equal(invoke('not-yet-supplied', { path: ref })?.block, true);
+    handlers.get('before_provider_request')({ payload: { tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })),
+      messages: [{ role: 'user', content: prompt }] } }, ctx);
+    assert.equal(invoke('direct-scalar', { path: ref }), undefined);
+    assert.equal(invoke('direct-batch', { paths: [ref] }), undefined);
+    assert.equal(invoke('wrong-pin', { path: ref.replace(fixture.snapshot, 's_' + 'b'.repeat(64)) })?.block, true);
+    const observed = await lines(output);
+    assert.equal(observed.filter(event => event.phase === 'provider-request').flatMap(event => event.contents).length, 0);
+    assert.equal(observed.some(event => event.phase === 'tool-result'), false, 'No prior main or resource tool result is needed for this authorized fixed-ref request');
   } finally { globalThis.fetch = originalFetch; }
 });
 
@@ -183,14 +225,18 @@ test('Pi observer admits a discovered short ref before execution and verifies SD
   const handlers = new Map(), originalFetch = globalThis.fetch;
   try {
     observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
-      { fs, crypto, path, sourceMode: 'sdk', parseNativeReference, cwd: root, responses, cache, output, rootRef: fixture.rootRef, model: 'controlled/fake', prompt: 'controlled task' });
+      { fs, crypto, path, sourceMode: 'sdk', parseNativeReference, cwd: root, responses, cache, output, entryMode: 'discovery-only', model: 'controlled/fake', prompt: 'controlled task' });
     await handlers.get('session_start')({}, ctx);
-    handlers.get('before_agent_start')({ prompt: 'controlled task', systemPrompt: '<skill><name>notion-root</name><description>' + fixture.record.description + '</description><location>' + candidate + '</location></skill>' }, ctx);
+    const system = '<skill><name>' + fixture.record.name + '</name><description>' + fixture.record.description + '</description><location>' + candidate + '</location></skill>';
+    handlers.get('before_agent_start')({ prompt: 'controlled task', systemPrompt: system }, ctx);
     const invoke = (id, input) => {
       handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: 'read', arguments: input }] } }, ctx);
       return handlers.get('tool_call')({ toolName: 'read', toolCallId: id, input }, ctx);
     };
-    assert.equal(invoke('main', { path: candidate }), undefined, 'Metadata identity authorizes the native request before source acquisition');
+    assert.equal(invoke('before-provider-main', { path: candidate })?.block, true);
+    const tools = GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } }));
+    handlers.get('before_provider_request')({ payload: { tools, messages: [{ role: 'system', content: system }] } }, ctx);
+    assert.equal(invoke('main', { path: candidate }), undefined, 'Actual provider metadata identity authorizes the native request before source acquisition');
     const prior = sourceFixture('parent');
     prior.value.preparation.nodes.push({ id: fixture.id, state: 'candidate', record: fixture.record });
     await save(path.join(responses, '0-prior-consume.json'), rawReceipt('consume', prior.value));
@@ -216,12 +262,11 @@ test('Pi observer admits a discovered short ref before execution and verifies SD
       entrypoint_sha256: hash(fixture.body), file_bindings: fixture.bindings }), outputEvidence: { path: path.join(cache, 'already-produced'),
       content: fixture.resource, bytes: fixture.files[1].bytes, sha256: fixture.files[1].sha256 } });
     handlers.get('tool_result')({ toolName: 'read', toolCallId: 'guide', content: [{ type: 'text', text: fixture.resource }] }, ctx);
-    const tools = GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } }));
     handlers.get('before_provider_request')({ payload: { tools, messages: [{ role: 'tool', tool_call_id: 'main', content }, { role: 'tool', tool_call_id: 'guide', content: fixture.resource }] } }, ctx);
     const events = await lines(output);
     assert.equal(events.find(event => event.phase === 'catalog').skills[0].provenance.source, 'verified-notion-metadata');
     for (const id of ['main', 'guide']) assert.equal(events.find(event => event.phase === 'tool-result' && event.toolCallId === id)?.complete, true, JSON.stringify(events.filter(event => event.phase === 'tool-result')));
-    assert.deepEqual(events.find(event => event.phase === 'provider-request').contents.map(item => item.sha256).sort(), [hash(fixture.body), hash(fixture.resource)].sort());
+    assert.deepEqual(events.filter(event => event.phase === 'provider-request').at(-1).contents.map(item => item.sha256).sort(), [hash(fixture.body), hash(fixture.resource)].sort());
     branch.push({ ...branch[1], data: { ...branch[1].data, target: { ...branch[1].data.target, snapshot_id: 's_' + 'd'.repeat(64) } } });
     assert.equal(invoke('wrong-branch', { path: selected }).block, true, 'A conflicting persisted binding never authorizes a read');
   } finally { globalThis.fetch = originalFetch; }

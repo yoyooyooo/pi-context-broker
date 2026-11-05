@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { mkdtemp, mkdir, writeFile, readFile, symlink } from 'node:fs/promises';
 import { observeGraphGate, GRAPH_GATE_TOOLS } from './notion-skill-graph-model.mjs';
+import { verifyPublicReadBoundary } from './notion-skill-graph-observer-smoke.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
 import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 
@@ -39,7 +40,9 @@ async function fixture(mutate, options = {}) {
   const originalFetch = globalThis.fetch, handlers = new Map(), ctx = { model: { provider: 'controlled', id: 'fake' } };
   observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
     { fs, crypto, path, parseNativeReference, cwd: directory, cache, responses, output, rootRef: record.ref, model: 'controlled/fake', prompt: 'controlled task' });
-  handlers.get('before_agent_start')({ systemPrompt: '<skill><name>root</name><location>' + main + '</location></skill>', prompt: 'controlled task' }, ctx);
+  const system = '<skill><name>root</name><location>' + main + '</location></skill>';
+  handlers.get('before_agent_start')({ systemPrompt: system, prompt: 'controlled task' }, ctx);
+  handlers.get('before_provider_request')({ payload: { model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })), messages: [{ role: 'system', content: system }] } }, ctx);
   const call = (id, target) => { handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: 'read', arguments: { path: target } }] } });
     return handlers.get('tool_call')({ toolName: 'read', toolCallId: id, input: { path: target } }); };
   const result = (id, content) => handlers.get('tool_result')({ toolName: 'read', toolCallId: id, content: [{ type: 'text', text: content }] });
@@ -216,8 +219,9 @@ test('a discovered unmaterialized metadata owner resolves its declared main path
   } finally { f.close(); }
 });
 
-function nativeProvider(f, { location = path.join(f.tree, 'SKILL.md'), body = f.body, proof = true, mutate, assistant = false } = {}) {
-  const content = '<skill name="controlled" location="' + location + '">\n' + body + '</skill>\nControlled task.';
+function nativeProvider(f, { location = path.join(f.tree, 'SKILL.md'), reference, body = f.body, proof = true, mutate, assistant = false } = {}) {
+  const content = reference === undefined ? '<skill name="controlled" location="' + location + '">\n' + body + '</skill>\nControlled task.'
+    : '<context-broker-record kind="skill" ref="' + reference + '"><body>\n' + body + '</body></context-broker-record>';
   const binding = { record: { id: f.owner, kind: 'skill', entrypoint: 'SKILL.md', ref: bareRef(f.owner, 'SKILL.md') },
     scope: f.scope, snapshot_id: f.snapshot, version_id: f.version, body_sha256: hash(f.body), ref: f.files[0].ref };
   if (mutate) mutate(binding);
@@ -226,7 +230,7 @@ function nativeProvider(f, { location = path.join(f.tree, 'SKILL.md'), body = f.
   const messages = [{ role: assistant ? 'assistant' : 'user', content: [{ type: 'text', text: content }] },
     ...(proof ? [{ role: 'custom', customType: 'context-broker', content: [], details: { records: [receipt] } }] : [])];
   f.handlers.get('context')({ messages }, f.ctx);
-  f.handlers.get('before_provider_request')({ payload: { model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })),
+  f.handlers.get('before_provider_request')({ payload: { model: 'fake', temperature: undefined, tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })),
     messages: [{ role: assistant ? 'assistant' : 'user', content }] } }, f.ctx);
   return content;
 }
@@ -260,11 +264,66 @@ test('native wrapper discovery requires its actual delivery proof, full body and
   } finally { f.close(); }
 });
 
+test('a current source wrapper exposes its exact public main ref only with complete owner delivery in that provider payload', async () => {
+  const f = await fixture();
+  try {
+    nativeProvider(f, { reference: f.files[0].ref });
+    const events = await f.events(), provided = events.find(event => event.phase === 'provided-native-reference');
+    assert.ok(provided, 'Current Broker source wrappers need an independently verified public reference observation');
+    assert.equal(provided.source, 'actual Broker source wrapper'); assert.equal(provided.reference, f.files[0].ref);
+    assert.equal(provided.ref, f.files[0].ref); assert.equal(provided.ownerId, f.owner);
+    assert.equal(provided.scope, f.scope); assert.equal(provided.snapshot, f.snapshot);
+    assert.equal(provided.sha256, hash(f.body)); assert.equal(provided.bytes, Buffer.byteLength(f.body));
+    assert.equal(provided.providerPayloadSha256, events.filter(event => event.phase === 'provider-request').at(-1).observedPayloadSha256);
+    assert.equal(f.call('source-ref-main', provided.reference), undefined); f.result('source-ref-main', f.body);
+    const read = (await f.events()).find(event => event.phase === 'tool-result' && event.toolCallId === 'source-ref-main');
+    assert.equal(read.complete, true); assert.equal(read.ref, provided.ref); assert.equal(read.sha256, provided.sha256);
+  } finally { f.close(); }
+});
+
+test('source wrapper ref observation rejects missing body proof, partial or duplicate body, assistant text and identity mismatch', async () => {
+  for (const change of [f => ({ proof: false }), f => ({ body: f.body.slice(0, 8) }), f => ({ body: f.body + f.body }),
+    f => ({ assistant: true }), f => ({ reference: f.files[0].ref.replace(encodeURIComponent(f.owner), 'wrong-owner') }),
+    f => ({ reference: f.files[0].ref.replace(f.snapshot, 's_' + 'e'.repeat(64)) }),
+    f => ({ reference: f.files[0].ref.replace('main-file', 'wrong-file') }),
+    f => ({ mutate: binding => { binding.scope = 'f'.repeat(64); } })]) {
+    const f = await fixture();
+    try { nativeProvider(f, { reference: f.files[0].ref, ...change(f) });
+      assert.equal((await f.events()).some(event => event.phase === 'provided-native-reference'), false); }
+    finally { f.close(); }
+  }
+});
+
+test('public metadata selection may precede preparation while complete identity and actual call ordering remain required', () => {
+  const expected = { ownerId: 'shared_skill:controlled:member', scope: 'a'.repeat(64), path: 'SKILL.md', snapshot: 's_' + hash('pin'),
+    fileId: 'main-member', sha256: hash('Complete main.\n'), bytes: Buffer.byteLength('Complete main.\n') };
+  const input = { path: 'sr:Cselected-member' }, argumentsSha256 = hash(JSON.stringify(input));
+  const reference = 'skill://' + encodeURIComponent(expected.ownerId) + '/SKILL.md';
+  const value = {
+    expected,
+    authored: { toolCallId: 'call-member', sequence: 1, input, argumentsSha256, discovered: true, at: '2026-11-05T00:00:00.010Z' },
+    admitted: { toolCallId: 'call-member', sequence: 2, authoredSequence: 1, input: input.path, argumentsSha256, allowed: true,
+      claim: { ownerId: expected.ownerId, scope: expected.scope, path: expected.path }, at: '2026-11-05T00:00:00.020Z' },
+    preparation: { command: 'ctl', args: ['ctl', 'prepare', reference, '--purpose', 'inspect'], requestId: 'request-member', at: '2026-11-05T00:00:00.030Z' },
+    closed: { requestId: 'request-member', code: 0, at: '2026-11-05T00:00:00.040Z' },
+    read: { ...expected, toolCallId: 'call-member', callSequence: 2, complete: true, at: '2026-11-05T00:00:00.050Z',
+      ref: reference + '?snapshot=' + expected.snapshot + '&file_id=' + expected.fileId },
+  };
+  assert.equal(verifyPublicReadBoundary(value).selected.snapshot, undefined, 'Metadata is not promoted to a fixed body proof');
+  for (const change of [v => { v.admitted.claim.ownerId = 'other'; }, v => { v.read.snapshot = 'wrong'; }, v => { v.read.sha256 = 'wrong'; },
+    v => { v.read.complete = false; }, v => { v.read.ref = v.read.ref.replace('main-member', 'wrong-file'); },
+    v => { v.read.toolCallId = 'another-call'; }, v => { v.admitted.authoredSequence = 99; }, v => { v.closed.requestId = 'another-request'; },
+    v => { v.preparation.args[2] = 'skill://another/SKILL.md'; }, v => { v.preparation.args[4] = 'use'; },
+    v => { v.preparation.at = '2026-11-05T00:00:00.001Z'; }, v => { v.closed.at = '2026-11-05T00:00:00.060Z'; }]) {
+    const invalid = structuredClone(value); change(invalid); assert.throws(() => verifyPublicReadBoundary(invalid));
+  }
+});
+
 test('host-index aliases cannot borrow a mismatched scope, pin, main File ID, main hash or manifest', async () => {
   for (const change of [r => { r.scope = 'b'.repeat(64); }, r => { r.snapshot_id = 's_' + 'b'.repeat(64); },
     r => { r.ref = r.ref.replace('main-file', 'another-file'); }, r => { r.source.sha256 = 'b'.repeat(64); }, r => { r.manifest_id = 'b'.repeat(64); }]) {
     const f = await fixture(change);
-    try { assert.equal(f.call('main', f.main), undefined); f.result('main', f.body);
+    try { assert.equal(f.call('main', f.main)?.block, true, 'An invalid catalog binding cannot authorize even its main file'); f.result('main', f.body);
       assert.equal(f.call('resource', path.join(f.index, 'references/checklist.md')).block, true); }
     finally { f.close(); }
   }
