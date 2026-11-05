@@ -82,6 +82,16 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       for (const handler of events.get(name) ?? []) results.push(await handler(event as never, ctx));
       return results;
     };
+    const systemPrompt = async () => {
+      const [projection] = await emit("context_with_system", { messages: [{ role: "system", content: "base" }] });
+      const messages = object(projection).messages;
+      assert.ok(Array.isArray(messages));
+      return messages.filter(message => object(message).role === "system").flatMap(message => {
+        const value = object(message), sections = value.sections;
+        return [value.content, ...Object.values(sections && typeof sections === "object" ? sections : {})]
+          .filter(text => typeof text === "string");
+      }).join("\n\n");
+    };
     const search = (signal?: AbortSignal) => tools.get(kind === "pi" ? "notion_list" : "skill_search")!.execute("startup-search", { query: "startup" }, signal, undefined, ctx);
     const begin = async (text: string) => {
       const [result] = await emit("input", { source: "rpc", text });
@@ -92,7 +102,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       return { result, submitted, project: () => emit("context", { messages: [{ role: "user", content: submitted }] }) };
     };
     return {
-      installed, emit, requests, published, notices, loads, search, adapter, ctx, begin,
+      installed, emit, systemPrompt, requests, published, notices, loads, search, adapter, ctx, begin,
       stop: () => operation?.abort(),
       async end() { await emit("agent_end"); ctx.signal = undefined; operation = undefined; },
       entry: () => entry, aborts: () => aborts, host: () => host,
@@ -111,8 +121,10 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       for (const text of ["ordinary first turn", "Code: `$startup@fixture`", "```text\n$startup@fixture\n```", "\\$startup@fixture", "Amounts 10 and variable `$HOME`"]) {
         assert.deepEqual(await bounded(f.emit("input", { source: "rpc", text }), `Ordinary Pi input must not await metadata: ${text}`), [{ action: "continue" }]);
         const [before] = await bounded(f.emit("before_agent_start", { prompt: text, systemPrompt: "base" }), "Ordinary Pi provider setup must not await metadata");
-        assert.match(String(object(before).systemPrompt), /status="pending"/);
-        assert.match(String(object(before).systemPrompt), /notion_list/);
+        assert.equal(before, undefined, "Pi must not freeze an early system prompt before context preparation");
+        const prompt = await bounded(f.systemPrompt(), "Ordinary Pi system projection must not await metadata");
+        assert.match(prompt, /status="pending"/);
+        assert.match(prompt, /notion_list/);
       }
       assert.deepEqual(await bounded(f.emit("tool_call", { toolName: "read", input: { path: join(root, "ordinary.txt") } }), "An unrelated Pi read must not await Skill discovery"), [undefined]);
       assert.equal(f.requests.length, 1, "Ordinary input does not restart background directory maintenance");
@@ -166,7 +178,8 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       await assert.rejects(f.search(), new RegExp(code));
       assert.deepEqual(await bounded(f.emit("input", { source: "rpc", text: "ordinary after failure" }), "Failed discovery must not block ordinary input"), [{ action: "continue" }]);
       const [before] = await bounded(f.emit("before_agent_start", { prompt: "ordinary after failure", systemPrompt: "base" }), "Failed discovery must not block provider setup");
-      assert.match(String(object(before).systemPrompt), /status="unavailable"/);
+      assert.equal(before, undefined);
+      assert.match(await bounded(f.systemPrompt(), "Failed discovery must not block final system projection"), /status="unavailable"/);
       for (const text of ["$startup@fixture task", "/skill:fixture-startup task"]) {
         const accepted = await bounded(f.begin(text), "Failed metadata cannot block input acceptance");
         await assert.rejects(accepted.project(), new RegExp(code));

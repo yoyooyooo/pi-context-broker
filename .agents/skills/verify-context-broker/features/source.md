@@ -8,6 +8,8 @@
 
 前置：Node.js 22.x 中的 22.22.3+，或 24.20.0+、仅用于构建的 Bun、Pi/OMP已安装，当前扩展可被宿主加载。先运行 `node .agents/skills/verify-context-broker/scripts/control.mjs doctor source`，再运行 `node .agents/skills/verify-context-broker/scripts/control.mjs run source`。实际入口是 `node scripts/verify-notion-integration.mjs run deterministic`，CLI executable fixture只占Notion边界，宿主、read工具、broker、provider capture都实际运行。
 
+Pi 的 pending/unavailable 目录断言位于最终公开 `context_with_system` 边界；`before_agent_start` 不再返回强制整段系统提示。常规 package check 中的 `input-guard.test.ts` 分别检查早期事件立即返回、最终系统 section 投影立即返回、错误来源准确可见与正文读取为零；OMP 原事件合同另测。实际安装的两版 Pi、完整默认目录、原生本地 Skill/工具保留及 HTTP serializer 证明继续复用[安装地图](../../verify-notion-skills-integration/features/installed-consumption.md#catalog-projection-after-explicit-preflight)的原 SDK driver，不用这里的直接事件测试替代实驱。2026-11-05 的 CI 42119481764 和本地 `sc06-catalog-projection-soeu76qa/guard-caller/fail-before.*` 保留了旧事件断言失败；后续通过不改写它们。
+
 - `source-metadata`：首个provider请求可见原生目录name/location，正文marker为零。
 - `source-native-read`：受控provider请求真实read工具读取该location，后续provider消息含完整正文。
 - `source-dollar-native`：两个宿主分别提交 `$ui-alpha@notion` 并重复，再执行 host 原生命令；反向从冷原生命令切换 `$`。另由同一 runner 在 cold native 参数中加入自身 `$` 引用，确认同轮正文一份且参数完整；Pi 冷调用用 Tab，暖调用再覆盖 Tab/换行分隔。每次核对实际 provider，不因 Pi 路径仅包含正文就判通过。
