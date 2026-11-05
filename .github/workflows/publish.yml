@@ -36,7 +36,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yoyooyooo/notion-skills-cli
-          ref: 23991457c51b9f1255367a1545be00ef8c1a84bb
+          ref: 481ccb6ed0f50c6b25591f055b845d576fe93951
           path: .verification/ntn-skills-cli
           persist-credentials: false
       - name: Set up Bun
@@ -89,10 +89,22 @@ jobs:
       - name: Release policy regression
         run: node --test scripts/release.test.mjs
       - name: Native CLI host regressions
+        id: native-hosts
         run: |
           node packages/context-broker/scripts/context-broker-host-e2e.mjs
           node packages/context-broker/scripts/context-broker-global-config-e2e.mjs
           node packages/context-broker/scripts/context-broker-lifecycle-e2e.mjs
+      - name: Preserve failed native host evidence
+        if: failure() && steps.native-hosts.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-host-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/context-broker-host-e2e-*/
+            /tmp/context-broker-config-e2e-*/
+            /tmp/context-broker-lifecycle-e2e-*/
+          if-no-files-found: warn
+          retention-days: 7
       - name: Installed Pi artifact regression
         run: node scripts/verify-artifacts.mjs --host pi
       - name: Installed OMP and Tern artifact regression

@@ -5,12 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { activeSources, activeSelection, missingActiveSources, assertRestoredSource, confirmActiveSources, SESSION_ACTIVE_ENTRY } from "../src/session-active";
 import { persistSessionSelection } from "../src/session-graph";
-import { sourceDeliveryReceipt, projectSelectedSourceMessages } from "../src/session-source-snapshot";
+import { sourceDeliveryReceipt, projectSelectedSourceMessages, deferredSourceEntries, sourceBodyLoaded, sourceMessageText, withSessionSourceReceipts } from "../src/session-source-snapshot";
 import { installHostSkills } from "../src/host-skills";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { discoverSourceCatalog, loadSourceSkill } from "../src/sources";
 import type { PreparedHostGraph, PreparationPurpose } from "../src/prepare-protocol";
-import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, SessionEntry, SkillRecord } from "../src/types";
+import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, ProjectedSessionEntry, SessionBoundaryDraft, SessionBoundaryResult, SessionEntry, SkillRecord, TurnEndEvent } from "../src/types";
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const canonical = (value: unknown): string => value === null || typeof value !== "object" ? JSON.stringify(value)
   : Array.isArray(value) ? "[" + value.map(canonical).join(",") + "]"
@@ -127,14 +127,19 @@ test("unknown receipt versions and tampered bodies fail closed instead of fallin
   expect(activeSources(other).sources.size).toBe(0);
 });
 
-test("a Prompt stays once per invocation across a tool turn's second provider context", async () => {
+async function deferredFixture() {
   const listeners = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
-  const queued: AgentMessage[] = [], controller = new AbortController();
+  const queued: AgentMessage[] = [], controller = new AbortController(), entries: ProjectedSessionEntry[] = [];
+  const state = { sessionId: "prompt-run" };
   const api: ExtensionAPI = {
     on(name, handler) { listeners.set(name, [...listeners.get(name) ?? [], handler]); },
-    sendMessage(message, options) { expect(options.triggerTurn).toBe(false); queued.push({ ...message, role: "custom" }); },
+    sendMessage(message) { queued.push({ ...message, role: "custom" }); },
   };
-  const ctx: ExtensionContext = { signal: controller.signal, abort: () => controller.abort(), sessionManager: { getSessionId: () => "prompt-run" } };
+  const messages = () => entries.flatMap(entry => entry.messages);
+  const ctx: ExtensionContext = { signal: controller.signal, abort: () => controller.abort(), sessionManager: {
+    getSessionId: () => state.sessionId, buildSessionProjection: () => ({ entries, messages: messages() }),
+    getEntries() { throw new Error("Deferred delivery must not read all session history"); },
+  } };
   await installHostSkills(api, { config: {}, getRecords: async () => ({ records: [], failures: [] }), loadRecord: async record => record,
     needsPreflightPrompt: text => text.includes("$task"), taskPrompt: async text => text + "\n\nTASK_BODY_ONCE" }, createPiHostAdapter(api));
   const emit = async (name: string, event: unknown = {}) => {
@@ -142,18 +147,114 @@ test("a Prompt stays once per invocation across a tool turn's second provider co
     for (const handler of listeners.get(name) ?? []) results.push(await handler(event as never, ctx));
     return results;
   };
-  const user: AgentMessage = { role: "user", content: "$task keep the task" };
-  await emit("input", { source: "rpc", text: user.content });
-  await emit("before_agent_start", { prompt: user.content, systemPrompt: "base" });
+  const user: AgentMessage = { role: "user", content: [{ type: "text", text: "$task keep the task" }, { type: "image", data: "preserved", mimeType: "image/png" }] };
+  await emit("input", { source: "rpc", text: "$task keep the task" });
+  await emit("before_agent_start", { prompt: "$task keep the task", systemPrompt: "base" });
   await emit("agent_start");
-  expect(JSON.stringify(await emit("context", { messages: [user] })).split("TASK_BODY_ONCE").length - 1).toBe(1);
-  await emit("before_provider_request", { type: "before_provider_request", payload: {} });
-  await emit("after_provider_response", { type: "after_provider_response", status: 200, headers: {} });
-  expect(queued).toHaveLength(1);
-  const second = await emit("context", { messages: [user, ...queued, { role: "toolResult", toolName: "read", toolCallId: "ordinary", content: "resource" }] });
+  // Pi persists the actual user after agent_start and before the first context.
+  entries.push({ sourceEntry: { type: "message", id: "user", message: user }, messages: [user] });
+  let turn = 0;
+  const request = async (status: number | null = 200) => {
+    const contexts = await emit("context", { messages: messages() });
+    await emit("before_provider_request", { type: "before_provider_request", payload: {} });
+    if (status !== null) await emit("after_provider_response", { type: "after_provider_response", status, headers: {} });
+    const assistant: AgentMessage = { role: "assistant", content: "OK" };
+    const tool: AgentMessage = { role: "toolResult", toolName: "read", toolCallId: "ordinary-" + turn, content: "resource" };
+    entries.push({ sourceEntry: { type: "message", id: "assistant-" + turn, message: assistant }, messages: [assistant] },
+      { sourceEntry: { type: "message", id: "tool-" + turn, message: tool }, messages: [tool] });
+    turn++;
+    return contexts;
+  };
+  const boundary = async (outcome: TurnEndEvent["outcome"] = "completed", previous: SessionBoundaryDraft[] = []) => {
+    const results = await emit("turn_end", { type: "turn_end", turnIndex: turn - 1, outcome, entries: previous, continue: false,
+      messageEntryId: "assistant-" + (turn - 1), toolResultEntryIds: ["tool-" + (turn - 1)],
+      context: { contextEntries: entries, contextMessages: messages() } });
+    return results.find((value): value is SessionBoundaryResult => !!value && typeof value === "object" && "entries" in value && Array.isArray(value.entries));
+  };
+  const apply = (drafts: readonly SessionBoundaryDraft[]) => {
+    for (const draft of drafts) {
+      if (draft.type === "context_edit") {
+        const target = entries.find(entry => entry.sourceEntry.id === draft.targetId)!;
+        target.messages = draft.replacement === null ? [] : target.messages.map(message => ({ ...message, content: draft.replacement!.content }));
+      } else if (draft.type === "custom") entries.push({ sourceEntry: { ...draft, id: "custom-" + entries.length }, messages: [] });
+    }
+  };
+  const close = async () => { await emit("agent_end"); await emit("session_shutdown"); };
+  return { entries, user, queued, state, controller, emit, request, boundary, apply, close };
+}
+
+test("deferred Prompt persistence preserves images, current edits and tool ordering without a queued custom message", async () => {
+  const f = await deferredFixture();
+  const projectedContent = [...(Array.isArray(f.user.content) ? f.user.content : []), { type: "text" as const, text: "Earlier context edit." }];
+  const projected: AgentMessage = { ...f.user, content: projectedContent };
+  f.entries[0]!.messages = [projected];
+  expect(JSON.stringify(await f.request()).split("TASK_BODY_ONCE").length - 1).toBe(1);
+  expect(f.queued).toEqual([]);
+  const prior: SessionBoundaryDraft = { type: "custom", customType: "other-extension", data: { keep: true } };
+  const boundary = await f.boundary("completed", [prior]);
+  expect(boundary?.continue).toBeUndefined();
+  expect(boundary?.entries?.[0]).toBe(prior);
+  f.apply(boundary!.entries!);
+  expect(f.entries[0]!.sourceEntry.message).toBe(f.user);
+  expect(sourceMessageText(f.user.content)).not.toContain("TASK_BODY_ONCE");
+  expect(f.entries[0]!.messages[0]!.content).toEqual([...projectedContent, { type: "text", text: "TASK_BODY_ONCE" }]);
+  expect(f.entries.flatMap(entry => entry.messages).filter(message => message.role !== "user").map(message => [message.role, message.toolCallId])).toEqual([
+    ["assistant", undefined], ["toolResult", "ordinary-0"],
+  ]);
+  const second = await f.request();
   expect(JSON.stringify(second).split("TASK_BODY_ONCE").length - 1).toBe(1);
-  await emit("before_provider_request", { type: "before_provider_request", payload: {} });
-  await emit("after_provider_response", { type: "after_provider_response", status: 200, headers: {} });
-  expect(queued).toHaveLength(1);
-  await emit("agent_end"); await emit("session_shutdown");
+  expect(JSON.stringify(second)).not.toContain("nativePromptSha256");
+  expect(await f.boundary()).toBeUndefined();
+  expect(f.queued).toEqual([]);
+  await f.close();
+});
+
+test("discarded boundary drafts do not falsely mark a deferred Prompt persisted", async () => {
+  const f = await deferredFixture();
+  await f.request(); expect((await f.boundary())?.entries).toHaveLength(2);
+  // Another extension discarded the drafts; native projection is unchanged.
+  expect(JSON.stringify(await f.request()).split("TASK_BODY_ONCE").length - 1).toBe(1);
+  const retried = await f.boundary(); expect(retried?.entries).toHaveLength(2);
+  f.apply(retried!.entries!);
+  expect(JSON.stringify(await f.request()).split("TASK_BODY_ONCE").length - 1).toBe(1);
+  expect(await f.boundary()).toBeUndefined();
+  await f.close();
+});
+
+test("failed, aborted, late and rewound deferred deliveries append no projection or proof", async () => {
+  for (const mode of ["error", "aborted", "failed-response", "no-response", "cancel", "switch", "rewind"] as const) {
+    const f = await deferredFixture();
+    await f.request(mode === "failed-response" ? 503 : mode === "no-response" ? null : 200);
+    if (mode === "cancel") f.controller.abort();
+    if (mode === "switch") { await f.emit("session_before_switch", { type: "session_before_switch" }); f.state.sessionId = "other"; }
+    if (mode === "rewind") f.entries.splice(0, 1);
+    const before = JSON.stringify(f.entries);
+    expect(await f.boundary(mode === "error" || mode === "aborted" ? mode : "completed")).toBeUndefined();
+    expect(JSON.stringify(f.entries)).toBe(before);
+    expect(f.queued).toEqual([]);
+    await f.close();
+  }
+});
+
+test("projected source receipts retain exact spans across additions and disappear with compacted or foreign user content", () => {
+  const [root, required] = graph().records;
+  const user: AgentMessage = { role: "user", content: "Original user" };
+  const entries: ProjectedSessionEntry[] = [{ sourceEntry: { type: "message", id: "user", message: user }, messages: [user] }];
+  const first = deferredSourceEntries(entries, "user", delivered([root!]))!;
+  const edit = first.entries[0]!, proof = first.entries[1]!;
+  if (edit.type !== "context_edit" || !edit.replacement || proof.type !== "custom") throw new Error("Expected native projection drafts");
+  entries[0]!.messages = [{ ...user, content: edit.replacement.content }];
+  entries.push({ sourceEntry: { ...proof, id: "proof" }, messages: [] });
+  const second = deferredSourceEntries(entries, "user", delivered([required!]))!;
+  const secondEdit = second.entries[0]!, secondProof = second.entries[1]!;
+  if (secondEdit.type !== "context_edit" || !secondEdit.replacement || secondProof.type !== "custom") throw new Error("Expected native projection drafts");
+  entries[0]!.messages = [{ ...user, content: secondEdit.replacement.content }];
+  entries.push({ sourceEntry: { ...secondProof, id: "proof-2" }, messages: [] });
+  const active = withSessionSourceReceipts(entries[0]!.messages, entries);
+  expect(sourceBodyLoaded(active, root!)).toBe(true);
+  expect(sourceBodyLoaded(active, required!)).toBe(true);
+  expect(withSessionSourceReceipts([], entries)).toEqual([]);
+  expect(withSessionSourceReceipts([{ role: "user", content: "Compacted summary." }], entries)).toEqual([{ role: "user", content: "Compacted summary." }]);
+  expect(sourceBodyLoaded(withSessionSourceReceipts(entries[0]!.messages, []), root!)).toBe(false);
+  expect(deferredSourceEntries(entries.slice(1), "user", delivered([root!]))).toBeUndefined();
 });

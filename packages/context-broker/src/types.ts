@@ -22,6 +22,21 @@ export type ContextResult = {
   messages?: AgentMessage[];
 };
 
+/** Pi's public, compaction-aware provenance for the current model context. */
+export type ProjectedSessionEntry = { sourceEntry: SessionEntry; messages: AgentMessage[] };
+export type SessionBoundaryDraft =
+  | { type: "custom"; customType: string; data?: unknown }
+  | { type: "custom_message"; customType: string; content: MessageContent; display: boolean; details?: unknown }
+  | { type: "context_edit"; targetId: string; replacement: { content: MessageContent } | null }
+  | { type: "compaction"; summary: string; firstKeptEntryId: string | null; details?: unknown; usage?: unknown };
+export type TurnEndEvent = {
+  type: "turn_end"; turnIndex: number; message: AgentMessage; toolResults: AgentMessage[];
+  messageEntryId: string; toolResultEntryIds: string[];
+  entries: SessionBoundaryDraft[]; continue: boolean; outcome: "completed" | "aborted" | "error";
+  context: { contextEntries: ProjectedSessionEntry[]; contextMessages: AgentMessage[] };
+};
+export type SessionBoundaryResult = { entries?: SessionBoundaryDraft[]; continue?: boolean };
+
 export type BeforeAgentStartEvent = {
   prompt: string;
   systemPrompt?: string | string[];
@@ -90,6 +105,7 @@ type ExtensionEvents = {
   before_agent_start: { event: BeforeAgentStartEvent; result: BeforeAgentStartResult };
   before_provider_request: { event: { type: "before_provider_request"; payload: unknown }; result: void };
   after_provider_response: { event: { type: "after_provider_response"; status: number; headers: Record<string, string> }; result: void };
+  turn_end: { event: TurnEndEvent; result: SessionBoundaryResult };
   input: { event: InputEvent; result: InputResult };
   tool_call: { event: ToolCallEvent; result: ToolCallResult };
   tool_result: { event: ToolResultEvent; result: void | { details: unknown } };
@@ -145,6 +161,7 @@ export type AutocompleteProvider = {
 };
 
 export type SessionEntry = {
+  id?: string;
   type: string;
   message?: AgentMessage;
   customType?: string;
@@ -193,6 +210,7 @@ export type ExtensionContext = {
     getSessionId?(): string;
     getBranch?(): SessionEntry[];
     getEntries?(): SessionEntry[];
+    buildSessionProjection?(): { entries: ProjectedSessionEntry[]; messages: AgentMessage[] };
     buildSessionContext?(): { messages?: AgentMessage[] };
   };
   /** OMP's same-name native delegation, supplied only during a registered tool's execute. */

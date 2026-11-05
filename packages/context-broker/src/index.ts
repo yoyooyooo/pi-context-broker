@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { sessionSourceSnapshot, sessionSourceBindings, sourceContentIdentity, sourceDeliveryReceipt, sourceBodyLoaded, projectSelectedSourceMessages } from "./session-source-snapshot";
+import { sessionSourceSnapshot, sessionSourceBindings, sourceContentIdentity, sourceDeliveryReceipt, sourceBodyLoaded, projectSelectedSourceMessages, withSessionSourceReceipts } from "./session-source-snapshot";
 import { sessionSelection, selectedBinding, persistSessionSelection, exportSessionSelection } from "./session-graph";
 import { activeSelection, activeSources, missingActiveSources, assertRestoredSource, confirmActiveSources } from "./session-active";
 import { checkPreparationSignal, isPreparationCancelled } from "./skill-preparation";
@@ -87,7 +87,6 @@ import type {
   RouterDiscoveryRecord,
   ScanConfig,
   SourceConfig,
-  SessionEntry,
   SkillRecord,
   SkillRequest,
   TextContent,
@@ -769,28 +768,11 @@ function hasLoadedSkill(messages: AgentMessage[], skill: SkillRecord): boolean {
   return hasLoadedRecord(messages, skill);
 }
 
-function messagesFromSessionEntries(entries: SessionEntry[] | undefined): AgentMessage[] {
-  if (!entries) return [];
-  return entries
-    .map((entry): AgentMessage | undefined => {
-      if (entry.type === "message" && entry.message) return entry.message;
-      if (entry.type === "custom_message" || entry.type === "custom") {
-        return {
-          role: "custom",
-          customType: entry.customType,
-          content: entry.content,
-          details: entry.details,
-        };
-      }
-      return undefined;
-    })
-    .filter((message): message is AgentMessage => message !== undefined);
-}
-
 function messagesFromActiveSessionContext(ctx: ExtensionContext): AgentMessage[] {
+  const projection = ctx.sessionManager?.buildSessionProjection?.();
+  if (projection) return withSessionSourceReceipts(projection.messages, projection.entries);
   const activeMessages = ctx.sessionManager?.buildSessionContext?.()?.messages;
-  if (Array.isArray(activeMessages)) return activeMessages;
-  return messagesFromSessionEntries(ctx.sessionManager?.getEntries?.());
+  return Array.isArray(activeMessages) ? activeMessages : [];
 }
 
 function buildCliGuidance(config: ConfigFile, activeTools?: readonly string[]): Omit<AgentMessage, "role" | "timestamp"> {
@@ -1859,7 +1841,6 @@ export {
   invokeForContext,
   matchDiscoveryRecord,
   matchSkill,
-  messagesFromSessionEntries,
   normalizeKey,
   normalizeRuleConfigFile,
   notifyInjectedSkill,

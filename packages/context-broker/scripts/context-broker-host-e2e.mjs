@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { isolatedEnv, preserveTemp, runCommand, writeFakeProvider } from "./context-broker-e2e-fixture.mjs";
+import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { isolatedEnv, preserveTemp, resolveHost, runCommand, writeFakeProvider } from "./context-broker-e2e-fixture.mjs";
 import { startRpc } from "./context-broker-rpc-harness.mjs";
 
 const repoRoot = resolve(import.meta.dirname, "..");
@@ -112,15 +114,41 @@ async function runHost(host, tempRoot, fakeProviderPath) {
     CONTEXT_BROKER_CONFIG: configFile,
     CONTEXT_BROKER_LOG_FILE: logFile,
     CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: providerContextFile,
+    BROKER_E2E_PROCESS_LEDGER: join(base, "owned-processes.jsonl"),
   });
+  const hostIdentity = await resolveHost(host);
   const run = async (prompt, continued = false) => {
     const resume = continued ? ["--continue"] : [];
-    if (host === "pi") return runCommand(host, [...commonArgs, ...resume, prompt], { cwd: base, env });
-    const rpc = await startRpc({ host, args: [...commonArgs.filter(arg => arg !== "-p"), "--no-ui", ...resume], cwd: base, env });
+    const turn = continued ? "continued" : "first";
+    const args = host === "pi" ? [...commonArgs, ...resume, prompt] : [...commonArgs.filter(arg => arg !== "-p"), "--no-ui", ...resume];
+    const invocation = { host, host_identity: hostIdentity, node: process.version, cwd: base, args, continued,
+      boundary: host === "pi" ? "actual CLI print stdout/stderr" : "native RPC assistant text and frames" };
+    let rpc;
     try {
-      await rpc.prompt(prompt);
-      return { stdout: (await rpc.command("get_last_assistant_text")).text ?? "" };
-    } finally { await rpc.stop(); }
+      let result;
+      if (host === "pi") result = await runCommand(host, args, { cwd: base, env });
+      else {
+        rpc = await startRpc({ host, args, cwd: base, env });
+        await rpc.prompt(prompt);
+        result = { stdout: (await rpc.command("get_last_assistant_text")).text ?? "" };
+      }
+      // Persist even an exit-zero/empty-stdout response before asserting. It is
+      // evidence of a failed print boundary, not a successful assistant result.
+      await writeFile(join(base, turn + "-stdio.json"), JSON.stringify({ ...invocation, command_completed: true, ...result }, null, 2) + "\n", { mode: 0o600 });
+      return result;
+    } catch (error) {
+      await writeFile(join(base, turn + "-error.json"), JSON.stringify({ ...invocation, command_completed: false,
+        error: String(error.message) }, null, 2) + "\n", { mode: 0o600 });
+      throw error;
+    } finally {
+      if (rpc) {
+        try { await rpc.stop(); }
+        finally {
+          await writeFile(join(base, turn + "-rpc.json"), JSON.stringify(rpc.frames, null, 2) + "\n", { mode: 0o600 });
+          await writeFile(join(base, turn + "-lifecycle.json"), JSON.stringify(rpc.lifecycle, null, 2) + "\n", { mode: 0o600 });
+        }
+      }
+    }
   };
 
   const prompt = "中文😀先使用$design-context，再用$review-context。请一起评审";
@@ -146,7 +174,8 @@ async function runHost(host, tempRoot, fakeProviderPath) {
   const sessionFiles = await findJsonlFiles(sessionDir);
   assert.equal(sessionFiles.length, 1, `${host}: expected one session file`);
   const sessionText = await readFile(sessionFiles[0], "utf8");
-  const guidanceEntries = sessionText.trim().split("\n").map(line => JSON.parse(line)).filter(entry => entry.type === "custom_message" && entry.customType === "ntn-skills-guidance");
+  const sessionEntries = sessionText.trim().split("\n").map(line => JSON.parse(line));
+  const guidanceEntries = sessionEntries.filter(entry => entry.type === "custom_message" && entry.customType === "ntn-skills-guidance");
   assert.equal(guidanceEntries.length, 1, `${host}: continued session must retain one CLI guidance message`);
   const guidance = JSON.stringify(guidanceEntries[0].content).slice(1, -1);
   const customMatches = sessionText.match(/"customType":"context-broker"/g) ?? [];
@@ -156,12 +185,39 @@ async function runHost(host, tempRoot, fakeProviderPath) {
   assert.equal(markerMatches.length, 1, `${host}: expected one injected skill marker`);
   assert.equal(reviewMarkerMatches.length, 1, `${host}: expected one injected review skill marker`);
   assert.match(sessionText, /"records":\[/, `${host}: expected multi-record details`);
+  if (host === "pi") {
+    let packageRoot = dirname(hostIdentity.identity), packageName;
+    while (packageRoot !== dirname(packageRoot)) {
+      try { packageName = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8")).name; }
+      catch (error) { if (error.code !== "ENOENT") throw error; }
+      if (packageName === "@earendil-works/pi-coding-agent") break;
+      packageRoot = dirname(packageRoot);
+    }
+    assert.equal(packageName, "@earendil-works/pi-coding-agent", "Resolve the actual Pi package from its executable");
+    const sessionModule = join(packageRoot, "dist/core/session-manager.js");
+    const { SessionManager } = await import(pathToFileURL(sessionModule).href);
+    const projection = SessionManager.open(sessionFiles[0]).buildSessionProjection();
+    const users = sessionEntries.filter(entry => entry.type === "message" && entry.message.role === "user");
+    const text = content => typeof content === "string" ? content : content.filter(part => part.type === "text").map(part => part.text).join("\n");
+    assert.deepEqual(users.map(entry => text(entry.message.content)), [prompt, prompt], "Pi keeps the exact original user entries");
+    const edits = sessionEntries.filter(entry => entry.type === "context_edit");
+    assert.equal(edits.length, 1, "Pi persists one deferred body projection");
+    assert.equal(edits[0].targetId, users[0].id, "Pi edits the actual selected user entry");
+    assert.equal(projection.messages.at(-1).role, "assistant", "Pi final native context stays printable");
+    const projectedUser = projection.entries.find(entry => entry.sourceEntry.id === users[0].id).messages[0];
+    const proof = sessionEntries.find(entry => entry.type === "custom" && entry.customType === "context-broker");
+    assert.equal(proof.data.nativePromptSha256, createHash("sha256").update(text(projectedUser.content)).digest("hex"));
+    assert.equal(proof.data.records.length, 2, "Pi retains both original local identity receipts");
+    await writeFile(join(base, "native-projection.json"), JSON.stringify({ sessionModule,
+      sessionModuleSha256: createHash("sha256").update(await readFile(sessionModule)).digest("hex"), ...projection }, null, 2) + "\n", { mode: 0o600 });
+  }
 
   const providerContextText = await readFile(providerContextFile, "utf8");
   const providerContexts = providerContextText.trim().split("\n").map(line => JSON.parse(line).context);
   assert.equal(providerContexts.length, 2, `${host}: expected two provider context captures`);
   for (const [turn, context] of providerContexts.entries()) {
     const messages = JSON.stringify(context.messages);
+    assert.ok(!messages.includes("nativePromptSha256"), `${host}: machine-only delivery proofs do not enter provider input`);
     assert.equal(messages.split(guidance).length - 1, 1, `${host}: turn ${turn + 1} must contain the complete CLI guidance exactly once`);
     for (const marker of ["CONTEXT_BROKER_E2E_MARKER", "CONTEXT_BROKER_E2E_REVIEW_MARKER"]) {
       assert.equal(messages.split(marker).length - 1, 1, `${host}: turn ${turn + 1} provider messages must contain exactly one ${marker} body`);
@@ -172,12 +228,12 @@ async function runHost(host, tempRoot, fakeProviderPath) {
 }
 
 const tempRoot = await mkdtemp(join(tmpdir(), "context-broker-host-e2e-"));
+const results = [];
 
 try {
   const fakeProviderPath = await writeFakeProvider(tempRoot);
   const hosts = process.argv.slice(2);
   const selectedHosts = hosts.length > 0 ? hosts : ["omp", "pi"];
-  const results = [];
   for (const host of selectedHosts) {
     if (host !== "omp" && host !== "pi") throw new Error(`Unsupported host: ${host}`);
     results.push(await runHost(host, tempRoot, fakeProviderPath));
@@ -185,6 +241,11 @@ try {
   for (const result of results) {
     console.log(`${result.host} host e2e ok: ${result.sessionFile}`);
   }
+  await writeFile(join(tempRoot, "result.json"), JSON.stringify({ status: "passed", results }, null, 2) + "\n", { mode: 0o600 });
+} catch (error) {
+  await writeFile(join(tempRoot, "result.json"), JSON.stringify({ status: "failed", results,
+    error: { code: error.code ?? error.name, message: String(error.message), stack: error.stack } }, null, 2) + "\n", { mode: 0o600 });
+  throw error;
 } finally {
   preserveTemp(tempRoot);
 }

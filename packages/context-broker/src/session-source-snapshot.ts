@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { recordIdentity } from "./discovery-records";
 import { parseNativeReference } from "./native-reference";
-import type { AgentMessage, MessageContent, SkillRecord } from "./types";
+import type { AgentMessage, MessageContent, ProjectedSessionEntry, SessionBoundaryDraft, SkillRecord } from "./types";
 import { decodePreparationLock, isPreparationBinding, type PreparationBinding } from "./prepare-protocol";
 import type { SessionSelection } from "./session-graph";
 import { deriveSkillPrepareProjection, validateSkillPrepareProjection } from "./skill-context-projection-proof";
@@ -21,6 +21,48 @@ function escaped(value: string): string { return value.replaceAll("&", "&amp;").
 function unescaped(value: string): string { return value.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&"); }
 export function sourceMessageText(content: MessageContent | undefined): string {
   return typeof content === "string" ? content : (content ?? []).filter(part => part.type === "text").map(part => String(part.text ?? "")).join("\n");
+}
+
+/** Machine entries have no model message. Reattach their existing delivery
+ * receipts only while the exact projected user content remains in context. */
+export function withSessionSourceReceipts(messages: AgentMessage[], entries: readonly ProjectedSessionEntry[]): AgentMessage[] {
+  const userHashes = new Set(messages.filter(message => message.role === "user").map(message => hash(sourceMessageText(message.content))));
+  const receipts = entries.flatMap(({ sourceEntry: entry }): AgentMessage[] => entry.type === "custom" && entry.customType === "context-broker"
+    && object(entry.data) && typeof entry.data.nativePromptSha256 === "string" && userHashes.has(entry.data.nativePromptSha256)
+    ? [{ role: "custom", customType: "context-broker", content: [], details: entry.data }] : []);
+  return receipts.length ? [...messages, ...receipts] : messages;
+}
+
+/** Keep the delivered text in Pi's native context so print output, compaction
+ * and branch navigation all see the same history. Only content is projected;
+ * raw user/assistant/tool entries and non-text user blocks stay untouched. */
+export function deferredSourceEntries(entries: readonly ProjectedSessionEntry[], userEntryId: string, delivered: readonly AgentMessage[]): {
+  entries: SessionBoundaryDraft[]; nativePromptSha256: string;
+} | undefined {
+  const target = entries.find(entry => entry.sourceEntry.id === userEntryId && entry.sourceEntry.type === "message");
+  const user = target?.messages.find(message => message.role === "user");
+  if (!user || user.content === undefined) return undefined;
+  let content = user.content;
+  const records = deferredDeliveryRecords(withSessionSourceReceipts([user], entries));
+  let appended = false;
+  for (const message of delivered) {
+    const text = sourceMessageText(message.content);
+    if (!text) continue;
+    content = typeof content === "string" ? content + "\n\n" + text : [...content, { type: "text", text }];
+    const offset = sourceMessageText(content).length - text.length;
+    for (const proof of deferredDeliveryRecords([message])) {
+      records.push(object(proof.delivery)
+        ? { ...proof, delivery: { ...proof.delivery, start: Number(proof.delivery.start) + offset, end: Number(proof.delivery.end) + offset } }
+        : proof);
+    }
+    appended = true;
+  }
+  if (!appended) return undefined;
+  const nativePromptSha256 = hash(sourceMessageText(content));
+  return { nativePromptSha256, entries: [
+    { type: "context_edit", targetId: userEntryId, replacement: { content } },
+    { type: "custom", customType: "context-broker", data: { nativePromptSha256, records } },
+  ] };
 }
 
 /** Produced only for a successfully completed, whole-entry native tool read.
@@ -178,6 +220,25 @@ function injectedSnapshots(messages: AgentMessage[], visit?: (proof: Record<stri
     }
   }
   return result;
+}
+
+function deferredDeliveryRecords(messages: AgentMessage[]): Record<string, unknown>[] {
+  const records = injectedSnapshots(messages);
+  const userHashes = new Set(messages.filter(message => message.role === "user").map(message => hash(sourceMessageText(message.content))));
+  for (const message of messages) {
+    if (message.role !== "custom" || message.customType !== "context-broker" || !object(message.details)) continue;
+    const details = message.details;
+    if (typeof details.nativePromptSha256 === "string" && !userHashes.has(details.nativePromptSha256)) continue;
+    // The original skillRoots directory predates source IDs and v2 source
+    // receipts. Preserve its existing local identity metadata, now attached to
+    // the exact projected user digest; it never establishes a Notion pin.
+    for (const record of Array.isArray(details.records) ? details.records : []) {
+      if (object(record) && record.sourceId === undefined && record.snapshotId === undefined && record.delivery === undefined
+        && record.loaded === true && typeof record.identity === "string" && typeof record.path === "string"
+        && (record.kind === "skill" || record.kind === "router")) records.push(record);
+    }
+  }
+  return records;
 }
 
 type Replacement = { start: number; end: number; text: string };

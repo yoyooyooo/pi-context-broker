@@ -9,13 +9,13 @@ import { assertSourceAvailable, formatSourceFailures } from "./sources";
 import { SourceError, ReferenceMiss, sourceFailureMessage } from "./notion-source";
 import { createActivationFeedback, ACTIVATION_MESSAGE } from "./activation-feedback";
 import { checkPreparationSignal, createPreparationGate, preparationCancelled, type ActivePreparation } from "./skill-preparation";
-import type { AgentMessage, ConfigFile, ExtensionAPI, ExtensionContext, ImageContent, SkillRecord, DiscoveryResult, SourceFailure, NotionViewState, ToolCallEvent, ToolCallResult } from "./types";
+import type { AgentMessage, ConfigFile, ExtensionAPI, ExtensionContext, ImageContent, SkillRecord, DiscoveryResult, SourceFailure, NotionViewState, ProjectedSessionEntry, ToolCallEvent, ToolCallResult } from "./types";
 import type { HostCapabilities } from "./host-adapter";
 import { invocationText } from "./invocation-text";
 import { viewSystemPrompt } from "./view-prompt";
 import { hostCliScope } from "./host-command";
 import { notifyUnavailableReferences, renderUnavailableReferences } from "./unavailable-references";
-import { deduplicateSourceReads, nativeReadReceipt, sourceDeliveryReceipt } from "./session-source-snapshot";
+import { deduplicateSourceReads, deferredSourceEntries, nativeReadReceipt, sourceDeliveryReceipt, sourceMessageText, withSessionSourceReceipts } from "./session-source-snapshot";
 import { parseNativeReference, nativeResourcePath, type ExactNativeReference } from "./native-reference";
 import type { PreparedHostGraph, PreparationPurpose, PreparationBinding, PreparationDirectory } from "./prepare-protocol";
 import type { SelectionMode } from "./session-graph";
@@ -218,6 +218,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     generation: number; sessionId: string | undefined; signal: AbortSignal; entry?: ActivePreparation;
     selectedNative?: SkillRecord; submitted?: string; projection?: AgentMessage[];
     prepared: boolean; requestPending: boolean; confirmed: boolean; persisted: number;
+    userEntryId?: string;
+    requestProjection?: { count: number; messages: AgentMessage[] };
+    confirmedProjection?: { count: number; messages: AgentMessage[] };
+    pendingPersistence?: { count: number; nativePromptSha256: string };
     candidates: Map<string, SkillRecord>; graphs: Array<{ graphs: PreparedHostGraph[]; mode: SelectionMode }>;
     contextMessages?: AgentMessage[];
   };
@@ -227,6 +231,18 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     checkPreparationSignal(run.signal);
     checkPreparationSignal(run.entry?.controller.signal);
     if (piRun !== run || generation !== run.generation || run.sessionId !== ctx.sessionManager?.getSessionId?.()) throw preparationCancelled();
+  }
+  function acknowledgeProjection(run: PiRun, entries: readonly ProjectedSessionEntry[]): void {
+    const pending = run.pendingPersistence;
+    if (!pending) return;
+    // A later boundary handler may replace/discard the returned drafts. Advance
+    // only after Pi's public projection shows the actual committed receipt.
+    const user = entries.find(entry => entry.sourceEntry.id === run.userEntryId)?.messages.find(message => message.role === "user");
+    const matches = user && createHash("sha256").update(sourceMessageText(user.content)).digest("hex") === pending.nativePromptSha256;
+    if (matches && entries.some(({ sourceEntry: entry }) => entry.type === "custom" && entry.customType === "context-broker"
+      && entry.data && typeof entry.data === "object" && "nativePromptSha256" in entry.data
+      && entry.data.nativePromptSha256 === pending.nativePromptSha256)) run.persisted = pending.count;
+    run.pendingPersistence = undefined;
   }
   const nativeCommands = new Map<string, (args: string, ctx: ExtensionContext, images?: ImageContent[], entry?: ActivePreparation) => Promise<void>>();
   host.on("agent_end", () => {
@@ -887,8 +903,12 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   api.on("context", async (event, ctx) => {
     const run = deferredPiDiscovery ? piRun : undefined;
     try {
+      const contextEntries = deferredPiDiscovery ? ctx.sessionManager?.buildSessionProjection?.().entries ?? [] : [];
       if (run) {
         assertPiRun(run, ctx);
+        acknowledgeProjection(run, contextEntries);
+        run.userEntryId ??= contextEntries.findLast(entry => entry.sourceEntry.type === "message"
+          && entry.messages.some(message => message.role === "user"))?.sourceEntry.id;
         if (!run.prepared && run.entry) {
           const entry = run.entry, text = entry.event.text ?? "", signal = entry.controller.signal;
           gate.assertCurrent(entry, ctx);
@@ -907,7 +927,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         }
         if (run) run.prepared = true;
       }
-      let messages = event.messages.filter(message => message.customType !== ACTIVATION_MESSAGE);
+      let messages = withSessionSourceReceipts(event.messages.filter(message => message.customType !== ACTIVATION_MESSAGE), contextEntries);
       // Only this run's accepted receipt authorizes removing our neutralizing
       // newline. Historical text/markers never create a new invocation.
       if (run?.entry && run.submitted !== run.entry.event.text) {
@@ -923,27 +943,28 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
           break;
         }
       }
-      if (run?.projection?.length) messages = [...messages, ...run.projection.filter(projected => {
-        const details = projected.details;
-        if (projected.customType !== "context-broker-task" || !details || typeof details !== "object" || Array.isArray(details)
-          || !("invocation" in details) || typeof details.invocation !== "string") return true;
-        return !messages.some(existing => existing.role === "custom" && existing.customType === projected.customType
-          && existing.details && typeof existing.details === "object" && !Array.isArray(existing.details)
-          && "invocation" in existing.details && existing.details.invocation === details.invocation
-          && JSON.stringify(existing.content) === JSON.stringify(projected.content));
-      })];
+      const projectionIndices: number[] = [];
+      for (const projected of run?.projection?.slice(run.persisted) ?? []) {
+        projectionIndices.push(messages.length);
+        messages = [...messages, projected];
+      }
       messages = options.projectContext?.(messages, ctx, run?.graphs) ?? messages;
       if (run && options.restoreActive) {
         const restored = await options.restoreActive(messages, ctx, run.signal, run.graphs);
         assertPiRun(run, ctx);
         if (restored) {
           const message = { ...restored, role: "custom", timestamp: Date.now() };
-          (run.projection ??= []).push(message); messages = [...messages, message];
+          (run.projection ??= []).push(message); projectionIndices.push(messages.length); messages = [...messages, message];
         }
       }
       messages = deduplicateSourceReads(messages);
-      if (run) { assertPiRun(run, ctx); run.contextMessages = messages; }
-      return { messages };
+      if (run) {
+        assertPiRun(run, ctx); run.contextMessages = messages;
+        run.requestProjection = { count: run.projection?.length ?? 0, messages: projectionIndices.map(index => messages[index]!) };
+      }
+      // Receipt-only custom entries support validation above, never model input.
+      return { messages: messages.filter(message => !(message.role === "custom" && message.customType === "context-broker"
+        && !sourceMessageText(message.content) && message.details && typeof message.details === "object" && "nativePromptSha256" in message.details)) };
     } catch (error) {
       // Pi reports extension errors and continues; aborting the current operation
       // is what actually prevents provider dispatch after failed acquisition.
@@ -955,7 +976,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     host.on("before_provider_request", (_event, ctx) => {
       const run = piRun;
       if (!run) return;
-      try { assertPiRun(run, ctx); run.requestPending = true; }
+      try { assertPiRun(run, ctx); run.requestPending = true; run.confirmedProjection = undefined; }
       catch (error) { if (piRun === run && generation === run.generation) ctx.abort?.(); throw error; }
     });
     host.on("after_provider_response", (event, ctx) => {
@@ -967,13 +988,29 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         options.confirmDelivery?.([...run.candidates.values()], run.contextMessages ?? [], ctx);
         // onResponse means headers received, before consuming the stream. It
         // confirms this request was accepted; it does not claim model completion.
-        for (const message of (run.projection ?? []).slice(run.persisted)) if (message.customType && message.content !== undefined) host.sendMessage?.({
-          customType: message.customType, content: message.content, details: message.details, display: message.display ?? false,
-        }, { triggerTurn: false });
+        run.confirmedProjection = run.requestProjection;
         run.confirmed = true;
         run.requestPending = false;
-        run.persisted = run.projection?.length ?? 0;
         if (run.entry) gate.release(run.entry);
+      } catch (error) {
+        if (!run.signal.aborted && piRun === run && generation === run.generation) { ctx.abort?.(); throw error; }
+      }
+    });
+    host.on("turn_end", (event, ctx) => {
+      const run = piRun;
+      if (!run || event.outcome !== "completed" || !run.confirmedProjection || run.signal.aborted) return;
+      try {
+        assertPiRun(run, ctx);
+        acknowledgeProjection(run, event.context.contextEntries);
+        const delivered = run.confirmedProjection;
+        if (delivered.count <= run.persisted || !run.userEntryId
+          || !event.context.contextEntries.some(entry => entry.sourceEntry.id === event.messageEntryId)) return;
+        const projected = deferredSourceEntries(event.context.contextEntries, run.userEntryId, delivered.messages);
+        if (!projected) return;
+        run.pendingPersistence = { count: delivered.count, nativePromptSha256: projected.nativePromptSha256 };
+        // Keep other extensions' drafts, without changing continuation or native
+        // assistant/tool ordering. Pi applies the content edit and proof together.
+        return { entries: [...event.entries, ...projected.entries] };
       } catch (error) {
         if (!run.signal.aborted && piRun === run && generation === run.generation) { ctx.abort?.(); throw error; }
       }
