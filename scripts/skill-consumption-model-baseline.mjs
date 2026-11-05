@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
+import { createServer } from 'node:http';
 import { access, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -12,6 +13,7 @@ import { safeDiagnostic } from './verification-command.mjs';
 import { consumptionCostExtensionSource, readConsumptionCostEvents, consumptionMetricStats } from './skill-consumption-cost.mjs';
 import { providerTransportExtensionSource, readProviderTransport } from './skill-consumption-provider.mjs';
 import { sourceObserverPreloadSource, readSourceObservation } from './skill-consumption-source-observer.mjs';
+import { packageIdentity } from './notion-skill-graph-model.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -20,7 +22,7 @@ const rows = async path => { try { return (await readFile(path, 'utf8')).trim().
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const comparisonRoles = ['previous-broker', 'notion-candidate', 'pi-native-local'];
 const nativeLocal = config => config.role === 'pi-native-local';
-const usage = 'Usage: node scripts/skill-consumption-model-baseline.mjs doctor|run --config ABSOLUTE_JSON [--evidence-root ABSOLUTE_DIR]; evidence|cleanup --evidence ABSOLUTE_DIR. Real model is restricted to magpie/group/flash-free. Normal Pi tools; source consumption may perform adoption/Records writes, no generated task guidance or forced tool choices. Broker config: {version:1,extension,transport?:"cli"|"sdk",command?:[absoluteNode,absoluteCLI],database,prompt,expectedAnswers:[string],counts:{cold:5,warm:20},packagePath?,toolProfile?:"standard"|"native-skills"|"legacy-skills"}. Standard preserves the original seven tools; native-skills adds notion_list/notion_use without removing normal tools; legacy-skills is explicit historical compatibility. Deferred notion_ctl is absent by default. Missing transport preserves legacy CLI mode; explicit sdk forbids command. Comparison roles previous-broker|notion-candidate|pi-native-local require comparison:ABS_FROZEN_MANIFEST. Pure pi-native-local omits extension/transport/command/database/packagePath, uses standard tools and Pi native --skill/read, and loads no Broker. The first common comparison is read inspection of one same-byte Skill plus frozen required UTF-8 resources; actual catalog name/description differences fail Doctor before model calls. Automatic Requires and /skill expansion are separate semantics. Cold=new isolated process/cache (native files already exist; OS page cache is uncontrolled); warm=ordinary turns in the final cold process with history counted. All attempts and unrun planned samples remain recorded.';
+const usage = 'Usage: node scripts/skill-consumption-model-baseline.mjs doctor|selection|run --config ABSOLUTE_JSON [--evidence-root ABSOLUTE_DIR]; evidence|cleanup --evidence ABSOLUTE_DIR. Real model is restricted to magpie/group/flash-free. Normal Pi tools; source consumption may perform adoption/Records writes, no generated task guidance or forced tool choices. Broker config: {version:1,extension,transport?:"cli"|"sdk",command?:[absoluteNode,absoluteCLI],database,prompt,expectedAnswers:[string],counts:{cold:5,warm:20},packagePath?,toolProfile?:"standard"|"native-skills"|"legacy-skills"}. Standard preserves the original seven tools; native-skills adds notion_list/notion_use without removing normal tools; legacy-skills is explicit historical compatibility. Deferred notion_ctl is absent by default. Missing transport preserves legacy CLI mode; explicit sdk forbids command. Comparison roles previous-broker|notion-candidate|pi-native-local require comparison:ABS_FROZEN_MANIFEST. Pure pi-native-local omits extension/transport/command/database/packagePath, uses standard tools and Pi native --skill/read, and loads no Broker. Comparison v1 freezes one candidate; v2 preserves the complete existing View and inspects one same-byte Skill plus required UTF-8 resources. Run selection on the v2 Notion config for separate metadata-only installed-Pi evidence before Doctor; actual catalog name/description differences fail Doctor before model calls. Automatic Requires and /skill expansion are separate semantics. Cold=new isolated process/cache (native files already exist; OS page cache is uncontrolled); warm=ordinary turns in the final cold process with history counted. All attempts and unrun planned samples remain recorded.';
 
 async function tree(directory) {
   const output = {};
@@ -84,34 +86,47 @@ export function modelBaselineSource(config, { cacheDir, command, viewId } = {}) 
   return {...source,command};
 }
 
-/** This compares actual Pi/Notion metadata, never a rewritten frontmatter or a
- * hand-authored replacement catalog. The first common task is a single Skill
- * inspected with native read; automatic Requires activation is a separate arm. */
-export function comparisonCatalog(payload) {
+/** Compare actual Pi/Notion metadata without rewriting source frontmatter.
+ * One selected Skill is inspected; all visible candidates remain in the catalog. */
+function comparisonCatalogBlock(payload,allowPending=false) {
   const text = value => typeof value === 'string' ? value : (Array.isArray(value) ? value : [])
     .filter(part => ['text','input_text'].includes(part?.type)).map(part => part.text ?? '').join('\n');
   const systems = [payload?.system, payload?.instructions, payload?.systemPrompt,
     ...(payload?.messages ?? []).filter(message => ['system','developer'].includes(message.role)).map(message => message.content)]
     .map(text).filter(Boolean);
   const blocks = systems.flatMap(value => [...value.matchAll(/<ntn-skills-view-catalog>[\s\S]*?<\/ntn-skills-view-catalog>/g)].map(match => match[0]));
+  const pending=systems.flatMap(value=>[...value.matchAll(/<ntn-skills-discovery\b[^>]*\bstatus="pending"[^>]*>/g)]);
+  if(blocks.length===0&&pending.length===1) {
+    assert.ok(allowPending,'Pending or failed discovery cannot freeze an empty catalog');
+    return null;
+  }
   assert.equal(blocks.length, 1, 'Comparison needs the actual ready Notion provider catalog');
-  assert.ok(/<view\s[^>]*\bid="/.test(blocks[0]) && !/<view\s[^>]*\bstatus="(?:pending|error)"/.test(blocks[0]), 'Pending or failed discovery cannot freeze an empty catalog');
-  assert.equal(/<router\b/.test(blocks[0]), false, 'Router routing is outside the first common native-read inspect task');
+  return blocks[0];
+}
+export function comparisonCatalog(payload) {
+  const block=comparisonCatalogBlock(payload);
+  assert.ok(/<view\s[^>]*\bid="/.test(block) && !/<view\s[^>]*\bstatus="(?:pending|error)"/.test(block), 'Pending or failed discovery cannot freeze an empty catalog');
+  assert.equal(/<router\b/.test(block), false, 'Router routing is outside the first common native-read inspect task');
   const unescape = value => value.replaceAll('&quot;', '"').replaceAll('&apos;', "'").replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
-  const records = [...blocks[0].matchAll(/<skill>([\s\S]*?)<\/skill>/g)].map(match => {
+  const records = [...block.matchAll(/<skill>([\s\S]*?)<\/skill>/g)].map(match => {
     const field = name => { const matches = [...match[1].matchAll(new RegExp('<' + name + '>([\\s\\S]*?)</' + name + '>', 'g'))];
       assert.equal(matches.length, 1, 'Each comparison candidate needs one ' + name); return unescape(matches[0][1]); };
     return { name: field('name'), description: field('description'), location: field('location') };
   });
-  assert.equal(records.length, 1, 'First comparison freezes one actual visible Skill candidate');
-  assert.ok(records[0].name && records[0].description && /^(?:sr:C[A-Za-z0-9_-]{22}|skill:\/\/)/.test(records[0].location), 'Notion candidate needs its actual exact entry');
+  assert.ok(records.length > 0, 'Comparison needs at least one actual visible Skill candidate');
+  assert.equal(new Set(records.map(record=>record.name)).size,records.length,'Duplicate visible names cannot be normalized into native aliases');
+  assert.equal(new Set(records.map(record=>record.location)).size,records.length,'Each candidate needs a distinct exact entry');
+  for(const record of records) assert.ok(record.name && record.description && /^(?:sr:C[A-Za-z0-9_-]{22}|skill:\/\/\S+)$/.test(record.location), 'Notion candidate needs its actual exact entry');
   return records;
 }
 
 export function verifyComparisonCatalog(nativeSkills, notionCatalog) {
-  assert.equal(nativeSkills.length, 1, 'Native discovery must expose the same one candidate');
-  assert.equal(nativeSkills[0].disableModelInvocation, false, 'The native Skill must be normally model-visible');
-  assert.deepEqual(nativeSkills.map(({name,description}) => ({name,description})), notionCatalog.map(({name,description}) => ({name,description})),
+  assert.ok(nativeSkills.length > 0 && nativeSkills.length === notionCatalog.length, 'Native discovery must expose the same complete candidate set');
+  assert.equal(new Set(nativeSkills.map(skill=>skill.name)).size,nativeSkills.length,'Native name collisions cannot be normalized away');
+  assert.equal(new Set(notionCatalog.map(skill=>skill.name)).size,notionCatalog.length,'Notion name collisions cannot be normalized away');
+  for(const skill of nativeSkills) assert.equal(skill.disableModelInvocation, false, 'The native Skill must be normally model-visible');
+  const metadata=skills=>skills.map(({name,description})=>({name,description})).sort((a,b)=>a.name.localeCompare(b.name));
+  assert.deepEqual(metadata(nativeSkills), metadata(notionCatalog),
     'Actual candidate names/descriptions differ; do not normalize names or rewrite source frontmatter');
 }
 
@@ -134,23 +149,26 @@ async function installedPiPackage(host) {
   }
 }
 
+async function frozenJson(identity) {
+  assert.ok(identity && typeof identity.path === 'string' && isAbsolute(identity.path));
+  assert.match(identity.sha256, /^[a-f0-9]{64}$/);
+  const bytes=await readFile(identity.path);
+  assert.equal(hash(bytes),identity.sha256,'Frozen comparison input changed: '+identity.path);
+  return JSON.parse(bytes.toString('utf8'));
+}
+
 export async function modelBaselineComparison(config, host) {
   if (!config.comparison) return null;
   const descriptorBytes = await readFile(config.comparison), descriptor = JSON.parse(descriptorBytes.toString('utf8'));
-  assert.equal(descriptor.version, 1); assert.equal(descriptor.intent, 'inspect'); assert.equal(descriptor.entry, 'read');
+  assert.ok([1,2].includes(descriptor.version)); assert.equal(descriptor.intent, 'inspect'); assert.equal(descriptor.entry, 'read');
   assert.deepEqual(descriptor.roles, comparisonRoles, 'Declare previous Broker, candidate and pure native roles separately');
   assert.equal(descriptor.model, 'magpie/group/flash-free'); assert.equal(descriptor.promptSha256, hash(config.prompt));
   assert.equal(descriptor.expectedAnswersSha256, hash(JSON.stringify(config.expectedAnswers))); assert.deepEqual(descriptor.counts, config.counts);
   assert.ok(!/^\s*(?:\$|\/skill:)/.test(config.prompt), 'Native read inspection cannot be relabelled explicit use or /skill expansion');
-  const artifact = async identity => {
-    assert.ok(identity && typeof identity.path === 'string' && isAbsolute(identity.path));
-    assert.match(identity.sha256, /^[a-f0-9]{64}$/);
-    const bytes = await readFile(identity.path); assert.equal(hash(bytes), identity.sha256, 'Frozen comparison input changed: ' + identity.path);
-    return JSON.parse(bytes.toString('utf8'));
-  };
-  const selection = await artifact(descriptor.notionSelection), payload = await artifact(descriptor.notionProviderPayload);
-  const catalogSource = await artifact(descriptor.notionCatalogSource);
-  assert.equal(selection.status, 'passed'); assert.equal(selection.kind, 'installed-pi-selection-preflight');
+  const selection = await frozenJson(descriptor.notionSelection), payload = await frozenJson(descriptor.notionProviderPayload);
+  const catalogSource = await frozenJson(descriptor.notionCatalogSource);
+  assert.equal(selection.status, 'passed');
+  assert.equal(selection.kind,descriptor.version===1?'installed-pi-selection-preflight':'installed-pi-catalog-preflight');
   assert.equal(selection.sourceMode, 'sdk', 'The candidate catalog must be the default SDK path');
   assert.equal(selection.bodyRequests, 0); assert.equal(selection.realModelRequests, 0); assert.equal(selection.processesClosed, true);
   assert.equal(selection.defaultDiscovery?.status, 'passed'); assert.equal(selection.defaultDiscovery?.catalog?.status, 'ready');
@@ -159,40 +177,82 @@ export async function modelBaselineComparison(config, host) {
   assert.equal(catalogSource.transport, 'sdk'); assert.equal(catalogSource.operation, 'list'); assert.equal(catalogSource.status, 'completed'); assert.equal(catalogSource.resultObserved, true);
   assert.equal(catalogSource.value.coverage?.exhaustive, true); assert.equal(catalogSource.value.count, catalogSource.value.records.length);
   assert.equal(catalogSource.value.coverage.search_index_limited, false); assert.deepEqual(catalogSource.value.coverage.failed_sources, []);
-  assert.deepEqual(catalogSource.value.records.filter(record=>record.id===selection.record.id), [selection.record], 'The visible candidate must match its actual authorized SDK metadata');
-  const manifest = await artifact(descriptor.manifest);
-  assert.equal(manifest.complete, true); assert.equal(manifest.record?.kind, 'skill'); assert.equal(manifest.entrypoint, 'SKILL.md');
-  assert.match(manifest.scope, /^[a-f0-9]{64}$/); assert.match(manifest.snapshot_id, /^s_[a-f0-9]{64}$/); assert.match(manifest.version_id, /^[a-f0-9]{64}$/);
-  assert.equal(manifest.scope, catalogSource.value.scope, 'Frozen bytes and visible metadata must share authorization scope');
-  assert.equal(manifest.record.id, selection.record.id); assert.equal(manifest.record.ref, selection.record.ref);
+  const actualCatalog=comparisonCatalog(payload),records=catalogSource.value.records;
+  assert.equal(new Set(records.map(record=>record.id)).size,records.length,'The source catalog must retain distinct owners');
+  verifyComparisonCatalog(records.map(record=>({...record,disableModelInvocation:false})),actualCatalog);
+  const candidates=descriptor.version===1?[{manifest:descriptor.manifest,directory:descriptor.directory,recordId:selection.record.id}]:descriptor.candidates;
+  assert.ok(Array.isArray(candidates)&&candidates.length>0&&candidates.length===records.length,'Every visible candidate needs one frozen source tree');
+  assert.equal(new Set(candidates.map(candidate=>candidate.recordId)).size,candidates.length,'Duplicate frozen owners are not separate candidates');
+  const selectedRecordId=descriptor.version===1?selection.record.id:descriptor.selectedRecordId;
+  assert.equal(selection.record.id,selectedRecordId);
+  assert.deepEqual(records.filter(record=>record.id===selectedRecordId),[selection.record],'The selected owner must match its authorized SDK metadata');
+  if(descriptor.version===2) {
+    assert.equal(selection.runtimeUnchanged,true,'Metadata selection inputs changed during observation');
+    assert.equal(selection.viewId,descriptor.viewId); assert.equal(catalogSource.value.view?.id,descriptor.viewId);
+    assert.deepEqual(selection.catalog,actualCatalog,'Selection must retain the same actual provider catalog');
+  }
   assert.ok(typeof descriptor.directory === 'string' && isAbsolute(descriptor.directory));
   const directory = await realpath(descriptor.directory), files = await tree(directory);
-  assert.ok(Array.isArray(manifest.files) && manifest.files.length > 0);
-  assert.deepEqual(Object.keys(files.files).sort(), manifest.files.map(file => file.path).sort(), 'Native tree must retain every frozen source file and no replacements');
-  for (const file of manifest.files) {
-    assert.ok(typeof file.path === 'string' && file.path.split('/').every(part => part && part !== '.' && part !== '..') && !file.path.includes('\\'));
-    assert.equal(files.files[file.path], file.sha256, 'Native file differs from fixed Notion source: ' + file.path);
-    assert.equal((await readFile(join(directory, file.path))).length, file.bytes);
+  const frozen=[],inventory={};
+  for(const candidate of candidates) {
+    const manifest=await frozenJson(candidate.manifest),record=records.find(record=>record.id===candidate.recordId);
+    assert.ok(record,'Frozen owner is outside the actual visible catalog');
+    assert.equal(manifest.complete,true);assert.equal(manifest.record?.kind,'skill');assert.equal(manifest.entrypoint,'SKILL.md');
+    assert.equal(manifest.record.id,record.id);
+    for(const key of ['ref','name','description'])assert.equal(manifest.record[key],record[key],'Frozen source metadata differs: '+key);
+    assert.match(manifest.scope,/^[a-f0-9]{64}$/);assert.match(manifest.snapshot_id,/^s_[a-f0-9]{64}$/);assert.match(manifest.version_id,/^[a-f0-9]{64}$/);
+    assert.equal(manifest.scope,catalogSource.value.scope,'Frozen bytes and visible metadata must share authorization scope');
+    assert.ok(typeof candidate.directory==='string'&&isAbsolute(candidate.directory));
+    const candidateDirectory=await realpath(candidate.directory),prefix=relative(directory,candidateDirectory);
+    assert.ok(!prefix.startsWith('..')&&!isAbsolute(prefix),'Every native candidate must be inside the frozen catalog root');
+    if(descriptor.version===2)assert.ok(prefix&&prefix.split('/').length===1,'Multi-candidate trees must be distinct direct children');
+    const candidateTree=await tree(candidateDirectory);
+    assert.ok(Array.isArray(manifest.files)&&manifest.files.length>0);
+    assert.deepEqual(Object.keys(candidateTree.files).sort(),manifest.files.map(file=>file.path).sort(),'Native tree must retain every frozen source file and no replacements');
+    const source={scope:manifest.scope,snapshotId:manifest.snapshot_id,versionId:manifest.version_id,recordId:record.id,entrypoint:manifest.entrypoint};
+    const candidateFiles=[];
+    for(const file of manifest.files) {
+      assert.ok(typeof file.path==='string'&&file.path.split('/').every(part=>part&&part!=='.'&&part!=='..')&&!file.path.includes('\\'));
+      assert.equal(candidateTree.files[file.path],file.sha256,'Native file differs from fixed Notion source: '+file.path);
+      const absolutePath=join(candidateDirectory,file.path);
+      assert.equal((await readFile(absolutePath)).length,file.bytes);
+      const bindings=(manifest.file_bindings??[]).filter(binding=>binding.path===file.path);
+      assert.ok(bindings.length<=1,'A frozen path cannot have ambiguous File IDs');
+      candidateFiles.push({...file,absolutePath,recordId:record.id,...(bindings[0]?{fileId:bindings[0].file_id}:{})});
+      const path=relative(directory,absolutePath);assert.equal(Object.hasOwn(inventory,path),false,'Native source trees cannot share a file');
+      inventory[path]=file.sha256;
+    }
+    frozen.push({record,manifest,directory:candidateDirectory,tree:candidateTree,files:candidateFiles,source});
   }
+  assert.deepEqual(files.files,inventory,'The catalog root cannot contain extra native files or replacement wrappers');
+  const selected=frozen.find(candidate=>candidate.record.id===selectedRecordId);
+  assert.ok(selected,'The inspect task must select exactly one visible frozen owner');
+  const manifest=selected.manifest;
   assert.ok(Array.isArray(descriptor.requiredResources) && descriptor.requiredResources.length > 0 && descriptor.requiredResources.length <= 16);
   const required = [manifest.entrypoint, ...descriptor.requiredResources];
   assert.equal(new Set(required).size, required.length);
   const requiredFiles = [];
   for (const name of required) {
     const file = manifest.files.find(file => file.path === name); assert.ok(file, 'Required inspect resource absent from source manifest: ' + name);
-    const bytes = await readFile(join(directory, name));
+    const bytes = await readFile(join(selected.directory, name));
     assert.ok(bytes.length > 0 && Buffer.from(bytes.toString('utf8')).equals(bytes), 'First common inspect case requires complete nonempty UTF-8 files');
-    const bindings=(manifest.file_bindings??[]).filter(binding=>binding.path===name);
-    assert.ok(bindings.length<=1,'A frozen path cannot have ambiguous File IDs');
-    requiredFiles.push({...file, absolutePath: join(directory, name),...(bindings[0]?{fileId:bindings[0].file_id}:{})});
+    requiredFiles.push(selected.files.find(file=>file.path===name));
   }
   const nativePackage=await installedPiPackage(host);
+  if(descriptor.version===2) {
+    assert.equal(nativePackage.version,descriptor.piVersion,'Comparison must retain its actual frozen Pi version');
+    assert.equal(selection.pi.version,nativePackage.version);
+    assert.equal(selection.pi.sha256,nativePackage.sha256,'Metadata selection and task must use the same Pi package');
+  }
   const skillsModule = await realpath(join(nativePackage.directory,'dist/core/skills.js'));
   const { loadSkills } = await import(pathToFileURL(skillsModule).href);
   const discovered = loadSkills({cwd: directory, agentDir: join(directory, '.unused-agent'), skillPaths: [directory], includeDefaults: false});
   assert.ok(!discovered.diagnostics.some(item=>['error','collision'].includes(item.type)), 'Native discovery errors or collisions cannot be normalized away');
-  verifyComparisonCatalog(discovered.skills, comparisonCatalog(payload));
-  assert.equal(await realpath(discovered.skills[0].filePath), join(directory, manifest.entrypoint));
+  verifyComparisonCatalog(discovered.skills, actualCatalog);
+  for(const candidate of frozen) {
+    const skill=discovered.skills.find(skill=>skill.name===candidate.record.name);
+    assert.equal(await realpath(skill.filePath),join(candidate.directory,candidate.manifest.entrypoint),'Native metadata must belong to its exact frozen owner');
+  }
   if (!nativeLocal(config)) {
     assert.equal(config.database, selection.database);
     if (config.role === 'notion-candidate') {
@@ -201,11 +261,16 @@ export async function modelBaselineComparison(config, host) {
       assert.ok(config.packagePath); assert.equal(hash(await readFile(config.packagePath)), selection.artifacts.package.sha256);
     }
   }
-  return {version: 1, path: await realpath(config.comparison), sha256: hash(descriptorBytes), role: config.role,
+  const sourceSetup=descriptor.sourceFreezeSetup?await frozenJson(descriptor.sourceFreezeSetup):null;
+  return {version: descriptor.version, path: await realpath(config.comparison), sha256: hash(descriptorBytes), role: config.role,
     directory, tree: files, requiredFiles, catalog: discovered.skills.map(({name,description,filePath}) => ({name,description,filePath})),
-    source: {scope: manifest.scope, snapshotId: manifest.snapshot_id, versionId: manifest.version_id, recordId: manifest.record.id,entrypoint:manifest.entrypoint},
+    source:selected.source,selectedRecordId,
+    candidates:frozen.map(candidate=>({recordId:candidate.record.id,ref:candidate.record.ref,directory:candidate.directory,source:candidate.source})),
+    unselectedFiles:frozen.filter(candidate=>candidate!==selected).flatMap(candidate=>candidate.files),
+    unselectedSources:frozen.filter(candidate=>candidate!==selected).map(candidate=>({...candidate.source,name:candidate.record.name,ref:candidate.record.ref})),
     viewId: selection.viewId, selectionReceipt: descriptor.notionSelection, catalogPayload: descriptor.notionProviderPayload, catalogSource: descriptor.notionCatalogSource,
-    setupCost: selection.setupCost, frozenSourceBytes:manifest.files.reduce((total,file)=>total+file.bytes,0),
+    setupCost: selection.setupCost,sourceSetupCost:sourceSetup?.setupCost??null,
+    frozenSourceBytes:frozen.flatMap(candidate=>candidate.files).reduce((total,file)=>total+file.bytes,0),
     nativeDiscoveryDiagnostics:discovered.diagnostics,
     nativeFilesystemCache:'File fingerprinting and native metadata parsing are setup reads; OS page cache is uncontrolled, never claimed cold.',
     nativePackage,nativeLoader: {path: skillsModule, sha256: hash(await readFile(skillsModule))},
@@ -231,10 +296,11 @@ export function modelBaselineHostArgs(config, {base, observer, transport, inspec
  * instruction bodies. A body becomes known only after the actual read result;
  * the exact same outer tool output must subsequently reach the provider. */
 export function observeNativeInspection(api, settings) {
-  const {fs,crypto,path,diagnostics,output,files,catalog,clockId,source,validateResourceReadProjection} = settings;
+  const {fs,crypto,path,diagnostics,output,files,catalog,clockId,source,validateResourceReadProjection,unselectedFiles=[],unselectedSources=[]} = settings;
   const sha = value => crypto.createHash('sha256').update(value).digest('hex');
   const fd = fs.openSync(output, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW ?? 0), 0o600);
   const expected = new Map(files.map(file => [file.absolutePath, file])), calls = new Map(), delivered = new Map(), subscriptions = [];
+  const unselected=new Map(unselectedFiles.map(file=>[file.absolutePath,file])),unselectedRefs=new Map(),unselectedOutputs=new Map();
   let sequence = 0, previous = null, turn = 0, closed = false, errors = 0;
   const append = (phase, values = {}) => {
     const row = {version:1,sequence:++sequence,previousSha256:previous,clockId,monotonicNs:process.hrtime.bigint().toString(),phase,turn,...values};
@@ -255,8 +321,9 @@ export function observeNativeInspection(api, settings) {
   on('tool_call', event => {
     const pathname = event.toolName === 'read' && typeof event.input?.path === 'string' ? path.resolve(process.cwd(),event.input.path) : null;
     const file = pathname ? expected.get(pathname) : undefined;
-    if ((file||source&&event.toolName==='read') && typeof event.toolCallId === 'string' && event.toolCallId) {
-      calls.set(event.toolCallId,{file,input:event.input}); append('native_read_call',{toolCallIdSha256:sha(event.toolCallId),path:file?.path??null});
+    const other=pathname?unselected.get(pathname):undefined;
+    if ((file||other||source&&event.toolName==='read') && typeof event.toolCallId === 'string' && event.toolCallId) {
+      calls.set(event.toolCallId,{file,other,input:event.input}); append('native_read_call',{toolCallIdSha256:sha(event.toolCallId),path:file?.path??other?.path??null});
     }
     if (!source&&/^(?:notion_|skill_(?:search|prepare|graph))/.test(event.toolName)) append('unexpected_product_tool');
   });
@@ -264,6 +331,16 @@ export function observeNativeInspection(api, settings) {
     const call = calls.get(event.toolCallId); if (!call) return;
     const outputText = text(event.content), observed=[];
     const valid=event.toolName==='read'&&event.isError!==true&&!event.parentToolCallId&&Array.isArray(event.content)&&event.content.every(part=>part.type==='text');
+    const owner=event.details?.contextBrokerRead?.binding?.record?.id??event.details?.contextBrokerResource?.selection?.owner??event.details?.contextBrokerResource?.id;
+    const inputRefs=[call.input?.path,...(Array.isArray(call.input?.paths)?call.input.paths:[])].filter(value=>typeof value==='string');
+    const otherRef=inputRefs.find(ref=>unselectedRefs.has(ref));
+    let canonicalOwner;
+    if(source)for(const ref of inputRefs)try{const parsed=new URL(ref),id=decodeURIComponent(parsed.hostname);if(parsed.protocol==='skill:'&&id.startsWith('shared_skill:')&&id!==source.recordId)canonicalOwner=id;}catch{}
+    if(valid&&outputText&&(call.other||source&&owner&&owner!==source.recordId||otherRef||canonicalOwner)) {
+      const rejected={recordId:call.other?.recordId??canonicalOwner??owner??unselectedRefs.get(otherRef),path:call.other?.path??null,
+        toolCallIdSha256:sha(event.toolCallId),bytes:Buffer.byteLength(outputText),sha256:sha(outputText)};
+      append('unselected_read_result',rejected);unselectedOutputs.set(event.toolCallId,{outputText,...rejected});
+    }
     const remember=(file,body,span,wholeOutput=false)=>{
       const complete=valid&&file&&sha(body)===file.sha256&&Buffer.byteLength(body)===file.bytes;
       append('native_read_result',{toolCallIdSha256:sha(event.toolCallId),path:file?.path??null,sha256:sha(body),bytes:Buffer.byteLength(body),complete:Boolean(complete)});
@@ -326,9 +403,19 @@ export function observeNativeInspection(api, settings) {
       const field = name => unescape(new RegExp('<' + name + '>([\\s\\S]*?)</' + name + '>').exec(match[1])?.[1] ?? '');
       return {name:field('name'),description:field('description'),filePath:field('location')};
     }));
+    for(const item of actual) {
+      const other=unselectedSources.find(candidate=>candidate.name===item.name);
+      if(other)unselectedRefs.set(item.filePath,other.recordId);
+    }
+    const unselectedBodies=outputs.filter(item=>unselectedOutputs.get(item.id)?.outputText===item.text)
+      .map(item=>({recordId:unselectedOutputs.get(item.id).recordId,toolCallIdSha256:sha(item.id)}));
+    const catalogState=source?(/<(?:view|ntn-skills-discovery)\s[^>]*\bstatus="pending"/.test(systems)?'pending':
+      /<(?:view|ntn-skills-discovery)\s[^>]*\bstatus="error"/.test(systems)?'error':/<ntn-skills-view-catalog>/.test(systems)?'ready':'absent'):'ready';
+    const metadata=items=>items.map(({name,description})=>({name,description})).sort((a,b)=>a.name.localeCompare(b.name));
     const productTools = (payload?.tools ?? []).some(tool => /^(?:notion_|skill_(?:search|prepare|graph))/.test(tool.function?.name ?? tool.name ?? ''));
     append('native_provider',{payloadSha256:sha(JSON.stringify(payload)),payloadBytes:Buffer.byteLength(JSON.stringify(payload)),files:matches,
-      catalogMatches:source?null:JSON.stringify(actual) === JSON.stringify(catalog),brokerAbsent:source?null:!productTools && !/<ntn-skills-(?:guidance|view-catalog)>/.test(systems)});
+      catalogState,unselectedBodies,catalogMatches:source?(catalogState==='pending'?null:JSON.stringify(metadata(actual))===JSON.stringify(metadata(catalog))):
+        JSON.stringify(actual) === JSON.stringify(catalog),brokerAbsent:source?null:!productTools && !/<ntn-skills-(?:guidance|view-catalog)>/.test(systems)});
   });
   const finish = () => {
     if (closed) return;
@@ -355,6 +442,7 @@ export function verifyNativeInspectionEvents(events) {
     assert.equal(event.clockId,events[0].clockId); assert.equal(hash(JSON.stringify(body)),eventSha256,'Native evidence hash chain changed'); previous=eventSha256;
   }
   assert.equal(events.at(-1).complete,true); assert.equal(events.at(-1).errors,0);
+  assert.equal(events.some(event=>event.phase==='unselected_read_result'),false,'An unselected candidate body was read');
   return events;
 }
 
@@ -407,6 +495,188 @@ async function doctor(config) {
     packageSha256:config.packagePath ? hash(await readFile(config.packagePath)) : null,
     model:'magpie/group/flash-free',toolProfile:config.toolProfile??'standard',tools:modelBaselineTools(config), authentication:'not-probed' };
 }
+
+function observeComparisonCatalog(api,{fs,crypto,path,directory,output}) {
+  let turn=0,number=0,errors=0,closed=false;
+  const append=value=>fs.appendFileSync(output,JSON.stringify(value)+'\n');
+  const guard=handler=>(...args)=>{if(closed)return;try{handler(...args);}catch{errors++;}};
+  api.on('input',guard(()=>{turn++;}));
+  api.on('tool_call',guard(event=>append({phase:'tool_call',turn,name:event.toolName,id:event.toolCallId,input:event.input})));
+  api.on('tool_result',guard(event=>append({phase:'tool_result',turn,name:event.toolName,id:event.toolCallId,isError:event.isError===true})));
+  api.on('before_provider_request',guard(event=>{
+    const bytes=JSON.stringify(event.payload),name='payload-'+(++number)+'.json';
+    fs.writeFileSync(path.join(directory,name),bytes,{flag:'wx',mode:0o600});
+    append({phase:'provider',turn,number,file:name,sha256:crypto.createHash('sha256').update(bytes).digest('hex')});
+  }));
+  api.on('session_shutdown',guard(()=>{append({phase:'end',complete:errors===0,errors});closed=true;}));
+}
+
+function observeComparisonCatalogSources({fs,diagnostics,directory}) {
+  let count=0,errors=0;
+  diagnostics.subscribe('context-broker.notion-sdk-result',event=>{
+    try {
+      if(event?.version!==1||event.operation!=='list'||typeof event.id!=='string')throw new Error('Only metadata results belong to catalog selection');
+      fs.writeFileSync(directory+'/source-'+(++count)+'.json',JSON.stringify({version:1,id:event.id,pid:process.pid,
+        transport:'sdk',operation:'list',status:'completed',resultObserved:true,value:event.value}),{flag:'wx',mode:0o600});
+    } catch {errors++;}
+  });
+  process.once('exit',()=>{try{fs.writeFileSync(directory+'/capture-end.json',JSON.stringify({complete:errors===0,count,errors}),{flag:'wx',mode:0o600});}catch{}});
+}
+
+export function verifyComparisonSelection({hooks,wires,sources,sourceEvents,expectedRecords,viewId}) {
+  const providers=hooks.filter(row=>row.phase==='provider'),calls=hooks.filter(row=>row.phase==='tool_call');
+  assert.deepEqual(providers.map(row=>row.turn),[1,1,2],'A ready catalog needs a separate ordinary continuation');
+  assert.equal(wires.length,3);assert.equal(hooks.at(-1)?.phase,'end');assert.equal(hooks.at(-1)?.complete,true);
+  assert.equal(calls.length,1);assert.equal(calls[0].name,'notion_list');assert.deepEqual(calls[0].input,{});
+  assert.equal(hooks.filter(row=>row.phase==='tool_result'&&row.id===calls[0].id&&row.name==='notion_list'&&!row.isError).length,1);
+  const expected=expectedRecords.map(record=>({...record,disableModelInvocation:false}));
+  for(const [index,provider]of providers.entries()) {
+    assert.equal(provider.number,index+1);assert.equal(provider.sha256,hash(JSON.stringify(provider.payload)),'Catalog hook payload changed');
+    assert.equal(provider.sha256,wires[index].sha256,'Actual catalog hook differs from the HTTP serializer');
+    const block=comparisonCatalogBlock(provider.payload,index<2);
+    if(index<2&&(block===null||/<view\s[^>]*\bstatus="pending"/.test(block)))continue;
+    verifyComparisonCatalog(expected,comparisonCatalog(provider.payload));
+  }
+  const catalog=comparisonCatalog(providers.at(-1).payload);
+  const starts=sourceEvents.filter(row=>row.phase==='started');
+  assert.ok(starts.length>0&&starts.every(row=>row.kind==='sdk'&&row.operation==='list'),'Catalog selection permits only SDK metadata operations');
+  assert.equal(sources.length,starts.length,'Every actual metadata operation needs its raw SDK result');
+  for(const source of sources) {
+    assert.equal(source.operation,'list');assert.equal(source.transport,'sdk');assert.equal(source.status,'completed');assert.equal(source.resultObserved,true);
+    const requestId='sdk:'+source.pid+':'+source.id;
+    assert.equal(starts.filter(row=>row.requestId===requestId).length,1,'Raw catalog result must bind one actual SDK operation');
+    assert.equal(sourceEvents.filter(row=>row.phase==='completed'&&row.requestId===requestId&&row.status==='completed').length,1);
+  }
+  const ids=records=>records.map(record=>record.id).sort();
+  const matching=sources.filter(source=>source.value?.view?.id===viewId);
+  assert.ok(matching.length>0,'The actual SDK must return this existing View');
+  for(const source of matching) {
+    assert.equal(source.value.coverage?.exhaustive,true);assert.equal(source.value.coverage.search_index_limited,false);
+    assert.deepEqual(source.value.coverage.failed_sources,[]);assert.equal(source.value.count,source.value.records.length);
+    assert.deepEqual(ids(source.value.records),ids(expectedRecords),'The View owner set differs from the frozen inputs');
+    for(const record of source.value.records) {
+      const expectedRecord=expectedRecords.find(item=>item.id===record.id);
+      for(const key of ['id','ref','kind','name','description'])assert.equal(record[key],expectedRecord[key],'The SDK candidate differs: '+key);
+    }
+    verifyComparisonCatalog(source.value.records.map(record=>({...record,disableModelInvocation:false})),catalog);
+  }
+  return {catalog,payload:providers.at(-1),source:matching.at(-1)};
+}
+
+async function selection(config,parent) {
+  assert.equal(config.role,'notion-candidate');assert.equal(config.transport,'sdk');
+  const descriptor=JSON.parse(await readFile(config.comparison,'utf8'));
+  assert.equal(descriptor.version,2);assert.match(descriptor.viewId,/^[a-f0-9-]{36}$/);
+  assert.ok(Array.isArray(descriptor.candidates)&&descriptor.candidates.length>0);
+  const expectedRecords=[];
+  for(const candidate of descriptor.candidates) {
+    const manifest=await frozenJson(candidate.manifest);assert.equal(manifest.record.id,candidate.recordId);
+    expectedRecords.push(manifest.record);
+  }
+  assert.equal(new Set(expectedRecords.map(record=>record.id)).size,expectedRecords.length);
+  assert.ok(expectedRecords.some(record=>record.id===descriptor.selectedRecordId));
+  const host=await resolveHost('pi'),pi=await installedPiPackage(host),artifacts=await packageIdentity(config),runtime=await bundledRuntimeAt(config.extension);
+  assert.equal(pi.version,descriptor.piVersion,'Use the comparison frozen Pi version for metadata selection');
+  const evidence=await mkdtemp(join(await evidenceRoot(parent,await systemTempRoot()),'skill-model-catalog-'));
+  const scratch=await mkdtemp(join(await systemTempRoot(),'skill-model-catalog-scratch-')),runId=randomUUID(),clockId=runId;
+  const payloads=join(evidence,'provider-payloads'),sourceDirectory=join(evidence,'source-results');
+  await Promise.all([payloads,sourceDirectory].map(path=>mkdir(path)));
+  const output=join(evidence,'catalog-hooks.jsonl'),ledger=join(evidence,'source.jsonl'),wire=join(evidence,'wire.jsonl'),owned=join(evidence,'owned-processes.jsonl');
+  await Promise.all([output,wire].map(path=>writeFile(path,'',{flag:'wx',mode:0o600})));
+  const report={version:1,kind:'installed-pi-catalog-preflight',status:'running',runId,evidence,scratch,sourceMode:'sdk',
+    database:config.database,viewId:descriptor.viewId,artifacts,pi,bodyRequests:null,realModelRequests:0,
+    input:{path:config.comparison,sha256:hash(await readFile(config.comparison))},
+    driverSha256:hash(await readFile(fileURLToPath(import.meta.url))),processes:[]};
+  await save(join(scratch,'owner.json'),{runId,evidence});
+  await save(join(evidence,'ownership.json'),{runId,evidence,scratch,kind:report.kind});
+  await save(join(evidence,'intent.json'),report);
+  const brokerConfig=join(scratch,'broker.json');
+  await save(brokerConfig,{pathMode:'hash',logPaths:false,skillRoots:[],extraSkillRoots:[],
+    sources:[modelBaselineSource(config,{cacheDir:join(scratch,'broker-cache'),viewId:descriptor.viewId})]});
+  const observer=join(scratch,'cost.mjs'),transport=join(scratch,'transport.mjs'),capture=join(scratch,'catalog.mjs'),preload=join(scratch,'source.mjs');
+  await writeFile(observer,consumptionCostExtensionSource({output:join(evidence,'cost.jsonl'),checkoutRoot:root,runId,sampleId:'catalog',clockId}),{flag:'wx',mode:0o600});
+  await writeFile(transport,providerTransportExtensionSource({output:join(evidence,'transport.jsonl'),checkoutRoot:root,clockId}),{flag:'wx',mode:0o600});
+  await writeFile(capture,"import fs from 'node:fs';import crypto from 'node:crypto';import path from 'node:path';export default api=>("
+    +observeComparisonCatalog.toString()+')(api,{fs,crypto,path,...'+JSON.stringify({directory:payloads,output})+'});\n',{flag:'wx',mode:0o600});
+  await writeFile(preload,sourceObserverPreloadSource({output:ledger,checkoutRoot:root,clockId,cliPath:runtime.cli.path,ownerEntry:host.identity,ownerParentPid:process.pid})
+    +'\nif(owned)('+observeComparisonCatalogSources.toString()+')({fs,diagnostics,directory:'+JSON.stringify(sourceDirectory)+'});\n',{flag:'wx',mode:0o600});
+  let wireCount=0,wireFailure;
+  const server=createServer(async(request,response)=>{
+    try {
+      let raw='';for await(const chunk of request)raw+=chunk;
+      const body=JSON.parse(raw),number=++wireCount;
+      await writeFile(wire,JSON.stringify({number,sha256:hash(raw),bytes:Buffer.byteLength(raw),body})+'\n',{flag:'a'});
+      assert.ok(number<=3,'Only one metadata tool call and one ordinary continuation are planned');
+      assert.deepEqual(body.tools.map(tool=>tool.function?.name??tool.name).sort(),modelBaselineTools(config).sort());
+      const tool=number===1,chunk=(delta,finish_reason=null)=>'data: '+JSON.stringify({id:'catalog-'+number,object:'chat.completion.chunk',
+        created:1,model:'metadata',choices:[{index:0,delta,finish_reason}]})+'\n\n';
+      response.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-cache'});
+      response.end(chunk({role:'assistant'})+chunk(tool?{tool_calls:[{index:0,id:'catalog-list',type:'function',function:{name:'notion_list',arguments:'{}'}}]}:
+        {content:'Metadata observation complete.'})+chunk({},tool?'tool_calls':'stop')+'data: [DONE]\n\n');
+    } catch(error) {wireFailure=error;response.writeHead(500,{'content-type':'application/json'});response.end(JSON.stringify({error:{message:error.message}}));}
+  });
+  await new Promise(accept=>server.listen(0,'127.0.0.1',accept));server.unref();
+  const provider=join(scratch,'provider.mjs'),model='skill-model-catalog/metadata';
+  await writeFile(provider,"export default api=>api.registerProvider('skill-model-catalog',{name:'Metadata-only catalog observation',baseUrl:"
+    +JSON.stringify('http://127.0.0.1:'+server.address().port+'/v1')+",api:'openai-completions',apiKey:'controlled-no-secret',models:[{id:'metadata',name:'Controlled metadata observer',input:['text'],contextWindow:1000000,maxTokens:256,cost:{input:0,output:0,cacheRead:0,cacheWrite:0}}]});\n",{flag:'wx',mode:0o600});
+  const env=verificationCliEnvironment(join(scratch,'cli'));
+  Object.assign(env,{CONTEXT_BROKER_CONFIG:brokerConfig,CONTEXT_BROKER_HOST:'pi',CONTEXT_BROKER_LOG_FILE:join(evidence,'broker.jsonl'),
+    BROKER_E2E_PROCESS_LEDGER:owned,NTN_SKILLS_REQUEST_TRACE_LIMIT:'10000',PWD:scratch});
+  for(const key of ['NODE_OPTIONS','CONTEXT_BROKER_ROOTS','CONTEXT_BROKER_EXTRA_ROOTS','CONTEXT_BROKER_DISCOVERY_CATALOGS','CONTEXT_BROKER_EXTRA_DISCOVERY_CATALOGS','OLDPWD','INIT_CWD'])delete env[key];
+  env.NODE_OPTIONS='--import='+pathToFileURL(preload).href;
+  const args=modelBaselineHostArgs(config,{base:scratch,observer,transport,inspection:capture,comparison:{directory:descriptor.directory}});
+  args.splice(args.length-2,2,'-e',provider,'--model',model);
+  let rpc,boundary;
+  try {
+    rpc=await startRpc({host:'pi',cwd:scratch,env,args,timeoutMs:90000,waitForState:false});
+    for(const prompt of ['Inspect the available Notion metadata directory only. Do not load instructions or resources.','Continue by reporting the current default directory state only.'])await rpc.prompt(prompt);
+    if(wireFailure)throw wireFailure;
+    boundary=await settleSource(ledger,'sdk');assert.ok(boundary.quiet&&boundary.observed);
+    await rpc.closeInput();
+  } catch(error){report.error=safeDiagnostic(Buffer.from(error.message));if(rpc)try{await rpc.stop();}catch{}}
+  finally {server.closeAllConnections();await new Promise(accept=>server.close(accept));if(rpc)await save(join(evidence,'pi-rpc.json'),rpc.frames);}
+  try {
+    const observation=await readSourceObservation(ledger),lifecycle=await rows(owned);
+    const source=summarizeSource(observation.events,{transport:'sdk',sourceObservation:observation,ownedLifecycle:lifecycle,
+      beforeCloseRequestIds:boundary?.requestIds,beforeCloseChildIds:boundary?.childIds});
+    report.processes=[{id:'.',sourceTransport:'sdk',source}];report.sourceAccounting=source;
+    report.bodyRequests=source.requestKinds.notion_body;report.processesClosed=source.hostClosed;
+    report.setupCost={httpAttempts:source.httpAttempts,observedHttpAttempts:source.observedHttpAttempts,
+      requestBytes:source.requestBodyBytes,responseBytes:source.decodedResponseBytes,
+      scope:'Metadata selection/setup only, including failed observations; separate from source acquisition and later task consumers.'};
+    assert.ok(source.complete,'Metadata source and host lifecycle must close completely');
+    const attempts=observation.events.filter(row=>row.phase==='attempt');
+    assert.ok(attempts.every(row=>row.request_kind==='notion_metadata'),'Catalog selection must not read bodies or write Notion');
+    const captureEnd=JSON.parse(await readFile(join(sourceDirectory,'capture-end.json'),'utf8'));
+    assert.equal(captureEnd.complete,true);
+    const sources=await Promise.all((await readdir(sourceDirectory)).filter(name=>/^source-\d+\.json$/.test(name)).sort()
+      .map(async name=>({...JSON.parse(await readFile(join(sourceDirectory,name),'utf8')),file:'source-results/'+name})));
+    assert.equal(sources.length,captureEnd.count);
+    const hooks=await rows(output);
+    for(const row of hooks.filter(row=>row.phase==='provider'))row.payload=JSON.parse(await readFile(join(payloads,row.file),'utf8'));
+    const checked=verifyComparisonSelection({hooks,wires:await rows(wire),sources,sourceEvents:observation.events,expectedRecords,viewId:descriptor.viewId});
+    report.catalog=checked.catalog;report.record=checked.source.value.records.find(record=>record.id===descriptor.selectedRecordId);
+    report.defaultDiscovery={status:'passed',catalog:{status:'ready'},ordinaryTurns:2,controlledProviderRequests:3};
+    report.providerPayload='provider-payloads/'+checked.payload.file;report.catalogSource=checked.source.file;
+    assert.equal(report.bodyRequests,0);
+    assert.equal(hash(await readFile(fileURLToPath(import.meta.url))),report.driverSha256,'Metadata driver changed during observation');
+    assert.equal(hash(await readFile(config.comparison)),report.input.sha256,'Metadata selection input changed');
+    for(const file of artifacts.runtimeFiles)assert.equal(hash(await readFile(join(artifacts.packageRoot,file.path))),file.sha256,'Installed candidate changed');
+    assert.deepEqual(await installedPiPackage(await resolveHost('pi')),pi,'Installed Pi identity changed');
+    report.runtimeUnchanged=true;
+    assert.equal(report.error,undefined,'A failed metadata run cannot be relabelled by later observations');
+    report.status='passed';
+  } catch(error) {report.status='failed';report.error??=safeDiagnostic(Buffer.from(error.message));}
+  report.files=Object.keys((await tree(evidence)).files);
+  await save(join(evidence,'report.json'),report);
+  const artifact=async name=>({path:join(evidence,name),sha256:hash(await readFile(join(evidence,name)))});
+  const inputs=report.status==='passed'?{notionSelection:await artifact('report.json'),notionProviderPayload:await artifact(report.providerPayload),notionCatalogSource:await artifact(report.catalogSource)}:null;
+  await save(join(evidence,'comparison-artifacts.json'),inputs);
+  await save(join(evidence,'retained.json'),await tree(evidence));
+  console.log(JSON.stringify({status:report.status,evidence,setupCost:report.setupCost,comparisonArtifacts:inputs,error:report.error},null,2));
+  if(report.status!=='passed')process.exitCode=1;
+}
+
 function textOf(frame) {
   const message = [...(frame?.messages ?? [])].reverse().find(message => message.role === 'assistant');
   return { text: (message?.content ?? []).filter(part => part.type === 'text').map(part => part.text).join('\n'), stopReason:message?.stopReason };
@@ -561,6 +831,7 @@ async function run(config, parent) {
       }
       await writeFile(inspection,nativeInspectionExtensionSource({output:inspectionLog,clockId,
         files:preflight.comparison.requiredFiles,catalog:preflight.comparison.catalog,
+        unselectedFiles:preflight.comparison.unselectedFiles,unselectedSources:preflight.comparison.unselectedSources,
         ...(!nativeLocal(config)?{source:preflight.comparison.source,...(validatorPath?{validatorPath}:{})}:{})}),{mode:0o600,flag:'wx'});
     }
     if(config.transport==='sdk') {
@@ -589,6 +860,8 @@ async function run(config, parent) {
             const cost=(await readConsumptionCostEvents(observation)).events;
             const providers=cost.filter(event=>event.phase==='provider_request'&&event.turn===sample.turn);
             const inspectionEvents=await rows(inspectionLog);
+            assert.equal(inspectionEvents.some(event=>event.phase==='unselected_read_result'),false,'An inspect task cannot read an unselected candidate body');
+            assert.equal(inspectionEvents.some(event=>event.phase==='native_provider'&&event.catalogMatches===false),false,'The actual provider candidate set changed');
             const delivered=inspectionEvents.filter(event=>event.phase==='native_provider'&&event.turn===sample.turn)
               .filter(event=>providers.some(provider=>provider.payload.sha256===event.payloadSha256)).flatMap(event=>event.files);
             sample.inspection={entry:'read',paths:preflight.comparison.requiredFiles.map(file=>({path:file.path,sha256:file.sha256,
@@ -688,8 +961,10 @@ async function evidence(path,cleanup=false) {
       console.log(JSON.stringify({status:'already-trashed',functionalStatus:report.status,evidence:path,files:Object.keys(inventory.files).length}));return;
     } catch(error) { if(error.code!=='ENOENT')throw error; }
     const owner=JSON.parse(await readFile(join(path,'ownership.json'),'utf8')), scratch=owner.scratch;
-    assert.equal(owner.evidence,path);assert.equal(owner.runId,report.runId);assert.equal(owner.kind,'skill-consumption-model-baseline');
-    assert.ok(dirname(scratch)===await systemTempRoot()&&scratch.startsWith(join(await systemTempRoot(),'skill-model-cost-scratch-')));
+    assert.equal(owner.evidence,path);assert.equal(owner.runId,report.runId);
+    assert.ok(['skill-consumption-model-baseline','installed-pi-catalog-preflight'].includes(report.kind));assert.equal(owner.kind,report.kind);
+    const prefix=report.kind==='installed-pi-catalog-preflight'?'skill-model-catalog-scratch-':'skill-model-cost-scratch-';
+    assert.ok(dirname(scratch)===await systemTempRoot()&&scratch.startsWith(join(await systemTempRoot(),prefix)));
     for(const item of report.processes){
       const ledger=await rows(join(path,item.id,'owned-processes.jsonl'));
       const spawned=ledger.filter(row=>row.event==='spawn');
@@ -716,9 +991,11 @@ async function main() {
   const args=process.argv.slice(2);if(args.some(arg=>['--help','-h','help'].includes(arg))){console.log(usage);return;}
   const action=args.shift(),options={};while(args.length){const key=args.shift();assert.ok(key?.startsWith('--')&&args.length);options[key.slice(2)]=args.shift();}
   if(action==='evidence'||action==='cleanup')return evidence(options.evidence,action==='cleanup');
-  assert.ok(action==='doctor'||action==='run',usage);
+  assert.ok(['doctor','selection','run'].includes(action),usage);
   const config=await configAt(options.config);
-  if(action==='doctor')console.log(JSON.stringify(await doctor(config),null,2));else await run(config,options['evidence-root']);
+  if(action==='doctor')console.log(JSON.stringify(await doctor(config),null,2));
+  else if(action==='selection')await selection(config,options['evidence-root']);
+  else await run(config,options['evidence-root']);
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))main().catch(error=>{console.error(safeDiagnostic(Buffer.from(error.message)));process.exitCode=1;});
 

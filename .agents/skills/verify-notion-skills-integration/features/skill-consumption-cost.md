@@ -13,7 +13,7 @@
 | 普通启动顺序 | `skill-consumption-startup.mjs` | 实际 Pi，受控 source/provider；原生 RPC 提交先于目录完成。受控 stream 不等于真实模型 HTTP 或 token |
 | 真实模型成本任务 | `skill-consumption-model-baseline.mjs` | 固定 magpie/group/flash-free；正常工具、冻结的普通或 Skill 任务；独立 cold 进程和最后一个进程中的 existing-session warm 续接。原 driver 的 `pi-native-local` 臂不加载 Broker，使用 Pi 原生发现/read；任务类型分组记录，成本 driver 不替代 Skill 完整消费断言 |
 
-被动 observer 的 JSONL 使用 0600 权限、逐事件 hash 链和同机 monotonic clock。日志不保存认证头、token、签名 URL、原始 CLI stdout 或完整 provider 正文；独立 Source CLI driver 的原件保留规则另按该 driver 执行。实际 payload 的 hash 必须与 transport 发送 body 对齐；hash/摘要本身不证明 Skill 正文投递，后者仍由消费链的完整 span 断言负责。纯本地臂使用同一成本和 HTTP observer，并以原 driver 内的 native inspection observer 替代 Notion source observer；没有另建总验证入口。
+被动成本 observer 的 JSONL 使用 0600 权限、逐事件 hash 链和同机 monotonic clock。成本日志不保存认证头、token、签名 URL、原始 CLI stdout 或完整 provider 正文；独立 Source CLI driver 的原件保留规则另按该 driver 执行。metadata selection 另保留无 Skill 正文的实际 provider JSON、受控本地 HTTP payload 和 SDK 目录结果，用于比较完整候选集合。实际 payload 的 hash 必须与 transport 发送 body 对齐；hash/摘要本身不证明 Skill 正文投递，后者仍由消费链的完整 span 断言负责。纯本地臂使用同一成本和 HTTP observer，并以原 driver 内的 native inspection observer 替代 Notion source observer；没有另建总验证入口。
 
 正文观察只扫描实际 message content（包含 JSON 编码的 prepare 正文），排除 details、tool schema 和 assistant tool arguments；raw/XML/JSON 的同一物理片段不重复计数。known body 必须来自 owned receipt 和匹配的非空 toolCallId，v2 compiler/hash/span 也要匹配。该统计仍不替代完整功能投递判断。真实 Pi 的 TranscriptContext 可带内部 details，受控捕获的总 JSON 大小不能当模型 HTTP body；serializer/localhost HTTP 的字节和真实模型 HTTP/token 分开报告。
 
@@ -140,7 +140,7 @@ SDK 模式还要求被动 source observer 的真实 exit 终界、完整 hash �
 
 Notion candidate 配置保留实际独立安装的 `extension`、archive、`database`、`transport:"sdk"` 与产品默认工具 profile，增加同一 `comparison` 和 `role:"notion-candidate"`。必须省略 `command`。比较使用 manifest 已冻结的真实 Default View；模型仍可按实际工具面决策。额外工具定义、guidance 和错误往返都进入累计成本，不能隐藏它们来降低结果。
 
-比较 manifest 版本 1 包含这些字段，所有 SHA 必须由原件计算，不能填写期望结果：
+既有单候选比较 manifest 版本 1 保持兼容，包含这些字段。所有 SHA 必须由原件计算，不能填写期望结果：
 
 | 字段 | 冻结内容 |
 | --- | --- |
@@ -156,7 +156,30 @@ Notion candidate 配置保留实际独立安装的 `extension`、archive、`data
 
 复用既有 `notion-skill-graph-model.mjs selection --config ABSOLUTE_CONFIG` 取得 metadata 原件；它使用独立 consumer 根，真实 metadata/setup HTTP 与后续任务分账。Source 固定树也必须来自独立冻结输入，不以准备基线为由预热将要测量的 Notion consumer。Doctor 只读这些已存在原件和本地 Pi loader，不再调用 Notion 或模型。
 
-Doctor 用实际安装 Pi 的原生 loader 读取未改写的 frontmatter，并与已收到的 Notion provider 目录精确比较名称、描述和候选数量。`notion-foo` 与 `foo`、大小写、不同描述或替代入口均不自动归一化；不一致必须在调用模型前失败，不能换好样本或改 source frontmatter。固定完整源树的 hash 同时约束正文中的 Members；此切片不把其后续路由或 Requires 执行算成双方共有能力。候选扩展/archive、所有 manifest 输入和来源树在执行结束再次核对，变化使该批 incomplete。
+多候选目录使用同一 baseline driver 的版本 2。保留上表中的任务、模型、计数及资源要求，用以下字段替代单个 `manifest`：
+
+| 字段 | 冻结内容 |
+| --- | --- |
+| `candidates` | 完整数组，每项为 `{recordId,manifest:{path,sha256},directory}`。每个实际可见候选必须有一份精确 manifest 和完整原始文件树，不接受重复 owner、额外候选或少列候选 |
+| `directory` | 原生目录根，各候选目录为互不重叠的直接子目录。根内只允许上述固定文件，不能生成替代 frontmatter 或目录 wrapper |
+| `selectedRecordId` | 本任务选择的一个真实可见 owner。`requiredResources` 仅指向该 owner；其它候选的主文和资源不作为任务输入加载 |
+| `piVersion` / `viewId` | 本次实际 Pi 版本和既有 View ID。候选目录来自完整 View，不为比较创建或修改生产 View |
+| `sourceFreezeSetup` | 可选 `{path,sha256}`，独立来源冻结回执；其 `setupCost` 与 metadata selection、后续任务三份账本分别保留 |
+
+Graph A/B 的 `selection` 仍要求单根目录，不改变它的验收条件。多候选预检在原 baseline driver 内使用独立空状态、实际安装 Pi 和默认 SDK：
+
+```bash
+node scripts/skill-consumption-model-baseline.mjs selection \
+  --config /absolute/notion-selection-config.json --evidence-root /absolute/catalog-evidence
+```
+
+selection 配置使用 `role:"notion-candidate"`、安装包和默认 SDK，`comparison` 先指向包含完整候选树及任务 hash 的版本 2 输入文件。它以受控本地 provider 执行一次 `notion_list`，然后提交普通续轮；两个用户轮次的三个实际 provider payload 均与 HTTP serializer 对齐。首轮真实的 `ntn-skills-discovery status="pending"` 只表示发现尚未完成，不能当成空目录，也不能代替续轮 ready。来源只允许 SDK `list` 和 metadata HTTP；CLI 子进程、正文、远端写入、失败或未闭合操作均不满足预检。
+
+成功输出的 `comparisonArtifacts` 给出 `notionSelection`、`notionProviderPayload`、`notionCatalogSource` 的实际路径和 SHA。将它们加入一份新的冻结 comparison 文件，供两个 arm 共用；保留预检原输入文件及失败回执，不覆盖原件。Doctor 独立核对 ready payload、SDK 完整 owner 集合、每份 source manifest 和原生 loader 的同一集合；只靠 receipt 的 `passed` 字段不能满足这些校验。metadata selection 不调用真实模型、不准备正文，也不建立后续任务 consumer 缓存。其成功只证明这份输入可比较。
+
+Doctor 用实际安装 Pi 的原生 loader 读取未改写的 frontmatter，并与已收到的 Notion provider 目录精确比较名称、描述和候选数量。所有候选都必须原生可见；`disable-model-invocation:true`、名称碰撞、不同描述、不同大小写或替代入口均不能自动归一化。原生与 Notion 的实际目录顺序分别保留，集合比较不改写它们。固定完整源树的 hash 同时约束正文中的 Members；此切片不把其后续路由或 Requires 执行算成双方共有能力。候选扩展/archive、所有 manifest 输入和来源树在执行结束再次核对，变化使该批 incomplete。
+
+当前真实日用默认 View 的 74 项与原生目录尚未证明同条件，其中已观察到 manual-only Skill。现有 3 项 builtin View 是独立窄场景；它的通过不能替代 74 项默认目录比较，也不能通过改源 frontmatter、成员或名单消除差异。
 
 Pi 原生 loader 从实际 executable 所属的 package.json 定位，并核对该包声明的 bin 确实指向实际入口；不能把 `dist/bundle/cli.js` 的父目录误当整个 runtime 根。原生臂冻结完整 `dist`、package.json 与 `dist/core/skills.js`，结束时重新核对；runtime 或比较输入变化均把整批结果判为 incomplete。原 baseline test 中的 public Doctor smoke 使用真实 PATH、实际安装 Pi 和原生 loader，仅 source/selection 输入为受控 fixture，不调用 Notion 或模型，也不替代真实来源预检。
 
@@ -172,6 +195,8 @@ node scripts/skill-consumption-model-baseline.mjs run \
 inspection observer 的输入只有冻结文件身份与 SHA/bytes，不读正文预置答案。实际 native read 成功返回全部文本后，它才记住该内容，并要求同一 outer toolCallId 的完整 tool output 出现在实际 provider 请求中。details-only、partial、失败 read、另一 owner 的文件路径、换 call ID、assistant 引用或 tool arguments 均不能证明交付。两个路径的正文即使字节相同，也分别核对真实 read 身份，不能用一个文件冒充另一个。
 
 Notion 臂沿实际 read receipt 核对冻结的 scope、owner、snapshot/version、路径与 File ID，并复用候选安装包的 resource projection validator 验证 `read.paths`；批量文件分别记录原外层 call 的完整 provider span，保持一次外层调用计数。原 scalar 和 batch 入口都保留，不能为了对照隐藏合法 schema。每个任务仍要通过冻结答案谓词并把主文和全部必需资源送达 provider，不接受 use/prepare 来冒充本项 inspect。答案谓词不代替独立语义审阅或已有 graph 权限/版本 oracle。
+
+多候选检视只允许选择的 owner 贡献正文。原生 observer 识别未选候选的实际文件路径；Notion observer 同时保留已出现短引用、canonical owner 和实际 read receipt 的归属。成功读取未选正文使该次检视失败，即使所选主文和资源已经完整送达，或两个 owner 的正文恰好字节相同。失败 read 不冒充成功正文读取。每个实际 ready provider 目录仍核对冻结候选集合；初始 pending 可保留，额外候选、缺项和替换描述不能默默通过。
 
 native 的零 CLI/SDK/来源 HTTP 只有在真实 observer 终界、host close、无产品调用、无 child starts、无 non-model Undici attempt、实际目录/schema 不含 Broker 的条件下成立。缺观察或未知 child 保持 null。`nativeFileReadResults` 和 `nativeFileReadBytes` 是实际完整 read 输出，filesystem syscall 数保持 null；文件本已存在、fingerprint/setup 可以暖 OS page cache，因此本地 cold 仅指新进程/新 provider 会话，不能宣称冷磁盘。
 

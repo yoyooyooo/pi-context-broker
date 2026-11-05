@@ -10,7 +10,7 @@ import test from 'node:test';
 import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { comparisonCatalog, modelBaselineHostArgs, modelBaselineSource, modelBaselineTools, observeNativeInspection,
   summarizeNativeSource, validateModelBaselineConfig, verifyComparisonCatalog, verifyNativeInspectionEvents,
-  summarizeSource, verifyModelAnswer } from './skill-consumption-model-baseline.mjs';
+  summarizeSource, verifyComparisonSelection, verifyModelAnswer } from './skill-consumption-model-baseline.mjs';
 
 test('ordinary task acceptance rejects permission-only replies containing the expected answer', () => {
   assert.equal(verifyModelAnswer({ stopReason: 'stop', text: '请先确认授权，我才能回答 12 加 7 是否等于 19。' }, ['19', '十九']), false);
@@ -238,6 +238,59 @@ test('the public Doctor resolves the actual installed Pi bundled CLI and native 
   assert.equal(output.runtimeDirectory,path.dirname(path.dirname(output.comparison.nativeLoader.path)));
   assert.equal(output.authentication,'not-probed');assert.equal(output.extension,null);assert.equal(output.cliSha256,null);
   assert.deepEqual(output.comparison.catalog.map(({name,description})=>({name,description})),[{name:'reader',description:'Inspect fixed files.'}]);
+
+  const catalogRoot=path.join(base,'catalog'),viewId='12345678-1234-1234-1234-123456789012',candidates=[],records=[];
+  for(const name of ['reader','other-one','other-two']) {
+    const directory=path.join(catalogRoot,name),description='Inspect '+name+'.';
+    await mkdir(path.join(directory,'references'),{recursive:true});
+    const files=[{path:'SKILL.md',body:'---\nname: '+name+'\ndescription: '+description+'\n---\nRead references/check.md.\n'},
+      {path:'references/check.md',body:'Reference for '+name+'.\n'}];
+    for(const file of files)await writeFile(path.join(directory,file.path),file.body);
+    const record={id:'shared_skill:fixture:'+name,kind:'skill',name,description,ref:'skill://'+encodeURIComponent('shared_skill:fixture:'+name)+'/SKILL.md'};
+    const manifest=await write(name+'-manifest.json',{complete:true,record,entrypoint:'SKILL.md',scope:'a'.repeat(64),snapshot_id:'s_'+digest(name),version_id:digest('version-'+name),
+      files:files.map(({path,body})=>({path,bytes:Buffer.byteLength(body),sha256:digest(body)}))});
+    candidates.push({recordId:record.id,manifest,directory});records.push(record);
+  }
+  const multiSource=await write('multi-source.json',{transport:'sdk',operation:'list',status:'completed',resultObserved:true,
+    value:{scope:'a'.repeat(64),view:{id:viewId},records,count:3,coverage:{exhaustive:true,search_index_limited:false,failed_sources:[]}}});
+  const multiPayload={messages:[{role:'system',content:catalogFor(records)}]},multiPayloadIdentity=await write('multi-payload.json',multiPayload);
+  const multiSelection=await write('multi-selection.json',{kind:'installed-pi-catalog-preflight',status:'passed',sourceMode:'sdk',pi:output.comparison.nativePackage,runtimeUnchanged:true,
+    bodyRequests:0,realModelRequests:0,processesClosed:true,defaultDiscovery:{status:'passed',catalog:{status:'ready'}},
+    evidence:base,files:['multi-source.json','multi-payload.json'],record:records[0],viewId,catalog:comparisonCatalog(multiPayload),setupCost:{kind:'controlled-fixture',httpAttempts:0}});
+  const descriptor={version:2,roles:['previous-broker','notion-candidate','pi-native-local'],intent:'inspect',entry:'read',model:'magpie/group/flash-free',
+    promptSha256:digest(config.prompt),expectedAnswersSha256:digest(JSON.stringify(config.expectedAnswers)),counts:config.counts,
+    notionSelection:multiSelection,notionProviderPayload:multiPayloadIdentity,notionCatalogSource:multiSource,
+    piVersion:output.comparison.nativePackage.version,viewId,directory:catalogRoot,candidates,selectedRecordId:records[0].id,requiredResources:['references/check.md']};
+  const invoke=async(name,descriptor)=>{
+    const comparison=await write(name+'-comparison.json',descriptor),input=await write(name+'-config.json',{...config,comparison:comparison.path});
+    return spawnSync(process.execPath,[fileURLToPath(new URL('./skill-consumption-model-baseline.mjs',import.meta.url)),'doctor','--config',input.path],
+      {encoding:'utf8',env:process.env,timeout:20000});
+  };
+  const multi=await invoke('multi',descriptor);assert.equal(multi.status,0,multi.stderr);
+  const comparison=JSON.parse(multi.stdout).comparison;
+  assert.equal(comparison.version,2);assert.equal(comparison.catalog.length,3);assert.equal(comparison.candidates.length,3);
+  assert.equal(comparison.requiredFiles.length,2);assert.equal(comparison.unselectedFiles.length,4);
+  assert.equal(comparison.source.recordId,records[0].id);
+  for(const scenario of ['missing','duplicate','wrong-owner','outside-root','wrong-scope','stale-payload','host-version']) {
+    const changed=structuredClone(descriptor);
+    if(scenario==='missing')changed.candidates.pop();
+    else if(scenario==='duplicate')changed.candidates[1].recordId=changed.candidates[0].recordId;
+    else if(scenario==='wrong-owner')changed.candidates[1].manifest=changed.candidates[0].manifest;
+    else if(scenario==='outside-root')changed.candidates[1].directory=directory;
+    else if(scenario==='wrong-scope') {
+      const manifest=JSON.parse(await readFile(changed.candidates[1].manifest.path,'utf8'));manifest.scope='d'.repeat(64);
+      changed.candidates[1].manifest=await write('wrong-scope-manifest.json',manifest);
+    } else if(scenario==='stale-payload')changed.notionProviderPayload=payload;
+    else changed.piVersion='0.0.0';
+    const rejected=await invoke('multi-'+scenario,changed);assert.notEqual(rejected.status,0,scenario);
+  }
+  const disabled=structuredClone(descriptor),manualFile=path.join(candidates[1].directory,'SKILL.md');
+  const manual=(await readFile(manualFile,'utf8')).replace('---\n','---\ndisable-model-invocation: true\n');
+  await writeFile(manualFile,manual);
+  const manualManifest=JSON.parse(await readFile(candidates[1].manifest.path,'utf8'));
+  Object.assign(manualManifest.files.find(file=>file.path==='SKILL.md'),{bytes:Buffer.byteLength(manual),sha256:digest(manual)});
+  disabled.candidates[1].manifest=await write('manual-manifest.json',manualManifest);
+  const rejected=await invoke('multi-manual',disabled);assert.notEqual(rejected.status,0);assert.match(rejected.stderr,/model-visible/);
 });
 
 test('native delivery binds each full read to the same actual outer provider tool output', () => {
@@ -360,4 +413,97 @@ test('native evidence write failure cannot change a tool result or fabricate a c
   assert.deepEqual(event,before);probe.failWrites(false);probe.finish();
   assert.equal(probe.events().at(-1).complete,false);
   assert.equal(summarizeNativeSource(probe.events(),[{phase:'transport_end',complete:true}],hostClosed,nativeFiles).httpAttempts,null);
+});
+
+const visibleRecords=['reader','other-one','other-two'].map((name,index)=>({
+  id:'shared_skill:fixture:'+name,ref:'skill://'+encodeURIComponent('shared_skill:fixture:'+name)+'/SKILL.md',
+  kind:'skill',name,description:index===0?'Inspect fixed files.':'Inspect '+name+'.',
+}));
+const catalogFor=(records=visibleRecords)=>'<ntn-skills-view-catalog><view source="notion" id="view" database="db">Ready</view><available_skills>'
+  +records.map((record,index)=>'<skill><name>'+record.name+'</name><description>'+record.description+'</description><location>sr:C'
+    +String.fromCharCode(97+index).repeat(22)+'</location></skill>').join('')+'</available_skills></ntn-skills-view-catalog>';
+
+test('a complete multi-candidate directory compares exact metadata without changing source names or imposing provider order',()=>{
+  const actual=comparisonCatalog({messages:[{role:'system',content:catalogFor()}]});
+  const native=visibleRecords.map(record=>({...record,disableModelInvocation:false})).reverse(),before=structuredClone(native);
+  verifyComparisonCatalog(native,actual);assert.deepEqual(native,before);
+  for(const scenario of ['missing','duplicate-name','disabled','description','case']) {
+    const changed=structuredClone(native);
+    if(scenario==='missing')changed.pop();
+    else if(scenario==='duplicate-name')changed[1].name=changed[0].name;
+    else if(scenario==='disabled')changed[1].disableModelInvocation=true;
+    else if(scenario==='description')changed[1].description+=' changed';
+    else changed[1].name=changed[1].name.toUpperCase();
+    assert.throws(()=>verifyComparisonCatalog(changed,actual),undefined,scenario);
+  }
+  assert.throws(()=>comparisonCatalog({system:catalogFor([visibleRecords[0],visibleRecords[0]])}),/Duplicate visible names/);
+  assert.throws(()=>comparisonCatalog({system:catalogFor().replace('sr:C'+'b'.repeat(22),'sr:C'+'a'.repeat(22))}),/distinct exact entry/);
+});
+
+function catalogSelectionProbe() {
+  const payloads=[0,1,2].map(index=>({messages:[{role:'system',content:index<2?
+    '<ntn-skills-discovery status="pending">Metadata is pending; the directory is not empty.</ntn-skills-discovery>':catalogFor()}]}));
+  const providers=payloads.map((payload,index)=>({phase:'provider',number:index+1,turn:index<2?1:2,sha256:digest(JSON.stringify(payload)),payload}));
+  const requestId='sdk:1:source-id';
+  return {hooks:[providers[0],{phase:'tool_call',name:'notion_list',id:'call',input:{}},
+    {phase:'tool_result',name:'notion_list',id:'call',isError:false},...providers.slice(1),{phase:'end',complete:true}],
+    wires:providers.map(row=>({sha256:row.sha256})),
+    sources:[{id:'source-id',pid:1,transport:'sdk',operation:'list',status:'completed',resultObserved:true,value:{
+      scope:'a'.repeat(64),view:{id:'view'},records:structuredClone(visibleRecords),count:3,
+      coverage:{exhaustive:true,search_index_limited:false,failed_sources:[]}}}],
+    sourceEvents:[{phase:'started',requestId,kind:'sdk',operation:'list'},{phase:'completed',requestId,status:'completed'}],
+    expectedRecords:structuredClone(visibleRecords),viewId:'view'};
+}
+
+test('metadata selection proves an ordinary ready turn, actual HTTP payload and the same complete SDK owner set',()=>{
+  const input=catalogSelectionProbe(),checked=verifyComparisonSelection(input);
+  assert.equal(checked.catalog.length,3);assert.equal(checked.source.id,'source-id');
+  for(const scenario of ['no-new-turn','wire-mismatch','source-id','missing-result','source-owner','source-description','failed-source','wrong-view','body-operation']) {
+    const value=structuredClone(input),providers=value.hooks.filter(row=>row.phase==='provider');
+    if(scenario==='no-new-turn')providers.at(-1).turn=1;
+    else if(scenario==='wire-mismatch')value.wires.at(-1).sha256='0'.repeat(64);
+    else if(scenario==='source-id')value.sources[0].id='forged';
+    else if(scenario==='missing-result')value.sources=[];
+    else if(scenario==='source-owner')value.sources[0].value.records[1].id='shared_skill:another-owner';
+    else if(scenario==='source-description')value.sources[0].value.records[1].description='Replacement text';
+    else if(scenario==='failed-source')value.sources[0].value.coverage.failed_sources=['unavailable'];
+    else if(scenario==='wrong-view')value.sources[0].value.view.id='another-view';
+    else value.sourceEvents[0].operation='consume';
+    assert.throws(()=>verifyComparisonSelection(value),undefined,scenario);
+  }
+  const pending=structuredClone(input),last=pending.hooks.filter(row=>row.phase==='provider').at(-1);
+  last.payload=pending.hooks[0].payload;last.sha256=digest(JSON.stringify(last.payload));pending.wires.at(-1).sha256=last.sha256;
+  assert.throws(()=>verifyComparisonSelection(pending),/Pending or failed/);
+});
+
+test('unselected native bodies fail even when the selected files were already delivered or bytes are identical',()=>{
+  for(const sameBytes of [false,true]) {
+    const other={...nativeFiles[0],absolutePath:'/frozen/other/SKILL.md',recordId:'shared_skill:fixture:other',
+      ...(sameBytes?{}:{body:'Unselected instructions.',bytes:Buffer.byteLength('Unselected instructions.'),sha256:digest('Unselected instructions.')})};
+    const probe=nativeProbe({unselectedFiles:[other]});
+    nativeFiles.forEach(file=>probe.read(file));probe.read(other,'unselected');
+    probe.provider([...nativeFiles.map(file=>({role:'tool',tool_call_id:'call-'+file.path,content:file.body})),
+      {role:'tool',tool_call_id:'unselected',content:other.body}]);probe.finish();
+    assert.throws(()=>verifyNativeInspectionEvents(probe.events()),/unselected candidate body/);
+    const provider=probe.events().find(row=>row.phase==='native_provider');
+    assert.equal(provider.files.length,2);assert.equal(provider.unselectedBodies.length,1);
+    assert.equal(summarizeNativeSource(probe.events(),[{phase:'transport_end',complete:true}],hostClosed,nativeFiles).complete,false);
+  }
+  const failed=nativeProbe({unselectedFiles:[{...nativeFiles[0],absolutePath:'/frozen/other/SKILL.md',recordId:'other'}]});
+  failed.read(nativeFiles[0],'denied',{pathname:'/frozen/other/SKILL.md',content:'Access denied',isError:true});failed.finish();
+  verifyNativeInspectionEvents(failed.events());
+});
+
+test('Notion unselected scalar and batch reads cannot be hidden by a correct selected owner receipt or a short ref',()=>{
+  const other={recordId:'shared_skill:fixture:other-one',name:'other-one',snapshotId:'s_'+'d'.repeat(64),scope:fixedSource.scope,versionId:'e'.repeat(64)};
+  for(const scenario of ['proof-owner','canonical-owner','catalog-short-ref','batch']) {
+    const probe=nativeProbe({source:fixedSource,files:boundFiles,unselectedSources:[other],catalog:visibleRecords});
+    if(scenario==='catalog-short-ref')probe.provider([],{messages:[{role:'system',content:catalogFor()}]});
+    const ref=scenario==='canonical-owner'?'skill://'+encodeURIComponent(other.recordId)+'/SKILL.md':'sr:C'+'b'.repeat(22);
+    probe.fire('tool_call',{toolName:'read',toolCallId:'unselected',input:scenario==='batch'?{paths:[ref]}:{path:ref}});
+    probe.fire('tool_result',{toolName:'read',toolCallId:'unselected',content:[{type:'text',text:'Unselected body.'}],
+      details:scenario==='proof-owner'||scenario==='batch'?{contextBrokerRead:{binding:{record:{id:other.recordId}}}}:{}});
+    probe.provider([{role:'tool',tool_call_id:'unselected',content:'Unselected body.'}]);probe.finish();
+    assert.throws(()=>verifyNativeInspectionEvents(probe.events()),/unselected candidate body/,scenario);
+  }
 });
