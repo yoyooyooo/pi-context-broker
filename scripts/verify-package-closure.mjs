@@ -96,7 +96,12 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
     inventories[name] = { version: npmVersion, files: npmFiles };
   }
   await writeFile(join(base, "official-inventory.json"), JSON.stringify(inventories, null, 2) + "\n");
-  if (query) assert.deepEqual(await readFile(join(installed, "dist/ntn-skills.mjs")), await readFile(join(query, "ntn-skills.mjs")));
+  if (query) {
+    for (const file of ["ntn-skills.mjs", "ntn-skills-sdk.mjs", "ntn-skills-runtime.json"]) {
+      assert.deepEqual(await readFile(join(installed, "dist", file)), await readFile(join(query, file)),
+        `${file}: Broker and Tern must ship the same complete consumption runtime`);
+    }
+  }
   const npmBuiltins = join(installed, "dist/builtin-skills");
   const ternBuiltins = query ? join(query, "builtin-skills") : undefined;
   const builtinNames = ["ntn-skills", "ntn-skills-maintain", "ntn-skills-sync"];

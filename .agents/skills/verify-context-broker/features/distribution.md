@@ -6,7 +6,7 @@
 
 - `package-runtime`：npm tarball 解包、生产依赖安装后能加载所选 Pi 或 OMP 扩展，连续请求正文各一份；各宿主单独留证。
 - `package-query`：npm/Tern 两个独立 Node 查询程序能解析中文 alias、UTF-16 编辑范围且不返回 Skill 正文。
-- `package-closure`：Tern manifest、Luau 依赖、独立 query、CLI 和三份随包 Skill 的完整参考资源都在归档中；不含退役的 builtin.luau/save-workflow。
+- `package-closure`：Tern manifest、Luau 依赖、独立 query、CLI/SDK/runtime manifest 和三份随包 Skill 的完整参考资源都在归档中；Broker 与 Tern 的三份消费运行时文件逐字节相同，不含退役的 builtin.luau/save-workflow。
 - `package-docs`：npm/Tern 双语 README、broker 参考和贡献指南的本地链接与章节锚点在解包后可达。
 - `release-gate`：检查失败阻止 commit/tag/push；成功且 `--no-push` 只产生本地 tag；规划模式不执行检查。
 - `package-desktop`：独立 Tern 插件安装后的实际界面由 [编辑器地图](editor.md) 覆盖。
@@ -29,6 +29,8 @@ Preconditions:
 - **Pi 安装路径。** 运行 `node .agents/skills/verify-context-broker/scripts/control.mjs run distribution-pi`，对应 `node scripts/verify-artifacts.mjs --host pi`。只构建 Broker npm 包，在独立 prefix 实际安装；核对随包 CLI、SDK 与 runtime manifest 后，用实际 Pi RPC 和 provider 观察连续两次正文交付，重跑安装态 source 故障与恢复场景。manifest 的 host 为 pi，OMP/Tern 记 notRun。未提供 SDK fixture 时，`defaultSdk` 明记 `not_run / fixture_not_provided`，不代表默认 SDK 已验收。
 - **完整路径。** 运行 `node .agents/skills/verify-context-broker/scripts/control.mjs run distribution`。该路线分别执行 `verify-artifacts.mjs --host pi` 和 `--host omp`，再执行 release tests；OMP 路线另打包、解包 Tern。npm 只安装生产依赖且跳过 install scripts/peer 自动安装。每个宿主的两次真实 prompt 分别要求 provider 中正文恰好一份，不能互代。
 - **独立查询。** 两份 query 从仓库外独立 Node 进程接收 `中文😀\n使用 $架构 tail`，返回身份限定的 `$design-review@…@local` 与正确 UTF-16 from/to/len；结果无私有 body marker；拆开 emoji surrogate 的 cursor 以非零退出。
+- **默认 SDK 闭包。** 未配置凭据的 Notion source 在两份独立 query 中都应返回 `AUTH_REQUIRED`，同时保留本地候选；`SOURCE_SDK_UNAVAILABLE` 不是此正例的替代结果。2026-11-05 远端 run `42091391270` 的 Pi 两版本门禁通过，后续 Tern query 因归档缺少 SDK/runtime manifest 在该断言失败；原日志保存在 `~/Library/Logs/pi-context-broker/AH-617-20261105/pi15-compat-tyqr9arj/remote-ci/job-127470034246.log`（SHA256 `6648406e56d165f477f6f1ed3cfc1116a33a1b401a2e998d549d598927b2f45d`）。修复复用同一构建循环分发 CLI、SDK 和 manifest，原 closure 在启动宿主前核对三份文件；仍须实际运行 query 的凭据拒绝和原 artifact 路径，不能只凭文件存在声称可消费。保护已有 Tern staged 改动时，在明确 owned 的源码导出目录执行完整构建，不能在用户工作树运行会覆盖 query 的全量构建。
+  本机修复后已在 `sc26-tern-sdk-z8jbdh6k/` 保存原 artifact 全路径与 7 项 pack 定向测试结果：实际 OMP `18.16.0` 的 8 次受控 provider 请求、两个独立 query 和 source 故障/恢复均通过；Tern 随包 SDK/manifest 与 Broker 逐字节相同。重建的 Broker 归档仍精确为 `85888eeda4683ba53c79b84640839220a4162d8902a8ed321d30ba9fd4e42d3e`，86 项发布文件不变。原 Tern staged 字节保持；保留 owned 源码导出、安装、session 与 runner 的真实 teardown。该本机结果不能替代 CI 固定 OMP `18.10.3` 的后续结果，也不代表 Tern 桌面或 Pi 真实模型验收。
 - **文档导航。** 解包后从 npm 的双语 README、双语参考和贡献指南、Tern 的双语 README 递归检查本地链接与标题锚点，防止下沉文档漏包或投影仍指向 workspace。线上链接与实际 Markdown 呈现需另行核对，不由文件存在替代。
 - **发布行为。** 同一命令执行 `node --test scripts/release.test.mjs`。它创建临时 repo 与本地 bare remote、受控 registry 回复及检查命令，观察 commit count、tag、remote refs、拒绝 push 的 hook。检查失败无发布 refs；成功 `--no-push` 有正确版本的 annotated tag，原 main 不变；规划模式未执行 gate。
 - **证据。** manifest 指向 `broker-artifacts-*`，含 `archives`、`npm/package`、`tern`、`provider.jsonl` 和 session；release tests 的各个 `pi-context-broker-release-*` 保存 repo/remote.git 与 gate.json。transcript 保留所有断言结果，完成后执行 `control.mjs evidence`。

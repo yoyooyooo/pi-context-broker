@@ -163,10 +163,8 @@ if (buildTern) {
 for (const directory of [join(brokerOutput, "dist"), ...(buildTern ? [query] : [])]) {
   await mkdir(directory, { recursive: true });
   await writeFile(join(directory, "ntn-skills.mjs"), cliCode);
-  if (directory === join(brokerOutput, "dist")) {
-    await writeFile(join(directory, "ntn-skills-sdk.mjs"), sdkCode);
-    await writeFile(join(directory, "ntn-skills-runtime.json"), JSON.stringify(runtimeManifest, null, 2) + "\n");
-  }
+  await writeFile(join(directory, "ntn-skills-sdk.mjs"), sdkCode);
+  await writeFile(join(directory, "ntn-skills-runtime.json"), JSON.stringify(runtimeManifest, null, 2) + "\n");
   await writeFile(join(directory, "NOTICES.txt"), [...licenseFiles].map(([name, license]) => `Bundled dependency: ${name}\n${license.trim()}\n`).join("\n"));
   const builtinRoot = join(directory, "builtin-skills");
   try {
