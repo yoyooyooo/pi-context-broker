@@ -73,6 +73,47 @@ test('host, unknown, or cyclic ancestry cannot conceal HTTP as other-plugin traf
   ]) assert.throws(() => classifyDailyHttp(rows, new Set([20]), new Set([10])));
 });
 
+const sdkRequestId = '12345678-1234-4234-8234-123456789abc';
+function sdkObservation(overrides = {}) {
+  return { complete: true, errors: [], events: [
+    { phase: 'source_observer_start', pid: 10 },
+    { phase: 'started', kind: 'sdk', pid: 10, operation: 'list', requestId: 'sdk:10:one' },
+    { phase: 'attempt', kind: 'http', requestId: 'sdk:10:one', attempt: 1,
+      request_id: sdkRequestId, request_kind: 'notion_metadata', method: 'POST', http_status: 200, outcome: 'success', request_bytes: 2, response_bytes: 100 },
+    { phase: 'metrics', kind: 'metrics', requestId: 'sdk:10:one', observed: true, complete: true, total_requests: 1 },
+    { phase: 'completed', kind: 'sdk', pid: 10, operation: 'list', requestId: 'sdk:10:one', status: 'completed', sdkStarted: true },
+    { phase: 'source_observer_end', complete: true },
+  ], ...overrides };
+}
+const sdkHttp = [
+  { event: 'http_start', pid: 10, id: '10:1', method: 'POST', origin: 'https://api.notion.com', path: '/v1/views/view/queries', request_bytes: 2 },
+  { event: 'http_end', pid: 10, id: '10:1', status: 200, response_request_id: sdkRequestId },
+];
+
+test('host SDK HTTP needs an exact complete operation and independent response request ID', () => {
+  const result = classifyDailyHttp(sdkHttp, new Set(), new Set([10]), { sourceObservation: sdkObservation() });
+  assert.equal(result.sdk.length, 1);
+  assert.equal(result.source.length, 1);
+  assert.equal(result.sdk[0].attribution.operation, 'list');
+  assert.equal(result.sdk[0].attribution.requestId, 'sdk:10:one');
+  assert.equal(result.sdk[0].attribution.response_bytes, 100);
+});
+
+test('SDK HTTP rejects absent, ambiguous, failed or mismatched receipt evidence', () => {
+  for (const changed of [
+    sdkObservation({ complete: false }),
+    sdkObservation({ errors: ['missing-end-boundary'] }),
+    sdkObservation({ events: sdkObservation().events.filter(event => event.phase !== 'completed') }),
+    sdkObservation({ events: sdkObservation().events.map(event => event.phase === 'attempt' ? { ...event, request_id: null } : event) }),
+    sdkObservation({ events: sdkObservation().events.map(event => event.phase === 'attempt' ? { ...event, method: 'GET' } : event) }),
+    sdkObservation({ events: sdkObservation().events.map(event => event.phase === 'attempt' ? { ...event, http_status: 403 } : event) }),
+    sdkObservation({ events: sdkObservation().events.map(event => event.phase === 'started' ? { ...event, pid: 99 } : event) }),
+    sdkObservation({ events: [...sdkObservation().events, { ...sdkObservation().events[2], requestId: 'sdk:10:two' }] }),
+  ]) assert.throws(() => classifyDailyHttp(sdkHttp, new Set(), new Set([10]), { sourceObservation: changed }));
+  assert.throws(() => classifyDailyHttp([...sdkHttp, { ...sdkHttp[0], id: '10:2' }, { ...sdkHttp[1], id: '10:2' }],
+    new Set(), new Set([10]), { sourceObservation: sdkObservation() }));
+});
+
 test('metadata and an explicit doctor body probe are accounted separately', () => {
   const request = { origin: 'https://api.notion.com', pid: 20, method: 'GET', path: '/v1/pages/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/markdown' };
   assert.equal(classifyDailyNotionRequest(request, 20), 'doctor-body');

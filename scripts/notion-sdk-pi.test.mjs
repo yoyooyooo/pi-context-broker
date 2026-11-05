@@ -385,8 +385,9 @@ test('resource provider repeats replace only nonempty text and preserve empty an
 
 function resourceSchemaContext() {
   const value = context(), paths = { type: 'array', minItems: 1, maxItems: 16, items: { type: 'string' } };
-  value.messages[0].toolsAdded.find(tool => tool.name === 'read').parameters = { type: 'object', properties: { path: { type: 'string' }, paths }, oneOf: [
-    { type: 'object', properties: { path: { type: 'string' } }, required: ['path'], not: { required: ['paths'] } },
+  const path = { type: 'string', description: 'Local file path, or a supplied skill:// or sr: reference. Copy issued refs verbatim.' };
+  value.messages[0].toolsAdded.find(tool => tool.name === 'read').parameters = { type: 'object', properties: { path, paths }, oneOf: [
+    { type: 'object', properties: { path: { ...path } }, required: ['path'], not: { required: ['paths'] } },
     { type: 'object', properties: { paths }, required: ['paths'], additionalProperties: false },
   ] };
   return value;
@@ -400,6 +401,10 @@ test('actual provider schema must express a bounded paths branch exclusive with 
     schema => { schema.oneOf[1].properties.offset = { type: 'number' }; },
     schema => { schema.properties.paths.items.type = 'number'; },
     schema => { schema.properties.paths.minItems = 0; },
+    schema => { schema.properties.path.description = 'Path to the file to read (relative or absolute)'; },
+    schema => { schema.oneOf[0].properties.path.description = 'Path to the file to read (relative or absolute)'; },
+    schema => { schema.properties.path.description = 'Use skill:// or sr: references.'; },
+    schema => { schema.oneOf[0].properties.path.description = 'Copy a local file path verbatim.'; },
   ]) {
     const value = resourceSchemaContext(); mutate(value.messages[0].toolsAdded.find(tool => tool.name === 'read').parameters);
     assert.throws(() => assertResourceReadSchema(value));
@@ -409,9 +414,9 @@ test('actual provider schema must express a bounded paths branch exclusive with 
 function defaultViewFixture() {
   const records = ['a', 'b'].map(name => ({ id: 'owner:' + name, name, ref: 'skill://owner-' + name + '/SKILL.md' }));
   const fixture = { default_view: { id: 'view-1', records } };
-  const discovery = { records: records.map((record, index) => ({ ...record, source: 'sdk-fixture', in_default_view: true, ref: 'sr:C' + String(index).repeat(22) })) };
+  const discovery = { records: records.map((record, index) => ({ ...record, description: 'Metadata', source: 'sdk-fixture', in_default_view: true, ref: 'sr:C' + String(index).repeat(22) })) };
   const catalog = '<ntn-skills-view-catalog><view source="sdk-fixture" id="view-1" partial="false">Default</view>'
-    + discovery.records.map(record => '<skill><name>sdk-fixture-' + record.name + '</name><description>Metadata</description><location>' + record.ref + '</location></skill>').join('')
+    + discovery.records.map(record => '<skill><name>' + record.name + '</name><description>Metadata</description><source>sdk-fixture</source><location>' + record.ref + '</location></skill>').join('')
     + '</ntn-skills-view-catalog>';
   const captures = [{ requestId: '1', context: { messages: [{ role: 'system', content: '<ntn-skills-discovery status="pending"/>' }] } },
     { requestId: '2', context: { messages: [{ role: 'system', content: catalog }] } }];
@@ -435,6 +440,9 @@ test('missing, partial, stale, duplicate or body-bearing default directories can
     value => { value.captures.pop(); },
     value => { value.captures[1].context.messages[0].content += 'Full private body'; },
     value => { value.captures[1].context.messages.push({ ...value.captures[1].context.messages[0] }); },
+    value => { value.captures[1].context.messages[0].content = value.captures[1].context.messages[0].content.replace('<name>a</name>', '<name>sdk-fixture-a</name>'); },
+    value => { value.captures[1].context.messages[0].content = value.captures[1].context.messages[0].content.replace('<source>sdk-fixture</source>', '<source>foreign</source>'); },
+    value => { value.captures[1].context.messages[0].content = value.captures[1].context.messages[0].content.replace('<source>sdk-fixture</source>', ''); },
   ]) {
     const value = defaultViewFixture(); mutate(value);
     assert.throws(() => assertDefaultViewProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies));
@@ -595,6 +603,88 @@ test('every-request HTTP evidence rejects missing or changed schemas, arguments,
   assert.throws(() => assertProviderHttpRequest(value.payload, Buffer.concat([value.body, Buffer.from('\n')]), value.context));
 });
 
+function lifecycleBranchFixture() {
+  const bodies = new Map(['a', 'b', 'c', 'base'].map(name => [name, 'Instructions for ' + name + '.\n']));
+  const snapshots = [...bodies].map(([name, body], index) => ({ scope: 'fixture-scope', record: { id: 'source:' + name, name },
+    snapshot_id: 's_' + String(index).repeat(64), version_id: createHash('sha256').update(body).digest('hex') }));
+  const bindings = snapshots.map(snapshot => ({ record: snapshot.record, scope: snapshot.scope, snapshot_id: snapshot.snapshot_id,
+    version_id: snapshot.version_id, body_sha256: snapshot.version_id, ref: 'skill://' + snapshot.record.name + '/SKILL.md?snapshot=' + snapshot.snapshot_id }));
+  const refs = snapshots.map((snapshot, index) => ({ type: 'custom', customType: 'context-broker-short-ref', data: {
+    ref: 'sr:S' + String(index).repeat(22), target: { kind: 'selected', identity: { id: snapshot.record.id, scope: snapshot.scope },
+      snapshot_id: snapshot.snapshot_id, version_id: snapshot.version_id, body_sha256: snapshot.version_id } } }));
+  const active = { type: 'custom', customType: 'context-broker-active-sources', data: {
+    graphs: [{ scope: snapshots[0].scope, roots: snapshots.slice(0, 3).map(snapshot => snapshot.record.id), bindings }],
+    sources: snapshots.map((snapshot, index) => ({ snapshotId: snapshot.snapshot_id, bodySha256: snapshot.version_id,
+      bytes: Buffer.byteLength(bodies.get(snapshot.record.name)), record: { ...snapshot.record, source: 'notion', sourceScope: snapshot.scope,
+        snapshotId: snapshot.snapshot_id, versionId: snapshot.version_id, preparationBinding: bindings[index] } })) } };
+  return { entries: [...refs, active], snapshots, bodies, selected: true };
+}
+
+test('native branch evidence distinguishes preparation from actual activation and checks every fixed pin', async () => {
+  const { assertLifecycleBranch } = await import('./notion-sdk-pi.mjs');
+  const value = lifecycleBranchFixture(), before = JSON.stringify(value.entries);
+  assert.equal(assertLifecycleBranch(value.entries, value).pins.length, 4);
+  assert.equal(JSON.stringify(value.entries), before);
+  assert.throws(() => assertLifecycleBranch(value.entries, { ...value, selected: false }));
+  assert.deepEqual(assertLifecycleBranch([], { ...value, selected: false }).pins, []);
+  const prepared = value.entries.slice(0, 1).concat(value.entries[3]);
+  const cancelled = assertLifecycleBranch(prepared, { ...value, selected: false, preparedNames: ['a', 'base'] });
+  assert.equal(cancelled.active_entries, 0); assert.equal(cancelled.selected_handles, 2);
+  assert.throws(() => assertLifecycleBranch(prepared, { ...value, selected: false }));
+  assert.throws(() => assertLifecycleBranch(prepared, { ...value, selected: false, preparedNames: ['a', 'b'] }));
+  assert.throws(() => assertLifecycleBranch(prepared, value));
+});
+
+test('branch evidence rejects missing Requires, changed scopes, pins, body proofs and stale handles', async () => {
+  const { assertLifecycleBranch } = await import('./notion-sdk-pi.mjs');
+  for (const mutate of [
+    value => { value.entries.at(-1).data.sources.pop(); },
+    value => { value.entries.at(-1).data.sources[0].snapshotId = 'foreign'; },
+    value => { value.entries.at(-1).data.sources[0].record.versionId = 'foreign'; },
+    value => { value.entries.at(-1).data.sources[0].record.sourceScope = 'foreign'; },
+    value => { value.entries.at(-1).data.sources[0].bytes++; },
+    value => { value.entries.at(-1).data.sources[0].bodySha256 = 'foreign'; },
+    value => { value.entries.at(-1).data.graphs[0].bindings.pop(); },
+    value => { value.entries.at(-1).data.graphs[0].roots.reverse(); },
+    value => { value.entries[0].data.target.identity.scope = 'foreign'; },
+    value => { value.entries[0].data.target.snapshot_id = 'foreign'; },
+    value => { value.entries[0].data.ref = 'sr:S-foreign'; },
+    value => { value.entries.shift(); },
+  ]) {
+    const value = lifecycleBranchFixture(); mutate(value);
+    assert.throws(() => assertLifecycleBranch(value.entries, value));
+  }
+});
+
+test('actual SDK restore evidence requires inspect over complete fixed inputs and never certifies model delivery', async () => {
+  const { assertLifecycleRestore } = await import('./notion-sdk-pi.mjs');
+  const oracle = lifecycleBranchFixture();
+  const fixture = () => ({ status: 'ready', delivery: { status: 'not_observed' }, activation: { status: 'not_evaluated' },
+    preparation: { purpose: 'inspect', required_closure: [], roots: oracle.snapshots.map(snapshot => ({
+      id: snapshot.record.id, readiness: 'ready', target: 'skill://' + snapshot.record.name + '/SKILL.md?snapshot=' + snapshot.snapshot_id,
+      ref: 'skill://' + snapshot.record.name + '/SKILL.md?snapshot=' + snapshot.snapshot_id })) },
+    entries: oracle.snapshots.map(snapshot => ({ manifest: { record: snapshot.record, scope: snapshot.scope,
+      snapshot_id: snapshot.snapshot_id, version_id: snapshot.version_id }, source_body: { has_more: false,
+      bytes: Buffer.byteLength(oracle.bodies.get(snapshot.record.name)), sha256: snapshot.version_id } })) });
+  const value = fixture(), before = JSON.stringify(value);
+  const result = assertLifecycleRestore(value, oracle);
+  assert.equal(result.pins.length, 4); assert.equal(result.delivery_claimed_by_sdk, false);
+  assert.equal(JSON.stringify(value), before);
+  for (const mutate of [
+    value => { value.preparation.purpose = 'use'; },
+    value => { value.preparation.required_closure.push('new-requirement'); },
+    value => { value.preparation.roots[0].target = 'skill://a/SKILL.md'; },
+    value => { value.entries[0].manifest.version_id = 'new-version'; },
+    value => { value.entries[0].source_body.has_more = true; },
+    value => { value.entries[0].source_body.bytes--; },
+    value => { value.entries.pop(); },
+    value => { value.delivery.status = 'delivered'; },
+    value => { value.activation.status = 'active'; },
+  ]) {
+    const sample = fixture(); mutate(sample); assert.throws(() => assertLifecycleRestore(sample, oracle));
+  }
+});
+
 function sequenceFixture() {
   const { context } = providerHttpFixture(), call = context.messages[1].content[0], result = context.messages[2];
   const frames = [{ type: 'message_end', message: context.messages[1] },
@@ -617,6 +707,20 @@ test('tool rounds are reconciled from actual RPC assistant messages, executions 
     const sample = sequenceFixture(); mutate(sample);
     assert.throws(() => assertProviderToolSequence(sample.captures, sample.frames));
   }
+});
+
+test('expected stale-reference errors remain actual counted tool results and require exact explicit call IDs', () => {
+  const value = sequenceFixture(), id = value.frames[1].toolCallId;
+  value.frames[2].isError = true; value.captures[1].context.messages.at(-1).isError = true;
+  const result = assertProviderToolSequence(value.captures, value.frames, { expectedErrors: [id] });
+  assert.equal(result.tool_calls, 1); assert.equal(result.sequence[0].is_error, true);
+  assert.throws(() => assertProviderToolSequence(value.captures, value.frames));
+  assert.throws(() => assertProviderToolSequence(value.captures, value.frames, { expectedErrors: ['absent'] }));
+  assert.throws(() => assertProviderToolSequence(value.captures, value.frames, { expectedErrors: [id, id] }));
+  value.captures[1].context.messages.at(-1).isError = false;
+  assert.throws(() => assertProviderToolSequence(value.captures, value.frames, { expectedErrors: [id] }));
+  value.frames[2].isError = false;
+  assert.throws(() => assertProviderToolSequence(value.captures, value.frames, { expectedErrors: [id] }));
 });
 
 function searchProjectionFixture(compact = true) {

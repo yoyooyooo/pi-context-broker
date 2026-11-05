@@ -2,6 +2,32 @@
 
 前置条件：harness 创建独立 session 与 fixture source，双 Pi/OMP 原生会话路径可用。缓存证据必须同时核对 source 调用与 provider 当前有效上下文；不修改用户 session。
 
+## SC08-SC22 Pi 默认 SDK 会话恢复
+
+当前 Pi 合同使用同一 `scripts/notion-sdk-pi.mjs --scenario session-lifecycle`。`SDK_PACKAGE` 为独立安装的 Broker 根，`SDK_FIXTURE` 为 CLI 原 `sdk-fixture.ts --catalog` 输出，`SDK_LIFECYCLE_EVIDENCE` 为新的仓外绝对目录。fixture 为离线暖 source，Broker cache、agent 设置与会话从 owned 空目录开始；不借用用户 session 或日用设置。先冻结包、CLI/SDK/runtime 清单和 fixture，后运行：
+
+```bash
+node scripts/notion-sdk-pi.mjs doctor --package "$SDK_PACKAGE" --fixture "$SDK_FIXTURE" --scenario session-lifecycle
+node scripts/notion-sdk-pi.mjs run --package "$SDK_PACKAGE" --fixture "$SDK_FIXTURE" --scenario session-lifecycle --out "$SDK_LIFECYCLE_EVIDENCE"
+node scripts/notion-sdk-pi.mjs evidence --evidence "$SDK_LIFECYCLE_EVIDENCE"
+node scripts/notion-sdk-pi.mjs cleanup --evidence "$SDK_LIFECYCLE_EVIDENCE"
+node scripts/notion-sdk-pi.mjs evidence --evidence "$SDK_LIFECYCLE_EVIDENCE"
+```
+
+| 实际入口 | 正反例与证据 |
+| --- | --- |
+| 普通 turn → `notion_list` → 单次 `notion_use` 的 a/b/c 多根 | 根与共享 base 完整交付一次；实际 SDK 原结果、top-level tool result 和下一 provider 正文分别核对。重复普通 turn 不新增正文 SDK 操作。 |
+| RPC `fork` 到选择前、`switch_session` 返回、`clone` 选择后分支 | 未选择分支无 active/graph/selected handle；复制旧分支实际 `sr:S` 到原生 read 得到 `SHORT_REF_UNKNOWN`，且 body SDK +0。返回与 clone 后四份全文仍各一份，固定 scope/snapshot/version 不变。预期负例工具调用必须实际执行并出现在下一 provider，不能从成本账本删掉。 |
+| 原生命令 context 的 `navigateTree` 退回选择前，再返回选择后 | 使用真实 SessionManager 的 `getBranch()`，不以所有历史 entries 代替当前分支；退回后正文为零，返回后完整恢复有效历史。 |
+| RPC `compact` → 普通续接 → EOF → 新 Pi 进程指定同一 session | 真正触发 Pi compact 生命周期；owned settings 缩短保留 token，受控摘要不包含源正文。`get_messages` 先证明四份正文已移除，随后一次 bundled SDK `inspect` 读取四个已固定 target；`required_closure` 不重新展开。下一实际 provider 四份全文各一次；新进程 resume 不再次准备正文。 |
+| 新会话 `$a` 已派发 provider 后 RPC `abort`，再释放晚到响应 | 必须观察 `response_held → signal_aborted → response_callback(aborted=true)`、SDK/进程终局和后续普通 turn 正文为零。此次已派发输入单独计为 1，不写成 provider=0；prepared a/base 短引用可留作元数据，但 active/selected graph 为零。 |
+
+审阅 `lifecycle-launch.json`、`lifecycle-steps.json`、逐阶段 `*-branch.json`、`fixed-restore.json`、`messages-after-compact-before-restore.json`、两进程 `rpc-frames*.json` / `rpc-lifecycle*.json`、`native-session-events.jsonl` 和 `observer*.jsonl`。每进程独立 SDK hash-chain 与 terminal，全部关闭才封存和 cleanup；四个真实 session 文件原样归档。所有 provider capture 均通过已安装 pi-ai 序列化并向本地 HTTP 发出，schema、正文、历史、工具与字节累计在 `provider-http.json` 中；受控摘要质量、真实模型、真实 Notion、冷 source 与双机恢复仍分别验收。
+
+2026-11-05 的 b40126dc 独立包样本 `/private/tmp/ah627-sdk-native-2ocefldg/evidence`：2 个实际 Pi 进程、4 个 session、16 次 provider 输入、3 次工具调用（含预期旧引用拒绝）、10 次 SDK list、3 次 consume、0 CLI 子进程、0 source HTTP；实际序列化累计 157590 B。run log SHA256 为 `382779a547f0d086eb1efebf8870aad3c4aac9d161090695cca87d6fb060ae75`。新增 inspect/固定 target 断言另对已封存原始 observer 回读通过，记录在相邻 `fixed-restore-review.json`，未改写原证据。三个 harness 校准失败同样保留；四次 evidence → cleanup → evidence 全通过，196 个原件 hash 未变，receipt 为 `/private/tmp/ah627-sdk-cleanup-d6c8ilz1/receipt.json`。此样本不包含后续 SC04/schema 修复，正式候选必须重新取得自身记录。
+
+原 `notion-startup-flow.mjs` 的 `rpc-abort,rpc-new-session,rpc-late-response,rpc-active-recovery` 仍保留。它们在同一 b401 包的真实 Pi 上通过，保留目录为 `/private/tmp/ah627-pi-startup-before-pdwj_jcg`；该组是受控 command source，不能替代上述默认 SDK。准备完成前取消的 provider=0，与已经派发后的晚到取消是两个不同边界。
+
 真实 Notion fixture 的独立入口为 `node scripts/verify-notion-integration.mjs doctor --mode live-fixture --database UUID` 与 `node scripts/verify-notion-integration.mjs run --mode live-fixture --database UUID`。唯一页与 `references/guide.md` 创建、消费、finally archive 本次页及 child pages 的 GET 回执保存在 `live-fixture-create.json`、`live-fixture-cleanup.json`；它不自动证明本地图的错误/超时与 cold/warm，仍须对应确定性证据。只读 live 不替代远端端到端。
 
 仅 deterministic/installed 主 run 调用 OMP 的 runSourceLifecycle 子 helper，真实 fork/branch/compact-remove+refresh 的 assertion 必须审阅 helper 返回的实际证据文件及 manifest 列出的 `omp-source-lifecycle-cli-calls.jsonl`。fork/branch 后按有效上下文判定正文；compact-remove 后再次消费必须恢复正文。refresh 必须调用 `list --refresh` 并重建 metadata，只等待元数据完成，随后可后台预取所选 View 成员；预取不得发起 provider 请求或写入 loaded/Read 记录。该 helper 只证明实际执行的 OMP，不扩展为 Pi 或 live 结论。双宿主后台与生命周期按 [默认上下文地图](default-context-prefetch.md) 独立取证。Notion native cold print 看 `*-cold-print-provider.jsonl`，不由暖路径推断。

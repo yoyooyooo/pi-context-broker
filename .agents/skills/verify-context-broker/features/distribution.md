@@ -34,6 +34,14 @@ Preconditions:
 
 - **随包消费。** 未配置 source 的冷安装可发现三份 `@builtin` 候选；选择正文并读取相对参考文件。两份产物的 Skill 库存一致，同名本地/Notion 内容可以精确消歧。复用现有包/宿主检查。
 
+## Pi 正常日用身份与 SDK 来源归因
+
+`scripts/verify-pi-daily-installation.mjs plan|run --config ABSOLUTE_CONFIG.json` 是正常 autoload 的只读前置检查。`plan` 不启动 Pi；`run` 仅在配置给出的正式包已处于日用 settings 槽位时执行，不替换 source.command、不通过 `-e` 注入目标 Broker、不切换安装。配置的原 archive/CLI 身份之外还必须给 `embeddedSdkSha256`，同时核对 bundled runtime 清单和实际字节。
+
+startup/find 的来源必须实际走 bundled SDK `list`；显式 doctor 的 CLI 子进程和它允许的正文探测独立计账。被动 SDK 操作结果必须完整，host HTTP 必须通过相同 PID、method/status/bytes 和独立响应 request ID 与 SDK attempt 一一对应；缺失、重复或不匹配的 request ID 仍是 unknown。其它插件 HTTP、CLI descendants、SDK HTTP 分开归因。保留原始 RPC、生命周期与每个 owned 进程的终局，再核对 settings、安装文件和 shim 未变化。
+
+该入口仍不执行 provider 或消费工具，因此不能独自关闭 SC24。2026-11-05 的归因改动已有 12 项定向正反例；尚未以最终日用安装实跑。真实日用新会话、完整正文/资源交付和任务结果须在统一候选后另留证据，不把此元数据检查或受控 lifecycle 的 pass 扩大为日用验收。
+
 ## Gotchas
 
 - 本脚本只驱动解包后的 OMP；Pi package 安装运行未被它覆盖。Pi 源码 host 回归通过不等价于 Pi 独立安装通过。

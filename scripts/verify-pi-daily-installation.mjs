@@ -8,6 +8,7 @@ import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
+import { sourceObserverPreloadSource, readSourceObservation } from './skill-consumption-source-observer.mjs';
 
 // The run action is deliberately explicit. Merely importing/checking this file
 // or generating a plan never launches Pi or changes the daily installation.
@@ -26,12 +27,12 @@ function plan(config) {
     version: 1, kind: 'pi-daily-installation-readonly-diagnostics', status: 'prepared_not_executed',
     settings: join(homedir(), '.pi/agent/settings.json'), expected_package_index: config.packageIndex ?? 1,
     expected_package_count: config.packageCount ?? 21, broker_root: config.brokerRoot ?? null,
-    cli_root: config.cliRoot ?? null, required_artifacts: ['brokerRoot', 'brokerArchive', 'brokerArchiveSha256', 'embeddedCliSha256', 'cliRoot', 'cliArchive', 'cliArchiveSha256', 'cliEntrySha256'],
+    cli_root: config.cliRoot ?? null, required_artifacts: ['brokerRoot', 'brokerArchive', 'brokerArchiveSha256', 'embeddedCliSha256', 'embeddedSdkSha256', 'cliRoot', 'cliArchive', 'cliArchiveSha256', 'cliEntrySha256'],
     pi_arguments: ['--mode', 'rpc', '--session-dir', '<new owned directory>'],
     rpc_commands: ['get_state', 'get_commands', '/context-broker find ' + (config.findQuery ?? 'pstack'), '/context-broker doctor', 'get_state'],
     expected_find_record: config.expectedFindRecord ?? null,
     reviewed_external_namespace_diagnostics: config.namespaceDiagnosticsReview ?? null,
-    observation: 'Actual get_commands.sourceInfo, published-file SHA closure and passive process/HTTP observation. Startup/find remain metadata-only; the explicit doctor --database may probe one current Skill as documented by the public CLI. No source.command substitution or target -e argument.',
+    observation: 'Actual get_commands.sourceInfo, published-file SHA closure and passive SDK/process/HTTP observation. SDK attempts pair with independent HTTP response request IDs; unpaired host HTTP remains unknown. Startup/find remain metadata-only; the explicit doctor --database CLI may probe one current Skill as documented by the public CLI. No source.command substitution or target -e argument.',
     preserved: ['HOME and normal agent directory', 'all settings packages and extensions', 'source/auth/model configuration', 'existing sessions', 'PATH and source.command'],
     forbidden: ['provider or tool execution', 'Notion writes or body loading outside the explicit doctor process', 'official ntn invocation', 'Tern execution', 'user-session restart'],
     execution: 'Run only after root activates the final immutable package and CLI shim. Supply final package paths/hashes; run refuses an old settings package before launching Pi.',
@@ -42,6 +43,7 @@ function plan(config) {
 // arguments, configuration, response bodies, or source command. It reads no
 // credential files and never logs environment values, headers, or raw payloads.
 function installPassiveObserver(config) {
+  if (!require('node:worker_threads').isMainThread) return;
   const fs = require('node:fs');
   const cp = require('node:child_process');
   const path = require('node:path');
@@ -88,9 +90,12 @@ function installPassiveObserver(config) {
     const id = `${process.pid}:${++sequence}`;
     const body = init?.body;
     const requestBytes = typeof body === 'string' ? Buffer.byteLength(body) : body instanceof Uint8Array ? body.byteLength : body == null ? 0 : null;
-    write({ event: 'http_start', id, method, origin: url.origin, path: url.pathname, request_bytes: requestBytes });
+    const requestHash = typeof body === 'string' || body instanceof Uint8Array ? digest(body) : body == null ? digest('') : null;
+    write({ event: 'http_start', id, method, origin: url.origin, path: url.pathname, request_bytes: requestBytes, request_sha256: requestHash });
     return Reflect.apply(nativeFetch, this, args).then(response => {
-      write({ event: 'http_end', id, status: response.status });
+      const requestId = response.headers.get('x-request-id') ?? response.headers.get('request-id');
+      write({ event: 'http_end', id, status: response.status,
+        response_request_id: typeof requestId === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(requestId) ? requestId : null });
       return response;
     }, error => {
       write({ event: 'http_error', id, code: error?.code ?? error?.name ?? 'unknown' });
@@ -144,7 +149,7 @@ async function configurationSnapshot(config) {
   const sources = (parsed.sources ?? []).filter(source => source.type === 'notion' && source.enabled !== false);
   assert.ok(sources.length, 'No enabled Notion source');
   for (const source of sources) {
-    assert.ok(source.command === undefined, 'Daily verification must exercise the default bundled CLI');
+    assert.ok(source.command === undefined, 'Daily verification must exercise the default bundled SDK');
     assert.ok(source.prefetch === false || source.prefetch === undefined, 'This metadata-only run requires disabled prefetch');
   }
   return {
@@ -206,13 +211,49 @@ export function validateDailyDoctor(reports, review, sourceDatabaseIds, required
   return { status: 'retained-external-catalog-diagnostics', failures, catalog: review.catalog, reason: review.reason };
 }
 
-export function classifyDailyHttp(observed, sourcePids, hostPids) {
+export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObservation } = {}) {
   const parents = new Map();
   for (const row of observed) {
     if (row.event === 'process_start' && Number.isInteger(row.ppid)) parents.set(row.pid, row.ppid);
     if (row.event === 'spawn' && Number.isInteger(row.child_pid)) parents.set(row.child_pid, row.pid);
   }
-  const source = [], otherPlugins = [];
+  const sdkAttempts = new Map(), matchedSdk = new Set();
+  if (sourceObservation) {
+    assert.equal(sourceObservation.complete, true, 'Incomplete SDK observation cannot attribute host HTTP');
+    assert.deepEqual(sourceObservation.errors, [], 'SDK observation contains invalid or missing evidence');
+    const events = sourceObservation.events;
+    assert.ok(Array.isArray(events) && events[0]?.phase === 'source_observer_start'
+      && events.at(-1)?.phase === 'source_observer_end' && events.at(-1)?.complete === true);
+    const starts = events.filter(event => event.phase === 'started');
+    const operations = new Map(starts.map(event => [event.requestId, event]));
+    assert.equal(operations.size, starts.length, 'Duplicate source operation');
+    for (const attempt of events.filter(event => event.phase === 'attempt')) {
+      const operation = operations.get(attempt.requestId);
+      assert.ok(operation, 'An HTTP attempt has no original source operation');
+      if (operation.kind !== 'sdk') continue;
+      assert.ok(hostPids.has(operation.pid), 'SDK operation belongs to another process');
+      assert.ok(['list', 'consume', 'read', 'read-resources'].includes(operation.operation));
+      assert.ok(typeof attempt.request_id === 'string' && attempt.request_id.length > 0,
+        'SDK HTTP without a request ID remains unattributed');
+      assert.ok(!sdkAttempts.has(attempt.request_id), 'An SDK request ID cannot identify multiple attempts');
+      sdkAttempts.set(attempt.request_id, { operation, attempt });
+    }
+    for (const operation of starts.filter(event => event.kind === 'sdk')) {
+      assert.ok(hostPids.has(operation.pid), 'SDK operation belongs to another process');
+      const terminal = events.filter(event => event.phase === 'completed' && event.requestId === operation.requestId);
+      assert.equal(terminal.length, 1, 'SDK operation needs one actual terminal');
+      assert.equal(terminal[0].pid, operation.pid);
+      assert.equal(terminal[0].operation, operation.operation);
+      assert.equal(terminal[0].sdkStarted, true);
+      assert.equal(terminal[0].status, 'completed');
+      const metrics = events.filter(event => event.phase === 'metrics' && event.requestId === operation.requestId);
+      assert.equal(metrics.length, 1);
+      assert.equal(metrics[0].observed, true);
+      assert.equal(metrics[0].complete, true, 'Truncated or absent metrics cannot prove SDK HTTP coverage');
+      assert.equal(metrics[0].total_requests, events.filter(event => event.phase === 'attempt' && event.requestId === operation.requestId).length);
+    }
+  }
+  const source = [], sdk = [], otherPlugins = [];
   for (const request of observed.filter(row => row.event === 'http_start')) {
     let pid = request.pid, role;
     const visited = new Set();
@@ -222,10 +263,28 @@ export function classifyDailyHttp(observed, sourcePids, hostPids) {
       if (hostPids.has(pid)) { role = pid === request.pid ? 'host' : 'other-plugin'; break; }
       pid = parents.get(pid);
     }
-    assert.ok(role === 'source' || role === 'other-plugin', 'HTTP without a verified source or other-plugin process ancestry');
-    (role === 'source' ? source : otherPlugins).push(request);
+    if (role === 'host') {
+      const terminal = observed.filter(row => row.event === 'http_end' && row.id === request.id && row.pid === request.pid);
+      assert.equal(terminal.length, 1, 'Host HTTP needs one independent response');
+      const match = sdkAttempts.get(terminal[0].response_request_id);
+      assert.ok(match && match.operation.pid === request.pid, 'Host HTTP has no exact SDK request ID match');
+      assert.ok(!matchedSdk.has(match.attempt.request_id), 'One SDK attempt cannot account for two HTTP requests');
+      assert.equal(match.attempt.method, request.method);
+      assert.equal(match.attempt.http_status, terminal[0].status);
+      assert.equal(match.attempt.request_bytes, request.request_bytes);
+      assert.equal(match.attempt.outcome, 'success');
+      const attributed = { ...request, attribution: { kind: 'sdk', operation: match.operation.operation,
+        requestId: match.operation.requestId, attempt: match.attempt.attempt, request_id: match.attempt.request_id,
+        request_kind: match.attempt.request_kind, response_bytes: match.attempt.response_bytes,
+        body_kind: match.attempt.body_kind ?? null, target: match.attempt.target ?? null } };
+      matchedSdk.add(match.attempt.request_id); sdk.push(attributed); source.push(attributed);
+    } else {
+      assert.ok(role === 'source' || role === 'other-plugin', 'HTTP without a verified source or other-plugin process ancestry');
+      (role === 'source' ? source : otherPlugins).push(request);
+    }
   }
-  return { source, otherPlugins };
+  assert.equal(matchedSdk.size, sdkAttempts.size, 'An SDK attempt lacks independent HTTP evidence');
+  return { source, sdk, otherPlugins };
 }
 
 export function classifyDailyNotionRequest(request, doctorPid) {
@@ -243,7 +302,7 @@ export function classifyDailyNotionRequest(request, doctorPid) {
 }
 
 async function run(config) {
-  for (const key of ['brokerRoot', 'brokerArchive', 'embeddedCliSha256', 'brokerArchiveSha256', 'cliRoot', 'cliArchive', 'cliArchiveSha256', 'cliEntrySha256', 'evidenceRoot']) assert.equal(typeof config[key], 'string', `Missing final artifact: ${key}`);
+  for (const key of ['brokerRoot', 'brokerArchive', 'embeddedCliSha256', 'embeddedSdkSha256', 'brokerArchiveSha256', 'cliRoot', 'cliArchive', 'cliArchiveSha256', 'cliEntrySha256', 'evidenceRoot']) assert.equal(typeof config[key], 'string', `Missing final artifact: ${key}`);
   const findQuery = config.findQuery ?? 'pstack';
   assert.ok(typeof findQuery === 'string' && findQuery.length && !/[\r\n]/u.test(findQuery));
   await mkdir(config.evidenceRoot, { recursive: true });
@@ -251,7 +310,7 @@ async function run(config) {
   const sessions = join(evidence, 'sessions'), cwd = join(evidence, 'workspace'), observerDir = join(evidence, 'observation');
   await Promise.all([sessions, cwd, observerDir].map(path => mkdir(path)));
   const result = { version: 1, kind: 'actual-daily-pi-autoload-and-diagnostics', status: 'running', evidence, plan: plan(config), harness: await fileIdentity(fileURLToPath(import.meta.url)), modifications: { user_settings: 0, source_config: 0, harness_model_credential_files_read: 0, old_sessions_read: 0, target_extensions_injected: 0, source_command_overrides: 0 }, phases: [] };
-  let rpc, before, broker;
+  let rpc, observedRpc, before, broker;
   try {
     before = await configurationSnapshot(config);
     let namespaceReview;
@@ -269,24 +328,33 @@ async function run(config) {
     await save(join(evidence, 'installed-broker-files.json'), broker); await save(join(evidence, 'installed-cli-files.json'), cli);
     const embedded = await fileIdentity(join(config.brokerRoot, 'dist/ntn-skills.mjs'));
     assert.equal(embedded.sha256, config.embeddedCliSha256);
+    const embeddedSdk = await fileIdentity(join(config.brokerRoot, 'dist/ntn-skills-sdk.mjs'));
+    assert.equal(embeddedSdk.sha256, config.embeddedSdkSha256);
+    const sdkManifest = await json(join(config.brokerRoot, 'dist/ntn-skills-runtime.json'));
+    assert.equal(sdkManifest.version, 1); assert.equal(sdkManifest.package, 'ntn-skills');
+    assert.equal(sdkManifest.cli_sha256, embedded.sha256); assert.equal(sdkManifest.sdk_sha256, embeddedSdk.sha256);
     const standalone = await fileIdentity(join(config.cliRoot, 'dist/ntn-skills.js'));
     assert.equal(standalone.sha256, config.cliEntrySha256);
     const shim = await fileIdentity(config.cliShim ?? join(homedir(), '.local/bin/ntn-skills'));
     const shimReferencesFinalCli = inside(await realpath(config.cliRoot), shim.realpath) || (await readFile(shim.path, 'utf8')).includes(standalone.path);
     assert.ok(shimReferencesFinalCli, 'The daily CLI shim has not been switched to the final CLI');
-    result.artifacts = { broker: { root: broker.root, archive_sha256: broker.archive.sha256, published_files: broker.file_count, files_sha256: broker.sha256 }, embedded, standalone, cli_shim: { ...shim, references_final_cli: shimReferencesFinalCli, executed_by_harness: false } };
+    result.artifacts = { broker: { root: broker.root, archive_sha256: broker.archive.sha256, published_files: broker.file_count, files_sha256: broker.sha256 }, embedded, embeddedSdk, sdkManifest, standalone, cli_shim: { ...shim, references_final_cli: shimReferencesFinalCli, executed_by_harness: false } };
     result.configuration_before = before;
     const host = await resolveHost('pi'); result.host = host;
     assert.ok(host.identity.includes('/@earendil-works/pi-coding-agent/'), 'The daily host must be actual Pi');
     const preload = join(evidence, 'observe-process.cjs');
     await writeFile(preload, `(${installPassiveObserver.toString()})(${JSON.stringify({ directory: observerDir, cliEntry: embedded.realpath })});\n`, { mode: 0o600 });
+    const sdkPreload = join(evidence, 'observe-source.mjs'), sourceLedger = join(evidence, 'source-operations.jsonl');
+    await writeFile(sdkPreload, sourceObserverPreloadSource({ output: sourceLedger, checkoutRoot: resolve(fileURLToPath(new URL('..', import.meta.url))),
+      clockId: 'daily-' + Date.now(), cliPath: embedded.realpath, ownerParentPid: process.pid, ownerEntry: host.path }), { mode: 0o600 });
     const processLedger = join(evidence, 'owned-processes.jsonl');
     await writeFile(processLedger, '', { flag: 'wx', mode: 0o600 });
-    const env = { ...process.env, BROKER_E2E_PROCESS_LEDGER: processLedger, NODE_OPTIONS: [process.env.NODE_OPTIONS, '--require=' + JSON.stringify(preload)].filter(Boolean).join(' ') };
+    const env = { ...process.env, BROKER_E2E_PROCESS_LEDGER: processLedger, NODE_OPTIONS: [process.env.NODE_OPTIONS, '--require=' + JSON.stringify(preload), '--import=' + JSON.stringify(sdkPreload)].filter(Boolean).join(' ') };
     const args = ['--session-dir', sessions];
-    result.launch = { host: 'pi', cwd, args: ['--mode', 'rpc', ...args], normal_user_settings: true, preexisting_node_options_preserved: Boolean(process.env.NODE_OPTIONS), observer_sha256: hash(await readFile(preload)) };
+    result.launch = { host: 'pi', cwd, args: ['--mode', 'rpc', ...args], normal_user_settings: true, preexisting_node_options_preserved: Boolean(process.env.NODE_OPTIONS), observer_sha256: hash(await readFile(preload)), source_observer_sha256: hash(await readFile(sdkPreload)) };
     await save(join(evidence, 'result.json'), result);
     rpc = await startRpc({ host: 'pi', cwd, env, args, timeoutMs: 120000 });
+    observedRpc = rpc;
     const initial = safeState(await rpc.command('get_state'));
     assert.ok(initial.sessionId && !initial.isStreaming && !initial.isCompacting);
     if (initial.sessionFile) assert.ok(inside(sessions, resolve(initial.sessionFile)), 'Only the new owned session may be used');
@@ -324,12 +392,12 @@ async function run(config) {
     await rpc.closeInput(); rpc = undefined;
     const observed = await observedRows(observerDir);
     const spawned = observed.filter(row => row.event === 'spawn' && row.bundled_cli);
-    assert.ok(spawned.length, 'No actual bundled CLI child was observed');
+    assert.ok(spawned.length, 'No explicit bundled doctor CLI child was observed');
     for (const child of spawned) {
       assert.equal(child.real_script, embedded.realpath); assert.equal(child.script_sha256, embedded.sha256);
       const closed = observed.find(row => row.event === 'child_close' && row.pid === child.pid && row.child_pid === child.child_pid);
       assert.ok(closed && closed.code === 0 && !closed.signal, 'Every observed bundled CLI must finish successfully');
-      assert.ok(['list', 'views'].includes(child.cli_args[0]) || child.cli_args[0] === 'ctl' && (child.cli_args[1] === 'doctor' || child.cli_args[1] === 'cache' && child.cli_args[2] === 'identity'), 'A non-metadata CLI command ran');
+      assert.ok(child.cli_args[0] === 'ctl' && child.cli_args[1] === 'doctor', 'Default SDK discovery must not start catalog, identity or body CLI children');
       assert.ok(observed.some(row => row.event === 'process_start' && row.pid === child.child_pid && row.real_entry === embedded.realpath && row.entry_sha256 === embedded.sha256), 'The real CLI child did not independently observe its installed entry');
     }
     const doctors = spawned.filter(row => row.cli_args[0] === 'ctl' && row.cli_args[1] === 'doctor');
@@ -340,10 +408,13 @@ async function run(config) {
     assert.equal(doctor.receipt.skill_read?.checked, true);
     assert.equal(doctor.receipt.skill_read?.available, true);
     const owned = (await readFile(processLedger, 'utf8')).split('\n').filter(Boolean).map(JSON.parse);
-    const partition = classifyDailyHttp(observed, new Set(spawned.map(row => row.child_pid)), new Set(owned.filter(row => row.event === 'spawn').map(row => row.pid)));
+    const sourceObservation = await readSourceObservation(sourceLedger);
+    const sdkOperations = sourceObservation.events.filter(row => row.kind === 'sdk' && row.phase === 'started');
+    assert.ok(sdkOperations.length && sdkOperations.every(row => row.operation === 'list'), 'Metadata startup/find must use the actual SDK catalog entry only');
+    const partition = classifyDailyHttp(observed, new Set(spawned.map(row => row.child_pid)), new Set(owned.filter(row => row.event === 'spawn').map(row => row.pid)), { sourceObservation });
     const http = partition.source;
     result.other_plugin_http = partition.otherPlugins.map(request => ({ ...request, process: observed.find(row => row.event === 'process_start' && row.pid === request.pid), outcome: observed.find(row => ['http_end', 'http_error'].includes(row.event) && row.id === request.id) }));
-    result.http_accounting_scope = 'The verified default bundled CLI process tree is the Notion consumer. Other configured plugin startup/shutdown HTTP is retained separately; host or unattributed HTTP is rejected.';
+    result.http_accounting_scope = 'Default bundled SDK attempts are paired by PID, response request ID, method, status and request bytes. The explicit doctor uses its verified bundled CLI process tree. Other configured plugin child-process HTTP is separate; other host HTTP is unattributed and rejected. Worker transport is outside this passive process observer.';
     assert.ok(http.length, 'No real HTTP metadata request was observed');
     const diagnosticBodyRequests = [];
     for (const request of http) {
@@ -351,7 +422,9 @@ async function run(config) {
       assert.ok(observed.some(row => row.event === 'http_end' && row.id === request.id && row.status >= 200 && row.status < 300), 'An observed Notion request did not complete with HTTP 2xx');
     }
     assert.ok(!observed.some(row => row.event === 'spawn' && basename(row.executable ?? '') === 'ntn'), 'Official ntn was invoked');
-    result.actual_default_cli = { entry: embedded.realpath, sha256: embedded.sha256, processes: spawned.map(row => ({ parent_pid: row.pid, pid: row.child_pid, executable: row.executable, script: row.script, args: row.cli_args })), doctor: doctor.receipt, source_command_overridden: false, path_cli_used_for_default_source: false };
+    result.actual_default_sdk = { entry: embeddedSdk.realpath, sha256: embeddedSdk.sha256, operations: sdkOperations,
+      http: partition.sdk, source_observation_complete: sourceObservation.complete, source_command_overridden: false, catalog_cli_children: 0 };
+    result.explicit_doctor_cli = { entry: embedded.realpath, sha256: embedded.sha256, processes: spawned.map(row => ({ parent_pid: row.pid, pid: row.child_pid, executable: row.executable, script: row.script, args: row.cli_args })), doctor: doctor.receipt, path_cli_used_for_default_source: false };
     result.metadata_http_requests = http.length - diagnosticBodyRequests.length;
     result.diagnostic_body_requests = diagnosticBodyRequests;
     result.startup_and_find_body_reads = 0;
@@ -362,6 +435,10 @@ async function run(config) {
     result.status = 'failed'; result.error = { code: error.code ?? 'DAILY_VERIFICATION_FAILED', message: error.message };
   } finally {
     if (rpc) await rpc.stop().catch(error => { result.shutdown_error = error.message; });
+    if (observedRpc) {
+      await save(join(evidence, 'rpc.json'), observedRpc.frames);
+      await save(join(evidence, 'rpc-lifecycle.json'), observedRpc.lifecycle);
+    }
     if (before) {
       result.configuration_after = await configurationSnapshot(config).catch(() => ({ validation_failed: true }));
       if (JSON.stringify(before) !== JSON.stringify(result.configuration_after)) { result.status = 'failed'; result.configuration_unchanged = false; }

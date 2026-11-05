@@ -14,8 +14,8 @@ import { safeRequestMetrics } from './notion-default-context.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
 import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
 
-const usage = 'Usage: node scripts/notion-sdk-pi.mjs doctor|run --package ABSOLUTE_INSTALLED_BROKER --fixture ABSOLUTE_FIXTURE_JSON [--expect-short-refs true|false] [--expect-compact-context true|false] [--expect-direct-scalar true|false] [--expect-short-confirmations true|false] [--scenario all|default-view|codemode-hidden|codemode-truncated|dollar|native|native-repeat|prepare|scoped-command|resource-batch|resource-batch-short-refs|resource-scalar|resource-scalar-short-refs|partial-entrypoint] [--out NEW_ABSOLUTE_EVIDENCE]; evidence|cleanup --evidence ABSOLUTE_EVIDENCE. Real Pi 1.4 RPC, controlled provider with public onPayload/onResponse hooks, offline source, default bundled SDK (source.command is absent). Compact context, direct scalar and short confirmation checks default to true; false observes a baseline without certifying that contract. Comparisons include the installed Broker and bundled CLI/SDK identities. default-view observes pending startup plus ready metadata on an ordinary continuation. Native menu, live Notion and real model are not claimed.';
-const scenarioNames = ['default-view', 'codemode-hidden', 'codemode-truncated', 'dollar', 'native', 'native-repeat', 'prepare', 'scoped-command', 'resource-batch', 'resource-batch-short-refs', 'resource-scalar', 'resource-scalar-short-refs', 'partial-entrypoint'];
+const usage = 'Usage: node scripts/notion-sdk-pi.mjs doctor|run --package ABSOLUTE_INSTALLED_BROKER --fixture ABSOLUTE_FIXTURE_JSON [--expect-short-refs true|false] [--expect-compact-context true|false] [--expect-direct-scalar true|false] [--expect-short-confirmations true|false] [--scenario all|default-view|codemode-hidden|codemode-truncated|dollar|native|native-repeat|prepare|scoped-command|resource-batch|resource-batch-short-refs|resource-scalar|resource-scalar-short-refs|partial-entrypoint|session-lifecycle] [--out NEW_ABSOLUTE_EVIDENCE]; evidence|cleanup --evidence ABSOLUTE_EVIDENCE. Real Pi 1.4 RPC, controlled provider with public onPayload/onResponse hooks, offline source, default bundled SDK (source.command is absent). Compact context, direct scalar and short confirmation checks default to true; false observes a baseline without certifying that contract. Comparisons include the installed Broker and bundled CLI/SDK identities. default-view observes pending startup plus ready metadata on an ordinary continuation. session-lifecycle drives native fork/clone/tree/compact/resume and late-response cancellation with a controlled summary. Native menu, live Notion and real model are not claimed.';
+const scenarioNames = ['default-view', 'codemode-hidden', 'codemode-truncated', 'dollar', 'native', 'native-repeat', 'prepare', 'scoped-command', 'resource-batch', 'resource-batch-short-refs', 'resource-scalar', 'resource-scalar-short-refs', 'partial-entrypoint', 'session-lifecycle'];
 const nativeTools = ['read', 'notion_list', 'notion_use'];
 const scopedCommandTools = [...nativeTools, 'bash', 'notion_ctl'];
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -202,7 +202,9 @@ export function assertProviderHttpRequest(payload, body, context) {
       measurement: 'Host TranscriptContext including details; not HTTP bytes or model token usage' } };
 }
 
-export function assertProviderToolSequence(captures, frames) {
+export function assertProviderToolSequence(captures, frames, { expectedErrors = [] } = {}) {
+  const errors = new Set(expectedErrors);
+  assert.equal(errors.size, expectedErrors.length, 'Expected error call IDs must be unique');
   const starts = frames.filter(frame => frame.type === 'tool_execution_start');
   const ends = frames.filter(frame => frame.type === 'tool_execution_end');
   const rounds = frames.filter(frame => frame.type === 'message_end' && frame.message?.role === 'assistant')
@@ -212,11 +214,16 @@ export function assertProviderToolSequence(captures, frames) {
   assert.deepEqual(calls.map(call => call.id), starts.map(frame => frame.toolCallId), 'RPC assistant calls and actual tool executions must reconcile in order');
   assert.equal(new Set(starts.map(frame => frame.toolCallId)).size, starts.length);
   assert.equal(ends.length, starts.length, 'Every actual tool call has one terminal result');
+  for (const id of errors) assert.ok(starts.some(frame => frame.toolCallId === id), 'Each expected error must actually execute');
   const sequence = starts.map((frame, index) => {
     const ended = ends.filter(item => item.toolCallId === frame.toolCallId);
-    assert.equal(ended.length, 1); assert.equal(ended[0].isError, false);
+    assert.equal(ended.length, 1); assert.equal(ended[0].isError, errors.has(frame.toolCallId));
     assert.equal(frame.toolName, calls[index].name); assert.deepEqual(frame.args, calls[index].arguments);
-    const requests = captures.filter(capture => toolResult(capture.context, frame.toolCallId)).map(capture => capture.requestId);
+    const requests = captures.filter(capture => {
+      const result = toolResult(capture.context, frame.toolCallId);
+      if (result) assert.equal(result.isError, ended[0].isError, 'The actual provider must receive the terminal error status unchanged');
+      return Boolean(result);
+    }).map(capture => capture.requestId);
     assert.ok(requests.length > 0, 'Every actual result must be observed by a following provider request');
     return { index: index + 1, round: rounds.findIndex(items => items.some(call => call.id === frame.toolCallId)) + 1,
       tool_call_id: frame.toolCallId, tool_name: frame.toolName, arguments: frame.args, is_error: ended[0].isError,
@@ -267,13 +274,16 @@ export function assertDefaultViewProjection(captures, discovery, events, fixture
     const view = attributes.find(value => value.source === 'sdk-fixture');
     if (!view?.id) return { request_id: capture.requestId, state: view?.status ?? 'not_ready', code: view?.code ?? null };
     assert.equal(view.id, expected.id); assert.equal(view.partial, 'false');
-    const entries = [...catalog.matchAll(/<skill><name>([^<]+)<\/name><description>([^<]*)<\/description><location>([^<]+)<\/location><\/skill>/gu)];
+    const entries = [...catalog.matchAll(/<skill><name>([^<]+)<\/name><description>([^<]*)<\/description><source>([^<]+)<\/source><location>([^<]+)<\/location><\/skill>/gu)];
     assert.equal(entries.length, expected.records.length);
+    const xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
     for (const record of expected.records) {
-      const matches = entries.filter(entry => entry[1] === 'sdk-fixture-' + record.name);
-      assert.equal(matches.length, 1); assert.ok(matches[0][2].length > 0); assert.match(matches[0][3], /^sr:C[A-Za-z0-9_-]{22}$/u);
-      assert.equal(matches[0][3], discovery.records.find(value => value.name === record.name && value.source === 'sdk-fixture').ref);
-      assert.equal(texts.reduce((count, text) => count + text.split('<skill><name>' + matches[0][1] + '</name>').length - 1, 0), 1);
+      const actual = discovery.records.find(value => value.name === record.name && value.source === 'sdk-fixture');
+      assert.ok(actual); const matches = entries.filter(entry => entry[1] === xml(record.name) && entry[3] === actual.source);
+      assert.equal(matches.length, 1, 'Display the author name and explicit source, not the sanitized command token');
+      assert.equal(matches[0][2], xml(actual.description)); assert.match(matches[0][4], /^sr:C[A-Za-z0-9_-]{22}$/u);
+      assert.equal(matches[0][4], actual.ref);
+      assert.equal(texts.reduce((count, text) => count + text.split(matches[0][0]).length - 1, 0), 1);
     }
     return { request_id: capture.requestId, state: 'ready', records: entries.length, catalog_bytes: Buffer.byteLength(catalogs[0][0]) };
   });
@@ -769,9 +779,9 @@ async function replayPreparationHttp(context, info, output, kind = 'prepare', ve
   }
 }
 
-async function replayScenarioHttp(captures, frames, info, output, { preparation = false } = {}) {
+async function replayScenarioHttp(captures, frames, info, output, { preparation = false, expectedErrors = [] } = {}) {
   const directory = join(output, 'provider-requests'); await mkdir(directory, { mode: 0o700 });
-  const sequence = assertProviderToolSequence(captures, frames), requests = [];
+  const sequence = assertProviderToolSequence(captures, frames, { expectedErrors }), requests = [];
   for (const [index, capture] of captures.entries()) {
     const name = String(index + 1).padStart(3, '0');
     const result = await replayPreparationHttp(capture.context, info, directory, name, assertProviderHttpRequest);
@@ -827,9 +837,17 @@ export function assertResourceReadSchema(context) {
   const single = schema.oneOf.find(branch => branch.required?.includes('path'));
   const batch = schema.oneOf.find(branch => branch.required?.includes('paths'));
   assert.ok(single && batch); assert.deepEqual(single.not, { required: ['paths'] });
+  for (const path of [schema.properties.path, single.properties?.path]) {
+    assert.equal(path?.type, 'string'); assert.equal(typeof path.description, 'string');
+    assert.match(path.description, /local.*file.*path/iu);
+    assert.match(path.description, /skill:\/\//u); assert.match(path.description, /sr:/u);
+    assert.match(path.description, /\bcopy\b[\s\S]*\b(?:verbatim|unchanged)\b/iu,
+      'Outer and scalar path schemas must both explain copying the supplied reference');
+  }
   assert.deepEqual(batch.required, ['paths']); assert.equal(batch.additionalProperties, false);
   assert.deepEqual(Object.keys(batch.properties), ['paths']); assert.deepEqual(batch.properties.paths, paths);
-  return { tool: 'read', paths_supported: true, path_and_paths_exclusive: true, batch_range_options: false,
+  return { tool: 'read', paths_supported: true, path_ref_guidance: true, scalar_branch_ref_guidance: true,
+    path_and_paths_exclusive: true, batch_range_options: false,
     parameters: schema, parameters_sha256: hash(JSON.stringify(schema)) };
 }
 
@@ -1006,6 +1024,7 @@ function selectProviderCall(context) {
   const text = value => typeof value === 'string' ? value : (value ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
   const parsed = result => { if (result.isError) throw new Error('CONTROLLED_TOOL_FAILED'); return JSON.parse(text(result.content)); };
   const call = (id, name, args) => ({ type: 'toolCall', id, name, arguments: args });
+  if (plan.mode === 'lifecycle-probe') return find(plan.id) ? null : call(plan.id, 'read', { path: plan.ref });
   if (['resource-scalar', 'resource-scalar-short-refs'].includes(plan.mode)) return selectScalarProviderCall(context, plan.calls);
   if (plan.mode === 'scoped-command') {
     const scope = find('sc05-source-command');
@@ -1075,15 +1094,28 @@ function selectProviderCall(context) {
   if (!find('sc10-resource')) return call('sc10-resource', 'read', { path: resources[0].ref });
   return null;
 }
+async function holdLifecycleResponse(options, hook) {
+  if (!JSON.parse(readFileSync(process.env.SC10_PI_TOOL_PLAN, 'utf8')).holdResponse) return false;
+  hook('response_held');
+  const aborted = () => hook('signal_aborted');
+  options.signal.addEventListener('abort', aborted, { once: true });
+  try {
+    if (options.signal.aborted) aborted();
+    while (JSON.parse(readFileSync(process.env.SC10_PI_TOOL_PLAN, 'utf8')).holdResponse)
+      await new Promise(resolve => setTimeout(resolve, 25));
+  } finally { options.signal.removeEventListener('abort', aborted); }
+  return true;
+}
+
 async function provider(base) {
   const path = await writeFakeProvider(base);
   let source = await readFile(path, 'utf8');
   const replace = (before, after) => { assert.equal(source.split(before).length, 2, 'Provider fixture shape changed'); source = source.replace(before, after); };
   replace('import { appendFileSync }', 'import { appendFileSync, readFileSync }');
-  replace('function stream(model, context) {', `${resourceRefsFromNative.toString()}\n${selectScalarProviderCall.toString()}\n${selectNativeRepeatCall.toString()}\n${selectProviderCall.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
+  replace('function stream(model, context) {', `${resourceRefsFromNative.toString()}\n${selectScalarProviderCall.toString()}\n${selectNativeRepeatCall.toString()}\n${selectProviderCall.toString()}\n${holdLifecycleResponse.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, aborted: Boolean(options?.signal?.aborted), monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
   replace('const payload = await options?.onPayload?.({ model: model.id, context }, model);', 'if (typeof options?.onPayload !== "function" || typeof options?.onResponse !== "function") throw new Error("PUBLIC_PROVIDER_HOOKS_REQUIRED");\n      hook("payload_start");\n      const payload = await options.onPayload({ model: model.id, context }, model);\n      hook("payload_end");');
   replace('JSON.stringify({ model: model.id, context })', 'JSON.stringify({ requestId, model: model.id, context })');
-  replace('await options?.onResponse?.({ status: 200, headers: { "x-fixture": "deterministic" } }, model);', 'await options.onResponse({ status: 200, headers: { "x-fixture": "deterministic" } }, model);\n      hook("response_end");');
+  replace('await options?.onResponse?.({ status: 200, headers: { "x-fixture": "deterministic" } }, model);', 'const held = await holdLifecycleResponse(options, hook);\n      await options.onResponse({ status: 200, headers: { "x-fixture": "deterministic" } }, model);\n      if (held) hook("response_callback");\n      hook("response_end");');
   replace('let sent = false;', `let sent = false;\n  let call, prepared = false;\n  async function prepareOutput() {\n    await request();\n    if (!prepared) { call = selectProviderCall(context); if (call) { output.content = [call]; output.stopReason = 'toolUse'; } prepared = true; }\n    return output;\n  }`);
   replace('result: async () => { await request(); return output; }', 'result: prepareOutput');
   replace('await request();\n      for (const event of events) yield event;', `await prepareOutput();\n      if (call) {\n        yield { type: 'start', partial: output };\n        yield { type: 'toolcall_start', contentIndex: 0, partial: output };\n        yield { type: 'toolcall_end', contentIndex: 0, toolCall: call, partial: output };\n        yield { type: 'done', reason: 'toolUse', message: output };\n      } else for (const event of events) yield event;`);
@@ -1186,6 +1218,7 @@ function observe() {
   });
   channel('context-broker.notion-sdk-result').subscribe(event => {
     if (event.operation === 'list') record({ kind: 'sdk_catalog', id: event.id, value: event.value });
+    else if (process.env.SC08_PI_LIFECYCLE === '1') record({ kind: 'sdk_lifecycle_result', id: event.id, operation: event.operation, value: event.value });
   });
   const originalSpawn = childProcess.spawn;
   childProcess.spawn = function(...values) {
@@ -1396,6 +1429,313 @@ async function assertPartialObjectState(partial) {
     corrupt_actual_sha256: hash(bytes), corrupt_bytes: bytes.length, unchanged: true };
 }
 
+/** The input is the native SessionManager's current branch, never getEntries()
+ * over every branch. Compare persisted authority against independent fixture
+ * pins; provider body delivery is checked separately at each actual request. */
+export function assertLifecycleBranch(entries, { snapshots, bodies, selected, preparedNames = [] }) {
+  assert.ok(Array.isArray(entries));
+  const active = entries.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-active-sources');
+  const graphs = entries.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-selected-graph');
+  const refs = entries.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-short-ref'
+    && entry.data?.target?.kind === 'selected');
+  const prepared = refs.map(entry => {
+    const target = entry.data.target, snapshot = snapshots.find(item => item.record.id === target.identity.id && item.scope === target.identity.scope);
+    assert.ok(snapshot && bodies.has(snapshot.record.name), 'Prepared short reference must belong to the original source scope');
+    assert.equal(target.snapshot_id, snapshot.snapshot_id); assert.equal(target.version_id, snapshot.version_id);
+    assert.equal(target.body_sha256, hash(bodies.get(snapshot.record.name))); assert.match(entry.data.ref, /^sr:S[A-Za-z0-9_-]{22}$/u);
+    return { name: snapshot.record.name, ref: entry.data.ref, snapshot_id: target.snapshot_id, version_id: target.version_id };
+  });
+  if (!selected) {
+    assert.equal(active.length, 0, 'An unselected native branch cannot inherit active sources from another branch');
+    assert.equal(graphs.length, 0, 'An unselected native branch cannot inherit another branch graph');
+    assert.deepEqual([...new Set(prepared.map(item => item.name))].sort(), [...preparedNames].sort(),
+      'Only explicitly prepared, unactivated source handles may remain after cancellation');
+    return { active_entries: 0, selected_graph_entries: 0, selected_handles: new Set(prepared.map(item => item.ref)).size,
+      prepared_unactivated: prepared, pins: [] };
+  }
+  assert.ok(active.length > 0, 'Complete provider delivery must persist an active entry on this branch');
+  const sources = active.at(-1).data.sources;
+  assert.equal(sources.length, bodies.size);
+  assert.equal(new Set(sources.map(source => source.record.id)).size, sources.length);
+  const pins = sources.map(source => {
+    const snapshot = snapshots.find(item => item.record.id === source.record.id && item.scope === source.record.sourceScope);
+    assert.ok(snapshot && bodies.has(snapshot.record.name), 'Active source must belong to the original source scope');
+    const body = bodies.get(snapshot.record.name), binding = source.record.preparationBinding;
+    assert.equal(source.record.source, 'notion'); assert.equal(source.snapshotId, snapshot.snapshot_id);
+    assert.equal(source.record.snapshotId, snapshot.snapshot_id); assert.equal(source.record.versionId, snapshot.version_id);
+    assert.equal(source.bodySha256, hash(body)); assert.equal(source.bytes, Buffer.byteLength(body));
+    assert.equal(binding.scope, snapshot.scope); assert.equal(binding.record.id, snapshot.record.id);
+    assert.equal(binding.snapshot_id, snapshot.snapshot_id); assert.equal(binding.version_id, snapshot.version_id);
+    assert.equal(binding.body_sha256, hash(body)); assert.equal(new URL(binding.ref).searchParams.get('snapshot'), snapshot.snapshot_id);
+    const matching = refs.filter(entry => entry.data.target.identity.id === snapshot.record.id);
+    assert.ok(matching.length > 0, 'The active selected source needs a current-branch short handle');
+    for (const entry of matching) {
+      const target = entry.data.target;
+      assert.equal(target.identity.scope, snapshot.scope); assert.equal(target.snapshot_id, snapshot.snapshot_id);
+      assert.equal(target.version_id, snapshot.version_id); assert.equal(target.body_sha256, hash(body));
+      assert.match(entry.data.ref, /^sr:S[A-Za-z0-9_-]{22}$/u);
+    }
+    return { name: snapshot.record.name, scope: snapshot.scope, id: snapshot.record.id, snapshot_id: snapshot.snapshot_id,
+      version_id: snapshot.version_id, body_sha256: hash(body), ref: matching.at(-1).data.ref };
+  });
+  const locks = active.at(-1).data.graphs;
+  assert.equal(locks.length, 1); assert.equal(locks[0].scope, snapshots[0].scope);
+  assert.deepEqual(locks[0].roots, ['a', 'b', 'c'].map(name => snapshots.find(item => item.record.name === name).record.id));
+  assert.equal(locks[0].bindings.length, pins.length);
+  for (const binding of locks[0].bindings) {
+    const pin = pins.find(item => item.id === binding.record.id && item.scope === binding.scope);
+    assert.ok(pin); assert.equal(binding.snapshot_id, pin.snapshot_id); assert.equal(binding.version_id, pin.version_id);
+    assert.equal(binding.body_sha256, pin.body_sha256);
+  }
+  return { active_entries: active.length, selected_graph_entries: graphs.length,
+    selected_handles: new Set(refs.map(entry => entry.data.ref)).size, pins };
+}
+
+export function assertLifecycleRestore(value, { snapshots, bodies }) {
+  assert.equal(value.status, 'ready'); assert.equal(value.preparation.purpose, 'inspect');
+  assert.deepEqual(value.preparation.required_closure, [], 'Recovery inspects the persisted fixed vector without traversing a new Requires closure');
+  assert.equal(value.delivery.status, 'not_observed'); assert.equal(value.activation.status, 'not_evaluated');
+  assert.equal(value.entries.length, bodies.size); assert.equal(value.preparation.roots.length, bodies.size);
+  const ids = new Set();
+  const pins = value.entries.map(entry => {
+    const manifest = entry.manifest, snapshot = snapshots.find(item => item.record.id === manifest.record.id && item.scope === manifest.scope);
+    assert.ok(snapshot && bodies.has(snapshot.record.name)); assert.equal(ids.has(manifest.record.id), false); ids.add(manifest.record.id);
+    assert.equal(manifest.snapshot_id, snapshot.snapshot_id); assert.equal(manifest.version_id, snapshot.version_id);
+    const root = value.preparation.roots.filter(item => item.id === snapshot.record.id);
+    assert.equal(root.length, 1); assert.equal(root[0].readiness, 'ready');
+    assert.equal(new URL(root[0].target).searchParams.get('snapshot'), snapshot.snapshot_id, 'The SDK recovery input must already be fixed');
+    assert.equal(new URL(root[0].ref).searchParams.get('snapshot'), snapshot.snapshot_id);
+    assert.equal(entry.source_body.sha256, hash(bodies.get(snapshot.record.name)));
+    assert.equal(entry.source_body.bytes, Buffer.byteLength(bodies.get(snapshot.record.name))); assert.equal(entry.source_body.has_more, false);
+    return { name: snapshot.record.name, id: snapshot.record.id, scope: snapshot.scope, target: root[0].target,
+      snapshot_id: manifest.snapshot_id, version_id: manifest.version_id, source_body: entry.source_body };
+  });
+  return { purpose: 'inspect', pins, required_closure_expanded: false, delivery_claimed_by_sdk: false,
+    boundary: 'Actual bundled SDK result; subsequent provider bytes and response establish delivery separately' };
+}
+
+function lifecycleControl(api) {
+  const control = () => JSON.parse(readFileSync(process.env.SC08_PI_CONTROL, 'utf8'));
+  const record = (type, fields = {}) => appendFileSync(process.env.SC08_PI_NATIVE_EVENTS,
+    JSON.stringify({ type, pid: process.pid, monotonic_ns: process.hrtime.bigint().toString(), ...fields }) + '\n', { mode: 0o600 });
+  for (const name of ['session_start', 'session_shutdown', 'session_before_fork', 'session_fork', 'session_before_tree', 'session_tree', 'session_compact'])
+    api.on(name, (event, ctx) => record(name, { reason: event.reason ?? null, position: event.position ?? null,
+      target_id: event.entryId ?? event.preparation?.targetId ?? null, leaf_id: ctx.sessionManager.getLeafId(),
+      session_file: ctx.sessionManager.getSessionFile(), from_extension: event.fromExtension ?? null }));
+  api.on('session_before_compact', event => {
+    const plan = control();
+    if (plan.action !== 'compact') return;
+    if (!event.branchEntries.some(entry => entry.id === plan.firstKeptEntryId)) throw new Error('SC08_COMPACT_KEEP_ENTRY_ABSENT');
+    record('controlled_compaction', { first_kept_entry_id: plan.firstKeptEntryId, tokens_before: event.preparation.tokensBefore });
+    return { compaction: { summary: 'Controlled lifecycle summary. Continue the ordinary task; recover any active fixed Skill instructions from their persisted bindings.',
+      firstKeptEntryId: plan.firstKeptEntryId, tokensBefore: event.preparation.tokensBefore,
+      details: { verification: 'controlled summary; real Pi compaction lifecycle, no model summary quality claim' } } };
+  });
+  api.registerCommand('sc08-fixture', { description: 'Owned verification fixture: inspect or navigate the actual Pi session branch.',
+    handler: async (_args, ctx) => {
+      await ctx.waitForIdle();
+      const plan = control();
+      if (plan.action === 'rewind') {
+        const result = await ctx.navigateTree(plan.entryId, { summarize: false });
+        if (result.cancelled) throw new Error('SC08_TREE_CANCELLED');
+      } else if (plan.action !== 'snapshot') throw new Error('SC08_CONTROL_ACTION_INVALID');
+      const snapshot = { session_file: ctx.sessionManager.getSessionFile(), leaf_id: ctx.sessionManager.getLeafId(),
+        branch: ctx.sessionManager.getBranch() };
+      writeFileSync(plan.output, JSON.stringify(snapshot, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
+      record('branch_snapshot', { action: plan.action, output: plan.output, leaf_id: snapshot.leaf_id, session_file: snapshot.session_file });
+    } });
+}
+
+async function runSdkLifecycle({ info, base, output, sessions, providerFile, hookFile, ledger, toolPlan, env, argv }) {
+  const controlFile = join(base, 'lifecycle-control.json'), nativeEvents = join(output, 'native-session-events.jsonl');
+  const extension = join(base, 'lifecycle-control.mjs'), steps = [], processes = [], frames = [];
+  const compactionSettings = { enabled: false, keepRecentTokens: 1, reserveTokens: 1024 };
+  await save(join(env.PI_CODING_AGENT_DIR, 'settings.json'), { compaction: compactionSettings });
+  await save(controlFile, { action: 'snapshot', output: join(output, 'initial-unused.json') });
+  await writeFile(extension, "import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';\nexport default " + lifecycleControl.toString() + '\n', { mode: 0o600 });
+  const args = [...argv, '-e', extension], lifecycleEnv = { ...env, SC08_PI_LIFECYCLE: '1', SC08_PI_CONTROL: controlFile, SC08_PI_NATIVE_EVENTS: nativeEvents };
+  await save(join(output, 'lifecycle-launch.json'), { host: info.host, argv: args, cwd: base,
+    source_command_configured: false, control_extension: extension, control_extension_sha256: hash(await readFile(extension)),
+    controlled_summary: true, compaction_settings: compactionSettings, real_model: false,
+    observation: 'Same public provider and SDK observer; every process has a separate complete source ledger' });
+  const oracle = { snapshots: info.fixture.snapshots.slice(0, 4), bodies: info.bodies };
+  let rpc, segment, failed, archive, serializer;
+  const countBodies = context => Object.fromEntries([...info.bodies].map(([key, body]) => [key, bodyCount(context, body)]));
+  const counts = selected => Object.fromEntries([...info.bodies.keys()].map(key => [key, selected ? 1 : 0]));
+  const bodyOperations = async () => (await rows(segment.ledger)).filter(event => event.kind === 'sdk' && event.event === 'start' && event.operation !== 'list').length;
+  const snapshot = async (label, selected, action = {}, preparedNames = []) => {
+    const path = join(output, label + '-branch.json');
+    await save(controlFile, { action: 'snapshot', ...action, output: path });
+    await rpc.prompt('/sc08-fixture');
+    const state = await json(path), checked = assertLifecycleBranch(state.branch, { ...oracle, selected, preparedNames });
+    steps.push({ label, boundary: 'native SessionManager.getBranch()', session_file: state.session_file, leaf_id: state.leaf_id,
+      evidence: label + '-branch.json', ...checked });
+    return state;
+  };
+  const ordinary = async (label, selected) => {
+    await save(toolPlan, { mode: 'complete' });
+    const before = (await rows(providerFile)).length, bodyBefore = await bodyOperations();
+    await rpc.prompt('SC08_' + label + ' Continue the ordinary task without requesting new Skill instructions.');
+    const captures = await rows(providerFile), current = captures.slice(before);
+    assert.equal(current.length, 1, label + ': an ordinary continuation has one actual provider request');
+    assert.deepEqual(countBodies(current[0].context), counts(selected), label + ': full selected root and Requires body counts');
+    const value = { label, boundary: 'actual Pi provider payload', provider_request_id: current[0].requestId,
+      body_counts: countBodies(current[0].context), sdk_body_calls: await bodyOperations() - bodyBefore };
+    steps.push(value); return value;
+  };
+  const open = async (name, sessionPath) => {
+    const suffix = name === 'initial' ? '' : '-' + name;
+    const observerFile = name === 'initial' ? ledger : join(output, 'observer' + suffix + '.jsonl');
+    segment = { name, ledger: observerFile, observer_file: 'observer' + suffix + '.jsonl',
+      lifecycle_file: 'rpc-lifecycle' + suffix + '.json', frames_file: 'rpc-frames' + suffix + '.json' };
+    rpc = await startRpc({ host: 'pi', args: [...args, ...(sessionPath ? ['--session', sessionPath] : [])],
+      cwd: base, env: { ...lifecycleEnv, SC10_PI_OBSERVER: observerFile }, timeoutMs: 60000 });
+    segment.rpc = rpc; processes.push(segment);
+    await rpc.command('set_auto_compaction', { enabled: false });
+  };
+  const close = async () => {
+    if (!rpc || segment.closed) return;
+    const before = await waitForSourceFinality(segment.ledger, rpc.lifecycle[0].pid);
+    await save(join(output, 'source-before-close-' + segment.name + '.json'), before);
+    try { await rpc.closeInput(); }
+    catch (error) { await rpc.stop().catch(() => {}); throw error; }
+    finally {
+      segment.closed = true; frames.push(...rpc.frames);
+      segment.finality = await waitForSourceFinality(segment.ledger, rpc.lifecycle[0].pid, { hostClosed: true });
+      await save(join(output, segment.lifecycle_file), rpc.lifecycle); await save(join(output, segment.frames_file), rpc.frames);
+      await save(join(output, 'source-finality-' + segment.name + '.json'), segment.finality);
+    }
+  };
+  const waitHook = async phase => {
+    const deadline = Date.now() + 20000;
+    for (;;) {
+      const found = (await rows(hookFile)).find(event => event.phase === phase);
+      if (found) return found;
+      assert.ok(Date.now() < deadline, 'Actual controlled provider hook did not arrive: ' + phase);
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+  };
+  try {
+    await save(toolPlan, { mode: 'complete' }); await open('initial');
+    await ordinary('BASELINE', false); const baseline = await snapshot('baseline', false);
+    await save(toolPlan, { mode: 'prepare' });
+    await rpc.prompt('SC08_USE_A_B_C Use the available a, b and c Skills with their complete Requires.');
+    let captures = await rows(providerFile), prepared = toolResult(captures.at(-1).context, 'sc10-prepare');
+    const projection = assertPreparedProjection(prepared, oracle);
+    await save(join(output, 'use-projection.json'), projection);
+    for (const [name, body] of info.bodies) assert.equal(bodyCount(captures.at(-1).context, body), 1, name);
+    const selected = await snapshot('selected', true), originalSession = selected.session_file;
+    const user = selected.branch.find(entry => entry.message?.role === 'user' && textContent(entry.message.content).includes('SC08_USE_A_B_C'));
+    assert.ok(user);
+    assert.equal((await ordinary('READY_AFTER_USE', true)).sdk_body_calls, 0);
+    await snapshot('original-ready', true);
+    assert.equal((await rpc.command('fork', { entryId: user.id })).cancelled, false);
+    const forked = await snapshot('fork-before-use', false); assert.notEqual(forked.session_file, originalSession);
+    await ordinary('FORK_WITHOUT_SELECTION', false);
+    const oldRef = projection.records.find(record => record.name === 'a').ref, beforeProbe = await bodyOperations();
+    await save(toolPlan, { mode: 'lifecycle-probe', id: 'sc08-stale-fork', ref: oldRef });
+    await rpc.prompt('SC08_STALE_HANDLE Inspect the supplied handle from the abandoned branch: ' + oldRef);
+    captures = await rows(providerFile);
+    const rejected = toolResult(captures.at(-1).context, 'sc08-stale-fork');
+    assert.equal(rejected?.isError, true); assert.match(textContent(rejected.content), /SHORT_REF_UNKNOWN/u);
+    assert.deepEqual(countBodies(captures.at(-1).context), counts(false));
+    assert.equal(await bodyOperations(), beforeProbe, 'Unknown branch handle must fail before any body SDK operation');
+    steps.push({ label: 'stale-handle', ref: oldRef, tool_call_id: 'sc08-stale-fork', code: 'SHORT_REF_UNKNOWN', sdk_body_calls: 0 });
+    assert.equal((await rpc.command('switch_session', { sessionPath: originalSession })).cancelled, false);
+    assert.equal((await ordinary('SWITCH_ORIGINAL', true)).sdk_body_calls, 0); await snapshot('switch-original', true);
+    assert.equal((await rpc.command('clone')).cancelled, false);
+    assert.equal((await ordinary('CLONE_SELECTED', true)).sdk_body_calls, 0);
+    const clone = await snapshot('clone-selected', true); assert.notEqual(clone.session_file, originalSession);
+    await snapshot('rewind-before-use', false, { action: 'rewind', entryId: baseline.leaf_id });
+    await ordinary('REWIND_WITHOUT_SELECTION', false);
+    await snapshot('return-to-selected', true, { action: 'rewind', entryId: clone.leaf_id });
+    assert.equal((await ordinary('RETURN_SELECTED', true)).sdk_body_calls, 0);
+    const beforeCompact = await snapshot('before-compact', true);
+    const keep = [...beforeCompact.branch].reverse().find(entry => entry.message?.role === 'user' && textContent(entry.message.content).includes('SC08_RETURN_SELECTED'));
+    assert.ok(keep); await save(controlFile, { action: 'compact', firstKeptEntryId: keep.id });
+    await save(join(output, 'compact-rpc.json'), await rpc.command('compact', { customInstructions: 'Use the owned controlled lifecycle summary.' }));
+    const compacted = await rpc.command('get_messages');
+    await save(join(output, 'messages-after-compact-before-restore.json'), compacted);
+    assert.deepEqual(countBodies({ messages: compacted.messages }), counts(false), 'Actual Pi compaction must remove the original bodies before restoration');
+    await snapshot('compacted-bindings', true);
+    const restored = await ordinary('RESTORE_COMPACTED', true);
+    assert.equal(restored.sdk_body_calls, 1, 'The fixed active graph is restored in one SDK operation');
+    const restoreResults = (await rows(segment.ledger)).filter(event => event.kind === 'sdk_lifecycle_result' && event.value?.preparation?.purpose === 'inspect');
+    assert.equal(restoreResults.length, 1);
+    await save(join(output, 'fixed-restore.json'), { sdk_operation_id: restoreResults[0].id,
+      ...assertLifecycleRestore(restoreResults[0].value, oracle), provider_request_id: restored.provider_request_id });
+    const resumedPath = (await snapshot('restored', true)).session_file;
+    await close(); await open('resumed', resumedPath);
+    const resumed = await ordinary('RESUME_PROCESS', true);
+    assert.equal(resumed.sdk_body_calls, 0, 'A persisted restored body must not be prepared again on process resume');
+    await snapshot('resumed', true);
+    await rpc.command('new_session');
+    await snapshot('new-session', false);
+    await save(toolPlan, { mode: 'complete', holdResponse: true });
+    const pending = rpc.prompt('$a@sdk-fixture SC08_ABORT_AFTER_DISPATCH Apply the selected instructions.').then(
+      () => ({ succeeded: true }), error => ({ succeeded: false, message: String(error.message) }));
+    const held = await waitHook('response_held'), abort = rpc.command('abort');
+    const aborted = await waitHook('signal_aborted'); assert.equal(aborted.requestId, held.requestId); assert.equal(aborted.aborted, true);
+    await save(toolPlan, { mode: 'complete' }); await abort;
+    const outcome = await pending; assert.equal(outcome.succeeded, false); assert.match(outcome.message, /abort/iu);
+    const late = await waitHook('response_callback'); assert.equal(late.requestId, held.requestId); assert.equal(late.aborted, true);
+    await snapshot('cancelled-after-response', false, {}, ['a', 'base']);
+    await ordinary('AFTER_CANCEL', false);
+    const dispatched = (await rows(providerFile)).filter(item => item.requestId === held.requestId);
+    assert.equal(dispatched.length, 1);
+    assert.deepEqual(countBodies(dispatched[0].context), { a: 1, b: 0, c: 0, base: 1 });
+    steps.push({ label: 'cancel-after-dispatch', provider_request_id: held.requestId, actual_provider_inputs: 1,
+      source_bodies_dispatched: ['a', 'base'], signal_aborted: true, late_callback_aborted: true, active_commit: false, outcome });
+    await close();
+    const native = await rows(nativeEvents);
+    for (const name of ['session_before_fork', 'session_tree', 'session_compact', 'controlled_compaction'])
+      assert.ok(native.some(event => event.type === name), 'Actual Pi lifecycle event is required: ' + name);
+    assert.ok(native.some(event => event.type === 'session_start' && event.reason === 'resume'), 'New process must actually resume the owned session');
+    assert.ok(native.some(event => event.type === 'session_compact' && event.from_extension === true));
+  } catch (error) { failed = { code: error.code ?? error.name, message: String(error.message), stack: error.stack }; }
+  finally {
+    await save(toolPlan, { mode: 'complete' });
+    try { await close(); } catch (error) { failed ??= { code: error.code ?? error.name, message: String(error.message) }; }
+    await save(join(output, 'lifecycle-steps.json'), steps);
+    await save(join(output, 'rpc-processes.json'), processes.map(({ rpc: _rpc, ledger: _ledger, ...process }) => process));
+    archive = await archiveSessions(sessions, output);
+  }
+  const stable = processes.length > 0 && processes.every(process => process.closed && process.finality?.complete);
+  try {
+    if (failed) throw Object.assign(new Error(failed.message), failed);
+    const captures = await rows(providerFile);
+    const hooks = await rows(hookFile);
+    assert.equal(new Set(captures.map(capture => capture.requestId)).size, captures.length);
+    for (const capture of captures) {
+      const actual = hooks.filter(event => event.requestId === capture.requestId);
+      const expected = actual.some(event => event.phase === 'response_held')
+        ? ['payload_start', 'payload_end', 'response_held', 'signal_aborted', 'response_callback', 'response_end']
+        : ['payload_start', 'payload_end', 'response_end'];
+      assert.deepEqual(actual.map(event => event.phase), expected);
+      assertNativeGuidance(capture.context, env.SC10_PI_BUNDLED_CLI);
+    }
+    serializer = await replayScenarioHttp(captures, frames, info, output, { expectedErrors: ['sc08-stale-fork'] });
+    const observations = [];
+    for (const process of processes) {
+      const observed = await rows(process.ledger);
+      observations.push({ name: process.name, ...reconcile(observed, process.rpc.lifecycle, {
+        bodyTransportRequired: observed.some(event => event.kind === 'sdk' && event.event === 'start' && event.operation !== 'list') }) });
+    }
+    const result = { name: 'session-lifecycle', status: 'passed', observer_finality: stable, source_command_configured: false,
+      provider_requests: captures.length, actual_pi_processes: processes.length, session_archive_files: archive.files.length,
+      session_lifecycle: 'native fork, clone, switch, tree, compact, process resume and post-dispatch abort verified',
+      controlled_summary: true, model_summary_quality: 'not_measured', actual_model: false, live_notion: false,
+      steps: 'lifecycle-steps.json', process_observations: observations, serializer_http_replay: { status: serializer.status,
+        requests: serializer.provider_requests, request_bytes: serializer.request_bytes, tool_calls: serializer.tool_calls,
+        all_provider_requests_serialized: serializer.all_provider_requests_serialized, evidence: 'provider-http.json' } };
+    await save(join(output, 'result.json'), result); return result;
+  } catch (error) {
+    const result = { name: 'session-lifecycle', status: 'failed', observer_finality: stable,
+      error: failed ?? { code: error.code ?? error.name, message: String(error.message), stack: error.stack } };
+    await save(join(output, 'result.json'), result); return result;
+  }
+}
+
 async function scenario(name, info, scratch, evidence, expectShortRefs, expectCompactContext, expectDirectScalar, expectShortConfirmations) {
   const shortResourceRefs = name === 'resource-batch-short-refs';
   const resourceScenario = name === 'resource-batch' || shortResourceRefs;
@@ -1460,6 +1800,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       : 'cloned warm controlled snapshots/current catalog; fresh Broker cache and Pi session', expect_short_refs: expectShortRefs,
     expect_compact_context: expectCompactContext, expect_direct_scalar: expectDirectScalar, expect_short_confirmations: expectShortConfirmations, active_tools: activeTools,
     ...(scalarSeed ? { seed_evidence: 'resource-scalar-seed.json', seed_sha256: scalarSeed.evidence.session_sha256 } : {}) });
+  if (name === 'session-lifecycle') return runSdkLifecycle({ info, base, output, sessions, providerFile, hookFile, ledger, toolPlan, env, argv });
   let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, resourceScalarEvidence, nativeRepeatEvidence, entrypointEvidence, defaultViewEvidence, serializerContext, archive, dollarProjection, nativeProjection;
   try {
     rpc = await startRpc({ host: 'pi', args: argv, cwd: base, env, timeoutMs: 60000 });
@@ -1493,6 +1834,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       captures = await rows(providerFile); last = captures.at(-1).context;
       assert.equal(captures.length, 3, 'Nonblocking startup and one ordinary continuation are both retained');
       defaultViewEvidence = assertDefaultViewProjection(captures, discovery, await rows(ledger), info.fixture, info.bodies);
+      defaultViewEvidence.read_schema = assertResourceReadSchema(last);
       await save(join(output, 'default-view.json'), defaultViewEvidence);
     } else if (codemode) {
       assert.equal(captures.length, 4);
@@ -1966,11 +2308,18 @@ async function retained(evidence, cleanup) {
     assert.ok(Array.isArray(plan.scenarios) && plan.scenarios.length > 0 && plan.scenarios.every(name => scenarioNames.includes(name)));
     assert.equal(new Set(plan.scenarios).size, plan.scenarios.length);
     for (const name of plan.scenarios) {
-      const lifecycle = await json(join(evidence, name, 'rpc-lifecycle.json'));
-      assert.equal(lifecycle.filter(event => event.event === 'spawn').length, 1);
-      assert.equal(lifecycle.filter(event => event.event === 'close').length, 1);
-      const observed = await rows(join(evidence, name, 'observer.jsonl'));
-      assert.ok(observed.length); assert.ok(observed.some(event => event.kind === 'observer_end' && event.observer_pid === lifecycle[0].pid && event.active_sdk === 0 && event.active_children === 0));
+      const processes = name === 'session-lifecycle' ? await json(join(evidence, name, 'rpc-processes.json'))
+        : [{ lifecycle_file: 'rpc-lifecycle.json', observer_file: 'observer.jsonl' }];
+      assert.ok(processes.length > 0);
+      for (const process of processes) {
+        assert.match(process.lifecycle_file, /^rpc-lifecycle(?:-[a-z]+)?\.json$/u);
+        assert.match(process.observer_file, /^observer(?:-[a-z]+)?\.jsonl$/u);
+        const lifecycle = await json(join(evidence, name, process.lifecycle_file));
+        assert.equal(lifecycle.filter(event => event.event === 'spawn').length, 1);
+        assert.equal(lifecycle.filter(event => event.event === 'close').length, 1);
+        const observed = await rows(join(evidence, name, process.observer_file));
+        assert.equal(sourceFinality(observed, lifecycle[0].pid, { hostClosed: true }).complete, true);
+      }
     }
     try { await lstat(ownership.scratch); await runCommand('/usr/bin/trash', [ownership.scratch], { cwd: evidence, env: process.env, timeoutMs: 30000 }); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }

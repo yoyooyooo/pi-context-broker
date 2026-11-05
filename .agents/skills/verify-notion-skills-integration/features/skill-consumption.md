@@ -23,7 +23,7 @@
 | SC05 | AH-622 | provider 输入 | [能力化指引](../../../../packages/context-broker/docs/skill-consumption-guidance.md)、[prepare 编译投影](../../../../packages/context-broker/docs/skill-consumption-projection.md)、[搜索/注入/native 呈现](../../../../packages/context-broker/docs/skill-model-surfaces-verification-2026-11-05.md)及[重复确认配对](../../../../packages/context-broker/docs/repeat-read-consumption-verification-2026-11-05.md)：完整作者正文与机器证明分离，实际 span、全部 provider HTTP 与工具往返分别验收；正式模型 Gate 仍分列 |
 | SC06 | AH-623 | 目录、search、自然任务 | search 卡片已减少重复 id/scope 并批量登记短引用，完整 UI/机器元数据保留；view-discovery / model 继续验跨入口去重及两种目录的真实选路比较 |
 | SC07 | AH-626 | inspect、use、资源 | installed --skill-graph true；固定资源批读使用下方 `resource-batch` 路线及[合同](../../../../packages/context-broker/docs/fixed-resource-batches.md)；单文件直读使用 `resource-scalar` / `resource-scalar-short-refs` 与[配对记录](../../../../packages/context-broker/docs/scalar-resource-consumption-verification-2026-11-05.md)；[批读最终包、真实模型与新会话记录](../../../../packages/context-broker/docs/fixed-resource-batches-verification-2026-11-04.md)。原句介绍/执行与正式模型 Gate 分别验收；[指引历史](../../../../packages/context-broker/docs/skill-consumption-guidance.md)的失败继续保留 |
-| SC08 | AH-627 | 重复、resume、压缩 | [状态与恢复证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：selected/visible/active 分离、状态层 14/14、实际 Pi 压缩后固定恢复；[重复读取配对](../../../../packages/context-broker/docs/repeat-read-consumption-verification-2026-11-05.md)核对确认失效证明与原始全文保留；默认模型摘要另验 |
+| SC08 | AH-627 | 重复、resume、压缩 | [默认 SDK 实际会话入口](session-cache-recovery.md#sc08-sc22-pi-默认-sdk-会话恢复)：原 driver 的 session-lifecycle 驱动真实 fork/clone/tree/compact/跨进程 resume/晚到取消，逐 turn 核对完整正文、分支绑定与源终局；[重复读取配对](../../../../packages/context-broker/docs/repeat-read-consumption-verification-2026-11-05.md)保留原始全文；受控摘要与真实模型摘要分别验收 |
 | SC09 | AH-624 | 普通消息、显式选择 | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：context 准备与运行信号，RPC/PTY 10/10、完整启动 31/31；[历史失败](../../../../packages/context-broker/docs/skill-consumption-startup-checkpoint.md)保留 |
 | SC10 | AH-625 | SDK、公开 CLI | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：独立 npm/Node SDK 11/11、Broker 等价 9/9、实际 Pi 默认 SDK 3/3；目录 CLI 和 custom command 明确单列 |
 | SC11 | AH-628 | 目录、依赖选择 | CLI 的 scalar inventory SDK/CLI smoke 及[完整目录复用记录](../../../../packages/context-broker/docs/shared-metadata-consumption-verification-2026-11-05.md)；同次 logical selector / native-reference 编译复用六属性观察，真实 source driver 单独计量；需求批次、其他投影与关系范围继续补齐 |
@@ -149,7 +149,7 @@ node scripts/notion-sdk-pi.mjs cleanup --evidence "$SDK_EVIDENCE"
 node scripts/notion-sdk-pi.mjs evidence --evidence "$SDK_EVIDENCE"
 ```
 
-此既有 driver 的 13 个场景使用实际 Pi 1.4、独立安装 Broker、随包 CLI/SDK、受控 source/provider。`default-view` 留下 pending → list → 普通续接 ready 的三次请求；核对 a、b 的名称、描述、短入口以及只有一份默认目录，SDK 完整元数据和失败状态独立核对。`prepare` 的场景名保留历史入口，但实际调用为 `notion_use({ref:[...]})`，共享 Requires 只交付一次。native、批读、固定 scalar、恢复短引用和 partial-cache 场景继续复用原证据与实际对象读取正控制。
+此既有 driver 的 14 个场景使用实际 Pi 1.4、独立安装 Broker、随包 CLI/SDK、受控 source/provider。`default-view` 留下 pending → list → 普通续接 ready 的三次请求；逐条显示准确 `record.name`、description、独立 source 与短入口，不能以命令 token 冒充显示名；只有一份默认目录，SDK 完整元数据和失败状态独立核对。默认目录与资源场景同时核对实际 provider 的 read.path outer/oneOf scalar schema 都说明 local path、`skill://`、`sr:` 和复制 issued ref。`prepare` 的场景名保留历史入口，但实际调用为 `notion_use({ref:[...]})`，共享 Requires 只交付一次。native、批读、固定 scalar、恢复短引用和 partial-cache 场景继续复用原证据与实际对象读取正控制；`session-lifecycle` 的实际分支/压缩/恢复/取消按[会话地图](session-cache-recovery.md#sc08-sc22-pi-默认-sdk-会话恢复)独立报告。
 
 资源使用的 scalar `read.path` 和 batch `read.paths` 都是当前入口。逐文件的完整 provider span、固定 owner/snapshot/File ID/hash 与外层 toolCallId 独立核对；资源数与外层工具调用数分列，不能把一次 batch 记成多次 Agent 往返。实际图模型 observer 同样检查原始 SDK 结果与完整外层输出，details-only、部分正文、未发现或错 pin 的资源不计完成。
 
@@ -225,7 +225,7 @@ cleanup 新增自己的回执不影响原文件比对。若原文件改变，保
 
 ### Drive：SC05/06 搜索、注入与原生读取投影
 
-沿用同一已安装 CLI/SDK、同一 fixture，分别构建并独立安装基线与候选 Broker。复用 `scripts/notion-sdk-pi.mjs`，对每臂分别运行 `--scenario dollar`、`native`、`prepare`；`all` 还包含其他七个场景，不等同于本次三路对照。每次使用新的仓外 `--out`。基线传 `--expect-compact-context false`，候选传 true（默认）；false 仅允许观察旧形态，不认证新合同。
+沿用同一已安装 CLI/SDK、同一 fixture，分别构建并独立安装基线与候选 Broker。复用 `scripts/notion-sdk-pi.mjs`，对每臂分别运行 `--scenario dollar`、`native`、`prepare`；`all` 的当前清单见 `--help`，不等同于本次三路对照。每次使用新的仓外 `--out`。基线传 `--expect-compact-context false`，候选传 true（默认）；false 仅允许观察旧形态，不认证新合同。
 
 ```bash
 node scripts/notion-sdk-pi.mjs doctor --package "$CONTEXT_PACKAGE" --fixture "$CONTEXT_FIXTURE"

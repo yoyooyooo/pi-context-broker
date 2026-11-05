@@ -23,7 +23,7 @@ AH-561 的直连请求和跨 Skill 图先走 [request-engine](features/request-e
 | [默认上下文与后台预取](features/default-context-prefetch.md) | NS-DEFAULT-01～08 |
 | [美元补全与选择](features/dollar-completion-selection.md) | NS-SELECT-01～06 |
 | [激活快照与资源](features/activation-snapshot-resources.md) | NS-ACT-01～04 |
-| [会话缓存与恢复](features/session-cache-recovery.md) | NS-SESSION-01～21 |
+| [会话缓存与恢复](features/session-cache-recovery.md) | NS-SESSION-01～22；SC08/SC22 默认 SDK 原生分支、压缩、恢复与取消 |
 | [安装包消费](features/installed-consumption.md) | NS-INSTALL-01～04 |
 | [日常安装与真实原生菜单](features/daily-installation-ui.md) | NS-DAILY-01～08 |
 | [随包 Skill](features/builtin-management.md) | NS-BUILTIN-01～05 |
