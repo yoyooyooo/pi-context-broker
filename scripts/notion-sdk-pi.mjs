@@ -27,6 +27,19 @@ const rows = async path => {
   catch (error) { if (error.code === 'ENOENT') return []; throw error; }
 };
 const textContent = content => typeof content === 'string' ? content : (content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
+/** Pi replays system content and named section patches before serialization.
+ * Ignore receipts/tool schemas and retire replaced or removed section values. */
+export function providerSystemText(context) {
+  const content = [], sections = new Map();
+  for (const message of context.messages ?? []) {
+    if (message.role !== 'system') continue;
+    const text = textContent(message.content); if (text) content.push(text);
+    for (const [name, value] of Object.entries(message.sections ?? {})) {
+      if (value === null) sections.delete(name); else sections.set(name, value);
+    }
+  }
+  return [...content, ...sections.values()].filter(Boolean).join('\n\n');
+}
 function toolResult(context, id) { return [...context.messages].reverse().find(message => message.role === 'toolResult' && message.toolCallId === id); }
 function parsedResult(message) { assert.ok(message && !message.isError, 'Public tool result must succeed'); return JSON.parse(textContent(message.content)); }
 function strings(value) {
@@ -252,7 +265,7 @@ export function assertSearchProjection(message, { expectCompact = true, scope } 
 }
 
 /** The actual default catalog must agree with the independent metadata fixture. */
-export function assertDefaultViewProjection(captures, discovery, events, fixture, bodies, { sourceId = 'sdk-fixture' } = {}) {
+function defaultViewProjection(captures, discovery, events, fixture, { sourceId = 'sdk-fixture' } = {}) {
   const expected = fixture.default_view;
   assert.ok(expected?.records?.length, 'Default View fixture metadata is required');
   const results = events.filter(event => event.kind === 'sdk_catalog' && event.value?.view?.id === expected.id);
@@ -265,10 +278,9 @@ export function assertDefaultViewProjection(captures, discovery, events, fixture
   }
   if (discovery) assert.deepEqual(discovery.records.filter(record => record.in_default_view).map(record => record.name).sort(), expected.records.map(record => record.name).sort());
   const observations = captures.map(capture => {
-    const texts = capture.context.messages.map(message => textContent(message.content));
+    const texts = [providerSystemText(capture.context)];
     const catalogs = texts.flatMap(text => [...text.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)]);
     assert.ok(catalogs.length <= 1, 'Default directory must not be duplicated in a provider request');
-    for (const body of bodies.values()) assert.equal(bodyCount(capture.context, body), 0, 'Default discovery never delivers Skill bodies');
     if (!catalogs.length) return { request_id: capture.requestId,
       state: texts.some(text => /<ntn-skills-discovery status="pending">[\s\S]*?<\/ntn-skills-discovery>/u.test(text)) ? 'pending' : 'not_ready' };
     const catalog = catalogs[0][1], views = [...catalog.matchAll(/<view\b([^>]*)>/gu)];
@@ -292,7 +304,44 @@ export function assertDefaultViewProjection(captures, discovery, events, fixture
   });
   assert.equal(observations.at(-1)?.state, 'ready', 'Missing or incomplete Default View cannot pass as an empty successful directory');
   return { status: 'verified', view_id: expected.id, source_command_configured: false, sdk_catalog_results: results.length,
-    default_names: expected.records.map(record => record.name), provider_requests: observations, body_delivery: false };
+    default_names: expected.records.map(record => record.name), provider_requests: observations };
+}
+
+export function assertDefaultViewProjection(captures, discovery, events, fixture, bodies, options) {
+  const result = defaultViewProjection(captures, discovery, events, fixture, options);
+  for (const capture of captures) for (const body of bodies.values())
+    assert.equal(bodyCount(capture.context, body), 0, 'Default discovery never delivers Skill bodies');
+  return { ...result, body_delivery: false };
+}
+
+export function assertPreflightCatalogProjection(captures, discovery, events, fixture, bodies) {
+  const result = defaultViewProjection(captures, discovery, events, fixture);
+  for (const request of result.provider_requests) assert.equal(request.state, 'ready',
+    'An explicit selection that awaited metadata must expose the ready catalog at its first provider request');
+  for (const capture of captures) {
+    assert.doesNotMatch(providerSystemText(capture.context), /<ntn-skills-discovery\b[^>]*status="pending"/u);
+    for (const [name, body] of bodies) assert.equal(bodyCount(capture.context, body), ['a', 'base'].includes(name) ? 1 : 0,
+      name + ': explicit preflight delivers only its complete selected root and Requires');
+  }
+  return { ...result, body_delivery: 'selected-root-and-Requires', ready_from_first_provider: true };
+}
+
+export function assertNativeCatalogPreserved(captures, nativeSkill, section) {
+  const firstTools = currentProviderTools(captures[0].context);
+  assert.deepEqual(firstTools.map(tool => tool.name).sort(), [...nativeTools].sort());
+  for (const capture of captures) {
+    const prompt = providerSystemText(capture.context);
+    const entries = [...prompt.matchAll(/<skill>[\s\S]*?<\/skill>/gu)].filter(match =>
+      match[0].includes('<name>' + nativeSkill.name + '</name>'));
+    assert.equal(entries.length, 1, 'The real native local Skill directory survives Notion catalog projection');
+    assert.ok(entries[0][0].includes('<description>' + nativeSkill.description + '</description>'));
+    assert.ok(entries[0][0].includes('<location>' + nativeSkill.path + '</location>'));
+    assert.equal(prompt.split(section).length - 1, 1, 'An independent official system section is retained exactly once');
+    assert.equal(bodyCount(capture.context, nativeSkill.marker), 0, 'The unselected native Skill body is not loaded');
+    assert.deepEqual(currentProviderTools(capture.context), firstTools, 'Native read and the existing tool definitions remain intact');
+  }
+  return { native_skill: nativeSkill, independent_section_sha256: hash(section), provider_requests: captures.length,
+    native_body_loaded: false, tool_definitions_sha256: hash(JSON.stringify(firstTools)) };
 }
 
 export function assertDollarProjection(context, { bodies, snapshots, expectCompact = true }) {
@@ -1280,9 +1329,10 @@ async function provider(base) {
   const path = await writeFakeProvider(base);
   let source = await readFile(path, 'utf8');
   const replace = (before, after) => { assert.equal(source.split(before).length, 2, 'Provider fixture shape changed'); source = source.replace(before, after); };
-  replace('import { appendFileSync }', 'import { appendFileSync, readFileSync }');
+  replace('import { appendFileSync }', "import { channel } from 'node:diagnostics_channel';\nimport { appendFileSync, readFileSync }");
   replace('function stream(model, context) {', `${currentProviderTools.toString()}\n${resourceRefsFromNative.toString()}\n${selectScalarProviderCall.toString()}\n${selectNativeRepeatCall.toString()}\n${selectLiveProviderCall.toString()}\n${selectProviderCall.toString()}\n${holdLifecycleResponse.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, aborted: Boolean(options?.signal?.aborted), monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
   replace('const payload = await options?.onPayload?.({ model: model.id, context }, model);', 'if (typeof options?.onPayload !== "function" || typeof options?.onResponse !== "function") throw new Error("PUBLIC_PROVIDER_HOOKS_REQUIRED");\n      hook("payload_start");\n      const payload = await options.onPayload({ model: model.id, context }, model);\n      hook("payload_end");');
+  replace('hook("payload_start");', 'hook("payload_start");\n      if (process.env.SC06_PI_CATALOG_RELEASE === "provider") channel("context-broker.verify-sdk-initialization-release").publish({ pid: process.pid, boundary: "provider" });');
   replace('JSON.stringify({ model: model.id, context })', 'JSON.stringify({ requestId, model: model.id, context })');
   replace('await options?.onResponse?.({ status: 200, headers: { "x-fixture": "deterministic" } }, model);', 'const held = await holdLifecycleResponse(options, hook);\n      await options.onResponse({ status: 200, headers: { "x-fixture": "deterministic" } }, model);\n      if (held) hook("response_callback");\n      hook("response_end");');
   replace('let sent = false;', `let sent = false;\n  let call, prepared = false;\n  async function prepareOutput() {\n    await request();\n    if (!prepared) { call = selectProviderCall(context); if (call) { output.content = [call]; output.stopReason = 'toolUse'; } prepared = true; }\n    return output;\n  }`);
@@ -1381,12 +1431,14 @@ export function observeSdkInitialization({ fs, configPath, record, subscribe }) 
     }
     return read.apply(this, args);
   };
-  subscribe(() => {
+  subscribe(event => {
     if (released) return;
     released = true;
-    record({ kind: 'initialization_shutdown_boundary', pending: held.size });
-    // The real native shutdown releases the original read callback. Only the
-    // product's own AbortSignal may cancel the SDK; the probe does not abort it.
+    const boundary = event?.boundary ?? 'shutdown';
+    if (!['shutdown', 'context', 'provider'].includes(boundary)) throw new Error('UNKNOWN_INITIALIZATION_RELEASE_BOUNDARY');
+    record({ kind: 'initialization_' + boundary + '_boundary', pending: held.size });
+    // A real host/provider boundary releases the original callback. Only the
+    // product's own AbortSignal may cancel the SDK; this probe never aborts it.
     const callbacks = [...held]; held.clear();
     for (const resume of callbacks) resume();
     record({ kind: 'initialization_released', callbacks: callbacks.length, pending: 0 });
@@ -1407,7 +1459,10 @@ function observe() {
   record({ kind: 'observer_start', exec_path: process.execPath, parent_pid: process.ppid });
   const initialization = process.env.SC08_PI_INIT_CONFIG ? observeSdkInitialization({ fs,
     configPath: process.env.SC08_PI_INIT_CONFIG, record,
-    subscribe: handler => channel('context-broker.verify-sdk-initialization-shutdown').subscribe(handler) }) : undefined;
+    subscribe: handler => {
+      channel('context-broker.verify-sdk-initialization-shutdown').subscribe(handler);
+      if (process.env.SC06_PI_CATALOG_RELEASE) channel('context-broker.verify-sdk-initialization-release').subscribe(handler);
+    } }) : undefined;
   const objectObserver = process.env.SC13_PI_OBJECT_ROOT ? observeOwnedObjectReads({ fs, fsPromises,
     objects: process.env.SC13_PI_OBJECT_ROOT, record, hash: bytes => createHash('sha256').update(bytes).digest('hex') }) : undefined;
   channel('context-broker.notion-sdk').subscribe(event => {
@@ -1752,9 +1807,23 @@ export function assertLifecycleRestore(value, { snapshots, bodies }) {
 }
 
 function catalogShutdownObserver(api) {
-  api.on('session_shutdown', event => appendFileSync(process.env.SC10_PI_NATIVE_EVENTS,
-    JSON.stringify({ type: 'session_shutdown', pid: process.pid, monotonic_ns: process.hrtime.bigint().toString(),
-      reason: event.reason ?? null }) + '\n', { mode: 0o600 }));
+  const record = (type, fields = {}) => appendFileSync(process.env.SC10_PI_NATIVE_EVENTS,
+    JSON.stringify({ type, pid: process.pid, monotonic_ns: process.hrtime.bigint().toString(), ...fields }) + '\n', { mode: 0o600 });
+  api.on('session_shutdown', event => {
+    record('session_shutdown', { reason: event.reason ?? null });
+    if (process.env.SC08_PI_INIT_CONFIG) channel('context-broker.verify-sdk-initialization-shutdown').publish({ pid: process.pid });
+  });
+  if (process.env.SC06_PI_CATALOG_RELEASE) {
+    api.on('before_agent_start', event => {
+      event.systemPromptOptions.sections['sc06-independent'] = process.env.SC06_PI_PRESERVED_SECTION;
+      record('before_agent_start');
+    });
+    api.on('context', () => {
+      record('context');
+      if (process.env.SC06_PI_CATALOG_RELEASE === 'context')
+        channel('context-broker.verify-sdk-initialization-release').publish({ pid: process.pid, boundary: 'context' });
+    });
+  }
 }
 
 function lifecycleControl(api) {
@@ -2020,6 +2089,7 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
 }
 
 async function scenario(name, info, scratch, evidence, expectShortRefs, expectCompactContext, expectDirectScalar, expectShortConfirmations) {
+  const catalogProjection = ['dollar', 'default-view'].includes(name);
   const shortResourceRefs = name === 'resource-batch-short-refs';
   const resourceScenario = name === 'resource-batch' || shortResourceRefs;
   const scalarShortRefs = name === 'resource-scalar-short-refs', scalarScenario = name === 'resource-scalar' || scalarShortRefs;
@@ -2032,6 +2102,16 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
   await cp(info.fixture.cwd, localSource, { recursive: true, errorOnExist: true, force: false });
   const agentDir = join(base, 'agent'), sessions = join(base, 'sessions');
   await mkdir(join(agentDir, 'context-broker'), { recursive: true }); await mkdir(sessions);
+  let nativeSkill;
+  const preservedSection = 'SC06 independent host instructions remain unchanged.';
+  if (catalogProjection) {
+    const path = join(base, 'native-skills', 'catalog-canary', 'SKILL.md');
+    nativeSkill = { name: 'catalog-canary', description: 'Owned ordinary native Skill catalog probe.', path,
+      marker: 'SC06_UNSELECTED_NATIVE_BODY_MUST_NOT_LOAD' };
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, `---\nname: ${nativeSkill.name}\ndescription: ${nativeSkill.description}\n---\n\n${nativeSkill.marker}\n`, { mode: 0o600 });
+    nativeSkill.sha256 = hash(await readFile(path));
+  }
   const source = { type: 'notion', id: 'sdk-fixture', namespace: 'sdk-fixture', database: info.fixture.database,
     discovery: { offline: true }, activation: { offline: true }, cacheDir: join(base, 'broker-cache'), prefetch: false };
   assert.equal(Object.hasOwn(source, 'command'), false);
@@ -2061,7 +2141,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
   const nativeEvents = join(output, 'native-session-events.jsonl');
   const shutdownObserver = name === 'session-lifecycle' ? undefined : join(base, 'catalog-shutdown-observer.mjs');
   if (shutdownObserver) await writeFile(shutdownObserver,
-    "import { appendFileSync } from 'node:fs';\nexport default " + catalogShutdownObserver.toString() + '\n', { mode: 0o600 });
+    "import { appendFileSync } from 'node:fs';\nimport { channel } from 'node:diagnostics_channel';\nexport default " + catalogShutdownObserver.toString() + '\n', { mode: 0o600 });
   const fixtureEnv = { ...info.fixtureEnv };
   for (const key of ['NTN_SKILLS_HOME', 'NTN_SKILLS_CONFIG_HOME', 'NTN_SKILLS_CACHE_HOME']) {
     const original = resolve(info.fixture.cwd, fixtureEnv[key]);
@@ -2075,6 +2155,8 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     BROKER_E2E_PROCESS_LEDGER: join(output, 'owned-processes.jsonl'), SC10_PI_TOOL_PLAN: toolPlan,
     SC10_PI_PROVIDER_HOOKS: hookFile, SC10_PI_OBSERVER: ledger,
     SC10_PI_NATIVE_EVENTS: nativeEvents,
+    ...(catalogProjection ? { SC08_PI_INIT_CONFIG: join(fixtureEnv.NTN_SKILLS_CONFIG_HOME, 'config.json'),
+      SC06_PI_CATALOG_RELEASE: name === 'dollar' ? 'context' : 'provider', SC06_PI_PRESERVED_SECTION: preservedSection } : {}),
     ...(entrypointSetup ? { SC13_PI_OBJECT_ROOT: entrypointSetup.partial.objects }
       : scalarScenario ? { SC13_PI_OBJECT_ROOT: join(fixtureEnv.NTN_SKILLS_HOME, 'objects') } : {}),
     SC10_PI_BUNDLED_CLI: join(info.packageRoot, 'dist/ntn-skills.mjs'), NODE_OPTIONS: `--import=${preload}` });
@@ -2093,6 +2175,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       mechanism: 'Installed official tool_search; owned settings.defaultTools, no hard tool allowlist or manual control activation' };
   }
   const argv = ['--no-extensions', '--session-dir', sessions, ...(scalarSeed ? ['--session', scalarSeed.path] : []),
+    ...(nativeSkill ? ['--skill', nativeSkill.path] : []),
     ...(toolDiscovery ? [] : ['--tools', activeTools.join(',')]), '-e', fakeProvider,
     ...(shutdownObserver ? ['-e', shutdownObserver] : []), '-e', info.extension,
     ...(toolDiscovery ? ['-e', toolDiscovery.extension.path] : []),
@@ -2103,17 +2186,27 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       : 'cloned warm controlled snapshots/current catalog; fresh Broker cache and Pi session', expect_short_refs: expectShortRefs,
     expect_compact_context: expectCompactContext, expect_direct_scalar: expectDirectScalar, expect_short_confirmations: expectShortConfirmations, active_tools: activeTools,
     ...(toolDiscovery ? { deferred_discovery: toolDiscovery } : {}),
+    ...(catalogProjection ? { catalog_projection: { release_boundary: env.SC06_PI_CATALOG_RELEASE,
+      actual_config_read: env.SC08_PI_INIT_CONFIG, native_skill: nativeSkill,
+      independent_section_sha256: hash(preservedSection), timing: 'Actual config read callback held until the native context or provider boundary; no simulated SDK result or source HTTP delay' } } : {}),
     ...(shutdownObserver ? { native_shutdown_observer: { extension: shutdownObserver, registration: 'before_broker', events: nativeEvents } } : {}),
     ...(scalarSeed ? { seed_evidence: 'resource-scalar-seed.json', seed_sha256: scalarSeed.evidence.session_sha256 } : {}) });
   if (name === 'session-lifecycle') return runSdkLifecycle({ info, base, output, sessions, providerFile, hookFile, ledger, toolPlan, env, argv });
-  let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, resourceScalarEvidence, nativeRepeatEvidence, entrypointEvidence, defaultViewEvidence, serializerContext, archive, dollarProjection, nativeProjection, scopedCommandEvidence;
+  let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, resourceScalarEvidence, nativeRepeatEvidence, entrypointEvidence, defaultViewEvidence, serializerContext, archive, dollarProjection, nativeProjection, scopedCommandEvidence, catalogProjectionEvidence;
   try {
     rpc = await startRpc({ host: 'pi', args: argv, cwd: base, env, timeoutMs: 60000 });
+    if (catalogProjection) {
+      const deadline = Date.now() + 30000;
+      while (!(await rows(ledger)).some(event => event.kind === 'initialization_held')) {
+        assert.ok(Date.now() < deadline, 'Actual SDK initialization must reach the owned config read cutpoint');
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+    }
     const prompts = {
       'codemode-hidden': 'Inspect the selected main inside code mode without forwarding it, then load the full a, b and c closure through the top-level use tool.',
       'codemode-truncated': 'Inspect the selected main inside code mode and forward only a short prefix, then load the full a, b and c closure through the top-level use tool.',
       'default-view': 'Discover the authorized Skill directory and retain the default Notion Skill metadata without reading any Skill body.',
-      dollar: 'Discover the authorized Skill directory for the controlled task.',
+      dollar: '$a@' + source.namespace + ' Apply the selected Skill for this controlled task.',
       native: 'Inspect the available a Skill and read its advertised resource.',
       'native-repeat': 'Read the resources Skill main, then its advertised references/guide.md resource. Read the same fixed main and resource again using the handles from that first native directory. Preserve the selected owner and snapshot.',
       prepare: 'Use the available a, b and c Skills together, preparing their required instructions.',
@@ -2139,6 +2232,8 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       captures = await rows(providerFile); last = captures.at(-1).context;
       assert.equal(captures.length, 3, 'Nonblocking startup and one ordinary continuation are both retained');
       defaultViewEvidence = assertDefaultViewProjection(captures, discovery, await rows(ledger), info.fixture, info.bodies);
+      assert.equal(defaultViewEvidence.provider_requests[0].state, 'pending',
+        'The ordinary first provider must run while the actual catalog initialization is held');
       defaultViewEvidence.read_schema = assertResourceReadSchema(last);
       await save(join(output, 'default-view.json'), defaultViewEvidence);
     } else if (codemode) {
@@ -2162,15 +2257,17 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       preparation = { first, originalToolResults: [raw], code_mode: { mode: name, nested_reads: 1, internal_complete_body: true,
         before_top_level_complete_bodies: 0, after_top_level_complete_bodies: info.bodies.size } };
     } else if (name === 'dollar') {
-      for (const body of info.bodies.values()) assert.equal(bodyCount(last, body), 0, 'Metadata-only discovery must not deliver bodies');
       const selected = discovery.records.filter(record => record.name === 'a' && record.source === source.id);
       assert.equal(selected.length, 1);
       await save(toolPlan, { mode: 'complete' });
-      await rpc.prompt(`$${selected[0].name}@${source.namespace} Apply the selected Skill for this controlled task.`);
+      await rpc.prompt('Continue the ordinary task with the selected Skill and the current default directory.');
       captures = await rows(providerFile); last = captures.at(-1).context;
       for (const key of ['a', 'base']) assert.equal(bodyCount(last, info.bodies.get(key)), 1, `${key}: full source body exactly once`);
       for (const key of ['b', 'c']) assert.equal(bodyCount(last, info.bodies.get(key)), 0);
       dollarProjection = assertDollarProjection(last, { bodies: info.bodies, snapshots: info.fixture.snapshots, expectCompact: expectCompactContext });
+      defaultViewEvidence = assertPreflightCatalogProjection(captures, discovery, await rows(ledger), info.fixture, info.bodies);
+      defaultViewEvidence.read_schema = assertResourceReadSchema(last);
+      await save(join(output, 'default-view.json'), defaultViewEvidence);
     } else if (scalarScenario) {
       const batch = info.resourceBatch, calls = rpc.frames.filter(frame => frame.type === 'tool_execution_start');
       assert.equal(captures.length, 6, 'Five direct scalar calls require exactly six provider requests');
@@ -2523,6 +2620,31 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     assert.equal(new Set(captures.map(capture => capture.requestId)).size, captures.length);
     const guidance = captures.map(capture => ({ request_id: capture.requestId, ...assertNativeGuidance(capture.context, env.SC10_PI_BUNDLED_CLI) }));
     await save(join(output, 'guidance.json'), guidance);
+    if (catalogProjection) {
+      const events = await rows(ledger), native = await rows(nativeEvents);
+      const held = events.filter(event => event.kind === 'initialization_held');
+      const released = events.filter(event => event.kind === 'initialization_released');
+      const boundaries = events.filter(event => event.kind === 'initialization_' + env.SC06_PI_CATALOG_RELEASE + '_boundary');
+      assert.equal(held.length, 1); assert.equal(boundaries.length, 1); assert.equal(released.length, 1);
+      assert.equal(boundaries[0].pending, 1); assert.equal(released[0].callbacks, 1); assert.equal(released[0].pending, 0);
+      const before = native.find(event => event.type === 'before_agent_start');
+      const firstProvider = hooks.find(event => event.phase === 'payload_start');
+      assert.ok(before && firstProvider);
+      assert.ok(BigInt(held[0].monotonic_ns) < BigInt(before.monotonic_ns));
+      assert.ok(BigInt(before.monotonic_ns) < BigInt(boundaries[0].monotonic_ns));
+      if (name === 'dollar') {
+        const catalog = events.find(event => event.kind === 'sdk_catalog' && event.value?.view?.id === info.fixture.default_view.id);
+        assert.ok(catalog && BigInt(catalog.monotonic_ns) < BigInt(firstProvider.monotonic_ns),
+          'The actual Default View SDK result precedes explicit preflight delivery');
+        assert.ok(BigInt(boundaries[0].monotonic_ns) < BigInt(firstProvider.monotonic_ns));
+      } else assert.ok(BigInt(firstProvider.monotonic_ns) < BigInt(boundaries[0].monotonic_ns),
+        'Ordinary provider dispatch precedes release of actual metadata initialization');
+      catalogProjectionEvidence = { status: 'verified', release_boundary: env.SC06_PI_CATALOG_RELEASE,
+        initialization: { held: held[0], boundary: boundaries[0], released: released[0] },
+        first_before_agent_start: before, first_provider: firstProvider,
+        catalog: defaultViewEvidence, native: assertNativeCatalogPreserved(captures, nativeSkill, preservedSection),
+        source_state: 'Warm source snapshot/catalog fixture; fresh Broker metadata and actual Pi session, no source HTTP latency claim' };
+    }
     if (scopedCommandEvidence) {
       serializer = await replayScenarioHttp(captures, rpc.frames, info, output);
       assert.equal(serializer.provider_requests, 3); assert.equal(serializer.tool_calls, 2);
@@ -2541,8 +2663,24 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       serializer = await replayScenarioHttp(captures, codemode ? rpc.frames.filter(frame => !frame.parentToolCallId) : rpc.frames, info, output, { preparation: Boolean(preparation) });
       if (name === 'dollar') {
         assert.deepEqual(serializer.sequence.map(call => call.tool_call_id), ['sc10-search']);
-        assert.equal(captures.length, 3, 'Metadata discovery and dollar activation retain the original two-prompt scenario');
+        assert.equal(captures.length, 3, 'Cold Broker dollar preflight and ordinary continuation use two prompts and one discovery tool');
       }
+    }
+    if (catalogProjectionEvidence) {
+      const serialized = await Promise.all(serializer.requests.map(async request => ({ requestId: request.provider_request_id,
+        context: { messages: (await json(join(output, request.request_file))).messages } })));
+      const httpCatalog = name === 'dollar'
+        ? assertPreflightCatalogProjection(serialized, discovery, await rows(ledger), info.fixture, info.bodies)
+        : assertDefaultViewProjection(serialized, discovery, await rows(ledger), info.fixture, info.bodies);
+      assert.deepEqual(httpCatalog.provider_requests.map(request => request.state), defaultViewEvidence.provider_requests.map(request => request.state));
+      for (const capture of serialized) {
+        const prompt = providerSystemText(capture.context);
+        assert.equal(prompt.split(preservedSection).length - 1, 1);
+        assert.equal(prompt.split('<location>' + nativeSkill.path + '</location>').length - 1, 1);
+        assert.equal(bodyCount(capture.context, nativeSkill.marker), 0);
+      }
+      catalogProjectionEvidence.installed_serializer_http = httpCatalog;
+      await save(join(output, 'catalog-projection.json'), catalogProjectionEvidence);
     }
     if (scalarScenario) {
       serializer = await replayScenarioHttp(captures, rpc.frames, info, output);
@@ -2592,6 +2730,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
         read_output_proof_version: info.runtime.read_output_proof_version ?? null, scalar_evidence: 'resource-scalar-evidence.json' } : {}),
       discovery_failures: discovery?.failures ?? null, native_guidance_without_cli_templates: true, observer_finality: finality?.complete === true,
       ...(scopedCommandEvidence ? { deferred_control_discovery: 'verified', discovery_evidence: 'source-command.json' } : {}),
+      ...(catalogProjectionEvidence ? { catalog_projection: 'verified', catalog_projection_evidence: 'catalog-projection.json' } : {}),
       session_archive_files: archive?.files.length ?? 0, preparation_projection: preparation ? 'verified' : 'not_applicable',
       code_mode: preparation?.code_mode ?? null,
       resource_batch_projection: resourceBatchEvidence ? 'verified' : 'not_applicable',

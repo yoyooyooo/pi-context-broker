@@ -122,6 +122,76 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
   };
   return { ctx, records, root: root!, required: required!, member: member!, graph, calls, persisted, install, emit, session, resourceText, resourceReads };
 }
+
+test("Pi projects the ready default catalog after explicit preparation, not the earlier pending observation", async () => {
+  const f = await fixture(true), metadata = Promise.withResolvers<Awaited<ReturnType<HostSkillOptions["getRecords"]>>>();
+  await f.install(undefined, { getRecords: () => metadata.promise });
+  const user = { role: "user", content: "$root task" };
+  await f.emit("input", { source: "rpc", text: user.content }, f.ctx);
+  const before = await f.emit("before_agent_start", { prompt: user.content, systemPrompt: "Native instructions" }, f.ctx);
+  const beforePrompt = before.flatMap(result => result && typeof result === "object" && "systemPrompt" in result && typeof result.systemPrompt === "string"
+    ? [result.systemPrompt] : []).at(-1) ?? "Native instructions";
+  await f.emit("agent_start", {}, f.ctx);
+  const preparing = f.emit("context", { messages: [user] }, f.ctx);
+  metadata.resolve({ records: f.records.map(record => ({ ...record, body: undefined, preparationBinding: undefined,
+    defaultDiscovery: record !== f.required })), failures: [] });
+  await preparing;
+  const head = { role: "system", content: beforePrompt, sections: { local: "Keep the native local rules" },
+    toolsAdded: [{ name: "read", parameters: { type: "object" } }] };
+  const messages = [head, user], original = JSON.stringify(messages);
+  const projected = await f.emit("context_with_system", { messages }, f.ctx);
+  const actual = JSON.stringify(projected.length ? projected : { messages });
+  expect(actual).toContain("<name>root</name>");
+  expect(actual).toContain("<name>member</name>");
+  expect(actual).not.toContain("<name>required</name>");
+  expect(actual).not.toContain("Notion metadata is pending");
+  expect(actual.split("<ntn-skills-view-catalog>")).toHaveLength(2);
+  expect(actual).toContain("sr:C");
+  expect(before).not.toEqual(expect.arrayContaining([expect.objectContaining({ systemPrompt: expect.anything() })]));
+  expect(projected).toEqual([expect.objectContaining({ messages: [expect.objectContaining({
+    content: head.content, sections: expect.objectContaining(head.sections), toolsAdded: head.toolsAdded,
+  }), user] })]);
+  expect(JSON.stringify(messages)).toBe(original);
+  expect(f.calls).toEqual(["use"]);
+  expect(f.resourceReads).toEqual([]);
+});
+
+test("Pi keeps ordinary pending requests immediate and refreshes only owned system metadata on a later request", async () => {
+  const f = await fixture(true), metadata = Promise.withResolvers<Awaited<ReturnType<HostSkillOptions["getRecords"]>>>();
+  const { search } = await f.install(undefined, { getRecords: () => metadata.promise });
+  const local = "<available_skills><skill><name>local-native</name><location>/local/skill/SKILL.md</location></skill></available_skills>";
+  const head = { role: "system", content: "Native instructions", sections: { skills: local }, toolsAdded: [{ name: "read" }] };
+  const user = { role: "user", content: "Keep this literal <ntn-skills-view-catalog>author text</ntn-skills-view-catalog>" };
+  const before = await f.emit("before_agent_start", { prompt: user.content, systemPrompt: head.content }, f.ctx);
+  const beforePrompt = before.flatMap(result => result && typeof result === "object" && "systemPrompt" in result && typeof result.systemPrompt === "string"
+    ? [result.systemPrompt] : []).at(-1) ?? head.content;
+  const messages = [{ ...head, content: beforePrompt }, user];
+  const pending = await f.emit("context_with_system", { messages }, f.ctx);
+  expect(JSON.stringify(pending.length ? pending : { messages })).toContain("Notion metadata is pending");
+  expect(f.calls).toEqual([]);
+  metadata.resolve({ records: f.records.map(record => ({ ...record, body: undefined, preparationBinding: undefined,
+    defaultDiscovery: record === f.root })), failures: [] });
+  await search.execute("metadata-ready", { query: "root" }, undefined, undefined, f.ctx);
+  const stale = { ...head, content: head.content + "\n<ntn-skills-discovery status=\"pending\">obsolete state</ntn-skills-discovery>",
+    sections: { skills: local + `<available_skills><skill><name>old-broker-index</name><location>${f.root.path}</location></skill></available_skills>`,
+      "context-broker-notion-catalog": "<ntn-skills-view-catalog>obsolete catalog</ntn-skills-view-catalog>", other: null } };
+  const patch = { role: "system", content: "Additional native instructions", sections: { extra: "Keep the native patch" }, toolsRemoved: [{ name: "obsolete-tool" }] };
+  const original = JSON.stringify([stale, user, patch]);
+  const ready = await f.emit("context_with_system", { messages: [stale, user, patch] }, f.ctx);
+  const actual = JSON.stringify(ready);
+  expect(actual).toContain("<name>root</name>");
+  expect(actual).toContain("<name>local-native</name>");
+  expect(actual).not.toContain("old-broker-index");
+  expect(actual).not.toContain("obsolete state");
+  expect(actual).not.toContain("obsolete catalog");
+  expect(actual).not.toContain("Notion metadata is pending");
+  expect(ready).toEqual([expect.objectContaining({ messages: [expect.objectContaining({ toolsAdded: head.toolsAdded,
+    sections: expect.objectContaining({ other: null }) }), user, patch] })]);
+  expect(JSON.stringify([stale, user, patch])).toBe(original);
+  expect(f.calls).toEqual([]);
+  expect(f.resourceReads).toEqual([]);
+});
+
 test("Pi preparation shows its budget immediately without queueing a session message", async () => {
   const f = await fixture();
   const widgets = new Map<string, string[]>(), messages: unknown[] = [], entries: unknown[] = [];

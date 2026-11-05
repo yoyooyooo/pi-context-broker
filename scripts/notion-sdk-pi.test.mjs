@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { systemTempRoot } from './verification-paths.mjs';
-import { resolveInstalledPiSerializer, observeSdkInitialization } from './notion-sdk-pi.mjs';
+import { resolveInstalledPiSerializer, observeSdkInitialization, providerSystemText, assertPreflightCatalogProjection, assertNativeCatalogPreserved } from './notion-sdk-pi.mjs';
 import { validateLiveInput, selectLiveProviderCall, liveSourceMetrics } from './notion-sdk-pi.mjs';
 import { assertNativeGuidance, assertScopedCommand, assertPreparedHttpRequest, assertResourceHttpRequest, assertResourceBatchProjection, assertResourceReadSchema, resourceRefsFromNative, resourceTextCopies, bodyCount, reconcile, sourceFinality, observeOwnedObjectReads, assertObjectReadEvidence, assertProviderHttpRequest, assertProviderToolSequence, assertSearchProjection, assertDefaultViewProjection, assertDollarProjection, assertNativeProjection, resourceScalarCalls, selectScalarProviderCall, assertResourceScalarResult, resourceScalarSelectedFixture, assertResourceScalarSession, assertResourceScalarCost, selectNativeRepeatCall, assertNativeRepeatProjection, assertScalarReadObjectIntervals } from './notion-sdk-pi.mjs';
 
@@ -553,6 +553,58 @@ test('Default View evidence retains pending startup and proves the ready metadat
   const result = assertDefaultViewProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies);
   assert.equal(result.status, 'verified'); assert.equal(result.body_delivery, false);
   assert.deepEqual(result.provider_requests.map(request => request.state), ['pending', 'ready']);
+});
+test('catalog projection reads current public system sections and retires replaced sections', () => {
+  const value = defaultViewFixture();
+  for (const capture of value.captures) {
+    const text = capture.context.messages[0].content;
+    capture.context.messages = [
+      { role: 'system', content: 'Native instructions.', sections: { catalog: 'obsolete directory', removed: 'obsolete text', native: 'Native Skill directory.' } },
+      { role: 'system', content: '', sections: { catalog: text, removed: null } },
+      { role: 'user', content: 'Ordinary request.', details: { sections: { private: 'not model system text' } } },
+    ];
+  }
+  assert.equal(providerSystemText(value.captures[1].context), 'Native instructions.\n\n' + value.captures[1].context.messages[1].sections.catalog + '\n\nNative Skill directory.');
+  assert.deepEqual(assertDefaultViewProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies).provider_requests.map(row => row.state), ['pending', 'ready']);
+  const forged = structuredClone(value.captures);
+  forged[1].context.messages[1].sections.catalog = null;
+  forged[1].context.messages[2].content += value.captures[1].context.messages[1].sections.catalog;
+  assert.throws(() => assertDefaultViewProjection(forged, value.discovery, value.events, value.fixture, value.bodies), /Missing or incomplete Default View/);
+});
+test('explicit preflight cannot pass with a pending first request or missing selected Required body', () => {
+  const sample = () => {
+    const value = defaultViewFixture();
+    value.bodies = new Map([['a', 'Complete selected a instructions'], ['base', 'Complete Required base instructions'], ['b', 'Unselected b instructions']]);
+    const ready = value.captures[1];
+    value.captures = ['1', '2', '3'].map(requestId => ({ requestId, context: { messages: [structuredClone(ready.context.messages[0]),
+      { role: 'user', content: value.bodies.get('a') + '\n' + value.bodies.get('base') }] } }));
+    return value;
+  };
+  const positive = sample();
+  assert.equal(assertPreflightCatalogProjection(positive.captures, positive.discovery, positive.events, positive.fixture, positive.bodies).ready_from_first_provider, true);
+  for (const mutate of [
+    value => { value.captures[0].context.messages[0] = defaultViewFixture().captures[0].context.messages[0]; },
+    value => { value.captures[0].context.messages[1].content = value.bodies.get('a'); },
+    value => { value.captures[1].context.messages[1].content += value.bodies.get('b'); },
+    value => { value.captures[0].context.messages[0].content += defaultViewFixture().captures[0].context.messages[0].content; },
+  ]) {
+    const value = sample(); mutate(value);
+    assert.throws(() => assertPreflightCatalogProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies));
+  }
+});
+test('Notion catalog projection must preserve native directory, independent section and tool definitions', () => {
+  const native = { name: 'catalog-canary', description: 'Native metadata', path: '/owned/native/SKILL.md', marker: 'UNSELECTED_NATIVE_BODY' };
+  const section = 'Preserved independent instruction.';
+  const sample = () => ['1', '2'].map(requestId => ({ requestId, context: { messages: [{ role: 'system', content: '',
+    sections: { native: '<available_skills><skill><name>' + native.name + '</name><description>' + native.description + '</description><location>' + native.path + '</location></skill></available_skills>', independent: section },
+    toolsAdded: ['read', 'notion_list', 'notion_use'].map(name => ({ name, description: name, parameters: { type: 'object' } })) }] } }));
+  assert.equal(assertNativeCatalogPreserved(sample(), native, section).provider_requests, 2);
+  for (const mutate of [
+    captures => { delete captures[1].context.messages[0].sections.native; },
+    captures => { captures[1].context.messages[0].sections.independent = null; },
+    captures => { captures[1].context.messages[0].toolsAdded[0].parameters = { type: 'string' }; },
+    captures => { captures[1].context.messages.push({ role: 'user', content: native.marker }); },
+  ]) { const captures = sample(); mutate(captures); assert.throws(() => assertNativeCatalogPreserved(captures, native, section)); }
 });
 test('live Default View matches frozen metadata and actual SDK rows without a discovery tool warmup', () => {
   const value = defaultViewFixture();

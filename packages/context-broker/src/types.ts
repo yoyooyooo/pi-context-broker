@@ -8,6 +8,8 @@ export type AgentMessage = {
   toolCallId?: string;
   isError?: boolean;
   content?: MessageContent;
+  /** Pi system sections; preserve native prompt and tool patches during projection. */
+  sections?: Record<string, string | null>;
   customType?: string;
   details?: unknown;
   display?: boolean;

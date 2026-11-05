@@ -12,7 +12,7 @@ import { checkPreparationSignal, createPreparationGate, preparationCancelled, ty
 import type { AgentMessage, ConfigFile, ExtensionAPI, ExtensionContext, ImageContent, SkillRecord, DiscoveryResult, SourceFailure, NotionViewState, ProjectedSessionEntry, ToolCallEvent, ToolCallResult } from "./types";
 import type { HostCapabilities } from "./host-adapter";
 import { invocationText } from "./invocation-text";
-import { viewSystemPrompt } from "./view-prompt";
+import { viewSystemPrompt, withoutViewMetadata } from "./view-prompt";
 import { hostCliScope } from "./host-command";
 import { notifyUnavailableReferences, renderUnavailableReferences } from "./unavailable-references";
 import { deduplicateSourceReads, deferredSourceEntries, nativeReadReceipt, sourceDeliveryReceipt, sourceMessageText, withSessionSourceReceipts } from "./session-source-snapshot";
@@ -790,7 +790,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
           for (const message of formatSourceFailures(sourceFailures)) ctx.ui?.notify?.(message, "warning");
           if (announce) ctx.ui?.notify?.("context-broker: source metadata refreshed", "info");
         }
-        // Reconcile the prompt at before_agent_start; View switches do not reload the session.
+        // Pi projects this observation at each provider boundary; View switches do not reload the session.
       } finally { release(); }
     } catch (error) { if (metadataGeneration === selectedGeneration) { discoveryError = error; if (ctx) notify(ctx, error); } }
     finally { if (metadataGeneration === selectedGeneration) metadataPending = false; }
@@ -1140,17 +1140,40 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       details: { nativePromptSha256: promptHash, records: [sourceDeliveryReceipt(native, event.prompt ?? "")].filter(Boolean) },
     } : undefined;
     if (native && adapter.submission.receipt === "input-digest") nativeInputs.delete(promptHash);
+    // Pi preparation runs later in context. A forced prompt here would freeze
+    // pending metadata and override its final context_with_system projection.
+    if (deferredPiDiscovery) return message ? { message } : undefined;
+    const systemPrompt = catalogSystemPrompt(event.systemPrompt, ctx);
+    return { ...(message ? { message } : {}), systemPrompt: adapter.systemPrompt?.(systemPrompt) ?? systemPrompt };
+  });
+  function catalogSystemPrompt(input: string | string[] | undefined, ctx: ExtensionContext): string {
     const candidateRefs = modelCandidateReferences([...records, ...defaultRouters], ctx);
-    let systemPrompt = viewSystemPrompt(event.systemPrompt, records, defaultRouters, new Set(readRecords.keys()), views, ctx.cwd,
+    let systemPrompt = viewSystemPrompt(input, records, defaultRouters, new Set(readRecords.keys()), views, ctx.cwd,
       record => candidateRefs.get(record), listToolName, piConsumption);
     if (deferredPiDiscovery) {
-      systemPrompt = systemPrompt.replace(/\n*<ntn-skills-discovery\b[^>]*>[\s\S]*?<\/ntn-skills-discovery>/g, "");
       if (metadataPending || discoveryError || sourceFailures.some(failure => failure.blocking !== false)) {
         const state = metadataPending ? "pending" : "unavailable";
         systemPrompt += `\n\n<ntn-skills-discovery status="${state}">Notion metadata is ${state}; this does not mean the directory is empty. Use ${listToolName} when the task needs discovery. It reports source failures. Visible entries may come from a previous observation. Previously loaded instructions keep their selected versions.</ntn-skills-discovery>`;
       }
     }
-    return { ...(message ? { message } : {}), systemPrompt: adapter.systemPrompt?.(systemPrompt) ?? systemPrompt };
+    return systemPrompt;
+  }
+  if (deferredPiDiscovery) host.on("context_with_system", (event, ctx) => {
+    if (event.messages[0]?.role !== "system" || lifecycleController.signal.aborted || piRun?.signal.aborted) return undefined;
+    // Use only the current in-memory observation. Ordinary messages never join
+    // metadata I/O; explicit preflight has already awaited its required catalog.
+    const section = "context-broker-notion-catalog", catalog = catalogSystemPrompt("", ctx).trimStart();
+    const ownedPaths = new Set(readRecords.keys());
+    const clean = (text: string) => withoutViewMetadata(text, ownedPaths, ctx.cwd);
+    return { messages: event.messages.map((message, index) => {
+      if (message.role !== "system") return message;
+      const content = typeof message.content === "string" ? clean(message.content)
+        : message.content?.map(part => part.type === "text" ? { ...part, text: clean(part.text) } : part);
+      const sections = Object.fromEntries(Object.entries(message.sections ?? {}).filter(([name]) => name !== section)
+        .map(([name, value]) => [name, value === null ? null : clean(value)]));
+      if (index === 0 && catalog) sections[section] = catalog;
+      return { ...message, content, ...(message.sections || Object.keys(sections).length ? { sections } : {}) };
+    }) };
   });
   async function exactRecord(reference: ExactNativeReference, ctx: ExtensionContext, signal: AbortSignal, short?: HostShortRefResolution): Promise<SkillRecord> {
     const selector = reference.selector;

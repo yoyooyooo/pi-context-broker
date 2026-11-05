@@ -6,10 +6,11 @@ const xml = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&
 const unescape = (value: string) => value.replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
 const hostName = (record: SkillRecord) => (record.token ?? record.name).replace(/[^a-z0-9-]/g, "-");
 
-/** Rebuild only broker-owned metadata for this request, never conversation bodies. */
-export function viewSystemPrompt(input: string | string[] | undefined, skills: readonly SkillRecord[], routers: readonly SkillRecord[], ownedPaths: ReadonlySet<string>, views: readonly NotionViewState[], cwd = process.cwd(), renderRef?: (record: SkillRecord) => string | undefined, listTool = "skill_search", notionNames = false): string {
-  const prompt = (Array.isArray(input) ? input.join("\n\n") : input ?? "")
+/** Remove only broker-owned metadata, preserving native Skill entries and other instructions. */
+export function withoutViewMetadata(input: string, ownedPaths: ReadonlySet<string>, cwd = process.cwd()): string {
+  return input
     .replace(/\n*<ntn-skills-view-catalog>[\s\S]*?<\/ntn-skills-view-catalog>/g, "")
+    .replace(/\n*<ntn-skills-discovery\b[^>]*>[\s\S]*?<\/ntn-skills-discovery>/g, "")
     .replace(/<available_skills>[\s\S]*?<\/available_skills>/g, block => block.replace(/<skill>[\s\S]*?<\/skill>/g, entry => {
       const raw = /<location>\s*([^<]+)\s*<\/location>/.exec(entry)?.[1];
       if (!raw) return entry;
@@ -17,6 +18,11 @@ export function viewSystemPrompt(input: string | string[] | undefined, skills: r
       const expanded = path.startsWith("~/") ? homedir() + path.slice(1) : path;
       return ownedPaths.has(resolve(cwd, expanded)) ? "" : entry;
     }));
+}
+
+/** Rebuild only broker-owned metadata for this request, never conversation bodies. */
+export function viewSystemPrompt(input: string | string[] | undefined, skills: readonly SkillRecord[], routers: readonly SkillRecord[], ownedPaths: ReadonlySet<string>, views: readonly NotionViewState[], cwd = process.cwd(), renderRef?: (record: SkillRecord) => string | undefined, listTool = "skill_search", notionNames = false): string {
+  const prompt = withoutViewMetadata(Array.isArray(input) ? input.join("\n\n") : input ?? "", ownedPaths, cwd);
   if (!skills.length && !routers.length && !views.length) return prompt;
   const states = views.map(state => state.status === "ready"
     ? `<view source="${xml(state.sourceId)}" id="${xml(state.view.id)}" database="${xml(state.view.database_id)}" origin="${state.origin}" partial="${state.partial}">${xml(state.view.name)}</view>`
