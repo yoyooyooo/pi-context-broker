@@ -505,16 +505,21 @@ function discoverUsableSkillRoots(config: ConfigFile = readConfig(), cwd = proce
   return uniqueStrings(configuredRoots(config).map((root) => expandPath(root, cwd)));
 }
 
-async function buildDiscoveryRegistry(config: ConfigFile = readConfig(), cwd = process.cwd(), options: { refresh?: boolean; stale?: boolean; refreshSourceIds?: readonly string[]; paths?: HostPathOptions } = {}): Promise<DiscoveryResult> {
+async function buildDiscoveryRegistry(config: ConfigFile = readConfig(), cwd = process.cwd(), options: { refresh?: boolean; stale?: boolean; refreshSourceIds?: readonly string[]; paths?: HostPathOptions; signal?: AbortSignal } = {}): Promise<DiscoveryResult> {
+  options.signal?.throwIfAborted();
   const skills = dedupeLocalSkillPaths([
     ...configuredBundledBuiltinRecords(config),
     ...await buildRegistryFromRoots(discoverUsableSkillRoots(config, cwd), false, scanOptions(config)),
   ]);
+  options.signal?.throwIfAborted();
   const sources = await discoverSourceCatalog(config, cwd, options);
-  return { records: dedupeDiscoveryRecords([
+  options.signal?.throwIfAborted();
+  const records = dedupeDiscoveryRecords([
     ...await buildDiscoveryRegistryFromParts(skills, configuredDiscoveryCatalogs(config, cwd), scanOptions(config), { sources: config.sources, records: sources.records, failures: sources.failures }),
     ...sources.records,
-  ]), failures: sources.failures, lists: sources.lists };
+  ]);
+  options.signal?.throwIfAborted();
+  return { records, failures: sources.failures, lists: sources.lists };
 }
 
 async function buildDollarRegistry(config?: ConfigFile, cwd = process.cwd(), paths: HostPathOptions = {}): Promise<DiscoveryResult> {
@@ -1440,6 +1445,22 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     | { status: "ready"; promise: Promise<DiscoveryResult>; result: DiscoveryResult }
     | { status: "failed"; promise: Promise<DiscoveryResult>; error: unknown };
   const dollarRegistryByCwd = new Map<string, CatalogState>();
+  const catalogOwner = new AbortController();
+  // Invalidated cache entries can disappear while their source request is still
+  // running. Retain ownership until the actual operation has settled.
+  const pendingCatalogs = new Set<Promise<unknown>>();
+  const ownCatalog = <T>(run: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> => {
+    const owned = signal ? AbortSignal.any([catalogOwner.signal, signal]) : catalogOwner.signal;
+    const promise = (async () => {
+      owned.throwIfAborted();
+      const result = await run(owned);
+      owned.throwIfAborted();
+      return result;
+    })();
+    pendingCatalogs.add(promise);
+    void promise.then(() => pendingCatalogs.delete(promise), () => pendingCatalogs.delete(promise));
+    return promise;
+  };
   const sourceChanges = new Map<string, number>();
   const observedChangesByCwd = new Map<string, Map<string, number>>();
   const notionRefresh = new Map<string, Promise<DiscoveryResult>>();
@@ -1448,17 +1469,18 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   const catalogCwd = (cwd: string) => { try { return realpathSync(cwd); } catch { return resolve(cwd); } };
   const unseenChanges = (cwd: string) => new Map([...sourceChanges].filter(([id, version]) => (observedChangesByCwd.get(cwd)?.get(id) ?? 0) < version));
   const publishCatalog = (cwd: string, promise: Promise<DiscoveryResult>, changes = new Map<string, number>()) => {
+    if (catalogOwner.signal.aborted) return Promise.reject(catalogOwner.signal.reason);
     const entry: CatalogState = { status: "pending", promise };
     dollarRegistryByCwd.set(cwd, entry);
     void promise.then(result => {
-      if (dollarRegistryByCwd.get(cwd) !== entry) return;
+      if (catalogOwner.signal.aborted || dollarRegistryByCwd.get(cwd) !== entry) return;
       const observed = observedChangesByCwd.get(cwd) ?? new Map<string, number>();
       for (const [id, version] of changes) if (!result.failures.some(failure => failure.sourceId === id)) observed.set(id, version);
       observedChangesByCwd.set(cwd, observed);
       if (changes.size && unseenChanges(cwd).size) notionRetryAt.set(cwd, Date.now() + notionCatalogRetryGapMs);
       dollarRegistryByCwd.set(cwd, { status: "ready", promise, result });
     }, error => {
-      if (dollarRegistryByCwd.get(cwd) === entry) {
+      if (!catalogOwner.signal.aborted && dollarRegistryByCwd.get(cwd) === entry) {
         if (changes.size) notionRetryAt.set(cwd, Date.now() + notionCatalogRetryGapMs);
         dollarRegistryByCwd.set(cwd, { status: "failed", promise, error });
       }
@@ -1466,11 +1488,12 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     return promise;
   };
   const getCatalog = (cwd = process.cwd()) => {
+    if (catalogOwner.signal.aborted) return Promise.reject(catalogOwner.signal.reason);
     const key = catalogCwd(cwd);
     const entry = dollarRegistryByCwd.get(key);
     const changes = unseenChanges(key);
     if (entry && (entry.status === "pending" || !changes.size || Date.now() < (notionRetryAt.get(key) ?? 0))) return entry.promise;
-    return publishCatalog(key, buildDiscoveryRegistry(config, key, { paths, stale: true, refreshSourceIds: [...changes.keys()] }), changes);
+    return publishCatalog(key, ownCatalog(signal => buildDiscoveryRegistry(config, key, { paths, signal, stale: true, refreshSourceIds: [...changes.keys()] })), changes);
   };
   installCliWriteInvalidation(pi, {
     sources: config.sources ?? [],
@@ -1526,9 +1549,9 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     if (!pending) {
       const generation = refreshGeneration;
       const changes = unseenChanges(cwd);
-      pending = (async () => {
+      pending = ownCatalog(async signal => {
         try {
-          const next = await buildDiscoveryRegistry(config, cwd, { paths, refreshSourceIds: [...changes.keys()] });
+          const next = await buildDiscoveryRegistry(config, cwd, { paths, signal, refreshSourceIds: [...changes.keys()] });
           if (generation !== refreshGeneration) return await getCatalog(cwd);
           const failed = next.failures.some((failure) => failure.blocking !== false && sourceIds.includes(failure.sourceId));
           const unsafe = next.failures.some(failure => sourceIds.includes(failure.sourceId) && ["AUTH_REQUIRED", "ACCESS_DENIED", "CACHE_SCOPE_UNAVAILABLE", "SOURCE_IDENTITY_MISMATCH"].includes(failure.code));
@@ -1549,7 +1572,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
         } finally {
           if (notionRefresh.get(cwd) === pending) notionRefresh.delete(cwd);
         }
-      })();
+      });
       notionRefresh.set(cwd, pending);
     }
     const hasNotion = current.records.some((record) => record.source === "notion");
@@ -1596,11 +1619,12 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   });
   const host = await installHostSkills(pi, {
     config,
-    getRecords: async (ctx, signal) => {
+    getRecords: (ctx, signal) => ownCatalog(async owned => {
       const result = await getCatalog(ctx?.cwd);
-      return resolveViewDiscovery(config, { records: result.records.filter((record): record is SkillRecord => Boolean(record.sourceId)), failures: result.failures, lists: result.lists }, ctx, signal);
-    },
-    lookupReference: (ctx, signal) => discoverSourceCatalog({ ...config, sources: config.sources?.filter(source => source.type === "notion") }, ctx.cwd, { signal, refreshSourceIds: config.sources?.filter(source => source.type === "notion" && !source.discovery?.offline).map(source => source.id) }),
+      owned.throwIfAborted();
+      return resolveViewDiscovery(config, { records: result.records.filter((record): record is SkillRecord => Boolean(record.sourceId)), failures: result.failures, lists: result.lists }, ctx, owned);
+    }, signal),
+    lookupReference: (ctx, signal) => ownCatalog(owned => discoverSourceCatalog({ ...config, sources: config.sources?.filter(source => source.type === "notion") }, ctx.cwd, { signal: owned, refreshSourceIds: config.sources?.filter(source => source.type === "notion" && !source.discovery?.offline).map(source => source.id) }), signal),
     loadRecord: (record, signal, snapshotId) => snapshotId
       ? sourceRuntime.foreground(() => loadSourceSkill(record, config, undefined, { signal, snapshotId }))
       : sourceRuntime.load(record, signal),
@@ -1757,12 +1781,22 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       await host.prepareMany(injections.map(injection => injection.record).filter(record => record.sourceId), ctx, signal);
     },
   }, adapter);
+  // Host metadata generations must retire before cancelled source promises
+  // settle, so no late failure can notify or publish into the closed session.
+  pi.on("session_shutdown", async () => {
+    refreshGeneration++;
+    catalogOwner.abort();
+    dollarRegistryByCwd.clear();
+    notionRefresh.clear();
+    notionRetryAt.clear();
+    await Promise.allSettled([...pendingCatalogs]);
+  });
   const refresh = async (ctx: ExtensionContext) => {
     const selectedGeneration = ++refreshGeneration;
     host.invalidate();
     sourceRuntime.invalidate();
     registryPromise = buildRegistry(config, paths);
-    const result = await buildDiscoveryRegistry(config, ctx.cwd, { refresh: true, paths });
+    const result = await ownCatalog(signal => buildDiscoveryRegistry(config, ctx.cwd, { refresh: true, paths, signal }));
     if (selectedGeneration !== refreshGeneration) return;
     dollarRegistryByCwd.clear();
     notionRetryAt.delete(catalogCwd(ctx.cwd ?? process.cwd()));

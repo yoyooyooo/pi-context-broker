@@ -16,7 +16,12 @@ const environmentKeys = ["CONTEXT_BROKER_CONFIG", "CONTEXT_BROKER_ROOTS", "CONTE
 const previous = new Map(environmentKeys.map(key => [key, process.env[key]]));
 const sockets = new Set<Socket>();
 const connected = Promise.withResolvers<void>();
-const server = createServer(socket => { sockets.add(socket); socket.on("close", () => sockets.delete(socket)); connected.resolve(); });
+let shutdownChild: ReturnType<typeof Promise.withResolvers<number>> | undefined;
+let shutdownPid: number | undefined;
+const server = createServer(socket => {
+  sockets.add(socket); socket.on("close", () => sockets.delete(socket)); connected.resolve();
+  socket.once("data", bytes => shutdownChild?.resolve(Number(bytes.toString("utf8"))));
+});
 let releaseRefresh = () => {};
 try {
   const fixture = await createNotionFixture(join(root, "fixture"));
@@ -36,6 +41,7 @@ import { connect } from "node:net";
 const args = process.argv.slice(2);
 if (args[0] === "list" && !args.includes("--default-view") && !args.includes("--view")) {
   const socket = connect(${address.port}, "127.0.0.1");
+  socket.write(String(process.pid));
   await once(socket, "data");
   socket.end();
 }
@@ -104,11 +110,31 @@ process.exitCode = result.status ?? 1;
   helperRetired = true;
   registry.resolve([]);
   assert.deepEqual((await merged).map((record: { name: string }) => record.name), ["native-next"]);
-  console.log("catalog session checks passed: delayed refresh survives context retirement; old menu stays pinned; retained provider uses the replacement session");
+  await writeFile(config, JSON.stringify({ skillRoots: [], sources: [{ ...source, cacheDir: join(root, "shutdown-cache"), command: [process.execPath, wire] }] }));
+  listeners.clear();
+  shutdownChild = Promise.withResolvers<number>();
+  await contextBroker(api);
+  await emit("session_start", next);
+  shutdownPid = await shutdownChild.promise;
+  assert.ok(Number.isSafeInteger(shutdownPid) && shutdownPid > 0);
+  process.kill(shutdownPid, 0);
+  await emit("session_shutdown", next);
+  assert.throws(() => process.kill(shutdownPid!, 0), { code: "ESRCH" }, "Shutdown must await the actual pending catalogue child close, without releasing its controlled read barrier");
+  assert.deepEqual(notices, [], "A cancelled catalogue must not notify a retired session");
+  assert.equal(await providers.at(-1)!.getSuggestions(["$"], 0, 1), null, "The retired menu cannot restart catalogue discovery");
+  console.log("catalog session checks passed: delayed refresh survives context retirement; old menu stays pinned; retained provider uses the replacement session; shutdown cancels and awaits the owned pending catalogue");
 } finally {
   releaseRefresh();
   for (const socket of sockets) socket.destroy();
   if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));
+  if (shutdownPid) {
+    const deadline = Date.now() + 10000;
+    for (;;) {
+      try { process.kill(shutdownPid, 0); } catch { break; }
+      assert.ok(Date.now() < deadline, "Owned catalogue child must terminate during cleanup");
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  }
   for (const [key, value] of previous) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
   console.log(`Catalog session artifacts retained: ${root}`);
 }

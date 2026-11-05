@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFile as callbackReadFile } from 'node:fs';
 import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { systemTempRoot } from './verification-paths.mjs';
-import { resolveInstalledPiSerializer } from './notion-sdk-pi.mjs';
+import { resolveInstalledPiSerializer, observeSdkInitialization } from './notion-sdk-pi.mjs';
 import { validateLiveInput, selectLiveProviderCall, liveSourceMetrics } from './notion-sdk-pi.mjs';
 import { assertNativeGuidance, assertScopedCommand, assertPreparedHttpRequest, assertResourceHttpRequest, assertResourceBatchProjection, assertResourceReadSchema, resourceRefsFromNative, resourceTextCopies, bodyCount, reconcile, sourceFinality, observeOwnedObjectReads, assertObjectReadEvidence, assertProviderHttpRequest, assertProviderToolSequence, assertSearchProjection, assertDefaultViewProjection, assertDollarProjection, assertNativeProjection, resourceScalarCalls, selectScalarProviderCall, assertResourceScalarResult, resourceScalarSelectedFixture, assertResourceScalarSession, assertResourceScalarCost, selectNativeRepeatCall, assertNativeRepeatProjection, assertScalarReadObjectIntervals } from './notion-sdk-pi.mjs';
 
@@ -1164,6 +1165,48 @@ const catalog = [
     request_metrics: { complete: true, total_requests: 0, trace: [] } },
   { kind: 'observer_end', code: 0, active_sdk: 0, active_children: 0 },
 ];
+
+test('the initialization cutpoint releases only the original owned read at the native shutdown boundary', async () => {
+  const base = await mkdtemp(join(await systemTempRoot(), 'sdk-initialization-probe-'));
+  const configPath = join(base, 'config.json'), ordinaryPath = join(base, 'ordinary.txt');
+  await writeFile(configPath, '{"owned":true}\n'); await writeFile(ordinaryPath, 'ordinary');
+  const io = { readFile: callbackReadFile }, events = [], reached = Promise.withResolvers();
+  let release, delivered = false;
+  const probe = observeSdkInitialization({ fs: io, configPath, subscribe: handler => { release = handler; },
+    record: event => { events.push(event); if (event.kind === 'initialization_held') reached.resolve(); } });
+  const result = new Promise((resolve, reject) => io.readFile(configPath, 'utf8', (error, bytes) => {
+    delivered = true; if (error) reject(error); else resolve(bytes);
+  }));
+  await reached.promise;
+  assert.equal(delivered, false); assert.equal(probe.pending(), 1);
+  assert.equal(await new Promise((resolve, reject) => io.readFile(ordinaryPath, 'utf8', (error, bytes) => error ? reject(error) : resolve(bytes))), 'ordinary');
+  assert.equal(delivered, false, 'An unrelated completed read does not release initialization');
+  release(); release();
+  assert.equal(await result, '{"owned":true}\n'); assert.equal(probe.pending(), 0);
+  assert.deepEqual(events.map(event => event.kind), ['initialization_held', 'initialization_shutdown_boundary', 'initialization_released']);
+  assert.equal(events.at(-1).callbacks, 1);
+  assert.equal(await new Promise((resolve, reject) => io.readFile(configPath, 'utf8', (error, bytes) => error ? reject(error) : resolve(bytes))), '{"owned":true}\n');
+});
+
+test('shutdown-only accounting requires one real cancelled list and never claims ready discovery', () => {
+  const fields = structuredClone(catalog); fields[2].status = 'cancelled';
+  const options = { bodyTransportRequired: false, expectedCatalogOutcome: 'shutdown_cancelled',
+    catalogLifecycle: [{ type: 'session_shutdown', pid: 42, monotonic_ns: '2' }] };
+  const result = reconcile(observed(fields), lifecycle, options);
+  assert.equal(result.sdk_completed_lists, 0); assert.equal(result.sdk_cancelled_lists, 1);
+  assert.equal(result.default_catalog_transport, 'not_exercised');
+  assert.throws(() => reconcile(observed(fields), lifecycle, { ...options, expectedCatalogOutcome: 'completed' }), /do not establish/);
+  assert.throws(() => reconcile(observed(catalog), lifecycle, options));
+  assert.throws(() => reconcile(observed(fields), lifecycle, { ...options, catalogLifecycle: [{ type: 'session_tree', pid: 42, monotonic_ns: '2' }] }));
+  for (const change of [
+    value => { value[2].request_metrics = null; },
+    value => { value[2].request_metrics.total_requests = 1; },
+    value => { value[3].active_initializations = 1; },
+    value => { value.splice(2, 1); },
+  ]) { const wrong = structuredClone(fields); change(wrong); assert.throws(() => reconcile(observed(wrong), lifecycle, options)); }
+  const pending = structuredClone(catalog); pending[3].observer_pid = pending[0].observer_pid = 42; pending[3].active_initializations = 1;
+  assert.equal(sourceFinality(pending, 42, { hostClosed: true }).complete, false);
+});
 
 test('metadata-only scope does not weaken the existing mandatory SDK transport assertion', () => {
   assert.throws(() => reconcile(observed(catalog), lifecycle), /empty body SDK observation/);

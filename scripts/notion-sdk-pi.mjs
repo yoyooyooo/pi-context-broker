@@ -1341,6 +1341,34 @@ export function assertObjectReadEvidence(events, { selected, forbidden = [], req
     coverage: 'owned Store.readBytes through Node readFile APIs; exact returned source bytes are positive controls' };
 }
 
+export function observeSdkInitialization({ fs, configPath, record, subscribe }) {
+  const read = fs.readFile, held = new Set();
+  let released = false;
+  fs.readFile = function(...args) {
+    if (args[0] === configPath && !released) {
+      const callback = args.at(-1);
+      args[args.length - 1] = function(...values) {
+        if (released) return callback.apply(this, values);
+        const resume = () => callback.apply(this, values);
+        held.add(resume);
+        record({ kind: 'initialization_held', pending: held.size, code: values[0]?.code ?? null });
+      };
+    }
+    return read.apply(this, args);
+  };
+  subscribe(() => {
+    if (released) return;
+    released = true;
+    record({ kind: 'initialization_shutdown_boundary', pending: held.size });
+    // The real native shutdown releases the original read callback. Only the
+    // product's own AbortSignal may cancel the SDK; the probe does not abort it.
+    const callbacks = [...held]; held.clear();
+    for (const resume of callbacks) resume();
+    record({ kind: 'initialization_released', callbacks: callbacks.length, pending: 0 });
+  });
+  return { pending: () => held.size };
+}
+
 function observe() {
   const ledger = process.env.SC10_PI_OBSERVER;
   const cli = process.env.SC10_PI_BUNDLED_CLI;
@@ -1352,6 +1380,9 @@ function observe() {
     appendFileSync(ledger, JSON.stringify({ ...value, sha256: previous }) + '\n', { mode: 0o600 });
   };
   record({ kind: 'observer_start', exec_path: process.execPath, parent_pid: process.ppid });
+  const initialization = process.env.SC08_PI_INIT_CONFIG ? observeSdkInitialization({ fs,
+    configPath: process.env.SC08_PI_INIT_CONFIG, record,
+    subscribe: handler => channel('context-broker.verify-sdk-initialization-shutdown').subscribe(handler) }) : undefined;
   const objectObserver = process.env.SC13_PI_OBJECT_ROOT ? observeOwnedObjectReads({ fs, fsPromises,
     objects: process.env.SC13_PI_OBJECT_ROOT, record, hash: bytes => createHash('sha256').update(bytes).digest('hex') }) : undefined;
   channel('context-broker.notion-sdk').subscribe(event => {
@@ -1396,11 +1427,12 @@ function observe() {
   process.once('exit', code => {
     const objects = objectObserver?.finish();
     record({ kind: 'observer_end', code, active_sdk: activeSdk.size, active_children: activeChildren.size,
+      ...(initialization ? { active_initializations: initialization.pending() } : {}),
       ...(objects ? { active_object_reads: objects.pending_reads, object_read_errors: objects.errors } : {}) });
   });
 }
 async function observer(path) {
-  await writeFile(path, `import { isMainThread } from 'node:worker_threads';\nimport childProcess from 'node:child_process';\nimport { createHash } from 'node:crypto';\nimport { channel } from 'node:diagnostics_channel';\nimport fs, { appendFileSync } from 'node:fs';\nimport fsPromises from 'node:fs/promises';\nimport { syncBuiltinESMExports } from 'node:module';\n${safeRequestMetrics.toString()}\n${observeOwnedObjectReads.toString()}\nif (isMainThread) (${observe.toString()})();\n`, { mode: 0o600 });
+  await writeFile(path, `import { isMainThread } from 'node:worker_threads';\nimport childProcess from 'node:child_process';\nimport { createHash } from 'node:crypto';\nimport { channel } from 'node:diagnostics_channel';\nimport fs, { appendFileSync } from 'node:fs';\nimport fsPromises from 'node:fs/promises';\nimport { syncBuiltinESMExports } from 'node:module';\n${safeRequestMetrics.toString()}\n${observeOwnedObjectReads.toString()}\n${observeSdkInitialization.toString()}\nif (isMainThread) (${observe.toString()})();\n`, { mode: 0o600 });
 }
 
 export function sourceFinality(events, hostPid, { hostClosed = false } = {}) {
@@ -1421,6 +1453,7 @@ export function sourceFinality(events, hostPid, { hostClosed = false } = {}) {
     if (!hostClosed && start.observer_pid === hostPid) continue;
     const ended = events.filter(event => event.kind === 'observer_end' && event.observer_pid === start.observer_pid);
     if (ended.length !== 1 || ended[0].active_sdk !== 0 || ended[0].active_children !== 0
+      || (ended[0].active_initializations ?? 0) !== 0
       || (ended[0].active_object_reads ?? 0) !== 0 || (ended[0].object_read_errors ?? 0) !== 0) pending.push({ kind: 'observer_end', pid: start.observer_pid });
   }
   for (const start of events.filter(event => event.kind === 'sdk' && event.event === 'start')) {
@@ -1453,8 +1486,9 @@ export function assertCatalogCancellationBoundary(start, end, lifecycle) {
   return boundary;
 }
 
-export function reconcile(events, lifecycle, { bodyTransportRequired = true, sourceMode = 'offline', catalogLifecycle = [] } = {}) {
+export function reconcile(events, lifecycle, { bodyTransportRequired = true, sourceMode = 'offline', catalogLifecycle = [], expectedCatalogOutcome = 'completed' } = {}) {
   assert.ok(['offline', 'live'].includes(sourceMode));
+  assert.ok(['completed', 'shutdown_cancelled'].includes(expectedCatalogOutcome));
   assert.ok(events.length > 0, 'Empty observer ledger cannot establish zero work');
   const chains = new Map();
   for (const item of events) {
@@ -1468,6 +1502,7 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true, sou
     chains.set(item.observer_pid, item);
   }
   for (const last of chains.values()) { assert.equal(last.kind, 'observer_end'); assert.equal(last.active_sdk, 0); assert.equal(last.active_children, 0);
+    assert.equal(last.active_initializations ?? 0, 0);
     assert.equal(last.active_object_reads ?? 0, 0); assert.equal(last.object_read_errors ?? 0, 0); }
   assert.equal(lifecycle.filter(event => event.event === 'spawn').length, 1);
   assert.equal(lifecycle.filter(event => event.event === 'close').length, 1);
@@ -1507,7 +1542,11 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true, sou
       native_monotonic_ns: boundary.monotonic_ns, http_attempts: attempts.length });
   }
   const completedCatalogs = catalog.length - cancelledCatalogs.length;
-  if (catalog.length) assert.ok(completedCatalogs > 0, 'Cancelled catalogues do not establish successful default discovery');
+  if (expectedCatalogOutcome === 'shutdown_cancelled') {
+    assert.equal(bodyTransportRequired, false); assert.equal(bodies.length, 0);
+    assert.equal(catalog.length, 1); assert.equal(completedCatalogs, 0);
+    assert.equal(cancelledCatalogs.length, 1); assert.equal(cancelledCatalogs[0].native_event, 'session_shutdown');
+  } else if (catalog.length) assert.ok(completedCatalogs > 0, 'Cancelled catalogues do not establish successful default discovery');
   if (sourceMode === 'offline') assert.equal(http, 0, 'The controlled SDK source must stay offline');
   const cliCloses = events.filter(event => event.kind === 'child_close');
   return { sdk_calls: sdk.length, sdk_body_calls: bodies.length, sdk_lists: catalog.length,
@@ -1692,9 +1731,13 @@ function lifecycleControl(api) {
   const record = (type, fields = {}) => appendFileSync(process.env.SC08_PI_NATIVE_EVENTS,
     JSON.stringify({ type, pid: process.pid, monotonic_ns: process.hrtime.bigint().toString(), ...fields }) + '\n', { mode: 0o600 });
   for (const name of ['session_start', 'session_shutdown', 'session_before_fork', 'session_fork', 'session_before_tree', 'session_tree', 'session_compact'])
-    api.on(name, (event, ctx) => record(name, { reason: event.reason ?? null, position: event.position ?? null,
-      target_id: event.entryId ?? event.preparation?.targetId ?? null, leaf_id: ctx.sessionManager.getLeafId(),
-      session_file: ctx.sessionManager.getSessionFile(), from_extension: event.fromExtension ?? null }));
+    api.on(name, (event, ctx) => {
+      record(name, { reason: event.reason ?? null, position: event.position ?? null,
+        target_id: event.entryId ?? event.preparation?.targetId ?? null, leaf_id: ctx.sessionManager.getLeafId(),
+        session_file: ctx.sessionManager.getSessionFile(), from_extension: event.fromExtension ?? null });
+      if (name === 'session_shutdown' && process.env.SC08_PI_INIT_CONFIG)
+        channel('context-broker.verify-sdk-initialization-shutdown').publish({ pid: process.pid });
+    });
   api.on('session_before_compact', event => {
     const plan = control();
     if (plan.action !== 'compact') return;
@@ -1725,12 +1768,17 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
   const compactionSettings = { enabled: false, keepRecentTokens: 1, reserveTokens: 1024 };
   await save(join(env.PI_CODING_AGENT_DIR, 'settings.json'), { compaction: compactionSettings });
   await save(controlFile, { action: 'snapshot', output: join(output, 'initial-unused.json') });
-  await writeFile(extension, "import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';\nexport default " + lifecycleControl.toString() + '\n', { mode: 0o600 });
-  const args = [...argv, '-e', extension], lifecycleEnv = { ...env, SC08_PI_LIFECYCLE: '1', SC08_PI_CONTROL: controlFile, SC08_PI_NATIVE_EVENTS: nativeEvents };
+  await writeFile(extension, "import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';\nimport { channel } from 'node:diagnostics_channel';\nexport default " + lifecycleControl.toString() + '\n', { mode: 0o600 });
+  const args = [...argv], broker = args.indexOf(info.extension);
+  assert.equal(args[broker - 1], '-e');
+  // Record native event entry before the product can await source termination.
+  // A handler placed afterwards observes completion, not the cancellation edge.
+  args.splice(broker - 1, 0, '-e', extension);
+  const lifecycleEnv = { ...env, SC08_PI_LIFECYCLE: '1', SC08_PI_CONTROL: controlFile, SC08_PI_NATIVE_EVENTS: nativeEvents };
   await save(join(output, 'lifecycle-launch.json'), { host: info.host, argv: args, cwd: base,
     source_command_configured: false, control_extension: extension, control_extension_sha256: hash(await readFile(extension)),
     controlled_summary: true, compaction_settings: compactionSettings, real_model: false,
-    observation: 'Same public provider and SDK observer; every process has a separate complete source ledger' });
+    observation: 'Same public provider and SDK observer; passive native boundaries register before Broker; every process has a separate complete source ledger' });
   const oracle = { snapshots: info.fixture.snapshots.slice(0, 4), bodies: info.bodies };
   let rpc, segment, failed, archive, serializer;
   const countBodies = context => Object.fromEntries([...info.bodies].map(([key, body]) => [key, bodyCount(context, body)]));
@@ -1756,19 +1804,24 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
       body_counts: countBodies(current[0].context), sdk_body_calls: await bodyOperations() - bodyBefore };
     steps.push(value); return value;
   };
-  const open = async (name, sessionPath) => {
+  const open = async (name, sessionPath, initializationCutpoint = false) => {
     const suffix = name === 'initial' ? '' : '-' + name;
     const observerFile = name === 'initial' ? ledger : join(output, 'observer' + suffix + '.jsonl');
-    segment = { name, ledger: observerFile, observer_file: 'observer' + suffix + '.jsonl',
+    segment = { name, initialization_cutpoint: initializationCutpoint, ledger: observerFile, observer_file: 'observer' + suffix + '.jsonl',
       lifecycle_file: 'rpc-lifecycle' + suffix + '.json', frames_file: 'rpc-frames' + suffix + '.json' };
+    const initializationConfig = join(env.NTN_SKILLS_CONFIG_HOME, 'config.json');
+    if (initializationCutpoint) await readFile(initializationConfig);
     rpc = await startRpc({ host: 'pi', args: [...args, ...(sessionPath ? ['--session', sessionPath] : [])],
-      cwd: base, env: { ...lifecycleEnv, SC10_PI_OBSERVER: observerFile }, timeoutMs: 60000 });
+      cwd: base, env: { ...lifecycleEnv, SC10_PI_OBSERVER: observerFile,
+        ...(initializationCutpoint ? { SC08_PI_INIT_CONFIG: initializationConfig } : {}) }, timeoutMs: 60000 });
     segment.rpc = rpc; processes.push(segment);
     await rpc.command('set_auto_compaction', { enabled: false });
   };
   const close = async () => {
     if (!rpc || segment.closed) return;
-    const before = await waitForSourceFinality(segment.ledger, rpc.lifecycle[0].pid);
+    const before = segment.initialization_cutpoint
+      ? sourceFinality(await rows(segment.ledger), rpc.lifecycle[0].pid)
+      : await waitForSourceFinality(segment.ledger, rpc.lifecycle[0].pid);
     await save(join(output, 'source-before-close-' + segment.name + '.json'), before);
     try { await rpc.closeInput(); }
     catch (error) { await rpc.stop().catch(() => {}); throw error; }
@@ -1860,6 +1913,30 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
     steps.push({ label: 'cancel-after-dispatch', provider_request_id: held.requestId, actual_provider_inputs: 1,
       source_bodies_dispatched: ['a', 'base'], signal_aborted: true, late_callback_aborted: true, active_commit: false, outcome });
     await close();
+    await save(toolPlan, { mode: 'complete' }); await open('shutdown', undefined, true);
+    const shutdownDeadline = Date.now() + 20000;
+    for (;;) {
+      if ((await rows(segment.ledger)).some(event => event.kind === 'initialization_held')) break;
+      assert.ok(Date.now() < shutdownDeadline, 'Owned SDK config-read cutpoint was not reached');
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    const greeting = await ordinary('FAST_GREETING', false);
+    assert.equal(greeting.sdk_body_calls, 0);
+    const pendingSource = await rows(segment.ledger);
+    assert.equal(pendingSource.filter(event => event.kind === 'sdk' && event.event === 'start').length, 1);
+    assert.equal(pendingSource.filter(event => event.kind === 'sdk' && event.event === 'end').length, 0);
+    assert.equal(rpc.frames.filter(frame => frame.type === 'tool_execution_start').length, 0);
+    await save(join(output, 'shutdown-pending-before-eof.json'), { provider_request_id: greeting.provider_request_id,
+      source_finality: sourceFinality(pendingSource, rpc.lifecycle[0].pid),
+      sdk_calls_pending: 1, skill_body_reads: 0, tool_calls: 0, wait_for_catalog_before_eof: false });
+    await close();
+    const shutdownSource = await rows(segment.ledger);
+    assert.equal(shutdownSource.filter(event => event.kind === 'initialization_held').length, 1);
+    assert.equal(shutdownSource.filter(event => event.kind === 'initialization_shutdown_boundary').length, 1);
+    assert.equal(shutdownSource.filter(event => event.kind === 'initialization_released' && event.callbacks === 1 && event.pending === 0).length, 1);
+    steps.push({ label: 'shutdown-pending-catalog', boundary: 'actual native EOF session_shutdown',
+      provider_request_id: greeting.provider_request_id, no_catalog_prewarm: true, source_finality: segment.finality,
+      host_exit: segment.rpc.lifecycle.at(-1), initialization_callback_released: true });
     const native = await rows(nativeEvents);
     for (const name of ['session_before_fork', 'session_tree', 'session_compact', 'controlled_compaction'])
       assert.ok(native.some(event => event.type === name), 'Actual Pi lifecycle event is required: ' + name);
@@ -1893,11 +1970,12 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
       const observed = await rows(process.ledger);
       observations.push({ name: process.name, ...reconcile(observed, process.rpc.lifecycle, {
         bodyTransportRequired: observed.some(event => event.kind === 'sdk' && event.event === 'start' && event.operation !== 'list'),
-        catalogLifecycle: await rows(nativeEvents) }) });
+        catalogLifecycle: await rows(nativeEvents),
+        expectedCatalogOutcome: process.initialization_cutpoint ? 'shutdown_cancelled' : 'completed' }) });
     }
     const result = { name: 'session-lifecycle', status: 'passed', observer_finality: stable, source_command_configured: false,
       provider_requests: captures.length, actual_pi_processes: processes.length, session_archive_files: archive.files.length,
-      session_lifecycle: 'native fork, clone, switch, tree, compact, process resume and post-dispatch abort verified',
+      session_lifecycle: 'native fork, clone, switch, tree, compact, process resume, post-dispatch abort and pending-catalogue EOF shutdown verified',
       controlled_summary: true, model_summary_quality: 'not_measured', actual_model: false, live_notion: false,
       steps: 'lifecycle-steps.json', process_observations: observations, serializer_http_replay: { status: serializer.status,
         requests: serializer.provider_requests, request_bytes: serializer.request_bytes, tool_calls: serializer.tool_calls,
