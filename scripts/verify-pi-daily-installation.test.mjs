@@ -90,11 +90,13 @@ const sdkHttp = [
   { event: 'http_end', pid: 10, id: '10:1', status: 200, response_request_id: sdkRequestId },
 ];
 
-test('host SDK HTTP needs an exact complete operation and independent response request ID', () => {
-  const result = classifyDailyHttp(sdkHttp, new Set(), new Set([10]), { sourceObservation: sdkObservation() });
+for (const operation of ['list', 'files']) test(operation + ' host SDK HTTP needs an exact complete operation and independent response request ID', () => {
+  const observation = sdkObservation();
+  observation.events = observation.events.map(event => event.operation ? { ...event, operation } : event);
+  const result = classifyDailyHttp(sdkHttp, new Set(), new Set([10]), { sourceObservation: observation });
   assert.equal(result.sdk.length, 1);
   assert.equal(result.source.length, 1);
-  assert.equal(result.sdk[0].attribution.operation, 'list');
+  assert.equal(result.sdk[0].attribution.operation, operation);
   assert.equal(result.sdk[0].attribution.requestId, 'sdk:10:one');
   assert.equal(result.sdk[0].attribution.response_bytes, 100);
 });
@@ -108,6 +110,7 @@ test('SDK HTTP rejects absent, ambiguous, failed or mismatched receipt evidence'
     sdkObservation({ events: sdkObservation().events.map(event => event.phase === 'attempt' ? { ...event, method: 'GET' } : event) }),
     sdkObservation({ events: sdkObservation().events.map(event => event.phase === 'attempt' ? { ...event, http_status: 403 } : event) }),
     sdkObservation({ events: sdkObservation().events.map(event => event.phase === 'started' ? { ...event, pid: 99 } : event) }),
+    sdkObservation({ events: sdkObservation().events.map(event => event.operation ? { ...event, operation: 'future-operation' } : event) }),
     sdkObservation({ events: [...sdkObservation().events, { ...sdkObservation().events[2], requestId: 'sdk:10:two' }] }),
   ]) assert.throws(() => classifyDailyHttp(sdkHttp, new Set(), new Set([10]), { sourceObservation: changed }));
   assert.throws(() => classifyDailyHttp([...sdkHttp, { ...sdkHttp[0], id: '10:2' }, { ...sdkHttp[1], id: '10:2' }],

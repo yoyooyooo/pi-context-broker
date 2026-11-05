@@ -130,7 +130,7 @@ SDK 观测由 driver 为自有 Pi 进程安装 Node preload；父 PID、实际�
 | 字段 / 层 | 口径 |
 | --- | --- |
 | `sdkStarts` / `sdkCloses` | SDK 桥公开 start/end 的数量；失败、取消和 pending 也保留。`sdkEntered` 只统计 end 明确回报 `sdk_started:true` 的调用，未结束不能据此推断没有执行 |
-| SDK `files` | 固定名称解析复用 core manifest-only `listSkill`；独立计一次 SDK 操作，属于文件清单元数据，不能计作主文已读或漏记为零成本。实际 HTTP/bytes 仍取该操作完整 metrics；未知 operation 保持观察错误，不能降级成完整零请求 |
+| SDK `files` | 固定名称解析复用 core manifest-only `listSkill`；独立计一次 SDK 操作，属于文件清单元数据，不能计作主文已读或漏记为零成本。原 graph 的 `sdk_calls` 与日用 HTTP 归因同样记录它，后者仍须独立 response request ID 精确匹配。实际 HTTP/bytes 仍取该操作完整 metrics；未知 operation 保持观察错误，不能降级成完整零请求 |
 | `cliStarts` / `cliSpawnEvents` / `cliCloses` | 分别为观察到的 CLI spawn 调用开始、真实 child spawn 事件和 child close。退出码、signal、stdout 完整性单列；一次子进程可包含零次或多次 HTTP |
 | `observedHttpAttempts` / `httpAttempts` | 前者为已记录 attempt 数；后者仅在所有相关 metrics、进程边界和最终复核完整时给出总数，否则为 null。缺 child、零 SDK starts 或空账本都不证明零 HTTP |
 | Source bytes / waits | 沿用 request_metrics 的 request bytes、decoded response bytes、metadata/body/retained-body/write/provider 分类及 queue/retry 等待；缺字段不估算。TCP/TLS wire 始终为 null |

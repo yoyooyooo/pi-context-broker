@@ -201,11 +201,15 @@ test('SDK observer retains actual return values and one complete metric receipt 
     channel('context-broker.notion-sdk').publish({ version: 1, event: 'end', id, operation, pid: process.pid, status: 'completed', sdk_started: true, metrics_observed: true, request_metrics: emptyMetrics });
   };
   publish('catalog', 'list', { scope: fixture.scope, records: [fixture.record] });
+  publish('manifest', 'files', fixture.value.entries[0].manifest);
   publish('consumption', 'consume', fixture.value); observer.close();
-  const receipts = await Promise.all(['catalog', 'consumption'].map(async id => JSON.parse(await readFile(path.join(responses, id + '.json'), 'utf8'))));
-  assert.deepEqual(receipts[1].value, fixture.value);
+  const receipts = await Promise.all(['catalog', 'manifest', 'consumption'].map(async id => JSON.parse(await readFile(path.join(responses, id + '.json'), 'utf8'))));
+  assert.deepEqual(receipts[2].value, fixture.value);
+  assert.deepEqual(graphSourceViews([receipts[1]]), { directories: [], preparations: [], entries: [], resources: [] }, 'File metadata is not a directory, prepared graph or delivered body');
   const events = await lines(ledger), accounting = graphSourceAccounting(events, receipts, { sourceMode: 'sdk', requireConsumption: true });
-  assert.deepEqual(accounting.sdk_calls, { list: 1, consume: 1, read: 0, 'read-resources': 0 }); assert.equal(accounting.actual_http_attempts, 0);
+  assert.deepEqual(accounting.sdk_calls, { list: 1, files: 1, consume: 1, read: 0, 'read-resources': 0 }); assert.equal(accounting.actual_http_attempts, 0);
+  assert.throws(() => graphSourceAccounting(events.map(event => event.requestId === 'manifest' ? { ...event, operation: 'future-operation' } : event),
+    receipts.map(item => item.requestId === 'manifest' ? { ...item, operation: 'future-operation' } : item), { sourceMode: 'sdk' }), /Unknown SDK operation/);
   assert.throws(() => graphSourceAccounting([], receipts, { sourceMode: 'sdk' }), /missing source observer/);
   assert.throws(() => graphSourceAccounting(events, receipts.map(item => ({ ...item, metrics: null })), { sourceMode: 'sdk' }), /metrics/);
   assert.throws(() => graphSourceAccounting([...events, { phase: 'alternate-child-api', source: true }], receipts, { sourceMode: 'sdk' }), /CLI child/);

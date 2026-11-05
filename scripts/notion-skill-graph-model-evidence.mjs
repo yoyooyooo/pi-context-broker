@@ -197,6 +197,8 @@ export function graphSourceAccounting(events, receipts, { sourceMode, requireCon
   }
   for (const start of events.filter(event => event.phase === 'child-spawn')) assert.equal(events.filter(event => event.phase === 'child-close' && event.id === start.id).length, 1, 'Every observed child must close');
   const sdk = receipts.filter(receipt => receipt.transport === 'sdk');
+  const sdkOperations = ['list', 'files', 'consume', 'read', 'read-resources'];
+  assert.ok(sdk.every(receipt => sdkOperations.includes(receipt.operation)), 'Unknown SDK operation cannot disappear from source accounting');
   const childCalls = events.filter(event => (event.phase === 'child-spawn' || event.phase === 'alternate-child-api') && event.source);
   if (sourceMode === 'sdk') {
     assert.equal(childCalls.length, 0, 'Default bundled SDK cannot silently invoke a CLI child');
@@ -204,7 +206,7 @@ export function graphSourceAccounting(events, receipts, { sourceMode, requireCon
     assert.ok(sdk.some(receipt => receipt.operation === 'list'), 'Default metadata must actually use the catalog SDK');
     if (requireConsumption) assert.ok(sdk.some(receipt => receipt.operation === 'consume'), 'The real consumer must reach the bundled SDK');
   }
-  return { sourceMode, sdk_calls: Object.fromEntries(['list', 'consume', 'read', 'read-resources'].map(operation => [operation, sdk.filter(receipt => receipt.operation === operation).length])),
+  return { sourceMode, sdk_calls: Object.fromEntries(sdkOperations.map(operation => [operation, sdk.filter(receipt => receipt.operation === operation).length])),
     cli_children: childCalls.length, actual_http_attempts: receipts.every(receipt => receipt.metrics?.complete)
       ? receipts.reduce((sum, receipt) => sum + receipt.metrics.trace.filter(event => event.event === 'attempt').length, 0) : null,
     source_results_observed: sdk.filter(receipt => receipt.resultObserved).length };
