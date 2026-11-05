@@ -1161,7 +1161,7 @@ const catalog = [
   { kind: 'observer_start', exec_path: command[0] },
   { kind: 'sdk', event: 'start', id: '42:1', operation: 'list' },
   { kind: 'sdk', event: 'end', id: '42:1', operation: 'list', status: 'completed', sdk_started: true, metrics_observed: true,
-    request_metrics: { complete: true, total_requests: 0 } },
+    request_metrics: { complete: true, total_requests: 0, trace: [] } },
   { kind: 'observer_end', code: 0, active_sdk: 0, active_children: 0 },
 ];
 
@@ -1176,6 +1176,47 @@ test('metadata-only scope does not weaken the existing mandatory SDK transport a
     { kind: 'child_close', id: '42:2', code: 0, signal: null, request_metrics: { complete: true, total_requests: 0 } });
   assert.throws(() => reconcile(observed(child), lifecycle, { bodyTransportRequired: false }), /must not spawn CLI children/);
   assert.throws(() => reconcile(observed(catalog.filter(item => item.event !== 'end')), lifecycle, { bodyTransportRequired: false }));
+});
+
+test('a catalogue interrupted by an actual session boundary retains complete cancellation accounting', () => {
+  const fields = [
+    { ...catalog[0], monotonic_ns: '10' },
+    { ...catalog[1], id: 'cancelled-list', monotonic_ns: '20' },
+    { ...catalog[2], id: 'cancelled-list', status: 'cancelled', monotonic_ns: '40', request_metrics: { complete: true, total_requests: 0, trace: [] } },
+    { ...catalog[1], id: 'completed-list', monotonic_ns: '50' },
+    { ...catalog[2], id: 'completed-list', monotonic_ns: '60', request_metrics: { complete: true, total_requests: 0, trace: [] } },
+    { ...catalog[3], monotonic_ns: '70' },
+  ];
+  const boundary = { type: 'session_tree', pid: 42, monotonic_ns: '30', leaf_id: 'new-branch' };
+  const options = { bodyTransportRequired: false, catalogLifecycle: [boundary] };
+  const result = reconcile(observed(fields), lifecycle, options);
+  assert.equal(result.sdk_cancelled_lists, 1); assert.equal(result.sdk_lists, 2); assert.equal(result.sdk_http, 0);
+  assert.deepEqual(result.cancelled_catalogs, [{ id: 'cancelled-list', pid: 42, native_event: 'session_tree', native_monotonic_ns: '30', http_attempts: 0 }]);
+  for (const native of [[], [{ ...boundary, pid: 99 }], [{ ...boundary, monotonic_ns: '19' }], [{ ...boundary, type: 'branch_snapshot' }]])
+    assert.throws(() => reconcile(observed(fields), lifecycle, { ...options, catalogLifecycle: native }), /actual session boundary/);
+  const unknown = structuredClone(fields); unknown[2].request_metrics = null;
+  assert.throws(() => reconcile(observed(unknown), lifecycle, options), /complete metrics/);
+  const failed = structuredClone(fields); failed[2].status = 'failed';
+  assert.throws(() => reconcile(observed(failed), lifecycle, options), /completed/);
+  const body = structuredClone(fields); body[1].operation = body[2].operation = 'consume';
+  assert.throws(() => reconcile(observed(body), lifecycle, { ...options, bodyTransportRequired: true }), /Only catalogue/);
+});
+
+test('cancelled HTTP attempts are counted and cannot hide behind a complete flag or offline mode', () => {
+  const fields = [
+    { ...catalog[0], monotonic_ns: '10' },
+    { ...catalog[1], id: 'cancelled-list', monotonic_ns: '20' },
+    { ...catalog[2], id: 'cancelled-list', status: 'cancelled', monotonic_ns: '40', request_metrics: { complete: true, total_requests: 1, trace: [{ event: 'attempt', attempt: 1, outcome: 'cancelled' }] } },
+    { ...catalog[1], id: 'completed-list', monotonic_ns: '50' },
+    { ...catalog[2], id: 'completed-list', monotonic_ns: '60', request_metrics: { complete: true, total_requests: 0, trace: [] } },
+    { ...catalog[3], monotonic_ns: '70' },
+  ];
+  const options = { bodyTransportRequired: false, sourceMode: 'live', catalogLifecycle: [{ type: 'session_shutdown', pid: 42, monotonic_ns: '30' }] };
+  const result = reconcile(observed(fields), lifecycle, options);
+  assert.equal(result.sdk_http, 1); assert.equal(result.cancelled_catalogs[0].http_attempts, 1);
+  assert.throws(() => reconcile(observed(fields), lifecycle, { ...options, sourceMode: 'offline' }), /stay offline/);
+  fields[2].request_metrics.trace = [];
+  assert.throws(() => reconcile(observed(fields), lifecycle, options), /every actual HTTP attempt/);
 });
 
 const childTerminal = [

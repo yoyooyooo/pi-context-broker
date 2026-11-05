@@ -1443,7 +1443,7 @@ async function waitForSourceFinality(path, hostPid, options = {}) {
   }
 }
 
-export function reconcile(events, lifecycle, { bodyTransportRequired = true, sourceMode = 'offline' } = {}) {
+export function reconcile(events, lifecycle, { bodyTransportRequired = true, sourceMode = 'offline', catalogLifecycle = [] } = {}) {
   assert.ok(['offline', 'live'].includes(sourceMode));
   assert.ok(events.length > 0, 'Empty observer ledger cannot establish zero work');
   const chains = new Map();
@@ -1475,22 +1475,44 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true, sou
     assert.ok(bodies.length > 0, 'An empty body SDK observation cannot establish default transport');
   } else assert.equal(bodies.length, 0, 'A host-local command metadata query must not consume source bodies');
   let http = 0;
+  const cancelledCatalogs = [];
   for (const start of sdk) {
     const ends = events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.id === start.id);
-    assert.equal(ends.length, 1); assert.equal(ends[0].status, 'completed'); assert.equal(ends[0].sdk_started, true);
-    assert.equal(ends[0].metrics_observed, true); assert.equal(ends[0].request_metrics?.complete, true);
-    http += ends[0].request_metrics.total_requests;
+    assert.equal(ends.length, 1);
+    const end = ends[0];
+    assert.equal(end.observer_pid, start.observer_pid); assert.equal(end.operation, start.operation);
+    let boundary;
+    if (end.status === 'cancelled') {
+      assert.equal(start.operation, 'list', 'Only catalogue cancellation can be reconciled at a native session boundary');
+      boundary = catalogLifecycle.find(event => ['session_tree', 'session_shutdown'].includes(event.type)
+        && event.pid === start.observer_pid && typeof event.monotonic_ns === 'string' && /^\d+$/.test(event.monotonic_ns)
+        && BigInt(event.monotonic_ns) >= BigInt(start.monotonic_ns) && BigInt(event.monotonic_ns) <= BigInt(end.monotonic_ns));
+      assert.ok(boundary, 'Cancelled catalogue must match an actual session boundary inside its exact SDK interval');
+    } else assert.equal(end.status, 'completed');
+    assert.equal(end.sdk_started, true); assert.equal(end.metrics_observed, true);
+    assert.equal(end.request_metrics?.complete, true, 'Every SDK terminal, including cancellation, requires complete metrics');
+    assert.ok(Array.isArray(end.request_metrics.trace), 'Complete metrics must retain the actual HTTP trace');
+    const attempts = end.request_metrics.trace.filter(event => event.event === 'attempt');
+    assert.equal(attempts.length, end.request_metrics.total_requests, 'Every SDK terminal must account for every actual HTTP attempt');
+    assert.equal(new Set(attempts.map(event => event.attempt)).size, attempts.length);
+    assert.ok(attempts.every(event => Number.isSafeInteger(event.attempt) && event.attempt > 0 && event.attempt <= attempts.length));
+    http += end.request_metrics.total_requests;
+    if (boundary) cancelledCatalogs.push({ id: start.id, pid: start.observer_pid, native_event: boundary.type,
+      native_monotonic_ns: boundary.monotonic_ns, http_attempts: attempts.length });
   }
+  const completedCatalogs = catalog.length - cancelledCatalogs.length;
+  if (catalog.length) assert.ok(completedCatalogs > 0, 'Cancelled catalogues do not establish successful default discovery');
   if (sourceMode === 'offline') assert.equal(http, 0, 'The controlled SDK source must stay offline');
   const cliCloses = events.filter(event => event.kind === 'child_close');
   return { sdk_calls: sdk.length, sdk_body_calls: bodies.length, sdk_lists: catalog.length,
+    sdk_completed_lists: completedCatalogs, sdk_cancelled_lists: cancelledCatalogs.length, cancelled_catalogs: cancelledCatalogs,
     sdk_consumes: sdk.filter(event => event.operation === 'consume').length,
     sdk_reads: sdk.filter(event => event.operation === 'read').length, sdk_http: http,
     sdk_resource_batches: sdk.filter(event => event.operation === 'read-resources').length,
     cli_catalog_children: starts.filter(event => event.bundled && event.operation === 'list').length,
     cli_prepare_read_export_children: 0, cli_http: cliCloses.every(event => event.request_metrics?.complete) ? cliCloses.reduce((total, event) => total + event.request_metrics.total_requests, 0) : null,
     observer_processes: chains.size, source_children_closed: starts.length, eof_closed: true,
-    default_catalog_transport: catalog.length ? 'verified_sdk' : 'not_exercised',
+    default_catalog_transport: completedCatalogs ? 'verified_sdk' : 'not_exercised',
     default_body_transport: bodyTransportRequired ? 'verified_sdk' : 'not_applicable_metadata_query' };
 }
 
@@ -1864,7 +1886,8 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
     for (const process of processes) {
       const observed = await rows(process.ledger);
       observations.push({ name: process.name, ...reconcile(observed, process.rpc.lifecycle, {
-        bodyTransportRequired: observed.some(event => event.kind === 'sdk' && event.event === 'start' && event.operation !== 'list') }) });
+        bodyTransportRequired: observed.some(event => event.kind === 'sdk' && event.event === 'start' && event.operation !== 'list'),
+        catalogLifecycle: await rows(nativeEvents) }) });
     }
     const result = { name: 'session-lifecycle', status: 'passed', observer_finality: stable, source_command_configured: false,
       provider_requests: captures.length, actual_pi_processes: processes.length, session_archive_files: archive.files.length,
