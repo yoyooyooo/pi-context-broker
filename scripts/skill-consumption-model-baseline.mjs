@@ -296,12 +296,12 @@ export function modelBaselineHostArgs(config, {base, observer, transport, inspec
  * instruction bodies. A body becomes known only after the actual read result;
  * the exact same outer tool output must subsequently reach the provider. */
 export function observeNativeInspection(api, settings) {
-  const {fs,crypto,path,diagnostics,output,files,catalog,clockId,source,validateResourceReadProjection,unselectedFiles=[],unselectedSources=[]} = settings;
+  const {fs,crypto,path,diagnostics,output,files,catalog,clockId,source,rawDirectory,validateResourceReadProjection,unselectedFiles=[],unselectedSources=[]} = settings;
   const sha = value => crypto.createHash('sha256').update(value).digest('hex');
   const fd = fs.openSync(output, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW ?? 0), 0o600);
   const expected = new Map(files.map(file => [file.absolutePath, file])), calls = new Map(), delivered = new Map(), subscriptions = [];
   const unselected=new Map(unselectedFiles.map(file=>[file.absolutePath,file])),unselectedRefs=new Map(),unselectedOutputs=new Map();
-  let sequence = 0, previous = null, turn = 0, closed = false, errors = 0;
+  let sequence = 0, previous = null, turn = 0, closed = false, errors = 0, rawPayloads = 0;
   const append = (phase, values = {}) => {
     const row = {version:1,sequence:++sequence,previousSha256:previous,clockId,monotonicNs:process.hrtime.bigint().toString(),phase,turn,...values};
     row.eventSha256 = sha(JSON.stringify(row)); previous = row.eventSha256; fs.writeSync(fd, JSON.stringify(row) + '\n');
@@ -311,7 +311,8 @@ export function observeNativeInspection(api, settings) {
   const guard = handler => (...args) => { if (closed) return; try { handler(...args); } catch { errors++; try { append('observer_error'); } catch { /* Observation stays incomplete; the original tool proceeds unchanged. */ } } };
   const on = (event, handler) => api.on(event, guard(handler));
   const subscribe = (name, handler) => { const callback = guard(handler); diagnostics.subscribe(name,callback); subscriptions.push([name,callback]); };
-  append('native_observer_start',{method:'native-read-result-to-provider-output',bodyInput:'none; only frozen file hashes',fileCount:files.length});
+  append('native_observer_start',{method:'native-read-result-to-provider-output',bodyInput:'none; only frozen file hashes',fileCount:files.length,
+    ...(rawDirectory?{rawEvidence:'private-provider-body-v1'}:{})});
   if(!source)subscribe('context-broker.notion-sdk', () => append('unexpected_sdk_operation'));
   if(!source)subscribe('tracing:child_process.spawn:start', ({process:child}) => {
     const id = sequence + 1; append('child_start',{id});
@@ -381,6 +382,8 @@ export function observeNativeInspection(api, settings) {
   });
   on('before_provider_request', event => {
     const payload = event.payload, outputs = [];
+    const serialized=JSON.stringify(payload),rawPayload=rawDirectory?'provider-'+(++rawPayloads)+'.json':undefined;
+    if(rawPayload)fs.writeFileSync(path.join(rawDirectory,rawPayload),serialized,{flag:'wx',mode:0o600});
     for (const message of payload?.messages ?? []) {
       if (message.role === 'tool' && typeof message.tool_call_id === 'string') outputs.push({id:message.tool_call_id,text:text(message.content)});
       for (const part of Array.isArray(message.content) ? message.content : [])
@@ -413,14 +416,14 @@ export function observeNativeInspection(api, settings) {
       /<(?:view|ntn-skills-discovery)\s[^>]*\bstatus="error"/.test(systems)?'error':/<ntn-skills-view-catalog>/.test(systems)?'ready':'absent'):'ready';
     const metadata=items=>items.map(({name,description})=>({name,description})).sort((a,b)=>a.name.localeCompare(b.name));
     const productTools = (payload?.tools ?? []).some(tool => /^(?:notion_|skill_(?:search|prepare|graph))/.test(tool.function?.name ?? tool.name ?? ''));
-    append('native_provider',{payloadSha256:sha(JSON.stringify(payload)),payloadBytes:Buffer.byteLength(JSON.stringify(payload)),files:matches,
+    append('native_provider',{payloadSha256:sha(serialized),payloadBytes:Buffer.byteLength(serialized),...(rawPayload?{rawPayload}:{}),files:matches,
       catalogState,unselectedBodies,catalogMatches:source?(catalogState==='pending'?null:JSON.stringify(metadata(actual))===JSON.stringify(metadata(catalog))):
         JSON.stringify(actual) === JSON.stringify(catalog),brokerAbsent:source?null:!productTools && !/<ntn-skills-(?:guidance|view-catalog)>/.test(systems)});
   });
   const finish = () => {
     if (closed) return;
     for (const [name,callback] of subscriptions) diagnostics.unsubscribe(name,callback);
-    append('native_observer_end',{complete:errors === 0,errors}); closed = true; fs.closeSync(fd);
+    append('native_observer_end',{complete:errors === 0,errors,...(rawDirectory?{rawPayloads}:{})}); closed = true; fs.closeSync(fd);
   };
   on('session_shutdown',finish);
   return {finish};
@@ -444,6 +447,52 @@ export function verifyNativeInspectionEvents(events) {
   assert.equal(events.at(-1).complete,true); assert.equal(events.at(-1).errors,0);
   assert.equal(events.some(event=>event.phase==='unselected_read_result'),false,'An unselected candidate body was read');
   return events;
+}
+
+/** Private originals are separate from the body-free metrics ledger. Only the
+ * provider payload is retained; the hook event and HTTP headers are not copied. */
+export async function verifyModelRawEvidence({processEvidence,events,costEvents,answers=[]}) {
+  verifyNativeInspectionEvents(events);
+  assert.equal(events[0].rawEvidence,'private-provider-body-v1');
+  const providers=events.filter(event=>event.phase==='native_provider'),directory=join(processEvidence,'provider-payloads');
+  assert.ok(providers.length>0,'No actual provider original was observed');
+  assert.equal(events.at(-1).rawPayloads,providers.length,'Raw writes need their completed observer terminal');
+  const names=providers.map((event,index)=>{assert.equal(event.rawPayload,'provider-'+(index+1)+'.json');return event.rawPayload;});
+  assert.deepEqual((await readdir(directory)).sort(),[...names].sort(),'Missing or extra provider originals');
+  for(const event of providers) {
+    const bytes=await readFile(join(directory,event.rawPayload));
+    assert.equal(bytes.length,event.payloadBytes);assert.equal(hash(bytes),event.payloadSha256,'Raw provider body changed');
+    assert.equal(JSON.stringify(JSON.parse(bytes.toString('utf8'))),bytes.toString('utf8'),'Raw provider original must be the exact serialized payload');
+  }
+  assert.deepEqual(providers.map(event=>[event.turn,event.payloadSha256,event.payloadBytes]),
+    costEvents.filter(event=>event.phase==='provider_request').map(event=>[event.turn,event.payload.sha256,event.payload.bytes]),
+    'Raw provider originals must bind every cost event, including repeated payloads');
+  for(const sample of answers) {
+    assert.equal(sample.answerFile,sample.id+'-answer.json');
+    const answer=JSON.parse(await readFile(join(processEvidence,sample.answerFile),'utf8'));
+    assert.equal(answer.version,1);assert.equal(answer.sampleId,sample.id);assert.equal(answer.turn,sample.turn);
+    assert.equal(answer.stopReason,sample.stopReason);assert.equal(hash(answer.text),sample.answerSha256);
+    assert.equal(Buffer.byteLength(answer.text),sample.answerBytes);
+    const ends=costEvents.filter(event=>event.phase==='agent_end'&&event.turn===sample.turn);
+    assert.equal(ends.length,1,'Final answer requires its actual agent terminal');
+    assert.equal(ends[0].final?.text?.sha256,sample.answerSha256);assert.equal(ends[0].final?.text?.bytes,sample.answerBytes);
+  }
+  return {complete:true,providerOriginals:providers.length,finalAnswers:answers.length,contentPolicy:'private provider body and actual final text; no HTTP headers'};
+}
+
+/** A reviewer may stop future samples after a natural terminal; this cannot
+ * mark a sample successful, change a prompt or authorize a replacement run. */
+export async function readModelReviewStop(evidence,completed) {
+  const path=join(evidence,'semantic-stop-request.json');let bytes;
+  try{bytes=await readFile(path);}catch(error){if(error.code==='ENOENT')return null;throw error;}
+  const request=JSON.parse(bytes.toString('utf8'));
+  assert.deepEqual(Object.keys(request).sort(),['version','kind','sampleId','answerSha256','reason'].sort());
+  assert.equal(request.version,1);assert.equal(request.kind,'semantic-failure');
+  assert.ok(typeof request.reason==='string'&&request.reason.trim()&&request.reason.length<=5000);
+  const samples=completed.filter(sample=>sample.id===request.sampleId&&typeof sample.answerSha256==='string');
+  assert.equal(samples.length,1,'Semantic stop must name one completed answer');
+  assert.equal(request.answerSha256,samples[0].answerSha256,'Semantic stop must bind the exact observed answer');
+  return {...request,path,requestSha256:hash(bytes)};
 }
 
 export function summarizeNativeSource(events, transport, ownedLifecycle, requiredFiles) {
@@ -781,12 +830,16 @@ async function run(config, parent) {
   const runId = randomUUID(), clockId = runId, planned = [
     ...Array.from({length:config.counts.cold},(_,i)=>({id:'cold-'+(i+1),cache:'cold',session:'new'})),
     ...Array.from({length:config.counts.warm},(_,i)=>({id:'warm-'+(i+1),cache:'warm',session:'existing'}))];
-  const plan = { version:1, kind:'skill-consumption-model-baseline', runId, clockId, config, preflight,
+  const harnessPaths=['scripts/skill-consumption-model-baseline.mjs','scripts/skill-consumption-cost.mjs','scripts/skill-consumption-provider.mjs',
+    'scripts/notion-default-context.mjs',...(config.transport==='sdk'?['scripts/skill-consumption-source-observer.mjs']:[])];
+  const harnessFiles=await Promise.all(harnessPaths.map(async path=>({path,sha256:hash(await readFile(join(root,path)))})));
+  const plan = { version:1, kind:'skill-consumption-model-baseline', runId, clockId, config, preflight,harnessFiles,
     frozenAt:new Date().toISOString(), samples:planned, freshness:'unchanged production defaults; prefetch false',
     isolation:'disjoint production source/Broker caches; normal authentication only; no oracle preparation',
     warmCondition:'same process and existing session after final cold task; context history is retained and counted',
     answerPredicate:'normal stop, nonblank final text, no permission-only reply, and a frozen expected-answer substring; semantic correctness still requires review',
-    earlyStop:'after first failed task/availability/owned-process failure; preserve remaining not-run entries',
+    earlyStop:'after first failed task/availability/owned-process failure, or a completed-answer semantic stop request; preserve remaining not-run entries',
+    rawEvidence:preflight.comparison?'Private before_provider_request payloads and actual final answers, hash/byte bound to cost events; no HTTP headers. Semantic review may stop future samples at a natural turn terminal.':null,
     role:config.role??null,comparison:preflight.comparison,
     nativeCondition:nativeLocal(config)?'Local fixed files already exist; provider/session cold, OS page cache uncontrolled. Doctor hashes fixed inputs separately; no body is injected into the consumer.':null,
     toolProfile:config.toolProfile??'standard',tools:modelBaselineTools(config), observer:'passive hooks plus Node Undici diagnostics',sourceTransport,
@@ -798,9 +851,22 @@ async function run(config, parent) {
   await save(join(evidence,'plan.json'),plan);
   await save(join(scratch,'owner.json'),{runId,evidence});
   await save(join(evidence,'ownership.json'),{runId,evidence,scratch,kind:plan.kind});
-  const samples = [], processes = []; let stoppedReason;
+  const samples = [], processes = []; let stoppedReason,reviewStop;
+  const checkReviewStop=async local=>{
+    if(stoppedReason||reviewStop)return;
+    const completed=[...samples,...local];
+    try {
+      const request=await readModelReviewStop(evidence,completed);if(!request)return;
+      reviewStop={status:'accepted',...request};
+      const sample=completed.find(sample=>sample.id===request.sampleId);
+      sample.automatedStatus=sample.status;sample.status='failed';sample.semanticReview={status:'failed',reason:request.reason,requestSha256:request.requestSha256};
+      stoppedReason='Semantic review failed for '+request.sampleId+'; no later sample will be submitted';
+    } catch(error) {reviewStop={status:'rejected',error:safeDiagnostic(Buffer.from(error.message))};stoppedReason='Invalid semantic stop request; no later sample will be submitted';}
+    await save(join(evidence,'semantic-stop-applied.json'),reviewStop);
+  };
   console.log(JSON.stringify({status:'running',evidence,planned:planned.length}));
   for (let processIndex=1;processIndex<=config.counts.cold;processIndex++) {
+    await checkReviewStop([]);
     if(stoppedReason) break;
     const id='process-'+processIndex, base=join(scratch,id), processEvidence=join(evidence,id);
     await mkdir(base,{recursive:true,mode:0o700}); await mkdir(processEvidence,{mode:0o700});
@@ -824,12 +890,13 @@ async function run(config, parent) {
     if(preflight.comparison) {
       inspection=join(base,'native-inspection.mjs');
       inspectionLog=nativeLocal(config)?ledger.ledger:join(processEvidence,'read-inspection.jsonl');
+      const rawDirectory=join(processEvidence,'provider-payloads');await mkdir(rawDirectory,{mode:0o700});
       let validatorPath;
       if(!nativeLocal(config)) {
         const candidate=join(dirname(config.extension),'resource-read-projection.ts');
         try{await access(candidate);validatorPath=candidate;}catch(error){if(error.code!=='ENOENT')throw error;}
       }
-      await writeFile(inspection,nativeInspectionExtensionSource({output:inspectionLog,clockId,
+      await writeFile(inspection,nativeInspectionExtensionSource({output:inspectionLog,clockId,rawDirectory,
         files:preflight.comparison.requiredFiles,catalog:preflight.comparison.catalog,
         unselectedFiles:preflight.comparison.unselectedFiles,unselectedSources:preflight.comparison.unselectedSources,
         ...(!nativeLocal(config)?{source:preflight.comparison.source,...(validatorPath?{validatorPath}:{})}:{})}),{mode:0o600,flag:'wx'});
@@ -846,6 +913,7 @@ async function run(config, parent) {
       rpc=await startRpc({host:'pi',cwd:base,env,args,timeoutMs:120000,waitForState:false});
       const tasks=[planned[processIndex-1],...(processIndex===config.counts.cold?planned.slice(config.counts.cold):[])];
       for(const task of tasks) {
+        await checkReviewStop(local);if(stoppedReason)break;
         const sourceStartRow=(await sourceRows(ledger.ledger,sourceTransport)).events.length;
         const sample={...task,process:id,turn:++turn,status:'running',submitNs:process.hrtime.bigint().toString(),promptSha256:hash(config.prompt),sourceStartRow};
         try {
@@ -854,6 +922,8 @@ async function run(config, parent) {
           const completed=await pending;sample.completeNs=completed.completeNs;if(completed.error)throw completed.error;
           const answer=textOf(completed.frame);
           sample.answerSha256=hash(answer.text); sample.answerBytes=Buffer.byteLength(answer.text); sample.stopReason=answer.stopReason;
+          sample.answerFile=task.id+'-answer.json';
+          await save(join(processEvidence,sample.answerFile),{version:1,sampleId:sample.id,turn:sample.turn,stopReason:answer.stopReason,text:answer.text});
           sample.taskVerified=verifyModelAnswer(answer,config.expectedAnswers);
           assert.ok(sample.taskVerified,'Successful final must answer the frozen task');
           if(preflight.comparison) {
@@ -880,6 +950,7 @@ async function run(config, parent) {
         }
         sample.sourceEndRow=(await sourceRows(ledger.ledger,sourceTransport)).events.length;
         await save(join(processEvidence,task.id+'-outcome.json'),sample); local.push(sample);
+        await checkReviewStop(local);
         if(stoppedReason) break;
       }
       if(!nativeLocal(config)) {
@@ -904,8 +975,13 @@ async function run(config, parent) {
         transport:sourceTransport,sourceObservation,ownedLifecycle:lifecycle });
       if(nativeLocal(config)) processResult.observedSourcesQuiet=processResult.source.complete;
       if(inspectionLog) {
-        try{verifyNativeInspectionEvents(await rows(inspectionLog));processResult.inspectionComplete=true;}
+        try{
+          const inspectionEvents=await rows(inspectionLog);verifyNativeInspectionEvents(inspectionEvents);processResult.inspectionComplete=true;
+          processResult.rawEvidence=await verifyModelRawEvidence({processEvidence,events:inspectionEvents,costEvents:events,
+            answers:local.filter(sample=>sample.answerFile)});
+        }
         catch(error){processResult.inspectionComplete=false;processResult.inspectionError=safeDiagnostic(Buffer.from(error.message));}
+        if(!processResult.rawEvidence?.complete)stoppedReason??='Raw provider/answer observation is incomplete; no later sample will be submitted';
       }
       processResult.sourceLedger=ledger.ledger;
       await save(join(processEvidence,'process.json'),processResult);processes.push(processResult);
@@ -929,6 +1005,7 @@ async function run(config, parent) {
     await save(join(evidence,item.id,'process-reconciliation.json'),item);
   }
   const after=await tree(preflight.runtimeDirectory);
+  const harnessUnchanged=(await Promise.all(harnessFiles.map(async file=>hash(await readFile(join(root,file.path)))===file.sha256))).every(Boolean);
   const runtimeBundleUnchanged=config.transport!=='sdk'||JSON.stringify(await bundledRuntimeAt(config.extension))===JSON.stringify(preflight.bundledRuntime);
   let comparisonUnchanged=!preflight.comparison, comparisonError;
   if(preflight.comparison)try{comparisonUnchanged=JSON.stringify(await modelBaselineComparison(config,await resolveHost('pi')))===JSON.stringify(preflight.comparison);}
@@ -937,9 +1014,9 @@ async function run(config, parent) {
   const sourceComplete=processes.length===config.counts.cold&&processes.every(item=>item.status==='closed'&&item.observedSourcesQuiet&&item.source.complete
     &&(!preflight.comparison||item.inspectionComplete===true));
   const report={version:1,kind:plan.kind,runId,status:sourceComplete&&observed.every(sample=>sample.status==='passed'&&sample.observationComplete)&&observed.length===planned.length?'observed':'incomplete',
-    evidence,scratch,planSha256:hash(await readFile(join(evidence,'plan.json'))),runtimeUnchanged:after.sha256===preflight.runtime.sha256&&runtimeBundleUnchanged&&comparisonUnchanged,
+    evidence,scratch,planSha256:hash(await readFile(join(evidence,'plan.json'))),runtimeUnchanged:after.sha256===preflight.runtime.sha256&&runtimeBundleUnchanged&&comparisonUnchanged&&harnessUnchanged,
     role:config.role??null,comparison:preflight.comparison,comparisonUnchanged,comparisonError,sourceTransport,runtimeBundleUnchanged,
-    sourceComplete,stoppedReason,samples,processes,notClaimed:['Skill task or graph acceptance','installed candidate acceptance','metadata-producer completion inferred from a quiet interval','model SDK retry/queue wait attribution','TCP/TLS wire bytes'],
+    sourceComplete,stoppedReason,reviewStop,harnessUnchanged,samples,processes,notClaimed:['Skill task or graph acceptance','installed candidate acceptance','metadata-producer completion inferred from a quiet interval','model SDK retry/queue wait attribution','TCP/TLS wire bytes'],
     groups:Object.fromEntries(['cold','warm'].map(cache=>[cache,{planned:planned.filter(sample=>sample.cache===cache).length,observed:observed.filter(sample=>sample.cache===cache).length,
       metrics:Object.fromEntries(['submitToFirstProviderMs','submitToFirstModelHttpMs','submitToFirstEffectiveTextMs','submitToCompletionMs','providerPayloadJsonBytes','toolRounds']
         .map(key=>[key,consumptionMetricStats(observed.filter(sample=>sample.cache===cache).map(sample=>sample[key]??null))]))}]))};

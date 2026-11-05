@@ -202,6 +202,10 @@ native 的零 CLI/SDK/来源 HTTP 只有在真实 observer 终界、host close�
 
 所有 provider 请求均计入 payload、tool schema、guidance/目录诊断 span、历史、工具轮次和 reported usage；诊断 span 会重叠，不相加成独立 token 分类。模型 HTTP attempts/发送 body hash 与 hooks 单独对齐。当前原 driver 仍仅驱动 cold/new 和 warm/existing 两种真实模型初态；expired、partial、fork/rewind/compaction 等完整 SC20 组合继续复用既有受控 driver 与各自真实门禁，不能把本切片标成完整矩阵通过。
 
+共同 inspect 模型批次同时在每个 `process-N/provider-payloads/provider-M.json` 保存 `before_provider_request` 的完整实际 payload，并在 `cold-N-answer.json` / `warm-N-answer.json` 保存该 turn 的实际最终答案。它们是私有 Evidence，文件权限为 0600；只保存 payload 和答案，不复制 hook event、HTTP 认证 headers 或凭据。原通用 metrics/transport ledger 继续只含安全的 hash、字节和时序。所有原件的完整 bytes/hash、turn 和顺序须与 cost 事件一致；最终答案须匹配 `agent_end`。只有 owned host 关闭、观察器终界和写盘核验全部完成，成本报告才可完整；缺原件、额外原件、篡改、重复 cost 事件或缺终界均保持 incomplete。setup 旧 receipt 不因此升级为新的模型任务证据。
+
+既定顺序是五个独立进程各一个 cold，最后一个 cold 成功后在同进程、同历史继续二十个 warm。每 turn 的 RPC deadline 为 120 秒，最多二十五次提交；任一功能、可用性或观察失败停止后续样本，不重试、不回退、不补数。`expectedAnswers` 的基础谓词不能代替完整任务语义审阅。审阅发现明确失败时，可在本次 evidence 根原子写入 `semantic-stop-request.json`：`{"version":1,"kind":"semantic-failure","sampleId":"cold-1","answerSha256":"原答案的64位SHA256","reason":"具体未满足的任务要求"}`。请求只能绑定本次已完成答案；runner 在当前自然 turn 终界后停止，保留原自动 outcome，并在 report 中单列语义失败及剩余 `not_run`。该入口不能修改 prompt/model、把失败改为成功或启动替代样本。私有 oracle 不进入模型。运行期间 driver、cost/transport/source observer 和请求账本 helper 的冻结 hash 也必须保持不变。
+
 本次定向验证保留了旧 driver 拒绝纯本地配置的 fail-before，随后覆盖完整投递、错误路径/partial/details/错误 call、缺失/篡改观察、未知 child、SDK/HTTP 和额外 Broker schema 等反例。实际安装 Pi 的受控 HTTP provider 检查走了两次 native read、三个 provider 请求，未加载 Broker，完整主文和资源到达实际 serializer。该受控结果证明驱动接线，真实 Notion、真实模型成本对照和完整 SC20 矩阵尚未由此成立。
 
 该读取探针没有执行完整 comparison Doctor。安装入口审查随后发现错误的 `dist/bundle/core/skills.js` 路径，新增 public Doctor smoke 先复现失败，再按上述包归属定位修复通过。两份证据分别保留，不把早先的读取探针称为 Doctor 已通过。

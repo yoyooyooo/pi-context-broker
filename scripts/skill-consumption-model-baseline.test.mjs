@@ -10,7 +10,7 @@ import test from 'node:test';
 import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { comparisonCatalog, modelBaselineHostArgs, modelBaselineSource, modelBaselineTools, observeNativeInspection,
   summarizeNativeSource, validateModelBaselineConfig, verifyComparisonCatalog, verifyNativeInspectionEvents,
-  summarizeSource, verifyComparisonSelection, verifyModelAnswer } from './skill-consumption-model-baseline.mjs';
+  summarizeSource, verifyComparisonSelection, verifyModelAnswer, verifyModelRawEvidence, readModelReviewStop } from './skill-consumption-model-baseline.mjs';
 
 test('ordinary task acceptance rejects permission-only replies containing the expected answer', () => {
   assert.equal(verifyModelAnswer({ stopReason: 'stop', text: '请先确认授权，我才能回答 12 加 7 是否等于 19。' }, ['19', '十九']), false);
@@ -159,12 +159,13 @@ const nativeMetadata = [{name:'reader',description:'Inspect fixed files.',filePa
 const nativeSystem = '<available_skills><skill><name>reader</name><description>Inspect fixed files.</description><location>/frozen/reader/SKILL.md</location></skill></available_skills>';
 const notionSystem = '<ntn-skills-view-catalog><view source="notion" id="view" database="db">Ready</view><available_skills><skill><name>reader</name><description>Inspect fixed files.</description><location>sr:C'+'a'.repeat(22)+'</location></skill></available_skills></ntn-skills-view-catalog>';
 function nativeProbe(overrides={}) {
-  const lines=[],hooks=new Map(),channels=new Map();
-  let failWrites=false;
+  const lines=[],rawWrites=[],hooks=new Map(),channels=new Map();
+  let failWrites=false,failRawWrites=false;
   const api={on:(name,handler)=>hooks.set(name,[...(hooks.get(name)??[]),handler])};
   const files=nativeFiles.map(({body,...file})=>file);
   const handle=observeNativeInspection(api,{crypto,path,files,catalog:nativeMetadata,output:'/private/native.jsonl',clockId:'native-test',
-    fs:{constants:{O_CREAT:1,O_EXCL:2,O_WRONLY:4},openSync:()=>1,writeSync:(_fd,line)=>{if(failWrites)throw new Error('EVIDENCE_WRITE_FAILED');lines.push(line);},closeSync:()=>{}},
+    fs:{constants:{O_CREAT:1,O_EXCL:2,O_WRONLY:4},openSync:()=>1,writeSync:(_fd,line)=>{if(failWrites)throw new Error('EVIDENCE_WRITE_FAILED');lines.push(line);},closeSync:()=>{},
+      writeFileSync:(file,bytes,options)=>{if(failRawWrites)throw new Error('RAW_EVIDENCE_WRITE_FAILED');rawWrites.push({file,bytes,options});}},
     diagnostics:{subscribe:(name,handler)=>channels.set(name,handler),unsubscribe:name=>channels.delete(name)},...overrides});
   const fire=(name,event={})=>{for(const handler of hooks.get(name)??[])assert.equal(handler(event),undefined,'The passive observer must not transform an event');};
   const read=(file,id='call-'+file.path,{pathname=file.absolutePath,content=file.body,isError=false,details}={})=>{
@@ -173,8 +174,75 @@ function nativeProbe(overrides={}) {
   };
   const provider=(messages,extra={})=>fire('before_provider_request',{payload:{model:'controlled',messages:[{role:'system',content:nativeSystem},...messages],tools:[{type:'function',function:{name:'read',parameters:{type:'object'}}}],...extra}});
   fire('input');
-  return {fire,read,provider,channels,failWrites:value=>{failWrites=value;},finish:handle.finish,events:()=>lines.map(line=>JSON.parse(line))};
+  return {fire,read,provider,channels,rawWrites,failWrites:value=>{failWrites=value;},failRawWrites:value=>{failRawWrites=value;},finish:handle.finish,events:()=>lines.map(line=>JSON.parse(line))};
 }
+
+test('raw provider evidence preserves actual body, schema and guidance without event headers or mutation', () => {
+  const probe=nativeProbe({rawDirectory:'/private/provider-payloads'});
+  const payload={model:'controlled',messages:[{role:'system',content:nativeSystem},{role:'user',content:'Inspect the frozen files.'}],
+    tools:[{type:'function',function:{name:'read',description:'Read a file.',parameters:{type:'object',properties:{path:{type:'string'}}}}}]};
+  const original=JSON.stringify(payload);
+  probe.fire('before_provider_request',{payload,headers:{authorization:'PRIVATE_EVENT_HEADER_NOT_PAYLOAD'}});
+  probe.finish();
+  assert.equal(JSON.stringify(payload),original);
+  assert.equal(probe.rawWrites.length,1,'Every actual provider payload needs its complete private original');
+  assert.deepEqual(probe.rawWrites[0],{file:'/private/provider-payloads/provider-1.json',bytes:original,options:{flag:'wx',mode:0o600}});
+  const event=probe.events().find(item=>item.phase==='native_provider');
+  assert.equal(event.rawPayload,'provider-1.json');assert.equal(event.payloadSha256,digest(original));
+  assert.equal(event.payloadBytes,Buffer.byteLength(original));
+  assert.equal(probe.events().at(-1).rawPayloads,1);verifyNativeInspectionEvents(probe.events());
+});
+
+test('a failed raw write leaves the provider untouched and cannot claim an observer terminal', () => {
+  const probe=nativeProbe({rawDirectory:'/private/provider-payloads'}),payload={messages:[{role:'user',content:'Actual task'}],tools:[]};
+  const before=structuredClone(payload);probe.failRawWrites(true);
+  assert.doesNotThrow(()=>probe.fire('before_provider_request',{payload}));probe.finish();
+  assert.deepEqual(payload,before);assert.equal(probe.rawWrites.length,0);
+  assert.equal(probe.events().at(-1).complete,false);assert.throws(()=>verifyNativeInspectionEvents(probe.events()));
+});
+
+test('private provider and answer originals bind complete cost events and reject tampering or missing observations', async t => {
+  const base=await mkdtemp(path.join(tmpdir(),'model-baseline-raw-'));
+  t.after(()=>{if(process.platform==='darwin')assert.equal(spawnSync('/usr/bin/trash',[base]).status,0);});
+  const rawDirectory=path.join(base,'provider-payloads');await mkdir(rawDirectory);
+  const probe=nativeProbe({rawDirectory});probe.provider([]);probe.finish();
+  for(const item of probe.rawWrites)await writeFile(item.file,item.bytes,item.options);
+  const event=probe.events().find(item=>item.phase==='native_provider'),answerText='Actual final answer, including --from.';
+  const sample={id:'cold-1',turn:1,stopReason:'stop',answerFile:'cold-1-answer.json',answerSha256:digest(answerText),answerBytes:Buffer.byteLength(answerText)};
+  const answer={version:1,sampleId:sample.id,turn:1,stopReason:'stop',text:answerText};
+  await writeFile(path.join(base,sample.answerFile),JSON.stringify(answer),{mode:0o600});
+  const costEvents=[{phase:'provider_request',turn:1,payload:{sha256:event.payloadSha256,bytes:event.payloadBytes}},
+    {phase:'agent_end',turn:1,final:{text:{sha256:sample.answerSha256,bytes:sample.answerBytes}}}];
+  const input={processEvidence:base,events:probe.events(),costEvents,answers:[sample]};
+  assert.deepEqual(await verifyModelRawEvidence(input),{complete:true,providerOriginals:1,finalAnswers:1,contentPolicy:'private provider body and actual final text; no HTTP headers'});
+  await assert.rejects(verifyModelRawEvidence({...input,events:input.events.slice(0,-1)}),/lifecycle/);
+  await assert.rejects(verifyModelRawEvidence({...input,costEvents:[...costEvents,costEvents[0]]}),/every cost event/);
+  await assert.rejects(verifyModelRawEvidence({...input,costEvents:costEvents.slice(0,1)}),/agent terminal/);
+  await writeFile(probe.rawWrites[0].file,probe.rawWrites[0].bytes.replace('controlled','altered---'));
+  await assert.rejects(verifyModelRawEvidence(input));
+  await writeFile(probe.rawWrites[0].file,probe.rawWrites[0].bytes);
+  await writeFile(path.join(base,sample.answerFile),JSON.stringify({...answer,text:'Fabricated final --from'}));
+  await assert.rejects(verifyModelRawEvidence(input));
+  await writeFile(path.join(base,sample.answerFile),JSON.stringify(answer));
+  await writeFile(path.join(rawDirectory,'provider-2.json'),'{}');
+  await assert.rejects(verifyModelRawEvidence(input),/Missing or extra/);
+});
+
+test('semantic stop is bound to one completed answer and cannot replace a prompt, model or outcome', async t => {
+  const base=await mkdtemp(path.join(tmpdir(),'model-baseline-review-'));
+  t.after(()=>{if(process.platform==='darwin')assert.equal(spawnSync('/usr/bin/trash',[base]).status,0);});
+  const sample={id:'cold-1',answerSha256:digest('Observed final answer')};
+  assert.equal(await readModelReviewStop(base,[sample]),null);
+  const request={version:1,kind:'semantic-failure',sampleId:sample.id,answerSha256:sample.answerSha256,reason:'The required cache boundary is missing.'};
+  const file=path.join(base,'semantic-stop-request.json'),write=value=>writeFile(file,JSON.stringify(value));
+  await write(request);const actual=await readModelReviewStop(base,[sample]);
+  assert.equal(actual.answerSha256,sample.answerSha256);assert.equal(actual.requestSha256,digest(JSON.stringify(request)));
+  for(const changed of [{...request,sampleId:'cold-2'},{...request,answerSha256:'a'.repeat(64)},
+    {...request,kind:'passed'},{...request,prompt:'Retry with an easier task'},{...request,reason:''}]) {
+    await write(changed);await assert.rejects(readModelReviewStop(base,[sample]));
+  }
+  await write(request);await assert.rejects(readModelReviewStop(base,[sample,sample]),/one completed/);
+});
 
 test('the frozen comparison uses actual system catalog names, descriptions and exact entries', () => {
   const actual=comparisonCatalog({messages:[{role:'system',content:notionSystem}]});
