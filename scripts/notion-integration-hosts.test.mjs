@@ -1,10 +1,52 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { selectIntegrationHosts, selectIntegrationPrefetch } from './notion-integration-hosts.mjs';
+import { selectIntegrationHosts, selectIntegrationPrefetch, selectLiveCatalogRecord, projectedResourceRef, measuredConsumptionArgs } from './notion-integration-hosts.mjs';
+import { nativeEntries } from './notion-default-context.mjs';
 
 test('default verification keeps the existing two-host contract', () => {
   assert.deepEqual(selectIntegrationHosts({}), ['pi', 'omp']);
+});
+
+test('provider metadata preserves author names, explicit sources and distinct same-name handles', () => {
+  const entry = (source, location) => '<skill><name>真实 Skill &amp; A</name><description>A &lt; B</description><source>' + source + '</source><location>' + location + '</location></skill>';
+  const context = { messages: [{ role: 'system', content: entry('notion', 'sr:C' + 'a'.repeat(22)) + entry('notion', 'sr:C' + 'b'.repeat(22)) + entry('other', 'skill://shared_skill%3Aowner/SKILL.md?snapshot=s_fixed&amp;file_id=main') }] };
+  assert.deepEqual(nativeEntries('pi', context), [
+    { name: '真实 Skill & A', source: 'notion', filePath: 'sr:C' + 'a'.repeat(22), catalog: 'prompt-metadata' },
+    { name: '真实 Skill & A', source: 'notion', filePath: 'sr:C' + 'b'.repeat(22), catalog: 'prompt-metadata' },
+    { name: '真实 Skill & A', source: 'other', filePath: 'skill://shared_skill%3Aowner/SKILL.md?snapshot=s_fixed&file_id=main', catalog: 'prompt-metadata' },
+  ]);
+});
+
+test('fixed public refs select their exact owner without replacing the requested version', () => {
+  const id = 'shared_skill:library-a:owner', page = '11111111-1111-4111-8111-111111111111';
+  const record = { id, name: '真实 Skill & A', alias: 'shared-alias', locator: { page_id: page }, ref: 'skill://' + encodeURIComponent(id) + '/SKILL.md' };
+  const other = { ...record, id: 'shared_skill:other:owner', locator: { page_id: '22222222-2222-4222-8222-222222222222' }, ref: 'skill://shared_skill%3Aother%3Aowner/SKILL.md' };
+  const fixed = record.ref + '?snapshot=s_' + 'a'.repeat(64) + '&file_id=main';
+  assert.equal(selectLiveCatalogRecord([record, other], fixed), record);
+  assert.equal(selectLiveCatalogRecord([record, other], 'skill://' + page.replaceAll('-', '') + '/SKILL.md'), record);
+  assert.equal(selectLiveCatalogRecord([record], 'skill://' + encodeURIComponent(record.name) + '/SKILL.md'), record);
+  assert.throws(() => selectLiveCatalogRecord([record, other], 'skill://shared-alias/SKILL.md'), /exactly one/);
+  assert.throws(() => selectLiveCatalogRecord([record], other.ref), /exactly one/);
+  assert.equal(record.ref.includes('snapshot='), false, 'The selected metadata is not rewritten into a current or fixed ref');
+});
+
+test('resource reads copy the supplied reference of the one selected body', () => {
+  const ref = 'sr:R' + 'x'.repeat(22);
+  const projection = '<context-broker-record kind="skill" name="Skill &amp; A" ref="sr:S' + 'a'.repeat(22) + '"><body>complete source</body><resources>' + JSON.stringify([{ path: 'references/a&b.md', ref }]).replaceAll('&', '&amp;') + '</resources></context-broker-record>';
+  const context = { messages: [{ role: 'user', content: projection }] };
+  assert.equal(projectedResourceRef(context, 'Skill & A', 'references/a&b.md'), ref);
+  assert.throws(() => projectedResourceRef(context, 'Other', 'references/a&b.md'), /one actual provider/);
+  assert.throws(() => projectedResourceRef(context, 'Skill & A', 'references/unknown.md'), /belong/);
+  assert.throws(() => projectedResourceRef({ messages: [...context.messages, ...context.messages] }, 'Skill & A', 'references/a&b.md'), /one actual provider/);
+});
+
+test('the existing CLI ledger measures use and ctl prepare with valid JSON arguments', () => {
+  for (const args of [['use', 'skill://a/SKILL.md'], ['ctl', 'prepare', 'skill://a/SKILL.md'], ['list'], ['read', 'skill://a/SKILL.md'], ['files', 's_fixed']])
+    assert.deepEqual(measuredConsumptionArgs(args), [...args, '--json', '--metrics']);
+  assert.deepEqual(measuredConsumptionArgs(['use', 'a', '--json', '--metrics']), ['use', 'a', '--json', '--metrics']);
+  assert.deepEqual(measuredConsumptionArgs(['read', 'a', '--raw']), ['read', 'a', '--raw']);
+  assert.deepEqual(measuredConsumptionArgs(['ctl', 'doctor']), ['ctl', 'doctor']);
 });
 
 for (const host of ['pi', 'omp']) {

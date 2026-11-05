@@ -9,7 +9,7 @@ import { isolatedEnv, resolveHost, runCommand, spawnHost, signalHost, writeFakeP
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { createNotionFixture, database as fixtureDatabase, secondCanary } from './notion-integration-fixture.mjs';
 import { runNotionModel } from './notion-integration-model.mjs';
-import { selectIntegrationHosts, selectIntegrationPrefetch } from './notion-integration-hosts.mjs';
+import { selectIntegrationHosts, selectIntegrationPrefetch, selectLiveCatalogRecord, projectedResourceRef } from './notion-integration-hosts.mjs';
 import { runConsumerModel } from './notion-consumer-model.mjs';
 import { prepareNativeKinds, runNativeKinds, validateNativeKindsConfig } from './notion-native-kinds.mjs';
 import { createLiveFixture } from './notion-live-fixture.mjs';
@@ -93,7 +93,7 @@ async function doctor() {
 async function sourceLive(scratch,{metadataOnly=false,commandOverride,evidence}={}) {
  const oracleEnv=mode==='model'?verificationCliEnvironment(join(scratch,'model-oracle-cli')):process.env;
  const cmd=commandOverride??command();const resolved=await executable(cmd[0]);const invoke=async args=>invokeJson([resolved.file,...resolved.prefix,...cmd.slice(1)],args,{cwd:scratch,env:oracleEnv,evidence:join(evidence,'command-receipts.jsonl'),category:mode==='model'?'source-live-isolated-oracle':'source-live',deadline:consumerIsolation?180000:60000});
- const listed=await invoke(['list','--database',options.database,...(!consumerIsolation ? options.view ? ['--view',options.view] : ['--default-view'] : [])]);assert.deepEqual(listed.coverage?.failed_sources,[],'Live list must not hide failed sources');assert.equal(listed.coverage?.exhaustive,true,'Explicit database catalog must be exhaustive');assert.ok(listed.coverage?.queried_data_sources?.length,'Live list must cover a data source');const target=options['skill-ref'].split('/')[2];const item=listed.records.find(s=>s.locator?.page_id===target||s.ref===options['skill-ref']);assert.ok(item,'Requested real skill must belong to selected database');
+ const listed=await invoke(['list','--database',options.database,...(!consumerIsolation ? options.view ? ['--view',options.view] : ['--default-view'] : [])]);assert.deepEqual(listed.coverage?.failed_sources,[],'Live list must not hide failed sources');assert.equal(listed.coverage?.exhaustive,true,'Explicit database catalog must be exhaustive');assert.ok(listed.coverage?.queried_data_sources?.length,'Live list must cover a data source');const item=selectLiveCatalogRecord(listed.records,options['skill-ref']);
  if(!consumerIsolation)assert.ok(listed.view?.id,'Native live/model recipe requires a selected View containing the requested record');
  if(metadataOnly)return {command:cmd,alias:item.alias??item.name,record:item,skillRef:options['skill-ref'],live:{scope:listed.scope,skillId:item.id,metadataOnly:true}};
  const read=await invoke(['read',options['skill-ref'],'--database',options.database]);assert.ok(read.content?.trim()&&read.snapshot_id,'Live read must return a body and snapshot');assert.equal(read.record?.id,item.id,'Live read must preserve the selected stable content identity');assert.deepEqual(read.record?.locator,item.locator,'Live read must preserve the selected physical locator');const exported=await invoke(['export',read.snapshot_id,...['--projection','snapshot'],'--format','directory','--output',join(scratch,'live-export')]);const entry=join(exported.output,exported.main_path??'SKILL.md');const body=await readFile(entry,'utf8');assert.ok(body.trim());
@@ -118,7 +118,10 @@ async function scriptedProvider(directory) {
 async function hostRun(host,context) {
  const {scratch,evidence,fixture,extension}=context;const namespace=fixture.namespace??'notion';const label=namespace==='notion'?host:host+'-'+namespace;const base=join(scratch,label);await mkdir(base,{recursive:true});const agentDir=join(base,'agent');await mkdir(join(agentDir,'context-broker'),{recursive:true});const sessions=join(base,'sessions');await mkdir(sessions);
  const source=fixture.source??{type:'notion',id:'notion',namespace:'notion',command:fixture.command,database:options.database??fixtureDatabase,prefetch:selectedPrefetch,cacheDir:join(base,'source-cache'),requestTimeoutMs:fixture.live?30000:1500};const config=join(agentDir,'context-broker','config.yml');await writeFile(config,JSON.stringify({sources:[source]}));
- const selection=source.type==='notion'?`${fixture.alias}@${namespace}`:`${namespace}/${fixture.alias}`;
+  const selection=source.type==='notion'?(fixture.selectionToken??`${fixture.alias}@${namespace}`):`${namespace}/${fixture.alias}`;
+  const nativeName=(source.type==='notion'?`${namespace}/${selection.slice(0,-namespace.length-1)}`:selection).replace(/[^a-z0-9-]/g,'-');
+  const namedNotion=host==='pi'&&source.type==='notion', catalogName=namedNotion?(fixture.record?.name??fixture.name):nativeName;
+  const catalogEntries=context=>nativeEntries(host,context).filter(entry=>entry.name===catalogName&&(!namedNotion||entry.source===source.id));
  const provider=await scriptedProvider(base);const providerFile=join(evidence,label+'-provider.jsonl');const plan=join(base,'tool-plan.json');await save(plan,{trigger:'NEVER',id:'notion-read-1',path:'/nonexistent'});
  const env=isolatedEnv({base,agentDir,CONTEXT_BROKER_HOST:host,CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE:providerFile,CONTEXT_BROKER_LOG_FILE:join(evidence,label+'-decisions.jsonl'),BROKER_NOTION_TOOL_PLAN:plan});
  if(['live','live-fixture','model'].includes(mode)) {
@@ -144,9 +147,8 @@ async function hostRun(host,context) {
   // body failure before startup so default-View prefetch cannot win this race.
   let failureReadStart=0;
   if(fixture.setScenario){assert.ok(fixture.callsPath,'Controlled activation failures require a source-call ledger');failureReadStart=(await rows(fixture.callsPath)).length;await fixture.setScenario('denied',{activationOnly:true});}
-  rpc=await startRpc({host,cwd:base,env,args});await waitForCatalog(providerFile);await rpc.prompt('Describe available ledger skill names without opening a file.');let captures=await rows(providerFile);assert.ok(captures.length);const initial=JSON.stringify(captures[0].context);assert.ok(initial.includes(fixture.alias),'Default host catalog must advertise the remote alias');assert.equal(count(captures[0].context,fixture.marker),0,'Metadata must not contain skill body');
-  const nativeName=(namespace+'-'+fixture.alias).replace(/[^a-z0-9-]/g,'-');
-  const selected=nativeEntries(host,captures[0].context).find(skill=>skill.name===nativeName);
+   rpc=await startRpc({host,cwd:base,env,args});await waitForCatalog(providerFile);await rpc.prompt('Describe available ledger skill names without opening a file.');let captures=await rows(providerFile);assert.ok(captures.length);assert.equal(count(captures[0].context,fixture.marker),0,'Metadata must not contain skill body');
+   const selectedEntries=catalogEntries(captures[0].context);assert.equal(selectedEntries.length,1,'Default host catalog must advertise the exact author name and selected source once');const selected=selectedEntries[0];
   const location=selected?.filePath;assert.ok(location,'Host skill catalog must expose the selected native read entry');observations.push('metadata-only default host catalog');
   if(fixture.setScenario){
    for(const scenario of ['denied','malformed','timeout']){
@@ -187,9 +189,9 @@ async function hostRun(host,context) {
   if(fixture.resourceCanary){
    // Host catalog locations belong to the current process. Earlier RPC hosts
    // above have closed; their discovery paths are not portable resource refs.
-   const currentEntry=nativeEntries(host,captures.at(-1).context).find(skill=>skill.name===nativeName);
+    const currentEntries=catalogEntries(captures.at(-1).context);assert.equal(currentEntries.length,1);const currentEntry=currentEntries[0];
    assert.ok(currentEntry?.filePath,'Current provider catalog must advertise the selected resource owner');
-   const resourceLocation=join(dirname(currentEntry.filePath),fixture.resourcePath??'references/ledger.md');
+    const resourceLocation=namedNotion?projectedResourceRef(captures.at(-1).context,catalogName,fixture.resourcePath??'references/ledger.md'):join(dirname(currentEntry.filePath),fixture.resourcePath??'references/ledger.md');
    await save(plan,{trigger:'OPEN_LINKED_LEDGER',id:'notion-resource-2',path:resourceLocation});
    await rpc.prompt('OPEN_LINKED_LEDGER: read the linked ledger resource.');captures=await rows(providerFile);
    assert.ok(JSON.stringify(captures.at(-1).context.messages).includes(fixture.resourceCanary),'Real host read must return linked resource bytes');
@@ -209,9 +211,11 @@ async function hostRun(host,context) {
    await fixture.setScenario('duplicates');const duplicateBase=join(base,'duplicates');await mkdir(duplicateBase);const duplicateCapture=join(evidence,label+'-duplicates-provider.jsonl');const duplicateEnv={...env,CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE:duplicateCapture};
    rpc=await startRpc({host,cwd:base,env:duplicateEnv,args:[...args,'--session-dir',duplicateBase]});await waitForCatalog(duplicateCapture);await rpc.prompt('List available skill names only.');const catalog=(await rows(duplicateCapture))[0].context;
    const entries=nativeEntries(host,catalog);
-   const selectedPages=entries.filter(entry=>entry.name.startsWith(nativeName+'-'));assert.equal(selectedPages.length,2,'Same alias pages must retain two qualified native names');assert.equal(count(catalog,fixture.marker),0);
-   const before=(await rows(duplicateCapture)).length;await rpc.prompt(`$${fixture.alias}@${namespace} Apply this skill.`);assert.equal((await rows(duplicateCapture)).length,before,'Ambiguous alias must block provider request');
-   for(const entry of selectedPages){const start=(await rows(duplicateCapture)).length;await rpc.prompt(`/skill:${entry.name}`);const contexts=(await rows(duplicateCapture)).slice(start);const expected=entry.filePath.includes('22222222')?secondCanary:fixture.marker;assert.ok(contexts.some(row=>JSON.stringify(row.context.messages).includes(expected)),'Qualified native page must load its own distinct body');}
+    const selectedPages=namedNotion?catalogEntries(catalog):entries.filter(entry=>entry.name.startsWith(nativeName+'-'));assert.equal(selectedPages.length,2,'Same alias pages must retain two distinct read entries');assert.equal(new Set(selectedPages.map(entry=>entry.filePath)).size,2);assert.equal(count(catalog,fixture.marker),0);
+    const before=(await rows(duplicateCapture)).length,ambiguousFrameStart=rpc.frames.length;let ambiguousFailure;try{await rpc.prompt(`$${fixture.alias}@${namespace} Apply this skill.`);}catch(error){ambiguousFailure=error.message;}assert.equal((await rows(duplicateCapture)).length,before,'Ambiguous alias must block provider request');
+    assert.match(JSON.stringify(rpc.frames.slice(ambiguousFrameStart)),/ambiguous/i,'The native boundary must report the actual selection ambiguity');observations.push({scenario:'ambiguous alias rejection',providerRequests:0,reportedFailure:ambiguousFailure??'host handled blocked selection'});
+    const qualified=namedNotion?fixture.duplicateSelections.map(entry=>({name:nativeName+'-'+entry.pageId.replaceAll('-',''),expected:entry.marker})):selectedPages.map(entry=>({name:entry.name,expected:entry.filePath.includes('22222222')?secondCanary:fixture.marker}));
+    for(const entry of qualified){const start=(await rows(duplicateCapture)).length;await rpc.prompt(`/skill:${entry.name}`);const contexts=(await rows(duplicateCapture)).slice(start);assert.ok(contexts.some(row=>JSON.stringify(row.context.messages).includes(entry.expected)),'Qualified native page must load its own distinct body');}
    await save(join(evidence,label+'-duplicates-rpc.json'),rpc.frames);await rpc.stop();rpc=undefined;await fixture.setScenario('normal');observations.push('ambiguous alias blocked and two qualified pages selected');
   }
   if(fixture.callsPath){

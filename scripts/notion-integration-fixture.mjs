@@ -25,7 +25,8 @@ export async function createNotionFixture(directory) {
   const callsPath = join(directory, 'notion-fixture-calls.jsonl');
   const setScenario = async (scenario, options = {}) => writeFile(statePath, JSON.stringify({ ...options, scenario, callsPath }));
   await setScenario('normal');
-  return { command: [process.execPath, fileURLToPath(import.meta.url), '--state', statePath], statePath, callsPath, canary, resourceCanary, skillRef, alias, snapshotId: snapshot, scope, setScenario };
+  return { command: [process.execPath, fileURLToPath(import.meta.url), '--state', statePath], statePath, callsPath, canary, resourceCanary, skillRef, alias, name: 'UI Alpha', snapshotId: snapshot, scope, setScenario,
+    duplicateSelections: [{ pageId: skillRef.split('/')[2], marker: canary }, { pageId: '22222222-2222-4222-8222-222222222222', marker: secondCanary }] };
 }
 async function main() {
   const args = process.argv.slice(2);

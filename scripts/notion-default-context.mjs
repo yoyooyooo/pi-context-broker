@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { isolatedEnv } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { database as fixtureDatabase, unflaggedAlias, unflaggedCanary, missingAlias, missingCanary } from './notion-integration-fixture.mjs';
+import { decodeCatalogText, measuredConsumptionArgs } from './notion-integration-hosts.mjs';
 
 const helper = fileURLToPath(import.meta.url);
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
@@ -70,7 +71,7 @@ export async function runLedger(configPath, args) {
   const safe = { kind: 'cli', command: args[0], ref: args[1]?.startsWith('skill://') || args[1]?.startsWith('s_') ? args[1] : null, policy: args.includes('--refresh') ? 'refresh' : args.includes('--max-age') ? args[args.indexOf('--max-age') + 1] : 'default' };
   const log = (phase, details = {}) => appendFile(config.ledger, JSON.stringify({ ...safe, requestId, pid: process.pid, phase, ...details, at: new Date().toISOString() }) + '\n', { mode: 0o600 });
   await log('started');
-  const measured = ['list', 'prepare', 'read', 'files'].includes(args[0]) && !args.includes('--metrics') && !args.includes('--raw') ? [...args, '--metrics'] : args;
+  const measured = measuredConsumptionArgs(args);
   const child = spawn(config.command[0], [...config.command.slice(1), ...measured], { env: { ...process.env, NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000' }, shell: false, stdio: ['inherit', 'pipe', 'inherit'] });
   const chunks = [];
   let bytes = 0;
@@ -115,9 +116,15 @@ export function nativeEntries(host, context) {
     if (text) content.push(text);
   }
   const text = [...content, skills].join('\n');
-  const metadata = [...text.matchAll(/<skill>\s*<name>\s*([^<]+)\s*<\/name>[\s\S]*?<location>\s*([^<]+)\s*<\/location>[\s\S]*?<\/skill>/g)].map(match => ({ name: match[1].trim(), filePath: match[2].trim(), catalog: 'prompt-metadata' }));
+  const metadata = [...text.matchAll(/<skill>([\s\S]*?)<\/skill>/g)].flatMap(match => {
+    const name = /<name>\s*([^<]+)\s*<\/name>/u.exec(match[1])?.[1];
+    const location = /<location>\s*([^<]+)\s*<\/location>/u.exec(match[1])?.[1];
+    const source = /<source>\s*([^<]+)\s*<\/source>/u.exec(match[1])?.[1];
+    return name && location ? [{ name: decodeCatalogText(name.trim()), filePath: decodeCatalogText(location.trim()),
+      ...(source ? { source: decodeCatalogText(source.trim()) } : {}), catalog: 'prompt-metadata' }] : [];
+  });
   const native = host === 'omp' ? (context.tools ?? []).flatMap(tool => tool.tool?.session?.skills ?? []).map(item => ({ ...item, catalog: 'host-native' })) : [];
-  return [...new Map([...metadata, ...native].map(item => [item.name, item])).values()];
+  return [...new Map([...metadata, ...native].map(item => [JSON.stringify([item.name, item.source ?? '', item.filePath]), item])).values()];
 }
 const contentRequests = requests => requests.filter(row => row.kind === 'http' && row.phase === 'attempt' && row.request_kind === 'notion_body');
 const exportsStarted = requests => requests.filter(row => row.kind === 'cli' && row.phase === 'started' && row.command === 'export');
