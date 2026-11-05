@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { doctor, executePlan, freezePlan, measureCommand, metricsSummary, sourceIdentity } from './skill-consumption-source-baseline.mjs';
+import { cleanup, doctor, executePlan, freezePlan, measureCommand, metricsSummary, sourceIdentity } from './skill-consumption-source-baseline.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const base = await mkdtemp(join(await realpath(tmpdir()), 'source-baseline-driver-test-'));
@@ -56,16 +56,18 @@ test('failed CLI response keeps its complete attempt metrics and raw failure std
 });
 
 // This child is a driver fixture, never evidence for product performance.
-function fixtureCli() {
+function fixtureCli(failure = null) {
   const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
   const digest = value => crypto.createHash('sha256').update(value).digest('hex');
   const canonical = value => JSON.stringify(value, (_, item) => item && typeof item === 'object' && !Array.isArray(item)
     ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
   const args = process.argv.slice(2);
+  if (args[0] === 'ctl') args.shift();
   if (args.includes('--help')) { console.log('--metrics --database --max-age 0, Ns, Nm, Nh --from'); return; }
   if (args.includes('--version')) { console.log('source-driver-fixture v1'); return; }
   const metrics = { trace_enabled: true, trace: [], total_requests: 0, trace_dropped: 0 };
   const send = value => console.log(JSON.stringify({ ...value, request_metrics: metrics }));
+  if (failure) { send({ ok: false, error: { code: failure, operation_id: 'original-unknown' } }); process.exitCode = 1; return; }
   const state = process.env.NTN_SKILLS_HOME;
   const root = 'skill://shared_skill%3Atest%3Aone/SKILL.md', id = 'shared_skill:test:one', scope = 'a'.repeat(64);
   const body = '# Fixture\n', version = digest(body), snapshot = 's_' + digest(JSON.stringify([scope, id, version]));
@@ -84,9 +86,12 @@ function fixtureCli() {
     const node = { id, ref, state: 'prepared', roles: ['root'], record, kind: 'skill', binding, path: 'SKILL.md', content: body, bytes: Buffer.byteLength(body), body_sha256: digest(body),
       files: [{ path: 'SKILL.md', bytes: Buffer.byteLength(body), sha256: digest(body), ref }], required: [], candidates: [], references: [],
       source, freshness: { policy: pinned ? 'pinned' : 'max_age', max_age_ms: expired ? 1000 : 300000 } };
-    const vector = { version: 1, kind: 'observed_version_vector', purpose: 'use', scope, roots: [id], required: [], bindings: [binding] };
-    send({ ok: true, version: 1, status: 'ready', purpose: 'use', scope, roots: [{ target: args[1], id, ref, readiness: 'ready' }], nodes: [node],
-      graph_lock: { ...vector, sha256: digest(canonical(vector)) }, session_bindings: [binding], required: [], required_closure: [id] });
+    const purpose = args[args.indexOf('--purpose') + 1];
+    const vector = { version: 1, kind: 'observed_version_vector', purpose, scope, roots: [id], required: [], bindings: [binding] };
+    send({ ok: true, version: 1, status: 'ready', purpose, scope, roots: [{ target: args[1], id, ref, readiness: 'ready' }], nodes: [node],
+      graph_lock: { ...vector, sha256: digest(canonical(vector)) }, session_bindings: [binding], required: [], required_closure: [id],
+      usage: { prepared_nodes: 1 }, preparation_metrics: { root_ready_ms: 7, required_ready_ms: 8, elapsed_ms: 9 },
+      fixture_scheduler_root: process.env.NTN_SKILLS_SCHEDULER_ROOT });
   } else if (args[0] === 'read') send({ ok: true, record, scope, snapshot_id: snapshot, version_id: version, ref, entrypoint: 'SKILL.md', path: 'SKILL.md',
     content: body, range: { start: 1, end: 2, total_lines: 2 }, has_more: false, freshness: { policy: 'pinned' } });
   else { send({ ok: false, error: { code: 'INVALID_ARGUMENT' } }); process.exitCode = 2; }
@@ -185,4 +190,52 @@ test('resource-only cold samples run one read, preserve complete-cache observati
   assert.equal(samples[0].preparation, null);
   assert.ok(samples[1].errors.some(error => error.code === 'SOURCE_DRIFT'));
   assert.equal(samples[1].sourceIdentityVerified, false);
+});
+
+test('inspect-current measures one public prepare per empty cold state and retains root-ready timing', async () => {
+  const cli = join(base, 'inspect-fixture.cjs'); await writeFile(cli, '(' + fixtureCli.toString() + ')();\n', { mode: 0o600 });
+  const config = { command: [process.execPath, cli], database: '00000000-0000-4000-8000-000000000001',
+    root: 'skill://shared_skill%3Atest%3Aone/SKILL.md', pipeline: 'inspect-current',
+    evidenceRoot: join(base, 'inspect-runs'), timeoutMs: 2000, samples: { cold: 2, warm: 0, 'expired-unchanged': 0, partial: 0 } };
+  const plan = await freezePlan(config);
+  assert.deepEqual(plan.pipeline, ['prepare-one-current-inspect']);
+  const report = await executePlan(plan);
+  assert.equal(report.artifactIntegrity.valid, true);
+  assert.equal(report.operationCount, 2);
+  assert.equal(report.setups.length, 0);
+  assert.equal(report.groups.cold.outcomes.passed, 2);
+  assert.equal(report.groups.cold.rootReadyMs.median, 7);
+  const samples = JSON.parse(await readFile(join(plan.run, 'samples.json'), 'utf8'));
+  for (const sample of samples) {
+    assert.equal(sample.cliStarts, 1); assert.equal(sample.executedMainReads, 0); assert.equal(sample.plannedMainReads, 0);
+    assert.equal(sample.initialState.strategy, 'empty-owned-state');
+    assert.equal(sample.preparation.rootReadyMs, 7);
+    const receipt = JSON.parse(await readFile(sample.operations[0], 'utf8'));
+    assert.equal(JSON.parse(await readFile(receipt.stdout.path, 'utf8')).fixture_scheduler_root, join(sample.initialState.path, 'scheduler'));
+    assert.equal(sample.elapsedMs, receipt.elapsedMs);
+    assert.deepEqual(receipt.args, ['ctl', 'prepare', config.root, '--purpose', 'inspect', '--database', config.database, '--metrics']);
+  }
+  for (const extra of [{ resourcePath: 'references/example.md' }, { resourcePath: '' },
+    ...['warm', 'expired-unchanged', 'partial'].map(group => ({ samples: { ...config.samples, [group]: 1 } }))])
+    await assert.rejects(() => freezePlan({ ...config, ...extra }), /inspect-current/);
+});
+
+test('inspect-current stops after the original failed operation and retains its recovery state', async () => {
+  const cli = join(base, 'inspect-unknown.cjs'); await writeFile(cli, '(' + fixtureCli.toString() + ')("WRITE_OUTCOME_UNKNOWN");\n', { mode: 0o600 });
+  const config = { command: [process.execPath, cli], database: '00000000-0000-4000-8000-000000000001',
+    root: 'skill://shared_skill%3Atest%3Aone/SKILL.md', pipeline: 'inspect-current',
+    evidenceRoot: join(base, 'inspect-failed-runs'), timeoutMs: 2000, samples: { cold: 3, warm: 0, 'expired-unchanged': 0, partial: 0 } };
+  const plan = await freezePlan(config), report = await executePlan(plan);
+  assert.equal(report.operationCount, 1);
+  assert.equal(report.coverageComplete, true);
+  assert.equal(report.groups.cold.outcomes.failed, 1);
+  assert.equal(report.groups.cold.outcomes.not_run, 2);
+  const samples = JSON.parse(await readFile(join(plan.run, 'samples.json'), 'utf8'));
+  const receipt = JSON.parse(await readFile(samples[0].operations[0], 'utf8'));
+  assert.equal(receipt.errorCode, 'WRITE_OUTCOME_UNKNOWN');
+  assert.equal(JSON.parse(await readFile(receipt.stdout.path, 'utf8')).error.operation_id, 'original-unknown');
+  assert.ok(samples.slice(1).every(sample => sample.errors[0].code === 'INSPECT_STOPPED_AFTER_FAILURE'));
+  await assert.rejects(() => cleanup(plan), /retain.*failed inspect/i);
+  assert.ok((await stat(join(plan.run, 'working'))).isDirectory());
+  await assert.rejects(() => executePlan(plan), /already started/);
 });

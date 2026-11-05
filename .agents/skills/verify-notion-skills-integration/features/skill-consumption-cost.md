@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | Pi 用户提交与 provider | `skill-consumption-cost.mjs` / observer JSONL | 同机单调时间、实际 provider hook 的 JSON bytes/hash、tool schema/目录/正文/资源/历史的分项字节与模型报告 usage |
 | 模型 HTTP | `skill-consumption-provider.mjs` / transport JSONL | Node Undici diagnostics 的实际 request body hash/bytes、response entity chunks、真实尝试；不替换 fetch、不消费响应、不注入工具参数 |
-| Source CLI | `skill-consumption-source-baseline.mjs` / 每个 child 的 receipt、stdout、lifecycle | prepare 后逐节点固定 read，或独立单资源 read；request_metrics 中的 metadata/body/retained-body/write/provider、retry、queue 与响应解码字节 |
+| Source CLI | `skill-consumption-source-baseline.mjs` / 每个 child 的 receipt、stdout、lifecycle | prepare 后逐节点固定 read、独立单资源 read，或单 current inspect；request_metrics 中的 metadata/body/retained-body/write/provider、retry、queue 与响应解码字节 |
 | Pi 默认 Source SDK / 显式兼容 CLI | `skill-consumption-source-observer.mjs` / safe-source-requests JSONL | 进程内 SDK list/consume/read/read-resources 的公开 start/end 与安全 request_metrics；显式兼容 CLI 的真实 spawn/close 和完整 stdout 中的 request_metrics。SDK 操作、CLI 子进程与 HTTP attempt 分别计数 |
 | 普通启动顺序 | `skill-consumption-startup.mjs` | 实际 Pi，受控 source/provider；原生 RPC 提交先于目录完成。受控 stream 不等于真实模型 HTTP 或 token |
 | 真实模型成本任务 | `skill-consumption-model-baseline.mjs` | 固定 magpie/group/flash-free；正常工具、冻结的普通或 Skill 任务；独立 cold 进程和最后一个进程中的 existing-session warm 续接。原 driver 的 `pi-native-local` 臂不加载 Broker，使用 Pi 原生发现/read；任务类型分组记录，成本 driver 不替代 Skill 完整消费断言 |
@@ -42,6 +42,12 @@ Doctor 不调用模型或真实 Notion。配置和证据均放在 checkout 外�
 
 可选 `resourcePath` 增加一次根固定资源读取。独立单资源基线使用 `pipeline: "resource-only"`、非空 `resourcePath`，以及 `{"cold":5,"warm":0,"expired-unchanged":0,"partial":0}`；它每例仅启动一个当前资源 read，之后只读本例本地缓存，无 prepare/files 或主文读取。
 
+SC11 的单 current inspect 使用 `pipeline: "inspect-current"`、cold-only counts，并拒绝任何 `resourcePath`。每例在全新的 owned state 只执行一次公开 `ctl prepare ROOT --purpose inspect --database DATABASE --metrics`；不追加 read/files/export，也不使用 forced refresh 或 TTL 改写。输出须为唯一 ready root、完整正文 bytes/hash、固定身份和完整目录；Requires/Members 保持 known。首个有效样本冻结这些身份与目录，其后漂移失败。
+
+`elapsedMs` 取实际 CLI child 从启动到 close 的完整时间（包含 startup 与完整 stdout）；`preparation.rootReadyMs` 取同一结果的公开 `preparation_metrics.root_ready_ms`，表示准备开始到根已就绪，不包含此前 CLI startup。保留两者、每对样本和全部 HTTP attempts/bytes、queue/retry；不可只选其中改善的一项。trace 不完整、正文/身份错误或任何调用失败都会停止余下 inspect 样本，标为 not_run；unknown write 保留原 operation，不能重放。失败状态不进自动 Cleanup，留待原操作恢复与审阅。
+
+旧包/候选配对先冻结实际 archive、安装 CLI/SDK/Node、同一 root/database/认证 scope、所有配置和样本顺序，再交错串行运行各自新目录中的样本。比较全部 metadata/body/retained/write/provider 账本，不能仅比较目录字节；current 消费可能 retention/adoption，实际写入不能预先填零或从成本中扣去。N=1 的受控字节回退保留；增加一次完整页 GET 对真实首读延迟的影响须由该窗口判断。有限样本只能形成该窗口的判断，不能外推 p95、Agent 任务成本或日用通过。源漂移、权限变化、未知归属或不等价远端写入使配对不可比较，不替换失败样本。
+
 ```bash
 node scripts/skill-consumption-source-baseline.mjs doctor --config /absolute/source-config.json
 node scripts/skill-consumption-source-baseline.mjs plan --config /absolute/source-config.json
@@ -51,6 +57,24 @@ node scripts/skill-consumption-source-baseline.mjs run --run /absolute/reported-
 Plan 在远程读取前冻结 CLI/hash、方法、样本顺序和初态；执行拒绝被修改的 driver 或 CLI，不重复执行同一个 run。首个实际 cold 样本建立源身份锚，之后的 scope/snapshot/version/hash 漂移必须失败；不由 oracle 预热 consumer。独立 oracle 有自己的状态根与成本账本。
 
 Cold 每例为空的自有状态；warm 使用独立 setup 后的共享自有状态，固定 5m 策略。Expired 使用冻结的 `--max-age 1s` 和实际单调计时至少 1001ms 的等待，验证 freshness 回执；不是 `--refresh` 或 `--max-age 0` 的强制全量行为。Partial 仅把已验证的自有主文对象移入系统 Trash，保存原对象和 manifest，随后走原固定 pin；不得回退 current 或补做成功来替换失败。
+
+### SC11 的六样本采用门槛失败
+
+2026-11-05 的 `inspect-current` 实验按冻结的 C6→候选、候选→C6、C6→候选顺序执行，六次均为独立空 consumer state。C6 包 SHA-256 为 `84f79a9d28a7667f0a58b33e3c5a0598c7adc3349e8263c5976ee8143153c1e4`，候选包为 `b647882c074f8e09a9c6600a9408aee1f6778932f2f7abc73c12b214408ce348`。完整安装入口、SDK、Node、driver、输入、scope 和独立 oracle hash 均在原计划中冻结。
+
+| Pair 与顺序 | C6 elapsed / rootReady ms | 候选 elapsed / rootReady ms | 候选减 C6 ms | C6 / 候选总 response B |
+| --- | ---: | ---: | ---: | ---: |
+| 1，C6→候选 | 9875.752 / 9572 | 9007.326 / 8626 | -868.425 / -946 | 1,971,679 / 1,182,312 |
+| 2，候选→C6 | 8302.505 / 7993 | 8683.400 / 8384 | +380.895 / +391 | 1,971,679 / 1,182,292 |
+| 3，C6→候选 | 8588.354 / 8280 | 10698.151 / 10401 | +2109.797 / +2121 | 1,971,679 / 1,182,316 |
+
+每对只增加一次选中根 metadata GET，HTTP attempts 为 15→16。三页 Skills inventory 保持完整；四个 body attempts 的目标、归属与 395,627 response B 相等。正文、46 个落盘文件的 bytes/hash、scope/version/pin 和关系目录均与独立原件一致。已有离线 retained-source proof 绑定每个 chunk 和 owner，没有为本实验补发归属查询。原 `unclassified_body` 类别继续保留，来源归属单列；Requires 和未选 Members 的 body attempts 为零。
+
+各臂 elapsed 中位数为 C6 8588.354 ms、候选 9007.326 ms；rootReady 为 8280 ms、8626 ms。paired delta 中位数分别为 +380.895 ms、+391 ms。每对总 decoded response B 约减少 40.035%，但冻结的两项延迟门槛均失败。`functional_acceptance=true` 与 `adoption_gate_passed=false` 分开保存。候选运行时代码和专用断言已撤回，原 scalar read 复用与 graph 完整 inventory 保持原行为；本 driver 的冷 inspect 测量入口独立保留。
+
+六次共 93 HTTP、9,461,957 decoded response B，write/provider 实测为零，无 unknown bytes、缺失归属、失败替换或补跑。原 E→C→E 六次均通过，只把 owned working 移至系统 Trash，原包、失败、计划、stdout、trace 和 source proof 全部保留。日用配置 hash 不变。三对数据不支持 p95 或全 Agent 任务收益；受控 N=1 的 +864 B 反例继续有效。
+
+证据根为 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc11-single-inspect-iyw1oxit`。`live-pair-plan/paired-plan.json` SHA-256 为 `e313aa2edb966982a18a3f2d3a1119cbf42fd3d47edc8792ef8bc5b75cf887ad`；`real-pair-result.json` 为 `515544b7210df7847f77bbaf05454f50309af5c5936b651dbc435a26008d7700`；同目录 `cleanup-result.json` 为 `407a69beb93eec0ba7a4288e5cc000748a8465d488461d7498d81afbb164c6ad`。后续比较必须有能改变请求与延迟取舍的具体机制，或明确调整后的任务预算，并冻结新计划。不能追加同输入样本、规模阈值或缓存策略把本轮改成通过。
 
 ### 普通启动配置
 

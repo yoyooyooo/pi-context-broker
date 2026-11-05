@@ -27,7 +27,8 @@ const within = (parent, child) => { const part = relative(parent, child); return
 const present = async path => { try { await access(path); return true; } catch (error) { if (error.code === 'ENOENT') return false; throw error; } };
 const cleanError = error => ({ code: /^[A-Z0-9_]+$/.test(error?.code ?? '') ? error.code : 'DRIVER_FAILURE', message: safeDiagnostic(Buffer.from(String(error?.message ?? error))) });
 const help = [
-  'Read-only source CLI baseline; never invokes a model or changes remote content.',
+  'Source CLI baseline; never invokes a model or actively edits source pages.',
+  'Current consumption may retain/adopt Records; actual source writes remain in the ledger.',
   '  node scripts/skill-consumption-source-baseline.mjs --help',
   '  node scripts/skill-consumption-source-baseline.mjs doctor --config /absolute/config.json',
   '  node scripts/skill-consumption-source-baseline.mjs plan --config /absolute/config.json',
@@ -38,7 +39,7 @@ const help = [
   '',
   'Config: command (absolute executable argv), database, root (unfixed exact main ref),',
   'evidenceRoot (absolute, outside checkout); optional resourcePath, timeoutMs (default 120000),',
-  'pipeline (prepare-fixed-main by default, or resource-only for an independent single read),',
+  'pipeline (prepare-fixed-main by default, resource-only, or inspect-current),',
   'samples ({cold:5,warm:20,"expired-unchanged":20,partial:5}). Authentication is inherited.',
   'doctor only reads paths and runs --version/--help. plan freezes identities and sample order',
   'before remote reads. Each run has private CLI state. Warm/expired share one owned cache.',
@@ -47,6 +48,9 @@ const help = [
   'then fixed reads may fail. There is no current-version fallback. All failures are retained.',
   'resource-only requires resourcePath and cold-only counts; every sample uses empty owned state,',
   'one current resource read, then local manifest/object observations without prepare/files calls.',
+  'inspect-current requires cold-only counts and no resourcePath; each sample runs one public',
+  'ctl prepare --purpose inspect in empty owned state, without follow-up read/files. A failed',
+  'sample stops remaining samples and retains its working state for original-operation recovery.',
   'Observed materialization is not delivery. Provider HTTP=0 does not exclude inline Records ZIP.',
   'cleanup moves only the owned working directory to Trash and retains evidence.',
 ].join('\n');
@@ -157,10 +161,14 @@ async function configuration(path) {
 
 function pipelineMode(config) {
   const mode = config.pipeline ?? 'prepare-fixed-main';
-  assert.ok(['prepare-fixed-main', 'resource-only'].includes(mode), 'Unknown source pipeline');
+  assert.ok(['prepare-fixed-main', 'resource-only', 'inspect-current'].includes(mode), 'Unknown source pipeline');
   if (mode === 'resource-only') {
     assert.ok(config.resourcePath && config.resourcePath !== decodeURIComponent(new URL(config.root).pathname.slice(1)), 'Select a resource distinct from the main file');
     assert.ok(config.samples.cold > 0 && ['warm', 'expired-unchanged', 'partial'].every(group => config.samples[group] === 0), 'resource-only currently measures independent cold samples');
+  }
+  if (mode === 'inspect-current') {
+    assert.equal(config.resourcePath, undefined, 'inspect-current does not accept resourcePath');
+    assert.ok(config.samples.cold > 0 && ['warm', 'expired-unchanged', 'partial'].every(group => config.samples[group] === 0), 'inspect-current requires independent cold samples');
   }
   return mode;
 }
@@ -182,7 +190,7 @@ export async function doctor(config) {
     assert.equal(result.status, 0, 'Offline CLI probe failed: ' + args.join(' '));
     return { args, bytes: Buffer.byteLength(result.stdout), sha256: sha(result.stdout), text: result.stdout };
   };
-  const version = probe(['--version']), prepare = probe(['prepare', '--help']), read = probe(['read', '--help']);
+  const version = probe(['--version']), prepare = probe(config.pipeline === 'inspect-current' ? ['ctl', 'prepare', '--help'] : ['prepare', '--help']), read = probe(['read', '--help']);
   const runtime = spawnSync(config.command[0], ['--version'], { encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024 });
   assert.equal(runtime.status, 0, 'Executable version probe failed');
   for (const flag of ['--metrics', '--database', '--max-age']) assert.ok(prepare.text.includes(flag) && read.text.includes(flag), 'CLI does not expose ' + flag);
@@ -197,6 +205,7 @@ export async function doctor(config) {
 
 export async function freezePlan(config) {
   const resourceOnly = pipelineMode(config) === 'resource-only';
+  const inspectOnly = pipelineMode(config) === 'inspect-current';
   const checked = await doctor(config);
   assert.ok(checked.trashAvailable || config.samples.partial === 0, '/usr/bin/trash is required for partial samples');
   await mkdir(config.evidenceRoot, { recursive: true, mode: 0o700 });
@@ -216,9 +225,12 @@ export async function freezePlan(config) {
     config, command: checked.command, cliVersion: checked.cliVersion, runtimeVersion: checked.runtimeVersion, driverNodeVersion: checked.driverNodeVersion,
     help: { prepare: checked.prepareHelp, read: checked.readHelp }, traceLimit: checked.traceLimit, ttl: checked.ttl, samples,
     sourceAnchor: resourceOnly ? 'first-successful-cold-resource-read-and-actual-local-snapshot-with-all-earlier-failures-retained' : 'first-successful-cold-actual-graph-with-all-earlier-failures-retained',
-    setup: resourceOnly ? 'none-each-resource-read-starts-with-empty-owned-state' : 'separate-receipts-and-costs-for-steady-and-each-partial-owned-cache',
-    partial: resourceOnly ? 'not-applicable-independent-cold-resource-plan' : 'trash-verified-owned-root-main-object-preserve-manifest-pinned-prepare-then-fixed-reads-no-current-fallback',
-    pipeline: resourceOnly ? ['read-one-current-resource', 'observe-owned-cache-without-another-cli'] : ['prepare-use', 'read-every-prepared-main-at-returned-pin', ...(config.resourcePath ? ['read-one-relative-resource-at-root-pin'] : [])],
+    setup: resourceOnly || inspectOnly ? 'none-each-sample-starts-with-empty-owned-state' : 'separate-receipts-and-costs-for-steady-and-each-partial-owned-cache',
+    partial: resourceOnly || inspectOnly ? 'not-applicable-independent-cold-plan' : 'trash-verified-owned-root-main-object-preserve-manifest-pinned-prepare-then-fixed-reads-no-current-fallback',
+    pipeline: resourceOnly ? ['read-one-current-resource', 'observe-owned-cache-without-another-cli'] : inspectOnly ? ['prepare-one-current-inspect'] : ['prepare-use', 'read-every-prepared-main-at-returned-pin', ...(config.resourcePath ? ['read-one-relative-resource-at-root-pin'] : [])],
+    ...(inspectOnly ? { timing: { elapsedMs: 'measured CLI child launch through close, including startup and complete stdout',
+      rootReadyMs: 'public preparation_metrics.root_ready_ms from the same call; preparation start through ready root, excluding earlier CLI startup' },
+    failurePolicy: 'stop remaining samples after any failure; retain original operation and working state; no replay' } : {}),
     scope: 'source-cli-only', modelProviderTotalCost: null, productAcceptance: 'not-inferred' };
   const plan = { ...body, sha256: sha(canonical(body)) };
   await save(join(run, 'plan.json'), plan);
@@ -359,6 +371,8 @@ export async function executePlan(plan) {
   const abort = () => stop.abort();
   process.once('SIGINT', abort); process.once('SIGTERM', abort);
   const operations = [], setups = [], samples = [];
+  const inspectOnly = pipelineMode(plan.config) === 'inspect-current';
+  let inspectFailed = false;
   await save(join(plan.run, 'operations.json'), operations);
   let baseline = null, steadySetup = null;
   const operation = async (id, command, args, options = {}) => {
@@ -371,19 +385,23 @@ export async function executePlan(plan) {
   const pipelineSample = async (item, { setup = false, target = plan.config.root } = {}) => {
     const started = now(), receipts = [], errors = [];
     const base = join(plan.run, 'working', item.state);
+    if (inspectOnly) assert.equal(await present(base), false, 'Cold inspect state must not pre-exist');
     await mkdir(base, { recursive: true, mode: 0o700 });
-    const env = { ...verificationCliEnvironment(base), NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000' };
+    const env = { ...verificationCliEnvironment(base), NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000',
+      ...(inspectOnly ? { NTN_SKILLS_SCHEDULER_ROOT: join(base, 'scheduler') } : {}) };
     const invoke = async (suffix, args) => {
       const result = await operation(item.id + '-' + suffix, plan.config.command, args, { env, role: setup ? 'setup' : 'sample' });
       receipts.push(result.receipt);
       if (result.receipt.failure) errors.push({ stage: suffix, code: result.receipt.failure, errorCode: result.receipt.errorCode });
       return result.value;
     };
-    const args = ['prepare', target, '--purpose', 'use', '--database', plan.config.database, '--metrics'];
-    if (!setup && item.group === 'expired-unchanged') args.push('--max-age', '1s');
-    else if (target === plan.config.root) args.push('--max-age', '5m');
+    const args = inspectOnly
+      ? ['ctl', 'prepare', target, '--purpose', 'inspect', '--database', plan.config.database, '--metrics']
+      : ['prepare', target, '--purpose', 'use', '--database', plan.config.database, '--metrics'];
+    if (!inspectOnly && !setup && item.group === 'expired-unchanged') args.push('--max-age', '1s');
+    else if (!inspectOnly && target === plan.config.root) args.push('--max-age', '5m');
     const graph = await invoke('prepare', args);
-    let identity = null, nodes = [];
+    let identity = null, nodes = [], rootReadyMs = null;
     if (graph?.ok === true && graph.status === 'ready') try {
       identity = sourceIdentity(graph); nodes = graph.nodes.filter(node => node.state === 'prepared');
       assert.equal(graph.roots.length, 1); assert.equal(graph.roots[0].target, target);
@@ -391,6 +409,17 @@ export async function executePlan(plan) {
       assert.equal(selectedRoot?.record?.id, decodeURIComponent(requestedRoot.hostname));
       assert.equal(selectedRoot?.path, decodeURIComponent(requestedRoot.pathname.slice(1)));
       assert.equal(selectedRoot?.record?.locator?.database_id, plan.config.database);
+      if (inspectOnly) {
+        assert.equal(graph.purpose, 'inspect'); assert.equal(graph.graph_lock.purpose, 'inspect');
+        assert.equal(nodes.length, 1); assert.equal(graph.usage?.prepared_nodes, 1);
+        assert.equal(selectedRoot.source, 'notion', 'Cold inspect did not observe the source');
+        const measuredRootReady = graph.preparation_metrics?.root_ready_ms;
+        assert.ok(Number.isSafeInteger(measuredRootReady) && measuredRootReady >= 0, 'Missing inspect root-ready timing');
+        rootReadyMs = measuredRootReady;
+        identity = { ...identity, directory: nodes.map(node => ({ id: node.id, required: node.required, candidates: node.candidates,
+          references: node.references, unresolved_references: node.unresolved_references ?? [] })) };
+        if (!receipts[0].costs.complete) errors.push({ stage: 'metrics', code: 'INCOMPLETE_METRICS' });
+      }
       if (baseline !== null && !same(identity, baseline.identity)) errors.push({ stage: 'identity', code: 'SOURCE_DRIFT' });
       if (baseline === null && item.group === 'cold' && !setup && receipts[0]?.failure === null) {
         baseline = { sample: item.id, identity, sha256: sha(canonical(identity)) };
@@ -399,7 +428,7 @@ export async function executePlan(plan) {
       const rootNodes = graph.roots.map(root => nodes.find(node => node.id === root.id));
       if (!setup && item.group === 'warm' && rootNodes.some(node => node?.source !== 'local_cache')) errors.push({ stage: 'initial-state', code: 'WARM_CACHE_NOT_OBSERVED' });
       if (!setup && item.group === 'expired-unchanged' && rootNodes.some(node => node?.source !== 'notion' || node.freshness?.policy !== 'max_age' || node.freshness?.max_age_ms !== 1000)) errors.push({ stage: 'initial-state', code: 'TTL_REVALIDATION_NOT_OBSERVED' });
-      for (const [index, node] of nodes.entries()) {
+      for (const [index, node] of (inspectOnly ? [] : nodes).entries()) {
         if (stop.signal.aborted) { errors.push({ stage: 'read-' + (index + 1), code: 'RUN_CANCELLED_BEFORE_READ' }); break; }
         const read = await invoke('read-' + String(index + 1).padStart(3, '0'), ['read', node.ref, '--database', plan.config.database, '--metrics']);
         try { validateRead(read, node); } catch (error) { errors.push({ stage: 'read-' + (index + 1), code: 'FIXED_READ_MISMATCH', diagnostic: cleanError(error) }); }
@@ -419,11 +448,13 @@ export async function executePlan(plan) {
     const sum = field => receipts.length && receipts.every(receipt => typeof receipt.costs[field] === 'number')
       ? receipts.reduce((total, receipt) => total + receipt.costs[field], 0) : null;
     const result = { version: 1, ...item, setup, status: errors.length ? 'failed' : 'passed', errors,
-      startedNs: started.toString(), completedNs: completed.toString(), elapsedMs: milliseconds(completed, started),
+      startedNs: inspectOnly ? receipts[0]?.startedNs ?? null : started.toString(),
+      completedNs: inspectOnly ? receipts[0]?.closedNs ?? null : completed.toString(),
+      elapsedMs: inspectOnly ? receipts[0]?.elapsedMs ?? null : milliseconds(completed, started),
       identitySha256: identity === null ? null : sha(canonical(identity)), sourceIdentityVerified: baseline !== null && identity !== null && same(identity, baseline.identity),
-      preparation: { target, preparedNodes: identity?.bindings.length ?? null, requestFreshness: graph?.nodes?.filter(node => node.state === 'prepared').map(node => ({ id: node.id, source: node.source ?? null, freshness: node.freshness ?? null })) ?? null },
+      preparation: { target, preparedNodes: identity?.bindings.length ?? null, ...(inspectOnly ? { rootReadyMs } : {}), requestFreshness: graph?.nodes?.filter(node => node.state === 'prepared').map(node => ({ id: node.id, source: node.source ?? null, freshness: node.freshness ?? null })) ?? null },
       operations: receipts.map(receipt => receipt.receiptPath), logicalOperations: receipts.length, cliStarts: receipts.filter(receipt => receipt.pid !== null).length,
-      plannedMainReads: identity?.bindings.length ?? baseline?.identity.bindings.length ?? null,
+      plannedMainReads: inspectOnly ? 0 : identity?.bindings.length ?? baseline?.identity.bindings.length ?? null,
       executedMainReads: receipts.filter(receipt => receipt.args[0] === 'read' && !receipt.args.includes('--from')).length,
       costs: { cliElapsedSumMs: receipts.every(receipt => typeof receipt.elapsedMs === 'number') ? receipts.reduce((total, receipt) => total + receipt.elapsedMs, 0) : null, sourceHttpAttempts: sum('sourceHttpAttempts'),
         requestBytes: sum('requestBytes'), responseBytes: sum('responseBytes'), queueWaitMs: sum('queueWaitMs'), retryWaitMs: sum('retryWaitMs'),
@@ -463,6 +494,7 @@ export async function executePlan(plan) {
   try {
     for (const item of plan.samples) {
       if (stop.signal.aborted) { samples.push({ ...item, status: 'not_run', errors: [{ code: 'RUN_CANCELLED' }], elapsedMs: null, costs: null }); continue; }
+      if (inspectFailed) { samples.push({ ...item, status: 'not_run', errors: [{ code: 'INSPECT_STOPPED_AFTER_FAILURE' }], elapsedMs: null, costs: null }); continue; }
       let initialState = null;
       try {
         if (pipelineMode(plan.config) === 'resource-only') {
@@ -491,11 +523,13 @@ export async function executePlan(plan) {
           initialState = await trashMain(plan, item, root, operation); target = root.ref;
         }
         const sampled = await pipelineSample(item, { target });
+        if (inspectOnly) initialState = { strategy: 'empty-owned-state', path: join(plan.run, 'working', item.state) };
         samples.push({ ...sampled.result, initialState });
       } catch (error) {
         samples.push({ ...item, status: 'failed', errors: [{ stage: 'initial-state-or-driver', ...cleanError(error) }], initialState,
           elapsedMs: null, operations: operations.filter(operation => operation.id.startsWith(item.id + '-')).map(operation => operation.receipt.receiptPath), costs: null });
       }
+      if (inspectOnly && samples.at(-1)?.status !== 'passed') inspectFailed = true;
       await save(join(plan.run, 'samples.json'), samples);
       process.stdout.write(JSON.stringify({ run: plan.run, sample: item.id, status: samples.at(-1).status }) + '\n');
     }
@@ -538,6 +572,7 @@ export async function evidence(plan) {
       comparableSamples: values.filter(sample => sample.status === 'passed' && sample.sourceIdentityVerified && sample.costs?.metricsComplete).length,
       outcomes: Object.fromEntries(['passed', 'failed', 'not_run'].map(status => [status, values.filter(sample => sample.status === status).length])),
       elapsedMs: consumptionMetricStats(values.map(sample => sample.elapsedMs ?? null)),
+      ...(pipelineMode(plan.config) === 'inspect-current' ? { rootReadyMs: consumptionMetricStats(values.map(sample => sample.preparation?.rootReadyMs ?? null)) } : {}),
       cliStarts: consumptionMetricStats(values.map(sample => sample.cliStarts ?? null)),
       costs: Object.fromEntries(['cliElapsedSumMs', 'sourceHttpAttempts', 'requestBytes', 'responseBytes', 'queueWaitMs', 'retryWaitMs'].map(key => [key, consumptionMetricStats(values.map(sample => sample.costs?.[key] ?? null))])) }];
   }));
@@ -552,6 +587,10 @@ export async function evidence(plan) {
 
 export async function cleanup(plan) {
   assert.ok(await present(join(plan.run, 'run-end.json')), 'Cleanup requires an ended run');
+  if (pipelineMode(plan.config) === 'inspect-current') {
+    const samples = JSON.parse(await readFile(join(plan.run, 'samples.json'), 'utf8'));
+    assert.ok(samples.length === plan.samples.length && samples.every(sample => sample.status === 'passed'), 'Retain the failed inspect working state for review and original-operation recovery');
+  }
   const working = join(plan.run, 'working');
   if (!(await present(working))) return { status: 'already-clean', run: plan.run };
   assert.equal(await realpath(working), working); assert.ok((await lstat(working)).isDirectory() && !(await lstat(working)).isSymbolicLink());
