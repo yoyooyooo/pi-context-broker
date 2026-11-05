@@ -368,3 +368,28 @@ test("cold native refs select an outside-View owner and resolve stable File ID i
   expect(JSON.stringify(oldAlias.values)).toContain("SOURCE_REFERENCE_MISSING");
   expect(() => parseNativeReference(owner.ref + "?snapshot=" + a + "&snapshot=" + b)).toThrow();
 });
+
+
+test("precise references bypass unrelated metadata failure without an Agent list step", async () => {
+  const root = await mkdtemp(join(tmpdir(), "broker-exact-lookup-"));
+  await writeFile(join(root, "SKILL.md"), record.body);
+  const owner = { ...record, id: "shared_skill:lib:skill", ref: "skill://shared_skill%3Alib%3Askill/SKILL.md", entrypoint: "SKILL.md", path: join(root, "SKILL.md"), metadataIndexPath: undefined, defaultDiscovery: false };
+  const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
+  const api = { on(name: string, listener: (event: never, ctx: ExtensionContext) => unknown) { events.set(name, [...events.get(name) ?? [], listener]); } } as ExtensionAPI;
+  const ctx: ExtensionContext = { cwd: root, hasUI: false, mode: "rpc" };
+  const pins: Array<string | undefined> = [];
+  let lookups = 0;
+  await installHostSkills(api, {
+    config: {},
+    getRecords: async () => { throw Object.assign(new Error("Unrelated invalid catalog"), { code: "SOURCE_DISCOVERY_INVALID" }); },
+    lookupReference: async () => { lookups++; return { records: [{ ...owner, body: undefined }], failures: [{ sourceId: "other", namespace: "other", type: "notion", code: "NOTION_FORBIDDEN", message: "Unrelated source cannot be listed" }] }; },
+    loadRecord: async (_record, _signal, pin) => { pins.push(pin); return owner; },
+  }, createPiHostAdapter(api));
+  const input = { path: owner.ref + "?snapshot=" + a };
+  const replies = [];
+  for (const listener of events.get("tool_call") ?? []) replies.push(await listener({ toolName: "read", toolCallId: "exact-unrelated", input } as never, ctx));
+  expect(replies.some(reply => reply && typeof reply === "object" && "block" in reply && reply.block)).toBe(false);
+  expect(input.path).toBe(await realpath(join(root, "SKILL.md")));
+  expect(pins).toEqual([a]);
+  expect(lookups).toBe(1);
+});

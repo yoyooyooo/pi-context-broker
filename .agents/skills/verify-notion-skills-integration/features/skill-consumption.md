@@ -94,6 +94,18 @@ J19 的附件专属分支、J20 的 checkpoint 专属分支依候选实际采用
 
 先建立工作树保护基线。保留别人已暂存的文件，按明确文件提交本次改动；不 reset、clean 或批量 restore。私有证据放在 checkout 外。
 
+### 精确引用与目录失败
+
+SC04 的 canonical ref 或当前分支短引用不要求 Agent 先调用 list。`notion_use`、单个原生 read 和固定资源批读可以在无关来源目录失败时继续；已选来源的阻断错误仍必须在准备或读取正文前返回。根与 Requires、owner/scope/File/pin 继续由原消费内核核对，不能为此回退 current 或跳过权限。
+
+冷态 View 外 canonical 引用仍可能在内部查询所需元数据，其 HTTP 与字节计入该次账本。“无需 Agent 发现工具往返”不等于“零目录请求”。用原 host harness 运行：
+
+```bash
+bun test packages/context-broker/scripts/host-prepare.test.ts packages/context-broker/scripts/native-read-session.test.ts
+```
+
+正例同时保持发现入口失败，并证明精确 use 返回根和完整 Requires、未选 Member 未加载；反例分别注入目录和 exact lookup 的选中来源错误，确认正文准备为零。单个 native read 另验证冷态 View 外入口。它们是源码 host 集成证据，实际 Pi 和独立安装候选仍须单列。
+
 ### Doctor
 
 以下命令全部离线，不创建生产数据、不调用模型：

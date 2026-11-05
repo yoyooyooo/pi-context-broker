@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { installHostSkills, type HostSkills } from "../src/host-skills";
+import { installHostSkills, type HostSkills, type HostSkillOptions } from "../src/host-skills";
 import { buildInjectedContextMessage } from "../src/index";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { createOmpHostAdapter } from "../src/omp-host-adapter";
@@ -92,11 +92,12 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
       budget: { maxNodes: 64, maxDepth: 16, maxInstructionBytes: 1048576, maxContextBytes: 262144 },
       usage: { prepared_nodes: selected.length, instruction_bytes: selected.reduce((n, record) => n + Buffer.byteLength(record.body!), 0), context_bytes: 4000, max_depth: purpose === "use" ? 1 : 0 } };
   }
-  const install = async (prepareGraph: (purpose: PreparationPurpose, signal?: AbortSignal) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)]) => {
+  const install = async (prepareGraph: (purpose: PreparationPurpose, signal?: AbortSignal) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference">> = {}) => {
     let host: HostSkills;
     host = await installHostSkills(api, {
       config: { sources: [{ id: "controlled", type: "notion", prefetch: false }] },
       getRecords: async () => ({ records: records.map(record => ({ ...record, body: undefined, preparationBinding: undefined })), failures: [] }),
+      ...discovery,
       loadRecord: async () => { throw new Error("Graph roots must use the CLI preparation bridge"); },
       loadResource: async (record, path, _ctx, signal) => materializeNotionEntryFile(record, path, ensure, async (file, output) => {
         const text = resourceText.get(record.id!);
@@ -120,6 +121,37 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
   };
   return { ctx, records, root: root!, required: required!, member: member!, graph, calls, persisted, install, emit, session, resourceText, resourceReads };
 }
+test("exact use survives unrelated discovery errors while discovery remains failed", async () => {
+  const f = await fixture();
+  let lookups = 0;
+  const { tool, search } = await f.install(undefined, {
+    getRecords: async () => { throw Object.assign(new Error("Invalid unrelated catalog"), { code: "SOURCE_DISCOVERY_INVALID" }); },
+    lookupReference: async () => {
+      lookups++;
+      return { records: f.records, failures: [{ sourceId: "other", namespace: "other", type: "notion", code: "ACCESS_DENIED", message: "Unrelated source" }] };
+    },
+  });
+  await expect(search.execute("discovery", {}, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "SOURCE_DISCOVERY_INVALID" });
+  const used = await tool.execute("exact-use", { ref: f.root.ref }, undefined, undefined, f.ctx);
+  const content = sourceMessageText(used.content);
+  const projected = JSON.parse(content);
+  expect(projected.records.map((value: { content: string }) => value.content)).toEqual([f.root.body, f.required.body]);
+  expect(content).not.toContain(f.member.body!);
+  expect(lookups).toBe(1);
+  expect(f.calls).toEqual(["use"]);
+});
+test("exact use still rejects its own source failure before preparing any instructions", async () => {
+  for (const fromLookup of [false, true]) {
+    const f = await fixture();
+    const failed = { records: f.records, failures: [{ sourceId: "controlled", namespace: "controlled", type: "notion" as const, code: "ACCESS_DENIED", message: "Selected source denied" }] };
+    const { tool } = await f.install(undefined, {
+      getRecords: async () => fromLookup ? { records: [], failures: [] } : failed,
+      lookupReference: async () => failed,
+    });
+    await expect(tool.execute("denied", { ref: f.root.ref }, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+    expect(f.calls).toEqual([]);
+  }
+});
 test("native metadata search stays known; explicit inspect and use deliver complete bodies with separate intent", async () => {
   const f = await fixture(), { search, tool } = await f.install();
   const directory = await search.execute("search", { query: "member" }, undefined, undefined, f.ctx);

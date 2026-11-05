@@ -489,12 +489,15 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     for (const record of selected) if (!options.prepareGraph || record.source !== "notion" || record.kind === "prompt") await prepare(record, ctx, combined);
   }
 
-  function assertSourceSelection(record: SkillRecord, ctx?: ExtensionContext, requestedSnapshot?: string): { snapshot: string | undefined; binding: PreparationBinding | undefined } {
-    if (discoveryError) throw discoveryError;
+  function assertRecordSourceAvailable(record: SkillRecord, failures: readonly SourceFailure[] = sourceFailures): void {
     if (record.sourceId) {
-      const unavailable = sourceFailures.find(failure => failure.sourceId === record.sourceId && failure.blocking !== false);
+      const unavailable = failures.find(failure => failure.sourceId === record.sourceId && failure.blocking !== false);
       if (unavailable) throw new SourceError(unavailable.code, unavailable.sourceId);
     }
+  }
+
+  function assertSourceSelection(record: SkillRecord, ctx?: ExtensionContext, requestedSnapshot?: string): { snapshot: string | undefined; binding: PreparationBinding | undefined } {
+    assertRecordSourceAvailable(record);
     if (gate.active) gate.assertCurrent(gate.active, ctx ?? gate.active.ctx);
     const binding = ctx ? options.sessionBinding?.(record, ctx) : undefined;
     const activeSnapshot = binding?.snapshot_id ?? (ctx ? options.sessionSnapshot?.(record, ctx) : undefined);
@@ -1111,15 +1114,16 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   });
   async function exactRecord(reference: ExactNativeReference, ctx: ExtensionContext, signal: AbortSignal, short?: HostShortRefResolution): Promise<SkillRecord> {
     const selector = reference.selector;
-    assertSourceAvailable(selector, sourceFailures, true);
     const matches = (record: SkillRecord) => record.ref?.startsWith("skill://") && parseNativeReference(record.ref).selector === selector
       && (!short || matchesShortRefSource(short.assertion, record));
     let candidates = [...hostRecords.values()].filter(matches);
+    let lookupFailures: readonly SourceFailure[] = [];
     if (!candidates.length && options.lookupReference) {
       const observedGeneration = generation;
       const fresh = await options.lookupReference(ctx, signal);
       checkPreparationSignal(signal);
       if (observedGeneration !== generation) throw preparationCancelled();
+      lookupFailures = fresh.failures;
       candidates = fresh.records.filter(record => record.source === "notion" && matches(record));
       if (!candidates.length && fresh.failures.some(item => item.blocking !== false)) {
         const failed = fresh.failures.find(item => item.blocking !== false)!;
@@ -1132,6 +1136,11 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (candidates.length > 1) throw new InvocationError(selector, "ambiguous", candidates);
     const selected = candidates[0];
     if (!selected) throw hostError("SOURCE_REFERENCE_MISSING");
+    // A canonical selector is an identity, not a source namespace prefix.
+    // Unrelated directory failures do not veto this exact owner; its own
+    // recorded failure and the normal source read/prepare checks still apply.
+    assertRecordSourceAvailable(selected);
+    assertRecordSourceAvailable(selected, lookupFailures);
     if (short) assertShortRefSource(short, selected);
     hostRecords.set(recordIdentity(selected), selected);
     return selected;
@@ -1191,7 +1200,6 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     async execute(id, input, signal, _onUpdate, ctx) {
       const combined = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
       await ready(combined);
-      if (discoveryError) throw discoveryError;
       const requested = piConsumption ? typeof input.ref === "string" ? [input.ref] : input.ref : input.roots;
       if ((!piConsumption && !["use", "inspect"].includes(String(input.purpose))) || !Array.isArray(requested) || !requested.length || requested.length > 64
         || requested.some(value => typeof value !== "string") || input.refresh !== undefined && typeof input.refresh !== "boolean"
@@ -1377,7 +1385,6 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     let rootRelative = false;
     let exactReference: ExactNativeReference | undefined;
     let short: HostShortRefResolution | undefined;
-    if (explicit && discoveryError) return { block: true, reason: failure(discoveryError) };
     if (explicit) {
       try {
         const resolved = resolveReference(requested, ctx);
@@ -1507,7 +1514,6 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       rawRefs.add(requested[index]!); identities.add(identity);
     }
     await ready(signal); current();
-    if (discoveryError) throw discoveryError;
     const asserted = resolved.find(value => value.short)?.short;
     const record = await exactRecord(first, ctx, signal, asserted); current();
     if (record.source !== "notion" || !record.sourceScope || !record.id) throw hostError("SOURCE_IDENTITY_MISMATCH");

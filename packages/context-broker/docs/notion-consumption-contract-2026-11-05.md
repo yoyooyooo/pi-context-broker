@@ -59,6 +59,12 @@ Router 的 Members 是待选择目录。通用指引要求按任务选择 Member
 
 ## 剩余验收与正式收口
 
-本切片之后继续检查精确引用绕过无关目录失败、冷态 View 外直接引用，以及完整生命周期下的权限、取消、预算和缓存隔离。已有成功样本不能补齐尚未运行的样本。
+后续 SC04 切片已修正精确引用被无关目录故障全局阻断的问题。明确 canonical/短引用继续通过既有精确 lookup 和 core；目录发现仍报告原错误，已选来源的阻断错误在正文准备前返回。没有新增 resolver、持久层或全局授权豁免，冷态 lookup 的实际元数据请求仍计成本。
+
+原失败保留在 `/private/tmp/ah621-exact-ref-before-xr3s0bue` 与 `/private/tmp/ah621-use-before-to8bsvy_`；修复后两组原 host harness 共 33 项、374 断言通过，日志 `/private/tmp/ah621-exact-ref-after-yfatqb01/test.log`，SHA256 `010869151ba556f496c771fc3708edca2097fcfebfa76cbfccef3681b2720a2d`。此增量不在已有 `b40126dc5ce2` 安装包内，必须随下一固定候选实际复验；不能据源码通过宣称 SC04 全部完成。
+
+该增量的完整消费专项为 169 项、1696 断言，全部通过；typecheck 通过。结果清单 `/private/tmp/ah621-final-hhybqs7g/results.json`，消费日志 SHA256 `6b6bb5dcd69c6e3125be3f226b5748e4900032ed0ef9047c4d9b3ed17be90c00`。
+
+继续检查完整生命周期下的权限、取消、预算和缓存隔离。已有成功样本不能补齐尚未运行的样本。
 
 正式顺序保持 SC23 调用者迁移 → SC22 独立固定候选及 pro/mini → SC20 同条件全任务和纯本地全局 Skill 成本矩阵 → SC21 真实模型 A/B/C/D → SC24 日用切换。最终候选的文件身份、真实 Notion/模型账本和日用指针通过各自实际回执写回 Linear。当前记录不宣称这些后续门槛完成，不改用户日用安装，不构建或切换 Tern。
