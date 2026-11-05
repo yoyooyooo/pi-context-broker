@@ -11,6 +11,7 @@
 - `release-gate`：检查失败阻止 commit/tag/push；成功且 `--no-push` 只产生本地 tag；规划模式不执行检查。
 - `package-desktop`：独立 Tern 插件安装后的实际界面由 [编辑器地图](editor.md) 覆盖。
 - `package-source`：`node scripts/verify-notion-integration.mjs run --mode installed --host pi --package /absolute/pi-context-broker.tgz` 在独立临时 prefix 安装指定归档，实际 Pi 加载安装后的扩展并消费 source。先 `doctor --mode installed --host pi` 带同一 `--package`；省略 `--host` 才执行双宿主。旧 positional `installed` 仍为 parser 的显式兼容，当前规程统一推荐 `--mode`。未运行时不能用源码 source 结果代替，详见[安装消费地图](../../verify-notion-skills-integration/features/installed-consumption.md)。
+- `package-sdk-pi`：原 artifact runner 以明确 fixture 驱动同一独立安装包的默认 SDK all14；实际 Pi RPC、provider serializer HTTP、完整正文、目录、资源和会话终局一起验收。
 
 ## How to get to it (user POV)
 
@@ -25,7 +26,7 @@ Preconditions:
 - Node.js 22.x 中的 22.22.3+，或 24.20.0+、仅用于构建的 Bun、Pi 1.4.0、npm、tar；完整双宿主路线另需 OMP 和 Git。npm registry 网络可用。
 - `control.mjs doctor distribution-pi` ready；完整路线用 `doctor distribution`。runner 构建并打包当前 checkout，或消费明确提供的候选目录；不调用仓库的真实 release，不创建线上发布。
 
-- **Pi 安装路径。** 运行 `node .agents/skills/verify-context-broker/scripts/control.mjs run distribution-pi`，对应 `node scripts/verify-artifacts.mjs --host pi`。只构建 Broker npm 包，在独立 prefix 实际安装；核对随包 CLI、SDK 与 runtime manifest 后，用实际 Pi RPC 和 provider 观察连续两次正文交付，重跑安装态 source 故障与恢复场景。manifest 的 host 为 pi，OMP/Tern 记 notRun。
+- **Pi 安装路径。** 运行 `node .agents/skills/verify-context-broker/scripts/control.mjs run distribution-pi`，对应 `node scripts/verify-artifacts.mjs --host pi`。只构建 Broker npm 包，在独立 prefix 实际安装；核对随包 CLI、SDK 与 runtime manifest 后，用实际 Pi RPC 和 provider 观察连续两次正文交付，重跑安装态 source 故障与恢复场景。manifest 的 host 为 pi，OMP/Tern 记 notRun。未提供 SDK fixture 时，`defaultSdk` 明记 `not_run / fixture_not_provided`，不代表默认 SDK 已验收。
 - **完整路径。** 运行 `node .agents/skills/verify-context-broker/scripts/control.mjs run distribution`。该路线分别执行 `verify-artifacts.mjs --host pi` 和 `--host omp`，再执行 release tests；OMP 路线另打包、解包 Tern。npm 只安装生产依赖且跳过 install scripts/peer 自动安装。每个宿主的两次真实 prompt 分别要求 provider 中正文恰好一份，不能互代。
 - **独立查询。** 两份 query 从仓库外独立 Node 进程接收 `中文😀\n使用 $架构 tail`，返回身份限定的 `$design-review@…@local` 与正确 UTF-16 from/to/len；结果无私有 body marker；拆开 emoji surrogate 的 cursor 以非零退出。
 - **文档导航。** 解包后从 npm 的双语 README、双语参考和贡献指南、Tern 的双语 README 递归检查本地链接与标题锚点，防止下沉文档漏包或投影仍指向 workspace。线上链接与实际 Markdown 呈现需另行核对，不由文件存在替代。
@@ -34,6 +35,22 @@ Preconditions:
 - **桌面安装。** 本路径仅检查 Tern 文件完整与查询能力；需要证明真实插件装入窗口并能交互时再执行 `run editor`。`verify-native-ui.mjs` 的 `BROKER_UI_EXTENSION` 只选择 Broker 扩展，companion 仍从当前已构建 checkout 重新归档；不能称为直接消费此前冻结的同一 Tern tar。日常 UI runner 使用日常 installed companion，是另一条来源边界。
 
 - **随包消费。** 未配置 source 的冷安装可发现三份 `@builtin` 候选；选择正文并读取相对参考文件。两份产物的 Skill 库存一致，同名本地/Notion 内容可以精确消歧。复用现有包/宿主检查。
+
+## 默认 SDK 的 CI 安装门禁
+
+CI 与 publish 从同一精确 CLI commit frozen install/build，再使用该 checkout 的原 `scripts/sdk-fixture.ts --outdir NEW_ABSOLUTE_DIRECTORY --catalog` 生成受控 fixture。workflow 明确传入 `--fixture "$CONTEXT_BROKER_SDK_FIXTURE" --require-sdk`；缺 fixture 必须在打包或启动宿主前失败，不能退成通用安装路线。普通安装路线的 optional fixture 不改变 CI 的必跑要求，`check-gates` 同时拒绝 producer 漏接、路径漏传、条件跳过、吞掉失败或缺失原件上传。
+
+人工复跑时，`CLI_CHECKOUT` 指向同一固定版本的 CLI 源码，`CLI_ENTRY` 指向完整 CLI 安装入口，`CANDIDATE_DIR` 只含冻结候选，`SDK_FIXTURE_ROOT` 为新的仓外绝对目录：
+
+```bash
+node "$CLI_CHECKOUT/scripts/sdk-fixture.ts" --outdir "$SDK_FIXTURE_ROOT" --catalog
+NTN_SKILLS_BUILD_ENTRY="$CLI_ENTRY" CONTEXT_BROKER_CANDIDATE_DIR="$CANDIDATE_DIR" \
+  node scripts/verify-artifacts.mjs --host pi --fixture "$SDK_FIXTURE_ROOT/fixture.json" --require-sdk
+```
+
+runner 复用刚刚独立安装的同一个 `installed` 路径，调用原 `notion-sdk-pi.mjs run --scenario all`，不再次打包。`defaultSdk` 保存 fixture/driver、plan/result 路径与 hash、子进程退出和 14 景终局；plan 必须保持同一 package、bundled runtime 和开启的全部断言，result 的每一景都须通过且 observer 已关闭。`default-sdk-pi/` 保留 RPC、provider/HTTP、SDK、session 与逐景结果，stdout/stderr 同在原 `broker-artifacts-*` 目录。两 workflow 无论成功失败都上传该 owned 目录、SDK scratch 和 fixture（含隐藏文件）；Linux 保留 scratch，不调用 macOS Trash。
+
+这条路线使用离线暖 fixture、owned 空 Broker cache/session、实际 Pi 1.4 与受控 provider。它不覆盖真实 Notion、真实模型或用户 Pi 1.5。默认目录与恢复边界详见[原 SDK 恢复地图](../../verify-notion-skills-integration/features/session-cache-recovery.md)。2026-11-05 的漏接线负例保存在 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/unified-c4-0f0b02-wj9ya_hr/ci-sdk-wiring/fail-before.log`，SHA256 `5412df3aa56f96ce512131125b03e00cfccf2d911956b6893c0fb798e4504ecd`；原 workflow 未变时新门禁报 `GATE_SDK_FIXTURE_MISSING`，旧门禁误绿记录同时保留。
 
 ## Pi 正常日用身份与 SDK 来源归因
 

@@ -26,6 +26,7 @@ jobs:
     environment: npm-publish
     env:
       NTN_SKILLS_BUILD_ENTRY: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/cli/dist/ntn-skills.js
+      CONTEXT_BROKER_SDK_FIXTURE: ${{ runner.temp }}/ntn-skills-sdk-fixture/fixture.json
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,7 +37,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yoyooyooo/notion-skills-cli
-          ref: 481ccb6ed0f50c6b25591f055b845d576fe93951
+          ref: ba21e390d52b84200e43c0b247a4adc5d306f6d6
           path: .verification/ntn-skills-cli
           persist-credentials: false
       - name: Set up Bun
@@ -105,8 +106,22 @@ jobs:
             /tmp/context-broker-lifecycle-e2e-*/
           if-no-files-found: warn
           retention-days: 7
+      - name: Create controlled SDK fixture
+        run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-sdk-fixture" --catalog
       - name: Installed Pi artifact regression
-        run: node scripts/verify-artifacts.mjs --host pi
+        run: node scripts/verify-artifacts.mjs --host pi --fixture "$CONTEXT_BROKER_SDK_FIXTURE" --require-sdk
+      - name: Preserve installed Pi SDK evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installed-pi-sdk-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/broker-artifacts-*/
+            /tmp/notion-sdk-pi-*/
+            ${{ runner.temp }}/ntn-skills-sdk-fixture/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
       - name: Installed OMP and Tern artifact regression
         run: node scripts/verify-artifacts.mjs --host omp
       - name: Package release artifacts

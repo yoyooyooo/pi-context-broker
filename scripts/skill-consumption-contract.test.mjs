@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { consumptionFixture, evaluateConsumptionEvidence, selfTest, validateMap, expandCoverage, consumptionGateConfiguration, validateConsumptionGates } from './skill-consumption-contract.mjs';
 
 test('normal checks and both workflows retain consumption and real Pi installation gates', () => {
@@ -14,9 +16,30 @@ test('normal checks and both workflows retain consumption and real Pi installati
     [value => { value.workflows[1].text = value.workflows[1].text.replace(/(repository: yoyooyooo\/notion-skills-cli\s+ref: )[a-f0-9]{40}/u, '$1' + 'a'.repeat(40)); }, 'GATE_SDK_BUILD_INPUT_DRIFT'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('bun-version: 1.4.3', 'bun-version: 1.3.14'); }, 'GATE_BUN_VERSION'],
     [value => { value.workflows[1].text = value.workflows[1].text.replace('run: node scripts/verify-artifacts.mjs --host pi', 'run: true'); }, 'GATE_INSTALLED_HOST_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('CONTEXT_BROKER_SDK_FIXTURE:', 'UNUSED_SDK_FIXTURE:'); }, 'GATE_SDK_FIXTURE_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-sdk-fixture" --catalog', 'sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-sdk-fixture"'); }, 'GATE_SDK_FIXTURE_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('- name: Create controlled SDK fixture\n', '- name: Create controlled SDK fixture\n        if: false\n'); }, 'GATE_SDK_FIXTURE_MISSING'],
+    [value => { value.workflows[1].text = value.workflows[1].text.replace(' --fixture "$CONTEXT_BROKER_SDK_FIXTURE"', ''); }, 'GATE_INSTALLED_SDK_MISSING'],
+    [value => { value.workflows[1].text = value.workflows[1].text.replace(' --require-sdk', ''); }, 'GATE_INSTALLED_SDK_MISSING'],
+    [value => { value.workflows[1].text = value.workflows[1].text.replace('- name: Installed Pi artifact regression\n', '- name: Installed Pi artifact regression\n        continue-on-error: true\n'); }, 'GATE_INSTALLED_SDK_MISSING'],
+    [value => { value.workflows[1].text = value.workflows[1].text.replace('if: always()', 'if: success()'); }, 'GATE_SDK_EVIDENCE_MISSING'],
+    [value => { value.workflows[1].text = value.workflows[1].text.replace('/tmp/notion-sdk-pi-*/', '/tmp/unrelated-*/'); }, 'GATE_SDK_EVIDENCE_MISSING'],
   ]) {
     const config = consumptionGateConfiguration(); mutate(config);
     assert.throws(() => validateConsumptionGates(config), { code });
+  }
+});
+
+test('required installed SDK execution rejects missing fixture before packaging or host execution', () => {
+  const driver = fileURLToPath(new URL('./verify-artifacts.mjs', import.meta.url));
+  for (const args of [
+    ['--host', 'pi', '--require-sdk'],
+    ['--host', 'pi', '--fixture', '', '--require-sdk'],
+  ]) {
+    const result = spawnSync(process.execPath, [driver, ...args], { encoding: 'utf8', timeout: 10000 });
+    assert.equal(result.error, undefined); assert.equal(result.status, 1);
+    assert.match(result.stderr, /--require-sdk/u);
+    assert.doesNotMatch(result.stdout, /Artifact workspace retained/u, 'An absent CI fixture must not start the optional installation-only route');
   }
 });
 

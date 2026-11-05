@@ -42,10 +42,25 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
     sourceRevisions.push(source[1]);
     for (const host of ['pi', 'omp']) check(workflow.text.includes('run: node scripts/verify-artifacts.mjs --host ' + host),
       'GATE_INSTALLED_HOST_MISSING', workflow.name + ' needs the actual installed ' + host + ' gate.');
+    const steps = workflow.text.split(/(?=^      - name: )/mu);
+    const step = name => steps.find(value => value.startsWith('      - name: ' + name + '\n')) ?? '';
+    const fixture = step('Create controlled SDK fixture'), installed = step('Installed Pi artifact regression');
+    const unconditional = value => !/\n        (?:if|continue-on-error):/u.test(value);
+    check(workflow.text.includes('CONTEXT_BROKER_SDK_FIXTURE: ${{ runner.temp }}/ntn-skills-sdk-fixture/fixture.json')
+      && fixture.includes('run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-sdk-fixture" --catalog')
+      && unconditional(fixture) && workflow.text.indexOf(fixture) < workflow.text.indexOf(installed),
+      'GATE_SDK_FIXTURE_MISSING', workflow.name + ' must create the controlled catalog fixture from its pinned CLI source.');
+    check(installed.includes('run: node scripts/verify-artifacts.mjs --host pi --fixture "$CONTEXT_BROKER_SDK_FIXTURE" --require-sdk')
+      && unconditional(installed), 'GATE_INSTALLED_SDK_MISSING', workflow.name + ' must require actual default SDK Pi execution against that fixture.');
+    const retained = step('Preserve installed Pi SDK evidence');
+    check(retained.includes('if: always()') && retained.includes('uses: actions/upload-artifact@v4')
+      && retained.includes('/tmp/broker-artifacts-*/') && retained.includes('/tmp/notion-sdk-pi-*/')
+      && retained.includes('${{ runner.temp }}/ntn-skills-sdk-fixture/') && retained.includes('include-hidden-files: true'),
+      'GATE_SDK_EVIDENCE_MISSING', workflow.name + ' must always retain owned installation, SDK RPC and fixture evidence.');
   }
   check(new Set(sourceRevisions).size === 1, 'GATE_SDK_BUILD_INPUT_DRIFT', 'CI and publish must use the same frozen CLI revision.');
   return { status: 'gate-wiring-valid', supportedPi: '1.4.0', requiredTests: required.length,
-    cliSourceRevision: sourceRevisions[0],
+    cliSourceRevision: sourceRevisions[0], installedSdk: 'required_all14',
     runtimeAcceptance: 'not-inferred', boundary: 'Wiring is checked here; actual test logs and installed host runs remain separate evidence.' };
 }
 

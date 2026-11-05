@@ -11,12 +11,27 @@ import { verifyPackageClosure, verifyBundledRuntime } from "./verify-package-clo
 
 const root = resolve(import.meta.dirname, "..");
 const args = process.argv.slice(2);
-if (args.length && (args.length !== 2 || args[0] !== "--host" || !["pi", "omp"].includes(args[1]))) throw new Error("Usage: node scripts/verify-artifacts.mjs [--host pi|omp]");
-const host = args[1] ?? "omp";
+const usage = "Usage: node scripts/verify-artifacts.mjs [--host pi|omp] [--fixture ABSOLUTE_SDK_FIXTURE_JSON] [--require-sdk]";
+const options = new Map();
+for (let index = 0; index < args.length; index++) {
+  const key = args[index];
+  assert.ok(["--host", "--fixture", "--require-sdk"].includes(key) && !options.has(key), usage);
+  if (key === "--require-sdk") options.set(key, true);
+  else { const value = args[++index]; assert.ok(value && !value.startsWith("--"), usage); options.set(key, value); }
+}
+const host = options.get("--host") ?? "omp";
+assert.ok(["pi", "omp"].includes(host), usage);
+const sdkFixtureOption = options.get("--fixture"), requireSdk = options.has("--require-sdk");
+assert.ok(!sdkFixtureOption || host === "pi" && isAbsolute(sdkFixtureOption), "--fixture requires Pi and an absolute fixture path");
+assert.ok(!requireSdk || host === "pi" && sdkFixtureOption, "--require-sdk requires --host pi and --fixture; SDK execution cannot be skipped");
+const sdkFixture = sdkFixtureOption ? await realpath(sdkFixtureOption) : undefined;
+if (sdkFixture) assert.ok((await stat(sdkFixture)).isFile(), "SDK fixture must be a file");
 const brokerOnly = host === "pi";
 const base = await mkdtemp(join(tmpdir(), "broker-artifacts-"));
 console.log(`Artifact workspace retained: ${base}`);
-const report = { version: 1, host, status: "running", startedAt: new Date().toISOString(), notRun: brokerOnly ? ["OMP", "Tern"] : ["Pi"] };
+const report = { version: 1, host, status: "running", startedAt: new Date().toISOString(),
+  notRun: brokerOnly ? ["OMP", "Tern", ...(sdkFixture ? [] : ["Default SDK installed Pi"])] : ["Pi"],
+  defaultSdk: { status: "not_run", required: requireSdk, reason: sdkFixture ? "artifact_gate_not_reached" : host === "pi" ? "fixture_not_provided" : "different_host" } };
 const saveReport = () => writeFile(join(base, "manifest.json"), JSON.stringify(report, null, 2) + "\n");
 await saveReport();
 try {
@@ -294,9 +309,47 @@ for (const executable of queryExecutables) {
   assert.equal(bad.status, 1, "Query must reject a split UTF-16 surrogate pair");
   assert.match(bad.stderr, /surrogate/i);
 }
+if (sdkFixture) {
+  const evidence = join(base, "default-sdk-pi");
+  const command = [join(root, "scripts/notion-sdk-pi.mjs"), "run", "--package", installed, "--fixture", sdkFixture, "--scenario", "all", "--out", evidence];
+  report.defaultSdk = { status: "running", required: requireSdk, evidence, command: [process.execPath, ...command],
+    fixture: await identity(sdkFixture), driver: await identity(command[0]) };
+  await saveReport();
+  try {
+    const execution = spawnSync(process.execPath, command, { cwd: root, env: process.env, encoding: "utf8", timeout: 180_000, maxBuffer: 16 * 1024 * 1024 });
+    await writeFile(join(base, "default-sdk-stdout.log"), execution.stdout ?? "", { mode: 0o600 });
+    await writeFile(join(base, "default-sdk-stderr.log"), execution.stderr ?? "", { mode: 0o600 });
+    report.defaultSdk.exit = { code: execution.status, signal: execution.signal, error: execution.error?.message ?? null };
+    const observed = {};
+    for (const [name, file] of [["plan", "plan.json"], ["result", "report.json"]]) {
+      const path = join(evidence, file);
+      try { observed[name] = JSON.parse(await readFile(path, "utf8")); report.defaultSdk[name] = await identity(path); }
+      catch (error) { if (error.code !== "ENOENT") throw error; }
+    }
+    assert.ok(!execution.error && execution.status === 0, "Installed default SDK Pi driver failed; inspect retained default-sdk logs and scenario evidence");
+    const { plan, result } = observed;
+    assert.ok(plan && result, "Installed default SDK Pi driver must retain its plan and result");
+    assert.equal(plan.package, await realpath(installed), "SDK scenarios must use this same independently installed package");
+    assert.deepEqual(plan.runtime, report.runtime.manifest, "SDK scenarios must retain the same bundled CLI/SDK identity");
+    assert.equal(plan.driver_sha256, report.defaultSdk.driver.sha256);
+    assert.equal(plan.pi, report.hostIdentity.version); assert.equal(plan.source_command_configured, false);
+    for (const field of ["expect_short_refs", "expect_compact_context", "expect_direct_scalar", "expect_short_confirmations"])
+      assert.equal(plan[field], true, "Installed SDK assertions may not be disabled: " + field);
+    assert.equal(plan.scenarios.length, 14); assert.equal(new Set(plan.scenarios).size, 14);
+    assert.equal(result.status, "passed"); assert.equal(result.package_unchanged, true); assert.equal(result.evidence_stable, true);
+    assert.equal(result.evidence, await realpath(evidence));
+    assert.deepEqual(result.results.map(row => row.name), plan.scenarios, "All planned SDK scenarios must complete");
+    assert.ok(result.results.every(row => row.status === "passed" && row.observer_finality === true), "Every SDK scenario must pass with closed observers");
+    assert.deepEqual(await identity(sdkFixture), report.defaultSdk.fixture, "Original SDK fixture changed during verification");
+    report.defaultSdk.status = "passed";
+    report.defaultSdk.scenarios = result.results.map(({ name, status, observer_finality }) => ({ name, status, observer_finality }));
+  } catch (error) { report.defaultSdk.status = "failed"; throw error; }
+  finally { await saveReport(); }
+}
 report.status = "passed";
 report.providerRequests = contexts.length;
 report.assertions = ["independent-npm-install", "actual-host-rpc", "complete-local-and-builtin-bodies", "source-failure-isolation", "bundled-cli-sdk-identity", "offline-resources", "metadata-only-completion"];
+if (report.defaultSdk.status === "passed") report.assertions.push("default-sdk-installed-pi-all14");
 console.log(`Artifact verification passed: ${host} actual installed RPC, complete builtin bodies, independent Node queries and offline resources${ternExtract ? ", Tern runtime closure" : ""}. Fixtures retained: ${base}`);
 } catch (error) {
   report.status = "failed";
