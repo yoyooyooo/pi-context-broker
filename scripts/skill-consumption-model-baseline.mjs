@@ -766,6 +766,18 @@ function summarizeTurn(sample, events, transport) {
       && transport.at(-1)?.complete === true && transport.at(-1)?.selectedModel === hash('magpie/group/flash-free')
       && payloadsMatch && active.length === completed.length };
 }
+export function modelProcessTerminalFailure(result,{costEvents,transportEvents,inspectionRequired=false}) {
+  if(result.status!=='closed'||result.source?.hostClosed!==true)
+    return 'Owned process has no complete close boundary; no later sample will be submitted';
+  if(result.source?.complete!==true||result.observedSourcesQuiet!==true)
+    return 'Source observation is incomplete; no later sample will be submitted';
+  if(costEvents.at(-1)?.phase!=='observer_end'||costEvents.at(-1)?.complete!==true)
+    return 'Provider cost observation is incomplete; no later sample will be submitted';
+  if(transportEvents.at(-1)?.phase!=='transport_end'||transportEvents.at(-1)?.complete!==true)
+    return 'Provider transport observation is incomplete; no later sample will be submitted';
+  if(inspectionRequired&&(result.inspectionComplete!==true||result.rawEvidence?.complete!==true))
+    return 'Raw provider/answer observation is incomplete; no later sample will be submitted';
+}
 export function summarizeSource(ledger, { beforeCloseRequestIds, beforeCloseChildIds, ownedLifecycle = [], transport = 'cli', sourceObservation } = {}) {
   const starts=ledger.filter(row=>row.phase==='started'), ends=ledger.filter(row=>row.phase==='completed');
   const metrics=ledger.filter(row=>row.phase==='metrics'), attempts=ledger.filter(row=>row.phase==='attempt'), waits=ledger.filter(row=>row.phase==='wait');
@@ -981,8 +993,9 @@ async function run(config, parent) {
             answers:local.filter(sample=>sample.answerFile)});
         }
         catch(error){processResult.inspectionComplete=false;processResult.inspectionError=safeDiagnostic(Buffer.from(error.message));}
-        if(!processResult.rawEvidence?.complete)stoppedReason??='Raw provider/answer observation is incomplete; no later sample will be submitted';
       }
+      stoppedReason??=modelProcessTerminalFailure(processResult,{costEvents:events,transportEvents,
+        inspectionRequired:Boolean(inspectionLog)});
       processResult.sourceLedger=ledger.ledger;
       await save(join(processEvidence,'process.json'),processResult);processes.push(processResult);
       for(const sample of local) samples.push(summarizeTurn(sample,events,transportEvents));

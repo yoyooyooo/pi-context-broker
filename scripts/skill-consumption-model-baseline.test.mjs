@@ -10,7 +10,8 @@ import test from 'node:test';
 import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { comparisonCatalog, modelBaselineHostArgs, modelBaselineSource, modelBaselineTools, observeNativeInspection,
   summarizeNativeSource, validateModelBaselineConfig, verifyComparisonCatalog, verifyNativeInspectionEvents,
-  summarizeSource, verifyComparisonSelection, verifyModelAnswer, verifyModelRawEvidence, readModelReviewStop } from './skill-consumption-model-baseline.mjs';
+  summarizeSource, verifyComparisonSelection, verifyModelAnswer, verifyModelRawEvidence, readModelReviewStop,
+  modelProcessTerminalFailure } from './skill-consumption-model-baseline.mjs';
 
 test('ordinary task acceptance rejects permission-only replies containing the expected answer', () => {
   assert.equal(verifyModelAnswer({ stopReason: 'stop', text: '请先确认授权，我才能回答 12 加 7 是否等于 19。' }, ['19', '十九']), false);
@@ -421,6 +422,40 @@ test('identical bytes in different native files retain distinct path identities'
   const observed=probe.events().find(event=>event.phase==='native_provider').files;
   assert.deepEqual(observed.map(file=>file.path),['SKILL.md']);
   assert.equal(observed.some(file=>file.path===duplicate.path),false,'A main read cannot stand in for a same-byte resource read');
+});
+
+test('a closed native child with unknown source cost stops later samples after the owned terminal', () => {
+  const probe=nativeProbe();probe.read(nativeFiles[0]);
+  probe.channels.get('tracing:child_process.spawn:start')({process:{once:(_event,callback)=>callback(0,null)}});
+  probe.provider([{role:'tool',tool_call_id:'call-SKILL.md',content:nativeFiles[0].body}]);probe.finish();
+  const transportEvents=[{phase:'transport_end',complete:true}];
+  const source=summarizeNativeSource(probe.events(),transportEvents,hostClosed,nativeFiles);
+  assert.equal(source.hostClosed,true);assert.equal(source.sourceObserverComplete,true);
+  assert.equal(source.unmatchedChildren,1);assert.equal(source.httpAttempts,null);
+  const result={status:'closed',source,observedSourcesQuiet:source.complete,inspectionComplete:true,rawEvidence:{complete:true}};
+  assert.match(modelProcessTerminalFailure(result,{costEvents:[{phase:'observer_end',complete:true}],transportEvents,
+    inspectionRequired:true}),/Source observation is incomplete/);
+});
+
+test('later samples require source, cost, transport and raw originals to close; a captured HTTP failure is not erased', () => {
+  const result={status:'closed',source:{complete:true,hostClosed:true},observedSourcesQuiet:true,inspectionComplete:true,rawEvidence:{complete:true}};
+  const options={costEvents:[{phase:'observer_end',complete:true}],
+    transportEvents:[{phase:'request_end',status:200,outcome:'failure',errorCode:20},{phase:'transport_end',complete:true}],inspectionRequired:true};
+  const original=structuredClone(options.transportEvents);
+  assert.equal(modelProcessTerminalFailure(result,options),undefined);
+  assert.deepEqual(options.transportEvents,original,'HTTP 200 with a captured stream failure remains a failure record');
+  for(const [changed,observed,reason] of [
+    [{status:'running'},{},/close boundary/],
+    [{source:undefined},{},/close boundary/],
+    [{source:{complete:false,hostClosed:true}},{},/Source observation/],
+    [{observedSourcesQuiet:false},{},/Source observation/],
+    [{},{costEvents:[]},/cost observation/],
+    [{},{costEvents:[{phase:'observer_end',complete:false}]},/cost observation/],
+    [{},{transportEvents:[]},/transport observation/],
+    [{},{transportEvents:[{phase:'transport_end',complete:false}]},/transport observation/],
+    [{inspectionComplete:false},{},/Raw provider/],
+    [{rawEvidence:undefined},{},/Raw provider/],
+  ])assert.match(modelProcessTerminalFailure({...result,...changed},{...options,...observed}),reason);
 });
 
 const fixedSource={scope:'a'.repeat(64),recordId:'shared_skill:library-fixed:reader',snapshotId:'s_'+'b'.repeat(64),versionId:'c'.repeat(64),entrypoint:'SKILL.md'};
