@@ -138,6 +138,23 @@ test("compiled repeated entries use a compact confirmation even for small comple
   expect(JSON.stringify(messages)).toBe(original);
 });
 
+test("compiled tiny and confirmation-shaped source bodies remain replaced with valid provider proof", () => {
+  for (const body of ["x", "Already loaded."]) {
+    const tiny = record("tiny-confirmation", body), first = preparation([tiny], "first"), second = preparation([tiny, beta], "second");
+    const messages = [first, second], stored = JSON.stringify(messages), projected = deduplicateSourceReads(messages);
+    const text = sourceMessageText(projected[1]!.content), proof = (projected[1]!.details as typeof second.details).contextBrokerPreparation;
+    expect(JSON.parse(text).records[0].content).toBe("Already loaded.");
+    expect(JSON.parse(text).records[1].content).toBe(beta.body);
+    expect(validateSkillPrepareProjection(text, proof.projection)).toBe(proof.projection);
+    expect(proof.records.map(value => value.loaded)).toEqual([false, true]);
+    expect(sourceBodyLoaded([projected[0]!], tiny)).toBe(true);
+    expect(sourceBodyLoaded([projected[1]!], tiny)).toBe(false);
+    expect(deduplicateSourceReads(projected)).toBe(projected);
+    expect(deduplicateSourceReads([second])[0]).toBe(second);
+    expect(JSON.stringify(messages)).toBe(stored);
+  }
+});
+
 test("superseding one record derives a valid projection for the remaining fixed selection", () => {
   const message = preparation(), before = JSON.stringify(message);
   const projected = projectSelectedSourceMessages([message], { scopes: new Map([[scope, {

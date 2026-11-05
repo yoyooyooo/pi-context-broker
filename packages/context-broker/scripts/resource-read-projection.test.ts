@@ -125,6 +125,22 @@ test("legacy single reads and batch spans share exact identity but not main acti
   expect(deduplicateSourceReads(history)).toBe(history);
 });
 
+test("batch tiny and confirmation-shaped resources keep derived proof without attesting the confirmation", () => {
+  for (const body of ["x", "Already available."]) {
+    const source = file("references/tiny.md", body), first = message("first", [source]), second = message("second", [source]);
+    const messages = [first, second], stored = JSON.stringify(messages), projected = deduplicateSourceReads(messages);
+    const text = sourceMessageText(projected[1]!.content);
+    const proof = validateResourceReadProjection(text, (projected[1]!.details as { contextBrokerResource: unknown }).contextBrokerResource);
+    expect(JSON.parse(text).files[0].content).toBe("Already available.");
+    expect(proof).toBeDefined(); expect(proof?.files[0]?.delivered_complete_text).toBe(false);
+    expect(deduplicateSourceReads(projected)).toBe(projected);
+    const fresh = message("fresh", [source]);
+    expect(deduplicateSourceReads([projected[1]!, fresh])[1]).toBe(fresh);
+    expect(deduplicateSourceReads([second])[0]).toBe(second);
+    expect(JSON.stringify(messages)).toBe(stored);
+  }
+});
+
 test("derived batch proof requires a valid full parent and changes only chosen text", () => {
   const result = compile(), before = sourceMessageText(result.content), proof = result.details.contextBrokerResource;
   const model = JSON.parse(before) as ResourceReadModel;

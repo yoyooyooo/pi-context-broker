@@ -54,7 +54,7 @@ export function sourceDeliveryReceipt(record: SkillRecord, content: string, enco
 function verifiedReadProof(message: AgentMessage) {
   if (message.role !== "toolResult" || message.toolName !== "read" || message.isError === true || !object(message.details)) return undefined;
   const proof = message.details.contextBrokerRead;
-  if (!object(proof) || ![1, 2, 3].includes(Number(proof.version)) || typeof proof.identity !== "string"
+  if (!object(proof) || proof.loaded === false || ![1, 2, 3].includes(Number(proof.version)) || typeof proof.identity !== "string"
     || typeof proof.toolCallId !== "string" || !proof.toolCallId || proof.toolCallId !== message.toolCallId || !snapshot(proof.snapshotId)) return undefined;
   const text = sourceMessageText(message.content);
   if (proof.version === 3) {
@@ -251,6 +251,12 @@ function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number
       return { ...message, details: { ...next, contextBrokerPreparation: { ...next.contextBrokerPreparation, records, projection: derived } } };
     }
     if (projected[index] !== original && reason === "deduplicate") {
+      // A confirmation can equal a very short author body. Invalidate only the
+      // provider copy explicitly instead of relying on different text hashes.
+      const native = verifiedReadProof(original);
+      if (native && object(next)) return { ...message, details: { ...next, contextBrokerRead: { ...native, loaded: false } } };
+      const resource = verifiedResourceReadProof(original);
+      if (resource && object(next)) return { ...message, details: { ...next, contextBrokerResource: { ...resource, delivered_complete_text: false } } };
       const batch = verifiedResourceBatchProof(original);
       if (batch && object(next)) {
         const changes = replacements.get(index) ?? [];
@@ -272,7 +278,7 @@ function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number
 export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[] {
   const seen = new Map<string, string>();
   const replacements = new Map<number, Replacement[]>();
-  const confirmation = (proof: Record<string, unknown>) => `The complete Skill entry for snapshot ${proof.snapshotId} is already present in this active context. This successful repeated read verified the same entry bytes; use the existing instructions and their fixed resource directory.`;
+  const entryConfirmation = "Already loaded.", resourceConfirmation = "Already available.";
   function replace(index: number, start: number, end: number, text: string) {
     const spans = replacements.get(index) ?? [];
     if (!spans.some(span => span.start === start && span.end === end)) spans.push({ start, end, text });
@@ -287,18 +293,15 @@ export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[]
     const location = JSON.stringify([index, proof.delivery.start, proof.delivery.end]);
     if (!seen.has(key)) { seen.set(key, location); return; }
     if (seen.get(key) === location) return;
-    const message = messages[index]!;
-    const preparation = object(message.details) ? message.details.contextBrokerPreparation : undefined;
-    const text = message.role === "toolResult" && message.toolName === "skill_prepare" && object(preparation) && preparation.version === 2
-      ? "Already loaded." : confirmation(proof);
-    replace(index, Number(proof.delivery.start), Number(proof.delivery.end), proof.delivery.encoding === "json" ? JSON.stringify(text).slice(1, -1) : text);
+    replace(index, Number(proof.delivery.start), Number(proof.delivery.end),
+      proof.delivery.encoding === "json" ? JSON.stringify(entryConfirmation).slice(1, -1) : entryConfirmation);
   });
   messages.forEach((message, index) => {
     const proof = verifiedReadProof(message);
     if (!proof) return;
     const key = JSON.stringify([proof.contentIdentity ?? proof.identity, proof.snapshotId, proof.bodySha256]);
     if (!seen.has(key)) { seen.set(key, String(index)); return; }
-    replace(index, 0, readProofEnd(proof, message), confirmation(proof));
+    replace(index, 0, readProofEnd(proof, message), entryConfirmation);
   });
   const resources = new Set<string>();
   messages.forEach((message, index) => {
@@ -307,8 +310,7 @@ export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[]
       const fileIdentity = proof.file_id === undefined ? ["path", proof.path] : ["file_id", proof.file_id];
       const key = JSON.stringify([proof.scope, proof.id, proof.snapshot_id, fileIdentity, proof.sha256]);
       if (!resources.has(key)) resources.add(key);
-      else if (proof.bytes !== 0) replace(index, 0, sourceMessageText(message.content).length,
-        `The complete Skill resource ${proof.path} for snapshot ${proof.snapshot_id} is already present in this active context. This successful repeated read verified the same resource bytes.`);
+      else if (proof.bytes !== 0) replace(index, 0, sourceMessageText(message.content).length, resourceConfirmation);
       return;
     }
     const batch = verifiedResourceBatchProof(message);
@@ -320,7 +322,7 @@ export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[]
       if (!resources.has(key)) { resources.add(key); continue; }
       // An empty source is already minimal. Its zero-length span is still fully
       // proved; adding a confirmation would only increase model context.
-      if (file.bytes !== 0) replace(index, file.delivery.start, file.delivery.end, JSON.stringify("Already available.").slice(1, -1));
+      if (file.bytes !== 0) replace(index, file.delivery.start, file.delivery.end, JSON.stringify(resourceConfirmation).slice(1, -1));
     }
   });
   return replacements.size ? projectDeliverySpans(messages, replacements, "deduplicate") : messages;

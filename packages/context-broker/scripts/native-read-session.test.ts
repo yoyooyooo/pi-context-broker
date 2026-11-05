@@ -24,6 +24,7 @@ test("a complete successful native read counts as loaded without injecting a sec
 test("partial, failed, detached, forged text and cross-scope receipts cannot suppress activation", () => {
   expect(nativeReadReceipt(record, "id", record.body.slice(0, 10))).toBeUndefined();
   for (const message of [{ ...result(), content: "partial" }, { ...result(), isError: true }, { ...result(), role: "user" }, { ...result(), toolCallId: "different" }, { ...result(), details: undefined }]) expect(hasLoadedSkill([message], record)).toBe(false);
+  expect(hasLoadedSkill([{ ...result(), details: { contextBrokerRead: { ...nativeReadReceipt(record, "read-1", record.body), loaded: false } } }], record)).toBe(false);
   for (const toolCallId of [undefined, ""]) expect(hasLoadedSkill([{ ...result(), toolCallId,
     details: { contextBrokerRead: { ...nativeReadReceipt(record, "read-1", record.body), toolCallId } } }], record)).toBe(false);
   expect(hasLoadedSkill([result()], { ...record, sourceScope: "other-credential" })).toBe(false);
@@ -40,8 +41,8 @@ test("v3 native receipts prove only the exact full prefix and retain the appende
   const stored = JSON.stringify([message, duplicate]);
   const projected = deduplicateSourceReads([message, duplicate]);
   expect(sourceMessageText(projected[0]?.content)).toBe(content);
-  expect(sourceMessageText(projected[1]?.content)).not.toContain(record.body);
-  expect(sourceMessageText(projected[1]?.content).endsWith(footer)).toBe(true);
+  expect(sourceMessageText(projected[1]?.content)).toBe("Already loaded." + footer);
+  expect(hasLoadedSkill([projected[1]!], record)).toBe(false);
   expect(projected.map(value => value.toolCallId)).toEqual(["prefix-read", "second-read"]);
   expect(JSON.stringify([message, duplicate])).toBe(stored);
   const retiredBinding = { record: { ...record, alias: record.name, enabled: true, default_context: false, entrypoint: "SKILL.md", ref: "skill://record/SKILL.md" },
@@ -82,12 +83,68 @@ test("repeated actual native reads keep one provider body without mutating store
   const messages = [first, second];
   const projected = deduplicateSourceReads(messages);
   expect(JSON.stringify(projected).split("Exact native instructions.").length - 1).toBe(1);
+  expect(sourceMessageText(projected[1]?.content)).toBe("Already loaded.");
+  expect(projected[1]?.details).toMatchObject({ contextBrokerRead: { loaded: false } });
   expect(projected[1]?.toolCallId).toBe("read-2");
   expect(messages[1]?.content).toEqual(second.content);
   expect(nativeReadSnapshot(messages, record)).toBe(a);
   // If compaction removes the original, the remaining full stored read becomes
   // the one provider-visible copy again.
   expect(deduplicateSourceReads([second])[0]).toBe(second);
+});
+
+test("raw, XML and JSON instruction deliveries retain one source and compact only the repeated span", () => {
+  const source = { ...record, body: '\ufeff作者 <body> & "quoted" \\ 🧭\r\nKeep every rule.\r\n' };
+  for (const encoding of ["raw", "xml", "json"] as const) {
+    const encoded = encoding === "xml" ? source.body.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+      : encoding === "json" ? JSON.stringify(source.body).slice(1, -1) : source.body;
+    const prefix = encoding === "json" ? '{"content":"' : "<source>";
+    const suffix = encoding === "json" ? '","after":"preserved"}' : "</source>after";
+    const content = prefix + encoded + suffix;
+    const first: AgentMessage = { role: "custom", customType: "context-broker", content,
+      details: { records: [sourceDeliveryReceipt(source, content, encoding, prefix.length)] } };
+    const second = structuredClone(first), messages = [first, second], stored = JSON.stringify(messages);
+    const projected = deduplicateSourceReads(messages);
+    expect(sourceMessageText(projected[0]?.content)).toBe(content);
+    expect(sourceMessageText(projected[1]?.content)).toBe(prefix + "Already loaded." + suffix);
+    expect(hasLoadedSkill([projected[0]!], source)).toBe(true);
+    expect(hasLoadedSkill([projected[1]!], source)).toBe(false);
+    expect(deduplicateSourceReads(projected)).toBe(projected);
+    expect(deduplicateSourceReads([second])[0]).toBe(second);
+    expect(JSON.stringify(messages)).toBe(stored);
+  }
+});
+
+test("native confirmation stays compact for tiny bodies and cannot become a new complete delivery", () => {
+  for (const body of ["x", "Already loaded."]) for (const footer of ["", "\n<skill-directory>fixed resources</skill-directory>"]) {
+    const source = { ...record, body }, content = body + footer;
+    const messages: AgentMessage[] = ["first", "second"].map(toolCallId => ({ role: "toolResult", toolName: "read", toolCallId, content,
+      details: { contextBrokerRead: nativeReadReceipt(source, toolCallId, content) } }));
+    const stored = JSON.stringify(messages), projected = deduplicateSourceReads(messages);
+    expect(sourceMessageText(projected[0]?.content)).toBe(content);
+    expect(sourceMessageText(projected[1]?.content)).toBe("Already loaded." + footer);
+    expect(hasLoadedSkill([projected[0]!], source)).toBe(true);
+    expect(hasLoadedSkill([projected[1]!], source)).toBe(false);
+    expect(deduplicateSourceReads(projected)).toBe(projected);
+    const fresh: AgentMessage = { ...messages[1]!, toolCallId: "fresh", details: { contextBrokerRead: nativeReadReceipt(source, "fresh", content) } };
+    expect(deduplicateSourceReads([projected[1]!, fresh])[1]).toBe(fresh);
+    expect(deduplicateSourceReads([messages[1]!])[0]).toBe(messages[1]);
+    expect(hasLoadedSkill([messages[1]!], source)).toBe(true);
+    expect(JSON.stringify(messages)).toBe(stored);
+  }
+});
+
+test("native compaction keeps different scopes, pins and bytes and does not shorten partial or failed reads", () => {
+  for (const source of [{ ...record, sourceScope: "other" }, { ...record, snapshotId: b }, { ...record, body: "Different complete instructions.\n" }]) {
+    const second: AgentMessage = { role: "toolResult", toolName: "read", toolCallId: "second", content: source.body,
+      details: { contextBrokerRead: nativeReadReceipt(source, "second", source.body) } };
+    const messages = [result(), second]; expect(deduplicateSourceReads(messages)).toBe(messages);
+  }
+  const second: AgentMessage = { ...result(), toolCallId: "second", details: { contextBrokerRead: nativeReadReceipt(record, "second", record.body) } };
+  for (const changed of [{ ...second, content: "partial" }, { ...second, isError: true }, { ...second, toolCallId: "detached" },
+    { ...second, details: undefined }, { ...second, content: [{ type: "image", data: "AA==" }] }]) {
+    const messages: AgentMessage[] = [result(), changed]; expect(deduplicateSourceReads(messages)).toBe(messages);
+  }
 });
 test("trusted native or dollar injection coalesces rereads, never user XML or foreign scope", () => {
   const injected: AgentMessage = { role: "custom", customType: "context-broker", content: record.body, details: { records: [sourceDeliveryReceipt(record, record.body)] } };
@@ -120,8 +177,9 @@ test("repeated complete resource reads retain one provider body and every stored
   const stored = JSON.stringify(messages), body = sourceMessageText(messages[0]!.content);
   const projected = deduplicateSourceReads(messages);
   expect(projected.filter(message => sourceMessageText(message.content) === body)).toHaveLength(1);
+  expect(sourceMessageText(projected[1]?.content)).toBe("Already available.");
   expect(projected.map(message => message.toolCallId)).toEqual(["resource-1", "resource-2", "resource-3"]);
-  expect(projected[1]?.details).toEqual(messages[1]?.details);
+  expect(projected[1]?.details).toEqual({ contextBrokerResource: { ...messages[1]!.details.contextBrokerResource, delivered_complete_text: false } });
   expect(JSON.stringify(messages)).toBe(stored);
   expect(deduplicateSourceReads(projected)).toBe(projected);
   // Compaction can discard earlier copies; the remaining real read still owns its full body.
@@ -132,6 +190,24 @@ test("repeated complete resource reads retain one provider body and every stored
     expect(sessionSourceSnapshot(active, owner)).toBeUndefined();
     expect(sessionSourceBindings(active, "scope")).toEqual([]);
   }
+});
+
+test("scalar resource confirmations never attest their own text and empty resources stay empty", () => {
+  for (const body of ["x", "Already available."]) {
+    const messages = [resourceResult("first", { body }), resourceResult("second", { body })], stored = JSON.stringify(messages);
+    const projected = deduplicateSourceReads(messages);
+    expect(sourceMessageText(projected[0]?.content)).toBe(body);
+    expect(sourceMessageText(projected[1]?.content)).toBe("Already available.");
+    expect(projected[1]?.details).toMatchObject({ contextBrokerResource: { delivered_complete_text: false, loaded: false } });
+    expect(deduplicateSourceReads(projected)).toBe(projected);
+    const fresh = resourceResult("fresh", { body });
+    expect(deduplicateSourceReads([projected[1]!, fresh])[1]).toBe(fresh);
+    expect(deduplicateSourceReads([messages[1]!])[0]).toBe(messages[1]);
+    expect(JSON.stringify(messages)).toBe(stored);
+  }
+  const empty = [resourceResult("empty-first", { body: "" }), resourceResult("empty-second", { body: "" })];
+  expect(deduplicateSourceReads(empty)).toBe(empty);
+  expect(empty.every(message => sourceMessageText(message.content) === "")).toBe(true);
 });
 
 test("resource deduplication preserves different scopes, owners, snapshots, File IDs and bodies", () => {
@@ -191,7 +267,7 @@ test("verified resources without File IDs deduplicate by exact owner, snapshot a
     const projected = deduplicateSourceReads(history);
     expect(projected.filter(message => sourceMessageText(message.content) === body)).toHaveLength(1);
     expect(projected.map(message => message.toolCallId)).toEqual(["path-1", "path-2", "path-3"]);
-    expect(projected[1]?.details).toEqual(history[1]?.details);
+    expect(projected[1]?.details).toEqual({ contextBrokerResource: { ...messages[1]!.details.contextBrokerResource, delivered_complete_text: false } });
     expect(deduplicateSourceReads(projected)).toBe(projected);
     expect(deduplicateSourceReads([history[2]!])[0]).toBe(history[2]);
     const owner = { ...record, id: "shared_skill:lib:skill" };

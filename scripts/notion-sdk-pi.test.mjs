@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { assertNativeGuidance, assertScopedCommand, assertPreparedHttpRequest, assertResourceHttpRequest, assertResourceBatchProjection, assertResourceReadSchema, resourceRefsFromInspection, resourceTextCopies, bodyCount, reconcile, sourceFinality, observeOwnedObjectReads, assertObjectReadEvidence, assertProviderHttpRequest, assertProviderToolSequence, assertSearchProjection, assertDollarProjection, assertNativeProjection, resourceScalarCalls, selectScalarProviderCall, assertResourceScalarResult, resourceScalarSelectedFixture, assertResourceScalarSession, assertResourceScalarCost } from './notion-sdk-pi.mjs';
+import { assertNativeGuidance, assertScopedCommand, assertPreparedHttpRequest, assertResourceHttpRequest, assertResourceBatchProjection, assertResourceReadSchema, resourceRefsFromInspection, resourceTextCopies, bodyCount, reconcile, sourceFinality, observeOwnedObjectReads, assertObjectReadEvidence, assertProviderHttpRequest, assertProviderToolSequence, assertSearchProjection, assertDollarProjection, assertNativeProjection, resourceScalarCalls, selectScalarProviderCall, assertResourceScalarResult, resourceScalarSelectedFixture, assertResourceScalarSession, assertResourceScalarCost, selectNativeRepeatCall, assertNativeRepeatProjection, assertScalarReadObjectIntervals } from './notion-sdk-pi.mjs';
 
 const command = ['/absolute/node', '/installed/dist/ntn-skills.mjs'];
 const database = '11111111-2222-3333-4444-555555555555';
@@ -171,6 +171,81 @@ test('fixed scalar plan starts with read and preserves native pagination, BOM, b
   assert.deepEqual(resourceScalarCalls(batch, refs).map(call => call.args.path), [refs[0], refs[1], refs[1], refs[3], refs[2]]);
   assert.equal(JSON.stringify(batch), before);
   assert.throws(() => selectScalarProviderCall({ messages: [{ ...messages[0], isError: true }] }, calls));
+});
+
+function scalarReadIntervalsFixture(readsPerCall = 1) {
+  const { calls } = scalarFixture(), requiredPid = 123, events = [];
+  const add = event => events.push({ observer_pid: requiredPid, sequence: events.length + 1, ...event });
+  add({ kind: 'object_observer_start' });
+  for (const [index, call] of calls.entries()) {
+    const id = '123:sdk:' + index;
+    add({ kind: 'sdk', operation: 'read', event: 'start', id });
+    for (let read = 0; read < readsPerCall; read++) {
+      const object = { kind: 'object_read', id: '123:object:' + index + ':' + read, api: 'node:fs.readFile', object_sha256: call.file.sha256 };
+      add({ ...object, event: 'start' });
+      add({ ...object, event: 'end', code: null, bytes: call.file.bytes, content_sha256: call.file.sha256 });
+    }
+    add({ kind: 'sdk', operation: 'read', event: 'end', id, status: 'completed' });
+  }
+  add({ kind: 'object_observer_end', pending_reads: 0 });
+  return { events, calls, requiredPid };
+}
+
+test('scalar object intervals attribute one or two actual reads per call, including repeated paths and empty objects', () => {
+  for (const count of [1, 2]) {
+    const value = scalarReadIntervalsFixture(count), before = JSON.stringify(value);
+    const result = assertScalarReadObjectIntervals(value.events, value);
+    assert.equal(result.sdk_reads, value.calls.length); assert.equal(result.object_reads, count * value.calls.length);
+    assert.deepEqual(result.intervals.map(interval => interval.tool_call_id), value.calls.map(call => call.id));
+    for (const [index, interval] of result.intervals.entries()) {
+      assert.equal(interval.object_reads, count); assert.equal(interval.returned_object_bytes, count * value.calls[index].file.bytes);
+      assert.equal(interval.object_sha256, value.calls[index].file.sha256); assert.equal(interval.path, value.calls[index].file.path);
+      assert.deepEqual(interval.arguments, value.calls[index].args);
+    }
+    assert.equal(result.intervals[1].path, result.intervals[2].path);
+    assert.equal(result.intervals.at(-1).returned_object_bytes, 0);
+    assert.equal(result.intervals.at(-1).object_reads, count, 'An empty object still needs an observed read');
+    assert.equal(JSON.stringify(value), before);
+  }
+});
+
+test('scalar object intervals reject reads crossing a call boundary, outside every call, or absent from a call', () => {
+  const renumber = value => value.events.forEach((event, index) => { event.sequence = index + 1; });
+  const crossed = scalarReadIntervalsFixture(), objectEnd = crossed.events.splice(3, 1)[0];
+  crossed.events.splice(4, 0, objectEnd); renumber(crossed);
+  assert.throws(() => assertScalarReadObjectIntervals(crossed.events, crossed), /same SDK interval/);
+  const outside = scalarReadIntervalsFixture(), extra = structuredClone(outside.events.slice(2, 4));
+  for (const event of extra) event.id = '123:object:outside';
+  outside.events.splice(1, 0, ...extra); renumber(outside);
+  assert.throws(() => assertScalarReadObjectIntervals(outside.events, outside), /outside the measured SDK read intervals/);
+  const absent = scalarReadIntervalsFixture(); absent.events.splice(2, 2); renumber(absent);
+  assert.throws(() => assertScalarReadObjectIntervals(absent.events, absent), /Every SDK read must actually read/);
+  const overlap = scalarReadIntervalsFixture(), secondStart = overlap.events.splice(5, 1)[0];
+  overlap.events.splice(4, 0, secondStart); renumber(overlap);
+  assert.throws(() => assertScalarReadObjectIntervals(overlap.events, overlap), /without overlap/);
+});
+
+test('scalar object intervals reject incomplete, duplicated, foreign or byte-inconsistent observations', () => {
+  for (const [label, mutate] of [
+    ['missing SDK end', value => { value.events.splice(4, 1); }],
+    ['missing object end', value => { value.events.splice(3, 1); }],
+    ['unmatched object end', value => { value.events[3].id = 'unmatched'; }],
+    ['duplicate SDK id', value => { value.events[5].id = value.events[8].id = value.events[1].id; }],
+    ['duplicate object id', value => { value.events[6].id = value.events[7].id = value.events[2].id; }],
+    ['foreign SDK PID', value => { value.events[1].observer_pid++; }],
+    ['foreign object PID', value => { value.events[3].observer_pid++; }],
+    ['out-of-order observation', value => { value.events[3].sequence = value.events[2].sequence; }],
+    ['missing sequence', value => { delete value.events[3].sequence; }],
+    ['failed SDK call', value => { value.events[4].status = 'failed'; }],
+    ['different object', value => { value.events[2].object_sha256 = value.events[3].object_sha256 = value.calls[1].file.sha256; }],
+    ['wrong returned bytes', value => { value.events[3].bytes++; }],
+    ['wrong returned hash', value => { value.events[3].content_sha256 = '0'.repeat(64); }],
+    ['failed object read', value => { value.events[3].code = 'EIO'; }],
+    ['different Store API', value => { value.events[2].api = value.events[3].api = 'node:fs/promises.readFile'; }],
+  ]) {
+    const value = scalarReadIntervalsFixture(); mutate(value);
+    assert.throws(() => assertScalarReadObjectIntervals(value.events, value), label);
+  }
 });
 
 test('scalar receipts bind exact native results and reject forged identity, full-text and activation claims', () => {
@@ -566,6 +641,158 @@ test('native compact footer retains direct resource refs and checks full hashes/
   ]) {
     const sample = nativeProjectionFixture(); mutate(sample);
     assert.throws(() => assertNativeProjection(sample.message, sample));
+  }
+});
+
+function nativeRepeatFixture({ expectShort = true, structured = true, splitMain = false } = {}) {
+  const { batch, messages } = scalarFixture(), native = nativeProjectionFixture();
+  batch.main = native.body;
+  Object.assign(batch.snapshot.files[0], { bytes: Buffer.byteLength(batch.main), sha256: createHash('sha256').update(batch.main).digest('hex') });
+  const advertisedMainRef = 'sr:S' + 'a'.repeat(22), file = batch.files[0];
+  const directory = { ...native.message.details.contextBrokerRead.directory, files: batch.snapshot.files.map(source => {
+    const binding = batch.snapshot.file_bindings.find(value => value.path === source.path);
+    return { ...source, ref: 'skill://' + encodeURIComponent(batch.snapshot.record.id) + '/' + source.path
+      + '?snapshot=' + batch.snapshot.snapshot_id + '&file_id=' + binding.file_id };
+  }) };
+  const model = { ref: advertisedMainRef, directory: { ...directory,
+    files: directory.files.map(({ path, bytes }, index) => ({ path, bytes, ref: index ? 'sr:R' + String(index).repeat(22) : advertisedMainRef })),
+    required: directory.required.map(({ id, ...record }) => record) } };
+  const footer = '<skill-directory>\n' + JSON.stringify(model) + '\n</skill-directory>';
+  const suffix = (splitMain ? '\n' : '\n\n') + footer;
+  const mainRef = directory.files[0].ref, resourceRef = model.directory.files.find(value => value.path === file.path).ref;
+  const originals = ['sc15-main', 'sc15-resource', 'sc15-main-repeat', 'sc15-resource-repeat'].map((id, index) => {
+    const message = structuredClone(index % 2 ? messages[0] : native.message); message.toolCallId = id;
+    if (index % 2) message.details.contextBrokerResource.toolCallId = id;
+    else {
+      message.content = splitMain ? [{ type: 'text', text: batch.main }, { type: 'text', text: footer }]
+        : [{ type: 'text', text: batch.main + suffix }];
+      Object.assign(message.details.contextBrokerRead, { version: 3, toolCallId: id, loaded: true,
+        binding: { record: batch.snapshot.record, scope: batch.snapshot.scope, version_id: batch.snapshot.version_id },
+        snapshotId: batch.snapshot.snapshot_id, directory,
+        delivery: { start: 0, end: batch.main.length, encoding: 'raw' } });
+    }
+    return message;
+  });
+  const projected = structuredClone(originals);
+  projected[2].content[0].text = (expectShort ? 'Already loaded.'
+    : `The complete Skill entry for snapshot ${batch.snapshot.snapshot_id} is already present in this active context. This successful repeated read verified the same entry bytes; use the existing instructions and their fixed resource directory.`) + (splitMain ? '' : suffix);
+  projected[3].content[0].text = expectShort ? 'Already available.'
+    : `The complete Skill resource ${file.path} for snapshot ${batch.snapshot.snapshot_id} is already present in this active context. This successful repeated read verified the same resource bytes.`;
+  if (expectShort) {
+    projected[2].details.contextBrokerRead.loaded = false;
+    projected[3].details.contextBrokerResource.delivered_complete_text = false;
+  }
+  if (!structured) for (const message of projected) delete message.structuredContent;
+  const search = { role: 'toolResult', toolName: 'skill_search', toolCallId: 'sc15-search', isError: false,
+    content: [{ type: 'text', text: JSON.stringify({ matches: [{ name: batch.name, ref: mainRef }] }) }] };
+  const captures = Array.from({ length: 6 }, (_, index) => ({ requestId: index + 1,
+    context: { messages: [...context().messages, ...(index ? [structuredClone(search)] : []),
+      ...structuredClone(projected.slice(0, Math.max(0, index - 1)))] } }));
+  return { batch, originals, captures, model, mainRef, advertisedMainRef, resourceRef, resourcePath: file.path, suffix };
+}
+
+test('native repeat selector follows only first-read advertised handles through all four native reads', () => {
+  for (const stringContent of [false, true]) {
+    const value = nativeRepeatFixture(), state = context();
+    if (stringContent) value.originals[0].content = value.originals[0].content[0].text;
+    state.messages.push({ role: 'toolResult', toolCallId: 'unrelated', content: [{ type: 'text', text:
+      '<skill-directory>' + JSON.stringify({ ref: 'sr:S' + 'z'.repeat(22), directory: { files: [] } }) + '</skill-directory>' }] });
+    const refs = [value.mainRef, value.resourceRef, value.advertisedMainRef, value.resourceRef];
+    for (const [index, message] of value.originals.entries()) {
+      const before = JSON.stringify(state);
+      assert.deepEqual(selectNativeRepeatCall(state, value), { type: 'toolCall', id: message.toolCallId, name: 'read', arguments: { path: refs[index] } });
+      assert.equal(JSON.stringify(state), before); state.messages.push(message);
+    }
+    assert.equal(selectNativeRepeatCall(state, value), null);
+  }
+});
+
+test('native repeat selector rejects missing, ambiguous or invalid advertised handles and failed reads', () => {
+  for (const mutate of [
+    model => { model.ref = 'skill://owner/SKILL.md'; },
+    model => { model.directory.files[1].ref = model.ref; },
+    model => { model.directory.files.splice(1, 1); },
+    model => { model.directory.files.push(structuredClone(model.directory.files[1])); },
+  ]) {
+    const value = nativeRepeatFixture(); mutate(value.model);
+    value.originals[0].content[0].text = value.batch.main + '<skill-directory>' + JSON.stringify(value.model) + '</skill-directory>';
+    assert.throws(() => selectNativeRepeatCall({ messages: [value.originals[0]] }, value), /HANDLES_INVALID/);
+  }
+  for (const text of ['No directory', '<skill-directory>{</skill-directory>']) {
+    const value = nativeRepeatFixture(); value.originals[0].content[0].text = text;
+    assert.throws(() => selectNativeRepeatCall({ messages: [value.originals[0]] }, value));
+  }
+  for (let index = 0; index < 4; index++) {
+    const value = nativeRepeatFixture(); value.originals[index].isError = true;
+    assert.throws(() => selectNativeRepeatCall({ messages: value.originals.slice(0, index + 1) }, value), /CONTROLLED_REPEAT_.*FAILED/);
+  }
+});
+
+test('native repeat projection verifies each provider request with omitted or preserved native structured output', () => {
+  for (const expectShort of [true, false]) for (const structured of [true, false]) for (const splitMain of [false, true]) {
+    const value = nativeRepeatFixture({ expectShort, structured, splitMain }), before = JSON.stringify(value);
+    const result = assertNativeRepeatProjection(value.captures, value.originals, { batch: value.batch, expectShort });
+    assert.equal(result.expectation, expectShort ? 'short_confirmations_verified' : 'baseline_long_confirmations_recorded');
+    assert.equal(result.first_complete_content_preserved, true); assert.equal(result.original_directory_preserved, true);
+    assert.deepEqual(result.requests.map(request => request.main_content_copies), [0, 0, 1, 1, 1, 1]);
+    assert.deepEqual(result.requests.map(request => request.resource_content_copies), [0, 0, 0, 1, 1, 1]);
+    assert.deepEqual(result.requests.at(-1).structured_content_present, structured ? ['sc15-resource', 'sc15-resource-repeat'] : []);
+    assert.equal(result.main.native_content_blocks.length, splitMain ? 2 : 1);
+    if (splitMain) {
+      const repeated = value.captures[5].context.messages.find(message => message.toolCallId === 'sc15-main-repeat');
+      assert.equal(value.originals[0].content[0].text, value.batch.main);
+      assert.equal(result.main.native_content_blocks[0].bytes, Buffer.byteLength(value.batch.main));
+      assert.notEqual(value.batch.main.length, Buffer.byteLength(value.batch.main), 'The source span uses character offsets, not UTF-8 byte length');
+      assert.notEqual(result.main.confirmation_bytes, result.main.native_content_blocks[0].bytes);
+      assert.equal(repeated.content[0].text, result.main.confirmation);
+      assert.deepEqual(repeated.content[1], value.originals[0].content[1]);
+    }
+    if (expectShort) { assert.equal(result.main.confirmation_bytes, 15); assert.equal(result.resource.confirmation_bytes, 18); }
+    else { assert.ok(result.main.confirmation_bytes > 15); assert.ok(result.resource.confirmation_bytes > 18); }
+    assert.equal(JSON.stringify(value), before);
+    assert.throws(() => assertNativeRepeatProjection(value.captures, value.originals, { batch: value.batch, expectShort: !expectShort }));
+  }
+});
+
+test('native repeat projection preserves separate directory blocks even when flattened text would match', () => {
+  for (const expectShort of [true, false]) for (const id of ['sc15-main', 'sc15-main-repeat']) {
+    for (const [label, mutate] of [
+      ['changed directory', message => { message.content[1].text = message.content[1].text.replace('references/utf8.txt', 'references/foreign.txt'); }],
+      ['missing directory', message => { message.content.pop(); }],
+      ['changed directory length', message => { message.content[1].text += '\n'; }],
+      ['flattened block boundary', message => { message.content = [{ type: 'text', text: message.content.map(block => block.text).join('\n') }]; }],
+    ]) {
+      const value = nativeRepeatFixture({ expectShort, splitMain: true });
+      const message = value.captures[5].context.messages.find(message => message.toolCallId === id); mutate(message);
+      assert.throws(() => assertNativeRepeatProjection(value.captures, value.originals, { batch: value.batch, expectShort }), label);
+    }
+  }
+});
+
+test('native repeat projection rejects lost source, changed directories, forged delivery markers and request drift', () => {
+  const at = (value, request, id) => value.captures[request].context.messages.find(message => message.toolCallId === id);
+  for (const [label, mutate] of [
+    ['missing provider request', value => { value.captures.pop(); }],
+    ['raw repeat main shortened', value => { value.originals[2].content[0].text = 'Already loaded.' + value.suffix; }],
+    ['raw main incomplete proof', value => { value.originals[2].details.contextBrokerRead.delivery.end--; }],
+    ['raw resource changed', value => { value.originals[3].structuredContent = 'Already available.'; }],
+    ['first main replaced', value => { at(value, 2, 'sc15-main').content[0].text = 'Already loaded.' + value.suffix; }],
+    ['first proof changed', value => { at(value, 2, 'sc15-main').details.contextBrokerRead.bodySha256 = '0'.repeat(64); }],
+    ['first structured output changed', value => { at(value, 3, 'sc15-resource').structuredContent = 'Changed'; }],
+    ['repeat directory removed', value => { at(value, 4, 'sc15-main-repeat').content[0].text = 'Already loaded.'; }],
+    ['repeat main still loaded', value => { at(value, 4, 'sc15-main-repeat').details.contextBrokerRead.loaded = true; }],
+    ['repeat resource still complete', value => { at(value, 5, 'sc15-resource-repeat').details.contextBrokerResource.delivered_complete_text = true; }],
+    ['repeat source duplicated', value => { at(value, 5, 'sc15-resource-repeat').content[0].text = value.batch.files[0].content; }],
+    ['repeat structured output changed', value => { at(value, 5, 'sc15-resource-repeat').structuredContent = 'Already available.'; }],
+    ['premature main', value => { value.captures[1].context.messages.push(structuredClone(value.originals[0])); }],
+    ['missing result', value => { value.captures[5].context.messages = value.captures[5].context.messages.filter(message => message.toolCallId !== 'sc15-resource-repeat'); }],
+    ['duplicate result', value => { value.captures[5].context.messages.push(structuredClone(at(value, 5, 'sc15-resource-repeat'))); }],
+    ['failed tool result', value => { at(value, 5, 'sc15-resource-repeat').isError = true; }],
+    ['wrong tool', value => { at(value, 5, 'sc15-resource-repeat').toolName = 'skill_prepare'; }],
+    ['unrequested body leaked', value => { value.captures[5].context.messages.push({ role: 'user', content: value.batch.unselected[0].content }); }],
+  ]) {
+    const value = nativeRepeatFixture(); mutate(value);
+    assert.throws(() => assertNativeRepeatProjection(value.captures, value.originals, { batch: value.batch }), label);
   }
 });
 
