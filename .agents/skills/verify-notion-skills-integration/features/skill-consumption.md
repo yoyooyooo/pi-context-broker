@@ -28,7 +28,7 @@
 | SC10 | AH-625 | SDK、公开 CLI | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：独立 npm/Node SDK 11/11、Broker 等价 9/9、实际 Pi 默认 SDK 3/3；目录 CLI 和 custom command 明确单列 |
 | SC11 | AH-628 | 目录、依赖选择 | CLI control / request-engine；另补需求范围与字段字节 |
 | SC12 | AH-629 | 暖、过期、clear | session-cache-recovery；另补五层缓存和权限期限 |
-| SC13 | AH-630 | 主文、单资源、export | CLI 独立 SDK smoke 与下方 `partial-entrypoint`；[最终包、独立新会话与真实来源记录](../../../../packages/context-broker/docs/selected-snapshot-consumption-verification-2026-11-05.md)；完整目录、按需对象验证与 full export 各自验收；源归属规划和首次 current 全树观察另保留未完成范围 |
+| SC13 | AH-630 | 主文、单资源、export | CLI 独立 SDK smoke 与下方 `partial-entrypoint`；[固定快照记录](../../../../packages/context-broker/docs/selected-snapshot-consumption-verification-2026-11-05.md)及[来源所有权、最终包与真实来源记录](../../../../packages/context-broker/docs/source-ownership-consumption-verification-2026-11-05.md)；完整目录、先判归属后取字节与 full export 各自验收；首次 current 全树观察、Git 隐私回退与 legacy ZIP 成本仍单列 |
 | SC14 | AH-631 | 过期 Records | CLI request_metrics；另补事实计划复用与Payload归因 |
 | SC15 | AH-632 | 并发、取消、崩溃 | request-engine / cache-concurrency；另补跨进程只读 owner 终局 |
 | SC16 | AH-633 | 历史重算 | shared SSOT CLI；另补 checkpoint 与冲突/unknown |
@@ -209,6 +209,8 @@ node scripts/notion-sdk-pi.mjs evidence --evidence "$ENTRYPOINT_EVIDENCE"
 缺失/坏 hash 对象被选中时的明确失败、partial export 拒绝、完整 clone 逐文件 export 在独立 SDK smoke 验证；同 pin retained 缺失主文恢复由 CLI Core 的真实请求集合验证。不要让预算错误替代缺失对象负例，也不要由文件目录或旧验证记录推断所有 bytes 当前完整。current 的 TTL、正文期限、scope、失效和 pending 条件仍独立生效。
 
 按上方相同规则封存真实 session、provider、source/object 账本并核对清理前后原件 hash；仅 `status: trashed`、owned scratch 消失且原证据不变才证明清理完成。新会话验证须从本 Skill 和本地图实际完成同一路径，不能只 review 新增文字。全 warm/partial-cache 的 0 HTTP 不证明真实冷源成本；真实 Notion、实际模型和 current/source 尚未完成的范围单独报告。此条通过不关闭整个 SC13/SC21。
+
+Current 来源所有权的 cold 验证继续走 CLI 既有 SDK smoke，见相邻 CLI 消费链地图的「Current 来源先判归属再取字节」。核对空 Store、已有 custom/tombstone 对应的大来源零获取、必需 source main YAML/有效资源的正控制，以及 installed CLI full export 的逐文件 bytes/hash。该 transport 是受控 Response 与 loopback Notion；本节真实 Pi 的 partial-cache 不能替代它。HTTP/Git local alias 还必须保持实际字节验证后、对象发布前的 durable marker 顺序，后续 provider 失败不能留下漏标的新对象。Legacy ZIP 的 whole-archive 成本和首次 current 完整观察继续独立记账。
 
 ## Gotchas
 
