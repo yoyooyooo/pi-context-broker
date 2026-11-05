@@ -19,8 +19,9 @@ function isReadState(value: unknown): value is ReadState {
   return !!value && typeof value === "object" && "id" in value && typeof value.id === "string" && "target" in value && typeof value.target === "string" && "status" in value;
 }
 
-export async function createActivationFeedback(api: ExtensionAPI, repaint: () => void) {
+export async function createActivationFeedback(api: ExtensionAPI, repaint: () => void, presentation: "message" | "widget" = "message") {
   const states = new Map<string, ReadState>();
+  const widgetKey = (id: string) => `${ACTIVATION_MESSAGE}:${id}`;
   const Text = api.registerMessageRenderer ? await hostTextComponent(api) : undefined;
   api.registerMessageRenderer?.(ACTIVATION_MESSAGE, message => {
     if (!Text || !isReadState(message.details)) return undefined;
@@ -54,6 +55,7 @@ export async function createActivationFeedback(api: ExtensionAPI, repaint: () =>
   });
   return {
     restore(ctx: ExtensionContext) {
+      if (presentation === "widget") for (const id of states.keys()) ctx.ui?.setWidget?.(widgetKey(id), undefined);
       states.clear();
       // Only the selected leaf's entries may supply final states for restored running rows.
       for (const entry of ctx.sessionManager?.getBranch?.() ?? []) {
@@ -62,14 +64,18 @@ export async function createActivationFeedback(api: ExtensionAPI, repaint: () =>
       repaint();
     },
     begin(record: SkillRecord, ctx?: ExtensionContext, purpose?: "use" | "inspect", source?: SourceConfig): ((result: { value: SkillRecord } | { error: string } | { skipped: true }) => void) | undefined {
-      if (!ctx?.hasUI || !api.sendMessage || !api.registerMessageRenderer) return undefined;
+      if (!ctx?.hasUI) return undefined;
+      if (presentation === "widget" ? !ctx.ui?.setWidget : !api.sendMessage || !api.registerMessageRenderer) return undefined;
       const session = ctx.sessionManager?.getSessionId?.();
       const token = record.token ?? record.name;
       const budget = source?.type === "notion" ? source.preparation : undefined;
       const note = purpose ? `Preparing ${purpose}: up to ${budget?.maxNodes ?? 64} nodes, depth ${budget?.maxDepth ?? 16}, ${budget?.maxInstructionBytes ?? 1048576} instruction bytes, ${budget?.maxContextBytes ?? 262144} context bytes. Stop cancels preparation.` : "Fetching the selected Skill and its resources.";
       const state: ReadState = { id: randomUUID(), target: `ntn-skills://${token.slice(token.indexOf("/") + 1)}`, source: record.sourceId ?? "source", status: "running", started: Date.now(), note };
       states.set(state.id, state);
-      api.sendMessage({ customType: ACTIVATION_MESSAGE, content: [], details: { ...state }, display: true }, { triggerTurn: false });
+      // Pi defers non-triggering messages until the turn ends. Its context-bound
+      // acquisition needs a transient widget so the budget is visible while waiting.
+      if (presentation === "widget") ctx.ui?.setWidget?.(widgetKey(state.id), [`Read ${state.target}`, state.note]);
+      else api.sendMessage?.({ customType: ACTIVATION_MESSAGE, content: [], details: { ...state }, display: true }, { triggerTurn: false });
       repaint();
       return result => {
         if (state.status !== "running") return;
@@ -78,6 +84,7 @@ export async function createActivationFeedback(api: ExtensionAPI, repaint: () =>
         state.note = "value" in result ? "Skill and resources ready." : "error" in result ? result.error : "Reference unavailable; original message retained.";
         if ("value" in result) { state.version = result.value.versionId; state.snapshot = result.value.snapshotId; }
         if (states.get(state.id) === state && session === ctx.sessionManager?.getSessionId?.()) {
+          if (presentation === "widget") ctx.ui?.setWidget?.(widgetKey(state.id), undefined);
           api.appendEntry?.(ACTIVATION_RESULT, { ...state });
           repaint();
         }

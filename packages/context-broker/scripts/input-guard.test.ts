@@ -233,9 +233,11 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       await f.installed;
       const accepted = await f.begin("/skill:fixture-startup cancelled");
       const context = accepted.project();
-      const settled = assert.rejects(context, /cancelled/i);
+      const settled = boundary === "cancel"
+        ? context.then(result => { assert.deepEqual(result, [undefined], "An already aborted Pi operation must not produce an extension error"); })
+        : assert.rejects(context, /cancelled/i);
       await turn();
-      if (boundary === "cancel") f.stop();
+      if (boundary === "cancel") { f.stop(); assert.equal(f.ctx.signal?.aborted, true); }
       else { f.move(); await f.emit(boundary); }
       await bounded(settled, "Cancellation must settle without waiting for metadata");
       f.resolve(0);

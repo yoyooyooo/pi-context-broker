@@ -118,7 +118,9 @@ else if (action === 'cleanup') {
           const provider = await writeFakeProvider(base), env = isolatedEnv({ base,agentDir,TMPDIR:temporaryRoot,TERM:'xterm-256color',COLORTERM:'truecolor',CONTEXT_BROKER_HOST:'pi',CONTEXT_BROKER_CONFIG:config,CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE:providerFile,CONTEXT_BROKER_LOG_FILE:join(output,'decisions.jsonl') });
           const command = [report.host.file,...report.host.prefix,'--no-extensions','--no-mcp','--no-context-files','--no-prompt-templates','--approve','--offline','--tui-mode','regular','--tools','read','--session-dir',join(base,'sessions'),'-e',provider,'-e',extension.path,'--model','context-broker-e2e/fake'];
           const steps = [
-            { label:'ready',screen:{stage:'ready',skill:'notion-graph-root'},providerCount:0 },
+            // Pi 1.4 starts before deferred Notion metadata can enter its native
+            // startup menu. The following real dollar candidate proves readiness.
+            { label:'ready',screen:{stage:'draft',token:''},ledger:[{path:ledger.ledger,where:{kind:'cli',command:'list',phase:'completed',code:0},minimum:2}],providerCount:0 },
             { label:'dollar-candidate',send:'$graph-ro',screen:{stage:'candidate',prefix:'$graph-ro',selected:'$graph-root@notion'},providerCount:0 },
             { label:'dollar-selected',send:'\t',screen:{stage:'draft',token:'$graph-root@notion'},providerCount:0 },
           ];

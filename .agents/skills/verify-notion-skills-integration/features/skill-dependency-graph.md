@@ -119,6 +119,14 @@ Pi 的正常 prepare 模型结果使用[确定性投影](../../../../packages/co
 
 ### 实际 Pi 终端选择与 Stop
 
+当前 Pi 1.4 的 Notion 目录异步完成，启动画面的 `[Skills]` 不能作为冷启动前置。原 PTY driver 先观察完整空编辑框和该 fixture 两次 metadata list 的实际成功退出，再以实际 `$` 候选和 Tab 接受验证目录已可用；前两步仍要求 provider 为零，不能由内部 metadata 回调代替实际候选。只等空编辑框就输入会落在 metadata pending 时段，原失败 `pty-c4-stop-j6_96xrz/broker-pi-graph-pty-sBq9K5` 保留。`escape-stop` 可以独立运行以验证当前取消合同。旧 `selection` 场景还要求 `/skill:` 原生菜单 Tab，Pi 的延后目录不会自动补入 startup 菜单，该子路径未通过时必须单列，不用 `$` 成功覆盖。
+
+2026-11-05 的 fail-before 位于 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/pty-c4-kywlib7c/broker-pi-graph-pty-zcJfgx/`：同 `66a64e3b` 包在第一步等待旧 startup Skill 行而超时，provider 为零；Ctrl+O 的只读诊断原件另存 `startup-ui-probe/`，展开后仍无同步 Notion native 菜单。原失败和旧包历史通过均保留。
+
+同一证据根下 `pty-c4-stop-ready-7qr_byjj/broker-pi-graph-pty-ocu8dX` 已实际完成 `$` 候选、Tab、Escape、CLI 130 和重试，但准备预算不可见，整体仍为失败。Pi 1.4 在运行中把 `sendMessage(..., {triggerTurn:false})` 延后至本轮结束；延后 context 准备现在用公开 `ui.setWidget` 立即显示同一预算和 Stop 提示，终结／会话替换清除 widget。只有仍属于当前 run/generation 且原生 signal 已取消的 context 才正常结束；真实获取错误仍 abort 并报错，旧 ctx 不可被重新读取或用于取消新提交。
+
+修复的独立包 `d5dc05bf79a19b3f7983e6e9ce80724b1513a0293c679b65b3123f87c689ab8e` 使用 C4 CLI/SDK；`pty-feedback-fix-9h0je71c/actual-pty/broker-pi-graph-pty-YT6GPK` 的 `escape-stop` 通过。实际终端可见 8 nodes／depth 4／8192 instruction bytes／131072 context bytes；Escape 后所有 prepare 子进程退出 130、provider 仍为零、widget 消失，同会话重试的 root 与 Requires 完整且各一份、Members 为零，Pi 自然退出 0。Pi 自身保留普通 aborted 提示，Broker 不再追加 SOURCE_CANCELLED 扩展堆栈。此为实际 TUI + custom-command + 受控 SQLite/provider 的证据，不是默认 SDK 真实 Notion 或模型验收；后续 C5 统一候选须保留自身身份和受影响验证。对应 `host-prepare`／`session-active`／`native-read-session` 44 项、input guard 和 `check:broker` 均通过，原失败日志不覆盖。
+
 ~~~bash
 node scripts/verify-pi-graph-pty.mjs doctor --package /absolute/frozen-broker.tgz --command-json '["/absolute/node","/absolute/installed/ntn-skills.js"]' --cli-source /absolute/notion-skills-cli
 node scripts/verify-pi-graph-pty.mjs run --package /absolute/frozen-broker.tgz --command-json '["/absolute/node","/absolute/installed/ntn-skills.js"]' --cli-source /absolute/notion-skills-cli --cases selection,escape-stop --evidence-root /absolute/evidence

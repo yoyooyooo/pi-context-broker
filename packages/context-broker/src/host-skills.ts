@@ -212,7 +212,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     catch (error) { gate.release(entry); throw error; }
   }
   let turnPrompts: { snapshots: Map<string, SkillRecord>; signal: AbortSignal } | undefined;
-  const feedback = await createActivationFeedback(api, gate.repaint);
+  const feedback = await createActivationFeedback(api, gate.repaint, deferredPiDiscovery ? "widget" : "message");
   let handoff: { entry: ActivePreparation; prompts: string[]; consumed: boolean; selectedNative?: SkillRecord; native?: { snapshot: SkillRecord; promptSha256: string } } | undefined;
   type PiRun = {
     generation: number; sessionId: string | undefined; signal: AbortSignal; entry?: ActivePreparation;
@@ -966,6 +966,9 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       return { messages: messages.filter(message => !(message.role === "custom" && message.customType === "context-broker"
         && !sourceMessageText(message.content) && message.details && typeof message.details === "object" && "nativePromptSha256" in message.details)) };
     } catch (error) {
+      // An already cancelled Pi operation cannot dispatch. Do not report normal
+      // Stop as an extension failure; acquisition errors below must still abort.
+      if (run?.signal.aborted && piRun === run && generation === run.generation) return undefined;
       // Pi reports extension errors and continues; aborting the current operation
       // is what actually prevents provider dispatch after failed acquisition.
       if (!run || !run.signal.aborted && piRun === run && generation === run.generation) ctx.abort?.();

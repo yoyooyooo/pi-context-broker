@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installHostSkills, type HostSkills, type HostSkillOptions } from "../src/host-skills";
+import { createActivationFeedback } from "../src/activation-feedback";
 import { buildInjectedContextMessage } from "../src/index";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { createOmpHostAdapter } from "../src/omp-host-adapter";
@@ -121,6 +122,38 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
   };
   return { ctx, records, root: root!, required: required!, member: member!, graph, calls, persisted, install, emit, session, resourceText, resourceReads };
 }
+test("Pi preparation shows its budget immediately without queueing a session message", async () => {
+  const f = await fixture();
+  const widgets = new Map<string, string[]>(), messages: unknown[] = [], entries: unknown[] = [];
+  const api: ExtensionAPI = { on() {}, sendMessage(message) { messages.push(message); }, appendEntry(_type, data) { entries.push(data); } };
+  const feedback = await createActivationFeedback(api, () => {}, "widget");
+  let session = "feedback-session", revoked = false;
+  const context = new Proxy({ ...f.ctx, hasUI: true, mode: "tui" as const,
+    ui: { setWidget(key: string, content: unknown) {
+      if (content === undefined) widgets.delete(key);
+      else {
+        if (!Array.isArray(content) || content.some(line => typeof line !== "string")) throw new Error("Expected a text preparation widget");
+        widgets.set(key, content);
+      }
+    } }, sessionManager: { getSessionId: () => session, getBranch: () => [] },
+  }, { get(target, key, receiver) { if (revoked) throw new Error("Revoked feedback context"); return Reflect.get(target, key, receiver); } });
+  const source = { type: "notion" as const, id: "controlled", preparation: { maxNodes: 8, maxDepth: 4, maxInstructionBytes: 8192, maxContextBytes: 131072 } };
+  const finish = feedback.begin(f.root, context, "use", source);
+  expect(finish).toBeDefined(); expect(widgets.size).toBe(1);
+  expect([...widgets.values()][0]!.join("\n")).toContain("Preparing use: up to 8 nodes, depth 4, 8192 instruction bytes, 131072 context bytes. Stop cancels preparation.");
+  expect(messages).toEqual([]);
+  finish!({ error: "Cancelled." });
+  expect(widgets.size).toBe(0); expect(entries).toHaveLength(1);
+  finish!({ value: f.root }); expect(entries).toHaveLength(1);
+  const late = feedback.begin(f.root, context, "use", source);
+  expect(widgets.size).toBe(1);
+  session = "replacement";
+  feedback.restore({ ...context }); revoked = true;
+  expect(widgets.size).toBe(0);
+  late!({ value: f.root }); expect(entries).toHaveLength(1);
+  expect(messages).toEqual([]);
+});
+
 test("exact use survives unrelated discovery errors while discovery remains failed", async () => {
   const f = await fixture();
   let lookups = 0;
