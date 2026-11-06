@@ -141,8 +141,9 @@ for (const selector of ['canonical', 'display-name', 'alias', 'alias-root', 'ali
   } finally { globalThis.fetch = originalFetch; }
 });
 
-async function observedMetadataCatalog(kind, metadata, overrides = {}) {
+async function observedMetadataCatalog(kind, metadata, overrides = {}, t) {
   const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-catalog-metadata-'));
+  t?.diagnostic('Owned catalogue role fixture: ' + base);
   const responses = path.join(base, 'responses'), cache = path.join(base, 'cache'), output = path.join(base, 'observer.jsonl');
   await mkdir(responses); await mkdir(cache); await writeFile(output, '');
   const scope = 'a'.repeat(64), short = 'sr:C' + 'M'.repeat(22), entrypoint = kind === 'router' ? 'ROUTER.md' : 'SKILL.md';
@@ -160,13 +161,36 @@ async function observedMetadataCatalog(kind, metadata, overrides = {}) {
     const ctx = { model: { provider: 'controlled', id: 'fake' }, sessionManager: { getBranch: () => [{ type: 'custom', customType: 'context-broker-short-ref',
       data: { version: 1, ref: short, target: { kind: 'candidate', identity: { source: 'notion', scope: overrides.scope ?? scope,
         id: overrides.ownerId ?? record.id, kind, ref: record.ref.slice(0, record.ref.lastIndexOf('/')) } } } }] } };
-    const payload = { model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })), messages: [{ role: 'system', content: system }] };
+    const payload = { model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })),
+      messages: [{ role: overrides.messageRole ?? 'system', content: overrides.textParts ? [{ type: 'text', text: system }] : system }] };
+    const before = JSON.stringify(payload);
     handlers.get('before_provider_request')({ payload }, ctx);
     const events = (await readFile(output, 'utf8')).trim().split('\n').map(JSON.parse), catalog = events.find(event => event.phase === 'catalog');
-    assert.equal(catalog.systemPromptSha256, hash(system), 'Observation must preserve the actual provider system bytes');
-    return { item: (kind === 'skill' ? catalog.skills : catalog.routers)[0], record, scope };
+    assert.equal(JSON.stringify(payload), before, 'Observing the instruction role must not change the provider request');
+    assert.equal(catalog.systemPromptSha256, hash(overrides.expectedSystem ?? system), 'Observation must preserve the actual provider instruction bytes');
+    return { item: (kind === 'skill' ? catalog.skills : catalog.routers)[0], record, scope, catalog };
   } finally { globalThis.fetch = originalFetch; }
 }
+
+for (const kind of ['skill', 'router']) test('catalogue observes ' + kind + ' in actual developer messages', async t => {
+  for (const textParts of [false, true]) {
+    const result = await observedMetadataCatalog(kind, { name: 'Visible entry', description: 'An authored description.' },
+      { messageRole: 'developer', textParts }, t);
+    assert.equal(result.item.provenance?.ownerId, result.record.id);
+    assert.equal(result.item.provenance.scope, result.scope);
+    assert.equal(graphModel.graphCatalogEvidence([result.catalog], { gate: kind === 'router' ? 'A' : 'B', rootRef: result.record.ref }).status, 'ready');
+  }
+});
+
+test('catalogue ignores non-instruction message roles', async t => {
+  for (const messageRole of ['user', 'assistant', 'tool']) {
+    const result = await observedMetadataCatalog('router', { name: 'Quoted entry', description: 'Not a host directory.' },
+      { messageRole, expectedSystem: '' }, t);
+    assert.deepEqual(result.catalog.skills, []);
+    assert.deepEqual(result.catalog.routers, []);
+    assert.throws(() => graphModel.graphCatalogEvidence([result.catalog], { gate: 'A', rootRef: result.record.ref }), /selected root/);
+  }
+});
 
 for (const kind of ['skill', 'router']) for (const [variant, metadata] of [
   ['quotes', { name: 'Visible "quoted" metadata', description: 'Use "quoted" instructions.' }],

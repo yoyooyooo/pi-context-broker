@@ -107,6 +107,15 @@ function scanGeneratedFiles(text, { projectRoot } = {}) {
       if (file) issues.push({ code: 'UNCLOSED_FILE_FENCE', path: file, openingLine: index + 1 });
       break;
     }
+    if (file && bodyStart !== lines[index].end) {
+      const bodyLines = lines.slice(index + 1, end).map(line => line.text).filter(line => line.trim());
+      // Without an explicit filename, multiple bare paths describe an inventory.
+      // A named file or a first-line path label still retains path-only content.
+      if (bodyLines.length > 1 && bodyLines.every(line => cleanPath(line) === line)) {
+        index = end;
+        continue;
+      }
+    }
     if (file) {
       const content = text.slice(bodyStart, lines[end].start);
       assert.ok(content.trim(), 'A named generated file cannot be empty');

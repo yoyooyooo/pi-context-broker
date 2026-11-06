@@ -1069,7 +1069,7 @@ export function observeGraphGate(api, settings) {
       discover(value, 'actual provider verified delivery');
     for (const message of event.payload?.messages ?? []) if (message.role === 'user')
       for (const value of sourceStrings(message.content)) if (value === settings.prompt) discover(value, 'actual frozen user reference');
-    const system = [text(event.payload?.system), ...(event.payload?.messages ?? []).filter(message => message.role === 'system').map(message => text(message.content))].filter(Boolean).join('\n\n');
+    const system = [text(event.payload?.system), ...(event.payload?.messages ?? []).filter(message => ['system', 'developer'].includes(message.role)).map(message => text(message.content))].filter(Boolean).join('\n\n');
     const visibleMessages = [...deliveredTools.values()].flatMap(result => !result.message ? [] : providerToolOutputs(event.payload, result.toolCallId)
       .filter(content => result.tool === 'notion_list' || content === result.content).map(content => ({ ...result.message, content })));
     const toolResults = [...deliveredTools.values()].map(result => {
@@ -1487,7 +1487,7 @@ function verifyCatalogProvider(observation, wires, config) {
     assert.equal(transports[index].wireBodySha256, wires[index].wireBodySha256, 'The public provider hook must match the actual local HTTP payload');
     assert.equal(providers[index].contents.length, 0, 'Catalog validation cannot load main instructions');
     const snapshot = catalogs[index], payload = wires[index].body;
-    const system = [text(payload.system), ...(payload.messages ?? []).filter(message => message.role === 'system').map(message => text(message.content))].filter(Boolean).join('\n\n');
+    const system = [text(payload.system), ...(payload.messages ?? []).filter(message => ['system', 'developer'].includes(message.role)).map(message => text(message.content))].filter(Boolean).join('\n\n');
     assert.equal(snapshot.providerPayloadSha256, providers[index].observedPayloadSha256);
     assert.ok(snapshot.sequence < providers[index].sequence);
     assert.equal(snapshot.systemPromptSha256, hash(system), 'Only the final actual HTTP system text proves catalog visibility');

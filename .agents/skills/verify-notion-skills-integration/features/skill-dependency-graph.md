@@ -85,6 +85,16 @@ node --test scripts/verify-skill-graph-contract.test.mjs scripts/notion-skill-gr
 
 独立无 prompt 宿主预检 `daily-route-host-preflight-ycjzk8tt/handoff.json`（SHA-256 `aa1490e98c18e708c8a7b87b5fb7fe1e1875dd673d23da55e6b32e9e75f56ace`）证明实际 Pi 的 flash/high 和 owned SettingsManager 的 trusted project/retry 0，并保留原探针对缺失 `autoRetryEnabled` 的错误断言与更正 sidecar。该预检为 0 prompt / 0 model；接线单测也不证明实际模型 wire 或任务通过。新真实样本须独立冻结最终安装身份、来源版本、原任务、预算与顺序，先做 SC20 本地/Notion 同条件共同任务，再按 AH-639 执行 SC21。
 
+### 实际 provider 的 system / developer 指令消息
+
+原 graph observer 和 metadata HTTP 复核须从实际 payload 的顶层 `system` 以及 `messages` 中的 `system` / `developer` 消息读取目录与描述复用依据。Pi 日用 reasoning serializer 可以使用 `developer` 承载同一系统提示；`before_agent_start` 或内部 context 不能代替实际 provider 内容。普通 user、assistant、tool 文本仍不算默认目录；消息 role、正文、工具参数、model/effort 和最终 wire 都不得由观察器改写。内部 `context_with_system` 的系统段处理保留原宿主类型语义。
+
+真实 A `sc21-daily-early-mu3y6io8/ab-evidence/graph-model-A-0ZB0iv` 的四份实际 HTTP 请求中，2768 B 系统指令均位于 `developer`，包含完整的 865 B root-only Pstack 目录。旧观察器只读取 `system`，将四次目录错误记为零字节，随后 `graphCatalogEvidence` 在设置 `isolation.inventoryComplete` 前失败，导致下游 `LOCAL_INVENTORY`；这不是 Agent 未读取项目库存。四份原 payload 与各自 HTTP body 逐字节相等，实际 name/description/View/short ref 另行核对，原 report 与 observer 不重写。
+
+两处实际边界的窄修复在原 `notion-skill-graph-model.test.mjs` 先保留有效 RED（1 pass / 2 fail），随后原组 121/121、零 skip。新增正例覆盖 skill/router 的字符串与 text parts developer 内容，负例覆盖 user/assistant/tool，旧身份、来源、描述和实际交付门槛继续通过。原件 `graph-developer-catalog-1238b426/` 中 `actual-payload-review.json` SHA `d3af3aa08d703a0fa0115174481308f846a1ddf0730dd5d7f953105265e2d495`，`red.log` SHA `dd07a75b58ec9b5cd4edc3bc4cd79e51856d5a73f8af4d954cdc82dbad99037e`，`green-full.log` SHA `479975960595400eefd6913b96f5d3d2bc0d08191c23bec6c123999aa06b7ac0`。本修复没有新的真实来源或模型请求；12 个明确记录的新增 fixture / 24 文件完成 Evidence→系统 Trash→Evidence，原件保持。
+
+A 的独立任务审阅仍不接受产物：规程将 teardown 放在保存证据之前，且完整生成文件中没有原 controller allowlist 的可执行命令，实驱仍未验证。后者是现有 controller 能力边界，不独立证明自定义 helper 本身错误。文件清单误识别另按下文提取规程修复；观察修复不能自动通过内容或 exercise。`sc21-daily-early-mu3y6io8/A-private-review/review.json` 保留完整正文/项目/参考读取和原产物边界。剩余 B/C/D 使用新冻结的验证源码，A 不重跑，不把旧失败改成成功；产品 C9 不变。
+
 ### 普通 daily D 的共享技术失败停止
 
 原 `--intent-config ... --intent-case D-early` 在显式 `daily-route-v1` 下，遇到来源账本不完整、observer 错误/未验证 provider 输入、宿主关闭失败或 `MODEL_STATE` / `MODEL_ROUTE_EVIDENCE` 时，保留当次结果与成本并停止后续 case。共同判定不读取 ready 实验的 `directorySetup`；原 ready 专项仍额外检查目录、成本与 arm wall。daily 的 `hostFinality` 和 `modelContractFailure` 独立保存，后续通用任务断言不能擦掉原技术原因。剩余未提交 turns/cases 明确为 `not_run`，只在实际发现失败后停止，不倒写此前已经发生的提交。
@@ -344,6 +354,16 @@ C首实际输入已给正确sr:C，模型仍追加/SKILL.md或/playbooks路径�
 原node --test scripts/notion-skill-graph-project.test.mjs新增两回归：实际标题先1 pass/1 fail，修后定向2/2；独立审阅发现括号内第二目标歧义，再保留1 pass/1 fail并收窄；最终原文件18/18。证据file-label-root-fix-mymnghgu/green-final.log SHA 688493d623b0abc7a240d964243647434f1d4e5e69bc4c1f45af349a56e3a71e，red-note-ambiguity.log SHA a7fb95a2b2110848cafa0e6778f72c060b3d68d4537fdcc97734d645c2483cb4。
 
 原retainGeneratedPlan对封存B做离线复核，提取文档4,030 B/SHA 2a553ccf2c39fff0040ab32b395dfc77277f2ff87f3432eb4c23965d59e06fcc，状态incomplete-generated-files、0Skill、executed=false；原4证据hash不变。actual-B-extraction-review.json SHA 701de019098d817403ac3591c9eba8b215fe9ea6837823d416121d9b49797bae；最终源复核final-source-actual-B.json SHA 1ba43d5cfa3d667e3e7f39ebc2cf57d663a20a97e07f6c16adcaa1db13dbe293。没有新模型/来源/产品包或旧报告改判。
+
+### 未具名文件清单与完整生成文件
+
+仅在没有显式 fence 文件名或前置路径标题、准备从正文首行推断文件名时，将闭合代码块内至少两行裸合法路径视为文件清单，不将后面的路径误存为第一份文件正文。显式 info、标题或 `path:` 首行标签指定的文件仍可完整包含路径列表；保存源文本 bytes/hash/span，不修改其换行。真实冲突定义、空文件、路径越界、未闭合/歧义围栏、缺 Skill 与引用缺失继续失败。
+
+真实 daily A 的“文件清单”后另有六个完整具名代码块；旧提取器把清单首行视为 SKILL.md，将后五行路径视为其正文，遇到真正 SKILL.md 时误报冲突。原 `notion-skill-graph-project.test.mjs` 保留 RED 21/24，再以原组 24/24 验证修复；新增三例包括 LF/CRLF、显式路径列表文件和仍必须拒绝的真实冲突。对同一 31412 B 原回答离线提取，六文件与独立人工审阅逐项一致，原 A 文本和 failed report 不改写，也没有新模型/来源请求。
+
+证据在 `sc21-daily-early-mu3y6io8/A-private-review/extractor-file-list-m_k4wkzx/`：`handoff.json` SHA `84418a73d6eef027dddf17175d2c22194d8a1a00cfb1cf87af45e28ebb286582`，`tests-green.stdout` SHA `961453b2f8065dc726176b9b8cf2363ab6312cb051998094f11f0952fdbccaa4`，`actual-green.json` SHA `1d35e0d812ee5f9f437f4c6308eea73aff68cccbfc5aa87df21c9afe36aba8aa`。root核实际 diff 和28个直接引用。清理调用的 -11 异常、原 scratch 消失及之后普通只读核对186项相符分别保留，不改写为退出零。31份原 A 文件、原 staged 和日用哨兵保持。
+
+文件可提取只证明产物保留。A 生成规程的 Evidence/Cleanup 顺序仍违反任务；既有 controller 的 allowlist 也没有对应可驱动命令，未执行 exercise。这两项分别是内容缺陷和执行能力限制，不由提取成功消除。
 
 ### SC06 同次 provider 的生成卡片描述复用
 

@@ -323,6 +323,64 @@ test('first body-line paths reject empty and conflicting definitions', () => {
   assert.throws(() => extractGeneratedFiles(block('First bytes.\n') + block('Different bytes.\n')), /conflicting complete definitions/);
 });
 
+test('an unnamed file inventory does not conflict with six complete Skill files', async () => {
+  const root = '.cursor/skills/verify-owned';
+  for (const newline of ['\n', '\r\n']) {
+    const entries = [
+      ['SKILL.md', '---\nname: verify-owned\ndescription: Verify the owned project.\n---\n\nRead [the map](features/README.md).\n'],
+      ['features/README.md', '# Cases\n\n[Create](create-ticket.md), [lookup](lookup-ticket.md), [failure](failure-handling.md).\n'],
+      ['features/create-ticket.md', '# Create\n\nVerify a stored ticket.\n'],
+      ['features/lookup-ticket.md', '# Lookup\n\nVerify the selected ticket.\n'],
+      ['features/failure-handling.md', '# Failures\n\nReject invalid input.\n'],
+      ['scripts/acceptance.mjs', '// Owned verification helper.\n'],
+    ].map(([path, content]) => ({ path: root + '/' + path, content: content.replaceAll('\n', newline) }));
+    const inventory = '# 文件清单' + newline + newline + '```' + newline + entries.map(file => file.path).join(newline) + newline + '```' + newline + newline;
+    const text = inventory + entries.map(file => '## `' + file.path + '`' + newline + newline + '```text' + newline + file.content + '```' + newline + newline).join('');
+    const files = extractGeneratedFiles(text);
+    assert.deepEqual(files.map(file => file.path), entries.map(file => file.path));
+    for (const [index, expected] of entries.entries()) {
+      const file = files[index];
+      assert.equal(file.content, expected.content);
+      assert.equal(file.bytes, Buffer.byteLength(expected.content));
+      assert.equal(file.sha256, hash(expected.content));
+      assert.equal(text.slice(file.sourceSpan.start, file.sourceSpan.end), expected.content);
+    }
+    const directory = await evidence();
+    const receipt = await retainGeneratedPlan({ evidence: directory, final: { success: true, text }, prompt, project });
+    assert.equal(receipt.artifactStatus, 'complete-skill-files-retained');
+    assert.deepEqual(receipt.skillFiles, [root + '/SKILL.md']);
+    assert.deepEqual(receipt.fileExtractionIssues, []);
+    assert.deepEqual(receipt.unresolvedReferences, []);
+    assert.equal(await readFile(receipt.path, 'utf8'), text);
+    for (const file of entries) assert.equal(await readFile(join(directory, 'generated-files', file.path), 'utf8'), file.content);
+  }
+});
+
+test('path-only inventories stay unnamed while explicitly named path-only files retain their bytes', () => {
+  const content = 'docs/one.md\n\ndocs/two.md\n';
+  for (const info of ['', 'text']) assert.deepEqual(extractGeneratedFiles('```' + info + '\n' + content + '```\n'), []);
+  for (const text of [
+    '```text path=docs/inventory.txt\n' + content + '```\n',
+    '## `docs/inventory.txt`\n\n```text\n' + content + '```\n',
+    '```text\npath: docs/inventory.txt\n' + content + '```\n',
+  ]) {
+    const files = extractGeneratedFiles(text);
+    assert.equal(files.length, 1);
+    assert.equal(files[0].path, 'docs/inventory.txt');
+    assert.equal(files[0].content, content);
+    assert.equal(text.slice(files[0].sourceSpan.start, files[0].sourceSpan.end), content);
+  }
+});
+
+test('an earlier file inventory does not hide genuinely conflicting complete definitions', () => {
+  const inventory = '```text\ndocs/listed-one.md\ndocs/listed-two.md\n```\n';
+  const block = content => '```text path=docs/acceptance.md\n' + content + '```\n';
+  assert.throws(() => extractGeneratedFiles(inventory + block('First bytes.\n') + block('Different bytes.\n')), /conflicting complete definitions/);
+  const files = extractGeneratedFiles(inventory + block('Same bytes.\n') + block('Same bytes.\n'));
+  assert.equal(files.length, 1);
+  assert.equal(files[0].content, 'Same bytes.\n');
+});
+
 test('first body-line paths do not promote incomplete Skills or missing references', async () => {
   const skillPath = '.cursor/skills/verify-owned/SKILL.md';
   for (const [content, skillFiles, unresolvedReferences] of [

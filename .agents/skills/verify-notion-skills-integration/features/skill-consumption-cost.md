@@ -338,6 +338,48 @@ native 的零 CLI/SDK/来源 HTTP 只有在真实 observer 终界、host close�
 
 `native-default-policy` 接线在原 baseline test 中先保留 RED（1 pass / 2 fail），修后定向 3/3、原文件 32/32。public Doctor 使用实际安装 Pi 的 loader/formatter 和受控三项来源，覆盖 strict 拒绝 manual-only、显式策略允许已证差异、全部 manual-only 时原生目录为空、未知策略、缺 owner、元数据与作者政策字节篡改拒绝；原 observer 另核每臂自己的实际目录。完整正文、未选正文、错误来源和终局负例继续通过。证据在 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc20-native-policy-uo2u1ket/`；`red-corrected.log` SHA `e909dcef78b0f52aa9dc0ee44afd26ba52bdd7a6b16fcc7f8f0a560255db777d`，`green-full.log` SHA `bab07b6a21daaed8ed33fefaab48a2658b19b8be8ff6f0913cbeb4f87e1ea393`。原件保留；这证明双口径接线，不代表真实 Default74 来源桥接、真实模型或 SC20 完整矩阵已通过。
 
+## C9 冻结实测索引（2026-11-06）
+
+以下原件均位于 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/`。产品固定为 C9 runtime `f1a4f872b39d45bff73d91c400fb08b845299006`、tar SHA `b4ed4cf1240db15b47e831096a848b6b6656f0764bca9c3f3bb2fe63ae4602a8`；验证源码为独立归档 `5a8221237319da0675231c0658828c944b8b750f`。不从当前 checkout 的未提交验证改动运行这些已冻结批次。
+
+### 旧 Broker 与 C9 的受控比较
+
+`sc20-c9-previous-interface-n6t4z8kw/plan.json` 冻结实际 Pi 1.4、serializer、39 份 fixture 文件、三份提示和目录语义。旧 Broker 使用原 PASS 原件，旧失败保留；新 C9 各场景运行一次，不重跑旧版本。完整比较、实际 provider HTTP 和清理引用见同目录 `handoff.json`，SHA `bbf1efd08e3338d0133c9dc80b56e36e3f21d914b29bf2105f69bab3c69cb68d`。
+
+| 场景 | 旧请求体 B | C9 请求体 B | 各自差额 | provider / tools / rounds |
+| --- | ---: | ---: | ---: | --- |
+| native-repeat | 70154 | 64024 | -6130（-8.7379%） | 6 / 5 / 5，均不变 |
+| prepare | 60791 | 55575 | -5216（-8.5802%） | 5 / 3 / 3，均不变 |
+
+每景旧两次 metadata CLI 子进程变为零 CLI、两次 SDK list，正文交付次数不变。此处为 warm/offline fixture 和受控 provider，真实来源 HTTP 与远端模型均为零；不推导生产冷源延迟、实际 token、费用或模型质量。两个百分比分别归属原基线，不能相加。
+
+### 完整库存与真实模型默认策略比较
+
+`sc20-daily-v3-cohort-vgut6z_1/cohort-contract.json` 在首个提示前冻结两个 arm、private oracle-v3、模型和预算；`commands.json` 保留原 driver argv，`cohort-result.json` 为最终索引（SHA `fcfc14cb39a6892d986c1cf3f67346a3d9d5fab1d3f23b20c5496667b64b2f27`）。每臂 cold1 + 同会话 warm1，完整 74 owner / 262 文件 / 2324517 B 作者库存保持；共同任务必要三文件共 36900 B。实际 native 默认可见 22、Notion 默认可见 74，按 `native-default-policy` 作为实验变量记录。
+
+| 样本 | 模型 HTTP | 实际请求体 B | tools / rounds | input / cacheRead / output | 提交至完成 ms |
+| --- | ---: | ---: | ---: | --- | ---: |
+| native cold | 2 | 85146 | 3 / 1 | 16740 / 5376 / 5199 | 10287.775 |
+| native warm | 1 | 84586 | 0 / 0 | 524 / 21504 / 4801 | 5695.906 |
+| Notion cold | 4 | 210947 | 3 / 3 | 27255 / 27904 / 5121 | 27347.766 |
+| Notion warm | 2 | 224315 | 2 / 1 | 755 / 58880 / 3737 | 6774.732 |
+
+九个实际响应均为 `deepseek-ai/DeepSeek-V4.1-Flash-1017`，请求 selector 为 `magpie/group/flash`、thinking high；控制器、宿主与 provider retry 均为零，没有 fallback。每轮原始 body 的 bytes/hash 与实际 wire 对齐。累计 native 169732 请求 B / 54144 total tokens，Notion 435262 请求 B / 123652 total tokens；费用 unknown。每格 n1，不报告稳定 p95。目录诊断 span 可以重叠，不将其加总为互斥 token 分量。
+
+四样本的原 driver 技术与预算检查通过；三份必要正文在实际 provider 中逐字节相符，暖历史仍完整。Notion 暖轮两次资源工具返回 already loaded/available，没有再次交付全文。raw HTTP 与应用完成仍分列：native 一次 raw success、两次严格 SSE 完成；Notion 六次严格 SSE 完成且 raw success 为零。原取消 failure20 不改写。
+
+Notion consumer 为五次 SDK / 零 CLI / 28 HTTP（22 metadata + 6 body），2589 请求 B / 3128175 decoded 响应 B、零写入。独立私有来源归属检查另有三次 metadata HTTP / 300 请求 B / 10282 decoded B；不混入 consumer 成本。`source-attribution/attribution.json`（SHA `3599e0263e3e26e70037b84daeabac3a93940b82e5a2428ce1c3376258384f7c`）用完整 owner 映射和固定 bundle/chunk 证明六次 body 均属所选 notion-api，其他 73 owner 正文读取为零；同 owner 两份未用资源的 18994 raw B / 23349 decoded 当前文件响应 B 单列 overfetch。native Agent 三次 read 为 36900 B，发现过程 syscall/物理读取字节仍 unknown。
+
+独立语义审阅保留 native 两次 C5（formula 值只读表述）与全部四次 C6（results 批次语义及汇集步骤）的 NOT_PROVEN，其余 C1–C4/C7/C8 通过，Notion C5 通过。private oracle 未送入 consumer，也未在看到答案后改写。完整逐项内容、实际交付与原件 hash 见 `native-private-review/review.json` 和 `notion-private-review/review.json`。这些样本支持实际成本与交付观察，不能得出完整任务净收益、相同曝光下 Broker 净开销或 SC20 正式通过的结论；不以再次抽样替换失败。
+
+`observed-cost-ledger.json` SHA `94e3c2692add507cae8914e568013467e2b0b5af392aa91a4ab8fbf0df351d51` 分列来源冻结、metadata selection、consumer 和私有核验。两臂原 Evidence→系统 Trash→Evidence 六步退出零、46 份 retained raw 保持，scratch 与 owned PID 消失；`ece/receipt.json` SHA `4ccda8cafa995347da2ad37d66a4d627e7cb6f4561b0328c557c03b25f24a54d`。可选 Trash 内容回读被 macOS 拒绝，记为 unknown，不尝试替代访问。旧 v2 首批失败及全部旧模型结果保持。
+
+### C9 实际 compaction 的窄验证
+
+`sc20-c9-compaction-x8nq4r2m/handoff.json`（SHA `20f34b246f735d1514a3cffbaff68f1e47eb0de03bd19a394cf86b93c670a7f8`）复用原 installed driver 的单个 `session-compaction` 场景：实际 Pi 1.5、受控 provider、既有 offline fixture；19 serializer 请求 / 179330 请求 B、三次工具、17 SDK（13 list 含三次取消 + 四次 consume），零真实模型/来源 HTTP。保留全文分支的下一 provider 仍有一份正文且零 body SDK；summary/forged 分支各恢复一份正文、各一次 body SDK。三次 compact 事件自身不调用 provider 或 body SDK，三个 Pi 自然退出零且 ECE 完成。这证明实际生命周期与交付恢复，不证明真实模型摘要质量。
+
+这些窄证据不能替代尚待完成的 controlled HTTP 缓存/权限/取消交叉、SC21 正式模型路径或 SC24 日用切换；具体剩余项继续按 AH-638 与原对应 feature map 管理。
+
 ## Evidence 与比较
 
 先读 plan，再读每例原件和 report。至少核对：
