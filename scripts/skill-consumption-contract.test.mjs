@@ -57,6 +57,40 @@ test('installed name gates cannot omit their distinct fixture, required executio
   }
 });
 
+test('installed ambiguity gate is required independently of the two existing name scenarios', () => {
+  assert.equal(validateConsumptionGates().installedAmbiguity, 'required_scenario');
+});
+
+test('installed ambiguity gates reject missing fixture, skipped execution, wrong package routing and lost evidence', () => {
+  for (const mutate of [
+    value => { value.workflows[0].text = value.workflows[0].text.replace(' --catalog --ambiguous-names', ' --catalog'); },
+    value => { value.workflows[1].text = value.workflows[1].text.replace('- name: Create controlled ambiguity SDK fixture\n', '- name: Create controlled ambiguity SDK fixture\n        if: false\n'); },
+    value => { value.workflows[1].text = value.workflows[1].text.replace(' --ambiguity-fixture "$RUNNER_TEMP/ntn-skills-ambiguity-fixture/fixture.json"', ''); },
+    value => { value.workflows[0].text = value.workflows[0].text.replace(' --ambiguity-fixture "$RUNNER_TEMP/ntn-skills-ambiguity-fixture/fixture.json"', ' --ambiguity-fixture "$RUNNER_TEMP/unrelated/fixture.json"'); },
+    value => { value.workflows[1].text = value.workflows[1].text.replace('${{ runner.temp }}/ntn-skills-ambiguity-fixture/', '${{ runner.temp }}/unrelated/'); },
+    value => { value.workflows[0].text = value.workflows[0].text.replace("assert.equal(manifest.ambiguitySdk.status, 'passed')", "assert.equal(manifest.namedSdk.status, 'passed')"); },
+    value => { value.workflows[0].text = value.workflows[0].text.replace('--scenario name-reference-ambiguity --out "$RUNNER_TEMP/pi14-name-reference-ambiguity-evidence"', '--scenario name-references --out "$RUNNER_TEMP/pi14-name-reference-ambiguity-evidence"'); },
+    value => { value.workflows[0].text = value.workflows[0].text.replace('${{ runner.temp }}/pi14-name-reference-ambiguity-evidence/', '${{ runner.temp }}/unrelated/'); },
+  ]) {
+    const config = consumptionGateConfiguration(); mutate(config);
+    assert.throws(() => validateConsumptionGates(config), { code: 'GATE_INSTALLED_AMBIGUITY_MISSING' });
+  }
+});
+
+test('ambiguity fixture rejects unrelated hosts, missing original fixture and relative paths before packaging', () => {
+  const driver = fileURLToPath(new URL('./verify-artifacts.mjs', import.meta.url));
+  for (const args of [
+    ['--host', 'omp', '--ambiguity-fixture', '/unopened/ambiguity-fixture.json'],
+    ['--host', 'pi', '--ambiguity-fixture', '/unopened/ambiguity-fixture.json'],
+    ['--host', 'pi', '--fixture', '/unopened/original.json', '--ambiguity-fixture', 'relative.json'],
+  ]) {
+    const result = spawnSync(process.execPath, [driver, ...args], { encoding: 'utf8', timeout: 10000 });
+    assert.equal(result.error, undefined); assert.equal(result.status, 1);
+    assert.match(result.stderr, /--ambiguity-fixture/u);
+    assert.doesNotMatch(result.stdout, /Artifact workspace retained/u);
+  }
+});
+
 test('name fixture selection rejects an unrelated host, missing original fixture or relative path before packaging', () => {
   const driver = fileURLToPath(new URL('./verify-artifacts.mjs', import.meta.url));
   for (const args of [

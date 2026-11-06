@@ -9,11 +9,13 @@ import { installCliWriteInvalidation } from "../src/cli-write-invalidation";
 import { formatFindDiagnostics } from "../src/diagnostics";
 import { matchesPreciseRecordToken, parseCatalogMember, preciseRecordToken, resolveCatalogReference } from "../src/discovery-records";
 import { hostCliScope } from "../src/host-command";
+import { installHostSkills } from "../src/host-skills";
 import { discoverNotionSource, loadNotionSkill, ReferenceMiss, resolveNotionReference } from "../src/notion-source";
+import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { sharedSkillId } from "../src/shared-skill-identity";
 import { normalizeSources } from "../src/sources";
 import { resolveViewDiscovery, VIEW_SELECTION_ENTRY } from "../src/view-discovery";
-import type { ContentRecord, ExtensionAPI, ExtensionContext, SkillRecord, SourceConfig } from "../src/types";
+import type { ContentRecord, ExtensionAPI, ExtensionContext, PiReadDefinition, SessionEntry, SkillRecord, SourceConfig } from "../src/types";
 
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
 type Json = Record<string, unknown>;
@@ -212,6 +214,178 @@ test("SC25 enabled name ambiguity, cross-source scope and failed authorities rem
   const controller = new AbortController(); controller.abort(); await other.clearCalls();
   await expect(resolveNotionReference("skill://shared/SKILL.md", [other.source], other.root, { signal: controller.signal })).rejects.toMatchObject({ code: "SOURCE_CANCELLED" });
   expect(await other.calls()).toEqual([]);
+});
+
+async function ambiguityTools(fixtures: readonly { fixture: Awaited<ReturnType<typeof fixture>>; source: NotionSource }[], withUse: boolean) {
+  const root = fixtures[0]!.fixture.root, entries: SessionEntry[] = [];
+  const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
+  const tools = new Map<string, Parameters<NonNullable<ExtensionAPI["registerTool"]>>[0]>();
+  const native: PiReadDefinition = { name: "read", label: "read", description: "Native fixture reader",
+    parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
+    async execute(_id, input) {
+      assert.equal(typeof input.path, "string");
+      return { content: [{ type: "text", text: await readFile(input.path, "utf8") }] };
+    } };
+  tools.set("read", native);
+  const api: ExtensionAPI = {
+    on(name, listener) { events.set(name, [...events.get(name) ?? [], listener]); },
+    registerTool(tool) { tools.set(tool.name, tool); },
+    getAllTools: () => [...tools.values()].map(tool => ({ ...tool, sourceInfo: { source: tool === native ? "builtin" : "local", path: "/fixture" } })),
+    getActiveTools: () => ["read"], appendEntry(customType, data) { entries.push({ type: "custom", customType, data }); },
+  };
+  const ctx: ExtensionContext = { cwd: root, hasUI: false, mode: "rpc", sessionManager: {
+    getSessionId: () => "ambiguity-session", getSessionFile: () => join(root, "session.jsonl"), getBranch: () => entries,
+  } };
+  const state = { loads: [] as SkillRecord[], preparations: [] as Array<{ records: readonly SkillRecord[]; purpose: string; pins: ReadonlyMap<string, string> | undefined }> };
+  const host = await installHostSkills(api, {
+    config: { sources: fixtures.map(value => value.source) }, getRecords: async () => ({ records: [], failures: [] }),
+    resolveNamedReference: (ref, _ctx, signal, refresh) => resolveNotionReference(ref, fixtures.map(value => value.source), root, { signal, refresh }),
+    loadRecord: async (record, signal, snapshotId) => {
+      state.loads.push(record);
+      const selected = fixtures.find(value => value.source.id === record.sourceId);
+      assert.ok(selected);
+      return loadNotionSkill(record, selected.source, root, { signal, snapshotId });
+    },
+    ...(withUse ? { prepareGraph: async (records: readonly SkillRecord[], _ctx: ExtensionContext | undefined, _signal: AbortSignal | undefined, purpose: "use" | "inspect", pins?: ReadonlyMap<string, string>) => {
+      state.preparations.push({ records, purpose, pins });
+      throw Object.assign(new Error("Reached exact preparation boundary"), { code: "CONTROLLED_PREPARATION" });
+    } } : {}),
+  }, createPiHostAdapter(api, async () => () => native));
+  const emit = async (name: string) => { for (const listener of events.get(name) ?? []) await listener({ type: name } as never, ctx); };
+  await emit("session_start"); await host.refresh(ctx);
+  return { state, entries, emit, call: (name: "read" | "notion_use", ref: string) => {
+    const tool = tools.get(name); assert.ok(tool);
+    return tool.execute("ambiguity-" + name, name === "read" ? { path: ref } : { ref }, undefined, undefined, ctx);
+  } };
+}
+
+async function ambiguityOutput(operation: Promise<unknown>) {
+  let failure: unknown;
+  try { await operation; } catch (error) { failure = error; }
+  assert.ok(failure instanceof Error, "The registered tool must reject the ambiguous reference");
+  expect(failure.message).toContain("SKILL_AMBIGUOUS");
+  expect(failure.message).toContain('"candidates"');
+  const value: unknown = JSON.parse(failure.message);
+  assert.ok(value && typeof value === "object" && "candidates" in value && Array.isArray(value.candidates));
+  return value.candidates.map((candidate: unknown) => {
+    assert.ok(candidate && typeof candidate === "object" && "name" in candidate && typeof candidate.name === "string"
+      && "source" in candidate && typeof candidate.source === "string" && "ref" in candidate && typeof candidate.ref === "string");
+    return { name: candidate.name, source: candidate.source, ref: candidate.ref,
+      selectable: !("selectable" in candidate) || candidate.selectable !== false };
+  });
+}
+
+test.each(["read", "notion_use"] as const)("SC04 registered %s returns copyable same-source choices without body preparation", async tool => {
+  const first = sharedRecord(), second = sharedRecord("second", { page: uuid(61) });
+  const f = await fixture({ records: [first, second] }), h = await ambiguityTools([{ fixture: f, source: f.source }], tool === "notion_use");
+  try {
+    const choices = await ambiguityOutput(h.call(tool, "skill://shared/SKILL.md"));
+    expect(choices.map(choice => [choice.name, choice.source])).toEqual([[first.name, "shared"], [second.name, "shared"]]);
+    expect(choices.every(choice => /^sr:C[A-Za-z0-9_-]{22}$/.test(choice.ref) && choice.selectable)).toBe(true);
+    expect(h.state.loads).toEqual([]); expect(h.state.preparations).toEqual([]);
+    expect((await f.calls()).filter(args => args[0] === "list")).toHaveLength(1);
+    expect((await f.calls()).some(args => ["read", "prepare", "files", "export"].includes(args[0]!))).toBe(false);
+    const selected = choices[0]!;
+    if (tool === "read") {
+      const result = await h.call(tool, selected.ref);
+      expect(result.content).toEqual([{ type: "text", text: f.content }]);
+      expect(h.state.loads.map(record => [record.id, record.sourceId, record.sourceScope])).toEqual([[first.id, "shared", scope]]);
+      expect(h.state.preparations).toEqual([]);
+    } else {
+      await expect(h.call(tool, selected.ref)).rejects.toMatchObject({ code: "CONTROLLED_PREPARATION" });
+      expect(h.state.preparations.map(value => [value.purpose, value.records[0]?.id, value.records[0]?.sourceScope])).toEqual([["use", first.id, scope]]);
+      expect(h.state.loads).toEqual([]);
+    }
+    expect((await f.calls()).filter(args => args[0] === "list")).toHaveLength(1);
+  } finally { await h.emit("session_shutdown"); }
+});
+
+test.each(["read", "notion_use"] as const)("SC04 registered %s keeps equal IDs in different scopes independently selectable", async tool => {
+  const first = await fixture(), second = await fixture(), otherScope = "e".repeat(64);
+  second.state.catalog = { ...(second.state.catalog as Json), scope: otherScope };
+  second.state.read = { ...second.read, scope: otherScope };
+  await second.save();
+  const h = await ambiguityTools([{ fixture: first, source: first.source }, { fixture: second, source: { ...second.source, id: "other-scope" } }], tool === "notion_use");
+  try {
+    const choices = await ambiguityOutput(h.call(tool, "skill://shared/SKILL.md"));
+    expect(choices.map(choice => choice.source)).toEqual(["shared", "other-scope"]);
+    expect(new Set(choices.map(choice => choice.ref)).size).toBe(2);
+    expect(h.state.loads).toEqual([]); expect(h.state.preparations).toEqual([]);
+    if (tool === "read") {
+      expect((await h.call(tool, choices[1]!.ref)).content).toEqual([{ type: "text", text: second.content }]);
+      expect(h.state.loads.map(record => [record.sourceId, record.sourceScope])).toEqual([["other-scope", otherScope]]);
+    } else {
+      await expect(h.call(tool, choices[1]!.ref)).rejects.toMatchObject({ code: "CONTROLLED_PREPARATION" });
+      expect(h.state.preparations.map(value => [value.records[0]?.sourceId, value.records[0]?.sourceScope])).toEqual([["other-scope", otherScope]]);
+    }
+    expect((await first.calls()).filter(args => args[0] === "list")).toHaveLength(1);
+    expect((await second.calls()).filter(args => args[0] === "list")).toHaveLength(1);
+  } finally { await h.emit("session_shutdown"); }
+});
+
+test.each(["read", "notion_use"] as const)("SC04 registered %s keeps fixed choices pinned and selects a distinct historical owner", async tool => {
+  const first = await fixture(), other = sharedRecord("historical-other", { page: uuid(62) }), second = await fixture();
+  second.state.files = { ...(second.state.files as Json), record: other, ref: other.ref + "?snapshot=" + snapshot,
+    files: [{ path: other.entrypoint, bytes: Buffer.byteLength(second.content), ref: other.ref + "?snapshot=" + snapshot }] };
+  await second.save();
+  const h = await ambiguityTools([{ fixture: first, source: first.source }, { fixture: second, source: { ...second.source, id: "historical-other" } }], tool === "notion_use");
+  try {
+    const choices = await ambiguityOutput(h.call(tool, "skill://shared/SKILL.md?snapshot=" + snapshot));
+    expect(choices.map(choice => choice.ref)).toEqual([first.read.ref, other.ref + "?snapshot=" + snapshot]);
+    expect(choices.every(choice => choice.selectable)).toBe(true);
+    expect(h.entries).toEqual([]); expect(h.state.loads).toEqual([]); expect(h.state.preparations).toEqual([]);
+    expect((await first.calls()).filter(args => args[0] === "files")).toHaveLength(1);
+    expect((await second.calls()).filter(args => args[0] === "files")).toHaveLength(1);
+    if (tool === "read") {
+      expect((await h.call(tool, choices[0]!.ref)).content).toEqual([{ type: "text", text: first.content }]);
+      expect(h.state.loads.map(record => [record.id, record.sourceScope, record.snapshotId])).toEqual([[first.record.id, scope, snapshot]]);
+    } else {
+      await expect(h.call(tool, choices[0]!.ref)).rejects.toMatchObject({ code: "CONTROLLED_PREPARATION" });
+      expect([...h.state.preparations[0]!.pins!]).toEqual([[first.record.id, snapshot]]);
+    }
+    expect((await first.calls()).some(args => args[0] === "list")).toBe(false);
+    expect((await second.calls()).some(args => args[0] === "list")).toBe(false);
+  } finally { await h.emit("session_shutdown"); }
+});
+
+test("SC04 equal fixed refs in different scopes remain explicitly non-selectable without inventing a preparation proof", async () => {
+  const first = await fixture(), second = await fixture();
+  second.state.files = { ...(second.state.files as Json), scope: "e".repeat(64) }; await second.save();
+  const h = await ambiguityTools([{ fixture: first, source: first.source }, { fixture: second, source: { ...second.source, id: "other-scope" } }], false);
+  try {
+    const choices = await ambiguityOutput(h.call("read", "skill://shared/SKILL.md?snapshot=" + snapshot));
+    expect(choices).toEqual([
+      { name: first.record.name, source: "shared", ref: first.read.ref, selectable: false },
+      { name: second.record.name, source: "other-scope", ref: second.read.ref, selectable: false },
+    ]);
+    expect(h.entries).toEqual([]); expect(h.state.loads).toEqual([]); expect(h.state.preparations).toEqual([]);
+    expect((await first.calls()).some(args => ["list", "read", "prepare", "export"].includes(args[0]!))).toBe(false);
+    expect((await second.calls()).some(args => ["list", "read", "prepare", "export"].includes(args[0]!))).toBe(false);
+  } finally { await h.emit("session_shutdown"); }
+});
+
+test("SC04 resource ambiguity preserves the requested path instead of offering a main-entry handle", async () => {
+  const f = await fixture({ records: [sharedRecord(), sharedRecord("second", { page: uuid(63) })] });
+  const h = await ambiguityTools([{ fixture: f, source: f.source }], false);
+  try {
+    const choices = await ambiguityOutput(h.call("read", "skill://shared/references/exact%2520name.md"));
+    expect(choices.every(choice => choice.ref.endsWith("/references/exact%2520name.md") && choice.selectable)).toBe(true);
+    expect(h.entries).toEqual([]); expect(h.state.loads).toEqual([]);
+    expect((await f.calls()).some(args => ["read", "files", "prepare", "export"].includes(args[0]!))).toBe(false);
+  } finally { await h.emit("session_shutdown"); }
+});
+
+test.each(["read", "notion_use"] as const)("SC04 registered %s does not hide a failed authority behind another source's ambiguity", async tool => {
+  const first = await fixture({ records: [sharedRecord(), sharedRecord("second", { page: uuid(64) })] }), failed = await fixture();
+  failed.state.catalog = { ok: false, error: { code: "ACCESS_DENIED", details: { token: "PRIVATE_TOKEN", path: "/private/credentials", candidates: [failed.record] } } };
+  await failed.save();
+  const h = await ambiguityTools([{ fixture: first, source: first.source }, { fixture: failed, source: { ...failed.source, id: "denied" } }], tool === "notion_use");
+  try {
+    let failure: unknown; try { await h.call(tool, "skill://shared/SKILL.md"); } catch (error) { failure = error; }
+    assert.ok(failure instanceof Error); expect(failure.message).toContain("ACCESS_DENIED");
+    for (const privateValue of ['"candidates"', "PRIVATE_TOKEN", "/private/credentials", "sr:C"]) expect(failure.message).not.toContain(privateValue);
+    expect(h.entries).toEqual([]); expect(h.state.loads).toEqual([]); expect(h.state.preparations).toEqual([]);
+  } finally { await h.emit("session_shutdown"); }
 });
 
 const invalidRecords: [string, (record: ContentRecord) => unknown][] = [

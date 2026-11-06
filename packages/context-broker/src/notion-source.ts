@@ -45,6 +45,18 @@ export class SourceError extends Error {
   }
 }
 
+/** Validated discovery choices only; none of these records proves body delivery. */
+export class SourceReferenceAmbiguity extends SourceError {
+  readonly #candidates: readonly { record: SkillRecord; ref: string }[];
+  constructor(sourceId: string, candidates: readonly { record: SkillRecord; ref: string }[], message?: string) {
+    super("SKILL_AMBIGUOUS", sourceId);
+    this.name = "SourceReferenceAmbiguity";
+    this.#candidates = candidates;
+    if (message !== undefined) this.message = message;
+  }
+  get candidates() { return this.#candidates; }
+}
+
 /** A target lookup miss, distinct from missing resources or unavailable sources. */
 export class ReferenceMiss extends Error {
   constructor(readonly sourceId: string, readonly recordId?: string) { super("Content reference is unavailable"); this.name = "ReferenceMiss"; }
@@ -485,18 +497,38 @@ async function resolveNotionReferenceInSource(input: string, source: NotionSourc
       const { has_more: _more, next_cursor: _cursor, total_count: _total, ...metadata } = catalog;
       complete = metadata;
     }
+    const selectedReference = (resolved: unknown) => {
+      if (!object(resolved) || resolved.scope !== catalog.scope || typeof resolved.ref !== "string") decodeError(source);
+      const record = contentRecord(resolved.record, source), selected = directory.find(item => item.id === record.id);
+      const raw = Array.isArray(catalog.records) ? catalog.records.find(item => object(item) && item.id === record.id) : undefined;
+      const canonical = parseNativeReference(resolved.ref);
+      if (!selected || !isDeepStrictEqual(record, raw) || canonical.selector !== parseNativeReference(record.ref).selector
+        || canonical.snapshot !== undefined || canonical.path !== (requested.path || record.entrypoint)
+        || canonical.fileId !== requested.fileId) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+      return { record: selected, ref: resolved.ref };
+    };
     let resolved: unknown;
     try { resolved = await resolveNotionCatalogReferenceSdk(input, complete); }
-    catch (error) { throw sdkFailure(error, source, "list", options.signal); }
+    catch (error) {
+      const failure = sdkFailure(error, source, "list", options.signal);
+      if (!(failure instanceof SourceError) || failure.code !== "SKILL_AMBIGUOUS") throw failure;
+      const details = object(error) && object(error.details) ? error.details : undefined;
+      if (!details || details.selector !== requested.selector || !Array.isArray(details.candidates) || details.candidates.length < 2
+        || !Array.isArray(details.exact_selectors) || details.exact_selectors.length !== details.candidates.length) decodeError(source);
+      const selectors = details.exact_selectors, seen = new Set<string>();
+      const candidates = details.candidates.map(value => {
+        const record = contentRecord(value, source);
+        if (seen.has(record.id) || selectors.filter(item => object(item) && item.id === record.id && item.ref === record.ref).length !== 1) decodeError(source);
+        seen.add(record.id);
+        const ref = record.ref.slice(0, record.ref.lastIndexOf("/") + 1)
+          + (requested.path || record.entrypoint).split("/").map(encodeURIComponent).join("/")
+          + (requested.fileId === undefined ? "" : "?file_id=" + encodeURIComponent(requested.fileId));
+        return selectedReference({ record, scope: catalog.scope, ref });
+      });
+      throw new SourceReferenceAmbiguity(source.id, candidates);
+    }
     if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-    if (!object(resolved) || resolved.scope !== catalog.scope || typeof resolved.ref !== "string") decodeError(source);
-    const record = contentRecord(resolved.record, source), selected = directory.find(item => item.id === record.id);
-    const raw = Array.isArray(catalog.records) ? catalog.records.find(item => object(item) && item.id === record.id) : undefined;
-    const canonical = parseNativeReference(resolved.ref);
-    if (!selected || !isDeepStrictEqual(record, raw) || canonical.selector !== parseNativeReference(record.ref).selector
-      || canonical.snapshot !== undefined || canonical.path !== (requested.path || record.entrypoint)
-      || canonical.fileId !== requested.fileId) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
-    return { record: selected, ref: resolved.ref };
+    return selectedReference(resolved);
   }
   let value: unknown;
   try {
@@ -564,13 +596,15 @@ export async function resolveNotionReference(input: string, sources: readonly No
       // Only complete, authorized absence can be ignored. A partial or failed
       // source cannot be hidden by a name match in another configured scope.
       if (!(error instanceof SourceError)) throw error;
-      if (fixed && error.code === "SNAPSHOT_MISSING") missingSnapshot ??= error;
+      if (error instanceof SourceReferenceAmbiguity) matches.push(...error.candidates);
+      else if (fixed && error.code === "SNAPSHOT_MISSING") missingSnapshot ??= error;
       else if (error.code !== "SKILL_NOT_FOUND") throw error;
     }
   }
   if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", "notion");
   if (!matches.length && missingSnapshot) throw missingSnapshot;
-  if (matches.length !== 1) throw new SourceError(matches.length ? "SKILL_AMBIGUOUS" : "SKILL_NOT_FOUND", "notion");
+  if (matches.length > 1) throw new SourceReferenceAmbiguity("notion", matches);
+  if (!matches.length) throw new SourceError("SKILL_NOT_FOUND", "notion");
   return matches[0]!;
 }
 

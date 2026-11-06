@@ -18,8 +18,9 @@ import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
 const usage = 'Usage: node scripts/notion-sdk-pi.mjs doctor|run --package ABSOLUTE_INSTALLED_BROKER (--fixture ABSOLUTE_FIXTURE_JSON | --live-input ABSOLUTE_LIVE_INPUT_JSON) [--expect-short-refs true|false] [--expect-compact-context true|false] [--expect-direct-scalar true|false] [--expect-short-confirmations true|false] [--scenario all|default-view|codemode-hidden|codemode-truncated|dollar|native|native-repeat|prepare|scoped-command|resource-batch|resource-batch-short-refs|resource-scalar|resource-scalar-short-refs|partial-entrypoint|session-lifecycle] [--out NEW_ABSOLUTE_EVIDENCE]; evidence|cleanup --evidence ABSOLUTE_EVIDENCE. Real Pi 1.4.0 or 1.5.0 RPC, controlled provider with public onPayload/onResponse hooks, offline source, default bundled SDK (source.command is absent). Compact context, direct scalar and short confirmation checks default to true; false observes a baseline without certifying that contract. Comparisons include the installed Broker and bundled CLI/SDK identities. default-view observes pending startup plus ready metadata on an ordinary continuation. session-lifecycle drives native fork/clone/tree/compact/resume and late-response cancellation with a controlled summary. The explicit live-input route selects one separate cold consumer on real Notion, an independently installed package auto-loaded by owned settings, and observer-only frozen local originals. The default offline all remains 14 scenarios. Native menu and real model are not claimed; live retained-body Member exclusion requires separate source attribution.';
 const scenarioNames = ['default-view', 'codemode-hidden', 'codemode-truncated', 'dollar', 'native', 'native-repeat', 'prepare', 'scoped-command', 'resource-batch', 'resource-batch-short-refs', 'resource-scalar', 'resource-scalar-short-refs', 'partial-entrypoint', 'session-lifecycle'];
 const nameScenarioNames = ['name-references', 'name-reference-failed-source'];
-const selectableScenarioNames = [...scenarioNames, ...nameScenarioNames];
-const nameUsage = 'Additional required name gates: --scenario name-references or --scenario name-reference-failed-source, with the original sdk-fixture.ts --catalog --distinct-names fixture. They are separate from all14, which keeps its original fixture and names.';
+const ambiguityScenarioName = 'name-reference-ambiguity';
+const selectableScenarioNames = [...scenarioNames, ...nameScenarioNames, ambiguityScenarioName];
+const nameUsage = 'Additional required name gates: --scenario name-references or --scenario name-reference-failed-source, with the original sdk-fixture.ts --catalog --distinct-names fixture. --scenario name-reference-ambiguity uses a separate --catalog --ambiguous-names fixture. These gates are separate from all14, which keeps its original fixture and names.';
 const nativeTools = ['read', 'notion_list', 'notion_use'];
 const scopedCommandTools = [...nativeTools, 'bash', 'tool_search'];
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -613,6 +614,30 @@ export function selectScalarProviderCall(context, calls) {
 
 /** Scripted caller inputs contain names and refs only; source bytes stay in the
  * outer oracle. Resource handles must come from the actual native main result. */
+export function ambiguityCandidatesFromMessage(message, { id, tool }) {
+  if (message?.role !== 'toolResult' || message.toolName !== tool || message.toolCallId !== id || message.isError !== true)
+    throw new Error('CONTROLLED_AMBIGUITY_TOOL_MESSAGE_MISSING');
+  const content = typeof message.content === 'string' ? message.content
+    : Array.isArray(message.content) && message.content.length === 1 && message.content[0].type === 'text' ? message.content[0].text : undefined;
+  if (typeof content !== 'string') throw new Error('CONTROLLED_AMBIGUITY_MODEL_CONTENT_MISSING');
+  let value;
+  try { value = JSON.parse(content); } catch { throw new Error('CONTROLLED_AMBIGUITY_CANDIDATES_MISSING'); }
+  if (!value || Object.keys(value).sort().join(',') !== 'candidates,code,message' || value.code !== 'SKILL_AMBIGUOUS'
+    || typeof value.message !== 'string' || !value.message.length || !Array.isArray(value.candidates) || value.candidates.length < 2)
+    throw new Error('CONTROLLED_AMBIGUITY_CANDIDATES_INVALID');
+  const seen = new Set();
+  for (const candidate of value.candidates) {
+    if (!candidate || Object.keys(candidate).sort().join(',') !== 'name,ref,selectable,source'
+      || !['name', 'source', 'ref'].every(key => typeof candidate[key] === 'string' && candidate[key].length > 0)
+      || typeof candidate.selectable !== 'boolean' || !/^(?:sr:[CSR][A-Za-z0-9_-]{22}|skill:\/\/\S+)$/u.test(candidate.ref))
+      throw new Error('CONTROLLED_AMBIGUITY_CANDIDATE_INVALID');
+    const identity = candidate.source + '\0' + candidate.ref;
+    if (seen.has(identity)) throw new Error('CONTROLLED_AMBIGUITY_CANDIDATE_DUPLICATED');
+    seen.add(identity);
+  }
+  return value.candidates;
+}
+
 export function selectNamedReferenceCall(context, plan) {
   const find = id => context.messages.find(message => message.role === 'toolResult' && message.toolCallId === id);
   const text = message => typeof message?.content === 'string' ? message.content
@@ -620,14 +645,59 @@ export function selectNamedReferenceCall(context, plan) {
   for (const call of plan.calls) {
     const result = find(call.id);
     if (!result) {
-      const args = call.resourceFrom ? { path: resourceRefsFromNative(find(call.resourceFrom), [call.resourcePath])[0] } : call.args;
+      let args = call.resourceFrom ? { path: resourceRefsFromNative(find(call.resourceFrom), [call.resourcePath])[0] } : call.args;
+      if (call.candidateFrom) {
+        const from = call.candidateFrom, messages = context.messages.filter(message => message.role === 'toolResult' && message.toolCallId === from.id);
+        if (messages.length !== 1 || !Number.isSafeInteger(from.index) || from.index < 0 || !['read', 'notion_use'].includes(call.tool))
+          throw new Error('CONTROLLED_AMBIGUITY_SELECTION_INVALID');
+        const candidate = ambiguityCandidatesFromMessage(messages[0], from)[from.index];
+        if (!candidate || !candidate.selectable) throw new Error('CONTROLLED_AMBIGUITY_CANDIDATE_NOT_SELECTABLE');
+        args = call.tool === 'read' ? { path: candidate.ref } : { ref: candidate.ref };
+      }
       return { type: 'toolCall', id: call.id, name: call.tool, arguments: args };
     }
     if (call.errorCode) {
       if (!result.isError || !text(result).includes(call.errorCode)) throw new Error('Missing expected named-reference failure: ' + call.errorCode);
+      if (call.errorCode === 'SKILL_AMBIGUOUS') ambiguityCandidatesFromMessage(result, call);
     } else if (result.isError) throw new Error('CONTROLLED_NAMED_REFERENCE_FAILED: ' + call.id + ': ' + text(result));
   }
   return null;
+}
+
+export function assertAmbiguityCandidates(message, { source, snapshots, entries }) {
+  const candidates = ambiguityCandidatesFromMessage(message, { id: message.toolCallId, tool: message.toolName });
+  assert.equal(candidates.length, snapshots.length, 'Every independent ambiguous owner must be offered exactly once');
+  const delivered = entries.findIndex(entry => entry.type === 'message' && entry.message?.role === 'toolResult'
+    && entry.message.toolCallId === message.toolCallId);
+  assert.ok(delivered >= 0, 'The actual error must be retained in the native session');
+  const bound = candidates.map(candidate => {
+    assert.equal(candidate.source, source.id); assert.equal(candidate.selectable, true);
+    assert.match(candidate.ref, /^sr:C[A-Za-z0-9_-]{22}$/u);
+    const bindings = entries.slice(0, delivered).filter(entry => entry.type === 'custom'
+      && entry.customType === 'context-broker-short-ref' && entry.data?.ref === candidate.ref);
+    assert.ok(bindings.length > 0, 'The advertised reference needs an actual preceding current-branch binding');
+    const target = bindings[0].data.target;
+    assert.equal(target.kind, 'candidate'); assert.equal(target.identity.source, 'notion');
+    for (const binding of bindings) assert.deepEqual(binding.data.target, target, 'A candidate handle cannot change owner');
+    const snapshot = snapshots.find(value => value.record.id === target.identity.id && value.scope === target.identity.scope);
+    assert.ok(snapshot, 'The actual candidate must belong to an independently frozen owner and scope');
+    assert.equal(candidate.name, snapshot.record.name); assert.equal(target.identity.kind, snapshot.record.kind);
+    assert.equal(target.identity.ref, snapshot.record.ref); assert.deepEqual(target.identity.locator, snapshot.record.locator);
+    return { ...candidate, id: snapshot.record.id, scope: snapshot.scope, canonical_ref: target.identity.ref };
+  });
+  assert.deepEqual(bound.map(value => value.id).sort(), snapshots.map(value => value.record.id).sort());
+  return bound;
+}
+
+export function assertAmbiguityBodyTimeline(captures, { bodiesById, inspectedId, usedId, requiredId }) {
+  assert.equal(captures.length, 5); assert.equal(new Set([inspectedId, usedId, requiredId]).size, 3);
+  for (const id of [inspectedId, usedId, requiredId]) assert.ok(bodiesById.has(id));
+  return captures.map((capture, index) => ({ request_id: capture.requestId, bodies: [...bodiesById].map(([id, body]) => {
+    const expected = id === inspectedId && index >= 2 || [usedId, requiredId].includes(id) && index === 4 ? 1 : 0;
+    const copies = bodyCount(capture.context, body);
+    assert.equal(copies, expected, 'Only the actually selected owner body may enter each provider; Requires enters only after use: ' + id);
+    return { id, sha256: hash(body), bytes: Buffer.byteLength(body), copies };
+  }) }));
 }
 
 export function assertResourceScalarResult(message, { batch, call }) {
@@ -1154,16 +1224,19 @@ async function inspect(options) {
   if (live) return { ...common, ...await inspectLiveInput(live, common) };
   const fixture = await json(options['--fixture']);
   assert.equal(fixture.version, 1); assert.equal(fixture.catalog, true);
+  assert.equal(fixture.ambiguous_names === true, options['--scenario'] === ambiguityScenarioName,
+    'The opt-in ambiguity fixture is reserved for its separate ambiguity scenario');
   const fixtureEnv = await json(fixture.env);
   assert.equal(new URL(fixtureEnv.NOTION_API_BASE_URL).hostname, '127.0.0.1', 'Only controlled offline fixture origin is accepted');
   const stateRoot = resolve(fixture.cwd, fixtureEnv.NTN_SKILLS_HOME);
   assert.ok(stateRoot.startsWith(resolve(fixture.cwd) + '/'));
-  const bodies = new Map();
-  for (const snapshot of fixture.snapshots.slice(0, 4)) {
+  const bodies = new Map(), bodiesById = new Map();
+  for (const snapshot of fixture.ambiguous_names ? fixture.snapshots : fixture.snapshots.slice(0, 4)) {
     const file = snapshot.files.find(file => file.path === snapshot.entrypoint);
     const bytes = await readFile(join(stateRoot, 'objects', file.sha256));
     assert.equal(bytes.length, file.bytes); assert.equal(hash(bytes), file.sha256);
-    bodies.set(snapshot.record.name, new TextDecoder('utf8', { fatal: true, ignoreBOM: true }).decode(bytes));
+    const body = new TextDecoder('utf8', { fatal: true, ignoreBOM: true }).decode(bytes);
+    bodies.set(snapshot.record.name, body); bodiesById.set(snapshot.record.id, body);
   }
   let resourceBatch;
   if (fixture.resourceBatch) {
@@ -1218,7 +1291,7 @@ async function inspect(options) {
     namedRootResource = { ...file, file_id: binding.file_id, ref: fixture.resource.ref,
       content: bytes.toString('base64'), encoding: 'base64' };
   }
-  return { packageRoot, manifest, extension, runtime, host, pi, piPackageRoot: current, serializerIdentity, fixture, fixtureEnv, bodies, resourceBatch, entrypoint, namedRootResource };
+  return { packageRoot, manifest, extension, runtime, host, pi, piPackageRoot: current, serializerIdentity, fixture, fixtureEnv, bodies, bodiesById, resourceBatch, entrypoint, namedRootResource };
 }
 
 export function resourceRefsFromNative(message, paths) {
@@ -1247,7 +1320,7 @@ function selectProviderCall(context) {
   const parsed = result => { if (result.isError) throw new Error('CONTROLLED_TOOL_FAILED'); return JSON.parse(text(result.content)); };
   const call = (id, name, args) => ({ type: 'toolCall', id, name, arguments: args });
   if (plan.mode === 'live-consume') return selectLiveProviderCall(context, plan);
-  if (['name-references', 'name-reference-failed-source'].includes(plan.mode)) return selectNamedReferenceCall(context, plan);
+  if (['name-references', 'name-reference-failed-source', 'name-reference-ambiguity'].includes(plan.mode)) return selectNamedReferenceCall(context, plan);
   if (plan.mode === 'lifecycle-probe') return find(plan.id) ? null : call(plan.id, 'read', { path: plan.ref });
   if (['resource-scalar', 'resource-scalar-short-refs'].includes(plan.mode)) return selectScalarProviderCall(context, plan.calls);
   if (plan.mode === 'scoped-command') {
@@ -1366,7 +1439,7 @@ async function provider(base) {
   let source = await readFile(path, 'utf8');
   const replace = (before, after) => { assert.equal(source.split(before).length, 2, 'Provider fixture shape changed'); source = source.replace(before, after); };
   replace('import { appendFileSync }', "import { channel } from 'node:diagnostics_channel';\nimport { appendFileSync, readFileSync }");
-  replace('function stream(model, context) {', `${currentProviderTools.toString()}\n${resourceRefsFromNative.toString()}\n${selectScalarProviderCall.toString()}\n${selectNamedReferenceCall.toString()}\n${selectNativeRepeatCall.toString()}\n${selectLiveProviderCall.toString()}\n${selectProviderCall.toString()}\n${holdLifecycleResponse.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, aborted: Boolean(options?.signal?.aborted), monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
+  replace('function stream(model, context) {', `${currentProviderTools.toString()}\n${resourceRefsFromNative.toString()}\n${selectScalarProviderCall.toString()}\n${ambiguityCandidatesFromMessage.toString()}\n${selectNamedReferenceCall.toString()}\n${selectNativeRepeatCall.toString()}\n${selectLiveProviderCall.toString()}\n${selectProviderCall.toString()}\n${holdLifecycleResponse.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, aborted: Boolean(options?.signal?.aborted), monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
   replace('const payload = await options?.onPayload?.({ model: model.id, context }, model);', 'if (typeof options?.onPayload !== "function" || typeof options?.onResponse !== "function") throw new Error("PUBLIC_PROVIDER_HOOKS_REQUIRED");\n      hook("payload_start");\n      const payload = await options.onPayload({ model: model.id, context }, model);\n      hook("payload_end");');
   replace('hook("payload_start");', 'hook("payload_start");\n      if (process.env.SC06_PI_CATALOG_RELEASE === "provider") channel("context-broker.verify-sdk-initialization-release").publish({ pid: process.pid, boundary: "provider" });');
   replace('JSON.stringify({ model: model.id, context })', 'JSON.stringify({ requestId, model: model.id, context })');
@@ -2173,7 +2246,7 @@ export function assertNamedReferenceIntervals(captures, hooks, events, calls) {
       const terminals = events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.id === sdk.id && event.observer_pid === sdk.observer_pid);
       assert.equal(terminals.length, 1); assert.ok(inside(terminals[0]), 'The SDK operation must close before its actual following provider request');
     }
-    if (['sc25-fixed-canonical', 'sc25-canonical-main', 'sc25-short-resource'].includes(call.id))
+    if (['sc25-fixed-canonical', 'sc25-canonical-main', 'sc25-short-resource', 'sc04-copy-read', 'sc04-copy-use'].includes(call.id))
       assert.ok(operations.every(operation => operation !== 'list' && operation !== 'files'), 'Canonical and actual short refs must not add a name metadata lookup');
     if (['sc25-current-name', 'sc25-current-alias', 'sc25-view-excluded', 'sc25-failed-name'].includes(call.id))
       assert.ok(operations.includes('list'), 'A current name must use the actual ordinary SDK directory');
@@ -2183,6 +2256,10 @@ export function assertNamedReferenceIntervals(captures, hooks, events, calls) {
     }
     if (call.id === 'sc25-failed-name') assert.ok(operations.every(operation => operation === 'list'), 'A failed authority must reject a name before any body operation');
     const objects = events.filter(event => inside(event) && event.kind === 'object_read' && event.event === 'start');
+    if (['sc04-ambiguous-read', 'sc04-ambiguous-use'].includes(call.id)) {
+      assert.ok(operations.length > 0 && operations.every(operation => operation === 'list'), 'Ambiguity resolution may only inspect the complete ordinary directory');
+      assert.equal(objects.length, 0, 'An ambiguous name cannot read any source body object');
+    }
     return { tool_call_id: call.id, observer_pid: before.pid, after_provider_request: captures[index].requestId, before_provider_request: captures[index + 1].requestId,
       start_monotonic_ns: before.monotonic_ns, end_monotonic_ns: after.monotonic_ns,
       sdk: starts.map(event => ({ id: event.id, operation: event.operation })),
@@ -2340,6 +2417,127 @@ function assertNamedReferenceEvidence(captures, frames, hooks, events, archive, 
     canonical_and_short_name_lookups: 0, body_authorization: 'caller-supplied name/fixed inputs and actual native resource footer; no private oracle bytes in provider setup' };
 }
 
+function ambiguityReferenceSettings(info, source) {
+  const metadata = info.fixture.ambiguity;
+  assert.equal(info.fixture.ambiguous_names, true); assert.equal(info.fixture.distinct_names, false);
+  assert.ok(metadata && metadata.candidate_ids.length === 2 && new Set(metadata.candidate_ids).size === 2);
+  const candidates = metadata.candidate_ids.map(id => info.fixture.snapshots.find(snapshot => snapshot.record.id === id));
+  const required = info.fixture.snapshots.find(snapshot => snapshot.record.name === 'base');
+  assert.ok(required && candidates.every(Boolean));
+  for (const snapshot of candidates) {
+    assert.equal(snapshot.record.name, metadata.name); assert.equal(snapshot.record.alias, metadata.alias);
+    assert.deepEqual(snapshot.required.map(value => value.id), [required.record.id]);
+    assert.ok(info.bodiesById.has(snapshot.record.id));
+  }
+  const defaults = new Set(info.fixture.default_view.records.map(record => record.id));
+  assert.equal(candidates.filter(snapshot => defaults.has(snapshot.record.id)).length, 1,
+    'Only one ambiguous owner belongs to the Default View; ordinary metadata must still retain both');
+  const ref = name => 'skill://' + encodeURIComponent(name) + '/SKILL.md';
+  const calls = [
+    { id: 'sc04-ambiguous-read', tool: 'read', args: { path: ref(metadata.name) }, errorCode: 'SKILL_AMBIGUOUS' },
+    { id: 'sc04-copy-read', tool: 'read', candidateFrom: { id: 'sc04-ambiguous-read', tool: 'read', index: 1 } },
+    { id: 'sc04-ambiguous-use', tool: 'notion_use', args: { ref: ref(metadata.alias) }, errorCode: 'SKILL_AMBIGUOUS' },
+    { id: 'sc04-copy-use', tool: 'notion_use', candidateFrom: { id: 'sc04-ambiguous-use', tool: 'notion_use', index: 0 } },
+  ];
+  return { ambiguity: true, candidates, required, source, plan: { calls } };
+}
+
+function assertAmbiguityReferenceEvidence(captures, frames, hooks, events, archive, info, settings, hostPid) {
+  const { source, candidates, required, plan } = settings;
+  const expectedErrors = plan.calls.filter(call => call.errorCode).map(call => call.id);
+  const sequence = assertProviderToolSequence(captures, frames, { expectedErrors });
+  assert.deepEqual(sequence.sequence.map(call => call.tool_call_id), plan.calls.map(call => call.id));
+  const raw = id => {
+    const found = frames.filter(frame => frame.type === 'tool_execution_end' && frame.toolCallId === id); assert.equal(found.length, 1);
+    const frame = found[0]; return { ...frame.result, role: 'toolResult', toolName: frame.toolName, toolCallId: id, isError: frame.isError };
+  };
+  const following = id => captures[plan.calls.findIndex(call => call.id === id) + 1].context;
+  const delivered = new Map();
+  for (const call of plan.calls) {
+    const actual = raw(call.id), projected = toolResult(following(call.id), call.id);
+    assert.ok(projected); assert.deepEqual(projected.content, actual.content);
+    const persisted = archive.messages.filter(message => message.role === 'toolResult' && message.toolCallId === call.id);
+    assert.equal(persisted.length, 1); assert.deepEqual(persisted[0].content, actual.content); assert.deepEqual(persisted[0].details, actual.details);
+    const frame = frames.find(frame => frame.type === 'tool_execution_start' && frame.toolCallId === call.id);
+    let args = call.args;
+    if (call.errorCode) {
+      const bound = assertAmbiguityCandidates(projected, { source, snapshots: candidates, entries: archive.entries });
+      assert.deepEqual(ambiguityCandidatesFromMessage(actual, call), ambiguityCandidatesFromMessage(projected, call));
+      delivered.set(call.id, bound);
+      assert.equal(actual.details?.contextBrokerRead, undefined); assert.equal(actual.details?.contextBrokerPreparation, undefined);
+    } else {
+      const choice = delivered.get(call.candidateFrom.id)[call.candidateFrom.index];
+      args = call.tool === 'read' ? { path: choice.ref } : { ref: choice.ref };
+    }
+    assert.equal(frame.toolName, call.tool); assert.deepEqual(frame.args, args, 'The next actual invocation must copy the returned candidate reference exactly');
+  }
+  const inspected = candidates.find(snapshot => snapshot.record.id === delivered.get('sc04-ambiguous-read')[1].id);
+  const used = candidates.find(snapshot => snapshot.record.id === delivered.get('sc04-ambiguous-use')[0].id);
+  assert.ok(inspected && used); assert.notEqual(inspected.record.id, used.record.id, 'The controlled continuation must exercise both independent ambiguous owners');
+  const timelineOptions = { bodiesById: info.bodiesById, inspectedId: inspected.record.id, usedId: used.record.id, requiredId: required.record.id };
+  const timeline = assertAmbiguityBodyTimeline(captures, timelineOptions);
+  const inspectedBody = info.bodiesById.get(inspected.record.id), usedBody = info.bodiesById.get(used.record.id);
+  const inspection = assertNativeProjection(raw('sc04-copy-read'), { snapshot: inspected, body: inspectedBody });
+  assert.deepEqual(inspection, assertNativeProjection(toolResult(following('sc04-copy-read'), 'sc04-copy-read'), { snapshot: inspected, body: inspectedBody }));
+  const useOracle = { snapshots: [used, required], roots: [used.record.name],
+    bodies: new Map([used, required].map(snapshot => [snapshot.record.name, info.bodiesById.get(snapshot.record.id)])) };
+  const preparation = assertPreparedProjection(raw('sc04-copy-use'), useOracle);
+  assert.deepEqual(preparation.content, assertPreparedProjection(toolResult(following('sc04-copy-use'), 'sc04-copy-use'), useOracle).content);
+  const intervals = assertNamedReferenceIntervals(captures, hooks, events, plan.calls);
+  const starts = events.filter(event => event.kind === 'sdk' && event.event === 'start');
+  const ends = events.filter(event => event.kind === 'sdk' && event.event === 'end');
+  assert.equal(ends.length, starts.length);
+  for (const start of starts) {
+    const matching = ends.filter(end => end.id === start.id && end.observer_pid === start.observer_pid); assert.equal(matching.length, 1);
+    const end = matching[0];
+    assert.equal(start.source_id, source.id); assert.equal(start.database, source.database);
+    assert.equal(end.source_id, start.source_id); assert.equal(end.database, start.database); assert.equal(end.operation, start.operation);
+    assert.equal(end.status, 'completed', 'A successful catalog followed by synchronous ambiguity cannot hide an SDK failure');
+    assert.equal(end.error_code, null); assert.equal(end.request_metrics?.complete, true);
+  }
+  const catalogProofs = [];
+  for (const interval of intervals.filter(value => expectedErrors.includes(value.tool_call_id))) {
+    const catalogs = events.filter(event => event.kind === 'sdk_catalog' && event.observer_pid === hostPid
+      && interval.sdk.some(value => value.id === event.id) && !event.value.view);
+    assert.ok(catalogs.length > 0, 'Each ambiguous name needs its actual complete ordinary SDK directory');
+    for (const event of catalogs) {
+      assert.equal(event.value.scope, info.fixture.scope); assert.equal(event.value.coverage.exhaustive, true);
+      assert.equal(event.value.coverage.search_index_limited, false); assert.deepEqual(event.value.coverage.failed_sources, []);
+      assert.deepEqual(event.value.records.map(record => record.id).sort(), [...info.fixture.catalog_records].sort());
+      for (const candidate of candidates) assert.deepEqual(event.value.records.find(record => record.id === candidate.record.id), candidate.record);
+      catalogProofs.push({ tool_call_id: interval.tool_call_id, sdk_id: event.id, source_id: source.id, database: source.database,
+        scope: event.value.scope, record_ids: event.value.records.map(record => record.id) });
+    }
+  }
+  for (const interval of intervals.filter(value => value.tool_call_id.startsWith('sc04-copy-')))
+    assert.equal(interval.sdk.filter(value => ['read', 'consume'].includes(value.operation)).length, 1, 'A copied candidate uses the original exact SDK body path');
+  const selected = [inspected, used, required].map(snapshot => snapshot.files.find(file => file.path === snapshot.entrypoint));
+  const objectReads = assertNamedReferenceObjects(events, { selected,
+    forbidden: info.fixture.snapshots.flatMap(snapshot => snapshot.files).filter(file => !selected.includes(file)), requiredPid: hostPid });
+  const useIndex = archive.entries.findIndex(entry => entry.type === 'message' && entry.message?.toolCallId === 'sc04-copy-use');
+  assert.ok(useIndex >= 0);
+  const active = archive.entries.flatMap((entry, index) => entry.type === 'custom' && entry.customType === 'context-broker-active-sources' ? [{ entry, index }] : []);
+  assert.ok(active.length > 0 && active.every(value => value.index > useIndex), 'Ambiguity and read cannot activate a Skill before complete use delivery');
+  const finalActive = active.at(-1).entry.data;
+  assert.deepEqual(finalActive.sources.map(value => value.record.id).sort(), [used.record.id, required.record.id].sort());
+  for (const value of finalActive.sources) {
+    const snapshot = [used, required].find(snapshot => snapshot.record.id === value.record.id), body = info.bodiesById.get(snapshot.record.id);
+    assert.equal(value.record.sourceScope, snapshot.scope); assert.equal(value.snapshotId, snapshot.snapshot_id);
+    assert.equal(value.bodySha256, hash(body)); assert.equal(value.bytes, Buffer.byteLength(body));
+    assert.equal(value.record.preparationBinding.snapshot_id, snapshot.snapshot_id); assert.equal(value.record.preparationBinding.version_id, snapshot.version_id);
+  }
+  assert.equal(finalActive.graphs.length, 1); assert.equal(finalActive.graphs[0].scope, used.scope);
+  assert.deepEqual(finalActive.graphs[0].roots, [used.record.id]);
+  assert.deepEqual(finalActive.graphs[0].bindings.map(value => value.record.id).sort(), [used.record.id, required.record.id].sort());
+  return { status: 'verified', variant: ambiguityScenarioName, sequence, expected_errors: expectedErrors, expected_failed_sdk_ids: [],
+    sdk_failure_boundary: 'Both ordinary lists complete; the synchronous name resolver produces the outer tool ambiguity. No failed SDK operation is allowed.',
+    candidates: [...delivered].map(([tool_call_id, candidates]) => ({ tool_call_id, candidates })), ordinary_catalogs: catalogProofs,
+    inspection, preparation, inspected_owner: inspected.record.id, used_owner: used.record.id, required_owner: required.record.id,
+    provider_body_timeline: timeline, sdk_intervals: intervals, object_reads: objectReads,
+    active_only_after_use: true, active_owner_ids: finalActive.sources.map(value => value.record.id), original_session_preserved: true,
+    body_authorization: 'Candidate references copied only from actual provider-visible error tool messages; independent fixture bytes keyed by record.id and source hash' };
+}
+
 async function scenario(name, info, scratch, evidence, expectShortRefs, expectCompactContext, expectDirectScalar, expectShortConfirmations) {
   const catalogProjection = ['dollar', 'default-view'].includes(name);
   const shortResourceRefs = name === 'resource-batch-short-refs';
@@ -2348,7 +2546,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
   const nativeRepeat = name === 'native-repeat';
   const partialEntrypoint = name === 'partial-entrypoint';
   const codemode = ['codemode-hidden', 'codemode-truncated'].includes(name);
-  const namedScenario = nameScenarioNames.includes(name);
+  const ambiguity = name === ambiguityScenarioName, namedScenario = nameScenarioNames.includes(name) || ambiguity;
   const base = join(scratch, name), output = join(evidence, name);
   await mkdir(base); await mkdir(output, { mode: 0o700 });
   const localSource = join(base, 'source');
@@ -2371,12 +2569,15 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
   const failedNameSource = name === 'name-reference-failed-source' ? { ...source, id: 'uncached-authority', namespace: 'uncached-authority',
     database: '00000000-0000-4000-8000-000000000099', cacheDir: join(base, 'uncached-authority') } : undefined;
   if (failedNameSource) assert.notEqual(failedNameSource.database, source.database);
-  const namedSettings = namedScenario ? namedReferenceSettings(info, source, failedNameSource) : undefined;
+  const namedSettings = ambiguity ? ambiguityReferenceSettings(info, source)
+    : namedScenario ? namedReferenceSettings(info, source, failedNameSource) : undefined;
   const config = join(agentDir, 'context-broker/config.yml');
   await save(config, { sources: [source, ...(failedNameSource ? [failedNameSource] : [])] }); await save(join(output, 'source.json'), source);
   if (namedSettings) await save(join(output, 'name-reference-inputs.json'), { calls: namedSettings.plan.calls,
     default_view: info.fixture.default_view, source, failed_source: failedNameSource ?? null,
-    fixture_boundary: 'Original generator --distinct-names fixture; complete manifest/current/catalog generated together, no hand-mutated cache or body wrapper' });
+    fixture_boundary: ambiguity
+      ? 'Original generator --ambiguous-names fixture; a/c retain independent IDs/body/Requires with identical display name/alias, Default View remains a/b, no hand-mutated cache'
+      : 'Original generator --distinct-names fixture; complete manifest/current/catalog generated together, no hand-mutated cache or body wrapper' });
   const providerFile = join(output, 'provider.jsonl'), hookFile = join(output, 'provider-hooks.jsonl'), ledger = join(output, 'observer.jsonl');
   const toolPlan = join(base, 'tool-plan.json');
   const resourcePlan = resourceScenario ? { owner: info.resourceBatch?.name, refs: info.resourceBatch?.refs,
@@ -2477,14 +2678,19 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       'resource-scalar-short-refs': 'Resume the persisted resource references and read only these fixed resources in the supplied order, using one native read path call per item: ' + JSON.stringify(scalarCalls.map(call => call.args)) + '. Preserve native pagination and file results. Do not prepare or activate the main Skill.',
       'partial-entrypoint': 'Read the supplied fixed entrypoint Skill main, inspect its current candidate directory, then read only the advertised selected text resource. Keep the selected owner and snapshot.',
       'scoped-command': 'Discover the deferred Notion maintenance tool, then obtain the host-local command prefix and database scope for the sdk-fixture source. Return that metadata only; do not execute commands or read Skill bodies.',
-      ...(namedSettings ? { [name]: 'Exercise these caller-supplied names and exact fixed references through the public Notion tools: '
+      ...(namedSettings ? { [name]: ambiguity
+        ? 'Inspect the named Skill ' + JSON.stringify(namedSettings.plan.calls[0].args.path)
+          + '. When it is ambiguous, copy the second candidate reference from the actual error and read it. Then use '
+          + JSON.stringify(namedSettings.plan.calls[2].args.ref)
+          + '; copy the first candidate reference from that actual ambiguity error and use its full Requires. Do not activate the inspected Skill.'
+        : 'Exercise these caller-supplied names and exact fixed references through the public Notion tools: '
         + JSON.stringify(namedSettings.plan.calls.filter(call => call.args).map(call => ({ tool: call.tool, args: call.args })))
         + '. For the final supporting resource, copy the handle from the actual native main directory. Preserve owners and pins; an invalid historical name or failed configured source must remain a failure.' } : {}),
     };
     await rpc.prompt(prompts[name]);
     let captures = await rows(providerFile); assert.ok(captures.length >= 2);
     last = captures.at(-1).context;
-    if (name !== 'scoped-command' && !scalarScenario) {
+    if (name !== 'scoped-command' && !scalarScenario && !ambiguity) {
       discovery = parsedResult(toolResult(last, namedScenario ? 'sc25-search' : 'sc10-search'));
       assert.equal(discovery.ok, true); assert.equal(discovery.count, info.fixture.catalog_records?.length ?? 4);
       for (const record of discovery.records) if (expectShortRefs) assert.match(record.ref, /^sr:C/u);
@@ -2887,11 +3093,25 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     const guidance = captures.map(capture => ({ request_id: capture.requestId, ...assertNativeGuidance(capture.context, env.SC10_PI_BUNDLED_CLI) }));
     await save(join(output, 'guidance.json'), guidance);
     if (namedSettings) {
-      namedEvidence = assertNamedReferenceEvidence(captures, rpc.frames, hooks, await rows(ledger), archive, info, namedSettings, rpc.lifecycle[0].pid);
+      namedEvidence = (ambiguity ? assertAmbiguityReferenceEvidence : assertNamedReferenceEvidence)(captures, rpc.frames, hooks, await rows(ledger), archive, info, namedSettings, rpc.lifecycle[0].pid);
       await save(join(output, 'name-reference-evidence.json'), namedEvidence);
       serializer = await replayScenarioHttp(captures, rpc.frames, info, output, { expectedErrors: namedEvidence.expected_errors });
       assert.equal(serializer.provider_requests, namedSettings.plan.calls.length + 1);
       assert.equal(serializer.tool_calls, namedSettings.plan.calls.length);
+      if (ambiguity) {
+        const serialized = await Promise.all(serializer.requests.map(async request => ({ requestId: request.provider_request_id,
+          context: { messages: (await json(join(output, request.request_file))).messages } })));
+        const bodyTimeline = assertAmbiguityBodyTimeline(serialized, { bodiesById: info.bodiesById,
+          inspectedId: namedEvidence.inspected_owner, usedId: namedEvidence.used_owner, requiredId: namedEvidence.required_owner });
+        for (const call of namedSettings.plan.calls.filter(call => call.errorCode)) {
+          const index = namedSettings.plan.calls.findIndex(value => value.id === call.id) + 1;
+          const actual = serialized[index].context.messages.filter(message => message.role === 'tool' && message.tool_call_id === call.id);
+          assert.equal(actual.length, 1); assert.equal(actual[0].content, textContent(toolResult(captures[index].context, call.id).content));
+        }
+        namedEvidence.installed_serializer_http = { provider_body_timeline: bodyTimeline, candidates_preserved_in_actual_tool_content: true,
+          requests: serializer.requests.map(value => ({ request_file: value.request_file, request_bytes: value.request_bytes, request_sha256: value.request_sha256 })) };
+        await save(join(output, 'name-reference-evidence.json'), namedEvidence);
+      }
     }
     if (catalogProjection) {
       const events = await rows(ledger), native = await rows(nativeEvents);
@@ -3005,8 +3225,10 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       discovery_failures: discovery?.failures ?? null, native_guidance_without_cli_templates: true, observer_finality: finality?.complete === true,
       ...(scopedCommandEvidence ? { deferred_control_discovery: 'verified', discovery_evidence: 'source-command.json' } : {}),
       ...(catalogProjectionEvidence ? { catalog_projection: 'verified', catalog_projection_evidence: 'catalog-projection.json' } : {}),
-      ...(namedEvidence ? { name_references: 'verified', name_reference_evidence: 'name-reference-evidence.json',
+      ...(namedEvidence && !ambiguity ? { name_references: 'verified', name_reference_evidence: 'name-reference-evidence.json',
         fixed_name_main_pre_reads: 0, canonical_short_name_lookups: 0, explicit_failed_source: Boolean(failedNameSource) } : {}),
+      ...(namedEvidence && ambiguity ? { ambiguity_candidates: 'verified', name_reference_evidence: 'name-reference-evidence.json',
+        ambiguity_body_reads: 0, copied_candidate_name_lookups: 0, inspect_requires_expansion: false, active_only_after_use: true } : {}),
       session_archive_files: archive?.files.length ?? 0, preparation_projection: preparation ? 'verified' : 'not_applicable',
       code_mode: preparation?.code_mode ?? null,
       resource_batch_projection: resourceBatchEvidence ? 'verified' : 'not_applicable',

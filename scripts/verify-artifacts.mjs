@@ -11,11 +11,11 @@ import { verifyPackageClosure, verifyBundledRuntime } from "./verify-package-clo
 
 const root = resolve(import.meta.dirname, "..");
 const args = process.argv.slice(2);
-const usage = "Usage: node scripts/verify-artifacts.mjs [--host pi|omp] [--fixture ABSOLUTE_SDK_FIXTURE_JSON] [--require-sdk] [--name-fixture ABSOLUTE_NAME_FIXTURE_JSON]";
+const usage = "Usage: node scripts/verify-artifacts.mjs [--host pi|omp] [--fixture ABSOLUTE_SDK_FIXTURE_JSON] [--require-sdk] [--name-fixture ABSOLUTE_NAME_FIXTURE_JSON] [--ambiguity-fixture ABSOLUTE_AMBIGUITY_FIXTURE_JSON]";
 const options = new Map();
 for (let index = 0; index < args.length; index++) {
   const key = args[index];
-  assert.ok(["--host", "--fixture", "--require-sdk", "--name-fixture"].includes(key) && !options.has(key), usage);
+  assert.ok(["--host", "--fixture", "--require-sdk", "--name-fixture", "--ambiguity-fixture"].includes(key) && !options.has(key), usage);
   if (key === "--require-sdk") options.set(key, true);
   else { const value = args[++index]; assert.ok(value && !value.startsWith("--"), usage); options.set(key, value); }
 }
@@ -23,20 +23,25 @@ const host = options.get("--host") ?? "omp";
 assert.ok(["pi", "omp"].includes(host), usage);
 const sdkFixtureOption = options.get("--fixture"), requireSdk = options.has("--require-sdk");
 const nameFixtureOption = options.get("--name-fixture");
+const ambiguityFixtureOption = options.get("--ambiguity-fixture");
 assert.ok(!sdkFixtureOption || host === "pi" && isAbsolute(sdkFixtureOption), "--fixture requires Pi and an absolute fixture path");
 assert.ok(!requireSdk || host === "pi" && sdkFixtureOption, "--require-sdk requires --host pi and --fixture; SDK execution cannot be skipped");
 assert.ok(!nameFixtureOption || host === "pi" && sdkFixtureOption && isAbsolute(nameFixtureOption), "--name-fixture requires --host pi, --fixture and an absolute name fixture path");
+assert.ok(!ambiguityFixtureOption || host === "pi" && sdkFixtureOption && isAbsolute(ambiguityFixtureOption), "--ambiguity-fixture requires --host pi, --fixture and an absolute ambiguity fixture path");
 const sdkFixture = sdkFixtureOption ? await realpath(sdkFixtureOption) : undefined;
 if (sdkFixture) assert.ok((await stat(sdkFixture)).isFile(), "SDK fixture must be a file");
 const nameFixture = nameFixtureOption ? await realpath(nameFixtureOption) : undefined;
 if (nameFixture) assert.ok((await stat(nameFixture)).isFile(), "Name SDK fixture must be a file");
+const ambiguityFixture = ambiguityFixtureOption ? await realpath(ambiguityFixtureOption) : undefined;
+if (ambiguityFixture) assert.ok((await stat(ambiguityFixture)).isFile(), "Ambiguity SDK fixture must be a file");
 const brokerOnly = host === "pi";
 const base = await mkdtemp(join(tmpdir(), "broker-artifacts-"));
 console.log(`Artifact workspace retained: ${base}`);
 const report = { version: 1, host, status: "running", startedAt: new Date().toISOString(),
-  notRun: brokerOnly ? ["OMP", "Tern", ...(sdkFixture ? [] : ["Default SDK installed Pi"]), ...(nameFixture ? [] : ["Named references installed Pi"])] : ["Pi"],
+  notRun: brokerOnly ? ["OMP", "Tern", ...(sdkFixture ? [] : ["Default SDK installed Pi"]), ...(nameFixture ? [] : ["Named references installed Pi"]), ...(ambiguityFixture ? [] : ["Ambiguous references installed Pi"])] : ["Pi"],
   defaultSdk: { status: "not_run", required: requireSdk, reason: sdkFixture ? "artifact_gate_not_reached" : host === "pi" ? "fixture_not_provided" : "different_host" },
-  namedSdk: { status: "not_run", required: Boolean(nameFixture), reason: nameFixture ? "artifact_gate_not_reached" : host === "pi" ? "name_fixture_not_provided" : "different_host", scenarios: [] } };
+  namedSdk: { status: "not_run", required: Boolean(nameFixture), reason: nameFixture ? "artifact_gate_not_reached" : host === "pi" ? "name_fixture_not_provided" : "different_host", scenarios: [] },
+  ambiguitySdk: { status: "not_run", required: Boolean(ambiguityFixture), reason: ambiguityFixture ? "artifact_gate_not_reached" : host === "pi" ? "ambiguity_fixture_not_provided" : "different_host" } };
 const saveReport = () => writeFile(join(base, "manifest.json"), JSON.stringify(report, null, 2) + "\n");
 await saveReport();
 try {
@@ -367,11 +372,13 @@ if (nameFixture) {
   } catch (error) { report.namedSdk.status = "failed"; throw error; }
   finally { await saveReport(); }
 }
+if (ambiguityFixture) await verifySdkScenario(ambiguityFixture, "name-reference-ambiguity", report.ambiguitySdk, "sdk-name-reference-ambiguity");
 report.status = "passed";
 report.providerRequests = contexts.length;
 report.assertions = ["independent-npm-install", "actual-host-rpc", "complete-local-and-builtin-bodies", "source-failure-isolation", "bundled-cli-sdk-identity", "offline-resources", "metadata-only-completion"];
 if (report.defaultSdk.status === "passed") report.assertions.push("default-sdk-installed-pi-all14");
 if (report.namedSdk.status === "passed") report.assertions.push("default-sdk-installed-pi-named-references");
+if (report.ambiguitySdk.status === "passed") report.assertions.push("default-sdk-installed-pi-actionable-ambiguity");
 console.log(`Artifact verification passed: ${host} actual installed RPC, complete builtin bodies, independent Node queries and offline resources${ternExtract ? ", Tern runtime closure" : ""}. Fixtures retained: ${base}`);
 } catch (error) {
   report.status = "failed";

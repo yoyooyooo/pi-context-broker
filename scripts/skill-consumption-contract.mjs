@@ -65,6 +65,12 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
       && installed.includes(' --name-fixture "$RUNNER_TEMP/ntn-skills-name-fixture/fixture.json"')
       && retained.includes('${{ runner.temp }}/ntn-skills-name-fixture/'),
       'GATE_INSTALLED_NAMES_MISSING', workflow.name + ' must require both named-reference scenarios from the distinct fixture on the same installed package and retain their evidence.');
+    const ambiguityFixture = step('Create controlled ambiguity SDK fixture');
+    check(ambiguityFixture.includes('run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-ambiguity-fixture" --catalog --ambiguous-names')
+      && unconditional(ambiguityFixture) && workflow.text.indexOf(ambiguityFixture) < workflow.text.indexOf(installed)
+      && installed.includes(' --ambiguity-fixture "$RUNNER_TEMP/ntn-skills-ambiguity-fixture/fixture.json"')
+      && retained.includes('${{ runner.temp }}/ntn-skills-ambiguity-fixture/'),
+      'GATE_INSTALLED_AMBIGUITY_MISSING', workflow.name + ' must require the actionable ambiguity scenario from its own complete catalog fixture and retain its evidence.');
     if (workflow.name === 'ci') {
       const compatibility = step('Pi 1.4 compatibility');
       check(unconditional(compatibility) && compatibility.includes('@earendil-works/pi-coding-agent@1.4.0')
@@ -85,11 +91,16 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
         && retained.includes('${{ runner.temp }}/pi14-name-references-evidence/')
         && retained.includes('${{ runner.temp }}/pi14-name-reference-failed-source-evidence/'),
         'GATE_INSTALLED_NAMES_MISSING', 'Both supported Pi releases must execute the two named-reference scenarios on the same independent package.');
+      check(compatibility.includes('node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-ambiguity-fixture/fixture.json" --scenario name-reference-ambiguity --out "$RUNNER_TEMP/pi14-name-reference-ambiguity-evidence"')
+        && installed.includes("assert.equal(manifest.ambiguitySdk.status, 'passed')")
+        && retained.includes('${{ runner.temp }}/pi14-name-reference-ambiguity-evidence/'),
+        'GATE_INSTALLED_AMBIGUITY_MISSING', 'Both supported Pi releases must verify actionable ambiguity on the same independently installed package.');
     } else check(!/^    strategy:/mu.test(workflow.text), 'GATE_PUBLISH_MATRIX', 'Publishing remains a single job, not a host-version matrix.');
   }
   check(new Set(sourceRevisions).size === 1, 'GATE_SDK_BUILD_INPUT_DRIFT', 'CI and publish must use the same frozen CLI revision.');
   return { status: 'gate-wiring-valid', supportedPi: ['1.4.0', '1.5.0'], primaryPi: '1.5.0', requiredTests: required.length,
     cliSourceRevision: sourceRevisions[0], installedSdk: 'required_all14', installedNames: 'required_two_scenarios',
+    installedAmbiguity: 'required_scenario',
     runtimeAcceptance: 'not-inferred', boundary: 'Wiring is checked here; actual test logs and installed host runs remain separate evidence.' };
 }
 

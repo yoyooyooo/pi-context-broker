@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from "node:util";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { InvocationError, recordIdentity } from "./discovery-records";
 import { assertSourceAvailable, formatSourceFailures } from "./sources";
-import { SourceError, ReferenceMiss, sourceFailureMessage } from "./notion-source";
+import { SourceError, SourceReferenceAmbiguity, ReferenceMiss, sourceFailureMessage } from "./notion-source";
 import { createActivationFeedback, ACTIVATION_MESSAGE } from "./activation-feedback";
 import { checkPreparationSignal, createPreparationGate, preparationCancelled, type ActivePreparation } from "./skill-preparation";
 import type { AgentMessage, ConfigFile, ExtensionAPI, ExtensionContext, ImageContent, SkillRecord, DiscoveryResult, SourceFailure, NotionViewState, ProjectedSessionEntry, ToolCallEvent, ToolCallResult } from "./types";
@@ -70,6 +70,7 @@ export function hostSkillName(record: SkillRecord): string {
 }
 function failure(error: unknown): string {
   const code = error !== null && typeof error === "object" && "code" in error ? error.code : undefined;
+  if (error instanceof SourceReferenceAmbiguity) return error.message;
   if (error instanceof SourceError) return `context-broker source ${error.sourceId} unavailable (${error.code}). ${sourceFailureMessage(error.code)}`;
   if (error instanceof InvocationError) return error.message;
   return `context-broker activation failed (${typeof code === "string" && /^[A-Z_]+$/.test(code) ? code : "SOURCE_ACTIVATION_FAILED"})`;
@@ -184,15 +185,40 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (resolved.short || canonical || !options.resolveNamedReference)
       return { ...resolved, canonicalRef: resolved.short?.canonicalRef ?? value };
     const observedGeneration = generation, sessionId = ctx.sessionManager?.getSessionId?.(), sessionFile = ctx.sessionManager?.getSessionFile?.();
-    const selected = await options.resolveNamedReference(value, ctx, signal, refresh);
-    checkPreparationSignal(signal);
-    if (observedGeneration !== generation || sessionId !== ctx.sessionManager?.getSessionId?.() || sessionFile !== ctx.sessionManager?.getSessionFile?.()) throw preparationCancelled();
-    const reference = parseNativeReference(selected.ref), record = selected.record;
-    if (record.source !== "notion" || !record.sourceId || !record.sourceScope || !record.ref || record.enabled === false
-      || reference.selector !== parseNativeReference(record.ref).selector || reference.snapshot !== requested.snapshot
-      || reference.path !== (requested.path || record.entrypoint) || requested.fileId !== undefined && reference.fileId !== requested.fileId)
-      throw hostError("SOURCE_IDENTITY_MISMATCH");
-    return { reference, canonicalRef: selected.ref, record };
+    const current = () => {
+      checkPreparationSignal(signal);
+      if (observedGeneration !== generation || sessionId !== ctx.sessionManager?.getSessionId?.() || sessionFile !== ctx.sessionManager?.getSessionFile?.()) throw preparationCancelled();
+    };
+    const checked = (selected: { record: SkillRecord; ref: string }) => {
+      const reference = parseNativeReference(selected.ref), record = selected.record;
+      if (record.source !== "notion" || !record.sourceId || !record.sourceScope || !record.ref || record.enabled === false
+        || reference.selector !== parseNativeReference(record.ref).selector || reference.snapshot !== requested.snapshot
+        || reference.path !== (requested.path || record.entrypoint) || requested.fileId !== undefined && reference.fileId !== requested.fileId)
+        throw hostError("SOURCE_IDENTITY_MISMATCH");
+      return { reference, canonicalRef: selected.ref, record };
+    };
+    let selected: { record: SkillRecord; ref: string };
+    try { selected = await options.resolveNamedReference(value, ctx, signal, refresh); }
+    catch (error) {
+      current();
+      if (!(error instanceof SourceReferenceAmbiguity)) throw error;
+      if (error.candidates.length < 2) throw hostError("SOURCE_IDENTITY_MISMATCH");
+      const candidates = error.candidates.map(checked);
+      // Candidate handles bind only unfixed main entries. A manifest-only
+      // fixed lookup cannot manufacture the preparation proof for sr:S/R.
+      const refs = modelCandidateReferences(candidates.filter(candidate => !candidate.reference.snapshot
+        && candidate.reference.fileId === undefined && candidate.reference.path === candidate.record.entrypoint).map(candidate => candidate.record), ctx);
+      const choices = candidates.map(candidate => ({ name: candidate.record.name, source: candidate.record.sourceId!,
+        ref: refs.get(candidate.record) ?? candidate.canonicalRef }));
+      const presented = choices.map(choice => ({ ...choice, selectable: choices.filter(other => other.ref === choice.ref).length === 1 }));
+      current();
+      for (const candidate of candidates) hostRecords.set(recordIdentity(candidate.record), candidate.record);
+      throw new SourceReferenceAmbiguity(error.sourceId, error.candidates, JSON.stringify({ code: error.code,
+        message: "Multiple Notion Skills match. Copy one selectable ref into the same read or notion_use call. These are metadata choices, not loaded content. A non-selectable ref cannot distinguish source scopes here; keep its snapshot and do not substitute current.",
+        candidates: presented }));
+    }
+    current();
+    return checked(selected);
   }
   let records: SkillRecord[] = [];
   let defaultRouters: SkillRecord[] = [];

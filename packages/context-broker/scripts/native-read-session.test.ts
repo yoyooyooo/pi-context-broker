@@ -10,7 +10,8 @@ import { installHostSkills } from "../src/host-skills";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { recordIdentity } from "../src/discovery-records";
 import { compileResourceRead } from "../src/resource-read-projection";
-import type { AgentMessage, ExtensionAPI, ExtensionContext, SkillRecord } from "../src/types";
+import { SourceError, SourceReferenceAmbiguity } from "../src/notion-source";
+import type { AgentMessage, ExtensionAPI, ExtensionContext, SessionEntry, SkillRecord } from "../src/types";
 const a = "s_" + "a".repeat(64), b = "s_" + "b".repeat(64);
 const record = { kind: "skill", sourceId: "notion", sourceScope: "scope", source: "notion", id: "record", name: "example", token: "notion/example", path: "/immutable/SKILL.md", metadataIndexPath: "/metadata/SKILL.md", description: "Example", aliases: [], normalizedName: "example", normalizedDescription: "example", normalizedAliases: [], autoloadEnabled: false, body: "---\nname: example\n---\nExact native instructions.\n", snapshotId: a, locator: { type: "shared_skill", library_id: "lib", skill_id: "skill", page_id: "p", database_id: "d", data_source_id: "ds" } } satisfies SkillRecord;
 const result = (): AgentMessage => ({ role: "toolResult", toolName: "read", toolCallId: "read-1", isError: false, content: [{ type: "text", text: record.body }], details: { contextBrokerRead: nativeReadReceipt(record, "read-1", record.body) } });
@@ -394,18 +395,24 @@ test("precise references bypass unrelated metadata failure without an Agent list
   expect(lookups).toBe(1);
 });
 
-async function logicalReferenceFixture(options: { use?: boolean } = {}) {
+async function logicalReferenceFixture(options: { use?: boolean; shortRefs?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "broker-logical-uri-"));
   await writeFile(join(root, "SKILL.md"), record.body);
   await mkdir(join(root, "references"));
   await writeFile(join(root, "references/guide.md"), "Fixed historical resource.");
   const owner: SkillRecord = { ...record, name: "URI Example", alias: "uri-example", normalizedName: "uri-example",
     id: "shared_skill:lib:skill", ref: "skill://shared_skill%3Alib%3Askill/SKILL.md", entrypoint: "SKILL.md",
-    token: "notion/uri-example", path: join(root, "SKILL.md"), metadataIndexPath: undefined, defaultDiscovery: false };
+    token: "notion/uri-example", path: join(root, "SKILL.md"), metadataIndexPath: undefined, defaultDiscovery: false,
+    ...(options.shortRefs ? { sourceScope: "a".repeat(64), enabled: true, default_context: false,
+      locator: { type: "shared_skill" as const, library_id: "lib", skill_id: "skill", page_id: "00000000-0000-4000-8000-000000000001",
+        database_id: "00000000-0000-4000-8000-000000000002", data_source_id: "00000000-0000-4000-8000-000000000003" } } : {}) };
   const controller = new AbortController(), events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
   const tools: Parameters<NonNullable<ExtensionAPI["registerTool"]>>[0][] = [];
-  const api: ExtensionAPI = { on(name, listener) { events.set(name, [...events.get(name) ?? [], listener]); }, registerTool(tool) { tools.push(tool); } };
-  const ctx: ExtensionContext = { cwd: root, hasUI: false, mode: "rpc", signal: controller.signal };
+  const entries: SessionEntry[] = [];
+  const api: ExtensionAPI = { on(name, listener) { events.set(name, [...events.get(name) ?? [], listener]); }, registerTool(tool) { tools.push(tool); },
+    ...(options.shortRefs ? { appendEntry(customType: string, data?: unknown) { entries.push({ type: "custom", customType, data }); } } : {}) };
+  const ctx: ExtensionContext = { cwd: root, hasUI: false, mode: "rpc", signal: controller.signal,
+    ...(options.shortRefs ? { sessionManager: { getBranch: () => entries, getSessionId: () => "logical-session", getSessionFile: () => join(root, "session.jsonl") } } : {}) };
   const state = { calls: [] as string[], loads: [] as Array<string | undefined>, refreshes: [] as Array<boolean | undefined>, graphRoots: [] as Array<Array<string | undefined>>,
     resolve: async (value: string, _signal?: AbortSignal) => {
       const ref = parseNativeReference(value);
@@ -431,7 +438,7 @@ async function logicalReferenceFixture(options: { use?: boolean } = {}) {
     return { input, values };
   }
   const emit = async (name: string) => { for (const listener of events.get(name) ?? []) await listener({ type: name } as never, ctx); };
-  return { root, owner, ctx, controller, state, host, read, emit,
+  return { root, owner, ctx, controller, state, host, read, emit, entries,
     use: async (input: Record<string, unknown>) => {
       const tool = tools.find(tool => tool.name === "notion_use");
       if (!tool) throw new Error("Expected the actual registered Notion use tool");
@@ -514,4 +521,66 @@ test.each(["abort", "session_switch"])("SC25 name resolution cannot publish afte
     expect(result.input.path).toBe("skill://URI%20Example/SKILL.md");
     expect(f.state.loads).toEqual([]);
   } finally { released.resolve(); await f.emit("session_shutdown"); }
+});
+
+function ambiguityCandidates(owner: SkillRecord) {
+  const first = { ...owner, body: undefined, snapshotId: undefined };
+  const second: SkillRecord = { ...first, sourceId: "other", sourceScope: "b".repeat(64) };
+  return [{ record: first, ref: first.ref! }, { record: second, ref: second.ref! }];
+}
+
+test.each([
+  ["read", "abort"], ["read", "session_switch"], ["notion_use", "abort"], ["notion_use", "session_switch"],
+] as const)("SC04 a %s ambiguity arriving after %s cannot publish candidate handles", async (tool, boundary) => {
+  const f = await logicalReferenceFixture({ shortRefs: true, use: tool === "notion_use" }), entered = Promise.withResolvers<void>(), released = Promise.withResolvers<void>();
+  try {
+    f.state.resolve = async () => { entered.resolve(); await released.promise; throw new SourceReferenceAmbiguity("notion", ambiguityCandidates(f.owner)); };
+    const pending = (tool === "read" ? f.read("skill://URI%20Example/SKILL.md") : f.use({ ref: "skill://URI%20Example/SKILL.md" }))
+      .then(value => ({ ok: true as const, value }), error => ({ ok: false as const, error }));
+    await entered.promise;
+    if (boundary === "abort") f.controller.abort(); else await f.emit("session_switch");
+    released.resolve();
+    const result = await pending;
+    if (tool === "notion_use") {
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error("Cancelled use must reject");
+      expect(result.error).toMatchObject({ code: "SOURCE_ACTIVATION_CANCELLED" });
+      expect(String(result.error)).not.toContain("candidates");
+    } else {
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw result.error;
+      expect(JSON.stringify(result.value)).toContain("SOURCE_ACTIVATION_CANCELLED");
+      expect(JSON.stringify(result.value)).not.toContain("candidates");
+    }
+    expect(f.entries).toEqual([]); expect(f.state.loads).toEqual([]); expect(f.state.graphRoots).toEqual([]);
+  } finally { released.resolve(); await f.emit("session_shutdown"); }
+});
+
+test("SC04 candidate errors expose only safe metadata and reject mismatched fixed owners before binding", async () => {
+  const f = await logicalReferenceFixture({ shortRefs: true, use: true });
+  try {
+    const candidates = ambiguityCandidates(f.owner);
+    candidates[0]!.record.body = "PRIVATE_BODY"; candidates[0]!.record.path = "/private/machine-path";
+    f.state.resolve = async () => { throw new SourceReferenceAmbiguity("notion", candidates); };
+    let error: unknown; try { await f.use({ ref: "skill://URI%20Example/SKILL.md" }); } catch (value) { error = value; }
+    expect(error).toBeInstanceOf(SourceReferenceAmbiguity);
+    if (!(error instanceof SourceReferenceAmbiguity)) throw new Error("Expected the actual registered ambiguity error");
+    const output = JSON.parse(error.message);
+    expect(output.candidates.map((value: Record<string, unknown>) => Object.keys(value).sort())).toEqual([
+      ["name", "ref", "selectable", "source"], ["name", "ref", "selectable", "source"],
+    ]);
+    for (const privateValue of ["PRIVATE_BODY", "/private/machine-path", "sourceScope", "locator", "versionId"]) {
+      expect(error.message).not.toContain(privateValue);
+      expect(JSON.stringify(error)).not.toContain(privateValue);
+    }
+    const persisted = f.entries.length;
+    f.state.resolve = async () => { throw new SourceReferenceAmbiguity("notion", candidates); };
+    expect(JSON.stringify((await f.read("skill://URI%20Example/SKILL.md?snapshot=" + a)).values)).toContain("SOURCE_IDENTITY_MISMATCH");
+    expect(f.entries).toHaveLength(persisted); expect(f.state.loads).toEqual([]); expect(f.state.graphRoots).toEqual([]);
+    f.state.resolve = async () => { throw Object.assign(new SourceError("SKILL_AMBIGUOUS", "notion"), { details: { token: "PRIVATE_TOKEN", candidates } }); };
+    const ordinary = JSON.stringify((await f.read("skill://URI%20Example/SKILL.md")).values);
+    expect(ordinary).toContain("SKILL_AMBIGUOUS");
+    expect(ordinary).not.toContain("PRIVATE_TOKEN"); expect(ordinary).not.toContain('"candidates"');
+    expect(f.entries).toHaveLength(persisted);
+  } finally { await f.emit("session_shutdown"); }
 });

@@ -1304,6 +1304,110 @@ test('metadata-only scope does not weaken the existing mandatory SDK transport a
   assert.throws(() => reconcile(observed(catalog.filter(item => item.event !== 'end')), lifecycle, { bodyTransportRequired: false }));
 });
 
+function ambiguityMessage(id = 'ambiguous-read', tool = 'read') {
+  return { role: 'toolResult', toolName: tool, toolCallId: id, isError: true, content: [{ type: 'text', text: JSON.stringify({
+    code: 'SKILL_AMBIGUOUS', message: 'Copy one returned candidate reference.', candidates: [
+      { name: 'A', source: 'sdk-fixture', ref: 'sr:C' + 'a'.repeat(22), selectable: true },
+      { name: 'A', source: 'sdk-fixture', ref: 'sr:C' + 'c'.repeat(22), selectable: true },
+    ] }) }] };
+}
+
+test('ambiguity provider copies the chosen reference only from the actual error tool message', () => {
+  const plan = { calls: [
+    { id: 'ambiguous-read', tool: 'read', args: { path: 'skill://A/SKILL.md' }, errorCode: 'SKILL_AMBIGUOUS' },
+    { id: 'copy-read', tool: 'read', candidateFrom: { id: 'ambiguous-read', tool: 'read', index: 1 } },
+    { id: 'ambiguous-use', tool: 'notion_use', args: { ref: 'skill://a/SKILL.md' }, errorCode: 'SKILL_AMBIGUOUS' },
+    { id: 'copy-use', tool: 'notion_use', candidateFrom: { id: 'ambiguous-use', tool: 'notion_use', index: 0 } },
+  ] };
+  const context = { messages: [] };
+  assert.deepEqual(namedSdkProbe.selectNamedReferenceCall(context, plan).arguments, plan.calls[0].args);
+  context.messages.push(ambiguityMessage());
+  assert.deepEqual(namedSdkProbe.selectNamedReferenceCall(context, plan), { type: 'toolCall', id: 'copy-read', name: 'read', arguments: { path: 'sr:C' + 'c'.repeat(22) } });
+  context.messages.push({ role: 'toolResult', toolName: 'read', toolCallId: 'copy-read', isError: false, content: [{ type: 'text', text: 'Complete inspected body.' }] });
+  assert.deepEqual(namedSdkProbe.selectNamedReferenceCall(context, plan).arguments, plan.calls[2].args);
+  context.messages.push(ambiguityMessage('ambiguous-use', 'notion_use'));
+  assert.deepEqual(namedSdkProbe.selectNamedReferenceCall(context, plan), { type: 'toolCall', id: 'copy-use', name: 'notion_use', arguments: { ref: 'sr:C' + 'a'.repeat(22) } });
+});
+
+test('ambiguity provider refuses missing, forged, duplicated and nonselectable candidates', () => {
+  const call = { id: 'copy', tool: 'read', candidateFrom: { id: 'ambiguous-read', tool: 'read', index: 1 } };
+  for (const change of [
+    message => { message.role = 'user'; },
+    message => { message.toolName = 'notion_use'; },
+    message => { message.isError = false; },
+    message => { message.details = JSON.parse(message.content[0].text); message.content = []; },
+    message => { message.content[0].text = 'SKILL_AMBIGUOUS'; },
+    message => { const value = JSON.parse(message.content[0].text); value.candidates[1].selectable = false; message.content[0].text = JSON.stringify(value); },
+    message => { const value = JSON.parse(message.content[0].text); value.candidates[1].ref = '/private/cache/SKILL.md'; message.content[0].text = JSON.stringify(value); },
+    message => { const value = JSON.parse(message.content[0].text); value.candidates[1].body = 'Private body'; message.content[0].text = JSON.stringify(value); },
+    message => { const value = JSON.parse(message.content[0].text); value.candidates[1] = value.candidates[0]; message.content[0].text = JSON.stringify(value); },
+  ]) {
+    const message = ambiguityMessage(); change(message);
+    assert.throws(() => namedSdkProbe.selectNamedReferenceCall({ messages: [message] }, { calls: [call] }));
+  }
+  assert.throws(() => namedSdkProbe.selectNamedReferenceCall({ messages: [ambiguityMessage(), ambiguityMessage()] }, { calls: [call] }));
+  const fixed = ambiguityMessage(), value = JSON.parse(fixed.content[0].text);
+  value.candidates = ['left', 'right'].map(source => ({ name: 'A', source, ref: 'skill://owner/SKILL.md?snapshot=fixed', selectable: false }));
+  fixed.content[0].text = JSON.stringify(value);
+  assert.throws(() => namedSdkProbe.selectNamedReferenceCall({ messages: [fixed] }, { calls: [call] }), /NOT_SELECTABLE/);
+});
+
+function ambiguityOwnerFixture() {
+  const snapshots = ['a', 'c'].map(id => ({ scope: 'scope', record: { id: 'shared_skill:sdk-library:' + id, name: 'A', kind: 'skill',
+    ref: 'skill://' + encodeURIComponent('shared_skill:sdk-library:' + id) + '/SKILL.md', locator: { type: 'shared_skill', skill_id: id } } }));
+  const message = ambiguityMessage();
+  const entries = snapshots.map((snapshot, index) => ({ type: 'custom', customType: 'context-broker-short-ref', data: {
+    ref: JSON.parse(message.content[0].text).candidates[index].ref,
+    target: { kind: 'candidate', identity: { source: 'notion', scope: snapshot.scope, ...snapshot.record } },
+  } }));
+  entries.push({ type: 'message', message });
+  return { message, snapshots, entries, source: { id: 'sdk-fixture' } };
+}
+
+test('ambiguity candidates bind every actual handle to its independent owner and scope before delivery', () => {
+  const valid = ambiguityOwnerFixture();
+  assert.deepEqual(namedSdkProbe.assertAmbiguityCandidates(valid.message, valid).map(value => value.id), valid.snapshots.map(value => value.record.id));
+  for (const change of [
+    value => { value.entries[1].data.target.identity.id = value.snapshots[0].record.id; },
+    value => { value.entries[1].data.target.identity.scope = 'foreign'; },
+    value => { value.entries[1].data.target.identity.ref = value.snapshots[0].record.ref; },
+    value => { const parsed = JSON.parse(value.message.content[0].text); parsed.candidates[1].source = 'another-source'; value.message.content[0].text = JSON.stringify(parsed); },
+    value => { const parsed = JSON.parse(value.message.content[0].text); parsed.candidates.pop(); value.message.content[0].text = JSON.stringify(parsed); },
+    value => { value.entries.push(value.entries.splice(1, 1)[0]); },
+  ]) {
+    const bad = ambiguityOwnerFixture(); change(bad);
+    assert.throws(() => namedSdkProbe.assertAmbiguityCandidates(bad.message, bad));
+  }
+});
+
+test('ambiguity body timeline keeps duplicate display names separate and expands Requires only after use', () => {
+  const options = { bodiesById: new Map([['a', 'Complete a.'], ['c', 'Complete c.'], ['base', 'Complete base.'], ['b', 'Unselected b.']]),
+    inspectedId: 'c', usedId: 'a', requiredId: 'base' };
+  const captures = ['', '', 'Complete c.', 'Complete c.', 'Complete c.\nComplete a.\nComplete base.']
+    .map((text, index) => ({ requestId: String(index), context: { messages: [{ role: 'toolResult', content: [{ type: 'text', text }] }] } }));
+  assert.equal(namedSdkProbe.assertAmbiguityBodyTimeline(captures, options).length, 5);
+  for (const [index, addition] of [[0, 'Complete a.'], [1, 'Complete c.'], [2, 'Complete base.'], [3, 'Complete a.'], [4, 'Unselected b.'], [4, 'Complete a.']]) {
+    const bad = structuredClone(captures); bad[index].context.messages[0].content[0].text += addition;
+    assert.throws(() => namedSdkProbe.assertAmbiguityBodyTimeline(bad, options));
+  }
+  const missing = structuredClone(captures); missing[4].context.messages[0].content[0].text = 'Complete c.\nComplete a.';
+  assert.throws(() => namedSdkProbe.assertAmbiguityBodyTimeline(missing, options));
+});
+
+test('ambiguity lookup intervals reject body work and copied handles do not repeat a name lookup', () => {
+  const captures = [{ requestId: 'before' }, { requestId: 'after' }];
+  const hooks = [{ requestId: 'before', phase: 'response_end', pid: 42, monotonic_ns: '10' },
+    { requestId: 'after', phase: 'payload_start', pid: 42, monotonic_ns: '40' }];
+  const fields = [{ kind: 'sdk', event: 'start', id: 'lookup', operation: 'list', observer_pid: 42, monotonic_ns: '20' },
+    { kind: 'sdk', event: 'end', id: 'lookup', operation: 'list', observer_pid: 42, monotonic_ns: '30' }];
+  assert.equal(namedSdkProbe.assertNamedReferenceIntervals(captures, hooks, fields, [{ id: 'sc04-ambiguous-read' }])[0].sdk.length, 1);
+  assert.throws(() => namedSdkProbe.assertNamedReferenceIntervals(captures, hooks, fields, [{ id: 'sc04-copy-read' }]));
+  const body = structuredClone(fields); body[0].operation = body[1].operation = 'consume';
+  assert.throws(() => namedSdkProbe.assertNamedReferenceIntervals(captures, hooks, body, [{ id: 'sc04-ambiguous-use' }]));
+  assert.throws(() => namedSdkProbe.assertNamedReferenceIntervals(captures, hooks,
+    [...fields, { kind: 'object_read', event: 'start', id: 'body', observer_pid: 42, monotonic_ns: '25' }], [{ id: 'sc04-ambiguous-read' }]));
+});
+
 test('name reference provider preserves display and alias inputs and copies only an actual resource handle', () => {
   const plan = { calls: [
     { id: 'name', tool: 'read', args: { path: 'skill://A/SKILL.md' } },
