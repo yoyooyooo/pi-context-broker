@@ -86,6 +86,33 @@ test("each final context projects current capabilities without mutating history,
   expect(JSON.stringify(history)).toBe(original);
 });
 
+test("Notion source flags are scoped to native installations without rewriting source or native context", async () => {
+  const h = guidanceHarness();
+  h.tools(["read", "notion_list", "notion_use"]);
+  const system = { role: "system", content: "Native Skill directory and /local/SKILL.md remain host-owned." };
+  const source = { role: "custom", customType: "context-broker", content: "---\ndisable-model-invocation: true\n---\nExact source instructions.\n" };
+  const history = [system, { role: "user", content: "Introduce this Skill." }, source];
+  const original = JSON.stringify(history);
+  const projected = await h.project("context", history);
+  const guidance = guidanceText(projected);
+  expect(guidance).toContain("Notion's Default View controls its default directory");
+  expect(guidance).toContain("Native-loader/editor flags in source text (for example disable-model-invocation) describe native installations");
+  expect(guidance).toContain("reported availability and permissions and the current user intent");
+  expect(guidance).toContain("Local Skills keep their native discovery and read paths");
+  expect(guidance).toContain("does not authorize executing its workflow");
+  expect(guidance).toContain("Choosing a Skill to introduce or inspect uses read");
+  expect(projected[0]).toBe(system);
+  expect(projected).toContain(source);
+  expect(JSON.stringify(history)).toBe(original);
+  expect(await h.project("context_with_system", projected)).toBe(projected);
+  h.tools(full);
+  const legacy = await h.project("context_with_system", projected);
+  expect(guidanceText(legacy)).not.toContain("Native-loader/editor flags");
+  expect(legacy[0]).toBe(system);
+  expect(legacy).toContain(source);
+  expect(JSON.stringify(history)).toBe(original);
+});
+
 test("unknown Pi capability and OMP keep legacy command guidance", async () => {
   for (const h of [guidanceHarness("pi", false), guidanceHarness("omp", true)]) {
     const old = { role: "custom", customType: "ntn-skills-guidance", content: "Earlier legacy config guidance" };

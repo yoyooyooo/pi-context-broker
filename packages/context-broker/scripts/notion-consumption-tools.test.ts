@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { installHostSkills } from "../src/host-skills";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { buildCliGuidance } from "../src/index";
-import type { ExtensionAPI, NativeSkillSearchDefinition } from "../src/types";
+import type { ExtensionAPI, NativeSkillSearchDefinition, SkillRecord } from "../src/types";
 
 test("Pi exposes one Notion consumption contract and keeps use outside nested code execution", async () => {
   const registered: Parameters<NonNullable<ExtensionAPI["registerTool"]>>[0][] = [];
@@ -17,6 +17,9 @@ test("Pi exposes one Notion consumption contract and keeps use outside nested co
   expect(registered.map(tool => tool.name)).toEqual(["notion_list", "notion_use", "notion_ctl"]);
   const use = registered.find(tool => String(tool.name) === "notion_use");
   const ctl = registered.find(tool => String(tool.name) === "notion_ctl");
+  const list = registered.find(tool => String(tool.name) === "notion_list");
+  expect(list?.description).toContain("Skill refs for read or notion_use");
+  expect(list?.description).not.toContain("read references only");
   expect(use).toMatchObject({ exposure: "model-only", defaultActive: true });
   expect(ctl).toMatchObject({ exposure: "deferred", defaultActive: false });
   expect(use?.parameters).toMatchObject({ required: ["ref"], additionalProperties: false });
@@ -52,4 +55,34 @@ test("an empty metadata page retains incomplete or unknown source coverage", asy
       coverage: { exhaustive: exhaustive ?? null, sources: [{ source: "notion", exhaustive: exhaustive ?? null }] } });
     await expect(list.execute("unknown-source", { source: "foreign" }, undefined, undefined, {})).rejects.toMatchObject({ code: "SOURCE_UNAVAILABLE" });
   }
+});
+
+test("Notion discovery reports disabled metadata and permission failures independently of native source flags", async () => {
+  let list: NativeSkillSearchDefinition | undefined, bodyLoads = 0;
+  const records: SkillRecord[] = [true, false].map(enabled => {
+    const name = enabled ? "available" : "disabled";
+    return { id: name, kind: "skill", name, description: "Owned metadata", enabled,
+      ref: `skill://${name}/SKILL.md`, path: `/unused-native-flags/${name}/SKILL.md`,
+      body: "---\ndisable-model-invocation: true\n---\nSource instructions.\n",
+      source: "notion", sourceId: "notion", sourceScope: "a".repeat(64), defaultDiscovery: true,
+      aliases: [], normalizedAliases: [], normalizedName: name, normalizedDescription: "owned metadata", autoloadEnabled: false };
+  });
+  const api: ExtensionAPI = { on() {}, registerTool(tool) { if (tool.name === "notion_list") list = tool; } };
+  const host = await installHostSkills(api, {
+    config: { sources: [{ id: "notion", type: "notion", prefetch: false }, { id: "denied", type: "notion", prefetch: false }] },
+    getRecords: async () => ({ records, failures: [{ sourceId: "denied", code: "ACCESS_DENIED" }],
+      lists: [{ sourceId: "notion", policy: "default", exhaustive: true }] }),
+    loadRecord: async () => { bodyLoads++; throw new Error("Metadata must not load bodies"); },
+  }, createPiHostAdapter(api));
+  await host.refresh({});
+  if (!list) throw new Error("Expected the registered discovery tool");
+  const result = await list.execute("native-flags", {}, undefined, undefined, {});
+  const first = result.content[0];
+  if (first?.type !== "text") throw new Error("Expected metadata JSON");
+  expect(JSON.parse(first.text)).toMatchObject({ count: 2, coverage: { exhaustive: false },
+    records: [{ ref: records[0]!.ref, availability: "available" }, { ref: records[1]!.ref, availability: "disabled" }],
+    failures: [{ source: "denied", code: "ACCESS_DENIED" }] });
+  expect(first.text).not.toContain("disable-model-invocation");
+  expect(first.text).not.toContain("Source instructions");
+  expect(bodyLoads).toBe(0);
 });

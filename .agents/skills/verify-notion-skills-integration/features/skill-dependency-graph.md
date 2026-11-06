@@ -4,6 +4,25 @@
 
 最终安装包与原 AH-560 场景、模型图场景的复跑入口及未通过账本见 [验收索引](../../../../scripts/notion-skill-graph-acceptance.md)。该索引不将旧包或受控结果升级为当前包的真实模型通过。
 
+## Notion 来源字段与原生安装语境（SC06/SC07）
+
+用户入口仍为 `notion_list`、原生 `read` 与 `notion_use`。Notion Default View 决定默认目录；作者原文中的 native-loader/editor 字段（例如 `disable-model-invocation`）描述原生安装语境，不单独改变 Notion 工具报告的可发现性、availability 或权限。按当前用户意图选择 read/use，继续尊重实际 disabled、权限失败和工作流执行授权。保留作者正文及字段；不自动 use，不改变本地 Pi 原生加载或 View 成员，不把原生字段说明推广成忽略作者指令。
+
+2026-11-06 的 C9 fail-before 是可核对的语境歧义：D-named 实际 provider 同时收到目标 Default 卡片和完整正文中的 `disable-model-invocation: true`，回答把该字段概括为“需要显式调用，不会自动触发”，未限定 native 安装；当时 1790 B guidance 没有说明两种来源的区别。原作者字段及原生含义是真实的，原六主题 semantic 通过保持；本项不证明该歧义导致 D-natural 未 use，更不修正其生成脚本错误或改判旧失败。
+
+定向 Drive 复用现有测试，不新建 parser 或平台：
+
+```bash
+bun test packages/context-broker/scripts/notion-consumption-tools.test.ts packages/context-broker/scripts/skill-guidance.test.ts packages/context-broker/scripts/pi-read-adapter.test.ts
+bun run --cwd packages/context-broker typecheck
+```
+
+正例通过公开 guidance/context hook 与真实工具注册/调用核对：新说明只进入 Notion guidance，作者 frontmatter、原历史、native system/path 原样保留，重复投影不增加说明；Pi list 正确给出可用于 read/use 的 Skill refs。反例保留实际 reported disabled、来源 `ACCESS_DENIED`、未知/不完整 coverage、原生 read 禁用与第三方 read 边界，metadata 不加载正文；这些验证输出范围和既有行为，不是权限机制修复。非 Pi list 文案、list 参数与 use schema 保持，`view-prompt` 通用层未改。
+
+本切片有效 RED 为 1 pass/2 fail（新语境说明与 Pi list 文案缺失），GREEN 上述三文件 20/20、0 fail，typecheck exit 0。实际 checkout 导出/注册输出的 guidance UTF-8 为 1790→2048 B（+258），Pi list description 为 178→185 B（+7）；这增加了语境说明，不宣称节省 token、自动选路改善或任务质量提升。独立安装实际 Pi 的 wire 与后续模型诊断须另绑新候选，不能用本组离线输出替代。
+
+Evidence 位于 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc07-native-flags-_okkmwtf/`：`fail-before/observation.json`（SHA `6a9e372b60f2c5238319cdb541c72100c2ccd8f16675c53d91111ac9a9505a9d`）绑定原始回答、三份 actual wire、完整作者正文和旧 guidance；`red/`、`green-tests/`、`typecheck/`、`measurement-v2/` 分别保留命令、原始输出与结果。证据提取器对 user content 数组的初次误设、离线 OMP 测量缺 native handle 的首次失败分别保留，不计作产品 RED。此次未新建 consumer、应用进程、会话或 scratch fixture；Bun/tsc 自然退出，全部证据保留，Cleanup 无新增运行资源可回收。后续 installed/model run 仍按原 Evidence→系统 Trash→Evidence 执行。
+
 ## 两条用户路径
 
 Gate A 只有 Pstack Router 根选择和自然任务，不出现 poteto-mode、目标成员名/ref、答案或叶子资源。Agent 从 Members 的用途和准确 ref 自主选择目标，读取完整主文与 feature-map。不得通过普通 Skill 绕路或把目标改 Requires。

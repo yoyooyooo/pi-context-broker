@@ -316,7 +316,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
 
   host.registerTool?.({
     name: listToolName, label: piConsumption ? "List Notion Skills" : "Skill search",
-    description: "Search the authorized Skill metadata directory, including items outside the default View. Returns exact read references only; it does not load instructions or activate workflows.",
+    description: `Search the authorized Skill metadata directory, including items outside the default View. Returns ${piConsumption ? "Skill refs for read or notion_use" : "exact read references only"}; it does not load instructions or activate workflows.`,
     parameters: { type: "object", properties: {
       query: { type: "string", description: "A short name or description keyword; empty lists the directory." },
       source: { type: "string", description: "Optional configured source ID to disambiguate directories." },
