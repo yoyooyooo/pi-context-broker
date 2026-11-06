@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createHash, randomUUID } from 'node:crypto';
-import { appendFile, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
+import { appendFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolveHost, runCommand, assertSupportedPiVersion } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
@@ -11,7 +11,7 @@ import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { entryIdentity, verifyEntryIdentity } from './verification-entry.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
-import { evaluateGraphTrace, frozenPrompt, verifyWorkerAuthorization } from './verify-skill-graph-contract.mjs';
+import { evaluateGraphTrace, frozenPrompt, verifyWorkerAuthorization, dailyRouteContract, verifyDailyRouteState } from './verify-skill-graph-contract.mjs';
 import { createOwnedGraphProject, inspectOwnedGraphProject, retainGeneratedPlan, exerciseGeneratedProcedure } from './notion-skill-graph-project.mjs';
 import { verifyRetainedSourceProof } from './notion-skill-retained-proof.mjs';
 import { createPiHelpBoundary } from './notion-pi-help.mjs';
@@ -28,7 +28,7 @@ const within = (base, target) => { const value = relative(base, target); return 
 const disjoint = (a, b) => !within(a, b) && !within(b, a);
 const modelSelectors = ['magpie/group/flash-free', 'magpie/group/worker'];
 const permissionFailure = text => /insufficient (?:permission|quota)|not authorized|api key.*(?:invalid|denied)|please upgrade|无权限使用|额度不足|账户.*(?:无权|欠费)/i.test(text);
-export const GRAPH_GATE_HARNESS_VERSION = 17;
+export const GRAPH_GATE_HARNESS_VERSION = 18;
 export const GRAPH_GATE_TOOLS = Object.freeze(['read', 'notion_list', 'notion_use']);
 export async function graphHarnessIdentity() {
   const files = await Promise.all(['notion-skill-graph-model.mjs', 'notion-skill-graph-model-evidence.mjs', 'skill-preparation-evidence.mjs', 'verify-skill-graph-contract.mjs', 'notion-skill-graph-project.mjs', 'notion-skill-graph-observer-smoke.mjs', 'notion-skill-retained-proof.mjs', 'notion-skill-source-proof.ts', 'notion-pi-help.mjs', 'notion-skill-graph.mjs', 'notion-integration-model.mjs', 'verify-pi-notion-model-cache.mjs'].map(async name => {
@@ -41,6 +41,7 @@ export async function graphHarnessIdentity() {
 export function graphObserverModule(settings, referenceParser) {
   return "import * as fs from 'node:fs';\nimport * as crypto from 'node:crypto';\nimport * as path from 'node:path';\nimport { graphSourceViews } from " + JSON.stringify(new URL('./notion-skill-graph-model-evidence.mjs', import.meta.url).href)
     + ';\nimport { verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards } from ' + JSON.stringify(new URL('./skill-preparation-evidence.mjs', import.meta.url).href)
+    + ';\nimport { dailyRouteContract } from ' + JSON.stringify(new URL('./verify-skill-graph-contract.mjs', import.meta.url).href)
     + ';\nimport { parseNativeReference } from ' + JSON.stringify(referenceParser)
     + ';\nimport { validateResourceReadProjection } from ' + JSON.stringify(new URL('./resource-read-projection.ts', referenceParser).href)
     + ";\nexport default function(api) { const settings = " + JSON.stringify(settings) + '; const piHelpBoundary = (' + createPiHelpBoundary.toString() + ')({fs,crypto,path,executable:settings.piExecutable}); (' + observeGraphGate.toString() + ')(api, { ...settings, fs, crypto, path, piHelpBoundary, parseNativeReference, validateResourceReadProjection }); }\n';
@@ -137,6 +138,9 @@ export function observeGraphGate(api, settings) {
   const inside = (parent, child) => { const value = relative(parent, child); return value === '' || (!value.startsWith('../') && value !== '..' && !isAbsolute(value)); };
   const canonical = value => value === null || typeof value !== 'object' ? JSON.stringify(value) : Array.isArray(value) ? '[' + value.map(canonical).join(',') + ']' : '{' + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => JSON.stringify(key) + ':' + canonical(item)).join(',') + '}';
   const same = (a, b) => canonical(a) === canonical(b);
+  const modelProfile = settings.modelProfile === undefined ? undefined : dailyRouteContract(settings.modelProfile);
+  if (modelProfile && (!same(settings.modelProfile, modelProfile) || settings.model !== modelProfile.model))
+    throw new Error('Daily observer requires the exact frozen model profile');
   const tools = ['read', 'notion_list', 'notion_use'];
   let currentContext;
   const refreshContext = ctx => { if (ctx) currentContext = ctx; };
@@ -202,6 +206,8 @@ export function observeGraphGate(api, settings) {
   const wireAllowed = model => model === settings.model || model === settings.model.slice(settings.model.indexOf('/') + 1);
   const assertModel = ctx => {
     if (ctx.model?.provider + '/' + ctx.model?.id !== settings.model) throw new Error('Graph gate rejected an unauthorized model');
+    if (modelProfile && (ctx.model.provider !== modelProfile.model.slice(0, modelProfile.model.indexOf('/'))
+      || ctx.model.id !== modelProfile.model.slice(modelProfile.model.indexOf('/') + 1))) throw new Error('Daily gate rejected an unauthorized model identity');
   };
   const sourceStrings = value => typeof value === 'string' ? [value] : Array.isArray(value) ? value.flatMap(sourceStrings) : value && typeof value === 'object' ? ['assistant', 'model'].includes(value.role) ? [] : Object.values(value).flatMap(sourceStrings) : [];
   const copies = (payload, body) => {
@@ -221,7 +227,7 @@ export function observeGraphGate(api, settings) {
       }
     }, 0);
   };
-  let verifiedPayloadHash;
+  let verifiedPayloadHash, currentProvider;
   const observerFault = (stage, error, payload) => {
     verifiedPayloadHash = undefined;
     const message = String(error?.message ?? error).slice(0, 512);
@@ -797,6 +803,8 @@ export function observeGraphGate(api, settings) {
     try { const raw = init?.body ?? (input instanceof Request ? await input.clone().text() : undefined); if (typeof raw === 'string') { serialized = raw; body = JSON.parse(raw); } } catch { /* Non-model authentication transport. */ }
     if (body && typeof body.model === 'string') {
       if (!wireAllowed(body.model)) throw new Error('Graph gate rejected an unauthorized transport model');
+      if (modelProfile && body.reasoning_effort !== modelProfile.thinkingLevel)
+        throw observerFault('provider-transport', new Error('Daily route requires actual wire thinking high'), body);
       const observedPayloadSha256 = digest(canonical(body));
       if (verifiedPayloadHash !== observedPayloadSha256) {
         const error = observerFault('provider-transport', new Error('Provider transport has no matching verified observation payload.'), body);
@@ -806,6 +814,7 @@ export function observeGraphGate(api, settings) {
       const wireBodyFile = settings.payloads ? 'http-' + sequence + '.json' : undefined;
       if (wireBodyFile) settings.fs.writeFileSync(join(settings.payloads, wireBodyFile), serialized, { mode: 0o600, flag: 'wx' });
       record({ phase: 'provider-transport-start', model: settings.model, wireModel: body.model, observedPayloadSha256,
+        ...(modelProfile ? { providerSequence: currentProvider?.sequence ?? null, reasoningEffort: body.reasoning_effort } : {}),
         wireBodySha256: digest(serialized), wireBodyBytes: Buffer.byteLength(serialized), ...(wireBodyFile ? { wireBodyFile } : {}) });
       try { const response = await originalFetch.call(this, input, init); record({ phase: 'provider-transport-response', status: response.status }); return response; }
       catch (error) { record({ phase: 'provider-transport-error', name: error.name, code: typeof error.code === 'string' ? error.code : null }); throw error; }
@@ -1037,9 +1046,12 @@ export function observeGraphGate(api, settings) {
   api.on('before_provider_request', (event, ctx) => {
     refreshContext(ctx);
     verifiedPayloadHash = undefined;
+    currentProvider = undefined;
     try {
     assertModel(ctx);
     if (event.payload?.model !== undefined && !wireAllowed(event.payload.model)) throw new Error('Graph gate rejected an unauthorized provider model');
+    if (modelProfile && event.payload?.reasoning_effort !== modelProfile.thinkingLevel)
+      throw new Error('Daily route requires actual provider thinking high');
     const toolChoice = event.payload?.tool_choice ?? event.payload?.toolChoice;
     if (toolChoice !== undefined && toolChoice !== 'auto' && toolChoice?.type !== 'auto') throw new Error('Graph gate requires autonomous tool selection');
     const advertisedTools = (event.payload?.tools ?? []).map(tool => tool.function?.name ?? tool.name).sort();
@@ -1103,7 +1115,8 @@ export function observeGraphGate(api, settings) {
       discoveryProjection = undefined;
     }
     observeCatalog(system, { phase: 'catalog', stage: 'before_provider_request', userTurn, providerPayloadSha256: observedPayloadSha256 }, true, visibleMessages);
-    const provider = record({ phase: 'provider-request', model: settings.model, tools: advertisedTools, toolSurface: selected.surface, toolDefinitionsSha256: digest(JSON.stringify(event.payload?.tools)), toolChoice: 'auto', forcedToolArguments: false, payloadSha256: digest(serialized), payloadBytes: Buffer.byteLength(serialized), ...(payloadFile ? { payloadFile } : {}), ...(discoveryProof ? { discoveryProjection: discoveryProof } : {}), observedPayloadSha256, contents, hostHelp, toolResults, sourceTextHashes: sourceStrings(event.payload).map(value => ({ sha256: digest(value), bytes: Buffer.byteLength(value) })) });
+    const provider = record({ phase: 'provider-request', model: settings.model, ...(modelProfile ? { reasoningEffort: event.payload.reasoning_effort } : {}), tools: advertisedTools, toolSurface: selected.surface, toolDefinitionsSha256: digest(JSON.stringify(event.payload?.tools)), toolChoice: 'auto', forcedToolArguments: false, payloadSha256: digest(serialized), payloadBytes: Buffer.byteLength(serialized), ...(payloadFile ? { payloadFile } : {}), ...(discoveryProof ? { discoveryProjection: discoveryProof } : {}), observedPayloadSha256, contents, hostHelp, toolResults, sourceTextHashes: sourceStrings(event.payload).map(value => ({ sha256: digest(value), bytes: Buffer.byteLength(value) })) });
+    currentProvider = provider;
     if ((event.payload?.messages ?? []).some(message => message.role === 'user' && sourceStrings(message.content).includes(settings.prompt)))
       submittedUser = { sequence: provider.sequence, promptSha256: digest(settings.prompt), providerPayloadSha256: observedPayloadSha256 };
     verifiedPayloadHash = observedPayloadSha256;
@@ -1114,6 +1127,10 @@ export function observeGraphGate(api, settings) {
     refreshContext(ctx);
     const message = event.message;
     if (message?.role !== 'assistant') return;
+    if (modelProfile) record({ phase: 'model-response', providerSequence: currentProvider?.sequence ?? null,
+      providerPayloadSha256: currentProvider?.observedPayloadSha256 ?? null, provider: message.provider ?? null,
+      model: message.model ?? null, responseModel: message.responseModel ?? null, thinkingLevel: message.thinkingLevel ?? null,
+      providerThinkingLevel: message.providerThinkingLevel ?? null, usage: message.usage ?? null, stopReason: message.stopReason ?? null });
     for (const part of message.content ?? []) if (part.type === 'toolCall') {
       const input = JSON.parse(JSON.stringify(part.arguments)), selected = part.name === 'read' ? input?.paths ?? input?.path : input;
       const requested = typeof selected?.ref === 'string' ? [selected.ref] : selected?.ref;
@@ -1321,10 +1338,12 @@ export function observeGraphGate(api, settings) {
 export async function readGateConfig(path) {
   assert.ok(isAbsolute(path), '--config must be absolute');
   const input = await json(path);
-  const allowed = ['version', 'gate', 'selection', 'rootRef', 'database', 'viewId', 'profileId', 'sourceMode', 'extension', 'packagePath', 'cliCommand', 'oraclePath', 'evidenceRoot', 'model', 'promptTimeoutMs', 'previousFailures', 'workerAuthorization', 'preparation', 'mode', 'reuseReceipt', 'selectionReceipt', 'retainedSourceProofRepo'];
+  const allowed = ['version', 'gate', 'selection', 'rootRef', 'database', 'viewId', 'profileId', 'sourceMode', 'extension', 'packagePath', 'cliCommand', 'oraclePath', 'evidenceRoot', 'model', 'modelContract', 'thinkingLevel', 'rpcTimeoutMs', 'promptTimeoutMs', 'previousFailures', 'workerAuthorization', 'preparation', 'mode', 'reuseReceipt', 'selectionReceipt', 'retainedSourceProofRepo'];
   assert.ok(input && Object.keys(input).every(key => allowed.includes(key)), 'Unknown graph-model configuration field');
   assert.equal(input.version, 1);
+  const modelProfile = dailyRouteContract(input);
   const promptTimeoutMs = input.promptTimeoutMs === undefined ? 300000 : input.promptTimeoutMs;
+  if (modelProfile) assert.equal(promptTimeoutMs, modelProfile.rpcTimeoutMs, 'Daily RPC policy must remain 300000 ms');
   assert.ok(Number.isSafeInteger(promptTimeoutMs) && promptTimeoutMs > 0 && promptTimeoutMs <= 2147483647, 'promptTimeoutMs must be a positive safe timer integer no greater than 2147483647');
   const prompt = frozenPrompt(input.gate, input.selection);
   assert.match(input.rootRef ?? '', /^skill:\/\/[^/?#]+\/(?:SKILL|ROUTER)\.md$/);
@@ -1339,7 +1358,7 @@ export async function readGateConfig(path) {
   for (const key of ['extension', 'packagePath', 'oraclePath', 'evidenceRoot']) assert.ok(isAbsolute(input[key] ?? ''), key + ' must be absolute');
   assert.ok(Array.isArray(input.cliCommand) && input.cliCommand.length === 2 && input.cliCommand.every(isAbsolute), 'cliCommand must contain absolute Node and installed CLI paths');
   const model = input.model ?? modelSelectors[0];
-  assert.ok(modelSelectors.includes(model), 'No third model is authorized');
+  assert.ok(modelProfile ? model === modelProfile.model : modelSelectors.includes(model), 'No third model is authorized by the legacy contract');
   const previousFailures = [];
   for (const file of input.previousFailures ?? []) {
     assert.ok(isAbsolute(file));
@@ -1358,13 +1377,13 @@ export async function readGateConfig(path) {
     workerAuthorization = { path: await realpath(input.workerAuthorization.path), sha256: input.workerAuthorization.sha256, raw };
     verifyWorkerAuthorization(workerAuthorization, { gate: input.gate, rootRef: input.rootRef, promptSha256: prompt.sha256 });
   }
-  assert.ok(model === modelSelectors[0] || previousFailures.length || workerAuthorization, 'Worker requires a retained actual flash-free availability failure or explicit user authorization');
+  assert.ok(modelProfile || model === modelSelectors[0] || previousFailures.length || workerAuthorization, 'Worker requires a retained actual flash-free availability failure or explicit user authorization');
   const mode = input.mode ?? 'cold';
   assert.ok(['cold', 'warm-new-process', 'matrix'].includes(mode), 'Use cold, warm-new-process, or the fixed matrix (which includes two live continued-session samples)');
   assert.ok(mode === 'warm-new-process' ? isAbsolute(input.reuseReceipt ?? '') : input.reuseReceipt === undefined, 'Only warm-new-process may name a previous complete cache receipt');
   if (input.selectionReceipt !== undefined) assert.ok(isAbsolute(input.selectionReceipt));
   if (input.retainedSourceProofRepo !== undefined) assert.ok(isAbsolute(input.retainedSourceProofRepo));
-  return { ...input, sourceMode, model, mode, promptTimeoutMs, previousFailures, ...(workerAuthorization ? { workerAuthorization } : {}), prompt };
+  return { ...input, sourceMode, model, mode, promptTimeoutMs, previousFailures, ...(modelProfile ? { modelProfile } : {}), ...(workerAuthorization ? { workerAuthorization } : {}), prompt };
 }
 
 export const brokerConfiguration = (config, command, cacheDir) => ({ skillRoots: [], extraSkillRoots: [], sources: [{ type: 'notion', id: 'notion', namespace: 'notion', ...(config.sourceMode === 'command' ? { command } : {}), database: config.database, ...(config.viewId ? { default_view_id: config.viewId } : { profile_id: config.profileId }), prefetch: false, cacheDir, requestTimeoutMs: 60000, ...(config.preparation ? { preparation: config.preparation } : {}) }] });
@@ -1378,14 +1397,14 @@ export async function sourceObserver(control, { ledger, responses, outputRoot, c
     + "process.once('exit',()=>{sdk.close();children.close();});\n", { mode: 0o600 });
   return file;
 }
-const sourceEnvironment = root => ({ NTN_SKILLS_CONFIG_HOME: join(root, 'config'), NTN_SKILLS_HOME: join(root, 'state'), NTN_SKILLS_CACHE_HOME: join(root, 'cache'), NTN_SKILLS_DATA_HOME: join(root, 'data') });
+const sourceEnvironment = (root, modelProfile) => ({ NTN_SKILLS_CONFIG_HOME: join(root, 'config'), NTN_SKILLS_HOME: join(root, 'state'), NTN_SKILLS_CACHE_HOME: join(root, 'cache'), NTN_SKILLS_DATA_HOME: join(root, 'data'), ...(modelProfile ? { NTN_SKILLS_SCHEDULER_ROOT: join(root, 'request-engine') } : {}) });
 function gateEnvironment(cliPaths, brokerConfig, evidence, owned) {
   const env = { ...process.env, ...cliPaths, CONTEXT_BROKER_CONFIG: brokerConfig, CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_LOG_FILE: join(evidence, 'broker-decisions.jsonl'), BROKER_E2E_PROCESS_LEDGER: owned };
   for (const key of ['NODE_OPTIONS', 'CONTEXT_BROKER_ROOTS', 'CONTEXT_BROKER_EXTRA_ROOTS', 'CONTEXT_BROKER_DISCOVERY_CATALOGS', 'CONTEXT_BROKER_EXTRA_DISCOVERY_CATALOGS']) delete env[key];
   return env;
 }
 
-export const runFingerprint = (config, doctor, oracleSha256, projectSha256) => hash(JSON.stringify({ version: 3, sourceMode: config.sourceMode ?? 'sdk', harness: doctor.harness.sha256, gate: config.gate, rootRef: config.rootRef, selection: config.selection, database: config.database, viewId: config.viewId, profileId: config.profileId, prompt: config.prompt.sha256, model: config.model, promptTimeoutMs: config.promptTimeoutMs, ...(config.workerAuthorization ? { workerAuthorizationSha256: config.workerAuthorization.sha256 } : {}), cli: doctor.cli.sha256, extension: doctor.extension.sha256, package: doctor.package.sha256, oracleSha256, projectSha256, preparation: config.preparation ?? null }));
+export const runFingerprint = (config, doctor, oracleSha256, projectSha256) => hash(JSON.stringify({ version: 3, sourceMode: config.sourceMode ?? 'sdk', harness: doctor.harness.sha256, gate: config.gate, rootRef: config.rootRef, selection: config.selection, database: config.database, viewId: config.viewId, profileId: config.profileId, prompt: config.prompt.sha256, model: config.model, promptTimeoutMs: config.promptTimeoutMs, ...(config.modelProfile ? { modelProfile: config.modelProfile } : {}), ...(config.workerAuthorization ? { workerAuthorizationSha256: config.workerAuthorization.sha256 } : {}), cli: doctor.cli.sha256, extension: doctor.extension.sha256, package: doctor.package.sha256, oracleSha256, projectSha256, preparation: config.preparation ?? null }));
 
 export function graphFailureEvidence(error, samples = []) {
   const validationError = { code: error.code ?? 'GRAPH_GATE_FAILED', message: error.code === 'ERR_ASSERTION' || error.code ? error.message : 'Native graph gate did not complete; retained observer and source artifacts identify the boundary' };
@@ -1492,7 +1511,7 @@ export async function graphSelectionPreflight(config) {
   const ledger = join(evidence, 'source-processes.jsonl'), owned = join(evidence, 'owned-processes.jsonl'), provider = join(evidence, 'catalog-provider-http.jsonl'), output = join(evidence, 'catalog-observer.jsonl'), payloads = join(evidence, 'catalog-provider-requests');
   await mkdir(payloads);
   await Promise.all([ledger, owned, provider, output].map(path => writeFile(path, '', { mode: 0o600 })));
-  const cliPaths = sourceEnvironment(cli), state = join(control, 'source.json'), brokerConfig = join(control, 'broker.json');
+  const cliPaths = sourceEnvironment(cli, config.modelProfile), state = join(control, 'source.json'), brokerConfig = join(control, 'broker.json');
   await save(state, { command: config.cliCommand, cliPaths, ledger, responses, metadataOnly: true });
   await save(brokerConfig, brokerConfiguration(config, [process.execPath, helper, '--source', state], broker));
   await save(join(evidence, 'source-config.json'), await json(brokerConfig));
@@ -1616,7 +1635,7 @@ export async function graphModelDoctor(config) {
   const probe = await mkdtemp(join(await systemTempRoot(), 'broker-graph-model-doctor-'));
   const pi = await runCommand('pi', ['--version'], { cwd: probe, env: process.env, timeoutMs: 10000 });
   assertSupportedPiVersion(pi.stdout.trim());
-  return { status: 'ready', gate: config.gate, model: config.model, promptTimeoutMs: config.promptTimeoutMs, prompt: config.prompt, ...artifacts, harness: await graphHarnessIdentity(), cli: { command: config.cliCommand, sha256: hash(await readFile(config.cliCommand[1])) }, node: process.version, pi: pi.stdout.trim(), authentication: 'existing credentials reused in place; not probed or copied', scratch: probe, proof: 'Doctor inspects artifacts and contract only; no real model or Notion request' };
+  return { status: 'ready', gate: config.gate, model: config.model, ...(config.modelProfile ? { modelProfile: config.modelProfile } : {}), promptTimeoutMs: config.promptTimeoutMs, prompt: config.prompt, ...artifacts, harness: await graphHarnessIdentity(), cli: { command: config.cliCommand, sha256: hash(await readFile(config.cliCommand[1])) }, node: process.version, pi: pi.stdout.trim(), authentication: 'existing credentials reused in place; not probed or copied', scratch: probe, proof: 'Doctor inspects artifacts and contract only; no real model or Notion request' };
 }
 
 async function collectResponses(directory) {
@@ -1802,6 +1821,12 @@ export function graphTrace({ config, oracle, observation, responses, sourceLedge
   const statuses = observation.filter(event => ['provider-response', 'provider-transport-response'].includes(event.phase)).map(event => event.status).filter(status => typeof status === 'number');
   const trace = { version: 1, toolContract: 'agent-cli-ref-20261105', sourceMode: config.sourceMode ?? 'sdk', evidenceKind: 'real_model', host: 'pi', nativeEntry: true, gate: config.gate, prompt: config.prompt, selectedRoots: [config.rootRef], requiredRefs: rootPreparation.required.map(edge => edge.ref), toolChoice: 'auto', forcedToolArguments: false, cacheMode: config.mode === 'cold' || !config.mode ? 'cold' : 'warm', isolation, candidates, memberBodyReadsBeforeSelection: unattributedBeforeSelection || missingMetrics ? null : memberBodyReadsBeforeSelection, directorySequence, reads, providerRequests, httpLedgerObserved: !missingMetrics, httpAttempts: attempts, model: { selector: config.model, previousFailures: config.previousFailures, ...(config.workerAuthorization ? { workerAuthorization: config.workerAuthorization } : {}), responseStatus: statuses.find(status => status >= 200 && status < 300) ?? statuses.at(-1) ?? null, final }, processes, unknownWrites: [], replayedUnknownWrites: false, preparation: { roots: rootPreparation.roots, required: rootPreparation.required, graph_lock: rootPreparation.graph_lock, usage: rootPreparation.usage }, attribution: { unattributedBeforeSelection, missingMetrics, rule: 'Every actual body target must map without ambiguity to a prepared root/Required or an earlier model-selected owner; missing targets never imply zero' } };
   const targetRead = reads.find(read => read.logicalId === oracle.target.logicalId && read.scope === oracle.target.scope);
+  if (config.modelProfile) {
+    trace.modelProfile = config.modelProfile;
+    trace.model.stateReadbacks = observation.filter(event => event.phase === 'model-state').map(event => event.state);
+    trace.model.transports = observation.filter(event => event.phase === 'provider-transport-start');
+    trace.model.responses = observation.filter(event => event.phase === 'model-response');
+  }
   if (targetRead) assert.equal(targetRead.ref, oracle.target.ref, 'The oracle must use the observed canonical snapshot/file_id ref');
   return trace;
 }
@@ -1839,10 +1864,11 @@ export async function collectSupplementaryRetainedProof({ config, evidence, trac
     collector: { path: collector, sha256: hash(await readFile(collector)) }, cliSource: config.retainedSourceProofRepo,
     command: [process.execPath, collector, 'collect', '--input', inputPath, '--output', output, '--cli-repo', config.retainedSourceProofRepo],
     accounting: 'Supplementary exact immutable source metadata only. Its HTTP/process costs are separate from consumer metrics; bundle membership does not establish native read, provider delivery, or loaded state.', startedAt: new Date().toISOString() };
+  if (config.modelProfile) receipt.schedulerRoot = join(output, 'request-engine');
   let proof;
   try {
     const execution = await runCommand(receipt.command[0], receipt.command.slice(1), { cwd: dirname(helper),
-      env: { ...process.env, BROKER_E2E_PROCESS_LEDGER: join(evidence, 'retained-source-processes.jsonl') }, timeoutMs: 120000 });
+      env: { ...process.env, ...(config.modelProfile ? { NTN_SKILLS_SCHEDULER_ROOT: join(output, 'request-engine') } : {}), BROKER_E2E_PROCESS_LEDGER: join(evidence, 'retained-source-processes.jsonl') }, timeoutMs: 120000 });
     await writeFile(join(evidence, 'retained-source-collector.stdout'), execution.stdout, { mode: 0o600 });
     await writeFile(join(evidence, 'retained-source-collector.stderr'), execution.stderr, { mode: 0o600 });
     const bytes = await readFile(proofPath); proof = JSON.parse(bytes.toString('utf8'));
@@ -1878,7 +1904,7 @@ async function runGate(config) {
   const evidence = await mkdtemp(join(await realpath(config.evidenceRoot), `graph-model-${config.gate}-`));
   const scratch = await mkdtemp(join(await systemTempRoot(), 'broker-graph-model-'));
   const control = join(scratch, 'control'), cwd = join(scratch, 'workspace');
-  const project = await createOwnedGraphProject(cwd);
+  const project = await createOwnedGraphProject(cwd, { modelProfile: config.modelProfile });
   const fingerprint = runFingerprint(config, doctor, hash(await readFile(oraclePath)), project.sha256);
   let reuse;
   let priorResponseFiles = [], priorResponses = [];
@@ -1909,7 +1935,7 @@ async function runGate(config) {
   await Promise.all([responses, payloads].map(directory => mkdir(directory)));
   const ledger = join(evidence, 'source-processes.jsonl'), owned = join(evidence, 'owned-processes.jsonl'), output = join(evidence, 'observer.jsonl');
   await Promise.all([ledger, owned, output].map(path => writeFile(path, '', { mode: 0o600 })));
-  const cliPaths = sourceEnvironment(resolved[0]);
+  const cliPaths = sourceEnvironment(resolved[0], config.modelProfile);
   const statePath = join(control, 'source.json');
   await save(statePath, { command: config.cliCommand, cliPaths, ledger, responses });
   const brokerConfig = join(control, 'broker.json');
@@ -1917,7 +1943,7 @@ async function runGate(config) {
   await save(join(evidence, 'source-config.json'), await json(brokerConfig));
   const sourceHook = await sourceObserver(control, { ledger, responses, outputRoot: resolved[1], cliEntries: [config.cliCommand[1], join(doctor.packageRoot, 'dist/ntn-skills.mjs')] });
   const observer = join(control, 'observer.mjs');
-  const settings = { sourceMode: config.sourceMode ?? 'sdk', rootRef: config.rootRef, model: config.model, prompt: config.prompt.text, cache: resolved[1], cwd, responses, payloads, output, project, priorResponseFiles, piExecutable: (await resolveHost('pi')).identity };
+  const settings = { sourceMode: config.sourceMode ?? 'sdk', rootRef: config.rootRef, model: config.model, ...(config.modelProfile ? { modelProfile: config.modelProfile } : {}), prompt: config.prompt.text, cache: resolved[1], cwd, responses, payloads, output, project, priorResponseFiles, piExecutable: (await resolveHost('pi')).identity };
   const referenceParser = pathToFileURL(join(dirname(config.extension), 'native-reference.ts')).href;
   await writeFile(observer, graphObserverModule(settings, referenceParser), { mode: 0o600 });
   const inputObserver = join(control, 'input-observer.mjs');
@@ -1925,6 +1951,7 @@ async function runGate(config) {
   const traps = await createGraphFallbackTraps(control, evidence);
   const isolation = { oracleRoots, consumerRoots: resolved, resolved: true, oracleObserverOnly: true, inventoryComplete: false, localSkillInventory: [], shellEnabled: false, contextFiles: false, promptTemplates: false, autoExtensions: false, tools: GRAPH_GATE_TOOLS, prelaunch, discoveryPolicy: 'Pi --no-skills plus explicit installed Broker/observer only; read, notion_list and notion_use are advertised. notion_ctl stays deferred. Undiscovered reads, shell and outside project files are blocked.', credentialPolicy: 'Inherited host authentication read in place; no credential file is read or copied by the driver', legacyFallback: { directory: traps.directory, ledger: traps.ledger, checks: traps.checks } };
   const result = { version: 1, sourceMode: config.sourceMode ?? 'sdk', harness: doctor.harness, gate: config.gate, mode: config.mode, model: config.model, promptTimeoutMs: config.promptTimeoutMs, status: 'running', evidence, scratch, doctor, isolation, project, prompt: config.prompt, availabilityFailure: false, samples: [], files: ['doctor.json', 'isolation.json', 'project.json', 'ownership.json', 'source-config.json', 'observer.jsonl', 'source-processes.jsonl', 'owned-processes.jsonl', 'legacy-fallback-calls.jsonl', 'result.json'], notRun: ['Native composer Stop/TUI', 'Generated procedure execution until the explicit exercise action'] };
+  if (config.modelProfile) { result.modelProfile = config.modelProfile; isolation.schedulerRoot = cliPaths.NTN_SKILLS_SCHEDULER_ROOT; }
   await save(join(scratch, 'ownership.json'), { evidence, purpose: 'native-graph-model', runId: randomUUID() });
   await save(join(evidence, 'ownership.json'), await json(join(scratch, 'ownership.json')));
   await save(join(evidence, 'doctor.json'), doctor);
@@ -1934,6 +1961,7 @@ async function runGate(config) {
   console.log(JSON.stringify({ status: 'running', gate: config.gate, evidence, scratch }));
   const env = { ...gateEnvironment(cliPaths, brokerConfig, evidence, owned), ...traps.environment, NODE_OPTIONS: '--import=' + sourceHook };
   const args = ['--no-extensions', '--no-skills', '--no-mcp', '--no-context-files', '--no-prompt-templates', '--session-dir', resolved[2], '--tools', GRAPH_GATE_TOOLS.join(','), '-e', inputObserver, '-e', doctor.extension.path, '-e', observer, '--model', config.model];
+  if (config.modelProfile) args.push('--thinking', config.modelProfile.thinkingLevel);
   let rpc, launchError;
   let startupMs = null;
   try {
@@ -1941,6 +1969,13 @@ async function runGate(config) {
     for (let index = 0; index <= (config.continuedSamples ?? 0); index++) {
       const sample = { index, mode: index === 0 ? config.mode : 'continued-session', startedAt: new Date().toISOString(), promptSha256: config.prompt.sha256, status: 'running' };
       result.samples.push(sample);
+      if (config.modelProfile) {
+        await inspectOwnedGraphProject(cwd, { modelProfile: config.modelProfile });
+        const actual = await rpc.command('get_state');
+        const state = { model: { provider: actual.model?.provider, id: actual.model?.id }, thinkingLevel: actual.thinkingLevel };
+        await log(output, { phase: 'model-state', sample: index, state });
+        verifyDailyRouteState(config.modelProfile, state);
+      }
       await log(output, { phase: 'submission-start', sample: index, mode: sample.mode, promptSha256: config.prompt.sha256 });
       try { await rpc.prompt(config.prompt.text); } catch (error) { sample.error = { code: error.code ?? 'NATIVE_SUBMISSION_FAILED', message: error.message }; launchError = error; }
       sample.finishedAt = new Date().toISOString();
@@ -1993,7 +2028,7 @@ async function runGate(config) {
     assert.ok(!observation.some(event => event.phase === 'tool-call' && !event.allowed), 'An unobserved local or shell fallback was attempted');
     assert.ok(!observation.some(event => event.phase === 'metadata-result' && !event.complete), 'Metadata discovery failure cannot disappear from the trace');
     assert.equal(result.legacyFallback.calls, 0, 'An old ntn/login fallback was invoked');
-    await inspectOwnedGraphProject(cwd);
+    await inspectOwnedGraphProject(cwd, { modelProfile: config.modelProfile });
     if (launchError) throw launchError;
     assert.equal(result.availabilityFailure, false, 'HTTP success with a permission/quota answer is unavailable');
     await verifyEntryIdentity(doctor.extension.path, doctor.extension);
@@ -2054,6 +2089,7 @@ async function runMatrix(config) {
   await mkdir(config.evidenceRoot, { recursive: true });
   const evidence = await mkdtemp(join(await realpath(config.evidenceRoot), `graph-matrix-${config.gate}-`));
   const result = { version: 1, gate: config.gate, mode: 'matrix', evidence, status: 'running', prompt: config.prompt, promptTimeoutMs: config.promptTimeoutMs, design: { cold: 1, warm_new_process: 2, continued_session: 2, order: ['cold', 'warm-new-process', 'warm-new-process', 'continued-session', 'continued-session'] }, runs: [], samples: [], notRun: [], files: ['result.json'] };
+  if (config.modelProfile) result.modelProfile = config.modelProfile;
   await save(join(evidence, 'result.json'), result); console.log(JSON.stringify({ status: 'running', action: 'matrix', evidence }));
   for (let index = 0; index < 3; index++) {
     const previous = result.runs.at(-1);
@@ -2072,12 +2108,45 @@ async function runMatrix(config) {
   await save(join(evidence, 'result.json'), result); return result;
 }
 
+const dailyRuntimeArchive = 'daily-runtime-settings.json';
+async function dailyCleanupBinding(directory, result, bytes) {
+  assert.deepEqual(result.modelProfile, dailyRouteContract(result.modelProfile));
+  assert.equal(dirname(result.scratch), await systemTempRoot());
+  assert.equal(result.project.root, join(result.scratch, 'workspace'));
+  const project = await readFile(join(directory, 'project.json')), owner = await readFile(join(directory, 'ownership.json'));
+  assert.deepEqual(JSON.parse(project), result.project, 'Retained project manifest changed');
+  assert.equal(hash(JSON.stringify(result.project.files)), result.project.sha256);
+  assert.equal(JSON.parse(owner).evidence, directory); assert.equal(JSON.parse(owner).purpose, 'native-graph-model');
+  assert.equal(bytes.toString('utf8'), JSON.stringify(result.modelProfile.ownedProjectRetry, null, 2) + '\n', 'Retained daily runtime settings changed');
+  assert.deepEqual(result.project.runtimeSettings, { path: '.pi/settings.json', bytes: bytes.length, sha256: hash(bytes), modelContract: result.modelProfile.modelContract });
+  return { version: 1, file: dailyRuntimeArchive, bytes: bytes.length, sha256: hash(bytes),
+    modelProfileSha256: hash(JSON.stringify(result.modelProfile)), projectManifestSha256: hash(project),
+    ownershipSha256: hash(owner), resultSha256: hash(await readFile(join(directory, 'result.json'))) };
+}
+
 async function evidenceStatus(directory) {
   assert.ok(isAbsolute(directory));
   const result = await json(join(directory, 'result.json'));
   assert.equal(await realpath(directory), result.evidence);
   for (const file of result.files) assert.ok(!isAbsolute(file) && !file.split('/').includes('..'));
   const present = await Promise.all(result.files.map(file => readFile(join(directory, file))));
+  if (result.modelProfile && result.project) {
+    assert.deepEqual(result.modelProfile, dailyRouteContract(result.modelProfile));
+    let scratchPresent = true;
+    try { await lstat(result.scratch); } catch (error) { if (error.code !== 'ENOENT') throw error; scratchPresent = false; }
+    if (scratchPresent) {
+      const current = await inspectOwnedGraphProject(result.project.root, { modelProfile: result.modelProfile });
+      assert.equal(current.sha256, result.project.sha256);
+      assert.deepEqual(current.runtimeSettings, result.project.runtimeSettings);
+    } else {
+      const archived = join(directory, dailyRuntimeArchive);
+      assert.ok((await lstat(archived)).isFile(), 'Retained daily runtime settings must be an ordinary file');
+      assert.equal(await realpath(archived), archived);
+      const binding = await dailyCleanupBinding(directory, result, await readFile(archived));
+      assert.deepEqual(await json(join(directory, 'cleanup.json')), { status: 'trashed', scratch: result.scratch,
+        evidencePreserved: true, dailyRuntime: binding }, 'Cleanup must bind the retained daily runtime and original manifests');
+    }
+  }
   if (result.mode === 'matrix') for (const run of result.runs) if (run.evidence) await evidenceStatus(run.evidence);
   return { status: 'preserved', functionalStatus: result.status, evidence: directory, files: present.length, gate: result.gate, model: result.model, failureClass: result.failureClass, error: result.error, validationError: result.validationError };
 }
@@ -2091,6 +2160,7 @@ async function main(args) {
     discovery: 'selection uses its own cold scratch, real Notion metadata, actual Pi and three controlled local HTTP provider requests: one public notion_list followed by a second ordinary user turn with ready default metadata. No instruction bodies or real model are requested. Setup attempts/bytes remain a separate ledger. The later task can observe first-turn pending; explicit root consumption never substitutes for the independent ready-directory proof.',
     promptTimeout: 'Optional config.promptTimeoutMs freezes the model-run RPC deadline before launch; default 300000 ms, positive safe timer integer up to 2147483647. The value is retained in doctor/run/matrix/cache evidence and the cache fingerprint. It never changes task or graph assertions.',
     workerAuthorization: 'Optional config.workerAuthorization is {path, sha256} for a retained explicit user approval of worker for the exact gate/root/frozen prompt. It remains observer-only evidence; absent authorization preserves the flash-free availability-failure requirement. No receipt can substitute for actual user approval.',
+    dailyRoute: 'Independent AH-639 config: modelContract=daily-route-v1, model=magpie/group/flash, thinkingLevel=high, rpcTimeoutMs=300000. Legacy failure/fallback receipts are forbidden. Owned project settings disable agent and provider retries; actual Pi state, wire reasoning_effort and routed response usage are retained. Daily scheduling uses an owned request-engine root. These fields do not authorize a model run by themselves.',
     sampling: 'matrix runs 1 cold process, 2 warm new processes on the same complete CLI/Broker caches, then 2 more frozen submissions in the second warm live session; failures remain samples; raw values and medians, no p95',
     artifacts: 'Retain the actual final verbatim. Extract only complete fenced files with explicit relative filenames; a valid SKILL.md and all local links must be present. Prose alone remains plan-only. exercise accepts an exact test command from a retained generated file and drives the unchanged owned application with PID, exit, stdout and hash evidence. Graph pass alone is not generated-Skill acceptance.',
     retainedSourceProof: 'Optional config.retainedSourceProofRepo names the absolute frozen CLI source tree. After Pi closes, only unresolved retained chunks with actual observed bundle IDs trigger the independent Effect collector. Its immutable metadata proof, process ledger and HTTP costs are retained separately; it cannot add model reads, resources or loaded state. Missing proof remains observation-incomplete.',
@@ -2116,8 +2186,21 @@ async function main(args) {
   const sources = await rows(join(options.evidence, 'source-processes.jsonl'));
   assert.ok(sources.filter(event => event.phase === 'spawn').every(event => sources.some(end => end.phase === 'close' && end.requestId === event.requestId)), 'Do not trash an active owned CLI process');
   graphSourceAccounting(sources, await collectResponses(join(options.evidence, 'source-responses')), { sourceMode: result.sourceMode ?? 'command', requireConsumption: false });
+  let dailyRuntime;
+  if (result.modelProfile && result.project) {
+    assert.deepEqual(owner, await json(join(options.evidence, 'ownership.json')), 'Retained ownership must match the live scratch');
+    const bytes = await readFile(join(result.project.root, '.pi/settings.json'));
+    dailyRuntime = await dailyCleanupBinding(options.evidence, result, bytes);
+    const archived = join(options.evidence, dailyRuntimeArchive);
+    try { await writeFile(archived, bytes, { mode: 0o600, flag: 'wx' }); }
+    catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      assert.ok((await lstat(archived)).isFile()); assert.equal(await realpath(archived), archived);
+      assert.deepEqual(await readFile(archived), bytes, 'Existing retained runtime settings changed');
+    }
+  }
   await runCommand('/usr/bin/trash', [result.scratch], { cwd: dirname(helper), env: process.env, timeoutMs: 10000 });
-  await save(join(options.evidence, 'cleanup.json'), { status: 'trashed', scratch: result.scratch, evidencePreserved: true });
+  await save(join(options.evidence, 'cleanup.json'), { status: 'trashed', scratch: result.scratch, evidencePreserved: true, ...(dailyRuntime ? { dailyRuntime } : {}) });
   return { ...retained, cleanup: 'trashed' };
 }
 

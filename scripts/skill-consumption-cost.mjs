@@ -17,8 +17,9 @@ const sum = values => values.every(finite) ? values.reduce((a, b) => a + b, 0) :
  *
  * The driver supplies Node fs/crypto/path, an existing external output directory,
  * and a clockId shared with its process.hrtime.bigint() submission receipt.
- * No user/provider/tool text, URLs, headers, environment values or credentials are
- * written. Hashes and UTF-8 byte counts refer to the actual unredacted values.
+ * No user/provider/tool content, URLs, headers, environment values or credentials
+ * are written. Model identifiers and effort labels are observed explicitly;
+ * hashes and UTF-8 byte counts refer to the actual unredacted content values.
  * A before_provider_request payload is a hook value, NOT HTTP wire evidence.
  * The driver must prove that no later hook transforms it (or supply a transport
  * receipt). This observer neither changes hook ordering nor wraps global fetch.
@@ -38,6 +39,7 @@ export function observeConsumptionCost(api, settings) {
   const bytes = value => Buffer.byteLength(value, 'utf8');
   const textMeasure = value => ({ bytes: bytes(value), sha256: sha(value) });
   const jsonMeasure = value => textMeasure(JSON.stringify(value) ?? 'null');
+  const modelField = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._/:@+-]{0,255}$/.test(value) ? value : null;
   const clock = settings.clock ?? (() => process.hrtime.bigint());
   const origin = clock();
   let sequence = 0, previous = null, closed = false, errors = 0, workNs = 0n, turn = 0, request = 0;
@@ -70,6 +72,8 @@ export function observeConsumptionCost(api, settings) {
       text: textMeasure(text), nonWhitespaceText: text.trim().length > 0,
       permissionOnly: text.length < 1200 && /(?:please\s+(?:approve|authorize|confirm)|(?:need|require|await)\w*\s+(?:your\s+)?(?:approval|permission)|(?:请|需要|等待).{0,15}(?:授权|批准|确认))/iu.test(text),
       stopReason: ['stop', 'length', 'toolUse', 'error', 'aborted'].includes(message?.stopReason) ? message.stopReason : null,
+      provider: modelField(message?.provider), model: modelField(message?.model), responseModel: modelField(message?.responseModel),
+      thinkingLevel: modelField(message?.thinkingLevel), providerThinkingLevel: modelField(message?.providerThinkingLevel),
       usage: usage(message?.usage) };
   };
   const nonempty = value => typeof value === 'string' && value.length > 0;
@@ -218,10 +222,10 @@ export function observeConsumptionCost(api, settings) {
       diagnosticSpans: spans, verifiedBodyOccurrences: bodies, diagnosticMethod: 'nonadditive-content-spans-and-receipt-verified-exact-matches', tokens: null,
       tokenMethod: 'per-component-tokenization-unavailable-use-reported-request-usage' };
   };
-  const on = (phase, handle) => api.on(phase, event => {
+  const on = (phase, handle) => api.on(phase, (event, context) => {
     if (closed) return;
     const started = clock();
-    try { handle(event); }
+    try { handle(event, context); }
     catch {
       errors++;
       try { append('observer_error', { observedPhase: phase }); } catch { /* Evidence is incomplete; the product proceeds unchanged. */ }
@@ -234,7 +238,7 @@ export function observeConsumptionCost(api, settings) {
       observedPhases: [...phases], observerWorkMs: Number(workNs) / 1e6 }); }
     finally { closed = true; fs.closeSync(fd); }
   };
-  append('observer_start', { clockMethod: 'node-process-hrtime-bigint', contentPolicy: 'hash-and-byte-count-only',
+  append('observer_start', { clockMethod: 'node-process-hrtime-bigint', contentPolicy: 'content-hash-and-byte-counts-with-actual-model-identifiers',
     providerMethod: 'extension-hook-payload-not-http-attempt-or-wire', overheadMethod: 'synchronous-observer-work-reported-not-subtracted' });
   on('input', event => { turn++; append('input', { turn, source: ['interactive', 'rpc', 'extension'].includes(event.source) ? event.source : 'unknown',
     text: textMeasure(String(event.text ?? '')), images: jsonMeasure(event.images ?? []), imageCount: Array.isArray(event.images) ? event.images.length : 0,
@@ -245,7 +249,9 @@ export function observeConsumptionCost(api, settings) {
       components: (event.messages ?? []).map(message => ({ role: ['system', 'user', 'assistant', 'toolResult', 'custom'].includes(message.role) ? message.role : 'other',
         content: jsonMeasure(message.content) })), method: phase === 'context_with_system' ? 'post-context-hooks-with-system' : 'at-observer-context-hook-position' });
   });
-  on('before_provider_request', event => append('provider_request', { turn, request: ++request, payload: payload(event.payload) }));
+  on('before_provider_request', (event, context) => append('provider_request', { turn, request: ++request,
+    provider: modelField(context?.model?.provider), model: modelField(context?.model?.id),
+    requestModel: modelField(event.payload?.model), reasoningEffort: modelField(event.payload?.reasoning_effort), payload: payload(event.payload) }));
   on('after_provider_response', event => append('provider_response', { turn, request, status: Number.isInteger(event.status) ? event.status : null }));
   on('tool_call', event => append('tool_call', { turn, request, toolCallIdSha256: sha(String(event.toolCallId ?? '')),
     toolNameSha256: sha(String(event.toolName ?? '')), input: jsonMeasure(event.input) }));

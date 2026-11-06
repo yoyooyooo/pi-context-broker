@@ -9,6 +9,7 @@ import { invokeJson } from './verification-command.mjs';
 import { assertModelCase, requestCounts, cacheCaseDirectory, modelAvailabilityFailure, validateIntentConfiguration, assertIntentTurn, assertIntentSource, validateIntentReview } from './verify-pi-notion-model-cache.mjs';
 import * as intentRunner from './verify-pi-notion-model-cache.mjs';
 import { observe } from './notion-integration-model.mjs';
+import { dailyRouteContract } from './verify-skill-graph-contract.mjs';
 import { createPiHelpBoundary } from './notion-pi-help.mjs';
 import * as crypto from 'node:crypto';
 import * as path from 'node:path';
@@ -30,6 +31,18 @@ const intentConfig = () => {
       { id: 'D-chat', entryMode: 'discovery-only', intent: 'chat', initial: prompt('你好'), followups: [] },
     ] };
 };
+
+test('daily C/D keeps the frozen cases and budgets while explicitly selecting flash with high thinking', () => {
+  const config = { ...intentConfig(), modelContract: 'daily-route-v1', model: 'magpie/group/flash', thinkingLevel: 'high', rpcTimeoutMs: 300000 };
+  assert.equal(validateIntentConfiguration(config), config);
+  const selected = intentRunner.selectIntentCases(config, 'C-introduce');
+  assert.equal(selected.plannedBudget.maxSubmissions, 3); assert.equal(selected.plannedBudget.timeoutMsPerSubmission, 300000);
+  for (const change of [{ modelContract: 'unknown' }, { model: 'magpie/group/worker' }, { thinkingLevel: 'off' },
+    { rpcTimeoutMs: 120000 }, { previousFailures: ['old-free-failure'] }, { workerAuthorization: {} }, { fallback: 'allowed' }])
+    assert.throws(() => validateIntentConfiguration({ ...config, ...change }));
+  const undeclared = { ...intentConfig(), model: 'magpie/group/flash' };
+  assert.throws(() => validateIntentConfiguration(undeclared), 'Legacy validation cannot silently adopt daily routing');
+});
 
 test('C/D keeps the approved budget and production default without private discovery seeds', () => {
   assert.equal(validateIntentConfiguration(intentConfig()).model, 'magpie/group/flash-free');
@@ -201,6 +214,29 @@ const introInput = () => {
       { phase: 'tool-result', tool: 'read', complete: true, ...file }, provider([file]),
       { phase: 'assistant-final', success: true, text: 'Creates project verification procedures.' }] };
 };
+
+test('daily intent evaluator binds each turn to actual state, wire effort and routed response usage', () => {
+  const input = introInput();
+  input.modelProfile = dailyRouteContract({ modelContract: 'daily-route-v1', model: 'magpie/group/flash', thinkingLevel: 'high', rpcTimeoutMs: 300000 });
+  input.observation.unshift({ phase: 'model-state', state: { model: { provider: 'magpie', id: 'group/flash' }, thinkingLevel: 'high' } });
+  const providers = input.observation.filter(event => event.phase === 'provider-request');
+  providers.forEach((request, index) => {
+    Object.assign(request, { sequence: index + 1, model: input.modelProfile.model, reasoningEffort: 'high', observedPayloadSha256: String(index + 1).repeat(64) });
+    input.observation.push({ phase: 'provider-transport-start', providerSequence: request.sequence, wireModel: 'group/flash',
+      reasoningEffort: 'high', observedPayloadSha256: request.observedPayloadSha256 },
+    { phase: 'model-response', providerSequence: request.sequence, providerPayloadSha256: request.observedPayloadSha256,
+      provider: 'magpie', model: 'group/flash', responseModel: 'controlled/backend-v1', stopReason: 'stop',
+      usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 12 } });
+  });
+  assert.equal(assertIntentTurn(input).modelEvidence.requests, 2);
+  for (const mutate of [value => { value.observation[0].state.thinkingLevel = 'off'; },
+    value => { value.observation.find(event => event.phase === 'provider-transport-start').reasoningEffort = null; },
+    value => { value.observation.find(event => event.phase === 'model-response').responseModel = null; },
+    value => { value.observation.find(event => event.phase === 'model-response').usage = null; },
+    value => { value.observation.push({ phase: 'tool-result', complete: false, errorCode: 'SHORT_REF_INVALID' }); }]) {
+    const invalid = structuredClone(input); mutate(invalid); assert.throws(() => assertIntentTurn(invalid));
+  }
+});
 
 test('introduction requires complete inspected source and never target activation or hidden preload', () => {
   assert.equal(assertIntentTurn(introInput()).semantic_review, 'required');

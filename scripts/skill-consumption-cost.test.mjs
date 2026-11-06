@@ -41,7 +41,7 @@ const source = () => ({ coverage: { complete: true, truncated: false, evidenceSh
   receipt('prefetch', [attempt(1)], { purpose: 'prefetch', execution: 'sdk' })] });
 
 async function observe({ final = 'Task completed with the requested answer.', usage = reportedUsage, payload = { messages: [{ role: 'user', content: 'task' }], tools: [] },
-  tool = false, ioFailure = false } = {}) {
+  tool = false, ioFailure = false, context, assistantFields = {} } = {}) {
   const handlers = new Map(), mutations = [], file = output();
   const api = new Proxy({ on: (name, callback) => handlers.set(name, callback) }, { get(target, key) {
     if (key !== 'on') { mutations.push(String(key)); throw new Error('Observer accessed a non-observation API'); }
@@ -56,7 +56,7 @@ async function observe({ final = 'Task completed with the requested answer.', us
     runId: 'run', sampleId: 'a', clockId: 'host-boot', clock: () => (clock += 1000000n) });
   const emit = (name, event = {}) => {
     const before = copy(event); deepFreeze(event);
-    assert.equal(handlers.get(name)(event), undefined, name + ' must not replace/block a hook value');
+    assert.equal(handlers.get(name)(event, context), undefined, name + ' must not replace/block a hook value');
     assert.deepEqual(event, before, name + ' mutated caller data');
   };
   const submission = { promptSha256: conditions.promptSha256, monotonicNs: clock.toString(), clockId: 'host-boot', evidenceSha256: sha('driver-original-prompt-and-submit') };
@@ -71,7 +71,7 @@ async function observe({ final = 'Task completed with the requested answer.', us
     emit('tool_call', { toolCallId: 'call-secret', toolName: 'read', input: { path: 'https://secret.invalid/file' } });
     emit('tool_result', { toolCallId: 'call-secret', toolName: 'read', content: [{ type: 'text', text: 'secret tool result' }], isError: false });
   }
-  const assistant = { role: 'assistant', content: [{ type: 'text', text: final }], usage, stopReason: 'stop' };
+  const assistant = { role: 'assistant', content: [{ type: 'text', text: final }], usage, stopReason: 'stop', ...assistantFields };
   emit('message_update', { message: assistant, assistantMessageEvent: { type: 'text_delta', delta: '  ' } });
   emit('message_update', { message: assistant, assistantMessageEvent: { type: 'text_delta', delta: final } });
   emit('message_end', { message: assistant }); emit('agent_end', { messages: [assistant] }); emit('session_shutdown');
@@ -82,6 +82,28 @@ async function observe({ final = 'Task completed with the requested answer.', us
 const sample = (observed, overrides = {}) => summarizeConsumptionSample({ id: 'a', scenario, conditions,
   events: observed.events, submission: observed.submission, source: source(), outcome, ...overrides });
 const run = samples => ({ plan: freezeConsumptionPlan({ conditions, samples: samples.map(item => item.scenario) }), samples });
+
+test('model identity and thinking observations come from actual hooks and responses beside their own usage', async () => {
+  const payload = deepFreeze({ model: 'group/flash', reasoning_effort: 'high', messages: [{ role: 'user', content: 'task' }] });
+  const context = deepFreeze({ model: { provider: 'magpie', id: 'group/flash' } });
+  const assistantFields = { provider: 'magpie', model: 'group/flash', responseModel: 'actual-provider-route',
+    thinkingLevel: 'high', providerThinkingLevel: 'high' };
+  const observed = await observe({ payload, context, assistantFields });
+  const request = observed.events.find(event => event.phase === 'provider_request');
+  assert.equal(request.provider, 'magpie'); assert.equal(request.model, 'group/flash');
+  assert.equal(request.requestModel, 'group/flash'); assert.equal(request.reasoningEffort, 'high');
+  const response = observed.events.find(event => event.phase === 'message_end' && event.message.role === 'assistant');
+  assert.equal(response.turn, request.turn); assert.equal(response.request, request.request);
+  for (const [key, value] of Object.entries(assistantFields)) assert.equal(response.message[key], value, key);
+  assert.equal(response.message.usage.totalTokens, reportedUsage.totalTokens);
+  assert.equal(request.payload.sha256, sha(JSON.stringify(payload)));
+  const absent = await observe();
+  const missingRequest = absent.events.find(event => event.phase === 'provider_request');
+  for (const key of ['provider', 'model', 'requestModel', 'reasoningEffort']) assert.equal(missingRequest[key], null, key);
+  const missingResponse = absent.events.find(event => event.phase === 'message_end').message;
+  for (const key of Object.keys(assistantFields)) assert.equal(missingResponse[key], null, key);
+  assert.equal(missingResponse.usage.totalTokens, reportedUsage.totalTokens, 'Missing model metadata must not rewrite usage');
+});
 
 function preparedBody(body, version = 2, toolName = version === 1 ? 'skill_prepare' : 'notion_use') {
   const record = { name: 'controlled', kind: 'skill', ref: 'sr:S' + 'a'.repeat(22), content: body,

@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { delimiter, dirname, join, relative, resolve } from 'node:path';
+import { dailyRouteContract } from './verify-skill-graph-contract.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
@@ -17,21 +18,28 @@ export const ownedProjectFiles = Object.freeze({
   'test/tickets.test.mjs': "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { makeServer } from '../src/tickets.mjs';\n\nasync function localServer(run) {\n  const server = makeServer();\n  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));\n  try { await run('http://127.0.0.1:' + server.address().port); } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }\n}\n\ntest('create and retrieve a validated ticket through HTTP', () => localServer(async origin => {\n  assert.deepEqual(await (await fetch(origin + '/health')).json(), { ready: true });\n  const created = await fetch(origin + '/tickets', { method: 'POST', body: JSON.stringify({ subject: '  Printer offline  ', priority: 'high' }) });\n  assert.equal(created.status, 201);\n  const ticket = await created.json();\n  assert.equal(ticket.subject, 'Printer offline');\n  assert.equal(ticket.priority, 'high');\n  assert.deepEqual(await (await fetch(origin + '/tickets/' + ticket.id)).json(), ticket);\n}));\n\ntest('reject malformed input and missing tickets through HTTP', () => localServer(async origin => {\n  for (const body of ['{', JSON.stringify({ subject: ' ' }), JSON.stringify({ subject: 'a'.repeat(81) }), JSON.stringify({ subject: 'valid', priority: 'urgent' })]) {\n    const response = await fetch(origin + '/tickets', { method: 'POST', body });\n    assert.equal(response.status, 400);\n    assert.ok((await response.json()).error);\n  }\n  assert.equal((await fetch(origin + '/tickets/00000000-0000-4000-8000-000000000000')).status, 404);\n}));\n",
 });
 
-export async function createOwnedGraphProject(directory) {
+function dailySettings(modelProfile) {
+  if (modelProfile === undefined) return {};
+  assert.deepEqual(modelProfile, dailyRouteContract(modelProfile), 'The owned project requires its exact daily policy');
+  return { '.pi/settings.json': JSON.stringify(modelProfile.ownedProjectRetry, null, 2) + '\n' };
+}
+
+export async function createOwnedGraphProject(directory, { modelProfile } = {}) {
   await mkdir(directory, { recursive: true });
-  for (const [path, content] of Object.entries(ownedProjectFiles)) {
+  for (const [path, content] of Object.entries({ ...ownedProjectFiles, ...dailySettings(modelProfile) })) {
     await mkdir(dirname(join(directory, path)), { recursive: true });
     await writeFile(join(directory, path), content, { flag: 'wx', mode: 0o600 });
   }
-  return inspectOwnedGraphProject(directory);
+  return inspectOwnedGraphProject(directory, { modelProfile });
 }
 
-export async function inspectOwnedGraphProject(directory) {
+export async function inspectOwnedGraphProject(directory, { modelProfile } = {}) {
+  const runtime = dailySettings(modelProfile);
   const root = await realpath(directory);
   const actualPaths = [];
   const walk = async (directory, prefix = '') => { for (const entry of await readdir(directory, { withFileTypes: true })) { const name = prefix + entry.name; if (entry.isDirectory()) await walk(join(directory, entry.name), name + '/'); else { assert.ok(entry.isFile(), 'Owned project cannot contain symlinks or special files'); actualPaths.push(name); } } };
   await walk(root);
-  assert.deepEqual(actualPaths.sort(), Object.keys(ownedProjectFiles).sort(), 'The owned application inventory must remain complete and unchanged');
+  assert.deepEqual(actualPaths.sort(), [...Object.keys(ownedProjectFiles), ...Object.keys(runtime)].sort(), 'The owned application inventory must remain complete and unchanged');
   const files = [];
   for (const [path, expected] of Object.entries(ownedProjectFiles)) {
     assert.equal(await realpath(join(root, path)), join(root, path), 'Owned project source cannot be a symlink');
@@ -39,7 +47,14 @@ export async function inspectOwnedGraphProject(directory) {
     assert.equal(hash(bytes), hash(expected), 'Owned project source changed during the read-only model gate');
     files.push({ path, sha256: hash(bytes), bytes: bytes.length });
   }
-  return { version: 1, root, files, sha256: hash(JSON.stringify(files)), source: 'fixed owned local application; no Skill or private oracle material' };
+  let runtimeSettings;
+  for (const [path, expected] of Object.entries(runtime)) {
+    assert.equal(await realpath(join(root, path)), join(root, path), 'Owned runtime settings cannot be a symlink');
+    const bytes = await readFile(join(root, path));
+    assert.equal(hash(bytes), hash(expected), 'Owned runtime settings changed during the model gate');
+    runtimeSettings = { path, bytes: bytes.length, sha256: hash(bytes), modelContract: modelProfile.modelContract };
+  }
+  return { version: 1, root, files, sha256: hash(JSON.stringify(files)), ...(runtimeSettings ? { runtimeSettings } : {}), source: 'fixed owned local application; no Skill or private oracle material' };
 }
 
 function scanGeneratedFiles(text, { projectRoot } = {}) {
@@ -137,7 +152,7 @@ export async function exerciseGeneratedProcedure(evidence, command) {
   const receipt = JSON.parse(await readFile(join(evidence, 'generated-plan.json'), 'utf8'));
   const plan = await readFile(receipt.path, 'utf8');
   assert.equal(hash(plan), receipt.sha256, 'The generated plan must retain the actual model bytes');
-  const project = await inspectOwnedGraphProject(result.project.root);
+  const project = await inspectOwnedGraphProject(result.project.root, { modelProfile: result.modelProfile });
   assert.equal(project.sha256, receipt.projectSha256);
   assert.equal(receipt.artifactStatus, 'complete-skill-files-retained', 'A prose-only summary cannot stand in for a complete generated Skill file');
   const generatedFiles = await Promise.all(receipt.files.map(async file => { const content = await readFile(join(evidence, file.evidencePath), 'utf8'); assert.equal(hash(content), file.sha256); return { ...file, content }; }));

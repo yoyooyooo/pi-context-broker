@@ -11,7 +11,7 @@
 | Source CLI | `skill-consumption-source-baseline.mjs` / 每个 child 的 receipt、stdout、lifecycle | prepare 后逐节点固定 read、独立单资源 read，或单 current inspect；request_metrics 中的 metadata/body/retained-body/write/provider、retry、queue 与响应解码字节 |
 | Pi 默认 Source SDK / 显式兼容 CLI | `skill-consumption-source-observer.mjs` / safe-source-requests JSONL | 进程内 SDK list/files/consume/read/read-resources 的公开 start/end 与安全 request_metrics；显式兼容 CLI 的真实 spawn/close 和完整 stdout 中的 request_metrics。SDK 操作、CLI 子进程与 HTTP attempt 分别计数 |
 | 普通启动顺序 | `skill-consumption-startup.mjs` | 实际 Pi，受控 source/provider；原生 RPC 提交先于目录完成。受控 stream 不等于真实模型 HTTP 或 token |
-| 真实模型成本任务 | `skill-consumption-model-baseline.mjs` | 固定 magpie/group/flash-free；正常工具、冻结的普通或 Skill 任务；独立 cold 进程和最后一个进程中的 existing-session warm 续接。原 driver 的 `pi-native-local` 臂不加载 Broker，使用 Pi 原生发现/read；任务类型分组记录，成本 driver 不替代 Skill 完整消费断言 |
+| 真实模型成本任务 | `skill-consumption-model-baseline.mjs` | 缺省保留 magpie/group/flash-free；显式 daily-route-v1 冻结 magpie/group/flash、high、300000ms 与 owned retry0。正常工具、冻结的普通或 Skill 任务；独立 cold 进程和最后一个进程中的 existing-session warm 续接。原 driver 的 `pi-native-local` 臂不加载 Broker，使用 Pi 原生发现/read；任务类型分组记录，成本 driver 不替代 Skill 完整消费断言 |
 
 被动成本 observer 的 JSONL 使用 0600 权限、逐事件 hash 链和同机 monotonic clock。成本日志不保存认证头、token、签名 URL、原始 CLI stdout 或完整 provider 正文；独立 Source CLI driver 的原件保留规则另按该 driver 执行。metadata selection 另保留无 Skill 正文的实际 provider JSON、受控本地 HTTP payload 和 SDK 目录结果，用于比较完整候选集合。实际 payload 的 hash 必须与 transport 发送 body 对齐；hash/摘要本身不证明 Skill 正文投递，后者仍由消费链的完整 span 断言负责。纯本地臂使用同一成本和 HTTP observer，并以原 driver 内的 native inspection observer 替代 Notion source observer；没有另建总验证入口。
 
@@ -149,7 +149,25 @@ node scripts/skill-consumption-startup.mjs run \
 
 ### 真实模型配置
 
-共同配置为 `{version:1,extension,database,prompt,expectedAnswers,counts:{cold:5,warm:20},packagePath?,toolProfile?}`，路径均为绝对路径。模型固定为 `magpie/group/flash-free`，不回退；prefetch false。`toolProfile` 缺省或 `standard` 时保持原 read/bash/edit/write/grep/find/ls 七项；显式 `native-skills` 在这七项上增加 notion_list/notion_use，不移除正常工具，也不规定模型调用顺序；notion_ctl 按需发现，不进入默认 schema。显式 `legacy-skills` 才增加 skill_search/skill_prepare/skill_graph，用于旧包对照。拒绝未知或自定义工具组合。已注册工具不代表已经 active，仍须核对实际 provider 声明；不同 profile 的历史样本不能混成同条件比较。observer 不追加任务指令，也不替换返回值。
+共同配置为 `{version:1,extension,database,prompt,expectedAnswers,counts:{cold:5,warm:20},packagePath?,toolProfile?}`，路径均为绝对路径。无 `modelContract` 时仍固定 `magpie/group/flash-free` 和 120000ms，不增加项目 retry 设置或状态握手；prefetch false。`toolProfile` 缺省或 `standard` 时保持原 read/bash/edit/write/grep/find/ls 七项；显式 `native-skills` 在这七项上增加 notion_list/notion_use，不移除正常工具，也不规定模型调用顺序；notion_ctl 按需发现，不进入默认 schema。显式 `legacy-skills` 才增加 skill_search/skill_prepare/skill_graph，用于旧包对照。拒绝未知或自定义工具组合。已注册工具不代表已经 active，仍须核对实际 provider 声明；不同 profile 的历史样本不能混成同条件比较。observer 不追加任务指令，也不替换返回值。
+
+#### AH-639：显式日用模型路由合同
+
+本轮使用同一 driver 的 `modelContract: "daily-route-v1"`，必须同时明确 `model: "magpie/group/flash"`、`thinkingLevel: "high"`、`rpcTimeoutMs: 300000`。`counts` 限定 `cold:1` 与 `warm:0|1`：`{cold:1,warm:0}` 是一次 cold 任务；显式 `warm:1` 才增加一次保留历史的续接。不是将 n1 外推为 p95 或正式全矩阵。比较 manifest 必须冻结相同四个字段和 counts；Doctor、plan、report 均保留共享纯 `dailyRouteContract` 生成的 `modelProfile` 及其 SHA，driver 和共享合同源码也进入运行期间的 hash 检查。旧无合同 manifest 及原失败记录不改写。
+
+真实 run 只在新建 owned project 写 `.pi/settings.json`：`{"retry":{"enabled":false,"maxRetries":0,"provider":{"maxRetries":0}}}`。实际安装 Pi 的 `SettingsManager` 重读并核对 project trust、agent retry 与 provider retry 的有效值；模块和设置文件记录 bytes/hash，结束再核没有变化。控制器 retries 为 0、fallback 禁止，不发送会写全局状态的 `set_auto_retry`。这是本次批准的重试策略覆盖，不表示与原日用全部设置相等；用户 settings、models、auth 及旧失败保持原状。task 与 metadata selection 的 `NTN_SKILLS_SCHEDULER_ROOT` 均显式落在各自 owned `request-engine`，不借用日用调度状态。
+
+每次 daily prompt 前先读取真实 `get_state` 并留最小状态原件，严格匹配 provider/model 和 high；不依赖不存在的 RPC retry 字段。初次或续接状态不符时保留失败且不提交 prompt。当前 baseline 仍只提供 cold/new、warm/existing；持久会话 resume 等入口由原 graph/场景 driver 验证，不新增另一套恢复平台。metadata-only `selection` 明确使用它原有的独立 controlled model，仅一个 `--model`，不混入 daily thinking/state 合同；其受控请求不算真实模型验收。
+
+原成本 observer 在每个 `provider_request` 记录实际 hook context 的 provider/model、payload 的 requestModel 和 reasoningEffort；每个 assistant `message_end` 同条保存实际 provider/model/responseModel、thinkingLevel/providerThinkingLevel 与 reported usage。无字段时保留 null，不凭 args 或计划填值；responseModel 缺失时保留 null/unknown 并使 daily 路由合同失败，不用计划模型填值或猜测路由。daily 接受要求实际 wire body.model 精确等于 `group/flash` 或 `magpie/group/flash`，每个请求的 `reasoning_effort` 实际为 high，完整 payload bytes/hash 与唯一成功的实际 HTTP body 对齐，并且实际 responseModel 与 usage 属于同一 turn/request。缺 effort、身份不符、错配/重复 usage、缺失/重复/失败 HTTP 或 body bytes/hash 不符均失败，阻止继续提交后续样本；正确答案不能覆盖模型合同失败。原请求、响应、失败与 not_run 全部保留。
+
+原 `skill-consumption-model-baseline.test.mjs` 和 `skill-consumption-cost.test.mjs` 覆盖上述 config/manifest 正反例、metadata 参数隔离、实际 public run 控制器的受控 RPC 状态门、原 legacy 路径，以及逐请求模型/usage/wire 对齐。受控 RPC 只替换原运行入口的 RPC 边界；Doctor 与安装 Pi 的 SettingsManager 未伪造，测试不启动 Pi RPC、来源或真实模型。RED 与原组 GREEN 证据在 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/daily-route-baseline-5golykx8/`；这些结果证明验证接线，不代表真实 wire high、真实任务成功或日用交付已经通过。
+
+初版先保留 6 条定向 RED，再原两文件 57/57 GREEN、0 skip；其中实际 provider 与 model 分字段校验，不能用拼接后相同的字符串消除身份差异。`red-complete.log` SHA-256 `e385417777b5e2b8414d10901cb16956deeed313b0c2d6925f0db452398d8c6d`；`green-full-final.log` SHA-256 `8090164be05ac095842b6820fdb17f2a4bcce332da48718b2ba05220f80c5c23`。错误状态原件、受控停止的 incomplete 报告与原日用失败均保留，未标为真实模型成功。
+
+审阅随后发现：ctx 模型正确但实际 body.model 改成 worker，或 responseModel 缺失，初版 daily gate 仍可能误过。两条独立反例先产生 0 pass / 2 fail，再将实际 requestModel 限为上述两个精确值，并令缺 responseModel 的原始 null 保持 unknown/合同失败。`red-route-review.log` SHA-256 `75d75eab2923489cbef8006fa0257039d51964b02ad0bba1f1f73cd50833f2e3`；修后原两文件 59/59、0 skip，`green-full-v2.log` SHA-256 `f54969f7ececae65ac218743993659df765404dd8d9fdcc73cec634923066e14`。原 57 条结果和 v1 五文件快照保留为审阅前证据；正式交接以 `handoff-v2.json` 为准。
+
+2026-11-06 的公共 full74 source freeze 已独立完成：74 owner、262 文件、2,324,517 原始字节；setup 账本为 449 次 HTTP attempts、105,847 request B、24,248,031 decoded response B、469,863.642417ms，Notion writes 和真实模型请求均为 0，wire bytes 仍未知。这是冻结输入准备费用，后续各臂任务费用须另记，不能用来源冻结成功替代 selected owner 的真实模型任务成功。原件为 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc20-full74-freeze-plan-qn4de427/execution-handoff.json`，SHA-256 `5082b2a3a5cad95124e8ab465c4e022c2c0fd0c8c8f4e4ca990e7881714d7bbf`。完整 74 库存和作者政策保持原样；实际任务选择另由其新冻结 manifest 明确，未运行方案维持 NOT_RUN。
 
 两种 Source 入口独立冻结，已有 CLI 配置与历史结果继续有效：
 

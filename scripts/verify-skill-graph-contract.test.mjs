@@ -1,7 +1,73 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
+import * as modelContracts from './verify-skill-graph-contract.mjs';
 import { CONTRACT_VERSION, PROMPT_VERSION, TASK, TASK_V1, EVIDENCE_COLUMNS, NEGATIVE_CASES, contractFixture, evaluateGraphTrace, frozenPrompt, selfTest } from './verify-skill-graph-contract.mjs';
+
+const dailyConfig = () => ({ modelContract: 'daily-route-v1', model: 'magpie/group/flash', thinkingLevel: 'high', rpcTimeoutMs: 300000 });
+
+test('daily route is an explicit frozen contract and cannot borrow legacy fallback authorization', () => {
+  const profile = modelContracts.dailyRouteContract(dailyConfig());
+  assert.deepEqual(profile, { ...dailyConfig(), controllerRetries: 0, fallback: 'forbidden',
+    ownedProjectRetry: { retry: { enabled: false, maxRetries: 0, provider: { maxRetries: 0 } } } });
+  assert.equal(modelContracts.dailyRouteContract({ model: 'magpie/group/flash-free' }), undefined);
+  for (const change of [
+    { modelContract: 'unknown' }, { model: 'magpie/group/flash-free' }, { model: 'magpie/group/worker' },
+    { thinkingLevel: 'off' }, { rpcTimeoutMs: 600000 }, { previousFailures: ['old-free-failure'] },
+    { workerAuthorization: {} }, { fallback: 'allowed' }, { controllerRetries: 1 },
+    { ownedProjectRetry: { retry: { enabled: true } } },
+  ]) assert.throws(() => modelContracts.dailyRouteContract({ ...dailyConfig(), ...change }), JSON.stringify(change));
+});
+
+test('daily thinking is verified from actual session state without inventing a retry state field', () => {
+  const profile = modelContracts.dailyRouteContract(dailyConfig());
+  const state = { model: { provider: 'magpie', id: 'group/flash' }, thinkingLevel: 'high' };
+  assert.deepEqual(modelContracts.verifyDailyRouteState(profile, state), { provider: 'magpie', model: 'group/flash', thinkingLevel: 'high' });
+  for (const value of [undefined, {}, { ...state, thinkingLevel: 'off' },
+    { ...state, model: { provider: 'magpie/group', id: 'flash' } },
+    { ...state, model: { provider: 'magpie', id: 'group/flash-free' } }, { ...state, model: { provider: 'foreign', id: 'group/flash' } }])
+    assert.throws(() => modelContracts.verifyDailyRouteState(profile, value));
+});
+
+function dailyEvidence(profile, requests = [{ sequence: 10 }, { sequence: 20 }]) {
+  const bound = requests.map((request, index) => ({ ...request, model: profile.model, reasoningEffort: 'high',
+    observedPayloadSha256: String(index + 1).repeat(64) }));
+  return { states: [{ model: { provider: 'magpie', id: 'group/flash' }, thinkingLevel: 'high' }], requests: bound,
+    transports: bound.map(request => ({ providerSequence: request.sequence, wireModel: 'group/flash',
+      reasoningEffort: 'high', observedPayloadSha256: request.observedPayloadSha256 })),
+    responses: bound.map(request => ({ providerSequence: request.sequence, providerPayloadSha256: request.observedPayloadSha256,
+      provider: 'magpie', model: 'group/flash', responseModel: 'controlled/backend-v1', stopReason: 'stop',
+      usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 12 } })) };
+}
+
+test('daily model evidence binds effective state, every wire effort and actual routed response usage', () => {
+  const profile = modelContracts.dailyRouteContract(dailyConfig()), evidence = dailyEvidence(profile);
+  assert.deepEqual(modelContracts.verifyDailyRouteEvidence(profile, evidence).responseModels, ['controlled/backend-v1']);
+  for (const change of [value => { value.states = []; }, value => { value.states[0].thinkingLevel = 'off'; },
+    value => { delete value.requests[0].reasoningEffort; }, value => { value.transports[0].reasoningEffort = 'low'; },
+    value => { value.transports[0].observedPayloadSha256 = 'f'.repeat(64); }, value => { value.transports.push(value.transports[0]); },
+    value => { value.responses[0].providerSequence = 999; }, value => { value.responses[0].responseModel = null; },
+    value => { value.responses[0].model = 'group/worker'; }, value => { value.responses[0].usage = null; },
+    value => { Object.assign(value.responses[0], { provider: 'magpie/group', model: 'flash' }); },
+    value => { value.responses[0].usage.totalTokens = 0; }]) {
+    const invalid = structuredClone(evidence); change(invalid);
+    assert.throws(() => modelContracts.verifyDailyRouteEvidence(profile, invalid));
+  }
+});
+
+test('graph evaluator requires the separate daily contract and its actual model evidence', () => {
+  const { trace, oracle } = contractFixture(), profile = modelContracts.dailyRouteContract(dailyConfig());
+  const evidence = dailyEvidence(profile, trace.providerRequests.map((request, index) => ({ ...request, sequence: index + 1 })));
+  trace.modelProfile = profile; trace.model.selector = profile.model; trace.providerRequests = evidence.requests;
+  Object.assign(trace.model, { stateReadbacks: evidence.states, transports: evidence.transports, responses: evidence.responses });
+  assert.equal(evaluateGraphTrace(trace, oracle).status, 'contract-valid');
+  for (const change of [value => { delete value.modelProfile; }, value => { value.model.workerAuthorization = {}; },
+    value => { value.model.previousFailures = [{ selector: 'magpie/group/flash-free' }]; },
+    value => { value.model.stateReadbacks[0].thinkingLevel = 'off'; }, value => { value.model.responses[0].responseModel = null; }]) {
+    const invalid = structuredClone(trace); change(invalid);
+    assert.throws(() => evaluateGraphTrace(invalid, oracle));
+  }
+});
 
 test('prompt v2 clarifies complete file delivery while preserving v1 and the trace/oracle schema', () => {
   assert.equal(CONTRACT_VERSION, 1); assert.equal(PROMPT_VERSION, 2);

@@ -6,12 +6,13 @@ import * as crypto from 'node:crypto';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtemp, mkdir, readFile, writeFile, symlink } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { mkdtemp, mkdir, readFile, writeFile, symlink, rename } from 'node:fs/promises';
 import { graphTrace, observeGraphGate, summarizeSamples, GRAPH_GATE_TOOLS, createGraphFallbackTraps, retainedSourceProofInput, readGateConfig } from './notion-skill-graph-model.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { createOwnedGraphProject, exerciseGeneratedProcedure, retainGeneratedPlan } from './notion-skill-graph-project.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
-import { contractFixture, evaluateGraphTrace, frozenPrompt, selfTest } from './verify-skill-graph-contract.mjs';
+import { contractFixture, dailyRouteContract, evaluateGraphTrace, frozenPrompt, selfTest } from './verify-skill-graph-contract.mjs';
 import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 import { viewSystemPrompt } from '../packages/context-broker/src/view-prompt.ts';
 import { observeConsumptionCost } from './skill-consumption-cost.mjs';
@@ -20,6 +21,68 @@ import { assertDiscoveryProjection, assertIntentTurn, summarizeDiscoveryCosts } 
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const save = (file, value) => writeFile(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
 const uuid = '11111111-2222-4333-8444-555555555555';
+
+async function dailyEvidenceFixture(t) {
+  const scratch = await mkdtemp(path.join(await systemTempRoot(), 'graph-daily-ece-scratch-'));
+  const evidence = await mkdtemp(path.join(await systemTempRoot(), 'graph-daily-ece-evidence-'));
+  const modelProfile = dailyRouteContract({ modelContract: 'daily-route-v1', model: 'magpie/group/flash', thinkingLevel: 'high', rpcTimeoutMs: 300000 });
+  const project = await createOwnedGraphProject(path.join(scratch, 'workspace'), { modelProfile });
+  const owner = { evidence, purpose: 'native-graph-model', runId: crypto.randomUUID() };
+  await save(path.join(scratch, 'ownership.json'), owner); await save(path.join(evidence, 'ownership.json'), owner);
+  await save(path.join(evidence, 'project.json'), project);
+  await mkdir(path.join(evidence, 'source-responses'));
+  await writeFile(path.join(evidence, 'owned-processes.jsonl'), '');
+  await writeFile(path.join(evidence, 'source-processes.jsonl'), [
+    { phase: 'sdk-observer-start', pid: process.pid }, { phase: 'sdk-observer-end', pid: process.pid, pending: 0 },
+  ].map(JSON.stringify).join('\n') + '\n');
+  const result = { version: 1, status: 'failed', evidence, scratch, sourceMode: 'command', modelProfile, project,
+    files: ['ownership.json', 'project.json', 'owned-processes.jsonl', 'source-processes.jsonl', 'result.json'] };
+  await save(path.join(evidence, 'result.json'), result);
+  const invoke = action => spawnSync(process.execPath, [fileURLToPath(new URL('./notion-skill-graph-model.mjs', import.meta.url)), action, '--evidence', evidence], { encoding: 'utf8', timeout: 15000 });
+  t.diagnostic('Owned controlled ECE fixture: ' + JSON.stringify({ evidence, scratch, realPi: 0, realModel: 0, realSource: 0 }));
+  return { evidence, scratch, result, invoke };
+}
+
+test('daily evidence survives actual owned cleanup without requiring the trashed project', { skip: process.platform !== 'darwin' }, async t => {
+  const f = await dailyEvidenceFixture(t);
+  const before = await Promise.all(f.result.files.map(async file => [file, hash(await readFile(path.join(f.evidence, file)))]));
+  for (const action of ['evidence', 'cleanup', 'evidence']) {
+    const actual = f.invoke(action); t.diagnostic(JSON.stringify({ action, status: actual.status, stdout: actual.stdout, stderr: actual.stderr }));
+    assert.equal(actual.status, 0, actual.stderr);
+    assert.equal(JSON.parse(actual.stdout).functionalStatus, 'failed', 'Cleanup never upgrades task acceptance');
+  }
+  await assert.rejects(readFile(path.join(f.scratch, 'ownership.json')), { code: 'ENOENT' });
+  assert.deepEqual(await Promise.all(f.result.files.map(async file => [file, hash(await readFile(path.join(f.evidence, file)))])), before);
+});
+
+test('daily cleanup evidence rejects arbitrary markers, changed archives and missing live projects', { skip: process.platform !== 'darwin' }, async t => {
+  const f = await dailyEvidenceFixture(t);
+  assert.equal(f.invoke('cleanup').status, 0);
+  const cleanupPath = path.join(f.evidence, 'cleanup.json'), archivePath = path.join(f.evidence, 'daily-runtime-settings.json');
+  const cleanup = await readFile(cleanupPath), archived = await readFile(archivePath);
+  const reject = async (name, change, restore) => {
+    await change();
+    try {
+      const actual = f.invoke('evidence');
+      await save(path.join(f.evidence, 'rejected-' + name + '.json'), { status: actual.status, stdout: actual.stdout, stderr: actual.stderr });
+      assert.equal(actual.status, 1, name + ' must not certify preserved runtime evidence');
+    } finally { await restore(); }
+  };
+  await reject('marker-only', () => save(cleanupPath, { status: 'trashed', scratch: f.scratch, evidencePreserved: true }), () => writeFile(cleanupPath, cleanup));
+  await reject('changed-settings', () => writeFile(archivePath, Buffer.concat([archived, Buffer.from(' ')])), () => writeFile(archivePath, archived));
+  const mismatched = JSON.parse(cleanup); mismatched.dailyRuntime.ownershipSha256 = '0'.repeat(64);
+  await reject('wrong-owner-binding', () => save(cleanupPath, mismatched), () => writeFile(cleanupPath, cleanup));
+  assert.equal(f.invoke('evidence').status, 0, 'The original retained raw evidence still verifies');
+  const live = await dailyEvidenceFixture(t), moved = path.join(live.scratch, 'moved-workspace');
+  await rename(live.result.project.root, moved);
+  await save(path.join(live.evidence, 'cleanup.json'), { status: 'trashed', scratch: live.scratch, evidencePreserved: true });
+  const rejected = live.invoke('evidence');
+  await save(path.join(live.evidence, 'rejected-missing-live-project.json'), { status: rejected.status, stderr: rejected.stderr });
+  assert.equal(rejected.status, 1, 'An existing scratch cannot use cleanup evidence to excuse a missing live project');
+  await rename(moved, live.result.project.root);
+  assert.equal(live.invoke('cleanup').status, 0);
+  assert.equal(live.invoke('evidence').status, 0);
+});
 
 test('discovery-only observation cannot seed a private root or an unknown entry mode', async () => {
   const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-discovery-entry-'));
@@ -660,6 +723,73 @@ async function workerConfigFixture() {
   await write();
   return { base, config, receipt, configPath, authorizationPath, write };
 }
+
+async function dailyRouteObserverFixture(t) {
+  const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-daily-model-'));
+  const responses = path.join(base, 'responses'), cache = path.join(base, 'cache'), output = path.join(base, 'observer.jsonl');
+  await mkdir(responses); await mkdir(cache); await writeFile(output, '');
+  t.diagnostic('Owned daily observer fixture: ' + base);
+  const profile = dailyRouteContract({ modelContract: 'daily-route-v1', model: 'magpie/group/flash', thinkingLevel: 'high', rpcTimeoutMs: 300000 });
+  const original = globalThis.fetch, handlers = new Map(); let forwarded = 0;
+  globalThis.fetch = async () => { forwarded++; return new Response('{}', { status: 200 }); };
+  t.after(() => { globalThis.fetch = original; });
+  observeGraphGate({ on: (name, handler) => handlers.set(name, handler), setActiveTools: async () => {} },
+    { fs, crypto, path, parseNativeReference, cwd: base, responses, cache, output, model: profile.model,
+      modelProfile: profile, prompt: 'Natural task', sourceMode: 'sdk', entryMode: 'discovery-only' });
+  const ctx = { model: { provider: 'magpie', id: 'group/flash' } };
+  const payload = { model: 'group/flash', reasoning_effort: 'high', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })),
+    messages: [{ role: 'user', content: 'Natural task' }] };
+  return { handlers, ctx, payload, forwarded: () => forwarded,
+    events: async () => (await readFile(output, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse) };
+}
+
+test('daily graph checks actual hook and wire thinking before transport', async t => {
+  const f = await dailyRouteObserverFixture(t);
+  assert.throws(() => f.handlers.get('before_provider_request')({ payload: f.payload },
+    { model: { provider: 'magpie/group', id: 'flash' } }), /unauthorized model/);
+  for (const effort of [undefined, 'off', 'low']) {
+    const payload = { ...f.payload, reasoning_effort: effort };
+    assert.throws(() => f.handlers.get('before_provider_request')({ payload }, f.ctx), /thinking|high/i);
+  }
+  f.handlers.get('before_provider_request')({ payload: f.payload }, f.ctx);
+  await assert.rejects(globalThis.fetch('https://controlled.invalid/v1', { method: 'POST', body: JSON.stringify({ ...f.payload, reasoning_effort: 'low' }) }), /thinking|high/i);
+  assert.equal(f.forwarded(), 0, 'Neither an invalid hook nor a changed wire reaches the controlled transport');
+});
+
+test('daily graph records the actual response route and usage against its observed request', async t => {
+  const f = await dailyRouteObserverFixture(t);
+  f.handlers.get('before_provider_request')({ payload: f.payload }, f.ctx);
+  await globalThis.fetch('https://controlled.invalid/v1', { method: 'POST', body: JSON.stringify(f.payload) });
+  const usage = { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 12 };
+  f.handlers.get('message_end')({ message: { role: 'assistant', provider: 'magpie', model: 'group/flash', responseModel: 'controlled/backend-v1',
+    thinkingLevel: 'high', providerThinkingLevel: 'high', usage, content: [{ type: 'text', text: 'Complete.' }], stopReason: 'stop' } }, f.ctx);
+  const events = await f.events(), request = events.find(row => row.phase === 'provider-request');
+  const wire = events.find(row => row.phase === 'provider-transport-start'), response = events.find(row => row.phase === 'model-response');
+  assert.equal(wire.reasoningEffort, 'high'); assert.equal(wire.providerSequence, request.sequence);
+  assert.equal(response.providerSequence, request.sequence); assert.equal(response.providerPayloadSha256, request.observedPayloadSha256);
+  assert.equal(response.responseModel, 'controlled/backend-v1'); assert.deepEqual(response.usage, usage);
+  assert.equal(response.thinkingLevel, 'high'); assert.equal(response.providerThinkingLevel, 'high');
+});
+
+test('daily graph config preserves its explicit model profile without changing legacy matrix support', async () => {
+  const f = await workerConfigFixture();
+  delete f.config.workerAuthorization;
+  Object.assign(f.config, { modelContract: 'daily-route-v1', model: 'magpie/group/flash', thinkingLevel: 'high', rpcTimeoutMs: 300000 });
+  await save(f.configPath, f.config);
+  const parsed = await readGateConfig(f.configPath);
+  assert.equal(parsed.modelProfile.modelContract, 'daily-route-v1');
+  assert.equal(parsed.modelProfile.thinkingLevel, 'high'); assert.equal(parsed.promptTimeoutMs, 300000);
+  assert.equal(parsed.mode, 'matrix', 'The frozen cohort chooses modes; a new route does not delete supported warm boundaries');
+  const doctor = { harness: { sha256: 'harness' }, cli: { sha256: 'cli' }, extension: { sha256: 'extension' }, package: { sha256: 'package' } };
+  assert.notEqual(graphModel.runFingerprint(parsed, doctor, hash('oracle'), hash('project')),
+    graphModel.runFingerprint({ ...parsed, modelProfile: undefined }, doctor, hash('oracle'), hash('project')),
+    'The normalized profile is an independent cache/comparison fingerprint input');
+  for (const change of [{ modelContract: 'unknown' }, { thinkingLevel: 'off' }, { rpcTimeoutMs: 600000 },
+    { promptTimeoutMs: 600000 }, { previousFailures: [f.authorizationPath] }, { workerAuthorization: {} }]) {
+    await save(f.configPath, { ...f.config, ...change });
+    await assert.rejects(readGateConfig(f.configPath));
+  }
+});
 
 test('explicit worker authorization retains exact scope and evidence without inventing an availability failure', async () => {
   const value = await workerConfigFixture(), parsed = await readGateConfig(value.configPath);

@@ -14,6 +14,7 @@ import { consumptionCostExtensionSource, readConsumptionCostEvents, consumptionM
 import { providerTransportExtensionSource, readProviderTransport } from './skill-consumption-provider.mjs';
 import { sourceObserverPreloadSource, readSourceObservation } from './skill-consumption-source-observer.mjs';
 import { packageIdentity } from './notion-skill-graph-model.mjs';
+import { dailyRouteContract, verifyDailyRouteState } from './verify-skill-graph-contract.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -22,7 +23,7 @@ const rows = async path => { try { return (await readFile(path, 'utf8')).trim().
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const comparisonRoles = ['previous-broker', 'notion-candidate', 'pi-native-local'];
 const nativeLocal = config => config.role === 'pi-native-local';
-const usage = 'Usage: node scripts/skill-consumption-model-baseline.mjs doctor|selection|run --config ABSOLUTE_JSON [--evidence-root ABSOLUTE_DIR]; evidence|cleanup --evidence ABSOLUTE_DIR. Real model is restricted to magpie/group/flash-free. Normal Pi tools; source consumption may perform adoption/Records writes, no generated task guidance or forced tool choices. Broker config: {version:1,extension,transport?:"cli"|"sdk",command?:[absoluteNode,absoluteCLI],database,prompt,expectedAnswers:[string],counts:{cold:5,warm:20},packagePath?,toolProfile?:"standard"|"native-skills"|"legacy-skills"}. Standard preserves the original seven tools; native-skills adds notion_list/notion_use without removing normal tools; legacy-skills is explicit historical compatibility. Deferred notion_ctl is absent by default. Missing transport preserves legacy CLI mode; explicit sdk forbids command. Comparison roles previous-broker|notion-candidate|pi-native-local require comparison:ABS_FROZEN_MANIFEST. Pure pi-native-local omits extension/transport/command/database/packagePath, uses standard tools and Pi native --skill/read, and loads no Broker. Comparison v1 freezes one candidate; v2 preserves the complete existing View and inspects one same-byte Skill plus required UTF-8 resources. Run selection on the v2 Notion config for separate metadata-only installed-Pi evidence before Doctor; actual catalog name/description differences fail Doctor before model calls. Comparison visibilityPolicy defaults to strict; v2 native-default-policy retains the full authored inventory and installed native visibility rules, while each arm checks its own actual provider catalog. This measures system-default workflow cost, not Broker net cost under identical visibility. Automatic Requires and /skill expansion are separate semantics. Cold=new isolated process/cache (native files already exist; OS page cache is uncontrolled); warm=ordinary turns in the final cold process with history counted. All attempts and unrun planned samples remain recorded.';
+const usage = 'Usage: node scripts/skill-consumption-model-baseline.mjs doctor|selection|run --config ABSOLUTE_JSON [--evidence-root ABSOLUTE_DIR]; evidence|cleanup --evidence ABSOLUTE_DIR. Legacy defaults remain magpie/group/flash-free and 120000ms. Explicit modelContract daily-route-v1 requires model magpie/group/flash, thinkingLevel high, rpcTimeoutMs 300000 and counts cold:1,warm:0|1; controller retries 0 and no fallback. Only owned project retry settings change; actual get_state, sent high effort and per-request response usage must verify. Normal Pi tools; source consumption may perform adoption/Records writes, no generated task guidance or forced tool choices. Broker config: {version:1,extension,transport?:"cli"|"sdk",command?:[absoluteNode,absoluteCLI],database,prompt,expectedAnswers:[string],counts:{cold:5,warm:20},packagePath?,toolProfile?:"standard"|"native-skills"|"legacy-skills"}. Standard preserves the original seven tools; native-skills adds notion_list/notion_use without removing normal tools; legacy-skills is explicit historical compatibility. Deferred notion_ctl is absent by default. Missing transport preserves legacy CLI mode; explicit sdk forbids command. Comparison roles previous-broker|notion-candidate|pi-native-local require comparison:ABS_FROZEN_MANIFEST. Pure pi-native-local omits extension/transport/command/database/packagePath, uses standard tools and Pi native --skill/read, and loads no Broker. Comparison v1 freezes one candidate; v2 preserves the complete existing View and inspects one same-byte Skill plus required UTF-8 resources. Run selection on the v2 Notion config for separate metadata-only installed-Pi evidence before Doctor; actual catalog name/description differences fail Doctor before model calls. Comparison visibilityPolicy defaults to strict; v2 native-default-policy retains the full authored inventory and installed native visibility rules, while each arm checks its own actual provider catalog. This measures system-default workflow cost, not Broker net cost under identical visibility. Automatic Requires and /skill expansion are separate semantics. Cold=new isolated process/cache (native files already exist; OS page cache is uncontrolled); warm=ordinary turns in the final cold process with history counted. All attempts and unrun planned samples remain recorded.';
 
 async function tree(directory) {
   const output = {};
@@ -38,7 +39,9 @@ async function tree(directory) {
 }
 export function validateModelBaselineConfig(config) {
   assert.equal(config.version, 1);
-  assert.ok(Object.keys(config).every(key => ['version','extension','transport','command','database','prompt','expectedAnswers','counts','packagePath','toolProfile','role','comparison'].includes(key)));
+  const modelProfile=dailyRouteContract(config);
+  assert.ok(Object.keys(config).every(key => ['version','extension','transport','command','database','prompt','expectedAnswers','counts','packagePath','toolProfile','role','comparison',
+    ...(modelProfile?['modelContract','model','thinkingLevel','rpcTimeoutMs']:[])].includes(key)));
   if (config.role !== undefined) {
     assert.ok(comparisonRoles.includes(config.role), 'Unknown comparison role');
     assert.ok(typeof config.comparison === 'string' && isAbsolute(config.comparison), 'Comparison roles require a frozen absolute comparison manifest');
@@ -56,7 +59,11 @@ export function validateModelBaselineConfig(config) {
   }
   assert.ok(typeof config.prompt === 'string' && config.prompt.trim() && Array.isArray(config.expectedAnswers) && config.expectedAnswers.length
     && config.expectedAnswers.every(value => typeof value === 'string' && value.trim()));
-  assert.ok(['cold','warm'].every(key => Number.isSafeInteger(config.counts?.[key]) && config.counts[key] >= 1 && config.counts[key] <= 20));
+  if(modelProfile) {
+    assert.equal(config.counts?.cold,1,'Daily routing freezes one cold sample');
+    assert.ok(config.counts?.warm===0||config.counts?.warm===1,'Daily routing freezes zero or one existing-session warm sample');
+    assert.deepEqual(Object.keys(config.counts).sort(),['cold','warm']);
+  } else assert.ok(['cold','warm'].every(key => Number.isSafeInteger(config.counts?.[key]) && config.counts[key] >= 1 && config.counts[key] <= 20));
   modelBaselineTools(config);
   return config;
 }
@@ -187,7 +194,9 @@ export async function modelBaselineComparison(config, host) {
   assert.ok([1,2].includes(descriptor.version)); assert.equal(descriptor.intent, 'inspect'); assert.equal(descriptor.entry, 'read');
   const visibilityPolicy=comparisonVisibilityPolicy(descriptor);
   assert.deepEqual(descriptor.roles, comparisonRoles, 'Declare previous Broker, candidate and pure native roles separately');
-  assert.equal(descriptor.model, 'magpie/group/flash-free'); assert.equal(descriptor.promptSha256, hash(config.prompt));
+  const modelProfile=dailyRouteContract(config);
+  assert.deepEqual(dailyRouteContract(descriptor),modelProfile,'Comparison manifest must freeze the same model contract');
+  assert.equal(descriptor.model,modelProfile?.model??'magpie/group/flash-free'); assert.equal(descriptor.promptSha256, hash(config.prompt));
   assert.equal(descriptor.expectedAnswersSha256, hash(JSON.stringify(config.expectedAnswers))); assert.deepEqual(descriptor.counts, config.counts);
   assert.ok(!/^\s*(?:\$|\/skill:)/.test(config.prompt), 'Native read inspection cannot be relabelled explicit use or /skill expansion');
   const selection = await frozenJson(descriptor.notionSelection), payload = await frozenJson(descriptor.notionProviderPayload);
@@ -296,6 +305,7 @@ export async function modelBaselineComparison(config, host) {
   }
   const sourceSetup=descriptor.sourceFreezeSetup?await frozenJson(descriptor.sourceFreezeSetup):null;
   return {version: descriptor.version, path: await realpath(config.comparison), sha256: hash(descriptorBytes), role: config.role,
+    ...(modelProfile?{modelProfile}:{}),
     directory, tree: files, requiredFiles, catalog:nativeLocal(config)?nativeVisible:actualCatalog,visibility,
     nativePrompt:{text:nativePrompt,bytes:Buffer.byteLength(nativePrompt),sha256:hash(nativePrompt)},
     source:selected.source,selectedRecordId,
@@ -314,6 +324,7 @@ export async function modelBaselineComparison(config, host) {
 }
 
 export function modelBaselineHostArgs(config, {base, observer, transport, inspection, comparison} = {}) {
+  const modelProfile=dailyRouteContract(config);
   const args = ['--no-extensions','--no-mcp','--no-context-files','--no-prompt-templates','--session-dir',join(base,'sessions'),
     '--tools',modelBaselineTools(config).join(',')];
   if (comparison) args.push('--no-skills');
@@ -323,7 +334,16 @@ export function modelBaselineHostArgs(config, {base, observer, transport, inspec
   } else args.push('-e', config.extension);
   args.push('-e', transport, '-e', observer);
   if (inspection) args.push('-e', inspection);
-  return [...args, '--model', 'magpie/group/flash-free'];
+  return [...args, '--model', modelProfile?.model??'magpie/group/flash-free',...(modelProfile?['--thinking',modelProfile.thinkingLevel]:[])];
+}
+
+export function modelBaselineSelectionArgs(config,{provider,controlledModel,...options}) {
+  // Catalog preparation uses its owned controlled provider, independently of
+  // the frozen real-task route and its thinking/state policy.
+  const {modelContract,model,thinkingLevel,rpcTimeoutMs,...catalogConfig}=config;
+  const args=modelBaselineHostArgs(catalogConfig,options);
+  args[args.indexOf('--model')+1]=controlledModel;
+  return [...args,'-e',provider];
 }
 
 /** Passive proof for the native arm. Expected inputs contain hashes, never
@@ -571,12 +591,34 @@ async function doctor(config) {
   const bundledRuntime=config.transport==='sdk'?await bundledRuntimeAt(config.extension):null;
   const runtimeDirectory = nativeLocal(config) ? join(comparison.nativePackage.directory,'dist') : dirname(config.extension);
   const runtime = await tree(runtimeDirectory);
+  const modelProfile=dailyRouteContract(config);
+  let settingsManager;
+  if(modelProfile) {
+    const piPackage=comparison?.nativePackage??await installedPiPackage(host),path=join(piPackage.directory,'dist/core/settings-manager.js');
+    const bytes=await readFile(path);settingsManager={path,bytes:bytes.length,sha256:hash(bytes)};
+  }
   return { status:'ready', node:process.versions.node, pi:version.stdout.trim(), piIdentity:host.identity,
     piSha256:hash(await readFile(host.identity)), runtime, runtimeDirectory, extension:config.extension??null,
     role:config.role??null,comparison,sourceTransport:nativeLocal(config)?'pi-native-local':config.transport??'cli',bundledRuntime,
     cliSha256:nativeLocal(config)?null:bundledRuntime?.cli.sha256??hash(await readFile(config.command[1])),
     packageSha256:config.packagePath ? hash(await readFile(config.packagePath)) : null,
-    model:'magpie/group/flash-free',toolProfile:config.toolProfile??'standard',tools:modelBaselineTools(config), authentication:'not-probed' };
+    model:modelProfile?.model??'magpie/group/flash-free',
+    ...(modelProfile?{modelProfile,modelProfileSha256:hash(JSON.stringify(modelProfile)),settingsManager}:{}),
+    toolProfile:config.toolProfile??'standard',tools:modelBaselineTools(config), authentication:'not-probed' };
+}
+
+async function prepareDailyProject(preflight,base) {
+  const file=join(base,'.pi','settings.json');
+  await mkdir(dirname(file),{mode:0o700});await save(file,preflight.modelProfile.ownedProjectRetry);
+  const bytes=await readFile(file),module=preflight.settingsManager;
+  assert.equal(hash(await readFile(module.path)),module.sha256,'Installed settings manager changed after Doctor');
+  const {SettingsManager}=await import(pathToFileURL(module.path).href),settings=SettingsManager.create(base);
+  assert.deepEqual(settings.getProjectSettings(),preflight.modelProfile.ownedProjectRetry);
+  const effective={projectTrusted:settings.isProjectTrusted(),enabled:settings.getRetryEnabled(),
+    maxRetries:settings.getRetrySettings().maxRetries,providerMaxRetries:settings.getProviderRetrySettings().maxRetries};
+  assert.deepEqual(effective,{projectTrusted:true,enabled:false,maxRetries:0,providerMaxRetries:0},'Owned daily retry policy was not applied');
+  return {file:{path:file,bytes:bytes.length,sha256:hash(bytes)},settingsManager:module,effective,
+    scope:'Only the owned project retry policy; remaining global settings and authentication are not rewritten'};
 }
 
 function observeComparisonCatalog(api,{fs,crypto,path,directory,output}) {
@@ -705,11 +747,10 @@ async function selection(config,parent) {
     +JSON.stringify('http://127.0.0.1:'+server.address().port+'/v1')+",api:'openai-completions',apiKey:'controlled-no-secret',models:[{id:'metadata',name:'Controlled metadata observer',input:['text'],contextWindow:1000000,maxTokens:256,cost:{input:0,output:0,cacheRead:0,cacheWrite:0}}]});\n",{flag:'wx',mode:0o600});
   const env=verificationCliEnvironment(join(scratch,'cli'));
   Object.assign(env,{CONTEXT_BROKER_CONFIG:brokerConfig,CONTEXT_BROKER_HOST:'pi',CONTEXT_BROKER_LOG_FILE:join(evidence,'broker.jsonl'),
-    BROKER_E2E_PROCESS_LEDGER:owned,NTN_SKILLS_REQUEST_TRACE_LIMIT:'10000',PWD:scratch});
+    BROKER_E2E_PROCESS_LEDGER:owned,NTN_SKILLS_REQUEST_TRACE_LIMIT:'10000',NTN_SKILLS_SCHEDULER_ROOT:join(scratch,'request-engine'),PWD:scratch});
   for(const key of ['NODE_OPTIONS','CONTEXT_BROKER_ROOTS','CONTEXT_BROKER_EXTRA_ROOTS','CONTEXT_BROKER_DISCOVERY_CATALOGS','CONTEXT_BROKER_EXTRA_DISCOVERY_CATALOGS','OLDPWD','INIT_CWD'])delete env[key];
   env.NODE_OPTIONS='--import='+pathToFileURL(preload).href;
-  const args=modelBaselineHostArgs(config,{base:scratch,observer,transport,inspection:capture,comparison:{directory:descriptor.directory}});
-  args.splice(args.length-2,2,'-e',provider,'--model',model);
+  const args=modelBaselineSelectionArgs(config,{base:scratch,observer,transport,inspection:capture,comparison:{directory:descriptor.directory},provider,controlledModel:model});
   let rpc,boundary;
   try {
     rpc=await startRpc({host:'pi',cwd:scratch,env,args,timeoutMs:90000,waitForState:false});
@@ -770,19 +811,62 @@ export function verifyModelAnswer(answer, expectedAnswers) {
   const permissionOnly = answer.text.length < 1200 && /(?:please\s+(?:approve|authorize|confirm)|(?:need|require|await)\w*\s+(?:your\s+)?(?:approval|permission)|(?:请|需要|等待).{0,15}(?:授权|批准|确认))/iu.test(answer.text);
   return !permissionOnly && expectedAnswers.some(value => answer.text.includes(value));
 }
-function summarizeTurn(sample, events, transport) {
+
+export function modelBaselineModelEvidence(sample,events,transport,modelProfile) {
+  assert.deepEqual(modelProfile,dailyRouteContract(modelProfile),'The normalized daily profile changed');
+  const separator=modelProfile.model.indexOf('/'),expectedProvider=modelProfile.model.slice(0,separator),expectedModel=modelProfile.model.slice(separator+1);
+  const errors=[],requests=events.filter(event=>event.phase==='provider_request'&&event.turn===sample.turn);
+  const replies=events.filter(event=>event.phase==='message_end'&&event.turn===sample.turn&&event.message?.role==='assistant');
+  const hasSubmission=/^\d+$/.test(sample.submitNs??'')&&/^\d+$/.test(sample.completeNs??'');
+  const active=hasSubmission?transport.filter(event=>event.phase==='request_start'&&event.category==='model'
+    &&BigInt(event.monotonicNs)>=BigInt(sample.submitNs)&&BigInt(event.monotonicNs)<=BigInt(sample.completeNs)):[];
+  const activeIds=new Set(active.map(event=>event.id)),sent=transport.filter(event=>event.phase==='request_sent'&&activeIds.has(event.id));
+  if(!hasSubmission||requests.length===0)errors.push('MODEL_REQUEST_UNOBSERVED');
+  if(new Set(requests.map(event=>event.request)).size!==requests.length||replies.length!==requests.length)
+    errors.push('MODEL_RESPONSE_USAGE_UNALIGNED');
+  if(active.length!==requests.length||sent.length!==requests.length)errors.push('MODEL_HTTP_ATTEMPTS_UNALIGNED');
+  const observed=requests.map(event=>{
+    const matched=replies.filter(reply=>reply.request===event.request),message=matched.length===1?matched[0].message:null;
+    const wires=sent.filter(wire=>wire.requestBodySha256===event.payload?.sha256&&wire.requestBodyBytes===event.payload?.bytes);
+    if(event.provider!==expectedProvider||event.model!==expectedModel)
+      errors.push('MODEL_REQUEST_IDENTITY_UNPROVEN');
+    if(![expectedModel,modelProfile.model].includes(event.requestModel))errors.push('MODEL_REQUEST_ROUTE_UNPROVEN');
+    if(event.reasoningEffort!=='high'||wires.length!==1)errors.push('MODEL_WIRE_HIGH_UNPROVEN');
+    if(!message||message.provider!==expectedProvider||message.model!==expectedModel)errors.push('MODEL_RESPONSE_IDENTITY_UNPROVEN');
+    if(typeof message?.responseModel!=='string'||!message.responseModel.trim())errors.push('MODEL_RESPONSE_ROUTE_UNPROVEN');
+    if(message&&[message.thinkingLevel,message.providerThinkingLevel].some(level=>level!=null&&level!=='high'))errors.push('MODEL_RESPONSE_THINKING_MISMATCH');
+    if(!message||!['input','output','cacheRead','cacheWrite','totalTokens'].every(key=>Number.isFinite(message.usage?.[key])&&message.usage[key]>=0)
+      ||message.usage.totalTokens<=0)errors.push('MODEL_RESPONSE_USAGE_UNALIGNED');
+    for(const wire of wires) {
+      const ends=transport.filter(end=>end.phase==='request_end'&&end.id===wire.id);
+      if(ends.length!==1||ends[0].category!=='model'||ends[0].outcome!=='completed'||!Number.isInteger(ends[0].status)
+        ||ends[0].status<200||ends[0].status>=300)errors.push('MODEL_HTTP_ATTEMPT_FAILED');
+    }
+    return {turn:event.turn,request:event.request,provider:event.provider??null,model:event.model??null,requestModel:event.requestModel??null,
+      reasoningEffort:event.reasoningEffort??null,payloadSha256:event.payload?.sha256??null,wireRequestIds:wires.map(wire=>wire.id),
+      response:message?{provider:message.provider??null,model:message.model??null,responseModel:message.responseModel??null,
+        thinkingLevel:message.thinkingLevel??null,providerThinkingLevel:message.providerThinkingLevel??null,usage:message.usage}:null};
+  });
+  if(new Set(observed.flatMap(item=>item.wireRequestIds)).size!==requests.length)errors.push('MODEL_HTTP_ATTEMPTS_UNALIGNED');
+  return {complete:errors.length===0,errors:[...new Set(errors)],requests:observed,
+    method:'Actual hook model and effort, exact sent HTTP body model/hash/bytes, and one same-turn/request assistant usage; an unknown responseModel fails the daily contract'};
+}
+
+function summarizeTurn(sample, events, transport, modelProfile) {
   const selected = events.filter(event => event.turn === sample.turn);
   const requests = selected.filter(event => event.phase === 'provider_request');
   const assistants = selected.filter(event => event.phase === 'message_end' && event.message?.role === 'assistant');
   const firstText = selected.find(event => event.phase === 'message_update' && event.firstEffectiveText);
-  const elapsed = event => event ? Number(BigInt(event.monotonicNs) - BigInt(sample.submitNs)) / 1e6 : null;
+  const hasSubmission=/^\d+$/.test(sample.submitNs??'');
+  const elapsed = event => event&&hasSubmission ? Number(BigInt(event.monotonicNs) - BigInt(sample.submitNs)) / 1e6 : null;
   const add = values => values.length && values.every(value => typeof value === 'number' && Number.isFinite(value)) ? values.reduce((a,b) => a+b,0) : null;
-  const active = transport.filter(event => event.phase === 'request_start' && event.category === 'model' && BigInt(event.monotonicNs) >= BigInt(sample.submitNs)
+  const active = transport.filter(event => hasSubmission && event.phase === 'request_start' && event.category === 'model' && BigInt(event.monotonicNs) >= BigInt(sample.submitNs)
     && BigInt(event.monotonicNs) <= BigInt(sample.completeNs));
   const ids = new Set(active.map(event => event.id));
   const sent = transport.filter(event => event.phase === 'request_sent' && ids.has(event.id));
   const completed = transport.filter(event => event.phase === 'request_end' && ids.has(event.id));
   const payloadsMatch = requests.length > 0 && requests.every(event => sent.some(request => request.requestBodySha256 === event.payload.sha256));
+  const modelEvidence=modelProfile?modelBaselineModelEvidence(sample,events,transport,modelProfile):undefined;
   return { ...sample, observedProviderHooks:requests.length, toolCalls:selected.filter(event => event.phase === 'tool_call').length,
     toolRounds:new Set(selected.filter(event => event.phase === 'tool_call').map(event => event.request)).size,
     providerPayloadJsonBytes:add(requests.map(event => event.payload.bytes)), firstProviderPayloadJsonBytes:requests[0]?.payload.bytes ?? null,
@@ -792,14 +876,15 @@ function summarizeTurn(sample, events, transport) {
     providerComponentMethod:'All requests, including repeated history; diagnostic spans overlap and are not additive token estimates',
     reportedUsage:Object.fromEntries(['input','output','cacheRead','cacheWrite','totalTokens'].map(key => [key,add(assistants.map(event => event.message.usage[key]))])),
     submitToFirstProviderMs:elapsed(requests[0]), submitToFirstModelHttpMs:elapsed(active[0]), submitToFirstEffectiveTextMs:elapsed(firstText),
-    submitToCompletionMs:Number(BigInt(sample.completeNs)-BigInt(sample.submitNs))/1e6,
+    submitToCompletionMs:hasSubmission?Number(BigInt(sample.completeNs)-BigInt(sample.submitNs))/1e6:null,
+    ...(modelProfile?{modelEvidence}:{}),
     modelHttp:{ attempts:active.length, completed:completed.length, successful:completed.filter(event => event.status >= 200 && event.status < 300 && event.outcome === 'completed').length,
       requestBodyBytes:add(sent.map(event => event.requestBodyBytes)), responseEntityBytes:add(completed.map(event => event.responseEntityBytes)),
       decodedResponseBytes:add(completed.map(event => event.decodedResponseBytes)), payloadHashesMatchObservedRequests:payloadsMatch,
       method:'Node Undici diagnostics; HTTP entity chunks, not TCP/TLS wire', retryWaitMs:null, queueWaitMs:null, wireBytes:null },
     observationComplete:events.at(-1)?.phase === 'observer_end' && events.at(-1)?.complete === true
-      && transport.at(-1)?.complete === true && transport.at(-1)?.selectedModel === hash('magpie/group/flash-free')
-      && payloadsMatch && active.length === completed.length };
+      && transport.at(-1)?.complete === true && transport.at(-1)?.selectedModel === hash(modelProfile?.model??'magpie/group/flash-free')
+      && payloadsMatch && active.length === completed.length && (!modelProfile||modelEvidence.complete) };
 }
 export function modelProcessTerminalFailure(result,{costEvents,transportEvents,inspectionRequired=false}) {
   if(result.status!=='closed'||result.source?.hostClosed!==true)
@@ -871,6 +956,7 @@ export async function settleSource(path,transport='cli') {
 }
 async function run(config, parent) {
   const preflight = await doctor(config);
+  const modelProfile=preflight.modelProfile;
   const sourceTransport = preflight.sourceTransport;
   const evidence = await mkdtemp(join(await evidenceRoot(parent, await systemTempRoot()), 'skill-model-cost-'));
   const scratch = await mkdtemp(join(await systemTempRoot(), 'skill-model-cost-scratch-'));
@@ -878,9 +964,11 @@ async function run(config, parent) {
     ...Array.from({length:config.counts.cold},(_,i)=>({id:'cold-'+(i+1),cache:'cold',session:'new'})),
     ...Array.from({length:config.counts.warm},(_,i)=>({id:'warm-'+(i+1),cache:'warm',session:'existing'}))];
   const harnessPaths=['scripts/skill-consumption-model-baseline.mjs','scripts/skill-consumption-cost.mjs','scripts/skill-consumption-provider.mjs',
-    'scripts/notion-default-context.mjs',...(config.transport==='sdk'?['scripts/skill-consumption-source-observer.mjs']:[])];
+    'scripts/notion-default-context.mjs',...(config.transport==='sdk'?['scripts/skill-consumption-source-observer.mjs']:[]),
+    ...(modelProfile?['scripts/verify-skill-graph-contract.mjs']:[])];
   const harnessFiles=await Promise.all(harnessPaths.map(async path=>({path,sha256:hash(await readFile(join(root,path)))})));
   const plan = { version:1, kind:'skill-consumption-model-baseline', runId, clockId, config, preflight,harnessFiles,
+    ...(modelProfile?{modelProfile,modelProfileSha256:preflight.modelProfileSha256}:{}),
     frozenAt:new Date().toISOString(), samples:planned, freshness:'unchanged production defaults; prefetch false',
     isolation:'disjoint production source/Broker caches; normal authentication only; no oracle preparation',
     warmCondition:'same process and existing session after final cold task; context history is retained and counted',
@@ -928,7 +1016,8 @@ async function run(config, parent) {
     await writeFile(transport,providerTransportExtensionSource({output:network,checkoutRoot:root,clockId}),{mode:0o600,flag:'wx'});
     const env=verificationCliEnvironment(join(base,'cli'));
     Object.assign(env,{CONTEXT_BROKER_CONFIG:brokerConfig,CONTEXT_BROKER_HOST:'pi',CONTEXT_BROKER_LOG_FILE:join(processEvidence,'broker.jsonl'),
-      BROKER_E2E_PROCESS_LEDGER:join(processEvidence,'owned-processes.jsonl'),NTN_SKILLS_REQUEST_TRACE_LIMIT:'10000',PWD:base});
+      BROKER_E2E_PROCESS_LEDGER:join(processEvidence,'owned-processes.jsonl'),NTN_SKILLS_REQUEST_TRACE_LIMIT:'10000',
+      NTN_SKILLS_SCHEDULER_ROOT:join(base,'request-engine'),PWD:base});
     for(const key of ['NODE_OPTIONS','CONTEXT_BROKER_ROOTS','OLDPWD','INIT_CWD']) delete env[key];
     let inspection,inspectionLog;
     if(nativeLocal(config)) {
@@ -957,13 +1046,28 @@ async function run(config, parent) {
     const args=modelBaselineHostArgs(config,{base,observer,transport,inspection,comparison:preflight.comparison});
     let rpc, turn=0; const local=[]; const processResult={id,status:'running',observedSourcesQuiet:false,sourceTransport};
     try {
-      rpc=await startRpc({host:'pi',cwd:base,env,args,timeoutMs:120000,waitForState:false});
+      if(modelProfile) {
+        processResult.projectRetry=await prepareDailyProject(preflight,base);
+        await save(join(processEvidence,'project-retry.json'),processResult.projectRetry);
+      }
+      rpc=await startRpc({host:'pi',cwd:base,env,args,timeoutMs:modelProfile?.rpcTimeoutMs??120000,waitForState:false});
       const tasks=[planned[processIndex-1],...(processIndex===config.counts.cold?planned.slice(config.counts.cold):[])];
       for(const task of tasks) {
         await checkReviewStop(local);if(stoppedReason)break;
         const sourceStartRow=(await sourceRows(ledger.ledger,sourceTransport)).events.length;
-        const sample={...task,process:id,turn:++turn,status:'running',submitNs:process.hrtime.bigint().toString(),promptSha256:hash(config.prompt),sourceStartRow};
+        const sample={...task,process:id,turn:++turn,status:'running',promptSha256:hash(config.prompt),sourceStartRow};
         try {
+          if(modelProfile) {
+            const file=processResult.projectRetry.file;
+            assert.equal(hash(await readFile(file.path)),file.sha256,'Owned retry settings changed before prompt');
+            const state=await rpc.command('get_state');
+            sample.modelState={provider:state?.model?.provider??null,model:state?.model?.id??null,thinkingLevel:state?.thinkingLevel??null};
+            sample.modelStateFile=task.id+'-state.json';
+            await save(join(processEvidence,sample.modelStateFile),{observedAtNs:process.hrtime.bigint().toString(),
+              modelProfileSha256:preflight.modelProfileSha256,phase:'before-prompt',actual:sample.modelState});
+            verifyDailyRouteState(modelProfile,state);
+          }
+          sample.submitNs=process.hrtime.bigint().toString();
           const pending=rpc.prompt(config.prompt).then(frame=>({frame,completeNs:process.hrtime.bigint().toString()}),error=>({error,completeNs:process.hrtime.bigint().toString()}));
           await save(join(processEvidence,task.id+'-submission.json'),{...sample,prompt:config.prompt});
           const completed=await pending;sample.completeNs=completed.completeNs;if(completed.error)throw completed.error;
@@ -973,6 +1077,10 @@ async function run(config, parent) {
           await save(join(processEvidence,sample.answerFile),{version:1,sampleId:sample.id,turn:sample.turn,stopReason:answer.stopReason,text:answer.text});
           sample.taskVerified=verifyModelAnswer(answer,config.expectedAnswers);
           assert.ok(sample.taskVerified,'Successful final must answer the frozen task');
+          if(modelProfile) {
+            sample.modelEvidence=modelBaselineModelEvidence(sample,(await readConsumptionCostEvents(observation)).events,await rows(network),modelProfile);
+            assert.ok(sample.modelEvidence.complete,'Daily model/wire contract failed: '+sample.modelEvidence.errors.join(','));
+          }
           if(preflight.comparison) {
             const cost=(await readConsumptionCostEvents(observation)).events;
             const providers=cost.filter(event=>event.phase==='provider_request'&&event.turn===sample.turn);
@@ -1031,9 +1139,16 @@ async function run(config, parent) {
       }
       stoppedReason??=modelProcessTerminalFailure(processResult,{costEvents:events,transportEvents,
         inspectionRequired:Boolean(inspectionLog)});
+      if(modelProfile) {
+        try {processResult.retryPolicyUnchanged=Boolean(processResult.projectRetry)
+          &&hash(await readFile(processResult.projectRetry.file.path))===processResult.projectRetry.file.sha256
+          &&hash(await readFile(preflight.settingsManager.path))===preflight.settingsManager.sha256;}
+        catch {processResult.retryPolicyUnchanged=false;}
+        if(!processResult.retryPolicyUnchanged)stoppedReason??='Owned daily retry policy changed';
+      }
       processResult.sourceLedger=ledger.ledger;
       await save(join(processEvidence,'process.json'),processResult);processes.push(processResult);
-      for(const sample of local) samples.push(summarizeTurn(sample,events,transportEvents));
+      for(const sample of local) samples.push(summarizeTurn(sample,events,transportEvents,modelProfile));
     }
   }
   for(const sample of planned) if(!samples.some(value=>value.id===sample.id)) samples.push({...sample,status:'not_run',reason:stoppedReason??'Process did not reach submission'});
@@ -1061,7 +1176,9 @@ async function run(config, parent) {
   const observed=samples.filter(sample=>sample.status!=='not_run');
   const sourceComplete=processes.length===config.counts.cold&&processes.every(item=>item.status==='closed'&&item.observedSourcesQuiet&&item.source.complete
     &&(!preflight.comparison||item.inspectionComplete===true));
-  const report={version:1,kind:plan.kind,runId,status:sourceComplete&&observed.every(sample=>sample.status==='passed'&&sample.observationComplete)&&observed.length===planned.length?'observed':'incomplete',
+  const modelPolicyUnchanged=!modelProfile||processes.length===config.counts.cold&&processes.every(item=>item.retryPolicyUnchanged===true);
+  const report={version:1,kind:plan.kind,runId,status:sourceComplete&&modelPolicyUnchanged&&observed.every(sample=>sample.status==='passed'&&sample.observationComplete)&&observed.length===planned.length?'observed':'incomplete',
+    ...(modelProfile?{modelProfile,modelProfileSha256:preflight.modelProfileSha256,modelPolicyUnchanged}:{}),
     evidence,scratch,planSha256:hash(await readFile(join(evidence,'plan.json'))),runtimeUnchanged:after.sha256===preflight.runtime.sha256&&runtimeBundleUnchanged&&comparisonUnchanged&&harnessUnchanged,
     role:config.role??null,comparison:preflight.comparison,comparisonUnchanged,comparisonError,sourceTransport,runtimeBundleUnchanged,
     sourceComplete,stoppedReason,reviewStop,harnessUnchanged,samples,processes,notClaimed:['Skill task or graph acceptance','installed candidate acceptance','metadata-producer completion inferred from a quiet interval','model SDK retry/queue wait attribution','TCP/TLS wire bytes',

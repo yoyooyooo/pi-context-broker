@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { access, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
+import { access, appendFile, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -18,6 +18,7 @@ import { installedBrokerIdentity } from './notion-skill-graph-session.mjs';
 import { verificationCliEnvironment, systemTempRoot } from './verification-paths.mjs';
 import { assertCatalogCancellationBoundary } from './notion-sdk-pi.mjs';
 import { consumptionCostExtensionSource, readConsumptionCostEvents } from './skill-consumption-cost.mjs';
+import { dailyRouteContract, verifyDailyRouteState, verifyDailyRouteEvidence } from './verify-skill-graph-contract.mjs';
 
 const json = async path => JSON.parse(await readFile(path, 'utf8'));
 const rows = async path => { try { return (await readFile(path, 'utf8')).split('\n').filter(Boolean).map(JSON.parse); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } };
@@ -36,6 +37,7 @@ export function discoveryExperimentIdentity(config) {
 }
 
 export function validateIntentConfiguration(config) {
+  const modelProfile = dailyRouteContract(config);
   assert.equal(config.version, 1); assert.equal(config.contract, 'agent-cli-ref-20261105');
   if (config.discoveryExperiment === undefined) assert.equal(config.phase, 'early-feedback-not-formal-SC21');
   else {
@@ -48,7 +50,7 @@ export function validateIntentConfiguration(config) {
     assert.ok(config.discoveryExperiment, 'Ready-directory startup is an explicit D discovery experiment');
     assert.deepEqual(config.discoveryStartup, { mode: 'ready-directory', timeoutMs: 60000 });
   }
-  assert.equal(config.model, 'magpie/group/flash-free'); assert.equal(config.fallback, 'forbidden');
+  assert.equal(config.model, modelProfile?.model ?? 'magpie/group/flash-free'); assert.equal(config.fallback, 'forbidden');
   assert.equal(config.sampling.codeMode, false);
   assert.deepEqual(config.sampling.tools, ['read', 'notion_list', 'notion_use']);
   assert.deepEqual(config.budget, { primarySamplesPerCase: 1, primaryCases: 4, maxFollowupSubmissions: 3,
@@ -263,8 +265,12 @@ export function assertReadyDiscoveryProvider({ observation, catalogRecords, scop
 }
 
 export function assertIntentTurn({ observation, turnObservation = observation, responses, newResponses = responses,
-  item, intent = item.intent, oracle, catalogRecords, followup = false, discoveryExperiment, discoveryStartup }) {
+  item, intent = item.intent, oracle, catalogRecords, followup = false, discoveryExperiment, discoveryStartup, modelProfile }) {
   const providers = turnObservation.filter(event => event.phase === 'provider-request');
+  const modelEvidence = modelProfile && verifyDailyRouteEvidence(modelProfile, {
+    states: observation.filter(event => event.phase === 'model-state').map(event => event.state), requests: providers,
+    transports: turnObservation.filter(event => event.phase === 'provider-transport-start'),
+    responses: turnObservation.filter(event => event.phase === 'model-response') });
   assert.ok(providers.length, 'Actual verified provider input is required');
   assert.ok(turnObservation.some(event => event.phase === 'provider-transport-response' && event.status >= 200 && event.status < 300), 'Actual provider HTTP success is required');
   assert.ok(!turnObservation.some(event => ['observer-error', 'provider-transport-blocked'].includes(event.phase)), 'A failed observer cannot establish delivery');
@@ -334,6 +340,7 @@ export function assertIntentTurn({ observation, turnObservation = observation, r
     }
   }
   return { status: 'passed', acceptance: 'technical_only', final: { ...final, sha256: hash(final.text) },
+    ...(modelEvidence ? { modelProfile, modelEvidence } : {}),
     provider_requests: providers.length, provider_input_bytes: providers.reduce((sum, item) => sum + item.payloadBytes, 0),
     tool_calls: turnObservation.filter(event => event.phase === 'tool-call').length,
     catalog_states: catalog.map(event => event.state), semantic_review: 'required',
@@ -530,6 +537,7 @@ async function checkedJson(reference) {
 
 export async function intentDoctor(path, selectedCase) {
   assert.ok(isAbsolute(path)); const config = await json(path), executionScope = selectIntentCases(config, selectedCase);
+  const modelProfile = dailyRouteContract(config);
   const oracle = await checkedJson(config.privateOracle);
   const semantic = await checkedJson(config.privateOracle.semanticReference);
   const body = await readFile(semantic.sourceBody.path);
@@ -560,6 +568,7 @@ export async function intentDoctor(path, selectedCase) {
   assert.ok(Array.isArray(config.cliCommand) && config.cliCommand.length === 2 && config.cliCommand.every(isAbsolute));
   assert.ok(isAbsolute(config.evidenceRoot)); await mkdir(config.evidenceRoot, { recursive: true });
   return { config, oracle, semantic, catalog, artifacts, host, executionScope, report: { status: 'ready', model: config.model, executionScope,
+    ...(modelProfile ? { modelProfile } : {}),
     budget: config.budget, sourceMode: 'sdk', productionDefaultCount: 74, pi: { ...host, version },
     ...(experiment ? { phase: config.phase, discoveryExperiment: experiment, actualPublicProjection: 'not_run', experimentalAdoption: 'not_authorized' } : {}),
     ...(config.discoveryStartup ? { directoryStartup: { ...config.discoveryStartup, state: 'not_run', command: '/context-broker view',
@@ -586,8 +595,10 @@ async function retainedFileInventory(directory, prefix = '') {
 export async function runIntentCases(configPath, selectedCase) {
   const armStartedMs = performance.now(), armStartedAt = new Date().toISOString();
   const { config, oracle, semantic, catalog, artifacts, host, executionScope, report: doctor } = await intentDoctor(configPath, selectedCase);
+  const modelProfile = dailyRouteContract(config);
   const evidence = await mkdtemp(join(await realpath(config.evidenceRoot), 'pi-intent-evidence-'));
   const manifest = { version: 1, kind: 'pi-model-intent-early-feedback', status: 'running', evidence,
+    ...(modelProfile ? { modelProfile } : {}),
     model: config.model, budget: config.budget, executionScope, doctor, cases: [], submissions: 0, automaticRetries: 0,
     semanticOracle: { sourceBodySha256: semantic.sourceBody.sha256, reference: config.privateOracle.semanticReference },
     not_claimed: ['Formal SC21 matrix', 'Cost acceptance', 'Daily installation switch', 'Autonomous execution of the generated procedure'] };
@@ -619,7 +630,7 @@ export async function runIntentCases(configPath, selectedCase) {
     assert.ok((await Promise.all([cliRoot, cache, sessions].map(path => readdir(path)))).every(items => items.length === 0));
     const oracleRoot = await realpath(dirname(config.privateOracle.path));
     assert.ok(!scratch.startsWith(oracleRoot + '/') && !oracleRoot.startsWith(scratch + '/'), 'Private oracle cannot warm a consumer root');
-    const project = await createOwnedGraphProject(cwd); assert.equal(project.sha256, config.project.sha256);
+    const project = await createOwnedGraphProject(cwd, { modelProfile }); assert.equal(project.sha256, config.project.sha256);
     await Promise.all([ledger, owned, observationPath].map(path => writeFile(path, '', { mode: 0o600 })));
     const source = { type: 'notion', id: 'notion', namespace: 'notion', database: config.source.database,
       prefetch: false, cacheDir: cache, requestTimeoutMs: 60000 };
@@ -629,9 +640,11 @@ export async function runIntentCases(configPath, selectedCase) {
       cliEntries: [config.cliCommand[1], join(artifacts.packageRoot, 'dist/ntn-skills.mjs')] });
     const traps = await createGraphFallbackTraps(control, output);
     const env = { ...verificationCliEnvironment(cliRoot), ...traps.environment, NODE_OPTIONS: '--import=' + hook,
+      ...(modelProfile ? { NTN_SKILLS_SCHEDULER_ROOT: join(cliRoot, 'request-engine') } : {}),
       CONTEXT_BROKER_CONFIG: brokerConfig, CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_LOG_FILE: join(output, 'decisions.jsonl'),
       BROKER_E2E_PROCESS_LEDGER: owned };
     const result = { version: 1, kind: 'pi-model-intent-case', sourceMode: 'sdk', toolContract: config.contract,
+      ...(modelProfile ? { modelProfile, schedulerRoot: env.NTN_SKILLS_SCHEDULER_ROOT } : {}),
       gate: item.id, model: config.model, evidence: await realpath(output), scratch, project, status: 'running', executionScope,
       acceptance: 'technical_only_until_semantic_review', entryMode: item.entryMode, turns: [], files: [],
       prelaunch: { cli_entries: 0, broker_entries: 0, session_entries: 0, oracle_consumer_disjoint: true },
@@ -657,9 +670,11 @@ export async function runIntentCases(configPath, selectedCase) {
     stopActive = stop;
     const boot = async () => {
       await stop(); processIndex++;
+      await inspectOwnedGraphProject(cwd, { modelProfile });
       const sequenceOffset = Math.max(0, ...(await rows(observationPath)).map(event => event.sequence ?? 0));
       const observer = join(control, 'observer-' + processIndex + '.mjs'), module = join(control, 'graph-observer-' + processIndex + '.mjs');
       const settings = { sourceMode: 'sdk', entryMode: item.entryMode, ...(item.entryMode === 'explicit-root' ? { rootRef: oracle.roots.B.ref } : {}),
+        ...(modelProfile ? { modelProfile } : {}),
         model: config.model, prompt: item.initial.text, cache, cwd, responses: responsesPath, payloads, output: observationPath,
         project, piExecutable: host.identity, sequenceOffset,
         ...(config.discoveryExperiment ? { discoveryExperiment: config.discoveryExperiment } : {}) };
@@ -671,6 +686,7 @@ export async function runIntentCases(configPath, selectedCase) {
       const args = ['--no-extensions', '--no-skills', '--no-mcp', '--no-context-files', '--no-prompt-templates',
         '--session-dir', sessions, '--tools', 'read,notion_list,notion_use', '-e', observer, '-e', config.candidate.extension,
         '-e', module, '--model', config.model, ...(session ? ['--session', session] : [])];
+      if (modelProfile) args.push('--thinking', modelProfile.thinkingLevel);
       let cost;
       if (config.discoveryExperiment) {
         cost = { processIndex, sequenceOffset, sampleId: item.id + '-' + processIndex, clockId: 'intent-' + process.pid,
@@ -683,6 +699,7 @@ export async function runIntentCases(configPath, selectedCase) {
         args.push('-e', cost.extension);
       }
       await save(join(output, 'launch-' + processIndex + '.json'), { host, args, cwd, source, observerSha256: hash(await readFile(observer)), graphObserverSha256: hash(await readFile(module)), sourceHookSha256: hash(await readFile(hook)),
+        ...(modelProfile ? { modelProfile, schedulerRoot: env.NTN_SKILLS_SCHEDULER_ROOT, runtimeSettings: project.runtimeSettings } : {}),
         ...(cost ? { consumptionCostObserver: cost } : {}) });
       const deadline = { armStartedMs, stageStartedMs: processIndex === 1 ? setupStartedMs : performance.now(),
         stageLimitMs: processIndex === 1 ? 60000 : 300000, stop };
@@ -694,6 +711,11 @@ export async function runIntentCases(configPath, selectedCase) {
         ...(config.discoveryStartup ? { waitForState: false } : {}) });
       const state = config.discoveryStartup ? await withinDiscoveryBudget(() => rpc.command('get_state'), deadline) : await rpc.command('get_state');
       await save(join(output, 'state-' + processIndex + '.json'), state);
+      if (modelProfile) {
+        await appendFile(observationPath, JSON.stringify({ phase: 'model-state', at: new Date().toISOString(), processIndex,
+          state: { model: { provider: state.model?.provider, id: state.model?.id }, thinkingLevel: state.thinkingLevel } }) + '\n', { mode: 0o600 });
+        verifyDailyRouteState(modelProfile, state);
+      }
     };
     try {
       await boot();
@@ -735,7 +757,7 @@ export async function runIntentCases(configPath, selectedCase) {
           const responses = await collectIntentResponses(responsesPath);
           Object.assign(receipt, assertIntentTurn({ observation, turnObservation, responses,
             newResponses: responses.filter(row => !beforeIds.has(row.requestId)), item, intent: turn.intent,
-            oracle, catalogRecords: catalog.records, followup: index > 0, discoveryExperiment: config.discoveryExperiment, discoveryStartup: config.discoveryStartup }));
+            oracle, catalogRecords: catalog.records, followup: index > 0, discoveryExperiment: config.discoveryExperiment, discoveryStartup: config.discoveryStartup, modelProfile }));
           const state = config.discoveryStartup ? await withinDiscoveryBudget(() => currentRpc.command('get_state'),
             { armStartedMs, stageStartedMs: began, stageLimitMs: 300000, stop }) : await currentRpc.command('get_state');
           session = state.sessionFile;
@@ -821,7 +843,7 @@ export async function runIntentCases(configPath, selectedCase) {
       // complete allowance no longer fits inside the opt-in arm wall.
       const proofBudgetAvailable = !config.discoveryStartup || armRemaining() >= 120000;
       const supplementary = await collectSupplementaryRetainedProof({ config: { gate: item.id,
-        retainedSourceProofRepo: proofBudgetAvailable ? config.retainedSourceProofRepo : undefined },
+        ...(modelProfile ? { modelProfile } : {}), retainedSourceProofRepo: proofBudgetAvailable ? config.retainedSourceProofRepo : undefined },
         evidence: output, trace: { httpAttempts: attribution.attempts }, responses, ownershipResponses: responses });
       if (!proofBudgetAvailable && supplementary.receipt.status === 'not-configured')
         Object.assign(supplementary.receipt, { status: 'not_run', reason: 'insufficient_remaining_arm_wall', ownership: 'unknown' });
@@ -829,7 +851,7 @@ export async function runIntentCases(configPath, selectedCase) {
       result.sourceAccounting = assertIntentSource({ ...common, retainedSourceProofs: supplementary.proof ? [supplementary.proof] : [] });
       sourceComplete = true;
       assert.equal((await rows(traps.ledger)).length, 0, 'Legacy fallback was invoked');
-      await inspectOwnedGraphProject(cwd);
+      await inspectOwnedGraphProject(cwd, { modelProfile });
       assert.ok(!result.error && result.turns.length === 1 + item.followups.length && result.turns.every(turn => turn.status === 'passed'));
       result.status = 'passed';
       if (item.intent === 'produce-and-exercise-artifact') {
@@ -914,6 +936,10 @@ export async function reviewIntentCases(configPath, evidence, reviewPath, select
   assert.equal(manifest.doctor.config.sha256, doctor.config.sha256);
   assert.deepEqual(manifest.executionScope ?? selectIntentCases(config), executionScope, 'Review must bind the original explicit selection');
   const results = await Promise.all(manifest.cases.map(item => json(join(item.evidence, 'result.json'))));
+  const modelProfile = dailyRouteContract(config);
+  assert.deepEqual(manifest.modelProfile, modelProfile, 'Review must bind the frozen model contract');
+  assert.deepEqual(manifest.doctor.modelProfile, modelProfile);
+  for (const result of results) assert.deepEqual(result.modelProfile, modelProfile);
   const review = await json(reviewPath), verdict = validateIntentReview(review, manifest, results, semantic);
   await writeFile(join(evidence, 'manifest-before-review.json'), JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
   await save(join(evidence, 'semantic-review.json'), review);

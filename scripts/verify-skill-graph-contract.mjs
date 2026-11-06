@@ -22,6 +22,64 @@ const nonempty = value => typeof value === 'string' && value.trim().length > 0;
 const fail = (code, message) => { const error = new Error(message); error.code = code; throw error; };
 const check = (condition, code, message) => { if (!condition) fail(code, message); };
 
+// A new explicitly frozen AH-639 route, never an interpretation of an old
+// flash-free failure or worker authorization. Legacy callers keep their policy.
+export function dailyRouteContract(config) {
+  if (config.modelContract === undefined) {
+    check(config.thinkingLevel === undefined && config.rpcTimeoutMs === undefined, 'MODEL_CONTRACT',
+      'Thinking and RPC policy require an explicit daily-route-v1 contract');
+    return undefined;
+  }
+  const profile = { modelContract: 'daily-route-v1', model: 'magpie/group/flash', thinkingLevel: 'high', rpcTimeoutMs: 300000,
+    controllerRetries: 0, fallback: 'forbidden', ownedProjectRetry: { retry: { enabled: false, maxRetries: 0, provider: { maxRetries: 0 } } } };
+  for (const key of ['modelContract', 'model', 'thinkingLevel', 'rpcTimeoutMs'])
+    check(config[key] === profile[key], 'MODEL_CONTRACT', 'Daily model policy differs at ' + key);
+  check(config.workerAuthorization === undefined && (config.previousFailures === undefined
+    || Array.isArray(config.previousFailures) && config.previousFailures.length === 0), 'MODEL_CONTRACT',
+  'Daily routing cannot reuse legacy fallback authorization');
+  for (const key of ['controllerRetries', 'fallback'])
+    check(config[key] === undefined || config[key] === profile[key], 'MODEL_CONTRACT', 'Daily model policy differs at ' + key);
+  if (config.ownedProjectRetry !== undefined) assert.deepEqual(config.ownedProjectRetry, profile.ownedProjectRetry,
+    'Daily retry policy must remain explicit and isolated to the owned project');
+  return profile;
+}
+
+export function verifyDailyRouteState(profile, state) {
+  assert.deepEqual(profile, dailyRouteContract(profile), 'The normalized daily profile changed');
+  const separator = profile.model.indexOf('/');
+  check(state?.model?.provider === profile.model.slice(0, separator) && state?.model?.id === profile.model.slice(separator + 1)
+    && state?.thinkingLevel === profile.thinkingLevel, 'MODEL_STATE', 'Actual Pi model/thinking differs from the frozen daily route');
+  return { provider: state.model.provider, model: state.model.id, thinkingLevel: state.thinkingLevel };
+}
+
+export function verifyDailyRouteEvidence(profile, { states, requests, transports, responses }) {
+  assert.deepEqual(profile, dailyRouteContract(profile), 'The normalized daily profile changed');
+  const separator = profile.model.indexOf('/');
+  check(Array.isArray(states) && states.length > 0, 'MODEL_STATE', 'Retain actual Pi state before the daily submission');
+  states.forEach(state => verifyDailyRouteState(profile, state));
+  check(Array.isArray(requests) && requests.length > 0 && Array.isArray(transports) && Array.isArray(responses)
+    && transports.length === requests.length && responses.length === requests.length,
+  'MODEL_ROUTE_EVIDENCE', 'Every daily request needs one actual wire and one response; retries and missing evidence remain failures');
+  check(new Set(requests.map(request => request.sequence)).size === requests.length,
+    'MODEL_ROUTE_EVIDENCE', 'Daily provider request identities must be unique');
+  for (const request of requests) {
+    check(Number.isSafeInteger(request.sequence) && request.model === profile.model && request.reasoningEffort === profile.thinkingLevel
+      && /^[a-f0-9]{64}$/.test(request.observedPayloadSha256 ?? ''), 'MODEL_ROUTE_EVIDENCE', 'Actual provider input must bind the frozen model and high thinking');
+    const wires = transports.filter(wire => wire.providerSequence === request.sequence);
+    check(wires.length === 1 && wires[0].observedPayloadSha256 === request.observedPayloadSha256
+      && [profile.model, profile.model.slice(profile.model.indexOf('/') + 1)].includes(wires[0].wireModel)
+      && wires[0].reasoningEffort === profile.thinkingLevel, 'MODEL_ROUTE_EVIDENCE', 'Actual wire model/thinking must match the observed request');
+    const results = responses.filter(response => response.providerSequence === request.sequence), response = results[0];
+    check(results.length === 1 && response.providerPayloadSha256 === request.observedPayloadSha256
+      && response.provider === profile.model.slice(0, separator) && response.model === profile.model.slice(separator + 1) && nonempty(response.responseModel)
+      && ['stop', 'length', 'toolUse'].includes(response.stopReason), 'MODEL_ROUTE_EVIDENCE', 'Retain the actual routed response for this request');
+    check(['input', 'output', 'cacheRead', 'cacheWrite', 'totalTokens'].every(key => Number.isFinite(response.usage?.[key])
+      && response.usage[key] >= 0) && response.usage.totalTokens > 0, 'MODEL_ROUTE_EVIDENCE', 'Missing actual response usage remains unknown');
+  }
+  return { modelContract: profile.modelContract, requests: requests.length,
+    responseModels: [...new Set(responses.map(response => response.responseModel))] };
+}
+
 export function frozenPrompt(gate, selection, version = PROMPT_VERSION) {
   check(version === 1 || version === PROMPT_VERSION, 'PROMPT_VERSION', 'Unknown frozen prompt version');
   check(gate === 'A' || gate === 'B', 'GATE', 'Gate must be A or B');
@@ -179,7 +237,14 @@ export function evaluateGraphTrace(trace, oracle) {
   check(trace.httpAttempts.every(row => (Number.isInteger(row.status) || (row.status === null && nonempty(row.networkError))) && typeof row.requestIdAvailable === 'boolean' && (row.requestIdAvailable ? nonempty(row.requestId) : row.requestId === null)), 'HTTP_METADATA', 'Preserve actual response/network metadata and never invent a missing request ID');
   check(!trace.httpAttempts.some(row => row.kind === 'write'), 'UNAUTHORIZED_WRITE', 'This read-only gate cannot mutate remote data');
   if (trace.cacheMode === 'cold') check(trace.httpAttempts.some(row => row.kind === 'body'), 'FALSE_COLD', 'An empty consumer must observe a real body request');
-  check(['magpie/group/flash-free', 'magpie/group/worker'].includes(trace.model?.selector), 'MODEL_SELECTOR', 'Only the authorized model sequence is valid');
+  if (trace.modelProfile !== undefined) {
+    const profile = dailyRouteContract({ ...trace.modelProfile, previousFailures: trace.model?.previousFailures,
+      workerAuthorization: trace.model?.workerAuthorization });
+    assert.deepEqual(trace.modelProfile, profile, 'Daily trace profile must match its frozen policy');
+    check(trace.model?.selector === profile.model, 'MODEL_SELECTOR', 'Daily trace selector differs from its explicit contract');
+    verifyDailyRouteEvidence(profile, { states: trace.model.stateReadbacks, requests: trace.providerRequests,
+      transports: trace.model.transports, responses: trace.model.responses });
+  } else check(['magpie/group/flash-free', 'magpie/group/worker'].includes(trace.model?.selector), 'MODEL_SELECTOR', 'Only the authorized model sequence is valid');
   if (trace.model.workerAuthorization !== undefined) {
     check(trace.model.selector === 'magpie/group/worker', 'MODEL_AUTHORIZATION', 'Worker authorization cannot authorize another model');
     verifyWorkerAuthorization(trace.model.workerAuthorization, { gate: trace.gate, rootRef: trace.selectedRoots[0], promptSha256: trace.prompt.sha256 });

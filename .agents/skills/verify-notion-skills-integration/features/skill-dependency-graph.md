@@ -59,13 +59,35 @@ node scripts/verify-skill-graph-contract.mjs evaluate --trace "$TRACE_FILE" --or
 
 ## 证明与保留
 
-自检拒绝oracle暖化、隐藏/改名本地副本、猜名、错误ref/hash/scope/snapshot、强制叶子、错误kind、预置正文、资源缺失、HTTP200许可消息、空final、重复provider正文、缺ledger/进程退出等假阳性。真实模型先用 `magpie/group/flash-free`，本次实际不可用才用 `magpie/group/worker`，失败原件保留；无可用授权模型标blocked。
+自检拒绝oracle暖化、隐藏/改名本地副本、猜名、错误ref/hash/scope/snapshot、强制叶子、错误kind、预置正文、资源缺失、HTTP200许可消息、空final、重复provider正文、缺ledger/进程退出等假阳性。旧 NG-SG-11 / AH-560 模型合同继续先用 `magpie/group/flash-free`，本次实际不可用才用 `magpie/group/worker`，失败原件保留；无可用授权模型标blocked。独立日用模型合同见下一节，不能作为旧样本 fallback 或改判依据。
 
 CLI/source、实际Notion、真实模型、原生UI、安装产物分栏。旧AH-560、受控provider、单纯schema和编译不代替图验收。证据落checkout外，按run追加并校验hash；清理只处理自有scratch/process/fixture，unknown需要的原operation状态不回收。修改实现时同时给上表对应ID补真实命令与观察结果，不把本地图本身当实现完成。
 
+## AH-639 独立日用模型合同
+
+Graph harness 18 在原 A/B 和 C/D 入口显式接受 `modelContract: "daily-route-v1"`、`model: "magpie/group/flash"`、`thinkingLevel: "high"`、`rpcTimeoutMs: 300000` 四项。规范化 `modelProfile` 同时进入 doctor、run、trace、cache fingerprint 和 evaluator；C/D 的冻结 config SHA、manifest、case 与 review 保持同一 profile。未声明新合同仍使用原模型限制和默认超时。新合同拒绝旧 flash-free 失败回执、worker 授权、fallback 和 controller 重抽；旧失败与旧预算不改写。每个冻结场景的样本数和顺序由独立 run config 登记，现有 warm / continued-session 能力保留，不能以早期冷 n=1 关闭完整 SC20 / SC21。
+
+| 边界 | 实际驱动与判据 |
+| --- | --- |
+| 日用 route | CLI 明确传 `--thinking high`；首 prompt 和恢复前由实际 RPC `get_state` 分别核对 provider、model ID 与 thinking。不得拼接字符串掩盖 provider/model 分界差异，也不要求 Pi 未暴露的 `autoRetryEnabled` 字段。 |
+| 请求与响应 | 每个实际 provider hook 的 `reasoning_effort` 必须为 `high`，随后实际 HTTP body 的模型、effort 和 payload hash 必须匹配。逐 request sequence 保留实际 assistant provider/model、`responseModel`、usage 与 stopReason；缺失 route 或 usage 保持未知/失败，不能拿选择器或估算补齐。 |
+| 重试与项目 | 每个 owned cwd 的 `.pi/settings.json` 精确写入 `retry.enabled:false`、`retry.maxRetries:0`、`retry.provider.maxRetries:0`；不调用会写全局设置的 `set_auto_retry`。五个应用源文件的 task hash 不变，第六个 runtime 文件另存 bytes/hash。创建、启动/恢复、结束、exercise 和清理前重检 live inventory；默认合同仍拒绝第六个文件，新合同也拒绝字节变化、多余文件及 symlink。清理后的 Evidence 使用下述受绑定的保留原件。 |
+| 来源隔离 | 新 daily 的 metadata selection、真实任务和补充 retained-source collector 均显式使用对应 owned `NTN_SKILLS_SCHEDULER_ROOT`，不继承日用调度状态；已有冷/暖缓存与来源账本条件继续生效。 |
+| 判定与旧样本 | 新 route 不放宽完整正文、Requires、未选 Members、固定版本、权限、取消、历史恢复和语义判据。模型错误 ref 即使到达产品错误边界仍是失败；旧 C9 A/B/C 和 free 的失败原件不覆盖。 |
+
+受控接线证据在 `AH-617-20261105/sc21-daily-route-wiring-77vwvgio/`，保留命令入口、wire/evaluator、严格第六文件 inventory 和 provider/model 身份碰撞的 fail-before。最终原四组 245/245 通过，`affected-groups-final.log` 为 25583 B、SHA-256 `006a0285c03cc54c57f7a35495b5c3ebc440042cf43479ea6648bead84a2bd81`；前一轮仅 legacy 拒绝文案断言不匹配的 244/245 原日志也保留。复跑原四组：
+
+```bash
+node --test scripts/verify-skill-graph-contract.test.mjs scripts/notion-skill-graph-model.test.mjs scripts/notion-model-cache.test.mjs scripts/notion-skill-graph-project.test.mjs
+```
+
+同目录 `ece-fail-before.*` 保留随后独立发现的 ECE 回归：原 CLI 的 Evidence 和系统 Trash 已成功，第二次 Evidence 因仍检查已回收 workspace 而 ENOENT。修复在清理前保存精确 `daily-runtime-settings.json`，cleanup 回执绑定原 result、project、ownership、profile 与该原件的 hash；仅整个 owned scratch 已不存在且绑定全匹配时使用保留证据。活 scratch 内缺项目、任意 cleanup 标记、原件变化或 ownership hash 不符仍失败。原 ECE 失败和初版 handoff 保留，`handoff-v2.json` 记录修复；唯一受影响的 graph-model 原组在 Pro macOS 上 118/118 通过（含两个新增 ECE 正反例），其余三组沿用上次验证。这两项调用真实 `/usr/bin/trash` 的集成测试只在 macOS 执行，macOS 缺该入口仍失败；Ubuntu CI 明确额外 skip 两项，不声称在 Linux 验过系统 Trash，也不安装替代 shim。`handoff-v3.json` 另存平台声明修正，原 Mac RED/GREEN 保留。本次实际 E→Trash→E 保持原文件 hash 和 `functionalStatus:failed`，清理不会改判任务。
+
+独立无 prompt 宿主预检 `daily-route-host-preflight-ycjzk8tt/handoff.json`（SHA-256 `aa1490e98c18e708c8a7b87b5fb7fe1e1875dd673d23da55e6b32e9e75f56ace`）证明实际 Pi 的 flash/high 和 owned SettingsManager 的 trusted project/retry 0，并保留原探针对缺失 `autoRetryEnabled` 的错误断言与更正 sidecar。该预检为 0 prompt / 0 model；接线单测也不证明实际模型 wire 或任务通过。新真实样本须独立冻结最终安装身份、来源版本、原任务、预算与顺序，先做 SC20 本地/Notion 同条件共同任务，再按 AH-639 执行 SC21。
+
 ## SC21 C/D 普通意图与介绍
 
-`scripts/verify-pi-notion-model-cache.mjs --intent-config` 复用本 Skill 的 graph observer、RPC、SDK source ledger、完整正文与资源证明、生成文件检查及 owned exercise。旧 A/B 和旧 custom cache 矩阵保持原入口；此分支不新建总 runner。冻结配置绑定独立安装包、runtime、实际 Pi、全部参与的 harness、生产 Default View 元数据和私有正文 oracle。当前早期反馈为四个独立冷入口各 n=1，最多三次必要续问，每次 300000 ms，仅 `magpie/group/flash-free`，无 fallback、自动重试或失败后续问。
+`scripts/verify-pi-notion-model-cache.mjs --intent-config` 复用本 Skill 的 graph observer、RPC、SDK source ledger、完整正文与资源证明、生成文件检查及 owned exercise。旧 A/B 和旧 custom cache 矩阵保持原入口；此分支不新建总 runner。冻结配置绑定独立安装包、runtime、实际 Pi、全部参与的 harness、生产 Default View 元数据和私有正文 oracle。原早期反馈为四个独立冷入口各 n=1，最多三次必要续问，每次 300000 ms，仅 `magpie/group/flash-free`，无 fallback、自动重试或失败后续问。显式 `daily-route-v1` 是另行冻结的模型输入，不改变这些原任务、预算和 prerequisite 断言。
 
 | 入口 | 实际动作和成功条件 |
 | --- | --- |

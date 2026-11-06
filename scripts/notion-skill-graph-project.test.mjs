@@ -1,15 +1,55 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, readdir, realpath } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { extractGeneratedFiles, retainGeneratedPlan } from './notion-skill-graph-project.mjs';
+import { createOwnedGraphProject, inspectOwnedGraphProject, extractGeneratedFiles, retainGeneratedPlan } from './notion-skill-graph-project.mjs';
+import { dailyRouteContract } from './verify-skill-graph-contract.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const project = { sha256: hash('controlled file extraction fixture'), files: [] };
 const prompt = { sha256: hash('unchanged natural task') };
 const evidence = async () => mkdtemp(join(await realpath(tmpdir()), 'graph-file-extraction-'));
+
+const dailyProfile = () => dailyRouteContract({ modelContract: 'daily-route-v1', model: 'magpie/group/flash', thinkingLevel: 'high', rpcTimeoutMs: 300000 });
+test('daily owned inventory admits the frozen sixth file only under its explicit contract', async () => {
+  const directory = await evidence(), modelProfile = dailyProfile();
+  const before = await createOwnedGraphProject(directory);
+  await mkdir(join(directory, '.pi'));
+  await writeFile(join(directory, '.pi/settings.json'), JSON.stringify(modelProfile.ownedProjectRetry, null, 2) + '\n');
+  const after = await inspectOwnedGraphProject(directory, { modelProfile });
+  assert.equal(after.sha256, before.sha256);
+  assert.equal(after.runtimeSettings.modelContract, 'daily-route-v1');
+  await assert.rejects(inspectOwnedGraphProject(directory), /inventory/);
+});
+
+test('daily owned retry settings are an exact sixth file without changing task source identity', async () => {
+  const plain = await createOwnedGraphProject(await evidence()), modelProfile = dailyProfile();
+  const directory = await evidence(), actual = await createOwnedGraphProject(directory, { modelProfile });
+  const settings = JSON.stringify(modelProfile.ownedProjectRetry, null, 2) + '\n';
+  assert.equal(await readFile(join(directory, '.pi/settings.json'), 'utf8'), settings);
+  assert.equal(actual.sha256, plain.sha256);
+  assert.deepEqual(actual.files, plain.files);
+  assert.deepEqual(actual.runtimeSettings, { path: '.pi/settings.json', bytes: Buffer.byteLength(settings), sha256: hash(settings), modelContract: 'daily-route-v1' });
+  assert.deepEqual(await inspectOwnedGraphProject(directory, { modelProfile }), actual);
+  await assert.rejects(inspectOwnedGraphProject(directory), /inventory/);
+  await assert.rejects(createOwnedGraphProject(directory, { modelProfile }), /EEXIST/);
+});
+
+test('daily owned settings cannot change policy, bytes, inventory or filesystem identity', async () => {
+  const modelProfile = dailyProfile();
+  const changed = await evidence(); await createOwnedGraphProject(changed, { modelProfile });
+  await writeFile(join(changed, '.pi/settings.json'), JSON.stringify(modelProfile.ownedProjectRetry));
+  await assert.rejects(inspectOwnedGraphProject(changed, { modelProfile }), /settings changed/);
+  const extra = await evidence(); await createOwnedGraphProject(extra, { modelProfile });
+  await writeFile(join(extra, '.pi/extra.json'), '{}');
+  await assert.rejects(inspectOwnedGraphProject(extra, { modelProfile }), /inventory/);
+  const linked = await evidence(); await createOwnedGraphProject(linked);
+  await mkdir(join(linked, '.pi')); await symlink(join(changed, '.pi/settings.json'), join(linked, '.pi/settings.json'));
+  await assert.rejects(inspectOwnedGraphProject(linked, { modelProfile }), /symlink/);
+  await assert.rejects(inspectOwnedGraphProject(changed, { modelProfile: { ...modelProfile, thinkingLevel: 'off' } }), /policy/);
+});
 
 test('explicit multilevel numbered file headings retain complete long-fenced bytes', () => {
   const content = '# Acceptance\r\n\r\n```bash\r\nnpm test\r\n```\r\n';

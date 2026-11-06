@@ -1,17 +1,122 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { access, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { registerHooks } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
+import * as baselineDriver from './skill-consumption-model-baseline.mjs';
 import { comparisonCatalog, modelBaselineHostArgs, modelBaselineSource, modelBaselineTools, observeNativeInspection,
   summarizeNativeSource, validateModelBaselineConfig, verifyComparisonCatalog, verifyNativeInspectionEvents,
   summarizeSource, verifyComparisonSelection, verifyModelAnswer, verifyModelRawEvidence, readModelReviewStop,
   modelProcessTerminalFailure } from './skill-consumption-model-baseline.mjs';
+
+const dailyRoute = { modelContract: 'daily-route-v1', model: 'magpie/group/flash', thinkingLevel: 'high', rpcTimeoutMs: 300000 };
+const dailyProfile = { ...dailyRoute, controllerRetries: 0, fallback: 'forbidden',
+  ownedProjectRetry: { retry: { enabled: false, maxRetries: 0, provider: { maxRetries: 0 } } } };
+
+test('daily route is explicit and freezes one sample per cache condition without changing legacy defaults', () => {
+  const legacy = { version: 1, extension: '/fixture/index.mjs', transport: 'sdk', database: '12345678-1234-1234-1234-123456789012',
+    prompt: 'Inspect the selected Skill.', expectedAnswers: ['reference'], counts: { cold: 5, warm: 20 } };
+  assert.equal(validateModelBaselineConfig(legacy), legacy);
+  for (const warm of [0, 1]) {
+    const config = { ...legacy, ...dailyRoute, counts: { cold: 1, warm } };
+    assert.equal(validateModelBaselineConfig(config), config);
+  }
+  for (const changed of [{ modelContract: 'unknown' }, { model: 'magpie/group/flash-free' }, { thinkingLevel: 'medium' },
+    { rpcTimeoutMs: 120000 }, { counts: { cold: 2, warm: 0 } }, { counts: { cold: 1, warm: 2 } }, { controllerRetries: 1 }])
+    assert.throws(() => validateModelBaselineConfig({ ...legacy, ...dailyRoute, counts: { cold: 1, warm: 0 }, ...changed }));
+  for (const key of Object.keys(dailyRoute)) {
+    const config = { ...legacy, ...dailyRoute, counts: { cold: 1, warm: 0 } }; delete config[key];
+    assert.throws(() => validateModelBaselineConfig(config), key);
+  }
+  assert.throws(() => validateModelBaselineConfig({ ...legacy, counts: { cold: 1, warm: 0 } }), 'Legacy warm minimum stays unchanged');
+  assert.throws(() => validateModelBaselineConfig({ ...legacy, model: dailyRoute.model }), 'A model arg alone cannot select a contract');
+});
+
+test('daily route host args select the frozen model and high thinking while legacy args stay unchanged', () => {
+  const options = { base: '/owned', observer: '/owned/cost.mjs', transport: '/owned/transport.mjs' };
+  const config = { extension: '/fixture/index.mjs' };
+  const legacy = modelBaselineHostArgs(config, options), daily = modelBaselineHostArgs({ ...config, ...dailyRoute }, options);
+  assert.deepEqual(legacy.slice(-2), ['--model', 'magpie/group/flash-free']);
+  assert.equal(legacy.includes('--thinking'), false);
+  assert.deepEqual(daily.slice(-4), ['--model', 'magpie/group/flash', '--thinking', 'high']);
+  assert.deepEqual(daily.slice(0, -4), legacy.slice(0, -2));
+});
+
+test('metadata selection keeps one controlled model and no daily thinking or real-model contract', () => {
+  assert.equal(typeof baselineDriver.modelBaselineSelectionArgs, 'function');
+  const args = baselineDriver.modelBaselineSelectionArgs({ extension: '/fixture/index.mjs', ...dailyRoute }, {
+    base: '/owned', observer: '/owned/cost.mjs', transport: '/owned/transport.mjs',
+    provider: '/owned/provider.mjs', controlledModel: 'catalog-controlled/catalog',
+  });
+  assert.equal(args.filter(value => value === '--model').length, 1);
+  assert.equal(args[args.indexOf('--model') + 1], 'catalog-controlled/catalog');
+  assert.equal(args.includes('--thinking'), false); assert.equal(args.includes(dailyRoute.model), false);
+  assert.ok(args.includes('/owned/provider.mjs'));
+});
+
+function dailyEvidenceFixture() {
+  const sample = { turn: 2, submitNs: '10', completeNs: '100' }, payload = { sha256: digest('wire'), bytes: 4 };
+  const events = [{ phase: 'provider_request', turn: 2, request: 3, provider: 'magpie', model: 'group/flash',
+    requestModel: 'group/flash', reasoningEffort: 'high', payload },
+  { phase: 'message_end', turn: 2, request: 3, message: { role: 'assistant', provider: 'magpie', model: 'group/flash',
+    responseModel: 'actual-upstream-model', thinkingLevel: 'high', providerThinkingLevel: 'high',
+    usage: { input: 20, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 25 } } }];
+  const transport = [{ phase: 'request_start', id: 7, category: 'model', monotonicNs: '20' },
+    { phase: 'request_sent', id: 7, requestBodySha256: payload.sha256, requestBodyBytes: 4 },
+    { phase: 'request_end', id: 7, category: 'model', outcome: 'completed', status: 200 }];
+  return {sample,events,transport};
+}
+
+test('daily model evidence binds each actual request, high wire payload and response usage without guessing the route', () => {
+  assert.equal(typeof baselineDriver.modelBaselineModelEvidence, 'function');
+  const {sample,events,transport}=dailyEvidenceFixture();
+  const check = (changed = events, wires = transport) => baselineDriver.modelBaselineModelEvidence(sample, changed, wires, dailyProfile);
+  const result = check(); assert.equal(result.complete, true, result.errors.join(','));
+  assert.equal(result.requests.length, 1); assert.equal(result.requests[0].response.responseModel, 'actual-upstream-model');
+  assert.equal(result.requests[0].response.usage.totalTokens, 25); assert.deepEqual(result.requests[0].wireRequestIds, [7]);
+  for (const mutate of [
+    rows => { rows[0].provider = 'other'; }, rows => { rows[0].model = 'group/flash-free'; },
+    rows => { rows[0].provider = 'magpie/group'; rows[0].model = 'flash'; },
+    rows => { delete rows[0].reasoningEffort; }, rows => { rows[0].reasoningEffort = 'medium'; },
+    rows => { rows[1].request = 2; }, rows => { rows[1].turn = 1; }, rows => { rows[1].message.provider = 'other'; },
+    rows => { rows[1].message.model = 'group/flash-free'; }, rows => { rows[1].message.providerThinkingLevel = 'low'; },
+    rows => { rows[1].message.provider = 'magpie/group'; rows[1].message.model = 'flash'; },
+    rows => { rows[1].message.usage.totalTokens = null; }, rows => { rows.push(structuredClone(rows[1])); },
+  ]) { const changed = structuredClone(events); mutate(changed); assert.equal(check(changed).complete, false); }
+  for (const mutate of [
+    rows => rows.splice(1, 1), rows => { rows[1].requestBodySha256 = digest('other'); },
+    rows => { rows[1].requestBodyBytes = 5; }, rows => { rows[2].status = 503; }, rows => { delete rows[2].status; },
+    rows => rows.push({ ...rows[0], id: 8 }, { ...rows[1], id: 8 }, { ...rows[2], id: 8 }),
+  ]) { const changed = structuredClone(transport); mutate(changed); assert.equal(check(events, changed).complete, false); }
+});
+
+test('daily route rejects a different wire model even when the sent body hash and high effort match', () => {
+  for(const requestModel of ['group/flash','magpie/group/flash','group/worker','magpie/group/worker']) {
+    const {sample,events,transport}=dailyEvidenceFixture(),body=JSON.stringify({model:requestModel,reasoning_effort:'high'});
+    events[0].requestModel=requestModel;events[0].payload={sha256:digest(body),bytes:Buffer.byteLength(body)};
+    transport[1].requestBodySha256=digest(body);transport[1].requestBodyBytes=Buffer.byteLength(body);
+    const result=baselineDriver.modelBaselineModelEvidence(sample,events,transport,dailyProfile);
+    const accepted=['group/flash','magpie/group/flash'].includes(requestModel);
+    assert.equal(result.complete,accepted,requestModel);
+    if(!accepted)assert.ok(result.errors.includes('MODEL_REQUEST_ROUTE_UNPROVEN'));
+    assert.equal(result.requests[0].requestModel,requestModel);
+  }
+});
+
+test('daily route retains an unreported response model as unknown and fails its route contract', () => {
+  for(const responseModel of [undefined,null,'']) {
+    const {sample,events,transport}=dailyEvidenceFixture();events[1].message.responseModel=responseModel;
+    const result=baselineDriver.modelBaselineModelEvidence(sample,events,transport,dailyProfile);
+    assert.equal(result.complete,false);assert.ok(result.errors.includes('MODEL_RESPONSE_ROUTE_UNPROVEN'));
+    assert.equal(result.requests[0].response.responseModel,responseModel??null,'Do not fill the missing route from the selected model');
+    assert.equal(result.requests[0].response.usage.totalTokens,25,'Retain actual usage even when route evidence fails');
+  }
+});
 
 test('ordinary task acceptance rejects permission-only replies containing the expected answer', () => {
   assert.equal(verifyModelAnswer({ stopReason: 'stop', text: '请先确认授权，我才能回答 12 加 7 是否等于 19。' }, ['19', '十九']), false);
@@ -330,8 +435,8 @@ test('the public Doctor resolves the actual installed Pi bundled CLI and native 
     promptSha256:digest(config.prompt),expectedAnswersSha256:digest(JSON.stringify(config.expectedAnswers)),counts:config.counts,
     notionSelection:multiSelection,notionProviderPayload:multiPayloadIdentity,notionCatalogSource:multiSource,
     piVersion:output.comparison.nativePackage.version,viewId,directory:catalogRoot,candidates,selectedRecordId:records[0].id,requiredResources:['references/check.md']};
-  const invoke=async(name,descriptor)=>{
-    const comparison=await write(name+'-comparison.json',descriptor),input=await write(name+'-config.json',{...config,comparison:comparison.path});
+  const invoke=async(name,descriptor,overrides={})=>{
+    const comparison=await write(name+'-comparison.json',descriptor),input=await write(name+'-config.json',{...config,...overrides,comparison:comparison.path});
     return spawnSync(process.execPath,[fileURLToPath(new URL('./skill-consumption-model-baseline.mjs',import.meta.url)),'doctor','--config',input.path],
       {encoding:'utf8',env:process.env,timeout:20000});
   };
@@ -340,6 +445,68 @@ test('the public Doctor resolves the actual installed Pi bundled CLI and native 
   assert.equal(comparison.version,2);assert.equal(comparison.catalog.length,3);assert.equal(comparison.candidates.length,3);
   assert.equal(comparison.requiredFiles.length,2);assert.equal(comparison.unselectedFiles.length,4);
   assert.equal(comparison.source.recordId,records[0].id);
+  const dailyDescriptor={...descriptor,...dailyRoute,counts:{cold:1,warm:0}},dailyOverrides={...dailyRoute,counts:{cold:1,warm:0}};
+  const dailyDoctor=await invoke('daily',dailyDescriptor,dailyOverrides);
+  assert.equal(dailyDoctor.status,0,dailyDoctor.stderr);
+  const dailyOutput=JSON.parse(dailyDoctor.stdout);
+  assert.deepEqual(dailyOutput.modelProfile,dailyProfile);
+  assert.equal(dailyOutput.modelProfileSha256,digest(JSON.stringify(dailyProfile)));
+  assert.deepEqual(dailyOutput.comparison.modelProfile,dailyProfile);
+  assert.equal(dailyOutput.comparison.sha256,digest(await readFile(path.join(base,'daily-comparison.json'))));
+  for(const changed of [{modelContract:undefined},{model:'magpie/group/flash-free'},{thinkingLevel:'medium'},{rpcTimeoutMs:120000}]) {
+    const rejected=await invoke('daily-mismatch-'+Object.keys(changed)[0],{...dailyDescriptor,...changed},dailyOverrides);
+    assert.notEqual(rejected.status,0,'Comparison manifest must freeze every daily-route parameter');
+  }
+
+  // Exercise the public run controller with only its RPC boundary replaced.
+  // Doctor and the installed SettingsManager remain real, but no Pi RPC process,
+  // provider, source, prompt execution or authentication operation is started.
+  const fakeRpc=path.join(base,'controlled-rpc.mjs'),loader=path.join(base,'controlled-loader.mjs');
+  await writeFile(fakeRpc,`import fs from 'node:fs';import path from 'node:path';
+export async function startRpc(options) {
+ const file=process.env.BASELINE_CONTROLLED_RPC_CAPTURE,settingsFile=path.join(options.cwd,'.pi','settings.json');
+ const receipt={cwd:options.cwd,args:options.args,timeoutMs:options.timeoutMs,schedulerRoot:options.env.NTN_SKILLS_SCHEDULER_ROOT,
+  projectSettings:fs.existsSync(settingsFile)?JSON.parse(fs.readFileSync(settingsFile,'utf8')):null,calls:[]};
+ const record=call=>{receipt.calls.push(call);fs.writeFileSync(file,JSON.stringify(receipt));};record('start');
+ return {lifecycle:[],command:async type=>{record(type);if(type!=='get_state')throw Error('UNEXPECTED_RPC_COMMAND');
+   return {model:{provider:'magpie',id:'group/flash'},thinkingLevel:process.env.BASELINE_CONTROLLED_THINKING};},
+  prompt:async()=>{record('prompt');throw Error('CONTROLLED_STOP_AFTER_STATE');},closeInput:async()=>record('closeInput'),stop:async()=>record('stop')};
+}`);
+  const driverUrl=new URL('./skill-consumption-model-baseline.mjs',import.meta.url).href;
+  await writeFile(loader,`import {registerHooks} from 'node:module';registerHooks({resolve(specifier,context,next){
+ if(context.parentURL===${JSON.stringify(driverUrl)}&&specifier.endsWith('context-broker-rpc-harness.mjs'))
+  return {url:${JSON.stringify(pathToFileURL(fakeRpc).href)},shortCircuit:true};return next(specifier,context);}});`);
+  for(const mode of ['high','low','legacy']) {
+    const capture=path.join(base,'controlled-'+mode+'.json'),evidence=path.join(base,'controlled-'+mode+'-evidence');await mkdir(evidence);
+    const file=path.join(base,mode==='legacy'?'config.json':'daily-config.json');
+    const outcome=spawnSync(process.execPath,['--import',loader,fileURLToPath(new URL('./skill-consumption-model-baseline.mjs',import.meta.url)),
+      'run','--config',file,'--evidence-root',evidence],{encoding:'utf8',timeout:30000,
+      env:{...process.env,BASELINE_CONTROLLED_RPC_CAPTURE:capture,BASELINE_CONTROLLED_THINKING:mode}});
+    await write('controlled-'+mode+'-result.json',{status:outcome.status,stdout:outcome.stdout,stderr:outcome.stderr});
+    assert.notEqual(outcome.status,0,'The controlled stop and absent real evidence must not count as model acceptance');
+    const captured=JSON.parse(await readFile(capture,'utf8'));
+    assert.equal(captured.schedulerRoot,path.join(captured.cwd,'request-engine'));
+    const [runDirectory]=await readdir(evidence),report=JSON.parse(await readFile(path.join(evidence,runDirectory,'report.json'),'utf8'));
+    const plan=JSON.parse(await readFile(path.join(evidence,runDirectory,'plan.json'),'utf8'));
+    assert.equal(report.status,'incomplete');assert.equal(report.samples.filter(sample=>sample.status==='passed').length,0);
+    if(mode==='legacy') {
+      assert.equal(captured.timeoutMs,120000);assert.equal(captured.projectSettings,null);
+      assert.equal(captured.calls.includes('get_state'),false);assert.equal(captured.calls.filter(x=>x==='prompt').length,1);
+      assert.equal(Object.hasOwn(plan,'modelProfile'),false);assert.equal(Object.hasOwn(report,'modelProfile'),false);
+    } else {
+      assert.equal(captured.timeoutMs,300000);assert.deepEqual(captured.projectSettings,dailyProfile.ownedProjectRetry);
+      assert.equal(captured.calls.filter(x=>x==='get_state').length,1);assert.equal(captured.calls.includes('set_auto_retry'),false);
+      assert.equal(captured.calls.filter(x=>x==='prompt').length,mode==='high'?1:0);
+      if(mode==='high')assert.ok(captured.calls.indexOf('get_state')<captured.calls.indexOf('prompt'));
+      assert.deepEqual(plan.modelProfile,dailyProfile);assert.deepEqual(report.modelProfile,dailyProfile);
+      assert.equal(report.modelProfileSha256,digest(JSON.stringify(dailyProfile)));
+      assert.deepEqual(report.processes[0].projectRetry.effective,{projectTrusted:true,enabled:false,maxRetries:0,providerMaxRetries:0});
+      assert.equal(report.processes[0].retryPolicyUnchanged,true);
+      const state=JSON.parse(await readFile(path.join(evidence,runDirectory,'process-1',report.samples[0].modelStateFile),'utf8'));
+      assert.equal(state.actual.thinkingLevel,mode);assert.equal(state.modelProfileSha256,report.modelProfileSha256);
+      if(mode==='low') {assert.equal(report.samples[0].submitNs,undefined);assert.equal(report.samples[0].submitToCompletionMs,null);}
+    }
+  }
   for(const scenario of ['missing','duplicate','wrong-owner','outside-root','wrong-scope','stale-payload','host-version']) {
     const changed=structuredClone(descriptor);
     if(scenario==='missing')changed.candidates.pop();
