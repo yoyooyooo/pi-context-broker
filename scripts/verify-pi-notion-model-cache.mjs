@@ -282,6 +282,7 @@ export function assertIntentSource({ observation, responses, sourceLedger, hostL
   for (const receipt of responses) {
     assert.equal(receipt.sdk_started, true); assert.equal(receipt.metrics_observed, true);
     if (receipt.status === 'cancelled') {
+      assert.equal(receipt.resultObserved, false); assert.equal(receipt.value, null, 'Cancellation is not a completed catalog');
       const start = sourceLedger.find(row => row.phase === 'sdk-start' && row.requestId === receipt.requestId);
       const end = sourceLedger.find(row => row.phase === 'sdk-end' && row.requestId === receipt.requestId);
       const boundary = assertCatalogCancellationBoundary({ ...start, observer_pid: start?.pid }, { ...end, observer_pid: end?.pid },
@@ -299,9 +300,31 @@ export function assertIntentSource({ observation, responses, sourceLedger, hostL
   let defaultCatalog = 'not_observed_before_shutdown';
   if (catalogRecords) {
     const shape = records => records.map(record => [record.id, record.name, record.description, record.ref]).sort((a, b) => a[0].localeCompare(b[0]));
-    const matching = directories.find(row => row.value.scope === scope && JSON.stringify(shape(row.value.records)) === JSON.stringify(shape(catalogRecords)));
-    if (matching) defaultCatalog = 'observed_complete_production_default';
-    else assert.ok(metadataOnly && cancelledCatalogs.length > 0 && directories.length === 0, 'Actual default SDK metadata must match the frozen production directory');
+    const defaults = [];
+    for (const { value } of directories) {
+      assert.equal(value.scope, scope, 'Catalog scope must match the frozen source');
+      assert.equal(value.count, value.records.length); assert.equal(new Set(value.records.map(record => record.id)).size, value.count);
+      assert.ok(value.records.every(record => ['id', 'name', 'description', 'ref'].every(key => typeof record[key] === 'string')));
+      assert.equal(value.coverage?.exhaustive, true); assert.deepEqual(value.coverage?.failed_sources, []);
+      assert.equal(value.coverage?.search_index_limited, false);
+      // A complete ordinary inventory may finish before the independent Default View request.
+      const ordinary = value.coverage.method === 'explicit_database'
+        && ['view', 'view_selection', 'view_query', 'profile', 'capability_directory'].every(key => !Object.hasOwn(value, key));
+      if (ordinary) continue;
+      assert.equal(value.coverage.method, 'explicit_view'); assert.equal(value.capability_directory, true);
+      assert.ok(value.view && typeof value.view.id === 'string' && ['first', 'explicit'].includes(value.view_selection));
+      assert.deepEqual(shape(value.records), shape(catalogRecords), 'Actual Default View metadata must match the frozen production directory');
+      defaults.push(value);
+    }
+    if (defaults.length) defaultCatalog = 'observed_complete_production_default';
+    else {
+      const catalogs = observation.filter(event => event.phase === 'catalog' && event.stage === 'before_provider_request');
+      assert.ok(metadataOnly && cancelledCatalogs.length > 0 && catalogs.length > 0 && catalogs.every(event => event.state === 'pending'),
+        'Only pending chat may close before its Default View is observed');
+      assert.ok(responses.every(receipt => receipt.operation === 'list'
+        && receipt.metrics.trace.filter(event => event.event === 'attempt').every(event => event.request_kind === 'notion_metadata')),
+      'An unobserved Default View cannot excuse source bodies, writes or unknown request kinds');
+    }
   }
   assert.equal(attributed.missingMetrics, false);
   assert.equal(attributed.unattributedBeforeSelection, 0, 'Unknown source-body ownership remains observation-incomplete');

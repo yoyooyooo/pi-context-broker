@@ -130,7 +130,7 @@ node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/discover
 
 两臂加载同一原 `observeConsumptionCost` 被动观察器。`consumption-cost-*.jsonl` 与 `discovery-cost-*.json` 按每次原进程保存累计 provider JSON/实际 HTTP request bytes、工具 schema、默认目录、guidance、正文诊断跨度、工具调用/轮次、原 Pi usage 和提交到首 provider/首有效文本/完成的时间。on-demand 提示自身 bytes 单列；诊断跨度可能嵌套，不能相加或由字符估 tokens。缺失 usage/HTTP response bytes 保留 null。source 启动、取消、恢复、HTTP attempts/bytes 与 private extra proof 继续沿原 whole-case 账本单列，不重复分配到工具轮次。技术失败也保留已发生的成本，不能用更少调用或较短失败当收益；所有原条件续问和独立语义判断完成后才可评估完整任务。
 
-初始代码与局部 public-hook→localhost HTTP 接线验证的红例和原件在 `AH-617-20261105/sc06-discovery-experiment-raqdvyrj`。后续实际安装 Pi 两臂已按下方 2026-11-06 记录完成；生产来源/真实模型及同条件任务成功与成本对照仍为 `not_run`。实验结果不自动改变日用默认目录，不代表正式 SC21 全矩阵，也不作为 SC20 纯本地全局 Skill 的等价臂。规模 1/10/74/100/101/300 与 Members 场景仍依原地图分别报告，不能由这次 D 早期对照替代。
+初始代码与局部 public-hook→localhost HTTP 接线验证的红例和原件在 `AH-617-20261105/sc06-discovery-experiment-raqdvyrj`。后续实际安装 Pi 两臂已按下方 2026-11-06 记录完成；真实模型的首个 full-cards 失败样本另见下方，on-demand 未运行，同条件任务成功与成本对照仍未成立。实验结果不自动改变日用默认目录，不代表正式 SC21 全矩阵，也不作为 SC20 纯本地全局 Skill 的等价臂。规模 1/10/74/100/101/300 与 Members 场景仍依原地图分别报告，不能由这次 D 早期对照替代。
 
 实际 Pi 的前置接线沿原 `notion-skill-graph-observer-smoke.mjs`，显式传入原 all14 的已种离线 fixture（不是 distinct/ambiguous fixture）。每臂使用同一已安装包与 tgz、C7 CLI/SDK、Pi、prompt、工具及初态，独立复制 source 状态并建立空 Broker cache/session；由原 `packageIdentity()` 核对 archive 与 installed src/dist，前后再次核 hash。SDK 分支 `source.command` 缺省，discovery/activation offline、prefetch false；不启动来源服务或将受控模型伪装为 magpie。原无这些新参数的 custom-command smoke 保持原行为。
 
@@ -162,6 +162,18 @@ node scripts/notion-skill-graph-observer-smoke.mjs --extension /absolute/install
 原件根：`/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc06-controlled-pair-9d9314r3`。`plan.json` SHA256 `ec1444b18e185f72cd3156ea9ccb2823ff7bf33616621eee63f06a3fcbedb16c`；`handoff.json` 为 `36f1c3b9a0c58fb0863cebfe3c5630039f0e797b9c4984f9c9a9c00a66097675`。两个原 result 的 SHA256 分别为 `b7ea358ecd61350f0c273e3cf591fef7336a0feaef814357b32a4d907bcb1654`、`93fcae6c9240b2371eab1e52ddefdfb5836b4561b460e6528b4c1dcb7e71e970`。Evidence→系统 Trash→Evidence 保留 76 份原件 hash 与两份 native session JSONL，仅清理两处 owned scratch；`cleanup/proof.json` 为 `c21ab6e864444b7b1a7add2af3f98ccf9e01658457cc32695b80061e954bb805`。
 
 这 503 B 差值仅属于上述三次受控请求，不是生产 74 条目录或真实任务收益。UTF-8 诊断跨度存在嵌套，不能相加；usage 和 HTTP response bytes 缺失仍为 null。真实 D 两臂配置仅 prepared/not_run，旧 D 失败不改判；正常 SC21 的实际 74 条断言、原 A/B、原提示和预算不变。后续更换包或 schema 必须另绑候选身份，不覆盖本轮 bace 原件，也不自动采用 on-demand 为日用方案。
+
+### SC06 真实 D 早期反馈：普通目录与关闭取消分账
+
+同 `282fb35a…`／C8／Pi 1.5、纯 `1e23f5e` observers、原 flash-free 与三个 D 提示的 full-cards 臂只执行一次，3 首轮、0 条件续问；原 cohort 和三个 case 均保留 failed，on-demand 为 `not_run`。原件与 E→系统 Trash→E 在 `sc06-real-prototypes-1e23-c84t7fgl`，最终 `full-cards-readonly-yuik51tm/handoff.json` SHA256 `46e70de3689d3b2670bd16c08c8f779869de8e1d4dd1e2c8be8085c78595b39d` 绑定 84 个原始文件、各项目 5 文件及三项日用哨兵的 unchanged hashes。driver 自然 exit 1／outer 0 与三个原生 Pi 的 `rpc.stop` exit 143 分列。
+
+命名介绍实际 list→use 完整取得目标，但未走原要求的 inspect/read，技术失败；独立介绍语义通过。自然任务只读取五份项目文件，未使用 Skill；原提示只要求方案，独立语义失败来自具体规程缺陷，不是未执行项目。二者首个实际 HTTP 的 system 目录均为 pending，原文明确“不等于空目录、需要发现时用 notion_list”；命名介绍后两次请求 ready 74，自然任务两次仍 pending。实际 read/use 区分、全部工具描述及 1,790 B guidance 保留在 `provider-entry-boundary.json`（SHA256 `fac3532b7a5b5b67ee84f02f1f61bc4af08fa08bac228e7e1585be22364d54a2`），不推测模型动机。
+
+聊天的原 turn 与内容语义通过，case 仍因来源断言 failed：完整普通库响应 `coverage.method=explicit_database` 返回 298 项，其中冻结 Default 74 的 id/name/description/ref 全部逐项相同；随后 list 在真实 native shutdown 区间内取消，没有返回 View。普通成功不能冒充 Default 完成，也不应使合法未完成关闭分支失败。`d-chat-source-boundary.json` SHA256 `4c29be209cf06dfd50738d9dc946d6d54c0315c2ed0771194180c21f4814ecb5` 绑定两份原 SDK 回执、真实时序与旧断言位置。
+
+原 intent source oracle 只在现有返回字段上区分普通完整目录与 View。所有完成目录必须同 scope、count/唯一身份及完整 coverage 相符；任何完成 View 都须逐项等于冻结名单，不能被另一份正确 View 掩盖。没有完成 View 时，仅 metadataOnly 聊天、实际 provider pending、真实同进程关闭取消和来源 EOF 全闭、所有 SDK 操作及 HTTP 仅元数据可保留 `not_observed_before_shutdown`。普通目录恰好包含 74 项也不是 View 完成证明。取消必须 value=null／resultObserved=false；响应字节 unknown 仍为 null；named/natural 未完成目录、错 scope／partial／failed source／未知请求种类／正文或写入仍拒绝，原 turn ready/交付断言未改。
+
+该窄修原测试先 39/42（3 红），后 42/42；证据 `sc26-chat-catalog-eske5_gm/fail-before.log` SHA256 `42e083fcf54d76da6256d4482b7655da43c73c707abac7baa311595acf2f6b56`、`pass-after.log` SHA256 `b57d241606d94127d715af6a5e82803adeb296d231b103cc7cacdb439aca2d12`。对封存聊天原件的纯函数补充归因 `offline-chat-source.json` SHA256 `9c7e0c040407a5a491f0b7ff04de9a5809e21de541efab6e5f1f3167181b3ec6` 保持 Default 未观测、6 次 HTTP、721,014 B 已知响应加 1 次 unknown；它没有重跑模型或修改原 failed。全臂实际 6 次模型 HTTP／128,691 B 请求、33,476 input／7,680 output tokens；消费者来源 60 次 HTTP、5,284,874 B 已知响应加 1 unknown，私有归属验证另 3 次／10,101 B。子跨度不重复加总，未知响应与未发票定价不填零；没有第二臂和完整任务成功，不能宣称目录曝光收益或关闭 SC20／SC21。
 
 ### SC06 同次 provider 的生成卡片描述复用
 

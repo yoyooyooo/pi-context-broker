@@ -250,6 +250,112 @@ test('ordinary shutdown may cancel metadata only with the same exact native boun
   ]) { const candidate = structuredClone(value); mutate(candidate); assert.throws(() => assertIntentSource(candidate)); }
 });
 
+const pendingChatSource = () => {
+  const value = intentSource();
+  const records = Array.from({ length: 298 }, (_, index) => ({ id: `skill-${index}`, name: `Skill ${index}`,
+    description: `Description ${index}`, ref: `skill://skill-${index}/SKILL.md` }));
+  value.catalogRecords = structuredClone(records.slice(0, 74)); value.metadataOnly = true;
+  value.observation = [{ phase: 'catalog', stage: 'before_provider_request', state: 'pending', skills: [], routers: [] }];
+  value.responses[0].value = { scope: 'scope', records, count: records.length, coverage: { method: 'explicit_database',
+    exhaustive: true, failed_sources: [], search_index_limited: false } };
+  value.responses[0].metrics = { complete: true, total_requests: 1, trace: [{ event: 'attempt', attempt: 1,
+    request_kind: 'notion_metadata', request_bytes: 237, response_bytes: 721014, outcome: 'success' }] };
+  value.responses.push({ transport: 'sdk', operation: 'list', requestId: 'two', status: 'cancelled', value: null,
+    sdk_started: true, metrics_observed: true, resultObserved: false,
+    metrics: { complete: true, total_requests: 1, trace: [{ event: 'attempt', attempt: 1, request_kind: 'notion_metadata',
+      request_bytes: 0, response_bytes: null, outcome: 'cancelled' }] } });
+  value.sourceLedger.splice(-1, 0,
+    { phase: 'sdk-start', requestId: 'two', operation: 'list', pid: 42, monotonic_ns: '40' },
+    { phase: 'native-session-shutdown', pid: 42, monotonic_ns: '50' },
+    { phase: 'sdk-end', requestId: 'two', operation: 'list', pid: 42, monotonic_ns: '60' });
+  return value;
+};
+const completeDefaultSource = () => {
+  const value = pendingChatSource(), result = value.responses[1];
+  result.status = 'completed'; result.resultObserved = true;
+  result.value = { scope: 'scope', records: structuredClone(value.catalogRecords), count: 74,
+    capability_directory: true, view: { id: 'default-view' }, view_selection: 'first',
+    coverage: { method: 'explicit_view', exhaustive: true, failed_sources: [], search_index_limited: false } };
+  result.metrics.trace[0] = { ...result.metrics.trace[0], outcome: 'success', response_bytes: 100 };
+  value.observation[0].state = 'ready';
+  return value;
+};
+
+test('chat keeps completed ordinary 298 metadata separate from a shutdown-cancelled Default View', () => {
+  const value = pendingChatSource(), actual = assertIntentSource(value);
+  assert.equal(actual.default_catalog, 'not_observed_before_shutdown');
+  assert.equal(actual.sdk_calls.list, 2); assert.equal(actual.actual_http_attempts, 2);
+  assert.equal(actual.request_bytes, 237); assert.equal(actual.response_bytes, null);
+  assert.equal(actual.cancelled_catalogs[0].countedAsReady, false);
+  assert.ok(actual.httpAttempts.every(attempt => attempt.kind === 'metadata'));
+  assert.equal(actual.unselected_body_reads, 0); assert.deepEqual(actual.source_writes, []);
+  // Identical ordinary members are still not a completed View observation.
+  value.responses[0].value.records = structuredClone(value.catalogRecords); value.responses[0].value.count = 74;
+  assert.equal(assertIntentSource(value).default_catalog, 'not_observed_before_shutdown');
+});
+
+test('chat cancellation cannot excuse partial, foreign or View-marked ordinary metadata', () => {
+  for (const mutate of [
+    value => { value.responses[0].value.scope = 'foreign'; },
+    value => { value.responses[0].value.coverage.exhaustive = false; },
+    value => { value.responses[0].value.coverage.failed_sources = [{ id: 'source', code: 'AUTH_REQUIRED' }]; },
+    value => { value.responses[0].value.coverage.search_index_limited = true; },
+    value => { value.responses[0].value.count = 297; },
+    value => { value.responses[0].value.records[1] = value.responses[0].value.records[0]; },
+    value => { value.responses[0].value.view = null; },
+    value => { value.responses[0].value.profile = { profile_id: 'profile' }; },
+    value => { value.responses[0].value.capability_directory = true; },
+    value => { value.responses[0].value.coverage.method = 'search_and_registered'; },
+  ]) { const value = pendingChatSource(); mutate(value); assert.throws(() => assertIntentSource(value)); }
+});
+
+test('completed Default Views must each match the frozen complete same-scope directory', () => {
+  const value = completeDefaultSource();
+  assert.equal(assertIntentSource(value).default_catalog, 'observed_complete_production_default');
+  for (const mutate of [
+    result => { result.scope = 'foreign'; },
+    result => { result.records[0].name = 'changed'; },
+    result => { result.records[0].description = 'changed'; },
+    result => { result.records[0].ref = 'skill://wrong/SKILL.md'; },
+    result => { result.records.pop(); result.count--; },
+    result => { result.coverage.exhaustive = false; },
+    result => { result.coverage.failed_sources = [{ id: 'source', code: 'NOT_FOUND' }]; },
+    result => { result.capability_directory = false; },
+    result => { delete result.view; },
+  ]) {
+    const candidate = completeDefaultSource(), extra = structuredClone(candidate.responses[1]);
+    extra.requestId = 'three'; mutate(extra.value); candidate.responses.push(extra);
+    candidate.sourceLedger.splice(-1, 0, { phase: 'sdk-start', requestId: 'three', operation: 'list', pid: 42, monotonic_ns: '70' },
+      { phase: 'sdk-end', requestId: 'three', operation: 'list', pid: 42, monotonic_ns: '80' });
+    assert.throws(() => assertIntentSource(candidate), 'One matching View must not hide another completed invalid View');
+  }
+});
+
+test('missing Default completion is only allowed for pending chat with actual shutdown, EOF and metadata-only source work', () => {
+  for (const mutate of [
+    value => { value.metadataOnly = false; },
+    value => { value.observation = []; },
+    value => { value.observation[0].stage = 'before_agent_start'; },
+    value => { value.observation[0].state = 'ready'; },
+    value => { value.sourceLedger = value.sourceLedger.filter(row => row.phase !== 'native-session-shutdown'); },
+    value => { value.sourceLedger.find(row => row.phase === 'native-session-shutdown').pid = 99; },
+    value => { value.sourceLedger.find(row => row.phase === 'native-session-shutdown').monotonic_ns = '61'; },
+    value => { value.sourceLedger.pop(); },
+    value => { value.sourceLedger.at(-1).pending = 1; },
+    value => { value.hostLedger.pop(); },
+    value => { value.responses[1].value = { records: [] }; },
+    value => { value.responses[1].resultObserved = true; },
+    value => { value.responses[1].status = 'failed'; },
+    value => { value.responses[0].metrics.trace[0].request_kind = 'notion_body'; },
+    value => { value.responses[0].metrics.trace[0].request_kind = 'notion_write'; },
+    value => { value.responses[0].metrics.trace[0].request_kind = 'unknown'; },
+    value => { value.responses[0].operation = value.sourceLedger[1].operation = value.sourceLedger[2].operation = 'consume'; },
+  ]) { const value = pendingChatSource(); mutate(value); assert.throws(() => assertIntentSource(value)); }
+  const noCancellation = pendingChatSource(); noCancellation.responses.pop();
+  noCancellation.sourceLedger = noCancellation.sourceLedger.filter(row => row.requestId !== 'two' && row.phase !== 'native-session-shutdown');
+  assert.throws(() => assertIntentSource(noCancellation));
+});
+
 test('semantic acceptance binds real answer spans and cannot replace missing action evidence', () => {
   const final = 'Creates project verification procedures.', sha = intentHash(final);
   const manifest = { evidence: '/owned/evidence', doctor: { config: { sha256: 'config' } }, semanticOracle: { reference: { sha256: 'reference' } } };
