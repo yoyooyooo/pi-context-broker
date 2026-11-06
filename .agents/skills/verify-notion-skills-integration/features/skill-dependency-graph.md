@@ -70,11 +70,11 @@ CLI/source、实际Notion、真实模型、原生UI、安装产物分栏。旧AH
 | 入口 | 实际动作和成功条件 |
 | --- | --- |
 | C `$poteto-mode@notion 介绍下 create-verification-skill` | 显式根和完整 Requires 在首次 provider 中各一份；目标由 native `read` inspect 后完整进入 provider，不能激活目标工作流。普通续问复用原交付；明确再次读取必须有该 turn 自己的真实完整 read 回执，不强制已有固定正文重新访问来源。 |
-| D 普通命名介绍 | 原句不含 `$`。只能从实际已展示的目录或 `notion_list` 发现引用，observer 不预植私有目标；介绍读正文、不 use 执行工作流。独立重启后恢复同一实际 session 的续问必须复用已交付内容。 |
+| D 普通命名介绍 | 原句不含 `$`。可从实际目录或 `notion_list` 选择，也可对实际 provider 已收到的冻结用户原句中的完整字面名称直接尝试 current 主文 `read`；后者先保存未绑定声明，再由本次完整普通目录和真实 read/inspect consume 唯一绑定来源与正文。observer 不预植私有目标；介绍读正文、不 use 执行工作流。独立重启后恢复同一实际 session 的续问必须复用已交付内容。 |
 | D 自然任务 | 原句不含目标名、准确 ref 或答案。模型实际读项目、自主选择并 use，根与 Requires 完整交付；最终输出须包含路径明确、内容完整的验证 Skill 文件。原生成物 helper 保存文件并单列执行其中一个允许的 owned 应用验证命令；仅计划或模型声称已验证不通过。 |
 | D 闲聊 | 有相关非空回答，Skill/资源正文和激活均为零；允许目录在后台运行，不阻塞首 provider。只有完整 source observer 起止、逐 HTTP attempt、EOF 和 host close 齐备后才能报告成本。 |
 
-四个入口均使用真实生产默认名单，source 省略 `command`、`default_view_id`、`profile_id`，`prefetch:false`；不得换成 A/B root-only View 或删减可选项。冷首轮 `pending` 合法，后续普通 turn 必须验证 ready 的完整 owner/name/description 集合。D 初始 observer 的发现集合为空，实际目录交付才授予可读 ref；私有 oracle 和介绍事实不进入提示、guidance 或 consumer cache。冷启动原生 `/skill` 菜单的宿主边界单列，不作 C/D 就绪条件。
+四个入口均使用真实生产默认名单，source 省略 `command`、`default_view_id`、`profile_id`，`prefetch:false`；不得换成 A/B root-only View 或删减可选项。冷首轮 `pending` 合法，后续普通 turn 必须验证 ready 的完整 owner/name/description 集合。D 初始 observer 的发现集合为空；已披露 owner 的名称选择与用户原句的未绑定名称尝试分别留证。后者不要求等待默认目录 ready，也不能预先取得私有 oracle 的 owner。私有 oracle 和介绍事实不进入提示、guidance 或 consumer cache。冷启动原生 `/skill` 菜单的宿主边界单列，不作 C/D 就绪条件。
 
 ~~~bash
 node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/frozen-cd-config.json --intent-action doctor
@@ -116,7 +116,7 @@ bun packages/context-broker/scripts/source-runtime.test.ts
 node scripts/verify-notion-integration.mjs run --mode installed --host pi --package /absolute/frozen-broker.tgz --skill-graph true --command-json '["/absolute/node","/absolute/installed/ntn-skills.js"]' --graph-cli-source /absolute/notion-skills-cli --evidence-root /absolute/evidence
 ~~~
 
-实际参数以入口 help / doctor 为准；不得将另一个源 checkout 或临时产物替换 manifest 中已冻结的安装包。当前默认 SDK Graph Gate 的 Pi 工具面为 `read,notion_list,notion_use`；controlled native-chain 另保留单 `read` 专项。observer 逐请求核对真实工具定义，metadata-only list 的结果须匹配实际 SDK listCatalog 结果，use 只接受已发现的精确 refs，自动 Required 不冒充 Agent 自主选中的 Member。所有场景保持 shell 禁用和三层冷目录；来源身份必须带 scope、canonical ID、snapshot、主文 bytes/hash 与 stable File ID。不可从裸名、同名替身、另一库或本地副本补齐。
+实际参数以入口 help / doctor 为准；不得将另一个源 checkout 或临时产物替换 manifest 中已冻结的安装包。当前默认 SDK Graph Gate 的 Pi 工具面为 `read,notion_list,notion_use`；controlled native-chain 另保留单 `read` 专项。observer 逐请求核对真实工具定义，metadata-only list 的结果须匹配实际 SDK listCatalog 结果，use 只接受已披露 owner 的引用或经同一实际来源唯一映射的 name/alias，自动 Required 不冒充 Agent 自主选中的 Member。所有场景保持 shell 禁用和三层冷目录；最终来源身份必须带 scope、canonical ID、snapshot、主文 bytes/hash 与 stable File ID。未绑定名称不是身份或正文交付证明，不可用同名替身、另一库或本地副本补齐。
 
 `scripts/notion-skill-graph-model.mjs` 的当前配置默认 `sourceMode:"sdk"`，生成的 source 必须省略 `command`；`cliCommand` 仅用于冻结输入身份与显式 command 分支。现有 `viewId` 走真实 View；历史 `profileId` 必须显式指定 `sourceMode:"command"`，独立报告 custom/profile 兼容结果，不能由包装 CLI 冒充默认 SDK。按下列顺序从冻结配置复跑，selection 使用独立 metadata scratch，不预热后来全冷 consumer，也不读取私有 oracle：
 
@@ -131,7 +131,21 @@ node scripts/notion-skill-graph-model.mjs evidence --evidence /absolute/retained
 
 selection 成功回执中的精确 selection 与 `result.json` 绑定 `selection` / `selectionReceipt` 后再 run。当前 selection 在独立 scratch 中执行两个普通 prompt 与一次 metadata list，共三次本地受控 provider HTTP；它读取真实 Notion metadata，但正文和真实模型调用都为零，完整计入 setup 成本。旧的零 provider 回执不再证明新增续轮条件。普通冷启动首轮默认目录可以是 pending，不能把它解释为成功的空 Default View，也不能用旧的首请求 exact-one 断言阻塞真实执行；目录 metadata 完成后，下一条普通用户 turn 必须独立证明 ready 的 root-only 名单、准确入口及零正文 I/O。显式 `$` 根使用与普通默认目录是两个观察点，完整根正文投递不能代替后续模型自主选 Member、读资源与完成任务。
 
-观察端复用 `scripts/notion-skill-graph-model-evidence.mjs`，保留 public provider hook 与实际 wire payload 配对、私有 SDK result、短引用分支事件和源进程账本。默认 SDK 的 list/consume/read/read-resources 逐 operation 配对，CLI child 为零，缺失 metrics/terminal/result 不推断为零；code mode 内部正文不算顶层交付。trace 标明 `toolContract:"agent-cli-ref-20261105"` 后只按新 Pi 工具判定；未标该合同的旧 trace 才保留 legacy `skill_prepare` 解析。`notion_ctl` 是 deferred 管理入口，不进入默认模型 schema。这些 helper 的正反例与现有 graph tests 一起进入 `bun run test:verification`；受控通过仍不代替真实模型成功。
+观察端复用 `scripts/notion-skill-graph-model-evidence.mjs`，保留 public provider hook 与实际 wire payload 配对、私有 SDK result、短引用分支事件和源进程账本。默认 SDK 的 list/files/consume/read/read-resources 逐 operation 配对，CLI child 为零，缺失 metrics/terminal/result 不推断为零；code mode 内部正文不算顶层交付。trace 标明 `toolContract:"agent-cli-ref-20261105"` 后只按新 Pi 工具判定；未标该合同的旧 trace 才保留 legacy `skill_prepare` 解析。`notion_ctl` 是 deferred 管理入口，不进入默认模型 schema。这些 helper 的正反例与现有 graph tests 一起进入 `bun run test:verification`；受控通过仍不代替真实模型成功。
+
+### 名称引用的 observer 边界（harness 16）
+
+名称是选择表达，canonical ref 是身份。observer 保留模型的原始参数，不把 name/alias 改写后送入工具，也不放宽 consume 的 canonical `root.target` 合同。已实际披露的 owner 可由同一来源的 record 名称或 alias 唯一映射；未披露的全库条目本身不授予读取资格。固定名称只使用该 pin 的历史 manifest，不能被 current 目录的改名重绑，原 scope/pin/File ID/路径与完整字节证明继续有效。
+
+未披露 owner 的直接名称读取只接受实际 provider 中与冻结用户原句完全一致的 user 消息。selector 必须是其中的完整字面文本，不能是更长词的子串、assistant 引用或未验证工具文本；这条规则不分析“介绍/使用”等意图词。准入仅允许无 pin 的主文尝试，不授权猜资源、固定版本或 `notion_use`。`message_end` 先保存原 args/hash/sequence、prompt/provider hash、literal span 和当时已有 source 回执集合，claim 不含 owner。调用后必须有新完成的普通目录覆盖及 read/inspect consume 回执，把相同 name/alias 唯一绑定 scope/owner/主入口；缺页、失败来源、歧义、旧回执、错误 scope/owner/main 或部分正文均不通过。同窗明确成功的 View/profile/query/page 投影保留原成本，不能证明名字唯一；仅在另有完整 ordinary 目录时排除其选择作用，失败或无法归属的 list 不会被忽略。
+
+Broker 的 source work 可以发生在 assistant `message_end` 与 observer `tool_call` 之间。名称选择在前者冻结，后者保留原 admission 时点；目录、read 和完整 native/provider 证明都匹配后，源归属才可使用真实 authored 时点。该条件不回填消息时间，也不能把真正早于模型选择的正文读记为合法选择。named use 仍核完整 graph lock、根和 Requires、主文 manifest、实际投影 span 与下一 provider；固定资源不靠重复主文成功冒充资源已交付。
+
+本次受控红例与回归在 `~/Library/Logs/pi-context-broker/AH-617-20261105/sc26-graph-name-oracle-hjifttm5/`：`disclosed-names-fail-before`、`submitted-names-fail-before`、`authored-name-fail-before`、`name-attribution-fail-before`、`name-background-and-missing-author-fail-before`、`name-short-candidate-fail-before` 保留原失败。最后一项覆盖实际目录用 `sr:C` 广告 owner、模型用该 owner 的 name/alias 选择的组合；它仍要求原会话短引用、来源元数据和主入口同时匹配，不能把资源路径猜测变成已发现主文。`handoff.json` 索引最终文件 hash 和可复跑结果。旧 C/D 实模结果不重写，本迁移不证明新候选已经完成真实模型验收。原入口复跑：
+
+~~~bash
+node --test scripts/notion-skill-graph-model.test.mjs scripts/notion-skill-graph-host-index.test.mjs scripts/notion-skill-graph-model-evidence.test.mjs scripts/skill-preparation-evidence.test.mjs scripts/verify-skill-graph-contract.test.mjs
+~~~
 
 Graph harness 15 通过 Pi 公开 `systemPromptOptions.sections` 添加原样的 owned project paths 文本，不再从 `before_agent_start` 返回整段 `systemPrompt`。该早期观察另记 `catalog-before-agent-start`，`context_with_system` 的 sections 只保存诊断 hash；两者都不能授权目录读取。`catalog` 只解析 `before_provider_request` 实际 payload 的 system 文本，并绑定该次 payload SHA，再与实际 HTTP wire 对照。用户文本、assistant 工具参数、未验证 tool body 中的伪目录均不算目录发现；已完整验证的 Skill 正文及其原工具结果仍按原 oracle 授权 Members / 资源引用。实际 provider 中与冻结用户 prompt 完全相同的明确固定资源 ref 仍可凭独立 owner manifest 直接标量或批量读取，不要求先交付主文。错误 scope、pin、File ID 或 manifest 的本地目录在主文准入处即拒绝，不借目录文本绕过完整性检查。
 

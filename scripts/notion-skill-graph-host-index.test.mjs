@@ -8,6 +8,7 @@ import { observeGraphGate, GRAPH_GATE_TOOLS } from './notion-skill-graph-model.m
 import { verifyPublicReadBoundary } from './notion-skill-graph-observer-smoke.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
 import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
+import { compileSkillPreparation } from '../packages/context-broker/src/skill-context-projection.ts';
 
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const save = (file, value) => writeFile(file, JSON.stringify(value, null, 2) + '\n');
@@ -21,7 +22,8 @@ async function fixture(mutate, options = {}) {
   const files = definitions
     .map(([file, content, id]) => ({ path: file, bytes: Buffer.byteLength(content), sha256: hash(content), ref: ref(file, id) }));
   const bindings = files.map((file, index) => ({ file_id: definitions[index][2], page_id: `${index + 1}1111111-2222-4333-8444-555555555555`, path: file.path }));
-  const record = { id: owner, kind: 'skill', entrypoint: 'SKILL.md', ref: 'skill://' + encodeURIComponent(owner) + '/SKILL.md' };
+  const record = { id: owner, kind: 'skill', entrypoint: 'SKILL.md', ref: 'skill://' + encodeURIComponent(owner) + '/SKILL.md',
+    ...(options.name ? { name: options.name, alias: options.alias } : {}) };
   const entry = path.join(cache, 'scopes', scope, 'records', hash(owner), 'entries', snapshot), tree = path.join(entry, 'tree');
   await mkdir(tree, { recursive: true }); await mkdir(responses); await writeFile(output, ''); await writeFile(path.join(tree, 'SKILL.md'), body);
   const manifest = { version: 1, projection: 'entry', manifest_complete: true, scope, id: owner, snapshot_id: snapshot, version_id: version,
@@ -46,7 +48,7 @@ async function fixture(mutate, options = {}) {
   const call = (id, target) => { handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: 'read', arguments: { path: target } }] } });
     return handlers.get('tool_call')({ toolName: 'read', toolCallId: id, input: { path: target } }); };
   const result = (id, content) => handlers.get('tool_result')({ toolName: 'read', toolCallId: id, content: [{ type: 'text', text: content }] });
-  return { directory, index, main, tree, body, resource, files, call, result, receipt, cache, responses, manifest, owner, scope, snapshot, version, handlers, ctx,
+  return { directory, index, main, tree, body, resource, files, call, result, receipt, cache, responses, manifest, record, owner, scope, snapshot, version, handlers, ctx,
     events: async () => (await readFile(output, 'utf8')).trim().split('\n').map(JSON.parse), close: () => { globalThis.fetch = originalFetch; } };
 }
 
@@ -132,7 +134,7 @@ async function writeVariant(f, { scope = f.scope, snapshot = f.snapshot, fileId 
   await mkdir(path.join(entry, 'tree'), { recursive: true }); await writeFile(path.join(entry, 'tree/SKILL.md'), f.body);
   await save(path.join(entry, '.broker-entry.json'), manifest);
   await save(path.join(f.responses, 'read' + (suffix ? '-' + suffix : '') + '.json'), { code: 0, command: 'read', response: {
-    ok: true, record: { id: f.owner, kind: 'skill', entrypoint: 'SKILL.md', ref: bareRef(f.owner, 'SKILL.md') }, scope, snapshot_id: snapshot, version_id: f.version,
+    ok: true, record: f.record, scope, snapshot_id: snapshot, version_id: f.version,
     ref: manifest.ref, path: 'SKILL.md', content: f.body, file_bindings: manifest.file_bindings } });
   await save(path.join(f.responses, 'prepare' + (suffix ? '-' + suffix : '') + '.json'), { code: 0, command: 'prepare', response: { ok: true, status: 'ready', purpose: 'use', scope,
     nodes: [{ id: f.owner, state: 'prepared', path: 'SKILL.md', body_sha256: hash(f.body), binding: { snapshot_id: snapshot, ref: manifest.ref }, files: manifest.files }] } });
@@ -184,6 +186,94 @@ function authoredTool(f, id, name, input) {
   f.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name, arguments: input }] } });
   return f.handlers.get('tool_call')({ toolName: name, toolCallId: id, input });
 }
+
+test('a disclosed fixed resource accepts only the manifest historical name or alias with the same pin', async () => {
+  const f = await fixture(undefined, { name: 'Historical Skill', alias: 'historical-skill' });
+  const named = name => 'skill://' + encodeURIComponent(name) + '/references/checklist.md?snapshot=' + f.snapshot;
+  try {
+    assert.equal(f.call('before-disclosure', named(f.record.name)).block, true);
+    readMain(f);
+    await save(path.join(f.responses, 'renamed-current.json'), { command: 'list', code: 0, response: { ok: true, scope: f.scope,
+      records: [{ ...f.record, name: 'Renamed Current', alias: 'renamed-current' }] } });
+    for (const name of [f.record.name, f.record.alias]) assert.equal(f.call(name, named(name)), undefined);
+    assert.equal(f.call('current-name-is-not-history', named('renamed-current')).block, true);
+    assert.equal(f.call('wrong-pin', named(f.record.name).replace(f.snapshot, 's_' + 'b'.repeat(64))).block, true);
+    assert.equal(f.call('unseen-resource', named(f.record.alias).replace('checklist.md', 'unmentioned.md')).block, true);
+    await materialize(f, 'references/checklist.md', f.resource);
+    for (const name of [f.record.name, f.record.alias]) f.result(name, f.resource);
+    const reads = (await f.events()).filter(event => event.phase === 'tool-result' && [f.record.name, f.record.alias].includes(event.toolCallId));
+    assert.equal(reads.length, 2);
+    for (const read of reads) { assert.equal(read.complete, true); assert.equal(read.ref, f.files[1].ref); assert.equal(read.scope, f.scope); }
+  } finally { f.close(); }
+});
+
+test('disclosed current names cannot choose between two visible owners or drift scope after admission', async () => {
+  const other = 'shared_skill:controlled:other', otherRef = bareRef(other, 'SKILL.md');
+  const f = await fixture(undefined, { name: 'Visible Skill', alias: 'visible-skill', body: 'Another disclosed owner: ' + otherRef + '\n' });
+  const input = 'skill://visible-skill/SKILL.md';
+  try {
+    readMain(f);
+    assert.equal(f.call('admitted-main', input), undefined);
+    await save(path.join(f.responses, 'changed-scope.json'), { command: 'list', code: 0, response: { ok: true, scope: 'b'.repeat(64), records: [f.record] } });
+    f.result('admitted-main', f.body);
+    assert.equal((await f.events()).find(event => event.phase === 'tool-result' && event.toolCallId === 'admitted-main').complete, false);
+    await save(path.join(f.responses, 'changed-scope.json'), { command: 'list', code: 0, response: { ok: true, scope: f.scope,
+      records: [{ ...f.record, id: other, ref: otherRef }] } });
+    assert.equal(f.call('ambiguous-name', input).block, true);
+    assert.equal(authoredTool(f, 'ambiguous-use', 'notion_use', { ref: input }).block, true);
+  } finally { f.close(); }
+});
+
+test('a disclosed name retains its original scope when source work finishes before observer admission', async () => {
+  const f = await fixture(undefined, { name: 'Visible Skill', alias: 'visible-skill' }), input = { path: 'skill://visible-skill/SKILL.md' };
+  try {
+    readMain(f);
+    f.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id: 'pre-admission-scope', name: 'read', arguments: input }] } });
+    const authored = (await f.events()).find(event => event.phase === 'authored-tool-call' && event.toolCallId === 'pre-admission-scope');
+    assert.equal(authored.nameSelection.expected.scope, f.scope);
+    await writeVariant(f, { scope: 'b'.repeat(64) }, 'changed-scope');
+    assert.equal(f.handlers.get('tool_call')({ toolName: 'read', toolCallId: 'pre-admission-scope', input }), undefined);
+    f.result('pre-admission-scope', f.body);
+    const events = await f.events(), call = events.find(event => event.phase === 'tool-call' && event.toolCallId === 'pre-admission-scope');
+    assert.deepEqual(call.expected, authored.nameSelection.expected);
+    assert.equal(events.find(event => event.phase === 'tool-result' && event.toolCallId === 'pre-admission-scope').complete, false);
+  } finally { f.close(); }
+});
+
+for (const selector of ['Visible Skill', 'visible-skill']) test('named notion_use preserves its raw input and verifies the complete canonical preparation: ' + selector, async () => {
+  const f = await fixture(undefined, { name: 'Visible Skill', alias: 'visible-skill' });
+  const canonical = value => value === null || typeof value !== 'object' ? JSON.stringify(value) : Array.isArray(value)
+    ? '[' + value.map(canonical).join(',') + ']' : '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonical(value[key])).join(',') + '}';
+  try {
+    const binding = { scope: f.scope, record: f.record, snapshot_id: f.snapshot, version_id: f.version, body_sha256: hash(f.body), ref: f.files[0].ref };
+    const directory = { files: f.files, required: [], candidates: [], references: [] };
+    const node = { id: f.owner, state: 'prepared', record: f.record, content: f.body, path: 'SKILL.md', bytes: Buffer.byteLength(f.body),
+      body_sha256: hash(f.body), binding, ...directory };
+    const vector = { version: 1, scope: f.scope, roots: [f.owner], required: [], bindings: [binding] };
+    const graph = { scope: f.scope, roots: [f.owner], graph_lock: { ...vector, sha256: hash(canonical(vector)) }, budget: {}, usage: {} };
+    await save(path.join(f.responses, 'prepare.json'), { requestId: 'actual-named-use', code: 0, command: 'prepare', response: {
+      ok: true, status: 'ready', purpose: 'use', ...graph, roots: [{ id: f.owner }], nodes: [node] } });
+    readMain(f);
+    const id = 'named-use', input = { ref: 'skill://' + encodeURIComponent(selector) };
+    assert.equal(authoredTool(f, id, 'notion_use', input), undefined);
+    const identity = f.scope + '/' + f.owner, compiled = compileSkillPreparation({ purpose: 'use', roots: [f.files[0].ref],
+      records: [{ name: f.record.name, kind: f.record.kind, ref: f.files[0].ref, content: f.body,
+        source: { identity, sha256: hash(f.body), bytes: Buffer.byteLength(f.body) }, directory }] });
+    const proof = { version: 2, toolCallId: id, purpose: 'use', graphs: [graph], projection: compiled.projection,
+      records: [{ version: 2, identity, loaded: true, snapshotId: f.snapshot, bodySha256: hash(f.body), bytes: Buffer.byteLength(f.body),
+        binding, directory, delivery: compiled.bodySpans[0] }] };
+    f.handlers.get('tool_result')({ toolName: 'notion_use', toolCallId: id, content: [{ type: 'text', text: compiled.content }], details: { contextBrokerPreparation: proof } });
+    const events = await f.events(), call = events.find(event => event.phase === 'tool-call' && event.toolCallId === id);
+    const read = events.find(event => event.phase === 'tool-result' && event.toolCallId === id);
+    assert.deepEqual(call.input, input); assert.equal(call.selectedRoots[0].parsed.selector, f.owner);
+    assert.equal(read.complete, true); assert.equal(read.ref, f.files[0].ref); assert.equal(read.scope, f.scope);
+    assert.deepEqual(read.preparationProof.requestedRefs, [input.ref]); assert.deepEqual(read.preparationProof.roots, [f.files[0].ref]);
+    f.handlers.get('before_provider_request')({ payload: { tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })),
+      messages: [{ role: 'tool', tool_call_id: id, content: compiled.content }] } }, f.ctx);
+    const provider = (await f.events()).filter(event => event.phase === 'provider-request').at(-1);
+    assert.equal(provider.toolResults.find(result => result.toolCallId === id).records[0].providerCopies, 1);
+  } finally { f.close(); }
+});
 
 test('H6 B: public main references may omit their path after exact owner discovery', async () => {
   const f = await fixture(), owner = 'skill://' + encodeURIComponent(f.owner);

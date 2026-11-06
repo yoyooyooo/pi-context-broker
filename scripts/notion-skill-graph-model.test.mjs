@@ -30,24 +30,28 @@ test('discovery-only observation cannot seed a private root or an unknown entry 
   } finally { globalThis.fetch = originalFetch; }
 });
 
-test('discovery-only observation authorizes an entry only after actual visible catalogue metadata', async () => {
+for (const selector of ['canonical', 'display-name', 'alias', 'alias-root', 'alias-after-candidate']) test('discovery-only observation authorizes ' + selector + ' only after actual visible catalogue metadata', async () => {
   const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-discovery-visible-'));
   const responses = path.join(base, 'responses'), cache = path.join(base, 'cache'), output = path.join(base, 'observer.jsonl');
   await mkdir(responses); await mkdir(cache); await writeFile(output, '');
-  const record = { id: 'shared_skill:controlled:visible', ref: 'skill://shared_skill%3Acontrolled%3Avisible/SKILL.md', kind: 'skill', name: 'visible', description: 'Visible candidate', enabled: true };
+  const record = { id: 'shared_skill:controlled:visible', ref: 'skill://shared_skill%3Acontrolled%3Avisible/SKILL.md', kind: 'skill', name: 'Visible Skill', alias: 'visible-skill', description: 'Visible candidate', enabled: true };
+  const selectedRef = selector === 'canonical' ? record.ref : 'skill://' + encodeURIComponent(selector === 'display-name' ? record.name : record.alias) + (selector === 'alias-root' ? '/' : '/SKILL.md');
   await save(path.join(responses, 'list.json'), { command: 'list', code: 0, response: { ok: true, scope: 'a'.repeat(64), records: [record] } });
   const handlers = new Map(), originalFetch = globalThis.fetch;
   try {
     observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
       { fs, crypto, path, parseNativeReference, cwd: base, responses, cache, output, model: 'controlled/fake', prompt: 'Natural task', entryMode: 'discovery-only' });
-    const invoke = id => {
-      const input = { path: record.ref };
-      handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: 'read', arguments: input }] } });
-      return handlers.get('tool_call')({ toolName: 'read', toolCallId: id, input });
+    const invoke = (id, tool = 'read') => {
+      const input = tool === 'read' ? { path: selectedRef } : { ref: selectedRef };
+      handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: tool, arguments: input }] } });
+      return handlers.get('tool_call')({ toolName: tool, toolCallId: id, input });
     };
     assert.equal(invoke('hidden-source-metadata').block, true, 'Observer source receipts alone must not authorize a model reference');
-    const system = '<skill><name>visible</name><description>Visible candidate</description><location>' + record.ref + '</location></skill>';
-    const ctx = { model: { provider: 'controlled', id: 'fake' } };
+    const short = 'sr:C' + 'N'.repeat(22);
+    const system = '<skill><name>Visible Skill</name><description>Visible candidate</description><location>' + (selector === 'alias-after-candidate' ? short : record.ref) + '</location></skill>';
+    const ctx = { model: { provider: 'controlled', id: 'fake' }, sessionManager: { getBranch: () => [{ type: 'custom', customType: 'context-broker-short-ref',
+      data: { version: 1, ref: short, target: { kind: 'candidate', identity: { source: 'notion', scope: 'a'.repeat(64),
+        id: record.id, kind: record.kind, ref: record.ref.replace('/SKILL.md', '') } } } }] } };
     handlers.get('before_agent_start')({ prompt: 'Natural task', systemPrompt: system }, ctx);
     assert.equal(invoke('before-agent-only')?.block, true, 'An earlier internal prompt is not actual provider discovery');
     handlers.get('context_with_system')({ messages: [{ role: 'system', content: '', sections: { 'context-broker-notion-catalog': system } }] }, ctx);
@@ -55,12 +59,17 @@ test('discovery-only observation authorizes an entry only after actual visible c
     const payload = { model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })), messages: [{ role: 'system', content: system }] };
     handlers.get('before_provider_request')({ payload }, ctx);
     assert.equal(invoke('visible-native-entry'), undefined);
+    assert.equal(invoke('visible-native-use', 'notion_use'), undefined);
     const events = (await readFile(output, 'utf8')).trim().split('\n').map(JSON.parse);
     const catalog = events.find(event => event.phase === 'catalog');
     assert.equal(catalog.skills[0].provenance.ownerId, record.id);
     assert.equal(catalog.stage, 'before_provider_request');
     assert.equal(catalog.providerPayloadSha256, events.find(event => event.phase === 'provider-request').observedPayloadSha256);
     assert.equal(catalog.systemPromptSha256, hash(system));
+    const call = events.find(event => event.phase === 'tool-call' && event.toolCallId === 'visible-native-entry');
+    assert.equal(call.input, selectedRef, 'The observer must not rewrite actual model arguments');
+    assert.equal(call.claim.ownerId, record.id);
+    assert.equal(call.claim.scope, 'a'.repeat(64));
     assert.ok(events.some(event => event.phase === 'catalog-before-agent-start'));
   } finally { globalThis.fetch = originalFetch; }
 });
@@ -372,6 +381,51 @@ test('authored timing cannot authorize an undiscovered, changed, mismatched or g
   }
 });
 
+function submittedNameSelectionFixture() {
+  const f = authoredSelectionFixture(), selector = 'visible-member', prompt = '请介绍 visible-member。';
+  const provider = f.value.observation[0];
+  provider.observedPayloadSha256 = hash('actual frozen payload');
+  provider.sourceTextHashes = [{ sha256: hash(prompt), bytes: Buffer.byteLength(prompt) }];
+  const claim = { kind: 'submitted-name', selector, path: 'SKILL.md', promptSha256: hash(prompt), promptSequence: provider.sequence,
+    providerPayloadSha256: provider.observedPayloadSha256, span: { start: 4, end: 18 }, sourceFilesBefore: [] };
+  f.author.input = { path: 'skill://' + selector + '/SKILL.md' };
+  f.author.argumentsSha256 = hash(JSON.stringify(f.author.input)); f.author.nameSelection = { claim: structuredClone(claim) };
+  f.admission.input = f.author.input.path; f.admission.argumentsSha256 = f.author.argumentsSha256;
+  delete f.admission.expected; f.admission.claim = claim;
+  f.read.nameResolution = { selector, promptSha256: claim.promptSha256, promptSequence: claim.promptSequence,
+    selectionRequestId: 'named-catalog', readRequestId: 'named-read' };
+  const sourceRead = f.value.responses.find(item => item.command === 'read' && item.response.record.id === f.read.ownerId);
+  sourceRead.requestId = 'named-read'; sourceRead.response.path = f.read.path; sourceRead.response.content = f.read.content;
+  Object.assign(sourceRead.response.record, { name: 'Visible member', alias: selector, kind: 'skill', entrypoint: 'SKILL.md' });
+  const catalog = { requestId: 'named-catalog', command: 'list', code: 0, response: { ok: true, scope: f.read.scope,
+    count: 1, records: [structuredClone(sourceRead.response.record)],
+    coverage: { method: 'explicit_database', exhaustive: true, search_index_limited: false, failed_sources: [] } }, metrics: { complete: true, trace: [] } };
+  f.value.responses.push(catalog);
+  return { ...f, catalog, sourceRead, provider };
+}
+
+test('submitted-name source attribution uses the original authored time only after its catalog and read bind the name', () => {
+  const f = submittedNameSelectionFixture();
+  assert.equal(graphTrace(f.value).memberBodyReadsBeforeSelection, 0);
+  for (const mutate of [
+    v => { delete v.read.nameResolution; },
+    v => { v.author.nameSelection.claim.selector = 'another-name'; },
+    v => { v.read.nameResolution.selectionRequestId = 'not-observed'; },
+    v => { v.read.nameResolution.readRequestId = 'not-observed'; },
+    v => { v.read.nameResolution.promptSha256 = hash('another request'); },
+    v => { v.provider.observedPayloadSha256 = hash('another payload'); },
+    v => { v.catalog.response.scope = 'another-scope'; },
+    v => { v.catalog.response.coverage.exhaustive = false; },
+    v => { v.catalog.response.coverage.failed_sources.push({ id: 'failed', code: 'API_ERROR' }); },
+    v => { v.sourceRead.response.record.id = 'shared_skill:controlled:another'; },
+    v => { v.sourceRead.response.path = 'another.md'; },
+    v => { v.value.sourceLedger[0].at = '2026-01-01T00:00:00.010Z'; },
+  ]) {
+    const changed = submittedNameSelectionFixture(); mutate(changed);
+    assert.notEqual(graphTrace(changed.value).memberBodyReadsBeforeSelection, 0);
+  }
+});
+
 test('retained ownership requires a verified manifest and its bundle in the same actual receipt, without inventing consumption', () => {
   const scope = 'a'.repeat(64), libraryId = 'library-992754f7-01c1-4ad1-a492-81f6f35d4ed6';
   const archive = 'controlled immutable archive', digest = hash(archive), chunkId = 'chunk-' + digest;
@@ -537,26 +591,178 @@ test('only explicitly selected prepared mains with full public and provider proo
   }
 });
 
-async function literalObserverFixture(body, transport, selectedSurface, fileId) {
+async function literalObserverFixture(body, transport, selectedSurface, fileId, options = {}) {
   const directory = await mkdtemp(path.join(await systemTempRoot(), 'graph-literal-observer-'));
   const cache = path.join(directory, 'cache'), responses = path.join(directory, 'responses'), output = path.join(directory, 'observer.jsonl');
   const owner = 'shared_skill:controlled:literal-root', scope = 'a'.repeat(64), snapshot = 's_' + hash(body);
   const root = path.join(cache, 'scopes', scope, 'records', hash(owner), 'snapshots', snapshot);
-  await mkdir(root, { recursive: true }); await mkdir(responses); await writeFile(output, '');
-  await writeFile(path.join(root, 'SKILL.md'), body);
-  await save(path.join(root, '.broker-snapshot.json'), { version: 3, projection: 'snapshot', scope, snapshot, entry: 'SKILL.md', record: { id: owner, kind: 'skill' }, files: [{ path: 'SKILL.md', bytes: Buffer.byteLength(body), hash: hash(body) }] });
-  await save(path.join(responses, 'read.json'), { command: 'read', code: 0, response: { ok: true, scope, snapshot_id: snapshot, version_id: hash(body), path: 'SKILL.md', record: { id: owner, kind: 'skill' }, content: body, ...(fileId ? { file_bindings: [{ file_id: fileId, page_id: uuid, path: 'SKILL.md' }] } : {}) } });
+  await mkdir(cache); await mkdir(responses); await writeFile(output, '');
+  const record = { id: owner, kind: 'skill', ...(options.record ?? {}) };
+  const publish = async () => {
+    await mkdir(root, { recursive: true }); await writeFile(path.join(root, 'SKILL.md'), body);
+    await save(path.join(root, '.broker-snapshot.json'), { version: 3, projection: 'snapshot', scope, snapshot, entry: 'SKILL.md', record, files: [{ path: 'SKILL.md', bytes: Buffer.byteLength(body), hash: hash(body) }] });
+    await save(path.join(responses, 'read.json'), { requestId: 'literal-public-read', command: 'read', code: 0, response: { ok: true, scope, snapshot_id: snapshot, version_id: hash(body), path: 'SKILL.md', record, content: body, ...(fileId ? { file_bindings: [{ file_id: fileId, page_id: uuid, path: 'SKILL.md' }] } : {}) } });
+  };
+  if (!options.deferred) await publish();
   const toolSurfaceFile = selectedSurface ? path.join(directory, 'frozen-surface.json') : undefined;
   if (toolSurfaceFile) await save(toolSurfaceFile, { surface: selectedSurface });
   const handlers = new Map(), originalFetch = globalThis.fetch;
   if (transport) globalThis.fetch = transport;
-  observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} }, { fs, crypto, path, parseNativeReference, cwd: directory, nativeHome: directory, responses, cache, output, rootRef: 'skill://' + encodeURIComponent(owner) + '/SKILL.md', model: 'controlled/fake', prompt: 'controlled task', ...(toolSurfaceFile ? { toolSurfaceFile } : {}) });
+  observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} }, { fs, crypto, path, parseNativeReference, cwd: directory, nativeHome: directory, responses, cache, output,
+    ...(options.deferred ? { entryMode: 'discovery-only' } : { rootRef: 'skill://' + encodeURIComponent(owner) + '/SKILL.md' }), model: 'controlled/fake', prompt: options.prompt ?? 'controlled task', ...(toolSurfaceFile ? { toolSurfaceFile } : {}) });
   const tools = GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } }));
   const payload = content => ({ model: 'fake', tools, messages: [{ role: 'user', content }] });
-  return { handlers, payload, toolSurfaceFile, directory, root, owner, scope, snapshot, ctx: { model: { provider: 'controlled', id: 'fake' } },
+  return { handlers, payload, toolSurfaceFile, directory, root, owner, scope, snapshot, record, responses, publish, ctx: { model: { provider: 'controlled', id: 'fake' } },
     events: async () => (await readFile(output, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse),
     close: () => { globalThis.fetch = originalFetch; } };
 }
+
+const nameCatalog = fixture => ({ requestId: 'new-name-selection', command: 'list', code: 0,
+  response: { ok: true, scope: fixture.scope, count: 1, records: [fixture.record], coverage: { method: 'explicit_database', exhaustive: true, failed_sources: [], search_index_limited: false } } });
+
+for (const selector of ['Visible Skill', 'visible-skill']) test('an actual frozen user name permits only a current main attempt before catalogue discovery: ' + selector, async () => {
+  const body = 'Complete introduced instructions.\n', prompt = '请介绍 ' + selector + '。';
+  const fixture = await literalObserverFixture(body, undefined, undefined, undefined, { deferred: true, prompt,
+    record: { name: 'Visible Skill', alias: 'visible-skill', enabled: true, entrypoint: 'SKILL.md', ref: 'skill://shared_skill%3Acontrolled%3Aliteral-root/SKILL.md' } });
+  const input = 'skill://' + encodeURIComponent(selector) + '/SKILL.md';
+  const invoke = (id, target = input, tool = 'read') => {
+    const args = tool === 'read' ? { path: target } : { ref: target };
+    fixture.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: tool, arguments: args }] } });
+    return fixture.handlers.get('tool_call')({ toolName: tool, toolCallId: id, input: args });
+  };
+  try {
+    assert.equal(invoke('not-yet-submitted').block, true);
+    fixture.handlers.get('before_provider_request')({ payload: fixture.payload(prompt) }, fixture.ctx);
+    assert.equal(invoke('unselected-use', input, 'notion_use').block, true);
+    assert.equal(invoke('guessed-resource', input.replace('/SKILL.md', '/references/guess.md')).block, true);
+    assert.equal(invoke('guessed-pin', input + '?snapshot=' + fixture.snapshot).block, true);
+    assert.equal(invoke('named-main'), undefined);
+    const before = (await fixture.events()).find(event => event.phase === 'tool-call' && event.toolCallId === 'named-main');
+    assert.equal(before.claim.kind, 'submitted-name'); assert.equal(before.claim.selector, selector);
+    assert.equal(before.claim.ownerId, undefined); assert.equal(before.input, input);
+    assert.equal(before.claim.promptSha256, hash(prompt));
+    await save(path.join(fixture.responses, 'name-selection.json'), nameCatalog(fixture));
+    await fixture.publish();
+    fixture.handlers.get('tool_result')({ toolName: 'read', toolCallId: 'named-main', content: [{ type: 'text', text: body }] });
+    const read = (await fixture.events()).find(event => event.phase === 'tool-result' && event.toolCallId === 'named-main');
+    assert.equal(read.complete, true); assert.equal(read.ownerId, fixture.owner); assert.equal(read.scope, fixture.scope);
+    assert.equal(read.requested, input); assert.equal(read.nameResolution.selectionRequestId, 'new-name-selection');
+    assert.equal(read.nameResolution.readRequestId, 'literal-public-read');
+    fixture.handlers.get('before_provider_request')({ payload: { ...fixture.payload(prompt), messages: [{ role: 'user', content: prompt }, { role: 'tool', tool_call_id: 'named-main', content: body }] } }, fixture.ctx);
+    assert.equal((await fixture.events()).filter(event => event.phase === 'provider-request').at(-1).contents[0].sha256, hash(body));
+  } finally { fixture.close(); }
+});
+
+test('a submitted name freezes its claim before Broker source work in the tool-call preamble', async () => {
+  const body = 'Complete instructions from the original named source.\n', prompt = '请介绍 visible-skill。';
+  const fixture = await literalObserverFixture(body, undefined, undefined, undefined, { deferred: true, prompt,
+    record: { name: 'Visible Skill', alias: 'visible-skill', enabled: true, entrypoint: 'SKILL.md', ref: 'skill://shared_skill%3Acontrolled%3Aliteral-root/SKILL.md' } });
+  try {
+    fixture.handlers.get('before_provider_request')({ payload: fixture.payload(prompt) }, fixture.ctx);
+    const input = { path: 'skill://visible-skill/SKILL.md' };
+    fixture.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id: 'early-source-name', name: 'read', arguments: input }] } });
+    const authored = (await fixture.events()).find(event => event.phase === 'authored-tool-call');
+    assert.equal(authored.nameSelection?.claim.kind, 'submitted-name');
+    assert.deepEqual(authored.nameSelection.claim.sourceFilesBefore, []);
+    await save(path.join(fixture.responses, 'name-selection.json'), nameCatalog(fixture));
+    await fixture.publish();
+    assert.equal(fixture.handlers.get('tool_call')({ toolName: 'read', toolCallId: 'early-source-name', input }), undefined);
+    fixture.handlers.get('tool_result')({ toolName: 'read', toolCallId: 'early-source-name', content: [{ type: 'text', text: body }] });
+    const events = await fixture.events(), call = events.find(event => event.phase === 'tool-call'), read = events.find(event => event.phase === 'tool-result');
+    assert.deepEqual(call.claim, authored.nameSelection.claim);
+    assert.equal(call.argumentsSha256, hash(JSON.stringify(input))); assert.equal(call.authoredSequence, authored.sequence);
+    assert.equal(read.complete, true); assert.equal(read.ownerId, fixture.owner); assert.equal(read.scope, fixture.scope);
+    assert.equal(read.nameResolution.readRequestId, 'literal-public-read');
+  } finally { fixture.close(); }
+});
+
+for (const projection of ['view', 'profile', 'query', 'page']) test('a full ordinary name selection remains valid beside a successful background ' + projection + ' projection', async () => {
+  const body = 'Complete named instructions.\n', prompt = '请介绍 visible-skill。';
+  const fixture = await literalObserverFixture(body, undefined, undefined, undefined, { deferred: true, prompt,
+    record: { name: 'Visible Skill', alias: 'visible-skill', enabled: true, entrypoint: 'SKILL.md', ref: 'skill://shared_skill%3Acontrolled%3Aliteral-root/SKILL.md' } });
+  try {
+    fixture.handlers.get('before_provider_request')({ payload: fixture.payload(prompt) }, fixture.ctx);
+    const input = { path: 'skill://visible-skill/SKILL.md' };
+    fixture.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id: 'background-projection', name: 'read', arguments: input }] } });
+    const projected = nameCatalog(fixture); projected.requestId = 'background-' + projection;
+    if (projection === 'page') Object.assign(projected.response, { total_count: 2, has_more: true, next_cursor: 'next' });
+    else projected.response[projection] = projection === 'query' ? 'visible' : { id: 'background-' + projection };
+    await save(path.join(fixture.responses, 'background.json'), projected);
+    await save(path.join(fixture.responses, 'ordinary.json'), nameCatalog(fixture));
+    await fixture.publish();
+    assert.equal(fixture.handlers.get('tool_call')({ toolName: 'read', toolCallId: 'background-projection', input }), undefined);
+    fixture.handlers.get('tool_result')({ toolName: 'read', toolCallId: 'background-projection', content: [{ type: 'text', text: body }] });
+    const read = (await fixture.events()).find(event => event.phase === 'tool-result');
+    assert.equal(read.complete, true); assert.equal(read.nameResolution.selectionRequestId, 'new-name-selection');
+    const sourceFiles = await fs.promises.readdir(fixture.responses);
+    assert.equal(sourceFiles.length, 3, 'Ignoring a projected selection does not erase its actual source receipt');
+  } finally { fixture.close(); }
+});
+
+test('notion_use without a received authored selection blocks explicitly', async () => {
+  const fixture = await literalObserverFixture('Complete original source.\n');
+  try {
+    const input = { ref: 'skill://' + encodeURIComponent(fixture.owner) + '/SKILL.md' };
+    assert.equal(fixture.handlers.get('tool_call')({ toolName: 'notion_use', toolCallId: 'missing-author', input }).block, true);
+    assert.equal((await fixture.events()).find(event => event.phase === 'tool-call').allowed, false);
+  } finally { fixture.close(); }
+});
+
+for (const variant of ['before-provider', 'assistant', 'unverified-tool', 'different-user-text', 'longer-word', 'private-source-only']) test('a submitted-name attempt rejects ' + variant + ' as literal user authority', async () => {
+  const selector = 'visible-skill', prompt = variant === 'longer-word' ? '请介绍 prefix-visible-skill-suffix。'
+    : variant === 'private-source-only' ? '请完成普通任务。' : '请介绍 visible-skill。';
+  const fixture = await literalObserverFixture('Unseen private body.\n', undefined, undefined, undefined, { deferred: true, prompt,
+    record: { name: selector, alias: selector, enabled: true, entrypoint: 'SKILL.md', ref: 'skill://shared_skill%3Acontrolled%3Aliteral-root/SKILL.md' } });
+  try {
+    await save(path.join(fixture.responses, 'hidden-catalog.json'), nameCatalog(fixture));
+    if (variant !== 'before-provider') {
+      const message = { role: variant === 'assistant' ? 'assistant' : variant === 'unverified-tool' ? 'tool' : 'user',
+        content: variant === 'different-user-text' ? prompt + ' This was not the frozen request.' : prompt };
+      fixture.handlers.get('before_provider_request')({ payload: { ...fixture.payload(prompt), messages: [message] } }, fixture.ctx);
+    }
+    const input = { path: 'skill://visible-skill/SKILL.md' };
+    fixture.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id: 'rejected-name', name: 'read', arguments: input }] } });
+    assert.equal(fixture.handlers.get('tool_call')({ toolName: 'read', toolCallId: 'rejected-name', input }).block, true);
+    assert.equal((await fixture.events()).some(event => event.phase === 'tool-call' && event.allowed), false);
+  } finally { fixture.close(); }
+});
+
+for (const variant of ['unresolved', 'ambiguous', 'failed-source', 'failed-list-operation', 'incomplete', 'projected', 'failed-projected-source', 'failed-projected-operation', 'duplicate-id', 'wrong-owner', 'wrong-scope', 'wrong-main', 'old-catalog', 'old-read', 'partial-body']) test('a submitted-name result cannot bind ' + variant + ' source evidence', async () => {
+  const body = 'Complete introduced instructions.\n', prompt = '请介绍 visible-skill。';
+  const fixture = await literalObserverFixture(body, undefined, undefined, undefined, { deferred: true, prompt,
+    record: { name: 'Visible Skill', alias: 'visible-skill', enabled: true, entrypoint: 'SKILL.md', ref: 'skill://shared_skill%3Acontrolled%3Aliteral-root/SKILL.md' } });
+  try {
+    const catalog = nameCatalog(fixture);
+    if (variant === 'old-catalog') await save(path.join(fixture.responses, 'name-selection.json'), catalog);
+    if (variant === 'old-read') await fixture.publish();
+    fixture.handlers.get('before_provider_request')({ payload: fixture.payload(prompt) }, fixture.ctx);
+    const input = { path: 'skill://visible-skill/SKILL.md' };
+    fixture.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id: 'named-main', name: 'read', arguments: input }] } });
+    assert.equal(fixture.handlers.get('tool_call')({ toolName: 'read', toolCallId: 'named-main', input }), undefined);
+    const value = catalog.response;
+    if (variant === 'unresolved') { value.records = []; value.count = 0; }
+    if (variant === 'ambiguous') { value.records.push({ ...fixture.record, id: 'shared_skill:controlled:other', ref: 'skill://shared_skill%3Acontrolled%3Aother/SKILL.md' }); value.count = 2; }
+    if (variant === 'failed-source') value.coverage.failed_sources.push({ id: 'another-source', code: 'ACCESS_DENIED' });
+    if (variant === 'incomplete') value.coverage.exhaustive = false;
+    if (variant === 'projected') value.view = { id: 'a-complete-view-is-not-the-whole-source' };
+    if (variant === 'duplicate-id') { value.records.push(structuredClone(fixture.record)); value.count = 2; }
+    if (variant === 'wrong-owner') value.records = [{ ...fixture.record, id: 'shared_skill:controlled:other', ref: 'skill://shared_skill%3Acontrolled%3Aother/SKILL.md' }];
+    if (variant === 'wrong-scope') value.scope = 'b'.repeat(64);
+    if (variant === 'wrong-main') value.records = [{ ...fixture.record, entrypoint: 'WORKFLOW.md', ref: fixture.record.ref.replace('/SKILL.md', '/WORKFLOW.md') }];
+    if (variant !== 'old-catalog') await save(path.join(fixture.responses, 'name-selection.json'), catalog);
+    if (variant === 'failed-list-operation') await save(path.join(fixture.responses, 'failed-source.json'), { requestId: 'failed-name-source', transport: 'sdk', operation: 'list', status: 'failed', resultObserved: false, value: null });
+    if (variant.startsWith('failed-projected-')) {
+      const projected = nameCatalog(fixture); projected.requestId = 'failed-background'; projected.response.view = { id: 'background-view' };
+      if (variant === 'failed-projected-source') projected.response.coverage.failed_sources.push({ id: 'background-source', code: 'ACCESS_DENIED' });
+      else projected.code = 1;
+      await save(path.join(fixture.responses, 'failed-projection.json'), projected);
+    }
+    if (variant !== 'old-read') await fixture.publish();
+    fixture.handlers.get('tool_result')({ toolName: 'read', toolCallId: 'named-main', content: [{ type: 'text', text: variant === 'partial-body' ? body.slice(0, -3) : body }] });
+    const read = (await fixture.events()).find(event => event.phase === 'tool-result' && event.toolCallId === 'named-main');
+    assert.equal(read.complete, false); assert.equal(read.nameResolution, undefined);
+  } finally { fixture.close(); }
+});
 
 test('the exact provided native path resolves through its verified manifest when the wrapper omits File ID', async () => {
   const body = 'Controlled complete main.\n', fixture = await literalObserverFixture(body, undefined, undefined, 'stable-main');
