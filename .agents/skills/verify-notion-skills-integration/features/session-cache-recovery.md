@@ -314,6 +314,40 @@ No execution is claimed by this map update; final owner runs and retains the evi
 
 AH-498 的旧候选记录：Pi 1.4.0 七次请求全部通过；OMP 18.14.2 首个 Prompt 返回 `agentInvoked:false`，provider 零请求，source 在约 25 秒准备预算到期时取消，因此该宿主失败且后续步骤未运行。RPC 已收口，不能靠增加 harness 等待或删除 provider 单次派发断言解释为成功。原失败保持不变；[execute/command 预算修复](host-skill-discovery-read.md#omp-冷读取与命令预算)后的新候选结果另行取得，本文不预报通过。
 
+## 实际 HTTP 缓存、权限与中断
+
+SC08／SC20 的跨层场景复用 `scripts/notion-sdk-pi.mjs` 的 `http-cache-recovery` 与 `http-interruption`；完整 Doctor／run／Evidence→Cleanup→Evidence 命令见[安装地图](installed-consumption.md#已安装-sdk-的真实-http-消费接线)。同一 frozen helper 提供原 CLI scalar fixture 的真实 loopback HTTP，Pi 及安装 SDK 负责实际请求、缓存和取消；不直接替换 SDK 返回值，不修改系统时钟或 SQLite 验证时间。该 fixture 的根没有 Requires，因此此处不扩充图闭包验收结论。
+
+| cache phase | 实际入口与断言 |
+| --- | --- |
+| `cold` | 空 current/snapshot/object 状态的实际 Pi native `read`；完整 root 正文、canonical resource 与 scope／snapshot／version 绑定。真实 source HTTP 必须包含所选 owner 正文，未选 reference 目标不读正文。 |
+| `warm` | 新 Pi 复用同一 SDK cache；两个目录 list 为 0 HTTP，main consume 保留一次在线 `GET /v1/users/me` 身份校验，目录与正文下载为 0；正文及绑定相同，actual `validated_at` 不前移。该新进程边界不冒称同进程 warm 或全零网络。 |
+| `expired` | 使用正常支持的 `activation.maxAge: 1s`，读取上一成功 SDK node 的实际 `validated_at`，只等待尚未经过的一秒时间，然后提交；记录 request 前真实 age≥1000ms、实际新验证时间和同一固定 snapshot。必须实际发 metadata HTTP，source 事实未变时正文 HTTP 为 0。此项不是默认 300000ms 时钟门禁。 |
+| `forced` | 原 `maxAge: 0` 合同按 `snapshot.ts` 的 `forceFull` 语义执行：精确重读同 owner 的 main 与两个 supporting file，身份和正文不变；不把这三次 body HTTP 隐藏成普通过期复用。随后通过真实 403／401 拒绝及恢复验证 `notion_use refresh` 与旧固定资源。 |
+| `resumed` | 退出后以 `--session` 打开前一实际 Pi 的原 session file；完整历史正文仅一份、原 active receipt 保留，无 body SDK 重读。历史已交付正文不代表新的权限判定成功。 |
+
+403 必须由本次实际 owner page／markdown 请求收到；401 必须由实际身份校验收到。失败工具没有 `contextBrokerRead`／`Resource`／`Preparation` 成功证明；已知拒绝后固定资源在本地 object read 和来源 HTTP 之前失败。恢复后显式在线 use 成功、旧固定资源完整且不准备主文，scope／snapshot／version 不漂移。fixture `denyCurrent` 同时覆盖同一 root 的 page 和 markdown，避免 catalog 解析路线没有访问 page GET 时把“已设置注入开关”冒充真实 403。
+
+中断场景为 `rate-limit`、`disconnect`、`cancel` 三个独立空缓存。429 和 partial disconnect 各只注入一次；同一 source body 必须有两个真实 HTTP attempts，SDK trace 顺序为 failure→success，最终正文实际进入 provider。重试属于原 SDK policy，不能把 controller 重启当 retry 或改变其预算。取消等待源客户端实际收到目标 markdown headers（保留 `markdown_version` query），发送真实 RPC `abort`，将送达／ack 时间与同一个 SDK interval 及原生 tool start/end 绑定；terminal、连接关闭、原生进程退出均闭合后，迟到放行和普通续问不得新增来源请求、激活回执或正文交付。
+
+部分响应有两个不同计量边界：HTTP service 的 `observed_response_bytes` 是服务端已写字节，只有 finish 才填写 `decoded_response_bytes`／完整 hash；SDK `response_bytes` 是客户端已接收 decoded 字节，失败或取消后已知的 prefix 不会消失。失败 attempt 可以有 32B 已接收，但完整响应长度仍未知且没有完整正文交付。不要把它改成成功、当完整正文或把已观察字节抹成 0／unknown。最终成本同时保留 failure/cancel attempt、成功 retry、工具往返和累计 serializer 输入，两个计量边界不相加。
+
+这些新增场景沿用原 run 的 failure 与 evidence 状态，不追认旧失败。当前源码证据明确区分：源 SDK terminal 与 Broker 目录发布、warm identity 与 body reuse、非零 TTL 与 force-full、部分接收与完整交付。原 CLI cache32／默认时钟单测与真实 Pi 证据分列，不能互相替代。只清理本 run ownership 指定且全部宿主／观察器已关闭的 scratch；失败的证据、输入和账本继续保留。
+
+2026-11-06 的 C9／Pi 1.5 实际结果位于 `~/Library/Logs/pi-context-broker/AH-617-20261105/sdk-pi-http-59mmlay9/remaining-v7/`，冻结 driver `4884b812…`、HTTP helper `7ede1e7f…`、原 scalar fixture `24d8f8cd…`。两景整体 PASS；完整身份、请求字节、provider/schema 累计量和 Evidence→Cleanup→Evidence 见[安装地图](installed-consumption.md#已安装-sdk-的真实-http-消费接线)及同根 `acceptance-ledger.json`。
+
+| 实际 cache phase | HTTP attempts／markdown attempts | 完整服务响应 B | 观察结果 |
+| --- | ---: | ---: | --- |
+| cold | 23／3 | 1184627 | 当前主文与同 owner 两资源；无未选目标正文 |
+| warm | 1／0 | 61 | 只验证身份，actual validation time 不变 |
+| expired 1s | 8／0 | 997942 | 请求前实际 age 1061ms，无额外等待；随后新 `validated_at`，同 snapshot 与正文 |
+| forced 0＋403／401 拒绝和恢复 | 40／10 | 3988527 | 首次 force-full 三正文；实际 403 后固定资源与实际 401 后固定资源均 0 HTTP／0 object read；恢复后旧固定资源各 0 HTTP |
+| resumed | 0／0 | 0 | 原 session file 续接，完整主文一份，0 body SDK |
+
+五阶段共 12 次公开工具调用与 25 份 provider 输入。10 个 forced markdown attempts 包含一条真实 403，不能全部称为成功正文下载。`http-interruption` 的 429／disconnect／cancel 分别为 24／24／21 个来源 attempts，所选 root 的失败→成功分别仅重试一次。断流与取消各有 32B 实收 prefix、完整响应长度未知；SDK bytes 保留该 prefix。实际 abort 的原生工具错误为 `SOURCE_CANCELLED`，SDK 仅返回 `{version:1,status:'cancelled',reason:'interrupted'}`，没有 entries 或成功 delivery；晚到放行后普通续问正文为 0，新增来源 HTTP 为 0。三进程自然 EOF，controller retries 为 0。
+
+原 v1–v6 的 setup、目录发布、暖身份、零 age、故障未命中、query 后缀和取消结果假设失败均原样保留。对应 driver／oracle 校准不改 C9 运行时或 SDK retry policy，也不将这些失败改判为通过；真实非零 TTL 由本次实际 phase 补足，默认五分钟、真实 Notion、真实模型与 Requires 仍未由该场景证明。
+
 ## NS-SESSION-22 — Real Pi/model cold and warm source matrix
 
 Use `scripts/verify-pi-notion-model-cache.mjs` for a real installed Pi + installed Broker + official Notion CLI + authorized actual model. Its fixture JSON describes an owned two-file Skill and a dedicated native View, selected record/ref, exact source marker/resource and expected final values. Build the oracle in a distinct CLI/XDG root. The standard model helper also isolates its oracle under `model-oracle-cli`; a parent read/export must never prewarm the consumer and then be called a cold run.

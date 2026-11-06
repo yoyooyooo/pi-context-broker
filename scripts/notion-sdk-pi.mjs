@@ -22,7 +22,21 @@ const scenarioNames = ['default-view', 'codemode-hidden', 'codemode-truncated', 
 const nameScenarioNames = ['name-references', 'name-reference-failed-source'];
 const ambiguityScenarioName = 'name-reference-ambiguity';
 const compactionScenarioName = 'session-compaction';
-const selectableScenarioNames = [...scenarioNames, ...nameScenarioNames, ambiguityScenarioName, compactionScenarioName];
+const httpScenarioNames = ['http-directory', 'http-cache-recovery', 'http-interruption'];
+const selectableScenarioNames = [...scenarioNames, ...nameScenarioNames, ambiguityScenarioName, compactionScenarioName, ...httpScenarioNames];
+const httpUsage = 'Controlled HTTP gates require --scenario http-directory|http-cache-recovery|http-interruption, the original current sdk-fixture.ts --catalog input and --source-http-helper ABSOLUTE_FROZEN_MODULE. They use actual Pi with the installed SDK, a shared owned loopback Notion fixture and a controlled provider. They remain separate from offline all14 and production live input; source.command stays absent.';
+export function controlledHttpOptions(options) {
+  const scenario = options['--scenario'], helperPath = options['--source-http-helper'];
+  if (!httpScenarioNames.includes(scenario)) {
+    assert.equal(helperPath, undefined, httpUsage);
+    return null;
+  }
+  assert.ok(options['--fixture'] && !options['--live-input'] && typeof helperPath === 'string' && isAbsolute(helperPath), httpUsage);
+  assert.notEqual(options['--warm-directory'], 'true', httpUsage);
+  for (const key of ['--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar', '--expect-short-confirmations'])
+    assert.notEqual(options[key], 'false', 'Controlled HTTP gates require the current installed consumption contract');
+  return { scenario, helperPath, sourceMode: 'controlled-http' };
+}
 const nameUsage = 'Additional required name gates: --scenario name-references or --scenario name-reference-failed-source, with the original sdk-fixture.ts --catalog --distinct-names fixture. --scenario name-reference-ambiguity uses a separate --catalog --ambiguous-names fixture. These gates are separate from all14, which keeps its original fixture and names.';
 const compactionUsage = 'Explicit --scenario session-compaction reuses session-lifecycle with two additional real compact boundaries: keep the original full delivery and receipt, then discard bodies and leave untrusted public loaded labels. The original session-lifecycle and all14 remain unchanged; this controlled summary gate does not measure model summarization quality.';
 const isLifecycleScenario = name => name === 'session-lifecycle' || name === compactionScenarioName;
@@ -1467,6 +1481,7 @@ async function inspectLiveInput(live, common) {
 
 async function inspect(options) {
   assert.ok(options['--package'] && Boolean(options['--fixture']) !== Boolean(options['--live-input']), usage);
+  const http = controlledHttpOptions(options);
   const live = options['--live-input'] ? validateLiveInput(await json(options['--live-input'])) : undefined;
   const packageRoot = await realpath(options['--package']);
   const checkout = resolve(import.meta.dirname, '..');
@@ -1497,6 +1512,26 @@ async function inspect(options) {
     'The opt-in ambiguity fixture is reserved for its separate ambiguity scenario');
   const fixtureEnv = await json(fixture.env);
   assert.equal(new URL(fixtureEnv.NOTION_API_BASE_URL).hostname, '127.0.0.1', 'Only controlled offline fixture origin is accepted');
+  if (http) {
+    assert.equal(fixtureEnv.NOTION_API_TOKEN, 'sdk-controlled-offline-fixture-token', 'Controlled HTTP uses only the original fixture credential');
+    const sample = fixture.scalarInventory;
+    assert.equal(sample?.source_cache, 'cold-current-without-objects-snapshots-or-catalogs', httpUsage);
+    assert.equal(sample.row_count, 101); assert.ok(sample.view_dynamics?.view && sample.view_dynamics.observations?.length, httpUsage);
+    const seed = await realpath(sample.seed);
+    assert.ok(seed.startsWith(await realpath(fixture.cwd) + '/'), 'Controlled source seed must belong to the original fixture');
+    for (const observation of ['cold', 'refreshed']) {
+      const oracle = sample.oracle[observation];
+      assert.equal(oracle.root_ref, sample.root_ref); assert.deepEqual(oracle.required, []);
+      for (const file of oracle.files) {
+        const bytes = Buffer.from(oracle.contents[file.path], 'utf8');
+        assert.equal(bytes.length, file.bytes); assert.equal(hash(bytes), file.sha256);
+      }
+    }
+    const path = await realpath(http.helperPath), bytes = await readFile(path);
+    assert.ok((await lstat(path)).isFile());
+    return { ...common, fixture, fixtureEnv, controlledHttp: { ...http, sample, seed,
+      helper: { path, bytes: bytes.length, sha256: hash(bytes) } } };
+  }
   const stateRoot = resolve(fixture.cwd, fixtureEnv.NTN_SKILLS_HOME);
   assert.ok(stateRoot.startsWith(resolve(fixture.cwd) + '/'));
   const bodies = new Map(), bodiesById = new Map();
@@ -1618,8 +1653,25 @@ export function selectCatalogScaleCall(context, count) {
   return null;
 }
 
+export function selectControlledHttpCall(context, plan) {
+  const call = plan.call;
+  if (!call || typeof call.id !== 'string' || !['read', 'notion_use', 'notion_list'].includes(call.tool)
+    || !call.args || typeof call.args !== 'object' || Array.isArray(call.args)) throw new Error('CONTROLLED_HTTP_CALL_INVALID');
+  const results = context.messages.filter(message => message.role === 'toolResult' && message.toolCallId === call.id);
+  if (!results.length) return { type: 'toolCall', id: call.id, name: call.tool, arguments: call.args };
+  if (results.length !== 1 || results[0].toolName !== call.tool || Boolean(results[0].isError) !== Boolean(call.errorCode))
+    throw new Error('CONTROLLED_HTTP_TOOL_OUTCOME_MISMATCH');
+  if (call.errorCode) {
+    const content = results[0].content, text = typeof content === 'string' ? content : content.filter(block => block.type === 'text').map(block => block.text).join('\n');
+    if (!/^[A-Z][A-Z0-9_]+$/u.test(call.errorCode) || !new RegExp('\\b' + call.errorCode + '\\b', 'u').test(text))
+      throw new Error('CONTROLLED_HTTP_ERROR_CODE_MISMATCH');
+  }
+  return null;
+}
+
 export function selectProviderCall(context, plan = JSON.parse(readFileSync(process.env.SC10_PI_TOOL_PLAN, 'utf8'))) {
   if (plan.mode === 'complete') return null;
+  if (plan.mode === 'http-call') return selectControlledHttpCall(context, plan);
   if (Object.hasOwn(plan, 'catalog_size')) return selectCatalogScaleCall(context, plan.catalog_size);
   const find = id => [...context.messages].reverse().find(message => message.role === 'toolResult' && message.toolCallId === id);
   const text = value => typeof value === 'string' ? value : (value ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
@@ -1745,7 +1797,7 @@ async function provider(base) {
   let source = await readFile(path, 'utf8');
   const replace = (before, after) => { assert.equal(source.split(before).length, 2, 'Provider fixture shape changed'); source = source.replace(before, after); };
   replace('import { appendFileSync }', "import { channel } from 'node:diagnostics_channel';\nimport { appendFileSync, readFileSync }");
-  replace('function stream(model, context) {', `${currentProviderTools.toString()}\n${resourceRefsFromNative.toString()}\n${selectScalarProviderCall.toString()}\n${ambiguityCandidatesFromMessage.toString()}\n${selectNamedReferenceCall.toString()}\n${selectNativeRepeatCall.toString()}\n${selectLiveProviderCall.toString()}\n${selectCatalogScaleCall.toString()}\n${selectProviderCall.toString()}\n${holdLifecycleResponse.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, aborted: Boolean(options?.signal?.aborted), monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
+  replace('function stream(model, context) {', `${currentProviderTools.toString()}\n${resourceRefsFromNative.toString()}\n${selectScalarProviderCall.toString()}\n${ambiguityCandidatesFromMessage.toString()}\n${selectNamedReferenceCall.toString()}\n${selectNativeRepeatCall.toString()}\n${selectLiveProviderCall.toString()}\n${selectCatalogScaleCall.toString()}\n${selectControlledHttpCall.toString()}\n${selectProviderCall.toString()}\n${holdLifecycleResponse.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, aborted: Boolean(options?.signal?.aborted), monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
   replace('const payload = await options?.onPayload?.({ model: model.id, context }, model);', 'if (typeof options?.onPayload !== "function" || typeof options?.onResponse !== "function") throw new Error("PUBLIC_PROVIDER_HOOKS_REQUIRED");\n      hook("payload_start");\n      const payload = await options.onPayload({ model: model.id, context }, model);\n      hook("payload_end");');
   replace('hook("payload_start");', 'hook("payload_start");\n      if (process.env.SC06_PI_CATALOG_RELEASE === "provider") channel("context-broker.verify-sdk-initialization-release").publish({ pid: process.pid, boundary: "provider" });');
   replace('JSON.stringify({ model: model.id, context })', 'JSON.stringify({ requestId, model: model.id, context })');
@@ -1872,6 +1924,12 @@ function observe() {
     appendFileSync(ledger, JSON.stringify({ ...value, sha256: previous }) + '\n', { mode: 0o600 });
   };
   record({ kind: 'observer_start', exec_path: process.execPath, parent_pid: process.ppid });
+  const sourceHeaders = event => {
+    if (String(event.request?.origin) !== process.env.NOTION_API_BASE_URL) return;
+    record({ kind: 'source_http_headers', method: event.request.method, path: event.request.path,
+      status: event.response?.statusCode ?? null });
+  };
+  if (process.env.SC10_PI_SOURCE_MODE === 'controlled-http') channel('undici:request:headers').subscribe(sourceHeaders);
   const initialization = process.env.SC08_PI_INIT_CONFIG ? observeSdkInitialization({ fs,
     configPath: process.env.SC08_PI_INIT_CONFIG, record,
     subscribe: handler => {
@@ -1884,7 +1942,10 @@ function observe() {
     if (event.event === 'start') activeSdk.add(event.id);
     if (event.event === 'end') activeSdk.delete(event.id);
     const { request_metrics, ...safe } = event;
-    record({ kind: 'sdk', ...safe, request_metrics: request_metrics === undefined ? undefined : safeRequestMetrics(request_metrics) ?? null });
+    record({ kind: 'sdk', ...safe, request_metrics: request_metrics === undefined ? undefined : safeRequestMetrics(request_metrics) ?? null,
+      ...(process.env.SC10_PI_SOURCE_MODE === 'controlled-http' && event.event === 'end' ? {
+        source_http_terminal: Object.fromEntries(['in_flight', 'request_bytes', 'response_bytes', 'unknown_request_bytes', 'unknown_response_bytes']
+          .map(key => [key, request_metrics?.[key] ?? null])) } : {}) });
   });
   channel('context-broker.notion-sdk-result').subscribe(event => {
     if (event.operation === 'list') record({ kind: 'sdk_catalog', id: event.id, value: event.value });
@@ -1921,6 +1982,7 @@ function observe() {
   }
   syncBuiltinESMExports();
   process.once('exit', code => {
+    if (process.env.SC10_PI_SOURCE_MODE === 'controlled-http') channel('undici:request:headers').unsubscribe(sourceHeaders);
     const objects = objectObserver?.finish();
     record({ kind: 'observer_end', code, active_sdk: activeSdk.size, active_children: activeChildren.size,
       ...(initialization ? { active_initializations: initialization.pending() } : {}),
@@ -2044,10 +2106,33 @@ export function assertCatalogCancellationBoundary(start, end, lifecycle) {
   return boundary;
 }
 
-export function reconcile(events, lifecycle, { bodyTransportRequired = true, sourceMode = 'offline', catalogLifecycle = [], expectedCatalogOutcome = 'completed', expectedFailedSdkIds = [] } = {}) {
-  assert.ok(['offline', 'live'].includes(sourceMode));
-  assert.ok(['completed', 'shutdown_cancelled'].includes(expectedCatalogOutcome));
+export function assertControlledHttpCancellation(start, end, proof) {
+  assert.ok(['consume', 'read', 'read-resources'].includes(start.operation));
+  assert.equal(end.operation, start.operation); assert.equal(end.observer_pid, start.observer_pid);
+  assert.equal(proof?.sdk_id, start.id); assert.equal(proof.host_pid, start.observer_pid);
+  for (const key of ['sent_monotonic_ns', 'completed_monotonic_ns']) assert.match(proof[key], /^\d+$/u);
+  const sent = BigInt(proof.sent_monotonic_ns);
+  assert.ok(sent >= BigInt(start.monotonic_ns) && sent <= BigInt(end.monotonic_ns), 'Actual RPC abort must fall inside the cancelled SDK interval');
+  assert.ok(BigInt(proof.completed_monotonic_ns) >= sent);
+  assert.equal(proof.response?.type, 'response'); assert.equal(proof.response.command, 'abort');
+  assert.equal(proof.response.success, true); assert.equal(typeof proof.response.id, 'string');
+  assert.equal(proof.tool_start?.type, 'tool_execution_start'); assert.equal(proof.tool_end?.type, 'tool_execution_end');
+  assert.equal(proof.tool_start.toolCallId, proof.tool_call_id); assert.equal(proof.tool_end.toolCallId, proof.tool_call_id);
+  assert.equal(proof.tool_start.toolName, proof.tool_end.toolName); assert.equal(proof.tool_end.isError, true);
+  assert.equal(proof.tool_start.toolName, start.operation === 'consume' ? 'notion_use' : 'read');
+  assert.deepEqual(proof.sdk_result, { version: 1, status: 'cancelled', reason: 'interrupted' }, 'A typed cancellation must not retain successful preparation or delivery fields');
+  return { id: start.id, pid: start.observer_pid, tool_call_id: proof.tool_call_id,
+    sent_monotonic_ns: proof.sent_monotonic_ns, completed_monotonic_ns: proof.completed_monotonic_ns,
+    rpc_response_id: proof.response.id };
+}
+
+export function reconcile(events, lifecycle, { bodyTransportRequired = true, sourceMode = 'offline', catalogLifecycle = [], expectedCatalogOutcome = 'completed', expectedFailedSdkIds = [], controlledCancellations = [] } = {}) {
+  assert.ok(['offline', 'live', 'controlled-http'].includes(sourceMode));
+  assert.ok(['completed', 'shutdown_cancelled', ...(sourceMode === 'controlled-http' ? ['failed'] : [])].includes(expectedCatalogOutcome));
   assert.ok(Array.isArray(expectedFailedSdkIds) && new Set(expectedFailedSdkIds).size === expectedFailedSdkIds.length);
+  assert.ok(Array.isArray(controlledCancellations));
+  assert.equal(new Set(controlledCancellations.map(value => value.sdk_id)).size, controlledCancellations.length);
+  if (sourceMode !== 'controlled-http') assert.equal(controlledCancellations.length, 0);
   assert.ok(events.length > 0, 'Empty observer ledger cannot establish zero work');
   const chains = new Map();
   for (const item of events) {
@@ -2080,7 +2165,7 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true, sou
     assert.ok(bodies.length > 0, 'An empty body SDK observation cannot establish default transport');
   } else assert.equal(bodies.length, 0, 'A host-local command metadata query must not consume source bodies');
   let http = 0;
-  const cancelledCatalogs = [], expectedFailures = [];
+  const cancelledCatalogs = [], cancelledBodies = [], expectedFailures = [];
   for (const start of sdk) {
     const ends = events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.id === start.id);
     assert.equal(ends.length, 1);
@@ -2088,7 +2173,9 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true, sou
     assert.equal(end.observer_pid, start.observer_pid); assert.equal(end.operation, start.operation);
     let boundary;
     if (end.status === 'cancelled') {
-      boundary = assertCatalogCancellationBoundary(start, end, catalogLifecycle);
+      const proof = controlledCancellations.find(value => value.sdk_id === start.id);
+      if (proof) cancelledBodies.push(assertControlledHttpCancellation(start, end, proof));
+      else boundary = assertCatalogCancellationBoundary(start, end, catalogLifecycle);
     } else if (end.status === 'failed' && expectedFailedSdkIds.includes(start.id)) {
       expectedFailures.push({ id: start.id, operation: start.operation });
     } else assert.equal(end.status, 'completed');
@@ -2103,17 +2190,23 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true, sou
     if (boundary) cancelledCatalogs.push({ id: start.id, pid: start.observer_pid, native_event: boundary.type,
       native_monotonic_ns: boundary.monotonic_ns, http_attempts: attempts.length });
   }
+  assert.deepEqual(new Set(cancelledBodies.map(value => value.id)), new Set(controlledCancellations.map(value => value.sdk_id)), 'Every declared RPC cancellation needs its actual SDK terminal');
   assert.deepEqual(new Set(expectedFailures.map(failure => failure.id)), new Set(expectedFailedSdkIds), 'Every expected failure needs its exact observed failed SDK terminal');
   const completedCatalogs = catalog.length - cancelledCatalogs.length - expectedFailures.filter(failure => failure.operation === 'list').length;
   if (expectedCatalogOutcome === 'shutdown_cancelled') {
     assert.equal(bodyTransportRequired, false); assert.equal(bodies.length, 0);
     assert.equal(catalog.length, 1); assert.equal(completedCatalogs, 0);
     assert.equal(cancelledCatalogs.length, 1); assert.equal(cancelledCatalogs[0].native_event, 'session_shutdown');
+  } else if (expectedCatalogOutcome === 'failed') {
+    assert.equal(bodyTransportRequired, false); assert.equal(bodies.length, 0);
+    assert.ok(catalog.length > 0); assert.equal(completedCatalogs, 0); assert.equal(cancelledCatalogs.length, 0);
+    assert.equal(expectedFailures.length, catalog.length);
   } else if (catalog.length) assert.ok(completedCatalogs > 0, 'Cancelled catalogues do not establish successful default discovery');
   if (sourceMode === 'offline') assert.equal(http, 0, 'The controlled SDK source must stay offline');
   const cliCloses = events.filter(event => event.kind === 'child_close');
   return { sdk_calls: sdk.length, sdk_body_calls: bodies.length, sdk_lists: catalog.length, sdk_files: files.length,
     expected_failed_sdk: expectedFailures,
+    ...(sourceMode === 'controlled-http' ? { sdk_cancelled_bodies: cancelledBodies.length, cancelled_bodies: cancelledBodies } : {}),
     sdk_completed_lists: completedCatalogs, sdk_cancelled_lists: cancelledCatalogs.length, cancelled_catalogs: cancelledCatalogs,
     sdk_consumes: sdk.filter(event => event.operation === 'consume').length,
     sdk_reads: sdk.filter(event => event.operation === 'read').length, sdk_http: http,
@@ -3044,6 +3137,517 @@ function assertAmbiguityReferenceEvidence(captures, frames, hooks, events, archi
     provider_body_timeline: timeline, sdk_intervals: intervals, object_reads: objectReads,
     active_only_after_use: true, active_owner_ids: finalActive.sources.map(value => value.record.id), original_session_preserved: true,
     body_authorization: 'Candidate references copied only from actual provider-visible error tool messages; independent fixture bytes keyed by record.id and source hash' };
+}
+
+async function httpBounded(promise, label) {
+  let timer;
+  try { return await Promise.race([promise, new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('CONTROLLED_HTTP_DEADLINE: ' + label)), 20000);
+  })]); }
+  finally { clearTimeout(timer); }
+}
+
+async function coldHttpSource(sample, path) {
+  await cp(sample.seed, path, { recursive: true, errorOnExist: true, force: false });
+  const database = new DatabaseSync(join(path, 'state/state.sqlite'), { readOnly: true });
+  try {
+    for (const table of ['shared_local_records', 'snapshots'])
+      assert.equal(database.prepare('SELECT count(*) AS count FROM ' + table).get().count, 0, 'HTTP source must start without a seeded snapshot');
+  } finally { database.close(); }
+  const objects = await readdir(join(path, 'state/objects')).catch(error => { if (error.code === 'ENOENT') return []; throw error; });
+  assert.deepEqual(objects, []);
+  return path;
+}
+
+async function driveHttpTool(control, service, call) {
+  const before = await waitForSourceFinality(control.ledger, control.rpc.lifecycle[0].pid);
+  assert.equal(before.complete, true);
+  const eventCount = (await control.events()).length, providerCount = (await control.captures()).length,
+    requestCount = service.requests.length, frameCount = control.rpc.frames.length;
+  await publishToolPlan(control.toolPlan, { mode: 'http-call', call });
+  await control.rpc.prompt('Perform this explicit Notion operation: ' + call.tool + ' ' + JSON.stringify(call.args));
+  const captures = (await control.captures()).slice(providerCount), frames = control.rpc.frames.slice(frameCount);
+  assert.equal(captures.length, 2, 'One controlled public tool call must have its initial and following provider input');
+  const message = toolResult(captures.at(-1).context, call.id), ended = frames.filter(frame => frame.type === 'tool_execution_end' && frame.toolCallId === call.id);
+  assert.ok(message); assert.equal(ended.length, 1); assert.equal(Boolean(message.isError), Boolean(call.errorCode));
+  const raw = { ...ended[0].result, role: 'toolResult', toolName: ended[0].toolName, toolCallId: call.id, isError: ended[0].isError };
+  assert.equal(Boolean(raw.isError), Boolean(call.errorCode));
+  const events = (await control.events()).slice(eventCount), requests = service.requests.slice(requestCount);
+  if (call.errorCode) {
+    const failed = events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.status === 'failed');
+    assert.ok(failed.length > 0); assert.ok(failed.every(event => event.error_code === call.errorCode));
+    for (const field of ['contextBrokerRead', 'contextBrokerResource', 'contextBrokerPreparation'])
+      assert.equal(raw.details?.[field], undefined, 'An expected source error cannot become a delivery receipt');
+  }
+  const step = { call, provider_request_ids: captures.map(capture => capture.requestId),
+    sdk_ids: events.filter(event => event.kind === 'sdk' && event.event === 'start').map(event => event.id),
+    source_http_attempts: requests.length, source_http_statuses: requests.map(request => request.status),
+    source_object_reads: events.filter(event => event.kind === 'object_read' && event.event === 'start').length };
+  await save(join(control.output, call.id + '.json'), step);
+  return { message, raw, events, requests, captures, step };
+}
+
+function httpNativeProof(observed, sample, expectedBinding) {
+  const proof = observed.raw.details?.contextBrokerRead, oracle = sample.oracle.cold;
+  assert.ok(proof?.binding); assert.equal(proof.binding.record.id, oracle.root_id);
+  if (expectedBinding) for (const key of ['scope', 'snapshot_id', 'version_id']) assert.equal(proof.binding[key], expectedBinding[key]);
+  const snapshot = { record: proof.binding.record, scope: proof.binding.scope, snapshot_id: proof.snapshotId,
+    version_id: proof.binding.version_id, entrypoint: 'SKILL.md', files: oracle.files };
+  assertNativeProjection(observed.raw, { snapshot, body: oracle.contents['SKILL.md'] });
+  assert.equal(bodyCount(observed.captures.at(-1).context, oracle.contents['SKILL.md']), 1);
+  const resource = proof.directory.files.find(file => file.path === sample.resource_path);
+  assert.ok(resource && resource.ref.startsWith('skill://'));
+  const node = observed.events.flatMap(event => event.kind === 'sdk_lifecycle_result' ? event.value.preparation?.nodes ?? [] : [])
+    .find(node => node.id === oracle.root_id && node.state === 'prepared');
+  assert.ok(Number.isFinite(Date.parse(node?.freshness?.validated_at)), 'The actual SDK must expose the selected current validation time');
+  return { binding: proof.binding, resource, body_sha256: proof.bodySha256, bytes: proof.bytes, freshness: node.freshness };
+}
+
+function httpUseProof(observed, sample, expectedBinding) {
+  const proof = observed.raw.details?.contextBrokerPreparation;
+  assert.equal(proof?.records?.length, 1);
+  const record = proof.records[0], file = sample.oracle.cold.files.find(file => file.path === 'SKILL.md');
+  assert.equal(record.binding?.record.id, sample.oracle.cold.root_id);
+  for (const key of ['scope', 'snapshot_id', 'version_id']) {
+    assert.equal(typeof record.binding[key], 'string'); assert.ok(record.binding[key].length);
+    if (expectedBinding) assert.equal(record.binding[key], expectedBinding[key]);
+  }
+  assert.equal(record.bodySha256, file.sha256); assert.equal(record.bytes, file.bytes);
+  assert.equal(record.loaded, true); assert.equal(bodyCount({ messages: [observed.raw] }, sample.oracle.cold.contents['SKILL.md']), 1);
+  assert.equal(bodyCount(observed.captures.at(-1).context, sample.oracle.cold.contents['SKILL.md']), 1);
+  return { binding: record.binding, body_sha256: record.bodySha256, bytes: record.bytes };
+}
+
+function httpFixedResourceProof(observed, sample, binding) {
+  const proof = observed.raw.details?.contextBrokerResource, expected = sample.oracle.cold.files.find(file => file.path === sample.resource_path);
+  assert.ok(proof); assert.equal(proof.id, sample.oracle.cold.root_id); assert.equal(proof.scope, binding.scope);
+  assert.equal(proof.snapshot_id, binding.snapshot_id); assert.equal(proof.version_id, binding.version_id);
+  assert.equal(proof.sha256, expected.sha256); assert.equal(proof.bytes, expected.bytes); assert.equal(proof.delivered_complete_text, true);
+  const content = textContent(observed.raw.content); assert.equal(content, sample.oracle.cold.contents[sample.resource_path]);
+  assert.equal(hash(content), expected.sha256); assert.equal(observed.requests.length, 0);
+  return { snapshot_id: proof.snapshot_id, file_id: proof.file_id, path: proof.path, sha256: proof.sha256, bytes: proof.bytes };
+}
+
+export function assertControlledHttpWarmRequests(requests) {
+  assert.equal(requests.length, 1, 'A warm source in a new Pi retains its one online identity validation');
+  assert.equal(requests[0].method, 'GET'); assert.equal(requests[0].path, '/v1/users/me');
+  assert.equal(requests[0].status, 200); assert.equal(requests[0].response_bytes_complete, true);
+  return { identity_http: 1, directory_http: 0, body_http: 0,
+    identity_response_bytes: requests[0].decoded_response_bytes, boundary: requests[0].response_boundary };
+}
+
+export function assertControlledHttpForcedRevalidation(requests, sample) {
+  const bodies = requests.filter(request => /\/markdown$/u.test(request.path));
+  const selected = [sample.notion.main.id, ...sample.notion.files.map(file => file.id)].map(id => '/v1/pages/' + id + '/markdown');
+  assert.deepEqual(bodies.map(request => request.path).sort(), selected.sort(), 'Zero max-age forces exactly the selected owner current bodies');
+  assert.ok(bodies.every(request => request.status === 200 && request.response_bytes_complete));
+  return { policy: 'max_age', max_age_ms: 0, force_full: true, selected_body_http: bodies.length,
+    natural_default_ttl_boundary: 'not_run', source_current_facts_changed: false };
+}
+
+export function controlledHttpBodyHeaders(events, origin, pageId) {
+  const path = '/v1/pages/' + pageId + '/markdown';
+  return events.find(event => event.kind === 'source_http_headers' && event.method === 'GET'
+    && new URL(event.path, origin).pathname === path);
+}
+
+export function assertControlledHttpRetry(observed, pageId, fault) {
+  assert.ok(['rate-limit', 'disconnect'].includes(fault));
+  const path = '/v1/pages/' + pageId + '/markdown', requests = observed.requests.filter(request => request.path === path);
+  assert.equal(requests.length, 2, 'One failed source attempt must recover through the original SDK retry');
+  assert.deepEqual(requests.map(request => request.status), fault === 'rate-limit' ? [429, 200] : [200, 200]);
+  assert.equal(requests[1].response_bytes_complete, true); assert.equal(requests[1].terminal, 'finished');
+  if (fault === 'disconnect') {
+    assert.equal(requests[0].terminal, 'aborted'); assert.equal(requests[0].response_bytes_complete, false);
+    assert.equal(requests[0].decoded_response_bytes, null); assert.ok(requests[0].observed_response_bytes > 0);
+  }
+  const terminals = observed.events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.operation !== 'list');
+  assert.equal(terminals.length, 1); assert.equal(terminals[0].status, 'completed');
+  const attempts = terminals[0].request_metrics.trace.filter(event => event.event === 'attempt' && event.target?.page_id === pageId && event.body_kind === 'current_body');
+  assert.equal(attempts.length, 2); assert.deepEqual(attempts.map(attempt => attempt.outcome), ['failure', 'success']);
+  if (fault === 'disconnect') {
+    assert.ok(Number.isSafeInteger(attempts[0].response_bytes) && attempts[0].response_bytes >= 0);
+    assert.ok(attempts[0].response_bytes <= requests[0].observed_response_bytes);
+    assert.equal(terminals[0].source_http_terminal.unknown_response_bytes, 0);
+  } else assert.equal(attempts[0].http_status, 429);
+  return { fault, sdk_retries: 1, controller_retries: 0, requests, sdk_attempts: attempts,
+    ...(fault === 'disconnect' ? { failed_attempt: { sdk_received_bytes: attempts[0].response_bytes,
+      server_written_bytes: requests[0].observed_response_bytes, complete_response_bytes: null, complete_text_delivered: false } } : {}) };
+}
+
+export async function waitForControlledHttpView({ rpc, sample, state, captureCount }) {
+  assert.ok(['ready', 'failed'].includes(state));
+  const started = process.hrtime.bigint(), deadline = started + 20000000000n, before = await captureCount(), observations = [];
+  const expected = state === 'ready'
+    ? 'sdk-fixture: ' + sample.view_dynamics.view.name + ' (' + sample.view_dynamics.view.id + ') · ' + sample.view_dynamics.observations[0].member_record_ids.length + ' Skill/Router · first'
+    : 'sdk-fixture: default View failed (AUTH_REQUIRED) · first';
+  for (;;) {
+    const offset = rpc.frames.length;
+    const response = await rpc.command('prompt', { message: '/context-broker view' });
+    const notifications = rpc.frames.slice(offset).filter(frame => frame.type === 'extension_ui_request' && frame.method === 'notify');
+    observations.push({ response, notifications });
+    assert.equal(await captureCount(), before, 'The existing read-only View status command must not invoke a provider');
+    if (notifications.some(frame => frame.message === expected)) return { command: '/context-broker view', state,
+      calls: observations.length, observations, elapsed_ms: Number(process.hrtime.bigint() - started) / 1e6, expected };
+    assert.ok(process.hrtime.bigint() < deadline, 'The actual published View status did not settle before the deadline');
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+}
+
+export function assertControlledHttpDirectory(captures, events, { sample, hostPid, state, held }) {
+  assert.ok(['ready', 'failed'].includes(state)); assert.equal(captures.length, 2);
+  assert.equal(events.filter(event => event.kind === 'sdk' && event.event === 'start' && event.operation !== 'list').length, 0);
+  assertObjectReadEvidence(events, { selected: [], requiredPid: hostPid });
+  assert.equal(events.filter(event => event.kind === 'object_read').length, 0);
+  for (const capture of captures) for (const file of sample.oracle.cold.files)
+    assert.equal(bodyCount(capture.context, sample.oracle.cold.contents[file.path]), 0, 'Ordinary prompts must not receive any authored source body');
+  const systems = captures.map(capture => providerSystemText(capture.context));
+  if (held) {
+    assert.match(systems[0], /<ntn-skills-discovery status="pending">/u);
+    assert.doesNotMatch(systems[0], /<ntn-skills-view-catalog>[\s\S]*<skill>/u);
+    assert.equal(held.provider_request_id, captures[0].requestId);
+    assert.ok(BigInt(held.request_seen_monotonic_ns) <= BigInt(held.provider_payload_end_monotonic_ns));
+    assert.ok(BigInt(held.provider_payload_end_monotonic_ns) < BigInt(held.released_monotonic_ns), 'Actual provider input must complete before the held HTTP response is released');
+  }
+  const catalogs = events.filter(event => event.kind === 'sdk_catalog' && event.value?.view);
+  if (state === 'ready') {
+    const view = sample.view_dynamics.view, membership = sample.view_dynamics.observations[0];
+    assert.ok(catalogs.length > 0);
+    for (const { value } of catalogs) {
+      assert.equal(value.view.id, view.id); assert.equal(value.coverage?.exhaustive, true);
+      assert.deepEqual(value.coverage.failed_sources, []);
+      assert.deepEqual(value.records.map(record => record.id).sort(), [...membership.member_record_ids].sort());
+    }
+    const text = systems[1], blocks = [...text.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)];
+    assert.equal(blocks.length, 1); assert.ok(blocks[0][1].includes('id="' + view.id + '"'));
+    const cards = [...blocks[0][1].matchAll(/<skill><name>([^<]+)<\/name>(?:<description>([^<]*)<\/description>)?<source>([^<]+)<\/source><location>([^<]+)<\/location><\/skill>/gu)];
+    assert.equal(cards.length, membership.member_record_ids.length);
+    const xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+    for (const record of catalogs.at(-1).value.records) {
+      const card = cards.filter(value => value[1] === xml(record.name) && value[2] === xml(record.description) && value[3] === 'sdk-fixture');
+      assert.equal(card.length, 1); assert.match(card[0][4], /^sr:C[A-Za-z0-9_-]{22}$/u);
+    }
+  } else {
+    assert.equal(catalogs.length, 0);
+    assert.doesNotMatch(systems[1], /<ntn-skills-view-catalog>[\s\S]*<skill>/u);
+    const failures = events.filter(event => event.kind === 'sdk' && event.event === 'end');
+    assert.ok(failures.length > 0);
+    assert.ok(failures.every(event => event.status === 'failed' && event.error_code === 'AUTH_REQUIRED'));
+  }
+  return { status: 'verified', ordinary_provider_requests: 2, state, source_body_calls: 0, source_object_reads: 0,
+    ...(held ? { held_http: held } : {}) };
+}
+
+async function controlledHttpPhase(info, { label, baseRoot, outputRoot, sourceRoot, service, activation,
+  expectedCatalogOutcome = 'completed', allowedSdkErrors = [], bodyTransportRequired = true, exercise, verify, sessionPath }) {
+  const base = join(baseRoot, label), output = join(outputRoot, label), agentDir = join(base, 'agent'), sessions = join(base, 'sessions');
+  await mkdir(base, { mode: 0o700 }); await mkdir(output, { mode: 0o700 });
+  await mkdir(join(agentDir, 'context-broker'), { recursive: true }); await mkdir(sessions, { recursive: true });
+  const source = { type: 'notion', id: 'sdk-fixture', namespace: 'sdk-fixture',
+    database: info.controlledHttp.sample.notion.library.skills.database_id,
+    ...(activation ? { activation } : {}), cacheDir: join(base, 'broker-cache'), prefetch: false };
+  assert.equal(Object.hasOwn(source, 'command'), false);
+  const config = join(agentDir, 'context-broker/config.yml'); await save(config, { sources: [source] });
+  await save(join(output, 'source.json'), source);
+  await save(join(agentDir, 'settings.json'), { compaction: { enabled: false }, retry: { enabled: false, maxRetries: 0, provider: { maxRetries: 0 } } });
+  const providerFile = join(output, 'provider.jsonl'), hookFile = join(output, 'provider-hooks.jsonl');
+  const ledger = join(output, 'observer.jsonl'), toolPlan = join(base, 'tool-plan.json'), nativeEvents = join(output, 'native-session-events.jsonl');
+  await publishToolPlan(toolPlan, { mode: 'complete' });
+  const fakeProvider = await provider(base), preload = join(base, 'observer.mjs'), shutdownObserver = join(base, 'catalog-shutdown-observer.mjs');
+  await observer(preload);
+  await writeFile(shutdownObserver, "import { appendFileSync } from 'node:fs';\nimport { channel } from 'node:diagnostics_channel';\nexport default " + catalogShutdownObserver.toString() + '\n', { mode: 0o600 });
+  const env = isolatedEnv({ base, agentDir, ...info.fixtureEnv, TMPDIR: await systemTempRoot(),
+    NOTION_API_BASE_URL: service.origin, NTN_SKILLS_HOME: join(sourceRoot, 'state'),
+    NTN_SKILLS_CONFIG_HOME: join(sourceRoot, 'config'), NTN_SKILLS_CACHE_HOME: join(sourceRoot, 'cache'),
+    NTN_SKILLS_SCHEDULER_ROOT: join(baseRoot, 'request-engine'), NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000',
+    CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_CONFIG: config, CONTEXT_BROKER_LOG_FILE: join(output, 'decisions.jsonl'),
+    CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: providerFile, BROKER_E2E_PROCESS_LEDGER: join(output, 'owned-processes.jsonl'),
+    SC10_PI_TOOL_PLAN: toolPlan, SC10_PI_PROVIDER_HOOKS: hookFile, SC10_PI_OBSERVER: ledger,
+    SC10_PI_NATIVE_EVENTS: nativeEvents, SC10_PI_SOURCE_MODE: 'controlled-http', SC08_PI_LIFECYCLE: '1',
+    SC13_PI_OBJECT_ROOT: join(sourceRoot, 'state/objects'),
+    SC10_PI_BUNDLED_CLI: join(info.packageRoot, 'dist/ntn-skills.mjs'), NODE_OPTIONS: `--import=${preload}` });
+  const argv = ['--no-extensions', '--session-dir', sessions, ...(sessionPath ? ['--session', sessionPath] : []),
+    '--tools', nativeTools.join(','), '-e', fakeProvider, '-e', shutdownObserver, '-e', info.extension,
+    '--model', 'context-broker-e2e/fake'];
+  if (sessionPath) assert.ok((await realpath(sessionPath)).startsWith(await realpath(baseRoot) + '/'), 'Only this owned cohort session can be resumed');
+  await save(join(output, 'launch.json'), { host: info.host, argv, cwd: base, source_mode: 'controlled-http',
+    source_command_configured: false, source_root: sourceRoot, scheduler_root: env.NTN_SKILLS_SCHEDULER_ROOT,
+    source_origin: service.origin, source_http_helper: info.controlledHttp.helper,
+    rpc_timeout_ms: 60000, controller_retries: 0, real_model: 'not_run', production_notion: 'not_run' });
+  let rpc, failed, finality, archive, details, state, beforeClose;
+  const control = { output, providerFile, hookFile, ledger, toolPlan, nativeEvents, source,
+    captures: () => rows(providerFile), events: () => rows(ledger) };
+  try {
+    rpc = await startRpc({ host: 'pi', args: argv, cwd: base, env, timeoutMs: 60000 });
+    details = await exercise({ ...control, rpc });
+    beforeClose = await waitForSourceFinality(ledger, rpc.lifecycle[0].pid);
+    assert.equal(beforeClose.complete, true, 'Actual source SDK must settle before normal EOF');
+    state = await rpc.command('get_state'); await save(join(output, 'state-before-eof.json'), state);
+    await rpc.closeInput();
+  } catch (error) {
+    failed = { code: error.code ?? error.name, message: String(error.message) };
+    if (rpc) await rpc.stop().catch(() => {});
+  } finally {
+    if (rpc) {
+      finality = await waitForSourceFinality(ledger, rpc.lifecycle[0].pid, { hostClosed: true });
+      await save(join(output, 'rpc.json'), rpc.frames); await save(join(output, 'rpc-lifecycle.json'), rpc.lifecycle);
+      await save(join(output, 'observer-finalization.json'), { before_close: beforeClose, after_close: finality });
+      archive = await archiveSessions(sessionPath ? dirname(sessionPath) : sessions, output);
+    }
+  }
+  try {
+    if (failed) throw Object.assign(new Error(failed.message), { code: failed.code });
+    assert.equal(finality?.complete, true);
+    const events = await rows(ledger), captures = await rows(providerFile), failures = events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.status === 'failed');
+    assert.ok(failures.every(event => allowedSdkErrors.includes(event.error_code)), 'Only the frozen source errors are expected');
+    const observations = reconcile(events, rpc.lifecycle, { sourceMode: 'controlled-http', bodyTransportRequired,
+      expectedCatalogOutcome, catalogLifecycle: await rows(nativeEvents), expectedFailedSdkIds: failures.map(event => event.id),
+      controlledCancellations: details?.controlled_cancellations ?? [] });
+    const terminals = events.filter(event => event.kind === 'sdk' && event.event === 'end');
+    for (const terminal of terminals) {
+      assert.equal(terminal.source_http_terminal?.in_flight, 0);
+      for (const value of Object.values(terminal.source_http_terminal)) assert.ok(Number.isSafeInteger(value) && value >= 0);
+    }
+    const requests = service.requests.filter(request => request.phase === label);
+    assert.equal(observations.sdk_http, requests.length, 'Actual SDK attempts must reconcile with the shared loopback service');
+    assert.deepEqual(service.unexpected, []);
+    const serializer = await replayScenarioHttp(captures, rpc.frames, info, output, { expectedErrors: details?.expected_error_calls ?? [] });
+    const verification = verify ? await verify({ events, captures, archive, requests, hooks: await rows(hookFile), details,
+      hostPid: rpc.lifecycle[0].pid, output, serializer, state }) : undefined;
+    const result = { label, status: 'passed', observer_finality: true, source_mode: 'controlled-http',
+      ...observations, details, ...(verification ? { verification } : {}), provider_requests: captures.length,
+      source_http: { attempts: requests.length, terminal_metrics: terminals.map(event => ({ sdk_id: event.id, ...event.source_http_terminal })) },
+      serializer_http_replay: { requests: serializer.provider_requests, request_bytes: serializer.request_bytes },
+      session_file: state?.sessionFile ?? null, source_command_configured: false };
+    await save(join(output, 'result.json'), result); return { result, events, captures, archive, requests, hooks: await rows(hookFile) };
+  } catch (error) {
+    const result = { label, status: 'failed', observer_finality: finality?.complete === true,
+      error: failed ?? { code: error.code ?? error.name, message: String(error.message) }, source_mode: 'controlled-http' };
+    await save(join(output, 'result.json'), result); return { result, events: await rows(ledger), captures: await rows(providerFile), archive };
+  }
+}
+
+async function controlledHttpScenario(name, info, scratch, evidence) {
+  const base = join(scratch, name), output = join(evidence, name), sample = info.controlledHttp.sample;
+  await mkdir(base, { mode: 0o700 }); await mkdir(output, { mode: 0o700 });
+  const helperBytes = await readFile(info.controlledHttp.helper.path);
+  assert.equal(helperBytes.length, info.controlledHttp.helper.bytes); assert.equal(hash(helperBytes), info.controlledHttp.helper.sha256);
+  const helperPath = join(output, 'source-http-helper.mjs');
+  await writeFile(helperPath, helperBytes, { mode: 0o600, flag: 'wx' });
+  await save(join(output, 'source-fixture-input.json'), sample);
+  await save(join(output, 'source-seed-files.json'), await inventory(sample.seed));
+  const { startSdkSourceFixture } = await import(pathToFileURL(helperPath).href);
+  assert.equal(typeof startSdkSourceFixture, 'function');
+  const service = await startSdkSourceFixture(sample, join(output, 'source-http.jsonl'));
+  const origin = new URL(service.origin);
+  assert.equal(origin.protocol, 'http:'); assert.equal(origin.hostname, '127.0.0.1'); assert.ok(origin.port);
+  const phases = [], processes = [];
+  let failed, serviceClosed = false;
+  const phase = async (label, options) => {
+    const observed = await controlledHttpPhase(info, { label, baseRoot: base, outputRoot: output, service, ...options });
+    phases.push(observed.result); processes.push({ name: label, directory: label, lifecycle_file: 'rpc-lifecycle.json', observer_file: 'observer.jsonl' });
+    await save(join(output, 'rpc-processes.json'), processes); await save(join(output, 'progress.json'), phases);
+    assert.equal(observed.result.status, 'passed', JSON.stringify(observed.result.error));
+    return observed;
+  };
+  try {
+    if (name === 'http-directory') {
+      for (const label of ['pending', 'failed']) {
+        await service.setPhase(label, { current: 'initial', viewObservationId: 'initial', denyAuthentication: label === 'failed', denyCurrent: false });
+        const sourceRoot = await coldHttpSource(sample, join(base, 'source-' + label));
+        const hold = label === 'pending' ? service.holdNext({ method: 'GET', path: '/v1/views', afterHeaders: false }) : undefined;
+        let held;
+        await phase(label, { sourceRoot, bodyTransportRequired: false,
+          expectedCatalogOutcome: label === 'failed' ? 'failed' : 'completed', allowedSdkErrors: label === 'failed' ? ['AUTH_REQUIRED'] : [],
+          exercise: async ({ rpc, ledger, providerFile, hookFile }) => {
+            try {
+              if (hold) { await httpBounded(hold.reached, 'metadata request reached'); held = { request_seen_monotonic_ns: process.hrtime.bigint().toString() }; }
+              await rpc.prompt('Continue the ordinary conversation. Reply briefly without using any Skill or tools.');
+              if (hold) {
+                const capture = (await rows(providerFile)).at(-1), hook = (await rows(hookFile)).find(event => event.requestId === capture.requestId && event.phase === 'payload_end');
+                assert.ok(hook); held.provider_request_id = capture.requestId; held.provider_payload_end_monotonic_ns = hook.monotonic_ns;
+                held.released_monotonic_ns = process.hrtime.bigint().toString(); hold.release();
+              }
+              const settled = await waitForSourceFinality(ledger, rpc.lifecycle[0].pid); assert.equal(settled.complete, true);
+              const sourceAttempts = service.requests.length;
+              const publication = await waitForControlledHttpView({ rpc, sample, state: label === 'pending' ? 'ready' : 'failed',
+                captureCount: async () => (await rows(providerFile)).length });
+              assert.equal(service.requests.length, sourceAttempts, 'Read-only View status must not refresh the source');
+              await rpc.prompt('Continue the same ordinary conversation. Reply briefly without using any Skill or tools.');
+              return { ordinary_prompts: 2, held_http: held ?? null, publication, publication_source_http: 0 };
+            } finally { hold?.release(); }
+          },
+          verify: async ({ captures, events, archive, requests, hostPid, output }) => {
+            assert.equal(requests.filter(request => /\/markdown$/u.test(request.path)).length, 0);
+            assert.equal(archive.entries.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-active-sources').length, 0);
+            const proof = assertControlledHttpDirectory(captures, events, { sample, hostPid, state: label === 'pending' ? 'ready' : 'failed', held });
+            await save(join(output, 'directory-proof.json'), proof); return proof;
+          } });
+      }
+    } else if (name === 'http-cache-recovery') {
+      const sourceRoot = await coldHttpSource(sample, join(base, 'source'));
+      let original, sessionPath;
+      for (const label of ['cold', 'warm', 'expired', 'forced']) {
+        await service.setPhase(label, { current: 'initial', viewObservationId: 'initial', denyAuthentication: false, denyCurrent: false });
+        const observed = await phase(label, { sourceRoot, ...(['expired', 'forced'].includes(label) ? { activation: { maxAge: label === 'expired' ? '1s' : '0' } } : {}),
+          allowedSdkErrors: label === 'forced' ? ['ACCESS_DENIED', 'AUTH_REQUIRED'] : [],
+          exercise: async control => {
+            let expiry;
+            if (label === 'expired') {
+              const previous = Date.parse(original.freshness.validated_at), before = Date.now(), wait = Math.max(0, 1000 - (before - previous));
+              if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
+              const observed = Date.now(); assert.ok(observed - previous >= 1000, 'The real selected validation time must age past the declared nonzero TTL');
+              expiry = { previous_validated_at: original.freshness.validated_at, before_request: new Date(observed).toISOString(),
+                observed_age_ms: observed - previous, waited_ms: observed - before, max_age_ms: 1000, default_five_minute_boundary: 'not_run' };
+            }
+            const main = await driveHttpTool(control, service, { id: 'http-' + label + '-main', tool: 'read', args: { path: sample.root_ref } });
+            const proof = httpNativeProof(main, sample, original?.binding); original ??= proof;
+            const steps = [main.step], errors = [];
+            const warm = label === 'warm' ? assertControlledHttpWarmRequests(main.requests) : undefined;
+            if (label === 'warm') assert.equal(proof.freshness.validated_at, original.freshness.validated_at, 'A warm read cannot renew the selected validation time');
+            if (expiry) {
+              assert.equal(proof.freshness.policy, 'max_age'); assert.equal(proof.freshness.max_age_ms, 1000);
+              assert.ok(Date.parse(proof.freshness.validated_at) > Date.parse(expiry.previous_validated_at));
+              assert.ok(main.requests.length > 0); assert.equal(main.requests.filter(request => /\/markdown$/u.test(request.path)).length, 0);
+              expiry.revalidated_at = proof.freshness.validated_at; expiry.source_body_http = 0;
+            }
+            const revalidation = label === 'forced' ? assertControlledHttpForcedRevalidation(main.requests, sample) : undefined;
+            if (label === 'forced') {
+              assert.ok(main.requests.length > 0, 'Explicit maxAge=0 must actually revalidate the current observation');
+              const resourceCall = (id, errorCode) => ({ id, tool: 'read', args: { path: original.resource.ref }, ...(errorCode ? { errorCode } : {}) });
+              const useCall = (id, errorCode) => ({ id, tool: 'notion_use', args: { ref: sample.root_ref, refresh: true }, ...(errorCode ? { errorCode } : {}) });
+              const deniedPin = async (id, code) => {
+                const denied = await driveHttpTool(control, service, resourceCall(id, code)); steps.push(denied.step); errors.push(id);
+                assert.equal(denied.requests.length, 0, 'Known denial must fence a fixed resource before source HTTP');
+                assert.equal(denied.events.filter(event => event.kind === 'object_read').length, 0, 'Known denial must precede local source object access');
+              };
+              await service.setPhase(label, { denyCurrent: true });
+              const denied = await driveHttpTool(control, service, useCall('http-target-denied', 'ACCESS_DENIED'));
+              steps.push(denied.step); errors.push('http-target-denied'); assert.ok(denied.requests.some(request => request.status === 403));
+              await deniedPin('http-target-denied-pin', 'ACCESS_DENIED');
+              await service.setPhase(label, { denyCurrent: false });
+              const recovered = await driveHttpTool(control, service, useCall('http-target-recovered'));
+              steps.push(recovered.step); httpUseProof(recovered, sample, original.binding); assert.ok(recovered.requests.length > 0);
+              const fixed = await driveHttpTool(control, service, resourceCall('http-target-recovered-pin'));
+              steps.push(fixed.step); httpFixedResourceProof(fixed, sample, original.binding);
+              await service.setPhase(label, { denyAuthentication: true });
+              const revoked = await driveHttpTool(control, service, useCall('http-scope-denied', 'AUTH_REQUIRED'));
+              steps.push(revoked.step); errors.push('http-scope-denied'); assert.ok(revoked.requests.some(request => request.status === 401));
+              await deniedPin('http-scope-denied-pin', 'AUTH_REQUIRED');
+              await service.setPhase(label, { denyAuthentication: false });
+              const restored = await driveHttpTool(control, service, useCall('http-scope-recovered'));
+              steps.push(restored.step); httpUseProof(restored, sample, original.binding); assert.ok(restored.requests.length > 0);
+              const oldPin = await driveHttpTool(control, service, resourceCall('http-scope-recovered-pin'));
+              steps.push(oldPin.step); httpFixedResourceProof(oldPin, sample, original.binding);
+            }
+            return { main: proof, steps, ...(warm ? { warm } : {}), ...(expiry ? { expiry } : {}), ...(revalidation ? { revalidation } : {}), expected_error_calls: errors,
+              version_boundary: 'The current source facts remain unchanged; fixed snapshot/scope/File identity and permission recovery are checked, not a new-version transition' };
+          },
+          verify: async ({ requests, state }) => {
+            if (label === 'cold') assert.ok(requests.some(request => /\/markdown$/u.test(request.path)), 'Cold current body must come through actual source HTTP');
+            if (label === 'warm') assertControlledHttpWarmRequests(requests);
+            if (label === 'forced') { assert.equal(typeof state.sessionFile, 'string'); assert.ok(isAbsolute(state.sessionFile)); }
+            return { cache_cell: label, body_and_resource_identity: 'verified', source_body_http: requests.filter(request => /\/markdown$/u.test(request.path)).length };
+          } });
+        if (label === 'forced') sessionPath = observed.result.session_file;
+      }
+      await service.setPhase('resumed', { current: 'initial', viewObservationId: 'initial', denyAuthentication: false, denyCurrent: false });
+      await phase('resumed', { sourceRoot, sessionPath, bodyTransportRequired: false,
+        exercise: async control => {
+          await control.rpc.prompt('Continue the existing task with its selected Skill instructions. Do not load another Skill.');
+          const captures = await control.captures(); assert.equal(captures.length, 1);
+          assert.equal(bodyCount(captures[0].context, sample.oracle.cold.contents['SKILL.md']), 1);
+          return { resumed_session: sessionPath, complete_selected_body_copies: 1, body_sdk_calls: 0 };
+        },
+        verify: async ({ state, archive }) => {
+          assert.equal(state.sessionFile, sessionPath);
+          assert.ok(archive.entries.some(entry => entry.type === 'custom' && entry.customType === 'context-broker-active-sources'));
+          return { actual_session_resumed: true, original_history_retained: true };
+        } });
+    } else if (name === 'http-interruption') {
+      const bodyPath = '/v1/pages/' + sample.notion.main.id + '/markdown';
+      for (const label of ['rate-limit', 'disconnect', 'cancel']) {
+        await service.setPhase(label, { current: 'initial', viewObservationId: 'initial', denyAuthentication: false, denyCurrent: false });
+        const sourceRoot = await coldHttpSource(sample, join(base, 'source-' + label));
+        const fault = label === 'rate-limit' ? service.rejectNext({ method: 'GET', path: bodyPath, status: 429, retryAfterSeconds: 0.1 })
+          : label === 'disconnect' ? service.interruptNext({ method: 'GET', path: bodyPath })
+          : service.holdNext({ method: 'GET', path: bodyPath, afterHeaders: true });
+        await phase(label, { sourceRoot,
+          exercise: async control => {
+            if (label !== 'cancel') {
+              const observed = await driveHttpTool(control, service, { id: 'http-' + label, tool: 'read', args: { path: sample.root_ref } });
+              await httpBounded(fault.closed, 'fault response closed');
+              return { step: observed.step, main: httpNativeProof(observed, sample),
+                retry: assertControlledHttpRetry(observed, sample.notion.main.id, label) };
+            }
+            const id = 'http-cancel', call = { id, tool: 'notion_use', args: { ref: sample.root_ref } };
+            await publishToolPlan(control.toolPlan, { mode: 'http-call', call });
+            const completion = control.rpc.prompt('Perform this explicit Notion operation: notion_use ' + JSON.stringify(call.args))
+              .then(() => ({ status: 'completed' }), error => ({ status: 'rejected', message: String(error.message) }));
+            try {
+              const reached = await httpBounded(fault.reached, 'held body response reached');
+              const deadline = process.hrtime.bigint() + 20000000000n;
+              let headers;
+              while (!(headers = controlledHttpBodyHeaders(await control.events(), service.origin, sample.notion.main.id))) {
+                assert.ok(process.hrtime.bigint() < deadline, 'The actual SDK must receive the held response headers');
+                await new Promise(resolve => setTimeout(resolve, 25));
+              }
+              assert.equal(headers.status, 200); assert.equal((await control.captures()).length, 1);
+              const sent = process.hrtime.bigint().toString(), offset = control.rpc.frames.length;
+              await control.rpc.command('abort');
+              const completed = process.hrtime.bigint().toString(), response = control.rpc.frames.slice(offset).find(frame => frame.type === 'response' && frame.command === 'abort');
+              const outcome = await completion, closed = await httpBounded(fault.closed, 'cancelled body response closed');
+              assert.equal(closed.sequence, reached.sequence); assert.equal(closed.response_bytes_complete, false);
+              assert.equal(closed.decoded_response_bytes, null); assert.equal(closed.terminal, 'aborted');
+              const settled = await waitForSourceFinality(control.ledger, control.rpc.lifecycle[0].pid); assert.equal(settled.complete, true);
+              const events = await control.events(), ends = events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.status === 'cancelled');
+              assert.equal(ends.length, 1); assert.equal(ends[0].operation, 'consume');
+              const attempt = ends[0].request_metrics.trace.find(event => event.event === 'attempt' && event.target?.page_id === sample.notion.main.id && event.body_kind === 'current_body');
+              assert.equal(attempt?.outcome, 'cancelled');
+              assert.ok(Number.isSafeInteger(attempt.response_bytes) && attempt.response_bytes >= 0 && attempt.response_bytes <= closed.observed_response_bytes);
+              assert.equal(ends[0].source_http_terminal.unknown_response_bytes, 0);
+              const cancelledResults = events.filter(event => event.kind === 'sdk_lifecycle_result' && event.id === ends[0].id);
+              assert.equal(cancelledResults.length, 1);
+              const proof = { sdk_id: ends[0].id, host_pid: control.rpc.lifecycle[0].pid, tool_call_id: id,
+                sent_monotonic_ns: sent, completed_monotonic_ns: completed, response,
+                sdk_result: cancelledResults[0].value,
+                tool_start: control.rpc.frames.find(frame => frame.type === 'tool_execution_start' && frame.toolCallId === id),
+                tool_end: control.rpc.frames.find(frame => frame.type === 'tool_execution_end' && frame.toolCallId === id) };
+              assertControlledHttpCancellation(events.find(event => event.kind === 'sdk' && event.event === 'start' && event.id === ends[0].id), ends[0], proof);
+              const before = service.requests.length; fault.release();
+              await publishToolPlan(control.toolPlan, { mode: 'complete' });
+              await control.rpc.prompt('Continue the ordinary conversation after cancellation. Do not select or load any Skill.');
+              const captures = await control.captures(); assert.equal(captures.length, 2);
+              for (const capture of captures) for (const file of sample.oracle.cold.files)
+                assert.equal(bodyCount(capture.context, sample.oracle.cold.contents[file.path]), 0, 'Cancelled content must not reach a later provider request');
+              assert.equal(service.requests.length, before, 'Late release and the ordinary continuation must not retry cancelled source work');
+              return { controlled_cancellations: [proof], expected_error_calls: [id], held_response: closed,
+                cancelled_attempt: { sdk_received_bytes: attempt.response_bytes, server_written_bytes: closed.observed_response_bytes,
+                  complete_response_bytes: null, complete_text_delivered: false },
+                actual_client_headers: headers, prompt_outcome: outcome, after_abort_provider_body_copies: 0, after_abort_source_http: 0 };
+            } finally { fault.release(); }
+          },
+          verify: async ({ archive, requests }) => {
+            if (label === 'cancel') {
+              assert.equal(archive.entries.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-active-sources').length, 0);
+              assert.equal(requests.filter(request => request.path === bodyPath).length, 1, 'An actual abort must not consume an SDK retry');
+            }
+            return { fault: label, original_sdk_retry_policy: true, controller_retries: 0 };
+          } });
+      }
+    } else throw new Error('CONTROLLED_HTTP_SCENARIO_NOT_IMPLEMENTED: ' + name);
+  } catch (error) { failed = { code: error.code ?? error.name, message: String(error.message) }; }
+  finally {
+    try { await service.close(); serviceClosed = true; }
+    catch (error) { failed ??= { code: error.code ?? error.name, message: String(error.message) }; }
+    await save(join(output, 'source-service-final.json'), { closed: serviceClosed, requests: service.requests, unexpected: service.unexpected });
+  }
+  const result = { name, status: failed ? 'failed' : 'passed', source_mode: 'controlled-http',
+    observer_finality: serviceClosed && phases.length > 0 && phases.every(phase => phase.observer_finality),
+    phases, ...(failed ? { error: failed } : {}), source_command_configured: false, production_notion: 'not_run', real_model: 'not_run',
+    ...(name === 'http-directory' && !failed ? { default_view: 'verified' } : {}),
+    source_http_helper: { ...info.controlledHttp.helper, retained_file: 'source-http-helper.mjs' } };
+  await save(join(output, 'result.json'), result); return result;
 }
 
 async function scenario(name, info, scratch, evidence, expectShortRefs, expectCompactContext, expectDirectScalar, expectShortConfirmations, warmDirectory = false) {
@@ -3987,16 +4591,18 @@ async function retained(evidence, cleanup) {
     assert.ok(Array.isArray(plan.scenarios) && plan.scenarios.length > 0 && plan.scenarios.every(name => allowed.includes(name)));
     assert.equal(new Set(plan.scenarios).size, plan.scenarios.length);
     for (const name of plan.scenarios) {
-      const processes = isLifecycleScenario(name) ? await json(join(evidence, name, 'rpc-processes.json'))
+      const processes = isLifecycleScenario(name) || httpScenarioNames.includes(name) ? await json(join(evidence, name, 'rpc-processes.json'))
         : [{ lifecycle_file: 'rpc-lifecycle.json', observer_file: 'observer.jsonl' }];
       assert.ok(processes.length > 0);
       for (const process of processes) {
         assert.match(process.lifecycle_file, /^rpc-lifecycle(?:-[a-z]+)?\.json$/u);
         assert.match(process.observer_file, /^observer(?:-[a-z]+)?\.jsonl$/u);
-        const lifecycle = await json(join(evidence, name, process.lifecycle_file));
+        const directory = httpScenarioNames.includes(name) ? process.directory : '';
+        if (httpScenarioNames.includes(name)) assert.ok(['pending', 'failed', 'cold', 'warm', 'expired', 'forced', 'resumed', 'rate-limit', 'disconnect', 'cancel'].includes(directory));
+        const lifecycle = await json(join(evidence, name, directory, process.lifecycle_file));
         assert.equal(lifecycle.filter(event => event.event === 'spawn').length, 1);
         assert.equal(lifecycle.filter(event => event.event === 'close').length, 1);
-        const observed = await rows(join(evidence, name, process.observer_file));
+        const observed = await rows(join(evidence, name, directory, process.observer_file));
         assert.equal(sourceFinality(observed, lifecycle[0].pid, { hostClosed: true }).complete, true);
       }
     }
@@ -4010,13 +4616,13 @@ async function retained(evidence, cleanup) {
 }
 async function main(argv) {
 const args = [...argv];
-if (args.some(value => ['--help', '-h', 'help'].includes(value))) { console.log(usage + '\n' + nameUsage + '\n' + warmDirectoryUsage + '\n' + compactionUsage + '\n' + catalogScaleUsage); return; }
+if (args.some(value => ['--help', '-h', 'help'].includes(value))) { console.log(usage + '\n' + nameUsage + '\n' + warmDirectoryUsage + '\n' + compactionUsage + '\n' + catalogScaleUsage + '\n' + httpUsage); return; }
 const action = args.shift();
 assert.ok(['doctor', 'run', 'evidence', 'cleanup'].includes(action), usage);
 const options = {};
 for (let index = 0; index < args.length; index += 2) {
   const key = args[index], value = args[index + 1];
-  assert.ok(['--package', '--fixture', '--live-input', '--out', '--evidence', '--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar', '--expect-short-confirmations', '--warm-directory', '--scenario'].includes(key) && value && !Object.hasOwn(options, key), usage);
+  assert.ok(['--package', '--fixture', '--live-input', '--source-http-helper', '--out', '--evidence', '--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar', '--expect-short-confirmations', '--warm-directory', '--scenario'].includes(key) && value && !Object.hasOwn(options, key), usage);
   if (['--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar', '--expect-short-confirmations', '--warm-directory'].includes(key)) assert.ok(['true', 'false'].includes(value), usage);
   else if (key === '--scenario') assert.ok(value === 'all' || selectableScenarioNames.includes(value), usage + '\n' + nameUsage + '\n' + compactionUsage);
   else assert.ok(isAbsolute(value), usage);
@@ -4030,7 +4636,11 @@ if (action === 'evidence' || action === 'cleanup') {
   const info = await inspect(options);
   if (action === 'doctor') console.log(JSON.stringify({ status: 'ready', node: process.version, pi: info.pi.version, host: info.host, extension: info.extension, runtime: info.runtime, serializer: info.serializerIdentity,
     fixture: options['--fixture'], live_input: options['--live-input'], authentication: 'not_probed',
-    source: info.live ? 'Real Notion; local private oracle never seeds the consumer' : 'controlled offline catalog and snapshots',
+    source: info.live ? 'Real Notion; local private oracle never seeds the consumer'
+      : info.controlledHttp ? 'controlled-http; original cold seed, actual loopback source HTTP, no production requests'
+      : 'controlled offline catalog and snapshots',
+    ...(info.controlledHttp ? { source_mode: 'controlled-http', source_http_helper: info.controlledHttp.helper,
+      scenario: info.controlledHttp.scenario, source_http: 'not_run' } : {}),
     ...(info.live ? { artifact: info.live.artifact, installed_files: info.published, oracle: info.live.oracle, expected_default_records: info.catalog.count } : {}),
     ...(warmDirectory ? { comparison_cell: 'warm-directory', metadata_barrier: 'not_run', metadata_barrier_timeout_ms: 10000 } : {}),
     ...(info.catalogScale ? { catalog_scale: info.catalogScale, object_files: info.catalogObjects } : {}),
@@ -4052,6 +4662,9 @@ if (action === 'evidence' || action === 'cleanup') {
       fixture: options['--fixture'], driver_sha256: hash(await readFile(fileURLToPath(import.meta.url))), source_command_configured: false,
       ...(options['--fixture'] ? { fixture_sha256: hash(await readFile(options['--fixture'])) } : {}),
       ...(info.catalogScale ? { catalog_scale: info.catalogScale, object_files: info.catalogObjects, source_api_pagination: 'not_exercised_offline_fixture' } : {}),
+      ...(info.controlledHttp ? { input_mode: 'controlled_http_sdk', source_mode: 'controlled-http', source_http_helper: info.controlledHttp.helper,
+        source_fixture: 'original scalarInventory cold seed and complete service facts', source_http: 'planned', controller_retries: 0,
+        helper_retained_path: info.controlledHttp.scenario + '/source-http-helper.mjs' } : {}),
       scenarios, expect_short_refs: expectShortRefs, expect_compact_context: expectCompactContext, expect_direct_scalar: expectDirectScalar, expect_short_confirmations: expectShortConfirmations,
       ...(warmDirectory ? { comparison_cell: 'warm-directory', metadata_barrier_timeout_ms: 10000, extra_prompts: 0, body_preparation_during_barrier: false } : {}),
       comparison_scope: 'Installed Broker plus bundled CLI/SDK; a changed runtime manifest or bundle hash is a changed comparison input',
@@ -4061,6 +4674,7 @@ if (action === 'evidence' || action === 'cleanup') {
     const results = [];
     for (const name of scenarios) {
       try { results.push(info.live ? await liveScenario(info, scratch, evidence)
+        : info.controlledHttp ? await controlledHttpScenario(name, info, scratch, evidence)
         : await scenario(name, info, scratch, evidence, expectShortRefs, expectCompactContext, expectDirectScalar, expectShortConfirmations, warmDirectory)); }
       catch (error) { results.push({ name, status: 'failed', error: { code: error.code ?? error.name, message: String(error.message) } }); }
       await save(join(evidence, 'progress.json'), results); console.log(JSON.stringify(results.at(-1)));
@@ -4070,7 +4684,8 @@ if (action === 'evidence' || action === 'cleanup') {
     const stable = results.every(result => result.observer_finality === true);
     const report = { version: 1, status: unchanged && results.every(result => result.status === 'passed') ? 'passed' : 'failed', package_unchanged: unchanged, evidence_stable: stable, scratch, evidence, results,
       ...(info.live ? { acceptance: 'partial_until_independent_source_attribution' } : {}),
-      not_claimed: [...(info.live ? ['Unselected Member source body exclusion without independent retained-source attribution'] : ['Live Notion', 'Cold source cache']),
+      not_claimed: [...(info.live ? ['Unselected Member source body exclusion without independent retained-source attribution']
+        : info.controlledHttp ? ['Live Notion', 'Default five-minute TTL clock boundary', 'HTTP Requires closure'] : ['Live Notion', 'Cold source cache']),
         'Real model', 'Native menu', ...(results.some(result => result.default_view === 'verified') ? [] : ['Default View']), 'Binary resource as complete text delivery', 'OMP/Tern'] };
     await save(join(evidence, 'report.json'), report);
     await save(join(evidence, stable ? 'retained.json' : 'retained-incomplete.json'), await inventory(evidence));

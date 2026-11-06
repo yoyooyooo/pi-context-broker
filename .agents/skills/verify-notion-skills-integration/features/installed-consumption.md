@@ -75,6 +75,41 @@ Run `verify-artifacts.mjs --host pi` against the frozen archive directory, or `c
 
 Default SDK acceptance uses the same installed package with `node scripts/notion-sdk-pi.mjs doctor --package ABSOLUTE_INSTALLED_BROKER --fixture ABSOLUTE_FIXTURE_JSON`, then `run` with those arguments plus `--scenario all --out NEW_ABSOLUTE_EVIDENCE`. Its source.command must be absent. This is an actual Pi, controlled-provider, offline-source route; follow the [consumption map](skill-consumption.md) for default View, tool delivery, resource and session assertions. Source fixtures do not prove real Notion or real-model acceptance.
 
+### 已安装 SDK 的真实 HTTP 消费接线
+
+SC06／SC08／SC20／SC26 继续使用同一个 `scripts/notion-sdk-pi.mjs`，另显式选择 `http-directory`、`http-cache-recovery` 或 `http-interruption`。原 `all` 仍为 14 景，名字与 ambiguity 场景也保持独立。输入来自原 CLI `scripts/sdk-fixture.ts --outdir ABSOLUTE_OWNED_DIRECTORY --catalog`，使用其中的空 scalar source seed；该 seed 不含 snapshot、共享 current record 或 object。CLI 的 `scripts/sdk-source-fixture.mjs` 是原 installed smoke 共用的验证 HTTP service，不属于安装包运行时。
+
+```bash
+node scripts/notion-sdk-pi.mjs doctor --package ABSOLUTE_INSTALLED_BROKER --fixture ABSOLUTE_FIXTURE_JSON --source-http-helper ABSOLUTE_FROZEN_HELPER --scenario http-directory
+node scripts/notion-sdk-pi.mjs run --package ABSOLUTE_INSTALLED_BROKER --fixture ABSOLUTE_FIXTURE_JSON --source-http-helper ABSOLUTE_FROZEN_HELPER --scenario http-directory --out NEW_ABSOLUTE_EVIDENCE
+node scripts/notion-sdk-pi.mjs evidence --evidence ABSOLUTE_EVIDENCE
+node scripts/notion-sdk-pi.mjs cleanup --evidence ABSOLUTE_EVIDENCE
+node scripts/notion-sdk-pi.mjs evidence --evidence ABSOLUTE_EVIDENCE
+```
+
+另外两景仅替换 `--scenario` 与新的 `--out`。Doctor 只读取 helper 身份，不 import 或启动服务；run 先按 SHA／bytes 保留 helper，再从证据副本启动只绑定 `127.0.0.1` 的原 HTTP fixture。实际 Pi 使用独立安装的 Broker／内置 SDK、无 `source.command`、关闭 prefetch、独立 HOME／XDG／state／cache／session 与 scheduler；consumer 不继承 oracle snapshot。Controlled provider 的真实 Pi 输入逐份通过所安装 pi-ai serializer 发往 localhost。每阶段分别记录 SDK terminal、实际 source attempts／字节、provider 输入、tool result 与宿主退出；缺失、未闭合或错误路径不记为零。
+
+| 用户入口 | 实际驱动与正反例 | 验收边界 |
+| --- | --- | --- |
+| 普通会话的默认目录 | `http-directory` 在实际 View HTTP response 被 hold 时先完成普通 provider 请求；放行后通过既有只读 `/context-broker view` 观察发布状态，再提交普通续问。独立空根实测 401。 | 首次 pending 不阻塞；ready 后名称、描述、View 与短引用准确；401 无伪 ready／部分目录；所有输入均无正文，0 object read。公开状态命令必须新增 HTTP／provider 都为 0，次数、耗时、全部通知保留。该屏障只用于受控第二轮，不加入真实 C/D 任务。 |
+| `read`、`notion_use` 与真实 session 恢复 | `http-cache-recovery` 在同一 owned SDK cache 中依次启动真实 Pi：cold、新进程 warm、非零 TTL 实际到期、显式零 age 强制重验、权限失败／恢复及原 session-file resume。 | 按[会话地图](session-cache-recovery.md#实际-http-缓存权限与中断)逐项绑定 scope／snapshot／version／File。warm 的一次在线身份校验单列，不能要求或宣称全零 HTTP；到期与强制重验分开。 |
+| 读取中的重试和取消 | `http-interruption` 为三个独立 cold 根分别注入一次 429、一次 partial stream disconnect、一次 headers 后的真实 RPC abort。 | 前两者只由原 SDK retry 恢复，失败 attempt 保留；取消不重试、不激活，迟到响应与下一次普通输入均不能交付正文。controller retry 为 0。 |
+
+CI 在原独立安装产物之后运行 Pi 1.5 的三景；Pi 1.4 兼容 step 在同一产物上另跑 `http-directory`。`check-gates` 继续检查原 check／all14／names／ambiguity，并拒绝删景、错 helper、改用 checkout、条件跳过、吞错或丢失 HTTP evidence。CI 与 publish 的 CLI checkout pin 仍一致，publish 保持单 job。上述路由不证明真实 Notion、真实模型、Requires 闭包、默认五分钟真实时钟边界或日用安装；对应既有门禁仍单列。
+
+2026-11-06 的实际安装验证在 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sdk-pi-http-59mmlay9`。沿用 C9 独立安装包，没有重包：SDK SHA256 `4637b06c48a4c48432c2a75a4e8034a10a153893b5e5c676038653bf86b61511`，CLI `2d78b994627f05f715edebaad04f7891b96326b037ea2c52d57c2d79883af837`；fixture 为 `24d8f8cd…`。八文件 harness 只覆盖本次 driver，其余七文件保持原 `5a822123` 字节。
+
+| 实际 n=1 运行 | Pi 进程 | 来源 HTTP attempts | 完整服务响应 B | 不完整响应已写 B | provider 请求／安装 serializer 请求 B |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `directory-v3/pi15`，Pi 1.5 | 2 | 15 | 183538 | 0 | 4／30220 |
+| `directory-v3/pi14`，Pi 1.4 | 2 | 15 | 183538 | 0 | 4／31288 |
+| `remaining-v7/http-cache-recovery`，Pi 1.5 | 5 | 72 | 6171157 | 0 | 25／286266 |
+| `remaining-v7/http-interruption`，Pi 1.5 | 3 | 69 | 3553412 | 64 | 6／48353 |
+
+四次整体 PASS、安装文件前后不变、12 个 Pi 均自然 EOF，source CLI 子进程与真实模型／生产 Notion 均为 0。两个 directory 的 source body／object read 为 0；只读状态探测在 ready／failed 各一次，新增 source HTTP 与 provider 都为 0。目录仍使用已通过的 `f70eb343…` driver／`5f27b4bb…` helper；B/C 使用 `4884b812…` driver／`7ede1e7f…` helper。后者仅补同一已声明 403 的 root markdown 路由，不将前两次原件改标为新 helper 运行。CI／publish 固定 CLI `0f637a5ab7f98d8de5d77f6994103164b0c7e173`；本地接线检查和其 17 项正反例已过，远端 CI 结果仍单列。
+
+`acceptance-ledger.json`（SHA256 `809e1ad87aa301daea676cfdb46e1d905c058920d33ba5593ab61b2f4438e7ff`）逐阶段关联原 source journal、SDK terminal、provider-http、RPC 与进程记录。服务端未压缩写入和 SDK 实收字节独立核对，不相加；累计工具 schema JSON 分别为 12352／12352／77200／18528 B。原件及各冻结输入保留，11 次已封存运行均完成原 Evidence→Trash→Evidence，742 个原件 hash 不变；零 Pi 的早期未实现失败另有严格 owned prelaunch cleanup 回执，未改 `evidence_stable:false` 或原 FAILED。各旧失败及校准原因保留，不能由这些单样本账本相减推断整体性能改善。
+
 ### Name and fixed URI resolution
 
 CLI, SDK composition and Pi accept explicit `skill://<name-or-alias>/<path>` references. Current names resolve through the shared Core `resolveCatalogReference` against the complete ordinary enabled catalog, then enter the unchanged exact `consume`/read contract with its canonical target. SDK `consume` itself remains an exact machine API; do not rewrite `preparation.roots[*].target` after decoding or relax its expected-target check. Copy canonical refs or session handles from results for subsequent actions.

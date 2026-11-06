@@ -95,12 +95,27 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
         && installed.includes("assert.equal(manifest.ambiguitySdk.status, 'passed')")
         && retained.includes('${{ runner.temp }}/pi14-name-reference-ambiguity-evidence/'),
         'GATE_INSTALLED_AMBIGUITY_MISSING', 'Both supported Pi releases must verify actionable ambiguity on the same independently installed package.');
+      const controlled = step('Installed Pi controlled HTTP consumption');
+      const httpCommand = 'node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs"';
+      const runLines = value => value.split('\n        run: |\n')[1]?.split('\n').map(line => line.trim()) ?? [];
+      const controlledLines = runLines(controlled), compatibilityLines = runLines(compatibility);
+      check(unconditional(controlled)
+        && controlled.includes('BROKER_INSTALLED_PACKAGE: ${{ steps.installed-pi.outputs.package }}')
+        && controlledLines.includes('for scenario in http-directory http-cache-recovery http-interruption; do')
+        && controlledLines.includes(httpCommand + ' --scenario "$scenario" --out "$RUNNER_TEMP/pi15-$scenario-evidence"')
+        && workflow.text.indexOf(installed) < workflow.text.indexOf(controlled)
+        && workflow.text.indexOf(controlled) < workflow.text.indexOf(compatibility)
+        && compatibilityLines.includes(httpCommand + ' --scenario http-directory --out "$RUNNER_TEMP/pi14-http-directory-evidence"')
+        && retained.includes('${{ runner.temp }}/pi15-http-*-evidence/')
+        && retained.includes('${{ runner.temp }}/pi14-http-directory-evidence/'),
+        'GATE_CONTROLLED_HTTP_MISSING', 'CI must exercise all three actual Pi1.5 HTTP scenes and Pi1.4 directory on the same installed package, retaining source and provider evidence.');
     } else check(!/^    strategy:/mu.test(workflow.text), 'GATE_PUBLISH_MATRIX', 'Publishing remains a single job, not a host-version matrix.');
   }
   check(new Set(sourceRevisions).size === 1, 'GATE_SDK_BUILD_INPUT_DRIFT', 'CI and publish must use the same frozen CLI revision.');
   return { status: 'gate-wiring-valid', supportedPi: ['1.4.0', '1.5.0'], primaryPi: '1.5.0', requiredTests: required.length,
     cliSourceRevision: sourceRevisions[0], installedSdk: 'required_all14', installedNames: 'required_two_scenarios',
     installedAmbiguity: 'required_scenario',
+    controlledHttp: { primary: ['http-directory', 'http-cache-recovery', 'http-interruption'], compatibility: ['http-directory'] },
     runtimeAcceptance: 'not-inferred', boundary: 'Wiring is checked here; actual test logs and installed host runs remain separate evidence.' };
 }
 

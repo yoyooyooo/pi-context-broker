@@ -20,7 +20,7 @@ test('normal checks and both workflows retain consumption and real Pi installati
     [value => { value.workflows[0].text = value.workflows[0].text.replace('@earendil-works/pi-coding-agent@1.5.0', '@earendil-works/pi-coding-agent@1.5.1'); }, 'GATE_PI_VERSION'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('@earendil-works/pi-coding-agent@1.4.0', '@earendil-works/pi-coding-agent@1.4.1'); }, 'GATE_PI_COMPATIBILITY_MISSING'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('- name: Pi 1.4 compatibility\n', '- name: Pi 1.4 compatibility\n        if: false\n'); }, 'GATE_PI_COMPATIBILITY_MISSING'],
-    [value => { value.workflows[0].text = value.workflows[0].text.replace('BROKER_INSTALLED_PACKAGE: ${{ steps.installed-pi.outputs.package }}', 'BROKER_INSTALLED_PACKAGE: packages/context-broker'); }, 'GATE_PI_COMPATIBILITY_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replaceAll('BROKER_INSTALLED_PACKAGE: ${{ steps.installed-pi.outputs.package }}', 'BROKER_INSTALLED_PACKAGE: packages/context-broker'); }, 'GATE_PI_COMPATIBILITY_MISSING'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('--scenario all --out "$RUNNER_TEMP/pi14-sdk-evidence"', '--scenario dollar --out "$RUNNER_TEMP/pi14-sdk-evidence"'); }, 'GATE_PI_COMPATIBILITY_MISSING'],
     [value => { value.workflows[1].text = value.workflows[1].text.replace('    steps:\n', '    strategy:\n      matrix:\n        pi: [1.4.0, 1.5.0]\n    steps:\n'); }, 'GATE_PUBLISH_MATRIX'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('NTN_SKILLS_BUILD_ENTRY:', 'UNUSED_CLI_ENTRY:'); }, 'GATE_SDK_BUILD_INPUT_MISSING'],
@@ -59,6 +59,46 @@ test('installed name gates cannot omit their distinct fixture, required executio
 
 test('installed ambiguity gate is required independently of the two existing name scenarios', () => {
   assert.equal(validateConsumptionGates().installedAmbiguity, 'required_scenario');
+});
+
+test('controlled HTTP gates retain all primary scenes and the compatibility directory on the installed package', () => {
+  assert.deepEqual(validateConsumptionGates().controlledHttp, { primary: ['http-directory', 'http-cache-recovery', 'http-interruption'], compatibility: ['http-directory'] });
+});
+
+test('controlled HTTP gates reject missing scenes, helper, package routing, unconditional execution or retained evidence', () => {
+  for (const mutate of [
+    text => text.replace('for scenario in http-directory http-cache-recovery http-interruption; do', 'for scenario in http-directory http-interruption; do'),
+    text => text.replace('- name: Installed Pi controlled HTTP consumption\n', '- name: Installed Pi controlled HTTP consumption\n        if: false\n'),
+    text => text.replace('- name: Installed Pi controlled HTTP consumption\n', '- name: Installed Pi controlled HTTP consumption\n        continue-on-error: true\n'),
+    text => text.replace('BROKER_INSTALLED_PACKAGE: ${{ steps.installed-pi.outputs.package }}', 'BROKER_INSTALLED_PACKAGE: packages/context-broker'),
+    text => text.replace(' --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs"', ''),
+    text => text.replace('--scenario http-directory --out "$RUNNER_TEMP/pi14-http-directory-evidence"', '--scenario default-view --out "$RUNNER_TEMP/pi14-http-directory-evidence"'),
+    text => text.replace('${{ runner.temp }}/pi15-http-*-evidence/', '${{ runner.temp }}/unrelated-http/'),
+    text => text.replace('${{ runner.temp }}/pi14-http-directory-evidence/', '${{ runner.temp }}/unrelated-http/'),
+  ]) {
+    const config = consumptionGateConfiguration(); config.workflows[0].text = mutate(config.workflows[0].text);
+    assert.throws(() => validateConsumptionGates(config), { code: 'GATE_CONTROLLED_HTTP_MISSING' });
+  }
+});
+
+test('controlled HTTP gates reject commented compatibility commands', () => {
+  const config = consumptionGateConfiguration(), workflow = config.workflows.find(value => value.name === 'ci');
+  const command = workflow.text.split('\n').find(line => line.endsWith('--scenario http-directory --out "$RUNNER_TEMP/pi14-http-directory-evidence"'));
+  assert.ok(command?.trimStart().startsWith('node scripts/notion-sdk-pi.mjs run '));
+  assert.equal(workflow.text.split(command).length, 2);
+  workflow.text = workflow.text.replace(command, command.replace(/^(\s*)/u, '$1# '));
+  assert.throws(() => validateConsumptionGates(config), { code: 'GATE_CONTROLLED_HTTP_MISSING' });
+});
+
+test('controlled HTTP gates reject swallowed primary or compatibility command failures', () => {
+  for (const output of ['pi15-$scenario-evidence', 'pi14-http-directory-evidence']) {
+    const config = consumptionGateConfiguration(), workflow = config.workflows.find(value => value.name === 'ci');
+    const command = workflow.text.split('\n').find(line => line.endsWith('--out "$RUNNER_TEMP/' + output + '"'));
+    assert.ok(command?.trimStart().startsWith('node scripts/notion-sdk-pi.mjs run '));
+    assert.equal(workflow.text.split(command).length, 2);
+    workflow.text = workflow.text.replace(command, command + ' || true');
+    assert.throws(() => validateConsumptionGates(config), { code: 'GATE_CONTROLLED_HTTP_MISSING' }, output);
+  }
 });
 
 test('installed ambiguity gates reject missing fixture, skipped execution, wrong package routing and lost evidence', () => {

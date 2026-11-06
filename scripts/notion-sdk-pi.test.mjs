@@ -14,6 +14,52 @@ const command = ['/absolute/node', '/installed/dist/ntn-skills.mjs'];
 const database = '11111111-2222-3333-4444-555555555555';
 const toolNames = ['read', 'notion_list', 'notion_use', 'bash', 'notion_ctl'];
 const guidance = '<ntn-skills-guidance>Use supplied bodies. Request cli_source only for an intended source.</ntn-skills-guidance>';
+
+for (const scenario of ['http-directory', 'http-cache-recovery', 'http-interruption'])
+  test(`controlled HTTP entry requires one frozen helper for ${scenario}`, () => {
+    assert.equal(typeof namedSdkProbe.controlledHttpOptions, 'function');
+    const options = { '--fixture': '/owned/fixture.json', '--scenario': scenario,
+      '--source-http-helper': '/frozen/sdk-source-fixture.mjs' };
+    assert.deepEqual(namedSdkProbe.controlledHttpOptions(options), {
+      scenario, helperPath: '/frozen/sdk-source-fixture.mjs', sourceMode: 'controlled-http' });
+    for (const changed of [
+      { '--source-http-helper': undefined }, { '--source-http-helper': 'relative.mjs' },
+      { '--live-input': '/owned/live.json' }, { '--fixture': undefined },
+      { '--warm-directory': 'true' }, { '--expect-short-refs': 'false' },
+    ]) assert.throws(() => namedSdkProbe.controlledHttpOptions({ ...options, ...changed }));
+  });
+
+test('controlled HTTP entry cannot silently change an existing offline or live route', () => {
+  assert.equal(typeof namedSdkProbe.controlledHttpOptions, 'function');
+  for (const scenario of [undefined, 'all', 'default-view', 'session-lifecycle']) {
+    const options = { '--fixture': '/owned/fixture.json', '--scenario': scenario };
+    assert.equal(namedSdkProbe.controlledHttpOptions(options), null);
+    assert.throws(() => namedSdkProbe.controlledHttpOptions({ ...options,
+      '--source-http-helper': '/frozen/sdk-source-fixture.mjs' }));
+  }
+});
+
+test('controlled HTTP caller emits the exact planned public call once and retains a declared source error', () => {
+  assert.equal(typeof namedSdkProbe.selectControlledHttpCall, 'function');
+  const call = { id: 'http-denied-resource', tool: 'read', args: { path: 'skill://owned/references/a.md?snapshot=fixed' }, errorCode: 'ACCESS_DENIED' };
+  const context = { messages: [] }, plan = { mode: 'http-call', call };
+  assert.deepEqual(namedSdkProbe.selectControlledHttpCall(context, plan), {
+    type: 'toolCall', id: call.id, name: call.tool, arguments: call.args });
+  context.messages.push({ role: 'toolResult', toolName: 'read', toolCallId: call.id, isError: true,
+    content: [{ type: 'text', text: 'context-broker activation failed (ACCESS_DENIED)' }] });
+  assert.equal(namedSdkProbe.selectControlledHttpCall(context, plan), null);
+  context.messages[0].isError = false; assert.throws(() => namedSdkProbe.selectControlledHttpCall(context, plan));
+});
+
+test('controlled HTTP caller cannot accept an undeclared error, another code or an arbitrary tool', () => {
+  assert.equal(typeof namedSdkProbe.selectControlledHttpCall, 'function');
+  const call = { id: 'http-main', tool: 'read', args: { path: 'skill://owned/SKILL.md' } };
+  const context = { messages: [{ role: 'toolResult', toolName: 'read', toolCallId: call.id, isError: true,
+    content: [{ type: 'text', text: 'context-broker activation failed (AUTH_REQUIRED)' }] }] };
+  assert.throws(() => namedSdkProbe.selectControlledHttpCall(context, { call }));
+  assert.throws(() => namedSdkProbe.selectControlledHttpCall(context, { call: { ...call, errorCode: 'ACCESS_DENIED' } }));
+  assert.throws(() => namedSdkProbe.selectControlledHttpCall({ messages: [] }, { call: { ...call, tool: 'bash' } }));
+});
 const context = () => ({ messages: [
   { role: 'system', content: 'Controlled system instructions.', toolsAdded: toolNames.map(name => ({ name })) },
   { role: 'user', content: guidance },
@@ -1684,6 +1730,148 @@ const catalog = [
     request_metrics: { complete: true, total_requests: 0, trace: [] } },
   { kind: 'observer_end', code: 0, active_sdk: 0, active_children: 0 },
 ];
+
+test('controlled HTTP metadata failures require actual failed lists and do not become ready', () => {
+  const fields = structuredClone(catalog);
+  fields[2].status = 'failed'; fields[2].error_code = 'AUTH_REQUIRED';
+  fields[2].request_metrics = { complete: true, total_requests: 1, trace: [{ event: 'attempt', attempt: 1, http_status: 401 }] };
+  const options = { sourceMode: 'controlled-http', bodyTransportRequired: false,
+    expectedCatalogOutcome: 'failed', expectedFailedSdkIds: ['42:1'] };
+  const result = reconcile(observed(fields), lifecycle, options);
+  assert.equal(result.sdk_http, 1); assert.equal(result.sdk_completed_lists, 0);
+  assert.equal(result.default_catalog_transport, 'not_exercised');
+  assert.throws(() => reconcile(observed(fields), lifecycle, { ...options, sourceMode: 'offline' }));
+  assert.throws(() => reconcile(observed(fields), lifecycle, { ...options, expectedFailedSdkIds: [] }));
+  assert.throws(() => reconcile(observed(catalog), lifecycle, options));
+});
+
+test('controlled HTTP body cancellation requires its actual RPC abort inside the SDK interval', () => {
+  const fields = structuredClone(catalog);
+  fields.splice(3, 0,
+    { kind: 'sdk', event: 'start', id: '42:2', operation: 'consume' },
+    { kind: 'sdk', event: 'end', id: '42:2', operation: 'consume', status: 'cancelled', sdk_started: true, metrics_observed: true,
+      request_metrics: { complete: true, total_requests: 1, trace: [{ event: 'attempt', attempt: 1, outcome: 'cancelled' }] } });
+  const cancellation = { sdk_id: '42:2', host_pid: 42, tool_call_id: 'http-cancel',
+    sent_monotonic_ns: '4', completed_monotonic_ns: '5',
+    sdk_result: { version: 1, status: 'cancelled', reason: 'interrupted' },
+    response: { type: 'response', command: 'abort', id: 'broker-e2e-4', success: true },
+    tool_start: { type: 'tool_execution_start', toolName: 'notion_use', toolCallId: 'http-cancel' },
+    tool_end: { type: 'tool_execution_end', toolName: 'notion_use', toolCallId: 'http-cancel', isError: true } };
+  const options = { sourceMode: 'controlled-http', controlledCancellations: [cancellation] };
+  const result = reconcile(observed(fields), lifecycle, options);
+  assert.equal(result.sdk_cancelled_bodies, 1); assert.equal(result.sdk_http, 1);
+  assert.throws(() => reconcile(observed(fields), lifecycle), /Only catalogue/);
+  for (const changed of [
+    { host_pid: 41 }, { sdk_id: '42:3' }, { sent_monotonic_ns: '3' },
+    { response: { ...cancellation.response, success: false } },
+    { response: { ...cancellation.response, command: 'get_state' } },
+    { tool_end: { ...cancellation.tool_end, isError: false } },
+    { tool_end: { ...cancellation.tool_end, toolCallId: 'different' } },
+    { sdk_result: { version: 1, status: 'ready', reason: 'interrupted' } },
+    { sdk_result: { ...cancellation.sdk_result, entries: [{ content: 'partial body' }] } },
+  ]) assert.throws(() => reconcile(observed(fields), lifecycle, { ...options,
+    controlledCancellations: [{ ...cancellation, ...changed }] }));
+});
+
+function controlledDirectoryFixture() {
+  const sample = { oracle: { cold: { files: [{ path: 'SKILL.md' }], contents: { 'SKILL.md': 'Unselected authored source body.\n' } } },
+    view_dynamics: { view: { id: 'owned-view' }, observations: [{ member_record_ids: ['owned-root'] }] } };
+  const record = { id: 'owned-root', name: 'HTTP fixture', description: 'Metadata only.' };
+  const captures = [
+    { requestId: '42:provider:1', context: { messages: [{ role: 'system', content: '<ntn-skills-discovery status="pending">pending</ntn-skills-discovery>' }] } },
+    { requestId: '42:provider:2', context: { messages: [{ role: 'system', content: '<ntn-skills-view-catalog><view id="owned-view" source="sdk-fixture" partial="false"><skill><name>HTTP fixture</name><description>Metadata only.</description><source>sdk-fixture</source><location>sr:Cabcdefghijklmnopqrstuv</location></skill></view></ntn-skills-view-catalog>' }] } },
+  ];
+  const events = [
+    { kind: 'object_observer_start', observer_pid: 42, coverage: ['node:fs.readFile', 'node:fs.readFileSync', 'node:fs/promises.readFile'] },
+    { kind: 'sdk', event: 'start', operation: 'list' },
+    { kind: 'sdk_catalog', value: { view: { id: 'owned-view' }, coverage: { exhaustive: true, failed_sources: [] }, records: [record] } },
+    { kind: 'object_observer_end', observer_pid: 42, pending_reads: 0, errors: 0 },
+  ];
+  return { sample, captures, events, held: { provider_request_id: captures[0].requestId,
+    request_seen_monotonic_ns: '10', provider_payload_end_monotonic_ns: '20', released_monotonic_ns: '30' } };
+}
+
+test('controlled HTTP directory requires provider input before release and exact complete metadata without source bodies', () => {
+  const check = ({ sample, captures, events, held }) => namedSdkProbe.assertControlledHttpDirectory(captures, events, { sample, hostPid: 42, state: 'ready', held });
+  assert.equal(check(controlledDirectoryFixture()).status, 'verified');
+  for (const mutate of [
+    value => { value.held.released_monotonic_ns = '20'; },
+    value => { value.held.provider_request_id = 'another-request'; },
+    value => { value.captures[0].context.messages[0].content = value.captures[1].context.messages[0].content; },
+    value => { value.captures[1].context.messages.push({ role: 'user', content: value.sample.oracle.cold.contents['SKILL.md'] }); },
+    value => { value.events[2].value.records[0].id = 'unselected-root'; },
+    value => { value.events[2].value.coverage.exhaustive = false; },
+    value => { value.events.push({ kind: 'sdk', event: 'start', operation: 'consume' }); },
+    value => { value.events.shift(); },
+  ]) { const value = controlledDirectoryFixture(); mutate(value); assert.throws(() => check(value)); }
+});
+
+test('controlled HTTP failed directory preserves failure without inventing ready metadata', () => {
+  const value = controlledDirectoryFixture();
+  value.captures[1].context.messages[0].content = '<ntn-skills-discovery status="failed">Source unavailable.</ntn-skills-discovery>';
+  value.events[2] = { kind: 'sdk', event: 'end', operation: 'list', status: 'failed', error_code: 'AUTH_REQUIRED' };
+  const check = () => namedSdkProbe.assertControlledHttpDirectory(value.captures, value.events,
+    { sample: value.sample, hostPid: 42, state: 'failed' });
+  assert.equal(check().state, 'failed');
+  value.events[2].error_code = 'ANOTHER_ERROR'; assert.throws(check);
+});
+
+test('controlled HTTP publication waits for the existing read-only View status without extra provider input', async () => {
+  const sample = controlledDirectoryFixture().sample;
+  sample.view_dynamics.view.name = 'Owned View';
+  const expected = 'sdk-fixture: Owned View (owned-view) · 1 Skill/Router · first';
+  let calls = 0;
+  const rpc = { frames: [], async command(type, fields) {
+    assert.equal(type, 'prompt'); assert.deepEqual(fields, { message: '/context-broker view' });
+    this.frames.push({ type: 'extension_ui_request', method: 'notify', message: ++calls === 1 ? 'Notion Views: no enabled Notion sources' : expected });
+    return { disposition: 'handled' };
+  } };
+  const proof = await namedSdkProbe.waitForControlledHttpView({ rpc, sample, state: 'ready', captureCount: async () => 1 });
+  assert.equal(proof.calls, 2); assert.equal(proof.expected, expected);
+  let captures = 0;
+  await assert.rejects(namedSdkProbe.waitForControlledHttpView({ rpc, sample, state: 'ready', captureCount: async () => ++captures }), /must not invoke a provider/);
+});
+
+test('controlled HTTP warm new-process accounting preserves identity validation but rejects directory or body downloads', () => {
+  const request = { method: 'GET', path: '/v1/users/me', status: 200, response_bytes_complete: true, decoded_response_bytes: 61, response_boundary: 'server uncompressed writes' };
+  assert.equal(namedSdkProbe.assertControlledHttpWarmRequests([request]).body_http, 0);
+  for (const requests of [[], [request, request], [{ ...request, path: '/v1/pages/owned/markdown' }], [{ ...request, response_bytes_complete: false }]])
+    assert.throws(() => namedSdkProbe.assertControlledHttpWarmRequests(requests));
+});
+
+test('controlled HTTP zero-age is forced full validation and cannot hide an unselected body', () => {
+  const sample = { notion: { main: { id: 'root' }, files: [{ id: 'resource' }] } };
+  const requests = ['root', 'resource'].map(id => ({ path: '/v1/pages/' + id + '/markdown', status: 200, response_bytes_complete: true }));
+  assert.equal(namedSdkProbe.assertControlledHttpForcedRevalidation(requests, sample).natural_default_ttl_boundary, 'not_run');
+  assert.throws(() => namedSdkProbe.assertControlledHttpForcedRevalidation(requests.slice(0, 1), sample));
+  assert.throws(() => namedSdkProbe.assertControlledHttpForcedRevalidation([...requests, { ...requests[0], path: '/v1/pages/unselected/markdown' }], sample));
+});
+
+test('controlled HTTP client headers retain the real Markdown query while matching the selected page', () => {
+  const header = { kind: 'source_http_headers', method: 'GET', path: '/v1/pages/root/markdown?markdown_version=v2', status: 200 };
+  assert.equal(namedSdkProbe.controlledHttpBodyHeaders([header], 'http://127.0.0.1:1234', 'root'), header);
+  assert.equal(namedSdkProbe.controlledHttpBodyHeaders([header], 'http://127.0.0.1:1234', 'another'), undefined);
+  assert.equal(namedSdkProbe.controlledHttpBodyHeaders([{ ...header, method: 'POST' }], 'http://127.0.0.1:1234', 'root'), undefined);
+});
+
+test('controlled HTTP retry proof preserves failed partial bytes and requires two actual SDK attempts', () => {
+  const requests = [{ path: '/v1/pages/owned/markdown', status: 200, terminal: 'aborted', response_bytes_complete: false, decoded_response_bytes: null, observed_response_bytes: 32 },
+    { path: '/v1/pages/owned/markdown', status: 200, terminal: 'finished', response_bytes_complete: true, decoded_response_bytes: 100 }];
+  const attempts = [{ event: 'attempt', target: { page_id: 'owned' }, body_kind: 'current_body', outcome: 'failure', response_bytes: 32 },
+    { event: 'attempt', target: { page_id: 'owned' }, body_kind: 'current_body', outcome: 'success', response_bytes: 100 }];
+  const value = { requests, events: [{ kind: 'sdk', event: 'end', operation: 'consume', status: 'completed',
+    request_metrics: { trace: attempts }, source_http_terminal: { unknown_response_bytes: 0 } }] };
+  const check = item => namedSdkProbe.assertControlledHttpRetry(item, 'owned', 'disconnect');
+  assert.equal(check(value).sdk_retries, 1);
+  for (const mutate of [item => { item.requests[0].decoded_response_bytes = 32; }, item => { item.requests[0].response_bytes_complete = true; },
+    item => { item.events[0].request_metrics.trace[0].outcome = 'success'; }, item => { item.events[0].request_metrics.trace.pop(); },
+    item => { item.events[0].request_metrics.trace[0].response_bytes = 100; }]) {
+    const changed = structuredClone(value); mutate(changed); assert.throws(() => check(changed));
+  }
+  const limited = structuredClone(value); limited.requests[0] = { ...limited.requests[0], status: 429, terminal: 'finished', response_bytes_complete: true, decoded_response_bytes: 110 };
+  limited.events[0].request_metrics.trace[0].http_status = 429;
+  assert.equal(namedSdkProbe.assertControlledHttpRetry(limited, 'owned', 'rate-limit').sdk_retries, 1);
+});
 
 test('the initialization cutpoint releases only the original owned read at the native shutdown boundary', async () => {
   const base = await mkdtemp(join(await systemTempRoot(), 'sdk-initialization-probe-'));

@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yoyooyooo/notion-skills-cli
-          ref: 55e06bb3d6ec426b38aefdf8fed61e26ece0343d
+          ref: 0f637a5ab7f98d8de5d77f6994103164b0c7e173
           path: .verification/ntn-skills-cli
           persist-credentials: false
       - name: Set up Bun
@@ -90,6 +90,14 @@ jobs:
           assert.equal(manifest.ambiguitySdk.status, 'passed');
           appendFileSync(process.env.GITHUB_OUTPUT, 'package=' + manifest.package.installed + '\n');
           NODE
+      - name: Installed Pi controlled HTTP consumption
+        id: controlled-http
+        env:
+          BROKER_INSTALLED_PACKAGE: ${{ steps.installed-pi.outputs.package }}
+        run: |
+          for scenario in http-directory http-cache-recovery http-interruption; do
+            node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --scenario "$scenario" --out "$RUNNER_TEMP/pi15-$scenario-evidence"
+          done
       - name: Pi 1.4 compatibility
         env:
           BROKER_INSTALLED_PACKAGE: ${{ steps.installed-pi.outputs.package }}
@@ -103,6 +111,7 @@ jobs:
             node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-name-fixture/fixture.json" --scenario "$scenario" --out "$RUNNER_TEMP/pi14-$scenario-evidence"
           done
           node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-ambiguity-fixture/fixture.json" --scenario name-reference-ambiguity --out "$RUNNER_TEMP/pi14-name-reference-ambiguity-evidence"
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --scenario http-directory --out "$RUNNER_TEMP/pi14-http-directory-evidence"
       - name: Preserve installed Pi SDK evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -119,6 +128,8 @@ jobs:
             ${{ runner.temp }}/pi14-name-references-evidence/
             ${{ runner.temp }}/pi14-name-reference-failed-source-evidence/
             ${{ runner.temp }}/pi14-name-reference-ambiguity-evidence/
+            ${{ runner.temp }}/pi15-http-*-evidence/
+            ${{ runner.temp }}/pi14-http-directory-evidence/
             ${{ runner.temp }}/installed-pi-artifact.log
           include-hidden-files: true
           if-no-files-found: warn
