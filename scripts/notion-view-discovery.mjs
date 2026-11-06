@@ -4,8 +4,9 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { isolatedEnv } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
-import { database, firstViewId, secondViewId, unflaggedAlias, unflaggedCanary } from './notion-integration-fixture.mjs';
+import { database, firstViewId, secondViewId, unflaggedAlias, unflaggedCanary, missingCanary, missingRef } from './notion-integration-fixture.mjs';
 import { nativeEntries, verifyPreparedProviderBody } from './notion-default-context.mjs';
+import { decodeCatalogText } from './notion-integration-hosts.mjs';
 
 const save = (path, data) => writeFile(path, JSON.stringify(data, null, 2) + '\n', { mode: 0o600 });
 async function rows(path) { try { return (await readFile(path, 'utf8')).split('\n').filter(Boolean).map(JSON.parse); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } }
@@ -20,8 +21,7 @@ function current(context) {
 }
 const occurrences = (value, needle) => JSON.stringify(value).split(needle).length - 1;
 
-/** Inspect the retained native branch, not every historical entry in the file. */
-export function confirmedViewActivation(entries, expected) {
+function retainedBranch(entries) {
   const indexed = entries.filter(entry => typeof entry.id === 'string'), byId = new Map(indexed.map(entry => [entry.id, entry]));
   const branch = [], seen = new Set();
   let current = indexed.at(-1);
@@ -31,6 +31,12 @@ export function confirmedViewActivation(entries, expected) {
     if (!current.parentId) break;
     current = byId.get(current.parentId); assert.ok(current, 'Native branch parent must be retained');
   }
+  return branch;
+}
+
+/** Inspect the retained native branch, not every historical entry in the file. */
+export function confirmedViewActivation(entries, expected) {
+  const branch = retainedBranch(entries);
   const receipts = branch.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-active-sources');
   const receipt = receipts.at(-1); assert.ok(receipt, 'A successful provider delivery must have an active-source confirmation');
   assert.equal(receipt.data.sources?.length, 1);
@@ -49,6 +55,51 @@ export function confirmedViewActivation(entries, expected) {
   assert.deepEqual(source.record.preparationBinding, binding);
   return { entryId: receipt.id, activationId: receipt.data.activation_id, graph, source,
     selectedGraphEntries: branch.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-selected-graph').map(entry => ({ id: entry.id, data: entry.data })) };
+}
+
+/** Match a nonempty partial wire response to the actual system directory. */
+export function verifyPartialViewCoverage({ host, context, response, entries, fixture }) {
+  assert.equal(response.ok, true); assert.equal(response.scope, fixture.scope);
+  assert.equal(response.view.id, firstViewId); assert.equal(response.view.database_id, database);
+  assert.equal(response.count, 1);
+  assert.deepEqual(response.records.map(record => record.ref), [fixture.skillRef]);
+  assert.equal(response.coverage.method, 'explicit_view'); assert.equal(response.coverage.exhaustive, false);
+  assert.deepEqual(response.coverage.failed_sources, [{ id: missingRef.split('/')[2], code: 'NOT_FOUND' }]);
+  const record = response.records[0], directory = current(context);
+  assert.equal(record.name, fixture.name); assert.equal(record.alias, fixture.alias);
+  assert.equal(record.id, 'notion_page:' + record.locator.page_id);
+  const owner = 'skill://' + record.locator.page_id;
+  assert.equal(record.ref, owner + '/' + record.entrypoint);
+  const views = [...directory.matchAll(/<view\b([^>]*)>/gu)];
+  assert.equal(views.length, 1);
+  const attributes = Object.fromEntries([...views[0][1].matchAll(/([a-z_]+)="([^"]*)"/gu)].map(match => [match[1], decodeCatalogText(match[2])]));
+  assert.deepEqual(attributes, { source: 'notion', id: firstViewId, database, origin: 'first', partial: 'true' });
+  const cards = [...directory.matchAll(/<skill>([\s\S]*?)<\/skill>/gu)];
+  assert.equal(cards.length, 1, 'Partial coverage must preserve the exact returned member, not all-library or empty fallback');
+  assert.equal([...directory.matchAll(/<router\b/gu)].length, 0, 'An unrelated Router cannot enter the selected View');
+  const card = cards[0][1], field = tag => decodeCatalogText(new RegExp('<' + tag + '>([\\s\\S]*?)</' + tag + '>').exec(card)?.[1] ?? '');
+  assert.equal(field('name'), host === 'pi' ? record.name : 'notion-' + record.alias);
+  assert.equal(field('description'), record.description);
+  const ref = field('location'); assert.ok(ref);
+  const branch = retainedBranch(entries);
+  assert.equal(branch.filter(entry => ['context-broker-selected-graph', 'context-broker-active-sources'].includes(entry.customType)).length, 0, 'Metadata cannot activate or confirm a Skill');
+  if (host === 'pi') {
+    assert.equal(field('source'), 'notion');
+    if (ref.startsWith('sr:')) {
+      assert.match(ref, /^sr:C[A-Za-z0-9_-]{22}$/u);
+      const bindings = branch.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-short-ref' && entry.data?.ref === ref);
+      assert.ok(bindings.length > 0, 'An advertised short ref needs a retained current-branch owner binding');
+      const expected = { kind: 'candidate', identity: { source: 'notion', scope: response.scope, id: record.id, kind: record.kind, locator: record.locator, ref: owner } };
+      for (const binding of bindings) { assert.equal(binding.data.version, 1); assert.deepEqual(binding.data.target, expected); }
+    } else assert.equal(ref, record.ref, 'A canonical entry must retain the exact source owner and main path');
+  } else assert.equal(field('ref'), record.ref, 'The OMP native path must advertise the same canonical owner');
+  for (const marker of [fixture.marker ?? fixture.canary, unflaggedCanary, missingCanary, fixture.resourceCanary, 'LOCAL_BODY_NOT_AUTOMATIC_413']) {
+    assert.ok(typeof marker === 'string' && marker.length > 0);
+    assert.equal(occurrences(context, marker), 0, 'Partial metadata must not contain any Skill or resource body');
+  }
+  return { source: 'notion', viewId: firstViewId, partial: true, count: 1, coverage: response.coverage,
+    record: { id: record.id, scope: response.scope, name: record.name, description: record.description, canonicalRef: record.ref, advertisedRef: ref },
+    responseSha256: createHash('sha256').update(JSON.stringify(response)).digest('hex'), directorySha256: createHash('sha256').update(directory).digest('hex') };
 }
 
 // Real installed Pi/OMP + public extension hooks + provider payload capture.
@@ -261,8 +312,58 @@ export async function runViewDiscovery({ host, scratch, evidence, fixture, exten
     await rpc.prompt(`$${fixture.alias}@notion Inspect the explicit workflow.`);
     assert.equal(occurrences((await captures()).at(-1).context.messages, fixture.marker), 1);
     result.observations.push('verified no-Views result means empty metadata, not failure or all-library fallback');
+
+    await stop();
+    await fixture.setScenario('normal', { includeUnflagged: true, partialView: true, observeViewCoverage: true });
+    const partialStart = (await rows(fixture.callsPath)).length, partialProviderStart = (await captures()).length;
+    await boot();
+    context = await metadata(firstViewId, secondViewId);
+    const partialEntries = await retainSession('partial');
+    assert.ok(rpc.frames.some(frame => frame.type === 'extension_ui_request' && JSON.stringify(frame).includes('CATALOG_INCOMPLETE')), 'Partial coverage must surface its actual source warning');
+    await stop();
+    const partialCalls = (await rows(fixture.callsPath)).slice(partialStart);
+    const partialResponse = partialCalls.filter(call => call.command === 'catalog-response' && call.args.includes('--default-view')).at(-1)?.response;
+    assert.ok(partialResponse, 'The actual selected-View CLI response must be retained');
+    const partialProof = verifyPartialViewCoverage({ host, context, response: partialResponse, entries: partialEntries, fixture });
+    const bodyCalls = calls => calls.filter(call => ['prepare', 'read', 'use', 'export'].includes(call.operation ?? call.command));
+    assert.equal(bodyCalls(partialCalls).length, 0, 'Partial discovery must not prepare any selected or unselected body');
+    assert.equal((await captures()).length - partialProviderStart, 1);
+    result.observations.push({ action: 'nonempty partial View retains the exact returned metadata', ...partialProof,
+      providerIndex: partialProviderStart, providerRequests: 1, sourceCallStart: partialStart, sourceCallCount: partialCalls.length, bodyCalls: 0 });
+
+    await fixture.setScenario('normal', { includeUnflagged: true, failList: true, observeViewCoverage: true });
+    const failureStart = (await rows(fixture.callsPath)).length;
+    await boot();
+    await rpc.prompt('Describe available workflow names without reading any files.');
+    context = (await captures()).at(-1).context;
+    assert.match(current(context), /<view source="notion" origin="first" status="error" code="NOTION_REQUEST_FAILED"\/>/u);
+    assert.equal(nativeEntries(host, { messages: [{ role: 'system', content: current(context) }] }).length, 0, 'A failed View cannot reuse the partial member as a complete or empty directory');
+    assert.ok(system(context).includes('LOCAL_METADATA_KEPT_413'));
+    const failureCalls = (await rows(fixture.callsPath)).slice(failureStart);
+    const failures = failureCalls.filter(call => call.command === 'catalog-response');
+    assert.ok(failures.some(call => call.args.includes('--default-view')), 'The selected View request must reach the controlled failure');
+    assert.ok(failures.every(call => call.response.ok === false && call.response.error.code === 'NOTION_REQUEST_FAILED'));
+    assert.equal(bodyCalls(failureCalls).length, 0);
+    for (const marker of [fixture.marker, unflaggedCanary, missingCanary, fixture.resourceCanary]) assert.equal(occurrences(context, marker), 0);
+    result.observations.push({ action: 'source failure remains an error distinct from partial and empty', code: 'NOTION_REQUEST_FAILED',
+      sourceCallStart: failureStart, sourceCallCount: failureCalls.length, providerIndex: (await captures()).length - 1, bodyCalls: 0 });
+
+    await fixture.setScenario('normal', { includeUnflagged: true, observeViewCoverage: true });
+    const recoveryStart = (await rows(fixture.callsPath)).length;
+    await ready();
+    context = await metadata(firstViewId, secondViewId);
+    assert.ok(current(context).includes('partial="false"'));
+    assert.equal(listed(context, names.alpha).length, 1); assert.equal(listed(context, names.beta).length, 0);
+    assert.equal(occurrences(context, fixture.marker), 0);
+    const recoveryCalls = (await rows(fixture.callsPath)).slice(recoveryStart);
+    const recovered = recoveryCalls.filter(call => call.command === 'catalog-response' && call.args.includes('--default-view')).at(-1)?.response;
+    assert.ok(recovered?.ok); assert.deepEqual(recovered.records.map(record => record.ref), [fixture.skillRef]);
+    assert.equal(recovered.coverage.exhaustive, true); assert.deepEqual(recovered.coverage.failed_sources, []);
+    assert.equal(bodyCalls(recoveryCalls).length, 0);
+    result.observations.push({ action: 'public refresh after source recovery restores one complete View', providerIndex: (await captures()).length - 1,
+      sourceCallStart: recoveryStart, sourceCallCount: recoveryCalls.length, bodyCalls: 0 });
     result.status = 'passed';
     return result;
   } catch (error) { result.status = 'failed'; result.error = error.message; error.results = [result]; throw error; }
-  finally { await stop(); await save(rpcFile, allFrames); await save(resultFile, result); }
+  finally { try { await stop(); } finally { await fixture.setScenario('normal'); await save(rpcFile, allFrames); await save(resultFile, result); } }
 }

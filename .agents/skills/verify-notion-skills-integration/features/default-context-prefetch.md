@@ -29,12 +29,20 @@ Source 的可选 `profile_id` 必须同时配置显式 `database`。默认目录
 | 再次切换 View | 已读正文和固定资源版本保留，不复制、不声称撤回 |
 | 无配置 / 显式配置 / default reset | 无 Profile 绑定时首项兜底 / 配置 ID 优先 / 恢复默认解析分别可见 |
 | 错误 ID / 零 Views | 前者报告错误而不改选，后者为空目录；普通任务和精确显式调用仍可用 |
+| 非空 partial View | 原 CLI 成功返回一个精确成员、`coverage.exhaustive: false` 和非空 `failed_sources`；实际 provider 的同一 View 保留该成员与 `partial="true"`，不替换为空目录或全库目录；来源警告可见，正文准备为零 |
+| 来源失败与恢复 | 同一入口的 `failList` 返回 `NOTION_REQUEST_FAILED`；provider 明确为 error，没有沿用 partial 成员冒充成功。恢复源后公开 refresh 不调用 provider，下一普通请求恢复完整目录 |
 | 进程重开续接 / fork 到旧分支 | 根据有效分支恢复选择，不拿进程内状态充当持久化 |
 | 两个活跃会话 | 切换互不串选；无 Profile 绑定的 fixture 未配置 View 时各自解析首项 |
 | 本地 Skill | 不是 Broker 所有的 metadata 仍保留 |
 | Pi compaction 后普通续问 | 先证明压缩移除了正文；当前分支成功交付的 active receipt 仍在。普通下一轮用原固定向量 `inspect` 恢复完整正文恰一次，View 不变，不新选版本；再显式 `$` 仍一份 |
 
 证据为 `*-view-provider.jsonl`、`*-view-rpc.json`、`*-view-result.json`、manifest 与自有进程退出回执。检查实际 provider 中的目录，不只检查配置对象或 UI 提示。
+
+partial 相位只扩原 `notion-integration-fixture.mjs` 的受控列表响应：普通完整库仍返回原三个成员，选定 View 返回原 `UI Alpha` 一个成员，缺失项以原 `UI Gamma` 的 ID 和 `NOT_FOUND` 标入 coverage。`source-cli-calls.jsonl` 的 `catalog-response` 保存实际 stdout 对象、原 argv 和时刻；与 provider 索引、当前分支 session 副本一起核对。Pi 从实际系统目录取得 `sr:C` 后，校验其既有 candidate 绑定的 owner/scope/locator；canonical 入口逐字匹配返回的主文 ref，OMP 仍核原 native 路径旁的 canonical ref。私有绑定只证明公开入口归属，不能代替模型实际看到目录。
+
+此相位不选 Skill、不读取正文、不展开 Requires，也不产生 active 确认。断言拒绝 empty/all-library/complete 冒充 partial、用户消息伪造目录、错误 owner/scope、旧分支句柄及正文混入。复用原 `failList` 后必须在 finally 复位 fixture；仅清理 manifest 所属 scratch 并进系统 Trash。受控 CLI 没有真实 Notion HTTP/core 缓存，不能由本相位推导生产请求、权限或跨进程缓存收益。
+
+接线证据（2026-11-06）：`sc06-partial-view-d_zadb79/fail-before.log` 保留旧 fixture 的实际 `true !== false`；更新后原 `notion-integration-hosts.test.mjs` 为 25/25，包含原入口/正文/压缩断言。以上是本地 fixture 与 oracle 验证；新候选上的 `--view-discovery true --host pi --extension ABS_INSTALLED/src/index.ts` 实驱仍为 **not run**，待最终 C8/Broker 包冻结，不继承旧 646 的完整、空、错误 View 结果作为本次 partial 通过。
 
 压缩 oracle 依据 AH-627 的 `agent-cli-ref-20261105` 已校准合同：已实际送达并确认 active 的来源，必要全文被 compact 移除后应在普通续问恢复同一版本。Pi 不再沿用旧“普通续问正文必须为零”的断言。保留 fork 到选择前的零正文负例；压缩前、压缩后和恢复后的原生 session 副本必须显示同一 owner/scope/pin/hash 与同一确认/选择，不接受 orphan receipt、仅准备成功或新 `inspect` 冒充 `use` 确认。OMP 保留其显式 reload 的兼容边界。旧失败原件不改写。
 

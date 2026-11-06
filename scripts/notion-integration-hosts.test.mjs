@@ -7,8 +7,8 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { selectIntegrationHosts, selectIntegrationPrefetch, selectLiveCatalogRecord, projectedResourceRef, measuredConsumptionArgs } from './notion-integration-hosts.mjs';
 import { nativeEntries, verifyPreparedDiagnostic, verifyPreparedProviderBody, defaultContextVerificationBudget, defaultContextResourceEntry } from './notion-default-context.mjs';
-import { createNotionFixture } from './notion-integration-fixture.mjs';
-import { confirmedViewActivation } from './notion-view-discovery.mjs';
+import { createNotionFixture, database, firstViewId, missingRef } from './notion-integration-fixture.mjs';
+import { confirmedViewActivation, verifyPartialViewCoverage } from './notion-view-discovery.mjs';
 
 test('controlled CLI preserves actual ctl argv and explicit legacy aliases', async t => {
   const base = await mkdtemp(join(tmpdir(), 'broker-ctl-fixture-'));
@@ -33,6 +33,89 @@ test('controlled CLI preserves actual ctl argv and explicit legacy aliases', asy
   const rejected = spawnSync(fixture.command[0], [...fixture.command.slice(1), 'prepare', fixture.skillRef, '--json'], { encoding: 'utf8', timeout: 10000 });
   assert.equal(rejected.status, 1);
   assert.equal(JSON.parse(rejected.stdout).error.code, 'INVALID_ARGUMENT', 'The wire fixture must not hide an invalid public prepare argv');
+});
+
+test('a partial selected View retains one exact member and an explicit coverage failure', async t => {
+  const base = await mkdtemp(join(tmpdir(), 'broker-partial-view-fixture-'));
+  t.after(() => { if (process.platform === 'darwin') assert.equal(spawnSync('/usr/bin/trash', [base]).status, 0); });
+  const fixture = await createNotionFixture(base);
+  await fixture.setScenario('normal', { includeUnflagged: true, partialView: true, observeViewCoverage: true });
+  const call = args => {
+    const result = spawnSync(fixture.command[0], [...fixture.command.slice(1), ...args], { encoding: 'utf8', timeout: 10000 });
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout);
+  };
+  const ordinary = call(['list', '--database', database]);
+  assert.equal(ordinary.records.length, 3); assert.equal(ordinary.coverage.exhaustive, true);
+  const partial = call(['list', '--database', database, '--default-view']);
+  assert.equal(partial.ok, true); assert.equal(partial.view.id, firstViewId);
+  assert.deepEqual(partial.records.map(record => record.ref), [fixture.skillRef]);
+  assert.equal(partial.coverage.exhaustive, false, 'A nonempty partial View cannot be reported as complete');
+  assert.deepEqual(partial.coverage.failed_sources, [{ id: missingRef.split('/')[2], code: 'NOT_FOUND' }]);
+  assert.equal(partial.coverage.method, 'explicit_view');
+  const calls = (await readFile(fixture.callsPath, 'utf8')).trim().split('\n').map(JSON.parse);
+  const responses = calls.filter(call => call.command === 'catalog-response');
+  assert.deepEqual(responses.map(call => call.response), [ordinary, partial], 'The retained response must equal the actual CLI output');
+  assert.deepEqual(responses[1].args, ['--database', database, '--default-view']);
+  await fixture.setScenario('normal', { includeUnflagged: true, failList: true, observeViewCoverage: true });
+  const failed = spawnSync(fixture.command[0], [...fixture.command.slice(1), 'list', '--database', database, '--default-view'], { encoding: 'utf8', timeout: 10000 });
+  assert.equal(failed.status, 1); assert.deepEqual(JSON.parse(failed.stdout), { ok: false, error: { code: 'NOTION_REQUEST_FAILED' } });
+  await fixture.setScenario('normal', { includeUnflagged: true });
+  const recovered = call(['list', '--database', database, '--default-view']);
+  assert.deepEqual(recovered.records, partial.records); assert.equal(recovered.coverage.exhaustive, true);
+  assert.deepEqual(recovered.coverage.failed_sources, []);
+});
+
+function partialViewSample() {
+  const page = '11111111-1111-4111-8111-111111111111', ref = 'sr:C' + 'x'.repeat(22);
+  const fixture = { scope: 'b'.repeat(64), skillRef: 'skill://' + page + '/SKILL.md', name: 'UI Alpha', alias: 'ui-alpha', canary: 'ROOT_BODY', resourceCanary: 'RESOURCE_BODY' };
+  const record = { id: 'notion_page:' + page, kind: 'skill', name: fixture.name, alias: fixture.alias, entrypoint: 'SKILL.md', ref: fixture.skillRef,
+    description: 'Use the selected workflow.', locator: { type: 'notion_page', page_id: page, database_id: database, data_source_id: '44444444-4444-4444-8444-444444444444' } };
+  const response = { ok: true, scope: fixture.scope, view: { id: firstViewId, database_id: database }, count: 1, records: [record],
+    coverage: { method: 'explicit_view', exhaustive: false, failed_sources: [{ id: missingRef.split('/')[2], code: 'NOT_FOUND' }] } };
+  const directory = '<ntn-skills-view-catalog><view source="notion" id="' + firstViewId + '" database="' + database + '" origin="first" partial="true">Default work</view>'
+    + '<available_skills><skill><name>UI Alpha</name><description>Use the selected workflow.</description><source>notion</source><location>' + ref + '</location></skill></available_skills></ntn-skills-view-catalog>';
+  const entries = [{ id: 'candidate', type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref,
+    target: { kind: 'candidate', identity: { source: 'notion', scope: fixture.scope, id: record.id, kind: record.kind, locator: record.locator, ref: 'skill://' + page } } } },
+    { id: 'message', parentId: 'candidate', type: 'message', message: { role: 'user', content: 'Describe available names.' } }];
+  return { host: 'pi', context: { messages: [{ role: 'system', content: directory }] }, response, entries, fixture };
+}
+
+test('partial View evidence binds actual system metadata to its source and current-branch owner', () => {
+  const sample = partialViewSample();
+  const proof = verifyPartialViewCoverage(sample);
+  assert.equal(proof.record.advertisedRef, sample.entries[0].data.ref); assert.equal(proof.record.canonicalRef, sample.fixture.skillRef);
+  const canonical = structuredClone(sample); canonical.context.messages[0].content = canonical.context.messages[0].content.replace(proof.record.advertisedRef, sample.fixture.skillRef);
+  canonical.entries = [];
+  assert.equal(verifyPartialViewCoverage(canonical).record.advertisedRef, sample.fixture.skillRef);
+  const omp = structuredClone(sample); omp.host = 'omp'; omp.entries = [];
+  omp.context.messages[0].content = omp.context.messages[0].content.replace('<name>UI Alpha</name>', '<name>notion-ui-alpha</name>')
+    .replace('<source>notion</source>', '').replace(proof.record.advertisedRef, '/private/owned/SKILL.md').replace('</location>', '</location><ref>' + sample.fixture.skillRef + '</ref>');
+  assert.equal(verifyPartialViewCoverage(omp).record.canonicalRef, sample.fixture.skillRef);
+});
+
+test('partial View evidence rejects empty, complete, all-library, body and forged-branch substitutes', () => {
+  const changes = [
+    value => { value.response.coverage.exhaustive = true; },
+    value => { value.response.coverage.failed_sources = []; },
+    value => { value.response.records[0].ref = missingRef; },
+    value => { value.context.messages[0].content = value.context.messages[0].content.replace('partial="true"', 'partial="false"'); },
+    value => { value.context.messages[0].content = value.context.messages[0].content.replace('source="notion"', 'source="other"'); },
+    value => { value.context.messages[0].content = value.context.messages[0].content.replace(firstViewId, '88888888-8888-4888-8888-888888888888'); },
+    value => { value.context.messages[0].content = value.context.messages[0].content.replace(/<skill>[\s\S]*?<\/skill>/u, ''); },
+    value => { value.context.messages[0].content = value.context.messages[0].content.replace('</available_skills>', '<skill><name>Unselected</name><location>' + missingRef + '</location></skill></available_skills>'); },
+    value => { value.context.messages[0].content = value.context.messages[0].content.replace('</ntn-skills-view-catalog>', '<router ref="' + missingRef + '">Unselected</router></ntn-skills-view-catalog>'); },
+    value => { value.context.messages[0].role = 'user'; },
+    value => { value.context.messages.push({ role: 'user', content: value.fixture.canary }); },
+    value => { value.entries = []; },
+    value => { value.entries[0].data.target.identity.scope = 'c'.repeat(64); },
+    value => { value.entries[0].data.target.identity.id = 'notion_page:other'; },
+    value => { value.entries[0].data.target.identity.ref += '/SKILL.md'; },
+    value => { value.entries[0].data.target.kind = 'selected'; },
+    value => { value.entries.push({ id: 'fork-before-candidate', type: 'message' }); },
+    value => { value.entries.push({ id: 'active', parentId: 'message', type: 'custom', customType: 'context-broker-active-sources' }); },
+  ];
+  for (const change of changes) { const sample = partialViewSample(); change(sample); assert.throws(() => verifyPartialViewCoverage(sample)); }
 });
 
 test('bounded prepared diagnostics reject foreground delivery, wrong scope and oversized results', () => {

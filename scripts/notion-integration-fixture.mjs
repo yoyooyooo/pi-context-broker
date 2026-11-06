@@ -54,7 +54,9 @@ async function main() {
   if (command === 'list' && state.listDelayMs) await new Promise(resolve => setTimeout(resolve, state.listDelayMs));
   if (command === 'list' && state.failList) {
     await appendFile(state.callsPath, JSON.stringify({ command: 'catalog-failed', at: new Date().toISOString() }) + '\n');
-    out({ ok: false, error: { code: 'NOTION_REQUEST_FAILED' } }); process.exitCode = 1; return;
+    const response = { ok: false, error: { code: 'NOTION_REQUEST_FAILED' } };
+    if (state.observeViewCoverage) await appendFile(state.callsPath, JSON.stringify({ command: 'catalog-response', args: flags, response, at: new Date().toISOString() }) + '\n');
+    out(response); process.exitCode = 1; return;
   }
   if (scenario === 'timeout') {
     await new Promise(resolve => setTimeout(resolve, Number(process.env.NTN_SKILLS_REQUEST_TIMEOUT_MS ?? 30000)));
@@ -168,7 +170,10 @@ async function main() {
     const view = requestedView ? views.find(view => view.id === requestedView) : views[0];
     if (selectedView && requestedView && !view) { out({ ok: false, error: { code: 'NOT_FOUND' } }); process.exitCode = 1; return; }
     const records = !selectedView ? skills : !view ? [] : view.id === secondViewId ? skills.filter(item => item.alias === unflaggedAlias) : skills.filter(item => item.default_context);
-    out({ ok: true, scope, source: 'notion', fetched_at: Date.now(), databases: [{ database_id: skill.locator.database_id, title: 'Fixture', alias: 'fixture', data_source_ids: [skill.locator.data_source_id] }], records, count: records.length, coverage: { method: selectedView ? 'explicit_view' : 'explicit_database', exhaustive: true, queried_data_sources: [skill.locator.data_source_id], failed_sources: [], search_index_limited: false }, freshness, ...(selectedView ? { view: view ?? null, view_selection: view ? requestedView ? 'explicit' : 'first' : 'none', view_query: null } : {}) });
+    const partial = selectedView && view !== undefined && state.partialView === true;
+    const response = { ok: true, scope, source: 'notion', fetched_at: Date.now(), databases: [{ database_id: skill.locator.database_id, title: 'Fixture', alias: 'fixture', data_source_ids: [skill.locator.data_source_id] }], records, count: records.length, coverage: { method: selectedView ? 'explicit_view' : 'explicit_database', exhaustive: !partial, queried_data_sources: [skill.locator.data_source_id], failed_sources: partial ? [{ id: missingRef.split('/')[2], code: 'NOT_FOUND' }] : [], search_index_limited: false }, freshness, ...(selectedView ? { view: view ?? null, view_selection: view ? requestedView ? 'explicit' : 'first' : 'none', view_query: null } : {}) };
+    if (state.observeViewCoverage) await appendFile(state.callsPath, JSON.stringify({ command: 'catalog-response', args: flags, response, at: new Date().toISOString() }) + '\n');
+    out(response);
     if (state.cacheIdentity) await appendFile(state.callsPath, JSON.stringify({ command: 'catalog-ready', at: new Date().toISOString() }) + '\n');
   } else if (command === 'read') {
     const path = decodeURIComponent(new URL(flags[0]).pathname.slice(1));
