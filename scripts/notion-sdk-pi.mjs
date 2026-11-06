@@ -34,6 +34,39 @@ export function warmDirectoryOptions(options) {
   assert.ok(options['--fixture'] && !options['--live-input'] && ['native', 'native-repeat', 'prepare'].includes(options['--scenario']), warmDirectoryUsage);
   return true;
 }
+const catalogScaleUsage = 'An original sdk-fixture.ts --catalog --catalog-size 10|100|101|300 fixture is accepted only by explicit --scenario default-view. It retains warm offline source data, real SDK metadata, public list cursors, native catalog, zero object reads and the original pending-to-ready boundary; it does not prove source API pagination or model quality.';
+export function catalogScaleOptions(fixture, options) {
+  if (!Object.hasOwn(fixture, 'catalog_size')) return null;
+  const count = fixture.catalog_size;
+  assert.ok([10, 100, 101, 300].includes(count), catalogScaleUsage);
+  assert.equal(options['--scenario'], 'default-view', catalogScaleUsage);
+  assert.ok(options['--fixture'] && !options['--live-input'] && options['--warm-directory'] !== 'true', catalogScaleUsage);
+  for (const key of ['--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar', '--expect-short-confirmations'])
+    assert.notEqual(options[key], 'false', 'Catalog scale is an exact current-package gate, not a baseline relaxation');
+  assert.equal(fixture.version, 1); assert.equal(fixture.catalog, true);
+  assert.ok(!fixture.ambiguous_names && !fixture.distinct_names);
+  assert.equal(fixture.snapshots?.length, count); assert.equal(fixture.catalog_records?.length, count);
+  assert.equal(fixture.default_view?.records?.length, count);
+  const ids = fixture.snapshots.map(snapshot => snapshot.record.id);
+  assert.equal(new Set(ids).size, count); assert.equal(new Set(fixture.snapshots.map(snapshot => snapshot.record.name)).size, count);
+  assert.deepEqual([...fixture.catalog_records].sort(), [...ids].sort());
+  assert.deepEqual(fixture.default_view.records.map(record => record.id).sort(), [...ids].sort());
+  for (const snapshot of fixture.snapshots) {
+    assert.equal(snapshot.scope, fixture.scope); assert.equal(snapshot.record.locator.database_id, fixture.database);
+    assert.equal(snapshot.record.enabled, true); assert.equal(snapshot.record.kind, 'skill');
+    for (const key of ['name', 'description', 'ref']) assert.equal(typeof snapshot.record[key], 'string');
+    const member = fixture.default_view.records.find(record => record.id === snapshot.record.id);
+    for (const key of ['name', 'ref']) assert.equal(member[key], snapshot.record[key]);
+    if (Object.hasOwn(member, 'description')) assert.equal(member.description, snapshot.record.description);
+    assert.ok(snapshot.files.some(file => file.path === snapshot.entrypoint));
+    assert.ok(snapshot.files.some(file => file.path !== snapshot.entrypoint), 'Every scale owner retains an independent unselected resource');
+    for (const file of snapshot.files) {
+      assert.match(file.sha256, /^[a-f0-9]{64}$/u); assert.ok(Number.isSafeInteger(file.bytes) && file.bytes >= 0);
+      assert.equal(snapshot.file_bindings.filter(binding => binding.path === file.path && typeof binding.file_id === 'string' && binding.file_id.length > 0).length, 1);
+    }
+  }
+  return { count, page_size: 100, pages: Math.ceil(count / 100), provider_requests: Math.ceil(count / 100) + 2 };
+}
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const json = async path => JSON.parse(await readFile(path, 'utf8'));
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
@@ -320,6 +353,99 @@ export function assertSearchProjection(message, { expectCompact = true, scope, c
   return { records: full.records.length, content_bytes: Buffer.byteLength(textContent(message.content)),
     host_details_bytes: Buffer.byteLength(JSON.stringify(full)), full_host_id_scope: true,
     compact_contract: expectCompact ? 'verified' : 'not_required_for_baseline', reused_descriptions: reused };
+}
+
+/** Aggregate only independently verified actual pages; never synthesize a tool
+ * message or use this aggregate as proof of provider delivery. */
+export function assertCatalogScalePages(captures, frames, fixture) {
+  const scale = catalogScaleOptions(fixture, { '--scenario': 'default-view', '--fixture': '/frozen/fixture.json' });
+  assert.ok(scale); assert.equal(captures.length, scale.provider_requests);
+  const starts = frames.filter(frame => frame.type === 'tool_execution_start');
+  const ends = frames.filter(frame => frame.type === 'tool_execution_end');
+  assert.equal(starts.length, scale.pages); assert.equal(ends.length, scale.pages);
+  const expected = new Map(fixture.snapshots.map(snapshot => [snapshot.record.id, snapshot.record]));
+  const records = [], seenIds = new Set(), seenRefs = new Set(), seenCursors = new Set(), pages = [];
+  let cursor;
+  for (let index = 0; index < scale.pages; index++) {
+    const id = index === 0 ? 'sc10-search' : 'sc06-catalog-page-' + (index + 1);
+    const args = { query: '', source: 'sdk-fixture', limit: 100, ...(cursor ? { cursor } : {}) };
+    assert.equal(starts[index].toolName, 'notion_list'); assert.equal(starts[index].toolCallId, id); assert.deepEqual(starts[index].args, args);
+    const end = ends.filter(frame => frame.toolCallId === id); assert.equal(end.length, 1);
+    assert.equal(end[0].toolName, 'notion_list'); assert.equal(end[0].isError, false);
+    const full = end[0].result.details, length = Math.min(100, scale.count - index * 100), more = index + 1 < scale.pages;
+    assert.equal(full.ok, true); assert.equal(full.state, 'known'); assert.equal(full.count, length);
+    assert.equal(full.total_count, scale.count); assert.equal(full.records.length, length); assert.equal(full.has_more, more);
+    assert.deepEqual(full.failures, []); assert.deepEqual(full.coverage, { exhaustive: true, sources: [{ source: 'sdk-fixture', exhaustive: true }] });
+    if (more) {
+      assert.equal(typeof full.next_cursor, 'string'); assert.ok(full.next_cursor.length > 0 && full.next_cursor.length <= 4096);
+      assert.equal(seenCursors.has(full.next_cursor), false); seenCursors.add(full.next_cursor); cursor = full.next_cursor;
+    } else assert.equal(full.next_cursor, null);
+    for (const record of full.records) {
+      const original = expected.get(record.id); assert.ok(original, 'Every actual page owner must belong to the independent scale fixture');
+      assert.equal(seenIds.has(record.id), false); seenIds.add(record.id);
+      assert.match(record.ref, /^sr:C[A-Za-z0-9_-]{22}$/u); assert.equal(seenRefs.has(record.ref), false); seenRefs.add(record.ref);
+      assert.equal(record.source, 'sdk-fixture'); assert.equal(record.scope, fixture.scope);
+      assert.equal(record.in_default_view, true); assert.equal(record.availability, 'available');
+      for (const key of ['name', 'kind', 'description']) assert.equal(record[key], original[key]);
+      records.push(record);
+    }
+    const delivered = [];
+    for (const [captureIndex, capture] of captures.entries()) {
+      const messages = capture.context.messages.filter(message => message.role === 'toolResult' && message.toolCallId === id);
+      assert.equal(messages.length, captureIndex > index ? 1 : 0, 'Each actual page must enter the next and all retained provider requests');
+      if (!messages.length) continue;
+      const message = messages[0]; assert.equal(message.toolName, 'notion_list'); assert.equal(message.isError, false);
+      assert.deepEqual(message.details, full, 'Provider projection cannot change the complete host metadata receipt');
+      const projection = assertSearchProjection(message, { scope: fixture.scope, context: capture.context, fixture });
+      delivered.push({ request_id: capture.requestId, ...projection });
+    }
+    pages.push({ tool_call_id: id, args, count: length, total_count: full.total_count, next_cursor: full.next_cursor,
+      source_details_sha256: hash(JSON.stringify(full)), delivered });
+  }
+  assert.deepEqual([...seenIds].sort(), [...fixture.catalog_records].sort());
+  return { status: 'verified', count: records.length, pages, records,
+    aggregation: 'Read-only assertions over original tool receipts and every actual provider context; no synthetic message is sent' };
+}
+
+export function assertCatalogScaleBindings(records, entries, fixture) {
+  const identities = [];
+  for (const record of records) {
+    const snapshot = fixture.snapshots.find(value => value.record.id === record.id && value.scope === record.scope);
+    assert.ok(snapshot);
+    const candidates = entries.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-short-ref' && entry.data?.ref === record.ref);
+    assert.ok(candidates.length > 0, 'Every displayed current handle needs its actual native session binding');
+    const target = candidates[0].data.target;
+    for (const entry of candidates) assert.deepEqual(entry.data.target, target, 'A current handle cannot change owner or scope');
+    assert.equal(target.kind, 'candidate'); assert.equal(target.identity.source, 'notion');
+    assert.equal(target.identity.scope, fixture.scope); assert.equal(target.identity.id, snapshot.record.id);
+    assert.equal(target.identity.kind, snapshot.record.kind); assert.deepEqual(target.identity.locator, snapshot.record.locator);
+    const owner = 'skill://' + encodeURIComponent(snapshot.record.id);
+    assert.equal(snapshot.record.ref, owner + '/' + snapshot.record.entrypoint.split('/').map(encodeURIComponent).join('/'));
+    assert.equal(target.identity.ref, owner, 'Current metadata binds the unpinned canonical owner, not an invented selected snapshot');
+    identities.push({ ref: record.ref, identity: target.identity });
+  }
+  for (const entry of entries.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-active-sources')) {
+    assert.deepEqual(entry.data.sources, []); assert.deepEqual(entry.data.graphs, []);
+  }
+  assert.equal(entries.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-selected-graph').length, 0);
+  return { status: 'verified', candidates: identities, active_sources: 0, selected_graphs: 0 };
+}
+
+export function assertCatalogScaleSource(events, fixture, objects, hostPid) {
+  assert.equal(initialDirectoryReady(events, hostPid, { fixture, sourceId: 'sdk-fixture', transport: 'sdk' }), true);
+  const catalogs = events.filter(event => event.kind === 'sdk_catalog');
+  assert.equal(catalogs.length, 2); assert.equal(catalogs.filter(event => event.value.view).length, 1);
+  assert.equal(events.filter(event => event.kind === 'sdk' && event.event === 'start').length, 2);
+  for (const { value } of catalogs) for (const record of value.records) {
+    const snapshot = fixture.snapshots.find(snapshot => snapshot.record.id === record.id && snapshot.scope === value.scope);
+    assert.ok(snapshot);
+    assert.deepEqual(record, snapshot.record, 'Both actual SDK directories must preserve all independently frozen metadata fields');
+  }
+  const observed = assertObjectReadEvidence(events, { selected: [], forbidden: objects, requiredPid: hostPid });
+  assert.equal(observed.reads, 0, 'No main, resource or unknown source object is selected by the scale gate');
+  for (const end of events.filter(event => event.kind === 'object_observer_end')) assert.equal(end.reads, 0);
+  return { status: 'verified', sdk_lists: 2, source_http: 0, selected_objects: 0, object_files: objects,
+    object_observation: observed, source_api_pagination: 'not_exercised_offline_fixture' };
 }
 
 /** The actual default catalog must agree with the independent metadata fixture. */
@@ -1361,6 +1487,7 @@ async function inspect(options) {
   if (live) return { ...common, ...await inspectLiveInput(live, common) };
   const fixture = await json(options['--fixture']);
   assert.equal(fixture.version, 1); assert.equal(fixture.catalog, true);
+  const catalogScale = catalogScaleOptions(fixture, options);
   assert.equal(fixture.ambiguous_names === true, options['--scenario'] === ambiguityScenarioName,
     'The opt-in ambiguity fixture is reserved for its separate ambiguity scenario');
   const fixtureEnv = await json(fixture.env);
@@ -1368,12 +1495,19 @@ async function inspect(options) {
   const stateRoot = resolve(fixture.cwd, fixtureEnv.NTN_SKILLS_HOME);
   assert.ok(stateRoot.startsWith(resolve(fixture.cwd) + '/'));
   const bodies = new Map(), bodiesById = new Map();
-  for (const snapshot of fixture.ambiguous_names ? fixture.snapshots : fixture.snapshots.slice(0, 4)) {
+  for (const snapshot of fixture.ambiguous_names || catalogScale ? fixture.snapshots : fixture.snapshots.slice(0, 4)) {
     const file = snapshot.files.find(file => file.path === snapshot.entrypoint);
     const bytes = await readFile(join(stateRoot, 'objects', file.sha256));
     assert.equal(bytes.length, file.bytes); assert.equal(hash(bytes), file.sha256);
     const body = new TextDecoder('utf8', { fatal: true, ignoreBOM: true }).decode(bytes);
     bodies.set(snapshot.record.name, body); bodiesById.set(snapshot.record.id, body);
+  }
+  const catalogObjects = [];
+  if (catalogScale) for (const snapshot of fixture.snapshots) for (const file of snapshot.files) {
+    const bytes = await readFile(join(stateRoot, 'objects', file.sha256));
+    assert.equal(bytes.length, file.bytes); assert.equal(hash(bytes), file.sha256);
+    catalogObjects.push({ owner: snapshot.record.id, path: file.path, sha256: file.sha256, bytes: file.bytes,
+      role: file.path === snapshot.entrypoint ? 'main' : 'resource' });
   }
   let resourceBatch;
   if (fixture.resourceBatch) {
@@ -1428,7 +1562,7 @@ async function inspect(options) {
     namedRootResource = { ...file, file_id: binding.file_id, ref: fixture.resource.ref,
       content: bytes.toString('base64'), encoding: 'base64' };
   }
-  return { packageRoot, manifest, extension, runtime, host, pi, piPackageRoot: current, serializerIdentity, fixture, fixtureEnv, bodies, bodiesById, resourceBatch, entrypoint, namedRootResource };
+  return { packageRoot, manifest, extension, runtime, host, pi, piPackageRoot: current, serializerIdentity, fixture, fixtureEnv, bodies, bodiesById, resourceBatch, entrypoint, namedRootResource, catalogScale, catalogObjects };
 }
 
 export function resourceRefsFromNative(message, paths) {
@@ -1449,9 +1583,39 @@ export function resourceRefsFromNative(message, paths) {
   return refs;
 }
 
-function selectProviderCall(context) {
-  const plan = JSON.parse(readFileSync(process.env.SC10_PI_TOOL_PLAN, 'utf8'));
+export function selectCatalogScaleCall(context, count) {
+  if (![10, 100, 101, 300].includes(count)) throw new Error('CONTROLLED_CATALOG_SIZE_INVALID');
+  let cursor;
+  const cursors = new Set(), refs = new Set();
+  for (let page = 0; page < Math.ceil(count / 100); page++) {
+    const id = page === 0 ? 'sc10-search' : 'sc06-catalog-page-' + (page + 1);
+    const matches = context.messages.filter(message => message.role === 'toolResult' && message.toolCallId === id);
+    if (matches.length > 1) throw new Error('CONTROLLED_CATALOG_RESULT_DUPLICATED');
+    if (!matches.length) return { type: 'toolCall', id, name: 'notion_list',
+      arguments: { query: '', source: 'sdk-fixture', limit: 100, ...(cursor ? { cursor } : {}) } };
+    const result = matches[0];
+    if (result.isError || result.toolName !== 'notion_list') throw new Error('CONTROLLED_CATALOG_LIST_FAILED');
+    const value = JSON.parse(typeof result.content === 'string' ? result.content : result.content.filter(block => block.type === 'text').map(block => block.text).join('\n'));
+    const length = Math.min(100, count - page * 100), more = page * 100 + length < count;
+    if (value.ok !== true || value.state !== 'known' || value.count !== length || value.total_count !== count
+      || !Array.isArray(value.records) || value.records.length !== length || value.has_more !== more
+      || !Array.isArray(value.failures) || value.failures.length) throw new Error('CONTROLLED_CATALOG_PAGE_INVALID');
+    for (const record of value.records) {
+      if (record.source !== 'sdk-fixture' || typeof record.ref !== 'string' || refs.has(record.ref)) throw new Error('CONTROLLED_CATALOG_OWNER_DUPLICATED');
+      refs.add(record.ref);
+    }
+    if (more) {
+      if (typeof value.next_cursor !== 'string' || !value.next_cursor || value.next_cursor.length > 4096 || cursors.has(value.next_cursor))
+        throw new Error('CONTROLLED_CATALOG_CURSOR_INVALID');
+      cursors.add(value.next_cursor); cursor = value.next_cursor;
+    } else if (value.next_cursor !== null) throw new Error('CONTROLLED_CATALOG_CURSOR_NOT_TERMINAL');
+  }
+  return null;
+}
+
+export function selectProviderCall(context, plan = JSON.parse(readFileSync(process.env.SC10_PI_TOOL_PLAN, 'utf8'))) {
   if (plan.mode === 'complete') return null;
+  if (Object.hasOwn(plan, 'catalog_size')) return selectCatalogScaleCall(context, plan.catalog_size);
   const find = id => [...context.messages].reverse().find(message => message.role === 'toolResult' && message.toolCallId === id);
   const text = value => typeof value === 'string' ? value : (value ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
   const parsed = result => { if (result.isError) throw new Error('CONTROLLED_TOOL_FAILED'); return JSON.parse(text(result.content)); };
@@ -1576,7 +1740,7 @@ async function provider(base) {
   let source = await readFile(path, 'utf8');
   const replace = (before, after) => { assert.equal(source.split(before).length, 2, 'Provider fixture shape changed'); source = source.replace(before, after); };
   replace('import { appendFileSync }', "import { channel } from 'node:diagnostics_channel';\nimport { appendFileSync, readFileSync }");
-  replace('function stream(model, context) {', `${currentProviderTools.toString()}\n${resourceRefsFromNative.toString()}\n${selectScalarProviderCall.toString()}\n${ambiguityCandidatesFromMessage.toString()}\n${selectNamedReferenceCall.toString()}\n${selectNativeRepeatCall.toString()}\n${selectLiveProviderCall.toString()}\n${selectProviderCall.toString()}\n${holdLifecycleResponse.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, aborted: Boolean(options?.signal?.aborted), monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
+  replace('function stream(model, context) {', `${currentProviderTools.toString()}\n${resourceRefsFromNative.toString()}\n${selectScalarProviderCall.toString()}\n${ambiguityCandidatesFromMessage.toString()}\n${selectNamedReferenceCall.toString()}\n${selectNativeRepeatCall.toString()}\n${selectLiveProviderCall.toString()}\n${selectCatalogScaleCall.toString()}\n${selectProviderCall.toString()}\n${holdLifecycleResponse.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, aborted: Boolean(options?.signal?.aborted), monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
   replace('const payload = await options?.onPayload?.({ model: model.id, context }, model);', 'if (typeof options?.onPayload !== "function" || typeof options?.onResponse !== "function") throw new Error("PUBLIC_PROVIDER_HOOKS_REQUIRED");\n      hook("payload_start");\n      const payload = await options.onPayload({ model: model.id, context }, model);\n      hook("payload_end");');
   replace('hook("payload_start");', 'hook("payload_start");\n      if (process.env.SC06_PI_CATALOG_RELEASE === "provider") channel("context-broker.verify-sdk-initialization-release").publish({ pid: process.pid, boundary: "provider" });');
   replace('JSON.stringify({ model: model.id, context })', 'JSON.stringify({ requestId, model: model.id, context })');
@@ -2866,6 +3030,8 @@ function assertAmbiguityReferenceEvidence(captures, frames, hooks, events, archi
 
 async function scenario(name, info, scratch, evidence, expectShortRefs, expectCompactContext, expectDirectScalar, expectShortConfirmations, warmDirectory = false) {
   const catalogProjection = ['dollar', 'default-view'].includes(name);
+  const catalogScale = info.catalogScale;
+  if (catalogScale) assert.equal(name, 'default-view', catalogScaleUsage);
   const shortResourceRefs = name === 'resource-batch-short-refs';
   const resourceScenario = name === 'resource-batch' || shortResourceRefs;
   const scalarShortRefs = name === 'resource-scalar-short-refs', scalarScenario = name === 'resource-scalar' || scalarShortRefs;
@@ -2922,6 +3088,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
   const entrypointPlan = partialEntrypoint ? { owner: info.entrypoint.name, fixed_main_ref: info.entrypoint.ref,
     selected_path: info.entrypoint.files.find(file => file.role === 'selected').path } : {};
   await publishToolPlan(toolPlan, { mode: ['dollar', 'default-view'].includes(name) ? 'search' : name, ...resourcePlan, ...entrypointPlan, ...repeatPlan,
+    ...(catalogScale ? { catalog_size: catalogScale.count } : {}),
     ...(namedSettings ? namedSettings.plan : {}),
     ...(scalarScenario ? { calls: scalarCalls.map(({ id, args }) => ({ id, args })) } : {}) });
   const fakeProvider = await provider(base), preload = join(base, 'observer.mjs');
@@ -2946,7 +3113,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     ...(catalogProjection ? { SC08_PI_INIT_CONFIG: join(fixtureEnv.NTN_SKILLS_CONFIG_HOME, 'config.json'),
       SC06_PI_CATALOG_RELEASE: name === 'dollar' ? 'context' : 'provider', SC06_PI_PRESERVED_SECTION: preservedSection } : {}),
     ...(entrypointSetup ? { SC13_PI_OBJECT_ROOT: entrypointSetup.partial.objects }
-      : scalarScenario || namedScenario ? { SC13_PI_OBJECT_ROOT: join(fixtureEnv.NTN_SKILLS_HOME, 'objects') } : {}),
+      : scalarScenario || namedScenario || catalogScale ? { SC13_PI_OBJECT_ROOT: join(fixtureEnv.NTN_SKILLS_HOME, 'objects') } : {}),
     SC10_PI_BUNDLED_CLI: join(info.packageRoot, 'dist/ntn-skills.mjs'), NODE_OPTIONS: `--import=${preload}` });
   const activeTools = name === 'scoped-command' ? scopedCommandTools : codemode ? [...nativeTools, 'codemode'] : nativeTools;
   let toolDiscovery;
@@ -2981,7 +3148,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     ...(shutdownObserver ? { native_shutdown_observer: { extension: shutdownObserver, registration: 'before_broker', events: nativeEvents } } : {}),
     ...(scalarSeed ? { seed_evidence: 'resource-scalar-seed.json', seed_sha256: scalarSeed.evidence.session_sha256 } : {}) });
   if (isLifecycleScenario(name)) return runSdkLifecycle({ info, base, output, sessions, providerFile, hookFile, ledger, toolPlan, env, argv, name });
-  let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, resourceScalarEvidence, nativeRepeatEvidence, entrypointEvidence, defaultViewEvidence, serializerContext, archive, dollarProjection, nativeProjection, scopedCommandEvidence, catalogProjectionEvidence, namedEvidence, warmDirectoryEvidence;
+  let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, resourceScalarEvidence, nativeRepeatEvidence, entrypointEvidence, defaultViewEvidence, serializerContext, archive, dollarProjection, nativeProjection, scopedCommandEvidence, catalogProjectionEvidence, namedEvidence, warmDirectoryEvidence, catalogScaleEvidence;
   try {
     rpc = await startRpc({ host: 'pi', args: argv, cwd: base, env, timeoutMs: 60000 });
     if (warmDirectory) {
@@ -3024,17 +3191,22 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     last = captures.at(-1).context;
     if (name !== 'scoped-command' && !scalarScenario && !ambiguity) {
       discovery = parsedResult(toolResult(last, namedScenario ? 'sc25-search' : 'sc10-search'));
-      assert.equal(discovery.ok, true); assert.equal(discovery.count, info.fixture.catalog_records?.length ?? 4);
+      assert.equal(discovery.ok, true);
+      if (!catalogScale) assert.equal(discovery.count, info.fixture.catalog_records?.length ?? 4);
       for (const record of discovery.records) if (expectShortRefs) assert.match(record.ref, /^sr:C/u);
     }
     if (namedScenario) {
       assert.equal(captures.length, namedSettings.plan.calls.length + 1, 'Each scripted named-reference tool has one actual following provider request');
     } else if (name === 'default-view') {
-      assert.equal(captures.length, 2);
+      assert.equal(captures.length, catalogScale ? catalogScale.pages + 1 : 2);
       await publishToolPlan(toolPlan, { mode: 'complete' });
       await rpc.prompt('Continue the ordinary task using the now available default directory metadata. Do not read any Skill body.');
       captures = await rows(providerFile); last = captures.at(-1).context;
-      assert.equal(captures.length, 3, 'Nonblocking startup and one ordinary continuation are both retained');
+      assert.equal(captures.length, catalogScale ? catalogScale.provider_requests : 3, 'Nonblocking startup and one ordinary continuation are both retained');
+      if (catalogScale) {
+        catalogScaleEvidence = assertCatalogScalePages(captures, rpc.frames, info.fixture);
+        discovery = { records: catalogScaleEvidence.records };
+      }
       defaultViewEvidence = assertDefaultViewProjection(captures, discovery, await rows(ledger), info.fixture, info.bodies);
       assert.equal(defaultViewEvidence.provider_requests[0].state, 'pending',
         'The ordinary first provider must run while the actual catalog initialization is held');
@@ -3493,8 +3665,11 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       }
     }
     if (catalogProjectionEvidence) {
-      const serialized = await Promise.all(serializer.requests.map(async request => ({ requestId: request.provider_request_id,
-        context: { messages: (await json(join(output, request.request_file))).messages } })));
+      const serialized = await Promise.all(serializer.requests.map(async request => {
+        const context = { messages: (await json(join(output, request.request_file))).messages };
+        return { requestId: request.provider_request_id, context: catalogScale
+          ? catalogContextFromHttp(context, captures.find(capture => capture.requestId === request.provider_request_id).context) : context };
+      }));
       const httpCatalog = name === 'dollar'
         ? assertPreflightCatalogProjection(serialized, discovery, await rows(ledger), info.fixture, info.bodies)
         : assertDefaultViewProjection(serialized, discovery, await rows(ledger), info.fixture, info.bodies);
@@ -3506,6 +3681,14 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
         assert.equal(bodyCount(capture.context, nativeSkill.marker), 0);
       }
       catalogProjectionEvidence.installed_serializer_http = httpCatalog;
+      if (catalogScale) {
+        const wirePages = assertCatalogScalePages(serialized, rpc.frames, info.fixture);
+        assert.deepEqual(wirePages.records, catalogScaleEvidence.records);
+        catalogScaleEvidence.installed_serializer_http = wirePages;
+        catalogScaleEvidence.current_session_bindings = assertCatalogScaleBindings(catalogScaleEvidence.records, archive.entries, info.fixture);
+        catalogScaleEvidence.source = assertCatalogScaleSource(await rows(ledger), info.fixture, info.catalogObjects, rpc.lifecycle[0].pid);
+        await save(join(output, 'catalog-scale.json'), catalogScaleEvidence);
+      }
       await save(join(output, 'catalog-projection.json'), catalogProjectionEvidence);
     }
     if (warmDirectory) {
@@ -3571,6 +3754,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       discovery_failures: discovery?.failures ?? null, native_guidance_without_cli_templates: true, observer_finality: finality?.complete === true,
       ...(scopedCommandEvidence ? { deferred_control_discovery: 'verified', discovery_evidence: 'source-command.json' } : {}),
       ...(catalogProjectionEvidence ? { catalog_projection: 'verified', catalog_projection_evidence: 'catalog-projection.json' } : {}),
+      ...(catalogScaleEvidence ? { catalog_size: catalogScale.count, catalog_scale: 'verified', catalog_scale_evidence: 'catalog-scale.json' } : {}),
       ...(namedEvidence && !ambiguity ? { name_references: 'verified', name_reference_evidence: 'name-reference-evidence.json',
         fixed_name_main_pre_reads: 0, canonical_short_name_lookups: 0, explicit_failed_source: Boolean(failedNameSource) } : {}),
       ...(namedEvidence && ambiguity ? { ambiguity_candidates: 'verified', name_reference_evidence: 'name-reference-evidence.json',
@@ -3808,7 +3992,7 @@ async function retained(evidence, cleanup) {
 }
 async function main(argv) {
 const args = [...argv];
-if (args.some(value => ['--help', '-h', 'help'].includes(value))) { console.log(usage + '\n' + nameUsage + '\n' + warmDirectoryUsage + '\n' + compactionUsage); return; }
+if (args.some(value => ['--help', '-h', 'help'].includes(value))) { console.log(usage + '\n' + nameUsage + '\n' + warmDirectoryUsage + '\n' + compactionUsage + '\n' + catalogScaleUsage); return; }
 const action = args.shift();
 assert.ok(['doctor', 'run', 'evidence', 'cleanup'].includes(action), usage);
 const options = {};
@@ -3831,6 +4015,7 @@ if (action === 'evidence' || action === 'cleanup') {
     source: info.live ? 'Real Notion; local private oracle never seeds the consumer' : 'controlled offline catalog and snapshots',
     ...(info.live ? { artifact: info.live.artifact, installed_files: info.published, oracle: info.live.oracle, expected_default_records: info.catalog.count } : {}),
     ...(warmDirectory ? { comparison_cell: 'warm-directory', metadata_barrier: 'not_run', metadata_barrier_timeout_ms: 10000 } : {}),
+    ...(info.catalogScale ? { catalog_scale: info.catalogScale, object_files: info.catalogObjects } : {}),
     default_view: 'not_verified' }, null, 2));
   else {
     assert.ok(options['--out'], usage);
@@ -3848,6 +4033,7 @@ if (action === 'evidence' || action === 'cleanup') {
     await save(join(evidence, 'plan.json'), { version: 1, node: process.version, pi: info.pi.version, package: info.packageRoot, runtime: info.runtime, extension: info.extension, serializer: info.serializerIdentity,
       fixture: options['--fixture'], driver_sha256: hash(await readFile(fileURLToPath(import.meta.url))), source_command_configured: false,
       ...(options['--fixture'] ? { fixture_sha256: hash(await readFile(options['--fixture'])) } : {}),
+      ...(info.catalogScale ? { catalog_scale: info.catalogScale, object_files: info.catalogObjects, source_api_pagination: 'not_exercised_offline_fixture' } : {}),
       scenarios, expect_short_refs: expectShortRefs, expect_compact_context: expectCompactContext, expect_direct_scalar: expectDirectScalar, expect_short_confirmations: expectShortConfirmations,
       ...(warmDirectory ? { comparison_cell: 'warm-directory', metadata_barrier_timeout_ms: 10000, extra_prompts: 0, body_preparation_during_barrier: false } : {}),
       comparison_scope: 'Installed Broker plus bundled CLI/SDK; a changed runtime manifest or bundle hash is a changed comparison input',

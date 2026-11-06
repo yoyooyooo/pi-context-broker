@@ -70,6 +70,199 @@ for (const stage of ['write', 'rename']) test(`tool-plan publication preserves t
   assert.equal(await readFile(path, 'utf8'), previous);
 });
 
+function scalePage(count, page) {
+  const offset = page * 100, length = Math.min(100, count - offset), more = offset + length < count;
+  return { ok: true, state: 'known', count: length, total_count: count, has_more: more,
+    next_cursor: more ? `${offset + length}.${'c'.repeat(64)}` : null,
+    records: Array.from({ length }, (_, index) => ({ name: `Skill ${offset + index}`, source: 'sdk-fixture',
+      ref: 'sr:C' + String(offset + index).padStart(22, '0') })), failures: [] };
+}
+const scaleCallId = page => page === 0 ? 'sc10-search' : 'sc06-catalog-page-' + (page + 1);
+for (const count of [10, 100, 101, 300]) test(`catalog scale follows every returned cursor for ${count} records`, () => {
+  const context = { messages: [] }, plan = { mode: 'search', catalog_size: count };
+  let cursor;
+  for (let page = 0; page < Math.ceil(count / 100); page++) {
+    const id = scaleCallId(page), args = { query: '', source: 'sdk-fixture', limit: 100, ...(cursor ? { cursor } : {}) };
+    assert.deepEqual(namedSdkProbe.selectProviderCall(context, plan), { type: 'toolCall', id, name: 'notion_list', arguments: args });
+    const result = scalePage(count, page);
+    context.messages.push({ role: 'toolResult', toolName: 'notion_list', toolCallId: id, isError: false,
+      content: [{ type: 'text', text: JSON.stringify(result) }] });
+    cursor = result.next_cursor;
+  }
+  assert.equal(namedSdkProbe.selectProviderCall(context, plan), null);
+  assert.equal(context.messages.length + 2, count === 300 ? 5 : count === 101 ? 4 : 3);
+});
+
+test('catalog scale follows the actual cursor instead of stopping at the first partial result', () => {
+  const page = scalePage(101, 0), context = { messages: [{ role: 'toolResult', toolName: 'notion_list',
+    toolCallId: 'sc10-search', isError: false, content: [{ type: 'text', text: JSON.stringify(page) }] }] };
+  assert.deepEqual(namedSdkProbe.selectProviderCall(context, { mode: 'search', catalog_size: 101 }),
+    { type: 'toolCall', id: 'sc06-catalog-page-2', name: 'notion_list',
+      arguments: { query: '', source: 'sdk-fixture', limit: 100, cursor: page.next_cursor } });
+});
+
+function catalogScaleFixture(count = 101) {
+  const sha = text => createHash('sha256').update(text).digest('hex'), scope = 'a'.repeat(64);
+  const snapshots = Array.from({ length: count }, (_, index) => {
+    const id = 'shared_skill:scale-library:owner-' + index, body = `UNSELECTED SCALE BODY ${index}\n`, resource = `UNSELECTED SCALE RESOURCE ${index}\n`;
+    const record = { id, kind: 'skill', name: `目录 ${index} α 😀`, alias: 'owner-' + index,
+      description: `Description ${index}: 中文 😀 "quote" &quot; <tag> & tail\n`, enabled: true, default_context: false,
+      entrypoint: 'SKILL.md', ref: 'skill://' + encodeURIComponent(id) + '/SKILL.md',
+      locator: { type: 'shared_skill', library_id: 'scale-library', skill_id: 'owner-' + index,
+        page_id: '00000000-0000-4000-8000-' + String(index + 1).padStart(12, '0'), database_id: database,
+        data_source_id: '11111111-2222-3333-4444-555555555556' } };
+    return { scope, record, snapshot_id: 's_' + sha(body), version_id: sha(body), entrypoint: 'SKILL.md',
+      files: [{ path: 'SKILL.md', bytes: Buffer.byteLength(body), sha256: sha(body) },
+        { path: 'references/info.txt', bytes: Buffer.byteLength(resource), sha256: sha(resource) }],
+      file_bindings: [{ path: 'SKILL.md', file_id: 'main-' + index }, { path: 'references/info.txt', file_id: 'resource-' + index }] };
+  });
+  const fixture = { version: 1, catalog: true, catalog_size: count, scope, database, snapshots,
+    catalog_records: snapshots.map(snapshot => snapshot.record.id), default_view: { id: 'view-1',
+      records: snapshots.map(({ record: { id, name, ref } }) => ({ id, name, ref })) } };
+  const records = snapshots.map((snapshot, index) => ({ id: snapshot.record.id, scope, kind: snapshot.record.kind,
+    name: snapshot.record.name, description: snapshot.record.description, ref: 'sr:C' + String(index).padStart(22, '0'),
+    source: 'sdk-fixture', in_default_view: true, availability: 'available' }));
+  const xml = text => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+  const native = { name: 'catalog-canary', description: 'Native metadata', path: '/owned/native/SKILL.md', marker: 'UNSELECTED_NATIVE_BODY' };
+  const section = 'Independent instructions stay unchanged.';
+  const nativeSystem = section + '<available_skills><skill><name>' + native.name + '</name><description>' + native.description
+    + '</description><location>' + native.path + '</location></skill></available_skills>';
+  const catalog = '<ntn-skills-view-catalog><view source="sdk-fixture" id="view-1" partial="false">Default</view>'
+    + records.map(record => '<skill><name>' + xml(record.name) + '</name><description>' + xml(record.description)
+      + '</description><source>sdk-fixture</source><location>' + record.ref + '</location></skill>').join('') + '</ntn-skills-view-catalog>';
+  const system = text => ({ role: 'system', content: nativeSystem + text, toolsAdded: ['read', 'notion_list', 'notion_use'].map(name => ({ name, parameters: { type: 'object' } })) });
+  const captures = [{ requestId: '42:1', context: { messages: [system('<ntn-skills-discovery status="pending">Pending</ntn-skills-discovery>')] } }];
+  const frames = [], messages = [], entries = records.map((record, index) => ({ type: 'custom', customType: 'context-broker-short-ref',
+    data: { ref: record.ref, target: { kind: 'candidate', identity: { source: 'notion', scope, id: record.id, kind: record.kind,
+      locator: structuredClone(snapshots[index].record.locator), ref: 'skill://' + encodeURIComponent(record.id) } } } }));
+  let cursor;
+  for (let page = 0; page < Math.ceil(count / 100); page++) {
+    const id = scaleCallId(page), part = records.slice(page * 100, (page + 1) * 100), more = (page + 1) * 100 < count;
+    const full = { ok: true, state: 'known', count: part.length, has_more: more, total_count: count,
+      next_cursor: more ? `${(page + 1) * 100}.${'c'.repeat(64)}` : null,
+      coverage: { exhaustive: true, sources: [{ source: 'sdk-fixture', exhaustive: true }] }, records: part, failures: [] };
+    const model = { ...full, records: part.map(({ id, scope, description, ...record }) => record) };
+    const message = { role: 'toolResult', toolName: 'notion_list', toolCallId: id, isError: false,
+      content: [{ type: 'text', text: JSON.stringify(model) }], details: structuredClone(full) };
+    frames.push({ type: 'tool_execution_start', toolName: 'notion_list', toolCallId: id,
+      args: { query: '', source: 'sdk-fixture', limit: 100, ...(cursor ? { cursor } : {}) } },
+      { type: 'tool_execution_end', toolName: 'notion_list', toolCallId: id, isError: false,
+        result: { content: [{ type: 'text', text: JSON.stringify(full) }], details: structuredClone(full) } });
+    messages.push(message); entries.push({ type: 'message', message: structuredClone(message) });
+    captures.push({ requestId: '42:' + (page + 2), context: { messages: [system(catalog), ...structuredClone(messages)] } });
+    cursor = full.next_cursor;
+  }
+  captures.push({ requestId: '42:' + (captures.length + 1), context: structuredClone(captures.at(-1).context) });
+  const events = [{ kind: 'object_observer_start', observer_pid: 42, objects: '/owned/objects',
+    coverage: ['node:fs.readFile', 'node:fs.readFileSync', 'node:fs/promises.readFile'] }];
+  for (const [index, view] of [false, true].entries()) {
+    const id = 'sdk-' + index, record = { observer_pid: 42, id, operation: 'list', source_id: 'sdk-fixture', database };
+    const value = { scope, count, records: snapshots.map(snapshot => structuredClone(snapshot.record)),
+      coverage: { exhaustive: true, failed_sources: [] }, ...(view ? { view: { id: 'view-1', database_id: database }, view_selection: 'first' } : {}) };
+    events.push({ kind: 'sdk', event: 'start', ...record }, { kind: 'sdk_catalog', id, observer_pid: 42, value },
+      { kind: 'sdk', event: 'end', ...record, status: 'completed', error_code: null, metrics_observed: true,
+        request_metrics: { complete: true, total_requests: 0, trace: [], trace_dropped: 0 } });
+  }
+  events.push({ kind: 'object_observer_end', observer_pid: 42, reads: 0, pending_reads: 0, errors: 0 });
+  const objects = snapshots.flatMap(snapshot => snapshot.files.map(file => ({ ...file, owner: snapshot.record.id })));
+  const bodies = new Map(snapshots.map((snapshot, index) => [snapshot.record.name, `UNSELECTED SCALE BODY ${index}\n`]));
+  return { fixture, captures, frames, events, entries, objects, bodies, native, section };
+}
+
+for (const count of [10, 100, 101, 300]) test(`catalog scale binds all ${count} cards across actual pages provider and HTTP text`, () => {
+  const value = catalogScaleFixture(count), before = JSON.stringify(value);
+  const pages = namedSdkProbe.assertCatalogScalePages(value.captures, value.frames, value.fixture);
+  const defaults = assertDefaultViewProjection(value.captures, { records: pages.records }, value.events, value.fixture, value.bodies);
+  assert.equal(defaults.provider_requests[0].state, 'pending');
+  assert.ok(defaults.provider_requests.slice(1).every(row => row.state === 'ready' && row.records === count));
+  assertNativeCatalogPreserved(value.captures, value.native, value.section);
+  assert.equal(namedSdkProbe.assertCatalogScaleBindings(pages.records, value.entries, value.fixture).candidates.length, count);
+  assert.equal(namedSdkProbe.assertCatalogScaleSource(value.events, value.fixture, value.objects, 42).object_observation.reads, 0);
+  const wire = value.captures.map(capture => ({ requestId: capture.requestId,
+    context: namedSdkProbe.catalogContextFromHttp({ messages: capture.context.messages.map(message => message.role === 'system' ? message
+      : { role: 'tool', tool_call_id: message.toolCallId, content: message.content[0].text }) }, capture.context) }));
+  assert.deepEqual(namedSdkProbe.assertCatalogScalePages(wire, value.frames, value.fixture).records, pages.records);
+  assert.equal(assertDefaultViewProjection(wire, { records: pages.records }, value.events, value.fixture, value.bodies).provider_requests.at(-1).records, count);
+  assert.equal(JSON.stringify(value), before);
+});
+
+test('catalog scale is opt-in only for explicit default-view with the complete independent owner set', () => {
+  const fixture = catalogScaleFixture(10).fixture, options = { '--fixture': '/owned/fixture.json', '--scenario': 'default-view' };
+  assert.deepEqual(namedSdkProbe.catalogScaleOptions(fixture, options), { count: 10, page_size: 100, pages: 1, provider_requests: 3 });
+  const ordinary = structuredClone(fixture); delete ordinary.catalog_size;
+  assert.equal(namedSdkProbe.catalogScaleOptions(ordinary, { '--scenario': 'all' }), null);
+  for (const name of [undefined, 'all', 'dollar', 'native', 'name-references', 'session-lifecycle'])
+    assert.throws(() => namedSdkProbe.catalogScaleOptions(fixture, { ...options, '--scenario': name }));
+  for (const mutate of [value => { value.catalog_size = 74; }, value => { value.catalog_size = '10'; },
+    value => { value.catalog_records[1] = value.catalog_records[0]; }, value => { value.default_view.records.pop(); },
+    value => { value.snapshots[0].scope = 'foreign'; }, value => { value.snapshots[0].record.locator.database_id = 'foreign'; },
+    value => { value.snapshots[0].record.enabled = false; }, value => { value.distinct_names = true; },
+    value => { value.snapshots[0].files.pop(); }, value => { value.snapshots[0].file_bindings.pop(); }]) {
+    const bad = structuredClone(fixture); mutate(bad); assert.throws(() => namedSdkProbe.catalogScaleOptions(bad, options));
+  }
+  for (const option of [{ '--live-input': '/live.json' }, { '--warm-directory': 'true' }, { '--expect-short-refs': 'false' }])
+    assert.throws(() => namedSdkProbe.catalogScaleOptions(fixture, { ...options, ...option }));
+});
+
+test('catalog scale public pagination rejects missing duplicated foreign or cyclic actual results', () => {
+  const page = scalePage(300, 0);
+  for (const mutate of [value => { value.has_more = false; }, value => { value.count--; }, value => { value.total_count--; },
+    value => { value.records.pop(); }, value => { value.next_cursor = ''; }, value => { value.failures = [{ code: 'DENIED' }]; },
+    value => { value.records[0].source = 'foreign'; }, value => { value.records[1].ref = value.records[0].ref; }]) {
+    const bad = structuredClone(page); mutate(bad);
+    const context = { messages: [{ role: 'toolResult', toolName: 'notion_list', toolCallId: 'sc10-search', content: JSON.stringify(bad) }] };
+    assert.throws(() => namedSdkProbe.selectProviderCall(context, { mode: 'search', catalog_size: 300 }));
+  }
+  const second = scalePage(300, 1); second.next_cursor = page.next_cursor;
+  const messages = [page, second].map((result, index) => ({ role: 'toolResult', toolName: 'notion_list', toolCallId: scaleCallId(index), content: JSON.stringify(result) }));
+  assert.throws(() => namedSdkProbe.selectProviderCall({ messages }, { mode: 'search', catalog_size: 300 }), /CURSOR_INVALID/);
+  assert.throws(() => namedSdkProbe.selectProviderCall({ messages: [messages[0], messages[0]] }, { mode: 'search', catalog_size: 300 }), /RESULT_DUPLICATED/);
+  assert.deepEqual(namedSdkProbe.selectProviderCall({ messages: [] }, { mode: 'search' }).arguments, { query: '', source: 'sdk-fixture', limit: 20 });
+});
+
+test('catalog scale refuses count-only coverage or metadata and current-reference identity substitutions', () => {
+  for (const mutate of [
+    value => { value.frames[2].args.cursor = 'invented'; },
+    value => { value.frames[1].result.details.total_count--; },
+    value => { value.frames[1].result.details.records[0].scope = 'foreign'; },
+    value => { value.frames[1].result.details.records[0].source = 'foreign'; },
+    value => { value.frames[1].result.details.records[0].id = 'unowned'; },
+    value => { value.frames[1].result.details.records[0].description += 'invented'; },
+    value => { value.frames[1].result.details.coverage.exhaustive = false; },
+    value => { value.captures[1].context.messages.pop(); },
+    value => { value.captures.at(-1).context.messages[1].details.records[0].name = 'changed'; },
+    value => { value.captures[1].context.messages[0].content = value.section; },
+    value => { value.frames[3].result.details.records[0] = structuredClone(value.frames[1].result.details.records[0]); },
+  ]) {
+    const value = catalogScaleFixture(); mutate(value);
+    assert.throws(() => namedSdkProbe.assertCatalogScalePages(value.captures, value.frames, value.fixture));
+  }
+  for (const mutate of [value => { value.entries[0].data.target.identity.scope = 'foreign'; },
+    value => { value.entries[0].data.target.identity.id = 'other'; },
+    value => { value.entries[0].data.target.identity.ref += '/SKILL.md'; },
+    value => { value.entries[0].data.target.identity.ref += '?snapshot=s_old'; },
+    value => { value.entries[0].data.target.identity.locator.page_id = 'foreign'; },
+    value => { value.entries[0].data.target.kind = 'selected'; },
+    value => { value.entries.shift(); },
+    value => { value.entries.push({ type: 'custom', customType: 'context-broker-active-sources', data: { sources: [{}], graphs: [] } }); }]) {
+    const value = catalogScaleFixture(10), pages = namedSdkProbe.assertCatalogScalePages(value.captures, value.frames, value.fixture); mutate(value);
+    assert.throws(() => namedSdkProbe.assertCatalogScaleBindings(pages.records, value.entries, value.fixture));
+  }
+});
+
+test('catalog scale zero-body evidence requires completed observers and all independent object hashes', () => {
+  for (const mutate of [value => { value.events.shift(); }, value => { value.events.pop(); },
+    value => { value.events.at(-1).reads = 1; }, value => { value.events.at(-1).pending_reads = 1; },
+    value => { value.events.push({ kind: 'object_read', event: 'start', observer_pid: 42, object_sha256: value.objects.at(-1).sha256 }); },
+    value => { value.events.find(event => event.kind === 'sdk_catalog' && !event.value.view).value.records[0].description = 'invented'; },
+    value => { value.events.find(event => event.kind === 'sdk' && event.event === 'end').request_metrics.total_requests = 1; },
+    value => { value.events.find(event => event.kind === 'sdk' && event.event === 'start').operation = 'consume'; },
+  ]) {
+    const value = catalogScaleFixture(10); mutate(value);
+    assert.throws(() => namedSdkProbe.assertCatalogScaleSource(value.events, value.fixture, value.objects, 42));
+  }
+});
+
 const liveInput = () => {
   const file = path => ({ path, sha256: 'a'.repeat(64) });
   return { version: 1, kind: 'live_notion_sdk', host: file('/owned/pi'), artifact: file('/owned/broker.tgz'),
