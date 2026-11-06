@@ -112,9 +112,24 @@ Doctor 仅确认输入和计划，不能宣布目录已 ready。Barrier 复用�
 
 repeat 每臂 6 个请求，prepare 每臂 5 个请求。每份实际 HTTP 原始文件的 bytes/hash 都先验证，且与原紧凑 JSON 序列化相同，再把工具数组、tool 消息、非 tool 消息中的 guidance/catalog 编码文本及剩余结构互斥归类；不能再把纯文本长度或 host details 加进合计。每个请求工具数组增加 403 B：read 定义 2,044→2,443 B，其中总 description 增加 125 B、scalar path description 47→184 B 在现有两分支共增加 274 B；discovery 定义增加 105 B、use 定义减少 101 B。工具结果增长均来自每次后续请求保留的 discovery 结果增加 137 B；read/resource/use 正文结果没有因此减少。
 
-两组实际净增作为一行文案收敛的 fail-before。仅将 `pi-host-adapter.ts` 的 `scalarProperties.path.description` 从 184 B 缩为 123 B：`Local file path (relative or absolute), or an issued skill:// or sr: ref. Copy refs verbatim; never guess filesystem paths.` 顶层与 scalar oneOf 使用同一属性，因此离线原 payload 克隆的每请求差值精确为 −122 B。只改该字符串的反事实为 repeat 69,718 B（相对旧臂 −436 B）、prepare 60,305 B（−486 B）；这不是新包实测结果。schema 结构、read 总说明、普通本地路径、分页、图片、issued Skill/canonical/sr 引用、read/use 区别、guidance 和其他工具定义保持不变。原 `pi-read-adapter.test.ts` 的五项语义测试继续覆盖这些边界；新独立安装包仍需按受影响两景核对实际 serializer，而不追加旧 native 样本。
+两组实际净增作为一行文案收敛的 fail-before。仅将 `pi-host-adapter.ts` 的 `scalarProperties.path.description` 从 184 B 缩为 123 B：`Local file path (relative or absolute), or an issued skill:// or sr: ref. Copy refs verbatim; never guess filesystem paths.` 顶层与 scalar oneOf 使用同一属性，因此离线原 payload 克隆的每请求差值精确为 −122 B。只改该字符串的反事实为 repeat 69,718 B（相对旧臂 −436 B）、prepare 60,305 B（−486 B）；该阶段仅为离线预测。schema 结构、read 总说明、普通本地路径、分页、图片、issued Skill/canonical/sr 引用、read/use 区别、guidance 和其他工具定义保持不变。原 `pi-read-adapter.test.ts` 的五项语义测试继续覆盖这些边界；后续独立安装实测另列，旧 native 样本不追加、不重判。
 
 六个 Pi 均 natural exit 0；整体外层 exit 1 保留旧 native 的功能失败。39 个已知进程均关闭，六次原 E→系统 Trash→E 保持 218 个原件 hash；238 个 frozen inputs 与实际 daily3 before/after 相等。来源 SDK/CLI HTTP 为零，30 个 HTTP 是安装版本 serializer 的 localhost 观察，不能当生产网络或模型账单。`cases-terminal.json` SHA-256 为 `2bd96bdefb97beebc78910f2372d84a56cc68ee79bec19858b0e40c15ae11045`；`window-release.json` 为 `178c23be097dc1a17be686623619ffb9dda3c823e5e0740d52b29dd501d343bf`；`offline-cost-analysis.json` 为 `021ec0bec375ab569ba7faded1288e15dfee7912d9741665e3c7ba8433c550c1`。它们均在上述 warm-directory 证据根，原失败和 startup 等待成本完整保留。
+
+2026-11-06 的后续安装实测使用纯提交 `128b59d776648ab2eca2b8b14c9a09a267958faa` 导出、原 pack/strict closure 与同一 C7 输入。归档 SHA-256 为 `14acc956a1bde32ddde4966b5298266c3b52898c5da92abe1a718c74c822dfba`，86 个安装文件与 tar 的路径、字节、hash、mode 全等；相对 bace，85 个成员不变，仅 `src/pi-host-adapter.ts` 改动。内嵌 CLI `3c4a6284…`、SDK `912a853d…` 和 completion 均不变。构建时首次 owned import 包装误入 closure 的 CLI main guard，及后验一次路径排序错误各自留证；修正调用/比较方式没有重打包、重跑消费者或改旧报告。
+
+继续使用已冻 `5400b774…` helper、Pi 1.4、原 `4a43f63c…` fixture 和相同用户输入，只执行新版 native-repeat、prepare 各 n=1：Doctor 一次，单景原 180 秒、RPC 60 秒、barrier 10 秒，零重试。两景均 PASS，首个及后续 provider/serializer 目录均 ready，owner/scope/name/description 与旧 PASS 相同；完整正文、Requires、固定资源和重复确认仍经原断言核验。
+
+| 同条件实际完整 HTTP 请求 | 旧版已冻 PASS B | 未收敛 bace B | 新 14acc B | 对旧版 / 对 bace B |
+| --- | ---: | ---: | ---: | ---: |
+| native-repeat，6 请求 / 5 工具回合 | 70,154 | 70,450 | **69,718** | **−436 / −732** |
+| prepare，5 请求 / 3 工具回合 | 60,791 | 60,915 | **60,305** | **−486 / −610** |
+
+逐原始 HTTP 重新核对 bytes/hash、完整紧凑序列化及互斥组成项后，实际新工具数组相对 bace 每请求恰少 122 B；完整 schema 深比较仅这两个 path description 出现位置不同。新 repeat 的 tools/guidance/catalog/tool-results/剩余项为 23,772 / 10,782 / 4,776 / 12,777 / 17,611 B；prepare 为 19,810 / 8,985 / 3,980 / 13,748 / 13,782 B。除工具定义外，其他组成项与 bace 的每请求字节完全相等，工具回合没有增加。两组净值已由独立安装后的实际 serializer 确认，不把先前各切片的百分比相加，也不外推真实模型质量、token 或 cold 延迟。
+
+新两场外层及原生 Pi 均自然 exit 0，12 个已知进程已关闭；原 E→系统 Trash→E 保持 77 个原件快照 hash，consumer scratch 已移走，包与原件保留。两场 SDK 分别 5 次（2 list / 1 consume / 2 read）和 4 次（2 list / 2 consume），均无 CLI child、source HTTP、cancelled/failed SDK 或未闭合 EOF；11 次 HTTP 仅是 localhost serializer 观察，真实模型未运行。冻结输入与实际 daily3 不变。证据根 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc05-path-description-candidate-v2i8bk7v` 的 `actual-cost-comparison.json` SHA-256 为 `157f52aded33f77a633457d2d3731178f151de88c9803fcddb9cf0e8233bc4ce`，`window-release.json` 为 `f7f16cca9b2788ddb66690d082a50a3e74fe0ede53046fcad0782593538bdd21`。
+
+同提交 CI run `42163570180` / job `127715000368` 为 SUCCESS：Check、installed Pi、Pi 1.4 compatibility、OMP/Tern artifact 和 package dry run 均成功；只用于失败留证的条件步骤正常 skipped。该根 `ci-42163570180.json` SHA-256 为 `2b5a029d81fe933a9bd50d42467908c545f34c2f4943543091ba01bd0d7e1e85`。本地不重复全套 CI；原六轮 5 PASS / 1 FAIL、早期不配对数据及真实模型失败保持各自结论。
 
 ### 普通启动配置
 
