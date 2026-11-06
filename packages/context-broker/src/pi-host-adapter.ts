@@ -52,7 +52,7 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
           description: "Copy complete resource refs verbatim from the selected Skill snapshot's resource directory. Every ref must identify a file in the same owner and snapshot. Reads all selected files in one operation without preparing the main body." };
         const scalarProperties = { ...native.parameters.properties, path: {
           ...(object(native.parameters.properties.path) ? native.parameters.properties.path : { type: "string" }),
-          description: "Local file path (relative or absolute), or a supplied Skill/resource ref (skill://... or sr:...). Copy issued refs verbatim; do not turn a resource path into a guessed filesystem path.",
+          description: "Local file path (relative or absolute), or an issued skill:// or sr: ref. Copy refs verbatim; never guess filesystem paths.",
         } };
         const parameters: Record<string, unknown> = {
           type: "object", properties: { ...scalarProperties, paths },

@@ -97,7 +97,24 @@ Doctor 仅确认输入和计划，不能宣布目录已 ready。Barrier 复用�
 
 2026-11-06 的原六次诊断保留为非同目录状态样本：native 序列化 HTTP 为 41,175→42,715 B，native-repeat 为 67,364→69,978 B，prepare 为 59,438→60,443 B。旧臂四/六次请求仍 pending，而新臂第二次起为 ready；prepare 的第二用户句还不相同。因此这些差值不裁决收益或回归。旧源的真实默认 list 已自然退出，后续同轮系统目录仍 pending，原因是旧版在 `before_agent_start` 固定投影；第二用户轮次确实显示原两项，不能归因为 SDK 请求失败。原 FAILED reports、serializer sidecars 与 unpaired 标记保持。
 
-原账本为 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc05-public-cost-a4yii0vm/initial-six-comparison.json`，SHA-256 `11f2364f13b8363701ab197c5f119ef22ec6fcae7ad82705464f0490c2792d0c`。新 helper 的红绿证据与待执行计划在同根 `warm-directory-harness-iwh8jg4k`。后续只在独立授权窗口对这三场各跑一次旧/新臂，使用同一 Pi 1.4、C7 runtime、fixture 和原用户输入；prepare 两臂第二句精确使用当前原句 `Use the same a, b and c Skills again, keeping their selected versions.`，旧 helper 的其他工具名称/正文断言不改。当前仅完成 helper 接线和本地测试，六次实际 warm-directory consumer 尚未执行。该受控 cell 不替代真实模型、生产源网络、cold 启动或 SC20 的全任务成本矩阵。
+原账本为 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc05-public-cost-a4yii0vm/initial-six-comparison.json`，SHA-256 `11f2364f13b8363701ab197c5f119ef22ec6fcae7ad82705464f0490c2792d0c`。新 helper 的红绿证据与冻结计划在同根 `warm-directory-harness-iwh8jg4k`。三场各跑一次旧/新臂，使用同一 Pi 1.4、C7 runtime、fixture 和原用户输入；prepare 两臂第二句精确使用当前原句 `Use the same a, b and c Skills again, keeping their selected versions.`，旧 helper 的其他工具名称/正文断言不改。该受控 cell 不替代真实模型、生产源网络、cold 启动或 SC20 的全任务成本矩阵。
+
+2026-11-06 按冻结计划实际运行六轮，结果为 **5 PASS / 1 FAIL**，零重试。旧 native 的 metadata close 后 0.592 ms，barrier 观察到 source 终局；再过 6.407 ms 首个 provider 仍为 pending，四次请求都没有 ready 目录，原失败保留。它的 41,175 B 不能与新 native 的 43,187 B 作同目录配对，也没有增加 sleep 或重跑。repeat 和 prepare 的两臂从首个实际 provider 起都显示相同两个 owner/scope/name/description，原完整正文、Requires、资源与终局断言通过；实际旧 namespaced 名称及新 source 标签差异照常计入。
+
+| 实际配对与互斥组成项 | repeat 旧 → 新 B | prepare 旧 → 新 B |
+| --- | ---: | ---: |
+| 全部工具定义数组 | 22,086 → 24,504 | 18,405 → 20,420 |
+| guidance 的 JSON 编码文本 | 13,020 → 10,782 | 10,850 → 8,985 |
+| Default View 的 JSON 编码文本 | 5,340 → 4,776 | 4,450 → 3,980 |
+| 实际工具结果消息 | 12,092 → 12,777 | 13,200 → 13,748 |
+| 其余消息与 JSON 结构 | 17,616 → 17,611 | 13,886 → 13,782 |
+| **实际完整 HTTP 请求合计** | **70,154 → 70,450，+296** | **60,791 → 60,915，+124** |
+
+repeat 每臂 6 个请求，prepare 每臂 5 个请求。每份实际 HTTP 原始文件的 bytes/hash 都先验证，且与原紧凑 JSON 序列化相同，再把工具数组、tool 消息、非 tool 消息中的 guidance/catalog 编码文本及剩余结构互斥归类；不能再把纯文本长度或 host details 加进合计。每个请求工具数组增加 403 B：read 定义 2,044→2,443 B，其中总 description 增加 125 B、scalar path description 47→184 B 在现有两分支共增加 274 B；discovery 定义增加 105 B、use 定义减少 101 B。工具结果增长均来自每次后续请求保留的 discovery 结果增加 137 B；read/resource/use 正文结果没有因此减少。
+
+两组实际净增作为一行文案收敛的 fail-before。仅将 `pi-host-adapter.ts` 的 `scalarProperties.path.description` 从 184 B 缩为 123 B：`Local file path (relative or absolute), or an issued skill:// or sr: ref. Copy refs verbatim; never guess filesystem paths.` 顶层与 scalar oneOf 使用同一属性，因此离线原 payload 克隆的每请求差值精确为 −122 B。只改该字符串的反事实为 repeat 69,718 B（相对旧臂 −436 B）、prepare 60,305 B（−486 B）；这不是新包实测结果。schema 结构、read 总说明、普通本地路径、分页、图片、issued Skill/canonical/sr 引用、read/use 区别、guidance 和其他工具定义保持不变。原 `pi-read-adapter.test.ts` 的五项语义测试继续覆盖这些边界；新独立安装包仍需按受影响两景核对实际 serializer，而不追加旧 native 样本。
+
+六个 Pi 均 natural exit 0；整体外层 exit 1 保留旧 native 的功能失败。39 个已知进程均关闭，六次原 E→系统 Trash→E 保持 218 个原件 hash；238 个 frozen inputs 与实际 daily3 before/after 相等。来源 SDK/CLI HTTP 为零，30 个 HTTP 是安装版本 serializer 的 localhost 观察，不能当生产网络或模型账单。`cases-terminal.json` SHA-256 为 `2bd96bdefb97beebc78910f2372d84a56cc68ee79bec19858b0e40c15ae11045`；`window-release.json` 为 `178c23be097dc1a17be686623619ffb9dda3c823e5e0740d52b29dd501d343bf`；`offline-cost-analysis.json` 为 `021ec0bec375ab569ba7faded1288e15dfee7912d9741665e3c7ba8433c550c1`。它们均在上述 warm-directory 证据根，原失败和 startup 等待成本完整保留。
 
 ### 普通启动配置
 
