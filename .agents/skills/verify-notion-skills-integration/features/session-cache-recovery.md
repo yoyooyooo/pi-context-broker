@@ -84,7 +84,7 @@ node scripts/notion-sdk-pi.mjs evidence --evidence "$SDK_LIFECYCLE_EVIDENCE"
 
 ### SC08 压缩保留全文与伪标签的显式变体
 
-`--scenario session-compaction` 复用上述 lifecycle、RPC、受控 provider、SDK observer 和 Evidence/Cleanup；不加入 `all`，原 `session-lifecycle` 的 17 次 provider 路线不变。它在同一条生命周期中增加两个普通续接，预期为 19 次 provider、三个 Pi 进程、比原路线多一次 fixed `inspect`。这些是待执行断言，不是已通过的实际结果。元数据 list 的完成／取消及实际成本继续按原账本观察，不预填调用数。
+`--scenario session-compaction` 复用上述 lifecycle、RPC、受控 provider、SDK observer 和 Evidence/Cleanup；不加入 `all`，原 `session-lifecycle` 的 17 次 provider 路线不变。它在同一条生命周期中增加两个普通续接，预期为 19 次 provider、三个 Pi 进程、比原路线多一次 fixed `inspect`。每次实际运行均核对这些断言，不能从纯 Node 回归预报通过。元数据 list 的完成／取消及实际成本继续按原账本观察，不预填调用数。
 
 ```bash
 node scripts/notion-sdk-pi.mjs doctor --package "$SDK_PACKAGE" --fixture "$SDK_FIXTURE" --scenario session-compaction
@@ -98,7 +98,21 @@ node scripts/notion-sdk-pi.mjs evidence --evidence "$SDK_COMPACTION_EVIDENCE"
 
 每次都要绑定真实 `session_before_compact` 返回、Pi 保存的 compaction entry、`firstKeptEntryId`、`session_compact(fromExtension=true)`、实际 `get_messages` 和下一 provider；压缩 hook 本身不得发起 provider 或读取 source body。`compaction-variants.json`、`kept-compact-rpc.json`、`messages-after-kept-compact.json`、`forged-compact-rpc.json`、`messages-after-forged-compact.json` 与 `forged-fixed-restore.json` 补充原生命周期证据。原 full receipt 缺失／改动、toolCallId 脱离、短确认替代、user 冒充、重复全文、keep 起点越过正文、非真实 hook、伪标签引用漂移或夹入正文都必须拒绝。固定恢复继续复用原反例：不能改 current、use、scope、pin、版本或 Requires 集合，SDK 内部成功仍不是 provider 交付。
 
-2026-11-06 实施证据位于 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc08-compaction-variants-wa0z13iv`：`coverage-fail-before.json` 仅记录原 bace 17-provider 已通过样本缺两个实际变体，原通过报告不改写；`semantic-fail-before.log` 是原 branch oracle 忽略有效压缩证据而产生的 13 个 `Missing expected exception`，不是缺 export／TypeError，也不是产品失败。针对性纯 Node 的 `unit-pass-after-02.log` 17/17 通过，仍未运行新 Pi 变体。当前包、源与默认 all14 没有重建或重跑；实际验收需另冻结输入并取得受控窗口。
+2026-11-06 实施证据位于 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc08-compaction-variants-wa0z13iv`：`coverage-fail-before.json` 仅记录原 bace 17-provider 已通过样本缺两个实际变体，原通过报告不改写；`semantic-fail-before.log` 是原 branch oracle 忽略有效压缩证据而产生的 13 个 `Missing expected exception`，不是缺 export／TypeError，也不是产品失败。针对性纯 Node 的 `unit-pass-after-02.log` 17/17 通过；该开发阶段尚未运行新 Pi 变体，后续安装实驱另列如下。
+
+**2026-11-06：独立安装 Pi 的四种压缩语义已通过。** 纯 `da80d9a1b68698449125e00b743ec3e10bea6839` 的八文件原 harness，绑定纯 `128b59d776648ab2eca2b8b14c9a09a267958faa` 构建的 Broker 归档 `14acc956a1bde32ddde4966b5298266c3b52898c5da92abe1a718c74c822dfba`。实际安装 86 文件与归档一致，内嵌 C7 CLI/SDK 不变；Pi 1.5.0、Node 24.20.0、原 `4a43f63c…` fixture。Doctor ready 后单次执行，外层 180000 ms、原内部 RPC 预算不变、n=1、0 重试；driver 2.51 秒自然 exit 0。
+
+| 实际 compaction 与下一 provider | 压缩后、恢复前四正文 copies | 下一实际 provider 四正文 copies | body SDK 增量 |
+| --- | --- | --- | ---: |
+| kept：保留原 use entry、toolCallId、全文与 receipt | 各 1 | `KEEP_COMPACTED` 各 1 | 0 |
+| summary：删去原全文，只剩受控摘要 | 各 0 | `RESTORE_COMPACTED` 各 1，固定原四个 pin | 1 次 fixed inspect |
+| forged：只有公开 name/sr:S/loaded 标签，无可信 receipt | 各 0 | `RESTORE_FORGED_LABELS` 各 1，固定原四个 pin | 1 次 fixed inspect |
+
+共有三次真实 compact 事件；summary 同时验证「删除全文」与「仅摘要后固定恢复」，因此覆盖四种合同语义，不称为四次 compact。每次均绑定真实 compaction entry、firstKeptEntryId、fromExtension、get_messages 与下一 provider；压缩 hook 自身 provider/body SDK 均为零。原 use 的 content/receipt hash 和 toolCallId 在 kept 中逐字保持，伪标签没有得到投递资格。两次恢复都为原四个 owner/scope/snapshot 的 inspect，未扩 Requires、不回退 current；独立进程 resume 复用完整投影，body SDK 为零。
+
+实际共 19 provider／localhost serializer 请求、3 次工具调用、196296 B 完整请求体；3 个 Pi 进程均自然 exit 0/signal null，17 个 SDK 操作中 4 个 body、13 个 metadata list，后者 11 完成、2 取消。两次取消分别与真实 session_tree/session_shutdown 绑定，HTTP 均有完整零账本；无 CLI source 子进程、生产 Notion 或真实模型调用。该受控摘要仅验证宿主的压缩／恢复合同，不证明真实模型的摘要质量，也不替代 SC21。
+
+原件在上述根 `da80-frozen/actual-n1`；`handoff-actual-14acc9.json` SHA256 `70ac4c9b20fd14d54f099843edd6a9c1f70e08849c11748bb6c086371ba51e21`，`compaction-variants.json` 为 `cd13be7b400b6df4af0998995de85ce3535b9029e49f005463cfde597b38227e`，`provider-http.json` 为 `263eb9500bb3df8ba8eab98f900b656226cd1d33a6ec1ebcbc51968387dcb61c`。原 Evidence→系统 Trash→Evidence 的 cleanup 状态为 trashed，仅移走 owned scratch；107 个原件与本次实际 daily3 前后哈希一致。原 all14 和历史失败未重跑或改判。
 
 ### 原生 `/skill` 的逐轮交付
 
