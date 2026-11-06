@@ -162,6 +162,36 @@ test('SC06 comparison identity allows only the arm and evidence path to differ',
   assert.equal(intentRunner.discoveryExperimentIdentity(intentConfig()), undefined);
 });
 
+const readyConfig = () => ({ ...intentConfig(), phase: 'SC06-discovery-prototype',
+  discoveryExperiment: { version: 1, mode: 'full-cards' },
+  discoveryStartup: { mode: 'ready-directory', timeoutMs: 60000 } });
+
+test('ready-directory selection shares the original 1200-second arm wall with setup', () => {
+  const config = readyConfig(), scope = intentRunner.selectIntentCases(config, 'D-early');
+  assert.equal(scope.plannedBudget.maxScheduledPromptMs, 1200000);
+  assert.equal(scope.plannedBudget.maxArmWallMs, 1200000);
+  assert.deepEqual(scope.plannedBudget.directorySetup, { perCaseMs: 60000, maxCases: 3,
+    maxSetupMs: 180000, includedInArmWall: true });
+  assert.equal(scope.plannedBudget.timeoutMsPerSubmission, 300000);
+  assert.deepEqual(scope.notRunCases.map(item => item.id), ['C-introduce']);
+  assert.equal(intentRunner.selectIntentCases(intentConfig(), 'D-early').plannedBudget.maxArmWallMs, undefined,
+    'The existing cold experiment is not silently relabelled or changed');
+});
+
+test('ready-directory opt-in rejects incomplete configuration and never expands task budgets', () => {
+  for (const mutate of [
+    value => { delete value.discoveryExperiment; value.phase = 'early-feedback-not-formal-SC21'; },
+    value => { value.discoveryStartup.mode = 'preload-body'; },
+    value => { value.discoveryStartup.timeoutMs = 60001; },
+    value => { value.discoveryStartup.armTimeoutMs = 1380000; },
+    value => { value.discoveryStartup.target = 'private-ref'; },
+  ]) { const value = readyConfig(); mutate(value); assert.throws(() => validateIntentConfiguration(value)); }
+  for (const selected of [undefined, 'C-introduce']) assert.throws(() => intentRunner.selectIntentCases(readyConfig(), selected));
+  const cold = readyConfig(); delete cold.discoveryStartup;
+  assert.notEqual(intentRunner.discoveryExperimentIdentity(readyConfig()).comparisonSha256,
+    intentRunner.discoveryExperimentIdentity(cold).comparisonSha256, 'Ready and cold strata have distinct frozen inputs');
+});
+
 const introInput = () => {
   const target = { logicalId: 'target', scope: 'scope', snapshot: 's_pin', bodySha256: 'b'.repeat(64), bodyBytes: 100, ref: 'skill://target/SKILL.md?snapshot=s_pin' };
   const file = { ...target, ownerId: target.logicalId, role: 'entrypoint', sha256: target.bodySha256, bytes: target.bodyBytes };
@@ -182,6 +212,16 @@ test('introduction requires complete inspected source and never target activatio
     value => { value.responses = [{ command: 'prepare', code: 0, response: { status: 'ready', purpose: 'use', nodes: [{ id: 'target' }] } }]; },
     value => { value.observation.push({ phase: 'tool-call', allowed: false }); },
   ]) { const input = introInput(); mutate(input); assert.throws(() => assertIntentTurn(input)); }
+});
+
+test('ready-directory task cannot pass using a pending first provider or an internal ready label', () => {
+  const value = introInput();
+  value.observation.unshift({ phase: 'catalog', stage: 'before_provider_request', state: 'pending', skills: [] });
+  assert.equal(assertIntentTurn(value).status, 'passed', 'Original cold pending behavior is unchanged');
+  value.discoveryStartup = readyConfig().discoveryStartup;
+  assert.throws(() => assertIntentTurn(value), /ready.*first provider|first provider.*ready/i);
+  value.observation[0] = { phase: 'catalog-before-agent-start', state: 'ready', skills: [] };
+  assert.throws(() => assertIntentTurn(value), /ready.*first provider|first provider.*ready/i);
 });
 
 for (const [sourceName, encodedName] of [
@@ -280,6 +320,188 @@ const completeDefaultSource = () => {
   value.observation[0].state = 'ready';
   return value;
 };
+
+const startupInput = () => {
+  const value = completeDefaultSource();
+  value.responses[1].value.view.name = 'Default';
+  value.catalog = { scope: value.scope, records: structuredClone(value.catalogRecords), view: { id: 'default-view', name: 'Default' } };
+  value.sourceLedger = value.sourceLedger.filter(event => !['sdk-observer-end', 'native-session-shutdown'].includes(event.phase));
+  for (const event of value.sourceLedger.filter(event => event.phase === 'sdk-end'))
+    Object.assign(event, { status: 'completed', metricsComplete: true, resultObserved: true });
+  return { ...value, observation: [], handled: { agentInvoked: false, status: 'completed' }, pid: 42,
+    statusFrame: { type: 'extension_ui_request', method: 'notify', notifyType: 'info', message: 'notion: Default (default-view) · 74 Skill/Router · first' } };
+};
+
+test('ready-directory barrier pairs local status with complete same-scope Default SDK metadata', () => {
+  const value = startupInput(), ready = intentRunner.inspectDiscoveryStartup(value);
+  assert.equal(ready.state, 'ready'); assert.deepEqual(ready.defaultRequestIds, ['two']);
+  assert.equal(ready.httpAttempts, 2); assert.equal(ready.requestBytes, 237); assert.equal(ready.responseBytes, 721114);
+  assert.equal(ready.modelVisibility, 'not_yet_observed');
+  const missing = structuredClone(value); missing.responses.pop(); missing.sourceLedger.pop();
+  assert.equal(intentRunner.inspectDiscoveryStartup(missing).state, 'pending', 'A local ready message cannot replace the unfinished SDK operation');
+  const unpublished = structuredClone(value); unpublished.statusFrame.message = 'Notion Views: no enabled Notion sources';
+  assert.equal(intentRunner.inspectDiscoveryStartup(unpublished).state, 'pending', 'Source completion alone is not the native ready state');
+  const ordinary = structuredClone(value); ordinary.responses.pop(); ordinary.sourceLedger.splice(-2);
+  ordinary.responses[0].value.records = ordinary.catalogRecords; ordinary.responses[0].value.count = 74;
+  assert.equal(intentRunner.inspectDiscoveryStartup(ordinary).state, 'pending', 'Even a complete 74-row ordinary inventory is not a Default View');
+  value.responses[0].metrics.trace[0].response_bytes = null;
+  assert.equal(intentRunner.inspectDiscoveryStartup(value).responseBytes, null, 'Unknown bytes cannot become zero');
+});
+
+test('ready-directory rejects partial, failed, cancelled, foreign and fabricated setup evidence', () => {
+  for (const mutate of [
+    value => { value.responses[1].value.coverage.exhaustive = false; },
+    value => { value.responses[1].value.coverage.failed_sources = [{ id: 'source', code: 'DENIED' }]; },
+    value => { value.responses[1].value.scope = 'other'; },
+    value => { value.responses[0].value.scope = 'other'; },
+    value => { value.responses[1].value.records[0].description = 'changed'; },
+    value => { value.responses[1].value.records[0].ref = 'skill://different/SKILL.md'; },
+    value => { value.responses[1].value.records[1] = value.responses[1].value.records[0]; },
+    value => { value.responses[1].value.view.id = 'different'; },
+    value => { value.responses[1].value.view_selection = 'explicit'; },
+    value => { value.responses[1].value.count--; },
+    value => { value.responses[0].value.coverage.search_index_limited = true; },
+    value => { value.responses[1].status = 'cancelled'; value.responses[1].value = null; },
+    value => { value.sourceLedger.at(-1).status = 'failed'; },
+    value => { value.responses[1].resultObserved = false; },
+    value => { value.responses[1].metrics.complete = false; },
+    value => { value.responses[1].metrics.total_requests++; },
+    value => { value.responses[1].metrics.trace[0].request_kind = 'notion_body'; },
+    value => { value.responses[1].metrics.trace[0].request_kind = 'notion_write'; },
+    value => { value.sourceLedger[1].operation = 'consume'; },
+    value => { value.sourceLedger.at(-1).pid = 99; },
+    value => { value.sourceLedger.push({ phase: 'sdk-observer-error' }); },
+    value => { value.sourceLedger.push({ phase: 'native-session-shutdown' }); },
+    value => { value.sourceLedger.push({ phase: 'child-spawn', source: true }); },
+    value => { value.handled.agentInvoked = true; },
+    value => { value.statusFrame.type = 'assistant'; },
+    value => { value.statusFrame.message += ' · partial'; },
+    value => { value.statusFrame.message = 'notion: default View failed (DENIED) · first'; },
+    value => { value.statusFrame.message = 'notion: no Views; empty default directory · first'; },
+    value => { value.statusFrame.notifyType = 'error'; },
+    value => { value.observation.push({ phase: 'native-input' }); },
+    value => { value.observation.push({ phase: 'provider-transport-start' }); },
+    value => { value.observation.push({ phase: 'project-read-result' }); },
+  ]) { const value = startupInput(); mutate(value); assert.throws(() => intentRunner.inspectDiscoveryStartup(value)); }
+});
+
+test('ready-directory waits through native local commands without adding a user/model message', async () => {
+  const value = startupInput(), seen = [], saved = []; let count = 0, clock = 0;
+  const rpc = { frames: [], lifecycle: [{ event: 'spawn', pid: 42 }],
+    command: async name => { seen.push(name); assert.ok(['get_messages', 'get_commands'].includes(name));
+      return name === 'get_commands' ? { commands: [{ name: 'context-broker', source: 'extension' }] } : { messages: [] }; },
+    prompt: async text => { seen.push(text); count++; rpc.frames.push({ ...value.statusFrame,
+      message: count === 1 ? 'Notion Views: no enabled Notion sources' : value.statusFrame.message }); return value.handled; } };
+  const result = await intentRunner.waitForDiscoveryReady({ rpc, catalog: value.catalog, armStartedMs: 0, setupStartedMs: 0,
+    snapshot: async () => value, stop: async () => assert.fail('No shutdown before the admitted task'), savePoll: async poll => saved.push(poll),
+    now: () => clock, pause: async ms => { clock += ms; } });
+  assert.equal(result.status, 'ready'); assert.equal(result.polls.length, 2); assert.equal(result.elapsedMs, 250);
+  assert.deepEqual(seen, ['get_commands', 'get_messages', '/context-broker view', '/context-broker view', 'get_messages']);
+  assert.equal(saved.length, 2); assert.equal(result.setupProviderRequests, 0);
+  rpc.command = async name => name === 'get_commands' ? { commands: [{ name: 'context-broker', source: 'extension' }] }
+    : { messages: [{ role: 'user', content: 'preloaded greeting' }] };
+  await assert.rejects(() => intentRunner.waitForDiscoveryReady({ rpc, catalog: value.catalog, armStartedMs: 0, setupStartedMs: 0,
+    snapshot: async () => value, stop: async () => {}, savePoll: async () => {}, now: () => 0 }), /empty session/);
+  rpc.command = async () => ({ commands: [] });
+  await assert.rejects(() => intentRunner.waitForDiscoveryReady({ rpc, catalog: value.catalog, armStartedMs: 0, setupStartedMs: 0,
+    snapshot: async () => value, stop: async () => {}, savePoll: async () => {}, now: () => 0 }), /command must be registered/);
+  assert.equal(count, 2, 'An unavailable extension command cannot fall through to the model');
+});
+
+test('ready-directory timeout never submits a task and shares the shrinking arm allowance', async () => {
+  assert.equal(intentRunner.discoveryAllowance({ armStartedMs: 0, stageStartedMs: 1199000, stageLimitMs: 60000, nowMs: 1199500 }), 500);
+  assert.equal(intentRunner.discoveryAllowance({ armStartedMs: 0, stageStartedMs: 900000, stageLimitMs: 300000, nowMs: 950000 }), 250000);
+  assert.throws(() => intentRunner.discoveryAllowance({ armStartedMs: 0, stageStartedMs: 1199000, stageLimitMs: 60000, nowMs: 1200000 }), { code: 'DISCOVERY_ARM_TIMEOUT' });
+  assert.throws(() => intentRunner.discoveryAllowance({ armStartedMs: 0, stageStartedMs: 0, stageLimitMs: 60000, nowMs: 60000 }), { code: 'DISCOVERY_STAGE_TIMEOUT' });
+  const value = startupInput(); value.statusFrame.message = 'Notion Views: no enabled Notion sources';
+  let clock = 0, prompts = 0;
+  const rpc = { frames: [], lifecycle: [{ event: 'spawn', pid: 42 }], command: async name => name === 'get_commands'
+    ? { commands: [{ name: 'context-broker', source: 'extension' }] } : { messages: [] },
+    prompt: async text => { assert.equal(text, '/context-broker view'); prompts++; rpc.frames.push(value.statusFrame); return value.handled; } };
+  await assert.rejects(() => intentRunner.waitForDiscoveryReady({ rpc, catalog: value.catalog, armStartedMs: 0, setupStartedMs: 0,
+    snapshot: async () => value, stop: async () => {}, savePoll: async () => {}, now: () => clock, pause: async () => { clock = 60000; } }),
+  { code: 'DISCOVERY_STAGE_TIMEOUT' });
+  assert.equal(prompts, 1, 'Polling timeout cannot create a model submission or retry');
+});
+
+test('failed ready-directory setup keeps source costs and proves zero model work only with a complete observer chain', () => {
+  const setupIdentity = { sampleId: 'setup', clockId: 'clock' };
+  const events = extra => {
+    let previousSha256 = null;
+    return [{ phase: 'observer_start' }, ...extra, { phase: 'observer_end', complete: true, errors: 0 }].map((event, index) => {
+      const body = { ...event, ...setupIdentity, sequence: index + 1, previousSha256 };
+      previousSha256 = intentHash(JSON.stringify(body)); return { ...body, eventSha256: previousSha256 };
+    });
+  };
+  const result = intentRunner.summarizeDiscoveryCosts({ events: events([]), observation: [], setupIdentity });
+  assert.equal(result.task, 'not_run'); assert.equal(result.modelHttpAttempts, 0); assert.equal(result.tokens, null);
+  for (const phase of ['input', 'provider_request', 'tool_call'])
+    assert.throws(() => intentRunner.summarizeDiscoveryCosts({ events: events([{ phase }]), observation: [], setupIdentity }), /hide model work/);
+  for (const phase of ['provider-transport-error', 'authored-tool-call'])
+    assert.throws(() => intentRunner.summarizeDiscoveryCosts({ events: events([]), observation: [{ phase }], setupIdentity }));
+  const truncated = events([]); truncated.pop();
+  assert.throws(() => intentRunner.summarizeDiscoveryCosts({ events: truncated, observation: [], setupIdentity }));
+  const changed = events([]); changed[0].eventSha256 = '0'.repeat(64);
+  assert.throws(() => intentRunner.summarizeDiscoveryCosts({ events: changed, observation: [], setupIdentity }));
+});
+
+test('ready-directory host finality failure stops the cohort even when source and cost ledgers closed', () => {
+  const value = { sourceComplete: true, observation: [], result: { status: 'failed', error: { code: 'INTENT_EVIDENCE_FAILED' },
+    directorySetup: { status: 'ready', firstProvider: { status: 'verified' } }, discoveryExperiment: { costStatus: 'complete' } } };
+  assert.equal(intentRunner.discoveryTechnicalFailure(value), false, 'An independent task-behavior failure does not stop the other cases');
+  value.result.hostFinality = { status: 'failed', error: { code: 'HOST_FINALITY_FAILED', message: 'Native close failed' } };
+  assert.equal(intentRunner.discoveryTechnicalFailure(value), true, 'A later generic assertion cannot hide the terminal failure');
+  assert.equal(value.result.hostFinality.error.code, 'HOST_FINALITY_FAILED');
+});
+
+const readyProviderInput = (mode, changedCard = {}) => {
+  const encode = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+  const record = { id: 'target', ref: 'skill://target/SKILL.md', name: 'Target "quoted"', description: '\nDescription &quot; 中文\n' };
+  const card = { ...record, path: 'sr:C' + 'A'.repeat(22), source: 'notion', ...changedCard };
+  const inputSection = '<ntn-skills-view-catalog><available_skills><skill>'
+    + ['name', 'description', 'source'].map(key => `<${key}>${encode(card[key])}</${key}>`).join('')
+    + `<location>${encode(card.path)}</location></skill></available_skills></ntn-skills-view-catalog>`;
+  const marker = '\nNotion cards are on demand; discover them with notion_list.';
+  const outputSection = mode === 'full-cards' ? inputSection : inputSection.replace(/<available_skills>[\s\S]*?<\/available_skills>/g, '') + marker;
+  const input = { phase: 'discovery-input-catalog', sequence: 1, userTurn: 1, state: 'ready', systemPromptSha256: intentHash(inputSection),
+    skills: [{ name: encode(record.name), path: 'sr:C' + 'A'.repeat(22), provenance: { source: 'verified-notion-metadata', loaded: false,
+      ownerId: record.id, ref: record.ref, scope: 'scope' } }] };
+  const proof = { phase: 'discovery-projection', sequence: 2, userTurn: 1, mode, stage: 'context_with_system', section: 'context-broker-notion-catalog',
+    inputCatalogSequence: 1, inputSection, outputSection, inputSectionSha256: intentHash(inputSection), outputSectionSha256: intentHash(outputSection),
+    inputSectionBytes: Buffer.byteLength(inputSection), outputSectionBytes: Buffer.byteLength(outputSection),
+    inputMessagesSha256: intentHash('messages'), outputMessagesSha256: intentHash('messages'), preservedMessagesSha256: intentHash('preserved'),
+    markerBytes: mode === 'full-cards' ? 0 : Buffer.byteLength(marker) };
+  const actual = { phase: 'catalog', sequence: 3, stage: 'before_provider_request', userTurn: 1, providerPayloadSha256: 'actual-provider', state: 'ready',
+    skills: mode === 'full-cards' ? structuredClone(input.skills) : [] };
+  const provider = { phase: 'provider-request', sequence: 4, observedPayloadSha256: 'actual-provider', tools: ['read', 'notion_list', 'notion_use'], contents: [], payloadBytes: 500,
+    discoveryProjection: { sequence: 2, mode, inputCatalogSequence: 1, outputSectionSha256: proof.outputSectionSha256,
+      wireFragmentSha256: intentHash(outputSection.trim()), markerBytes: proof.markerBytes } };
+  return { item: intentConfig().cases[3], oracle: { target: { scope: 'scope' } }, catalogRecords: [record], responses: [],
+    discoveryExperiment: { version: 1, mode }, discoveryStartup: readyConfig().discoveryStartup,
+    observation: [input, proof, actual, provider, { phase: 'provider-transport-start', sequence: 5, observedPayloadSha256: 'actual-provider', wireBodySha256: 'a'.repeat(64), wireBodyBytes: 500 },
+      { phase: 'provider-transport-response', status: 200 }, { phase: 'assistant-final', success: true, text: 'Hello.' }] };
+};
+
+test('ready-directory first provider binds complete decoded metadata and distinguishes hidden cards', () => {
+  for (const mode of ['full-cards', 'on-demand-cards']) {
+    const value = readyProviderInput(mode);
+    assert.equal(assertIntentTurn(value).status, 'passed');
+    const verified = intentRunner.assertReadyDiscoveryProvider({ observation: value.observation, catalogRecords: value.catalogRecords,
+      scope: 'scope', experiment: value.discoveryExperiment });
+    assert.equal(verified.completeDescriptionBytes, Buffer.byteLength(value.catalogRecords[0].description));
+    assert.match(verified.visibility, mode === 'full-cards' ? /actual provider system/ : /before the public on-demand projection/);
+    assert.equal(value.observation[2].skills.length, mode === 'full-cards' ? 1 : 0, 'Hidden cards must not be called outer provider-visible');
+    for (const changed of [{ name: 'other' }, { description: 'Description &quot; 中文' },
+      { description: '\nDescription " 中文\n' }, { path: 'skill://other/SKILL.md' }, { source: 'foreign' }])
+      assert.throws(() => assertIntentTurn(readyProviderInput(mode, changed)));
+    for (const mutate of [
+      item => { item.observation[2].stage = 'context_with_system'; },
+      item => { item.observation[2].providerPayloadSha256 = 'another-provider'; },
+      item => { item.observation[0].skills[0].provenance.ref = 'skill://another/SKILL.md'; },
+      item => { item.observation.splice(3, 0, structuredClone(item.observation[2])); },
+    ]) { const wrong = structuredClone(value); mutate(wrong); assert.throws(() => assertIntentTurn(wrong)); }
+  }
+});
 
 test('chat keeps completed ordinary 298 metadata separate from a shutdown-cancelled Default View', () => {
   const value = pendingChatSource(), actual = assertIntentSource(value);

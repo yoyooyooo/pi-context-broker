@@ -201,6 +201,25 @@ node scripts/notion-skill-graph-observer-smoke.mjs --extension /absolute/install
 
 第二臂原driver自然exit1、outer收集器exit0；3个Pi按原rpc.stop关闭143，观察器EOF均pending0。原Evidence→系统Trash→Evidence保留65份raw、各项目5文件、daily三哨兵及包身份，未执行生成的规程脚本。证据根 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc06-on-demand-a08-csh6fejk/`：原manifest SHA `9f7efd765d3ca812fd3d042ada78d9de3dc3d483392c2e610bbf545ba24c07ba`，`closure/ece.json` SHA `f3038f83a9f86442269d7ca545f9d90ccc7cb2f793033df5d5b14095c5844a88`，`readonly-review/costs-and-outcomes.json` SHA `a90003952e33029fcacf4029e28b9a8f3ff1dc9793b50aab4bac45e2199a5391`，`first-input-comparison.json` SHA `600e28211d4429592ae1cf2b025b5abd07083092c73e26432a38805c14b629a4`，独立内容审阅 `independent-semantics-verification/handoff.json` SHA `22ff83adcbe3872d41482333f528ad5535f83f0198f0ed28dd823616fa5c4d94`。这些sidecar不改变原技术结果。
 
+### 预注册：目录已 ready 时的真实 D 发现策略
+
+上一节两臂的六个首请求都是 pending，因此未形成 ready 卡片的任务配对，原 failed 及其成本账本保持不变。下一层沿原 `verify-pi-notion-model-cache.mjs` 显式配置 `discoveryStartup: {mode: "ready-directory", timeoutMs: 60000}`；只允许已有 SC06 full-cards／on-demand-cards 实验和 `--intent-case D-early`。完整四场配置、原提示、flash-free、生产 Default 74、原工具面、私有 oracle 隔离及条件续问仍逐项校验，C 明确 not_run。没有该字段时，原冷启动路径不增加等待。这是新的预注册条件，不能把它称为原失败样本的重试或修复后成功。
+
+| 限制 | 本层含义 |
+|---|---|
+| 每个原始 D case 准备 | 最多 60,000 ms，含初始 Pi 启动和本地状态检查 |
+| 模型提交 | 每次最多 300,000 ms；每臂三个首轮、最多一条原条件续问，n=1、零自动重试／回退 |
+| 整臂 wall fence | 从原 run 入口起最多 1,200,000 ms，**包含准备、消费及来源终局**；不是额外增加 180 秒 |
+| 两臂上限 | 最多八次原模型提交、2,400,000 ms 总 wall；剩余时间不足时如实失败或 not_run |
+
+准备只在原空 state／空 session 启动后，用现有 RPC `get_commands` 确认扩展命令已注册，再用裸 `/context-broker view` 读取内存状态。不会调用复数 `views`、带 selector 的 `view`、refresh、正文工具，也不会先给模型发 greeting、目标 ref 或私有文件。命令必须由宿主 handled，原 `extension_ui_request` 通知逐次保存；准备前后 `get_messages` 必须完全相等且为空。初始化时的 “no enabled Notion sources” 只能继续等待，不能冒充成功空目录。
+
+屏障同时要求原 SDK list 起止与实际返回值完整绑定，同 scope 的普通完整目录与 Default View 分开，Default 必须是原 first View、完整 coverage／无 failed_sources、冻结 74 条 name／description／canonical ref 精确相同。所有准备请求只能是 metadata，SDK error／cancel、partial、错误 View 或超时均不得打开任务。裸状态、完整 SDK 返回与首个实际 provider 是不同证据：首个 provider 再绑定原 public projection／HTTP，并逐条解码完整 name、description 和 location 对照冻结 owner/ref，保留引号、实体与末尾换行。full-cards 必须真实送达完整原 section；on-demand 只证明隐藏前目录完整，同时保留外层没有卡片及原发现说明的证据，不把内部 ready 写成模型已看到卡片。
+
+每个准备 poll 保存真实通知、RPC 区间、原 source ledger 前缀与回执 hash；其 HTTP、字节和时间属于整个 case／arm，前缀成本不得再加一次。原来源和模型账本继续保留未知字节为 null。未提交模型时，只有完整被动观察器链和零 provider/tool/input 事件才能记为已证明的零模型工作；缺观察器不能推零。原独立 retained-source collector 的 120 秒上限必须完整放入剩余整臂预算，否则不启动且归属保持 unknown。到期即停止 owned RPC；实际关闭超出的时间单列 `closureOverrunMs` 并使整臂 failed。`HOST_FINALITY_FAILED` 独立保存在 `result.hostFinality` 且停止后续 case，不被通用任务断言覆盖；来源／观察器技术故障也停组，普通模型任务失败保留原独立场景顺序。
+
+本层目前只完成本地实现和原测试，**真实来源、Pi、模型与 Doctor 均 not_run**。证据根 `sc06-ready-stratum-ll12nc7l` 保留原三个合同红例（`red.log` SHA256 `8419831f0bcc32e54a2627f9071ebffd4307e259676e9cbae0604b0ce192771e`）、原 host-finality 停组谓词的确定性红例及修复后原测试组 52/52。最终测试使用纯 `96c6830` 导出加本片 driver/test，`final-tests.log` SHA256 `86e83511dd26df8e421cc44cfd9a240896bcaef8d8566e5a95a70896d919d07f`；没有借用工作区中其他未提交代码。执行前仍须冻结准确提交、同 `282fb35a…`／C8 包、真实日用哨兵和两臂配置，并沿原 Evidence → 系统 Trash → Evidence 收束。该分层不改变默认全文目录合同，也不关闭 SC20／SC21 正式任务或原生等价缺口。
+
 ### SC06 同次 provider 的生成卡片描述复用
 
 原 ce50/C7 Pro live 的七份实际 serializer 请求已独立定位重复：末次默认 74、list 2、Members 55、Requires 1，共 132 个生成卡片出现、79 个来源身份。作者正文中的 `## Members`、根和 Requires 合计 47,475 B 均保留。诊断原件为 `sc06-controlled-pair-9d9314r3/metadata-card-readonly/report.json`（SHA256 `0d2521153fb11cb48c27795d7eafb1f4d927f37c1c45257e53784343edf772dc`）；这是历史实际输入的重复字段分析，不是新候选已实现的成本收益。

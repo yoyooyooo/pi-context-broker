@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { resolveHost, runCommand, assertSupportedPiVersion } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { createRequestLedger } from './notion-default-context.mjs';
+import { decodeCatalogText } from './notion-integration-hosts.mjs';
 import { observe } from './notion-integration-model.mjs';
 import { graphObserverModule, sourceObserver, graphSourceAttribution, collectSupplementaryRetainedProof, createGraphFallbackTraps } from './notion-skill-graph-model.mjs';
 import { graphSourceViews, graphSourceAccounting } from './notion-skill-graph-model-evidence.mjs';
@@ -42,6 +43,10 @@ export function validateIntentConfiguration(config) {
     assert.deepEqual(Object.keys(config.discoveryExperiment).sort(), ['mode', 'version']);
     assert.equal(config.discoveryExperiment.version, 1);
     assert.ok(['full-cards', 'on-demand-cards'].includes(config.discoveryExperiment.mode));
+  }
+  if (config.discoveryStartup !== undefined) {
+    assert.ok(config.discoveryExperiment, 'Ready-directory startup is an explicit D discovery experiment');
+    assert.deepEqual(config.discoveryStartup, { mode: 'ready-directory', timeoutMs: 60000 });
   }
   assert.equal(config.model, 'magpie/group/flash-free'); assert.equal(config.fallback, 'forbidden');
   assert.equal(config.sampling.codeMode, false);
@@ -79,7 +84,122 @@ export function selectIntentCases(config, selectedCase) {
   return { mode: selectedCase === undefined ? 'all' : 'targeted', selectedCaseIds: selected.map(item => item.id),
     notRunCases: config.cases.filter(item => !selected.includes(item)).map(item => ({ id: item.id, status: 'not_run', reason: 'not_selected_for_early_feedback' })),
     plannedBudget: { ...config.budget, primaryCases: selected.length, maxFollowupSubmissions: followups,
-      maxSubmissions: submissions, maxScheduledPromptMs: submissions * config.budget.timeoutMsPerSubmission } };
+      maxSubmissions: submissions, maxScheduledPromptMs: submissions * config.budget.timeoutMsPerSubmission,
+      ...(config.discoveryStartup ? { maxArmWallMs: 1200000, directorySetup: { perCaseMs: 60000,
+        maxCases: selected.length, maxSetupMs: selected.length * 60000, includedInArmWall: true } } : {}) } };
+}
+
+const catalogShape = records => records.map(record => [record.id, record.name, record.description, record.ref]).sort((a, b) => a[0].localeCompare(b[0]));
+const discoveryTimeout = (code, message) => Object.assign(new Error(message), { code });
+
+/** An opt-in arm has one wall budget, including all startup work. A local stage
+ * can spend only the smaller of its own allowance and the remaining arm time. */
+export function discoveryAllowance({ armStartedMs, stageStartedMs, stageLimitMs, nowMs }) {
+  const arm = 1200000 - (nowMs - armStartedMs), stage = stageLimitMs - (nowMs - stageStartedMs);
+  if (arm <= 0) throw discoveryTimeout('DISCOVERY_ARM_TIMEOUT', 'The 1200-second arm wall budget includes directory setup');
+  if (stage <= 0) throw discoveryTimeout('DISCOVERY_STAGE_TIMEOUT', 'The original discovery stage deadline elapsed');
+  return Math.min(arm, stage);
+}
+
+async function withinDiscoveryBudget(operation, { armStartedMs, stageStartedMs, stageLimitMs, stop, now = () => performance.now() }) {
+  const remaining = () => discoveryAllowance({ armStartedMs, stageStartedMs, stageLimitMs, nowMs: now() });
+  const allowance = remaining(); let timer, timedOut = false;
+  try {
+    const value = await Promise.race([operation(), new Promise((_, reject) => {
+      timer = setTimeout(() => { timedOut = true; reject(discoveryTimeout(
+        now() - armStartedMs >= 1200000 ? 'DISCOVERY_ARM_TIMEOUT' : 'DISCOVERY_STAGE_TIMEOUT',
+        'Discovery work exceeded its remaining wall budget')); }, allowance);
+    })]);
+    remaining(); return value;
+  } catch (error) {
+    if (timedOut || error.code?.startsWith('DISCOVERY_')) await stop().catch(failure => { error.message += '; shutdown: ' + failure.message; });
+    throw error;
+  } finally { clearTimeout(timer); }
+}
+
+/** Completed source facts and the native local status must agree. This does
+ * not establish model visibility; the first actual provider is checked later. */
+export function inspectDiscoveryStartup({ observation, sourceLedger, responses, statusFrame, handled, catalog, sourceId = 'notion', pid }) {
+  assert.equal(handled?.agentInvoked, false, 'The bare View command must be handled without invoking an agent');
+  assert.equal(statusFrame?.type, 'extension_ui_request'); assert.equal(statusFrame.method, 'notify');
+  assert.equal(statusFrame.notifyType, 'info', 'A failed View status cannot open a task');
+  assert.ok(!observation.some(event => ['native-input', 'catalog-before-agent-start', 'provider-request', 'provider-transport-start',
+    'assistant-final', 'authored-tool-call', 'tool-call', 'tool-result', 'metadata-result', 'project-read-result', 'observer-error'].includes(event.phase)),
+  'Directory setup cannot submit a greeting, invoke a model, or read project/Skill bodies');
+  assert.ok(sourceLedger.some(event => event.phase === 'sdk-observer-start' && event.pid === pid), 'Observe the actual initial Pi source process');
+  assert.ok(!sourceLedger.some(event => ['sdk-observer-error', 'sdk-observer-end', 'native-session-shutdown'].includes(event.phase)), 'Setup requires a live, intact source observer');
+  assert.ok(!sourceLedger.some(event => ['child-spawn', 'alternate-child-api'].includes(event.phase) && event.source), 'Setup cannot invoke a source CLI');
+  const starts = sourceLedger.filter(event => event.phase === 'sdk-start'), ends = sourceLedger.filter(event => event.phase === 'sdk-end');
+  assert.equal(new Set(starts.map(event => event.requestId)).size, starts.length);
+  assert.equal(ends.length, responses.length); assert.equal(new Set(ends.map(event => event.requestId)).size, ends.length);
+  assert.ok(starts.every(event => event.pid === pid && event.operation === 'list'), 'Only native startup metadata is permitted');
+  const defaults = [], attempts = [];
+  for (const end of ends) {
+    const start = starts.find(event => event.requestId === end.requestId), matches = responses.filter(receipt => receipt.requestId === end.requestId);
+    assert.ok(start); assert.equal(end.pid, pid); assert.equal(end.operation, start.operation);
+    assert.equal(end.status, 'completed', 'Cancelled or failed setup cannot become ready');
+    assert.equal(end.metricsComplete, true); assert.equal(end.resultObserved, true); assert.equal(matches.length, 1);
+    const receipt = matches[0], value = receipt.value;
+    assert.equal(receipt.transport, 'sdk'); assert.equal(receipt.operation, 'list'); assert.equal(receipt.status, 'completed');
+    assert.equal(receipt.resultObserved, true); assert.equal(receipt.sdk_started, true); assert.equal(receipt.metrics_observed, true);
+    assert.equal(receipt.metrics?.complete, true);
+    const measured = receipt.metrics.trace.filter(event => event.event === 'attempt');
+    assert.equal(measured.length, receipt.metrics.total_requests); assert.equal(new Set(measured.map(event => event.attempt)).size, measured.length);
+    assert.ok(measured.every(event => event.request_kind === 'notion_metadata'), 'Setup body/write/unknown attempts are forbidden');
+    attempts.push(...measured);
+    assert.equal(value?.scope, catalog.scope); assert.equal(value.count, value.records.length);
+    assert.equal(new Set(value.records.map(record => record.id)).size, value.count);
+    assert.ok(value.records.every(record => ['id', 'name', 'description', 'ref'].every(key => typeof record[key] === 'string')));
+    assert.equal(value.coverage?.exhaustive, true); assert.deepEqual(value.coverage?.failed_sources, []);
+    assert.equal(value.coverage?.search_index_limited, false);
+    const ordinary = value.coverage.method === 'explicit_database'
+      && ['view', 'view_selection', 'view_query', 'profile', 'capability_directory'].every(key => !Object.hasOwn(value, key));
+    if (ordinary) continue;
+    assert.equal(value.coverage.method, 'explicit_view'); assert.equal(value.capability_directory, true);
+    assert.equal(value.view_selection, 'first'); assert.equal(value.profile, undefined);
+    assert.equal(value.view?.id, catalog.view.id); assert.equal(value.view.name, catalog.view.name);
+    assert.deepEqual(catalogShape(value.records), catalogShape(catalog.records), 'Setup must observe the complete frozen Default View');
+    defaults.push(receipt.requestId);
+  }
+  const expectedStatus = `${sourceId}: ${catalog.view.name} (${catalog.view.id}) · ${catalog.records.filter(record => record.kind !== 'prompt').length} Skill/Router · first`;
+  const statusReady = statusFrame.message === expectedStatus;
+  assert.ok(statusReady || statusFrame.message === 'Notion Views: no enabled Notion sources', 'Partial, empty, failed or unexpected View state cannot open the task');
+  const sum = key => attempts.every(event => Number.isSafeInteger(event[key]) && event[key] >= 0)
+    ? attempts.reduce((total, event) => total + event[key], 0) : null;
+  return { state: statusReady && defaults.length > 0 && ends.length === starts.length ? 'ready' : 'pending',
+    defaultRequestIds: defaults, startedSdkIds: starts.map(event => event.requestId), completedSdkIds: ends.map(event => event.requestId),
+    httpAttempts: attempts.length, requestBytes: sum('request_bytes'), responseBytes: sum('response_bytes'),
+    accounting: 'Startup prefix of the original whole-case source ledger, not an additional cost total', modelVisibility: 'not_yet_observed' };
+}
+
+export async function waitForDiscoveryReady({ rpc, snapshot, catalog, armStartedMs, setupStartedMs, stop, savePoll,
+  now = () => performance.now(), pause = ms => new Promise(resolve => setTimeout(resolve, ms)) }) {
+  const bounded = operation => withinDiscoveryBudget(operation, { armStartedMs, stageStartedMs: setupStartedMs, stageLimitMs: 60000, stop, now });
+  const commands = await bounded(() => rpc.command('get_commands'));
+  assert.equal(commands.commands?.filter(command => command.name === 'context-broker' && command.source === 'extension').length, 1,
+    'The native command must be registered before sending local status input');
+  const initialMessages = await bounded(() => rpc.command('get_messages')), polls = [];
+  assert.equal(initialMessages.messages?.length, 0, 'Ready discovery starts in the original empty session');
+  while (true) {
+    discoveryAllowance({ armStartedMs, stageStartedMs: setupStartedMs, stageLimitMs: 60000, nowMs: now() });
+    const frameStart = rpc.frames.length, startedAt = new Date().toISOString();
+    const handled = await bounded(() => rpc.prompt('/context-broker view'));
+    const frames = rpc.frames.slice(frameStart), notifications = frames.filter(frame => frame.type === 'extension_ui_request' && frame.method === 'notify');
+    assert.equal(notifications.length, 1, 'Keep the actual bare View notification, not an invented ready flag');
+    const captured = await snapshot(), status = inspectDiscoveryStartup({ ...captured, statusFrame: notifications[0], handled, catalog,
+      pid: rpc.lifecycle.find(event => event.event === 'spawn')?.pid });
+    const poll = { index: polls.length, startedAt, finishedAt: new Date().toISOString(), frameStart, frameEnd: rpc.frames.length,
+      command: '/context-broker view', handled, frames, status, sourcePrefix: { rows: captured.sourceLedger.length,
+        sha256: hash(JSON.stringify(captured.sourceLedger)), receipts: captured.responses.map(receipt => ({ requestId: receipt.requestId, sha256: hash(JSON.stringify(receipt)) })) } };
+    polls.push(poll); await savePoll(poll);
+    if (status.state === 'ready') {
+      assert.deepEqual(await bounded(() => rpc.command('get_messages')), initialMessages, 'Local status commands cannot add a model-visible message');
+      return { status: 'ready', elapsedMs: now() - setupStartedMs, polls, ...status,
+        sessionMessagesSha256: hash(JSON.stringify(initialMessages)), setupProviderRequests: 0, setupBodyRequests: 0,
+        setupSourceCosts: 'Included once in sourceAccounting for the entire case; these prefix values are non-additive' };
+    }
+    await pause(Math.min(250, discoveryAllowance({ armStartedMs, stageStartedMs: setupStartedMs, stageLimitMs: 60000, nowMs: now() })));
+  }
 }
 
 export function intentRunStatus(scope, cases, semanticStatus) {
@@ -92,12 +212,58 @@ export function intentRunStatus(scope, cases, semanticStatus) {
   return scope.mode === 'all' ? 'passed' : 'partial';
 }
 
+export function discoveryTechnicalFailure({ result, sourceComplete, observation }) {
+  return result.hostFinality?.status === 'failed' || result.directorySetup.status !== 'ready'
+    || result.directorySetup.firstProvider?.status !== 'verified' || !sourceComplete
+    || result.discoveryExperiment.costStatus !== 'complete'
+    || observation.some(event => ['observer-error', 'provider-transport-blocked'].includes(event.phase));
+}
+
 const exactFile = (file, expected) => file.ownerId === expected.logicalId && file.scope === expected.scope
   && file.snapshot === expected.snapshot && file.sha256 === expected.sha256 && file.bytes === expected.bytes
   && (expected.ref === undefined || file.ref === expected.ref);
 
+export function assertReadyDiscoveryProvider({ observation, catalogRecords, scope, experiment }) {
+  const first = observation.find(event => event.phase === 'provider-request');
+  const actual = observation.filter(event => event.phase === 'catalog' && event.stage === 'before_provider_request'
+    && first && event.providerPayloadSha256 === first.observedPayloadSha256 && event.sequence < first.sequence);
+  assert.ok(experiment, 'The ready first provider needs the explicitly frozen discovery projection');
+  const input = assertDiscoveryProjection({ observation, experiment });
+  assert.ok(first && actual.length === 1 && actual[0].state === 'ready' && input[0]?.state === 'ready', 'The ready stratum requires the first provider to observe ready metadata');
+  assert.deepEqual(input[0].skills.map(skill => [skill.provenance?.ownerId, skill.provenance?.ref]).sort(),
+    catalogRecords.map(record => [record.id, record.ref]).sort(), 'The ready first provider must match every frozen Default owner/ref');
+  assert.ok(input[0].skills.every(skill => skill.provenance?.source === 'verified-notion-metadata'
+    && skill.provenance.scope === scope && skill.provenance.loaded === false));
+  const proof = observation.find(event => event.phase === 'discovery-projection' && event.sequence === first.discoveryProjection.sequence);
+  // The original graph observer verifies metadata against SDK returns. Bind the
+  // complete first section to the separately frozen directory as well, without
+  // confusing an on-demand input section with cards sent to the provider.
+  const cards = [...proof.inputSection.matchAll(/<skill>([\s\S]*?)<\/skill>/g)].map(match => {
+    const field = name => {
+      const values = [...match[1].matchAll(new RegExp('<' + name + '>([\\s\\S]*?)</' + name + '>', 'g'))];
+      assert.equal(values.length, 1, 'The ready first provider needs each complete metadata field exactly once');
+      return decodeCatalogText(values[0][1]);
+    };
+    return { name: field('name'), description: field('description'), path: field('location'), source: field('source') };
+  });
+  assert.equal(cards.length, input[0].skills.length); assert.equal(new Set(cards.map(card => card.path)).size, cards.length);
+  for (const card of cards) {
+    const declared = input[0].skills.find(skill => skill.path === card.path);
+    const record = catalogRecords.find(record => record.id === declared?.provenance?.ownerId);
+    assert.ok(record); assert.equal(card.source, 'notion');
+    assert.equal(card.name, record.name, 'First provider name must match the frozen source exactly');
+    assert.equal(card.description, record.description, 'First provider complete description must match the frozen source exactly');
+    assert.equal(declared.provenance.ref, record.ref);
+  }
+  return { status: 'verified', sequence: first.sequence, observedPayloadSha256: first.observedPayloadSha256,
+    catalogSequence: actual[0].sequence, inputCatalogSequence: input[0].sequence, count: input[0].skills.length,
+    completeDescriptionBytes: cards.reduce((sum, card) => sum + Buffer.byteLength(card.description), 0),
+    inputSectionSha256: proof.inputSectionSha256, outputSectionSha256: proof.outputSectionSha256,
+    visibility: experiment?.mode === 'on-demand-cards' ? 'ready source directory verified before the public on-demand projection' : 'ready cards in actual provider system' };
+}
+
 export function assertIntentTurn({ observation, turnObservation = observation, responses, newResponses = responses,
-  item, intent = item.intent, oracle, catalogRecords, followup = false, discoveryExperiment }) {
+  item, intent = item.intent, oracle, catalogRecords, followup = false, discoveryExperiment, discoveryStartup }) {
   const providers = turnObservation.filter(event => event.phase === 'provider-request');
   assert.ok(providers.length, 'Actual verified provider input is required');
   assert.ok(turnObservation.some(event => event.phase === 'provider-transport-response' && event.status >= 200 && event.status < 300), 'Actual provider HTTP success is required');
@@ -117,6 +283,8 @@ export function assertIntentTurn({ observation, turnObservation = observation, r
   const catalog = turnObservation.filter(event => event.phase === 'catalog');
   const inputCatalog = discoveryExperiment === undefined ? catalog
     : assertDiscoveryProjection({ observation: turnObservation, experiment: discoveryExperiment });
+  if (discoveryStartup && !followup) assertReadyDiscoveryProvider({ observation: turnObservation,
+    catalogRecords, scope: oracle.target.scope, experiment: discoveryExperiment });
   for (const current of inputCatalog) {
     if (current.state === 'pending') { assert.equal(followup, false, 'An ordinary continuation must expose ready metadata'); continue; }
     assert.equal(current.state, 'ready');
@@ -218,19 +386,30 @@ export function assertDiscoveryProjection({ observation, experiment }) {
 /** Reuse the existing passive cost observer; graph transport independently
  * binds its exact provider bytes to HTTP. Source costs remain the original
  * whole-case SDK ledger, including startup, cancellation and resume. */
-export function summarizeDiscoveryCosts({ events, observation, submission }) {
+export function summarizeDiscoveryCosts({ events, observation, submission, setupIdentity }) {
+  const identity = submission ?? setupIdentity;
   const providers = events.filter(event => event.phase === 'provider_request');
   const graph = observation.filter(event => event.phase === 'provider-request');
   const wires = observation.filter(event => event.phase === 'provider-transport-start');
   assert.equal(events[0]?.phase, 'observer_start'); assert.equal(events.at(-1)?.phase, 'observer_end');
   assert.equal(events.at(-1).complete, true); assert.equal(events.at(-1).errors, 0);
   assert.ok(!events.some(event => event.phase === 'observer_error'));
-  assert.ok(events.every(event => event.clockId === submission.clockId && event.sampleId === submission.sampleId));
+  assert.ok(identity && events.every(event => event.clockId === identity.clockId && event.sampleId === identity.sampleId));
   for (const [index, event] of events.entries()) {
     const { eventSha256, ...record } = event;
     assert.equal(event.sequence, index + 1, 'Cost event chain sequence changed');
     assert.equal(event.previousSha256, events[index - 1]?.eventSha256 ?? null, 'Cost event chain link changed');
     assert.equal(hash(JSON.stringify(record)), eventSha256, 'Cost event chain content changed');
+  }
+  if (!submission) {
+    assert.ok(setupIdentity && !events.some(event => ['input', 'provider_request', 'tool_call'].includes(event.phase)
+      || event.phase === 'message_end' && event.message?.role === 'assistant'), 'An unsubmitted setup cannot hide model work');
+    assert.equal(graph.length, 0); assert.equal(wires.length, 0);
+    assert.ok(!observation.some(event => event.phase?.startsWith('provider-')
+      || ['native-input', 'authored-tool-call', 'tool-call', 'assistant-final'].includes(event.phase)), 'Unsubmitted setup needs a zero-model observation, not missing transport');
+    return { method: 'existing-consumption-cost-observer-with-graph-http-binding', complete: true, task: 'not_run',
+      providerRequests: 0, modelHttpAttempts: 0, modelHttpRequestBodyBytes: 0, modelHttpResponseBytes: null, tokens: null,
+      sourceCosts: 'All startup source costs remain in the original whole-case ledger; no model request was submitted' };
   }
   assert.ok(events.some(event => event.phase === 'input' && event.text.sha256 === submission.promptSha256), 'Cost input must match the actual frozen submission');
   assert.deepEqual(providers.map(event => [event.payload.sha256, event.payload.bytes]), graph.map(event => [event.payloadSha256, event.payloadBytes]),
@@ -356,6 +535,11 @@ export async function intentDoctor(path, selectedCase) {
   assert.equal(catalog.scope, config.source.catalogEvidence.scope);
   assert.equal(catalog.records.length, 74); assert.equal(new Set(catalog.records.map(item => item.id)).size, 74);
   assert.ok(catalog.records.some(record => record.id === oracle.target.logicalId));
+  if (config.discoveryStartup) {
+    assert.equal(catalog.capability_directory, true); assert.equal(catalog.view_selection, 'first');
+    assert.ok(catalog.view?.id && catalog.view?.name); assert.equal(catalog.coverage?.exhaustive, true);
+    assert.deepEqual(catalog.coverage?.failed_sources, []);
+  }
   const artifacts = await installedBrokerIdentity(config.candidate.extension, config.candidate.packagePath);
   assert.equal(artifacts.extension.sha256, config.candidate.extensionSha256);
   assert.equal(artifacts.package.sha256, config.candidate.packageSha256);
@@ -374,6 +558,8 @@ export async function intentDoctor(path, selectedCase) {
   return { config, oracle, semantic, catalog, artifacts, host, executionScope, report: { status: 'ready', model: config.model, executionScope,
     budget: config.budget, sourceMode: 'sdk', productionDefaultCount: 74, pi: { ...host, version },
     ...(experiment ? { phase: config.phase, discoveryExperiment: experiment, actualPublicProjection: 'not_run', experimentalAdoption: 'not_authorized' } : {}),
+    ...(config.discoveryStartup ? { directoryStartup: { ...config.discoveryStartup, state: 'not_run', command: '/context-broker view',
+      maxArmWallMs: 1200000, setupIncludedInArmWall: true, firstProvider: 'must independently observe ready metadata' } } : {}),
     artifacts, config: { path, sha256: hash(await readFile(path)) }, privateOracleSha256: config.privateOracle.sha256,
     semanticReferenceSha256: config.privateOracle.semanticReference.sha256,
     boundary: 'Read-only installed identity, private source and frozen budget inspection; no Notion or model request' } };
@@ -394,6 +580,7 @@ async function retainedFileInventory(directory, prefix = '') {
 }
 
 export async function runIntentCases(configPath, selectedCase) {
+  const armStartedMs = performance.now(), armStartedAt = new Date().toISOString();
   const { config, oracle, semantic, catalog, artifacts, host, executionScope, report: doctor } = await intentDoctor(configPath, selectedCase);
   const evidence = await mkdtemp(join(await realpath(config.evidenceRoot), 'pi-intent-evidence-'));
   const manifest = { version: 1, kind: 'pi-model-intent-early-feedback', status: 'running', evidence,
@@ -405,9 +592,19 @@ export async function runIntentCases(configPath, selectedCase) {
     manifest.discoveryExperiment = discoveryExperimentIdentity(config);
     manifest.not_claimed.push('SC20 native Skill equivalence', 'Production adoption of the experimental presentation');
   }
+  let stopActive = async () => {}, armTimedOut = false, armStop;
+  const armRemaining = () => 1200000 - (performance.now() - armStartedMs);
+  const armTimer = config.discoveryStartup ? setTimeout(() => {
+    armTimedOut = true; armStop = stopActive().catch(error => { manifest.armStopError = error.message; });
+  }, Math.max(1, armRemaining())) : undefined;
+  if (config.discoveryStartup) manifest.directoryStartup = { ...config.discoveryStartup, startedAt: armStartedAt,
+    maxArmWallMs: 1200000, accounting: 'All preparation, task and source-finality time shares the arm wall; setup prefix costs are not added twice' };
+  try {
   await save(join(evidence, 'config.json'), config); await save(join(evidence, 'manifest.json'), manifest);
   console.log(JSON.stringify({ evidence, status: 'running', executionScope, primaryCases: executionScope.plannedBudget.primaryCases, maxSubmissions: executionScope.plannedBudget.maxSubmissions }));
   for (const item of config.cases.filter(item => executionScope.selectedCaseIds.includes(item.id))) {
+    if (config.discoveryStartup && (armTimedOut || armRemaining() <= 0)) { armTimedOut = true; break; }
+    const setupStartedMs = performance.now(), setupStartedAt = new Date().toISOString();
     const output = join(evidence, item.id); await mkdir(output);
     const scratch = await mkdtemp(join(await systemTempRoot(), 'broker-intent-model-'));
     const control = join(scratch, 'control'), cwd = join(scratch, 'workspace'), cliRoot = join(scratch, 'cli');
@@ -436,18 +633,24 @@ export async function runIntentCases(configPath, selectedCase) {
       prelaunch: { cli_entries: 0, broker_entries: 0, session_entries: 0, oracle_consumer_disjoint: true },
       sourceCommandConfigured: false, semanticReview: { status: 'pending', referenceSha256: config.privateOracle.semanticReference.sha256 } };
     if (config.discoveryExperiment) result.discoveryExperiment = { ...manifest.discoveryExperiment, costs: [] };
+    if (config.discoveryStartup) result.directorySetup = { status: 'running', startedAt: setupStartedAt, timeoutMs: 60000,
+      includedInArmWall: true, modelVisibility: 'not_yet_observed' };
     const owner = { evidence: result.evidence, purpose: 'native-graph-model', kind: 'pi-model-intent-case' };
     await save(join(scratch, 'ownership.json'), owner); await save(join(output, 'ownership.json'), owner);
     await save(join(output, 'project.json'), project); await save(join(output, 'result.json'), result);
     manifest.cases.push({ id: item.id, evidence: result.evidence, status: 'running' });
-    let rpc, processIndex = 0, session, availabilityFailure = false;
+    let rpc, stopping, processIndex = 0, session, availabilityFailure = false, sourceComplete = false;
     const costRuns = [];
     const stop = async () => {
-      if (!rpc) return;
+      if (!rpc) return stopping;
       const current = rpc; rpc = undefined;
-      try { await current.stop(); }
-      finally { await save(join(output, 'rpc-' + processIndex + '.json'), current.frames); await save(join(output, 'lifecycle-' + processIndex + '.json'), current.lifecycle); }
+      stopping = (async () => {
+        try { await current.stop(); }
+        finally { await save(join(output, 'rpc-' + processIndex + '.json'), current.frames); await save(join(output, 'lifecycle-' + processIndex + '.json'), current.lifecycle); }
+      })();
+      return stopping;
     };
+    stopActive = stop;
     const boot = async () => {
       await stop(); processIndex++;
       const sequenceOffset = Math.max(0, ...(await rows(observationPath)).map(event => event.sequence ?? 0));
@@ -477,16 +680,36 @@ export async function runIntentCases(configPath, selectedCase) {
       }
       await save(join(output, 'launch-' + processIndex + '.json'), { host, args, cwd, source, observerSha256: hash(await readFile(observer)), graphObserverSha256: hash(await readFile(module)), sourceHookSha256: hash(await readFile(hook)),
         ...(cost ? { consumptionCostObserver: cost } : {}) });
-      rpc = await startRpc({ host: config.pi.path, cwd, env, args, timeoutMs: 300000 });
-      const state = await rpc.command('get_state'); await save(join(output, 'state-' + processIndex + '.json'), state);
+      const deadline = { armStartedMs, stageStartedMs: processIndex === 1 ? setupStartedMs : performance.now(),
+        stageLimitMs: processIndex === 1 ? 60000 : 300000, stop };
+      if (config.discoveryStartup) discoveryAllowance({ ...deadline, nowMs: performance.now() });
+      // The 60-second setup stage must not shorten later model submissions in
+      // this same RPC process. The outer stage race enforces setup separately.
+      const timeoutMs = config.discoveryStartup ? Math.ceil(Math.min(300000, armRemaining())) : 300000;
+      rpc = await startRpc({ host: config.pi.path, cwd, env, args, timeoutMs,
+        ...(config.discoveryStartup ? { waitForState: false } : {}) });
+      const state = config.discoveryStartup ? await withinDiscoveryBudget(() => rpc.command('get_state'), deadline) : await rpc.command('get_state');
+      await save(join(output, 'state-' + processIndex + '.json'), state);
     };
     try {
       await boot();
+      if (config.discoveryStartup) {
+        Object.assign(result.directorySetup, await waitForDiscoveryReady({ rpc, catalog, armStartedMs, setupStartedMs, stop,
+          snapshot: async () => {
+            const sourceLedger = await rows(ledger);
+            const responses = await Promise.all(sourceLedger.filter(row => row.phase === 'sdk-end').map(row => json(join(responsesPath, row.responseFile))));
+            return { sourceLedger, responses, observation: await rows(observationPath) };
+          }, savePoll: poll => save(join(output, 'directory-setup-poll-' + poll.index + '.json'), poll) }));
+        result.directorySetup.finishedAt = new Date().toISOString();
+        await save(join(output, 'directory-setup.json'), result.directorySetup);
+      }
       const turns = [{ intent: item.intent, prompt: item.initial, mode: 'initial' }, ...item.followups];
       for (const [index, turn] of turns.entries()) {
         if (turn.mode === 'restart-and-resume-same-session') await boot();
+        if (config.discoveryStartup) discoveryAllowance({ armStartedMs, stageStartedMs: performance.now(), stageLimitMs: 300000, nowMs: performance.now() });
+        const currentRpc = rpc;
         const before = (await rows(observationPath)).length, priorResponses = await collectIntentResponses(responsesPath);
-        const beforeIds = new Set(priorResponses.map(row => row.requestId)), began = performance.now(), frameStart = rpc.frames.length;
+        const beforeIds = new Set(priorResponses.map(row => row.requestId)), began = performance.now(), frameStart = currentRpc.frames.length;
         const receipt = { index, intent: turn.intent, prompt: turn.prompt, mode: turn.mode, status: 'running', processIndex };
         result.turns.push(receipt); manifest.submissions++;
         assert.ok(manifest.submissions <= executionScope.plannedBudget.maxSubmissions, 'Frozen maximum selected submissions exceeded');
@@ -500,22 +723,32 @@ export async function runIntentCases(configPath, selectedCase) {
             receipt.costSubmission = cost.submission;
             await save(join(output, 'cost-submission-' + processIndex + '.json'), cost.submission);
           }
-          await rpc.prompt(turn.prompt.text);
+          if (config.discoveryStartup) await withinDiscoveryBudget(() => currentRpc.prompt(turn.prompt.text),
+            { armStartedMs, stageStartedMs: began, stageLimitMs: 300000, stop });
+          else await currentRpc.prompt(turn.prompt.text);
           const observation = await rows(observationPath), turnObservation = observation.slice(before);
           assert.ok(turnObservation.some(event => event.phase === 'native-input' && event.textSha256 === turn.prompt.sha256), 'Actual native input must match the frozen prompt');
           const responses = await collectIntentResponses(responsesPath);
           Object.assign(receipt, assertIntentTurn({ observation, turnObservation, responses,
             newResponses: responses.filter(row => !beforeIds.has(row.requestId)), item, intent: turn.intent,
-            oracle, catalogRecords: catalog.records, followup: index > 0, discoveryExperiment: config.discoveryExperiment }));
-          const state = await rpc.command('get_state'); session = state.sessionFile;
+            oracle, catalogRecords: catalog.records, followup: index > 0, discoveryExperiment: config.discoveryExperiment, discoveryStartup: config.discoveryStartup }));
+          const state = config.discoveryStartup ? await withinDiscoveryBudget(() => currentRpc.command('get_state'),
+            { armStartedMs, stageStartedMs: began, stageLimitMs: 300000, stop }) : await currentRpc.command('get_state');
+          session = state.sessionFile;
           assert.ok(session, 'An actual session file is required for continuation');
           receipt.session = session;
         } catch (error) {
           receipt.status = 'failed'; receipt.error = { code: error.code ?? 'INTENT_TURN_FAILED', message: error.message };
         }
         receipt.elapsedMs = performance.now() - began;
-        receipt.providerUsage = rpc.frames.slice(frameStart).filter(frame => frame.type === 'message_end' && frame.message?.role === 'assistant').map(frame => frame.message.usage ?? null);
+        receipt.providerUsage = currentRpc.frames.slice(frameStart).filter(frame => frame.type === 'message_end' && frame.message?.role === 'assistant').map(frame => frame.message.usage ?? null);
         const turnEvents = (await rows(observationPath)).slice(before);
+        if (config.discoveryStartup && index === 0) {
+          try { result.directorySetup.firstProvider = assertReadyDiscoveryProvider({ observation: turnEvents,
+            catalogRecords: catalog.records, scope: oracle.target.scope, experiment: config.discoveryExperiment }); }
+          catch (error) { result.directorySetup.firstProvider = { status: 'failed', error: error.message }; }
+          await save(join(output, 'directory-setup.json'), result.directorySetup);
+        }
         receipt.availabilityFailure = modelAvailabilityFailure(turnEvents.map(event => ({ ...event,
           phase: event.phase === 'provider-transport-response' ? 'response' : event.phase === 'assistant-final' ? 'assistant_final'
             : event.phase === 'tool-call' ? 'tool_call' : event.phase })));
@@ -523,15 +756,44 @@ export async function runIntentCases(configPath, selectedCase) {
         await save(join(output, 'turn-' + index + '.json'), receipt);
         if (receipt.status !== 'passed') break;
       }
-    } catch (error) { result.error = { code: error.code ?? 'INTENT_HOST_FAILED', message: error.message }; }
-    finally { try { await stop(); } catch (error) { result.error ??= { code: 'HOST_FINALITY_FAILED', message: error.message }; } }
+    } catch (error) {
+      result.error = { code: error.code ?? 'INTENT_HOST_FAILED', message: error.message };
+      if (result.directorySetup?.status === 'running') {
+        Object.assign(result.directorySetup, { status: 'failed', error: result.error, finishedAt: new Date().toISOString(), elapsedMs: performance.now() - setupStartedMs,
+          task: 'not_run', modelVisibility: 'not_observed' });
+        await save(join(output, 'directory-setup.json'), result.directorySetup);
+      }
+    }
+    finally {
+      try { await stop(); }
+      catch (error) {
+        const failure = { code: 'HOST_FINALITY_FAILED', message: error.message };
+        result.error ??= failure;
+        if (config.discoveryStartup) result.hostFinality = { status: 'failed', error: failure };
+      }
+    }
     const observation = await rows(observationPath), responses = await collectIntentResponses(responsesPath), sourceLedger = await rows(ledger), hostLedger = await rows(owned);
+    if (config.discoveryStartup) {
+      result.notRunTurns = [{ intent: item.intent, prompt: item.initial, mode: 'initial' }, ...item.followups]
+        .slice(result.turns.length).map((turn, index) => ({ index: result.turns.length + index, intent: turn.intent, status: 'not_run',
+          reason: result.directorySetup.status === 'failed' ? 'directory_setup_failed' : 'failed_prerequisite_or_arm_deadline' }));
+      try {
+        const attempts = responses.flatMap(receipt => receipt.metrics?.trace?.filter(event => event.event === 'attempt') ?? []);
+        const sum = key => responses.every(receipt => receipt.metrics?.complete) && attempts.every(event => Number.isSafeInteger(event[key]) && event[key] >= 0)
+          ? attempts.reduce((total, event) => total + event[key], 0) : null;
+        result.wholeCaseSourceCosts = { ...graphSourceAccounting(sourceLedger, responses, { sourceMode: 'sdk' }),
+          requestBytes: sum('request_bytes'), responseBytes: sum('response_bytes'),
+          accounting: 'Includes directory setup and task once; attribution is established separately by sourceAccounting' };
+      } catch (error) { result.wholeCaseSourceCosts = { complete: false, error: error.message, requestBytes: null, responseBytes: null }; }
+    }
     if (config.discoveryExperiment) {
       try {
         for (const [index, cost] of costRuns.entries()) {
-          assert.ok(cost.submission, 'A started experimental process must have its original submission receipt');
+          assert.ok(cost.submission || config.discoveryStartup && result.directorySetup.status === 'failed',
+            'A started experimental process must have its original submission receipt or an explicit failed setup');
           const observed = await readConsumptionCostEvents(cost.path), through = costRuns[index + 1]?.sequenceOffset ?? Infinity;
           const summary = summarizeDiscoveryCosts({ events: observed.events, submission: cost.submission,
+            ...(cost.submission ? {} : { setupIdentity: { sampleId: cost.sampleId, clockId: cost.clockId } }),
             observation: observation.filter(event => event.sequence > cost.sequenceOffset && event.sequence <= through) });
           const receipt = { processIndex: cost.processIndex, submission: cost.submission,
             events: { path: cost.path, ...observed.artifact }, ...summary };
@@ -551,10 +813,17 @@ export async function runIntentCases(configPath, selectedCase) {
         libraryId: oracle.target.logicalId.split(':')[1], catalogRecords: catalog.records, metadataOnly: item.intent === 'chat', selected };
       let attribution = graphSourceAttribution(common);
       await save(join(output, 'source-attribution-before-proof.json'), attribution);
-      const supplementary = await collectSupplementaryRetainedProof({ config: { gate: item.id, retainedSourceProofRepo: config.retainedSourceProofRepo },
+      // This existing collector has a 120-second cap. Do not launch it if its
+      // complete allowance no longer fits inside the opt-in arm wall.
+      const proofBudgetAvailable = !config.discoveryStartup || armRemaining() >= 120000;
+      const supplementary = await collectSupplementaryRetainedProof({ config: { gate: item.id,
+        retainedSourceProofRepo: proofBudgetAvailable ? config.retainedSourceProofRepo : undefined },
         evidence: output, trace: { httpAttempts: attribution.attempts }, responses, ownershipResponses: responses });
+      if (!proofBudgetAvailable && supplementary.receipt.status === 'not-configured')
+        Object.assign(supplementary.receipt, { status: 'not_run', reason: 'insufficient_remaining_arm_wall', ownership: 'unknown' });
       result.retainedSourceObservation = supplementary.receipt;
       result.sourceAccounting = assertIntentSource({ ...common, retainedSourceProofs: supplementary.proof ? [supplementary.proof] : [] });
+      sourceComplete = true;
       assert.equal((await rows(traps.ledger)).length, 0, 'Legacy fallback was invoked');
       await inspectOwnedGraphProject(cwd);
       assert.ok(!result.error && result.turns.length === 1 + item.followups.length && result.turns.every(turn => turn.status === 'passed'));
@@ -581,8 +850,20 @@ export async function runIntentCases(configPath, selectedCase) {
     Object.assign(manifest.cases.at(-1), { status: result.status, semanticReview: result.semanticReview.status, turns: result.turns.length, error: result.error });
     await save(join(evidence, 'manifest.json'), manifest);
     if (availabilityFailure) { manifest.availabilityFailure = true; break; }
+    if (config.discoveryStartup && (armTimedOut || armRemaining() <= 0 || discoveryTechnicalFailure({ result, sourceComplete, observation }))) {
+      manifest.stoppedAfterTechnicalFailure = item.id; break;
+    }
+  }
+  } finally { clearTimeout(armTimer); await armStop; }
+  if (config.discoveryStartup) {
+    const elapsedMs = performance.now() - armStartedMs;
+    Object.assign(manifest.directoryStartup, { elapsedMs, finishedAt: new Date().toISOString(), timedOut: armTimedOut || elapsedMs > 1200000,
+      closureOverrunMs: Math.max(0, elapsedMs - 1200000) });
+    manifest.notRunCases = [...executionScope.notRunCases, ...executionScope.selectedCaseIds.filter(id => !manifest.cases.some(item => item.id === id))
+      .map(id => ({ id, status: 'not_run', reason: 'prior_technical_failure_or_arm_deadline' }))];
   }
   manifest.status = intentRunStatus(executionScope, manifest.cases);
+  if (manifest.directoryStartup?.timedOut) manifest.status = 'failed';
   await save(join(evidence, 'manifest.json'), manifest);
   return manifest;
 }
