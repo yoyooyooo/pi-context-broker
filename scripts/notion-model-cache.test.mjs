@@ -9,7 +9,8 @@ import { invokeJson } from './verification-command.mjs';
 import { assertModelCase, requestCounts, cacheCaseDirectory, modelAvailabilityFailure, validateIntentConfiguration, assertIntentTurn, assertIntentSource, validateIntentReview } from './verify-pi-notion-model-cache.mjs';
 import * as intentRunner from './verify-pi-notion-model-cache.mjs';
 import { observe } from './notion-integration-model.mjs';
-import { dailyRouteContract } from './verify-skill-graph-contract.mjs';
+import { dailyRouteContract, verifyDailyRouteState, verifyDailyRouteEvidence } from './verify-skill-graph-contract.mjs';
+import { createOwnedGraphProject, inspectOwnedGraphProject } from './notion-skill-graph-project.mjs';
 import { createPiHelpBoundary } from './notion-pi-help.mjs';
 import * as crypto from 'node:crypto';
 import * as path from 'node:path';
@@ -527,6 +528,131 @@ test('ready-directory host finality failure stops the cohort even when source an
   value.result.hostFinality = { status: 'failed', error: { code: 'HOST_FINALITY_FAILED', message: 'Native close failed' } };
   assert.equal(intentRunner.discoveryTechnicalFailure(value), true, 'A later generic assertion cannot hide the terminal failure');
   assert.equal(value.result.hostFinality.error.code, 'HOST_FINALITY_FAILED');
+});
+
+// Execute the production case loop with local RPC/source boundaries. No copied
+// loop, replacement selector, real host, provider or source is used. Actual file
+// writes let the assertions inspect the persisted failure and not-run records.
+async function driveIntentStopping(config, fault, inspect) {
+  const root = await mkdtemp(join(tmpdir(), 'intent-stop-'));
+  try {
+    const evidenceRoot = join(root, 'evidence'), privateRoot = join(root, 'private');
+    await Promise.all([mkdir(evidenceRoot), mkdir(privateRoot)]);
+    config = { ...config, evidenceRoot, pi: { path: '/controlled/pi' }, candidate: { extension: '/controlled/broker/index.ts' },
+      cliCommand: ['/controlled/node', '/controlled/ntn-skills.mjs'],
+      project: { sha256: 'b4c48f279ec9d1895ab9e2cc5f91ff4fa6dd56743cdc83aa5b95e700b2a8495f' },
+      privateOracle: { ...config.privateOracle, path: join(privateRoot, 'oracle.json'), semanticReference: { sha256: 'a'.repeat(64) } } };
+    const executionScope = intentRunner.selectIntentCases(config, 'D-early'), profile = dailyRouteContract(config);
+    const prompts = [], launches = [], stops = [], exercises = [], settings = new Map();
+    const save = (file, value) => writeFile(file, JSON.stringify(value, null, 2) + '\n');
+    const rows = async file => { try { return (await readFile(file, 'utf8')).split('\n').filter(Boolean).map(JSON.parse); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } };
+    const add = (file, row) => fs.promises.appendFile(file, JSON.stringify(row) + '\n');
+    const state = { model: { provider: 'magpie', id: profile ? 'group/flash' : 'group/flash-free' }, thinkingLevel: profile ? 'high' : 'off' };
+    const boundaries = { ...intentRunner, assert, join, basename: path.basename, dirname: path.dirname, pathToFileURL: value => ({ href: 'file://' + value }),
+      mkdir, mkdtemp, realpath, readdir: fs.promises.readdir, readFile, writeFile, appendFile: fs.promises.appendFile,
+      save, rows, json: async file => JSON.parse(await readFile(file, 'utf8')), hash: intentHash,
+      root: path.resolve(import.meta.dirname, '..'), console: { log() {} }, dailyRouteContract, verifyDailyRouteState,
+      createOwnedGraphProject, inspectOwnedGraphProject, verificationCliEnvironment: () => ({}), systemTempRoot: async () => root,
+      intentDoctor: async () => ({ config, executionScope, oracle: { target: { scope: 'scope', logicalId: 'shared_skill:library:target' } },
+        semantic: { sourceBody: { sha256: 'b'.repeat(64) } }, catalog: { records: [] },
+        artifacts: { packageRoot: '/controlled/broker' }, host: { identity: '/controlled/pi' }, report: {} }),
+      sourceObserver: async control => { const file = join(control, 'source.mjs'); await writeFile(file, ''); return file; },
+      createGraphFallbackTraps: async (control, output) => { const ledger = join(output, 'fallback.jsonl'); await writeFile(ledger, ''); return { environment: {}, ledger }; },
+      graphObserverModule: value => { settings.set(value.cwd, value); return 'export default () => {};'; },
+      consumptionCostExtensionSource: () => 'export default () => {};',
+      readConsumptionCostEvents: async () => ({ events: [], artifact: {} }), summarizeDiscoveryCosts: () => ({ complete: true }),
+      withinDiscoveryBudget: operation => operation(),
+      waitForDiscoveryReady: async () => ({ status: 'ready' }), assertReadyDiscoveryProvider: () => ({ status: 'verified' }),
+      collectIntentResponses: async () => [], graphSourceAttribution: () => ({ attempts: [] }), graphSourceAccounting: () => ({}),
+      collectSupplementaryRetainedProof: async () => ({ receipt: { status: 'not-configured' } }),
+      assertIntentSource: input => {
+        if (fault === 'source' && input.observation.some(row => row.caseId === 'D-named-introduce')) throw Object.assign(new Error('controlled source finality failure'), { code: 'SOURCE_OBSERVER_FAILED' });
+        return { complete: true, fixtureLedgerRetained: true };
+      },
+      assertIntentTurn: input => {
+        if (input.item.id === 'D-named-introduce' && !input.followup && ['source', 'observer', 'intent', 'model-route'].includes(fault)) {
+          if (fault === 'model-route') verifyDailyRouteEvidence(profile, { states: [state], requests: [], transports: [], responses: [] });
+          assert.fail('controlled ' + fault + ' turn failure');
+        }
+        return { status: 'passed', final: { success: true, text: 'Controlled complete final.' } };
+      },
+      retainedFileInventory: async () => [],
+      retainGeneratedPlan: async ({ evidence }) => { await writeFile(join(evidence, 'generated-skill.md'), '`npm test`\n'); return { artifactStatus: 'complete-skill-files-retained', files: [{ evidencePath: 'generated-skill.md' }] }; },
+      exerciseGeneratedProcedure: async (evidence, command) => { exercises.push({ evidence, command }); return { status: 'passed' }; },
+      startRpc: async options => {
+        const value = settings.get(options.cwd), caseId = path.basename(path.dirname(value.output));
+        const processIndex = launches.filter(row => row.caseId === caseId).length + 1;
+        launches.push({ caseId, processIndex, args: options.args, timeoutMs: options.timeoutMs });
+        const frames = [], lifecycle = [{ event: 'spawn', pid: launches.length }];
+        return { frames, lifecycle,
+          command: async name => name === 'get_state' ? { ...state, ...(fault === 'model-state' && caseId === 'D-named-introduce' ? { thinkingLevel: 'off' } : {}), sessionFile: join(options.cwd, '..', 'sessions', 'actual-session.jsonl') } : { messages: [] },
+          prompt: async text => {
+            prompts.push({ caseId, processIndex, text });
+            await add(value.output, { phase: 'native-input', caseId, textSha256: intentHash(text) });
+            await add(join(path.dirname(value.output), 'source-processes.jsonl'), { phase: 'controlled-cost', caseId, submission: prompts.length, bytes: 91 });
+            if (fault === 'observer' && caseId === 'D-named-introduce') await add(value.output, { phase: 'observer-error', caseId });
+          },
+          stop: async () => { stops.push({ caseId, processIndex }); lifecycle.push({ event: 'close', code: 143 });
+            if (fault === 'host' && caseId === 'D-named-introduce' && processIndex === 1) throw new Error('controlled native close failure'); },
+        };
+      },
+    };
+    const run = Function(...Object.keys(boundaries), 'return (' + intentRunner.runIntentCases.toString() + ');')(...Object.values(boundaries));
+    const manifest = await run('/controlled/config.json', 'D-early');
+    assert.deepEqual(JSON.parse(await readFile(join(manifest.evidence, 'manifest.json'), 'utf8')), JSON.parse(JSON.stringify(manifest)));
+    const results = await Promise.all(manifest.cases.map(item => boundaries.json(join(item.evidence, 'result.json'))));
+    const costs = await Promise.all(manifest.cases.map(item => rows(join(item.evidence, 'source-processes.jsonl'))));
+    await inspect({ manifest, results, prompts, launches, stops, exercises, costs });
+  } finally {
+    // The verification caller retains these synthetic fixtures before using Trash.
+    console.log('Owned intent-stop fixture retained: ' + root);
+  }
+}
+
+for (const fault of ['source', 'observer', 'host', 'model-state', 'model-route']) test('ordinary daily D stops later submissions after ' + fault + ' technical failure', async () => {
+  const config = { ...intentConfig(), modelContract: 'daily-route-v1', model: 'magpie/group/flash', thinkingLevel: 'high', rpcTimeoutMs: 300000 };
+  await driveIntentStopping(config, fault, ({ manifest, results, prompts, launches, costs }) => {
+    assert.deepEqual(manifest.cases.map(item => item.id), ['D-named-introduce']);
+    assert.equal(manifest.stoppedAfterTechnicalFailure, 'D-named-introduce');
+    assert.equal(manifest.status, 'failed'); assert.equal(manifest.directoryStartup, undefined);
+    assert.equal(manifest.executionScope.plannedBudget.maxArmWallMs, undefined);
+    assert.ok(launches.every(row => row.caseId === 'D-named-introduce' && row.timeoutMs === 300000));
+    assert.equal(prompts.length, fault === 'model-state' ? 0 : 1);
+    assert.equal(costs[0].length, prompts.length, 'All original cost rows survive the stop');
+    assert.deepEqual(manifest.notRunCases.map(item => [item.id, item.reason]), [
+      ['C-introduce', 'not_selected_for_early_feedback'], ['D-natural-task', 'shared_technical_failure'], ['D-chat', 'shared_technical_failure'],
+    ]);
+    assert.equal(results[0].sharedTechnicalFailure, true);
+    assert.equal(results[0].notRunTurns.length, fault === 'model-state' ? 2 : 1);
+    assert.ok(results[0].notRunTurns.every(turn => turn.status === 'not_run' && turn.reason === 'shared_technical_failure'));
+    if (fault === 'host') assert.equal(results[0].hostFinality.error.code, 'HOST_FINALITY_FAILED');
+    if (fault.startsWith('model-')) assert.equal(results[0].modelContractFailure.code, fault === 'model-state' ? 'MODEL_STATE' : 'MODEL_ROUTE_EVIDENCE');
+  });
+});
+
+test('ordinary daily D keeps independent intent failure distinct and runs later original cases', async () => {
+  const config = { ...intentConfig(), modelContract: 'daily-route-v1', model: 'magpie/group/flash', thinkingLevel: 'high', rpcTimeoutMs: 300000 };
+  await driveIntentStopping(config, 'intent', ({ manifest, results, prompts, exercises }) => {
+    assert.deepEqual(manifest.cases.map(item => item.id), ['D-named-introduce', 'D-natural-task', 'D-chat']);
+    assert.equal(prompts.length, 3); assert.equal(exercises.length, 1);
+    assert.equal(manifest.stoppedAfterTechnicalFailure, undefined); assert.equal(manifest.status, 'failed');
+    assert.equal(results[0].sharedTechnicalFailure, false);
+    assert.deepEqual(results[0].notRunTurns.map(turn => [turn.intent, turn.reason]), [['reuse-introduction', 'failed_prerequisite']]);
+    assert.deepEqual(manifest.notRunCases.map(item => item.id), ['C-introduce']);
+  });
+});
+
+test('ordinary legacy D keeps its original continuation and ready D keeps its existing stop policy', async () => {
+  await driveIntentStopping(intentConfig(), 'source', ({ manifest, prompts }) => {
+    assert.equal(manifest.cases.length, 3); assert.equal(prompts.length, 3);
+    assert.equal(manifest.stoppedAfterTechnicalFailure, undefined); assert.equal(manifest.notRunCases, undefined);
+  });
+  await driveIntentStopping(readyConfig(), 'source', ({ manifest, prompts }) => {
+    assert.equal(manifest.cases.length, 1); assert.equal(prompts.length, 1);
+    assert.equal(manifest.stoppedAfterTechnicalFailure, 'D-named-introduce');
+    assert.equal(manifest.directoryStartup.maxArmWallMs, 1200000);
+    assert.deepEqual(manifest.notRunCases.map(item => item.reason), ['not_selected_for_early_feedback', 'prior_technical_failure_or_arm_deadline', 'prior_technical_failure_or_arm_deadline']);
+  });
 });
 
 const readyProviderInput = (mode, changedCard = {}) => {

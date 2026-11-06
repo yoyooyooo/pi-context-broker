@@ -85,6 +85,18 @@ node --test scripts/verify-skill-graph-contract.test.mjs scripts/notion-skill-gr
 
 独立无 prompt 宿主预检 `daily-route-host-preflight-ycjzk8tt/handoff.json`（SHA-256 `aa1490e98c18e708c8a7b87b5fb7fe1e1875dd673d23da55e6b32e9e75f56ace`）证明实际 Pi 的 flash/high 和 owned SettingsManager 的 trusted project/retry 0，并保留原探针对缺失 `autoRetryEnabled` 的错误断言与更正 sidecar。该预检为 0 prompt / 0 model；接线单测也不证明实际模型 wire 或任务通过。新真实样本须独立冻结最终安装身份、来源版本、原任务、预算与顺序，先做 SC20 本地/Notion 同条件共同任务，再按 AH-639 执行 SC21。
 
+### 普通 daily D 的共享技术失败停止
+
+原 `--intent-config ... --intent-case D-early` 在显式 `daily-route-v1` 下，遇到来源账本不完整、observer 错误/未验证 provider 输入、宿主关闭失败或 `MODEL_STATE` / `MODEL_ROUTE_EVIDENCE` 时，保留当次结果与成本并停止后续 case。共同判定不读取 ready 实验的 `directorySetup`；原 ready 专项仍额外检查目录、成本与 arm wall。daily 的 `hostFinality` 和 `modelContractFailure` 独立保存，后续通用任务断言不能擦掉原技术原因。剩余未提交 turns/cases 明确为 `not_run`，只在实际发现失败后停止，不倒写此前已经发生的提交。
+
+普通内容/意图断言失败不因此成为共享技术故障：该 case 的依赖续问停止，后续独立 D 场景继续。正文缺失或普通超时本身也不证明共享故障；若同时存在上述来源/观察器/宿主/模型合同失效，按其独立证据判定。旧缺省模型路径保留原继续/availability 停止规则；普通 daily 仍只有原每提交 300000 ms 和固定样本数，不套用 ready 的 1200000 ms 整臂 wall，也不把 scheduled 总和改称 hard wall。原 prompt、四场配置、selector、预算、私有 oracle、真实模型失败均不改动。
+
+`scripts/notion-model-cache.test.mjs` 直接驱动原 `runIntentCases` 函数的循环和实际结果文件保存，只替换本地 RPC/来源边界；分别注入 source、observer、host-finality、model-state、model-route 故障，核后续 prompt 未提交、not_run 原因、成本原行保留，并覆盖内容失败继续与 legacy/ready 原行为。此为离线控制流验证，未启动真实 Pi、Notion 或 provider，不是新的模型任务成功证据。复跑原组：`node --test scripts/notion-model-cache.test.mjs`。
+
+证据 `AH-617-20261105/daily-intent-stop-wcad0gzr/`：有效 RED 为 1 pass / 6 fail，五种共享故障均实际继续了后两个 D case；修复后原 cache 组 63/63、0 skip。初轮测试夹具遗漏 ready 的本地 deadline 接缝所造成的失败也保留，独立注明为测试原因。新真实 cohort 必须绑定提交后的新 harness 身份；纯验证器变化不改 C9 产品包身份，不重判旧 A/B/C/D 结果。
+
+root 审查发现新增测试 helper 沿用永久删除合成 owned fixture 的旧写法，已改为输出并保留本次精确路径，由验证调用方完成 Evidence → Trash → Evidence；未改旧结果来冒称此前已清理合规。仅补跑受影响的 7 个新增分支，7/7、0 skip，runtime hash 未变，其余原组不重复运行。本次 8 个 fixture／317 文件已保留副本并移入系统 Trash，原路径消失且两份字节全等；原件 `green-retained-fixtures.*`、`fixtures-ece-before.json`、`fixtures-ece-after.json`。CI 临时执行器保留这些 synthetic fixture 至 worker 回收，不在测试中永久删除，也不把本机 Trash 证明推给 Linux。
+
 ## SC21 C/D 普通意图与介绍
 
 `scripts/verify-pi-notion-model-cache.mjs --intent-config` 复用本 Skill 的 graph observer、RPC、SDK source ledger、完整正文与资源证明、生成文件检查及 owned exercise。旧 A/B 和旧 custom cache 矩阵保持原入口；此分支不新建总 runner。冻结配置绑定独立安装包、runtime、实际 Pi、全部参与的 harness、生产 Default View 元数据和私有正文 oracle。原早期反馈为四个独立冷入口各 n=1，最多三次必要续问，每次 300000 ms，仅 `magpie/group/flash-free`，无 fallback、自动重试或失败后续问。显式 `daily-route-v1` 是另行冻结的模型输入，不改变这些原任务、预算和 prerequisite 断言。

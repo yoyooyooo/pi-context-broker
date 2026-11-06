@@ -214,11 +214,16 @@ export function intentRunStatus(scope, cases, semanticStatus) {
   return scope.mode === 'all' ? 'passed' : 'partial';
 }
 
-export function discoveryTechnicalFailure({ result, sourceComplete, observation }) {
-  return result.hostFinality?.status === 'failed' || result.directorySetup.status !== 'ready'
-    || result.directorySetup.firstProvider?.status !== 'verified' || !sourceComplete
-    || result.discoveryExperiment.costStatus !== 'complete'
+export function intentTechnicalFailure({ result, sourceComplete, observation }) {
+  return result.hostFinality?.status === 'failed' || !sourceComplete
+    || ['MODEL_STATE', 'MODEL_ROUTE_EVIDENCE'].includes(result.modelContractFailure?.code)
     || observation.some(event => ['observer-error', 'provider-transport-blocked'].includes(event.phase));
+}
+
+export function discoveryTechnicalFailure(input) {
+  const { result } = input;
+  return intentTechnicalFailure(input) || result.directorySetup.status !== 'ready'
+    || result.directorySetup.firstProvider?.status !== 'verified' || result.discoveryExperiment.costStatus !== 'complete';
 }
 
 const exactFile = (file, expected) => file.ownerId === expected.logicalId && file.scope === expected.scope
@@ -765,6 +770,7 @@ export async function runIntentCases(configPath, selectedCase) {
           receipt.session = session;
         } catch (error) {
           receipt.status = 'failed'; receipt.error = { code: error.code ?? 'INTENT_TURN_FAILED', message: error.message };
+          if (modelProfile && ['MODEL_STATE', 'MODEL_ROUTE_EVIDENCE'].includes(error.code)) result.modelContractFailure ??= receipt.error;
         }
         receipt.elapsedMs = performance.now() - began;
         receipt.providerUsage = currentRpc.frames.slice(frameStart).filter(frame => frame.type === 'message_end' && frame.message?.role === 'assistant').map(frame => frame.message.usage ?? null);
@@ -784,6 +790,7 @@ export async function runIntentCases(configPath, selectedCase) {
       }
     } catch (error) {
       result.error = { code: error.code ?? 'INTENT_HOST_FAILED', message: error.message };
+      if (modelProfile && ['MODEL_STATE', 'MODEL_ROUTE_EVIDENCE'].includes(error.code)) result.modelContractFailure ??= result.error;
       if (result.directorySetup?.status === 'running') {
         Object.assign(result.directorySetup, { status: 'failed', error: result.error, finishedAt: new Date().toISOString(), elapsedMs: performance.now() - setupStartedMs,
           task: 'not_run', modelVisibility: 'not_observed' });
@@ -795,7 +802,7 @@ export async function runIntentCases(configPath, selectedCase) {
       catch (error) {
         const failure = { code: 'HOST_FINALITY_FAILED', message: error.message };
         result.error ??= failure;
-        if (config.discoveryStartup) result.hostFinality = { status: 'failed', error: failure };
+        if (config.discoveryStartup || modelProfile) result.hostFinality = { status: 'failed', error: failure };
       }
     }
     const observation = await rows(observationPath), responses = await collectIntentResponses(responsesPath), sourceLedger = await rows(ledger), hostLedger = await rows(owned);
@@ -869,14 +876,21 @@ export async function runIntentCases(configPath, selectedCase) {
     } catch (error) {
       result.status = 'failed'; result.error = { code: error.code ?? 'INTENT_EVIDENCE_FAILED', message: error.message };
     }
+    if (modelProfile) {
+      result.sharedTechnicalFailure = intentTechnicalFailure({ result, sourceComplete, observation });
+      if (!config.discoveryStartup) result.notRunTurns = [{ intent: item.intent, prompt: item.initial, mode: 'initial' }, ...item.followups]
+        .slice(result.turns.length).map((turn, index) => ({ index: result.turns.length + index, intent: turn.intent, status: 'not_run',
+          reason: result.sharedTechnicalFailure ? 'shared_technical_failure' : 'failed_prerequisite' }));
+    }
     result.semanticReview.status = result.status === 'passed' ? 'pending' : 'blocked_by_technical_failure';
     result.finishedAt = new Date().toISOString();
     result.files = [...new Set([...(await retainedFileInventory(output)), 'result.json'])];
     await save(join(output, 'result.json'), result);
     Object.assign(manifest.cases.at(-1), { status: result.status, semanticReview: result.semanticReview.status, turns: result.turns.length, error: result.error });
     await save(join(evidence, 'manifest.json'), manifest);
+    if (modelProfile && !config.discoveryStartup && result.sharedTechnicalFailure) manifest.stoppedAfterTechnicalFailure = item.id;
     if (availabilityFailure) { manifest.availabilityFailure = true; break; }
-    if (config.discoveryStartup && (armTimedOut || armRemaining() <= 0 || discoveryTechnicalFailure({ result, sourceComplete, observation }))) {
+    if (manifest.stoppedAfterTechnicalFailure || config.discoveryStartup && (armTimedOut || armRemaining() <= 0 || discoveryTechnicalFailure({ result, sourceComplete, observation }))) {
       manifest.stoppedAfterTechnicalFailure = item.id; break;
     }
   }
@@ -888,6 +902,9 @@ export async function runIntentCases(configPath, selectedCase) {
     manifest.notRunCases = [...executionScope.notRunCases, ...executionScope.selectedCaseIds.filter(id => !manifest.cases.some(item => item.id === id))
       .map(id => ({ id, status: 'not_run', reason: 'prior_technical_failure_or_arm_deadline' }))];
   }
+  else if (modelProfile) manifest.notRunCases = [...executionScope.notRunCases,
+    ...executionScope.selectedCaseIds.filter(id => !manifest.cases.some(item => item.id === id)).map(id => ({ id, status: 'not_run',
+      reason: manifest.stoppedAfterTechnicalFailure ? 'shared_technical_failure' : 'model_unavailable' }))];
   manifest.status = intentRunStatus(executionScope, manifest.cases);
   if (manifest.directoryStartup?.timedOut) manifest.status = 'failed';
   await save(join(evidence, 'manifest.json'), manifest);
