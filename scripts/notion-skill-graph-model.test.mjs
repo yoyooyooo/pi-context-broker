@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import * as crypto from 'node:crypto';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createServer } from 'node:http';
 import { mkdtemp, mkdir, readFile, writeFile, symlink } from 'node:fs/promises';
 import { graphTrace, observeGraphGate, summarizeSamples, GRAPH_GATE_TOOLS, createGraphFallbackTraps, retainedSourceProofInput, readGateConfig } from './notion-skill-graph-model.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
@@ -13,6 +14,8 @@ import { systemTempRoot } from './verification-paths.mjs';
 import { contractFixture, evaluateGraphTrace, frozenPrompt, selfTest } from './verify-skill-graph-contract.mjs';
 import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 import { viewSystemPrompt } from '../packages/context-broker/src/view-prompt.ts';
+import { observeConsumptionCost } from './skill-consumption-cost.mjs';
+import { assertDiscoveryProjection, assertIntentTurn, summarizeDiscoveryCosts } from './verify-pi-notion-model-cache.mjs';
 
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const save = (file, value) => writeFile(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
@@ -142,6 +145,200 @@ test('owned project paths use public mutable sections without forcing the earlie
     assert.deepEqual(event.systemPromptOptions.sections, { independent: 'Preserve this section.',
       'graph-owned-project-files': '\n\nCurrent owned project files (paths only; read the actual source when needed):\n- package.json\n- src/server.mjs\n' });
   } finally { globalThis.fetch = originalFetch; }
+});
+
+async function discoveryExperimentFixture(t, mode, state = 'ready', includeRouter = false) {
+  const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-discovery-prototype-'));
+  const responses = path.join(base, 'responses'), cache = path.join(base, 'cache'), output = path.join(base, 'observer.jsonl');
+  await mkdir(responses); await mkdir(cache); await writeFile(output, '');
+  const scope = 'a'.repeat(64), short = 'sr:C' + 'E'.repeat(22);
+  t.diagnostic('SC06 owned local fixture: ' + base);
+  const record = { id: 'shared_skill:controlled:experiment', ref: 'skill://shared_skill%3Acontrolled%3Aexperiment/SKILL.md',
+    kind: 'skill', alias: 'experiment', name: 'Authored &quot; title', description: 'Keep "quotes" and the final newline.\n',
+    enabled: true, entrypoint: 'SKILL.md', source: 'notion', sourceId: 'controlled' };
+  const router = { ...record, id: 'shared_skill:controlled:router', ref: 'skill://shared_skill%3Acontrolled%3Arouter/ROUTER.md',
+    kind: 'router', entrypoint: 'ROUTER.md', name: 'Router', description: 'Metadata route, not loaded.' };
+  await save(path.join(responses, 'list.json'), { transport: 'sdk', requestId: 'metadata', operation: 'list', status: 'completed',
+    resultObserved: true, value: { scope, count: includeRouter ? 2 : 1, records: includeRouter ? [record, router] : [record] } });
+  const catalog = state === 'ready'
+    ? viewSystemPrompt('', [record], includeRouter ? [router] : [], new Set(), [{ sourceId: 'controlled', status: 'ready', origin: 'default', partial: false,
+      view: { id: 'view', database_id: 'database', name: 'Default' } }], base, row => row.kind === 'skill' ? short : row.ref, 'notion_list', true)
+    : '<ntn-skills-discovery status="' + state + '">Default metadata is ' + state + '; notion_list remains available.</ntn-skills-discovery>';
+  const messages = [
+    { role: 'system', content: 'Native system stays byte-exact.', sections: {
+      'native-skills': '<available_skills><skill><name>local-canary</name><location>/owned/local/SKILL.md</location></skill></available_skills>',
+      'context-broker-notion-catalog': catalog, independent: 'Independent section stays byte-exact.',
+      'guidance': '<ntn-skills-guidance>Original guidance stays byte-exact.</ntn-skills-guidance>' } },
+    { role: 'user', content: [{ type: 'text', text: 'Natural task' }, { type: 'image', data: 'retained-image', mimeType: 'image/png' }] },
+    { role: 'assistant', content: [{ type: 'toolCall', id: 'prior', name: 'read', arguments: { path: '/owned/selected' } }] },
+    { role: 'toolResult', toolCallId: 'prior', toolName: 'read',
+      content: [{ type: 'text', text: 'Already selected author body.\n<available_skills>Author example stays verbatim.</available_skills>\n' }] },
+  ];
+  const handlers = new Map(), originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
+    { fs, crypto, path, parseNativeReference, cwd: base, responses, cache, output, sourceMode: 'sdk',
+      model: 'controlled/fake', prompt: 'Natural task', entryMode: 'discovery-only', discoveryExperiment: { version: 1, mode } });
+  const ctx = { model: { provider: 'controlled', id: 'fake' }, sessionManager: { getBranch: () => [{ type: 'custom', customType: 'context-broker-short-ref',
+    data: { version: 1, ref: short, target: { kind: 'candidate', identity: { source: 'notion', scope,
+      id: record.id, kind: record.kind, ref: record.ref.slice(0, record.ref.lastIndexOf('/')) } } } }] } };
+  handlers.get('before_agent_start')({ prompt: 'Natural task', systemPrompt: 'Earlier native prompt' }, ctx);
+  const payload = selected => ({ model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })),
+    messages: [{ role: 'system', content: selected.filter(message => message.role === 'system')
+      .flatMap(message => [message.content, ...Object.values(message.sections ?? {})]).filter(Boolean).join('\n\n') },
+      { role: 'user', content: 'Natural task' }] });
+  const events = async () => (await readFile(output, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse);
+  return { base, responses, output, record, scope, short, catalog, messages, handlers, ctx, payload, events };
+}
+
+for (const mode of ['full-cards', 'on-demand-cards']) test('SC06 ' + mode + ' reaches loopback HTTP through the actual public context hook', async t => {
+  const fixture = await discoveryExperimentFixture(t, mode), original = structuredClone(fixture.messages);
+  const costHandlers = new Map(), costOutput = path.join(fixture.base, 'cost.jsonl');
+  const costObserver = observeConsumptionCost({ on: (event, handler) => costHandlers.set(event, handler) },
+    { fs, crypto, path, output: costOutput, checkoutRoot: path.resolve(import.meta.dirname, '..'), runId: 'SC06',
+      sampleId: 'one', clockId: 'loopback' });
+  t.after(() => costObserver.finish());
+  const submission = { sampleId: 'one', clockId: 'loopback', monotonicNs: process.hrtime.bigint().toString(), promptSha256: hash('Natural task') };
+  costHandlers.get('input')({ text: 'Natural task', source: 'rpc' });
+  const projected = fixture.handlers.get('context_with_system')({ messages: fixture.messages }, fixture.ctx)?.messages ?? fixture.messages;
+  costHandlers.get('context_with_system')({ messages: projected });
+  assert.deepEqual(fixture.messages, original, 'Projection must not mutate the host input');
+  const section = projected[0].sections['context-broker-notion-catalog'];
+  if (mode === 'full-cards') assert.deepEqual(projected, original, 'The baseline must retain every original byte');
+  else {
+    assert.ok(!section.includes('<skill>'), 'On-demand projection must remove only default cards at the public boundary');
+    assert.ok(section.includes('<view source="controlled"'), 'View identity and state remain visible');
+    assert.match(section, /on demand.*notion_list/);
+    const restored = structuredClone(projected); restored[0].sections['context-broker-notion-catalog'] = fixture.catalog;
+    assert.deepEqual(restored, original, 'Native catalog, guidance, image, author body and tool pairing remain unchanged');
+  }
+  const calls = [], server = createServer(async (request, response) => {
+    let body = ''; for await (const chunk of request) body += chunk;
+    calls.push(body); response.writeHead(200, { 'content-type': 'application/json' }); response.end('{"ok":true}');
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
+  const actual = fixture.payload(projected), frozen = structuredClone(actual);
+  fixture.handlers.get('before_provider_request')({ payload: actual }, fixture.ctx);
+  costHandlers.get('before_provider_request')({ payload: actual });
+  const response = await fetch('http://127.0.0.1:' + server.address().port, { method: 'POST', body: JSON.stringify(actual) });
+  assert.equal(response.status, 200); await response.text();
+  assert.deepEqual(actual, frozen, 'Provider observation must not privately rewrite the payload');
+  assert.deepEqual(JSON.parse(calls[0]), frozen);
+  await writeFile(path.join(fixture.base, 'http-request.json'), calls[0], { mode: 0o600 });
+  const final = { role: 'assistant', stopReason: 'stop', content: [{ type: 'text', text: 'Hello.' }],
+    ...(mode === 'full-cards' ? { usage: { input: 100, output: 3, cacheRead: 0, cacheWrite: 0, totalTokens: 103 } } : {}) };
+  fixture.handlers.get('message_end')({ message: final }, fixture.ctx);
+  costHandlers.get('message_update')({ assistantMessageEvent: { type: 'text_delta', delta: 'Hello.' } });
+  costHandlers.get('message_end')({ message: final }); costHandlers.get('agent_end')({ messages: [final] });
+  costObserver.finish();
+  const events = await fixture.events(), proof = events.find(event => event.phase === 'discovery-projection');
+  assert.ok(proof, 'The public projection needs explicit before/after evidence');
+  assert.equal(proof.inputSectionSha256, hash(fixture.catalog)); assert.equal(proof.outputSectionSha256, hash(section));
+  assert.equal(proof.inputMessagesSha256, hash(JSON.stringify(original)));
+  assert.equal(proof.outputMessagesSha256, hash(JSON.stringify(projected)));
+  const input = events.find(event => event.sequence === proof.inputCatalogSequence);
+  assert.equal(input.phase, 'discovery-input-catalog'); assert.equal(input.skills[0].provenance.ownerId, fixture.record.id);
+  const provider = events.find(event => event.phase === 'provider-request'), wire = events.find(event => event.phase === 'provider-transport-start');
+  assert.equal(provider.discoveryProjection.sequence, proof.sequence);
+  assert.equal(wire.observedPayloadSha256, provider.observedPayloadSha256);
+  assert.equal(wire.wireBodySha256, hash(calls[0]));
+  const accepted = assertDiscoveryProjection({ observation: events, experiment: { version: 1, mode } });
+  assert.equal(accepted[0].skills[0].provenance.ownerId, fixture.record.id);
+  const intent = { observation: events, responses: [], item: { entryMode: 'discovery-only', intent: 'chat' },
+    oracle: { target: { scope: fixture.scope } }, catalogRecords: [fixture.record], discoveryExperiment: { version: 1, mode } };
+  assert.equal(assertIntentTurn(intent).status, 'passed');
+  if (mode === 'on-demand-cards') {
+    assert.throws(() => assertIntentTurn({ ...intent, discoveryExperiment: undefined }), /actual production 74/,
+      'The ordinary SC21 oracle still rejects a hidden ready catalog');
+    for (const change of [
+      value => { value.find(event => event.phase === 'discovery-input-catalog').skills[0].provenance.scope = 'wrong'; },
+      value => { value.find(event => event.phase === 'discovery-input-catalog').skills = []; },
+      value => { value.find(event => event.phase === 'discovery-input-catalog').skills[0].provenance.loaded = true; },
+    ]) { const changed = structuredClone(events); change(changed); assert.throws(() => assertIntentTurn({ ...intent, observation: changed })); }
+  }
+  for (const change of [
+    value => value.splice(value.findIndex(event => event.phase === 'discovery-projection'), 1),
+    value => { value.find(event => event.phase === 'provider-request').discoveryProjection.sequence--; },
+    value => { value.find(event => event.phase === 'provider-transport-start').observedPayloadSha256 = 'wrong'; },
+    value => { value.find(event => event.phase === 'discovery-projection').outputSection += ' changed'; },
+    value => { value.find(event => event.phase === 'catalog').state = 'pending'; },
+  ]) { const changed = structuredClone(events); change(changed); assert.throws(() => assertDiscoveryProjection({ observation: changed, experiment: { version: 1, mode } })); }
+  const costEvents = (await readFile(costOutput, 'utf8')).trim().split('\n').map(JSON.parse);
+  const costs = summarizeDiscoveryCosts({ events: costEvents, observation: events, submission });
+  assert.equal(costs.providerJsonBytes, Buffer.byteLength(calls[0]));
+  assert.equal(costs.modelHttpRequestBodyBytes, Buffer.byteLength(calls[0]));
+  assert.equal(costs.schemaJsonBytes, Buffer.byteLength(JSON.stringify(actual.tools)));
+  assert.equal(costs.guidanceUtf8Bytes, Buffer.byteLength(projected[0].sections.guidance));
+  assert.equal(costs.catalogInputSectionBytes, Buffer.byteLength(fixture.catalog));
+  assert.equal(costs.catalogOutputSectionBytes, Buffer.byteLength(section));
+  assert.equal(costs.noticeBytes, mode === 'full-cards' ? 0 : Buffer.byteLength('\nNotion cards are on demand; discover them with notion_list.'));
+  assert.equal(costs.tokens.totalTokens, mode === 'full-cards' ? 103 : null); assert.equal(costs.modelHttpResponseBytes, null);
+  if (mode === 'on-demand-cards') assert.equal(costs.tokens.input, null, 'Actually unreported usage stays unknown, never zero');
+  const badCost = structuredClone(costEvents); badCost.find(event => event.phase === 'provider_request').payload.sha256 = 'wrong';
+  assert.throws(() => summarizeDiscoveryCosts({ events: badCost, observation: events, submission }), /Cost event chain/);
+  const badGraph = structuredClone(events); badGraph.find(event => event.phase === 'provider-request').payloadSha256 = 'wrong';
+  assert.throws(() => summarizeDiscoveryCosts({ events: costEvents, observation: badGraph, submission }), /same verified/);
+  assert.throws(() => summarizeDiscoveryCosts({ events: costEvents.slice(0, -1), observation: events, submission }));
+  assert.throws(() => summarizeDiscoveryCosts({ events: costEvents, observation: events, submission: { ...submission, clockId: 'another' } }));
+  const visible = events.find(event => event.phase === 'catalog');
+  assert.equal(visible.skills.filter(skill => skill.provenance?.source === 'verified-notion-metadata').length, mode === 'full-cards' ? 1 : 0);
+  const toolCall = { toolName: 'read', toolCallId: 'default-ref', input: { path: fixture.short } };
+  fixture.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id: toolCall.toolCallId, name: 'read', arguments: toolCall.input }] } });
+  assert.equal(fixture.handlers.get('tool_call')(toolCall)?.block, mode === 'full-cards' ? undefined : true,
+    'An evidence-only input catalog cannot authorize a hidden candidate');
+});
+
+for (const state of ['pending', 'error']) test('SC06 on-demand preserves ' + state + ' instead of asserting an empty complete directory', async t => {
+  const fixture = await discoveryExperimentFixture(t, 'on-demand-cards', state);
+  const messages = fixture.handlers.get('context_with_system')({ messages: fixture.messages }, fixture.ctx)?.messages ?? fixture.messages;
+  const section = messages[0].sections['context-broker-notion-catalog'];
+  assert.ok(section.startsWith(fixture.catalog)); assert.match(section, /on demand.*notion_list/);
+  assert.ok(!section.includes('count=') && !section.includes('empty') && !section.includes('complete'));
+  const events = await fixture.events();
+  assert.equal(events.find(event => event.phase === 'discovery-input-catalog').state, state);
+});
+
+test('SC06 on-demand removes Router cards in the same owned section without changing author examples', async t => {
+  const fixture = await discoveryExperimentFixture(t, 'on-demand-cards', 'ready', true);
+  const messages = fixture.handlers.get('context_with_system')({ messages: fixture.messages }, fixture.ctx).messages;
+  assert.match(fixture.catalog, /<available_routers>/);
+  assert.ok(!messages[0].sections['context-broker-notion-catalog'].includes('<available_routers>'));
+  assert.deepEqual(messages.slice(1), fixture.messages.slice(1));
+  const input = (await fixture.events()).find(event => event.phase === 'discovery-input-catalog');
+  assert.equal(input.routers[0].provenance.ownerId, 'shared_skill:controlled:router');
+  assert.equal(input.routers[0].provenance.loaded, false);
+});
+
+test('SC06 provider gate rejects missing public projection and later payload substitution', async t => {
+  const fixture = await discoveryExperimentFixture(t, 'on-demand-cards');
+  assert.throws(() => fixture.handlers.get('before_provider_request')({ payload: fixture.payload(fixture.messages) }, fixture.ctx), /discovery.*projection/i);
+  const projected = fixture.handlers.get('context_with_system')({ messages: fixture.messages }, fixture.ctx)?.messages ?? fixture.messages;
+  const wrong = fixture.payload(projected); wrong.messages[0].content += fixture.catalog;
+  assert.throws(() => fixture.handlers.get('before_provider_request')({ payload: wrong }, fixture.ctx), /discovery.*projection/i);
+  const events = await fixture.events();
+  assert.ok(events.some(event => event.phase === 'observer-error')); assert.ok(!events.some(event => event.phase === 'provider-request'));
+});
+
+test('SC06 refuses an unknown presentation or a private/command-source entry at the observer boundary', async t => {
+  const fixture = await discoveryExperimentFixture(t, 'full-cards');
+  const settings = { fs, crypto, path, parseNativeReference, cwd: fixture.base, responses: fixture.responses, cache: path.join(fixture.base, 'cache'),
+    output: fixture.output, model: 'controlled/fake', prompt: 'Natural task', entryMode: 'discovery-only', sourceMode: 'sdk',
+    discoveryExperiment: { version: 1, mode: 'full-cards' } };
+  for (const change of [
+    value => { value.discoveryExperiment.mode = 'hide-everything'; },
+    value => { value.discoveryExperiment.privateName = 'target'; },
+    value => { value.sourceMode = 'command'; },
+    value => { value.entryMode = 'explicit-root'; value.rootRef = fixture.record.ref; },
+  ]) {
+    const changed = { ...settings, discoveryExperiment: { ...settings.discoveryExperiment } }; change(changed);
+    assert.throws(() => observeGraphGate({ on() {} }, changed), /SC06 discovery experiment/);
+  }
+  for (const messages of [
+    [{ role: 'system', content: fixture.catalog }],
+    [fixture.messages[0], structuredClone(fixture.messages[0])],
+    [{ ...fixture.messages[0], sections: { 'context-broker-notion-catalog': 'Unobserved state' } }],
+  ]) assert.throws(() => fixture.handlers.get('context_with_system')({ messages }, fixture.ctx), /discovery projection/);
 });
 
 for (const variant of ['user', 'assistant', 'assistant-tool-arguments', 'unverified-tool-body']) test('a forged ' + variant + ' catalogue cannot advertise a source reference', async () => {

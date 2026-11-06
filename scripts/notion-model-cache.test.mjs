@@ -111,6 +111,57 @@ test('intent case selection cannot count C or a partial D run as completed D ear
   assert.throws(() => intentRunner.intentRunStatus(selected, [completed[1], completed[0], completed[2]], 'passed'));
 });
 
+test('SC06 discovery experiment is explicit, D-only and keeps the original complete contract', () => {
+  const normal = intentConfig(), original = structuredClone(normal);
+  for (const mode of ['full-cards', 'on-demand-cards']) {
+    const config = { ...structuredClone(normal), phase: 'SC06-discovery-prototype', discoveryExperiment: { version: 1, mode } };
+    assert.equal(validateIntentConfiguration(config), config);
+    const selected = intentRunner.selectIntentCases(config, 'D-early');
+    assert.deepEqual(selected.selectedCaseIds, ['D-named-introduce', 'D-natural-task', 'D-chat']);
+    assert.deepEqual(selected.plannedBudget, intentRunner.selectIntentCases(normal, 'D-early').plannedBudget);
+    assert.deepEqual(config.cases, original.cases);
+    assert.throws(() => intentRunner.selectIntentCases(config), /D-early/);
+    assert.throws(() => intentRunner.selectIntentCases(config, 'C-introduce'), /D-early/);
+  }
+  assert.deepEqual(normal, original);
+});
+
+test('SC06 discovery experiment cannot silently replace normal SC21 or change source and budget', () => {
+  for (const mutate of [
+    value => { value.phase = 'early-feedback-not-formal-SC21'; },
+    value => { delete value.discoveryExperiment; },
+    value => { value.discoveryExperiment.mode = 'hide-all-system'; },
+    value => { value.discoveryExperiment.version = 2; },
+    value => { value.discoveryExperiment.target = 'private'; },
+    value => { value.source.default_view_id = 'narrowed'; },
+    value => { value.source.catalogEvidence.count = 1; },
+    value => { value.budget.automaticRetries = 1; },
+    value => { value.budget.timeoutMsPerSubmission = 600000; },
+  ]) {
+    const config = { ...intentConfig(), phase: 'SC06-discovery-prototype', discoveryExperiment: { version: 1, mode: 'on-demand-cards' } };
+    mutate(config); assert.throws(() => intentRunner.selectIntentCases(config, 'D-early'));
+  }
+});
+
+test('SC06 comparison identity allows only the arm and evidence path to differ', () => {
+  const a = { ...intentConfig(), phase: 'SC06-discovery-prototype', evidenceRoot: '/owned/full',
+    discoveryExperiment: { version: 1, mode: 'full-cards' }, candidate: { runtimeSha256: 'same-runtime' }, harness: [{ path: '/same/observer', sha256: 'same' }] };
+  const b = { ...structuredClone(a), evidenceRoot: '/owned/demand', discoveryExperiment: { version: 1, mode: 'on-demand-cards' } };
+  assert.equal(intentRunner.discoveryExperimentIdentity(a).comparisonSha256, intentRunner.discoveryExperimentIdentity(b).comparisonSha256);
+  for (const change of [
+    value => { value.candidate.runtimeSha256 = 'other'; },
+    value => { value.cases[1].initial.text = 'different task'; },
+    value => { value.source.catalogEvidence.sha256 = 'different directory'; },
+    value => { value.sampling.codeMode = true; },
+    value => { value.budget.automaticRetries = 1; },
+    value => { value.harness[0].sha256 = 'different observer'; },
+  ]) {
+    const changed = structuredClone(b); change(changed);
+    assert.notEqual(intentRunner.discoveryExperimentIdentity(a).comparisonSha256, intentRunner.discoveryExperimentIdentity(changed).comparisonSha256);
+  }
+  assert.equal(intentRunner.discoveryExperimentIdentity(intentConfig()), undefined);
+});
+
 const introInput = () => {
   const target = { logicalId: 'target', scope: 'scope', snapshot: 's_pin', bodySha256: 'b'.repeat(64), bodyBytes: 100, ref: 'skill://target/SKILL.md?snapshot=s_pin' };
   const file = { ...target, ownerId: target.logicalId, role: 'entrypoint', sha256: target.bodySha256, bytes: target.bodyBytes };

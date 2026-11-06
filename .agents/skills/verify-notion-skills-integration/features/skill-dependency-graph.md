@@ -111,6 +111,38 @@ node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/frozen-c
 
 对每个已运行 case 分别执行 Evidence→Cleanup→Evidence，保留 raw provider、RPC、source、实际 final、失败和文件 hash。`run` 的技术成功只返回 `review_required`；独立语义评审逐 turn 绑定 final SHA，介绍还绑定准确源正文 SHA 和真实答案片段，检查意思、必要事实和无证据的执行声称。语义评审不能补造缺失的正文交付或动作。模型计划生成与控制器随后执行的 owned exercise 分列，不能声称模型已自主执行。
 
+### SC06 目录曝光对照：实验入口
+
+同一 intent runner 接受显式 `phase:"SC06-discovery-prototype"` 与 `discoveryExperiment:{"version":1,"mode":"full-cards"}` 或 `mode:"on-demand-cards"`。实验必须选择 `--intent-case D-early`，仍完整校验原四场配置，C 为 `not_run`；原三个 D 的 prompt、命名介绍的重启续问、每次 300000 ms、最多四次提交、零 retry/fallback 均不变。没有实验字段时，普通 SC21 的 phase、实际 ready 74 条断言与原 A/B、C/D 行为保持原样；不能把旧失败换成实验结果。
+
+两份配置仅 mode 和 owned `evidenceRoot` 不同。冻结同一独立包/runtime、C7、Pi/model/参数、生产 Default View 74 条及 scope、原完整四场 prompt/oracle/project、全部原 harness；此外把实际执行的 `scripts/skill-consumption-cost.mjs` 路径和 SHA 加入两臂相同的 harness 清单。Doctor 返回 `comparisonSha256`，必须相同才能配对。它只忽略曝光 mode 与 evidenceRoot，换源、名单、正文、prompt、包、工具、预算或 observer 都会改变该值。每场沿原驱动创建空 CLI/Broker/session roots；命名介绍的恢复续问保留原 session/cache，不重置为新的冷样本。
+
+~~~bash
+node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/discovery-full-cards.json --intent-case D-early --intent-action doctor
+node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/discovery-on-demand-cards.json --intent-case D-early --intent-action doctor
+node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/discovery-full-cards.json --intent-case D-early --intent-action run
+node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/discovery-on-demand-cards.json --intent-case D-early --intent-action run
+~~~
+
+这是两个可调用的呈现实验，工具仍是原 `read/notion_list/notion_use`。graph observer 在 Pi 公开 `context_with_system` 中只定位唯一的 `context-broker-notion-catalog` section：`full-cards` 逐字返回原内容；`on-demand-cards` 只去掉该 section 的 Skill/Router 卡片容器，并加一句不含目标的 `Notion cards are on demand; discover them with notion_list.`。原 View 状态、已有 guidance、原生本地目录、其它 section、消息/图片/工具配对及已选作者正文不变，不修改 SDK 目录或来源。不展示卡片不是完整空目录；pending/error 状态照原文保留，标记不声称 count、ready 或成功。
+
+私有证据保存输入目录的完整 metadata 归属、前后 section 原文/bytes/SHA、整组消息 SHA 和非目录内容 SHA；这些证明不进入模型。隐藏的目录只以 `discovery-input-catalog` 观察，不能授权模型引用。`notion_list` 的实际输出、模型复制引用、read/use/Requires/固定资源仍经过原身份和完整性交付门禁。每个 provider 必须绑定本次 public projection，完整投影片段必须出现在实际 system 中且不重复，再与现有 transport 的实际 HTTP body 配对；只在 onPayload 私改 JSON、跳过 public hook、复用旧投影、混入原卡片或修改 scope/正文都不能通过。实验对 ready **输入**仍要求同一完整 74 条来源目录；正常 SC21 对模型可见目录的 74 条断言没有放宽。
+
+两臂加载同一原 `observeConsumptionCost` 被动观察器。`consumption-cost-*.jsonl` 与 `discovery-cost-*.json` 按每次原进程保存累计 provider JSON/实际 HTTP request bytes、工具 schema、默认目录、guidance、正文诊断跨度、工具调用/轮次、原 Pi usage 和提交到首 provider/首有效文本/完成的时间。on-demand 提示自身 bytes 单列；诊断跨度可能嵌套，不能相加或由字符估 tokens。缺失 usage/HTTP response bytes 保留 null。source 启动、取消、恢复、HTTP attempts/bytes 与 private extra proof 继续沿原 whole-case 账本单列，不重复分配到工具轮次。技术失败也保留已发生的成本，不能用更少调用或较短失败当收益；所有原条件续问和独立语义判断完成后才可评估完整任务。
+
+本次仅完成代码与局部 public-hook→localhost HTTP 接线验证，红例与原件在 `AH-617-20261105/sc06-discovery-experiment-raqdvyrj`。实际安装 Pi 两臂、真实来源/模型、同条件任务成功与成本对照仍为 `not_run`，等待独立窗口。实验结果不自动改变日用默认目录，不代表正式 SC21 全矩阵，也不作为 SC20 纯本地全局 Skill 的等价臂。规模 1/10/74/100/101/300 与 Members 场景仍依原地图分别报告，不能由这次 D 早期对照替代。
+
+实际 Pi 的前置接线沿原 `notion-skill-graph-observer-smoke.mjs`，显式传入原 all14 的已种离线 fixture（不是 distinct/ambiguous fixture）。每臂使用同一已安装包与 tgz、C7 CLI/SDK、Pi、prompt、工具及初态，独立复制 source 状态并建立空 Broker cache/session；由原 `packageIdentity()` 核对 archive 与 installed src/dist，前后再次核 hash。SDK 分支 `source.command` 缺省，discovery/activation offline、prefetch false；不启动来源服务或将受控模型伪装为 magpie。原无这些新参数的 custom-command smoke 保持原行为。
+
+~~~bash
+node scripts/notion-skill-graph-observer-smoke.mjs --extension /absolute/installed/node_modules/pi-context-broker/src/index.ts --package-path /absolute/frozen/pi-context-broker.tgz --cli-entry /absolute/c7/node_modules/ntn-skills/dist/ntn-skills.js --sdk-fixture /absolute/original-all14-fixture.json --discovery-only true --discovery-mode full-cards --evidence-root /absolute/new/full-cards
+node scripts/notion-skill-graph-observer-smoke.mjs --extension /absolute/installed/node_modules/pi-context-broker/src/index.ts --package-path /absolute/frozen/pi-context-broker.tgz --cli-entry /absolute/c7/node_modules/ntn-skills/dist/ntn-skills.js --sdk-fixture /absolute/original-all14-fixture.json --discovery-only true --discovery-mode on-demand-cards --evidence-root /absolute/new/on-demand-cards
+~~~
+
+该受控层沿原 90000 ms 单次 prompt、n=1、三次 localhost HTTP：首请求选择 `notion_list`，下一步只复制实际默认可用 metadata 的 ref 给 native `read`，最后完整正文恰一份进入 provider。它不使用私有 target seed，inspect 不读取 Requires/Member。正常本地 Skill canary 的 metadata 必须留在每次实际 system，未选正文不得出现；原工具 schema、guidance、项目路径和 canary 均进入成本口径。原 graph observer 仍逐 body 绑定 public projection→provider→HTTP，成本 observer 最后加载；输入目录严格对齐 fixture 的完整 Default View，full 原字节不变/on-demand 只隐藏卡片。fixture 的两条默认目录是受控层，不替代生产 74 条校验。
+
+成功要求原 `RPC.closeInput()` 自然退出 0、完整 `observer_end`、每个 SDK/HTTP 终局与实际返回值闭合；来源 HTTP/CLI 必须为实际完整账本的零。`run-0/launch.json`、`cost-submission.json`、`consumption-cost.jsonl`、`discovery-cost.json`、`source-accounting.json`、`rpc-lifecycle.json`、原 provider/source 原件与 installed/runtime 身份一同保存。按原 owned Evidence→Trash→Evidence 流程封存，失败不得重写。该层是 source 已暖、Pi/Broker 新状态的接线验证，不声称冷 Notion 延迟或全任务收益；之后才在独立窗口运行上面的原 D 两臂。新增入口红例、缺省尚未创建 cache 目录的真实复制红例及本地回归原件在 `AH-617-20261105/sc06-controlled-sdk-pnifyc5s`；此时未启动实际 Pi/来源/模型。
+
 SDK 取消只沿既有严格断言结算 metadata `list`：被动 native `session_shutdown` 与 SDK 起止同 PID，时间位于同一 monotonic 闭区间，完整 metrics/trace/EOF 均在；该回执不算 ready 目录。缺失账本、null metrics、未知正文归属仍是 observation-incomplete。任何 source write 必须另有 Records retention/adoption 与业务写入归因，不能仅因为 operation 是 use 就放行。
 
 改前旧入口拒绝 `--intent-config` 和私有 D seed 负例保留。`--discovery-only true` 的原 `notion-skill-graph-observer-smoke.mjs` 实驱实际 Pi、受控 HTTP 和显式 custom source：首请求无正文，真实 list 元数据先于 read、正文全文进入 provider、未读 Requires/Member。该受控证明不能代替生产 SDK、真实模型 C/D 或正式 SC21 全矩阵。

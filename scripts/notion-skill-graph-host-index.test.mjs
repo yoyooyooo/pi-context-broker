@@ -5,13 +5,69 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { mkdtemp, mkdir, writeFile, readFile, symlink } from 'node:fs/promises';
 import { observeGraphGate, GRAPH_GATE_TOOLS } from './notion-skill-graph-model.mjs';
-import { verifyPublicReadBoundary } from './notion-skill-graph-observer-smoke.mjs';
+import { verifyPublicReadBoundary, parseGraphObserverOptions, copySdkDiscoveryFixture } from './notion-skill-graph-observer-smoke.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
 import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 import { compileSkillPreparation } from '../packages/context-broker/src/skill-context-projection.ts';
 
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const save = (file, value) => writeFile(file, JSON.stringify(value, null, 2) + '\n');
+
+for (const mode of ['full-cards', 'on-demand-cards']) test('controlled SDK discovery smoke accepts the explicit ' + mode + ' arm', () => {
+  const options = parseGraphObserverOptions(['--extension', '/installed/broker/src/index.ts', '--cli-entry', '/installed/cli/ntn-skills.js',
+    '--evidence-root', '/owned/evidence', '--discovery-only', 'true', '--package-path', '/owned/broker.tgz', '--sdk-fixture', '/owned/fixture.json', '--discovery-mode', mode]);
+  assert.equal(options['discovery-mode'], mode); assert.equal(options['sdk-fixture'], '/owned/fixture.json');
+  assert.equal(options['discovery-only'], 'true'); assert.equal(options.model, undefined);
+});
+
+test('controlled SDK discovery smoke rejects implicit arms and mixed scenarios', () => {
+  const base = ['--discovery-only', 'true', '--sdk-fixture', '/owned/fixture.json', '--package-path', '/owned/broker.tgz', '--discovery-mode', 'full-cards'];
+  for (const invalid of [base.slice(0, -2), base.filter((_, i) => i !== 2 && i !== 3),
+    ['--sdk-fixture', '/owned/fixture.json', '--discovery-mode', 'full-cards'],
+    [...base.slice(0, -1), 'unknown'], [...base, '--matrix', 'true'], [...base, '--public-boundaries', 'true'],
+    [...base, '--large-body', 'true'], [...base, '--host-index-resource', 'true'],
+    [...base, '--model', 'magpie/group/flash-free']]) assert.throws(() => parseGraphObserverOptions(invalid));
+  assert.deepEqual(parseGraphObserverOptions(['--discovery-only', 'true']), { 'discovery-only': 'true' });
+});
+
+test('controlled SDK discovery clones only validated offline source roots and independent body evidence', async () => {
+  const directory = await mkdtemp(path.join(await systemTempRoot(), 'graph-discovery-sdk-'));
+  const source = path.join(directory, 'source'), target = path.join(directory, 'clone'), body = 'Original controlled main.\n';
+  await mkdir(path.join(source, 'state', 'objects'), { recursive: true }); await mkdir(path.join(source, 'config'));
+  const file = path.join(source, 'fixture.json'), env = path.join(source, 'env.json'), object = path.join(source, 'state', 'objects', hash(body));
+  await writeFile(object, body); await writeFile(path.join(source, 'config', 'config.json'), '{}\n');
+  const environment = { NOTION_API_BASE_URL: 'http://127.0.0.1:1/v1', NTN_SKILLS_HOME: 'state', NTN_SKILLS_CONFIG_HOME: 'config', NTN_SKILLS_CACHE_HOME: 'cache' };
+  await symlink(directory, path.join(source, 'outside-cache'), 'dir');
+  await save(env, environment);
+  const record = { id: 'shared_skill:fixture:a', name: 'a', ref: 'skill://shared_skill%3Afixture%3Aa/SKILL.md', entrypoint: 'SKILL.md' };
+  const input = { version: 1, catalog: true, cwd: source, env, scope: 'a'.repeat(64), database: 'controlled-database',
+    default_view: { database_id: 'controlled-database', source_cache: 'complete-metadata-only', records: [{ id: record.id, name: record.name, ref: record.ref }] },
+    snapshots: [{ scope: 'a'.repeat(64), record, entrypoint: 'SKILL.md', files: [{ path: 'SKILL.md', sha256: hash(body), bytes: Buffer.byteLength(body) }] }] };
+  await save(file, input);
+  const copied = await copySdkDiscoveryFixture(file, target);
+  assert.equal(fs.existsSync(path.join(source, 'cache')), false, 'A configured cache root can be created later by the real SDK');
+  assert.equal(copied.graph.nodes[0].body, body); assert.equal(copied.identity.sha256, hash(await readFile(file)));
+  for (const [key, subdir] of [['NTN_SKILLS_HOME', 'state'], ['NTN_SKILLS_CONFIG_HOME', 'config'], ['NTN_SKILLS_CACHE_HOME', 'cache']])
+    assert.equal(copied.environment[key], path.join(target, subdir));
+  await writeFile(path.join(target, 'state', 'objects', hash(body)), 'changed clone'); assert.equal(await readFile(object, 'utf8'), body);
+  for (const [name, mutate] of [
+    ['production-origin', (_value, env) => { env.NOTION_API_BASE_URL = 'https://api.notion.com/v1'; }],
+    ['escaping-state', (_value, env) => { env.NTN_SKILLS_HOME = directory; }],
+    ['escaping-missing-cache', (_value, env) => { env.NTN_SKILLS_CACHE_HOME = 'outside-cache/future'; }],
+    ['missing-directory', value => { value.default_view.source_cache = 'missing'; }],
+    ['wrong-scope', value => { value.snapshots[0].scope = 'b'.repeat(64); }],
+    ['wrong-body', value => { value.snapshots[0].files[0].bytes++; }],
+    ['ambiguous-fixture', value => { value.ambiguous_names = true; }],
+  ]) {
+    const bad = structuredClone(input), badEnv = { ...environment }; mutate(bad, badEnv);
+    await save(file, bad); await save(env, badEnv);
+    await assert.rejects(copySdkDiscoveryFixture(file, path.join(directory, name)));
+    assert.equal(fs.existsSync(path.join(directory, name)), false, 'Invalid source input must fail before copying');
+  }
+  await save(file, input); await save(env, environment);
+  await assert.rejects(copySdkDiscoveryFixture(file, path.join(source, 'nested-clone')));
+});
+
 async function fixture(mutate, options = {}) {
   const directory = await mkdtemp(path.join(await systemTempRoot(), 'graph-host-index-'));
   const cache = path.join(directory, 'cache'), responses = path.join(directory, 'responses'), output = path.join(directory, 'observer.jsonl');

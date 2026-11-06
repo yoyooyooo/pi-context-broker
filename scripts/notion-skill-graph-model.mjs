@@ -184,6 +184,12 @@ export function observeGraphGate(api, settings) {
   const entryMode = settings.entryMode ?? 'explicit-root';
   if (!['explicit-root', 'discovery-only'].includes(entryMode)) throw new Error('Unknown graph entry mode');
   if (entryMode === 'discovery-only' && settings.rootRef !== undefined) throw new Error('Discovery-only observation cannot seed a private root');
+  const experiment = settings.discoveryExperiment;
+  if (experiment !== undefined && (experiment?.version !== 1
+    || !['full-cards', 'on-demand-cards'].includes(experiment.mode)
+    || !same(Object.keys(experiment).sort(), ['mode', 'version'])
+    || entryMode !== 'discovery-only' || settings.sourceMode !== 'sdk'))
+    throw new Error('Invalid SC06 discovery experiment: only the default SDK discovery entry is supported');
   const root = entryMode === 'explicit-root' ? parseRef(settings.rootRef) : undefined;
   if (entryMode === 'explicit-root' && !root) throw new Error('An explicitly selected root requires its actual reference');
   const discovered = new Map(root ? [[settings.rootRef, { sequence: 0, source: 'explicit selected root' }]] : []);
@@ -868,9 +874,12 @@ export function observeGraphGate(api, settings) {
     }
     return record({ ...observation, state, skills, routers, systemPromptSha256: digest(prompt), systemPromptBytes: Buffer.byteLength(prompt), localDiscoveryDisabled: true });
   };
-  let userTurn = 0;
+  let userTurn = 0, discoveryProjection;
+  const catalogSection = 'context-broker-notion-catalog';
+  const discoveryMarker = 'Notion cards are on demand; discover them with notion_list.';
   api.on('before_agent_start', (event, ctx) => {
     refreshContext(ctx); assertModel(ctx);
+    discoveryProjection = undefined;
     const prompt = typeof event.systemPrompt === 'string' ? event.systemPrompt : (event.systemPrompt ?? []).join('\n');
     observeCatalog(prompt, { phase: 'catalog-before-agent-start', stage: 'before_agent_start', userTurn: ++userTurn,
       submittedPromptSha256: digest(event.prompt ?? ''), frozenPromptMatched: event.prompt === settings.prompt });
@@ -886,6 +895,39 @@ export function observeGraphGate(api, settings) {
         contentSha256: digest(text(message.content)), contentBytes: Buffer.byteLength(text(message.content)),
         sections: Object.fromEntries(Object.entries(message.sections ?? {}).map(([name, value]) => [name,
           value === null ? null : { sha256: digest(value), bytes: Buffer.byteLength(value) }])) })) });
+    if (experiment === undefined) return;
+    try {
+      const indexes = event.messages.flatMap((message, index) => message.role === 'system'
+        && typeof message.sections?.[catalogSection] === 'string' ? [index] : []);
+      if (indexes.length !== 1) throw new Error('SC06 discovery projection requires exactly one owned catalog section');
+      const index = indexes[0], original = event.messages[index], input = original.sections[catalogSection];
+      const catalogBlocks = [...input.matchAll(/<ntn-skills-view-catalog>[\s\S]*?<\/ntn-skills-view-catalog>/g)];
+      const statusBlocks = [...input.matchAll(/<ntn-skills-discovery\b[^>]*>[\s\S]*?<\/ntn-skills-discovery>/g)];
+      if (catalogBlocks.length > 1 || statusBlocks.length > 1 || catalogBlocks.length + statusBlocks.length === 0)
+        throw new Error('SC06 discovery projection cannot infer an unobserved catalog state');
+      const incoming = observeCatalog(input, { phase: 'discovery-input-catalog', stage: 'context_with_system', userTurn }, false);
+      const marker = experiment.mode === 'on-demand-cards' ? '\n' + discoveryMarker : '';
+      const output = experiment.mode === 'full-cards' ? input : input.replace(
+        /<ntn-skills-view-catalog>[\s\S]*?<\/ntn-skills-view-catalog>/g,
+        block => block.replace(/<available_skills>[\s\S]*?<\/available_skills>/g, '')
+          .replace(/<available_routers>[\s\S]*?<\/available_routers>/g, '')) + marker;
+      const messages = output === input ? event.messages : event.messages.map((message, position) => position === index
+        ? { ...message, sections: { ...message.sections, [catalogSection]: output } } : message);
+      const preserved = values => values.map((message, position) => position === index
+        ? { ...message, sections: { ...message.sections, [catalogSection]: null } } : message);
+      if (!same(preserved(event.messages), preserved(messages))) throw new Error('SC06 discovery projection changed non-catalog context');
+      const proof = record({ phase: 'discovery-projection', stage: 'context_with_system', mode: experiment.mode, userTurn,
+        section: catalogSection, messageIndex: index, inputCatalogSequence: incoming.sequence,
+        inputSection: input, inputSectionSha256: digest(input), inputSectionBytes: Buffer.byteLength(input),
+        outputSection: output, outputSectionSha256: digest(output), outputSectionBytes: Buffer.byteLength(output),
+        inputMessagesSha256: digest(JSON.stringify(event.messages)), outputMessagesSha256: digest(JSON.stringify(messages)),
+        preservedMessagesSha256: digest(JSON.stringify(preserved(messages))), markerBytes: Buffer.byteLength(marker),
+        markerSha256: digest(marker), wireFragmentSha256: digest(output.trim()) });
+      // Pi owns separators between system sections. The complete non-separator
+      // fragment must survive its serializer; author metadata is never trimmed.
+      discoveryProjection = { proof, fragment: output.trim(), catalogBlocks: catalogBlocks.length, statusBlocks: statusBlocks.length };
+      if (messages !== event.messages) return { messages };
+    } catch (error) { throw observerFault('discovery-projection', error); }
   });
   api.on('context', (event, ctx) => {
     refreshContext(ctx);
@@ -934,8 +976,22 @@ export function observeGraphGate(api, settings) {
     const payloadFile = settings.payloads ? 'payload-' + sequence + '.json' : undefined;
     if (payloadFile) settings.fs.writeFileSync(join(settings.payloads, payloadFile), serialized, { mode: 0o600, flag: 'wx' });
     const system = [text(event.payload?.system), ...(event.payload?.messages ?? []).filter(message => message.role === 'system').map(message => text(message.content))].filter(Boolean).join('\n\n');
+    let discoveryProof;
+    if (experiment !== undefined) {
+      const projected = discoveryProjection;
+      if (!projected || projected.proof.userTurn !== userTurn || !projected.fragment
+        || system.split(projected.fragment).length !== 2
+        || [...system.matchAll(/<ntn-skills-view-catalog>/g)].length !== projected.catalogBlocks
+        || [...system.matchAll(/<ntn-skills-discovery\b/g)].length !== projected.statusBlocks
+        || system.split(discoveryMarker).length !== (experiment.mode === 'on-demand-cards' ? 2 : 1))
+        throw new Error('SC06 discovery projection is missing or changed before the provider');
+      discoveryProof = { sequence: projected.proof.sequence, inputCatalogSequence: projected.proof.inputCatalogSequence,
+        mode: experiment.mode, outputSectionSha256: projected.proof.outputSectionSha256,
+        wireFragmentSha256: digest(projected.fragment), markerBytes: projected.proof.markerBytes };
+      discoveryProjection = undefined;
+    }
     observeCatalog(system, { phase: 'catalog', stage: 'before_provider_request', userTurn, providerPayloadSha256: observedPayloadSha256 }, true);
-    const provider = record({ phase: 'provider-request', model: settings.model, tools: advertisedTools, toolSurface: selected.surface, toolDefinitionsSha256: digest(JSON.stringify(event.payload?.tools)), toolChoice: 'auto', forcedToolArguments: false, payloadSha256: digest(serialized), payloadBytes: Buffer.byteLength(serialized), ...(payloadFile ? { payloadFile } : {}), observedPayloadSha256, contents, hostHelp, toolResults, sourceTextHashes: sourceStrings(event.payload).map(value => ({ sha256: digest(value), bytes: Buffer.byteLength(value) })) });
+    const provider = record({ phase: 'provider-request', model: settings.model, tools: advertisedTools, toolSurface: selected.surface, toolDefinitionsSha256: digest(JSON.stringify(event.payload?.tools)), toolChoice: 'auto', forcedToolArguments: false, payloadSha256: digest(serialized), payloadBytes: Buffer.byteLength(serialized), ...(payloadFile ? { payloadFile } : {}), ...(discoveryProof ? { discoveryProjection: discoveryProof } : {}), observedPayloadSha256, contents, hostHelp, toolResults, sourceTextHashes: sourceStrings(event.payload).map(value => ({ sha256: digest(value), bytes: Buffer.byteLength(value) })) });
     if ((event.payload?.messages ?? []).some(message => message.role === 'user' && sourceStrings(message.content).includes(settings.prompt)))
       submittedUser = { sequence: provider.sequence, promptSha256: digest(settings.prompt), providerPayloadSha256: observedPayloadSha256 };
     verifiedPayloadHash = observedPayloadSha256;

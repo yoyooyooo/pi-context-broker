@@ -16,6 +16,7 @@ import { createPiHelpBoundary } from './notion-pi-help.mjs';
 import { installedBrokerIdentity } from './notion-skill-graph-session.mjs';
 import { verificationCliEnvironment, systemTempRoot } from './verification-paths.mjs';
 import { assertCatalogCancellationBoundary } from './notion-sdk-pi.mjs';
+import { consumptionCostExtensionSource, readConsumptionCostEvents } from './skill-consumption-cost.mjs';
 
 const json = async path => JSON.parse(await readFile(path, 'utf8'));
 const rows = async path => { try { return (await readFile(path, 'utf8')).split('\n').filter(Boolean).map(JSON.parse); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } };
@@ -23,9 +24,25 @@ const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '
 const hash = value => createHash('sha256').update(value).digest('hex');
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
+export function discoveryExperimentIdentity(config) {
+  if (config.discoveryExperiment === undefined) return undefined;
+  const { evidenceRoot: _evidence, discoveryExperiment, ...sameInputs } = config;
+  const canonical = value => JSON.stringify(value, (_, item) => item && typeof item === 'object' && !Array.isArray(item)
+    ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
+  return { ...discoveryExperiment, comparisonSha256: hash(canonical({ ...sameInputs, discoveryExperiment: { version: discoveryExperiment.version } })),
+    changedInput: 'Broker-owned default card presentation and its target-free on-demand notice only',
+    notClaimed: ['Production adoption', 'Formal SC21 acceptance', 'SC20 native Skill equivalence'] };
+}
+
 export function validateIntentConfiguration(config) {
   assert.equal(config.version, 1); assert.equal(config.contract, 'agent-cli-ref-20261105');
-  assert.equal(config.phase, 'early-feedback-not-formal-SC21');
+  if (config.discoveryExperiment === undefined) assert.equal(config.phase, 'early-feedback-not-formal-SC21');
+  else {
+    assert.equal(config.phase, 'SC06-discovery-prototype');
+    assert.deepEqual(Object.keys(config.discoveryExperiment).sort(), ['mode', 'version']);
+    assert.equal(config.discoveryExperiment.version, 1);
+    assert.ok(['full-cards', 'on-demand-cards'].includes(config.discoveryExperiment.mode));
+  }
   assert.equal(config.model, 'magpie/group/flash-free'); assert.equal(config.fallback, 'forbidden');
   assert.equal(config.sampling.codeMode, false);
   assert.deepEqual(config.sampling.tools, ['read', 'notion_list', 'notion_use']);
@@ -55,6 +72,7 @@ export function validateIntentConfiguration(config) {
 
 export function selectIntentCases(config, selectedCase) {
   validateIntentConfiguration(config);
+  if (config.discoveryExperiment !== undefined) assert.equal(selectedCase, 'D-early', 'SC06 discovery experiments require the original D-early selection');
   if (selectedCase !== undefined) assert.ok(['C-introduce', 'D-early'].includes(selectedCase), 'Only the explicitly authorized C-introduce or D-early selection is supported');
   const selected = config.cases.filter(item => selectedCase === undefined || (selectedCase === 'D-early' ? item.id !== 'C-introduce' : item.id === selectedCase));
   const followups = selected.reduce((count, item) => count + item.followups.length, 0), submissions = selected.length + followups;
@@ -79,7 +97,7 @@ const exactFile = (file, expected) => file.ownerId === expected.logicalId && fil
   && (expected.ref === undefined || file.ref === expected.ref);
 
 export function assertIntentTurn({ observation, turnObservation = observation, responses, newResponses = responses,
-  item, intent = item.intent, oracle, catalogRecords, followup = false }) {
+  item, intent = item.intent, oracle, catalogRecords, followup = false, discoveryExperiment }) {
   const providers = turnObservation.filter(event => event.phase === 'provider-request');
   assert.ok(providers.length, 'Actual verified provider input is required');
   assert.ok(turnObservation.some(event => event.phase === 'provider-transport-response' && event.status >= 200 && event.status < 300), 'Actual provider HTTP success is required');
@@ -97,7 +115,9 @@ export function assertIntentTurn({ observation, turnObservation = observation, r
   if (item.entryMode === 'discovery-only' && !followup) assert.equal(providers[0].contents.length, 0, 'D starts from metadata without preloaded Skill bodies');
   const views = graphSourceViews(responses);
   const catalog = turnObservation.filter(event => event.phase === 'catalog');
-  for (const current of catalog) {
+  const inputCatalog = discoveryExperiment === undefined ? catalog
+    : assertDiscoveryProjection({ observation: turnObservation, experiment: discoveryExperiment });
+  for (const current of inputCatalog) {
     if (current.state === 'pending') { assert.equal(followup, false, 'An ordinary continuation must expose ready metadata'); continue; }
     assert.equal(current.state, 'ready');
     assert.deepEqual(current.skills.map(skill => skill.provenance?.ownerId).sort(), catalogRecords.map(record => record.id).sort(), 'Ready default directory must contain the actual production 74');
@@ -144,7 +164,115 @@ export function assertIntentTurn({ observation, turnObservation = observation, r
   return { status: 'passed', acceptance: 'technical_only', final: { ...final, sha256: hash(final.text) },
     provider_requests: providers.length, provider_input_bytes: providers.reduce((sum, item) => sum + item.payloadBytes, 0),
     tool_calls: turnObservation.filter(event => event.phase === 'tool-call').length,
-    catalog_states: catalog.map(event => event.state), semantic_review: 'required' };
+    catalog_states: catalog.map(event => event.state), semantic_review: 'required',
+    ...(discoveryExperiment ? { discoveryExperiment, input_catalog_states: inputCatalog.map(event => event.state) } : {}) };
+}
+
+export function assertDiscoveryProjection({ observation, experiment }) {
+  assert.equal(experiment.version, 1); assert.ok(['full-cards', 'on-demand-cards'].includes(experiment.mode));
+  const providers = observation.filter(event => event.phase === 'provider-request');
+  const projections = observation.filter(event => event.phase === 'discovery-projection');
+  assert.ok(providers.length); assert.equal(projections.length, providers.length, 'Every experimental provider needs its own public projection');
+  const consumed = new Set(), inputs = [];
+  for (const provider of providers) {
+    const binding = provider.discoveryProjection, proof = projections.find(event => event.sequence === binding?.sequence);
+    assert.ok(proof && !consumed.has(proof.sequence), 'A public projection cannot be skipped or reused across providers');
+    consumed.add(proof.sequence);
+    assert.equal(proof.mode, experiment.mode); assert.equal(binding.mode, experiment.mode);
+    assert.equal(proof.stage, 'context_with_system'); assert.equal(proof.section, 'context-broker-notion-catalog');
+    assert.ok(proof.sequence < provider.sequence);
+    for (const kind of ['input', 'output']) {
+      assert.equal(hash(proof[kind + 'Section']), proof[kind + 'SectionSha256']);
+      assert.equal(Buffer.byteLength(proof[kind + 'Section']), proof[kind + 'SectionBytes']);
+    }
+    assert.equal(binding.outputSectionSha256, proof.outputSectionSha256);
+    assert.equal(binding.wireFragmentSha256, hash(proof.outputSection.trim()));
+    assert.equal(binding.markerBytes, proof.markerBytes);
+    const input = observation.find(event => event.phase === 'discovery-input-catalog' && event.sequence === proof.inputCatalogSequence);
+    const actual = observation.find(event => event.phase === 'catalog' && event.sequence > proof.sequence && event.sequence < provider.sequence
+      && event.providerPayloadSha256 === provider.observedPayloadSha256);
+    assert.ok(input && actual, 'The input directory and actual provider must both be observed');
+    assert.ok(input.sequence < proof.sequence && actual.sequence < provider.sequence);
+    assert.equal(input.userTurn, proof.userTurn); assert.equal(actual.userTurn, proof.userTurn);
+    assert.equal(input.systemPromptSha256, proof.inputSectionSha256);
+    assert.equal(actual.state, input.state, 'Presentation cannot change pending/error into a complete empty directory');
+    assert.equal(binding.inputCatalogSequence, input.sequence);
+    assert.ok(observation.some(event => event.phase === 'provider-transport-start'
+      && event.sequence > provider.sequence
+      && event.observedPayloadSha256 === provider.observedPayloadSha256
+      && /^[a-f0-9]{64}$/.test(event.wireBodySha256) && event.wireBodyBytes > 0), 'Experimental projection must reach actual HTTP');
+    if (experiment.mode === 'full-cards') {
+      assert.equal(proof.outputSection, proof.inputSection, 'Full cards are byte-exact');
+      assert.equal(proof.outputMessagesSha256, proof.inputMessagesSha256); assert.equal(proof.markerBytes, 0);
+    } else {
+      assert.ok(!/<(?:skill|router)\b/.test(proof.outputSection), 'On-demand output cannot retain default cards');
+      assert.ok(proof.outputSection.endsWith('Notion cards are on demand; discover them with notion_list.'));
+      assert.equal(proof.markerBytes, Buffer.byteLength('\nNotion cards are on demand; discover them with notion_list.'));
+    }
+    assert.match(proof.preservedMessagesSha256, /^[a-f0-9]{64}$/);
+    inputs.push(input);
+  }
+  return inputs;
+}
+
+/** Reuse the existing passive cost observer; graph transport independently
+ * binds its exact provider bytes to HTTP. Source costs remain the original
+ * whole-case SDK ledger, including startup, cancellation and resume. */
+export function summarizeDiscoveryCosts({ events, observation, submission }) {
+  const providers = events.filter(event => event.phase === 'provider_request');
+  const graph = observation.filter(event => event.phase === 'provider-request');
+  const wires = observation.filter(event => event.phase === 'provider-transport-start');
+  assert.equal(events[0]?.phase, 'observer_start'); assert.equal(events.at(-1)?.phase, 'observer_end');
+  assert.equal(events.at(-1).complete, true); assert.equal(events.at(-1).errors, 0);
+  assert.ok(!events.some(event => event.phase === 'observer_error'));
+  assert.ok(events.every(event => event.clockId === submission.clockId && event.sampleId === submission.sampleId));
+  for (const [index, event] of events.entries()) {
+    const { eventSha256, ...record } = event;
+    assert.equal(event.sequence, index + 1, 'Cost event chain sequence changed');
+    assert.equal(event.previousSha256, events[index - 1]?.eventSha256 ?? null, 'Cost event chain link changed');
+    assert.equal(hash(JSON.stringify(record)), eventSha256, 'Cost event chain content changed');
+  }
+  assert.ok(events.some(event => event.phase === 'input' && event.text.sha256 === submission.promptSha256), 'Cost input must match the actual frozen submission');
+  assert.deepEqual(providers.map(event => [event.payload.sha256, event.payload.bytes]), graph.map(event => [event.payloadSha256, event.payloadBytes]),
+    'Cost measurements must describe the same verified provider inputs');
+  assert.ok(wires.every(event => graph.some(request => request.observedPayloadSha256 === event.observedPayloadSha256)));
+  assert.ok(graph.every(event => wires.some(wire => wire.observedPayloadSha256 === event.observedPayloadSha256)));
+  const terminal = observation.filter(event => ['provider-transport-response', 'provider-transport-error'].includes(event.phase));
+  assert.equal(terminal.length, wires.length, 'Every observed HTTP attempt needs a terminal response or error');
+  const sum = values => values.every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0)
+    ? values.reduce((total, value) => total + value, 0) : null;
+  const usage = new Map(events.filter(event => event.phase === 'message_end' && event.message?.role === 'assistant')
+    .map(event => [event.request, event.message.usage]));
+  const elapsed = event => {
+    if (!event || !/^\d+$/.test(submission.monotonicNs) || !/^\d+$/.test(event.monotonicNs)) return null;
+    const delta = BigInt(event.monotonicNs) - BigInt(submission.monotonicNs);
+    assert.ok(delta >= 0n, 'Cost timestamps must share the submission clock');
+    return Number(delta) / 1e6;
+  };
+  const spans = kind => providers.flatMap(event => event.payload.diagnosticSpans).filter(span => span.kind === kind);
+  const projections = observation.filter(event => event.phase === 'discovery-projection');
+  return { method: 'existing-consumption-cost-observer-with-graph-http-binding', complete: true,
+    providerRequests: providers.length, providerJsonBytes: sum(providers.map(event => event.payload.bytes)),
+    modelHttpAttempts: wires.length, modelHttpRequestBodyBytes: sum(wires.map(event => event.wireBodyBytes)), modelHttpResponseBytes: null,
+    toolCalls: events.filter(event => event.phase === 'tool_call').length,
+    toolRounds: new Set(events.filter(event => event.phase === 'tool_call').map(event => event.request)).size,
+    schemaJsonBytes: sum(providers.flatMap(event => event.payload.components).filter(component => component.group === 'tools').map(component => component.bytes)),
+    defaultCatalogUtf8Bytes: sum(spans('catalog').map(span => span.bytes)),
+    availableSkillsUtf8Bytes: sum(spans('native-skill-directory').map(span => span.bytes)),
+    guidanceUtf8Bytes: sum(spans('guidance').map(span => span.bytes)),
+    projectedBodyUtf8Bytes: sum(spans('projected-body').map(span => span.bytes)),
+    catalogInputSectionBytes: sum(projections.map(event => event.inputSectionBytes)),
+    catalogOutputSectionBytes: sum(projections.map(event => event.outputSectionBytes)),
+    noticeBytes: sum(projections.map(event => event.markerBytes)),
+    diagnosticMethod: 'Nonadditive UTF-8 spans; do not sum nested spans or infer tokens from bytes',
+    tokens: Object.fromEntries(['input', 'output', 'cacheRead', 'cacheWrite', 'totalTokens'].map(key =>
+      [key, providers.length ? sum(providers.map(event => usage.get(event.request)?.[key])) : null])),
+    tokenMethod: 'Actual Pi assistant-reported usage; missing usage remains null',
+    timings: { submitToFirstProviderMs: elapsed(providers[0]),
+      submitToFirstEffectiveTextMs: elapsed(events.find(event => event.phase === 'message_update' && event.firstEffectiveText)),
+      submitToCompletionMs: elapsed(events.filter(event => event.phase === 'agent_end').at(-1)) },
+    observerWorkMs: events.at(-1).observerWorkMs,
+    sourceCosts: 'Use the original whole-case sourceAccounting, without splitting or duplicating background SDK requests' };
 }
 
 export function assertIntentSource({ observation, responses, sourceLedger, hostLedger, scope, libraryId, catalogRecords,
@@ -210,6 +338,11 @@ export async function intentDoctor(path, selectedCase) {
   assert.equal(artifacts.package.sha256, config.candidate.packageSha256);
   assert.equal(artifacts.runtimeSha256, config.candidate.runtimeSha256);
   for (const file of config.harness) assert.equal(hash(await readFile(file.path)), file.sha256, 'Frozen intent harness changed');
+  const experiment = discoveryExperimentIdentity(config);
+  if (experiment) {
+    const costObserver = fileURLToPath(new URL('./skill-consumption-cost.mjs', import.meta.url));
+    assert.ok(config.harness.some(file => file.path === costObserver), 'Freeze the existing cost observer for both discovery arms');
+  }
   const host = await resolveHost(config.pi.path), version = (await runCommand(config.pi.path, ['--version'], { cwd: root, env: process.env, timeoutMs: 10000 })).stdout.trim();
   assertSupportedPiVersion(version); assert.equal(version, config.pi.version);
   assert.equal(hash(await readFile(host.identity)), config.pi.executableSha256);
@@ -217,6 +350,7 @@ export async function intentDoctor(path, selectedCase) {
   assert.ok(isAbsolute(config.evidenceRoot)); await mkdir(config.evidenceRoot, { recursive: true });
   return { config, oracle, semantic, catalog, artifacts, host, executionScope, report: { status: 'ready', model: config.model, executionScope,
     budget: config.budget, sourceMode: 'sdk', productionDefaultCount: 74, pi: { ...host, version },
+    ...(experiment ? { phase: config.phase, discoveryExperiment: experiment, actualPublicProjection: 'not_run', experimentalAdoption: 'not_authorized' } : {}),
     artifacts, config: { path, sha256: hash(await readFile(path)) }, privateOracleSha256: config.privateOracle.sha256,
     semanticReferenceSha256: config.privateOracle.semanticReference.sha256,
     boundary: 'Read-only installed identity, private source and frozen budget inspection; no Notion or model request' } };
@@ -243,6 +377,11 @@ export async function runIntentCases(configPath, selectedCase) {
     model: config.model, budget: config.budget, executionScope, doctor, cases: [], submissions: 0, automaticRetries: 0,
     semanticOracle: { sourceBodySha256: semantic.sourceBody.sha256, reference: config.privateOracle.semanticReference },
     not_claimed: ['Formal SC21 matrix', 'Cost acceptance', 'Daily installation switch', 'Autonomous execution of the generated procedure'] };
+  if (config.discoveryExperiment) {
+    manifest.kind = 'pi-discovery-presentation-experiment';
+    manifest.discoveryExperiment = discoveryExperimentIdentity(config);
+    manifest.not_claimed.push('SC20 native Skill equivalence', 'Production adoption of the experimental presentation');
+  }
   await save(join(evidence, 'config.json'), config); await save(join(evidence, 'manifest.json'), manifest);
   console.log(JSON.stringify({ evidence, status: 'running', executionScope, primaryCases: executionScope.plannedBudget.primaryCases, maxSubmissions: executionScope.plannedBudget.maxSubmissions }));
   for (const item of config.cases.filter(item => executionScope.selectedCaseIds.includes(item.id))) {
@@ -273,11 +412,13 @@ export async function runIntentCases(configPath, selectedCase) {
       acceptance: 'technical_only_until_semantic_review', entryMode: item.entryMode, turns: [], files: [],
       prelaunch: { cli_entries: 0, broker_entries: 0, session_entries: 0, oracle_consumer_disjoint: true },
       sourceCommandConfigured: false, semanticReview: { status: 'pending', referenceSha256: config.privateOracle.semanticReference.sha256 } };
+    if (config.discoveryExperiment) result.discoveryExperiment = { ...manifest.discoveryExperiment, costs: [] };
     const owner = { evidence: result.evidence, purpose: 'native-graph-model', kind: 'pi-model-intent-case' };
     await save(join(scratch, 'ownership.json'), owner); await save(join(output, 'ownership.json'), owner);
     await save(join(output, 'project.json'), project); await save(join(output, 'result.json'), result);
     manifest.cases.push({ id: item.id, evidence: result.evidence, status: 'running' });
     let rpc, processIndex = 0, session, availabilityFailure = false;
+    const costRuns = [];
     const stop = async () => {
       if (!rpc) return;
       const current = rpc; rpc = undefined;
@@ -290,7 +431,8 @@ export async function runIntentCases(configPath, selectedCase) {
       const observer = join(control, 'observer-' + processIndex + '.mjs'), module = join(control, 'graph-observer-' + processIndex + '.mjs');
       const settings = { sourceMode: 'sdk', entryMode: item.entryMode, ...(item.entryMode === 'explicit-root' ? { rootRef: oracle.roots.B.ref } : {}),
         model: config.model, prompt: item.initial.text, cache, cwd, responses: responsesPath, payloads, output: observationPath,
-        project, piExecutable: host.identity, sequenceOffset };
+        project, piExecutable: host.identity, sequenceOffset,
+        ...(config.discoveryExperiment ? { discoveryExperiment: config.discoveryExperiment } : {}) };
       await writeFile(module, graphObserverModule(settings, pathToFileURL(join(dirname(config.candidate.extension), 'native-reference.ts')).href), { mode: 0o600 });
       await writeFile(observer, "import {appendFileSync} from 'node:fs';import {createHash} from 'node:crypto';export default api=>{api.on('input',event=>appendFileSync(" + JSON.stringify(observationPath)
         + ",JSON.stringify({phase:'native-input',at:new Date().toISOString(),textSha256:createHash('sha256').update(event.text??'').digest('hex')})+'\\n'));"
@@ -299,7 +441,19 @@ export async function runIntentCases(configPath, selectedCase) {
       const args = ['--no-extensions', '--no-skills', '--no-mcp', '--no-context-files', '--no-prompt-templates',
         '--session-dir', sessions, '--tools', 'read,notion_list,notion_use', '-e', observer, '-e', config.candidate.extension,
         '-e', module, '--model', config.model, ...(session ? ['--session', session] : [])];
-      await save(join(output, 'launch-' + processIndex + '.json'), { host, args, cwd, source, observerSha256: hash(await readFile(observer)), graphObserverSha256: hash(await readFile(module)), sourceHookSha256: hash(await readFile(hook)) });
+      let cost;
+      if (config.discoveryExperiment) {
+        cost = { processIndex, sequenceOffset, sampleId: item.id + '-' + processIndex, clockId: 'intent-' + process.pid,
+          path: join(output, 'consumption-cost-' + processIndex + '.jsonl'), extension: join(control, 'consumption-cost-' + processIndex + '.mjs') };
+        await writeFile(cost.extension, consumptionCostExtensionSource({ output: cost.path, checkoutRoot: root,
+          runId: basename(evidence), sampleId: cost.sampleId, clockId: cost.clockId }), { mode: 0o600 });
+        cost.extensionSha256 = hash(await readFile(cost.extension)); costRuns.push(cost);
+        // Last passive observer measures the public projection without changing
+        // provider input. Both experimental arms load the same observer.
+        args.push('-e', cost.extension);
+      }
+      await save(join(output, 'launch-' + processIndex + '.json'), { host, args, cwd, source, observerSha256: hash(await readFile(observer)), graphObserverSha256: hash(await readFile(module)), sourceHookSha256: hash(await readFile(hook)),
+        ...(cost ? { consumptionCostObserver: cost } : {}) });
       rpc = await startRpc({ host: config.pi.path, cwd, env, args, timeoutMs: 300000 });
       const state = await rpc.command('get_state'); await save(join(output, 'state-' + processIndex + '.json'), state);
     };
@@ -315,13 +469,21 @@ export async function runIntentCases(configPath, selectedCase) {
         assert.ok(manifest.submissions <= executionScope.plannedBudget.maxSubmissions, 'Frozen maximum selected submissions exceeded');
         await save(join(evidence, 'manifest.json'), manifest); await save(join(output, 'result.json'), result);
         try {
+          if (config.discoveryExperiment) {
+            const cost = costRuns.at(-1);
+            assert.equal(cost.submission, undefined, 'The D experiment uses one submission per original process lifecycle');
+            cost.submission = { sampleId: cost.sampleId, clockId: cost.clockId, monotonicNs: process.hrtime.bigint().toString(),
+              promptSha256: turn.prompt.sha256, index };
+            receipt.costSubmission = cost.submission;
+            await save(join(output, 'cost-submission-' + processIndex + '.json'), cost.submission);
+          }
           await rpc.prompt(turn.prompt.text);
           const observation = await rows(observationPath), turnObservation = observation.slice(before);
           assert.ok(turnObservation.some(event => event.phase === 'native-input' && event.textSha256 === turn.prompt.sha256), 'Actual native input must match the frozen prompt');
           const responses = await collectIntentResponses(responsesPath);
           Object.assign(receipt, assertIntentTurn({ observation, turnObservation, responses,
             newResponses: responses.filter(row => !beforeIds.has(row.requestId)), item, intent: turn.intent,
-            oracle, catalogRecords: catalog.records, followup: index > 0 }));
+            oracle, catalogRecords: catalog.records, followup: index > 0, discoveryExperiment: config.discoveryExperiment }));
           const state = await rpc.command('get_state'); session = state.sessionFile;
           assert.ok(session, 'An actual session file is required for continuation');
           receipt.session = session;
@@ -341,6 +503,25 @@ export async function runIntentCases(configPath, selectedCase) {
     } catch (error) { result.error = { code: error.code ?? 'INTENT_HOST_FAILED', message: error.message }; }
     finally { try { await stop(); } catch (error) { result.error ??= { code: 'HOST_FINALITY_FAILED', message: error.message }; } }
     const observation = await rows(observationPath), responses = await collectIntentResponses(responsesPath), sourceLedger = await rows(ledger), hostLedger = await rows(owned);
+    if (config.discoveryExperiment) {
+      try {
+        for (const [index, cost] of costRuns.entries()) {
+          assert.ok(cost.submission, 'A started experimental process must have its original submission receipt');
+          const observed = await readConsumptionCostEvents(cost.path), through = costRuns[index + 1]?.sequenceOffset ?? Infinity;
+          const summary = summarizeDiscoveryCosts({ events: observed.events, submission: cost.submission,
+            observation: observation.filter(event => event.sequence > cost.sequenceOffset && event.sequence <= through) });
+          const receipt = { processIndex: cost.processIndex, submission: cost.submission,
+            events: { path: cost.path, ...observed.artifact }, ...summary };
+          result.discoveryExperiment.costs.push(receipt);
+          await save(join(output, 'discovery-cost-' + cost.processIndex + '.json'), receipt);
+        }
+        result.discoveryExperiment.costStatus = 'complete';
+      } catch (error) {
+        result.discoveryExperiment.costStatus = 'incomplete';
+        result.discoveryExperiment.costError = { code: 'DISCOVERY_COST_EVIDENCE_FAILED', message: error.message };
+        result.error ??= result.discoveryExperiment.costError;
+      }
+    }
     try {
       const selected = item.entryMode === 'explicit-root' ? oracle.preparations.B.map(row => ({ id: row.logicalId })) : [];
       const common = { observation, responses, sourceLedger, hostLedger, scope: oracle.target.scope,
