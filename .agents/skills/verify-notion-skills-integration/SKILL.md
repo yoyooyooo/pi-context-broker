@@ -9,6 +9,8 @@ AH-617 消费链重构先读 [消费链验证地图](features/skill-consumption.
 
 AH-561 的直连请求和跨 Skill 图先走 [request-engine](features/request-engine.md) 与 [skill-dependency-graph](features/skill-dependency-graph.md)，复用 `scripts/verify-skill-graph-contract.mjs` 的离线反例与 fail-before。该入口保存两条根选择提示、私有 oracle/trace 合同、三层缓存边界与五类证据；`contract-valid` 不代表真实模型通过。当前 live/model/helper 使用项目直连引擎和安全请求账本；每次交付必须重新取得真实服务、宿主和安装证据，既有历史回执保持原状。
 
+生成 Skill 的实际产物验证继续使用原 graph `exercise`，按[产物执行合同](../../../scripts/notion-skill-graph-acceptance.md#generated-artifacts-and-execution)区分两条路径：`--command-json` 仅记录 `existing-project-check`；`--review` 才将独立审阅且绑定完整 bytes/hash 的一个 Node helper 安装到独立 owned 项目副本并执行。D 不从生成文字自动挑选命令，完整产物先记 `waiting-for-independent-exercise`。原技术失败不执行、不改判；成功退出只记 execution completed，仍独立核查真实功能行为、HTTP/动作/结果与语义。按新 exercise evidence root 做 Evidence→系统 Trash→Evidence，保留原 final、源回执及失败。具体审阅字段、预算与清理见同一地图和验收索引；不引入第三套 runner。
+
 从本仓库根目录执行命令。先按变更选择下列地图；使用真实 Pi/OMP extension 与 provider 边界捕获，不把直接调用 adapter 或 CLI 当成宿主消费通过。此 Skill 的维护目录在 `.agents`，不修改用户全局配置。
 
 缺失引用按 [selection 的 Missing-reference regression route](features/dollar-completion-selection.md#missing-reference-regression-route) 验收。未知名字/source/alias 与限定引用及选中目标明确 typed not-found 原样透传；真实已选记录故障仍失败。双轮混合三种 Kind、图片、单次派发及取消/切会话需独立证据，不修改历史冻结结论。

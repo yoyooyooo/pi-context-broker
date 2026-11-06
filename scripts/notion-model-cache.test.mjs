@@ -627,8 +627,8 @@ async function driveIntentStopping(config, fault, inspect) {
         return { status: 'passed', final: { success: true, text: 'Controlled complete final.' } };
       },
       retainedFileInventory: async () => [],
-      retainGeneratedPlan: async ({ evidence }) => { await writeFile(join(evidence, 'generated-skill.md'), '`npm test`\n'); return { artifactStatus: 'complete-skill-files-retained', files: [{ evidencePath: 'generated-skill.md' }] }; },
-      exerciseGeneratedProcedure: async (evidence, command) => { exercises.push({ evidence, command }); return { status: 'passed' }; },
+      retainGeneratedPlan: async ({ evidence }) => { await writeFile(join(evidence, 'generated-skill.md'), 'Do not substitute `npm test` for the complete helper.\n'); return { artifactStatus: 'complete-skill-files-retained', files: [{ evidencePath: 'generated-skill.md' }] }; },
+      exerciseExistingProjectCommand: async (evidence, command) => { exercises.push({ evidence, command }); assert.fail('D must wait for independent exercise review'); },
       startRpc: async options => {
         const value = settings.get(options.cwd), caseId = path.basename(path.dirname(value.output));
         const processIndex = launches.filter(row => row.caseId === caseId).length + 1;
@@ -684,7 +684,8 @@ test('ordinary daily D keeps independent intent failure distinct and runs later 
   const config = { ...intentConfig(), modelContract: 'daily-route-v1', model: 'magpie/group/flash', thinkingLevel: 'high', rpcTimeoutMs: 300000 };
   await driveIntentStopping(config, 'intent', ({ manifest, results, prompts, exercises }) => {
     assert.deepEqual(manifest.cases.map(item => item.id), ['D-named-introduce', 'D-natural-task', 'D-chat']);
-    assert.equal(prompts.length, 3); assert.equal(exercises.length, 1);
+    assert.equal(prompts.length, 3); assert.equal(exercises.length, 0);
+    assert.equal(results[1].generatedExercise.status, 'waiting-for-independent-exercise');
     assert.equal(manifest.stoppedAfterTechnicalFailure, undefined); assert.equal(manifest.status, 'failed');
     assert.equal(results[0].sharedTechnicalFailure, false);
     assert.deepEqual(results[0].notRunTurns.map(turn => [turn.intent, turn.reason]), [['reuse-introduction', 'failed_prerequisite']]);
@@ -703,6 +704,19 @@ test('ordinary legacy D keeps its original continuation and ready D keeps its ex
     assert.equal(manifest.directoryStartup.maxArmWallMs, 1200000);
     assert.deepEqual(manifest.notRunCases.map(item => item.reason), ['not_selected_for_early_feedback', 'prior_technical_failure_or_arm_deadline', 'prior_technical_failure_or_arm_deadline']);
   });
+});
+
+test('D artifact review cannot accept a missing or legacy existing-project execution receipt', async () => {
+  const result = { gate: 'D-natural-task', status: 'passed', evidence: '/controlled/original' };
+  const row = { caseId: result.gate, index: 0, verdict: 'passed' };
+  await assert.rejects(intentRunner.verifyIntentGeneratedExercises({ turns: [row] }, [result]), /independent helper execution receipt/);
+  const root = await mkdtemp(join(tmpdir(), 'intent-legacy-exercise-'));
+  const old = JSON.stringify({ kind: 'existing-project-check', status: 'passed', generatedProcedureExecuted: true });
+  await writeFile(join(root, 'result.json'), old);
+  await assert.rejects(intentRunner.verifyIntentGeneratedExercises({ turns: [{ ...row, generatedExercise: { evidence: await realpath(root), resultSha256: intentHash(old) } }] }, [result]));
+  assert.deepEqual(await intentRunner.verifyIntentGeneratedExercises({ turns: [{ ...row, verdict: 'failed' }] }, [result]), []);
+  assert.deepEqual(await intentRunner.verifyIntentGeneratedExercises({ turns: [row] }, [{ ...result, status: 'failed' }]), []);
+  console.log('Owned legacy-exercise receipt fixture retained: ' + root);
 });
 
 const readyProviderInput = (mode, changedCard = {}) => {

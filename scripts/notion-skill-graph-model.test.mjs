@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { mkdtemp, mkdir, readFile, writeFile, symlink, rename } from 'node:fs/promises';
 import { graphTrace, observeGraphGate, summarizeSamples, GRAPH_GATE_TOOLS, createGraphFallbackTraps, retainedSourceProofInput, readGateConfig } from './notion-skill-graph-model.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
-import { createOwnedGraphProject, exerciseGeneratedProcedure, retainGeneratedPlan } from './notion-skill-graph-project.mjs';
+import { createOwnedGraphProject, exerciseExistingProjectCommand, retainGeneratedPlan } from './notion-skill-graph-project.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
 import { contractFixture, dailyRouteContract, evaluateGraphTrace, frozenPrompt, selfTest } from './verify-skill-graph-contract.mjs';
 import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
@@ -1605,25 +1605,28 @@ test('prose-only output and incomplete referenced files cannot count as a genera
   const prose = await retainGeneratedPlan({ evidence: proseEvidence, final: { success: true, text: 'Read the source and run `npm test`; retain the evidence.' }, prompt, project });
   assert.equal(prose.artifactStatus, 'plan-only'); assert.deepEqual(prose.files, []);
   await save(path.join(proseEvidence, 'result.json'), { version: 1, status: 'passed', evidence: proseEvidence, project, generatedPlan: prose, files: [] });
-  await assert.rejects(exerciseGeneratedProcedure(proseEvidence, ['npm', 'test']), /prose-only/);
+  await assert.rejects(exerciseExistingProjectCommand(proseEvidence, ['npm', 'test']), /prose-only/);
   const missingEvidence = path.join(base, 'missing'); await mkdir(missingEvidence);
   const missing = await retainGeneratedPlan({ evidence: missingEvidence, final: { success: true, text: '### `.agents/skills/verify-owned/SKILL.md`\n\n````markdown\n---\nname: verify-owned\ndescription: Verify the owned project.\n---\n\nRead [the steps](references/steps.md), then run `npm test`.\n````\n' }, prompt, project });
   assert.equal(missing.artifactStatus, 'incomplete-generated-files');
   assert.deepEqual(missing.unresolvedReferences, [{ from: '.agents/skills/verify-owned/SKILL.md', href: 'references/steps.md' }]);
 });
 
-test('one verbatim generated procedure drives the unchanged real owned project; guessed or shell commands are rejected', async () => {
+test('an existing project command never claims to execute the generated helper', async () => {
   const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-generated-procedure-'));
   const project = await createOwnedGraphProject(path.join(base, 'project'));
   const evidence = path.join(base, 'evidence'); await mkdir(evidence);
   const generatedPlan = await retainGeneratedPlan({ evidence, final: { success: true, text: '# Controlled adapter fixture\n\n### `.agents/skills/verify-ticket-service/SKILL.md`\n\n````markdown\n---\nname: verify-ticket-service\ndescription: Verify the owned ticket HTTP service.\n---\n\nRun `npm test` for the existing HTTP checks. This fixture is not real-model acceptance.\n````\n' }, prompt: { sha256: hash('controlled fixture') }, project });
   assert.equal(generatedPlan.artifactStatus, 'complete-skill-files-retained');
   await save(path.join(evidence, 'result.json'), { version: 1, status: 'passed', evidence, project, generatedPlan, files: [], proofLayer: 'controlled test of the artifact adapter only' });
-  await assert.rejects(exerciseGeneratedProcedure(evidence, ['sh', '-c', 'npm test']));
-  await assert.rejects(exerciseGeneratedProcedure(evidence, ['node', '--test']));
-  const execution = await exerciseGeneratedProcedure(evidence, ['npm', 'test']);
+  await assert.rejects(exerciseExistingProjectCommand(evidence, ['sh', '-c', 'npm test']));
+  await assert.rejects(exerciseExistingProjectCommand(evidence, ['node', '--test']));
+  const execution = await exerciseExistingProjectCommand(evidence, ['npm', 'test']);
   assert.equal(execution.status, 'passed'); assert.equal(execution.closeObserved, true); assert.equal(execution.planSha256, generatedPlan.sha256);
-  assert.match(await readFile(path.join(evidence, 'generated-procedure.stdout.log'), 'utf8'), /(?:#|ℹ) fail 0/);
+  assert.equal(execution.kind, 'existing-project-check');
+  const result = JSON.parse(await readFile(path.join(evidence, 'result.json'), 'utf8'));
+  assert.notEqual(result.productAcceptance.generatedProcedureExecuted, true);
+  assert.match(await readFile(path.join(evidence, 'existing-project-check.stdout.log'), 'utf8'), /(?:#|ℹ) fail 0/);
 });
 
 test('matrix status retains a final run failure even when all five graph samples passed', () => {

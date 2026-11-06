@@ -1,18 +1,37 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, realpath, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, symlink, writeFile, rename } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import fsPromises from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createOwnedGraphProject, inspectOwnedGraphProject, extractGeneratedFiles, retainGeneratedPlan } from './notion-skill-graph-project.mjs';
+import * as graphProject from './notion-skill-graph-project.mjs';
 import { dailyRouteContract } from './verify-skill-graph-contract.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const project = { sha256: hash('controlled file extraction fixture'), files: [] };
 const prompt = { sha256: hash('unchanged natural task') };
 const evidence = async () => mkdtemp(join(await realpath(tmpdir()), 'graph-file-extraction-'));
+const systemTrashAvailable = process.env.GRAPH_TEST_DISABLE_SYSTEM_TRASH !== '1' && process.platform === 'darwin'
+  && await fsPromises.access('/usr/bin/trash', 1).then(() => true, () => false);
+const trashNotRun = (t, result) => t.diagnostic('System Trash ECE not_run: ' + JSON.stringify({ platform: process.platform,
+  capability: 'unavailable-or-explicitly-disabled-for-test', coreAssertions: 'executed', evidence: result.evidence, scratch: result.scratch }));
 
 const dailyProfile = () => dailyRouteContract({ modelContract: 'daily-route-v1', model: 'magpie/group/flash', thinkingLevel: 'high', rpcTimeoutMs: 300000 });
+test('daily existing project check keeps the same sixth-file policy before and after execution', async () => {
+  const base = await evidence(), modelProfile = dailyProfile();
+  const actualProject = await createOwnedGraphProject(join(base, 'project'), { modelProfile });
+  const output = join(base, 'evidence'); await mkdir(output);
+  const final = { success: true, text: '````markdown path: .agents/skills/verify-owned/SKILL.md\n---\nname: verify-owned\ndescription: Verify the owned project.\n---\n\nRun `npm test` for existing project checks.\n````\n' };
+  const generatedPlan = await retainGeneratedPlan({ evidence: output, final, prompt, project: actualProject });
+  await writeFile(join(output, 'result.json'), JSON.stringify({ status: 'passed', evidence: output, modelProfile, project: actualProject, generatedPlan, files: [] }));
+  const execution = await graphProject.exerciseExistingProjectCommand(output, ['npm', 'test']);
+  assert.equal(execution.status, 'passed');
+  assert.deepEqual(await inspectOwnedGraphProject(actualProject.root, { modelProfile }), actualProject);
+});
 test('daily owned inventory admits the frozen sixth file only under its explicit contract', async () => {
   const directory = await evidence(), modelProfile = dailyProfile();
   const before = await createOwnedGraphProject(directory);
@@ -399,4 +418,234 @@ test('first body-line paths do not promote incomplete Skills or missing referenc
     assert.deepEqual(receipt.unresolvedReferences, unresolvedReferences);
     assert.equal(await readFile(receipt.path, 'utf8'), text);
   }
+});
+
+async function controlledLoopbackFeature() {
+  const assert = (await import('node:assert/strict')).default;
+  const { spawn } = await import('node:child_process');
+  const { mkdir, writeFile } = await import('node:fs/promises');
+  const child = spawn(process.execPath, ['src/server.mjs'], { cwd: process.cwd(), env: { ...process.env, PORT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const closed = new Promise((accept, reject) => { child.once('error', reject); child.once('close', (code, signal) => accept({ code, signal })); });
+  const requests = [], report = { pid: child.pid, args: ['src/server.mjs'], cwd: process.cwd(), inheritedSecret: process.env.GENERATED_HELPER_TEST_SECRET ?? null };
+  try {
+    const ready = await new Promise((accept, reject) => { child.once('error', reject); child.stdout.once('data', bytes => { try { accept(JSON.parse(bytes.toString())); } catch (error) { reject(error); } }); });
+    assert.equal(ready.address.address, '127.0.0.1'); assert.ok(ready.address.port > 0); report.ready = ready;
+    const origin = 'http://127.0.0.1:' + ready.address.port;
+    const request = async (path, options = {}) => {
+      const response = await fetch(origin + path, options), body = await response.json();
+      requests.push({ method: options.method ?? 'GET', path, requestBody: options.body ?? null, status: response.status, responseBody: body });
+      return { status: response.status, body };
+    };
+    const created = await request('/tickets', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ subject: 'Reviewed generated helper', priority: 'high' }) });
+    assert.equal(created.status, 201); assert.equal(created.body.priority, 'high');
+    const fetched = await request('/tickets/' + created.body.id);
+    assert.equal(fetched.status, 200); assert.deepEqual(fetched.body, created.body);
+    report.requests = requests;
+  } finally { child.kill('SIGTERM'); report.closed = await closed; }
+  await mkdir('artifacts', { recursive: true });
+  await writeFile('artifacts/feature.json', JSON.stringify(report, null, 2) + '\n');
+}
+
+async function reviewedHelperFixture(t, { helper = '(' + controlledLoopbackFeature.toString() + ')();\n', status = 'passed', extraFiles = [] } = {}) {
+  const root = await evidence(), output = join(root, 'evidence'), privateRoot = join(root, 'private');
+  await mkdir(output); await mkdir(privateRoot);
+  const modelProfile = dailyProfile(), actualProject = await createOwnedGraphProject(join(root, 'project'), { modelProfile });
+  const entry = '.agents/skills/verify-owned/scripts/acceptance.mjs';
+  const files = [
+    { path: '.agents/skills/verify-owned/SKILL.md', content: '---\nname: verify-owned\ndescription: Verify one owned ticket feature.\n---\n\nUse [the complete helper](scripts/acceptance.mjs). Do not substitute `npm test`.\n' },
+    { path: entry, content: helper }, ...extraFiles,
+  ];
+  const final = { success: true, text: files.map(file => '````text path: ' + file.path + '\n' + file.content + '````\n').join('\n') };
+  const generatedPlan = await retainGeneratedPlan({ evidence: output, final, prompt, project: actualProject });
+  const result = { version: 1, status, evidence: output, scratch: root, modelProfile, project: actualProject, generatedPlan, files: [] };
+  await writeFile(join(output, 'result.json'), JSON.stringify(result, null, 2) + '\n');
+  const reviewPath = join(await evidence(), 'review.json');
+  const review = { version: 1, purpose: 'generated-helper-exercise', reviewer: 'independent controlled-fixture reviewer', approvedForOwnedExercise: true,
+    parent: { evidence: output, resultSha256: hash(await readFile(join(output, 'result.json'))), planSha256: generatedPlan.sha256, projectSha256: actualProject.sha256,
+      files: generatedPlan.files.map(({ path, sha256, bytes }) => ({ path, sha256, bytes })) },
+    entry: { path: entry, sha256: hash(helper) }, command: { executable: await realpath(process.execPath), args: [entry] }, budget: { timeoutMs: 20000, killGraceMs: 1000 } };
+  await writeFile(reviewPath, JSON.stringify(review, null, 2) + '\n', { mode: 0o600 });
+  const originalResult = await readFile(join(output, 'result.json'));
+  t.diagnostic('Owned reviewed-helper fixture: ' + JSON.stringify({ root, reviewPath, realPi: 0, realModel: 0, realNotion: 0 }));
+  return { root, evidence: output, reviewPath, review, result, project: actualProject, originalResult, generatedPlan, entry };
+}
+
+test('reviewed generated helper drives real loopback HTTP; available system Trash completes CLI ECE', async t => {
+  const value = await reviewedHelperFixture(t);
+  const driver = new URL('./notion-skill-graph-model.mjs', import.meta.url).pathname;
+  const invoke = (action, args) => spawnSync(process.execPath, [driver, action, ...args], { encoding: 'utf8', timeout: 30000,
+    env: { ...process.env, GENERATED_HELPER_TEST_SECRET: 'controlled-secret-must-not-be-inherited' } });
+  const exercised = invoke('exercise', ['--evidence', value.evidence, '--review', value.reviewPath]);
+  assert.equal(exercised.status, 0, exercised.stderr);
+  const result = JSON.parse(exercised.stdout);
+  t.diagnostic('Owned generated-helper exercise: ' + JSON.stringify({ evidence: result.evidence, scratch: result.scratch }));
+  assert.equal(result.kind, 'generated-helper-exercise'); assert.equal(result.status, 'completed');
+  assert.notEqual(result.project.root, value.project.root); assert.equal(result.project.sha256, value.project.sha256);
+  assert.equal(result.execution.spawnObserved, true); assert.equal(result.execution.closeObserved, true);
+  assert.equal(result.execution.processGroupAbsent, true); assert.equal(result.execution.code, 0);
+  assert.deepEqual(result.execution.args, value.review.command.args); assert.equal(result.execution.entrySha256, value.review.entry.sha256);
+  assert.equal(result.productAcceptance.status, 'independent-review-required');
+  assert.equal(result.productAcceptance.generatedProcedureExecuted, undefined);
+  await assert.rejects(readFile(join(result.project.root, '.pi/settings.json')), error => error.code === 'ENOENT');
+  for (const file of value.generatedPlan.files) assert.equal(hash(await readFile(join(result.project.root, file.path))), file.sha256);
+  const actual = JSON.parse(await readFile(join(result.evidence, 'owned-output/artifacts/feature.json'), 'utf8'));
+  assert.equal(actual.inheritedSecret, null); assert.equal(actual.ready.address.address, '127.0.0.1');
+  assert.deepEqual(actual.requests.map(row => [row.method, row.status]), [['POST', 201], ['GET', 200]]);
+  assert.deepEqual(JSON.parse(actual.requests[0].requestBody), { subject: 'Reviewed generated helper', priority: 'high' });
+  assert.deepEqual(actual.requests[1].responseBody, actual.requests[0].responseBody);
+  assert.equal(actual.closed.code, 0);
+  const reference = { evidence: result.evidence, resultSha256: hash(await readFile(join(result.evidence, 'result.json'))) };
+  await assert.rejects(graphProject.verifyGeneratedExerciseAcceptance(value.result, reference), /requires owned exercise cleanup/);
+  const lifecycle = [];
+  for (const action of systemTrashAvailable ? ['evidence', 'cleanup', 'evidence'] : ['evidence']) {
+    const run = invoke(action, ['--evidence', result.evidence]); assert.equal(run.status, 0, run.stderr);
+    lifecycle.push({ action, result: JSON.parse(run.stdout) });
+  }
+  await writeFile(join(value.root, 'exercise-ece.json'), JSON.stringify({ systemTrash: systemTrashAvailable ? 'completed' : 'not_run', lifecycle }, null, 2) + '\n');
+  assert.ok(lifecycle.every(row => row.result.status === 'preserved'));
+  if (systemTrashAvailable) {
+    assert.equal(lifecycle[1].result.cleanup, 'trashed');
+    await assert.rejects(readFile(join(result.scratch, 'ownership.json')), error => error.code === 'ENOENT');
+  } else trashNotRun(t, result);
+  assert.deepEqual(await readFile(join(value.evidence, 'result.json')), value.originalResult, 'Original model evidence remains immutable');
+  assert.deepEqual(await inspectOwnedGraphProject(value.project.root, { modelProfile: value.result.modelProfile }), value.project);
+  if (systemTrashAvailable) assert.equal((await graphProject.verifyGeneratedExerciseAcceptance(value.result, reference)).execution, 'completed');
+  else await assert.rejects(graphProject.verifyGeneratedExerciseAcceptance(value.result, reference), /requires owned exercise cleanup/);
+});
+
+for (const fault of ['missing-review', 'failed-prerequisite', 'result-hash', 'plan-bytes', 'helper-bytes', 'file-manifest', 'entry-argv', 'interpreter', 'budget', 'incomplete', 'unsafe-path', 'symlink', 'baseline-overwrite', 'runtime-settings', 'consumer-review']) {
+  test('reviewed helper rejects ' + fault + ' before creating an execution or spawning', async t => {
+    const extraFiles = fault === 'baseline-overwrite' ? [{ path: 'src/tickets.mjs', content: 'changed\n' }]
+      : fault === 'runtime-settings' ? [{ path: '.pi/settings.json', content: '{}\n' }] : [];
+    const value = await reviewedHelperFixture(t, { status: fault === 'failed-prerequisite' ? 'failed' : 'passed', extraFiles });
+    const receipt = structuredClone(value.generatedPlan), review = structuredClone(value.review);
+    let reviewPath = value.reviewPath;
+    if (fault === 'missing-review') reviewPath += '.missing';
+    if (fault === 'result-hash') review.parent.resultSha256 = '0'.repeat(64);
+    if (fault === 'plan-bytes') await writeFile(receipt.path, 'changed actual final');
+    if (fault === 'helper-bytes') await writeFile(join(value.evidence, 'generated-files', value.entry), 'console.log("changed");\n');
+    if (fault === 'file-manifest') review.parent.files.pop();
+    if (fault === 'entry-argv') review.command.args = ['--eval', 'console.log("must not run")'];
+    if (fault === 'interpreter') review.command.executable = '/bin/sh';
+    if (fault === 'budget') review.budget.timeoutMs = 20001;
+    if (fault === 'incomplete') receipt.artifactStatus = 'incomplete-generated-files';
+    if (fault === 'unsafe-path') receipt.files[0].path = '../escape/SKILL.md';
+    if (['incomplete', 'unsafe-path'].includes(fault)) await writeFile(join(value.evidence, 'generated-plan.json'), JSON.stringify(receipt));
+    if (fault === 'symlink') { const target = join(value.evidence, 'generated-files', value.entry); await rename(target, target + '.original'); await symlink(target + '.original', target); }
+    if (fault === 'consumer-review') reviewPath = join(value.evidence, 'self-approval.json');
+    if (fault !== 'missing-review') await writeFile(reviewPath, JSON.stringify(review));
+    const before = await readdir(value.root);
+    await assert.rejects(graphProject.exerciseReviewedGeneratedHelper(value.evidence, reviewPath));
+    assert.deepEqual(await readdir(value.root), before, 'No execution evidence or owned installation was created');
+    assert.deepEqual(await readFile(join(value.evidence, 'result.json')), value.originalResult);
+  });
+}
+
+for (const [name, helper, budget] of [
+  ['nonzero', 'process.exitCode = 17;\n', { timeoutMs: 20000, killGraceMs: 1000 }],
+  ['timeout', 'setInterval(() => {}, 1000);\n', { timeoutMs: 100, killGraceMs: 1000 }],
+  ['only-prints-pass', 'console.log("PASS");\n', { timeoutMs: 20000, killGraceMs: 1000 }],
+]) test('helper ' + name + ' retains actual execution without manufacturing feature acceptance', async t => {
+  const value = await reviewedHelperFixture(t, { helper }); value.review.budget = budget;
+  await writeFile(value.reviewPath, JSON.stringify(value.review));
+  const result = await graphProject.exerciseReviewedGeneratedHelper(value.evidence, value.reviewPath);
+  t.diagnostic('Owned generated-helper exercise: ' + JSON.stringify({ evidence: result.evidence, scratch: result.scratch }));
+  assert.equal(result.status, name === 'only-prints-pass' ? 'completed' : 'failed');
+  assert.equal(result.productAcceptance.status, 'independent-review-required');
+  assert.equal(result.execution.closeObserved, true); assert.equal(result.execution.processGroupAbsent, true);
+  assert.equal(result.execution.timedOut, name === 'timeout');
+  if (name === 'nonzero') assert.equal(result.execution.code, 17);
+  const reference = { evidence: result.evidence, resultSha256: hash(await readFile(join(result.evidence, 'result.json'))) };
+  if (name !== 'only-prints-pass') await assert.rejects(graphProject.verifyGeneratedExerciseAcceptance(value.result, reference));
+  await graphProject.inspectGeneratedExercise(result.evidence);
+  if (systemTrashAvailable) { await graphProject.cleanupGeneratedExercise(result.evidence); await graphProject.inspectGeneratedExercise(result.evidence); }
+  else trashNotRun(t, result);
+  assert.deepEqual(await readFile(join(value.evidence, 'result.json')), value.originalResult);
+});
+
+test('a setup copy failure retains a not-run receipt; available system Trash completes ECE', async t => {
+  const value = await reviewedHelperFixture(t);
+  const originalWrite = fsPromises.writeFile;
+  let failedCopy = false, result;
+  fsPromises.writeFile = async (file, ...args) => {
+    if (!failedCopy && String(file).includes('/graph-generated-exercise-') && String(file).includes('/project/') && String(file).endsWith('/scripts/acceptance.mjs')) {
+      failedCopy = true; throw Object.assign(new Error('Controlled full-helper copy failure'), { code: 'EIO' });
+    }
+    return originalWrite(file, ...args);
+  };
+  syncBuiltinESMExports();
+  try { result = await graphProject.exerciseReviewedGeneratedHelper(value.evidence, value.reviewPath); }
+  finally { fsPromises.writeFile = originalWrite; syncBuiltinESMExports(); }
+  t.diagnostic('Owned generated-helper exercise: ' + JSON.stringify({ evidence: result.evidence, scratch: result.scratch }));
+  assert.equal(failedCopy, true); assert.equal(result.status, 'failed'); assert.equal(result.error.code, 'EIO');
+  assert.equal(result.error.stage, 'install-generated-files'); assert.equal(result.execution.status, 'not_run');
+  assert.equal(result.execution.spawnObserved, false); assert.equal(result.execution.closeObserved, false);
+  const before = await readFile(join(result.evidence, 'result.json'));
+  const driver = new URL('./notion-skill-graph-model.mjs', import.meta.url).pathname;
+  const lifecycle = [];
+  for (const action of systemTrashAvailable ? ['evidence', 'cleanup', 'evidence'] : ['evidence']) {
+    const run = spawnSync(process.execPath, [driver, action, '--evidence', result.evidence], { encoding: 'utf8', timeout: 10000 });
+    assert.equal(run.status, 0, run.stderr); lifecycle.push({ action, result: JSON.parse(run.stdout) });
+  }
+  await writeFile(join(value.root, 'setup-failure-ece.json'), JSON.stringify({ systemTrash: systemTrashAvailable ? 'completed' : 'not_run', lifecycle }, null, 2) + '\n');
+  if (!systemTrashAvailable) trashNotRun(t, result);
+  assert.ok(lifecycle.every(row => row.result.functionalStatus === 'failed'));
+  assert.deepEqual(await readFile(join(result.evidence, 'result.json')), before);
+  assert.deepEqual(await readFile(join(value.evidence, 'result.json')), value.originalResult);
+});
+
+async function controlledDetachedPipeHolder() {
+  const { spawn } = await import('node:child_process');
+  const { mkdir, readFile } = await import('node:fs/promises');
+  const { resolve } = await import('node:path');
+  await mkdir('artifacts', { recursive: true });
+  const marker = resolve('artifacts/child-owner.json'), token = process.argv[2];
+  const code = 'require("node:fs").writeFileSync(process.argv[1], JSON.stringify({pid:process.pid,startedAt:new Date().toISOString(),executable:process.execPath,argv:process.argv.slice(1),token:process.argv[2]})); setInterval(()=>{},1000);';
+  const child = spawn(process.execPath, ['-e', code, marker, token], { detached: true, stdio: ['ignore', process.stdout, process.stderr] });
+  child.unref();
+  for (;;) { try { await readFile(marker); break; } catch (error) { if (error.code !== 'ENOENT') throw error; await new Promise(accept => setTimeout(accept, 10)); } }
+}
+
+test('a detached fixture pipe holder cannot keep the runner waiting or manufacture close and cleanup', async t => {
+  const value = await reviewedHelperFixture(t, { helper: '(' + controlledDetachedPipeHolder.toString() + ')();\n' });
+  const token = hash('owned detached fixture ' + value.root);
+  value.review.command.args.push(token); value.review.budget = { timeoutMs: 250, killGraceMs: 100 };
+  await writeFile(value.reviewPath, JSON.stringify(value.review));
+  const started = Date.now(), result = await graphProject.exerciseReviewedGeneratedHelper(value.evidence, value.reviewPath);
+  t.diagnostic('Owned generated-helper exercise with outer cleanup: ' + JSON.stringify({ evidence: result.evidence, scratch: result.scratch }));
+  const owner = JSON.parse(await readFile(join(result.evidence, 'owned-output/artifacts/child-owner.json'), 'utf8'));
+  assert.equal(owner.token, token); assert.equal(owner.executable, await realpath(process.execPath));
+  assert.deepEqual(owner.argv, [join(result.project.root, 'artifacts/child-owner.json'), token]);
+  assert.ok(Number.isSafeInteger(owner.pid) && owner.pid > 0 && Date.parse(owner.startedAt) >= started);
+  const present = () => { try { process.kill(owner.pid, 0); return true; } catch (error) { if (error.code === 'ESRCH') return false; throw error; } };
+  const original = await readFile(join(result.evidence, 'result.json'));
+  const outer = { kind: 'controlled-fixture-owned-detached-child', owner, originalResultSha256: hash(original), driverCleanup: 'blocked', steps: [] };
+  try {
+    assert.ok(Date.now() - started < 5000, 'The hard deadline must return even without natural pipe EOF');
+    assert.equal(result.status, 'failed'); assert.equal(result.execution.processExitObserved, true);
+    assert.equal(result.execution.closeObserved, false); assert.equal(result.execution.forcedPipeClosure, true);
+    assert.equal(result.execution.stdoutComplete, false); assert.equal(result.execution.stderrComplete, false);
+    assert.equal(result.execution.processScope, 'incomplete-finality-unknown-pipe-holder');
+    outer.steps.push({ action: 'evidence', status: (await graphProject.inspectGeneratedExercise(result.evidence)).status });
+    await assert.rejects(graphProject.cleanupGeneratedExercise(result.evidence), /finality/);
+    await assert.rejects(graphProject.verifyGeneratedExerciseAcceptance(value.result, { evidence: result.evidence, resultSha256: hash(original) }));
+  } finally {
+    // This fixture, not the driver, deliberately created and identified this
+    // one child. Its cleanup is outside the driver's still-failed raw receipt.
+    if (present()) { process.kill(owner.pid, 'SIGTERM'); outer.steps.push({ action: 'signal-known-fixture-child', pid: owner.pid, signal: 'SIGTERM' }); }
+    const deadline = Date.now() + 2000;
+    while (present() && Date.now() < deadline) await new Promise(accept => setTimeout(accept, 20));
+    assert.equal(present(), false, 'Only the explicitly identified fixture child may be stopped');
+    if (systemTrashAvailable) {
+      const trashed = spawnSync('/usr/bin/trash', [result.scratch], { encoding: 'utf8', timeout: 10000 });
+      assert.equal(trashed.status, 0, trashed.stderr);
+      outer.steps.push({ action: 'outer-owned-fixture-trash', scratch: result.scratch, code: trashed.status });
+      await assert.rejects(readFile(join(result.scratch, 'ownership.json')), error => error.code === 'ENOENT');
+    } else { outer.steps.push({ action: 'outer-owned-fixture-trash', status: 'not_run', reason: 'system-trash-unavailable' }); trashNotRun(t, result); }
+    for (const file of result.artifacts) assert.equal(hash(await readFile(join(result.evidence, file.path))), file.sha256);
+    assert.deepEqual(await readFile(join(result.evidence, 'result.json')), original);
+    outer.steps.push({ action: systemTrashAvailable ? 'evidence-after-outer-cleanup' : 'evidence-with-fixture-retained', retainedFiles: result.artifacts.length, originalResultUnchanged: true, knownChildAbsent: true });
+    await writeFile(join(value.root, 'hard-deadline-outer-ece.json'), JSON.stringify(outer, null, 2) + '\n');
+  }
+  await assert.rejects(readFile(join(result.evidence, 'cleanup.json')), error => error.code === 'ENOENT', 'No successful driver cleanup is invented');
 });

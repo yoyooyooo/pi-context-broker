@@ -12,7 +12,7 @@ import { safeRequestMetrics } from './notion-default-context.mjs';
 import { entryIdentity, verifyEntryIdentity } from './verification-entry.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
 import { evaluateGraphTrace, frozenPrompt, verifyWorkerAuthorization, dailyRouteContract, verifyDailyRouteState } from './verify-skill-graph-contract.mjs';
-import { createOwnedGraphProject, inspectOwnedGraphProject, retainGeneratedPlan, exerciseGeneratedProcedure } from './notion-skill-graph-project.mjs';
+import { createOwnedGraphProject, inspectOwnedGraphProject, retainGeneratedPlan, exerciseExistingProjectCommand, exerciseReviewedGeneratedHelper, inspectGeneratedExercise, cleanupGeneratedExercise } from './notion-skill-graph-project.mjs';
 import { verifyRetainedSourceProof } from './notion-skill-retained-proof.mjs';
 import { createPiHelpBoundary } from './notion-pi-help.mjs';
 import { graphSourceViews, graphSourceAccounting } from './notion-skill-graph-model-evidence.mjs';
@@ -2154,7 +2154,7 @@ async function evidenceStatus(directory) {
 async function main(args) {
   const action = args.shift();
   if (!action || action === '--help' || action === 'help') return {
-    usage: ['node scripts/notion-skill-graph-model.mjs doctor|selection --config ABSOLUTE_JSON', 'node scripts/notion-skill-graph-model.mjs run --config ABSOLUTE_JSON', 'node scripts/notion-skill-graph-model.mjs exercise --evidence ABSOLUTE_RUN --command-json \'["npm","test"]\'', 'node scripts/notion-skill-graph-model.mjs evidence|cleanup --evidence ABSOLUTE_RUN'],
+    usage: ['node scripts/notion-skill-graph-model.mjs doctor|selection --config ABSOLUTE_JSON', 'node scripts/notion-skill-graph-model.mjs run --config ABSOLUTE_JSON', 'node scripts/notion-skill-graph-model.mjs exercise --evidence ABSOLUTE_RUN --command-json \'["npm","test"]\'', 'node scripts/notion-skill-graph-model.mjs exercise --evidence ABSOLUTE_RUN --review ABSOLUTE_PRIVATE_REVIEW', 'node scripts/notion-skill-graph-model.mjs evidence|cleanup --evidence ABSOLUTE_RUN_OR_EXERCISE'],
     config: { version: 1, gate: 'A or B', selection: 'Use exact token returned by the independent selection preflight', selectionReceipt: 'absolute successful selection result.json; required for run', rootRef: 'exact unpinned shared record.ref', database: 'UUID', viewId: 'existing root-only View UUID', sourceMode: 'sdk (default, source.command absent); command explicitly selects the legacy/custom/profile comparison', profileId: 'legacy compatibility only, requires sourceMode command instead of viewId', extension: 'absolute installed Pi entry', packagePath: 'absolute frozen tgz', cliCommand: ['absolute Node', 'absolute installed ntn-skills entry; identity and explicit command mode only'], oraclePath: 'absolute private oracle JSON, kept outside consumer roots; not opened by selection preflight', evidenceRoot: 'absolute retained directory', model: modelSelectors[0], promptTimeoutMs: 300000, previousFailures: [], mode: 'cold (default), warm-new-process or matrix', reuseReceipt: 'absolute complete cache-reuse.json for warm-new-process only' },
     consumption: 'Pi 1.4 advertises read, notion_list and notion_use. notion_use is model-only; inspection and resources use read. notion_ctl stays deferred and is not activated for the A/B plan task. Actual SDK results and their matching HTTP metrics are observer-only evidence; roots and Requires still require complete source bytes in actual provider requests. The driver does not claim live or independent acceptance merely because its tests pass.',
     discovery: 'selection uses its own cold scratch, real Notion metadata, actual Pi and three controlled local HTTP provider requests: one public notion_list followed by a second ordinary user turn with ready default metadata. No instruction bodies or real model are requested. Setup attempts/bytes remain a separate ledger. The later task can observe first-turn pending; explicit root consumption never substitutes for the independent ready-directory proof.',
@@ -2162,7 +2162,7 @@ async function main(args) {
     workerAuthorization: 'Optional config.workerAuthorization is {path, sha256} for a retained explicit user approval of worker for the exact gate/root/frozen prompt. It remains observer-only evidence; absent authorization preserves the flash-free availability-failure requirement. No receipt can substitute for actual user approval.',
     dailyRoute: 'Independent AH-639 config: modelContract=daily-route-v1, model=magpie/group/flash, thinkingLevel=high, rpcTimeoutMs=300000. Legacy failure/fallback receipts are forbidden. Owned project settings disable agent and provider retries; actual Pi state, wire reasoning_effort and routed response usage are retained. Daily scheduling uses an owned request-engine root. These fields do not authorize a model run by themselves.',
     sampling: 'matrix runs 1 cold process, 2 warm new processes on the same complete CLI/Broker caches, then 2 more frozen submissions in the second warm live session; failures remain samples; raw values and medians, no p95',
-    artifacts: 'Retain the actual final verbatim. Extract only complete fenced files with explicit relative filenames; a valid SKILL.md and all local links must be present. Prose alone remains plan-only. exercise accepts an exact test command from a retained generated file and drives the unchanged owned application with PID, exit, stdout and hash evidence. Graph pass alone is not generated-Skill acceptance.',
+    artifacts: 'Retain the actual final verbatim. Extract only complete fenced files with explicit relative filenames; a valid SKILL.md and all local links must be present. Prose alone remains plan-only. exercise --command-json records only an existing-project-check. exercise --review binds an independent private review to the full files, original result, exact Node invocation and finite budget, then runs that helper in a separate owned project copy. Evidence and cleanup accept its separate evidence root. Completion is execution evidence, with feature and semantic acceptance still independently reviewed; failed model prerequisites remain blocked.',
     retainedSourceProof: 'Optional config.retainedSourceProofRepo names the absolute frozen CLI source tree. After Pi closes, only unresolved retained chunks with actual observed bundle IDs trigger the independent Effect collector. Its immutable metadata proof, process ledger and HTTP costs are retained separately; it cannot add model reads, resources or loaded state. Missing proof remains observation-incomplete.',
     oracleIdentity: 'Target logicalId is the full public record.id (shared_skill:library:skill_id); resource logicalId is its observed stable file_id (fallback owner/path only for historical snapshots without file IDs). All refs are canonical actual read refs including snapshot and available file_id.',
   };
@@ -2170,9 +2170,17 @@ async function main(args) {
   const options = {};
   while (args.length) { const key = args.shift(); assert.ok(/^--[a-z-]+$/.test(key) && args.length && options[key.slice(2)] === undefined); options[key.slice(2)] = args.shift(); }
   if (['doctor', 'selection', 'run'].includes(action)) { assert.deepEqual(Object.keys(options), ['config']); const config = await readGateConfig(options.config); return action === 'doctor' ? graphModelDoctor(config) : action === 'selection' ? graphSelectionPreflight(config) : config.mode === 'matrix' ? runMatrix(config) : runGate(config); }
-  if (action === 'exercise') { assert.deepEqual(Object.keys(options).sort(), ['command-json', 'evidence']); return exerciseGeneratedProcedure(options.evidence, JSON.parse(options['command-json'])); }
+  if (action === 'exercise') {
+    if (options.review !== undefined) { assert.deepEqual(Object.keys(options).sort(), ['evidence', 'review']); return exerciseReviewedGeneratedHelper(options.evidence, options.review); }
+    assert.deepEqual(Object.keys(options).sort(), ['command-json', 'evidence']);
+    return exerciseExistingProjectCommand(options.evidence, JSON.parse(options['command-json']));
+  }
   assert.ok(['evidence', 'cleanup'].includes(action));
   assert.deepEqual(Object.keys(options), ['evidence']);
+  if ((await json(join(options.evidence, 'result.json'))).kind === 'generated-helper-exercise') {
+    const { result, ...report } = await (action === 'cleanup' ? cleanupGeneratedExercise(options.evidence) : inspectGeneratedExercise(options.evidence));
+    return report;
+  }
   const retained = await evidenceStatus(options.evidence);
   if (action === 'evidence') return retained;
   const result = await json(join(options.evidence, 'result.json'));

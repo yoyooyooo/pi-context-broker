@@ -657,3 +657,23 @@ H7 每个 observer 调用方（含 legacy）直接注入实际 installed extensi
 实际 installed Broker8/CLI9 的 SDK `graph-observer-http-PUEbMb` 与 `graph-observer-http-wutwR7` 各通过 10 对 provider/wire。前者完成 native command 主文 389 B 重读、provider 一份正文、裸 owner prepare、authored→真实 prepareRead→late admission 链和省略 query 的 canonical resource，15/15 source close；后者保留旧显示路径/File ID alias 与 host-index 相对资源，14/14 source close。两者均有 Pi observedExit，旧 CLI traps 零调用。
 
 H7 最终九文件聚合 SHA `b43eeaef8f76b5bf5c97eab4fd10de3367321d1fa5282dde423119e1958910f2`，`ng14/harness-v7/freeze.json` SHA `92c369b047339eb1388cb7081890212e539616d074dada0fdb90427849155cd4`；installed parser 精确路径及 SHA `a68207cd5163e85f68c0bb0de749cca5ed146581f7b098af9cc8245beb3f9a34` 一并绑定。两 SDK 原 aggregate `c0165eb3923b887a1dd62fa85b11d3794363f0216532992cd79b4cf14074729d` 不重写，随后唯一 helper 变化为 collector；`sdk-project-boundary-final.json` 证明 SDK 调用的创建/检查项目函数逐字不变。两份独立 review 无阻断项。产品、TASK、oracle、工具面、预算和 Tern 工作字节未改；受控证据与真实模型 Gate/legacy 结果分开报告。
+
+## SC21：生成物的独立执行
+
+入口继续是原 `notion-skill-graph-model.mjs exercise`。`--command-json` 保留四条受控原项目测试命令，结果明确为 `existing-project-check`；文本命中与原项目测试成功不能充当生成 helper 实驱。`--review` 才接受 controller 独立审阅的完整文件、原 result/final/五文件项目 SHA、精确 Node executable/args 与有限预算，将全部生成文件安装到另一个 owned 项目副本并执行一个 helper。审阅回执留在 consumer 外；模型、Notion 或旧失败样本都不会因本地回归而补跑。
+
+| Feature → 用户入口 | 真实驱动与正反例 | Evidence → Cleanup |
+| --- | --- | --- |
+| 原项目命令 → `exercise --command-json` | 原 Node/npm 测试仍执行；否定句里的命令不变成 helper 证据；daily 第六文件前后使用同一 profile | `existing-project-check.*`、PID/close、原项目完整性；保留历史旧回执的读取 |
+| 完整产物 → `exercise --review` | 完整 Node helper 在独立项目通过真实 loopback POST 创建、GET 读取；逐一绑定实际安装 bytes、argv、预算、真实进程、请求和结果 | 独立 `graph-generated-exercise-*` 保存原 result/plan、review、所有生成文件、stdout/stderr 与 owned 输出哈希 |
+| 实驱门禁 → 同一 `exercise` | 无独立 review、原技术失败、不完整/改动文件、错误 SHA、越界/符号链接、覆盖源文件/运行时配置、argv/interpreter/预算不符均在 spawn 前拒绝 | 原模型结果保持不变；反例不创建执行副本；原 A/B/C/D 失败继续保留 |
+| 执行终态 → 同一 `evidence` | nonzero 与 timeout 保留 failed；只打印 PASS 的 helper 即使退出 0，也只记 completed 和 independent-review-required | 实际 PID、信号、close 和 owned group 消失；原 `evidence → cleanup → evidence`，仅系统 Trash 自有 scratch，保留不可变回执 |
+| D 自然任务 → 原 intent runner/review | D 不自动挑命令，技术通过且完整产物后记 `waiting-for-independent-exercise`；passed review 必须绑定新 helper 执行回执，旧项目检查不满足 | 内容/功能独立评审仍审实际行为和请求结果；完成一次执行不自动推导全部 feature 通过 |
+
+此入口是经审阅程序的有限执行器，不是通用沙箱或副作用判定平台。controller 必须先检查完整 helper 的 imports、参数、资源与进程归属，只批准 owned 项目和 loopback 路线；不得读取生产配置/凭据或启动脱离 owned group 的进程。完整 receipt 字段和复跑命令见 [验收索引](../../../../scripts/notion-skill-graph-acceptance.md#generated-artifacts-and-execution)。原 `notion-skill-graph-project.test.mjs`、`notion-skill-graph-model.test.mjs` 与 `notion-model-cache.test.mjs` 覆盖本表，继续进入既有 `test:verification`。
+
+终态门禁另保三条反例：setup/copy 故障在已分配 ownership 下保存 `not_run` 与失败阶段，未 spawn 时仍可原 driver ECE；未知继承管道到达硬截止后只销毁 runner 自有管道，保留 `closeObserved: false`/输出不完整并阻断 driver cleanup；最终 acceptance 在 scratch 尚在或 cleanup 未绑定 result SHA 时拒绝。专门的 detached 负例由测试预先标识并拥有其 child PID/起始身份/token，外层只结束该 child 并保存自己的 ECE，不回写被测失败或追认 driver 清理成功。
+
+Linux CI 仍运行完整 helper/loopback/失败/finality 核心断言。仅系统 Trash ECE 和清理后 acceptance 正例要求 macOS 且 `/usr/bin/trash` 可执行；缺能力时保留 owned 夹具并明确输出 `System Trash ECE not_run`，不整项 skip、不换成 rm、不伪造清理通过。测试环境可用 `GRAPH_TEST_DISABLE_SYSTEM_TRASH=1` 重放该缺能力分支；生产 cleanup 合同不变。
+
+本切片先保存三项真实 RED：D 自动执行仍为 1 次、原项目检查缺正确 kind、daily 后检漏 profile。原始日志与后续受控证据位于 `AH-617-20261105/generated-helper-exercise-wq_xxo2d`；不将此次受控产物证明写成真实模型或正式 SC21 通过。已冻结失败、原 prompt/oracle、模型预算、日用配置和 Tern 暂存保持原状。
