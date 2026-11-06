@@ -682,7 +682,13 @@ export function assertAmbiguityCandidates(message, { source, snapshots, entries 
     const snapshot = snapshots.find(value => value.record.id === target.identity.id && value.scope === target.identity.scope);
     assert.ok(snapshot, 'The actual candidate must belong to an independently frozen owner and scope');
     assert.equal(candidate.name, snapshot.record.name); assert.equal(target.identity.kind, snapshot.record.kind);
-    assert.equal(target.identity.ref, snapshot.record.ref); assert.deepEqual(target.identity.locator, snapshot.record.locator);
+    // Shared Skill candidate identities bind the owner, not its main-file path.
+    // Derive both canonical forms independently; do not strip a returned suffix.
+    const ownerRef = 'skill://' + encodeURIComponent(snapshot.record.id);
+    assert.equal(target.identity.ref, ownerRef, 'A current candidate identity is an exact unpinned owner URI');
+    assert.equal(snapshot.record.ref, ownerRef + '/' + snapshot.record.entrypoint.split('/').map(encodeURIComponent).join('/'),
+      'The independent record must name that same owner and its exact declared main entrypoint');
+    assert.deepEqual(target.identity.locator, snapshot.record.locator);
     return { ...candidate, id: snapshot.record.id, scope: snapshot.scope, canonical_ref: target.identity.ref };
   });
   assert.deepEqual(bound.map(value => value.id).sort(), snapshots.map(value => value.record.id).sort());

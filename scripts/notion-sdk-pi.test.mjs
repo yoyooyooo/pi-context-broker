@@ -1354,11 +1354,13 @@ test('ambiguity provider refuses missing, forged, duplicated and nonselectable c
 
 function ambiguityOwnerFixture() {
   const snapshots = ['a', 'c'].map(id => ({ scope: 'scope', record: { id: 'shared_skill:sdk-library:' + id, name: 'A', kind: 'skill',
-    ref: 'skill://' + encodeURIComponent('shared_skill:sdk-library:' + id) + '/SKILL.md', locator: { type: 'shared_skill', skill_id: id } } }));
+    entrypoint: 'SKILL.md', ref: 'skill://' + encodeURIComponent('shared_skill:sdk-library:' + id) + '/SKILL.md',
+    locator: { type: 'shared_skill', skill_id: id } } }));
   const message = ambiguityMessage();
   const entries = snapshots.map((snapshot, index) => ({ type: 'custom', customType: 'context-broker-short-ref', data: {
     ref: JSON.parse(message.content[0].text).candidates[index].ref,
-    target: { kind: 'candidate', identity: { source: 'notion', scope: snapshot.scope, ...snapshot.record } },
+    target: { kind: 'candidate', identity: { source: 'notion', scope: snapshot.scope, id: snapshot.record.id,
+      kind: snapshot.record.kind, locator: snapshot.record.locator, ref: 'skill://' + encodeURIComponent(snapshot.record.id) } },
   } }));
   entries.push({ type: 'message', message });
   return { message, snapshots, entries, source: { id: 'sdk-fixture' } };
@@ -1370,7 +1372,21 @@ test('ambiguity candidates bind every actual handle to its independent owner and
   for (const change of [
     value => { value.entries[1].data.target.identity.id = value.snapshots[0].record.id; },
     value => { value.entries[1].data.target.identity.scope = 'foreign'; },
-    value => { value.entries[1].data.target.identity.ref = value.snapshots[0].record.ref; },
+    value => { value.entries[1].data.target.identity.ref = value.entries[0].data.target.identity.ref; },
+    value => { value.entries[1].data.target.identity.ref = value.snapshots[1].record.ref; },
+    value => { value.entries[1].data.target.identity.ref += '/'; },
+    value => { value.entries[1].data.target.identity.ref += '?snapshot=s_' + 'a'.repeat(64); },
+    value => { value.entries[1].data.target.identity.ref += '?file_id=main-c'; },
+    value => { value.entries[1].data.target.identity.ref += '?unexpected=value'; },
+    value => { value.entries[1].data.target.identity.ref += '#SKILL.md'; },
+    value => { value.entries[1].data.target.identity.ref = value.entries[1].data.target.identity.ref.replace('%3A', '%253A'); },
+    value => { value.entries[1].data.target.identity.kind = 'router'; },
+    value => { value.entries[1].data.target.identity.locator = { type: 'shared_skill', skill_id: 'foreign' }; },
+    value => { value.snapshots[1].record.ref = value.snapshots[0].record.ref; },
+    value => { value.snapshots[1].record.ref = value.entries[1].data.target.identity.ref + '/references/guide.md'; },
+    value => { value.snapshots[1].record.entrypoint = 'OTHER.md'; },
+    value => { value.snapshots[1].record.ref += '?snapshot=s_' + 'a'.repeat(64); },
+    value => { value.snapshots[1].record.ref += '?file_id=main-c'; },
     value => { const parsed = JSON.parse(value.message.content[0].text); parsed.candidates[1].source = 'another-source'; value.message.content[0].text = JSON.stringify(parsed); },
     value => { const parsed = JSON.parse(value.message.content[0].text); parsed.candidates.pop(); value.message.content[0].text = JSON.stringify(parsed); },
     value => { value.entries.push(value.entries.splice(1, 1)[0]); },
