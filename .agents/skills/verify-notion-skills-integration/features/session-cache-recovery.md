@@ -2,6 +2,58 @@
 
 前置条件：harness 创建独立 session 与 fixture source，双 Pi/OMP 原生会话路径可用。缓存证据必须同时核对 source 调用与 provider 当前有效上下文；不修改用户 session。
 
+## SC08/SC12：A/B 会话与失败恢复
+
+复用 `scripts/notion-skill-graph-session.mjs` 和 `scripts/notion-skill-graph-service.mjs`，用独立安装的 Pi、Broker、CLI 驱动真实 RPC／公开工具／HTTPS transport。服务端只复用冻结 CLI 源码的受控 Notion fixture，消费者始终执行独立安装 CLI。它是显式 `source.command` 与受控 provider 的证据；默认 SDK、真实 Notion、实模和正常自加载分别验收。
+
+本分支保留原七景，并增加两条失败门槛：
+
+| 场景 | 实际动作与断言 |
+| --- | --- |
+| `cold-root-required-a` | 冷消费者首次 `notion_use`；根和 Requires 的 A 正文各一份，未选 Member 无正文。 |
+| `old-session-keeps-a` | 服务改为 B；旧会话继续实际选择 A。 |
+| `new-session-observes-b` | 新 Pi 会话取得 B；与独立 B oracle 的 scope／owner／pin／正文相符。 |
+| `resumed-original-keeps-a` | 重新打开原真实 JSONL，仍保持根和 Requires 的 A。 |
+| `failed-refresh-keeps-a` | 只将本次 root 刷新必经的精确 Skills data-source inventory POST 设为 `404/object_not_found`；必须真实命中 fault，公开 `notion_use(refresh:true)` 与对应 CLI 实际失败，后续 `notion_ctl` 和 provider 保持原 A graph lock／绑定／完整正文，B 正文为零，原 JSONL 前缀逐字节不变。 |
+| `first-optional-selects-b` | 移除故障后首次读取 optional，只固定其 B；既有根和 Requires 继续 A。 |
+| `explicit-refresh-selects-all-b` | 完整成功的显式刷新才切到全部 B；原始 A 历史仍保留。 |
+| `resumed-refresh-keeps-b` | 新进程恢复刷新后的真实 session，普通续聊继续 B。 |
+| `unavailable-fixed-rejects-current` | 复制第一景真实 delivery 返回的 A fixed ref，在全新 CLI／Broker／session 根读取；当前服务仍是 B。所有 read/files 的 argv 目标必须原样固定输入并明确 `SNAPSHOT_MISSING`，零 HTTP 的 current read/files 也拒绝。原 fixed-main 路线仅允许下述唯一失败 inspect prepare；禁止 current／refresh／use／export 或其他 prepare 回退。没有成功 delivery 或 active／selected graph，独立冷 CLI fixed read 另列一致性回执。 |
+
+服务控制仅有 `revision: "A" | "B"` 与可选布尔 `fail_refresh_root`。该开关模拟本次 root 刷新所需共享身份目录不可用；它不表示某个页面权限被撤销，404 不等同 401／403。当前 graph 从完整 inventory 取得 root 身份，因此故障精确匹配该 Skills data-source 的 POST query，不挂在未执行的 root metadata GET，也不改成正文读取失败。无关 root GET、users/me 等路由保持正常，不篡改历史 archive 或源码缓存。公开 prepare 返回 `CATALOG_INCOMPLETE`，其唯一 `failed_sources` 必须将 `NOT_FOUND` 绑定到该 Skills data source 和 database；原 CLI trace 的唯一失败 POST／404／target 与服务精确路径、请求和响应字节配对。故障的完整路径和账本仍保留在原 `service/http.jsonl`，不能只看到错误就判通过。故障窗口和全局 finally 都复位开关，服务终结的 `stopped.json` 须显示关闭。未知或意外工具错误继续使场景失败；只有计划中的准确 callId／tool／错误类别可继续后置审计，且仍需配对实际非零 CLI exit、原请求 ref 和完整 source metrics。错误不能携带完整正文成功回执。
+
+固定缺失来自新的空状态，不删除旧缓存、不伪造 pin、不向消费者复制 A 正文或 SQLite。这里验证本机 `s_…` 固定引用不可用时的拒绝；可恢复的共享 pin 正例仍由原双机旧格式演练和相应 reader 证据承担。
+
+固定失败的 source oracle 按原 adapter 的 `command, ref, ...options` 位置读取目标，不以 `args.includes(ref)` 判定。额外调用只允许原 list/views/schema 与 ctl views/doctor/cache identity 元数据入口；即使账本完整、HTTP 为零、没有模型交付，也不能用另一 current read/files 或其他内容命令绕过固定引用。复核反例与红→绿原件保存在本节既有 evidence 根的 `fixed-reference-review-01/`，原 17/17 源码回归保留为先前阶段结果。
+
+固定主文在原 Broker 中走 `prepare --purpose inspect` 的激活路径。该路径可以仅省略主文 `file_id`，但 source oracle 必须先从第一景实际成功 delivery、完整 projection proof、selected graph 和 graph lock 独立证明主文 File ID／owner／entrypoint／snapshot／scope／database，再构造唯一允许的固定 target。实际 argv 必须精确等于该 target、inspect、原 database、`--max-age 0 --metrics`；没有 refresh、额外根或 query。唯一非零 CLI 回执必须为 `SNAPSHOT_MISSING`，同 scope／pin 的唯一根 `not_ready`、唯一节点 `failed`，`prepared_nodes=0`、`instruction_bytes=0`、`observed_bindings=[]`，无 content／binding／graph lock 或 Requires；完整 source trace 不能有正文／写入。随后实际 provider 与 graph 仍须证明没有交付或激活。这是已证明主文入口的兼容归一，scalar 资源和其他 prepare 不获得例外；read/files 继续逐字匹配原 fixed ref。
+
+该驱动直接接受参数，没有独立 `doctor`／`run` 子命令。先用原 installed Doctor 核工具与归档，再由驱动的内置检查绑定实际 installed package、CLI／driver／service hash 和空根。`CLI_FIXTURE_SOURCE` 是冻结的 C7 fixture 源码目录，不是消费者源码 fallback。
+
+```bash
+node scripts/verify-notion-integration.mjs doctor --mode installed --host pi --package "$BROKER_TGZ" --command-json "[\"$NODE\",\"$CLI_ENTRY\"]"
+node scripts/notion-skill-graph-session.mjs --extension "$BROKER_ENTRY" --package-path "$BROKER_TGZ" --cli-entry "$CLI_ENTRY" --cli-source "$CLI_FIXTURE_SOURCE" --evidence-root "$SESSION_EVIDENCE_ROOT" --bun "$BUN"
+node --test scripts/notion-skill-graph-delivery.test.mjs
+```
+
+原测试文件的 installed refresh fault 回归仅在显式设置 `BROKER_SESSION_CLI_ENTRY`、`BROKER_SESSION_CLI_SOURCE`、`BROKER_SESSION_BUN` 三个绝对路径时启用：它启动同一受控 HTTPS 服务、执行一次独立 CLI prepare refresh，核 fault 命中／非零退出／metadata-only，另探测无关路由和 finally disarm；没有 Pi 或真实 Notion。未配置时该安装门槛明确 skipped，不能由纯 Node 用例数推断已经运行。临时目录按输出的 owned 路径保留原件后交系统 Trash。
+
+各路径使用绝对值，并通过 owned PATH 选择已冻结的实际 Pi。保留原 120 秒 RPC／CLI 上限、30 秒 source 上限、`prefetch:false` 和 `maxAge:"0"`；即时 A/B 不能代替默认五分钟真实时钟验证，也不能将 9 景与原 7 景次数相减计算收益。主消费者、独立 A/B oracle、额外固定 CLI 对照分别列账；`controlledService` 汇总全部实际 HTTP／响应字节，retention/adoption 不预设为零写。两个失败景另外要求没有正文或写入。
+
+终结后 `sourceAccounting` 将所有 CLI 回执及其原进程 spawn／close 与连续的服务 HTTP journal 对账；完整 trace 的 method／HTTP status／request bytes／response bytes 多重集合必须与服务全量相等。唯一允许未报告 metrics 的情形是本地 `ctl cache identity --database …` 已记录转发 SIGTERM、非超时终结且没有 stdout／响应；它仍列为非成功、metrics 未观察，不能补为零。`serverHttpFullyCovered` 与 `allInvocationMetricsPresent` 是不同结论，HTTP 全量闭合不覆盖该子进程缺少自身账本的事实。其他缺 metrics、缺进程终局、额外／缺失服务请求或字节不符仍失败。
+
+每景保留原 plan、工具参数／错误、RPC、provider、原 CLI response／metrics 和服务 HTTP；`manifest.sessions` 绑定关闭后复制的原 JSONL。失败刷新另保存前后原文件及前缀 hash 证明，固定缺失保存来自真实第一景 delivery 的输入与冷根声明。先核 manifest 终局、每个 owned 进程 close、原件与安装 hash，再按 `ownership.json` 将该次 scratch 交给原系统 `/usr/bin/trash`，保留 evidence 并复核原件 hash；不调用永久删除，不处理旧 run 或用户状态。失败和未关闭进程不因 PID 消失而记成功。
+
+2026-11-06 的原函数红例与源码回归位于 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc12-session-final-kwko86id`。`planned-errors-fail-before.log` 保留旧 planner 的 2 fail／1 pass，SHA256 `9d4d694c406f77604e0cd8aa1d3b3f1661355c508b43144be9b73ca233a54ef3`；它只导出原函数供原测试调用，未先改逻辑。原 `30bc…/graph-session-GedwqY` 七景保留历史身份。该轮源码门禁封存时实际 7＋2 景尚未运行，不能由纯 Node 回归或旧包通过推断；后续实际终局单列如下。
+
+同根 `run-c8-prepare-01/fail-after-handoff.json` 保留 bace／C7／Pi 1.5 首次实际运行：前四景通过，第五景失败，后四景未运行。实际 refresh 正确使用 current ref 和 `--refresh` 并取得 B；原 root metadata GET 故障零命中，不能将成功刷新当成预期失败。原 129 HTTP 与完整账本、自然终局、故障复位及 E→Trash→E 均保留。修复该受控注入路径的独立红→绿位于 `refresh-fault-review-01/`：原安装 CLI 红例 fault=0／exit0，改注入点后的首轮 21/22 已真实命中 404、CLI exit1，但旧 oracle 错把目录错误期待成页面级 `NOT_FOUND`，故仍保留失败；后续精确断言上述 `CATALOG_INCOMPLETE` 及失败来源。它不覆盖或改写这次 Pi 失败，实际九景仍需按修正后的冻结驱动另行授权执行。
+
+该局部门槛最终 `pass-after-02.log` 为 22/22、零 skipped，SHA256 `1986afb5ff90f53ef5b61216496c33543b904c55411b714ce56576c927a17741`。独立 C7 CLI 非零退出，3 次 metadata／0 body／0 write、唯一 inventory 404；无关 users/me 和 root GET 正常，finally 关闭故障后同 inventory 返回 200，服务自然退出。三次父控探测单列服务账本，不能并入 CLI 请求数或作为性能收益。没有执行 Pi／真实 Notion／实模。
+
+同根 `run-5f03-02/fail-after-handoff.json`（SHA256 `8ec3d6d3e7c35eb7df1fc7bb1b6b7683e4ebec73e47652613b83625d4fed8535`）保留第二次 bace／C7／Pi 1.5 实际九景：前八景通过，包括准确 inventory 404 的失败刷新保持 A、成功刷新至 B 和进程恢复 B；第九景因旧 oracle 禁止合法 fixed-main inspect prepare 而失败。实际用户／Pi 输入保持第一景完整 A ref，内部 prepare 只省主文 File ID、保留同 owner／path／A pin；唯一根失败 `SNAPSHOT_MISSING`、0 prepared／0 body／0 write，后续 provider 无 A/B 正文、selected graph 为空。五个 Pi 均自然 exit0，64 个 owned 子进程均终结，fault 最终关闭；原 411 份证据保持、scratch 经系统 Trash 处理。原整体 FAILED 不改为 PASS。
+
+`fixed-main-review-02/` 保留原实际 capture 和同形单元 fail-before，以及最窄修正后的 `unit-pass-after-01.log`：24 PASS／1 显式 HTTPS SKIP（SHA256 `7631a74eaba8b95a70943cec8ca2c74ca8e86be6d8ade4aeb109233155c4d823`）。`acceptance-sidecar.json` 仅离线重放原九景的 source／RPC／provider／history：前八景继续通过，第九景在上述精确主文例外下通过；没有新 Pi、source 或 model 调用，不改原失败。两次一次性离线 reader 的工具可见时点／PID 字段错误及纠正也保留，不能算消费重试。57 个完整 metrics 回执与服务 153 HTTP／37196 请求字节／198656 响应字节逐多重集合相等；另一个 `ctl cache identity` 为 SIGTERM，原回执没有 metrics 字段，仍单列未观察。账本含独立 A/B oracle 的 18 次受控写入，主消费者与固定缺失消费者写入均为零；不能把总服务成本写成消费者零写或新候选节省。
+
 ## SC08-SC22 Pi 默认 SDK 会话恢复
 
 当前 Pi 合同使用同一 `scripts/notion-sdk-pi.mjs --scenario session-lifecycle`。`SDK_PACKAGE` 为独立安装的 Broker 根，`SDK_FIXTURE` 为 CLI 原 `sdk-fixture.ts --catalog` 输出，`SDK_LIFECYCLE_EVIDENCE` 为新的仓外绝对目录。fixture 为离线暖 source，Broker cache、agent 设置与会话从 owned 空目录开始；不借用用户 session 或日用设置。先冻结包、CLI/SDK/runtime 清单和 fixture，后运行：

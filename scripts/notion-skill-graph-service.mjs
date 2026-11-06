@@ -43,10 +43,13 @@ fixture.pages[0].properties.members.relation = [{ id: optional }];
 fixture.pages[0].properties.members.has_more = false;
 for (const [index, page] of fixture.pages.entries()) page.properties.default.checkbox = index === 0;
 const roles = ['root', 'required', 'optional'];
-let revision, editedAtMs = Date.now() - 2000, sequence = 0;
+let revision, failRefreshRoot = false, editedAtMs = Date.now() - 2000, sequence = 0;
 const applyControl = async () => {
   const value = JSON.parse(await readFile(control, 'utf8'));
   assert.ok(value && !Array.isArray(value) && ['A', 'B'].includes(value.revision), 'control.revision must be A or B');
+  assert.ok(Object.keys(value).every(key => ['revision', 'fail_refresh_root'].includes(key)), 'Unknown controlled graph option');
+  assert.ok(value.fail_refresh_root === undefined || typeof value.fail_refresh_root === 'boolean', 'control.fail_refresh_root must be boolean');
+  failRefreshRoot = value.fail_refresh_root === true;
   if (value.revision !== revision) {
     revision = value.revision;
     editedAtMs = Math.max(Date.now(), editedAtMs + 1);
@@ -110,7 +113,7 @@ const handle = async request => {
   const started = performance.now();
   const url = new URL(request.url), method = request.method, path = url.pathname.slice(1) + url.search;
   const raw = method === 'GET' ? '' : await request.text();
-  let body, result, status = 200, failure;
+  let body, result, status = 200, failure, fault;
   try {
     if (request.headers.get('authorization') !== `Bearer ${token}`) {
       status = 401;
@@ -118,14 +121,20 @@ const handle = async request => {
     }
     body = raw === '' ? undefined : JSON.parse(raw);
     await applyControl();
-    result = await dispatch(method, url.pathname, path, body);
+    // Current graph preparation obtains the selected root from this complete
+    // identity inventory, not from an independent root-page metadata GET.
+    if (failRefreshRoot && method === 'POST' && url.pathname === `/v1/data_sources/${library.skills.data_source_id}/query`) {
+      status = 404;
+      fault = 'refresh-skill-inventory-unavailable';
+      result = { object: 'error', status, code: 'object_not_found', message: 'Controlled Skill metadata required by refresh is unavailable' };
+    } else result = await dispatch(method, url.pathname, path, body);
   } catch (error) {
     if (status === 200) status = 400;
     failure = error instanceof Error ? error.message : String(error);
     result = { object: 'error', status, code: status === 401 ? 'unauthorized' : 'validation_error', message: failure };
   }
   const serialized = JSON.stringify(result);
-  const observed = { sequence: ++sequence, at: new Date().toISOString(), revision, method, path, status, request_bytes: Buffer.byteLength(raw), response_bytes: Buffer.byteLength(serialized), request_body_sha256: hash(raw), response_body_sha256: hash(serialized), entity_ids: [...new Set(entityIds(body))], duration_ms: performance.now() - started, ...(typeof result.markdown === 'string' ? { markdown_sha256: hash(result.markdown), markdown_bytes: Buffer.byteLength(result.markdown), page_id: result.id } : {}), ...(failure ? { failure } : {}) };
+  const observed = { sequence: ++sequence, at: new Date().toISOString(), revision, method, path, status, request_bytes: Buffer.byteLength(raw), response_bytes: Buffer.byteLength(serialized), request_body_sha256: hash(raw), response_body_sha256: hash(serialized), entity_ids: [...new Set(entityIds(body))], duration_ms: performance.now() - started, ...(typeof result.markdown === 'string' ? { markdown_sha256: hash(result.markdown), markdown_bytes: Buffer.byteLength(result.markdown), page_id: result.id } : {}), ...(failure ? { failure } : {}), ...(fault ? { fault } : {}) };
   // Never record request headers, credentials, raw Record payloads, or parent env.
   await appendFile(ledgerPath, JSON.stringify(observed) + '\n', { mode: 0o600 });
   return new Response(serialized, { status, headers: { 'Content-Type': 'application/json' } });
@@ -145,7 +154,8 @@ const stop = async signal => {
   stopping = true;
   server.stop(false);
   await pending;
-  await writeFile(join(output, 'stopped.json'), JSON.stringify({ signal, requests: sequence, final_revision: revision, at: new Date().toISOString(), production_requests: 0 }) + '\n', { mode: 0o600 });
+  await applyControl();
+  await writeFile(join(output, 'stopped.json'), JSON.stringify({ signal, requests: sequence, final_revision: revision, fail_refresh_root: failRefreshRoot, at: new Date().toISOString(), production_requests: 0 }) + '\n', { mode: 0o600 });
   process.exit(0);
 };
 process.on('SIGTERM', () => void stop('SIGTERM'));
