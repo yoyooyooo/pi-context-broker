@@ -5,13 +5,13 @@ import { join } from 'node:path';
 import { isolatedEnv } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { database, firstViewId, secondViewId, unflaggedAlias, unflaggedCanary, missingCanary, missingRef } from './notion-integration-fixture.mjs';
-import { nativeEntries, verifyPreparedProviderBody } from './notion-default-context.mjs';
+import { nativeEntries, verifyPreparedProviderBody, providerSystemText } from './notion-default-context.mjs';
 import { decodeCatalogText } from './notion-integration-hosts.mjs';
 
 const save = (path, data) => writeFile(path, JSON.stringify(data, null, 2) + '\n', { mode: 0o600 });
 async function rows(path) { try { return (await readFile(path, 'utf8')).split('\n').filter(Boolean).map(JSON.parse); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } }
 function system(context) {
-  return [Array.isArray(context.systemPrompt) ? context.systemPrompt.join('\n') : context.systemPrompt ?? '', ...context.messages.filter(message => message.role === 'system').map(message => typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? message.sections ?? ''))].join('\n');
+  return [Array.isArray(context.systemPrompt) ? context.systemPrompt.join('\n') : context.systemPrompt ?? '', providerSystemText(context)].filter(Boolean).join('\n');
 }
 function current(context) {
   const text = system(context);

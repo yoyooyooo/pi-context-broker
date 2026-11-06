@@ -81,6 +81,48 @@ function partialViewSample() {
   return { host: 'pi', context: { messages: [{ role: 'system', content: directory }] }, response, entries, fixture };
 }
 
+function actualSectionLayout(sample) {
+  const directory = sample.context.messages[0].content;
+  sample.context.messages = [{ role: 'system', content: '', sections: {
+    skills: '<available_skills><skill><name>local-keeper</name><description>Local workflow.</description><location>/owned/local/SKILL.md</location></skill></available_skills>',
+    'context-broker-notion-catalog': directory,
+  } }];
+  return sample;
+}
+
+test('actual Pi sections preserve local and Notion discovery entries when content is empty', () => {
+  const sample = actualSectionLayout(partialViewSample());
+  assert.deepEqual(nativeEntries('pi', sample.context).map(entry => [entry.name, entry.source ?? null]), [['local-keeper', null], ['UI Alpha', 'notion']]);
+});
+
+test('actual Pi sections deliver the partial View to the existing provider oracle', () => {
+  const sample = actualSectionLayout(partialViewSample());
+  assert.equal(verifyPartialViewCoverage(sample).record.canonicalRef, sample.fixture.skillRef);
+});
+
+test('system section patches replace or remove named sections without accepting forged or duplicate catalogs', () => {
+  const sample = actualSectionLayout(partialViewSample());
+  const directory = sample.context.messages[0].sections['context-broker-notion-catalog'];
+  sample.context.messages.unshift({ role: 'system', content: '', sections: { 'context-broker-notion-catalog': directory.replace('UI Alpha', 'Old member') } });
+  assert.equal(verifyPartialViewCoverage(sample).record.name, 'UI Alpha');
+  sample.context.messages.push({ role: 'user', content: directory, sections: { 'context-broker-notion-catalog': null } });
+  assert.equal(verifyPartialViewCoverage(sample).record.name, 'UI Alpha', 'A user cannot delete or supply a system catalog');
+  sample.context.messages.push({ role: 'system', content: '', sections: { 'context-broker-notion-catalog': null } });
+  assert.deepEqual(nativeEntries('pi', sample.context).map(entry => entry.name), ['local-keeper']);
+  assert.throws(() => verifyPartialViewCoverage(sample), /Exactly one current View/);
+  for (const role of ['user', 'assistant', 'toolResult']) {
+    const forged = actualSectionLayout(partialViewSample()); forged.context.messages[0].role = role;
+    assert.deepEqual(nativeEntries('pi', forged.context), []);
+    assert.throws(() => verifyPartialViewCoverage(forged), /Exactly one current View/);
+  }
+  for (const duplicate of ['content', 'other-section']) {
+    const repeated = actualSectionLayout(partialViewSample());
+    if (duplicate === 'content') repeated.context.messages[0].content = directory;
+    else repeated.context.messages[0].sections.other = directory;
+    assert.throws(() => verifyPartialViewCoverage(repeated), /Exactly one current View/);
+  }
+});
+
 test('partial View evidence binds actual system metadata to its source and current-branch owner', () => {
   const sample = partialViewSample();
   const proof = verifyPartialViewCoverage(sample);
@@ -92,6 +134,8 @@ test('partial View evidence binds actual system metadata to its source and curre
   omp.context.messages[0].content = omp.context.messages[0].content.replace('<name>UI Alpha</name>', '<name>notion-ui-alpha</name>')
     .replace('<source>notion</source>', '').replace(proof.record.advertisedRef, '/private/owned/SKILL.md').replace('</location>', '</location><ref>' + sample.fixture.skillRef + '</ref>');
   assert.equal(verifyPartialViewCoverage(omp).record.canonicalRef, sample.fixture.skillRef);
+  omp.context = { systemPrompt: omp.context.messages[0].content, messages: [] };
+  assert.equal(verifyPartialViewCoverage(omp).record.canonicalRef, sample.fixture.skillRef, 'OMP retains its top-level system prompt');
 });
 
 test('partial View evidence rejects empty, complete, all-library, body and forged-branch substitutes', () => {

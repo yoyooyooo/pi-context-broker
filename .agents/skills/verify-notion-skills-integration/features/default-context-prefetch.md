@@ -42,7 +42,11 @@ partial 相位只扩原 `notion-integration-fixture.mjs` 的受控列表响应�
 
 此相位不选 Skill、不读取正文、不展开 Requires，也不产生 active 确认。断言拒绝 empty/all-library/complete 冒充 partial、用户消息伪造目录、错误 owner/scope、旧分支句柄及正文混入。复用原 `failList` 后必须在 finally 复位 fixture；仅清理 manifest 所属 scratch 并进系统 Trash。受控 CLI 没有真实 Notion HTTP/core 缓存，不能由本相位推导生产请求、权限或跨进程缓存收益。
 
-接线证据（2026-11-06）：`sc06-partial-view-d_zadb79/fail-before.log` 保留旧 fixture 的实际 `true !== false`；更新后原 `notion-integration-hosts.test.mjs` 为 25/25，包含原入口/正文/压缩断言。以上是本地 fixture 与 oracle 验证；新候选上的 `--view-discovery true --host pi --extension ABS_INSTALLED/src/index.ts` 实驱仍为 **not run**，待最终 C8/Broker 包冻结，不继承旧 646 的完整、空、错误 View 结果作为本次 partial 通过。
+接线证据（2026-11-06）：`sc06-partial-view-d_zadb79/fail-before.log` 保留旧 fixture 的实际 `true !== false`；更新后原 `notion-integration-hosts.test.mjs` 为 25/25，包含原入口/正文/压缩断言。该阶段只有本地 fixture 与 oracle 验证，安装实驱当时标为 not run；不继承旧 646 的完整、空、错误 View 结果作为本次 partial 通过。
+
+随后以纯 `d0eee56` harness、`282fb35a…` 安装包和 Pi 1.5 执行一次，原 `QC55vI` 保留为 **failed**：首个实际 provider 的 `system.sections["context-broker-notion-catalog"]` 已包含 647 字节完整目录，但旧 View 读取器只看空 `content`，旧 `nativeEntries` 也只读 `sections.skills`。原 outer exit 1、Pi 按 `rpc.stop` 退出 143，E→Trash→E 后 304 个原件保持哈希；partial/失败/恢复三相位均未运行，不离线改判成功。
+
+调用方现在共用原 SDK 验证器迁入 `notion-default-context.mjs` 的 `providerSystemText`：只回放实际 system 消息的文本及命名 section patches，同名替换、`null` 删除，保留 OMP 顶层 `systemPrompt`。SDK 保持同名 re-export，不另建解析器。`sc06-view-sections-fb92jufh` 保存两个同形态红例、原 28/28 回归及封存捕获的离线解码；非 system 伪造、重复目录、原 owner/scope/单目录要求不变。新的安装实驱尚待授权，包不因这个 observer 修复重建。
 
 压缩 oracle 依据 AH-627 的 `agent-cli-ref-20261105` 已校准合同：已实际送达并确认 active 的来源，必要全文被 compact 移除后应在普通续问恢复同一版本。Pi 不再沿用旧“普通续问正文必须为零”的断言。保留 fork 到选择前的零正文负例；压缩前、压缩后和恢复后的原生 session 副本必须显示同一 owner/scope/pin/hash 与同一确认/选择，不接受 orphan receipt、仅准备成功或新 `inspect` 冒充 `use` 确认。OMP 保留其显式 reload 的兼容边界。旧失败原件不改写。
 

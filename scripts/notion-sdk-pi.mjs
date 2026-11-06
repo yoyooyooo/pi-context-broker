@@ -11,9 +11,11 @@ import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isolatedEnv, resolveHost, runCommand, writeFakeProvider, assertSupportedPiVersion } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
-import { safeRequestMetrics } from './notion-default-context.mjs';
+import { safeRequestMetrics, providerSystemText } from './notion-default-context.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
 import { verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards } from './skill-preparation-evidence.mjs';
+
+export { providerSystemText };
 
 const usage = 'Usage: node scripts/notion-sdk-pi.mjs doctor|run --package ABSOLUTE_INSTALLED_BROKER (--fixture ABSOLUTE_FIXTURE_JSON | --live-input ABSOLUTE_LIVE_INPUT_JSON) [--expect-short-refs true|false] [--expect-compact-context true|false] [--expect-direct-scalar true|false] [--expect-short-confirmations true|false] [--scenario all|default-view|codemode-hidden|codemode-truncated|dollar|native|native-repeat|prepare|scoped-command|resource-batch|resource-batch-short-refs|resource-scalar|resource-scalar-short-refs|partial-entrypoint|session-lifecycle] [--out NEW_ABSOLUTE_EVIDENCE]; evidence|cleanup --evidence ABSOLUTE_EVIDENCE. Real Pi 1.4.0 or 1.5.0 RPC, controlled provider with public onPayload/onResponse hooks, offline source, default bundled SDK (source.command is absent). Compact context, direct scalar and short confirmation checks default to true; false observes a baseline without certifying that contract. Comparisons include the installed Broker and bundled CLI/SDK identities. default-view observes pending startup plus ready metadata on an ordinary continuation. session-lifecycle drives native fork/clone/tree/compact/resume and late-response cancellation with a controlled summary. The explicit live-input route selects one separate cold consumer on real Notion, an independently installed package auto-loaded by owned settings, and observer-only frozen local originals. The default offline all remains 14 scenarios. Native menu and real model are not claimed; live retained-body Member exclusion requires separate source attribution.';
 const scenarioNames = ['default-view', 'codemode-hidden', 'codemode-truncated', 'dollar', 'native', 'native-repeat', 'prepare', 'scoped-command', 'resource-batch', 'resource-batch-short-refs', 'resource-scalar', 'resource-scalar-short-refs', 'partial-entrypoint', 'session-lifecycle'];
@@ -40,19 +42,6 @@ const rows = async path => {
   catch (error) { if (error.code === 'ENOENT') return []; throw error; }
 };
 const textContent = content => typeof content === 'string' ? content : (content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
-/** Pi replays system content and named section patches before serialization.
- * Ignore receipts/tool schemas and retire replaced or removed section values. */
-export function providerSystemText(context) {
-  const content = [], sections = new Map();
-  for (const message of context.messages ?? []) {
-    if (message.role !== 'system') continue;
-    const text = textContent(message.content); if (text) content.push(text);
-    for (const [name, value] of Object.entries(message.sections ?? {})) {
-      if (value === null) sections.delete(name); else sections.set(name, value);
-    }
-  }
-  return [...content, ...sections.values()].filter(Boolean).join('\n\n');
-}
 function toolResult(context, id) { return [...context.messages].reverse().find(message => message.role === 'toolResult' && message.toolCallId === id); }
 /** Attach only the original host evidence to byte-identical actual HTTP tool
  * text. This object is for assertions; no receipt is added to the request. */
@@ -332,13 +321,31 @@ export function assertSearchProjection(message, { expectCompact = true, scope, c
 function defaultViewProjection(captures, discovery, events, fixture, { sourceId = 'sdk-fixture' } = {}) {
   const expected = fixture.default_view;
   assert.ok(expected?.records?.length, 'Default View fixture metadata is required');
+  assert.equal(typeof fixture.scope, 'string');
+  const frozenRecords = new Map(expected.records.map(record => {
+    let full = record;
+    if (typeof full.description !== 'string') {
+      const snapshots = (fixture.snapshots ?? []).filter(snapshot => snapshot.scope === fixture.scope && snapshot.record.id === record.id);
+      assert.equal(snapshots.length, 1, 'Compact fixture membership needs one independent complete record in the same scope');
+      full = snapshots[0].record;
+    }
+    for (const key of ['id', 'name', 'ref']) assert.equal(full[key], record[key]);
+    assert.equal(typeof full.description, 'string'); assert.equal(typeof full.kind, 'string');
+    return [record.id, full];
+  }));
+  assert.equal(frozenRecords.size, expected.records.length);
   const results = events.filter(event => event.kind === 'sdk_catalog' && event.value?.view?.id === expected.id);
   assert.ok(results.length > 0, 'An actual default listCatalog SDK result is required');
   for (const { value } of results) {
     assert.equal(value.view_selection, 'first'); assert.equal(value.coverage?.exhaustive, true);
+    assert.equal(value.scope, fixture.scope);
     assert.deepEqual(value.coverage.failed_sources, []);
     assert.deepEqual(value.records.map(record => record.id).sort(), expected.records.map(record => record.id).sort());
     assert.equal(value.count, expected.records.length);
+    for (const record of value.records) {
+      const frozen = frozenRecords.get(record.id);
+      for (const key of ['name', 'kind', 'description', 'ref']) assert.equal(record[key], frozen[key]);
+    }
   }
   if (discovery) assert.deepEqual(discovery.records.filter(record => record.in_default_view).map(record => record.name).sort(), expected.records.map(record => record.name).sort());
   const observations = captures.map(capture => {
@@ -358,16 +365,21 @@ function defaultViewProjection(captures, discovery, events, fixture, { sourceId 
     const reused = [];
     const xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
     for (const record of expected.records) {
-      const actual = discovery ? discovery.records.find(value => value.name === record.name && value.source === sourceId)
-        : { ...record, scope: fixture.scope, source: sourceId, availability: record.enabled === false ? 'disabled' : 'available' };
-      assert.ok(actual); const matches = entries.filter(entry => entry[1] === xml(record.name) && entry[3] === actual.source);
+      const frozen = frozenRecords.get(record.id), actual = { ...frozen, scope: fixture.scope, source: sourceId,
+        availability: frozen.enabled === false ? 'disabled' : 'available' };
+      const selected = discovery?.records.find(value => value.name === record.name && value.source === sourceId);
+      if (discovery) {
+        assert.ok(selected); assert.equal(selected.kind, frozen.kind);
+        if (Object.hasOwn(selected, 'description')) assert.equal(selected.description, frozen.description);
+      }
+      const matches = entries.filter(entry => entry[1] === xml(record.name) && entry[3] === actual.source);
       assert.equal(matches.length, 1, 'Display the author name and explicit source, not the sanitized command token');
       assert.match(matches[0][4], /^sr:C[A-Za-z0-9_-]{22}$/u);
       if (matches[0][2] === undefined) {
         const evidence = catalogDescriptionEvidence(capture.context, { ...actual, ref: matches[0][4] }, fixture, { generatedOnly: true });
         assert.ok(evidence, 'Missing default description requires a complete same-request generated card'); reused.push(evidence);
       } else assert.equal(matches[0][2], xml(actual.description));
-      if (discovery) assert.equal(matches[0][4], actual.ref);
+      if (discovery) assert.equal(matches[0][4], selected.ref);
       assert.equal(texts.reduce((count, text) => count + text.split(matches[0][0]).length - 1, 0), 1);
     }
     return { request_id: capture.requestId, state: 'ready', records: entries.length, catalog_bytes: Buffer.byteLength(catalogs[0][0]), reused_descriptions: reused };
@@ -400,7 +412,7 @@ export function assertPreflightCatalogProjection(captures, discovery, events, fi
  * actual system payload, retaining each version's name/source presentation. */
 export function assertWarmDirectoryProjection(captures, discoveryMessage, fixture, bodies, { transport = 'sdk', sourceId = 'sdk-fixture' } = {}) {
   assert.ok(['sdk', 'cli'].includes(transport)); assert.ok(captures.length > 0);
-  assertSearchProjection(discoveryMessage, { expectCompact: false, scope: fixture.scope });
+  assertSearchProjection(discoveryMessage, { expectCompact: false, scope: fixture.scope, context: captures.at(-1).context, fixture });
   const full = discoveryMessage.details, expected = fixture.default_view.records;
   assert.deepEqual(full.failures, []); assert.equal(full.has_more, false);
   assert.deepEqual(full.records.filter(record => record.in_default_view).map(record => record.id).sort(), expected.map(record => record.id).sort());
@@ -2653,7 +2665,9 @@ function assertNamedReferenceEvidence(captures, frames, hooks, events, archive, 
   };
   const following = id => captures[plan.calls.findIndex(call => call.id === id) + 1].context;
   const search = parsedResult(raw('sc25-search'));
-  const searchProof = assertSearchProjection(raw('sc25-search'), { scope: info.fixture.scope });
+  const searchContext = following('sc25-search');
+  const searchProof = assertSearchProjection(toolResult(searchContext, 'sc25-search'), { scope: info.fixture.scope,
+    context: searchContext, fixture: info.fixture });
   assert.equal(search.records.filter(record => record.name === root.record.name && record.source === 'sdk-fixture' && record.in_default_view).length, 1);
   assert.equal(search.records.filter(record => record.name === outside.record.name && record.source === 'sdk-fixture' && !record.in_default_view).length, 1);
   for (const call of plan.calls) {
@@ -3493,12 +3507,13 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       const final = captures.at(-1), message = toolResult(final.context, 'sc10-search');
       const originalMessage = rpc.frames.find(frame => frame.type === 'tool_execution_end' && frame.toolCallId === 'sc10-search')?.result;
       assert.ok(originalMessage, 'The original discovery receipt must remain available');
+      assert.deepEqual(message.details, originalMessage.details, 'Projection must retain the complete original discovery metadata');
       const serialized = await Promise.all(serializer.requests.map(async request => ({ requestId: request.provider_request_id,
         context: catalogContextFromHttp({ messages: (await json(join(output, request.request_file))).messages },
           captures.find(capture => capture.requestId === request.provider_request_id).context) })));
       assertSearchProjection(message, { scope: info.fixture.scope, context: final.context, fixture: info.fixture });
-      warmDirectoryEvidence = { provider: assertWarmDirectoryProjection(captures, originalMessage, info.fixture, info.bodies),
-        installed_serializer_http: assertWarmDirectoryProjection(serialized, originalMessage, info.fixture, info.bodies) };
+      warmDirectoryEvidence = { provider: assertWarmDirectoryProjection(captures, message, info.fixture, info.bodies),
+        installed_serializer_http: assertWarmDirectoryProjection(serialized, toolResult(serialized.at(-1).context, 'sc10-search'), info.fixture, info.bodies) };
       await save(join(output, 'warm-directory.json'), warmDirectoryEvidence);
     }
     if (scalarScenario) {

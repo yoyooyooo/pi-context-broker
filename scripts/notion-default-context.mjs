@@ -106,16 +106,24 @@ export async function createRequestLedger({ scratch, evidence, command }) {
   return { command: [process.execPath, helper, '--request-ledger', config], ledger };
 }
 
-export function nativeEntries(host, context) {
-  let skills = '';
-  const content = host === 'omp' ? [Array.isArray(context.systemPrompt) ? context.systemPrompt.join('\n') : context.systemPrompt ?? ''] : [];
-  for (const message of context.messages) {
+const textContent = content => typeof content === 'string' ? content : (content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
+/** Pi replays system content and named section patches before serialization.
+ * Ignore receipts/tool schemas and retire replaced or removed section values. */
+export function providerSystemText(context) {
+  const content = [], sections = new Map();
+  for (const message of context.messages ?? []) {
     if (message.role !== 'system') continue;
-    if (message.sections && Object.hasOwn(message.sections, 'skills')) skills = message.sections.skills ?? '';
-    const text = typeof message.content === 'string' ? message.content : (message.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
-    if (text) content.push(text);
+    const text = textContent(message.content); if (text) content.push(text);
+    for (const [name, value] of Object.entries(message.sections ?? {})) {
+      if (value === null) sections.delete(name); else sections.set(name, value);
+    }
   }
-  const text = [...content, skills].join('\n');
+  return [...content, ...sections.values()].filter(Boolean).join('\n\n');
+}
+
+export function nativeEntries(host, context) {
+  const topLevel = host === 'omp' ? (Array.isArray(context.systemPrompt) ? context.systemPrompt.join('\n') : context.systemPrompt ?? '') : '';
+  const text = [topLevel, providerSystemText(context)].filter(Boolean).join('\n');
   const metadata = [...text.matchAll(/<skill>([\s\S]*?)<\/skill>/g)].flatMap(match => {
     const name = /<name>\s*([^<]+)\s*<\/name>/u.exec(match[1])?.[1];
     const location = /<location>\s*([^<]+)\s*<\/location>/u.exec(match[1])?.[1];

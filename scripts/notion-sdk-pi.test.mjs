@@ -537,15 +537,15 @@ test('actual provider schema must express a bounded paths branch exclusive with 
 });
 
 function defaultViewFixture() {
-  const records = ['a', 'b'].map(name => ({ id: 'owner:' + name, name, description: 'Metadata', ref: 'skill://owner-' + name + '/SKILL.md' }));
-  const fixture = { default_view: { id: 'view-1', records } };
+  const records = ['a', 'b'].map(name => ({ id: 'owner:' + name, kind: 'skill', name, description: 'Metadata', ref: 'skill://owner-' + name + '/SKILL.md' }));
+  const fixture = { scope: 'fixture-scope', default_view: { id: 'view-1', records } };
   const discovery = { records: records.map((record, index) => ({ ...record, description: 'Metadata', source: 'sdk-fixture', in_default_view: true, ref: 'sr:C' + String(index).repeat(22) })) };
   const catalog = '<ntn-skills-view-catalog><view source="sdk-fixture" id="view-1" partial="false">Default</view>'
     + discovery.records.map(record => '<skill><name>' + record.name + '</name><description>Metadata</description><source>sdk-fixture</source><location>' + record.ref + '</location></skill>').join('')
     + '</ntn-skills-view-catalog>';
   const captures = [{ requestId: '1', context: { messages: [{ role: 'system', content: '<ntn-skills-discovery status="pending">Notion metadata is pending; this does not mean the directory is empty.</ntn-skills-discovery>' }] } },
     { requestId: '2', context: { messages: [{ role: 'system', content: catalog }] } }];
-  const events = [{ kind: 'sdk_catalog', value: { view: { id: 'view-1' }, view_selection: 'first', count: 2, records,
+  const events = [{ kind: 'sdk_catalog', value: { scope: fixture.scope, view: { id: 'view-1' }, view_selection: 'first', count: 2, records,
     coverage: { exhaustive: true, failed_sources: [] } } }];
   return { captures, discovery, events, fixture, bodies: new Map([['a', 'Full private body']]) };
 }
@@ -554,6 +554,56 @@ test('Default View evidence retains pending startup and proves the ready metadat
   const result = assertDefaultViewProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies);
   assert.equal(result.status, 'verified'); assert.equal(result.body_delivery, false);
   assert.deepEqual(result.provider_requests.map(request => request.state), ['pending', 'ready']);
+});
+
+function compactDefaultDiscoveryFixture() {
+  const value = warmDirectoryFixture();
+  value.fixture.snapshots = structuredClone(value.fixture.snapshots);
+  value.events = structuredClone(value.events);
+  value.fixture.default_view.records = value.fixture.default_view.records.map(({ id, name, ref }) => ({ id, name, ref }));
+  const model = JSON.parse(value.message.content[0].text);
+  for (const record of model.records) delete record.description;
+  value.message.content[0].text = JSON.stringify(model);
+  Object.assign(value.message, { role: 'toolResult', toolName: 'notion_list' });
+  value.discovery = model;
+  value.captures[0].context.messages.push(value.message);
+  return value;
+}
+
+test('Default View uses independent complete metadata when the same-provider discovery omits descriptions', () => {
+  const value = compactDefaultDiscoveryFixture(), before = JSON.stringify(value);
+  const result = assertDefaultViewProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies);
+  assert.equal(result.status, 'verified');
+  assert.equal(result.provider_requests[0].records, 2);
+  assert.equal(JSON.stringify(value), before);
+  for (const mutate of [
+    value => { value.fixture.snapshots[0].record.description = 'Changed frozen metadata'; },
+    value => { value.fixture.snapshots[0].scope = 'foreign'; },
+    value => { value.fixture.snapshots[0].record.ref = 'skill://different-owner/SKILL.md'; },
+    value => { value.fixture.snapshots.push(structuredClone(value.fixture.snapshots[0])); },
+    value => { value.events.find(row => row.kind === 'sdk_catalog' && row.value.view).value.records[0].description = 'Different actual SDK metadata'; },
+    value => { value.events.find(row => row.kind === 'sdk_catalog' && row.value.view).value.scope = 'foreign'; },
+    value => { value.discovery.records[0].description = 'Invented discovery metadata'; },
+    value => { value.captures[0].context.messages[0].content = value.captures[0].context.messages[0].content.replace('<description>Metadata</description>', ''); },
+  ]) {
+    const invalid = compactDefaultDiscoveryFixture(); mutate(invalid);
+    assert.throws(() => assertDefaultViewProjection(invalid.captures, invalid.discovery, invalid.events, invalid.fixture, invalid.bodies));
+  }
+});
+
+test('warm comparison validates omitted discovery descriptions in the corresponding actual provider context', () => {
+  const value = compactDefaultDiscoveryFixture(), before = JSON.stringify(value);
+  assert.equal(namedSdkProbe.assertWarmDirectoryProjection(value.captures, value.message, value.fixture, value.bodies).status, 'verified');
+  assert.equal(JSON.stringify(value), before);
+  for (const mutate of [
+    value => { value.captures[0].context.messages[0].content = ''; },
+    value => { value.captures[0].context.messages[0].content = value.captures[0].context.messages[0].content.replaceAll('Metadata', 'Different'); },
+    value => { value.captures[0].context.messages[0].content = value.captures[0].context.messages[0].content.replaceAll('sdk-fixture', 'foreign'); },
+    value => { value.captures[0].context.messages[0].content = value.captures[0].context.messages[0].content.replaceAll('sr:C', 'sr:S'); },
+  ]) {
+    const invalid = compactDefaultDiscoveryFixture(); mutate(invalid);
+    assert.throws(() => namedSdkProbe.assertWarmDirectoryProjection(invalid.captures, invalid.message, invalid.fixture, invalid.bodies));
+  }
 });
 test('catalog projection reads current public system sections and retires replaced sections', () => {
   const value = defaultViewFixture();
