@@ -994,6 +994,69 @@ test('compact search omits only model id/scope while baseline observation cannot
   assert.throws(() => assertSearchProjection(value), 'The full machine identity must survive in details');
 });
 
+test('search descriptions may reuse an exact complete card in this actual provider system', () => {
+  const message = searchProjectionFixture(), model = JSON.parse(message.content[0].text), record = message.details.records[0];
+  delete model.records[0].description; message.content[0].text = JSON.stringify(model);
+  const system = '<ntn-skills-view-catalog><skill><name>a</name><description>Author description</description><source>sdk-fixture</source><location>' + record.ref + '</location></skill></ntn-skills-view-catalog>';
+  const context = { messages: [{ role: 'system', content: system }, message] }, before = JSON.stringify(context);
+  assert.equal(assertSearchProjection(message, { scope: 'scope', context }).compact_contract, 'verified');
+  assert.equal(JSON.stringify(context), before);
+  for (const text of [system.replace('Author description', 'Other metadata'), system.replace('sr:C', 'sr:S'), system.replace('sdk-fixture', 'foreign'), '']) {
+    assert.throws(() => assertSearchProjection(message, { context: { messages: [{ role: 'system', content: text }, message] } }));
+  }
+  assert.throws(() => assertSearchProjection(message, { context: { messages: [{ role: 'user', content: system }, message] } }));
+});
+
+function nativeCatalogReuseFixture() {
+  const hash = value => createHash('sha256').update(value).digest('hex');
+  const value = warmDirectoryFixture(), scope = 'a'.repeat(64), body = 'Complete independent root.\n', pin = 's_' + 'a'.repeat(64), version = 'v1';
+  value.fixture.scope = scope;
+  for (const snapshot of value.fixture.snapshots) {
+    Object.assign(snapshot.record, { kind: 'skill', entrypoint: 'SKILL.md', ref: 'skill://' + encodeURIComponent(snapshot.record.id) + '/SKILL.md', locator: { type: 'shared_skill' } });
+    Object.assign(snapshot, { scope, snapshot_id: pin, version_id: version,
+      files: [{ path: 'SKILL.md', bytes: Buffer.byteLength(body), sha256: hash(body) }] });
+  }
+  for (const record of value.message.details.records) Object.assign(record, { scope, kind: 'skill' });
+  value.message.content[0].text = JSON.stringify({ ...value.message.details, records: value.message.details.records.map(({ id, scope, ...record }) => record) });
+  const snapshot = value.fixture.snapshots[0], member = value.fixture.snapshots[1].record, visible = value.message.details.records[1];
+  const binding = { record: snapshot.record, scope, snapshot_id: pin, version_id: version, body_sha256: hash(body), ref: snapshot.record.ref + '?snapshot=' + pin };
+  const canonical = { files: [], required: [], candidates: [{ id: member.id, ref: member.ref, kind: 'skill', name: member.name,
+    description: member.description, availability: 'available' }], references: [] };
+  const directory = { ...canonical, candidates: canonical.candidates.map(({ id, ...record }) => ({ ...record, ref: visible.ref })) };
+  const footer = { ref: 'sr:S' + 's'.repeat(22), directory };
+  const read = { role: 'toolResult', toolName: 'read', toolCallId: 'complete-inspect', isError: false,
+    content: body + '\n\n<skill-directory>\n' + JSON.stringify(footer) + '\n</skill-directory>', details: { contextBrokerRead: {
+      version: 3, identity: JSON.stringify(['sdk-fixture', scope, 'skill', 'shared_skill', snapshot.record.id]), toolCallId: 'complete-inspect',
+      snapshotId: pin, bodySha256: hash(body), bytes: Buffer.byteLength(body), delivery: { start: 0, end: body.length, encoding: 'raw' }, binding, directory: canonical } } };
+  const after = structuredClone(value.captures[0]); after.requestId = 'after-inspect';
+  after.context.messages[0].content = after.context.messages[0].content.replace('<name>b</name><description>Metadata</description>', '<name>b</name>');
+  after.context.messages.push(read); value.captures.push(after);
+  return { ...value, read, footer, binding };
+}
+
+test('a warm catalog can reuse the complete native generated directory in the same provider only', () => {
+  const value = nativeCatalogReuseFixture(), before = JSON.stringify(value);
+  assert.equal(namedSdkProbe.assertWarmDirectoryProjection(value.captures, value.message, value.fixture, value.bodies).status, 'verified');
+  assert.equal(JSON.stringify(value), before);
+  for (const mutate of [
+    value => { value.captures[1].context.messages.pop(); },
+    value => { value.read.content = 'Only a summary.'; },
+    value => { value.read.isError = true; },
+    value => { value.read.toolCallId = 'unrelated'; },
+    value => { value.read.details.contextBrokerRead.identity = JSON.stringify(['foreign', value.fixture.scope, 'skill', 'shared_skill', value.binding.record.id]); },
+    value => { value.read.details.contextBrokerRead.binding.scope = 'b'.repeat(64); },
+    value => { value.read.details.contextBrokerRead.version = 99; },
+    value => { value.read.details.contextBrokerRead.binding.record.locator = { type: 'notion_page' }; },
+    value => { value.read.content = value.read.content.replace('sr:C', 'sr:S'); },
+    value => { value.read.details.contextBrokerRead.directory.candidates[0].ref += '?snapshot=' + value.binding.snapshot_id; },
+    value => { value.footer.directory.candidates.push({ ...value.footer.directory.candidates[0] });
+      value.read.details.contextBrokerRead.directory.candidates.push({ ...value.read.details.contextBrokerRead.directory.candidates[0] });
+      value.read.content = value.read.content.slice(0, value.read.details.contextBrokerRead.delivery.end) + '\n\n<skill-directory>\n'
+        + JSON.stringify(value.footer) + '\n</skill-directory>'; },
+    value => { value.read.content += '\n<skill-directory>unverified</skill-directory>'; },
+  ]) { const invalid = nativeCatalogReuseFixture(); mutate(invalid); assert.throws(() => namedSdkProbe.assertWarmDirectoryProjection(invalid.captures, invalid.message, invalid.fixture, invalid.bodies)); }
+});
+
 function dollarProjectionFixture(compact = true) {
   const bodies = new Map([['a', '\ufeff作者 <instructions>literal source</instructions>\r\n'], ['base', 'Base instructions.\n']]);
   const snapshots = [...bodies.keys()].map(name => ({ record: { name }, entrypoint: 'SKILL.md',

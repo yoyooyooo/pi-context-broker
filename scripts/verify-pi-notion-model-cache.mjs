@@ -669,7 +669,23 @@ export function assertModelCase(events, expected, { native = false, explicit = f
     assert.ok(!graphEvents.some(row => row.phase === 'tool-call' && row.allowed !== true), 'A claimed pass cannot hide a blocked or unauthored public tool');
     const returned = graphEvents.filter(row => ['metadata-result', 'preparation-result', 'tool-result'].includes(row.phase));
     assert.ok(returned.every(row => row.complete === true), 'Every public tool result must pass its actual CLI/manifest/delivery proof');
-    for (const result of returned.filter(row => row.phase === 'metadata-result')) assert.ok(provider.some(row => row.toolResults.some(tool => tool.toolCallId === result.toolCallId && tool.sha256 === result.sha256 && tool.bytes === result.bytes && tool.exactToolOutputCopies === 1)), 'Metadata must reach the provider as one complete actual native tool output');
+    for (const result of returned.filter(row => row.phase === 'metadata-result')) assert.ok(provider.some(row => row.toolResults.some(tool => {
+      if (tool.toolCallId !== result.toolCallId || tool.sha256 !== result.sha256 || tool.bytes !== result.bytes) return false;
+      const projections = tool.metadataProjections ?? [];
+      if (!Array.isArray(projections)) return false;
+      if (tool.exactToolOutputCopies === 1) return projections.length === 0;
+      if (toolContract !== 'agent-cli-ref-20261105' || result.tool !== 'notion_list' || tool.tool !== 'notion_list'
+        || tool.exactToolOutputCopies !== 0 || projections.length !== 1) return false;
+      const projection = projections[0];
+      // The paired graph observer verifies every omitted description against a
+      // complete card in this same payload; retain its distinct delivery receipt.
+      return projection.sourceSha256 === result.sha256 && projection.sourceBytes === result.bytes
+        && /^[a-f0-9]{64}$/u.test(projection.sha256) && projection.sha256 !== result.sha256
+        && Number.isSafeInteger(projection.bytes) && projection.bytes > 0
+        && Array.isArray(projection.descriptionReuse) && projection.descriptionReuse.length > 0
+        && projection.descriptionReuse.every(evidence => ['actual-default-card', 'actual-discovery-card', 'complete-generated-directory'].includes(evidence.origin)
+          && /^sr:C[A-Za-z0-9_-]{22}$/u.test(evidence.ref) && typeof evidence.description === 'string');
+    })), 'Metadata must reach the provider as one complete actual native tool output or one independently verified metadata projection');
     const useTool = toolContract === 'legacy-pi-tools' ? 'skill_prepare' : 'notion_use';
     for (const result of returned.filter(row => row.phase === 'tool-result' && ['skill_prepare', 'notion_use'].includes(row.tool))) {
       assert.equal(result.tool, useTool, 'Fresh and historical tool contracts cannot be mixed');

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
+import { createServer } from 'node:http';
 import { mkdtemp, mkdir, writeFile, readFile, symlink } from 'node:fs/promises';
 import { observeGraphGate, GRAPH_GATE_TOOLS } from './notion-skill-graph-model.mjs';
 import { verifyPublicReadBoundary, parseGraphObserverOptions, copySdkDiscoveryFixture } from './notion-skill-graph-observer-smoke.mjs';
@@ -97,16 +98,88 @@ async function fixture(mutate, options = {}) {
   if (mutate) mutate(receipt); await save(path.join(index, '.broker-host-index.json'), receipt);
   const originalFetch = globalThis.fetch, handlers = new Map(), ctx = { model: { provider: 'controlled', id: 'fake' } };
   observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
-    { fs, crypto, path, parseNativeReference, cwd: directory, cache, responses, output, rootRef: record.ref, model: 'controlled/fake', prompt: 'controlled task' });
+    { fs, crypto, path, parseNativeReference, cwd: directory, cache, responses, output, rootRef: record.ref, model: 'controlled/fake', prompt: 'controlled task', ...options.observerSettings });
   const system = '<skill><name>root</name><location>' + main + '</location></skill>';
   handlers.get('before_agent_start')({ systemPrompt: system, prompt: 'controlled task' }, ctx);
-  handlers.get('before_provider_request')({ payload: { model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })), messages: [{ role: 'system', content: system }] } }, ctx);
+  if (!options.observerSettings?.discoveryExperiment) handlers.get('before_provider_request')({ payload: { model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })), messages: [{ role: 'system', content: system }] } }, ctx);
   const call = (id, target) => { handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: 'read', arguments: { path: target } }] } });
     return handlers.get('tool_call')({ toolName: 'read', toolCallId: id, input: { path: target } }); };
   const result = (id, content) => handlers.get('tool_result')({ toolName: 'read', toolCallId: id, content: [{ type: 'text', text: content }] });
   return { directory, index, main, tree, body, resource, files, call, result, receipt, cache, responses, manifest, record, owner, scope, snapshot, version, handlers, ctx,
     events: async () => (await readFile(output, 'utf8')).trim().split('\n').map(JSON.parse), close: () => { globalThis.fetch = originalFetch; } };
 }
+
+test('SC06 on-demand moves only a removed complete default description into the first matching discovery output', async () => {
+  const xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+  for (const mode of ['full-cards', 'on-demand-cards']) {
+    const f = await fixture(undefined, { name: 'Visible &quot; Skill', alias: 'visible-skill', observerSettings: {
+      rootRef: undefined, sourceMode: 'sdk', entryMode: 'discovery-only', discoveryExperiment: { version: 1, mode } } });
+    try {
+      f.record.description = 'Exact "description" &quot;\n';
+      await save(path.join(f.responses, 'list.json'), { code: 0, command: 'list', response: { ok: true, scope: f.scope, records: [f.record] } });
+      const ref = 'sr:C' + 'x'.repeat(22), section = 'context-broker-notion-catalog';
+      f.ctx.sessionManager = { getBranch: () => [{ type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref,
+        target: { kind: 'candidate', identity: { source: 'notion', scope: f.scope, id: f.owner, kind: 'skill', ref: bareRef(f.owner, '') } } } }] };
+      const card = '<skill><name>' + xml(f.record.name) + '</name><description>' + xml(f.record.description) + '</description><source>notion</source><location>' + ref + '</location></skill>';
+      const catalog = '<ntn-skills-view-catalog>Original guidance.<available_skills>' + card + '</available_skills></ntn-skills-view-catalog>';
+      const details = { ok: true, state: 'known', count: 1, total_count: 1, has_more: false, next_cursor: null,
+        coverage: { exhaustive: true, sources: [] }, failures: [], records: [{ id: f.owner, scope: f.scope, ref, kind: 'skill',
+        name: f.record.name, description: f.record.description, source: 'notion', in_default_view: true, availability: 'available' }] };
+      const complete = { ...details, records: details.records.map(({ id: _id, scope: _scope, ...record }) => record) };
+      const model = structuredClone(complete); delete model.records[0].description;
+      const list = id => ({ role: 'toolResult', toolCallId: id, toolName: 'notion_list', isError: false,
+        content: [{ type: 'text', text: JSON.stringify(model) }], details });
+      const messages = [{ role: 'system', content: 'Native system', sections: { [section]: catalog, local: 'Native local catalog' } },
+        { role: 'user', content: [{ type: 'text', text: 'Author <skill-directory>example</skill-directory>' }, { type: 'image', data: 'unchanged' }] },
+        list('first'), list('second')];
+      const before = JSON.stringify(messages), project = value => f.handlers.get('context_with_system')({ messages: value }, f.ctx)?.messages ?? value;
+      const actual = project(messages);
+      assert.equal(JSON.stringify(messages), before, 'Original history is immutable');
+      if (mode === 'full-cards') { assert.deepEqual(actual, messages); continue; }
+      assert.equal(actual[2].content[0].text, JSON.stringify(complete), 'Only the first missing exact description is moved');
+      assert.equal(actual[3].content[0].text, messages[3].content[0].text);
+      assert.deepEqual(actual[1], messages[1]); assert.strictEqual(actual[2].details, details);
+      assert.ok(!actual[0].sections[section].includes('<skill>'));
+      const proof = (await f.events()).filter(event => event.phase === 'discovery-projection').at(-1);
+      assert.deepEqual(proof.restoredDescriptions.map(item => [item.toolCallId, item.ref, item.source, item.name, item.descriptionSha256]),
+        [['first', ref, 'notion', f.record.name, hash(f.record.description)]]);
+      for (const id of ['first', 'second']) {
+        assert.equal(authoredTool(f, id, 'notion_list', {}), undefined);
+        f.handlers.get('tool_result')({ toolName: 'notion_list', toolCallId: id, content: [{ type: 'text', text: JSON.stringify(complete) }], details });
+      }
+      const payload = selected => ({ model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })), messages: [
+        { role: 'system', content: selected[0].content + '\n\n' + Object.values(selected[0].sections).join('\n\n') },
+        ...selected.filter(message => message.role === 'toolResult').map(message => ({ role: 'tool', tool_call_id: message.toolCallId, content: message.content[0].text }))] });
+      const wire = [], server = createServer(async (request, response) => {
+        let body = ''; for await (const chunk of request) body += chunk; wire.push(body); response.end('{}');
+      });
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+      try {
+        const actualPayload = payload(project(messages)), originalPayload = JSON.stringify(actualPayload);
+        f.handlers.get('before_provider_request')({ payload: actualPayload }, f.ctx);
+        const response = await fetch('http://127.0.0.1:' + server.address().port, { method: 'POST', body: originalPayload }); await response.text();
+        assert.equal(JSON.stringify(actualPayload), originalPayload); assert.deepEqual(wire, [originalPayload]);
+        const events = await f.events(), provider = events.filter(event => event.phase === 'provider-request').at(-1), transport = events.filter(event => event.phase === 'provider-transport-start').at(-1);
+        assert.equal(transport.observedPayloadSha256, provider.observedPayloadSha256); assert.equal(transport.wireBodySha256, hash(originalPayload));
+        assert.equal(provider.toolResults.find(item => item.toolCallId === 'second').metadataProjections[0].descriptionReuse[0].tool_call_id, 'first');
+        const missing = payload(project(messages)); missing.messages[1].content = JSON.stringify(model);
+        assert.throws(() => f.handlers.get('before_provider_request')({ payload: missing }, f.ctx), /no complete card|restored discovery description/);
+      } finally { await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }); }
+      for (const mutate of [
+        value => { value[0].sections[section] = catalog.replace('<description>' + xml(f.record.description) + '</description>', ''); },
+        value => { value[0].sections[section] = catalog.replace('<source>notion</source>', '<source>foreign</source>'); },
+        value => { value[0].sections[section] = catalog.replace('<name>' + xml(f.record.name) + '</name>', '<name>Different name</name>'); },
+        value => { value[0].sections[section] = catalog.replace(xml(f.record.description), 'Different description'); },
+        value => { value[2].isError = true; value[3].isError = true; },
+        value => { value[2].details = {}; value[3].details = {}; },
+      ]) {
+        const invalid = structuredClone(messages); mutate(invalid); const projected = project(invalid);
+        assert.equal(projected[2].content[0].text, invalid[2].content[0].text);
+        assert.equal(projected[3].content[0].text, invalid[3].content[0].text);
+      }
+    } finally { f.close(); }
+  }
+});
 
 test('H4 sequence 29: a complete advertised host-index main authorizes only its linked exact manifest resource alias', async () => {
   const f = await fixture(), alias = path.join(f.index, 'references/checklist.md');
@@ -328,6 +401,66 @@ for (const selector of ['Visible Skill', 'visible-skill']) test('named notion_us
       messages: [{ role: 'tool', tool_call_id: id, content: compiled.content }] } }, f.ctx);
     const provider = (await f.events()).filter(event => event.phase === 'provider-request').at(-1);
     assert.equal(provider.toolResults.find(result => result.toolCallId === id).records[0].providerCopies, 1);
+  } finally { f.close(); }
+});
+
+test('actual catalog observation reuses a complete generated card from the same provider tool output', async () => {
+  const f = await fixture(undefined, { name: 'Visible Skill', alias: 'visible-skill' });
+  const canonical = value => value === null || typeof value !== 'object' ? JSON.stringify(value) : Array.isArray(value)
+    ? '[' + value.map(canonical).join(',') + ']' : '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonical(value[key])).join(',') + '}';
+  try {
+    f.record.description = 'Quoted "metadata" &quot;\n';
+    f.record.locator = { type: 'shared_skill' };
+    await save(path.join(f.responses, 'list.json'), { code: 0, command: 'list', response: { ok: true, scope: f.scope, records: [f.record] } });
+    const ref = 'sr:C' + 'c'.repeat(22);
+    f.ctx.sessionManager = { getBranch: () => [{ type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref,
+      target: { kind: 'candidate', identity: { source: 'notion', scope: f.scope, id: f.owner, kind: 'skill', locator: f.record.locator, ref: bareRef(f.owner, '') } } } }] };
+    const binding = { scope: f.scope, record: f.record, snapshot_id: f.snapshot, version_id: f.version, body_sha256: hash(f.body), ref: f.files[0].ref };
+    const card = { id: f.owner, ref: f.record.ref, kind: 'skill', name: f.record.name, description: f.record.description, availability: 'available' };
+    const directory = { files: f.files, required: [], candidates: [card], references: [] };
+    const node = { id: f.owner, state: 'prepared', record: f.record, content: f.body, path: 'SKILL.md', bytes: Buffer.byteLength(f.body), body_sha256: hash(f.body), binding, ...directory };
+    const vector = { version: 1, scope: f.scope, roots: [f.owner], required: [], bindings: [binding] };
+    const graph = { scope: f.scope, roots: [f.owner], graph_lock: { ...vector, sha256: hash(canonical(vector)) }, budget: {}, usage: {} };
+    await save(path.join(f.responses, 'prepare.json'), { requestId: 'actual-catalog-use', code: 0, command: 'prepare', response: {
+      ok: true, status: 'ready', purpose: 'use', ...graph, roots: [{ id: f.owner }], nodes: [node] } });
+    readMain(f);
+    const id = 'catalog-use'; assert.equal(authoredTool(f, id, 'notion_use', { ref: f.record.ref }), undefined);
+    const identity = JSON.stringify(['notion', f.scope, 'skill', 'shared_skill', f.owner]);
+    const compiled = compileSkillPreparation({ purpose: 'use', roots: [f.files[0].ref], records: [{ name: f.record.name, kind: 'skill', ref: f.files[0].ref,
+      content: f.body, source: { identity, sha256: hash(f.body), bytes: Buffer.byteLength(f.body) }, directory: { ...directory, candidates: [{ ...card, ref }] } }] });
+    const proof = { version: 2, toolCallId: id, purpose: 'use', graphs: [graph], projection: compiled.projection,
+      records: [{ version: 2, identity, loaded: true, snapshotId: f.snapshot, bodySha256: hash(f.body), bytes: Buffer.byteLength(f.body), binding, directory, delivery: compiled.bodySpans[0] }] };
+    f.handlers.get('tool_result')({ toolName: 'notion_use', toolCallId: id, content: [{ type: 'text', text: compiled.content }], details: { contextBrokerPreparation: proof } });
+    assert.equal((await f.events()).find(event => event.phase === 'preparation-result' && event.toolCallId === id).complete, true);
+    const system = '<ntn-skills-view-catalog><skill><name>Visible Skill</name><source>notion</source><location>' + ref + '</location></skill></ntn-skills-view-catalog>';
+    const request = content => f.handlers.get('before_provider_request')({ payload: { tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })),
+      messages: [{ role: 'system', content: system }, ...(content === undefined ? [] : [{ role: 'tool', tool_call_id: id, content }])] } }, f.ctx);
+    request(compiled.content);
+    assert.equal((await f.events()).filter(event => event.phase === 'catalog').at(-1).skills[0].provenance?.ownerId, f.owner);
+    for (const content of [undefined, 'A summary', compiled.content.slice(0, -1)]) {
+      request(content); assert.equal((await f.events()).filter(event => event.phase === 'catalog').at(-1).skills[0].provenance, null);
+    }
+    const details = { ok: true, state: 'known', count: 1, total_count: 1, has_more: false, next_cursor: null,
+      coverage: { exhaustive: true, sources: [] }, failures: [], records: [{ id: f.owner, ref, kind: 'skill',
+        name: f.record.name, description: f.record.description, source: 'notion', scope: f.scope, in_default_view: true, availability: 'available' }] };
+    const model = { ...details, records: details.records.map(({ id: _id, scope: _scope, ...card }) => card) };
+    assert.equal(authoredTool(f, 'catalog-list', 'notion_list', {}), undefined);
+    f.handlers.get('tool_result')({ toolName: 'notion_list', toolCallId: 'catalog-list', content: [{ type: 'text', text: JSON.stringify(model) }], details });
+    const missing = structuredClone(model); delete missing.records[0].description;
+    const payload = { tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })), messages: [
+      { role: 'system', content: system }, { role: 'tool', tool_call_id: id, content: compiled.content },
+      { role: 'tool', tool_call_id: 'catalog-list', content: JSON.stringify(missing) }] };
+    f.handlers.get('before_provider_request')({ payload }, f.ctx);
+    const delivery = (await f.events()).filter(event => event.phase === 'provider-request').at(-1).toolResults.find(result => result.toolCallId === 'catalog-list');
+    assert.equal(delivery.exactToolOutputCopies, 0);
+    assert.equal(delivery.metadataProjections[0].descriptionReuse[0].origin, 'complete-generated-directory');
+    assert.equal(delivery.metadataProjections[0].sourceSha256, hash(JSON.stringify(model)));
+    const withoutBody = structuredClone(payload); withoutBody.messages.splice(1, 1);
+    assert.throws(() => f.handlers.get('before_provider_request')({ payload: withoutBody }, f.ctx), /no complete card/);
+    for (const change of [value => { value.records[0].name = 'another name'; }, value => { value.records[0].ref = value.records[0].ref.replace('sr:C', 'sr:S'); }]) {
+      const changed = structuredClone(payload), body = JSON.parse(changed.messages[2].content); change(body); changed.messages[2].content = JSON.stringify(body);
+      assert.throws(() => f.handlers.get('before_provider_request')({ payload: changed }, f.ctx), /Discovery projection/);
+    }
   } finally { f.close(); }
 });
 

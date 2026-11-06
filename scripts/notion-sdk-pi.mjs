@@ -13,7 +13,7 @@ import { isolatedEnv, resolveHost, runCommand, writeFakeProvider, assertSupporte
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
-import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
+import { verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards } from './skill-preparation-evidence.mjs';
 
 const usage = 'Usage: node scripts/notion-sdk-pi.mjs doctor|run --package ABSOLUTE_INSTALLED_BROKER (--fixture ABSOLUTE_FIXTURE_JSON | --live-input ABSOLUTE_LIVE_INPUT_JSON) [--expect-short-refs true|false] [--expect-compact-context true|false] [--expect-direct-scalar true|false] [--expect-short-confirmations true|false] [--scenario all|default-view|codemode-hidden|codemode-truncated|dollar|native|native-repeat|prepare|scoped-command|resource-batch|resource-batch-short-refs|resource-scalar|resource-scalar-short-refs|partial-entrypoint|session-lifecycle] [--out NEW_ABSOLUTE_EVIDENCE]; evidence|cleanup --evidence ABSOLUTE_EVIDENCE. Real Pi 1.4.0 or 1.5.0 RPC, controlled provider with public onPayload/onResponse hooks, offline source, default bundled SDK (source.command is absent). Compact context, direct scalar and short confirmation checks default to true; false observes a baseline without certifying that contract. Comparisons include the installed Broker and bundled CLI/SDK identities. default-view observes pending startup plus ready metadata on an ordinary continuation. session-lifecycle drives native fork/clone/tree/compact/resume and late-response cancellation with a controlled summary. The explicit live-input route selects one separate cold consumer on real Notion, an independently installed package auto-loaded by owned settings, and observer-only frozen local originals. The default offline all remains 14 scenarios. Native menu and real model are not claimed; live retained-body Member exclusion requires separate source attribution.';
 const scenarioNames = ['default-view', 'codemode-hidden', 'codemode-truncated', 'dollar', 'native', 'native-repeat', 'prepare', 'scoped-command', 'resource-batch', 'resource-batch-short-refs', 'resource-scalar', 'resource-scalar-short-refs', 'partial-entrypoint', 'session-lifecycle'];
@@ -54,6 +54,18 @@ export function providerSystemText(context) {
   return [...content, ...sections.values()].filter(Boolean).join('\n\n');
 }
 function toolResult(context, id) { return [...context.messages].reverse().find(message => message.role === 'toolResult' && message.toolCallId === id); }
+/** Attach only the original host evidence to byte-identical actual HTTP tool
+ * text. This object is for assertions; no receipt is added to the request. */
+export function catalogContextFromHttp(context, captured) {
+  return { ...context, messages: context.messages.map(message => {
+    if (message.role !== 'tool') return message;
+    const originals = captured.messages.filter(value => value.role === 'toolResult' && value.toolCallId === message.tool_call_id);
+    assert.equal(originals.length, 1, 'Every HTTP tool result needs one exact captured result');
+    const original = originals[0];
+    assert.equal(textContent(message.content), textContent(original.content), 'HTTP text cannot borrow proof for another rendering');
+    return { ...original, content: message.content };
+  }) };
+}
 function parsedResult(message) { assert.ok(message && !message.isError, 'Public tool result must succeed'); return JSON.parse(textContent(message.content)); }
 function strings(value) {
   if (typeof value === 'string') {
@@ -259,7 +271,38 @@ export function assertProviderToolSequence(captures, frames, { expectedErrors = 
   return { provider_requests: captures.length, tool_rounds: rounds.length, tool_calls: starts.length, sequence };
 }
 
-export function assertSearchProjection(message, { expectCompact = true, scope } = {}) {
+function catalogDescriptionEvidence(context, expected, fixture, { generatedOnly = false, exclude } = {}) {
+  if (!context || !/^sr:C[A-Za-z0-9_-]{22}$/u.test(expected.ref)) return undefined;
+  const messages = context.messages ?? [], xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+  if (!generatedOnly) {
+    const system = providerSystemText(context), card = '<skill><name>' + xml(expected.name) + '</name><description>' + xml(expected.description)
+      + '</description><source>' + xml(expected.source) + '</source><location>' + expected.ref + '</location></skill>';
+    const matches = [...system.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)].flatMap(block =>
+      [...block[1].matchAll(/<skill>[\s\S]*?<\/skill>/gu)].filter(match => match[0] === card));
+    if (expected.kind === 'skill' && matches.length === 1) return { origin: 'actual-default-card', ref: expected.ref, description: expected.description, system_sha256: hash(system) };
+    for (const message of messages) {
+      if (message === exclude || message.toolCallId === exclude?.toolCallId) continue;
+      let cards; try { cards = visibleDiscoveryCards(message); } catch { continue; }
+      const matches = cards.filter(card => ['ref', 'id', 'scope', 'source', 'kind', 'name', 'description', 'availability'].every(key => card[key] === expected[key]));
+      if (matches.length === 1) return { origin: 'actual-discovery-card', ref: expected.ref, description: matches[0].description,
+        tool_call_id: matches[0].tool_call_id, tool_content_sha256: matches[0].tool_content_sha256 };
+    }
+  }
+  const original = fixture?.snapshots?.find(snapshot => snapshot.scope === expected.scope && snapshot.record.id === expected.id)?.record
+    ?? (fixture?.scope === expected.scope ? fixture.default_view?.records.find(record => record.id === expected.id) : undefined);
+  if (!original) return undefined;
+  return generatedDescriptionEvidence(messages, { ...expected, canonical_ref: original.ref }, (binding, bodyHash, bodyBytes) => {
+    const snapshots = fixture.snapshots.filter(snapshot => snapshot.scope === binding.scope && snapshot.record.id === binding.record.id
+      && snapshot.snapshot_id === binding.snapshot_id && snapshot.version_id === binding.version_id);
+    if (snapshots.length !== 1) return false;
+    const snapshot = snapshots[0], main = snapshot.files.find(file => file.path === (snapshot.entrypoint ?? snapshot.record.entrypoint));
+    return main?.sha256 === bodyHash && main.bytes === bodyBytes && binding.body_sha256 === bodyHash
+      && binding.record.ref === snapshot.record.ref && binding.record.kind === snapshot.record.kind
+      && JSON.stringify(binding.record.locator) === JSON.stringify(snapshot.record.locator);
+  });
+}
+
+export function assertSearchProjection(message, { expectCompact = true, scope, context, fixture } = {}) {
   const model = parsedResult(message), full = message.details;
   assert.ok(full && Array.isArray(full.records), 'The full metadata directory must remain in host details');
   assert.equal(model.records.length, full.records.length);
@@ -270,11 +313,19 @@ export function assertSearchProjection(message, { expectCompact = true, scope } 
     const { id: _id, scope: _scope, ...visible } = record;
     return visible;
   }) };
-  if (expectCompact) assert.deepEqual(model, compact, 'Only id and scope are omitted from the model search projection');
-  else assert.ok(JSON.stringify(model) === JSON.stringify(full) || JSON.stringify(model) === JSON.stringify(compact), 'Baseline search content must still agree with its full host receipt');
+  const reused = [];
+  const projected = { ...compact, records: compact.records.map((record, index) => {
+    if (Object.hasOwn(model.records[index], 'description')) return record;
+    assert.ok(scope !== undefined, 'Description reuse needs the frozen source scope');
+    const evidence = catalogDescriptionEvidence(context, full.records[index], fixture, { exclude: message });
+    assert.ok(evidence, 'An omitted description must remain fully visible in this same actual provider');
+    reused.push(evidence); const { description, ...remaining } = record; return remaining;
+  }) };
+  if (expectCompact) assert.deepEqual(model, projected, 'Only id/scope and independently proved duplicate descriptions may be omitted');
+  else assert.ok(JSON.stringify(model) === JSON.stringify(full) || JSON.stringify(model) === JSON.stringify(projected), 'Baseline search content must still agree with its full host receipt');
   return { records: full.records.length, content_bytes: Buffer.byteLength(textContent(message.content)),
     host_details_bytes: Buffer.byteLength(JSON.stringify(full)), full_host_id_scope: true,
-    compact_contract: expectCompact ? 'verified' : 'not_required_for_baseline' };
+    compact_contract: expectCompact ? 'verified' : 'not_required_for_baseline', reused_descriptions: reused };
 }
 
 /** The actual default catalog must agree with the independent metadata fixture. */
@@ -301,19 +352,25 @@ function defaultViewProjection(captures, discovery, events, fixture, { sourceId 
     const view = attributes.find(value => value.source === sourceId);
     if (!view?.id) return { request_id: capture.requestId, state: view?.status ?? 'not_ready', code: view?.code ?? null };
     assert.equal(view.id, expected.id); assert.equal(view.partial, 'false');
-    const entries = [...catalog.matchAll(/<skill><name>([^<]+)<\/name><description>([^<]*)<\/description><source>([^<]+)<\/source><location>([^<]+)<\/location><\/skill>/gu)];
+    const entries = [...catalog.matchAll(/<skill><name>([^<]+)<\/name>(?:<description>([^<]*)<\/description>)?<source>([^<]+)<\/source><location>([^<]+)<\/location><\/skill>/gu)];
     assert.equal(entries.length, expected.records.length);
+    assert.equal((catalog.match(/<skill>/gu) ?? []).length, entries.length);
+    const reused = [];
     const xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
     for (const record of expected.records) {
       const actual = discovery ? discovery.records.find(value => value.name === record.name && value.source === sourceId)
-        : { name: record.name, description: record.description, source: sourceId };
+        : { ...record, scope: fixture.scope, source: sourceId, availability: record.enabled === false ? 'disabled' : 'available' };
       assert.ok(actual); const matches = entries.filter(entry => entry[1] === xml(record.name) && entry[3] === actual.source);
       assert.equal(matches.length, 1, 'Display the author name and explicit source, not the sanitized command token');
-      assert.equal(matches[0][2], xml(actual.description)); assert.match(matches[0][4], /^sr:C[A-Za-z0-9_-]{22}$/u);
+      assert.match(matches[0][4], /^sr:C[A-Za-z0-9_-]{22}$/u);
+      if (matches[0][2] === undefined) {
+        const evidence = catalogDescriptionEvidence(capture.context, { ...actual, ref: matches[0][4] }, fixture, { generatedOnly: true });
+        assert.ok(evidence, 'Missing default description requires a complete same-request generated card'); reused.push(evidence);
+      } else assert.equal(matches[0][2], xml(actual.description));
       if (discovery) assert.equal(matches[0][4], actual.ref);
       assert.equal(texts.reduce((count, text) => count + text.split(matches[0][0]).length - 1, 0), 1);
     }
-    return { request_id: capture.requestId, state: 'ready', records: entries.length, catalog_bytes: Buffer.byteLength(catalogs[0][0]) };
+    return { request_id: capture.requestId, state: 'ready', records: entries.length, catalog_bytes: Buffer.byteLength(catalogs[0][0]), reused_descriptions: reused };
   });
   assert.equal(observations.at(-1)?.state, 'ready', 'Missing or incomplete Default View cannot pass as an empty successful directory');
   return { status: 'verified', view_id: expected.id, source_command_configured: false, sdk_catalog_results: results.length,
@@ -356,7 +413,7 @@ export function assertWarmDirectoryProjection(captures, discoveryMessage, fixtur
     const views = [...catalogs[0][1].matchAll(/<view\b([^>]*)>/gu)]; assert.equal(views.length, 1);
     const view = Object.fromEntries([...views[0][1].matchAll(/([a-z_]+)="([^"]*)"/gu)].map(match => [match[1], match[2]]));
     assert.equal(view.source, sourceId); assert.equal(view.id, fixture.default_view.id); assert.equal(view.partial, 'false');
-    const cards = [...catalogs[0][1].matchAll(/<skill><name>([^<]+)<\/name><description>([^<]*)<\/description>(?:<source>([^<]+)<\/source>)?<location>([^<]+)<\/location><\/skill>/gu)];
+    const cards = [...catalogs[0][1].matchAll(/<skill><name>([^<]+)<\/name>(?:<description>([^<]*)<\/description>)?(?:<source>([^<]+)<\/source>)?<location>([^<]+)<\/location><\/skill>/gu)];
     assert.equal(cards.length, expected.length); assert.equal((catalogs[0][1].match(/<skill>/gu) ?? []).length, cards.length);
     const records = cards.map(card => {
       const matches = full.records.filter(record => record.ref === card[4] && record.source === sourceId); assert.equal(matches.length, 1);
@@ -365,10 +422,16 @@ export function assertWarmDirectoryProjection(captures, discoveryMessage, fixtur
       assert.equal(record.name, frozen.name); assert.equal(record.description, frozen.description);
       assert.equal(record.in_default_view, true); assert.equal(record.availability, 'available');
       assert.equal(card[1], xml(transport === 'cli' ? sourceId + '-' + frozen.name : frozen.name));
-      assert.equal(card[2], xml(frozen.description)); assert.equal(card[3], transport === 'cli' ? undefined : sourceId);
+      let reuse;
+      if (card[2] === undefined) {
+        assert.equal(transport, 'sdk', 'Legacy baseline rendering remains unchanged');
+        reuse = catalogDescriptionEvidence(capture.context, record, fixture, { generatedOnly: true });
+        assert.ok(reuse, 'Warm catalog omission requires a complete same-request generated card');
+      } else assert.equal(card[2], xml(frozen.description));
+      assert.equal(card[3], transport === 'cli' ? undefined : sourceId);
       assert.match(card[4], /^sr:C[A-Za-z0-9_-]{22}$/u);
       return { id: record.id, scope: record.scope, source: sourceId, name: record.name, description: record.description,
-        displayed_name: card[1], displayed_source: card[3] ?? null, ref: card[4] };
+        displayed_name: card[1], displayed_source: card[3] ?? null, ref: card[4], ...(reuse ? { description_reuse: reuse } : {}) };
     });
     assert.deepEqual(records.map(record => record.id).sort(), expected.map(record => record.id).sort());
     return { request_id: capture.requestId, state: 'ready', system_sha256: hash(system), system_bytes: Buffer.byteLength(system),
@@ -3396,7 +3459,8 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     if (compactScenarios.includes(name)) {
       const search = captures.flatMap(capture => {
         const message = toolResult(capture.context, 'sc10-search');
-        return message ? [{ request_id: capture.requestId, ...assertSearchProjection(message, { expectCompact: expectCompactContext, scope: info.fixture.scope }) }] : [];
+        return message ? [{ request_id: capture.requestId, ...assertSearchProjection(message, { expectCompact: expectCompactContext, scope: info.fixture.scope,
+          context: capture.context, fixture: info.fixture }) }] : [];
       });
       assert.ok(search.length > 0);
       await save(join(output, 'compact-context.json'), { expected: expectCompactContext,
@@ -3426,11 +3490,15 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       await save(join(output, 'catalog-projection.json'), catalogProjectionEvidence);
     }
     if (warmDirectory) {
-      const message = toolResult(captures.at(-1).context, 'sc10-search');
+      const final = captures.at(-1), message = toolResult(final.context, 'sc10-search');
+      const originalMessage = rpc.frames.find(frame => frame.type === 'tool_execution_end' && frame.toolCallId === 'sc10-search')?.result;
+      assert.ok(originalMessage, 'The original discovery receipt must remain available');
       const serialized = await Promise.all(serializer.requests.map(async request => ({ requestId: request.provider_request_id,
-        context: { messages: (await json(join(output, request.request_file))).messages } })));
-      warmDirectoryEvidence = { provider: assertWarmDirectoryProjection(captures, message, info.fixture, info.bodies),
-        installed_serializer_http: assertWarmDirectoryProjection(serialized, message, info.fixture, info.bodies) };
+        context: catalogContextFromHttp({ messages: (await json(join(output, request.request_file))).messages },
+          captures.find(capture => capture.requestId === request.provider_request_id).context) })));
+      assertSearchProjection(message, { scope: info.fixture.scope, context: final.context, fixture: info.fixture });
+      warmDirectoryEvidence = { provider: assertWarmDirectoryProjection(captures, originalMessage, info.fixture, info.bodies),
+        installed_serializer_http: assertWarmDirectoryProjection(serialized, originalMessage, info.fixture, info.bodies) };
       await save(join(output, 'warm-directory.json'), warmDirectoryEvidence);
     }
     if (scalarScenario) {
@@ -3655,6 +3723,20 @@ async function liveScenario(info, scratch, evidence) {
     assert.notEqual(metrics.request_bytes, null); assert.notEqual(metrics.response_bytes, null);
     await save(join(output, 'source-metrics.json'), { ...metrics, ordinary_end_sequence: ordinaryBoundary });
     const serializer = await replayScenarioHttp(captures, rpc.frames, info, output, { preparation: true });
+    const discovery = toolResult(captures.at(-1).context, 'live-list')?.details;
+    assert.ok(discovery, 'The live discovery retains its full metadata evidence');
+    const catalogProjection = defaultViewProjection(captures, undefined, events, info.fixture, { sourceId: source.id });
+    const searchProjection = captures.flatMap(capture => {
+      const message = toolResult(capture.context, 'live-list');
+      return message ? [{ request_id: capture.requestId, ...assertSearchProjection(message, { scope: info.fixture.scope,
+        context: capture.context, fixture: info.fixture }) }] : [];
+    });
+    const serialized = await Promise.all(serializer.requests.map(async request => ({ requestId: request.provider_request_id,
+      context: catalogContextFromHttp({ messages: (await json(join(output, request.request_file))).messages },
+        captures.find(capture => capture.requestId === request.provider_request_id).context) })));
+    const httpCatalog = defaultViewProjection(serialized, undefined, events, info.fixture, { sourceId: source.id });
+    assert.deepEqual(httpCatalog.provider_requests.map(request => request.state), catalogProjection.provider_requests.map(request => request.state));
+    await save(join(output, 'catalog-description-reuse.json'), { provider: catalogProjection, search: searchProjection, installed_serializer_http: httpCatalog });
     for (const identity of [...Object.values(info.live.oracle), ...info.live.sentinels]) await frozenBytes(identity);
     const result = { name, status: 'passed', acceptance: 'partial_until_source_attribution', observer_finality: true, live_notion: 'verified', real_model: 'not_run',
       default_view: 'verified', default_records: info.catalog.count, source_command_configured: false, prefetch: false,

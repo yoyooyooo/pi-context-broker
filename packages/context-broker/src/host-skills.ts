@@ -22,6 +22,8 @@ import type { SelectionMode } from "./session-graph";
 import { publicEntryMaterialization } from "./notion-entry";
 import { createSessionShortRefHost, isSessionShortRefInput, matchesShortRefSource, assertShortRefSource, assertShortRefSnapshot, assertShortRefResource, type HostShortRefResolution } from "./session-short-ref-host";
 import { compileSkillPreparation, projectSkillDirectory } from "./skill-context-projection";
+import { projectCatalogDescriptions, type CatalogDescription } from "./skill-catalog-projection";
+import { reduceSessionShortRefs, resolveSessionShortRef } from "./session-short-ref";
 import { compileResourceRead } from "./resource-read-projection";
 import { DEFAULT_RESOURCE_READ_BUDGET, RESOURCE_READ_MAX_CONTEXT_BYTES, type FixedResourceRead, type ResourceReadBatch, type ResourceReadFileIdentity } from "./resource-read-types";
 
@@ -1178,10 +1180,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const systemPrompt = catalogSystemPrompt(event.systemPrompt, ctx);
     return { ...(message ? { message } : {}), systemPrompt: adapter.systemPrompt?.(systemPrompt) ?? systemPrompt };
   });
-  function catalogSystemPrompt(input: string | string[] | undefined, ctx: ExtensionContext): string {
-    const candidateRefs = modelCandidateReferences([...records, ...defaultRouters], ctx);
+  function catalogSystemPrompt(input: string | string[] | undefined, ctx: ExtensionContext,
+    candidateRefs = modelCandidateReferences([...records, ...defaultRouters], ctx), omitDescription?: (record: SkillRecord) => boolean): string {
     let systemPrompt = viewSystemPrompt(input, records, defaultRouters, new Set(readRecords.keys()), views, ctx.cwd,
-      record => candidateRefs.get(record), listToolName, piConsumption);
+      record => candidateRefs.get(record), listToolName, piConsumption, omitDescription);
     if (deferredPiDiscovery) {
       if (metadataPending || discoveryError || sourceFailures.some(failure => failure.blocking !== false)) {
         const state = metadataPending ? "pending" : "unavailable";
@@ -1194,10 +1196,56 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (event.messages[0]?.role !== "system" || lifecycleController.signal.aborted || piRun?.signal.aborted) return undefined;
     // Use only the current in-memory observation. Ordinary messages never join
     // metadata I/O; explicit preflight has already awaited its required catalog.
-    const section = "context-broker-notion-catalog", catalog = catalogSystemPrompt("", ctx).trimStart();
+    const candidateRefs = modelCandidateReferences([...records, ...defaultRouters], ctx);
+    let branch: ReturnType<typeof reduceSessionShortRefs> | undefined;
+    try { branch = reduceSessionShortRefs(ctx.sessionManager?.getBranch?.() ?? []); }
+    catch { /* Unverifiable branch references cannot justify omitting metadata. */ }
+    const defaultCard = (record: SkillRecord): CatalogDescription | undefined => {
+      const ref = candidateRefs.get(record);
+      return record.source === "notion" && ref && record.sourceId && record.sourceScope && record.kind
+        ? { ref, source: record.sourceId, scope: record.sourceScope, kind: record.kind, name: record.name,
+          description: record.description, availability: record.enabled === false ? "disabled" : "available" } : undefined;
+    };
+    const identify = (card: CatalogDescription, canonical?: { id: string; ref: string }): string | undefined => {
+        if (!branch || card.availability !== "available") return undefined;
+        try {
+          const target = resolveSessionShortRef(branch, card.ref, card.scope);
+          if (target.kind !== "candidate") return undefined;
+          const record = hostRecords.get(JSON.stringify([card.source, card.scope, card.kind, target.identity.locator.type, target.identity.id]));
+          if (!record || !matchesShortRefSource(target.identity, record) || record.enabled === false
+            || record.kind !== card.kind || record.name !== card.name || record.description !== card.description) return undefined;
+          if (canonical) {
+            const reference = parseNativeReference(canonical.ref);
+            if (canonical.id !== target.identity.id || reference.snapshot !== undefined || reference.fileId !== undefined
+              || reference.selector !== parseNativeReference(target.canonicalRef).selector || reference.path !== record.entrypoint) return undefined;
+          }
+          return JSON.stringify([card.source, target.identity, card.ref, card.name, card.description, card.availability]);
+        } catch { return undefined; }
+    };
+    const projected = projectCatalogDescriptions({ messages: event.messages,
+      defaults: [...records, ...defaultRouters].flatMap(record => { const card = defaultCard(record); return card ? [card] : []; }),
+      identify,
+      matchesRead(ref, binding, identity) {
+        if (!branch) return false;
+        try {
+          const record = hostRecords.get(identity);
+          const target = resolveSessionShortRef(branch, ref, binding.scope);
+          return record !== undefined && target.kind === "selected" && matchesShortRefSource(target.selection.identity, record)
+            && isDeepStrictEqual(target.selection.identity.locator, binding.record.locator)
+            && target.selection.identity.id === binding.record.id
+            && target.selection.identity.kind === binding.record.kind
+            && target.selection.ref === binding.ref && target.selection.snapshot_id === binding.snapshot_id
+            && target.selection.version_id === binding.version_id && target.selection.body_sha256 === binding.body_sha256;
+        } catch { return false; }
+      },
+    });
+    const section = "context-broker-notion-catalog", catalog = catalogSystemPrompt("", ctx, candidateRefs, record => {
+      const card = defaultCard(record), key = card && identify(card);
+      return key !== undefined && projected.omittedDefaults.has(key);
+    }).trimStart();
     const ownedPaths = new Set(readRecords.keys());
     const clean = (text: string) => withoutViewMetadata(text, ownedPaths, ctx.cwd);
-    return { messages: event.messages.map((message, index) => {
+    return { messages: projected.messages.map((message, index) => {
       if (message.role !== "system") return message;
       const content = typeof message.content === "string" ? clean(message.content)
         : message.content?.map(part => part.type === "text" ? { ...part, text: clean(part.text) } : part);

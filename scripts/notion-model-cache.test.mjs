@@ -392,6 +392,42 @@ test('metadata and explicit preparation require actual provider delivery in addi
   assert.throws(() => assertModelCase(events, expected, { graphEvents: [...graphEvents, { ...prepared, tool: 'skill_prepare' }] }), /cannot be mixed/);
 });
 
+test('current metadata accepts one independently witnessed provider projection without claiming an exact tool copy', () => {
+  const events = good();
+  for (const event of events.filter(row => row.phase === 'request')) event.tools = ['read', 'notion_list', 'notion_use'];
+  const card = { ref: 'sr:C' + 'A'.repeat(22), name: 'owned', description: 'Complete source description', source: 'notion', kind: 'skill', availability: 'available' };
+  const { description, ...thinCard } = card;
+  const full = JSON.stringify({ records: [card] }), projected = JSON.stringify({ records: [thinCard] });
+  const metadata = { phase: 'metadata-result', tool: 'notion_list', toolCallId: 'metadata', sha256: intentHash(full), bytes: Buffer.byteLength(full), complete: true };
+  const delivery = { tool: 'notion_list', toolCallId: metadata.toolCallId, sha256: metadata.sha256, bytes: metadata.bytes, exactToolOutputCopies: 0,
+    metadataProjections: [{ sha256: intentHash(projected), bytes: Buffer.byteLength(projected), sourceSha256: metadata.sha256, sourceBytes: metadata.bytes,
+      descriptionReuse: [{ origin: 'actual-default-card', ref: card.ref, description, system_sha256: intentHash('complete default card') }] }] };
+  const evidence = value => [...[0, 1].map(index => ({ phase: 'provider-request', tools: ['read', 'notion_list', 'notion_use'], toolResults: index ? [value] : [] })), metadata];
+  assert.equal(assertModelCase(events, expected, { graphEvents: evidence(delivery) }).providerRequests, 2);
+  assert.equal(delivery.exactToolOutputCopies, 0, 'Projected metadata never masquerades as the full native output');
+  for (const mutate of [
+    value => { value.metadataProjections[0].sourceSha256 = intentHash('other result'); },
+    value => { value.metadataProjections[0].sourceBytes++; },
+    value => { value.metadataProjections[0].descriptionReuse = []; },
+    value => { value.metadataProjections[0].descriptionReuse[0].origin = 'loaded-label'; },
+    value => { value.metadataProjections[0].descriptionReuse[0].ref = 'sr:S' + 'A'.repeat(22); },
+    value => { value.metadataProjections.push(structuredClone(value.metadataProjections[0])); },
+    value => { value.exactToolOutputCopies = 1; },
+    value => { value.exactToolOutputCopies = 2; },
+    value => { value.tool = 'skill_search'; },
+    value => { value.metadataProjections[0].sha256 = metadata.sha256; },
+    value => { value.metadataProjections[0].sha256 = 'unverified'; },
+    value => { value.metadataProjections[0].bytes = 0; },
+  ]) {
+    const invalid = structuredClone(delivery); mutate(invalid);
+    assert.throws(() => assertModelCase(events, expected, { graphEvents: evidence(invalid) }), /Metadata must reach the provider/);
+  }
+  const historical = evidence(delivery);
+  for (const row of historical.filter(row => row.phase === 'provider-request')) row.tools = ['read', 'skill_search', 'skill_prepare'];
+  for (const row of events.filter(row => row.phase === 'request')) row.tools = ['read', 'skill_search', 'skill_prepare'];
+  assert.throws(() => assertModelCase(events, expected, { graphEvents: historical, toolContract: 'legacy-pi-tools' }), /Metadata must reach the provider/);
+});
+
 test('old Pi model evidence requires an explicit historical tool contract', () => {
   const events = good(); for (const event of events.filter(row => row.phase === 'request')) event.tools = ['read', 'skill_search', 'skill_prepare'];
   const graphEvents = [0, 1].map(() => ({ phase: 'provider-request', tools: ['read', 'skill_search', 'skill_prepare'], toolResults: [] }));

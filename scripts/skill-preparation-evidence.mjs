@@ -102,3 +102,105 @@ export function verifyPreparationEvidence(content, proof, toolCallId) {
   if (projection.derived) assert.ok(records.some(record => record.mapping.state === 'replaced'), 'A derived result must identify its changed records');
   return { model, projection, records };
 }
+
+/** Inspect actual complete tool text independently of the request projection.
+ * The caller still authenticates the selected binding against its source oracle.
+ * These cards are evidence only while this very text remains in the request. */
+export function generatedCatalogCards(message) {
+  assert.equal(message?.role, 'toolResult'); assert.notEqual(message.isError, true);
+  assert.ok(typeof message.toolCallId === 'string' && message.toolCallId.length > 0);
+  const parts = typeof message.content === 'string' ? [message.content]
+    : (message.content ?? []).map(part => { assert.equal(part.type, 'text'); assert.equal(typeof part.text, 'string'); return part.text; });
+  const content = parts.join('\n');
+  let records;
+  if (message.toolName === 'notion_use') {
+    const verified = verifyPreparationEvidence(content, message.details?.contextBrokerPreparation, message.toolCallId);
+    assert.equal(verified.model.purpose, 'use');
+    records = verified.records.filter(record => record.mapping.state === 'source').map(record => ({
+      receipt: record.receipt, directory: record.model.directory, body: record.decodedContent,
+    }));
+  } else {
+    assert.equal(message.toolName, 'read');
+    const receipt = message.details?.contextBrokerRead, span = receipt?.delivery;
+    assert.equal(receipt?.version, 3); assert.notEqual(receipt.loaded, false);
+    assert.equal(receipt.toolCallId, message.toolCallId); assert.equal(span?.start, 0); assert.equal(span?.encoding, 'raw');
+    assert.ok(Number.isSafeInteger(span.end) && span.end > 0 && span.end <= content.length);
+    const body = content.slice(0, span.end);
+    assert.equal(hash(body), receipt.bodySha256); assert.equal(Buffer.byteLength(body), receipt.bytes);
+    const footer = /^\n{2,3}<skill-directory>\n([\s\S]*)\n<\/skill-directory>$/.exec(content.slice(span.end));
+    assert.ok(footer, 'Only the generated suffix after the complete author span supplies cards');
+    const model = JSON.parse(footer[1]); keys(model, ['ref', 'directory'], 'Native generated directory');
+    assert.equal(footer[1], JSON.stringify(model));
+    assert.match(model.ref, /^sr:S[A-Za-z0-9_-]{22}$/u);
+    records = [{ receipt, directory: model.directory, body }];
+  }
+  return records.flatMap(({ receipt, directory, body }) => {
+    const binding = receipt.binding, identity = JSON.parse(receipt.identity);
+    assert.ok(object(binding) && object(binding.record) && Array.isArray(identity) && identity.length === 5);
+    assert.ok(typeof identity[0] === 'string' && identity[0].length > 0);
+    assert.match(binding.scope, /^[a-f0-9]{64}$/u); assert.equal(identity[1], binding.scope);
+    assert.equal(identity[2], binding.record.kind); assert.equal(identity[3], binding.record.locator?.type);
+    assert.equal(identity[4], binding.record.id); assert.equal(binding.snapshot_id, receipt.snapshotId);
+    assert.equal(binding.body_sha256, receipt.bodySha256); assert.equal(hash(body), binding.body_sha256);
+    if (directory === undefined) return [];
+    keys(directory, ['files', 'required', 'candidates', 'references'], 'Complete generated directory');
+    const result = [];
+    for (const group of ['files', 'required', 'candidates', 'references']) {
+      const canonical = receipt.directory?.[group];
+      assert.ok(Array.isArray(directory[group]) && Array.isArray(canonical));
+      assert.equal(directory[group].length, canonical.length);
+      for (const [index, card] of directory[group].entries()) {
+        const original = canonical[index], fields = group === 'files' ? ['path', 'ref', 'bytes'] : ['ref', 'kind', 'name', 'description', 'availability'];
+        keys(card, fields, 'Every directory row keeps its public fields');
+        assert.equal(typeof card.ref, 'string'); assert.equal(typeof original?.ref, 'string');
+        for (const key of fields.filter(key => key !== 'ref')) assert.deepEqual(card[key], original[key]);
+        if (group === 'files') continue;
+        for (const key of ['kind', 'name', 'description', 'availability']) assert.equal(typeof card[key], 'string');
+        assert.equal(typeof original.id, 'string');
+        // A selected/fixed relation is not a current discovery card, even for the
+        // same owner. The exact current handle and canonical owner are both kept.
+        if (!/^sr:C[A-Za-z0-9_-]{22}$/u.test(card.ref) || original.ref.includes('?')) continue;
+        result.push({ ...card, id: original.id, canonical_ref: original.ref, source: identity[0], scope: binding.scope,
+          binding, body_sha256: hash(body), body_bytes: Buffer.byteLength(body), tool_call_id: message.toolCallId,
+          tool_name: message.toolName, tool_content_sha256: hash(content) });
+      }
+    }
+    return result;
+  });
+}
+
+export function generatedDescriptionEvidence(messages, expected, matchesBinding) {
+  if (!/^sr:C[A-Za-z0-9_-]{22}$/u.test(expected.ref) || typeof matchesBinding !== 'function') return undefined;
+  for (const message of messages) {
+    let cards;
+    try { cards = generatedCatalogCards(message); } catch { continue; }
+    const matches = cards.filter(card => ['ref', 'id', 'scope', 'source', 'kind', 'name', 'description', 'availability'].every(key => card[key] === expected[key])
+      && card.canonical_ref === expected.canonical_ref && matchesBinding(card.binding, card.body_sha256, card.body_bytes));
+    if (matches.length !== 1) continue;
+    const { binding: _binding, ...card } = matches[0];
+    return { origin: 'complete-generated-directory', ...card };
+  }
+  return undefined;
+}
+
+/** Structural validation only: absent descriptions still need a separate
+ * same-request witness. The returned rows contain actual visible descriptions. */
+export function visibleDiscoveryCards(message) {
+  assert.equal(message?.role, 'toolResult'); assert.equal(message.toolName, 'notion_list'); assert.notEqual(message.isError, true);
+  const content = typeof message.content === 'string' ? message.content : message.content.map(part => {
+    assert.equal(part.type, 'text'); return part.text;
+  }).join('\n');
+  const model = JSON.parse(content), full = message.details;
+  assert.equal(content, JSON.stringify(model)); assert.equal(full?.ok, true); assert.equal(full.state, 'known');
+  assert.ok(Array.isArray(full.records) && Array.isArray(model.records)); assert.equal(model.records.length, full.records.length);
+  const expected = { ...full, records: full.records.map((record, index) => {
+    assert.ok(typeof record.id === 'string' && typeof record.scope === 'string');
+    const { id, scope, ...card } = record;
+    if (!Object.hasOwn(model.records[index], 'description')) delete card.description;
+    return card;
+  }) };
+  assert.deepEqual(model, expected, 'Discovery projection may omit only the description after id and scope');
+  return model.records.flatMap((record, index) => Object.hasOwn(record, 'description')
+    ? [{ ...record, id: full.records[index].id, scope: full.records[index].scope, tool_call_id: message.toolCallId,
+      tool_content_sha256: hash(content) }] : []);
+}

@@ -21,7 +21,7 @@ export function withoutViewMetadata(input: string, ownedPaths: ReadonlySet<strin
 }
 
 /** Rebuild only broker-owned metadata for this request, never conversation bodies. */
-export function viewSystemPrompt(input: string | string[] | undefined, skills: readonly SkillRecord[], routers: readonly SkillRecord[], ownedPaths: ReadonlySet<string>, views: readonly NotionViewState[], cwd = process.cwd(), renderRef?: (record: SkillRecord) => string | undefined, listTool = "skill_search", notionNames = false): string {
+export function viewSystemPrompt(input: string | string[] | undefined, skills: readonly SkillRecord[], routers: readonly SkillRecord[], ownedPaths: ReadonlySet<string>, views: readonly NotionViewState[], cwd = process.cwd(), renderRef?: (record: SkillRecord) => string | undefined, listTool = "skill_search", notionNames = false, omitDescription?: (record: SkillRecord) => boolean): string {
   const prompt = withoutViewMetadata(Array.isArray(input) ? input.join("\n\n") : input ?? "", ownedPaths, cwd);
   if (!skills.length && !routers.length && !views.length) return prompt;
   const states = views.map(state => state.status === "ready"
@@ -30,11 +30,13 @@ export function viewSystemPrompt(input: string | string[] | undefined, skills: r
   const entries = skills.map(record => {
     const shortRef = record.source === "notion" ? renderRef?.(record) : undefined;
     const namedSource = notionNames && record.source === "notion";
-    return `<skill><name>${xml(namedSource ? record.name : hostName(record))}</name><description>${xml(record.description)}</description>${namedSource && record.sourceId ? `<source>${xml(record.sourceId)}</source>` : ""}<location>${xml(shortRef || (record.metadataIndexPath ?? record.path))}</location>${!shortRef && record.ref ? `<ref>${xml(record.ref)}</ref>` : ""}</skill>`;
+    const description = omitDescription?.(record) ? "" : `<description>${xml(record.description)}</description>`;
+    return `<skill><name>${xml(namedSource ? record.name : hostName(record))}</name>${description}${namedSource && record.sourceId ? `<source>${xml(record.sourceId)}</source>` : ""}<location>${xml(shortRef || (record.metadataIndexPath ?? record.path))}</location>${!shortRef && record.ref ? `<ref>${xml(record.ref)}</ref>` : ""}</skill>`;
   }).join("\n");
   const routes = routers.map(record => {
     const shortRef = record.source === "notion" ? renderRef?.(record) : undefined;
-    return `<router ref="${xml(shortRef || (record.ref ?? record.path))}"><name>${xml(record.name)}</name><description>${xml(record.description)}</description></router>`;
+    const description = omitDescription?.(record) ? "" : `<description>${xml(record.description)}</description>`;
+    return `<router ref="${xml(shortRef || (record.ref ?? record.path))}"><name>${xml(record.name)}</name>${description}</router>`;
   }).join("\n");
   return `${prompt}\n\n<ntn-skills-view-catalog>\nDefault Notion candidates. Inspect with read; use a Skill through the available use tool. Discover other authorized entries with ${listTool}. Previously loaded bodies keep their selected versions.\n${states}${entries ? `\n<available_skills>\n${entries}\n</available_skills>` : ""}${routes ? `\n<available_routers>\n${routes}\n</available_routers>` : ""}\n</ntn-skills-view-catalog>`;
 }

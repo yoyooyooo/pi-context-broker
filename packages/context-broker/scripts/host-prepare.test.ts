@@ -10,6 +10,7 @@ import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { createOmpHostAdapter } from "../src/omp-host-adapter";
 import { deduplicateSourceReads, sourceDeliveryReceipt, sourceBodyLoaded, sourceMessageText, sessionSourceBindings } from "../src/session-source-snapshot";
 import { materializeNotionEntryFile, publishNotionEntry } from "../src/notion-entry";
+import { projectCatalogDescriptions } from "../src/skill-catalog-projection";
 import type { PreparedHostGraph, PreparationPurpose } from "../src/prepare-protocol";
 import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, MessageContent, NativeSkillGraphDefinition, NativeSkillPrepareDefinition, NativeSkillSearchDefinition, SessionEntry, SkillRecord } from "../src/types";
 import type { SelectionMode } from "../src/session-graph";
@@ -27,7 +28,7 @@ function preparationDetails(result: { details?: unknown }): Record<string, unkno
   if (!preparation || typeof preparation !== "object" || Array.isArray(preparation)) throw new Error("Expected preparation proof");
   return Object.fromEntries(Object.entries(preparation));
 }
-async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKind: "pi" | "omp" = "pi") {
+async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKind: "pi" | "omp" = "pi", identityScope = scope) {
   const owned = await mkdtemp(join(tmpdir(), "broker-host-prepare-"));
   const directory = withDirectoryAlias ? join(owned, "alias") : owned;
   if (withDirectoryAlias) {
@@ -50,9 +51,9 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
     await mkdir(join(directory, name), { recursive: true });
     await writeFile(path, body);
     let selected: SkillRecord = {
-      ...metadata, source: "notion", sourceId: "controlled", sourceScope: scope, body, path, snapshotId, versionId: hash(body),
+      ...metadata, source: "notion", sourceId: "controlled", sourceScope: identityScope, body, path, snapshotId, versionId: hash(body),
       aliases: [], normalizedAliases: [], normalizedName: name, normalizedDescription: metadata.description, autoloadEnabled: true, defaultDiscovery: false,
-      preparationBinding: { record: metadata, scope, snapshot_id: snapshotId, version_id: hash(body), body_sha256: hash(body), ref: metadata.ref + "?snapshot=" + snapshotId },
+      preparationBinding: { record: metadata, scope: identityScope, snapshot_id: snapshotId, version_id: hash(body), body_sha256: hash(body), ref: metadata.ref + "?snapshot=" + snapshotId },
       preparationDirectory: { files: [], required: [], candidates: [], references: [] },
     };
     if (withShortRefs) {
@@ -79,6 +80,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
   } } : {}) };
   const calls: PreparationPurpose[] = [];
   const persisted: SelectionMode[] = [];
+  const sources: Array<{ id: string; type: "notion"; prefetch: false }> = [{ id: "controlled", type: "notion", prefetch: false }];
   const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
   let search: NativeSkillSearchDefinition | undefined, tool: NativeSkillPrepareDefinition | undefined, graphTool: NativeSkillGraphDefinition | undefined;
   const api: ExtensionAPI = { ...(hostKind === "omp" ? { pi: {} } : {}), on(name, listener) { events.set(name, [...events.get(name) ?? [], listener]); },
@@ -86,17 +88,17 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
     registerTool(value) { if (value.name === "skill_search" || value.name === "notion_list") search = value; if (value.name === "skill_prepare" || value.name === "notion_use") tool = value; if (value.name === "skill_graph" || value.name === "notion_ctl") graphTool = value; } };
   function graph(purpose: PreparationPurpose): PreparedHostGraph {
     const selected = purpose === "use" ? [root!, required!] : [root!];
-    const vector = { version: 1 as const, kind: "observed_version_vector" as const, purpose, scope, roots: [root!.id!],
+    const vector = { version: 1 as const, kind: "observed_version_vector" as const, purpose, scope: identityScope, roots: [root!.id!],
       required: purpose === "use" ? [{ from: root!.id!, to: required!.id!, ref: required!.preparationBinding!.ref }] : [],
       bindings: selected.map(record => record.preparationBinding!) };
-    return { purpose, sourceId: "controlled", scope, roots: [root!.id!], records: selected, bindings: selected.map(record => record.preparationBinding!), lock: { ...vector, sha256: hash(canonical(vector)) },
+    return { purpose, sourceId: "controlled", scope: identityScope, roots: [root!.id!], records: selected, bindings: selected.map(record => record.preparationBinding!), lock: { ...vector, sha256: hash(canonical(vector)) },
       budget: { maxNodes: 64, maxDepth: 16, maxInstructionBytes: 1048576, maxContextBytes: 262144 },
       usage: { prepared_nodes: selected.length, instruction_bytes: selected.reduce((n, record) => n + Buffer.byteLength(record.body!), 0), context_bytes: 4000, max_depth: purpose === "use" ? 1 : 0 } };
   }
   const install = async (prepareGraph: (purpose: PreparationPurpose, signal?: AbortSignal) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference">> = {}) => {
     let host: HostSkills;
     host = await installHostSkills(api, {
-      config: { sources: [{ id: "controlled", type: "notion", prefetch: false }] },
+      config: { sources },
       getRecords: async () => ({ records: records.map(record => ({ ...record, body: undefined, preparationBinding: undefined })), failures: [] }),
       ...discovery,
       loadRecord: async () => { throw new Error("Graph roots must use the CLI preparation bridge"); },
@@ -108,7 +110,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
       }, signal),
       prepareGraph: async (_records, _ctx, signal, purpose) => { calls.push(purpose); return prepareGraph(purpose, signal); },
       persistGraphs: (_graphs, _ctx, mode) => { persisted.push(mode); },
-      ...(withShortRefs ? { sessionGraph: () => ({ kind: "controlled-selected-graph", scope }) } : {}),
+      ...(withShortRefs ? { sessionGraph: () => ({ kind: "controlled-selected-graph", scope: identityScope }) } : {}),
       needsPreflightPrompt: text => text.includes("$root"),
       preflightPrompt: async (text, ctx, signal) => { if (text.includes("$root")) await host.prepareMany([root!], ctx, signal); },
     }, hostKind === "omp" ? createOmpHostAdapter(api) : createPiHostAdapter(api));
@@ -120,7 +122,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
     for (const listener of events.get(name) ?? []) results.push(await listener(value as never, ctx));
     return results;
   };
-  return { ctx, records, root: root!, required: required!, member: member!, graph, calls, persisted, install, emit, session, resourceText, resourceReads };
+  return { ctx, records, root: root!, required: required!, member: member!, graph, calls, persisted, install, emit, session, resourceText, resourceReads, api, sources };
 }
 
 test("Pi projects the ready default catalog after explicit preparation, not the earlier pending observation", async () => {
@@ -188,6 +190,220 @@ test("Pi keeps ordinary pending requests immediate and refreshes only owned syst
   expect(ready).toEqual([expect.objectContaining({ messages: [expect.objectContaining({ toolsAdded: head.toolsAdded,
     sections: expect.objectContaining({ other: null }) }), user, patch] })]);
   expect(JSON.stringify([stale, user, patch])).toBe(original);
+  expect(f.calls).toEqual([]);
+  expect(f.resourceReads).toEqual([]);
+});
+
+async function catalogProjection(f: Awaited<ReturnType<typeof fixture>>, input: AgentMessage[]) {
+  const outputs = await f.emit("context_with_system", { messages: input }, f.ctx);
+  const output = outputs.find(value => value !== null && typeof value === "object" && "messages" in value && Array.isArray(value.messages));
+  if (!output || typeof output !== "object" || !("messages" in output) || !Array.isArray(output.messages)) throw new Error("Expected actual final context projection");
+  const messages: unknown[] = output.messages;
+  const head = messages.find(value => value !== null && typeof value === "object" && "role" in value && value.role === "system");
+  if (!head || typeof head !== "object") throw new Error("Expected the native system message");
+  if (!("sections" in head) || !head.sections || typeof head.sections !== "object" || !("context-broker-notion-catalog" in head.sections)) return { messages, catalog: "" };
+  if (typeof head.sections["context-broker-notion-catalog"] !== "string") throw new Error("Expected generated catalog text");
+  return { messages, catalog: head.sections["context-broker-notion-catalog"] };
+}
+
+function projectedToolText(messages: readonly unknown[], id: string): string {
+  const message = messages.find(value => value !== null && typeof value === "object" && "toolCallId" in value && value.toolCallId === id);
+  if (!message || typeof message !== "object" || !("content" in message)) throw new Error("Expected actual projected tool result");
+  if (typeof message.content === "string") return message.content;
+  if (!Array.isArray(message.content) || message.content.length !== 1) throw new Error("Expected one original text part");
+  const part: unknown = message.content[0];
+  if (!part || typeof part !== "object" || !("type" in part) || part.type !== "text" || !("text" in part) || typeof part.text !== "string") throw new Error("Expected actual tool text");
+  return part.text;
+}
+
+test("duplicate default cards cannot remove every complete description", () => {
+  const card = { ref: "sr:C" + "a".repeat(22), source: "controlled", scope, kind: "skill", name: "member", description: "Complete metadata", availability: "available" };
+  const result = projectCatalogDescriptions({ messages: [], defaults: [card, { ...card }], identify: value => JSON.stringify(value) });
+  expect([...result.omittedDefaults]).toEqual([]);
+});
+
+test("same current ref in two configured sources retains the unwitnessed source description", async () => {
+  const f = await fixture(true), head: AgentMessage = { role: "system", content: "Native rules" };
+  f.sources.push({ id: "other-source", type: "notion", prefetch: false });
+  const alias = { ...f.member, sourceId: "other-source", token: "other-member" };
+  const { search } = await f.install(undefined, { getRecords: async () => ({ records: [...f.records, alias].map(record => ({
+    ...record, body: undefined, preparationBinding: undefined, defaultDiscovery: true,
+  })), failures: [] }) });
+  await search.execute("alias-catalog", {}, undefined, undefined, f.ctx);
+  const read = await nativeRead(f, f.root.ref!, "alias-inspect");
+  const projected = await catalogProjection(f, [head, read]);
+  const cards = [...projected.catalog.matchAll(/<skill>([\s\S]*?)<\/skill>/g)].map(match => match[1]!);
+  const original = cards.find(card => card.includes("<name>member</name>") && card.includes("<source>controlled</source>"));
+  const other = cards.find(card => card.includes("<name>member</name>") && card.includes("<source>other-source</source>"));
+  expect(original).toBeDefined(); expect(other).toBeDefined();
+  expect(/<location>([^<]+)<\/location>/.exec(original!)![1]).toBe(/<location>([^<]+)<\/location>/.exec(other!)![1]);
+  expect(original).not.toContain("<description>Controlled member</description>");
+  expect(other).toContain("<description>Controlled member</description>");
+  expect(projected.messages).toContain(read);
+  expect(f.calls).toEqual(["inspect"]);
+});
+
+test("Pi native inspect reuses only its verified generated footer without changing author bytes", async () => {
+  const f = await fixture(true), head: AgentMessage = { role: "system", content: "Native rules" };
+  const { search } = await f.install(undefined, { getRecords: async () => ({ records: f.records.map(record => ({
+    ...record, body: undefined, preparationBinding: undefined, defaultDiscovery: true,
+  })), failures: [] }) });
+  const listed = await search.execute("inspect-list", { query: "member" }, undefined, undefined, f.ctx);
+  const read = await nativeRead(f, f.root.ref!, "inspect-main");
+  const original = JSON.stringify(read), body = sourceMessageText(read.content);
+  const list: AgentMessage = { role: "toolResult", toolName: "notion_list", toolCallId: "inspect-list", content: listed.content, details: listed.details, isError: false };
+  const projected = await catalogProjection(f, [head, list, read]);
+  expect(projected.catalog).not.toContain("<description>Controlled member</description>");
+  expect(projected.catalog).toContain("<description>Controlled root</description>");
+  expect(JSON.parse(projectedToolText(projected.messages, "inspect-list")).records[0].description).toBeUndefined();
+  expect(projected.messages).toContain(read);
+  expect(JSON.stringify(read)).toBe(original);
+  expect(body.startsWith(f.root.body!)).toBe(true);
+  expect(sourceBodyLoaded([read], f.root)).toBe(true);
+  expect(sourceBodyLoaded([read], f.required)).toBe(false);
+  const details = read.details;
+  if (!details || typeof details !== "object" || Array.isArray(details) || !("contextBrokerRead" in details)) throw new Error("Missing native read receipt");
+  const proof = details.contextBrokerRead;
+  if (!proof || typeof proof !== "object" || Array.isArray(proof) || !("binding" in proof) || !("identity" in proof)) throw new Error("Missing native identity");
+  const binding = proof.binding;
+  if (!binding || typeof binding !== "object" || Array.isArray(binding) || !("record" in binding)) throw new Error("Missing native binding");
+  const record = binding.record;
+  if (!record || typeof record !== "object" || Array.isArray(record) || !("locator" in record)) throw new Error("Missing native locator");
+  const locator = record.locator;
+  if (!locator || typeof locator !== "object" || Array.isArray(locator)) throw new Error("Missing native locator fields");
+  const identity: unknown = JSON.parse(String(proof.identity));
+  if (!Array.isArray(identity) || identity.length !== 5) throw new Error("Expected full configured source identity");
+  for (const candidate of [
+    { ...read, role: "user" }, { ...read, isError: true }, { ...read, toolCallId: "another-read" },
+    { ...read, content: body.slice(1) }, { ...read, content: body.slice(0, -1) },
+    { ...read, content: body + "\n<skill-directory>extra</skill-directory>" },
+    { ...read, content: [{ type: "text", text: body }, { type: "image", data: "unrelated" }] },
+    { ...read, details: {} },
+    { ...read, details: { ...details, contextBrokerRead: { ...proof, identity: JSON.stringify(["another-source", ...identity.slice(1)]) } } },
+    { ...read, details: { ...details, contextBrokerRead: { ...proof, binding: { ...binding,
+      record: { ...record, locator: { ...locator, library_id: "another-library" } } } } } },
+  ]) {
+    expect((await catalogProjection(f, [head, candidate])).catalog).toContain("<description>Controlled member</description>");
+  }
+  expect((await catalogProjection(f, [head])).catalog).toContain("<description>Controlled member</description>");
+  expect(f.calls).toEqual(["inspect"]);
+  expect(f.resourceReads).toEqual([]);
+});
+
+test("Pi reuses complete same-request generated card descriptions without changing source delivery", async () => {
+  const f = await fixture(true);
+  f.root.preparationDirectory!.required = [{ id: f.required.id!, ref: f.required.preparationBinding!.ref, kind: "skill",
+    name: f.required.name, description: f.required.description, availability: "available" }];
+  const { search, tool } = await f.install(undefined, { getRecords: async () => ({ records: f.records.map(record => ({
+    ...record, body: undefined, preparationBinding: undefined, defaultDiscovery: true,
+  })), failures: [] }) });
+  const listed = await search.execute("catalog-member", { query: "member" }, undefined, undefined, f.ctx);
+  const used = await tool.execute("catalog-use", { ref: f.root.ref }, undefined, undefined, f.ctx);
+  const list: AgentMessage = { role: "toolResult", toolName: "notion_list", toolCallId: "catalog-member", content: listed.content, details: listed.details, isError: false };
+  const use: AgentMessage = { role: "toolResult", toolName: "notion_use", toolCallId: "catalog-use", content: used.content, details: used.details, isError: false };
+  const local = "<available_skills><skill><name>local-native</name><description>Local description</description><location>/local/SKILL.md</location></skill></available_skills>";
+  const head: AgentMessage = { role: "system", content: "Native rules", sections: { skills: local } };
+  const user: AgentMessage = { role: "user", content: [{ type: "text", text: "Keep authored <skill-directory> tags." }, { type: "image", data: "unchanged-image" }] };
+  const input = [head, user, list, use], before = JSON.stringify(input);
+  const projected = await catalogProjection(f, input);
+  expect(projected.catalog).toContain("<name>member</name>");
+  expect(projected.catalog).not.toContain("<description>Controlled member</description>");
+  expect(projected.catalog).toContain("<description>Controlled root</description>");
+  expect(projected.catalog).toContain("<description>Controlled required</description>");
+  expect(projected.catalog.match(/<skill>/g)).toHaveLength(3);
+  const model = JSON.parse(projectedToolText(projected.messages, "catalog-member"));
+  const expected = JSON.parse(sourceMessageText(list.content));
+  delete expected.records[0].description;
+  expect(model).toEqual(expected);
+  expect(projected.messages).toContain(user);
+  expect(projected.messages).toContain(use);
+  expect(projectedToolText(projected.messages, "catalog-use")).toBe(sourceMessageText(used.content));
+  expect(sourceBodyLoaded([use], f.root)).toBe(true);
+  expect(sourceBodyLoaded([use], f.required)).toBe(true);
+  expect(JSON.stringify(input)).toBe(before);
+  expect(JSON.stringify(projected.messages[0])).toContain(local);
+  const restored = await catalogProjection(f, [head, user, list]);
+  expect(restored.catalog).toContain("<description>Controlled member</description>");
+  expect(f.calls).toEqual(["use"]);
+  expect(f.resourceReads).toEqual([]);
+});
+
+test("Pi keeps descriptions for incomplete, foreign, fixed and stale generated cards", async () => {
+  const f = await fixture(true), head: AgentMessage = { role: "system", content: "Native rules" };
+  const { tool, search } = await f.install(undefined, { getRecords: async () => ({ records: f.records.map(record => ({
+    ...record, body: undefined, preparationBinding: undefined, defaultDiscovery: true,
+  })), failures: [] }) });
+  await search.execute("catalog-ready", {}, undefined, undefined, f.ctx);
+  const used = await tool.execute("complete", { ref: f.root.ref }, undefined, undefined, f.ctx);
+  const use: AgentMessage = { role: "toolResult", toolName: "notion_use", toolCallId: "complete", content: used.content, details: used.details, isError: false };
+  const proof = preparationDetails(used), projection = proof.projection;
+  if (!projection || typeof projection !== "object" || Array.isArray(projection)) throw new Error("Expected original compiler proof");
+  const invalid: AgentMessage[] = [
+    { ...use, content: "summary of the selected Skill" },
+    { ...use, content: sourceMessageText(use.content).slice(0, -1) },
+    { ...use, content: [] },
+    { ...use, isError: true },
+    { ...use, toolCallId: "another-call" },
+    { ...use, role: "user" },
+    { ...use, details: { contextBrokerPreparation: { ...proof, projection: { ...projection, compiler: "unknown/compiler" } } } },
+  ];
+  for (const candidate of invalid) {
+    const before = JSON.stringify(candidate), projected = await catalogProjection(f, [head, candidate]);
+    expect(projected.catalog).toContain("<description>Controlled member</description>");
+    expect(projected.messages).toContain(candidate);
+    expect(JSON.stringify(candidate)).toBe(before);
+  }
+  const foreign = await fixture(true, false, "pi", "b".repeat(64));
+  const other = await foreign.install();
+  const foreignUse = await other.tool.execute("foreign", { ref: foreign.root.ref }, undefined, undefined, foreign.ctx);
+  f.session.entries.push(...foreign.session.entries);
+  expect((await catalogProjection(f, [head, { role: "toolResult", toolName: "notion_use", toolCallId: "foreign",
+    content: foreignUse.content, details: foreignUse.details, isError: false }])).catalog).toContain("<description>Controlled member</description>");
+  f.root.preparationDirectory!.candidates[0]!.description = "A different metadata observation";
+  const changed = await tool.execute("metadata-changed", { ref: f.root.ref }, undefined, undefined, f.ctx);
+  expect((await catalogProjection(f, [head, { role: "toolResult", toolName: "notion_use", toolCallId: "metadata-changed",
+    content: changed.content, details: changed.details, isError: false }])).catalog).toContain("<description>Controlled member</description>");
+  f.root.preparationDirectory!.candidates[0]!.description = f.member.description;
+  f.root.preparationDirectory!.candidates[0]!.ref = f.member.ref + "?snapshot=s_" + hash("historical-member");
+  const fixed = await tool.execute("fixed-candidate", { ref: f.root.ref }, undefined, undefined, f.ctx);
+  expect((await catalogProjection(f, [head, { role: "toolResult", toolName: "notion_use", toolCallId: "fixed-candidate",
+    content: fixed.content, details: fixed.details, isError: false }])).catalog).toContain("<description>Controlled member</description>");
+  f.session.entries = [];
+  expect((await catalogProjection(f, [head, use])).catalog).toContain("<description>Controlled member</description>");
+  expect(f.calls).toEqual(["use", "use", "use"]);
+  expect(f.resourceReads).toEqual([]);
+});
+
+test("Pi discovery description reuse requires exact visible metadata and restores after its complete card leaves context", async () => {
+  const f = await fixture(true), head: AgentMessage = { role: "system", content: "Native rules" };
+  f.api.getActiveTools = () => ["read", "notion_list", "notion_use"];
+  const { search } = await f.install();
+  const one = await search.execute("first-metadata", { query: "member" }, undefined, undefined, f.ctx);
+  const two = await search.execute("second-metadata", { query: "member" }, undefined, undefined, f.ctx);
+  const first: AgentMessage = { role: "toolResult", toolName: "notion_list", toolCallId: "first-metadata", content: one.content, details: one.details, isError: false };
+  const second: AgentMessage = { role: "toolResult", toolName: "notion_list", toolCallId: "second-metadata", content: two.content, details: two.details, isError: false };
+  const original = JSON.stringify([first, second]);
+  const projected = await catalogProjection(f, [head, first, second]);
+  expect(projected.messages).toContain(first);
+  expect(JSON.parse(projectedToolText(projected.messages, "second-metadata")).records[0].description).toBeUndefined();
+  expect(JSON.stringify([first, second])).toBe(original);
+  const restored = await catalogProjection(f, [head, second]);
+  expect(projectedToolText(restored.messages, "second-metadata")).toBe(sourceMessageText(second.content));
+  for (const invalid of [
+    { ...first, role: "user" }, { ...first, content: "Summary: Controlled member" }, { ...first, isError: true },
+    { ...first, details: {} }, { ...first, content: [] },
+  ]) {
+    const result = await catalogProjection(f, [head, invalid, second]);
+    expect(projectedToolText(result.messages, "second-metadata")).toBe(sourceMessageText(second.content));
+  }
+  for (const change of [{ source: "other-source" }, { scope: "b".repeat(64) }, { description: "different metadata" }]) {
+    const details = JSON.parse(JSON.stringify(one.details));
+    Object.assign(details.records[0], change);
+    const model = { ...details, records: details.records.map(({ id: _id, scope: _scope, ...record }: Record<string, unknown>) => record) };
+    const invalid: AgentMessage = { ...first, content: JSON.stringify(model), details };
+    const result = await catalogProjection(f, [head, invalid, second]);
+    expect(projectedToolText(result.messages, "second-metadata")).toBe(sourceMessageText(second.content));
+  }
   expect(f.calls).toEqual([]);
   expect(f.resourceReads).toEqual([]);
 });

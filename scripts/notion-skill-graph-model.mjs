@@ -16,7 +16,7 @@ import { createOwnedGraphProject, inspectOwnedGraphProject, retainGeneratedPlan,
 import { verifyRetainedSourceProof } from './notion-skill-retained-proof.mjs';
 import { createPiHelpBoundary } from './notion-pi-help.mjs';
 import { graphSourceViews, graphSourceAccounting } from './notion-skill-graph-model-evidence.mjs';
-import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
+import { verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards } from './skill-preparation-evidence.mjs';
 
 const helper = fileURLToPath(import.meta.url);
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -40,7 +40,7 @@ export async function graphHarnessIdentity() {
 
 export function graphObserverModule(settings, referenceParser) {
   return "import * as fs from 'node:fs';\nimport * as crypto from 'node:crypto';\nimport * as path from 'node:path';\nimport { graphSourceViews } from " + JSON.stringify(new URL('./notion-skill-graph-model-evidence.mjs', import.meta.url).href)
-    + ';\nimport { verifyPreparationEvidence } from ' + JSON.stringify(new URL('./skill-preparation-evidence.mjs', import.meta.url).href)
+    + ';\nimport { verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards } from ' + JSON.stringify(new URL('./skill-preparation-evidence.mjs', import.meta.url).href)
     + ';\nimport { parseNativeReference } from ' + JSON.stringify(referenceParser)
     + ';\nimport { validateResourceReadProjection } from ' + JSON.stringify(new URL('./resource-read-projection.ts', referenceParser).href)
     + ";\nexport default function(api) { const settings = " + JSON.stringify(settings) + '; const piHelpBoundary = (' + createPiHelpBoundary.toString() + ')({fs,crypto,path,executable:settings.piExecutable}); (' + observeGraphGate.toString() + ')(api, { ...settings, fs, crypto, path, piHelpBoundary, parseNativeReference, validateResourceReadProjection }); }\n';
@@ -813,7 +813,32 @@ export function observeGraphGate(api, settings) {
     return originalFetch.call(this, input, init);
   };
   api.on('session_start', async (_event, ctx) => { refreshContext(ctx); assertModel(ctx); const selected = toolSurface(); await api.setActiveTools(selected.tools); record({ phase: 'selected', model: settings.model, tools: selected.tools, toolSurface: selected.surface, fallbackTools: false }); });
-  const observeCatalog = (prompt, observation, admit = false) => {
+  const generatedDescription = (messages, expected) => generatedDescriptionEvidence(messages, expected, (binding, sha256, bytes) =>
+    exportedFiles().some(file => file.role === 'entrypoint' && file.scope === binding.scope && file.ownerId === binding.record.id
+      && file.snapshot === binding.snapshot_id && file.ref === binding.ref && file.sha256 === sha256 && file.bytes === bytes));
+  const metadataDescription = (record, messages, system, excludedId) => {
+    const parsed = resolveMainReference(parseRef(record.ref));
+    if (!/^sr:C[A-Za-z0-9_-]{22}$/u.test(record.ref) || !parsed || parsed.snapshot !== undefined
+      || parsed.selector !== record.id || parsed.scope !== record.scope) return undefined;
+    const xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+    const visible = '<skill><name>' + xml(record.name) + '</name><description>' + xml(record.description) + '</description><source>'
+      + xml(record.source) + '</source><location>' + record.ref + '</location></skill>';
+    const defaults = [...system.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)].flatMap(block =>
+      [...block[1].matchAll(/<skill>[\s\S]*?<\/skill>/gu)].filter(match => match[0] === visible));
+    if (record.kind === 'skill' && defaults.length === 1) return { origin: 'actual-default-card', ref: record.ref, description: record.description, system_sha256: digest(system) };
+    for (const message of messages) {
+      if (message.toolCallId === excludedId) continue;
+      let cards; try { cards = visibleDiscoveryCards(message); } catch { continue; }
+      const matches = cards.filter(card => ['ref', 'id', 'scope', 'source', 'kind', 'name', 'description', 'availability'].every(key => card[key] === record[key]));
+      if (matches.length === 1) return { origin: 'actual-discovery-card', ref: record.ref, description: matches[0].description,
+        tool_call_id: message.toolCallId, tool_content_sha256: matches[0].tool_content_sha256 };
+    }
+    const originals = sourceViews().directories.filter(item => item.value.scope === record.scope).flatMap(item => item.value.records ?? [])
+      .filter(item => item.id === record.id && item.kind === record.kind && item.name === record.name && item.description === record.description);
+    const refs = [...new Set(originals.map(item => item.ref))];
+    return refs.length === 1 ? generatedDescription(messages, { ...record, canonical_ref: refs[0] }) : undefined;
+  };
+  const observeCatalog = (prompt, observation, admit = false, visibleMessages = []) => {
     const skills = [...prompt.matchAll(/<skill>[\s\S]*?<name>\s*([^<]+)\s*<\/name>[\s\S]*?<location>\s*([^<]+)\s*<\/location>[\s\S]*?<\/skill>/g)].map(match => {
       const file = unescape(match[2].trim());
       let provenance = null, sha256 = null;
@@ -823,9 +848,14 @@ export function observeGraphGate(api, settings) {
           .filter(item => item.record.id === selected.selector && item.record.kind === 'skill'
             && settings.parseNativeReference(item.record.ref).path === selected.path && (selected.scope === undefined || selected.scope === item.scope));
         const unique = [...new Map(matches.map(item => [item.scope + '/' + item.record.id, item])).values()];
-        const description = unescape(/<description>([\s\S]*?)<\/description>/.exec(match[0])?.[1] ?? '');
-        if (unique.length === 1 && unescape(match[1].trim()) === unique[0].record.name && description === unique[0].record.description) provenance = { source: 'verified-notion-metadata',
-          ownerId: unique[0].record.id, scope: unique[0].scope, ref: unique[0].record.ref, loaded: false };
+        const declared = /<description>([\s\S]*?)<\/description>/.exec(match[0]);
+        const sourceId = unescape(/<source>([^<]+)<\/source>/.exec(match[0])?.[1] ?? '');
+        const expected = unique.length === 1 ? { ...unique[0].record, scope: unique[0].scope, ref: file,
+          canonical_ref: unique[0].record.ref, source: sourceId, availability: unique[0].record.enabled === false ? 'disabled' : 'available' } : undefined;
+        const reused = declared === null && expected ? generatedDescription(visibleMessages, expected) : undefined;
+        const description = declared ? unescape(declared[1]) : reused?.description;
+        if (expected && unescape(match[1].trim()) === expected.name && description === expected.description) provenance = { source: 'verified-notion-metadata',
+          ownerId: expected.id, scope: expected.scope, ref: expected.canonical_ref, loaded: false, ...(reused ? { descriptionReuse: reused } : {}) };
       }
       try {
         if (selected) return { name: match[1].trim(), path: file, sha256, provenance };
@@ -863,9 +893,13 @@ export function observeGraphGate(api, settings) {
       const unique = [...new Map(candidates.map(item => [item.scope + '/' + item.record.id, item])).values()];
       const source = unique.length === 1 ? unique[0] : undefined;
       const name = unescape(/<name>\s*([^<]*)\s*<\/name>/.exec(match[2])?.[1] ?? '');
-      const description = unescape(/<description>([\s\S]*?)<\/description>/.exec(match[2])?.[1] ?? '');
+      const declared = /<description>([\s\S]*?)<\/description>/.exec(match[2]);
+      const reused = declared === null && source ? generatedDescription(visibleMessages, { ...source.record, scope: source.scope,
+        ref, canonical_ref: source.record.ref, source: settings.sourceId ?? 'notion', availability: source.record.enabled === false ? 'disabled' : 'available' }) : undefined;
+      const description = declared ? unescape(declared[1]) : reused?.description;
       return { ref, ...(source && source.record.name === name && source.record.description === description
-        ? { canonicalRef: source.record.ref, provenance: { source: 'verified-notion-metadata', ownerId: source.record.id, scope: source.scope, loaded: false } } : {}) };
+        ? { canonicalRef: source.record.ref, provenance: { source: 'verified-notion-metadata', ownerId: source.record.id, scope: source.scope, loaded: false,
+          ...(reused ? { descriptionReuse: reused } : {}) } } : {}) };
     });
     const state = /<ntn-skills-discovery\b[^>]*\bstatus="([^"]+)"/.exec(prompt)?.[1] ?? 'ready';
     if (admit) {
@@ -877,6 +911,44 @@ export function observeGraphGate(api, settings) {
   let userTurn = 0, discoveryProjection;
   const catalogSection = 'context-broker-notion-catalog';
   const discoveryMarker = 'Notion cards are on demand; discover them with notion_list.';
+  const restoreRemovedDescriptions = (messages, blocks) => {
+    const key = card => JSON.stringify([card.source, card.ref, card.kind, card.name, card.description]);
+    const removed = new Map();
+    for (const block of blocks) for (const group of block[0].matchAll(/<available_skills>([\s\S]*?)<\/available_skills>/gu)) {
+      for (const row of group[1].matchAll(/<skill><name>([^<]*)<\/name><description>([^<]*)<\/description><source>([^<]+)<\/source><location>([^<]+)<\/location><\/skill>/gu)) {
+        const card = { kind: 'skill', name: unescape(row[1]), description: unescape(row[2]), source: unescape(row[3]), ref: unescape(row[4]) };
+        if (/^sr:C[A-Za-z0-9_-]{22}$/u.test(card.ref)) removed.set(key(card), card);
+      }
+    }
+    const complete = new Set();
+    for (const message of messages) {
+      try { for (const card of visibleDiscoveryCards(message)) complete.add(key(card)); } catch { /* Not a complete discovery output. */ }
+    }
+    const restored = [], changedIndexes = new Set();
+    const projected = messages.map((message, messageIndex) => {
+      try { visibleDiscoveryCards(message); } catch { return message; }
+      if (typeof message.content !== 'string' && (message.content.length !== 1 || message.content[0].type !== 'text')) return message;
+      const content = text(message.content), model = JSON.parse(content), changes = [];
+      const records = model.records.map((card, recordIndex) => {
+        const full = message.details.records[recordIndex], identity = key(full), original = removed.get(identity);
+        if (Object.hasOwn(card, 'description') || !original || complete.has(identity)) return card;
+        complete.add(identity);
+        changes.push({ messageIndex, recordIndex, toolCallId: message.toolCallId, ref: full.ref, source: full.source, name: full.name,
+          descriptionSha256: digest(original.description), descriptionBytes: Buffer.byteLength(original.description) });
+        // The original host field order is retained; only this previously visible
+        // description is restored, never a source body or an oracle-only value.
+        return Object.fromEntries(Object.keys(full).filter(field => field !== 'id' && field !== 'scope')
+          .map(field => [field, field === 'description' ? original.description : card[field]]));
+      });
+      if (!changes.length) return message;
+      const output = JSON.stringify({ ...model, records });
+      restored.push(...changes.map(change => ({ ...change, inputToolSha256: digest(content), outputToolSha256: digest(output),
+        inputToolBytes: Buffer.byteLength(content), outputToolBytes: Buffer.byteLength(output) })));
+      changedIndexes.add(messageIndex);
+      return { ...message, content: typeof message.content === 'string' ? output : [{ ...message.content[0], text: output }] };
+    });
+    return { messages: projected, restored, changedIndexes };
+  };
   api.on('before_agent_start', (event, ctx) => {
     refreshContext(ctx); assertModel(ctx);
     discoveryProjection = undefined;
@@ -905,23 +977,32 @@ export function observeGraphGate(api, settings) {
       const statusBlocks = [...input.matchAll(/<ntn-skills-discovery\b[^>]*>[\s\S]*?<\/ntn-skills-discovery>/g)];
       if (catalogBlocks.length > 1 || statusBlocks.length > 1 || catalogBlocks.length + statusBlocks.length === 0)
         throw new Error('SC06 discovery projection cannot infer an unobserved catalog state');
-      const incoming = observeCatalog(input, { phase: 'discovery-input-catalog', stage: 'context_with_system', userTurn }, false);
+      const incoming = observeCatalog(input, { phase: 'discovery-input-catalog', stage: 'context_with_system', userTurn }, false, event.messages);
       const marker = experiment.mode === 'on-demand-cards' ? '\n' + discoveryMarker : '';
       const output = experiment.mode === 'full-cards' ? input : input.replace(
         /<ntn-skills-view-catalog>[\s\S]*?<\/ntn-skills-view-catalog>/g,
         block => block.replace(/<available_skills>[\s\S]*?<\/available_skills>/g, '')
           .replace(/<available_routers>[\s\S]*?<\/available_routers>/g, '')) + marker;
-      const messages = output === input ? event.messages : event.messages.map((message, position) => position === index
+      const relocated = experiment.mode === 'on-demand-cards' ? restoreRemovedDescriptions(event.messages, catalogBlocks)
+        : { messages: event.messages, restored: [], changedIndexes: new Set() };
+      const messages = output === input ? relocated.messages : relocated.messages.map((message, position) => position === index
         ? { ...message, sections: { ...message.sections, [catalogSection]: output } } : message);
-      const preserved = values => values.map((message, position) => position === index
-        ? { ...message, sections: { ...message.sections, [catalogSection]: null } } : message);
+      const preserved = values => values.map((message, position) => {
+        if (position === index) return { ...message, sections: { ...message.sections, [catalogSection]: null } };
+        if (!relocated.changedIndexes.has(position)) return message;
+        const model = JSON.parse(text(message.content));
+        for (const restored of relocated.restored.filter(item => item.messageIndex === position)) delete model.records[restored.recordIndex].description;
+        const original = JSON.parse(text(event.messages[position].content));
+        if (!same(model, original)) throw new Error('SC06 discovery restoration changed fields other than the visible description');
+        return { ...message, content: event.messages[position].content };
+      });
       if (!same(preserved(event.messages), preserved(messages))) throw new Error('SC06 discovery projection changed non-catalog context');
       const proof = record({ phase: 'discovery-projection', stage: 'context_with_system', mode: experiment.mode, userTurn,
         section: catalogSection, messageIndex: index, inputCatalogSequence: incoming.sequence,
         inputSection: input, inputSectionSha256: digest(input), inputSectionBytes: Buffer.byteLength(input),
         outputSection: output, outputSectionSha256: digest(output), outputSectionBytes: Buffer.byteLength(output),
         inputMessagesSha256: digest(JSON.stringify(event.messages)), outputMessagesSha256: digest(JSON.stringify(messages)),
-        preservedMessagesSha256: digest(JSON.stringify(preserved(messages))), markerBytes: Buffer.byteLength(marker),
+        preservedMessagesSha256: digest(JSON.stringify(preserved(messages))), restoredDescriptions: relocated.restored, markerBytes: Buffer.byteLength(marker),
         markerSha256: digest(marker), wireFragmentSha256: digest(output.trim()) });
       // Pi owns separators between system sections. The complete non-separator
       // fragment must survive its serializer; author metadata is never trimmed.
@@ -970,12 +1051,32 @@ export function observeGraphGate(api, settings) {
       discover(value, 'actual provider verified delivery');
     for (const message of event.payload?.messages ?? []) if (message.role === 'user')
       for (const value of sourceStrings(message.content)) if (value === settings.prompt) discover(value, 'actual frozen user reference');
-    const toolResults = [...deliveredTools.values()].map(result => ({ toolCallId: result.toolCallId, tool: result.tool, sha256: digest(result.content), bytes: Buffer.byteLength(result.content), copies: copies(event.payload, result.content),
-      exactToolOutputCopies: providerToolOutputs(event.payload, result.toolCallId).filter(content => content === result.content).length,
-      records: (result.records ?? []).map(file => ({ ref: file.ref, scope: file.scope, snapshot: file.snapshot, sha256: file.sha256, bytes: file.bytes, providerCopies: contents.filter(item => item.ref === file.ref && item.scope === file.scope && item.sha256 === file.sha256).length })) }));
+    const system = [text(event.payload?.system), ...(event.payload?.messages ?? []).filter(message => message.role === 'system').map(message => text(message.content))].filter(Boolean).join('\n\n');
+    const visibleMessages = [...deliveredTools.values()].flatMap(result => !result.message ? [] : providerToolOutputs(event.payload, result.toolCallId)
+      .filter(content => result.tool === 'notion_list' || content === result.content).map(content => ({ ...result.message, content })));
+    const toolResults = [...deliveredTools.values()].map(result => {
+      const actual = providerToolOutputs(event.payload, result.toolCallId), metadataProjections = [];
+      if (result.tool === 'notion_list') {
+        if (actual.length > 1) throw new Error('Duplicate provider discovery result');
+        for (const content of actual.filter(value => value !== result.content)) {
+          const message = { ...result.message, content }, model = JSON.parse(content);
+          visibleDiscoveryCards(message);
+          const reuse = model.records.flatMap((card, index) => {
+            if (Object.hasOwn(card, 'description')) return [];
+            const evidence = metadataDescription(message.details.records[index], visibleMessages, system, message.toolCallId);
+            if (!evidence) throw new Error('Discovery description has no complete card in this actual provider');
+            return [evidence];
+          });
+          metadataProjections.push({ sha256: digest(content), bytes: Buffer.byteLength(content), sourceSha256: digest(result.content),
+            sourceBytes: Buffer.byteLength(result.content), descriptionReuse: reuse });
+        }
+      }
+      return { toolCallId: result.toolCallId, tool: result.tool, sha256: digest(result.content), bytes: Buffer.byteLength(result.content), copies: copies(event.payload, result.content),
+        exactToolOutputCopies: actual.filter(content => content === result.content).length, ...(metadataProjections.length ? { metadataProjections } : {}),
+        records: (result.records ?? []).map(file => ({ ref: file.ref, scope: file.scope, snapshot: file.snapshot, sha256: file.sha256, bytes: file.bytes, providerCopies: contents.filter(item => item.ref === file.ref && item.scope === file.scope && item.sha256 === file.sha256).length })) };
+    });
     const payloadFile = settings.payloads ? 'payload-' + sequence + '.json' : undefined;
     if (payloadFile) settings.fs.writeFileSync(join(settings.payloads, payloadFile), serialized, { mode: 0o600, flag: 'wx' });
-    const system = [text(event.payload?.system), ...(event.payload?.messages ?? []).filter(message => message.role === 'system').map(message => text(message.content))].filter(Boolean).join('\n\n');
     let discoveryProof;
     if (experiment !== undefined) {
       const projected = discoveryProjection;
@@ -985,12 +1086,17 @@ export function observeGraphGate(api, settings) {
         || [...system.matchAll(/<ntn-skills-discovery\b/g)].length !== projected.statusBlocks
         || system.split(discoveryMarker).length !== (experiment.mode === 'on-demand-cards' ? 2 : 1))
         throw new Error('SC06 discovery projection is missing or changed before the provider');
+      for (const restored of projected.proof.restoredDescriptions) {
+        const actual = providerToolOutputs(event.payload, restored.toolCallId);
+        if (actual.length !== 1 || digest(actual[0]) !== restored.outputToolSha256 || Buffer.byteLength(actual[0]) !== restored.outputToolBytes)
+          throw new Error('SC06 restored discovery description is missing or changed before the provider');
+      }
       discoveryProof = { sequence: projected.proof.sequence, inputCatalogSequence: projected.proof.inputCatalogSequence,
         mode: experiment.mode, outputSectionSha256: projected.proof.outputSectionSha256,
         wireFragmentSha256: digest(projected.fragment), markerBytes: projected.proof.markerBytes };
       discoveryProjection = undefined;
     }
-    observeCatalog(system, { phase: 'catalog', stage: 'before_provider_request', userTurn, providerPayloadSha256: observedPayloadSha256 }, true);
+    observeCatalog(system, { phase: 'catalog', stage: 'before_provider_request', userTurn, providerPayloadSha256: observedPayloadSha256 }, true, visibleMessages);
     const provider = record({ phase: 'provider-request', model: settings.model, tools: advertisedTools, toolSurface: selected.surface, toolDefinitionsSha256: digest(JSON.stringify(event.payload?.tools)), toolChoice: 'auto', forcedToolArguments: false, payloadSha256: digest(serialized), payloadBytes: Buffer.byteLength(serialized), ...(payloadFile ? { payloadFile } : {}), ...(discoveryProof ? { discoveryProjection: discoveryProof } : {}), observedPayloadSha256, contents, hostHelp, toolResults, sourceTextHashes: sourceStrings(event.payload).map(value => ({ sha256: digest(value), bytes: Buffer.byteLength(value) })) });
     if ((event.payload?.messages ?? []).some(message => message.role === 'user' && sourceStrings(message.content).includes(settings.prompt)))
       submittedUser = { sequence: provider.sequence, promptSha256: digest(settings.prompt), providerPayloadSha256: observedPayloadSha256 };
@@ -1083,7 +1189,8 @@ export function observeGraphGate(api, settings) {
         record({ phase: 'metadata-result', toolCallId: event.toolCallId, tool: event.toolName, origin: call.origin, complete: true, sha256: digest(content), bytes: Buffer.byteLength(content), records: result.records, content, callSequence: call.sequence });
         for (const item of event.details.records) if (item.availability === 'available') discovered.set(item.ref, { sequence, source: 'actual authorized metadata list', id: item.id, scope: item.scope });
         if (result.next_cursor) metadataCursors.set(result.next_cursor, JSON.stringify([call.input.query ?? '', call.input.source ?? null]));
-        deliveredTools.set(event.toolCallId, { toolCallId: event.toolCallId, tool: event.toolName, content });
+        deliveredTools.set(event.toolCallId, { toolCallId: event.toolCallId, tool: event.toolName, content,
+          message: { role: 'toolResult', toolName: event.toolName, toolCallId: event.toolCallId, isError: false, content: event.content, details: event.details } });
       } catch (error) { record({ phase: 'metadata-result', toolCallId: event.toolCallId, complete: false, error: error.message, sha256: digest(content), bytes: Buffer.byteLength(content) }); }
       return;
     }
@@ -1100,7 +1207,8 @@ export function observeGraphGate(api, settings) {
           discover(target.content, 'successful explicit preparation', target);
         }
         discover(content, 'successful explicit preparation directory');
-        deliveredTools.set(event.toolCallId, { toolCallId: event.toolCallId, tool: event.toolName, content, records: result.records });
+        deliveredTools.set(event.toolCallId, { toolCallId: event.toolCallId, tool: event.toolName, content, records: result.records,
+          message: { role: 'toolResult', toolName: event.toolName, toolCallId: event.toolCallId, isError: false, content: event.content, details: event.details } });
       } catch (error) { record({ phase: 'tool-result', toolCallId: event.toolCallId, tool: 'notion_use', origin: call.origin, complete: false, error: error.message, sha256: digest(content), bytes: Buffer.byteLength(content), callSequence: call.sequence }); }
       return;
     }
@@ -1179,7 +1287,8 @@ export function observeGraphGate(api, settings) {
     if (complete) {
       discover(body, 'successful native read', target, bindHostIndex(call.input, target));
       discover(content, 'successful native read directory');
-      deliveredTools.set(event.toolCallId, { toolCallId: event.toolCallId, tool: event.toolName, content, records: [target] });
+      deliveredTools.set(event.toolCallId, { toolCallId: event.toolCallId, tool: event.toolName, content, records: [target],
+        message: { role: 'toolResult', toolName: event.toolName, toolCallId: event.toolCallId, isError: false, content: event.content, details: event.details } });
     }
   });
   api.on('session_shutdown', () => record({ phase: 'session-shutdown' }));
@@ -1617,7 +1726,9 @@ export function graphTrace({ config, oracle, observation, responses, sourceLedge
   for (const delivery of observation.filter(event => ['metadata-result', 'preparation-result'].includes(event.phase) && event.complete)) {
     const observed = providerRequests.some(request => request.sequence > delivery.sequence && request.toolResults?.some(result => result.toolCallId === delivery.toolCallId
       && result.sha256 === delivery.sha256 && result.bytes === delivery.bytes
-      && (delivery.phase === 'metadata-result' ? result.exactToolOutputCopies >= 1 : result.exactToolOutputCopies >= 1 || result.records?.length > 0 && result.records.every(record => record.providerCopies === 1))));
+      && (delivery.phase === 'metadata-result' ? result.exactToolOutputCopies >= 1 || result.metadataProjections?.some(projection => projection.sourceSha256 === delivery.sha256
+        && projection.sourceBytes === delivery.bytes && projection.descriptionReuse?.length > 0)
+        : result.exactToolOutputCopies >= 1 || result.records?.length > 0 && result.records.every(record => record.providerCopies === 1))));
     assert.ok(observed, 'A successful discovery/preparation tool output must reach an actual provider with matching output or verified body hashes');
   }
   if (config.gate === 'A' && oracle.roots?.B?.ref) assert.ok(!reads.some(read => read.ownerId === decodeURIComponent(oracle.roots.B.ref.split('/')[2])), 'Gate A cannot read the ordinary root as a bridge, including a pinned ref');
