@@ -23,6 +23,12 @@ const selectableScenarioNames = [...scenarioNames, ...nameScenarioNames, ambigui
 const nameUsage = 'Additional required name gates: --scenario name-references or --scenario name-reference-failed-source, with the original sdk-fixture.ts --catalog --distinct-names fixture. --scenario name-reference-ambiguity uses a separate --catalog --ambiguous-names fixture. These gates are separate from all14, which keeps its original fixture and names.';
 const nativeTools = ['read', 'notion_list', 'notion_use'];
 const scopedCommandTools = [...nativeTools, 'bash', 'tool_search'];
+const warmDirectoryUsage = 'Optional --warm-directory true waits for the existing offline metadata initialization before the unchanged first prompt, only with an explicit native, native-repeat or prepare scenario. This warm-directory comparison is separate from cold startup and all14; source startup time and all provider bytes remain in evidence.';
+export function warmDirectoryOptions(options) {
+  if (options['--warm-directory'] !== 'true') return false;
+  assert.ok(options['--fixture'] && !options['--live-input'] && ['native', 'native-repeat', 'prepare'].includes(options['--scenario']), warmDirectoryUsage);
+  return true;
+}
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const json = async path => JSON.parse(await readFile(path, 'utf8'));
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
@@ -328,6 +334,48 @@ export function assertPreflightCatalogProjection(captures, discovery, events, fi
       name + ': explicit preflight delivers only its complete selected root and Requires');
   }
   return { ...result, body_delivery: 'selected-root-and-Requires', ready_from_first_provider: true };
+}
+
+/** A comparison barrier does not itself prove model visibility. Verify the
+ * actual system payload, retaining each version's name/source presentation. */
+export function assertWarmDirectoryProjection(captures, discoveryMessage, fixture, bodies, { transport = 'sdk', sourceId = 'sdk-fixture' } = {}) {
+  assert.ok(['sdk', 'cli'].includes(transport)); assert.ok(captures.length > 0);
+  assertSearchProjection(discoveryMessage, { expectCompact: false, scope: fixture.scope });
+  const full = discoveryMessage.details, expected = fixture.default_view.records;
+  assert.deepEqual(full.failures, []); assert.equal(full.has_more, false);
+  assert.deepEqual(full.records.filter(record => record.in_default_view).map(record => record.id).sort(), expected.map(record => record.id).sort());
+  const xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+  const observations = captures.map(capture => {
+    const system = providerSystemText(capture.context);
+    assert.doesNotMatch(system, /<ntn-skills-discovery\b[^>]*status="pending"/u, 'Warm directory must be ready from the first actual provider');
+    const catalogs = [...system.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)];
+    assert.equal(catalogs.length, 1, 'One actual system catalog is required');
+    const views = [...catalogs[0][1].matchAll(/<view\b([^>]*)>/gu)]; assert.equal(views.length, 1);
+    const view = Object.fromEntries([...views[0][1].matchAll(/([a-z_]+)="([^"]*)"/gu)].map(match => [match[1], match[2]]));
+    assert.equal(view.source, sourceId); assert.equal(view.id, fixture.default_view.id); assert.equal(view.partial, 'false');
+    const cards = [...catalogs[0][1].matchAll(/<skill><name>([^<]+)<\/name><description>([^<]*)<\/description>(?:<source>([^<]+)<\/source>)?<location>([^<]+)<\/location><\/skill>/gu)];
+    assert.equal(cards.length, expected.length); assert.equal((catalogs[0][1].match(/<skill>/gu) ?? []).length, cards.length);
+    const records = cards.map(card => {
+      const matches = full.records.filter(record => record.ref === card[4] && record.source === sourceId); assert.equal(matches.length, 1);
+      const record = matches[0], frozen = fixture.snapshots.find(snapshot => snapshot.scope === fixture.scope && snapshot.record.id === record.id)?.record;
+      assert.ok(frozen && expected.some(value => value.id === record.id)); assert.equal(record.scope, fixture.scope);
+      assert.equal(record.name, frozen.name); assert.equal(record.description, frozen.description);
+      assert.equal(record.in_default_view, true); assert.equal(record.availability, 'available');
+      assert.equal(card[1], xml(transport === 'cli' ? sourceId + '-' + frozen.name : frozen.name));
+      assert.equal(card[2], xml(frozen.description)); assert.equal(card[3], transport === 'cli' ? undefined : sourceId);
+      assert.match(card[4], /^sr:C[A-Za-z0-9_-]{22}$/u);
+      return { id: record.id, scope: record.scope, source: sourceId, name: record.name, description: record.description,
+        displayed_name: card[1], displayed_source: card[3] ?? null, ref: card[4] };
+    });
+    assert.deepEqual(records.map(record => record.id).sort(), expected.map(record => record.id).sort());
+    return { request_id: capture.requestId, state: 'ready', system_sha256: hash(system), system_bytes: Buffer.byteLength(system),
+      catalog_bytes: Buffer.byteLength(catalogs[0][0]), records };
+  });
+  for (const body of bodies.values()) {
+    assert.equal(bodyCount(captures[0].context, body), 0, 'Warm metadata setup cannot preload source bodies');
+    assert.equal(providerSystemText(captures[0].context).includes(body), false);
+  }
+  return { status: 'verified', view_id: fixture.default_view.id, transport, first_provider_body_copies: 0, provider_requests: observations };
 }
 
 export function assertNativeCatalogPreserved(captures, nativeSkill, section) {
@@ -1631,7 +1679,52 @@ async function observer(path) {
   await writeFile(path, `import { isMainThread } from 'node:worker_threads';\nimport childProcess from 'node:child_process';\nimport { createHash } from 'node:crypto';\nimport { channel } from 'node:diagnostics_channel';\nimport fs, { appendFileSync } from 'node:fs';\nimport fsPromises from 'node:fs/promises';\nimport { syncBuiltinESMExports } from 'node:module';\n${safeRequestMetrics.toString()}\n${observeOwnedObjectReads.toString()}\n${observeSdkInitialization.toString()}\nif (isMainThread) (${observe.toString()})();\n`, { mode: 0o600 });
 }
 
-export function sourceFinality(events, hostPid, { hostClosed = false } = {}) {
+function initialDirectoryReady(events, hostPid, { fixture, sourceId, transport, bundledCli }) {
+  assert.ok(['sdk', 'cli'].includes(transport));
+  assert.ok(fixture.default_view?.records.length && fixture.catalog_records?.length);
+  assert.equal(events.some(event => event.kind === 'object_read' || event.kind === 'observer_error'), false, 'Warm setup must remain metadata-only');
+  const completed = [];
+  const metrics = value => { assert.equal(value?.complete, true); assert.equal(value.total_requests, 0); assert.deepEqual(value.trace, []); assert.equal(value.trace_dropped, 0); };
+  if (transport === 'sdk') {
+    assert.equal(events.some(event => event.kind === 'child_start'), false, 'Current warm setup uses the default SDK');
+    const calls = events.filter(event => event.kind === 'sdk');
+    for (const event of calls) {
+      assert.equal(event.observer_pid, hostPid); assert.equal(event.operation, 'list');
+      assert.equal(event.source_id, sourceId); assert.equal(event.database, fixture.database);
+      assert.ok(['start', 'end'].includes(event.event));
+    }
+    for (const result of events.filter(event => event.kind === 'sdk_catalog')) {
+      assert.equal(result.observer_pid, hostPid);
+      assert.equal(calls.filter(event => event.event === 'start' && event.id === result.id).length, 1);
+    }
+    for (const end of calls.filter(event => event.event === 'end')) {
+      const starts = calls.filter(event => event.event === 'start' && event.id === end.id); assert.equal(starts.length, 1);
+      assert.equal(end.status, 'completed'); assert.equal(end.error_code, null); assert.equal(end.metrics_observed, true); metrics(end.request_metrics);
+      const results = events.filter(event => event.kind === 'sdk_catalog' && event.id === end.id && event.observer_pid === hostPid);
+      assert.equal(results.length, 1); assert.ok(events.indexOf(starts[0]) < events.indexOf(results[0]) && events.indexOf(results[0]) < events.indexOf(end));
+      const value = results[0].value; assert.equal(value.scope, fixture.scope); assert.equal(value.coverage.exhaustive, true); assert.deepEqual(value.coverage.failed_sources, []);
+      const ids = value.view ? fixture.default_view.records.map(record => record.id) : fixture.catalog_records;
+      assert.equal(value.count, ids.length); assert.deepEqual(value.records.map(record => record.id).sort(), [...ids].sort());
+      if (value.view) { assert.equal(value.view.id, fixture.default_view.id); assert.equal(value.view.database_id, fixture.database); assert.equal(value.view_selection, 'first'); }
+      completed.push(value.view ? 'default' : 'ordinary');
+    }
+  } else {
+    assert.equal(events.some(event => event.kind === 'sdk'), false, 'Historical warm setup uses its actual bundled CLI');
+    for (const start of events.filter(event => event.kind === 'child_start')) {
+      assert.equal(start.observer_pid, hostPid); assert.equal(start.bundled, true); assert.equal(start.operation, 'list');
+      const isDefault = start.argv.includes('--default-view');
+      assert.deepEqual(start.argv, [bundledCli, 'list', '--database', fixture.database, ...(isDefault ? ['--default-view'] : []), '--offline']);
+      const ends = events.filter(event => event.kind === 'child_close' && event.id === start.id && event.observer_pid === hostPid);
+      if (!ends.length) continue;
+      assert.equal(ends.length, 1); const end = ends[0]; assert.equal(end.code, 0); assert.equal(end.signal, null);
+      assert.ok(end.stdout_bytes > 0); assert.match(end.stdout_sha256, /^[a-f0-9]{64}$/u); metrics(end.request_metrics);
+      completed.push(isDefault ? 'default' : 'ordinary');
+    }
+  }
+  return completed.includes('ordinary') && completed.includes('default');
+}
+
+export function sourceFinality(events, hostPid, { hostClosed = false, initialDirectory } = {}) {
   const pending = [];
   const starts = events.filter(event => event.kind === 'observer_start');
   if (starts.filter(event => event.observer_pid === hostPid).length !== 1) pending.push({ kind: 'host_observer_start', pid: hostPid });
@@ -1656,6 +1749,7 @@ export function sourceFinality(events, hostPid, { hostClosed = false } = {}) {
     if (events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.id === start.id && event.observer_pid === start.observer_pid).length !== 1)
       pending.push({ kind: 'sdk_end', id: start.id, pid: start.observer_pid });
   }
+  if (initialDirectory && !initialDirectoryReady(events, hostPid, initialDirectory)) pending.push({ kind: 'initial_default_directory' });
   return { complete: pending.length === 0, host_pid: hostPid, host_closed: hostClosed,
     observer_processes: starts.length, source_children: events.filter(event => event.kind === 'child_start').length, pending };
 }
@@ -1670,6 +1764,22 @@ async function waitForSourceFinality(path, hostPid, options = {}) {
     if (process.hrtime.bigint() >= deadline) return { ...last, timeout_ms: timeoutMs, deadline_exceeded: true };
     await new Promise(resolve => setTimeout(resolve, 25));
   }
+}
+
+export async function waitForWarmDirectory({ ledger, providerFile, hostPid, fixture, sourceId = 'sdk-fixture', transport = 'sdk', bundledCli }) {
+  const started = process.hrtime.bigint();
+  assert.equal((await rows(providerFile)).length, 0, 'Warm barrier precedes every original prompt/provider');
+  const initialDirectory = { fixture, sourceId, transport, bundledCli };
+  const finality = await waitForSourceFinality(ledger, hostPid, { initialDirectory });
+  assert.equal((await rows(providerFile)).length, 0, 'Warm barrier must not submit extra prompts');
+  const prefix = await readFile(ledger), ended = process.hrtime.bigint();
+  const observed = prefix.toString('utf8'); assert.ok(observed.endsWith('\n'), 'Warm source prefix must end at a complete record');
+  const sealed = sourceFinality(observed.trimEnd().split('\n').map(JSON.parse), hostPid, { initialDirectory });
+  assert.equal(sealed.complete, finality.complete, 'Warm startup receipt binds the same complete source prefix');
+  return { ...finality, transport, source: sourceId, database: fixture.database, scope: fixture.scope, view_id: fixture.default_view.id,
+    started_monotonic_ns: String(started), ended_monotonic_ns: String(ended), elapsed_ms: Number(ended - started) / 1e6,
+    ledger_prefix_bytes: prefix.length, ledger_prefix_sha256: hash(prefix), provider_requests: 0,
+    model_visibility: 'not_yet_observed', comparison_cell: 'warm-directory' };
 }
 
 export function assertCatalogCancellationBoundary(start, end, lifecycle) {
@@ -2544,7 +2654,7 @@ function assertAmbiguityReferenceEvidence(captures, frames, hooks, events, archi
     body_authorization: 'Candidate references copied only from actual provider-visible error tool messages; independent fixture bytes keyed by record.id and source hash' };
 }
 
-async function scenario(name, info, scratch, evidence, expectShortRefs, expectCompactContext, expectDirectScalar, expectShortConfirmations) {
+async function scenario(name, info, scratch, evidence, expectShortRefs, expectCompactContext, expectDirectScalar, expectShortConfirmations, warmDirectory = false) {
   const catalogProjection = ['dollar', 'default-view'].includes(name);
   const shortResourceRefs = name === 'resource-batch-short-refs';
   const resourceScenario = name === 'resource-batch' || shortResourceRefs;
@@ -2649,6 +2759,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     ...(toolDiscovery ? ['-e', toolDiscovery.extension.path] : []),
     ...(codemode ? ['-e', join(info.piPackageRoot, 'dist/extensions/codemode/index.js')] : []), '--model', 'context-broker-e2e/fake'];
   await save(join(output, 'launch.json'), { host: info.host, argv, cwd: base, source_command_configured: false,
+    ...(warmDirectory ? { comparison_cell: 'warm-directory', metadata_barrier_timeout_ms: 10000 } : {}),
     source_state: partialEntrypoint ? 'complete controlled current validated by installed SDK, then owned partial cache; fresh Broker cache and Pi session'
       : scalarSeed ? 'cloned warm controlled source; fresh Broker cache and new Pi process restoring a metadata-only short-reference session'
       : 'cloned warm controlled snapshots/current catalog; fresh Broker cache and Pi session', expect_short_refs: expectShortRefs,
@@ -2660,9 +2771,14 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     ...(shutdownObserver ? { native_shutdown_observer: { extension: shutdownObserver, registration: 'before_broker', events: nativeEvents } } : {}),
     ...(scalarSeed ? { seed_evidence: 'resource-scalar-seed.json', seed_sha256: scalarSeed.evidence.session_sha256 } : {}) });
   if (name === 'session-lifecycle') return runSdkLifecycle({ info, base, output, sessions, providerFile, hookFile, ledger, toolPlan, env, argv });
-  let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, resourceScalarEvidence, nativeRepeatEvidence, entrypointEvidence, defaultViewEvidence, serializerContext, archive, dollarProjection, nativeProjection, scopedCommandEvidence, catalogProjectionEvidence, namedEvidence;
+  let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, resourceScalarEvidence, nativeRepeatEvidence, entrypointEvidence, defaultViewEvidence, serializerContext, archive, dollarProjection, nativeProjection, scopedCommandEvidence, catalogProjectionEvidence, namedEvidence, warmDirectoryEvidence;
   try {
     rpc = await startRpc({ host: 'pi', args: argv, cwd: base, env, timeoutMs: 60000 });
+    if (warmDirectory) {
+      const startup = await waitForWarmDirectory({ ledger, providerFile, hostPid: rpc.lifecycle[0].pid, fixture: info.fixture, sourceId: source.id });
+      await save(join(output, 'warm-directory-startup.json'), startup);
+      assert.equal(startup.complete, true, 'Both actual metadata calls must finish before the unchanged first prompt');
+    }
     if (catalogProjection) {
       const deadline = Date.now() + 30000;
       while (!(await rows(ledger)).some(event => event.kind === 'initialization_held')) {
@@ -3181,6 +3297,14 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       catalogProjectionEvidence.installed_serializer_http = httpCatalog;
       await save(join(output, 'catalog-projection.json'), catalogProjectionEvidence);
     }
+    if (warmDirectory) {
+      const message = toolResult(captures.at(-1).context, 'sc10-search');
+      const serialized = await Promise.all(serializer.requests.map(async request => ({ requestId: request.provider_request_id,
+        context: { messages: (await json(join(output, request.request_file))).messages } })));
+      warmDirectoryEvidence = { provider: assertWarmDirectoryProjection(captures, message, info.fixture, info.bodies),
+        installed_serializer_http: assertWarmDirectoryProjection(serialized, message, info.fixture, info.bodies) };
+      await save(join(output, 'warm-directory.json'), warmDirectoryEvidence);
+    }
     if (scalarScenario) {
       serializer = await replayScenarioHttp(captures, rpc.frames, info, output);
       assert.equal(serializer.provider_requests, 6); assert.equal(serializer.tool_rounds, 5); assert.equal(serializer.tool_calls, 5);
@@ -3244,7 +3368,8 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       serializer_http_replay: serializer ? { status: serializer.status, request_bytes: serializer.request_bytes,
         requests: serializer.provider_requests ?? 1, ...(serializer.sequence ? { tool_rounds: serializer.tool_rounds, tool_calls: serializer.tool_calls,
           all_provider_requests_serialized: serializer.all_provider_requests_serialized, evidence: 'provider-http.json' } : {}), production_network: false } : null,
-      default_view: defaultViewEvidence ? 'verified' : 'not_exercised', ...observations };
+      ...(warmDirectoryEvidence ? { comparison_cell: 'warm-directory', warm_directory: 'verified', warm_directory_evidence: 'warm-directory.json' } : {}),
+      default_view: defaultViewEvidence || warmDirectoryEvidence ? 'verified' : 'not_exercised', ...observations };
     await save(join(output, 'result.json'), result); return result;
   } catch (error) {
     const result = { name, status: 'failed', observer_finality: finality?.complete === true, error: failed ?? { code: error.code ?? error.name, message: String(error.message) } };
@@ -3453,14 +3578,14 @@ async function retained(evidence, cleanup) {
 }
 async function main(argv) {
 const args = [...argv];
-if (args.some(value => ['--help', '-h', 'help'].includes(value))) { console.log(usage + '\n' + nameUsage); return; }
+if (args.some(value => ['--help', '-h', 'help'].includes(value))) { console.log(usage + '\n' + nameUsage + '\n' + warmDirectoryUsage); return; }
 const action = args.shift();
 assert.ok(['doctor', 'run', 'evidence', 'cleanup'].includes(action), usage);
 const options = {};
 for (let index = 0; index < args.length; index += 2) {
   const key = args[index], value = args[index + 1];
-  assert.ok(['--package', '--fixture', '--live-input', '--out', '--evidence', '--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar', '--expect-short-confirmations', '--scenario'].includes(key) && value && !Object.hasOwn(options, key), usage);
-  if (['--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar', '--expect-short-confirmations'].includes(key)) assert.ok(['true', 'false'].includes(value), usage);
+  assert.ok(['--package', '--fixture', '--live-input', '--out', '--evidence', '--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar', '--expect-short-confirmations', '--warm-directory', '--scenario'].includes(key) && value && !Object.hasOwn(options, key), usage);
+  if (['--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar', '--expect-short-confirmations', '--warm-directory'].includes(key)) assert.ok(['true', 'false'].includes(value), usage);
   else if (key === '--scenario') assert.ok(value === 'all' || selectableScenarioNames.includes(value), usage + '\n' + nameUsage);
   else assert.ok(isAbsolute(value), usage);
   options[key] = value;
@@ -3468,12 +3593,14 @@ for (let index = 0; index < args.length; index += 2) {
 if (action === 'evidence' || action === 'cleanup') {
   assert.ok(options['--evidence'], usage); await retained(await realpath(options['--evidence']), action === 'cleanup');
 } else {
+  const warmDirectory = warmDirectoryOptions(options);
   if (options['--live-input']) assert.equal(options['--scenario'], undefined, 'Explicit live input selects one separate live-notion route; offline all remains unchanged');
   const info = await inspect(options);
   if (action === 'doctor') console.log(JSON.stringify({ status: 'ready', node: process.version, pi: info.pi.version, host: info.host, extension: info.extension, runtime: info.runtime, serializer: info.serializerIdentity,
     fixture: options['--fixture'], live_input: options['--live-input'], authentication: 'not_probed',
     source: info.live ? 'Real Notion; local private oracle never seeds the consumer' : 'controlled offline catalog and snapshots',
     ...(info.live ? { artifact: info.live.artifact, installed_files: info.published, oracle: info.live.oracle, expected_default_records: info.catalog.count } : {}),
+    ...(warmDirectory ? { comparison_cell: 'warm-directory', metadata_barrier: 'not_run', metadata_barrier_timeout_ms: 10000 } : {}),
     default_view: 'not_verified' }, null, 2));
   else {
     assert.ok(options['--out'], usage);
@@ -3492,6 +3619,7 @@ if (action === 'evidence' || action === 'cleanup') {
       fixture: options['--fixture'], driver_sha256: hash(await readFile(fileURLToPath(import.meta.url))), source_command_configured: false,
       ...(options['--fixture'] ? { fixture_sha256: hash(await readFile(options['--fixture'])) } : {}),
       scenarios, expect_short_refs: expectShortRefs, expect_compact_context: expectCompactContext, expect_direct_scalar: expectDirectScalar, expect_short_confirmations: expectShortConfirmations,
+      ...(warmDirectory ? { comparison_cell: 'warm-directory', metadata_barrier_timeout_ms: 10000, extra_prompts: 0, body_preparation_during_barrier: false } : {}),
       comparison_scope: 'Installed Broker plus bundled CLI/SDK; a changed runtime manifest or bundle hash is a changed comparison input',
       ...(info.live ? { input_mode: 'live_notion_sdk', live_input: options['--live-input'], live_input_sha256: hash(await readFile(options['--live-input'])),
         artifact: info.live.artifact, published_files: info.published, oracle: info.live.oracle, host: info.host } : {}),
@@ -3499,7 +3627,7 @@ if (action === 'evidence' || action === 'cleanup') {
     const results = [];
     for (const name of scenarios) {
       try { results.push(info.live ? await liveScenario(info, scratch, evidence)
-        : await scenario(name, info, scratch, evidence, expectShortRefs, expectCompactContext, expectDirectScalar, expectShortConfirmations)); }
+        : await scenario(name, info, scratch, evidence, expectShortRefs, expectCompactContext, expectDirectScalar, expectShortConfirmations, warmDirectory)); }
       catch (error) { results.push({ name, status: 'failed', error: { code: error.code ?? error.name, message: String(error.message) } }); }
       await save(join(evidence, 'progress.json'), results); console.log(JSON.stringify(results.at(-1)));
     }

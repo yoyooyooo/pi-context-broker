@@ -1692,3 +1692,114 @@ test('an unfinished SDK call or unmatched observer remains unresolved even after
   events.push({ kind: 'observer_start', observer_pid: 44, parent_pid: 42 }, { ...hostEnd, observer_pid: 44 });
   assert.equal(sourceFinality(events, 42).complete, false);
 });
+
+function warmDirectoryFixture() {
+  const value = defaultViewFixture(), scope = 'warm-source-scope';
+  Object.assign(value.fixture, { database, scope, catalog_records: value.fixture.default_view.records.map(record => record.id),
+    snapshots: value.fixture.default_view.records.map(record => ({ scope, record })) });
+  for (const record of value.discovery.records) Object.assign(record, { scope, availability: 'available' });
+  Object.assign(value.discovery, { ok: true, count: 2, has_more: false, failures: [] });
+  const full = structuredClone(value.discovery), model = structuredClone(full);
+  for (const record of model.records) { delete record.id; delete record.scope; }
+  value.message = { role: 'toolResult', toolCallId: 'sc10-search', content: [{ type: 'text', text: JSON.stringify(model) }], details: full };
+  value.expected = { fixture: value.fixture, sourceId: 'sdk-fixture', transport: 'sdk' };
+  const metrics = { complete: true, total_requests: 0, trace: [], trace_dropped: 0 };
+  value.events = [{ kind: 'observer_start', observer_pid: 42, parent_pid: 10 }];
+  for (const [index, view] of [undefined, { id: 'view-1', database_id: database }].entries()) {
+    const common = { observer_pid: 42, id: 'list-' + index, operation: 'list', source_id: 'sdk-fixture', database };
+    value.events.push({ kind: 'sdk', event: 'start', ...common },
+      { kind: 'sdk_catalog', observer_pid: 42, id: common.id, value: { scope, ...(view ? { view, view_selection: 'first' } : {}),
+        count: 2, records: value.fixture.default_view.records, coverage: { exhaustive: true, failed_sources: [] } } },
+      { kind: 'sdk', event: 'end', ...common, status: 'completed', error_code: null, metrics_observed: true, request_metrics: metrics });
+  }
+  value.captures = value.captures.slice(1);
+  return value;
+}
+
+test('warm directory rejects idle source finality and ordinary-only metadata', () => {
+  const { events, expected } = warmDirectoryFixture();
+  assert.equal(sourceFinality(events.slice(0, 1), 42).complete, true, 'Default source-drain semantics remain unchanged');
+  assert.equal(sourceFinality(events.slice(0, 1), 42, { initialDirectory: expected }).complete, false);
+  assert.equal(sourceFinality(events.slice(0, 4), 42, { initialDirectory: expected }).complete, false);
+  assert.equal(sourceFinality(events, 42, { initialDirectory: expected }).complete, true);
+  assert.equal(sourceFinality(events.slice(0, -1), 42, { initialDirectory: expected }).complete, false);
+});
+
+test('warm directory binds actual SDK source database scope coverage and no-body setup', () => {
+  for (const mutate of [
+    value => { value.events[4].source_id = 'other'; },
+    value => { value.events[6].database = 'other'; },
+    value => { value.events[5].value.scope = 'other'; },
+    value => { value.events[5].value.coverage.exhaustive = false; },
+    value => { value.events[5].value.coverage.failed_sources = [{ code: 'CACHE_MISSING' }]; },
+    value => { value.events[5].value.records = value.events[5].value.records.slice(0, 1); },
+    value => { value.events[6].status = 'failed'; value.events[6].error_code = 'CACHE_MISSING'; },
+    value => { value.events[6].request_metrics = { complete: false, total_requests: null }; },
+    value => { value.events[4].operation = 'consume'; },
+    value => { value.events.push({ kind: 'sdk_catalog', observer_pid: 42, id: 'unbound', value: value.events[5].value }); },
+    value => { value.events.push({ kind: 'object_read', event: 'start', observer_pid: 42 }); },
+  ]) {
+    const value = warmDirectoryFixture(); mutate(value);
+    assert.throws(() => sourceFinality(value.events, 42, { initialDirectory: value.expected }));
+  }
+});
+
+test('warm directory supports only terminal bundled metadata CLI calls for the owned historical arm', () => {
+  const { expected } = warmDirectoryFixture(); Object.assign(expected, { transport: 'cli', bundledCli: command[1] });
+  const events = [childTerminal[0]];
+  for (const [index, defaultView] of [false, true].entries()) {
+    const id = '42:' + (index + 1), pid = 43 + index;
+    events.push({ kind: 'child_start', observer_pid: 42, id, bundled: true, operation: 'list',
+      argv: [command[1], 'list', '--database', database, ...(defaultView ? ['--default-view'] : []), '--offline'] },
+      { kind: 'child_spawn', observer_pid: 42, id, child_pid: pid },
+      { kind: 'observer_start', observer_pid: pid, parent_pid: 42 },
+      { ...hostEnd, observer_pid: pid },
+      { kind: 'child_close', observer_pid: 42, id, child_pid: pid, code: 0, signal: null, stdout_bytes: 123, stdout_sha256: 'a'.repeat(64),
+        request_metrics: { complete: true, total_requests: 0, trace: [], trace_dropped: 0 } });
+  }
+  assert.equal(sourceFinality(events, 42, { initialDirectory: expected }).complete, true);
+  assert.equal(sourceFinality(events.slice(0, 6), 42, { initialDirectory: expected }).complete, false);
+  assert.equal(sourceFinality(events.slice(0, -1), 42, { initialDirectory: expected }).complete, false);
+  for (const mutate of [value => { value[6].argv[3] = 'other'; }, value => { value[10].code = 1; },
+    value => { value[10].stdout_sha256 = null; }, value => { value[6].operation = 'prepare'; }]) {
+    const changed = structuredClone(events); mutate(changed);
+    assert.throws(() => sourceFinality(changed, 42, { initialDirectory: expected }));
+  }
+});
+
+test('warm directory option is explicit and cannot alter all14 live or held-startup scenarios', () => {
+  assert.equal(namedSdkProbe.warmDirectoryOptions({}), false);
+  assert.equal(namedSdkProbe.warmDirectoryOptions({ '--warm-directory': 'false', '--scenario': 'all' }), false);
+  for (const name of ['native', 'native-repeat', 'prepare'])
+    assert.equal(namedSdkProbe.warmDirectoryOptions({ '--warm-directory': 'true', '--scenario': name, '--fixture': '/fixture.json' }), true);
+  for (const options of [{}, { '--scenario': 'all' }, { '--scenario': 'dollar' }, { '--scenario': 'default-view' },
+    { '--scenario': 'native', '--live-input': '/live.json' }])
+    assert.throws(() => namedSdkProbe.warmDirectoryOptions({ '--warm-directory': 'true', '--fixture': '/fixture.json', ...options }));
+});
+
+test('warm directory proves actual first system cards and preserves historical presentation differences', () => {
+  const value = warmDirectoryFixture();
+  const current = namedSdkProbe.assertWarmDirectoryProjection(value.captures, value.message, value.fixture, value.bodies);
+  assert.deepEqual(current.provider_requests[0].records.map(record => record.id), ['owner:a', 'owner:b']);
+  assert.equal(current.first_provider_body_copies, 0);
+  const legacy = structuredClone(value.captures);
+  legacy[0].context.messages[0].content = legacy[0].context.messages[0].content.replaceAll('<name>', '<name>sdk-fixture-').replaceAll('<source>sdk-fixture</source>', '');
+  const old = namedSdkProbe.assertWarmDirectoryProjection(legacy, value.message, value.fixture, value.bodies, { transport: 'cli' });
+  assert.deepEqual(old.provider_requests[0].records.map(record => [record.displayed_name, record.displayed_source]), [['sdk-fixture-a', null], ['sdk-fixture-b', null]]);
+  assert.throws(() => namedSdkProbe.assertWarmDirectoryProjection(legacy, value.message, value.fixture, value.bodies));
+});
+
+test('warm directory rejects pending fake user directory wrong owner metadata and private preloads', () => {
+  for (const mutate of [
+    value => { value.captures[0].context.messages[0].role = 'user'; },
+    value => { value.captures[0].context.messages[0].content = '<ntn-skills-discovery status="pending">Pending</ntn-skills-discovery>'; },
+    value => { value.captures[0].context.messages[0].content += value.captures[0].context.messages[0].content; },
+    value => { value.message.details.records[0].id = 'other'; },
+    value => { value.captures[0].context.messages[0].content = value.captures[0].context.messages[0].content.replace('Metadata', 'invented'); },
+    value => { value.captures[0].context.messages[0].content = value.captures[0].context.messages[0].content.replace('sr:C' + '0'.repeat(22), 'sr:C' + '9'.repeat(22)); },
+    value => { value.captures[0].context.messages.push({ role: 'user', content: value.bodies.get('a') }); },
+  ]) {
+    const value = warmDirectoryFixture(); mutate(value);
+    assert.throws(() => namedSdkProbe.assertWarmDirectoryProjection(value.captures, value.message, value.fixture, value.bodies), { code: 'ERR_ASSERTION' });
+  }
+});

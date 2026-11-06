@@ -76,6 +76,29 @@ Cold 每例为空的自有状态；warm 使用独立 setup 后的共享自有状
 
 证据根为 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc11-single-inspect-iyw1oxit`。`live-pair-plan/paired-plan.json` SHA-256 为 `e313aa2edb966982a18a3f2d3a1119cbf42fd3d47edc8792ef8bc5b75cf887ad`；`real-pair-result.json` 为 `515544b7210df7847f77bbaf05454f50309af5c5936b651dbc435a26008d7700`；同目录 `cleanup-result.json` 为 `407a69beb93eec0ba7a4288e5cc000748a8465d488461d7498d81afbb164c6ad`。后续比较必须有能改变请求与延迟取舍的具体机制，或明确调整后的任务预算，并冻结新计划。不能追加同输入样本、规模阈值或缓存策略把本轮改成通过。
 
+### SC05：同目录就绪状态的受控比较
+
+原 `notion-sdk-pi.mjs` 的 `native`、`native-repeat`、`prepare` 可显式增加 `--warm-directory true`。此选项只用于独立的 warm-directory cell：每臂仍启动新的实际 Pi、使用同一已暖的离线 source fixture、空 Broker cache 和新会话；在原首 prompt 前等待已经启动的 ordinary catalog 与 Default View 请求实际终结，不增加 prompt、工具调用或正文准备。默认值为 false；`all`、`default-view`、`dollar`、live 等场景不接受 true，原普通首轮 pending 及 all14 门禁保持原样。
+
+```bash
+node scripts/notion-sdk-pi.mjs doctor \
+  --package /absolute/independently-installed/pi-context-broker \
+  --fixture /absolute/original-sdk-catalog/fixture.json \
+  --scenario native --warm-directory true
+node scripts/notion-sdk-pi.mjs run \
+  --package /absolute/independently-installed/pi-context-broker \
+  --fixture /absolute/original-sdk-catalog/fixture.json \
+  --scenario native --warm-directory true --out /absolute/new-warm-directory-evidence
+```
+
+Doctor 仅确认输入和计划，不能宣布目录已 ready。Barrier 复用原 source/process finality，最多 10 秒，并计入原单景 180 秒外层预算；RPC 原 60 秒限制不变。空 ledger、只有 ordinary list、缺 terminal、错误 source/database/scope、部分目录、失败 source、正文读取或非零来源 HTTP 都不能通过。当前默认 SDK 必须有同 ID 的真实 list start/result/end；历史比较臂只在 owned helper 副本中接相同等待点，核实际 bundled CLI 的 ordinary/default-view argv、stdout bytes/hash 和子进程终局，不能为旧臂合成 SDK 回执。`warm-directory-startup.json` 保留等待区间、source ledger 前缀 hash 和尚未提交任何 provider 的事实。
+
+等待完成还不等于模型获得目录。`warm-directory.json` 必须逐个验证实际 provider system 与安装版本 serializer 生成的 HTTP payload：首请求起都恰有完整 Default View，候选 ref 绑定真实 discovery 的 owner、scope、source、name、description，并对独立 fixture manifest 核对；首请求正文为零。原完整正文、Requires、资源、历史副本与 source finality 断言继续执行。旧版本显示 namespaced 名称且没有单独 source 标签，当前显示作者名称并列 source；这些呈现和相应字节全部保留，语义候选相同不代表文字相同。任何首次 pending、用户文本伪目录、候选缺失或未绑定 ref 都使新 cell 失败，不自动再试。
+
+2026-11-06 的原六次诊断保留为非同目录状态样本：native 序列化 HTTP 为 41,175→42,715 B，native-repeat 为 67,364→69,978 B，prepare 为 59,438→60,443 B。旧臂四/六次请求仍 pending，而新臂第二次起为 ready；prepare 的第二用户句还不相同。因此这些差值不裁决收益或回归。旧源的真实默认 list 已自然退出，后续同轮系统目录仍 pending，原因是旧版在 `before_agent_start` 固定投影；第二用户轮次确实显示原两项，不能归因为 SDK 请求失败。原 FAILED reports、serializer sidecars 与 unpaired 标记保持。
+
+原账本为 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc05-public-cost-a4yii0vm/initial-six-comparison.json`，SHA-256 `11f2364f13b8363701ab197c5f119ef22ec6fcae7ad82705464f0490c2792d0c`。新 helper 的红绿证据与待执行计划在同根 `warm-directory-harness-iwh8jg4k`。后续只在独立授权窗口对这三场各跑一次旧/新臂，使用同一 Pi 1.4、C7 runtime、fixture 和原用户输入；prepare 两臂第二句精确使用当前原句 `Use the same a, b and c Skills again, keeping their selected versions.`，旧 helper 的其他工具名称/正文断言不改。当前仅完成 helper 接线和本地测试，六次实际 warm-directory consumer 尚未执行。该受控 cell 不替代真实模型、生产源网络、cold 启动或 SC20 的全任务成本矩阵。
+
 ### 普通启动配置
 
 先用 `doctor --extension ABSOLUTE_ENTRY` 确认实际宿主，再冻结完整批次：
