@@ -28,7 +28,7 @@ const within = (base, target) => { const value = relative(base, target); return 
 const disjoint = (a, b) => !within(a, b) && !within(b, a);
 const modelSelectors = ['magpie/group/flash-free', 'magpie/group/worker'];
 const permissionFailure = text => /insufficient (?:permission|quota)|not authorized|api key.*(?:invalid|denied)|please upgrade|无权限使用|额度不足|账户.*(?:无权|欠费)/i.test(text);
-export const GRAPH_GATE_HARNESS_VERSION = 16;
+export const GRAPH_GATE_HARNESS_VERSION = 17;
 export const GRAPH_GATE_TOOLS = Object.freeze(['read', 'notion_list', 'notion_use']);
 export async function graphHarnessIdentity() {
   const files = await Promise.all(['notion-skill-graph-model.mjs', 'notion-skill-graph-model-evidence.mjs', 'skill-preparation-evidence.mjs', 'verify-skill-graph-contract.mjs', 'notion-skill-graph-project.mjs', 'notion-skill-graph-observer-smoke.mjs', 'notion-skill-retained-proof.mjs', 'notion-skill-source-proof.ts', 'notion-pi-help.mjs', 'notion-skill-graph.mjs', 'notion-integration-model.mjs', 'verify-pi-notion-model-cache.mjs'].map(async name => {
@@ -1143,6 +1143,15 @@ export function observeGraphGate(api, settings) {
     const payload = authored?.input ?? event.input;
     const batch = event.toolName === 'read' && Object.hasOwn(payload ?? {}, 'paths');
     const input = event.toolName === 'read' ? batch ? payload.paths : payload?.path : payload;
+    // A disclosed handle with extra bytes is still in the product-owned sr:
+    // namespace, but cannot satisfy its exact token grammar. Preserve the bad
+    // args for the SDK read adapter's error; this never authorizes a file read.
+    const shortBase = typeof input === 'string' ? /^sr:[CSR][A-Za-z0-9_-]{22}/.exec(input)?.[0] : undefined;
+    const validationAttempt = settings.sourceMode === 'sdk' && event.toolName === 'read' && !batch
+      && Object.keys(payload ?? {}).length === 1 && same(payload, event.input)
+      && shortBase && input.length > shortBase.length && !/^sr:[CSR][A-Za-z0-9_-]{22}$/.test(input)
+      && parseRef(shortBase) && (discovered.has(shortBase) || advertisedPaths.has(shortBase)) && wasDiscovered(shortBase)
+      ? { baseRef: shortBase, expectedCode: 'SHORT_REF_INVALID' } : undefined;
     const batchTargets = batch && Array.isArray(input) && input.length > 0 && input.length <= 16 && Object.keys(payload).length === 1
       ? input.map(ref => typeof ref === 'string' && parseRef(ref)?.snapshot && discoveredReadIdentity(ref)) : undefined;
     const batchAllowed = batchTargets?.every(Boolean) && new Set(batchTargets.map(target => JSON.stringify([target.scope, target.ownerId, target.snapshot]))).size === 1
@@ -1160,7 +1169,7 @@ export function observeGraphGate(api, settings) {
     const discoveredBefore = event.toolName === 'notion_use'
       ? Array.isArray(requested) && requested.length > 0 && requested.every(ref => typeof ref === 'string' && parseRef(ref) && wasDiscovered(ref))
       : batch ? Boolean(batchAllowed) : Boolean(expected || claim);
-    const projectPath = typeof input === 'string' && !parseRef(input) ? canonicalReadPath(input) : undefined;
+    const projectPath = !validationAttempt && typeof input === 'string' && !parseRef(input) ? canonicalReadPath(input) : undefined;
     const project = projectFiles.get(projectPath);
     let help;
     try { if (event.toolName === 'read' && typeof input === 'string') help = settings.piHelpBoundary?.target(input); }
@@ -1178,11 +1187,11 @@ export function observeGraphGate(api, settings) {
         const views = sourceViews(), records = [...views.directories.flatMap(item => item.value.records ?? []), ...views.entries.map(item => item.value.record)];
         return records.some(record => record.id === parsed.selector && settings.parseNativeReference(record.ref).path === parsed.path && ['skill', 'router'].includes(record.kind));
       });
-    const allowed = toolSurface().tools.includes(event.toolName) && authored?.tool === event.toolName && (event.toolName === 'read' && (discoveredBefore || Boolean(project) || Boolean(help)) || metadata || preparation);
-    const category = !allowed ? 'blocked' : help ? 'host-help' : project ? 'project' : metadata ? 'metadata' : preparation ? 'preparation' : batch ? 'resource-batch' : 'skill';
+    const allowed = toolSurface().tools.includes(event.toolName) && authored?.tool === event.toolName && (event.toolName === 'read' && (discoveredBefore || Boolean(project) || Boolean(help) || Boolean(validationAttempt)) || metadata || preparation);
+    const category = !allowed ? 'blocked' : validationAttempt ? 'invalid-short-ref' : help ? 'host-help' : project ? 'project' : metadata ? 'metadata' : preparation ? 'preparation' : batch ? 'resource-batch' : 'skill';
     const authoredProof = authored ? { authoredSequence: authored.sequence, authoredAt: authored.at, argumentsSha256: authored.argumentsSha256 } : {};
-    calls.set(event.toolCallId, { toolCallId: event.toolCallId, input, projectPath, category, discovered: discoveredBefore, expected, claim, selectedRoots, ...authoredProof, origin: authored ? 'model' : 'unknown', sequence: sequence + 1, allowed });
-    record({ phase: 'tool-call', toolCallId: event.toolCallId, tool: event.toolName, input, category, allowed, discovered: discoveredBefore, expected, claim, selectedRoots, ...authoredProof, origin: authored ? 'model' : 'unknown' });
+    calls.set(event.toolCallId, { toolCallId: event.toolCallId, input, projectPath, category, discovered: discoveredBefore, expected, claim, selectedRoots, validationAttempt, ...authoredProof, origin: authored ? 'model' : 'unknown', sequence: sequence + 1, allowed });
+    record({ phase: 'tool-call', toolCallId: event.toolCallId, tool: event.toolName, input, category, allowed, discovered: discoveredBefore, expected, claim, selectedRoots, validationAttempt, ...authoredProof, origin: authored ? 'model' : 'unknown' });
     if (!allowed) return { block: true, reason: 'This gate permits owned project reads, advertised Pi help, notion_list, disclosed read/use references, and current-main attempts for complete names in the submitted frozen user request.' };
   });
   api.on('tool_result', (event, ctx) => {
@@ -1219,6 +1228,15 @@ export function observeGraphGate(api, settings) {
       return;
     }
     if (event.toolName !== 'read') { record({ phase: 'blocked-tool-result', toolCallId: event.toolCallId, tool: event.toolName, error: event.isError, sha256: digest(content), bytes: Buffer.byteLength(content) }); return; }
+    if (call?.category === 'invalid-short-ref') {
+      const errorCode = event.isError === true ? /^context-broker activation failed \(([A-Z][A-Z0-9_]+)\)$/.exec(content)?.[1] ?? null : null;
+      record({ phase: 'tool-result', toolCallId: event.toolCallId, tool: event.toolName, origin: call.origin,
+        callSequence: call.sequence, requested: call.input, category: call.category, complete: false,
+        isError: event.isError === true, error: content, errorCode, validationAttempt: call.validationAttempt,
+        validationErrorMatched: !event.parentToolCallId && errorCode === call.validationAttempt.expectedCode,
+        content, sha256: digest(content), bytes: Buffer.byteLength(content) });
+      return;
+    }
     if (call?.category === 'host-help') {
       try {
         const proof = settings.piHelpBoundary.verifyRead(call.input, content, event.isError);

@@ -911,6 +911,12 @@ export function selectNamedReferenceCall(context, plan) {
         if (!candidate || !candidate.selectable) throw new Error('CONTROLLED_AMBIGUITY_CANDIDATE_NOT_SELECTABLE');
         args = call.tool === 'read' ? { path: candidate.ref } : { ref: candidate.ref };
       }
+      if (Object.hasOwn(call, 'invalidShortRefSuffix')) {
+        if (call.tool !== 'read' || !call.resourceFrom || call.candidateFrom || call.invalidShortRefSuffix !== '/SKILL.md'
+          || call.errorCode !== 'SHORT_REF_INVALID' || !/^sr:R[A-Za-z0-9_-]{22}$/u.test(args?.path))
+          throw new Error('CONTROLLED_SHORT_REF_NEGATIVE_INVALID');
+        args = { path: args.path + call.invalidShortRefSuffix };
+      }
       return { type: 'toolCall', id: call.id, name: call.tool, arguments: args };
     }
     if (call.errorCode) {
@@ -2712,6 +2718,8 @@ function namedReferenceSettings(info, source, failedSource) {
     { id: 'sc25-fixed-name', tool: 'read', args: { path: named(info.resourceBatch.snapshot.record.name, resource.path, info.resourceBatch.snapshot.snapshot_id) } },
     { id: 'sc25-fixed-canonical', tool: 'read', args: { path: resource.ref } },
     { id: 'sc25-short-resource', tool: 'read', resourceFrom: 'sc25-current-name', resourcePath: info.namedRootResource.path },
+    { id: 'sc07-malformed-short-resource', tool: 'read', resourceFrom: 'sc25-current-name', resourcePath: info.namedRootResource.path,
+      invalidShortRefSuffix: '/SKILL.md', errorCode: 'SHORT_REF_INVALID' },
     { id: 'sc25-wrong-fixed-name', tool: 'read', args: { path: named('sc25-wrong-historical-owner', resource.path, info.resourceBatch.snapshot.snapshot_id) }, errorCode: 'SNAPSHOT_CONFLICT' });
   return { root, outside, resource, source, failedSource, plan: { calls } };
 }
@@ -2743,6 +2751,10 @@ export function assertNamedReferenceIntervals(captures, hooks, events, calls) {
     }
     if (call.id === 'sc25-failed-name') assert.ok(operations.every(operation => operation === 'list'), 'A failed authority must reject a name before any body operation');
     const objects = events.filter(event => inside(event) && event.kind === 'object_read' && event.event === 'start');
+    if (call.invalidShortRefSuffix) {
+      assert.equal(starts.length, 0, 'A malformed short reference must not start SDK work');
+      assert.equal(objects.length, 0, 'A malformed short reference must not read source objects');
+    }
     if (['sc04-ambiguous-read', 'sc04-ambiguous-use'].includes(call.id)) {
       assert.ok(operations.length > 0 && operations.every(operation => operation === 'list'), 'Ambiguity resolution may only inspect the complete ordinary directory');
       assert.equal(objects.length, 0, 'An ambiguous name cannot read any source body object');
@@ -2841,11 +2853,18 @@ function assertNamedReferenceEvidence(captures, frames, hooks, events, archive, 
   for (const call of plan.calls) {
     const frame = frames.find(frame => frame.type === 'tool_execution_start' && frame.toolCallId === call.id);
     assert.equal(frame.toolName, call.tool);
-    const args = call.resourceFrom ? { path: resourceRefsFromNative(toolResult(following(call.resourceFrom), call.resourceFrom), [call.resourcePath])[0] } : call.args;
+    const args = call.resourceFrom ? { path: resourceRefsFromNative(toolResult(following(call.resourceFrom), call.resourceFrom), [call.resourcePath])[0]
+      + (call.invalidShortRefSuffix ?? '') } : call.args;
     assert.deepEqual(frame.args, args);
     const original = raw(call.id), persisted = archive.messages.filter(message => message.role === 'toolResult' && message.toolCallId === call.id);
     assert.equal(persisted.length, 1); assert.deepEqual(persisted[0].content, original.content); assert.deepEqual(persisted[0].details, original.details);
     if (call.errorCode) assert.ok(original.isError && textContent(original.content).includes(call.errorCode), 'Only the declared semantic failure is an expected negative');
+    if (call.invalidShortRefSuffix) {
+      for (const key of ['contextBrokerRead', 'contextBrokerResource', 'contextBrokerPreparation'])
+        assert.equal(original.details?.[key], undefined, 'Invalid input cannot create a body or delivery receipt');
+      const next = toolResult(following(call.id), call.id);
+      assert.equal(next.isError, true); assert.equal(textContent(next.content), textContent(original.content), 'The next actual provider must receive the original product error');
+    }
   }
   const mainId = failedSource ? 'sc25-canonical-main' : 'sc25-current-name';
   const main = assertNativeProjection(raw(mainId), { snapshot: root, body: info.bodies.get(root.record.name) });

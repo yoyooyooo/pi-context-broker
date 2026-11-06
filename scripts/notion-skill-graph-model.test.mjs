@@ -223,6 +223,119 @@ test('discovery Router description reuse rejects missing or mismatched current p
   }
 });
 
+async function shortRefValidationFixture(t, sourceMode = 'sdk') {
+  const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-short-ref-validation-'));
+  const responses = path.join(base, 'responses'), cache = path.join(base, 'cache'), output = path.join(base, 'observer.jsonl');
+  await mkdir(responses); await mkdir(cache); await writeFile(output, '');
+  t.diagnostic('Short-ref validation observer fixture: ' + base);
+  const scope = 'a'.repeat(64), snapshot = 's_' + 'b'.repeat(64), body = 'Complete source instructions.\n', resource = 'Complete resource.\n';
+  const refs = Object.fromEntries(['C', 'S', 'R', 'hidden'].map((kind, index) => [kind, 'sr:' + (kind === 'hidden' ? 'C' : kind) + String(index).repeat(22)]));
+  const records = ['visible', 'hidden'].map(name => ({ id: 'shared_skill:controlled:' + name, kind: 'skill', name,
+    entrypoint: 'SKILL.md', ref: 'skill://shared_skill%3Acontrolled%3A' + name + '/SKILL.md', enabled: true }));
+  const files = ['SKILL.md', 'references/checklist.md'].map((file, index) => ({ path: file, bytes: Buffer.byteLength(index ? resource : body),
+    sha256: hash(index ? resource : body), ref: records[0].ref.replace('SKILL.md', file) + '?snapshot=' + snapshot + '&file_id=file-' + index }));
+  const identity = record => ({ source: 'notion', scope, id: record.id, kind: record.kind, ref: record.ref.replace('/SKILL.md', '') });
+  const selected = { kind: 'selected', identity: identity(records[0]), snapshot_id: snapshot, version_id: 'version',
+    body_sha256: hash(body), entrypoint: 'SKILL.md', ref: files[0].ref, file_id: 'file-0' };
+  const branches = [
+    { ref: refs.C, target: { kind: 'candidate', identity: identity(records[0]) } },
+    { ref: refs.S, target: selected },
+    { ref: refs.R, target: { kind: 'resource', owner: refs.S, path: files[1].path, ref: files[1].ref,
+      bytes: files[1].bytes, sha256: files[1].sha256, file_id: 'file-1' } },
+    { ref: refs.hidden, target: { kind: 'candidate', identity: identity(records[1]) } },
+  ].map(data => ({ type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ...data } }));
+  for (const [operation, value] of [
+    ['list', { scope, records }],
+    ['read', { scope, record: records[0], snapshot_id: snapshot, version_id: 'version', path: 'SKILL.md', ref: files[0].ref, content: body }],
+    ['prepare', { scope, status: 'ready', purpose: 'inspect', nodes: [{ state: 'prepared', id: records[0].id,
+      record: records[0], path: 'SKILL.md', binding: { snapshot_id: snapshot, version_id: 'version', ref: files[0].ref }, files }] }],
+  ]) await save(path.join(responses, operation + '.json'), { transport: 'sdk', requestId: 'observed-' + operation,
+    operation, status: 'completed', resultObserved: true, value });
+  const prompt = 'Inspect the exact references ' + [refs.C, refs.S, refs.R].join(' '), handlers = new Map(), originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
+    { fs, crypto, path, parseNativeReference, cwd: base, responses, cache, output, sourceMode,
+      model: 'controlled/fake', prompt, entryMode: 'discovery-only' });
+  const ctx = { model: { provider: 'controlled', id: 'fake' }, sessionManager: { getBranch: () => branches } };
+  const payload = { model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })), messages: [{ role: 'user', content: prompt }] };
+  handlers.get('before_provider_request')({ payload }, ctx);
+  const invoke = (id, input, tool = 'read', actualInput = input) => {
+    handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: tool, arguments: input }] } });
+    return handlers.get('tool_call')({ toolName: tool, toolCallId: id, input: actualInput }, ctx);
+  };
+  return { handlers, ctx, refs, branches, payload, invoke, close: () => { globalThis.fetch = originalFetch; },
+    events: async () => (await readFile(output, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse) };
+}
+
+for (const kind of ['C', 'S', 'R']) test('disclosed ' + kind + ' suffix reaches product validation without proving delivery', async t => {
+  const f = await shortRefValidationFixture(t), input = { path: f.refs[kind] + '/SKILL.md' }, original = structuredClone(input);
+  const toolCallId = 'invalid-' + kind;
+  assert.equal(f.invoke(toolCallId, input), undefined, 'The product must receive an already-disclosed malformed short ref');
+  assert.deepEqual(input, original, 'Validation must use the original bad args');
+  const content = 'context-broker activation failed (SHORT_REF_INVALID)';
+  f.handlers.get('tool_result')({ toolName: 'read', toolCallId, content: [{ type: 'text', text: content }], isError: true }, f.ctx);
+  const events = await f.events(), call = events.find(event => event.phase === 'tool-call' && event.toolCallId === toolCallId);
+  const result = events.find(event => event.phase === 'tool-result' && event.toolCallId === toolCallId);
+  assert.equal(call.category, 'invalid-short-ref'); assert.equal(call.discovered, false);
+  assert.deepEqual(call.validationAttempt, { baseRef: f.refs[kind], expectedCode: 'SHORT_REF_INVALID' });
+  assert.equal(result.complete, false); assert.equal(result.errorCode, 'SHORT_REF_INVALID');
+  assert.equal(result.isError, true); assert.equal(result.validationErrorMatched, true);
+  assert.equal(result.error, content); assert.equal(result.content, content); assert.equal(result.sha256, hash(content));
+  assert.equal(result.requested, input.path); assert.equal(result.ownerId, undefined); assert.equal(result.preparationProof, undefined);
+  const payload = { ...f.payload, messages: [...f.payload.messages, { role: 'tool', tool_call_id: toolCallId, content }] };
+  f.handlers.get('before_provider_request')({ payload }, f.ctx);
+  const provider = (await f.events()).filter(event => event.phase === 'provider-request').at(-1);
+  assert.deepEqual(provider.contents, []);
+  assert.equal(provider.toolResults.some(result => result.toolCallId === toolCallId), false, 'An error cannot enter verified body delivery');
+});
+
+test('short-ref validation exception keeps undisclosed, stale, non-SDK and unsafe calls blocked', async t => {
+  const f = await shortRefValidationFixture(t), malformed = f.refs.C + '/SKILL.md';
+  for (const [label, input, tool] of [
+    ['unknown-valid', { path: 'sr:C' + 'x'.repeat(22) }],
+    ['unknown-suffix', { path: 'sr:C' + 'x'.repeat(22) + '/SKILL.md' }],
+    ['undisclosed-valid', { path: f.refs.hidden }],
+    ['undisclosed-suffix', { path: f.refs.hidden + '/SKILL.md' }],
+    ['batch', { paths: [f.refs.R + '/SKILL.md'] }],
+    ['mixed', { path: malformed, paths: [f.refs.R] }],
+    ['extra', { path: malformed, offset: 1 }],
+    ['short', { path: 'sr:C' }],
+    ['outside', { path: '/etc/passwd' }],
+    ['traversal', { path: '../outside.md' }],
+    ['canonical-traversal', { path: 'skill://visible/../outside.md' }],
+    ['use', { ref: malformed }, 'notion_use'],
+    ['shell', { command: 'cat ' + malformed }, 'bash'],
+  ]) assert.equal(f.invoke(label, input, tool)?.block, true, label);
+  assert.equal(f.invoke('unchanged-valid-handle', { path: f.refs.C }), undefined);
+  assert.equal((await f.events()).find(event => event.phase === 'tool-call' && event.toolCallId === 'unchanged-valid-handle').category, 'skill');
+  const unshownAlias = 'sr:C' + 'u'.repeat(22);
+  f.branches.push({ ...f.branches[0], data: { ...f.branches[0].data, ref: unshownAlias } });
+  assert.equal(f.invoke('unshown-same-owner-handle', { path: unshownAlias + '/SKILL.md' })?.block, true);
+  assert.equal(f.handlers.get('tool_call')({ toolName: 'read', toolCallId: 'not-authored', input: { path: malformed } }, f.ctx)?.block, true);
+  assert.equal(f.invoke('changed-args', { path: malformed }, 'read', { path: '/etc/passwd' })?.block, true);
+  f.ctx.sessionManager.getBranch = () => [];
+  assert.equal(f.invoke('old-branch', { path: malformed })?.block, true);
+  f.close();
+  const legacy = await shortRefValidationFixture(t, 'command');
+  assert.equal(legacy.invoke('not-sdk', { path: legacy.refs.C + '/SKILL.md' })?.block, true);
+});
+
+test('invalid short-ref results never certify an unexpected success or different product error', async t => {
+  const f = await shortRefValidationFixture(t);
+  for (const [toolCallId, content, isError, parentToolCallId] of [
+    ['unexpected-success', 'Unexpected source body. sr:C' + 'x'.repeat(22), false],
+    ['different-error', 'context-broker activation failed (SHORT_REF_UNKNOWN)', true],
+    ['nested-error', 'context-broker activation failed (SHORT_REF_INVALID)', true, 'outer-call'],
+  ]) {
+    assert.equal(f.invoke(toolCallId, { path: f.refs.C + '/SKILL.md' }), undefined);
+    f.handlers.get('tool_result')({ toolName: 'read', toolCallId, content: [{ type: 'text', text: content }], isError, parentToolCallId }, f.ctx);
+    const result = (await f.events()).find(event => event.phase === 'tool-result' && event.toolCallId === toolCallId);
+    assert.equal(result.complete, false); assert.equal(result.validationErrorMatched, false);
+    assert.equal(result.content, content); assert.equal(result.ownerId, undefined);
+  }
+  assert.equal(f.invoke('not-discovered-from-error', { path: 'sr:C' + 'x'.repeat(22) })?.block, true);
+});
+
 test('owned project paths use public mutable sections without forcing the earlier system prompt', async () => {
   const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-public-sections-'));
   const responses = path.join(base, 'responses'), cache = path.join(base, 'cache'), output = path.join(base, 'observer.jsonl');

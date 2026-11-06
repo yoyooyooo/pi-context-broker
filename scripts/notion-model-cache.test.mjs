@@ -214,6 +214,15 @@ test('introduction requires complete inspected source and never target activatio
   ]) { const input = introInput(); mutate(input); assert.throws(() => assertIntentTurn(input)); }
 });
 
+test('product validation errors keep the complete task failed even after a later correct read', () => {
+  const value = introInput(), requested = 'sr:C' + 'c'.repeat(22) + '/SKILL.md';
+  value.observation.splice(2, 0,
+    { phase: 'tool-call', tool: 'read', allowed: true, category: 'invalid-short-ref', input: requested },
+    { phase: 'tool-result', tool: 'read', complete: false, requested, isError: true,
+      error: 'context-broker activation failed (SHORT_REF_INVALID)', errorCode: 'SHORT_REF_INVALID', validationErrorMatched: true });
+  assert.throws(() => assertIntentTurn(value), /Every actual selected output must be complete/);
+});
+
 test('ready-directory task cannot pass using a pending first provider or an internal ready label', () => {
   const value = introInput();
   value.observation.unshift({ phase: 'catalog', stage: 'before_provider_request', state: 'pending', skills: [] });

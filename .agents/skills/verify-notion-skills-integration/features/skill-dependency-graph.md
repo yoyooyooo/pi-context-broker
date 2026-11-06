@@ -395,6 +395,12 @@ Graph harness 15 通过 Pi 公开 `systemPromptOptions.sections` 添加原样的
 
 当前原生资源入口同时支持 scalar `read({path:REF})` 与 batch `read({paths:[REF,...]})`，REF 可为已实际发现的 canonical ref 或会话 `sr:R`。batch 必须用原始 SDK `read-resources` manifest/body、安装包自己的资源投影校验器和同一外层 toolCallId 对齐逐文件完整 span；不能从 details、summary 或部分文本推断已交付。错误 owner/pin、未发现的 ref、缺完整外层输出与部分正文均拒绝。资源文件数量、外层工具调用数量和内部 SDK operation 分列计账，一次 batch 不能冒充多次工具往返，也不能掩盖缺失文件。
 
+Graph harness 17 在默认 SDK scalar `read({path})` 保留一个窄产品校验入口：模型实际 authored args 与工具参数完全相同，原 `sr:C/S/R` token 已逐字披露、仍由当前分支和独立来源回执证明，且追加内容确实违反产品 token 语法时，将原错误参数交给已安装产品。observer 不替换 ref、不给模型正确答案，也不生成授权错误代替产品的 `SHORT_REF_INVALID`。例外不接受未知或未逐字披露 token 的后缀，包括同 owner 的另一短引用；有效形状但未知或未披露 owner 的 ref、旧分支、非 SDK、batch、多余参数、真实路径越界和 shell 维持原拒绝。
+
+这类调用记录 `invalid-short-ref` 与 validation attempt；原 tool result 记录实际 error text/code/hash/bytes，始终 `complete:false`，不写正文 delivery ledger、不发现新引用、不证明激活。错误码不同、意外成功、嵌套结果以及后来正确读取，都不能把该次 invalid input 或整个任务改为通过。实际 `SHORT_REF_INVALID` 及增量 SDK / 源对象读取为零由原 installed `name-references` 场景另验；原生文件路径不降级由产品既有边界测试和代码路径保障，本项不声称实测文件系统调用次数。已有后台 metadata 工作必须单列，observer 单测不替代真实 Pi 产品执行。
+
+本次原两组定向回归入口是 `node --test scripts/notion-skill-graph-model.test.mjs scripts/notion-model-cache.test.mjs`，证据保存在 `AH-617-20261105/sc07-native-validation-sxkcpu76/`。`fail-before-isolated` 保留 163 pass / 4 fail，分别暴露 C/S/R 后缀被旧 gate 抢先拦截和错误观察缺口。旧 C9 A/B/C raw、报告、语义评审和任务失败均不重写；这项 observer 修正自身不证明模型会正确选路或 SC21 已验收。
+
 Pi 默认 graph bridge 使用随包公开 SDK `consume`，同一内核验证完整清单、主文范围、身份、固定版本与 hash，Broker 核对选中身份后直接物化，不再逐节点启动 CLI read。资源通过同包 SDK 固定 `readSkill` 或 `readResources` 物化。显式 `source.command` 与 OMP 保留公开 CLI prepare + 逐 prepared node 固定 read 的兼容边界；上述 `--command-json` 命令验证的是该边界，不能代表默认 SDK。默认目录改用同包 SDK `listCatalog`，公开 operation=list，目录/正文路径都应为零 CLI children。显式 custom command 独立列账；超过默认分页大小时须证明遍历所有页，未验证前不宣称 SC23 全量迁移。旧直接加载与 Prompt 的完整 export receipt 不放宽。本轮独立 Node / Pi 路线与 hash 见 [运行时记录](../../../../packages/context-broker/docs/skill-consumption-runtime.md)。
 
 安装 Pi + 受控 provider 的首次请求应含 root / Required 完整正文各一份、Members 正文零份。记录实际 tool input/output、完整 body hash、目录 ref、provider context 和源请求账本。native read 的资源 ref 必须来自公开目录/正文，旧路径带稳定 File ID 应解析到固定 owner snapshot 的正确路径。missing Required / budget / cancellation 时 provider 数量为零；RPC abort、new_session、EOF 与真正终端 Escape Stop 分开记录。

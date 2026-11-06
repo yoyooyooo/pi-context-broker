@@ -1887,6 +1887,48 @@ test('name reference provider preserves display and alias inputs and copies only
   assert.throws(() => namedSdkProbe.selectNamedReferenceCall(hidden, plan), /expected named-reference failure/);
 });
 
+test('malformed short-ref negative uses the actual issued handle and requires the public product error', () => {
+  const selected = 'sr:R' + 'r'.repeat(22), path = 'references/guide.md';
+  const main = { role: 'toolResult', toolName: 'read', toolCallId: 'main', isError: false, content: [{ type: 'text', text:
+    'Full main.\n<skill-directory>' + JSON.stringify({ ref: 'sr:S' + 's'.repeat(22), directory: { files: [{ path, ref: selected }] } }) + '</skill-directory>' }] };
+  const call = { id: 'invalid', tool: 'read', resourceFrom: 'main', resourcePath: path,
+    invalidShortRefSuffix: '/SKILL.md', errorCode: 'SHORT_REF_INVALID' };
+  const context = { messages: [main] }, plan = { calls: [call] };
+  assert.deepEqual(namedSdkProbe.selectNamedReferenceCall(context, plan), {
+    type: 'toolCall', id: 'invalid', name: 'read', arguments: { path: selected + '/SKILL.md' },
+  });
+  for (const change of [value => { value.invalidShortRefSuffix = ''; }, value => { value.errorCode = 'OTHER'; },
+    value => { value.resourceFrom = undefined; value.args = { path: selected }; }]) {
+    const altered = structuredClone(call); change(altered);
+    assert.throws(() => namedSdkProbe.selectNamedReferenceCall(context, { calls: [altered] }), /SHORT_REF_NEGATIVE_INVALID/);
+  }
+  const canonical = structuredClone(context); canonical.messages[0].content[0].text = main.content[0].text.replace(selected, 'skill://owner/references/guide.md');
+  assert.throws(() => namedSdkProbe.selectNamedReferenceCall(canonical, plan));
+  context.messages.push({ role: 'toolResult', toolName: 'read', toolCallId: 'invalid', isError: true,
+    content: [{ type: 'text', text: 'SHORT_REF_INVALID: Skill short reference cannot be used in this session' }] });
+  assert.equal(namedSdkProbe.selectNamedReferenceCall(context, plan), null);
+  for (const change of [value => { value.isError = false; }, value => { value.content[0].text = 'ACCESS_DENIED'; }]) {
+    const altered = structuredClone(context); change(altered.messages.at(-1));
+    assert.throws(() => namedSdkProbe.selectNamedReferenceCall(altered, plan), /expected named-reference failure/);
+  }
+});
+
+test('malformed short-ref interval excludes SDK and object work without counting prior metadata as its cost', () => {
+  const captures = [{ requestId: 'before' }, { requestId: 'after' }];
+  const hooks = [{ requestId: 'before', phase: 'response_end', pid: 42, monotonic_ns: '10' },
+    { requestId: 'after', phase: 'payload_start', pid: 42, monotonic_ns: '40' }];
+  const call = { id: 'sc07-malformed-short-resource', invalidShortRefSuffix: '/SKILL.md', errorCode: 'SHORT_REF_INVALID' };
+  const background = [{ kind: 'sdk', event: 'start', id: 'catalog', operation: 'list', observer_pid: 42, monotonic_ns: '1' },
+    { kind: 'sdk', event: 'end', id: 'catalog', operation: 'list', observer_pid: 42, monotonic_ns: '8' }];
+  const result = namedSdkProbe.assertNamedReferenceIntervals(captures, hooks, background, [call]);
+  assert.deepEqual(result[0].sdk, []); assert.deepEqual(result[0].object_reads, []);
+  const sdk = [{ kind: 'sdk', event: 'start', id: 'body', operation: 'read', observer_pid: 42, monotonic_ns: '20' },
+    { kind: 'sdk', event: 'end', id: 'body', operation: 'read', observer_pid: 42, monotonic_ns: '30' }];
+  assert.throws(() => namedSdkProbe.assertNamedReferenceIntervals(captures, hooks, [...background, ...sdk], [call]), /must not start SDK/);
+  assert.throws(() => namedSdkProbe.assertNamedReferenceIntervals(captures, hooks, [...background,
+    { kind: 'object_read', event: 'start', id: 'body', observer_pid: 42, monotonic_ns: '25' }], [call]), /must not read source objects/);
+});
+
 test('name reference metadata files never count as body transport and unknown operations remain rejected', () => {
   const fields = structuredClone(catalog);
   fields.splice(3, 0, { kind: 'sdk', event: 'start', id: 'files-1', operation: 'files' },
