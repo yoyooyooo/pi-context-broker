@@ -11,7 +11,7 @@
 - `release-gate`：检查失败阻止 commit/tag/push；成功且 `--no-push` 只产生本地 tag；规划模式不执行检查。
 - `package-desktop`：独立 Tern 插件安装后的实际界面由 [编辑器地图](editor.md) 覆盖。
 - `package-source`：`node scripts/verify-notion-integration.mjs run --mode installed --host pi --package /absolute/pi-context-broker.tgz` 在独立临时 prefix 安装指定归档，实际 Pi 加载安装后的扩展并消费 source。先 `doctor --mode installed --host pi` 带同一 `--package`；省略 `--host` 才执行双宿主。旧 positional `installed` 仍为 parser 的显式兼容，当前规程统一推荐 `--mode`。未运行时不能用源码 source 结果代替，详见[安装消费地图](../../verify-notion-skills-integration/features/installed-consumption.md)。
-- `package-sdk-pi`：原 artifact runner 以明确 fixture 驱动同一独立安装包的默认 SDK all14；实际 Pi RPC、provider serializer HTTP、完整正文、目录、资源和会话终局一起验收。
+- `package-sdk-pi`：原 artifact runner 以明确 fixture 驱动同一独立安装包的默认 SDK all14，再以 distinct-names fixture 验两条名称与失败来源场景；实际 Pi RPC、provider serializer HTTP、完整正文、目录、资源和会话终局一起验收。
 
 ## How to get to it (user POV)
 
@@ -40,19 +40,23 @@ Preconditions:
 
 ## 默认 SDK 的 CI 安装门禁
 
-CI 与 publish 从同一精确 CLI commit frozen install/build，再使用该 checkout 的原 `scripts/sdk-fixture.ts --outdir NEW_ABSOLUTE_DIRECTORY --catalog` 生成受控 fixture。producer 与 artifact 的 step 命令直接使用同一个 `$RUNNER_TEMP/ntn-skills-sdk-fixture` 路径，后者明确传入 `--fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --require-sdk`；缺 fixture 必须在打包或启动宿主前失败，不能退成通用安装路线。普通安装路线的 optional fixture 不改变 CI 的必跑要求，`check-gates` 同时拒绝 producer 漏接、路径漏传、条件跳过、吞掉失败或缺失原件上传。
+CI 与 publish 从同一精确 CLI commit frozen install/build，再使用该 checkout 的原 `scripts/sdk-fixture.ts --outdir NEW_ABSOLUTE_DIRECTORY --catalog` 生成受控 fixture。原 all14 fixture 使用 `$RUNNER_TEMP/ntn-skills-sdk-fixture`；第二份 fixture 用同一生成器追加 `--distinct-names`，写到 `$RUNNER_TEMP/ntn-skills-name-fixture`。artifact 明确传入 `--fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --require-sdk --name-fixture "$RUNNER_TEMP/ntn-skills-name-fixture/fixture.json"`；缺少声明的 fixture 必须在打包或启动宿主前失败，不能退成通用安装路线。普通安装路线的 optional fixture 不改变 CI 的必跑要求，`check-gates` 同时拒绝 producer 漏接、路径漏传、条件跳过、吞掉失败或缺失原件上传。
 
-人工复跑时，`CLI_CHECKOUT` 指向同一固定版本的 CLI 源码，`CLI_ENTRY` 指向完整 CLI 安装入口，`CANDIDATE_DIR` 只含冻结候选，`SDK_FIXTURE_ROOT` 为新的仓外绝对目录：
+人工复跑时，`CLI_CHECKOUT` 指向同一固定版本的 CLI 源码，`CLI_ENTRY` 指向完整 CLI 安装入口，`CANDIDATE_DIR` 只含冻结候选，`SDK_FIXTURE_ROOT` 与 `SDK_NAME_FIXTURE_ROOT` 为不同的、新的仓外绝对目录：
 
 ```bash
 node "$CLI_CHECKOUT/scripts/sdk-fixture.ts" --outdir "$SDK_FIXTURE_ROOT" --catalog
+node "$CLI_CHECKOUT/scripts/sdk-fixture.ts" --outdir "$SDK_NAME_FIXTURE_ROOT" --catalog --distinct-names
 NTN_SKILLS_BUILD_ENTRY="$CLI_ENTRY" CONTEXT_BROKER_CANDIDATE_DIR="$CANDIDATE_DIR" \
-  node scripts/verify-artifacts.mjs --host pi --fixture "$SDK_FIXTURE_ROOT/fixture.json" --require-sdk
+  node scripts/verify-artifacts.mjs --host pi --fixture "$SDK_FIXTURE_ROOT/fixture.json" --require-sdk \
+    --name-fixture "$SDK_NAME_FIXTURE_ROOT/fixture.json"
 ```
 
-runner 复用刚刚独立安装的同一个 `installed` 路径，调用原 `notion-sdk-pi.mjs run --scenario all`，不再次打包。`defaultSdk` 保存 fixture/driver、plan/result 路径与 hash、子进程退出和 14 景终局；plan 必须保持同一 package、bundled runtime 和开启的全部断言，result 的每一景都须通过且 observer 已关闭。`default-sdk-pi/` 保留 RPC、provider/HTTP、SDK、session 与逐景结果，stdout/stderr 同在原 `broker-artifacts-*` 目录。两 workflow 无论成功失败都上传该 owned 目录、SDK scratch 和 fixture（含隐藏文件）；Linux 保留 scratch，不调用 macOS Trash。
+runner 复用刚刚独立安装的同一个 `installed` 路径，调用原 `notion-sdk-pi.mjs run --scenario all`，随后显式执行 `name-references` 与 `name-reference-failed-source`，不再次打包。`defaultSdk` 保存 fixture/driver、plan/result 路径与 hash、子进程退出和 14 景终局；`namedSdk` 单列两条名称场景，未提供 name fixture 时明确 not_run。所有 plan 必须保持同一 package、bundled runtime 和开启的全部断言，每一景都须通过且 observer 已关闭。原 artifact 证据目录保留 RPC、provider/HTTP、SDK、session、逐景结果及 stdout/stderr；两 workflow 无论成功失败都上传该 owned 目录、SDK scratch 和两份 fixture（含隐藏文件）。Linux 保留 scratch，不调用 macOS Trash。名称路径的 owner/scope/pin 与逐来源失败归因断言见[安装消费地图](../../verify-notion-skills-integration/features/installed-consumption.md)。
 
-CI／publish 主宿主固定为 Pi 1.5.0，CLI producer/build 同钉 C6 commit `6415836c5910528ddf4aef95346dec2537943013`。C6 修复公共 replace 的精确等值文件/metadata 处理，并将原独立作者与 unknown 恢复门禁接入 package smoke；SDK 与 C5 `5125f418d51bc59f55ed248a26503403451113e6` 逐字节等价，CLI bundle 身份更新，不能用同一 package version 冒充同一产物。CI 追加 owned npm prefix 的 Pi 1.4.0：先核实际 version，复跑原 native print／continue，再对主 artifact manifest 指向的同一独立安装目录执行原 SDK all14。主步骤使用 Bash pipefail 保留完整日志，并只从唯一成功 manifest 导出 installed 路径；兼容步骤不重新 pack、不重复整个 CLI/check，也不能用源码路径顶替。两宿主 SDK 与 native 原件均 always 上传。Publish 保持单 job，不使用版本 matrix 重复发布。
+CI／publish 主宿主固定为 Pi 1.5.0，CLI producer/build 同钉 C7 commit `b75b650df6c985cbe7f7ca8749a4e258163dc6a8`，包含共享的完整目录名称解析与薄 files/manifest SDK。CI 追加 owned npm prefix 的 Pi 1.4.0：先核实际 version，复跑原 native print／continue，再对主 artifact manifest 指向的同一独立安装目录执行原 SDK all14 和上述两条名称场景。主步骤使用 Bash pipefail 保留完整日志，并只从唯一成功 manifest 导出 installed 路径；兼容步骤不重新 pack、不重复整个 CLI/check，也不能用源码路径顶替。两宿主 SDK 与 native 原件均 always 上传。Publish 保持单 job，不使用版本 matrix 重复发布。
+
+历史 C6 commit `6415836c5910528ddf4aef95346dec2537943013` 修复公共 replace 的精确等值文件/metadata 处理，并将原独立作者与 unknown 恢复门禁接入 package smoke；当时 SDK 与 C5 `5125f418d51bc59f55ed248a26503403451113e6` 逐字节等价、CLI bundle 身份更新。该历史等价不扩展到 C7，任何阶段都不能用同一 package version 冒充同一产物。
 
 这条路线使用离线暖 fixture、owned 空 Broker cache/session、实际 Pi 与受控 provider；每个报告必须写明实际版本。允许版本通过 Doctor 只表示可执行，必须保留该版本自己的 artifact/all14、native print／continue 与 PTY Stop／retry 结果，才能证明兼容。旧 Pi 1.4 证据不能替代新 Pi 1.5，旧 `66a64` 包的 1.5 版本拒绝原件继续保留。它不覆盖真实 Notion、真实模型或日用切换。默认目录与恢复边界详见[原 SDK 恢复地图](../../verify-notion-skills-integration/features/session-cache-recovery.md)。2026-11-05 的漏接线负例保存在 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/unified-c4-0f0b02-wj9ya_hr/ci-sdk-wiring/fail-before.log`，SHA256 `5412df3aa56f96ce512131125b03e00cfccf2d911956b6893c0fb798e4504ecd`；原 workflow 未变时新门禁报 `GATE_SDK_FIXTURE_MISSING`，旧门禁误绿记录同时保留。
 

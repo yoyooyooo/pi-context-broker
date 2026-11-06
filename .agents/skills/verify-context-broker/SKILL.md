@@ -46,7 +46,7 @@ node .agents/skills/verify-context-broker/scripts/control.mjs doctor editor
 
 最后一个参数可为 `injection`、`editor`、`lifecycle`、`model`、`distribution`、`distribution-pi`、`source`、`notion-editor`。Doctor 输出 Node 版本、实际 host executable/arguments、宿主版本、所需工具、平台以及构建产物 hash。要求 `status: ready` 和退出码 0。它不启动会话、不调用模型、不证明认证或功能成功。
 
-CLI/RPC helpers 只用 Node.js 22.x 中的 22.22.3+，或 24.20.0+ 启动；Bun 用于构建和已有单元测试。CI 使用 Node.js 24.20.0、OMP 18.10.3、Pi 1.4.0、Bun 1.4.3。Pi 安装门禁冻结为 1.4.0；Doctor 记录本机实际版本，版本不符为 blocked。其他本机专项可记录差异独立运行，不能替代所声明的候选与远端 CI 结果。
+CLI/RPC helpers 只用 Node.js 22.x 中的 22.22.3+，或 24.20.0+ 启动；Bun 用于构建和已有单元测试。CI 使用 Node.js 24.20.0、OMP 18.10.3、Bun 1.4.3。Pi 的精确主版本与兼容版本见[安装地图](features/distribution.md#默认-sdk-的-ci-安装门禁)，由 `check-gates` 核对实际 workflow；兼容版对同一安装产物单独留证。Doctor 记录本机实际版本并按所选入口的冻结合同检查，不支持的版本为 blocked。其他本机专项可记录差异独立运行，不能替代所声明的候选与远端 CI 结果。
 
 先运行 `node scripts/skill-consumption-contract.mjs check-gates` 检查常规 check、CI/publish、Pi 版本与必要 consumption 集的接线。再运行 `bun run check:broker` 实际执行；接线检查本身不证明测试通过。`test:consumption` 从 package check 进入，原 test 中重复的 native-read/session、host-prepare 和 view-discovery 已归到这一处。
 
