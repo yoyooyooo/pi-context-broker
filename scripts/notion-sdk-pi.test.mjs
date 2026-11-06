@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { systemTempRoot } from './verification-paths.mjs';
 import { resolveInstalledPiSerializer, observeSdkInitialization, providerSystemText, assertPreflightCatalogProjection, assertNativeCatalogPreserved } from './notion-sdk-pi.mjs';
+import * as namedSdkProbe from './notion-sdk-pi.mjs';
 import { validateLiveInput, selectLiveProviderCall, liveSourceMetrics } from './notion-sdk-pi.mjs';
 import { assertNativeGuidance, assertScopedCommand, assertPreparedHttpRequest, assertResourceHttpRequest, assertResourceBatchProjection, assertResourceReadSchema, resourceRefsFromNative, resourceTextCopies, bodyCount, reconcile, sourceFinality, observeOwnedObjectReads, assertObjectReadEvidence, assertProviderHttpRequest, assertProviderToolSequence, assertSearchProjection, assertDefaultViewProjection, assertDollarProjection, assertNativeProjection, resourceScalarCalls, selectScalarProviderCall, assertResourceScalarResult, resourceScalarSelectedFixture, assertResourceScalarSession, assertResourceScalarCost, selectNativeRepeatCall, assertNativeRepeatProjection, assertScalarReadObjectIntervals } from './notion-sdk-pi.mjs';
 
@@ -1301,6 +1302,186 @@ test('metadata-only scope does not weaken the existing mandatory SDK transport a
     { kind: 'child_close', id: '42:2', code: 0, signal: null, request_metrics: { complete: true, total_requests: 0 } });
   assert.throws(() => reconcile(observed(child), lifecycle, { bodyTransportRequired: false }), /must not spawn CLI children/);
   assert.throws(() => reconcile(observed(catalog.filter(item => item.event !== 'end')), lifecycle, { bodyTransportRequired: false }));
+});
+
+test('name reference provider preserves display and alias inputs and copies only an actual resource handle', () => {
+  const plan = { calls: [
+    { id: 'name', tool: 'read', args: { path: 'skill://A/SKILL.md' } },
+    { id: 'alias', tool: 'notion_use', args: { ref: 'skill://a/SKILL.md' } },
+    { id: 'resource', tool: 'read', resourceFrom: 'name', resourcePath: 'assets/sample.bin' },
+    { id: 'wrong', tool: 'read', args: { path: 'skill://Wrong/assets/sample.bin?snapshot=fixed' }, errorCode: 'SNAPSHOT_CONFLICT' },
+  ] };
+  const context = { messages: [] }, selected = 'sr:R' + 'r'.repeat(22);
+  assert.deepEqual(namedSdkProbe.selectNamedReferenceCall(context, plan), { type: 'toolCall', id: 'name', name: 'read', arguments: plan.calls[0].args });
+  const main = { role: 'toolResult', toolName: 'read', toolCallId: 'name', isError: false, content: [{ type: 'text', text:
+    'Full main.\n<skill-directory>' + JSON.stringify({ ref: 'sr:S' + 's'.repeat(22), directory: { files: [{ path: 'assets/sample.bin', ref: selected }] } }) + '</skill-directory>' }] };
+  context.messages.push(main);
+  assert.deepEqual(namedSdkProbe.selectNamedReferenceCall(context, plan), { type: 'toolCall', id: 'alias', name: 'notion_use', arguments: plan.calls[1].args });
+  context.messages.push({ role: 'toolResult', toolName: 'notion_use', toolCallId: 'alias', isError: false, content: [{ type: 'text', text: '{}' }] });
+  assert.deepEqual(namedSdkProbe.selectNamedReferenceCall(context, plan), { type: 'toolCall', id: 'resource', name: 'read', arguments: { path: selected } });
+  const forged = structuredClone(context); forged.messages[0].role = 'assistant';
+  assert.throws(() => namedSdkProbe.selectNamedReferenceCall(forged, { calls: [plan.calls[2]] }));
+  context.messages.push({ role: 'toolResult', toolName: 'read', toolCallId: 'resource', isError: false, content: [{ type: 'text', text: 'resource' }] });
+  assert.equal(namedSdkProbe.selectNamedReferenceCall(context, plan).id, 'wrong');
+  context.messages.push({ role: 'toolResult', toolName: 'read', toolCallId: 'wrong', isError: true, content: [{ type: 'text', text: 'SNAPSHOT_CONFLICT' }] });
+  assert.equal(namedSdkProbe.selectNamedReferenceCall(context, plan), null);
+  const unexpected = structuredClone(context); unexpected.messages.at(-1).content[0].text = 'SOURCE_SDK_INCOMPATIBLE';
+  assert.throws(() => namedSdkProbe.selectNamedReferenceCall(unexpected, plan), /expected named-reference failure/);
+  const hidden = structuredClone(context); hidden.messages.at(-1).isError = false;
+  assert.throws(() => namedSdkProbe.selectNamedReferenceCall(hidden, plan), /expected named-reference failure/);
+});
+
+test('name reference metadata files never count as body transport and unknown operations remain rejected', () => {
+  const fields = structuredClone(catalog);
+  fields.splice(3, 0, { kind: 'sdk', event: 'start', id: 'files-1', operation: 'files' },
+    { kind: 'sdk', event: 'end', id: 'files-1', operation: 'files', status: 'completed', sdk_started: true, metrics_observed: true,
+      request_metrics: { complete: true, total_requests: 0, trace: [] } });
+  const result = reconcile(observed(fields), lifecycle, { bodyTransportRequired: false });
+  assert.equal(result.sdk_files, 1); assert.equal(result.sdk_body_calls, 0); assert.equal(result.sdk_lists, 1);
+  assert.throws(() => reconcile(observed(fields), lifecycle), /empty body SDK observation/);
+  const unknown = structuredClone(fields); unknown[3].operation = unknown[4].operation = 'new-unaccounted-operation';
+  assert.throws(() => reconcile(observed(unknown), lifecycle, { bodyTransportRequired: false }), /Unknown SDK operations/);
+});
+
+test('name reference expected source failures require exact closed SDK identities and complete metrics', () => {
+  const fields = structuredClone(catalog);
+  fields.splice(3, 0, { kind: 'sdk', event: 'start', id: 'failed-files', operation: 'files' },
+    { kind: 'sdk', event: 'end', id: 'failed-files', operation: 'files', status: 'failed', sdk_started: true, metrics_observed: true,
+      request_metrics: { complete: true, total_requests: 0, trace: [] } });
+  const options = { bodyTransportRequired: false, expectedFailedSdkIds: ['failed-files'] };
+  const result = reconcile(observed(fields), lifecycle, options);
+  assert.deepEqual(result.expected_failed_sdk, [{ id: 'failed-files', operation: 'files' }]);
+  assert.equal(result.sdk_body_calls, 0);
+  assert.throws(() => reconcile(observed(fields), lifecycle, { bodyTransportRequired: false }));
+  assert.throws(() => reconcile(observed(fields), lifecycle, { ...options, expectedFailedSdkIds: ['unobserved'] }));
+  const missing = structuredClone(fields); missing[4].request_metrics = null;
+  assert.throws(() => reconcile(observed(missing), lifecycle, options), /complete metrics/);
+  const incompatible = structuredClone(fields); incompatible[4].sdk_started = false;
+  assert.throws(() => reconcile(observed(incompatible), lifecycle, options));
+});
+
+test('name reference lookup claims require the actual matching provider interval and a closed SDK call', () => {
+  const captures = [{ requestId: 'before' }, { requestId: 'after' }];
+  const hooks = [{ requestId: 'before', phase: 'response_end', pid: 42, monotonic_ns: '10' },
+    { requestId: 'after', phase: 'payload_start', pid: 42, monotonic_ns: '40' }];
+  const fields = [{ kind: 'sdk', event: 'start', id: 'manifest', operation: 'files', observer_pid: 42, monotonic_ns: '20' },
+    { kind: 'sdk', event: 'end', id: 'manifest', operation: 'files', observer_pid: 42, monotonic_ns: '30' }];
+  const fixed = [{ id: 'sc25-fixed-name' }];
+  assert.deepEqual(namedSdkProbe.assertNamedReferenceIntervals(captures, hooks, fields, fixed)[0].sdk,
+    [{ id: 'manifest', operation: 'files' }]);
+  assert.throws(() => namedSdkProbe.assertNamedReferenceIntervals(captures, hooks, fields, [{ id: 'sc25-fixed-canonical' }]), /must not add/);
+  assert.throws(() => namedSdkProbe.assertNamedReferenceIntervals(captures, hooks, fields, [{ id: 'sc25-current-name' }]), /ordinary SDK directory/);
+  for (const change of [
+    values => { values[1].monotonic_ns = '41'; },
+    values => { values[1].observer_pid = 99; },
+    values => { values.splice(1, 1); },
+    values => { values[0].monotonic_ns = '9'; },
+  ]) {
+    const altered = structuredClone(fields); change(altered);
+    assert.throws(() => namedSdkProbe.assertNamedReferenceIntervals(captures, hooks, altered, fixed));
+  }
+  const unrelated = fields.map(value => ({ ...value, observer_pid: 99 }));
+  assert.throws(() => namedSdkProbe.assertNamedReferenceIntervals(captures, hooks, unrelated, fixed), /actual manifest/);
+});
+
+test('name reference object evidence distinguishes shared content addresses without permitting extra source objects', () => {
+  const value = objectReadFixture();
+  const shared = { ...value.selected, path: 'other-owner/assets/same-bytes.bin' };
+  const options = { selected: [value.selected], forbidden: [value.forbidden, shared], requiredPid: value.requiredPid };
+  const verified = namedSdkProbe.assertNamedReferenceObjects(value.events, options);
+  assert.deepEqual(verified.shared_content_objects, [{ sha256: shared.sha256, bytes: shared.bytes,
+    unselected_path: shared.path, selected_paths: [value.selected.path] }]);
+  assert.throws(() => namedSdkProbe.assertNamedReferenceObjects(value.events, { ...options,
+    forbidden: [{ ...shared, bytes: shared.bytes + 1 }] }), /exact byte length/);
+  for (const sha256 of [value.forbidden.sha256, 'c'.repeat(64)]) {
+    const extra = structuredClone(value.events);
+    extra.splice(3, 0, { ...extra[1], id: 'extra-object', object_sha256: sha256 },
+      { ...extra[2], id: 'extra-object', object_sha256: sha256, content_sha256: sha256 });
+    assert.throws(() => namedSdkProbe.assertNamedReferenceObjects(extra, options));
+  }
+});
+
+function namedFailureFixture(failedAuthority = true) {
+  const source = { id: 'sdk-fixture', database: '00000000-0000-4000-8000-000000000010' };
+  const failedSource = failedAuthority ? { id: 'uncached-authority', database: '00000000-0000-4000-8000-000000000099' } : undefined;
+  const selected = failedSource ?? source, operation = failedAuthority ? 'list' : 'files';
+  const start = { kind: 'sdk', event: 'start', id: 'failed-call', operation, observer_pid: 42,
+    sequence: 10, monotonic_ns: '20', source_id: selected.id, database: selected.database };
+  const end = { ...start, event: 'end', sequence: 11, monotonic_ns: '30', status: 'failed',
+    error_code: failedAuthority ? 'CACHE_MISSING' : 'SNAPSHOT_CONFLICT' };
+  const intervals = [{ tool_call_id: failedAuthority ? 'sc25-failed-name' : 'sc25-wrong-fixed-name', observer_pid: 42,
+    after_provider_request: '42:3', before_provider_request: '42:4', start_monotonic_ns: '10', end_monotonic_ns: '40',
+    sdk: [{ id: start.id, operation }], object_reads: [] }];
+  return { events: [start, end], intervals, options: { source, failedSource } };
+}
+
+test('named SDK failure attribution preserves only the declared source and database', () => {
+  const valid = namedFailureFixture();
+  assert.equal(namedSdkProbe.assertNamedReferenceFailures(valid.events, valid.intervals, valid.options)[0].id, 'failed-call');
+  for (const change of [
+    value => { for (const event of value.events) { event.source_id = value.options.source.id; event.database = value.options.source.database; } },
+    value => { for (const event of value.events) delete event.source_id; },
+    value => { for (const event of value.events) event.database = null; },
+    value => { value.events[0].database = value.options.source.database; },
+    value => { value.events[1].source_id = value.options.source.id; },
+    value => { value.events[1].error_code = null; },
+    value => { value.events[1].error_code = 'ACCESS_DENIED'; },
+  ]) {
+    const wrong = namedFailureFixture(); change(wrong);
+    assert.throws(() => namedSdkProbe.assertNamedReferenceFailures(wrong.events, wrong.intervals, wrong.options));
+  }
+});
+
+test('named SDK failure attribution rejects late, extra and unpaired terminals', () => {
+  for (const change of [
+    value => { value.events[1].monotonic_ns = '41'; },
+    value => { value.intervals[0].tool_call_id = 'sc25-canonical-main'; },
+    value => { value.events.splice(0, 1); },
+    value => { value.events[1].observer_pid = 99; },
+    value => { for (const event of value.events) event.observer_pid = 99; },
+    value => { value.events.push({ ...value.events[1] }); },
+    value => { value.events.push({ ...value.events[0], id: 'missing-terminal' }); },
+    value => { value.events.push({ ...value.events[0], id: 'extra-healthy', source_id: value.options.source.id, database: value.options.source.database, monotonic_ns: '42' },
+      { ...value.events[1], id: 'extra-healthy', source_id: value.options.source.id, database: value.options.source.database, monotonic_ns: '43' }); },
+  ]) {
+    const wrong = namedFailureFixture(); change(wrong);
+    assert.throws(() => namedSdkProbe.assertNamedReferenceFailures(wrong.events, wrong.intervals, wrong.options));
+  }
+});
+
+test('named SDK fixed-manifest failure requires the actual owner and SNAPSHOT_CONFLICT code', () => {
+  const valid = namedFailureFixture(false);
+  assert.equal(namedSdkProbe.assertNamedReferenceFailures(valid.events, valid.intervals, valid.options)[0].id, 'failed-call');
+  for (const change of [
+    value => { value.events[1].error_code = 'ACCESS_DENIED'; },
+    value => { for (const event of value.events) event.source_id = 'another-source'; },
+    value => { for (const event of value.events) event.database = '00000000-0000-4000-8000-000000000099'; },
+    value => { value.events[1].monotonic_ns = '41'; },
+  ]) {
+    const wrong = namedFailureFixture(false); change(wrong);
+    assert.throws(() => namedSdkProbe.assertNamedReferenceFailures(wrong.events, wrong.intervals, wrong.options));
+  }
+});
+
+test('named SDK startup failure must close within the first actual discovery boundary', () => {
+  const value = namedFailureFixture();
+  value.events[0].monotonic_ns = '5';
+  value.events.unshift({ kind: 'observer_start', observer_pid: 42, monotonic_ns: '1', sequence: 1 });
+  value.intervals[0].tool_call_id = 'sc25-search'; value.intervals[0].sdk = [];
+  const verified = namedSdkProbe.assertNamedReferenceFailures(value.events, value.intervals, value.options);
+  assert.equal(verified[0].boundary.phase, 'startup');
+  assert.equal(verified[0].boundary.before_provider_request, '42:4');
+  for (const change of [
+    wrong => { wrong.events.pop(); },
+    wrong => { wrong.events[2].monotonic_ns = '41'; },
+    wrong => { wrong.events[1].monotonic_ns = '0'; },
+    wrong => { wrong.events.shift(); },
+    wrong => { wrong.intervals[0].observer_pid = 99; },
+    wrong => { wrong.intervals[0].tool_call_id = 'sc25-canonical-main'; },
+  ]) {
+    const wrong = structuredClone(value); change(wrong);
+    assert.throws(() => namedSdkProbe.assertNamedReferenceFailures(wrong.events, wrong.intervals, wrong.options));
+  }
 });
 
 test('a catalogue interrupted by an actual session boundary retains complete cancellation accounting', () => {

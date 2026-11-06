@@ -7,7 +7,7 @@ import { channel } from "node:diagnostics_channel";
 
 // These fixtures exercise the loading/observation boundary only. Actual SDK
 // runtime, package and Pi proofs use independently installed ntn-skills builds.
-async function fixture(options: { sdk?: boolean; sdkVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number; readProofVersion?: number; readProofManifestVersion?: number; catalog?: boolean } = {}) {
+async function fixture(options: { sdk?: boolean; sdkVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number; readProofVersion?: number; readProofManifestVersion?: number; catalog?: boolean; catalogFailure?: "typed" | "returned" | "untyped" | "unsafe"; resolver?: boolean; files?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "broker-sdk-boundary-"));
   await mkdir(join(root, "src")); await mkdir(join(root, "dist"));
   await copyFile(new URL("../src/notion-sdk.ts", import.meta.url), join(root, "src/notion-sdk.ts"));
@@ -32,10 +32,27 @@ export async function readSkill(target, options) {
   return { target, output: options.output };
 }
 ${options.catalog ? `
+export const catalogError = Object.assign(new Error('PRIVATE_ERROR_MESSAGE_SENTINEL'), {
+  code: ${options.catalogFailure === "untyped" ? "undefined" : JSON.stringify(options.catalogFailure === "unsafe" ? "A".repeat(129) : "CACHE_MISSING")},
+  details: { private: 'PRIVATE_ERROR_DETAILS_SENTINEL' },
+});
 export async function listCatalog(options) {
   calls.push({ operation: 'list', options });
   options.onRequestMetrics?.({ total_requests: 0, trace: [] });
+  ${options.catalogFailure === "returned" ? "return { status: 'failed', error: catalogError };" : options.catalogFailure ? "throw catalogError;" : ""}
   return { records: [], count: 0, view: options.view, scope: options.env?.SDK_TEST_ID };
+}
+` : ""}
+${options.resolver ? `
+export function resolveCatalogReference(target, catalog) {
+  return { target, record: catalog.records[0], scope: catalog.scope, ref: catalog.records[0].ref };
+}
+` : ""}
+${options.files ? `
+export async function listSkill(target, options) {
+  calls.push({ operation: 'files', target, options });
+  options.onRequestMetrics?.({ total_requests: 0, trace: [] });
+  return { target, files: [], scope: options.env?.SDK_TEST_ID };
 }
 ` : ""}
 ${options.resourceVersion === undefined ? "" : `
@@ -111,6 +128,67 @@ test("the shared public duration parser is used without acquiring an operation r
   expect(JSON.parse(await readFile(join(root, "dist/ntn-skills-runtime.json"), "utf8")).package).toBe("ntn-skills");
 });
 
+test("passive SDK attribution binds concurrent source identities without changing runtime options", async () => {
+  const healthy = await fixture({ catalog: true }), denied = await fixture({ catalog: true, catalogFailure: "typed" });
+  const topic = channel("context-broker.notion-sdk"), events: unknown[] = [];
+  const collect = (event: unknown) => events.push(event);
+  const options = [
+    { sourceId: "healthy-source", database: "healthy-database", env: { PRIVATE_TOKEN: "PRIVATE_TOKEN_SENTINEL" } },
+    { sourceId: "denied-source", database: "denied-database", env: { PRIVATE_TOKEN: "PRIVATE_TOKEN_SENTINEL" } },
+  ];
+  topic.subscribe(collect);
+  let outcomes: PromiseSettledResult<unknown>[];
+  try { outcomes = await Promise.allSettled([healthy.boundary.listNotionCatalogSdk(options[0]), denied.boundary.listNotionCatalogSdk(options[1])]); }
+  finally { topic.unsubscribe(collect); }
+  expect(outcomes[0]?.status).toBe("fulfilled");
+  const rejected = outcomes[1];
+  if (!rejected || rejected.status !== "rejected") throw new Error("Expected the actual SDK rejection");
+  expect(rejected.reason).toBe((await import(pathToFileURL(denied.module).href)).catalogError);
+  const rows = events.filter((event): event is Record<string, unknown> => typeof event === "object" && event !== null);
+  expect(rows).toHaveLength(4);
+  for (const [index, value] of options.entries()) {
+    const starts = rows.filter(event => event.event === "start" && event.source_id === value.sourceId);
+    expect(starts).toHaveLength(1);
+    const start = starts[0];
+    if (!start) throw new Error("Missing actual SDK start");
+    expect(start).toMatchObject({ operation: "list", source_id: value.sourceId, database: value.database });
+    const ends = rows.filter(event => event.event === "end" && event.id === start.id);
+    expect(ends).toHaveLength(1);
+    expect(ends[0]).toMatchObject({ operation: "list", source_id: value.sourceId, database: value.database,
+      status: index === 0 ? "completed" : "failed", error_code: index === 0 ? null : "CACHE_MISSING",
+      sdk_started: true, metrics_observed: true, request_metrics: { total_requests: 0, trace: [] } });
+    const module = index === 0 ? healthy.module : denied.module;
+    const calls = (await import(pathToFileURL(module).href)).calls;
+    expect(calls).toHaveLength(1);
+    expect(calls[0].options.database).toBe(value.database);
+    expect(calls[0].options.env).toBe(value.env);
+    expect(Object.hasOwn(calls[0].options, "sourceId")).toBe(false);
+  }
+  const serialized = JSON.stringify(events);
+  for (const secret of ["PRIVATE_TOKEN_SENTINEL", "PRIVATE_ERROR_MESSAGE_SENTINEL", "PRIVATE_ERROR_DETAILS_SENTINEL"])
+    expect(serialized).not.toContain(secret);
+});
+
+test("passive SDK failure codes preserve actual typed outcomes and keep unknown codes null", async () => {
+  const topic = channel("context-broker.notion-sdk");
+  for (const catalogFailure of ["returned", "untyped", "unsafe"] as const) {
+    const current = await fixture({ catalog: true, catalogFailure }), events: unknown[] = [];
+    const collect = (event: unknown) => events.push(event); topic.subscribe(collect);
+    const module = await import(pathToFileURL(current.module).href);
+    try {
+      if (catalogFailure === "returned") expect(await current.boundary.listNotionCatalogSdk({})).toEqual({ status: "failed", error: module.catalogError });
+      else await expect(current.boundary.listNotionCatalogSdk({})).rejects.toBe(module.catalogError);
+    } finally { topic.unsubscribe(collect); }
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({ event: "start", source_id: null, database: null });
+    expect(events[1]).toMatchObject({ event: "end", source_id: null, database: null, status: "failed",
+      error_code: catalogFailure === "returned" ? "CACHE_MISSING" : null });
+    const serialized = JSON.stringify(events);
+    for (const secret of ["PRIVATE_ERROR_MESSAGE_SENTINEL", "PRIVATE_ERROR_DETAILS_SENTINEL", "A".repeat(129)])
+      expect(serialized).not.toContain(secret);
+  }
+});
+
 test("catalog discovery uses one SDK call and never silently falls back when the export is absent", async () => {
   const old = await fixture();
   await expect(old.boundary.listNotionCatalogSdk({})).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
@@ -121,6 +199,38 @@ test("catalog discovery uses one SDK call and never silently falls back when the
   const calls = (await import(pathToFileURL(current.module).href)).calls;
   expect(calls).toHaveLength(1);
   expect(calls[0]).toMatchObject({ operation: "list", options });
+});
+
+test("SC25 current name resolution reuses the pure SDK export without another source runtime", async () => {
+  const old = await fixture();
+  await expect(old.boundary.resolveNotionCatalogReferenceSdk("skill://Name/SKILL.md", {})).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+  expect((await import(pathToFileURL(old.module).href)).calls).toHaveLength(0);
+  const current = await fixture({ resolver: true }), topic = channel("context-broker.notion-sdk"), events: unknown[] = [];
+  const collect = (value: unknown) => events.push(value), record = { ref: "skill://canonical/SKILL.md" }, catalog = { scope: "same-scope", records: [record] };
+  topic.subscribe(collect);
+  try { expect(await current.boundary.resolveNotionCatalogReferenceSdk("skill://Name/SKILL.md", catalog)).toEqual({ target: "skill://Name/SKILL.md", record, scope: catalog.scope, ref: record.ref }); }
+  finally { topic.unsubscribe(collect); }
+  expect(events).toHaveLength(0); expect((await import(pathToFileURL(current.module).href)).calls).toHaveLength(0);
+});
+
+test("SC25 fixed-name files keep one scoped observed operation and reject missing capability before runtime", async () => {
+  const old = await fixture(), topic = channel("context-broker.notion-sdk"), events: unknown[] = [];
+  const collect = (value: unknown) => events.push(value); topic.subscribe(collect);
+  const current = await fixture({ files: true }), controller = new AbortController();
+  const target = "skill://Old/SKILL.md?snapshot=fixed", options = { cwd: "/selected", database: "selected-db", offline: true, env: { SDK_TEST_ID: "authorized-scope" }, signal: controller.signal };
+  try {
+    await expect(old.boundary.listNotionFilesSdk(target, options)).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+    expect(await current.boundary.listNotionFilesSdk(target, options)).toEqual({ target, files: [], scope: "authorized-scope" });
+  } finally { topic.unsubscribe(collect); }
+  expect((await import(pathToFileURL(old.module).href)).calls).toHaveLength(0);
+  const calls = (await import(pathToFileURL(current.module).href)).calls;
+  expect(calls).toHaveLength(1); expect(calls[0]).toMatchObject({ operation: "files", target, options });
+  expect(calls[0].options.signal).toBe(controller.signal);
+  expect(events).toEqual(expect.arrayContaining([
+    expect.objectContaining({ operation: "files", event: "end", status: "failed", sdk_started: false, metrics_observed: false }),
+    expect.objectContaining({ operation: "files", event: "end", status: "completed", sdk_started: true, metrics_observed: true, request_metrics: { total_requests: 0, trace: [] } }),
+  ]));
+  expect(JSON.stringify(events)).not.toContain(target); expect(JSON.stringify(events)).not.toContain("authorized-scope");
 });
 
 test("raw result evidence is opt-in and correlates with body-free operation metrics", async () => {

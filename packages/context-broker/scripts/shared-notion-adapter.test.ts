@@ -9,7 +9,7 @@ import { installCliWriteInvalidation } from "../src/cli-write-invalidation";
 import { formatFindDiagnostics } from "../src/diagnostics";
 import { matchesPreciseRecordToken, parseCatalogMember, preciseRecordToken, resolveCatalogReference } from "../src/discovery-records";
 import { hostCliScope } from "../src/host-command";
-import { discoverNotionSource, loadNotionSkill, ReferenceMiss } from "../src/notion-source";
+import { discoverNotionSource, loadNotionSkill, ReferenceMiss, resolveNotionReference } from "../src/notion-source";
 import { sharedSkillId } from "../src/shared-skill-identity";
 import { normalizeSources } from "../src/sources";
 import { resolveViewDiscovery, VIEW_SELECTION_ENTRY } from "../src/view-discovery";
@@ -44,7 +44,10 @@ async function fixture(input: { records?: readonly unknown[]; profile?: boolean 
   const statePath = join(root, "state.json"), logPath = join(root, "calls.jsonl"), executable = join(root, "controlled-cli.mjs");
   const record = sharedRecord(), content = "---\nname: shared\ndescription: controlled\n---\nFixed shared body\n";
   const read = { ok: true, record, content, snapshot_id: snapshot, version_id: "version-controlled", scope, entrypoint: record.entrypoint, path: record.entrypoint, ref: `${record.ref}?snapshot=${snapshot}`, range: { start: 1, end: content.split("\n").length, total_lines: content.split("\n").length }, has_more: false, freshness: freshness() };
-  const state: Json = { catalog: listing(input.records ?? [record]), profile: listing([record], "profile"), explicit: listing([record], "view"), read, resources: { "scripts/fixed.bin": Buffer.from([0, 255, 13, 10]).toString("base64") } };
+  const state: Json = { catalog: listing(input.records ?? [record]), profile: listing([record], "profile"), explicit: listing([record], "view"), read,
+    files: { ok: true, record, snapshot_id: snapshot, version_id: read.version_id, scope, entrypoint: record.entrypoint, ref: read.ref, freshness: { policy: "pinned" },
+      files: [{ path: record.entrypoint, bytes: Buffer.byteLength(content), ref: read.ref }, { path: "scripts/fixed.bin", bytes: 4, ref: record.ref.replace(record.entrypoint, "scripts/fixed.bin") + `?snapshot=${snapshot}` }] },
+    resources: { "scripts/fixed.bin": Buffer.from([0, 255, 13, 10]).toString("base64") } };
   await writeFile(logPath, "", { mode: 0o600 });
   await writeFile(executable, `
 import {readFileSync,appendFileSync,mkdirSync,writeFileSync} from 'node:fs';
@@ -56,6 +59,7 @@ let value;
 if(args[0]==='ctl'&&args[1]==='cache'&&args[2]==='identity')value={ok:true,identity:'a'.repeat(64),catalog_max_age_ms:3600000};
 else if(args[0]==='list')value=state.pages?state.pages[args.includes('--cursor')?args[args.indexOf('--cursor')+1]:'first']:args.includes('--view')?state.explicit:args.includes('--default-view')?state.profile:state.catalog;
 else if(args[0]==='read')value=state.read;
+else if(args[0]==='files')value=state.files;
 else if(args[0]==='export'){
  const read=state.read,output=args[args.indexOf('--output')+1];
  const manifest={format:'ntn-skills',version:2,kind:read.record.kind,main:read.entrypoint,name:read.record.name,description:read.record.description};
@@ -113,6 +117,101 @@ test("custom-command pagination cannot bless missing cursors, changing scopes or
     await f.save();
     await expect(discoverNotionSource(f.source, f.root)).rejects.toMatchObject({ code: defect === "scope" ? "SOURCE_IDENTITY_MISMATCH" : "SOURCE_RESPONSE_INVALID" });
   }
+});
+
+test("SC25 fixed names retain their manifest owner without looking up the current name", async () => {
+  const f = await fixture(), other = sharedRecord("new-owner", { page: uuid(50) });
+  f.state.catalog = listing([{ ...other, name: f.record.name, alias: f.record.alias }]); await f.save();
+  for (const selector of [f.record.name, f.record.alias]) {
+    const input = `skill://${encodeURIComponent(selector)}/scripts/fixed.bin?snapshot=${snapshot}`;
+    const selected = await resolveNotionReference(input, [f.source], f.root);
+    expect(selected.record).toMatchObject({ id: f.record.id, sourceId: f.source.id, sourceScope: scope, snapshotId: snapshot });
+    expect(selected.ref).toBe(f.record.ref.replace("SKILL.md", "scripts/fixed.bin") + `?snapshot=${snapshot}`);
+    expect(await readFile(selected.record.path, "utf8")).not.toContain(f.content);
+  }
+  expect((await f.calls()).map(args => args[0])).toEqual(["files", "files"]);
+});
+
+test("SC25 a fixed snapshot absent from one source can be found in another without hiding permission failures", async () => {
+  const absent = await fixture(), present = await fixture(), input = `skill://shared/SKILL.md?snapshot=${snapshot}`;
+  absent.state.files = { ok: false, error: { code: "SNAPSHOT_MISSING" } }; await absent.save();
+  const selected = await resolveNotionReference(input, [{ ...absent.source, id: "absent" }, { ...present.source, id: "present" }], present.root);
+  expect(selected.record.sourceId).toBe("present");
+  await expect(resolveNotionReference(input, [absent.source], absent.root)).rejects.toMatchObject({ code: "SNAPSHOT_MISSING" });
+  for (const code of ["AUTH_REQUIRED", "ACCESS_DENIED", "STATE_CORRUPT", "CATALOG_INCOMPLETE"]) {
+    absent.state.files = { ok: false, error: { code } }; await absent.save();
+    await expect(resolveNotionReference(input, [present.source, absent.source], present.root)).rejects.toMatchObject({ code });
+  }
+  expect((await absent.calls()).some(args => args[0] !== "files")).toBe(false);
+  expect((await present.calls()).some(args => args[0] !== "files")).toBe(false);
+});
+
+test("SC25 custom fixed metadata must belong to the configured UUID database", async () => {
+  const f = await fixture(), files = f.state.files as Json;
+  f.state.files = { ...files, record: { ...f.record, locator: { ...f.record.locator, database_id: uuid(90) } } }; await f.save();
+  await expect(resolveNotionReference(`skill://shared/SKILL.md?snapshot=${snapshot}`, [f.source], f.root)).rejects.toMatchObject({ code: "SOURCE_IDENTITY_MISMATCH" });
+  expect((await f.calls()).map(args => args[0])).toEqual(["files"]);
+});
+
+test("SC25 custom fixed database aliases use same-scope metadata without rebinding the historical owner", async () => {
+  const f = await fixture(), input = `skill://shared/scripts/fixed.bin?snapshot=${snapshot}`;
+  f.state.catalog = listing([]); await f.save();
+  const selected = await resolveNotionReference(input, [{ ...f.source, database: "shared", activation: { offline: true } }], f.root);
+  expect(selected.record.id).toBe(f.record.id);
+  const calls = await f.calls(), lists = calls.filter(args => args[0] === "list");
+  expect(lists).toHaveLength(1); expect(lists[0]).toContain("--offline");
+  expect(calls.every(args => ["files", "list", "ctl"].includes(args[0]!))).toBe(true);
+  await f.clearCalls();
+  f.state.files = { ...(f.state.files as Json), scope: "e".repeat(64) }; await f.save();
+  await expect(resolveNotionReference(input, [{ ...f.source, database: "shared" }], f.root)).rejects.toMatchObject({ code: "SOURCE_IDENTITY_MISMATCH" });
+});
+
+test("SC25 current names use the complete ordinary directory outside the default View", async () => {
+  const outside = { ...sharedRecord("outside", { page: uuid(51) }), name: "Outside View", alias: "outside" };
+  const f = await fixture({ records: [sharedRecord(), outside], profile: true });
+  expect((await discoverNotionSource(f.source, f.root, { defaultView: true })).map(record => record.id)).toEqual([f.record.id]);
+  for (const selector of [outside.name, outside.alias]) {
+    const selected = await resolveNotionReference(`skill://${encodeURIComponent(selector)}/SKILL.md`, [f.source], f.root);
+    expect(selected.ref).toBe(outside.ref); expect(selected.record).toMatchObject({ id: outside.id, sourceScope: scope, sourceId: f.source.id });
+  }
+  const calls = await f.calls(), lists = calls.filter(args => args[0] === "list");
+  expect(lists).toHaveLength(2); expect(lists[0]).toContain("--default-view"); expect(lists[1]).not.toContain("--default-view");
+  expect(calls.some(args => ["read", "prepare", "use", "export", "files"].includes(args[0]!))).toBe(false);
+});
+
+test("SC25 current names wait for every custom page before invoking the shared resolver", async () => {
+  const first = { ...sharedRecord("first"), alias: "first" }, second = { ...sharedRecord("second", { page: uuid(52) }), alias: "second" };
+  const f = await fixture(), initial = listing([first]);
+  f.state.pages = { first: { ...initial, total_count: 2, has_more: true, next_cursor: "page-two" },
+    "page-two": { ...initial, records: [second], total_count: 2, has_more: false, next_cursor: null } }; await f.save();
+  expect((await resolveNotionReference("skill://second/SKILL.md", [f.source], f.root)).record.id).toBe(second.id);
+  const calls = await f.calls(), lists = calls.filter(args => args[0] === "list");
+  expect(lists).toHaveLength(2); expect(lists[1].slice(-3)).toEqual(["--offline", "--cursor", "page-two"]);
+  expect(calls.some(args => ["read", "prepare", "use", "export", "files"].includes(args[0]!))).toBe(false);
+});
+
+test("SC25 a partial or projected current catalog cannot prove a name unique or absent", async () => {
+  for (const count of [0, 1]) for (const defect of ["incomplete", "query", "view_query"]) {
+    const f = await fixture(), catalog = listing(count ? [f.record] : []);
+    f.state.catalog = defect === "incomplete" ? { ...catalog, coverage: { ...(catalog.coverage as Json), exhaustive: false, search_index_limited: true } }
+      : { ...catalog, [defect]: "selected-subset" }; await f.save();
+    await expect(resolveNotionReference("skill://shared/SKILL.md", [f.source], f.root)).rejects.toMatchObject({ code: "CATALOG_INCOMPLETE" });
+    expect((await f.calls()).some(args => ["read", "prepare", "use", "export", "files"].includes(args[0]!))).toBe(false);
+  }
+});
+
+test("SC25 enabled name ambiguity, cross-source scope and failed authorities remain distinct", async () => {
+  const f = await fixture({ records: [sharedRecord(), sharedRecord("other", { page: uuid(53) })] });
+  await expect(resolveNotionReference("skill://shared/SKILL.md", [f.source], f.root)).rejects.toMatchObject({ code: "SKILL_AMBIGUOUS" });
+  const enabled = await fixture({ records: [sharedRecord(), sharedRecord("disabled", { page: uuid(54), enabled: false })] });
+  expect((await resolveNotionReference("skill://shared/SKILL.md", [enabled.source], enabled.root)).record.id).toBe(enabled.record.id);
+  const other = await fixture(); other.state.catalog = { ...(other.state.catalog as Json), scope: "f".repeat(64) }; await other.save();
+  await expect(resolveNotionReference("skill://shared/SKILL.md", [enabled.source, { ...other.source, id: "other-authority" }], enabled.root)).rejects.toMatchObject({ code: "SKILL_AMBIGUOUS" });
+  other.state.catalog = { ok: false, error: { code: "ACCESS_DENIED" } }; await other.save();
+  await expect(resolveNotionReference("skill://shared/SKILL.md", [enabled.source, { ...other.source, id: "other-authority" }], enabled.root, { refresh: true })).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+  const controller = new AbortController(); controller.abort(); await other.clearCalls();
+  await expect(resolveNotionReference("skill://shared/SKILL.md", [other.source], other.root, { signal: controller.signal })).rejects.toMatchObject({ code: "SOURCE_CANCELLED" });
+  expect(await other.calls()).toEqual([]);
 });
 
 const invalidRecords: [string, (record: ContentRecord) => unknown][] = [

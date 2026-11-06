@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installHostSkills } from "../src/host-skills";
@@ -28,15 +28,21 @@ async function fixture() {
     { requested_ref: ref("references/b.md", "b"), ref: ref("references/b.md", "b"), path: "references/b.md", file_id: "b", encoding: "utf8", content: "", bytes: 0, sha256: hash("") },
     { requested_ref: ref("assets/selected.bin", "binary"), ref: ref("assets/selected.bin", "binary"), path: "assets/selected.bin", file_id: "binary", encoding: "base64", content: binary.toString("base64"), bytes: binary.length, sha256: hash(binary), output },
   ];
+  const scalarOutput = join(root, "selected-text.md"); await writeFile(scalarOutput, files[0]!.content);
   const ownerBinding = { record: content, scope, snapshot_id: snapshot, version_id: version, body_sha256: hash("unread main"), ref: ref("SKILL.md", "main") };
   const manifestFiles = [{ path: "SKILL.md", bytes: 11, sha256: ownerBinding.body_sha256, ref: ownerBinding.ref }, ...files];
   const manifest = { complete: true, scope, snapshot_id: snapshot, version_id: version, record: content, entrypoint: "SKILL.md", files: manifestFiles.map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })) };
   const state = { id: "session-one", entries: [] as SessionEntry[], calls: [] as string[][], mainReads: 0, persisted: 0,
+    nameCalls: [] as string[], fixedCalls: [] as string[], scalarReads: 0,
     transform: (batch: ResourceReadBatch): ResourceReadBatch => batch, wait: undefined as undefined | (() => Promise<void>), signal: undefined as AbortSignal | undefined };
   const events = new Map<string, Array<(event: never, context: ExtensionContext) => unknown>>();
   const tools = new Map<string, { definition: PiReadDefinition; source: string }>();
   const native: PiReadDefinition = { name: "read", label: "read", description: "Native scalar reader", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] }, outputSchema: { type: "string" },
-    async execute() { throw new Error("A resource batch cannot enter the scalar reader"); } };
+    async execute(_id, input) {
+      state.scalarReads++;
+      if (input.path !== scalarOutput) throw new Error("Only the selected fixed resource can enter the scalar reader");
+      return { content: [{ type: "text", text: await readFile(scalarOutput, "utf8") }] };
+    } };
   tools.set("read", { definition: native, source: "builtin" });
   const api: ExtensionAPI = {
     on(name, handler) { events.set(name, [...events.get(name) ?? [], handler]); },
@@ -49,9 +55,22 @@ async function fixture() {
   } };
   const host = await installHostSkills(api, {
     config: {}, getRecords: async () => ({ records: [metadata], failures: [] }),
+    resolveNamedReference: async input => {
+      state.nameCalls.push(input);
+      const parsed = parseNativeReference(input);
+      if (![content.name, content.alias].includes(parsed.selector) || parsed.snapshot !== snapshot) throw new Error("Unexpected fixed name");
+      return { record: metadata, ref: ref(parsed.path) };
+    },
     loadRecord: async () => { state.mainReads++; throw new Error("Resource reads cannot load the main entry"); },
     prepareGraph: async () => { state.mainReads++; throw new Error("Resource reads cannot prepare a graph"); },
     persistGraphs: () => { state.persisted++; },
+    readFixedResource: async (_record, input) => {
+      state.fixedCalls.push(input);
+      const selected = files[0]!;
+      if (parseNativeReference(input).path !== selected.path) throw new Error("Unexpected scalar resource");
+      return { selection: { scope, owner: id, snapshot_id: snapshot, version_id: version }, ownerBinding, entrypoint: content.entrypoint,
+        file: { requested_ref: input, ref: selected.ref, path: selected.path, file_id: selected.file_id, bytes: selected.bytes, sha256: selected.sha256, output: scalarOutput } };
+    },
     readResources: async (_record, refs, _ctx, signal) => {
       state.calls.push([...refs]); state.signal = signal;
       await state.wait?.();
@@ -77,6 +96,11 @@ async function fixture() {
       manifest_complete: true, local_files_ready: false, materialized_paths: [] } };
   const short = createSessionShortRefHost(api);
   return { root, ref, files, metadata, selected, ctx, state, emit, short,
+    result: async (result: Record<string, unknown>) => {
+      const updates: unknown[] = [];
+      for (const handler of events.get("tool_result") ?? []) updates.push(await handler({ toolName: "read", toolCallId: "batch-call", ...result } as never, ctx));
+      return updates;
+    },
     read: (input: Record<string, unknown>, signal?: AbortSignal) => tools.get("read")!.definition.execute("batch-call", input, signal, undefined, ctx) };
 }
 
@@ -88,9 +112,33 @@ test("one resource batch delivers exact selected text and binary metadata withou
   expect(model.files[2]).toMatchObject({ kind: "binary", output: f.files[2]!.encoding === "base64" ? f.files[2]!.output : "" });
   expect(JSON.stringify(result.content)).not.toContain(f.files[2]!.content);
   expect(f.state.calls).toHaveLength(1); expect(f.state.mainReads).toBe(0); expect(f.state.persisted).toBe(0);
+  expect(f.state.scalarReads).toBe(0); expect(f.state.nameCalls).toHaveLength(0);
   expect(f.metadata.body).toBeUndefined(); expect(f.metadata.entryManifest).toBeUndefined();
   expect(sessionSourceSnapshot([{ role: "toolResult", toolName: "read", toolCallId: "batch-call", ...result }], f.metadata)).toBeUndefined();
   expect(result.details).toMatchObject({ contextBrokerResource: { version: 2, toolCallId: "batch-call", loaded: false }, contextBrokerResourceSource: { source_id: "notion" } });
+});
+
+test("SC25 scalar fixed-name resources deliver the exact file without preparing the main entry", async () => {
+  const f = await fixture(), input = `skill://Owner/references/a.md?${f.files[0]!.ref.split("?")[1]!.split("&")[0]}`;
+  const result = await f.read({ path: input });
+  expect(result.content).toEqual([{ type: "text", text: f.files[0]!.content }]);
+  expect(await f.result(result)).toEqual(expect.arrayContaining([expect.objectContaining({ details: expect.objectContaining({
+    contextBrokerResource: expect.objectContaining({ delivered_complete_text: true, loaded: false, ref: f.files[0]!.ref }),
+  }) })]));
+  expect(f.state.nameCalls).toEqual([input]); expect(f.state.fixedCalls).toEqual([f.ref("references/a.md")]);
+  expect(f.state.scalarReads).toBe(1); expect(f.state.calls).toHaveLength(0); expect(f.state.mainReads).toBe(0); expect(f.state.persisted).toBe(0);
+});
+
+test("SC25 fixed-name resource batches preserve one canonical owner and exclude unfixed names before lookup", async () => {
+  const f = await fixture(), snapshot = parseNativeReference(f.files[0]!.ref).snapshot;
+  const refs = [`skill://Owner/references/a.md?snapshot=${snapshot}`, `skill://owner/references/b.md?snapshot=${snapshot}`];
+  const result = await f.read({ paths: refs });
+  expect(result.structuredContent).toHaveProperty("files.0.content", f.files[0]!.content);
+  expect(result.structuredContent).toHaveProperty("files.1.content", "");
+  expect(f.state.calls).toEqual([[f.ref("references/a.md"), f.ref("references/b.md")]]);
+  expect(f.state.nameCalls).toEqual(refs); expect(f.state.mainReads).toBe(0); expect(f.state.scalarReads).toBe(0); expect(f.state.persisted).toBe(0);
+  await expect(f.read({ paths: ["skill://Owner/references/a.md"] })).rejects.toMatchObject({ code: "SOURCE_REFERENCE_INVALID" });
+  expect(f.state.nameCalls).toEqual(refs); expect(f.state.calls).toHaveLength(1);
 });
 
 test("batch admission rejects invalid modes and identities before any SDK operation", async () => {

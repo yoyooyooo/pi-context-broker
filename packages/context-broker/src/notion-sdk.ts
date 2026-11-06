@@ -13,6 +13,8 @@ export class NotionSdkError extends Error {
 }
 
 type Options = {
+  /** Broker observation identity; stripped before invoking the SDK. */
+  sourceId?: string;
   database?: string;
   cwd?: string;
   env?: Readonly<Record<string, string | undefined>>;
@@ -29,7 +31,7 @@ type Options = {
   defaultView?: boolean;
   profile?: string;
 };
-type RuntimeOptions = Options & { metrics?: boolean; onRequestMetrics?: (snapshot: unknown) => void };
+type RuntimeOptions = Omit<Options, "sourceId"> & { metrics?: boolean; onRequestMetrics?: (snapshot: unknown) => void };
 type Sdk = {
   SDK_VERSION: 1;
   CONSUMER_CONTRACT_VERSION: 1;
@@ -38,6 +40,8 @@ type Sdk = {
   decodeConsumeResult: (value: unknown, expected?: unknown) => Promise<unknown>;
   readSkill: (target: string, options?: RuntimeOptions) => Promise<unknown>;
   listCatalog?: (options?: RuntimeOptions) => Promise<unknown>;
+  resolveCatalogReference?: (target: string, catalog: unknown) => unknown;
+  listSkill?: (target: string, options?: RuntimeOptions) => Promise<unknown>;
   READ_OUTPUT_PROOF_VERSION?: number;
   RESOURCE_READ_CONTRACT_VERSION?: number;
   readResources?: (input: unknown, options?: RuntimeOptions) => Promise<unknown>;
@@ -53,6 +57,9 @@ let readOutputProofVersion: unknown;
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function observationErrorCode(error: unknown): string | null {
+  return object(error) && typeof error.code === "string" && /^[A-Z][A-Z0-9_]{0,127}$/.test(error.code) ? error.code : null;
 }
 function compatible(value: unknown): value is Sdk {
   return object(value) && value.SDK_VERSION === 1 && value.CONSUMER_CONTRACT_VERSION === 1
@@ -82,7 +89,9 @@ async function loadBundledSdk(): Promise<Sdk> {
 }
 
 /** Code is shared; every operation still creates and closes its own SDK runtime. */
-async function observed(operation: "consume" | "read" | "read-resources" | "list", options: Options, run: (sdk: Sdk, options: RuntimeOptions) => Promise<unknown>): Promise<unknown> {
+async function observed(operation: "consume" | "read" | "read-resources" | "list" | "files", options: Options, run: (sdk: Sdk, options: RuntimeOptions) => Promise<unknown>): Promise<unknown> {
+  const { sourceId, ...runtimeOptions } = options;
+  const attribution = { source_id: sourceId ?? null, database: options.database ?? null };
   const enabled = observations.hasSubscribers;
   const id = enabled || resultObservations.hasSubscribers ? randomUUID() : undefined;
   const started = process.hrtime.bigint();
@@ -90,29 +99,33 @@ async function observed(operation: "consume" | "read" | "read-resources" | "list
   let metricsObserved = false;
   let metrics: unknown = null;
   let status = "failed";
-  if (enabled) observations.publish({ version: 1, event: "start", id, operation, pid: process.pid, monotonic_ns: started.toString() });
+  let errorCode: string | null = null;
+  if (enabled) observations.publish({ version: 1, event: "start", id, operation, ...attribution, pid: process.pid, monotonic_ns: started.toString() });
   try {
     const sdk = await loadBundledSdk();
     if (operation === "list" && typeof sdk.listCatalog !== "function") throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
+    if (operation === "files" && typeof sdk.listSkill !== "function") throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     if (operation === "read-resources" && (sdk.RESOURCE_READ_CONTRACT_VERSION !== 1 || resourceContractVersion !== 1
       || typeof sdk.readResources !== "function" || typeof sdk.decodeResourceReadResult !== "function")) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     sdkStarted = true;
-    const value = await run(sdk, { ...options, ...(enabled ? { metrics: true, onRequestMetrics: (snapshot: unknown) => {
+    const value = await run(sdk, { ...runtimeOptions, ...(enabled ? { metrics: true, onRequestMetrics: (snapshot: unknown) => {
       metricsObserved = true;
       // The SDK's public metrics contract excludes headers, raw paths, bodies and signed URLs.
       metrics = snapshot;
     } } : {}) });
     status = object(value) && value.status === "cancelled" ? "cancelled" : object(value) && value.status === "failed" ? "failed" : "completed";
+    if (status === "failed" && object(value)) errorCode = observationErrorCode(value.error);
     if (resultObservations.hasSubscribers) resultObservations.publish({ version: 1, id, operation, value });
     return value;
   } catch (error) {
+    errorCode = observationErrorCode(error);
     if (options.signal?.aborted || object(error) && error.code === "CANCELLED") status = "cancelled";
     throw error;
   } finally {
     if (enabled) {
       const ended = process.hrtime.bigint();
-      observations.publish({ version: 1, event: "end", id, operation, pid: process.pid, monotonic_ns: ended.toString(),
-        elapsed_ms: Number(ended - started) / 1e6, status, sdk_started: sdkStarted, metrics_observed: metricsObserved, request_metrics: metrics });
+      observations.publish({ version: 1, event: "end", id, operation, ...attribution, pid: process.pid, monotonic_ns: ended.toString(),
+        elapsed_ms: Number(ended - started) / 1e6, status, error_code: errorCode, sdk_started: sdkStarted, metrics_observed: metricsObserved, request_metrics: metrics });
     }
   }
 }
@@ -128,6 +141,16 @@ export function readNotionSdk(target: string, options: Options): Promise<unknown
 /** Metadata uses the core catalog cache; no CLI subprocess or second discovery authority. */
 export function listNotionCatalogSdk(options: Options): Promise<unknown> {
   return observed("list", options, (sdk, runtime) => sdk.listCatalog!(runtime));
+}
+/** The shared resolver is pure; it never acquires another SDK runtime or source. */
+export async function resolveNotionCatalogReferenceSdk(target: string, catalog: unknown): Promise<unknown> {
+  const sdk = await loadBundledSdk();
+  if (typeof sdk.resolveCatalogReference !== "function") throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
+  return sdk.resolveCatalogReference(target, catalog);
+}
+/** Fixed names are owned by their retained manifest, without preparing its body. */
+export function listNotionFilesSdk(target: string, options: Options): Promise<unknown> {
+  return observed("files", options, (sdk, runtime) => sdk.listSkill!(target, runtime));
 }
 /** Feature detection loads code only; an older SDK never starts a speculative read. */
 export async function supportsNotionSdkReadOutputProof(): Promise<boolean> {

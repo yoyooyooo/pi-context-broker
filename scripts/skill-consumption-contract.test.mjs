@@ -43,6 +43,34 @@ test('normal checks and both workflows retain consumption and real Pi installati
   }
 });
 
+test('installed name gates cannot omit their distinct fixture, required execution, evidence or compatibility route', () => {
+  for (const mutate of [
+    value => { value.workflows[0].text = value.workflows[0].text.replace(' --catalog --distinct-names', ' --catalog'); },
+    value => { value.workflows[1].text = value.workflows[1].text.replace('- name: Create controlled name SDK fixture\n', '- name: Create controlled name SDK fixture\n        if: false\n'); },
+    value => { value.workflows[1].text = value.workflows[1].text.replace(' --name-fixture "$RUNNER_TEMP/ntn-skills-name-fixture/fixture.json"', ''); },
+    value => { value.workflows[0].text = value.workflows[0].text.replace(' --name-fixture "$RUNNER_TEMP/ntn-skills-name-fixture/fixture.json"', ' --name-fixture "$RUNNER_TEMP/unrelated/fixture.json"'); },
+    value => { value.workflows[1].text = value.workflows[1].text.replace('${{ runner.temp }}/ntn-skills-name-fixture/', '${{ runner.temp }}/unrelated/'); },
+    value => { value.workflows[0].text = value.workflows[0].text.replace('for scenario in name-references name-reference-failed-source;', 'for scenario in name-references;'); },
+  ]) {
+    const config = consumptionGateConfiguration(); mutate(config);
+    assert.throws(() => validateConsumptionGates(config), { code: 'GATE_INSTALLED_NAMES_MISSING' });
+  }
+});
+
+test('name fixture selection rejects an unrelated host, missing original fixture or relative path before packaging', () => {
+  const driver = fileURLToPath(new URL('./verify-artifacts.mjs', import.meta.url));
+  for (const args of [
+    ['--host', 'omp', '--name-fixture', '/unopened/name-fixture.json'],
+    ['--host', 'pi', '--name-fixture', '/unopened/name-fixture.json'],
+    ['--host', 'pi', '--fixture', '/unopened/original.json', '--name-fixture', 'relative.json'],
+  ]) {
+    const result = spawnSync(process.execPath, [driver, ...args], { encoding: 'utf8', timeout: 10000 });
+    assert.equal(result.error, undefined); assert.equal(result.status, 1);
+    assert.match(result.stderr, /--name-fixture/u);
+    assert.doesNotMatch(result.stdout, /Artifact workspace retained/u);
+  }
+});
+
 test('required installed SDK execution rejects missing fixture before packaging or host execution', () => {
   const driver = fileURLToPath(new URL('./verify-artifacts.mjs', import.meta.url));
   for (const args of [

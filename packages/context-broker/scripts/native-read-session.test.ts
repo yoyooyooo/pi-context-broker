@@ -393,3 +393,125 @@ test("precise references bypass unrelated metadata failure without an Agent list
   expect(pins).toEqual([a]);
   expect(lookups).toBe(1);
 });
+
+async function logicalReferenceFixture(options: { use?: boolean } = {}) {
+  const root = await mkdtemp(join(tmpdir(), "broker-logical-uri-"));
+  await writeFile(join(root, "SKILL.md"), record.body);
+  await mkdir(join(root, "references"));
+  await writeFile(join(root, "references/guide.md"), "Fixed historical resource.");
+  const owner: SkillRecord = { ...record, name: "URI Example", alias: "uri-example", normalizedName: "uri-example",
+    id: "shared_skill:lib:skill", ref: "skill://shared_skill%3Alib%3Askill/SKILL.md", entrypoint: "SKILL.md",
+    token: "notion/uri-example", path: join(root, "SKILL.md"), metadataIndexPath: undefined, defaultDiscovery: false };
+  const controller = new AbortController(), events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
+  const tools: Parameters<NonNullable<ExtensionAPI["registerTool"]>>[0][] = [];
+  const api: ExtensionAPI = { on(name, listener) { events.set(name, [...events.get(name) ?? [], listener]); }, registerTool(tool) { tools.push(tool); } };
+  const ctx: ExtensionContext = { cwd: root, hasUI: false, mode: "rpc", signal: controller.signal };
+  const state = { calls: [] as string[], loads: [] as Array<string | undefined>, refreshes: [] as Array<boolean | undefined>, graphRoots: [] as Array<Array<string | undefined>>,
+    resolve: async (value: string, _signal?: AbortSignal) => {
+      const ref = parseNativeReference(value);
+      if (![owner.name, owner.alias].includes(ref.selector)) throw Object.assign(new Error("Not found"), { code: "SKILL_NOT_FOUND" });
+      return { record: { ...owner, body: undefined }, ref: "skill://shared_skill%3Alib%3Askill/" + (ref.path || owner.entrypoint)
+        + (ref.snapshot ? "?snapshot=" + ref.snapshot : "") };
+    } };
+  const host = await installHostSkills(api, {
+    config: { sources: [{ type: "notion", id: "notion", prefetch: false }] },
+    getRecords: async () => ({ records: [{ ...owner, body: undefined, snapshotId: undefined }], failures: [] }),
+    resolveNamedReference: async (value: string, _ctx: ExtensionContext, signal?: AbortSignal, refresh?: boolean) => {
+      state.calls.push(value); state.refreshes.push(refresh); return state.resolve(value, signal);
+    },
+    loadRecord: async (_record, _signal, pin) => { state.loads.push(pin); return owner; },
+    ...(options.use ? { prepareGraph: async (records: readonly SkillRecord[]) => {
+      state.graphRoots.push(records.map(record => record.ref));
+      throw Object.assign(new Error("Controlled exact preparation boundary"), { code: "CONTROLLED_PREPARATION" });
+    } } : {}),
+  }, createPiHostAdapter(api));
+  async function read(path: string) {
+    const input = { path }, values: unknown[] = [];
+    for (const listener of events.get("tool_call") ?? []) values.push(await listener({ toolName: "read", toolCallId: "logical", input } as never, ctx));
+    return { input, values };
+  }
+  const emit = async (name: string) => { for (const listener of events.get(name) ?? []) await listener({ type: name } as never, ctx); };
+  return { root, owner, ctx, controller, state, host, read, emit,
+    use: async (input: Record<string, unknown>) => {
+      const tool = tools.find(tool => tool.name === "notion_use");
+      if (!tool) throw new Error("Expected the actual registered Notion use tool");
+      return tool.execute("name-use", input, controller.signal, undefined, ctx);
+    } };
+}
+
+test("SC25 use resolves names into exact canonical roots and applies refresh to name discovery", async () => {
+  const f = await logicalReferenceFixture({ use: true });
+  try {
+    const names = ["skill://URI%20Example/SKILL.md", "skill://uri-example/SKILL.md"];
+    await expect(f.use({ ref: names })).rejects.toMatchObject({ code: "CONTROLLED_PREPARATION" });
+    expect(f.state.graphRoots).toEqual([[f.owner.ref, f.owner.ref]]); expect(f.state.calls).toEqual(names);
+    await expect(f.use({ ref: names[0], refresh: true })).rejects.toMatchObject({ code: "CONTROLLED_PREPARATION" });
+    expect(f.state.refreshes.at(-1)).toBe(true);
+    const calls = f.state.calls.length;
+    await expect(f.use({ ref: "skill://URI%20Example/SKILL.md?snapshot=" + a, refresh: true })).rejects.toMatchObject({ code: "PREPARE_VERSION_CONFLICT" });
+    expect(f.state.calls).toHaveLength(calls); expect(f.state.graphRoots).toHaveLength(2);
+    await expect(f.use({ ref: f.owner.ref })).rejects.toMatchObject({ code: "CONTROLLED_PREPARATION" });
+    expect(f.state.calls).toHaveLength(calls);
+  } finally { await f.emit("session_shutdown"); }
+});
+
+test.each(["URI Example", "uri-example"])("SC25 logical URI %s uses authoritative resolution and retains the canonical fast path", async selector => {
+  const f = await logicalReferenceFixture();
+  try {
+    const canonical = await f.read(f.owner.ref!);
+    expect(canonical.input.path).toBe(await realpath(f.owner.path));
+    expect(f.state.calls).toEqual([]);
+    const ref = "skill://" + encodeURIComponent(selector) + "/SKILL.md", logical = await f.read(ref);
+    expect(logical.values.filter(value => value && typeof value === "object" && "block" in value && value.block)).toEqual([]);
+    expect(logical.input.path).toBe(await realpath(f.owner.path));
+    expect(f.state.calls).toEqual([ref]);
+  } finally { await f.emit("session_shutdown"); }
+});
+
+test("SC25 fixed historical name retains the requested owner and snapshot", async () => {
+  const f = await logicalReferenceFixture(), ref = "skill://Old%20Name/references/guide.md?snapshot=" + a;
+  try {
+    f.state.resolve = async value => {
+      expect(value).toBe(ref);
+      return { record: { ...f.owner, name: "Old Name", alias: "old-name", body: undefined },
+        ref: "skill://shared_skill%3Alib%3Askill/references/guide.md?snapshot=" + a };
+    };
+    const result = await f.read(ref);
+    expect(result.values.filter(value => value && typeof value === "object" && "block" in value && value.block)).toEqual([]);
+    expect(result.input.path).toBe(await realpath(join(f.root, "references/guide.md")));
+    expect(f.state.calls).toEqual([ref]); expect(f.state.loads).toEqual([a]);
+  } finally { await f.emit("session_shutdown"); }
+});
+
+test("SC25 name failures cannot fall back to the projected directory or weaken fixed URI checks", async () => {
+  const f = await logicalReferenceFixture();
+  try {
+    for (const code of ["CATALOG_INCOMPLETE", "SKILL_AMBIGUOUS", "CONTENT_DISABLED", "SNAPSHOT_CONFLICT"]) {
+      f.state.resolve = async () => { throw Object.assign(new Error(code), { code }); };
+      expect(JSON.stringify((await f.read("skill://URI%20Example/SKILL.md")).values)).toContain(code);
+    }
+    expect(f.state.loads).toEqual([]);
+    const calls = f.state.calls.length;
+    expect(JSON.stringify((await f.read("skill://URI%20Example/guide.md?snapshot=" + a + "&file_id=guide")).values)).toContain("SOURCE_REFERENCE_INVALID");
+    expect(f.state.calls).toHaveLength(calls);
+    expect((await f.read(f.owner.ref!)).input.path).toBe(await realpath(f.owner.path));
+    expect(f.state.calls).toHaveLength(calls);
+  } finally { await f.emit("session_shutdown"); }
+});
+
+test.each(["abort", "session_switch"])("SC25 name resolution cannot publish after %s", async boundary => {
+  const f = await logicalReferenceFixture(), entered = Promise.withResolvers<void>(), released = Promise.withResolvers<void>();
+  const resolve = f.state.resolve;
+  try {
+    f.state.resolve = async (value, signal) => { entered.resolve(); await released.promise; return resolve(value, signal); };
+    const pending = f.read("skill://URI%20Example/SKILL.md");
+    const didEnter = await Promise.race([entered.promise.then(() => true), pending.then(() => false)]);
+    expect(didEnter).toBe(true);
+    if (boundary === "abort") f.controller.abort(); else await f.emit("session_switch");
+    released.resolve();
+    const result = await pending;
+    expect(JSON.stringify(result.values)).toContain("CANCELLED");
+    expect(result.input.path).toBe("skill://URI%20Example/SKILL.md");
+    expect(f.state.loads).toEqual([]);
+  } finally { released.resolve(); await f.emit("session_shutdown"); }
+});

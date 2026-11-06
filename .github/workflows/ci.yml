@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yoyooyooo/notion-skills-cli
-          ref: 6415836c5910528ddf4aef95346dec2537943013
+          ref: b75b650df6c985cbe7f7ca8749a4e258163dc6a8
           path: .verification/ntn-skills-cli
           persist-credentials: false
       - name: Set up Bun
@@ -68,11 +68,13 @@ jobs:
           retention-days: 7
       - name: Create controlled SDK fixture
         run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-sdk-fixture" --catalog
+      - name: Create controlled name SDK fixture
+        run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-name-fixture" --catalog --distinct-names
       - name: Installed Pi artifact regression
         id: installed-pi
         shell: bash
         run: |
-          node scripts/verify-artifacts.mjs --host pi --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --require-sdk | tee "$RUNNER_TEMP/installed-pi-artifact.log"
+          node scripts/verify-artifacts.mjs --host pi --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --require-sdk --name-fixture "$RUNNER_TEMP/ntn-skills-name-fixture/fixture.json" | tee "$RUNNER_TEMP/installed-pi-artifact.log"
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
           import { readFileSync, appendFileSync } from 'node:fs';
@@ -82,6 +84,7 @@ jobs:
           const manifest = JSON.parse(readFileSync(join(matches[0][1], 'manifest.json'), 'utf8'));
           assert.equal(manifest.status, 'passed'); assert.equal(manifest.hostIdentity.version, '1.5.0');
           assert.equal(manifest.defaultSdk.status, 'passed'); assert.ok(isAbsolute(manifest.package.installed));
+          assert.equal(manifest.namedSdk.status, 'passed');
           appendFileSync(process.env.GITHUB_OUTPUT, 'package=' + manifest.package.installed + '\n');
           NODE
       - name: Pi 1.4 compatibility
@@ -93,6 +96,9 @@ jobs:
           test "$(pi --version)" = "1.4.0"
           node packages/context-broker/scripts/context-broker-host-e2e.mjs pi
           node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --scenario all --out "$RUNNER_TEMP/pi14-sdk-evidence"
+          for scenario in name-references name-reference-failed-source; do
+            node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-name-fixture/fixture.json" --scenario "$scenario" --out "$RUNNER_TEMP/pi14-$scenario-evidence"
+          done
       - name: Preserve installed Pi SDK evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -103,7 +109,10 @@ jobs:
             /tmp/notion-sdk-pi-*/
             /tmp/context-broker-host-e2e-*/
             ${{ runner.temp }}/ntn-skills-sdk-fixture/
+            ${{ runner.temp }}/ntn-skills-name-fixture/
             ${{ runner.temp }}/pi14-sdk-evidence/
+            ${{ runner.temp }}/pi14-name-references-evidence/
+            ${{ runner.temp }}/pi14-name-reference-failed-source-evidence/
             ${{ runner.temp }}/installed-pi-artifact.log
           include-hidden-files: true
           if-no-files-found: warn

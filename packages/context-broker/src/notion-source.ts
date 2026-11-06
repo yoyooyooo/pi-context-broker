@@ -13,7 +13,7 @@ import { decodePreparedGraph, preparationFailureDetails, type PreparationPurpose
 import { sharedSkillId, validSharedIdentity } from "./shared-skill-identity";
 import type { PrefetchBudget, PrefetchOutcome, PrefetchPlan } from "./prefetch-policy";
 import { publishNotionEntry, materializeNotionEntryFile, materializeNotionResourceBatch, publishNotionResourceFile } from "./notion-entry";
-import { consumeNotionSdk, readNotionSdk, readNotionResourcesSdk, listNotionCatalogSdk, supportsNotionSdkReadOutputProof, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
+import { consumeNotionSdk, readNotionSdk, readNotionResourcesSdk, listNotionCatalogSdk, resolveNotionCatalogReferenceSdk, listNotionFilesSdk, supportsNotionSdkReadOutputProof, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
 import { DEFAULT_RESOURCE_READ_BUDGET, type FixedResourceRead, type ResourceReadBatch, type ResourceReadFileIdentity, type ResourceReadWireFile } from "./resource-read-types";
 import type { ContentRecord, NotionListObservation, NotionView, SkillRecord, SourceConfig, SourcePolicy, SourceFailure } from "./types";
 
@@ -102,7 +102,7 @@ async function sdkFreshness(source: NotionSource, refresh?: boolean) {
   return { policy: "max_age", max_age_ms };
 }
 function sdkOptions(source: NotionSource, cwd: string, signal?: AbortSignal) {
-  return { database: source.database, cwd, signal, env: { ...process.env,
+  return { sourceId: source.id, database: source.database, cwd, signal, env: { ...process.env,
     ...(source.requestTimeoutMs === undefined ? {} : { NTN_SKILLS_REQUEST_TIMEOUT_MS: String(source.requestTimeoutMs) }) } };
 }
 function sdkFailure(error: unknown, source: NotionSource, operation: "prepare" | "read" | "list", signal?: AbortSignal, selected?: SkillRecord): Error {
@@ -334,7 +334,7 @@ async function commandCatalog(source: NotionSource, cwd: string, selectors: stri
   }
 }
 
-export async function discoverNotionSource(source: NotionSource, cwd: string, options: Options = {}): Promise<NotionDirectory> {
+async function discoverNotionDirectory(source: NotionSource, cwd: string, options: Options): Promise<{ catalog: Json; directory: NotionDirectory }> {
   if (source.profile_id !== undefined && (!validSharedIdentity(source.profile_id) || !source.database)) throw new SourceError("SOURCE_CONFIG_INVALID", source.id);
   if (options.view !== undefined && options.defaultView) throw new SourceError("SOURCE_CONFIG_INVALID", source.id);
   const selectedView = options.view !== undefined || options.defaultView === true;
@@ -434,7 +434,7 @@ export async function discoverNotionSource(source: NotionSource, cwd: string, op
   const index = join(await cacheRoot(source, cwd), "scopes", scope, "indexes", indexId);
   if (saved) {
     const info = await lstat(index).catch(() => undefined);
-    if (!info?.isDirectory() || await realpath(index) !== resolve(index)) return discoverNotionSource(source, cwd, { ...options, refresh: true });
+    if (!info?.isDirectory() || await realpath(index) !== resolve(index)) return discoverNotionDirectory(source, cwd, { ...options, refresh: true });
   } else await privateDirectory(index, source);
   const records: SkillRecord[] = [];
   for (const item of skills) {
@@ -464,7 +464,114 @@ export async function discoverNotionSource(source: NotionSource, cwd: string, op
     await rename(pending, join(published, order));
   }
   if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-  return Object.assign(attachList(records, source, observedFreshness, coverage.exhaustive), { failures, ...(selectedView ? { view: selected ?? null } : {}), ...(object(result.profile) ? { profileId: String(result.profile.profile_id) } : {}) });
+  return { catalog: result, directory: Object.assign(attachList(records, source, observedFreshness, coverage.exhaustive), { failures, ...(selectedView ? { view: selected ?? null } : {}), ...(object(result.profile) ? { profileId: String(result.profile.profile_id) } : {}) }) };
+}
+
+export async function discoverNotionSource(source: NotionSource, cwd: string, options: Options = {}): Promise<NotionDirectory> {
+  return (await discoverNotionDirectory(source, cwd, options)).directory;
+}
+
+/** Resolve names before entering the exact owner path. This never prepares a body. */
+async function resolveNotionReferenceInSource(input: string, source: NotionSource, cwd: string, options: Pick<Options, "signal" | "refresh">): Promise<{ record: SkillRecord; ref: string }> {
+  if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
+  const requested = parseNativeReference(input);
+  if (!requested.snapshot) {
+    const { catalog, directory } = await discoverNotionDirectory(source, cwd, options);
+    // commandCatalog has already closed every page against one observation.
+    // Only its transport pagination envelope is removed, never a View/query marker.
+    let complete = catalog;
+    if (source.command && catalog.has_more !== undefined) {
+      if (catalog.has_more !== false || catalog.next_cursor !== null || catalog.total_count !== catalog.count) decodeError(source);
+      const { has_more: _more, next_cursor: _cursor, total_count: _total, ...metadata } = catalog;
+      complete = metadata;
+    }
+    let resolved: unknown;
+    try { resolved = await resolveNotionCatalogReferenceSdk(input, complete); }
+    catch (error) { throw sdkFailure(error, source, "list", options.signal); }
+    if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
+    if (!object(resolved) || resolved.scope !== catalog.scope || typeof resolved.ref !== "string") decodeError(source);
+    const record = contentRecord(resolved.record, source), selected = directory.find(item => item.id === record.id);
+    const raw = Array.isArray(catalog.records) ? catalog.records.find(item => object(item) && item.id === record.id) : undefined;
+    const canonical = parseNativeReference(resolved.ref);
+    if (!selected || !isDeepStrictEqual(record, raw) || canonical.selector !== parseNativeReference(record.ref).selector
+      || canonical.snapshot !== undefined || canonical.path !== (requested.path || record.entrypoint)
+      || canonical.fileId !== requested.fileId) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+    return { record: selected, ref: resolved.ref };
+  }
+  let value: unknown;
+  try {
+    value = source.command
+      ? await run(source, cwd, ["files", input, ...(source.database ? ["--database", source.database] : []), ...(source.activation?.offline ? ["--offline"] : [])], options.signal)
+      : await listNotionFilesSdk(input, { ...sdkOptions(source, cwd, options.signal), ...(source.activation?.offline ? { offline: true } : {}) });
+  } catch (error) { if (error instanceof SourceError) throw error; throw sdkFailure(error, source, "read", options.signal); }
+  if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
+  if (!object(value) || !Array.isArray(value.files) || value.snapshot_id !== requested.snapshot || !HASH.test(String(value.scope))
+    || typeof value.version_id !== "string" || !value.version_id) decodeError(source);
+  const record = contentRecord(value.record, source), owner = parseNativeReference(record.ref), main = parseNativeReference(text(value.ref, source));
+  if (![record.name, record.alias, record.id, owner.selector].includes(requested.selector)) throw new SourceError("SNAPSHOT_CONFLICT", source.id);
+  if (record.enabled === false) throw new SourceError("CONTENT_DISABLED", source.id);
+  if (value.entrypoint !== record.entrypoint || main.selector !== owner.selector || main.path !== record.entrypoint || main.snapshot !== requested.snapshot
+    || freshness(value.freshness, source).policy !== "pinned") decodeError(source);
+  if (source.database !== undefined) {
+    const target = record.locator.type === "notion_subscription" ? record.locator.target_database_id
+      : record.locator.type === "local" ? undefined : record.locator.database_id;
+    let database = UUID.test(source.database) ? source.database : undefined;
+    if (database === undefined && source.command) {
+      // The historical owner comes only from its manifest. This ordinary
+      // metadata lookup proves the configured database alias, not a Skill name.
+      const metadataSource = source.activation?.offline ? { ...source, discovery: { ...source.discovery, offline: true } } : source;
+      const authority = await discoverNotionDirectory(metadataSource, cwd, { signal: options.signal });
+      if (!authority.directory.list.exhaustive || authority.directory.failures.length) throw new SourceError("CATALOG_INCOMPLETE", source.id);
+      if (authority.catalog.scope !== value.scope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+      const databases = Array.isArray(authority.catalog.databases) ? authority.catalog.databases.filter(item => object(item)
+        && item.alias === source.database && (item.role === undefined || item.role === "content")) : [];
+      if (databases.length !== 1 || !object(databases[0]) || typeof databases[0].database_id !== "string") decodeError(source);
+      database = databases[0].database_id;
+    }
+    // The bundled Core already resolves aliases and checks this binding for
+    // SDK files. UUIDs can also be checked without another source operation.
+    if (database !== undefined && target?.replaceAll("-", "").toLowerCase() !== database.replaceAll("-", "").toLowerCase())
+      throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+  }
+  const selectedPath = requested.path || record.entrypoint, matches = value.files.filter(file => object(file) && file.path === selectedPath);
+  const file = matches[0];
+  if (matches.length !== 1 || !object(file) || typeof file.ref !== "string" || !Number.isSafeInteger(file.bytes) || Number(file.bytes) < 0)
+    throw new SourceError("FILE_NOT_FOUND", source.id);
+  const canonical = parseNativeReference(file.ref);
+  if (canonical.selector !== owner.selector || canonical.snapshot !== requested.snapshot || canonical.path !== selectedPath
+    || requested.fileId !== undefined && canonical.fileId !== requested.fileId) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+  // Use the same metadata-stub layout as discovery; it is not a name index or body cache.
+  const index = join(await cacheRoot(source, cwd), "scopes", String(value.scope), "indexes", randomUUID(), createHash("sha256").update(record.id).digest("hex"));
+  await privateDirectory(index, source);
+  const path = join(index, record.entrypoint), namespace = source.namespace ?? source.id;
+  await writeFile(path, `---\nname: ${JSON.stringify(record.alias)}\ndescription: ${JSON.stringify(record.description)}\n---\n`, { flag: "wx", mode: 0o600 });
+  if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
+  return { ref: file.ref, record: { ...record, source: "notion", sourceId: source.id, sourceScope: String(value.scope),
+    path, metadataIndexPath: path, snapshotId: requested.snapshot, versionId: value.version_id, defaultDiscovery: false,
+    aliases: [], normalizedAliases: [], normalizedName: record.alias, normalizedDescription: normalizeKey(record.description),
+    autoloadEnabled: record.kind !== "prompt", token: `${namespace}/${record.alias}`, selectionToken: `${record.alias}@${namespace}` } };
+}
+
+/** Each configured source is an independent authority, even for the same logical ID. */
+export async function resolveNotionReference(input: string, sources: readonly NotionSource[], cwd: string, options: Pick<Options, "signal" | "refresh"> = {}): Promise<{ record: SkillRecord; ref: string }> {
+  const matches: Array<{ record: SkillRecord; ref: string }> = [];
+  const fixed = parseNativeReference(input).snapshot !== undefined;
+  let missingSnapshot: SourceError | undefined;
+  for (const source of sources) {
+    if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
+    try { matches.push(await resolveNotionReferenceInSource(input, source, cwd, options)); }
+    catch (error) {
+      // Only complete, authorized absence can be ignored. A partial or failed
+      // source cannot be hidden by a name match in another configured scope.
+      if (!(error instanceof SourceError)) throw error;
+      if (fixed && error.code === "SNAPSHOT_MISSING") missingSnapshot ??= error;
+      else if (error.code !== "SKILL_NOT_FOUND") throw error;
+    }
+  }
+  if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", "notion");
+  if (!matches.length && missingSnapshot) throw missingSnapshot;
+  if (matches.length !== 1) throw new SourceError(matches.length ? "SKILL_AMBIGUOUS" : "SKILL_NOT_FOUND", "notion");
+  return matches[0]!;
 }
 
 const ViewMetadataSchema = Schema.Struct({ id: Schema.String, name: Schema.String, type: Schema.String, database_id: Schema.String, data_source_id: Schema.String, url: Schema.String });

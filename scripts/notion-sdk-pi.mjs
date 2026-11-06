@@ -17,6 +17,9 @@ import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
 
 const usage = 'Usage: node scripts/notion-sdk-pi.mjs doctor|run --package ABSOLUTE_INSTALLED_BROKER (--fixture ABSOLUTE_FIXTURE_JSON | --live-input ABSOLUTE_LIVE_INPUT_JSON) [--expect-short-refs true|false] [--expect-compact-context true|false] [--expect-direct-scalar true|false] [--expect-short-confirmations true|false] [--scenario all|default-view|codemode-hidden|codemode-truncated|dollar|native|native-repeat|prepare|scoped-command|resource-batch|resource-batch-short-refs|resource-scalar|resource-scalar-short-refs|partial-entrypoint|session-lifecycle] [--out NEW_ABSOLUTE_EVIDENCE]; evidence|cleanup --evidence ABSOLUTE_EVIDENCE. Real Pi 1.4.0 or 1.5.0 RPC, controlled provider with public onPayload/onResponse hooks, offline source, default bundled SDK (source.command is absent). Compact context, direct scalar and short confirmation checks default to true; false observes a baseline without certifying that contract. Comparisons include the installed Broker and bundled CLI/SDK identities. default-view observes pending startup plus ready metadata on an ordinary continuation. session-lifecycle drives native fork/clone/tree/compact/resume and late-response cancellation with a controlled summary. The explicit live-input route selects one separate cold consumer on real Notion, an independently installed package auto-loaded by owned settings, and observer-only frozen local originals. The default offline all remains 14 scenarios. Native menu and real model are not claimed; live retained-body Member exclusion requires separate source attribution.';
 const scenarioNames = ['default-view', 'codemode-hidden', 'codemode-truncated', 'dollar', 'native', 'native-repeat', 'prepare', 'scoped-command', 'resource-batch', 'resource-batch-short-refs', 'resource-scalar', 'resource-scalar-short-refs', 'partial-entrypoint', 'session-lifecycle'];
+const nameScenarioNames = ['name-references', 'name-reference-failed-source'];
+const selectableScenarioNames = [...scenarioNames, ...nameScenarioNames];
+const nameUsage = 'Additional required name gates: --scenario name-references or --scenario name-reference-failed-source, with the original sdk-fixture.ts --catalog --distinct-names fixture. They are separate from all14, which keeps its original fixture and names.';
 const nativeTools = ['read', 'notion_list', 'notion_use'];
 const scopedCommandTools = [...nativeTools, 'bash', 'tool_search'];
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -608,6 +611,25 @@ export function selectScalarProviderCall(context, calls) {
   return null;
 }
 
+/** Scripted caller inputs contain names and refs only; source bytes stay in the
+ * outer oracle. Resource handles must come from the actual native main result. */
+export function selectNamedReferenceCall(context, plan) {
+  const find = id => context.messages.find(message => message.role === 'toolResult' && message.toolCallId === id);
+  const text = message => typeof message?.content === 'string' ? message.content
+    : (message?.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
+  for (const call of plan.calls) {
+    const result = find(call.id);
+    if (!result) {
+      const args = call.resourceFrom ? { path: resourceRefsFromNative(find(call.resourceFrom), [call.resourcePath])[0] } : call.args;
+      return { type: 'toolCall', id: call.id, name: call.tool, arguments: args };
+    }
+    if (call.errorCode) {
+      if (!result.isError || !text(result).includes(call.errorCode)) throw new Error('Missing expected named-reference failure: ' + call.errorCode);
+    } else if (result.isError) throw new Error('CONTROLLED_NAMED_REFERENCE_FAILED: ' + call.id + ': ' + text(result));
+  }
+  return null;
+}
+
 export function assertResourceScalarResult(message, { batch, call }) {
   assert.equal(message?.role, 'toolResult'); assert.equal(message.toolName, 'read'); assert.equal(message.isError, false);
   assert.equal(message.toolCallId, call.id);
@@ -1183,7 +1205,20 @@ async function inspect(options) {
     }
     entrypoint = { ...sample, snapshot, main_file: main, main: new TextDecoder('utf8', { fatal: true, ignoreBOM: true }).decode(bytes) };
   }
-  return { packageRoot, manifest, extension, runtime, host, pi, piPackageRoot: current, serializerIdentity, fixture, fixtureEnv, bodies, resourceBatch, entrypoint };
+  let namedRootResource;
+  if (nameScenarioNames.includes(options['--scenario'])) {
+    const root = fixture.snapshots[0];
+    assert.ok(root.record.name !== root.record.alias, 'Name gates require the original generator --distinct-names fixture');
+    assert.ok(resourceBatch, 'The name gate requires an independently frozen UTF-8 resource');
+    const ref = new URL(fixture.resource.ref), path = decodeURIComponent(ref.pathname.slice(1));
+    const file = root.files.find(value => value.path === path), binding = root.file_bindings.find(value => value.path === path);
+    assert.ok(file && binding);
+    const bytes = await readFile(join(stateRoot, 'objects', file.sha256));
+    assert.equal(bytes.length, file.bytes); assert.equal(hash(bytes), file.sha256);
+    namedRootResource = { ...file, file_id: binding.file_id, ref: fixture.resource.ref,
+      content: bytes.toString('base64'), encoding: 'base64' };
+  }
+  return { packageRoot, manifest, extension, runtime, host, pi, piPackageRoot: current, serializerIdentity, fixture, fixtureEnv, bodies, resourceBatch, entrypoint, namedRootResource };
 }
 
 export function resourceRefsFromNative(message, paths) {
@@ -1212,6 +1247,7 @@ function selectProviderCall(context) {
   const parsed = result => { if (result.isError) throw new Error('CONTROLLED_TOOL_FAILED'); return JSON.parse(text(result.content)); };
   const call = (id, name, args) => ({ type: 'toolCall', id, name, arguments: args });
   if (plan.mode === 'live-consume') return selectLiveProviderCall(context, plan);
+  if (['name-references', 'name-reference-failed-source'].includes(plan.mode)) return selectNamedReferenceCall(context, plan);
   if (plan.mode === 'lifecycle-probe') return find(plan.id) ? null : call(plan.id, 'read', { path: plan.ref });
   if (['resource-scalar', 'resource-scalar-short-refs'].includes(plan.mode)) return selectScalarProviderCall(context, plan.calls);
   if (plan.mode === 'scoped-command') {
@@ -1330,7 +1366,7 @@ async function provider(base) {
   let source = await readFile(path, 'utf8');
   const replace = (before, after) => { assert.equal(source.split(before).length, 2, 'Provider fixture shape changed'); source = source.replace(before, after); };
   replace('import { appendFileSync }', "import { channel } from 'node:diagnostics_channel';\nimport { appendFileSync, readFileSync }");
-  replace('function stream(model, context) {', `${currentProviderTools.toString()}\n${resourceRefsFromNative.toString()}\n${selectScalarProviderCall.toString()}\n${selectNativeRepeatCall.toString()}\n${selectLiveProviderCall.toString()}\n${selectProviderCall.toString()}\n${holdLifecycleResponse.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, aborted: Boolean(options?.signal?.aborted), monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
+  replace('function stream(model, context) {', `${currentProviderTools.toString()}\n${resourceRefsFromNative.toString()}\n${selectScalarProviderCall.toString()}\n${selectNamedReferenceCall.toString()}\n${selectNativeRepeatCall.toString()}\n${selectLiveProviderCall.toString()}\n${selectProviderCall.toString()}\n${holdLifecycleResponse.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, aborted: Boolean(options?.signal?.aborted), monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
   replace('const payload = await options?.onPayload?.({ model: model.id, context }, model);', 'if (typeof options?.onPayload !== "function" || typeof options?.onResponse !== "function") throw new Error("PUBLIC_PROVIDER_HOOKS_REQUIRED");\n      hook("payload_start");\n      const payload = await options.onPayload({ model: model.id, context }, model);\n      hook("payload_end");');
   replace('hook("payload_start");', 'hook("payload_start");\n      if (process.env.SC06_PI_CATALOG_RELEASE === "provider") channel("context-broker.verify-sdk-initialization-release").publish({ pid: process.pid, boundary: "provider" });');
   replace('JSON.stringify({ model: model.id, context })', 'JSON.stringify({ requestId, model: model.id, context })');
@@ -1473,6 +1509,7 @@ function observe() {
   });
   channel('context-broker.notion-sdk-result').subscribe(event => {
     if (event.operation === 'list') record({ kind: 'sdk_catalog', id: event.id, value: event.value });
+    else if (event.operation === 'files') record({ kind: 'sdk_files', id: event.id, value: event.value });
     else if (process.env.SC08_PI_LIFECYCLE === '1') record({ kind: 'sdk_lifecycle_result', id: event.id, operation: event.operation, value: event.value });
   });
   const originalSpawn = childProcess.spawn;
@@ -1566,9 +1603,10 @@ export function assertCatalogCancellationBoundary(start, end, lifecycle) {
   return boundary;
 }
 
-export function reconcile(events, lifecycle, { bodyTransportRequired = true, sourceMode = 'offline', catalogLifecycle = [], expectedCatalogOutcome = 'completed' } = {}) {
+export function reconcile(events, lifecycle, { bodyTransportRequired = true, sourceMode = 'offline', catalogLifecycle = [], expectedCatalogOutcome = 'completed', expectedFailedSdkIds = [] } = {}) {
   assert.ok(['offline', 'live'].includes(sourceMode));
   assert.ok(['completed', 'shutdown_cancelled'].includes(expectedCatalogOutcome));
+  assert.ok(Array.isArray(expectedFailedSdkIds) && new Set(expectedFailedSdkIds).size === expectedFailedSdkIds.length);
   assert.ok(events.length > 0, 'Empty observer ledger cannot establish zero work');
   const chains = new Map();
   for (const item of events) {
@@ -1593,14 +1631,15 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true, sou
   assert.equal(events.filter(event => event.kind === 'alternate_child_api').length, 0, 'Unexpected child APIs require explicit accounting');
   assert.equal(starts.length, 0, 'Default bundled SDK directory and body consumption must not spawn CLI children');
   const sdk = events.filter(event => event.kind === 'sdk' && event.event === 'start');
-  assert.ok(sdk.every(event => ['list', 'consume', 'read', 'read-resources'].includes(event.operation)), 'Unknown SDK operations require explicit accounting');
-  const catalog = sdk.filter(event => event.operation === 'list'), bodies = sdk.filter(event => event.operation !== 'list');
+  assert.ok(sdk.every(event => ['list', 'files', 'consume', 'read', 'read-resources'].includes(event.operation)), 'Unknown SDK operations require explicit accounting');
+  const catalog = sdk.filter(event => event.operation === 'list'), files = sdk.filter(event => event.operation === 'files');
+  const bodies = sdk.filter(event => ['consume', 'read', 'read-resources'].includes(event.operation));
   if (bodyTransportRequired) {
     assert.ok(catalog.length > 0, 'Actual default catalog SDK must be observed');
     assert.ok(bodies.length > 0, 'An empty body SDK observation cannot establish default transport');
   } else assert.equal(bodies.length, 0, 'A host-local command metadata query must not consume source bodies');
   let http = 0;
-  const cancelledCatalogs = [];
+  const cancelledCatalogs = [], expectedFailures = [];
   for (const start of sdk) {
     const ends = events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.id === start.id);
     assert.equal(ends.length, 1);
@@ -1609,6 +1648,8 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true, sou
     let boundary;
     if (end.status === 'cancelled') {
       boundary = assertCatalogCancellationBoundary(start, end, catalogLifecycle);
+    } else if (end.status === 'failed' && expectedFailedSdkIds.includes(start.id)) {
+      expectedFailures.push({ id: start.id, operation: start.operation });
     } else assert.equal(end.status, 'completed');
     assert.equal(end.sdk_started, true); assert.equal(end.metrics_observed, true);
     assert.equal(end.request_metrics?.complete, true, 'Every SDK terminal, including cancellation, requires complete metrics');
@@ -1621,7 +1662,8 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true, sou
     if (boundary) cancelledCatalogs.push({ id: start.id, pid: start.observer_pid, native_event: boundary.type,
       native_monotonic_ns: boundary.monotonic_ns, http_attempts: attempts.length });
   }
-  const completedCatalogs = catalog.length - cancelledCatalogs.length;
+  assert.deepEqual(new Set(expectedFailures.map(failure => failure.id)), new Set(expectedFailedSdkIds), 'Every expected failure needs its exact observed failed SDK terminal');
+  const completedCatalogs = catalog.length - cancelledCatalogs.length - expectedFailures.filter(failure => failure.operation === 'list').length;
   if (expectedCatalogOutcome === 'shutdown_cancelled') {
     assert.equal(bodyTransportRequired, false); assert.equal(bodies.length, 0);
     assert.equal(catalog.length, 1); assert.equal(completedCatalogs, 0);
@@ -1629,7 +1671,8 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true, sou
   } else if (catalog.length) assert.ok(completedCatalogs > 0, 'Cancelled catalogues do not establish successful default discovery');
   if (sourceMode === 'offline') assert.equal(http, 0, 'The controlled SDK source must stay offline');
   const cliCloses = events.filter(event => event.kind === 'child_close');
-  return { sdk_calls: sdk.length, sdk_body_calls: bodies.length, sdk_lists: catalog.length,
+  return { sdk_calls: sdk.length, sdk_body_calls: bodies.length, sdk_lists: catalog.length, sdk_files: files.length,
+    expected_failed_sdk: expectedFailures,
     sdk_completed_lists: completedCatalogs, sdk_cancelled_lists: cancelledCatalogs.length, cancelled_catalogs: cancelledCatalogs,
     sdk_consumes: sdk.filter(event => event.operation === 'consume').length,
     sdk_reads: sdk.filter(event => event.operation === 'read').length, sdk_http: http,
@@ -2088,6 +2131,215 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
   }
 }
 
+function namedReferenceSettings(info, source, failedSource) {
+  const root = info.fixture.snapshots[0], outside = info.fixture.snapshots.find(value => value.record.name === 'c');
+  assert.ok(root && outside && info.namedRootResource && info.resourceBatch);
+  assert.notEqual(root.record.name, root.record.alias);
+  assert.ok(!info.fixture.default_view.records.some(record => record.id === outside.record.id), 'The named outside target must really be absent from the Default View');
+  const resource = info.resourceBatch.files.find(file => file.encoding === 'utf8' && file.content.length && !file.content.startsWith('\ufeff'));
+  assert.ok(resource);
+  const named = (name, path = 'SKILL.md', snapshot) => 'skill://' + encodeURIComponent(name) + '/' + path + (snapshot ? '?snapshot=' + snapshot : '');
+  const calls = [{ id: 'sc25-search', tool: 'notion_list', args: { source: 'sdk-fixture', limit: 20 } }];
+  if (failedSource) calls.push(
+    { id: 'sc25-failed-source-list', tool: 'notion_list', args: { source: failedSource.id, limit: 20 } },
+    { id: 'sc25-failed-name', tool: 'read', args: { path: named(root.record.name) }, errorCode: 'CACHE_MISSING' },
+    { id: 'sc25-canonical-main', tool: 'read', args: { path: info.fixture.roots[0] } },
+    { id: 'sc25-short-resource', tool: 'read', resourceFrom: 'sc25-canonical-main', resourcePath: info.namedRootResource.path });
+  else calls.push(
+    { id: 'sc25-current-name', tool: 'read', args: { path: named(root.record.name) } },
+    { id: 'sc25-current-alias', tool: 'notion_use', args: { ref: named(root.record.alias) } },
+    { id: 'sc25-view-excluded', tool: 'read', args: { path: named(outside.record.name) } },
+    { id: 'sc25-fixed-name', tool: 'read', args: { path: named(info.resourceBatch.snapshot.record.name, resource.path, info.resourceBatch.snapshot.snapshot_id) } },
+    { id: 'sc25-fixed-canonical', tool: 'read', args: { path: resource.ref } },
+    { id: 'sc25-short-resource', tool: 'read', resourceFrom: 'sc25-current-name', resourcePath: info.namedRootResource.path },
+    { id: 'sc25-wrong-fixed-name', tool: 'read', args: { path: named('sc25-wrong-historical-owner', resource.path, info.resourceBatch.snapshot.snapshot_id) }, errorCode: 'SNAPSHOT_CONFLICT' });
+  return { root, outside, resource, source, failedSource, plan: { calls } };
+}
+
+export function assertNamedReferenceIntervals(captures, hooks, events, calls) {
+  assert.equal(captures.length, calls.length + 1);
+  const hook = (capture, phase) => {
+    const values = hooks.filter(value => value.requestId === capture.requestId && value.phase === phase);
+    assert.equal(values.length, 1); return values[0];
+  };
+  return calls.map((call, index) => {
+    const before = hook(captures[index], 'response_end'), after = hook(captures[index + 1], 'payload_start');
+    assert.equal(before.pid, after.pid);
+    const start = BigInt(before.monotonic_ns), end = BigInt(after.monotonic_ns); assert.ok(start < end);
+    const inside = event => event.observer_pid === before.pid && BigInt(event.monotonic_ns) > start && BigInt(event.monotonic_ns) < end;
+    const starts = events.filter(event => inside(event) && event.kind === 'sdk' && event.event === 'start');
+    const operations = starts.map(event => event.operation);
+    for (const sdk of starts) {
+      const terminals = events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.id === sdk.id && event.observer_pid === sdk.observer_pid);
+      assert.equal(terminals.length, 1); assert.ok(inside(terminals[0]), 'The SDK operation must close before its actual following provider request');
+    }
+    if (['sc25-fixed-canonical', 'sc25-canonical-main', 'sc25-short-resource'].includes(call.id))
+      assert.ok(operations.every(operation => operation !== 'list' && operation !== 'files'), 'Canonical and actual short refs must not add a name metadata lookup');
+    if (['sc25-current-name', 'sc25-current-alias', 'sc25-view-excluded', 'sc25-failed-name'].includes(call.id))
+      assert.ok(operations.includes('list'), 'A current name must use the actual ordinary SDK directory');
+    if (['sc25-fixed-name', 'sc25-wrong-fixed-name'].includes(call.id)) {
+      assert.ok(operations.includes('files'), 'A fixed name must be checked against its actual manifest');
+      assert.ok(!operations.includes('list') && !operations.includes('consume'), 'Fixed resources must not query the current name directory or prepare a main');
+    }
+    if (call.id === 'sc25-failed-name') assert.ok(operations.every(operation => operation === 'list'), 'A failed authority must reject a name before any body operation');
+    const objects = events.filter(event => inside(event) && event.kind === 'object_read' && event.event === 'start');
+    return { tool_call_id: call.id, observer_pid: before.pid, after_provider_request: captures[index].requestId, before_provider_request: captures[index + 1].requestId,
+      start_monotonic_ns: before.monotonic_ns, end_monotonic_ns: after.monotonic_ns,
+      sdk: starts.map(event => ({ id: event.id, operation: event.operation })),
+      object_reads: objects.map(event => ({ id: event.id, sha256: event.object_sha256 })) };
+  });
+}
+
+export function assertNamedReferenceObjects(events, { selected, forbidden, requiredPid }) {
+  const selectedHashes = new Set(selected.map(file => file.sha256));
+  const shared = forbidden.filter(file => selectedHashes.has(file.sha256)).map(file => {
+    const matches = selected.filter(value => value.sha256 === file.sha256);
+    assert.ok(matches.every(value => value.bytes === file.bytes), 'A shared content address must retain its exact byte length');
+    return { sha256: file.sha256, bytes: file.bytes, unselected_path: file.path,
+      selected_paths: matches.map(value => value.path) };
+  });
+  const result = assertObjectReadEvidence(events, { selected, requiredPid,
+    forbidden: forbidden.filter(file => !selectedHashes.has(file.sha256)) });
+  assert.deepEqual(result.object_sha256s, [...selectedHashes].sort(), 'Every source object read must belong to the independently verified selected byte set');
+  return { ...result, shared_content_objects: shared,
+    shared_content_boundary: 'A content-addressed object shared by selected and unselected paths cannot be counted as zero physical reads for one alias; actual call IDs, owner/pin/FileID proofs separately bind every selected read' };
+}
+
+export function assertNamedReferenceFailures(events, intervals, { source, failedSource }) {
+  const starts = events.filter(event => event.kind === 'sdk' && event.event === 'start');
+  const ends = events.filter(event => event.kind === 'sdk' && event.event === 'end');
+  for (const start of starts) {
+    const terminals = ends.filter(end => end.id === start.id && end.observer_pid === start.observer_pid);
+    assert.equal(terminals.length, 1, 'Every named-reference SDK call needs exactly one actual terminal');
+    assert.equal(terminals[0].operation, start.operation);
+    assert.equal(terminals[0].source_id, start.source_id, 'SDK source identity must remain fixed from start to terminal');
+    assert.equal(terminals[0].database, start.database, 'SDK database must remain fixed from start to terminal');
+  }
+  const failed = events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.status === 'failed');
+  assert.ok(failed.length > 0, 'The declared negative must produce an actual failed SDK terminal');
+  const expected = failedSource ?? source;
+  assert.ok(typeof expected?.id === 'string' && typeof expected.database === 'string');
+  const allowed = failedSource ? ['sc25-search', 'sc25-failed-source-list', 'sc25-failed-name'] : ['sc25-wrong-fixed-name'];
+  return failed.map(end => {
+    const matching = starts.filter(start => start.id === end.id && start.observer_pid === end.observer_pid);
+    assert.equal(matching.length, 1, 'A failed SDK terminal must identify its actual start');
+    const start = matching[0];
+    assert.equal(end.operation, failedSource ? 'list' : 'files');
+    assert.equal(start.source_id, expected.id, 'Only the configured expected authority may fail');
+    assert.equal(start.database, expected.database, 'The failed call must use the configured expected database');
+    assert.equal(end.error_code, failedSource ? 'CACHE_MISSING' : 'SNAPSHOT_CONFLICT', 'The actual SDK error code must match the declared negative');
+    const from = BigInt(start.monotonic_ns), to = BigInt(end.monotonic_ns);
+    assert.ok(from <= to);
+    const matches = intervals.filter(interval => interval.observer_pid === end.observer_pid && allowed.includes(interval.tool_call_id)
+      && interval.sdk.some(sdk => sdk.id === end.id && sdk.operation === end.operation)
+      && from > BigInt(interval.start_monotonic_ns) && to < BigInt(interval.end_monotonic_ns));
+    let boundary;
+    if (matches.length) {
+      assert.equal(matches.length, 1);
+      const interval = matches[0];
+      boundary = { phase: 'tool', tool_call_id: interval.tool_call_id,
+        after_provider_request: interval.after_provider_request, before_provider_request: interval.before_provider_request,
+        start_monotonic_ns: interval.start_monotonic_ns, end_monotonic_ns: interval.end_monotonic_ns };
+    } else if (failedSource) {
+      // Startup may precede provider dispatch. It must still close by the first
+      // completed discovery and carry the same explicit failed authority.
+      const search = intervals.find(interval => interval.tool_call_id === 'sc25-search');
+      const observers = events.filter(event => event.kind === 'observer_start' && event.observer_pid === end.observer_pid);
+      assert.equal(observers.length, 1, 'An unmatched failure requires the actual owned startup boundary');
+      assert.ok(search && search.observer_pid === end.observer_pid && from >= BigInt(observers[0].monotonic_ns)
+        && from < BigInt(search.start_monotonic_ns) && to < BigInt(search.end_monotonic_ns),
+      'Extra failures outside startup/discovery or the declared negative tool interval are not expected');
+      boundary = { phase: 'startup', before_provider_request: search.before_provider_request,
+        start_monotonic_ns: observers[0].monotonic_ns, end_monotonic_ns: search.end_monotonic_ns };
+    } else assert.fail('A fixed-name manifest failure must close within its actual wrong-name tool interval');
+    return { id: end.id, operation: end.operation, source_id: end.source_id, database: end.database, error_code: end.error_code,
+      observer_pid: end.observer_pid, start_sequence: start.sequence, end_sequence: end.sequence,
+      start_monotonic_ns: start.monotonic_ns, end_monotonic_ns: end.monotonic_ns, boundary };
+  });
+}
+
+function assertNamedReferenceEvidence(captures, frames, hooks, events, archive, info, settings, hostPid) {
+  const { root, outside, resource, source, failedSource, plan } = settings;
+  const expectedErrors = plan.calls.filter(call => call.errorCode).map(call => call.id);
+  const sequence = assertProviderToolSequence(captures, frames, { expectedErrors });
+  assert.deepEqual(sequence.sequence.map(call => call.tool_call_id), plan.calls.map(call => call.id));
+  const raw = id => {
+    const values = frames.filter(frame => frame.type === 'tool_execution_end' && frame.toolCallId === id); assert.equal(values.length, 1);
+    const frame = values[0]; return { ...frame.result, role: 'toolResult', toolName: frame.toolName, toolCallId: id, isError: frame.isError };
+  };
+  const following = id => captures[plan.calls.findIndex(call => call.id === id) + 1].context;
+  const search = parsedResult(raw('sc25-search'));
+  const searchProof = assertSearchProjection(raw('sc25-search'), { scope: info.fixture.scope });
+  assert.equal(search.records.filter(record => record.name === root.record.name && record.source === 'sdk-fixture' && record.in_default_view).length, 1);
+  assert.equal(search.records.filter(record => record.name === outside.record.name && record.source === 'sdk-fixture' && !record.in_default_view).length, 1);
+  for (const call of plan.calls) {
+    const frame = frames.find(frame => frame.type === 'tool_execution_start' && frame.toolCallId === call.id);
+    assert.equal(frame.toolName, call.tool);
+    const args = call.resourceFrom ? { path: resourceRefsFromNative(toolResult(following(call.resourceFrom), call.resourceFrom), [call.resourcePath])[0] } : call.args;
+    assert.deepEqual(frame.args, args);
+    const original = raw(call.id), persisted = archive.messages.filter(message => message.role === 'toolResult' && message.toolCallId === call.id);
+    assert.equal(persisted.length, 1); assert.deepEqual(persisted[0].content, original.content); assert.deepEqual(persisted[0].details, original.details);
+    if (call.errorCode) assert.ok(original.isError && textContent(original.content).includes(call.errorCode), 'Only the declared semantic failure is an expected negative');
+  }
+  const mainId = failedSource ? 'sc25-canonical-main' : 'sc25-current-name';
+  const main = assertNativeProjection(raw(mainId), { snapshot: root, body: info.bodies.get(root.record.name) });
+  assert.equal(bodyCount(following(mainId), info.bodies.get(root.record.name)), 1, 'The complete named/canonical main reaches its actual following provider');
+  const rootResourceCall = plan.calls.find(call => call.id === 'sc25-short-resource');
+  const rootBytes = Buffer.from(info.namedRootResource.content, 'base64');
+  const rootResource = assertResourceScalarResult(raw(rootResourceCall.id), { batch: { snapshot: root }, call: {
+    id: rootResourceCall.id, args: sequence.sequence.find(call => call.tool_call_id === rootResourceCall.id).arguments,
+    file: info.namedRootResource, expectedText: rootBytes.toString('utf8'),
+    completeText: hash(rootBytes.toString('utf8')) === info.namedRootResource.sha256 && Buffer.byteLength(rootBytes.toString('utf8')) === rootBytes.length } });
+  const selected = [root.files.find(file => file.path === root.entrypoint), info.namedRootResource], forbidden = [info.resourceBatch.snapshot.files.find(file => file.path === info.resourceBatch.snapshot.entrypoint),
+    ...info.resourceBatch.unselected, ...info.resourceBatch.files.filter(file => failedSource || file.path !== resource.path)];
+  let prepared, fixed, outsideMain, authority;
+  if (failedSource) {
+    const failure = parsedResult(raw('sc25-failed-source-list'));
+    assert.ok(failure.failures.length > 0);
+    for (const entry of failure.failures) assert.deepEqual(entry, { source: failedSource.id, code: 'CACHE_MISSING' });
+    assert.equal(failure.records.length, 0); assert.equal(failure.coverage.exhaustive, false);
+    authority = { source: failedSource.id, database: failedSource.database, failures: failure.failures,
+      failure_receipts: failure.failures.length, name_rejected: true, canonical_remains_readable: true };
+    for (const snapshot of info.fixture.snapshots.slice(1, 4)) forbidden.push(snapshot.files.find(file => file.path === snapshot.entrypoint));
+    for (const capture of captures.slice(0, plan.calls.findIndex(call => call.id === mainId) + 1))
+      for (const body of info.bodies.values()) assert.equal(bodyCount(capture.context, body), 0, 'No main body may precede the independently selected canonical read');
+  } else {
+    const base = info.fixture.snapshots.find(snapshot => snapshot.record.name === 'base'); assert.ok(base);
+    prepared = assertPreparedProjection(raw('sc25-current-alias'), { snapshots: [root, base],
+      bodies: new Map([root, base].map(snapshot => [snapshot.record.name, info.bodies.get(snapshot.record.name)])), roots: [root.record.name] });
+    outsideMain = assertNativeProjection(raw('sc25-view-excluded'), { snapshot: outside, body: info.bodies.get(outside.record.name) });
+    assert.equal(bodyCount(following('sc25-current-name'), info.bodies.get(base.record.name)), 0, 'Inspect does not load Requires');
+    assert.equal(bodyCount(following('sc25-current-alias'), info.bodies.get(base.record.name)), 1, 'The alias use delivers the complete Required');
+    fixed = ['sc25-fixed-name', 'sc25-fixed-canonical'].map(id => assertResourceScalarResult(raw(id), { batch: info.resourceBatch, call: {
+      id, args: plan.calls.find(call => call.id === id).args, file: resource, expectedText: resource.content, completeText: true } }));
+    assert.equal(bodyCount(following('sc25-fixed-name'), resource.content), 1);
+    assert.equal(bodyCount(captures.at(-1).context, resource.content), 1, 'The canonical resource reread retains one complete provider copy');
+    selected.push(resource, base.files.find(file => file.path === base.entrypoint), outside.files.find(file => file.path === outside.entrypoint));
+    const unselected = info.fixture.snapshots.find(snapshot => snapshot.record.name === 'b'); forbidden.push(unselected.files.find(file => file.path === unselected.entrypoint));
+    for (const snapshot of [root, base, outside]) assert.equal(bodyCount(captures.at(-1).context, info.bodies.get(snapshot.record.name)), 1);
+  }
+  for (const capture of captures) assert.equal(bodyCount(capture.context, info.resourceBatch.main), 0, 'The fixed resource owner main must never enter provider context');
+  const intervals = assertNamedReferenceIntervals(captures, hooks, events, plan.calls);
+  const resourceMain = info.resourceBatch.snapshot.files.find(file => file.path === info.resourceBatch.snapshot.entrypoint);
+  for (const interval of intervals.filter(value => ['sc25-fixed-name', 'sc25-fixed-canonical', 'sc25-short-resource', 'sc25-wrong-fixed-name'].includes(value.tool_call_id)))
+    assert.ok(interval.object_reads.every(file => file.sha256 !== resourceMain.sha256 && file.sha256 !== root.files.find(file => file.path === root.entrypoint).sha256),
+      'A resource call must not pre-read its owner main object');
+  const objectReads = assertNamedReferenceObjects(events, { selected, forbidden, requiredPid: hostPid });
+  const failed = assertNamedReferenceFailures(events, intervals, { source, failedSource });
+  const catalog = events.filter(event => event.kind === 'sdk_catalog' && event.value?.scope === info.fixture.scope);
+  const defaults = catalog.filter(event => event.value.view?.id === info.fixture.default_view.id);
+  assert.ok(defaults.length > 0);
+  for (const value of defaults) assert.deepEqual(value.value.records.map(record => record.id).sort(), info.fixture.default_view.records.map(record => record.id).sort());
+  if (!failedSource) assert.ok(catalog.some(event => !event.value.view && event.value.coverage?.exhaustive === true
+    && event.value.records.some(record => record.id === outside.record.id)), 'A name outside the Default View needs a complete ordinary catalog');
+  const mainIds = new Set(selected.filter(file => file.path === 'SKILL.md').map(file => file.sha256));
+  return { status: 'verified', sequence, search: searchProof, main, root_resource: rootResource, prepared, fixed_resources: fixed, outside_default_view: outsideMain,
+    authority, expected_errors: expectedErrors, expected_failed_sdk_ids: failed.map(event => event.id), failed_sdk_bindings: failed, sdk_intervals: intervals,
+    object_reads: objectReads, fixed_resource_owner_main_reads: 0, selected_main_hashes: [...mainIds],
+    original_session_preserved: true, name_catalog_source: 'complete ordinary SDK catalog', fixed_name_source: 'actual fixed SDK files manifest',
+    canonical_and_short_name_lookups: 0, body_authorization: 'caller-supplied name/fixed inputs and actual native resource footer; no private oracle bytes in provider setup' };
+}
+
 async function scenario(name, info, scratch, evidence, expectShortRefs, expectCompactContext, expectDirectScalar, expectShortConfirmations) {
   const catalogProjection = ['dollar', 'default-view'].includes(name);
   const shortResourceRefs = name === 'resource-batch-short-refs';
@@ -2096,6 +2348,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
   const nativeRepeat = name === 'native-repeat';
   const partialEntrypoint = name === 'partial-entrypoint';
   const codemode = ['codemode-hidden', 'codemode-truncated'].includes(name);
+  const namedScenario = nameScenarioNames.includes(name);
   const base = join(scratch, name), output = join(evidence, name);
   await mkdir(base); await mkdir(output, { mode: 0o700 });
   const localSource = join(base, 'source');
@@ -2115,8 +2368,15 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
   const source = { type: 'notion', id: 'sdk-fixture', namespace: 'sdk-fixture', database: info.fixture.database,
     discovery: { offline: true }, activation: { offline: true }, cacheDir: join(base, 'broker-cache'), prefetch: false };
   assert.equal(Object.hasOwn(source, 'command'), false);
+  const failedNameSource = name === 'name-reference-failed-source' ? { ...source, id: 'uncached-authority', namespace: 'uncached-authority',
+    database: '00000000-0000-4000-8000-000000000099', cacheDir: join(base, 'uncached-authority') } : undefined;
+  if (failedNameSource) assert.notEqual(failedNameSource.database, source.database);
+  const namedSettings = namedScenario ? namedReferenceSettings(info, source, failedNameSource) : undefined;
   const config = join(agentDir, 'context-broker/config.yml');
-  await save(config, { sources: [source] }); await save(join(output, 'source.json'), source);
+  await save(config, { sources: [source, ...(failedNameSource ? [failedNameSource] : [])] }); await save(join(output, 'source.json'), source);
+  if (namedSettings) await save(join(output, 'name-reference-inputs.json'), { calls: namedSettings.plan.calls,
+    default_view: info.fixture.default_view, source, failed_source: failedNameSource ?? null,
+    fixture_boundary: 'Original generator --distinct-names fixture; complete manifest/current/catalog generated together, no hand-mutated cache or body wrapper' });
   const providerFile = join(output, 'provider.jsonl'), hookFile = join(output, 'provider-hooks.jsonl'), ledger = join(output, 'observer.jsonl');
   const toolPlan = join(base, 'tool-plan.json');
   const resourcePlan = resourceScenario ? { owner: info.resourceBatch?.name, refs: info.resourceBatch?.refs,
@@ -2135,6 +2395,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
   const entrypointPlan = partialEntrypoint ? { owner: info.entrypoint.name, fixed_main_ref: info.entrypoint.ref,
     selected_path: info.entrypoint.files.find(file => file.role === 'selected').path } : {};
   await save(toolPlan, { mode: ['dollar', 'default-view'].includes(name) ? 'search' : name, ...resourcePlan, ...entrypointPlan, ...repeatPlan,
+    ...(namedSettings ? namedSettings.plan : {}),
     ...(scalarScenario ? { calls: scalarCalls.map(({ id, args }) => ({ id, args })) } : {}) });
   const fakeProvider = await provider(base), preload = join(base, 'observer.mjs');
   await observer(preload);
@@ -2158,7 +2419,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     ...(catalogProjection ? { SC08_PI_INIT_CONFIG: join(fixtureEnv.NTN_SKILLS_CONFIG_HOME, 'config.json'),
       SC06_PI_CATALOG_RELEASE: name === 'dollar' ? 'context' : 'provider', SC06_PI_PRESERVED_SECTION: preservedSection } : {}),
     ...(entrypointSetup ? { SC13_PI_OBJECT_ROOT: entrypointSetup.partial.objects }
-      : scalarScenario ? { SC13_PI_OBJECT_ROOT: join(fixtureEnv.NTN_SKILLS_HOME, 'objects') } : {}),
+      : scalarScenario || namedScenario ? { SC13_PI_OBJECT_ROOT: join(fixtureEnv.NTN_SKILLS_HOME, 'objects') } : {}),
     SC10_PI_BUNDLED_CLI: join(info.packageRoot, 'dist/ntn-skills.mjs'), NODE_OPTIONS: `--import=${preload}` });
   const activeTools = name === 'scoped-command' ? scopedCommandTools : codemode ? [...nativeTools, 'codemode'] : nativeTools;
   let toolDiscovery;
@@ -2192,7 +2453,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     ...(shutdownObserver ? { native_shutdown_observer: { extension: shutdownObserver, registration: 'before_broker', events: nativeEvents } } : {}),
     ...(scalarSeed ? { seed_evidence: 'resource-scalar-seed.json', seed_sha256: scalarSeed.evidence.session_sha256 } : {}) });
   if (name === 'session-lifecycle') return runSdkLifecycle({ info, base, output, sessions, providerFile, hookFile, ledger, toolPlan, env, argv });
-  let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, resourceScalarEvidence, nativeRepeatEvidence, entrypointEvidence, defaultViewEvidence, serializerContext, archive, dollarProjection, nativeProjection, scopedCommandEvidence, catalogProjectionEvidence;
+  let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, resourceScalarEvidence, nativeRepeatEvidence, entrypointEvidence, defaultViewEvidence, serializerContext, archive, dollarProjection, nativeProjection, scopedCommandEvidence, catalogProjectionEvidence, namedEvidence;
   try {
     rpc = await startRpc({ host: 'pi', args: argv, cwd: base, env, timeoutMs: 60000 });
     if (catalogProjection) {
@@ -2216,16 +2477,21 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       'resource-scalar-short-refs': 'Resume the persisted resource references and read only these fixed resources in the supplied order, using one native read path call per item: ' + JSON.stringify(scalarCalls.map(call => call.args)) + '. Preserve native pagination and file results. Do not prepare or activate the main Skill.',
       'partial-entrypoint': 'Read the supplied fixed entrypoint Skill main, inspect its current candidate directory, then read only the advertised selected text resource. Keep the selected owner and snapshot.',
       'scoped-command': 'Discover the deferred Notion maintenance tool, then obtain the host-local command prefix and database scope for the sdk-fixture source. Return that metadata only; do not execute commands or read Skill bodies.',
+      ...(namedSettings ? { [name]: 'Exercise these caller-supplied names and exact fixed references through the public Notion tools: '
+        + JSON.stringify(namedSettings.plan.calls.filter(call => call.args).map(call => ({ tool: call.tool, args: call.args })))
+        + '. For the final supporting resource, copy the handle from the actual native main directory. Preserve owners and pins; an invalid historical name or failed configured source must remain a failure.' } : {}),
     };
     await rpc.prompt(prompts[name]);
     let captures = await rows(providerFile); assert.ok(captures.length >= 2);
     last = captures.at(-1).context;
     if (name !== 'scoped-command' && !scalarScenario) {
-      discovery = parsedResult(toolResult(last, 'sc10-search'));
+      discovery = parsedResult(toolResult(last, namedScenario ? 'sc25-search' : 'sc10-search'));
       assert.equal(discovery.ok, true); assert.equal(discovery.count, info.fixture.catalog_records?.length ?? 4);
       for (const record of discovery.records) if (expectShortRefs) assert.match(record.ref, /^sr:C/u);
     }
-    if (name === 'default-view') {
+    if (namedScenario) {
+      assert.equal(captures.length, namedSettings.plan.calls.length + 1, 'Each scripted named-reference tool has one actual following provider request');
+    } else if (name === 'default-view') {
       assert.equal(captures.length, 2);
       await save(toolPlan, { mode: 'complete' });
       await rpc.prompt('Continue the ordinary task using the now available default directory metadata. Do not read any Skill body.');
@@ -2620,6 +2886,13 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     assert.equal(new Set(captures.map(capture => capture.requestId)).size, captures.length);
     const guidance = captures.map(capture => ({ request_id: capture.requestId, ...assertNativeGuidance(capture.context, env.SC10_PI_BUNDLED_CLI) }));
     await save(join(output, 'guidance.json'), guidance);
+    if (namedSettings) {
+      namedEvidence = assertNamedReferenceEvidence(captures, rpc.frames, hooks, await rows(ledger), archive, info, namedSettings, rpc.lifecycle[0].pid);
+      await save(join(output, 'name-reference-evidence.json'), namedEvidence);
+      serializer = await replayScenarioHttp(captures, rpc.frames, info, output, { expectedErrors: namedEvidence.expected_errors });
+      assert.equal(serializer.provider_requests, namedSettings.plan.calls.length + 1);
+      assert.equal(serializer.tool_calls, namedSettings.plan.calls.length);
+    }
     if (catalogProjection) {
       const events = await rows(ledger), native = await rows(nativeEvents);
       const held = events.filter(event => event.kind === 'initialization_held');
@@ -2689,7 +2962,8 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     }
     const catalogLifecycle = await rows(nativeEvents);
     assert.ok(catalogLifecycle.some(event => event.type === 'session_shutdown' && event.pid === rpc.lifecycle[0].pid), 'Actual native shutdown must be observed before Broker termination');
-    const observations = reconcile(await rows(ledger), rpc.lifecycle, { bodyTransportRequired: !['scoped-command', 'default-view'].includes(name), catalogLifecycle });
+    const observations = reconcile(await rows(ledger), rpc.lifecycle, { bodyTransportRequired: !['scoped-command', 'default-view'].includes(name), catalogLifecycle,
+      expectedFailedSdkIds: namedEvidence?.expected_failed_sdk_ids ?? [] });
     if (nativeRepeatEvidence) {
       assert.equal(serializer.provider_requests, 6); assert.equal(serializer.tool_rounds, 5); assert.equal(serializer.tool_calls, 5);
       assert.equal(observations.sdk_resource_batches, 0);
@@ -2731,6 +3005,8 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       discovery_failures: discovery?.failures ?? null, native_guidance_without_cli_templates: true, observer_finality: finality?.complete === true,
       ...(scopedCommandEvidence ? { deferred_control_discovery: 'verified', discovery_evidence: 'source-command.json' } : {}),
       ...(catalogProjectionEvidence ? { catalog_projection: 'verified', catalog_projection_evidence: 'catalog-projection.json' } : {}),
+      ...(namedEvidence ? { name_references: 'verified', name_reference_evidence: 'name-reference-evidence.json',
+        fixed_name_main_pre_reads: 0, canonical_short_name_lookups: 0, explicit_failed_source: Boolean(failedNameSource) } : {}),
       session_archive_files: archive?.files.length ?? 0, preparation_projection: preparation ? 'verified' : 'not_applicable',
       code_mode: preparation?.code_mode ?? null,
       resource_batch_projection: resourceBatchEvidence ? 'verified' : 'not_applicable',
@@ -2922,7 +3198,7 @@ async function retained(evidence, cleanup) {
     assert.equal(report.scratch, ownership.scratch); assert.equal(await realpath(ownership.evidence), evidence);
     assert.ok(ownership.scratch.startsWith(await systemTempRoot() + '/notion-sdk-pi-'));
     const plan = await json(join(evidence, 'plan.json'));
-    const allowed = plan.input_mode === 'live_notion_sdk' ? ['live-notion'] : scenarioNames;
+    const allowed = plan.input_mode === 'live_notion_sdk' ? ['live-notion'] : selectableScenarioNames;
     assert.ok(Array.isArray(plan.scenarios) && plan.scenarios.length > 0 && plan.scenarios.every(name => allowed.includes(name)));
     assert.equal(new Set(plan.scenarios).size, plan.scenarios.length);
     for (const name of plan.scenarios) {
@@ -2949,7 +3225,7 @@ async function retained(evidence, cleanup) {
 }
 async function main(argv) {
 const args = [...argv];
-if (args.some(value => ['--help', '-h', 'help'].includes(value))) { console.log(usage); return; }
+if (args.some(value => ['--help', '-h', 'help'].includes(value))) { console.log(usage + '\n' + nameUsage); return; }
 const action = args.shift();
 assert.ok(['doctor', 'run', 'evidence', 'cleanup'].includes(action), usage);
 const options = {};
@@ -2957,7 +3233,7 @@ for (let index = 0; index < args.length; index += 2) {
   const key = args[index], value = args[index + 1];
   assert.ok(['--package', '--fixture', '--live-input', '--out', '--evidence', '--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar', '--expect-short-confirmations', '--scenario'].includes(key) && value && !Object.hasOwn(options, key), usage);
   if (['--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar', '--expect-short-confirmations'].includes(key)) assert.ok(['true', 'false'].includes(value), usage);
-  else if (key === '--scenario') assert.ok(value === 'all' || scenarioNames.includes(value), usage);
+  else if (key === '--scenario') assert.ok(value === 'all' || selectableScenarioNames.includes(value), usage + '\n' + nameUsage);
   else assert.ok(isAbsolute(value), usage);
   options[key] = value;
 }
@@ -2986,6 +3262,7 @@ if (action === 'evidence' || action === 'cleanup') {
     const scenarios = info.live ? ['live-notion'] : options['--scenario'] && options['--scenario'] !== 'all' ? [options['--scenario']] : scenarioNames;
     await save(join(evidence, 'plan.json'), { version: 1, node: process.version, pi: info.pi.version, package: info.packageRoot, runtime: info.runtime, extension: info.extension, serializer: info.serializerIdentity,
       fixture: options['--fixture'], driver_sha256: hash(await readFile(fileURLToPath(import.meta.url))), source_command_configured: false,
+      ...(options['--fixture'] ? { fixture_sha256: hash(await readFile(options['--fixture'])) } : {}),
       scenarios, expect_short_refs: expectShortRefs, expect_compact_context: expectCompactContext, expect_direct_scalar: expectDirectScalar, expect_short_confirmations: expectShortConfirmations,
       comparison_scope: 'Installed Broker plus bundled CLI/SDK; a changed runtime manifest or bundle hash is a changed comparison input',
       ...(info.live ? { input_mode: 'live_notion_sdk', live_input: options['--live-input'], live_input_sha256: hash(await readFile(options['--live-input'])),

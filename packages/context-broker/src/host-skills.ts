@@ -29,6 +29,7 @@ export type HostSkillOptions = {
   config: ConfigFile;
   getRecords(ctx?: ExtensionContext, signal?: AbortSignal): Promise<DiscoveryResult<SkillRecord>>;
   lookupReference?(ctx: ExtensionContext, signal?: AbortSignal): Promise<DiscoveryResult<SkillRecord>>;
+  resolveNamedReference?(ref: string, ctx: ExtensionContext, signal?: AbortSignal, refresh?: boolean): Promise<{ record: SkillRecord; ref: string }>;
   loadRecord(record: SkillRecord, signal?: AbortSignal, snapshotId?: string): Promise<SkillRecord>;
   loadResource?(record: SkillRecord, path: string, ctx: ExtensionContext, signal?: AbortSignal): Promise<string>;
   readFixedResource?(record: SkillRecord, ref: string, ctx: ExtensionContext, signal?: AbortSignal): Promise<FixedResourceRead | undefined>;
@@ -120,6 +121,7 @@ async function assertEntryFilePath(record: SkillRecord, path: string | undefined
 }
 type ActivationOutcome<T> = { ok: true; value: T } | { ok: false; error: unknown };
 type PreparedReadResult = ToolCallResult & { assertCurrent?: () => void };
+type ResolvedHostReference = { reference: ExactNativeReference; canonicalRef: string; short?: HostShortRefResolution; record?: SkillRecord };
 type PendingResourceRead = {
   generation: number;
   assertCurrent?: () => void;
@@ -174,6 +176,23 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (!isSessionShortRefInput(value)) return { reference: parseNativeReference(value) };
     const short = shortRefs.resolve(ctx, value);
     return { reference: parseNativeReference(short.canonicalRef), short };
+  }
+  async function resolveToolReference(value: string, ctx: ExtensionContext, signal: AbortSignal, refresh?: boolean): Promise<ResolvedHostReference> {
+    const resolved = resolveReference(value, ctx), requested = resolved.reference;
+    const canonical = /^(shared_skill:[^:]+:.+|(?:notion_subscription|upstream):[a-f0-9-]+)$/u.test(requested.selector)
+      || /^[a-f0-9]{32}$/iu.test(requested.selector.replace(/^notion_page:/u, "").replaceAll("-", ""));
+    if (resolved.short || canonical || !options.resolveNamedReference)
+      return { ...resolved, canonicalRef: resolved.short?.canonicalRef ?? value };
+    const observedGeneration = generation, sessionId = ctx.sessionManager?.getSessionId?.(), sessionFile = ctx.sessionManager?.getSessionFile?.();
+    const selected = await options.resolveNamedReference(value, ctx, signal, refresh);
+    checkPreparationSignal(signal);
+    if (observedGeneration !== generation || sessionId !== ctx.sessionManager?.getSessionId?.() || sessionFile !== ctx.sessionManager?.getSessionFile?.()) throw preparationCancelled();
+    const reference = parseNativeReference(selected.ref), record = selected.record;
+    if (record.source !== "notion" || !record.sourceId || !record.sourceScope || !record.ref || record.enabled === false
+      || reference.selector !== parseNativeReference(record.ref).selector || reference.snapshot !== requested.snapshot
+      || reference.path !== (requested.path || record.entrypoint) || requested.fileId !== undefined && reference.fileId !== requested.fileId)
+      throw hostError("SOURCE_IDENTITY_MISMATCH");
+    return { reference, canonicalRef: selected.ref, record };
   }
   let records: SkillRecord[] = [];
   let defaultRouters: SkillRecord[] = [];
@@ -1162,11 +1181,12 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       return { ...message, content, ...(message.sections || Object.keys(sections).length ? { sections } : {}) };
     }) };
   });
-  async function exactRecord(reference: ExactNativeReference, ctx: ExtensionContext, signal: AbortSignal, short?: HostShortRefResolution): Promise<SkillRecord> {
+  async function exactRecord(reference: ExactNativeReference, ctx: ExtensionContext, signal: AbortSignal, short?: HostShortRefResolution, resolved?: SkillRecord): Promise<SkillRecord> {
     const selector = reference.selector;
     const matches = (record: SkillRecord) => record.ref?.startsWith("skill://") && parseNativeReference(record.ref).selector === selector
       && (!short || matchesShortRefSource(short.assertion, record));
-    let candidates = [...hostRecords.values()].filter(matches);
+    let candidates = (resolved ? [resolved] : [...hostRecords.values()]).filter(matches);
+    if (resolved && !candidates.length) throw hostError("SOURCE_IDENTITY_MISMATCH");
     let lookupFailures: readonly SourceFailure[] = [];
     if (!candidates.length && options.lookupReference) {
       const observedGeneration = generation;
@@ -1239,7 +1259,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       ? "Load a Notion Skill and its Requires to apply its instructions to the user's task. To introduce, summarize or inspect a Skill, use read instead. Copy a supplied ref, or pass several refs together. Members remain candidates. Loading does not authorize executing a workflow."
       : "Prepare exact Skill roots. Use purpose use to load complete root and Required instructions before executing a workflow; inspect reads only roots and does not activate their dependencies. Members and ordinary references remain directories.",
     parameters: piConsumption ? { type: "object", properties: {
-      ref: { anyOf: [{ type: "string" }, { type: "array", minItems: 1, maxItems: 64, items: { type: "string" } }], description: "A supplied sr:C/sr:S or canonical skill:// main ref, or several refs needed together." },
+      ref: { anyOf: [{ type: "string" }, { type: "array", minItems: 1, maxItems: 64, items: { type: "string" } }], description: "A supplied sr:C/sr:S or skill://<name-or-id>/<main> ref, or several refs needed together. Prefer returned canonical refs for later actions." },
       refresh: { type: "boolean", description: "Explicitly select current versions after a complete successful load. Requires unfixed refs; failure keeps the previous selection." },
     }, required: ["ref"], additionalProperties: false } : { type: "object", properties: {
       roots: { type: "array", minItems: 1, maxItems: 64, items: { type: "string" }, description: "Copy exact session sr:C/sr:S references or canonical skill:// main-entry references from metadata or a previous result." },
@@ -1256,11 +1276,15 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if ((!piConsumption && !["use", "inspect"].includes(String(input.purpose))) || !Array.isArray(requested) || !requested.length || requested.length > 64
         || requested.some(value => typeof value !== "string") || input.refresh !== undefined && typeof input.refresh !== "boolean"
         || Object.keys(input).some(key => !(piConsumption ? ["ref", "refresh"] : ["roots", "purpose", "refresh"]).includes(key))) throw hostError("INVALID_ARGUMENT");
-      const roots: SkillRecord[] = [], pins = new Map<string, string>(), resolved = requested.map(raw => resolveReference(String(raw), ctx));
-      for (const { reference, short } of resolved) {
+      for (const raw of requested) {
+        const { reference, short } = resolveReference(String(raw), ctx);
         if (short?.kind === "resource") throw hostError("PREPARE_ROOT_NOT_MAIN");
         if (input.refresh === true && reference.snapshot) throw hostError("PREPARE_VERSION_CONFLICT");
-        const record = await exactRecord(reference, ctx, combined, short);
+      }
+      const roots: SkillRecord[] = [], pins = new Map<string, string>(), resolved: ResolvedHostReference[] = [];
+      for (const raw of requested) resolved.push(await resolveToolReference(String(raw), ctx, combined, input.refresh === true));
+      for (const { reference, short, record: named } of resolved) {
+        const record = await exactRecord(reference, ctx, combined, short, named);
         if (reference.path && reference.path !== record.entrypoint || record.kind === "prompt") throw hostError("PREPARE_ROOT_NOT_MAIN");
         if (reference.snapshot && record.id) {
           if (pins.has(record.id) && pins.get(record.id) !== reference.snapshot) throw hostError("SOURCE_SESSION_CONFLICT");
@@ -1436,12 +1460,14 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     let reference = "";
     let rootRelative = false;
     let exactReference: ExactNativeReference | undefined;
+    let canonicalRef: string | undefined;
     let short: HostShortRefResolution | undefined;
     if (explicit) {
       try {
-        const resolved = resolveReference(requested, ctx);
+        const resolved = await resolveToolReference(requested, ctx, signal);
         exactReference = resolved.reference; short = resolved.short;
-        selected = await exactRecord(exactReference, ctx, signal, short);
+        canonicalRef = resolved.canonicalRef;
+        selected = await exactRecord(exactReference, ctx, signal, short, resolved.record);
         reference = exactReference.path;
       } catch (error) { return { block: true, reason: failure(error) }; }
     } else {
@@ -1491,7 +1517,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
     try {
       if (readPhase === "execute" && exactReference) {
-        const fixed = await prepareFixedResourceRead(event, ctx, signal, selected, exactReference, short);
+        const fixed = await prepareFixedResourceRead(canonicalRef ? { ...event, input: { ...event.input, path: canonicalRef } } : event, ctx, signal, selected, exactReference, short);
         if (fixed) return fixed;
       }
       const snapshot = retained ?? await activate(selected, ctx, signal, true, readPhase,
@@ -1551,12 +1577,13 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (signal.aborted || observedGeneration !== generation || sessionId !== ctx.sessionManager?.getSessionId?.() || sessionFile !== ctx.sessionManager?.getSessionFile?.()) throw hostError("SOURCE_CANCELLED");
     };
     current();
-    const resolved = requested.map(value => {
+    for (const value of requested) {
       if (!value.startsWith("skill://") && !isSessionShortRefInput(value)) throw hostError("SOURCE_REFERENCE_INVALID");
       const selected = resolveReference(value, ctx);
       if (selected.short && selected.short.kind !== "resource" || !selected.reference.snapshot || !selected.reference.path) throw hostError("SOURCE_REFERENCE_INVALID");
-      return selected;
-    });
+    }
+    const resolved: ResolvedHostReference[] = [];
+    for (const value of requested) { resolved.push(await resolveToolReference(value, ctx, signal)); current(); }
     const first = resolved[0]!.reference, identities = new Set<string>(), rawRefs = new Set<string>();
     for (const [index, value] of resolved.entries()) {
       const reference = value.reference;
@@ -1567,13 +1594,15 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
     await ready(signal); current();
     const asserted = resolved.find(value => value.short)?.short;
-    const record = await exactRecord(first, ctx, signal, asserted); current();
+    const named = resolved.find(value => value.record)?.record;
+    if (named && resolved.some(value => value.record && recordIdentity(value.record) !== recordIdentity(named))) throw hostError("RESOURCE_SELECTION_CONFLICT");
+    const record = await exactRecord(first, ctx, signal, asserted, named); current();
     if (record.source !== "notion" || !record.sourceScope || !record.id) throw hostError("SOURCE_IDENTITY_MISMATCH");
     for (const value of resolved) {
       if (value.short) assertShortRefSource(value.short, record);
       if (value.reference.fileId === undefined && value.reference.path === record.entrypoint) throw hostError("RESOURCE_MAIN_NOT_ALLOWED");
     }
-    const refs = resolved.map((value, index) => value.short?.canonicalRef ?? requested[index]!);
+    const refs = resolved.map(value => value.canonicalRef);
     const batch = await options.readResources(record, refs, ctx, signal); current();
     if (batch.selection.scope !== record.sourceScope || batch.selection.owner !== record.id || batch.selection.snapshot_id !== first.snapshot
       || batch.files.length !== resolved.length) throw hostError("SOURCE_IDENTITY_MISMATCH");
