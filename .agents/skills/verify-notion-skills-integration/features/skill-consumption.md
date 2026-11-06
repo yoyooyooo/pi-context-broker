@@ -335,6 +335,23 @@ node scripts/notion-sdk-pi.mjs evidence --evidence "$ENTRYPOINT_EVIDENCE"
 
 Current 来源所有权的 cold 验证继续走 CLI 既有 SDK smoke，见相邻 CLI 消费链地图的「Current 来源先判归属再取字节」。核对空 Store、已有 custom/tombstone 对应的大来源零获取、必需 source main YAML/有效资源的正控制，以及 installed CLI full export 的逐文件 bytes/hash。该 transport 是受控 Response 与 loopback Notion；本节真实 Pi 的 partial-cache 不能替代它。HTTP/Git local alias 还必须保持实际字节验证后、对象发布前的 durable marker 顺序，后续 provider 失败不能留下漏标的新对象。Legacy ZIP 的 whole-archive 成本和首次 current 完整观察继续独立记账。
 
+### SC13：已有成本按来源与初态分组（2026-11-06）
+
+下表复核既有实际原件，不新增消费者、来源请求或存储机制。CLI 两份 C7 归档 `1e44d7cb…` 与最终 `f854faf5…` 的 CLI `6a82d148…` / SDK `2095a85a…` 字节相同；Pi 生产来源记录明确属于 ce50，不能改称后续 Broker 归档实测。
+
+| 来源与初态 | 已观察的获取与完整性 | 不能推出的结论 |
+| --- | --- | --- |
+| 真实 Notion、Pro/Mini 各自空客户端根，独立 C7 公共 CLI 六命令 | 每机 38 HTTP：32 metadata、6 body、0 write；Pro decoded response 4,882,566 B，Mini 4,882,554 B。root read-inspect 为 21 HTTP，fixed use 为 12；随后 files/固定资源/offline export 为 0 HTTP。根+Requires 47,475 B、46文件/364,634 B完整export与oracle匹配，54个未选Member正文为零 | 这些是整次操作成本；未独立拆出生产首次原生手改/adoption的CPU、压缩wire或阶段延迟。原一个 unclassified_body trace标签由独立owner sidecar归属，原标签不改 |
+| 真实 Pi、ce50/C7、两物理机各自cold roots | 每机4 SDK、0 CLI、37 HTTP、3,473,054 decoded response B；74条默认目录、完整根/Requires与固定资源交付。全部6个body请求经原独立sidecar归属，54个未选Member不读取 | 控制provider并非真实模型；不是未来候选成本，不能与CLI六命令相减称收益 |
+| 受控 warm/partial-cache，安装 C7 SDK/CLI | 原公开 current consume先完成四对象验证（6次受观测Store读取），随后才移除/损坏两份2MiB未选对象；fixed/current主文各2次、单主文read与小资源各1次，未选读取零。选择缺失/损坏对象分别SNAPSHOT_MISSING/STATE_CORRUPT；partial export拒绝，完整clone四文件4,194,399 B逐hash一致 | Store观察不覆盖全部filesystem或hash/CPU；warm零HTTP不是cold下载收益 |
+| 首次 current完整所有权观察、安装C7空Store/受控Response与loopback Notion | cold取得必要source main YAML与有效小资源：2请求/187 B，11 Notion请求/0write；custom/tombstone替代的两份2MiB来源不取得。仅元数据refresh为0 source请求、10 Notion请求/0write，两相位均29受观测对象读取、完整export等于oracle | 这是受控来源，不是生产native-edit/adoption延迟。完整有效清单/引用校验仍先完成，不能借旧receipt跳过当前事实 |
+| legacy retained_bundle ZIP，C7实际CI service fixture缺失所选对象 | 选16 B guide仍取得完整2,097,517 B ZIP、全部65 chunks；1受控retained请求，7,848 request B / 2,939,106 decoded response B。完整archive/member校验后仅写16 B所选对象，未选坏/缺对象保持；第二次只读所选cache对象、零远端请求 | whole_archive_cost=true。只发布所选文件不等于随机下载；生产ZIP流量、频率、压缩wire与CPU仍unknown |
+| 历史旧producer的真实双机恢复演练 | 各13 HTTP/89,667 decoded response B恢复4文件711 B，current body/write为零，后续9个fixed命令0 HTTP | 此数据是新建的graph_release + exact_bytes chunks，**不是legacy ZIP**，也不是找到的存量用户旧pin |
+
+复核清单：`/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc13-cost-groups-jdz_17h8/classification.json`，SHA256 `9c9f4301186013a518ac33ad22e7fb6629345cdc2a4dd09da9aa61f6c0e230e0`。绑定原 C7 installed22 report `8209b2e3…`、partial `fc9213d4…`、ownership `8babe9be…`、实际 CI log `127603636279.log`、生产双机CLI/ce50及旧producer账本；原retained测试从b75到当前字节相同。所有历史失败、旧报告和C7 CLI的永久删除清理偏差保留，不能改称Trash；本次只有只读复核，没有清理来源或用户缓存。
+
+本候选保留已验证的按需物化、完整current观察和完整export合同。这里完成成本分层，未知继续显式保留；不据此宣称新的存储布局、checkpoint或迁移已实现/无需实现。SC14、SC17、SC18继续按实际瓶颈、预算和已批准批次各自裁决；不把tiny fixture外推生产绝对收益，也不累加历轮百分比。
+
 ## Gotchas
 
 宿主目录中的临时 location 只属于当前进程。多次 stop/start 后，资源相对路径必须从当前实际 provider 目录重新取得，不能沿用第一个进程的位置。当前按需消费可以使用 prepare、固定主文 read 和所选资源 read，无需整包 export；验收必须核对实际固定内容与资源回执，不能把发生过 export 当成成功的必要条件。失败分支的 source CLI 账本也必须在 scratch 回收前保留。
