@@ -826,6 +826,12 @@ export function observeGraphGate(api, settings) {
     const defaults = [...system.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)].flatMap(block =>
       [...block[1].matchAll(/<skill>[\s\S]*?<\/skill>/gu)].filter(match => match[0] === visible));
     if (record.kind === 'skill' && defaults.length === 1) return { origin: 'actual-default-card', ref: record.ref, description: record.description, system_sha256: digest(system) };
+    if (record.kind === 'router' && record.source === 'notion') {
+      const visibleRouter = '<router ref="' + record.ref + '"><name>' + xml(record.name) + '</name><description>' + xml(record.description) + '</description></router>';
+      const routers = [...system.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)].flatMap(block =>
+        [...block[1].matchAll(/<router\b[^>]*>[\s\S]*?<\/router>/gu)].filter(match => match[0] === visibleRouter));
+      if (routers.length === 1) return { origin: 'actual-default-card', ref: record.ref, description: record.description, system_sha256: digest(system) };
+    }
     for (const message of messages) {
       if (message.toolCallId === excludedId) continue;
       let cards; try { cards = visibleDiscoveryCards(message); } catch { continue; }

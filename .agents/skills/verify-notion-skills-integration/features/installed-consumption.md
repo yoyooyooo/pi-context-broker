@@ -184,6 +184,23 @@ Fail-before 是 Broker `327fdee` 的实际 CI run `42193430631`：整条 workflo
 
 这份安装 gate 的 provider 受控。随后真实 A 模型在工具执行前拒绝 C8 read 的顶层 `oneOf`，原 failed 保留；schema 兼容修复及真实首因呈现见原 source/graph 地图，必须另冻结修后包，不能用本次 C8 绿色结果代替。
 
+### 2026-11-06：C9 schema 修复、同包 CI 与双机冷消费
+
+产品源 `f1a4f872b39d45bff73d91c400fb08b845299006` 的独立 C9 为1,385,995 B，SHA `b4ed4cf1240db15b47e831096a848b6b6656f0764bca9c3f3bb2fe63ae4602a8`。87发布成员中86个与C8相同，唯一变化为 `src/pi-host-adapter.ts`（SHA `86c4128c…`）；嵌入CLI `2d78b994…`、SDK `4637b06c…` 和runtime manifest保持，13个历史reader逐项继承。原pack自然0、strict closure原20命令全0，tar与Pro/Mini安装均87/87相等。产品与harness身份分别记录；后续只改观察器不要求重包未变C9。冻结根 `c9-broker-candidate-swur3a7o/` 的 `candidate-handoff.json` SHA `cd37db09e0add9fd37862c0b06d14b7a156e0afdd6316ba13f93af22e33a0017`，`reader-inheritance.json` SHA `67add319f7d3ce33b930d3108d4cece5597ec1355003653bbf93166cafca0c70`。未变CLI六命令、作者及旧producer/reader证明按实物身份继承，不冒称本轮重跑。
+
+自然CI `42202814091` / attempt1 / f1a4f87 success，实际CLI checkout为55e06bb；上传tar、CI安装和Pro安装全等。CI buildInput CLI `33dbe3ec…` / SDK `91ca58f9…` 独立记录，不冒称本地构建输入。Pi1.5/1.4 各all14＋两名称＋ambiguity共17 PASS，各96实际serializer，累计输入994,368 B／1,013,968 B，各19个Pi自然close0；另custom artifact Pi143单列。Node582 pass/1 skip、Bun96 pass/5 skip、consumption205/0、release7/7；原skip与observer/source EOF保留。证据 `ci-f1a4-57spyl4i/handoff.json` SHA `b005388120515e617b6a63a933525c75f4caeff9126c9fd1ed8ab0b34bc02465`；`actual-read-schema.json` SHA `ca67ea97e941cea3e25f48420a99707283c400421a9b31b9008654d5afcb7a5a` 绑定两版实际provider与HTTP原件：read顶层仅type/properties，path/offset/limit/paths完整，无六类禁用顶层组合键。
+
+两机各用自己的认证、空consumer及正常包autoload，复用原 `notion-sdk-pi.mjs doctor/run --package … --live-input … --out NEW` 冷路径，无source.command/prefetch。Default74、poteto-mode＋unslop共47,475 B、固定资源1,135 B和续聊完整正文恰一份均通过；固定资源新增来源HTTP为0。原报告保留 `partial_until_independent_source_attribution`，独立离线sidecar核全部6次正文归属，54个未选Member正文0、未知归属0、额外HTTP0；原unclassified_body标签不改。
+
+| 主机 | SDK / CLI | 来源HTTP / 请求B / decoded响应B | 受控serializer / 累计请求B | 原run时长 / Pi终局 |
+| --- | --- | --- | --- | --- |
+| Pro | 4 / 0 | 37 / 3,904 / 3,473,054 | 7 / 428,892 | 27,955.7 ms / 自然0 |
+| Mini | 4 / 0 | 37 / 3,904 / 3,473,054 | 7 / 430,618 | 56,482.5 ms / 自然0 |
+
+每机31次metadata／3,059,419 B、6次body／413,635 B、0write。均n=1且provider受控，不替代真实模型、全任务矩阵或稳定时延结论，不与旧切片百分比累加。TLS/headers、真实模型账单和物理磁盘I/O仍未知。
+
+Pro原件 `c9-broker-candidate-swur3a7o/pro-live/handoff.json` SHA `8133eb45ed00c31c029fbd398c3876ce4dd057af57335df7eec65abb9d11692f`。Mini原件在Mini的 `sc22-c9-mini-f0z0cp6f/`；可分享报告在Pro镜像 `sc22-c9-mini-mirror-yhnomivi/actual/handoff-final.json`，SHA `dce60686fd3874140b0a8ef863fc279db045e76b8e19b3211a653713eb3d9020`，`actual-host-map.json` SHA `8a903f34f2309f80346e0e44b7d096d12cb60d301692637947818cfac6331991`。43项镜像共132,521 B逐项相等；原provider正文/session/oracle/cache/auth留Mini，不按同名绝对路径假定它们位于Pro。两机原E→系统Trash→E均0，43raw＋5归属原件、日用3哨兵、87安装成员及相关harness/oracle保持，没有日用切换。
+
 ### 2026-11-06：C8 双机与完整安装身份
 
 最终运行时为 CLI `b5564ee` / Broker `726d274`。CLI 独立归档 SHA `2c65d54aee20f0fbb30af30bd1d67b32ad00e7285f0c9a50bc9f477962aeee9f`（68 文件），Broker 归档 SHA `282fb35a8266fc76c49d9ae3e423fff536b5d9b8d7346b059474357cca28d889`（87 文件）。随后 `1e23f5e`、`8650132`、`a08bb6f` 只改验证器、测试和地图；不以相同版本号替代完整文件身份。

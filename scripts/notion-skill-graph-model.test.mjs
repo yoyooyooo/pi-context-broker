@@ -131,6 +131,98 @@ for (const kind of ['skill', 'router']) test('catalogue metadata rejects altered
   }
 });
 
+async function routerDiscoveryProjectionFixture(t, change = '') {
+  const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-router-description-'));
+  const responses = path.join(base, 'responses'), cache = path.join(base, 'cache'), output = path.join(base, 'observer.jsonl');
+  await mkdir(responses); await mkdir(cache); await writeFile(output, '');
+  t.diagnostic('Router description observer fixture: ' + base);
+  const scope = 'a'.repeat(64), shorts = ['L', 'R', 'M'].map(value => 'sr:C' + value.repeat(22));
+  const records = ['left', 'router', 'right'].map((name, index) => ({ id: 'shared_skill:controlled:' + name,
+    ref: 'skill://shared_skill%3Acontrolled%3A' + name + (index === 1 ? '/ROUTER.md' : '/SKILL.md'),
+    kind: index === 1 ? 'router' : 'skill', name: index === 1 ? 'Router "quoted" &quot;' : name,
+    description: index === 1 ? ' Route "quoted", keep &quot; and <cards>.\n' : name + ' complete metadata.\n',
+    enabled: true, entrypoint: index === 1 ? 'ROUTER.md' : 'SKILL.md', source: 'notion' }));
+  await save(path.join(responses, 'list.json'), { transport: 'sdk', requestId: 'router-metadata', operation: 'list', status: 'completed',
+    resultObserved: true, value: { scope, count: records.length, records } });
+  const branches = records.map((record, index) => ({ type: 'custom', customType: 'context-broker-short-ref', data: {
+    version: 1, ref: shorts[index], target: { kind: 'candidate', identity: { source: 'notion', scope,
+      id: record.id, kind: record.kind, ref: record.ref.slice(0, record.ref.lastIndexOf('/')) } } } }));
+  const details = { ok: true, state: 'known', count: 3, has_more: false, total_count: 3, next_cursor: null,
+    coverage: { exhaustive: true, sources: [{ source: 'notion', exhaustive: true }] }, records: records.map((record, index) => ({
+      id: record.id, ref: shorts[index], kind: record.kind, name: record.name, description: record.description,
+      source: change === 'wrong-source' && index === 1 ? 'foreign' : 'notion', scope,
+      in_default_view: index === 1, availability: 'available' })), failures: [] };
+  const full = { ...details, records: details.records.map(({ id, scope, ...card }) => card) }, content = JSON.stringify(full);
+  const shown = { ...records[1] };
+  if (change === 'wrong-name') shown.name += ' changed';
+  if (change === 'wrong-description') shown.description += ' changed';
+  if (change === 'trimmed-description') shown.description = shown.description.trim();
+  if (change === 'decoded-literal') shown.description = shown.description.replace('&quot;', '"');
+  let system = viewSystemPrompt('', [], [shown], new Set(), [], base,
+    () => change === 'wrong-ref' ? shorts[0] : change === 'fixed-ref' ? 'sr:S' + 'R'.repeat(22) : shorts[1], 'notion_list', true);
+  if (change === 'missing-router') system = system.replace(/<router\b[\s\S]*?<\/router>/u, '');
+  const handlers = new Map(), originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
+    { fs, crypto, path, parseNativeReference, cwd: base, responses, cache, output, sourceMode: 'sdk',
+      model: 'controlled/fake', prompt: 'Natural task', entryMode: 'discovery-only' });
+  const ctx = { model: { provider: 'controlled', id: 'fake' }, sessionManager: { getBranch: () => branches } };
+  const projected = [];
+  for (const [index, query] of ['Router', 'router'].entries()) {
+    const id = 'list-' + index, input = { query };
+    handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: 'notion_list', arguments: input }] } });
+    assert.equal(handlers.get('tool_call')({ toolName: 'notion_list', toolCallId: id, input }, ctx), undefined);
+    handlers.get('tool_result')({ toolName: 'notion_list', toolCallId: id, content: [{ type: 'text', text: content }], details, isError: false }, ctx);
+    const model = structuredClone(full);
+    for (const [rowIndex, card] of model.records.entries()) if (index === 1 || rowIndex === 1
+      || change === 'missing-first-card' && rowIndex === 0) delete card.description;
+    projected.push({ role: 'tool', tool_call_id: id, content: JSON.stringify(model) });
+  }
+  if (change === 'wrong-scope') branches[1].data.target.identity.scope = 'b'.repeat(64);
+  if (change === 'wrong-owner') branches[1].data.target.identity.id = records[0].id;
+  if (change === 'wrong-identity-source') branches[1].data.target.identity.source = 'foreign';
+  const events = async () => (await readFile(output, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse);
+  assert.equal((await events()).filter(event => event.phase === 'metadata-result' && event.complete).length, 2,
+    'Both original tool results must be admitted before testing the provider projection');
+  const payload = { model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })),
+    messages: [{ role: 'system', content: system }, ...projected] };
+  return { handlers, ctx, payload, system, events, content, records, scope, shorts, close: () => { globalThis.fetch = originalFetch; } };
+}
+
+test('discovery Router descriptions reuse the same provider default card across two complete lists', async t => {
+  const f = await routerDiscoveryProjectionFixture(t), before = structuredClone(f.payload);
+  f.handlers.get('before_provider_request')({ payload: f.payload }, f.ctx);
+  assert.deepEqual(f.payload, before, 'The observer must not restore or mutate missing descriptions');
+  const events = await f.events(), provider = events.find(event => event.phase === 'provider-request');
+  assert.equal(events.some(event => event.phase === 'observer-error'), false);
+  assert.equal(provider.toolResults.length, 2);
+  for (const result of provider.toolResults) {
+    assert.equal(result.exactToolOutputCopies, 0);
+    assert.equal(result.metadataProjections.length, 1);
+    assert.equal(result.metadataProjections[0].sourceSha256, hash(f.content));
+    assert.equal(result.metadataProjections[0].sourceBytes, Buffer.byteLength(f.content));
+  }
+  const first = provider.toolResults[0].metadataProjections[0].descriptionReuse;
+  assert.deepEqual(first, [{ origin: 'actual-default-card', ref: f.shorts[1], description: f.records[1].description, system_sha256: hash(f.system) }]);
+  const second = provider.toolResults[1].metadataProjections[0].descriptionReuse;
+  assert.equal(second.length, 3);
+  assert.deepEqual(second[1], first[0]);
+  for (const item of [second[0], second[2]]) { assert.equal(item.origin, 'actual-discovery-card'); assert.equal(item.tool_call_id, 'list-0'); }
+});
+
+test('discovery Router description reuse rejects missing or mismatched current provider witnesses', async t => {
+  for (const change of ['missing-router', 'wrong-ref', 'fixed-ref', 'wrong-name', 'wrong-description', 'trimmed-description',
+    'decoded-literal', 'wrong-source', 'wrong-scope', 'wrong-owner', 'wrong-identity-source', 'missing-first-card']) {
+    const f = await routerDiscoveryProjectionFixture(t, change), before = structuredClone(f.payload);
+    try {
+      assert.throws(() => f.handlers.get('before_provider_request')({ payload: f.payload }, f.ctx),
+        /Discovery description has no complete card/, change);
+      assert.deepEqual(f.payload, before, change + ' must not rewrite the provider payload');
+      assert.equal((await f.events()).filter(event => event.phase === 'provider-request').length, 0, change);
+    } finally { f.close(); }
+  }
+});
+
 test('owned project paths use public mutable sections without forcing the earlier system prompt', async () => {
   const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-public-sections-'));
   const responses = path.join(base, 'responses'), cache = path.join(base, 'cache'), output = path.join(base, 'observer.jsonl');
