@@ -130,7 +130,7 @@ node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/discover
 
 两臂加载同一原 `observeConsumptionCost` 被动观察器。`consumption-cost-*.jsonl` 与 `discovery-cost-*.json` 按每次原进程保存累计 provider JSON/实际 HTTP request bytes、工具 schema、默认目录、guidance、正文诊断跨度、工具调用/轮次、原 Pi usage 和提交到首 provider/首有效文本/完成的时间。on-demand 提示自身 bytes 单列；诊断跨度可能嵌套，不能相加或由字符估 tokens。缺失 usage/HTTP response bytes 保留 null。source 启动、取消、恢复、HTTP attempts/bytes 与 private extra proof 继续沿原 whole-case 账本单列，不重复分配到工具轮次。技术失败也保留已发生的成本，不能用更少调用或较短失败当收益；所有原条件续问和独立语义判断完成后才可评估完整任务。
 
-本次仅完成代码与局部 public-hook→localhost HTTP 接线验证，红例与原件在 `AH-617-20261105/sc06-discovery-experiment-raqdvyrj`。实际安装 Pi 两臂、真实来源/模型、同条件任务成功与成本对照仍为 `not_run`，等待独立窗口。实验结果不自动改变日用默认目录，不代表正式 SC21 全矩阵，也不作为 SC20 纯本地全局 Skill 的等价臂。规模 1/10/74/100/101/300 与 Members 场景仍依原地图分别报告，不能由这次 D 早期对照替代。
+初始代码与局部 public-hook→localhost HTTP 接线验证的红例和原件在 `AH-617-20261105/sc06-discovery-experiment-raqdvyrj`。后续实际安装 Pi 两臂已按下方 2026-11-06 记录完成；生产来源/真实模型及同条件任务成功与成本对照仍为 `not_run`。实验结果不自动改变日用默认目录，不代表正式 SC21 全矩阵，也不作为 SC20 纯本地全局 Skill 的等价臂。规模 1/10/74/100/101/300 与 Members 场景仍依原地图分别报告，不能由这次 D 早期对照替代。
 
 实际 Pi 的前置接线沿原 `notion-skill-graph-observer-smoke.mjs`，显式传入原 all14 的已种离线 fixture（不是 distinct/ambiguous fixture）。每臂使用同一已安装包与 tgz、C7 CLI/SDK、Pi、prompt、工具及初态，独立复制 source 状态并建立空 Broker cache/session；由原 `packageIdentity()` 核对 archive 与 installed src/dist，前后再次核 hash。SDK 分支 `source.command` 缺省，discovery/activation offline、prefetch false；不启动来源服务或将受控模型伪装为 magpie。原无这些新参数的 custom-command smoke 保持原行为。
 
@@ -141,7 +141,27 @@ node scripts/notion-skill-graph-observer-smoke.mjs --extension /absolute/install
 
 该受控层沿原 90000 ms 单次 prompt、n=1、三次 localhost HTTP：首请求选择 `notion_list`，下一步只复制实际默认可用 metadata 的 ref 给 native `read`，最后完整正文恰一份进入 provider。它不使用私有 target seed，inspect 不读取 Requires/Member。正常本地 Skill canary 的 metadata 必须留在每次实际 system，未选正文不得出现；原工具 schema、guidance、项目路径和 canary 均进入成本口径。原 graph observer 仍逐 body 绑定 public projection→provider→HTTP，成本 observer 最后加载；输入目录严格对齐 fixture 的完整 Default View，full 原字节不变/on-demand 只隐藏卡片。fixture 的两条默认目录是受控层，不替代生产 74 条校验。
 
-成功要求原 `RPC.closeInput()` 自然退出 0、完整 `observer_end`、每个 SDK/HTTP 终局与实际返回值闭合；来源 HTTP/CLI 必须为实际完整账本的零。`run-0/launch.json`、`cost-submission.json`、`consumption-cost.jsonl`、`discovery-cost.json`、`source-accounting.json`、`rpc-lifecycle.json`、原 provider/source 原件与 installed/runtime 身份一同保存。按原 owned Evidence→Trash→Evidence 流程封存，失败不得重写。该层是 source 已暖、Pi/Broker 新状态的接线验证，不声称冷 Notion 延迟或全任务收益；之后才在独立窗口运行上面的原 D 两臂。新增入口红例、缺省尚未创建 cache 目录的真实复制红例及本地回归原件在 `AH-617-20261105/sc06-controlled-sdk-pnifyc5s`；此时未启动实际 Pi/来源/模型。
+成功要求原 `RPC.closeInput()` 自然退出 0、完整 `observer_end`、每个 SDK/HTTP 终局与实际返回值闭合；来源 HTTP/CLI 必须为实际完整账本的零。`run-0/launch.json`、`cost-submission.json`、`consumption-cost.jsonl`、`discovery-cost.json`、`source-accounting.json`、`rpc-lifecycle.json`、原 provider/source 原件与 installed/runtime 身份一同保存。按原 owned Evidence→Trash→Evidence 流程封存，失败不得重写。该层是 source 已暖、Pi/Broker 新状态的接线验证，不声称冷 Notion 延迟或全任务收益；之后才在独立窗口运行上面的原 D 两臂。新增入口红例、缺省尚未创建 cache 目录的真实复制红例及本地回归原件在 `AH-617-20261105/sc06-controlled-sdk-pnifyc5s`；该开发阶段未启动实际 Pi/来源/模型。
+
+**2026-11-06：同包两臂实际 Pi 接线通过。** 从纯 `61a063d30273596bb8f5abfc11750f7b920d0766` git archive 执行上述原 smoke，冻结全部 257 个 tracked 源文件；未借用工作区后续的 SC05 helper。两臂共同使用 Pi 1.5.0、独立安装的 bace 归档 `bace39340fbe68df8c1b667f3dfbb6eefea2d7bb4b809eaa7270cf34cb293893`、C7 CLI `6a82d148…` / SDK `2095a85a…` 及原 all14 离线 fixture `4a43f63c…`。实际安装 86 个 Broker 文件、68 个 CLI 文件与归档相等；来源缓存已种好，每臂分别复制到新的 owned 根，`source.command` 缺省、offline、prefetch false。
+
+| 原受控场景，分别 n=1 / 90000 ms | full-cards | on-demand-cards |
+| --- | ---: | ---: |
+| public hook 的完整输入目录状态 | pending → ready → ready | pending → ready → ready |
+| 实际 provider / localhost HTTP 请求 | 3 / 3 | 3 / 3 |
+| 工具调用 / 工具轮次 | 2 / 2 | 2 / 2 |
+| 累计实际 provider JSON / HTTP request body | 32,303 / 32,303 B | 31,800 / 31,800 B |
+| 累计工具 schema / guidance | 12,252 / 5,370 B | 12,252 / 5,370 B |
+| 原目录 section 输入 / 输出 | 1,850 / 1,850 B | 1,850 / 1,350 B |
+| on-demand 说明自身累计字节 | 0 B | 180 B |
+| SDK list / inspect consume；来源 HTTP / CLI | 2 / 1；0 / 0 | 2 / 1；0 / 0 |
+| 原生 Pi / runner 自然退出 | 0 / 0 | 0 / 0 |
+
+每轮保持正常本地 Skill canary 的名称、描述和入口，未选 canary 正文为零。两次 ready 的原始 Default View 都是 fixture 的 a/b 两条；full 保留原 section 每字节，on-demand 仅隐藏这些卡片。模型侧先收到实际 `notion_list` 回执，再复制其 ref 调用 native read；同 owner/scope/pin 的 25 B 主文完整进入后续 HTTP 一次，Requires/Member 未读取。public hook、provider 与 HTTP body SHA 逐次绑定，两个原 cost observer 均有完整 `observer_end`，SDK/child 终局均 pending=0。每臂实际前后核对日用三个哨兵、原 fixture、归档、安装文件与 harness 相等。
+
+原件根：`/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc06-controlled-pair-9d9314r3`。`plan.json` SHA256 `ec1444b18e185f72cd3156ea9ccb2823ff7bf33616621eee63f06a3fcbedb16c`；`handoff.json` 为 `36f1c3b9a0c58fb0863cebfe3c5630039f0e797b9c4984f9c9a9c00a66097675`。两个原 result 的 SHA256 分别为 `b7ea358ecd61350f0c273e3cf591fef7336a0feaef814357b32a4d907bcb1654`、`93fcae6c9240b2371eab1e52ddefdfb5836b4561b460e6528b4c1dcb7e71e970`。Evidence→系统 Trash→Evidence 保留 76 份原件 hash 与两份 native session JSONL，仅清理两处 owned scratch；`cleanup/proof.json` 为 `c21ab6e864444b7b1a7add2af3f98ccf9e01658457cc32695b80061e954bb805`。
+
+这 503 B 差值仅属于上述三次受控请求，不是生产 74 条目录或真实任务收益。UTF-8 诊断跨度存在嵌套，不能相加；usage 和 HTTP response bytes 缺失仍为 null。真实 D 两臂配置仅 prepared/not_run，旧 D 失败不改判；正常 SC21 的实际 74 条断言、原 A/B、原提示和预算不变。后续更换包或 schema 必须另绑候选身份，不覆盖本轮 bace 原件，也不自动采用 on-demand 为日用方案。
 
 SDK 取消只沿既有严格断言结算 metadata `list`：被动 native `session_shutdown` 与 SDK 起止同 PID，时间位于同一 monotonic 闭区间，完整 metrics/trace/EOF 均在；该回执不算 ready 目录。缺失账本、null metrics、未知正文归属仍是 observation-incomplete。任何 source write 必须另有 Records retention/adoption 与业务写入归因，不能仅因为 operation 是 use 就放行。
 
