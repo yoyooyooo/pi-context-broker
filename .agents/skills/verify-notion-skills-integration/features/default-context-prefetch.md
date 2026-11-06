@@ -46,7 +46,28 @@ partial 相位只扩原 `notion-integration-fixture.mjs` 的受控列表响应�
 
 随后以纯 `d0eee56` harness、`282fb35a…` 安装包和 Pi 1.5 执行一次，原 `QC55vI` 保留为 **failed**：首个实际 provider 的 `system.sections["context-broker-notion-catalog"]` 已包含 647 字节完整目录，但旧 View 读取器只看空 `content`，旧 `nativeEntries` 也只读 `sections.skills`。原 outer exit 1、Pi 按 `rpc.stop` 退出 143，E→Trash→E 后 304 个原件保持哈希；partial/失败/恢复三相位均未运行，不离线改判成功。
 
-调用方现在共用原 SDK 验证器迁入 `notion-default-context.mjs` 的 `providerSystemText`：只回放实际 system 消息的文本及命名 section patches，同名替换、`null` 删除，保留 OMP 顶层 `systemPrompt`。SDK 保持同名 re-export，不另建解析器。`sc06-view-sections-fb92jufh` 保存两个同形态红例、原 28/28 回归及封存捕获的离线解码；非 system 伪造、重复目录、原 owner/scope/单目录要求不变。新的安装实驱尚待授权，包不因这个 observer 修复重建。
+调用方现在共用原 SDK 验证器迁入 `notion-default-context.mjs` 的 `providerSystemText`：只回放实际 system 消息的文本及命名 section patches，同名替换、`null` 删除，保留 OMP 顶层 `systemPrompt`。SDK 保持同名 re-export，不另建解析器。`sc06-view-sections-fb92jufh` 保存两个同形态红例、原 28/28 回归及封存捕获的离线解码；非 system 伪造、重复目录、原 owner/scope/单目录要求不变。该阶段的新安装实驱当时尚待授权，包不因这个 observer 修复重建。
+
+### 2026-11-06：同包 View 安装实驱
+
+纯 `130a7e4567ee9aa6d1e7f8deaa3616c9390507b3` 导出的 258 个 harness 文件，配原 `282fb35a8266fc76c49d9ae3e423fff536b5d9b8d7346b059474357cca28d889` 安装包、C8 和 Pi 1.5.0，按原 RPC 120000 ms、n=1、零重试运行一次：`gBLqrM` **passed**。24 次实际受控 provider 调用贯通原完整/空/无效 View、切换、显式选择、续接、fork、compaction 及新增 partial → 来源失败 → 恢复。新结果不改写前述 `QC55vI` failed 或其三个 not_run。
+
+以下索引从 0 开始，来自本轮 `pi-view-provider.jsonl` 的实际 system sections；目录始终恰一份，状态与精确成员分别核对。
+
+| 状态 | 实际 capture 与边界 |
+| --- | --- |
+| complete | provider 0 为首项 View、一个 `UI Alpha`、`partial="false"`；provider 23 在来源恢复后回到同一完整 View。中间正常切换另保留实际 Alpha/Beta 目录 |
+| empty | provider 19/20 为 `origin="first" status="empty"`、零成员；不回退成全库目录 |
+| invalid-config | provider 17/18 为 `origin="configured" status="error" code="NOT_FOUND"`，不自动改选 |
+| source-failure | provider 22 为 `status="error" code="NOTION_REQUEST_FAILED"`，没有把旧 partial 成员当成功目录 |
+| partial-source | provider 21 保留一个精确 `UI Alpha`、`partial="true"`；同区间实际 CLI stdout 的 `coverage.exhaustive=false`、`failed_sources` 含 Gamma/NOT_FOUND，公开 `sr:C` 与当前分支 owner/scope/locator 一致 |
+| pending | **本 View run 没有 pending capture**，它沿原公开 refresh 元数据屏障后发消息。独立同包/同 `130a7e4` SDK 场景 `validation-130a7e4/pi150-default-view` 的 request `90541:1` 为 pending、`:2`/`:3` 为 ready（各两个成员）；不能写成这 24 次 View 调用覆盖了六态 |
+
+账本是 **81 次受控 custom CLI 调用 + 13 条 stdout/失败响应观察 = 94 条日志**，不是 94 次 HTTP。partial、来源失败、恢复三个区间分别有 5/7/3 次 CLI 调用，均没有 prepare/read/use/export 正文调用；不从受控 fixture 推断生产 HTTP、核心缓存或权限收益，也不补造逐 CLI 子进程退出指标。外层 runner 自然退出 0；9 个原生 Pi 均由既有 `rpc.stop` 关闭，实际 code 143、signal null，不能记作 Pi 自然退出 0 或 stdin EOF。
+
+证据根为 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc06-view-sections-after-5c5421rd`：`handoff.json` SHA `eefab15eb01f73ed1f11044525b11332e4c79f2b02e6ed586f73bd783cd99751`，`actual-review.json` SHA `0c03244b8c43b01908350674e57aeb4769aed588f1b658badbc93ea941af7eee`，`selected-system-catalogs.json` SHA `ce8d1e0ce85a9aad3e00d48525386508e78e94a11c165cb45656efabd56c5b63`。`ece.json` SHA `beef2e30d41b2c1cccbf7259ebee3557958d4c4a92a7c747a8772f6ba0132cea` 记录原 Evidence→系统 Trash→Evidence、391 个封存文件哈希保持、101 个非敏感 scratch 文件保留、auth 内容未复制，以及 258 个 harness 文件、87 个包成员、旧失败原件和日用三哨兵均未变化。
+
+pending 的独立 SDK 原件在 `sc06-c8-sdk-all14-zzcex1t7/validation-130a7e4/pi150-default-view/evidence/default-view/`：`default-view.json` SHA `82c8b34602760299a57fe504812eb4d76a142052b553a8bf101bbc1153d33e02`，`provider.jsonl` SHA `f3c892445ac6af2432bc232894844ad3606548b50a715463754b5143e5d68a4f`。这是另一受控 SDK fixture；本 View run 仍属 custom CLI，真实 Notion SDK 来源、生产 74 项目录和真实模型未由此补验。
 
 压缩 oracle 依据 AH-627 的 `agent-cli-ref-20261105` 已校准合同：已实际送达并确认 active 的来源，必要全文被 compact 移除后应在普通续问恢复同一版本。Pi 不再沿用旧“普通续问正文必须为零”的断言。保留 fork 到选择前的零正文负例；压缩前、压缩后和恢复后的原生 session 副本必须显示同一 owner/scope/pin/hash 与同一确认/选择，不接受 orphan receipt、仅准备成功或新 `inspect` 冒充 `use` 确认。OMP 保留其显式 reload 的兼容边界。旧失败原件不改写。
 
