@@ -310,7 +310,9 @@ export function assertIntentTurn({ observation, turnObservation = observation, r
   }
   const target = { ...oracle.target, sha256: oracle.target.bodySha256, bytes: oracle.target.bodyBytes };
   const targetReads = observation.filter(event => event.phase === 'tool-result' && event.complete && event.tool === 'read' && exactFile(event, target));
-  const targetUses = views.preparations.filter(row => row.value.purpose === 'use' && row.value.nodes.some(node => node.id === oracle.target.logicalId));
+  // Use graphs also advertise known Members; only prepared nodes carry the use closure.
+  const targetUses = views.preparations.filter(row => row.value.purpose === 'use'
+    && row.value.nodes.some(node => node.id === oracle.target.logicalId && node.state === 'prepared'));
   if (item.intent === 'chat') {
     assert.ok(providers.every(request => request.contents.length === 0), 'Chat cannot load Skill or resource bodies');
     assert.equal(views.entries.length, 0); assert.equal(views.resources.length, 0); assert.equal(views.preparations.length, 0);

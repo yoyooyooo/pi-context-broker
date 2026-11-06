@@ -216,6 +216,56 @@ const introInput = () => {
       { phase: 'assistant-final', success: true, text: 'Creates project verification procedures.' }] };
 };
 
+const explicitRootIntroInput = () => {
+  const value = introInput();
+  value.item = intentConfig().cases[0];
+  const bodies = ['root', 'required'].map((role, index) => ({ ...value.oracle.target,
+    logicalId: role, role, sha256: String(index + 1).repeat(64), bytes: value.oracle.target.bodyBytes,
+    ref: 'skill://' + role + '/SKILL.md?snapshot=s_pin' }));
+  value.oracle.preparations = { B: bodies };
+  const files = bodies.map(body => ({ ...body, ownerId: body.logicalId }));
+  value.observation[0].contents = files;
+  value.observation[3].contents.push(...files);
+  value.responses = [
+    { command: 'prepare', code: 0, response: { status: 'ready', purpose: 'use', roots: [{ id: 'root' }], nodes: [
+      ...bodies.map(body => ({ id: body.logicalId, state: 'prepared', roles: [body.role] })),
+      { id: 'target', state: 'known', roles: ['member'] },
+    ] } },
+    { command: 'prepare', code: 0, response: { status: 'ready', purpose: 'inspect', roots: [{ id: 'target' }],
+      nodes: [{ id: 'target', state: 'prepared', roles: ['root'] }], required: [] } },
+  ];
+  return value;
+};
+
+test('C introduction distinguishes known candidate metadata from the selected use closure', () => {
+  for (const role of ['member', 'reference']) {
+    const input = explicitRootIntroInput();
+    input.responses[0].response.nodes.at(-1).roles = [role];
+    const before = structuredClone(input);
+    assert.equal(assertIntentTurn(input).semantic_review, 'required');
+    assert.deepEqual(input, before, 'Intent review cannot rewrite source or provider evidence');
+  }
+});
+
+test('C introduction rejects a target prepared by use as a root or Required', () => {
+  for (const role of ['root', 'required']) {
+    const input = explicitRootIntroInput();
+    if (role === 'root') input.responses[1].response.purpose = 'use';
+    else Object.assign(input.responses[0].response.nodes.at(-1), { state: 'prepared', roles: ['required'] });
+    assert.throws(() => assertIntentTurn(input), /Introduction must not activate the target workflow/);
+  }
+});
+
+test('C introduction keeps actual reads, complete root and Requires, and provider delivery mandatory', () => {
+  for (const mutate of [
+    value => { value.observation = value.observation.filter(event => event.phase !== 'tool-result'); },
+    value => { value.observation[0].contents.pop(); },
+    value => { value.observation[3].contents = value.observation[3].contents.filter(file => file.ownerId !== 'target'); },
+    value => { value.observation[3].contents[0].bytes = 99; },
+    value => { value.observation.push({ phase: 'tool-call', allowed: false }); },
+  ]) { const input = explicitRootIntroInput(); mutate(input); assert.throws(() => assertIntentTurn(input)); }
+});
+
 test('daily intent evaluator binds each turn to actual state, wire effort and routed response usage', () => {
   const input = introInput();
   input.modelProfile = dailyRouteContract({ modelContract: 'daily-route-v1', model: 'magpie/group/flash', thinkingLevel: 'high', rpcTimeoutMs: 300000 });

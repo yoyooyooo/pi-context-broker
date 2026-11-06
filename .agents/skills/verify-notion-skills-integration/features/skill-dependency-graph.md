@@ -155,6 +155,14 @@ node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/frozen-c
 
 对每个已运行 case 分别执行 Evidence→Cleanup→Evidence，保留 raw provider、RPC、source、实际 final、失败和文件 hash。`run` 的技术成功只返回 `review_required`；独立语义评审逐 turn 绑定 final SHA，介绍还绑定准确源正文 SHA 和真实答案片段，检查意思、必要事实和无证据的执行声称。语义评审不能补造缺失的正文交付或动作。模型计划生成与控制器随后执行的 owned exercise 分列，不能声称模型已自主执行。
 
+### 介绍意图的已知候选与实际 use
+
+`assertIntentTurn` 只将 verified preparation 中 `purpose: use` 且目标节点 `state: prepared` 计为目标激活。use 图内仅有 `state: known` 的 Member / reference 是候选元数据；目标的独立 `purpose: inspect` 不因内部 SDK operation 为 `consume` 而变成 use。真正以目标为 root 或 Required 的 prepared use 仍拒绝；完整目标 read、实际 provider 正文、首次显式根与全部 Requires、允许的模型调用和副作用门槛均保留。
+
+真实 C `sc21-daily-early-mu3y6io8/remaining-v2/cd-evidence/pi-intent-evidence-ib85Vf/C-introduce` 只有两个模型 `read`。根 use 的目标是 known/member、没有正文；目标 consume 则是 inspect/prepared、Required 为空。旧断言只按 ID 命中节点，误将候选判为激活。原 `failed`、两条未提交续问、raw observer/source/provider/final 不改写，也不重新提交 C。
+
+证据位于 `AH-617-20261105/intent-known-member-6ps3hlqe/`。新增三项回归的有效 RED 为 2 pass / 1 fail；同一真实 C 原件调用原导出断言也得到 `1 !== 0`。修复仅限制 prepared 节点，原 63 项全部通过；首个修后全组为 65/66，新增正例因合成 oracle 漏填根/Requires 的 sha256/bytes 被原完整性门槛拒绝，该测试夹具失败保留。补齐夹具后仅重跑受影响的三项，3/3、零 skip。真实 C 的完整断言使用相同输入 SHA `fb396b22a2087ebd21a348b01a599cb2daa5daebcb40ca844fd70168af8a17aa` 离线通过：3 个实际 provider、301088 request B、2 个 read，仍要求独立语义评审。该旁证没有 Pi/模型/来源新调用，不代表整条 C、续问或正式 SC21 通过；新真实路径需绑定提交后的 harness。
+
 ### SC06 目录曝光对照：实验入口
 
 同一 intent runner 接受显式 `phase:"SC06-discovery-prototype"` 与 `discoveryExperiment:{"version":1,"mode":"full-cards"}` 或 `mode:"on-demand-cards"`。实验必须选择 `--intent-case D-early`，仍完整校验原四场配置，C 为 `not_run`；原三个 D 的 prompt、命名介绍的重启续问、每次 300000 ms、最多四次提交、零 retry/fallback 均不变。没有实验字段时，普通 SC21 的 phase、实际 ready 74 条断言与原 A/B、C/D 行为保持原样；不能把旧失败换成实验结果。
