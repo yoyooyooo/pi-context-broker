@@ -286,7 +286,7 @@ export function assertIntentTurn({ observation, turnObservation = observation, r
   if (discoveryStartup && !followup) assertReadyDiscoveryProvider({ observation: turnObservation,
     catalogRecords, scope: oracle.target.scope, experiment: discoveryExperiment });
   for (const current of inputCatalog) {
-    if (current.state === 'pending') { assert.equal(followup, false, 'An ordinary continuation must expose ready metadata'); continue; }
+    if (current.state === 'pending') continue;
     assert.equal(current.state, 'ready');
     assert.deepEqual(current.skills.map(skill => skill.provenance?.ownerId).sort(), catalogRecords.map(record => record.id).sort(), 'Ready default directory must contain the actual production 74');
     for (const skill of current.skills) {
@@ -316,7 +316,11 @@ export function assertIntentTurn({ observation, turnObservation = observation, r
       for (const body of expected) assert.equal(providers[0].contents.filter(file => exactFile(file, body)).length, 1, 'C must deliver its root and full Requires before the first provider');
       assert.ok(views.preparations.some(row => row.value.purpose === 'use' && row.value.roots.some(root => root.id === expected.find(body => body.role === 'root').logicalId)));
     }
-    if (intent === 'reuse-introduction') assert.equal(newResponses.filter(row => row.operation !== 'list').length, 0, 'Ordinary reuse cannot silently read or prepare bodies again');
+    if (intent === 'reuse-introduction') {
+      assert.equal(newResponses.filter(row => row.operation !== 'list').length, 0, 'Ordinary reuse cannot silently read or prepare bodies again');
+      assert.equal(providers[0].contents.filter(file => exactFile(file, target)).length, 1,
+        'Ordinary reuse must restore the complete selected body before the first provider');
+    }
     if (intent === 'explicit-reread') {
       assert.ok(turnObservation.some(event => event.phase === 'tool-result' && event.tool === 'read' && event.complete && exactFile(event, target)), 'Explicit reread needs its own actual read result');
     }

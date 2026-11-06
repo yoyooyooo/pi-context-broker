@@ -257,7 +257,37 @@ test('ordinary reuse, explicit reread and chat keep different source obligations
   assert.equal(assertIntentTurn(chat).status, 'passed');
   const pending = introInput(); pending.observation.unshift({ phase: 'catalog', state: 'pending' });
   assert.equal(assertIntentTurn(pending).status, 'passed');
-  pending.followup = true; assert.throws(() => assertIntentTurn(pending), /continuation must expose ready/);
+});
+
+test('ordinary restored reuse can start with pending metadata only with its complete selected body', () => {
+  const input = () => {
+    const value = introInput();
+    value.followup = true; value.intent = 'reuse-introduction'; value.newResponses = [];
+    value.discoveryStartup = readyConfig().discoveryStartup;
+    value.turnObservation = [
+      { phase: 'catalog', stage: 'before_provider_request', state: 'pending', skills: [] },
+      structuredClone(value.observation[3]),
+      { phase: 'provider-transport-response', status: 200 },
+      { phase: 'assistant-final', success: true, text: 'Reuses the inspected verification procedure.' },
+    ];
+    return value;
+  };
+  assert.equal(assertIntentTurn(input()).status, 'passed');
+  for (const mutate of [
+    value => { value.turnObservation[1].contents = []; },
+    value => { value.turnObservation[1].contents[0].bytes = 99; },
+    value => { value.turnObservation[1].contents[0].sha256 = 'c'.repeat(64); },
+    value => { value.turnObservation[1].contents[0].snapshot = 's_other'; },
+    value => { value.turnObservation[1].contents[0].scope = 'other-scope'; },
+    value => { value.turnObservation[1].contents[0].ownerId = 'other-owner'; },
+    value => { value.turnObservation[1].contents.push({ ...value.turnObservation[1].contents[0] }); },
+    value => { value.newResponses = [{ operation: 'consume' }]; },
+    value => { value.newResponses = [{ operation: 'read' }]; },
+    value => { value.turnObservation[0].state = 'ready'; },
+  ]) { const value = input(); mutate(value); assert.throws(() => assertIntentTurn(value)); }
+  const delayed = input();
+  delayed.turnObservation.splice(1, 0, { ...delayed.turnObservation[1], contents: [] });
+  assert.throws(() => assertIntentTurn(delayed), /before the first provider/);
 });
 
 const intentSource = () => ({

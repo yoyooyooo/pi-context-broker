@@ -218,7 +218,46 @@ node scripts/notion-skill-graph-observer-smoke.mjs --extension /absolute/install
 
 每个准备 poll 保存真实通知、RPC 区间、原 source ledger 前缀与回执 hash；其 HTTP、字节和时间属于整个 case／arm，前缀成本不得再加一次。原来源和模型账本继续保留未知字节为 null。未提交模型时，只有完整被动观察器链和零 provider/tool/input 事件才能记为已证明的零模型工作；缺观察器不能推零。原独立 retained-source collector 的 120 秒上限必须完整放入剩余整臂预算，否则不启动且归属保持 unknown。到期即停止 owned RPC；实际关闭超出的时间单列 `closureOverrunMs` 并使整臂 failed。`HOST_FINALITY_FAILED` 独立保存在 `result.hostFinality` 且停止后续 case，不被通用任务断言覆盖；来源／观察器技术故障也停组，普通模型任务失败保留原独立场景顺序。
 
-本层目前只完成本地实现和原测试，**真实来源、Pi、模型与 Doctor 均 not_run**。证据根 `sc06-ready-stratum-ll12nc7l` 保留原三个合同红例（`red.log` SHA256 `8419831f0bcc32e54a2627f9071ebffd4307e259676e9cbae0604b0ce192771e`）、原 host-finality 停组谓词的确定性红例及修复后原测试组 52/52。最终测试使用纯 `96c6830` 导出加本片 driver/test，`final-tests.log` SHA256 `86e83511dd26df8e421cc44cfd9a240896bcaef8d8566e5a95a70896d919d07f`；没有借用工作区中其他未提交代码。执行前仍须冻结准确提交、同 `282fb35a…`／C8 包、真实日用哨兵和两臂配置，并沿原 Evidence → 系统 Trash → Evidence 收束。该分层不改变默认全文目录合同，也不关闭 SC20／SC21 正式任务或原生等价缺口。
+预注册冻结时，本层只完成本地实现和原测试，**当时真实来源、Pi、模型与 Doctor 均 not_run**。证据根 `sc06-ready-stratum-ll12nc7l` 保留原三个合同红例（`red.log` SHA256 `8419831f0bcc32e54a2627f9071ebffd4307e259676e9cbae0604b0ce192771e`）、原 host-finality 停组谓词的确定性红例及修复后原测试组 52/52。最终测试使用纯 `96c6830` 导出加本片 driver/test，`final-tests.log` SHA256 `86e83511dd26df8e421cc44cfd9a240896bcaef8d8566e5a95a70896d919d07f`；没有借用工作区中其他未提交代码。执行前要求冻结准确提交、同 `282fb35a…`／C8 包、真实日用哨兵和两臂配置，并沿原 Evidence → 系统 Trash → Evidence 收束。以下实际记录不改变默认全文目录合同，也不关闭 SC20／SC21 正式任务或原生等价缺口。
+
+### Ready 分层两臂实际终局（2026-11-06，均保留 failed）
+
+两臂按原顺序各执行一次，harness 的 258 个文件与提交 `327fdee4c33b2e5e77c507f184ff50f809d12a52` 逐字节相等，同 `282fb35a…`／C8／Pi 1.5 包的 87 个成员未变。两份原静态 Doctor 各 ready；实际六个首任务均先获得完整同 scope 的冻结 Default 74，再提交原提示。full-cards 的三个首 provider 实际收到 74 张卡片；on-demand 的三个首 provider 只收到原按需说明和零卡片，隐藏前的完整名称／描述／owner/ref 另有同 payload 绑定。准备中没有模型请求、正文读取或写入。原 C、所有冷失败及其输入不改。
+
+| 原场景 | Full-cards 实际路径与原技术结果 | On-demand 实际路径与原技术结果 |
+|---|---|---|
+| named 首轮 | 复制实际短 ref → native `read`，完整 6,837 B 目标正文进入 provider；passed，独立介绍语义通过 | `notion_list(query=目标名)` → `notion_use`；完整正文已交付，但介绍选路 failed；独立介绍语义通过 |
+| named 条件恢复续问 | 原 restart/resume 后唯一 provider 为 pending；原断言判 failed，完整原文仍在同一恢复输入中且无新正文操作 | 首轮前置失败，原续问 not_run |
+| natural 规划 | 五个实际项目 read → 无参数 list，未 use Skill；failed；独立静态方案质量亦失败 | 五个实际项目 read → list(query=`intent`)，未 use Skill；failed；独立静态方案质量亦失败 |
+| chat | 一个 provider、零工具，技术及内容均通过 | 一个 provider、零工具，技术及内容均通过 |
+
+Full 恢复续问原 FAIL 保留：首 provider `09:17:27.652Z` 早于该新进程 Default SDK 完成 `09:17:27.871Z`；SDK、source EOF 与 host finality 均完整。已定位该无条件 ready 断言与 SC09 普通恢复非阻塞合同冲突，后续 oracle 校准独立记录，不把本轮原 report 改为 passed，不增加续问等待或重跑。两个 natural 提示均只要求方案；独立语义失败来自可定位的脚本、断言、运行路径和证据清理缺陷，不能因未实际执行项目判失败。
+
+| 实际整臂账本 | Full-cards | On-demand |
+|---|---:|---:|
+| 模型提交／实际 HTTP | 4／7 | 3／7 |
+| 完整模型 HTTP 输入 B | 289,927 | 87,304 |
+| 实际 input／output tokens | 76,948／8,202 | 21,577／9,798 |
+| Consumer 来源 HTTP／decoded response B | 73／6,037,657 | 73／6,037,657 |
+| 其中准备子集 HTTP／decoded B | 57／4,421,391 | 57／4,421,391 |
+| 三次准备累计 ms | 29,511.77 | 30,201.79 |
+| 独立归属证明额外 metadata HTTP／decoded B | 3／10,101 | 3／10,101 |
+
+准备子集已经包含在整臂来源账本内；独立证明另记，不隐去设置成本。14 份实际 provider 输入逐文件核对原 cost hash，schema 均 3,962 B／SHA `8e2d3bd4…`，guidance 均 1,790 B／SHA `0280357f…`；模型 HTTP 响应字节仍为 null。`projectedBodyUtf8Bytes=0` 仅表示该诊断 marker 未出现：精确原文实际上在 full named 的后两份输入及 on-demand named 的第三份输入各出现一次，这些 tool 正文跨度不能再加到完整输入。Full 多执行一条原条件续问，且 substantive 场景结果不同，不能将整臂数字差直接宣称为成功任务收益。可配对的 chat 输入是 38,803 → 8,512 B，但只证明该问候场景，不支持采用按需目录或关闭正式任务门槛。
+
+两臂 runner 均 exit 1、外层收集器 exit 0；7 个 Pi 均按原 RPC stop 关闭 143，不能称原生自然 0。source/observer EOF 与 owned 进程终局完整，无遗留 consumer。原 Evidence → 系统 Trash → Evidence 的 18 个动作均 exit 0，六个 owned scratch 已 Trash，399 份原件及日用三哨兵保持。最初 on-demand 编排工具 `-32603` 单独留证，后续先确认无回执／无消费者，并在 spawn 前用同一 stdout 的排他创建保证只启动一次；不是模型重试。
+
+原件根 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc06-ready-stratum-ll12nc7l/`：两运行分别为 `full-cards/evidence/pi-intent-evidence-FMPvxd` 与 `on-demand-cards/evidence/pi-intent-evidence-wsFmdB`；`comparison/ready-comparison.json` SHA256 `9315dfaf1befdf7d4020d1c02cab33289c16b475a200bab9d0e1cc1096da7e46`，两份原 ECE SHA256 `530e92bc3b901217465368cc330118b4750ba3fff885c1eafc17425f01608c61`／`8fcff0567ef7c0714485d0c08fda769c901bf1ad701fefeb9461722b0b3a1e73`。独立内容审阅位于同 Logs 根 `sc06-ready-semantic-review-tlqwc8z2/`，full handoff SHA `fb77875d…`，on-demand handoff SHA `ea3d1973…`；没有调用 review 子命令升级原技术状态。
+
+### SC09 普通恢复的目录断言校准（2026-11-06）
+
+上面的 full 恢复样本暴露旧 oracle 与现行合同的冲突：AH-623 与已完成的 AH-624/SC09 允许普通新旧消息在目录 pending 时进入 provider；原 `assertIntentTurn` 却对所有 followup 强制 ready。修复只调整验证器：普通恢复保留真实 pending 状态，ready 分支仍核完整默认成员、名称、scope 与来源；显式 ready 分层的首任务依旧必须绑定实际 ready provider。产品不增加目录等待。
+
+`reuse-introduction` 同时加强为第一次实际 provider 就必须包含精确 owner/scope/pin/ref/hash/bytes 的完整目标正文且恰一份，后续新来源操作仍只能是 list。正文缺失、截断、换版本/归属、重复、迟到下一 provider，以及静默 read/consume 均拒绝；原来源、观察器和进程终局门槛保持。
+
+原测试入口新增恢复回归，在 `327fdee` 旧验证器上先得到同一 ready 断言失败；修后 `node --test scripts/notion-model-cache.test.mjs` 为 53/53。证据根 `sc26-resume-oracle-8yosq3tz/` 的 `fail-before.log` SHA `4b466f159ffaf49a0131e8370d84dbddd3b789894095f0132f6d08fb8ad99181`、`regression-after.log` SHA `66a0e8e6a6e142aa2dce3087504fce65b98f94b9bc8f0eb5151fe5668cd712a7`。
+
+同目录 `replay-original-recovery.mjs` 对原 full 恢复输入运行旧/新断言：旧断言仍失败，新技术断言通过。实际首次 HTTP `seq61` 中精确 6,837 B 原文出现一次，仅有两次新的 metadata list；16 份输入逐 hash 保持，来源/模型新请求均为 0。`original-recovery-review.json` SHA `9c7ba3bacd975ad8f9c2d76b8f237f0f97069107b568538c7d8c833023077e95`。这是离线合同复核，原 arm/case/turn failed 与独立内容审阅均不改写，也不充当一次新实际运行或正式 SC21 通过。
 
 ### SC06 同次 provider 的生成卡片描述复用
 
