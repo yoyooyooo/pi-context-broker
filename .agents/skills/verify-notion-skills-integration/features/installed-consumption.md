@@ -201,6 +201,8 @@ Fail-before 是 Broker `327fdee` 的实际 CI run `42193430631`：整条 workflo
 
 Pro原件 `c9-broker-candidate-swur3a7o/pro-live/handoff.json` SHA `8133eb45ed00c31c029fbd398c3876ce4dd057af57335df7eec65abb9d11692f`。Mini原件在Mini的 `sc22-c9-mini-f0z0cp6f/`；可分享报告在Pro镜像 `sc22-c9-mini-mirror-yhnomivi/actual/handoff-final.json`，SHA `dce60686fd3874140b0a8ef863fc279db045e76b8e19b3211a653713eb3d9020`，`actual-host-map.json` SHA `8a903f34f2309f80346e0e44b7d096d12cb60d301692637947818cfac6331991`。43项镜像共132,521 B逐项相等；原provider正文/session/oracle/cache/auth留Mini，不按同名绝对路径假定它们位于Pro。两机原E→系统Trash→E均0，43raw＋5归属原件、日用3哨兵、87安装成员及相关harness/oracle保持，没有日用切换。
 
+后续纯harness提交c55816b的自然CI42220865625/attempt1也已成功：实际CLI checkout55e06bb；上传ZIP49,340,604 B按API digest核对，tar仍为同一b4ed4…，87发布成员/CI安装/本地C9全等。Pi1.5/1.4各17景、各96serializer，输入994,368/1,013,968 B，SDK两版本次均97次（不沿用旧run的96）；每版19Pi自然0，原custom artifact Pi143单列。Node584 pass/1 skip、Bun96 pass/5 skip、consumption205、release7；192实际HTTP的read顶层组合键均0。ci-c55816b-t2ffhglc/handoff.json SHA 3ba532a5f88e47d9a7c4c82e4164bc6fde2530356384755cca8fb208efbc70fe。随后同C9/纯c558的新真实A/B/C均到最终答复但任务未通过，详见图模型地图；CI/安装通过不覆盖实际模型失败。后续只改文件标题提取仍保留C9产品身份，不重包或改判原失败。
+
 ### 2026-11-06：C8 双机与完整安装身份
 
 最终运行时为 CLI `b5564ee` / Broker `726d274`。CLI 独立归档 SHA `2c65d54aee20f0fbb30af30bd1d67b32ad00e7285f0c9a50bc9f477962aeee9f`（68 文件），Broker 归档 SHA `282fb35a8266fc76c49d9ae3e423fff536b5d9b8d7346b059474357cca28d889`（87 文件）。随后 `1e23f5e`、`8650132`、`a08bb6f` 只改验证器、测试和地图；不以相同版本号替代完整文件身份。

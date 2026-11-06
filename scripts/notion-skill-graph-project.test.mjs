@@ -25,6 +25,46 @@ test('explicit multilevel numbered file headings retain complete long-fenced byt
   }
 });
 
+test('save-file labels retain exact files with parenthesized location notes without completing a Skill', async () => {
+  const content = '# Acceptance\r\n\r\nRun `node scripts/acceptance.cjs`.\r\n';
+  const heading = 'Save the file: `docs/acceptance-procedure.md` (directory relative to the repo root `workspace/`).';
+  const text = heading + '\r\n\r\n```markdown\r\n' + content + '```\r\n';
+  const [file] = extractGeneratedFiles(text);
+  assert.ok(file, 'The explicitly named complete Markdown file must be retained');
+  assert.equal(file.path, 'docs/acceptance-procedure.md');
+  assert.equal(file.content, content);
+  assert.equal(file.bytes, Buffer.byteLength(content));
+  assert.equal(file.sha256, hash(content));
+  assert.equal(text.slice(file.sourceSpan.start, file.sourceSpan.end), content);
+  const directory = await evidence();
+  const receipt = await retainGeneratedPlan({ evidence: directory, final: { success: true, text }, prompt, project });
+  assert.equal(receipt.files.length, 1);
+  assert.equal(receipt.artifactStatus, 'incomplete-generated-files');
+  assert.deepEqual(receipt.skillFiles, []);
+  assert.equal(receipt.executed, false);
+  assert.equal(await readFile(receipt.path, 'utf8'), text);
+  assert.equal(await readFile(join(directory, 'generated-files', file.path), 'utf8'), content);
+  assert.throws(() => extractGeneratedFiles(text + text.replace(content, 'Conflicting bytes.\r\n')), /conflicting complete definitions/);
+});
+
+test('save-file labels reject prose, multiple paths and paths outside the owned project', () => {
+  const block = heading => heading + '\n\n```markdown\nExact file bytes.\n```\n';
+  for (const heading of [
+    'Read `docs/acceptance.md` (directory relative to the repo root).',
+    'Save the file: `docs/one.md` or `docs/two.md`',
+    'Save the file: `docs/one.md` (or `docs/two.md`)',
+    'Save the file: `docs/one.md` (or docs/two.md).',
+    'Save the file: `docs/one.md` (or `/outside/docs/two.md`)',
+    'Save the file: `docs/one.md` (or `../escape/two.md`)',
+    'Save the file: `docs/acceptance.md` then execute it.',
+    'Save the file: `../escape/acceptance.md` (relative file).',
+    'Save the file: `docs/../acceptance.md` (relative file).',
+    'Save the file: `docs//acceptance.md` (relative file).',
+    'Save the file: `/outside/docs/acceptance.md` (absolute file).',
+    'Save the file: `/owned/project-other/docs/acceptance.md` (absolute file).',
+  ]) assert.deepEqual(extractGeneratedFiles(block(heading), { projectRoot: '/owned/project' }), [], heading);
+});
+
 test('same-length nested fences retain the raw plan and report ambiguity without truncated files', async () => {
   const text = [
     '### 3.1 `docs/acceptance.md`', '', '```markdown',

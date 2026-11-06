@@ -281,6 +281,36 @@ A 真实模型只产生一份 30,456 B HTTP 输入，HTTP 200 后实际 assistan
 
 原 `node --test --test-name-pattern='discovery Router' scripts/notion-skill-graph-model.test.mjs` 先得到合法 Router＋双 list 的真实 observer 回调 RED：1 pass／1 failed，`red.log` SHA256 `0ed28750642edf8944a8b89650b48a22d1f283f88cb69af936a04f49bf5f8374`。修后定向 2/2、原测试文件 108/108（原 106＋新增 2），`green-full.log` SHA256 `b8d7fdc9fd400ec9e1be9f71b08c409d0625142a847534f162af6c52988a2180`。十二项反例保留缺完整 Router／第一 list 卡片、错误 source／identity source／scope／owner／ref、fixed 引用、改名、冲突或截短 description、重复实体解码的拒绝；provider payload 不被观察器改写。以上仅本地回归与封存原件复核，没有启动新 Pi／来源／模型，原 A failed 与 B not_run 不改判。
 
+### C9 / c558：新 A/B/C 实际任务与整段成本（2026-11-06）
+
+本轮使用未变C9归档b4ed4cf1…、纯c55816b harness、Pi1.5、原提示与预算。A/B fresh selection各通过，root-only View/Kind/token不变；C为普通Default74，无ready屏障。每任务cold n1、每submission300000ms、零重试/回退。39份实际provider均接受平坦read schema，observer error及blocked provider payload均0；请求selector为magpie/group/flash-free，实际responseModel均为upstage/solar-mini4。
+
+| 路径 | 实际provider / 请求体累计B | usage input / cacheRead / output / total | 原结果 |
+| --- | --- | --- | --- |
+| A：Router | 10 / 830,708 | 213,477 / 28,800 / 2,153 / 244,430 | READ_MISSING；参考未读、0项目读取、无完整文件、语义FAIL |
+| B：Skill | 23 / 3,904,324 | 599,219 / 411,200 / 4,603 / 1,015,022 | READ_MISSING；5项目文件/10资源读取已观察，参考链及产物不完整、语义FAIL |
+| C：原句介绍 | 6 / 565,434 | 163,397 / 0 / 1,099 / 164,496 | 5read被拒，目标正文未交付，技术/语义FAIL，两续问NOT_RUN |
+
+A原final时间91,273ms，B233,584ms；C初轮90,963.9ms。n1不给p95，cost.totalFromProvider=false故收费unknown；响应SSE wire bytes未保存。不同任务的输入/时间差额不是改善。A authored13/admitted11工具：两次sr:S误入resource batch被校验拒绝；后来scalar Router三次成功，末provider中20,872 B全文恰一份，模型“不能读Router/项目”无依据。方案也缺实际项目依据，清理会删证据，未执行其命令。
+
+B authored/admitted工具各37。原projectSourceReadCount=2仅计src/，另有README/package/test三份完整读取。B实际有4,030 B的docs/acceptance-procedure.md；原files=[]为旧标题识别结果。依赖scripts/acceptance.cjs缺失、fresh UUID响应被要求两轮全文相同、81字符负例用了伪JSON、清理不保留证据且无唯一run边界，仍无controller资格。14次空query分页期间新增SDK为0；选择分页的请求9–22共2,787,631 B，收到结果的10–23共2,937,692 B，两集合重叠13请求不能相加。分页消息重复105次、对象JSON1,140,957 B已包含总输入。
+
+C首实际输入已给正确sr:C，模型仍追加/SKILL.md或/playbooks路径，另两项目路径缺leading slash；5read被拒、2list正常。SDK为2list+1显式根consume、0read/CLI。根41,537 B和Required5,938 B在6份实际provider中完整各一份，目标6,837 B均0，按实际XML逆解码核hash。答案还包含未读项目不具备的更新/删除/分配/统计/过滤等事实，未执行两续问。
+
+来源分账：A/B selection24HTTP/2,893,488 decoded B；A consumer51/6,152,091；B consumer32/3,446,729；private另9metadata/44,961。全A/B cohort116HTTP、12,879请求B、12,537,269 decoded响应B，字节终局完整。C consumer37HTTP/3,904请求B/3,473,054响应B，private另4metadata/842请求B/27,180响应B。来源写入均0，原unclassified_body标签不改、独立归属另列。准备、消费、核验与受控selection模型成本分开，不混成源I/O收益。
+
+所有consumer/collector已闭合。A/B原4Pi及C原1Pi均真实close143/signal null，未写自然0。A/B原16个Evidence/系统Trash/empty-Doctor步骤均0、188raw+4native镜像保持；C原E→Trash→E三步均0、44raw保持。日用3哨兵、安装87成员、冻结harness及两仓原暂存不变，无controller执行。
+
+证据根~/Library/Logs/pi-context-broker/AH-617-20261105/：A/B为sc21-c9-ab-router-3wj9ucia/cohort-final-handoff.json，SHA e4c0ff0cf3eedddd6b8a7773d330a7272971e059407b41f3ac66d1641e5a9b1c；C为sc07-c9-c-cohort-v4mtftky/handoff-v2-final.json，SHA 94fae8e9decae851c510d72c6f8ca0802345c9224e47a11bac3dfe6b085f815f。二者含逐请求完整账本、实际原件及A/B/C独立语义审阅引用，旧failed/not-run均保留。
+
+### 显式保存标题与位置注记的文件提取
+
+原提取器须识别实际B的Save the file:反引号路径及括号位置注记，逐字节保留完整fence正文。注记可说明workspace/等目录，不能给第二候选文件；原owned-root、遍历、双斜杠、多路径、冲突、空文件与不完整/歧义围栏门槛保持。识别文件不授予执行资格，缺完整Skill或依赖仍不可exercise。
+
+原node --test scripts/notion-skill-graph-project.test.mjs新增两回归：实际标题先1 pass/1 fail，修后定向2/2；独立审阅发现括号内第二目标歧义，再保留1 pass/1 fail并收窄；最终原文件18/18。证据file-label-root-fix-mymnghgu/green-final.log SHA 688493d623b0abc7a240d964243647434f1d4e5e69bc4c1f45af349a56e3a71e，red-note-ambiguity.log SHA a7fb95a2b2110848cafa0e6778f72c060b3d68d4537fdcc97734d645c2483cb4。
+
+原retainGeneratedPlan对封存B做离线复核，提取文档4,030 B/SHA 2a553ccf2c39fff0040ab32b395dfc77277f2ff87f3432eb4c23965d59e06fcc，状态incomplete-generated-files、0Skill、executed=false；原4证据hash不变。actual-B-extraction-review.json SHA 701de019098d817403ac3591c9eba8b215fe9ea6837823d416121d9b49797bae；最终源复核final-source-actual-B.json SHA 1ba43d5cfa3d667e3e7f39ebc2cf57d663a20a97e07f6c16adcaa1db13dbe293。没有新模型/来源/产品包或旧报告改判。
+
 ### SC06 同次 provider 的生成卡片描述复用
 
 原 ce50/C7 Pro live 的七份实际 serializer 请求已独立定位重复：末次默认 74、list 2、Members 55、Requires 1，共 132 个生成卡片出现、79 个来源身份。作者正文中的 `## Members`、根和 Requires 合计 47,475 B 均保留。诊断原件为 `sc06-controlled-pair-9d9314r3/metadata-card-readonly/report.json`（SHA256 `0d2521153fb11cb48c27795d7eafb1f4d927f37c1c45257e53784343edf772dc`）；这是历史实际输入的重复字段分析，不是新候选已实现的成本收益。

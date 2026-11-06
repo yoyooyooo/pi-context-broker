@@ -47,9 +47,12 @@ function scanGeneratedFiles(text, { projectRoot } = {}) {
   const cleanPath = value => {
     let path = value.trim().replace(/^#{1,6}\s+/, '').replace(/^\d+(?:\.\d+)*[.)]?\s+/, '');
     if (/^\*\*.*\*\*$/.test(path)) path = path.slice(2, -2);
-    path = path.replace(/^(?:\*\*)?(?:file(?:\s+path)?|path|文件路径|文件|路径)\s*[:：](?:\*\*)?\s*/i, '').trim();
+    path = path.replace(/^(?:\*\*)?(?:save\s+(?:the\s+)?file|file(?:\s+path)?|path|文件路径|文件|路径)\s*[:：](?:\*\*)?\s*/i, '').trim();
     if (/^\*\*.*\*\*$/.test(path)) path = path.slice(2, -2);
-    if (/^`[^`]+`$/.test(path)) path = path.slice(1, -1);
+    const quoted = /^`([^`]+)`(?:\s+\(([^()\r\n]*)\)[.!]?)?$/.exec(path);
+    // A location note may name directories, but cannot offer a second file.
+    const noteHasFilePath = /(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+(?=$|[\s`"'.,;:!?])/.test(quoted?.[2] ?? '');
+    if (quoted && !noteHasFilePath) path = quoted[1];
     if (path.includes('//') || path.split('/').some(part => ['.', '..'].includes(part))) return undefined;
     if (path.startsWith('/')) {
       if (typeof projectRoot !== 'string' || !projectRoot.startsWith('/')) return undefined;
