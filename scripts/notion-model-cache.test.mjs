@@ -77,9 +77,38 @@ test('intent case selection never turns a C-only success into full-suite accepta
 
 test('intent case selection has an explicit CLI option without entering the legacy custom-source matrix', () => {
   const result = spawnSync(process.execPath, ['scripts/verify-pi-notion-model-cache.mjs', '--help'], { cwd: path.resolve(import.meta.dirname, '..'), encoding: 'utf8' });
-  assert.equal(result.status, 0); assert.match(result.stdout, /--intent-case C-introduce/);
+  assert.equal(result.status, 0); assert.match(result.stdout, /--intent-case C-introduce/); assert.match(result.stdout, /C-introduce\|D-early/);
   const mixed = spawnSync(process.execPath, ['scripts/verify-pi-notion-model-cache.mjs', '--intent-case', 'C-introduce'], { cwd: path.resolve(import.meta.dirname, '..'), encoding: 'utf8' });
   assert.notEqual(mixed.status, 0); assert.match(mixed.stderr, /intent-case requires --intent-config/);
+});
+
+test('intent case selection explicitly runs the three D cases without resubmitting C', () => {
+  const config = intentConfig(), original = structuredClone(config), selected = intentRunner.selectIntentCases(config, 'D-early');
+  assert.equal(selected.mode, 'targeted');
+  assert.deepEqual(selected.selectedCaseIds, ['D-named-introduce', 'D-natural-task', 'D-chat']);
+  assert.deepEqual(selected.notRunCases, [{ id: 'C-introduce', status: 'not_run', reason: 'not_selected_for_early_feedback' }]);
+  assert.deepEqual(selected.plannedBudget, { primarySamplesPerCase: 1, primaryCases: 3, maxFollowupSubmissions: 1, maxSubmissions: 4,
+    timeoutMsPerSubmission: 300000, maxScheduledPromptMs: 1200000, automaticRetries: 0, continueAfterFailedPrerequisite: false });
+  assert.deepEqual(config, original, 'D selection keeps all original prompts, conditions and the full configuration');
+  for (const id of ['D', 'D-chat', 'D-natural-task', ['D-early'], 'D-early,C-introduce']) assert.throws(() => intentRunner.selectIntentCases(config, id));
+  for (const mutate of [value => { value.cases.shift(); }, value => { value.cases[0].initial.text = 'changed unselected C'; },
+    value => { value.cases[1].followups.pop(); }, value => { value.budget.timeoutMsPerSubmission = 600000; },
+    value => { value.budget.automaticRetries = 1; }, value => { value.source.default_view_id = 'private-singleton'; }]) {
+    const invalid = intentConfig(); mutate(invalid); assert.throws(() => intentRunner.selectIntentCases(invalid, 'D-early'));
+  }
+});
+
+test('intent case selection cannot count C or a partial D run as completed D early feedback', () => {
+  const selected = intentRunner.selectIntentCases(intentConfig(), 'D-early');
+  const completed = selected.selectedCaseIds.map(id => ({ id, status: 'passed' }));
+  assert.equal(intentRunner.intentRunStatus(selected, completed), 'review_required');
+  assert.equal(intentRunner.intentRunStatus(selected, completed, 'passed'), 'partial');
+  assert.equal(intentRunner.intentRunStatus(selected, completed, 'failed'), 'failed');
+  assert.equal(intentRunner.intentRunStatus(selected, completed.slice(0, 2), 'passed'), 'failed');
+  assert.equal(intentRunner.intentRunStatus(selected, completed.map((item, i) => i === 1 ? { ...item, status: 'failed' } : item), 'passed'), 'failed');
+  assert.throws(() => intentRunner.intentRunStatus(selected, [{ id: 'C-introduce', status: 'passed' }, ...completed], 'passed'));
+  assert.throws(() => intentRunner.intentRunStatus(selected, [...completed, completed[0]], 'passed'));
+  assert.throws(() => intentRunner.intentRunStatus(selected, [completed[1], completed[0], completed[2]], 'passed'));
 });
 
 const introInput = () => {
