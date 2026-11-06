@@ -1,10 +1,12 @@
-# Notion 消费入口迁移：2026-11-05
+# Notion 消费入口迁移：2026-11-05 历史阶段记录
 
-本记录对应 `agent-cli-ref-20261105`、[AH-675](https://linear.app/yoyooyooo/issue/AH-675)、[AH-676](https://linear.app/yoyooyooo/issue/AH-676) 及 SC04–08、SC23 的当前切片。它记录已实现的行为和各层证据，不将开发候选等同于 SC22 正式双机验收或 SC24 日用切换。
+本记录保存 `agent-cli-ref-20261105`、[AH-675](https://linear.app/yoyooyooo/issue/AH-675)、[AH-676](https://linear.app/yoyooyooo/issue/AH-676) 对应的 C3、首批 SC04–08 与 SC23 历史切片。以下行为、构建输入、验证数量和剩余验收均按当时状态记录，不代表现行产物或门禁进度，也不将该开发候选等同于 SC22 正式双机验收或 SC24 日用切换。
+
+现行用法见 [英文参考](reference.md)、[中文参考](reference.zh-CN.md) 与 [CLI 消费合同](https://github.com/yoyooyooo/notion-skills-cli/blob/main/docs/consumer-contract.md)。当前固定候选、双机验收与验证门禁以 [AH-637](https://linear.app/yoyooyooo/issue/AH-637)、[AH-676](https://linear.app/yoyooyooo/issue/AH-676) 及 [Feature 地图与场景矩阵](https://linear.app/yoyooyooo/document/pi-skill-消费链feature-地图场景矩阵与实施门禁-9180af8fb196) 中的对应产物回执为准；本文保留的旧 hash、数量和失败记录不作新产物证明。
 
 ## 用户入口与调用者
 
-| 调用者 | 当前入口 | 兼容或边界 |
+| 调用者 | 该阶段入口 | 兼容或边界 |
 | --- | --- | --- |
 | CLI 日常消费 | `list [--query TEXT]`、`read REF`、`use REF` | `read` 检查，`use` 完整取得根与 Requires；list/read 保留 JSON 默认 |
 | CLI 管理 | `ctl views/prepare/resolve/operation/sync` 及原 ctl 子树 | 旧五个根入口为同一 AST/handler 的隐藏兼容；历史 next.argv 不改写 |
@@ -19,7 +21,7 @@
 | OMP | 原 skill_search/skill_prepare/skill_graph | 本轮 Pi 合同之外的明确兼容，不据 Pi 证据宣称 OMP 通过 |
 | 历史会话与 pin | 原版本 receipt/short-ref/固定资源 reader | 不为新工具名改写历史 toolName、正文或 hash |
 
-CLI 构建输入固定为 [23991457c51b9f1255367a1545be00ef8c1a84bb](https://github.com/yoyooyooo/notion-skills-cli/commit/23991457c51b9f1255367a1545be00ef8c1a84bb)。其独立 tarball SHA256 为 `1c5406ae16946496355c05f04a291610a0daf7c77f3e31b3b7baa19c58faf953`；安装后 CLI SHA256 为 `732f21326c4e9a1c4049fa338f45180ec42d17568f653cdebe59bbc6b9aafa65`，SDK 为 `68bf4e8dc199848f2a1572f297dfc76a51246d23e59064bfa7bdf27ce0a91f1f`。Broker 的再打包会改变 bundle 字节，安装门禁分别记录输入与输出身份，不用 package version 代替 hash。
+该阶段的 CLI 构建输入固定为 [23991457c51b9f1255367a1545be00ef8c1a84bb](https://github.com/yoyooyooo/notion-skills-cli/commit/23991457c51b9f1255367a1545be00ef8c1a84bb)。其独立 tarball SHA256 为 `1c5406ae16946496355c05f04a291610a0daf7c77f3e31b3b7baa19c58faf953`；安装后 CLI SHA256 为 `732f21326c4e9a1c4049fa338f45180ec42d17568f653cdebe59bbc6b9aafa65`，SDK 为 `68bf4e8dc199848f2a1572f297dfc76a51246d23e59064bfa7bdf27ce0a91f1f`。Broker 的再打包会改变 bundle 字节，安装门禁分别记录输入与输出身份，不用 package version 代替 hash。
 
 ## 模型正文与宿主证明
 
@@ -48,9 +50,9 @@ Router 的 Members 是待选择目录。通用指引要求按任务选择 Member
 
 ## 验证接线与实际证据
 
-继续使用仓库原有的 [Broker 验证 Skill](https://github.com/yoyooyooo/pi-context-broker/tree/main/.agents/skills/verify-context-broker) 与 [跨仓验证 Skill](https://github.com/yoyooyooo/pi-context-broker/tree/main/.agents/skills/verify-notion-skills-integration)。消费专项进入 `check:broker`，CI/publish 显式构建固定 CLI 输入并安装 Pi 1.4.0。SDK 缺出口、错误输入包和强制将 use 暴露给 Code mode 的反例不能通过门禁。
+该阶段沿用仓库原有的 [Broker 验证 Skill](https://github.com/yoyooyooo/pi-context-broker/tree/main/.agents/skills/verify-context-broker) 与 [跨仓验证 Skill](https://github.com/yoyooyooo/pi-context-broker/tree/main/.agents/skills/verify-notion-skills-integration)。当时消费专项接入 `check:broker`，CI/publish 显式构建固定 CLI 输入并安装 Pi 1.4.0。SDK 缺出口、错误输入包和强制将 use 暴露给 Code mode 的反例不能通过门禁。
 
-下列证据已经取得；每项保留自己的产物边界，不能合并测试数量为覆盖率，也不能把旧切片百分比相加：
+下列是该阶段取得的证据；每项保留自己的产物边界，不能合并测试数量为覆盖率，也不能把旧切片百分比相加：
 
 - CLI C3：受影响 Bun 305 项、Node 恢复 87 项、另外选定的模式恢复 6 项、独立 SDK 20 项及 package smoke 43 项通过；候选源码清单格式和 typecheck 通过。C1 远端 CI 的格式失败另保留，未执行的 tests/build 不算通过。
 - Broker 源码消费专项：166 项、1683 断言通过，包含实际 local 来源发现、加载、交付确认和恢复；typecheck 通过。日志 `/private/tmp/ah627-consumption-after-i4jrplvo/test.log`，SHA256 `fa48141191afee128e5fe0cf086eaf3c667b2f004c01201ca2f6b118f4c54198`。
@@ -60,7 +62,7 @@ Router 的 Members 是待选择目录。通用指引要求按任务选择 Member
 
 只观察的 SDK metrics 不包含正文或凭据。需要核对真实交付的私有验证驱动显式订阅同一调用 ID 的 `context-broker.notion-sdk-result`，核对实际 source bytes、绑定和 provider 正文跨度。工具 details、内部成功和同名记录均不能替代这些事实。
 
-## 剩余验收与正式收口
+## 该阶段的剩余验收与正式收口
 
 后续 SC04 切片已修正精确引用被无关目录故障全局阻断的问题。明确 canonical/短引用继续通过既有精确 lookup 和 core；目录发现仍报告原错误，已选来源的阻断错误在正文准备前返回。没有新增 resolver、持久层或全局授权豁免，冷态 lookup 的实际元数据请求仍计成本。
 
