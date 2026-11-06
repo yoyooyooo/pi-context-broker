@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFile as callbackReadFile } from 'node:fs';
-import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, open, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { systemTempRoot } from './verification-paths.mjs';
-import { resolveInstalledPiSerializer, observeSdkInitialization, providerSystemText, assertPreflightCatalogProjection, assertNativeCatalogPreserved } from './notion-sdk-pi.mjs';
+import { resolveInstalledPiSerializer, observeSdkInitialization, providerSystemText, assertPreflightCatalogProjection, assertNativeCatalogPreserved, publishToolPlan } from './notion-sdk-pi.mjs';
 import * as namedSdkProbe from './notion-sdk-pi.mjs';
 import { validateLiveInput, selectLiveProviderCall, liveSourceMetrics } from './notion-sdk-pi.mjs';
 import { assertNativeGuidance, assertScopedCommand, assertPreparedHttpRequest, assertResourceHttpRequest, assertResourceBatchProjection, assertResourceReadSchema, resourceRefsFromNative, resourceTextCopies, bodyCount, reconcile, sourceFinality, observeOwnedObjectReads, assertObjectReadEvidence, assertProviderHttpRequest, assertProviderToolSequence, assertSearchProjection, assertDefaultViewProjection, assertDollarProjection, assertNativeProjection, resourceScalarCalls, selectScalarProviderCall, assertResourceScalarResult, resourceScalarSelectedFixture, assertResourceScalarSession, assertResourceScalarCost, selectNativeRepeatCall, assertNativeRepeatProjection, assertScalarReadObjectIntervals } from './notion-sdk-pi.mjs';
@@ -18,6 +18,57 @@ const context = () => ({ messages: [
   { role: 'system', content: 'Controlled system instructions.', toolsAdded: toolNames.map(name => ({ name })) },
   { role: 'user', content: guidance },
 ] });
+
+test('tool-plan publication keeps complete prior JSON visible until commit', async t => {
+  const root = await mkdtemp(join(await systemTempRoot(), 'sdk-tool-plan-'));
+  t.after(() => console.log('Tool-plan fixture retained: ' + root));
+  const path = join(root, 'tool-plan.json');
+  const previous = { mode: 'complete', holdResponse: true }, next = { mode: 'complete' };
+  const previousText = JSON.stringify(previous, null, 2) + '\n';
+  await writeFile(path, previousText);
+  let opened, release;
+  const atWrite = new Promise(resolve => { opened = resolve; });
+  const released = new Promise(resolve => { release = resolve; });
+  const pending = publishToolPlan(path, next, {
+    async writeFile(target, value, options) {
+      const file = await open(target, options.flag ?? 'w', options.mode);
+      opened(target);
+      try { await released; await file.writeFile(value); }
+      finally { await file.close(); }
+    }, rename,
+  });
+  try {
+    const target = await atWrite;
+    const visible = await readFile(path, 'utf8');
+    t.diagnostic(JSON.stringify({ cutpoint: 'open-before-write', publishedBytes: Buffer.byteLength(visible),
+      writerUsesPublishedPath: target === path, writerBytes: (await readFile(target)).length }));
+    assert.deepEqual(JSON.parse(visible), previous);
+    assert.equal(visible, previousText);
+    assert.equal(dirname(target), root);
+  } finally { release(); await pending; }
+  assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), next);
+  assert.deepEqual(await readdir(root), ['tool-plan.json']);
+});
+
+for (const stage of ['write', 'rename']) test(`tool-plan publication preserves the prior plan after ${stage} failure`, async t => {
+  const root = await mkdtemp(join(await systemTempRoot(), 'sdk-tool-plan-'));
+  t.after(() => console.log('Tool-plan fixture retained: ' + root));
+  const path = join(root, 'tool-plan.json'), previous = '{"mode":"complete","holdResponse":true}\n';
+  await writeFile(path, previous);
+  const failure = Object.assign(new Error('Owned tool-plan publication failure'), { code: 'EIO' });
+  const io = {
+    async writeFile(target, value, options) {
+      if (stage === 'write') { await writeFile(target, value.slice(0, 4), options); throw failure; }
+      await writeFile(target, value, options);
+    },
+    async rename(source, target) {
+      if (stage === 'rename') throw failure;
+      await rename(source, target);
+    },
+  };
+  await assert.rejects(publishToolPlan(path, { mode: 'complete' }, io), error => error === failure);
+  assert.equal(await readFile(path, 'utf8'), previous);
+});
 
 const liveInput = () => {
   const file = path => ({ path, sha256: 'a'.repeat(64) });

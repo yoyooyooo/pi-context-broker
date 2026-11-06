@@ -68,6 +68,12 @@ node scripts/notion-sdk-pi.mjs cleanup --evidence "$SDK_LIFECYCLE_EVIDENCE"
 node scripts/notion-sdk-pi.mjs evidence --evidence "$SDK_LIFECYCLE_EVIDENCE"
 ```
 
+受控 provider 与父驱动共享的 `tool-plan.json` 只通过 `publishToolPlan` 发布：在同目录独占创建临时文件，完整写入后用 `rename` 替换原路径。初始、普通、生命周期和 live 模式的 16 处写入使用同一入口；其它报告仍使用原 `save`。provider 继续严格 `JSON.parse`，不忽略空文件或部分 JSON、不增加读取重试。写入或替换失败保持旧计划并传播原错误，临时文件随本次 owned scratch 交系统 Trash。
+
+2026-11-06 的 Broker `1e23f5e` CI run `42178766964`／job `127763231400` 保留 all14 的 13 PASS／1 FAIL：取消景实际出现 `response_held → signal_aborted`，随后 assistant 报 `Unexpected end of JSON input`，未到晚到 callback，不能因 RPC abort 成功与进程自然退出而判取消门槛通过。原 artifact 在 `~/Library/Logs/pi-context-broker/AH-617-20261105/ci-1e23-failure-7_dnjq04/`，zip SHA256 `7813cff289ac87a9e87ccf9c77da2a323ec610772a0b04e119b987e802c5e109`。CI 没有捕获当次 plan 读取字节，因此该次恰好读到截断窗口仍是有源码和时序支持的归因，不写成已直接观察。
+
+对应确定性离线红→绿保存在同一 Logs 根的 `sc08-tool-plan-atomic-kexw13g1/`。原测试在真实文件 `open('w')` 后、写入前暂停，直接读到已发布文件为 0 B 并重现同类 parse error；另核写入／rename 失败不能破坏旧计划。`fail-before.log` 为 3/3 预期失败，SHA256 `e2b1e8dabf7a17798fa1ba8a734b0a21b52e0ead108c135cc272e1054ea34d0e`；修复后同三例通过，`pass-after.log` SHA256 `31946011edf73bf2452ac32b4ec8c835863cd8c72805d35fda27c49dd6d4b3ee`，原 SDK driver 测试整组 107/107，`sdk-test.log` SHA256 `102f7ea2188bbe0de269f75917b46020f2688eeb8376a8552c3e2d05827cbfb1`。切点始终释放，无 sleep 调度；原 `/abort/`、真实晚到 callback、分支无 active／正文、超时和零重试断言不变。本轮未启动 Pi、SDK consumer、真实来源或模型；修复后的独立安装 `session-lifecycle` 实驱仍待授权，原 CI 失败不重判。
+
 | 实际入口 | 正反例与证据 |
 | --- | --- |
 | 普通 turn → `notion_list` → 单次 `notion_use` 的 a/b/c 多根 | 根与共享 base 完整交付一次；实际 SDK 原结果、top-level tool result 和下一 provider 正文分别核对。重复普通 turn 不新增正文 SDK 操作。 |

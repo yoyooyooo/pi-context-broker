@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import fs from 'node:fs';
 import fsPromises, { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
@@ -37,6 +37,11 @@ export function warmDirectoryOptions(options) {
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const json = async path => JSON.parse(await readFile(path, 'utf8'));
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
+export async function publishToolPlan(path, value, io = { writeFile, rename }) {
+  const temporary = path + '.' + randomUUID() + '.tmp';
+  await io.writeFile(temporary, JSON.stringify(value, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
+  await io.rename(temporary, path);
+}
 const rows = async path => {
   try { const text = await readFile(path, 'utf8'); assert.ok(!text || text.endsWith('\n'), 'Incomplete JSONL line'); return text.split('\n').filter(Boolean).map(JSON.parse); }
   catch (error) { if (error.code === 'ENOENT') return []; throw error; }
@@ -2265,7 +2270,7 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
     return state;
   };
   const ordinary = async (label, selected) => {
-    await save(toolPlan, { mode: 'complete' });
+    await publishToolPlan(toolPlan, { mode: 'complete' });
     const before = (await rows(providerFile)).length, bodyBefore = await bodyOperations();
     await rpc.prompt('SC08_' + label + ' Continue the ordinary task without requesting new Skill instructions.');
     const captures = await rows(providerFile), current = captures.slice(before);
@@ -2341,9 +2346,9 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
     }
   };
   try {
-    await save(toolPlan, { mode: 'complete' }); await open('initial');
+    await publishToolPlan(toolPlan, { mode: 'complete' }); await open('initial');
     await ordinary('BASELINE', false); const baseline = await snapshot('baseline', false);
-    await save(toolPlan, { mode: 'prepare' });
+    await publishToolPlan(toolPlan, { mode: 'prepare' });
     await rpc.prompt('SC08_USE_A_B_C Use the available a, b and c Skills with their complete Requires.');
     let captures = await rows(providerFile), prepared = toolResult(captures.at(-1).context, 'sc10-prepare');
     const projection = assertPreparedProjection(prepared, oracle);
@@ -2358,7 +2363,7 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
     const forked = await snapshot('fork-before-use', false); assert.notEqual(forked.session_file, originalSession);
     await ordinary('FORK_WITHOUT_SELECTION', false);
     const oldRef = projection.records.find(record => record.name === 'a').ref, beforeProbe = await bodyOperations();
-    await save(toolPlan, { mode: 'lifecycle-probe', id: 'sc08-stale-fork', ref: oldRef });
+    await publishToolPlan(toolPlan, { mode: 'lifecycle-probe', id: 'sc08-stale-fork', ref: oldRef });
     await rpc.prompt('SC08_STALE_HANDLE Inspect the supplied handle from the abandoned branch: ' + oldRef);
     captures = await rows(providerFile);
     const rejected = toolResult(captures.at(-1).context, 'sc08-stale-fork');
@@ -2423,12 +2428,12 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
     }
     await rpc.command('new_session');
     await snapshot('new-session', false);
-    await save(toolPlan, { mode: 'complete', holdResponse: true });
+    await publishToolPlan(toolPlan, { mode: 'complete', holdResponse: true });
     const pending = rpc.prompt('$a@sdk-fixture SC08_ABORT_AFTER_DISPATCH Apply the selected instructions.').then(
       () => ({ succeeded: true }), error => ({ succeeded: false, message: String(error.message) }));
     const held = await waitHook('response_held'), abort = rpc.command('abort');
     const aborted = await waitHook('signal_aborted'); assert.equal(aborted.requestId, held.requestId); assert.equal(aborted.aborted, true);
-    await save(toolPlan, { mode: 'complete' }); await abort;
+    await publishToolPlan(toolPlan, { mode: 'complete' }); await abort;
     const outcome = await pending; assert.equal(outcome.succeeded, false); assert.match(outcome.message, /abort/iu);
     const late = await waitHook('response_callback'); assert.equal(late.requestId, held.requestId); assert.equal(late.aborted, true);
     await snapshot('cancelled-after-response', false, {}, ['a', 'base']);
@@ -2439,7 +2444,7 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
     steps.push({ label: 'cancel-after-dispatch', provider_request_id: held.requestId, actual_provider_inputs: 1,
       source_bodies_dispatched: ['a', 'base'], signal_aborted: true, late_callback_aborted: true, active_commit: false, outcome });
     await close();
-    await save(toolPlan, { mode: 'complete' }); await open('shutdown', undefined, true);
+    await publishToolPlan(toolPlan, { mode: 'complete' }); await open('shutdown', undefined, true);
     const shutdownDeadline = Date.now() + 20000;
     for (;;) {
       if ((await rows(segment.ledger)).some(event => event.kind === 'initialization_held')) break;
@@ -2470,7 +2475,7 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
     assert.ok(native.some(event => event.type === 'session_compact' && event.from_extension === true));
   } catch (error) { failed = { code: error.code ?? error.name, message: String(error.message), stack: error.stack }; }
   finally {
-    await save(toolPlan, { mode: 'complete' });
+    await publishToolPlan(toolPlan, { mode: 'complete' });
     try { await close(); } catch (error) { failed ??= { code: error.code ?? error.name, message: String(error.message) }; }
     await save(join(output, 'lifecycle-steps.json'), steps);
     if (compactionVariants) await save(join(output, 'compaction-variants.json'), compactions);
@@ -2916,7 +2921,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
   if (partialEntrypoint) assert.ok(info.entrypoint, 'The fixture must provide the complete entrypoint scenario');
   const entrypointPlan = partialEntrypoint ? { owner: info.entrypoint.name, fixed_main_ref: info.entrypoint.ref,
     selected_path: info.entrypoint.files.find(file => file.role === 'selected').path } : {};
-  await save(toolPlan, { mode: ['dollar', 'default-view'].includes(name) ? 'search' : name, ...resourcePlan, ...entrypointPlan, ...repeatPlan,
+  await publishToolPlan(toolPlan, { mode: ['dollar', 'default-view'].includes(name) ? 'search' : name, ...resourcePlan, ...entrypointPlan, ...repeatPlan,
     ...(namedSettings ? namedSettings.plan : {}),
     ...(scalarScenario ? { calls: scalarCalls.map(({ id, args }) => ({ id, args })) } : {}) });
   const fakeProvider = await provider(base), preload = join(base, 'observer.mjs');
@@ -3026,7 +3031,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       assert.equal(captures.length, namedSettings.plan.calls.length + 1, 'Each scripted named-reference tool has one actual following provider request');
     } else if (name === 'default-view') {
       assert.equal(captures.length, 2);
-      await save(toolPlan, { mode: 'complete' });
+      await publishToolPlan(toolPlan, { mode: 'complete' });
       await rpc.prompt('Continue the ordinary task using the now available default directory metadata. Do not read any Skill body.');
       captures = await rows(providerFile); last = captures.at(-1).context;
       assert.equal(captures.length, 3, 'Nonblocking startup and one ordinary continuation are both retained');
@@ -3058,7 +3063,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     } else if (name === 'dollar') {
       const selected = discovery.records.filter(record => record.name === 'a' && record.source === source.id);
       assert.equal(selected.length, 1);
-      await save(toolPlan, { mode: 'complete' });
+      await publishToolPlan(toolPlan, { mode: 'complete' });
       await rpc.prompt('Continue the ordinary task with the selected Skill and the current default directory.');
       captures = await rows(providerFile); last = captures.at(-1).context;
       for (const key of ['a', 'base']) assert.equal(bodyCount(last, info.bodies.get(key)), 1, `${key}: full source body exactly once`);
@@ -3244,7 +3249,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       const materialized = await inventory(source.cacheDir);
       for (const file of batch.unselected) assert.equal(materialized.some(item => item.path.endsWith('/' + file.path)), false, 'Unselected resources are absent from Broker materialization');
       const requestsBeforeRepeat = captures.length; assert.equal(requestsBeforeRepeat, shortResourceRefs ? 4 : 3);
-      await save(toolPlan, { mode: 'resource-batch-repeat', ...resourcePlan });
+      await publishToolPlan(toolPlan, { mode: 'resource-batch-repeat', ...resourcePlan });
       await rpc.prompt('Read the same fixed resource set again in one read paths call. Keep the same owner and snapshot without activating its main body.');
       captures = await rows(providerFile); last = captures.at(-1).context;
       const repeated = toolResult(last, 'sc07-resources-repeat'), repeatedRaw = fromFrame('sc07-resources-repeat');
@@ -3294,7 +3299,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       await save(join(output, 'prepared.json'), prepared);
       const requestsBeforeRepeat = captures.length;
       assert.equal(requestsBeforeRepeat, 3, 'Search and first preparation produce two tool rounds');
-      await save(toolPlan, { mode: 'prepare-repeat' });
+      await publishToolPlan(toolPlan, { mode: 'prepare-repeat' });
       await rpc.prompt('Use the same a, b and c Skills again, keeping their selected versions.');
       captures = await rows(providerFile); last = captures.at(-1).context;
       const repeated = toolResult(last, 'sc05-prepare-repeat'), repeatedRaw = fromFrame('sc05-prepare-repeat');
@@ -3620,7 +3625,7 @@ async function liveScenario(info, scratch, evidence) {
   await save(join(agentDir, 'settings.json'), { packages: [info.packageRoot] });
   const providerFile = join(output, 'provider.jsonl'), hookFile = join(output, 'provider-hooks.jsonl'), ledger = join(output, 'observer.jsonl');
   const toolPlan = join(base, 'tool-plan.json'), preload = join(base, 'observer.mjs');
-  await save(toolPlan, { mode: 'complete' });
+  await publishToolPlan(toolPlan, { mode: 'complete' });
   const fakeProvider = await provider(base); await observer(preload);
   const env = isolatedEnv({ base, agentDir, NOTION_API_TOKEN: process.env.NOTION_API_TOKEN,
     NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000', CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_CONFIG: config,
@@ -3685,7 +3690,7 @@ async function liveScenario(info, scratch, evidence) {
     assert.equal(initialEvents.filter(event => event.kind === 'sdk' && event.event === 'start' && event.operation !== 'list').length, 0);
     ordinaryBoundary = initialEvents.at(-1).sequence;
     await save(join(output, 'default-view.json'), defaultView);
-    await save(toolPlan, { mode: 'live-consume', owner: info.root.record.name, source: source.id, resource_path: info.resource.path });
+    await publishToolPlan(toolPlan, { mode: 'live-consume', owner: info.root.record.name, source: source.id, resource_path: info.resource.path });
     await rpc.prompt('Find and use ' + info.root.record.name + ' with its complete Requires. Then read the returned ' + info.resource.path + ' resource.');
     let captures = await rows(providerFile);
     const used = captures.find(capture => toolResult(capture.context, 'live-use'));
@@ -3698,7 +3703,7 @@ async function liveScenario(info, scratch, evidence) {
     const call = { id: 'live-resource', args: resourceCall.args, expectedText: info.resource.content, completeText: true, file: info.resource };
     resourceProof = assertResourceScalarResult(toolResult(read.context, call.id), { batch: { snapshot: info.root }, call });
     assert.equal(bodyCount(read.context, info.resource.content), 1);
-    await save(toolPlan, { mode: 'complete' });
+    await publishToolPlan(toolPlan, { mode: 'complete' });
     await rpc.prompt('Continue the ordinary task using the instructions and resource already delivered.');
     captures = await rows(providerFile);
     for (const body of [...info.bodies.values(), info.resource.content]) assert.equal(bodyCount(captures.at(-1).context, body), 1, 'Ordinary continuation retains one complete copy');
