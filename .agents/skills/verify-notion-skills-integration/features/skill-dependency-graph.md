@@ -175,6 +175,32 @@ node scripts/notion-skill-graph-observer-smoke.mjs --extension /absolute/install
 
 该窄修原测试先 39/42（3 红），后 42/42；证据 `sc26-chat-catalog-eske5_gm/fail-before.log` SHA256 `42e083fcf54d76da6256d4482b7655da43c73c707abac7baa311595acf2f6b56`、`pass-after.log` SHA256 `b57d241606d94127d715af6a5e82803adeb296d231b103cc7cacdb439aca2d12`。对封存聊天原件的纯函数补充归因 `offline-chat-source.json` SHA256 `9c7e0c040407a5a491f0b7ff04de9a5809e21de541efab6e5f1f3167181b3ec6` 保持 Default 未观测、6 次 HTTP、721,014 B 已知响应加 1 次 unknown；它没有重跑模型或修改原 failed。全臂实际 6 次模型 HTTP／128,691 B 请求、33,476 input／7,680 output tokens；消费者来源 60 次 HTTP、5,284,874 B 已知响应加 1 unknown，私有归属验证另 3 次／10,101 B。子跨度不重复加总，未知响应与未发票定价不填零；没有第二臂和完整任务成功，不能宣称目录曝光收益或关闭 SC20／SC21。
 
+### 2026-11-06：两种真实 D 原型的完整结果
+
+第二臂沿原 `D-early` 入口使用纯 `a08bb6f` observer、同一 `282fb/C8` 包、Pi1.5、`magpie/group/flash-free`、原三项 prompt/Default74/owned project/private oracle。只换 harness 身份与新 evidenceRoot，反向核其余配置相等；每提交300秒、每臂1200秒、n=1、0重试/模型fallback，实际3 primary、0 followup，C未运行。旧full-cards保持failed，不以新断言或第二臂覆盖原报告。
+
+| 场景 | full-cards 原行为/结果 | on-demand-cards 原行为/结果 |
+| --- | --- | --- |
+| 无美元介绍 | list→use，正文完整但错误启用use；技术失败，介绍内容语义通过 | 0工具、泛化解释，未inspect/read；技术与内容语义均失败 |
+| 自然验收任务 | 5次本地read，未发现/使用Skill；技术失败，生成规程有端口、状态码、JSON及证据清理缺陷 | 0工具，未了解实际项目，反例为TODO且脚本路径/变量/证据保留有缺陷；技术与内容语义均失败 |
+| 普通聊天 | turn/内容通过，旧post-run目录oracle失败仍保留 | turn/case/内容通过；只见pending，Default关闭取消保留not_observed |
+
+六个首provider实际都是pending。第二臂每景都只有一个provider，因此没有取得“ready74卡片 vs 隐藏卡片”的有效任务配对。on-demand named的Default在首wire后9.798秒完成、原模型message_end为12.363秒；natural分别7.973秒与52.778秒，均没有下一次请求把目录交给模型。chat仅普通298目录完成，Default在shutdown后cancelled/resultObserved=false，不能冒充成功Default。
+
+逐wire核验三组首请求：工具定义、原任务、1,790 B guidance及其它模型参数相同；system的owned cwd等长替换，另只多 `\nNotion cards are on demand; discover them with notion_list.`。该提示实际UTF-8为60 B，JSON转义新增换行后wire精确多61 B；不是卡片节省，也不能归因为模型选路变化的充分原因。
+
+| 两臂完整成本 | full-cards | on-demand-cards |
+| --- | ---: | ---: |
+| 实际模型HTTP / request body B | 6 / 128,691 | 3 / 25,559 |
+| 模型input / output tokens | 33,476 / 7,680 | 6,222 / 4,865 |
+| Agent工具调用 | 7 | 0 |
+| 消费者来源HTTP | 60 | 50 |
+| 已知decoded响应B / unknown响应次数 | 5,284,874 / 1 | 3,683,281 / 1 |
+
+完整来源响应总量和模型response wire bytes均为unknown；Pi usage不是发票成本。full-cards私有来源归属3 HTTP / 10,101 B另列。累计输入的schema/目录/guidance/正文/历史子跨度不与整体请求相加。原 `projectedBodyUtf8Bytes` 只统计字面 `<body>` 标签span，不是全部正文：full named的三请求仍有0/0/1次完整目标正文，累计源正文6,837 B、tool JSON内转义span6,897 B、outer wire嵌套span6,973 B，已经包含在97,372 B任务输入及128,691 B全臂输入中。`readonly-review/body-accounting-supplement.json` SHA `9865f0331c04b702cf610bd5c62bdff12533f7c1563ef124bb52c02262d878a6` 解释此观察范围，不改原报告或把0当未交付。较低成本伴随任务所需读取缺失，不是成功任务收益；n=1不支持稳定时延/p95或改用按需目录。当前普通全局Skill的Default元数据合同保持，SC06/SC07/SC20/SC21均未据此关闭。
+
+第二臂原driver自然exit1、outer收集器exit0；3个Pi按原rpc.stop关闭143，观察器EOF均pending0。原Evidence→系统Trash→Evidence保留65份raw、各项目5文件、daily三哨兵及包身份，未执行生成的规程脚本。证据根 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc06-on-demand-a08-csh6fejk/`：原manifest SHA `9f7efd765d3ca812fd3d042ada78d9de3dc3d483392c2e610bbf545ba24c07ba`，`closure/ece.json` SHA `f3038f83a9f86442269d7ca545f9d90ccc7cb2f793033df5d5b14095c5844a88`，`readonly-review/costs-and-outcomes.json` SHA `a90003952e33029fcacf4029e28b9a8f3ff1dc9793b50aab4bac45e2199a5391`，`first-input-comparison.json` SHA `600e28211d4429592ae1cf2b025b5abd07083092c73e26432a38805c14b629a4`，独立内容审阅 `independent-semantics-verification/handoff.json` SHA `22ff83adcbe3872d41482333f528ad5535f83f0198f0ed28dd823616fa5c4d94`。这些sidecar不改变原技术结果。
+
 ### SC06 同次 provider 的生成卡片描述复用
 
 原 ce50/C7 Pro live 的七份实际 serializer 请求已独立定位重复：末次默认 74、list 2、Members 55、Requires 1，共 132 个生成卡片出现、79 个来源身份。作者正文中的 `## Members`、根和 Requires 合计 47,475 B 均保留。诊断原件为 `sc06-controlled-pair-9d9314r3/metadata-card-readonly/report.json`（SHA256 `0d2521153fb11cb48c27795d7eafb1f4d927f37c1c45257e53784343edf772dc`）；这是历史实际输入的重复字段分析，不是新候选已实现的成本收益。

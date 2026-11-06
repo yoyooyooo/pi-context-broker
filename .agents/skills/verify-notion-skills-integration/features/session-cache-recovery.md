@@ -72,7 +72,7 @@ node scripts/notion-sdk-pi.mjs evidence --evidence "$SDK_LIFECYCLE_EVIDENCE"
 
 2026-11-06 的 Broker `1e23f5e` CI run `42178766964`／job `127763231400` 保留 all14 的 13 PASS／1 FAIL：取消景实际出现 `response_held → signal_aborted`，随后 assistant 报 `Unexpected end of JSON input`，未到晚到 callback，不能因 RPC abort 成功与进程自然退出而判取消门槛通过。原 artifact 在 `~/Library/Logs/pi-context-broker/AH-617-20261105/ci-1e23-failure-7_dnjq04/`，zip SHA256 `7813cff289ac87a9e87ccf9c77da2a323ec610772a0b04e119b987e802c5e109`。CI 没有捕获当次 plan 读取字节，因此该次恰好读到截断窗口仍是有源码和时序支持的归因，不写成已直接观察。
 
-对应确定性离线红→绿保存在同一 Logs 根的 `sc08-tool-plan-atomic-kexw13g1/`。原测试在真实文件 `open('w')` 后、写入前暂停，直接读到已发布文件为 0 B 并重现同类 parse error；另核写入／rename 失败不能破坏旧计划。`fail-before.log` 为 3/3 预期失败，SHA256 `e2b1e8dabf7a17798fa1ba8a734b0a21b52e0ead108c135cc272e1054ea34d0e`；修复后同三例通过，`pass-after.log` SHA256 `31946011edf73bf2452ac32b4ec8c835863cd8c72805d35fda27c49dd6d4b3ee`，原 SDK driver 测试整组 107/107，`sdk-test.log` SHA256 `102f7ea2188bbe0de269f75917b46020f2688eeb8376a8552c3e2d05827cbfb1`。切点始终释放，无 sleep 调度；原 `/abort/`、真实晚到 callback、分支无 active／正文、超时和零重试断言不变。本轮未启动 Pi、SDK consumer、真实来源或模型；修复后的独立安装 `session-lifecycle` 实驱仍待授权，原 CI 失败不重判。
+对应确定性离线红→绿保存在同一 Logs 根的 `sc08-tool-plan-atomic-kexw13g1/`。原测试在真实文件 `open('w')` 后、写入前暂停，直接读到已发布文件为 0 B 并重现同类 parse error；另核写入／rename 失败不能破坏旧计划。`fail-before.log` 为 3/3 预期失败，SHA256 `e2b1e8dabf7a17798fa1ba8a734b0a21b52e0ead108c135cc272e1054ea34d0e`；修复后同三例通过，`pass-after.log` SHA256 `31946011edf73bf2452ac32b4ec8c835863cd8c72805d35fda27c49dd6d4b3ee`，原 SDK driver 测试整组 107/107，`sdk-test.log` SHA256 `102f7ea2188bbe0de269f75917b46020f2688eeb8376a8552c3e2d05827cbfb1`。切点始终释放，无 sleep 调度；原 `/abort/`、真实晚到 callback、分支无 active／正文、超时和零重试断言不变。此离线切片未启动 Pi、SDK consumer、真实来源或模型；随后完成的独立安装 `session-lifecycle` 实驱与 CI 见下节，原 CI 失败不重判。
 
 | 实际入口 | 正反例与证据 |
 | --- | --- |
@@ -87,6 +87,14 @@ node scripts/notion-sdk-pi.mjs evidence --evidence "$SDK_LIFECYCLE_EVIDENCE"
 审阅 `lifecycle-launch.json`、`lifecycle-steps.json`、逐阶段 `*-branch.json`、`fixed-restore.json`、`messages-after-compact-before-restore.json`、逐进程 `rpc-frames*.json` / `rpc-lifecycle*.json`、`native-session-events.jsonl` 和 `observer*.jsonl`。被动 native event handler 必须在 Broker 之前注册，记录事件入口；在产品 await 之后才执行的 handler 不能作为取消发生时刻，不补时间容差。新增 `shutdown-pending-before-eof.json` 必须保留关闭前仍有 SDK pending 的事实；`observer-shutdown.jsonl` 与 `source-finality-shutdown.json` 证明关闭后的实际终局，不能由 exit0 单独推断完成。每进程独立 SDK hash-chain 与 terminal，全部关闭才封存和 cleanup；真实 session 文件原样归档。所有 provider capture 均通过已安装 pi-ai 序列化并向本地 HTTP 发出，schema、正文、历史、工具与字节累计在 `provider-http.json` 中；受控摘要质量、真实模型、真实 Notion、冷 source 与双机恢复仍分别验收。
 
 目录 owner 回归复用 `bun packages/context-broker/scripts/catalog-menu.test.ts` 内的 `catalog-menu-session.test.ts`：原暖目录、旧 context 退休、新会话菜单与取消切换断言不变；追加真实阻塞 command catalogue 子进程，`session_shutdown` 返回前该 PID 必须已关闭，不能通过释放读屏障让其自然完成。host metadata generation 先退休，随后 owner abort/await；旧 promise 不得发布目录、通知已退休的 session 或从旧菜单重启请求。command 子进程门禁与上述默认 SDK／真实 Pi 门禁分别保留。
+
+### 2026-11-06：原子计划发布后的安装与 CI
+
+`8650132` 的原子 tool-plan 发布只修受控 provider fixture；实际安装产品仍为 `282fb/C8`。用纯865原driver、同4a43输入和Pi1.5执行一次 `session-lifecycle`，外层180秒/RPC60秒、n=1、0重试。driver自然exit0、2,460.218ms，3个Pi都自然exit0；post-dispatch abort的实际请求 `29398:2` 依次 held→abort→晚到callback aborted=true→end，原 `/abort/` 断言通过。取消分支 active=0、selected graph=0、pins=[]，允许prepared未active元数据，随后普通消息无正文；fork/clone/switch/tree/compact/resume和pending目录EOF均保留原断言。
+
+实际15 SDK（12 list、3 consume）/0 source HTTP/0 CLI/0远端模型；17份安装serializer请求累计171,933 B，3工具调用。原Evidence→系统Trash→Evidence后93原件、87包文件、8helper、daily三哨兵与Tern原暂存保持。证据 `sc08-tool-plan-installed-wrz4fx6a/handoff.json` SHA `194927b42970dc444111a8c01a30c03f30e906dc44840783d997c1623cf64fcb`，原报告 SHA `d75b8dee844f97e683ee92fa8a8529739f798c13c7d6a74c6a45250b94e7835f`，ECE SHA `ba2eee3c4535370c69d9eed290e565eeed2dadebfbfd34667a07745e649a3d2b`，均在本Skill既有 AH-617 Logs 根。
+
+[865 CI attempt1](https://github.com/yoyooyooo/pi-context-broker/actions/runs/42182196099) 和 [a08 CI attempt1](https://github.com/yoyooyooo/pi-context-broker/actions/runs/42184373169) 的 check、native host、独立安装 Pi、Pi1.4、OMP/Tern及pack步骤全部通过。CI生命周期的17份serializer为175,826 B，单独保留，不能混成上述本机171,933 B。两份完整CI日志分别 SHA `9e90928cbf65fd105cabdd63d70ec8acc46d31f7debb2a6cd6a4fc1b0edcf9da` / `3d4709c5c78d332a5aee1fc95f24ec157293ac5b71ef75330dc189d2b2128d73`，没有workflow重跑。原1e23的13 PASS / lifecycle FAIL仍失败；这次不代表真实Notion或模型任务成功。
 
 ### SC08 压缩保留全文与伪标签的显式变体
 

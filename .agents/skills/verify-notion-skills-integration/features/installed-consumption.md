@@ -147,6 +147,30 @@ The sequence is ordinary greeting → ordinary continuation with the complete re
 
 Full SDK traces account for actual HTTP attempts, response bytes and source writes; unknowns are not zero. Provider absence is not source exclusion: retained chunk ownership and every unselected Member need the existing independent `notion-skill-source-proof` attribution. Until that separate proof exists, the live result explicitly reports partial acceptance. No additional verification platform, source mutation, new pin, copied authentication or daily configuration change is part of this route. Keep failed attempts, then run the existing `evidence`, `cleanup`, and `evidence` commands against sealed owned output.
 
+### 2026-11-06：C8 双机与完整安装身份
+
+最终运行时为 CLI `b5564ee` / Broker `726d274`。CLI 独立归档 SHA `2c65d54aee20f0fbb30af30bd1d67b32ad00e7285f0c9a50bc9f477962aeee9f`（68 文件），Broker 归档 SHA `282fb35a8266fc76c49d9ae3e423fff536b5d9b8d7346b059474357cca28d889`（87 文件）。随后 `1e23f5e`、`8650132`、`a08bb6f` 只改验证器、测试和地图；不以相同版本号替代完整文件身份。
+
+Pro 与 Mini 各自在 checkout 外独立安装、以自身认证执行公共 help 与六条 list/read/use/files/resource/export 命令，再用普通 package 自动加载、无 `source.command` / prefetch 的原 live SDK 入口消费。每机 SDK 为 2 list + 1 consume + 1 read、0 CLI 子进程，真实 Default View 74 项，根与 Requires 共 47,475 B、所选资源 1,135 B；公开导出另有 46 个业务文件、364,634 B。每机实际 37 HTTP / 3,473,054 decoded response B / 0 write；独立源归属覆盖 6 次正文 attempts，54 个未选 Members 与 unknown body targets 都为 0。后续 provider 仅一份完整正文。
+
+两机各 7 份实际安装 serializer 请求为 435,010 / 436,736 B，provider 受控，不能代替真实模型质量。相对 ce50 同路线各少 37,508 B；HTTP 与响应量未下降，这是跨版本描述性比较，不能加上 CLI read 另少 6 请求的差额。两 Pi 自然 exit 0；86 份原件与 10 份归属 sidecar 经原 Evidence→系统 Trash→Evidence 后不变，日用配置、87 包文件、8 helper 均保持，没有跨机复制 credential、SQLite 或正文缓存。
+
+历史恢复只声明已实际双机演练的 shared `snapshot-…` pin / `graph-…`：旧 a80 producer 的 A，在 current 已为 B 后冷恢复 2 节点4文件711 B；每机13 HTTP、0 current body，后续9次固定读0 HTTP。C6→C7→C8 固定 reader 闭包逐文件继承；缺失/损坏、offline、401/403 和禁止 current 回退由原安装 SDK22 / 缓存负例维护。该格式使用精确 Records object chunks，不依赖签名附件 URL；专门 expired-link 下载未执行，不把 URL 参数轮换或 Notion 权限失败冒充它。旧 retained ZIP 共用分块 reader 是源码边界，不算本轮双机 ZIP 执行。
+
+完整旧包负例复用原 `intentDoctor`：内部自洽的 ce50/C7 与 C8 同 version `0.0.2`、同 `src/index.ts` SHA `97e7aa5f…`；分别 86/87 发布文件与自身归档一致。仅更改实际 package/extension 路径、保留全部 C8 expected 字段，Doctor 在 `candidate.packageSha256` 比较处 exit 1 拒绝，60 个归档检查子进程全部 close 0，没有 Pi/CLI 消费或来源/模型请求。已有缺 SDK、错 protocol/version、坏 bundle hash 和不支持 Pi 版本的真实 loader/CI 负例仍保留。
+
+证据根为 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/`：
+
+| 原件 | SHA256 |
+| --- | --- |
+| `sc22-final-c8-3a02z8s9/sdk-live-handoff-1e23f5e.json` | `5d9017ed67ed76d2e4cebae1a97dcf269a58e97f1cc25796d97eb7cf010dc1fd` |
+| 同目录 `ce50-comparison-1e23f5e.json` | `46667f76589858f7751de0be591bee143c1f54cfce56fe9e4c88e70205509bec` |
+| 同目录 `cli-physical-handoff.json` | `c04515f1ef4e156063f803d0e26fb6793de0ddb0cbaa659ced03fc2b93bc323a` |
+| `sc22-old-package-negative-_6fna3uy/handoff.json` | `b63380ec6af185882a6711f051df52a7f4fbfc252b565126600ac4ba4b4a891b` |
+| 同目录 `attachment-scope-review.json` | `090a9dc3174f119c0e3cc3d29d036b01fca740f4cd4e44b14cf0d96e43785ff9` |
+
+root 直接核过双机 44 个 SDK 引用、Mini SSH 原件和旧包负例15引用。SC22 六项安装检查已记录，整票继续依赖 SC07 的真实 read/use 主路径；不据此关闭 SC20/SC21、切换日用或发布 npm。旧130 Pro、1e23 CI和模型失败保留。原子计划发布修复后的安装/CI结果见 `session-cache-recovery.md`；真实模型结果见 `skill-dependency-graph.md`。
+
 ### 2026-11-02 normal-path result
 
 A separately installed npm candidate was exercised with Pi 1.4.0 and Node 24.20.0 against a real two-file shared Notion Skill. Main and resource bodies were directly edited through the official Notion API, then observed by the CLI as a new complete fixed snapshot; the earlier pin remained unchanged. The Pi-only live run passed metadata-only advertisement, native read, cold native command, dollar selection, both invocation switch directions, repeat deduplication and persisted continuation. Its provider was controlled, so this result is separate from model acceptance.

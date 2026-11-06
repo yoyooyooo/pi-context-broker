@@ -75,6 +75,8 @@ pending 的独立 SDK 原件在 `sc06-c8-sdk-all14-zzcex1t7/validation-130a7e4/p
 
 使用已有只读授权的库和 View。模型模式需明确 `--model provider/model`、自然任务和 `--view VIEW_ID`。要求模型选择入口、成功读取正文及同快照支持文件，实际网络成功并把两份内容送入后续请求。模型与预算须沿当前已批准配置冻结，不修改全局模型选择。记录失败，不把受控 provider 或 HTTP 200 单独算作完成。Pi 复制实际广告的短引用或 canonical ref，OMP 保留宿主兼容入口；均须核验源 owner/scope/pin、完整回执和实际进入 provider 的字节，不能把 metadata stub 或 preparation details 当成已投递正文。
 
+2026-11-06 的同包真实模型两原型结果见 `skill-dependency-graph.md` 的“两种真实 D 原型”。两臂各三景首provider均pending；on-demand每景只有首请求，后台完成Default74没有进入下一请求，因此没有ready卡片曝光的有效配对。普通聊天无正文读取、无目录强制等待，shutdown取消保持独立状态；介绍与自然任务均存在真实选路失败，不能用较少工具/输入称收益。没有采用on-demand为产品默认策略、扩大样本或改变原预算，普通全局Skill的Default名称/描述/准确入口合同保持。
+
 ## 有界预取与压缩专项
 
 ```bash
