@@ -176,7 +176,8 @@ export function generatedDescriptionEvidence(messages, expected, matchesBinding)
     try { cards = generatedCatalogCards(message); } catch { continue; }
     const matches = cards.filter(card => ['ref', 'id', 'scope', 'source', 'kind', 'name', 'description', 'availability'].every(key => card[key] === expected[key])
       && card.canonical_ref === expected.canonical_ref && matchesBinding(card.binding, card.body_sha256, card.body_bytes));
-    if (matches.length !== 1) continue;
+    // Relation groups and complete roots may share the same current card.
+    if (matches.length === 0) continue;
     const { binding: _binding, ...card } = matches[0];
     return { origin: 'complete-generated-directory', ...card };
   }

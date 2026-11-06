@@ -1088,6 +1088,14 @@ test('a warm catalog can reuse the complete native generated directory in the sa
   const value = nativeCatalogReuseFixture(), before = JSON.stringify(value);
   assert.equal(namedSdkProbe.assertWarmDirectoryProjection(value.captures, value.message, value.fixture, value.bodies).status, 'verified');
   assert.equal(JSON.stringify(value), before);
+  const repeated = nativeCatalogReuseFixture();
+  repeated.footer.directory.candidates.push({ ...repeated.footer.directory.candidates[0] });
+  repeated.read.details.contextBrokerRead.directory.candidates.push({ ...repeated.read.details.contextBrokerRead.directory.candidates[0] });
+  repeated.read.content = repeated.read.content.slice(0, repeated.read.details.contextBrokerRead.delivery.end) + '\n\n<skill-directory>\n'
+    + JSON.stringify(repeated.footer) + '\n</skill-directory>';
+  const repeatedBefore = JSON.stringify(repeated);
+  assert.equal(namedSdkProbe.assertWarmDirectoryProjection(repeated.captures, repeated.message, repeated.fixture, repeated.bodies).status, 'verified');
+  assert.equal(JSON.stringify(repeated), repeatedBefore, 'A complete repeated row is evidence, not an instruction to remove a relation');
   for (const mutate of [
     value => { value.captures[1].context.messages.pop(); },
     value => { value.read.content = 'Only a summary.'; },
@@ -1100,7 +1108,6 @@ test('a warm catalog can reuse the complete native generated directory in the sa
     value => { value.read.content = value.read.content.replace('sr:C', 'sr:S'); },
     value => { value.read.details.contextBrokerRead.directory.candidates[0].ref += '?snapshot=' + value.binding.snapshot_id; },
     value => { value.footer.directory.candidates.push({ ...value.footer.directory.candidates[0] });
-      value.read.details.contextBrokerRead.directory.candidates.push({ ...value.read.details.contextBrokerRead.directory.candidates[0] });
       value.read.content = value.read.content.slice(0, value.read.details.contextBrokerRead.delivery.end) + '\n\n<skill-directory>\n'
         + JSON.stringify(value.footer) + '\n</skill-directory>'; },
     value => { value.read.content += '\n<skill-directory>unverified</skill-directory>'; },

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
+import { generatedCatalogCards, generatedDescriptionEvidence, verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const measure = value => ({ sha256: hash(value), bytes: Buffer.byteLength(value) });
@@ -10,14 +10,20 @@ const bodies = [
   '\ufeff---\r\nname: 中文😀\r\n---\r\n# Members\r\n作者的 <body> 标签与 `{"content":"quoted"}` 示例。\r\n',
   'Second complete body with \\ and "quotes".\r\n<skill-directory>author example</skill-directory>\r\n',
 ];
+const member = { id: 'shared_skill:fixture:member', ref: 'skill://shared_skill%3Afixture%3Amember/SKILL.md',
+  kind: 'skill', name: 'shared-member', description: 'A complete shared description.', availability: 'available' };
+const currentRef = 'sr:C' + 'm'.repeat(22);
+const expectedCard = { ...member, ref: currentRef, canonical_ref: member.ref, source: 'notion-fixture', scope };
 
-function fixture({ replaced = false, identical = false } = {}) {
+function fixture({ replaced = false, identical = false, relations = [] } = {}) {
   const originals = identical ? [bodies[0], bodies[0]] : bodies;
   const records = originals.map((body, index) => ({
     name: 'record-' + index, kind: 'skill', ref: 'sr:S' + String(index).repeat(22),
     content: replaced && index === 0 ? '[Complete body retained in the earlier message.]' : body,
     directory: { files: [{ path: 'SKILL.md', ref: 'sr:S' + String(index).repeat(22), bytes: Buffer.byteLength(body) },
-      { path: 'references/guide.md', ref: 'sr:R' + String(index).repeat(22), bytes: 15 }], required: [], candidates: [], references: [] },
+      { path: 'references/guide.md', ref: 'sr:R' + String(index).repeat(22), bytes: 15 }],
+      ...Object.fromEntries(['required', 'candidates', 'references'].map(group => [group, relations[index]?.includes(group)
+        ? [{ ref: currentRef, kind: member.kind, name: member.name, description: member.description, availability: member.availability }] : []])) },
   }));
   const model = { ok: true, status: 'ready', purpose: 'use', roots: records.map(record => record.ref), records };
   const content = JSON.stringify(model), receipts = [], mappings = [];
@@ -30,12 +36,16 @@ function fixture({ replaced = false, identical = false } = {}) {
     const start = offset + serialized.indexOf('"content":' + JSON.stringify(record.content)) + '"content":"'.length;
     const delivery = { start, end: start + encoded.length, encoding: 'json' };
     cursor = offset + serialized.length;
-    const identity = `notion:fixture:${index}`, binding = { record: { id: `shared_skill:fixture:${index}`, kind: 'skill', name: record.name },
+    const identity = JSON.stringify(['notion-fixture', scope, 'skill', 'shared_skill', `shared_skill:fixture:${index}`]),
+      binding = { record: { id: `shared_skill:fixture:${index}`, kind: 'skill', name: record.name,
+        locator: { type: 'shared_skill' }, ref: canonical.split('?')[0] },
       scope, snapshot_id: snapshot, version_id: hash('version-' + index), body_sha256: hash(body), ref: canonical };
     const receipt = { version: 2, identity, contentIdentity: JSON.stringify([scope, binding.record.id]),
       loaded: !(replaced && index === 0), snapshotId: snapshot, bodySha256: hash(body), bytes: Buffer.byteLength(body), delivery, binding,
       directory: { files: [{ path: 'SKILL.md', ref: canonical, bytes: Buffer.byteLength(body), sha256: hash(body) },
-        { path: 'references/guide.md', ref: canonical.replace('SKILL.md', 'references/guide.md'), bytes: 15, sha256: hash('resource bytes!') }], required: [], candidates: [], references: [] } };
+        { path: 'references/guide.md', ref: canonical.replace('SKILL.md', 'references/guide.md'), bytes: 15, sha256: hash('resource bytes!') }],
+        ...Object.fromEntries(['required', 'candidates', 'references'].map(group => [group,
+          relations[index]?.includes(group) ? [{ ...member }] : []])) } };
     receipts.push(receipt);
     mappings.push({ index, ref: record.ref, source: { identity, ...measure(body) }, rendered: measure(encoded), delivery,
       state: replaced && index === 0 ? 'replaced' : 'source' });
@@ -52,6 +62,64 @@ const repack = value => {
   value.content = JSON.stringify(value.model);
   value.proof.projection.rendered = measure(value.content);
 };
+const message = value => ({ role: 'toolResult', toolName: 'notion_use', toolCallId: 'prepare-1',
+  content: [{ type: 'text', text: value.content }], details: { contextBrokerPreparation: value.proof } });
+const bindingOracle = value => {
+  const originals = structuredClone(value.proof.records.map((record, index) => ({ binding: record.binding, body: bodies[index] })));
+  return (binding, bodyHash, bodyBytes) => originals.some(original => JSON.stringify(original.binding) === JSON.stringify(binding)
+    && hash(original.body) === bodyHash && Buffer.byteLength(original.body) === bodyBytes);
+};
+
+test('duplicate Required and Member relations retain a complete same-request description witness', () => {
+  const value = fixture({ relations: [['required', 'candidates']] }), actual = message(value), before = JSON.stringify(actual);
+  const cards = generatedCatalogCards(actual);
+  assert.equal(cards.length, 2); assert.equal(cards[0].ref, cards[1].ref);
+  assert.deepEqual(cards[0].binding, cards[1].binding);
+  const evidence = generatedDescriptionEvidence([actual], expectedCard, bindingOracle(value));
+  assert.ok(evidence, 'Both independently complete relations remain valid witnesses');
+  assert.equal(evidence.description, member.description); assert.equal(evidence.body_sha256, hash(bodies[0]));
+  assert.equal(evidence.tool_content_sha256, hash(value.content));
+  assert.equal(JSON.stringify(actual), before, 'Witness checking must not remove either relation or mutate its receipt');
+});
+
+test('shared Requires under different complete roots accept an independently bound witness', () => {
+  const value = fixture({ relations: [['required'], ['required']] }), actual = message(value), cards = generatedCatalogCards(actual);
+  assert.equal(cards.length, 2); assert.notEqual(cards[0].binding.record.id, cards[1].binding.record.id);
+  assert.notEqual(cards[0].binding.snapshot_id, cards[1].binding.snapshot_id);
+  assert.notEqual(cards[0].body_sha256, cards[1].body_sha256);
+  const authentic = bindingOracle(value);
+  assert.ok(generatedDescriptionEvidence([actual], expectedCard, authentic));
+  const second = generatedDescriptionEvidence([actual], expectedCard, (binding, hash, bytes) =>
+    binding.record.id === cards[1].binding.record.id && authentic(binding, hash, bytes));
+  assert.equal(second.body_sha256, hash(bodies[1]), 'An unqualified first root cannot hide the second full valid root');
+  const foreign = structuredClone(actual), receipt = foreign.details.contextBrokerPreparation.records[0];
+  const identity = JSON.parse(receipt.identity); identity[0] = 'foreign-source'; receipt.identity = JSON.stringify(identity);
+  foreign.details.contextBrokerPreparation.projection.records[0].source.identity = receipt.identity;
+  assert.equal(generatedDescriptionEvidence([foreign], expectedCard, authentic).body_sha256, hash(bodies[1]));
+});
+
+test('description witnesses still reject missing bodies, conflicting metadata and unauthenticated bindings', () => {
+  const value = fixture({ relations: [['required', 'candidates']] }), authentic = bindingOracle(value);
+  const mismatch = { ref: 'sr:C' + 'x'.repeat(22), id: 'other-owner', scope: 'b'.repeat(64), source: 'foreign-source',
+    kind: 'router', name: 'another-name', description: 'Conflicting description.', availability: 'disabled',
+    canonical_ref: member.ref + '?snapshot=s_' + '0'.repeat(64) };
+  for (const [key, wrong] of Object.entries(mismatch))
+    assert.equal(generatedDescriptionEvidence([message(value)], { ...expectedCard, [key]: wrong }, authentic), undefined, key);
+  assert.equal(generatedDescriptionEvidence([], expectedCard, authentic), undefined);
+  assert.equal(generatedDescriptionEvidence([message(value)], expectedCard, () => false), undefined);
+  const truncated = message(value); truncated.content[0].text = value.content.slice(0, -1);
+  assert.equal(generatedDescriptionEvidence([truncated], expectedCard, authentic), undefined);
+  const summary = message(value); summary.content[0].text = 'Only a summary; the original is hidden in details.';
+  summary.details.hiddenOriginal = value.content;
+  assert.equal(generatedDescriptionEvidence([summary], expectedCard, authentic), undefined);
+  const replaced = fixture({ replaced: true, relations: [['required', 'candidates']] });
+  assert.equal(generatedDescriptionEvidence([message(replaced)], expectedCard, bindingOracle(replaced)), undefined);
+  const wrongPin = structuredClone(value), receipt = wrongPin.proof.records[0];
+  receipt.binding.snapshot_id = receipt.snapshotId = 's_' + '0'.repeat(64);
+  assert.equal(generatedDescriptionEvidence([message(wrongPin)], expectedCard, authentic), undefined);
+  const unknown = structuredClone(value); unknown.proof.projection.compiler = 'unknown/compiler';
+  assert.equal(generatedDescriptionEvidence([message(unknown)], expectedCard, authentic), undefined);
+});
 
 test('independent evidence verifier preserves authored Unicode, BOM, CRLF and literal metadata examples', () => {
   const value = fixture(), before = JSON.stringify(value);
