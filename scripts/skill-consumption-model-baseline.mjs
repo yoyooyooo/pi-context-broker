@@ -11,7 +11,7 @@ import { createRequestLedger } from './notion-default-context.mjs';
 import { systemTempRoot, evidenceRoot, verificationCliEnvironment } from './verification-paths.mjs';
 import { safeDiagnostic } from './verification-command.mjs';
 import { consumptionCostExtensionSource, readConsumptionCostEvents, consumptionMetricStats } from './skill-consumption-cost.mjs';
-import { providerTransportExtensionSource, readProviderTransport } from './skill-consumption-provider.mjs';
+import { providerTransportExtensionSource, readProviderTransport, providerApplicationCompletion } from './skill-consumption-provider.mjs';
 import { sourceObserverPreloadSource, readSourceObservation } from './skill-consumption-source-observer.mjs';
 import { packageIdentity } from './notion-skill-graph-model.mjs';
 import { dailyRouteContract, verifyDailyRouteState } from './verify-skill-graph-contract.mjs';
@@ -837,22 +837,24 @@ export function modelBaselineModelEvidence(sample,events,transport,modelProfile)
     if(message&&[message.thinkingLevel,message.providerThinkingLevel].some(level=>level!=null&&level!=='high'))errors.push('MODEL_RESPONSE_THINKING_MISMATCH');
     if(!message||!['input','output','cacheRead','cacheWrite','totalTokens'].every(key=>Number.isFinite(message.usage?.[key])&&message.usage[key]>=0)
       ||message.usage.totalTokens<=0)errors.push('MODEL_RESPONSE_USAGE_UNALIGNED');
+    let applicationCompletion=null;
     for(const wire of wires) {
       const ends=transport.filter(end=>end.phase==='request_end'&&end.id===wire.id);
-      if(ends.length!==1||ends[0].category!=='model'||ends[0].outcome!=='completed'||!Number.isInteger(ends[0].status)
-        ||ends[0].status<200||ends[0].status>=300)errors.push('MODEL_HTTP_ATTEMPT_FAILED');
+      const completion=ends.length===1?providerApplicationCompletion(ends[0],message):null;
+      if(!completion)errors.push('MODEL_HTTP_ATTEMPT_FAILED');
+      if(wires.length===1)applicationCompletion=completion;
     }
     return {turn:event.turn,request:event.request,provider:event.provider??null,model:event.model??null,requestModel:event.requestModel??null,
-      reasoningEffort:event.reasoningEffort??null,payloadSha256:event.payload?.sha256??null,wireRequestIds:wires.map(wire=>wire.id),
+      reasoningEffort:event.reasoningEffort??null,payloadSha256:event.payload?.sha256??null,wireRequestIds:wires.map(wire=>wire.id),applicationCompletion,
       response:message?{provider:message.provider??null,model:message.model??null,responseModel:message.responseModel??null,
         thinkingLevel:message.thinkingLevel??null,providerThinkingLevel:message.providerThinkingLevel??null,usage:message.usage}:null};
   });
   if(new Set(observed.flatMap(item=>item.wireRequestIds)).size!==requests.length)errors.push('MODEL_HTTP_ATTEMPTS_UNALIGNED');
   return {complete:errors.length===0,errors:[...new Set(errors)],requests:observed,
-    method:'Actual hook model and effort, exact sent HTTP body model/hash/bytes, and one same-turn/request assistant usage; an unknown responseModel fails the daily contract'};
+    method:'Actual hook model and effort, exact sent HTTP body model/hash/bytes, and one same-turn/request assistant usage; unknown responseModel fails. HTTP completion or separately proved SSE DONE before AbortError/20; raw HTTP failures are retained'};
 }
 
-function summarizeTurn(sample, events, transport, modelProfile) {
+export function summarizeTurn(sample, events, transport, modelProfile) {
   const selected = events.filter(event => event.turn === sample.turn);
   const requests = selected.filter(event => event.phase === 'provider_request');
   const assistants = selected.filter(event => event.phase === 'message_end' && event.message?.role === 'assistant');
@@ -877,7 +879,13 @@ function summarizeTurn(sample, events, transport, modelProfile) {
     reportedUsage:Object.fromEntries(['input','output','cacheRead','cacheWrite','totalTokens'].map(key => [key,add(assistants.map(event => event.message.usage[key]))])),
     submitToFirstProviderMs:elapsed(requests[0]), submitToFirstModelHttpMs:elapsed(active[0]), submitToFirstEffectiveTextMs:elapsed(firstText),
     submitToCompletionMs:hasSubmission?Number(BigInt(sample.completeNs)-BigInt(sample.submitNs))/1e6:null,
-    ...(modelProfile?{modelEvidence}:{}),
+    ...(modelProfile?{modelEvidence,modelApplication:{
+      completed:modelEvidence.requests.filter(request=>request.applicationCompletion!==null).length,
+      httpComplete:modelEvidence.requests.filter(request=>request.applicationCompletion==='http-complete').length,
+      sseDoneBeforeHttpCancel:modelEvidence.requests.filter(request=>request.applicationCompletion==='sse-done-before-http-cancel').length,
+      unproven:modelEvidence.requests.filter(request=>request.applicationCompletion===null).length,
+      method:'Per-request application protocol completion; HTTP outcomes, all model-contract checks and task acceptance remain separate',
+    }}:{}),
     modelHttp:{ attempts:active.length, completed:completed.length, successful:completed.filter(event => event.status >= 200 && event.status < 300 && event.outcome === 'completed').length,
       requestBodyBytes:add(sent.map(event => event.requestBodyBytes)), responseEntityBytes:add(completed.map(event => event.responseEntityBytes)),
       decodedResponseBytes:add(completed.map(event => event.decodedResponseBytes)), payloadHashesMatchObservedRequests:payloadsMatch,

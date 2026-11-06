@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';
 import { gzipSync } from 'node:zlib';
 import { observeProviderTransport, readProviderTransport } from './skill-consumption-provider.mjs';
+import * as providerObserver from './skill-consumption-provider.mjs';
 
 test('passive provider diagnostics preserve fetch, exact request and decoded response while counting HTTP entities', async t => {
   const base = fs.mkdtempSync(path.join(tmpdir(), 'consumption-provider-test-'));
@@ -124,5 +125,102 @@ test('reader verifies complete lines, boundaries, clock, counts and one terminal
     fs.writeFileSync(file, rows.map(row => JSON.stringify(row)).join('\n') + '\n');
     await assert.rejects(() => readProviderTransport(file), /PROVIDER_TRACE_/);
   });
+});
+
+function protocolTrace(directory, name, { chunks, api = 'openai-completions', status = 200,
+  contentType = 'text/event-stream; charset=utf-8', encoding = 'identity', model = true,
+  error = { name: 'AbortError', code: 20 } } = {}) {
+  const callbacks = new Map(), hooks = new Map(), output = path.join(directory, name + '.jsonl');
+  const observer = observeProviderTransport({ on(event, callback) { hooks.set(event, callback); } },
+    { diagnostics: { subscribe(event, callback) { callbacks.set(event, callback); }, unsubscribe() {} },
+      fs, crypto, path, output, checkoutRoot: process.cwd(), clockId: 'protocol-test' });
+  const context = { model: { provider: 'fixture', id: 'model', api, baseUrl: 'https://fixture.invalid' } };
+  hooks.get('session_start')({}, context);
+  hooks.get('before_provider_request')?.({ payload: {} }, context);
+  const request = { origin: model ? 'https://fixture.invalid' : 'https://other.invalid', path: '/completions', method: 'POST' };
+  const emit = (event, fields = {}) => callbacks.get('undici:request:' + event)({ request, ...fields });
+  emit('create'); emit('bodySent');
+  emit('headers', { response: { statusCode: status, headers: ['content-type', contentType, 'content-encoding', encoding] } });
+  for (const chunk of chunks) emit('bodyChunkReceived', { chunk: Buffer.from(chunk) });
+  if (error) emit('error', { error }); else emit('trailers');
+  observer.finish();
+  return { output, rows: fs.readFileSync(output, 'utf8').trimEnd().split('\n').map(JSON.parse) };
+}
+
+const normalProtocolReply = () => ({ role: 'assistant', provider: 'fixture', model: 'model',
+  responseModel: 'controlled/actual-route', stopReason: 'stop',
+  usage: { input: 17, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 22 } });
+
+test('SSE protocol targets preserve HTTP failure and distinguish DONE cancellation from finish and usage without DONE', () => {
+  const directory = fs.mkdtempSync(path.join(tmpdir(), 'consumption-provider-sse-'));
+  const finished = 'data: {"choices":[{"finish_reason":"stop"}],"usage":{"total_tokens":22},"text":"private-body-secret"}\n\n';
+  const cases = [
+    ['immediate-eof', [finished, 'data: [DONE]\n\n'], null, 'http-complete'],
+    ['done-http-open', [finished, 'data: [DO', 'NE]\n', '\n'], { name: 'AbortError', code: 20 }, 'sse-done-before-http-cancel'],
+    ['finish-usage-without-done', [finished], { name: 'AbortError', code: 20 }, null],
+    ['before-finish', ['data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'], { name: 'AbortError', code: 20 }, null],
+  ];
+  assert.equal(typeof providerObserver.providerApplicationCompletion, 'function');
+  for (const [name, chunks, error, expected] of cases) {
+    const { output, rows } = protocolTrace(directory, name, { chunks, error }), end = rows.find(row => row.phase === 'request_end');
+    assert.equal(end.outcome, error ? 'failure' : 'completed', name);
+    assert.equal(end.errorCode, error ? 20 : null, name);
+    assert.equal(end.errorName, error ? 'AbortError' : null, name);
+    assert.equal(providerObserver.providerApplicationCompletion(end, normalProtocolReply()), expected, name);
+    assert.equal(fs.readFileSync(output, 'utf8').includes('private-body-secret'), false);
+    assert.equal(rows.at(-1).complete, true, 'An observed HTTP failure still has a closed observer lifecycle');
+  }
+});
+
+test('SSE completion requires an independent complete single data event across byte and line boundaries', () => {
+  const directory = fs.mkdtempSync(path.join(tmpdir(), 'consumption-provider-sse-framing-'));
+  const cases = [
+    ['lf', ['data:[DONE]\n\n'], true],
+    ['crlf-bytewise', [...Buffer.from('data: [DONE]\r\n\r\n')].map(byte => Buffer.from([byte])), true],
+    ['cr', ['data: [DONE]\r\r'], true],
+    ['comments', [': keepalive\ndata: [DONE]\n\n'], true],
+    ['truncated-event', ['data: [DONE]\n'], false],
+    ['truncated-line', ['data: [DONE]'], false],
+    ['json-string', ['data: {"text":"data: [DONE]\\n\\n"}\n\n'], false],
+    ['multiple-data', ['data: [DONE]\ndata:\n\n'], false],
+    ['multiple-events', ['data: [DONE]\n\ndata: [DONE]\n\n'], false],
+    ['event-field', ['event: error\ndata: [DONE]\n\n'], false],
+    ['long-line', ['data: [DONE]' + ' '.repeat(100000) + '\n\n'], false],
+    ['long-prior-event', ['data: ' + 'x'.repeat(100000) + '\n\ndata: [DONE]\n\n'], true],
+    ['event-overflow', [(': keepalive\n').repeat(10000) + 'data: [DONE]\n\n'], false],
+  ];
+  for (const [name, chunks, accepted] of cases) {
+    const { rows } = protocolTrace(directory, name, { chunks }), end = rows.find(row => row.phase === 'request_end');
+    assert.equal(end.sseCompletion?.method, 'bounded-sse-data-done-v1', name);
+    assert.equal(end.sseCompletion.doneEvents === 1, accepted, name);
+    assert.ok(Buffer.byteLength(JSON.stringify(end)) < 1200, 'No unbounded body/event data enters the trace');
+  }
+});
+
+test('SSE application completion rejects unsupported transport, error, API and assistant evidence', () => {
+  const directory = fs.mkdtempSync(path.join(tmpdir(), 'consumption-provider-sse-gates-'));
+  assert.equal(typeof providerObserver.providerApplicationCompletion, 'function');
+  let sequence = 0;
+  for (const changed of [{ api: 'openai-responses' }, { status: 503 }, { model: false }, { encoding: 'gzip' },
+    { encoding: 'unknown' }, { contentType: 'application/json' }, { error: { name: 'Error', code: 20 } },
+    { error: { name: 'AbortError', code: '20' } }, { error: { name: 'AbortError', code: 'ECONNRESET' } },
+    { error: { name: 'secret-header-value with spaces', code: 20 } }]) {
+    const { rows } = protocolTrace(directory, 'gate-' + sequence++, { chunks: ['data: [DONE]\n\n'], ...changed });
+    const end = rows.find(row => row.phase === 'request_end');
+    assert.equal(providerObserver.providerApplicationCompletion(end, normalProtocolReply()), null, JSON.stringify(changed));
+    assert.equal(JSON.stringify(rows).includes('secret-header-value'), false);
+  }
+  const end = protocolTrace(directory, 'valid', { chunks: ['data: [DONE]\n\n'] }).rows.find(row => row.phase === 'request_end');
+  for (const mutate of [reply => { reply.stopReason = 'length'; }, reply => { reply.stopReason = 'aborted'; },
+    reply => { reply.stopReason = 'error'; }, reply => { delete reply.stopReason; }, reply => { reply.role = 'toolResult'; },
+    reply => { delete reply.provider; }, reply => { delete reply.model; }, reply => { delete reply.responseModel; },
+    reply => { reply.usage.input = null; }, reply => { reply.usage.totalTokens = 0; }]) {
+    const reply = normalProtocolReply(); mutate(reply);
+    assert.equal(providerObserver.providerApplicationCompletion(end, reply), null);
+  }
+  const toolUse = normalProtocolReply(); toolUse.stopReason = 'toolUse';
+  assert.equal(providerObserver.providerApplicationCompletion(end, toolUse), 'sse-done-before-http-cancel');
+  const legacy = { category: 'model', status: 200, outcome: 'failure', errorCode: 20 };
+  assert.equal(providerObserver.providerApplicationCompletion(legacy, normalProtocolReply()), null, 'Old evidence without protocol proof stays failed');
 });
 

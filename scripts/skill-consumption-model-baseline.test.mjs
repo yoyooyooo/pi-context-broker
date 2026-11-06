@@ -118,6 +118,50 @@ test('daily route retains an unreported response model as unknown and fails its 
   }
 });
 
+test('daily application completion accepts proved SSE cancellation only for the exact paired normal response', () => {
+  const { sample, events, transport } = dailyEvidenceFixture();
+  events[1].message.stopReason = 'stop';
+  Object.assign(transport[2], { outcome: 'failure', errorCode: 20, errorName: 'AbortError', modelApi: 'openai-completions',
+    contentEncoding: 'identity', contentType: 'text/event-stream', sseCompletion: { method: 'bounded-sse-data-done-v1', doneEvents: 1 } });
+  const check = (changed = events, wires = transport) => baselineDriver.modelBaselineModelEvidence(sample, changed, wires, dailyProfile);
+  const result = check(); assert.equal(result.complete, true, result.errors.join(','));
+  assert.equal(result.requests[0].applicationCompletion, 'sse-done-before-http-cancel');
+  assert.equal(transport[2].outcome, 'failure'); assert.equal(transport[2].errorCode, 20);
+  for (const mutate of [rows => { delete rows[2].sseCompletion; }, rows => { rows[2].sseCompletion.doneEvents = 0; },
+    rows => { rows[2].sseCompletion.doneEvents = 2; }, rows => { rows[2].errorName = 'Error'; },
+    rows => { rows[2].contentEncoding = 'gzip'; }, rows => { rows[2].modelApi = 'openai-responses'; },
+    rows => { rows[1].requestBodySha256 = digest('unrelated-body'); }, rows => { rows[1].requestBodyBytes++; },
+    rows => { rows.push(structuredClone(rows[2])); }]) {
+    const wires = structuredClone(transport); mutate(wires); assert.equal(check(events, wires).complete, false);
+  }
+  for (const mutate of [rows => { rows[1].request++; }, rows => { rows[1].turn++; },
+    rows => { rows[1].message.stopReason = 'length'; }, rows => { rows[1].message.responseModel = null; },
+    rows => { rows[1].message.usage.totalTokens = 0; }, rows => { rows.push(structuredClone(rows[1])); }]) {
+    const changed = structuredClone(events); mutate(changed); assert.equal(check(changed).complete, false);
+  }
+});
+
+test('daily summary keeps HTTP successful separate from proved application completion', () => {
+  assert.equal(typeof baselineDriver.summarizeTurn, 'function');
+  const { sample, events, transport } = dailyEvidenceFixture();
+  events[0].monotonicNs = '30'; Object.assign(events[0].payload, { components: [], diagnosticSpans: [] });
+  events[1].monotonicNs = '80'; events[1].message.stopReason = 'stop';
+  events.push({ phase: 'observer_end', complete: true });
+  Object.assign(transport[2], { outcome: 'failure', errorCode: 20, errorName: 'AbortError', modelApi: 'openai-completions',
+    contentEncoding: 'identity', contentType: 'text/event-stream', responseEntityBytes: 20, decodedResponseBytes: 20,
+    sseCompletion: { method: 'bounded-sse-data-done-v1', doneEvents: 1 } });
+  transport.push({ phase: 'transport_end', complete: true, selectedModel: digest(dailyRoute.model) });
+  const summary = baselineDriver.summarizeTurn(sample, events, transport, dailyProfile);
+  assert.equal(summary.observationComplete, true); assert.equal(summary.modelHttp.successful, 0);
+  assert.equal(summary.modelHttp.attempts, 1); assert.equal(summary.modelHttp.completed, 1);
+  assert.equal(summary.modelApplication.completed, 1); assert.equal(summary.modelApplication.httpComplete, 0);
+  assert.equal(summary.modelApplication.sseDoneBeforeHttpCancel, 1); assert.equal(summary.modelApplication.unproven, 0);
+  const missing = structuredClone(transport); delete missing[2].sseCompletion;
+  const rejected = baselineDriver.summarizeTurn(sample, events, missing, dailyProfile);
+  assert.equal(rejected.observationComplete, false); assert.equal(rejected.modelHttp.successful, 0);
+  assert.equal(rejected.modelApplication.completed, 0); assert.equal(rejected.modelApplication.unproven, 1);
+});
+
 test('ordinary task acceptance rejects permission-only replies containing the expected answer', () => {
   assert.equal(verifyModelAnswer({ stopReason: 'stop', text: '请先确认授权，我才能回答 12 加 7 是否等于 19。' }, ['19', '十九']), false);
   assert.equal(verifyModelAnswer({ stopReason: 'stop', text: 'I need your approval to answer whether the result is 19.' }, ['19']), false);

@@ -14,7 +14,7 @@ export function observeProviderTransport(api, settings) {
   const fd = fs.openSync(output, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW ?? 0), 0o600);
   fs.fchmodSync(fd, 0o600);
   const hash = value => crypto.createHash('sha256').update(value).digest('hex');
-  let sequence = 0, previous = null, nextRequest = 0, closed = false, errors = 0, modelOrigin, selectedModel;
+  let sequence = 0, previous = null, nextRequest = 0, closed = false, errors = 0, modelOrigin, modelApi, selectedModel;
   const rows = new Map(), active = new Set(), subscriptions = [];
   const record = (phase, data = {}) => {
     const row = { version: 1, sequence: ++sequence, previousSha256: previous, clockId,
@@ -26,6 +26,34 @@ export function observeProviderTransport(api, settings) {
     for (let i = 0; i + 1 < (headers?.length ?? 0); i += 2)
       if (String(headers[i]).toLowerCase() === name) return String(headers[i + 1]).toLowerCase();
     return undefined;
+  };
+  // Retain only a short line prefix and capped counters, never response text.
+  // A complete blank-line-delimited event must contain exactly one DONE data
+  // field. Oversized/nonterminal events are discarded and the next event starts
+  // fresh; an oversized event itself can never supply a completion proof.
+  const completionScanner = () => {
+    let prefix = '', lineBytes = 0, eventBytes = 0, invalid = false, dataLines = 0, doneData = false, doneEvents = 0, skipLf = false;
+    const lineEnd = () => {
+      if (lineBytes === 0) {
+        if (!invalid && dataLines === 1 && doneData) doneEvents = Math.min(2, doneEvents + 1);
+        eventBytes = 0; invalid = false; dataLines = 0; doneData = false;
+      } else if (lineBytes <= 16 && (prefix === 'data:[DONE]' || prefix === 'data: [DONE]')) {
+        dataLines = Math.min(2, dataLines + 1); doneData = true;
+      } else if (!prefix.startsWith(':')) invalid = true;
+      prefix = ''; lineBytes = 0;
+    };
+    return {
+      push(chunk) {
+        for (const byte of chunk) {
+          if (skipLf) { skipLf = false; if (byte === 10) continue; }
+          eventBytes = Math.min(65537, eventBytes + 1);
+          if (eventBytes > 65536) invalid = true;
+          if (byte === 10 || byte === 13) { lineEnd(); skipLf = byte === 13; }
+          else { if (lineBytes < 16) prefix += String.fromCharCode(byte); lineBytes = Math.min(17, lineBytes + 1); }
+        }
+      },
+      proof: () => ({ method: 'bounded-sse-data-done-v1', doneEvents }),
+    };
   };
   const register = (name, handle) => {
     const callback = event => {
@@ -43,7 +71,8 @@ export function observeProviderTransport(api, settings) {
     const id = ++nextRequest, origin = String(request.origin), now = process.hrtime.bigint();
     const row = { id, started: now, requestBytes: 0, responseBytes: 0, requestHash: crypto.createHash('sha256'),
       responseHash: crypto.createHash('sha256'), sent: false, headers: false, encoding: null, status: null,
-      category: modelOrigin && origin === modelOrigin ? 'model' : 'other', originSha256: hash(origin) };
+      category: modelOrigin && origin === modelOrigin ? 'model' : 'other', originSha256: hash(origin),
+      modelApi, contentType: null, completion: null };
     rows.set(request, row); active.add(request);
     record('request_start', { id, category: row.category, method: request.method, originSha256: row.originSha256,
       pathSha256: hash(String(request.path)), declaredRequestBodyBytes: Number.isSafeInteger(request.contentLength) && request.contentLength >= 0 ? request.contentLength : null });
@@ -63,11 +92,16 @@ export function observeProviderTransport(api, settings) {
     const encoding = field(response.headers, 'content-encoding');
     row.encoding = encoding === undefined || encoding === 'identity' ? 'identity'
       : ['gzip', 'br', 'deflate', 'zstd'].includes(encoding) ? encoding : 'other';
-    record('response_headers', { id: row.id, status: row.status, contentEncoding: row.encoding });
+    const contentType = field(response.headers, 'content-type');
+    row.contentType = contentType === undefined ? null : contentType.split(';', 1)[0].trim() === 'text/event-stream' ? 'text/event-stream' : 'other';
+    if (row.category === 'model' && row.modelApi === 'openai-completions' && row.status >= 200 && row.status < 300
+      && row.encoding === 'identity' && row.contentType === 'text/event-stream') row.completion = completionScanner();
+    record('response_headers', { id: row.id, status: row.status, contentEncoding: row.encoding, contentType: row.contentType });
   });
   register('bodyChunkReceived', ({ request, chunk }) => {
     const row = rows.get(request); if (!row) throw new Error('UNOBSERVED_REQUEST');
     row.responseBytes += Buffer.byteLength(chunk); row.responseHash.update(chunk);
+    row.completion?.push(chunk);
   });
   const finishRequest = (request, error) => {
     const row = rows.get(request); if (!row || !active.delete(request)) throw new Error('UNOBSERVED_REQUEST');
@@ -77,6 +111,8 @@ export function observeProviderTransport(api, settings) {
       responseEntityBytes: row.headers ? row.responseBytes : null,
       decodedResponseBytes: row.headers && row.encoding === 'identity' ? row.responseBytes : null,
       responseEntitySha256: row.responseHash.digest('hex'), contentEncoding: row.encoding,
+      modelApi: row.modelApi ?? null, contentType: row.contentType, sseCompletion: row.completion?.proof() ?? null,
+      errorName: error ? (['AbortError', 'Error', 'TypeError', 'TimeoutError'].includes(error.name) ? error.name : 'OtherError') : null,
       errorCode: error ? (/^[A-Z0-9_]{1,80}$/i.test(error.code ?? '') ? error.code : 'UNCLASSIFIED') : null });
   };
   register('trailers', ({ request }) => finishRequest(request));
@@ -91,16 +127,40 @@ export function observeProviderTransport(api, settings) {
         waitMethod: 'SDK-application-waits-not-observable-through-undici' });
     } finally { closed = true; fs.closeSync(fd); }
   };
+  const selectModel = ctx => {
+    const model = ctx.model;
+    selectedModel = model ? hash(String(model.provider) + '/' + String(model.id)) : null;
+    modelOrigin = model?.baseUrl ? new URL(model.baseUrl).origin : undefined;
+    modelApi = model?.api === 'openai-completions' ? 'openai-completions' : model?.api ? 'other' : null;
+  };
   api.on('session_start', (_event, ctx) => {
     try {
-      const model = ctx.model;
-      selectedModel = model ? hash(String(model.provider) + '/' + String(model.id)) : null;
-      modelOrigin = model?.baseUrl ? new URL(model.baseUrl).origin : undefined;
+      selectModel(ctx);
       record('model_selected', { modelSha256: selectedModel, originSha256: modelOrigin ? hash(modelOrigin) : null });
     } catch { errors++; record('observer_error', { channel: 'session_start' }); }
   });
+  api.on('before_provider_request', (_event, ctx) => {
+    try { selectModel(ctx); }
+    catch { modelApi = null; errors++; record('observer_error', { channel: 'before_provider_request' }); }
+  });
   api.on('session_shutdown', finish);
   return { finish };
+}
+
+/** The caller binds this terminal and assistant message to one exact request.
+ * HTTP failure remains a failure in the transport ledger. Only the proved SSE
+ * protocol terminal can establish a separate application completion. */
+export function providerApplicationCompletion(end, message) {
+  if (end?.category !== 'model' || !Number.isInteger(end.status) || end.status < 200 || end.status >= 300) return null;
+  if (end.outcome === 'completed') return 'http-complete';
+  if (end.outcome !== 'failure' || end.errorName !== 'AbortError' || end.errorCode !== 20
+    || end.modelApi !== 'openai-completions' || end.contentEncoding !== 'identity' || end.contentType !== 'text/event-stream'
+    || end.sseCompletion?.method !== 'bounded-sse-data-done-v1' || end.sseCompletion.doneEvents !== 1) return null;
+  if (message?.role !== 'assistant' || !['stop', 'toolUse'].includes(message.stopReason)
+    || !['provider', 'model', 'responseModel'].every(key => typeof message[key] === 'string' && message[key].trim())
+    || !['input', 'output', 'cacheRead', 'cacheWrite', 'totalTokens'].every(key => Number.isFinite(message.usage?.[key]) && message.usage[key] >= 0)
+    || message.usage.totalTokens <= 0) return null;
+  return 'sse-done-before-http-cancel';
 }
 
 export function providerTransportExtensionSource(settings) {

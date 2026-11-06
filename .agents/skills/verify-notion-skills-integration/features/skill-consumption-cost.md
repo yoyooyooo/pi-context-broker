@@ -159,7 +159,7 @@ node scripts/skill-consumption-startup.mjs run \
 
 每次 daily prompt 前先读取真实 `get_state` 并留最小状态原件，严格匹配 provider/model 和 high；不依赖不存在的 RPC retry 字段。初次或续接状态不符时保留失败且不提交 prompt。当前 baseline 仍只提供 cold/new、warm/existing；持久会话 resume 等入口由原 graph/场景 driver 验证，不新增另一套恢复平台。metadata-only `selection` 明确使用它原有的独立 controlled model，仅一个 `--model`，不混入 daily thinking/state 合同；其受控请求不算真实模型验收。
 
-原成本 observer 在每个 `provider_request` 记录实际 hook context 的 provider/model、payload 的 requestModel 和 reasoningEffort；每个 assistant `message_end` 同条保存实际 provider/model/responseModel、thinkingLevel/providerThinkingLevel 与 reported usage。无字段时保留 null，不凭 args 或计划填值；responseModel 缺失时保留 null/unknown 并使 daily 路由合同失败，不用计划模型填值或猜测路由。daily 接受要求实际 wire body.model 精确等于 `group/flash` 或 `magpie/group/flash`，每个请求的 `reasoning_effort` 实际为 high，完整 payload bytes/hash 与唯一成功的实际 HTTP body 对齐，并且实际 responseModel 与 usage 属于同一 turn/request。缺 effort、身份不符、错配/重复 usage、缺失/重复/失败 HTTP 或 body bytes/hash 不符均失败，阻止继续提交后续样本；正确答案不能覆盖模型合同失败。原请求、响应、失败与 not_run 全部保留。
+原成本 observer 在每个 `provider_request` 记录实际 hook context 的 provider/model、payload 的 requestModel 和 reasoningEffort；每个 assistant `message_end` 同条保存实际 provider/model/responseModel、thinkingLevel/providerThinkingLevel 与 reported usage。无字段时保留 null，不凭 args 或计划填值；responseModel 缺失时保留 null/unknown 并使 daily 路由合同失败，不用计划模型填值或猜测路由。daily 接受要求实际 wire body.model 精确等于 `group/flash` 或 `magpie/group/flash`，每个请求的 `reasoning_effort` 实际为 high，完整 payload bytes/hash 与唯一实际 HTTP body 对齐，并且实际 responseModel 与 usage 属于同一 turn/request。HTTP 必须完整成功，或具备下述独立 SSE 应用完成证明；原始 HTTP failure 不会改写为成功。缺 effort、身份不符、错配/重复 usage、缺失/重复 HTTP、无完成证明的 HTTP failure 或 body bytes/hash 不符均失败，阻止继续提交后续样本；正确答案不能覆盖模型合同失败。原请求、响应、失败与 not_run 全部保留。
 
 原 `skill-consumption-model-baseline.test.mjs` 和 `skill-consumption-cost.test.mjs` 覆盖上述 config/manifest 正反例、metadata 参数隔离、实际 public run 控制器的受控 RPC 状态门、原 legacy 路径，以及逐请求模型/usage/wire 对齐。受控 RPC 只替换原运行入口的 RPC 边界；Doctor 与安装 Pi 的 SettingsManager 未伪造，测试不启动 Pi RPC、来源或真实模型。RED 与原组 GREEN 证据在 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/daily-route-baseline-5golykx8/`；这些结果证明验证接线，不代表真实 wire high、真实任务成功或日用交付已经通过。
 
@@ -168,6 +168,27 @@ node scripts/skill-consumption-startup.mjs run \
 审阅随后发现：ctx 模型正确但实际 body.model 改成 worker，或 responseModel 缺失，初版 daily gate 仍可能误过。两条独立反例先产生 0 pass / 2 fail，再将实际 requestModel 限为上述两个精确值，并令缺 responseModel 的原始 null 保持 unknown/合同失败。`red-route-review.log` SHA-256 `75d75eab2923489cbef8006fa0257039d51964b02ad0bba1f1f73cd50833f2e3`；修后原两文件 59/59、0 skip，`green-full-v2.log` SHA-256 `f54969f7ececae65ac218743993659df765404dd8d9fdcc73cec634923066e14`。原 57 条结果和 v1 五文件快照保留为审阅前证据；正式交接以 `handoff-v2.json` 为准。
 
 2026-11-06 的公共 full74 source freeze 已独立完成：74 owner、262 文件、2,324,517 原始字节；setup 账本为 449 次 HTTP attempts、105,847 request B、24,248,031 decoded response B、469,863.642417ms，Notion writes 和真实模型请求均为 0，wire bytes 仍未知。这是冻结输入准备费用，后续各臂任务费用须另记，不能用来源冻结成功替代 selected owner 的真实模型任务成功。原件为 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc20-full74-freeze-plan-qn4de427/execution-handoff.json`，SHA-256 `5082b2a3a5cad95124e8ab465c4e022c2c0fd0c8c8f4e4ca990e7881714d7bbf`。完整 74 库存和作者政策保持原样；实际任务选择另由其新冻结 manifest 明确，未运行方案维持 NOT_RUN。
+
+### SSE 应用完成与 HTTP 取消的区分（AH-638）
+
+用户入口仍是原 daily baseline `run`；驱动仍为安装 Pi RPC、原 cost observer 和原 Undici transport observer。实际 OpenAI SSE SDK 可以在收到完整 `[DONE]` 后取消尚未 HTTP EOF 的 response body。transport 的 `outcome: failure`、`errorCode: 20` 和响应字节必须照实保留，不能凭答案、finish reason、usage、HTTP 200 或 Pi 自然退出直接豁免。
+
+原 `skill-consumption-provider.mjs` 在每次 `before_provider_request` 读取实际 model API；只对 model 请求、`openai-completions`、2xx、identity encoding 与 `text/event-stream` 的实际 body chunks 进行被动扫描。它不读取、替换或消费原 response stream，也不保留响应正文。扫描最多保留 16 B 行前缀和 65,536 B 事件上限的封顶计数，支持跨 chunk 的 LF、CRLF、CR；独立空行结束的事件必须恰有一条 `data:[DONE]` 或 `data: [DONE]`，允许注释，但不接受其他 event 字段、多 data、重复 DONE、截断或正文字符串中的伪标记。过大非终止事件丢弃后可继续识别下一独立事件；过大事件本身不提供完成证明。未知或压缩内容保持无证明。
+
+`request_end` 追加 `modelApi`、内容类型枚举、脱敏 `errorName` 和 `sseCompletion`，原 `outcome/errorCode` 不变。原 provider 文件的纯 helper `providerApplicationCompletion` 只在实际 `AbortError`／数字 `20`、恰一个完整 SSE DONE 与同一请求的正常 `stop/toolUse`、实际 route 和正数 usage 同时成立时返回 `sse-done-before-http-cancel`。baseline 继续先核原 turn/request、唯一 wire body bytes/hash、真实模型身份、高 thinking 和 usage 关联；缺失或重复关联仍失败。旧证据没有新 proof 时维持原判定。
+
+`modelHttp.successful` 继续只计原始 HTTP `completed` + 2xx。daily 另报 `modelApplication.completed/httpComplete/sseDoneBeforeHttpCancel/unproven` 和每请求的 `applicationCompletion`；应用协议完成、模型合同、任务内容验收分别保留，不能把 HTTP 取消描述为无错误传输。
+
+| 协议目标 | 原断言与实际驱动 | 验收边界 |
+| --- | --- | --- |
+| 完整 SSE 后立即 HTTP EOF | 原 provider 组与已有实际 Pi loopback 对照 | HTTP 完整成功，原计数含义不变 |
+| 完整 `[DONE]` 后 HTTP body 保持打开 | 原 provider/baseline 两组；实际安装 Pi 单请求 RED → GREEN | 原始 HTTP 仍 `failure/AbortError/20`，新增 DONE 证明允许单独记录应用完成，HTTP successful 必须为 0 |
+| 完整正文、finish reason、usage，但缺 `[DONE]` 后断流 | 原两组包含正常 stop + code20 的强负例；实际 Pi 另用固定缺 DONE SSE 后断开 | 必须拒绝；已有文本、route 与 usage 不能代替协议结束 |
+| finish reason 前断流及伪标记／截断／多 data | 原 provider framing/gate 断言 | 无终止证明；API、编码、状态、类别、error 类型或回复不符均不得豁免 |
+
+本切片证据根为 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sse-completion-boundary-dikjdh94/`。原两组 RED 为 51 pass／5 fail／0 skip（`red-two-groups.log` SHA-256 `689e252213cd5ce1943a3033e74aa7733e6295566e661089096452684a818f36`），GREEN 为 56/56、0 skip（`green-two-groups-01.log` SHA-256 `0c892900a04383d581e81fe4c3b01988cabe4094a74a668b9b4a0bd33de96d39`）。真实安装 Pi 的 `pi-red-done-http-open` 保留旧 gate 的唯一 `MODEL_HTTP_ATTEMPT_FAILED`；`pi-green-done-http-open` 保留同样原始 HTTP failure，但新增 doneEvents=1、应用完成 1；`pi-green-finish-usage-without-done` 的实际 route 和合成 usage 仍存在，doneEvents=0、`UND_ERR_SOCKET`、应用完成 0，按预定负例拒绝。三场各 1 次 owned loopback、每场总界限 30 s，0 来源／真实 provider／工具，均自然 EOF 0，owned agentDir 和网络边界独立，逐场 Evidence → system Trash → Evidence。受控 usage 固定为 17+5=22，只证明接线，不计真实成本。
+
+此前真实 native 冷样本 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc20-daily-cohort-isxq6jpt/native-evidence/skill-model-cost-eDmgmC/` 未保存 DONE／errorName，原 `failed/incomplete` 和 warm `not_run` 永不追认或重写。本修复的受控成功不代表真实路由、后续新 cohort、private 内容 oracle 或日用交付已经通过。
 
 两种 Source 入口独立冻结，已有 CLI 配置与历史结果继续有效：
 
