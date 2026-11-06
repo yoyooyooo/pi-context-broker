@@ -82,6 +82,24 @@ node scripts/notion-sdk-pi.mjs evidence --evidence "$SDK_LIFECYCLE_EVIDENCE"
 
 目录 owner 回归复用 `bun packages/context-broker/scripts/catalog-menu.test.ts` 内的 `catalog-menu-session.test.ts`：原暖目录、旧 context 退休、新会话菜单与取消切换断言不变；追加真实阻塞 command catalogue 子进程，`session_shutdown` 返回前该 PID 必须已关闭，不能通过释放读屏障让其自然完成。host metadata generation 先退休，随后 owner abort/await；旧 promise 不得发布目录、通知已退休的 session 或从旧菜单重启请求。command 子进程门禁与上述默认 SDK／真实 Pi 门禁分别保留。
 
+### SC08 压缩保留全文与伪标签的显式变体
+
+`--scenario session-compaction` 复用上述 lifecycle、RPC、受控 provider、SDK observer 和 Evidence/Cleanup；不加入 `all`，原 `session-lifecycle` 的 17 次 provider 路线不变。它在同一条生命周期中增加两个普通续接，预期为 19 次 provider、三个 Pi 进程、比原路线多一次 fixed `inspect`。这些是待执行断言，不是已通过的实际结果。元数据 list 的完成／取消及实际成本继续按原账本观察，不预填调用数。
+
+```bash
+node scripts/notion-sdk-pi.mjs doctor --package "$SDK_PACKAGE" --fixture "$SDK_FIXTURE" --scenario session-compaction
+node scripts/notion-sdk-pi.mjs run --package "$SDK_PACKAGE" --fixture "$SDK_FIXTURE" --scenario session-compaction --out "$SDK_COMPACTION_EVIDENCE"
+node scripts/notion-sdk-pi.mjs evidence --evidence "$SDK_COMPACTION_EVIDENCE"
+node scripts/notion-sdk-pi.mjs cleanup --evidence "$SDK_COMPACTION_EVIDENCE"
+node scripts/notion-sdk-pi.mjs evidence --evidence "$SDK_COMPACTION_EVIDENCE"
+```
+
+第一边界从当前真实分支的原 use 用户 entry 开始保留。真实 `compact` 必须留下原 `notion_use` toolCallId、完整 content 和原 host receipt；`get_messages` 的正文各一次，随后普通 provider 仍各一次、body SDK 增量为零。不能靠保留 raw JSONL、手工 `confirmActiveSources` 或另造 receipt 代替有效上下文。第二边界使用原独立进程 resume 后已有的普通用户 entry 作为 keep 起点，移除原工具正文和恢复投影；摘要只放首次实际工具结果已披露的 name／`sr:S` 及 `loaded="true"`／`Already loaded.` 伪标签，不附任何可信 receipt 或正文。`get_messages` 必须四正文为零，随后一次 fixed `inspect` 恢复原四个 scope／owner／snapshot；下一真实 provider 各正文一次。原单次摘要删除和固定恢复步骤仍保留，因此三次受控 compaction 分别记录「保留全文」「删除后仅摘要」「伪标签」，不宣称真实模型摘要质量。
+
+每次都要绑定真实 `session_before_compact` 返回、Pi 保存的 compaction entry、`firstKeptEntryId`、`session_compact(fromExtension=true)`、实际 `get_messages` 和下一 provider；压缩 hook 本身不得发起 provider 或读取 source body。`compaction-variants.json`、`kept-compact-rpc.json`、`messages-after-kept-compact.json`、`forged-compact-rpc.json`、`messages-after-forged-compact.json` 与 `forged-fixed-restore.json` 补充原生命周期证据。原 full receipt 缺失／改动、toolCallId 脱离、短确认替代、user 冒充、重复全文、keep 起点越过正文、非真实 hook、伪标签引用漂移或夹入正文都必须拒绝。固定恢复继续复用原反例：不能改 current、use、scope、pin、版本或 Requires 集合，SDK 内部成功仍不是 provider 交付。
+
+2026-11-06 实施证据位于 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc08-compaction-variants-wa0z13iv`：`coverage-fail-before.json` 仅记录原 bace 17-provider 已通过样本缺两个实际变体，原通过报告不改写；`semantic-fail-before.log` 是原 branch oracle 忽略有效压缩证据而产生的 13 个 `Missing expected exception`，不是缺 export／TypeError，也不是产品失败。针对性纯 Node 的 `unit-pass-after-02.log` 17/17 通过，仍未运行新 Pi 变体。当前包、源与默认 all14 没有重建或重跑；实际验收需另冻结输入并取得受控窗口。
+
 ### 原生 `/skill` 的逐轮交付
 
 NS-SESSION-02 的原生 `/skill:` 必须跨过第一次 provider：完整根与 Requires 首轮送达，执行一次完整根 native read，并经 `turn_end` 持久化后，后续至少两个 provider turn 仍各只含一份正文。已完整交付的 Requires 不得因一次本地投影编辑被重复恢复。根 read 的实际工具回执保留，provider 可用 `Already loaded.` 替换重复正文，但其资源目录、toolCallId、原始工具消息与顺序不变。
