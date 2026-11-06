@@ -22,7 +22,7 @@ const rows = async path => { try { return (await readFile(path, 'utf8')).trim().
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const comparisonRoles = ['previous-broker', 'notion-candidate', 'pi-native-local'];
 const nativeLocal = config => config.role === 'pi-native-local';
-const usage = 'Usage: node scripts/skill-consumption-model-baseline.mjs doctor|selection|run --config ABSOLUTE_JSON [--evidence-root ABSOLUTE_DIR]; evidence|cleanup --evidence ABSOLUTE_DIR. Real model is restricted to magpie/group/flash-free. Normal Pi tools; source consumption may perform adoption/Records writes, no generated task guidance or forced tool choices. Broker config: {version:1,extension,transport?:"cli"|"sdk",command?:[absoluteNode,absoluteCLI],database,prompt,expectedAnswers:[string],counts:{cold:5,warm:20},packagePath?,toolProfile?:"standard"|"native-skills"|"legacy-skills"}. Standard preserves the original seven tools; native-skills adds notion_list/notion_use without removing normal tools; legacy-skills is explicit historical compatibility. Deferred notion_ctl is absent by default. Missing transport preserves legacy CLI mode; explicit sdk forbids command. Comparison roles previous-broker|notion-candidate|pi-native-local require comparison:ABS_FROZEN_MANIFEST. Pure pi-native-local omits extension/transport/command/database/packagePath, uses standard tools and Pi native --skill/read, and loads no Broker. Comparison v1 freezes one candidate; v2 preserves the complete existing View and inspects one same-byte Skill plus required UTF-8 resources. Run selection on the v2 Notion config for separate metadata-only installed-Pi evidence before Doctor; actual catalog name/description differences fail Doctor before model calls. Automatic Requires and /skill expansion are separate semantics. Cold=new isolated process/cache (native files already exist; OS page cache is uncontrolled); warm=ordinary turns in the final cold process with history counted. All attempts and unrun planned samples remain recorded.';
+const usage = 'Usage: node scripts/skill-consumption-model-baseline.mjs doctor|selection|run --config ABSOLUTE_JSON [--evidence-root ABSOLUTE_DIR]; evidence|cleanup --evidence ABSOLUTE_DIR. Real model is restricted to magpie/group/flash-free. Normal Pi tools; source consumption may perform adoption/Records writes, no generated task guidance or forced tool choices. Broker config: {version:1,extension,transport?:"cli"|"sdk",command?:[absoluteNode,absoluteCLI],database,prompt,expectedAnswers:[string],counts:{cold:5,warm:20},packagePath?,toolProfile?:"standard"|"native-skills"|"legacy-skills"}. Standard preserves the original seven tools; native-skills adds notion_list/notion_use without removing normal tools; legacy-skills is explicit historical compatibility. Deferred notion_ctl is absent by default. Missing transport preserves legacy CLI mode; explicit sdk forbids command. Comparison roles previous-broker|notion-candidate|pi-native-local require comparison:ABS_FROZEN_MANIFEST. Pure pi-native-local omits extension/transport/command/database/packagePath, uses standard tools and Pi native --skill/read, and loads no Broker. Comparison v1 freezes one candidate; v2 preserves the complete existing View and inspects one same-byte Skill plus required UTF-8 resources. Run selection on the v2 Notion config for separate metadata-only installed-Pi evidence before Doctor; actual catalog name/description differences fail Doctor before model calls. Comparison visibilityPolicy defaults to strict; v2 native-default-policy retains the full authored inventory and installed native visibility rules, while each arm checks its own actual provider catalog. This measures system-default workflow cost, not Broker net cost under identical visibility. Automatic Requires and /skill expansion are separate semantics. Cold=new isolated process/cache (native files already exist; OS page cache is uncontrolled); warm=ordinary turns in the final cold process with history counted. All attempts and unrun planned samples remain recorded.';
 
 async function tree(directory) {
   const output = {};
@@ -120,14 +120,38 @@ export function comparisonCatalog(payload) {
   return records;
 }
 
-export function verifyComparisonCatalog(nativeSkills, notionCatalog) {
+export function verifyComparisonCatalog(nativeSkills, notionCatalog, visibilityPolicy = 'strict') {
+  assert.ok(['strict','native-default-policy'].includes(visibilityPolicy),'Unknown comparison visibility policy');
   assert.ok(nativeSkills.length > 0 && nativeSkills.length === notionCatalog.length, 'Native discovery must expose the same complete candidate set');
   assert.equal(new Set(nativeSkills.map(skill=>skill.name)).size,nativeSkills.length,'Native name collisions cannot be normalized away');
   assert.equal(new Set(notionCatalog.map(skill=>skill.name)).size,notionCatalog.length,'Notion name collisions cannot be normalized away');
-  for(const skill of nativeSkills) assert.equal(skill.disableModelInvocation, false, 'The native Skill must be normally model-visible');
+  for(const skill of nativeSkills) {
+    assert.equal(typeof skill.disableModelInvocation,'boolean','Native authored visibility policy must be known');
+    if(visibilityPolicy==='strict')assert.equal(skill.disableModelInvocation, false, 'The native Skill must be normally model-visible');
+  }
   const metadata=skills=>skills.map(({name,description})=>({name,description})).sort((a,b)=>a.name.localeCompare(b.name));
   assert.deepEqual(metadata(nativeSkills), metadata(notionCatalog),
     'Actual candidate names/descriptions differ; do not normalize names or rewrite source frontmatter');
+}
+
+function comparisonVisibilityPolicy(descriptor) {
+  const policy=descriptor.visibilityPolicy===undefined?'strict':descriptor.visibilityPolicy;
+  assert.ok(['strict','native-default-policy'].includes(policy),'Unknown comparison visibility policy');
+  if(policy==='native-default-policy')assert.equal(descriptor.version,2,'Native default policy requires the complete version 2 inventory');
+  return policy;
+}
+
+function nativePromptCatalog(prompt) {
+  assert.equal(typeof prompt,'string','The installed native formatter must return its actual prompt');
+  const blocks=[...prompt.matchAll(/<available_skills>([\s\S]*?)<\/available_skills>/g)];
+  assert.ok(blocks.length<=1,'Native formatting must have one catalog or no visible candidates');
+  if(!blocks.length){assert.equal(prompt,'','An absent native catalog must have an empty formatter result');return [];}
+  const unescape=value=>value.replaceAll('&quot;','"').replaceAll('&apos;',"'").replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&amp;','&');
+  return [...blocks[0][1].matchAll(/<skill>([\s\S]*?)<\/skill>/g)].map(match=>{
+    const field=name=>{const values=[...match[1].matchAll(new RegExp('<'+name+'>([\\s\\S]*?)</'+name+'>','g'))];
+      assert.equal(values.length,1,'Each native candidate needs one '+name);return unescape(values[0][1]);};
+    return {name:field('name'),description:field('description'),filePath:field('location')};
+  });
 }
 
 async function installedPiPackage(host) {
@@ -161,6 +185,7 @@ export async function modelBaselineComparison(config, host) {
   if (!config.comparison) return null;
   const descriptorBytes = await readFile(config.comparison), descriptor = JSON.parse(descriptorBytes.toString('utf8'));
   assert.ok([1,2].includes(descriptor.version)); assert.equal(descriptor.intent, 'inspect'); assert.equal(descriptor.entry, 'read');
+  const visibilityPolicy=comparisonVisibilityPolicy(descriptor);
   assert.deepEqual(descriptor.roles, comparisonRoles, 'Declare previous Broker, candidate and pure native roles separately');
   assert.equal(descriptor.model, 'magpie/group/flash-free'); assert.equal(descriptor.promptSha256, hash(config.prompt));
   assert.equal(descriptor.expectedAnswersSha256, hash(JSON.stringify(config.expectedAnswers))); assert.deepEqual(descriptor.counts, config.counts);
@@ -226,7 +251,7 @@ export async function modelBaselineComparison(config, host) {
   }
   assert.deepEqual(files.files,inventory,'The catalog root cannot contain extra native files or replacement wrappers');
   const selected=frozen.find(candidate=>candidate.record.id===selectedRecordId);
-  assert.ok(selected,'The inspect task must select exactly one visible frozen owner');
+  assert.ok(selected,'The inspect task must select exactly one authorized frozen owner');
   const manifest=selected.manifest;
   assert.ok(Array.isArray(descriptor.requiredResources) && descriptor.requiredResources.length > 0 && descriptor.requiredResources.length <= 16);
   const required = [manifest.entrypoint, ...descriptor.requiredResources];
@@ -245,10 +270,18 @@ export async function modelBaselineComparison(config, host) {
     assert.equal(selection.pi.sha256,nativePackage.sha256,'Metadata selection and task must use the same Pi package');
   }
   const skillsModule = await realpath(join(nativePackage.directory,'dist/core/skills.js'));
-  const { loadSkills } = await import(pathToFileURL(skillsModule).href);
+  const { loadSkills, formatSkillsForPrompt } = await import(pathToFileURL(skillsModule).href);
   const discovered = loadSkills({cwd: directory, agentDir: join(directory, '.unused-agent'), skillPaths: [directory], includeDefaults: false});
   assert.ok(!discovered.diagnostics.some(item=>['error','collision'].includes(item.type)), 'Native discovery errors or collisions cannot be normalized away');
-  verifyComparisonCatalog(discovered.skills, actualCatalog);
+  verifyComparisonCatalog(discovered.skills, actualCatalog, visibilityPolicy);
+  const nativePrompt=formatSkillsForPrompt(discovered.skills),nativeVisible=nativePromptCatalog(nativePrompt);
+  const nativeInventory=discovered.skills.map(({name,description,filePath,disableModelInvocation})=>({name,description,filePath,disableModelInvocation}));
+  assert.deepEqual(nativeVisible,nativeInventory.filter(skill=>!skill.disableModelInvocation).map(({name,description,filePath})=>({name,description,filePath})),
+    'Native catalog differences must be explained by unchanged authored visibility flags and the installed formatter');
+  const nativeNames=new Set(nativeVisible.map(skill=>skill.name)),notionNames=new Set(actualCatalog.map(skill=>skill.name));
+  const notionOnly=actualCatalog.filter(skill=>!nativeNames.has(skill.name)),nativeOnly=nativeVisible.filter(skill=>!notionNames.has(skill.name));
+  const visibility={policy:visibilityPolicy,costQuestion:visibilityPolicy==='strict'?'same-visible-candidates':'system-default-workflow',
+    sameVisibleCandidates:notionOnly.length===0&&nativeOnly.length===0,nativeInventory,nativeVisible,notionVisible:actualCatalog,notionOnly,nativeOnly};
   for(const candidate of frozen) {
     const skill=discovered.skills.find(skill=>skill.name===candidate.record.name);
     assert.equal(await realpath(skill.filePath),join(candidate.directory,candidate.manifest.entrypoint),'Native metadata must belong to its exact frozen owner');
@@ -263,7 +296,8 @@ export async function modelBaselineComparison(config, host) {
   }
   const sourceSetup=descriptor.sourceFreezeSetup?await frozenJson(descriptor.sourceFreezeSetup):null;
   return {version: descriptor.version, path: await realpath(config.comparison), sha256: hash(descriptorBytes), role: config.role,
-    directory, tree: files, requiredFiles, catalog: discovered.skills.map(({name,description,filePath}) => ({name,description,filePath})),
+    directory, tree: files, requiredFiles, catalog:nativeLocal(config)?nativeVisible:actualCatalog,visibility,
+    nativePrompt:{text:nativePrompt,bytes:Buffer.byteLength(nativePrompt),sha256:hash(nativePrompt)},
     source:selected.source,selectedRecordId,
     candidates:frozen.map(candidate=>({recordId:candidate.record.id,ref:candidate.record.ref,directory:candidate.directory,source:candidate.source})),
     unselectedFiles:frozen.filter(candidate=>candidate!==selected).flatMap(candidate=>candidate.files),
@@ -616,6 +650,7 @@ async function selection(config,parent) {
   assert.equal(config.role,'notion-candidate');assert.equal(config.transport,'sdk');
   const descriptor=JSON.parse(await readFile(config.comparison,'utf8'));
   assert.equal(descriptor.version,2);assert.match(descriptor.viewId,/^[a-f0-9-]{36}$/);
+  const visibilityPolicy=comparisonVisibilityPolicy(descriptor);
   assert.ok(Array.isArray(descriptor.candidates)&&descriptor.candidates.length>0);
   const expectedRecords=[];
   for(const candidate of descriptor.candidates) {
@@ -633,7 +668,7 @@ async function selection(config,parent) {
   const output=join(evidence,'catalog-hooks.jsonl'),ledger=join(evidence,'source.jsonl'),wire=join(evidence,'wire.jsonl'),owned=join(evidence,'owned-processes.jsonl');
   await Promise.all([output,wire].map(path=>writeFile(path,'',{flag:'wx',mode:0o600})));
   const report={version:1,kind:'installed-pi-catalog-preflight',status:'running',runId,evidence,scratch,sourceMode:'sdk',
-    database:config.database,viewId:descriptor.viewId,artifacts,pi,bodyRequests:null,realModelRequests:0,
+    database:config.database,viewId:descriptor.viewId,visibilityPolicy,artifacts,pi,bodyRequests:null,realModelRequests:0,
     input:{path:config.comparison,sha256:hash(await readFile(config.comparison))},
     driverSha256:hash(await readFile(fileURLToPath(import.meta.url))),processes:[]};
   await save(join(scratch,'owner.json'),{runId,evidence});
@@ -1029,7 +1064,8 @@ async function run(config, parent) {
   const report={version:1,kind:plan.kind,runId,status:sourceComplete&&observed.every(sample=>sample.status==='passed'&&sample.observationComplete)&&observed.length===planned.length?'observed':'incomplete',
     evidence,scratch,planSha256:hash(await readFile(join(evidence,'plan.json'))),runtimeUnchanged:after.sha256===preflight.runtime.sha256&&runtimeBundleUnchanged&&comparisonUnchanged&&harnessUnchanged,
     role:config.role??null,comparison:preflight.comparison,comparisonUnchanged,comparisonError,sourceTransport,runtimeBundleUnchanged,
-    sourceComplete,stoppedReason,reviewStop,harnessUnchanged,samples,processes,notClaimed:['Skill task or graph acceptance','installed candidate acceptance','metadata-producer completion inferred from a quiet interval','model SDK retry/queue wait attribution','TCP/TLS wire bytes'],
+    sourceComplete,stoppedReason,reviewStop,harnessUnchanged,samples,processes,notClaimed:['Skill task or graph acceptance','installed candidate acceptance','metadata-producer completion inferred from a quiet interval','model SDK retry/queue wait attribution','TCP/TLS wire bytes',
+      ...(preflight.comparison?.visibility.policy==='native-default-policy'?['Broker net cost under identical visibility; default visibility policy is an experiment variable']:[])],
     groups:Object.fromEntries(['cold','warm'].map(cache=>[cache,{planned:planned.filter(sample=>sample.cache===cache).length,observed:observed.filter(sample=>sample.cache===cache).length,
       metrics:Object.fromEntries(['submitToFirstProviderMs','submitToFirstModelHttpMs','submitToFirstEffectiveTextMs','submitToCompletionMs','providerPayloadJsonBytes','toolRounds']
         .map(key=>[key,consumptionMetricStats(observed.filter(sample=>sample.cache===cache).map(sample=>sample[key]??null))]))}]))};

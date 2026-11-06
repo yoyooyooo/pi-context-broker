@@ -360,6 +360,48 @@ test('the public Doctor resolves the actual installed Pi bundled CLI and native 
   Object.assign(manualManifest.files.find(file=>file.path==='SKILL.md'),{bytes:Buffer.byteLength(manual),sha256:digest(manual)});
   disabled.candidates[1].manifest=await write('manual-manifest.json',manualManifest);
   const rejected=await invoke('multi-manual',disabled);assert.notEqual(rejected.status,0);assert.match(rejected.stderr,/model-visible/);
+  const policyDescriptor={...disabled,visibilityPolicy:'native-default-policy'};
+  const policyResult=await invoke('multi-native-default',policyDescriptor);
+  assert.equal(policyResult.status,0,policyResult.stderr);
+  const policy=JSON.parse(policyResult.stdout).comparison;
+  assert.equal(policy.visibility.policy,'native-default-policy');
+  assert.equal(policy.visibility.costQuestion,'system-default-workflow');
+  assert.equal(policy.visibility.sameVisibleCandidates,false);
+  assert.equal(policy.visibility.nativeInventory.length,3);assert.equal(policy.candidates.length,3);
+  assert.deepEqual(policy.catalog.map(skill=>skill.name).sort(),['other-two','reader']);
+  assert.deepEqual(policy.visibility.notionOnly.map(skill=>skill.name),['other-one']);
+  assert.equal(policy.visibility.notionVisible.length,3);
+  assert.equal(policy.requiredFiles.length,2);assert.equal(policy.unselectedFiles.length,4);
+  assert.equal(policy.nativePrompt.sha256,digest(policy.nativePrompt.text));
+  assert.equal((await readFile(manualFile,'utf8')),manual,'Doctor must retain the authored manual-only policy');
+  for(const scenario of ['unknown-policy','missing-owner','changed-metadata','changed-author-policy']) {
+    const changed=structuredClone(policyDescriptor);
+    if(scenario==='unknown-policy')changed.visibilityPolicy='auto';
+    else if(scenario==='missing-owner')changed.candidates.pop();
+    else if(scenario==='changed-metadata') {
+      const manifest=structuredClone(manualManifest);manifest.record.description+=' changed';
+      changed.candidates[1].manifest=await write('changed-native-metadata.json',manifest);
+    } else await writeFile(manualFile,manual.replace('disable-model-invocation: true','disable-model-invocation: false'));
+    try {const bad=await invoke('native-policy-'+scenario,changed);assert.notEqual(bad.status,0,scenario);}
+    finally {if(scenario==='changed-author-policy')await writeFile(manualFile,manual);}
+  }
+  const legacyPolicy=JSON.parse(await readFile(path.join(base,'comparison.json'),'utf8'));
+  const legacyRejected=await invoke('legacy-native-policy',{...legacyPolicy,visibilityPolicy:'native-default-policy'});
+  assert.notEqual(legacyRejected.status,0);assert.match(legacyRejected.stderr,/version 2/);
+  const allManual=structuredClone(policyDescriptor);
+  for(const index of [0,2]) {
+    const file=path.join(allManual.candidates[index].directory,'SKILL.md');
+    const text=(await readFile(file,'utf8')).replace('---\n','---\ndisable-model-invocation: true\n');
+    await writeFile(file,text);
+    const manifest=JSON.parse(await readFile(allManual.candidates[index].manifest.path,'utf8'));
+    Object.assign(manifest.files.find(file=>file.path==='SKILL.md'),{bytes:Buffer.byteLength(text),sha256:digest(text)});
+    allManual.candidates[index].manifest=await write('all-manual-'+index+'.json',manifest);
+  }
+  const empty=await invoke('all-manual-native-policy',allManual);assert.equal(empty.status,0,empty.stderr);
+  const emptyCatalog=JSON.parse(empty.stdout).comparison;
+  assert.equal(emptyCatalog.visibility.nativeInventory.length,3);assert.equal(emptyCatalog.visibility.notionVisible.length,3);
+  assert.deepEqual(emptyCatalog.catalog,[]);assert.equal(emptyCatalog.visibility.notionOnly.length,3);
+  assert.equal(emptyCatalog.nativePrompt.text,'');assert.equal(emptyCatalog.requiredFiles.length,2);
 });
 
 test('native delivery binds each full read to the same actual outer provider tool output', () => {
@@ -541,6 +583,43 @@ test('a complete multi-candidate directory compares exact metadata without chang
   }
   assert.throws(()=>comparisonCatalog({system:catalogFor([visibleRecords[0],visibleRecords[0]])}),/Duplicate visible names/);
   assert.throws(()=>comparisonCatalog({system:catalogFor().replace('sr:C'+'b'.repeat(22),'sr:C'+'a'.repeat(22))}),/distinct exact entry/);
+});
+
+test('native-default policy permits authored visibility differences without weakening the full inventory or metadata',()=>{
+  const actual=comparisonCatalog({system:catalogFor()});
+  const native=visibleRecords.map((record,index)=>({...record,disableModelInvocation:index===1})),before=structuredClone(native);
+  assert.throws(()=>verifyComparisonCatalog(native,actual),/model-visible/);
+  assert.doesNotThrow(()=>verifyComparisonCatalog(native,actual,'native-default-policy'));
+  assert.deepEqual(native,before);
+  for(const scenario of ['missing','duplicate','name','description','unknown-flag']) {
+    const changed=structuredClone(native);
+    if(scenario==='missing')changed.pop();
+    else if(scenario==='duplicate')changed[1].name=changed[0].name;
+    else if(scenario==='name')changed[1].name='replacement';
+    else if(scenario==='description')changed[1].description+=' changed';
+    else delete changed[1].disableModelInvocation;
+    assert.throws(()=>verifyComparisonCatalog(changed,actual,'native-default-policy'),undefined,scenario);
+  }
+  const visible=native.map(skill=>({...skill,disableModelInvocation:false}));
+  for(const policy of [null,'auto','native-default',false])assert.throws(()=>verifyComparisonCatalog(visible,actual,policy),/visibility policy/);
+});
+
+test('each native-default arm still verifies its actual catalog, including an empty native catalog',()=>{
+  const native=visibleRecords.map(({name,description})=>({name,description,filePath:'/frozen/'+name+'/SKILL.md'}));
+  const format=skills=>skills.length?'<available_skills>'+skills.map(skill=>'<skill><name>'+skill.name+'</name><description>'
+    +skill.description+'</description><location>'+skill.filePath+'</location></skill>').join('')+'</available_skills>':'';
+  for(const expected of [[],native.filter(skill=>skill.name!=='other-one')]) {
+    for(const actual of [expected,native]) {
+      const probe=nativeProbe({catalog:expected});
+      probe.provider([],{messages:[{role:'system',content:format(actual)}]});probe.finish();
+      assert.equal(probe.events().find(row=>row.phase==='native_provider').catalogMatches,actual===expected);
+    }
+  }
+  for(const actual of [visibleRecords,visibleRecords.slice(0,2)]) {
+    const probe=nativeProbe({source:fixedSource,catalog:visibleRecords});
+    probe.provider([],{messages:[{role:'system',content:catalogFor(actual)}]});probe.finish();
+    assert.equal(probe.events().find(row=>row.phase==='native_provider').catalogMatches,actual===visibleRecords);
+  }
 });
 
 function catalogSelectionProbe() {

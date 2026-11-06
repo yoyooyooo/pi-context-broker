@@ -240,11 +240,12 @@ Notion candidate 配置保留实际独立安装的 `extension`、archive、`data
 
 | 字段 | 冻结内容 |
 | --- | --- |
-| `candidates` | 完整数组，每项为 `{recordId,manifest:{path,sha256},directory}`。每个实际可见候选必须有一份精确 manifest 和完整原始文件树，不接受重复 owner、额外候选或少列候选 |
+| `candidates` | 完整数组，每项为 `{recordId,manifest:{path,sha256},directory}`。实际 Notion View 的每个 owner 必须有一份精确 manifest 和完整原始文件树；原生 manual-only 也保留在库存中，不接受重复 owner、额外候选或少列候选 |
 | `directory` | 原生目录根，各候选目录为互不重叠的直接子目录。根内只允许上述固定文件，不能生成替代 frontmatter 或目录 wrapper |
-| `selectedRecordId` | 本任务选择的一个真实可见 owner。`requiredResources` 仅指向该 owner；其它候选的主文和资源不作为任务输入加载 |
+| `selectedRecordId` | 本任务选择的一个已授权 View owner。`requiredResources` 仅指向该 owner；其它候选的主文和资源不作为任务输入加载，不为原生 manual-only 目标补造可见入口 |
 | `piVersion` / `viewId` | 本次实际 Pi 版本和既有 View ID。候选目录来自完整 View，不为比较创建或修改生产 View |
 | `sourceFreezeSetup` | 可选 `{path,sha256}`，独立来源冻结回执；其 `setupCost` 与 metadata selection、后续任务三份账本分别保留 |
+| `visibilityPolicy` | 缺省或 `strict` 保持同可见性合同；只有 v2 可显式使用 `native-default-policy` 比较两侧真实默认策略。未知值在 selection/Doctor 调用来源或模型前拒绝 |
 
 Graph A/B 的 `selection` 仍要求单根目录，不改变它的验收条件。多候选预检在原 baseline driver 内使用独立空状态、实际安装 Pi 和默认 SDK：
 
@@ -257,9 +258,13 @@ selection 配置使用 `role:"notion-candidate"`、安装包和默认 SDK，`com
 
 成功输出的 `comparisonArtifacts` 给出 `notionSelection`、`notionProviderPayload`、`notionCatalogSource` 的实际路径和 SHA。将它们加入一份新的冻结 comparison 文件，供两个 arm 共用；保留预检原输入文件及失败回执，不覆盖原件。Doctor 独立核对 ready payload、SDK 完整 owner 集合、每份 source manifest 和原生 loader 的同一集合；只靠 receipt 的 `passed` 字段不能满足这些校验。metadata selection 不调用真实模型、不准备正文，也不建立后续任务 consumer 缓存。其成功只证明这份输入可比较。
 
-Doctor 用实际安装 Pi 的原生 loader 读取未改写的 frontmatter，并与已收到的 Notion provider 目录精确比较名称、描述和候选数量。所有候选都必须原生可见；`disable-model-invocation:true`、名称碰撞、不同描述、不同大小写或替代入口均不能自动归一化。原生与 Notion 的实际目录顺序分别保留，集合比较不改写它们。固定完整源树的 hash 同时约束正文中的 Members；此切片不把其后续路由或 Requires 执行算成双方共有能力。候选扩展/archive、所有 manifest 输入和来源树在执行结束再次核对，变化使该批 incomplete。
+默认 `strict` Doctor 用实际安装 Pi 的原生 loader 读取未改写的 frontmatter，并与已收到的 Notion provider 目录精确比较名称、描述和候选数量。所有候选都必须原生可见；`disable-model-invocation:true`、名称碰撞、不同描述、不同大小写或替代入口均不能自动归一化。原生与 Notion 的实际目录顺序分别保留，集合比较不改写它们。固定完整源树的 hash 同时约束正文中的 Members；此切片不把其后续路由或 Requires 执行算成双方共有能力。候选扩展/archive、所有 manifest 输入和来源树在执行结束再次核对，变化使该批 incomplete。
 
-当前真实日用默认 View 的 74 项与原生目录尚未证明同条件，其中已观察到 manual-only Skill。现有 3 项 builtin View 是独立窄场景；它的通过不能替代 74 项默认目录比较，也不能通过改源 frontmatter、成员或名单消除差异。
+2026-11-06 用户在具体修订提案后确认继续，SC20 增加显式 `native-default-policy` 口径：保留完整 74 项授权库存、作者正文/资源和纯原生机制，将两侧真实默认可见性作为实验变量。它衡量两套默认工作流的全任务结果和成本，不能声称隔离了相同曝光条件下的 Broker 净开销；严格同可见性的结果仍单列。3 项 builtin 或受控测试目录不替代这份完整库存。
+
+新口径仅放开已由作者 `disable-model-invocation` 与实际安装 Pi 的 `loadSkills`、`formatSkillsForPrompt` 共同解释的自动可见性差异。Doctor 仍核完整 owner 集合、每份 manifest/文件 hash、权限 scope、固定版本和原始名称/描述；不修改 frontmatter，不启用 `skillsOverride`，不追加隐藏目录或代读正文。全部作者条目都为 manual-only 时，库存仍完整、原生自动可见集合可为空；任务要求和必需正文断言保持原样，任务失败仍是失败。
+
+`comparison.visibility` 保存 policy、`costQuestion`、`sameVisibleCandidates`、原生完整库存及两侧实际可见清单/差集；`nativePrompt` 保存官方 formatter 的文本、bytes/hash，仅用于 setup 证明，不注入模型。原 observer 的 `catalog` 按角色冻结：原生使用官方自动可见集合，Notion 使用完整实际 View。每次实际 provider 继续精确比对自己的集合，不能因为允许策略差异而跳过缺项、额外项、错误描述或正文完整性检查。新口径的 report 明列相同曝光下的 Broker 净开销为 `notClaimed`。
 
 Pi 原生 loader 从实际 executable 所属的 package.json 定位，并核对该包声明的 bin 确实指向实际入口；不能把 `dist/bundle/cli.js` 的父目录误当整个 runtime 根。原生臂冻结完整 `dist`、package.json 与 `dist/core/skills.js`，结束时重新核对；runtime 或比较输入变化均把整批结果判为 incomplete。原 baseline test 中的 public Doctor smoke 使用真实 PATH、实际安装 Pi 和原生 loader，仅 source/selection 输入为受控 fixture，不调用 Notion 或模型，也不替代真实来源预检。
 
@@ -291,6 +296,8 @@ native 的零 CLI/SDK/来源 HTTP 只有在真实 observer 终界、host close�
 本次定向验证保留了旧 driver 拒绝纯本地配置的 fail-before，随后覆盖完整投递、错误路径/partial/details/错误 call、缺失/篡改观察、未知 child、SDK/HTTP 和额外 Broker schema 等反例。实际安装 Pi 的受控 HTTP provider 检查走了两次 native read、三个 provider 请求，未加载 Broker，完整主文和资源到达实际 serializer。该受控结果证明驱动接线，真实 Notion、真实模型成本对照和完整 SC20 矩阵尚未由此成立。
 
 该读取探针没有执行完整 comparison Doctor。安装入口审查随后发现错误的 `dist/bundle/core/skills.js` 路径，新增 public Doctor smoke 先复现失败，再按上述包归属定位修复通过。两份证据分别保留，不把早先的读取探针称为 Doctor 已通过。
+
+`native-default-policy` 接线在原 baseline test 中先保留 RED（1 pass / 2 fail），修后定向 3/3、原文件 32/32。public Doctor 使用实际安装 Pi 的 loader/formatter 和受控三项来源，覆盖 strict 拒绝 manual-only、显式策略允许已证差异、全部 manual-only 时原生目录为空、未知策略、缺 owner、元数据与作者政策字节篡改拒绝；原 observer 另核每臂自己的实际目录。完整正文、未选正文、错误来源和终局负例继续通过。证据在 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc20-native-policy-uo2u1ket/`；`red-corrected.log` SHA `e909dcef78b0f52aa9dc0ee44afd26ba52bdd7a6b16fcc7f8f0a560255db777d`，`green-full.log` SHA `bab07b6a21daaed8ed33fefaab48a2658b19b8be8ff6f0913cbeb4f87e1ea393`。原件保留；这证明双口径接线，不代表真实 Default74 来源桥接、真实模型或 SC20 完整矩阵已通过。
 
 ## Evidence 与比较
 
