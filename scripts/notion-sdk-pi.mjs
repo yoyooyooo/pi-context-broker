@@ -1264,24 +1264,23 @@ export function assertResourceReadSchema(context) {
   assert.ok(read, 'The actual provider must expose read');
   const schema = read.parameters;
   assert.equal(schema?.type, 'object'); assert.equal(schema.properties?.path?.type, 'string');
+  assert.deepEqual(Object.keys(schema).filter(key => ['oneOf', 'anyOf', 'allOf', 'enum', 'const', 'not'].includes(key)), [],
+    'The actual provider rejects these top-level schema keywords before tool execution');
+  assert.ok(schema.required === undefined || Array.isArray(schema.required) && schema.required.length === 0,
+    'Neither alternative may be required for every read call');
+  assert.equal(schema.properties.offset?.type, 'number'); assert.equal(schema.properties.limit?.type, 'number');
   const paths = schema.properties?.paths;
   assert.equal(paths?.type, 'array'); assert.equal(paths.items?.type, 'string');
   assert.equal(paths.minItems, 1); assert.equal(paths.maxItems, 16);
-  assert.ok(Array.isArray(schema.oneOf) && schema.oneOf.length === 2, 'path and paths must be mutually exclusive public branches');
-  const single = schema.oneOf.find(branch => branch.required?.includes('path'));
-  const batch = schema.oneOf.find(branch => branch.required?.includes('paths'));
-  assert.ok(single && batch); assert.deepEqual(single.not, { required: ['paths'] });
-  for (const path of [schema.properties.path, single.properties?.path]) {
-    assert.equal(path?.type, 'string'); assert.equal(typeof path.description, 'string');
-    assert.match(path.description, /local.*file.*path/iu);
-    assert.match(path.description, /skill:\/\//u); assert.match(path.description, /sr:/u);
-    assert.match(path.description, /\bcopy\b[\s\S]*\b(?:verbatim|unchanged)\b/iu,
-      'Outer and scalar path schemas must both explain copying the supplied reference');
-  }
-  assert.deepEqual(batch.required, ['paths']); assert.equal(batch.additionalProperties, false);
-  assert.deepEqual(Object.keys(batch.properties), ['paths']); assert.deepEqual(batch.properties.paths, paths);
-  return { tool: 'read', paths_supported: true, path_ref_guidance: true, scalar_branch_ref_guidance: true,
-    path_and_paths_exclusive: true, batch_range_options: false,
+  const path = schema.properties.path;
+  assert.equal(typeof path.description, 'string'); assert.match(path.description, /local.*file.*path/iu);
+  assert.match(path.description, /skill:\/\//u); assert.match(path.description, /sr:/u);
+  assert.match(path.description, /\bcopy\b[\s\S]*\b(?:verbatim|unchanged)\b/iu,
+    'The path schema must explain copying the supplied reference');
+  // This proves the advertised shape only. Adapter execute tests and actual
+  // batch scenarios prove mode admission; a schema cannot certify that I/O gate.
+  return { tool: 'read', paths_supported: true, path_ref_guidance: true, native_range_options: true,
+    top_level_object: true, validation_boundary: 'tool_execute',
     parameters: schema, parameters_sha256: hash(JSON.stringify(schema)) };
 }
 

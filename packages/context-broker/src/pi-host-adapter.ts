@@ -47,20 +47,17 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
         if (!createRead || allTools().find(tool => tool.name === "read")?.parameters !== original.parameters) return;
         const native = createRead(ctx.cwd ?? process.cwd(), { autoResizeImages: api.getSettings?.().images?.autoResize ?? true });
         if (!object(native.parameters) || !object(native.parameters.properties) || typeof native.execute !== "function") return;
+        const resourceRef = /^(?:sr:R[A-Za-z0-9_-]{22}|skill:\/\/.+)$/;
         const paths = { type: "array", minItems: 1, maxItems: DEFAULT_RESOURCE_READ_BUDGET.maxFiles,
-          items: { type: "string", pattern: "^(?:sr:R[A-Za-z0-9_-]{22}|skill://.+)$" },
+          items: { type: "string", pattern: resourceRef.source },
           description: "Copy complete resource refs verbatim from the selected Skill snapshot's resource directory. Every ref must identify a file in the same owner and snapshot. Reads all selected files in one operation without preparing the main body." };
         const scalarProperties = { ...native.parameters.properties, path: {
           ...(object(native.parameters.properties.path) ? native.parameters.properties.path : { type: "string" }),
           description: "Local file path (relative or absolute), or an issued skill:// or sr: ref. Copy refs verbatim; never guess filesystem paths.",
         } };
-        const parameters: Record<string, unknown> = {
-          type: "object", properties: { ...scalarProperties, paths },
-          oneOf: [
-            { ...native.parameters, properties: scalarProperties, not: { required: ["paths"] } },
-            { type: "object", properties: { paths }, required: ["paths"], additionalProperties: false },
-          ],
-        };
+        // Providers may reject root combinators. Enforce the two exclusive modes
+        // before shared preparation or native I/O, including direct tool callers.
+        const parameters: Record<string, unknown> = { type: "object", properties: { ...scalarProperties, paths } };
         const definition: PiReadDefinition = {
           ...native,
           description: "For Notion introductions, summaries or inspection, copy a supplied Skill/resource ref into path. This reads content without loading Requires or activating its workflow. " + native.description + " Alternatively, paths reads fixed resources of one owner and snapshot together; choose path or paths. Batch reads exclude offset/limit and the main entrypoint.",
@@ -68,7 +65,11 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
           ...(native.outputSchema ? { outputSchema: { anyOf: [native.outputSchema, resourceOutputSchema] } } : {}),
           async execute(id, input, signal, onUpdate, context) {
             const hasPath = Object.hasOwn(input, "path"), hasPaths = Object.hasOwn(input, "paths");
-            if (hasPath === hasPaths || hasPaths && (Object.keys(input).some(key => key !== "paths") || !Array.isArray(input.paths))) {
+            if (hasPath === hasPaths
+              || hasPath && (typeof input.path !== "string" || [input.offset, input.limit].some(value => value !== undefined && (typeof value !== "number" || !Number.isFinite(value))))
+              || hasPaths && (Object.keys(input).some(key => key !== "paths") || !Array.isArray(input.paths)
+                || input.paths.length < 1 || input.paths.length > DEFAULT_RESOURCE_READ_BUDGET.maxFiles
+                || input.paths.some(value => typeof value !== "string" || !resourceRef.test(value)))) {
               throw Object.assign(new Error("Choose one file path or an explicit resource paths array"), { code: "INVALID_ARGUMENT" });
             }
             return execute(input, context, signal,

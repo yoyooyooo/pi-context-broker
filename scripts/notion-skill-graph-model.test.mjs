@@ -1132,6 +1132,46 @@ test('graph evidence distinguishes observer failure from absent transport or mod
   assert.throws(() => graphTrace(value), error => error.code === 'GRAPH_OBSERVER_INVALID' && /transport/.test(error.message));
 });
 
+test('graph failure keeps the actual native submission before downstream missing reads', () => {
+  const value = contractFixture('A'); value.trace.reads = [];
+  let validation;
+  assert.throws(() => evaluateGraphTrace(value.trace, value.oracle), error => {
+    validation = error; return error.code === 'READ_MISSING';
+  });
+  const error = { code: 'NATIVE_SUBMISSION_FAILED', message: "pi: assistant error: Invalid schema for function 'read': schema must have type 'object' and not have 'oneOf'/'anyOf'/'allOf'/'enum'/'const'/'not' at the top level." };
+  const sample = { index: 0, mode: 'cold', status: 'failed', error };
+  const before = JSON.stringify(sample);
+  const result = { availabilityFailure: false, responseStatuses: [200], samples: [sample], sourceAccounting: { complete: false } };
+  Object.assign(result, graphModel.graphFailureEvidence(validation, result.samples));
+  assert.equal(result.status, 'failed', 'HTTP 200 cannot turn an assistant error into a successful task');
+  assert.deepEqual(result.error, error, 'The actual RPC submission error remains the first failure');
+  assert.deepEqual(result.validationError, { code: validation.code, message: validation.message });
+  assert.equal(result.availabilityFailure, false, 'A client schema error does not authorize an availability fallback');
+  assert.deepEqual(result.sourceAccounting, { complete: false }, 'Error presentation cannot close an incomplete source ledger');
+  assert.equal(JSON.stringify(sample), before, 'The original failed sample is not rewritten');
+});
+
+test('graph failure keeps blocking validation and unknown native codes without inventing a model cause', () => {
+  const submission = { code: 'NATIVE_UNCLASSIFIED', message: 'Actual unclassified native response' };
+  for (const code of ['GRAPH_OBSERVER_INVALID', 'OBSERVATION_INCOMPLETE', 'HOST_CLOSE_FAILED']) {
+    const validation = Object.assign(new Error('Actual validation: ' + code), { code });
+    const outcome = graphModel.graphFailureEvidence(validation, [{ index: 0, error: submission }]);
+    assert.equal(outcome.status, 'failed');
+    assert.deepEqual(outcome.error, submission);
+    assert.deepEqual(outcome.validationError, { code, message: validation.message });
+    assert.equal(Object.hasOwn(outcome, 'availabilityFailure'), false);
+  }
+});
+
+test('graph failure without a submission error keeps the original graph failure', () => {
+  const validation = Object.assign(new Error('Retain native tool calls and full read receipts'), { code: 'READ_MISSING' });
+  const outcome = graphModel.graphFailureEvidence(validation, [{ index: 0, status: 'passed' }]);
+  assert.deepEqual(outcome, { status: 'failed', error: { code: validation.code, message: validation.message } });
+  assert.deepEqual(graphModel.graphFailureEvidence(new Error('Unclassified validation')), {
+    status: 'failed', error: { code: 'GRAPH_GATE_FAILED', message: 'Native graph gate did not complete; retained observer and source artifacts identify the boundary' },
+  });
+});
+
 test('the frozen legacy read-only surface retains provider proof and transitions explicitly to the public tools', async () => {
   let dispatched = 0;
   const fixture = await literalObserverFixture('Controlled complete body.\n', async () => { dispatched++; return new Response('{}', { status: 200 }); }, 'native-read-only');
@@ -1242,6 +1282,9 @@ test('matrix status retains a final run failure even when all five graph samples
   assert.equal(graphModel.matrixStatus(failedSample), 'failed');
   assert.equal(graphModel.matrixStatus({ ...passed, samples: passed.samples.slice(0, 4) }), 'failed');
   assert.equal(graphModel.matrixStatus({ ...passed, runs: passed.runs.slice(0, 2) }), 'failed');
+  const secondary = structuredClone(passed);
+  secondary.runs[0].validationError = { code: 'OBSERVATION_INCOMPLETE', message: 'Original source EOF is missing' };
+  assert.equal(graphModel.matrixStatus(secondary), 'failed', 'A retained validation failure cannot disappear from matrix status');
 });
 
 async function addLiteralResource(fixture, relative, content) {

@@ -1363,6 +1363,14 @@ function gateEnvironment(cliPaths, brokerConfig, evidence, owned) {
 
 export const runFingerprint = (config, doctor, oracleSha256, projectSha256) => hash(JSON.stringify({ version: 3, sourceMode: config.sourceMode ?? 'sdk', harness: doctor.harness.sha256, gate: config.gate, rootRef: config.rootRef, selection: config.selection, database: config.database, viewId: config.viewId, profileId: config.profileId, prompt: config.prompt.sha256, model: config.model, promptTimeoutMs: config.promptTimeoutMs, ...(config.workerAuthorization ? { workerAuthorizationSha256: config.workerAuthorization.sha256 } : {}), cli: doctor.cli.sha256, extension: doctor.extension.sha256, package: doctor.package.sha256, oracleSha256, projectSha256, preparation: config.preparation ?? null }));
 
+export function graphFailureEvidence(error, samples = []) {
+  const validationError = { code: error.code ?? 'GRAPH_GATE_FAILED', message: error.code === 'ERR_ASSERTION' || error.code ? error.message : 'Native graph gate did not complete; retained observer and source artifacts identify the boundary' };
+  const submissionError = samples.find(sample => sample.error)?.error;
+  return { status: 'failed', error: submissionError
+    ? { code: submissionError.code ?? 'NATIVE_SUBMISSION_FAILED', message: submissionError.message }
+    : validationError, ...(submissionError ? { validationError } : {}) };
+}
+
 export function summarizeSamples(samples) {
   const summary = {};
   for (const mode of ['cold', 'warm-new-process', 'continued-session']) {
@@ -1968,7 +1976,7 @@ async function runGate(config) {
     result.status = 'passed';
     result.proof = 'Actual native Pi/provider/source artifacts checked against the independent oracle; contract alone is not counted as product proof';
   } catch (error) {
-    result.status = 'failed'; result.error = { code: error.code ?? 'GRAPH_GATE_FAILED', message: error.code === 'ERR_ASSERTION' || error.code ? error.message : 'Native graph gate did not complete; retained observer and source artifacts identify the boundary' };
+    Object.assign(result, graphFailureEvidence(error, result.samples));
     if (error.code === 'GRAPH_OBSERVER_INVALID' || observerErrors.length) { result.failureClass = 'harness-invalid'; result.availabilityFailure = false; }
     else if (error.code === 'OBSERVATION_INCOMPLETE') { result.failureClass = 'observation-incomplete'; result.availabilityFailure = false; }
   }
@@ -2014,7 +2022,7 @@ export function unstartedMatrixSamples(result) {
 }
 
 export function matrixStatus(result) {
-  return result.runs.length === 3 && result.runs.every(run => run.status === 'passed')
+  return result.runs.length === 3 && result.runs.every(run => run.status === 'passed' && !run.validationError)
     && result.samples.length === 5 && result.samples.every(sample => sample.status === 'passed') ? 'passed' : 'failed';
 }
 
@@ -2025,11 +2033,11 @@ async function runMatrix(config) {
   await save(join(evidence, 'result.json'), result); console.log(JSON.stringify({ status: 'running', action: 'matrix', evidence }));
   for (let index = 0; index < 3; index++) {
     const previous = result.runs.at(-1);
-    if (index > 0 && !previous?.cacheReceipt) { result.notRun.push(...result.design.order.slice(result.samples.length).map(mode => ({ mode, reason: 'No complete successful prior consumer cache receipt exists; the failed sample is retained' }))); break; }
+    if (index > 0 && (previous?.status !== 'passed' || previous.validationError || !previous.cacheReceipt)) { result.notRun.push(...result.design.order.slice(result.samples.length).map(mode => ({ mode, reason: 'No complete successful prior consumer cache receipt exists; the failed sample is retained' }))); break; }
     let run;
     try { run = await runGate({ ...config, mode: index === 0 ? 'cold' : 'warm-new-process', ...(index ? { reuseReceipt: previous.cacheReceipt.path } : {}), continuedSamples: index === 2 ? 2 : 0 }); }
     catch (error) { run = { status: 'failed', error: { code: error.code ?? 'RUN_SETUP_FAILED', message: error.message }, samples: [{ mode: index === 0 ? 'cold' : 'warm-new-process', status: 'failed', error: { code: error.code ?? 'RUN_SETUP_FAILED', message: error.message } }] }; }
-    result.runs.push({ evidence: run.evidence, status: run.status, cacheReceipt: run.cacheReceipt, generatedArtifactStatus: run.generatedPlan?.artifactStatus ?? 'missing', generatedProcedure: run.generatedProcedure ?? null, availabilityFailure: run.availabilityFailure, error: run.error });
+    result.runs.push({ evidence: run.evidence, status: run.status, cacheReceipt: run.cacheReceipt, generatedArtifactStatus: run.generatedPlan?.artifactStatus ?? 'missing', generatedProcedure: run.generatedProcedure ?? null, availabilityFailure: run.availabilityFailure, failureClass: run.failureClass, error: run.error, validationError: run.validationError });
     result.samples.push(...run.samples.map(sample => ({ ...sample, evidence: run.evidence })));
     await save(join(evidence, 'result.json'), result);
   }
@@ -2047,7 +2055,7 @@ async function evidenceStatus(directory) {
   for (const file of result.files) assert.ok(!isAbsolute(file) && !file.split('/').includes('..'));
   const present = await Promise.all(result.files.map(file => readFile(join(directory, file))));
   if (result.mode === 'matrix') for (const run of result.runs) if (run.evidence) await evidenceStatus(run.evidence);
-  return { status: 'preserved', functionalStatus: result.status, evidence: directory, files: present.length, gate: result.gate, model: result.model, error: result.error };
+  return { status: 'preserved', functionalStatus: result.status, evidence: directory, files: present.length, gate: result.gate, model: result.model, failureClass: result.failureClass, error: result.error, validationError: result.validationError };
 }
 
 async function main(args) {

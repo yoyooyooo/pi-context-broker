@@ -50,9 +50,38 @@ test("Pi batch is one branch of read and retains structured results without ente
     await expect(f.current().execute("invalid", input, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
   }
   expect(f.current().renderCall?.({ paths: ["one", "two"] }, {}, {})).toMatchObject({ args: { path: "one, two" } });
-  expect(f.current().parameters).toMatchObject({ type: "object", properties: { paths: { type: "array", minItems: 1, maxItems: 16 } }, oneOf: [
-    { required: ["path"], not: { required: ["paths"] } }, { required: ["paths"], additionalProperties: false },
-  ] });
+  expect(f.current().parameters).toMatchObject({ type: "object", properties: { paths: { type: "array", minItems: 1, maxItems: 16 } } });
+  expect(f.current().parameters.required ?? []).not.toContain("path");
+});
+
+test("Pi read advertises an object schema without provider-rejected top-level combinators", async () => {
+  const f = fixture();
+  f.adapter.registerReadExecutor!((_input, _ctx, _signal, read) => read({ path: "unused" }));
+  await f.start();
+  const schema = f.current().parameters;
+  expect(schema.type).toBe("object");
+  // The actual provider rejects these root keywords before invoking any tool.
+  expect(Object.keys(schema).filter(key => ["oneOf", "anyOf", "allOf", "enum", "const", "not"].includes(key))).toEqual([]);
+  expect(schema.properties).toHaveProperty("path");
+  expect(schema.properties).toHaveProperty("paths");
+});
+
+test("Pi read rejects invalid scalar and batch arguments before shared preparation or native I/O", async () => {
+  const f = fixture(), ref = "sr:R" + "a".repeat(22);
+  let preparations = 0;
+  f.adapter.registerReadExecutor!((input, _ctx, signal, read) => { preparations++; return read(input, signal); });
+  await f.start();
+  for (const input of [
+    {}, { path: "one", paths: [ref] }, { path: undefined }, { path: null }, { path: 7 },
+    { path: "one", offset: "2" }, { path: "one", limit: null }, { path: "one", offset: Number.NaN },
+    { path: "one", limit: Number.POSITIVE_INFINITY }, { paths: "one" }, { paths: [] },
+    { paths: [null] }, { paths: [7] }, { paths: [""] }, { paths: ["references/one.md"] },
+    { paths: ["sr:R"] }, { paths: ["sr:C" + "a".repeat(22)] }, { paths: [ref], offset: 2 },
+    { paths: [ref], limit: 3 }, { paths: [ref], extra: true }, { paths: Array.from({ length: 17 }, () => ref) },
+  ]) {
+    await expect(f.current().execute("invalid", input, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  }
+  expect(preparations).toBe(0); expect(f.calls).toHaveLength(0);
 });
 
 test("Pi resource schema distinguishes complete issued handles from category prefixes", async () => {
@@ -68,17 +97,15 @@ test("Pi resource schema distinguishes complete issued handles from category pre
   }
 });
 
-test("Pi scalar read advertises issued Skill refs in both provider schema branches without changing the native definition", async () => {
+test("Pi scalar read advertises issued Skill refs without changing the native definition", async () => {
   const f = fixture(), before = JSON.stringify(f.native.parameters);
   f.adapter.registerReadExecutor!((_input, _ctx, _signal, read) => read({ path: "unused" }));
   await f.start();
-  const schema = f.current().parameters as { properties: { path: { description: string } }; oneOf: Array<{ properties: { path?: { description: string } } }> };
-  for (const description of [schema.properties.path.description, schema.oneOf[0]!.properties.path!.description]) {
-    expect(description).toContain("relative or absolute");
-    expect(description).toContain("skill://");
-    expect(description).toContain("sr:");
-    expect(description).toContain("verbatim");
-  }
+  const schema = f.current().parameters as { properties: { path: { description: string } } };
+  expect(schema.properties.path.description).toContain("relative or absolute");
+  expect(schema.properties.path.description).toContain("skill://");
+  expect(schema.properties.path.description).toContain("sr:");
+  expect(schema.properties.path.description).toContain("verbatim");
   expect(f.current().description).toStartWith("For Notion introductions, summaries or inspection,");
   expect(f.current().description).toContain("without loading Requires or activating its workflow");
   expect(JSON.stringify(f.native.parameters)).toBe(before);

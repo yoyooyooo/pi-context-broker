@@ -180,6 +180,10 @@ Fail-before 是 Broker `327fdee` 的实际 CI run `42193430631`：整条 workflo
 
 新两行接线已由原 `node scripts/skill-consumption-contract.mjs check-gates` 以及 `node --test scripts/skill-consumption-contract.test.mjs`（15/15）检查。日志位于 `sc26-resume-oracle-8yosq3tz/check-gates.log`（SHA `dadcf24305f96036134f38b6e51524020ae1da1541fccc00f0926b9a2a9f0e5f`）与 `contract-tests.log`（SHA `5ac671b12ca0eb6d19688c0e8e5417fec89ff65f08ac1312eb193f59171fe0c2`）。提交后的自然 CI 仍须分别核 checkout、实际 buildInput/嵌入 SDK/归档身份、安装 Pi 与各宿主终局；此处只记录接线，未预判新 CI 结果。
 
+7112 的自然 CI `42197219406` 已 completed/success，原日志实际 checkout 为 `55e06bb`。本次新上传的 `pi-context-broker-0.0.2.tgz` 为 1,385,871 B／SHA `282fb35a8266fc76c49d9ae3e423fff536b5d9b8d7346b059474357cca28d889`，与现有 C8 完全相同，87 个独立安装成员逐项相等；嵌入 CLI/SDK 仍为 `2d78b994…`／`4637b06c…`。原模型 harness 53、SDK harness 120、consumption 203 全通过，Pi1.5/1.4 各 all14＋两名称场景＋歧义场景共34项通过，serializer/observer 终局齐全。原 Node 1 skip、Bun 5 skip 与 custom artifact host 的143关闭分别保留。证据根 `ci-7112-gxthrgdk/handoff.json` SHA `8388b2a6b272d7c6d5e637e9fc94ca77f615df6060ef38d59b827fe19190a110`，`final-status.json` SHA `14d952dc025303e17aa18eaafa0417dfaec3512f95d5ac0af40ca5dbf4e7bfc5`；root另直接计算了该归档 SHA。manifest 中 `/home/runner/…` buildInput 路径是原 CI 运行位置，不声称它们存在于 Pro。
+
+这份安装 gate 的 provider 受控。随后真实 A 模型在工具执行前拒绝 C8 read 的顶层 `oneOf`，原 failed 保留；schema 兼容修复及真实首因呈现见原 source/graph 地图，必须另冻结修后包，不能用本次 C8 绿色结果代替。
+
 ### 2026-11-06：C8 双机与完整安装身份
 
 最终运行时为 CLI `b5564ee` / Broker `726d274`。CLI 独立归档 SHA `2c65d54aee20f0fbb30af30bd1d67b32ad00e7285f0c9a50bc9f477962aeee9f`（68 文件），Broker 归档 SHA `282fb35a8266fc76c49d9ae3e423fff536b5d9b8d7346b059474357cca28d889`（87 文件）。随后 `1e23f5e`、`8650132`、`a08bb6f` 只改验证器、测试和地图；不以相同版本号替代完整文件身份。

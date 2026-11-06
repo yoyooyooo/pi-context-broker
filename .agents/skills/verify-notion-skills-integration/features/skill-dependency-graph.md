@@ -259,6 +259,18 @@ Full 恢复续问原 FAIL 保留：首 provider `09:17:27.652Z` 早于该新进�
 
 同目录 `replay-original-recovery.mjs` 对原 full 恢复输入运行旧/新断言：旧断言仍失败，新技术断言通过。实际首次 HTTP `seq61` 中精确 6,837 B 原文出现一次，仅有两次新的 metadata list；16 份输入逐 hash 保持，来源/模型新请求均为 0。`original-recovery-review.json` SHA `9c7ba3bacd975ad8f9c2d76b8f237f0f97069107b568538c7d8c833023077e95`。这是离线合同复核，原 arm/case/turn failed 与独立内容审阅均不改写，也不充当一次新实际运行或正式 SC21 通过。
 
+### SC21 C 与 root-only A/B：实际失败及提交错误分层（2026-11-06）
+
+纯 `7112ddf` harness、同 `282fb35a…`／C8／Pi 1.5 的普通 C 首轮已运行。实际首 provider 已提供正确的 `sr:CUGdD4OYX0jRoU6T0Fsdygg` 与 canonical ref，模型却先调用原输入中不存在的 `sr:skill://create-verification-skill/SKILL.md`；该 read 被拒绝后，模型执行 list → use，目标完整 6,837 B 原文最终送达。原技术状态保持 failed，两条条件续问均 not_run；独立六主题内容审阅通过不能覆盖选路失败。原件为 `sc07-c8-c-cohort-247688nx/runs/pi-intent-evidence-4Ll6CI/C-introduce/result.json`（SHA256 `2082bbcdca7402f27c20f9b2bbd38ca07559ce9d9a6e3632c00aa043d6993768`）；独立内容 handoff `sc07-c8-c-semantic-gyrcf_nu/handoff.json`（SHA256 `1cd3511af9f1868bbf9bf6d3a328409fcc064bef69efc46748f86ca8ecb4a31e`）。原 schema／guidance 已明确介绍使用 read，不能把本次行为归因于缺少该说明，也不自动纠正坏 ref 或将 use 暗改为 inspect。
+
+同候选的 A `$pstack@notion` 与 B `$poteto-mode@notion` 两个 root-only metadata selection 均实际通过，分别保留 `sc21-c8-ab-7112-7fscsgto/evidence/graph-selection-zuACGP/result.json`（SHA256 `96aad42f05a4edab6ab3a635d2347c5782ed0e375bd53bcb1ef660d2e09a1d48`）与 `graph-selection-lJvQf8/result.json`（SHA256 `79f6f703a4e2e4dfe795dd9c6da86d2e2a716b17cc14f0477de6275220628746`）。每次均为 3 次 SDK metadata list、3 次受控 provider、12 次来源 HTTP／1,446,744 B decoded response，正文及 CLI 子进程为 0；这些准备成本单列，不作为真实任务成功或任务缓存预热。两个 selection 的 Pi 都经原 RPC stop 关闭 143，不能称自然 0。
+
+A 真实模型只产生一份 30,456 B HTTP 输入，HTTP 200 后实际 assistant 返回 read 顶层 schema 拒绝：`type: object` 之外的顶层 `oneOf` 不被该次调用接受。模型工具调用为 0、无 final；显式根的自动来源准备另有真实账本，不能把无模型工具调用写成来源无正文。原 `samples[0].error` 为 `NATIVE_SUBMISSION_FAILED`，后续完整读取断言却使原顶层 `error` 显示 `READ_MISSING`。原 `availabilityFailure=false`、RPC 的 model/provider/api 字段及该 failed 报告全部保留；HTTP 成功不等于模型提交成功，不据错误文本推断隐藏后端或服务不可用。B 模型因这项技术故障未启动。A 原件为 `evidence/graph-model-A-m8TE03/result.json`（SHA256 `09597406c7ac73761fb01f842473208d54fdac8cbda1fd857c5708806538041c`）；`payload-19.json` 与实际 `http-21.json` 均为 SHA256 `944d8189e1829a5d54c84afbf2cc0a069594946abffdfcd7fe2b5df8f40de3b9`。本批原 Evidence → 系统 Trash → Evidence 后 69 份原件 hash 不变，`after-cleanup-integrity.json` SHA256 `ec4b324c6a944fd0278e497130b9f6aeb931b7bbcbd0a4fbadf8a9f12f3ffc5a`。
+
+原 graph driver 现在仅修复错误呈现：存在实际提交错误时，将其原 code/message 保留为首因，并将后续 graph/source/observer/host 验证错误完整记录为阻断性的 `validationError`；没有提交错误时维持原验证错误。matrix 摘要、停止条件和 evidence 输出均保留这两个错误，不因存在 schema 错误跳过完整性或终局门槛。原来源账本、原预算、零重试、任务语义及 availability 分类不变；本片不改产品 read schema。
+
+原回归入口先保留 1 pass／3 failed 的确定性红例（提交首因被覆盖及 matrix 忽略 validationError），修后定向 4/4、原 `node --test scripts/notion-skill-graph-model.test.mjs` 106/106 通过。证据根 `sc07-graph-error-50z9pba8/`：`red.log` SHA256 `a9636fe92251949e1e04020d049a6711aefc92f391a0418d8f97a8f79fbcf2e8`，`green-full.log` SHA256 `7a0f5a7610d34819497020d2c4acdb58106b929088cd4d197f1aa6de9e22e51d`。`presentation-replay.json`（SHA256 `16c6229012b929507a0ff118a33c51bbefb45246526dea2b5b4967ad7a99bef3`）只对封存 A 的错误呈现做离线复核，仍 failed，保留 `READ_MISSING` 为 validationError，四份输入逐 hash 不变；它不重跑来源／provider，也不补证原终局或修后实际 schema 成功。产品 schema 兼容修复及新候选实际 provider 验证另行记录。
+
 ### SC06 同次 provider 的生成卡片描述复用
 
 原 ce50/C7 Pro live 的七份实际 serializer 请求已独立定位重复：末次默认 74、list 2、Members 55、Requires 1，共 132 个生成卡片出现、79 个来源身份。作者正文中的 `## Members`、根和 Requires 合计 47,475 B 均保留。诊断原件为 `sc06-controlled-pair-9d9314r3/metadata-card-readonly/report.json`（SHA256 `0d2521153fb11cb48c27795d7eafb1f4d927f37c1c45257e53784343edf772dc`）；这是历史实际输入的重复字段分析，不是新候选已实现的成本收益。

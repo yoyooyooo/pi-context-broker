@@ -18,6 +18,14 @@ Pi 的 pending/unavailable 目录断言位于最终公开 `context_with_system` 
 - `source-error-recovery`：fixture切换denied、malformed、timeout、duplicate，错误不能变空body成功；刷新后恢复。精确范围和证据见[联动恢复地图](../../verify-notion-skills-integration/features/session-cache-recovery.md)。
 - `source-submission`：Adapter 或输入事件类型变化时，复用上述 cold native、双向 `$` 切换、资源及失败恢复；OMP 命令 handoff 和 Pi 输入 digest 分别核对，不只直接调用 Adapter。取消后的旧 handoff 不得派发 provider，也不能误取消下一条提交。后台及会话边界按下方 NS-DEFAULT 地图，实际 Stop 与草稿恢复按 loading 路径，避免另建 Adapter 验证框架。
 
+### Pi read 的公开 schema 与执行前校验
+
+Pi `read` 的参数保持顶层 `type: object`，不能用顶层 `oneOf`、`anyOf`、`allOf`、`enum`、`const` 或 `not` 表示标量与批量分支；实际 provider 曾在任何工具调用前拒绝该 schema。公开 `path` 保留原生 `offset`/`limit`、图片、进度回调与原生结果；`paths` 继续只读取同 owner、同固定 snapshot 的资源。两者互斥、批量不得带标量选项、数量及成员类型在 adapter 进入共享 preparation/原生 I/O 前校验；owner、权限、pin 与取消仍由原共享读取层校验，不自动修补坏引用或改为 use。
+
+原入口 `bun test packages/context-broker/scripts/pi-read-adapter.test.ts packages/context-broker/scripts/scalar-resource-read-host.test.ts packages/context-broker/scripts/resource-read-host.test.ts` 同时检查公开 schema 和实际 execute 拒绝，并保留原生设置/图片/完整字段、固定资源、跨 scope、分支及取消的回归。这三个文件仍在 package 的 `test:consumption` 中。原 `scripts/notion-sdk-pi.mjs` 的 schema 报告仅证明顶层 object、公开 path/paths、标量 range 选项及引用 guidance，明确 `validation_boundary: tool_execute`；不再由 schema 推断互斥或批量选项已被执行验证。实际安装/provider 继续用该 driver 的 native、resource-scalar、resource-batch 与 Code mode 场景；schema 静态通过不替代新安装包和真实 provider 接受。
+
+2026-11-06 原模型失败保留于 `~/Library/Logs/pi-context-broker/AH-617-20261105/sc21-c8-ab-7112-7fscsgto/evidence/graph-model-A-m8TE03/` 的 `provider-requests/payload-19.json`、`pi-rpc.json`；HTTP 200 不能覆盖其中的 schema error。对应修复证据为 `~/Library/Logs/pi-context-broker/AH-617-20261105/read-schema-compat-6pv7x5n9/`：原 adapter 回归 5 PASS / 2 FAIL，修复后的上述三组 27 PASS；旧 SDK schema oracle 对新形状的 1 FAIL 原件单列，迁移后原 `node --test scripts/notion-sdk-pi.test.mjs` 120 PASS，TypeScript 检查通过。此处未重建 C8、未重跑模型或真实源，不宣称新产物实模已通过。
+
 默认目录解析与会话 View 选择按[默认目录地图](../../verify-notion-skills-integration/features/default-context-prefetch.md)运行 `node scripts/verify-notion-integration.mjs run --mode deterministic --view-discovery true`。旧 `--default-context true` 通过 View 的 checkbox 筛选运行预取、取消隔离与新鲜度 fixture，checkbox 不是独立全局门禁。这些受控路径不证明真实 Profile 机器绑定；真实页与安装产物分别使用 live-fixture 与 installed，不由确定性路径推断。
 
 真实 CLI 冷缓存、跨会话/进程复用、Notion 正文/资源修改与默认五分钟过期使用 `node scripts/verify-notion-integration.mjs run --mode live-fixture --cache-lifecycle true --database UUID --command-json '["/absolute/ntn-skills"]'`，按 [NS-SESSION-09～12](../../verify-notion-skills-integration/features/session-cache-recovery.md) 分别核对实际 Pi/OMP 终端与 Tern/OMP 菜单/胶囊。有效会话固定 A、新会话未过期复用 A、过期新会话取得 B 为不同断言；既有受控 cold/warm 不替代真实 Notion 编辑与 CLI 空缓存。

@@ -755,25 +755,28 @@ test('resource provider repeats replace only nonempty text and preserve empty an
 function resourceSchemaContext() {
   const value = context(), paths = { type: 'array', minItems: 1, maxItems: 16, items: { type: 'string' } };
   const path = { type: 'string', description: 'Local file path, or a supplied skill:// or sr: reference. Copy issued refs verbatim.' };
-  value.messages[0].toolsAdded.find(tool => tool.name === 'read').parameters = { type: 'object', properties: { path, paths }, oneOf: [
-    { type: 'object', properties: { path: { ...path } }, required: ['path'], not: { required: ['paths'] } },
-    { type: 'object', properties: { paths }, required: ['paths'], additionalProperties: false },
-  ] };
+  value.messages[0].toolsAdded.find(tool => tool.name === 'read').parameters = { type: 'object', properties: {
+    path, offset: { type: 'number' }, limit: { type: 'number' }, paths,
+  } };
   return value;
 }
-test('actual provider schema must express a bounded paths branch exclusive with native path', () => {
-  assert.equal(assertResourceReadSchema(resourceSchemaContext()).paths_supported, true);
+test('actual provider schema exposes native ranges and bounded paths in a supported top-level object', () => {
+  const result = assertResourceReadSchema(resourceSchemaContext());
+  assert.equal(result.paths_supported, true); assert.equal(result.native_range_options, true);
+  assert.equal(result.top_level_object, true); assert.equal(result.validation_boundary, 'tool_execute');
+  for (const key of ['path_and_paths_exclusive', 'batch_range_options', 'scalar_branch_ref_guidance']) assert.equal(Object.hasOwn(result, key), false);
   for (const mutate of [
-    schema => { delete schema.oneOf; },
-    schema => { schema.oneOf[0].not.required = ['unrelated']; },
-    schema => { schema.oneOf[1].additionalProperties = true; },
-    schema => { schema.oneOf[1].properties.offset = { type: 'number' }; },
+    ...['oneOf', 'anyOf', 'allOf', 'enum', 'const', 'not'].map(key => schema => { schema[key] = []; }),
+    schema => { schema.required = ['path']; },
+    schema => { schema.required = ['paths']; },
+    schema => { schema.properties.offset.type = 'string'; },
+    schema => { delete schema.properties.limit; },
     schema => { schema.properties.paths.items.type = 'number'; },
     schema => { schema.properties.paths.minItems = 0; },
+    schema => { schema.properties.paths.maxItems = 17; },
     schema => { schema.properties.path.description = 'Path to the file to read (relative or absolute)'; },
-    schema => { schema.oneOf[0].properties.path.description = 'Path to the file to read (relative or absolute)'; },
     schema => { schema.properties.path.description = 'Use skill:// or sr: references.'; },
-    schema => { schema.oneOf[0].properties.path.description = 'Copy a local file path verbatim.'; },
+    schema => { schema.properties.path.description = 'Copy a local file path verbatim.'; },
   ]) {
     const value = resourceSchemaContext(); mutate(value.messages[0].toolsAdded.find(tool => tool.name === 'read').parameters);
     assert.throws(() => assertResourceReadSchema(value));
