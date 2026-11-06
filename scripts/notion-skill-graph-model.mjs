@@ -133,7 +133,7 @@ export function observeGraphGate(api, settings) {
   if (!Number.isSafeInteger(sequence) || sequence < 0) throw new Error('Invalid observer sequence offset');
   const record = value => { const event = { sequence: ++sequence, at: new Date().toISOString(), ...value }; appendFileSync(settings.output, JSON.stringify(event) + '\n', { mode: 0o600 }); return event; };
   const text = content => typeof content === 'string' ? content : (content ?? []).filter(item => item.type === 'text').map(item => String(item.text ?? '')).join('\n');
-  const unescape = value => value.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
+  const unescape = value => value.replaceAll('&quot;', '"').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
   const inside = (parent, child) => { const value = relative(parent, child); return value === '' || (!value.startsWith('../') && value !== '..' && !isAbsolute(value)); };
   const canonical = value => value === null || typeof value !== 'object' ? JSON.stringify(value) : Array.isArray(value) ? '[' + value.map(canonical).join(',') + ']' : '{' + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => JSON.stringify(key) + ':' + canonical(item)).join(',') + '}';
   const same = (a, b) => canonical(a) === canonical(b);
@@ -817,7 +817,7 @@ export function observeGraphGate(api, settings) {
           .filter(item => item.record.id === selected.selector && item.record.kind === 'skill'
             && settings.parseNativeReference(item.record.ref).path === selected.path && (selected.scope === undefined || selected.scope === item.scope));
         const unique = [...new Map(matches.map(item => [item.scope + '/' + item.record.id, item])).values()];
-        const description = unescape(/<description>\s*([\s\S]*?)\s*<\/description>/.exec(match[0])?.[1] ?? '');
+        const description = unescape(/<description>([\s\S]*?)<\/description>/.exec(match[0])?.[1] ?? '');
         if (unique.length === 1 && unescape(match[1].trim()) === unique[0].record.name && description === unique[0].record.description) provenance = { source: 'verified-notion-metadata',
           ownerId: unique[0].record.id, scope: unique[0].scope, ref: unique[0].record.ref, loaded: false };
       }
@@ -857,7 +857,7 @@ export function observeGraphGate(api, settings) {
       const unique = [...new Map(candidates.map(item => [item.scope + '/' + item.record.id, item])).values()];
       const source = unique.length === 1 ? unique[0] : undefined;
       const name = unescape(/<name>\s*([^<]*)\s*<\/name>/.exec(match[2])?.[1] ?? '');
-      const description = unescape(/<description>\s*([\s\S]*?)\s*<\/description>/.exec(match[2])?.[1] ?? '');
+      const description = unescape(/<description>([\s\S]*?)<\/description>/.exec(match[2])?.[1] ?? '');
       return { ref, ...(source && source.record.name === name && source.record.description === description
         ? { canonicalRef: source.record.ref, provenance: { source: 'verified-notion-metadata', ownerId: source.record.id, scope: source.scope, loaded: false } } : {}) };
     });

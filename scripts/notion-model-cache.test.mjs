@@ -133,6 +133,26 @@ test('introduction requires complete inspected source and never target activatio
   ]) { const input = introInput(); mutate(input); assert.throws(() => assertIntentTurn(input)); }
 });
 
+for (const [sourceName, encodedName] of [
+  ['Target "quoted"', 'Target &quot;quoted&quot;'],
+  ['Target &quot; &amp;quot; &lt;', 'Target &amp;quot; &amp;amp;quot; &amp;lt;'],
+]) test('intent catalogue metadata decodes one layer for ' + encodedName, () => {
+  const value = introInput();
+  value.catalogRecords[0].name = sourceName;
+  const catalog = { phase: 'catalog', state: 'ready', skills: [{ name: encodedName,
+    provenance: { ownerId: 'target', source: 'verified-notion-metadata', scope: 'scope', loaded: false } }] };
+  value.observation.unshift(catalog);
+  assert.equal(assertIntentTurn(value).status, 'passed');
+  catalog.skills[0].name = encodedName + ' altered';
+  assert.throws(() => assertIntentTurn(value), /actual record name/);
+  catalog.skills[0].name = encodedName;
+  catalog.skills[0].provenance.scope = 'another-scope';
+  assert.throws(() => assertIntentTurn(value));
+  catalog.skills[0].provenance.scope = 'scope';
+  catalog.skills[0].provenance.ownerId = 'another-owner';
+  assert.throws(() => assertIntentTurn(value), /actual production 74/);
+});
+
 test('ordinary reuse, explicit reread and chat keep different source obligations', () => {
   const reused = introInput(); reused.followup = true; reused.intent = 'reuse-introduction'; reused.newResponses = [{ operation: 'consume' }];
   assert.throws(() => assertIntentTurn(reused), /silently read/);

@@ -76,6 +76,14 @@ CLI/source、实际Notion、真实模型、原生UI、安装产物分栏。旧AH
 
 四个入口均使用真实生产默认名单，source 省略 `command`、`default_view_id`、`profile_id`，`prefetch:false`；不得换成 A/B root-only View 或删减可选项。冷首轮 `pending` 合法，后续普通 turn 必须验证 ready 的完整 owner/name/description 集合。D 初始 observer 的发现集合为空；已披露 owner 的名称选择与用户原句的未绑定名称尝试分别留证。后者不要求等待默认目录 ready，也不能预先取得私有 oracle 的 owner。私有 oracle 和介绍事实不进入提示、guidance 或 consumer cache。冷启动原生 `/skill` 菜单的宿主边界单列，不作 C/D 就绪条件。
 
+目录观察须将实际 provider XML 与同 scope 的 SDK 元数据逐字绑定。只解码产品编码的一层实体，最后解码 `&amp;`，使作者的字面 `&quot;`（传输为 `&amp;quot;`）仍为字面文本；描述首尾空白和换行也属于作者数据，不能在提取时删掉。名称、描述、owner、scope 任一不符仍拒绝，不能用名称近似匹配或减少 74 项全集断言消除空归属。
+
+2026-11-06 的 D 命名介绍原件保留在 `AH-617-20261105/sc21-c7-d-early-n8f8g08y`。四次实际 ready provider 均含 74 项，旧 observer 的 10 项空归属分别来自 8 项漏解 `&quot;`、2 项描述末尾 LF 被正则删掉。`AH-617-20261105/sc26-catalog-decoding-12whs9s7` 保留原件 hash、逐项归因、7 个定向红例、修后 163 项既有回归，以及同四份 payload、已完成 SDK list 和当时分支短引用的离线重验：旧 observer 绑定 64 项，修后绑定全部 74 项，零新来源或模型请求。这是目录观察修复，原 D failed 报告、未提交续问和独立语义结论保持原样。
+
+~~~bash
+node --test scripts/notion-skill-graph-model.test.mjs scripts/notion-model-cache.test.mjs scripts/notion-skill-graph-delivery.test.mjs scripts/notion-skill-graph-host-index.test.mjs
+~~~
+
 ~~~bash
 node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/frozen-cd-config.json --intent-action doctor
 node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/frozen-cd-config.json --intent-action run

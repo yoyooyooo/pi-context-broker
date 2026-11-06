@@ -12,6 +12,7 @@ import { createOwnedGraphProject, exerciseGeneratedProcedure, retainGeneratedPla
 import { systemTempRoot } from './verification-paths.mjs';
 import { contractFixture, evaluateGraphTrace, frozenPrompt, selfTest } from './verify-skill-graph-contract.mjs';
 import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
+import { viewSystemPrompt } from '../packages/context-broker/src/view-prompt.ts';
 
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const save = (file, value) => writeFile(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
@@ -72,6 +73,59 @@ for (const selector of ['canonical', 'display-name', 'alias', 'alias-root', 'ali
     assert.equal(call.claim.scope, 'a'.repeat(64));
     assert.ok(events.some(event => event.phase === 'catalog-before-agent-start'));
   } finally { globalThis.fetch = originalFetch; }
+});
+
+async function observedMetadataCatalog(kind, metadata, overrides = {}) {
+  const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-catalog-metadata-'));
+  const responses = path.join(base, 'responses'), cache = path.join(base, 'cache'), output = path.join(base, 'observer.jsonl');
+  await mkdir(responses); await mkdir(cache); await writeFile(output, '');
+  const scope = 'a'.repeat(64), short = 'sr:C' + 'M'.repeat(22), entrypoint = kind === 'router' ? 'ROUTER.md' : 'SKILL.md';
+  const record = { id: 'shared_skill:controlled:metadata', ref: 'skill://shared_skill%3Acontrolled%3Ametadata/' + entrypoint,
+    kind, alias: 'metadata', enabled: true, entrypoint, source: 'notion', sourceId: 'controlled', ...metadata };
+  await save(path.join(responses, 'list.json'), { transport: 'sdk', requestId: 'metadata', operation: 'list', status: 'completed',
+    resultObserved: true, value: { scope, count: 1, records: [record] } });
+  const shown = { ...record, ...overrides.shown };
+  const system = viewSystemPrompt('', kind === 'skill' ? [shown] : [], kind === 'router' ? [shown] : [], new Set(), [], base,
+    () => short, 'notion_list', true);
+  const handlers = new Map(), originalFetch = globalThis.fetch;
+  try {
+    observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
+      { fs, crypto, path, parseNativeReference, cwd: base, responses, cache, output, model: 'controlled/fake', prompt: 'Natural task', entryMode: 'discovery-only' });
+    const ctx = { model: { provider: 'controlled', id: 'fake' }, sessionManager: { getBranch: () => [{ type: 'custom', customType: 'context-broker-short-ref',
+      data: { version: 1, ref: short, target: { kind: 'candidate', identity: { source: 'notion', scope: overrides.scope ?? scope,
+        id: overrides.ownerId ?? record.id, kind, ref: record.ref.slice(0, record.ref.lastIndexOf('/')) } } } }] } };
+    const payload = { model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })), messages: [{ role: 'system', content: system }] };
+    handlers.get('before_provider_request')({ payload }, ctx);
+    const events = (await readFile(output, 'utf8')).trim().split('\n').map(JSON.parse), catalog = events.find(event => event.phase === 'catalog');
+    assert.equal(catalog.systemPromptSha256, hash(system), 'Observation must preserve the actual provider system bytes');
+    return { item: (kind === 'skill' ? catalog.skills : catalog.routers)[0], record, scope };
+  } finally { globalThis.fetch = originalFetch; }
+}
+
+for (const kind of ['skill', 'router']) for (const [variant, metadata] of [
+  ['quotes', { name: 'Visible "quoted" metadata', description: 'Use "quoted" instructions.' }],
+  ['literal entities', { name: 'Literal &quot; &lt; &amp;', description: 'Keep &quot;, &amp;quot;, &lt; and &#34; literal; decode "quoted" once.' }],
+  ['author whitespace', { name: 'Authored whitespace', description: ' \tPreserve this description.\r\n' }],
+]) test('catalogue metadata preserves ' + kind + ' ' + variant + ' in the actual observer', async () => {
+  const result = await observedMetadataCatalog(kind, metadata);
+  assert.equal(result.item.provenance?.ownerId, result.record.id);
+  assert.equal(result.item.provenance.scope, result.scope);
+  assert.equal(result.item.provenance.source, 'verified-notion-metadata');
+  assert.equal(result.item.provenance.loaded, false);
+});
+
+for (const kind of ['skill', 'router']) test('catalogue metadata rejects altered ' + kind + ' text, owner and scope', async () => {
+  const metadata = { name: 'Literal &quot; name', description: 'Keep &quot; and author whitespace.\n' };
+  for (const overrides of [
+    { shown: { name: 'Literal " name' } },
+    { shown: { description: 'Keep " and author whitespace.\n' } },
+    { shown: { description: metadata.description.trim() } },
+    { ownerId: 'shared_skill:controlled:another' },
+    { scope: 'b'.repeat(64) },
+  ]) {
+    const result = await observedMetadataCatalog(kind, metadata, overrides);
+    assert.equal(result.item.provenance ?? null, null, 'Decoding must not erase a text or source identity mismatch');
+  }
 });
 
 test('owned project paths use public mutable sections without forcing the earlier system prompt', async () => {

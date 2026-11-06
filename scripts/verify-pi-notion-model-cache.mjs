@@ -105,7 +105,7 @@ export function assertIntentTurn({ observation, turnObservation = observation, r
       const record = catalogRecords.find(record => record.id === skill.provenance?.ownerId);
       assert.equal(skill.provenance.source, 'verified-notion-metadata'); assert.equal(skill.provenance.loaded, false);
       assert.equal(skill.provenance.scope, oracle.target.scope);
-      const name = skill.name.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
+      const name = skill.name.replaceAll('&quot;', '"').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
       assert.equal(name, record.name, 'Display the actual record name, not a command alias');
     }
   }
