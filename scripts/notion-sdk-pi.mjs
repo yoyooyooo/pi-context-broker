@@ -4306,8 +4306,9 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
         assert.equal(bodyCount(capture.context, body), 0, 'Discovery and command scope lookup must not deliver Skill bodies');
       await save(join(output, 'source-command.json'), scopedCommandEvidence);
     }
-    beforeClose = await waitForSourceFinality(ledger, rpc.lifecycle[0].pid);
-    assert.ok(beforeClose.complete, 'Observed source processes must reach actual close/end before EOF');
+    beforeClose = await waitForSourceFinality(ledger, rpc.lifecycle[0].pid,
+      { initialCatalog: { sourceId: source.id, database: source.database } });
+    assert.ok(beforeClose.complete, 'Initial source catalog and observed processes must reach their actual terminal before EOF');
     await rpc.closeInput();
   } catch (error) {
     failed = { code: error.code ?? error.name, message: String(error.message) };

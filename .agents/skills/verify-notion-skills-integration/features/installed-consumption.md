@@ -242,6 +242,10 @@ Pro 的原 `http-directory` 与 `dollar` 各 n=1、0 retry。HTTP正常分支共
 
 普通恢复提交完成后、EOF／quit之前，原cache driver也必须使用已有 `initialCatalog` 屏障，观察本host/source/database的初始list start及terminal，再保留原成功facet断言。该等待只决定测试何时收尾，不阻塞普通provider、不改任务／预算、不加固定sleep或将失败降成成功。真实RED在 `c12-ci-b289-7hov5c4v/diagnosis.json`（SHA `12e8bae65dde11e2381c08c92884d1324c680138f0412acfcbe5fab14b27e5ef`）及 `resumed-red-input.json`（SHA `c06ea168a1801e6f88a93a9032ff6abf29f4bbfd5922e7cb08001975ec7a5972`）；ZIP 46,517,064 B已核GitHub digest。该原失败与81e92成功各自保留，修后结果另行绑定冻结harness。
 
+`1f991217` 自然 CI [42329003384](https://github.com/yoyooyooo/pi-context-broker/actions/runs/42329003384) 的默认14场保留13通过／`scoped-command`失败：维护工具的2次调用与3次provider已完成、scope/prefix准确、bash和正文为0，但唯一初始list在最后provider结束后11.954017 ms才开始，quit后3.171347 ms取消。通用drain前后complete不能替代成功目录，0HTTP与0成功facet仍失败；原件见 `c12-ci-1f991217-v3pqf0ms/scoped-command-red-input.json`（SHA `065f3007f5bfb5f73c6e32ded0544fc3d2f1123953f5d459dfadd950237f399f`）。此失败不归因于已通过的 native receipt helper 路线。
+
+普通 SDK `scenario()` 的共同正常EOF收尾使用相同 `initialCatalog` 条件，等待本host主source/database首次list start与terminal；不逐场景添加分支，不提前阻塞原provider，也不增加等待预算。所有普通场景都配置该主源，额外失败源仍按原预期核算；session-lifecycle／compaction已转入独立驱动，其明确shutdown-cancelled合同、异常catch和hostClosed drain不变。terminal可以记录失败或取消，后续原reconcile仍要求正常场景存在成功facet。复用 `node --test --test-name-pattern 'initial catalog|shutdown-only accounting' scripts/notion-sdk-pi.test.mjs` 及原完整161项；真实CI RED原样保留，不以纯测试替代安装态复验。
+
 ### 2026-11-06：CI 构建来源与当前消费内核对齐
 
 `ci.yml` 与 `publish.yml` 的 CLI checkout 同时固定为 `55e06bb3d6ec426b38aefdf8fed61e26ece0343d`。该提交包含 C8 产品源 `b5564ee`、现有 fixture 和 Records coverage 原件留存；继续由同一个 checkout 生成 fixture 并提供 `NTN_SKILLS_BUILD_ENTRY`。不使用分支名或另一个隐式 SDK 来源。
