@@ -219,6 +219,25 @@ The sequence is ordinary greeting → ordinary continuation with the complete re
 
 Full SDK traces account for actual HTTP attempts, response bytes and source writes; unknowns are not zero. Provider absence is not source exclusion: retained chunk ownership and every unselected Member need the existing independent `notion-skill-source-proof` attribution. Until that separate proof exists, the live result explicitly reports partial acceptance. No additional verification platform, source mutation, new pin, copied authentication or daily configuration change is part of this route. Keep failed attempts, then run the existing `evidence`, `cleanup`, and `evidence` commands against sealed owned output.
 
+### 2026-11-07：C12 同包 CI、实际 Pi 与 Pro 冷来源消费
+
+产品为 CLI `97ba806`、Broker `a9ba19e`，C12 独立 tar 为 1,390,981 B／SHA `d1d69e9c3d5ff07df2eceb0ecce02523468808be69b9e06b7b9fc0b4a19741a2`；87 个发布文件与独立安装相等。C11→C12 只有 `src/host-skills.ts` 改变。验证器另冻结纯 Git `81e92fdf2595aedc1d83f1b21f7688869e2d8110`，258 个 tracked 文件逐项等于 Git；不把工作区或候选旧 driver 当作最终 harness。
+
+自然 CI [42325171721](https://github.com/yoyooyooo/pi-context-broker/actions/runs/42325171721) success。root 下载其 51,618,495 B 原 ZIP并核 API digest，内含 tar 与 Pro C12 字节完全相同，CI 独立安装87文件亦相等。Pi1.5／1.4 各 all14＋名称／失败来源／歧义共17景通过，另 Pi1.5 三个 HTTP 场景和 Pi1.4 HTTP目录通过；12份 report 均 passed、package_unchanged、evidence_stable。Check、release policy、native hosts、OMP／Tern 和 package dry run 亦通过；旧三个中间提交 CI failed 原件不改判。
+
+Pro 的原 `http-directory` 与 `dollar` 各 n=1、0 retry。HTTP正常分支共享一次 list：101行库存两页、2 metadata HTTP／89,602 B，完整来源10 HTTP／93,645 B；失败分支如实计入 paired AUTH_REQUIRED 与既有后台 fallback 的3 HTTP／291 B。两个分支在出版和排空后各只执行一次状态 probe，HTTP／provider 增量均0，正文／对象读取0。`dollar` 的3份 provider和3份安装 serializer 请求均完整交付根110 B及Requires30 B、保持两卡身份与入口，持续复用canonical Members描述，未选b/c正文0；首轮原custom和后两轮有效session回执只作独立sidecar。该暖fixture为1list＋1consume、0HTTP／CLI、1个工具往返，累计serializer30,959 B，不据此推导真实模型成本。
+
+随后同包在 Pro 空consumer、正常autoload、无source.command／prefetch下完成原 live SDK路线一次（300秒外层／180秒RPC／0retry）。真实Default74、poteto-mode＋unslop共47,475 B、固定资源1,135 B和续聊全文恰一份均通过；固定资源1个对象读取、0HTTP。原report保留partial标签，独立归属另证全部6次正文attempts只属所选根／Requires，54未选Members正文0、未知归属0，补证无新增HTTP。
+
+| 同一Pro冷路线 | SDK／CLI | 来源HTTP／请求B／decoded响应B | 实际安装serializer请求／累计B |
+| --- | --- | --- | --- |
+| C9历史原件 | 4／0 | 37／3,904／3,473,054 | 7／428,892 |
+| C12本次 | 3／0 | 34／3,667／2,757,172 | 7／430,754 |
+
+来源差额仅在目录：旧两次list合计19 HTTP／1,473,797 B，新一次组合list为16 HTTP／757,915 B；consume仍18 HTTP／1,999,257 B，read仍0HTTP，写入0。7份实际provider JSON的增加1,862 B逐份归因为C10已经引入的guidance（每请求JSON字符串＋259 B）及list说明（＋7 B）；其余工具schema相同，目录卡片与50项描述复用时点一致。这里的显式notion_use路线不证明新增美元注入投影的真实模型收益，不把较少来源字节称为较少模型输入。原run为25,883 ms、C9为27,956 ms，均n=1，不作稳定延迟结论或累加旧百分比。
+
+两场受控与一次实源的原 E→系统Trash→E均0，分别55／32／48份证据保持，owned Pi和driver均已关闭，scratch移入Trash；候选87、harness258、原fixture／helper／oracle与日用3哨兵保持。证据相对 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/`：`c12-pi-s24k9oj8/closure-and-inputs.json` SHA `f58680d4cc5897787dc41a804f95209b1a9b36acedccf4bcd4f9838850b4829e`；`c12-pro-live-2xs5o14p/handoff.json` SHA `1026a545f99644ac939b4c01d121b19945d54b9ff25d82af1dacd19b959a78fb`；`c12-harness-260bf27j/ci-c12-identity-and-reports.json` SHA `041dd623b1f09d523e5124823f3fc0943b3e6b7a522d7f6b40faf55222cf9354`。root核实源38引用／36文件及CI包成员。C11两个actual Pi失败、旧模型失败、Mini正常执行工具UNAVAILABLE均保留；本节没有真实模型样本或日用切换，不关闭SC22／SC20／SC21／SC24。
+
 ### 2026-11-06：CI 构建来源与当前消费内核对齐
 
 `ci.yml` 与 `publish.yml` 的 CLI checkout 同时固定为 `55e06bb3d6ec426b38aefdf8fed61e26ece0343d`。该提交包含 C8 产品源 `b5564ee`、现有 fixture 和 Records coverage 原件留存；继续由同一个 checkout 生成 fixture 并提供 `NTN_SKILLS_BUILD_ENTRY`。不使用分支名或另一个隐式 SDK 来源。
