@@ -552,6 +552,42 @@ test("native alias version changes retain both snapshots and reuse an earlier pu
   await f.emit("session_shutdown", { type: "session_shutdown" }, f.ctx);
 });
 
+test("Pi catalog survives a forced system prompt and replaces its previous request message", async () => {
+  const f = await fixture(true), metadata = Promise.withResolvers<Awaited<ReturnType<HostSkillOptions["getRecords"]>>>();
+  const { search } = await f.install(undefined, { getRecords: () => metadata.promise });
+  const forced = "Native instructions\n<safe-delete-policy>Keep the deletion guard.</safe-delete-policy>";
+  const head: AgentMessage = { role: "system", content: "Native instructions", toolsAdded: [{ name: "read" }] };
+  const user: AgentMessage = { role: "user", content: "Discover the relevant Skill." };
+  const project = async (messages: AgentMessage[]) => {
+    const [output] = await f.emit("context_with_system", { messages }, f.ctx);
+    if (!output || typeof output !== "object" || !("messages" in output) || !Array.isArray(output.messages)) throw new Error("Expected context projection");
+    const projected: AgentMessage[] = output.messages;
+    // Pi applies a before_agent_start forced prompt after context_with_system.
+    return [{ ...head, content: forced }, ...projected.filter(message => message.role !== "system")];
+  };
+  const pending = await project([head, user]);
+  const owned = (messages: AgentMessage[]) => messages.filter(message => message.role === "custom" && message.customType === "context-broker-notion-catalog");
+  expect(owned(pending)).toHaveLength(1);
+  expect(sourceMessageText(owned(pending)[0]!.content)).toContain("Notion metadata is pending");
+  metadata.resolve({ records: f.records.map(record => ({ ...record, body: undefined, preparationBinding: undefined,
+    defaultDiscovery: record === f.root })), failures: [] });
+  await search.execute("forced-catalog-ready", {}, undefined, undefined, f.ctx);
+  const ready = await project(pending), repeated = await project(ready);
+  for (const messages of [ready, repeated]) {
+    expect(messages[0]).toEqual({ ...head, content: forced });
+    expect(messages).toContain(user);
+    expect(owned(messages)).toHaveLength(1);
+    const catalog = sourceMessageText(owned(messages)[0]!.content);
+    expect(catalog).toContain("<name>root</name><description>Controlled root</description>");
+    expect(catalog).not.toContain("Notion metadata is pending");
+    expect(catalog.match(/<description>Controlled root<\/description>/g)).toHaveLength(1);
+    expect(catalog).toContain("sr:C");
+  }
+  expect(f.calls).toEqual([]);
+  expect(f.resourceReads).toEqual([]);
+  expect(f.session.entries.some(entry => entry.type === "custom" && entry.customType === "context-broker-notion-catalog")).toBe(false);
+});
+
 test("Pi projects the ready default catalog after explicit preparation, not the earlier pending observation", async () => {
   const f = await fixture(true), metadata = Promise.withResolvers<Awaited<ReturnType<HostSkillOptions["getRecords"]>>>();
   await f.install(undefined, { getRecords: () => metadata.promise });
@@ -579,13 +615,13 @@ test("Pi projects the ready default catalog after explicit preparation, not the 
   expect(before).not.toEqual(expect.arrayContaining([expect.objectContaining({ systemPrompt: expect.anything() })]));
   expect(projected).toEqual([expect.objectContaining({ messages: [expect.objectContaining({
     content: head.content, sections: expect.objectContaining(head.sections), toolsAdded: head.toolsAdded,
-  }), user] })]);
+  }), user, expect.objectContaining({ role: "custom", customType: "context-broker-notion-catalog", display: false })] })]);
   expect(JSON.stringify(messages)).toBe(original);
   expect(f.calls).toEqual(["use"]);
   expect(f.resourceReads).toEqual([]);
 });
 
-test("Pi keeps ordinary pending requests immediate and refreshes only owned system metadata on a later request", async () => {
+test("Pi keeps ordinary pending requests immediate and refreshes only owned metadata on a later request", async () => {
   const f = await fixture(true), metadata = Promise.withResolvers<Awaited<ReturnType<HostSkillOptions["getRecords"]>>>();
   const { search } = await f.install(undefined, { getRecords: () => metadata.promise });
   const local = "<available_skills><skill><name>local-native</name><location>/local/skill/SKILL.md</location></skill></available_skills>";
@@ -615,7 +651,8 @@ test("Pi keeps ordinary pending requests immediate and refreshes only owned syst
   expect(actual).not.toContain("obsolete catalog");
   expect(actual).not.toContain("Notion metadata is pending");
   expect(ready).toEqual([expect.objectContaining({ messages: [expect.objectContaining({ toolsAdded: head.toolsAdded,
-    sections: expect.objectContaining({ other: null }) }), user, patch] })]);
+    sections: expect.objectContaining({ other: null }) }), user, patch,
+    expect.objectContaining({ role: "custom", customType: "context-broker-notion-catalog", display: false })] })]);
   expect(JSON.stringify([stale, user, patch])).toBe(original);
   expect(f.calls).toEqual([]);
   expect(f.resourceReads).toEqual([]);
@@ -628,9 +665,13 @@ async function catalogProjection(f: Awaited<ReturnType<typeof fixture>>, input: 
   const messages: unknown[] = output.messages;
   const head = messages.find(value => value !== null && typeof value === "object" && "role" in value && value.role === "system");
   if (!head || typeof head !== "object") throw new Error("Expected the native system message");
-  if (!("sections" in head) || !head.sections || typeof head.sections !== "object" || !("context-broker-notion-catalog" in head.sections)) return { messages, catalog: "" };
-  if (typeof head.sections["context-broker-notion-catalog"] !== "string") throw new Error("Expected generated catalog text");
-  return { messages, catalog: head.sections["context-broker-notion-catalog"] };
+  const catalogs = messages.filter(value => value !== null && typeof value === "object" && "role" in value && value.role === "custom"
+    && "customType" in value && value.customType === "context-broker-notion-catalog");
+  if (!catalogs.length) return { messages, catalog: "" };
+  expect(catalogs).toHaveLength(1);
+  const catalog = catalogs[0];
+  if (!catalog || typeof catalog !== "object" || !("content" in catalog) || typeof catalog.content !== "string") throw new Error("Expected generated catalog text");
+  return { messages, catalog: catalog.content };
 }
 
 function projectedToolText(messages: readonly unknown[], id: string): string {
@@ -674,7 +715,7 @@ test("Pi dollar injection reuses an exact canonical card while retaining every s
   expect(projected.catalog.match(/<skill>/g)).toHaveLength(3);
   expect([...projected.catalog.matchAll(/<location>(.*?)<\/location>/g)].map(match => match[1]))
     .toEqual([...initial.catalog.matchAll(/<location>(.*?)<\/location>/g)].map(match => match[1]));
-  expect(projected.messages.slice(1)).toEqual([f.injected, f.requiredInjection]);
+  expect(projected.messages.slice(1, -1)).toEqual([f.injected, f.requiredInjection]);
   expect(JSON.stringify(input)).toBe(before);
   expect(sourceBodyLoaded(input, f.root)).toBe(true);
   expect(sourceBodyLoaded(input, f.required)).toBe(true);
@@ -744,8 +785,8 @@ test("Pi deferred dollar catalog keeps native session proof across context hooks
     expect(result.messages).toEqual(messages);
     expect(result.messages.some(message => message.role === "custom")).toBe(false);
     const projected = await catalogProjection(f, [f.head, ...result.messages]);
-    expect(projected.messages).toHaveLength(messages.length + 1);
-    expect(projected.messages.slice(1)).toEqual(messages);
+    expect(projected.messages).toHaveLength(messages.length + 2);
+    expect(projected.messages.slice(1, -1)).toEqual(messages);
     expect(JSON.stringify(projected.messages)).not.toContain("nativePromptSha256");
     expect(JSON.stringify(projected.messages)).not.toContain("bodySha256");
     return projected.catalog;

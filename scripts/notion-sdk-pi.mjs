@@ -12,7 +12,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { isolatedEnv, resolveHost, runCommand, writeFakeProvider, assertSupportedPiVersion } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
-import { safeRequestMetrics, providerSystemText } from './notion-default-context.mjs';
+import { safeRequestMetrics, providerSystemText, providerCatalogText } from './notion-default-context.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
 import { verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from './skill-preparation-evidence.mjs';
 
@@ -346,11 +346,11 @@ function catalogDescriptionEvidence(context, expected, fixture, { generatedOnly 
   if (!context || !/^sr:C[A-Za-z0-9_-]{22}$/u.test(expected.ref)) return undefined;
   const messages = context.messages ?? [], xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
   if (!generatedOnly) {
-    const system = providerSystemText(context), card = '<skill><name>' + xml(expected.name) + '</name><description>' + xml(expected.description)
+    const catalogText = providerCatalogText(context), card = '<skill><name>' + xml(expected.name) + '</name><description>' + xml(expected.description)
       + '</description><source>' + xml(expected.source) + '</source><location>' + expected.ref + '</location></skill>';
-    const matches = [...system.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)].flatMap(block =>
+    const matches = [...catalogText.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)].flatMap(block =>
       [...block[1].matchAll(/<skill>[\s\S]*?<\/skill>/gu)].filter(match => match[0] === card));
-    if (expected.kind === 'skill' && matches.length === 1) return { origin: 'actual-default-card', ref: expected.ref, description: expected.description, system_sha256: hash(system) };
+    if (expected.kind === 'skill' && matches.length === 1) return { origin: 'actual-default-card', ref: expected.ref, description: expected.description, catalog_context_sha256: hash(catalogText) };
     for (const message of messages) {
       if (message === exclude || message.toolCallId === exclude?.toolCallId) continue;
       let cards; try { cards = visibleDiscoveryCards(message); } catch { continue; }
@@ -559,7 +559,7 @@ function defaultViewProjection(captures, discovery, events, fixture, { sourceId 
   }
   if (discovery) assert.deepEqual(discovery.records.filter(record => record.in_default_view).map(record => record.name).sort(), expected.records.map(record => record.name).sort());
   const observations = captures.map(capture => {
-    const texts = [providerSystemText(capture.context)];
+    const texts = [providerCatalogText(capture.context)];
     const catalogs = texts.flatMap(text => [...text.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)]);
     assert.ok(catalogs.length <= 1, 'Default directory must not be duplicated in a provider request');
     if (!catalogs.length) return { request_id: capture.requestId,
@@ -612,7 +612,7 @@ export function assertPreflightCatalogProjection(captures, discovery, events, fi
   for (const request of result.provider_requests) assert.equal(request.state, 'ready',
     'An explicit selection that awaited metadata must expose the ready catalog at its first provider request');
   for (const capture of captures) {
-    assert.doesNotMatch(providerSystemText(capture.context), /<ntn-skills-discovery\b[^>]*status="pending"/u);
+    assert.doesNotMatch(providerCatalogText(capture.context), /<ntn-skills-discovery\b[^>]*status="pending"/u);
     for (const [name, body] of bodies) assert.equal(bodyCount(capture.context, body), ['a', 'base'].includes(name) ? 1 : 0,
       name + ': explicit preflight delivers only its complete selected root and Requires');
   }
@@ -632,7 +632,7 @@ export function assertPreflightCatalogProjection(captures, discovery, events, fi
 }
 
 /** A comparison barrier does not itself prove model visibility. Verify the
- * actual system payload, retaining each version's name/source presentation. */
+ * actual visible payload, retaining each version's name/source presentation. */
 export function assertWarmDirectoryProjection(captures, discoveryMessage, fixture, bodies, { transport = 'sdk', sourceId = 'sdk-fixture' } = {}) {
   assert.ok(['sdk', 'cli'].includes(transport)); assert.ok(captures.length > 0);
   assertSearchProjection(discoveryMessage, { expectCompact: false, scope: fixture.scope, context: captures.at(-1).context, fixture });
@@ -641,10 +641,10 @@ export function assertWarmDirectoryProjection(captures, discoveryMessage, fixtur
   assert.deepEqual(full.records.filter(record => record.in_default_view).map(record => record.id).sort(), expected.map(record => record.id).sort());
   const xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
   const observations = captures.map(capture => {
-    const system = providerSystemText(capture.context);
-    assert.doesNotMatch(system, /<ntn-skills-discovery\b[^>]*status="pending"/u, 'Warm directory must be ready from the first actual provider');
-    const catalogs = [...system.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)];
-    assert.equal(catalogs.length, 1, 'One actual system catalog is required');
+    const system = providerSystemText(capture.context), catalogText = providerCatalogText(capture.context);
+    assert.doesNotMatch(catalogText, /<ntn-skills-discovery\b[^>]*status="pending"/u, 'Warm directory must be ready from the first actual provider');
+    const catalogs = [...catalogText.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)];
+    assert.equal(catalogs.length, 1, 'One actual visible catalog is required');
     const views = [...catalogs[0][1].matchAll(/<view\b([^>]*)>/gu)]; assert.equal(views.length, 1);
     const view = Object.fromEntries([...views[0][1].matchAll(/([a-z_]+)="([^"]*)"/gu)].map(match => [match[1], match[2]]));
     assert.equal(view.source, sourceId); assert.equal(view.id, fixture.default_view.id); assert.equal(view.partial, 'false');
@@ -670,6 +670,7 @@ export function assertWarmDirectoryProjection(captures, discoveryMessage, fixtur
     });
     assert.deepEqual(records.map(record => record.id).sort(), expected.map(record => record.id).sort());
     return { request_id: capture.requestId, state: 'ready', system_sha256: hash(system), system_bytes: Buffer.byteLength(system),
+      catalog_context_sha256: hash(catalogText), catalog_context_bytes: Buffer.byteLength(catalogText),
       catalog_bytes: Buffer.byteLength(catalogs[0][0]), records };
   });
   for (const body of bodies.values()) {
@@ -3463,7 +3464,7 @@ export function assertControlledHttpDirectory(captures, events, { sample, hostPi
   assert.equal(events.filter(event => event.kind === 'object_read').length, 0);
   for (const capture of captures) for (const file of sample.oracle.cold.files)
     assert.equal(bodyCount(capture.context, sample.oracle.cold.contents[file.path]), 0, 'Ordinary prompts must not receive any authored source body');
-  const systems = captures.map(capture => providerSystemText(capture.context));
+  const systems = captures.map(capture => providerCatalogText(capture.context));
   if (held) {
     assert.match(systems[0], /<ntn-skills-discovery status="pending">/u);
     assert.doesNotMatch(systems[0], /<ntn-skills-view-catalog>[\s\S]*<skill>/u);

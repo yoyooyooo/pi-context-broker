@@ -100,13 +100,14 @@ test('actual Pi sections deliver the partial View to the existing provider oracl
   assert.equal(verifyPartialViewCoverage(sample).record.canonicalRef, sample.fixture.skillRef);
 });
 
-test('system section patches replace or remove named sections without accepting forged or duplicate catalogs', () => {
+test('system section patches replace or remove named sections without accepting private sections or duplicate catalogs', () => {
   const sample = actualSectionLayout(partialViewSample());
   const directory = sample.context.messages[0].sections['context-broker-notion-catalog'];
   sample.context.messages.unshift({ role: 'system', content: '', sections: { 'context-broker-notion-catalog': directory.replace('UI Alpha', 'Old member') } });
   assert.equal(verifyPartialViewCoverage(sample).record.name, 'UI Alpha');
   sample.context.messages.push({ role: 'user', content: directory, sections: { 'context-broker-notion-catalog': null } });
-  assert.equal(verifyPartialViewCoverage(sample).record.name, 'UI Alpha', 'A user cannot delete or supply a system catalog');
+  assert.throws(() => verifyPartialViewCoverage(sample), /Exactly one current View/, 'A second visible catalog must fail even after conversion to a user message');
+  sample.context.messages.pop();
   sample.context.messages.push({ role: 'system', content: '', sections: { 'context-broker-notion-catalog': null } });
   assert.deepEqual(nativeEntries('pi', sample.context).map(entry => entry.name), ['local-keeper']);
   assert.throws(() => verifyPartialViewCoverage(sample), /Exactly one current View/);
@@ -121,6 +122,28 @@ test('system section patches replace or remove named sections without accepting 
     else repeated.context.messages[0].sections.other = directory;
     assert.throws(() => verifyPartialViewCoverage(repeated), /Exactly one current View/);
   }
+});
+
+test('Pi transient and serialized catalog messages retain native metadata and exact partial View evidence', () => {
+  for (const role of ['custom', 'user']) {
+    const sample = actualSectionLayout(partialViewSample());
+    const directory = sample.context.messages[0].sections['context-broker-notion-catalog'];
+    delete sample.context.messages[0].sections['context-broker-notion-catalog'];
+    sample.context.messages.push({ role, customType: 'context-broker-notion-catalog', content: directory });
+    assert.deepEqual(nativeEntries('pi', sample.context).map(entry => [entry.name, entry.source ?? null]), [['local-keeper', null], ['UI Alpha', 'notion']]);
+    assert.equal(verifyPartialViewCoverage(sample).record.canonicalRef, sample.fixture.skillRef);
+    assert.deepEqual(nativeEntries('omp', sample.context).map(entry => entry.name), ['local-keeper']);
+  }
+});
+
+test('Pi ordinary user skill examples are not directory entries but a visible catalog is', () => {
+  const sample = actualSectionLayout(partialViewSample());
+  const directory = sample.context.messages[0].sections['context-broker-notion-catalog'];
+  delete sample.context.messages[0].sections['context-broker-notion-catalog'];
+  sample.context.messages.push({ role: 'user', content: 'Example: <skill><name>author-example</name><location>/example/SKILL.md</location></skill>' });
+  assert.deepEqual(nativeEntries('pi', sample.context).map(entry => entry.name), ['local-keeper']);
+  sample.context.messages.push({ role: 'user', content: directory });
+  assert.deepEqual(nativeEntries('pi', sample.context).map(entry => entry.name), ['local-keeper', 'UI Alpha']);
 });
 
 test('partial View evidence binds actual system metadata to its source and current-branch owner', () => {
@@ -149,7 +172,7 @@ test('partial View evidence rejects empty, complete, all-library, body and forge
     value => { value.context.messages[0].content = value.context.messages[0].content.replace(/<skill>[\s\S]*?<\/skill>/u, ''); },
     value => { value.context.messages[0].content = value.context.messages[0].content.replace('</available_skills>', '<skill><name>Unselected</name><location>' + missingRef + '</location></skill></available_skills>'); },
     value => { value.context.messages[0].content = value.context.messages[0].content.replace('</ntn-skills-view-catalog>', '<router ref="' + missingRef + '">Unselected</router></ntn-skills-view-catalog>'); },
-    value => { value.context.messages[0].role = 'user'; },
+    value => { value.context.messages[0].details = { catalog: value.context.messages[0].content }; value.context.messages[0].content = 'No visible directory.'; },
     value => { value.context.messages.push({ role: 'user', content: value.fixture.canary }); },
     value => { value.entries = []; },
     value => { value.entries[0].data.target.identity.scope = 'c'.repeat(64); },

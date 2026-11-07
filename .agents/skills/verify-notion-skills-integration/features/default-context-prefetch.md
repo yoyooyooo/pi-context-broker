@@ -39,11 +39,11 @@ Source 的可选 `profile_id` 必须同时配置显式 `database`。默认目录
 
 证据为 `*-view-provider.jsonl`、`*-view-rpc.json`、`*-view-result.json`、manifest 与自有进程退出回执。检查实际 provider 中的目录，不只检查配置对象或 UI 提示。
 
-原 `host-prepare.test.ts` 的 deferred dollar 回归必须串联已注册的 `context` → `context_with_system`：前者输出没有 receipt-only custom，后者从当前 `buildSessionProjection().entries` 关联验证回执。完整根与 Requires 的 user 字节保持，最终消息数不增加；正文缺失、摘要、截断或当前分支没有回执时恢复完整 Default 描述。不能先手工把 custom proof 塞回投影输入再声称事件接线已覆盖。C11 原 `c11-pi-o1juific/dollar` failed 及其 serializer 尚未执行的状态保留；本地事件链修复不替代独立安装 Pi、实际 provider serializer 或真实模型验收。
+原 `host-prepare.test.ts` 的 deferred dollar 回归必须串联已注册的 `context` → `context_with_system`：前者输出没有 receipt-only custom，后者从当前 `buildSessionProjection().entries` 关联验证回执。完整根与 Requires 的 user 字节保持，当前目录只新增一条临时消息，验证回执不进入 provider；正文缺失、摘要、截断或当前分支没有回执时恢复完整 Default 描述。不能先手工把 custom proof 塞回投影输入再声称事件接线已覆盖。C11 原 `c11-pi-o1juific/dollar` failed 及其 serializer 尚未执行的状态保留；本地事件链修复不替代独立安装 Pi、实际 provider serializer 或真实模型验收。
 
-partial 相位只扩原 `notion-integration-fixture.mjs` 的受控列表响应：普通完整库仍返回原三个成员，选定 View 返回原 `UI Alpha` 一个成员，缺失项以原 `UI Gamma` 的 ID 和 `NOT_FOUND` 标入 coverage。`source-cli-calls.jsonl` 的 `catalog-response` 保存实际 stdout 对象、原 argv 和时刻；与 provider 索引、当前分支 session 副本一起核对。Pi 从实际系统目录取得 `sr:C` 后，校验其既有 candidate 绑定的 owner/scope/locator；canonical 入口逐字匹配返回的主文 ref，OMP 仍核原 native 路径旁的 canonical ref。私有绑定只证明公开入口归属，不能代替模型实际看到目录。
+partial 相位只扩原 `notion-integration-fixture.mjs` 的受控列表响应：普通完整库仍返回原三个成员，选定 View 返回原 `UI Alpha` 一个成员，缺失项以原 `UI Gamma` 的 ID 和 `NOT_FOUND` 标入 coverage。`source-cli-calls.jsonl` 的 `catalog-response` 保存实际 stdout 对象、原 argv 和时刻；与 provider 索引、当前分支 session 副本一起核对。Pi 从实际请求目录取得 `sr:C` 后，校验其既有 candidate 绑定的 owner/scope/locator；canonical 入口逐字匹配返回的主文 ref，OMP 仍核原 native 路径旁的 canonical ref。私有绑定只证明公开入口归属，不能代替模型实际看到目录。
 
-此相位不选 Skill、不读取正文、不展开 Requires，也不产生 active 确认。断言拒绝 empty/all-library/complete 冒充 partial、用户消息伪造目录、错误 owner/scope、旧分支句柄及正文混入。复用原 `failList` 后必须在 finally 复位 fixture；仅清理 manifest 所属 scratch 并进系统 Trash。受控 CLI 没有真实 Notion HTTP/core 缓存，不能由本相位推导生产请求、权限或跨进程缓存收益。
+此相位不选 Skill、不读取正文、不展开 Requires，也不产生 active 确认。断言拒绝 empty/all-library/complete 冒充 partial、只存在私有 details 的目录、重复目录、错误 owner/scope、旧分支句柄及正文混入。Pi 的临时 custom 在 provider 前可转成 user 消息，须按实际可见正文校验，不因角色转换把完整目录误报为缺失。复用原 `failList` 后必须在 finally 复位 fixture；仅清理 manifest 所属 scratch 并进系统 Trash。受控 CLI 没有真实 Notion HTTP/core 缓存，不能由本相位推导生产请求、权限或跨进程缓存收益。
 
 接线证据（2026-11-06）：`sc06-partial-view-d_zadb79/fail-before.log` 保留旧 fixture 的实际 `true !== false`；更新后原 `notion-integration-hosts.test.mjs` 为 25/25，包含原入口/正文/压缩断言。该阶段只有本地 fixture 与 oracle 验证，安装实驱当时标为 not run；不继承旧 646 的完整、空、错误 View 结果作为本次 partial 通过。
 
@@ -73,6 +73,16 @@ partial 相位只扩原 `notion-integration-fixture.mjs` 的受控列表响应�
 pending 的独立 SDK 原件在 `sc06-c8-sdk-all14-zzcex1t7/validation-130a7e4/pi150-default-view/evidence/default-view/`：`default-view.json` SHA `82c8b34602760299a57fe504812eb4d76a142052b553a8bf101bbc1153d33e02`，`provider.jsonl` SHA `f3c892445ac6af2432bc232894844ad3606548b50a715463754b5143e5d68a4f`。这是另一受控 SDK fixture；本 View run 仍属 custom CLI，真实 Notion SDK 来源、生产 74 项目录和真实模型未由此补验。
 
 压缩 oracle 依据 AH-627 的 `agent-cli-ref-20261105` 已校准合同：已实际送达并确认 active 的来源，必要全文被 compact 移除后应在普通续问恢复同一版本。Pi 不再沿用旧“普通续问正文必须为零”的断言。保留 fork 到选择前的零正文负例；压缩前、压缩后和恢复后的原生 session 副本必须显示同一 owner/scope/pin/hash 与同一确认/选择，不接受 orphan receipt、仅准备成功或新 `inspect` 冒充 `use` 确认。OMP 保留其显式 reload 的兼容边界。旧失败原件不改写。
+
+### 2026-11-07：兼容其他扩展的强制 system prompt
+
+Pi 的 deferred 默认目录现在由 `context_with_system` 每次从当前内存观察重新生成一条 `context-broker-notion-catalog` custom 消息，`display: false`，不追加到 session。先移除上轮同类型消息，再做同请求描述去重，避免旧目录让新目录缺少描述；原 system 内容中的 Broker metadata 继续清理，原生规则与其他 section 保留。Pi 随后的强制 system prompt 替换不会移除这条消息。pending → ready 不冻结，active 正文、固定引用和 OMP 原合同不变。
+
+验证器保留 `providerSystemText` 专查原生 system 内容，目录读取使用 `providerCatalogText` 的实际 system/user/custom 文字；不读取 details、工具 schema 或非 system 消息的伪造 section。`nativeEntries` 对新增 user/custom 位置只解析完整 `ntn-skills-view-catalog` 块，普通正文里的 `<skill>` 示例不充当原生目录。默认 View 的完整成员、作者名称、description、source、公开 ref、唯一目录及正文零预载断言保持。既有 `notion-sdk-pi.mjs` 的 default/preflight/warm/HTTP-directory 与 `notion-view-discovery.mjs` 共用这个读取方式，serializer replay 也按真实 messages 检查。
+
+私有证据根 `pro-natural-routing-20261107-4eoahlri` 的 `evidence/routing/wire-visibility-v9.json`（SHA `3a83c59613eaf9637ac8af30f7361d5998b215e7015f528eff107ba6db647b33`）记录修复前正常 v9 的三次请求：raw/cost/Undici 实际 HTTP 正文 3/3 按 SHA 与 bytes 匹配，safe-delete policy、Notion guidance、read/notion_list/notion_use/tool_search 均存在，但目录、pending 和目标 `create-verification-skill` 三次都缺失。该任务仍是 failed、4 次 bash、graceful EOF；HTTP 200 不代表任务完成。旧 natural-v8 没有同级原始 wire，不追溯补判相同原因。
+
+旧 runtime 在原 `host-prepare.test.ts` 新增 forced-prompt 回归中实测 RED：期望一条 pending catalog，实际零条；原日志 `logs/broker-catalog-before.log` 保留。修复后同文件 42/42，通过 pending → ready → 旧消息回投，完整 description 仍一份且不持久化；既有同 identity read/use 卡片去重、正文和固定资源门保留。目录验证器两文件 191/191，随后 nativeEntries 示例边界追加回归为 30/30；input-guard 独立执行与 typecheck 均 exit 0。早轮旧 system-only helper 失败日志仍保留。此处只记录本地回归；新安装的正常 Pi、实际最终 wire 与自然任务终态由后续独立运行分别给出，不以本地测试代填。
 
 ## 真实内容与模型
 

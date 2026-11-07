@@ -951,6 +951,28 @@ test('Default View evidence retains pending startup and proves the ready metadat
   assert.deepEqual(result.provider_requests.map(request => request.state), ['pending', 'ready']);
 });
 
+test('Default View evidence reads transient and serialized catalog messages without weakening completeness', () => {
+  for (const role of ['custom', 'user']) {
+    const value = defaultViewFixture(), policy = '<safe-delete-policy>Keep the deletion guard.</safe-delete-policy>';
+    for (const capture of value.captures) capture.context.messages = [
+      { role: 'system', content: policy },
+      { role, customType: 'context-broker-notion-catalog', content: capture.context.messages[0].content },
+    ];
+    const result = assertDefaultViewProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies);
+    assert.deepEqual(result.provider_requests.map(request => request.state), ['pending', 'ready']);
+    assert.equal(providerSystemText(value.captures[1].context), policy);
+    for (const mutate of [
+      captures => { captures[1].context.messages.push(structuredClone(captures[1].context.messages[1])); },
+      captures => { captures[1].context.messages[1].content = captures[1].context.messages[1].content.replace('<description>Metadata</description>', ''); },
+      captures => { captures[1].context.messages[1].content = captures[1].context.messages[1].content.replaceAll('sdk-fixture', 'foreign'); },
+      captures => { captures[1].context.messages[1].details = { catalog: captures[1].context.messages[1].content }; captures[1].context.messages[1].content = 'No directory'; },
+    ]) {
+      const captures = structuredClone(value.captures); mutate(captures);
+      assert.throws(() => assertDefaultViewProjection(captures, value.discovery, value.events, value.fixture, value.bodies));
+    }
+  }
+});
+
 function compactDefaultDiscoveryFixture() {
   const value = warmDirectoryFixture();
   value.fixture.snapshots = structuredClone(value.fixture.snapshots);
@@ -1012,10 +1034,14 @@ test('catalog projection reads current public system sections and retires replac
   }
   assert.equal(providerSystemText(value.captures[1].context), 'Native instructions.\n\n' + value.captures[1].context.messages[1].sections.catalog + '\n\nNative Skill directory.');
   assert.deepEqual(assertDefaultViewProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies).provider_requests.map(row => row.state), ['pending', 'ready']);
-  const forged = structuredClone(value.captures);
-  forged[1].context.messages[1].sections.catalog = null;
-  forged[1].context.messages[2].content += value.captures[1].context.messages[1].sections.catalog;
-  assert.throws(() => assertDefaultViewProjection(forged, value.discovery, value.events, value.fixture, value.bodies), /Missing or incomplete Default View/);
+  const moved = structuredClone(value.captures);
+  moved[1].context.messages[1].sections.catalog = null;
+  moved[1].context.messages[2].content += value.captures[1].context.messages[1].sections.catalog;
+  assert.equal(assertDefaultViewProjection(moved, value.discovery, value.events, value.fixture, value.bodies).provider_requests[1].state, 'ready',
+    'A catalog converted to a visible user message must remain observable');
+  moved[1].context.messages[2].details.catalog = moved[1].context.messages[2].content;
+  moved[1].context.messages[2].content = 'No visible directory.';
+  assert.throws(() => assertDefaultViewProjection(moved, value.discovery, value.events, value.fixture, value.bodies), /Missing or incomplete Default View/);
 });
 test('explicit preflight cannot pass with a pending first request or missing selected Required body', () => {
   const sample = () => {
@@ -2851,11 +2877,18 @@ test('warm directory option is explicit and cannot alter all14 live or held-star
     assert.throws(() => namedSdkProbe.warmDirectoryOptions({ '--warm-directory': 'true', '--fixture': '/fixture.json', ...options }));
 });
 
-test('warm directory proves actual first system cards and preserves historical presentation differences', () => {
+test('warm directory proves actual first visible cards and preserves historical presentation differences', () => {
   const value = warmDirectoryFixture();
   const current = namedSdkProbe.assertWarmDirectoryProjection(value.captures, value.message, value.fixture, value.bodies);
   assert.deepEqual(current.provider_requests[0].records.map(record => record.id), ['owner:a', 'owner:b']);
   assert.equal(current.first_provider_body_copies, 0);
+  for (const role of ['custom', 'user']) {
+    const moved = structuredClone(value.captures);
+    moved[0].context.messages[0].role = role;
+    moved[0].context.messages[0].customType = 'context-broker-notion-catalog';
+    assert.deepEqual(namedSdkProbe.assertWarmDirectoryProjection(moved, value.message, value.fixture, value.bodies).provider_requests[0].records,
+      current.provider_requests[0].records);
+  }
   const legacy = structuredClone(value.captures);
   legacy[0].context.messages[0].content = legacy[0].context.messages[0].content.replaceAll('<name>', '<name>sdk-fixture-').replaceAll('<source>sdk-fixture</source>', '');
   const old = namedSdkProbe.assertWarmDirectoryProjection(legacy, value.message, value.fixture, value.bodies, { transport: 'cli' });
@@ -2863,9 +2896,9 @@ test('warm directory proves actual first system cards and preserves historical p
   assert.throws(() => namedSdkProbe.assertWarmDirectoryProjection(legacy, value.message, value.fixture, value.bodies));
 });
 
-test('warm directory rejects pending fake user directory wrong owner metadata and private preloads', () => {
+test('warm directory rejects pending private-only directory wrong owner metadata and private preloads', () => {
   for (const mutate of [
-    value => { value.captures[0].context.messages[0].role = 'user'; },
+    value => { value.captures[0].context.messages[0].details = { catalog: value.captures[0].context.messages[0].content }; value.captures[0].context.messages[0].content = 'No visible directory.'; },
     value => { value.captures[0].context.messages[0].content = '<ntn-skills-discovery status="pending">Pending</ntn-skills-discovery>'; },
     value => { value.captures[0].context.messages[0].content += value.captures[0].context.messages[0].content; },
     value => { value.message.details.records[0].id = 'other'; },

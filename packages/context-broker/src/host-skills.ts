@@ -1336,6 +1336,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   }
   if (deferredPiDiscovery) host.on("context_with_system", (event, ctx) => {
     if (event.messages[0]?.role !== "system" || lifecycleController.signal.aborted || piRun?.signal.aborted) return undefined;
+    const section = "context-broker-notion-catalog";
+    // This is a fresh, transient projection. A prior catalog cannot justify
+    // omitting descriptions from the replacement that is sent this request.
+    const currentMessages = event.messages.filter(message => message.role !== "custom" || message.customType !== section);
     // Use only the current in-memory observation. Ordinary messages never join
     // metadata I/O; explicit preflight has already awaited its required catalog.
     const candidateRefs = modelCandidateReferences([...records, ...defaultRouters], ctx);
@@ -1366,7 +1370,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     };
     // The context hook removes receipt-only messages. Reattach the current
     // native receipts for validation, then omit these appended messages below.
-    const messages = withSessionSourceReceipts(event.messages, ctx.sessionManager?.buildSessionProjection?.().entries ?? []);
+    const messages = withSessionSourceReceipts(currentMessages, ctx.sessionManager?.buildSessionProjection?.().entries ?? []);
     const projected = projectCatalogDescriptions({ messages,
       defaults: [...records, ...defaultRouters].flatMap(record => { const card = defaultCard(record); return card ? [card] : []; }),
       identify,
@@ -1384,21 +1388,24 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         } catch { return false; }
       },
     });
-    const section = "context-broker-notion-catalog", catalog = catalogSystemPrompt("", ctx, candidateRefs, record => {
+    const catalog = catalogSystemPrompt("", ctx, candidateRefs, record => {
       const card = defaultCard(record), key = card && identify(card);
       return key !== undefined && projected.omittedDefaults.has(key);
     }).trimStart();
     const ownedPaths = new Set(readRecords.keys());
     const clean = (text: string) => withoutViewMetadata(text, ownedPaths, ctx.cwd);
-    return { messages: projected.messages.slice(0, event.messages.length).map((message, index) => {
+    const outgoing: AgentMessage[] = projected.messages.slice(0, currentMessages.length).map(message => {
       if (message.role !== "system") return message;
       const content = typeof message.content === "string" ? clean(message.content)
         : message.content?.map(part => part.type === "text" ? { ...part, text: clean(part.text) } : part);
       const sections = Object.fromEntries(Object.entries(message.sections ?? {}).filter(([name]) => name !== section)
         .map(([name, value]) => [name, value === null ? null : clean(value)]));
-      if (index === 0 && catalog) sections[section] = catalog;
       return { ...message, content, ...(message.sections || Object.keys(sections).length ? { sections } : {}) };
-    }) };
+    });
+    // Pi may replace all system messages with another extension's forced
+    // prompt after this hook. Its custom-message path preserves this catalog.
+    if (catalog) outgoing.push({ role: "custom", customType: section, content: catalog, display: false, timestamp: Date.now() });
+    return { messages: outgoing };
   });
   async function exactRecord(reference: ExactNativeReference, ctx: ExtensionContext, signal: AbortSignal, short?: HostShortRefResolution, resolved?: SkillRecord): Promise<SkillRecord> {
     const selector = reference.selector;

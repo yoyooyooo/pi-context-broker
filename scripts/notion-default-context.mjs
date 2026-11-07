@@ -121,9 +121,20 @@ export function providerSystemText(context) {
   return [...content, ...sections.values()].filter(Boolean).join('\n\n');
 }
 
+/** Pi converts transient custom messages to user messages before the provider.
+ * Inspect their visible text as well as system sections, never private details. */
+export function providerCatalogText(context) {
+  return [providerSystemText(context), ...(context.messages ?? [])
+    .filter(message => message.role === 'user' || message.role === 'custom')
+    .map(message => textContent(message.content))].filter(Boolean).join('\n\n');
+}
+
 export function nativeEntries(host, context) {
   const topLevel = host === 'omp' ? (Array.isArray(context.systemPrompt) ? context.systemPrompt.join('\n') : context.systemPrompt ?? '') : '';
-  const text = [topLevel, providerSystemText(context)].filter(Boolean).join('\n');
+  const projectedCatalogs = host === 'pi' ? (context.messages ?? [])
+    .filter(message => message.role === 'user' || message.role === 'custom')
+    .flatMap(message => [...textContent(message.content).matchAll(/<ntn-skills-view-catalog>[\s\S]*?<\/ntn-skills-view-catalog>/gu)].map(match => match[0])) : [];
+  const text = [topLevel, providerSystemText(context), ...projectedCatalogs].filter(Boolean).join('\n');
   const metadata = [...text.matchAll(/<skill>([\s\S]*?)<\/skill>/g)].flatMap(match => {
     const name = /<name>\s*([^<]+)\s*<\/name>/u.exec(match[1])?.[1];
     const location = /<location>\s*([^<]+)\s*<\/location>/u.exec(match[1])?.[1];

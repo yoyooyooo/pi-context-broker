@@ -82,12 +82,14 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       for (const handler of events.get(name) ?? []) results.push(await handler(event as never, ctx));
       return results;
     };
-    const systemPrompt = async () => {
+    const providerPrompt = async () => {
       const [projection] = await emit("context_with_system", { messages: [{ role: "system", content: "base" }] });
       const messages = object(projection).messages;
       assert.ok(Array.isArray(messages));
-      return messages.filter(message => object(message).role === "system").flatMap(message => {
+      return messages.flatMap(message => {
         const value = object(message), sections = value.sections;
+        if (value.role === "custom" && value.customType === "context-broker-notion-catalog") return typeof value.content === "string" ? [value.content] : [];
+        if (value.role !== "system") return [];
         return [value.content, ...Object.values(sections && typeof sections === "object" ? sections : {})]
           .filter(text => typeof text === "string");
       }).join("\n\n");
@@ -102,7 +104,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       return { result, submitted, project: () => emit("context", { messages: [{ role: "user", content: submitted }] }) };
     };
     return {
-      installed, emit, systemPrompt, requests, published, notices, loads, search, adapter, ctx, begin,
+      installed, emit, providerPrompt, requests, published, notices, loads, search, adapter, ctx, begin,
       stop: () => operation?.abort(),
       async end() { await emit("agent_end"); ctx.signal = undefined; operation = undefined; },
       entry: () => entry, aborts: () => aborts, host: () => host,
@@ -122,7 +124,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
         assert.deepEqual(await bounded(f.emit("input", { source: "rpc", text }), `Ordinary Pi input must not await metadata: ${text}`), [{ action: "continue" }]);
         const [before] = await bounded(f.emit("before_agent_start", { prompt: text, systemPrompt: "base" }), "Ordinary Pi provider setup must not await metadata");
         assert.equal(before, undefined, "Pi must not freeze an early system prompt before context preparation");
-        const prompt = await bounded(f.systemPrompt(), "Ordinary Pi system projection must not await metadata");
+        const prompt = await bounded(f.providerPrompt(), "Ordinary Pi context projection must not await metadata");
         assert.match(prompt, /status="pending"/);
         assert.match(prompt, /notion_list/);
       }
@@ -179,7 +181,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       assert.deepEqual(await bounded(f.emit("input", { source: "rpc", text: "ordinary after failure" }), "Failed discovery must not block ordinary input"), [{ action: "continue" }]);
       const [before] = await bounded(f.emit("before_agent_start", { prompt: "ordinary after failure", systemPrompt: "base" }), "Failed discovery must not block provider setup");
       assert.equal(before, undefined);
-      assert.match(await bounded(f.systemPrompt(), "Failed discovery must not block final system projection"), /status="unavailable"/);
+      assert.match(await bounded(f.providerPrompt(), "Failed discovery must not block final context projection"), /status="unavailable"/);
       for (const text of ["$startup@fixture task", "/skill:fixture-startup task"]) {
         const accepted = await bounded(f.begin(text), "Failed metadata cannot block input acceptance");
         await assert.rejects(accepted.project(), new RegExp(code));
