@@ -866,8 +866,10 @@ export function assertNativeRepeatProjection(captures, originals, { batch, expec
 
 /** Compare actual tool/provider text and byte spans against independently seeded
  * fixture bytes. Host receipts are checked, never used as the source oracle. */
-export function assertResourceBatchProjection(message, { batch, state = 'source' }) {
-  assert.equal(message?.role, 'toolResult'); assert.equal(message.toolName, 'read'); assert.equal(message.isError, false);
+const resourceReadToolNames = ['read', 'notion_read_resources'];
+export function assertResourceBatchProjection(message, { batch, state = 'source', toolName = 'read' }) {
+  assert.ok(resourceReadToolNames.includes(toolName), 'Only the declared resource read routes can carry a batch proof');
+  assert.equal(message?.role, 'toolResult'); assert.equal(message.toolName, toolName); assert.equal(message.isError, false);
   assert.ok(Array.isArray(message.content) && message.content.length === 1 && message.content[0].type === 'text');
   const content = textContent(message.content), model = JSON.parse(content), proof = message.details?.contextBrokerResource;
   assert.equal(content, JSON.stringify(model), 'The complete resource envelope uses deterministic JSON');
@@ -927,9 +929,10 @@ export function assertResourceBatchProjection(message, { batch, state = 'source'
     details: { bytes: Buffer.byteLength(JSON.stringify(message.details)), sha256: hash(JSON.stringify(message.details)) } };
 }
 
-export function resourceTextCopies(context, file) {
+export function resourceTextCopies(context, file, { toolName = 'read' } = {}) {
+  assert.ok(resourceReadToolNames.includes(toolName), 'Only the declared resource read routes can carry a batch proof');
   return (context.messages ?? []).reduce((count, message) => {
-    if (message.role !== 'toolResult' || message.toolName !== 'read' || message.isError) return count;
+    if (message.role !== 'toolResult' || message.toolName !== toolName || message.isError) return count;
     let value; try { value = JSON.parse(textContent(message.content)); } catch { return count; }
     return count + (Array.isArray(value.files) ? value.files.filter(item => item.kind === 'text' && item.path === file.path && item.content === file.content).length : 0);
   }, 0);
@@ -1358,19 +1361,30 @@ function currentProviderTools(context) {
   return [...tools.values()];
 }
 
-export function assertResourceReadSchema(context) {
-  const read = currentProviderTools(context).find(tool => tool.name === 'read');
-  assert.ok(read, 'The actual provider must expose read');
+export function assertResourceReadSchema(context, { toolName = 'read' } = {}) {
+  assert.ok(resourceReadToolNames.includes(toolName), 'Only the declared resource read routes can carry a batch proof');
+  const read = currentProviderTools(context).find(tool => tool.name === toolName);
+  assert.ok(read, `The actual provider must expose ${toolName}`);
   const schema = read.parameters;
-  assert.equal(schema?.type, 'object'); assert.equal(schema.properties?.path?.type, 'string');
+  assert.equal(schema?.type, 'object');
   assert.deepEqual(Object.keys(schema).filter(key => ['oneOf', 'anyOf', 'allOf', 'enum', 'const', 'not'].includes(key)), [],
     'The actual provider rejects these top-level schema keywords before tool execution');
-  assert.ok(schema.required === undefined || Array.isArray(schema.required) && schema.required.length === 0,
-    'Neither alternative may be required for every read call');
-  assert.equal(schema.properties.offset?.type, 'number'); assert.equal(schema.properties.limit?.type, 'number');
   const paths = schema.properties?.paths;
   assert.equal(paths?.type, 'array'); assert.equal(paths.items?.type, 'string');
   assert.equal(paths.minItems, 1); assert.equal(paths.maxItems, 16);
+  if (toolName === 'notion_read_resources') {
+    assert.deepEqual(Object.keys(schema.properties), ['paths']); assert.deepEqual(schema.required, ['paths']);
+    assert.equal(schema.additionalProperties, false); assert.equal(typeof paths.items.pattern, 'string');
+    const accepts = new RegExp(paths.items.pattern);
+    assert.ok(accepts.test('sr:R' + 'a'.repeat(22))); assert.ok(accepts.test('skill://owner/reference.md?snapshot=s_fixed'));
+    for (const invalid of ['local.md', 'sr:R', 'sr:C' + 'a'.repeat(22), 'sr:R' + 'a'.repeat(21), 'sr:R' + 'a'.repeat(23)]) assert.equal(accepts.test(invalid), false);
+    return { tool: toolName, paths_supported: true, resource_only: true, path_ref_guidance: false, native_range_options: false,
+      top_level_object: true, validation_boundary: 'tool_execute', parameters: schema, parameters_sha256: hash(JSON.stringify(schema)) };
+  }
+  assert.equal(schema.properties?.path?.type, 'string');
+  assert.ok(schema.required === undefined || Array.isArray(schema.required) && schema.required.length === 0,
+    'Neither alternative may be required for every read call');
+  assert.equal(schema.properties.offset?.type, 'number'); assert.equal(schema.properties.limit?.type, 'number');
   const path = schema.properties.path;
   assert.equal(typeof path.description, 'string'); assert.match(path.description, /local.*file.*path/iu);
   assert.match(path.description, /skill:\/\//u); assert.match(path.description, /sr:/u);

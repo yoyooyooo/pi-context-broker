@@ -12,7 +12,7 @@ import { DEFAULT_RESOURCE_READ_BUDGET, type ResourceReadBatch, type ResourceRead
 import type { ContentRecord, ExtensionAPI, ExtensionContext, PiReadDefinition, SessionEntry, SkillRecord } from "../src/types";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
-async function fixture() {
+async function fixture(readOwner = "builtin") {
   const root = await mkdtemp(join(tmpdir(), "broker-resource-host-"));
   const id = "shared_skill:batch:owner", scope = hash("scope"), snapshot = "s_" + hash("snapshot"), version = hash("version");
   const base = "skill://" + encodeURIComponent(id) + "/", ref = (path: string, file?: string) => base + path + "?snapshot=" + snapshot + (file ? "&file_id=" + file : "");
@@ -36,19 +36,25 @@ async function fixture() {
     nameCalls: [] as string[], fixedCalls: [] as string[], scalarReads: 0,
     transform: (batch: ResourceReadBatch): ResourceReadBatch => batch, wait: undefined as undefined | (() => Promise<void>), signal: undefined as AbortSignal | undefined };
   const events = new Map<string, Array<(event: never, context: ExtensionContext) => unknown>>();
-  const tools = new Map<string, { definition: PiReadDefinition; source: string }>();
+  type Definition = Parameters<NonNullable<ExtensionAPI["registerTool"]>>[0];
+  const tools = new Map<string, { definition: Definition; source: string }>();
+  let active = ["read"];
   const native: PiReadDefinition = { name: "read", label: "read", description: "Native scalar reader", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] }, outputSchema: { type: "string" },
     async execute(_id, input) {
       state.scalarReads++;
       if (input.path !== scalarOutput) throw new Error("Only the selected fixed resource can enter the scalar reader");
       return { content: [{ type: "text", text: await readFile(scalarOutput, "utf8") }] };
     } };
-  tools.set("read", { definition: native, source: "builtin" });
+  tools.set("read", { definition: native, source: readOwner });
   const api: ExtensionAPI = {
     on(name, handler) { events.set(name, [...events.get(name) ?? [], handler]); },
-    registerTool(tool) { tools.set(tool.name, { definition: tool as PiReadDefinition, source: "local" }); },
+    registerTool(tool) {
+      tools.set(tool.name, { definition: tool, source: "local" });
+      if (tool.defaultActive !== false && !active.includes(tool.name)) active.push(tool.name);
+    },
     getAllTools: () => [...tools.values()].map(({ definition, source }) => ({ ...definition, sourceInfo: { source, path: "/fixture" } })),
-    getActiveTools: () => ["read"], appendEntry(customType, data) { state.entries.push({ type: "custom", customType, data }); },
+    getActiveTools: () => [...active], setActiveTools(names) { active = [...names]; },
+    appendEntry(customType, data) { state.entries.push({ type: "custom", customType, data }); },
   };
   const ctx: ExtensionContext = { cwd: root, hasUI: false, mode: "rpc", sessionManager: {
     getSessionId: () => state.id, getSessionFile: () => join(root, state.id + ".jsonl"), getBranch: () => state.entries,
@@ -101,7 +107,8 @@ async function fixture() {
       for (const handler of events.get("tool_result") ?? []) updates.push(await handler({ toolName: "read", toolCallId: "batch-call", ...result } as never, ctx));
       return updates;
     },
-    read: (input: Record<string, unknown>, signal?: AbortSignal) => tools.get("read")!.definition.execute("batch-call", input, signal, undefined, ctx) };
+    read: (input: Record<string, unknown>, signal?: AbortSignal) => tools.get("read")!.definition.execute("batch-call", input, signal, undefined, ctx),
+    readResources: (input: Record<string, unknown>, signal?: AbortSignal) => tools.get("notion_read_resources")!.definition.execute("batch-call", input, signal, undefined, ctx) };
 }
 
 test("one resource batch delivers exact selected text and binary metadata without preparing or selecting the owner body", async () => {
@@ -116,6 +123,35 @@ test("one resource batch delivers exact selected text and binary metadata withou
   expect(f.metadata.body).toBeUndefined(); expect(f.metadata.entryManifest).toBeUndefined();
   expect(sessionSourceSnapshot([{ role: "toolResult", toolName: "read", toolCallId: "batch-call", ...result }], f.metadata)).toBeUndefined();
   expect(result.details).toMatchObject({ contextBrokerResource: { version: 2, toolCallId: "batch-call", loaded: false }, contextBrokerResourceSource: { source_id: "notion" } });
+});
+
+test("third-party read resource fallback reuses one complete batch and the same fail-before identity checks", async () => {
+  const f = await fixture("local"), short = f.short.resource(f.ctx, f.selected, f.files[0]!.ref), entries = f.state.entries.length;
+  const result = await f.readResources({ paths: [short, f.files[1]!.ref] });
+  expect(result.structuredContent).toMatchObject({ status: "ready", files: [
+    { kind: "text", ref: short, content: f.files[0]!.content }, { kind: "text", ref: f.files[1]!.ref, content: "" },
+  ] });
+  expect(f.state.calls).toEqual([[f.files[0]!.ref, f.files[1]!.ref]]);
+  expect(f.state.scalarReads).toBe(0); expect(f.state.mainReads).toBe(0); expect(f.state.persisted).toBe(0); expect(f.state.entries).toHaveLength(entries);
+  expect(result.details).toMatchObject({ contextBrokerResource: { version: 2, toolCallId: "batch-call", loaded: false } });
+  expect(sessionSourceSnapshot([{ role: "toolResult", toolName: "notion_read_resources", toolCallId: "batch-call", ...result }], f.metadata)).toBeUndefined();
+  for (const paths of [[f.ref("SKILL.md")], [f.files[0]!.ref.split("?")[0]!], [f.files[0]!.ref, f.files[1]!.ref.replace(/snapshot=s_[a-f0-9]+/, "snapshot=s_" + hash("other"))]]) {
+    await expect(f.readResources({ paths })).rejects.toThrow();
+  }
+  expect(f.state.calls).toHaveLength(1);
+  f.state.transform = batch => ({ ...batch, ownerBinding: { ...batch.ownerBinding, body_sha256: hash("foreign owner") } });
+  await expect(f.readResources({ paths: [short] })).rejects.toMatchObject({ code: "SHORT_REF_OWNER_MISMATCH" });
+});
+
+test("resource fallback never delivers a late batch after abort or session switch", async () => {
+  for (const boundary of ["abort", "session"] as const) {
+    const f = await fixture("local"), waiting = Promise.withResolvers<void>(), entered = Promise.withResolvers<void>(), controller = new AbortController();
+    f.state.wait = () => { entered.resolve(); return waiting.promise; };
+    const pending = f.readResources({ paths: [f.files[0]!.ref] }, controller.signal); await entered.promise;
+    if (boundary === "abort") controller.abort(); else { f.state.id = "session-two"; await f.emit("session_switch"); }
+    waiting.resolve(); await expect(pending).rejects.toMatchObject({ code: "SOURCE_CANCELLED" });
+    expect(f.state.calls).toHaveLength(1); expect(f.state.mainReads).toBe(0); expect(f.state.persisted).toBe(0); expect(f.state.signal?.aborted).toBe(true);
+  }
 });
 
 test("SC25 scalar fixed-name resources deliver the exact file without preparing the main entry", async () => {

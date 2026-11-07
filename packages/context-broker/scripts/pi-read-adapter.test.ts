@@ -3,7 +3,10 @@ import { createPiHostAdapter } from "../src/pi-host-adapter";
 import type { ExtensionAPI, ExtensionContext, NativeReadResult, PiReadDefinition } from "../src/types";
 
 function fixture(owner = "builtin", enabled = true) {
-  const handlers: Array<(event: never, ctx: ExtensionContext) => unknown> = [];
+  const handlers = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
+  type Definition = Parameters<NonNullable<ExtensionAPI["registerTool"]>>[0];
+  const additional = new Map<string, Definition>(), registrations: string[] = [];
+  let active = enabled ? ["read", "bash"] : ["bash"];
   const parameters = { type: "object", properties: { path: { type: "string", description: "Path to the file to read (relative or absolute)" }, offset: { type: "number" }, limit: { type: "number" } }, required: ["path"] };
   const calls: unknown[] = [], factories: unknown[] = [];
   const content: NativeReadResult = { content: [{ type: "image", data: "native-image", mimeType: "image/png" }], details: { native: true }, structuredContent: { type: "image", data: "native-image", mimeType: "image/png", note: "native" } };
@@ -13,13 +16,21 @@ function fixture(owner = "builtin", enabled = true) {
   };
   let current = { ...native, sourceInfo: { source: owner, path: "builtin:read" } };
   const api: ExtensionAPI = {
-    on(name, handler) { if (name === "session_start") handlers.push(handler as (event: never, ctx: ExtensionContext) => unknown); },
-    getAllTools: () => [current], getActiveTools: () => enabled ? ["read"] : [], getSettings: () => ({ images: { autoResize: false } }),
-    registerTool(tool) { if (tool.name === "read") current = { ...tool, sourceInfo: { source: "local", path: "/extension/index.ts" } }; },
+    on(name, handler) { handlers.set(name, [...handlers.get(name) ?? [], handler as (event: never, ctx: ExtensionContext) => unknown]); },
+    getAllTools: () => [current, ...[...additional.values()].map(tool => ({ ...tool, sourceInfo: { source: "local", path: "/extension/index.ts" } }))],
+    getActiveTools: () => [...active], setActiveTools(names) { active = [...names]; }, getSettings: () => ({ images: { autoResize: false } }),
+    registerTool(tool) {
+      registrations.push(tool.name);
+      if (tool.name === "read") current = { ...tool, sourceInfo: { source: "local", path: "/extension/index.ts" } };
+      else additional.set(tool.name, tool);
+      if (tool.defaultActive !== false && !active.includes(tool.name)) active.push(tool.name);
+    },
   };
   const ctx: ExtensionContext = { cwd: "/current/cwd" }, adapter = createPiHostAdapter(api, async () => (cwd, options) => { factories.push({ cwd, options }); return native; });
-  const start = async () => { for (const handler of handlers) await handler({ type: "session_start" } as never, ctx); };
-  return { api, adapter, native, content, calls, factories, ctx, start, current: () => current,
+  const emit = async (event: string) => { for (const handler of handlers.get(event) ?? []) await handler({ type: event } as never, ctx); };
+  const start = () => emit("session_start");
+  return { api, adapter, native, content, calls, factories, ctx, start, emit, current: () => current,
+    tool: (name: string) => additional.get(name), active: () => [...active], setActive: (names: string[]) => { active = [...names]; }, registrations,
     replace() { current = { ...native, parameters: { type: "object", properties: { thirdParty: { type: "string" } } }, sourceInfo: { source: "local", path: "/other/index.ts" } }; } };
 }
 
@@ -118,4 +129,53 @@ test("Pi preserves disabled read and never replaces a third-party read", async (
   const thirdParty = fixture("local"), owns = thirdParty.adapter.registerReadExecutor!((_input, _ctx, _signal, read) => read({ path: "unused" }))!;
   await thirdParty.start();
   expect(owns()).toBe(false); expect(thirdParty.factories).toHaveLength(0); expect(thirdParty.current().parameters).toBe(thirdParty.native.parameters);
+});
+
+test("Pi third-party read keeps its executor and renderers while the resource-only fallback preserves one batch", async () => {
+  const f = fixture("local"), original = f.current(), ref = "sr:R" + "a".repeat(22);
+  const batch = { content: [{ type: "text" as const, text: "batch" }], structuredContent: { status: "ready", files: [] } };
+  const prepared: unknown[] = [];
+  const owns = f.adapter.registerReadExecutor!(async (input, _ctx, _signal, _read, id) => { prepared.push({ input, id }); return batch; })!;
+  await f.start();
+  expect(owns()).toBe(false); expect(f.current()).toBe(original); expect(f.factories).toHaveLength(0);
+  const fallback = f.tool("notion_read_resources");
+  expect(fallback).toBeDefined();
+  expect(fallback!.parameters).toMatchObject({ type: "object", required: ["paths"], additionalProperties: false, properties: { paths: { type: "array", minItems: 1, maxItems: 16 } } });
+  expect(f.active()).toEqual(["read", "bash", "notion_read_resources"]);
+  expect(await fallback!.execute("fallback-batch", { paths: [ref] }, undefined, undefined, f.ctx)).toBe(batch);
+  expect(prepared).toEqual([{ input: { paths: [ref] }, id: "fallback-batch" }]);
+  for (const input of [{ path: ref }, { paths: [ref], offset: 2 }, { paths: [ref], limit: 1 }, { paths: [] }, { paths: ["sr:C" + "a".repeat(22)] }]) {
+    await expect(fallback!.execute("invalid", input, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  }
+  expect(prepared).toHaveLength(1); expect(f.calls).toHaveLength(0); expect(f.current()).toBe(original);
+});
+
+test("Pi fallback detects a late read override and preserves an explicit tool disable across contexts", async () => {
+  const f = fixture();
+  f.adapter.registerReadExecutor!((_input, _ctx, _signal, read) => read({ path: "unused" }));
+  await f.start(); expect(f.tool("notion_read_resources")).toBeUndefined();
+  f.replace(); const replacement = f.current();
+  await f.emit("before_agent_start");
+  expect(f.tool("notion_read_resources")).toBeDefined();
+  expect(f.active()).toEqual(["read", "bash", "notion_read_resources"]);
+  f.setActive(["read", "bash"]);
+  await f.emit("context"); await f.emit("before_agent_start"); await f.start();
+  expect(f.active()).toEqual(["read", "bash"]);
+  expect(f.registrations.filter(name => name === "notion_read_resources")).toHaveLength(1);
+  expect(f.current()).toBe(replacement); expect(f.factories).toHaveLength(1);
+});
+
+test("Pi fallback follows read availability without re-enabling read or changing unrelated active tools", async () => {
+  const f = fixture("local", false), ref = "sr:R" + "a".repeat(22), prepared: unknown[] = [];
+  f.adapter.registerReadExecutor!(async input => { prepared.push(input); return f.content; });
+  await f.start(); expect(f.tool("notion_read_resources")).toBeUndefined(); expect(f.active()).toEqual(["bash"]);
+  f.setActive(["read", "bash"]); await f.emit("before_agent_start");
+  const fallback = f.tool("notion_read_resources"); expect(fallback).toBeDefined();
+  f.setActive(["bash", "notion_read_resources"]); await f.emit("context");
+  expect(f.active()).toEqual(["bash"]);
+  await expect(fallback!.execute("disabled", { paths: [ref] }, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "SOURCE_RESOURCE_BATCH_UNAVAILABLE" });
+  expect(prepared).toHaveLength(0);
+  f.setActive(["read", "bash"]); await f.emit("before_agent_start");
+  expect(f.active()).toEqual(["read", "bash", "notion_read_resources"]);
+  expect(f.registrations.filter(name => name === "notion_read_resources")).toHaveLength(1);
 });

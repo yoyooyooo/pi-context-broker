@@ -151,7 +151,7 @@ node scripts/notion-sdk-pi.mjs evidence --evidence "$SDK_EVIDENCE"
 
 此既有 driver 的 14 个场景使用实际 Pi 1.4、独立安装 Broker、随包 CLI/SDK、受控 source/provider。`default-view` 留下 pending → list → 普通续接 ready 的三次请求；逐条显示准确 `record.name`、description、独立 source 与短入口，不能以命令 token 冒充显示名；只有一份默认目录，SDK 完整元数据和失败状态独立核对。默认目录与资源场景同时核对实际 provider 的 read.path outer/oneOf scalar schema 都说明 local path、`skill://`、`sr:` 和复制 issued ref。`prepare` 的场景名保留历史入口，但实际调用为 `notion_use({ref:[...]})`，共享 Requires 只交付一次。native、批读、固定 scalar、恢复短引用和 partial-cache 场景继续复用原证据与实际对象读取正控制；`session-lifecycle` 的实际分支/压缩/恢复/取消按[会话地图](session-cache-recovery.md#sc08-sc22-pi-默认-sdk-会话恢复)独立报告。
 
-资源使用的 scalar `read.path` 和 batch `read.paths` 都是当前入口。逐文件的完整 provider span、固定 owner/snapshot/File ID/hash 与外层 toolCallId 独立核对；资源数与外层工具调用数分列，不能把一次 batch 记成多次 Agent 往返。实际图模型 observer 同样检查原始 SDK 结果与完整外层输出，details-only、部分正文、未发现或错 pin 的资源不计完成。
+资源使用的 scalar `read.path` 和 batch `read.paths` 都是当前入口。若第三方扩展占有 `read`，Broker 保留其标量执行与渲染，仅在 `read` 可用时提供 `notion_read_resources({paths})`；它复用同一资源批读，不读主文、不激活。正常 Broker read 不额外广告该工具；晚覆盖、关闭 read、用户单独禁用 fallback 与重复 context 均由 `pi-read-adapter.test.ts` 验证。逐文件的完整 provider span、固定 owner/snapshot/File ID/hash 与外层 toolCallId 独立核对；资源数与外层工具调用数分列，不能把一次 batch 记成多次 Agent 往返。实际图模型 observer 同样检查原始 SDK 结果与完整外层输出，details-only、部分正文、未发现或错 pin 的资源不计完成。
 
 `dollar` 逐字校验完整 root / Requires 正文，同时验证注入 wrapper 的 supporting files：仅展示所选 snapshot 的 path 和准确 `sr:R`，不再把物理 cache 目录当作资源读取入口。无 supporting files 时不生成空资源块；资源路径、handle 类型、重复机器字段与正文摘要均有拒绝例。实际资源续读须复制 wrapper 返回的 ref，通过原 native read 验固定文件与版本；仅 wrapper 字符串正确不算读成功。产品红例保存在 `/tmp/ah622-source-files-before-smw_v3n5`，旧 driver 拒绝新合法 wrapper 的红例在 `/private/tmp/ah676-dollar-oracle-before-i13w67t1`；两类失败分开保留，当前 driver 与产品测试同步维护。
 
@@ -324,6 +324,8 @@ Doctor 是只读前置检查，Drive 使用真实 installed Pi 和受控 provide
 helper 输出中的 `cleanup` 布尔值表示本次命令是否请求清理；再次运行 evidence 时的 `cleanup: false` 不表示清理回退。实际清理状态核对 `cleanup.json` 的 `status: trashed`、owned scratch 已不存在，以及清理前后的原始证据 hash 一致。
 
 独立验收要逐项核对：实际 `read` schema 能表达互斥 `path/paths` 且最多16个文件；每批一次 `read-resources`、无 `consume` 和逐文件 `read`；实际 JSON text 的完整 UTF-8/BOM/CRLF/empty bytes/hash；binary 由实际落盘文件复核且不标完整文本；每个 v2 receipt 的 toolCallId、owner/pin/File、整体 digest 与 JSON span一致；repeat 只在 provider 投影替换非空重复正文，原始会话结果仍完整，empty 保持空字符串，binary 元数据不变；没有主文 active/graph 绑定。
+
+第三方 read Profile 要另外核对其原 schema/执行/渲染保留，实际 provider 的 `notion_read_resources` 只接收 `paths`，并由该真实工具名完成一批资源。复用 `assertResourceReadSchema`、`assertResourceBatchProjection` 与 `resourceTextCopies` 的显式 `toolName: "notion_read_resources"`；默认仍只接受 `read`，不能改写原回执工具名或以任意工具证明批读。原 isolated SDK-Pi 场景不加载日常第三方扩展，不能由其通过推断 normal Profile fallback 已通过。受控门禁复用 `pi-read-adapter.test.ts`、`resource-read-host.test.ts`、`resource-read-projection.test.ts` 与 `skill-guidance.test.ts`；真实宿主/模型、请求字节与安装身份另取本次证据。
 
 `resource-batch` 故意直接输入canonical固定引用，所以它只证明批读与发现的短引用分别可用。实际 `sr:R[]` 用独立 variant 验证：
 

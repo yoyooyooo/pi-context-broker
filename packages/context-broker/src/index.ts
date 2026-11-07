@@ -55,6 +55,7 @@ import { selectPrefetchPlans } from "./prefetch-policy";
 import { installCliWriteInvalidation } from "./cli-write-invalidation";
 import { createOmpHostAdapter } from "./omp-host-adapter";
 import { createPiHostAdapter } from "./pi-host-adapter";
+import { NOTION_RESOURCE_READ_TOOL } from "./resource-read-types";
 import { hostCliScope } from "./host-command";
 import { configuredBundledBuiltinRecords, isBundledBuiltin, isBundledBuiltinToken } from "./bundled-builtins";
 import { createAcceptedSelections } from "./accepted-selections";
@@ -819,7 +820,7 @@ function hasCliGuidance(messages: AgentMessage[], guidance: Omit<AgentMessage, "
 }
 
 function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit<AgentMessage, "role" | "timestamp"> {
-  if (tools.has("notion_list") || tools.has("notion_use") || tools.has("notion_ctl")) {
+  if (tools.has("notion_list") || tools.has("notion_use") || tools.has("notion_ctl") || tools.has(NOTION_RESOURCE_READ_TOOL)) {
     const read = tools.has("read"), list = tools.has("notion_list"), use = tools.has("notion_use");
     const sources = (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false);
     const content = [
@@ -830,6 +831,7 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
       "When a Router provides Members, choose those relevant to the task. Read a Member to inspect it, or use it before applying its instructions; the Router directory is only metadata for those Members.",
       ...(list ? ["Search notion_list with a short name or keyword; broaden if no match. It includes authorized entries outside the default View. Copy refs; page only for more candidates. Partial coverage or source failure is not an empty result."] : []),
       ...(read ? ["Use read to inspect a main entry or a needed resource. Copy its sr:C, sr:S, sr:R or skill:// ref unchanged; never append a path to an sr: handle. Read a named supporting file through its matching resource ref, without listing cache directories. With a canonical skill:// main ref, preserve its owner and snapshot, replace only the logical file path, and do not reuse the main file_id for another file. Inspection does not load Requires or activate a workflow."] : []),
+      ...(read && tools.has(NOTION_RESOURCE_READ_TOOL) ? [`For several needed supporting files, use ${NOTION_RESOURCE_READ_TOOL} with paths to read their fixed resource refs from the same owner and snapshot in one operation. It excludes the main entry and does not activate the Skill.`] : []),
       ...(use ? ["Use notion_use with ref to apply a Skill's instructions: it loads that root and its complete Requires. Choosing a Skill to introduce or inspect uses read, even when another Skill is active. Ref may be an array for several Skills needed together. Members remain candidates until selected. Call notion_use directly, outside Code mode. Explicit refresh:true with unfixed refs changes the selection only after complete success."] : []),
       ...(tools.has("bash") && (tools.has("notion_ctl") || tools.has("tool_search")) && sources.length ? [
         "For requested Notion creation or content edits, use the advertised ntn-skills-maintain@builtin Skill; use ntn-skills-sync@builtin for source/Profile or sync changes.",

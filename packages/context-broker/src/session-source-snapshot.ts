@@ -7,6 +7,7 @@ import { decodePreparationLock, isPreparationBinding, type PreparationBinding } 
 import type { SessionSelection } from "./session-graph";
 import { deriveSkillPrepareProjection, validateSkillPrepareProjection } from "./skill-context-projection-proof";
 import { deriveResourceReadProjection, validateResourceReadProjection } from "./resource-read-projection";
+import { NOTION_RESOURCE_READ_TOOL } from "./resource-read-types";
 
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -132,7 +133,7 @@ function verifiedResourceReadProof(message: AgentMessage) {
 }
 
 function verifiedResourceBatchProof(message: AgentMessage) {
-  if (message.role !== "toolResult" || message.toolName !== "read" || message.isError === true || !object(message.details)
+  if (message.role !== "toolResult" || message.toolName !== "read" && message.toolName !== NOTION_RESOURCE_READ_TOOL || message.isError === true || !object(message.details)
     || Array.isArray(message.content) && message.content.some(part => part.type !== "text")) return undefined;
   const proof = validateResourceReadProjection(sourceMessageText(message.content), message.details.contextBrokerResource);
   return proof && proof.toolCallId === message.toolCallId ? proof : undefined;

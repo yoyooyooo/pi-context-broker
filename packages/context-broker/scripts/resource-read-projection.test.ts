@@ -125,6 +125,26 @@ test("legacy single reads and batch spans share exact identity but not main acti
   expect(deduplicateSourceReads(history)).toBe(history);
 });
 
+test("resource fallback shares only verified batch delivery with native read without activating the owner", () => {
+  const first = message("native", [files[0]!]);
+  const fallback = { ...message("fallback", [files[0]!]), toolName: "notion_read_resources" };
+  const original = [first, fallback], stored = JSON.stringify(original);
+  const projected = deduplicateSourceReads(original);
+  expect(JSON.parse(sourceMessageText(projected[1]!.content)).files[0].content).toBe("Already available.");
+  expect(sessionSourceBindings(projected, selection.scope)).toEqual([]);
+  expect(JSON.stringify(original)).toBe(stored);
+  expect(deduplicateSourceReads(projected)).toBe(projected);
+  for (const invalid of [{ ...fallback, toolCallId: "detached" }, { ...fallback, isError: true }, { ...fallback, content: "partial" }, { ...fallback, toolName: "unrelated" }]) {
+    const history = [first, invalid];
+    expect(deduplicateSourceReads(history)).toBe(history);
+  }
+  const source = files[0]!, scalar: AgentMessage = { role: "toolResult", toolName: "notion_read_resources", toolCallId: "single", content: source.content,
+    details: { contextBrokerResource: { version: 1, toolCallId: "single", id: selection.owner, scope: selection.scope, snapshot_id: selection.snapshot_id,
+      file_id: source.file_id, path: source.path, ref: source.ref, bytes: source.bytes, sha256: source.sha256, delivered_complete_text: true, loaded: false } } };
+  const history = [scalar, first];
+  expect(deduplicateSourceReads(history)).toBe(history);
+});
+
 test("batch tiny and confirmation-shaped resources keep derived proof without attesting the confirmation", () => {
   for (const body of ["x", "Already available."]) {
     const source = file("references/tiny.md", body), first = message("first", [source]), second = message("second", [source]);

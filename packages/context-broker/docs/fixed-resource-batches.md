@@ -25,6 +25,19 @@ the real `toolCallId`; existing single-file/main receipts remain linked to their
 actual tool results. A third-party extension that already owns `read` is not
 replaced. OMP receives the call-ID plumbing but this batch slice is Pi-specific.
 
+When another extension owns `read`, Pi exposes the same resource batch through
+`notion_read_resources({ paths: [...] })`. The existing reader keeps its scalar
+schema, executor and rendering. This fallback accepts only fixed resources;
+main entries and individual native reads continue through `read`. The ordinary
+Broker-owned `read` already supports `paths`, so it does not add the fallback.
+
+The adapter checks availability at session start and again before requests, so a
+later read override can receive the fallback. Disabling `read` also suspends the
+fallback, without re-enabling `read` or changing other active tools. An explicit
+fallback disable while `read` remains available is preserved. Both batch entries
+share the source operation, budgets, cancellation and version-2 delivery proof.
+Their actual tool names remain distinct in the session and verification evidence.
+
 ### Fixed scalar resources
 
 A fixed resource `read({ path: "sr:R…", offset?, limit? })` or canonical fixed

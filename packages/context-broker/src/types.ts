@@ -98,6 +98,7 @@ export type PiReadDefinition = {
 export type NativeSkillSearchDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_search" | "notion_list" };
 export type NativeSkillPrepareDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_prepare" | "notion_use" };
 export type NativeSkillGraphDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_graph" | "notion_ctl" };
+export type NativeResourceReadDefinition = Omit<NativeReadDefinition, "name"> & { name: "notion_read_resources"; outputSchema?: unknown };
 type SessionBoundary = "session_before_switch" | "session_before_branch" | "session_before_tree"
   | "session_switch" | "session_tree" | "session_branch" | "session_shutdown" | "agent_start" | "agent_end";
 type ExtensionEvents = {
@@ -254,8 +255,9 @@ export type ExtensionAPI = {
   sendUserMessage?(content: MessageContent): void;
   getAllTools?(): Array<{ name: string; description: string; parameters: unknown; sourceInfo: { source: string; path: string } }>;
   getActiveTools?(): string[];
+  setActiveTools?(names: string[]): void;
   getSettings?(): { images?: { autoResize?: boolean } };
-  registerTool?(tool: NativeReadDefinition | PiReadDefinition | NativeSkillSearchDefinition | NativeSkillPrepareDefinition | NativeSkillGraphDefinition): void;
+  registerTool?(tool: NativeReadDefinition | PiReadDefinition | NativeSkillSearchDefinition | NativeSkillPrepareDefinition | NativeSkillGraphDefinition | NativeResourceReadDefinition): void;
   registerMessageRenderer?(customType: string, renderer: (message: AgentMessage, options: { expanded: boolean }, theme: unknown) => ExtensionWidgetComponent | undefined): void;
   sendMessage?(message: { customType: string; content: MessageContent; details: unknown; display: boolean }, options: { triggerTurn: boolean }): void;
   appendEntry?(customType: string, data?: unknown): void;

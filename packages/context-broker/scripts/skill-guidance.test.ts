@@ -90,6 +90,23 @@ test("Pi maintenance guidance routes deferred discovery to the intended source w
   expect(JSON.stringify(history)).toBe(original);
 });
 
+test("Pi resource fallback guidance appears only while its actual tool is active", async () => {
+  const h = guidanceHarness(), native = ["read", "notion_list", "notion_use"];
+  h.tools(native);
+  const ordinary = await h.project("context", [{ role: "user", content: "Read the two supporting files." }]);
+  expect(guidanceText(ordinary)).not.toContain("notion_read_resources");
+  h.tools([...native, "notion_read_resources"]);
+  const available = await h.project("context_with_system", ordinary);
+  const guidance = guidanceText(available);
+  expect(guidance).toContain("notion_read_resources");
+  expect(guidance).toContain("paths"); expect(guidance).toContain("same owner and snapshot");
+  expect(guidance).toContain("Use read to inspect a main entry");
+  h.tools(native);
+  const disabled = await h.project("context_with_system", available);
+  expect(guidanceText(disabled)).not.toContain("notion_read_resources");
+  expect(guidanceText(available)).toBe(guidance);
+});
+
 test("each final context projects current capabilities without mutating history, body or system", async () => {
   const h = guidanceHarness();
   const system = { role: "system", content: "native system and tools" };

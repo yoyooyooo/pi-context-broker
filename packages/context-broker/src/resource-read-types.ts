@@ -1,5 +1,6 @@
 import type { PreparationBinding } from "./prepare-protocol";
 
+export const NOTION_RESOURCE_READ_TOOL = "notion_read_resources";
 export type ResourceReadBudget = Readonly<{ maxFiles: number; maxBytes: number; timeBudgetMs: number }>;
 export const DEFAULT_RESOURCE_READ_BUDGET: ResourceReadBudget = Object.freeze({ maxFiles: 16, maxBytes: 1024 * 1024, timeBudgetMs: 30_000 });
 export const MAX_RESOURCE_READ_BUDGET: ResourceReadBudget = Object.freeze({ maxFiles: 64, maxBytes: 16 * 1024 * 1024, timeBudgetMs: 120_000 });

@@ -858,6 +858,22 @@ test('resource evidence verifies actual UTF-8, BOM/CRLF, zero-length spans and b
   assert.equal(JSON.stringify(message), before);
 });
 
+test('resource fallback evidence binds its original tool name without admitting arbitrary tools', () => {
+  const { batch, message } = resourceFixture(); message.toolName = 'notion_read_resources';
+  const before = JSON.stringify(message);
+  assert.throws(() => assertResourceBatchProjection(message, { batch }));
+  const result = assertResourceBatchProjection(message, { batch, toolName: 'notion_read_resources' });
+  assert.equal(result.files.length, 4); assert.equal(JSON.stringify(message), before);
+  assert.equal(resourceTextCopies({ messages: [message] }, batch.files[0]), 0);
+  assert.equal(resourceTextCopies({ messages: [message] }, batch.files[0], { toolName: 'notion_read_resources' }), 1);
+  for (const toolName of ['read', 'unrelated']) {
+    assert.throws(() => assertResourceBatchProjection(message, { batch, toolName }));
+  }
+  const other = { ...message, toolName: 'unrelated' };
+  assert.throws(() => assertResourceBatchProjection(other, { batch, toolName: 'unrelated' }));
+  assert.throws(() => resourceTextCopies({ messages: [other] }, batch.files[0], { toolName: 'unrelated' }));
+});
+
 test('resource evidence rejects partial sets, forged identity, wrong spans and leaking binary content', () => {
   for (const mutate of [
     value => { value.message.content[0].text += ' '; },
@@ -928,6 +944,36 @@ test('actual provider schema exposes native ranges and bounded paths in a suppor
   ]) {
     const value = resourceSchemaContext(); mutate(value.messages[0].toolsAdded.find(tool => tool.name === 'read').parameters);
     assert.throws(() => assertResourceReadSchema(value));
+  }
+});
+
+test('resource fallback schema declares only bounded fixed resource paths beside the unchanged scalar reader', () => {
+  const make = () => {
+    const value = resourceSchemaContext(), read = value.messages[0].toolsAdded.find(tool => tool.name === 'read');
+    const paths = { ...read.parameters.properties.paths, items: { type: 'string', pattern: '^(?:sr:R[A-Za-z0-9_-]{22}|skill://.+)$' } };
+    delete read.parameters.properties.paths; read.parameters.required = ['path'];
+    value.messages[0].toolsAdded.push({ name: 'notion_read_resources', description: 'Read supporting files only', parameters: {
+      type: 'object', properties: { paths }, required: ['paths'], additionalProperties: false,
+    } });
+    return value;
+  };
+  const value = make(), before = JSON.stringify(value), options = { toolName: 'notion_read_resources' };
+  const result = assertResourceReadSchema(value, options);
+  assert.equal(result.tool, 'notion_read_resources'); assert.equal(result.paths_supported, true);
+  assert.equal(result.native_range_options, false); assert.equal(result.resource_only, true);
+  assert.equal(JSON.stringify(value), before);
+  assert.throws(() => assertResourceReadSchema(value));
+  assert.throws(() => assertResourceReadSchema(value, { toolName: 'unrelated' }));
+  for (const mutate of [
+    schema => { schema.properties.path = { type: 'string' }; },
+    schema => { schema.properties.offset = { type: 'number' }; },
+    schema => { schema.required = []; },
+    schema => { schema.additionalProperties = true; },
+    schema => { schema.properties.paths.items.pattern = '^sr:R'; },
+    schema => { schema.properties.paths.maxItems = 17; },
+  ]) {
+    const broken = make(); mutate(broken.messages[0].toolsAdded.find(tool => tool.name === 'notion_read_resources').parameters);
+    assert.throws(() => assertResourceReadSchema(broken, options));
   }
 });
 
