@@ -242,7 +242,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   let metadataFallback = false;
   let filesystemCache: Promise<string> | undefined;
   const nativeIndexes = new Map<string, Promise<string>>();
-  type NativePublication = { root: string; entry: string; content: string };
+  type NativePublication = { root: string; entry: string; content: string; receipt?: string };
   const nativePublications = new Map<string, NativePublication>();
   const publishedIndexes = new Map<string, NativePublication>();
   const hostCacheRoot = () => {
@@ -343,7 +343,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     name: listToolName, label: piConsumption ? "List Notion Skills" : "Skill search",
     description: `Search the authorized Skill metadata directory, including items outside the default View. Returns ${piConsumption ? "Skill refs for read or notion_use" : "exact read references only"}; it does not load instructions or activate workflows.`,
     parameters: { type: "object", properties: {
-      query: { type: "string", description: "A short name or description keyword; empty lists the directory." },
+      query: { type: "string", description: piConsumption ? "Short name or task keyword; omit only to browse the directory." : "A short name or description keyword; empty lists the directory." },
       source: { type: "string", description: "Optional configured source ID to disambiguate directories." },
       limit: { type: "integer", minimum: 1, maximum: 100, description: "Maximum metadata entries, default 20." },
       ...(piConsumption ? { cursor: { type: "string", description: "Copy next_cursor from the previous result to continue the same query." } } : {}),
@@ -410,6 +410,48 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
     const info = await lstat(publication.entry);
     if (!info.isFile() || info.isSymbolicLink() || await readFile(publication.entry, "utf8") !== publication.content) throw hostError("SOURCE_INDEX_CONFLICT");
+    if (publication.receipt !== undefined) {
+      if (await realpath(publication.root) !== publication.root) throw hostError("SOURCE_INDEX_CONFLICT");
+      const path = join(publication.root, ".broker-host-index.json"), receipt = await lstat(path);
+      if (!receipt.isFile() || receipt.isSymbolicLink() || await readFile(path, "utf8") !== publication.receipt) throw hostError("SOURCE_INDEX_CONFLICT");
+    }
+  }
+
+  async function sharedNativePublication(snapshot: SkillRecord, projection: string, content: string, receipt: string, signal?: AbortSignal): Promise<NativePublication> {
+    const snapshotRoot = snapshot.entryManifest!.root, sourceEntry = relative(snapshotRoot, resolve(snapshot.path));
+    if (sourceEntry.split(sep).join("/") !== snapshot.entrypoint || isAbsolute(sourceEntry)
+      || sourceEntry.split(sep).some(part => !part || part === "." || part === "..")) throw hostError("SOURCE_ENTRY_CONFLICT");
+    const sourceState = await lstat(snapshotRoot);
+    if (!sourceState.isDirectory() || sourceState.isSymbolicLink()) throw hostError("SOURCE_INDEX_CONFLICT");
+    // Keep the immutable alias next to its verified entry, outside the source tree.
+    // Mutable native menu pointers remain private to each host/session.
+    const parent = join(dirname(await realpath(snapshotRoot)), ".host-indexes");
+    try { await mkdir(parent, { mode: 0o700 }); }
+    catch (error) { if (!error || typeof error !== "object" || !("code" in error) || error.code !== "EEXIST") throw error; }
+    const parentState = await lstat(parent);
+    if (!parentState.isDirectory() || parentState.isSymbolicLink()) throw hostError("SOURCE_INDEX_CONFLICT");
+    const root = join(parent, projection), publication = { root, entry: join(root, sourceEntry), content, receipt };
+    let exists = true;
+    try { await lstat(root); }
+    catch (error) { if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ENOENT") throw error; exists = false; }
+    if (exists) await assertNativePublication(publication);
+    else {
+      const stage = await mkdtemp(join(parent, ".host-index-stage-"));
+      try {
+        const entry = join(stage, sourceEntry);
+        await mkdir(dirname(entry), { recursive: true, mode: 0o700 });
+        await writeFile(entry, content, { mode: 0o600, flag: "wx" });
+        await writeFile(join(stage, ".broker-host-index.json"), receipt, { mode: 0o600, flag: "wx" });
+        checkPreparationSignal(signal);
+        try { await rename(stage, root); }
+        catch (error) {
+          if (!error || typeof error !== "object" || !("code" in error) || !["EEXIST", "ENOTEMPTY"].includes(String(error.code))) throw error;
+          await assertNativePublication(publication);
+        }
+      } finally { await retireOwnedCacheStage(stage); }
+    }
+    checkPreparationSignal(signal);
+    return publication;
   }
 
   async function nativeIndex(record: SkillRecord, signal: AbortSignal): Promise<string> {
@@ -466,9 +508,17 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       } catch { /* A portable plain-Markdown entry can begin with a thematic break. */ }
     }
     const aliasContent = `---\n${stringifyYaml({ ...metadata, name: hostSkillName(record), description: record.description })}---\n${body}`;
-    const projection = createHash("sha256").update(JSON.stringify([index, recordIdentity(snapshot), snapshot.path,
+    const receipt = snapshot.entryManifest ? JSON.stringify({
+      version: 1, projection: "host_index", loaded: false,
+      scope: snapshot.sourceScope, id: snapshot.id, snapshot_id: snapshot.snapshotId, version_id: snapshot.versionId,
+      ref: snapshot.preparationBinding?.ref, entrypoint: snapshot.entrypoint,
+      source: { bytes: Buffer.byteLength(content), sha256: createHash("sha256").update(content).digest("hex") },
+      published: { path: snapshot.entrypoint, bytes: Buffer.byteLength(aliasContent), sha256: createHash("sha256").update(aliasContent).digest("hex") },
+      manifest_id: snapshot.entryManifest.manifest_id,
+    }) : undefined;
+    const projection = createHash("sha256").update(JSON.stringify([receipt === undefined ? index : "shared-host-index-v1", recordIdentity(snapshot), snapshot.path,
       snapshot.snapshotId, snapshot.versionId, snapshot.preparationBinding?.ref, snapshot.entryManifest?.manifest_id,
-      createHash("sha256").update(content).digest("hex"), aliasContent])).digest("hex");
+      createHash("sha256").update(content).digest("hex"), aliasContent, receipt])).digest("hex");
     const previous = publishing.get(index);
     let release!: () => void;
     const pending = new Promise<void>((done) => { release = done; });
@@ -481,8 +531,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const reusable = nativePublications.get(projection);
       if (state.isSymbolicLink()) {
         const target = await realpath(directory);
-        const ownedRoot = join(await realpath(dirname(dirname(directory))), ".host-snapshots") + sep;
-        if (!target.startsWith(ownedRoot)) throw hostError("SOURCE_INDEX_CONFLICT");
+        const prior = publishedIndexes.get(index);
+        if (!prior || target !== await realpath(dirname(prior.entry))) throw hostError("SOURCE_INDEX_CONFLICT");
         if (reusable && target === await realpath(dirname(reusable.entry))) {
           await assertNativePublication(reusable);
           publishedIndexes.set(index, reusable);
@@ -506,23 +556,17 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const indexRoot = dirname(dirname(directory));
       let publication = reusable;
       if (publication) await assertNativePublication(publication);
+      else if (receipt !== undefined) {
+        publication = await sharedNativePublication(snapshot, projection, aliasContent, receipt, signal);
+        nativePublications.set(projection, publication);
+      }
       else {
         const publishedRoot = join(indexRoot, ".host-snapshots", randomUUID());
         const publishedEntry = join(publishedRoot, relative(snapshotRoot, resolve(snapshot.path)));
         try {
           await mkdir(dirname(publishedRoot), { recursive: true, mode: 0o700 });
-          if (!snapshot.entryManifest) await cp(snapshotRoot, publishedRoot, { recursive: true, errorOnExist: true, force: false });
-          else await mkdir(dirname(publishedEntry), { recursive: true, mode: 0o700 });
+          await cp(snapshotRoot, publishedRoot, { recursive: true, errorOnExist: true, force: false });
           await writeFile(publishedEntry, aliasContent, { mode: 0o600 });
-          if (snapshot.entryManifest) await writeFile(join(publishedRoot, ".broker-host-index.json"), JSON.stringify({
-            version: 1, projection: "host_index", loaded: false,
-            scope: snapshot.sourceScope, id: snapshot.id, snapshot_id: snapshot.snapshotId, version_id: snapshot.versionId,
-            ref: snapshot.preparationBinding?.ref, entrypoint: snapshot.entrypoint,
-            source: { bytes: Buffer.byteLength(content), sha256: createHash("sha256").update(content).digest("hex") },
-            published: { path: relative(publishedRoot, publishedEntry).split(sep).join("/"),
-              bytes: Buffer.byteLength(aliasContent), sha256: createHash("sha256").update(aliasContent).digest("hex") },
-            manifest_id: snapshot.entryManifest.manifest_id,
-          }), { mode: 0o600, flag: "wx" });
           publication = { root: publishedRoot, entry: publishedEntry, content: aliasContent };
           nativePublications.set(projection, publication);
         } catch (error) { await retireOwnedCacheStage(publishedRoot); throw error; }

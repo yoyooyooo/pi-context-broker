@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, realpath, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { installHostSkills, type HostSkills, type HostSkillOptions } from "../src/host-skills";
@@ -311,6 +312,177 @@ test("host metadata reuse isolates owners and changed descriptions while retaini
   await f.emit("session_shutdown", { type: "session_shutdown" }, f.ctx);
 });
 
+test("independent host instances share one immutable native projection while keeping their aliases private", async () => {
+  const f = await fixture(true);
+  const discovery = { getRecords: async () => ({ records: f.records.map(record => ({
+    ...record, body: undefined, preparationBinding: undefined, defaultDiscovery: record === f.root,
+  })), failures: [] }) };
+  const first = await f.install(undefined, discovery);
+  await first.search.execute("first-instance", {}, undefined, undefined, f.ctx);
+  const firstIndex = f.metadataObservations.at(-1)![0]!.metadataIndexPath!;
+  await first.host.prepareMany([f.root], f.ctx);
+  const firstPublication = await realpath(dirname(firstIndex));
+  const firstBody = await readFile(join(firstPublication, "SKILL.md"), "utf8");
+  const firstReceipt = await readFile(join(firstPublication, ".broker-host-index.json"), "utf8");
+  const publications = (await readdir(dirname(firstPublication), { recursive: true })).sort();
+  const second = await f.install(undefined, discovery);
+  await second.search.execute("second-instance", {}, undefined, undefined, f.ctx);
+  const secondIndex = f.metadataObservations.at(-1)![0]!.metadataIndexPath!;
+  expect(secondIndex).not.toBe(firstIndex);
+  await second.host.prepareMany([f.root], f.ctx);
+  expect(await realpath(dirname(secondIndex))).toBe(firstPublication);
+  expect((await readdir(dirname(firstPublication), { recursive: true })).sort()).toEqual(publications);
+  expect(await readFile(join(firstPublication, "SKILL.md"), "utf8")).toBe(firstBody);
+  expect(await readFile(join(firstPublication, ".broker-host-index.json"), "utf8")).toBe(firstReceipt);
+  expect(await readFile(f.root.path, "utf8")).toBe(f.root.body);
+  expect(f.calls).toEqual(["use", "use"]);
+  await f.emit("session_shutdown", { type: "session_shutdown" }, f.ctx);
+});
+
+test("concurrent host instances converge on one native publication and verify an existing receipt", async () => {
+  const f = await fixture(true), instances: Array<{ host: HostSkills; index: string }> = [];
+  for (let number = 0; number < 3; number++) {
+    const { host, search } = await f.install(undefined, { getRecords: async () => ({ records: f.records.map(record => ({
+      ...record, body: undefined, preparationBinding: undefined, defaultDiscovery: record === f.root,
+    })), failures: [] }) });
+    await search.execute("concurrent-instance-" + number, {}, undefined, undefined, f.ctx);
+    instances.push({ host, index: f.metadataObservations.at(-1)![0]!.metadataIndexPath! });
+  }
+  await Promise.all(instances.map(({ host }) => host.prepareMany([f.root], f.ctx)));
+  const publications = await Promise.all(instances.map(({ index }) => realpath(dirname(index))));
+  expect(new Set(publications).size).toBe(1);
+  const published = await readdir(dirname(publications[0]!));
+  expect(published.filter(path => !path.startsWith("."))).toHaveLength(1);
+  if (process.platform === "darwin") expect(published.filter(path => path.startsWith(".host-index-stage-"))).toEqual([]);
+  expect(f.calls).toEqual(["use", "use", "use"]);
+  const receipt = join(publications[0]!, ".broker-host-index.json");
+  await writeFile(receipt, JSON.stringify({ version: 1, scope: "foreign" }));
+  const next = await f.install(undefined, { getRecords: async () => ({ records: f.records.map(record => ({
+    ...record, body: undefined, preparationBinding: undefined, defaultDiscovery: record === f.root,
+  })), failures: [] }) });
+  await next.search.execute("receipt-conflict", {}, undefined, undefined, f.ctx);
+  await expect(next.host.prepareMany([f.root], f.ctx)).rejects.toMatchObject({ code: "SOURCE_INDEX_CONFLICT" });
+  expect(await readFile(f.root.path, "utf8")).toBe(f.root.body);
+  await f.emit("session_shutdown", { type: "session_shutdown" }, f.ctx);
+});
+
+test("shared native publications isolate display aliases and retain both immutable views", async () => {
+  const f = await fixture(true), publications: string[] = [];
+  for (const name of ["root", "renamed-root", "root"]) {
+    const { host, search } = await f.install(undefined, { getRecords: async () => ({ records: f.records.map(record => ({
+      ...record, ...(record === f.root ? { name } : {}), body: undefined, preparationBinding: undefined, defaultDiscovery: record === f.root,
+    })), failures: [] }) });
+    await search.execute("alias-" + name, {}, undefined, undefined, f.ctx);
+    const index = f.metadataObservations.at(-1)![0]!.metadataIndexPath!;
+    await host.prepareMany([f.root], f.ctx);
+    publications.push(await realpath(dirname(index)));
+  }
+  expect(publications[0]).not.toBe(publications[1]);
+  expect(publications[2]).toBe(publications[0]);
+  expect(await readFile(join(publications[0]!, "SKILL.md"), "utf8")).toMatch(/^---\nname: root\n/);
+  expect(await readFile(join(publications[1]!, "SKILL.md"), "utf8")).toMatch(/^---\nname: renamed-root\n/);
+  expect((await readdir(dirname(publications[0]!))).filter(path => !path.startsWith("."))).toHaveLength(2);
+  expect(await readFile(f.root.path, "utf8")).toBe(f.root.body);
+  expect(f.calls).toEqual(["use", "use", "use"]);
+  await f.emit("session_shutdown", { type: "session_shutdown" }, f.ctx);
+});
+
+for (const corruption of ["body", "parent-symlink"] as const) test(`another host rejects a shared native ${corruption} conflict`, async () => {
+  const f = await fixture(true);
+  const discovery = { getRecords: async () => ({ records: f.records.map(record => ({
+    ...record, body: undefined, preparationBinding: undefined, defaultDiscovery: record === f.root,
+  })), failures: [] }) };
+  const first = await f.install(undefined, discovery);
+  await first.search.execute("before-corruption", {}, undefined, undefined, f.ctx);
+  const index = f.metadataObservations.at(-1)![0]!.metadataIndexPath!;
+  await first.host.prepareMany([f.root], f.ctx);
+  const publication = await realpath(dirname(index)), parent = dirname(publication);
+  if (corruption === "body") await writeFile(join(publication, "SKILL.md"), "Corrupt shared native projection");
+  else {
+    const retained = parent + ".retained-test-original";
+    await rename(parent, retained);
+    await symlink(retained, parent, "dir");
+  }
+  const second = await f.install(undefined, discovery);
+  await second.search.execute("after-corruption", {}, undefined, undefined, f.ctx);
+  await expect(second.host.prepareMany([f.root], f.ctx)).rejects.toMatchObject({ code: "SOURCE_INDEX_CONFLICT" });
+  expect(await readFile(f.root.path, "utf8")).toBe(f.root.body);
+  if (corruption === "body") expect(await readFile(join(publication, "SKILL.md"), "utf8")).toBe("Corrupt shared native projection");
+  else expect((await lstat(parent)).isSymbolicLink()).toBe(true);
+  await f.emit("session_shutdown", { type: "session_shutdown" }, f.ctx);
+});
+
+test("separate host processes reuse native body and manifest bytes without sharing mutable aliases", async () => {
+  const f = await fixture(true), input = join(f.ctx.cwd!, "host-process-input.json");
+  await writeFile(input, JSON.stringify({ cwd: f.ctx.cwd, record: f.root }));
+  const program = `
+    import { readFile, realpath } from "node:fs/promises";
+    import { dirname } from "node:path";
+    import { installHostSkills } from ${JSON.stringify(new URL("../src/host-skills.ts", import.meta.url).href)};
+    import { createPiHostAdapter } from ${JSON.stringify(new URL("../src/pi-host-adapter.ts", import.meta.url).href)};
+    const { cwd, record } = JSON.parse(await readFile(process.env.BROKER_HOST_CACHE_FIXTURE, "utf8"));
+    const api = { on() {}, registerTool() {} }, ctx = { cwd, hasUI: false, mode: "rpc" };
+    let observed, sourceReads = 0;
+    const host = await installHostSkills(api, {
+      config: { sources: [{ id: "controlled", type: "notion", prefetch: false }] },
+      getRecords: async () => ({ records: [{ ...record, body: undefined, preparationBinding: undefined, defaultDiscovery: true }], failures: [] }),
+      loadRecord: async () => { sourceReads++; return record; },
+      onMetadata: records => { observed = records[0]; },
+    }, createPiHostAdapter(api));
+    await host.refresh(ctx);
+    const loaded = await host.activate(record, ctx);
+    process.stdout.write(JSON.stringify({ pid: process.pid, index: observed.metadataIndexPath,
+      publication: await realpath(dirname(observed.metadataIndexPath)), sourceReads,
+      scope: loaded.sourceScope, snapshot: loaded.snapshotId, version: loaded.versionId }));
+    host.invalidate();
+  `;
+  type ProcessPublication = { pid: number; index: string; publication: string; sourceReads: number; scope: string; snapshot: string; version: string };
+  const run = () => new Promise<ProcessPublication>((resolve, reject) => {
+    const child = spawn(process.execPath, ["--eval", program], {
+      env: { ...process.env, BROKER_HOST_CACHE_FIXTURE: input }, stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "", stderr = "";
+    child.stdout.on("data", chunk => { stdout += chunk; });
+    child.stderr.on("data", chunk => { stderr += chunk; });
+    const timeout = setTimeout(() => { child.kill("SIGTERM"); }, 15_000);
+    child.on("error", error => { clearTimeout(timeout); reject(error); });
+    child.on("close", (code, signal) => {
+      clearTimeout(timeout);
+      if (code !== 0 || signal) { reject(new Error(`Host child failed (${code}/${signal}): ${stderr}`)); return; }
+      try { resolve(JSON.parse(stdout)); } catch (error) { reject(error); }
+    });
+  });
+  const inventory = async (root: string) => {
+    const files: Array<{ path: string; bytes: number; sha256: string }> = [];
+    let directories = 1, symlinks = 0;
+    const visit = async (directory: string) => {
+      for (const name of (await readdir(join(root, directory))).sort()) {
+        const path = join(directory, name), state = await lstat(join(root, path));
+        if (state.isSymbolicLink()) symlinks++;
+        else if (state.isDirectory()) { directories++; await visit(path); }
+        else { const bytes = await readFile(join(root, path)); files.push({ path, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") }); }
+      }
+    };
+    await visit("");
+    return { directories, symlinks, files, fileBytes: files.reduce((total, file) => total + file.bytes, 0) };
+  };
+  const first = await run(), before = await inventory(dirname(first.publication));
+  const second = await run(), after = await inventory(dirname(first.publication));
+  expect(second.pid).not.toBe(first.pid);
+  expect(second.index).not.toBe(first.index);
+  expect(second.publication).toBe(first.publication);
+  expect([first.sourceReads, second.sourceReads]).toEqual([1, 1]);
+  for (const result of [first, second]) expect([result.scope, result.snapshot, result.version]).toEqual([f.root.sourceScope!, f.root.snapshotId!, f.root.versionId!]);
+  expect(before.files.map(file => file.path.split("/").at(-1)).sort()).toEqual([".broker-host-index.json", "SKILL.md"]);
+  expect(after).toEqual(before);
+  const privateRoots = [first, second].map(result => dirname(dirname(dirname(dirname(result.index)))));
+  const privateInventories = await Promise.all(privateRoots.map(inventory));
+  for (const actual of privateInventories) expect({ directories: actual.directories, symlinks: actual.symlinks, fileBytes: actual.fileBytes }).toEqual({ directories: 4, symlinks: 1, fileBytes: 0 });
+  expect(await readFile(f.root.path, "utf8")).toBe(f.root.body);
+  console.info("host-process-projection-counts", JSON.stringify({ pids: [first.pid, second.pid], sharedBefore: before, sharedAfter: after,
+    private: privateInventories.map(({ directories, symlinks, fileBytes }) => ({ directories, symlinks, fileBytes })) }));
+}, 40_000);
+
 test.skipIf(process.platform === "win32")("native directory creation can recover after its temporary root becomes available", async () => {
   const f = await fixture(true), blocked = join(f.ctx.cwd!, "blocked-temp");
   await writeFile(blocked, "An ordinary file cannot contain a temporary directory.");
@@ -359,6 +531,14 @@ test("native alias version changes retain both snapshots and reuse an earlier pu
   expect(second).not.toBe(first);
   expect(await readFile(join(first, "SKILL.md"), "utf8")).toContain("Exact root <instructions>");
   expect(await readFile(join(second, "SKILL.md"), "utf8")).toContain("A new verified version.");
+  const independent = await f.install(undefined, { getRecords: async () => ({ records: f.records.map(record => ({
+    ...record, body: undefined, preparationBinding: undefined, defaultDiscovery: true,
+  })), failures: [] }) });
+  await independent.search.execute("independent-old-version", {}, undefined, undefined, f.ctx);
+  const independentIndex = f.metadataObservations.at(-1)![0]!.metadataIndexPath!;
+  await independent.host.prepareMany([f.root], f.ctx);
+  expect(await realpath(dirname(independentIndex))).toBe(first);
+  expect(await realpath(dirname(index))).toBe(second);
   const publications = (await readdir(dirname(first))).sort();
   selected = f.root;
   await host.refresh(f.ctx);
@@ -368,7 +548,7 @@ test("native alias version changes retain both snapshots and reuse an earlier pu
   expect(await readFile(join(second, "SKILL.md"), "utf8")).toContain("A new verified version.");
   expect(await readFile(f.root.path, "utf8")).toBe(f.root.body);
   expect(await readFile(next.path, "utf8")).toBe(body);
-  expect(f.calls).toEqual(["use", "use", "use"]);
+  expect(f.calls).toEqual(["use", "use", "use", "use"]);
   await f.emit("session_shutdown", { type: "session_shutdown" }, f.ctx);
 });
 

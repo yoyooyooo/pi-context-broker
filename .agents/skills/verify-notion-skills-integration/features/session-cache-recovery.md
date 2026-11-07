@@ -264,7 +264,9 @@ NS-SESSION-15 的 CLI 边界从 CLI checkout 执行 `bun test packages/cli/test/
 
 固定资源投影以 scope、owner、snapshot 与规范文件路径定位，File ID 与规范路径各有一个确定性的身份回执，记录 ref、bytes、sha256。带同一 File ID 的旧路径提示复用规范文件，不因每次调用或拼写变化新增回执。查到本地文件后仍调用原 SDK read，继续验证权限、scope、owner、pin、File ID、返回 output 与内容 hash；SDK 使用已有文件的相同字节复用合同。没有新的 source list/export、旁路权限判断或另一套正文 cache。
 
-宿主原生目录是另一层进程内投影。相同 owner、scope 与实际名称/描述复用同一 metadata index；相同已验证 snapshot、来源路径和 alias 正文复用一次发布。`refresh` 与新会话继续执行原目录观察与准备，`loaded` 状态清空不会重新复制相同原生投影。更换描述、owner/scope 或固定版本保留不同投影；复用时检查实际目录、symlink 目标和正文，损坏投影明确失败，不能将其当作源端拒绝后的退路。
+宿主原生目录分为私有可变入口与不可变正文投影。相同 owner、scope 与实际名称/描述在同一实例复用 metadata index；默认 Notion entry-ready 的 host 正文及 `.broker-host-index.json` 在已验证 source entry 的同级 `.host-indexes/<hash>` 跨实例复用，位于 source tree 之外。key 包含来源身份/路径、scope、owner、snapshot/version、完整 manifest 身份、来源正文及实际 alias 正文/回执，不包含实例的临时 index。完整写入 owned stage 后原子 rename；竞争失败者须逐目录、正文与回执核对已发布赢家，symlink 或字节冲突明确失败。
+
+每个实例仍保留自己的可变 metadata alias，因此一个会话切到 B 不会改动另一会话的 A 入口。`refresh` 与新会话继续执行原目录观察和准备，`loaded` 状态清空不会重新复制相同不可变投影；本地复用不延长 TTL，也不能替代来源权限检查。更换显示名称/描述、owner/scope 或固定版本保留不同投影；损坏投影不能成为源端拒绝后的退路。未激活的 metadata stub、filesystem 副本和旧 full-export 分支的进程目录仍单独计数。
 
 从 Broker checkout 根运行现有回归；完整三文件中的共享解析用例需要与当前 CLI 候选一致的内嵌 SDK 编译物。先保留原 fail-before，再在最终 SDK 编译物到位后运行同一完整命令，不把过滤后的通过数替代整组结果。
 
@@ -287,16 +289,20 @@ bun run typecheck
 | 8. binary batch 重复使用 | `binary batch projection`：只物化选中的二进制字节，无主文或 entry manifest；再次使用相同 pin/file 不新增实体，损坏文件仍明确冲突。 |
 | 9. 原生目录重复刷新和激活 | `repeated host metadata refresh and activation`：四次 refresh+use 以及 session switch 后再次 use 继续实际观察和准备，metadata 路径、published 目标和递归实体集合均不增加；后续来源拒绝与投影损坏仍失败，源 snapshot 字节不变。`native alias version changes` 验证 A→B→A 复用先前发布、两版原件均保留；`native directory creation can recover` 使用真实失效 TMPDIR 后恢复，失败 Promise 不能阻断后续刷新。 |
 | 10. 原生 metadata 变更 | `host metadata reuse isolates owners`：改变一个描述只产生该记录的新投影，其他路径不变，旧描述仍可读取；相同记录换 scope 不能复用旧路径。 |
+| 11. 跨实例/进程原生投影 | `independent host instances` 与 `separate host processes`：两个独立实例及两个自然退出的 Bun 子进程调用公开 host API，同一完整 source 身份和正文共用一个物理正文/manifest；两侧仍各执行来源 load，分别记录共享文件 bytes/hash 和私有目录/symlink，递归计数不跟随 symlink。此测试不是实际 Pi 或真实 Notion。 |
+| 12. 共享发布与冲突 | `concurrent host instances`：三个并发实例只发布一份，Darwin active cache 不留本次 owned stage，后续实例拒绝坏回执。`shared native publications isolate display aliases` 验证别名 A→B→A；`another host rejects` 验证坏正文与被换为 symlink 的共享 parent，冲突不覆盖原件。原 `native alias version changes` 另核两个实例同时保持不同固定版本，互不改写 alias。 |
 
 发布完整 index/receipt 优先使用原子 rename。需要退还的资源 stage 仅限当前操作创建的绝对路径；Pro 使用已验证可执行的 `/usr/bin/trash`，结束后确认原路径不存在，禁止永久 unlink/rm 或扫描用户目录。其它平台没有这个已验证入口时保留 owned stage，因此测试只在 Darwin 要求 stage 清空；暖读不新增实体、正确字节、权限与身份断言在所有平台都执行。回收测试 scratch 继续走已有 verification cleanup，不能把来源状态、操作回执或失败证据当作临时目录清理。
 
-这组验收解决同内容、同 scope、同 pin 重复使用的派生实体增长。CLI Core 的 observations/对象/Records、Broker 的 metadata/resource 投影、用户已有 snapshot/pin 与操作历史分别核对；不同版本的历史保留与跨版本 GC 不由本组断言证明。显式旧 `source.command` 的 catalog journal 仍需按其独立路径计数。宿主只退还被替换的私有 alias/stub，保留 immutable published snapshot；不能在 shutdown 扫除整个进程临时根，因为 filesystem 来源的固定副本也在该根，持久原生会话可能继续引用它。Notion 原生 prompt 使用来源 immutable snapshot 路径，而非宿主 alias。
+这组验收减少同内容、同 scope、同 pin 重复使用的派生实体增长，不承诺整个缓存有界。CLI Core 的 observations/对象/Records、Broker 的 metadata/resource 投影、用户已有 snapshot/pin 与操作历史分别核对；不同版本的历史保留与跨版本 GC 不由本组断言证明。显式旧 `source.command` 的 catalog journal 仍需按其独立路径计数。宿主只退还已被同一实例替换的私有 alias/stub，保留 immutable published snapshot；不能在 shutdown 扫除整个进程临时根，因为 filesystem 来源的固定副本也在该根，持久原生会话可能继续引用它。新共享投影不迁移/删除旧 UUID root，不假设旧进程已退出。Notion 原生 prompt 使用来源 immutable snapshot 路径，而非宿主 alias。
 
 #### Source、installed 与 live 的证明层级
 
 Source 层使用上述真实源码和受控 SDK/source，记录原命令、exit code、失败日志及前后目录/字节证据。它证明复用与拒绝语义，不证明已安装包、Pi 工具投递、真实 Notion 成本或模型行为。2026-11-07 的原始复现保存在仓外 `verification-evidence/notion-skills/cache-reuse-20261107-uvs773xi/`：`red.log/json` 保留六处增长失败；`focused-1` 保留一次目录排序断言失败及随后修正，`full-2` 中八个缓存场景通过，但整组仍为 99 pass / 11 fail（缺少内嵌 SDK 编译物）。完整组必须在最终构建后另存新回执，不能改写这些失败；`catalog-2`、`types-2` 分别保留兼容路径和类型检查结果。
 
 同日宿主层复现与修复在 `verification-evidence/notion-skills/pro-local-loop-20261107-6wru9epq/evidence/cache-host/`：`red` 保留两处 UUID 目录增长失败；`host-final` 为最终源码下三文件 75 pass / 0 fail、828 个断言，包含同进程会话切换、权限拒绝、损坏投影、A→B→A 和临时根失败恢复。`alias-retention` 另核对 Trash 只移动 symlink、不移动其目标。此处不声称整个 host 临时根跨进程复用或安全退出回收；真实 Pi 与跨入口的 Core 复用仍按后续层级验收。
+
+后续跨实例修复的独立证据根为 `verification-evidence/notion-skills/pro-local-refinement-20261107-9jv57mcm/evidence/cache/cross-instance-v1/`。`fail-before.log` 保留两实例得到两个不同 UUID 发布目录、三并发实例产生三份的两个原始失败；最终 `host-final-stage-count.log` 为受影响三文件 86 pass / 0 fail、908 断言，`typecheck-final.log` 退出 0，`skill-validate-offline.log` 记录 skill-creator 原 validator 通过。`projection-counts.json` 绑定相同 source/host 字节 hash：该单 Skill 样本正文 101 B、manifest 803 B，第二实例旧实现新增 904 B；新实现两次独立进程结束后仍只有一份，第二进程共享普通文件增量 0 B。每个新进程仍留 4 个私有目录（含根）和 1 个 symlink、0 个普通文件；这是已激活单 Skill 的测量区间，不能外推所有目录、未激活 stub 或历史空间。初次 inventory 跟随 symlink 重复计入共享文件的失败保留在 `process-counts-inventory-fail.log`，后续按 lstat 递归而不遍历链接，运行结果为 `process-counts.log`。这些受控 source/进程证据不代表实际安装、真实 Notion/HTTP 或模型通过。
 
 首份统一 CLI 候选材料构建到位后，同目录 `cache-final` 记录原 cache 三文件完整 110 pass / 0 fail、533 个断言；执行前后源码与编译物 hash 均未变化。该次内嵌 CLI SHA-256 `7e5eb15d4940a975f1c486e679993e7037b919d216b9d4a749838a4557ae6a38`、SDK SHA-256 `042caf6a535501513be3a216283946b80b05960b81ce89619a79e7115dad3f62`，log SHA-256 `ca38cfb983d84a3c7d340e5c2f79d7ac4aa726cd25d27530a6b4acc836d0ddbc`。这是 source 回归使用当次 SDK 编译物的结果，不能单独作为实际安装、真实 Notion 请求数或模型消费的通过凭据；后续候选的真实产物身份与受影响增量见[安装实录](installed-consumption.md#2026-11-07-本机候选与-normal-pi-实录)，不把该次 hash 称为后续最终包。
 

@@ -396,6 +396,26 @@ Current 来源所有权的 cold 验证继续走 CLI 既有 SDK smoke，见相邻
 
 本候选保留已验证的按需物化、完整current观察和完整export合同。这里完成成本分层，未知继续显式保留；不据此宣称新的存储布局、checkpoint或迁移已实现/无需实现。SC14、SC17、SC18继续按实际瓶颈、预算和已批准批次各自裁决；不把tiny fixture外推生产绝对收益，也不累加历轮百分比。
 
+### 2026-11-07：Pro v8 正常安装的介绍与自然任务
+
+沿正常 HOME/settings/source/model/tools 自动加载已安装 v8，不注入扩展、命令或工具覆盖；模型仍为 `magpie/group/flash`、thinking high，原 C 介绍首轮与原 D 自然提示各一次，300000ms 上限，无 retry/fallback。项目采用独立 system-temp 的固定五文件 HTTP 服务，manifest `b4c48f279ec9d1895ab9e2cc5f91ff4fa6dd56743cdc83aa5b95e700b2a8495f`。此前 `natural-v7` 错将项目放在 evidence 父目录内，模型读到验收输入/runner/result，原超时失败保留并另标 `invalid_environment_exposure`，不作为干净 A/B。
+
+C 原提示 `$poteto-mode@notion 介绍下 create-verification-skill`：两次实际 read 分别完整取得 6,837 B 主文和 2,761 B feature-map README，owner/scope/snapshot 与 bytes/hash 对齐，未读取两个不必要示例叶子，未运行被介绍 Skill 的流程。runner passed，独立语义主体通过；“Pi 里必须改为 .pi/skills/”这项额外适配建议未由本轮证明为必须，保留非阻塞限定。项目五文件不变、未触达验收器/答案材料。这只是 C 单轮，不能关闭原 C 三轮或整个 SC21。
+
+D 原提示 SHA `357ea5d770ddacaf2ed9767ae9e3a7959457ba2e08fe34bcae5a172bf6e8d978`：原 runner 与独立语义均 failed，15 次工具全为 bash，没有主动 notion_list/notion_use/read/tool_search。正常 v8 autoload、session toolsAdded 的实际 schema、首 assistant 前的 guidance 与 74 个候选 short-ref 均有宿主原件；最终 raw provider 请求未留，不能据此推断模型最终看见的全部目录或失败内因。后台 SDK list 不等于模型发现/使用。
+
+D 的 68,529 B 原 final 逐字保留；原提取器报 `AMBIGUOUS_FILE_FENCE`，产物 `plan-only`、`files=[]`，不修补围栏或强制判通过。静态审查另确认停止 main 后仍检查它的 health/网卡、将任意传输异常当作预期反例通过、checksum 的 basename 与文档 cwd 不一致。没有执行生成规程。模型只读项目并在固定 `/tmp/acc-check` 写草稿、做语法/纯函数检查，未启动项目或写远端；该目录没有先验不存在/owned 证明，不整根清理。原 C10/C12 失败继续保留，不用本轮成功介绍覆盖。
+
+C 的 SDK 四操作账本为 list 17、consume 15、consume 12、read 0，共 44 HTTP（42 metadata、2 body、0 write）、3,949,061 decoded response B。其中三轮 Skills inventory 为 12 HTTP/3,776,626 B；两个 consume 各属新的 fresh preparation，不能仅凭数据源相同或间隔不足一分钟认定全部可省。fetch preload 的零观测不等于零来源请求或完整 wire 覆盖。D 仅后台 list 一次，完整 SDK metrics 为 0 HTTP。当前 query guidance 244→227 B 只属静态文案长度；两轮均未主动 notion_list，不把它写成真实选路或全任务成本收益。
+
+证据根 `/Users/yoyo/Documents/code/personal/verification-evidence/notion-skills/pro-local-refinement-20261107-9jv57mcm/evidence`：`introduction-v8/semantic-review.json` SHA `b28e16458ee168d9108dd7e888c66be446de044e97e4a64dd78846bb54c2407f`；`natural-v8/semantic-review.json` SHA `501e5bcba4cd5436357060a838707e95f07e435ea8d70d90fa8f0451bb30e767`；`natural-v8/discovery-review.json` SHA `bbe1f584122019029ecb5e2920efa1c55c60a1d999b6b3af53cd6731d4ba6d3a`；`cache/introduction-v8-cost-attribution.json` 保留逐请求归属。两个 owned Pi 已自然关闭；独立 scratch 经系统 Trash 回收，53 份原证据 hash 全保持，见 `model-owned-cleanup-v8.json`。原失败与未知范围不因清理成功改变。
+
+### 2026-11-07：最终 Pro v9 的来源投影与暖读
+
+v9 绑定 CLI `dab5ac1807fb04318221afac2bdf555cf9246ca8`，Broker `index.ts`／`host-skills.ts` 与上述 v8 逐字节相同；只更换内嵌 CLI/SDK 的来源 inventory 属性投影。完整分页与 fresh preparation 保留，十个必需字段和已登记 Members／Requires 不变；实际登记投影 15→12，去掉未被该链消费的 Tags、Origin、Source Member。相同 owned Skill 的公开 CLI `use --refresh` 顺序只读 A/B 均 ready、16 HTTP、0 write、0 guard 触发，decoded response 1,706,860→1,531,387 B，少 175,473 B。差额全属四页 inventory，其余十二次响应字节相同；主文 575 B、三个文件、fixed refs、links、manifest、关系和 graph lock 一致。此处是独立 API 对照，不把它折算为 v9 真实模型全任务收益。
+
+切入正常 Pro 后沿原 cross-entry 脚本再验 CLI→bundled SDK：首次 observation 已超过五分钟，CLI 实际 9 metadata HTTP／186,581 decoded response B，SDK 0；立即重复 CLI 与 SDK 均 0 HTTP／0 response B。owned observation 1→1，原 id／rowid 保持、generation 80→81，八个 owned snapshot 不变；该区间 objects 6,378 文件／243,698,980 B、snapshots 2,558 文件／290,568,288 B 及名称 inventory 不变，不声称历史缓存缩小或全局有界。实际包/激活/暖读分别见同一 evidence 根的 `broker-artifact-v9.json`、`activation-readback-v9.json`、`cache/graph-projection-ab/summary.json` 与 `cache/cross-entry-warm-v9-validation.json`。C/D 模型结果仍只归属于其实际 v8 包，D 失败不重采样、不改判。
+
 ## Gotchas
 
 宿主目录中的临时 location 只属于当前进程。多次 stop/start 后，资源相对路径必须从当前实际 provider 目录重新取得，不能沿用第一个进程的位置。当前按需消费可以使用 prepare、固定主文 read 和所选资源 read，无需整包 export；验收必须核对实际固定内容与资源回执，不能把发生过 export 当成成功的必要条件。失败分支的 source CLI 账本也必须在 scratch 回收前保留。
