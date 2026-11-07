@@ -449,4 +449,18 @@ node scripts/skill-consumption-model-baseline.mjs evidence --evidence /absolute/
 在 cleanup 前保存全部既有证据 hash，之后逐份核对。原件、plan、失败 stdout、固定 snapshot 副本和 partial 原对象备份均保留。cleanup 成功不改变 functional status。
 
 Startup driver 的每个 case 混合运行文件和证据，没有整目录 cleanup 命令。只将 plan/原件明确证明属于该 run 的外部 probe、alias 根列入清单，检查真实路径、进程状态后用 `/usr/bin/trash ABSOLUTE_PATH` 回收；不得按目录前缀、mtime 或进程名猜测归属。缺终局必须注明，不补造 exit code，无法证明安全的路径保留。
+## C12 metadata selection 的失败呈现（2026-11-07）
 
+当前 C12 成对提前观测先执行了一次原 metadata-only selection，实际失败，未进入双 Doctor 或真实模型。原报告在 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/c12-sc20-pair-xfx4_66r/metadata-selection/skill-model-catalog-gLx0Bc/report.json`，SHA `400e872c7d6a363ae6d87d9d404e1575b922dad3a42297fc1b9dbac905a56de5`。第一条 SDK 返回独立的目录结果：74 项 Default View 完整，但同一 raw 中 full catalog 为 `INVALID_SHARED_SKILL`。第二条 SDK 实际终局 `failed`，没有 raw result；其具体异常尚无原件证明，不能沿用第一条的错误码。来源总账仍是 16 metadata HTTP／711 请求体 B／1,460,522 解码响应 B，正文、写入和真实模型均为 0。
+
+本次只修原 baseline driver 的诊断呈现。`catalogSelectionDiagnostics` 按 raw 独立解析，将实际失败 facet 与所属 SDK request/source file、非成功 SDK terminal 分开保留；terminal 未携带异常时明确 `error:null`。结构损坏的 raw 单列为 `sourceDiagnosticErrors`，不能吞掉其他已捕获失败或 SDK terminal，也不视为合法目录。`catalogSelectionFailureEvidence` 保留执行阶段原错误的优先级；否则 `error` 提示已捕获的来源错误，`validationError` 保留实际阻断原因，二者不声明因果等同。成功目录、完整 owner/scope、实际 serializer、每个 SDK 必须有 raw result 等门槛保持，`1 !== 2` 仍使本次 selection 失败；损坏 raw 仍由原 `verifyComparisonSelection` 严格拒绝。既有“无独立失败操作、full facet 失败而 View 独立成功”的正例仍通过，不因诊断字段自动改判。
+
+原测试组命令保持在 `scripts/skill-consumption-model-baseline.test.mjs`：
+
+```bash
+node --test --test-name-pattern 'metadata selection|metadata diagnostics|combined catalog' scripts/skill-consumption-model-baseline.test.mjs
+```
+
+上一轮保存在上述 owned 根 `diagnostic-fix/` 的记录为：源码修改前相关 4 例通过、新增 3 例为 RED；修改后同组 7/7 GREEN。`render-existing-failure.mjs` 只读封存的实际 raw，通过未修改的原断言重新取得同一验证失败，再生成 `offline-presentation.json`；输出仍为 failed，旧报告及全部输入 hash 保持。它不是新 selection，不产生来源或模型请求，也不将本次早期观测升级为 SC20／SC22 通过。坏 ID 的来源诊断和后续处理独立保留。
+
+本轮补充损坏 raw 在前／在后的反例，先复现诊断收集中断，再验证已知来源失败、未知 SDK terminal 与原始阻断断言全部保留。上述定向命令 8/8，通过原完整 `skill-consumption-model-baseline.test.mjs` 为 46/46；其中 installed-Pi Doctor 使用受控输入，不证明真实 Notion 或模型任务通过。本轮未重新读取旧 selection 原件，当前来源诊断单独记入 AH-638，不改写历史报告。

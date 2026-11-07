@@ -946,3 +946,117 @@ test('combined catalog: SC20 retains an unrelated full failure but cannot substi
       value.directory.value.databases = [{ database_id: 'db', shared_library: { library_id: 'new' } }]; },
   ]) { const changed = combinedCatalogSelectionProbe(); mutate(changed.sources[0].value); assert.throws(() => verifyComparisonSelection(changed)); }
 });
+
+
+test('metadata diagnostics: failed SDK terminal and known catalog error stay distinct from the blocking raw-result gate', () => {
+  const input = combinedCatalogSelectionProbe(), source = input.sources[0];
+  source.file = 'source-results/source-1.json';
+  source.value.catalog = { ok: false, error: { code: 'INVALID_SHARED_SKILL', message: 'Skill ID must be a stable bounded identity.' } };
+  input.sourceEvents.push(
+    { phase: 'started', kind: 'sdk', operation: 'list', requestId: 'sdk:1:failed-id' },
+    { phase: 'completed', kind: 'sdk', operation: 'list', requestId: 'sdk:1:failed-id', status: 'failed', elapsedMs: 10129, sourceMonotonicNs: '200' });
+  const before = JSON.stringify(input);
+  let validation;
+  assert.throws(() => verifyComparisonSelection(input), error => {
+    validation = error;
+    return /Every actual metadata operation needs its raw SDK result/.test(error.message);
+  });
+  assert.equal(typeof baselineDriver.catalogSelectionDiagnostics, 'function');
+  const diagnostics = baselineDriver.catalogSelectionDiagnostics(input.sources, input.sourceEvents);
+  assert.deepEqual(diagnostics.sourceFailures, [{
+    requestId: 'sdk:1:source-id', operation: 'list', sourceFile: 'source-results/source-1.json', facet: 'catalog',
+    error: { code: 'INVALID_SHARED_SKILL', message: 'Skill ID must be a stable bounded identity.' },
+  }]);
+  assert.deepEqual(diagnostics.failedSdkOperations, [{
+    requestId: 'sdk:1:failed-id', operation: 'list', status: 'failed',
+    elapsedMs: 10129, sourceMonotonicNs: '200', error: null,
+  }], 'A terminal without a captured error cannot inherit another request failure');
+  assert.equal(typeof baselineDriver.catalogSelectionFailureEvidence, 'function');
+  const report = { sourceAccounting: { complete: true }, ...diagnostics };
+  Object.assign(report, baselineDriver.catalogSelectionFailureEvidence(validation, report));
+  assert.equal(report.status, 'failed');
+  assert.equal(report.error, 'INVALID_SHARED_SKILL: Skill ID must be a stable bounded identity.');
+  assert.deepEqual(report.validationError, { code: 'ERR_ASSERTION', message: validation.message });
+  assert.deepEqual(report.sourceAccounting, { complete: true }, 'Complete accounting does not imply successful selection');
+  assert.equal(JSON.stringify(input), before, 'Diagnosis must not rewrite the raw result or terminal');
+});
+
+test('metadata diagnostics: a successful independent View still passes with its unrelated full failure retained', () => {
+  const input = combinedCatalogSelectionProbe(), source = input.sources[0];
+  source.file = 'source-results/source-1.json';
+  source.value.catalog = { ok: false, error: { code: 'IDENTITY_CONFLICT', message: 'Unrelated full inventory conflict' } };
+  const before = JSON.stringify(input);
+  assert.equal(typeof baselineDriver.catalogSelectionDiagnostics, 'function');
+  const diagnostics = baselineDriver.catalogSelectionDiagnostics(input.sources, input.sourceEvents);
+  const checked = verifyComparisonSelection(input);
+  assert.equal(checked.source, source);
+  assert.equal(checked.directory.records.length, 3);
+  assert.equal(diagnostics.sourceFailures[0].error.code, 'IDENTITY_CONFLICT');
+  assert.deepEqual(diagnostics.failedSdkOperations, []);
+  assert.equal(JSON.stringify(input), before);
+});
+
+test('metadata diagnostics: a malformed raw result preserves other source failures and unknown SDK terminals without passing selection', () => {
+  const input = combinedCatalogSelectionProbe(), source = input.sources[0];
+  source.file = 'source-results/source-1.json';
+  source.value.catalog = { ok: false, error: { code: 'INVALID_SHARED_SKILL', message: 'Skill ID must be a stable bounded identity.' } };
+  const malformed = { ...structuredClone(source), id: 'malformed', file: 'source-results/source-2.json' };
+  delete malformed.value.directory;
+  input.sources.push(malformed);
+  input.sourceEvents.push(
+    { phase: 'started', kind: 'sdk', operation: 'list', requestId: 'sdk:1:malformed' },
+    { phase: 'completed', kind: 'sdk', operation: 'list', requestId: 'sdk:1:malformed', status: 'completed' },
+    { phase: 'started', kind: 'sdk', operation: 'list', requestId: 'sdk:1:unknown' },
+    { phase: 'completed', kind: 'sdk', operation: 'list', requestId: 'sdk:1:unknown', status: 'failed' });
+  const before = JSON.stringify(input);
+  assert.throws(() => verifyComparisonSelection(input), /Every actual metadata operation needs its raw SDK result/);
+  let validation;
+  assert.throws(() => verifyComparisonSelection({ ...input,
+    sourceEvents: input.sourceEvents.filter(row => row.requestId !== 'sdk:1:unknown'),
+  }), error => { validation = error; return /Both combined catalog outcomes are required/.test(error.message); });
+  for (const sources of [input.sources, [...input.sources].reverse()]) {
+    const diagnostics = baselineDriver.catalogSelectionDiagnostics(sources, input.sourceEvents);
+    assert.deepEqual(diagnostics.sourceFailures, [{
+      requestId: 'sdk:1:source-id', operation: 'list', sourceFile: 'source-results/source-1.json', facet: 'catalog',
+      error: source.value.catalog.error,
+    }]);
+    assert.deepEqual(diagnostics.sourceDiagnosticErrors, [{
+      requestId: 'sdk:1:malformed', operation: 'list', sourceFile: 'source-results/source-2.json',
+      error: { code: 'ERR_ASSERTION', message: 'Both combined catalog outcomes are required' },
+    }]);
+    assert.deepEqual(diagnostics.failedSdkOperations, [{
+      requestId: 'sdk:1:unknown', operation: 'list', status: 'failed',
+      elapsedMs: null, sourceMonotonicNs: null, error: null,
+    }]);
+    const report = { ...diagnostics, ...baselineDriver.catalogSelectionFailureEvidence(validation, diagnostics) };
+    assert.equal(report.status, 'failed');
+    assert.deepEqual(report.validationError, { code: 'ERR_ASSERTION', message: validation.message });
+  }
+  assert.equal(JSON.stringify(input), before, 'Diagnostic parsing must preserve every raw result and terminal');
+});
+
+test('metadata diagnostics: execution errors keep priority and unknown failures do not acquire a source cause', () => {
+  assert.equal(typeof baselineDriver.catalogSelectionDiagnostics, 'function');
+  assert.equal(typeof baselineDriver.catalogSelectionFailureEvidence, 'function');
+  const validation = Object.assign(new Error('Every actual metadata operation needs its raw SDK result'), { code: 'ERR_ASSERTION' });
+  const diagnostics = baselineDriver.catalogSelectionDiagnostics([], [{
+    phase: 'completed', kind: 'sdk', operation: 'list', requestId: 'sdk:1:unknown', status: 'failed',
+  }]);
+  const unknown = baselineDriver.catalogSelectionFailureEvidence(validation, diagnostics);
+  assert.equal(unknown.status, 'failed');
+  assert.equal(unknown.error, validation.message);
+  assert.deepEqual(unknown.validationError, { code: 'ERR_ASSERTION', message: validation.message });
+  assert.deepEqual(diagnostics.sourceFailures, []);
+  assert.equal(diagnostics.failedSdkOperations[0].error, null);
+  const execution = 'Actual RPC submission failed before validation';
+  const report = { ...diagnostics, error: execution, sourceFailures: [{
+    requestId: 'sdk:1:other', sourceFile: 'source-results/source-1.json', facet: 'catalog',
+    error: { code: 'INVALID_SHARED_SKILL', message: 'Later known catalog error' },
+  }] };
+  const before = JSON.stringify(report);
+  const outcome = baselineDriver.catalogSelectionFailureEvidence(validation, report);
+  assert.equal(outcome.status, 'failed');
+  assert.equal(outcome.error, execution);
+  assert.deepEqual(outcome.validationError, { code: 'ERR_ASSERTION', message: validation.message });
+  assert.equal(JSON.stringify(report), before);
+});

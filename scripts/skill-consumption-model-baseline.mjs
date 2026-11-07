@@ -694,6 +694,42 @@ export function verifyComparisonSelection({hooks,wires,sources,sourceEvents,expe
   return {catalog,payload:providers.at(-1),source:matching.at(-1).source,directory:matching.at(-1).value};
 }
 
+/** Present captured failures without changing selection eligibility or raw receipts. */
+export function catalogSelectionDiagnostics(sources, sourceEvents) {
+  const sourceFailures = [], sourceDiagnosticErrors = [];
+  const failedSdkOperations = sourceEvents
+    .filter(row => row.phase === 'completed' && row.kind === 'sdk' && row.status !== 'completed')
+    .map(row => ({
+      requestId: row.requestId, operation: row.operation, status: row.status,
+      elapsedMs: row.elapsedMs ?? null, sourceMonotonicNs: row.sourceMonotonicNs ?? null,
+      error: null, // The passive terminal does not carry the thrown error.
+    }));
+  for (const source of sources) {
+    const identity = { requestId: 'sdk:' + source.pid + ':' + source.id,
+      operation: source.operation, sourceFile: source.file ?? null };
+    try {
+      sourceFailures.push(...catalogFacets(source.value)
+        .filter(outcome => !outcome.ok)
+        .map(outcome => ({ ...identity, facet: outcome.facet,
+          error: { code: safeDiagnostic(Buffer.from(outcome.error.code)), message: safeDiagnostic(Buffer.from(outcome.error.message)) },
+        })));
+    } catch (error) {
+      sourceDiagnosticErrors.push({ ...identity, error: {
+        code: error.code ?? 'CATALOG_DIAGNOSTIC_FAILED', message: safeDiagnostic(Buffer.from(error.message)),
+      } });
+    }
+  }
+  return { sourceFailures, failedSdkOperations, sourceDiagnosticErrors };
+}
+
+export function catalogSelectionFailureEvidence(error, { error: executionError, sourceFailures = [] } = {}) {
+  const validationError = { code: error.code ?? 'CATALOG_SELECTION_FAILED', message: safeDiagnostic(Buffer.from(error.message)) };
+  const observed = sourceFailures[0]?.error;
+  return { status: 'failed',
+    error: executionError ?? (observed ? observed.code + ': ' + observed.message : validationError.message),
+    validationError };
+}
+
 async function selection(config,parent) {
   assert.equal(config.role,'notion-candidate');assert.equal(config.transport,'sdk');
   const descriptor=JSON.parse(await readFile(config.comparison,'utf8'));
@@ -782,6 +818,7 @@ async function selection(config,parent) {
     assert.equal(captureEnd.complete,true);
     const sources=await Promise.all((await readdir(sourceDirectory)).filter(name=>/^source-\d+\.json$/.test(name)).sort()
       .map(async name=>({...JSON.parse(await readFile(join(sourceDirectory,name),'utf8')),file:'source-results/'+name})));
+    Object.assign(report,catalogSelectionDiagnostics(sources,observation.events));
     assert.equal(sources.length,captureEnd.count);
     const hooks=await rows(output);
     for(const row of hooks.filter(row=>row.phase==='provider'))row.payload=JSON.parse(await readFile(join(payloads,row.file),'utf8'));
@@ -797,14 +834,16 @@ async function selection(config,parent) {
     report.runtimeUnchanged=true;
     assert.equal(report.error,undefined,'A failed metadata run cannot be relabelled by later observations');
     report.status='passed';
-  } catch(error) {report.status='failed';report.error??=safeDiagnostic(Buffer.from(error.message));}
+  } catch(error) {Object.assign(report,catalogSelectionFailureEvidence(error,report));}
   report.files=Object.keys((await tree(evidence)).files);
   await save(join(evidence,'report.json'),report);
   const artifact=async name=>({path:join(evidence,name),sha256:hash(await readFile(join(evidence,name)))});
   const inputs=report.status==='passed'?{notionSelection:await artifact('report.json'),notionProviderPayload:await artifact(report.providerPayload),notionCatalogSource:await artifact(report.catalogSource)}:null;
   await save(join(evidence,'comparison-artifacts.json'),inputs);
   await save(join(evidence,'retained.json'),await tree(evidence));
-  console.log(JSON.stringify({status:report.status,evidence,setupCost:report.setupCost,comparisonArtifacts:inputs,error:report.error},null,2));
+  console.log(JSON.stringify({status:report.status,evidence,setupCost:report.setupCost,comparisonArtifacts:inputs,error:report.error,
+    sourceFailures:report.sourceFailures,failedSdkOperations:report.failedSdkOperations,
+    sourceDiagnosticErrors:report.sourceDiagnosticErrors,validationError:report.validationError},null,2));
   if(report.status!=='passed')process.exitCode=1;
 }
 
