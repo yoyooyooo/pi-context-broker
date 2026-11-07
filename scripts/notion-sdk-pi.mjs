@@ -2007,6 +2007,20 @@ export function observeSdkInitialization({ fs, configPath, record, subscribe }) 
   return { pending: () => held.size };
 }
 
+export function isCacheRetirementChild(start, observer) {
+  if (observer?.platform !== 'darwin' || typeof observer.bundled_cli !== 'string'
+    || !isAbsolute(observer.bundled_cli) || !observer.bundled_cli.endsWith('/dist/ntn-skills.mjs')) return false;
+  if (start.api !== 'execFile' || start.operation !== 'cache-retirement' || start.bundled !== false
+    || start.executable !== '/usr/bin/trash' || !Array.isArray(start.argv) || start.argv.length !== 1
+    || typeof start.argv[0] !== 'string' || !isAbsolute(start.argv[0]) || resolve(start.argv[0]) !== start.argv[0]
+    || dirname(start.argv[0]) === start.argv[0] || !start.options || Object.keys(start.options).length !== 1
+    || start.options.timeout !== 10_000 || typeof start.stack !== 'string') return false;
+  const caller = join(dirname(dirname(observer.bundled_cli)), 'src/notion-cache-stage.ts');
+  const prefix = `at retireOwnedCacheStage (${caller}:`;
+  return start.stack.split('\n').some(line => line.trim().startsWith(prefix)
+    && /^\d+:\d+\)$/.test(line.trim().slice(prefix.length)));
+}
+
 function observe() {
   const ledger = process.env.SC10_PI_OBSERVER;
   const cli = process.env.SC10_PI_BUNDLED_CLI;
@@ -2017,7 +2031,8 @@ function observe() {
     previous = createHash('sha256').update(JSON.stringify(value)).digest('hex');
     appendFileSync(ledger, JSON.stringify({ ...value, sha256: previous }) + '\n', { mode: 0o600 });
   };
-  record({ kind: 'observer_start', exec_path: process.execPath, parent_pid: process.ppid });
+  const observerIdentity = { platform: process.platform, bundled_cli: cli };
+  record({ kind: 'observer_start', exec_path: process.execPath, parent_pid: process.ppid, ...observerIdentity });
   const sourceHeaders = event => {
     if (String(event.request?.origin) !== process.env.NOTION_API_BASE_URL) return;
     record({ kind: 'source_http_headers', method: event.request.method, path: event.request.path,
@@ -2070,8 +2085,24 @@ function observe() {
   for (const name of ['exec', 'execFile', 'fork', 'spawnSync', 'execSync', 'execFileSync']) {
     const original = childProcess[name];
     childProcess[name] = function(...values) {
-      record({ kind: 'alternate_child_api', api: name });
-      return original.apply(this, values);
+      const maintenance = { api: name, bundled: false, operation: 'cache-retirement',
+        executable: values[0], argv: values[1], options: values[2], stack: new Error('cache retirement call').stack };
+      if (name !== 'execFile' || values.length !== 4 || typeof values[3] !== 'function'
+        || !isCacheRetirementChild(maintenance, observerIdentity)) {
+        record({ kind: 'alternate_child_api', api: name });
+        return original.apply(this, values);
+      }
+      const id = `${process.pid}:${++nextChild}`;
+      record({ kind: 'child_start', id, ...maintenance });
+      activeChildren.add(id);
+      const child = original.apply(this, values);
+      child.once('spawn', () => record({ kind: 'child_spawn', id, child_pid: child.pid ?? null }));
+      child.once('error', error => record({ kind: 'child_error', id, code: error.code ?? 'UNKNOWN' }));
+      child.once('close', (code, signal) => {
+        activeChildren.delete(id);
+        record({ kind: 'child_close', id, child_pid: child.pid ?? null, code, signal, request_metrics: null });
+      });
+      return child;
     };
   }
   syncBuiltinESMExports();
@@ -2084,7 +2115,7 @@ function observe() {
   });
 }
 async function observer(path) {
-  await writeFile(path, `import { isMainThread } from 'node:worker_threads';\nimport childProcess from 'node:child_process';\nimport { createHash } from 'node:crypto';\nimport { channel } from 'node:diagnostics_channel';\nimport fs, { appendFileSync } from 'node:fs';\nimport fsPromises from 'node:fs/promises';\nimport { syncBuiltinESMExports } from 'node:module';\n${safeRequestMetrics.toString()}\n${observeOwnedObjectReads.toString()}\n${observeSdkInitialization.toString()}\nif (isMainThread) (${observe.toString()})();\n`, { mode: 0o600 });
+  await writeFile(path, `import { isMainThread } from 'node:worker_threads';\nimport childProcess from 'node:child_process';\nimport { createHash } from 'node:crypto';\nimport { channel } from 'node:diagnostics_channel';\nimport fs, { appendFileSync } from 'node:fs';\nimport fsPromises from 'node:fs/promises';\nimport { syncBuiltinESMExports } from 'node:module';\nimport { dirname, isAbsolute, join, resolve } from 'node:path';\n${safeRequestMetrics.toString()}\n${observeOwnedObjectReads.toString()}\n${observeSdkInitialization.toString()}\n${isCacheRetirementChild.toString()}\nif (isMainThread) (${observe.toString()})();\n`, { mode: 0o600 });
 }
 
 function initialDirectoryReady(events, hostPid, { fixture, sourceId, transport, bundledCli }) {
@@ -2140,12 +2171,14 @@ export function sourceFinality(events, hostPid, { hostClosed = false, initialDir
   const starts = events.filter(event => event.kind === 'observer_start');
   if (starts.filter(event => event.observer_pid === hostPid).length !== 1) pending.push({ kind: 'host_observer_start', pid: hostPid });
   for (const start of events.filter(event => event.kind === 'child_start')) {
+    const maintenance = isCacheRetirementChild(start, starts.find(event => event.observer_pid === start.observer_pid));
     const spawned = events.filter(event => event.kind === 'child_spawn' && event.id === start.id && event.observer_pid === start.observer_pid);
     const pid = spawned[0]?.child_pid;
     if (spawned.length !== 1 || !Number.isInteger(pid) || pid <= 0) { pending.push({ kind: 'child_identity', id: start.id }); continue; }
     const closed = events.filter(event => event.kind === 'child_close' && event.id === start.id && event.child_pid === pid && event.observer_pid === start.observer_pid);
     if (closed.length !== 1) pending.push({ kind: 'child_close', id: start.id, pid });
-    if (starts.filter(event => event.observer_pid === pid && event.parent_pid === start.observer_pid).length !== 1) pending.push({ kind: 'child_observer_start', id: start.id, pid });
+    // Native system Trash has no Node preload. Its actual process close is still required.
+    if (!maintenance && starts.filter(event => event.observer_pid === pid && event.parent_pid === start.observer_pid).length !== 1) pending.push({ kind: 'child_observer_start', id: start.id, pid });
   }
   for (const start of starts) {
     if (start.observer_pid !== hostPid && !events.some(event => event.kind === 'child_spawn' && event.child_pid === start.observer_pid && event.observer_pid === start.parent_pid))
@@ -2171,7 +2204,11 @@ export function sourceFinality(events, hostPid, { hostClosed = false, initialDir
   }
   if (initialDirectory && !initialDirectoryReady(events, hostPid, initialDirectory)) pending.push({ kind: 'initial_default_directory' });
   return { complete: pending.length === 0, host_pid: hostPid, host_closed: hostClosed,
-    observer_processes: starts.length, source_children: events.filter(event => event.kind === 'child_start').length, pending };
+    observer_processes: starts.length,
+    source_children: events.filter(event => event.kind === 'child_start'
+      && !isCacheRetirementChild(event, starts.find(start => start.observer_pid === event.observer_pid))).length,
+    maintenance_children: events.filter(event => event.kind === 'child_start'
+      && isCacheRetirementChild(event, starts.find(start => start.observer_pid === event.observer_pid))).length, pending };
 }
 
 async function waitForSourceFinality(path, hostPid, options = {}) {
@@ -2261,7 +2298,24 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true, sou
   const starts = events.filter(event => event.kind === 'child_start');
   for (const start of starts) assert.equal(events.filter(event => event.kind === 'child_close' && event.id === start.id).length, 1);
   assert.equal(events.filter(event => event.kind === 'alternate_child_api').length, 0, 'Unexpected child APIs require explicit accounting');
-  assert.equal(starts.length, 0, 'Default bundled SDK directory and body consumption must not spawn CLI children');
+  const maintenance = starts.filter(start => isCacheRetirementChild(start,
+    events.find(event => event.kind === 'observer_start' && event.observer_pid === start.observer_pid)));
+  assert.equal(starts.length - maintenance.length, 0, 'Default bundled SDK directory and body consumption must not spawn CLI children');
+  assert.equal(new Set(maintenance.map(start => start.id)).size, maintenance.length);
+  for (const start of maintenance) {
+    assert.equal(start.observer_pid, lifecycle[0].pid, 'Cache retirement belongs to the actual installed Pi');
+    const spawned = events.filter(event => event.kind === 'child_spawn' && event.id === start.id);
+    const closed = events.filter(event => event.kind === 'child_close' && event.id === start.id);
+    assert.equal(spawned.length, 1); assert.equal(closed.length, 1);
+    assert.equal(spawned[0].observer_pid, start.observer_pid); assert.equal(closed[0].observer_pid, start.observer_pid);
+    assert.ok(Number.isSafeInteger(spawned[0].child_pid) && spawned[0].child_pid > 0);
+    assert.equal(closed[0].child_pid, spawned[0].child_pid);
+    assert.ok(events.indexOf(start) < events.indexOf(spawned[0]) && events.indexOf(spawned[0]) < events.indexOf(closed[0]));
+    assert.equal(events.filter(event => event.kind === 'child_error' && event.id === start.id).length, 0);
+    assert.equal(closed[0].code, 0); assert.equal(closed[0].signal, null);
+    assert.equal(closed[0].request_metrics, null, 'Native maintenance must not invent source HTTP metrics');
+  }
+  const maintenanceIds = new Set(maintenance.map(start => start.id));
   const sdk = events.filter(event => event.kind === 'sdk' && event.event === 'start');
   assert.ok(sdk.every(event => ['list', 'files', 'consume', 'read', 'read-resources'].includes(event.operation)), 'Unknown SDK operations require explicit accounting');
   const catalog = sdk.filter(event => event.operation === 'list'), files = sdk.filter(event => event.operation === 'files');
@@ -2323,7 +2377,7 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true, sou
     assert.equal(expectedFailures.length + failedCombinedCatalogs.length, catalog.length);
   } else if (catalog.length) assert.ok(successfulCatalogs > 0, 'Cancelled or failed catalog outcomes do not establish successful default discovery');
   if (sourceMode === 'offline') assert.equal(http, 0, 'The controlled SDK source must stay offline');
-  const cliCloses = events.filter(event => event.kind === 'child_close');
+  const cliCloses = events.filter(event => event.kind === 'child_close' && !maintenanceIds.has(event.id));
   return { sdk_calls: sdk.length, sdk_body_calls: bodies.length, sdk_lists: catalog.length, sdk_files: files.length,
     expected_failed_sdk: expectedFailures,
     catalog_projection_failures: catalogProjectionFailures, sdk_successful_list_results: successfulCatalogs,
@@ -2334,7 +2388,8 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true, sou
     sdk_resource_batches: sdk.filter(event => event.operation === 'read-resources').length,
     cli_catalog_children: starts.filter(event => event.bundled && event.operation === 'list').length,
     cli_prepare_read_export_children: 0, cli_http: cliCloses.every(event => event.request_metrics?.complete) ? cliCloses.reduce((total, event) => total + event.request_metrics.total_requests, 0) : null,
-    observer_processes: chains.size, source_children_closed: starts.length, eof_closed: true,
+    observer_processes: chains.size, source_children_closed: starts.length - maintenance.length,
+    maintenance_children_closed: maintenance.length, maintenance_http: null, eof_closed: true,
     default_catalog_transport: successfulCatalogs ? 'verified_sdk' : 'not_exercised',
     default_body_transport: bodyTransportRequired ? 'verified_sdk' : 'not_applicable_metadata_query' };
 }

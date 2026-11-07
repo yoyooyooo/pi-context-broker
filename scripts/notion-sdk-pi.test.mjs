@@ -2123,6 +2123,62 @@ const catalog = [
   { kind: 'observer_end', code: 0, active_sdk: 0, active_children: 0 },
 ];
 
+function cacheRetirementEvents() {
+  const fields = structuredClone(catalog);
+  fields[0] = { ...fields[0], platform: 'darwin', bundled_cli: '/frozen/package/dist/ntn-skills.mjs' };
+  fields.splice(3, 0,
+    { kind: 'child_start', id: '42:trash:1', api: 'execFile', bundled: false, operation: 'cache-retirement',
+      executable: '/usr/bin/trash', argv: ['/owned/cache/indexes/.retired-host-indexes/owned-alias'], options: { timeout: 10000 },
+      stack: 'Error: cache retirement call\n    at retireOwnedCacheStage (/frozen/package/src/notion-cache-stage.ts:14:27)' },
+    { kind: 'child_spawn', id: '42:trash:1', child_pid: 43 },
+    { kind: 'child_close', id: '42:trash:1', child_pid: 43, code: 0, signal: null, request_metrics: null });
+  return fields;
+}
+
+test('owned cache retirement closes its native child without claiming a CLI child or HTTP metrics', () => {
+  const events = observed(cacheRetirementEvents());
+  const finality = sourceFinality(events, 42, { hostClosed: true });
+  assert.equal(finality.complete, true); assert.equal(finality.source_children, 0); assert.equal(finality.maintenance_children, 1);
+  const proof = reconcile(events, lifecycle, { bodyTransportRequired: false });
+  assert.equal(proof.maintenance_children_closed, 1); assert.equal(proof.maintenance_http, null);
+  assert.equal(proof.source_children_closed, 0); assert.equal(proof.cli_catalog_children, 0);
+  assert.equal(proof.cli_prepare_read_export_children, 0); assert.equal(proof.cli_http, 0);
+});
+
+test('cache retirement rejects other executables, callers, arguments and incomplete child lifecycles', () => {
+  for (const [reason, change] of [
+    ['foreign executable', fields => { fields[3].executable = '/tmp/trash'; }],
+    ['foreign caller', fields => { fields[3].stack = fields[3].stack.replace('/frozen/package/', '/another/package/'); }],
+    ['unbound package', fields => { delete fields[0].bundled_cli; }],
+    ['different platform', fields => { fields[0].platform = 'linux'; }],
+    ['extra target', fields => { fields[3].argv.push('/another/path'); }],
+    ['relative target', fields => { fields[3].argv = ['relative']; }],
+    ['root target', fields => { fields[3].argv = ['/']; }],
+    ['normalized-away target', fields => { fields[3].argv = ['/owned/../other']; }],
+    ['changed options', fields => { fields[3].options.shell = true; }],
+    ['changed timeout', fields => { fields[3].options.timeout = 20000; }],
+    ['CLI process', fields => { fields[3].api = 'spawn'; fields[3].bundled = true; fields[3].operation = 'read'; }],
+    ['missing spawn', fields => { fields.splice(4, 1); }],
+    ['missing close', fields => { fields.splice(5, 1); }],
+    ['duplicate close', fields => { fields.splice(5, 0, structuredClone(fields[5])); }],
+    ['wrong PID', fields => { fields[5].child_pid = 44; }],
+    ['foreign host', fields => { fields[4].observer_pid = 44; }],
+    ['nonzero close', fields => { fields[5].code = 1; }],
+    ['signalled close', fields => { fields[5].signal = 'SIGTERM'; }],
+    ['fabricated HTTP zero', fields => { fields[5].request_metrics = { complete: true, total_requests: 0, trace: [] }; }],
+    ['late close', fields => { fields.push(fields.splice(5, 1)[0]); }],
+    ['spawn error', fields => { fields.splice(5, 0, { kind: 'child_error', id: '42:trash:1', code: 'ENOENT' }); }],
+    ['unclosed observer', fields => { fields.at(-1).active_children = 1; }],
+    ['unknown alternate', fields => { fields.splice(6, 0, { kind: 'alternate_child_api', api: 'execFile' }); }],
+  ]) {
+    const fields = cacheRetirementEvents(); change(fields);
+    assert.throws(() => reconcile(observed(fields), lifecycle, { bodyTransportRequired: false }), reason);
+  }
+  const pending = cacheRetirementEvents(); pending.splice(5, 1);
+  const finality = sourceFinality(observed(pending), 42, { hostClosed: true });
+  assert.equal(finality.complete, false); assert.ok(finality.pending.some(item => item.kind === 'child_close'));
+});
+
 test('controlled HTTP metadata failures require actual failed lists and do not become ready', () => {
   const fields = structuredClone(catalog);
   fields[2].status = 'failed'; fields[2].error_code = 'AUTH_REQUIRED';
