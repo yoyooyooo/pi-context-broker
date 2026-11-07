@@ -147,6 +147,8 @@ root 审查发现新增测试 helper 沿用永久删除合成 owned fixture 的�
 
 定向入口为 `node --test --test-name-pattern 'native Members description' scripts/notion-skill-graph-model.test.mjs`；完整受影响回归沿用原 graph、shared evidence 与 SDK Pi tests。`AH-617-20261105/c12-graph-native-witness-2m3838uv/red.log` 保留首轮与恢复轮两项归属缺失 RED；本切片仅修验证接线，不改变产品包、C/D 任务、评分、模型预算或旧 C10 失败，不作为真实模型成本通过证据。测试只回收本次明确 owned 的本地 fixture，并保留原日志与 Evidence→Cleanup→Evidence 回执。
 
+随后纯 `1f991217` harness／C12 产品的原 C 三轮实际技术3/3通过：六份provider均保留一次完整根41,537 B与Requires5,938 B，以及74个准确Default入口。每份50处重复描述的证明来源为首份50 native-custom、后五份各49 native-session加1 complete-generated-directory；仅观察既有实际正文，不向模型追加机器proof。完整wire 575,282 B，语义却因前两轮无依据的仓库能力断言而整体失败；新read的源6,837 B与provider `Already loaded.` 短确认分层记录。原样本、独立语义、成本及清理回执见[主消费地图](skill-consumption.md)，不得据技术通过关闭SC21或把不同后端标识的全链差额认作净收益。
+
 2026-11-06 的 D 命名介绍原件保留在 `AH-617-20261105/sc21-c7-d-early-n8f8g08y`。四次实际 ready provider 均含 74 项，旧 observer 的 10 项空归属分别来自 8 项漏解 `&quot;`、2 项描述末尾 LF 被正则删掉。`AH-617-20261105/sc26-catalog-decoding-12whs9s7` 保留原件 hash、逐项归因、7 个定向红例、修后 163 项既有回归，以及同四份 payload、已完成 SDK list 和当时分支短引用的离线重验：旧 observer 绑定 64 项，修后绑定全部 74 项，零新来源或模型请求。这是目录观察修复，原 D failed 报告、未提交续问和独立语义结论保持原样。
 
 ~~~bash

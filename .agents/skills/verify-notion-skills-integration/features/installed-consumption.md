@@ -246,6 +246,10 @@ Pro 的原 `http-directory` 与 `dollar` 各 n=1、0 retry。HTTP正常分支共
 
 普通 SDK `scenario()` 的共同正常EOF收尾使用相同 `initialCatalog` 条件，等待本host主source/database首次list start与terminal；不逐场景添加分支，不提前阻塞原provider，也不增加等待预算。所有普通场景都配置该主源，额外失败源仍按原预期核算；session-lifecycle／compaction已转入独立驱动，其明确shutdown-cancelled合同、异常catch和hostClosed drain不变。terminal可以记录失败或取消，后续原reconcile仍要求正常场景存在成功facet。复用 `node --test --test-name-pattern 'initial catalog|shutdown-only accounting' scripts/notion-sdk-pi.test.mjs` 及原完整161项；真实CI RED原样保留，不以纯测试替代安装态复验。
 
+修复提交 `967cca9e5efa5d4134b78315c1bd69cf15adc344` 的自然 [CI 42330430928](https://github.com/yoyooyooo/pi-context-broker/actions/runs/42330430928) 全部通过。12份原plan/report中，Pi1.5／Pi1.4各17个SDK场景通过，Pi1.5 HTTP3景／Pi1.4 HTTP1景通过；OMP/Tern及package dry run亦通过。同包tgz 1,390,981 B／SHA `d1d69e9c3d5ff07df2eceb0ecce02523468808be69b9e06b7b9fc0b4a19741a2` 完全等于Pro C12，不重建本地产品。两Pi的scoped-command均先completed paired full6／Default2，再quit；3 provider、1 SDK list、0 HTTP／正文。resumed在provider完成4.047289 ms后才开始初始list，修后full100／Default1成功再退出，实际8 metadata HTTP／79请求体B／92,087解码响应B全计入；0consume/read/body/cancel。旧取消的0HTTP不是有效低成本基线。
+
+原CI observer链及真实时序已独立核对，根 `AH-617-20261105/c12-ci-967cca9-a3pvol4b`：`handoff.json` SHA `4c372eddae1d9097436a3a117683c2a1bea8704eb09ef4c00b028c8fa600d070`，`validation.json` SHA `643be1e919c527d75497d3d6a9060c78ed16a7945878ae852c33d1819fc72704`。完整artifact 51,775,494 B与GitHub digest一致，52份相关原件另留；无workflow rerun。b289／1f991及更早失败原件保持。真实C继续使用不变的1f991模型harness，技术与语义分层结果见[主消费地图](skill-consumption.md)，不以本CI代替Mini或日用。
+
 ### 2026-11-06：CI 构建来源与当前消费内核对齐
 
 `ci.yml` 与 `publish.yml` 的 CLI checkout 同时固定为 `55e06bb3d6ec426b38aefdf8fed61e26ece0343d`。该提交包含 C8 产品源 `b5564ee`、现有 fixture 和 Records coverage 原件留存；继续由同一个 checkout 生成 fixture 并提供 `NTN_SKILLS_BUILD_ENTRY`。不使用分支名或另一个隐式 SDK 来源。

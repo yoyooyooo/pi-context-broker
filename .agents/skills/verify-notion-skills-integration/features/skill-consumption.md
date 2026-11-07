@@ -172,6 +172,29 @@ SDK 组合目录的一个 `list` operation 可包含 full catalog 与 Default Vi
 
 SC23 当前 C3 的管理入口为 `ctl operation list/show/reconcile/resume`，旧顶层 `operation` 继续作为同一 handler 的显式兼容入口；新 `next.argv` 使用 `ctl`，历史 receipt 的原始 bytes/hash 不改写。验收须核对候选自身 schema，维护原 operation ID、unknown 状态与旧调用者的明确兼容范围。此前 C1 不支持 `ctl operation` 的失败原件保留为迁移前证据，不能套用到 C3。旧包回滚仍需从该包支持的 `operation show` 获取下一步，不直接执行新包生成的 ctl argv。
 
+### 2026-11-07：C12 原 C 三轮的技术、成本与语义
+
+使用原 `--intent-case C-introduce`，产品为 `a9ba19e`／C12，模型 harness 为纯 Git `1f991217`；计划、三份提示、私有 oracle、评分及原预算保持。一次 doctor ready 后一次 run，三次提交、0 retry／fallback。初始介绍、同会话复用、明确再读均技术通过；原 manifest 仍为 `review_required`，独立语义整体不通过。前两轮把明确标为 paths-only 的项目文件名单升级成“只有单元测试／缺少 E2E”的肯定结论，没有项目正文读取支持；第三轮核心回答通过，保留局部事实校正。不能将此样本写为正式 SC21 通过。
+
+实际公开动作是初轮 read 目标主文与参考 README，续问零工具，再读轮一次 read。完整 41,537 B 根与 5,938 B Requires 在六份实际输入中各保留一份；目标 6,837 B 在选择后完整交付。明确再读取得新的完整源读取记录，但本次 provider 工具消息是 2,822 B 的 `Already loaded.` 加目录，原完整正文仍在历史中一份；源读取与模型是否重发全文分开计账。53 个未选 Member 正文读取、来源写入及 CLI 子进程均为零。
+
+| 完整实际尝试 | C10 历史（含失败） | C12 本次 |
+| --- | ---: | ---: |
+| 原提示提交 | 3 | 3 |
+| provider 请求／序列化请求体 B | 7／771,632 | 6／575,282 |
+| 来源 HTTP attempts／请求体 B | 53／6,121 | 50／5,884 |
+| 来源解码响应 B | 5,089,320 | 4,373,438 |
+| runner 总时间（n=1） | 73.765 s | 88.420 s |
+| 技术／独立语义 | failed／failed | passed／failed |
+
+首个 provider 尚未出现模型工具选择时，请求体 92,546→80,824 B；完整 Default XML 块 30,687→18,965 B，二者均少 11,722 B。74 个 canonical 身份、名称和准确入口不变。每份省去 50 处重复描述：首份为 50 个 native-custom Members 证明，后五份各为 49 个 native-session 加 1 个 complete-generated-directory；不是六份均靠同一种 receipt。六份 Default 累计 113,790 B、guidance 12,288 B、工具定义 18,570 B；这些组件与正文／历史有重叠，不与完整请求体相加。
+
+来源逐 receipt 对账确认少的恰为三页 list 库存：237 请求体 B、715,882 解码响应 B，其余 50 次请求的 operation/kind/target/status/bytes 多重集相同；consume 仍为 11 次正文请求／458,902 B。一次 paired SDK 交付 full298／Default74，请求与字节只记一次。事后私有审计另有 5 次 metadata／32,149 B，不混入 consumer。Pi 规范化 usage 为 input44,750／output3,133／cacheRead118,272／total166,155；原 provider usage body 未留，费用未知，cost0 不代表免费。
+
+选择器仍为 `magpie/group/flash`、thinking high，但实际 responseModel 从 C10 的 `deepseek-ai/DeepSeek-V4.1-Flash-1017` 变为 `deepseek-v4.1-flash`，别名／后端版本等价未知；工具路径、回答、请求数也不同。因此 196,350 B 总差额不是严格同后端全任务净收益，n=1 不支持稳定时延结论，旧静态 80,272 B 假设不计实测。未新跑 D、未补样本、未用成功技术路径覆盖内容失败。
+
+证据根 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/c12-c-cost-draft-0yg6dljt`：`run-handoff.json` SHA `b6ab774e94a57e0f5754523a77361a25f0c5c1067fe819d680872448a10bd9b6`；`run-diagnostics/wire-and-cost.json` SHA `e4548c40d7d3361516bade38b62eeea9335784ecffc0c2ca398351f35eb5a532`；独立语义 `semantic-review-records-decode-20261107.json` SHA `46d2fbffa284a0bc131accb29fbd4edd93cc9ea2c1b5d389ff566b3bbb480536`。原 E→系统 Trash→E 全0，50份原件及父manifest保持，owned进程已关闭；产品87／harness258／日用3哨兵及两仓原暂存内容保持。root核18交接引用、来源17原件与6份实际wire。Mini正常执行入口仍UNAVAILABLE；SC22／SC20／SC21／SC24不关闭，日用保持旧安装。
+
 ### Drive：既有受控宿主路径
 
 以下路径无需生产 Notion 或真实模型授权。它实际启动 Pi 和 Broker，驱动原生 read、显式选择、资源、失败与持久会话；source 与 provider 明确为受控 fixture。它不证明真实模型能力或新的低延迟目标。
