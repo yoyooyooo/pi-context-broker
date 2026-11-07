@@ -1492,7 +1492,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   if (options.prepareGraph) host.registerTool?.({
     name: useToolName, label: piConsumption ? "Use Notion Skills" : "Prepare Skills",
     description: piConsumption
-      ? "Load a Notion Skill and its Requires to apply its instructions to the user's task. To introduce, summarize or inspect a Skill, use read instead. Copy a supplied ref, or pass several refs together. Members remain candidates. Loading does not authorize executing a workflow."
+      ? "Apply a Notion Skill's method to task output, including plans, reviews, documents or code. Loads the root and complete Requires without executing workflow commands, even if the root was already read. To introduce, summarize or inspect the Skill itself, use read. Copy a supplied ref, or pass several refs together. Members remain candidates."
       : "Prepare exact Skill roots. Use purpose use to load complete root and Required instructions before executing a workflow; inspect reads only roots and does not activate their dependencies. Members and ordinary references remain directories.",
     parameters: piConsumption ? { type: "object", properties: {
       ref: { anyOf: [{ type: "string" }, { type: "array", minItems: 1, maxItems: 64, items: { type: "string" } }], description: "A supplied sr:C/sr:S or skill://<name-or-id>/<main> ref, or several refs needed together. Prefer returned canonical refs for later actions." },
