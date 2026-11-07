@@ -1222,7 +1222,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
           return JSON.stringify([card.source, target.identity, card.ref, card.name, card.description, card.availability]);
         } catch { return undefined; }
     };
-    const projected = projectCatalogDescriptions({ messages: event.messages,
+    // The context hook removes receipt-only messages. Reattach the current
+    // native receipts for validation, then omit these appended messages below.
+    const messages = withSessionSourceReceipts(event.messages, ctx.sessionManager?.buildSessionProjection?.().entries ?? []);
+    const projected = projectCatalogDescriptions({ messages,
       defaults: [...records, ...defaultRouters].flatMap(record => { const card = defaultCard(record); return card ? [card] : []; }),
       identify,
       matchesRead(ref, binding, identity) {
@@ -1245,7 +1248,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }).trimStart();
     const ownedPaths = new Set(readRecords.keys());
     const clean = (text: string) => withoutViewMetadata(text, ownedPaths, ctx.cwd);
-    return { messages: projected.messages.map((message, index) => {
+    return { messages: projected.messages.slice(0, event.messages.length).map((message, index) => {
       if (message.role !== "system") return message;
       const content = typeof message.content === "string" ? clean(message.content)
         : message.content?.map(part => part.type === "text" ? { ...part, text: clean(part.text) } : part);

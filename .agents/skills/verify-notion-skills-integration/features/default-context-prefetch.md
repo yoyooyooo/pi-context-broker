@@ -34,9 +34,12 @@ Source 的可选 `profile_id` 必须同时配置显式 `database`。默认目录
 | 进程重开续接 / fork 到旧分支 | 根据有效分支恢复选择，不拿进程内状态充当持久化 |
 | 两个活跃会话 | 切换互不串选；无 Profile 绑定的 fixture 未配置 View 时各自解析首项 |
 | 本地 Skill | 不是 Broker 所有的 metadata 仍保留 |
+| Pi `$` 的原生历史进入后续请求 | 当前有效分支的机器回执须与本次实际 user 正文摘要、完整 span、owner/scope/pin 对齐；完整正文内已有的精确 canonical Member 卡片可继续承载 Default 描述，名称与入口保留。机器回执仅用于验证，不进入 provider |
 | Pi compaction 后普通续问 | 先证明压缩移除了正文；当前分支成功交付的 active receipt 仍在。普通下一轮用原固定向量 `inspect` 恢复完整正文恰一次，View 不变，不新选版本；再显式 `$` 仍一份 |
 
 证据为 `*-view-provider.jsonl`、`*-view-rpc.json`、`*-view-result.json`、manifest 与自有进程退出回执。检查实际 provider 中的目录，不只检查配置对象或 UI 提示。
+
+原 `host-prepare.test.ts` 的 deferred dollar 回归必须串联已注册的 `context` → `context_with_system`：前者输出没有 receipt-only custom，后者从当前 `buildSessionProjection().entries` 关联验证回执。完整根与 Requires 的 user 字节保持，最终消息数不增加；正文缺失、摘要、截断或当前分支没有回执时恢复完整 Default 描述。不能先手工把 custom proof 塞回投影输入再声称事件接线已覆盖。C11 原 `c11-pi-o1juific/dollar` failed 及其 serializer 尚未执行的状态保留；本地事件链修复不替代独立安装 Pi、实际 provider serializer 或真实模型验收。
 
 partial 相位只扩原 `notion-integration-fixture.mjs` 的受控列表响应：普通完整库仍返回原三个成员，选定 View 返回原 `UI Alpha` 一个成员，缺失项以原 `UI Gamma` 的 ID 和 `NOT_FOUND` 标入 coverage。`source-cli-calls.jsonl` 的 `catalog-response` 保存实际 stdout 对象、原 argv 和时刻；与 provider 索引、当前分支 session 副本一起核对。Pi 从实际系统目录取得 `sr:C` 后，校验其既有 candidate 绑定的 owner/scope/locator；canonical 入口逐字匹配返回的主文 ref，OMP 仍核原 native 路径旁的 canonical ref。私有绑定只证明公开入口归属，不能代替模型实际看到目录。
 

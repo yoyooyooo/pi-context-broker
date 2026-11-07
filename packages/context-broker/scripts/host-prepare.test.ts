@@ -298,6 +298,49 @@ test("Pi dollar catalog reuse follows the actual restored body and rejects missi
   expect(f.resourceReads).toEqual([]);
 });
 
+test("Pi deferred dollar catalog keeps native session proof across context hooks without exposing it to the provider", async () => {
+  const f = await dollarCatalogFixture(), user: AgentMessage = { role: "user", content: "$root inspect member" };
+  const userEntry = { type: "message", id: "deferred-user", message: user };
+  const deferred = deferredSourceEntries([{ sourceEntry: userEntry, messages: [user] }], userEntry.id, [f.injected, f.requiredInjection]);
+  const edit = deferred?.entries[0], receipt = deferred?.entries[1];
+  if (edit?.type !== "context_edit" || !edit.replacement || receipt?.type !== "custom") throw new Error("Expected persisted native projection and machine receipt");
+  const restored: AgentMessage = { ...user, content: edit.replacement.content };
+  const followup: AgentMessage = { role: "user", content: "Continue using the selected instructions." };
+  const entries = [{ sourceEntry: userEntry, messages: [restored] },
+    { sourceEntry: { ...receipt, id: "deferred-receipt" }, messages: [] }];
+  if (!f.ctx.sessionManager) throw new Error("Expected native session manager");
+  f.ctx.sessionManager.buildSessionProjection = () => ({ entries, messages: [restored] });
+  const original = JSON.stringify({ entries, restored });
+  const project = async (messages: AgentMessage[]) => {
+    const results = await f.emit("context", { messages }, f.ctx);
+    const result = results.find(value => value && typeof value === "object" && "messages" in value && Array.isArray(value.messages));
+    if (!result || typeof result !== "object" || !("messages" in result) || !Array.isArray(result.messages)) throw new Error("Expected actual context hook result");
+    expect(result.messages).toEqual(messages);
+    expect(result.messages.some(message => message.role === "custom")).toBe(false);
+    const projected = await catalogProjection(f, [f.head, ...result.messages]);
+    expect(projected.messages).toHaveLength(messages.length + 1);
+    expect(projected.messages.slice(1)).toEqual(messages);
+    expect(JSON.stringify(projected.messages)).not.toContain("nativePromptSha256");
+    expect(JSON.stringify(projected.messages)).not.toContain("bodySha256");
+    return projected.catalog;
+  };
+  for (const messages of [[restored], [restored, followup]]) {
+    const catalog = await project(messages);
+    expect(catalog).not.toContain('<description>Controlled member');
+    expect(catalog).toContain('<description>Controlled root</description>');
+    expect(catalog).toContain('<description>Controlled required</description>');
+    expect(catalog.match(/<skill>/g)).toHaveLength(3);
+  }
+  for (const messages of [[followup], [{ ...restored, content: "Compacted summary." }],
+    [{ ...restored, content: sourceMessageText(restored.content).slice(0, -100) }]])
+    expect(await project(messages)).toContain('<description>Controlled member');
+  expect(JSON.stringify({ entries, restored })).toBe(original);
+  f.ctx.sessionManager.buildSessionProjection = () => ({ entries: [], messages: [restored] });
+  expect(await project([restored])).toContain('<description>Controlled member');
+  expect(f.calls).toEqual(["use"]);
+  expect(f.resourceReads).toEqual([]);
+});
+
 test("Pi dollar catalog reuse rejects foreign identities, fixed relations and changed canonical descriptions", async () => {
   const f = await dollarCatalogFixture();
   const mutations: Array<(record: SkillRecord) => void> = [
