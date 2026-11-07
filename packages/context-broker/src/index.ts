@@ -821,6 +821,7 @@ function hasCliGuidance(messages: AgentMessage[], guidance: Omit<AgentMessage, "
 function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit<AgentMessage, "role" | "timestamp"> {
   if (tools.has("notion_list") || tools.has("notion_use") || tools.has("notion_ctl")) {
     const read = tools.has("read"), list = tools.has("notion_list"), use = tools.has("notion_use");
+    const sources = (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false);
     const content = [
       "<ntn-skills-guidance>",
       "Notion directories contain candidates. Local Skills keep their native discovery and read paths. Reuse complete content already available for follow-up questions; still perform read or use explicitly requested by the user.",
@@ -830,6 +831,10 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
       ...(list ? ["Use notion_list to discover Notion Skills by name or description, including authorized entries outside the default View. Copy a returned ref; continue with next_cursor when needed. Partial coverage or a source failure is not an empty directory."] : []),
       ...(read ? ["Use read to inspect a main entry or a needed resource. Copy its sr:C, sr:S, sr:R or skill:// ref unchanged; never append a path to an sr: handle. Read a named supporting file through its matching resource ref, without listing cache directories. With a canonical skill:// main ref, preserve its owner and snapshot, replace only the logical file path, and do not reuse the main file_id for another file. Inspection does not load Requires or activate a workflow."] : []),
       ...(use ? ["Use notion_use with ref to apply a Skill's instructions: it loads that root and its complete Requires. Choosing a Skill to introduce or inspect uses read, even when another Skill is active. Ref may be an array for several Skills needed together. Members remain candidates until selected. Call notion_use directly, outside Code mode. Explicit refresh:true with unfixed refs changes the selection only after complete success."] : []),
+      ...(tools.has("bash") && (tools.has("notion_ctl") || tools.has("tool_search")) && sources.length ? [
+        "For requested Notion creation or content edits, use the advertised ntn-skills-maintain@builtin Skill; use ntn-skills-sync@builtin for source/Profile or sync changes.",
+        `${tools.has("notion_ctl") ? "Call notion_ctl" : "Find notion_ctl with tool_search, then call it"} with cli_source set to the intended source ID: ${JSON.stringify(sources.map(source => source.id))}. Use its returned command and database scope; never choose the first source implicitly or assume a global CLI. This lookup executes nothing.`,
+      ] : []),
       ...((!read || !list) && tools.has("bash") ? (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false).map(source => {
         const scope = hostCliScope([source]);
         return `Unavailable native operations can use this source's CLI: ${JSON.stringify({ source: source.id, command: scope.command, database: scope.database, operations: [...(!list ? ["list --query TEXT --json"] : []), ...(!read ? ["read REF --json"] : [])] })}. CLI refs must be canonical; session sr: handles belong to this Pi session.`;
@@ -1520,6 +1525,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
         notionRetryAt.delete(cwd);
       }
       sourceRuntime.forgetSources(sourceIds);
+      host.invalidateMetadata();
     },
   });
   const getDollarRegistry = async (cwd?: string) => (await getCatalog(cwd)).records;

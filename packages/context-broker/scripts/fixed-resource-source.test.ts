@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, realpath, stat, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -20,7 +20,7 @@ async function fixture(options: { proofVersion?: number | null; bytes?: Uint8Arr
   const proofVersion = options.proofVersion === undefined ? 1 : options.proofVersion;
   const sdkPath = join(root, "src/ntn-skills-sdk.mjs");
   await writeFile(sdkPath, `
-import { writeFile, symlink } from 'node:fs/promises';
+import { readFile, writeFile, symlink } from 'node:fs/promises';
 export const SDK_VERSION = 1, CONSUMER_CONTRACT_VERSION = 1, PACKAGE_VERSION = 'fixed-resource-fixture';
 ${proofVersion === null ? "" : `export const READ_OUTPUT_PROOF_VERSION = ${proofVersion};`}
 export const calls = [];
@@ -31,11 +31,22 @@ export function consume() { throw new Error('main preparation must not run'); }
 export function decodeConsumeResult() { throw new Error('main decoder must not run'); }
 export async function readSkill(target, options) {
   calls.push({ target, options });
+  if (state.failure) throw Object.assign(new Error(state.failure), { code: state.failure });
+  let reused = false;
   if (state.symlink) await symlink(state.symlink, options.output);
-  else await writeFile(options.output, state.bytes, { flag: 'wx', mode: 0o600 });
+  else {
+    try {
+      const existing = await readFile(options.output);
+      if (!existing.equals(state.bytes)) throw Object.assign(new Error('Existing output differs'), { code: 'OUTPUT_CONFLICT' });
+      reused = true;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      await writeFile(options.output, state.bytes, { flag: 'wx', mode: 0o600 });
+    }
+  }
   state.afterWrite?.();
   options.onRequestMetrics?.({ total_requests: 0, trace: [] });
-  return { ...state.response, output: options.output, reused: false, ...state.overrides };
+  return { ...state.response, output: options.output, reused, ...state.overrides };
 }
 `);
   await writeFile(join(root, "src/ntn-skills-runtime.json"), JSON.stringify({ version: 1, package: "ntn-skills", package_version: "fixed-resource-fixture",
@@ -57,7 +68,7 @@ export async function readSkill(target, options) {
     bytes: bytes.length, sha256: hash(bytes), entrypoint_sha256: hash("independent main commitment"),
     file_bindings: [{ file_id: "main", path: main, page_id: "00000000-0000-4000-8000-000000000001" },
       { file_id: "guide", path, page_id: "00000000-0000-4000-8000-000000000002" }] };
-  const state = { bytes, response, overrides: {} as Record<string, unknown>, afterWrite: undefined as (() => void) | undefined, symlink: undefined as string | undefined };
+  const state = { bytes, response, overrides: {} as Record<string, unknown>, afterWrite: undefined as (() => void) | undefined, symlink: undefined as string | undefined, failure: undefined as string | undefined };
   sdk.configure(state);
   const resourceRoot = join(source.cacheDir!, "scopes", scope, "records", hash(id), "resources", snapshot, "tree");
   const read = (fixedRef = ref, signal?: AbortSignal) => boundary.readFixedNotionResource(record, fixedRef, source, root, signal, "sdk");
@@ -75,7 +86,11 @@ test("one scalar output read publishes exact text with an independent owner comm
   expect(f.record.body).toBeUndefined(); expect(f.record.entryManifest).toBeUndefined();
   expect(await exists(join(f.resourceRoot, f.main))).toBe(false);
   expect(f.sdk.calls).toHaveLength(1); expect(f.sdk.calls[0]).toMatchObject({ target: f.ref, options: { offline: true } });
+  const before = (await readdir(f.source.cacheDir!, { recursive: true })).sort();
+  if (process.platform === "darwin") expect(await readdir(f.source.cacheDir!)).toEqual(["scopes"]);
   expect(await f.read()).toEqual(result);
+  expect(f.sdk.calls).toHaveLength(2);
+  expect((await readdir(f.source.cacheDir!, { recursive: true })).sort()).toEqual(before);
   await writeFile(result.file.output, "corrupt");
   await expect(f.read()).rejects.toMatchObject({ code: "SOURCE_OUTPUT_CONFLICT" });
 });
@@ -98,6 +113,24 @@ test("stable File IDs accept old path hints and main aliases retain the main rou
     sha256: hash(main.bytes), entrypoint_sha256: hash(main.bytes) };
   expect(await main.read(main.ref.replace("file_id=guide", "file_id=main"))).toBeUndefined();
   expect(main.sdk.calls).toHaveLength(1); expect(await exists(main.resourceRoot)).toBe(false);
+});
+
+test("warm scalar resource spellings reuse one verified output and still enforce SDK denials", async () => {
+  const f = await fixture(), first = await f.read(), before = (await readdir(f.source.cacheDir!, { recursive: true })).sort();
+  const former = f.ref.replace(f.path, "former/guide.md"), pathOnly = f.ref.replace("&file_id=guide", "");
+  expect((await f.read(former)).file.output).toBe(first.file.output);
+  expect((await f.read(pathOnly)).file.output).toBe(first.file.output);
+  expect(f.sdk.calls.slice(1).map((call: { options: { output: string } }) => call.options.output)).toEqual([first.file.output, first.file.output]);
+  expect((await readdir(f.source.cacheDir!, { recursive: true })).sort()).toEqual(before);
+  f.state.failure = "ACCESS_DENIED";
+  await expect(f.read()).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+  expect(f.sdk.calls).toHaveLength(4);
+  expect(await readFile(first.file.output)).toEqual(f.bytes);
+  expect((await readdir(f.source.cacheDir!, { recursive: true })).sort()).toEqual(before);
+  f.state.failure = undefined; f.state.overrides = { scope: hash("another account") };
+  await expect(f.read()).rejects.toMatchObject({ code: "SOURCE_IDENTITY_MISMATCH" });
+  expect(await readFile(first.file.output)).toEqual(f.bytes);
+  expect((await readdir(f.source.cacheDir!, { recursive: true })).sort()).toEqual(before);
 });
 
 test("older SDKs and custom transports fall back before reading or staging a resource", async () => {
@@ -133,13 +166,16 @@ test("corrupt or symlinked SDK output and cancellation never publish ready resou
   const corrupt = await fixture(); corrupt.state.bytes = Buffer.from("corrupt");
   await expect(corrupt.read()).rejects.toMatchObject({ code: "SOURCE_OUTPUT_CONFLICT" });
   expect(await exists(join(corrupt.resourceRoot, corrupt.path))).toBe(false);
+  if (process.platform === "darwin") expect((await readdir(corrupt.source.cacheDir!)).filter(name => name.startsWith(".resource-stage-"))).toEqual([]);
   const linked = await fixture(), target = join(linked.root, "foreign-output");
   await writeFile(target, linked.bytes); linked.state.symlink = target;
   await expect(linked.read()).rejects.toMatchObject({ code: "SOURCE_CACHE_UNSAFE" });
+  expect(await readFile(target)).toEqual(linked.bytes);
   const cancelled = await fixture(), controller = new AbortController();
   cancelled.state.afterWrite = () => controller.abort();
   await expect(cancelled.read(cancelled.ref, controller.signal)).rejects.toMatchObject({ code: "SOURCE_CANCELLED" });
   expect(await exists(cancelled.resourceRoot)).toBe(false);
+  if (process.platform === "darwin") expect(await readdir(cancelled.source.cacheDir!)).toEqual([]);
   const before = await fixture();
   await expect(before.read(before.ref, controller.signal)).rejects.toMatchObject({ code: "SOURCE_CANCELLED" });
   expect(before.sdk.calls).toHaveLength(0); expect(await exists(before.source.cacheDir!)).toBe(false);

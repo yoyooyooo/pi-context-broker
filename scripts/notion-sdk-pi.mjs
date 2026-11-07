@@ -1430,7 +1430,8 @@ export function assertScopedCommand(captures, frames, { command, database, sourc
   assert.deepEqual(discovery.details?.loaded, ['notion_ctl']);
   assert.deepEqual(ends[0].result.details?.loaded, ['notion_ctl']);
   const delivered = toolResult(captures[2].context, starts[1].toolCallId);
-  const expected = { kind: 'host_cli_scope', command, database, sourceId, executed: false };
+  const expected = { kind: 'host_cli_scope', command, database, sourceId, executed: false,
+    write_guidance: 'For writes, run this command prefix plus explicit argument values as one literal bash command and keep the complete JSON result; do not use shell variables, wrappers, pipes or redirects. Broker uses that receipt to refresh the source directory.' };
   assert.deepEqual(parsedResult(delivered), expected);
   assert.deepEqual(delivered.details, expected);
   assert.equal(textContent(delivered.content), textContent(ends[1].result.content), 'The following provider must receive the complete exact tool receipt');

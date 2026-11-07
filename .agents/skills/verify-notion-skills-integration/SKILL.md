@@ -105,6 +105,8 @@ node scripts/verify-notion-integration.mjs run --mode installed --package /absol
 
 跨项目/宿主共享目录使用 `node scripts/verify-notion-integration.mjs run --mode deterministic --shared-catalog true`，按[共享 Notion 缓存地图](features/session-cache-recovery.md#共享-notion-缓存)运行 Doctor、审阅 `shared-catalog-result.json` 和双宿主 provider/RPC，再执行原 evidence/cleanup。它验证等价远端选择的一份目录/导出、共享刷新、旧会话固定 A 与新会话共用 B；不访问真实 Notion、不证明原生菜单或真实模型。CLI identity 与 TTL/身份负例使用地图所列两仓回归入口。
 
+默认 SDK 的重复 metadata/index、固定资源 File ID/path、owned stage 与宿主原生投影复用使用同一地图的[缓存场景](features/session-cache-recovery.md#默认-sdk-重复使用与派生缓存复用)。按 source、installed、live 分层保存结果；最终 Pro 体验还须核对独立 CLI 与 Pi 内嵌 SDK 的实际 Core 根、scope、pin、HTTP/字节账本及实体数。相同内容重复使用稳定不代表跨版本历史已回收；本地复用不能省略来源权限或身份检查。
+
 并发 catalog/snapshot 发布与真实 Pi/OMP 首次正文使用本 Skill 的 [NS-SESSION-16～21](features/session-cache-recovery.md#并发发布与首次正文)。先运行 `node .agents/skills/verify-notion-skills-integration/scripts/verify-cache-concurrency.mjs doctor --mode storage`，再用 `run --mode storage --case catalog-order,snapshot-race` 保留 fail-before；修复后以同一命令取得 pass-after，并运行 `--case snapshot-mismatch` 及 `--case catalog-equal-time,catalog-clock-rollback`。实际双宿主另用 `doctor --mode hosts` 与 `run --mode hosts --case host-first-body`，必须先完成两个真实宿主 discovery，再并发首次 `$`。两种 mode 使用隔离的受控 source，不需要凭据；snapshot 允许重复 read/export，要求两个 load 的完整字节一致且 active cache 无 losing stage。Doctor/run 每次输出各自 evidence，使用该 runner 的 `evidence`、`cleanup`、再次 `evidence`，保留所有独立失败。地图给出完整命令、显式 gate、逐项证据与证明边界。
 
 

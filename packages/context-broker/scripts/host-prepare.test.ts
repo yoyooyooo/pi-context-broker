@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { installHostSkills, type HostSkills, type HostSkillOptions } from "../src/host-skills";
 import { createActivationFeedback } from "../src/activation-feedback";
 import { buildInjectedContextMessage } from "../src/index";
@@ -80,6 +80,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
     getBranch: () => session.entries, getSessionId: () => session.id, getSessionFile: () => join(directory, "controlled-session.jsonl"),
   } } : {}) };
   const calls: PreparationPurpose[] = [];
+  const metadataObservations: SkillRecord[][] = [];
   const persisted: SelectionMode[] = [];
   const sources: Array<{ id: string; type: "notion"; prefetch: false }> = [{ id: "controlled", type: "notion", prefetch: false }];
   const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
@@ -96,11 +97,12 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
       budget: { maxNodes: 64, maxDepth: 16, maxInstructionBytes: 1048576, maxContextBytes: 262144 },
       usage: { prepared_nodes: selected.length, instruction_bytes: selected.reduce((n, record) => n + Buffer.byteLength(record.body!), 0), context_bytes: 4000, max_depth: purpose === "use" ? 1 : 0 } };
   }
-  const install = async (prepareGraph: (purpose: PreparationPurpose, signal?: AbortSignal) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference">> = {}) => {
+  const install = async (prepareGraph: (purpose: PreparationPurpose, signal?: AbortSignal) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference" | "resolveNamedReference">> = {}) => {
     let host: HostSkills;
     host = await installHostSkills(api, {
       config: { sources },
       getRecords: async () => ({ records: records.map(record => ({ ...record, body: undefined, preparationBinding: undefined })), failures: [] }),
+      onMetadata: observed => { metadataObservations.push(observed); },
       ...discovery,
       loadRecord: async () => { throw new Error("Graph roots must use the CLI preparation bridge"); },
       loadResource: async (record, path, _ctx, signal) => materializeNotionEntryFile(record, path, ensure, async (file, output) => {
@@ -123,8 +125,252 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
     for (const listener of events.get(name) ?? []) results.push(await listener(value as never, ctx));
     return results;
   };
-  return { ctx, records, root: root!, required: required!, member: member!, graph, calls, persisted, install, emit, session, resourceText, resourceReads, api, sources };
+  return { ctx, records, root: root!, required: required!, member: member!, graph, calls, persisted, install, emit, session, resourceText, resourceReads, api, sources, metadataObservations };
 }
+
+test("metadata invalidation is lazy, joins concurrent readers and fences an older directory request", async () => {
+  const f = await fixture(true), older = Promise.withResolvers<Awaited<ReturnType<HostSkillOptions["getRecords"]>>>(),
+    newer = Promise.withResolvers<Awaited<ReturnType<HostSkillOptions["getRecords"]>>>();
+  let fetches = 0;
+  const signals: Array<AbortSignal | undefined> = [], contexts: Array<ExtensionContext | undefined> = [];
+  const { host, search } = await f.install(undefined, { getRecords: (ctx, signal) => {
+    fetches++; signals.push(signal); contexts.push(ctx);
+    return fetches === 1 ? Promise.resolve({ records: f.records, failures: [] }) : fetches === 2 ? older.promise : newer.promise;
+  } });
+  const count = (result: { content: MessageContent }) => JSON.parse(sourceMessageText(result.content)).count;
+  expect(count(await search.execute("initial", {}, undefined, undefined, f.ctx))).toBe(3);
+  host.invalidateMetadata();
+  expect(fetches).toBe(1);
+  const one = search.execute("old-one", {}, undefined, undefined, f.ctx);
+  const two = search.execute("old-two", {}, undefined, undefined, f.ctx);
+  expect(fetches).toBe(2);
+  expect(contexts[1]).toBe(f.ctx);
+  host.invalidateMetadata();
+  expect(signals[1]?.aborted).toBe(true);
+  const current = search.execute("newer", {}, undefined, undefined, f.ctx);
+  expect(fetches).toBe(3);
+  newer.resolve({ records: [], failures: [] });
+  expect(count(await current)).toBe(0);
+  older.resolve({ records: f.records, failures: [] });
+  expect((await Promise.all([one, two])).map(count)).toEqual([0, 0]);
+  expect(count(await search.execute("still-current", {}, undefined, undefined, f.ctx))).toBe(0);
+  expect(fetches).toBe(3);
+  expect(f.metadataObservations.at(-1)).toEqual([]);
+  expect(f.calls).toEqual([]);
+});
+
+test("metadata-only refresh preserves an accepted Pi preparation and its fixed read without restoring the current directory", async () => {
+  const f = await fixture(true), started = Promise.withResolvers<void>(), finishPreparation = Promise.withResolvers<void>();
+  let visible = true, preparationSignal: AbortSignal | undefined;
+  const { host, search } = await f.install(async (purpose, signal) => {
+    preparationSignal = signal; started.resolve(); await finishPreparation.promise; return [f.graph(purpose)];
+  }, {
+    getRecords: async () => ({ records: visible ? f.records : [], failures: [] }),
+  });
+  const user = { role: "user", content: "$root task" };
+  await f.emit("input", { source: "rpc", text: user.content }, f.ctx);
+  await f.emit("before_agent_start", { prompt: user.content, systemPrompt: "base" }, f.ctx);
+  await f.emit("agent_start", {}, f.ctx);
+  const preparing = f.emit("context", { messages: [user] }, f.ctx);
+  await started.promise;
+  expect(f.calls).toEqual(["use"]);
+  visible = false;
+  host.invalidateMetadata();
+  const list = async () => JSON.parse(sourceMessageText((await search.execute("current", {}, undefined, undefined, f.ctx)).content));
+  expect((await list()).count).toBe(0);
+  expect(preparationSignal?.aborted).toBe(false);
+  finishPreparation.resolve();
+  await preparing;
+  expect((await list()).count).toBe(0);
+  const fixed = host.selectedModelReference(f.root, f.ctx);
+  if (!fixed) throw new Error("Expected a fixed selected ref");
+  const read = await nativeRead(f, fixed, "accepted-fixed-after-metadata-write");
+  expect(sourceBodyLoaded([read], f.root)).toBe(true);
+  expect((await list()).count).toBe(0);
+  expect(f.calls).toEqual(["use"]);
+  await f.emit("context", { messages: [user] }, f.ctx);
+  await f.emit("before_provider_request", { type: "before_provider_request", payload: {} }, f.ctx);
+  await f.emit("after_provider_response", { type: "after_provider_response", status: 200, headers: {} }, f.ctx);
+  expect(f.persisted).toEqual(["extend"]);
+  expect(preparationSignal?.aborted).toBe(false);
+});
+
+test("a retained fixed read survives directory removal but still validates the source and never re-advertises its old owner", async () => {
+  const f = await fixture(true);
+  let visible = true, denied = false;
+  const { host, search, tool } = await f.install(async purpose => {
+    if (denied) throw Object.assign(new Error("Controlled source permission denied"), { code: "SOURCE_PERMISSION_DENIED" });
+    return [f.graph(purpose)];
+  }, { getRecords: async () => ({ records: visible ? f.records : [], failures: [] }) });
+  const used = JSON.parse(sourceMessageText((await tool.execute("select-before-write", { ref: f.root.ref }, undefined, undefined, f.ctx)).content));
+  const fixed = used.records[0].ref;
+  visible = false;
+  host.invalidateMetadata();
+  const list = async () => JSON.parse(sourceMessageText((await search.execute("current", {}, undefined, undefined, f.ctx)).content));
+  expect((await list()).count).toBe(0);
+  const before = f.calls.length;
+  const read = await nativeRead(f, fixed, "retained-after-metadata-write");
+  expect(sourceBodyLoaded([read], f.root)).toBe(true);
+  expect(f.calls).toHaveLength(before + 1);
+  expect((await list()).count).toBe(0);
+  await tool.execute("reuse-fixed-graph", { ref: fixed }, undefined, undefined, f.ctx);
+  expect((await list()).count).toBe(0);
+  for (const path of [f.root.ref!, f.root.preparationBinding!.ref.replace(f.root.snapshotId!, "s_" + "f".repeat(64))]) {
+    expect(await f.emit("tool_call", { toolName: "read", toolCallId: "unavailable-current-or-pin", input: { path } }, f.ctx))
+      .toContainEqual(expect.objectContaining({ block: true }));
+  }
+  denied = true;
+  const deniedInput = { path: fixed };
+  expect(await f.emit("tool_call", { toolName: "read", toolCallId: "retained-source-denied", input: deniedInput }, f.ctx))
+    .toContainEqual(expect.objectContaining({ block: true, reason: expect.stringMatching(/SOURCE_PERMISSION_DENIED/) }));
+  expect(deniedInput.path).toBe(fixed);
+  expect((await list()).count).toBe(0);
+});
+
+test.each(["named", "exact"])("a late %s metadata lookup cannot republish an owner after directory invalidation", async route => {
+  const f = await fixture(true), started = Promise.withResolvers<void>(), finish = Promise.withResolvers<void>();
+  const { host, search } = await f.install(undefined, {
+    getRecords: async () => ({ records: [], failures: [] }),
+    lookupReference: async () => { started.resolve(); await finish.promise; return { records: f.records, failures: [] }; },
+    resolveNamedReference: async () => { started.resolve(); await finish.promise; return { record: f.root, ref: f.root.ref! }; },
+  });
+  const input = { path: route === "named" ? "skill://root/SKILL.md" : f.root.ref! };
+  const lookup = f.emit("tool_call", { toolName: "read", toolCallId: "late-lookup", input }, f.ctx);
+  await started.promise;
+  host.invalidateMetadata();
+  const list = async () => JSON.parse(sourceMessageText((await search.execute("current", {}, undefined, undefined, f.ctx)).content));
+  expect((await list()).count).toBe(0);
+  finish.resolve();
+  expect(await lookup).toContainEqual(expect.objectContaining({ block: true, reason: expect.stringMatching(/SOURCE_ACTIVATION_CANCELLED/) }));
+  expect((await list()).count).toBe(0);
+  expect(f.calls).toEqual([]);
+});
+
+test("repeated host metadata refresh and activation reuse native projections across session switches", async () => {
+  const f = await fixture(true);
+  let observations = 0, denied = false;
+  const { host, search, tool } = await f.install(undefined, { getRecords: async () => {
+    observations++;
+    return { records: f.records.map(record => ({ ...record, body: undefined, preparationBinding: undefined, defaultDiscovery: true })),
+      failures: denied ? [{ sourceId: "controlled", namespace: "controlled", type: "notion" as const, code: "ACCESS_DENIED", message: "Denied after native publication" }] : [] };
+  } });
+  await search.execute("initial-directory", {}, undefined, undefined, f.ctx);
+  const paths = f.metadataObservations.at(-1)!.map(record => record.metadataIndexPath!);
+  const root = dirname(dirname(dirname(dirname(paths[0]!))));
+  await host.prepareMany([f.root], f.ctx);
+  const published = await realpath(dirname(paths[0]!));
+  const entities = (await readdir(root, { recursive: true })).sort();
+  for (let index = 0; index < 4; index++) {
+    await host.refresh(f.ctx);
+    expect(f.metadataObservations.at(-1)!.map(record => record.metadataIndexPath!)).toEqual(paths);
+    await host.prepareMany([f.root], f.ctx);
+    expect(await realpath(dirname(paths[0]!))).toBe(published);
+    expect((await readdir(root, { recursive: true })).sort()).toEqual(entities);
+  }
+  f.session.id = "next-session";
+  await f.emit("session_switch", { type: "session_switch" }, f.ctx);
+  await search.execute("next-directory", {}, undefined, undefined, f.ctx);
+  await host.prepareMany([f.root], f.ctx);
+  expect(f.metadataObservations.at(-1)!.map(record => record.metadataIndexPath!)).toEqual(paths);
+  expect((await readdir(root, { recursive: true })).sort()).toEqual(entities);
+  expect(observations).toBe(6);
+  expect(f.calls).toEqual(Array(6).fill("use"));
+  expect(await readFile(f.root.path, "utf8")).toBe(f.root.body);
+  denied = true;
+  await host.refresh(f.ctx);
+  await expect(tool.execute("denied-use", { ref: f.root.ref }, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+  expect(f.calls).toHaveLength(6);
+  expect((await readdir(root, { recursive: true })).sort()).toEqual(entities);
+  denied = false;
+  await writeFile(paths[0]!, "Corrupt native projection");
+  await host.refresh(f.ctx);
+  await expect(search.execute("corrupt-directory", {}, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "SOURCE_INDEX_CONFLICT" });
+  expect(await readFile(f.root.path, "utf8")).toBe(f.root.body);
+  expect(f.calls).toHaveLength(6);
+  await f.emit("session_shutdown", { type: "session_shutdown" }, f.ctx);
+});
+
+test("host metadata reuse isolates owners and changed descriptions while retaining earlier views", async () => {
+  const f = await fixture(true);
+  const { host, search } = await f.install(undefined, { getRecords: async () => ({ records: f.records.map(record => ({
+    ...record, body: undefined, preparationBinding: undefined, defaultDiscovery: true,
+  })), failures: [] }) });
+  await search.execute("before-metadata-change", {}, undefined, undefined, f.ctx);
+  const initial = f.metadataObservations.at(-1)!.map(record => record.metadataIndexPath!);
+  f.member.description = "Changed authoritative description";
+  await host.refresh(f.ctx);
+  const changed = f.metadataObservations.at(-1)!.map(record => record.metadataIndexPath!);
+  expect(changed.slice(0, 2)).toEqual(initial.slice(0, 2));
+  expect(changed[2]).not.toBe(initial[2]);
+  expect(await readFile(initial[2]!, "utf8")).toContain("Controlled member");
+  expect(await readFile(changed[2]!, "utf8")).toContain("Changed authoritative description");
+  f.member.sourceScope = "b".repeat(64);
+  await host.refresh(f.ctx);
+  expect(f.metadataObservations.at(-1)![2]!.metadataIndexPath).not.toBe(changed[2]);
+  expect(f.calls).toEqual([]);
+  await f.emit("session_shutdown", { type: "session_shutdown" }, f.ctx);
+});
+
+test.skipIf(process.platform === "win32")("native directory creation can recover after its temporary root becomes available", async () => {
+  const f = await fixture(true), blocked = join(f.ctx.cwd!, "blocked-temp");
+  await writeFile(blocked, "An ordinary file cannot contain a temporary directory.");
+  const previous = process.env.TMPDIR;
+  let installed: Awaited<ReturnType<typeof f.install>>;
+  try {
+    process.env.TMPDIR = blocked;
+    installed = await f.install(undefined, { getRecords: async () => ({ records: f.records.map(record => ({
+      ...record, body: undefined, preparationBinding: undefined, defaultDiscovery: true,
+    })), failures: [] }) });
+    await expect(installed.search.execute("blocked-directory", {}, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "ENOTDIR" });
+  } finally {
+    if (previous === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = previous;
+  }
+  await installed.host.refresh(f.ctx);
+  const listed = await installed.search.execute("recovered-directory", {}, undefined, undefined, f.ctx);
+  expect(listed.isError).not.toBe(true);
+  expect(f.metadataObservations.at(-1)).toHaveLength(3);
+  expect(f.calls).toEqual([]);
+  await f.emit("session_shutdown", { type: "session_shutdown" }, f.ctx);
+});
+
+test("native alias version changes retain both snapshots and reuse an earlier publication", async () => {
+  const f = await fixture(true), nextSnapshot = "s_" + hash("root next version"), body = f.root.body + "\nA new verified version.\n";
+  const pin = (ref: string) => ref.replace(f.root.snapshotId!, nextSnapshot);
+  const files = f.root.preparationDirectory!.files.map(file => ({ ...file, ref: pin(file.ref),
+    ...(file.path === "SKILL.md" ? { bytes: Buffer.byteLength(body), sha256: hash(body) } : {}) }));
+  const next = await publishNotionEntry({ ...f.root, body, snapshotId: nextSnapshot, versionId: hash(body),
+    preparationBinding: { ...f.root.preparationBinding!, snapshot_id: nextSnapshot, version_id: hash(body), body_sha256: hash(body), ref: pin(f.root.preparationBinding!.ref) },
+    preparationDirectory: { ...f.root.preparationDirectory!, files } }, files, join(f.ctx.cwd!, "next-version"), async path => { await mkdir(path, { recursive: true }); });
+  let selected = f.root;
+  const { host, search } = await f.install(async purpose => {
+    const graph = f.graph(purpose), records = graph.records.map(record => record.id === f.root.id ? selected : record), bindings = records.map(record => record.preparationBinding!);
+    const vector = { version: graph.lock.version, kind: graph.lock.kind, purpose, scope: graph.scope, roots: graph.roots, required: graph.lock.required, bindings };
+    return [{ ...graph, records, bindings, lock: { ...vector, sha256: hash(canonical(vector)) } }];
+  }, { getRecords: async () => ({ records: f.records.map(record => ({ ...record, body: undefined, preparationBinding: undefined, defaultDiscovery: true })), failures: [] }) });
+  await search.execute("version-directory", {}, undefined, undefined, f.ctx);
+  const index = f.metadataObservations.at(-1)![0]!.metadataIndexPath!;
+  await host.prepareMany([f.root], f.ctx);
+  const first = await realpath(dirname(index));
+  selected = next;
+  await host.refresh(f.ctx);
+  await host.prepareMany([f.root], f.ctx);
+  const second = await realpath(dirname(index));
+  expect(second).not.toBe(first);
+  expect(await readFile(join(first, "SKILL.md"), "utf8")).toContain("Exact root <instructions>");
+  expect(await readFile(join(second, "SKILL.md"), "utf8")).toContain("A new verified version.");
+  const publications = (await readdir(dirname(first))).sort();
+  selected = f.root;
+  await host.refresh(f.ctx);
+  await host.prepareMany([f.root], f.ctx);
+  expect(await realpath(dirname(index))).toBe(first);
+  expect((await readdir(dirname(first))).sort()).toEqual(publications);
+  expect(await readFile(join(second, "SKILL.md"), "utf8")).toContain("A new verified version.");
+  expect(await readFile(f.root.path, "utf8")).toBe(f.root.body);
+  expect(await readFile(next.path, "utf8")).toBe(body);
+  expect(f.calls).toEqual(["use", "use", "use"]);
+  await f.emit("session_shutdown", { type: "session_shutdown" }, f.ctx);
+});
 
 test("Pi projects the ready default catalog after explicit preparation, not the earlier pending observation", async () => {
   const f = await fixture(true), metadata = Promise.withResolvers<Awaited<ReturnType<HostSkillOptions["getRecords"]>>>();
@@ -754,7 +1000,7 @@ test("repeated native prepare bodies deduplicate only the provider projection an
 async function nativeRead(f: Awaited<ReturnType<typeof fixture>>, reference: string, toolCallId: string): Promise<AgentMessage> {
   const input = { path: reference };
   const admission = await f.emit("tool_call", { toolName: "read", toolCallId, input }, f.ctx);
-  expect(admission.some(value => value && typeof value === "object" && "block" in value)).toBe(false);
+  expect(admission.find(value => value && typeof value === "object" && "block" in value)).toBeUndefined();
   const content = [{ type: "text" as const, text: await readFile(input.path, "utf8") }];
   const outputs = await f.emit("tool_result", { toolName: "read", toolCallId, input, content, isError: false }, f.ctx);
   const annotated = outputs.find((value): value is { content?: MessageContent; details: unknown } => Boolean(value) && typeof value === "object" && value !== null && "details" in value);

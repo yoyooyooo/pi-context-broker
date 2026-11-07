@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { decodeCliWriteOutput, installCliWriteInvalidation } from "../src/cli-write-invalidation";
+import { hostCliScope } from "../src/host-command";
 import contextBroker from "../src/index";
-import type { AutocompleteProvider, ExtensionAPI, ExtensionContext, SkillRecord, SourceConfig } from "../src/types";
+import { sharedSkillId } from "../src/shared-skill-identity";
+import type { AutocompleteProvider, ExtensionAPI, ExtensionContext, NativeSkillSearchDefinition, SkillRecord, SourceConfig } from "../src/types";
 
 type Listener = (event: never, ctx: ExtensionContext) => unknown;
 const db = "22222222-2222-4222-8222-222222222222", otherDb = "22222222-2222-4222-8222-222222222223";
@@ -201,6 +203,90 @@ for (const [label, cmd, value] of migratedCalls) {
 assert.deepEqual(migratedChanges, migratedCalls.map(([label, _cmd, _value, expected]) => [label, expected]),
   "New ctl callers and replace refresh the exact source only after verified changes; unknown and read-only outcomes remain inert");
 
+// Reproduce the installed Pi author command: one literal cd, relative bundled entry, full Enabled receipt.
+const cdRoot = await mkdtemp(join(tmpdir(), "broker-cd && invalidation-"));
+const bundledSource: SourceConfig = { type: "notion", id: "bundled", database: db };
+const bundledPrefix = hostCliScope([bundledSource]).command;
+const packageRoot = dirname(dirname(bundledPrefix[1]!));
+await mkdir(join(cdRoot, "node_modules"));
+await symlink(packageRoot, join(cdRoot, "node_modules", "pi-context-broker"));
+await symlink(cdRoot, join(cdRoot, "cwd-alias"));
+await writeFile(join(cdRoot, "other-entry.mjs"), "throw new Error('Not the bundled CLI');\n");
+await symlink(join(cdRoot, "other-entry.mjs"), join(cdRoot, "wrong-entry.mjs"));
+const relativeEntry = join("node_modules", "pi-context-broker", relative(packageRoot, bundledPrefix[1]!));
+const cdSources: SourceConfig[] = [
+  bundledSource,
+  { ...bundledSource, id: "bundled-other", database: otherDb },
+  { ...bundledSource, id: "custom", command: bundledPrefix },
+  { ...bundledSource, id: "custom-relative", command: [bundledPrefix[0]!, relativeEntry, "--profile", "../profile"] },
+];
+const cdListeners = new Map<string, Listener[]>(), cdChanges: string[][] = [];
+const cdApi: ExtensionAPI = { on(name, handler) { cdListeners.set(name, [...(cdListeners.get(name) ?? []), handler as unknown as Listener]); } };
+installCliWriteInvalidation(cdApi, {
+  sources: cdSources,
+  records: () => cdSources.map(source => ({ sourceId: source.id, sourceScope: auth, locator } as SkillRecord)),
+  changed: ids => cdChanges.push(ids),
+});
+const stableId = sharedSkillId("cd-library", "toggle");
+const enabledReceipt = (enabled: boolean) => ({
+  ok: true, verified: true, status: "applied", operation: "update", action: "updated", scope: auth,
+  operation_id: `metadata-write-${"e".repeat(64)}`, metadata_operation_id: `metadata-write-${"e".repeat(64)}`, changed_fields: ["Enabled"],
+  record: { id: stableId, kind: "skill", enabled, entrypoint: "SKILL.md", ref: `skill://${encodeURIComponent(stableId)}/SKILL.md`,
+    locator: { ...locator, type: "shared_skill", library_id: "cd-library", skill_id: "toggle" } },
+});
+const literal = (argv: string[]) => argv.map(quote).join(" ");
+const enabledArgs = (enabled: boolean) => ["update", page, "--database", db, "--enabled", String(enabled)];
+const cdCommand = (cwd = cdRoot, entry = relativeEntry, enabled = false, extra: string[] = []) =>
+  `cd ${quote(cwd)} && ${literal([bundledPrefix[0]!, entry, ...enabledArgs(enabled), ...extra])}`;
+async function cdResult(command: string, value: unknown = enabledReceipt(false), isError = false) {
+  const toolCallId = "cd-call-" + nextId++;
+  for (const handler of cdListeners.get("tool_call") ?? []) await handler({ toolName: "bash", toolCallId, input: { command } } as never, ctx);
+  for (const handler of cdListeners.get("tool_result") ?? []) await handler({ toolName: "bash", toolCallId, input: {},
+    content: typeof value === "string" ? value : JSON.stringify(value), isError } as never, ctx);
+}
+for (const enabled of [false, true]) {
+  await cdResult(cdCommand(cdRoot, relativeEntry, enabled), enabledReceipt(enabled));
+  assert.deepEqual(cdChanges.splice(0), [["bundled"]], "A verified Enabled change after literal cd refreshes only the default bundled source");
+}
+for (const cmd of [
+  cdCommand(join(cdRoot, "cwd-alias")),
+  cdCommand(cdRoot, bundledPrefix[1]!),
+  cdCommand(cdRoot, relativeEntry, false, ["--description", "literal && text", "--input", "../draft.md"]),
+]) {
+  await cdResult(cmd);
+  assert.deepEqual(cdChanges.splice(0), [["bundled"]], "Quoted operators and business argument paths do not change command ownership");
+}
+const relativeInvocation = literal([bundledPrefix[0]!, relativeEntry, ...enabledArgs(false)]);
+const customInvocation = literal([bundledPrefix[0]!, relativeEntry, "--profile", "../profile", ...enabledArgs(false)]);
+for (const cmd of [
+  cdCommand() + " && echo done", cdCommand() + " | cat", cdCommand() + " > result.json",
+  `cd ${quote(cdRoot)}; ${relativeInvocation}`, `cd ${quote(cdRoot)} && cd ${quote(cdRoot)} && ${relativeInvocation}`,
+  `cd ${quote(cdRoot)} && env ${relativeInvocation}`, `cd ${quote(cdRoot)} && ${quote(bundledPrefix[0]!)} --no-warnings ${quote(relativeEntry)} ${literal(enabledArgs(false))}`,
+  `cd relative && ${relativeInvocation}`, `cd "$HOME" && ${relativeInvocation}`, `cd -- ${quote(cdRoot)} && ${relativeInvocation}`,
+  cdCommand(join(cdRoot, "missing")), cdCommand(join(cdRoot, "other-entry.mjs")), cdCommand(cdRoot + "/node_modules/.."),
+  cdCommand(cdRoot, "node_modules/pi-context-broker/dist/../" + relative(packageRoot, bundledPrefix[1]!)),
+  cdCommand(cdRoot, "wrong-entry.mjs"), `cd ${quote(cdRoot)} && /other/node ${quote(relativeEntry)} ${literal(enabledArgs(false))}`,
+  `cd ${quote(cdRoot)} '&&' ${relativeInvocation}`, `cd ${quote(cdRoot)} \\&\\& ${relativeInvocation}`, `cd ${quote(cdRoot)} &&`,
+  `cd ${quote(cdRoot)} && ${customInvocation}`,
+]) {
+  await cdResult(cmd);
+  assert.deepEqual(cdChanges.splice(0), [], `Only one bounded bundled invocation owns its receipt: ${cmd}`);
+}
+for (const value of [
+  { ...enabledReceipt(false), verified: false }, { ...enabledReceipt(false), scope: "f".repeat(64) },
+  { ...enabledReceipt(false), changed_fields: [] }, { ...enabledReceipt(false), record: { locator } },
+  '{"ok":true,"verified":true',
+]) {
+  await cdResult(cdCommand(), value);
+  assert.deepEqual(cdChanges.splice(0), [], "Leading cd still requires a complete verified same-scope shared receipt");
+}
+await cdResult(cdCommand(), enabledReceipt(false), true);
+assert.deepEqual(cdChanges.splice(0), []);
+await cdResult(literal([...bundledPrefix, ...enabledArgs(false)]));
+assert.deepEqual(cdChanges.splice(0), [["bundled", "custom"]], "Existing literal configured prefixes remain exact matches");
+await cdResult(customInvocation);
+assert.deepEqual(cdChanges.splice(0), [["custom-relative"]], "An explicit custom prefix keeps its original direct invocation semantics");
+
 // Exercise the real directory owner and its on-disk cache, not just receipt classification.
 const root = await mkdtemp(join(tmpdir(), "broker-write-invalidation-"));
 const previous = { ...process.env };
@@ -212,7 +298,7 @@ try {
 const [state,log,...args]=process.argv.slice(2); await appendFile(log,JSON.stringify(args)+'\\n');
 const database=args[args.indexOf('--database')+1], alias=JSON.parse(await readFile(state,'utf8'))[database];
 if(args[0]==='ctl')console.log(JSON.stringify({ok:true,identity:database.replaceAll('-','').padEnd(64,'0'),catalog_max_age_ms:3600000}));
-else if(args[0]==='list')console.log(JSON.stringify({ok:true,scope:'${auth}',fetched_at:Date.now(),records:[{id:'notion_page:${page}',kind:'skill',name:alias,alias,description:'verified metadata',default_context:false,entrypoint:'SKILL.md',locator:{type:'notion_page',page_id:'${page}',database_id:database,data_source_id:'${ds}'},ref:'skill://${page}/SKILL.md'}],count:1,databases:[{database_id:database,title:'Fixture',alias:'fixture',data_source_ids:['${ds}']}],coverage:{method:'explicit_database',exhaustive:true,search_index_limited:false,queried_data_sources:['${ds}'],failed_sources:[]},freshness:{policy:args.includes('--refresh')?'refresh':'default',validated_at:new Date().toISOString(),age_ms:0,max_age_ms:3600000,stale:false}}));
+else if(args[0]==='list')console.log(JSON.stringify({ok:true,scope:'${auth}',fetched_at:Date.now(),records:alias?[{id:'notion_page:${page}',kind:'skill',name:alias,alias,description:'verified metadata',default_context:false,entrypoint:'SKILL.md',locator:{type:'notion_page',page_id:'${page}',database_id:database,data_source_id:'${ds}'},ref:'skill://${page}/SKILL.md'}]:[],count:alias?1:0,databases:[{database_id:database,title:'Fixture',alias:'fixture',data_source_ids:['${ds}']}],coverage:{method:'explicit_database',exhaustive:true,search_index_limited:false,queried_data_sources:['${ds}'],failed_sources:[]},freshness:{policy:args.includes('--refresh')?'refresh':'default',validated_at:new Date().toISOString(),age_ms:0,max_age_ms:3600000,stale:false}}));
 else throw Error('Unexpected command');
 `);
   const runtimePrefix = [process.execPath, fixture, state, log];
@@ -229,9 +315,11 @@ else throw Error('Unexpected command');
   delete process.env.CONTEXT_BROKER_ROOTS;
   const events = new Map<string, Listener[]>();
   let provider: AutocompleteProvider | undefined;
+  let search: NativeSkillSearchDefinition | undefined;
   const current: AutocompleteProvider = { getSuggestions: async () => null, applyCompletion: () => { throw Error("Unexpected native completion"); } };
   const runtimeContext: ExtensionContext = { cwd: root, mode: "rpc", hasUI: false, sessionManager: { getSessionId: () => "catalog-session", getEntries: () => [] }, ui: { addAutocompleteProvider(factory) { provider = factory(current); } } };
-  const runtimeApi: ExtensionAPI = { pi: {}, on(name, handler) { events.set(name, [...(events.get(name) ?? []), handler as unknown as Listener]); }, registerCommand() {} };
+  const runtimeApi: ExtensionAPI = { on(name, handler) { events.set(name, [...(events.get(name) ?? []), handler as unknown as Listener]); }, registerCommand() {},
+    registerTool(tool) { if (tool.name === "notion_list") search = tool; } };
   const dispatch = async (name: string, event: unknown) => { for (const listener of events.get(name) ?? []) await listener(event as never, runtimeContext); };
   await contextBroker(runtimeApi);
   await dispatch("session_start", { type: "session_start" });
@@ -240,6 +328,14 @@ else throw Error('Unexpected command');
   const fullCatalogCalls = async () => (await readFile(log, "utf8")).trim().split("\n").map(line => JSON.parse(line) as string[])
     .filter(args => args[0] === "list" && !args.includes("--default-view") && !args.includes("--view"));
   assert.ok((await selections()).includes("$before-write@notion"));
+  const listedNames = async () => {
+    assert.ok(search, "The actual Pi notion_list tool is registered");
+    const result = await search.execute("inspect-current-directory", {}, undefined, undefined, runtimeContext);
+    const content = result.content;
+    const text = typeof content === "string" ? content : content.filter(part => part.type === "text").map(part => part.text).join("\n");
+    return JSON.parse(text).records.map((record: { name: string }) => record.name) as string[];
+  };
+  assert.ok((await listedNames()).includes("before-write"));
   const callsBefore = await fullCatalogCalls();
   await writeFile(state, JSON.stringify({ [db]: "after-write", [otherDb]: "untouched" }));
   await dispatch("tool_call", { toolName: "bash", toolCallId: "write", input: { command: [...runtimePrefix, "replace", "s_baseline", "--database", db].map(quote).join(" ") } });
@@ -252,6 +348,7 @@ else throw Error('Unexpected command');
   assert.equal(callsAfter.length, 1, "An unrelated source reuses its existing directory cache");
   assert.ok(callsAfter[0]!.includes(db));
   assert.ok(callsAfter[0]!.includes("--refresh"), "A verified write bypasses the affected source's stale disk directory");
+  assert.ok((await listedNames()).includes("after-write"), "The model-facing notion_list shares the verified-write catalog generation");
   const beforeResume = await fullCatalogCalls();
   await writeFile(state, JSON.stringify({ [db]: "after-recovery", [otherDb]: "untouched" }));
   await dispatch("tool_call", { toolName: "bash", toolCallId: "resume", input: { command: [...runtimePrefix, "ctl", "operation", "resume", publication].map(quote).join(" ") } });
@@ -263,6 +360,20 @@ else throw Error('Unexpected command');
   const resumedCalls = (await fullCatalogCalls()).slice(beforeResume.length);
   assert.equal(resumedCalls.length, 2, "Recovery without source scope conservatively rereads this CLI's configured sources");
   assert.ok(resumedCalls.every(args => args.includes("--refresh")));
+  for (const enabled of [false, true]) {
+    const before = await fullCatalogCalls();
+    await writeFile(state, JSON.stringify({ [db]: enabled ? "after-recovery" : null, [otherDb]: "untouched" }));
+    const toolCallId = `enabled-${enabled}`;
+    await dispatch("tool_call", { toolName: "bash", toolCallId, input: { command: [...runtimePrefix, ...enabledArgs(enabled)].map(quote).join(" ") } });
+    await dispatch("tool_result", { toolName: "bash", toolCallId, input: {}, content: JSON.stringify(enabledReceipt(enabled)), isError: false });
+    const names = await listedNames();
+    assert.equal(names.includes("after-recovery"), enabled, "The next notion_list observes disable and re-enable without a manual refresh");
+    assert.ok(names.includes("untouched"));
+    const fetched = (await fullCatalogCalls()).slice(before.length);
+    assert.equal(fetched.length, 1, "Only the written source acquires a fresh metadata directory");
+    assert.ok(fetched[0]!.includes(db));
+    assert.ok(fetched[0]!.includes("--refresh"));
+  }
   await dispatch("session_shutdown", { type: "session_shutdown" });
 } finally {
   process.chdir(previousCwd);

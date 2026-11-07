@@ -1,3 +1,5 @@
+import { realpathSync, statSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
 import { hostCliScope } from "./host-command";
 import { sharedSkillId } from "./shared-skill-identity";
 import type { ExtensionAPI, ExtensionContext, MessageContent, SkillRecord, SourceConfig } from "./types";
@@ -11,10 +13,11 @@ const object = (value: unknown): Record<string, unknown> => value !== null && ty
 const uuid = (value: unknown): string | undefined => typeof value === "string" && /^(?:[a-f\d]{32}|[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12})$/i.test(value) ? value.replaceAll("-", "").toLowerCase() : undefined;
 const scope = (value: unknown): string | undefined => typeof value === "string" && /^[a-f\d]{64}$/.test(value) ? value : undefined;
 
-/** Decode one literal shell argv. Compound commands and expansions have no single CLI receipt owner. */
-function literalArgv(command: string): string[] | undefined {
+/** Decode one literal argv, optionally after one absolute cd. Other compound shell forms have no single receipt owner. */
+function literalCommand(command: string): { argv: string[]; cwd?: string } | undefined {
   command = command.trim();
   const result: string[] = [];
+  let cwd: string | undefined;
   let word = "", started = false, quote: "'" | '"' | undefined;
   for (let index = 0; index < command.length; index++) {
     const char = command[index]!;
@@ -36,21 +39,36 @@ function literalArgv(command: string): string[] | undefined {
     else if (char === "\n" || char === "\r") return undefined;
     else if (/\s/.test(char)) {
       if (started) { result.push(word); word = ""; started = false; }
+    } else if (char === "&" && command[index + 1] === "&" && cwd === undefined) {
+      if (started) result.push(word);
+      if (result.length !== 2 || result[0] !== "cd" || !isAbsolute(result[1]!) || result[1]!.split(/[\\/]/).includes("..")) return undefined;
+      cwd = result[1];
+      result.length = 0;
+      word = ""; started = false; index++;
     } else if (/[;&|<>(){}*?\[~]/.test(char) || char === "#" && !started) return undefined;
     else { word += char; started = true; }
   }
   if (quote) return undefined;
   if (started) result.push(word);
-  return result.length ? result : undefined;
+  return result.length ? { argv: result, cwd } : undefined;
 }
 
 function invocation(command: string, sources: NotionSource[]): Invocation | undefined {
-  const argv = literalArgv(command);
-  if (!argv) return undefined;
+  const parsed = literalCommand(command);
+  if (!parsed) return undefined;
+  const { argv, cwd } = parsed;
   const matching = sources.flatMap(source => {
     try {
       const prefix = hostCliScope([source]).command;
-      return prefix.every((value, index) => argv[index] === value) ? [{ source, length: prefix.length }] : [];
+      let matches = prefix.every((value, index) => argv[index] === value);
+      if (cwd !== undefined) {
+        // Only the known bundled entry has path semantics. Custom prefix arguments remain opaque.
+        const entry = argv[1];
+        if (source.command || prefix.length !== 2 || argv[0] !== prefix[0] || !entry || entry.startsWith("-") || entry.split(/[\\/]/).includes("..")) return [];
+        const directory = realpathSync(cwd);
+        matches = statSync(directory).isDirectory() && realpathSync(resolve(directory, entry)) === realpathSync(prefix[1]!);
+      }
+      return matches ? [{ source, length: prefix.length }] : [];
     } catch { return []; }
   });
   if (!matching.length || new Set(matching.map(item => item.length)).size !== 1) return undefined;
@@ -101,7 +119,7 @@ function changedTargets(value: unknown, kind: WriteKind): ChangedTarget[] {
     const sharedMetadata = locator.type === "shared_skill" && result.status === "applied" && result.action === "updated" &&
       typeof result.metadata_operation_id === "string" && /^metadata-write-[a-f0-9]{64}$/.test(result.metadata_operation_id) &&
       result.operation_id === result.metadata_operation_id && Array.isArray(result.changed_fields) && result.changed_fields.length > 0 &&
-      result.changed_fields.every(field => ["Name", "Description", "Default Context", "Members", "Source"].includes(String(field)));
+      result.changed_fields.every(field => ["Name", "Description", "Default Context", "Members", "Source", "Enabled"].includes(String(field)));
     const sharedSnapshot = locator.type === "shared_skill" && typeof result.snapshot_id === "string" && /^s_[a-f0-9]{64}$/.test(result.snapshot_id) && typeof result.version_id === "string" && result.version_id.length > 0;
     const sharedWrite = sharedSnapshot && result.operation === "write" && result.action === "updated" && result.unchanged === false && result.status === undefined &&
       typeof result.body_write_operation_id === "string" && /^body-write-adopt-[a-f0-9]{64}\.[a-f0-9]{64}$/.test(result.body_write_operation_id) &&

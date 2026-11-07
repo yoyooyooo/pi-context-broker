@@ -48,7 +48,7 @@ $ntn-skills-maintain@builtin Save the reusable method from this conversation as 
 $ntn-skills-sync@builtin Check my connected sources and preview the synchronization I requested.
 ```
 
-The current Agent reads the selected workflow and obtains the real CLI argv and database scope for the intended source. With `bash` enabled, Pi can discover and call `notion_ctl({cli_source:"SOURCE_ID"})` for this host-local invocation metadata; it does not execute a command or authorize a workflow. With multiple Notion sources, choose the intended source explicitly. Use `$ntn-skills@builtin` for command and resource guidance. Notion writes and synchronization use the CLI's own preview, exact-target and operation-result contracts. A verified write observed through the configured CLI marks its source directory for refresh on the next ordinary selection, so a newly created or renamed Skill becomes discoverable without a manual refresh. Already loaded snapshots and accepted drafts retain their existing ownership.
+The current Agent reads the selected workflow and obtains the real CLI argv and database scope for the intended source. With `bash` and `tool_search` enabled, Pi can discover and call `notion_ctl({cli_source:"SOURCE_ID"})` for this host-local invocation metadata; it does not execute a command or authorize a workflow. With multiple Notion sources, choose the intended source explicitly. Use `$ntn-skills@builtin` for command and resource guidance. Notion writes and synchronization use the CLI's own preview, exact-target and operation-result contracts. A verified write observed through the configured CLI marks its source directory for refresh on the next ordinary selection, so creation, renaming and Enabled changes become visible without a manual refresh. Already loaded snapshots and accepted drafts retain their existing ownership.
 
 `/context-broker` remains the host entry for View selection, metadata refresh and diagnostics. The old `/ntn-skills` command mirror, dedicated `save` shortcut and Tern management palettes are retired. Keep your natural-language request and attachments in the ordinary prompt; selecting a Skill only edits the draft.
 
@@ -68,16 +68,7 @@ omp install npm:pi-context-broker
 
 The broker package requires Node.js 22.22.3+ within 22.x or 24.20.0+. Bun is used only for building, not as the production CLI runtime. After installing or upgrading in OMP, run `/restart` in the composer to resume the session with the new extension code. `/reload-plugins` refreshes discovery state without re-executing loaded extensions.
 
-The npm package and GitHub `main` are separate distribution inputs. To try the current checkout before an npm release, run these commands from the repository root:
-
-```bash
-bun install --frozen-lockfile
-bun run build
-
-# Choose one host
-pi -e ./packages/context-broker/src/index.ts
-omp -e ./packages/context-broker/src/index.ts
-```
+An unreleased local candidate can run in normal Pi without publishing to npm or merging to `main`. Build the Broker against one complete local `ntn-skills` package, install both artifacts in new directories, and replace the existing Broker package entry so Pi loads it once. The [local Pi candidate procedure](./CONTRIBUTING.md#local-pi-candidate-and-rollback) covers CLI/SDK binding, the standalone CLI, verification and rollback. Start a new Pi process after switching; a global CLI upgrade alone does not update the Broker's bundled runtime or Skills.
 
 The optional Tern companion has its own [release installation](#tern-completion).
 

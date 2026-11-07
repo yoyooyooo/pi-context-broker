@@ -26,6 +26,8 @@ test("binary batch projection materializes only selected bytes and reuses fixed 
   expect(await stat(join(dirname(output), "SKILL.md")).then(() => true, () => false)).toBe(false);
   expect(metadata.body).toBeUndefined(); expect(metadata.entryManifest).toBeUndefined();
   const files = await readdir(dirname(output));
+  // Pro retires owned stages through system Trash; other platforms retain them.
+  if (process.platform === "darwin") expect(files).toEqual(["data.bin"]);
   expect(await materializeNotionResourceBatch(metadata, [resource], cache, ensure)).toEqual(result);
   expect(await readdir(dirname(output))).toEqual(files);
   await writeFile(output, "corrupt");
@@ -78,15 +80,19 @@ test("corrupt and interrupted resource outputs never become ready, and a new own
   await expect(materializeNotionEntryFile(f.selected, f.resource, ensure, async (_file, output) => { await writeFile(output, "corrupt"); }))
     .rejects.toMatchObject({ code: "SOURCE_OUTPUT_CONFLICT" });
   expect(await stat(destination).then(() => true, () => false)).toBe(false);
+  if (process.platform === "darwin") expect((await readdir(dirname(f.selected.entryManifest!.root))).filter(name => name.startsWith(".resource-stage-"))).toEqual([]);
   const cancelled = new AbortController();
   await expect(materializeNotionEntryFile(f.selected, f.resource, ensure, async (file, output) => {
     await fetch(file, output); cancelled.abort();
   }, cancelled.signal)).rejects.toMatchObject({ code: "SOURCE_CANCELLED" });
   expect(await stat(destination).then(() => true, () => false)).toBe(false);
   expect(f.selected.entryManifest?.materialized_paths).toEqual([f.main]);
+  if (process.platform === "darwin") expect((await readdir(dirname(f.selected.entryManifest!.root))).filter(name => name.startsWith(".resource-stage-"))).toEqual([]);
   const completed = await materializeNotionEntryFile(f.selected, f.resource, ensure, fetch);
   expect(await readFile(completed)).toEqual(f.bytes.get(f.resource)!);
   expect(f.selected.entryManifest?.local_files_ready).toBe(true);
+  expect(await materializeNotionEntryFile(f.selected, f.resource, ensure, fetch)).toBe(completed);
+  if (process.platform === "darwin") expect((await readdir(dirname(f.selected.entryManifest!.root))).filter(name => name.startsWith(".resource-stage-"))).toEqual([]);
   const restarted = await publishNotionEntry(f.selected, f.files, join(f.root, "cache"), ensure);
   expect(restarted.entryManifest?.materialized_paths).toEqual([f.main]);
   expect(restarted.entryManifest?.local_files_ready).toBe(false);
@@ -100,6 +106,20 @@ test("a conflicting entry manifest or foreign File ID cannot replace an immutabl
     .rejects.toMatchObject({ code: "SHARED_FILE_BINDING_UNAVAILABLE" });
   expect(await readFile(f.selected.path)).toEqual(f.bytes.get(f.main)!);
   expect(f.selected.entryManifest?.local_files_ready).toBe(false);
+});
+
+test("warm entry resources retain source checks without another staging output", async () => {
+  const f = await entry(), outputs: string[] = [];
+  const fetch = async (file: { path: string }, output: string) => { outputs.push(output); await writeFile(output, f.bytes.get(file.path)!); };
+  const path = await materializeNotionEntryFile(f.selected, f.resource, ensure, fetch);
+  const before = (await readdir(join(f.root, "cache"), { recursive: true })).sort();
+  expect(await materializeNotionEntryFile(f.selected, f.resource, ensure, fetch)).toBe(path);
+  expect(outputs).toHaveLength(2); expect(outputs[1]).toBe(path);
+  expect((await readdir(join(f.root, "cache"), { recursive: true })).sort()).toEqual(before);
+  await expect(materializeNotionEntryFile(f.selected, f.resource, ensure, async () => { throw Object.assign(new Error("Denied"), { code: "ACCESS_DENIED" }); }))
+    .rejects.toMatchObject({ code: "ACCESS_DENIED" });
+  expect(await readFile(path)).toEqual(f.bytes.get(f.resource)!);
+  expect((await readdir(join(f.root, "cache"), { recursive: true })).sort()).toEqual(before);
 });
 
 test("native resource tools resolve stable File ID and report materialization without claiming main delivery", async () => {

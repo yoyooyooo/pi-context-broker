@@ -258,6 +258,57 @@ NS-SESSION-15 的 CLI 边界从 CLI checkout 执行 `bun test packages/cli/test/
 
 用本次真实 evidence 路径执行 `evidence`、`cleanup`、再次 `evidence`，保留失败记录。修改 Skill 只维护规程；只有具体运行回执才能记录通过。
 
+### 默认 SDK 重复使用与派生缓存复用
+
+默认 SDK 的目录观察和正文权限仍由 CLI Core 决定。Broker 只复用已验证的本地投影：metadata index 以实际投影内容为身份，位于对应 scope 下；时间与 freshness 不进入投影 hash。相同的全目录与 View 投影、重复 discovery、同一固定 owner 的名称与别名应指向同一完整 index。内容或 scope 变化另建投影，旧路径与字节保持可读；返回值仍采用本次观察的 freshness，缓存存在不能覆盖源端拒绝或把本地读取当作一次新校验。
+
+固定资源投影以 scope、owner、snapshot 与规范文件路径定位，File ID 与规范路径各有一个确定性的身份回执，记录 ref、bytes、sha256。带同一 File ID 的旧路径提示复用规范文件，不因每次调用或拼写变化新增回执。查到本地文件后仍调用原 SDK read，继续验证权限、scope、owner、pin、File ID、返回 output 与内容 hash；SDK 使用已有文件的相同字节复用合同。没有新的 source list/export、旁路权限判断或另一套正文 cache。
+
+宿主原生目录是另一层进程内投影。相同 owner、scope 与实际名称/描述复用同一 metadata index；相同已验证 snapshot、来源路径和 alias 正文复用一次发布。`refresh` 与新会话继续执行原目录观察与准备，`loaded` 状态清空不会重新复制相同原生投影。更换描述、owner/scope 或固定版本保留不同投影；复用时检查实际目录、symlink 目标和正文，损坏投影明确失败，不能将其当作源端拒绝后的退路。
+
+从 Broker checkout 根运行现有回归；完整三文件中的共享解析用例需要与当前 CLI 候选一致的内嵌 SDK 编译物。先保留原 fail-before，再在最终 SDK 编译物到位后运行同一完整命令，不把过滤后的通过数替代整组结果。
+
+```bash
+bun test packages/context-broker/scripts/shared-notion-adapter.test.ts packages/context-broker/scripts/notion-entry.test.ts packages/context-broker/scripts/fixed-resource-source.test.ts --timeout 30000
+bun test packages/context-broker/scripts/host-prepare.test.ts packages/context-broker/scripts/native-read-session.test.ts packages/context-broker/scripts/session-active.test.ts --timeout 30000
+bun packages/context-broker/scripts/catalog-cache.test.ts
+bun run typecheck
+```
+
+| 场景 | 现有回归中的验收 |
+| --- | --- |
+| 1. 重复目录观察 | `repeated SDK metadata observations`：全目录与 View 的相同投影共用路径；刷新观察仍执行 SDK，freshness 取本次值，目录实体集合不增加；内容变更、scope 隔离和拒绝均保留。`SC25 fixed names` 同时核对固定 owner 的名称与别名复用同一 metadata 路径。 |
+| 2. 并发目录观察 | `simultaneous SDK metadata discovery`：三个并发 paired 观察的六个结果共用一个完整 index；Pro active cache 没有竞争失败的 owned stage。 |
+| 3. entry 资源失败与重试 | `corrupt and interrupted resource outputs`：错误字节和取消不发布 ready 文件；相同 owner 可重试成功，materialized 状态只在成功后推进；Pro 退还本次 owned stage。 |
+| 4. entry 资源暖读 | `warm entry resources`：第二次 fetch 使用已验证的 ready 文件，仍执行源端校验；递归实体集合保持不变，拒绝后既有字节保持不变。 |
+| 5. scalar 资源首次与重复读取 | `one scalar output read`：直接物化选中资源、不加载主文；重复读取返回相同固定路径且仍调用 SDK，递归实体集合稳定。 |
+| 6. scalar 资源不同拼写 | `warm scalar resource spellings`：File ID、带旧路径的同一 File ID、规范 path-only 请求共用实际文件；SDK 拒绝与返回错误 scope 仍失败，文件与回执集合不变。 |
+| 7. scalar 错误与取消 | `corrupt or symlinked SDK output`：错误字节、symlink、执行中取消均不发布 ready 资源；开始前已取消时零 SDK 调用；Pro 不遗留本次 owned stage。 |
+| 8. binary batch 重复使用 | `binary batch projection`：只物化选中的二进制字节，无主文或 entry manifest；再次使用相同 pin/file 不新增实体，损坏文件仍明确冲突。 |
+| 9. 原生目录重复刷新和激活 | `repeated host metadata refresh and activation`：四次 refresh+use 以及 session switch 后再次 use 继续实际观察和准备，metadata 路径、published 目标和递归实体集合均不增加；后续来源拒绝与投影损坏仍失败，源 snapshot 字节不变。`native alias version changes` 验证 A→B→A 复用先前发布、两版原件均保留；`native directory creation can recover` 使用真实失效 TMPDIR 后恢复，失败 Promise 不能阻断后续刷新。 |
+| 10. 原生 metadata 变更 | `host metadata reuse isolates owners`：改变一个描述只产生该记录的新投影，其他路径不变，旧描述仍可读取；相同记录换 scope 不能复用旧路径。 |
+
+发布完整 index/receipt 优先使用原子 rename。需要退还的资源 stage 仅限当前操作创建的绝对路径；Pro 使用已验证可执行的 `/usr/bin/trash`，结束后确认原路径不存在，禁止永久 unlink/rm 或扫描用户目录。其它平台没有这个已验证入口时保留 owned stage，因此测试只在 Darwin 要求 stage 清空；暖读不新增实体、正确字节、权限与身份断言在所有平台都执行。回收测试 scratch 继续走已有 verification cleanup，不能把来源状态、操作回执或失败证据当作临时目录清理。
+
+这组验收解决同内容、同 scope、同 pin 重复使用的派生实体增长。CLI Core 的 observations/对象/Records、Broker 的 metadata/resource 投影、用户已有 snapshot/pin 与操作历史分别核对；不同版本的历史保留与跨版本 GC 不由本组断言证明。显式旧 `source.command` 的 catalog journal 仍需按其独立路径计数。宿主只退还被替换的私有 alias/stub，保留 immutable published snapshot；不能在 shutdown 扫除整个进程临时根，因为 filesystem 来源的固定副本也在该根，持久原生会话可能继续引用它。Notion 原生 prompt 使用来源 immutable snapshot 路径，而非宿主 alias。
+
+#### Source、installed 与 live 的证明层级
+
+Source 层使用上述真实源码和受控 SDK/source，记录原命令、exit code、失败日志及前后目录/字节证据。它证明复用与拒绝语义，不证明已安装包、Pi 工具投递、真实 Notion 成本或模型行为。2026-11-07 的原始复现保存在仓外 `verification-evidence/notion-skills/cache-reuse-20261107-uvs773xi/`：`red.log/json` 保留六处增长失败；`focused-1` 保留一次目录排序断言失败及随后修正，`full-2` 中八个缓存场景通过，但整组仍为 99 pass / 11 fail（缺少内嵌 SDK 编译物）。完整组必须在最终构建后另存新回执，不能改写这些失败；`catalog-2`、`types-2` 分别保留兼容路径和类型检查结果。
+
+同日宿主层复现与修复在 `verification-evidence/notion-skills/pro-local-loop-20261107-6wru9epq/evidence/cache-host/`：`red` 保留两处 UUID 目录增长失败；`host-final` 为最终源码下三文件 75 pass / 0 fail、828 个断言，包含同进程会话切换、权限拒绝、损坏投影、A→B→A 和临时根失败恢复。`alias-retention` 另核对 Trash 只移动 symlink、不移动其目标。此处不声称整个 host 临时根跨进程复用或安全退出回收；真实 Pi 与跨入口的 Core 复用仍按后续层级验收。
+
+首份统一 CLI 候选材料构建到位后，同目录 `cache-final` 记录原 cache 三文件完整 110 pass / 0 fail、533 个断言；执行前后源码与编译物 hash 均未变化。该次内嵌 CLI SHA-256 `7e5eb15d4940a975f1c486e679993e7037b919d216b9d4a749838a4557ae6a38`、SDK SHA-256 `042caf6a535501513be3a216283946b80b05960b81ce89619a79e7115dad3f62`，log SHA-256 `ca38cfb983d84a3c7d340e5c2f79d7ac4aa726cd25d27530a6b4acc836d0ddbc`。这是 source 回归使用当次 SDK 编译物的结果，不能单独作为实际安装、真实 Notion 请求数或模型消费的通过凭据；后续候选的真实产物身份与受影响增量见[安装实录](installed-consumption.md#2026-11-07-本机候选与-normal-pi-实录)，不把该次 hash 称为后续最终包。
+
+Installed 层先冻结独立 CLI、Broker extension、内嵌 SDK 的实际入口、realpath、版本和 SHA-256，再使用本 Skill 原有 installed/SDK Pi route。仅 checkout 测试或成功 pack 不能记作本地安装体验通过。跨 CLI 与 SDK 复用还须在实际 Pi 进程及独立 CLI 两侧保存以下无敏感值回执：
+
+1. 两侧实际 HOME、XDG config/cache/state 与 `NTN_SKILLS_CONFIG_HOME`、`NTN_SKILLS_CACHE_HOME`、`NTN_SKILLS_HOME` 的最终绝对根，以及对应 Core SQLite、objects/snapshots 的实际位置。默认 Core 状态根为 `~/.local/state/ntn-skills`；显式覆盖优先，包路径与 source namespace 不自行分库。相对配置根按各自 cwd 解析，不能只核对 shell 环境后假定 Pi 一致。Broker `cacheDir` 是派生投影位置，独立存在不表示 Core 正文重复缓存。
+2. 等价 database/registration/upstream 选择、scope/credential identity 摘要、record owner、snapshot/version、文件 File ID/path 与正文/资源 hash；不记录 token。cwd、入口文件名、namespace 或本地 TTL 改变不应分裂远端身份；凭据或实际远端范围改变必须隔离。
+3. 在同一有效 scope 和原始 freshness 有效期内，先由一个入口准备目标，再由另一个入口消费同一 pin/对象。保留双方完整 `request_metrics`/HTTP 账本，核对第二入口符合暖读条件时零 Notion 请求，并核对实际对象/投影路径、递归实体数与 bytes/hash，而非只看两个独立的 cache-hit 标志。source SDK 调用次数、CLI 子进程次数、Notion HTTP 次数及传输字节分别记账。
+4. 重复 catalog/View 观察、同一资源重读和新会话重用后，同内容投影实体稳定；仍执行当前 source 检查，错误 scope/拒绝保持失败。当前版本更新或默认 TTL 到期沿原缓存规程获取新观察，旧会话 pin 与旧文件字节保持不变；明确区分必要新版本实体与相同内容重复增长。
+
+Live 层在已有任务授权覆盖的 Notion 记录和实际 Pro Pi 中执行相同跨入口条件，复用既有 live/model 的 Doctor、provider/RPC、HTTP ledger、evidence 和 cleanup。受控 SDK 测试不替代真实请求计数；真实 Notion 成功也不替代模型消费回执。未执行的层保持待验收，不新增验证平台或另建 Skill。
+
 ## 并发发布与首次正文
 
 复用本 Skill 的可执行 [concurrency harness](../scripts/verify-cache-concurrency.mjs)，不运行旧 `/private/tmp/broker-concurrent-vpvgU2/investigate.mjs`。入口位于本 Skill，工作目录仍为 Broker checkout 根目录。`storage` 不启动宿主，不继承凭据，不访问真实 Notion。Node 编排两个 Bun 子进程，直接导入当前 checkout 的 `notion-source.ts`，复用现有 `createNotionFixture()`。`hosts` 使用现有 RPC、隔离环境、fake provider 和 process ledger helper，实际启动 Pi/OMP 及当前 checkout extension，不从 API 结果推断宿主通过。
@@ -390,3 +441,18 @@ Regression gates: `bun test packages/context-broker/scripts/native-read-session.
 The observer excludes model-authored quotations/reasoning from imported-body counts, but still rejects two source-bearing copies. It records numeric usage cacheRead/cacheWrite without saving raw reasoning or provider payloads. Model rereads remain intact in persistent tool history; only the effective provider projection reduces repeated, checksum-proven instruction copies to confirmations. Original cold `/skill:` and autonomous-read failures remain retained even after reruns pass.
 
 A/B continuation reuses the original source command argv and append-only ledger; changed instrumentation commands must not change model guidance. Retry-only case roots are unique per evidence run, and cold roots are checked before launch. `--resume-case` selects an actual previously successful session (no copied session/cache). The 2026-11-03 evidence covers 9 initial plus 6 update/mixed-cache cases, not unrun variations in later runner code. See [acceptance checkpoint](../../../../packages/context-broker/docs/pi-real-model-cache-acceptance.md) for observed outcomes and timing scope.
+
+## 2026-11-07 Pro 正常目录：CLI v3 → Broker v7 SDK 复用实测
+
+模型任务结束后，复用既有 `cross-entry-read.mjs` 对同一 owned page 做一次公开 CLI current read → embedded SDK current read，随后只做一次立即暖重复。继承正常 config/state/cache 根，仅设置 `NTN_SKILLS_REQUEST_TRACE_LIMIT=10000`；没有手工种缓存、正文复制、缓存清理或 Notion 写入。CLI SHA256 为 `6e51c257275ac100a27ecd16d451a3ca32cac23d502cf6ddbcb2194d673f8e43`，SDK 为 `350a53d2b3e2463f006cc048eeaaa16359ff53b84652c3384303b62571be4f44`。
+
+| 实际轮次 | CLI HTTP／响应 B | SDK HTTP／响应 B | 正文／retained-body／写入请求 |
+| --- | ---: | ---: | ---: |
+| 首轮 | 10 个 metadata／186752 | 0／0 | 均为 0 |
+| 立即暖重复 | 0／0 | 0／0 | 均为 0 |
+
+四份 metrics 均 `trace_enabled=true`、`trace_dropped=0`、`in_flight=0`，实际 attempt 数与总数一致；暖重复两端的请求字节也为 0。四次结果的 owner／scope／snapshot／version／正文 hash 全等，完整正文 575 B。原首轮在线复验成本保留，不能只报告暖零请求。
+
+从首轮 SDK 读取前到立即暖重复结束，objects 目录 6373 项、snapshots 目录 2557 项及各自 inventory hash 不变，对应正文对象与 snapshot manifest 的校验保持一致。这仅证明该测量区间的复用，不表示全部历史缓存缩小。仅查询同一 owned scope／identity 的 SQLite observation：基线与最终均为 1 行，原 id `d3e8b48e-8f88-4fab-8944-a0134ef59d67.json` 保持；generation 55 → 74 包含基线后的模型工作，不全部归因于此 probe。
+
+证据根为 `/Users/yoyo/Documents/code/personal/verification-evidence/notion-skills/pro-local-loop-20261107-6wru9epq/evidence/cache-host/`：`cross-entry-warm-v7-summary.json`、`cross-entry-warm-v7-first.json`、`cross-entry-warm-v7-repeat.json`、`normal-owned-observation-before-v5.json`、`normal-owned-observation-after-v7.json`。独立 Pi 模型任务 `pi-activation-v7` 保留 `task_status=passed` 与整体 `task_passed_observation_partial`；本次 CLI／SDK 证据不能补成 observer 全覆盖，也不替代完整 Pi／模型成本矩阵。

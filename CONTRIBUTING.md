@@ -72,6 +72,26 @@ node scripts/verify-notion-integration.mjs run --mode live --host pi --database 
 
 `bun run test:verification` checks host/pack routing; it is part of the default check. `bun run check:broker` adds the Broker-only build, package regressions, shared Notion adapter and completion tests without building Tern. The real-model runner records a separate 300-second multi-step prompt budget and elapsed time; deterministic RPC retains its 120-second default. A successful final answer and receipt-validated entry/resource reads remain required, including after an earlier timed-out run.
 
+### Local Pi candidate and rollback
+
+Local delivery uses the current checked changes and a local CLI tarball; it does not require an npm release or a merge to `main`. Keep the candidate installation outside the checkout in a new persistent directory. Build and test before switching the normal Pi registration.
+
+1. Install the complete local CLI tarball into a fresh prefix. Select that installation's CLI entry when packing Broker; the builder resolves its SDK export and copies all three bundled Skills from the same package.
+
+   ```bash
+   npm install --prefix /absolute/candidate/cli --workspaces=false --omit=dev --no-audit --no-fund /absolute/ntn-skills-candidate.tgz
+   NTN_SKILLS_BUILD_ENTRY=/absolute/candidate/cli/node_modules/ntn-skills/dist/ntn-skills.js bun scripts/pack.mjs --target broker --out-dir /absolute/candidate/archives
+   npm install --prefix /absolute/candidate/broker --workspaces=false --omit=dev --no-audit --no-fund /absolute/candidate/archives/BROKER_TARBALL_FROM_PACK_OUTPUT.tgz
+   ```
+
+   Replace the example paths and final tarball name with the actual outputs. Record both archive hashes, installed entries, and `dist/ntn-skills-runtime.json`; its CLI/SDK hashes must match `dist/ntn-skills.mjs` and `dist/ntn-skills-sdk.mjs`. Run `--version` and `schema list/read/use` through the installed standalone CLI. A shared version number does not identify the build.
+2. Record `pi list`, the exact existing Broker package entry in the normal Pi settings, and the standalone `ntn-skills` launcher target/bytes and executable mode. Retain the old installed directories. For a first installation, `pi install /absolute/candidate/broker/node_modules/pi-context-broker` registers the local package. For an upgrade, replace only the existing Broker source in that package slot, preserving any per-package filters and every other setting; do not append a second Broker. Re-read the settings before writing so concurrent edits are not overwritten.
+3. Point the standalone CLI launcher to the same installed CLI used for the build. For Agent authoring, enable `tool_search` while retaining the current tool selection. Pi 1.5 accepts additive `defaultTools: ["+tool_search"]` when the setting is absent, or adding `"+tool_search"` to the existing selection; record the prior field presence/value for rollback. A one-run check can use `pi --tools +tool_search`. The Broker keeps `notion_ctl` deferred and does not enable tools itself. Keep the source configuration's default bundled SDK path: an explicit `source.command` selects the compatibility transport instead. Metadata-only discovery uses `prefetch: false`; existing source identity, authentication and cache settings stay in place. Do not clear working caches to make the installation appear fresh.
+4. Start a new owned Pi process with normal HOME/settings and a new session directory. Verify that exactly one `context-broker` command came from the candidate package, without `-e` injecting the target extension. The [installed-consumption map](./.agents/skills/verify-notion-skills-integration/features/installed-consumption.md#pro-本地主线交付) separates normal autoload, selected content/resource use, request accounting and real-model behavior. Existing user sessions need no forced restart.
+5. To roll back, first confirm that the package slot, launcher and any changed tool setting still match this candidate, then restore only their recorded previous values and start a new Pi process. Preserve concurrent changes, old sessions, caches and both artifact directories. A rollback changes the installed code selection; it does not rewrite a session's pinned content.
+
+Use fresh allowed evidence directories for each run. Existing runners accept explicit package, extension, fixture and evidence paths; historical evidence locations are not prerequisites for a new local candidate. Run the checks affected by the changes and one real authorized authoring/consumption task. Pi compatibility versions, other hosts, the full historical cost matrix and release gates keep their own reported status rather than becoming unconditional prerequisites for Pro local use.
+
 
 Build against the released `ntn-skills` dependency declared in the Broker package. For an intentional cross-repository development build, first build the CLI checkout, then select its built entry explicitly:
 

@@ -517,7 +517,8 @@ for (const [options, error] of [
 });
 
 function scopeFixture() {
-  const result = { kind: 'host_cli_scope', command, database, sourceId: 'sdk-fixture', executed: false };
+  const result = { kind: 'host_cli_scope', command, database, sourceId: 'sdk-fixture', executed: false,
+    write_guidance: 'For writes, run this command prefix plus explicit argument values as one literal bash command and keep the complete JSON result; do not use shell variables, wrappers, pipes or redirects. Broker uses that receipt to refresh the source directory.' };
   const content = [{ type: 'text', text: JSON.stringify(result) }];
   const discovery = [{ type: 'text', text: 'Loaded 1 tool. They are available from your next call:\n- notion_ctl: Inspect Notion maintenance metadata.' }];
   const first = context();
@@ -2020,8 +2021,8 @@ test('pre-injected executable, missing bash, another query or a bash call fails 
   assert.throws(() => assertScopedCommand(extraBash.captures, extraBash.frames, expected), /no bash or body read/);
 });
 
-test('wrong source, database, command or missing receipt content cannot be treated as a scoped result', () => {
-  for (const changed of [{ sourceId: 'other-source' }, { database: 'other-database' }, { command: ['node', '/other/cli'] }, { executed: true }]) {
+test('wrong source, database, command or missing write guidance/receipt content cannot be treated as a scoped result', () => {
+  for (const changed of [{ sourceId: 'other-source' }, { database: 'other-database' }, { command: ['node', '/other/cli'] }, { executed: true }, { write_guidance: undefined }]) {
     const fixture = scopeFixture();
     const message = fixture.captures[2].context.messages.at(-1);
     message.content = [{ type: 'text', text: JSON.stringify({ ...message.details, ...changed }) }];

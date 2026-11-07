@@ -48,7 +48,7 @@ $ntn-skills-maintain@builtin 把这段对话中可复用的方法整理为 Skill
 $ntn-skills-sync@builtin 检查已连接来源，预览这次需要执行的同步。
 ```
 
-当前 Agent 读取选中的工作流，取得目标来源的真实 CLI argv 与数据库范围。Pi 在启用 `bash` 后，可按需发现并调用 `notion_ctl({cli_source:"SOURCE_ID"})` 获取当前机器的调用元数据；取得该信息不会执行命令或授予工作流权限。配置多个 Notion source 时须明确选择目标，不隐式取第一个。命令和资源用法由 `$ntn-skills@builtin` 提供。Notion 写入与同步沿用 CLI 自身的预览、精确目标和操作结果合同。通过配置的 CLI 观察到已验证的真实写入后，Broker 在下一次普通选择时刷新对应来源目录，新建或改名后的 Skill 无需人工刷新即可发现。已加载快照和已接受草稿保持原有归属。
+当前 Agent 读取选中的工作流，取得目标来源的真实 CLI argv 与数据库范围。Pi 在启用 `bash` 和 `tool_search` 后，可按需发现并调用 `notion_ctl({cli_source:"SOURCE_ID"})` 获取当前机器的调用元数据；取得该信息不会执行命令或授予工作流权限。配置多个 Notion source 时须明确选择目标，不隐式取第一个。命令和资源用法由 `$ntn-skills@builtin` 提供。Notion 写入与同步沿用 CLI 自身的预览、精确目标和操作结果合同。通过配置的 CLI 观察到已验证的真实写入后，Broker 在下一次普通选择时刷新对应来源目录，创建、改名和启停结果无需人工刷新即可反映到目录。已加载快照和已接受草稿保持原有归属。
 
 `/context-broker` 保留 View 选择、元数据刷新与诊断。旧 `/ntn-skills` 命令镜像、专用 `save` 和 Tern 管理面板已退役。把自然语言要求与附件留在普通 prompt 中；选择 Skill 只编辑草稿。
 
@@ -68,16 +68,7 @@ omp install npm:pi-context-broker
 
 Broker 包需要 Node.js 22.x 中的 22.22.3+，或 24.20.0+。Bun 仅用于构建，不作为生产 CLI 运行时。在 OMP 安装或升级后，输入 `/restart`，恢复当前会话并执行新版扩展代码。`/reload-plugins` 只刷新发现状态，不重新执行已加载扩展。
 
-npm 包和 GitHub `main` 是独立的分发来源。npm 发新版前如需试用当前 checkout，在仓库根目录执行：
-
-```bash
-bun install --frozen-lockfile
-bun run build
-
-# 选择一个宿主
-pi -e ./packages/context-broker/src/index.ts
-omp -e ./packages/context-broker/src/index.ts
-```
+未发布的本地候选可以直接进入正常 Pi，无需先发 npm 或合入 `main`。用同一份完整的本地 `ntn-skills` 包构建 Broker，将两份产物安装到新目录，再替换原有 Broker 包入口，让 Pi 只加载一份。[本地 Pi 候选与回滚步骤](./CONTRIBUTING.md#local-pi-candidate-and-rollback)说明 CLI/SDK 绑定、独立 CLI、验证与回滚。切换后启动新的 Pi 进程；单独升级全局 CLI 不会更新 Broker 随包运行时或 Skills。
 
 可选 Tern 配套插件使用独立的 [Release 安装入口](#tern-补全)。
 

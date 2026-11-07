@@ -12,7 +12,8 @@ import { parseNativeReference, type NativeFileBinding } from "./native-reference
 import { decodePreparedGraph, preparationFailureDetails, type PreparationPurpose, type PreparationBinding, type PreparedHostGraph } from "./prepare-protocol";
 import { sharedSkillId, validSharedIdentity } from "./shared-skill-identity";
 import type { PrefetchBudget, PrefetchOutcome, PrefetchPlan } from "./prefetch-policy";
-import { publishNotionEntry, materializeNotionEntryFile, materializeNotionResourceBatch, publishNotionResourceFile } from "./notion-entry";
+import { publishNotionEntry, materializeNotionEntryFile, materializeNotionResourceBatch, publishNotionResourceFile, cachedNotionResourceFile } from "./notion-entry";
+import { retireOwnedCacheStage } from "./notion-cache-stage";
 import { consumeNotionSdk, readNotionSdk, readNotionResourcesSdk, listNotionCatalogSdk, resolveNotionCatalogReferenceSdk, listNotionFilesSdk, supportsNotionSdkReadOutputProof, supportsNotionSdkCatalogDirectory, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
 import { DEFAULT_RESOURCE_READ_BUDGET, type FixedResourceRead, type ResourceReadBatch, type ResourceReadFileIdentity, type ResourceReadWireFile } from "./resource-read-types";
 import type { ContentRecord, NotionDirectory, NotionDirectorySelection, NotionDirectoryOutcome, NotionListObservation, NotionView, SkillRecord, SourceConfig, SourcePolicy, SourceFailure } from "./types";
@@ -248,6 +249,44 @@ async function privateDirectory(path: string, source: NotionSource): Promise<voi
   if (!(await lstat(path)).isDirectory() || await realpath(path) !== resolve(path)) throw new SourceError("SOURCE_CACHE_UNSAFE", source.id);
 }
 
+type MetadataStub = { id: string; entrypoint: string; stub: string };
+function metadataIndexIdentity(files: readonly MetadataStub[]): string {
+  const projection = files.map(file => [file.id, file.entrypoint, file.stub]).sort((a, b) => a[0]! < b[0]! ? -1 : a[0]! > b[0]! ? 1 : 0);
+  // Time and selection freshness belong to the current observation, not its bytes.
+  return createHash("sha256").update(JSON.stringify(["metadata-index", 1, projection])).digest("hex");
+}
+async function publishMetadataIndex(index: string, files: readonly MetadataStub[], source: NotionSource, signal?: AbortSignal): Promise<void> {
+  const pathFor = (root: string, file: MetadataStub) => join(root, createHash("sha256").update(file.id).digest("hex"), file.entrypoint);
+  const verify = async () => {
+    await privateDirectory(index, source);
+    for (const file of files) {
+      const path = pathFor(index, file);
+      await privateDirectory(dirname(path), source);
+      const info = await lstat(path);
+      if (!info.isFile() || info.isSymbolicLink()) throw new SourceError("SOURCE_CACHE_UNSAFE", source.id);
+      if (await readFile(path, "utf8") !== file.stub) throw new SourceError("SOURCE_OUTPUT_CONFLICT", source.id);
+    }
+  };
+  let exists = true;
+  try { await lstat(index); } catch (error) { if (!object(error) || error.code !== "ENOENT") throw error; exists = false; }
+  if (exists) { await verify(); return; }
+  const stage = join(dirname(index), ".metadata-stage-" + randomUUID());
+  await privateDirectory(stage, source);
+  try {
+    for (const file of files) {
+      const path = pathFor(stage, file);
+      await privateDirectory(dirname(path), source);
+      await writeFile(path, file.stub, { flag: "wx", mode: 0o600 });
+    }
+    if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
+    try { await rename(stage, index); }
+    catch (error) {
+      if (!object(error) || !["EEXIST", "ENOTEMPTY"].includes(String(error.code))) throw error;
+      await verify();
+    }
+  } finally { await retireOwnedCacheStage(stage); }
+}
+
 const CATALOG_CACHE_VERSION = 4;
 const CATALOG_ORDER = /^[0-9]{20}$/;
 const MAX_CATALOG_ORDER = "18446744073709551615";
@@ -308,7 +347,7 @@ async function readCatalog(cache: CatalogCache, source: NotionSource): Promise<J
   if (!info.isFile() || info.size > 16 * 1024 * 1024) return undefined;
   const value: unknown = JSON.parse(await readFile(path, "utf8"));
   // The maximum directory remains an ordering fence even when its receipt is invalid.
-  return object(value) && value.version === CATALOG_CACHE_VERSION && value.key === cache.key && value.order === order && object(value.result) && typeof value.indexId === "string" && UUID.test(value.indexId) ? value : undefined;
+  return object(value) && value.version === CATALOG_CACHE_VERSION && value.key === cache.key && value.order === order && object(value.result) && typeof value.indexId === "string" && (UUID.test(value.indexId) || HASH.test(value.indexId)) ? value : undefined;
 }
 
 async function commandCatalog(source: NotionSource, cwd: string, selectors: string[], options: Options): Promise<Json> {
@@ -445,26 +484,27 @@ async function discoverNotionDirectory(source: NotionSource, cwd: string, option
     seen.add(page);
     counts.set(item.alias, (counts.get(item.alias) ?? 0) + 1);
   }
-  const indexId = saved?.indexId ?? randomUUID();
+  const metadata = skills.filter(item => item.enabled !== false).map(item => {
+    const locator = item.locator;
+    const selector = locator.type === "notion_page" || locator.type === "shared_skill" ? locator.page_id : locator.type === "notion_subscription" ? locator.subscription_id : item.id;
+    const name = `${item.alias}${counts.get(item.alias)! > 1 || !coverage.exhaustive ? `@${selector.replaceAll("-", "")}` : ""}`;
+    const hostName = name.replace(/[^a-z0-9-]/g, "-");
+    return { item, name, id: item.id, entrypoint: item.entrypoint, stub: `---\nname: ${JSON.stringify(hostName)}\ndescription: ${JSON.stringify(item.description)}\n---\n` };
+  });
+  const indexId = saved?.indexId ?? metadataIndexIdentity(metadata);
   const index = join(await cacheRoot(source, cwd), "scopes", scope, "indexes", indexId);
   if (saved) {
     const info = await lstat(index).catch(() => undefined);
     if (!info?.isDirectory() || await realpath(index) !== resolve(index)) return discoverNotionDirectory(source, cwd, { ...options, refresh: true });
-  } else await privateDirectory(index, source);
+  }
+  await publishMetadataIndex(index, metadata, source, options.signal);
   const records: SkillRecord[] = [];
-  for (const item of skills) {
-    if (item.enabled === false) continue;
+  for (const { item, name } of metadata) {
     const page = createHash("sha256").update(item.id).digest("hex");
     const dir = join(index, page);
-    if (!saved) await privateDirectory(dir, source);
     const path = join(dir, item.entrypoint);
     const namespace = source.namespace ?? source.id;
-    const selector = item.locator.type === "notion_page" || item.locator.type === "shared_skill" ? item.locator.page_id : item.locator.type === "notion_subscription" ? item.locator.subscription_id : item.id;
-    const name = `${item.alias}${counts.get(item.alias)! > 1 || !coverage.exhaustive ? `@${selector.replaceAll("-", "")}` : ""}`;
     const token = `${namespace}/${name}`;
-    const hostName = name.replace(/[^a-z0-9-]/g, "-");
-    const stub = `---\nname: ${JSON.stringify(hostName)}\ndescription: ${JSON.stringify(item.description)}\n---\n`;
-    if (!saved) await writeFile(path, stub, { flag: "wx", mode: 0o600 });
     records.push({ ...item, source: "notion", aliases: [], autoloadEnabled: item.kind !== "prompt", normalizedName: item.alias, normalizedAliases: [], normalizedDescription: normalizeKey(item.description), path, metadataIndexPath: path, sourceId: source.id, token, selectionToken: `${name}@${namespace}`, sourceScope: scope, freshness: observedFreshness, coverage });
   }
   if (!saved && cache && order && (await catalogCache(source, cwd, options.signal))?.key === cache.key) {
@@ -610,10 +650,10 @@ async function resolveNotionReferenceInSource(input: string, source: NotionSourc
   if (canonical.selector !== owner.selector || canonical.snapshot !== requested.snapshot || canonical.path !== selectedPath
     || requested.fileId !== undefined && canonical.fileId !== requested.fileId) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
   // Use the same metadata-stub layout as discovery; it is not a name index or body cache.
-  const index = join(await cacheRoot(source, cwd), "scopes", String(value.scope), "indexes", randomUUID(), createHash("sha256").update(record.id).digest("hex"));
-  await privateDirectory(index, source);
-  const path = join(index, record.entrypoint), namespace = source.namespace ?? source.id;
-  await writeFile(path, `---\nname: ${JSON.stringify(record.alias)}\ndescription: ${JSON.stringify(record.description)}\n---\n`, { flag: "wx", mode: 0o600 });
+  const metadata = [{ id: record.id, entrypoint: record.entrypoint, stub: `---\nname: ${JSON.stringify(record.alias)}\ndescription: ${JSON.stringify(record.description)}\n---\n` }];
+  const index = join(await cacheRoot(source, cwd), "scopes", String(value.scope), "indexes", metadataIndexIdentity(metadata));
+  await publishMetadataIndex(index, metadata, source, options.signal);
+  const path = join(index, createHash("sha256").update(record.id).digest("hex"), record.entrypoint), namespace = source.namespace ?? source.id;
   if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
   return { ref: file.ref, record: { ...record, source: "notion", sourceId: source.id, sourceScope: String(value.scope),
     path, metadataIndexPath: path, snapshotId: requested.snapshot, versionId: value.version_id, defaultDiscovery: false,
@@ -886,39 +926,41 @@ export async function readFixedNotionResource(record: SkillRecord, fixedRef: str
   try { if (!await supportsNotionSdkReadOutputProof()) return undefined; }
   catch (error) { throw sdkFailure(error, source, "read", signal, record); }
   if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-  const cache = await cacheRoot(source, cwd), stage = join(cache, ".resource-stage-" + randomUUID());
-  await privateDirectory(stage, source);
-  const output = join(stage, "file");
-  let value: unknown;
-  try { value = await readNotionSdk(fixedRef, { ...sdkOptions(source, cwd, signal), output, ...(source.activation?.offline ? { offline: true } : {}) }); }
-  catch (error) { throw sdkFailure(error, source, "read", signal, record); }
-  if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-  if (!object(value) || typeof value.sha256 !== "string" || !HASH.test(value.sha256)
-    || typeof value.entrypoint_sha256 !== "string" || !HASH.test(value.entrypoint_sha256)
-    || typeof value.version_id !== "string" || !value.version_id || typeof value.path !== "string" || typeof value.ref !== "string"
-    || !Number.isSafeInteger(value.bytes) || Number(value.bytes) < 0) decodeError(source);
-  const current = contentRecord(value.record, source), canonicalOwner = parseNativeReference(current.ref);
-  const bindings = nativeBindings(value.file_bindings, source), ref = parseNativeReference(value.ref);
-  const bound = bindings?.find(file => file.path === value.path), snapshotId = requested.snapshot;
-  if (value.scope !== record.sourceScope || current.id !== record.id || current.kind !== record.kind || !isDeepStrictEqual(current.locator, record.locator)
-    || value.snapshot_id !== snapshotId || value.entrypoint !== current.entrypoint || canonicalOwner.selector !== requested.selector
-    || ref.selector !== canonicalOwner.selector || ref.snapshot !== snapshotId || ref.path !== value.path || ref.fileId !== bound?.file_id
-    || requested.fileId !== undefined && requested.fileId !== ref.fileId || requested.fileId === undefined && requested.path !== ref.path)
-    throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
-  if (value.output !== output || typeof value.reused !== "boolean" || freshness(value.freshness, source).policy !== "pinned"
-    || value.materialization !== undefined && (!object(value.materialization) || value.materialization.manifest_complete !== true))
-    throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
-  if (value.path === current.entrypoint) {
-    if (value.sha256 !== value.entrypoint_sha256) decodeError(source);
-    return undefined;
-  }
-  const file: ResourceReadFileIdentity = { requested_ref: fixedRef, ref: value.ref, path: value.path, bytes: Number(value.bytes), sha256: value.sha256,
-    ...(ref.fileId === undefined ? {} : { file_id: ref.fileId }) };
-  const resourceRecord: SkillRecord = { ...record, snapshotId, versionId: value.version_id, entrypoint: current.entrypoint, fileBindings: bindings };
-  const materialized = await publishNotionResourceFile(resourceRecord, file, output, cache, target => privateDirectory(target, source), signal);
-  return { selection: { scope: record.sourceScope, owner: current.id, snapshot_id: snapshotId, version_id: value.version_id },
-    ownerBinding: fixedOwnerBinding(current, record.sourceScope, snapshotId, value.version_id, value.entrypoint_sha256, bindings),
-    entrypoint: current.entrypoint, file: materialized };
+  const cache = await cacheRoot(source, cwd);
+  const cached = await cachedNotionResourceFile({ ...record, snapshotId: requested.snapshot }, fixedRef, cache, target => privateDirectory(target, source));
+  const output = cached ?? join(cache, ".resource-stage-" + randomUUID());
+  try {
+    let value: unknown;
+    try { value = await readNotionSdk(fixedRef, { ...sdkOptions(source, cwd, signal), output, ...(source.activation?.offline ? { offline: true } : {}) }); }
+    catch (error) { throw sdkFailure(error, source, "read", signal, record); }
+    if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
+    if (!object(value) || typeof value.sha256 !== "string" || !HASH.test(value.sha256)
+      || typeof value.entrypoint_sha256 !== "string" || !HASH.test(value.entrypoint_sha256)
+      || typeof value.version_id !== "string" || !value.version_id || typeof value.path !== "string" || typeof value.ref !== "string"
+      || !Number.isSafeInteger(value.bytes) || Number(value.bytes) < 0) decodeError(source);
+    const current = contentRecord(value.record, source), canonicalOwner = parseNativeReference(current.ref);
+    const bindings = nativeBindings(value.file_bindings, source), ref = parseNativeReference(value.ref);
+    const bound = bindings?.find(file => file.path === value.path), snapshotId = requested.snapshot;
+    if (value.scope !== record.sourceScope || current.id !== record.id || current.kind !== record.kind || !isDeepStrictEqual(current.locator, record.locator)
+      || value.snapshot_id !== snapshotId || value.entrypoint !== current.entrypoint || canonicalOwner.selector !== requested.selector
+      || ref.selector !== canonicalOwner.selector || ref.snapshot !== snapshotId || ref.path !== value.path || ref.fileId !== bound?.file_id
+      || requested.fileId !== undefined && requested.fileId !== ref.fileId || requested.fileId === undefined && requested.path !== ref.path)
+      throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+    if (value.output !== output || typeof value.reused !== "boolean" || freshness(value.freshness, source).policy !== "pinned"
+      || value.materialization !== undefined && (!object(value.materialization) || value.materialization.manifest_complete !== true))
+      throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
+    if (value.path === current.entrypoint) {
+      if (value.sha256 !== value.entrypoint_sha256) decodeError(source);
+      return undefined;
+    }
+    const file: ResourceReadFileIdentity = { requested_ref: fixedRef, ref: value.ref, path: value.path, bytes: Number(value.bytes), sha256: value.sha256,
+      ...(ref.fileId === undefined ? {} : { file_id: ref.fileId }) };
+    const resourceRecord: SkillRecord = { ...record, snapshotId, versionId: value.version_id, entrypoint: current.entrypoint, fileBindings: bindings };
+    const materialized = await publishNotionResourceFile(resourceRecord, file, output, cache, target => privateDirectory(target, source), signal);
+    return { selection: { scope: record.sourceScope, owner: current.id, snapshot_id: snapshotId, version_id: value.version_id },
+      ownerBinding: fixedOwnerBinding(current, record.sourceScope, snapshotId, value.version_id, value.entrypoint_sha256, bindings),
+      entrypoint: current.entrypoint, file: materialized };
+  } finally { if (cached === undefined) await retireOwnedCacheStage(output); }
 }
 
 export async function loadNotionResource(record: SkillRecord, path: string, source: NotionSource, cwd: string, signal?: AbortSignal, transport?: "sdk"): Promise<string> {

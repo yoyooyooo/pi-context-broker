@@ -63,6 +63,33 @@ function guidanceHarness(host: "pi" | "omp" = "pi", known = true) {
   return { api, handlers, project, tools: (next: string[]) => { active = next; } };
 }
 
+test("Pi maintenance guidance routes deferred discovery to the intended source without exposing commands", async () => {
+  const h = guidanceHarness();
+  const native = ["read", "notion_list", "notion_use", "bash", "tool_search"];
+  h.tools(native);
+  const history: AgentMessage[] = [{ role: "user", content: "Update the selected Notion Skill and its supporting reference." }];
+  const original = JSON.stringify(history);
+  const deferred = await h.project("context", history);
+  const guidance = guidanceText(deferred);
+  for (const token of ["ntn-skills-maintain@builtin", "ntn-skills-sync@builtin", "Find notion_ctl with tool_search", "cli_source", '"alpha"', '"beta"'])
+    expect(guidance).toContain(token);
+  for (const token of ["/configured", "/must-not-appear", '"disabled"', '"local"', "skill_graph", "<cli", "literal bash command", "write_guidance"])
+    expect(guidance).not.toContain(token);
+  expect(guidance).toContain("never choose the first source implicitly");
+
+  h.tools([...native, "notion_ctl"]);
+  const discovered = await h.project("context_with_system", deferred);
+  expect(guidanceText(discovered)).toContain("Call notion_ctl with cli_source");
+  expect(guidanceText(discovered)).not.toContain("Find notion_ctl with tool_search");
+  for (const tools of [native.filter(tool => tool !== "bash"), native.filter(tool => tool !== "tool_search")]) {
+    h.tools(tools);
+    const unavailable = guidanceText(await h.project("context_with_system", discovered));
+    expect(unavailable).not.toContain("cli_source");
+    expect(unavailable).not.toContain("notion_ctl");
+  }
+  expect(JSON.stringify(history)).toBe(original);
+});
+
 test("each final context projects current capabilities without mutating history, body or system", async () => {
   const h = guidanceHarness();
   const system = { role: "system", content: "native system and tools" };
@@ -166,7 +193,8 @@ const resultJson = (result: Awaited<ReturnType<Awaited<ReturnType<typeof graphHa
 test("cli_source returns only the requested host-local scope without loading, execution or graph mutation", async () => {
   const h = await graphHarness();
   const result = await h.invoke({ cli_source: "beta" });
-  expect(resultJson(result)).toEqual({ kind: "host_cli_scope", sourceId: "beta", command: ["/configured beta/node", "/configured beta/cli.mjs", "--profile", "selected"], database: "database-b", executed: false });
+  expect(resultJson(result)).toEqual({ kind: "host_cli_scope", sourceId: "beta", command: ["/configured beta/node", "/configured beta/cli.mjs", "--profile", "selected"], database: "database-b", executed: false,
+    write_guidance: "For writes, run this command prefix plus explicit argument values as one literal bash command and keep the complete JSON result; do not use shell variables, wrappers, pipes or redirects. Broker uses that receipt to refresh the source directory." });
   expect(result.details).toEqual(resultJson(result));
   expect(h.counts()).toEqual({ graphReads: 0, loads: 0, appends: 0 });
   expect(resultJson(await h.invoke({}))).toEqual({ portable: true });

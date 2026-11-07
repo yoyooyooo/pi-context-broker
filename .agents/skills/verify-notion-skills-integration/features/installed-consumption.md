@@ -2,6 +2,55 @@
 
 前置条件：提供实际存在的 `/absolute/package.tgz`，npm 与所选宿主工具可用；本批主宿主 Pi 1.5.0，兼容 Pi 1.4.0 分别留安装态证据，并显式传 `--host pi`，省略时仍是双宿主。允许生产依赖安装所需网络。包必须是本次待验收产物；不以 checkout 替代。Doctor 只检查工具存在与版本，不安装、不认证。
 
+## Pro 本地主线交付
+
+当前主线为 Notion 管理 → CLI 创建/更新主文与 reference → 正常 Pi/Broker 消费。按 [本地候选与回滚](../../../../CONTRIBUTING.md#local-pi-candidate-and-rollback)安装同一物料的 CLI/SDK 与三份 builtin；本地候选无需先发布 npm 或合入 main。下面是本轮最小验证范围，不覆盖或改写已有失败与未运行记录。
+
+| 环节 | 复用入口与观察 |
+| --- | --- |
+| 包与作者入口 | 本次 CLI tgz 安装后显式绑定 `NTN_SKILLS_BUILD_ENTRY`，只 pack Broker；核对实际 CLI/SDK runtime manifest。原 `skill-guidance.test.ts` 和 installed `notion-sdk-pi.mjs --scenario scoped-command` 证明按需管理指导、真实工具发现与 source 范围，不以此宣称完成写入。 |
+| 正常 Pi 自动加载 | `node scripts/verify-pi-daily-installation.mjs plan --config ABSOLUTE_NEW_CONFIG` 准备本次路径与 hash，切换后以同配置 `run`。核对单一 package slot、真实 `get_commands.sourceInfo`、默认 SDK metadata/find、显式 doctor 的独立 body probe；无目标 `-e`、无 source.command 替换。该入口只做诊断，不证明模型任务。 |
+| 已授权的作者与消费任务 | 用本次 owned Skill 与 supporting reference 取得 CLI verified 写入结果。复用 `context-broker-rpc-harness.mjs` 在新 owned cwd/session 中启动正常自动加载的 Pi，执行当前授权的自然任务；保留实际 read/use、引用身份、模型终态及内容是否满足要求。按需取正文，Requires 完整、未选 Members 正文为零；不要将已有正文的续问变成重复读取。新草稿 enable 后和已有 Skill disable 后均检查下一次普通选择的目录变化；对应 `Enabled` 回执门见 [NS-BUILTIN-07](builtin-management.md)。 |
+| 新旧版本与冷热复用 | 同一候选覆盖首次选择、重复/新进程暖读取、一次已授权更新后的 current 选择和旧 pin。复用原 SDK/HTTP observer，记录真实 requests/bytes、终态与缺失项；目录缓存、正文缓存和会话中已有内容分别解释。warm 可能仍有权限/身份验证，未观测到数据不能记零。 |
+| 必要失败边界 | 受本次改动影响的权限、取消、不完整依赖、缓存清理/并发与固定资源身份仍用原反例。其余宿主、旧 C12 A/B/C/D 成本矩阵、Mini 和发布门禁单列状态；不无条件阻塞本机已验证的主线。 |
+
+所有新 config、fixture、entry 和 evidence 路径来自本次允许的目录。`verify-pi-daily-installation` 的 `evidenceRoot`、`notion-sdk-pi` 的 `--package/--fixture/--out` 均可指新路径；其 scratch/cache/data 根由原隔离 helper 在系统临时目录建立。无需读取历史 Logs 或旧工作区来启动新验证。正常日用自动加载检查保留实际 HOME/source/cache，不把它报告为空缓存；冷缓存场景另用 owned 根。
+
+普通 `verify-notion-integration --mode model` 与旧 cache matrix 使用显式 CLI command source，不能据此宣称默认 SDK 已过。C/D intent 路径的冻结目录、oracle 和完整矩阵继续按原合同验收；当前主线的小任务复用底层 RPC 与 observer，不放宽旧 validator，也不为此另建重复 runner。这里只定义路线，执行结果以本次产物、原始证据和实际语义审阅为准。
+
+### 2026-11-07 本机候选与 normal Pi 实录
+
+本轮证据根为 `/Users/yoyo/Documents/code/personal/verification-evidence/notion-skills/pro-local-loop-20261107-6wru9epq`。最终 CLI 候选 v3 的入口 SHA256 为 `6e51c257275ac100a27ecd16d451a3ca32cac23d502cf6ddbcb2194d673f8e43`；以该安装入口构建的 Broker 候选 v4 tgz SHA256 为 `454a8b04beb0d016736ea7831f52ae6c64828efeda7732c814062470164366d9`。这里的 v3/v4 是本次本地候选编号，npm 版本未改，未发布。
+
+`evidence/broker-artifact-v4.json` 与 `broker-installed-files-v4.json` 记录实际独立 npm 安装、88 个发布文件逐字闭合及三份 builtin 完整树与所选 CLI 相等。embedded CLI 为 `f580d83aea65895b98dee8decbef7f787011139975940aa2abbbdd9024f63e33`，SDK 为 `350a53d2b3e2463f006cc048eeaaa16359ff53b84652c3384303b62571be4f44`，SDK 与前一候选字节相同。guidance/model surfaces 19/19、selected/Enabled 小集 14/14 通过；`broker-sdk-contract-v4.json` 另记已安装导出与三个 schema 命令结果，不把它计作真实网络观测。
+
+07:41 UTC 已将正常 settings 的唯一 Broker slot 1 指向该独立安装包，PATH `ntn-skills` 指向 CLI v3；保留 `defaultTools: ["+tool_search"]`，其余20个包及其他设置语义未改。`evidence/activation-readback-v4.json` 保存读回与实际 shim 执行结果；`backup/v4/activation` 可回到前一候选，`backup/activation` 保留本轮之前的设置和 shim。未终止既有 Pi 会话。
+
+用已安装包的 `discoverSourceCatalog`、`dedupeDiscoveryRecords`、`recordToken` 和正常 source 配置实际导出 `$verify-pro-native-20261107-6wru9epq@notion`，page 为 `4115636c-236e-8182-a4f8-c222ac1368b5`，coverage exhaustive、无 source failure；派生阶段单列6个真实 HTTP 请求。随后原 daily driver 在正常 HOME、无目标 `-e`／source.command override 下自动加载 v4，`find` 返回唯一相同的 skill/source/page。`evidence/daily-v4-runs/daily-pi-iJgy2T` 保留原件，模型任务另行验收。
+
+该 daily run 的整体状态仍为 **failed**：全局 doctor 返回25条已配置旧 catalog 成员不可用及2条本地 `design-taste-frontend` 超过65536字节扫描上限的诊断，原 strict validator 没有被放宽。唯一 bundled CLI child 是显式 `ctl doctor --database`，实际退出0并确认 native Skill 可读；provider/tool 调用均0。SDK ledger 完整，但15个 SDK attempts 未与只覆盖 global fetch 的独立 HTTP observer 配对；另观测到的21个 Notion fetch 均2xx。不能把缺少配对解释为零请求或全部传输已观测。异常收尾的 owned Pi 退出码143，不宣称自然 EOF。配置、包文件与 shim 均保持不变。细分事实保存在 `evidence/daily-v4-partial-summary.json`，不替换原 failed 结果。
+
+上述27项诊断已登记 [AH-679](https://linear.app/yoyooyooo/issue/AH-679/后续-修复-pro-日用-catalog-的25个旧成员与2个超限入口诊断)，与 AH-641／AH-617／历史 AH-582 关联。它们需要后续逐项修复，不作为当前明确 native Skill 作者/消费主线的 blocking 前置，也不据此宣称相关旧 Router 已可用。
+
+08:01 UTC 的 Broker 候选 v5 仅在 Pi `notion_ctl({cli_source})` 的按需结果增加 `write_guidance`：管理写入使用返回的字面 argv 和完整 JSON，以便原 tool-result observer 接到回执后刷新目录。默认每轮提示、shell 解析与回执校验未变。归档 SHA256 为 `b4402004bbc2d8a924c59445c4f2f65ec681b60288d2a3ba72e73cdcdefb2e47`，88个文件闭合；相对 v4 唯一变化是 `src/host-skills.ts`，CLI/SDK/builtin 字节不变。原 guidance 10/10、scoped-command validator 4/4、typecheck 通过，缺指导字段的 RED 保留。正常 Pi 只切换 Broker slot，CLI v3 shim 的字节、inode、mtime 和模式保持；`evidence/activation-readback-v5.json` 与 `backup/v5/activation` 记录切换和回退。后续真实启停/消费任务独立验收，不以这次文案与安装验证推断通过。
+
+v5 实际作者的三次目录计数仍为 `[1,1,1]`，旧 runner 仅凭工具出现及标记得出的粗粒度 passed 已由 `evidence/pi-author-v5-semantic.json` 独立标为语义失败，原结果保留。v6 增加单个字面 `cd ABS &&` 的有界识别后，实际作者使用纯字面绝对命令仍为 failed `[1,1,1]`，但两次 Enabled 写入和自然 EOF 均通过。`evidence/pi-author-v6/result.json` SHA256 为 `05bfa6b797483c342721b03c6a111047180d8f052eaedb5d94cb1c7e1573e9d6`。`evidence/v6-real-write-observer-replay.json` 使用原始命令/回执及同一安装 observer，确认每次 `changed(notion)=1`，无 Notion/model 请求；不能将下游目录缓存缺口归咎于 Agent 未保留回执。
+
+08:38:49 UTC 已切换到 Broker v7，CLI 继续为 v3。v7 归档 SHA256 为 `735970576a33e1b4c688d1b6513639b0cb6d506c9ac6c5a7235ec4a66e1c2980`，88个发布文件与外部独立安装逐一相等；相对 v6 变化为 `src/host-skills.ts`、`src/index.ts` 和生成的 `dist/completion.mjs`，embedded CLI/SDK/builtin 保持字节一致。正常唯一 slot 1 指向本证据根的 `artifacts/broker-install-v7/node_modules/pi-context-broker`，其余设置、source config 及 CLI shim 的字节/inode/mtime/mode 均保持。`evidence/broker-artifact-v7.json`、`broker-installed-files-v7.json`、`activation-readback-v7.json` 记录身份与回读，`backup/v7/activation` 可回退到 v6，原始备份继续保留。
+
+v7 接通 verified write → host metadata-only lazy 失效 → 下一次 `notion_list`，保留 active preparation 和固定内容，并防止旧 metadata/lookup/固定图重新发布旧目录。受影响 host/native/session 80/80、869断言、完整 writer→list 回归和 typecheck 均通过，具体边界见 [NS-BUILTIN-09](builtin-management.md)。08:39–08:41 UTC 的正常 Pi 真实作者续验随后观察到 `[1,0,1]`：两次精确目标的 Enabled=false/true 回执均 applied/verified、changed_fields 仅 `Enabled`；三次查询 exhaustive=true、failures=[]。`evidence/pi-author-v7/result.json` 的 status/task_status=passed、graceful_eof=true，autoload 确认为 v7 的 `src/index.ts`，其 SHA256 为 `922832ee01d879dee8070edaea7bc7354271e6b9a0dd8c9564e770b440494054`，owned Pi 已 close。结果原件 SHA256 为 `bb5db31af76e1b10f3f0f2320d053773b31d5d0b077b7cb961743baea25bd928`。这是同会话目录启停的实际通过；fresh model 消费与跨入口 warm 账本另行记录，不改判前述失败或未运行矩阵。
+
+独立 fresh session 的 `evidence/pi-consumer-v7/result.json` 仍为 failed，SHA256 `e92d72cfbbf0255068750a9152bf5f29cd6d1c9c187f3d35ab74343a5720828a`：预期的 `notion_use` 未调用，read 和两条验收短语通过、自然 EOF。实际检查主文后，两 `sr:R` 资源各读两次，四份 raw tool result 均保留完整正文、对应 File ID/owner/scope/snapshot/hash 一致。模型随后另做两次 unfixed canonical read 和两次 CLI `--refresh`；这些成本属于原 run，不删除或称作最小消费路径。`evidence/consumer-v7-inspection.json` 独立核对正文范围及全部六次资源输出，SHA256 为 `c25b8329d37c74ab22b05fc10610e4ddbd3eedc62a3220c5c24aab734c828164`。模型提到的 “Already available” 不代替 provider context 的独立捕获，不能据此给出 wire/body 抑制数量。
+
+08:46:56–08:47:35 UTC 的另一次 fresh normal Pi 任务明确要求应用该 Skill，实际顺序为 `notion_list → notion_use → read → read → read → read`，没有 bash/CLI 工具调用。`notion_use` 返回 ready/purpose=use、主文575 B及 `sr:S` 根；两条 canonical File ID 资源输入虽未指定 snapshot，实际回执均落在已激活固定图的 `s_a1b7efd506d487071e96cd0636835af08c6c78602c78afc7e9e9992b3cde8888`，owner/scope/version 与 preparation binding 相同。主文 SHA256 为 `7159796c4e8d98811a68e96d6b867683bb8b91afeb73b0c62c19fac7efcb5fbd`，Required 为空；本 fixture 不据此证明额外依赖图场景。两资源各两次完整原始输出如下，均 isError=false：
+
+| 文件 | File ID | 字节 | 两次输出的共同 SHA256 |
+| --- | --- | --- | --- |
+| `references/checklist.md` | `file-472275df1bfdd8b53de383c548aca7f1cf3efe6939caa2a4cdddc87dccb2ae74` | 202 | `98c74017efd45bd2a5a81302f8567e31c177192c51a86279065211f54651e2a9` |
+| `references/agent-note.md` | `file-0ec27f81565b4cb4a18f24e1fb9a26055d9ea428592007abb17f9ebfa7c7fbb6` | 90 | `494c043f60cb8572f8d627778e82274797a513ea9a1efa8c2201c4ce91749529` |
+
+`evidence/pi-activation-v7/result.json` 的功能 `task_status=passed`，两短语与实际 read/use 均通过、graceful_eof=true、owned Pi 已 close，正常 HOME/autoload v7 且没有 source/extension/model/tools override。结果 SHA256 为 `1a3a8ffd7140bd3f01de45a257a574922273869e5823d673c7b380ac01951a49`；独立核对 `evidence/activation-v7-identity.json` SHA256 为 `0b78d95871a0407c66f67063cd9449c36a4fe9281ce218c3ce7a7df3f6dc3331`。整体状态保持 **task_passed_observation_partial**：完整 SDK ledger 的 list/consume/四次 read 请求数分别为 `17/1/0/0/0/0`、trace_dropped 全0、无 source CLI 调用；独立 fetch-only observer 观测0 fetch，但不覆盖 SDK transport，且 `http-80287.jsonl` 缺完整终态。不能将0 fetch推为整轮0 HTTP，或把 ledger 计数当完整独立传输测量；provider context/wire 抑制量仍 unknown。跨入口 warm 与共享根行数复用另见缓存地图，不由本次功能任务代填。
+
 安装消费与真实远端 fixture 是不同 mode。后者使用 `node scripts/verify-notion-integration.mjs doctor --mode live-fixture --database UUID` 与 `node scripts/verify-notion-integration.mjs run --mode live-fixture --database UUID`，唯一页及 `references/guide.md` 创建后消费，finally 仅 archive 自建页与 child pages 并 GET 确认；审阅 `live-fixture-create.json`、`live-fixture-cleanup.json`。只读 live 不替代它；live-fixture 通过也不证明 tgz 安装消费。
 
 installed 与 deterministic 默认执行双宿主 filesystem source metadata/read/native RPC+print/`$`/resource、Notion native cold print、歧义 `$ui-alpha@notion` provider 计数 0 后两个 qualified native 独立 page body，以及 OMP runSourceLifecycle 的真实 fork/branch/compact-remove+refresh。`--host pi` 只驱动 Pi，不能据此宣称 OMP lifecycle 已运行。分别审阅 `pi-fs-`/`omp-fs-` 系列、`*-cold-print-provider.jsonl`、`*-duplicates-rpc.json` 和 lifecycle helper 实际返回文件，不能用 checkout 路径替代安装产物。

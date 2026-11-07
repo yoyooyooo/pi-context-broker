@@ -20,6 +20,7 @@ import { parseNativeReference, nativeResourcePath, type ExactNativeReference } f
 import type { PreparedHostGraph, PreparationPurpose, PreparationBinding, PreparationDirectory } from "./prepare-protocol";
 import type { SelectionMode } from "./session-graph";
 import { publicEntryMaterialization } from "./notion-entry";
+import { retireOwnedCacheStage } from "./notion-cache-stage";
 import { createSessionShortRefHost, isSessionShortRefInput, matchesShortRefSource, assertShortRefSource, assertShortRefSnapshot, assertShortRefResource, type HostShortRefResolution } from "./session-short-ref-host";
 import { compileSkillPreparation, projectSkillDirectory } from "./skill-context-projection";
 import { projectCatalogDescriptions, type CatalogDescription } from "./skill-catalog-projection";
@@ -56,6 +57,7 @@ export type HostSkillOptions = {
 export type PreparedReference = { status: "ready"; record: SkillRecord } | { status: "miss" };
 export type HostSkills = {
   invalidate(): void;
+  invalidateMetadata(): void;
   refresh(ctx?: ExtensionContext): Promise<void>;
   activate(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal): Promise<SkillRecord>;
   prepare(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal): Promise<PreparedReference>;
@@ -186,10 +188,12 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       || /^[a-f0-9]{32}$/iu.test(requested.selector.replace(/^notion_page:/u, "").replaceAll("-", ""));
     if (resolved.short || canonical || !options.resolveNamedReference)
       return { ...resolved, canonicalRef: resolved.short?.canonicalRef ?? value };
-    const observedGeneration = generation, sessionId = ctx.sessionManager?.getSessionId?.(), sessionFile = ctx.sessionManager?.getSessionFile?.();
+    const observedGeneration = generation, observedMetadataGeneration = metadataGeneration;
+    const sessionId = ctx.sessionManager?.getSessionId?.(), sessionFile = ctx.sessionManager?.getSessionFile?.();
     const current = () => {
       checkPreparationSignal(signal);
-      if (observedGeneration !== generation || sessionId !== ctx.sessionManager?.getSessionId?.() || sessionFile !== ctx.sessionManager?.getSessionFile?.()) throw preparationCancelled();
+      if (observedGeneration !== generation || observedMetadataGeneration !== metadataGeneration
+        || sessionId !== ctx.sessionManager?.getSessionId?.() || sessionFile !== ctx.sessionManager?.getSessionFile?.()) throw preparationCancelled();
     };
     const checked = (selected: { record: SkillRecord; ref: string }) => {
       const reference = parseNativeReference(selected.ref), record = selected.record;
@@ -230,12 +234,24 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   let metadataController = new AbortController();
   let metadataReadiness: Promise<void> = Promise.resolve();
   let metadataPending = false;
+  let metadataDirty = false;
   let lifecycleController = new AbortController();
   let discoveryError: unknown;
   let sourceFailures: SourceFailure[] = [];
   let catalogCoverage = new Map<string, boolean>();
   let metadataFallback = false;
-  let filesystemCache: string | undefined;
+  let filesystemCache: Promise<string> | undefined;
+  const nativeIndexes = new Map<string, Promise<string>>();
+  type NativePublication = { root: string; entry: string; content: string };
+  const nativePublications = new Map<string, NativePublication>();
+  const publishedIndexes = new Map<string, NativePublication>();
+  const hostCacheRoot = () => {
+    if (filesystemCache) return filesystemCache;
+    const pending = mkdtemp(join(tmpdir(), "context-broker-host-"));
+    filesystemCache = pending;
+    void pending.catch(() => { if (filesystemCache === pending) filesystemCache = undefined; });
+    return pending;
+  };
   const hostRecords = new Map<string, SkillRecord>();
   let catalogPublication: Promise<void> = Promise.resolve();
   const nativeNames = new Map<string, SkillRecord>();
@@ -303,14 +319,23 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     printTurns.clear();
   });
 
-  async function ready(signal: AbortSignal = lifecycleController.signal): Promise<void> {
+  async function ready(signal: AbortSignal = lifecycleController.signal, ctx?: ExtensionContext): Promise<void> {
     checkPreparationSignal(signal);
     const cancelled = Promise.withResolvers<never>();
     const abort = () => cancelled.reject(preparationCancelled());
     signal.addEventListener("abort", abort, { once: true });
     try {
-      await Promise.race([metadataReadiness, cancelled.promise]);
-      checkPreparationSignal(signal);
+      for (;;) {
+        checkPreparationSignal(signal);
+        if (metadataDirty) {
+          metadataDirty = false;
+          metadataReadiness = refreshMetadata(ctx, false, true);
+        }
+        const selectedGeneration = metadataGeneration;
+        await Promise.race([metadataReadiness, cancelled.promise]);
+        checkPreparationSignal(signal);
+        if (selectedGeneration === metadataGeneration && !metadataDirty) return;
+      }
     } finally { signal.removeEventListener("abort", abort); }
   }
 
@@ -328,7 +353,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     sourcePath: import.meta.url, defaultInactive: false,
     async execute(_id, input, signal, _onUpdate, ctx) {
       const readSignal = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
-      await ready(readSignal);
+      await ready(readSignal, ctx);
       if (discoveryError) throw discoveryError;
       if ((input.query !== undefined || !piConsumption) && (typeof input.query !== "string" || input.query.length > 512)
         || input.source !== undefined && typeof input.source !== "string"
@@ -376,6 +401,51 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     },
   });
 
+  async function assertNativePublication(publication: NativePublication): Promise<void> {
+    for (let directory = dirname(publication.entry); ; directory = dirname(directory)) {
+      const state = await lstat(directory);
+      if (!state.isDirectory() || state.isSymbolicLink()) throw hostError("SOURCE_INDEX_CONFLICT");
+      if (directory === publication.root) break;
+      if (!directory.startsWith(publication.root + sep)) throw hostError("SOURCE_INDEX_CONFLICT");
+    }
+    const info = await lstat(publication.entry);
+    if (!info.isFile() || info.isSymbolicLink() || await readFile(publication.entry, "utf8") !== publication.content) throw hostError("SOURCE_INDEX_CONFLICT");
+  }
+
+  async function nativeIndex(record: SkillRecord, signal: AbortSignal): Promise<string> {
+    const stub = `---\n${stringifyYaml({ name: hostSkillName(record), description: record.description })}---\n`;
+    const identity = createHash("sha256").update(JSON.stringify([recordIdentity(record), stub])).digest("hex");
+    let pending = nativeIndexes.get(identity);
+    if (!pending) {
+      pending = (async () => {
+        const directory = join(await hostCacheRoot(), "indexes", "native", identity);
+        await mkdir(dirname(directory), { recursive: true, mode: 0o700 });
+        await mkdir(directory, { mode: 0o700 });
+        try {
+          const path = join(directory, "SKILL.md");
+          await writeFile(path, stub, { mode: 0o600, flag: "wx" });
+          return path;
+        } catch (error) { await retireOwnedCacheStage(directory); throw error; }
+      })();
+      nativeIndexes.set(identity, pending);
+      void pending.catch(() => { if (nativeIndexes.get(identity) === pending) nativeIndexes.delete(identity); });
+    }
+    const path = await pending;
+    // A refresh can cancel an in-flight native publication. Join its local
+    // pointer update before inspecting the reused index, never its source work.
+    await publishing.get(path);
+    checkPreparationSignal(signal);
+    const publication = publishedIndexes.get(path), state = await lstat(dirname(path));
+    if (publication) {
+      if (!state.isSymbolicLink() || await realpath(dirname(path)) !== await realpath(dirname(publication.entry))) throw hostError("SOURCE_INDEX_CONFLICT");
+      await assertNativePublication(publication);
+    } else {
+      const info = await lstat(path);
+      if (!state.isDirectory() || state.isSymbolicLink() || !info.isFile() || info.isSymbolicLink() || await readFile(path, "utf8") !== stub) throw hostError("SOURCE_INDEX_CONFLICT");
+    }
+    return path;
+  }
+
   async function publish(record: SkillRecord, snapshot: SkillRecord, signal?: AbortSignal): Promise<void> {
     checkPreparationSignal(signal);
     if (!record.metadataIndexPath || record.metadataIndexPath === snapshot.path) return;
@@ -396,6 +466,9 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       } catch { /* A portable plain-Markdown entry can begin with a thematic break. */ }
     }
     const aliasContent = `---\n${stringifyYaml({ ...metadata, name: hostSkillName(record), description: record.description })}---\n${body}`;
+    const projection = createHash("sha256").update(JSON.stringify([index, recordIdentity(snapshot), snapshot.path,
+      snapshot.snapshotId, snapshot.versionId, snapshot.preparationBinding?.ref, snapshot.entryManifest?.manifest_id,
+      createHash("sha256").update(content).digest("hex"), aliasContent])).digest("hex");
     const previous = publishing.get(index);
     let release!: () => void;
     const pending = new Promise<void>((done) => { release = done; });
@@ -405,11 +478,16 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       checkPreparationSignal(signal);
       if (recordIdentity(snapshot) !== recordIdentity(record)) throw hostError("SOURCE_IDENTITY_MISMATCH");
       const state = await lstat(directory);
+      const reusable = nativePublications.get(projection);
       if (state.isSymbolicLink()) {
-        if (await readFile(index, "utf8") === aliasContent && loaded.get(recordIdentity(record))?.record.path === snapshot.path) return;
         const target = await realpath(directory);
         const ownedRoot = join(await realpath(dirname(dirname(directory))), ".host-snapshots") + sep;
         if (!target.startsWith(ownedRoot)) throw hostError("SOURCE_INDEX_CONFLICT");
+        if (reusable && target === await realpath(dirname(reusable.entry))) {
+          await assertNativePublication(reusable);
+          publishedIndexes.set(index, reusable);
+          return;
+        }
       }
       if (!state.isDirectory() && !state.isSymbolicLink()) throw hostError("SOURCE_INDEX_CONFLICT");
       let snapshotRoot = snapshot.entryManifest?.root ?? dirname(resolve(snapshot.path));
@@ -426,21 +504,29 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       // Full exports retain their complete tree. Entry-ready indexes contain only
       // the main; resource reads resolve through its verified immutable manifest.
       const indexRoot = dirname(dirname(directory));
-      const publishedRoot = join(indexRoot, ".host-snapshots", randomUUID());
-      await mkdir(dirname(publishedRoot), { recursive: true, mode: 0o700 });
-      if (!snapshot.entryManifest) await cp(snapshotRoot, publishedRoot, { recursive: true, errorOnExist: true, force: false });
-      const publishedEntry = join(publishedRoot, relative(snapshotRoot, resolve(snapshot.path)));
-      if (snapshot.entryManifest) await mkdir(dirname(publishedEntry), { recursive: true, mode: 0o700 });
-      await writeFile(publishedEntry, aliasContent, { mode: 0o600 });
-      if (snapshot.entryManifest) await writeFile(join(publishedRoot, ".broker-host-index.json"), JSON.stringify({
-        version: 1, projection: "host_index", loaded: false,
-        scope: snapshot.sourceScope, id: snapshot.id, snapshot_id: snapshot.snapshotId, version_id: snapshot.versionId,
-        ref: snapshot.preparationBinding?.ref, entrypoint: snapshot.entrypoint,
-        source: { bytes: Buffer.byteLength(content), sha256: createHash("sha256").update(content).digest("hex") },
-        published: { path: relative(publishedRoot, publishedEntry).split(sep).join("/"),
-          bytes: Buffer.byteLength(aliasContent), sha256: createHash("sha256").update(aliasContent).digest("hex") },
-        manifest_id: snapshot.entryManifest.manifest_id,
-      }), { mode: 0o600, flag: "wx" });
+      let publication = reusable;
+      if (publication) await assertNativePublication(publication);
+      else {
+        const publishedRoot = join(indexRoot, ".host-snapshots", randomUUID());
+        const publishedEntry = join(publishedRoot, relative(snapshotRoot, resolve(snapshot.path)));
+        try {
+          await mkdir(dirname(publishedRoot), { recursive: true, mode: 0o700 });
+          if (!snapshot.entryManifest) await cp(snapshotRoot, publishedRoot, { recursive: true, errorOnExist: true, force: false });
+          else await mkdir(dirname(publishedEntry), { recursive: true, mode: 0o700 });
+          await writeFile(publishedEntry, aliasContent, { mode: 0o600 });
+          if (snapshot.entryManifest) await writeFile(join(publishedRoot, ".broker-host-index.json"), JSON.stringify({
+            version: 1, projection: "host_index", loaded: false,
+            scope: snapshot.sourceScope, id: snapshot.id, snapshot_id: snapshot.snapshotId, version_id: snapshot.versionId,
+            ref: snapshot.preparationBinding?.ref, entrypoint: snapshot.entrypoint,
+            source: { bytes: Buffer.byteLength(content), sha256: createHash("sha256").update(content).digest("hex") },
+            published: { path: relative(publishedRoot, publishedEntry).split(sep).join("/"),
+              bytes: Buffer.byteLength(aliasContent), sha256: createHash("sha256").update(aliasContent).digest("hex") },
+            manifest_id: snapshot.entryManifest.manifest_id,
+          }), { mode: 0o600, flag: "wx" });
+          publication = { root: publishedRoot, entry: publishedEntry, content: aliasContent };
+          nativePublications.set(projection, publication);
+        } catch (error) { await retireOwnedCacheStage(publishedRoot); throw error; }
+      }
       checkPreparationSignal(signal);
       const retiredRoot = join(indexRoot, ".retired-host-indexes");
       await mkdir(retiredRoot, { recursive: true, mode: 0o700 });
@@ -449,9 +535,14 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       await rename(directory, retired);
       try {
         checkPreparationSignal(signal);
-        await symlink(dirname(publishedEntry), directory, "dir");
+        await symlink(dirname(publication.entry), directory, "dir");
       }
       catch (error) { await rename(retired, directory); throw error; }
+      publishedIndexes.set(index, publication);
+      // This retired pointer/stub is private to this host and no longer named by
+      // any consumer. Keep every published immutable snapshot; retire only the
+      // replaced alias, never the snapshot it used to target.
+      await retireOwnedCacheStage(retired);
     } finally {
       release();
       if (publishing.get(index) === pending) publishing.delete(index);
@@ -460,6 +551,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
 
   async function graphPreparation(selected: readonly SkillRecord[], ctx: ExtensionContext | undefined, signal: AbortSignal, purpose: PreparationPurpose, pins?: ReadonlyMap<string, string>, mode: SelectionMode = "extend", commitNow = true): Promise<{ records: SkillRecord[]; graphs: PreparedHostGraph[]; commit(): void }> {
     const owner = gate.active, observedGeneration = generation;
+    const observedMetadataGeneration = metadataGeneration;
     const observedSession = ctx?.sessionManager?.getSessionId?.();
     const bindings = mode === "replace" ? [] : [...owner?.prepared.values() ?? []].flatMap(record => record.preparationBinding ? [record.preparationBinding] : []);
     const graphs = await options.prepareGraph!(selected, ctx, signal, purpose, pins, bindings, mode);
@@ -504,7 +596,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (mode === "replace" && owner) { owner.prepared.clear(); preparedForUse.delete(owner); }
       for (const record of values) {
         const key = recordIdentity(record), metadata = hostRecords.get(key) ?? record;
-        hostRecords.set(key, metadata);
+        if (hostRecords.has(key) || observedMetadataGeneration === metadataGeneration && !pins?.size) hostRecords.set(key, metadata);
         if (record.kind !== "prompt") loaded.set(key, { record, owner });
         if (record.entryManifest) readRecords.set(resolve(record.path), record);
         owner?.prepared.set(key, record);
@@ -524,7 +616,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
 
   async function prepareMany(selected: readonly SkillRecord[], ctx?: ExtensionContext, signal?: AbortSignal): Promise<void> {
     const combined = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
-    await ready(combined);
+    await ready(combined, ctx);
     if (discoveryError) throw discoveryError;
     const graphRoots = [...new Map(selected.filter(record => record.source === "notion" && record.kind !== "prompt")
       .map(record => [recordIdentity(record), record])).values()]
@@ -577,7 +669,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   async function activate(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal, waitForTool = false, readPhase: "hook" | "execute" = "hook", requestedSnapshot?: string): Promise<SkillRecord> {
     signal = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
     checkPreparationSignal(signal);
-    await ready(signal);
+    await ready(signal, ctx);
     const { snapshot: sessionSnapshot } = assertSourceSelection(record, ctx, requestedSnapshot);
     const key = recordIdentity(record);
     const prepared = gate.active?.prepared.get(key);
@@ -617,8 +709,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (recordIdentity(result) !== key) throw hostError("SOURCE_IDENTITY_MISMATCH");
       if (sessionSnapshot && result.snapshotId !== sessionSnapshot) throw hostError("SOURCE_IDENTITY_MISMATCH");
       if (options.config.sources?.some((source) => source.id === record.sourceId && source.type === "filesystem")) {
-        filesystemCache ??= await mkdtemp(join(tmpdir(), "context-broker-host-"));
-        const root = join(filesystemCache, ".snapshots", randomUUID());
+        const root = join(await hostCacheRoot(), ".snapshots", randomUUID());
         await mkdir(dirname(root), { recursive: true, mode: 0o700 });
         await cp(dirname(result.path), root, { recursive: true, force: false, errorOnExist: true });
         checkPreparationSignal(signal);
@@ -692,7 +783,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   async function preflight(text: string, ctx: ExtensionContext, signal?: AbortSignal, selectedNative?: SkillRecord): Promise<void> {
     checkPreparationSignal(signal);
     const selection = needsPreparation(text);
-    if (!deferredPiDiscovery || selection) await ready(signal);
+    if (!deferredPiDiscovery || selection) await ready(signal, ctx);
     text = invocationText(text);
     if (discoveryError && (deferredPiDiscovery ? selection : /(?:^|\s)(?:\$[^\s]+|\/skill:[^\s]+)/.test(text))) throw discoveryError;
     const record = selectedNative ?? nativeRecord(text);
@@ -720,7 +811,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         if (continuation) continuation.forwarded = true;
         try {
           gate.assertCurrent(entry, ctx);
-          await ready(entry.controller.signal);
+          await ready(entry.controller.signal, ctx);
           if (discoveryError) throw discoveryError;
           const selected = nativeNames.get(name);
           const prepared = selected ? await prepare(selected, ctx, entry.controller.signal) : { status: "miss" as const };
@@ -770,17 +861,19 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     metadataFallback = !await adapter.registerCatalog(records, signal);
   }
 
-  async function refreshMetadata(ctx?: ExtensionContext, announce = true): Promise<void> {
+  async function refreshMetadata(ctx?: ExtensionContext, announce = true, preserveActive = false): Promise<void> {
     const selectedGeneration = ++metadataGeneration;
     metadataController.abort();
     metadataController = new AbortController();
     const metadataSignal = metadataController.signal;
     metadataPending = true;
-    generation++;
-    lifecycleController.abort();
-    lifecycleController = new AbortController();
-    gate.cancel();
-    turnPrompts = undefined;
+    if (!preserveActive) {
+      generation++;
+      lifecycleController.abort();
+      lifecycleController = new AbortController();
+      gate.cancel();
+      turnPrompts = undefined;
+    }
     try {
       const result = await options.getRecords(ctx, metadataSignal);
       if (metadataGeneration !== selectedGeneration) return;
@@ -788,14 +881,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const next = result.records.filter(record => record.sourceId !== undefined).map(record => record.source === "notion" ? { ...record, metadataIndexPath: undefined } : record);
       const missing = next.filter(record => (record.kind === undefined || record.kind === "skill") && !record.metadataIndexPath && (record.source !== "notion" || record.defaultDiscovery === true));
       if (missing.length) {
-        filesystemCache ??= await mkdtemp(join(tmpdir(), "context-broker-host-"));
-        const index = join(filesystemCache, "indexes", randomUUID());
-        await mkdir(index, { recursive: true, mode: 0o700 });
         for (const record of missing) {
-          const directory = join(index, randomUUID());
-          await mkdir(directory, { mode: 0o700 });
-          const metadataIndexPath = join(directory, "SKILL.md");
-          await writeFile(metadataIndexPath, `---\n${stringifyYaml({ name: hostSkillName(record), description: record.description })}---\n`, { mode: 0o600, flag: "wx" });
+          const metadataIndexPath = await nativeIndex(record, metadataSignal);
           next[next.indexOf(record)] = { ...record, metadataIndexPath };
         }
       }
@@ -825,8 +912,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
           readRecords.set(resolve(record.metadataIndexPath ?? record.path), record);
           readRecords.set(resolve(record.path), record);
         }
-        nativeInputs.clear();
-        loading.clear();
+        if (!preserveActive) {
+          nativeInputs.clear();
+          loading.clear();
+        }
         discoveryError = undefined;
         await updateDirectories(metadataSignal);
         if (metadataGeneration !== selectedGeneration) return;
@@ -844,8 +933,17 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   }
 
   function refresh(ctx?: ExtensionContext, announce = true): Promise<void> {
+    metadataDirty = false;
     metadataReadiness = refreshMetadata(ctx, announce);
     return metadataReadiness;
+  }
+
+  function invalidateMetadata(): void {
+    // A current directory change does not revoke an accepted submission or its fixed snapshots.
+    metadataGeneration++;
+    metadataController.abort();
+    metadataDirty = true;
+    metadataPending = true;
   }
 
   if (adapter.submission.mode === "command" && host.registerCommand) host.registerCommand("context-broker-submit", {
@@ -1143,7 +1241,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     // may activate content. Delegated/bootstrap text is passed through unchanged.
     const beforeSignal = lifecycleController.signal, beforeGeneration = generation;
     try {
-      if (!deferredPiDiscovery) await ready(beforeSignal);
+      if (!deferredPiDiscovery) await ready(beforeSignal, ctx);
       checkPreparationSignal(beforeSignal);
     }
     catch (error) { if (!beforeSignal.aborted && beforeGeneration === generation) { ctx.abort?.(); notify(ctx, error); } return undefined; }
@@ -1264,12 +1362,21 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       && (!short || matchesShortRefSource(short.assertion, record));
     let candidates = (resolved ? [resolved] : [...hostRecords.values()]).filter(matches);
     if (resolved && !candidates.length) throw hostError("SOURCE_IDENTITY_MISMATCH");
+    let retained = false;
+    if (!candidates.length && reference.snapshot) {
+      const fixed = [...(gate.active?.prepared.values() ?? []), ...[...loaded.values()].map(value => value.record), ...readRecords.values()]
+        .filter(record => matches(record) && record.snapshotId === reference.snapshot && record.preparationBinding !== undefined && record.preparationBinding.snapshot_id === reference.snapshot
+          && record.preparationBinding.scope === record.sourceScope && record.preparationBinding.record.id === record.id
+          && isDeepStrictEqual(record.preparationBinding.record.locator, record.locator));
+      candidates = [...new Map(fixed.map(record => [recordIdentity(record), record])).values()];
+      retained = candidates.length > 0;
+    }
     let lookupFailures: readonly SourceFailure[] = [];
     if (!candidates.length && options.lookupReference) {
-      const observedGeneration = generation;
+      const observedGeneration = generation, observedMetadataGeneration = metadataGeneration;
       const fresh = await options.lookupReference(ctx, signal);
       checkPreparationSignal(signal);
-      if (observedGeneration !== generation) throw preparationCancelled();
+      if (observedGeneration !== generation || observedMetadataGeneration !== metadataGeneration) throw preparationCancelled();
       lookupFailures = fresh.failures;
       candidates = fresh.records.filter(record => record.source === "notion" && matches(record));
       if (!candidates.length && fresh.failures.some(item => item.blocking !== false)) {
@@ -1291,7 +1398,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     assertRecordSourceAvailable(selected);
     assertRecordSourceAvailable(selected, lookupFailures);
     if (short) assertShortRefSource(short, selected);
-    hostRecords.set(recordIdentity(selected), selected);
+    // A fixed owner can outlive its current directory membership; normal preparation still validates its source.
+    if (!retained) hostRecords.set(recordIdentity(selected), selected);
     return selected;
   }
   function modelFiles(record: SkillRecord, ctx: ExtensionContext) {
@@ -1348,7 +1456,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     ...(piConsumption ? { exposure: "model-only" as const, defaultActive: true } : {}),
     async execute(id, input, signal, _onUpdate, ctx) {
       const combined = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
-      await ready(combined);
+      await ready(combined, ctx);
       const requested = piConsumption ? typeof input.ref === "string" ? [input.ref] : input.ref : input.roots;
       if ((!piConsumption && !["use", "inspect"].includes(String(input.purpose))) || !Array.isArray(requested) || !requested.length || requested.length > 64
         || requested.some(value => typeof value !== "string") || input.refresh !== undefined && typeof input.refresh !== "boolean"
@@ -1449,7 +1557,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         const sources = (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false && source.id === input.cli_source);
         if (!sources.length) throw hostError("HOST_SOURCE_UNAVAILABLE");
         if (sources.length !== 1) throw hostError("HOST_SOURCE_AMBIGUOUS");
-        const result = { kind: "host_cli_scope", ...hostCliScope(sources), executed: false };
+        const result = { kind: "host_cli_scope", ...hostCliScope(sources), executed: false,
+          ...(piConsumption ? { write_guidance: "For writes, run this command prefix plus explicit argument values as one literal bash command and keep the complete JSON result; do not use shell variables, wrappers, pipes or redirects. Broker uses that receipt to refresh the source directory." } : {}) };
         return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
       }
       const graph = options.sessionGraph!(ctx);
@@ -1530,7 +1639,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const explicit = requested.startsWith("skill://") || isSessionShortRefInput(requested);
     // A plain file read does not acquire a remote Skill dependency. Published
     // broker locations are matched below and activate() retains their gate.
-    try { if (!deferredPiDiscovery || explicit) await ready(signal); }
+    try { if (!deferredPiDiscovery || explicit) await ready(signal, ctx); }
     catch (error) { return { block: true, reason: failure(error) }; }
     let selected: SkillRecord | undefined;
     let suffix = "";
@@ -1669,7 +1778,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (rawRefs.has(requested[index]!) || identities.has(identity)) throw hostError("RESOURCE_SELECTION_CONFLICT");
       rawRefs.add(requested[index]!); identities.add(identity);
     }
-    await ready(signal); current();
+    await ready(signal, ctx); current();
     const asserted = resolved.find(value => value.short)?.short;
     const named = resolved.find(value => value.record)?.record;
     if (named && resolved.some(value => value.record && recordIdentity(value.record) !== recordIdentity(named))) throw hostError("RESOURCE_SELECTION_CONFLICT");
@@ -1783,7 +1892,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
 
   const initialMetadata = refresh();
   if (adapter.metadataDiscovery !== "deferred") await initialMetadata;
-  return { invalidate() { metadataGeneration++; metadataController.abort(); generation++; lifecycleController.abort(); lifecycleController = new AbortController(); gate.cancel(false); turnPrompts = undefined; }, refresh, activate, prepare, prepareMany, withPreparedPrompt: async (prompt, ctx, build) => {
+  return { invalidate() { metadataGeneration++; metadataController.abort(); generation++; lifecycleController.abort(); lifecycleController = new AbortController(); gate.cancel(false); turnPrompts = undefined; }, invalidateMetadata, refresh, activate, prepare, prepareMany, withPreparedPrompt: async (prompt, ctx, build) => {
     const receipt = handoff?.prompts.includes(prompt) ? handoff : undefined;
     const selectedGeneration = generation;
     try {

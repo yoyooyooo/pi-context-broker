@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -102,6 +102,57 @@ async function pairedSdkFixture() {
   return { ...f, boundary, paired, source: { ...f.source, command: undefined } };
 }
 
+test("repeated SDK metadata observations reuse their immutable index while preserving current authority and freshness", async () => {
+  const f = await pairedSdkFixture();
+  f.paired.catalog.value = listing([f.record]); await f.save();
+  const observe = () => f.boundary.discoverNotionCatalogAndDirectory(f.source, f.root, {});
+  const first = await observe();
+  if (!first?.catalog.ok || !first.directory.ok) throw new Error("Expected both metadata projections");
+  const path = first.catalog.value[0]!.metadataIndexPath!;
+  expect(first.directory.value[0]!.metadataIndexPath).toBe(path);
+  const indexes = join(f.source.cacheDir!, "scopes", scope, "indexes");
+  const before = await readdir(indexes);
+  f.paired.catalog.value = listing([f.record]);
+  f.paired.directory.value = listing([f.record], "profile"); await f.save();
+  const second = await observe();
+  if (!second?.catalog.ok || !second.directory.ok) throw new Error("Expected the refreshed metadata projections");
+  expect(second.catalog.value[0]!.metadataIndexPath).toBe(path);
+  expect(second.directory.value[0]!.metadataIndexPath).toBe(path);
+  expect(second.catalog.value[0]!.freshness).toEqual(f.paired.catalog.value.freshness);
+  expect(await readdir(indexes)).toEqual(before);
+  expect((await f.calls()).map(call => call[0])).toEqual(["sdk-list", "sdk-list"]);
+  const original = await readFile(path, "utf8");
+  f.paired.catalog.value = listing([{ ...f.record, description: "Changed metadata" }]); await f.save();
+  const changed = await observe();
+  if (!changed?.catalog.ok) throw new Error("Expected the changed catalog");
+  expect(changed.catalog.value[0]!.metadataIndexPath).not.toBe(path);
+  expect(await readFile(changed.catalog.value[0]!.metadataIndexPath!, "utf8")).toContain("Changed metadata");
+  expect(await readFile(path, "utf8")).toBe(original);
+  const otherScope = "f".repeat(64);
+  f.paired.catalog.value.scope = otherScope; f.paired.directory.value.scope = otherScope; await f.save();
+  const other = await observe();
+  if (!other?.catalog.ok) throw new Error("Expected the other source scope");
+  expect(other.catalog.value[0]!.metadataIndexPath).toContain(join("scopes", otherScope, "indexes"));
+  expect(await readFile(path, "utf8")).toBe(original);
+  f.state.paired = { ...f.paired, catalog: { ok: false, error: { code: "ACCESS_DENIED" } } }; await f.save();
+  expect((await observe())?.catalog).toEqual({ ok: false, code: "ACCESS_DENIED" });
+});
+
+test("simultaneous SDK metadata discovery publishes one complete shared index", async () => {
+  const f = await pairedSdkFixture();
+  f.paired.catalog.value = listing([f.record]); await f.save();
+  const outcomes = await Promise.all(Array.from({ length: 3 }, () => f.boundary.discoverNotionCatalogAndDirectory(f.source, f.root, {})));
+  const paths = outcomes.flatMap(result => {
+    if (!result?.catalog.ok || !result.directory.ok) throw new Error("Expected complete concurrent metadata");
+    return [result.catalog.value[0]!.metadataIndexPath!, result.directory.value[0]!.metadataIndexPath!];
+  });
+  expect(new Set(paths).size).toBe(1);
+  expect(await readFile(paths[0]!, "utf8")).toContain(f.record.description);
+  const indexes = await readdir(join(f.source.cacheDir!, "scopes", scope, "indexes"));
+  expect(indexes.filter(name => /^[a-f0-9]{64}$/.test(name))).toHaveLength(1);
+  if (process.platform === "darwin") expect(indexes).toHaveLength(1);
+});
+
 test("paired SDK source rejects a different directory scope even when its successful full catalog has no rows", async () => {
   const f = await pairedSdkFixture();
   f.paired.directory.value.scope = "f".repeat(64); await f.save();
@@ -197,13 +248,17 @@ test("custom-command pagination cannot bless missing cursors, changing scopes or
 test("SC25 fixed names retain their manifest owner without looking up the current name", async () => {
   const f = await fixture(), other = sharedRecord("new-owner", { page: uuid(50) });
   f.state.catalog = listing([{ ...other, name: f.record.name, alias: f.record.alias }]); await f.save();
+  const paths: string[] = [];
   for (const selector of [f.record.name, f.record.alias]) {
     const input = `skill://${encodeURIComponent(selector)}/scripts/fixed.bin?snapshot=${snapshot}`;
     const selected = await resolveNotionReference(input, [f.source], f.root);
     expect(selected.record).toMatchObject({ id: f.record.id, sourceId: f.source.id, sourceScope: scope, snapshotId: snapshot });
     expect(selected.ref).toBe(f.record.ref.replace("SKILL.md", "scripts/fixed.bin") + `?snapshot=${snapshot}`);
     expect(await readFile(selected.record.path, "utf8")).not.toContain(f.content);
+    paths.push(selected.record.path);
   }
+  expect(new Set(paths).size).toBe(1);
+  expect(await readdir(join(f.source.cacheDir!, "scopes", scope, "indexes"))).toHaveLength(1);
   expect((await f.calls()).map(args => args[0])).toEqual(["files", "files"]);
 });
 
@@ -651,7 +706,7 @@ test("the selected View itself must belong to the returned database and queried 
   expect(result.records.some(record => record.defaultDiscovery)).toBe(false);
 });
 
-async function observeWrite(result: Json, operation = "update") {
+async function observeWrite(result: Json, operation = "update", args: readonly string[] = []) {
   const handlers = new Map<string, unknown>(), changed: string[][] = [];
   const api: ExtensionAPI = { on(event, handler) { handlers.set(event, handler); } };
   const source: NotionSource = { type: "notion", id: "shared", namespace: "team", command: ["node", "ntn-skills.mjs"], database };
@@ -660,7 +715,7 @@ async function observeWrite(result: Json, operation = "update") {
   const call = handlers.get("tool_call"), finish = handlers.get("tool_result");
   if (typeof call !== "function" || typeof finish !== "function") throw new Error("Expected installed write-observer handlers");
   const quoted = (argument: string) => "'" + argument.replaceAll("'", "'\\''") + "'";
-  const input = { command: [...hostCliScope([source]).command, operation, sharedRecord().ref, "--database", database].map(quoted).join(" ") };
+  const input = { command: [...hostCliScope([source]).command, operation, sharedRecord().ref, ...args, "--database", database].map(quoted).join(" ") };
   await call({ toolName: "bash", toolCallId: "write-1", input }, context);
   await finish({ toolName: "bash", toolCallId: "write-1", input, content: JSON.stringify(result), isError: false }, context);
   return changed;
@@ -672,6 +727,20 @@ function metadataReceipt(): Json {
 
 test("verified shared metadata updates invalidate their configured library using the real page locator", async () => {
   expect(await observeWrite(metadataReceipt())).toEqual([["shared"]]);
+});
+
+test.each([true, false])("verified shared Enabled=%s updates refresh discovery while preserving receipt checks", async enabled => {
+  const receipt = { ...metadataReceipt(), changed_fields: ["Enabled"], record: { ...sharedRecord(), enabled } };
+  const args = ["--enabled", String(enabled)];
+  expect(await observeWrite(receipt, "update", args)).toEqual([["shared"]]);
+  for (const invalid of [
+    { ...receipt, verified: false },
+    { ...receipt, dry_run: true },
+    { ...receipt, status: "unchanged", changed_fields: [] },
+    { ...receipt, status: "unknown" },
+    { ...receipt, changed_fields: ["Enabled", "Unexpected"] },
+    { ...receipt, record: { ...sharedRecord(), enabled: String(enabled) } },
+  ]) expect(await observeWrite(invalid, "update", args)).toEqual([]);
 });
 
 const invalidReceipts: [string, (receipt: Json) => Json][] = [
