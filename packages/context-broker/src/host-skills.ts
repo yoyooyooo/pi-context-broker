@@ -454,7 +454,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     return publication;
   }
 
-  async function nativeIndex(record: SkillRecord, signal: AbortSignal): Promise<string> {
+  async function nativeIndex(record: SkillRecord, signal?: AbortSignal): Promise<string> {
     const stub = `---\n${stringifyYaml({ name: hostSkillName(record), description: record.description })}---\n`;
     const identity = createHash("sha256").update(JSON.stringify([recordIdentity(record), stub])).digest("hex");
     let pending = nativeIndexes.get(identity);
@@ -491,7 +491,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   async function publish(record: SkillRecord, snapshot: SkillRecord, signal?: AbortSignal): Promise<void> {
     checkPreparationSignal(signal);
     if (!record.metadataIndexPath || record.metadataIndexPath === snapshot.path) return;
-    const index = resolve(record.metadataIndexPath);
+    // Name and exact lookups also return shared metadata stubs. Only this host's
+    // private native index may become a mutable pointer to a prepared body.
+    const target = record.source === "notion" ? await nativeIndex(record, signal) : record.metadataIndexPath;
+    const index = resolve(target);
     const directory = dirname(index);
     if (basename(snapshot.path) !== basename(index)) throw hostError("SOURCE_ENTRY_CONFLICT");
     const content = snapshot.body!;

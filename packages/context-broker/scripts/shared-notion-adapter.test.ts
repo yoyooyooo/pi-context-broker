@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rename, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -11,6 +11,7 @@ import { formatFindDiagnostics } from "../src/diagnostics";
 import { matchesPreciseRecordToken, parseCatalogMember, preciseRecordToken, resolveCatalogReference } from "../src/discovery-records";
 import { hostCliScope } from "../src/host-command";
 import { installHostSkills } from "../src/host-skills";
+import { publishNotionEntry } from "../src/notion-entry";
 import { discoverNotionCatalogAndDirectory, discoverNotionSource, loadNotionSkill, ReferenceMiss, resolveNotionReference } from "../src/notion-source";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { sharedSkillId } from "../src/shared-skill-identity";
@@ -101,6 +102,153 @@ async function pairedSdkFixture() {
   f.state.paired = paired; await f.save();
   return { ...f, boundary, paired, source: { ...f.source, command: undefined } };
 }
+
+async function legacyMetadataFixture(kind: ContentRecord["kind"] = "skill") {
+  const f = await pairedSdkFixture(), record = sharedRecord("skill:one", { kind }), entrypoint = record.entrypoint;
+  f.paired.catalog.value = listing([record]); f.paired.directory.value = listing([record], "profile"); await f.save();
+  const observe = () => f.boundary.discoverNotionCatalogAndDirectory(f.source, f.root, {});
+  const initial = await observe();
+  if (!initial?.catalog.ok) throw new Error("Expected initial metadata: " + JSON.stringify(initial));
+  const path = initial.catalog.value[0]!.metadataIndexPath!, stub = await readFile(path, "utf8"), directory = dirname(path);
+  const indexes = join(f.source.cacheDir!, "scopes", scope, "indexes");
+  const index = join(indexes, (await readdir(indexes)).find(name => /^[a-f0-9]{64}$/.test(name))!);
+  const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
+  const body = f.content, ref = record.ref + "?snapshot=" + snapshot;
+  const selected = await publishNotionEntry({ ...hostRecord(record), body, snapshotId: snapshot, versionId: hash(body),
+    preparationBinding: { record, scope, snapshot_id: snapshot, version_id: hash(body), body_sha256: hash(body), ref } },
+    [{ path: entrypoint, ref, bytes: Buffer.byteLength(body), sha256: hash(body) }], f.source.cacheDir!, async path => { await mkdir(path, { recursive: true }); });
+  const createAlias = async (label: string) => {
+    const root = join(dirname(selected.entryManifest!.root), ".host-indexes", hash(label));
+    const rendered = "---\nname: " + label + "\n---\n" + body, target = dirname(join(root, entrypoint));
+    await mkdir(target, { recursive: true }); await writeFile(join(root, entrypoint), rendered);
+    const receipt = { version: 1, projection: "host_index", loaded: false, scope, id: record.id,
+      snapshot_id: snapshot, version_id: selected.versionId, ref, entrypoint,
+      source: { bytes: Buffer.byteLength(body), sha256: hash(body) },
+      published: { path: entrypoint, bytes: Buffer.byteLength(rendered), sha256: hash(rendered) }, manifest_id: selected.entryManifest!.manifest_id };
+    await writeFile(join(root, ".broker-host-index.json"), JSON.stringify(receipt));
+    return { root, target, rendered, receipt };
+  };
+  const alias = await createAlias("legacy-host");
+  await rename(directory, join(f.root, "original-metadata")); await symlink(alias.target, directory, "dir");
+  const retained = join(index, ".retained-host-aliases", hash(record.id));
+  return { ...f, record, observe, path, stub, directory, index, retained, selected, alias, createAlias };
+}
+
+async function instrumentMetadataFs(f: Awaited<ReturnType<typeof legacyMetadataFixture>>, pause?: "rename" | "proof-lstat" | "proof-readlink") {
+  const fsModule = join(f.root, "observed-fs.mjs"), source = join(f.root, "observed-notion-source.ts");
+  await writeFile(fsModule, `export * from 'node:fs/promises';
+import {rename as originalRename, readlink as originalReadlink, lstat as originalLstat} from 'node:fs/promises';
+const arrived=Promise.withResolvers(), resumed=Promise.withResolvers();
+export const reached=arrived.promise, attempts=[], readlinkCalls=[];
+export const release=()=>resumed.resolve(); let paused=false;
+async function waitAt(point,path,expected) {
+ if(!paused && point===${JSON.stringify(pause ?? null)} && path===expected) {paused=true;arrived.resolve();await resumed.promise;}
+}
+export async function rename(from,to) {
+ await waitAt('rename',to,${JSON.stringify(f.retained)});
+ try {await originalRename(from,to);attempts.push({from,to,code:null});}
+ catch(error) {attempts.push({from,to,code:error.code});throw error;}
+}
+export async function lstat(path,...args) {
+ if(new Error().stack.includes('legacyMetadataAlias')) await waitAt('proof-lstat',path,${JSON.stringify(f.directory)});
+ return originalLstat(path,...args);
+}
+export async function readlink(path,...args) {
+ readlinkCalls.push(path);await waitAt('proof-readlink',path,${JSON.stringify(f.directory)});return originalReadlink(path,...args);
+}
+`);
+  await writeFile(source, (await readFile(join(f.root, "isolated-notion-source.ts"), "utf8"))
+    .replace('from "node:fs/promises"', 'from ' + JSON.stringify(fsModule)));
+  const boundary: typeof import("../src/notion-source") = await import(pathToFileURL(source).href);
+  const control: { reached: Promise<void>; release: () => void; attempts: Array<{ from: string; to: string; code: string | null }>; readlinkCalls: string[] } = await import(pathToFileURL(fsModule).href);
+  return { boundary, control };
+}
+
+test.each(["skill", "router", "prompt"] as const)("verified old metadata aliases recover without moving immutable targets (%s)", async kind => {
+  const f = await legacyMetadataFixture(kind), original = await readFile(f.selected.path), rendered = await readFile(join(f.alias.root, f.record.entrypoint));
+  const recovered = await f.observe();
+  expect(recovered?.catalog.ok).toBe(true); expect(recovered?.directory.ok).toBe(true);
+  expect((await lstat(f.directory)).isSymbolicLink()).toBe(false); expect(await readFile(f.path, "utf8")).toBe(f.stub);
+  expect(await readlink(f.retained)).toBe(f.alias.target);
+  expect(await readFile(f.selected.path)).toEqual(original); expect(await readFile(join(f.alias.root, f.record.entrypoint))).toEqual(rendered);
+  const before = await readdir(f.index, { recursive: true });
+  expect((await f.observe())?.catalog.ok).toBe(true); expect(await readdir(f.index, { recursive: true })).toEqual(before);
+  expect((await f.calls()).every(call => call[0] === "sdk-list")).toBe(true);
+  await rename(f.alias.root, join(f.root, "retained-projection-after-recovery"));
+  expect((await f.observe())?.catalog.ok).toBe(true); // Healthy metadata no longer depends on this historical target.
+});
+
+test.each(["missing", "empty"])("metadata recovery continues after the old link was retained and its slot is %s", async state => {
+  const f = await legacyMetadataFixture(); await mkdir(dirname(f.retained)); await rename(f.directory, f.retained);
+  if (state === "empty") await mkdir(f.directory);
+  expect((await f.observe())?.catalog.ok).toBe(true);
+  expect(await readFile(f.path, "utf8")).toBe(f.stub); expect(await readlink(f.retained)).toBe(f.alias.target);
+  expect(await readFile(join(f.alias.root, f.record.entrypoint), "utf8")).toBe(f.alias.rendered);
+});
+
+test("concurrent metadata recovery cannot rename another host's newly published directory", async () => {
+  const f = await legacyMetadataFixture(), { boundary, control } = await instrumentMetadataFs(f, "rename");
+  const first = boundary.discoverNotionCatalogAndDirectory(f.source, f.root, {});
+  await control.reached;
+  let second;
+  try { second = await f.observe(); } finally { control.release(); }
+  expect(second?.catalog.ok).toBe(true); expect((await first)?.catalog.ok).toBe(true);
+  expect(control.attempts).toContainEqual({ from: f.directory, to: f.retained, code: "ENOTDIR" });
+  expect((await lstat(f.directory)).isSymbolicLink()).toBe(false); expect(await readFile(f.path, "utf8")).toBe(f.stub);
+  expect(await readlink(f.retained)).toBe(f.alias.target); expect(await readdir(dirname(f.retained))).toHaveLength(1);
+  expect(await readFile(join(f.alias.root, f.record.entrypoint), "utf8")).toBe(f.alias.rendered);
+});
+
+test.each([
+  ["proof-lstat", "complete"], ["proof-readlink", "complete"], ["proof-readlink", "missing"], ["proof-readlink", "empty"],
+] as const)("metadata recovery reobserves another host before %s with slot %s", async (pause, state) => {
+  const f = await legacyMetadataFixture(), { boundary, control } = await instrumentMetadataFs(f, pause);
+  const first = boundary.discoverNotionCatalogAndDirectory(f.source, f.root, {});
+  await control.reached;
+  try {
+    if (state === "complete") expect((await f.observe())?.catalog.ok).toBe(true);
+    else {
+      await mkdir(dirname(f.retained)); await rename(f.directory, f.retained);
+      if (state === "empty") await mkdir(f.directory);
+    }
+  } finally { control.release(); }
+  expect((await first)?.catalog.ok).toBe(true);
+  expect(control.attempts.some(attempt => attempt.from === f.directory)).toBe(false);
+  expect((await lstat(f.directory)).isSymbolicLink()).toBe(false); expect(await readFile(f.path, "utf8")).toBe(f.stub);
+  expect(await readlink(f.retained)).toBe(f.alias.target); expect(await readdir(dirname(f.retained))).toHaveLength(1);
+  expect(await readFile(join(f.alias.root, f.record.entrypoint), "utf8")).toBe(f.alias.rendered);
+});
+
+test.each(["source-bytes", "alias-bytes", "manifest", "scope", "chain", "foreign", "different-retained"])("metadata recovery rejects unproven legacy aliases: %s", async change => {
+  const f = await legacyMetadataFixture();
+  if (change === "source-bytes") await writeFile(f.selected.path, "Changed source");
+  if (change === "alias-bytes") await writeFile(join(f.alias.root, f.record.entrypoint), "Changed alias");
+  if (change === "manifest" || change === "scope") await writeFile(join(f.alias.root, ".broker-host-index.json"), JSON.stringify({ ...f.alias.receipt,
+    ...(change === "manifest" ? { manifest_id: "f".repeat(64) } : { scope: "f".repeat(64) }) }));
+  if (change === "chain") {
+    const saved = join(f.root, "projection-behind-symlink"); await rename(f.alias.root, saved); await symlink(saved, f.alias.root, "dir");
+  }
+  if (change === "foreign") {
+    const saved = join(f.root, "foreign-projection"); await rename(f.directory, join(f.root, "saved-old-link"));
+    await mkdir(saved); await symlink(saved, f.directory, "dir");
+  }
+  if (change === "different-retained") {
+    const other = await f.createAlias("other-old-host"); await mkdir(dirname(f.retained)); await symlink(other.target, f.retained, "dir");
+  }
+  const originalTarget = await readlink(f.directory), outcome = await f.observe();
+  expect(outcome?.catalog).toEqual({ ok: false, code: "SOURCE_CACHE_UNSAFE" });
+  expect((await lstat(f.directory)).isSymbolicLink()).toBe(true); expect(await readlink(f.directory)).toBe(originalTarget);
+  if (change === "different-retained") expect(await readlink(f.retained)).not.toBe(f.alias.target);
+});
+
+test("metadata recovery rejects a linked retention directory before reading its foreign child", async () => {
+  const f = await legacyMetadataFixture(), foreign = join(f.root, "foreign-retention"); await mkdir(foreign);
+  await symlink(foreign, dirname(f.retained), "dir");
+  const { boundary, control } = await instrumentMetadataFs(f);
+  expect((await boundary.discoverNotionCatalogAndDirectory(f.source, f.root, {}))?.catalog).toEqual({ ok: false, code: "SOURCE_CACHE_UNSAFE" });
+  expect(control.readlinkCalls).toEqual([]); expect(await readdir(foreign)).toEqual([]);
+  expect(await readlink(f.directory)).toBe(f.alias.target);
+});
 
 test("repeated SDK metadata observations reuse their immutable index while preserving current authority and freshness", async () => {
   const f = await pairedSdkFixture();

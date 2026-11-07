@@ -4,7 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
-import { lstat, mkdir, readFile, readdir, realpath, rename, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, readlink, realpath, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { normalizeKey } from "./skill-records";
@@ -249,22 +249,144 @@ async function privateDirectory(path: string, source: NotionSource): Promise<voi
   if (!(await lstat(path)).isDirectory() || await realpath(path) !== resolve(path)) throw new SourceError("SOURCE_CACHE_UNSAFE", source.id);
 }
 
-type MetadataStub = { id: string; entrypoint: string; stub: string };
+type MetadataStub = { id: string; entrypoint: string; ref: string; stub: string };
 function metadataIndexIdentity(files: readonly MetadataStub[]): string {
   const projection = files.map(file => [file.id, file.entrypoint, file.stub]).sort((a, b) => a[0]! < b[0]! ? -1 : a[0]! > b[0]! ? 1 : 0);
   // Time and selection freshness belong to the current observation, not its bytes.
   return createHash("sha256").update(JSON.stringify(["metadata-index", 1, projection])).digest("hex");
 }
+
+/** Identify only the old host publication that replaced this exact metadata slot. */
+async function legacyMetadataAlias(index: string, file: MetadataStub, path: string, source: NotionSource): Promise<string> {
+  function unsafe(): never { throw new SourceError("SOURCE_CACHE_UNSAFE", source.id); }
+  const digest = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
+  const scopeRoot = dirname(dirname(index)), scope = basename(scopeRoot), owner = digest(file.id);
+  if (!HASH.test(scope) || basename(dirname(scopeRoot)) !== "scopes" || basename(dirname(index)) !== "indexes") unsafe();
+  try {
+    if (!(await lstat(path)).isSymbolicLink()) unsafe();
+    const target = await readlink(path), parts = relative(scopeRoot, target).split(sep);
+    const parents = file.entrypoint.split("/").slice(0, -1);
+    if (!isAbsolute(target) || resolve(target) !== target || parts.length !== 6 + parents.length
+      || parts[0] !== "records" || parts[1] !== owner || parts[2] !== "entries"
+      || !/^s_[a-f0-9]{64}$/.test(parts[3] ?? "") || parts[4] !== ".host-indexes" || !HASH.test(parts[5] ?? "")
+      || !isDeepStrictEqual(parts.slice(6), parents)) unsafe();
+    const entryRoot = join(scopeRoot, "records", owner, "entries", parts[3]!);
+    const projectionRoot = join(entryRoot, ".host-indexes", parts[5]!);
+    if (target !== dirname(join(projectionRoot, file.entrypoint))) unsafe();
+    const bytes = async (selected: string): Promise<Buffer> => {
+      for (let parent = dirname(selected); ; parent = dirname(parent)) {
+        if (parent !== scopeRoot && !parent.startsWith(scopeRoot + sep)) unsafe();
+        const state = await lstat(parent);
+        if (!state.isDirectory() || state.isSymbolicLink()) unsafe();
+        if (parent === scopeRoot) break;
+      }
+      const state = await lstat(selected);
+      if (!state.isFile() || state.isSymbolicLink() || state.size > 16 * 1024 * 1024) unsafe();
+      return readFile(selected);
+    };
+    const entryBytes = await bytes(join(entryRoot, ".broker-entry.json"));
+    const entry: unknown = JSON.parse(entryBytes.toString("utf8"));
+    const publication: unknown = JSON.parse((await bytes(join(projectionRoot, ".broker-host-index.json"))).toString("utf8"));
+    if (!object(entry) || !object(publication) || entry.version !== 1 || entry.projection !== "entry" || entry.manifest_complete !== true
+      || publication.version !== 1 || publication.projection !== "host_index" || publication.loaded !== false
+      || entry.scope !== scope || entry.id !== file.id || entry.snapshot_id !== parts[3] || entry.entrypoint !== file.entrypoint
+      || typeof entry.version_id !== "string" || !entry.version_id || typeof entry.ref !== "string"
+      || !Array.isArray(entry.files) || !entry.files.length) unsafe();
+    for (const key of ["scope", "id", "snapshot_id", "version_id", "entrypoint", "ref"])
+      if (entry[key] !== publication[key]) unsafe();
+    if (publication.manifest_id !== digest(entryBytes) || publication.manifest_id !== digest(JSON.stringify(entry))) unsafe();
+    const ownerRef = parseNativeReference(file.ref), fixed = parseNativeReference(entry.ref);
+    if (fixed.selector !== ownerRef.selector || fixed.path !== file.entrypoint || fixed.snapshot !== entry.snapshot_id) unsafe();
+    const seen = new Set<string>();
+    for (const item of entry.files) {
+      if (!object(item) || typeof item.path !== "string" || portablePath(item.path, source) !== item.path
+        || seen.has(item.path) || !Number.isSafeInteger(item.bytes) || Number(item.bytes) < 0
+        || typeof item.sha256 !== "string" || !HASH.test(item.sha256) || typeof item.ref !== "string") unsafe();
+      seen.add(item.path);
+      const ref = parseNativeReference(item.ref);
+      if (ref.selector !== ownerRef.selector || ref.snapshot !== entry.snapshot_id || ref.path !== item.path) unsafe();
+    }
+    const main = entry.files.find(item => object(item) && item.path === file.entrypoint);
+    if (!object(main) || main.ref !== entry.ref || !object(publication.source) || !object(publication.published)
+      || publication.source.bytes !== main.bytes || publication.source.sha256 !== main.sha256
+      || publication.published.path !== file.entrypoint) unsafe();
+    const original = await bytes(join(entryRoot, "tree", file.entrypoint));
+    const rendered = await bytes(join(projectionRoot, file.entrypoint));
+    if (original.length !== main.bytes || digest(original) !== main.sha256
+      || rendered.length !== publication.published.bytes || digest(rendered) !== publication.published.sha256) unsafe();
+    return target;
+  } catch { return unsafe(); }
+}
+
+async function recoverMetadataAlias(index: string, files: readonly MetadataStub[], file: MetadataStub, source: NotionSource,
+  verify: () => Promise<void>, signal?: AbortSignal, retryObservation = true): Promise<boolean> {
+  // Another host may already have finished. Healthy metadata never depends on
+  // an old retained target remaining available.
+  try { await verify(); return true; } catch { /* Inspect only the known old layout below. */ }
+  if (basename(index) !== metadataIndexIdentity(files)) return false;
+  const directory = dirname(join(index, createHash("sha256").update(file.id).digest("hex"), file.entrypoint));
+  await privateDirectory(dirname(directory), source);
+  const state = await lstat(directory).catch(error => { if (object(error) && error.code === "ENOENT") return undefined; throw error; });
+  if (state && !state.isSymbolicLink() && (!state.isDirectory() || (await readdir(directory)).length > 0)) {
+    try { await verify(); return true; } catch { return false; }
+  }
+  const retainedRoot = join(index, ".retained-host-aliases"), retained = join(retainedRoot, createHash("sha256").update(file.id).digest("hex"));
+  const retainedState = await lstat(retainedRoot).catch(error => { if (object(error) && error.code === "ENOENT") return undefined; throw error; });
+  if (retainedState && (!retainedState.isDirectory() || retainedState.isSymbolicLink())) throw new SourceError("SOURCE_CACHE_UNSAFE", source.id);
+  const saved = retainedState ? await lstat(retained).catch(error => { if (object(error) && error.code === "ENOENT") return undefined; throw error; }) : undefined;
+  if (!state?.isSymbolicLink() && !saved) return false;
+  let target: string | undefined, savedTarget: string | undefined;
+  try {
+    target = state?.isSymbolicLink() ? await legacyMetadataAlias(index, file, directory, source) : undefined;
+    savedTarget = saved ? await legacyMetadataAlias(index, file, retained, source) : undefined;
+  } catch (error) {
+    // The link may have moved between observation and proof. Reobserve once:
+    // only a verified current stub or the same proven retained layout can pass.
+    if (!retryObservation) throw error;
+    return recoverMetadataAlias(index, files, file, source, verify, signal, false);
+  }
+  if (target && savedTarget && target !== savedTarget) throw new SourceError("SOURCE_CACHE_UNSAFE", source.id);
+  if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
+  await privateDirectory(retainedRoot, source);
+  if (target) {
+    try { await rename(directory, retained); }
+    catch (error) {
+      // A concurrent recovery may have moved the link or published its directory.
+      // The fixed retained symlink is a non-directory barrier: a late directory
+      // rename cannot replace it. Do not swallow other filesystem failures.
+      if (!object(error) || !["ENOENT", "ENOTDIR"].includes(String(error.code))) throw error;
+    }
+  }
+  if (await legacyMetadataAlias(index, file, retained, source) !== (target ?? savedTarget)) throw new SourceError("SOURCE_CACHE_UNSAFE", source.id);
+  const stage = join(dirname(directory), ".metadata-repair-stage-" + randomUUID());
+  try {
+    await privateDirectory(stage, source);
+    await writeFile(join(stage, basename(file.entrypoint)), file.stub, { flag: "wx", mode: 0o600 });
+    if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
+    try { await rename(stage, directory); }
+    catch (error) { if (!object(error) || !["EEXIST", "ENOTEMPTY"].includes(String(error.code))) throw error; }
+    await verify();
+    return true;
+  } finally { await retireOwnedCacheStage(stage); }
+}
+
 async function publishMetadataIndex(index: string, files: readonly MetadataStub[], source: NotionSource, signal?: AbortSignal): Promise<void> {
   const pathFor = (root: string, file: MetadataStub) => join(root, createHash("sha256").update(file.id).digest("hex"), file.entrypoint);
+  const verifyFile = async (file: MetadataStub) => {
+    const path = pathFor(index, file);
+    await privateDirectory(dirname(path), source);
+    const info = await lstat(path);
+    if (!info.isFile() || info.isSymbolicLink()) throw new SourceError("SOURCE_CACHE_UNSAFE", source.id);
+    if (await readFile(path, "utf8") !== file.stub) throw new SourceError("SOURCE_OUTPUT_CONFLICT", source.id);
+  };
   const verify = async () => {
     await privateDirectory(index, source);
     for (const file of files) {
-      const path = pathFor(index, file);
-      await privateDirectory(dirname(path), source);
-      const info = await lstat(path);
-      if (!info.isFile() || info.isSymbolicLink()) throw new SourceError("SOURCE_CACHE_UNSAFE", source.id);
-      if (await readFile(path, "utf8") !== file.stub) throw new SourceError("SOURCE_OUTPUT_CONFLICT", source.id);
+      try { await verifyFile(file); }
+      catch (error) {
+        if (!object(error) || !["SOURCE_CACHE_UNSAFE", "ENOENT"].includes(String(error.code))
+          || !await recoverMetadataAlias(index, files, file, source, () => verifyFile(file), signal)) throw error;
+      }
     }
   };
   let exists = true;
@@ -489,7 +611,7 @@ async function discoverNotionDirectory(source: NotionSource, cwd: string, option
     const selector = locator.type === "notion_page" || locator.type === "shared_skill" ? locator.page_id : locator.type === "notion_subscription" ? locator.subscription_id : item.id;
     const name = `${item.alias}${counts.get(item.alias)! > 1 || !coverage.exhaustive ? `@${selector.replaceAll("-", "")}` : ""}`;
     const hostName = name.replace(/[^a-z0-9-]/g, "-");
-    return { item, name, id: item.id, entrypoint: item.entrypoint, stub: `---\nname: ${JSON.stringify(hostName)}\ndescription: ${JSON.stringify(item.description)}\n---\n` };
+    return { item, name, id: item.id, entrypoint: item.entrypoint, ref: item.ref, stub: `---\nname: ${JSON.stringify(hostName)}\ndescription: ${JSON.stringify(item.description)}\n---\n` };
   });
   const indexId = saved?.indexId ?? metadataIndexIdentity(metadata);
   const index = join(await cacheRoot(source, cwd), "scopes", scope, "indexes", indexId);
@@ -650,7 +772,7 @@ async function resolveNotionReferenceInSource(input: string, source: NotionSourc
   if (canonical.selector !== owner.selector || canonical.snapshot !== requested.snapshot || canonical.path !== selectedPath
     || requested.fileId !== undefined && canonical.fileId !== requested.fileId) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
   // Use the same metadata-stub layout as discovery; it is not a name index or body cache.
-  const metadata = [{ id: record.id, entrypoint: record.entrypoint, stub: `---\nname: ${JSON.stringify(record.alias)}\ndescription: ${JSON.stringify(record.description)}\n---\n` }];
+  const metadata = [{ id: record.id, entrypoint: record.entrypoint, ref: record.ref, stub: `---\nname: ${JSON.stringify(record.alias)}\ndescription: ${JSON.stringify(record.description)}\n---\n` }];
   const index = join(await cacheRoot(source, cwd), "scopes", String(value.scope), "indexes", metadataIndexIdentity(metadata));
   await publishMetadataIndex(index, metadata, source, options.signal);
   const path = join(index, createHash("sha256").update(record.id).digest("hex"), record.entrypoint), namespace = source.namespace ?? source.id;

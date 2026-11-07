@@ -21,6 +21,7 @@ Changes since the published [0.1.0 release](https://github.com/yoyooyooo/pi-cont
 - Restore exact selected snapshots across resume, fork, rewind and compaction. Refresh can create a new selection without moving older short references to today's content.
 - Read fixed scalar resources without preparing the main, and add bounded resource batches through native `read({paths})`. When another extension owns scalar `read`, expose `notion_read_resources` through the same batch handler while preserving that reader's paging, images and result behavior.
 - Share verified immutable body/manifest projections across processes while retaining instance-owned aliases and historical pins. Preserve durable operation/recovery state separately from content caches, and record source requests separately from model-provider caching.
+- Keep name and alias consumption from changing shared metadata indexes. Recover recognized stale host-alias links with verified ownership and retained link nodes, preserving immutable snapshots and rejecting unrelated or corrupt links.
 - Preserve native/slash delivery receipts, show preparation budgets during cancellable acquisition, and prevent late catalog or preparation callbacks from dispatching into replaced sessions.
 
 ### Distribution and compatibility

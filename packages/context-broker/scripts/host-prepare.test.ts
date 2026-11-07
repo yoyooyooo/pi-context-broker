@@ -29,7 +29,7 @@ function preparationDetails(result: { details?: unknown }): Record<string, unkno
   if (!preparation || typeof preparation !== "object" || Array.isArray(preparation)) throw new Error("Expected preparation proof");
   return Object.fromEntries(Object.entries(preparation));
 }
-async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKind: "pi" | "omp" = "pi", identityScope = scope, withBodyCard = false) {
+async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKind: "pi" | "omp" = "pi", identityScope = scope, withBodyCard = false, withDistinctName = false) {
   const owned = await mkdtemp(join(tmpdir(), "broker-host-prepare-"));
   const directory = withDirectoryAlias ? join(owned, "alias") : owned;
   if (withDirectoryAlias) {
@@ -42,7 +42,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
   for (const [index, name] of ["root", "required", "member"].entries()) {
     const id = "shared_skill:controlled:" + name;
     const metadata: ContentRecord = {
-      id, kind: "skill", name, alias: name, description: withBodyCard && name === "member" ? 'Controlled member <metadata> & "原文".' : "Controlled " + name, enabled: true, default_context: index === 0,
+      id, kind: "skill", name: withDistinctName && index === 0 ? "Root human title" : name, alias: name, description: withBodyCard && name === "member" ? 'Controlled member <metadata> & "原文".' : "Controlled " + name, enabled: true, default_context: index === 0,
       entrypoint: "SKILL.md", ref: "skill://" + encodeURIComponent(id) + "/SKILL.md",
       locator: { type: "shared_skill", library_id: "controlled", skill_id: name, page_id: "00000000-0000-4000-8000-" + String(index + 1).padStart(12, "0"),
         database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" },
@@ -245,6 +245,38 @@ test.each(["named", "exact"])("a late %s metadata lookup cannot republish an own
   expect(await lookup).toContainEqual(expect.objectContaining({ block: true, reason: expect.stringMatching(/SOURCE_ACTIVATION_CANCELLED/) }));
   expect((await list()).count).toBe(0);
   expect(f.calls).toEqual([]);
+});
+
+test.each(["named", "exact"])("late %s reads and use keep shared metadata stubs immutable", async route => {
+  const f = await fixture(true, false, "pi", scope, false, true), shared = join(f.ctx.cwd, "shared-metadata", "root", "SKILL.md");
+  const stub = "---\nname: root\ndescription: Shared metadata only\n---\n";
+  await mkdir(dirname(shared), { recursive: true });
+  await writeFile(shared, stub);
+  const metadata = { ...f.root, body: undefined, preparationBinding: undefined, path: shared, metadataIndexPath: shared };
+  const { tool } = await f.install(undefined, {
+    getRecords: async () => ({ records: [], failures: [] }),
+    lookupReference: async () => ({ records: [metadata], failures: [] }),
+    resolveNamedReference: async () => ({ record: metadata, ref: f.root.ref! }),
+  });
+  const ref = route === "named" ? "skill://" + encodeURIComponent(f.root.name) + "/SKILL.md" : f.root.ref!;
+  const inspected = await nativeRead(f, ref, "late-inspect");
+  expect(sourceMessageText(inspected.content)).toContain(f.root.body!);
+  expect((await lstat(dirname(shared))).isSymbolicLink()).toBe(false);
+  expect(await readFile(shared, "utf8")).toBe(stub);
+  const applied = await tool.execute("late-alias-use", { ref: "skill://root/SKILL.md" }, undefined, undefined, f.ctx);
+  expect(applied.isError).not.toBe(true);
+  expect(sourceMessageText(applied.content)).toContain("Exact required");
+  expect((await lstat(dirname(shared))).isSymbolicLink()).toBe(false);
+  expect(await readFile(shared, "utf8")).toBe(stub);
+  const exact = await nativeRead(f, f.root.ref!, "exact-after-alias-use");
+  expect(sourceMessageText(exact.content)).toContain(f.root.body!);
+  expect((await lstat(dirname(shared))).isSymbolicLink()).toBe(false);
+  expect(await readFile(shared, "utf8")).toBe(stub);
+  expect(await readFile(f.root.path, "utf8")).toBe(f.root.body!);
+  // This fixture has no accepted provider context or active preparation gate;
+  // a later current read still performs its own inspect admission.
+  expect(f.calls).toEqual(["inspect", "use", "inspect"]);
+  await f.emit("session_shutdown", { type: "session_shutdown" }, f.ctx);
 });
 
 test("repeated host metadata refresh and activation reuse native projections across session switches", async () => {
