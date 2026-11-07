@@ -1850,3 +1850,55 @@ test('a successful page cannot cross an immutable file identity changed after ad
     assert.equal(result.partialRead, undefined);
   } finally { f.close(); }
 });
+
+
+function combinedNameReceipt(receipt) {
+  const full = { ...receipt.response, databases: [] }, directory = { ...structuredClone(full), view: { id: 'background-view' },
+    capability_directory: true, view_selection: 'first', coverage: { ...full.coverage, method: 'explicit_view' } };
+  const paired = { requestId: receipt.requestId, transport: 'sdk', operation: 'list', status: 'completed', resultObserved: true,
+    value: { version: 1, catalog: { ok: true, value: full }, directory: { ok: true, value: directory } } };
+  if (receipt.metrics) paired.metrics = receipt.metrics;
+  return paired;
+}
+
+test('combined catalog: submitted-name source timing uses only the full facet of the exact SDK operation', () => {
+  const f = submittedNameSelectionFixture(), index = f.value.responses.indexOf(f.catalog);
+  f.value.responses[index] = combinedNameReceipt(f.catalog);
+  assert.equal(graphTrace(f.value).memberBodyReadsBeforeSelection, 0);
+  for (const variant of ['full-failed', 'directory-only', 'directory-failed', 'partial-full', 'ambiguous-full']) {
+    const changed = submittedNameSelectionFixture(), paired = combinedNameReceipt(changed.catalog);
+    changeCombinedName(paired, variant); changed.value.responses[changed.value.responses.indexOf(changed.catalog)] = paired;
+    assert.equal(graphTrace(changed.value).memberBodyReadsBeforeSelection, 1, variant);
+  }
+});
+
+function changeCombinedName(receipt, variant) {
+  if (variant === 'full-failed') receipt.value.catalog = { ok: false, error: { code: 'IDENTITY_CONFLICT', message: 'Controlled full failure' } };
+  if (variant === 'directory-failed') receipt.value.directory = { ok: false, error: { code: 'VIEW_INCOMPLETE', message: 'Controlled View failure' } };
+  if (variant === 'directory-only') receipt.value = receipt.value.directory.value;
+  if (variant === 'partial-full') receipt.value.catalog.value.coverage.exhaustive = false;
+  if (variant === 'ambiguous-full') {
+    const full = receipt.value.catalog.value, other = { ...full.records[0], id: full.records[0].id + ':other' };
+    other.ref = 'skill://' + encodeURIComponent(other.id) + '/SKILL.md'; full.records.push(other); full.count++;
+  }
+}
+
+for (const variant of ['complete', 'full-failed', 'directory-only', 'directory-failed', 'partial-full', 'ambiguous-full']) test('combined catalog: the live graph observer resolves a submitted name from the full facet: ' + variant, async () => {
+  const body = 'Complete named instructions.\n', prompt = '请介绍 visible-skill。';
+  const fixture = await literalObserverFixture(body, undefined, undefined, undefined, { deferred: true, prompt,
+    record: { name: 'Visible Skill', alias: 'visible-skill', enabled: true, entrypoint: 'SKILL.md', ref: 'skill://shared_skill%3Acontrolled%3Aliteral-root/SKILL.md' } });
+  try {
+    fixture.handlers.get('before_provider_request')({ payload: fixture.payload(prompt) }, fixture.ctx);
+    const input = { path: 'skill://visible-skill/SKILL.md' };
+    fixture.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id: 'paired-name', name: 'read', arguments: input }] } });
+    assert.equal(fixture.handlers.get('tool_call')({ toolName: 'read', toolCallId: 'paired-name', input }), undefined);
+    const paired = combinedNameReceipt(nameCatalog(fixture)); changeCombinedName(paired, variant);
+    await save(path.join(fixture.responses, 'combined-name.json'), paired);
+    await fixture.publish();
+    fixture.handlers.get('tool_result')({ toolName: 'read', toolCallId: 'paired-name', content: [{ type: 'text', text: body }] });
+    const read = (await fixture.events()).find(event => event.phase === 'tool-result');
+    assert.equal(read.complete, variant === 'complete');
+    if (variant === 'complete') assert.equal(read.nameResolution.selectionRequestId, 'new-name-selection');
+    else assert.equal(read.nameResolution, undefined);
+  } finally { fixture.close(); }
+});

@@ -1144,3 +1144,48 @@ test('the shared installed Pi help boundary permits advertised files without cla
     assert.throws(() => assertModelCase(helped, expected, { native: true }), /exact native entry/);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+
+function combinedStartupInput() {
+  const value = startupInput(), [full, selected] = value.responses;
+  full.value = { version: 1, catalog: { ok: true, value: { ...full.value, databases: [] } },
+    directory: { ok: true, value: { ...selected.value, databases: [] } } };
+  full.metrics = { complete: true, total_requests: 2, trace: [...full.metrics.trace, ...selected.metrics.trace]
+    .map((event, index) => ({ ...event, attempt: index + 1 })) };
+  value.responses = [full]; value.sourceLedger = value.sourceLedger.filter(event => event.requestId !== selected.requestId);
+  return value;
+}
+
+test('combined catalog: ready setup validates two projections and counts one SDK operation', () => {
+  const value = combinedStartupInput(), original = JSON.stringify(value.responses), ready = intentRunner.inspectDiscoveryStartup(value);
+  assert.equal(ready.state, 'ready'); assert.deepEqual(ready.defaultRequestIds, ['one']);
+  assert.deepEqual(ready.startedSdkIds, ['one']); assert.deepEqual(ready.completedSdkIds, ['one']);
+  assert.equal(ready.httpAttempts, 2); assert.equal(ready.requestBytes, 237); assert.equal(ready.responseBytes, 721114);
+  assert.equal(JSON.stringify(value.responses), original);
+  value.sourceLedger.push({ phase: 'sdk-observer-end', pid: 42, pending: 0 });
+  const source = assertIntentSource(value);
+  assert.equal(source.default_catalog, 'observed_complete_production_default');
+  assert.equal(source.sdk_calls.list, 1); assert.equal(source.actual_http_attempts, 2); assert.equal(source.response_bytes, 721114);
+});
+
+
+test('combined catalog: ready setup and whole-task source evidence retain failed and partial projection rejection', () => {
+  for (const mutate of [
+    value => { value.catalog = { ok: false, error: { code: 'IDENTITY_CONFLICT', message: 'Unrelated full-catalog conflict' } }; },
+    value => { value.directory = { ok: false, error: { code: 'VIEW_INCOMPLETE', message: 'Incomplete View' } }; },
+    value => { value.catalog.value.coverage.exhaustive = false; },
+    value => { value.directory.value.coverage.failed_sources = [{ id: 'source', code: 'DENIED' }]; },
+    value => { value.directory.value.scope = 'foreign'; },
+    value => { value.directory.value.records = []; value.directory.value.count = 0; },
+    value => { value.directory.value.count--; },
+    value => { value.directory.value.view.id = 'another-view'; },
+    value => { value.catalog.value.databases = [{ database_id: 'db', shared_library: { library_id: 'old' } }];
+      value.directory.value.databases = [{ database_id: 'db', shared_library: { library_id: 'new' } }]; },
+  ]) {
+    const input = combinedStartupInput(); mutate(input.responses[0].value);
+    assert.throws(() => intentRunner.inspectDiscoveryStartup(input));
+    input.sourceLedger.push({ phase: 'sdk-observer-end', pid: 42, pending: 0 });
+    // This gate has no expected View ID, but it still requires the actual complete owner set.
+    if (input.responses[0].value.directory.value?.view?.id !== 'another-view') assert.throws(() => assertIntentSource(input));
+  }
+});

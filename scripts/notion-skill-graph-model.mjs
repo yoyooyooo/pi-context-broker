@@ -287,22 +287,26 @@ export function observeGraphGate(api, settings) {
     const candidates = [];
     if (!catalogs.length) return undefined;
     for (const item of catalogs) {
-      const value = item.transport === 'sdk' ? item.value : item.response;
-      if (!item.observerCompleted || !value || typeof item.requestId !== 'string' || !/^[a-f0-9]{64}$/u.test(value.scope)
-        || !Array.isArray(value.records) || value.count !== value.records.length
-        || !Array.isArray(value.coverage?.failed_sources) || value.coverage.failed_sources.length) return undefined;
-      // A successful background View/search/page is observed cost, not name
-      // authority. A complete ordinary catalog is still required below; failed
-      // or unattributed list work cannot be discarded as background activity.
-      if (value.coverage.method === 'explicit_view' || ['view', 'view_selection', 'view_query', 'profile', 'capability_directory', 'query', 'limit', 'cursor', 'has_more', 'next_cursor', 'total_count'].some(key => key in value)) continue;
-      if (value.coverage.exhaustive !== true || value.coverage.search_index_limited !== false
-        || new Set(value.records.map(record => record.id)).size !== value.records.length) return undefined;
-      for (const record of value.records) {
-        if (record.enabled === false || ![record.name, record.alias].includes(claim.selector)) continue;
-        const parsed = parseRef(record.ref), path = record.entrypoint ?? parsed?.path;
-        if (!parsed || parsed.selector !== record.id || !path || path !== parsed.path || !['skill', 'router'].includes(record.kind)
-          || claim.path && claim.path !== path) return undefined;
-        candidates.push({ scope: value.scope, ownerId: record.id, path, record, selectionRequestId: item.requestId });
+      if (!item.observerCompleted || typeof item.requestId !== 'string') return undefined;
+      const projections = graphSourceViews([item]);
+      if (projections.directoryFailures.length || !projections.directories.length) return undefined;
+      for (const { value, facet } of projections.directories) {
+        if (!/^[a-f0-9]{64}$/u.test(value.scope)
+          || !Array.isArray(value.records) || value.count !== value.records.length
+          || !Array.isArray(value.coverage?.failed_sources) || value.coverage.failed_sources.length) return undefined;
+        // A successful background View/search/page is observed cost, not name
+        // authority. A complete ordinary catalog is still required below; failed
+        // or unattributed list work cannot be discarded as background activity.
+        if (facet === 'directory' || value.coverage.method === 'explicit_view' || ['view', 'view_selection', 'view_query', 'profile', 'capability_directory', 'query', 'limit', 'cursor', 'has_more', 'next_cursor', 'total_count'].some(key => key in value)) continue;
+        if (value.coverage.exhaustive !== true || value.coverage.search_index_limited !== false
+          || new Set(value.records.map(record => record.id)).size !== value.records.length) return undefined;
+        for (const record of value.records) {
+          if (record.enabled === false || ![record.name, record.alias].includes(claim.selector)) continue;
+          const parsed = parseRef(record.ref), path = record.entrypoint ?? parsed?.path;
+          if (!parsed || parsed.selector !== record.id || !path || path !== parsed.path || !['skill', 'router'].includes(record.kind)
+            || claim.path && claim.path !== path) return undefined;
+          candidates.push({ scope: value.scope, ownerId: record.id, path, record, selectionRequestId: item.requestId });
+        }
       }
     }
     const unique = [...new Map(candidates.map(item => [canonical([item.scope, item.ownerId, item.path, item.record.locator ?? null]), item])).values()];
@@ -1694,7 +1698,8 @@ export function graphSourceAttribution({ observation, responses, sourceLedger, o
       if (authored.nameSelection && JSON.stringify(authored.nameSelection) !== JSON.stringify({ expected, claim })) return admittedAt;
       if (claim?.kind === 'submitted-name') {
         const proof = read.nameResolution, provider = observation.find(event => event.phase === 'provider-request' && event.sequence === claim.promptSequence);
-        const catalogs = sourceViews.directories.filter(item => item.requestId === proof?.selectionRequestId);
+        const catalogs = sourceViews.directories.filter(item => item.requestId === proof?.selectionRequestId && item.facet !== 'directory');
+        if (sourceViews.directoryFailures.some(item => item.requestId === proof?.selectionRequestId)) return admittedAt;
         const catalog = catalogs.length === 1 ? catalogs[0].value : undefined;
         const records = catalog?.records?.filter(record => record.enabled !== false && [record.name, record.alias].includes(claim.selector));
         const sources = sourceViews.entries.filter(item => item.requestId === proof?.readRequestId);

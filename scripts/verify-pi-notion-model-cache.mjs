@@ -11,7 +11,7 @@ import { createRequestLedger } from './notion-default-context.mjs';
 import { decodeCatalogText } from './notion-integration-hosts.mjs';
 import { observe } from './notion-integration-model.mjs';
 import { graphObserverModule, sourceObserver, graphSourceAttribution, collectSupplementaryRetainedProof, createGraphFallbackTraps } from './notion-skill-graph-model.mjs';
-import { graphSourceViews, graphSourceAccounting } from './notion-skill-graph-model-evidence.mjs';
+import { catalogFacets, graphSourceViews, graphSourceAccounting } from './notion-skill-graph-model-evidence.mjs';
 import { createOwnedGraphProject, inspectOwnedGraphProject, retainGeneratedPlan, verifyGeneratedExerciseAcceptance } from './notion-skill-graph-project.mjs';
 import { createPiHelpBoundary } from './notion-pi-help.mjs';
 import { installedBrokerIdentity } from './notion-skill-graph-session.mjs';
@@ -141,7 +141,7 @@ export function inspectDiscoveryStartup({ observation, sourceLedger, responses, 
     assert.ok(start); assert.equal(end.pid, pid); assert.equal(end.operation, start.operation);
     assert.equal(end.status, 'completed', 'Cancelled or failed setup cannot become ready');
     assert.equal(end.metricsComplete, true); assert.equal(end.resultObserved, true); assert.equal(matches.length, 1);
-    const receipt = matches[0], value = receipt.value;
+    const receipt = matches[0];
     assert.equal(receipt.transport, 'sdk'); assert.equal(receipt.operation, 'list'); assert.equal(receipt.status, 'completed');
     assert.equal(receipt.resultObserved, true); assert.equal(receipt.sdk_started, true); assert.equal(receipt.metrics_observed, true);
     assert.equal(receipt.metrics?.complete, true);
@@ -149,19 +149,23 @@ export function inspectDiscoveryStartup({ observation, sourceLedger, responses, 
     assert.equal(measured.length, receipt.metrics.total_requests); assert.equal(new Set(measured.map(event => event.attempt)).size, measured.length);
     assert.ok(measured.every(event => event.request_kind === 'notion_metadata'), 'Setup body/write/unknown attempts are forbidden');
     attempts.push(...measured);
-    assert.equal(value?.scope, catalog.scope); assert.equal(value.count, value.records.length);
-    assert.equal(new Set(value.records.map(record => record.id)).size, value.count);
-    assert.ok(value.records.every(record => ['id', 'name', 'description', 'ref'].every(key => typeof record[key] === 'string')));
-    assert.equal(value.coverage?.exhaustive, true); assert.deepEqual(value.coverage?.failed_sources, []);
-    assert.equal(value.coverage?.search_index_limited, false);
-    const ordinary = value.coverage.method === 'explicit_database'
-      && ['view', 'view_selection', 'view_query', 'profile', 'capability_directory'].every(key => !Object.hasOwn(value, key));
-    if (ordinary) continue;
-    assert.equal(value.coverage.method, 'explicit_view'); assert.equal(value.capability_directory, true);
-    assert.equal(value.view_selection, 'first'); assert.equal(value.profile, undefined);
-    assert.equal(value.view?.id, catalog.view.id); assert.equal(value.view.name, catalog.view.name);
-    assert.deepEqual(catalogShape(value.records), catalogShape(catalog.records), 'Setup must observe the complete frozen Default View');
-    defaults.push(receipt.requestId);
+    for (const outcome of catalogFacets(receipt.value)) {
+      assert.equal(outcome.ok, true, 'Failed catalog projections cannot open the task');
+      const value = outcome.value;
+      assert.equal(value?.scope, catalog.scope); assert.equal(value.count, value.records.length);
+      assert.equal(new Set(value.records.map(record => record.id)).size, value.count);
+      assert.ok(value.records.every(record => ['id', 'name', 'description', 'ref'].every(key => typeof record[key] === 'string')));
+      assert.equal(value.coverage?.exhaustive, true); assert.deepEqual(value.coverage?.failed_sources, []);
+      assert.equal(value.coverage?.search_index_limited, false);
+      const ordinary = value.coverage.method === 'explicit_database'
+        && ['view', 'view_selection', 'view_query', 'profile', 'capability_directory'].every(key => !Object.hasOwn(value, key));
+      if (ordinary) { assert.notEqual(outcome.facet, 'directory', 'A full inventory is not a Default View'); continue; }
+      assert.equal(value.coverage.method, 'explicit_view'); assert.equal(value.capability_directory, true);
+      assert.equal(value.view_selection, 'first'); assert.equal(value.profile, undefined);
+      assert.equal(value.view?.id, catalog.view.id); assert.equal(value.view.name, catalog.view.name);
+      assert.deepEqual(catalogShape(value.records), catalogShape(catalog.records), 'Setup must observe the complete frozen Default View');
+      defaults.push(receipt.requestId);
+    }
   }
   const expectedStatus = `${sourceId}: ${catalog.view.name} (${catalog.view.id}) · ${catalog.records.filter(record => record.kind !== 'prompt').length} Skill/Router · first`;
   const statusReady = statusFrame.message === expectedStatus;
@@ -493,7 +497,8 @@ export function assertIntentSource({ observation, responses, sourceLedger, hostL
   }
   const attributed = graphSourceAttribution({ observation, responses, sourceLedger, scope, libraryId, selected, retainedSourceProofs });
   const attempts = attributed.attempts;
-  const directories = graphSourceViews(responses).directories;
+  const { directories, directoryFailures } = graphSourceViews(responses);
+  assert.deepEqual(directoryFailures, [], 'Source projection failure remains a failed model observation');
   let defaultCatalog = 'not_observed_before_shutdown';
   if (catalogRecords) {
     const shape = records => records.map(record => [record.id, record.name, record.description, record.ref]).sort((a, b) => a[0].localeCompare(b[0]));

@@ -161,6 +161,11 @@ Default View 的正反例必须使用不同 owned fixture：在 CLI 原入口额
 
 SDK 组合目录的一个 `list` operation 可包含 full catalog 与 Default View 两个独立成功／失败 outcome。验证读取原 envelope，不把两个 facet 算成两次 SDK 调用，也不把已返回的失败 facet 标为成功目录。实际 HTTP 复用、分页／响应字节、generation 一次性交付、旧 SDK 与 custom command 兼容按[安装态 HTTP 地图](installed-consumption.md#已安装-sdk-的真实-http-消费接线)验证；共享只在 CLI 同一次 operation 内成立。
 
+真实 C/D 的 ready setup、graph model 的名称选择与 SC20 比较沿用 `notion-skill-graph-model-evidence.mjs` 的纯 `catalogFacets`，同时接受历史 flat 回执和组合 envelope。两个投影保留同一原始 request ID；失败 outcome 单独保留，不复制 raw receipt 或 metrics。名称选择及其 authored-time 归属只使用成功完整 catalog，成功 View 不能替代失败、部分或歧义的全库；C/D setup 和全任务源验收仍拒绝任一失败／部分投影。SC20 只从成功 directory 投影确定可见候选，允许无关 full 失败留在原回执中，不能把 full 名单计作 Default View。双成功投影的 scope 或同数据库 shared-library descriptor 不一致均拒绝。
+
+对应原回归入口为 `node --test scripts/notion-skill-graph-model-evidence.test.mjs scripts/notion-skill-graph-model.test.mjs scripts/notion-model-cache.test.mjs scripts/skill-consumption-model-baseline.test.mjs`；`--test-name-pattern 'combined catalog:'` 可复跑本切片。保留旧 flat 正反例、组合一回执的 HTTP/bytes 计数、full 失败而 View 可用、名称歧义、权限 scope／descriptor、部分目录和原公开 Doctor 读取冻结 envelope 的证据。此迁移不改变真实任务、oracle、工具、预算或评分，也不把确定性回归视作真实 C/D／SC20 成功。
+
+
 这些结果证明真实 Pi 和安装边界，真实 Notion、真实模型、双机恢复及日用安装分别验收。SC20 的冻结比较 manifest 必须声明 previous-broker、notion-candidate、pi-native-local 三个角色；本地臂须用同字节/版本的普通全局 Skill，由 Pi 原生发现/read，不加载 Broker。记录相同任务、模型、工具 profile、缓存/会话初态和完整 provider 输入，未跑本地臂不能推算对照收益。
 
 SC23 当前 C3 的管理入口为 `ctl operation list/show/reconcile/resume`，旧顶层 `operation` 继续作为同一 handler 的显式兼容入口；新 `next.argv` 使用 `ctl`，历史 receipt 的原始 bytes/hash 不改写。验收须核对候选自身 schema，维护原 operation ID、unknown 状态与旧调用者的明确兼容范围。此前 C1 不支持 `ctl operation` 的失败原件保留为迁移前证据，不能套用到 C3。旧包回滚仍需从该包支持的 `operation show` 获取下一步，不直接执行新包生成的 ctl argv。

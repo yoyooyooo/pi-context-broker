@@ -489,6 +489,17 @@ test('the public Doctor resolves the actual installed Pi bundled CLI and native 
   assert.equal(comparison.version,2);assert.equal(comparison.catalog.length,3);assert.equal(comparison.candidates.length,3);
   assert.equal(comparison.requiredFiles.length,2);assert.equal(comparison.unselectedFiles.length,4);
   assert.equal(comparison.source.recordId,records[0].id);
+  const pairedSource=await write('paired-source.json',{transport:'sdk',operation:'list',status:'completed',resultObserved:true,
+    value:{version:1,catalog:{ok:false,error:{code:'IDENTITY_CONFLICT',message:'Unrelated full inventory conflict'}},
+      directory:{ok:true,value:{scope:'a'.repeat(64),databases:[],view:{id:viewId},records,count:3,
+        coverage:{exhaustive:true,search_index_limited:false,failed_sources:[]}}}}});
+  const pairedSelection=await write('paired-selection.json',{...JSON.parse(await readFile(multiSelection.path,'utf8')),
+    files:['paired-source.json','multi-payload.json']});
+  const paired=await invoke('paired',{...descriptor,notionSelection:pairedSelection,notionCatalogSource:pairedSource});
+  assert.equal(paired.status,0,paired.stderr);
+  assert.equal(JSON.parse(paired.stdout).comparison.source.recordId,records[0].id);
+  assert.equal(JSON.parse(paired.stdout).comparison.catalog.length,3);
+  assert.equal(digest(await readFile(pairedSource.path)),pairedSource.sha256,'Doctor preserves the raw failed/full and successful/View outcomes');
   const dailyDescriptor={...descriptor,...dailyRoute,counts:{cold:1,warm:0}},dailyOverrides={...dailyRoute,counts:{cold:1,warm:0}};
   const dailyDoctor=await invoke('daily',dailyDescriptor,dailyOverrides);
   assert.equal(dailyDoctor.status,0,dailyDoctor.stderr);
@@ -899,4 +910,39 @@ test('Notion unselected scalar and batch reads cannot be hidden by a correct sel
     probe.provider([{role:'tool',tool_call_id:'unselected',content:'Unselected body.'}]);probe.finish();
     assert.throws(()=>verifyNativeInspectionEvents(probe.events()),/unselected candidate body/,scenario);
   }
+});
+
+
+function combinedCatalogSelectionProbe() {
+  const input = catalogSelectionProbe(), source = input.sources[0], directory = { ...source.value, databases: [] };
+  const full = { ...structuredClone(directory), records: [...directory.records, { id: 'outside-default', name: 'Outside' }], count: 4 };
+  delete full.view;
+  source.value = { version: 1, catalog: { ok: true, value: full }, directory: { ok: true, value: directory } };
+  return input;
+}
+
+test('combined catalog: SC20 selects the successful directory without duplicating the raw source receipt', () => {
+  const input = combinedCatalogSelectionProbe(), source = input.sources[0], directory = source.value.directory.value;
+  const original = JSON.stringify(source), checked = verifyComparisonSelection(input);
+  assert.equal(checked.catalog.length, 3); assert.equal(checked.source, source); assert.deepEqual(checked.directory, directory);
+  assert.equal(JSON.stringify(source), original); assert.equal(input.sources.length, 1);
+});
+
+
+test('combined catalog: SC20 retains an unrelated full failure but cannot substitute the full inventory for a failed View', () => {
+  const input = combinedCatalogSelectionProbe(), source = input.sources[0];
+  source.value.catalog = { ok: false, error: { code: 'IDENTITY_CONFLICT', message: 'Unrelated full inventory conflict' } };
+  const before = JSON.stringify(source), checked = verifyComparisonSelection(input);
+  assert.equal(checked.source, source); assert.equal(checked.directory.records.length, 3);
+  assert.equal(JSON.stringify(source), before); assert.equal(input.sources.length, 1);
+  for (const mutate of [
+    value => { value.directory = { ok: false, error: { code: 'VIEW_INCOMPLETE', message: 'Incomplete View' } }; },
+    value => { value.directory.value.coverage.exhaustive = false; },
+    value => { value.directory.value.coverage.failed_sources = ['unavailable']; },
+    value => { value.directory.value.scope = 'foreign'; },
+    value => { value.directory.value.records.pop(); value.directory.value.count--; },
+    value => { value.directory.value.view.id = 'other'; },
+    value => { value.catalog.value.databases = [{ database_id: 'db', shared_library: { library_id: 'old' } }];
+      value.directory.value.databases = [{ database_id: 'db', shared_library: { library_id: 'new' } }]; },
+  ]) { const changed = combinedCatalogSelectionProbe(); mutate(changed.sources[0].value); assert.throws(() => verifyComparisonSelection(changed)); }
 });

@@ -14,6 +14,7 @@ import { consumptionCostExtensionSource, readConsumptionCostEvents, consumptionM
 import { providerTransportExtensionSource, readProviderTransport, providerApplicationCompletion } from './skill-consumption-provider.mjs';
 import { sourceObserverPreloadSource, readSourceObservation } from './skill-consumption-source-observer.mjs';
 import { packageIdentity } from './notion-skill-graph-model.mjs';
+import { catalogFacets } from './notion-skill-graph-model-evidence.mjs';
 import { dailyRouteContract, verifyDailyRouteState } from './verify-skill-graph-contract.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -209,9 +210,12 @@ export async function modelBaselineComparison(config, host) {
   assert.ok(selection.files.includes(relative(selection.evidence, descriptor.notionProviderPayload.path)), 'Catalog payload must belong to the frozen metadata selection');
   assert.ok(selection.files.includes(relative(selection.evidence, descriptor.notionCatalogSource.path)), 'Catalog source receipt must belong to that same selection');
   assert.equal(catalogSource.transport, 'sdk'); assert.equal(catalogSource.operation, 'list'); assert.equal(catalogSource.status, 'completed'); assert.equal(catalogSource.resultObserved, true);
-  assert.equal(catalogSource.value.coverage?.exhaustive, true); assert.equal(catalogSource.value.count, catalogSource.value.records.length);
-  assert.equal(catalogSource.value.coverage.search_index_limited, false); assert.deepEqual(catalogSource.value.coverage.failed_sources, []);
-  const actualCatalog=comparisonCatalog(payload),records=catalogSource.value.records;
+  const selections = catalogFacets(catalogSource.value).filter(outcome => outcome.ok && outcome.facet !== 'catalog');
+  assert.equal(selections.length, 1, 'The frozen source must contain one successful directory projection');
+  const selectedDirectory = selections[0].value;
+  assert.equal(selectedDirectory.coverage?.exhaustive, true); assert.equal(selectedDirectory.count, selectedDirectory.records.length);
+  assert.equal(selectedDirectory.coverage.search_index_limited, false); assert.deepEqual(selectedDirectory.coverage.failed_sources, []);
+  const actualCatalog=comparisonCatalog(payload),records=selectedDirectory.records;
   assert.equal(new Set(records.map(record=>record.id)).size,records.length,'The source catalog must retain distinct owners');
   verifyComparisonCatalog(records.map(record=>({...record,disableModelInvocation:false})),actualCatalog);
   const candidates=descriptor.version===1?[{manifest:descriptor.manifest,directory:descriptor.directory,recordId:selection.record.id}]:descriptor.candidates;
@@ -222,7 +226,7 @@ export async function modelBaselineComparison(config, host) {
   assert.deepEqual(records.filter(record=>record.id===selectedRecordId),[selection.record],'The selected owner must match its authorized SDK metadata');
   if(descriptor.version===2) {
     assert.equal(selection.runtimeUnchanged,true,'Metadata selection inputs changed during observation');
-    assert.equal(selection.viewId,descriptor.viewId); assert.equal(catalogSource.value.view?.id,descriptor.viewId);
+    assert.equal(selection.viewId,descriptor.viewId); assert.equal(selectedDirectory.view?.id,descriptor.viewId);
     assert.deepEqual(selection.catalog,actualCatalog,'Selection must retain the same actual provider catalog');
   }
   assert.ok(typeof descriptor.directory === 'string' && isAbsolute(descriptor.directory));
@@ -235,7 +239,7 @@ export async function modelBaselineComparison(config, host) {
     assert.equal(manifest.record.id,record.id);
     for(const key of ['ref','name','description'])assert.equal(manifest.record[key],record[key],'Frozen source metadata differs: '+key);
     assert.match(manifest.scope,/^[a-f0-9]{64}$/);assert.match(manifest.snapshot_id,/^s_[a-f0-9]{64}$/);assert.match(manifest.version_id,/^[a-f0-9]{64}$/);
-    assert.equal(manifest.scope,catalogSource.value.scope,'Frozen bytes and visible metadata must share authorization scope');
+    assert.equal(manifest.scope,selectedDirectory.scope,'Frozen bytes and visible metadata must share authorization scope');
     assert.ok(typeof candidate.directory==='string'&&isAbsolute(candidate.directory));
     const candidateDirectory=await realpath(candidate.directory),prefix=relative(directory,candidateDirectory);
     assert.ok(!prefix.startsWith('..')&&!isAbsolute(prefix),'Every native candidate must be inside the frozen catalog root');
@@ -673,19 +677,21 @@ export function verifyComparisonSelection({hooks,wires,sources,sourceEvents,expe
     assert.equal(sourceEvents.filter(row=>row.phase==='completed'&&row.requestId===requestId&&row.status==='completed').length,1);
   }
   const ids=records=>records.map(record=>record.id).sort();
-  const matching=sources.filter(source=>source.value?.view?.id===viewId);
+  const matching=sources.flatMap(source=>catalogFacets(source.value)
+    .filter(outcome=>outcome.ok&&outcome.facet!=='catalog'&&outcome.value.view?.id===viewId)
+    .map(outcome=>({source,value:outcome.value})));
   assert.ok(matching.length>0,'The actual SDK must return this existing View');
-  for(const source of matching) {
-    assert.equal(source.value.coverage?.exhaustive,true);assert.equal(source.value.coverage.search_index_limited,false);
-    assert.deepEqual(source.value.coverage.failed_sources,[]);assert.equal(source.value.count,source.value.records.length);
-    assert.deepEqual(ids(source.value.records),ids(expectedRecords),'The View owner set differs from the frozen inputs');
-    for(const record of source.value.records) {
+  for(const {value} of matching) {
+    assert.equal(value.coverage?.exhaustive,true);assert.equal(value.coverage.search_index_limited,false);
+    assert.deepEqual(value.coverage.failed_sources,[]);assert.equal(value.count,value.records.length);
+    assert.deepEqual(ids(value.records),ids(expectedRecords),'The View owner set differs from the frozen inputs');
+    for(const record of value.records) {
       const expectedRecord=expectedRecords.find(item=>item.id===record.id);
       for(const key of ['id','ref','kind','name','description'])assert.equal(record[key],expectedRecord[key],'The SDK candidate differs: '+key);
     }
-    verifyComparisonCatalog(source.value.records.map(record=>({...record,disableModelInvocation:false})),catalog);
+    verifyComparisonCatalog(value.records.map(record=>({...record,disableModelInvocation:false})),catalog);
   }
-  return {catalog,payload:providers.at(-1),source:matching.at(-1)};
+  return {catalog,payload:providers.at(-1),source:matching.at(-1).source,directory:matching.at(-1).value};
 }
 
 async function selection(config,parent) {
@@ -780,7 +786,7 @@ async function selection(config,parent) {
     const hooks=await rows(output);
     for(const row of hooks.filter(row=>row.phase==='provider'))row.payload=JSON.parse(await readFile(join(payloads,row.file),'utf8'));
     const checked=verifyComparisonSelection({hooks,wires:await rows(wire),sources,sourceEvents:observation.events,expectedRecords,viewId:descriptor.viewId});
-    report.catalog=checked.catalog;report.record=checked.source.value.records.find(record=>record.id===descriptor.selectedRecordId);
+    report.catalog=checked.catalog;report.record=checked.directory.records.find(record=>record.id===descriptor.selectedRecordId);
     report.defaultDiscovery={status:'passed',catalog:{status:'ready'},ordinaryTurns:2,controlledProviderRequests:3};
     report.providerPayload='provider-payloads/'+checked.payload.file;report.catalogSource=checked.source.file;
     assert.equal(report.bodyRequests,0);

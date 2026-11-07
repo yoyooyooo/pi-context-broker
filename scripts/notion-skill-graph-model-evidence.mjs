@@ -6,18 +6,60 @@ const canonical = value => value === null || typeof value !== 'object' ? JSON.st
   : Array.isArray(value) ? '[' + value.map(canonical).join(',') + ']'
     : '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonical(value[key])).join(',') + '}';
 
+/** Read projections without turning one SDK result into extra source operations.
+ * Legacy flat receipts keep their original shape; paired failures stay explicit. */
+export function catalogFacets(value) {
+  const object = item => item !== null && typeof item === 'object' && !Array.isArray(item);
+  assert.ok(object(value), 'A catalog result must be an object');
+  if (!Object.hasOwn(value, 'catalog') && !Object.hasOwn(value, 'directory')) return [{ facet: 'flat', ok: true, value }];
+  assert.equal(value.version, 1, 'Unknown combined catalog contract');
+  const facets = ['catalog', 'directory'].map(facet => {
+    const outcome = value[facet];
+    assert.ok(object(outcome) && typeof outcome.ok === 'boolean', 'Both combined catalog outcomes are required');
+    if (!outcome.ok) {
+      assert.equal(Object.hasOwn(outcome, 'value'), false, 'A failed projection cannot supply a catalog');
+      assert.ok(object(outcome.error) && typeof outcome.error.code === 'string' && outcome.error.code.length > 0);
+      assert.equal(typeof outcome.error.message, 'string');
+      return { facet, ok: false, error: outcome.error };
+    }
+    assert.equal(Object.hasOwn(outcome, 'error'), false, 'A successful projection cannot hide an error');
+    assert.ok(object(outcome.value) && typeof outcome.value.scope === 'string' && outcome.value.scope.length > 0);
+    assert.ok(Array.isArray(outcome.value.records) && Array.isArray(outcome.value.databases));
+    if (facet === 'catalog') {
+      assert.notEqual(outcome.value.coverage?.method, 'explicit_view');
+      assert.ok(['view', 'view_selection', 'view_query', 'profile', 'capability_directory', 'query', 'limit', 'cursor', 'has_more', 'next_cursor', 'total_count']
+        .every(key => !Object.hasOwn(outcome.value, key)), 'A selected or paged projection cannot claim the full catalog facet');
+    }
+    return { facet, ok: true, value: outcome.value };
+  });
+  if (facets.every(facet => facet.ok)) {
+    const [full, directory] = facets.map(facet => facet.value);
+    assert.equal(full.scope, directory.scope, 'Combined projections must share one credential scope');
+    for (const database of full.databases) {
+      const selected = directory.databases.find(item => item.database_id === database.database_id);
+      if (selected) assert.deepEqual(database.shared_library, selected.shared_library,
+        'Combined projections cannot mix shared-library descriptors for the same database');
+    }
+  }
+  return facets;
+}
+
 /** Views of captured source facts, never fabricated CLI calls or extra HTTP receipts.
  * A consume entry carries its own immutable manifest and original body range.
  * The caller still checks actual provider delivery and the private source oracle. */
 export function graphSourceViews(receipts) {
-  const directories = [], preparations = [], entries = [], resources = [];
+  const directories = [], directoryFailures = [], preparations = [], entries = [], resources = [];
   for (const receipt of receipts) {
     const sdk = receipt.transport === 'sdk';
     const value = sdk ? receipt.value : receipt.response;
     if (!value || (sdk ? receipt.status !== 'completed' || receipt.resultObserved !== true : receipt.code !== undefined && receipt.code !== 0)) continue;
     const operation = sdk ? receipt.operation : receipt.command;
     const observed = { requestId: receipt.requestId, transport: sdk ? 'sdk' : 'command', operation };
-    if (operation === 'list' && Array.isArray(value.records)) directories.push({ ...observed, value });
+    if (operation === 'list') for (const outcome of catalogFacets(value)) {
+      const projection = { ...observed, ...(outcome.facet === 'flat' ? {} : { facet: outcome.facet }) };
+      if (!outcome.ok) directoryFailures.push({ ...projection, error: outcome.error });
+      else if (Array.isArray(outcome.value.records)) directories.push({ ...projection, value: outcome.value });
+    }
     if (operation === 'read' && value.record && typeof value.scope === 'string') entries.push({ ...observed, value, ...(receipt.outputEvidence ? { outputEvidence: receipt.outputEvidence } : {}) });
     if (operation === 'prepare' && value.status === 'ready') preparations.push({ ...observed, value });
     if (sdk && operation === 'read-resources' && value.status === 'ready') {
@@ -85,7 +127,7 @@ export function graphSourceViews(receipts) {
       } });
     }
   }
-  return { directories, preparations, entries, resources };
+  return { directories, directoryFailures, preparations, entries, resources };
 }
 
 /** A subscriber sees the actual SDK result and its matching completed metrics.

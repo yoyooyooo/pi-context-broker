@@ -5,7 +5,7 @@ import * as crypto from 'node:crypto';
 import * as path from 'node:path';
 import { channel } from 'node:diagnostics_channel';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { graphSourceViews, observeGraphSdk, graphSourceAccounting } from './notion-skill-graph-model-evidence.mjs';
+import { catalogFacets, graphSourceViews, observeGraphSdk, graphSourceAccounting } from './notion-skill-graph-model-evidence.mjs';
 import { observeGraphGate, GRAPH_GATE_TOOLS } from './notion-skill-graph-model.mjs';
 import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 import { safeRequestMetrics } from './notion-default-context.mjs';
@@ -190,7 +190,7 @@ test('SDK evidence views bind original complete bodies and manifests without inv
   assert.equal(graphSourceViews([{ ...receipt, resultObserved: false }]).entries.length, 0);
 });
 
-test('SDK observer retains actual return values and one complete metric receipt per invocation', async () => {
+for (const representation of ['flat', 'combined']) test('SDK observer retains actual return values and one complete metric receipt per invocation: ' + representation, async () => {
   const root = await mkdtemp(path.join(await systemTempRoot(), 'graph-sdk-observer-'));
   const responses = path.join(root, 'responses'), ledger = path.join(root, 'source.jsonl'); await mkdir(responses); await writeFile(ledger, '');
   const observer = observeGraphSdk({ channel, fs, paths: { ledger, responses, outputRoot: root }, safeMetrics: safeRequestMetrics });
@@ -200,12 +200,12 @@ test('SDK observer retains actual return values and one complete metric receipt 
     channel('context-broker.notion-sdk-result').publish({ version: 1, id, operation, value });
     channel('context-broker.notion-sdk').publish({ version: 1, event: 'end', id, operation, pid: process.pid, status: 'completed', sdk_started: true, metrics_observed: true, request_metrics: emptyMetrics });
   };
-  publish('catalog', 'list', { scope: fixture.scope, records: [fixture.record] });
+  publish('catalog', 'list', representation === 'flat' ? { scope: fixture.scope, records: [fixture.record] } : pairedCatalogReceipt().value);
   publish('manifest', 'files', fixture.value.entries[0].manifest);
   publish('consumption', 'consume', fixture.value); observer.close();
   const receipts = await Promise.all(['catalog', 'manifest', 'consumption'].map(async id => JSON.parse(await readFile(path.join(responses, id + '.json'), 'utf8'))));
   assert.deepEqual(receipts[2].value, fixture.value);
-  assert.deepEqual(graphSourceViews([receipts[1]]), { directories: [], preparations: [], entries: [], resources: [] }, 'File metadata is not a directory, prepared graph or delivered body');
+  assert.deepEqual(graphSourceViews([receipts[1]]), { directories: [], directoryFailures: [], preparations: [], entries: [], resources: [] }, 'File metadata is not a directory, prepared graph or delivered body');
   const events = await lines(ledger), accounting = graphSourceAccounting(events, receipts, { sourceMode: 'sdk', requireConsumption: true });
   assert.deepEqual(accounting.sdk_calls, { list: 1, files: 1, consume: 1, read: 0, 'read-resources': 0 }); assert.equal(accounting.actual_http_attempts, 0);
   assert.throws(() => graphSourceAccounting(events.map(event => event.requestId === 'manifest' ? { ...event, operation: 'future-operation' } : event),
@@ -274,4 +274,57 @@ test('Pi observer admits a discovered short ref before execution and verifies SD
     branch.push({ ...branch[1], data: { ...branch[1].data, target: { ...branch[1].data.target, snapshot_id: 's_' + 'd'.repeat(64) } } });
     assert.equal(invoke('wrong-branch', { path: selected }).block, true, 'A conflicting persisted binding never authorizes a read');
   } finally { globalThis.fetch = originalFetch; }
+});
+
+
+function pairedCatalogReceipt() {
+  const full = { scope: 'scope', count: 1, records: [{ id: 'a' }], databases: [],
+    coverage: { method: 'explicit_database', exhaustive: true, failed_sources: [], search_index_limited: false } };
+  const directory = { ...structuredClone(full), view: { id: 'default' }, capability_directory: true, view_selection: 'first',
+    coverage: { ...full.coverage, method: 'explicit_view' } };
+  return { transport: 'sdk', requestId: 'paired', operation: 'list', status: 'completed', resultObserved: true,
+    value: { version: 1, catalog: { ok: true, value: full }, directory: { ok: true, value: directory } } };
+}
+
+test('combined catalog: source views retain both projections under one SDK receipt', () => {
+  const receipt = pairedCatalogReceipt(), original = JSON.stringify(receipt), views = graphSourceViews([receipt]);
+  assert.equal(views.directories.length, 2);
+  assert.deepEqual(views.directories.map(item => [item.requestId, item.facet]), [['paired', 'catalog'], ['paired', 'directory']]);
+  assert.deepEqual(views.directoryFailures, []); assert.equal(JSON.stringify(receipt), original);
+});
+
+
+test('combined catalog: typed failures remain attributed alongside a successful independent projection', () => {
+  for (const failed of ['catalog', 'directory']) {
+    const receipt = pairedCatalogReceipt(), error = { code: 'IDENTITY_CONFLICT', message: 'Controlled source failure' };
+    receipt.value[failed] = { ok: false, error };
+    const before = JSON.stringify(receipt), views = graphSourceViews([receipt]), facets = catalogFacets(receipt.value);
+    assert.equal(views.directories.length, 1); assert.notEqual(views.directories[0].facet, failed);
+    assert.deepEqual(views.directoryFailures, [{ requestId: 'paired', transport: 'sdk', operation: 'list', facet: failed, error }]);
+    assert.equal(facets.length, 2); assert.equal(facets.find(outcome => !outcome.ok).error, error);
+    assert.equal(JSON.stringify(receipt), before);
+  }
+});
+
+test('combined catalog: malformed outcomes, scope changes and changed shared descriptors cannot supply projections', () => {
+  for (const mutate of [
+    value => { value.version = 2; }, value => { delete value.directory; }, value => { delete value.catalog; },
+    value => { value.directory.ok = 'true'; }, value => { value.directory = { ok: false }; },
+    value => { value.catalog = { ok: false, error: { code: '', message: 'missing code' } }; },
+    value => { value.catalog = { ok: false, value: {}, error: { code: 'FAILED', message: '' } }; },
+    value => { value.directory.error = { code: 'FAILED', message: '' }; },
+    value => { value.catalog.value.scope = 'foreign'; value.catalog.value.records = []; value.catalog.value.count = 0; },
+    value => { value.catalog.value.view = { id: 'selected' }; }, value => { value.catalog.value.cursor = 'page'; },
+    value => { value.directory.value.databases = null; },
+    value => { value.catalog.value.databases = [{ database_id: 'db', shared_library: { library_id: 'old' } }];
+      value.directory.value.databases = [{ database_id: 'db', shared_library: { library_id: 'new' } }]; },
+  ]) {
+    const receipt = pairedCatalogReceipt(); mutate(receipt.value); assert.throws(() => graphSourceViews([receipt]));
+  }
+  const separate = pairedCatalogReceipt();
+  separate.value.catalog.value.databases = [{ database_id: 'full-db', shared_library: { library_id: 'one' } }];
+  separate.value.directory.value.databases = [{ database_id: 'view-db', shared_library: { library_id: 'two' } }];
+  assert.equal(graphSourceViews([separate]).directories.length, 2, 'Independent databases do not share a descriptor');
+  const legacy = { scope: 'historical', records: [] };
+  assert.deepEqual(catalogFacets(legacy), [{ facet: 'flat', ok: true, value: legacy }]);
 });
