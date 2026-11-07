@@ -128,6 +128,24 @@ node scripts/notion-sdk-pi.mjs evidence --evidence "$SDK_COMPACTION_EVIDENCE"
 
 原件在上述根 `da80-frozen/actual-n1`；`handoff-actual-14acc9.json` SHA256 `70ac4c9b20fd14d54f099843edd6a9c1f70e08849c11748bb6c086371ba51e21`，`compaction-variants.json` 为 `cd13be7b400b6df4af0998995de85ce3535b9029e49f005463cfde597b38227e`，`provider-http.json` 为 `263eb9500bb3df8ba8eab98f900b656226cd1d33a6ec1ebcbc51968387dcb61c`。原 Evidence→系统 Trash→Evidence 的 cleanup 状态为 trashed，仅移走 owned scratch；107 个原件与本次实际 daily3 前后哈希一致。原 all14 和历史失败未重跑或改判。
 
+### C12 同包压缩恢复增量（2026-11-07）
+
+C12 的 `a9ba19e` 改变原生回执与有效分支关联，不能直接继承 C9 的三变体结果。执行前登记 AH-638 comment `c75750c4-ad2d-44be-bc2a-dc0a57ccfecf`，使用同一 C12 tar `d1d69e9c3d5ff07df2eceb0ecce02523468808be69b9e06b7b9fc0b4a19741a2` 的 strict 安装、Pi 1.5.0、Node 24.20.0 和原 `4a43f63c…` offline fixture。复用已冻结 `1f991217` harness；六个生命周期／compaction／oracle 函数跨 C9、1f、967 和 c187 字节一致，967 的普通场景 EOF 改动位于本场景独立返回之后。没有重新打包或改变原断言。
+
+原 `session-compaction` 单次实驱通过：doctor 一次 ready，run 一次自然 exit0，2,309.962 ms；外层 doctor 60秒／run 180秒、原 RPC 预算、n=1、0 retry/fallback 保持。
+
+| 真实 compact 分支 | 压缩后、恢复前 a/b/c/base 正文 | 下一实际 provider 正文 | 后续 body SDK |
+| --- | --- | --- | ---: |
+| kept，保留原 toolCallId／完整 content／receipt | 各一份 | 各一份 | 0 |
+| summary，移除正文，仅摘要 | 各零份 | 各一份，原四个固定 pin | 1 次 fixed inspect |
+| forged，仅公开 loaded 标签 | 各零份 | 各一份，原四个固定 pin | 1 次 fixed inspect |
+
+三次 compact 自身 provider／body SDK 都为零。实际累计 19 个 provider capture，均通过安装 pi-ai 向 localhost 序列化，完整请求体 184,474 B、3 次工具调用；14 次 SDK＝10 list（8 completed、2 与真实 session_shutdown 绑定的 cancelled）＋4 consume，CLI／来源 HTTP／生产 Notion／远端模型均为零。新进程 resume 后首条普通续问保留完整投影，正文 SDK 增量为零；resumed 进程后续仍包含其他 consume。三个 Pi 均实际 close code0、source EOF 无 pending。本景四正文合计103 B，证明恢复正确性，不外推大正文或生产性能，也不从 C9 的 17 SDK 或字节差推算真实来源收益。
+
+原 Evidence→系统 Trash→Evidence 三步 exit0，106 份原件 hash 保持，owned scratch `/private/tmp/notion-sdk-pi-QEFxqE` 原位置不存在，三个 Pi 与 driver PID 均已退出。证据根 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/c12-compaction-7g_iv_nf`：`actual-n1/report.json` SHA `94a00000b486f6e50e90fa342cf774b71804fb648b30e193542722e8e8bd493c`；`actual-n1/session-compaction/compaction-variants.json` SHA `7dafd7ae26d25470d847406c662a031e7d819e6b61fb68587d493569630de411`；同目录 `provider-http.json` SHA `f159317aafd40da098a31606983614726d658e8f34d130127957d36fb29e49e0`。原命令与冻结预算在 `commands.json`／`plan.json`。此结果补当前候选的安装恢复，不能证明真实模型摘要质量、冷 Notion 或 Mini；原 C 内容失败与正式 SC20/21、日用门槛保持。
+
+额外的简化审计曾对 kept serializer 的顶层 tool content 直接匹配多行源正文，得到零次；该原失败另存，未被改判。root 直接读取同一 `013-serializer-request.json`，确认正文位于已声明的 JSON envelope `records[].content`，换行在该层仍转义；解码后的四个值分别为25／24／30／24 B，逐项匹配原 SDK source SHA／ref，整个原 tool content 的1,599 B及SHA也保持。澄清原件为同一证据根 `root-serializer-clarification.json`，SHA `37b1e410b692ea39267f5bcb08e915510dfd1975694946e1f06abde42f63edc6`。复核应沿原 encoding／完整性合同，不能把未解包的子串计数当作正文丢失；这次只读澄清没有重跑场景或升级辅助脚本为通过。
+
 ### 原生 `/skill` 的逐轮交付
 
 NS-SESSION-02 的原生 `/skill:` 必须跨过第一次 provider：完整根与 Requires 首轮送达，执行一次完整根 native read，并经 `turn_end` 持久化后，后续至少两个 provider turn 仍各只含一份正文。已完整交付的 Requires 不得因一次本地投影编辑被重复恢复。根 read 的实际工具回执保留，provider 可用 `Already loaded.` 替换重复正文，但其资源目录、toolCallId、原始工具消息与顺序不变。

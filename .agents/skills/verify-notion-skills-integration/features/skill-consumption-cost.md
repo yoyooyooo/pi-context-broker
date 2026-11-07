@@ -380,6 +380,46 @@ Notion consumer 为五次 SDK / 零 CLI / 28 HTTP（22 metadata + 6 body），25
 
 这些窄证据不能替代尚待完成的 controlled HTTP 缓存/权限/取消交叉、SC21 正式模型路径或 SC24 日用切换；具体剩余项继续按 AH-638 与原对应 feature map 管理。
 
+## C12 当前候选的已运行边界（2026-11-07）
+
+同包 [CI 42330430928](https://github.com/yoyooyooo/pi-context-broker/actions/runs/42330430928) 的 12 份原 plan/report 已核 identity；这些是安装 Pi／受控 HTTP 证据，不能当作生产 Notion或真实模型。原件索引在 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/c12-ci-967cca9-a3pvol4b/validation.json`，SHA `643be1e919c527d75497d3d6a9060c78ed16a7945878ae852c33d1819fc72704`。
+
+| 原场景 | 已执行分支及实际 HTTP attempts |
+| --- | --- |
+| http-cache-recovery | cold 21、warm 1、expired 8、forced 40、resumed 8 |
+| http-interruption | rate-limit 22、disconnect 22、cancel 19 |
+| http-directory | Pi 1.5／1.4 的 pending 与 failed 分支，按原报告逐请求计账 |
+| session-lifecycle | Pi 1.5／1.4 的真实分支、压缩后恢复、跨进程 resume 与取消 |
+
+原 `all14` 不含显式 `session-compaction`。当前候选已另用原 driver 跑一次 kept／summary／forged，详情与固定身份见[会话地图](session-cache-recovery.md#c12-同包压缩恢复增量2026-11-07)：19 个安装 serializer 请求／184,474 B、3 次工具、14 SDK（10 list／4 consume），0 来源 HTTP；三个 Pi 自然 exit0，106 原件在原 E→Trash→E 后保持。不要将受控 fixture 的零 HTTP 用作冷 Notion 成本，也不将新旧场景的总量差直接视为净收益。
+
+上述当前覆盖不替代完整 SC20。原纯本地 v3 的四个样本、native C5 与全部 C6 的 NOT_PROVEN 结果保持；C12 原 C 的语义失败、实际模型身份不等价限制和 Mini 未运行也保持。正式本地全任务对照、A/B/C/D 及日用仍分别验收，不追加样本求绿。
+
+## C12 旧归档的实际承载成本（2026-11-07）
+
+从原 C12 的两个 consume、一个固定 resource read、retained-source proof 和独立 source audit 关联同一 owner／scope／snapshot、chunk／request／raw trace。所有输入先核 bytes/hash、结束后再核；没有新 Notion／模型请求，也没有重新打开已退休的 consumer cache。
+
+| 所选 owner | ZIP B | chunks | 归档文件／展开 B | 实际归档 HTTP | decoded 响应 B |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| poteto-mode | 122,927 | 4 | 46／344,547 | 1 | 356,201 |
+| create-verification-skill | 7,675 | 1 | 4／16,984 | 1 | 24,524 |
+| unslop | 3,135 | 1 | 1／5,938 | 1 | 11,814 |
+| 合计 | 133,737 | 6 | 51／367,469 | 3 | 392,539 |
+
+三次请求体共 1,257 B。6 chunks 不等于 6 HTTP；原 SDK receipt 为 51 路径 `all_files_ready`，包括 poteto 全部 46 路径，不声称只物化入口。所记录主文及显式资源 read 共覆盖 4 路径，其他 47 个同 owner 归档路径与 53 个未选 Skill Member 正文0是不同集合；47 路径不代表 47 次可省请求或进入模型的正文。retained manifest 的主文件 bytes 与当前交付正文不同，不跨表示相减。
+
+现有 `shared-retained-source.ts` 在所选缓存 miss 时取完整旧 ZIP、验证全部成员后才发布所选对象；本样本实际物化范围仍由原 receipt 说明。392,539 decoded B 已包含在原 4,373,438 B 全消费账本中，不另加或扣除，不是替代格式的节省量或时延上界。事后私有归属审计仍单列。
+
+可复跑的只读分析在 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/c12-retained-cost-npauasty`：
+
+```bash
+python3 /Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/c12-retained-cost-npauasty/analyze_retained_cost.py --inputs /Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/c12-retained-cost-npauasty/inputs.json
+```
+
+root 独立重跑 exit0，输出与 `analysis.json` 的 11,652 B 逐字节相同，SHA `c7404a9a54f77d3ea48310c0ed8b022deaf8ff2f6d8e037994a5bcb6b2fdc21f`；脚本 SHA `b271a0099f98b959a13624f00bb055e8c9c12e7c242f86b74f9d55944851359c`，inputs SHA `89e06271047c47fd8091e3daa648753054b61dbcd5415802a2347453b5676435`。原五个输入保持，分析只写本次 evidence，不改变原消费回执或生产数据。
+
+SC17/18 的阶段选择为 C12 保留现有格式与旧 reader／pin，不纳入新 backend 或生产迁移。当前已量化残余成本，但尚无同内容分档的替代方案写入、附着、重定位、内存、全任务与双机恢复成本，不能据此关闭两票、声称无需后续优化或称为已迁移；未选择的条件机制也不新增为发行前置。
+
 ## Evidence 与比较
 
 先读 plan，再读每例原件和 report。至少核对：

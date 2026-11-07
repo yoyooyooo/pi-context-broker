@@ -195,6 +195,16 @@ SC23 当前 C3 的管理入口为 `ctl operation list/show/reconcile/resume`，�
 
 证据根 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/c12-c-cost-draft-0yg6dljt`：`run-handoff.json` SHA `b6ab774e94a57e0f5754523a77361a25f0c5c1067fe819d680872448a10bd9b6`；`run-diagnostics/wire-and-cost.json` SHA `e4548c40d7d3361516bade38b62eeea9335784ecffc0c2ca398351f35eb5a532`；独立语义 `semantic-review-records-decode-20261107.json` SHA `46d2fbffa284a0bc131accb29fbd4edd93cc9ea2c1b5d389ff566b3bbb480536`。原 E→系统 Trash→E 全0，50份原件及父manifest保持，owned进程已关闭；产品87／harness258／日用3哨兵及两仓原暂存内容保持。root核18交接引用、来源17原件与6份实际wire。Mini正常执行入口仍UNAVAILABLE；SC22／SC20／SC21／SC24不关闭，日用保持旧安装。
 
+### 2026-11-07：C12 恢复增量与剩余成本归属
+
+当前 C12 同包 [CI 42330430928](https://github.com/yoyooyooo/pi-context-broker/actions/runs/42330430928) 的原报告已覆盖 HTTP cache recovery 的 cold／warm／expired／forced／resumed，以及 rate-limit／disconnect／cancel；Pi 1.5／1.4 的 session-lifecycle 也已通过。各分支实际请求数见[成本地图](skill-consumption-cost.md#c12-当前候选的已运行边界2026-11-07)，不继续笼统列作待跑，也不据此升级全部 1,120 个组合。
+
+独立 `session-compaction` 另以同一 C12 包、原 fixture、冻结 1f harness 和原预算完成一次实际 Pi：kept 不重备正文，summary／forged 各一次 fixed inspect 恢复原四 pin，下一 provider 四正文各一份。19 份安装 serializer 请求共 184,474 B、14 SDK、0 来源 HTTP，原 E→Trash→E 后 106 原件保持；完整证据在[会话恢复地图](session-cache-recovery.md#c12-同包压缩恢复增量2026-11-07)。这不是新模型样本或双机验收。
+
+C12 原 C 的根因复核直接确认：实际 developer 项目块已标 paths-only，完整 poteto 也要求区分事实／推断／猜测；read 工具可读取项目源码。没有发现足以将未经核实的仓库判断归因于正文丢失或产品 guidance 的证据，因此保留原语义失败，不增加针对该回答的提示或重采样。作者正文和 Requires 保持。
+
+旧 ZIP 的残余成本已从同一原 C 的 raw receipt 核到 owner/chunk/request：3 个归档、6 chunks 实际为 3 HTTP／392,539 decoded B，SDK 回执报告 51 路径 all_files_ready。主文和显式资源 read 覆盖 4 路径，其他 47 个同 owner 归档路径与 53 个未选 Skill Member 正文0分开，不声称只有入口被下载或物化。复跑脚本、完整账本与限制见[旧归档成本](skill-consumption-cost.md#c12-旧归档的实际承载成本2026-11-07)。当前格式保留，SC17/18 不据此关闭或加入新 backend；Mini、完整本地对照与真实任务质量仍是各自未结项。
+
 ### Drive：既有受控宿主路径
 
 以下路径无需生产 Notion 或真实模型授权。它实际启动 Pi 和 Broker，驱动原生 read、显式选择、资源、失败与持久会话；source 与 provider 明确为受控 fixture。它不证明真实模型能力或新的低延迟目标。
