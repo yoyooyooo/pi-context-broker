@@ -350,7 +350,7 @@ export function assertIntentTurn({ observation, turnObservation = observation, r
       assert.ok(providers.some(request => request.contents.some(file => exactFile(file, expected))), 'Every chosen root and Required body must reach an actual provider');
     }
   }
-  return { status: 'passed', acceptance: 'technical_only', final: { ...final, sha256: hash(final.text) },
+  return { status: 'passed', acceptance: 'technical_only', final: { ...final, sha256: hash(final.text), bytes: Buffer.byteLength(final.text) },
     ...(modelEvidence ? { modelProfile, modelEvidence } : {}),
     provider_requests: providers.length, provider_input_bytes: providers.reduce((sum, item) => sum + item.payloadBytes, 0),
     tool_calls: turnObservation.filter(event => event.phase === 'tool-call').length,
@@ -761,9 +761,25 @@ export async function runIntentCases(configPath, selectedCase) {
             receipt.costSubmission = cost.submission;
             await save(join(output, 'cost-submission-' + processIndex + '.json'), cost.submission);
           }
-          if (config.discoveryStartup) await withinDiscoveryBudget(() => currentRpc.prompt(turn.prompt.text),
-            { armStartedMs, stageStartedMs: began, stageLimitMs: 300000, stop });
-          else await currentRpc.prompt(turn.prompt.text);
+          let promptError;
+          try {
+            if (config.discoveryStartup) await withinDiscoveryBudget(() => currentRpc.prompt(turn.prompt.text),
+              { armStartedMs, stageStartedMs: began, stageLimitMs: 300000, stop });
+            else await currentRpc.prompt(turn.prompt.text);
+          } catch (error) { promptError = error; throw error; }
+          finally {
+            try {
+              // Retain the actual output before acceptance can reject this turn.
+              const final = (await rows(observationPath)).slice(before).filter(event => event.phase === 'assistant-final').at(-1);
+              if (final) {
+                receipt.final = { ...final, ...(typeof final.text === 'string' ? { sha256: hash(final.text), bytes: Buffer.byteLength(final.text) } : {}) };
+                await save(join(output, 'turn-' + index + '.json'), receipt);
+              }
+            } catch (error) {
+              receipt.finalEvidenceError = { code: error.code ?? 'FINAL_EVIDENCE_FAILED', message: error.message };
+              if (!promptError) throw error;
+            }
+          }
           const observation = await rows(observationPath), turnObservation = observation.slice(before);
           assert.ok(turnObservation.some(event => event.phase === 'native-input' && event.textSha256 === turn.prompt.sha256), 'Actual native input must match the frozen prompt');
           const responses = await collectIntentResponses(responsesPath);

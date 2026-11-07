@@ -166,6 +166,8 @@ SDK 组合目录的一个 `list` operation 可包含 full catalog 与 Default Vi
 对应原回归入口为 `node --test scripts/notion-skill-graph-model-evidence.test.mjs scripts/notion-skill-graph-model.test.mjs scripts/notion-model-cache.test.mjs scripts/skill-consumption-model-baseline.test.mjs`；`--test-name-pattern 'combined catalog:'` 可复跑本切片。保留旧 flat 正反例、组合一回执的 HTTP/bytes 计数、full 失败而 View 可用、名称歧义、权限 scope／descriptor、部分目录和原公开 Doctor 读取冻结 envelope 的证据。此迁移不改变真实任务、oracle、工具、预算或评分，也不把确定性回归视作真实 C/D／SC20 成功。
 
 
+真实 C/D 的每轮 final 先从本次 submission 的 observer slice 取得最后一个 `assistant-final`，保留原事件、全文、SHA-256 与 UTF-8 bytes，并在验收前写入 `turn-N.json`。自然任务未实际 use、模型最终失败或 RPC 在输出后失败，都仍保留已发生的 final；当前轮缺少 final 时不借上一轮、早先成功事件或其他 case。保存输出不改变原失败、后续 `not_run`、语义评分、预算或通过条件。RPC 与 final 留证同时出错时保留原 RPC 主错误，另记 `finalEvidenceError`；留证失败本身仍为失败，不掩盖或降级。复用原 `driveIntentStopping` 的确定性入口 `node --test --test-name-pattern 'intent final receipt' scripts/notion-model-cache.test.mjs`，同时验证自然 use 断言仍失败、最后失败 final 不被早先成功替换、RPC 失败留证和恢复轮缺失 final。C10 原 `D-natural-task` 的 `observer.jsonl` sequence 88 已有 41,059 bytes / SHA `b226ad1e1096976ea04a03cde05cc7b4db8477111a92ce74d860618c75102258`，其旧 `turn-0.json` 缺 final 的失败原件保留，不回填或改判。
+
 这些结果证明真实 Pi 和安装边界，真实 Notion、真实模型、双机恢复及日用安装分别验收。SC20 的冻结比较 manifest 必须声明 previous-broker、notion-candidate、pi-native-local 三个角色；本地臂须用同字节/版本的普通全局 Skill，由 Pi 原生发现/read，不加载 Broker。记录相同任务、模型、工具 profile、缓存/会话初态和完整 provider 输入，未跑本地臂不能推算对照收益。
 
 SC23 当前 C3 的管理入口为 `ctl operation list/show/reconcile/resume`，旧顶层 `operation` 继续作为同一 handler 的显式兼容入口；新 `next.argv` 使用 `ctl`，历史 receipt 的原始 bytes/hash 不改写。验收须核对候选自身 schema，维护原 operation ID、unknown 状态与旧调用者的明确兼容范围。此前 C1 不支持 `ctl operation` 的失败原件保留为迁移前证据，不能套用到 C3。旧包回滚仍需从该包支持的 `operation show` 获取下一步，不直接执行新包生成的 ctl argv。

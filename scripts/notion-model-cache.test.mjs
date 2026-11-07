@@ -593,9 +593,13 @@ async function driveIntentStopping(config, fault, inspect) {
       project: { sha256: 'b4c48f279ec9d1895ab9e2cc5f91ff4fa6dd56743cdc83aa5b95e700b2a8495f' },
       privateOracle: { ...config.privateOracle, path: join(privateRoot, 'oracle.json'), semanticReference: { sha256: 'a'.repeat(64) } } };
     const executionScope = intentRunner.selectIntentCases(config, 'D-early'), profile = dailyRouteContract(config);
-    const prompts = [], launches = [], stops = [], exercises = [], settings = new Map();
-    const save = (file, value) => writeFile(file, JSON.stringify(value, null, 2) + '\n');
-    const rows = async file => { try { return (await readFile(file, 'utf8')).split('\n').filter(Boolean).map(JSON.parse); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } };
+    const prompts = [], launches = [], stops = [], exercises = [], evaluations = [], settings = new Map();
+    let retentionFault;
+    const failRetention = stage => { if (retentionFault !== stage) return; retentionFault = undefined;
+      throw Object.assign(new Error('controlled final ' + stage + ' failure'), { code: 'EIO' }); };
+    const save = (file, value) => { if (/turn-[0-9]+\.json$/u.test(file)) failRetention('write'); return writeFile(file, JSON.stringify(value, null, 2) + '\n'); };
+    const rows = async file => { if (path.basename(file) === 'observer.jsonl') failRetention('read');
+      try { return (await readFile(file, 'utf8')).split('\n').filter(Boolean).map(JSON.parse); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } };
     const add = (file, row) => fs.promises.appendFile(file, JSON.stringify(row) + '\n');
     const state = { model: { provider: 'magpie', id: profile ? 'group/flash' : 'group/flash-free' }, thinkingLevel: profile ? 'high' : 'off' };
     const boundaries = { ...intentRunner, assert, join, basename: path.basename, dirname: path.dirname, pathToFileURL: value => ({ href: 'file://' + value }),
@@ -620,11 +624,18 @@ async function driveIntentStopping(config, fault, inspect) {
         return { complete: true, fixtureLedgerRetained: true };
       },
       assertIntentTurn: input => {
+        const output = [...settings.values()].at(-1).output;
+        let retained; try { retained = JSON.parse(fs.readFileSync(join(path.dirname(output), 'turn-' + Number(input.followup) + '.json'), 'utf8')); }
+        catch (error) { if (error.code !== 'ENOENT') throw error; }
+        evaluations.push({ caseId: input.item.id, followup: input.followup, retained });
+        if (fault === 'natural-use' && input.item.id === 'D-natural-task'
+          || fault === 'failed-final' && input.item.id === 'D-named-introduce'
+          || fault === 'missing-final' && input.item.id === 'D-named-introduce' && input.followup) return assertIntentTurn(input);
         if (input.item.id === 'D-named-introduce' && !input.followup && ['source', 'observer', 'intent', 'model-route'].includes(fault)) {
           if (fault === 'model-route') verifyDailyRouteEvidence(profile, { states: [state], requests: [], transports: [], responses: [] });
           assert.fail('controlled ' + fault + ' turn failure');
         }
-        return { status: 'passed', final: { success: true, text: 'Controlled complete final.' } };
+        return { status: 'passed', final: input.turnObservation.filter(event => event.phase === 'assistant-final').at(-1) };
       },
       retainedFileInventory: async () => [],
       retainGeneratedPlan: async ({ evidence }) => { await writeFile(join(evidence, 'generated-skill.md'), 'Do not substitute `npm test` for the complete helper.\n'); return { artifactStatus: 'complete-skill-files-retained', files: [{ evidencePath: 'generated-skill.md' }] }; },
@@ -641,6 +652,23 @@ async function driveIntentStopping(config, fault, inspect) {
             await add(value.output, { phase: 'native-input', caseId, textSha256: intentHash(text) });
             await add(join(path.dirname(value.output), 'source-processes.jsonl'), { phase: 'controlled-cost', caseId, submission: prompts.length, bytes: 91 });
             if (fault === 'observer' && caseId === 'D-named-introduce') await add(value.output, { phase: 'observer-error', caseId });
+            await add(value.output, { phase: 'provider-request', tools: ['read', 'notion_list', 'notion_use'], contents: [], payloadBytes: 123 });
+            await add(value.output, { phase: 'provider-transport-response', status: 200 });
+            if (caseId === 'D-natural-task') await add(value.output, { phase: 'project-read-result', complete: true, path: 'src/index.js' });
+            const missing = fault === 'missing-final' && caseId === 'D-named-introduce' && processIndex === 2;
+            if (!missing) {
+              const failed = fault === 'failed-final' && caseId === 'D-named-introduce';
+              for (const [index, success, text] of [[1, failed, 'Earlier assistant tool step.'],
+                [2, !failed, caseId + ' complete original final: 保留原回答。\n']]) {
+                await add(value.output, { phase: 'assistant-final', sequence: prompts.length * 100 + index,
+                  at: '2026-11-07T00:00:00.000Z', success, stopReason: success ? 'stop' : 'error', text,
+                  sha256: intentHash(text), bytes: Buffer.byteLength(text) });
+              }
+            }
+            if (['rpc-final', 'rpc-final-read', 'rpc-final-write'].includes(fault) && caseId === 'D-named-introduce') {
+              retentionFault = fault === 'rpc-final-read' ? 'read' : fault === 'rpc-final-write' ? 'write' : undefined;
+              throw new Error('controlled prompt failure after final');
+            }
           },
           stop: async () => { stops.push({ caseId, processIndex }); lifecycle.push({ event: 'close', code: 143 });
             if (fault === 'host' && caseId === 'D-named-introduce' && processIndex === 1) throw new Error('controlled native close failure'); },
@@ -652,12 +680,61 @@ async function driveIntentStopping(config, fault, inspect) {
     assert.deepEqual(JSON.parse(await readFile(join(manifest.evidence, 'manifest.json'), 'utf8')), JSON.parse(JSON.stringify(manifest)));
     const results = await Promise.all(manifest.cases.map(item => boundaries.json(join(item.evidence, 'result.json'))));
     const costs = await Promise.all(manifest.cases.map(item => rows(join(item.evidence, 'source-processes.jsonl'))));
-    await inspect({ manifest, results, prompts, launches, stops, exercises, costs });
+    const observations = await Promise.all(manifest.cases.map(item => rows(join(item.evidence, 'observer.jsonl'))));
+    const turnReceipts = await Promise.all(manifest.cases.map((item, index) => Promise.all(results[index].turns.map(turn => boundaries.json(join(item.evidence, 'turn-' + turn.index + '.json'))))));
+    await inspect({ manifest, results, prompts, launches, stops, exercises, costs, evaluations, observations, turnReceipts });
   } finally {
     // The verification caller retains these synthetic fixtures before using Trash.
     console.log('Owned intent-stop fixture retained: ' + root);
   }
 }
+
+
+test('intent final receipt survives the original natural-use failure before assessment', async () => {
+  await driveIntentStopping(intentConfig(), 'natural-use', ({ manifest, results, observations, turnReceipts, evaluations, prompts }) => {
+    const result = results[1]; assert.equal(result.gate, 'D-natural-task');
+    const observed = observations[1].filter(event => event.phase === 'assistant-final').at(-1), turn = result.turns[0];
+    assert.equal(turn.status, 'failed'); assert.match(turn.error.message, /The natural task must actually use its chosen Skill/);
+    assert.deepEqual(turn.final, observed); assert.deepEqual(turnReceipts[1][0].final, observed);
+    const evaluated = evaluations.find(row => row.caseId === 'D-natural-task').retained;
+    assert.equal(evaluated.status, 'running'); assert.deepEqual(evaluated.final, observed, 'Persist the original final before acceptance can throw');
+    assert.equal(turn.final.sha256, intentHash(turn.final.text)); assert.equal(turn.final.bytes, Buffer.byteLength(turn.final.text));
+    assert.equal(manifest.status, 'failed'); assert.equal(prompts.length, 4);
+    assert.equal(results[2].status, 'passed', 'Independent later cases retain the existing legacy continuation policy');
+  });
+});
+
+for (const fault of ['failed-final', 'rpc-final']) test('intent final receipt retains the last observed final after ' + fault, async () => {
+  await driveIntentStopping(intentConfig(), fault, ({ manifest, results, observations, turnReceipts }) => {
+    const observed = observations[0].filter(event => event.phase === 'assistant-final').at(-1), turn = results[0].turns[0];
+    assert.equal(turn.status, 'failed'); assert.equal(manifest.status, 'failed'); assert.equal(results[0].turns.length, 1);
+    assert.deepEqual(turn.final, observed); assert.deepEqual(turnReceipts[0][0].final, observed);
+    assert.equal(turn.final.success, fault !== 'failed-final', 'A last failed final cannot be replaced by an earlier successful one');
+    assert.equal(turn.final.sha256, intentHash(turn.final.text)); assert.equal(turn.final.bytes, Buffer.byteLength(turn.final.text));
+  });
+});
+
+
+for (const stage of ['read', 'write']) test('intent final receipt preserves both RPC and evidence ' + stage + ' failures', async () => {
+  await driveIntentStopping(intentConfig(), 'rpc-final-' + stage, ({ manifest, results, observations, turnReceipts }) => {
+    const turn = results[0].turns[0], raw = observations[0].filter(event => event.phase === 'assistant-final').at(-1);
+    assert.equal(turn.status, 'failed'); assert.equal(manifest.status, 'failed');
+    assert.equal(turn.error.message, 'controlled prompt failure after final');
+    assert.deepEqual(turn.finalEvidenceError, { code: 'EIO', message: 'controlled final ' + stage + ' failure' });
+    assert.deepEqual(turnReceipts[0][0], turn); assert.equal(raw.sha256, intentHash(raw.text));
+    if (stage === 'write') assert.deepEqual(turn.final, raw);
+    else assert.equal(turn.final, undefined, 'An unread final is not fabricated from another event');
+  });
+});
+
+test('intent final receipt never borrows the previous turn when the resumed turn has no final', async () => {
+  await driveIntentStopping(intentConfig(), 'missing-final', ({ results, turnReceipts }) => {
+    const [initial, resumed] = results[0].turns;
+    assert.equal(initial.status, 'passed'); assert.ok(initial.final?.text); assert.equal(initial.final.sha256, intentHash(initial.final.text));
+    assert.equal(resumed.status, 'failed'); assert.match(resumed.error.message, /A successful nonempty final is required/);
+    assert.equal(resumed.final, undefined); assert.equal(turnReceipts[0][1].final, undefined);
+  });
+});
 
 for (const fault of ['source', 'observer', 'host', 'model-state', 'model-route']) test('ordinary daily D stops later submissions after ' + fault + ' technical failure', async () => {
   const config = { ...intentConfig(), modelContract: 'daily-route-v1', model: 'magpie/group/flash', thinkingLevel: 'high', rpcTimeoutMs: 300000 };
