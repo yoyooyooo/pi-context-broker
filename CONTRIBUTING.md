@@ -127,6 +127,10 @@ User guides describe supported behavior and durable decisions. Verification Skil
 
 ## Release
 
+When a change spans both repositories, release `ntn-skills` first and complete its registry verification. Then update Broker's exact `ntn-skills` development dependency and lockfile to that published version, and align the CLI source revision used to generate verification fixtures. Run Broker's checks and artifact verification without `NTN_SKILLS_BUILD_ENTRY` before preparing its release.
+
+Development CI may select an explicit CLI source revision while the upstream release is being prepared. Publication builds from the declared installed dependency and checks that its version and SDK export agree with the fixture source. A local candidate or successful source-override check does not satisfy this release prerequisite.
+
 Tern release archives are self-contained. Download and extract the archive, then run `tern plugin install <extracted-directory>`; Tern does not install the tar URL directly. Source checkouts require a build before local installation. Broker npm releases are tag-driven:
 
 ```bash

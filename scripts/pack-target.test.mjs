@@ -5,7 +5,91 @@ import { chmod, copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/pr
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { verifyBundledRuntime } from './verify-package-closure.mjs';
+import { brokerRegistryVersion, installBrokerConsumer, verifyBundledRuntime, verifyInstalledArchive, verifyRegistryArtifact, verifyReleaseCliInput } from './verify-package-closure.mjs';
+
+test('publication requires the declared installed SDK and a fixture from that same version', () => {
+  const fixture = { brokerManifest: { devDependencies: { 'ntn-skills': '0.4.0' } },
+    installedManifest: { name: 'ntn-skills', version: '0.4.0', exports: { './sdk': { import: './dist/sdk.js' } } },
+    fixtureManifest: { name: 'ntn-skills', version: '0.4.0' } };
+  assert.deepEqual(verifyReleaseCliInput(fixture), { package: 'ntn-skills', version: '0.4.0', fixtureVersion: '0.4.0' });
+  for (const change of [
+    value => { value.brokerManifest.devDependencies = {}; },
+    value => { value.brokerManifest.devDependencies['ntn-skills'] = '^0.4.0'; },
+    value => { value.installedManifest.name = 'another-package'; },
+    value => { value.installedManifest.version = '0.3.0'; },
+    value => { value.installedManifest.exports = {}; },
+    value => { value.fixtureManifest.version = '0.3.0'; },
+    value => { value.buildEntry = '/unverified/source-cli.js'; },
+  ]) {
+    const value = structuredClone(fixture); change(value);
+    assert.throws(() => verifyReleaseCliInput(value));
+  }
+});
+
+test('registry verification binds the exact package, version, integrity and candidate bytes', () => {
+  const archiveBytes = Buffer.from('verified-candidate');
+  const fixture = { spec: 'pi-context-broker@0.2.0', archiveBytes, expectedBytes: archiveBytes,
+    metadata: { name: 'pi-context-broker', version: '0.2.0', 'dist.integrity': `sha512-${createHash('sha512').update(archiveBytes).digest('base64')}` } };
+  assert.equal(verifyRegistryArtifact(fixture), fixture.metadata['dist.integrity']);
+  for (const change of [
+    value => { value.metadata.name = 'another-package'; },
+    value => { value.metadata.version = '0.1.0'; },
+    value => { value.metadata['dist.integrity'] = 'sha512-wrong'; },
+    value => { value.expectedBytes = Buffer.from('unverified-candidate'); },
+  ]) {
+    const value = structuredClone(fixture); change(value);
+    assert.throws(() => verifyRegistryArtifact(value));
+  }
+  for (const spec of ['pi-context-broker', 'pi-context-broker@latest', 'pi-context-broker@^0.2.0', 'pi-context-broker@01.2.0', 'other@0.2.0'])
+    assert.throws(() => brokerRegistryVersion(spec));
+});
+
+test('installed archive verification rejects altered and leftover package files after an upgrade', async t => {
+  const base = await mkdtemp(join(tmpdir(), 'broker-installed-archive-'));
+  t.diagnostic(`Package inventory fixture retained at ${base}`);
+  const staged = join(base, 'staged');
+  await mkdir(staged);
+  await writeFile(join(staged, 'package.json'), '{"name":"pi-context-broker","version":"0.2.0"}\n');
+  for (const kind of ['exact', 'changed', 'stale']) {
+    const installed = join(base, kind);
+    await mkdir(installed);
+    await copyFile(join(staged, 'package.json'), join(installed, 'package.json'));
+    if (kind === 'changed') await writeFile(join(installed, 'package.json'), '{"version":"0.1.0"}\n');
+    if (kind === 'stale') await writeFile(join(installed, 'obsolete-runtime.mjs'), 'old runtime');
+    if (kind === 'exact') assert.equal(await verifyInstalledArchive({ staged, installed }), 1);
+    else await assert.rejects(verifyInstalledArchive({ staged, installed }), /without stale upgrade files/);
+  }
+});
+
+for (const outcome of ['preserved', 'changed-config', 'wrong-previous-version']) {
+  test(`upgrade installs the previous registry version before the candidate (${outcome})`, async t => {
+    // The installer is controlled here; real npm and actual-host checks remain in verify-artifacts.
+    const base = await mkdtemp(join(tmpdir(), 'broker-upgrade-dispatch-'));
+    t.diagnostic(`Upgrade fixture retained at ${base}`);
+    const consumer = join(base, 'consumer'), home = join(base, 'home');
+    await mkdir(consumer); await mkdir(home);
+    const calls = [];
+    const run = async (argv, cwd) => {
+      assert.equal(cwd, consumer);
+      calls.push(argv);
+      const installed = join(consumer, 'node_modules/pi-context-broker');
+      await mkdir(installed, { recursive: true });
+      await writeFile(join(installed, 'package.json'), JSON.stringify({ name: 'pi-context-broker', version: calls.length === 1 && outcome !== 'wrong-previous-version' ? '0.1.0' : '0.2.0' }));
+      if (calls.length === 2 && outcome === 'changed-config') await writeFile(join(home, '.pi/agent/settings.json'), '{}');
+      return '';
+    };
+    const operation = installBrokerConsumer({ consumer, home, target: 'file:/candidate.tgz', upgradeFrom: 'pi-context-broker@0.1.0', run });
+    if (outcome === 'preserved') {
+      const result = await operation;
+      assert.equal(result.mode, 'upgrade');
+      assert.equal(result.preservedConfigurations.length, 2);
+      assert.deepEqual(calls.map(argv => argv.at(-1)), ['pi-context-broker@0.1.0', 'file:/candidate.tgz']);
+    } else {
+      await assert.rejects(operation);
+      assert.equal(calls.length, outcome === 'wrong-previous-version' ? 1 : 2);
+    }
+  });
+}
 
 test('a selected source build accepts its frozen version and rejects wrong packages or altered bundle bytes', () => {
   const hash = value => createHash('sha256').update(value).digest('hex');

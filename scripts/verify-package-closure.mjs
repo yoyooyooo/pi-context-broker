@@ -1,12 +1,82 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, readlink, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const official = ["effect", "@effect/platform-node", "@effect/platform-node-shared", "@effect/sql-sqlite-node"];
+const registry = "https://registry.npmjs.org";
+export function verifyReleaseCliInput({ brokerManifest, installedManifest, fixtureManifest, buildEntry }) {
+  assert.ok(!buildEntry, "Publication must use the declared ntn-skills dependency without NTN_SKILLS_BUILD_ENTRY");
+  const version = brokerManifest.devDependencies?.["ntn-skills"];
+  assert.match(version ?? "", /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/, "Publication requires an exact stable ntn-skills dependency");
+  assert.equal(installedManifest.name, "ntn-skills");
+  assert.equal(installedManifest.version, version, "Installed ntn-skills must match the declared release dependency");
+  const sdkExport = installedManifest.exports?.["./sdk"];
+  const sdkImport = typeof sdkExport === "string" ? sdkExport : sdkExport?.import;
+  assert.ok(typeof sdkImport === "string" && sdkImport.startsWith("./"), `Declared ntn-skills@${version} has no Node ESM SDK; publish a compatible CLI and update the exact dependency and lockfile before Broker publication`);
+  assert.equal(fixtureManifest.name, "ntn-skills");
+  assert.equal(fixtureManifest.version, version, "Pinned CLI fixture source must match the declared release dependency version");
+  return { package: "ntn-skills", version, fixtureVersion: fixtureManifest.version };
+}
+export function brokerRegistryVersion(spec) {
+  const match = /^pi-context-broker@((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$/.exec(spec ?? "");
+  assert.ok(match, "Registry verification requires an exact pi-context-broker@x.y.z version");
+  return match[1];
+}
+export function verifyRegistryArtifact({ spec, metadata, archiveBytes, expectedBytes }) {
+  assert.equal(metadata.name, "pi-context-broker");
+  assert.equal(metadata.version, brokerRegistryVersion(spec));
+  const integrity = `sha512-${createHash("sha512").update(archiveBytes).digest("base64")}`;
+  assert.equal(metadata["dist.integrity"], integrity, "Registry integrity does not match the downloaded archive");
+  assert.deepEqual(archiveBytes, expectedBytes, "Registry archive differs from the verified release candidate");
+  return integrity;
+}
+async function packageInventory(root) {
+  const files = {};
+  async function visit(directory, prefix = "") {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (entry.name === "node_modules") continue;
+      const name = prefix + entry.name;
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) await visit(path, name + "/");
+      else if (entry.isFile()) files[name] = createHash("sha256").update(await readFile(path)).digest("hex");
+      else if (entry.isSymbolicLink()) files[name] = { link: await readlink(path) };
+    }
+  }
+  await visit(root);
+  return files;
+}
+export async function verifyInstalledArchive({ staged, installed }) {
+  const files = await packageInventory(staged);
+  assert.deepEqual(await packageInventory(installed), files, "Installed package must contain exactly the candidate files, without stale upgrade files");
+  return Object.keys(files).length;
+}
+export async function installBrokerConsumer({ consumer, home, target, upgradeFrom, run }) {
+  await writeFile(join(consumer, "package.json"), JSON.stringify({ name: "strict-broker-consumer", private: true }, null, 2) + "\n");
+  const install = spec => run(["npm", "install", "--save-exact", "--omit=dev", "--no-audit", "--no-fund", "--registry", registry, spec], consumer);
+  const preserved = [];
+  if (upgradeFrom) {
+    const previousVersion = brokerRegistryVersion(upgradeFrom);
+    await install(upgradeFrom);
+    assert.equal(JSON.parse(await readFile(join(consumer, "node_modules/pi-context-broker/package.json"), "utf8")).version, previousVersion);
+    const agentDir = join(home, ".pi/agent");
+    for (const [path, contents] of [
+      [join(agentDir, "settings.json"), JSON.stringify({ packages: ["npm:pi-context-broker", "npm:other-user-package"], defaultTools: ["+tool_search"] }, null, 2) + "\n"],
+      [join(agentDir, "context-broker/config.yml"), "skillRoots: []\nsources: []\n"],
+    ]) {
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, contents);
+      preserved.push({ path, contents });
+    }
+  }
+  await install(target);
+  for (const { path, contents } of preserved) assert.equal(await readFile(path, "utf8"), contents, `Package upgrade changed user configuration: ${path}`);
+  return { mode: upgradeFrom ? "upgrade" : "fresh", ...(upgradeFrom ? { from: upgradeFrom } : {}), target, preservedConfigurations: preserved.map(({ path }) => path) };
+}
 export function verifyBundledRuntime({ manifest, cliBytes, sdkBytes, expectedVersion }) {
   assert.equal(manifest.version, 1, "Unknown bundled runtime manifest");
   assert.equal(manifest.package, "ntn-skills", "Unexpected bundled package identity");
@@ -16,7 +86,11 @@ export function verifyBundledRuntime({ manifest, cliBytes, sdkBytes, expectedVer
   assert.equal(manifest.sdk_sha256, hashes.sdk, "Bundled SDK bytes do not match its frozen runtime manifest");
   return hashes;
 }
-export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerManifest, base }) {
+export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerManifest, registryPackage, upgradeFrom, base }) {
+  if (registryPackage) brokerRegistryVersion(registryPackage);
+  if (upgradeFrom) brokerRegistryVersion(upgradeFrom);
+  assert.ok(!registryPackage || brokerArchive && !ternArchive && !brokerManifest, "Registry verification requires the expected Broker archive without Tern or manifest overrides");
+  assert.ok(!upgradeFrom || !ternArchive && !brokerManifest, "Upgrade verification requires the unmodified Broker candidate without Tern");
   base ??= await mkdtemp(join(tmpdir(), "broker-strict-closure-"));
   await mkdir(base, { recursive: true });
   const home = join(base, "home");
@@ -35,20 +109,36 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
   await run([process.execPath, "--version"], base);
   await run(["npm", "--version"], base);
   await run(["npm", "config", "get", "registry"], base);
+  let distribution;
+  if (registryPackage) {
+    const archives = join(base, "registry-archive");
+    await mkdir(archives);
+    const metadata = JSON.parse(await run(["npm", "view", registryPackage, "name", "version", "dist.integrity", "--json", "--registry", registry], base));
+    const packed = JSON.parse(await run(["npm", "pack", registryPackage, "--ignore-scripts", "--json", "--pack-destination", archives, "--registry", registry], base));
+    assert.equal(packed.length, 1);
+    assert.equal(packed[0].filename, `pi-context-broker-${brokerRegistryVersion(registryPackage)}.tgz`);
+    const downloaded = join(archives, packed[0].filename);
+    const integrity = verifyRegistryArtifact({ spec: registryPackage, metadata, archiveBytes: await readFile(downloaded), expectedBytes: await readFile(resolve(brokerArchive)) });
+    distribution = { package: registryPackage, registry, integrity, expectedArchive: resolve(brokerArchive) };
+    brokerArchive = downloaded;
+  }
   const consumer = join(base, "consumer");
   const staged = join(base, "staged");
   const tern = ternArchive ? join(base, "tern") : undefined;
   for (const directory of [consumer, staged, ...(tern ? [tern] : [])]) await mkdir(directory);
   await run(["tar", "-xzf", resolve(brokerArchive), "-C", staged], base);
+  const packedManifest = JSON.parse(await readFile(join(staged, "package/package.json"), "utf8"));
+  assert.equal(packedManifest.name, "pi-context-broker");
+  if (registryPackage) assert.equal(packedManifest.version, brokerRegistryVersion(registryPackage));
   if (brokerManifest) {
     // Dependency-only diagnostic: preserve all frozen executable/resource bytes.
     await cp(resolve(brokerManifest), join(staged, "package/package.json"));
     await run(["npm", "pack", "--ignore-scripts", "--pack-destination", staged], join(staged, "package"));
     brokerArchive = join(staged, (await readdir(staged)).find(name => name.endsWith(".tgz")));
   }
-  await writeFile(join(consumer, "package.json"), JSON.stringify({ name: "strict-broker-consumer", private: true, dependencies: { "pi-context-broker": `file:${resolve(brokerArchive)}` } }, null, 2));
-  await run(["npm", "install", "--omit=dev", "--no-audit", "--no-fund"], consumer);
+  const installation = await installBrokerConsumer({ consumer, home, target: registryPackage ?? `file:${resolve(brokerArchive)}`, upgradeFrom, run });
   const installed = join(consumer, "node_modules/pi-context-broker");
+  installation.publishedFiles = await verifyInstalledArchive({ staged: join(staged, "package"), installed });
   for (const host of ["@earendil-works/pi-coding-agent", "@oh-my-pi/pi-coding-agent"]) {
     assert.equal(JSON.parse(await readFile(join(installed, "package.json"), "utf8")).peerDependenciesMeta[host].optional, true);
     await assert.rejects(readFile(join(consumer, "node_modules", host, "package.json")), { code: "ENOENT" });
@@ -152,10 +242,28 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
     assert.equal((await cli(["ctl", "backup", "--output", join(base, label + "-backup")])).verified, true);
   }
   console.log(`Strict default-peer ${tern ? "Broker/Tern" : "Broker"} closure verified: ${base}`);
-  return { base, installed, tern, builtins: { names: builtinNames, npmRoot: npmBuiltins, ternRoot: ternBuiltins } };
+  return { base, installed, tern, brokerArchive: resolve(brokerArchive), installation, distribution, builtins: { names: builtinNames, npmRoot: npmBuiltins, ternRoot: ternBuiltins } };
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [brokerArchive, ternArchive, brokerManifest] = process.argv.slice(2);
-  assert.ok(brokerArchive && ternArchive, "Usage: node scripts/verify-package-closure.mjs BROKER.tgz TERN.tar.gz [dependency-only-package.json]");
-  await verifyPackageClosure({ brokerArchive, ternArchive, brokerManifest });
+  const args = process.argv.slice(2);
+  if (args[0] === "--release-input") {
+    assert.equal(args.length, 2, "Usage: node scripts/verify-package-closure.mjs --release-input CLI_FIXTURE_PACKAGE_JSON");
+    const brokerPath = resolve(dirname(fileURLToPath(import.meta.url)), "../packages/context-broker/package.json");
+    const require = createRequire(brokerPath);
+    const selection = verifyReleaseCliInput({
+      brokerManifest: JSON.parse(await readFile(brokerPath, "utf8")),
+      installedManifest: JSON.parse(await readFile(require.resolve("ntn-skills/package.json"), "utf8")),
+      fixtureManifest: JSON.parse(await readFile(resolve(args[1]), "utf8")),
+      buildEntry: process.env.NTN_SKILLS_BUILD_ENTRY,
+    });
+    const sdk = await import(pathToFileURL(require.resolve("ntn-skills/sdk")).href);
+    assert.equal(sdk.SDK_VERSION, 1, "Declared CLI dependency has an incompatible SDK");
+    assert.equal(sdk.CONSUMER_CONTRACT_VERSION, 1, "Declared CLI dependency has an incompatible consumer contract");
+    assert.equal(sdk.PACKAGE_VERSION, selection.version, "Declared CLI SDK bytes do not match its package version");
+    console.log(JSON.stringify({ status: "release-cli-input-valid", ...selection }));
+  } else {
+    const [brokerArchive, ternArchive, brokerManifest] = args;
+    assert.ok(brokerArchive && ternArchive, "Usage: node scripts/verify-package-closure.mjs BROKER.tgz TERN.tar.gz [dependency-only-package.json]");
+    await verifyPackageClosure({ brokerArchive, ternArchive, brokerManifest });
+  }
 }

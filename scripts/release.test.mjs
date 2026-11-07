@@ -137,12 +137,23 @@ test("successful configured check creates a local release tag with --no-push", t
   f.assertRemoteUnchanged();
 });
 
-for (const mode of ["--dry-run", "--precheck"]) {
-  test(`${mode} reports the configured check without executing it`, t => {
-    const f = fixture(t, 23);
-    const result = f.release("patch", mode);
-    assert.equal(result.status, 0, result.stderr || result.stdout);
-    assert.throws(() => readFileSync(f.gateLog), { code: "ENOENT" });
+test("--dry-run reports the configured check without executing it", t => {
+  const f = fixture(t, 23);
+  const result = f.release("patch", "--dry-run");
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.throws(() => readFileSync(f.gateLog), { code: "ENOENT" });
+  f.assertNoRelease();
+});
+
+for (const gateExit of [0, 23]) {
+  test(`--precheck executes the current checkout gate (${gateExit}) without creating a release`, t => {
+    const f = fixture(t, gateExit);
+    const result = f.release("patch", "--precheck");
+    assert.equal(result.status, gateExit === 0 ? 0 : 1, result.stderr || result.stdout);
+    const gate = JSON.parse(readFileSync(f.gateLog, "utf8"));
+    assert.deepEqual(gate.versions, f.config.versionFiles.map(() => "1.0.0"));
+    assert.equal(gate.branch, "main");
+    assert.equal(gate.commits, "1");
     f.assertNoRelease();
   });
 }

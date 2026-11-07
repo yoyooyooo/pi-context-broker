@@ -24,13 +24,18 @@ test('normal checks and both workflows retain consumption and real Pi installati
     [value => { value.workflows[0].text = value.workflows[0].text.replace('--scenario all --out "$RUNNER_TEMP/pi14-sdk-evidence"', '--scenario dollar --out "$RUNNER_TEMP/pi14-sdk-evidence"'); }, 'GATE_PI_COMPATIBILITY_MISSING'],
     [value => { value.workflows[1].text = value.workflows[1].text.replace('    steps:\n', '    strategy:\n      matrix:\n        pi: [1.4.0, 1.5.0]\n    steps:\n'); }, 'GATE_PUBLISH_MATRIX'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('NTN_SKILLS_BUILD_ENTRY:', 'UNUSED_CLI_ENTRY:'); }, 'GATE_SDK_BUILD_INPUT_MISSING'],
+    [value => { value.workflows[1].text = value.workflows[1].text.replace('    steps:\n', '    env:\n      NTN_SKILLS_BUILD_ENTRY: /unverified/source-cli.js\n    steps:\n'); }, 'GATE_PUBLISH_DEPENDENCY_OVERRIDE'],
+    [value => { value.workflows[1].text = value.workflows[1].text.replace('run: node scripts/verify-package-closure.mjs --release-input', 'run: true'); }, 'GATE_RELEASE_CLI_INPUT_MISSING'],
+    [value => { value.workflows[1].text = value.workflows[1].text.replace('- name: Validate declared CLI release input\n', '- name: Validate declared CLI release input\n        if: false\n'); }, 'GATE_RELEASE_CLI_INPUT_MISSING'],
+    [value => { value.workflows[1].text = value.workflows[1].text.replace('- name: Validate declared CLI release input\n', '- name: Validate declared CLI release input\n        continue-on-error: true\n'); }, 'GATE_RELEASE_CLI_INPUT_MISSING'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace(/(repository: yoyooyooo\/notion-skills-cli\s+ref: )[a-f0-9]{40}/u, '$1main'); }, 'GATE_SDK_BUILD_INPUT_MISSING'],
     [value => { value.workflows[1].text = value.workflows[1].text.replace(/(repository: yoyooyooo\/notion-skills-cli\s+ref: )[a-f0-9]{40}/u, '$1' + 'a'.repeat(40)); }, 'GATE_SDK_BUILD_INPUT_DRIFT'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('bun-version: 1.4.3', 'bun-version: 1.3.14'); }, 'GATE_BUN_VERSION'],
-    [value => { value.workflows[1].text = value.workflows[1].text.replace('run: node scripts/verify-artifacts.mjs --host pi', 'run: true'); }, 'GATE_INSTALLED_HOST_MISSING'],
+    [value => { value.workflows[1].text = value.workflows[1].text.replaceAll('node scripts/verify-artifacts.mjs --host pi', 'true'); }, 'GATE_INSTALLED_HOST_MISSING'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('    steps:\n', '      INVALID_FIXTURE: ${{ runner.temp }}/fixture.json\n    steps:\n'); }, 'GATE_RUNNER_CONTEXT_SCOPE'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-sdk-fixture" --catalog', 'sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-sdk-fixture"'); }, 'GATE_SDK_FIXTURE_MISSING'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('- name: Create controlled SDK fixture\n', '- name: Create controlled SDK fixture\n        if: false\n'); }, 'GATE_SDK_FIXTURE_MISSING'],
+    [value => { value.workflows[1].text = value.workflows[1].text.replace('run: node scripts/verify-artifacts.mjs --host pi', 'run: true'); }, 'GATE_INSTALLED_SDK_MISSING'],
     [value => { value.workflows[1].text = value.workflows[1].text.replace(' --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json"', ''); }, 'GATE_INSTALLED_SDK_MISSING'],
     [value => { value.workflows[1].text = value.workflows[1].text.replace(' --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json"', ' --fixture "$RUNNER_TEMP/unrelated/fixture.json"'); }, 'GATE_INSTALLED_SDK_MISSING'],
     [value => { value.workflows[1].text = value.workflows[1].text.replace(' --require-sdk', ''); }, 'GATE_INSTALLED_SDK_MISSING'],
@@ -41,6 +46,15 @@ test('normal checks and both workflows retain consumption and real Pi installati
     const config = consumptionGateConfiguration(); mutate(config);
     assert.throws(() => validateConsumptionGates(config), { code });
   }
+});
+
+test('publication validates the installed CLI dependency before source builds or package checks', () => {
+  const config = consumptionGateConfiguration();
+  const workflow = config.workflows.find(value => value.name === 'publish');
+  const input = '      - name: Validate declared CLI release input\n        run: node scripts/verify-package-closure.mjs --release-input .verification/ntn-skills-cli/packages/cli/package.json\n';
+  assert.ok(workflow.text.includes(input));
+  workflow.text = workflow.text.replace(input, '') + input;
+  assert.throws(() => validateConsumptionGates(config), { code: 'GATE_RELEASE_CLI_INPUT_MISSING' });
 });
 
 test('installed name gates cannot omit their distinct fixture, required execution, evidence or compatibility route', () => {

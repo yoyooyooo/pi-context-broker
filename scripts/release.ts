@@ -58,6 +58,7 @@ function main(): void {
     const tag = `${config.tagPrefix}${decision.next}`;
 
     if (options.dryRun || options.precheck) {
+      if (options.precheck) run(config.checkCommand[0]!, config.checkCommand.slice(1));
       printPlan(fileVersion, decision, tag, config, options, tagVersions);
       return;
     }
@@ -167,7 +168,8 @@ function usage(): string {
 Default model:
   Creates a temporary local release branch, writes version files, runs the configured checkCommand,
   then commits, tags that commit, and pushes tag only. --no-push still runs the check.
-  --dry-run and --precheck only print the plan; they do not run the check or create a release.
+  --precheck runs the configured check without changing versions or creating a release.
+  --dry-run only prints the plan; it does not run the check or create a release.
   If latest git tag is absent from npm, it is treated as a failed release and reused.`;
 }
 
@@ -306,7 +308,7 @@ function printPlan(
   replace failed tag: ${decision.reusingFailedTag ? "yes" : "no"}
   local branch: temporary ${config.releaseBranchPrefix}${tag}-<sha>
   pushes: ${options.noPush ? "none" : "tag only"}
-  check: ${formatCommand(config.checkCommand)} (not executed in this plan)
+  check: ${formatCommand(config.checkCommand)} (${options.precheck ? "passed on the current checkout" : "not executed in this plan"})
   main commit: no
   known tags: ${tagVersions.length}
 `);

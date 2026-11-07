@@ -24,8 +24,6 @@ jobs:
   main:
     runs-on: ubuntu-latest
     environment: npm-publish
-    env:
-      NTN_SKILLS_BUILD_ENTRY: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/cli/dist/ntn-skills.js
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,7 +34,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yoyooyooo/notion-skills-cli
-          ref: 97ba806db80a842cd33d7327e99745d32b476e97
+          ref: 4f4a7de21f8f16b4e436064229f7f48c2a236de8
           path: .verification/ntn-skills-cli
           persist-credentials: false
       - name: Set up Bun
@@ -51,6 +49,8 @@ jobs:
           package-manager-cache: false
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      - name: Validate declared CLI release input
+        run: node scripts/verify-package-closure.mjs --release-input .verification/ntn-skills-cli/packages/cli/package.json
       - name: Build pinned CLI SDK
         working-directory: .verification/ntn-skills-cli
         run: |
@@ -111,26 +111,16 @@ jobs:
         run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-name-fixture" --catalog --distinct-names
       - name: Create controlled ambiguity SDK fixture
         run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-ambiguity-fixture" --catalog --ambiguous-names
-      - name: Installed Pi artifact regression
-        run: node scripts/verify-artifacts.mjs --host pi --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --require-sdk --name-fixture "$RUNNER_TEMP/ntn-skills-name-fixture/fixture.json" --ambiguity-fixture "$RUNNER_TEMP/ntn-skills-ambiguity-fixture/fixture.json"
-      - name: Preserve installed Pi SDK evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: installed-pi-sdk-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            /tmp/broker-artifacts-*/
-            /tmp/notion-sdk-pi-*/
-            ${{ runner.temp }}/ntn-skills-sdk-fixture/
-            ${{ runner.temp }}/ntn-skills-name-fixture/
-            ${{ runner.temp }}/ntn-skills-ambiguity-fixture/
-          include-hidden-files: true
-          if-no-files-found: warn
-          retention-days: 7
-      - name: Installed OMP and Tern artifact regression
-        run: node scripts/verify-artifacts.mjs --host omp
       - name: Package release artifacts
         run: bun scripts/pack.mjs
+      - name: Installed Pi artifact regression
+        env:
+          CONTEXT_BROKER_CANDIDATE_DIR: ${{ github.workspace }}/dist
+        run: node scripts/verify-artifacts.mjs --host pi --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --require-sdk --name-fixture "$RUNNER_TEMP/ntn-skills-name-fixture/fixture.json" --ambiguity-fixture "$RUNNER_TEMP/ntn-skills-ambiguity-fixture/fixture.json"
+      - name: Installed OMP and Tern artifact regression
+        env:
+          CONTEXT_BROKER_CANDIDATE_DIR: ${{ github.workspace }}/dist
+        run: node scripts/verify-artifacts.mjs --host omp
       - name: Publish
         working-directory: packages/context-broker
         run: |
@@ -138,7 +128,7 @@ jobs:
             echo "${PACKAGE_NAME}@${PACKAGE_VERSION} is already on npm; skipping npm publish."
             exit 0
           fi
-          npm publish --registry https://registry.npmjs.org --access public --provenance
+          npm publish "${GITHUB_WORKSPACE}/dist/pi-context-broker-${PACKAGE_VERSION}.tgz" --registry https://registry.npmjs.org --access public --provenance
       - name: Verify npm package
         run: |
           for attempt in 1 2 3 4 5 6; do
@@ -160,7 +150,7 @@ jobs:
           git fetch --tags --force
           node <<'NODE'
           const { execFileSync } = require("node:child_process");
-          const { writeFileSync } = require("node:fs");
+          const { appendFileSync, writeFileSync } = require("node:fs");
 
           const packageName = process.env.PACKAGE_NAME;
           const currentVersion = process.env.PACKAGE_VERSION;
@@ -197,6 +187,7 @@ jobs:
           const parsed = JSON.parse(rawVersions || "[]");
           const versions = (Array.isArray(parsed) ? parsed : [parsed]).filter((value) => typeof value === "string" && stable(value));
           const previousVersion = versions.filter((version) => compare(version, currentVersion) < 0).sort(compare).at(-1);
+          appendFileSync(process.env.GITHUB_ENV, `PREVIOUS_PACKAGE=${previousVersion ? `${packageName}@${previousVersion}` : ""}\n`);
           const previousTag = previousVersion && tagExists(`v${previousVersion}`) ? `v${previousVersion}` : "";
           const range = previousTag ? `${previousTag}..${currentTag}` : currentTag;
 
@@ -267,6 +258,27 @@ jobs:
           }
           writeFileSync("release-notes.md", lines.join("\n"));
           NODE
+      - name: Verify registry fresh install
+        run: |
+          node scripts/verify-artifacts.mjs --host pi --registry "${PACKAGE_NAME}@${PACKAGE_VERSION}" --expected-archive "${GITHUB_WORKSPACE}/dist/pi-context-broker-${PACKAGE_VERSION}.tgz" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --require-sdk
+      - name: Verify registry upgrade
+        if: env.PREVIOUS_PACKAGE != ''
+        run: |
+          node scripts/verify-artifacts.mjs --host pi --registry "${PACKAGE_NAME}@${PACKAGE_VERSION}" --expected-archive "${GITHUB_WORKSPACE}/dist/pi-context-broker-${PACKAGE_VERSION}.tgz" --upgrade-from "$PREVIOUS_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --require-sdk
+      - name: Preserve installed Pi SDK evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installed-pi-sdk-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/broker-artifacts-*/
+            /tmp/notion-sdk-pi-*/
+            ${{ runner.temp }}/ntn-skills-sdk-fixture/
+            ${{ runner.temp }}/ntn-skills-name-fixture/
+            ${{ runner.temp }}/ntn-skills-ambiguity-fixture/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
       - name: Create GitHub Release
         run: |
           export GH_TOKEN="${{ github.token }}"

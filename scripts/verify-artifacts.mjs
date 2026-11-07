@@ -7,15 +7,15 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { startRpc } from "../packages/context-broker/scripts/context-broker-rpc-harness.mjs";
 import { writeFakeProvider, isolatedEnv, resolveHost, runCommand, assertSupportedPiVersion } from "../packages/context-broker/scripts/context-broker-e2e-fixture.mjs";
-import { verifyPackageClosure, verifyBundledRuntime } from "./verify-package-closure.mjs";
+import { brokerRegistryVersion, verifyPackageClosure, verifyBundledRuntime } from "./verify-package-closure.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const args = process.argv.slice(2);
-const usage = "Usage: node scripts/verify-artifacts.mjs [--host pi|omp] [--fixture ABSOLUTE_SDK_FIXTURE_JSON] [--require-sdk] [--name-fixture ABSOLUTE_NAME_FIXTURE_JSON] [--ambiguity-fixture ABSOLUTE_AMBIGUITY_FIXTURE_JSON]";
+const usage = "Usage: node scripts/verify-artifacts.mjs [--host pi|omp] [--fixture ABSOLUTE_SDK_FIXTURE_JSON] [--require-sdk] [--name-fixture ABSOLUTE_NAME_FIXTURE_JSON] [--ambiguity-fixture ABSOLUTE_AMBIGUITY_FIXTURE_JSON] [--registry pi-context-broker@VERSION --expected-archive ABSOLUTE_TGZ] [--upgrade-from pi-context-broker@VERSION]";
 const options = new Map();
 for (let index = 0; index < args.length; index++) {
   const key = args[index];
-  assert.ok(["--host", "--fixture", "--require-sdk", "--name-fixture", "--ambiguity-fixture"].includes(key) && !options.has(key), usage);
+  assert.ok(["--host", "--fixture", "--require-sdk", "--name-fixture", "--ambiguity-fixture", "--registry", "--expected-archive", "--upgrade-from"].includes(key) && !options.has(key), usage);
   if (key === "--require-sdk") options.set(key, true);
   else { const value = args[++index]; assert.ok(value && !value.startsWith("--"), usage); options.set(key, value); }
 }
@@ -24,6 +24,15 @@ assert.ok(["pi", "omp"].includes(host), usage);
 const sdkFixtureOption = options.get("--fixture"), requireSdk = options.has("--require-sdk");
 const nameFixtureOption = options.get("--name-fixture");
 const ambiguityFixtureOption = options.get("--ambiguity-fixture");
+const registryPackage = options.get("--registry");
+const expectedArchive = options.get("--expected-archive");
+const upgradeFrom = options.get("--upgrade-from");
+assert.ok(!registryPackage || host === "pi" && expectedArchive && isAbsolute(expectedArchive), "--registry requires --host pi and an absolute --expected-archive");
+assert.ok(!expectedArchive || registryPackage, "--expected-archive requires --registry");
+assert.ok(!upgradeFrom || host === "pi", "--upgrade-from requires --host pi");
+if (registryPackage) brokerRegistryVersion(registryPackage);
+if (upgradeFrom) brokerRegistryVersion(upgradeFrom);
+assert.ok(!registryPackage || !process.env.CONTEXT_BROKER_CANDIDATE_DIR, "Registry verification cannot use a local candidate directory");
 assert.ok(!sdkFixtureOption || host === "pi" && isAbsolute(sdkFixtureOption), "--fixture requires Pi and an absolute fixture path");
 assert.ok(!requireSdk || host === "pi" && sdkFixtureOption, "--require-sdk requires --host pi and --fixture; SDK execution cannot be skipped");
 assert.ok(!nameFixtureOption || host === "pi" && sdkFixtureOption && isAbsolute(nameFixtureOption), "--name-fixture requires --host pi, --fixture and an absolute name fixture path");
@@ -112,20 +121,28 @@ const candidateDirectory = process.env.CONTEXT_BROKER_CANDIDATE_DIR;
 const selectedEntry = process.env.NTN_SKILLS_BUILD_ENTRY;
 const selectedInput = selectedEntry ? await selectedBuildInput(selectedEntry) : undefined;
 if (selectedInput) { report.buildInput = selectedInput; await saveReport(); }
-if (candidateDirectory) {
-  assert.ok(isAbsolute(candidateDirectory), "Candidate directory must be absolute");
-  await mkdir(output);
-  const { copyFile } = await import("node:fs/promises");
-  for (const name of await readdir(candidateDirectory))
-    if (name.startsWith("pi-context-broker-") && name.endsWith(".tgz") || !brokerOnly && name === "tern-context-broker.tar.gz")
-      await copyFile(join(candidateDirectory, name), join(output, name));
-} else run(process.execPath, [join(root, "scripts/pack.mjs"), "--out-dir", output, "--target", brokerOnly ? "broker" : "all"], { cwd: root, stdio: "inherit" });
-const archives = await readdir(output);
-const npmArchives = archives.filter(name => name.endsWith(".tgz"));
-assert.equal(npmArchives.length, 1);
+let brokerArchive, ternArchive;
+if (registryPackage) brokerArchive = expectedArchive;
+else {
+  if (candidateDirectory) {
+    assert.ok(isAbsolute(candidateDirectory), "Candidate directory must be absolute");
+    await mkdir(output);
+    const { copyFile } = await import("node:fs/promises");
+    for (const name of await readdir(candidateDirectory))
+      if (name.startsWith("pi-context-broker-") && name.endsWith(".tgz") || !brokerOnly && name === "tern-context-broker.tar.gz")
+        await copyFile(join(candidateDirectory, name), join(output, name));
+  } else run(process.execPath, [join(root, "scripts/pack.mjs"), "--out-dir", output, "--target", brokerOnly ? "broker" : "all"], { cwd: root, stdio: "inherit" });
+  const archives = await readdir(output);
+  const npmArchives = archives.filter(name => name.endsWith(".tgz"));
+  assert.equal(npmArchives.length, 1);
+  brokerArchive = join(output, npmArchives[0]);
+  if (!brokerOnly) ternArchive = join(output, "tern-context-broker.tar.gz");
+}
 let ternExtract;
-const closure = await verifyPackageClosure({ brokerArchive: join(output, npmArchives[0]), ...(brokerOnly ? {} : { ternArchive: join(output, "tern-context-broker.tar.gz") }), base: join(base, "strict-closure") });
+const closure = await verifyPackageClosure({ brokerArchive, ternArchive, registryPackage, upgradeFrom, base: join(base, "strict-closure") });
 const installed = closure.installed;
+report.installation = closure.installation;
+if (closure.distribution) report.distribution = closure.distribution;
 ternExtract = closure.tern;
 const manifest = JSON.parse(await readFile(join(installed, "package.json"), "utf8"));
 assert.ok(manifest.pi?.extensions?.length);
@@ -138,13 +155,13 @@ const ternQuery = ternExtract ? await runtimePath(ternExtract, "query/completion
 const queryExecutables = [npmQuery, ...(ternQuery ? [ternQuery] : [])];
 await access(npmQuery, constants.X_OK);
 if (ternQuery) await access(ternQuery, constants.X_OK);
-report.package = { name: manifest.name, version: manifest.version, archive: await identity(join(output, npmArchives[0])), installed };
+report.package = { name: manifest.name, version: manifest.version, archive: await identity(closure.brokerArchive), installed };
 report.runtime = { extension: await identity(resolve(installed, manifest[host].extensions[0])),
   cli: await identity(join(installed, "dist/ntn-skills.mjs")), sdk: await identity(join(installed, "dist/ntn-skills-sdk.mjs")),
   manifest: JSON.parse(await readFile(join(installed, "dist/ntn-skills-runtime.json"), "utf8")) };
 if (selectedInput) assert.deepEqual(await selectedBuildInput(selectedEntry), selectedInput, "Frozen CLI/SDK input changed during packaging");
-const expectedCliVersion = selectedInput?.version ?? manifest.devDependencies["ntn-skills"];
-report.buildInput ??= { mode: "declared-release", package: "ntn-skills", version: expectedCliVersion };
+const expectedCliVersion = selectedInput?.version ?? (registryPackage ? report.runtime.manifest.package_version : manifest.devDependencies["ntn-skills"]);
+report.buildInput ??= { mode: registryPackage ? "verified-registry-archive" : "declared-release", package: "ntn-skills", version: expectedCliVersion };
 verifyBundledRuntime({ manifest: report.runtime.manifest, expectedVersion: expectedCliVersion,
   cliBytes: await readFile(report.runtime.cli.path), sdkBytes: await readFile(report.runtime.sdk.path) });
 await saveReport();
@@ -376,6 +393,8 @@ if (ambiguityFixture) await verifySdkScenario(ambiguityFixture, "name-reference-
 report.status = "passed";
 report.providerRequests = contexts.length;
 report.assertions = ["independent-npm-install", "actual-host-rpc", "complete-local-and-builtin-bodies", "source-failure-isolation", "bundled-cli-sdk-identity", "offline-resources", "metadata-only-completion"];
+if (registryPackage) report.assertions.push("registry-candidate-integrity-and-bytes");
+if (upgradeFrom) report.assertions.push("existing-consumer-upgrade", "user-configuration-preserved", "no-stale-package-files");
 if (report.defaultSdk.status === "passed") report.assertions.push("default-sdk-installed-pi-all14");
 if (report.namedSdk.status === "passed") report.assertions.push("default-sdk-installed-pi-named-references");
 if (report.ambiguitySdk.status === "passed") report.assertions.push("default-sdk-installed-pi-actionable-ambiguity");

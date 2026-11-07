@@ -38,9 +38,12 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
     check(workflow.text.includes('run: npm install --global @oh-my-pi/pi-coding-agent@18.10.3 @earendil-works/pi-coding-agent@1.5.0'),
       'GATE_PI_VERSION', workflow.name + ' must install the primary Pi 1.5.0 exactly.');
     const source = /repository: yoyooyooo\/notion-skills-cli\s+ref: ([a-f0-9]{40})\s+path: \.verification\/ntn-skills-cli/u.exec(workflow.text);
-    check(source && workflow.text.includes('NTN_SKILLS_BUILD_ENTRY: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/cli/dist/ntn-skills.js')
-      && /working-directory: \.verification\/ntn-skills-cli\s+run: \|\s+bun install --frozen-lockfile\s+bun run build/u.test(workflow.text),
-      'GATE_SDK_BUILD_INPUT_MISSING', workflow.name + ' must build its SDK-capable CLI from an explicit immutable checkout.');
+    check(source && /working-directory: \.verification\/ntn-skills-cli\s+run: \|\s+bun install --frozen-lockfile\s+bun run build/u.test(workflow.text),
+      'GATE_SDK_BUILD_INPUT_MISSING', workflow.name + ' must build its SDK fixture source from an explicit immutable checkout.');
+    if (workflow.name === 'ci') check(workflow.text.includes('NTN_SKILLS_BUILD_ENTRY: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/cli/dist/ntn-skills.js'),
+      'GATE_SDK_BUILD_INPUT_MISSING', 'CI must exercise its pinned cross-repository SDK input.');
+    else check(!workflow.text.includes('NTN_SKILLS_BUILD_ENTRY'), 'GATE_PUBLISH_DEPENDENCY_OVERRIDE',
+      'Publication must build the declared installed CLI dependency without the development override.');
     check(workflow.text.includes('bun-version: 1.4.3'), 'GATE_BUN_VERSION', workflow.name + ' must use the CLI package manager version.');
     sourceRevisions.push(source[1]);
     for (const host of ['pi', 'omp']) check(workflow.text.includes('node scripts/verify-artifacts.mjs --host ' + host),
@@ -49,6 +52,15 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
     const step = name => steps.find(value => value.startsWith('      - name: ' + name + '\n')) ?? '';
     const fixture = step('Create controlled SDK fixture'), installed = step('Installed Pi artifact regression');
     const unconditional = value => !/\n        (?:if|continue-on-error):/u.test(value);
+    if (workflow.name === 'publish') {
+      const releaseInput = step('Validate declared CLI release input');
+      check(releaseInput.includes('run: node scripts/verify-package-closure.mjs --release-input .verification/ntn-skills-cli/packages/cli/package.json')
+        && unconditional(releaseInput)
+        && workflow.text.indexOf(step('Install dependencies')) < workflow.text.indexOf(releaseInput)
+        && workflow.text.indexOf(releaseInput) < workflow.text.indexOf(step('Build pinned CLI SDK'))
+        && workflow.text.indexOf(releaseInput) < workflow.text.indexOf(step('Check')),
+        'GATE_RELEASE_CLI_INPUT_MISSING', 'Publication must validate its declared installed SDK and matching fixture version before building or checking.');
+    }
     check(fixture.includes('run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-sdk-fixture" --catalog')
       && unconditional(fixture) && workflow.text.indexOf(fixture) < workflow.text.indexOf(installed),
       'GATE_SDK_FIXTURE_MISSING', workflow.name + ' must create the controlled catalog fixture from its pinned CLI source.');
