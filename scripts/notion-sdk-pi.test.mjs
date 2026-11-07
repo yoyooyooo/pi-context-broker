@@ -1508,6 +1508,21 @@ test('a warm catalog can reuse the complete native generated directory in the sa
   ]) { const invalid = nativeCatalogReuseFixture(); mutate(invalid); assert.throws(() => namedSdkProbe.assertWarmDirectoryProjection(invalid.captures, invalid.message, invalid.fixture, invalid.bodies)); }
 });
 
+test('generated description receipts compare locator values independently of JSON key order', () => {
+  const value = nativeCatalogReuseFixture();
+  const locator = { type: 'shared_skill', library_id: 'library', skill_id: 'a', page_id: 'page', database_id: database, data_source_id: 'data-source' };
+  value.fixture.snapshots[0].record.locator = locator;
+  value.binding.record = { ...value.binding.record, locator: { type: 'shared_skill', page_id: 'page', database_id: database,
+    data_source_id: 'data-source', library_id: 'library', skill_id: 'a' } };
+  assert.notEqual(JSON.stringify(value.binding.record.locator), JSON.stringify(locator));
+  assert.deepEqual(value.binding.record.locator, locator);
+  const check = () => namedSdkProbe.assertWarmDirectoryProjection(value.captures, value.message, value.fixture, value.bodies);
+  assert.equal(check().status, 'verified');
+  for (const key of ['library_id', 'skill_id', 'page_id', 'database_id', 'data_source_id']) {
+    value.binding.record.locator[key] = 'other'; assert.throws(check); value.binding.record.locator[key] = locator[key];
+  }
+});
+
 function dollarProjectionFixture(compact = true, memberRow = '') {
   const bodies = new Map([['a', '\ufeff作者 <instructions>literal source</instructions>\r\n' + (memberRow ? memberRow + '\r\n' : '')], ['base', 'Base instructions.\n']]);
   const snapshots = [...bodies.keys()].map(name => ({ record: { name }, entrypoint: 'SKILL.md',
@@ -1564,6 +1579,103 @@ function injectedCatalogReuseFixture(deferred = false) {
   return { ...value, injected, proofs, snapshots, candidate };
 }
 
+function observedInjectionFixture(deferred = false) {
+  const value = injectedCatalogReuseFixture(deferred), captured = value.captures[0], digest = text => createHash('sha256').update(text).digest('hex');
+  const observation = { type: 'context_with_system', pid: 42, monotonic_ns: '10', session_file: '/owned/sessions/current.jsonl', leaf_id: 'current',
+    projection_available: true,
+    direct: deferred ? [] : [{ content_sha256: digest(textForTest(value.injected.content)), content_bytes: Buffer.byteLength(textForTest(value.injected.content)),
+      details: structuredClone(value.injected.details) }],
+    persisted: deferred ? [{ entry_id: 'native-receipt', data: structuredClone(value.injected.details) }] : [] };
+  captured.requestId = '42:1';
+  captured.context.messages = captured.context.messages.filter(message => message.role !== 'custom' || textForTest(message.content))
+    .map(message => message.role === 'custom' ? { role: 'user', content: message.content } : message);
+  if (!deferred) captured.context.messages.splice(1, 0, { role: 'user', content: 'Use the selected Skill.' });
+  const hooks = [{ requestId: captured.requestId, pid: 42, phase: 'payload_start', monotonic_ns: '20' }];
+  return { ...value, observation, hooks, injectionContexts: new Map([[captured.requestId, observation]]) };
+}
+
+for (const deferred of [false, true]) test(`actual provider dollar receipt sidecar remains separate with deferred=${deferred}`, () => {
+  const value = observedInjectionFixture(deferred), before = JSON.stringify(value.captures);
+  value.injectionContexts = namedSdkProbe.bindInjectionContexts(value.captures, [value.observation], value.hooks, { sessionRoot: '/owned/sessions', hostPid: 42 });
+  const proof = assertPreflightCatalogProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies,
+    { injectionContexts: value.injectionContexts });
+  assert.equal(proof.injected_member_reuse.status, 'verified');
+  assert.equal(JSON.stringify(value.captures), before);
+  assert.doesNotMatch(before, /bodySha256|nativePromptSha256|contentIdentity/);
+  assert.ok(value.captures[0].context.messages.every(message => message.role !== 'custom'));
+});
+
+test('native injection observation reads only direct custom proofs and effective projection source entries', () => {
+  const direct = injectedCatalogReuseFixture(), deferred = injectedCatalogReuseFixture(true);
+  const sourceEntry = { type: 'custom', id: 'current-receipt', customType: 'context-broker', data: deferred.injected.details };
+  const messages = direct.captures[0].context.messages, projection = { entries: [{ sourceEntry, messages: [] }],
+    rawEntries: [{ ...sourceEntry, id: 'other-branch-receipt' }] };
+  const before = JSON.stringify({ messages, projection });
+  const receipt = namedSdkProbe.captureInjectionReceipts(messages, projection);
+  assert.equal(receipt.projection_available, true); assert.equal(receipt.direct.length, 1);
+  assert.deepEqual(receipt.direct[0].details, direct.injected.details);
+  assert.equal(receipt.direct[0].content_bytes, Buffer.byteLength(direct.injected.content));
+  assert.deepEqual(receipt.persisted, [{ entry_id: sourceEntry.id, data: sourceEntry.data }]);
+  assert.equal(JSON.stringify({ messages, projection }), before);
+  const userOnly = messages.map(message => message.role === 'custom' ? { role: 'user', content: message.content } : message);
+  assert.deepEqual(namedSdkProbe.captureInjectionReceipts(userOnly, undefined), { projection_available: false, direct: [], persisted: [] });
+  assert.deepEqual(namedSdkProbe.captureInjectionReceipts([], { entries: [], rawEntries: [sourceEntry] }).persisted, [], 'An old branch receipt cannot re-enter the effective projection');
+});
+
+test('native injection receipts bind one ordered context per actual provider request and owned session', () => {
+  const first = observedInjectionFixture(), second = observedInjectionFixture(true);
+  second.captures[0].requestId = '42:2'; second.observation.monotonic_ns = '30';
+  Object.assign(second.hooks[0], { requestId: '42:2', monotonic_ns: '40' });
+  const original = { captures: [...first.captures, ...second.captures], contexts: [first.observation, second.observation], hooks: [...first.hooks, ...second.hooks] };
+  const bind = value => namedSdkProbe.bindInjectionContexts(value.captures, value.contexts, value.hooks, { sessionRoot: '/owned/sessions', hostPid: 42 });
+  assert.deepEqual([...bind(original).keys()], ['42:1', '42:2']);
+  for (const mutate of [
+    value => { value.contexts.pop(); }, value => { value.hooks.pop(); },
+    value => { value.contexts.push(structuredClone(value.contexts[0])); },
+    value => { value.captures[1].requestId = value.captures[0].requestId; },
+    value => { value.contexts[0].pid = 99; }, value => { value.hooks[0].pid = 99; },
+    value => { value.contexts[0].pid = value.hooks[0].pid = 99; value.captures[0].requestId = value.hooks[0].requestId = '99:1'; },
+    value => { value.contexts.reverse(); }, value => { value.hooks.reverse(); },
+    value => { value.contexts[0].monotonic_ns = '21'; }, value => { value.contexts[1].monotonic_ns = '19'; },
+    value => { value.contexts[0].session_file = '/other/session.jsonl'; },
+    value => { value.contexts[0].direct.push(structuredClone(value.contexts[0].direct[0])); },
+    value => { value.contexts[1].persisted.push(structuredClone(value.contexts[1].persisted[0])); },
+    value => { value.contexts[1].projection_available = false; },
+  ]) { const invalid = structuredClone(original); mutate(invalid); assert.throws(() => bind(invalid)); }
+});
+
+test('native dollar sidecar rejects future merged-user receipts and altered source identity or delivery', () => {
+  const check = value => assertPreflightCatalogProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies,
+    { injectionContexts: value.injectionContexts });
+  const first = observedInjectionFixture(), future = observedInjectionFixture(true);
+  first.observation.direct = []; first.observation.persisted = future.observation.persisted;
+  assert.throws(() => check(first), 'A future combined user hash cannot prove either separate first-request user block');
+  for (const deferred of [false, true]) for (const mutate of [
+    (value, receipt) => { receipt.records = []; },
+    (value, receipt) => { receipt.records[0].sourceId = 'other-source'; },
+    (value, receipt) => { receipt.records[0].binding.scope = 'b'.repeat(64); },
+    (value, receipt) => { receipt.records[0].binding.record.locator.skill_id = 'other-owner'; },
+    (value, receipt) => { receipt.records[0].snapshotId = 's_' + 'b'.repeat(64); },
+    (value, receipt) => { receipt.records[0].versionId = 'other-version'; },
+    (value, receipt) => { receipt.records[0].binding.ref = receipt.records[0].binding.record.ref; },
+    (value, receipt) => { receipt.records[0].bodySha256 = 'b'.repeat(64); },
+    (value, receipt) => { receipt.records[0].bytes--; },
+    (value, receipt) => { receipt.records[0].delivery.start++; },
+    (value, receipt) => { receipt.records[0].directory.candidates[0].ref += '?snapshot=fixed'; },
+    (value, receipt) => { receipt.records[0].directory.candidates[0].description = 'Changed metadata'; },
+    value => { value.injectionContexts.clear(); },
+    value => { const user = value.captures[0].context.messages.find(message => message.role === 'user' && textForTest(message.content).includes('<context-broker-record'));
+      user.content = textForTest(user.content).replace('作者', 'Summary'); },
+  ]) {
+    const value = observedInjectionFixture(deferred), receipt = deferred ? value.observation.persisted[0].data : value.observation.direct[0].details;
+    mutate(value, receipt); assert.throws(() => check(value));
+  }
+  const missingBranch = observedInjectionFixture(true); missingBranch.observation.persisted = []; assert.throws(() => check(missingBranch));
+  const wrongPrompt = observedInjectionFixture(true); wrongPrompt.observation.persisted[0].data.nativePromptSha256 = 'b'.repeat(64); assert.throws(() => check(wrongPrompt));
+  const wrongBytes = observedInjectionFixture(); wrongBytes.observation.direct[0].content_bytes--; assert.throws(() => check(wrongBytes));
+  const wrongDirectHash = observedInjectionFixture(); wrongDirectHash.observation.direct[0].details.nativePromptSha256 = 'b'.repeat(64); assert.throws(() => check(wrongDirectHash));
+});
+
 for (const deferred of [false, true]) test(`trusted dollar Members description reuse keeps complete bodies with deferred=${deferred}`, () => {
   const value = injectedCatalogReuseFixture(deferred), before = JSON.stringify(value.captures);
   const proof = assertPreflightCatalogProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies);
@@ -1573,17 +1685,18 @@ for (const deferred of [false, true]) test(`trusted dollar Members description r
   assert.equal(JSON.stringify(value.captures), before);
 });
 
-for (const deferred of [false, true]) test(`actual HTTP dollar text can use only its exact captured source receipt deferred=${deferred}`, () => {
-  const value = injectedCatalogReuseFixture(deferred), captured = value.captures[0].context;
-  const wire = { messages: captured.messages.filter(message => message.role !== 'custom' || textForTest(message.content))
-    .map(message => ({ role: message.role === 'custom' ? 'user' : message.role, content: message.content })) };
+for (const deferred of [false, true]) test(`actual HTTP dollar text uses only its exact independent native sidecar deferred=${deferred}`, () => {
+  const value = observedInjectionFixture(deferred), captured = value.captures[0].context, requestId = value.captures[0].requestId;
+  const wire = { messages: captured.messages.map(message => ({ role: message.role, content: message.content })) };
   const before = JSON.stringify(wire), mapped = namedSdkProbe.catalogContextFromHttp(wire, captured);
-  assert.equal(assertPreflightCatalogProjection([{ requestId: 'http', context: mapped }], value.discovery, value.events, value.fixture, value.bodies).injected_member_reuse.status, 'verified');
+  const options = { injectionContexts: namedSdkProbe.bindInjectionContexts(value.captures, [value.observation], value.hooks) };
+  assert.equal(assertPreflightCatalogProjection([{ requestId, context: mapped }], value.discovery, value.events, value.fixture, value.bodies, options).injected_member_reuse.status, 'verified');
   assert.equal(assertDollarProjection(mapped, value).records.length, 2); assert.equal(JSON.stringify(wire), before);
+  assert.deepEqual(mapped, wire, 'No source receipt or extra message enters the provider assertion context');
   assert.doesNotMatch(before, /bodySha256|nativePromptSha256|contentIdentity/);
-  const changed = structuredClone(wire), body = changed.messages.find(message => message.role === 'user');
+  const changed = structuredClone(wire), body = changed.messages.find(message => message.role === 'user' && textForTest(message.content).includes('<context-broker-record'));
   body.content = textForTest(body.content).replace('作者', 'Summary');
-  assert.throws(() => assertPreflightCatalogProjection([{ requestId: 'http', context: namedSdkProbe.catalogContextFromHttp(changed, captured) }], value.discovery, value.events, value.fixture, value.bodies));
+  assert.throws(() => assertPreflightCatalogProjection([{ requestId, context: namedSdkProbe.catalogContextFromHttp(changed, captured) }], value.discovery, value.events, value.fixture, value.bodies, options));
 });
 function textForTest(content) { return typeof content === 'string' ? content : (content ?? []).map(part => part.text ?? '').join('\n'); }
 
@@ -2056,6 +2169,30 @@ test('controlled HTTP publication waits for the existing read-only View status w
   assert.equal(proof.calls, 2); assert.equal(proof.expected, expected);
   let captures = 0;
   await assert.rejects(namedSdkProbe.waitForControlledHttpView({ rpc, sample, state: 'ready', captureCount: async () => ++captures }), /must not invoke a provider/);
+});
+
+test('controlled HTTP published status uses one isolated zero-HTTP probe after background publication', async () => {
+  const sample = controlledDirectoryFixture().sample, expected = 'sdk-fixture: default View failed (AUTH_REQUIRED) · first';
+  let calls = 0, sourceRequests = 10;
+  const rpc = { frames: [], async command() {
+    calls++; if (calls === 1) sourceRequests += 2;
+    this.frames.push({ type: 'extension_ui_request', method: 'notify', message: calls === 1 ? 'Notion Views: no enabled Notion sources' : expected });
+    return { disposition: 'handled' };
+  } };
+  const options = { rpc, sample, state: 'failed', captureCount: async () => 1 };
+  const publication = await namedSdkProbe.waitForControlledHttpView(options);
+  assert.equal(publication.calls, 2); assert.equal(sourceRequests, 12, 'Background publication retains its own source attempts');
+  sourceRequests++; // The already observed background follow-up reaches its terminal before the probe baseline.
+  const before = sourceRequests, callsBefore = calls;
+  const probe = await namedSdkProbe.waitForControlledHttpView({ ...options, single: true, sourceCount: () => sourceRequests });
+  assert.equal(probe.calls, 1); assert.equal(calls, callsBefore + 1); assert.equal(sourceRequests, before);
+  const original = rpc.command;
+  rpc.command = async function() { sourceRequests++; return original.call(this); };
+  await assert.rejects(namedSdkProbe.waitForControlledHttpView({ ...options, single: true, sourceCount: () => sourceRequests }), /must not refresh the source/);
+  rpc.command = async function() { calls++; this.frames.push({ type: 'extension_ui_request', method: 'notify', message: 'Notion Views: no enabled Notion sources' }); return { disposition: 'handled' }; };
+  const mismatchBefore = calls;
+  await assert.rejects(namedSdkProbe.waitForControlledHttpView({ ...options, single: true, sourceCount: () => sourceRequests }), /single read-only probe/);
+  assert.equal(calls, mismatchBefore + 1, 'A changed published state is not retried');
 });
 
 test('controlled HTTP warm new-process accounting preserves identity validation but rejects directory or body downloads', () => {
@@ -2583,6 +2720,50 @@ test('an unfinished SDK call or unmatched observer remains unresolved even after
   assert.equal(sourceFinality(events, 42).complete, true);
   events.push({ kind: 'observer_start', observer_pid: 44, parent_pid: 42 }, { ...hostEnd, observer_pid: 44 });
   assert.equal(sourceFinality(events, 42).complete, false);
+});
+
+test('controlled HTTP initial catalog cannot settle before the late first list starts and ends', () => {
+  const expected = { sourceId: 'sdk-fixture', database }, options = { initialCatalog: expected };
+  // The ordinary provider has already finished; background discovery has not started yet.
+  const events = [{ kind: 'observer_start', observer_pid: 42, parent_pid: 10 }];
+  assert.equal(sourceFinality(events, 42).complete, true, 'Ordinary drain semantics remain unchanged');
+  assert.equal(sourceFinality(events, 42, options).complete, false);
+  const common = { observer_pid: 42, id: 'initial-list', operation: 'list', source_id: expected.sourceId, database };
+  events.push({ kind: 'sdk', event: 'start', ...common });
+  assert.equal(sourceFinality(events, 42, options).complete, false);
+  const error = { code: 'AUTH_REQUIRED', message: 'Credential denied' };
+  events.push({ kind: 'sdk_catalog', observer_pid: 42, id: common.id,
+    value: { version: 1, catalog: { ok: false, error }, directory: { ok: false, error } } });
+  assert.equal(sourceFinality(events, 42, options).complete, false, 'Facet results do not replace the operation terminal');
+  events.push({ kind: 'sdk', event: 'end', ...common, status: 'completed' });
+  assert.equal(sourceFinality(events, 42, options).complete, true, 'Two failed projections still complete one real SDK operation');
+  events.push({ kind: 'sdk', event: 'start', ...common, id: 'background-followup' });
+  assert.equal(sourceFinality(events, 42, options).complete, false, 'An observed background follow-up must also settle');
+  events.push({ kind: 'sdk', event: 'end', ...common, id: 'background-followup', status: 'failed', error_code: 'AUTH_REQUIRED' });
+  assert.equal(sourceFinality(events, 42, options).complete, true);
+});
+
+test('controlled HTTP initial catalog requires the same host source database and ordered terminal', () => {
+  const common = { observer_pid: 42, id: 'initial-list', operation: 'list', source_id: 'sdk-fixture', database };
+  const events = [{ kind: 'observer_start', observer_pid: 42, parent_pid: 10 },
+    { kind: 'sdk', event: 'start', ...common },
+    { kind: 'sdk', event: 'end', ...common, status: 'failed', error_code: 'AUTH_REQUIRED' }];
+  const options = { initialCatalog: { sourceId: common.source_id, database } };
+  assert.equal(sourceFinality(events, 42, options).complete, true, 'Legacy failed list also supplies its actual terminal');
+  for (const mutate of [
+    value => { value.splice(1, 1); },
+    value => { for (const event of value.slice(1)) event.observer_pid = 99; },
+    value => { for (const event of value.slice(1)) event.source_id = 'other-source'; },
+    value => { for (const event of value.slice(1)) event.database = 'other-database'; },
+    value => { for (const event of value.slice(1)) event.operation = 'consume'; },
+    value => { value[2].source_id = 'other-source'; },
+    value => { value[2].database = 'other-database'; },
+    value => { value[2].id = 'another-list'; },
+    value => { [value[1], value[2]] = [value[2], value[1]]; },
+  ]) {
+    const changed = structuredClone(events); mutate(changed);
+    assert.equal(sourceFinality(changed, 42, options).complete, false);
+  }
 });
 
 function warmDirectoryFixture() {

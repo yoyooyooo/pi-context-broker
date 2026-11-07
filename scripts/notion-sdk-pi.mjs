@@ -9,6 +9,7 @@ import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { isolatedEnv, resolveHost, runCommand, writeFakeProvider, assertSupportedPiVersion } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { safeRequestMetrics, providerSystemText } from './notion-default-context.mjs';
@@ -99,12 +100,6 @@ function toolResult(context, id) { return [...context.messages].reverse().find(m
  * text. This object is for assertions; no receipt is added to the request. */
 export function catalogContextFromHttp(context, captured) {
   const messages = context.messages.map(message => {
-    if (message.role === 'user') {
-      const text = textContent(message.content), originals = captured.messages.filter(value => value.role === 'custom'
-        && value.customType === 'context-broker' && text && textContent(value.content) === text);
-      assert.ok(originals.length <= 1, 'An HTTP injection cannot borrow ambiguous source receipts');
-      return originals.length ? { ...originals[0], content: message.content } : message;
-    }
     if (message.role !== 'tool') return message;
     const originals = captured.messages.filter(value => value.role === 'toolResult' && value.toolCallId === message.tool_call_id);
     assert.equal(originals.length, 1, 'Every HTTP tool result needs one exact captured result');
@@ -112,11 +107,52 @@ export function catalogContextFromHttp(context, captured) {
     assert.equal(textContent(message.content), textContent(original.content), 'HTTP text cannot borrow proof for another rendering');
     return { ...original, content: message.content };
   });
-  const userHashes = new Set(context.messages.filter(message => message.role === 'user').map(message => hash(textContent(message.content))));
-  for (const receipt of captured.messages.filter(message => message.role === 'custom' && message.customType === 'context-broker'
-    && !textContent(message.content) && typeof message.details?.nativePromptSha256 === 'string'))
-    if (userHashes.has(receipt.details.nativePromptSha256)) messages.push(receipt);
   return { ...context, messages };
+}
+
+/** Observe source receipts before Pi converts custom messages to provider user
+ * text. Persisted authority comes only from the current effective projection. */
+export function captureInjectionReceipts(messages, projection) {
+  const text = content => typeof content === 'string' ? content
+    : Array.isArray(content) && content.every(part => part.type === 'text') ? content.map(part => part.text).join('\n') : '';
+  const direct = messages.filter(message => message.role === 'custom' && message.customType === 'context-broker'
+    && Array.isArray(message.details?.records) && text(message.content)).map(message => {
+    const content = text(message.content);
+    return { content_sha256: createHash('sha256').update(content).digest('hex'), content_bytes: Buffer.byteLength(content), details: message.details };
+  });
+  const projectionAvailable = Array.isArray(projection?.entries);
+  const persisted = (projection?.entries ?? []).map(entry => entry.sourceEntry).filter(entry => entry?.type === 'custom'
+    && entry.customType === 'context-broker' && Array.isArray(entry.data?.records)
+    && typeof entry.data.nativePromptSha256 === 'string').map(entry => ({ entry_id: entry.id, data: entry.data }));
+  return { projection_available: projectionAvailable, direct, persisted };
+}
+
+export function bindInjectionContexts(captures, nativeEvents, hooks, { sessionRoot, hostPid } = {}) {
+  const contexts = nativeEvents.filter(event => event.type === 'context_with_system');
+  const starts = hooks.filter(event => event.phase === 'payload_start');
+  assert.equal(contexts.length, captures.length, 'Each actual provider request needs its own native context receipt');
+  assert.equal(starts.length, captures.length, 'Each actual provider request needs its own payload boundary');
+  assert.equal(new Set(captures.map(capture => capture.requestId)).size, captures.length, 'Provider request IDs cannot repeat');
+  const bound = new Map();
+  for (const [index, capture] of captures.entries()) {
+    const context = contexts[index], start = starts[index];
+    assert.equal(start.requestId, capture.requestId, 'Native receipts bind the original provider order');
+    assert.ok(Number.isSafeInteger(start.pid) && start.pid > 0); assert.equal(context.pid, start.pid);
+    if (hostPid !== undefined) assert.equal(start.pid, hostPid, 'The source receipt must belong to this actual Pi process');
+    assert.match(capture.requestId, new RegExp('^' + start.pid + ':[1-9][0-9]*$'));
+    assert.ok(BigInt(context.monotonic_ns) < BigInt(start.monotonic_ns), 'A future native receipt cannot prove an earlier provider request');
+    if (index) assert.ok(BigInt(starts[index - 1].monotonic_ns) < BigInt(context.monotonic_ns), 'A native receipt cannot serve two requests');
+    assert.ok(typeof context.session_file === 'string' && isAbsolute(context.session_file));
+    if (sessionRoot) assert.ok(resolve(context.session_file).startsWith(resolve(sessionRoot) + '/'), 'The native receipt must belong to this owned session');
+    assert.ok(typeof context.leaf_id === 'string' && context.leaf_id.length > 0);
+    assert.ok(Array.isArray(context.direct) && Array.isArray(context.persisted));
+    if (!context.projection_available) assert.equal(context.persisted.length, 0, 'Missing effective projection cannot supply historical authority');
+    assert.equal(new Set(context.direct.map(receipt => receipt.content_sha256)).size, context.direct.length, 'Direct source receipts cannot repeat');
+    assert.equal(new Set(context.persisted.map(receipt => receipt.entry_id)).size, context.persisted.length, 'Persisted source receipt IDs cannot repeat');
+    for (const receipt of context.persisted) assert.ok(typeof receipt.entry_id === 'string' && receipt.entry_id.length > 0);
+    bound.set(capture.requestId, context);
+  }
+  return bound;
 }
 function parsedResult(message) { assert.ok(message && !message.isError, 'Public tool result must succeed'); return JSON.parse(textContent(message.content)); }
 function strings(value) {
@@ -323,14 +359,23 @@ export function assertProviderToolSequence(captures, frames, { expectedErrors = 
   return { provider_requests: captures.length, tool_rounds: rounds.length, tool_calls: starts.length, sequence };
 }
 
-function injectedDescriptionEvidence(messages, expected, fixture) {
-  for (const message of messages) {
-    if (message.role !== 'custom' || message.customType !== 'context-broker' || !Array.isArray(message.details?.records)) continue;
-    const promptHash = message.details.nativePromptSha256;
-    const delivered = promptHash === undefined ? message : messages.find(candidate => candidate.role === 'user' && hash(textContent(candidate.content)) === promptHash);
+function injectedDescriptionEvidence(messages, expected, fixture, injectionContext) {
+  const receipts = messages.filter(message => message.role === 'custom' && message.customType === 'context-broker')
+    .map(message => ({ message, details: message.details }));
+  for (const receipt of injectionContext?.direct ?? []) receipts.push({ ...receipt, receipt_source: 'native-custom' });
+  for (const receipt of injectionContext?.persisted ?? []) receipts.push({ details: receipt.data,
+    entry_id: receipt.entry_id, receipt_source: 'native-session' });
+  for (const receipt of receipts) {
+    if (!Array.isArray(receipt.details?.records)) continue;
+    const promptHash = receipt.details.nativePromptSha256, expectedHash = receipt.content_sha256 ?? promptHash;
+    const matching = expectedHash === undefined ? [] : messages.filter(candidate => candidate.role === 'user'
+      && hash(textContent(candidate.content)) === expectedHash);
+    const delivered = expectedHash === undefined ? receipt.message : matching.length === 1 ? matching[0] : undefined;
     if (!delivered || Array.isArray(delivered.content) && delivered.content.some(part => part.type !== 'text')) continue;
     const content = textContent(delivered.content);
-    for (const proof of message.details.records) {
+    if (receipt.receipt_source === 'native-custom' && Buffer.byteLength(content) !== receipt.content_bytes) continue;
+    if (receipt.receipt_source === 'native-custom' && promptHash !== undefined && promptHash !== expectedHash) continue;
+    for (const proof of receipt.details.records) {
       try {
         assert.equal(proof.version, 2); assert.equal(proof.loaded, true); assert.equal(proof.sourceId, expected.source);
         const binding = proof.binding, snapshots = (fixture.snapshots ?? []).filter(snapshot => snapshot.scope === binding.scope
@@ -364,7 +409,9 @@ function injectedDescriptionEvidence(messages, expected, fixture) {
           if (at < 0 || at > 0 && body[at - 1] !== '\n' || after !== body.length && body[after] !== '\n' && body.slice(after, after + 2) !== '\r\n') continue;
           return { origin: 'actual-injected-member', id: expected.id, ref: expected.ref, description: expected.description, source: expected.source,
             scope: expected.scope, owner: snapshot.record.id, snapshot_id: snapshot.snapshot_id, body_sha256: main.sha256,
-            body_bytes: main.bytes, body_start: start, body_end: end, ...(promptHash === undefined ? {} : { native_prompt_sha256: promptHash }) };
+            body_bytes: main.bytes, body_start: start, body_end: end, ...(promptHash === undefined ? {} : { native_prompt_sha256: promptHash }),
+            ...(receipt.receipt_source ? { receipt_source: receipt.receipt_source, native_context_monotonic_ns: injectionContext.monotonic_ns,
+              ...(receipt.entry_id ? { native_receipt_entry_id: receipt.entry_id } : {}) } : {}) };
         }
       } catch { /* Only an independently frozen complete body can support omission. */ }
     }
@@ -372,7 +419,7 @@ function injectedDescriptionEvidence(messages, expected, fixture) {
   return undefined;
 }
 
-function catalogDescriptionEvidence(context, expected, fixture, { generatedOnly = false, exclude } = {}) {
+function catalogDescriptionEvidence(context, expected, fixture, { generatedOnly = false, exclude, injectionContext } = {}) {
   if (!context || !/^sr:C[A-Za-z0-9_-]{22}$/u.test(expected.ref)) return undefined;
   const messages = context.messages ?? [], xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
   if (!generatedOnly) {
@@ -399,11 +446,11 @@ function catalogDescriptionEvidence(context, expected, fixture, { generatedOnly 
     const snapshot = snapshots[0], main = snapshot.files.find(file => file.path === (snapshot.entrypoint ?? snapshot.record.entrypoint));
     return main?.sha256 === bodyHash && main.bytes === bodyBytes && binding.body_sha256 === bodyHash
       && binding.record.ref === snapshot.record.ref && binding.record.kind === snapshot.record.kind
-      && JSON.stringify(binding.record.locator) === JSON.stringify(snapshot.record.locator);
-  }) ?? injectedDescriptionEvidence(messages, { ...expected, canonical_ref: original.ref }, fixture);
+      && isDeepStrictEqual(binding.record.locator, snapshot.record.locator);
+  }) ?? injectedDescriptionEvidence(messages, { ...expected, canonical_ref: original.ref }, fixture, injectionContext);
 }
 
-export function assertSearchProjection(message, { expectCompact = true, scope, context, fixture } = {}) {
+export function assertSearchProjection(message, { expectCompact = true, scope, context, fixture, injectionContext } = {}) {
   const model = parsedResult(message), full = message.details;
   assert.ok(full && Array.isArray(full.records), 'The full metadata directory must remain in host details');
   assert.equal(model.records.length, full.records.length);
@@ -418,7 +465,7 @@ export function assertSearchProjection(message, { expectCompact = true, scope, c
   const projected = { ...compact, records: compact.records.map((record, index) => {
     if (Object.hasOwn(model.records[index], 'description')) return record;
     assert.ok(scope !== undefined, 'Description reuse needs the frozen source scope');
-    const evidence = catalogDescriptionEvidence(context, full.records[index], fixture, { exclude: message });
+    const evidence = catalogDescriptionEvidence(context, full.records[index], fixture, { exclude: message, injectionContext });
     assert.ok(evidence, 'An omitted description must remain fully visible in this same actual provider');
     reused.push(evidence); const { description, ...remaining } = record; return remaining;
   }) };
@@ -554,7 +601,7 @@ export function assertCatalogScaleSource(events, fixture, objects, hostPid) {
 }
 
 /** The actual default catalog must agree with the independent metadata fixture. */
-function defaultViewProjection(captures, discovery, events, fixture, { sourceId = 'sdk-fixture' } = {}) {
+function defaultViewProjection(captures, discovery, events, fixture, { sourceId = 'sdk-fixture', injectionContexts } = {}) {
   const expected = fixture.default_view;
   assert.ok(expected?.records?.length, 'Default View fixture metadata is required');
   assert.equal(typeof fixture.scope, 'string');
@@ -612,7 +659,8 @@ function defaultViewProjection(captures, discovery, events, fixture, { sourceId 
       assert.equal(matches.length, 1, 'Display the author name and explicit source, not the sanitized command token');
       assert.match(matches[0][4], /^sr:C[A-Za-z0-9_-]{22}$/u);
       if (matches[0][2] === undefined) {
-        const evidence = catalogDescriptionEvidence(capture.context, { ...actual, ref: matches[0][4] }, fixture, { generatedOnly: true });
+        const evidence = catalogDescriptionEvidence(capture.context, { ...actual, ref: matches[0][4] }, fixture,
+          { generatedOnly: true, injectionContext: injectionContexts?.get(capture.requestId) });
         assert.ok(evidence, 'Missing default description requires a complete same-request generated card'); reused.push(evidence);
       } else assert.equal(matches[0][2], xml(actual.description));
       if (discovery) assert.equal(matches[0][4], selected.ref);
@@ -632,8 +680,8 @@ export function assertDefaultViewProjection(captures, discovery, events, fixture
   return { ...result, body_delivery: false };
 }
 
-export function assertPreflightCatalogProjection(captures, discovery, events, fixture, bodies) {
-  const result = defaultViewProjection(captures, discovery, events, fixture);
+export function assertPreflightCatalogProjection(captures, discovery, events, fixture, bodies, options) {
+  const result = defaultViewProjection(captures, discovery, events, fixture, options);
   for (const request of result.provider_requests) assert.equal(request.state, 'ready',
     'An explicit selection that awaited metadata must expose the ready catalog at its first provider request');
   for (const capture of captures) {
@@ -2144,7 +2192,7 @@ function initialDirectoryReady(events, hostPid, { fixture, sourceId, transport, 
   return completed.includes('ordinary') && completed.includes('default');
 }
 
-export function sourceFinality(events, hostPid, { hostClosed = false, initialDirectory } = {}) {
+export function sourceFinality(events, hostPid, { hostClosed = false, initialDirectory, initialCatalog } = {}) {
   const pending = [];
   const starts = events.filter(event => event.kind === 'observer_start');
   if (starts.filter(event => event.observer_pid === hostPid).length !== 1) pending.push({ kind: 'host_observer_start', pid: hostPid });
@@ -2168,6 +2216,15 @@ export function sourceFinality(events, hostPid, { hostClosed = false, initialDir
   for (const start of events.filter(event => event.kind === 'sdk' && event.event === 'start')) {
     if (events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.id === start.id && event.observer_pid === start.observer_pid).length !== 1)
       pending.push({ kind: 'sdk_end', id: start.id, pid: start.observer_pid });
+  }
+  if (initialCatalog) {
+    // Ordinary provider delivery can finish before background discovery starts.
+    const matches = event => event.kind === 'sdk' && event.observer_pid === hostPid && event.operation === 'list'
+      && event.source_id === initialCatalog.sourceId && event.database === initialCatalog.database;
+    const start = events.findIndex(event => matches(event) && event.event === 'start');
+    const ended = start >= 0 && events.slice(start + 1).some(event => matches(event) && event.event === 'end'
+      && event.id === events[start].id && ['completed', 'failed', 'cancelled'].includes(event.status));
+    if (!ended) pending.push({ kind: 'initial_catalog_terminal', source_id: initialCatalog.sourceId, database: initialCatalog.database });
   }
   if (initialDirectory && !initialDirectoryReady(events, hostPid, initialDirectory)) pending.push({ kind: 'initial_default_directory' });
   return { complete: pending.length === 0, host_pid: hostPid, host_closed: hostClosed,
@@ -2575,6 +2632,10 @@ function catalogShutdownObserver(api) {
       record('context');
       if (process.env.SC06_PI_CATALOG_RELEASE === 'context')
         channel('context-broker.verify-sdk-initialization-release').publish({ pid: process.pid, boundary: 'context' });
+    });
+    if (process.env.SC06_PI_CATALOG_RELEASE === 'context') api.on('context_with_system', (event, ctx) => {
+      record('context_with_system', { session_file: ctx.sessionManager.getSessionFile(), leaf_id: ctx.sessionManager.getLeafId(),
+        ...captureInjectionReceipts(event.messages, ctx.sessionManager.buildSessionProjection?.()) });
     });
   }
 }
@@ -3396,9 +3457,11 @@ export function assertControlledHttpRetry(observed, pageId, fault) {
       server_written_bytes: requests[0].observed_response_bytes, complete_response_bytes: null, complete_text_delivered: false } } : {}) };
 }
 
-export async function waitForControlledHttpView({ rpc, sample, state, captureCount }) {
+export async function waitForControlledHttpView({ rpc, sample, state, captureCount, single = false, sourceCount }) {
   assert.ok(['ready', 'failed'].includes(state));
   const started = process.hrtime.bigint(), deadline = started + 20000000000n, before = await captureCount(), observations = [];
+  assert.ok(!sourceCount || single, 'Source side effects are measured only by the isolated published-status probe');
+  const sourceBefore = sourceCount?.();
   const expected = state === 'ready'
     ? 'sdk-fixture: ' + sample.view_dynamics.view.name + ' (' + sample.view_dynamics.view.id + ') · ' + sample.view_dynamics.observations[0].member_record_ids.length + ' Skill/Router · first'
     : 'sdk-fixture: default View failed (AUTH_REQUIRED) · first';
@@ -3408,8 +3471,10 @@ export async function waitForControlledHttpView({ rpc, sample, state, captureCou
     const notifications = rpc.frames.slice(offset).filter(frame => frame.type === 'extension_ui_request' && frame.method === 'notify');
     observations.push({ response, notifications });
     assert.equal(await captureCount(), before, 'The existing read-only View status command must not invoke a provider');
+    if (sourceCount) assert.equal(sourceCount(), sourceBefore, 'Read-only View status must not refresh the source');
     if (notifications.some(frame => frame.message === expected)) return { command: '/context-broker view', state,
       calls: observations.length, observations, elapsed_ms: Number(process.hrtime.bigint() - started) / 1e6, expected };
+    assert.equal(single, false, 'A published View must remain at the expected state during its single read-only probe');
     assert.ok(process.hrtime.bigint() < deadline, 'The actual published View status did not settle before the deadline');
     await new Promise(resolve => setTimeout(resolve, 25));
   }
@@ -3533,7 +3598,8 @@ async function controlledHttpPhase(info, { label, baseRoot, outputRoot, sourceRo
   await publishToolPlan(toolPlan, { mode: 'complete' });
   const fakeProvider = await provider(base), preload = join(base, 'observer.mjs'), shutdownObserver = join(base, 'catalog-shutdown-observer.mjs');
   await observer(preload);
-  await writeFile(shutdownObserver, "import { appendFileSync } from 'node:fs';\nimport { channel } from 'node:diagnostics_channel';\nexport default " + catalogShutdownObserver.toString() + '\n', { mode: 0o600 });
+  await writeFile(shutdownObserver, "import { appendFileSync } from 'node:fs';\nimport { createHash } from 'node:crypto';\nimport { channel } from 'node:diagnostics_channel';\n"
+    + captureInjectionReceipts.toString() + '\nexport default ' + catalogShutdownObserver.toString() + '\n', { mode: 0o600 });
   const env = isolatedEnv({ base, agentDir, ...info.fixtureEnv, TMPDIR: await systemTempRoot(),
     NOTION_API_BASE_URL: service.origin, NTN_SKILLS_HOME: join(sourceRoot, 'state'),
     NTN_SKILLS_CONFIG_HOME: join(sourceRoot, 'config'), NTN_SKILLS_CACHE_HOME: join(sourceRoot, 'cache'),
@@ -3639,7 +3705,7 @@ async function controlledHttpScenario(name, info, scratch, evidence) {
         let held;
         await phase(label, { sourceRoot, bodyTransportRequired: false,
           expectedCatalogOutcome: label === 'failed' ? 'failed' : 'completed', allowedSdkErrors: label === 'failed' ? ['AUTH_REQUIRED'] : [],
-          exercise: async ({ rpc, ledger, providerFile, hookFile }) => {
+          exercise: async ({ rpc, ledger, providerFile, hookFile, source }) => {
             try {
               if (hold) { await httpBounded(hold.reached, 'metadata request reached'); held = { request_seen_monotonic_ns: process.hrtime.bigint().toString() }; }
               await rpc.prompt('Continue the ordinary conversation. Reply briefly without using any Skill or tools.');
@@ -3648,13 +3714,21 @@ async function controlledHttpScenario(name, info, scratch, evidence) {
                 assert.ok(hook); held.provider_request_id = capture.requestId; held.provider_payload_end_monotonic_ns = hook.monotonic_ns;
                 held.released_monotonic_ns = process.hrtime.bigint().toString(); hold.release();
               }
-              const settled = await waitForSourceFinality(ledger, rpc.lifecycle[0].pid); assert.equal(settled.complete, true);
-              const sourceAttempts = service.requests.length;
+              const settled = await waitForSourceFinality(ledger, rpc.lifecycle[0].pid,
+                { initialCatalog: { sourceId: source.id, database: source.database } });
+              assert.equal(settled.complete, true);
+              const beforePublication = service.requests.length;
               const publication = await waitForControlledHttpView({ rpc, sample, state: label === 'pending' ? 'ready' : 'failed',
                 captureCount: async () => (await rows(providerFile)).length });
-              assert.equal(service.requests.length, sourceAttempts, 'Read-only View status must not refresh the source');
+              const afterPublication = service.requests.length;
+              const drained = await waitForSourceFinality(ledger, rpc.lifecycle[0].pid); assert.equal(drained.complete, true);
+              const sourceAttempts = service.requests.length;
+              const statusProbe = await waitForControlledHttpView({ rpc, sample, state: label === 'pending' ? 'ready' : 'failed', single: true,
+                captureCount: async () => (await rows(providerFile)).length, sourceCount: () => service.requests.length });
               await rpc.prompt('Continue the same ordinary conversation. Reply briefly without using any Skill or tools.');
-              return { ordinary_prompts: 2, held_http: held ?? null, publication, publication_source_http: 0 };
+              return { ordinary_prompts: 2, held_http: held ?? null, publication,
+                publication_source_http: afterPublication - beforePublication, publication_drain_source_http: sourceAttempts - afterPublication,
+                status_probe: { ...statusProbe, source_http: 0 } };
             } finally { hold?.release(); }
           },
           verify: async ({ captures, events, archive, requests, hostPid, output }) => {
@@ -3900,7 +3974,8 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
   const nativeEvents = join(output, 'native-session-events.jsonl');
   const shutdownObserver = isLifecycleScenario(name) ? undefined : join(base, 'catalog-shutdown-observer.mjs');
   if (shutdownObserver) await writeFile(shutdownObserver,
-    "import { appendFileSync } from 'node:fs';\nimport { channel } from 'node:diagnostics_channel';\nexport default " + catalogShutdownObserver.toString() + '\n', { mode: 0o600 });
+    "import { appendFileSync } from 'node:fs';\nimport { createHash } from 'node:crypto';\nimport { channel } from 'node:diagnostics_channel';\n"
+      + captureInjectionReceipts.toString() + '\nexport default ' + catalogShutdownObserver.toString() + '\n', { mode: 0o600 });
   const fixtureEnv = { ...info.fixtureEnv };
   for (const key of ['NTN_SKILLS_HOME', 'NTN_SKILLS_CONFIG_HOME', 'NTN_SKILLS_CACHE_HOME']) {
     const original = resolve(info.fixture.cwd, fixtureEnv[key]);
@@ -3952,7 +4027,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     ...(shutdownObserver ? { native_shutdown_observer: { extension: shutdownObserver, registration: 'before_broker', events: nativeEvents } } : {}),
     ...(scalarSeed ? { seed_evidence: 'resource-scalar-seed.json', seed_sha256: scalarSeed.evidence.session_sha256 } : {}) });
   if (isLifecycleScenario(name)) return runSdkLifecycle({ info, base, output, sessions, providerFile, hookFile, ledger, toolPlan, env, argv, name });
-  let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, resourceScalarEvidence, nativeRepeatEvidence, entrypointEvidence, defaultViewEvidence, serializerContext, archive, dollarProjection, nativeProjection, scopedCommandEvidence, catalogProjectionEvidence, namedEvidence, warmDirectoryEvidence, catalogScaleEvidence;
+  let rpc, failed, last, discovery, beforeClose, finality, preparation, resourceBatchEvidence, resourceScalarEvidence, nativeRepeatEvidence, entrypointEvidence, defaultViewEvidence, serializerContext, archive, dollarProjection, nativeProjection, scopedCommandEvidence, catalogProjectionEvidence, namedEvidence, warmDirectoryEvidence, catalogScaleEvidence, injectionContexts;
   try {
     rpc = await startRpc({ host: 'pi', args: argv, cwd: base, env, timeoutMs: 60000 });
     if (warmDirectory) {
@@ -4045,7 +4120,12 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       for (const key of ['a', 'base']) assert.equal(bodyCount(last, info.bodies.get(key)), 1, `${key}: full source body exactly once`);
       for (const key of ['b', 'c']) assert.equal(bodyCount(last, info.bodies.get(key)), 0);
       dollarProjection = assertDollarProjection(last, { bodies: info.bodies, snapshots: info.fixture.snapshots, expectCompact: expectCompactContext });
-      defaultViewEvidence = assertPreflightCatalogProjection(captures, discovery, await rows(ledger), info.fixture, info.bodies);
+      injectionContexts = bindInjectionContexts(captures, await rows(nativeEvents), await rows(hookFile), { sessionRoot: sessions, hostPid: rpc.lifecycle[0].pid });
+      await save(join(output, 'injection-receipts.json'), { boundary: 'Original native context and effective session projection; receipts remain outside provider inputs',
+        requests: [...injectionContexts].map(([request_id, context]) => ({ request_id, pid: context.pid, monotonic_ns: context.monotonic_ns,
+          session_file: context.session_file, leaf_id: context.leaf_id, projection_available: context.projection_available,
+          direct_receipts: context.direct.length, persisted_receipt_ids: context.persisted.map(receipt => receipt.entry_id) })) });
+      defaultViewEvidence = assertPreflightCatalogProjection(captures, discovery, await rows(ledger), info.fixture, info.bodies, { injectionContexts });
       defaultViewEvidence.read_schema = assertResourceReadSchema(last);
       await save(join(output, 'default-view.json'), defaultViewEvidence);
     } else if (scalarScenario) {
@@ -4455,7 +4535,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       const search = captures.flatMap(capture => {
         const message = toolResult(capture.context, 'sc10-search');
         return message ? [{ request_id: capture.requestId, ...assertSearchProjection(message, { expectCompact: expectCompactContext, scope: info.fixture.scope,
-          context: capture.context, fixture: info.fixture }) }] : [];
+          context: capture.context, fixture: info.fixture, injectionContext: injectionContexts?.get(capture.requestId) }) }] : [];
       });
       assert.ok(search.length > 0);
       await save(join(output, 'compact-context.json'), { expected: expectCompactContext,
@@ -4475,7 +4555,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
           ? catalogContextFromHttp(context, captures.find(capture => capture.requestId === request.provider_request_id).context) : context };
       }));
       const httpCatalog = name === 'dollar'
-        ? assertPreflightCatalogProjection(serialized, discovery, await rows(ledger), info.fixture, info.bodies)
+        ? assertPreflightCatalogProjection(serialized, discovery, await rows(ledger), info.fixture, info.bodies, { injectionContexts })
         : assertDefaultViewProjection(serialized, discovery, await rows(ledger), info.fixture, info.bodies);
       assert.deepEqual(httpCatalog.provider_requests.map(request => request.state), defaultViewEvidence.provider_requests.map(request => request.state));
       for (const capture of serialized) {

@@ -91,6 +91,10 @@ node scripts/notion-sdk-pi.mjs evidence --evidence ABSOLUTE_EVIDENCE
 
 同次 full catalog／Default View 的复用继续在 `http-directory` 验证：安装包的 SDK 与 runtime manifest 同时声明 `catalog_directory_contract_version: 1`，一次 `list` 原始 envelope 包含两个独立 outcome。原 observer 只记一次 SDK 调用和一次 request metrics；纯读取断言展开两个结果，不伪造第二个事件。按完整 Skills row IDs、实际六字段 projection、分页 cursor／has_more 和响应 bytes 核对库存只读一遍，不能以 SDK 调用数下降代替 HTTP 复用。旧 SDK 的两次读取仍可通过普通兼容场景，但不能通过这条复用断言。401、取消、空／失败 View 与 full-library 无关错误独立保留。
 
+普通 provider 可以先于首个后台 SDK list 完成。`http-directory` 必须先观察本次 host／source／database 的初始 list start 及 terminal；尚无 start 不能作为已结束证据。等待 View 发布期间的后台 HTTP 单列，发布后排空已观察的操作，再取基线并仅执行一次无参状态查询，要求目标状态准确、HTTP 与 provider 均零增量。保留两次普通提交、原预算和全部迟到／失败账本，不用固定等待猜测来源静默。
+
+Pi 会将正文 custom message 转为实际 provider 的 user content，并把机器交付回执留在 session。`dollar` 的省略证明沿原 native observer 保留转换前的注入回执与当前有效分支的机器回执，按同一 Pi 进程及请求时序关联。首轮以原注入文本的 bytes／hash 定位实际 user 块，历史轮次以原 `nativePromptSha256` 定位合并后的 user 内容；不能拿后续合并回执证明首轮。两者都逐项校验完整 delivery span、正文 bytes／hash、scope／owner／snapshot／version 和冻结 canonical card。回执作为独立验证 sidecar，不插回 provider 或 HTTP 原件。原 `native`／`prepare` 等目录证明按 locator 的结构和值比较，不要求 JSON 对象键序相同；真正的 locator、版本或正文变化仍失败。
+
 Broker 只向同一 menu／refresh generation 交付这次目录观察一次，消费前摘下；取消、session switch／branch／tree、选择变化不能复用旧观察。后续 View 刷新继续走原权限和 freshness 路径，raw inventory 留在 SDK operation 内，不写入 Broker 持久缓存。CLI 的 maxAge 0 不跨时间复用库存，refresh／离线／暖／局部缓存结果各用原回执解释。
 
 | 用户入口 | 实际驱动与正反例 | 验收边界 |
