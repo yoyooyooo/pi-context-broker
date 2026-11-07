@@ -215,6 +215,107 @@ function catalogScaleFixture(count = 101) {
   return { fixture, captures, frames, events, entries, objects, bodies, native, section };
 }
 
+function combineCatalogEvents(events) {
+  const values = events.filter(event => event.kind === 'sdk_catalog');
+  assert.equal(values.length, 2);
+  return events.filter(event => event.id !== values[1].id).map(event => event.kind === 'sdk_catalog'
+    ? { ...event, value: { version: 1, catalog: { ok: true, value: values[0].value }, directory: { ok: true, value: values[1].value } } }
+    : event);
+}
+
+test('combined catalog evidence preserves one SDK call and both complete directory facets', () => {
+  const value = catalogScaleFixture(101);
+  value.events = combineCatalogEvents(value.events);
+  const before = JSON.stringify(value.events);
+  const proof = namedSdkProbe.assertCatalogScaleSource(value.events, value.fixture, value.objects, 42);
+  assert.equal(proof.sdk_lists, 1);
+  assert.equal(proof.catalog_projections, 2);
+  assert.equal(proof.combined_directory, true);
+  assert.equal(assertDefaultViewProjection(value.captures, undefined, value.events, value.fixture, value.bodies).status, 'verified');
+  assert.equal(JSON.stringify(value.events), before, 'Facet reads must not rewrite the original SDK observation');
+});
+
+test('combined catalog failure cannot hide a valid Default View result', () => {
+  const value = defaultViewFixture(), directory = value.events[0].value;
+  value.events[0].value = { version: 1, catalog: { ok: false, error: { code: 'SHARED_SKILL_ID_CONFLICT', message: 'Unrelated conflict' } }, directory: { ok: true, value: directory } };
+  const proof = assertDefaultViewProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies);
+  assert.equal(proof.status, 'verified'); assert.equal(proof.sdk_catalog_results, 1);
+});
+
+test('combined catalog facets reject unknown contracts, missing outcomes and swapped identities', () => {
+  for (const change of [
+    value => { value.version = 2; }, value => { delete value.directory; },
+    value => { value.directory.value.scope = 'foreign'; },
+    value => { value.catalog.value.view = value.directory.value.view; },
+    value => { delete value.directory.value.view; },
+    value => { value.catalog.ok = false; value.catalog.error = { code: 'DENIED', message: 'Denied' }; },
+    value => { value.directory = { ok: false, error: { message: 'No code' } }; },
+  ]) {
+    const value = catalogScaleFixture(10), events = combineCatalogEvents(value.events);
+    change(events.find(event => event.kind === 'sdk_catalog').value);
+    assert.throws(() => namedSdkProbe.sdkCatalogObservations(events));
+  }
+});
+
+function directoryHttpFixture(count = 201, combined = true) {
+  const properties = { Name: 'title', Description: 'description', Kind: 'kind', 'Skill ID': 'skill_id', Enabled: 'enabled', 'Default Context': 'default' };
+  const fields = Object.values(properties).sort(), ds = '11111111-2222-3333-4444-555555555556';
+  const sample = { notion: { library: { skills: { data_source_id: ds, property_ids: properties } },
+    skills: Array.from({ length: count }, (_, index) => ({ id: 'raw-' + index, enabled: index !== 1 })) } };
+  const requests = [], events = [], pageCount = Math.ceil(count / 100);
+  for (let scan = 0; scan < (combined ? 1 : 2); scan++) {
+    let bytes = 0;
+    for (let page = 0; page < pageCount; page++) {
+      const more = page + 1 < pageCount, pageIds = sample.notion.skills.slice(page * 100, (page + 1) * 100).map(row => row.id);
+      const payload = JSON.stringify(pageIds); bytes += Buffer.byteLength(payload);
+      requests.push({ method: 'POST', path: `/v1/data_sources/${ds}/query`, status: 200, filter_properties: fields,
+        body: { page_size: 100, ...(page ? { start_cursor: 'offset-' + page * 100 } : {}) }, page_ids: pageIds,
+        returned_properties: fields, has_more: more, next_cursor: more ? 'offset-' + (page + 1) * 100 : null,
+        response_bytes_complete: true, decoded_response_bytes: Buffer.byteLength(payload), response_sha256: createHash('sha256').update(payload).digest('hex') });
+    }
+    const common = { id: 'list-' + scan, observer_pid: 42, operation: 'list' };
+    const full = { scope: 'same-scope', records: [] }, directory = { ...full, view: { id: 'default' } };
+    events.push({ kind: 'sdk', event: 'start', ...common }, { kind: 'sdk_catalog', id: common.id, observer_pid: 42,
+      value: combined ? { version: 1, catalog: { ok: true, value: full }, directory: { ok: true, value: directory } } : scan ? directory : full },
+    { kind: 'sdk', event: 'end', ...common, status: 'completed', request_metrics: { complete: true, total_requests: pageCount },
+      source_http_terminal: { in_flight: 0, response_bytes: bytes } });
+  }
+  return { sample, requests, events };
+}
+
+for (const count of [101, 201]) test(`combined HTTP metadata proof retains all ${count} raw rows and counts bytes once`, () => {
+  const value = directoryHttpFixture(count), before = JSON.stringify(value);
+  const proof = namedSdkProbe.assertDirectoryMetadataReuse(value.requests, value.events, { sample: value.sample, hostPid: 42, requireCombined: true });
+  assert.equal(proof.pages_per_inventory, Math.ceil(count / 100)); assert.equal(proof.metadata_http_attempts, Math.ceil(count / 100));
+  assert.equal(proof.raw_metadata_rows, count); assert.equal(proof.sdk_lists, 1); assert.equal(proof.metadata_reuse, true);
+  assert.equal(proof.source_response_bytes, value.requests.reduce((total, request) => total + request.decoded_response_bytes, 0));
+  assert.equal(JSON.stringify(value), before);
+});
+
+test('legacy two-list HTTP observations remain separate and cannot pass the required reuse gate', () => {
+  const value = directoryHttpFixture(201, false), options = { sample: value.sample, hostPid: 42 };
+  const proof = namedSdkProbe.assertDirectoryMetadataReuse(value.requests, value.events, options);
+  assert.equal(proof.sdk_lists, 2); assert.equal(proof.metadata_http_attempts, 6); assert.equal(proof.metadata_reuse, false);
+  assert.throws(() => namedSdkProbe.assertDirectoryMetadataReuse(value.requests, value.events, { ...options, requireCombined: true }));
+});
+
+test('combined HTTP metadata proof rejects duplicate scans, missing disabled rows, cursors and unaccounted bytes', () => {
+  for (const change of [
+    value => { value.requests.push(...structuredClone(value.requests)); },
+    value => { value.requests[0].page_ids.splice(1, 1); },
+    value => { value.requests.pop(); }, value => { value.requests[1].body.start_cursor = 'offset-200'; },
+    value => { value.requests[0].filter_properties.push('payload'); },
+    value => { value.requests[0].has_more = false; }, value => { value.requests.at(-1).next_cursor = 'offset-300'; },
+    value => { value.requests[0].response_bytes_complete = false; },
+    value => { value.requests[0].decoded_response_bytes++; },
+    value => { value.events.at(-1).source_http_terminal.response_bytes *= 2; },
+    value => { value.events.at(-1).request_metrics.total_requests--; },
+  ]) {
+    const value = directoryHttpFixture(); change(value);
+    assert.throws(() => namedSdkProbe.assertDirectoryMetadataReuse(value.requests, value.events, { sample: value.sample, hostPid: 42, requireCombined: true }));
+  }
+});
+
 for (const count of [10, 100, 101, 300]) test(`catalog scale binds all ${count} cards across actual pages provider and HTTP text`, () => {
   const value = catalogScaleFixture(count), before = JSON.stringify(value);
   const pages = namedSdkProbe.assertCatalogScalePages(value.captures, value.frames, value.fixture);
@@ -1407,8 +1508,8 @@ test('a warm catalog can reuse the complete native generated directory in the sa
   ]) { const invalid = nativeCatalogReuseFixture(); mutate(invalid); assert.throws(() => namedSdkProbe.assertWarmDirectoryProjection(invalid.captures, invalid.message, invalid.fixture, invalid.bodies)); }
 });
 
-function dollarProjectionFixture(compact = true) {
-  const bodies = new Map([['a', '\ufeff作者 <instructions>literal source</instructions>\r\n'], ['base', 'Base instructions.\n']]);
+function dollarProjectionFixture(compact = true, memberRow = '') {
+  const bodies = new Map([['a', '\ufeff作者 <instructions>literal source</instructions>\r\n' + (memberRow ? memberRow + '\r\n' : '')], ['base', 'Base instructions.\n']]);
   const snapshots = [...bodies.keys()].map(name => ({ record: { name }, entrypoint: 'SKILL.md',
     files: [{ path: 'SKILL.md' }, ...(name === 'a' ? [{ path: 'assets/sample.bin' }] : [])] }));
   const content = [...bodies].map(([name, body]) => {
@@ -1420,6 +1521,111 @@ function dollarProjectionFixture(compact = true) {
   }).join('\n');
   return { bodies, snapshots, context: { messages: [{ role: 'user', content }] } };
 }
+
+function injectedCatalogReuseFixture(deferred = false) {
+  const value = defaultViewFixture(), scope = 'a'.repeat(64), digest = text => createHash('sha256').update(text).digest('hex');
+  value.fixture.scope = scope;
+  for (const record of value.fixture.default_view.records) Object.assign(record, { entrypoint: 'SKILL.md',
+    ref: 'skill://' + encodeURIComponent(record.id) + '/SKILL.md', locator: { type: 'shared_skill', skill_id: record.name } });
+  const member = value.fixture.default_view.records[1], candidate = { id: member.id, ref: member.ref, kind: member.kind,
+    name: member.name, description: member.description, availability: 'available' };
+  const dollar = dollarProjectionFixture(true, `- [${member.name}](${member.ref}) — ${member.description}`);
+  const snapshots = dollar.snapshots.map(snapshot => {
+    const body = dollar.bodies.get(snapshot.record.name), record = value.fixture.default_view.records.find(record => record.name === snapshot.record.name)
+      ?? { id: 'owner:base', name: 'base', kind: 'skill', description: 'Required metadata', ref: 'skill://owner%3Abase/SKILL.md', entrypoint: 'SKILL.md', locator: { type: 'shared_skill', skill_id: 'base' } };
+    return { ...snapshot, scope, record, snapshot_id: 's_' + digest(body), version_id: 'version-' + record.name,
+      files: snapshot.files.map(file => file.path === snapshot.entrypoint ? { ...file, bytes: Buffer.byteLength(body), sha256: digest(body) } : file) };
+  });
+  snapshots[0].members = [{ id: member.id, ref: member.ref, metadata: member }];
+  value.fixture.snapshots = [...snapshots, { scope, record: member }];
+  const content = dollar.context.messages[0].content;
+  const proofs = snapshots.map(snapshot => {
+    const body = dollar.bodies.get(snapshot.record.name), encoded = body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'), start = content.indexOf(encoded);
+    const binding = { scope, record: snapshot.record, snapshot_id: snapshot.snapshot_id, version_id: snapshot.version_id,
+      body_sha256: digest(body), ref: snapshot.record.ref + '?snapshot=' + snapshot.snapshot_id };
+    return { version: 2, loaded: true, sourceId: 'sdk-fixture', versionId: snapshot.version_id,
+      identity: JSON.stringify(['sdk-fixture', scope, snapshot.record.kind, snapshot.record.locator.type, snapshot.record.id]),
+      contentIdentity: JSON.stringify([scope, snapshot.record.id]), snapshotId: snapshot.snapshot_id, bodySha256: digest(body), bytes: Buffer.byteLength(body),
+      delivery: { start, end: start + encoded.length, encoding: 'xml' }, binding,
+      directory: { files: [], required: [], candidates: snapshot.record.name === 'a' ? [candidate] : [], references: [] } };
+  });
+  const injected = { role: 'custom', customType: 'context-broker', content, details: { records: proofs } };
+  const head = value.captures[1].context.messages[0];
+  head.content = head.content.replace('<name>b</name><description>Metadata</description>', '<name>b</name>');
+  value.events[0].value.scope = scope;
+  value.captures = [{ requestId: 'injected', context: { messages: [head, injected] } }];
+  if (deferred) {
+    const prefix = 'Use the selected Skill.\n', user = { role: 'user', content: prefix + content };
+    for (const proof of proofs) { proof.delivery.start += prefix.length; proof.delivery.end += prefix.length; }
+    injected.content = []; injected.details.nativePromptSha256 = digest(user.content);
+    value.captures[0].context.messages.splice(1, 0, user);
+  }
+  value.bodies = new Map([...dollar.bodies, ['b', 'Unselected member body.\n']]);
+  return { ...value, injected, proofs, snapshots, candidate };
+}
+
+for (const deferred of [false, true]) test(`trusted dollar Members description reuse keeps complete bodies with deferred=${deferred}`, () => {
+  const value = injectedCatalogReuseFixture(deferred), before = JSON.stringify(value.captures);
+  const proof = assertPreflightCatalogProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies);
+  assert.equal(proof.provider_requests[0].reused_descriptions[0].origin, 'actual-injected-member');
+  assert.equal(proof.injected_member_reuse.status, 'verified'); assert.deepEqual(proof.injected_member_reuse.candidate_ids, ['owner:b']);
+  assert.equal(assertDollarProjection(value.captures[0].context, value).records.length, 2);
+  assert.equal(JSON.stringify(value.captures), before);
+});
+
+for (const deferred of [false, true]) test(`actual HTTP dollar text can use only its exact captured source receipt deferred=${deferred}`, () => {
+  const value = injectedCatalogReuseFixture(deferred), captured = value.captures[0].context;
+  const wire = { messages: captured.messages.filter(message => message.role !== 'custom' || textForTest(message.content))
+    .map(message => ({ role: message.role === 'custom' ? 'user' : message.role, content: message.content })) };
+  const before = JSON.stringify(wire), mapped = namedSdkProbe.catalogContextFromHttp(wire, captured);
+  assert.equal(assertPreflightCatalogProjection([{ requestId: 'http', context: mapped }], value.discovery, value.events, value.fixture, value.bodies).injected_member_reuse.status, 'verified');
+  assert.equal(assertDollarProjection(mapped, value).records.length, 2); assert.equal(JSON.stringify(wire), before);
+  assert.doesNotMatch(before, /bodySha256|nativePromptSha256|contentIdentity/);
+  const changed = structuredClone(wire), body = changed.messages.find(message => message.role === 'user');
+  body.content = textForTest(body.content).replace('作者', 'Summary');
+  assert.throws(() => assertPreflightCatalogProjection([{ requestId: 'http', context: namedSdkProbe.catalogContextFromHttp(changed, captured) }], value.discovery, value.events, value.fixture, value.bodies));
+});
+function textForTest(content) { return typeof content === 'string' ? content : (content ?? []).map(part => part.text ?? '').join('\n'); }
+
+test('a frozen dollar overlap cannot pass while the provider still repeats its Default description', () => {
+  const value = injectedCatalogReuseFixture();
+  value.captures[0].context.messages[0].content = value.captures[0].context.messages[0].content.replace('<name>b</name>', '<name>b</name><description>Metadata</description>');
+  assert.throws(() => assertPreflightCatalogProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies), /must actually remove/);
+});
+
+test('trusted dollar Members omission rejects forged source proofs and changed candidate metadata', () => {
+  for (const change of [
+    value => { value.injected.role = 'user'; }, value => { delete value.injected.details; },
+    value => { value.injected.content = value.injected.content.replace('作者', 'Summary'); },
+    value => { value.injected.content = value.injected.content.slice(0, -100); },
+    value => { value.proofs[0].bodySha256 = 'b'.repeat(64); }, value => { value.proofs[0].bytes--; },
+    value => { value.proofs[0].sourceId = 'other-source'; }, value => { value.proofs[0].binding.scope = 'b'.repeat(64); },
+    value => { value.proofs[0].identity = JSON.stringify(['other-source', value.fixture.scope, 'skill', 'shared_skill', 'owner:a']); },
+    value => { value.proofs[0].contentIdentity = JSON.stringify([value.fixture.scope, 'owner:b']); },
+    value => { value.proofs[0].snapshotId = 's_' + 'b'.repeat(64); }, value => { value.proofs[0].versionId = 'different'; },
+    value => { value.proofs[0].binding = { ...value.proofs[0].binding, record: { ...value.proofs[0].binding.record, id: 'owner:b' } }; },
+    value => { value.proofs[0].binding.ref = value.proofs[0].binding.record.ref; },
+    value => { value.candidate.ref += '?snapshot=s_' + 'b'.repeat(64); }, value => { value.candidate.id = 'another-owner'; },
+    value => { value.candidate.description = 'Different current metadata'; }, value => { value.candidate.kind = 'router'; },
+    value => { value.candidate.availability = 'disabled'; }, value => { value.candidate.extra = 'unverified'; },
+  ]) {
+    const value = injectedCatalogReuseFixture(); change(value);
+    assert.throws(() => assertPreflightCatalogProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies));
+  }
+});
+
+test('deferred dollar Members proof must bind the exact still-visible native user text', () => {
+  for (const change of [
+    value => { value.injected.details.nativePromptSha256 = 'b'.repeat(64); },
+    value => { value.captures[0].context.messages.splice(1, 1); },
+    value => { value.captures[0].context.messages[1].content = 'Compacted summary.'; },
+    value => { value.captures[0].context.messages[1].role = 'assistant'; },
+    value => { value.injected.details.records = []; },
+  ]) {
+    const value = injectedCatalogReuseFixture(true); change(value);
+    assert.throws(() => assertPreflightCatalogProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies));
+  }
+});
 test('compact dollar checks only generated envelopes and preserves every escaped author byte', () => {
   const value = dollarProjectionFixture(), before = JSON.stringify(value.context);
   assert.equal(assertDollarProjection(value.context, value).compact_contract, 'verified');
@@ -1743,6 +1949,26 @@ test('controlled HTTP metadata failures require actual failed lists and do not b
   assert.throws(() => reconcile(observed(fields), lifecycle, { ...options, sourceMode: 'offline' }));
   assert.throws(() => reconcile(observed(fields), lifecycle, { ...options, expectedFailedSdkIds: [] }));
   assert.throws(() => reconcile(observed(catalog), lifecycle, options));
+});
+
+test('combined failed projections preserve the completed SDK terminal and account HTTP once', () => {
+  const fields = structuredClone(catalog), error = { code: 'AUTH_REQUIRED', message: 'Credential denied' };
+  fields[2].request_metrics = { complete: true, total_requests: 1, trace: [{ event: 'attempt', attempt: 1, http_status: 401 }] };
+  fields.splice(2, 0, { kind: 'sdk_catalog', id: '42:1', value: { version: 1,
+    catalog: { ok: false, error }, directory: { ok: false, error } } });
+  const options = { sourceMode: 'controlled-http', bodyTransportRequired: false, expectedCatalogOutcome: 'failed' };
+  const proof = reconcile(observed(fields), lifecycle, options);
+  assert.equal(proof.sdk_calls, 1); assert.equal(proof.sdk_completed_lists, 1); assert.equal(proof.sdk_http, 1);
+  assert.equal(proof.sdk_successful_list_results, 0); assert.deepEqual(proof.expected_failed_sdk, []);
+  assert.deepEqual(proof.catalog_projection_failures, [
+    { id: '42:1', facet: 'catalog', code: 'AUTH_REQUIRED' }, { id: '42:1', facet: 'directory', code: 'AUTH_REQUIRED' } ]);
+  assert.equal(proof.default_catalog_transport, 'not_exercised');
+  for (const change of [
+    value => { value[3].status = 'cancelled'; }, value => { value[3].status = 'failed'; },
+    value => { value[2].value.directory = { ok: true, value: { scope: 'valid', view: null } }; },
+    value => { value.splice(2, 0, structuredClone(value[2])); },
+    value => { value[2].id = 'another-call'; },
+  ]) { const bad = structuredClone(fields); change(bad); assert.throws(() => reconcile(observed(bad), lifecycle, options)); }
 });
 
 test('controlled HTTP body cancellation requires its actual RPC abort inside the SDK interval', () => {

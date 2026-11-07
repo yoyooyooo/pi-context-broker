@@ -49,7 +49,7 @@ import {
 import { discoverSourceCatalog, loadSourceSkill, normalizeSources, formatSourceFailures } from "./sources";
 import { diagnoseNotionSource, sourceFailureMessage, SourceError, ReferenceMiss, prepareNotionSkills, prefetchNotionSkills, loadNotionResource, readNotionResources, readFixedNotionResource, resolveNotionReference } from "./notion-source";
 import { installHostSkills } from "./host-skills";
-import { resolveViewDiscovery, createViewCommands } from "./view-discovery";
+import { resolveViewDiscovery, createViewCommands, notionDirectorySelections } from "./view-discovery";
 import { createSourceRuntime } from "./source-runtime";
 import { selectPrefetchPlans } from "./prefetch-policy";
 import { installCliWriteInvalidation } from "./cli-write-invalidation";
@@ -505,7 +505,7 @@ function discoverUsableSkillRoots(config: ConfigFile = readConfig(), cwd = proce
   return uniqueStrings(configuredRoots(config).map((root) => expandPath(root, cwd)));
 }
 
-async function buildDiscoveryRegistry(config: ConfigFile = readConfig(), cwd = process.cwd(), options: { refresh?: boolean; stale?: boolean; refreshSourceIds?: readonly string[]; paths?: HostPathOptions; signal?: AbortSignal } = {}): Promise<DiscoveryResult> {
+async function buildDiscoveryRegistry(config: ConfigFile = readConfig(), cwd = process.cwd(), options: { refresh?: boolean; stale?: boolean; refreshSourceIds?: readonly string[]; paths?: HostPathOptions; signal?: AbortSignal; directorySelections?: ReturnType<typeof notionDirectorySelections> } = {}): Promise<DiscoveryResult> {
   options.signal?.throwIfAborted();
   const skills = dedupeLocalSkillPaths([
     ...configuredBundledBuiltinRecords(config),
@@ -519,7 +519,7 @@ async function buildDiscoveryRegistry(config: ConfigFile = readConfig(), cwd = p
     ...sources.records,
   ]);
   options.signal?.throwIfAborted();
-  return { records, failures: sources.failures, lists: sources.lists };
+  return { records, failures: sources.failures, lists: sources.lists, ...(sources.directories ? { directories: sources.directories } : {}) };
 }
 
 async function buildDollarRegistry(config?: ConfigFile, cwd = process.cwd(), paths: HostPathOptions = {}): Promise<DiscoveryResult> {
@@ -1045,7 +1045,8 @@ function buildInjectedPayloadFromInjections(injections: ContextInjection[], conf
     const segment = segments[index]!, start = segment.indexOf("<body>\n");
     const proof = start < 0 ? undefined : sourceDeliveryReceipt(injection.record, content, "xml", offset + start + "<body>\n".length);
     offset += segment.length + 1;
-    return { ...recordDetail(injection, config), ...proof };
+    return { ...recordDetail(injection, config), ...proof,
+      ...(proof && injection.record.preparationDirectory ? { directory: injection.record.preparationDirectory } : {}) };
   });
   return {
     customType: CUSTOM_TYPE,
@@ -1467,6 +1468,9 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   const notionRefresh = new Map<string, Promise<DiscoveryResult>>();
   const notionRetryAt = new Map<string, number>();
   const autocompleteUis = new WeakSet<object>();
+  let menuContext: ExtensionContext | undefined;
+  let menuGeneration = 0;
+  const pairedCatalogGenerations = new WeakMap<DiscoveryResult, { menu: number; refresh: number }>();
   const catalogCwd = (cwd: string) => { try { return realpathSync(cwd); } catch { return resolve(cwd); } };
   const unseenChanges = (cwd: string) => new Map([...sourceChanges].filter(([id, version]) => (observedChangesByCwd.get(cwd)?.get(id) ?? 0) < version));
   const publishCatalog = (cwd: string, promise: Promise<DiscoveryResult>, changes = new Map<string, number>()) => {
@@ -1488,13 +1492,19 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     });
     return promise;
   };
-  const getCatalog = (cwd = process.cwd()) => {
+  const getCatalog = (cwd = process.cwd(), ctx = menuContext) => {
     if (catalogOwner.signal.aborted) return Promise.reject(catalogOwner.signal.reason);
     const key = catalogCwd(cwd);
     const entry = dollarRegistryByCwd.get(key);
     const changes = unseenChanges(key);
     if (entry && (entry.status === "pending" || !changes.size || Date.now() < (notionRetryAt.get(key) ?? 0))) return entry.promise;
-    return publishCatalog(key, ownCatalog(signal => buildDiscoveryRegistry(config, key, { paths, signal, stale: true, refreshSourceIds: [...changes.keys()] })), changes);
+    const generation = { menu: menuGeneration, refresh: refreshGeneration };
+    const promise = ownCatalog(signal => buildDiscoveryRegistry(config, key, { paths, signal, stale: true,
+      refreshSourceIds: [...changes.keys()], directorySelections: notionDirectorySelections(config, ctx) })).then(result => {
+      pairedCatalogGenerations.set(result, generation);
+      return result;
+    });
+    return publishCatalog(key, promise, changes);
   };
   installCliWriteInvalidation(pi, {
     sources: config.sources ?? [],
@@ -1586,8 +1596,6 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       })).catch(error => ({ records, notice: catalogError(error) })),
     };
   };
-  let menuContext: ExtensionContext | undefined;
-  let menuGeneration = 0;
   const retireMenuContext = () => { menuGeneration++; menuContext = undefined; };
   pi.on("session_shutdown", retireMenuContext);
   for (const event of ["session_switch", "session_branch", "session_tree"] as const) pi.on(event, (_event, ctx) => { menuGeneration++; menuContext = ctx; });
@@ -1621,9 +1629,19 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   const host = await installHostSkills(pi, {
     config,
     getRecords: (ctx, signal) => ownCatalog(async owned => {
-      const result = await getCatalog(ctx?.cwd);
+      // Pi supplies persisted View selection at session_start. Do not start a
+      // context-free discovery that the first session immediately cancels.
+      if (paths.host === "pi" && adapter.metadataDiscovery === "deferred" && ctx === undefined) return { records: [], failures: [] };
+      const result = await getCatalog(ctx?.cwd, ctx);
+      // Handoff only to this discovery generation. A cancellation or a later
+      // session cannot retain a second authority for View freshness or permissions.
+      const directories = result.directories;
+      delete result.directories;
+      const pairedGeneration = pairedCatalogGenerations.get(result);
+      pairedCatalogGenerations.delete(result);
       owned.throwIfAborted();
-      return resolveViewDiscovery(config, { records: result.records.filter((record): record is SkillRecord => Boolean(record.sourceId)), failures: result.failures, lists: result.lists }, ctx, owned);
+      const paired = pairedGeneration?.menu === menuGeneration && pairedGeneration.refresh === refreshGeneration ? directories : undefined;
+      return resolveViewDiscovery(config, { records: result.records.filter((record): record is SkillRecord => Boolean(record.sourceId)), failures: result.failures, lists: result.lists }, ctx, owned, paired);
     }, signal),
     lookupReference: (ctx, signal) => ownCatalog(owned => discoverSourceCatalog({ ...config, sources: config.sources?.filter(source => source.type === "notion") }, ctx.cwd, { signal: owned, refreshSourceIds: config.sources?.filter(source => source.type === "notion" && !source.discovery?.offline).map(source => source.id) }), signal),
     resolveNamedReference: (ref, ctx, signal, refresh) => ownCatalog(owned => resolveNotionReference(ref, notionSources(), ctx.cwd ?? process.cwd(), { signal: owned, refresh }), signal),

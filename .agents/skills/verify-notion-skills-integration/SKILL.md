@@ -7,6 +7,8 @@ description: "验证 Notion Skills source 与随包 Skill在 Pi/OMP、Tern 中�
 
 AH-617 消费链重构先读 [消费链验证地图](features/skill-consumption.md)。按 `agent-cli-ref-20261105` 复用既有 Pi harness，统一 SC01–26、J01–26、反例与证据保留；未执行的路线保持 draft/not_run，不能由旧 Gate 推断新产物通过。Pi 默认工具为 `notion_list`、`notion_use` 与原生 `read`；`notion_ctl` 按需发现，OMP 历史工具单列。
 
+full catalog／Default View 的组合读取与 `$` 完整 Members 描述复用均沿用上述地图、原 SDK driver 和安装态 `http-directory`／`dollar` 场景。一个 SDK envelope 的两个 outcome 不能重复计费；去重必须由实际 provider 中的完整正文和来源绑定证明，不能由内部成功、标题或摘要推断。原始正文／Requires、目录身份／入口和失败样本保持完整。
+
 AH-561 的直连请求和跨 Skill 图先走 [request-engine](features/request-engine.md) 与 [skill-dependency-graph](features/skill-dependency-graph.md)，复用 `scripts/verify-skill-graph-contract.mjs` 的离线反例与 fail-before。该入口保存两条根选择提示、私有 oracle/trace 合同、三层缓存边界与五类证据；`contract-valid` 不代表真实模型通过。当前 live/model/helper 使用项目直连引擎和安全请求账本；每次交付必须重新取得真实服务、宿主和安装证据，既有历史回执保持原状。
 
 生成 Skill 的实际产物验证继续使用原 graph `exercise`，按[产物执行合同](../../../scripts/notion-skill-graph-acceptance.md#generated-artifacts-and-execution)区分两条路径：`--command-json` 仅记录 `existing-project-check`；`--review` 才将独立审阅且绑定完整 bytes/hash 的一个 Node helper 安装到独立 owned 项目副本并执行。D 不从生成文字自动挑选命令，完整产物先记 `waiting-for-independent-exercise`。原技术失败不执行、不改判；成功退出只记 execution completed，仍独立核查真实功能行为、HTTP/动作/结果与语义。按新 exercise evidence root 做 Evidence→系统 Trash→Evidence，保留原 final、源回执及失败。具体审阅字段、预算与清理见同一地图和验收索引；不引入第三套 runner。

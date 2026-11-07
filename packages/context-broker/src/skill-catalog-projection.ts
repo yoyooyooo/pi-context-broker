@@ -1,6 +1,6 @@
 import { isSkillPreparationModel, type SkillPreparationModelRelation } from "./skill-context-projection";
 import { validateSkillPrepareProjection } from "./skill-context-projection-proof";
-import { sessionSourceBindings } from "./session-source-snapshot";
+import { injectedSourceBodies, sessionSourceBindings } from "./session-source-snapshot";
 import type { PreparationBinding } from "./prepare-protocol";
 import type { AgentMessage } from "./types";
 
@@ -113,8 +113,32 @@ function discovery(message: AgentMessage) {
   return records ? { model: message.details, records, cards } : undefined;
 }
 
+/** Reuse an exact canonical card already present in a complete injected body.
+ * The body remains opaque source text: no headings are interpreted or removed. */
+function injectedCards(messages: readonly AgentMessage[], defaults: readonly CatalogDescription[], identify: Identify): string[] {
+  const cards: string[] = [];
+  for (const { source, scope, body, directory } of injectedSourceBodies(messages)) {
+    if (!object(directory) || !Array.isArray(directory.candidates)) continue;
+    for (const item of directory.candidates) {
+      const fields = ["id", "ref", "kind", "name", "description", "availability"];
+      if (!object(item) || Object.keys(item).length !== fields.length || fields.some(key => typeof item[key] !== "string")) continue;
+      const row = `- [${item.name}](${item.ref}) — ${item.description}`;
+      const start = body.indexOf(row), end = start + row.length;
+      if (start < 0 || start > 0 && body[start - 1] !== "\n"
+        || end !== body.length && body[end] !== "\n" && body.slice(end, end + 2) !== "\r\n") continue;
+      for (const card of defaults) {
+        if (card.source !== source || card.scope !== scope || card.kind !== item.kind || card.name !== item.name
+          || card.description !== item.description || card.availability !== item.availability) continue;
+        const key = identify(card, { id: String(item.id), ref: String(item.ref) });
+        if (key !== undefined) cards.push(key);
+      }
+    }
+  }
+  return cards;
+}
+
 /** Pure request projection. No remembered "seen" state and no source I/O.
- * The intact preparation directories win; all other locations retain their
+ * Intact preparation directories and bound source cards win; other locations retain their
  * relationship, name and exact reference. Every omitted description has an
  * identical complete card elsewhere in these same outgoing messages. */
 export function projectCatalogDescriptions(input: {
@@ -123,7 +147,8 @@ export function projectCatalogDescriptions(input: {
   identify: Identify;
   matchesRead?: (ref: string, binding: PreparationBinding, identity: string) => boolean;
 }): { messages: readonly AgentMessage[]; omittedDefaults: ReadonlySet<string> } {
-  const delivered = new Set(input.messages.flatMap(message => [...preparationCards(message, input.identify), ...nativeCards(message, input)]));
+  const delivered = new Set([...input.messages.flatMap(message => [...preparationCards(message, input.identify), ...nativeCards(message, input)]),
+    ...injectedCards(input.messages, input.defaults, input.identify)]);
   const complete = new Set(delivered);
   const omittedDefaults = new Set<string>();
   for (const card of input.defaults) {

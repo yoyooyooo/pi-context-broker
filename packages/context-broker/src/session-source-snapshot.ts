@@ -188,7 +188,7 @@ function verifiedPreparationProjection(message: AgentMessage, proof: Record<stri
   return projection;
 }
 
-function injectedSnapshots(messages: AgentMessage[], visit?: (proof: Record<string, unknown>, contentIndex: number) => void): Record<string, unknown>[] {
+function injectedSnapshots(messages: readonly AgentMessage[], visit?: (proof: Record<string, unknown>, contentIndex: number, body: string) => void): Record<string, unknown>[] {
   const result: Record<string, unknown>[] = [];
   for (const [messageIndex, message] of messages.entries()) {
     if (!object(message.details)) continue;
@@ -216,10 +216,33 @@ function injectedSnapshots(messages: AgentMessage[], visit?: (proof: Record<stri
       let body: string;
       try { body = encoding === "xml" ? unescaped(span) : encoding === "json" ? JSON.parse('"' + span + '"') : span; }
       catch { continue; }
-      if (hash(body) === item.bodySha256 && Buffer.byteLength(body) === item.bytes) { result.push(item); visit?.(item, contentIndex); }
+      if (hash(body) === item.bodySha256 && Buffer.byteLength(body) === item.bytes) { result.push(item); visit?.(item, contentIndex, body); }
     }
   }
   return result;
+}
+
+/** Complete source bodies from broker injections in this outgoing context.
+ * Deferred user text counts only through its matching native receipt. */
+export function injectedSourceBodies(messages: readonly AgentMessage[]): Array<{ source: string; scope: string; body: string; directory: unknown }> {
+  const bodies: Array<{ source: string; scope: string; body: string; directory: unknown }> = [];
+  const injections = messages.filter(message => message.role === "user" || message.role === "custom" && message.customType === "context-broker");
+  injectedSnapshots(injections, (proof, _index, body) => {
+    const binding = proof.binding;
+    if (!isPreparationBinding(binding) || binding.snapshot_id !== proof.snapshotId || binding.body_sha256 !== proof.bodySha256
+      || binding.version_id !== proof.versionId || proof.contentIdentity !== JSON.stringify([binding.scope, binding.record.id])) return;
+    try {
+      const identity: unknown = JSON.parse(String(proof.identity));
+      if (!Array.isArray(identity) || identity.length !== 5 || typeof identity[0] !== "string" || !identity[0]
+        || identity[0] !== proof.sourceId || identity[1] !== binding.scope || identity[2] !== binding.record.kind
+        || identity[3] !== binding.record.locator.type || identity[4] !== binding.record.id) return;
+      const reference = parseNativeReference(binding.ref), canonical = parseNativeReference(binding.record.ref);
+      if (reference.selector !== canonical.selector || reference.snapshot !== binding.snapshot_id || reference.path !== binding.record.entrypoint
+        || canonical.path !== binding.record.entrypoint || canonical.snapshot !== undefined || canonical.fileId !== undefined) return;
+      bodies.push({ source: identity[0], scope: binding.scope, body, directory: proof.directory });
+    } catch { /* An unverifiable source identity cannot replace directory metadata. */ }
+  });
+  return bodies;
 }
 
 function deferredDeliveryRecords(messages: AgentMessage[]): Record<string, unknown>[] {

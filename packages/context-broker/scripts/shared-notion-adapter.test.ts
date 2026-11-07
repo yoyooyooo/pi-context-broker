@@ -4,18 +4,19 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { installCliWriteInvalidation } from "../src/cli-write-invalidation";
 import { formatFindDiagnostics } from "../src/diagnostics";
 import { matchesPreciseRecordToken, parseCatalogMember, preciseRecordToken, resolveCatalogReference } from "../src/discovery-records";
 import { hostCliScope } from "../src/host-command";
 import { installHostSkills } from "../src/host-skills";
-import { discoverNotionSource, loadNotionSkill, ReferenceMiss, resolveNotionReference } from "../src/notion-source";
+import { discoverNotionCatalogAndDirectory, discoverNotionSource, loadNotionSkill, ReferenceMiss, resolveNotionReference } from "../src/notion-source";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { sharedSkillId } from "../src/shared-skill-identity";
-import { normalizeSources } from "../src/sources";
+import { discoverSourceCatalog, normalizeSources } from "../src/sources";
 import { resolveViewDiscovery, VIEW_SELECTION_ENTRY } from "../src/view-discovery";
-import type { ContentRecord, ExtensionAPI, ExtensionContext, PiReadDefinition, SessionEntry, SkillRecord, SourceConfig } from "../src/types";
+import type { ContentRecord, ExtensionAPI, ExtensionContext, NotionDirectoryObservation, PiReadDefinition, SessionEntry, SkillRecord, SourceConfig } from "../src/types";
 
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
 type Json = Record<string, unknown>;
@@ -74,11 +75,83 @@ process.stdout.write(JSON.stringify(value));if(value.ok!==true)process.exitCode=
   const save = () => writeFile(statePath, JSON.stringify(state), { mode: 0o600 });
   await save();
   const source: NotionSource = { type: "notion", id: "shared", namespace: "team", database, command: [node, executable, statePath, logPath], cacheDir: join(root, "cache"), ...(input.profile ? { profile_id: "work" } : {}) };
-  return { root, source, state, save, read, record, content,
+  return { root, source, state, save, read, record, content, statePath, logPath,
     calls: async (): Promise<string[][]> => (await readFile(logPath, "utf8")).split("\n").filter(Boolean).map(line => JSON.parse(line)),
     clearCalls: () => writeFile(logPath, ""),
   };
 }
+
+async function pairedSdkFixture() {
+  const f = await fixture(), sdk = join(f.root, "controlled-sdk.ts"), source = join(f.root, "isolated-notion-source.ts");
+  const parent = resolve(import.meta.dirname, "../src");
+  await writeFile(sdk, [
+    'import { readFileSync, appendFileSync } from "node:fs";',
+    'const read = () => JSON.parse(readFileSync(' + JSON.stringify(f.statePath) + ', "utf8"));',
+    'export class NotionSdkError extends Error { code; constructor(code) { super(code); this.code = code; } }',
+    'export const supportsNotionSdkCatalogDirectory = async () => read().sdkSupportsPair !== false;',
+    'export async function listNotionCatalogSdk(options) { appendFileSync(' + JSON.stringify(f.logPath) + ', JSON.stringify(["sdk-list", JSON.stringify({ directory: options.directory, refresh: options.refresh, offline: options.offline })]) + "\\n"); return read().paired; }',
+    'const unexpected = () => { throw Error("Unexpected SDK operation in metadata-only source test"); };',
+    'export const consumeNotionSdk = unexpected, readNotionSdk = unexpected, readNotionResourcesSdk = unexpected, resolveNotionCatalogReferenceSdk = unexpected, listNotionFilesSdk = unexpected, supportsNotionSdkReadOutputProof = unexpected, parseNotionSdkDuration = unexpected;',
+  ].join("\n"));
+  const original = await readFile(join(parent, "notion-source.ts"), "utf8");
+  await writeFile(source, original.replace(/from "\.\/([^"]+)"/g, (_whole, name: string) => 'from ' + JSON.stringify(name === "notion-sdk" ? sdk : join(parent, name + ".ts")))
+    .replace('from "effect"', 'from ' + JSON.stringify(import.meta.resolve("effect"))));
+  const boundary: typeof import("../src/notion-source") = await import(pathToFileURL(source).href);
+  const paired = { version: 1, catalog: { ok: true, value: listing([]) }, directory: { ok: true, value: listing([f.record], "profile") } };
+  f.state.paired = paired; await f.save();
+  return { ...f, boundary, paired, source: { ...f.source, command: undefined } };
+}
+
+test("paired SDK source rejects a different directory scope even when its successful full catalog has no rows", async () => {
+  const f = await pairedSdkFixture();
+  f.paired.directory.value.scope = "f".repeat(64); await f.save();
+  const result = await f.boundary.discoverNotionCatalogAndDirectory(f.source, f.root, {});
+  if (!result?.catalog.ok) throw new Error("Expected the successful empty full catalog");
+  expect(result.catalog.value).toHaveLength(0);
+  expect(result?.directory).toEqual({ ok: false, code: "SOURCE_IDENTITY_MISMATCH" });
+  expect((await f.calls()).map(call => call[0])).toEqual(["sdk-list"]);
+});
+
+test("paired SDK source keeps both outcomes independent and returns no paired result for an old SDK", async () => {
+  const f = await pairedSdkFixture();
+  f.state.paired = { ...f.paired, catalog: { ok: false, error: { code: "ACCESS_DENIED" } } }; await f.save();
+  const result = await f.boundary.discoverNotionCatalogAndDirectory(f.source, f.root, {});
+  expect(result?.catalog).toEqual({ ok: false, code: "ACCESS_DENIED" });
+  expect(result?.directory).toMatchObject({ ok: true });
+  if (!result?.directory.ok) throw new Error("Expected the independent complete directory");
+  expect(result.directory.value.map(record => record.id)).toEqual([f.record.id]);
+  expect((await f.calls()).map(call => call[0])).toEqual(["sdk-list"]);
+  f.state.sdkSupportsPair = false; await f.save(); await f.clearCalls();
+  expect(await f.boundary.discoverNotionCatalogAndDirectory(f.source, f.root, {})).toBeUndefined();
+  expect(await f.calls()).toEqual([]);
+});
+
+test("explicit command discovery retains its original full then selected directory routes", async () => {
+  const f = await fixture({ profile: true });
+  expect(await discoverNotionCatalogAndDirectory(f.source, f.root, { profile: "work" })).toBeUndefined();
+  expect(await f.calls()).toEqual([]);
+  const catalog = await discoverSourceCatalog({ sources: [f.source] }, f.root, { directorySelections: new Map([[f.source.id, { profile: "work" }]]) });
+  expect(catalog.directories).toBeUndefined();
+  const selected = await resolveViewDiscovery({ sources: [f.source] }, catalog, { cwd: f.root });
+  expect(selected.views?.[0]).toMatchObject({ status: "ready", origin: "profile" });
+  expect((await f.calls()).filter(args => args[0] === "list")).toEqual([
+    ["list", "--database", database], ["list", "--database", database, "--default-view", "--profile", "work"],
+  ]);
+});
+
+test("mismatched paired View or Profile selectors fall back to the current authoritative selection", async () => {
+  const f = await fixture({ profile: true });
+  const directory = await discoverNotionSource(f.source, f.root, { defaultView: true });
+  const catalog = { records: await discoverNotionSource(f.source, f.root), failures: [] };
+  for (const explicit of [false, true]) {
+    await f.clearCalls();
+    const paired = new Map<string, NotionDirectoryObservation>([[f.source.id, { selection: explicit ? { view: uuid(99) } : { profile: "other-profile" }, outcome: { ok: true, value: directory } }]]);
+    const ctx: ExtensionContext = { cwd: f.root, ...(explicit ? { sessionManager: { getBranch: () => [{ type: "custom", customType: VIEW_SELECTION_ENTRY, data: { version: 1, sourceId: f.source.id, viewId: view } }] } } : {}) };
+    const result = await resolveViewDiscovery({ sources: [f.source] }, catalog, ctx, undefined, paired);
+    expect(result.views?.[0]).toMatchObject({ status: "ready", origin: explicit ? "session" : "profile" });
+    expect(await f.calls()).toEqual([explicit ? ["list", "--database", database, "--view", view] : ["list", "--database", database, "--default-view", "--profile", "work"]]);
+  }
+});
 
 test("shared identities encode each logical component and retain the actual page locator", async () => {
   expect(sharedSkillId("lib:team", "skill:one")).toBe("shared_skill:lib%3Ateam:skill%3Aone");

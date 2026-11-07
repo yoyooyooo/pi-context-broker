@@ -159,6 +159,8 @@ node scripts/notion-sdk-pi.mjs evidence --evidence "$SDK_EVIDENCE"
 
 Default View 的正反例必须使用不同 owned fixture：在 CLI 原入口额外指定 `--default-view-cache missing` 或 `--default-view-cache incomplete`，随后对该 fixture 运行同一 `--scenario default-view`。预期 runner 非零、report failed；真实 provider 目录分别为 CACHE_MISSING / STATE_CORRUPT，失败 SDK list 的终界和零离线 HTTP仍保留。不能把非零状态、失败目录或旧缓存降级为正例。失败原件也先 evidence → cleanup → evidence；只回收 driver 的 owned scratch，原 fixture 与 retained evidence 不删除。
 
+SDK 组合目录的一个 `list` operation 可包含 full catalog 与 Default View 两个独立成功／失败 outcome。验证读取原 envelope，不把两个 facet 算成两次 SDK 调用，也不把已返回的失败 facet 标为成功目录。实际 HTTP 复用、分页／响应字节、generation 一次性交付、旧 SDK 与 custom command 兼容按[安装态 HTTP 地图](installed-consumption.md#已安装-sdk-的真实-http-消费接线)验证；共享只在 CLI 同一次 operation 内成立。
+
 这些结果证明真实 Pi 和安装边界，真实 Notion、真实模型、双机恢复及日用安装分别验收。SC20 的冻结比较 manifest 必须声明 previous-broker、notion-candidate、pi-native-local 三个角色；本地臂须用同字节/版本的普通全局 Skill，由 Pi 原生发现/read，不加载 Broker。记录相同任务、模型、工具 profile、缓存/会话初态和完整 provider 输入，未跑本地臂不能推算对照收益。
 
 SC23 当前 C3 的管理入口为 `ctl operation list/show/reconcile/resume`，旧顶层 `operation` 继续作为同一 handler 的显式兼容入口；新 `next.argv` 使用 `ctl`，历史 receipt 的原始 bytes/hash 不改写。验收须核对候选自身 schema，维护原 operation ID、unknown 状态与旧调用者的明确兼容范围。此前 C1 不支持 `ctl operation` 的失败原件保留为迁移前证据，不能套用到 C3。旧包回滚仍需从该包支持的 `operation show` 获取下一步，不直接执行新包生成的 ctl argv。
@@ -238,6 +240,8 @@ node scripts/notion-sdk-pi.mjs evidence --evidence "$CONTEXT_EVIDENCE"
 每个实际 provider capture 都有 `provider-requests/NNN-serializer-request.json` 原始 POST 和对应 serializer receipt。独立重算 bytes/hash、核对实际 RPC 工具序列，并汇总 `provider-http.json` 的完整场景成本。原 prepare 最后一轮证据文件是同一请求的保留别名，不能再加一次。TranscriptContext 包含宿主 details，与真实 HTTP 输入分开记账。
 
 候选必须保留完整正文和准确后续入口；native 按实际 footer 的 ref 直接读取资源，不能插入额外 inspect。搜索保留来源消歧、disabled、分页和完整 host details；目录去机器字段不裁剪行。美元当前选择保留短引用与可用目录，恢复用固定 canonical ref，不依赖新进程未登记的旧目录。已有 `notion-startup-flow.mjs --case rpc-active-recovery` 单独验证实际 Pi 固定正文恢复；该场景故意保留目录失败，未执行的恢复后资源 read 不得记通过。
+
+`$` 注入的完整正文可以复用 Default 描述，但每个省略项必须在**本次实际输入**中有完整 canonical card，并与原准备目录及当前 Default 的 source、scope、id、kind、name、description、ref 相符。沿用既有 source-identity/v1 的完整正文交付 span、hash、snapshot/version binding；只改变生成的 Default 描述，不改作者正文、Requires、关系或目录身份/入口。普通 user 仿造 XML、仅有 `## Members` 标题、缺失/截断正文、摘要、孤立旧 receipt、不同来源/owner/固定版本、描述更新都不能证明可省略。原 `host-prepare.test.ts` 的 `Pi dollar` 用例覆盖直接注入和 Pi 原生 user-content + receipt 恢复；与原 native/read/use 投影断言同跑。安装版 dollar 场景在每个实际 provider 请求复核剩余描述的完整副本，累计量以实际 HTTP 原件重算；静态字节差额不代替真实模型任务收益。
 
 清理前保存原件哈希，核对所有宿主/SDK/child 终局；随后按既有 evidence → cleanup → evidence 流程复查原件。离线 fixture 的 Default View CACHE_MISSING 与 child exit 1 继续单列。本路径只证明 installed Pi 与实际 serializer/localhost HTTP，不证明真实模型 token、选路质量或生产延迟。最近对照见[测量记录](../../../../packages/context-broker/docs/skill-model-surfaces-verification-2026-11-05.md)。
 

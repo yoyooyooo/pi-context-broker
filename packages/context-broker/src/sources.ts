@@ -2,12 +2,12 @@ import { readFile, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { buildRegistryFromRoots, normalizeKey } from "./skill-records";
-import { discoverNotionSource, loadNotionSkill, SourceError, ReferenceMiss, sourceFailureMessage } from "./notion-source";
+import { discoverNotionSource, discoverNotionCatalogAndDirectory, loadNotionSkill, SourceError, ReferenceMiss, sourceFailureMessage } from "./notion-source";
 import { validSharedIdentity } from "./shared-skill-identity";
-import type { ConfigFile, NotionListObservation, SkillRecord, SourceConfig, SourcePolicy, ScanConfig, DiscoveryResult, SourceFailure } from "./types";
+import type { ConfigFile, NotionDirectorySelection, NotionDirectoryObservation, NotionListObservation, SkillRecord, SourceConfig, SourcePolicy, ScanConfig, DiscoveryResult, SourceFailure } from "./types";
 
 export { SourceError } from "./notion-source";
-export type SourceOptions = { signal?: AbortSignal; stale?: boolean; refreshSourceIds?: readonly string[]; snapshotId?: string };
+export type SourceOptions = { signal?: AbortSignal; stale?: boolean; refreshSourceIds?: readonly string[]; snapshotId?: string; directorySelections?: ReadonlyMap<string, NotionDirectorySelection> };
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -167,9 +167,24 @@ export async function discoverSourceCatalog(config: ConfigFile, cwd = process.cw
   const records: SkillRecord[] = [];
   const failures: SourceFailure[] = [];
   const lists: NotionListObservation[] = [];
+  const directories = new Map<string, NotionDirectoryObservation>();
   for (const source of normalizeSources(config.sources) ?? []) {
     if (source.enabled === false) continue;
     try {
+      const selection = options.directorySelections?.get(source.id);
+      if (source.type === "notion" && selection !== undefined) {
+        const paired = await discoverNotionCatalogAndDirectory(source, cwd, selection, { ...options,
+          refresh: options.refresh || !source.discovery?.offline && options.refreshSourceIds?.includes(source.id) });
+        if (paired) {
+          // Keep the valid View even when unrelated full-library discovery failed.
+          directories.set(source.id, { selection, outcome: paired.directory });
+          if (!paired.catalog.ok) throw new SourceError(paired.catalog.code, source.id);
+          records.push(...paired.catalog.value);
+          lists.push(paired.catalog.value.list);
+          failures.push(...paired.catalog.value.failures);
+          continue;
+        }
+      }
       const discovered = await discoverSources({ ...config, sources: [source] }, cwd, options);
       records.push(...discovered);
       if (discovered.lists) lists.push(...discovered.lists);
@@ -181,7 +196,7 @@ export async function discoverSourceCatalog(config: ConfigFile, cwd = process.cw
       failures.push({ sourceId: source.id, namespace: source.namespace ?? source.id, type: source.type, code, message: sourceFailureMessage(code) });
     }
   }
-  return { records, failures, lists };
+  return { records, failures, lists, ...(directories.size ? { directories } : {}) };
 }
 
 export function assertSourceAvailable(query: string, failures: SourceFailure[], native = false): void {

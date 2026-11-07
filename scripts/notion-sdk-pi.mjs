@@ -98,14 +98,25 @@ function toolResult(context, id) { return [...context.messages].reverse().find(m
 /** Attach only the original host evidence to byte-identical actual HTTP tool
  * text. This object is for assertions; no receipt is added to the request. */
 export function catalogContextFromHttp(context, captured) {
-  return { ...context, messages: context.messages.map(message => {
+  const messages = context.messages.map(message => {
+    if (message.role === 'user') {
+      const text = textContent(message.content), originals = captured.messages.filter(value => value.role === 'custom'
+        && value.customType === 'context-broker' && text && textContent(value.content) === text);
+      assert.ok(originals.length <= 1, 'An HTTP injection cannot borrow ambiguous source receipts');
+      return originals.length ? { ...originals[0], content: message.content } : message;
+    }
     if (message.role !== 'tool') return message;
     const originals = captured.messages.filter(value => value.role === 'toolResult' && value.toolCallId === message.tool_call_id);
     assert.equal(originals.length, 1, 'Every HTTP tool result needs one exact captured result');
     const original = originals[0];
     assert.equal(textContent(message.content), textContent(original.content), 'HTTP text cannot borrow proof for another rendering');
     return { ...original, content: message.content };
-  }) };
+  });
+  const userHashes = new Set(context.messages.filter(message => message.role === 'user').map(message => hash(textContent(message.content))));
+  for (const receipt of captured.messages.filter(message => message.role === 'custom' && message.customType === 'context-broker'
+    && !textContent(message.content) && typeof message.details?.nativePromptSha256 === 'string'))
+    if (userHashes.has(receipt.details.nativePromptSha256)) messages.push(receipt);
+  return { ...context, messages };
 }
 function parsedResult(message) { assert.ok(message && !message.isError, 'Public tool result must succeed'); return JSON.parse(textContent(message.content)); }
 function strings(value) {
@@ -312,6 +323,55 @@ export function assertProviderToolSequence(captures, frames, { expectedErrors = 
   return { provider_requests: captures.length, tool_rounds: rounds.length, tool_calls: starts.length, sequence };
 }
 
+function injectedDescriptionEvidence(messages, expected, fixture) {
+  for (const message of messages) {
+    if (message.role !== 'custom' || message.customType !== 'context-broker' || !Array.isArray(message.details?.records)) continue;
+    const promptHash = message.details.nativePromptSha256;
+    const delivered = promptHash === undefined ? message : messages.find(candidate => candidate.role === 'user' && hash(textContent(candidate.content)) === promptHash);
+    if (!delivered || Array.isArray(delivered.content) && delivered.content.some(part => part.type !== 'text')) continue;
+    const content = textContent(delivered.content);
+    for (const proof of message.details.records) {
+      try {
+        assert.equal(proof.version, 2); assert.equal(proof.loaded, true); assert.equal(proof.sourceId, expected.source);
+        const binding = proof.binding, snapshots = (fixture.snapshots ?? []).filter(snapshot => snapshot.scope === binding.scope
+          && snapshot.record.id === binding.record.id && snapshot.snapshot_id === binding.snapshot_id && snapshot.version_id === binding.version_id);
+        assert.equal(snapshots.length, 1);
+        const snapshot = snapshots[0], main = snapshot.files.find(file => file.path === snapshot.entrypoint || file.path === snapshot.record.entrypoint);
+        assert.equal(binding.scope, expected.scope); assert.deepEqual(binding.record, snapshot.record);
+        assert.equal(proof.snapshotId, snapshot.snapshot_id); assert.equal(proof.versionId, snapshot.version_id);
+        assert.equal(proof.bodySha256, main.sha256); assert.equal(proof.bytes, main.bytes); assert.equal(binding.body_sha256, main.sha256);
+        assert.equal(proof.contentIdentity, JSON.stringify([binding.scope, binding.record.id]));
+        assert.equal(proof.identity, JSON.stringify([expected.source, binding.scope, binding.record.kind, binding.record.locator.type, binding.record.id]));
+        const ref = new URL(binding.ref), current = new URL(snapshot.record.ref);
+        assert.equal(ref.protocol, 'skill:'); assert.equal(ref.host, current.host); assert.equal(ref.pathname, current.pathname);
+        assert.equal(ref.username, ''); assert.equal(ref.password, ''); assert.equal(ref.hash, '');
+        assert.equal(ref.searchParams.get('snapshot'), snapshot.snapshot_id);
+        assert.ok([...ref.searchParams.keys()].every(key => ['snapshot', 'file_id'].includes(key)));
+        assert.equal(ref.searchParams.getAll('snapshot').length, 1); assert.ok(ref.searchParams.getAll('file_id').length <= 1);
+        if (ref.searchParams.has('file_id')) assert.equal(ref.searchParams.get('file_id'), snapshot.file_bindings?.find(file => file.path === main.path)?.file_id);
+        const { start, end, encoding } = proof.delivery;
+        assert.ok(Number.isSafeInteger(start) && Number.isSafeInteger(end) && start >= 0 && end > start && end <= content.length);
+        assert.ok(['raw', 'xml', 'json'].includes(encoding));
+        const span = content.slice(start, end), body = encoding === 'xml'
+          ? span.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&')
+          : encoding === 'json' ? JSON.parse('"' + span + '"') : span;
+        assert.equal(hash(body), main.sha256); assert.equal(Buffer.byteLength(body), main.bytes);
+        const fields = ['id', 'ref', 'kind', 'name', 'description', 'availability'];
+        for (const candidate of proof.directory?.candidates ?? []) {
+          if (!candidate || typeof candidate !== 'object' || Object.keys(candidate).length !== fields.length
+            || fields.some(key => typeof candidate[key] !== 'string' || candidate[key] !== expected[key === 'ref' ? 'canonical_ref' : key])) continue;
+          const row = `- [${candidate.name}](${candidate.ref}) — ${candidate.description}`, at = body.indexOf(row), after = at + row.length;
+          if (at < 0 || at > 0 && body[at - 1] !== '\n' || after !== body.length && body[after] !== '\n' && body.slice(after, after + 2) !== '\r\n') continue;
+          return { origin: 'actual-injected-member', id: expected.id, ref: expected.ref, description: expected.description, source: expected.source,
+            scope: expected.scope, owner: snapshot.record.id, snapshot_id: snapshot.snapshot_id, body_sha256: main.sha256,
+            body_bytes: main.bytes, body_start: start, body_end: end, ...(promptHash === undefined ? {} : { native_prompt_sha256: promptHash }) };
+        }
+      } catch { /* Only an independently frozen complete body can support omission. */ }
+    }
+  }
+  return undefined;
+}
+
 function catalogDescriptionEvidence(context, expected, fixture, { generatedOnly = false, exclude } = {}) {
   if (!context || !/^sr:C[A-Za-z0-9_-]{22}$/u.test(expected.ref)) return undefined;
   const messages = context.messages ?? [], xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -340,7 +400,7 @@ function catalogDescriptionEvidence(context, expected, fixture, { generatedOnly 
     return main?.sha256 === bodyHash && main.bytes === bodyBytes && binding.body_sha256 === bodyHash
       && binding.record.ref === snapshot.record.ref && binding.record.kind === snapshot.record.kind
       && JSON.stringify(binding.record.locator) === JSON.stringify(snapshot.record.locator);
-  });
+  }) ?? injectedDescriptionEvidence(messages, { ...expected, canonical_ref: original.ref }, fixture);
 }
 
 export function assertSearchProjection(message, { expectCompact = true, scope, context, fixture } = {}) {
@@ -445,11 +505,41 @@ export function assertCatalogScaleBindings(records, entries, fixture) {
   return { status: 'verified', candidates: identities, active_sources: 0, selected_graphs: 0 };
 }
 
+function catalogOutcomes(value) {
+  assert.ok(value && typeof value === 'object' && !Array.isArray(value), 'A catalog observation must retain its actual SDK result');
+  if (!Object.hasOwn(value, 'catalog') && !Object.hasOwn(value, 'directory')) return [{ ok: true, value }];
+  assert.equal(value.version, 1, 'Unknown combined directory contract');
+  const outcomes = ['catalog', 'directory'].map(facet => {
+    const outcome = value[facet];
+    assert.ok(outcome && typeof outcome === 'object' && typeof outcome.ok === 'boolean', 'Both combined outcomes are required');
+    if (outcome.ok) {
+      assert.ok(outcome.value && typeof outcome.value === 'object' && !Array.isArray(outcome.value));
+      assert.equal(Object.hasOwn(outcome, 'error'), false);
+      assert.equal(Object.hasOwn(outcome.value, 'view'), facet === 'directory', 'Combined facets cannot exchange their full and selected meanings');
+    } else {
+      assert.equal(Object.hasOwn(outcome, 'value'), false);
+      assert.equal(typeof outcome.error?.code, 'string'); assert.ok(outcome.error.code);
+      assert.equal(typeof outcome.error?.message, 'string');
+    }
+    return { ...outcome, facet };
+  });
+  if (outcomes.every(outcome => outcome.ok)) assert.equal(outcomes[0].value.scope, outcomes[1].value.scope, 'Combined projections must share one credential scope');
+  return outcomes;
+}
+
+/** Read projections without synthesizing SDK operations, terminal metrics or observer events. */
+export function sdkCatalogObservations(events) {
+  return events.filter(event => event.kind === 'sdk_catalog').flatMap(event => catalogOutcomes(event.value)
+    .filter(outcome => outcome.ok).map(outcome => ({ ...event, value: outcome.value, ...(outcome.facet ? { facet: outcome.facet } : {}) })));
+}
+
 export function assertCatalogScaleSource(events, fixture, objects, hostPid) {
   assert.equal(initialDirectoryReady(events, hostPid, { fixture, sourceId: 'sdk-fixture', transport: 'sdk' }), true);
-  const catalogs = events.filter(event => event.kind === 'sdk_catalog');
+  const raw = events.filter(event => event.kind === 'sdk_catalog'), catalogs = sdkCatalogObservations(events);
   assert.equal(catalogs.length, 2); assert.equal(catalogs.filter(event => event.value.view).length, 1);
-  assert.equal(events.filter(event => event.kind === 'sdk' && event.event === 'start').length, 2);
+  const calls = events.filter(event => event.kind === 'sdk' && event.event === 'start');
+  const combined = raw.length === 1 && catalogOutcomes(raw[0].value).length === 2;
+  assert.equal(calls.length, combined ? 1 : 2); assert.equal(raw.length, calls.length);
   for (const { value } of catalogs) for (const record of value.records) {
     const snapshot = fixture.snapshots.find(snapshot => snapshot.record.id === record.id && snapshot.scope === value.scope);
     assert.ok(snapshot);
@@ -458,7 +548,8 @@ export function assertCatalogScaleSource(events, fixture, objects, hostPid) {
   const observed = assertObjectReadEvidence(events, { selected: [], forbidden: objects, requiredPid: hostPid });
   assert.equal(observed.reads, 0, 'No main, resource or unknown source object is selected by the scale gate');
   for (const end of events.filter(event => event.kind === 'object_observer_end')) assert.equal(end.reads, 0);
-  return { status: 'verified', sdk_lists: 2, source_http: 0, selected_objects: 0, object_files: objects,
+  return { status: 'verified', sdk_lists: calls.length, catalog_projections: catalogs.length, combined_directory: combined,
+    source_http: 0, selected_objects: 0, object_files: objects,
     object_observation: observed, source_api_pagination: 'not_exercised_offline_fixture' };
 }
 
@@ -479,7 +570,7 @@ function defaultViewProjection(captures, discovery, events, fixture, { sourceId 
     return [record.id, full];
   }));
   assert.equal(frozenRecords.size, expected.records.length);
-  const results = events.filter(event => event.kind === 'sdk_catalog' && event.value?.view?.id === expected.id);
+  const results = sdkCatalogObservations(events).filter(event => event.value?.view?.id === expected.id);
   assert.ok(results.length > 0, 'An actual default listCatalog SDK result is required');
   for (const { value } of results) {
     assert.equal(value.view_selection, 'first'); assert.equal(value.coverage?.exhaustive, true);
@@ -550,7 +641,19 @@ export function assertPreflightCatalogProjection(captures, discovery, events, fi
     for (const [name, body] of bodies) assert.equal(bodyCount(capture.context, body), ['a', 'base'].includes(name) ? 1 : 0,
       name + ': explicit preflight delivers only its complete selected root and Requires');
   }
-  return { ...result, body_delivery: 'selected-root-and-Requires', ready_from_first_provider: true };
+  const overlap = new Set((fixture.snapshots ?? []).filter(snapshot => ['a', 'base'].includes(snapshot.record.name)).flatMap(snapshot =>
+    (snapshot.members ?? []).filter(member => {
+      const current = fixture.default_view.records.find(record => record.id === member.id);
+      if (!current || member.ref !== current.ref) return false;
+      const row = `- [${current.name}](${current.ref}) — ${member.metadata?.description}`;
+      return typeof member.metadata?.description === 'string' && bodies.get(snapshot.record.name)?.split(/\r?\n/u).includes(row);
+    }).map(member => member.id)));
+  const reuse = result.provider_requests.map(request => ({ request_id: request.request_id,
+    ids: [...new Set(request.reused_descriptions.filter(item => item.origin === 'actual-injected-member').map(item => item.id))] }));
+  if (overlap.size) for (const request of reuse)
+    for (const id of overlap) assert.ok(request.ids.includes(id), 'The frozen injected Member overlap must actually remove its duplicate Default description');
+  return { ...result, body_delivery: 'selected-root-and-Requires', ready_from_first_provider: true,
+    injected_member_reuse: { status: overlap.size ? 'verified' : 'not_exercised', candidate_ids: [...overlap], provider_requests: reuse } };
 }
 
 /** A comparison barrier does not itself prove model visibility. Verify the
@@ -2016,11 +2119,14 @@ function initialDirectoryReady(events, hostPid, { fixture, sourceId, transport, 
       assert.equal(end.status, 'completed'); assert.equal(end.error_code, null); assert.equal(end.metrics_observed, true); metrics(end.request_metrics);
       const results = events.filter(event => event.kind === 'sdk_catalog' && event.id === end.id && event.observer_pid === hostPid);
       assert.equal(results.length, 1); assert.ok(events.indexOf(starts[0]) < events.indexOf(results[0]) && events.indexOf(results[0]) < events.indexOf(end));
-      const value = results[0].value; assert.equal(value.scope, fixture.scope); assert.equal(value.coverage.exhaustive, true); assert.deepEqual(value.coverage.failed_sources, []);
-      const ids = value.view ? fixture.default_view.records.map(record => record.id) : fixture.catalog_records;
-      assert.equal(value.count, ids.length); assert.deepEqual(value.records.map(record => record.id).sort(), [...ids].sort());
-      if (value.view) { assert.equal(value.view.id, fixture.default_view.id); assert.equal(value.view.database_id, fixture.database); assert.equal(value.view_selection, 'first'); }
-      completed.push(value.view ? 'default' : 'ordinary');
+      for (const outcome of catalogOutcomes(results[0].value)) {
+        assert.equal(outcome.ok, true, 'Warm setup requires complete successful directory outcomes');
+        const value = outcome.value; assert.equal(value.scope, fixture.scope); assert.equal(value.coverage.exhaustive, true); assert.deepEqual(value.coverage.failed_sources, []);
+        const ids = value.view ? fixture.default_view.records.map(record => record.id) : fixture.catalog_records;
+        assert.equal(value.count, ids.length); assert.deepEqual(value.records.map(record => record.id).sort(), [...ids].sort());
+        if (value.view) { assert.equal(value.view.id, fixture.default_view.id); assert.equal(value.view.database_id, fixture.database); assert.equal(value.view_selection, 'first'); }
+        completed.push(value.view ? 'default' : 'ordinary');
+      }
     }
   } else {
     assert.equal(events.some(event => event.kind === 'sdk'), false, 'Historical warm setup uses its actual bundled CLI');
@@ -2165,7 +2271,7 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true, sou
     assert.ok(bodies.length > 0, 'An empty body SDK observation cannot establish default transport');
   } else assert.equal(bodies.length, 0, 'A host-local command metadata query must not consume source bodies');
   let http = 0;
-  const cancelledCatalogs = [], cancelledBodies = [], expectedFailures = [];
+  const cancelledCatalogs = [], cancelledBodies = [], expectedFailures = [], catalogProjectionFailures = [], failedCombinedCatalogs = [];
   for (const start of sdk) {
     const ends = events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.id === start.id);
     assert.equal(ends.length, 1);
@@ -2179,6 +2285,19 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true, sou
     } else if (end.status === 'failed' && expectedFailedSdkIds.includes(start.id)) {
       expectedFailures.push({ id: start.id, operation: start.operation });
     } else assert.equal(end.status, 'completed');
+    if (start.operation === 'list') {
+      const results = events.filter(event => event.kind === 'sdk_catalog' && event.id === start.id);
+      assert.ok(results.length <= 1, 'One actual SDK call has at most one original result envelope');
+      if (results.length) {
+        assert.equal(end.status, 'completed', 'Cancelled or failed SDK calls cannot publish a complete combined result');
+        assert.equal(results[0].observer_pid, start.observer_pid);
+        assert.ok(events.indexOf(start) < events.indexOf(results[0]) && events.indexOf(results[0]) < events.indexOf(end));
+        const outcomes = catalogOutcomes(results[0].value);
+        for (const outcome of outcomes.filter(outcome => !outcome.ok))
+          catalogProjectionFailures.push({ id: start.id, facet: outcome.facet, code: outcome.error.code });
+        if (outcomes.every(outcome => !outcome.ok)) failedCombinedCatalogs.push(start.id);
+      }
+    }
     assert.equal(end.sdk_started, true); assert.equal(end.metrics_observed, true);
     assert.equal(end.request_metrics?.complete, true, 'Every SDK terminal, including cancellation, requires complete metrics');
     assert.ok(Array.isArray(end.request_metrics.trace), 'Complete metrics must retain the actual HTTP trace');
@@ -2193,19 +2312,21 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true, sou
   assert.deepEqual(new Set(cancelledBodies.map(value => value.id)), new Set(controlledCancellations.map(value => value.sdk_id)), 'Every declared RPC cancellation needs its actual SDK terminal');
   assert.deepEqual(new Set(expectedFailures.map(failure => failure.id)), new Set(expectedFailedSdkIds), 'Every expected failure needs its exact observed failed SDK terminal');
   const completedCatalogs = catalog.length - cancelledCatalogs.length - expectedFailures.filter(failure => failure.operation === 'list').length;
+  const successfulCatalogs = completedCatalogs - failedCombinedCatalogs.length;
   if (expectedCatalogOutcome === 'shutdown_cancelled') {
     assert.equal(bodyTransportRequired, false); assert.equal(bodies.length, 0);
     assert.equal(catalog.length, 1); assert.equal(completedCatalogs, 0);
     assert.equal(cancelledCatalogs.length, 1); assert.equal(cancelledCatalogs[0].native_event, 'session_shutdown');
   } else if (expectedCatalogOutcome === 'failed') {
     assert.equal(bodyTransportRequired, false); assert.equal(bodies.length, 0);
-    assert.ok(catalog.length > 0); assert.equal(completedCatalogs, 0); assert.equal(cancelledCatalogs.length, 0);
-    assert.equal(expectedFailures.length, catalog.length);
-  } else if (catalog.length) assert.ok(completedCatalogs > 0, 'Cancelled catalogues do not establish successful default discovery');
+    assert.ok(catalog.length > 0); assert.equal(successfulCatalogs, 0); assert.equal(cancelledCatalogs.length, 0);
+    assert.equal(expectedFailures.length + failedCombinedCatalogs.length, catalog.length);
+  } else if (catalog.length) assert.ok(successfulCatalogs > 0, 'Cancelled or failed catalog outcomes do not establish successful default discovery');
   if (sourceMode === 'offline') assert.equal(http, 0, 'The controlled SDK source must stay offline');
   const cliCloses = events.filter(event => event.kind === 'child_close');
   return { sdk_calls: sdk.length, sdk_body_calls: bodies.length, sdk_lists: catalog.length, sdk_files: files.length,
     expected_failed_sdk: expectedFailures,
+    catalog_projection_failures: catalogProjectionFailures, sdk_successful_list_results: successfulCatalogs,
     ...(sourceMode === 'controlled-http' ? { sdk_cancelled_bodies: cancelledBodies.length, cancelled_bodies: cancelledBodies } : {}),
     sdk_completed_lists: completedCatalogs, sdk_cancelled_lists: cancelledCatalogs.length, cancelled_catalogs: cancelledCatalogs,
     sdk_consumes: sdk.filter(event => event.operation === 'consume').length,
@@ -2214,7 +2335,7 @@ export function reconcile(events, lifecycle, { bodyTransportRequired = true, sou
     cli_catalog_children: starts.filter(event => event.bundled && event.operation === 'list').length,
     cli_prepare_read_export_children: 0, cli_http: cliCloses.every(event => event.request_metrics?.complete) ? cliCloses.reduce((total, event) => total + event.request_metrics.total_requests, 0) : null,
     observer_processes: chains.size, source_children_closed: starts.length, eof_closed: true,
-    default_catalog_transport: completedCatalogs ? 'verified_sdk' : 'not_exercised',
+    default_catalog_transport: successfulCatalogs ? 'verified_sdk' : 'not_exercised',
     default_body_transport: bodyTransportRequired ? 'verified_sdk' : 'not_applicable_metadata_query' };
 }
 
@@ -3004,7 +3125,7 @@ function assertNamedReferenceEvidence(captures, frames, hooks, events, archive, 
       'A resource call must not pre-read its owner main object');
   const objectReads = assertNamedReferenceObjects(events, { selected, forbidden, requiredPid: hostPid });
   const failed = assertNamedReferenceFailures(events, intervals, { source, failedSource });
-  const catalog = events.filter(event => event.kind === 'sdk_catalog' && event.value?.scope === info.fixture.scope);
+  const catalog = sdkCatalogObservations(events).filter(event => event.value?.scope === info.fixture.scope);
   const defaults = catalog.filter(event => event.value.view?.id === info.fixture.default_view.id);
   assert.ok(defaults.length > 0);
   for (const value of defaults) assert.deepEqual(value.value.records.map(record => record.id).sort(), info.fixture.default_view.records.map(record => record.id).sort());
@@ -3098,7 +3219,7 @@ function assertAmbiguityReferenceEvidence(captures, frames, hooks, events, archi
   }
   const catalogProofs = [];
   for (const interval of intervals.filter(value => expectedErrors.includes(value.tool_call_id))) {
-    const catalogs = events.filter(event => event.kind === 'sdk_catalog' && event.observer_pid === hostPid
+    const catalogs = sdkCatalogObservations(events).filter(event => event.observer_pid === hostPid
       && interval.sdk.some(value => value.id === event.id) && !event.value.view);
     assert.ok(catalogs.length > 0, 'Each ambiguous name needs its actual complete ordinary SDK directory');
     for (const event of catalogs) {
@@ -3294,6 +3415,54 @@ export async function waitForControlledHttpView({ rpc, sample, state, captureCou
   }
 }
 
+export function assertDirectoryMetadataReuse(requests, events, { sample, hostPid, requireCombined = false }) {
+  const skills = sample.notion.library.skills, fields = ['Name', 'Description', 'Kind', 'Skill ID', 'Enabled', 'Default Context']
+    .map(name => skills.property_ids[name]).sort();
+  assert.ok(fields.every(value => typeof value === 'string' && value)); assert.equal(new Set(fields).size, 6);
+  const starts = events.filter(event => event.kind === 'sdk' && event.event === 'start' && event.observer_pid === hostPid);
+  assert.ok(starts.every(event => event.operation === 'list'));
+  const raw = events.filter(event => event.kind === 'sdk_catalog' && event.observer_pid === hostPid);
+  const combined = raw.length === 1 && catalogOutcomes(raw[0].value).length === 2;
+  if (requireCombined) assert.equal(combined, true, 'This HTTP gate requires the combined directory operation');
+  assert.equal(raw.length, combined ? 1 : 2); assert.equal(starts.length, raw.length);
+  assert.equal(sdkCatalogObservations(raw).length, 2, 'Both actual directory projections must succeed');
+  const expectedIds = sample.notion.skills.map(row => row.id), pageCount = Math.max(1, Math.ceil(expectedIds.length / 100));
+  assert.equal(new Set(expectedIds).size, expectedIds.length);
+  const metadata = requests.filter(request => request.path === `/v1/data_sources/${skills.data_source_id}/query`);
+  assert.equal(metadata.length, pageCount * (combined ? 1 : 2), 'Each complete raw metadata page is fetched once per actual directory operation');
+  for (const [index, request] of metadata.entries()) {
+    const page = index % pageCount, more = (page + 1) * 100 < expectedIds.length;
+    assert.equal(request.method, 'POST'); assert.equal(request.status, 200);
+    assert.deepEqual(request.filter_properties.slice().sort(), fields, 'Only the six registered metadata properties cross the transport');
+    assert.deepEqual(request.body, { page_size: 100, ...(page ? { start_cursor: 'offset-' + page * 100 } : {}) });
+    assert.deepEqual(request.page_ids, expectedIds.slice(page * 100, (page + 1) * 100), 'Disabled and unselected raw rows remain in the shared complete observation');
+    assert.deepEqual(request.returned_properties, fields);
+    assert.equal(request.has_more, more); assert.equal(request.next_cursor, more ? 'offset-' + (page + 1) * 100 : null);
+  }
+  for (const request of requests) {
+    assert.equal(request.response_bytes_complete, true);
+    assert.ok(Number.isSafeInteger(request.decoded_response_bytes) && request.decoded_response_bytes > 0);
+    assert.match(request.response_sha256, /^[a-f0-9]{64}$/u);
+  }
+  const ends = starts.map(start => {
+    const found = events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.id === start.id && event.observer_pid === hostPid);
+    assert.equal(found.length, 1); assert.equal(found[0].status, 'completed');
+    const result = raw.filter(event => event.id === start.id); assert.equal(result.length, 1);
+    assert.ok(events.indexOf(start) < events.indexOf(result[0]) && events.indexOf(result[0]) < events.indexOf(found[0]));
+    assert.equal(found[0].request_metrics?.complete, true);
+    assert.equal(found[0].source_http_terminal?.in_flight, 0);
+    return found[0];
+  });
+  const responseBytes = requests.reduce((total, request) => total + request.decoded_response_bytes, 0);
+  assert.equal(ends.reduce((total, end) => total + end.request_metrics.total_requests, 0), requests.length);
+  assert.equal(ends.reduce((total, end) => total + end.source_http_terminal.response_bytes, 0), responseBytes,
+    'Actual response bytes are accounted once per SDK terminal, never once per projection');
+  return { status: 'verified', combined_directory: combined, metadata_reuse: combined, sdk_lists: starts.length,
+    raw_metadata_rows: expectedIds.length, pages_per_inventory: pageCount, metadata_http_attempts: metadata.length,
+    metadata_response_bytes: metadata.reduce((total, request) => total + request.decoded_response_bytes, 0),
+    source_http_attempts: requests.length, source_response_bytes: responseBytes };
+}
+
 export function assertControlledHttpDirectory(captures, events, { sample, hostPid, state, held }) {
   assert.ok(['ready', 'failed'].includes(state)); assert.equal(captures.length, 2);
   assert.equal(events.filter(event => event.kind === 'sdk' && event.event === 'start' && event.operation !== 'list').length, 0);
@@ -3309,7 +3478,7 @@ export function assertControlledHttpDirectory(captures, events, { sample, hostPi
     assert.ok(BigInt(held.request_seen_monotonic_ns) <= BigInt(held.provider_payload_end_monotonic_ns));
     assert.ok(BigInt(held.provider_payload_end_monotonic_ns) < BigInt(held.released_monotonic_ns), 'Actual provider input must complete before the held HTTP response is released');
   }
-  const catalogs = events.filter(event => event.kind === 'sdk_catalog' && event.value?.view);
+  const catalogs = sdkCatalogObservations(events).filter(event => event.value?.view);
   if (state === 'ready') {
     const view = sample.view_dynamics.view, membership = sample.view_dynamics.observations[0];
     assert.ok(catalogs.length > 0);
@@ -3332,7 +3501,16 @@ export function assertControlledHttpDirectory(captures, events, { sample, hostPi
     assert.doesNotMatch(systems[1], /<ntn-skills-view-catalog>[\s\S]*<skill>/u);
     const failures = events.filter(event => event.kind === 'sdk' && event.event === 'end');
     assert.ok(failures.length > 0);
-    assert.ok(failures.every(event => event.status === 'failed' && event.error_code === 'AUTH_REQUIRED'));
+    for (const terminal of failures) {
+      if (terminal.status === 'failed') assert.equal(terminal.error_code, 'AUTH_REQUIRED');
+      else {
+        assert.equal(terminal.status, 'completed'); assert.equal(terminal.error_code, null);
+        const raw = events.filter(event => event.kind === 'sdk_catalog' && event.id === terminal.id && event.observer_pid === hostPid);
+        assert.equal(raw.length, 1);
+        const outcomes = catalogOutcomes(raw[0].value); assert.equal(outcomes.length, 2);
+        assert.ok(outcomes.every(outcome => !outcome.ok && outcome.error.code === 'AUTH_REQUIRED'));
+      }
+    }
   }
   return { status: 'verified', ordinary_provider_requests: 2, state, source_body_calls: 0, source_object_reads: 0,
     ...(held ? { held_http: held } : {}) };
@@ -3400,6 +3578,8 @@ async function controlledHttpPhase(info, { label, baseRoot, outputRoot, sourceRo
     assert.equal(finality?.complete, true);
     const events = await rows(ledger), captures = await rows(providerFile), failures = events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.status === 'failed');
     assert.ok(failures.every(event => allowedSdkErrors.includes(event.error_code)), 'Only the frozen source errors are expected');
+    const projectionFailures = events.filter(event => event.kind === 'sdk_catalog').flatMap(event => catalogOutcomes(event.value).filter(outcome => !outcome.ok));
+    assert.ok(projectionFailures.every(outcome => allowedSdkErrors.includes(outcome.error.code)), 'Combined failures remain explicit source outcomes');
     const observations = reconcile(events, rpc.lifecycle, { sourceMode: 'controlled-http', bodyTransportRequired,
       expectedCatalogOutcome, catalogLifecycle: await rows(nativeEvents), expectedFailedSdkIds: failures.map(event => event.id),
       controlledCancellations: details?.controlled_cancellations ?? [] });
@@ -3481,7 +3661,9 @@ async function controlledHttpScenario(name, info, scratch, evidence) {
             assert.equal(requests.filter(request => /\/markdown$/u.test(request.path)).length, 0);
             assert.equal(archive.entries.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-active-sources').length, 0);
             const proof = assertControlledHttpDirectory(captures, events, { sample, hostPid, state: label === 'pending' ? 'ready' : 'failed', held });
-            await save(join(output, 'directory-proof.json'), proof); return proof;
+            const source = label === 'pending' ? assertDirectoryMetadataReuse(requests, events, { sample, hostPid, requireCombined: true }) : undefined;
+            const complete = { ...proof, ...(source ? { metadata_inventory: source } : {}) };
+            await save(join(output, 'directory-proof.json'), complete); return complete;
           } });
       }
     } else if (name === 'http-cache-recovery') {
@@ -4252,7 +4434,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       assert.ok(BigInt(held[0].monotonic_ns) < BigInt(before.monotonic_ns));
       assert.ok(BigInt(before.monotonic_ns) < BigInt(boundaries[0].monotonic_ns));
       if (name === 'dollar') {
-        const catalog = events.find(event => event.kind === 'sdk_catalog' && event.value?.view?.id === info.fixture.default_view.id);
+        const catalog = sdkCatalogObservations(events).find(event => event.value?.view?.id === info.fixture.default_view.id);
         assert.ok(catalog && BigInt(catalog.monotonic_ns) < BigInt(firstProvider.monotonic_ns),
           'The actual Default View SDK result precedes explicit preflight delivery');
         assert.ok(BigInt(boundaries[0].monotonic_ns) < BigInt(firstProvider.monotonic_ns));
@@ -4289,7 +4471,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     if (catalogProjectionEvidence) {
       const serialized = await Promise.all(serializer.requests.map(async request => {
         const context = { messages: (await json(join(output, request.request_file))).messages };
-        return { requestId: request.provider_request_id, context: catalogScale
+        return { requestId: request.provider_request_id, context: catalogScale || name === 'dollar'
           ? catalogContextFromHttp(context, captures.find(capture => capture.requestId === request.provider_request_id).context) : context };
       }));
       const httpCatalog = name === 'dollar'
@@ -4466,7 +4648,7 @@ async function liveScenario(info, scratch, evidence) {
     autoload = { registration: registrations[0], actual_entry: actual, sha256: actualHash, injected_by_cli: false };
     await rpc.prompt('Reply briefly to this ordinary greeting. No Skill is needed.');
     const deadline = Date.now() + 120000;
-    while (!(await rows(ledger)).some(event => event.kind === 'sdk_catalog' && event.value?.view?.id === info.catalog.view.id)) {
+    while (!sdkCatalogObservations(await rows(ledger)).some(event => event.value?.view?.id === info.catalog.view.id)) {
       assert.ok(Date.now() < deadline, 'Live Default View metadata did not become available');
       await new Promise(resolve => setTimeout(resolve, 25));
     }

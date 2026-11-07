@@ -339,7 +339,12 @@ export type NotionListObservation = {
   maxAgeMs?: number;
   stale?: boolean;
 };
-export type DiscoveryResult<T = DiscoveryRecord> = { records: T[]; failures: SourceFailure[]; lists?: NotionListObservation[]; views?: NotionViewState[] };
+export type NotionDirectorySelection = { view?: string; profile?: string };
+export type NotionDirectory = SkillRecord[] & { list: NotionListObservation; failures: SourceFailure[]; view?: NotionView | null; profileId?: string };
+export type NotionDirectoryOutcome = { ok: true; value: NotionDirectory } | { ok: false; code: string };
+/** One discovery's paired result, consumed once and never persisted as a cache. */
+export type NotionDirectoryObservation = { selection: NotionDirectorySelection; outcome: NotionDirectoryOutcome };
+export type DiscoveryResult<T = DiscoveryRecord> = { records: T[]; failures: SourceFailure[]; lists?: NotionListObservation[]; views?: NotionViewState[]; directories?: Map<string, NotionDirectoryObservation> };
 
 export type ConfigFile = {
   sources?: SourceConfig[];

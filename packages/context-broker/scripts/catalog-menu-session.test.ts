@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createNotionFixture } from "../../../scripts/notion-integration-fixture.mjs";
-import type { AutocompleteProvider, ExtensionAPI, ExtensionContext } from "../src/types";
+import type { AutocompleteProvider, ExtensionAPI, ExtensionContext, NativeSkillSearchDefinition } from "../src/types";
 
 const entry = process.env.CONTEXT_BROKER_SESSION_TEST_ENTRY ?? resolve(import.meta.dirname, "../src/index.ts");
 const { default: contextBroker, buildDiscoveryRegistry } = await import(pathToFileURL(entry).href);
@@ -75,11 +75,19 @@ process.exitCode = result.status ?? 1;
     get(target, key, receiver) { if (retired) throw new Error("This extension ctx is stale after session replacement or reload."); return Reflect.get(target, key, receiver); },
   });
   const next: ExtensionContext = { cwd: root, ui, getSystemPrompt: () => nextPrompt };
-  const api: ExtensionAPI = { on(name, handler) { listeners.set(name, [...(listeners.get(name) ?? []), handler as (event: never, ctx: ExtensionContext) => unknown]); } };
+  let metadataTool: NativeSkillSearchDefinition | undefined;
+  const api: ExtensionAPI = { on(name, handler) { listeners.set(name, [...(listeners.get(name) ?? []), handler as (event: never, ctx: ExtensionContext) => unknown]); },
+    registerTool(tool) { if (tool.name === "notion_list") metadataTool = tool; } };
   const emit = async (name: string, ctx: ExtensionContext) => {
     for (const listener of listeners.get(name) ?? []) await listener({ type: name } as never, ctx);
   };
+  const beforeBootstrap = await readFile(fixture.callsPath, "utf8");
   await contextBroker(api);
+  assert.ok(metadataTool);
+  // The public tool awaits initial metadata readiness without inventing a session.
+  const bootstrap = await metadataTool.execute("bootstrap-observation", {}, undefined, undefined, { cwd: root });
+  assert.equal(JSON.parse(bootstrap.content[0]!.text).count, 0);
+  assert.equal(await readFile(fixture.callsPath, "utf8"), beforeBootstrap, "Pi registration must not query a directory before its first session context");
   await emit("session_start", first);
   await connected.promise;
   const provider = providers[0]!;

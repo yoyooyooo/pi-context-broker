@@ -8,7 +8,7 @@ import { createActivationFeedback } from "../src/activation-feedback";
 import { buildInjectedContextMessage } from "../src/index";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { createOmpHostAdapter } from "../src/omp-host-adapter";
-import { deduplicateSourceReads, sourceDeliveryReceipt, sourceBodyLoaded, sourceMessageText, sessionSourceBindings } from "../src/session-source-snapshot";
+import { deduplicateSourceReads, deferredSourceEntries, sourceDeliveryReceipt, sourceBodyLoaded, sourceMessageText, sessionSourceBindings, withSessionSourceReceipts } from "../src/session-source-snapshot";
 import { materializeNotionEntryFile, publishNotionEntry } from "../src/notion-entry";
 import { projectCatalogDescriptions } from "../src/skill-catalog-projection";
 import type { PreparedHostGraph, PreparationPurpose } from "../src/prepare-protocol";
@@ -28,7 +28,7 @@ function preparationDetails(result: { details?: unknown }): Record<string, unkno
   if (!preparation || typeof preparation !== "object" || Array.isArray(preparation)) throw new Error("Expected preparation proof");
   return Object.fromEntries(Object.entries(preparation));
 }
-async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKind: "pi" | "omp" = "pi", identityScope = scope) {
+async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKind: "pi" | "omp" = "pi", identityScope = scope, withBodyCard = false) {
   const owned = await mkdtemp(join(tmpdir(), "broker-host-prepare-"));
   const directory = withDirectoryAlias ? join(owned, "alias") : owned;
   if (withDirectoryAlias) {
@@ -41,12 +41,13 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
   for (const [index, name] of ["root", "required", "member"].entries()) {
     const id = "shared_skill:controlled:" + name;
     const metadata: ContentRecord = {
-      id, kind: "skill", name, alias: name, description: "Controlled " + name, enabled: true, default_context: index === 0,
+      id, kind: "skill", name, alias: name, description: withBodyCard && name === "member" ? 'Controlled member <metadata> & "原文".' : "Controlled " + name, enabled: true, default_context: index === 0,
       entrypoint: "SKILL.md", ref: "skill://" + encodeURIComponent(id) + "/SKILL.md",
       locator: { type: "shared_skill", library_id: "controlled", skill_id: name, page_id: "00000000-0000-4000-8000-" + String(index + 1).padStart(12, "0"),
         database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" },
     };
-    const body = "\ufeff---\r\nname: " + name + "\r\n---\r\nExact " + name + " <instructions>.\r\n";
+    const body = "\ufeff---\r\nname: " + name + "\r\n---\r\nExact " + name + " <instructions>.\r\n"
+      + (withBodyCard && name === "root" ? '\r\n## Members\r\n\r\n- [member](skill://shared_skill%3Acontrolled%3Amember/SKILL.md) — Controlled member <metadata> & "原文".\r\n' : "");
     const snapshotId = "s_" + hash(name), path = join(directory, name, "SKILL.md");
     await mkdir(join(directory, name), { recursive: true });
     await writeFile(path, body);
@@ -220,6 +221,138 @@ test("duplicate default cards cannot remove every complete description", () => {
   const card = { ref: "sr:C" + "a".repeat(22), source: "controlled", scope, kind: "skill", name: "member", description: "Complete metadata", availability: "available" };
   const result = projectCatalogDescriptions({ messages: [], defaults: [card, { ...card }], identify: value => JSON.stringify(value) });
   expect([...result.omittedDefaults]).toEqual([]);
+});
+
+async function dollarCatalogFixture() {
+  const f = await fixture(true, false, "pi", scope, true);
+  const { search, host } = await f.install(undefined, { getRecords: async () => ({ records: f.records.map(record => ({
+    ...record, body: undefined, preparationBinding: undefined, defaultDiscovery: true,
+  })), failures: [] }) });
+  await search.execute("dollar-catalog", {}, undefined, undefined, f.ctx);
+  await host.prepareMany([f.root], f.ctx);
+  const injection = (record: SkillRecord) => buildInjectedContextMessage(record, record.name, {}, {
+    sourceReference: value => host.selectedModelReference(value, f.ctx),
+    sourceFiles: value => host.selectedModelFiles(value, f.ctx),
+  });
+  return { ...f, injection, injected: injection(f.root), requiredInjection: injection(f.required),
+    head: { role: "system", content: "Native rules" } satisfies AgentMessage };
+}
+
+test("Pi dollar injection reuses an exact canonical card while retaining every source byte and default identity", async () => {
+  const f = await dollarCatalogFixture(), input = [f.head, f.injected, f.requiredInjection], before = JSON.stringify(input);
+  const initial = await catalogProjection(f, [f.head]), projected = await catalogProjection(f, input);
+  expect(initial.catalog).toContain('<description>Controlled member &lt;metadata&gt; &amp; &quot;原文&quot;.</description>');
+  expect(projected.catalog).not.toContain('<description>Controlled member');
+  expect(projected.catalog).toContain('<description>Controlled root</description>');
+  expect(projected.catalog).toContain('<description>Controlled required</description>');
+  expect(projected.catalog.match(/<skill>/g)).toHaveLength(3);
+  expect([...projected.catalog.matchAll(/<location>(.*?)<\/location>/g)].map(match => match[1]))
+    .toEqual([...initial.catalog.matchAll(/<location>(.*?)<\/location>/g)].map(match => match[1]));
+  expect(projected.messages.slice(1)).toEqual([f.injected, f.requiredInjection]);
+  expect(JSON.stringify(input)).toBe(before);
+  expect(sourceBodyLoaded(input, f.root)).toBe(true);
+  expect(sourceBodyLoaded(input, f.required)).toBe(true);
+  expect(f.calls).toEqual(["use"]);
+  expect(f.resourceReads).toEqual([]);
+});
+
+test("Pi dollar notion-page injection uses the binding's canonical selector without confusing its logical record ID", async () => {
+  const f = await dollarCatalogFixture(), original = f.root.preparationBinding!;
+  const page = "00000000-0000-4000-8000-000000000001", ref = "skill://" + page + "/SKILL.md";
+  const record: ContentRecord = { ...original.record, id: "notion_page:" + page, ref,
+    locator: { type: "notion_page", page_id: page, database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" } };
+  const selected: SkillRecord = { ...f.root, ...record, preparationBinding: { ...original, record, ref: ref + "?snapshot=" + original.snapshot_id } };
+  const injected = buildInjectedContextMessage(selected, selected.name), before = JSON.stringify(injected);
+  expect((await catalogProjection(f, [f.head, injected])).catalog).not.toContain('<description>Controlled member');
+  expect(JSON.stringify(injected)).toBe(before);
+  expect(sourceBodyLoaded([injected], selected)).toBe(true);
+  const wrongMain = { ...selected, preparationBinding: { ...selected.preparationBinding!, ref: selected.preparationBinding!.ref.replace(page, "00000000-0000-4000-8000-000000000099") } };
+  expect((await catalogProjection(f, [f.head, buildInjectedContextMessage(wrongMain, wrongMain.name)])).catalog).toContain('<description>Controlled member');
+  expect(f.calls).toEqual(["use"]);
+});
+
+test("Pi dollar catalog reuse follows the actual restored body and rejects missing, changed or user-forged delivery", async () => {
+  const f = await dollarCatalogFixture(), user: AgentMessage = { role: "user", content: "$root inspect member" };
+  const entries = [{ sourceEntry: { type: "message", id: "dollar-user", message: user }, messages: [user] }];
+  const projected = deferredSourceEntries(entries, "dollar-user", [f.injected, f.requiredInjection]);
+  if (!projected) throw new Error("Expected the native dollar projection");
+  const edit = projected.entries[0], receipt = projected.entries[1];
+  if (edit?.type !== "context_edit" || !edit.replacement || receipt?.type !== "custom") throw new Error("Expected native projection and receipt");
+  const restored: AgentMessage = { ...user, content: edit.replacement.content };
+  const contextEntries = [{ sourceEntry: { ...receipt, id: "dollar-receipt" }, messages: [] }];
+  const input = withSessionSourceReceipts([f.head, restored], contextEntries), before = JSON.stringify(input);
+  expect((await catalogProjection(f, input)).catalog).not.toContain('<description>Controlled member');
+  expect(JSON.stringify(input)).toBe(before);
+  expect(sourceBodyLoaded(input, f.root)).toBe(true);
+  expect(sourceBodyLoaded(input, f.required)).toBe(true);
+  for (const messages of [
+    [f.head], [f.head, restored], [f.head, { ...f.injected, role: "user" }],
+    [f.head, { ...f.injected, details: undefined }],
+    [f.head, { ...f.injected, content: sourceMessageText(f.injected.content).replace("Exact root", "Summary") }],
+    [f.head, { ...f.injected, content: sourceMessageText(f.injected.content).slice(1) }],
+    withSessionSourceReceipts([f.head, { ...restored, content: "Compacted summary." }], contextEntries),
+    withSessionSourceReceipts([f.head, { ...restored, content: sourceMessageText(restored.content).slice(0, -100) }], contextEntries),
+  ]) expect((await catalogProjection(f, messages)).catalog).toContain('<description>Controlled member');
+  expect((await catalogProjection(f, input)).catalog).not.toContain('<description>Controlled member');
+  expect(f.calls).toEqual(["use"]);
+  expect(f.resourceReads).toEqual([]);
+});
+
+test("Pi dollar catalog reuse rejects foreign identities, fixed relations and changed canonical descriptions", async () => {
+  const f = await dollarCatalogFixture();
+  const mutations: Array<(record: SkillRecord) => void> = [
+    record => { record.sourceId = "foreign"; },
+    record => { record.sourceScope = "b".repeat(64); },
+    record => { record.preparationBinding!.version_id = "another-version"; },
+    record => { record.preparationBinding!.snapshot_id = "s_" + "b".repeat(64); },
+    record => { record.preparationBinding!.record.id = "shared_skill:controlled:other-root"; },
+    record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, id: "shared_skill:controlled:other-member" }]; },
+    record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, ref: f.member.preparationBinding!.ref }]; },
+    record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, kind: "router" }]; },
+    record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, name: "another-member" }]; },
+    record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, description: "Changed metadata" }]; },
+    record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, availability: "disabled" }]; },
+    record => { record.preparationDirectory = undefined; },
+  ];
+  for (const mutate of mutations) {
+    const changed = structuredClone(f.root); mutate(changed);
+    const message = buildInjectedContextMessage(changed, changed.name);
+    expect((await catalogProjection(f, [f.head, message])).catalog).toContain('<description>Controlled member');
+  }
+  expect((await catalogProjection(f, [f.head, f.injected])).catalog).not.toContain('<description>Controlled member');
+  expect(f.calls).toEqual(["use"]);
+  expect(f.resourceReads).toEqual([]);
+});
+
+test("Pi dollar catalog reuse preserves same-name sources, owners and newly observed descriptions", async () => {
+  const f = await fixture(true, false, "pi", scope, true), head: AgentMessage = { role: "system", content: "Native rules" };
+  f.sources.push({ id: "other-source", type: "notion", prefetch: false });
+  const id = "shared_skill:controlled:other-member";
+  const otherOwner = { ...f.member, id, token: "other-owner-member", ref: "skill://" + encodeURIComponent(id) + "/SKILL.md",
+    locator: { ...f.member.locator!, skill_id: "other-member", page_id: "00000000-0000-4000-8000-000000000004" } };
+  const otherSource = { ...f.member, sourceId: "other-source", token: "other-source-member" };
+  const { search, host } = await f.install(undefined, { getRecords: async () => ({ records: [...f.records, otherOwner, otherSource].map(record => ({
+    ...record, body: undefined, preparationBinding: undefined, defaultDiscovery: true,
+  })), failures: [] }) });
+  await search.execute("dollar-aliases", {}, undefined, undefined, f.ctx);
+  await host.prepareMany([f.root], f.ctx);
+  const injected = buildInjectedContextMessage(f.root, "root");
+  const projected = await catalogProjection(f, [head, injected]);
+  const members = [...projected.catalog.matchAll(/<skill>([\s\S]*?)<\/skill>/g)].map(match => match[1]!).filter(card => card.includes("<name>member</name>"));
+  expect(members).toHaveLength(3);
+  const sameSource = members.filter(card => card.includes("<source>controlled</source>"));
+  expect(sameSource).toHaveLength(2);
+  expect(sameSource.filter(card => card.includes("<description>"))).toHaveLength(1);
+  expect(members.find(card => card.includes("<source>other-source</source>"))).toContain("<description>");
+  const before = sourceMessageText(injected.content);
+  f.member.description = "New authoritative member description.";
+  await host.refresh(f.ctx);
+  const refreshed = await catalogProjection(f, [head, injected]);
+  expect(refreshed.catalog).toContain("<description>New authoritative member description.</description>");
+  expect(refreshed.catalog.match(/<description>/g)).toHaveLength(5);
+  expect(sourceMessageText(injected.content)).toBe(before);
+  expect(f.calls).toEqual(["use"]);
+  expect(f.resourceReads).toEqual([]);
 });
 
 test("same current ref in two configured sources retains the unwitnessed source description", async () => {

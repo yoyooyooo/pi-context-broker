@@ -7,7 +7,7 @@ import { channel } from "node:diagnostics_channel";
 
 // These fixtures exercise the loading/observation boundary only. Actual SDK
 // runtime, package and Pi proofs use independently installed ntn-skills builds.
-async function fixture(options: { sdk?: boolean; sdkVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number; readProofVersion?: number; readProofManifestVersion?: number; catalog?: boolean; catalogFailure?: "typed" | "returned" | "untyped" | "unsafe"; resolver?: boolean; files?: boolean } = {}) {
+async function fixture(options: { sdk?: boolean; sdkVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number; readProofVersion?: number; readProofManifestVersion?: number; directoryVersion?: number; directoryManifestVersion?: number; catalog?: boolean; catalogFailure?: "typed" | "returned" | "untyped" | "unsafe"; resolver?: boolean; files?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "broker-sdk-boundary-"));
   await mkdir(join(root, "src")); await mkdir(join(root, "dist"));
   await copyFile(new URL("../src/notion-sdk.ts", import.meta.url), join(root, "src/notion-sdk.ts"));
@@ -17,6 +17,7 @@ export const SDK_VERSION = ${options.sdkVersion ?? 1};
 export const CONSUMER_CONTRACT_VERSION = 1;
 export const PACKAGE_VERSION = ${JSON.stringify(options.packageVersion ?? "fixture-1")};
 ${options.readProofVersion === undefined ? "" : `export const READ_OUTPUT_PROOF_VERSION = ${options.readProofVersion};`}
+${options.directoryVersion === undefined ? "" : `export const CATALOG_DIRECTORY_CONTRACT_VERSION = ${options.directoryVersion};`}
 export const calls = [];
 export function parseDuration(value) { return value === '1s' ? 1000 : 0; }
 export function decodeConsumeResult() { throw new Error('consume already decoded; duplicate decoder invocation'); }
@@ -40,7 +41,8 @@ export async function listCatalog(options) {
   calls.push({ operation: 'list', options });
   options.onRequestMetrics?.({ total_requests: 0, trace: [] });
   ${options.catalogFailure === "returned" ? "return { status: 'failed', error: catalogError };" : options.catalogFailure ? "throw catalogError;" : ""}
-  return { records: [], count: 0, view: options.view, scope: options.env?.SDK_TEST_ID };
+  const value = { records: [], count: 0, view: options.view, scope: options.env?.SDK_TEST_ID };
+  return options.directory === undefined ? value : { version: 1, catalog: { ok: true, value }, directory: { ok: true, value: { ...value, view: options.directory.view } } };
 }
 ` : ""}
 ${options.resolver ? `
@@ -68,7 +70,8 @@ export async function readResources(input, options) {
   await writeFile(join(root, "dist/ntn-skills-runtime.json"), JSON.stringify({ version: 1, package: "ntn-skills",
     package_version: options.manifestVersion ?? options.packageVersion ?? "fixture-1", sdk_version: 1, consumer_contract_version: 1,
     ...(options.resourceVersion === undefined ? {} : { resource_read_contract_version: options.resourceManifestVersion ?? options.resourceVersion }),
-    ...(options.readProofVersion === undefined && options.readProofManifestVersion === undefined ? {} : { read_output_proof_version: options.readProofManifestVersion ?? options.readProofVersion }) }));
+    ...(options.readProofVersion === undefined && options.readProofManifestVersion === undefined ? {} : { read_output_proof_version: options.readProofManifestVersion ?? options.readProofVersion }),
+    ...(options.directoryVersion === undefined && options.directoryManifestVersion === undefined ? {} : { catalog_directory_contract_version: options.directoryManifestVersion ?? options.directoryVersion }) }));
   const boundary = await import(pathToFileURL(join(root, "src/notion-sdk.ts")).href);
   return { root, boundary, module };
 }
@@ -76,6 +79,32 @@ export async function readResources(input, options) {
 test("missing bundled SDK fails without selecting another CLI or SDK", async () => {
   const { boundary } = await fixture({ sdk: false });
   await expect(boundary.consumeNotionSdk({}, {})).rejects.toMatchObject({ code: "SOURCE_SDK_UNAVAILABLE" });
+});
+
+test("paired catalog discovery is feature-detected without an operation and stays one SDK call", async () => {
+  const { boundary, module } = await fixture({ catalog: true, directoryVersion: 1 });
+  expect(await boundary.supportsNotionSdkCatalogDirectory()).toBe(true);
+  const sdk = await import(pathToFileURL(module).href);
+  expect(sdk.calls).toHaveLength(0);
+  const result = await boundary.listNotionCatalogSdk({ sourceId: "source", database: "db", directory: { view: "selected" }, env: { SDK_TEST_ID: "scope" } });
+  expect(result).toMatchObject({ version: 1, catalog: { ok: true, value: { scope: "scope" } }, directory: { ok: true, value: { view: "selected", scope: "scope" } } });
+  expect(sdk.calls).toHaveLength(1);
+  expect(sdk.calls[0].options.directory).toEqual({ view: "selected" });
+  expect(sdk.calls[0].options.sourceId).toBeUndefined();
+});
+
+test("old SDK catalog remains usable while mixed or unknown paired contracts fail before an operation", async () => {
+  const old = await fixture({ catalog: true });
+  expect(await old.boundary.supportsNotionSdkCatalogDirectory()).toBe(false);
+  expect(await old.boundary.listNotionCatalogSdk({})).toMatchObject({ records: [], count: 0 });
+  await expect(old.boundary.listNotionCatalogSdk({ directory: {} })).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+  expect((await import(pathToFileURL(old.module).href)).calls).toHaveLength(1);
+  for (const versions of [{ directoryVersion: 2 }, { directoryVersion: 1, directoryManifestVersion: 2 }, { directoryManifestVersion: 1 }]) {
+    const value = await fixture({ catalog: true, ...versions });
+    await expect(value.boundary.supportsNotionSdkCatalogDirectory()).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+    await expect(value.boundary.listNotionCatalogSdk({ directory: {} })).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+    expect((await import(pathToFileURL(value.module).href)).calls).toHaveLength(0);
+  }
 });
 
 test("unsupported SDK protocol stops before its consume function", async () => {

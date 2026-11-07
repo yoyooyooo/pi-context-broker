@@ -13,13 +13,12 @@ import { decodePreparedGraph, preparationFailureDetails, type PreparationPurpose
 import { sharedSkillId, validSharedIdentity } from "./shared-skill-identity";
 import type { PrefetchBudget, PrefetchOutcome, PrefetchPlan } from "./prefetch-policy";
 import { publishNotionEntry, materializeNotionEntryFile, materializeNotionResourceBatch, publishNotionResourceFile } from "./notion-entry";
-import { consumeNotionSdk, readNotionSdk, readNotionResourcesSdk, listNotionCatalogSdk, resolveNotionCatalogReferenceSdk, listNotionFilesSdk, supportsNotionSdkReadOutputProof, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
+import { consumeNotionSdk, readNotionSdk, readNotionResourcesSdk, listNotionCatalogSdk, resolveNotionCatalogReferenceSdk, listNotionFilesSdk, supportsNotionSdkReadOutputProof, supportsNotionSdkCatalogDirectory, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
 import { DEFAULT_RESOURCE_READ_BUDGET, type FixedResourceRead, type ResourceReadBatch, type ResourceReadFileIdentity, type ResourceReadWireFile } from "./resource-read-types";
-import type { ContentRecord, NotionListObservation, NotionView, SkillRecord, SourceConfig, SourcePolicy, SourceFailure } from "./types";
+import type { ContentRecord, NotionDirectory, NotionDirectorySelection, NotionDirectoryOutcome, NotionListObservation, NotionView, SkillRecord, SourceConfig, SourcePolicy, SourceFailure } from "./types";
 
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
 type Options = { signal?: AbortSignal; refresh?: boolean; stale?: boolean; view?: string; defaultView?: boolean; snapshotId?: string };
-type NotionDirectory = SkillRecord[] & { list: NotionListObservation; failures: SourceFailure[]; view?: NotionView | null; profileId?: string };
 type Json = Record<string, unknown>;
 const PageLocator = Schema.Struct({ type: Schema.Literal("notion_page"), page_id: Schema.String, database_id: Schema.String, data_source_id: Schema.String });
 const SubscriptionLocator = Schema.Struct({ type: Schema.Literal("notion_subscription"), subscription_id: Schema.String, database_id: Schema.String, data_source_id: Schema.String, target_database_id: Schema.String });
@@ -346,14 +345,19 @@ async function commandCatalog(source: NotionSource, cwd: string, selectors: stri
   }
 }
 
-async function discoverNotionDirectory(source: NotionSource, cwd: string, options: Options): Promise<{ catalog: Json; directory: NotionDirectory }> {
+async function catalogPolicy(source: NotionSource, refresh?: boolean) {
+  return refresh ? { refresh: true } : source.discovery?.offline ? { offline: true }
+    : source.discovery?.maxAge === undefined ? {} : { maxAge: await parseNotionSdkDuration(source.discovery.maxAge) };
+}
+
+async function discoverNotionDirectory(source: NotionSource, cwd: string, options: Options, observed?: Json): Promise<{ catalog: Json; directory: NotionDirectory }> {
   if (source.profile_id !== undefined && (!validSharedIdentity(source.profile_id) || !source.database)) throw new SourceError("SOURCE_CONFIG_INVALID", source.id);
   if (options.view !== undefined && options.defaultView) throw new SourceError("SOURCE_CONFIG_INVALID", source.id);
   const selectedView = options.view !== undefined || options.defaultView === true;
   const selectedProfile = options.defaultView === true && options.view === undefined ? source.profile_id : undefined;
   // SDK discovery uses the core cache directly. The derived cache remains only
   // for explicit legacy commands; never put a filtered View under its full-library key.
-  const cache = selectedView || !source.command ? undefined : await catalogCache(source, cwd, options.signal);
+  const cache = observed || selectedView || !source.command ? undefined : await catalogCache(source, cwd, options.signal);
   let saved: { result: Json; indexId: string } | undefined;
   if (cache && !options.refresh) {
     try {
@@ -374,12 +378,11 @@ async function discoverNotionDirectory(source: NotionSource, cwd: string, option
     }
   }
   const order = !saved && cache ? await reserveCatalogOrder(cache, source, options.signal) : undefined;
-  const result = saved?.result ?? await (async () => {
+  const result = observed ?? saved?.result ?? await (async () => {
     if (source.command) return commandCatalog(source, cwd, [...(source.database ? ["--database", source.database] : []), ...(options.view !== undefined ? ["--view", options.view] : options.defaultView ? ["--default-view"] : []), ...(selectedProfile === undefined ? [] : ["--profile", selectedProfile])], options);
     let value: unknown;
     try {
-      const policy = options.refresh ? { refresh: true } : source.discovery?.offline ? { offline: true }
-        : source.discovery?.maxAge === undefined ? {} : { maxAge: await parseNotionSdkDuration(source.discovery.maxAge) };
+      const policy = await catalogPolicy(source, options.refresh);
       value = await listNotionCatalogSdk({ ...sdkOptions(source, cwd, options.signal), ...policy,
         ...(options.view !== undefined ? { view: options.view } : options.defaultView ? { defaultView: true } : {}),
         ...(selectedProfile === undefined ? {} : { profile: selectedProfile }) });
@@ -481,6 +484,40 @@ async function discoverNotionDirectory(source: NotionSource, cwd: string, option
 
 export async function discoverNotionSource(source: NotionSource, cwd: string, options: Options = {}): Promise<NotionDirectory> {
   return (await discoverNotionDirectory(source, cwd, options)).directory;
+}
+
+/** Both projections use one SDK runtime; raw metadata stays inside that runtime. */
+export async function discoverNotionCatalogAndDirectory(source: NotionSource, cwd: string, selection: NotionDirectorySelection, options: Options = {}): Promise<{ catalog: NotionDirectoryOutcome; directory: NotionDirectoryOutcome } | undefined> {
+  if (source.command) return undefined;
+  let value: unknown;
+  try {
+    if (!await supportsNotionSdkCatalogDirectory()) return undefined;
+    value = await listNotionCatalogSdk({ ...sdkOptions(source, cwd, options.signal), ...await catalogPolicy(source, options.refresh), directory: selection });
+  } catch (error) { throw sdkFailure(error, source, "list", options.signal); }
+  if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
+  if (!object(value) || value.version !== 1) decodeError(source);
+  const project = async (outcome: unknown, selected: Options): Promise<NotionDirectoryOutcome> => {
+    if (!object(outcome) || typeof outcome.ok !== "boolean") return decodeError(source);
+    if (!outcome.ok) {
+      if (!object(outcome.error) || typeof outcome.error.code !== "string") return decodeError(source);
+      const error = sdkFailure(outcome.error, source, "list", options.signal);
+      if (!(error instanceof SourceError) || error.code === "SOURCE_CANCELLED") throw error;
+      return { ok: false, code: error.code };
+    }
+    if (!object(outcome.value)) return decodeError(source);
+    try { return { ok: true, value: (await discoverNotionDirectory(source, cwd, selected, outcome.value)).directory }; }
+    catch (error) {
+      if (options.signal?.aborted || error instanceof SourceError && error.code === "SOURCE_CANCELLED") throw error;
+      return { ok: false, code: error instanceof SourceError ? error.code : "SOURCE_STORAGE_ERROR" };
+    }
+  };
+  const catalog = await project(value.catalog, options);
+  const directory = await project(value.directory, { ...options, ...(selection.view === undefined ? { defaultView: true } : { view: selection.view }) });
+  if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
+  const scopeOf = (outcome: unknown) => object(outcome) && object(outcome.value) ? outcome.value.scope : undefined;
+  if (catalog.ok && directory.ok && scopeOf(value.catalog) !== scopeOf(value.directory))
+    return { catalog, directory: { ok: false, code: "SOURCE_IDENTITY_MISMATCH" } };
+  return { catalog, directory };
 }
 
 /** Resolve names before entering the exact owner path. This never prepares a body. */

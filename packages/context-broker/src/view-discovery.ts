@@ -1,7 +1,7 @@
 import { recordIdentity } from "./discovery-records";
 import { isDeepStrictEqual } from "node:util";
 import { discoverNotionSource, listNotionViews, SourceError } from "./notion-source";
-import type { ConfigFile, DiscoveryResult, ExtensionAPI, ExtensionContext, NotionViewState, SkillRecord, SourceConfig } from "./types";
+import type { ConfigFile, DiscoveryResult, ExtensionAPI, ExtensionContext, NotionDirectoryObservation, NotionDirectorySelection, NotionViewState, SkillRecord, SourceConfig } from "./types";
 
 export const VIEW_SELECTION_ENTRY = "ntn-skills-view-selection";
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
@@ -22,24 +22,36 @@ export function sessionViews(ctx?: ExtensionContext): Map<string, string> {
   return overrides;
 }
 
-export async function resolveViewDiscovery(config: ConfigFile, catalog: DiscoveryResult<SkillRecord>, ctx?: ExtensionContext, signal?: AbortSignal): Promise<DiscoveryResult<SkillRecord>> {
+export function notionDirectorySelections(config: ConfigFile, ctx?: ExtensionContext): Map<string, NotionDirectorySelection> {
+  const overrides = sessionViews(ctx);
+  return new Map(enabledSources(config).map(source => {
+    const view = overrides.get(source.id) ?? source.default_view_id;
+    return [source.id, view === undefined ? source.profile_id === undefined ? {} : { profile: source.profile_id } : { view }];
+  }));
+}
+
+export async function resolveViewDiscovery(config: ConfigFile, catalog: DiscoveryResult<SkillRecord>, ctx?: ExtensionContext, signal?: AbortSignal, paired?: ReadonlyMap<string, NotionDirectoryObservation>): Promise<DiscoveryResult<SkillRecord>> {
   const records = new Map(catalog.records.map(record => [recordIdentity(record), { ...record, defaultDiscovery: record.source !== "notion" }]));
   const failures = catalog.failures.map(failure => ({ ...failure }));
   const views: NotionViewState[] = [];
   const overrides = sessionViews(ctx);
+  const selections = notionDirectorySelections(config, ctx);
   for (const source of enabledSources(config)) {
     signal?.throwIfAborted();
     const selector = overrides.get(source.id) ?? source.default_view_id;
     const origin = overrides.has(source.id) ? "session" : source.default_view_id !== undefined ? "configured" : source.profile_id !== undefined ? "profile" : "first";
     try {
-      const selected = await discoverNotionSource(source, ctx?.cwd ?? process.cwd(), { signal, ...(selector === undefined ? { defaultView: true } : { view: selector }) });
+      const observation = paired?.get(source.id);
+      const outcome = observation && isDeepStrictEqual(observation.selection, selections.get(source.id)) ? observation.outcome : undefined;
+      if (outcome && !outcome.ok) throw new SourceError(outcome.code, source.id);
+      const selected = outcome?.ok ? outcome.value : await discoverNotionSource(source, ctx?.cwd ?? process.cwd(), { signal, ...(selector === undefined ? { defaultView: true } : { view: selector }) });
       signal?.throwIfAborted();
       // Only associate rows observed under the same credential scope.
       const scopes = new Set(catalog.records.filter(record => record.sourceId === source.id).map(record => record.sourceScope));
       if (scopes.size && selected.some(record => !scopes.has(record.sourceScope))) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
       for (const record of selected) {
         const existing = records.get(recordIdentity(record));
-        if (record.locator?.type === "shared_skill" && existing !== undefined && !isDeepStrictEqual(existing.locator, record.locator)) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+        if (existing !== undefined && !isDeepStrictEqual(existing.locator, record.locator)) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
       }
       for (const record of selected) {
         const identity = recordIdentity(record);

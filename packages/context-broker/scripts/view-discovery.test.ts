@@ -4,14 +4,70 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createNotionFixture, database, firstViewId, secondViewId } from "../../../scripts/notion-integration-fixture.mjs";
 import { listNotionViews } from "../src/notion-source";
-import { sessionViews, VIEW_SELECTION_ENTRY } from "../src/view-discovery";
+import { notionDirectorySelections, resolveViewDiscovery, sessionViews, VIEW_SELECTION_ENTRY } from "../src/view-discovery";
 import { viewSystemPrompt } from "../src/view-prompt";
 import { normalizeSources } from "../src/sources";
-import type { ExtensionContext, SessionEntry, SkillRecord } from "../src/types";
+import type { ExtensionContext, NotionDirectory, NotionDirectoryObservation, SessionEntry, SkillRecord, SourceConfig } from "../src/types";
 
 const choice = (sourceId: string, viewId: string | null): SessionEntry => ({ type: "custom", customType: VIEW_SELECTION_ENTRY, data: { version: 1, sourceId, viewId } });
 const context = (entries: SessionEntry[]): ExtensionContext => ({ sessionManager: { getBranch: () => entries } });
 const record = (name: string, path: string): SkillRecord => ({ name, path, aliases: [], description: `${name} description`, normalizedName: name, normalizedAliases: [], normalizedDescription: `${name} description`, autoloadEnabled: true });
+
+function pairedView() {
+  const page = "11111111-1111-4111-8111-111111111111", dataSource = "22222222-2222-4222-8222-222222222222";
+  const source: Extract<SourceConfig, { type: "notion" }> = { id: "paired", type: "notion", command: ["must-not-spawn-paired-directory"] };
+  const selected: SkillRecord = { ...record("Paired member", "/owned/paired/SKILL.md"), id: "notion_page:" + page,
+    source: "notion", sourceId: source.id, sourceScope: "a".repeat(64), kind: "skill", ref: "skill://" + page + "/SKILL.md",
+    locator: { type: "notion_page", page_id: page, database_id: database, data_source_id: dataSource } };
+  const directory: NotionDirectory = Object.assign([selected], { list: { sourceId: source.id, policy: "default" as const, exhaustive: true }, failures: [],
+    view: { id: firstViewId, name: "Paired view", type: "table", database_id: database, data_source_id: dataSource, url: `https://notion.so/${database}?v=${firstViewId}` } });
+  const paired = new Map<string, NotionDirectoryObservation>([[source.id, { selection: {}, outcome: { ok: true, value: directory } }]]);
+  return { source, selected, directory, paired };
+}
+
+test("paired complete View survives an unrelated full-catalog failure without another source call", async () => {
+  const f = pairedView();
+  const result = await resolveViewDiscovery({ sources: [f.source] }, { records: [], failures: [{
+    sourceId: f.source.id, namespace: f.source.id, type: "notion", code: "ACCESS_DENIED", message: "Full discovery failed" }] }, undefined, undefined, f.paired);
+  expect(result.records).toEqual([{ ...f.selected, defaultDiscovery: true }]);
+  expect(result.views?.[0]).toMatchObject({ status: "ready", count: 1, partial: false });
+  expect(result.failures).toEqual([{ sourceId: f.source.id, namespace: f.source.id, type: "notion", code: "ACCESS_DENIED", message: "Full discovery failed", blocking: false }]);
+});
+
+test("paired selection preserves session View precedence and exact Profile matching", () => {
+  const f = pairedView(), source = { ...f.source, default_view_id: firstViewId, profile_id: "work", database };
+  expect(notionDirectorySelections({ sources: [source] }).get(source.id)).toEqual({ view: firstViewId });
+  expect(notionDirectorySelections({ sources: [{ ...source, default_view_id: undefined }] }).get(source.id)).toEqual({ profile: "work" });
+  expect(notionDirectorySelections({ sources: [source] }, context([choice(source.id, secondViewId)])).get(source.id)).toEqual({ view: secondViewId });
+  expect(notionDirectorySelections({ sources: [{ ...source, enabled: false }] }).size).toBe(0);
+});
+
+test("paired scope or physical locator mismatches remain errors instead of applying membership to an old owner", async () => {
+  for (const defect of ["scope", "locator"] as const) {
+    const f = pairedView();
+    const changed = { ...f.selected, ...(defect === "scope" ? { sourceScope: "b".repeat(64) }
+      : { locator: { ...f.selected.locator!, database_id: "99999999-9999-4999-8999-999999999999" } }) };
+    f.directory[0] = changed;
+    const result = await resolveViewDiscovery({ sources: [f.source] }, { records: [f.selected], failures: [] }, undefined, undefined, f.paired);
+    expect(result.views?.[0]).toMatchObject({ status: "error", code: "SOURCE_IDENTITY_MISMATCH" });
+    expect(result.records).toEqual([{ ...f.selected, defaultDiscovery: false }]);
+  }
+});
+
+test("paired failed or empty directory stays distinct and cancellation publishes no result", async () => {
+  const f = pairedView(), catalog = { records: [f.selected], failures: [] };
+  f.paired.set(f.source.id, { selection: {}, outcome: { ok: false, code: "ACCESS_DENIED" } });
+  const denied = await resolveViewDiscovery({ sources: [f.source] }, catalog, undefined, undefined, f.paired);
+  expect(denied.views?.[0]).toMatchObject({ status: "error", code: "ACCESS_DENIED" });
+  expect(denied.records.some(record => record.defaultDiscovery)).toBe(false);
+  const empty: NotionDirectory = Object.assign([], { list: f.directory.list, failures: [], view: null });
+  f.paired.set(f.source.id, { selection: {}, outcome: { ok: true, value: empty } });
+  expect((await resolveViewDiscovery({ sources: [f.source] }, catalog, undefined, undefined, f.paired)).views?.[0]).toMatchObject({ status: "empty" });
+  const aborted = new AbortController(); aborted.abort();
+  await expect(resolveViewDiscovery({ sources: [f.source] }, catalog, undefined, aborted.signal, f.paired)).rejects.toThrow();
+  expect(catalog.records[0]).toBe(f.selected);
+  expect(catalog.records[0]?.defaultDiscovery).toBeUndefined();
+});
 
 test("source View listing calls the public ctl route with its exact scope and policy", async () => {
   const root = await mkdtemp(join(tmpdir(), "broker-ctl-views-"));

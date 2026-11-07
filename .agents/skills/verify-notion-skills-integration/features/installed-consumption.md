@@ -89,6 +89,10 @@ node scripts/notion-sdk-pi.mjs evidence --evidence ABSOLUTE_EVIDENCE
 
 另外两景仅替换 `--scenario` 与新的 `--out`。Doctor 只读取 helper 身份，不 import 或启动服务；run 先按 SHA／bytes 保留 helper，再从证据副本启动只绑定 `127.0.0.1` 的原 HTTP fixture。实际 Pi 使用独立安装的 Broker／内置 SDK、无 `source.command`、关闭 prefetch、独立 HOME／XDG／state／cache／session 与 scheduler；consumer 不继承 oracle snapshot。Controlled provider 的真实 Pi 输入逐份通过所安装 pi-ai serializer 发往 localhost。每阶段分别记录 SDK terminal、实际 source attempts／字节、provider 输入、tool result 与宿主退出；缺失、未闭合或错误路径不记为零。
 
+同次 full catalog／Default View 的复用继续在 `http-directory` 验证：安装包的 SDK 与 runtime manifest 同时声明 `catalog_directory_contract_version: 1`，一次 `list` 原始 envelope 包含两个独立 outcome。原 observer 只记一次 SDK 调用和一次 request metrics；纯读取断言展开两个结果，不伪造第二个事件。按完整 Skills row IDs、实际六字段 projection、分页 cursor／has_more 和响应 bytes 核对库存只读一遍，不能以 SDK 调用数下降代替 HTTP 复用。旧 SDK 的两次读取仍可通过普通兼容场景，但不能通过这条复用断言。401、取消、空／失败 View 与 full-library 无关错误独立保留。
+
+Broker 只向同一 menu／refresh generation 交付这次目录观察一次，消费前摘下；取消、session switch／branch／tree、选择变化不能复用旧观察。后续 View 刷新继续走原权限和 freshness 路径，raw inventory 留在 SDK operation 内，不写入 Broker 持久缓存。CLI 的 maxAge 0 不跨时间复用库存，refresh／离线／暖／局部缓存结果各用原回执解释。
+
 | 用户入口 | 实际驱动与正反例 | 验收边界 |
 | --- | --- | --- |
 | 普通会话的默认目录 | `http-directory` 在实际 View HTTP response 被 hold 时先完成普通 provider 请求；放行后通过既有只读 `/context-broker view` 观察发布状态，再提交普通续问。独立空根实测 401。 | 首次 pending 不阻塞；ready 后名称、描述、View 与短引用准确；401 无伪 ready／部分目录；所有输入均无正文，0 object read。公开状态命令必须新增 HTTP／provider 都为 0，次数、耗时、全部通知保留。该屏障只用于受控第二轮，不加入真实 C/D 任务。 |

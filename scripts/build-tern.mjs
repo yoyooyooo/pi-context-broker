@@ -56,6 +56,10 @@ const readOutputProofVersion = selectedSdkApi.READ_OUTPUT_PROOF_VERSION;
 if (readOutputProofVersion !== undefined && (readOutputProofVersion !== 1 || typeof selectedSdkApi.readSkill !== "function")) {
   throw new Error("The selected ntn-skills SDK read output proof is incompatible");
 }
+const catalogDirectoryVersion = selectedSdkApi.CATALOG_DIRECTORY_CONTRACT_VERSION;
+if (catalogDirectoryVersion !== undefined && (catalogDirectoryVersion !== 1 || typeof selectedSdkApi.listCatalog !== "function")) {
+  throw new Error("The selected ntn-skills SDK catalog directory capability is incompatible");
+}
 const selectedSdk = await findPackage("ntn-skills", sdkEntry);
 if (await realpath(selectedSdk.directory) !== await realpath(selectedCli.directory)) throw new Error("CLI and SDK must come from the same selected ntn-skills package");
 const brokerMetadata = JSON.parse(await readFile(join(broker, "package.json"), "utf8"));
@@ -106,6 +110,7 @@ const sdkCode = await sdkResult.outputs[0].text();
 const runtimeManifest = { version: 1, package: "ntn-skills", package_version: selectedCli.metadata.version,
   sdk_version: 1, consumer_contract_version: 1, ...(resourceReadVersion === undefined ? {} : { resource_read_contract_version: resourceReadVersion }),
   ...(readOutputProofVersion === undefined ? {} : { read_output_proof_version: readOutputProofVersion }),
+  ...(catalogDirectoryVersion === undefined ? {} : { catalog_directory_contract_version: catalogDirectoryVersion }),
   cli_sha256: createHash("sha256").update(cliCode).digest("hex"), sdk_sha256: createHash("sha256").update(sdkCode).digest("hex") };
 const licenseFiles = new Map();
 async function collectLicenses(name, from) {
