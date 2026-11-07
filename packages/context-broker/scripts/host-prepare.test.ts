@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { installHostSkills, type HostSkills, type HostSkillOptions } from "../src/host-skills";
 import { createActivationFeedback } from "../src/activation-feedback";
 import { buildInjectedContextMessage } from "../src/index";
@@ -444,7 +444,7 @@ for (const corruption of ["body", "parent-symlink"] as const) test(`another host
   await f.emit("session_shutdown", { type: "session_shutdown" }, f.ctx);
 });
 
-test("separate host processes reuse native body and manifest bytes without sharing mutable aliases", async () => {
+test.each(["system", "no-system-trash"] as const)("separate host processes reuse native body and manifest bytes without sharing mutable aliases (%s)", async retirement => {
   const f = await fixture(true), input = join(f.ctx.cwd!, "host-process-input.json");
   await writeFile(input, JSON.stringify({ cwd: f.ctx.cwd, record: f.root }));
   const program = `
@@ -453,6 +453,8 @@ test("separate host processes reuse native body and manifest bytes without shari
     import { installHostSkills } from ${JSON.stringify(new URL("../src/host-skills.ts", import.meta.url).href)};
     import { createPiHostAdapter } from ${JSON.stringify(new URL("../src/pi-host-adapter.ts", import.meta.url).href)};
     const { cwd, record } = JSON.parse(await readFile(process.env.BROKER_HOST_CACHE_FIXTURE, "utf8"));
+    // Exercise the real no-Trash branch only in this isolated child process.
+    if (${retirement === "no-system-trash"}) Object.defineProperty(process, "platform", { value: "linux" });
     const api = { on() {}, registerTool() {} }, ctx = { cwd, hasUI: false, mode: "rpc" };
     let observed, sourceReads = 0;
     const host = await installHostSkills(api, {
@@ -462,13 +464,14 @@ test("separate host processes reuse native body and manifest bytes without shari
       onMetadata: records => { observed = records[0]; },
     }, createPiHostAdapter(api));
     await host.refresh(ctx);
+    const initialStub = await readFile(observed.metadataIndexPath, "utf8");
     const loaded = await host.activate(record, ctx);
     process.stdout.write(JSON.stringify({ pid: process.pid, index: observed.metadataIndexPath,
-      publication: await realpath(dirname(observed.metadataIndexPath)), sourceReads,
+      publication: await realpath(dirname(observed.metadataIndexPath)), sourceReads, initialStub,
       scope: loaded.sourceScope, snapshot: loaded.snapshotId, version: loaded.versionId }));
     host.invalidate();
   `;
-  type ProcessPublication = { pid: number; index: string; publication: string; sourceReads: number; scope: string; snapshot: string; version: string };
+  type ProcessPublication = { pid: number; index: string; publication: string; sourceReads: number; initialStub: string; scope: string; snapshot: string; version: string };
   const run = () => new Promise<ProcessPublication>((resolve, reject) => {
     const child = spawn(process.execPath, ["--eval", program], {
       env: { ...process.env, BROKER_HOST_CACHE_FIXTURE: input }, stdio: ["ignore", "pipe", "pipe"],
@@ -486,17 +489,18 @@ test("separate host processes reuse native body and manifest bytes without shari
   });
   const inventory = async (root: string) => {
     const files: Array<{ path: string; bytes: number; sha256: string }> = [];
+    const directoryPaths = [""], symlinkPaths: string[] = [];
     let directories = 1, symlinks = 0;
     const visit = async (directory: string) => {
       for (const name of (await readdir(join(root, directory))).sort()) {
         const path = join(directory, name), state = await lstat(join(root, path));
-        if (state.isSymbolicLink()) symlinks++;
-        else if (state.isDirectory()) { directories++; await visit(path); }
+        if (state.isSymbolicLink()) { symlinks++; symlinkPaths.push(path); }
+        else if (state.isDirectory()) { directories++; directoryPaths.push(path); await visit(path); }
         else { const bytes = await readFile(join(root, path)); files.push({ path, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") }); }
       }
     };
     await visit("");
-    return { directories, symlinks, files, fileBytes: files.reduce((total, file) => total + file.bytes, 0) };
+    return { directories, directoryPaths, symlinks, symlinkPaths, files, fileBytes: files.reduce((total, file) => total + file.bytes, 0) };
   };
   const first = await run(), before = await inventory(dirname(first.publication));
   const second = await run(), after = await inventory(dirname(first.publication));
@@ -509,10 +513,30 @@ test("separate host processes reuse native body and manifest bytes without shari
   expect(after).toEqual(before);
   const privateRoots = [first, second].map(result => dirname(dirname(dirname(dirname(result.index)))));
   const privateInventories = await Promise.all(privateRoots.map(inventory));
-  for (const actual of privateInventories) expect({ directories: actual.directories, symlinks: actual.symlinks, fileBytes: actual.fileBytes }).toEqual({ directories: 4, symlinks: 1, fileBytes: 0 });
+  const expectedStub = "---\nname: root\ndescription: Controlled root\n---\n";
+  for (const [index, actual] of privateInventories.entries()) {
+    const result = [first, second][index]!, root = privateRoots[index]!;
+    expect(result.initialStub).toBe(expectedStub);
+    expect(Buffer.byteLength(result.initialStub)).toBe(48);
+    if (retirement === "no-system-trash" || process.platform !== "darwin") expect(actual.files).toHaveLength(1);
+    else expect(actual.files.length).toBeLessThanOrEqual(1);
+    const retained = actual.files[0];
+    const directories = ["", "indexes", "indexes/.retired-host-indexes", "indexes/native"];
+    if (retained) {
+      expect(retained.path).toMatch(/^indexes\/\.retired-host-indexes\/[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\/SKILL\.md$/);
+      expect(retained).toEqual({ path: retained.path, bytes: 48, sha256: hash(expectedStub) });
+      expect(await readFile(join(root, retained.path), "utf8")).toBe(result.initialStub);
+      directories.push(dirname(retained.path));
+    }
+    expect([...actual.directoryPaths].sort()).toEqual(directories.sort());
+    expect(actual.symlinkPaths).toEqual([relative(root, dirname(result.index))]);
+    expect(await realpath(dirname(result.index))).toBe(result.publication);
+    expect({ directories: actual.directories, symlinks: actual.symlinks, fileBytes: actual.fileBytes })
+      .toEqual({ directories: retained ? 5 : 4, symlinks: 1, fileBytes: retained ? 48 : 0 });
+  }
   expect(await readFile(f.root.path, "utf8")).toBe(f.root.body);
   console.info("host-process-projection-counts", JSON.stringify({ pids: [first.pid, second.pid], sharedBefore: before, sharedAfter: after,
-    private: privateInventories.map(({ directories, symlinks, fileBytes }) => ({ directories, symlinks, fileBytes })) }));
+    private: privateInventories.map(({ directories, symlinks, fileBytes, files }) => ({ directories, symlinks, fileBytes, files })) }));
 }, 40_000);
 
 test.skipIf(process.platform === "win32")("native directory creation can recover after its temporary root becomes available", async () => {
