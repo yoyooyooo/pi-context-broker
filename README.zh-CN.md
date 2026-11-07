@@ -152,6 +152,8 @@ sources:
 
 Pi 通过 `notion_list`、`notion_use` 与原生 `read` 提供会话引用：`sr:C` 表示目录候选，`sr:S` 表示固定的选中主文，`sr:R` 表示属于该选择的资源。原样复制返回的引用。`notion_use` 仅向模型顶层开放，不能从 Code mode 内部调用；准备成功与实际完整交付分别验证。这些引用属于当前会话分支，使用时仍检查来源授权和身份。准备、投递与恢复边界见 [Skill 消费运行时](./packages/context-broker/docs/skill-consumption-runtime.md)。
 
+把 Skill 的指导用于方案、评审、文档或代码时，即使只输出文字，也先用 `notion_use`；这不授予执行其中命令的权限。仅介绍或检查 Skill 本身则用 `read`。
+
 不要将凭据写进这份配置。每个 Notion source 可选配 `default_view_id`；不配置就用 API 返回的第一个 View。显式 ID 失效会提示，不静默改选；确认没有 View 时默认远程目录为空。OMP 查询期间编辑器照常可用；用户首次发送后，在模型请求发出前等候并注入当前目录。每轮 `before_agent_start` 只替换 Broker 自己的目录，保留本地技能和已读正文。View 内未勾选 Default Context 的技能可默认发现，View 外已勾选的也不会越过筛选。完整 `$` 与 CLI 仍可显式使用所有已发现记录。代码或配置文件改变需要重启宿主，会话内切换 View 不需要。
 
 `/context-broker refresh` 刷新元数据，让后续 selection 可以取得新 snapshot，已有会话正文保留。不限定 database 的 Notion 发现可能受搜索索引限制；显式 database 可取得该 database 的 exhaustive coverage。所有字段、scope 隔离、歧义和缓存策略见[source 配置与激活](./packages/context-broker/docs/reference.zh-CN.md#内置-sources)。

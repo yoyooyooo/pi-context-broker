@@ -8,7 +8,7 @@ bun run build
 bun run check
 ```
 
-Host and artifact checks require `pi` and `omp` on PATH. CI pins OMP 18.10.3, Pi 1.2.0 and Bun 1.3.14:
+Host and artifact checks require the selected `pi` and/or `omp` executable on PATH. CI freezes host versions in the [workflow matrix](https://github.com/yoyooyooo/pi-context-broker/blob/main/.github/workflows/ci.yml); use the versions declared there when reproducing a release check:
 
 ```bash
 bun run test:host
@@ -121,27 +121,32 @@ Rebuild and reinstall both products when their selected CLI or Skill files chang
 
 Keep Pi and OMP prompt, native expansion and editor verification separate. The generic `model` route covers OMP summarization; Notion integration `--mode model` runs both hosts by default and accepts `--host pi|omp` for explicit single-host evidence. Pi terminal completion is validated separately from Tern/OMP capsules. Keep one broker package with host-neutral discovery, identity, preparation and snapshot services. Select the adapter once at the extension entry from the host API. Each adapter owns catalog registration, prompt presentation, editor installation, input results, native submission and receipt selection. OMP uses command submission with a handoff receipt; Pi uses input transformation with an expanded-input digest. The shared preparation gate owns cancellation and acknowledges a cancelled handoff before allowing a replacement submission. Current session context remains authoritative for activation deduplication. `CONTEXT_BROKER_HOST` selects fallback default paths for configuration and detached completion; it cannot change the running host's protocol or override an explicit agent directory. Keep the opposite-host override regression in the existing global-config runner, and use the existing source and editor verification maps for submission, resources and cancellation.
 
+## Documentation and verification records
+
+User guides describe supported behavior and durable decisions. Verification Skills retain runnable commands, negative cases and evidence requirements. Keep dated candidate reports, machine-specific paths and raw run ledgers outside the checkout. Preserve original failures and unrun cases there; removing a superseded report from Git does not change its result. Do not remove tests or weaken acceptance rules during documentation cleanup.
+
 ## Release
 
 Tern release archives are self-contained. Download and extract the archive, then run `tern plugin install <extracted-directory>`; Tern does not install the tar URL directly. Source checkouts require a build before local installation. Broker npm releases are tag-driven:
 
 ```bash
-bun run release:check patch --no-push
+bun run release:check patch
 bun run release patch
 ```
 
-The release script creates a temporary local release branch, writes version files, and executes the declared `checkCommand` before any release commit, tag or push. Check failure prevents those actions. `--no-push` also runs the gate; `release:check` and `--dry-run` are planning commands and do not run checks. Publication additionally requires code, both-host, lifecycle, release-policy and artifact gates in GitHub Actions.
+`release:check` resolves the proposed release and runs the configured `checkCommand` without creating a release commit, tag or push. `--dry-run` plans without running that quality gate. The release command creates a temporary local branch, writes the version files and runs the same check before committing, tagging or pushing; failure stops those actions. `--no-push` still runs the gate. GitHub Actions additionally enforces its configured host, lifecycle, release-policy and artifact checks.
 
 Planning still fetches/prunes tags and queries npm, so do not treat `--dry-run` or `release:check` as completely side-effect free. The repository permits reusing a failed version only while that version remains unpublished; published npm versions cannot be replaced. See [release configuration](https://github.com/yoyooyooo/pi-context-broker/blob/main/.github/release.config.json) for the current policy.
 
-Publication builds both artifacts, publishes npm from `packages/context-broker`, and attaches `tern-context-broker.tar.gz` to the GitHub Release. The Tern version is owned by its package and manifest and may differ from the broker's npm version. `bun scripts/pack.mjs` rehearses both artifact formats locally; Tern users install the extracted release directory; source checkouts are a development input.
+Publication builds both artifacts and publishes the exact packed Broker tarball. Registry fresh-install and upgrade checks must pass before creating the GitHub Release and attaching `tern-context-broker.tar.gz`. The Tern version is owned by its package and manifest and may differ from the broker's npm version. `bun scripts/pack.mjs` rehearses both artifact formats locally; Tern users install the extracted release directory; source checkouts are a development input.
 
-Before npm Trusted Publishing is configured, a maintainer can publish manually from a real TTY:
+Verify a registry release against the locally reviewed archive:
 
 ```bash
-bun run build
-npm login --auth-type=web --registry https://registry.npmjs.org
-npm publish ./packages/context-broker --access public --registry https://registry.npmjs.org --auth-type=web
+node scripts/verify-artifacts.mjs --host pi --registry pi-context-broker@X.Y.Z --expected-archive /absolute/candidate.tgz --fixture /absolute/sdk-fixture.json --require-sdk
+node scripts/verify-artifacts.mjs --host pi --registry pi-context-broker@X.Y.Z --expected-archive /absolute/candidate.tgz --fixture /absolute/sdk-fixture.json --require-sdk --upgrade-from pi-context-broker@A.B.C
 ```
 
-Agent shells may fail with `EOTP` because they are not a TTY. Read back the registry version before declaring a publication complete; local checks and CI success do not prove npm publication.
+Replace the placeholders with exact stable versions; ranges and `latest` are rejected. The verifier checks registry name/version/integrity, requires downloaded bytes to equal the reviewed archive, installs into a fresh npm consumer, and runs the existing Pi/SDK artifact checks. The upgrade route first installs the specified older package, replaces it in place, and checks preserved isolated Pi/Broker configuration fixtures and removal of old package files before the same consumer checks. `--upgrade-from` also supports the existing local candidate route for rehearsal.
+
+Read back the registry artifact and complete its installation checks before declaring publication complete; local checks and CI success do not prove npm publication.

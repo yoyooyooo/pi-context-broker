@@ -8,7 +8,7 @@
 
 前置：Node.js 22.x 中的 22.22.3+，或 24.20.0+、仅用于构建的 Bun、Pi/OMP已安装，当前扩展可被宿主加载。先运行 `node .agents/skills/verify-context-broker/scripts/control.mjs doctor source`，再运行 `node .agents/skills/verify-context-broker/scripts/control.mjs run source`。实际入口是 `node scripts/verify-notion-integration.mjs run deterministic`，CLI executable fixture只占Notion边界，宿主、read工具、broker、provider capture都实际运行。
 
-Pi 的 pending/unavailable 目录断言位于最终公开 `context_with_system` 边界；`before_agent_start` 不再返回强制整段系统提示。常规 package check 中的 `input-guard.test.ts` 分别检查早期事件立即返回、最终系统 section 投影立即返回、错误来源准确可见与正文读取为零；OMP 原事件合同另测。实际安装的两版 Pi、完整默认目录、原生本地 Skill/工具保留及 HTTP serializer 证明继续复用[安装地图](../../verify-notion-skills-integration/features/installed-consumption.md#catalog-projection-after-explicit-preflight)的原 SDK driver，不用这里的直接事件测试替代实驱。2026-11-05 的 CI 42119481764 和本地 `sc06-catalog-projection-soeu76qa/guard-caller/fail-before.*` 保留了旧事件断言失败；后续通过不改写它们。
+Pi 的 pending/unavailable 目录断言位于最终公开 `context_with_system` 边界；`before_agent_start` 不再返回强制整段系统提示。常规 package check 中的 `input-guard.test.ts` 分别检查早期事件立即返回、最终系统 section 投影立即返回、错误来源准确可见与正文读取为零；OMP 原事件合同另测。实际安装的两版 Pi、完整默认目录、原生本地 Skill/工具保留及 HTTP serializer 证明继续复用[安装地图](../../verify-notion-skills-integration/features/installed-consumption.md#catalog-projection-after-explicit-preflight)的原 SDK driver，不用这里的直接事件测试替代实驱。
 
 - `source-metadata`：首个provider请求可见原生目录name/location，正文marker为零。
 - `source-native-read`：受控provider请求真实read工具读取该location，后续provider消息含完整正文。
@@ -24,10 +24,6 @@ Pi `read` 的参数保持顶层 `type: object`，不能用顶层 `oneOf`、`anyO
 
 原入口 `bun test packages/context-broker/scripts/pi-read-adapter.test.ts packages/context-broker/scripts/scalar-resource-read-host.test.ts packages/context-broker/scripts/resource-read-host.test.ts` 同时检查公开 schema 和实际 execute 拒绝，并保留原生设置/图片/完整字段、固定资源、跨 scope、分支及取消的回归。这三个文件仍在 package 的 `test:consumption` 中。原 `scripts/notion-sdk-pi.mjs` 的 schema 报告仅证明顶层 object、公开 path/paths、标量 range 选项及引用 guidance，明确 `validation_boundary: tool_execute`；不再由 schema 推断互斥或批量选项已被执行验证。实际安装/provider 继续用该 driver 的 native、resource-scalar、resource-batch 与 Code mode 场景；schema 静态通过不替代新安装包和真实 provider 接受。
 
-2026-11-06 原模型失败保留于 `~/Library/Logs/pi-context-broker/AH-617-20261105/sc21-c8-ab-7112-7fscsgto/evidence/graph-model-A-m8TE03/` 的 `provider-requests/payload-19.json`、`pi-rpc.json`；HTTP 200 不能覆盖其中的 schema error。对应修复证据为 `~/Library/Logs/pi-context-broker/AH-617-20261105/read-schema-compat-6pv7x5n9/`：原 adapter 回归 5 PASS / 2 FAIL，修复后的上述三组 27 PASS；旧 SDK schema oracle 对新形状的 1 FAIL 原件单列，迁移后原 `node --test scripts/notion-sdk-pi.test.mjs` 120 PASS，TypeScript 检查通过。此处未重建 C8、未重跑模型或真实源，不宣称新产物实模已通过。
-
-修复由 `f1a4f87` 形成独立 C9，归档 SHA `b4ed4cf1240db15b47e831096a848b6b6656f0764bca9c3f3bb2fe63ae4602a8`。原 CI `42202814091` 的同字节包在 Pi1.5/1.4 各17景通过，实际 provider 与 HTTP serializer 都带顶层 flat object；Pro/Mini 各原 live SDK 冷路径也通过目录、根/Requires、固定资源和续聊，实际来源账本见[安装地图](../../verify-notion-skills-integration/features/installed-consumption.md)。随后 C9 A 首实际模型请求29,582 B返回两次 `notion_list`，确认该次整份工具 schema 已被远端接受；`read` 本身尚未被模型调用。之后默认 Router 描述见证的观察器异常阻断第二次发送，原 A failed/B not_run 保留；根因与原回归见[图模型地图](../../verify-notion-skills-integration/features/skill-dependency-graph.md)，不能据 schema 接受宣布任务完成。
-
 默认目录解析与会话 View 选择按[默认目录地图](../../verify-notion-skills-integration/features/default-context-prefetch.md)运行 `node scripts/verify-notion-integration.mjs run --mode deterministic --view-discovery true`。旧 `--default-context true` 通过 View 的 checkbox 筛选运行预取、取消隔离与新鲜度 fixture，checkbox 不是独立全局门禁。这些受控路径不证明真实 Profile 机器绑定；真实页与安装产物分别使用 live-fixture 与 installed，不由确定性路径推断。
 
 真实 CLI 冷缓存、跨会话/进程复用、Notion 正文/资源修改与默认五分钟过期使用 `node scripts/verify-notion-integration.mjs run --mode live-fixture --cache-lifecycle true --database UUID --command-json '["/absolute/ntn-skills"]'`，按 [NS-SESSION-09～12](../../verify-notion-skills-integration/features/session-cache-recovery.md) 分别核对实际 Pi/OMP 终端与 Tern/OMP 菜单/胶囊。有效会话固定 A、新会话未过期复用 A、过期新会话取得 B 为不同断言；既有受控 cold/warm 不替代真实 Notion 编辑与 CLI 空缓存。
@@ -35,7 +31,6 @@ Pi `read` 的参数保持顶层 `type: object`，不能用顶层 `oneOf`、`anyO
 跨项目、Pi/OMP 和命令写法共用 Notion 缓存时，另执行 `node scripts/verify-notion-integration.mjs run --mode deterministic --shared-catalog true`，按[共享缓存 NS-SESSION-13～15](../../verify-notion-skills-integration/features/session-cache-recovery.md#共享-notion-缓存)检查一份 catalog/index/export、原始校验时间、共享刷新和会话 A/B 固定版本，并执行两仓 identity/TTL/隔离回归。它使用真实宿主与受控 source/provider，不代替真实 Notion 或原生菜单；菜单继续用 `verify-native-ui.mjs --catalog-cache` / `--catalog-cache-failure`。
 
 并发发布另按 [NS-SESSION-16～21](../../verify-notion-skills-integration/features/session-cache-recovery.md#并发发布与首次正文) 运行 `node .agents/skills/verify-notion-skills-integration/scripts/verify-cache-concurrency.mjs run --mode storage --case catalog-order,snapshot-race`，在产品修改前保留 fail-before，修复后重跑相同命令取得 pass-after。实际双宿主首次正文另运行 `run --mode hosts --case host-first-body`，负例为 `run --mode storage --case snapshot-mismatch`；同时间与时钟回退使用 `run --mode storage --case catalog-equal-time,catalog-clock-rollback`。显式 gate 确保旧 list 晚完成及两个完整 export 竞争；要求 catalog 不回退、两个 load 都成功且完整字节一致、active cache 无 losing stage，允许重复 read/export。两种 mode 均为无凭据的受控 source；hosts 实际启动 Pi/OMP 并先完成 discovery。Doctor、case selector、完整命令与独立 evidence/Trash cleanup 见所链地图。
-
 
 真实 Notion 生命周期 fixture 由 CLI 发布为原生页；先验证未接受的直接编辑返回 `PUBLICATION_DIVERGED`，再用 `operation inspect-edit` 与带精确 `--expected-version` 的 `operation accept-edit` 接受自建页版本，随后验证过期刷新。不手工改发布标记、不预热三端缓存。
 
@@ -55,8 +50,6 @@ Pi `read` 的参数保持顶层 `type: object`，不能用顶层 `oneOf`、`anyO
 
 原 `cli-write-invalidation.test.ts` 覆盖新的 `ctl operation resume`、`ctl sync upstream/local` 和 `replace`，以及历史 alias。只有配置中真实 CLI 的完整成功回执、原 operation 和已验证目标才刷新相应来源；unknown、错误/混合 operation、dry-run、status/plan、只读 pull、reused 与非法 ctl 嵌套均不刷新，也不重放写入。原磁盘目录场景必须通过工具事件执行 replace 与 ctl resume 后看到新目录，其他 source 不被普通写入刷新；缺 scope 的已验证历史恢复只保守重读同 CLI 的配置来源。
 
-改前原件 `~/Library/Logs/pi-context-broker/AH-617-20261105/sc23-ctl-callers-syfo5ol8/fail-before.log`，SHA256 `17db82a3bdb2c7427ba740310491373f16133d7bab3f9922f7cdbc455efcddbe`：四种新调用均未触发应有目录更新。该驱动在常规 package check 中执行。它证明回执到目录缓存的接线；真实作者写入/unknown 恢复继续复用 CLI 原独立 package smoke，实际安装 Pi 和真实 Notion 分别记录，不由本地事件断言外推。
-
 runner输出独立 `/tmp/broker-notion-evidence-*`，manifest记录mode、各host分支和未运行入口；provider/RPC/decision transcripts保留，scratch在另一个目录。`node scripts/verify-notion-integration.mjs evidence --evidence /absolute/run` 核对通过和文件存在；`cleanup --evidence /absolute/run` 只将ownership证明属于本次的scratch移入系统Trash，不删除证据。control自身证据再用 `control.mjs evidence /absolute/control-run` 核对。
 
 ## 证明边界
@@ -70,4 +63,3 @@ Shared CLI boundary accepts records only and read/export record plus entrypoint.
 `shared_skill` locator 含 `page_id`、`database_id`、`data_source_id`、`library_id`、`skill_id`；前三项是物理 UUID，后两项是逻辑 ID。`record.id` 为 `shared_skill:${encodeURIComponent(library_id)}:${encodeURIComponent(skill_id)}`，公共 ref 为 `skill://${encodeURIComponent(record.id)}/${entrypoint}`。保持 CLI 返回的完整编码；公共 ref 不等于 `skill://<page_id>/...`，菜单消歧和精确页失效仍取 locator 的物理 page UUID。共享记录的 `enabled` 必须为 boolean；缺字段拒绝，disabled 记录不进入可消费目录。原 `notion_page` / `upstream_subscription` locator 的有效合同继续保留。
 
 No execution is claimed by this map update; final owner runs and retains the evidence.
-

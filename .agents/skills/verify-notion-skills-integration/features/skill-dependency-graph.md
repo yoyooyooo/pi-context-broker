@@ -2,13 +2,11 @@
 
 此地图是现有跨仓验证 Skill 的专项，使用真实 Pi 原生选择和 read。Launch/Doctor/离线 Drive/Evidence/Cleanup 复用 [request-engine](request-engine.md)。不要复制出第三个顶层总验收 Skill；实际模型、RPC、进程、安装和 UI 继续使用仓库既有 helpers。
 
-最终安装包与原 AH-560 场景、模型图场景的复跑入口及未通过账本见 [验收索引](../../../../scripts/notion-skill-graph-acceptance.md)。该索引不将旧包或受控结果升级为当前包的真实模型通过。
+最终安装包与原 AH-560 场景、模型图场景的复跑入口和验收边界见 [验收索引](../../../../scripts/notion-skill-graph-acceptance.md)。该索引不将旧包或受控结果升级为当前包的真实模型通过。
 
 ## Notion 来源字段与原生安装语境（SC06/SC07）
 
 用户入口仍为 `notion_list`、原生 `read` 与 `notion_use`。Notion Default View 决定默认目录；作者原文中的 native-loader/editor 字段（例如 `disable-model-invocation`）描述原生安装语境，不单独改变 Notion 工具报告的可发现性、availability 或权限。按当前用户意图选择 read/use，继续尊重实际 disabled、权限失败和工作流执行授权。保留作者正文及字段；不自动 use，不改变本地 Pi 原生加载或 View 成员，不把原生字段说明推广成忽略作者指令。
-
-2026-11-06 的 C9 fail-before 是可核对的语境歧义：D-named 实际 provider 同时收到目标 Default 卡片和完整正文中的 `disable-model-invocation: true`，回答把该字段概括为“需要显式调用，不会自动触发”，未限定 native 安装；当时 1790 B guidance 没有说明两种来源的区别。原作者字段及原生含义是真实的，原六主题 semantic 通过保持；本项不证明该歧义导致 D-natural 未 use，更不修正其生成脚本错误或改判旧失败。
 
 定向 Drive 复用现有测试，不新建 parser 或平台：
 
@@ -18,10 +16,6 @@ bun run --cwd packages/context-broker typecheck
 ```
 
 正例通过公开 guidance/context hook 与真实工具注册/调用核对：新说明只进入 Notion guidance，作者 frontmatter、原历史、native system/path 原样保留，重复投影不增加说明；Pi list 正确给出可用于 read/use 的 Skill refs。反例保留实际 reported disabled、来源 `ACCESS_DENIED`、未知/不完整 coverage、原生 read 禁用与第三方 read 边界，metadata 不加载正文；这些验证输出范围和既有行为，不是权限机制修复。非 Pi list 文案、list 参数与 use schema 保持，`view-prompt` 通用层未改。
-
-本切片有效 RED 为 1 pass/2 fail（新语境说明与 Pi list 文案缺失），GREEN 上述三文件 20/20、0 fail，typecheck exit 0。实际 checkout 导出/注册输出的 guidance UTF-8 为 1790→2048 B（+258），Pi list description 为 178→185 B（+7）；这增加了语境说明，不宣称节省 token、自动选路改善或任务质量提升。独立安装实际 Pi 的 wire 与后续模型诊断须另绑新候选，不能用本组离线输出替代。
-
-Evidence 位于 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc07-native-flags-_okkmwtf/`：`fail-before/observation.json`（SHA `6a9e372b60f2c5238319cdb541c72100c2ccd8f16675c53d91111ac9a9505a9d`）绑定原始回答、三份 actual wire、完整作者正文和旧 guidance；`red/`、`green-tests/`、`typecheck/`、`measurement-v2/` 分别保留命令、原始输出与结果。证据提取器对 user content 数组的初次误设、离线 OMP 测量缺 native handle 的首次失败分别保留，不计作产品 RED。此次未新建 consumer、应用进程、会话或 scratch fixture；Bun/tsc 自然退出，全部证据保留，Cleanup 无新增运行资源可回收。后续 installed/model run 仍按原 Evidence→系统 Trash→Evidence 执行。
 
 ## 两条用户路径
 
@@ -94,25 +88,15 @@ Graph harness 18 在原 A/B 和 C/D 入口显式接受 `modelContract: "daily-ro
 | 来源隔离 | 新 daily 的 metadata selection、真实任务和补充 retained-source collector 均显式使用对应 owned `NTN_SKILLS_SCHEDULER_ROOT`，不继承日用调度状态；已有冷/暖缓存与来源账本条件继续生效。 |
 | 判定与旧样本 | 新 route 不放宽完整正文、Requires、未选 Members、固定版本、权限、取消、历史恢复和语义判据。模型错误 ref 即使到达产品错误边界仍是失败；旧 C9 A/B/C 和 free 的失败原件不覆盖。 |
 
-受控接线证据在 `AH-617-20261105/sc21-daily-route-wiring-77vwvgio/`，保留命令入口、wire/evaluator、严格第六文件 inventory 和 provider/model 身份碰撞的 fail-before。最终原四组 245/245 通过，`affected-groups-final.log` 为 25583 B、SHA-256 `006a0285c03cc54c57f7a35495b5c3ebc440042cf43479ea6648bead84a2bd81`；前一轮仅 legacy 拒绝文案断言不匹配的 244/245 原日志也保留。复跑原四组：
-
 ```bash
 node --test scripts/verify-skill-graph-contract.test.mjs scripts/notion-skill-graph-model.test.mjs scripts/notion-model-cache.test.mjs scripts/notion-skill-graph-project.test.mjs
 ```
 
-同目录 `ece-fail-before.*` 保留随后独立发现的 ECE 回归：原 CLI 的 Evidence 和系统 Trash 已成功，第二次 Evidence 因仍检查已回收 workspace 而 ENOENT。修复在清理前保存精确 `daily-runtime-settings.json`，cleanup 回执绑定原 result、project、ownership、profile 与该原件的 hash；仅整个 owned scratch 已不存在且绑定全匹配时使用保留证据。活 scratch 内缺项目、任意 cleanup 标记、原件变化或 ownership hash 不符仍失败。原 ECE 失败和初版 handoff 保留，`handoff-v2.json` 记录修复；唯一受影响的 graph-model 原组在 Pro macOS 上 118/118 通过（含两个新增 ECE 正反例），其余三组沿用上次验证。这两项调用真实 `/usr/bin/trash` 的集成测试只在 macOS 执行，macOS 缺该入口仍失败；Ubuntu CI 明确额外 skip 两项，不声称在 Linux 验过系统 Trash，也不安装替代 shim。`handoff-v3.json` 另存平台声明修正，原 Mac RED/GREEN 保留。本次实际 E→Trash→E 保持原文件 hash 和 `functionalStatus:failed`，清理不会改判任务。
-
-独立无 prompt 宿主预检 `daily-route-host-preflight-ycjzk8tt/handoff.json`（SHA-256 `aa1490e98c18e708c8a7b87b5fb7fe1e1875dd673d23da55e6b32e9e75f56ace`）证明实际 Pi 的 flash/high 和 owned SettingsManager 的 trusted project/retry 0，并保留原探针对缺失 `autoRetryEnabled` 的错误断言与更正 sidecar。该预检为 0 prompt / 0 model；接线单测也不证明实际模型 wire 或任务通过。新真实样本须独立冻结最终安装身份、来源版本、原任务、预算与顺序，先做 SC20 本地/Notion 同条件共同任务，再按 AH-639 执行 SC21。
+清理前保存精确 `daily-runtime-settings.json`，并让 cleanup 回执绑定原 result、project、ownership、profile 与该原件 hash。仅当整个 owned scratch 已不存在且绑定完全匹配时，Evidence 才改用保留材料。活 scratch 中缺失项目、伪 cleanup 标记、原件变更或 ownership 不符都必须失败。系统 Trash 集成要求真实可执行能力；其他平台如实记录 not_run，不能用永久删除或替代 shim 冒充。
 
 ### 实际 provider 的 system / developer 指令消息
 
 原 graph observer 和 metadata HTTP 复核须从实际 payload 的顶层 `system` 以及 `messages` 中的 `system` / `developer` 消息读取目录与描述复用依据。Pi 日用 reasoning serializer 可以使用 `developer` 承载同一系统提示；`before_agent_start` 或内部 context 不能代替实际 provider 内容。普通 user、assistant、tool 文本仍不算默认目录；消息 role、正文、工具参数、model/effort 和最终 wire 都不得由观察器改写。内部 `context_with_system` 的系统段处理保留原宿主类型语义。
-
-真实 A `sc21-daily-early-mu3y6io8/ab-evidence/graph-model-A-0ZB0iv` 的四份实际 HTTP 请求中，2768 B 系统指令均位于 `developer`，包含完整的 865 B root-only Pstack 目录。旧观察器只读取 `system`，将四次目录错误记为零字节，随后 `graphCatalogEvidence` 在设置 `isolation.inventoryComplete` 前失败，导致下游 `LOCAL_INVENTORY`；这不是 Agent 未读取项目库存。四份原 payload 与各自 HTTP body 逐字节相等，实际 name/description/View/short ref 另行核对，原 report 与 observer 不重写。
-
-两处实际边界的窄修复在原 `notion-skill-graph-model.test.mjs` 先保留有效 RED（1 pass / 2 fail），随后原组 121/121、零 skip。新增正例覆盖 skill/router 的字符串与 text parts developer 内容，负例覆盖 user/assistant/tool，旧身份、来源、描述和实际交付门槛继续通过。原件 `graph-developer-catalog-1238b426/` 中 `actual-payload-review.json` SHA `d3af3aa08d703a0fa0115174481308f846a1ddf0730dd5d7f953105265e2d495`，`red.log` SHA `dd07a75b58ec9b5cd4edc3bc4cd79e51856d5a73f8af4d954cdc82dbad99037e`，`green-full.log` SHA `479975960595400eefd6913b96f5d3d2bc0d08191c23bec6c123999aa06b7ac0`。本修复没有新的真实来源或模型请求；12 个明确记录的新增 fixture / 24 文件完成 Evidence→系统 Trash→Evidence，原件保持。
-
-A 的独立任务审阅仍不接受产物：规程将 teardown 放在保存证据之前，且完整生成文件中没有原 controller allowlist 的可执行命令，实驱仍未验证。后者是现有 controller 能力边界，不独立证明自定义 helper 本身错误。文件清单误识别另按下文提取规程修复；观察修复不能自动通过内容或 exercise。`sc21-daily-early-mu3y6io8/A-private-review/review.json` 保留完整正文/项目/参考读取和原产物边界。剩余 B/C/D 使用新冻结的验证源码，A 不重跑，不把旧失败改成成功；产品 C9 不变。
 
 ### 普通 daily D 的共享技术失败停止
 
@@ -121,10 +105,6 @@ A 的独立任务审阅仍不接受产物：规程将 teardown 放在保存证�
 普通内容/意图断言失败不因此成为共享技术故障：该 case 的依赖续问停止，后续独立 D 场景继续。正文缺失或普通超时本身也不证明共享故障；若同时存在上述来源/观察器/宿主/模型合同失效，按其独立证据判定。旧缺省模型路径保留原继续/availability 停止规则；普通 daily 仍只有原每提交 300000 ms 和固定样本数，不套用 ready 的 1200000 ms 整臂 wall，也不把 scheduled 总和改称 hard wall。原 prompt、四场配置、selector、预算、私有 oracle、真实模型失败均不改动。
 
 `scripts/notion-model-cache.test.mjs` 直接驱动原 `runIntentCases` 函数的循环和实际结果文件保存，只替换本地 RPC/来源边界；分别注入 source、observer、host-finality、model-state、model-route 故障，核后续 prompt 未提交、not_run 原因、成本原行保留，并覆盖内容失败继续与 legacy/ready 原行为。此为离线控制流验证，未启动真实 Pi、Notion 或 provider，不是新的模型任务成功证据。复跑原组：`node --test scripts/notion-model-cache.test.mjs`。
-
-证据 `AH-617-20261105/daily-intent-stop-wcad0gzr/`：有效 RED 为 1 pass / 6 fail，五种共享故障均实际继续了后两个 D case；修复后原 cache 组 63/63、0 skip。初轮测试夹具遗漏 ready 的本地 deadline 接缝所造成的失败也保留，独立注明为测试原因。新真实 cohort 必须绑定提交后的新 harness 身份；纯验证器变化不改 C9 产品包身份，不重判旧 A/B/C/D 结果。
-
-root 审查发现新增测试 helper 沿用永久删除合成 owned fixture 的旧写法，已改为输出并保留本次精确路径，由验证调用方完成 Evidence → Trash → Evidence；未改旧结果来冒称此前已清理合规。仅补跑受影响的 7 个新增分支，7/7、0 skip，runtime hash 未变，其余原组不重复运行。本次 8 个 fixture／317 文件已保留副本并移入系统 Trash，原路径消失且两份字节全等；原件 `green-retained-fixtures.*`、`fixtures-ece-before.json`、`fixtures-ece-after.json`。CI 临时执行器保留这些 synthetic fixture 至 worker 回收，不在测试中永久删除，也不把本机 Trash 证明推给 Linux。
 
 ## SC21 C/D 普通意图与介绍
 
@@ -145,11 +125,7 @@ root 审查发现新增测试 helper 沿用永久删除合成 owned fixture 的�
 
 首轮从原 `context_with_system` 的 custom message 观察 receipt；恢复轮仅从当前 `buildSessionProjection().entries` 观察有效 receipt，不回退扫描整个历史。receipt 保留在原 `system-context.nativeInjection`，与下一实际 provider 的 PID、session、leaf、事件顺序一对一绑定并消费一次；完整 user 内容及 span 必须匹配。`provider-request.nativeInjection` 只记录关联，机器 proof 或合成正文不加入 provider／wire。缺 receipt、摘要／截断、旧分支、未来 merged-user hash、重复 receipt／user、错误 source／scope／owner／pin／version／正文或 canonical card 均不支持省略；两个合法来源即使正文相同，也不能跨 wrapper 借用。
 
-定向入口为 `node --test --test-name-pattern 'native Members description' scripts/notion-skill-graph-model.test.mjs`；完整受影响回归沿用原 graph、shared evidence 与 SDK Pi tests。`AH-617-20261105/c12-graph-native-witness-2m3838uv/red.log` 保留首轮与恢复轮两项归属缺失 RED；本切片仅修验证接线，不改变产品包、C/D 任务、评分、模型预算或旧 C10 失败，不作为真实模型成本通过证据。测试只回收本次明确 owned 的本地 fixture，并保留原日志与 Evidence→Cleanup→Evidence 回执。
-
-随后纯 `1f991217` harness／C12 产品的原 C 三轮实际技术3/3通过：六份provider均保留一次完整根41,537 B与Requires5,938 B，以及74个准确Default入口。每份50处重复描述的证明来源为首份50 native-custom、后五份各49 native-session加1 complete-generated-directory；仅观察既有实际正文，不向模型追加机器proof。完整wire 575,282 B，语义却因前两轮无依据的仓库能力断言而整体失败；新read的源6,837 B与provider `Already loaded.` 短确认分层记录。原样本、独立语义、成本及清理回执见[主消费地图](skill-consumption.md)，不得据技术通过关闭SC21或把不同后端标识的全链差额认作净收益。
-
-2026-11-06 的 D 命名介绍原件保留在 `AH-617-20261105/sc21-c7-d-early-n8f8g08y`。四次实际 ready provider 均含 74 项，旧 observer 的 10 项空归属分别来自 8 项漏解 `&quot;`、2 项描述末尾 LF 被正则删掉。`AH-617-20261105/sc26-catalog-decoding-12whs9s7` 保留原件 hash、逐项归因、7 个定向红例、修后 163 项既有回归，以及同四份 payload、已完成 SDK list 和当时分支短引用的离线重验：旧 observer 绑定 64 项，修后绑定全部 74 项，零新来源或模型请求。这是目录观察修复，原 D failed 报告、未提交续问和独立语义结论保持原样。
+定向入口为 `node --test --test-name-pattern 'native Members description' scripts/notion-skill-graph-model.test.mjs`。完整受影响回归沿用原 graph、shared evidence 与 SDK Pi tests，检查首轮与恢复轮的实际正文归属；验证器通过不证明真实模型已自主选路。
 
 ~~~bash
 node --test scripts/notion-skill-graph-model.test.mjs scripts/notion-model-cache.test.mjs scripts/notion-skill-graph-delivery.test.mjs scripts/notion-skill-graph-host-index.test.mjs
@@ -165,8 +141,6 @@ node scripts/notion-skill-graph-model.mjs evidence --evidence /absolute/pi-inten
 ~~~
 
 已授权的定向早期反馈可用同一入口显式传 `--intent-case C-introduce` 或 `--intent-case D-early`；省略该参数仍执行原四场。选择前仍完整校验原四场配置、全部 prompt hash、来源和总预算，不删除未选配置来缩小合同。Doctor、manifest 和每场 evidence 都保存 `executionScope`。C 为一首轮加至多两条原有条件续问，最多 3 次 / 900000 ms；另外三场 D 标为 `not_run`。D-early 固定原三个 D，保留命名介绍的一条重启恢复条件续问，最多 4 次 / 1200000 ms；C 标为 `not_run`，不再次提交。未选原因均为 `not_selected_for_early_feedback`。两种选择均保持每次 300000 ms、零自动重试和 fallback；技术通过仍需原独立语义审阅，全部所选场景通过的总状态为 `partial`，不能成为四场通过或正式 SC21 验收。Doctor、run、review 必须重复同一显式选择，旧四场证据和失败保持原样。D 自然任务保留原只输出完整方案的提示；生成文件检查和后续 owned exercise 仍由控制器执行并单列，不改为要求模型执行项目。
-
-该选择入口的三个红例、原 30 项回归及独立 `4d3ba0b…` 包的 all / C 离线 Doctor 回执在 `AH-617-20261105/sc26-intent-selection-yrqgogaz`。私有来源归属 collector 另用 C6 的 owned git export，内部包别名只指向该导出、外部仅链接已安装依赖；不复制认证或 consumer cache。此处未提交模型或 Notion 请求，不能把选择/身份验证当作新 C 任务通过；真正运行仍需绑定最终候选和新 harness 冻结。
 
 ~~~bash
 node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/frozen-cd-config.json --intent-case C-introduce --intent-action doctor
@@ -188,13 +162,11 @@ node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/frozen-c
 
 真实 C `sc21-daily-early-mu3y6io8/remaining-v2/cd-evidence/pi-intent-evidence-ib85Vf/C-introduce` 只有两个模型 `read`。根 use 的目标是 known/member、没有正文；目标 consume 则是 inspect/prepared、Required 为空。旧断言只按 ID 命中节点，误将候选判为激活。原 `failed`、两条未提交续问、raw observer/source/provider/final 不改写，也不重新提交 C。
 
-证据位于 `AH-617-20261105/intent-known-member-6ps3hlqe/`。新增三项回归的有效 RED 为 2 pass / 1 fail；同一真实 C 原件调用原导出断言也得到 `1 !== 0`。修复仅限制 prepared 节点，原 63 项全部通过；首个修后全组为 65/66，新增正例因合成 oracle 漏填根/Requires 的 sha256/bytes 被原完整性门槛拒绝，该测试夹具失败保留。补齐夹具后仅重跑受影响的三项，3/3、零 skip。真实 C 的完整断言使用相同输入 SHA `fb396b22a2087ebd21a348b01a599cb2daa5daebcb40ca844fd70168af8a17aa` 离线通过：3 个实际 provider、301088 request B、2 个 read，仍要求独立语义评审。该旁证没有 Pi/模型/来源新调用，不代表整条 C、续问或正式 SC21 通过；新真实路径需绑定提交后的 harness。
-
 ### SC06 目录曝光对照：实验入口
 
 同一 intent runner 接受显式 `phase:"SC06-discovery-prototype"` 与 `discoveryExperiment:{"version":1,"mode":"full-cards"}` 或 `mode:"on-demand-cards"`。实验必须选择 `--intent-case D-early`，仍完整校验原四场配置，C 为 `not_run`；原三个 D 的 prompt、命名介绍的重启续问、每次 300000 ms、最多四次提交、零 retry/fallback 均不变。没有实验字段时，普通 SC21 的 phase、实际 ready 74 条断言与原 A/B、C/D 行为保持原样；不能把旧失败换成实验结果。
 
-两份配置仅 mode 和 owned `evidenceRoot` 不同。冻结同一独立包/runtime、C7、Pi/model/参数、生产 Default View 74 条及 scope、原完整四场 prompt/oracle/project、全部原 harness；此外把实际执行的 `scripts/skill-consumption-cost.mjs` 路径和 SHA 加入两臂相同的 harness 清单。Doctor 返回 `comparisonSha256`，必须相同才能配对。它只忽略曝光 mode 与 evidenceRoot，换源、名单、正文、prompt、包、工具、预算或 observer 都会改变该值。每场沿原驱动创建空 CLI/Broker/session roots；命名介绍的恢复续问保留原 session/cache，不重置为新的冷样本。
+两份配置仅 mode 和 owned `evidenceRoot` 不同。冻结同一独立包/runtime、CLI/SDK、Pi/model/参数、生产 Default View 74 条及 scope、原完整四场 prompt/oracle/project、全部原 harness；此外把实际执行的 `scripts/skill-consumption-cost.mjs` 路径和 SHA 加入两臂相同的 harness 清单。Doctor 返回 `comparisonSha256`，必须相同才能配对。它只忽略曝光 mode 与 evidenceRoot，换源、名单、正文、prompt、包、工具、预算或 observer 都会改变该值。每场沿原驱动创建空 CLI/Broker/session roots；命名介绍的恢复续问保留原 session/cache，不重置为新的冷样本。
 
 ~~~bash
 node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/discovery-full-cards.json --intent-case D-early --intent-action doctor
@@ -209,224 +181,40 @@ node scripts/verify-pi-notion-model-cache.mjs --intent-config /absolute/discover
 
 两臂加载同一原 `observeConsumptionCost` 被动观察器。`consumption-cost-*.jsonl` 与 `discovery-cost-*.json` 按每次原进程保存累计 provider JSON/实际 HTTP request bytes、工具 schema、默认目录、guidance、正文诊断跨度、工具调用/轮次、原 Pi usage 和提交到首 provider/首有效文本/完成的时间。on-demand 提示自身 bytes 单列；诊断跨度可能嵌套，不能相加或由字符估 tokens。缺失 usage/HTTP response bytes 保留 null。source 启动、取消、恢复、HTTP attempts/bytes 与 private extra proof 继续沿原 whole-case 账本单列，不重复分配到工具轮次。技术失败也保留已发生的成本，不能用更少调用或较短失败当收益；所有原条件续问和独立语义判断完成后才可评估完整任务。
 
-初始代码与局部 public-hook→localhost HTTP 接线验证的红例和原件在 `AH-617-20261105/sc06-discovery-experiment-raqdvyrj`。后续实际安装 Pi 两臂已按下方 2026-11-06 记录完成；真实模型的首个 full-cards 失败样本另见下方，on-demand 未运行，同条件任务成功与成本对照仍未成立。实验结果不自动改变日用默认目录，不代表正式 SC21 全矩阵，也不作为 SC20 纯本地全局 Skill 的等价臂。规模 1/10/74/100/101/300 与 Members 场景仍依原地图分别报告，不能由这次 D 早期对照替代。
-
-实际 Pi 的前置接线沿原 `notion-skill-graph-observer-smoke.mjs`，显式传入原 all14 的已种离线 fixture（不是 distinct/ambiguous fixture）。每臂使用同一已安装包与 tgz、C7 CLI/SDK、Pi、prompt、工具及初态，独立复制 source 状态并建立空 Broker cache/session；由原 `packageIdentity()` 核对 archive 与 installed src/dist，前后再次核 hash。SDK 分支 `source.command` 缺省，discovery/activation offline、prefetch false；不启动来源服务或将受控模型伪装为 magpie。原无这些新参数的 custom-command smoke 保持原行为。
+实际 Pi 的前置接线沿原 `notion-skill-graph-observer-smoke.mjs`，显式传入原 all14 的已种离线 fixture（不是 distinct/ambiguous fixture）。每臂使用同一已安装包与 tgz、CLI/SDK、Pi、prompt、工具及初态，独立复制 source 状态并建立空 Broker cache/session；由原 `packageIdentity()` 核对 archive 与 installed src/dist，前后再次核 hash。SDK 分支 `source.command` 缺省，discovery/activation offline、prefetch false；不启动来源服务或将受控模型伪装为 magpie。原无这些新参数的 custom-command smoke 保持原行为。
 
 ~~~bash
-node scripts/notion-skill-graph-observer-smoke.mjs --extension /absolute/installed/node_modules/pi-context-broker/src/index.ts --package-path /absolute/frozen/pi-context-broker.tgz --cli-entry /absolute/c7/node_modules/ntn-skills/dist/ntn-skills.js --sdk-fixture /absolute/original-all14-fixture.json --discovery-only true --discovery-mode full-cards --evidence-root /absolute/new/full-cards
-node scripts/notion-skill-graph-observer-smoke.mjs --extension /absolute/installed/node_modules/pi-context-broker/src/index.ts --package-path /absolute/frozen/pi-context-broker.tgz --cli-entry /absolute/c7/node_modules/ntn-skills/dist/ntn-skills.js --sdk-fixture /absolute/original-all14-fixture.json --discovery-only true --discovery-mode on-demand-cards --evidence-root /absolute/new/on-demand-cards
+node scripts/notion-skill-graph-observer-smoke.mjs --extension /absolute/installed/node_modules/pi-context-broker/src/index.ts --package-path /absolute/frozen/pi-context-broker.tgz --cli-entry /absolute/cli/node_modules/ntn-skills/dist/ntn-skills.js --sdk-fixture /absolute/original-all14-fixture.json --discovery-only true --discovery-mode full-cards --evidence-root /absolute/new/full-cards
+node scripts/notion-skill-graph-observer-smoke.mjs --extension /absolute/installed/node_modules/pi-context-broker/src/index.ts --package-path /absolute/frozen/pi-context-broker.tgz --cli-entry /absolute/cli/node_modules/ntn-skills/dist/ntn-skills.js --sdk-fixture /absolute/original-all14-fixture.json --discovery-only true --discovery-mode on-demand-cards --evidence-root /absolute/new/on-demand-cards
 ~~~
 
 该受控层沿原 90000 ms 单次 prompt、n=1、三次 localhost HTTP：首请求选择 `notion_list`，下一步只复制实际默认可用 metadata 的 ref 给 native `read`，最后完整正文恰一份进入 provider。它不使用私有 target seed，inspect 不读取 Requires/Member。正常本地 Skill canary 的 metadata 必须留在每次实际 system，未选正文不得出现；原工具 schema、guidance、项目路径和 canary 均进入成本口径。原 graph observer 仍逐 body 绑定 public projection→provider→HTTP，成本 observer 最后加载；输入目录严格对齐 fixture 的完整 Default View，full 原字节不变/on-demand 只隐藏卡片。fixture 的两条默认目录是受控层，不替代生产 74 条校验。
 
-成功要求原 `RPC.closeInput()` 自然退出 0、完整 `observer_end`、每个 SDK/HTTP 终局与实际返回值闭合；来源 HTTP/CLI 必须为实际完整账本的零。`run-0/launch.json`、`cost-submission.json`、`consumption-cost.jsonl`、`discovery-cost.json`、`source-accounting.json`、`rpc-lifecycle.json`、原 provider/source 原件与 installed/runtime 身份一同保存。按原 owned Evidence→Trash→Evidence 流程封存，失败不得重写。该层是 source 已暖、Pi/Broker 新状态的接线验证，不声称冷 Notion 延迟或全任务收益；之后才在独立窗口运行上面的原 D 两臂。新增入口红例、缺省尚未创建 cache 目录的真实复制红例及本地回归原件在 `AH-617-20261105/sc06-controlled-sdk-pnifyc5s`；该开发阶段未启动实际 Pi/来源/模型。
-
-**2026-11-06：同包两臂实际 Pi 接线通过。** 从纯 `61a063d30273596bb8f5abfc11750f7b920d0766` git archive 执行上述原 smoke，冻结全部 257 个 tracked 源文件；未借用工作区后续的 SC05 helper。两臂共同使用 Pi 1.5.0、独立安装的 bace 归档 `bace39340fbe68df8c1b667f3dfbb6eefea2d7bb4b809eaa7270cf34cb293893`、C7 CLI `6a82d148…` / SDK `2095a85a…` 及原 all14 离线 fixture `4a43f63c…`。实际安装 86 个 Broker 文件、68 个 CLI 文件与归档相等；来源缓存已种好，每臂分别复制到新的 owned 根，`source.command` 缺省、offline、prefetch false。
-
-| 原受控场景，分别 n=1 / 90000 ms | full-cards | on-demand-cards |
-| --- | ---: | ---: |
-| public hook 的完整输入目录状态 | pending → ready → ready | pending → ready → ready |
-| 实际 provider / localhost HTTP 请求 | 3 / 3 | 3 / 3 |
-| 工具调用 / 工具轮次 | 2 / 2 | 2 / 2 |
-| 累计实际 provider JSON / HTTP request body | 32,303 / 32,303 B | 31,800 / 31,800 B |
-| 累计工具 schema / guidance | 12,252 / 5,370 B | 12,252 / 5,370 B |
-| 原目录 section 输入 / 输出 | 1,850 / 1,850 B | 1,850 / 1,350 B |
-| on-demand 说明自身累计字节 | 0 B | 180 B |
-| SDK list / inspect consume；来源 HTTP / CLI | 2 / 1；0 / 0 | 2 / 1；0 / 0 |
-| 原生 Pi / runner 自然退出 | 0 / 0 | 0 / 0 |
-
-每轮保持正常本地 Skill canary 的名称、描述和入口，未选 canary 正文为零。两次 ready 的原始 Default View 都是 fixture 的 a/b 两条；full 保留原 section 每字节，on-demand 仅隐藏这些卡片。模型侧先收到实际 `notion_list` 回执，再复制其 ref 调用 native read；同 owner/scope/pin 的 25 B 主文完整进入后续 HTTP 一次，Requires/Member 未读取。public hook、provider 与 HTTP body SHA 逐次绑定，两个原 cost observer 均有完整 `observer_end`，SDK/child 终局均 pending=0。每臂实际前后核对日用三个哨兵、原 fixture、归档、安装文件与 harness 相等。
-
-原件根：`/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc06-controlled-pair-9d9314r3`。`plan.json` SHA256 `ec1444b18e185f72cd3156ea9ccb2823ff7bf33616621eee63f06a3fcbedb16c`；`handoff.json` 为 `36f1c3b9a0c58fb0863cebfe3c5630039f0e797b9c4984f9c9a9c00a66097675`。两个原 result 的 SHA256 分别为 `b7ea358ecd61350f0c273e3cf591fef7336a0feaef814357b32a4d907bcb1654`、`93fcae6c9240b2371eab1e52ddefdfb5836b4561b460e6528b4c1dcb7e71e970`。Evidence→系统 Trash→Evidence 保留 76 份原件 hash 与两份 native session JSONL，仅清理两处 owned scratch；`cleanup/proof.json` 为 `c21ab6e864444b7b1a7add2af3f98ccf9e01658457cc32695b80061e954bb805`。
-
-这 503 B 差值仅属于上述三次受控请求，不是生产 74 条目录或真实任务收益。UTF-8 诊断跨度存在嵌套，不能相加；usage 和 HTTP response bytes 缺失仍为 null。真实 D 两臂配置仅 prepared/not_run，旧 D 失败不改判；正常 SC21 的实际 74 条断言、原 A/B、原提示和预算不变。后续更换包或 schema 必须另绑候选身份，不覆盖本轮 bace 原件，也不自动采用 on-demand 为日用方案。
-
-### SC06 真实 D 早期反馈：普通目录与关闭取消分账
-
-同 `282fb35a…`／C8／Pi 1.5、纯 `1e23f5e` observers、原 flash-free 与三个 D 提示的 full-cards 臂只执行一次，3 首轮、0 条件续问；原 cohort 和三个 case 均保留 failed，on-demand 为 `not_run`。原件与 E→系统 Trash→E 在 `sc06-real-prototypes-1e23-c84t7fgl`，最终 `full-cards-readonly-yuik51tm/handoff.json` SHA256 `46e70de3689d3b2670bd16c08c8f779869de8e1d4dd1e2c8be8085c78595b39d` 绑定 84 个原始文件、各项目 5 文件及三项日用哨兵的 unchanged hashes。driver 自然 exit 1／outer 0 与三个原生 Pi 的 `rpc.stop` exit 143 分列。
-
-命名介绍实际 list→use 完整取得目标，但未走原要求的 inspect/read，技术失败；独立介绍语义通过。自然任务只读取五份项目文件，未使用 Skill；原提示只要求方案，独立语义失败来自具体规程缺陷，不是未执行项目。二者首个实际 HTTP 的 system 目录均为 pending，原文明确“不等于空目录、需要发现时用 notion_list”；命名介绍后两次请求 ready 74，自然任务两次仍 pending。实际 read/use 区分、全部工具描述及 1,790 B guidance 保留在 `provider-entry-boundary.json`（SHA256 `fac3532b7a5b5b67ee84f02f1f61bc4af08fa08bac228e7e1585be22364d54a2`），不推测模型动机。
-
-聊天的原 turn 与内容语义通过，case 仍因来源断言 failed：完整普通库响应 `coverage.method=explicit_database` 返回 298 项，其中冻结 Default 74 的 id/name/description/ref 全部逐项相同；随后 list 在真实 native shutdown 区间内取消，没有返回 View。普通成功不能冒充 Default 完成，也不应使合法未完成关闭分支失败。`d-chat-source-boundary.json` SHA256 `4c29be209cf06dfd50738d9dc946d6d54c0315c2ed0771194180c21f4814ecb5` 绑定两份原 SDK 回执、真实时序与旧断言位置。
-
-原 intent source oracle 只在现有返回字段上区分普通完整目录与 View。所有完成目录必须同 scope、count/唯一身份及完整 coverage 相符；任何完成 View 都须逐项等于冻结名单，不能被另一份正确 View 掩盖。没有完成 View 时，仅 metadataOnly 聊天、实际 provider pending、真实同进程关闭取消和来源 EOF 全闭、所有 SDK 操作及 HTTP 仅元数据可保留 `not_observed_before_shutdown`。普通目录恰好包含 74 项也不是 View 完成证明。取消必须 value=null／resultObserved=false；响应字节 unknown 仍为 null；named/natural 未完成目录、错 scope／partial／failed source／未知请求种类／正文或写入仍拒绝，原 turn ready/交付断言未改。
-
-该窄修原测试先 39/42（3 红），后 42/42；证据 `sc26-chat-catalog-eske5_gm/fail-before.log` SHA256 `42e083fcf54d76da6256d4482b7655da43c73c707abac7baa311595acf2f6b56`、`pass-after.log` SHA256 `b57d241606d94127d715af6a5e82803adeb296d231b103cc7cacdb439aca2d12`。对封存聊天原件的纯函数补充归因 `offline-chat-source.json` SHA256 `9c7e0c040407a5a491f0b7ff04de9a5809e21de541efab6e5f1f3167181b3ec6` 保持 Default 未观测、6 次 HTTP、721,014 B 已知响应加 1 次 unknown；它没有重跑模型或修改原 failed。全臂实际 6 次模型 HTTP／128,691 B 请求、33,476 input／7,680 output tokens；消费者来源 60 次 HTTP、5,284,874 B 已知响应加 1 unknown，私有归属验证另 3 次／10,101 B。子跨度不重复加总，未知响应与未发票定价不填零；没有第二臂和完整任务成功，不能宣称目录曝光收益或关闭 SC20／SC21。
-
-### 2026-11-06：两种真实 D 原型的完整结果
-
-第二臂沿原 `D-early` 入口使用纯 `a08bb6f` observer、同一 `282fb/C8` 包、Pi1.5、`magpie/group/flash-free`、原三项 prompt/Default74/owned project/private oracle。只换 harness 身份与新 evidenceRoot，反向核其余配置相等；每提交300秒、每臂1200秒、n=1、0重试/模型fallback，实际3 primary、0 followup，C未运行。旧full-cards保持failed，不以新断言或第二臂覆盖原报告。
-
-| 场景 | full-cards 原行为/结果 | on-demand-cards 原行为/结果 |
-| --- | --- | --- |
-| 无美元介绍 | list→use，正文完整但错误启用use；技术失败，介绍内容语义通过 | 0工具、泛化解释，未inspect/read；技术与内容语义均失败 |
-| 自然验收任务 | 5次本地read，未发现/使用Skill；技术失败，生成规程有端口、状态码、JSON及证据清理缺陷 | 0工具，未了解实际项目，反例为TODO且脚本路径/变量/证据保留有缺陷；技术与内容语义均失败 |
-| 普通聊天 | turn/内容通过，旧post-run目录oracle失败仍保留 | turn/case/内容通过；只见pending，Default关闭取消保留not_observed |
-
-六个首provider实际都是pending。第二臂每景都只有一个provider，因此没有取得“ready74卡片 vs 隐藏卡片”的有效任务配对。on-demand named的Default在首wire后9.798秒完成、原模型message_end为12.363秒；natural分别7.973秒与52.778秒，均没有下一次请求把目录交给模型。chat仅普通298目录完成，Default在shutdown后cancelled/resultObserved=false，不能冒充成功Default。
-
-逐wire核验三组首请求：工具定义、原任务、1,790 B guidance及其它模型参数相同；system的owned cwd等长替换，另只多 `\nNotion cards are on demand; discover them with notion_list.`。该提示实际UTF-8为60 B，JSON转义新增换行后wire精确多61 B；不是卡片节省，也不能归因为模型选路变化的充分原因。
-
-| 两臂完整成本 | full-cards | on-demand-cards |
-| --- | ---: | ---: |
-| 实际模型HTTP / request body B | 6 / 128,691 | 3 / 25,559 |
-| 模型input / output tokens | 33,476 / 7,680 | 6,222 / 4,865 |
-| Agent工具调用 | 7 | 0 |
-| 消费者来源HTTP | 60 | 50 |
-| 已知decoded响应B / unknown响应次数 | 5,284,874 / 1 | 3,683,281 / 1 |
-
-完整来源响应总量和模型response wire bytes均为unknown；Pi usage不是发票成本。full-cards私有来源归属3 HTTP / 10,101 B另列。累计输入的schema/目录/guidance/正文/历史子跨度不与整体请求相加。原 `projectedBodyUtf8Bytes` 只统计字面 `<body>` 标签span，不是全部正文：full named的三请求仍有0/0/1次完整目标正文，累计源正文6,837 B、tool JSON内转义span6,897 B、outer wire嵌套span6,973 B，已经包含在97,372 B任务输入及128,691 B全臂输入中。`readonly-review/body-accounting-supplement.json` SHA `9865f0331c04b702cf610bd5c62bdff12533f7c1563ef124bb52c02262d878a6` 解释此观察范围，不改原报告或把0当未交付。较低成本伴随任务所需读取缺失，不是成功任务收益；n=1不支持稳定时延/p95或改用按需目录。当前普通全局Skill的Default元数据合同保持，SC06/SC07/SC20/SC21均未据此关闭。
-
-第二臂原driver自然exit1、outer收集器exit0；3个Pi按原rpc.stop关闭143，观察器EOF均pending0。原Evidence→系统Trash→Evidence保留65份raw、各项目5文件、daily三哨兵及包身份，未执行生成的规程脚本。证据根 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc06-on-demand-a08-csh6fejk/`：原manifest SHA `9f7efd765d3ca812fd3d042ada78d9de3dc3d483392c2e610bbf545ba24c07ba`，`closure/ece.json` SHA `f3038f83a9f86442269d7ca545f9d90ccc7cb2f793033df5d5b14095c5844a88`，`readonly-review/costs-and-outcomes.json` SHA `a90003952e33029fcacf4029e28b9a8f3ff1dc9793b50aab4bac45e2199a5391`，`first-input-comparison.json` SHA `600e28211d4429592ae1cf2b025b5abd07083092c73e26432a38805c14b629a4`，独立内容审阅 `independent-semantics-verification/handoff.json` SHA `22ff83adcbe3872d41482333f528ad5535f83f0198f0ed28dd823616fa5c4d94`。这些sidecar不改变原技术结果。
-
-### 预注册：目录已 ready 时的真实 D 发现策略
-
-上一节两臂的六个首请求都是 pending，因此未形成 ready 卡片的任务配对，原 failed 及其成本账本保持不变。下一层沿原 `verify-pi-notion-model-cache.mjs` 显式配置 `discoveryStartup: {mode: "ready-directory", timeoutMs: 60000}`；只允许已有 SC06 full-cards／on-demand-cards 实验和 `--intent-case D-early`。完整四场配置、原提示、flash-free、生产 Default 74、原工具面、私有 oracle 隔离及条件续问仍逐项校验，C 明确 not_run。没有该字段时，原冷启动路径不增加等待。这是新的预注册条件，不能把它称为原失败样本的重试或修复后成功。
-
-| 限制 | 本层含义 |
-|---|---|
-| 每个原始 D case 准备 | 最多 60,000 ms，含初始 Pi 启动和本地状态检查 |
-| 模型提交 | 每次最多 300,000 ms；每臂三个首轮、最多一条原条件续问，n=1、零自动重试／回退 |
-| 整臂 wall fence | 从原 run 入口起最多 1,200,000 ms，**包含准备、消费及来源终局**；不是额外增加 180 秒 |
-| 两臂上限 | 最多八次原模型提交、2,400,000 ms 总 wall；剩余时间不足时如实失败或 not_run |
-
-准备只在原空 state／空 session 启动后，用现有 RPC `get_commands` 确认扩展命令已注册，再用裸 `/context-broker view` 读取内存状态。不会调用复数 `views`、带 selector 的 `view`、refresh、正文工具，也不会先给模型发 greeting、目标 ref 或私有文件。命令必须由宿主 handled，原 `extension_ui_request` 通知逐次保存；准备前后 `get_messages` 必须完全相等且为空。初始化时的 “no enabled Notion sources” 只能继续等待，不能冒充成功空目录。
-
-屏障同时要求原 SDK list 起止与实际返回值完整绑定，同 scope 的普通完整目录与 Default View 分开，Default 必须是原 first View、完整 coverage／无 failed_sources、冻结 74 条 name／description／canonical ref 精确相同。所有准备请求只能是 metadata，SDK error／cancel、partial、错误 View 或超时均不得打开任务。裸状态、完整 SDK 返回与首个实际 provider 是不同证据：首个 provider 再绑定原 public projection／HTTP，并逐条解码完整 name、description 和 location 对照冻结 owner/ref，保留引号、实体与末尾换行。full-cards 必须真实送达完整原 section；on-demand 只证明隐藏前目录完整，同时保留外层没有卡片及原发现说明的证据，不把内部 ready 写成模型已看到卡片。
-
-每个准备 poll 保存真实通知、RPC 区间、原 source ledger 前缀与回执 hash；其 HTTP、字节和时间属于整个 case／arm，前缀成本不得再加一次。原来源和模型账本继续保留未知字节为 null。未提交模型时，只有完整被动观察器链和零 provider/tool/input 事件才能记为已证明的零模型工作；缺观察器不能推零。原独立 retained-source collector 的 120 秒上限必须完整放入剩余整臂预算，否则不启动且归属保持 unknown。到期即停止 owned RPC；实际关闭超出的时间单列 `closureOverrunMs` 并使整臂 failed。`HOST_FINALITY_FAILED` 独立保存在 `result.hostFinality` 且停止后续 case，不被通用任务断言覆盖；来源／观察器技术故障也停组，普通模型任务失败保留原独立场景顺序。
-
-预注册冻结时，本层只完成本地实现和原测试，**当时真实来源、Pi、模型与 Doctor 均 not_run**。证据根 `sc06-ready-stratum-ll12nc7l` 保留原三个合同红例（`red.log` SHA256 `8419831f0bcc32e54a2627f9071ebffd4307e259676e9cbae0604b0ce192771e`）、原 host-finality 停组谓词的确定性红例及修复后原测试组 52/52。最终测试使用纯 `96c6830` 导出加本片 driver/test，`final-tests.log` SHA256 `86e83511dd26df8e421cc44cfd9a240896bcaef8d8566e5a95a70896d919d07f`；没有借用工作区中其他未提交代码。执行前要求冻结准确提交、同 `282fb35a…`／C8 包、真实日用哨兵和两臂配置，并沿原 Evidence → 系统 Trash → Evidence 收束。以下实际记录不改变默认全文目录合同，也不关闭 SC20／SC21 正式任务或原生等价缺口。
-
-### Ready 分层两臂实际终局（2026-11-06，均保留 failed）
-
-两臂按原顺序各执行一次，harness 的 258 个文件与提交 `327fdee4c33b2e5e77c507f184ff50f809d12a52` 逐字节相等，同 `282fb35a…`／C8／Pi 1.5 包的 87 个成员未变。两份原静态 Doctor 各 ready；实际六个首任务均先获得完整同 scope 的冻结 Default 74，再提交原提示。full-cards 的三个首 provider 实际收到 74 张卡片；on-demand 的三个首 provider 只收到原按需说明和零卡片，隐藏前的完整名称／描述／owner/ref 另有同 payload 绑定。准备中没有模型请求、正文读取或写入。原 C、所有冷失败及其输入不改。
-
-| 原场景 | Full-cards 实际路径与原技术结果 | On-demand 实际路径与原技术结果 |
-|---|---|---|
-| named 首轮 | 复制实际短 ref → native `read`，完整 6,837 B 目标正文进入 provider；passed，独立介绍语义通过 | `notion_list(query=目标名)` → `notion_use`；完整正文已交付，但介绍选路 failed；独立介绍语义通过 |
-| named 条件恢复续问 | 原 restart/resume 后唯一 provider 为 pending；原断言判 failed，完整原文仍在同一恢复输入中且无新正文操作 | 首轮前置失败，原续问 not_run |
-| natural 规划 | 五个实际项目 read → 无参数 list，未 use Skill；failed；独立静态方案质量亦失败 | 五个实际项目 read → list(query=`intent`)，未 use Skill；failed；独立静态方案质量亦失败 |
-| chat | 一个 provider、零工具，技术及内容均通过 | 一个 provider、零工具，技术及内容均通过 |
-
-Full 恢复续问原 FAIL 保留：首 provider `09:17:27.652Z` 早于该新进程 Default SDK 完成 `09:17:27.871Z`；SDK、source EOF 与 host finality 均完整。已定位该无条件 ready 断言与 SC09 普通恢复非阻塞合同冲突，后续 oracle 校准独立记录，不把本轮原 report 改为 passed，不增加续问等待或重跑。两个 natural 提示均只要求方案；独立语义失败来自可定位的脚本、断言、运行路径和证据清理缺陷，不能因未实际执行项目判失败。
-
-| 实际整臂账本 | Full-cards | On-demand |
-|---|---:|---:|
-| 模型提交／实际 HTTP | 4／7 | 3／7 |
-| 完整模型 HTTP 输入 B | 289,927 | 87,304 |
-| 实际 input／output tokens | 76,948／8,202 | 21,577／9,798 |
-| Consumer 来源 HTTP／decoded response B | 73／6,037,657 | 73／6,037,657 |
-| 其中准备子集 HTTP／decoded B | 57／4,421,391 | 57／4,421,391 |
-| 三次准备累计 ms | 29,511.77 | 30,201.79 |
-| 独立归属证明额外 metadata HTTP／decoded B | 3／10,101 | 3／10,101 |
-
-准备子集已经包含在整臂来源账本内；独立证明另记，不隐去设置成本。14 份实际 provider 输入逐文件核对原 cost hash，schema 均 3,962 B／SHA `8e2d3bd4…`，guidance 均 1,790 B／SHA `0280357f…`；模型 HTTP 响应字节仍为 null。`projectedBodyUtf8Bytes=0` 仅表示该诊断 marker 未出现：精确原文实际上在 full named 的后两份输入及 on-demand named 的第三份输入各出现一次，这些 tool 正文跨度不能再加到完整输入。Full 多执行一条原条件续问，且 substantive 场景结果不同，不能将整臂数字差直接宣称为成功任务收益。可配对的 chat 输入是 38,803 → 8,512 B，但只证明该问候场景，不支持采用按需目录或关闭正式任务门槛。
-
-两臂 runner 均 exit 1、外层收集器 exit 0；7 个 Pi 均按原 RPC stop 关闭 143，不能称原生自然 0。source/observer EOF 与 owned 进程终局完整，无遗留 consumer。原 Evidence → 系统 Trash → Evidence 的 18 个动作均 exit 0，六个 owned scratch 已 Trash，399 份原件及日用三哨兵保持。最初 on-demand 编排工具 `-32603` 单独留证，后续先确认无回执／无消费者，并在 spawn 前用同一 stdout 的排他创建保证只启动一次；不是模型重试。
-
-原件根 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc06-ready-stratum-ll12nc7l/`：两运行分别为 `full-cards/evidence/pi-intent-evidence-FMPvxd` 与 `on-demand-cards/evidence/pi-intent-evidence-wsFmdB`；`comparison/ready-comparison.json` SHA256 `9315dfaf1befdf7d4020d1c02cab33289c16b475a200bab9d0e1cc1096da7e46`，两份原 ECE SHA256 `530e92bc3b901217465368cc330118b4750ba3fff885c1eafc17425f01608c61`／`8fcff0567ef7c0714485d0c08fda769c901bf1ad701fefeb9461722b0b3a1e73`。独立内容审阅位于同 Logs 根 `sc06-ready-semantic-review-tlqwc8z2/`，full handoff SHA `fb77875d…`，on-demand handoff SHA `ea3d1973…`；没有调用 review 子命令升级原技术状态。
-
-### SC09 普通恢复的目录断言校准（2026-11-06）
-
-上面的 full 恢复样本暴露旧 oracle 与现行合同的冲突：AH-623 与已完成的 AH-624/SC09 允许普通新旧消息在目录 pending 时进入 provider；原 `assertIntentTurn` 却对所有 followup 强制 ready。修复只调整验证器：普通恢复保留真实 pending 状态，ready 分支仍核完整默认成员、名称、scope 与来源；显式 ready 分层的首任务依旧必须绑定实际 ready provider。产品不增加目录等待。
-
-`reuse-introduction` 同时加强为第一次实际 provider 就必须包含精确 owner/scope/pin/ref/hash/bytes 的完整目标正文且恰一份，后续新来源操作仍只能是 list。正文缺失、截断、换版本/归属、重复、迟到下一 provider，以及静默 read/consume 均拒绝；原来源、观察器和进程终局门槛保持。
-
-原测试入口新增恢复回归，在 `327fdee` 旧验证器上先得到同一 ready 断言失败；修后 `node --test scripts/notion-model-cache.test.mjs` 为 53/53。证据根 `sc26-resume-oracle-8yosq3tz/` 的 `fail-before.log` SHA `4b466f159ffaf49a0131e8370d84dbddd3b789894095f0132f6d08fb8ad99181`、`regression-after.log` SHA `66a0e8e6a6e142aa2dce3087504fce65b98f94b9bc8f0eb5151fe5668cd712a7`。
-
-同目录 `replay-original-recovery.mjs` 对原 full 恢复输入运行旧/新断言：旧断言仍失败，新技术断言通过。实际首次 HTTP `seq61` 中精确 6,837 B 原文出现一次，仅有两次新的 metadata list；16 份输入逐 hash 保持，来源/模型新请求均为 0。`original-recovery-review.json` SHA `9c7ba3bacd975ad8f9c2d76b8f237f0f97069107b568538c7d8c833023077e95`。这是离线合同复核，原 arm/case/turn failed 与独立内容审阅均不改写，也不充当一次新实际运行或正式 SC21 通过。
-
-### SC21 C 与 root-only A/B：实际失败及提交错误分层（2026-11-06）
-
-纯 `7112ddf` harness、同 `282fb35a…`／C8／Pi 1.5 的普通 C 首轮已运行。实际首 provider 已提供正确的 `sr:CUGdD4OYX0jRoU6T0Fsdygg` 与 canonical ref，模型却先调用原输入中不存在的 `sr:skill://create-verification-skill/SKILL.md`；该 read 被拒绝后，模型执行 list → use，目标完整 6,837 B 原文最终送达。原技术状态保持 failed，两条条件续问均 not_run；独立六主题内容审阅通过不能覆盖选路失败。原件为 `sc07-c8-c-cohort-247688nx/runs/pi-intent-evidence-4Ll6CI/C-introduce/result.json`（SHA256 `2082bbcdca7402f27c20f9b2bbd38ca07559ce9d9a6e3632c00aa043d6993768`）；独立内容 handoff `sc07-c8-c-semantic-gyrcf_nu/handoff.json`（SHA256 `1cd3511af9f1868bbf9bf6d3a328409fcc064bef69efc46748f86ca8ecb4a31e`）。原 schema／guidance 已明确介绍使用 read，不能把本次行为归因于缺少该说明，也不自动纠正坏 ref 或将 use 暗改为 inspect。
-
-同候选的 A `$pstack@notion` 与 B `$poteto-mode@notion` 两个 root-only metadata selection 均实际通过，分别保留 `sc21-c8-ab-7112-7fscsgto/evidence/graph-selection-zuACGP/result.json`（SHA256 `96aad42f05a4edab6ab3a635d2347c5782ed0e375bd53bcb1ef660d2e09a1d48`）与 `graph-selection-lJvQf8/result.json`（SHA256 `79f6f703a4e2e4dfe795dd9c6da86d2e2a716b17cc14f0477de6275220628746`）。每次均为 3 次 SDK metadata list、3 次受控 provider、12 次来源 HTTP／1,446,744 B decoded response，正文及 CLI 子进程为 0；这些准备成本单列，不作为真实任务成功或任务缓存预热。两个 selection 的 Pi 都经原 RPC stop 关闭 143，不能称自然 0。
-
-A 真实模型只产生一份 30,456 B HTTP 输入，HTTP 200 后实际 assistant 返回 read 顶层 schema 拒绝：`type: object` 之外的顶层 `oneOf` 不被该次调用接受。模型工具调用为 0、无 final；显式根的自动来源准备另有真实账本，不能把无模型工具调用写成来源无正文。原 `samples[0].error` 为 `NATIVE_SUBMISSION_FAILED`，后续完整读取断言却使原顶层 `error` 显示 `READ_MISSING`。原 `availabilityFailure=false`、RPC 的 model/provider/api 字段及该 failed 报告全部保留；HTTP 成功不等于模型提交成功，不据错误文本推断隐藏后端或服务不可用。B 模型因这项技术故障未启动。A 原件为 `evidence/graph-model-A-m8TE03/result.json`（SHA256 `09597406c7ac73761fb01f842473208d54fdac8cbda1fd857c5708806538041c`）；`payload-19.json` 与实际 `http-21.json` 均为 SHA256 `944d8189e1829a5d54c84afbf2cc0a069594946abffdfcd7fe2b5df8f40de3b9`。本批原 Evidence → 系统 Trash → Evidence 后 69 份原件 hash 不变，`after-cleanup-integrity.json` SHA256 `ec4b324c6a944fd0278e497130b9f6aeb931b7bbcbd0a4fbadf8a9f12f3ffc5a`。
-
-原 graph driver 现在仅修复错误呈现：存在实际提交错误时，将其原 code/message 保留为首因，并将后续 graph/source/observer/host 验证错误完整记录为阻断性的 `validationError`；没有提交错误时维持原验证错误。matrix 摘要、停止条件和 evidence 输出均保留这两个错误，不因存在 schema 错误跳过完整性或终局门槛。原来源账本、原预算、零重试、任务语义及 availability 分类不变；本片不改产品 read schema。
-
-原回归入口先保留 1 pass／3 failed 的确定性红例（提交首因被覆盖及 matrix 忽略 validationError），修后定向 4/4、原 `node --test scripts/notion-skill-graph-model.test.mjs` 106/106 通过。证据根 `sc07-graph-error-50z9pba8/`：`red.log` SHA256 `a9636fe92251949e1e04020d049a6711aefc92f391a0418d8f97a8f79fbcf2e8`，`green-full.log` SHA256 `7a0f5a7610d34819497020d2c4acdb58106b929088cd4d197f1aa6de9e22e51d`。`presentation-replay.json`（SHA256 `16c6229012b929507a0ff118a33c51bbefb45246526dea2b5b4967ad7a99bef3`）只对封存 A 的错误呈现做离线复核，仍 failed，保留 `READ_MISSING` 为 validationError，四份输入逐 hash 不变；它不重跑来源／provider，也不补证原终局或修后实际 schema 成功。产品 schema 兼容修复及新候选实际 provider 验证另行记录。
-
-### C9 A：同次默认 Router 的描述见证（2026-11-06）
-
-纯 `f1a4f87` harness、C9 `b4ed4cf1…`／C8 SDK／Pi 1.5 的 A 首请求实际接受平坦 read schema，唯一 HTTP 输入为 29,582 B，`payload-19.json` 与 `http-21.json` 同 SHA256 `e80c1246632991e160d7cd19fb0f66f8359595bd9321e728e744bfe54784f482`。模型随后发出两次 `notion_list(query=Pstack/pstack)`；原 seq29/30 各返回相同三条完整元数据，1,389 B／SHA256 `c0239c2bf29427c808f420118915f2b004f6bba2ef4b3082b1294eaddc4d422d`。seq33 的 `before_provider_request` 先因 `Discovery description has no complete card in this actual provider` 失败，之后三次 transport 尝试均被本地验证器拦截，第二请求未发送；末尾 native `Connection error` 不能据此归因于远端 provider。原 `failureClass=harness-invalid`、`validationError=GRAPH_OBSERVER_INVALID`、`availabilityFailure=false` 保持；无 final／产物，B 模型 not_run。
-
-原件为 `c9-broker-candidate-swur3a7o/ab-preparation/evidence/graph-model-A-I810Y8/result.json`（SHA256 `944c05174c275a615c4f0d65bb0276288fb890d309b748b038769026d7543d25`）。第二轮 seq32 系统目录的 865 B／SHA256 `a7c917656a183a0d6c8ba9feabf1de7f016bdc402c73ca9db43dddf3ad747f15` 与首实际 HTTP 中完整 Pstack Router 目录片段相等；其 description 为 300 B／SHA256 `9df0877dc0b01aab21e3805d383a566052059f3d7b974462b9b6f123bf0c5c5a`，同当前 `sr:C`、source/scope/owner/kind、两次 list details 和普通／View SDK 目录全部对应。该 Router 卡只有 ref/name/description，没有 source XML 标签。RPC46/47 是根 user 正文替换及其 receipt，不是最终 list 投影；第二 logical payload 全文未落盘，不能把原工具历史或构造投影称作已发送的第二请求。只读复核为 `sc07-router-witness-ysi6hkd7/actual-originals-review.json`，SHA256 `50f6ea015a28ca670f1de3931e7dd3a66cc44be9ce5b184ee3246ee41f919c10`，九份所用原件逐 hash 保持。
-
-旧 `metadataDescription` 仅接受默认 `<skill>`，遗漏合法的默认 `<router>` 见证。最小修复仅在原 graph observer 增加 Router 分支：先沿原 current `sr:C` 解析绑定已观察的 Notion owner/scope，再显式要求 record.source 为 `notion`，在同次实际系统目录核对精确 ref/name/description；不改产品去重、作者正文、原关系、工具输出、first-cause helper 或任何原报告。其它 list 可复用同 payload 中第一份完整 discovery 卡片，缺少完整来源仍拒绝。
-
-原 `node --test --test-name-pattern='discovery Router' scripts/notion-skill-graph-model.test.mjs` 先得到合法 Router＋双 list 的真实 observer 回调 RED：1 pass／1 failed，`red.log` SHA256 `0ed28750642edf8944a8b89650b48a22d1f283f88cb69af936a04f49bf5f8374`。修后定向 2/2、原测试文件 108/108（原 106＋新增 2），`green-full.log` SHA256 `b8d7fdc9fd400ec9e1be9f71b08c409d0625142a847534f162af6c52988a2180`。十二项反例保留缺完整 Router／第一 list 卡片、错误 source／identity source／scope／owner／ref、fixed 引用、改名、冲突或截短 description、重复实体解码的拒绝；provider payload 不被观察器改写。以上仅本地回归与封存原件复核，没有启动新 Pi／来源／模型，原 A failed 与 B not_run 不改判。
-
-### C9 / c558：新 A/B/C 实际任务与整段成本（2026-11-06）
-
-本轮使用未变C9归档b4ed4cf1…、纯c55816b harness、Pi1.5、原提示与预算。A/B fresh selection各通过，root-only View/Kind/token不变；C为普通Default74，无ready屏障。每任务cold n1、每submission300000ms、零重试/回退。39份实际provider均接受平坦read schema，observer error及blocked provider payload均0；请求selector为magpie/group/flash-free，实际responseModel均为upstage/solar-mini4。
-
-| 路径 | 实际provider / 请求体累计B | usage input / cacheRead / output / total | 原结果 |
-| --- | --- | --- | --- |
-| A：Router | 10 / 830,708 | 213,477 / 28,800 / 2,153 / 244,430 | READ_MISSING；参考未读、0项目读取、无完整文件、语义FAIL |
-| B：Skill | 23 / 3,904,324 | 599,219 / 411,200 / 4,603 / 1,015,022 | READ_MISSING；5项目文件/10资源读取已观察，参考链及产物不完整、语义FAIL |
-| C：原句介绍 | 6 / 565,434 | 163,397 / 0 / 1,099 / 164,496 | 5read被拒，目标正文未交付，技术/语义FAIL，两续问NOT_RUN |
-
-A原final时间91,273ms，B233,584ms；C初轮90,963.9ms。n1不给p95，cost.totalFromProvider=false故收费unknown；响应SSE wire bytes未保存。不同任务的输入/时间差额不是改善。A authored13/admitted11工具：两次sr:S误入resource batch被校验拒绝；后来scalar Router三次成功，末provider中20,872 B全文恰一份，模型“不能读Router/项目”无依据。方案也缺实际项目依据，清理会删证据，未执行其命令。
-
-B authored/admitted工具各37。原projectSourceReadCount=2仅计src/，另有README/package/test三份完整读取。B实际有4,030 B的docs/acceptance-procedure.md；原files=[]为旧标题识别结果。依赖scripts/acceptance.cjs缺失、fresh UUID响应被要求两轮全文相同、81字符负例用了伪JSON、清理不保留证据且无唯一run边界，仍无controller资格。14次空query分页期间新增SDK为0；选择分页的请求9–22共2,787,631 B，收到结果的10–23共2,937,692 B，两集合重叠13请求不能相加。分页消息重复105次、对象JSON1,140,957 B已包含总输入。
-
-C首实际输入已给正确sr:C，模型仍追加/SKILL.md或/playbooks路径，另两项目路径缺leading slash；5read被拒、2list正常。SDK为2list+1显式根consume、0read/CLI。根41,537 B和Required5,938 B在6份实际provider中完整各一份，目标6,837 B均0，按实际XML逆解码核hash。答案还包含未读项目不具备的更新/删除/分配/统计/过滤等事实，未执行两续问。
-
-来源分账：A/B selection24HTTP/2,893,488 decoded B；A consumer51/6,152,091；B consumer32/3,446,729；private另9metadata/44,961。全A/B cohort116HTTP、12,879请求B、12,537,269 decoded响应B，字节终局完整。C consumer37HTTP/3,904请求B/3,473,054响应B，private另4metadata/842请求B/27,180响应B。来源写入均0，原unclassified_body标签不改、独立归属另列。准备、消费、核验与受控selection模型成本分开，不混成源I/O收益。
-
-所有consumer/collector已闭合。A/B原4Pi及C原1Pi均真实close143/signal null，未写自然0。A/B原16个Evidence/系统Trash/empty-Doctor步骤均0、188raw+4native镜像保持；C原E→Trash→E三步均0、44raw保持。日用3哨兵、安装87成员、冻结harness及两仓原暂存不变，无controller执行。
-
-证据根~/Library/Logs/pi-context-broker/AH-617-20261105/：A/B为sc21-c9-ab-router-3wj9ucia/cohort-final-handoff.json，SHA e4c0ff0cf3eedddd6b8a7773d330a7272971e059407b41f3ac66d1641e5a9b1c；C为sc07-c9-c-cohort-v4mtftky/handoff-v2-final.json，SHA 94fae8e9decae851c510d72c6f8ca0802345c9224e47a11bac3dfe6b085f815f。二者含逐请求完整账本、实际原件及A/B/C独立语义审阅引用，旧failed/not-run均保留。
+成功要求原 `RPC.closeInput()` 自然退出 0、完整 `observer_end`、每个 SDK/HTTP 终局与实际返回值闭合；来源 HTTP/CLI 必须为实际完整账本的零。`run-0/launch.json`、`cost-submission.json`、`consumption-cost.jsonl`、`discovery-cost.json`、`source-accounting.json`、`rpc-lifecycle.json`、原 provider/source 原件与 installed/runtime 身份一同保存。按原 owned Evidence→Trash→Evidence 流程封存，失败不得重写。该层是 source 已暖、Pi/Broker 新状态的接线验证，不声称冷 Notion 延迟或全任务收益；之后才在独立窗口运行上面的原 D 两臂。
 
 ### 显式保存标题与位置注记的文件提取
 
-原提取器须识别实际B的Save the file:反引号路径及括号位置注记，逐字节保留完整fence正文。注记可说明workspace/等目录，不能给第二候选文件；原owned-root、遍历、双斜杠、多路径、冲突、空文件与不完整/歧义围栏门槛保持。识别文件不授予执行资格，缺完整Skill或依赖仍不可exercise。
-
-原node --test scripts/notion-skill-graph-project.test.mjs新增两回归：实际标题先1 pass/1 fail，修后定向2/2；独立审阅发现括号内第二目标歧义，再保留1 pass/1 fail并收窄；最终原文件18/18。证据file-label-root-fix-mymnghgu/green-final.log SHA 688493d623b0abc7a240d964243647434f1d4e5e69bc4c1f45af349a56e3a71e，red-note-ambiguity.log SHA a7fb95a2b2110848cafa0e6778f72c060b3d68d4537fdcc97734d645c2483cb4。
-
-原retainGeneratedPlan对封存B做离线复核，提取文档4,030 B/SHA 2a553ccf2c39fff0040ab32b395dfc77277f2ff87f3432eb4c23965d59e06fcc，状态incomplete-generated-files、0Skill、executed=false；原4证据hash不变。actual-B-extraction-review.json SHA 701de019098d817403ac3591c9eba8b215fe9ea6837823d416121d9b49797bae；最终源复核final-source-actual-B.json SHA 1ba43d5cfa3d667e3e7f39ebc2cf57d663a20a97e07f6c16adcaa1db13dbe293。没有新模型/来源/产品包或旧报告改判。
+提取器须识别 `Save the file:` 后的反引号路径及括号位置注记，逐字节保留完整fence正文。注记可说明workspace/等目录，不能给第二候选文件；原owned-root、遍历、双斜杠、多路径、冲突、空文件与不完整/歧义围栏门槛保持。识别文件不授予执行资格，缺完整Skill或依赖仍不可exercise。
 
 ### 未具名文件清单与完整生成文件
 
 仅在没有显式 fence 文件名或前置路径标题、准备从正文首行推断文件名时，将闭合代码块内至少两行裸合法路径视为文件清单，不将后面的路径误存为第一份文件正文。显式 info、标题或 `path:` 首行标签指定的文件仍可完整包含路径列表；保存源文本 bytes/hash/span，不修改其换行。真实冲突定义、空文件、路径越界、未闭合/歧义围栏、缺 Skill 与引用缺失继续失败。
 
-真实 daily A 的“文件清单”后另有六个完整具名代码块；旧提取器把清单首行视为 SKILL.md，将后五行路径视为其正文，遇到真正 SKILL.md 时误报冲突。原 `notion-skill-graph-project.test.mjs` 保留 RED 21/24，再以原组 24/24 验证修复；新增三例包括 LF/CRLF、显式路径列表文件和仍必须拒绝的真实冲突。对同一 31412 B 原回答离线提取，六文件与独立人工审阅逐项一致，原 A 文本和 failed report 不改写，也没有新模型/来源请求。
+`notion-skill-graph-project.test.mjs` 保留 LF/CRLF、显式路径列表文件和真实冲突的回归。按原 bytes/hash/span 核对所有提取文件，不改写原模型文本或历史失败。
 
-证据在 `sc21-daily-early-mu3y6io8/A-private-review/extractor-file-list-m_k4wkzx/`：`handoff.json` SHA `84418a73d6eef027dddf17175d2c22194d8a1a00cfb1cf87af45e28ebb286582`，`tests-green.stdout` SHA `961453b2f8065dc726176b9b8cf2363ab6312cb051998094f11f0952fdbccaa4`，`actual-green.json` SHA `1d35e0d812ee5f9f437f4c6308eea73aff68cccbfc5aa87df21c9afe36aba8aa`。root核实际 diff 和28个直接引用。清理调用的 -11 异常、原 scratch 消失及之后普通只读核对186项相符分别保留，不改写为退出零。31份原 A 文件、原 staged 和日用哨兵保持。
-
-文件可提取只证明产物保留。A 生成规程的 Evidence/Cleanup 顺序仍违反任务；既有 controller 的 allowlist 也没有对应可驱动命令，未执行 exercise。这两项分别是内容缺陷和执行能力限制，不由提取成功消除。
+文件可提取只证明产物保留；任务语义、允许的执行入口和实际功能结果仍分别验证，提取成功不能消除这些失败。
 
 ### SC06 同次 provider 的生成卡片描述复用
-
-原 ce50/C7 Pro live 的七份实际 serializer 请求已独立定位重复：末次默认 74、list 2、Members 55、Requires 1，共 132 个生成卡片出现、79 个来源身份。作者正文中的 `## Members`、根和 Requires 合计 47,475 B 均保留。诊断原件为 `sc06-controlled-pair-9d9314r3/metadata-card-readonly/report.json`（SHA256 `0d2521153fb11cb48c27795d7eafb1f4d927f37c1c45257e53784343edf772dc`）；这是历史实际输入的重复字段分析，不是新候选已实现的成本收益。
 
 当前产品在最终 `context_with_system` 仅复用本次仍完整可见的描述。`notion_use` 必须通过原 compiler/projection、完整 body span 和 session binding；native `read` inspect 必须通过原 v3 receipt、原始正文 span/hash/bytes 与 selected `sr:S` 的完整 source/locator/owner/scope/ref/pin 绑定，仅解析正文结束后的原生成 footer。根正文、生成目录、关系边、精确引用、details、receipt 与历史字节均不改。随后默认卡片与精确验证的 discovery 模型投影可省同身份同元数据的 description；同次另一份完整描述离开上下文后自然恢复。已有默认卡片自身不能使所有重复默认项同时失去描述；共享一个 `sr:C` 的不同 configured source 也保持各自完整身份键，未获同 source witness 的卡片保留描述。
 
 当前 `sr:C` 不能仅按 owner 借用固定 `sr:S` 或带 snapshot 的关系；未知 compiler、摘要、截断、伪标签、错误 tool call、foreign scope/source、不同 locator 或 metadata 一律不省略。`$` 的 Skill wrapper 没有同类生成 Members 目录，Router custom wrapper 也没有本片所需的完整目录证明，因此这些包装保留原描述，不新建 receipt。完全相同的 Members/Requires 关系仍按原工具内容保留；本片不改正文 compiler、SDK、工具 schema 或默认曝光策略。
 
-独立 oracle 复用 `scripts/skill-preparation-evidence.mjs` 的原完整交付验证，未调用产品去重函数来生成 expected。SDK-Pi 和 graph observer 在**同一份实际 provider**中检查缺失描述的完整 card、current ref 和来源绑定；HTTP 断言仅把 byte-identical 的实际工具文本接回原 host evidence。原 74 条身份/完整覆盖断言继续生效。graph 的 `exactToolOutputCopies` 如实为 0 时，另记有完整来源 hash/bytes 与同次卡片 witness 的 `metadataProjections`；未知字段变化或没有完整 witness 都失败。on-demand 的描述搬移只搬走原本可见的元数据，本地 public hook→provider→localhost HTTP 已有原 handler 正反例；新实际 Pi/真实 D 两臂仍等待最终候选，不继承旧 pair 成果。
-
-本片原件根为 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc06-card-projection-x_8v_oee`：原注册出口夹具的 native/重复默认两项红 `9484c5c9…`，同 current ref 跨 source 红 `db7470e3…`，独立三项 oracle 红 `c46be829…`，on-demand 丢失描述红 `6a473dde…` 均保留。对应原消费集 203/203（2,066 assertions，`consumption-final.log` SHA256 `a016b4681f38599896d934ad20e643724cc180d201de497ee7e732f34c67f263`）、SDK-Pi/host-index/独立 preparation evidence 三组 139/139（`oracle-final-01.log` SHA256 `5c415a8464b91aad6a5d9a3d5b88a1d40eabcc0c48db7a28adf77952743fd961`）与 typecheck 已通过；最终显式配置双来源的 host-prepare 20/20、262 assertions（`host-prepare-final.log` SHA256 `73496864ef4010cc0c0fa4dead4d07b7a09d17845ce54846938b70563ee531e7`）。该轮只完成本地回归；随后安装结果单列如下，live74 和实际节省量仍待原安装 driver 验证，不新增总验证平台。
-
-原调用者 `verify-pi-notion-model-cache.mjs` 也迁移了 metadata 必须逐字一份的旧终局断言：原 exact 分支仍须一份且没有额外 projection；新合同只接受 exact copies 为 0、单一投影、原 source hash/bytes 完全相等和已由 graph observer 验证的同 payload 完整描述 witness。其它工具和 legacy 合同不接该例外。对应 `notion-model-cache.test.mjs` 原断言红与十三项反例保存在 `sc06-cache-delivery-assert-_hmxul2x`，handoff SHA256 `e20194e798b8cebeaf4882c961cc3112bb6e57d2563adee7aafcd685cc560053`，红 `a6b847e3af58140709c30a80084b6e40892311be6038b4a92a7d98c07e11ba64`、绿 `8c61e3ac4a02a247aefdd3e4bb442a102d4fd78b0d96f8868237b238f83f65d6`；随后原 graph-model/model-cache 两组 141/141 通过（`graph-intent-final.log` SHA256 `3000f3f4998887fb2a050aec7567f96cfdb49229a8d25cc2e5a24d4971a17670`）。以上全部是本地回归，未发生产 Notion 或真实模型请求，原实际失败报告不重写。
-
-2026-11-06 的独立安装首轮绑定纯 `726d274` 八文件 harness、C8 与 `282fb35a…` 归档（87 文件等值），在 Pi 1.5 原 `all` 一次执行中得到 12 pass / 2 failed，17.390 s、无超时。`default-view` 与 `dollar` 均在 serializer HTTP replay 前遇到旧 oracle 的 `xml(actual.description)` TypeError：实际 `notion_list` 的 a/b 描述已合法复用同请求完整 Default 卡片，host details 和来源记录均保留。原件在 `sc06-c8-sdk-all14-zzcex1t7/pi150/evidence`，原 `report.json` SHA256 `0339ba284b4a287317ff67ccca44d2b4f37c699f59d25a6a458d71dcc0fa7351` 永久保持 failed；16 个 Pi 均 observed close（14 个 code 0，两个错误景 teardown code 143），所有 source/observer 终局完整，原 Evidence → 系统 Trash → Evidence 保留 444 个原件 hash。包、原 fixture 和日用三哨兵未变。
-
-Default oracle 现在从独立 fixture 的完整 record 取得描述；精简的 View membership 必须唯一关联同 scope/id 的冻结 snapshot 元数据，并与实际完整 SDK 结果逐项一致。实际 Default、discovery 当前 ref/source/name 和缺描述时的同请求完整生成卡片仍逐一验证，不从压缩 list 补造 metadata。warm 与 name 入口传入对应实际 capture/fixture；系统 section 的累计、覆盖和 null 撤销复用 `notion-default-context.mjs` 中原 `providerSystemText`，SDK 保持同名导出。两个新增原测试先红（`oracle-repair/target-before.log` SHA256 `9e5ef85b7bac03dfe9794f9b0f520023b4072d9e381f02aa56d6a91b22cdc943`），修后原 SDK 组 104/104（`sdk-suite-final-01.log` SHA256 `b42e2ffde5aa5e2afa55d25c0e6fb931a3934772faefec1c88ebb4820496c1f3`）。对两份封存实际上下文的离线 replay 通过，sidecar SHA256 `e89205dbf60c5e89516f928e781fb6956ef274995efe2fabb1cefa626dbd8593`；它不补称原两景 HTTP 已通过。后续使用同包与修正后的冻结 harness，独立执行 Pi 1.5 两景和 Pi 1.4 原 all14；不重标旧失败或重复另外十二景。
-
-独立后验现已完成：纯 `130a7e4` 八文件 harness、同 `282fb35a…`／C8／原 `4a43f63c…` fixture，Pi 1.5 的 `default-view` 与 `dollar` 各 n1 通过，分别有 3 次实际 serializer HTTP、31,041 B 和 32,675 B；Pi 1.4 原 all14 单次 14/14 通过，76 次实际 serializer HTTP、852,986 B、44 次工具调用、69 次 SDK 调用（其中 3 次 metadata list 按真实 native 取消边界闭账，不算 ready）。三个 driver 均 exit 0，18 个原生 Pi 均自然 close 0／signal null，source 与 observer 全部终局；来源 HTTP 与 CLI 子进程均为 0。原 Evidence → 系统 Trash → Evidence 保留 529 个新原件 hash，87 个包文件、39 个 fixture 输入、八文件 harness 和每日三哨兵均未变。完整 handoff 为 `sc06-c8-sdk-all14-zzcex1t7/validation-130a7e4/handoff.json`，SHA256 `16cc88038f61306a504361ca753188041449c60312c077b106c5bfebae022d56`。原 Pi 1.5 all14 报告仍是 12 pass／2 failed；新两景的成功独立记录，未重跑其余十二景。以上是实际 Pi 与离线来源、受控 provider 的验证，C8 live74／真实模型及新 full-cards／on-demand 两臂仍未运行，不构成全任务成本收益结论。
-
-随后同 `282fb35a…`／C8、纯 `130a7e4` 的 Pro live n1 在最终目录 oracle 失败，Mini 未启动。原件位于 `sc22-final-c8-3a02z8s9/pro-130a7e4`，`failed-run-handoff.json` SHA256 `d2ea87f8a00cc26a6b5c5c6a4271577931ed4e4f34816a27efbb3549cd385d53`；原 report 保持 failed 与 partial 标签。实际 `98086:5` 的 `live-use` 同时在 `required[0]`、`candidates[40]` 保留 unslop 的同一 current 卡片，两条的八个元数据字段、canonical ref、source/scope、固定根 binding、41,537 B 全文 span/hash 都与独立原件相符；旧 `generatedDescriptionEvidence` 的 `matches.length !== 1` 误将证明出现次数当成身份歧义。最小修复仅在全部原完整性筛选之后接受至少一个合格 witness，不删关系、不改正文、产品或 receipt；多根共享 Requires 可具有各自完整合法的 binding。原测试先保留两项红（`sc06-duplicate-witness-98b5d5bv/fail-before.log` SHA256 `17d5808d0665e5be4e4567b9745e71353012bcf10e2eb0e2602984d7313fe902`）；调用者旧 native 同组重复负例造成的 143/144 失败亦保留，现将 model/receipt 都完整的重复改为正例、仅 model 增行仍拒绝，其余缺正文、截断、foreign source/scope/ref/pin、冲突描述和未知 compiler 反例不放松。原 helper／SDK-Pi／host-index 三组最终 144/144（`pass-after-final.log` SHA256 `b3fed7d9c9666055a183b644549aeab857d5eacfb3a1c9f784089c286464da05`）；对三个封存 provider 及对应三份实际 serializer HTTP 的该 witness 离线重验通过（`offline-replay/result.json` SHA256 `a14622c6e856a8dbf74cb72cecae74db4b1e061ad9c35a9b3e25ef5b410602f1`），未重开 Pi／来源／HTTP。原失败样本的 37 来源 HTTP、3,473,054 B 响应、4 SDK／0 CLI、7 次 serializer HTTP／435,010 B 仅是实际失败成本，不是已验收收益；原归因 helper 的成功报告前提未绕过，54 个未选 Member 的独立归因未跑。原 Pi 自然 exit 0、source observer 全终局；Evidence → 系统 Trash → Evidence 后 42 个原件与所有输入 hash 不变。新 harness 双机 live 验证仍需另行冻结执行，旧失败不重标。
+独立 oracle 复用 `scripts/skill-preparation-evidence.mjs` 的原完整交付验证，未调用产品去重函数来生成 expected。SDK-Pi 和 graph observer 在**同一份实际 provider**中检查缺失描述的完整 card、current ref 和来源绑定；HTTP 断言仅把 byte-identical 的实际工具文本接回原 host evidence。原 74 条身份/完整覆盖断言继续生效。graph 的 `exactToolOutputCopies` 如实为 0 时，另记有完整来源 hash/bytes 与同次卡片 witness 的 `metadataProjections`；未知字段变化或没有完整 witness 都失败。on-demand 的描述搬移只搬走原本可见的元数据，public hook→provider→localhost HTTP 保留原 handler 正反例；实际 Pi 与真实 D 两臂须绑定当前候选，不继承其他 pair 的结果。
 
 SDK 取消只沿既有严格断言结算 metadata `list`：被动 native `session_shutdown` 与 SDK 起止同 PID，时间位于同一 monotonic 闭区间，完整 metrics/trace/EOF 均在；该回执不算 ready 目录。缺失账本、null metrics、未知正文归属仍是 observation-incomplete。任何 source write 必须另有 Records retention/adoption 与业务写入归因，不能仅因为 operation 是 use 就放行。
 
 改前旧入口拒绝 `--intent-config` 和私有 D seed 负例保留。`--discovery-only true` 的原 `notion-skill-graph-observer-smoke.mjs` 实驱实际 Pi、受控 HTTP 和显式 custom source：首请求无正文，真实 list 元数据先于 read、正文全文进入 provider、未读 Requires/Member。该受控证明不能代替生产 SDK、真实模型 C/D 或正式 SC21 全矩阵。
-
-2026-11-05 的 `85888`／Pi 1.5／flash-free 实模在 C 与 D 命名介绍均出现 `list → notion_use`，没有目标的 native inspect/read；两个首轮自然终局后的续问均未提交。原件在 `~/Library/Logs/pi-context-broker/AH-617-20261105/cd-early-feedback-10ot7qk8/pi-intent-evidence-henERH/`。实际旧 schema 已明确 `read.path` 支持 Notion ref，旧 use 说明也已要求介绍用 read，不能把失败解释成缺少工具。D 首请求无根正文仍误选，不能只归因于 poteto 长正文或目标作者规则（目标规则在误选后才进入模型）。
 
 这组反馈触发一个独立措辞候选：把 read 的 Notion inspect 能力提到描述首部，将 use 的目的明确为应用所选规则，消除 guidance 中“选择来介绍”和“选择来应用”共用 load/selected 的歧义。仅改三处模型可见说明；不按自然语言关键词拦截或转换 use，不增加工具，不改作者正文、原 prompt、oracle 或旧样本。按原 C/D 入口和新独立安装身份检验实际选路后才能判断是否有收益，同时保留 D 自然任务自主选择并 use、显式 use/read、Requires 完整、普通续问复用、固定资源与本地/batch read 的既有反例。受控回归或文字变清楚不证明模型行为已修复，工具 schema/guidance 的新成本也应实记。
 
@@ -466,19 +254,15 @@ selection 成功回执中的精确 selection 与 `result.json` 绑定 `selection
 
 Broker 的 source work 可以发生在 assistant `message_end` 与 observer `tool_call` 之间。名称选择在前者冻结，后者保留原 admission 时点；目录、read 和完整 native/provider 证明都匹配后，源归属才可使用真实 authored 时点。该条件不回填消息时间，也不能把真正早于模型选择的正文读记为合法选择。named use 仍核完整 graph lock、根和 Requires、主文 manifest、实际投影 span 与下一 provider；固定资源不靠重复主文成功冒充资源已交付。
 
-本次受控红例与回归在 `~/Library/Logs/pi-context-broker/AH-617-20261105/sc26-graph-name-oracle-hjifttm5/`：`disclosed-names-fail-before`、`submitted-names-fail-before`、`authored-name-fail-before`、`name-attribution-fail-before`、`name-background-and-missing-author-fail-before`、`name-short-candidate-fail-before` 保留原失败。最后一项覆盖实际目录用 `sr:C` 广告 owner、模型用该 owner 的 name/alias 选择的组合；它仍要求原会话短引用、来源元数据和主入口同时匹配，不能把资源路径猜测变成已发现主文。`handoff.json` 索引最终文件 hash 和可复跑结果。旧 C/D 实模结果不重写，本迁移不证明新候选已经完成真实模型验收。原入口复跑：
-
 ~~~bash
 node --test scripts/notion-skill-graph-model.test.mjs scripts/notion-skill-graph-host-index.test.mjs scripts/notion-skill-graph-model-evidence.test.mjs scripts/skill-preparation-evidence.test.mjs scripts/verify-skill-graph-contract.test.mjs
 ~~~
 
 Graph harness 15 通过 Pi 公开 `systemPromptOptions.sections` 添加原样的 owned project paths 文本，不再从 `before_agent_start` 返回整段 `systemPrompt`。该早期观察另记 `catalog-before-agent-start`，`context_with_system` 的 sections 只保存诊断 hash；两者都不能授权目录读取。`catalog` 只解析 `before_provider_request` 实际 payload 的 system 文本，并绑定该次 payload SHA，再与实际 HTTP wire 对照。用户文本、assistant 工具参数、未验证 tool body 中的伪目录均不算目录发现；已完整验证的 Skill 正文及其原工具结果仍按原 oracle 授权 Members / 资源引用。实际 provider 中与冻结用户 prompt 完全相同的明确固定资源 ref 仍可凭独立 owner manifest 直接标量或批量读取，不要求先交付主文。错误 scope、pin、File ID 或 manifest 的本地目录在主文准入处即拒绝，不借目录文本绕过完整性检查。
 
-原 metadata selection 仍保持两个普通用户 turn 和三次受控 provider；每一次 provider 都独立核对最终目录、system 字节和实际 wire，不以两个早期 hook 代替三个模型输入。此次红例和回归保存在 `AH-617-20261105/sc06-graph-sections-bu8z7s6o`，旧 `cd-c6-646-na66cnz9` 的失败原件不改、不离线重判通过。后续候选必须明确记录此 observer 迁移作为输入差异，任务、预算、工具、目标和私有答案保持原冻结合同；该迁移自身不代表真实模型选路已改善。
+原 metadata selection 仍保持两个普通用户 turn 和三次受控 provider；每一次 provider 都独立核对最终目录、system 字节和实际 wire，不以两个早期 hook 代替三个模型输入。保留每次原失败与独立回归，不离线重判通过。后续候选必须明确记录此 observer 迁移作为输入差异，任务、预算、工具、目标和私有答案保持原冻结合同；该迁移自身不代表真实模型选路已改善。
 
-原 `--public-boundaries true` 专项从实际 provider 的原生 `<skill location>` 或完整 `<context-broker-record ref>` 复制主文读取入口。后者必须同时通过原 owner / scope / pin / File ID、完整正文 hash / bytes 和实际 payload hash 绑定；任意 XML、仅内部回执、缺正文、重复正文和错身份均不能授权。标量 `read` 继续按同一 toolCallId 验证完整源文件。该 caller 迁移保留旧 `graph-observer-http-U9Yaas` 的失败，使用同一 `4d3ba0b…` 独立安装包另行验证；它是打包后独立记录的 harness 差异，不改变产品、正式任务或模型预算。
-
-同包默认 `$` 受控 smoke `graph-observer-http-ujerTR` 已通过 9 次实际 provider / wire 配对，原 owned project paths 每次恰一份。公开 `/skill` 分支 `graph-observer-http-AuDn6P` 的 10 次请求虽已完成主文、Member 与资源读取，仍被原单份正文断言拒绝：第二次 wire 起根有两份，三个 Requires 随往返从各一份增至各十份。该失败不改为通过；精确源文件、逐次 wire、进程终局与后续清理保存在同一证据根。中间 `graph-observer-http-TCMdZ2` 的 observer 序列化 hash 不一致也保留，修复仅复用原 transport 的 JSON 序列化后 hash，不放松来源或完整性要求。
+原 `--public-boundaries true` 专项从实际 provider 的原生 `<skill location>` 或完整 `<context-broker-record ref>` 复制主文读取入口。后者必须同时通过原 owner / scope / pin / File ID、完整正文 hash / bytes 和实际 payload hash 绑定；任意 XML、仅内部回执、缺正文、重复正文和错身份均不能授权。标量 `read` 继续按同一 toolCallId 验证完整源文件。caller 与包的版本分别绑定；observer 变化不得改写旧失败，也不得改变正式任务或模型预算。
 
 该专项的 Member 读取若由 `sr:C` 元数据进入，准入时的 claim 只证明 owner / scope / path；fixed pin / File ID / 完整 hash / bytes 必须由实际 read 结果对独立 fixture 核对。实际 authored call、admission、prepare argv / requestId、完整结果的 callId / sequence 均须配对，时序要求 authored → prepare → 完整结果，不要求 prepare 早于原生工具准入。`AuDn6P` 因前述正文重复没有执行到这条后置断言；其原 raw 只用于保留旧 `admitted.expected` 假设的离线红例和迁移后后验，不能替代修复产品后的完整专项实驱。
 
@@ -488,9 +272,9 @@ Graph harness 17 在默认 SDK scalar `read({path})` 保留一个窄产品校验
 
 这类调用记录 `invalid-short-ref` 与 validation attempt；原 tool result 记录实际 error text/code/hash/bytes，始终 `complete:false`，不写正文 delivery ledger、不发现新引用、不证明激活。错误码不同、意外成功、嵌套结果以及后来正确读取，都不能把该次 invalid input 或整个任务改为通过。实际 `SHORT_REF_INVALID` 及增量 SDK / 源对象读取为零由原 installed `name-references` 场景另验；原生文件路径不降级由产品既有边界测试和代码路径保障，本项不声称实测文件系统调用次数。已有后台 metadata 工作必须单列，observer 单测不替代真实 Pi 产品执行。
 
-本次原两组定向回归入口是 `node --test scripts/notion-skill-graph-model.test.mjs scripts/notion-model-cache.test.mjs`，证据保存在 `AH-617-20261105/sc07-native-validation-sxkcpu76/`。`fail-before-isolated` 保留 163 pass / 4 fail，分别暴露 C/S/R 后缀被旧 gate 抢先拦截和错误观察缺口。旧 C9 A/B/C raw、报告、语义评审和任务失败均不重写；这项 observer 修正自身不证明模型会正确选路或 SC21 已验收。
+运行 `node --test scripts/notion-skill-graph-model.test.mjs scripts/notion-model-cache.test.mjs` 核对公开引用语法、来源归属和观察缺口。新的 observer 结果绑定本次源码与输入；保留原失败，不据纯验证器修正宣布模型验收通过。
 
-Pi 默认 graph bridge 使用随包公开 SDK `consume`，同一内核验证完整清单、主文范围、身份、固定版本与 hash，Broker 核对选中身份后直接物化，不再逐节点启动 CLI read。资源通过同包 SDK 固定 `readSkill` 或 `readResources` 物化。显式 `source.command` 与 OMP 保留公开 CLI prepare + 逐 prepared node 固定 read 的兼容边界；上述 `--command-json` 命令验证的是该边界，不能代表默认 SDK。默认目录改用同包 SDK `listCatalog`，公开 operation=list，目录/正文路径都应为零 CLI children。显式 custom command 独立列账；超过默认分页大小时须证明遍历所有页，未验证前不宣称 SC23 全量迁移。旧直接加载与 Prompt 的完整 export receipt 不放宽。本轮独立 Node / Pi 路线与 hash 见 [运行时记录](../../../../packages/context-broker/docs/skill-consumption-runtime.md)。
+Pi 默认 graph bridge 使用随包公开 SDK `consume`，同一内核验证完整清单、主文范围、身份、固定版本与 hash，Broker 核对选中身份后直接物化，不再逐节点启动 CLI read。资源通过同包 SDK 固定 `readSkill` 或 `readResources` 物化。显式 `source.command` 与 OMP 保留公开 CLI prepare + 逐 prepared node 固定 read 的兼容边界；上述 `--command-json` 命令验证的是该边界，不能代表默认 SDK。默认目录改用同包 SDK `listCatalog`，公开 operation=list，目录/正文路径都应为零 CLI children。显式 custom command 独立列账；超过默认分页大小时须证明遍历所有页，未验证的调用路径不得继承其他入口的结果。旧直接加载与 Prompt 的完整 export receipt 不放宽。实际 Node / Pi 路线按 [运行时合同](../../../../packages/context-broker/docs/skill-consumption-runtime.md)。
 
 安装 Pi + 受控 provider 的首次请求应含 root / Required 完整正文各一份、Members 正文零份。记录实际 tool input/output、完整 body hash、目录 ref、provider context 和源请求账本。native read 的资源 ref 必须来自公开目录/正文，旧路径带稳定 File ID 应解析到固定 owner snapshot 的正确路径。missing Required / budget / cancellation 时 provider 数量为零；RPC abort、new_session、EOF 与真正终端 Escape Stop 分开记录。
 
@@ -498,15 +282,13 @@ Pi 默认 graph bridge 使用随包公开 SDK `consume`，同一内核验证完�
 
 分支上的 `context-broker-selected-graph` custom entry 保存版本化 CLI graph lock，包含实际根、Required edges、scope 和精确 binding。已知目录、候选和后台预取不写该 entry。optional 第一次实际选择时才加入；正文是否仍在当前上下文由完整 hash/bytes/实际消息跨度证明，不能用选择锁或缓存存在推断 loaded。
 
-SC04 的 branch-local C/S/R 表独立于 graph lock；已固定短引用不改绑，刷新创建新 S/R，兄弟分支不可互用。固定旧 pin 或非主文关系不能因 ID 相同而替换为当前候选。按需发现的 Pi `notion_ctl({refs:[...]})` 导出 S/R 的 canonical 精确证明（OMP 仍为 legacy skill_graph），消费端仍重新授权。SC08 另保存版本化 active receipt：完整 visible 证明加同轮未取消的 2xx headers 确认后才激活，inspect/ready 不激活；压缩移除正文后普通消息从固定 roots 恢复一次，不改写原始 JSONL。实际 SessionManager、RPC/PTY 与 SDK-Pi 证据均见运行时记录，状态层成功不等于真实模型成功。
+SC04 的 branch-local C/S/R 表独立于 graph lock；已固定短引用不改绑，刷新创建新 S/R，兄弟分支不可互用。固定旧 pin 或非主文关系不能因 ID 相同而替换为当前候选。按需发现的 Pi `notion_ctl({refs:[...]})` 导出 S/R 的 canonical 精确证明（OMP 仍为 legacy skill_graph），消费端仍重新授权。SC08 另保存版本化 active receipt：完整 visible 证明加同轮未取消的 2xx headers 确认后才激活，inspect/ready 不激活；压缩移除正文后普通消息从固定 roots 恢复一次，不改写原始 JSONL。实际 SessionManager、RPC/PTY 与 SDK-Pi 的验证边界见运行时合同，状态层成功不等于真实模型成功。
 
 ### SC23：会话驱动的 View 元数据调用
 
 `notion-skill-graph-session.mjs --source OWNED_STATE` 是显式 custom-command 的真实进程包装器。它允许当前 `ctl views`，并保留裸 `views` 的旧调用兼容；`ctl doctor`、`ctl cache identity` 的原边界不变，其他管理／作者命令在启动 CLI 前拒绝。包装器不重复实现 CLI 参数解析，多余位置参数仍由独立安装的 CLI 拒绝。此迁移不启用预取，也不把 custom-command 结果算作默认 SDK 验收。
 
 定向回归复用 `node --test scripts/notion-skill-graph-delivery.test.mjs`：实际 `--source` 子进程必须原样转发 View 参数，旧 alias 可用，未知 `ctl sync`、operation、cache clear 和 create 不得启动 CLI。这里的 argv fixture 仅证明包装器协议，实际 View 数据另由安装包验证。
-
-2026-11-05 原件在 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc23-session-views-gd93lzlk`。同一 `6464469d…` 安装包的真实 `listNotionViews` 经该包装器、随包 C6 CLI 和原 `notion-skill-graph-service.mjs` HTTPS fixture：修复前 `SOURCE_COMMAND_FAILED`，0 CLI children／0 HTTP；仅增加 `ctl views` 白名单后返回准确 View ID、name、database 和 data source。实际账本共 4 次 metadata HTTP、2051 响应字节，正文／写入／provider 均为零；裸 alias 返回相同 View，额外 `sync` 位置参数由真实 CLI 返回 `INVALID_ARGUMENT` 且无新增 HTTP。3 个 CLI child 与服务进程均实际退出，安装文件和驱动 hash 未变。11 项定向测试通过，原 10 pass／1 fail 保留。该小切片不声称重跑完整 A/B 会话矩阵或真实 Notion／模型。
 
 ### 分支选择与恢复驱动
 
@@ -520,19 +302,15 @@ node packages/context-broker/scripts/session-selected-graph.mjs
 
 显式 `notion_use({ref,refresh:true})` 在完整准备、确切 File ID 与宿主输出预算全部通过后提交新的 scope 选择。失败保留旧锁。只在 provider 投影中替换已验证的过时/重复正文，原 native tool result、toolCallId、用户消息和 JSONL 不重写；修改跨度后仍保留其余有效回执的准确位置。按需 `notion_ctl` 导出当前选择和真实 delivery 状态，不进入默认 schema；旧 OMP 对应 skill_graph，不包含凭据、机器缓存路径或对话正文。未知 schema/compiler 版本与被篡改的版本向量必须报错。
 
-Pi 的正常 prepare 模型结果使用[确定性投影](../../../../packages/context-broker/docs/skill-consumption-projection.md)，canonical graph、目录 hash、版本和物化证明在 `details.contextBrokerPreparation` v2 中。通用 graph/session 验收以独立 `skill-preparation-evidence.mjs` 校验 compiler、整份 content hash 及各源 span，再与原 CLI oracle 对照；不能从内部 details 的正文或空 loaded 标记证明模型收到内容。旧 v1 只按原格式读取，含新版 projection 的降级 v1 拒绝。正式 graph model gate 的当前驱动按独立 SDK result、分支短引用与 v2 span 验证；旧 canonical-only / CLI-wrapper 样本保持历史身份。迁移后的真实模型复跑未取得证据前，不能用受控路线替它报通过。
+Pi 的正常 prepare 模型结果使用[确定性投影](../../../../packages/context-broker/docs/skill-consumption-runtime.md#model-content-and-machine-proofs)，canonical graph、目录 hash、版本和物化证明在 `details.contextBrokerPreparation` v2 中。通用 graph/session 验收以独立 `skill-preparation-evidence.mjs` 校验 compiler、整份 content hash 及各源 span，再与原 CLI oracle 对照；不能从内部 details 的正文或空 loaded 标记证明模型收到内容。旧 v1 只按原格式读取，含新版 projection 的降级 v1 拒绝。正式 graph model gate 的当前驱动按独立 SDK result、分支短引用与 v2 span 验证；旧 canonical-only / CLI-wrapper 样本保持历史身份。迁移后的真实模型复跑未取得证据前，不能用受控路线替它报通过。
 
 会话替换撤销旧 ctx：pending input 必须以 handled 结束，不能在 catch 中通知旧 UI 导致 Pi 回退为普通 prompt。生命周期取消不得调用已撤销 ctx 的 abort，也不能取消后一个提交；dispatch receipt 在真正 session 边界或原 consumer 确认前仍拦住重复提交。受控 Proxy 回归与实际 installed Pi new_session / EOF 结果分别保留，真正 TUI Stop 仍需独立终端证据。
 
 ### 实际 Pi 终端选择与 Stop
 
-当前 Pi 1.4 的 Notion 目录异步完成，启动画面的 `[Skills]` 不能作为冷启动前置。原 PTY driver 先观察完整空编辑框和该 fixture 两次 metadata list 的实际成功退出，再以实际 `$` 候选和 Tab 接受验证目录已可用；前两步仍要求 provider 为零，不能由内部 metadata 回调代替实际候选。只等空编辑框就输入会落在 metadata pending 时段，原失败 `pty-c4-stop-j6_96xrz/broker-pi-graph-pty-sBq9K5` 保留。`escape-stop` 可以独立运行以验证当前取消合同。旧 `selection` 场景还要求 `/skill:` 原生菜单 Tab，Pi 的延后目录不会自动补入 startup 菜单，该子路径未通过时必须单列，不用 `$` 成功覆盖。
+当前 Pi 1.4 的 Notion 目录异步完成，启动画面的 `[Skills]` 不能作为冷启动前置。原 PTY driver 先观察完整空编辑框和该 fixture 两次 metadata list 的实际成功退出，再以实际 `$` 候选和 Tab 接受验证目录已可用；前两步仍要求 provider 为零，不能由内部 metadata 回调代替实际候选。只等空编辑框就输入会落在 metadata pending 时段；保留该次失败。`escape-stop` 可以独立运行以验证当前取消合同。旧 `selection` 场景还要求 `/skill:` 原生菜单 Tab，Pi 的延后目录不会自动补入 startup 菜单，该子路径未通过时必须单列，不用 `$` 成功覆盖。
 
-2026-11-05 的 fail-before 位于 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/pty-c4-kywlib7c/broker-pi-graph-pty-zcJfgx/`：同 `66a64e3b` 包在第一步等待旧 startup Skill 行而超时，provider 为零；Ctrl+O 的只读诊断原件另存 `startup-ui-probe/`，展开后仍无同步 Notion native 菜单。原失败和旧包历史通过均保留。
-
-同一证据根下 `pty-c4-stop-ready-7qr_byjj/broker-pi-graph-pty-ocu8dX` 已实际完成 `$` 候选、Tab、Escape、CLI 130 和重试，但准备预算不可见，整体仍为失败。Pi 1.4 在运行中把 `sendMessage(..., {triggerTurn:false})` 延后至本轮结束；延后 context 准备现在用公开 `ui.setWidget` 立即显示同一预算和 Stop 提示，终结／会话替换清除 widget。只有仍属于当前 run/generation 且原生 signal 已取消的 context 才正常结束；真实获取错误仍 abort 并报错，旧 ctx 不可被重新读取或用于取消新提交。
-
-修复的独立包 `d5dc05bf79a19b3f7983e6e9ce80724b1513a0293c679b65b3123f87c689ab8e` 使用 C4 CLI/SDK；`pty-feedback-fix-9h0je71c/actual-pty/broker-pi-graph-pty-YT6GPK` 的 `escape-stop` 通过。实际终端可见 8 nodes／depth 4／8192 instruction bytes／131072 context bytes；Escape 后所有 prepare 子进程退出 130、provider 仍为零、widget 消失，同会话重试的 root 与 Requires 完整且各一份、Members 为零，Pi 自然退出 0。Pi 自身保留普通 aborted 提示，Broker 不再追加 SOURCE_CANCELLED 扩展堆栈。此为实际 TUI + custom-command + 受控 SQLite/provider 的证据，不是默认 SDK 真实 Notion 或模型验收；后续 C5 统一候选须保留自身身份和受影响验证。对应 `host-prepare`／`session-active`／`native-read-session` 44 项、input guard 和 `check:broker` 均通过，原失败日志不覆盖。
+延后的 context 准备通过公开 `ui.setWidget` 显示预算与 Stop 提示，并在终结或会话替换时清除。只有仍属于当前 run/generation 且原生 signal 已取消的 context 才正常取消；真实获取错误仍 abort 并报告，旧 context 不能取消新提交。PTY 验收必须实际看到该提示，不用 RPC 或延后显示的消息替代。
 
 ~~~bash
 node scripts/verify-pi-graph-pty.mjs doctor --package /absolute/frozen-broker.tgz --command-json '["/absolute/node","/absolute/installed/ntn-skills.js"]' --cli-source /absolute/notion-skills-cli
@@ -542,9 +320,7 @@ node scripts/verify-pi-graph-pty.mjs evidence --evidence /absolute/retained-run
 
 入口实际安装冻结的 Broker 包，核对已安装 Pi 的 @earendil-works 身份，使用独立 HOME / 配置 / session / Broker / CLI 目录。实际 PTY 输入 Tab 接受 $ 和 /skill 候选；候选与接受动作正文 I/O 为零。提交后完整 root / Requires 各一份、Members 零份；仅 read 工具可用。Escape 场景先等真实 CLI HTTP 等待和源子进程启动，再发送实际 Escape 字节，检查 CLI 130、所有源后代退出、provider 零次和无迟到正文，随后同会话重试。准备预算和 Stop 提示必须在实际终端可见。
 
-保存 raw terminal.ansi、逐步 screen.json、实际按键、provider body bytes/hash、source request ledger、session JSONL 与自然退出证据。2026-11-03 的 v3 安装包两场景通过，运行目录 ng15/broker-pi-graph-pty-QFA9Nc；之前 pw7jMY 的 Escape 功能通过但预算隐藏，整体 failure 保留。实际 Pi + 受控 provider / SQLite 输入证明宿主终端边界，不能代替真实模型选路或生产 Notion 验收。清理命令只将该 manifest 所属 scratch 移到系统 Trash，保留证据目录。
-
-最终 entry-ready runtime 已用 v4 + CLI7 重跑同两场景，ng15/broker-pi-graph-pty-SF1Awi 的 selection / escape-stop 均通过且自然退出。实际 Tab、预算行、Escape、CLI 130、provider 零次及同会话重试继续由原始终端和进程账本证明。v5 仅修正文档，下面的逐文件等价回执将这份实际执行结果关联到 v5；没有把它描述为 v5 重跑。
+保存 raw terminal.ansi、逐步 screen.json、实际按键、provider body bytes/hash、source request ledger、session JSONL 与自然退出证据。若 Escape 功能成功但预算隐藏，仍按完整合同判为失败并保留。实际 Pi + 受控 provider / SQLite 输入证明宿主终端边界，不能代替真实模型选路或生产 Notion 验收。清理命令只将该 manifest 所属 scratch 移到系统 Trash，保留证据目录。
 
 ## NG18 宿主清单与按需资源
 
@@ -559,25 +335,9 @@ bun test packages/context-broker/scripts/notion-entry.test.ts packages/context-b
 CONTEXT_BROKER_GRAPH_CLI=/absolute/installed/ntn-skills.js CONTEXT_BROKER_GRAPH_CORE=/absolute/notion-skills-cli/packages/core/src CONTEXT_BROKER_GRAPH_EVIDENCE=/absolute/evidence/ng18 bun test packages/context-broker/scripts/prepare-adapter.test.ts
 ~~~
 
-2026-11-03 的 CLI6 / 真实 Node + SQLite 适配测试通过主文、Required、BOM/CRLF、文本/二进制资源、固定版本与未选 256KiB 资源不落地；18 项宿主边界回归通过。保存 ng19/partial-cli6-adapter.log 与 partial-host-boundaries-final.log。输入守卫原先只在 export 注入“资源缺失”的夹具不能覆盖新的 main-only 准备，保留该旧 full-export 负例，另补实际 read has_more=true 的准备阻断；首次旧断言失败日志保留。最终安装 Pi 的 native-chain 与真实 Notion 跨机 partial 分栏验收，不把上述受控结果代替它们。
-
-最终 CLI7 的五项真实 Node/SQLite 适配及 59 个断言全部通过：ng18/broker-v4-tyjIGw/adapter-cli7.log。Broker 完整包 test 退出 0，85 项 Bun 回归通过；需安装 CLI 的五项另外按前述入口执行，不能把默认 skip 当通过。v4 的实际安装 Pi 16 场景、真实 SDK/受控 HTTP observer 分别保存在 pi-context-broker 的 ng20/broker-notion-evidence-l27VCB、broker-notion-evidence-s1bZ8E、graph-observer-http-V6XkFD；其中实际 root→View 外 Member→稳定 File ID 旧路径资源、host_index 与 entry receipt 均已验证。RPC abort 仍按宿主限制单列，不能替代实际 Escape。
-
-文档修正版 v5 为 ng18/broker-v5-n6LhcK/pi-context-broker-0.0.2.tgz，SHA-256 为 0f148de305b95b0faf1b4e7d9e8ab862b00f4d03cd69f20f1d7d76afed84d1c5。v4/v5 独立安装共 62 个包文件逐字节比较，仅 CONTRIBUTING.md 改变，其他 61 文件相同；src/dist 的 47 个运行文件、package.json、CLI7/CLI8 输入和三份 builtin Skill 均有哈希证明，见 installed-equivalence.json、v4-v5-runtime-equivalence.json。v4 的实际执行证据据此关联 v5。后续 SDK 病例暴露的 lazy 资源 OS 别名修复使用独立 v6；v5 的等价证明不覆盖这次产品变更，正式模型 Gates 和日用切换须绑定修复包的新 identity。
-
-Graph harness 2 将源码版本/hash 写入 Doctor、result 和 cache fingerprint；完整 search/prepare 输出按原 toolCallId 与实际 provider 消息核对，并验证 root/Required 每次最多一份且保持所选版本。owned `PATH/ntn` 与旧 `NTN_SKILLS_NTN_BIN` trap 只作用于隔离宿主，保留旧 CLI/login 调用记录，pass 要求零调用。首轮真实 A `ng14/final-package/graph-model-A-SQ1pSW` 保留 failed，不授权 fallback；完整 Router/Members 已进入 provider，旧 harness 却隐藏了产品合法工具。新工具面的 v5 受控 SDK 证据是 `ng14/harness-v2/graph-observer-http-gr7I2n`；`graph-observer-http-i3KRMi` 的未物化资源 `/tmp` alias 失败独立保留，须用 `scripts/notion-skill-graph-observer-smoke.mjs --resource-location alias` 对修复包复验。受控 provider 证据不能替代正式 A/B。
-
-v6 同病例已在 `ng14/harness-v2/graph-observer-http-M4pV6s` 通过：真实安装 Pi、随包 CLI、实际 SDK 七次请求；三工具定义真实可见，完整 search/prepare JSON 按原 toolCallId/bytes/hash 进入 provider，root/Required 各一份、初始 Member 零份；尚未物化的资源经 `/tmp` alias 读取完整 70 B/SHA，外部文件与 shell 被拒，两个旧 ntn trap 零调用。observer 未改写工具输入。harness 汇总 SHA 为 `c95c7fead6e1c133f79ae565496dbf6c71c4b07d431774abab01d968f8634c2f`。v6 包 `ng18/broker-v6-ff353lls/pi-context-broker-0.0.2.tgz` 的 SHA 为 `1fa9127cfa9f0162d76dabea383d72cbded490234cc66f4b1a5cb8903c8db5d6`；62 个安装文件与 tar 全等，相对 v5 仅 `src/host-skills.ts` 改变。`installed-identity.json` 和 `package-identity-boundary.json` 记录完整差异、48 个 runtime/manifest 文件及错误旧包配对反例。正式 A/B 与原 15 个真实模型用例另按新包留证。
-
-Broker7 随包 CLI9 修复全库 discovery 将共享管理表误作 legacy Skill 的问题，Broker 产品源码不变。包为 `ng18/broker-v7-_kp72c6m/pi-context-broker-0.0.2.tgz`，SHA `2a818890602d0e408c5175ed8e43691b50dbccd0357503a5fdf8bdb9f68a0455`；62 个安装文件逐字同 tar，v6→v7 仅 `dist/ntn-skills.mjs` 改变。48 文件 runtime/manifest 汇总 SHA 为 `37181275839f42f04ef9d163991b3d03a4bad4ee96b8e1d8d598c7e31f2f5d8e`，错配 v6 archive 的反例继续被拒。首次 npm offline 因 redis metadata 未缓存的失败保留；新独立 consumer 安装与 schema prepare / operation list 均通过。
-
-最终同包 SDK 证据 `ng14/harness-v2/graph-observer-http-hV3lRI` 使用尚未激活的真实日用候选 `/Users/yoyo/.local/share/context-broker/installed/ah561-2a818890602d/node_modules/pi-context-broker` 及其 embedded CLI：七次实际请求、三工具、完整输出 hash 链、alias 资源 70 B、外部路径/shell 拒绝、旧 ntn traps 零调用均通过。harness SHA 仍为 c95c7fead6e1c133f79ae565496dbf6c71c4b07d431774abab01d968f8634c2f，未重写工具输入。共享生成物同步回执是 ntn-skills evidence 的 `ng05/shared-runtime-assets-GKA60n/receipt.json`（9 文件、9 public checks；受保护 Tern completion 不变）。正式 A/B 与原 15 用例仍按实际模型证据验收。
+Graph harness 2 将源码版本/hash 写入 Doctor、result 和 cache fingerprint；完整 search/prepare 输出按原 toolCallId 与实际 provider 消息核对，并验证 root/Required 每次最多一份且保持所选版本。owned `PATH/ntn` 与旧 `NTN_SKILLS_NTN_BIN` trap 只作用于隔离宿主，保留旧 CLI/login 调用记录，pass 要求零调用。未物化资源 alias 须用 `scripts/notion-skill-graph-observer-smoke.mjs --resource-location alias` 核对。受控 provider 证据不能替代正式 A/B。
 
 Graph harness 3 将整篇正文生成的正则改为 literal 扫描，保留 raw/HTML/JSON 三种表示、同起点最长匹配、非重叠计数与 assistant/model 引用排除。before-provider 观测异常必须写 `observer-error` 并使 Gate 无效；实际 transport 仅接受已核验 payload，并记录 wire-body SHA。不得把 hook 抛错后的真实 HTTP 错写成 provider 零次，也不得以观测故障授权模型 fallback。
-
-冻结回执 `ng14/harness-v3/freeze.json` 对应 harness SHA `565d414f70bcfb1742ba94a04efb7f4dad218fc8a3f9324f85eb7560c905d4b6`。17 项回归通过；实际日用候选 Broker7/embedded CLI9 的 `graph-observer-http-RJRIM3` 通过 56,423 B 主文接缝，7 次 provider proof 与真实 server wire SHA 逐次匹配，root/Required 完整各一份、三工具、alias 资源 70 B、外部路径/shell 拒绝、ntn traps 零次。legacy 首例可经父进程冻结的 `toolSurfaceFile` 保持单 read，仍要求同样 provider proof；A/B 默认三工具不变。产品包、TASK、oracle、model、timeout 与预算均未修改。
-
-`ng14/harness-v3/prior-attempts.json` 独立保存旧样本分类和原文件 SHA。旧 B `final-v7/graph-model-B-O04HQP` 的 8 次 before-provider hook 因 `Regular expression too large` 失败；虽有 8 次真实 HTTP，却没有可验证的 provider payload，属于 harness-invalid，不能从 session 离线伪补。旧 A `graph-model-A-eXJd7p` 有完整 20 次 provider/transport、46 次 tool call、零 hook 错误，保留真实任务失败。两者均不触发 availability fallback；新版受控 SDK 通过不能替代真实模型 A/B 复验。
 
 ## NG19 默认零预算与可取消预取
 
@@ -609,14 +369,10 @@ node packages/context-broker/scripts/prefetch-cli-counterfactual.mjs --command-j
 
 此只读对照在两个独立空配置/state/cache/data 根中各自 restore manifest，保留相同已验证 A vector；默认零预算一路直接 use，显式预算一路先 inspect root 再 use 同一根和 Requires。只继承原有环境认证，不复制秘密。单独报告 manifest 成本、前台等待、预取加前台总时间、所有真实 HTTP/字节、未被选择的预取 instruction/retained-response 字节；遇到截断 trace、未知字节、当前正文或远端写入立即失败。公开CLI对照不冒充宿主自主模型或实际前台抢占测试。
 
-2026-11-03 的真实 owned 图、独立 CLI7、同一 A root + Requires 的一组对照通过，见 ng19/retained-prefetch-MnBaye/manifest.json。显式预算为 1 节点、64KiB、depth 0、45 秒 owner 上限、rateShare 0.25；保留全部公开回执和真实 HTTP trace。
-
 | 一组固定版本对照 | 前台等待 | 预取加前台总时间 | 请求数（不含 manifest restore） | 响应字节 |
 | --- | ---: | ---: | ---: | ---: |
 | 零预算 | 4.832 秒 | 4.832 秒 | 9 | 37,730 |
 | 显式预算 | 3.999 秒 | 9.782 秒 | 13 | 52,821 |
-
-每条独立 manifest restore 另为 11 Metadata + 1 retained-body 请求；该一次样本中的预取 retained 响应 4,257 字节全部用于随后选择，未用 instruction/retained-response 字节均为零。所有阶段 current-body、远端写入、provider 均为零，两路 scope/pin/main hash 完全一致。前台局部等待缩短不能抵消此次增加的总耗时、Metadata 与响应字节；这不证明普遍收益，默认保持零预算。
 
 ## Graph harness 4：真实广告与不可知归属
 
@@ -624,47 +380,29 @@ node packages/context-broker/scripts/prefetch-cli-counterfactual.mjs --command-j
 
 未知正文归属独立标为 `observation-incomplete`。配置 `retainedSourceProofRepo` 后，仅在 Pi 退出后使用同 CLI Effect 引擎取得已经观测到的 immutable bundle metadata；独立 oracle 的进程与 HTTP 账本不混入 consumer。纯离线 verifier 校验两层 canonical SHA、owner 与 chunk 清单，随后只按同一实际 CLI receipt 中出现的 bundle/Records DS 关联归属。ZIP 中已下载的其它资源不算 native read、provider 正文或 loaded。
 
-实际 Pi system `<docs>` 段广告的自身通用帮助文件使用共享 `notion-pi-help.mjs` 校验：真实 executable/package bin 确认规范根，只准存在 regular `.md` 与完整合法帮助读取中的包内 Markdown 引用；拒绝内部 symlink、未广告文件、越界及拼错包名。帮助回执独立为 `host-help`，不能满足任何 Notion Skill/resource 断言。H3 原 4 次正确帮助路径与 1 次非法路径的离线复验在 `ng14/harness-v4/actual-pi-help-boundary.json`。
-
-`ng14/harness-v4/combined-home-final.json` 保留 78 项组合回归。H3 的原 result/trace/provider 文件全部保留，`offline-h3-Fe0Sip/result.json` 只派生 immutable 归属：A 的 7 个、B 的 2 个未知 retained 请求均得到唯一 owner，consumer HTTP/read/provider 数量不变，新增 HTTP 为零；两者仍因真实未消费所需正文而失败。文件解析只修明确的编号标题/长外层 fence；B 的同长嵌套 fence 仍报告歧义，A 的纯规划仍是零文件。
-
-H4 最终源码聚合 SHA 为 `a58708b78cb9c4f4029f9c22b81478eccfd0a506828d4a24b9bbc181d4915ddd`，冻结回执 `ng14/harness-v4/freeze.json` 的 SHA 为 `3728fe47eee9d1cdd71d5f88f88e49c8b9ffc04109248add3f222ec46e5b31f1`。实际 Broker8 日用候选与随包 CLI9 的 `graph-observer-http-ejGbJE` 通过 9 次 provider/wire 哈希配对：56,423 B root 完整 prepare/provider、Required 各一份、已广告 `~/...` 原路径的 115 B Required 完整 native 读取、4,080 B Pi 帮助独立回执、三工具完整输出、70 B alias 资源、外部/shell 拒绝与旧 CLI traps 零调用。受控结果不冒充真实模型 Gate。
+实际 Pi system `<docs>` 段广告的自身通用帮助文件使用共享 `notion-pi-help.mjs` 校验：真实 executable/package bin 确认规范根，只准存在 regular `.md` 与完整合法帮助读取中的包内 Markdown 引用；拒绝内部 symlink、未广告文件、越界及拼错包名。帮助回执独立为 `host-help`，不能满足任何 Notion Skill/resource 断言。正确帮助路径与非法路径均保留独立断言。
 
 `sdk-attempts.json` 保留 `uGldin` 的观察器 HOME 前缀漏处理和 `66q5vw` 的不恰当测试组合：Pi 对 56,423 B 文件按正常 50 KiB 页限制截断，不能算完整读取。最终将大正文投递与短 Required 的完整原路径复读分别验证，产品、TASK、oracle、model 与 timeout/budget 均未修改。
 
 ### H5：已完整读取的 host-index 主文与相对资源
 
-H4 的 `ng20/pi-cache-evidence-y6izS4` 失败保留：主文完整读取后，真实正文链接对应的 index 资源在 sequence 29 被共享观察器误拦。H5 只在实际广告的 index 主文完整读取成功后，用 `.broker-host-index.json` 与已验证 entry manifest 绑定 scope、owner、snapshot、main File ID/hash 和 `manifest_id`；只允许该正文实际出现且同一 manifest 声明的相对资源。资源最终读取仍须匹配精确 File ID、pin、SHA 和字节数。提前读取、部分主文、未提及 sibling、篡改身份/manifest、raw `..` 和内部 symlink 继续拒绝。
-
-新增回归红绿与 80 项组合结果在 `ng14/harness-v5/{host-index-before,host-index-after,combined}.json`。实际 Broker8 日用候选与随包 CLI9 的 `graph-observer-http-g5KmVF/result.json` 通过 10 次 provider/wire 配对：实际广告 index main 完整 441 B → 确切绑定 → 正文相对资源 77 B；原三工具、Required 唯一正文、帮助独立回执、Optional 资源、外部/shell 拒绝和 legacy traps 零调用均保。首个受控 SDK `CAjyRg` 因 runner 对重复主文 provider 去重的错误假设而失败，原完整 tool 回执与失败均保留，后续断言同时核原 tool 正文和 provider 已有正文。
-
-H5 八文件聚合 SHA `83576bdd32d0e1c3419da8665adf035a0e3b456091dd6e21c46f268ff3532f19`；冻结回执 `ng14/harness-v5/freeze.json` SHA `9057024b67af5540810739218c91c6c9d686cc0b262057804f87fcb13f77e226`。本次仅观察器/受控夹具/验收文档变化，没有产品、任务、oracle、模型或预算变化，也未自行运行真实模型。
+host-index 资源只在实际广告的 index 主文完整读取成功后，用 `.broker-host-index.json` 与已验证 entry manifest 绑定 scope、owner、snapshot、main File ID/hash 和 `manifest_id`；只允许该正文实际出现且同一 manifest 声明的相对资源。资源最终读取仍须匹配精确 File ID、pin、SHA 和字节数。提前读取、部分主文、未提及 sibling、篡改身份/manifest、raw `..` 和内部 symlink 继续拒绝。
 
 ### H6：已发现资源的可选身份字段
 
-H5 原冷样本 `ng14/final-h5/graph-model-A-G3kOyT`、`graph-model-B-ti3uRk` 保留 failed。独立诊断 `ng20/h5-gate-diagnosis/diagnosis.json` 保存 A 三次实际输入、已发现目录、public read 和最终 native read 的完整身份链。三个资源的 owner/current path 已实际发现，产品成功补齐 session pin/File ID，H5 却因输入省略可选 `file_id` 而误拦。B 混接 record directory/snapshot 与猜测路径仍是实际输入错误。原 300000ms timeout、缺成功 final 和 collector 不完整均保留；pmset 合盖睡眠与样本及 collector 延迟重叠，不由这些失败授权模型 fallback。
-
 H6 对省略 File ID 的请求要求实际已发现的 same-owner/current manifest path，并唯一解析 scope、owner、path、snapshot、File ID、SHA、bytes。显式 File ID 保留公开的稳定身份语义：旧显示路径可以不同于 current path，但该 owner/path/File ID 组合必须已由真实正文或目录提供，且由 verified manifest 唯一绑定；未发现的路径不能借用正确 File ID。显式 pin/身份冲突、scope/pin 歧义、未发现资源与 B 混接 native 路径继续拒绝。call 保存完整 expected 身份，result 只接受同一身份且完整物化的正文，不能因字节相同换绑 File ID。metadata-only `skill_prepare` 发现合同不变。
 
-回归在 `ng14/harness-v6/`：`references-before.json` 记录 H5 上新增七例全部失败、旧两例通过；`stable-alias-before.json` 保留初版严格 path 比较误拦既有 File ID alias 的失败。最终 `combined.json` 为 88/88，包含原 80 项及八个新增病例。原三条无 query 输入、任选省略字段、已发现旧路径 alias、未发现 alias、显式错误 pin/File ID、scope/pin 歧义与调用后身份漂移均有独立断言。
+回归须包含无 query 输入、任选省略字段、已发现旧路径 alias、未发现 alias、显式错误 pin/File ID、scope/pin 歧义与调用后身份漂移；严格 path 比较不得误拦既有 stable File ID alias。
 
-同 Broker8 日用候选和 embedded CLI9 的两个实际 SDK run 均通过：`graph-observer-http-NGwP8n` 使用实际发现的旧显示路径和稳定 File ID；`graph-observer-http-Hgm7jA` 从实际 prepare.directory.files 取得 canonical ref 后省略 snapshot/file_id。入口为 `scripts/notion-skill-graph-observer-smoke.mjs`，分别使用 `--resource-location ref` 和 `--resource-location unqualified-ref`，都保留 `--host-index-resource true`。每次各 10 对 provider/wire、Member 资源 70 B 完整 read/provider、index 主文 441 B 与相对资源 77 B、完整工具输出、外部/shell 拒绝、legacy trap 零调用、14/14 source close 和 Pi observedExit。此处为受控 provider 证据，不代替真实模型 Gate 或 legacy。
-
-H6 八文件聚合 SHA `293c5d2718f326b43143e68a9623413d31386eae7413546e4713fcabd491726d`；`ng14/harness-v6/freeze.json` SHA `b4e28f3bdc6720d87ed155dbb28ebec18663263ad14f954b9ed297f1ee85d48c`。产品、TASK、oracle、工具面和预算未变，原 H5 Gate/matrix 共 70 份证据哈希不变。Tern 工作字节保持原 SHA，既存 stage 差异由 root 的独立恢复回执记录并保留。
+在选定安装包运行 `scripts/notion-skill-graph-observer-smoke.mjs`，分别使用 `--resource-location ref` 和 `--resource-location unqualified-ref`，保留 `--host-index-resource true`。核对实际发现的旧路径与 stable File ID、prepare.directory.files 返回的 canonical ref 省略可选字段后仍正确解析、完整主文与资源、provider/wire 配对、source close、Pi observedExit、外部/shell 拒绝及 legacy trap 零调用。受控 provider 证据不能代替真实模型 Gate 或其他 caller。
 
 ### H7：公开主入口、原生 wrapper 与实际作者时点
-
-H6 原结果保留。独立 `ng20/h6-gate-diagnosis/b-and-native-location.json` 证明 B 的首次 blocked prepare 使用了已公布的 poteto/unslop owner，合法省略 `/SKILL.md`，被观察器自建的窄 URI 语法误拦；legacy 的 native main 路径则已在真实 Pi user `<skill location="...">` 中完整投递，并具备 delivery/public read/manifest 身份链。原 legacy initial 仍为 10 pass/1 fail。A 的 `ng20/h6-a-eager-review-JuV3Ra/diagnosis.json` 证明 11 次假 eager 来自较晚的 observer admission：实际 assistant 已 authored read，Broker 随后 await prepareRead，observer 才记录调用。独立派生移除这 11 次误判后仍为资源覆盖失败；A/B 成功 final 有八组文件标题，却没有生成 Skill 主入口。原失败与证据不覆写，也不据此把模型任务改判通过。
 
 H7 每个 observer 调用方（含 legacy）直接注入实际 installed extension 同目录的 `parseNativeReference`，删除复制的窄语法。省略主路径只可按实际已发现 owner 和已验证 metadata 的唯一 scope/entrypoint 解析，不从 basename 猜 owner，也不硬编码 `SKILL.md`。显式 pin/File ID 与 H6 已发现 alias 边界继续精确核验。Pi native wrapper 的 location 必须来自真实非 assistant provider 内容，且完整主文与 loaded delivery receipt、manifest、公有 read 的 owner/scope/pin/File ID/hash/bytes 一致；assistant 引用、部分正文和身份冲突均不放行。
 
 `message_end` 到达时记录真实 authored tool call、call ID、原始参数与 hash；只有后来 allowed call 和完整 read/prepare 身份均匹配，归属判断才使用该较早时点。admission 原时点仍保留，不拿 message 创建时间回填。未 authored、参数/身份错配和真正早于作者选择的 source read 继续失败。legacy 新增显式 `--case cold-native-command`，复用原 boot/turn/assert/cleanup，标记 targeted 单例且与 resume 互斥；默认 initial11 与 updated6 不变。
 
-同轮产物收集器识别明确的“文件路径”标题，将 owned project 内绝对路径规范为相对路径，正文逐字保留；越界、同长度嵌套 fence 歧义、缺 Skill/frontmatter 和缺引用资源仍失败，TASK 与产物达标要求不变。`ng14/harness-v7/` 保留 observer 红例 4 fail/2 pass、collector 红例 2 fail/3 pass，最终 `regression-final.json` 为 96/96。
-
-实际 installed Broker8/CLI9 的 SDK `graph-observer-http-PUEbMb` 与 `graph-observer-http-wutwR7` 各通过 10 对 provider/wire。前者完成 native command 主文 389 B 重读、provider 一份正文、裸 owner prepare、authored→真实 prepareRead→late admission 链和省略 query 的 canonical resource，15/15 source close；后者保留旧显示路径/File ID alias 与 host-index 相对资源，14/14 source close。两者均有 Pi observedExit，旧 CLI traps 零调用。
-
-H7 最终九文件聚合 SHA `b43eeaef8f76b5bf5c97eab4fd10de3367321d1fa5282dde423119e1958910f2`，`ng14/harness-v7/freeze.json` SHA `92c369b047339eb1388cb7081890212e539616d074dada0fdb90427849155cd4`；installed parser 精确路径及 SHA `a68207cd5163e85f68c0bb0de749cca5ed146581f7b098af9cc8245beb3f9a34` 一并绑定。两 SDK 原 aggregate `c0165eb3923b887a1dd62fa85b11d3794363f0216532992cd79b4cf14074729d` 不重写，随后唯一 helper 变化为 collector；`sdk-project-boundary-final.json` 证明 SDK 调用的创建/检查项目函数逐字不变。两份独立 review 无阻断项。产品、TASK、oracle、工具面、预算和 Tern 工作字节未改；受控证据与真实模型 Gate/legacy 结果分开报告。
+同轮产物收集器识别明确的“文件路径”标题，将 owned project 内绝对路径规范为相对路径，正文逐字保留；越界、同长度嵌套 fence 歧义、缺 Skill/frontmatter 和缺引用资源仍失败，TASK 与产物达标要求不变。observer 与 collector 的正反例分别保留在原测试入口。
 
 ## SC21：生成物的独立执行
 
@@ -683,5 +421,3 @@ H7 最终九文件聚合 SHA `b43eeaef8f76b5bf5c97eab4fd10de3367321d1fa5282dde42
 终态门禁另保三条反例：setup/copy 故障在已分配 ownership 下保存 `not_run` 与失败阶段，未 spawn 时仍可原 driver ECE；未知继承管道到达硬截止后只销毁 runner 自有管道，保留 `closeObserved: false`/输出不完整并阻断 driver cleanup；最终 acceptance 在 scratch 尚在或 cleanup 未绑定 result SHA 时拒绝。专门的 detached 负例由测试预先标识并拥有其 child PID/起始身份/token，外层只结束该 child 并保存自己的 ECE，不回写被测失败或追认 driver 清理成功。
 
 Linux CI 仍运行完整 helper/loopback/失败/finality 核心断言。仅系统 Trash ECE 和清理后 acceptance 正例要求 macOS 且 `/usr/bin/trash` 可执行；缺能力时保留 owned 夹具并明确输出 `System Trash ECE not_run`，不整项 skip、不换成 rm、不伪造清理通过。测试环境可用 `GRAPH_TEST_DISABLE_SYSTEM_TRASH=1` 重放该缺能力分支；生产 cleanup 合同不变。
-
-本切片先保存三项真实 RED：D 自动执行仍为 1 次、原项目检查缺正确 kind、daily 后检漏 profile。原始日志与后续受控证据位于 `AH-617-20261105/generated-helper-exercise-wq_xxo2d`；不将此次受控产物证明写成真实模型或正式 SC21 通过。已冻结失败、原 prompt/oracle、模型预算、日用配置和 Tern 暂存保持原状。

@@ -127,8 +127,8 @@ separate `resource-batch-short-refs` variant explicitly inspects the owner first
 then batches the four actual `sr:R` handles from that directory. Its one inspect
 consume is counted separately from the two resource reads.
 
-The scalar variants and their baseline/candidate source and provider costs are
-recorded separately in [fixed scalar verification](scalar-resource-consumption-verification-2026-11-05.md).
+Run the scalar variants separately from batches and attribute their source and
+provider costs to the [fixed scalar contract](#fixed-scalar-resources).
 
 Launch, Doctor, Drive, Evidence and Cleanup remain in the existing
 [consumption map](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/skill-consumption.md).

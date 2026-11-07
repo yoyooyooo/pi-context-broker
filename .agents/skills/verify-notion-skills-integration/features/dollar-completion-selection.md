@@ -41,7 +41,7 @@ node scripts/verify-native-ui.mjs --catalog-cache-failure
 
 NS-SELECT-05 与 NS-SELECT-06 来自 CLI `list` 原始 `validated_at`、`age_ms`、`max_age_ms` 和 `stale`；新进程不能重置年龄。默认目录 TTL 为 60 秒。`ctl cache identity --database SELECTOR` 的本地凭据/远端目录摘要标识共享持久 index；等价 database selector、不同 cwd、Pi/OMP、source 标签和命令写法共用目录，身份或远端查询范围变化才隔离。自定义 command 不支持该能力时正常 list。`packages/context-broker/scripts/catalog-cache.test.ts` 覆盖独立冷/暖进程、跨项目/宿主/命令复用、当前策略 TTL、共享刷新、凭据隔离和损坏重建；实际双宿主投递沿[共享缓存地图](session-cache-recovery.md#共享-notion-缓存)执行。`catalog-menu.test.ts` 覆盖缓存先出现、提示行不可接受和同菜单刷新。正文仍按激活策略校验 scope 和固定快照。确定性双宿主与 fixture UI 不证明真实 Notion TTL；checkout 验证不代表另一份日常安装。
 
-`list` 必须返回 `records`，且响应里不能有 `skills`。带 `skills` 的整表会被拒绝，页面存在也不会出现在 `$`。2026-10-19 的日常入口曾因此看不到 `resin`；该页 id 是 `3fb5636c-236e-814e-8f88-e4e8e00f051a`，引用是 `skill://3fb5636c-236e-814e-8f88-e4e8e00f051a/SKILL.md`。
+`list` 必须返回 `records`，且响应里不能有 `skills`。带 `skills` 的整表会被拒绝，页面存在也不会出现在 `$`。
 
 ## Pi 独立终端
 自动化入口（真实终端，受控 source/provider）：
@@ -91,12 +91,12 @@ Source-call evidence must show no read/export for metadata misses and no source 
 
 ## Tern terminal frozen recipes
 
-`node scripts/verify-tern-surfaces.mjs run --surface pi-terminal --spec /absolute/pi-owned-run.json` and `--surface omp-terminal --spec /absolute/omp-terminal-owned-run.json` are separate real Tern terminal paths. They reuse AH255 `isolatedEnv`, `resolveHost`, process-group ledger and public Tern ctl, not the standalone Pi PTY result. Run spec and exact scenario semantics: control `ah275/harness.md`; shared native/terminal evidence rules: [editor map](../../verify-context-broker/features/editor.md#frozen-ah266267275-three-surface-driver).
+`node scripts/verify-tern-surfaces.mjs run --surface pi-terminal --spec /absolute/pi-owned-run.json` and `--surface omp-terminal --spec /absolute/omp-terminal-owned-run.json` are separate real Tern terminal paths. They reuse AH255 `isolatedEnv`, `resolveHost`, process-group ledger and public Tern ctl, not the standalone Pi PTY result. Freeze the owned spec for each surface; shared native/terminal evidence rules: [editor map](../../verify-context-broker/features/editor.md#three-surfaces).
 
 For each terminal, first observe the actual host startup and ANSI grid with native editor absent. Type only an owned fixture candidate prefix, capture current menu showing Kind/source, press Tab, capture the accepted current input line and zero new request count, then append natural task and Enter. Repeat Prompt with different material in the same session; compare newest user/request markers rather than counting historical Prompt messages as new activation. Router request must contain entry metadata but zero unselected member-body marker; mixed input preserves user Unicode and a real image.
 These terminal recipes use `serve` only as observed grid transport; they do not cover companion/window VM. OMP terminal selects `PI_TUI_NATIVE=0` and proves actual grid/native-editor absence; Pi uses its actual terminal renderer contract, never inferred OMP semantics. Explicit spec `hostBinary`, `hostSha256`, `ternBinary`, `model`, `scope` and artifact hashes bind the real fixture entries without depending on a daily install. Native companion acceptance uses the owned window recipe in the editor map.
 
-Parent slash recipe types `/ntn-skills ` then chooses sync→upstream/local→status/check/run and actual owned target metadata one level at a time. Capture every parent without submitting; no `--all` is inferred. Direct `ctl status`/`read` returns actual receipt with zero provider delta. Save uses the current Agent and owned destination receipt, one task, then independent real CLI readback and refreshed `$` consumption. Unknown writes retain operation/reconcile evidence supplied by E2E; no hardcoded target IDs.
+The retired `/ntn-skills` parent menu and dedicated save bridge are not release gates. Verify current management through the ordinary Agent loading its bundled workflow Skill and invoking the public CLI, then read back the owned result independently.
 
 Cancellation recipe starts owned delayed preparation, presses Esc/Stop, changes pane/cwd/host conversation through public UI, waits beyond source completion and proves zero late provider delta, editable draft and successful next submit. Without an actual delayed source or supported public session action mark that scenario `blocked`. Pi terminal does not inherit OMP capsule semantics; plain token delete/undo is recorded separately from native atomic capsule delete/undo. Image ingestion uses observed public attachment/drop/dialog capability with the generated `attachment.png`; absence is a real gate.
 

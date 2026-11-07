@@ -16,7 +16,7 @@
 
 ## Pi 的分支与实际 provider 验证
 
-[本轮运行时记录](../../../../packages/context-broker/docs/skill-consumption-runtime.md)给出冻结包与逐层证据。实际 SessionManager 的 `packages/context-broker/scripts/session-active-session.mjs` 通过 14 项，`session-short-ref-session.mjs` 通过 13 项及 5 个独立 resume；这些证明状态，不独立证明 provider 内容。`scripts/notion-startup-flow.mjs` 的实际 RPC/PTY 10 项包含 compaction 后独立 resume、固定 inspect 恢复、下一轮无额外准备，以及取消后迟到 2xx 不发布 active。
+[运行时合同](../../../../packages/context-broker/docs/skill-consumption-runtime.md)定义准备、投递与恢复边界。用实际 SessionManager 的 `session-active-session.mjs` 和 `session-short-ref-session.mjs` 核对状态，再用 `scripts/notion-startup-flow.mjs` 的 RPC/PTY 场景核对实际 provider 内容、compaction 后 resume、固定 inspect 恢复、下一轮复用，以及取消后迟到 2xx 不发布 active。状态测试不替代宿主投递。
 
 完整原生 main read 的 v3 receipt 证明源文本是准确完整前缀，允许保留随后的 body-free S/R 目录；部分 read、资源回执、摘要与伪标签不能替代主文。去重只变换当前 provider 投影中的已验证正文跨度，保留原始 JSONL、toolCallId 与 metadata footer。2xx headers 不是响应流完成；默认模型摘要和正式真实 Agent 任务另留证，不能从受控 compaction 推断。
 
@@ -24,9 +24,7 @@
 
 恢复读取只使用当前分支、经过 compaction 的公开 projection／context，不能从 `getEntries()` 全历史找回已移除正文。machine proof 仅在对应完整 user 投影仍在当前上下文时生效，且不会进入 provider 输入。已取消、错误、未收到成功响应、迟到或回退到其他分支的边界不写入；后续 source 恢复继续依据已有 active 固定版本，Prompt 仍按显式调用处理。`notion_use` 与 native read 的原生 tool result 不走此延迟持久化路径。
 
-原 `context-broker-smoke.mjs` 的历史加载正例也必须提供该合同：单记录与部分已加载场景使用 Pi `buildSessionProjection()` 的对应 `entries`／`messages`，多记录场景保留 OMP `buildSessionContext()` 路径。原 skip／部分注入断言不变；sibling 负例仍以空有效 context 加其他分支的 `getEntries()` 证明全历史不能抑制加载。2026-11-05 统一 C4 检查已保留旧夹具失败：`unified-c4-e1f7-m585ghan/check.log`（位于 `~/Library/Logs/pi-context-broker/AH-617-20261105/`），SHA256 `876761f87b7ef91507cec857df802362c6e0a2aca9be3799f28c51fa2b093f79`；该次检查的后续消费／安装门禁未执行。
-
-同一提交的远端 CI run `42072328437`／job `127403934820` 也在第一个旧正例 `smoke:476` 失败；完整原日志 `unified-c4-e1f7-m585ghan/ci-e1f7-job-127403934820.log` 共 95,647 bytes，SHA256 `1e9fa4eb8923f7d8cda1669869750c179f95dece3f0a6e7d552ca756233c89da`。三个夹具迁移后仅重跑原 smoke，`smoke-fixture-fix/smoke.log` SHA256 `724d681727082bfd88c9d81ebd5915d3ce1df4ea575f5a553ddab2a7868c945f` 通过；完整 check 和独立候选在该修复提交后继续，不能把此单项结果填成安装通过。
+原 `context-broker-smoke.mjs` 的历史加载正例也必须提供该合同：单记录与部分已加载场景使用 Pi `buildSessionProjection()` 的对应 `entries`／`messages`，多记录场景保留 OMP `buildSessionContext()` 路径。原 skip／部分注入断言不变；sibling 负例仍以空有效 context 加其他分支的 `getEntries()` 证明全历史不能抑制加载。
 
 ## How to get to it (user POV)
 
@@ -59,14 +57,9 @@ Preconditions:
 - print 自然退出与 RPC 主动 stop 是不同完成标准；SIGTERM 不单独证明行为通过。
 - Pi `-p` 首次与 `--continue` 必须实际输出完整预期 assistant 文本；session 内存在 `OK` 不能代替 stdout。`context-broker-host-e2e.mjs` 在断言前保存每端 `first-stdio.json` / `continued-stdio.json`、原始 provider/session/decisions、真实 executable identity 与 owned process spawn/close；OMP 另保存每轮 RPC/lifecycle，不把未观察的 stderr 填零。失败仍保存顶层 `result.json`，不降低输出断言。
 - CI 与 Publish 的 `Native CLI host regressions` 失败时，上传这一步创建的 `/tmp/context-broker-host-e2e-*`、`context-broker-config-e2e-*`、`context-broker-lifecycle-e2e-*` 受控证据，保留 7 天。上传或 preserved 只保留原失败，后续未执行的安装门禁仍为未执行；证据不存在时报告 warning。
-- 2026-11-05 CI run `42080986577`／job `127433632896` 已通过 Check、Release policy 和首个 host print/continue runner，随后 global-config 的旧 custom-message oracle 报 `0 !== 2`。下载的真实 session 含两个正确 user edits 与 machine proofs；两轮 provider 中第一正文各一份、第二正文为 0/1，shadowed 正文均为零。原日志 `unified-c4-0f0b02-wj9ya_hr/ci-sdk-wiring/remote-c5fc521/job.log`（位于 `~/Library/Logs/pi-context-broker/AH-617-20261105/`）SHA256 `ff863e841e020a32b92ce991caf77427d66f86e79ca9fb98d3e18aac36a292be` 保持失败；该次 SDK fixture 与安装门禁均未执行。仅迁移此夹具的 Pi 历史读取后，原双宿主 global-config 通过，`ci-sdk-wiring/global-config-projection-fix/global-config.log` SHA256 `d416ecbf2874d29d6cb6f3a2acd35a6008d9d6861080c4adb1a3234c206543f7`，实际 session／provider／projection 位于 `/tmp/context-broker-config-e2e-cKVOFJ`；此结果不替代后续远端或独立安装验收。
-- 2026-11-05 c66 远端 job 127376933166 的 Pi 首轮 empty stdout 已在本机原 harness 复现。增强留证后的原件 `/tmp/context-broker-host-e2e-103jxB` 显示 stdout/stderr 均空且退出 0，provider 1 次、session 先 assistant OK 后 context-broker custom message；Pi 1.4 print 仅打印最终 assistant 消息，因此这是实际用户输出失败。对应 log `/private/tmp/ah676-native-host-diagnostic-dgiizmtm/run.log` 的 SHA256 为 `77a2b32fa5592faa688cba6ebad7bfdbeb5a3b03ded00511aed061d5f426d1e2`。修复后原 Pi print/continue 已通过，日志 `/private/tmp/ah676-pi-print-after-qwvzviis/run.log` SHA256 `55753496d0f206aa702f22b00625529c41355191b8c98072e5957ff942b115ba`；启动取消／迟到／压缩恢复四项的日志 `/private/tmp/ah676-print-startup-recovery-jz27uipk/run.log` SHA256 `1367cc1e9ce89c355f1074a35364993b1cc96fed44d5ae2af7c2511e4292d9a2`。这些是当前源码加真实宿主、受控来源／provider 的证据，不代表最终独立候选、真实模型或日用切换通过。
-- 同批最终双宿主门禁包含上述原生投影断言，日志 `/private/tmp/ah676-print-final-p4_b2j7y/hosts.log` SHA256 `cb79f8716bc50c599eb0e365e3ee0942e128efc2322c8471b9dfe6b5da5f3d96`；`native-projection.json` 在 `/tmp/context-broker-host-e2e-zlK58k/pi/`。对应原 `session-active`／`native-read-session`／`host-prepare` 三组 43 项通过，另有 typecheck 与 OMP 全 lifecycle；实际默认 SDK 独立包仍须在统一候选上复跑受影响的 `$`／恢复路径。
-- 不在用户正在编辑的 session 上 fork/branch/compact；只操作 runner 创建的临时会话。
 
 ## AH258–260 shared content acceptance
 
 Each accepted submission owns invocationId/sessionId/generation and an identity-keyed prepared snapshot set. Preflight/task/final dispatch use one fixed snapshot; next Prompt submission must invoke again. Cancel/timeout/session changes abort preparation and reject late dispatch without consuming a new submission. Preserve original text and images.
 
 No execution is claimed by this map update; final owner runs and retains the evidence.
-

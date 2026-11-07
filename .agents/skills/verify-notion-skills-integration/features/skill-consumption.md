@@ -14,21 +14,21 @@
 
 普通消息、`$name@notion`、原生 `/skill:`、`notion_list`、原生 `read` 检查主文/资源、`notion_use` 与直接 CLI 是不同入口。CLI 日常合同为 `list [--query TEXT]`、`read REF`、`use REF`，主引用为单数 `skill://`。use 必须取得根与完整 Requires；Members 保持候选。Pi 的 `notion_use({ref:string|string[],refresh?:boolean})` 只支持已验证的顶层模型工具交付，Code mode 内部成功不能激活；`notion_ctl` 按需发现。OMP 旧工具与历史 receipt 单列，不在 Pi 默认同时注册。
 
-| 任务 | Issue | 用户入口 | 已有驱动及尚需补齐的证明 |
+| 任务 | Issue | 用户入口 | 现有驱动与验收边界 |
 | --- | --- | --- | --- |
 | SC01 | AH-618 | 验证规程 | 本页完整流程；反例及清理后证据 |
 | SC02 | AH-619 | 全部消费入口 | [只观察的成本规程](skill-consumption-cost.md)；真实模型、source 初态与单资源基线，旧 graph observer 不作为纯观察器 |
-| SC03 | AH-620 | CLI、SDK、Pi | CLI core 的 version 1 consume 合同与等价证明已提交；独立 SDK 打包和 Broker 迁移继续归 SC10 |
-| SC04 | AH-621 | 短引用、原生 read | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：C/S/R 分支表、真实 SessionManager 13 项与 5 次独立 resume、实际 Pi search/prepare/read；74 候选批量投影经同目录 13 点真实对照，跨机重新授权和正式模型 Gate 仍分列 |
-| SC05 | AH-622 | provider 输入 | [能力化指引](../../../../packages/context-broker/docs/skill-consumption-guidance.md)、[prepare 编译投影](../../../../packages/context-broker/docs/skill-consumption-projection.md)、[搜索/注入/native 呈现](../../../../packages/context-broker/docs/skill-model-surfaces-verification-2026-11-05.md)及[重复确认配对](../../../../packages/context-broker/docs/repeat-read-consumption-verification-2026-11-05.md)：完整作者正文与机器证明分离，实际 span、全部 provider HTTP 与工具往返分别验收；正式模型 Gate 仍分列 |
+| SC03 | AH-620 | CLI、SDK、Pi | 同一 version 1 consume 合同；核对独立 SDK 与 CLI 的结果等价及实际宿主投递 |
+| SC04 | AH-621 | 短引用、原生 read | [会话引用合同](../../../../packages/context-broker/docs/skill-consumption-runtime.md#session-references)；C/S/R 分支绑定、resume/fork/rewind、伪引用拒绝与跨进程重新授权 |
+| SC05 | AH-622 | provider 输入 | [正文与机器证明](../../../../packages/context-broker/docs/skill-consumption-runtime.md#model-content-and-machine-proofs)；完整源字节、实际 span、重复确认、坏证明与压缩恢复 |
 | SC06 | AH-623 | 目录、search、自然任务 | search 卡片已减少重复 id/scope 并批量登记短引用，完整 UI/机器元数据保留；view-discovery / model 继续验跨入口去重及两种目录的真实选路比较 |
-| SC07 | AH-626 | inspect、use、资源 | installed --skill-graph true；固定资源批读使用下方 `resource-batch` 路线及[合同](../../../../packages/context-broker/docs/fixed-resource-batches.md)；单文件直读使用 `resource-scalar` / `resource-scalar-short-refs` 与[配对记录](../../../../packages/context-broker/docs/scalar-resource-consumption-verification-2026-11-05.md)；[批读最终包、真实模型与新会话记录](../../../../packages/context-broker/docs/fixed-resource-batches-verification-2026-11-04.md)。原句介绍/执行与正式模型 Gate 分别验收；[指引历史](../../../../packages/context-broker/docs/skill-consumption-guidance.md)的失败继续保留 |
-| SC08 | AH-627 | 重复、resume、压缩 | [默认 SDK 实际会话入口](session-cache-recovery.md#sc08-sc22-pi-默认-sdk-会话恢复)：原 driver 的 session-lifecycle 驱动真实 fork/clone/tree/compact/跨进程 resume/晚到取消，逐 turn 核对完整正文、分支绑定与源终局；[重复读取配对](../../../../packages/context-broker/docs/repeat-read-consumption-verification-2026-11-05.md)保留原始全文；受控摘要与真实模型摘要分别验收 |
-| SC09 | AH-624 | 普通消息、显式选择 | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：context 准备与运行信号，RPC/PTY 10/10、完整启动 31/31；[历史失败](../../../../packages/context-broker/docs/skill-consumption-startup-checkpoint.md)保留 |
-| SC10 | AH-625 | SDK、公开 CLI | [本轮证据](../../../../packages/context-broker/docs/skill-consumption-runtime.md)：独立 npm/Node SDK 11/11、Broker 等价 9/9、实际 Pi 默认 SDK 3/3；目录 CLI 和 custom command 明确单列 |
-| SC11 | AH-628 | 目录、依赖选择 | CLI 的 scalar inventory SDK/CLI smoke 及[完整目录复用记录](../../../../packages/context-broker/docs/shared-metadata-consumption-verification-2026-11-05.md)；同次 logical selector / native-reference 编译复用六属性观察，真实 source driver 单独计量；需求批次、其他投影与关系范围继续补齐 |
+| SC07 | AH-626 | inspect、use、资源 | installed graph；下方 resource-batch、resource-scalar 与 short-ref 场景；[资源合同](../../../../packages/context-broker/docs/fixed-resource-batches.md)；第三方 read、用户禁用、原句意图和真实模型分别验收 |
+| SC08 | AH-627 | 重复、resume、压缩 | [默认 SDK 会话入口](session-cache-recovery.md#sc08-sc22-pi-默认-sdk-会话恢复)；fork/clone/tree/compact/resume/晚到取消，逐 turn 核对正文、分支与源终局 |
+| SC09 | AH-624 | 普通消息、显式选择 | [准备与取消合同](../../../../packages/context-broker/docs/skill-consumption-runtime.md#preparation-delivery-and-activation)；原 startup driver、RPC 与 PTY 分别核对非阻塞启动和真实取消 |
+| SC10 | AH-625 | SDK、公开 CLI | 默认目录/消费 SDK、独立 Node 安装与 CLI 等价；显式 custom command 和 runtime bridge 单独计账 |
+| SC11 | AH-628 | 目录、依赖选择 | scalar inventory 与 combined catalog/directory smoke；完整分页、scope/descriptor、防混合复用及真实源请求账本 |
 | SC12 | AH-629 | 暖、过期、clear | session-cache-recovery；验 freshness、scope、权限、恢复，不要求额外物理缓存全部落地 |
-| SC13 | AH-630 | 主文、单资源、export | CLI 独立 SDK smoke 与下方 `partial-entrypoint`；[固定快照记录](../../../../packages/context-broker/docs/selected-snapshot-consumption-verification-2026-11-05.md)、[来源所有权、最终包与真实来源记录](../../../../packages/context-broker/docs/source-ownership-consumption-verification-2026-11-05.md)、[固定单资源直读](../../../../packages/context-broker/docs/scalar-resource-consumption-verification-2026-11-05.md)及[同次目标 bytes 复用](../../../../packages/context-broker/docs/repeat-read-consumption-verification-2026-11-05.md)；完整目录、先判归属后取字节与 full export 各自验收；首次 current 全树观察、Git 隐私回退与 legacy ZIP 成本仍单列 |
+| SC13 | AH-630 | 主文、单资源、export | 下方 partial-entrypoint 与 scalar/batch 场景；固定清单、来源权限、按需对象和 full export 分别核对；current 全树与 legacy ZIP 成本单列 |
 | SC14 | AH-631 | 过期 Records | CLI request_metrics；另补事实计划复用与Payload归因 |
 | SC15 | AH-632 | 并发、取消、崩溃 | 现有 request-engine / cache-concurrency 的取消、预算、隔离是硬门槛；新增合并/预取先作成本裁决 |
 | SC16 | AH-633 | 历史重算 | 先验现有 replay 与成本；采用 checkpoint 时另验冲突/unknown，不无条件阻塞消费接口 |
@@ -36,14 +36,14 @@
 | SC18 | AH-635 | 固定来源、旧pin | 根据已选策略验迁移与回滚；所有已承诺旧 pin 仍要独立恢复 |
 | SC19 | AH-636 | poteto任务 | 审阅完整规则；作者优化需实际任务收益与独立内容 hash，不运行时摘要 |
 | SC20 | AH-638 | 完整矩阵 | 旧Broker→新候选、Pi原生本地Skill→新候选分开；累计全部provider输入及请求，不相加切片百分比 |
-| SC21 | AH-639 | A/B/C/D真实Agent | graph model / integration model；正式 A/B/C/D 另验；额外介绍案例 `7gd44M` 保留 incomplete，`9W6HlD` 为同原句一次 cold/warm 回归，0 工具仍有两处语义缺陷，不替代正式 C |
+| SC21 | AH-639 | A/B/C/D 真实 Agent | graph / integration model；冻结任务、模型与预算，核对完整输入、实际行为和最终产物；原失败和未跑场景独立保留 |
 | SC22 | AH-637 | 独立npm、pro/mini | installed / Pi PTY；双机各自新包证据 |
 | SC23 | AH-640 | 所有受影响调用者 | CLI / package / integration；迁移清单与回滚实驱 |
 | SC24 | AH-641 | 正常日用Pi | verify-pi-daily-installation 仅核安装身份；另留真实日用新会话、provider、工具调用与任务结果证据 |
 | SC25 | AH-675 | CLI list/read/use、默认目录 SDK | 公共单 ref、根/Requires、精确资源、Default View 与稳定机器输出；作者/ctl 按需 |
 | SC26 | AH-676 | 常规 check、CI、独立 Pi | 下方门禁接线、语义 oracle、默认 SDK 目录、成本对照 manifest 与独立新会话 |
 
-尚未实施功能的完整规程仍为 draft。SC01 只验证地图、证据反例与下方既有 Pi 路径；上表本轮分层证据只覆盖其实际执行范围，不批量更改 1,120 个矩阵项。不得把矩阵项标 passed 来消除 blocker。
+尚未实施功能的完整规程仍为 draft。SC01 只验证地图、证据反例与下方既有 Pi 路径；每次分层证据只覆盖其实际执行范围，不批量更改 1,120 个矩阵项。不得把矩阵项标 passed 来消除 blocker。
 
 ### 必跑用户旅程
 
@@ -165,45 +165,9 @@ SDK 组合目录的一个 `list` operation 可包含 full catalog 与 Default Vi
 
 对应原回归入口为 `node --test scripts/notion-skill-graph-model-evidence.test.mjs scripts/notion-skill-graph-model.test.mjs scripts/notion-model-cache.test.mjs scripts/skill-consumption-model-baseline.test.mjs`；`--test-name-pattern 'combined catalog:'` 可复跑本切片。保留旧 flat 正反例、组合一回执的 HTTP/bytes 计数、full 失败而 View 可用、名称歧义、权限 scope／descriptor、部分目录和原公开 Doctor 读取冻结 envelope 的证据。此迁移不改变真实任务、oracle、工具、预算或评分，也不把确定性回归视作真实 C/D／SC20 成功。
 
-
-真实 C/D 的每轮 final 先从本次 submission 的 observer slice 取得最后一个 `assistant-final`，保留原事件、全文、SHA-256 与 UTF-8 bytes，并在验收前写入 `turn-N.json`。自然任务未实际 use、模型最终失败或 RPC 在输出后失败，都仍保留已发生的 final；当前轮缺少 final 时不借上一轮、早先成功事件或其他 case。保存输出不改变原失败、后续 `not_run`、语义评分、预算或通过条件。RPC 与 final 留证同时出错时保留原 RPC 主错误，另记 `finalEvidenceError`；留证失败本身仍为失败，不掩盖或降级。复用原 `driveIntentStopping` 的确定性入口 `node --test --test-name-pattern 'intent final receipt' scripts/notion-model-cache.test.mjs`，同时验证自然 use 断言仍失败、最后失败 final 不被早先成功替换、RPC 失败留证和恢复轮缺失 final。C10 原 `D-natural-task` 的 `observer.jsonl` sequence 88 已有 41,059 bytes / SHA `b226ad1e1096976ea04a03cde05cc7b4db8477111a92ce74d860618c75102258`，其旧 `turn-0.json` 缺 final 的失败原件保留，不回填或改判。
-
 这些结果证明真实 Pi 和安装边界，真实 Notion、真实模型、双机恢复及日用安装分别验收。SC20 的冻结比较 manifest 必须声明 previous-broker、notion-candidate、pi-native-local 三个角色；本地臂须用同字节/版本的普通全局 Skill，由 Pi 原生发现/read，不加载 Broker。记录相同任务、模型、工具 profile、缓存/会话初态和完整 provider 输入，未跑本地臂不能推算对照收益。
 
-SC23 当前 C3 的管理入口为 `ctl operation list/show/reconcile/resume`，旧顶层 `operation` 继续作为同一 handler 的显式兼容入口；新 `next.argv` 使用 `ctl`，历史 receipt 的原始 bytes/hash 不改写。验收须核对候选自身 schema，维护原 operation ID、unknown 状态与旧调用者的明确兼容范围。此前 C1 不支持 `ctl operation` 的失败原件保留为迁移前证据，不能套用到 C3。旧包回滚仍需从该包支持的 `operation show` 获取下一步，不直接执行新包生成的 ctl argv。
-
-### 2026-11-07：C12 原 C 三轮的技术、成本与语义
-
-使用原 `--intent-case C-introduce`，产品为 `a9ba19e`／C12，模型 harness 为纯 Git `1f991217`；计划、三份提示、私有 oracle、评分及原预算保持。一次 doctor ready 后一次 run，三次提交、0 retry／fallback。初始介绍、同会话复用、明确再读均技术通过；原 manifest 仍为 `review_required`，独立语义整体不通过。前两轮把明确标为 paths-only 的项目文件名单升级成“只有单元测试／缺少 E2E”的肯定结论，没有项目正文读取支持；第三轮核心回答通过，保留局部事实校正。不能将此样本写为正式 SC21 通过。
-
-实际公开动作是初轮 read 目标主文与参考 README，续问零工具，再读轮一次 read。完整 41,537 B 根与 5,938 B Requires 在六份实际输入中各保留一份；目标 6,837 B 在选择后完整交付。明确再读取得新的完整源读取记录，但本次 provider 工具消息是 2,822 B 的 `Already loaded.` 加目录，原完整正文仍在历史中一份；源读取与模型是否重发全文分开计账。53 个未选 Member 正文读取、来源写入及 CLI 子进程均为零。
-
-| 完整实际尝试 | C10 历史（含失败） | C12 本次 |
-| --- | ---: | ---: |
-| 原提示提交 | 3 | 3 |
-| provider 请求／序列化请求体 B | 7／771,632 | 6／575,282 |
-| 来源 HTTP attempts／请求体 B | 53／6,121 | 50／5,884 |
-| 来源解码响应 B | 5,089,320 | 4,373,438 |
-| runner 总时间（n=1） | 73.765 s | 88.420 s |
-| 技术／独立语义 | failed／failed | passed／failed |
-
-首个 provider 尚未出现模型工具选择时，请求体 92,546→80,824 B；完整 Default XML 块 30,687→18,965 B，二者均少 11,722 B。74 个 canonical 身份、名称和准确入口不变。每份省去 50 处重复描述：首份为 50 个 native-custom Members 证明，后五份各为 49 个 native-session 加 1 个 complete-generated-directory；不是六份均靠同一种 receipt。六份 Default 累计 113,790 B、guidance 12,288 B、工具定义 18,570 B；这些组件与正文／历史有重叠，不与完整请求体相加。
-
-来源逐 receipt 对账确认少的恰为三页 list 库存：237 请求体 B、715,882 解码响应 B，其余 50 次请求的 operation/kind/target/status/bytes 多重集相同；consume 仍为 11 次正文请求／458,902 B。一次 paired SDK 交付 full298／Default74，请求与字节只记一次。事后私有审计另有 5 次 metadata／32,149 B，不混入 consumer。Pi 规范化 usage 为 input44,750／output3,133／cacheRead118,272／total166,155；原 provider usage body 未留，费用未知，cost0 不代表免费。
-
-选择器仍为 `magpie/group/flash`、thinking high，但实际 responseModel 从 C10 的 `deepseek-ai/DeepSeek-V4.1-Flash-1017` 变为 `deepseek-v4.1-flash`，别名／后端版本等价未知；工具路径、回答、请求数也不同。因此 196,350 B 总差额不是严格同后端全任务净收益，n=1 不支持稳定时延结论，旧静态 80,272 B 假设不计实测。未新跑 D、未补样本、未用成功技术路径覆盖内容失败。
-
-证据根 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/c12-c-cost-draft-0yg6dljt`：`run-handoff.json` SHA `b6ab774e94a57e0f5754523a77361a25f0c5c1067fe819d680872448a10bd9b6`；`run-diagnostics/wire-and-cost.json` SHA `e4548c40d7d3361516bade38b62eeea9335784ecffc0c2ca398351f35eb5a532`；独立语义 `semantic-review-records-decode-20261107.json` SHA `46d2fbffa284a0bc131accb29fbd4edd93cc9ea2c1b5d389ff566b3bbb480536`。原 E→系统 Trash→E 全0，50份原件及父manifest保持，owned进程已关闭；产品87／harness258／日用3哨兵及两仓原暂存内容保持。root核18交接引用、来源17原件与6份实际wire。Mini正常执行入口仍UNAVAILABLE；SC22／SC20／SC21／SC24不关闭，日用保持旧安装。
-
-### 2026-11-07：C12 恢复增量与剩余成本归属
-
-当前 C12 同包 [CI 42330430928](https://github.com/yoyooyooo/pi-context-broker/actions/runs/42330430928) 的原报告已覆盖 HTTP cache recovery 的 cold／warm／expired／forced／resumed，以及 rate-limit／disconnect／cancel；Pi 1.5／1.4 的 session-lifecycle 也已通过。各分支实际请求数见[成本地图](skill-consumption-cost.md#c12-当前候选的已运行边界2026-11-07)，不继续笼统列作待跑，也不据此升级全部 1,120 个组合。
-
-独立 `session-compaction` 另以同一 C12 包、原 fixture、冻结 1f harness 和原预算完成一次实际 Pi：kept 不重备正文，summary／forged 各一次 fixed inspect 恢复原四 pin，下一 provider 四正文各一份。19 份安装 serializer 请求共 184,474 B、14 SDK、0 来源 HTTP，原 E→Trash→E 后 106 原件保持；完整证据在[会话恢复地图](session-cache-recovery.md#c12-同包压缩恢复增量2026-11-07)。这不是新模型样本或双机验收。
-
-C12 原 C 的根因复核直接确认：实际 developer 项目块已标 paths-only，完整 poteto 也要求区分事实／推断／猜测；read 工具可读取项目源码。没有发现足以将未经核实的仓库判断归因于正文丢失或产品 guidance 的证据，因此保留原语义失败，不增加针对该回答的提示或重采样。作者正文和 Requires 保持。
-
-旧 ZIP 的残余成本已从同一原 C 的 raw receipt 核到 owner/chunk/request：3 个归档、6 chunks 实际为 3 HTTP／392,539 decoded B，SDK 回执报告 51 路径 all_files_ready。主文和显式资源 read 覆盖 4 路径，其他 47 个同 owner 归档路径与 53 个未选 Skill Member 正文0分开，不声称只有入口被下载或物化。复跑脚本、完整账本与限制见[旧归档成本](skill-consumption-cost.md#c12-旧归档的实际承载成本2026-11-07)。当前格式保留，SC17/18 不据此关闭或加入新 backend；Mini、完整本地对照与真实任务质量仍是各自未结项。
+当前管理入口为 `ctl operation list/show/reconcile/resume`，旧顶层 `operation` 继续作为同一 handler 的显式兼容入口；新 `next.argv` 使用 `ctl`，历史 receipt 的原始 bytes/hash 不改写。验收须核对候选自身 schema，维护原 operation ID、unknown 状态与旧调用者的明确兼容范围。旧包回滚仍需从该包支持的 `operation show` 获取下一步，不直接执行新包生成的 ctl argv。
 
 ### Drive：既有受控宿主路径
 
@@ -283,7 +247,7 @@ node scripts/notion-sdk-pi.mjs evidence --evidence "$CONTEXT_EVIDENCE"
 
 `$` 注入的完整正文可以复用 Default 描述，但每个省略项必须在**本次实际输入**中有完整 canonical card，并与原准备目录及当前 Default 的 source、scope、id、kind、name、description、ref 相符。沿用既有 source-identity/v1 的完整正文交付 span、hash、snapshot/version binding；只改变生成的 Default 描述，不改作者正文、Requires、关系或目录身份/入口。普通 user 仿造 XML、仅有 `## Members` 标题、缺失/截断正文、摘要、孤立旧 receipt、不同来源/owner/固定版本、描述更新都不能证明可省略。原 `host-prepare.test.ts` 的 `Pi dollar` 用例覆盖直接注入和 Pi 原生 user-content + receipt 恢复；与原 native/read/use 投影断言同跑。安装版 dollar 场景在每个实际 provider 请求复核剩余描述的完整副本，累计量以实际 HTTP 原件重算；静态字节差额不代替真实模型任务收益。
 
-清理前保存原件哈希，核对所有宿主/SDK/child 终局；随后按既有 evidence → cleanup → evidence 流程复查原件。离线 fixture 的 Default View CACHE_MISSING 与 child exit 1 继续单列。本路径只证明 installed Pi 与实际 serializer/localhost HTTP，不证明真实模型 token、选路质量或生产延迟。最近对照见[测量记录](../../../../packages/context-broker/docs/skill-model-surfaces-verification-2026-11-05.md)。
+清理前保存原件哈希，核对所有宿主/SDK/child 终局；随后按既有 evidence → cleanup → evidence 流程复查原件。离线 fixture 的 Default View CACHE_MISSING 与 child exit 1 继续单列。本路径只证明 installed Pi 与实际 serializer/localhost HTTP，不证明真实模型 token、选路质量或生产延迟。正文及机器证明遵循[投递合同](../../../../packages/context-broker/docs/skill-consumption-runtime.md#model-content-and-machine-proofs)。
 
 ### Drive：SC05 / SC08 重复原生读取的模型确认
 
@@ -303,7 +267,7 @@ node scripts/notion-sdk-pi.mjs evidence --evidence "$REPEAT_EVIDENCE"
 
 短文案与作者正文相同、raw/XML/JSON、极短与空内容、坏证明、不同 scope/pin、partial、重复投影与压缩后恢复由既有会话定向测试补齐。原始 JSONL、toolCallId、完整 read 结果不得改写。该路径是受控提供方与实际 Pi 的验证，不代替真实模型选路或生产延迟门槛。
 
-最近的三组同条件结果、逐 SDK 区间对象读取与清理后原件复核见[重复读取记录](../../../../packages/context-broker/docs/repeat-read-consumption-verification-2026-11-05.md)。
+重复读取核对[正文投影合同](../../../../packages/context-broker/docs/skill-consumption-runtime.md#model-content-and-machine-proofs)，并保留逐 SDK 区间对象读取和清理后的原件完整性。
 
 ### Drive：SC07 固定资源批读
 
@@ -380,43 +344,6 @@ node scripts/notion-sdk-pi.mjs evidence --evidence "$ENTRYPOINT_EVIDENCE"
 按上方相同规则封存真实 session、provider、source/object 账本并核对清理前后原件 hash；仅 `status: trashed`、owned scratch 消失且原证据不变才证明清理完成。新会话验证须从本 Skill 和本地图实际完成同一路径，不能只 review 新增文字。全 warm/partial-cache 的 0 HTTP 不证明真实冷源成本；真实 Notion、实际模型和 current/source 尚未完成的范围单独报告。此条通过不关闭整个 SC13/SC21。
 
 Current 来源所有权的 cold 验证继续走 CLI 既有 SDK smoke，见相邻 CLI 消费链地图的「Current 来源先判归属再取字节」。核对空 Store、已有 custom/tombstone 对应的大来源零获取、必需 source main YAML/有效资源的正控制，以及 installed CLI full export 的逐文件 bytes/hash。该 transport 是受控 Response 与 loopback Notion；本节真实 Pi 的 partial-cache 不能替代它。HTTP/Git local alias 还必须保持实际字节验证后、对象发布前的 durable marker 顺序，后续 provider 失败不能留下漏标的新对象。Legacy ZIP 的 whole-archive 成本和首次 current 完整观察继续独立记账。
-
-### SC13：已有成本按来源与初态分组（2026-11-06）
-
-下表复核既有实际原件，不新增消费者、来源请求或存储机制。CLI 两份 C7 归档 `1e44d7cb…` 与最终 `f854faf5…` 的 CLI `6a82d148…` / SDK `2095a85a…` 字节相同；Pi 生产来源记录明确属于 ce50，不能改称后续 Broker 归档实测。
-
-| 来源与初态 | 已观察的获取与完整性 | 不能推出的结论 |
-| --- | --- | --- |
-| 真实 Notion、Pro/Mini 各自空客户端根，独立 C7 公共 CLI 六命令 | 每机 38 HTTP：32 metadata、6 body、0 write；Pro decoded response 4,882,566 B，Mini 4,882,554 B。root read-inspect 为 21 HTTP，fixed use 为 12；随后 files/固定资源/offline export 为 0 HTTP。根+Requires 47,475 B、46文件/364,634 B完整export与oracle匹配，54个未选Member正文为零 | 这些是整次操作成本；未独立拆出生产首次原生手改/adoption的CPU、压缩wire或阶段延迟。原一个 unclassified_body trace标签由独立owner sidecar归属，原标签不改 |
-| 真实 Pi、ce50/C7、两物理机各自cold roots | 每机4 SDK、0 CLI、37 HTTP、3,473,054 decoded response B；74条默认目录、完整根/Requires与固定资源交付。全部6个body请求经原独立sidecar归属，54个未选Member不读取 | 控制provider并非真实模型；不是未来候选成本，不能与CLI六命令相减称收益 |
-| 受控 warm/partial-cache，安装 C7 SDK/CLI | 原公开 current consume先完成四对象验证（6次受观测Store读取），随后才移除/损坏两份2MiB未选对象；fixed/current主文各2次、单主文read与小资源各1次，未选读取零。选择缺失/损坏对象分别SNAPSHOT_MISSING/STATE_CORRUPT；partial export拒绝，完整clone四文件4,194,399 B逐hash一致 | Store观察不覆盖全部filesystem或hash/CPU；warm零HTTP不是cold下载收益 |
-| 首次 current完整所有权观察、安装C7空Store/受控Response与loopback Notion | cold取得必要source main YAML与有效小资源：2请求/187 B，11 Notion请求/0write；custom/tombstone替代的两份2MiB来源不取得。仅元数据refresh为0 source请求、10 Notion请求/0write，两相位均29受观测对象读取、完整export等于oracle | 这是受控来源，不是生产native-edit/adoption延迟。完整有效清单/引用校验仍先完成，不能借旧receipt跳过当前事实 |
-| legacy retained_bundle ZIP，C7实际CI service fixture缺失所选对象 | 选16 B guide仍取得完整2,097,517 B ZIP、全部65 chunks；1受控retained请求，7,848 request B / 2,939,106 decoded response B。完整archive/member校验后仅写16 B所选对象，未选坏/缺对象保持；第二次只读所选cache对象、零远端请求 | whole_archive_cost=true。只发布所选文件不等于随机下载；生产ZIP流量、频率、压缩wire与CPU仍unknown |
-| 历史旧producer的真实双机恢复演练 | 各13 HTTP/89,667 decoded response B恢复4文件711 B，current body/write为零，后续9个fixed命令0 HTTP | 此数据是新建的graph_release + exact_bytes chunks，**不是legacy ZIP**，也不是找到的存量用户旧pin |
-
-复核清单：`/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc13-cost-groups-jdz_17h8/classification.json`，SHA256 `9c9f4301186013a518ac33ad22e7fb6629345cdc2a4dd09da9aa61f6c0e230e0`。绑定原 C7 installed22 report `8209b2e3…`、partial `fc9213d4…`、ownership `8babe9be…`、实际 CI log `127603636279.log`、生产双机CLI/ce50及旧producer账本；原retained测试从b75到当前字节相同。所有历史失败、旧报告和C7 CLI的永久删除清理偏差保留，不能改称Trash；本次只有只读复核，没有清理来源或用户缓存。
-
-本候选保留已验证的按需物化、完整current观察和完整export合同。这里完成成本分层，未知继续显式保留；不据此宣称新的存储布局、checkpoint或迁移已实现/无需实现。SC14、SC17、SC18继续按实际瓶颈、预算和已批准批次各自裁决；不把tiny fixture外推生产绝对收益，也不累加历轮百分比。
-
-### 2026-11-07：Pro v8 正常安装的介绍与自然任务
-
-沿正常 HOME/settings/source/model/tools 自动加载已安装 v8，不注入扩展、命令或工具覆盖；模型仍为 `magpie/group/flash`、thinking high，原 C 介绍首轮与原 D 自然提示各一次，300000ms 上限，无 retry/fallback。项目采用独立 system-temp 的固定五文件 HTTP 服务，manifest `b4c48f279ec9d1895ab9e2cc5f91ff4fa6dd56743cdc83aa5b95e700b2a8495f`。此前 `natural-v7` 错将项目放在 evidence 父目录内，模型读到验收输入/runner/result，原超时失败保留并另标 `invalid_environment_exposure`，不作为干净 A/B。
-
-C 原提示 `$poteto-mode@notion 介绍下 create-verification-skill`：两次实际 read 分别完整取得 6,837 B 主文和 2,761 B feature-map README，owner/scope/snapshot 与 bytes/hash 对齐，未读取两个不必要示例叶子，未运行被介绍 Skill 的流程。runner passed，独立语义主体通过；“Pi 里必须改为 .pi/skills/”这项额外适配建议未由本轮证明为必须，保留非阻塞限定。项目五文件不变、未触达验收器/答案材料。这只是 C 单轮，不能关闭原 C 三轮或整个 SC21。
-
-D 原提示 SHA `357ea5d770ddacaf2ed9767ae9e3a7959457ba2e08fe34bcae5a172bf6e8d978`：原 runner 与独立语义均 failed，15 次工具全为 bash，没有主动 notion_list/notion_use/read/tool_search。正常 v8 autoload、session toolsAdded 的实际 schema、首 assistant 前的 guidance 与 74 个候选 short-ref 均有宿主原件；最终 raw provider 请求未留，不能据此推断模型最终看见的全部目录或失败内因。后台 SDK list 不等于模型发现/使用。
-
-D 的 68,529 B 原 final 逐字保留；原提取器报 `AMBIGUOUS_FILE_FENCE`，产物 `plan-only`、`files=[]`，不修补围栏或强制判通过。静态审查另确认停止 main 后仍检查它的 health/网卡、将任意传输异常当作预期反例通过、checksum 的 basename 与文档 cwd 不一致。没有执行生成规程。模型只读项目并在固定 `/tmp/acc-check` 写草稿、做语法/纯函数检查，未启动项目或写远端；该目录没有先验不存在/owned 证明，不整根清理。原 C10/C12 失败继续保留，不用本轮成功介绍覆盖。
-
-C 的 SDK 四操作账本为 list 17、consume 15、consume 12、read 0，共 44 HTTP（42 metadata、2 body、0 write）、3,949,061 decoded response B。其中三轮 Skills inventory 为 12 HTTP/3,776,626 B；两个 consume 各属新的 fresh preparation，不能仅凭数据源相同或间隔不足一分钟认定全部可省。fetch preload 的零观测不等于零来源请求或完整 wire 覆盖。D 仅后台 list 一次，完整 SDK metrics 为 0 HTTP。当前 query guidance 244→227 B 只属静态文案长度；两轮均未主动 notion_list，不把它写成真实选路或全任务成本收益。
-
-证据根 `/Users/yoyo/Documents/code/personal/verification-evidence/notion-skills/pro-local-refinement-20261107-9jv57mcm/evidence`：`introduction-v8/semantic-review.json` SHA `b28e16458ee168d9108dd7e888c66be446de044e97e4a64dd78846bb54c2407f`；`natural-v8/semantic-review.json` SHA `501e5bcba4cd5436357060a838707e95f07e435ea8d70d90fa8f0451bb30e767`；`natural-v8/discovery-review.json` SHA `bbe1f584122019029ecb5e2920efa1c55c60a1d999b6b3af53cd6731d4ba6d3a`；`cache/introduction-v8-cost-attribution.json` 保留逐请求归属。两个 owned Pi 已自然关闭；独立 scratch 经系统 Trash 回收，53 份原证据 hash 全保持，见 `model-owned-cleanup-v8.json`。原失败与未知范围不因清理成功改变。
-
-### 2026-11-07：最终 Pro v9 的来源投影与暖读
-
-v9 绑定 CLI `dab5ac1807fb04318221afac2bdf555cf9246ca8`，Broker `index.ts`／`host-skills.ts` 与上述 v8 逐字节相同；只更换内嵌 CLI/SDK 的来源 inventory 属性投影。完整分页与 fresh preparation 保留，十个必需字段和已登记 Members／Requires 不变；实际登记投影 15→12，去掉未被该链消费的 Tags、Origin、Source Member。相同 owned Skill 的公开 CLI `use --refresh` 顺序只读 A/B 均 ready、16 HTTP、0 write、0 guard 触发，decoded response 1,706,860→1,531,387 B，少 175,473 B。差额全属四页 inventory，其余十二次响应字节相同；主文 575 B、三个文件、fixed refs、links、manifest、关系和 graph lock 一致。此处是独立 API 对照，不把它折算为 v9 真实模型全任务收益。
-
-切入正常 Pro 后沿原 cross-entry 脚本再验 CLI→bundled SDK：首次 observation 已超过五分钟，CLI 实际 9 metadata HTTP／186,581 decoded response B，SDK 0；立即重复 CLI 与 SDK 均 0 HTTP／0 response B。owned observation 1→1，原 id／rowid 保持、generation 80→81，八个 owned snapshot 不变；该区间 objects 6,378 文件／243,698,980 B、snapshots 2,558 文件／290,568,288 B 及名称 inventory 不变，不声称历史缓存缩小或全局有界。实际包/激活/暖读分别见同一 evidence 根的 `broker-artifact-v9.json`、`activation-readback-v9.json`、`cache/graph-projection-ab/summary.json` 与 `cache/cross-entry-warm-v9-validation.json`。C/D 模型结果仍只归属于其实际 v8 包，D 失败不重采样、不改判。
 
 ## Gotchas
 

@@ -39,56 +39,23 @@ Source 的可选 `profile_id` 必须同时配置显式 `database`。默认目录
 
 证据为 `*-view-provider.jsonl`、`*-view-rpc.json`、`*-view-result.json`、manifest 与自有进程退出回执。检查实际 provider 中的目录，不只检查配置对象或 UI 提示。
 
-原 `host-prepare.test.ts` 的 deferred dollar 回归必须串联已注册的 `context` → `context_with_system`：前者输出没有 receipt-only custom，后者从当前 `buildSessionProjection().entries` 关联验证回执。完整根与 Requires 的 user 字节保持，当前目录只新增一条临时消息，验证回执不进入 provider；正文缺失、摘要、截断或当前分支没有回执时恢复完整 Default 描述。不能先手工把 custom proof 塞回投影输入再声称事件接线已覆盖。C11 原 `c11-pi-o1juific/dollar` failed 及其 serializer 尚未执行的状态保留；本地事件链修复不替代独立安装 Pi、实际 provider serializer 或真实模型验收。
+原 `host-prepare.test.ts` 的 deferred dollar 回归必须串联已注册的 `context` → `context_with_system`：前者输出没有 receipt-only custom，后者从当前 `buildSessionProjection().entries` 关联验证回执。完整根与 Requires 的 user 字节保持，当前目录只新增一条临时消息，验证回执不进入 provider；正文缺失、摘要、截断或当前分支没有回执时恢复完整 Default 描述。不能先手工把 custom proof 塞回投影输入再声称事件接线已覆盖。本地事件链测试不替代独立安装 Pi、实际 provider serializer 或真实模型验收。
 
 partial 相位只扩原 `notion-integration-fixture.mjs` 的受控列表响应：普通完整库仍返回原三个成员，选定 View 返回原 `UI Alpha` 一个成员，缺失项以原 `UI Gamma` 的 ID 和 `NOT_FOUND` 标入 coverage。`source-cli-calls.jsonl` 的 `catalog-response` 保存实际 stdout 对象、原 argv 和时刻；与 provider 索引、当前分支 session 副本一起核对。Pi 从实际请求目录取得 `sr:C` 后，校验其既有 candidate 绑定的 owner/scope/locator；canonical 入口逐字匹配返回的主文 ref，OMP 仍核原 native 路径旁的 canonical ref。私有绑定只证明公开入口归属，不能代替模型实际看到目录。
 
 此相位不选 Skill、不读取正文、不展开 Requires，也不产生 active 确认。断言拒绝 empty/all-library/complete 冒充 partial、只存在私有 details 的目录、重复目录、错误 owner/scope、旧分支句柄及正文混入。Pi 的临时 custom 在 provider 前可转成 user 消息，须按实际可见正文校验，不因角色转换把完整目录误报为缺失。复用原 `failList` 后必须在 finally 复位 fixture；仅清理 manifest 所属 scratch 并进系统 Trash。受控 CLI 没有真实 Notion HTTP/core 缓存，不能由本相位推导生产请求、权限或跨进程缓存收益。
 
-接线证据（2026-11-06）：`sc06-partial-view-d_zadb79/fail-before.log` 保留旧 fixture 的实际 `true !== false`；更新后原 `notion-integration-hosts.test.mjs` 为 25/25，包含原入口/正文/压缩断言。该阶段只有本地 fixture 与 oracle 验证，安装实驱当时标为 not run；不继承旧 646 的完整、空、错误 View 结果作为本次 partial 通过。
+调用方现在共用原 SDK 验证器迁入 `notion-default-context.mjs` 的 `providerSystemText`：只回放实际 system 消息的文本及命名 section patches，同名替换、`null` 删除，保留 OMP 顶层 `systemPrompt`。SDK 保持同名 re-export，不另建解析器。保留同形态 section patch、非 system 伪造、重复目录及 owner/scope/单目录断言；原始捕获的离线解码不能替代选定安装包的实驱。
 
-随后以纯 `d0eee56` harness、`282fb35a…` 安装包和 Pi 1.5 执行一次，原 `QC55vI` 保留为 **failed**：首个实际 provider 的 `system.sections["context-broker-notion-catalog"]` 已包含 647 字节完整目录，但旧 View 读取器只看空 `content`，旧 `nativeEntries` 也只读 `sections.skills`。原 outer exit 1、Pi 按 `rpc.stop` 退出 143，E→Trash→E 后 304 个原件保持哈希；partial/失败/恢复三相位均未运行，不离线改判成功。
-
-调用方现在共用原 SDK 验证器迁入 `notion-default-context.mjs` 的 `providerSystemText`：只回放实际 system 消息的文本及命名 section patches，同名替换、`null` 删除，保留 OMP 顶层 `systemPrompt`。SDK 保持同名 re-export，不另建解析器。`sc06-view-sections-fb92jufh` 保存两个同形态红例、原 28/28 回归及封存捕获的离线解码；非 system 伪造、重复目录、原 owner/scope/单目录要求不变。该阶段的新安装实驱当时尚待授权，包不因这个 observer 修复重建。
-
-### 2026-11-06：同包 View 安装实驱
-
-纯 `130a7e4567ee9aa6d1e7f8deaa3616c9390507b3` 导出的 258 个 harness 文件，配原 `282fb35a8266fc76c49d9ae3e423fff536b5d9b8d7346b059474357cca28d889` 安装包、C8 和 Pi 1.5.0，按原 RPC 120000 ms、n=1、零重试运行一次：`gBLqrM` **passed**。24 次实际受控 provider 调用贯通原完整/空/无效 View、切换、显式选择、续接、fork、compaction 及新增 partial → 来源失败 → 恢复。新结果不改写前述 `QC55vI` failed 或其三个 not_run。
-
-以下索引从 0 开始，来自本轮 `pi-view-provider.jsonl` 的实际 system sections；目录始终恰一份，状态与精确成员分别核对。
-
-| 状态 | 实际 capture 与边界 |
-| --- | --- |
-| complete | provider 0 为首项 View、一个 `UI Alpha`、`partial="false"`；provider 23 在来源恢复后回到同一完整 View。中间正常切换另保留实际 Alpha/Beta 目录 |
-| empty | provider 19/20 为 `origin="first" status="empty"`、零成员；不回退成全库目录 |
-| invalid-config | provider 17/18 为 `origin="configured" status="error" code="NOT_FOUND"`，不自动改选 |
-| source-failure | provider 22 为 `status="error" code="NOTION_REQUEST_FAILED"`，没有把旧 partial 成员当成功目录 |
-| partial-source | provider 21 保留一个精确 `UI Alpha`、`partial="true"`；同区间实际 CLI stdout 的 `coverage.exhaustive=false`、`failed_sources` 含 Gamma/NOT_FOUND，公开 `sr:C` 与当前分支 owner/scope/locator 一致 |
-| pending | **本 View run 没有 pending capture**，它沿原公开 refresh 元数据屏障后发消息。独立同包/同 `130a7e4` SDK 场景 `validation-130a7e4/pi150-default-view` 的 request `90541:1` 为 pending、`:2`/`:3` 为 ready（各两个成员）；不能写成这 24 次 View 调用覆盖了六态 |
-
-账本是 **81 次受控 custom CLI 调用 + 13 条 stdout/失败响应观察 = 94 条日志**，不是 94 次 HTTP。partial、来源失败、恢复三个区间分别有 5/7/3 次 CLI 调用，均没有 prepare/read/use/export 正文调用；不从受控 fixture 推断生产 HTTP、核心缓存或权限收益，也不补造逐 CLI 子进程退出指标。外层 runner 自然退出 0；9 个原生 Pi 均由既有 `rpc.stop` 关闭，实际 code 143、signal null，不能记作 Pi 自然退出 0 或 stdin EOF。
-
-证据根为 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/sc06-view-sections-after-5c5421rd`：`handoff.json` SHA `eefab15eb01f73ed1f11044525b11332e4c79f2b02e6ed586f73bd783cd99751`，`actual-review.json` SHA `0c03244b8c43b01908350674e57aeb4769aed588f1b658badbc93ea941af7eee`，`selected-system-catalogs.json` SHA `ce8d1e0ce85a9aad3e00d48525386508e78e94a11c165cb45656efabd56c5b63`。`ece.json` SHA `beef2e30d41b2c1cccbf7259ebee3557958d4c4a92a7c747a8772f6ba0132cea` 记录原 Evidence→系统 Trash→Evidence、391 个封存文件哈希保持、101 个非敏感 scratch 文件保留、auth 内容未复制，以及 258 个 harness 文件、87 个包成员、旧失败原件和日用三哨兵均未变化。
-
-pending 的独立 SDK 原件在 `sc06-c8-sdk-all14-zzcex1t7/validation-130a7e4/pi150-default-view/evidence/default-view/`：`default-view.json` SHA `82c8b34602760299a57fe504812eb4d76a142052b553a8bf101bbc1153d33e02`，`provider.jsonl` SHA `f3c892445ac6af2432bc232894844ad3606548b50a715463754b5143e5d68a4f`。这是另一受控 SDK fixture；本 View run 仍属 custom CLI，真实 Notion SDK 来源、生产 74 项目录和真实模型未由此补验。
-
-压缩 oracle 依据 AH-627 的 `agent-cli-ref-20261105` 已校准合同：已实际送达并确认 active 的来源，必要全文被 compact 移除后应在普通续问恢复同一版本。Pi 不再沿用旧“普通续问正文必须为零”的断言。保留 fork 到选择前的零正文负例；压缩前、压缩后和恢复后的原生 session 副本必须显示同一 owner/scope/pin/hash 与同一确认/选择，不接受 orphan receipt、仅准备成功或新 `inspect` 冒充 `use` 确认。OMP 保留其显式 reload 的兼容边界。旧失败原件不改写。
-
-### 2026-11-07：兼容其他扩展的强制 system prompt
+### 兼容其他扩展的强制 system prompt
 
 Pi 的 deferred 默认目录现在由 `context_with_system` 每次从当前内存观察重新生成一条 `context-broker-notion-catalog` custom 消息，`display: false`，不追加到 session。先移除上轮同类型消息，再做同请求描述去重，避免旧目录让新目录缺少描述；原 system 内容中的 Broker metadata 继续清理，原生规则与其他 section 保留。Pi 随后的强制 system prompt 替换不会移除这条消息。pending → ready 不冻结，active 正文、固定引用和 OMP 原合同不变。
 
 验证器保留 `providerSystemText` 专查原生 system 内容，目录读取使用 `providerCatalogText` 的实际 system/user/custom 文字；不读取 details、工具 schema 或非 system 消息的伪造 section。`nativeEntries` 对新增 user/custom 位置只解析完整 `ntn-skills-view-catalog` 块，普通正文里的 `<skill>` 示例不充当原生目录。默认 View 的完整成员、作者名称、description、source、公开 ref、唯一目录及正文零预载断言保持。既有 `notion-sdk-pi.mjs` 的 default/preflight/warm/HTTP-directory 与 `notion-view-discovery.mjs` 共用这个读取方式，serializer replay 也按真实 messages 检查。
 
-私有证据根 `pro-natural-routing-20261107-4eoahlri` 的 `evidence/routing/wire-visibility-v9.json`（SHA `3a83c59613eaf9637ac8af30f7361d5998b215e7015f528eff107ba6db647b33`）记录修复前正常 v9 的三次请求：raw/cost/Undici 实际 HTTP 正文 3/3 按 SHA 与 bytes 匹配，safe-delete policy、Notion guidance、read/notion_list/notion_use/tool_search 均存在，但目录、pending 和目标 `create-verification-skill` 三次都缺失。该任务仍是 failed、4 次 bash、graceful EOF；HTTP 200 不代表任务完成。旧 natural-v8 没有同级原始 wire，不追溯补判相同原因。
-
-旧 runtime 在原 `host-prepare.test.ts` 新增 forced-prompt 回归中实测 RED：期望一条 pending catalog，实际零条；原日志 `logs/broker-catalog-before.log` 保留。修复后同文件 42/42，通过 pending → ready → 旧消息回投，完整 description 仍一份且不持久化；既有同 identity read/use 卡片去重、正文和固定资源门保留。目录验证器两文件 191/191，随后 nativeEntries 示例边界追加回归为 30/30；input-guard 独立执行与 typecheck 均 exit 0。早轮旧 system-only helper 失败日志仍保留。此处只记录本地回归；新安装的正常 Pi、实际最终 wire 与自然任务终态由后续独立运行分别给出，不以本地测试代填。
-
 ## 真实内容与模型
 
 使用已有只读授权的库和 View。模型模式需明确 `--model provider/model`、自然任务和 `--view VIEW_ID`。要求模型选择入口、成功读取正文及同快照支持文件，实际网络成功并把两份内容送入后续请求。模型与预算须沿当前已批准配置冻结，不修改全局模型选择。记录失败，不把受控 provider 或 HTTP 200 单独算作完成。Pi 复制实际广告的短引用或 canonical ref，OMP 保留宿主兼容入口；均须核验源 owner/scope/pin、完整回执和实际进入 provider 的字节，不能把 metadata stub 或 preparation details 当成已投递正文。
-
-2026-11-06 的同包真实模型两原型结果见 `skill-dependency-graph.md` 的“两种真实 D 原型”。两臂各三景首provider均pending；on-demand每景只有首请求，后台完成Default74没有进入下一请求，因此没有ready卡片曝光的有效配对。普通聊天无正文读取、无目录强制等待，shutdown取消保持独立状态；介绍与自然任务均存在真实选路失败，不能用较少工具/输入称收益。没有采用on-demand为产品默认策略、扩大样本或改变原预算，普通全局Skill的Default名称/描述/准确入口合同保持。
 
 ## 有界预取与压缩专项
 
@@ -104,7 +71,7 @@ node scripts/verify-notion-integration.mjs evidence --evidence /absolute/run
 
 配置预取目前沿 public CLI `prepare --purpose inspect --priority prefetch`，即使日常 Pi 正文消费使用 SDK，也不能把这条兼容执行路径记成 SDK 请求。受控 fixture 的调用日志保留 `command` 与原始 `args`；`ctl views` 等新入口和旧 alias 共用一层分发，不能只凭规范化后的 operation 名称宣称调用方已迁移。
 
-调用账本按真实 CLI 输出合同加观测参数：`prepare` / `ctl prepare` 自带 JSON，只追加 `--metrics`，不支持 `--json`；`use` 采集机器证据则需要 `--json --metrics`。fixture 同样拒绝非法 `prepare --json`，避免受控专项掩盖已在独立 C6 包实际 PTY 中观察到的 parser 失败。故障原件与修复后原 PTY 验证分别保留，不通过重打包改变对照。
+调用账本按真实 CLI 输出合同加观测参数：`prepare` / `ctl prepare` 自带 JSON，只追加 `--metrics`，不支持 `--json`；`use` 采集机器证据则需要 `--json --metrics`。fixture 同样拒绝非法 `prepare --json`；受控与实际 PTY 都应使用被测入口支持的参数。
 
 | 场景 | 必须留下的实际边界 |
 | --- | --- |

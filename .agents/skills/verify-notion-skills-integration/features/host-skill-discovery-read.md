@@ -25,10 +25,6 @@ live 的固定 canonical ref 可含编码后的稳定 owner、snapshot 和 File 
 
 先运行 `node --test scripts/notion-integration-hosts.test.mjs scripts/skill-consumption-source-observer.test.mjs scripts/skill-consumption-startup.test.mjs`，再用 `run --mode installed --host pi --package ABSOLUTE_TGZ --evidence-root ABSOLUTE_EVIDENCE_PARENT` 验独立安装；已有逐文件验证的同一安装也可通过 ordinary `run --mode deterministic --host pi --extension ABSOLUTE_INSTALLED_ENTRY` 复跑。按实际 manifest 分别记录宿主版本、archive／entry identity、Notion custom-command 与 filesystem 两分支、metadata／read／native RPC／cold print／continue、资源及拒绝结果。
 
-2026-11-05，`85888eeda4683ba53c79b84640839220a4162d8902a8ed321d30ba9fd4e42d3e` 候选的旧 ordinary driver 在真实 Pi 1.4 独立安装中报 `Default host catalog must advertise the remote alias`；实际 provider 已显示 `UI Alpha`、`source=notion` 与 `sr:C`。原件位于 `~/Library/Logs/pi-context-broker/AH-617-20261105/sc23-custom-z5l5yxy3/broker-notion-evidence-kGmIsU/`。新增 parser 断言的 fail-before SHA256 为 `c83b1e69ac6dac7dc3e070e16d36f105f0a475de3ba4627b828a210be2bed103`；它还揭示旧 parser 合并同名不同入口、未解码 XML 的问题。修复目录后，首轮新 run 实际走到 ambiguous 拒绝，但旧 oracle 未捕获原生 aborted，仍按失败保留于 `after-pi14/`。
-
-修复后的原命令已在 Pi 1.4 独立 fresh install（`after-pi14-v2/broker-notion-evidence-ZY2iDF`）和 Pi 1.5 同一已验独立安装（`after-pi15/broker-notion-evidence-iRx29c`）分别通过 Notion custom-command 与 filesystem 两分支。两版均实际完成 read、资源短引用、cold native RPC／print、美元与 native 双向重复、参数保留、continue、三类 source 拒绝和重名拒绝／精确选择；未以 warm 结果替代 cold print。每个运行清理前的 86 个发布文件与同一 archive 逐字节一致。64 项原定向测试通过，日志 SHA256 `36aeb9f55bd070b3720257bc9addf34bd9ab92f9376ccd3bf9198df6f550a287`。四个成功／失败运行均完成原 Evidence → Cleanup → Evidence；49 个原件 hash 未变，receipt `cleanup.json` SHA256 `30cbe6652539b51eb9bf5fba8a37b1c60ceee3811d7339a133d2b3386a6811f6`。
-
 此 ordinary 兼容路径使用受控 CLI 与 provider，支持 custom command，不证明默认 SDK、真实 Notion或真实模型。旧 `--default-context true` 专用预取分支仍需独立迁移／验收，不能用本路径成功或 SDK all14 给它补记通过。所有 run 均先 evidence、再仅清理 manifest-owned scratch、再 evidence，并核原件 hash。
 
 ```bash
@@ -45,8 +41,6 @@ deterministic 与 installed 执行这些双 source 路径。审阅 `pi-fs-`/`omp
 model 使用当前已有授权与模型配置，不索取 token、不改 CLI 配置。默认执行 Pi 与 OMP；仅 model 可传 `--host pi|omp`，Doctor 按选定宿主检查，未执行宿主记入 `manifest.notRun`。NS-HOST-04 必须逐宿主审阅 `HOST-real-model-observer.jsonl` 与 `HOST-real-model-result.json`（HOST 为 pi 或 omp）：metadata 无正文、模型自主 native read、选定正文与关联资源成功读取、内容进入真实 provider、HTTP 响应成功，以及非空且 stopReason 为 stop 或 length 的成功 assistant final 回复。失败也保留 result。observer 保存 selector、计数、脱敏 source read 结果及 `assistant_final` 的 bytes、textSha256、脱敏 text、stopReason 和 success，不保留 raw provider payload 或凭据。普通确定性路径使用 `pi-rpc.json`、`omp-rpc.json` 与对应 provider/decisions；这些不证明真实模型行为，一个宿主不能代替另一个。
 
 ## OMP 冷读取与命令预算
-
-OMP 18.14.2 的 `tool_call` active-work 默认预算为 30 秒，合同来源为[该版本 runner](https://github.com/can1357/oh-my-pi/blob/7efd77219374ca4e8767979809835e4aa90666ba/packages/coding-agent/src/extensibility/extensions/runner.ts)。Broker 的 25 秒短 hook 保护不能承担完整冷读取。适配器通过同名 `read` 的公开注册入口，在 execute 阶段准备并校验固定快照，再用 `ctx.invokeTool` 调用原生 read；注册命令也在命令执行阶段等待队列与正文。fallback hook 仍保留有限预算，source 自身超时、取消与会话代际边界继续生效。不得提高用户全局设置、提前预热或放宽正文断言来通过冷读取。
 
 先在现有入口核对受控回归，再以实际安装的候选执行标准 live 与 [native-kinds](session-cache-recovery.md#native-kinds-rpc)：
 
