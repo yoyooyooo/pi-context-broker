@@ -238,6 +238,10 @@ Pro 的原 `http-directory` 与 `dollar` 各 n=1、0 retry。HTTP正常分支共
 
 两场受控与一次实源的原 E→系统Trash→E均0，分别55／32／48份证据保持，owned Pi和driver均已关闭，scratch移入Trash；候选87、harness258、原fixture／helper／oracle与日用3哨兵保持。证据相对 `/Users/yoyo/Library/Logs/pi-context-broker/AH-617-20261105/`：`c12-pi-s24k9oj8/closure-and-inputs.json` SHA `f58680d4cc5897787dc41a804f95209b1a9b36acedccf4bcd4f9838850b4829e`；`c12-pro-live-2xs5o14p/handoff.json` SHA `1026a545f99644ac939b4c01d121b19945d54b9ff25d82af1dacd19b959a78fb`；`c12-harness-260bf27j/ci-c12-identity-and-reports.json` SHA `041dd623b1f09d523e5124823f3fc0943b3e6b7a522d7f6b40faf55222cf9354`。root核实源38引用／36文件及CI包成员。C11两个actual Pi失败、旧模型失败、Mini正常执行工具UNAVAILABLE均保留；本节没有真实模型样本或日用切换，不关闭SC22／SC20／SC21／SC24。
 
+后续纯验证提交 `b28943e` 的自然 CI [42326774248](https://github.com/yoyooyooo/pi-context-broker/actions/runs/42326774248) 保留 failed：Check／native／Pi artifact通过，HTTP cache-recovery 的 cold／warm／expired／forced通过，resumed未取得成功目录；后续兼容门禁按条件跳过。原恢复正文334 B已在实际provider中完整一份，0新consume／read／对象读取，但首SDK list在provider response结束后4.178195 ms才start；通用before-close drain提前判idle，quit后该list取消，0HTTP／0B且无成功facet。不能用恢复正文通过或取消后的完整EOF把目录改判成功。
+
+普通恢复提交完成后、EOF／quit之前，原cache driver也必须使用已有 `initialCatalog` 屏障，观察本host/source/database的初始list start及terminal，再保留原成功facet断言。该等待只决定测试何时收尾，不阻塞普通provider、不改任务／预算、不加固定sleep或将失败降成成功。真实RED在 `c12-ci-b289-7hov5c4v/diagnosis.json`（SHA `12e8bae65dde11e2381c08c92884d1324c680138f0412acfcbe5fab14b27e5ef`）及 `resumed-red-input.json`（SHA `c06ea168a1801e6f88a93a9032ff6abf29f4bbfd5922e7cb08001975ec7a5972`）；ZIP 46,517,064 B已核GitHub digest。该原失败与81e92成功各自保留，修后结果另行绑定冻结harness。
+
 ### 2026-11-06：CI 构建来源与当前消费内核对齐
 
 `ci.yml` 与 `publish.yml` 的 CLI checkout 同时固定为 `55e06bb3d6ec426b38aefdf8fed61e26ece0343d`。该提交包含 C8 产品源 `b5564ee`、现有 fixture 和 Records coverage 原件留存；继续由同一个 checkout 生成 fixture 并提供 `NTN_SKILLS_BUILD_ENTRY`。不使用分支名或另一个隐式 SDK 来源。

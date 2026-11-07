@@ -16,7 +16,7 @@ import { createOwnedGraphProject, inspectOwnedGraphProject, retainGeneratedPlan,
 import { verifyRetainedSourceProof } from './notion-skill-retained-proof.mjs';
 import { createPiHelpBoundary } from './notion-pi-help.mjs';
 import { graphSourceViews, graphSourceAccounting } from './notion-skill-graph-model-evidence.mjs';
-import { verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards } from './skill-preparation-evidence.mjs';
+import { verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from './skill-preparation-evidence.mjs';
 
 const helper = fileURLToPath(import.meta.url);
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -40,7 +40,7 @@ export async function graphHarnessIdentity() {
 
 export function graphObserverModule(settings, referenceParser) {
   return "import * as fs from 'node:fs';\nimport * as crypto from 'node:crypto';\nimport * as path from 'node:path';\nimport { graphSourceViews } from " + JSON.stringify(new URL('./notion-skill-graph-model-evidence.mjs', import.meta.url).href)
-    + ';\nimport { verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards } from ' + JSON.stringify(new URL('./skill-preparation-evidence.mjs', import.meta.url).href)
+    + ';\nimport { verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from ' + JSON.stringify(new URL('./skill-preparation-evidence.mjs', import.meta.url).href)
     + ';\nimport { dailyRouteContract } from ' + JSON.stringify(new URL('./verify-skill-graph-contract.mjs', import.meta.url).href)
     + ';\nimport { parseNativeReference } from ' + JSON.stringify(referenceParser)
     + ';\nimport { validateResourceReadProjection } from ' + JSON.stringify(new URL('./resource-read-projection.ts', referenceParser).href)
@@ -146,6 +146,7 @@ export function observeGraphGate(api, settings) {
   const refreshContext = ctx => { if (ctx) currentContext = ctx; };
   const hostIndexBindings = new Map();
   let contextDeliveries = [];
+  let nativeInjectionContext;
   const toolSurface = () => {
     const surface = settings.toolSurfaceFile ? JSON.parse(readFileSync(settings.toolSurfaceFile, 'utf8')).surface : 'public-tools';
     if (!['native-read-only', 'public-tools'].includes(surface)) throw new Error('Unknown frozen graph tool surface');
@@ -826,10 +827,33 @@ export function observeGraphGate(api, settings) {
     return originalFetch.call(this, input, init);
   };
   api.on('session_start', async (_event, ctx) => { refreshContext(ctx); assertModel(ctx); const selected = toolSurface(); await api.setActiveTools(selected.tools); record({ phase: 'selected', model: settings.model, tools: selected.tools, toolSurface: selected.surface, fallbackTools: false }); });
-  const generatedDescription = (messages, expected) => generatedDescriptionEvidence(messages, expected, (binding, sha256, bytes) =>
+  const generatedDescription = (messages, expected, injectionContext) => generatedDescriptionEvidence(messages, expected, (binding, sha256, bytes) =>
     exportedFiles().some(file => file.role === 'entrypoint' && file.scope === binding.scope && file.ownerId === binding.record.id
-      && file.snapshot === binding.snapshot_id && file.ref === binding.ref && file.sha256 === sha256 && file.bytes === bytes));
-  const metadataDescription = (record, messages, system, excludedId) => {
+      && file.snapshot === binding.snapshot_id && file.ref === binding.ref && file.sha256 === sha256 && file.bytes === bytes))
+    ?? injectedDescriptionEvidence(messages, expected, (binding, { content, proof }) => {
+      const files = exportedFiles().filter(file => file.role === 'entrypoint' && file.scope === binding.scope && file.ownerId === binding.record.id
+        && file.snapshot === binding.snapshot_id && file.version === binding.version_id && file.ref === binding.ref);
+      if (files.length !== 1) return undefined;
+      const file = files[0];
+      // Equal body bytes can exist under other owners or pins. Bind this very
+      // delivery span to its actual public wrapper, using the existing ref parser.
+      const wrappers = [...content.matchAll(/<context-broker-record\b([^>]*)>([\s\S]*?)<\/context-broker-record>/gu)].filter(match => {
+        const reference = unescape(/\bref="([^"]+)"/.exec(match[1])?.[1]
+          ?? /<skill-ref>\s*([^<]+)\s*<\/skill-ref>/.exec(match[2])?.[1]?.trim() ?? '');
+        const selected = resolveMainReference(parseRef(reference)), start = match.index + match[0].indexOf('>') + 1;
+        return selected?.selector === file.ownerId && selected.path === file.path && selected.snapshot === file.snapshot
+          && (selected.scope === undefined || selected.scope === file.scope) && (selected.fileId === undefined || selected.fileId === file.fileId)
+          && proof.delivery?.start >= start && proof.delivery.end <= start + match[2].length && copies(match[2], file.content) === 1;
+      });
+      if (wrappers.length !== 1) return undefined;
+      const reads = sourceViews().entries.filter(item => item.value.scope === file.scope && item.value.record?.id === file.ownerId
+        && item.value.snapshot_id === file.snapshot && item.value.version_id === file.version && item.value.path === file.path
+        && same(item.value.record, binding.record) && item.value.content === file.content);
+      if (!reads.length || reads.some(item => !same(item.value.record, reads[0].value.record)
+        || !same(item.value.file_bindings, reads[0].value.file_bindings))) return undefined;
+      return { ...reads[0].value, entrypoint: file.path, files: [{ path: file.path, sha256: file.sha256, bytes: file.bytes }] };
+    }, injectionContext);
+  const metadataDescription = (record, messages, system, excludedId, injectionContext) => {
     const parsed = resolveMainReference(parseRef(record.ref));
     if (!/^sr:C[A-Za-z0-9_-]{22}$/u.test(record.ref) || !parsed || parsed.snapshot !== undefined
       || parsed.selector !== record.id || parsed.scope !== record.scope) return undefined;
@@ -855,9 +879,9 @@ export function observeGraphGate(api, settings) {
     const originals = sourceViews().directories.filter(item => item.value.scope === record.scope).flatMap(item => item.value.records ?? [])
       .filter(item => item.id === record.id && item.kind === record.kind && item.name === record.name && item.description === record.description);
     const refs = [...new Set(originals.map(item => item.ref))];
-    return refs.length === 1 ? generatedDescription(messages, { ...record, canonical_ref: refs[0] }) : undefined;
+    return refs.length === 1 ? generatedDescription(messages, { ...record, canonical_ref: refs[0] }, injectionContext) : undefined;
   };
-  const observeCatalog = (prompt, observation, admit = false, visibleMessages = []) => {
+  const observeCatalog = (prompt, observation, admit = false, visibleMessages = [], injectionContext) => {
     const skills = [...prompt.matchAll(/<skill>[\s\S]*?<name>\s*([^<]+)\s*<\/name>[\s\S]*?<location>\s*([^<]+)\s*<\/location>[\s\S]*?<\/skill>/g)].map(match => {
       const file = unescape(match[2].trim());
       let provenance = null, sha256 = null;
@@ -871,7 +895,7 @@ export function observeGraphGate(api, settings) {
         const sourceId = unescape(/<source>([^<]+)<\/source>/.exec(match[0])?.[1] ?? '');
         const expected = unique.length === 1 ? { ...unique[0].record, scope: unique[0].scope, ref: file,
           canonical_ref: unique[0].record.ref, source: sourceId, availability: unique[0].record.enabled === false ? 'disabled' : 'available' } : undefined;
-        const reused = declared === null && expected ? generatedDescription(visibleMessages, expected) : undefined;
+        const reused = declared === null && expected ? generatedDescription(visibleMessages, expected, injectionContext) : undefined;
         const description = declared ? unescape(declared[1]) : reused?.description;
         if (expected && unescape(match[1].trim()) === expected.name && description === expected.description) provenance = { source: 'verified-notion-metadata',
           ownerId: expected.id, scope: expected.scope, ref: expected.canonical_ref, loaded: false, ...(reused ? { descriptionReuse: reused } : {}) };
@@ -914,7 +938,7 @@ export function observeGraphGate(api, settings) {
       const name = unescape(/<name>\s*([^<]*)\s*<\/name>/.exec(match[2])?.[1] ?? '');
       const declared = /<description>([\s\S]*?)<\/description>/.exec(match[2]);
       const reused = declared === null && source ? generatedDescription(visibleMessages, { ...source.record, scope: source.scope,
-        ref, canonical_ref: source.record.ref, source: settings.sourceId ?? 'notion', availability: source.record.enabled === false ? 'disabled' : 'available' }) : undefined;
+        ref, canonical_ref: source.record.ref, source: settings.sourceId ?? 'notion', availability: source.record.enabled === false ? 'disabled' : 'available' }, injectionContext) : undefined;
       const description = declared ? unescape(declared[1]) : reused?.description;
       return { ref, ...(source && source.record.name === name && source.record.description === description
         ? { canonicalRef: source.record.ref, provenance: { source: 'verified-notion-metadata', ownerId: source.record.id, scope: source.scope, loaded: false,
@@ -971,6 +995,7 @@ export function observeGraphGate(api, settings) {
   api.on('before_agent_start', (event, ctx) => {
     refreshContext(ctx); assertModel(ctx);
     discoveryProjection = undefined;
+    nativeInjectionContext = undefined;
     const prompt = typeof event.systemPrompt === 'string' ? event.systemPrompt : (event.systemPrompt ?? []).join('\n');
     observeCatalog(prompt, { phase: 'catalog-before-agent-start', stage: 'before_agent_start', userTurn: ++userTurn,
       submittedPromptSha256: digest(event.prompt ?? ''), frozenPromptMatched: event.prompt === settings.prompt });
@@ -981,11 +1006,17 @@ export function observeGraphGate(api, settings) {
   });
   api.on('context_with_system', (event, ctx) => {
     refreshContext(ctx); assertModel(ctx);
-    record({ phase: 'system-context', stage: 'context_with_system', userTurn,
+    const receipts = captureInjectionReceipts(event.messages, ctx.sessionManager?.buildSessionProjection?.());
+    const hasReceipts = receipts.direct.length > 0 || receipts.persisted.length > 0;
+    if (nativeInjectionContext) throw observerFault('native-injection', new Error('A native source context cannot be replaced before its provider request'));
+    const native = hasReceipts ? { pid: process.pid, monotonic_ns: process.hrtime.bigint().toString(),
+      session_file: ctx.sessionManager?.getSessionFile?.(), leaf_id: ctx.sessionManager?.getLeafId?.(), ...receipts } : undefined;
+    const context = record({ phase: 'system-context', stage: 'context_with_system', userTurn, ...(native ? { nativeInjection: native } : {}),
       messages: event.messages.filter(message => message.role === 'system').map(message => ({
         contentSha256: digest(text(message.content)), contentBytes: Buffer.byteLength(text(message.content)),
         sections: Object.fromEntries(Object.entries(message.sections ?? {}).map(([name, value]) => [name,
           value === null ? null : { sha256: digest(value), bytes: Buffer.byteLength(value) }])) })) });
+    if (native) nativeInjectionContext = { ...native, context_sequence: context.sequence };
     if (experiment === undefined) return;
     try {
       const indexes = event.messages.flatMap((message, index) => message.role === 'system'
@@ -996,7 +1027,7 @@ export function observeGraphGate(api, settings) {
       const statusBlocks = [...input.matchAll(/<ntn-skills-discovery\b[^>]*>[\s\S]*?<\/ntn-skills-discovery>/g)];
       if (catalogBlocks.length > 1 || statusBlocks.length > 1 || catalogBlocks.length + statusBlocks.length === 0)
         throw new Error('SC06 discovery projection cannot infer an unobserved catalog state');
-      const incoming = observeCatalog(input, { phase: 'discovery-input-catalog', stage: 'context_with_system', userTurn }, false, event.messages);
+      const incoming = observeCatalog(input, { phase: 'discovery-input-catalog', stage: 'context_with_system', userTurn }, false, event.messages, nativeInjectionContext);
       const marker = experiment.mode === 'on-demand-cards' ? '\n' + discoveryMarker : '';
       const output = experiment.mode === 'full-cards' ? input : input.replace(
         /<ntn-skills-view-catalog>[\s\S]*?<\/ntn-skills-view-catalog>/g,
@@ -1051,8 +1082,18 @@ export function observeGraphGate(api, settings) {
     refreshContext(ctx);
     verifiedPayloadHash = undefined;
     currentProvider = undefined;
+    const injectionContext = nativeInjectionContext;
+    nativeInjectionContext = undefined;
     try {
     assertModel(ctx);
+    if (injectionContext && (injectionContext.pid !== process.pid || !isAbsolute(injectionContext.session_file ?? '')
+      || injectionContext.session_file !== ctx.sessionManager?.getSessionFile?.() || !injectionContext.leaf_id
+      || injectionContext.leaf_id !== ctx.sessionManager?.getLeafId?.()
+      || BigInt(injectionContext.monotonic_ns) >= process.hrtime.bigint()
+      || new Set(injectionContext.direct.map(receipt => receipt.content_sha256)).size !== injectionContext.direct.length
+      || new Set(injectionContext.persisted.map(receipt => receipt.entry_id)).size !== injectionContext.persisted.length
+      || injectionContext.persisted.some(receipt => typeof receipt.entry_id !== 'string' || !receipt.entry_id)))
+      throw new Error('Native source receipt changed its actual process, session, branch or provider order');
     if (event.payload?.model !== undefined && !wireAllowed(event.payload.model)) throw new Error('Graph gate rejected an unauthorized provider model');
     if (modelProfile && event.payload?.reasoning_effort !== modelProfile.thinkingLevel)
       throw new Error('Daily route requires actual provider thinking high');
@@ -1074,8 +1115,9 @@ export function observeGraphGate(api, settings) {
     for (const message of event.payload?.messages ?? []) if (message.role === 'user')
       for (const value of sourceStrings(message.content)) if (value === settings.prompt) discover(value, 'actual frozen user reference');
     const system = [text(event.payload?.system), ...(event.payload?.messages ?? []).filter(message => ['system', 'developer'].includes(message.role)).map(message => text(message.content))].filter(Boolean).join('\n\n');
-    const visibleMessages = [...deliveredTools.values()].flatMap(result => !result.message ? [] : providerToolOutputs(event.payload, result.toolCallId)
-      .filter(content => result.tool === 'notion_list' || content === result.content).map(content => ({ ...result.message, content })));
+    const visibleMessages = [...(event.payload?.messages ?? []).filter(message => message.role === 'user'),
+      ...[...deliveredTools.values()].flatMap(result => !result.message ? [] : providerToolOutputs(event.payload, result.toolCallId)
+        .filter(content => result.tool === 'notion_list' || content === result.content).map(content => ({ ...result.message, content })))];
     const toolResults = [...deliveredTools.values()].map(result => {
       const actual = providerToolOutputs(event.payload, result.toolCallId), metadataProjections = [];
       if (result.tool === 'notion_list') {
@@ -1085,7 +1127,7 @@ export function observeGraphGate(api, settings) {
           visibleDiscoveryCards(message);
           const reuse = model.records.flatMap((card, index) => {
             if (Object.hasOwn(card, 'description')) return [];
-            const evidence = metadataDescription(message.details.records[index], visibleMessages, system, message.toolCallId);
+            const evidence = metadataDescription(message.details.records[index], visibleMessages, system, message.toolCallId, injectionContext);
             if (!evidence) throw new Error('Discovery description has no complete card in this actual provider');
             return [evidence];
           });
@@ -1118,8 +1160,10 @@ export function observeGraphGate(api, settings) {
         wireFragmentSha256: digest(projected.fragment), markerBytes: projected.proof.markerBytes };
       discoveryProjection = undefined;
     }
-    observeCatalog(system, { phase: 'catalog', stage: 'before_provider_request', userTurn, providerPayloadSha256: observedPayloadSha256 }, true, visibleMessages);
-    const provider = record({ phase: 'provider-request', model: settings.model, ...(modelProfile ? { reasoningEffort: event.payload.reasoning_effort } : {}), tools: advertisedTools, toolSurface: selected.surface, toolDefinitionsSha256: digest(JSON.stringify(event.payload?.tools)), toolChoice: 'auto', forcedToolArguments: false, payloadSha256: digest(serialized), payloadBytes: Buffer.byteLength(serialized), ...(payloadFile ? { payloadFile } : {}), ...(discoveryProof ? { discoveryProjection: discoveryProof } : {}), observedPayloadSha256, contents, hostHelp, toolResults, sourceTextHashes: sourceStrings(event.payload).map(value => ({ sha256: digest(value), bytes: Buffer.byteLength(value) })) });
+    observeCatalog(system, { phase: 'catalog', stage: 'before_provider_request', userTurn, providerPayloadSha256: observedPayloadSha256 }, true, visibleMessages, injectionContext);
+    const provider = record({ phase: 'provider-request', model: settings.model, ...(modelProfile ? { reasoningEffort: event.payload.reasoning_effort } : {}), tools: advertisedTools, toolSurface: selected.surface, toolDefinitionsSha256: digest(JSON.stringify(event.payload?.tools)), toolChoice: 'auto', forcedToolArguments: false, payloadSha256: digest(serialized), payloadBytes: Buffer.byteLength(serialized), ...(payloadFile ? { payloadFile } : {}), ...(discoveryProof ? { discoveryProjection: discoveryProof } : {}),
+      ...(injectionContext ? { nativeInjection: { contextSequence: injectionContext.context_sequence, pid: injectionContext.pid,
+        sessionFile: injectionContext.session_file, leafId: injectionContext.leaf_id } } : {}), observedPayloadSha256, contents, hostHelp, toolResults, sourceTextHashes: sourceStrings(event.payload).map(value => ({ sha256: digest(value), bytes: Buffer.byteLength(value) })) });
     currentProvider = provider;
     if ((event.payload?.messages ?? []).some(message => message.role === 'user' && sourceStrings(message.content).includes(settings.prompt)))
       submittedUser = { sequence: provider.sequence, promptSha256: digest(settings.prompt), providerPayloadSha256: observedPayloadSha256 };

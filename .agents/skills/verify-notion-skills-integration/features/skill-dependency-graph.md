@@ -141,6 +141,12 @@ root 审查发现新增测试 helper 沿用永久删除合成 owned fixture 的�
 
 目录观察须将实际 provider XML 与同 scope 的 SDK 元数据逐字绑定。只解码产品编码的一层实体，最后解码 `&amp;`，使作者的字面 `&quot;`（传输为 `&amp;quot;`）仍为字面文本；描述首尾空白和换行也属于作者数据，不能在提取时删掉。名称、描述、owner、scope 任一不符仍拒绝，不能用名称近似匹配或减少 74 项全集断言消除空归属。
 
+`$` 完整正文中的 canonical Members 行可作为同一实际 provider 内的描述依据。原 graph observer 与 SDK Pi driver 共用 `skill-preparation-evidence.mjs` 的 native receipt／span／字节／hash／六字段卡片校验；graph 的来源仍由现有 materialized manifest 与实际 SDK read/preparation 证明。相同正文可属于不同 owner 或 pin，因此还须将该 delivery span 绑定到同一 user 文本中的真实 wrapper ref，复用原 native／short-ref parser，不能仅凭 `provider.contents` 的全文命中认领身份。Default 名称、准确入口与完整 root／Requires 不省略，未选 Members 不读取正文。
+
+首轮从原 `context_with_system` 的 custom message 观察 receipt；恢复轮仅从当前 `buildSessionProjection().entries` 观察有效 receipt，不回退扫描整个历史。receipt 保留在原 `system-context.nativeInjection`，与下一实际 provider 的 PID、session、leaf、事件顺序一对一绑定并消费一次；完整 user 内容及 span 必须匹配。`provider-request.nativeInjection` 只记录关联，机器 proof 或合成正文不加入 provider／wire。缺 receipt、摘要／截断、旧分支、未来 merged-user hash、重复 receipt／user、错误 source／scope／owner／pin／version／正文或 canonical card 均不支持省略；两个合法来源即使正文相同，也不能跨 wrapper 借用。
+
+定向入口为 `node --test --test-name-pattern 'native Members description' scripts/notion-skill-graph-model.test.mjs`；完整受影响回归沿用原 graph、shared evidence 与 SDK Pi tests。`AH-617-20261105/c12-graph-native-witness-2m3838uv/red.log` 保留首轮与恢复轮两项归属缺失 RED；本切片仅修验证接线，不改变产品包、C/D 任务、评分、模型预算或旧 C10 失败，不作为真实模型成本通过证据。测试只回收本次明确 owned 的本地 fixture，并保留原日志与 Evidence→Cleanup→Evidence 回执。
+
 2026-11-06 的 D 命名介绍原件保留在 `AH-617-20261105/sc21-c7-d-early-n8f8g08y`。四次实际 ready provider 均含 74 项，旧 observer 的 10 项空归属分别来自 8 项漏解 `&quot;`、2 项描述末尾 LF 被正则删掉。`AH-617-20261105/sc26-catalog-decoding-12whs9s7` 保留原件 hash、逐项归因、7 个定向红例、修后 163 项既有回归，以及同四份 payload、已完成 SDK list 和当时分支短引用的离线重验：旧 observer 绑定 64 项，修后绑定全部 74 项，零新来源或模型请求。这是目录观察修复，原 D failed 报告、未提交续问和独立语义结论保持原样。
 
 ~~~bash

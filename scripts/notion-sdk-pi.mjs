@@ -14,9 +14,9 @@ import { isolatedEnv, resolveHost, runCommand, writeFakeProvider, assertSupporte
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { safeRequestMetrics, providerSystemText } from './notion-default-context.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
-import { verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards } from './skill-preparation-evidence.mjs';
+import { verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from './skill-preparation-evidence.mjs';
 
-export { providerSystemText };
+export { providerSystemText, captureInjectionReceipts };
 
 const usage = 'Usage: node scripts/notion-sdk-pi.mjs doctor|run --package ABSOLUTE_INSTALLED_BROKER (--fixture ABSOLUTE_FIXTURE_JSON | --live-input ABSOLUTE_LIVE_INPUT_JSON) [--expect-short-refs true|false] [--expect-compact-context true|false] [--expect-direct-scalar true|false] [--expect-short-confirmations true|false] [--scenario all|default-view|codemode-hidden|codemode-truncated|dollar|native|native-repeat|prepare|scoped-command|resource-batch|resource-batch-short-refs|resource-scalar|resource-scalar-short-refs|partial-entrypoint|session-lifecycle] [--out NEW_ABSOLUTE_EVIDENCE]; evidence|cleanup --evidence ABSOLUTE_EVIDENCE. Real Pi 1.4.0 or 1.5.0 RPC, controlled provider with public onPayload/onResponse hooks, offline source, default bundled SDK (source.command is absent). Compact context, direct scalar and short confirmation checks default to true; false observes a baseline without certifying that contract. Comparisons include the installed Broker and bundled CLI/SDK identities. default-view observes pending startup plus ready metadata on an ordinary continuation. session-lifecycle drives native fork/clone/tree/compact/resume and late-response cancellation with a controlled summary. The explicit live-input route selects one separate cold consumer on real Notion, an independently installed package auto-loaded by owned settings, and observer-only frozen local originals. The default offline all remains 14 scenarios. Native menu and real model are not claimed; live retained-body Member exclusion requires separate source attribution.';
 const scenarioNames = ['default-view', 'codemode-hidden', 'codemode-truncated', 'dollar', 'native', 'native-repeat', 'prepare', 'scoped-command', 'resource-batch', 'resource-batch-short-refs', 'resource-scalar', 'resource-scalar-short-refs', 'partial-entrypoint', 'session-lifecycle'];
@@ -108,23 +108,6 @@ export function catalogContextFromHttp(context, captured) {
     return { ...original, content: message.content };
   });
   return { ...context, messages };
-}
-
-/** Observe source receipts before Pi converts custom messages to provider user
- * text. Persisted authority comes only from the current effective projection. */
-export function captureInjectionReceipts(messages, projection) {
-  const text = content => typeof content === 'string' ? content
-    : Array.isArray(content) && content.every(part => part.type === 'text') ? content.map(part => part.text).join('\n') : '';
-  const direct = messages.filter(message => message.role === 'custom' && message.customType === 'context-broker'
-    && Array.isArray(message.details?.records) && text(message.content)).map(message => {
-    const content = text(message.content);
-    return { content_sha256: createHash('sha256').update(content).digest('hex'), content_bytes: Buffer.byteLength(content), details: message.details };
-  });
-  const projectionAvailable = Array.isArray(projection?.entries);
-  const persisted = (projection?.entries ?? []).map(entry => entry.sourceEntry).filter(entry => entry?.type === 'custom'
-    && entry.customType === 'context-broker' && Array.isArray(entry.data?.records)
-    && typeof entry.data.nativePromptSha256 === 'string').map(entry => ({ entry_id: entry.id, data: entry.data }));
-  return { projection_available: projectionAvailable, direct, persisted };
 }
 
 export function bindInjectionContexts(captures, nativeEvents, hooks, { sessionRoot, hostPid } = {}) {
@@ -359,66 +342,6 @@ export function assertProviderToolSequence(captures, frames, { expectedErrors = 
   return { provider_requests: captures.length, tool_rounds: rounds.length, tool_calls: starts.length, sequence };
 }
 
-function injectedDescriptionEvidence(messages, expected, fixture, injectionContext) {
-  const receipts = messages.filter(message => message.role === 'custom' && message.customType === 'context-broker')
-    .map(message => ({ message, details: message.details }));
-  for (const receipt of injectionContext?.direct ?? []) receipts.push({ ...receipt, receipt_source: 'native-custom' });
-  for (const receipt of injectionContext?.persisted ?? []) receipts.push({ details: receipt.data,
-    entry_id: receipt.entry_id, receipt_source: 'native-session' });
-  for (const receipt of receipts) {
-    if (!Array.isArray(receipt.details?.records)) continue;
-    const promptHash = receipt.details.nativePromptSha256, expectedHash = receipt.content_sha256 ?? promptHash;
-    const matching = expectedHash === undefined ? [] : messages.filter(candidate => candidate.role === 'user'
-      && hash(textContent(candidate.content)) === expectedHash);
-    const delivered = expectedHash === undefined ? receipt.message : matching.length === 1 ? matching[0] : undefined;
-    if (!delivered || Array.isArray(delivered.content) && delivered.content.some(part => part.type !== 'text')) continue;
-    const content = textContent(delivered.content);
-    if (receipt.receipt_source === 'native-custom' && Buffer.byteLength(content) !== receipt.content_bytes) continue;
-    if (receipt.receipt_source === 'native-custom' && promptHash !== undefined && promptHash !== expectedHash) continue;
-    for (const proof of receipt.details.records) {
-      try {
-        assert.equal(proof.version, 2); assert.equal(proof.loaded, true); assert.equal(proof.sourceId, expected.source);
-        const binding = proof.binding, snapshots = (fixture.snapshots ?? []).filter(snapshot => snapshot.scope === binding.scope
-          && snapshot.record.id === binding.record.id && snapshot.snapshot_id === binding.snapshot_id && snapshot.version_id === binding.version_id);
-        assert.equal(snapshots.length, 1);
-        const snapshot = snapshots[0], main = snapshot.files.find(file => file.path === snapshot.entrypoint || file.path === snapshot.record.entrypoint);
-        assert.equal(binding.scope, expected.scope); assert.deepEqual(binding.record, snapshot.record);
-        assert.equal(proof.snapshotId, snapshot.snapshot_id); assert.equal(proof.versionId, snapshot.version_id);
-        assert.equal(proof.bodySha256, main.sha256); assert.equal(proof.bytes, main.bytes); assert.equal(binding.body_sha256, main.sha256);
-        assert.equal(proof.contentIdentity, JSON.stringify([binding.scope, binding.record.id]));
-        assert.equal(proof.identity, JSON.stringify([expected.source, binding.scope, binding.record.kind, binding.record.locator.type, binding.record.id]));
-        const ref = new URL(binding.ref), current = new URL(snapshot.record.ref);
-        assert.equal(ref.protocol, 'skill:'); assert.equal(ref.host, current.host); assert.equal(ref.pathname, current.pathname);
-        assert.equal(ref.username, ''); assert.equal(ref.password, ''); assert.equal(ref.hash, '');
-        assert.equal(ref.searchParams.get('snapshot'), snapshot.snapshot_id);
-        assert.ok([...ref.searchParams.keys()].every(key => ['snapshot', 'file_id'].includes(key)));
-        assert.equal(ref.searchParams.getAll('snapshot').length, 1); assert.ok(ref.searchParams.getAll('file_id').length <= 1);
-        if (ref.searchParams.has('file_id')) assert.equal(ref.searchParams.get('file_id'), snapshot.file_bindings?.find(file => file.path === main.path)?.file_id);
-        const { start, end, encoding } = proof.delivery;
-        assert.ok(Number.isSafeInteger(start) && Number.isSafeInteger(end) && start >= 0 && end > start && end <= content.length);
-        assert.ok(['raw', 'xml', 'json'].includes(encoding));
-        const span = content.slice(start, end), body = encoding === 'xml'
-          ? span.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&')
-          : encoding === 'json' ? JSON.parse('"' + span + '"') : span;
-        assert.equal(hash(body), main.sha256); assert.equal(Buffer.byteLength(body), main.bytes);
-        const fields = ['id', 'ref', 'kind', 'name', 'description', 'availability'];
-        for (const candidate of proof.directory?.candidates ?? []) {
-          if (!candidate || typeof candidate !== 'object' || Object.keys(candidate).length !== fields.length
-            || fields.some(key => typeof candidate[key] !== 'string' || candidate[key] !== expected[key === 'ref' ? 'canonical_ref' : key])) continue;
-          const row = `- [${candidate.name}](${candidate.ref}) — ${candidate.description}`, at = body.indexOf(row), after = at + row.length;
-          if (at < 0 || at > 0 && body[at - 1] !== '\n' || after !== body.length && body[after] !== '\n' && body.slice(after, after + 2) !== '\r\n') continue;
-          return { origin: 'actual-injected-member', id: expected.id, ref: expected.ref, description: expected.description, source: expected.source,
-            scope: expected.scope, owner: snapshot.record.id, snapshot_id: snapshot.snapshot_id, body_sha256: main.sha256,
-            body_bytes: main.bytes, body_start: start, body_end: end, ...(promptHash === undefined ? {} : { native_prompt_sha256: promptHash }),
-            ...(receipt.receipt_source ? { receipt_source: receipt.receipt_source, native_context_monotonic_ns: injectionContext.monotonic_ns,
-              ...(receipt.entry_id ? { native_receipt_entry_id: receipt.entry_id } : {}) } : {}) };
-        }
-      } catch { /* Only an independently frozen complete body can support omission. */ }
-    }
-  }
-  return undefined;
-}
-
 function catalogDescriptionEvidence(context, expected, fixture, { generatedOnly = false, exclude, injectionContext } = {}) {
   if (!context || !/^sr:C[A-Za-z0-9_-]{22}$/u.test(expected.ref)) return undefined;
   const messages = context.messages ?? [], xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -447,7 +370,11 @@ function catalogDescriptionEvidence(context, expected, fixture, { generatedOnly 
     return main?.sha256 === bodyHash && main.bytes === bodyBytes && binding.body_sha256 === bodyHash
       && binding.record.ref === snapshot.record.ref && binding.record.kind === snapshot.record.kind
       && isDeepStrictEqual(binding.record.locator, snapshot.record.locator);
-  }) ?? injectedDescriptionEvidence(messages, { ...expected, canonical_ref: original.ref }, fixture, injectionContext);
+  }) ?? injectedDescriptionEvidence(messages, { ...expected, canonical_ref: original.ref }, binding => {
+    const snapshots = (fixture.snapshots ?? []).filter(snapshot => snapshot.scope === binding.scope
+      && snapshot.record.id === binding.record.id && snapshot.snapshot_id === binding.snapshot_id && snapshot.version_id === binding.version_id);
+    return snapshots.length === 1 ? snapshots[0] : undefined;
+  }, injectionContext);
 }
 
 export function assertSearchProjection(message, { expectCompact = true, scope, context, fixture, injectionContext } = {}) {
@@ -3813,6 +3740,9 @@ async function controlledHttpScenario(name, info, scratch, evidence) {
           await control.rpc.prompt('Continue the existing task with its selected Skill instructions. Do not load another Skill.');
           const captures = await control.captures(); assert.equal(captures.length, 1);
           assert.equal(bodyCount(captures[0].context, sample.oracle.cold.contents['SKILL.md']), 1);
+          const settled = await waitForSourceFinality(control.ledger, control.rpc.lifecycle[0].pid,
+            { initialCatalog: { sourceId: control.source.id, database: control.source.database } });
+          assert.equal(settled.complete, true);
           return { resumed_session: sessionPath, complete_selected_body_copies: 1, body_sdk_calls: 0 };
         },
         verify: async ({ state, archive }) => {

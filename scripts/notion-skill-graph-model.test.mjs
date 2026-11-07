@@ -1230,6 +1230,153 @@ async function literalObserverFixture(body, transport, selectedSurface, fileId, 
 const nameCatalog = fixture => ({ requestId: 'new-name-selection', command: 'list', code: 0,
   response: { ok: true, scope: fixture.scope, count: 1, records: [fixture.record], coverage: { method: 'explicit_database', exhaustive: true, failed_sources: [], search_index_limited: false } } });
 
+async function nativeMemberObserverFixture(t, resumed = false) {
+  const member = { id: 'shared_skill:controlled:member', ref: 'skill://shared_skill%3Acontrolled%3Amember/SKILL.md',
+    kind: 'skill', name: 'Member', description: 'Complete authored member description.', availability: 'available' };
+  const body = '\ufeff# Root\r\nKeep <author>, "quotes" & 中文😀 bytes.\r\n- [' + member.name + '](' + member.ref + ') — ' + member.description + '\r\n';
+  const fixture = await literalObserverFixture(body, undefined, undefined, 'file-literal', { record: {
+    name: 'Root', description: 'Complete root.', entrypoint: 'SKILL.md', ref: 'skill://shared_skill%3Acontrolled%3Aliteral-root/SKILL.md',
+    locator: { type: 'shared_skill', library_id: 'controlled', skill_id: 'literal-root', page_id: uuid } } });
+  t.after(fixture.close); t.diagnostic('Owned native Members observer fixture: ' + fixture.directory);
+  const ref = fixture.record.ref + '?snapshot=' + fixture.snapshot + '&file_id=file-literal', short = 'sr:C' + 'm'.repeat(22), selected = 'sr:S' + 'r'.repeat(22);
+  const binding = { record: fixture.record, scope: fixture.scope, snapshot_id: fixture.snapshot, version_id: hash(body), body_sha256: hash(body), ref };
+  const xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  const prefix = '<context-broker-record kind="skill" name="Root" ref="' + xml(resumed ? ref : selected) + '">\n<body>\n', encoded = xml(body);
+  const content = prefix + encoded + '\n</body>\n</context-broker-record>';
+  const proof = { version: 2, sourceId: 'notion', loaded: true, identity: JSON.stringify(['notion', fixture.scope, 'skill', 'shared_skill', fixture.owner]),
+    contentIdentity: JSON.stringify([fixture.scope, fixture.owner]), binding, snapshotId: fixture.snapshot, versionId: binding.version_id,
+    bodySha256: hash(body), bytes: Buffer.byteLength(body), delivery: { start: prefix.length, end: prefix.length + encoded.length, encoding: 'xml' },
+    directory: { files: [{ path: 'SKILL.md', ref, sha256: hash(body), bytes: Buffer.byteLength(body) }], required: [], candidates: [member], references: [] } };
+  await save(path.join(fixture.responses, 'prepare.json'), { requestId: 'native-preparation', command: 'prepare', code: 0,
+    response: { ok: true, status: 'ready', purpose: 'use', scope: fixture.scope, roots: [{ id: fixture.owner }], nodes: [{ state: 'prepared', id: fixture.owner,
+      record: fixture.record, path: 'SKILL.md', binding, body_sha256: hash(body), bytes: Buffer.byteLength(body), ...proof.directory }] } });
+  await save(path.join(fixture.responses, 'list.json'), { requestId: 'native-catalog', command: 'list', code: 0,
+    response: { ok: true, scope: fixture.scope, records: [{ ...member, enabled: true, entrypoint: 'SKILL.md' }] } });
+  const actualRead = JSON.parse(await readFile(path.join(fixture.responses, 'read.json'), 'utf8')); actualRead.response.ref = ref;
+  await save(path.join(fixture.responses, 'read.json'), actualRead);
+  const system = '<ntn-skills-view-catalog><available_skills><skill><name>Member</name><source>notion</source><location>' + short + '</location></skill></available_skills></ntn-skills-view-catalog>';
+  const user = resumed ? 'controlled task\n' + content : content, records = [structuredClone(proof)];
+  if (resumed) { records[0].delivery.start += 'controlled task\n'.length; records[0].delivery.end += 'controlled task\n'.length; }
+  const details = { records, ...(resumed ? { nativePromptSha256: hash(user) } : {}) };
+  const machine = { type: 'custom', id: 'native-receipt', customType: 'context-broker', data: details };
+  const sessionFile = path.join(fixture.directory, 'sessions', 'actual.jsonl');
+  await mkdir(path.dirname(sessionFile)); await writeFile(sessionFile, '');
+  const branches = [{ type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref: short,
+    target: { kind: 'candidate', identity: { source: 'notion', scope: fixture.scope, id: member.id, kind: member.kind,
+      ref: member.ref.slice(0, member.ref.lastIndexOf('/')) } } } },
+    { type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref: selected, target: { kind: 'selected', ref,
+      identity: { source: 'notion', scope: fixture.scope, id: fixture.owner, kind: fixture.record.kind, locator: fixture.record.locator,
+        ref: fixture.record.ref.slice(0, fixture.record.ref.lastIndexOf('/')) }, snapshot_id: fixture.snapshot, version_id: binding.version_id,
+      body_sha256: binding.body_sha256, entrypoint: 'SKILL.md', file_id: 'file-literal' } } }];
+  const ctx = { ...fixture.ctx, sessionManager: { getSessionFile: () => sessionFile, getLeafId: () => 'leaf', getBranch: () => branches,
+    buildSessionProjection: () => ({ entries: resumed ? [{ sourceEntry: machine }] : [] }) } };
+  const messages = [{ role: 'system', content: system }, ...(resumed ? [{ role: 'user', content: user }]
+    : [{ role: 'user', content: 'controlled task' }, { role: 'custom', customType: 'context-broker', content, details }])];
+  const payload = fixture.payload(user); payload.messages.unshift({ role: 'system', content: system });
+  return { ...fixture, body, member, short, proof: records[0], details, machine, ctx, messages, payload };
+}
+
+for (const resumed of [false, true]) test('native Members description uses the complete actual provider body after ' + (resumed ? 'session restore' : 'direct injection'), async t => {
+  const f = await nativeMemberObserverFixture(t, resumed), before = JSON.stringify(f.payload);
+  f.handlers.get('context')({ messages: f.messages }, f.ctx);
+  f.handlers.get('context_with_system')({ messages: f.messages }, f.ctx);
+  f.handlers.get('before_provider_request')({ payload: f.payload }, f.ctx);
+  const events = await f.events(), catalog = events.find(event => event.phase === 'catalog'), provider = events.find(event => event.phase === 'provider-request');
+  assert.equal(catalog.skills[0].provenance?.ownerId, f.member.id, 'The omitted Default description needs its current native Members witness');
+  assert.equal(catalog.skills[0].provenance.descriptionReuse.origin, 'actual-injected-member');
+  assert.equal(catalog.skills[0].provenance.descriptionReuse.body_sha256, hash(f.body));
+  assert.equal(provider.contents.filter(file => file.ownerId === f.owner).length, 1);
+  const context = events.find(event => event.phase === 'system-context');
+  assert.equal(provider.nativeInjection.contextSequence, context.sequence);
+  assert.equal(provider.nativeInjection.pid, process.pid); assert.equal(context.nativeInjection.pid, process.pid);
+  assert.equal(provider.nativeInjection.sessionFile, f.ctx.sessionManager.getSessionFile());
+  assert.equal(provider.nativeInjection.leafId, f.ctx.sessionManager.getLeafId());
+  assert.ok(context.sequence < provider.sequence);
+  assert.equal(catalog.skills[0].provenance.descriptionReuse.receipt_source, resumed ? 'native-session' : 'native-custom');
+  assert.equal(JSON.stringify(f.payload), before, 'No receipt or synthesized body enters the actual provider payload');
+});
+
+test('native Members description rejects untrusted, incomplete or mismatched current provider evidence', async t => {
+  const changes = {
+    'plain-user-xml': f => { f.messages[2] = { role: 'user', content: f.messages[2].content }; },
+    'missing-body': f => { f.payload.messages[1].content = 'No source body.'; },
+    'truncated-body': f => { f.payload.messages[1].content = f.payload.messages[1].content.slice(0, -20); },
+    'summary-body': f => { f.payload.messages[1].content = 'Root and Member have already been loaded.'; },
+    'wrong-source': f => { f.proof.sourceId = 'foreign'; },
+    'wrong-scope': f => { f.proof.binding.scope = 'b'.repeat(64); },
+    'wrong-owner': f => { f.proof.binding.record.id = 'shared_skill:controlled:other'; },
+    'wrong-locator': f => { f.proof.binding.record.locator.library_id = 'foreign'; },
+    'wrong-kind': f => { f.proof.binding.record.kind = 'router'; },
+    'wrong-pin': f => { f.proof.binding.snapshot_id = 's_' + '0'.repeat(64); },
+    'wrong-version': f => { f.proof.versionId = 'wrong-version'; },
+    'wrong-hash': f => { f.proof.bodySha256 = '0'.repeat(64); },
+    'wrong-bytes': f => { f.proof.bytes++; },
+    'wrong-owner-identity': f => { f.proof.contentIdentity = JSON.stringify([f.scope, 'other']); },
+    'fixed-candidate': f => { f.proof.directory.candidates[0].ref += '?snapshot=' + f.snapshot; },
+    'wrong-card': f => { f.proof.directory.candidates[0].description += ' changed'; },
+    'non-effective-history': f => { f.ctx.sessionManager.buildSessionProjection = () => ({ entries: [] });
+      const original = f.ctx.sessionManager.getBranch; f.ctx.sessionManager.getBranch = () => [...original(), f.machine]; },
+    'missing-projection-api': f => { delete f.ctx.sessionManager.buildSessionProjection; },
+    'wrong-native-prompt-hash': f => { f.machine.data.nativePromptSha256 = '0'.repeat(64); },
+    'future-merged-receipt': f => { f.messages[2].details.nativePromptSha256 = hash('controlled task\n' + f.payload.messages[1].content); },
+    'duplicate-user-body': f => { f.payload.messages.push(structuredClone(f.payload.messages[1])); },
+  };
+  for (const [name, mutate] of Object.entries(changes)) {
+    const resumed = ['non-effective-history', 'missing-projection-api', 'wrong-native-prompt-hash'].includes(name);
+    const f = await nativeMemberObserverFixture(t, resumed); mutate(f); const before = JSON.stringify(f.payload);
+    f.handlers.get('context')({ messages: f.messages }, f.ctx);
+    f.handlers.get('context_with_system')({ messages: f.messages }, f.ctx);
+    f.handlers.get('before_provider_request')({ payload: f.payload }, f.ctx);
+    const catalog = (await f.events()).find(event => event.phase === 'catalog');
+    assert.equal(catalog.skills[0].provenance, null, name);
+    assert.equal(JSON.stringify(f.payload), before, name + ' must not rewrite provider text');
+    f.close();
+  }
+});
+
+for (const changed of ['owner', 'pin']) test('native Members description cannot borrow another valid same-byte ' + changed, async t => {
+  const f = await nativeMemberObserverFixture(t), record = { ...f.record, ...(changed === 'owner'
+    ? { id: 'shared_skill:controlled:other-root', ref: 'skill://shared_skill%3Acontrolled%3Aother-root/SKILL.md',
+      locator: { ...f.record.locator, skill_id: 'other-root' } } : {}) };
+  const snapshot = changed === 'pin' ? 's_' + hash('another snapshot') : f.snapshot;
+  const root = path.join(f.directory, 'cache', 'scopes', f.scope, 'records', hash(record.id), 'snapshots', snapshot);
+  await mkdir(root, { recursive: true }); await writeFile(path.join(root, 'SKILL.md'), f.body);
+  await save(path.join(root, '.broker-snapshot.json'), { version: 3, projection: 'snapshot', scope: f.scope, snapshot, entry: 'SKILL.md', record,
+    files: [{ path: 'SKILL.md', bytes: Buffer.byteLength(f.body), hash: hash(f.body) }] });
+  await save(path.join(f.responses, 'other-read.json'), { requestId: 'other-public-read', command: 'read', code: 0,
+    response: { ok: true, scope: f.scope, snapshot_id: snapshot, version_id: hash(f.body), path: 'SKILL.md', record, content: f.body,
+      file_bindings: [{ file_id: 'file-literal', page_id: uuid, path: 'SKILL.md' }] } });
+  Object.assign(f.proof.binding, { record, snapshot_id: snapshot, ref: record.ref + '?snapshot=' + snapshot + '&file_id=file-literal' });
+  f.proof.snapshotId = snapshot; f.proof.contentIdentity = JSON.stringify([f.scope, record.id]);
+  f.proof.identity = JSON.stringify(['notion', f.scope, record.kind, record.locator.type, record.id]);
+  f.handlers.get('context')({ messages: f.messages }, f.ctx);
+  f.handlers.get('context_with_system')({ messages: f.messages }, f.ctx);
+  f.handlers.get('before_provider_request')({ payload: f.payload }, f.ctx);
+  const events = await f.events(), provider = events.find(event => event.phase === 'provider-request');
+  assert.equal(provider.contents.length, 2, 'The original byte-only inventory alone is ambiguous');
+  assert.equal(events.find(event => event.phase === 'catalog').skills[0].provenance, null,
+    'A coherent second source receipt cannot override this actual wrapper and span');
+});
+
+test('native Members description consumes one matching process, session and branch context per provider', async t => {
+  for (const changed of ['session', 'branch', 'duplicate-direct', 'duplicate-persisted', 'repeat-provider', 'replaced-context']) {
+    const f = await nativeMemberObserverFixture(t, changed === 'duplicate-persisted');
+    if (changed === 'duplicate-direct') f.messages.push(structuredClone(f.messages[2]));
+    if (changed === 'duplicate-persisted') f.ctx.sessionManager.buildSessionProjection = () => ({ entries: [{ sourceEntry: f.machine }, { sourceEntry: f.machine }] });
+    f.handlers.get('context_with_system')({ messages: f.messages }, f.ctx);
+    if (changed === 'session') f.ctx.sessionManager.getSessionFile = () => path.join(f.directory, 'sessions', 'another.jsonl');
+    if (changed === 'branch') f.ctx.sessionManager.getLeafId = () => 'another-leaf';
+    if (changed === 'replaced-context') assert.throws(() => f.handlers.get('context_with_system')({ messages: f.messages }, f.ctx), /cannot be replaced/);
+    else if (changed === 'repeat-provider') {
+      f.handlers.get('before_provider_request')({ payload: f.payload }, f.ctx);
+      f.handlers.get('before_provider_request')({ payload: f.payload }, f.ctx);
+      assert.equal((await f.events()).filter(event => event.phase === 'catalog').at(-1).skills[0].provenance, null,
+        'The previous provider receipt cannot authorize another request');
+    } else assert.throws(() => f.handlers.get('before_provider_request')({ payload: f.payload }, f.ctx), /Native source receipt changed/, changed);
+    f.close();
+  }
+});
+
 for (const selector of ['Visible Skill', 'visible-skill']) test('an actual frozen user name permits only a current main attempt before catalogue discovery: ' + selector, async () => {
   const body = 'Complete introduced instructions.\n', prompt = '请介绍 ' + selector + '。';
   const fixture = await literalObserverFixture(body, undefined, undefined, undefined, { deferred: true, prompt,
