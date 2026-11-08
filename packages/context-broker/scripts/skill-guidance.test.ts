@@ -140,9 +140,9 @@ test("Notion source flags are scoped to native installations without rewriting s
   const projected = await h.project("context", history);
   const guidance = guidanceText(projected);
   expect(guidance).toContain("Notion's Default View controls its default directory");
-  expect(guidance).toContain("Native-loader/editor flags in source text (for example disable-model-invocation) describe native installations");
-  expect(guidance).toContain("reported availability and permissions and the current user intent");
-  expect(guidance).toContain("Local Skills keep their native discovery and read paths");
+  expect(guidance).toContain("Availability and permissions come from the current tools, not loader flags in source text");
+  expect(guidance).toContain("Follow the current user intent");
+  expect(guidance).toContain("Local Skills use their advertised paths");
   expect(guidance).toContain("does not authorize executing its workflow");
   expect(guidance).toContain("Choosing a Skill to introduce or inspect uses read");
   expect(projected[0]).toBe(system);
@@ -151,7 +151,7 @@ test("Notion source flags are scoped to native installations without rewriting s
   expect(await h.project("context_with_system", projected)).toBe(projected);
   h.tools(full);
   const legacy = await h.project("context_with_system", projected);
-  expect(guidanceText(legacy)).not.toContain("Native-loader/editor flags");
+  expect(guidanceText(legacy)).not.toContain("loader flags in source text");
   expect(legacy[0]).toBe(system);
   expect(legacy).toContain(source);
   expect(JSON.stringify(history)).toBe(original);
@@ -242,4 +242,14 @@ test("cli_source rejects ambiguous/disabled/foreign scopes, inactive tools and m
   const cancelled = new AbortController(); cancelled.abort();
   await expect(h.invoke({ cli_source: "beta" }, cancelled.signal)).rejects.toThrow();
   expect(h.counts()).toEqual({ graphReads: 0, loads: 0, appends: 0 });
+});
+
+
+test("emitted guidance describes current capabilities without development or migration narration", () => {
+  for (const tools of [undefined, ["read", "notion_list", "notion_use", "notion_read_resources", "notion_ctl", "bash"], full, ["bash"], []]) {
+    const guidance = text(tools);
+    expect(guidance).not.toMatch(/\blegacy\b|\bmigrat(?:e|ed|ion|ing)\b|This branch|已迁移|未迁移|兼容期|过渡期/i);
+    expect(guidance.match(/<ntn-skills-guidance>/g)).toHaveLength(1);
+    expect(guidance).not.toContain("--database skills");
+  }
 });

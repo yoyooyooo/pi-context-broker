@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { checkBuiltinGuidance } from "./builtin-guidance.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const args = process.argv.slice(2), options = new Map();
@@ -94,6 +95,7 @@ const builtinSkills = [
 ];
 for (const [, source] of builtinSkills) {
   await readFile(join(selectedCli.directory, source, "SKILL.md"), "utf8");
+  await checkBuiltinGuidance(join(selectedCli.directory, source));
 }
 const cliResult = await build({
   entrypoints: [ntnEntry], target: "node", format: "esm", packages: "bundle", minify: true,
