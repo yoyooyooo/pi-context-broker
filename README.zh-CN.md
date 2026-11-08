@@ -41,6 +41,8 @@ CLI 目录只返回 `records`，每条必须包含 `id/kind/locator/name/alias/d
 
 ## 用随包 Skill 维护与同步
 
+Notion 功能按来源配置启用。没有已启用的 `type: notion` source 时，Broker 不提供 Notion Skill 候选、不注册 Notion 专用工具，也不注入 Notion 提示词；纯本地 Pi 保留通用 Skill 工具，不会额外收到 `<ntn-skills-guidance>`。修改来源的启停配置后，需要重启宿主才能应用。
+
 安装包始终携带三份 Skill：`$ntn-skills@builtin`、`$ntn-skills-maintain@builtin` 和 `$ntn-skills-sync@builtin`，以及完整的参考文件。只有配置了至少一个未禁用的 `type: notion` source，才会在普通 `$` 候选中显示它们；尚未连通 Notion 或完成认证也能离线读取包内正文与资源，无需先发布到 Notion 或另行安装。没有启用 Notion source 时不显示这三条 builtin 补全。
 
 ```text

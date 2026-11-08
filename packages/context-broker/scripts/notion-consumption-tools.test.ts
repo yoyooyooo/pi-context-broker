@@ -25,6 +25,23 @@ test("Pi exposes one Notion consumption contract and keeps use outside nested co
   expect(use?.parameters).toMatchObject({ required: ["ref"], additionalProperties: false });
 });
 
+test("local-only Pi advertises only generic Skill tools, never Notion-specific schemas", async () => {
+  for (const sources of [[], [{ id: "local", type: "filesystem" as const, roots: [] }],
+    [{ id: "disabled", type: "notion" as const, enabled: false }]]) {
+    const registered: Parameters<NonNullable<ExtensionAPI["registerTool"]>>[0][] = [];
+    const api: ExtensionAPI = { on() {}, registerTool(tool) { registered.push(tool); } };
+    await installHostSkills(api, {
+      config: { sources },
+      getRecords: async () => ({ records: [], failures: [] }),
+      loadRecord: async () => { throw new Error("No content may load during registration"); },
+      prepareGraph: async () => { throw new Error("No instructions may prepare during registration"); },
+      sessionGraph: () => ({ scopes: [] }),
+    }, createPiHostAdapter(api));
+    expect(registered.map(tool => tool.name)).toEqual(["skill_search", "skill_prepare", "skill_graph"]);
+    expect(registered.every(tool => !String(tool.name).startsWith("notion_"))).toBe(true);
+  }
+});
+
 test("Pi guidance uses list, native read and use without exposing machine proof or a second protocol", () => {
   const guidance = String(buildCliGuidance({ sources: [{ id: "notion", type: "notion" }] }, ["read", "notion_list", "notion_use", "bash"]).content);
   expect(guidance).toContain("notion_list");

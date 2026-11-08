@@ -50,11 +50,11 @@ test("fallback follows missing operations and never advertises disabled tools or
   expect(text(["read", "skill_search", "skill_prepare", "bash"])).not.toContain("cli_source");
 });
 
-function guidanceHarness(host: "pi" | "omp" = "pi", known = true) {
+function guidanceHarness(host: "pi" | "omp" = "pi", known = true, selectedConfig: ConfigFile = config) {
   let active = [...full];
   const handlers = new Map<string, (event: never, ctx: ExtensionContext) => unknown>();
   const api: ExtensionAPI = { on(name, listener) { handlers.set(name, listener); }, ...(known ? { getActiveTools: () => [...active] } : {}) };
-  installSkillGuidance(api, config, { host });
+  installSkillGuidance(api, selectedConfig, { host });
   const ctx: ExtensionContext = { cwd: "/unused-guidance-test", hasUI: false };
   async function project(event: "context" | "context_with_system", messages: AgentMessage[]) {
     const result = await handlers.get(event)?.({ messages } as never, ctx) as ContextResult | undefined;
@@ -62,6 +62,31 @@ function guidanceHarness(host: "pi" | "omp" = "pi", known = true) {
   }
   return { api, handlers, project, tools: (next: string[]) => { active = next; } };
 }
+
+test("zero enabled Notion sources leave local-only provider context untouched", async () => {
+  const inactive: ConfigFile[] = [
+    {},
+    { sources: [] },
+    { sources: [{ id: "local", type: "filesystem", roots: [] }] },
+    { sources: [{ id: "notion-disabled", type: "notion", enabled: false, command: "/missing" }] },
+    { sources: [
+      { id: "local", type: "filesystem", roots: [] },
+      { id: "notion-disabled", type: "notion", enabled: false, command: "/missing" },
+    ] },
+  ];
+  for (const cfg of inactive) for (const [host, known] of [["pi", true], ["pi", false], ["omp", true]] as const) {
+    const h = guidanceHarness(host, known, cfg);
+    const history: AgentMessage[] = [{ role: "system", content: "Native local Skills are already available." },
+      { role: "user", content: "Use my local Skill only." }];
+    expect(h.handlers.size, `${host}/${known}: must not register Notion guidance handlers`).toBe(0);
+    expect(await h.project("context", history)).toBe(history);
+    expect(await h.project("context_with_system", history)).toBe(history);
+    expect(JSON.stringify(history)).not.toContain("ntn-skills-guidance");
+  }
+  const active = guidanceHarness("pi", true, { sources: [{ id: "notion", type: "notion", command: "/configured" }] });
+  expect(active.handlers.has("before_agent_start")).toBe(true);
+  expect(active.handlers.has("context_with_system")).toBe(true);
+});
 
 test("Pi maintenance guidance routes deferred discovery to the intended source without exposing commands", async () => {
   const h = guidanceHarness();

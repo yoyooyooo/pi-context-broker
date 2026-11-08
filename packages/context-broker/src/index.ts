@@ -903,6 +903,10 @@ function projectCliGuidance(messages: AgentMessage[], guidance: Omit<AgentMessag
 }
 
 function installSkillGuidance(pi: ExtensionAPI, config: ConfigFile, paths: HostPathOptions): void {
+  // A filesystem-only installation must not spend context on Notion guidance.
+  // Keep this gate aligned with bundled-builtin discovery and source activation:
+  // both are enabled only by an explicit, enabled Notion source.
+  if (!config.sources?.some(source => source.type === "notion" && source.enabled !== false)) return;
   const knownPi = paths.host === "pi" && typeof pi.getActiveTools === "function";
   const legacy = knownPi ? undefined : buildCliGuidance(config);
   const guidance = () => knownPi ? buildCliGuidance(config, pi.getActiveTools!()) : legacy!;

@@ -41,6 +41,8 @@ The converter changes only catalog record fields and recognized Broker session d
 
 ## Maintain and sync with bundled Skills
 
+Notion integration is opt-in. Without an enabled `type: notion` source, the Broker does not advertise Notion Skills, register Notion-specific tools, or register Notion guidance-injection hooks. Local-only Pi keeps the generic Skill tools without the extra `<ntn-skills-guidance>` prompt. After enabling or disabling a Notion source in the configuration, restart the host to apply the change.
+
 Installation includes three ordinary Skills: `$ntn-skills@builtin`, `$ntn-skills-maintain@builtin` and `$ntn-skills-sync@builtin`. They appear in `$` discovery only when at least one `sources` entry has `type: notion` and is not `enabled: false`. A configured Notion source enables them even when the connection/authentication is unavailable: their bodies and reference files remain readable offline, without a global `ntn-skills` executable, publication or separate Skill installation. With no enabled Notion source, they stay packaged but do not clutter `$` completion.
 
 ```text

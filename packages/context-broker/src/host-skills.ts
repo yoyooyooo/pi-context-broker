@@ -160,7 +160,11 @@ async function headlessActivation<T>(start: (signal: AbortSignal) => Promise<T>,
 
 export async function installHostSkills(api: ExtensionAPI, options: HostSkillOptions, adapter: HostCapabilities): Promise<HostSkills> {
   const host = api;
-  const piConsumption = adapter.paths.host === "pi";
+  // Pi's Notion-specific tools are opt-in, just like its bundled Notion Skills
+  // and the corresponding provider-context guidance. Without an enabled Notion
+  // source, keep the ordinary local Skill tools instead.
+  const piConsumption = adapter.paths.host === "pi"
+    && Boolean(options.config.sources?.some(source => source.type === "notion" && source.enabled !== false));
   const listToolName = piConsumption ? "notion_list" : "skill_search";
   const useToolName = piConsumption ? "notion_use" : "skill_prepare";
   const controlToolName = piConsumption ? "notion_ctl" : "skill_graph";
