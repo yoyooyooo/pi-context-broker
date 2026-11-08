@@ -167,6 +167,8 @@ node scripts/verify-daily-notion-ui.mjs --database UUID --skill-ref skill://PAGE
 
 随包 Skill 使用 [内容地图](features/builtin-management.md)，复用现有 distribution/source/editor 路径。独立 npm/Tern 产物在未配置 Notion source、全局 CLI 和中央 Skill 安装时，三份内建 Skill 仍可经普通 `$` 发现、加载正文与相对资源；多来源操作使用各自真实 argv/database。`/ntn-skills` 命令镜像、管理面板和 save 桥已退役。
 
+AH-714 的正常 HOME 候选预验收复用 `verify-pi-daily-installation.mjs candidate-plan|candidate-run`，先读[项目范围候选 autoload](features/skill-consumption.md#项目范围候选-autoload)。它保留其余日用 packages、原有本地 Skill、MCP 和 context，以正式项目 package 配置替换一个 Broker，并使用真实 SDK/模型；该层不代表全局日用安装或真实库存已经验收。原 SC20 的隔离 `--no-*` 驱动不能代替此路径。
+
 ## Evidence
 
 run 的 scratch、host cwd 和 TMPDIR 使用系统临时根（macOS `/private/tmp`，其他 POSIX `/tmp`），检查该根及祖先无 `.agents`，避免外部 TMPDIR 在用户目录下导致日常技能被扫描。`--evidence-root ABSOLUTE_DIRECTORY` 仅改变证据父目录，与 scratch 分离；不改变宿主 cwd 或 Skill 发现范围。使用本次实际输出的 evidence 绝对目录：

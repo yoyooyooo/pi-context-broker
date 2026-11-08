@@ -470,10 +470,18 @@ async function run(config) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [action, flag, input, ...extra] = process.argv.slice(2);
-  assert.ok(['plan', 'run'].includes(action) && flag === '--config' && input && !extra.length, 'Usage: node scripts/verify-pi-daily-installation.mjs plan|run --config ABSOLUTE_CONFIG.json');
+  const candidate = action === 'candidate-plan' || action === 'candidate-run';
+  assert.ok(['plan', 'run', 'candidate-plan', 'candidate-run'].includes(action) && flag === '--config' && input
+    && (action === 'candidate-run' ? extra.length === 1 && extra[0] === '--live' : !extra.length),
+  'Usage: node scripts/verify-pi-daily-installation.mjs plan|run|candidate-plan --config ABSOLUTE_CONFIG.json; candidate-run --config ABSOLUTE_CONFIG.json --live');
   const config = await json(resolve(input));
   assert.equal(config.version, 1);
-  if (action === 'plan') console.log(JSON.stringify(plan(config), null, 2));
+  if (candidate) {
+    const { candidatePlan, runCandidate } = await import('./verify-pi-daily-candidate.mjs');
+    const result = action === 'candidate-plan' ? candidatePlan(config) : await runCandidate(config, { packageClosure, fileIdentity });
+    console.log(JSON.stringify(result, null, 2));
+    if (action === 'candidate-run' && result.status !== 'passed') process.exitCode = 1;
+  } else if (action === 'plan') console.log(JSON.stringify(plan(config), null, 2));
   else {
     const result = await run(config);
     console.log(JSON.stringify({ status: result.status, evidence: result.evidence, error: result.error }));

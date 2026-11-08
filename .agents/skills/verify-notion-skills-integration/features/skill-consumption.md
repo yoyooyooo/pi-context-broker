@@ -424,3 +424,61 @@ Notion metadata/current-body/retained-body/write、附件与模型 HTTP 分开�
 原图 observer 会约束工具和任务文件，不能直接冒充 SC02 的纯成本 observer。[成本规程](skill-consumption-cost.md) 使用被动 provider hooks、Undici diagnostics 与 source request_metrics，保持工具和输入不变；失败与未知值不参与有效改善结论。
 
 每次报告 passed、failed、blocked、not_run、not_applicable；后者必须有理由。失败不会因 cleanup 成功变为 passed，历史 Gate 也不能代替新包。规程本身由独立新会话读取后执行同一路径，提交该会话的真实命令与清理后证据，才完成 SC-VERIFY-03。
+
+## 项目范围候选 autoload
+
+AH-714 的增量预验收沿用正常 Pi HOME/agentDir、全部其他 packages、MCP、context、tools 和真实已存在的本地 Skill。只在仓外 owned 验证项目创建 `.pi/settings.json`：同一旧 Broker 的绝对 source 以 `extensions: []` 过滤，另以正常 package 声明加载独立安装候选。目标扩展不经 `-e` 注入；`-e` 只加载被动观察器。沿公开 `CONTEXT_BROKER_CONFIG` 复制已审阅的来源配置，只替换一个 Notion entry 和它的 owned cache；local roots、rules、catalogs 保持，任何相对配置路径、其他启用 Notion source 或显式 source.command 均拒绝，先补范围审阅。
+
+这条路径称为 `project-scoped-candidate-precheck`。它不更改全局 package slot、CLI shim 或认证，不证明全局日用安装已经切换。AH-718 实际库存与最终日用层、物理 Mini、Notion UI 继续单列。真实本地同名条目须先从现存文件及实际 `get_commands` 证明；不能生成一个测试副本再称为“原本已有 @local”。新 owned Notion canary 可以沿公开 admission 使用已有本地 Skill 的同名，但 setup 必须明示，不改原本地文件、不复制其私有正文到 Notion。
+
+### 构建与输入绑定
+
+先取得最终 CLI/SDK 独立安装包及其归档 SHA。正式 builder 从 `NTN_SKILLS_BUILD_ENTRY` 所属 `ntn-skills/package.json` 解析同包 `./sdk`，检查合同与 Effect 依赖，分别 bundle 两者；嵌入 SHA 通常不同于原始 CLI/SDK，不能用直接字节相等替代这条输入链。
+
+```bash
+NTN_SKILLS_BUILD_ENTRY=/absolute/final-cli/node_modules/ntn-skills/dist/ntn-skills.js bun scripts/build-tern.mjs --target broker --package-out /absolute/new-broker-package
+# 在 new-broker-package 内运行；输出目录由本次 run 独占。
+npm pack --ignore-scripts --json --pack-destination /absolute/owned-archives
+# 回到 Broker checkout；使用刚生成的归档，不重打包、不改日用 vendor。
+NTN_SKILLS_BUILD_ENTRY=/absolute/final-cli/node_modules/ntn-skills/dist/ntn-skills.js CONTEXT_BROKER_CANDIDATE_DIR=/absolute/owned-archives node scripts/verify-artifacts.mjs --host pi
+```
+
+保留 builder 原命令/stdout/stderr、输入 package manifest/CLI/SDK hash，以及该次 `verify-artifacts` 的 `manifest.json`。其实际 `package.installed` 是候选根；artifact gate 与 daily helper 都检查 archive→安装成员→嵌入 runtime。不要手改 `dist/ntn-skills*` 或 runtime manifest。`verify-artifacts` 的受控 provider 不等于下面的真实模型验收。
+
+### 冻结配置与运行
+
+```bash
+node scripts/verify-pi-daily-installation.mjs candidate-plan --config /absolute/frozen-candidate.json
+node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/frozen-candidate.json --live
+```
+
+`candidate-plan` 不创建会话或访问服务；`candidate-run` 必须显式 `--live`。配置放仓外，`version: 1`、`scope: "project-scoped-candidate-precheck"`，字段如下：
+
+| 字段 | 冻结内容 |
+| --- | --- |
+| `brokerRoot`、`brokerArchive`、`brokerArchiveSha256` | 本次独立安装 Broker 根、真实归档及 SHA |
+| `embeddedCliSha256`、`embeddedSdkSha256` | 安装包内实际文件的 SHA |
+| `cliRoot`、`cliArchive`、`cliArchiveSha256`、`cliEntrySha256` | 作为 builder 输入的同一 CLI/SDK 包 |
+| `artifactReceipt: {path, sha256}` | 上述实际 artifact gate 的成功 `manifest.json`；必须是 Pi、explicit input、同一 archive 与 runtime |
+| `oldBrokerRoot`、`packageIndex` | 当前正常 settings 的目标包，默认 index 1；其余 packages 保持 |
+| `sourceId`、`database`、`ownershipReceipt: {path, sha256}` | 既有 source ID、新 owned entry、绑定该 entry 的公开创建回执 |
+| `localSkill: {path, sha256, name}` | 真实原有同名 Skill 主文，按 realpath 与实际 native command 交叉核对 |
+| `contextFiles` | 可选现存上下文文件绝对路径，只保存身份/hash，不拷正文 |
+| `expectedBodies` | `{path, sha256, bytes}` 数组，独立源 oracle 的完整非空 UTF-8 文件；观察器只读比较，不种入 source cache、工具结果或 provider |
+| `model`、`thinkingLevel` | `magpie/group/flash`、`high`；须由真实 get_state 与请求证明 |
+| `turns` | 预先冻结的 `{id, prompt, bodies, proofs, requireUse, forbiddenObjectSha256s}` 序列；同进程按序提交，任一失败停止，后续保持 not_run |
+| `evidenceRoot`、`rpcTimeoutMs` | 仓外证据根、可选 RPC deadline，默认 300000ms |
+
+每个 `bodies` 项为 `{sha256, occurrences}`；必要 root/Requires 与目标资源为 1，未选 Member/另一来源 canary 为 0。必须由 `expectedBodies` 提供独立原始字节。默认另要求当前 receipt 校验的完整正文；只有原生本地控制路径可以明确标 `receiptRequired: false`，其来源仍须由实际 local command/path/read 与独立文件身份人审核对。`proofs` 是实际 Broker receipt 中必须同对象匹配的 owner/snapshot/File ID 等字段子集，不能把不同记录拼成一个通过。
+
+`requireUse: true` 要求模型实际调用 `notion_use`，并有同一 toolCallId 的成功结果与 use receipt；只 read、旧轮回执、工具齐备或模型自述应用都失败。任务问题与预期在首次运行前冻结，失败后不改题、不补一次成功覆盖。本预验收只接受实际 `read/grep/find/ls/notion_list/notion_use` 调用；执行型或其他未审工具保留失败，不能据其声称脚本未执行。观察器不阻断或改写正常工具集，脚本和 binary 不可为验收自动执行。
+
+取消项用 `cancel: {operation: "consume" | "read" | "read-resources", providerRequestsBeforeAbort: 0, timeoutMs: 30000}`，其中 provider 数按实际场景预先冻结。观察到该真实 SDK 操作仍在进行时才发原生 `abort`，要求同一 operation 的 cancelled 完成和 abort 后零新增 provider；未捕捉到在途窗口就是未完成，不注入延迟来冒充真实服务时序。`forbiddenObjectSha256s` 的零读结论须同时有选中对象的实际 callback read 正控制。
+
+后端更新前后续接用 `resumeFrom: {path, sha256}` 指向前次 owned 成功 `result.json`。helper 校验前次 CLI/SDK/entry 和原 session hash，只复制本 helper 自建的 session 到新 owned 文件，保留原件，再调用真实 Pi `--session`；重用前次 owned source cache，明确是 warm resume，不当作空状态恢复。`noNotion: true` 将该唯一 source 标 disabled，仍保留其他配置；要求实际 provider 无 Notion 工具/catalog/guidance、SDK/CLI source 调用为零，本地 Skill 保持可用。
+
+### 证据与裁决
+
+复用 `skill-consumption-cost.mjs`、`skill-consumption-provider.mjs`、`skill-consumption-source-observer.mjs`、`observeGraphSdk` 与 `observeOwnedObjectReads`。观察器返回 undefined，不改 provider payload、工具集、SDK 参数或响应，不用 handler/fake provider。实际 payload 的 SHA/bytes 必须与 Undici 已发送 request body 一致，完整正文 raw/XML/JSON span 去重计数；details、schema、assistant arguments 不算模型正文。完整 SDK 输出、文件 proof、source requests、对象读取、每轮 final 与失败 verdict 分别留存。模型 HTTP entity bytes 不当 TCP/TLS wire bytes，source unknown outcome 不重放。
+
+`passed` 仅表示本轮自动观测断言通过，`semanticReview: required` 始终保留，需另审原任务回答。helper 尚未运行的新候选不继承旧 gate；全局日用、真实库存、Mini 和 UI 不因本分支通过而关闭。复跑验证器本身：`node --test scripts/verify-pi-daily-candidate.test.mjs scripts/verify-pi-daily-installation.test.mjs`，正常 check 同时包含这两组反例。
