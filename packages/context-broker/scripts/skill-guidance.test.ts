@@ -50,11 +50,11 @@ test("fallback follows missing operations and never advertises disabled tools or
   expect(text(["read", "skill_search", "skill_prepare", "bash"])).not.toContain("cli_source");
 });
 
-function guidanceHarness(host: "pi" | "omp" = "pi", known = true) {
+function guidanceHarness(host: "pi" | "omp" = "pi", known = true, settings: ConfigFile = config) {
   let active = [...full];
   const handlers = new Map<string, (event: never, ctx: ExtensionContext) => unknown>();
   const api: ExtensionAPI = { on(name, listener) { handlers.set(name, listener); }, ...(known ? { getActiveTools: () => [...active] } : {}) };
-  installSkillGuidance(api, config, { host });
+  installSkillGuidance(api, settings, { host });
   const ctx: ExtensionContext = { cwd: "/unused-guidance-test", hasUI: false };
   async function project(event: "context" | "context_with_system", messages: AgentMessage[]) {
     const result = await handlers.get(event)?.({ messages } as never, ctx) as ContextResult | undefined;
@@ -62,6 +62,36 @@ function guidanceHarness(host: "pi" | "omp" = "pi", known = true) {
   }
   return { api, handlers, project, tools: (next: string[]) => { active = next; } };
 }
+
+test("Pi with no enabled Notion source omits new and stale guidance without touching local history", async () => {
+  for (const known of [false, true]) for (const sources of [undefined, [], [{ id: "n", type: "notion" as const, enabled: false }], [{ id: "fs", type: "filesystem" as const, roots: [] }]]) {
+    const h = guidanceHarness("pi", known, { sources });
+    h.tools(["read", "notion_list", "notion_use", "existing_mcp_tool"]);
+    const system = { role: "system", content: "Native local Skill directory" };
+    const user = { role: "user", content: "Literal <ntn-skills-guidance> is user content" };
+    const local = { role: "custom", customType: "context-broker", content: "LOCAL_BODY <ntn-skills-guidance>" };
+    const stale = { role: "custom", ...buildCliGuidance(config) };
+    const history = [system, user, stale, local], original = JSON.stringify(history);
+    expect(await h.handlers.get("before_agent_start")?.({} as never, {})).toBeUndefined();
+    for (const event of known ? ["context", "context_with_system"] as const : ["context"] as const) {
+      const result = await h.project(event, history);
+      expect(result).toEqual([system, user, local]);
+      expect(result[0]).toBe(system); expect(result[1]).toBe(user); expect(result[2]).toBe(local);
+    }
+    expect(JSON.stringify(history)).toBe(original);
+  }
+});
+
+test("Pi guidance follows reloaded source availability without restoring stale disabled context", async () => {
+  let history: AgentMessage[] = [{ role: "user", content: "Keep the native local Skill" }];
+  for (const enabled of [false, true, false]) {
+    const h = guidanceHarness("pi", true, { sources: [{ id: "notion", type: "notion", enabled }] });
+    h.tools(enabled ? ["read", "notion_list", "notion_use"] : ["read", "existing_mcp_tool"]);
+    history = await h.project("context_with_system", history);
+    expect(history.filter(message => message.customType === "ntn-skills-guidance")).toHaveLength(enabled ? 1 : 0);
+    expect(history[0]).toEqual({ role: "user", content: "Keep the native local Skill" });
+  }
+});
 
 test("each final context projects current capabilities without mutating history, body or system", async () => {
   const h = guidanceHarness();

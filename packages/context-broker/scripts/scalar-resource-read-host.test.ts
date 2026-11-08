@@ -68,7 +68,7 @@ async function fixture(protectMain = true, withSessionBinding = false) {
     getSessionId: () => state.id, getSessionFile: () => state.file, getBranch: () => state.entries,
   } };
   const host = await installHostSkills(api, {
-    config: {}, getRecords: async () => ({ records: [metadata], failures: state.failures }),
+    config: { sources: [{ id: "notion", type: "notion", prefetch: false }] }, getRecords: async () => ({ records: [metadata], failures: state.failures }),
     sessionSnapshot: () => { state.snapshotReads++; return state.snapshot; },
     ...(withSessionBinding ? { sessionBinding: () => { state.bindingReads++; return state.binding; } } : {}),
     isLoaded: () => state.loaded, onPreparation: entry => { state.entry = entry; },

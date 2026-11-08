@@ -215,6 +215,20 @@ export function validateCandidateTurn(turn, { costs, transport, tasks }) {
     finalSha256: final.sha256, finalBytes: final.bytes, semanticReview: 'required', scriptExecutionToolCalls: 0 };
 }
 
+/** Input has already passed readProviderTransport's complete ledger validation. */
+export function candidateTransportCoverage(transport) {
+  const end = transport.at(-1);
+  assert.equal(end?.phase, 'transport_end');
+  assert.equal(end.errors, 0, 'A transport observer error leaves task coverage unknown');
+  const starts = transport.filter(event => event.phase === 'request_start');
+  const incomplete = end.incompleteRequestIds.map(id => starts.find(event => event.id === id));
+  assert.ok(incomplete.every(event => event && event.category === 'other'), 'A selected-model request has no terminal observation');
+  return { scope: 'selected-model-and-separately-validated-source', allRequestsComplete: end.complete,
+    model: { attempts: starts.filter(event => event.category === 'model').length, complete: true },
+    other: { attempts: starts.filter(event => event.category === 'other').length, complete: incomplete.length === 0,
+      unknownRequestIds: incomplete.map(event => event.id) } };
+}
+
 async function readRows(path) {
   if (!await exists(path)) return [];
   const text = await readFile(path, 'utf8');
@@ -350,6 +364,7 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
     result.session = { sessionId: initial.sessionId, sessionFile: initial.sessionFile };
     assert.ok(inside(sessions, resolve(initial.sessionFile)));
     const commands = (await rpc.command('get_commands')).commands;
+    await save(join(evidence, 'commands.json'), commands.map(command => ({ name: command.name, source: command.source, sourceInfo: command.sourceInfo })));
     const registrations = commands.filter(command => command.name === 'context-broker');
     assert.equal(registrations.length, 1); const actualEntry = await fileIdentity(registrations[0].sourceInfo.path);
     assert.ok(inside(await realpath(config.brokerRoot), actualEntry.realpath));
@@ -361,7 +376,6 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
         result.localCommand.push({ name: command.name, source: command.source, sourceInfo: command.sourceInfo });
     }
     assert.ok(result.localCommand.length > 0, 'The real existing local Skill was not discovered by normal Pi');
-    await save(join(evidence, 'commands.json'), commands.map(command => ({ name: command.name, source: command.source, sourceInfo: command.sourceInfo })));
     for (const [file, phase] of [[costs, 'observer_start'], [transport, 'transport_start'], [tasks, 'task_observer_start'], [sourceLedger, 'source_observer_start'], [sdkLedger, 'sdk-observer-start']])
       assert.equal((await readRows(file))[0]?.phase, phase, 'A required observer did not start; do not spend a model request without it');
     assert.equal((await readRows(objects))[0]?.kind, 'object_observer_start');
@@ -412,7 +426,7 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
     }
     await rpc.closeInput();
     result.cost = await readConsumptionCostEvents(costs); result.transport = await readProviderTransport(transport); result.source = await readSourceObservation(sourceLedger);
-    assert.equal(result.transport.at(-1)?.complete, true);
+    result.transportCoverage = candidateTransportCoverage(result.transport);
     assert.equal(result.source.complete, true); assert.deepEqual(result.source.errors, []);
     assert.ok(result.cost.events.at(-1)?.phase === 'observer_end' && result.cost.events.at(-1).complete);
     assert.ok((await readRows(tasks)).at(-1)?.complete);

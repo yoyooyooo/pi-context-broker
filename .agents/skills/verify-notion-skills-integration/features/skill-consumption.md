@@ -477,8 +477,14 @@ node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/f
 
 后端更新前后续接用 `resumeFrom: {path, sha256}` 指向前次 owned 成功 `result.json`。helper 校验前次 CLI/SDK/entry 和原 session hash，只复制本 helper 自建的 session 到新 owned 文件，保留原件，再调用真实 Pi `--session`；重用前次 owned source cache，明确是 warm resume，不当作空状态恢复。`noNotion: true` 将该唯一 source 标 disabled，仍保留其他配置；要求实际 provider 无 Notion 工具/catalog/guidance、SDK/CLI source 调用为零，本地 Skill 保持可用。
 
+无启用 Notion source 是产品能力边界。Pi 不注册 `notion_list/notion_use/notion_ctl`，不安装 Notion 专用 `read` 包装，也不投递 Notion guidance；原生 `read`、其它插件、filesystem source 和 `@local` 保留。重新加载扩展后按新配置重新决定这些能力；从已启用配置续接到禁用配置时，provider 投影去掉旧 Broker guidance，原 session、用户原文与本地正文不改。零 source、全 disabled、仅 filesystem、混合 source，以及 disabled→enabled→disabled 的重新加载由 `notion-consumption-tools.test.ts` 和 `skill-guidance.test.ts` 覆盖，真实安装/模型仍需独立重验。
+
+2026-11-08 的真实反例保留在 `~/Documents/code/personal/verification-evidence/ah681-20261108/broker-candidate-bab838e-a4a9a6d7/normal-pi-a/daily-candidate-0bFgWG`：真实本地全文一份、一次 provider 请求和任务回答成立，但 disabled source 仍暴露 Notion tools/guidance，不能把局部正控制当作本条件通过。正常 MCP 的其它 HTTP 请求与所选模型/SDK 边界分别记账；其它请求在观察器关闭时未结束不伪造完成，也不通过关闭正常 MCP 来制造全局零在途。
+
 ### 证据与裁决
 
 复用 `skill-consumption-cost.mjs`、`skill-consumption-provider.mjs`、`skill-consumption-source-observer.mjs`、`observeGraphSdk` 与 `observeOwnedObjectReads`。观察器返回 undefined，不改 provider payload、工具集、SDK 参数或响应，不用 handler/fake provider。实际 payload 的 SHA/bytes 必须与 Undici 已发送 request body 一致，完整正文 raw/XML/JSON span 去重计数；details、schema、assistant arguments 不算模型正文。完整 SDK 输出、文件 proof、source requests、对象读取、每轮 final 与失败 verdict 分别留存。模型 HTTP entity bytes 不当 TCP/TLS wire bytes，source unknown outcome 不重放。
+
+正常宿主的 transport ledger 仍校验完整 hash 链、请求配对与零 observer error。所选模型请求必须有终态，并由每轮原始 payload、协议完成和实际回答证明应用完成；SDK/CLI source observer 必须完整结束。`transportCoverage` 单列 `allRequestsComplete` 和 `other.unknownRequestIds`，正常 MCP 等其它请求未结束不会被改成成功，也不代替 model/source 的硬门槛。原始 `transport_end.complete: false` 与其它请求的未知状态一并保留，不能据此声称整个宿主所有网络请求已完成。
 
 `passed` 仅表示本轮自动观测断言通过，`semanticReview: required` 始终保留，需另审原任务回答。helper 尚未运行的新候选不继承旧 gate；全局日用、真实库存、Mini 和 UI 不因本分支通过而关闭。复跑验证器本身：`node --test scripts/verify-pi-daily-candidate.test.mjs scripts/verify-pi-daily-installation.test.mjs`，正常 check 同时包含这两组反例。

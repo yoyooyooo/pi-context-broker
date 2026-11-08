@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { candidatePlan, candidateProjectSettings, candidateSourceConfig, candidatePayloadBodies, observeCandidateTask, validateCandidateTurn, containsProof } from './verify-pi-daily-candidate.mjs';
+import { candidatePlan, candidateProjectSettings, candidateSourceConfig, candidatePayloadBodies, observeCandidateTask, validateCandidateTurn, candidateTransportCoverage, containsProof } from './verify-pi-daily-candidate.mjs';
 
 const sha = text => createHash('sha256').update(text).digest('hex');
 const body = 'complete source <tag> & "quoted"\nlast line';
@@ -64,6 +64,27 @@ test('a positive verdict binds full body, receipt, final answer, and the actual 
   stale.tasks.push({ phase: 'tool_call', toolName: 'notion_use', toolCallId: 'new', reviewedReadTool: true },
     { phase: 'tool_result', toolCallId: 'new', isError: true }, { phase: 'receipt', toolCallId: 'old', proofs: { contextBrokerPreparation: { purpose: 'use', toolCallId: 'old' } } });
   assert.throws(() => validateCandidateTurn({ ...turn, requireUse: true }, stale), /notion_use/u);
+});
+
+test('normal-host transport retains unknown other requests without mistaking them for incomplete model work', () => {
+  const events = [
+    { phase: 'request_start', id: 1, category: 'model' },
+    { phase: 'request_end', id: 1, category: 'model', outcome: 'completed' },
+    { phase: 'request_start', id: 2, category: 'other' },
+    { phase: 'transport_end', errors: 0, complete: false, incompleteRequestIds: [2] },
+  ];
+  const original = structuredClone(events);
+  assert.deepEqual(candidateTransportCoverage(events), {
+    scope: 'selected-model-and-separately-validated-source', allRequestsComplete: false,
+    model: { attempts: 1, complete: true }, other: { attempts: 1, complete: false, unknownRequestIds: [2] },
+  });
+  assert.deepEqual(events, original);
+  const pendingModel = structuredClone(events); pendingModel.at(-1).incompleteRequestIds = [1, 2];
+  assert.throws(() => candidateTransportCoverage(pendingModel), /selected-model/u);
+  const observerError = structuredClone(events); observerError.at(-1).errors = 1;
+  assert.throws(() => candidateTransportCoverage(observerError), /observer error/u);
+  const unknownId = structuredClone(events); unknownId.at(-1).incompleteRequestIds = [3];
+  assert.throws(() => candidateTransportCoverage(unknownId));
 });
 
 test('candidate plan is nonexecuting and rejects unfrozen body claims', () => {

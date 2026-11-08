@@ -46,7 +46,7 @@ import {
   dedupeDiscoveryRecords,
   InvocationError,
 } from "./discovery-records";
-import { discoverSourceCatalog, loadSourceSkill, normalizeSources, formatSourceFailures } from "./sources";
+import { discoverSourceCatalog, loadSourceSkill, normalizeSources, formatSourceFailures, hasEnabledNotionSource } from "./sources";
 import { diagnoseNotionSource, sourceFailureMessage, SourceError, ReferenceMiss, prepareNotionSkills, prefetchNotionSkills, loadNotionResource, readNotionResources, readFixedNotionResource, resolveNotionReference } from "./notion-source";
 import { installHostSkills } from "./host-skills";
 import { resolveViewDiscovery, createViewCommands, notionDirectorySelections } from "./view-discovery";
@@ -881,8 +881,9 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
 }
 
 /** Only the provider projection changes; original custom entries and source text stay intact. */
-function projectCliGuidance(messages: AgentMessage[], guidance: Omit<AgentMessage, "role" | "timestamp">): AgentMessage[] | undefined {
+function projectCliGuidance(messages: AgentMessage[], guidance: Omit<AgentMessage, "role" | "timestamp"> | undefined): AgentMessage[] | undefined {
   const owned = messages.filter(message => message.role === "custom" && message.customType === CLI_GUIDANCE_TYPE);
+  if (!guidance) return owned.length ? messages.filter(message => !owned.includes(message)) : undefined;
   if (owned.length === 1 && textFromContent(owned[0]!.content) === guidance.content) return undefined;
   let placed = false;
   const projected = messages.flatMap(message => {
@@ -897,16 +898,17 @@ function projectCliGuidance(messages: AgentMessage[], guidance: Omit<AgentMessag
 
 function installSkillGuidance(pi: ExtensionAPI, config: ConfigFile, paths: HostPathOptions): void {
   const knownPi = paths.host === "pi" && typeof pi.getActiveTools === "function";
-  const legacy = knownPi ? undefined : buildCliGuidance(config);
-  const guidance = () => knownPi ? buildCliGuidance(config, pi.getActiveTools!()) : legacy!;
+  const enabled = paths.host !== "pi" || hasEnabledNotionSource(config);
+  const legacy = !enabled || knownPi ? undefined : buildCliGuidance(config);
+  const guidance = () => !enabled ? undefined : knownPi ? buildCliGuidance(config, pi.getActiveTools!()) : legacy;
   pi.on("before_agent_start", (_event, ctx) => {
     const current = guidance();
-    if (!hasCliGuidance(messagesFromActiveSessionContext(ctx), current)) return { message: current };
+    if (current && !hasCliGuidance(messagesFromActiveSessionContext(ctx), current)) return { message: current };
     return undefined;
   });
   const project = (event: ContextEvent) => {
     const current = guidance();
-    if (!knownPi) return hasCliGuidance(event.messages, current) ? undefined
+    if (!knownPi && current) return hasCliGuidance(event.messages, current) ? undefined
       : { messages: [...event.messages, { ...current, role: "custom", timestamp: Date.now() }] };
     const messages = projectCliGuidance(event.messages, current);
     return messages ? { messages } : undefined;

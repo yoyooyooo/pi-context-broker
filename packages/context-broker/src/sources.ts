@@ -9,6 +9,10 @@ import type { ConfigFile, NotionDirectorySelection, NotionDirectoryObservation, 
 export { SourceError } from "./notion-source";
 export type SourceOptions = { signal?: AbortSignal; stale?: boolean; refreshSourceIds?: readonly string[]; snapshotId?: string; directorySelections?: ReadonlyMap<string, NotionDirectorySelection> };
 
+export function hasEnabledNotionSource(config: Pick<ConfigFile, "sources">): boolean {
+  return config.sources?.some(source => source.type === "notion" && source.enabled !== false) === true;
+}
+
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }

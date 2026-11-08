@@ -2,7 +2,60 @@ import { expect, test } from "bun:test";
 import { installHostSkills } from "../src/host-skills";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { buildCliGuidance } from "../src/index";
-import type { ExtensionAPI, NativeSkillSearchDefinition, SkillRecord } from "../src/types";
+import type { ConfigFile, ExtensionAPI, ExtensionContext, NativeSkillSearchDefinition, PiReadDefinition, SkillRecord } from "../src/types";
+
+async function sourceAvailabilityHost(config: ConfigFile) {
+  const registered: Parameters<NonNullable<ExtensionAPI["registerTool"]>>[0][] = [];
+  const listeners: Array<(event: never, ctx: ExtensionContext) => unknown> = [];
+  let factoryCalls = 0;
+  const native: PiReadDefinition = { name: "read", label: "Read", description: "Original local reader",
+    parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
+    async execute() { return { content: [{ type: "text", text: "LOCAL_NATIVE_CONTENT" }] }; } };
+  let current = { ...native, sourceInfo: { source: "builtin", path: "builtin:read" } };
+  const api: ExtensionAPI = { on(name, listener) { if (name === "session_start") listeners.push(listener); },
+    registerTool(tool) { registered.push(tool); if (tool.name === "read") current = { ...tool, sourceInfo: { source: "extension", path: "broker:read" } }; },
+    getAllTools: () => [current], getActiveTools: () => ["read", "existing_mcp_tool"] };
+  const adapter = createPiHostAdapter(api, async () => { factoryCalls++; return () => native; });
+  const host = await installHostSkills(api, { config,
+    getRecords: async () => ({ records: [], failures: [] }),
+    loadRecord: async () => { throw new Error("Registration must not load content"); },
+    prepareGraph: async () => { throw new Error("Registration must not prepare content"); },
+    sessionGraph: () => ({ scopes: [] }),
+  }, adapter);
+  for (const listener of listeners) await listener({ type: "session_start" } as never, {});
+  return { registered, native, current, factoryCalls, host, active: api.getActiveTools!() };
+}
+
+test("Pi without an enabled Notion source preserves native read and other sources without Notion tools", async () => {
+  const configs: ConfigFile[] = [
+    {}, { sources: [] },
+    { sources: [{ id: "notion", type: "notion", enabled: false }] },
+    { sources: [{ id: "files", type: "filesystem", roots: [] }] },
+    { sources: [{ id: "notion", type: "notion", enabled: false }, { id: "files", type: "filesystem", roots: [] }] },
+  ];
+  for (const config of configs) {
+    const original = JSON.stringify(config), h = await sourceAvailabilityHost(config);
+    expect(h.registered).toEqual([]);
+    expect(h.factoryCalls).toBe(0);
+    expect(h.current.parameters).toBe(h.native.parameters);
+    expect(h.current.description).toBe("Original local reader");
+    expect(h.active).toEqual(["read", "existing_mcp_tool"]);
+    expect(await h.current.execute("local", { path: "SKILL.md" }, undefined, undefined, {}))
+      .toEqual({ content: [{ type: "text", text: "LOCAL_NATIVE_CONTENT" }] });
+    expect(JSON.stringify(config)).toBe(original);
+  }
+});
+
+test("Pi extension reinstallation recomputes Notion capabilities across disabled enabled disabled configs", async () => {
+  for (const enabled of [false, true, false]) {
+    const h = await sourceAvailabilityHost({ sources: [
+      { id: "notion", type: "notion", enabled }, { id: "files", type: "filesystem", roots: [] },
+    ] });
+    expect(h.registered.map(tool => tool.name)).toEqual(enabled ? ["notion_list", "notion_use", "notion_ctl", "read"] : []);
+    expect(h.factoryCalls).toBe(enabled ? 1 : 0);
+    expect(h.active).toEqual(["read", "existing_mcp_tool"]);
+  }
+});
 
 test("Pi exposes one Notion consumption contract and keeps use outside nested code execution", async () => {
   const registered: Parameters<NonNullable<ExtensionAPI["registerTool"]>>[0][] = [];

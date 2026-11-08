@@ -5,7 +5,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 import { isDeepStrictEqual } from "node:util";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { InvocationError, recordIdentity } from "./discovery-records";
-import { assertSourceAvailable, formatSourceFailures } from "./sources";
+import { assertSourceAvailable, formatSourceFailures, hasEnabledNotionSource } from "./sources";
 import { SourceError, SourceReferenceAmbiguity, ReferenceMiss, sourceFailureMessage } from "./notion-source";
 import { createActivationFeedback, ACTIVATION_MESSAGE } from "./activation-feedback";
 import { checkPreparationSignal, createPreparationGate, preparationCancelled, type ActivePreparation } from "./skill-preparation";
@@ -159,6 +159,7 @@ async function headlessActivation<T>(start: (signal: AbortSignal) => Promise<T>,
 export async function installHostSkills(api: ExtensionAPI, options: HostSkillOptions, adapter: HostCapabilities): Promise<HostSkills> {
   const host = api;
   const piConsumption = adapter.paths.host === "pi";
+  const sourceToolsEnabled = !piConsumption || hasEnabledNotionSource(options.config);
   const listToolName = piConsumption ? "notion_list" : "skill_search";
   const useToolName = piConsumption ? "notion_use" : "skill_prepare";
   const controlToolName = piConsumption ? "notion_ctl" : "skill_graph";
@@ -314,7 +315,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     } finally { signal.removeEventListener("abort", abort); }
   }
 
-  host.registerTool?.({
+  if (sourceToolsEnabled) host.registerTool?.({
     name: listToolName, label: piConsumption ? "List Notion Skills" : "Skill search",
     description: `Search the authorized Skill metadata directory, including items outside the default View. Returns ${piConsumption ? "Skill refs for read or notion_use" : "exact read references only"}; it does not load instructions or activate workflows.`,
     parameters: { type: "object", properties: {
@@ -1330,7 +1331,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     return { files: modelFiles(record, ctx)!,
       required: directory.required.map(related), candidates: directory.candidates.map(related), references: directory.references.map(related) };
   }
-  if (options.prepareGraph) host.registerTool?.({
+  if (sourceToolsEnabled && options.prepareGraph) host.registerTool?.({
     name: useToolName, label: piConsumption ? "Use Notion Skills" : "Prepare Skills",
     description: piConsumption
       ? "Load a Notion Skill and its Requires to apply its instructions to the user's task. To introduce, summarize or inspect a Skill, use read instead. Copy a supplied ref, or pass several refs together. Members remain candidates. Loading does not authorize executing a workflow."
@@ -1428,7 +1429,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       };
     },
   });
-  if (options.sessionGraph) host.registerTool?.({
+  if (sourceToolsEnabled && options.sessionGraph) host.registerTool?.({
     name: controlToolName, label: piConsumption ? "Notion management" : "Selected Skill graph",
     description: "Export this branch's immutable Skill graph and delivery proofs without machine paths. Alternatively, request cli_source for one exact configured Notion source's host-local CLI command prefix and database scope when an authorized maintenance/sync action needs it. This metadata query does not execute commands or grant authorization; cli_source requires active bash and cannot be combined with refs.",
     parameters: { type: "object", properties: {
@@ -1707,7 +1708,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     return { ...result, details: { ...(result.details && typeof result.details === "object" ? result.details : {}),
       contextBrokerResourceSource: { source_id: record.sourceId, result: batch.machine } } };
   }
-  const readRunsInTool = adapter.registerReadExecutor?.(async (input, ctx, signal, read, toolCallId) => {
+  const readRunsInTool = sourceToolsEnabled ? adapter.registerReadExecutor?.(async (input, ctx, signal, read, toolCallId) => {
     const executionSignal = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
     if (Object.hasOwn(input, "paths")) {
       const deadline = AbortSignal.timeout(DEFAULT_RESOURCE_READ_BUDGET.timeBudgetMs);
@@ -1732,7 +1733,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       pendingNativeReads.delete(toolCallId);
       throw error;
     }
-  });
+  }) : undefined;
   host.on("tool_call", async (event, ctx): Promise<ToolCallResult | undefined> => {
     if (event.toolName === "read" && readRunsInTool?.()) return undefined;
     const operationSignal = deferredPiDiscovery && event.toolName === "read" ? ctx.signal : undefined;

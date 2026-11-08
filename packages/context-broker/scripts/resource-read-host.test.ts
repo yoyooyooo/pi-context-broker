@@ -54,7 +54,7 @@ async function fixture() {
     getSessionId: () => state.id, getSessionFile: () => join(root, state.id + ".jsonl"), getBranch: () => state.entries,
   } };
   const host = await installHostSkills(api, {
-    config: {}, getRecords: async () => ({ records: [metadata], failures: [] }),
+    config: { sources: [{ id: "notion", type: "notion", prefetch: false }] }, getRecords: async () => ({ records: [metadata], failures: [] }),
     resolveNamedReference: async input => {
       state.nameCalls.push(input);
       const parsed = parseNativeReference(input);
