@@ -110,13 +110,15 @@ export function candidatePayloadBodies(value, expectedBodies) {
 
 export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspectPayload }) {
   const sha = value => crypto.createHash('sha256').update(value).digest('hex');
+  const oracleStarted = process.hrtime.bigint();
   const expectedBodies = bodyFiles.map(file => {
     const bytes = fs.readFileSync(file.path);
     if (sha(bytes) !== file.sha256 || bytes.length !== file.bytes || bytes.length === 0) throw new Error('Frozen body bytes changed');
     return { sha256: file.sha256, bytes: file.bytes, text: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) };
   });
   const fd = fs.openSync(output, 'wx', 0o600);
-  let turn = 0, sequence = 0, previous = null, errors = 0, closed = false;
+  const oracleReadMs = Number(process.hrtime.bigint() - oracleStarted) / 1e6;
+  let turn = 0, sequence = 0, previous = null, errors = 0, closed = false, observerWorkNs = 0n;
   const record = (phase, fields = {}) => {
     const row = { sequence: ++sequence, previousSha256: previous, pid: process.pid, monotonicNs: process.hrtime.bigint().toString(), turn, phase, ...fields };
     row.eventSha256 = sha(JSON.stringify(row)); previous = row.eventSha256;
@@ -137,10 +139,12 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
   };
   const on = (name, fn) => api.on(name, event => {
     if (closed) return;
+    const started = process.hrtime.bigint();
     try { fn(event); } catch { errors++; record('observer_error', { event: name }); }
+    finally { observerWorkNs += process.hrtime.bigint() - started; }
     // Always undefined: observation cannot block, transform or choose tools.
   });
-  record('task_observer_start');
+  record('task_observer_start', { oracleReadMs, oracleSeededIntoSourceOrModel: false });
   on('input', () => { turn++; record('input'); });
   on('context_with_system', event => { for (const message of event.messages ?? []) receipt(message); });
   on('before_provider_request', event => {
@@ -163,7 +167,7 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     record('assistant_final', { text: value, sha256: sha(value), bytes: Buffer.byteLength(value), stopReason: message.stopReason,
       success: ['stop', 'length'].includes(message.stopReason) && value.trim().length > 0 });
   });
-  on('session_shutdown', () => { record('task_observer_end', { errors, complete: errors === 0 }); closed = true; fs.closeSync(fd); });
+  on('session_shutdown', () => { record('task_observer_end', { errors, complete: errors === 0, observerWorkMs: Number(observerWorkNs) / 1e6 }); closed = true; fs.closeSync(fd); });
 }
 
 export function containsProof(value, expected) {
@@ -340,6 +344,8 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
   try {
     rpc = await startRpc({ host: 'pi', cwd, env, args, timeoutMs: config.rpcTimeoutMs ?? 300000 });
     const initial = await rpc.command('get_state');
+    result.launch.readyNs = process.hrtime.bigint().toString(); result.launch.spawnReturnNs = rpc.lifecycle[0].monotonicNs;
+    result.launch.readyAfterSpawnMs = Number(BigInt(result.launch.readyNs) - BigInt(result.launch.spawnReturnNs)) / 1e6;
     assert.equal(initial.model?.provider, 'magpie'); assert.equal(initial.model?.id, 'group/flash'); assert.equal(initial.thinkingLevel, 'high');
     result.session = { sessionId: initial.sessionId, sessionFile: initial.sessionFile };
     assert.ok(inside(sessions, resolve(initial.sessionFile)));
