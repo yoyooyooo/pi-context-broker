@@ -176,8 +176,7 @@ async function runHost(host, tempRoot, fakeProviderPath) {
   const sessionText = await readFile(sessionFiles[0], "utf8");
   const sessionEntries = sessionText.trim().split("\n").map(line => JSON.parse(line));
   const guidanceEntries = sessionEntries.filter(entry => entry.type === "custom_message" && entry.customType === "ntn-skills-guidance");
-  assert.equal(guidanceEntries.length, 1, `${host}: continued session must retain one CLI guidance message`);
-  const guidance = JSON.stringify(guidanceEntries[0].content).slice(1, -1);
+  assert.equal(guidanceEntries.length, 0, `${host}: local-only session must not retain Notion guidance`);
   const customMatches = sessionText.match(/"customType":"context-broker"/g) ?? [];
   const markerMatches = sessionText.match(/CONTEXT_BROKER_E2E_MARKER/g) ?? [];
   const reviewMarkerMatches = sessionText.match(/CONTEXT_BROKER_E2E_REVIEW_MARKER/g) ?? [];
@@ -218,7 +217,8 @@ async function runHost(host, tempRoot, fakeProviderPath) {
   for (const [turn, context] of providerContexts.entries()) {
     const messages = JSON.stringify(context.messages);
     assert.ok(!messages.includes("nativePromptSha256"), `${host}: machine-only delivery proofs do not enter provider input`);
-    assert.equal(messages.split(guidance).length - 1, 1, `${host}: turn ${turn + 1} must contain the complete CLI guidance exactly once`);
+    assert.equal(messages.includes("ntn-skills-guidance"), false,
+      `${host}: turn ${turn + 1} must not receive Notion guidance without a Notion source`);
     for (const marker of ["CONTEXT_BROKER_E2E_MARKER", "CONTEXT_BROKER_E2E_REVIEW_MARKER"]) {
       assert.equal(messages.split(marker).length - 1, 1, `${host}: turn ${turn + 1} provider messages must contain exactly one ${marker} body`);
     }
