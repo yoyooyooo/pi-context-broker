@@ -171,8 +171,12 @@ test.each(["skill", "router", "prompt"] as const)("verified old metadata aliases
   expect((await lstat(f.directory)).isSymbolicLink()).toBe(false); expect(await readFile(f.path, "utf8")).toBe(f.stub);
   expect(await readlink(f.retained)).toBe(f.alias.target);
   expect(await readFile(f.selected.path)).toEqual(original); expect(await readFile(join(f.alias.root, f.record.entrypoint))).toEqual(rendered);
-  const before = await readdir(f.index, { recursive: true });
-  expect((await f.observe())?.catalog.ok).toBe(true); expect(await readdir(f.index, { recursive: true })).toEqual(before);
+  // Recursive readdir order is not a filesystem contract (Linux may enumerate
+  // a nested alias before the top-level stub). The invariant is the unchanged
+  // *set* of paths after another verified metadata observation.
+  const before = (await readdir(f.index, { recursive: true })).sort();
+  expect((await f.observe())?.catalog.ok).toBe(true);
+  expect((await readdir(f.index, { recursive: true })).sort()).toEqual(before);
   expect((await f.calls()).every(call => call[0] === "sdk-list")).toBe(true);
   await rename(f.alias.root, join(f.root, "retained-projection-after-recovery"));
   expect((await f.observe())?.catalog.ok).toBe(true); // Healthy metadata no longer depends on this historical target.
@@ -259,7 +263,7 @@ test("repeated SDK metadata observations reuse their immutable index while prese
   const path = first.catalog.value[0]!.metadataIndexPath!;
   expect(first.directory.value[0]!.metadataIndexPath).toBe(path);
   const indexes = join(f.source.cacheDir!, "scopes", scope, "indexes");
-  const before = await readdir(indexes);
+  const before = (await readdir(indexes)).sort();
   f.paired.catalog.value = listing([f.record]);
   f.paired.directory.value = listing([f.record], "profile"); await f.save();
   const second = await observe();
@@ -267,7 +271,7 @@ test("repeated SDK metadata observations reuse their immutable index while prese
   expect(second.catalog.value[0]!.metadataIndexPath).toBe(path);
   expect(second.directory.value[0]!.metadataIndexPath).toBe(path);
   expect(second.catalog.value[0]!.freshness).toEqual(f.paired.catalog.value.freshness);
-  expect(await readdir(indexes)).toEqual(before);
+  expect((await readdir(indexes)).sort()).toEqual(before);
   expect((await f.calls()).map(call => call[0])).toEqual(["sdk-list", "sdk-list"]);
   const original = await readFile(path, "utf8");
   f.paired.catalog.value = listing([{ ...f.record, description: "Changed metadata" }]); await f.save();
