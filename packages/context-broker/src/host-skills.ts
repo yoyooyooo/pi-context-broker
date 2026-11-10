@@ -957,6 +957,12 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         acknowledgeProjection(run, contextEntries);
         run.userEntryId ??= contextEntries.findLast(entry => entry.sourceEntry.type === "message"
           && entry.messages.some(message => message.role === "user"))?.sourceEntry.id;
+        // A one-shot print has no later turn for a late default directory. Join
+        // metadata only here, under the real operation's cancellation signal.
+        if (!run.prepared && (ctx.mode === "print" || ctx.mode === "json")) {
+          await ready(AbortSignal.any([run.signal, lifecycleController.signal]));
+          assertPiRun(run, ctx);
+        }
         if (!run.prepared && run.entry) {
           const entry = run.entry, text = entry.event.text ?? "", signal = entry.controller.signal;
           gate.assertCurrent(entry, ctx);
@@ -1195,8 +1201,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   }
   if (deferredPiDiscovery) host.on("context_with_system", (event, ctx) => {
     if (event.messages[0]?.role !== "system" || lifecycleController.signal.aborted || piRun?.signal.aborted) return undefined;
-    // Use only the current in-memory observation. Ordinary messages never join
-    // metadata I/O; explicit preflight has already awaited its required catalog.
+    // Render only metadata already observed by the cancellable context boundary.
     const candidateRefs = modelCandidateReferences([...records, ...defaultRouters], ctx);
     let branch: ReturnType<typeof reduceSessionShortRefs> | undefined;
     try { branch = reduceSessionShortRefs(ctx.sessionManager?.getBranch?.() ?? []); }
@@ -1225,7 +1230,9 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     };
     // The context hook removes receipt-only messages. Reattach the current
     // native receipts for validation, then omit these appended messages below.
-    const messages = withSessionSourceReceipts(event.messages, ctx.sessionManager?.buildSessionProjection?.().entries ?? []);
+    const section = "context-broker-notion-catalog";
+    const visible = event.messages.filter(message => message.role !== "custom" || message.customType !== section);
+    const messages = withSessionSourceReceipts(visible, ctx.sessionManager?.buildSessionProjection?.().entries ?? []);
     const projected = projectCatalogDescriptions({ messages,
       defaults: [...records, ...defaultRouters].flatMap(record => { const card = defaultCard(record); return card ? [card] : []; }),
       identify,
@@ -1243,21 +1250,25 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         } catch { return false; }
       },
     });
-    const section = "context-broker-notion-catalog", catalog = catalogSystemPrompt("", ctx, candidateRefs, record => {
+    const catalog = catalogSystemPrompt("", ctx, candidateRefs, record => {
       const card = defaultCard(record), key = card && identify(card);
       return key !== undefined && projected.omittedDefaults.has(key);
     }).trimStart();
     const ownedPaths = new Set(readRecords.keys());
     const clean = (text: string) => withoutViewMetadata(text, ownedPaths, ctx.cwd);
-    return { messages: projected.messages.slice(0, event.messages.length).map((message, index) => {
+    const cleaned = projected.messages.slice(0, visible.length).map(message => {
       if (message.role !== "system") return message;
       const content = typeof message.content === "string" ? clean(message.content)
         : message.content?.map(part => part.type === "text" ? { ...part, text: clean(part.text) } : part);
       const sections = Object.fromEntries(Object.entries(message.sections ?? {}).filter(([name]) => name !== section)
         .map(([name, value]) => [name, value === null ? null : clean(value)]));
-      if (index === 0 && catalog) sections[section] = catalog;
       return { ...message, content, ...(message.sections || Object.keys(sections).length ? { sections } : {}) };
-    }) };
+    });
+    // Pi may honor another extension's exact system prompt after this hook.
+    // Keep directory data outside that prompt, without persisting another body.
+    return { messages: cleaned.flatMap((message, index): AgentMessage[] => index === 0 && catalog
+      ? [message, { role: "custom", customType: section, content: catalog, display: false, timestamp: 0 }]
+      : [message]) };
   });
   async function exactRecord(reference: ExactNativeReference, ctx: ExtensionContext, signal: AbortSignal, short?: HostShortRefResolution, resolved?: SkillRecord): Promise<SkillRecord> {
     const selector = reference.selector;

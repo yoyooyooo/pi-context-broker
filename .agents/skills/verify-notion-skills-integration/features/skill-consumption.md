@@ -49,7 +49,7 @@
 
 | ID | 动作 | 主要断言 |
 | --- | --- | --- |
-| J01 | 全冷普通消息，目录延迟/失败 | provider先于目录完成；正文读取0 |
+| J01 | 全冷普通消息，目录延迟/失败 | 交互/RPC允许pending且不阻塞；一次性print/json首轮在可取消context等待目录或明确失败；均不预读正文 |
 | J02 | 暖目录普通消息 | 仅轻量发现；后台成本独立计 |
 | J03 | 暖缓存新会话显式激活 | 策略允许时远端0；根/Requires各一份 |
 | J04 | 全冷根与共享Requires | 只读所选闭包；Members正文0 |
@@ -135,7 +135,42 @@ SC26 的常规门禁先跑 `NTN_SKILLS_BUILD_ENTRY=ABSOLUTE_INSTALLED_CLI bun ru
 
 独立 Pi 安装沿原 control 入口执行 `node .agents/skills/verify-context-broker/scripts/control.mjs doctor distribution-pi`，再 `run distribution-pi`。该路径只允许精确 Pi 1.4.0／1.5.0，实际版本分别留证；未知版本仍失败。使用 `verify-artifacts.mjs --host pi` 打包 Broker 并在空 consumer 中 npm install，保留 package/CLI/SDK/实际Pi identity、RPC、provider 和进程终局。通用命令不带 fixture 时，manifest 的 `defaultSdk` 必须明确 `not_run`。完整默认 SDK 安装验收直接为原命令增加 `--fixture ABSOLUTE_FIXTURE_JSON --require-sdk`，检查同包 all14 的 plan/result/每景 terminal 和未改动身份；参见[分发门禁](../../verify-context-broker/features/distribution.md)。CI 主 Pi 1.5.0，兼容步骤用 owned Pi 1.4.0 跑原 native print／continue 和同 installed 路径的 all14；发布仍单 job。`CONTEXT_BROKER_CANDIDATE_DIR` 可指向一个已冻结的绝对包目录；未给时打包当前完整源码。它不构建 Tern、不验真实 Notion或模型，OMP 由独立 `--host omp` 结果负责。私有 evidence 保存在输出目录，后续原件hash与回收规则相同。
 
-正常默认目录必须在 source.command absent 下通过 SDK list 获取完整 View 元数据，未选正文读取为零；custom command、CACHE_MISSING、pending 或非零子进程只各自证明对应分支。非阻塞冷启动允许第一任务的 provider 保留 pending，`notion_list` 等待并交付真实目录；下一普通用户 turn 重建 ready 默认目录。每个 turn 单独记录，不把第一轮 pending 当作 Default View 成功。额外 list 允许已授权范围，默认 View 不变成永久搜索边界。live 驱动不主动编辑不等于产品 current read 永不写入；首次 adoption/retention、稳定未变、真实 notion_write 分组记录，unknown 操作不重放。
+正常默认目录必须在 source.command absent 下通过 SDK list 获取完整 View 元数据，未选正文读取为零；custom command、CACHE_MISSING、pending 或非零子进程只各自证明对应分支。交互/RPC非阻塞冷启动允许首轮pending，`notion_list`等待并交付目录，下一普通turn重建ready目录。一次性 `pi -p` 的print/json首轮没有后续任务来接收迟到目录，必须在已有可取消context边界等待元数据，再发送实际目录或明确unavailable状态。注册、input与普通本地读取不因此等待正文。默认目录通过一份临时元数据消息交付，不依赖会被其他扩展forceSystemPrompt覆盖的系统段落；必须保留安全提示与工具声明。每个turn单独记录，不能把pending当Default View成功。额外list允许已授权范围，默认View不变成永久搜索边界。live驱动不主动编辑不等于产品current read永不写入；首次adoption/retention、稳定未变、真实notion_write分组记录，unknown操作不重放。
+
+### Drive：正常 print 会话与原生 session 复核
+
+在已准备的项目范围候选中，保留正常HOME、其他包、安全扩展、MCP和本地Skill，仅替换
+当前Broker包及声明的自有Notion库。使用用户指定模型，不因失败切换模型或把RPC结果
+当print结果。每个场景用新的session目录；默认目录、显式`$`、不带`$`的自然选路分开。
+
+```bash
+pi -p --mode json --model magpie/group/worker \
+  --session-dir "$RUN/sessions" -- '原始只读任务'
+```
+
+同时运行现有cost/provider/SDK被动观察器，保留原始stdout、session JSONL和逐请求
+body计数。目录场景不得调用工具或加载正文；显式场景应从所选主文给出的`sr:R`读取
+同一snapshot资源；自然应用场景必须实际调用`notion_use`，不能只靠模型声称已加载。
+真实provider输入的正文应完整且不重复，脚本与二进制不得被自动执行。
+
+`inspectCandidatePrintSession` 读取新建线性session，核对精确model_change和assistant
+model、用户提交、context_edit目标、每个toolCallId与对应toolResult、错误及最后终态。
+它返回原文件hash和行号，不读取或信任回答中的“已完成”声明；分支/复制历史、截断
+JSONL、孤立工具结果和模型回退必须拒绝。任务语义和实际provider交付仍独立判断。
+宿主用原生`context_edit`明确撤回失败的部分模型响应时，单列`retractedCalls`并保留
+失败行，不能算成已执行工具或全程无错；再与实际工具事件和SDK记录核对是否派发。
+
+```js
+import { readFile } from 'node:fs/promises';
+import { inspectCandidatePrintSession } from './scripts/verify-pi-daily-candidate.mjs';
+const review = inspectCandidatePrintSession(await readFile(sessionPath, 'utf8'), {
+  provider: 'magpie', model: 'group/worker',
+});
+```
+
+先检查实际请求，不以某个`context_with_system`观察器的中间输出冒充最后输入。
+正常扩展按顺序执行，Pi还可能在全部handler之后应用精确系统提示。诊断loader可以
+记录这条边界，但正式复测必须撤掉诊断改写，使用原Pi运行时和正常包自动加载。
 
 ### Drive：SC25 / SC26 默认 SDK、Code mode 与精确资源
 

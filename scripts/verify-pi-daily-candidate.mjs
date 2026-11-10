@@ -24,6 +24,70 @@ const identifier = value => typeof value === 'string' && /^[A-Za-z0-9_.-]{1,120}
 const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value);
 const { parse: parseYaml } = createRequire(new URL('../packages/context-broker/package.json', import.meta.url))('yaml');
 
+/** Inspect a fresh linear native session independently of the model's answer.
+ * Forked histories need the host's branch projector, not this print-session check. */
+export function inspectCandidatePrintSession(text, { provider, model }) {
+  assert.ok(typeof text === 'string' && text.endsWith('\n'), 'Retain a complete native JSONL session');
+  const rows = text.trimEnd().split('\n').map((line, index) => ({ value: JSON.parse(line), line: index + 1 }));
+  assert.equal(rows[0]?.value.type, 'session');
+  assert.ok(typeof rows[0].value.id === 'string' && !rows[0].value.parentSession, 'Use a fresh session, not a copied or forked history');
+  const seen = new Set(), calls = new Map(), models = [], finals = [], userLines = [], projections = [];
+  let previous = null;
+  for (const { value: row, line } of rows.slice(1)) {
+    assert.ok(typeof row.id === 'string' && !seen.has(row.id), 'Native entry identity is missing or duplicated');
+    assert.equal(row.parentId, previous, 'This verifier only accepts a fresh linear session');
+    seen.add(row.id); previous = row.id;
+    if (row.type === 'model_change') {
+      assert.equal(row.provider, provider); assert.equal(row.modelId, model);
+      models.push({ line, provider: row.provider, model: row.modelId });
+    }
+    if (row.type === 'context_edit') {
+      assert.ok(seen.has(row.targetId) && row.targetId !== row.id, 'Context replacement must point to an earlier native entry');
+      projections.push({ line, targetId: row.targetId, sha256: hash(JSON.stringify(row.replacement)) });
+      if (row.replacement === null) for (const call of calls.values()) {
+        if (call.assistantEntryId === row.targetId) {
+          assert.ok(['error', 'aborted'].includes(call.assistantStopReason) && call.resultLine === undefined,
+            'Only a failed partial assistant call without a result can be classified as retracted');
+          call.retractedLine = line;
+        }
+      }
+    }
+    if (row.type !== 'message') continue;
+    const message = row.message;
+    if (message.role === 'user') userLines.push(line);
+    if (message.role === 'assistant') {
+      assert.equal(message.provider, provider); assert.equal(message.model, model);
+      for (const part of message.content ?? []) {
+        if (part.type !== 'toolCall') continue;
+        assert.ok(typeof part.id === 'string' && !calls.has(part.id), 'Tool calls must have unique native identities');
+        assert.ok(typeof part.name === 'string' && part.arguments && typeof part.arguments === 'object');
+        calls.set(part.id, { id: part.id, name: part.name, arguments: part.arguments, callLine: line,
+          assistantEntryId: row.id, assistantStopReason: message.stopReason });
+      }
+      if (['stop', 'length', 'error', 'aborted'].includes(message.stopReason)) {
+        const output = (message.content ?? []).filter(part => part.type === 'text').map(part => part.text).join('\n');
+        finals.push({ line, stopReason: message.stopReason, bytes: Buffer.byteLength(output), sha256: hash(output) });
+      }
+    }
+    if (message.role === 'toolResult') {
+      const call = calls.get(message.toolCallId);
+      assert.ok(call && call.resultLine === undefined && call.retractedLine === undefined, 'A result must pair with exactly one earlier unretracted tool call');
+      assert.equal(message.toolName, call.name);
+      Object.assign(call, { resultLine: line, isError: message.isError === true,
+        proofKinds: ['contextBrokerPreparation', 'contextBrokerRead', 'contextBrokerResource'].filter(key => message.details?.[key] !== undefined),
+        resultSha256: hash(JSON.stringify(message.content)) });
+    }
+  }
+  assert.ok(models.length > 0 && userLines.length === 1, 'Verify one fresh print submission with its recorded model');
+  assert.ok(finals.length > 0 && finals.at(-1).stopReason === 'stop' && finals.at(-1).bytes > 0, 'A process exit is not a successful final model response');
+  assert.ok([...calls.values()].every(call => call.resultLine !== undefined || call.retractedLine !== undefined), 'A native tool call has no terminal result or explicit failed-response retraction');
+  return { version: 1, sessionId: rows[0].value.id, sha256: hash(text), bytes: Buffer.byteLength(text),
+    lines: rows.length, models, userLines, calls: [...calls.values()].filter(call => call.retractedLine === undefined),
+    retractedCalls: [...calls.values()].filter(call => call.retractedLine !== undefined), projections, finals,
+    errors: [...calls.values()].filter(call => call.isError).map(call => ({ id: call.id, name: call.name, line: call.resultLine })),
+    scope: 'fresh-native-session-identity-and-tool-flow; provider delivery and task semantics require separate observations' };
+}
+
 export function candidatePlan(config) {
   assert.equal(config.version, 1);
   assert.equal(config.scope, 'project-scoped-candidate-precheck');

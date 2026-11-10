@@ -1,11 +1,63 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { candidatePlan, candidateProjectSettings, candidateSourceConfig, candidatePayloadBodies, observeCandidateTask, validateCandidateTurn, candidateTransportCoverage, containsProof } from './verify-pi-daily-candidate.mjs';
+import { candidatePlan, candidateProjectSettings, candidateSourceConfig, candidatePayloadBodies, observeCandidateTask, validateCandidateTurn, candidateTransportCoverage, containsProof, inspectCandidatePrintSession } from './verify-pi-daily-candidate.mjs';
 
 const sha = text => createHash('sha256').update(text).digest('hex');
 const body = 'complete source <tag> & "quoted"\nlast line';
 const file = { sha256: sha(body), bytes: Buffer.byteLength(body), text: body };
+
+const printSession = () => [
+  { type: 'session', id: 'fresh-session', version: 3 },
+  { type: 'model_change', id: 'model', parentId: null, provider: 'magpie', modelId: 'group/worker' },
+  { type: 'message', id: 'user', parentId: 'model', message: { role: 'user', content: [{ type: 'text', text: 'Read the selected reference.' }] } },
+  { type: 'context_edit', id: 'projection', parentId: 'user', targetId: 'user', replacement: { content: 'Original task and complete selected body' } },
+  { type: 'message', id: 'call', parentId: 'projection', message: { role: 'assistant', provider: 'magpie', model: 'group/worker', stopReason: 'toolUse', content: [{ type: 'toolCall', id: 'read-1', name: 'read', arguments: { path: 'sr:Rissued-reference' } }] } },
+  { type: 'message', id: 'result', parentId: 'call', message: { role: 'toolResult', toolName: 'read', toolCallId: 'read-1', isError: false, content: [{ type: 'text', text: 'Full reference' }], details: { contextBrokerResource: { snapshotId: 'fixed' } } } },
+  { type: 'message', id: 'answer', parentId: 'result', message: { role: 'assistant', provider: 'magpie', model: 'group/worker', stopReason: 'stop', content: [{ type: 'text', text: 'The requested facts.' }] } },
+];
+const jsonl = rows => rows.map(row => JSON.stringify(row)).join('\n') + '\n';
+const expectedPrintModel = { provider: 'magpie', model: 'group/worker' };
+
+test('native print inspection binds actual model, tool-call/result IDs and context projections to session lines', () => {
+  const source = jsonl(printSession()), inspected = inspectCandidatePrintSession(source, expectedPrintModel);
+  assert.equal(inspected.sha256, sha(source)); assert.equal(inspected.lines, 7);
+  assert.deepEqual(inspected.userLines, [3]);
+  assert.equal(inspected.calls[0].callLine, 5); assert.equal(inspected.calls[0].resultLine, 6);
+  assert.deepEqual(inspected.calls[0].proofKinds, ['contextBrokerResource']);
+  assert.equal(inspected.projections[0].targetId, 'user'); assert.deepEqual(inspected.errors, []);
+});
+
+test('native print inspection does not accept fallback models, orphan results, partial JSONL or branched history', () => {
+  const rows = printSession();
+  for (const mutate of [
+    value => { value[1].modelId = 'group/flash'; },
+    value => { value[6].message.model = 'another-model'; },
+    value => { value[5].message.toolCallId = 'unrelated'; },
+    value => { value[5].message.toolName = 'bash'; },
+    value => { value[3].parentId = 'model'; },
+    value => { value[3].targetId = 'not-in-session'; },
+    value => { value[6].message.stopReason = 'error'; },
+    value => { value[0].parentSession = '/old/session.jsonl'; },
+    value => { value.splice(5, 1); value[5].parentId = 'call'; },
+  ]) { const changed = structuredClone(rows); mutate(changed); assert.throws(() => inspectCandidatePrintSession(jsonl(changed), expectedPrintModel)); }
+  assert.throws(() => inspectCandidatePrintSession(jsonl(rows).trimEnd(), expectedPrintModel));
+});
+
+test('an explicit retraction of a failed partial model response stays distinct from executed tools', () => {
+  const rows = printSession();
+  const failed = { ...structuredClone(rows[4]), id: 'partial', parentId: 'projection' };
+  failed.message.stopReason = 'error'; failed.message.content[0].id = 'partial-call';
+  const retract = { type: 'context_edit', id: 'retract', parentId: 'partial', targetId: 'partial', replacement: null };
+  rows[4].parentId = 'retract'; rows.splice(4, 0, failed, retract);
+  const review = inspectCandidatePrintSession(jsonl(rows), expectedPrintModel);
+  assert.equal(review.calls.length, 1); assert.equal(review.retractedCalls.length, 1);
+  assert.equal(review.retractedCalls[0].id, 'partial-call');
+  assert.equal(review.retractedCalls[0].retractedLine, 6);
+  assert.equal(review.finals[0].stopReason, 'error');
+  const noRetraction = structuredClone(rows); noRetraction.splice(5, 1); noRetraction[5].parentId = 'partial';
+  assert.throws(() => inspectCandidatePrintSession(jsonl(noRetraction), expectedPrintModel));
+});
 
 test('candidate package override changes only the reviewed local package slot', () => {
   assert.deepEqual(candidateProjectSettings('/old/broker', '/candidate/broker'), { packages: [{ source: '/old/broker', extensions: [] }, '/candidate/broker'] });
