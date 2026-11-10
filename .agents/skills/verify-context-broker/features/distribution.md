@@ -40,6 +40,16 @@ Preconditions:
 
 ## 默认 SDK 的 CI 安装门禁
 
+原生 `context-broker-host-e2e.mjs` 的 fixture 只有本地 Skill，没有 Notion source。
+Pi 的首次及继续会话都必须保持零 Notion guidance、目录与工具，两个本地正文仍各一份。
+OMP 保留原有 guidance 行为；不能为了让旧断言通过而给 Pi fixture 增加 Notion source。
+已启用来源的目录和 guidance 仍由下述实际 SDK 场景单独验证。
+
+实际 provider 将 Broker 的临时目录消息转换成 user 文本。验证器通过原生最终
+context 的 customType、PID、请求顺序及完整内容摘要绑定这份文本，再核对 SDK
+返回的完整 View。普通 user 文本和工具参数中的同名标签不能取得这份证明。
+安装态 HTTP 重放必须再次核对相同字节，不能把宿主内部观察当成已发送请求。
+
 CI 与 publish 从同一精确 CLI commit frozen install/build，再使用该 checkout 的原 `scripts/sdk-fixture.ts --outdir NEW_ABSOLUTE_DIRECTORY --catalog` 生成受控 fixture。原 all14 fixture 使用 `$RUNNER_TEMP/ntn-skills-sdk-fixture`；第二份追加 `--distinct-names`，写到 `$RUNNER_TEMP/ntn-skills-name-fixture`；第三份追加互斥的 `--ambiguous-names`，写到 `$RUNNER_TEMP/ntn-skills-ambiguity-fixture`。第三份保持各记录的 owner、正文与 Requires，只让 a/c 的名称和 alias 相同，不把 foreign 记录加入权威目录。artifact 分别接收 `--fixture`、`--name-fixture`、`--ambiguity-fixture`，并开启 `--require-sdk`。缺少声明的 fixture 必须在打包或启动宿主前失败，不能退成通用安装路线。普通安装路线的 optional fixture 不改变 CI 的必跑要求，`check-gates` 同时拒绝 producer 漏接、路径漏传、条件跳过、吞掉失败或缺失原件上传。
 
 人工复跑时，`CLI_CHECKOUT` 指向同一固定版本的 CLI 源码，`CLI_ENTRY` 指向完整 CLI 安装入口，`CANDIDATE_DIR` 只含冻结候选，三个 `SDK_*FIXTURE_ROOT` 均为不同的、新的仓外绝对目录：

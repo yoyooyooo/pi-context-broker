@@ -96,6 +96,58 @@ const rows = async path => {
 };
 const textContent = content => typeof content === 'string' ? content : (content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
 function toolResult(context, id) { return [...context.messages].reverse().find(message => message.role === 'toolResult' && message.toolCallId === id); }
+const nativeCatalogEvidence = new WeakMap();
+
+/** Only the Broker's native final-context message can witness a data catalog.
+ * This passive observation never changes model messages or seeds source bytes. */
+export function captureNativeCatalog(messages) {
+  return messages.filter(message => message.role === 'custom' && message.customType === 'context-broker-notion-catalog')
+    .map(message => {
+      const content = typeof message.content === 'string' ? message.content
+        : (message.content ?? []).filter(part => part.type === 'text').map(part => part.text).join('\n');
+      return { sha256: createHash('sha256').update(content).digest('hex'), bytes: Buffer.byteLength(content) };
+    });
+}
+
+export function bindNativeCatalog(context, observation) {
+  assert.ok(observation && Array.isArray(observation.catalogs), 'An actual native catalog observation is required');
+  assert.ok(observation.catalogs.length <= 1, 'A native default directory cannot be duplicated');
+  for (const catalog of observation.catalogs) {
+    assert.match(catalog.sha256, /^[a-f0-9]{64}$/u); assert.ok(Number.isSafeInteger(catalog.bytes) && catalog.bytes > 0);
+    const matches = context.messages.filter(message => message.role === 'user'
+      && hash(textContent(message.content)) === catalog.sha256 && Buffer.byteLength(textContent(message.content)) === catalog.bytes);
+    assert.equal(matches.length, 1, 'One complete actual provider message must match the native catalog');
+  }
+  nativeCatalogEvidence.set(context, observation.catalogs);
+  return context;
+}
+
+export function providerCatalogText(context) {
+  const catalogs = nativeCatalogEvidence.get(context) ?? [];
+  // Recheck on every use so a later projection cannot borrow an old witness.
+  const texts = catalogs.map(catalog => {
+    const matches = context.messages.filter(message => message.role === 'user' && hash(textContent(message.content)) === catalog.sha256
+      && Buffer.byteLength(textContent(message.content)) === catalog.bytes);
+    assert.equal(matches.length, 1, 'Catalog evidence no longer matches the actual provider text');
+    return textContent(matches[0].content);
+  });
+  return [providerSystemText(context), ...texts].filter(Boolean).join('\n\n');
+}
+
+async function providerCaptures(path) {
+  const captures = await rows(path), observations = await rows(join(dirname(path), 'native-catalog.jsonl'));
+  let previous = -1n;
+  for (const capture of captures) {
+    const observation = observations.findLast(row => capture.requestId.startsWith(row.pid + ':') && BigInt(row.atNs) < BigInt(capture.capturedAtNs));
+    assert.ok(observation && Number.isSafeInteger(observation.pid) && observation.pid > 0);
+    assert.match(capture.requestId, new RegExp('^' + observation.pid + ':[1-9][0-9]*$'));
+    assert.ok(isAbsolute(observation.sessionFile) && BigInt(observation.atNs) > previous
+      && BigInt(observation.atNs) < BigInt(capture.capturedAtNs), 'Native catalog observation must belong to this request boundary');
+    previous = BigInt(capture.capturedAtNs);
+    bindNativeCatalog(capture.context, observation);
+  }
+  return captures;
+}
 /** Attach only the original host evidence to byte-identical actual HTTP tool
  * text. This object is for assertions; no receipt is added to the request. */
 export function catalogContextFromHttp(context, captured) {
@@ -107,7 +159,8 @@ export function catalogContextFromHttp(context, captured) {
     assert.equal(textContent(message.content), textContent(original.content), 'HTTP text cannot borrow proof for another rendering');
     return { ...original, content: message.content };
   });
-  return { ...context, messages };
+  const mapped = { ...context, messages }, catalogs = nativeCatalogEvidence.get(captured);
+  return catalogs ? bindNativeCatalog(mapped, { catalogs }) : mapped;
 }
 
 export function bindInjectionContexts(captures, nativeEvents, hooks, { sessionRoot, hostPid } = {}) {
@@ -346,7 +399,7 @@ function catalogDescriptionEvidence(context, expected, fixture, { generatedOnly 
   if (!context || !/^sr:C[A-Za-z0-9_-]{22}$/u.test(expected.ref)) return undefined;
   const messages = context.messages ?? [], xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
   if (!generatedOnly) {
-    const system = providerSystemText(context), card = '<skill><name>' + xml(expected.name) + '</name><description>' + xml(expected.description)
+    const system = providerCatalogText(context), card = '<skill><name>' + xml(expected.name) + '</name><description>' + xml(expected.description)
       + '</description><source>' + xml(expected.source) + '</source><location>' + expected.ref + '</location></skill>';
     const matches = [...system.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)].flatMap(block =>
       [...block[1].matchAll(/<skill>[\s\S]*?<\/skill>/gu)].filter(match => match[0] === card));
@@ -559,7 +612,7 @@ function defaultViewProjection(captures, discovery, events, fixture, { sourceId 
   }
   if (discovery) assert.deepEqual(discovery.records.filter(record => record.in_default_view).map(record => record.name).sort(), expected.records.map(record => record.name).sort());
   const observations = captures.map(capture => {
-    const texts = [providerSystemText(capture.context)];
+    const texts = [providerCatalogText(capture.context)];
     const catalogs = texts.flatMap(text => [...text.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)]);
     assert.ok(catalogs.length <= 1, 'Default directory must not be duplicated in a provider request');
     if (!catalogs.length) return { request_id: capture.requestId,
@@ -612,7 +665,7 @@ export function assertPreflightCatalogProjection(captures, discovery, events, fi
   for (const request of result.provider_requests) assert.equal(request.state, 'ready',
     'An explicit selection that awaited metadata must expose the ready catalog at its first provider request');
   for (const capture of captures) {
-    assert.doesNotMatch(providerSystemText(capture.context), /<ntn-skills-discovery\b[^>]*status="pending"/u);
+    assert.doesNotMatch(providerCatalogText(capture.context), /<ntn-skills-discovery\b[^>]*status="pending"/u);
     for (const [name, body] of bodies) assert.equal(bodyCount(capture.context, body), ['a', 'base'].includes(name) ? 1 : 0,
       name + ': explicit preflight delivers only its complete selected root and Requires');
   }
@@ -641,7 +694,7 @@ export function assertWarmDirectoryProjection(captures, discoveryMessage, fixtur
   assert.deepEqual(full.records.filter(record => record.in_default_view).map(record => record.id).sort(), expected.map(record => record.id).sort());
   const xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
   const observations = captures.map(capture => {
-    const system = providerSystemText(capture.context);
+    const system = providerCatalogText(capture.context);
     assert.doesNotMatch(system, /<ntn-skills-discovery\b[^>]*status="pending"/u, 'Warm directory must be ready from the first actual provider');
     const catalogs = [...system.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)];
     assert.equal(catalogs.length, 1, 'One actual system catalog is required');
@@ -1874,16 +1927,25 @@ async function provider(base) {
   const path = await writeFakeProvider(base);
   let source = await readFile(path, 'utf8');
   const replace = (before, after) => { assert.equal(source.split(before).length, 2, 'Provider fixture shape changed'); source = source.replace(before, after); };
-  replace('import { appendFileSync }', "import { channel } from 'node:diagnostics_channel';\nimport { appendFileSync, readFileSync }");
+  replace('import { appendFileSync }', "import { createHash } from 'node:crypto';\nimport { channel } from 'node:diagnostics_channel';\nimport { appendFileSync, readFileSync }");
   replace('function stream(model, context) {', `${currentProviderTools.toString()}\n${resourceRefsFromNative.toString()}\n${selectScalarProviderCall.toString()}\n${ambiguityCandidatesFromMessage.toString()}\n${selectNamedReferenceCall.toString()}\n${selectNativeRepeatCall.toString()}\n${selectLiveProviderCall.toString()}\n${selectCatalogScaleCall.toString()}\n${selectControlledHttpCall.toString()}\n${selectProviderCall.toString()}\n${holdLifecycleResponse.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, aborted: Boolean(options?.signal?.aborted), monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
   replace('const payload = await options?.onPayload?.({ model: model.id, context }, model);', 'if (typeof options?.onPayload !== "function" || typeof options?.onResponse !== "function") throw new Error("PUBLIC_PROVIDER_HOOKS_REQUIRED");\n      hook("payload_start");\n      const payload = await options.onPayload({ model: model.id, context }, model);\n      hook("payload_end");');
   replace('hook("payload_start");', 'hook("payload_start");\n      if (process.env.SC06_PI_CATALOG_RELEASE === "provider") channel("context-broker.verify-sdk-initialization-release").publish({ pid: process.pid, boundary: "provider" });');
-  replace('JSON.stringify({ model: model.id, context })', 'JSON.stringify({ requestId, model: model.id, context })');
+  replace('JSON.stringify({ model: model.id, context })', 'JSON.stringify({ requestId, model: model.id, context, capturedAtNs: process.hrtime.bigint().toString() })');
   replace('await options?.onResponse?.({ status: 200, headers: { "x-fixture": "deterministic" } }, model);', 'const held = await holdLifecycleResponse(options, hook);\n      await options.onResponse({ status: 200, headers: { "x-fixture": "deterministic" } }, model);\n      if (held) hook("response_callback");\n      hook("response_end");');
   replace('let sent = false;', `let sent = false;\n  let call, prepared = false;\n  async function prepareOutput() {\n    await request();\n    if (!prepared) { call = selectProviderCall(context); if (call) { output.content = [call]; output.stopReason = 'toolUse'; } prepared = true; }\n    return output;\n  }`);
   replace('result: async () => { await request(); return output; }', 'result: prepareOutput');
   replace('await request();\n      for (const event of events) yield event;', `await prepareOutput();\n      if (call) {\n        yield { type: 'start', partial: output };\n        yield { type: 'toolcall_start', contentIndex: 0, partial: output };\n        yield { type: 'toolcall_end', contentIndex: 0, toolCall: call, partial: output };\n        yield { type: 'done', reason: 'toolUse', message: output };\n      } else for (const event of events) yield event;`);
   await writeFile(path, source, { mode: 0o600 });
+  const catalogPackage = join(base, 'native-catalog-observer');
+  await mkdir(catalogPackage);
+  await save(join(catalogPackage, 'package.json'), { name: 'owned-catalog-observer', version: '0.0.0', private: true, pi: { extensions: ['index.mjs'] } });
+  await writeFile(join(catalogPackage, 'index.mjs'), "import {appendFileSync} from 'node:fs';import {createHash} from 'node:crypto';import {dirname,join} from 'node:path';\n"
+    + captureNativeCatalog.toString() + `\nexport default api => { api.on('context_with_system',(event,ctx)=>{
+      appendFileSync(join(dirname(process.env.SC10_PI_PROVIDER_HOOKS),'native-catalog.jsonl'),JSON.stringify({
+        pid:process.pid,sessionFile:ctx.sessionManager.getSessionFile(),atNs:process.hrtime.bigint().toString(),
+        catalogs:captureNativeCatalog(event.messages)})+'\\n',{mode:0o600});
+    }); };\n`, {mode:0o600});
   return path;
 }
 
@@ -2172,10 +2234,10 @@ async function waitForSourceFinality(path, hostPid, options = {}) {
 
 export async function waitForWarmDirectory({ ledger, providerFile, hostPid, fixture, sourceId = 'sdk-fixture', transport = 'sdk', bundledCli }) {
   const started = process.hrtime.bigint();
-  assert.equal((await rows(providerFile)).length, 0, 'Warm barrier precedes every original prompt/provider');
+  assert.equal((await providerCaptures(providerFile)).length, 0, 'Warm barrier precedes every original prompt/provider');
   const initialDirectory = { fixture, sourceId, transport, bundledCli };
   const finality = await waitForSourceFinality(ledger, hostPid, { initialDirectory });
-  assert.equal((await rows(providerFile)).length, 0, 'Warm barrier must not submit extra prompts');
+  assert.equal((await providerCaptures(providerFile)).length, 0, 'Warm barrier must not submit extra prompts');
   const prefix = await readFile(ledger), ended = process.hrtime.bigint();
   const observed = prefix.toString('utf8'); assert.ok(observed.endsWith('\n'), 'Warm source prefix must end at a complete record');
   const sealed = sourceFinality(observed.trimEnd().split('\n').map(JSON.parse), hostPid, { initialDirectory });
@@ -2642,9 +2704,9 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
   };
   const ordinary = async (label, selected) => {
     await publishToolPlan(toolPlan, { mode: 'complete' });
-    const before = (await rows(providerFile)).length, bodyBefore = await bodyOperations();
+    const before = (await providerCaptures(providerFile)).length, bodyBefore = await bodyOperations();
     await rpc.prompt('SC08_' + label + ' Continue the ordinary task without requesting new Skill instructions.');
-    const captures = await rows(providerFile), current = captures.slice(before);
+    const captures = await providerCaptures(providerFile), current = captures.slice(before);
     assert.equal(current.length, 1, label + ': an ordinary continuation has one actual provider request');
     assert.deepEqual(countBodies(current[0].context), counts(selected), label + ': full selected root and Requires body counts');
     const value = { label, boundary: 'actual Pi provider payload', provider_request_id: current[0].requestId,
@@ -2654,7 +2716,7 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
   const compactVariant = async (variant, firstKeptEntryId, originalDelivery, originalProjection) => {
     const labels = originalProjection.records.map(({ name, ref }) => ({ name, ref }));
     const summary = lifecycleCompactionSummary(variant, labels), prefix = variant === 'summary' ? 'compact' : variant + '-compact';
-    const providerBefore = (await rows(providerFile)).length, bodyBefore = await bodyOperations(), nativeBefore = (await rows(nativeEvents)).length;
+    const providerBefore = (await providerCaptures(providerFile)).length, bodyBefore = await bodyOperations(), nativeBefore = (await rows(nativeEvents)).length;
     await save(controlFile, { action: 'compact', variant, firstKeptEntryId, ...(variant === 'forged' ? { labels } : {}) });
     const response = await rpc.command('compact', { customInstructions: 'Use the owned controlled lifecycle summary.' });
     await save(join(output, prefix + '-rpc.json'), response);
@@ -2673,7 +2735,7 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
     assert.equal(controlled[0].first_kept_entry_id, firstKeptEntryId); assert.equal(controlled[0].summary, summary);
     const completed = events.filter(event => event.type === 'session_compact');
     assert.equal(completed.length, 1); assert.equal(completed[0].from_extension, true);
-    assert.equal((await rows(providerFile)).length, providerBefore, 'Controlled compaction must not call the provider');
+    assert.equal((await providerCaptures(providerFile)).length, providerBefore, 'Controlled compaction must not call the provider');
     assert.equal(await bodyOperations(), bodyBefore, 'The compact hook must not fetch or manually deliver source bodies');
     const result = { ...checked, messages: messagesFile, branch: branchLabel + '-branch.json', rpc: prefix + '-rpc.json',
       native_events: { controlled: controlled[0], completed: completed[0] }, provider_requests_during_compact: 0, body_sdk_during_compact: 0 };
@@ -2721,7 +2783,7 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
     await ordinary('BASELINE', false); const baseline = await snapshot('baseline', false);
     await publishToolPlan(toolPlan, { mode: 'prepare' });
     await rpc.prompt('SC08_USE_A_B_C Use the available a, b and c Skills with their complete Requires.');
-    let captures = await rows(providerFile), prepared = toolResult(captures.at(-1).context, 'sc10-prepare');
+    let captures = await providerCaptures(providerFile), prepared = toolResult(captures.at(-1).context, 'sc10-prepare');
     const projection = assertPreparedProjection(prepared, oracle);
     await save(join(output, 'use-projection.json'), projection);
     for (const [name, body] of info.bodies) assert.equal(bodyCount(captures.at(-1).context, body), 1, name);
@@ -2736,7 +2798,7 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
     const oldRef = projection.records.find(record => record.name === 'a').ref, beforeProbe = await bodyOperations();
     await publishToolPlan(toolPlan, { mode: 'lifecycle-probe', id: 'sc08-stale-fork', ref: oldRef });
     await rpc.prompt('SC08_STALE_HANDLE Inspect the supplied handle from the abandoned branch: ' + oldRef);
-    captures = await rows(providerFile);
+    captures = await providerCaptures(providerFile);
     const rejected = toolResult(captures.at(-1).context, 'sc08-stale-fork');
     assert.equal(rejected?.isError, true); assert.match(textContent(rejected.content), /SHORT_REF_UNKNOWN/u);
     assert.deepEqual(countBodies(captures.at(-1).context), counts(false));
@@ -2809,7 +2871,7 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
     const late = await waitHook('response_callback'); assert.equal(late.requestId, held.requestId); assert.equal(late.aborted, true);
     await snapshot('cancelled-after-response', false, {}, ['a', 'base']);
     await ordinary('AFTER_CANCEL', false);
-    const dispatched = (await rows(providerFile)).filter(item => item.requestId === held.requestId);
+    const dispatched = (await providerCaptures(providerFile)).filter(item => item.requestId === held.requestId);
     assert.equal(dispatched.length, 1);
     assert.deepEqual(countBodies(dispatched[0].context), { a: 1, b: 0, c: 0, base: 1 });
     steps.push({ label: 'cancel-after-dispatch', provider_request_id: held.requestId, actual_provider_inputs: 1,
@@ -2856,7 +2918,7 @@ async function runSdkLifecycle({ info, base, output, sessions, providerFile, hoo
   const stable = processes.length > 0 && processes.every(process => process.closed && process.finality?.complete);
   try {
     if (failed) throw Object.assign(new Error(failed.message), failed);
-    const captures = await rows(providerFile);
+    const captures = await providerCaptures(providerFile);
     const hooks = await rows(hookFile);
     assert.equal(new Set(captures.map(capture => capture.requestId)).size, captures.length);
     for (const capture of captures) {
@@ -3462,7 +3524,7 @@ export function assertControlledHttpDirectory(captures, events, { sample, hostPi
   assert.equal(events.filter(event => event.kind === 'object_read').length, 0);
   for (const capture of captures) for (const file of sample.oracle.cold.files)
     assert.equal(bodyCount(capture.context, sample.oracle.cold.contents[file.path]), 0, 'Ordinary prompts must not receive any authored source body');
-  const systems = captures.map(capture => providerSystemText(capture.context));
+  const systems = captures.map(capture => providerCatalogText(capture.context));
   if (held) {
     assert.match(systems[0], /<ntn-skills-discovery status="pending">/u);
     assert.doesNotMatch(systems[0], /<ntn-skills-view-catalog>[\s\S]*<skill>/u);
@@ -3539,6 +3601,7 @@ async function controlledHttpPhase(info, { label, baseRoot, outputRoot, sourceRo
     SC10_PI_BUNDLED_CLI: join(info.packageRoot, 'dist/ntn-skills.mjs'), NODE_OPTIONS: `--import=${preload}` });
   const argv = ['--no-extensions', '--session-dir', sessions, ...(sessionPath ? ['--session', sessionPath] : []),
     '--tools', nativeTools.join(','), '-e', fakeProvider, '-e', shutdownObserver, '-e', info.extension,
+    '-e', join(base, 'native-catalog-observer/index.mjs'),
     '--model', 'context-broker-e2e/fake'];
   if (sessionPath) assert.ok((await realpath(sessionPath)).startsWith(await realpath(baseRoot) + '/'), 'Only this owned cohort session can be resumed');
   await save(join(output, 'launch.json'), { host: info.host, argv, cwd: base, source_mode: 'controlled-http',
@@ -3547,7 +3610,7 @@ async function controlledHttpPhase(info, { label, baseRoot, outputRoot, sourceRo
     rpc_timeout_ms: 60000, controller_retries: 0, real_model: 'not_run', production_notion: 'not_run' });
   let rpc, failed, finality, archive, details, state, beforeClose;
   const control = { output, providerFile, hookFile, ledger, toolPlan, nativeEvents, source,
-    captures: () => rows(providerFile), events: () => rows(ledger) };
+    captures: () => providerCaptures(providerFile), events: () => rows(ledger) };
   try {
     rpc = await startRpc({ host: 'pi', args: argv, cwd: base, env, timeoutMs: 60000 });
     details = await exercise({ ...control, rpc });
@@ -3569,7 +3632,7 @@ async function controlledHttpPhase(info, { label, baseRoot, outputRoot, sourceRo
   try {
     if (failed) throw Object.assign(new Error(failed.message), { code: failed.code });
     assert.equal(finality?.complete, true);
-    const events = await rows(ledger), captures = await rows(providerFile), failures = events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.status === 'failed');
+    const events = await rows(ledger), captures = await providerCaptures(providerFile), failures = events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.status === 'failed');
     assert.ok(failures.every(event => allowedSdkErrors.includes(event.error_code)), 'Only the frozen source errors are expected');
     const projectionFailures = events.filter(event => event.kind === 'sdk_catalog').flatMap(event => catalogOutcomes(event.value).filter(outcome => !outcome.ok));
     assert.ok(projectionFailures.every(outcome => allowedSdkErrors.includes(outcome.error.code)), 'Combined failures remain explicit source outcomes');
@@ -3596,7 +3659,7 @@ async function controlledHttpPhase(info, { label, baseRoot, outputRoot, sourceRo
   } catch (error) {
     const result = { label, status: 'failed', observer_finality: finality?.complete === true,
       error: failed ?? { code: error.code ?? error.name, message: String(error.message) }, source_mode: 'controlled-http' };
-    await save(join(output, 'result.json'), result); return { result, events: await rows(ledger), captures: await rows(providerFile), archive };
+    await save(join(output, 'result.json'), result); return { result, events: await rows(ledger), captures: await providerCaptures(providerFile), archive };
   }
 }
 
@@ -3637,7 +3700,7 @@ async function controlledHttpScenario(name, info, scratch, evidence) {
               if (hold) { await httpBounded(hold.reached, 'metadata request reached'); held = { request_seen_monotonic_ns: process.hrtime.bigint().toString() }; }
               await rpc.prompt('Continue the ordinary conversation. Reply briefly without using any Skill or tools.');
               if (hold) {
-                const capture = (await rows(providerFile)).at(-1), hook = (await rows(hookFile)).find(event => event.requestId === capture.requestId && event.phase === 'payload_end');
+                const capture = (await providerCaptures(providerFile)).at(-1), hook = (await rows(hookFile)).find(event => event.requestId === capture.requestId && event.phase === 'payload_end');
                 assert.ok(hook); held.provider_request_id = capture.requestId; held.provider_payload_end_monotonic_ns = hook.monotonic_ns;
                 held.released_monotonic_ns = process.hrtime.bigint().toString(); hold.release();
               }
@@ -3646,12 +3709,12 @@ async function controlledHttpScenario(name, info, scratch, evidence) {
               assert.equal(settled.complete, true);
               const beforePublication = service.requests.length;
               const publication = await waitForControlledHttpView({ rpc, sample, state: label === 'pending' ? 'ready' : 'failed',
-                captureCount: async () => (await rows(providerFile)).length });
+                captureCount: async () => (await providerCaptures(providerFile)).length });
               const afterPublication = service.requests.length;
               const drained = await waitForSourceFinality(ledger, rpc.lifecycle[0].pid); assert.equal(drained.complete, true);
               const sourceAttempts = service.requests.length;
               const statusProbe = await waitForControlledHttpView({ rpc, sample, state: label === 'pending' ? 'ready' : 'failed', single: true,
-                captureCount: async () => (await rows(providerFile)).length, sourceCount: () => service.requests.length });
+                captureCount: async () => (await providerCaptures(providerFile)).length, sourceCount: () => service.requests.length });
               await rpc.prompt('Continue the same ordinary conversation. Reply briefly without using any Skill or tools.');
               return { ordinary_prompts: 2, held_http: held ?? null, publication,
                 publication_source_http: afterPublication - beforePublication, publication_drain_source_http: sourceAttempts - afterPublication,
@@ -3943,7 +4006,8 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     ...(toolDiscovery ? [] : ['--tools', activeTools.join(',')]), '-e', fakeProvider,
     ...(shutdownObserver ? ['-e', shutdownObserver] : []), '-e', info.extension,
     ...(toolDiscovery ? ['-e', toolDiscovery.extension.path] : []),
-    ...(codemode ? ['-e', join(info.piPackageRoot, 'dist/extensions/codemode/index.js')] : []), '--model', 'context-broker-e2e/fake'];
+    ...(codemode ? ['-e', join(info.piPackageRoot, 'dist/extensions/codemode/index.js')] : []),
+    '-e', join(base, 'native-catalog-observer/index.mjs'), '--model', 'context-broker-e2e/fake'];
   await save(join(output, 'launch.json'), { host: info.host, argv, cwd: base, source_command_configured: false,
     ...(warmDirectory ? { comparison_cell: 'warm-directory', metadata_barrier_timeout_ms: 10000 } : {}),
     source_state: partialEntrypoint ? 'complete controlled current validated by installed SDK, then owned partial cache; fresh Broker cache and Pi session'
@@ -3996,7 +4060,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
         + '. For the final supporting resource, copy the handle from the actual native main directory. Preserve owners and pins; an invalid historical name or failed configured source must remain a failure.' } : {}),
     };
     await rpc.prompt(prompts[name]);
-    let captures = await rows(providerFile); assert.ok(captures.length >= 2);
+    let captures = await providerCaptures(providerFile); assert.ok(captures.length >= 2);
     last = captures.at(-1).context;
     if (name !== 'scoped-command' && !scalarScenario && !ambiguity) {
       discovery = parsedResult(toolResult(last, namedScenario ? 'sc25-search' : 'sc10-search'));
@@ -4010,7 +4074,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       assert.equal(captures.length, catalogScale ? catalogScale.pages + 1 : 2);
       await publishToolPlan(toolPlan, { mode: 'complete' });
       await rpc.prompt('Continue the ordinary task using the now available default directory metadata. Do not read any Skill body.');
-      captures = await rows(providerFile); last = captures.at(-1).context;
+      captures = await providerCaptures(providerFile); last = captures.at(-1).context;
       assert.equal(captures.length, catalogScale ? catalogScale.provider_requests : 3, 'Nonblocking startup and one ordinary continuation are both retained');
       if (catalogScale) {
         catalogScaleEvidence = assertCatalogScalePages(captures, rpc.frames, info.fixture);
@@ -4046,7 +4110,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       assert.equal(selected.length, 1);
       await publishToolPlan(toolPlan, { mode: 'complete' });
       await rpc.prompt('Continue the ordinary task with the selected Skill and the current default directory.');
-      captures = await rows(providerFile); last = captures.at(-1).context;
+      captures = await providerCaptures(providerFile); last = captures.at(-1).context;
       for (const key of ['a', 'base']) assert.equal(bodyCount(last, info.bodies.get(key)), 1, `${key}: full source body exactly once`);
       for (const key of ['b', 'c']) assert.equal(bodyCount(last, info.bodies.get(key)), 0);
       dollarProjection = assertDollarProjection(last, { bodies: info.bodies, snapshots: info.fixture.snapshots, expectCompact: expectCompactContext });
@@ -4237,7 +4301,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       const requestsBeforeRepeat = captures.length; assert.equal(requestsBeforeRepeat, shortResourceRefs ? 4 : 3);
       await publishToolPlan(toolPlan, { mode: 'resource-batch-repeat', ...resourcePlan });
       await rpc.prompt('Read the same fixed resource set again in one read paths call. Keep the same owner and snapshot without activating its main body.');
-      captures = await rows(providerFile); last = captures.at(-1).context;
+      captures = await providerCaptures(providerFile); last = captures.at(-1).context;
       const repeated = toolResult(last, 'sc07-resources-repeat'), repeatedRaw = fromFrame('sc07-resources-repeat');
       const rawRepeatedProof = assertResourceBatchProjection(repeatedRaw, { batch });
       const repeatedProof = assertResourceBatchProjection(repeated, { batch, state: 'replaced' });
@@ -4287,7 +4351,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       assert.equal(requestsBeforeRepeat, 3, 'Search and first preparation produce two tool rounds');
       await publishToolPlan(toolPlan, { mode: 'prepare-repeat' });
       await rpc.prompt('Use the same a, b and c Skills again, keeping their selected versions.');
-      captures = await rows(providerFile); last = captures.at(-1).context;
+      captures = await providerCaptures(providerFile); last = captures.at(-1).context;
       const repeated = toolResult(last, 'sc05-prepare-repeat'), repeatedRaw = fromFrame('sc05-prepare-repeat');
       const rawRepeatedProof = assertPreparedProjection(repeatedRaw, oracle);
       const repeatedProof = assertPreparedProjection(repeated, { ...oracle, state: 'replaced' });
@@ -4406,7 +4470,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       const { originalToolResults: _original, ...publicEvidence } = entrypointEvidence;
       await save(join(output, 'partial-entrypoint-evidence.json'), { ...publicEvidence, object_reads: objectReads, original_session_preserved: true });
     }
-    const captures = await rows(providerFile), hooks = await rows(hookFile);
+    const captures = await providerCaptures(providerFile), hooks = await rows(hookFile);
     for (const capture of captures) assert.deepEqual(hooks.filter(hook => hook.requestId === capture.requestId).map(hook => hook.phase), ['payload_start', 'payload_end', 'response_end']);
     assert.equal(new Set(captures.map(capture => capture.requestId)).size, captures.length);
     const guidance = captures.map(capture => ({ request_id: capture.requestId, ...assertNativeGuidance(capture.context, env.SC10_PI_BUNDLED_CLI) }));
@@ -4482,8 +4546,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
     if (catalogProjectionEvidence) {
       const serialized = await Promise.all(serializer.requests.map(async request => {
         const context = { messages: (await json(join(output, request.request_file))).messages };
-        return { requestId: request.provider_request_id, context: catalogScale || name === 'dollar'
-          ? catalogContextFromHttp(context, captures.find(capture => capture.requestId === request.provider_request_id).context) : context };
+        return { requestId: request.provider_request_id, context: catalogContextFromHttp(context, captures.find(capture => capture.requestId === request.provider_request_id).context) };
       }));
       const httpCatalog = name === 'dollar'
         ? assertPreflightCatalogProjection(serialized, discovery, await rows(ledger), info.fixture, info.bodies, { injectionContexts })
@@ -4621,7 +4684,7 @@ async function liveScenario(info, scratch, evidence) {
   assert.equal(Object.hasOwn(source, 'command'), false);
   const config = join(agentDir, 'context-broker/config.yml');
   await save(config, { sources: [source] }); await save(join(output, 'source.json'), source);
-  await save(join(agentDir, 'settings.json'), { packages: [info.packageRoot] });
+  await save(join(agentDir, 'settings.json'), { packages: [info.packageRoot, join(base, 'native-catalog-observer')] });
   const providerFile = join(output, 'provider.jsonl'), hookFile = join(output, 'provider-hooks.jsonl'), ledger = join(output, 'observer.jsonl');
   const toolPlan = join(base, 'tool-plan.json'), preload = join(base, 'observer.mjs');
   await publishToolPlan(toolPlan, { mode: 'complete' });
@@ -4642,7 +4705,7 @@ async function liveScenario(info, scratch, evidence) {
   await save(join(output, 'cold-start.json'), { absent_roots: roots, empty_sessions: sessions, setup_files: before,
     credentials: 'Inherited local NOTION_API_TOKEN only; no copied auth/config/cache/body', oracle_in_consumer: false });
   const argv = ['--session-dir', sessions, '--tools', nativeTools.join(','), '-e', fakeProvider, '--model', 'context-broker-e2e/fake'];
-  await save(join(output, 'launch.json'), { host: info.host, argv, cwd: base, settings_packages: [info.packageRoot],
+  await save(join(output, 'launch.json'), { host: info.host, argv, cwd: base, settings_packages: [info.packageRoot, join(base, 'native-catalog-observer')],
     source_command_configured: false, target_extension_injected: false, observation_extensions: [fakeProvider, preload] });
   let rpc, failed, finality, beforeClose, defaultView, preparation, resourceProof, autoload, ordinaryBoundary;
   try {
@@ -4679,7 +4742,7 @@ async function liveScenario(info, scratch, evidence) {
     }
     await save(join(output, 'startup-publication.json'), { boundary: 'Read-only public host status after SDK catalog, before the next provider request', observations: publication });
     await rpc.prompt('Continue the ordinary conversation. No Skill body is needed.');
-    const ordinary = await rows(providerFile), initialEvents = await rows(ledger);
+    const ordinary = await providerCaptures(providerFile), initialEvents = await rows(ledger);
     assert.equal(ordinary.length, 2); assert.equal(rpc.frames.filter(frame => frame.type === 'tool_execution_start').length, 0);
     defaultView = assertDefaultViewProjection(ordinary, undefined, initialEvents, info.fixture, info.bodies, { sourceId: source.id });
     assert.ok(['pending', 'ready'].includes(defaultView.provider_requests[0].state), 'Startup exposes its actual pending or complete ready state');
@@ -4691,7 +4754,7 @@ async function liveScenario(info, scratch, evidence) {
     await save(join(output, 'default-view.json'), defaultView);
     await publishToolPlan(toolPlan, { mode: 'live-consume', owner: info.root.record.name, source: source.id, resource_path: info.resource.path });
     await rpc.prompt('Find and use ' + info.root.record.name + ' with its complete Requires. Then read the returned ' + info.resource.path + ' resource.');
-    let captures = await rows(providerFile);
+    let captures = await providerCaptures(providerFile);
     const used = captures.find(capture => toolResult(capture.context, 'live-use'));
     const read = captures.find(capture => toolResult(capture.context, 'live-resource'));
     assert.ok(used && read);
@@ -4704,7 +4767,7 @@ async function liveScenario(info, scratch, evidence) {
     assert.equal(bodyCount(read.context, info.resource.content), 1);
     await publishToolPlan(toolPlan, { mode: 'complete' });
     await rpc.prompt('Continue the ordinary task using the instructions and resource already delivered.');
-    captures = await rows(providerFile);
+    captures = await providerCaptures(providerFile);
     for (const body of [...info.bodies.values(), info.resource.content]) assert.equal(bodyCount(captures.at(-1).context, body), 1, 'Ordinary continuation retains one complete copy');
     assert.deepEqual(rpc.frames.filter(frame => frame.type === 'tool_execution_start').map(frame => frame.toolName), ['notion_list', 'notion_use', 'read']);
     const events = await rows(ledger), reads = events.filter(event => event.kind === 'sdk' && event.operation === 'read');
@@ -4730,7 +4793,7 @@ async function liveScenario(info, scratch, evidence) {
   try {
     if (failed) throw new Error(failed.message);
     assert.equal(finality?.complete, true);
-    const events = await rows(ledger), captures = await rows(providerFile), hooks = await rows(hookFile);
+    const events = await rows(ledger), captures = await providerCaptures(providerFile), hooks = await rows(hookFile);
     for (const capture of captures) {
       assert.deepEqual(hooks.filter(hook => hook.requestId === capture.requestId).map(hook => hook.phase), ['payload_start', 'payload_end', 'response_end']);
       assert.deepEqual(currentProviderTools(capture.context).map(tool => tool.name).sort(), [...nativeTools].sort());

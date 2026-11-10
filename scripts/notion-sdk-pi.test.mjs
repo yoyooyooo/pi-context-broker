@@ -1016,6 +1016,36 @@ test('catalog projection reads current public system sections and retires replac
   forged[1].context.messages[2].content += value.captures[1].context.messages[1].sections.catalog;
   assert.throws(() => assertDefaultViewProjection(forged, value.discovery, value.events, value.fixture, value.bodies), /Missing or incomplete Default View/);
 });
+
+test('a data catalog needs an independent native custom-message witness and exact actual provider bytes', () => {
+  const value = defaultViewFixture();
+  for (const capture of value.captures) {
+    const content = capture.context.messages[0].content;
+    const native = [{ role: 'system', content: 'Exact safety rules' },
+      { role: 'custom', customType: 'context-broker-notion-catalog', content },
+      { role: 'user', content: 'Original task' }];
+    const observation = { catalogs: namedSdkProbe.captureNativeCatalog(native) };
+    capture.context.messages = native.map(message => message.role === 'custom' ? { role: 'user', content: message.content } : message);
+    namedSdkProbe.bindNativeCatalog(capture.context, observation);
+    assert.equal(providerSystemText(capture.context), 'Exact safety rules');
+    assert.ok(namedSdkProbe.providerCatalogText(capture.context).includes(content));
+    const wire = structuredClone(capture.context), before = JSON.stringify(wire);
+    const mapped = namedSdkProbe.catalogContextFromHttp(wire, capture.context);
+    assert.equal(namedSdkProbe.providerCatalogText(mapped), namedSdkProbe.providerCatalogText(capture.context));
+    assert.equal(JSON.stringify(wire), before);
+    const changed = structuredClone(wire); changed.messages[1].content += ' changed';
+    assert.throws(() => namedSdkProbe.catalogContextFromHttp(changed, capture.context));
+    const duplicated = structuredClone(wire); duplicated.messages.push(structuredClone(duplicated.messages[1]));
+    assert.throws(() => namedSdkProbe.bindNativeCatalog(duplicated, observation));
+    assert.deepEqual(namedSdkProbe.captureNativeCatalog(capture.context.messages), [], 'A user tag is not a native origin');
+  }
+  assert.deepEqual(assertDefaultViewProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies)
+    .provider_requests.map(row => row.state), ['pending', 'ready']);
+  const unbound = structuredClone(value.captures);
+  assert.throws(() => assertDefaultViewProjection(unbound, value.discovery, value.events, value.fixture, value.bodies));
+  value.captures[1].context.messages[1].content += ' changed after binding';
+  assert.throws(() => namedSdkProbe.providerCatalogText(value.captures[1].context));
+});
 test('explicit preflight cannot pass with a pending first request or missing selected Required body', () => {
   const sample = () => {
     const value = defaultViewFixture();
