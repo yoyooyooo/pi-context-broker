@@ -228,8 +228,8 @@ test("canonical restored delivery retains fixed relative-resource routing withou
     assertSourceSpan(message, record);
   }
   const native = sourceMessageText(buildCliGuidance({}, nativeTools).content);
-  expect(native).toContain("preserve its owner and snapshot, replace only the logical file path");
-  expect(native).toContain("do not reuse the main file_id for another file");
+  expect(native).toContain("keep owner/snapshot, change only the path");
+  expect(native).toContain("omit the main file_id");
   const config: ConfigFile = { sources: [{ id: "alpha", type: "notion", command: ["/configured/node", "/configured/skills.mjs"] }] };
   const fallback = sourceMessageText(buildCliGuidance(config, ["bash"]).content);
   expect(fallback).toContain("/configured/skills.mjs");

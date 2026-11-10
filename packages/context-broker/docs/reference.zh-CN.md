@@ -258,6 +258,8 @@ OMP 保留既有宿主协议的 `skill_search`、`skill_prepare({roots,purpose})
 
 ### 宿主发现与选中激活
 
+Notion 用法指引由 Broker 在运行时负责，不在全局 `AGENTS.md` 或 `CLAUDE.md` 重复常驻；这些文件只保留跨 Agent 的偏好与行为规范。正常 Pi 指引只讲选路和授权边界，分页、刷新与参数细节留在工具定义中，具体工作流留在选定的 Skill 正文中。原生能力不足时才补充对应来源的 CLI 后备路径。没有启用 Notion source 时，不注入 Notion 指引、目录或工具。
+
 Pi 在 provider 派发前根据公开的 active-tool 列表生成 `<ntn-skills-guidance>`。日常消费使用 `notion_list`、原生 `read` 与 `notion_use`；本地 Skill 保留原生发现和读取。原生读取接受准确的 `sr:C`、`sr:S`、`sr:R` 和 canonical `skill://` 引用。原生发现与读取齐全时，不附上重复 CLI argv 或 shell 模板。缺少能力时，仅在 `bash` 已启用的情况下提供所选来源的 CLI 后备说明；指引不会启用工具。管理使用上文按需发现的 `notion_ctl`。普通续问复用完整正文，当前明确要求的 read/use 仍通过可用且已授权的入口执行。介绍与检查把指令当作内容，不采用其中的工作流或前置检查。`notion_use` 保持模型直接调用；Code mode 内层成功不能证明模型收到完整正文。
 
 OMP 与没有公开工具能力 API 的宿主保留既有 CLI 指引。argv 与宿主命令使用同一 resolver，保留各已启用来源的 id 与可选 database，`list-args`、`read-args`、`files-args`、`resource-read-args` 提供带范围的后备语法。保留 JSON 输出核对 `ok`/`error` 和快照身份，语法失败查看子命令 help。两种指引本身均不发现内容、执行命令或激活 Skill。

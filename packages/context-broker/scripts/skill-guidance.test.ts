@@ -15,6 +15,28 @@ const config: ConfigFile = { sources: [
 const text = (tools?: readonly string[]) => String(buildCliGuidance(config, tools).content);
 const guidanceText = (messages: AgentMessage[]) => String(messages.find(message => message.customType === "ntn-skills-guidance")?.content);
 
+test("native Pi guidance is a bounded routing contract, not a duplicated CLI tutorial", () => {
+  const guidance = text(["read", "notion_list", "notion_use", "bash"]);
+  expect(Buffer.byteLength(guidance)).toBeLessThanOrEqual(900);
+  for (const boundary of ["candidates", "Local Skills", "availability", "read", "notion_use", "Requires", "Members", "snapshot", "sr:", "authorize", "Code mode"])
+    expect(guidance).toContain(boundary);
+  for (const extra of ["<cli", "--query", "refresh:true", "maxNodes", "/configured", "next_cursor", "tool_search", "doctor", "notion-skill-owner"])
+    expect(guidance).not.toContain(extra);
+  expect((guidance.match(/<ntn-skills-guidance>/g) ?? [])).toHaveLength(1);
+});
+
+test("native capability fallback alone adds exact CLI scope without teaching unavailable operations", () => {
+  const baseline = text(["read", "notion_list", "notion_use", "bash"]);
+  const partial = text(["notion_list", "notion_use", "bash"]);
+  expect(partial).toContain("/configured alpha/node");
+  expect(partial).toContain("database-b");
+  expect(partial).not.toContain("/must-not-appear");
+  expect(partial).toContain("read REF");
+  expect(baseline).not.toContain("/configured");
+  expect(text(["notion_list", "notion_use"])).toContain("unavailable");
+  expect(text(["notion_list", "notion_use"])).not.toContain("<cli");
+});
+
 test("native consumption keeps exact references and operation intent without machine commands", () => {
   const guidance = text(full);
   for (const ref of ["sr:C", "sr:S", "sr:R", "skill://"]) expect(guidance).toContain(ref);
@@ -125,12 +147,11 @@ test("Notion source flags are scoped to native installations without rewriting s
   const original = JSON.stringify(history);
   const projected = await h.project("context", history);
   const guidance = guidanceText(projected);
-  expect(guidance).toContain("Notion's Default View controls its default directory");
-  expect(guidance).toContain("Native-loader/editor flags in source text (for example disable-model-invocation) describe native installations");
-  expect(guidance).toContain("reported availability and permissions and the current user intent");
-  expect(guidance).toContain("Local Skills keep their native discovery and read paths");
-  expect(guidance).toContain("does not authorize executing its workflow");
-  expect(guidance).toContain("Choosing a Skill to introduce or inspect uses read");
+  expect(guidance).toContain("beyond the default View");
+  expect(guidance).toContain("Source editor flags do not override Notion tool availability or permissions");
+  expect(guidance).toContain("Local Skills keep native routes");
+  expect(guidance).toContain("Loading does not authorize commands, writes or delegation");
+  expect(guidance).toContain("read inspects entries/resources without activation");
   expect(projected[0]).toBe(system);
   expect(projected).toContain(source);
   expect(JSON.stringify(history)).toBe(original);

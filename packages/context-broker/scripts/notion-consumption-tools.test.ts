@@ -86,7 +86,7 @@ test("Pi guidance uses list, native read and use without exposing machine proof 
   expect(guidance).toContain("read");
   for (const legacy of ["skill_search", "skill_prepare", "skill_graph", "<cli", "purpose use", "graph_lock"])
     expect(guidance).not.toContain(legacy);
-  expect(guidance).toContain("does not authorize executing");
+  expect(guidance).toContain("does not authorize commands, writes or delegation");
   expect(guidance).toContain("Local Skills");
 });
 
