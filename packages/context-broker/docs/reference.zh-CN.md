@@ -203,6 +203,8 @@ Pi 注册扩展和编辑器后在后台发现元数据。交互式和 RPC 的普
 
 当前目录作为一份临时目录数据消息加入最终请求，只包含名称、描述、来源身份和准确引用，不包含未选正文。其他扩展提供精确系统提示时，这份目录仍然可用，安全规则和工具声明保持不变。重复投影只替换 Broker 自己的目录，不追加目录历史或改写原生会话。目录仍在等待或暂不可用时提供 `notion_list` 入口；pending 不表示目录为空。后台请求仍计入发现成本。显式 `$`、精确 `/skill:` 输入、`notion_list`、`notion_use` 和 Notion read 继续检查所需目录、权限、身份和固定快照。选择失败阻断部分指令派发，已替换会话的旧准备不能迟到发布。普通续接保留已经 active 的指令及其选中快照。
 
+在 Notion 网页上直接改 `Enabled` 属于 CLI 缓存以外的操作：已有会话的默认目录和 `notion_list` 可能仍反映先前的元数据观察。精确当前 `read` 才是本次访问的权威结果。若它返回 `CONTENT_DISABLED`，Broker 会就地纠正该 Skill 的目录可用状态并移除旧默认展示，无需再拉取整座目录，也不会改写会话原 pin。之后重新启用，原精确引用仍可由新的当前读取重新核对；已固定历史快照保持会话语义。人工修改后可用 `/context-broker refresh` 明确重新取得目录和 View；普通消息不会每轮轮询 Notion。
+
 Pi 在 input 边界锁定选中提交，待 `agent_start` 提供本次操作的 signal 后，在 `context` hook 内获取目录、图与正文。待提交记录保留原文、图片和已接受的身份。**Stop**、Escape、RPC `abort` 及切换会话都会取消这项获取。准备出错会中止宿主操作，失败或已失效的准备不能继续调用 provider。
 
 Pi 仅在当前请求未取消，且 `after_provider_response` 返回 2xx 状态时记录 active 指令。写入 `context-broker-active-sources` 前，会核对本次请求中的完整正文；Notion 记录还须匹配固定的 `use` 图。该事件发生在收到响应头时，早于响应流结束；它确认请求已被接收，不代表模型完成。缓存文件、`ready` 结果、选中图、摘要和仅展示的 loaded 日志都不能单独证明 active。[Skill 消费运行时](skill-consumption-runtime.md) 说明这些独立状态与兼容路径。

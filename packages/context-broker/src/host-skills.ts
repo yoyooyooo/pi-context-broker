@@ -73,6 +73,8 @@ export function hostSkillName(record: SkillRecord): string {
 function failure(error: unknown): string {
   const code = error !== null && typeof error === "object" && "code" in error ? error.code : undefined;
   if (error instanceof SourceReferenceAmbiguity) return error.message;
+  if (error instanceof SourceError && error.code === "CONTENT_DISABLED")
+    return `context-broker Skill disabled (CONTENT_DISABLED). ${sourceFailureMessage(error.code)}`;
   if (error instanceof SourceError) return `context-broker source ${error.sourceId} unavailable (${error.code}). ${sourceFailureMessage(error.code)}`;
   if (error instanceof InvocationError) return error.message;
   return `context-broker activation failed (${typeof code === "string" && /^[A-Z_]+$/.test(code) ? code : "SOURCE_ACTIVATION_FAILED"})`;
@@ -238,6 +240,11 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   let metadataFallback = false;
   let filesystemCache: string | undefined;
   const hostRecords = new Map<string, SkillRecord>();
+  // Live current reads can observe Notion disablement before an earlier catalog
+  // expires. Do not mutate the cached record: a later exact read must be able
+  // to revalidate the same candidate after an external re-enable.
+  const liveDisabled = new Set<string>();
+  const available = (record: SkillRecord) => record.enabled !== false && !liveDisabled.has(recordIdentity(record));
   let catalogPublication: Promise<void> = Promise.resolve();
   const nativeNames = new Map<string, SkillRecord>();
   const readRecords = new Map<string, SkillRecord>();
@@ -364,7 +371,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         records: selected.map(record => ({
           id: record.id, ref: references.get(record) ?? record.ref, kind: record.kind, name: record.name, description: record.description,
           source: record.sourceId, scope: record.sourceScope, in_default_view: record.defaultDiscovery === true,
-          availability: record.enabled === false ? "disabled" : "available",
+          availability: available(record) ? "available" : "disabled",
         })),
         failures: (piConsumption ? failures : sourceFailures).map(({ sourceId, code }) => ({ source: sourceId, code })),
       };
@@ -653,9 +660,12 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       checkPreparationSignal(signal);
       if (!outcome.ok) throw outcome.error;
       if (generation !== selectedGeneration) throw preparationCancelled();
+      if (record.source === "notion" && !sessionSnapshot) liveDisabled.delete(key);
       finish?.({ value: outcome.value });
       return outcome.value;
     } catch (error) {
+      if (record.source === "notion" && error instanceof SourceError && error.code === "CONTENT_DISABLED"
+        && !signal.aborted && generation === selectedGeneration) liveDisabled.add(key);
       finish?.(error instanceof ReferenceMiss ? { skipped: true } : { error: signal?.aborted ? "Cancelled." : failure(error) });
       throw error;
     } finally {
@@ -1188,8 +1198,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     return { ...(message ? { message } : {}), systemPrompt: adapter.systemPrompt?.(systemPrompt) ?? systemPrompt };
   });
   function catalogSystemPrompt(input: string | string[] | undefined, ctx: ExtensionContext,
-    candidateRefs = modelCandidateReferences([...records, ...defaultRouters], ctx), omitDescription?: (record: SkillRecord) => boolean): string {
-    let systemPrompt = viewSystemPrompt(input, records, defaultRouters, new Set(readRecords.keys()), views, ctx.cwd,
+    candidateRefs = modelCandidateReferences([...records, ...defaultRouters].filter(available), ctx), omitDescription?: (record: SkillRecord) => boolean): string {
+    let systemPrompt = viewSystemPrompt(input, records.filter(available), defaultRouters.filter(available), new Set(readRecords.keys()), views, ctx.cwd,
       record => candidateRefs.get(record), listToolName, piConsumption, omitDescription);
     if (deferredPiDiscovery) {
       if (metadataPending || discoveryError || sourceFailures.some(failure => failure.blocking !== false)) {
@@ -1202,7 +1212,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   if (deferredPiDiscovery) host.on("context_with_system", (event, ctx) => {
     if (event.messages[0]?.role !== "system" || lifecycleController.signal.aborted || piRun?.signal.aborted) return undefined;
     // Render only metadata already observed by the cancellable context boundary.
-    const candidateRefs = modelCandidateReferences([...records, ...defaultRouters], ctx);
+    const candidateRefs = modelCandidateReferences([...records, ...defaultRouters].filter(available), ctx);
     let branch: ReturnType<typeof reduceSessionShortRefs> | undefined;
     try { branch = reduceSessionShortRefs(ctx.sessionManager?.getBranch?.() ?? []); }
     catch { /* Unverifiable branch references cannot justify omitting metadata. */ }
@@ -1210,7 +1220,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const ref = candidateRefs.get(record);
       return record.source === "notion" && ref && record.sourceId && record.sourceScope && record.kind
         ? { ref, source: record.sourceId, scope: record.sourceScope, kind: record.kind, name: record.name,
-          description: record.description, availability: record.enabled === false ? "disabled" : "available" } : undefined;
+          description: record.description, availability: available(record) ? "available" : "disabled" } : undefined;
     };
     const identify = (card: CatalogDescription, canonical?: { id: string; ref: string }): string | undefined => {
         if (!branch || card.availability !== "available") return undefined;
@@ -1234,7 +1244,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const visible = event.messages.filter(message => message.role !== "custom" || message.customType !== section);
     const messages = withSessionSourceReceipts(visible, ctx.sessionManager?.buildSessionProjection?.().entries ?? []);
     const projected = projectCatalogDescriptions({ messages,
-      defaults: [...records, ...defaultRouters].flatMap(record => { const card = defaultCard(record); return card ? [card] : []; }),
+      defaults: [...records, ...defaultRouters].filter(available).flatMap(record => { const card = defaultCard(record); return card ? [card] : []; }),
       identify,
       matchesRead(ref, binding, identity) {
         if (!branch) return false;

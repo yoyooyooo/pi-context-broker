@@ -156,6 +156,7 @@ export function sourceFailureMessage(code: string): string {
     case "NOTION_QUEUE_FULL": return "The shared Notion request queue is full. Let the current work finish, then retry this read.";
     case "NOTION_SCHEDULER_UNAVAILABLE": return "The shared Notion request scheduler is unavailable. Check the local scheduler state and run /context-broker doctor.";
     case "ACCESS_DENIED": return "Grant the existing Notion connection read access to the selected database.";
+    case "CONTENT_DISABLED": return "The Skill is disabled (Enabled=false) in Notion. This is not a source connection failure. Enable it before retrying the exact read; catalog metadata may remain cached until refreshed.";
     default: return "Check the source configuration and access, then run /context-broker refresh.";
   }
 }

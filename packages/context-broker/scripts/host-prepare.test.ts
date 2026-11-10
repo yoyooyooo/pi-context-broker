@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installHostSkills, type HostSkills, type HostSkillOptions } from "../src/host-skills";
+import { SourceError, sourceFailureMessage } from "../src/notion-source";
 import { createActivationFeedback } from "../src/activation-feedback";
 import { buildInjectedContextMessage } from "../src/index";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
@@ -125,6 +126,45 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
   };
   return { ctx, records, root: root!, required: required!, member: member!, graph, calls, persisted, install, emit, session, resourceText, resourceReads, api, sources };
 }
+
+test("a live disabled read corrects stale availability without extra discovery and permits re-enable retry", async () => {
+  const f = await fixture(true);
+  let remoteEnabled = false, metadataRequests = 0;
+  const { host, search } = await f.install(async purpose => {
+    if (!remoteEnabled) throw new SourceError("CONTENT_DISABLED", "controlled");
+    return [f.graph(purpose)];
+  }, { getRecords: async () => {
+    metadataRequests++;
+    return { records: f.records.map(record => ({ ...record, body: undefined, preparationBinding: undefined,
+      defaultDiscovery: record === f.root })), failures: [], lists: [{ sourceId: "controlled", policy: "default", exhaustive: true }] };
+  } });
+  await host.refresh(f.ctx);
+  const availability = async () => {
+    const output = await search.execute("lookup", { query: "root" }, undefined, undefined, f.ctx);
+    if (output.content[0]?.type !== "text") throw new Error("Expected metadata JSON");
+    return JSON.parse(output.content[0].text).records[0]?.availability;
+  };
+  const catalog = async () => JSON.stringify(await f.emit("context_with_system", { messages: [
+    { role: "system", content: "Native safety prompt" }, { role: "user", content: "Inspect root" },
+  ] }, f.ctx));
+  expect(await availability()).toBe("available");
+  expect(await catalog()).toContain("<name>root</name>");
+  const before = metadataRequests;
+  await expect(host.activate(f.root, f.ctx)).rejects.toMatchObject({ code: "CONTENT_DISABLED" });
+  expect(await availability()).toBe("disabled");
+  expect(await catalog()).not.toContain("<name>root</name>");
+  expect(f.root.enabled).toBe(true, "A failed live read must not turn the saved candidate into a permanently disabled record");
+  expect(metadataRequests).toBe(before);
+  expect(sourceFailureMessage("CONTENT_DISABLED")).toContain("Enabled=false");
+  expect(sourceFailureMessage("CONTENT_DISABLED")).not.toContain("source configuration");
+  const blocked = await f.emit("tool_call", { toolName: "read", toolCallId: "disabled-retry", input: { path: f.root.ref } }, f.ctx);
+  expect(JSON.stringify(blocked)).toContain("context-broker Skill disabled (CONTENT_DISABLED)");
+  remoteEnabled = true;
+  expect((await host.activate(f.root, f.ctx)).body).toContain("Exact root");
+  expect(await availability()).toBe("available");
+  expect(await catalog()).toContain("<name>root</name>");
+  expect(metadataRequests).toBe(before);
+});
 
 test("Pi projects the ready default catalog after explicit preparation, not the earlier pending observation", async () => {
   const f = await fixture(true), metadata = Promise.withResolvers<Awaited<ReturnType<HostSkillOptions["getRecords"]>>>();
