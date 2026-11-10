@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { completeDollarRequest, parseCompletionRequest } from "../src/completion";
+import { completeDollarRequest, parseCompletionRequest, type ContentCompletionItem } from "../src/completion";
+import { bundledBuiltinRecords } from "../src/bundled-builtins";
 import { recordIdentity } from "../src/discovery-records";
 import { createDollarSkillAutocompleteProvider, dollarAutocompleteItems } from "../src/dollar";
 import { buildDollarRegistry, invokeForContext } from "../src/index";
@@ -15,8 +16,15 @@ await mkdir(join(remoteRoot, "design-review"));
 await writeFile(join(remoteRoot, "design-review/SKILL.md"), "---\nname: design-review\ndescription: Source review\n---\nSOURCE_BODY_MARKER\n");
 await writeFile(join(root, "design-review/SKILL.md"), "---\nname: design-review\ndescription: Review API boundaries\nautoload:\n  aliases: [架构评审]\n---\nPRIVATE_BODY_MARKER\n");
 const localValue = "$design-review@" + encodeURIComponent("local:" + join(root, "design-review/SKILL.md")) + "@local";
-// Manual values bind a page identity; these assertions also check that identity against its ref.
-const displaySelectors = (items: Array<{ value: string; source?: string; ref?: string }>) => items.map(item => {
+const bundledIdentities = new Map(bundledBuiltinRecords().map(record => [recordIdentity(record), record]));
+const displaySelectors = (items: ContentCompletionItem[]) => items.map(item => {
+  const bundled = bundledIdentities.get(item.identity);
+  if (bundled) {
+    assert.equal(item.value, "$" + bundled.alias + "@builtin");
+    assert.equal(item.source, "local");
+    assert.equal(item.ref, bundled.path, "A bundled token must identify the actual packaged file");
+    return item.value;
+  }
   const match = /^\$(.+)@([^@]+)@([^@]+)$/.exec(item.value);
   assert.ok(match, "Detached completion always returns the existing identity-qualified token");
   if (item.source === "notion") {
@@ -50,6 +58,13 @@ const partial = await completeDollarRequest({ version: 1, text: "$des", cursor: 
 const selectedLocal = partial.items.find(item => item.value === localValue);
 assert.ok(selectedLocal, "A same-name source must leave the local candidate selectable");
 assert.ok(displaySelectors(partial.items).includes("$design-review@notion"), "A failed remote source must preserve later filesystem sources");
+const bundledSuggestions = await completeDollarRequest({ version: 1, text: "$ntn-", cursor: 5, cwd: root }, {
+  sources: [{ id: "broken", type: "notion", command: join(root, "absent-source-cli") }],
+});
+assert.equal(bundledSuggestions.items.length, 3);
+assert.deepEqual(displaySelectors(bundledSuggestions.items).sort(), [...bundledIdentities.values()].map(record => "$" + record.alias + "@builtin").sort());
+assert.throws(() => displaySelectors([{ ...bundledSuggestions.items[0]!, ref: join(root, "impostor/SKILL.md") }]));
+assert.throws(() => displaySelectors([{ ...bundledSuggestions.items[0]!, identity: selectedLocal!.identity }]));
 assert.deepEqual(partial.failures?.map(({ sourceId, namespace, code }) => ({ sourceId, namespace, code })), [{ sourceId: "broken", namespace: "remote", code: "SOURCE_COMMAND_UNAVAILABLE" }]);
 assert.ok(!JSON.stringify(partial).includes("PRIVATE_BODY_MARKER"));
 const mixedConfig = { ...config, sources: [{ id: "source", namespace: "notion", type: "filesystem" as const, roots: [remoteRoot], requireAutoload: false }] };

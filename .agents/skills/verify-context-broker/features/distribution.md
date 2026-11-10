@@ -36,7 +36,8 @@ Preconditions:
 - **证据。** manifest 指向 `broker-artifacts-*`，含 `archives`、`npm/package`、`tern`、`provider.jsonl` 和 session；release tests 的各个 `pi-context-broker-release-*` 保存 repo/remote.git 与 gate.json。transcript 保留所有断言结果，完成后执行 `control.mjs evidence`。
 - **桌面安装。** 本路径仅检查 Tern 文件完整与查询能力；需要证明真实插件装入窗口并能交互时再执行 `run editor`。`verify-native-ui.mjs` 的 `BROKER_UI_EXTENSION` 只选择 Broker 扩展，companion 仍从当前已构建 checkout 重新归档；不能称为直接消费此前冻结的同一 Tern tar。日常 UI runner 使用日常 installed companion，是另一条来源边界。
 
-- **随包消费。** 未配置 source 的冷安装可发现三份 `@builtin` 候选；选择正文并读取相对参考文件。两份产物的 Skill 库存一致，同名本地/Notion 内容可以精确消歧。复用现有包/宿主检查。
+- **随包消费。** 冷安装在显式启用 Notion source 后公布三份 `@builtin` 候选，连接暂不可用也保留离线设置工作流；未启用时不公布。选择正文后可读取相对参考文件。两份产物的 Skill 库存一致，同名本地/Notion 内容可以精确消歧。复用现有包/宿主检查。
+- **补全身份。** 只有已启用 Notion source 时才公布随包工作流。它们的 `$name@builtin` 与包内完整 identity/ref 一起核对；本地及远端候选保留精确身份限定格式。不可仅凭 `@builtin` 后缀接受普通本地文件，也不可用三段 token 的旧断言拒绝合法随包候选。
 
 ## 默认 SDK 的 CI 安装门禁
 
