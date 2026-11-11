@@ -23,8 +23,8 @@
     "packages/context-broker/tsconfig.json": "5b485daf61c3d2f793b77a9c8511a135f40988a402d1e0840b4e9d79a289646d",
     "scripts/skill-preparation-evidence.mjs": "e3f25b4e62e125543c48f5263c178c69071163a54b404a8963aa11221df12bdf",
     "scripts/skill-preparation-evidence.test.mjs": "3205a96b55844a40d2c1194ccb2485be4d570fd1e4f07156a2a8529676283275",
-    "scripts/notion-sdk-pi.mjs": "c4cafda43fa1b8b1b6fe73815dacc0814ff491db5299bac111d72dd11e8f1d84",
-    "scripts/notion-sdk-pi.test.mjs": "552a35175fadf707f35f2ad5766609ba41a5ee5eccccd92e6bf4c34a17af4c21",
+    "scripts/notion-sdk-pi.mjs": "f45359b0e7168abce977d2c6ca997b22a296b0e785c4f5333fa5d85922c8fb58",
+    "scripts/notion-sdk-pi.test.mjs": "f9d72ff8ffe97bb070a97f31812db065ad2fd34514d2ce4d6d12bcf5bbc4cd9a",
     "packages/context-broker/scripts/skill-model-surfaces.test.ts": "876b6c6650bed1f81068c71c1be630fb10ecb951e1cc1a7cb17797cc26d57d5b",
     "packages/context-broker/scripts/session-active.test.ts": "651b81077ba4635f8267c7623f001a5e3e46d65901a4bc646b1b04f5a6b30dcd",
     "packages/context-broker/src/resource-read-types.ts": "fe42ca452633a4919aea0d23ff46789d4de742686f4290d53ca69b00074e92ab",
@@ -185,6 +185,7 @@
   },
   "batch_readonly_review": {
     "issue": "AH-639",
+    "installed_effects_contract_followup": "The original installed Pi artifact gate exposed stale verifier expectations after the package-doc link was repaired: batch public effects were rejected, native-repeat compared per-operation effects for equality, and partial-entrypoint compared complete output with bare source. The existing driver now validates each effects receipt separately while preserving source oracles, exact body spans, block boundaries, raw/session equality and provider disclosure. Targeted negative controls reject missing, malformed or mismatched receipts and lost provider effects. No runtime, model state or transition changes; reuse existing model results without a TLC rerun.",
     "counterexample": "A v2 called read with three issued sr:R refs and readOnly:true, both public schema fields. The Pi adapter rejected the combination before the host; three later scalar reads succeeded. The original timed-out task remains failed.",
     "change": "Allow the existing boolean policy in batch admission and pass it through host/source to SDK readResources. Require both RESOURCE_READ_EFFECTS_VERSION=1 and resource_read_effects_version=1 before strict SDK dispatch. The producer reuses withConsumptionEffects/readOnlyNotion; ordinary legacy results keep unknown effects.",
     "semantics": "Existing owner/pin/File admission, whole-body JSON spans, cancellation, active-main exclusion and source-write policy retain their meanings. Effects are outside resource spans and remain in provider deduplication. This fixes concrete argument and capability wiring; no new finite-model state or transition.",

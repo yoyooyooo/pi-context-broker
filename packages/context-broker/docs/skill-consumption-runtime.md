@@ -20,7 +20,7 @@ Pi 注册 `notion_list({query?, source?, limit?, cursor?})`、`notion_use({ref, 
 
 `readOnly:true` 传给现有 CLI 请求层的语义写拦截，CLI 对应 `--read-only`。需要留存时以 `SHARED_OBSERVATION_REQUIRED` 在首个写前拒绝；内部不允许的写以 `NOTION_READ_ONLY` 失败。固定或已有留存的内容可返回 none。随包 SDK 与构建 manifest 均须声明消费效果 version 1，否则严格请求在调用前失败；显式 source.command 接收同一 CLI flag，旧命令不支持时显式失败。标量参数不改变原生本地读取、图片、分页或批量固定资源的原有合同。
 
-有限模型、故意破坏的反例及源码对应见 [RetentionDisclosure](../../../verification/models/consumer-observations/flows/README.md)。它检查效果披露和只读写边界，不证明任意 LLM 最终回答，也不将模型结果替代真实 Notion/Pi 的 Session、payload 和 HTTP 审计。
+有限模型、故意破坏的反例及源码对应见 [RetentionDisclosure](https://github.com/yoyooyooo/pi-context-broker/blob/4fde322f94e3b74f400f18fa46e4aa5ebf4f6a97/verification/models/consumer-observations/flows/README.md)。它检查效果披露和只读写边界，不证明任意 LLM 最终回答，也不将模型结果替代真实 Notion/Pi 的 Session、payload 和 HTTP 审计。
 
 ## 以下为此前产物的历史实现与证据
 

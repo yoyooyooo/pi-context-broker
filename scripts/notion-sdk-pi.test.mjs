@@ -614,7 +614,7 @@ test('owned object observation preserves callback, promise and sync results and 
   assert.equal(events.filter(event => event.kind === 'object_read' && event.event === 'end' && event.code === 'ENOENT').length, 3);
 });
 
-function resourceFixture(state = 'source') {
+function resourceFixture(state = 'source', effects) {
   const hash = value => createHash('sha256').update(value).digest('hex');
   const snapshot = { scope: 'scope', record: { id: 'shared_skill:fixture:resources' }, snapshot_id: 's_' + 'a'.repeat(64), version_id: 'b'.repeat(64) };
   const source = [
@@ -630,7 +630,8 @@ function resourceFixture(state = 'source') {
   });
   const model = { status: 'ready', files: files.map(file => file.encoding === 'base64'
     ? { kind: 'binary', ref: file.ref, path: file.path, bytes: file.bytes, sha256: file.sha256, output: '/owned/cache/' + file.path }
-    : { kind: 'text', ref: file.ref, path: file.path, content: state === 'replaced' && file.content.length ? 'Already available.' : file.content }) };
+    : { kind: 'text', ref: file.ref, path: file.path, content: state === 'replaced' && file.content.length ? 'Already available.' : file.content }),
+    ...(effects === undefined ? {} : { effects }) };
   const text = JSON.stringify(model);
   const proof = { version: 2, toolCallId: 'resources-' + state, loaded: false,
     selection: { scope: snapshot.scope, owner: snapshot.record.id, snapshot_id: snapshot.snapshot_id, version_id: snapshot.version_id },
@@ -646,7 +647,7 @@ function resourceFixture(state = 'source') {
       ...(state === 'replaced' ? { derived: { reason: 'deduplicate', parentSha256: 'c'.repeat(64) } } : {}) },
   };
   return { batch: { files, snapshot }, message: { role: 'toolResult', toolName: 'read', toolCallId: proof.toolCallId, isError: false,
-    content: [{ type: 'text', text }], structuredContent: model, details: { contextBrokerResource: proof } } };
+    content: [{ type: 'text', text }], structuredContent: model, details: { contextBrokerResource: proof, ...(effects === undefined ? {} : { effects }) } } };
 }
 
 function scalarFixture() {
@@ -875,6 +876,25 @@ test('resource evidence verifies actual UTF-8, BOM/CRLF, zero-length spans and b
   assert.equal(result.files[3].delivered_complete_text, false);
   assert.equal(result.files[3].delivery, undefined);
   assert.equal(JSON.stringify(message), before);
+});
+
+test('batch effects are validated against the receipt outside unchanged source spans', () => {
+  const effects = { version: 1, remote_writes: 'unknown', author_content: 'unknown', retention: [] };
+  for (const state of ['source', 'replaced']) {
+    const value = resourceFixture(state, effects);
+    assert.deepEqual(assertResourceBatchProjection(value.message, { batch: value.batch, state }).effects, effects);
+  }
+  for (const mutate of [
+    message => { delete message.details.effects; },
+    message => { delete message.structuredContent.effects; },
+    message => { message.details.effects = { ...effects, remote_writes: 'none', author_content: 'unchanged' }; },
+    message => { message.structuredContent.effects.version = 2; },
+  ]) {
+    const value = resourceFixture('source', structuredClone(effects)); mutate(value.message);
+    const text = JSON.stringify(value.message.structuredContent); value.message.content[0].text = text;
+    value.message.details.contextBrokerResource.projection.rendered = { sha256: createHash('sha256').update(text).digest('hex'), bytes: Buffer.byteLength(text) };
+    assert.throws(() => assertResourceBatchProjection(value.message, { batch: value.batch }));
+  }
 });
 
 test('resource evidence rejects partial sets, forged identity, wrong spans and leaking binary content', () => {
@@ -1844,7 +1864,7 @@ test('native compact footer retains direct resource refs and checks full hashes/
   }
 });
 
-function nativeRepeatFixture({ expectShort = true, structured = true, splitMain = false } = {}) {
+function nativeRepeatFixture({ expectShort = true, structured = true, splitMain = false, effects = false } = {}) {
   const { batch, messages } = scalarFixture(), native = nativeProjectionFixture();
   batch.main = native.body;
   Object.assign(batch.snapshot.files[0], { bytes: Buffer.byteLength(batch.main), sha256: createHash('sha256').update(batch.main).digest('hex') });
@@ -1873,6 +1893,16 @@ function nativeRepeatFixture({ expectShort = true, structured = true, splitMain 
     }
     return message;
   });
+  if (effects) for (const [index, message] of originals.entries()) {
+    message.details.effects = index === 2
+      ? { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] }
+      : { version: 1, remote_writes: 'unknown', author_content: 'unknown', retention: [] };
+    const footer = '\n\n<notion-effects>' + JSON.stringify(message.details.effects) + '</notion-effects>';
+    if (index % 2) {
+      Object.assign(message.details.contextBrokerResource, { version: 2, delivery: { start: 0, end: file.content.length, encoding: 'raw' } });
+      message.content.push({ type: 'text', text: footer });
+    } else message.content.at(-1).text += footer;
+  }
   const projected = structuredClone(originals);
   projected[2].content[0].text = (expectShort ? 'Already loaded.'
     : `The complete Skill entry for snapshot ${batch.snapshot.snapshot_id} is already present in this active context. This successful repeated read verified the same entry bytes; use the existing instructions and their fixed resource directory.`) + (splitMain ? '' : suffix);
@@ -1967,6 +1997,23 @@ test('native repeat projection preserves separate directory blocks even when fla
       assert.throws(() => assertNativeRepeatProjection(value.captures, value.originals, { batch: value.batch, expectShort }), label);
     }
   }
+});
+
+test('native repeat keeps each operation effects while comparing the same complete body and directory', () => {
+  const value = nativeRepeatFixture({ splitMain: true, effects: true }), before = JSON.stringify(value);
+  assertNativeRepeatProjection(value.captures, value.originals, { batch: value.batch });
+  assert.equal(JSON.stringify(value), before);
+  for (const mutate of [
+    message => { message.content.at(-1).text = message.content.at(-1).text.replace(/\n\n<notion-effects>.*<\/notion-effects>$/u, ''); },
+    message => { message.details.effects = { version: 1, remote_writes: 'unknown', author_content: 'unknown', retention: [] }; },
+  ]) {
+    const sample = nativeRepeatFixture({ splitMain: true, effects: true });
+    mutate(sample.captures.at(-1).context.messages.find(message => message.toolCallId === 'sc15-main-repeat'));
+    assert.throws(() => assertNativeRepeatProjection(sample.captures, sample.originals, { batch: sample.batch }));
+  }
+  const lost = nativeRepeatFixture({ splitMain: true, effects: true });
+  lost.captures.at(-1).context.messages.find(message => message.toolCallId === 'sc15-resource-repeat').content.pop();
+  assert.throws(() => assertNativeRepeatProjection(lost.captures, lost.originals, { batch: lost.batch }));
 });
 
 test('native repeat projection rejects lost source, changed directories, forged delivery markers and request drift', () => {

@@ -787,7 +787,7 @@ export function assertDollarProjection(context, { bodies, snapshots, expectCompa
 
 export function assertNativeProjection(message, { snapshot, body, expectCompact = true }) {
   assert.ok(message && !message.isError);
-  const content = textContent(message.content), proof = message.details?.contextBrokerRead;
+  const content = textContent(nativeMainBeforeEffects(message)), proof = message.details?.contextBrokerRead;
   assert.ok(proof); assert.equal(proof.binding?.record.id, snapshot.record.id); assert.equal(proof.binding?.scope, snapshot.scope);
   assert.equal(proof.snapshotId, snapshot.snapshot_id); assert.equal(proof.binding?.version_id, snapshot.version_id);
   assert.equal(proof.bodySha256, hash(body)); assert.equal(proof.bytes, Buffer.byteLength(body));
@@ -828,7 +828,22 @@ export function assertNativeProjection(message, { snapshot, body, expectCompact 
     resource_refs: model.directory.files.filter(file => file.path !== snapshot.entrypoint).map(file => file.ref),
     footer_bytes: Buffer.byteLength(footer[0]), footer_sha256: hash(footer[0]),
     host_details_bytes: Buffer.byteLength(JSON.stringify(message.details)), full_host_directory: proof.directory !== undefined,
-    compact_contract: expectCompact ? 'verified' : 'not_required_for_baseline' };
+    compact_contract: expectCompact ? 'verified' : 'not_required_for_baseline',
+    ...(message.details?.effects === undefined ? {} : { effects: message.details.effects }) };
+}
+
+function nativeMainBeforeEffects(message) {
+  if (message.details?.effects === undefined) return message.content;
+  const effects = verifyConsumptionEffects(message.details.effects);
+  const footer = '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>';
+  if (typeof message.content === 'string') {
+    assert.ok(message.content.endsWith(footer), 'The native main preserves its exact operation effects');
+    return message.content.slice(0, -footer.length);
+  }
+  assert.ok(Array.isArray(message.content));
+  const last = message.content.at(-1);
+  assert.ok(last?.type === 'text' && last.text.endsWith(footer), 'The native main preserves its exact operation effects');
+  return message.content.map((block, index) => index === message.content.length - 1 ? { ...block, text: block.text.slice(0, -footer.length) } : block);
 }
 
 /** Read only handles actually advertised by the first native main result. */
@@ -866,8 +881,9 @@ export function assertNativeRepeatProjection(captures, originals, { batch, expec
     assert.deepEqual(proof.delivery, { start: 0, end: batch.main.length, encoding: 'raw' });
     return { tool_call_id: message.toolCallId, ...result };
   });
-  assert.deepEqual(originals[2].content, originals[0].content, 'Both actual main reads return the complete same body and directory');
-  const source = textContent(originals[0].content), suffix = source.slice(batch.main.length);
+  const mainContents = [originals[0], originals[2]].map(nativeMainBeforeEffects);
+  assert.deepEqual(mainContents[1], mainContents[0], 'Both actual main reads return the complete same body and directory');
+  const suffix = textContent(mainContents[0]).slice(batch.main.length);
   const refs = JSON.parse(/<skill-directory>\s*([\s\S]*?)\s*<\/skill-directory>/u.exec(suffix)[1]);
   const resourceRef = refs.directory.files.find(value => value.path === file.path).ref;
   const resourceReads = [originals[1], originals[3]].map(message => assertResourceScalarResult(message,
@@ -876,11 +892,13 @@ export function assertNativeRepeatProjection(captures, originals, { batch, expec
     : `The complete Skill entry for snapshot ${batch.snapshot.snapshot_id} is already present in this active context. This successful repeated read verified the same entry bytes; use the existing instructions and their fixed resource directory.`;
   const resourceConfirmation = expectShort ? 'Already available.'
     : `The complete Skill resource ${file.path} for snapshot ${batch.snapshot.snapshot_id} is already present in this active context. This successful repeated read verified the same resource bytes.`;
-  const expectedContent = [source, file.content, mainConfirmation + suffix, resourceConfirmation];
   assert.ok(originals[2].content[0]?.type === 'text' && originals[2].content[0].text.startsWith(batch.main));
   const repeatedMainBlocks = originals[2].content.map((block, index) => index === 0
     ? { ...block, text: mainConfirmation + block.text.slice(batch.main.length) } : block);
-  const expectedBlocks = [originals[0].content, originals[1].content, repeatedMainBlocks, [{ type: 'text', text: resourceConfirmation }]];
+  const repeatedResourceBlocks = originals[3].content.map((block, index) => index === 0
+    ? { ...block, text: resourceConfirmation + block.text.slice(file.content.length) } : block);
+  const expectedBlocks = [originals[0].content, originals[1].content, repeatedMainBlocks, repeatedResourceBlocks];
+  const expectedContent = expectedBlocks.map(textContent);
   const requests = captures.map((capture, index) => {
     for (const [position, id] of ids.entries()) {
       const messages = capture.context.messages.filter(message => message.role === 'toolResult' && message.toolCallId === id);
@@ -890,6 +908,7 @@ export function assertNativeRepeatProjection(captures, originals, { batch, expec
       assert.deepEqual(message.content, expectedBlocks[position], 'Only the repeated body changes; the original native block boundaries and directory remain intact');
       assert.equal(textContent(message.content), expectedContent[position], 'The full native text projection preserves the exact directory suffix');
       if (position < 2) assert.deepEqual(message.details, originals[position].details, 'The first complete delivery retains its original receipt');
+      assert.deepEqual(message.details?.effects, originals[position].details?.effects, 'Provider projection retains this operation effects receipt');
       // Native v1/v3 receipts and structured output describe the original tool
       // result. Provider text is checked independently rather than treating a
       // retained full-text flag as proof that a short marker is source bytes.
@@ -923,7 +942,9 @@ export function assertResourceBatchProjection(message, { batch, state = 'source'
   assert.ok(Array.isArray(message.content) && message.content.length === 1 && message.content[0].type === 'text');
   const content = textContent(message.content), model = JSON.parse(content), proof = message.details?.contextBrokerResource;
   assert.equal(content, JSON.stringify(model), 'The complete resource envelope uses deterministic JSON');
-  exactKeys(model, ['status', 'files'], 'Only public resource results enter model content');
+  const effects = message.details?.effects;
+  exactKeys(model, ['status', 'files', ...(effects === undefined ? [] : ['effects'])], 'Only public resource results and declared effects enter model content');
+  if (effects !== undefined) assert.deepEqual(model.effects, verifyConsumptionEffects(effects), 'Model effects match this batch receipt');
   assert.equal(model.status, 'ready'); assert.equal(model.files.length, batch.files.length);
   if (message.structuredContent !== undefined) assert.deepEqual(message.structuredContent, model, 'Structured output and actual tool text must agree');
   exactKeys(proof, ['version', 'toolCallId', 'loaded', 'selection', 'files', 'projection'], 'Resource proof stays in host details');
@@ -976,6 +997,7 @@ export function assertResourceBatchProjection(message, { batch, state = 'source'
       ...(binary ? { output: file.output } : { delivery: receipt.delivery }) };
   });
   return { tool_call_id: message.toolCallId, state, content: projection.rendered, files: verified,
+    ...(effects === undefined ? {} : { effects }),
     details: { bytes: Buffer.byteLength(JSON.stringify(message.details)), sha256: hash(JSON.stringify(message.details)) } };
 }
 
@@ -4217,7 +4239,12 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       assert.equal(resourceProof.scope, sample.snapshot.scope); assert.equal(resourceProof.snapshot_id, sample.snapshot.snapshot_id);
       assert.equal(resourceProof.version_id, sample.snapshot.version_id); assert.equal(resourceProof.file_id, selected.file_id);
       assert.equal(resourceProof.path, selected.path); assert.equal(resourceProof.bytes, selected.bytes); assert.equal(resourceProof.sha256, selected.sha256);
-      assert.equal(resourceProof.delivered_complete_text, true); assert.equal(textContent(resourceRaw.content), selected.content);
+      const selectedCall = { id: 'sc13-resource', args: { path: resourceRefsFromNative(main, [selected.path])[0] },
+        file: selected, expectedText: selected.content, completeText: true };
+      assertResourceScalarResult(resourceRaw, { batch: sample, call: selectedCall });
+      assertResourceScalarResult(resource, { batch: sample, call: selectedCall });
+      assert.deepEqual(resource.content, resourceRaw.content, 'The provider preserves the complete selected bytes and operation effects');
+      assert.deepEqual(resource.details?.effects, resourceRaw.details?.effects);
       if (resourceProof.materialization !== undefined) assert.deepEqual(resourceProof.materialization, { manifest_complete: true, local_files_ready: false,
         materialized_paths: [sample.snapshot.entrypoint, selected.path].sort(), loaded: false });
       assert.equal(bodyCount(last, sample.main), 1); assert.equal(bodyCount(last, selected.content), 1);
@@ -4323,6 +4350,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       const repeated = toolResult(last, 'sc07-resources-repeat'), repeatedRaw = fromFrame('sc07-resources-repeat');
       const rawRepeatedProof = assertResourceBatchProjection(repeatedRaw, { batch });
       const repeatedProof = assertResourceBatchProjection(repeated, { batch, state: 'replaced' });
+      assert.deepEqual(repeatedProof.effects, rawRepeatedProof.effects, 'Batch deduplication preserves this operation effects');
       assert.equal(repeated.details.contextBrokerResource.projection.derived.parentSha256, rawRepeatedProof.content.sha256);
       assert.equal(textContent(toolResult(last, 'sc07-resources').content), textContent(firstRaw.content));
       assert.deepEqual(repeatedProof.files.find(file => file.state === 'binary'), binary, 'Binary metadata and exact materialized path remain stable');
