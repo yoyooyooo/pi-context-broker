@@ -43,5 +43,13 @@ CLI/SDK 的 version-1 `effects` 描述本次消费：`remote_writes` 为 none、
 
 复用 .agents/skills/verify-notion-skills-integration、verify-context-broker 和 CLI 的 .cursor/skills/verify-ntn-skills。补丁先有能失败的直接反例，再跑必要回归及真实链路；不重复展开无关完整矩阵。每个交接包含 commit、文件列表、命令、exit/进程终局、原始输出和仍未覆盖的门槛。
 
+### AH-623 当前目录身份与策略
+
+2026-11-11 的同源完整目录为 303 条，Default View 为 74 条。历史 25 个 `notion_page` 引用逐个匹配当前同一物理 page/database/data source 的唯一 enabled `shared_skill` 身份；数量来自本次 SDK 原件，不以名称推断。旧引用的精确当前兼容必须保留配置 namespace、credential scope、完整物理 locator、kind 与 canonical main 检查；同页多身份、来源失败、disabled、不同数据库、旧固定 snapshot 都不可猜。返回目录改用当前 canonical identity/ref，未选正文调用仍为零。`remote-catalog.test.ts` 先保留旧解析失败，再覆盖这些正反例；真实 doctor 与实际 Router 选择另验，不能由单测推定。
+
+现有紧凑完整目录与当前已存在的 root-only View 分开比较；窄 View 是候选管理策略，不是权限收缩。名称/描述发现、View 外精确 ref、分页和目录六态保持既有回归。两条超限本地声明按实际文件另审，不提高全局大小限制或截断作者正文。此项是当前目录身份归一化，未新增消费代际、取消或否决状态；既有 Availability/ReadRace 语义保持，不新建近似状态模型。
+
+本次记录的303条真实元数据在候选解析器逐一重放，25/25对应正确当前身份，额外HTTP与正文读取为零；这份元数据重放不冒充真实doctor。历史两个超限声明指向同一taste-skill路径，该本地SKILL.md今日已不存在；Agent Kit既有handoff将该精确路径映射到Notion页4065636c-236e-81cd-9730-ec4b548e90c4，当前目录中存在唯一enabled共享身份。实际配置是否仍保留旧声明、以及正式配置修正仍须独立复查，不能按历史大小声称今日超限或凭同名迁移。原件为`verification-evidence/ah623-20261111-daily-tnQiE9/catalog-identity-{red.log,green.log,typecheck.log,current-replay.json}`。
+
 不永久删除文件，不用 git reset --hard、git clean 或批量 restore。临时材料通过系统 Trash 回收，原始证据和未知操作保持。日用最终继续现有 CLI shim/NTN_SKILLS_DEV_ROOT 与 Broker 源入口，不新增发行目录或第二套缓存系统。
 

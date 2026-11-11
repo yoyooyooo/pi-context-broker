@@ -346,8 +346,13 @@ export function parseCatalogMember(value: unknown): RawCatalogMember {
 
 export function resolveCatalogReference(reference: CatalogRemoteReference, context: CatalogResolutionContext, kind: "skill" | "router"): SkillRecord {
   const sources = (context.sources ?? []).filter(source => source.enabled !== false && source.type === "notion" && (source.namespace ?? source.id) === reference.source.namespace);
-  const observedCandidates = (context.records ?? []).filter(record => record.source === "notion" && record.enabled !== false && sources.some(source => source.id === record.sourceId) && record.id === reference.id);
-  const candidates = observedCandidates.filter(record => record.locator && Object.entries(reference.locator).every(([key, value]) => record.locator![key as keyof typeof record.locator] === value) && Object.keys(record.locator).length === Object.keys(reference.locator).length);
+  const sameLegacyPage = (record: SkillRecord) => reference.locator.type === "notion_page" && record.locator?.type === "shared_skill"
+    && reference.locator.page_id === record.locator.page_id;
+  const observedCandidates = (context.records ?? []).filter(record => record.source === "notion" && record.enabled !== false && sources.some(source => source.id === record.sourceId)
+    && (record.id === reference.id || sameLegacyPage(record)));
+  const candidates = observedCandidates.filter(record => sameLegacyPage(record)
+    ? record.locator?.type === "shared_skill" && reference.locator.database_id === record.locator.database_id && reference.locator.data_source_id === record.locator.data_source_id
+    : record.locator && Object.entries(reference.locator).every(([key, value]) => record.locator![key as keyof typeof record.locator] === value) && Object.keys(record.locator).length === Object.keys(reference.locator).length);
   const candidateLabels = observedCandidates.map(record => `${record.sourceId}:${record.id}:${JSON.stringify(record.locator)}`);
   const fail = (code: string, message: string): never => { throw new CatalogReferenceError(code, message, candidateLabels); };
   if (!sources.length) fail("SOURCE_UNAVAILABLE", `No enabled configured Notion source for namespace ${reference.source.namespace}`);
@@ -358,7 +363,15 @@ export function resolveCatalogReference(reference: CatalogRemoteReference, conte
   if (!record) fail(observedCandidates.length ? "SOURCE_IDENTITY_MISMATCH" : "CATALOG_MEMBER_UNAVAILABLE", `Record ${reference.id} with the declared locator absent from current credential-scoped catalog for ${reference.source.namespace}`);
   const observed = record!;
   const locator = observed.locator;
-  if (!observed.sourceScope || !/^[0-9a-f]{64}$/.test(observed.sourceScope) || !locator || observed.kind !== kind || observed.ref !== reference.ref.split("?")[0]) fail("SOURCE_IDENTITY_MISMATCH", `Reference does not match current ${kind} record ${reference.id}`);
+  // The current catalog grants this mapping. A page match cannot transfer a
+  // historical snapshot between identity protocols or another physical source.
+  const exactEntry = sameLegacyPage(observed) && locator?.type === "shared_skill" && reference.locator.type === "notion_page"
+    ? reference.id === "notion_page:" + locator.page_id
+      && reference.ref === `skill://${locator.page_id}/${observed.entrypoint}`
+      && observed.id === sharedSkillId(locator.library_id, locator.skill_id)
+      && observed.ref === `skill://${encodeURIComponent(observed.id ?? "")}/${observed.entrypoint}`
+    : observed.ref === reference.ref.split("?")[0];
+  if (!observed.sourceScope || !/^[0-9a-f]{64}$/.test(observed.sourceScope) || !locator || observed.kind !== kind || !exactEntry) fail("SOURCE_IDENTITY_MISMATCH", `Reference does not match current ${kind} record ${reference.id}`);
   return observed;
 }
 
@@ -389,7 +402,10 @@ function memberFromRaw(value: unknown, catalogDir: string, scan: ScanConfig, con
   if (raw.type === "remote") {
     try {
       const record = resolveCatalogReference(raw, context, "skill");
-      return { type: "remote", source: raw.source, sourceId: record.sourceId, sourceScope: record.sourceScope, id: record.id, locator: raw.locator, kind: "skill", ref: raw.ref, name: record.name, description: record.description, aliases: record.aliases };
+      const migrated = record.id !== raw.id;
+      return { type: "remote", source: raw.source, sourceId: record.sourceId, sourceScope: record.sourceScope, id: record.id,
+        locator: migrated && record.locator?.type === "shared_skill" ? record.locator : raw.locator,
+        kind: "skill", ref: migrated ? record.ref ?? raw.ref : raw.ref, name: record.name, description: record.description, aliases: record.aliases };
     } catch (error) {
       if (!(error instanceof CatalogReferenceError)) throw error;
       return { ...raw, kind: "skill", name: raw.id, description: `Unavailable: ${error.message}`, unavailable: { code: error.code, message: error.message, candidates: error.candidates } };
@@ -416,7 +432,7 @@ function routerFromRaw(name: string | undefined, value: unknown, catalogPath: st
     const parsed = parseCatalogMember(reference);
     if (parsed.type !== "remote") throw new Error("Remote catalog Router requires remote reference");
     const record = resolveCatalogReference(parsed, context, "router");
-    if (parsed.ref !== record.ref) throw new CatalogReferenceError("SOURCE_IDENTITY_MISMATCH", "Direct remote Router catalog records require the canonical unpinned entry ref");
+    if (parsed.ref.includes("?")) throw new CatalogReferenceError("SOURCE_IDENTITY_MISMATCH", "Direct remote Router catalog records require the canonical unpinned entry ref");
     return record;
   }
   const catalogDir = dirname(catalogPath);
