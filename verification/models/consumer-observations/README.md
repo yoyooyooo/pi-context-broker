@@ -30,3 +30,7 @@ The `current` configurations deliberately retain the audit defects. Their expect
 Availability is bounded to one record and one saved cursor. ReadRace is bounded to two reads and two session epochs. Original validation time, cache origin, known permission denial, Requires attribution, full graph version vectors, provider body proofs and actual source polling have additional TypeScript/SDK/host tests; they are not proved by these finite models. In particular, the models do not prove server linearizability, a wall-clock order across machines, or all future races.
 
 F6 uses the actual metadata consumer and a controlled clock at TTL-1, TTL and subsequent accesses, with concurrent readers and zero body loads. The existing actual installed HTTP suite and live Notion/Pi runs supply the separate transport evidence. Keep per-case source, package, model, native session and wire hashes outside the repository; synchronize `coverage.json` only after tracing the changed implementation and rerunning its affected tests.
+
+## 组合日用流程与效果披露
+
+[flows](flows/README.md)复用同一运行器检查管理到模型输入的组成合同，另保留当前retention副作用不可见的反例。用`--suite flows`显式运行；不把这两项审阅模型算作本节原两项状态模型的已实施扩展，也不把候选报告规则当成模型行为保证。

@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "source_base": "d472dbd0cf708890a3a3e58951485ad87f14d28c",
+  "kind": "composed_design_contracts_with_real_flow_replay_not_refinement_proof",
+  "files": {
+    "packages/context-broker/src/host-skills.ts": "5b39350f485f82db334e6cd8189cbf13478f5685d9e7360500fc247ba5c1826c",
+    "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
+    "packages/context-broker/src/prepare-protocol.ts": "c3642c1bbae38f42fe74865f3b0c362fc9eac13ef7544bb7f651248402382806",
+    "packages/context-broker/src/skill-context-projection.ts": "64f183790385738ff42a2a3afa80928415a4d1a408481ddeec99f2fadb357f0f",
+    "packages/context-broker/src/skill-context-projection-proof.ts": "08767ee5fcc9c10e5fe98fa3744213a2e73407784feff4ca8daf167bab6ce65d",
+    "packages/context-broker/src/notion-sdk.ts": "f7313306ca4d7c2f5af767e9c1f92720ae26962d75f4d5644352fd345b1c226e",
+    "packages/context-broker/src/resource-read-projection.ts": "12f951ea8dc0c23ef83555b2fa4e1d9f688939058f67af956af0c468c90d4f7c",
+    "packages/context-broker/src/session-source-snapshot.ts": "4da0ad3783290e5565617051c298870e6f06d57d82c85d9dc932bc800b837eda"
+  },
+  "cases": [
+    [
+      "ManagementToDelivery",
+      "implemented",
+      []
+    ],
+    [
+      "ManagementToDelivery",
+      "partial-negative",
+      [
+        "CompleteBeforeApplication"
+      ]
+    ],
+    [
+      "ManagementToDelivery",
+      "moving-pin-negative",
+      [
+        "OrdinarySelectionStable"
+      ]
+    ],
+    [
+      "ManagementToDelivery",
+      "mixed-reference-negative",
+      [
+        "ReferenceBelongsToSelection"
+      ]
+    ],
+    [
+      "ManagementToDelivery",
+      "repeat-body-negative",
+      [
+        "FreshFollowupReusesBody"
+      ]
+    ],
+    [
+      "RetentionDisclosure",
+      "current",
+      [
+        "NoFalseZeroWriteReport",
+        "ReadyReportsObservedRetention"
+      ]
+    ],
+    [
+      "RetentionDisclosure",
+      "proposal",
+      []
+    ],
+    [
+      "RetentionDisclosure",
+      "claim-negative",
+      [
+        "NoFalseZeroWriteReport"
+      ]
+    ]
+  ],
+  "ManagementToDelivery": {
+    "observed_source_owners": {
+      "selection_commit": "host-skills.graphPreparation and decoder require complete graph before local commit",
+      "old_session": "selected graph and source-snapshot helpers preserve fixed versions",
+      "support_retirement": "host-skills/resource projection retires verified old main and reference spans",
+      "cache": "Current evidence and SDK original validation timestamps; already valid fixed bodies are reused"
+    },
+    "management_abstraction": "PublishVerified/EditInNotion only map to complete observed receipts, not an atomic remote multi-page transaction",
+    "replay": "An actual newly created root with one Requires and one reference; 5 real Pi turns, CLI edit v1→v2, original native JSONL and actual payload hashes",
+    "bounds": "One root, one Requires, one reference, two selected revisions, one ordered edit cycle",
+    "excluded": [
+      "Actual request budgets or p95; model counts logical acquisitions",
+      "HTTP errors/unknown write recovery",
+      "Credential revocation and cross-machine clocks",
+      "All agent choices or unbounded graph/tree shapes"
+    ]
+  },
+  "RetentionDisclosure": {
+    "finding": "Current compact ready projection has no semantic indication of six confirmed retention POSTs; actual final model says no write",
+    "replay": "native-review.json binds actual native session lines44/48/52, toolCallId and six HTTP request IDs after direct Notion edits",
+    "properties": "ReadyReportsObservedRetention is a proposed caller-visible contract absent today; NoFalseZeroWriteReport records the actual false claim as a counterexample, not an assumption every model will behave that way",
+    "current": "Expected failure retained as an unresolved finding; successful runner means expected outcome matched, not product repaired",
+    "proposal": "Design only. Adds effect evidence AND constrains the reporter to use it. A new field alone cannot prove arbitrary LLM truthfulness",
+    "bound": "One current read after one external edit, one abstract retention event",
+    "excluded": [
+      "Whether every caller is authorized to permit retention",
+      "Exact number/bytes of Records writes",
+      "Execution of scripts/author commands",
+      "General LLM behavior or content truth"
+    ]
+  }
+}

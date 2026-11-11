@@ -7,11 +7,12 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 
 const args=process.argv.slice(2);
 assert.equal(args[0],'--out','Usage: PSTACK_STATECHART_ROOT=/frozen/statechart TLA2TOOLS=/frozen/tla2tools.jar node scripts/verify-consumer-observations.mjs --out /new/absolute/output');
-assert.equal(args.length,2);assert.ok(path.isAbsolute(args[1]));
-const root=fileURLToPath(new URL('../verification/models/consumer-observations/',import.meta.url)),out=args[1];
+const flowSuite=args.length===4&&args[2]==='--suite'&&args[3]==='flows';
+assert.ok(args.length===2||flowSuite,'Only --suite flows is supported as an optional review suite');assert.ok(path.isAbsolute(args[1]));
+const modelRoot=fileURLToPath(new URL('../verification/models/consumer-observations/',import.meta.url)),root=flowSuite?path.join(modelRoot,'flows'):modelRoot,out=args[1];
 const tool=process.env.PSTACK_STATECHART_ROOT,jar=process.env.TLA2TOOLS;
 assert.ok(tool&&path.isAbsolute(tool)&&jar&&path.isAbsolute(jar));
-const hash=bytes=>createHash('sha256').update(bytes).digest('hex'),lock=JSON.parse(fs.readFileSync(path.join(root,'tool-lock.json')));
+const hash=bytes=>createHash('sha256').update(bytes).digest('hex'),lock=JSON.parse(fs.readFileSync(path.join(modelRoot,'tool-lock.json')));
 const repository=fileURLToPath(new URL('../',import.meta.url));
 const coverage=JSON.parse(fs.readFileSync(path.join(root,'coverage.json')));
 for(const[file,expected]of Object.entries(coverage.files))assert.equal(hash(fs.readFileSync(path.join(repository,file))),expected,'Review changed source correspondence before rerunning: '+file);
@@ -24,8 +25,8 @@ fs.rmSync=name=>{const resolved=path.resolve(String(name));assert.equal(path.dir
 const{check}=await import(pathToFileURL(path.join(tool,'scripts/run.ts')).href);
 const{compile}=await import(pathToFileURL(path.join(tool,'scripts/pipeline.ts')).href);
 const{checkView}=await import(pathToFileURL(path.join(tool,'scripts/frontends/view.ts')).href);
-const cases=[['Availability','current',['KnownObservationAgrees','CursorCannotMixAvailability']],['Availability','candidate',[]],['Availability','cursor-negative',['CursorCannotMixAvailability']],['ReadRace','current',['NewestObservationWins']],['ReadRace','candidate',[]],['ReadRace','generation-negative',['NewestObservationWins','NoCrossSessionPublication']]];
-const summary={version:1,toolCommit:lock.commit,tlcSha256:lock.tlc_sha256,coverageSha256:hash(fs.readFileSync(path.join(root,'coverage.json'))),sourceFiles:coverage.files,runs:[],complete:false};
+const cases=flowSuite?coverage.cases:[['Availability','current',['KnownObservationAgrees','CursorCannotMixAvailability']],['Availability','candidate',[]],['Availability','cursor-negative',['CursorCannotMixAvailability']],['ReadRace','current',['NewestObservationWins']],['ReadRace','candidate',[]],['ReadRace','generation-negative',['NewestObservationWins','NoCrossSessionPublication']]];
+const summary={version:1,suite:flowSuite?'flows':'observations',proofScope:coverage.kind??coverage.correspondence,toolCommit:lock.commit,tlcSha256:lock.tlc_sha256,coverageSha256:hash(fs.readFileSync(path.join(root,'coverage.json'))),sourceFiles:coverage.files,runs:[],complete:false};
 for(const[model,variant,expected]of cases){
  const dir=path.join(out,model+'-'+variant);fs.mkdirSync(dir);
  const spec=path.join(root,model+'.tla'),config=path.join(root,model+'.'+variant+'.cfg'),viewFile=path.join(root,model+'.view.mjs');
