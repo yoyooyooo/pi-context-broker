@@ -32,6 +32,10 @@ AH-953 的实施合同在 CLI consume/readSkill/prepareGraph 返回 version-1 `e
 
 此模型区分必要留存和作者修改，不删除历史来制造零写。严格调用通过 `readOnly: true`（CLI `--read-only`）进入原请求层无写边界：需要留存时在首个语义写前拒绝；固定或已留存内容可正常返回 none。诊断 HTTP 计数独立留在证据中，模型只收到最小语义回执。批量固定资源读取不在本切片新增标量参数的范围。
 
+AH-953 的独立源码审阅在 `79ee07fe` 找到两处实现接线缺口：`$` 的多源准备没有传递 operation observer，前源已留存而后源拒绝时可能只剩后源的 none；标量 native read 在准备后、原生执行前的取消检查位于 effects catch 外。既有 `host-prepare.test.ts` 现在分别用已确认 retention 加后源拒绝，以及提交后 `queueMicrotask` 取消复现；失败必须保留原错误身份和已观察的 Skill/File/operation，缺失的后源效果仍为 unknown，取消仍拒绝正文且清除 pending receipt。修复复用原 accumulator/catch，未增加请求、授权或状态维度。`NoFalseZeroWriteReport` 和未知结果披露合同不变；有限模型仍只抽象一次 acquisition/retention，不声称穷举多来源或 JavaScript 调度，这两条实现边界由直接反例证明。Availability/ReadRace 的资格与取消决定不变，双 coverage 同步实际源码和回归绑定。
+
+此修订的同一冻结工具复跑保存在 `verification-evidence/ah955-20261111/ah953-partial-cancel-fix/flows`：13 配置均探索完成、未截断并匹配原预期，历史及故意破坏配置保留原失败性质。命令与进程终局见相邻 `flows.json`，实际两条红例及67项宿主回归见 `red.*` 和 `targeted-final.*`。原六个 Availability/ReadRace 配置本切片未重跑，沿用未改变的资格/取消语义说明，不将 flows 结果宣称为它们的新执行。
+
 ## 源码与证据维护
 
 `coverage.json`绑定实际Broker状态、协议与投影文件，并明确CLI管理步骤的抽象边界。源码hash变化先重审对应，不直接替换hash。真实原件、SDK trace、模型session、只读缓存统计和操作receipt按运行保留；数据写入权威仍由原管理operation负责。

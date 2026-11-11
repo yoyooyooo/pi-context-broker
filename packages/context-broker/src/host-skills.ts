@@ -598,32 +598,45 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
 
   async function prepareMany(selected: readonly SkillRecord[], ctx?: ExtensionContext, signal?: AbortSignal): Promise<void> {
     const combined = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
-    await ready(combined);
-    if (discoveryError) throw discoveryError;
-    const graphRoots = [...new Map(selected.filter(record => record.source === "notion" && record.kind !== "prompt")
-      .map(record => [recordIdentity(record), record])).values()]
-      .filter(record => !gate.active || !preparedForUse.get(gate.active)?.has(recordIdentity(record)) && !misses.get(gate.active)?.has(recordIdentity(record)));
-    if (options.prepareGraph && graphRoots.length) {
-      const finish = feedback.begin(graphRoots[0]!, ctx, "use", options.config.sources?.find(source => source.id === graphRoots[0]!.sourceId && source.type === "notion"));
-      try {
-        const values = await graphPreparation(graphRoots, ctx, combined, "use");
-        finish?.({ value: values.records[0]! });
-      } catch (error) {
-        if (!(error instanceof ReferenceMiss)) { finish?.({ error: combined.aborted ? "Cancelled." : failure(error) }); throw error; }
-        checkPreparationSignal(combined);
-        const missing = graphRoots.find(record => record.sourceId === error.sourceId && record.id === error.recordId);
-        if (!missing) { finish?.({ error: failure(error) }); throw error; }
-        if (gate.active) {
-          const skipped = misses.get(gate.active) ?? new Set<string>();
-          skipped.add(recordIdentity(missing)); misses.set(gate.active, skipped);
+    const observedEffects: ConsumptionEffects[] = [];
+    const policy: ConsumptionPolicy = { observeEffects: effects => observedEffects.push(effects) };
+    try {
+      await ready(combined);
+      if (discoveryError) throw discoveryError;
+      const graphRoots = [...new Map(selected.filter(record => record.source === "notion" && record.kind !== "prompt")
+        .map(record => [recordIdentity(record), record])).values()]
+        .filter(record => !gate.active || !preparedForUse.get(gate.active)?.has(recordIdentity(record)) && !misses.get(gate.active)?.has(recordIdentity(record)));
+      if (options.prepareGraph && graphRoots.length) {
+        const finish = feedback.begin(graphRoots[0]!, ctx, "use", options.config.sources?.find(source => source.id === graphRoots[0]!.sourceId && source.type === "notion"));
+        try {
+          const values = await graphPreparation(graphRoots, ctx, combined, "use", undefined, "extend", true, policy);
+          observedEffects.push(combineConsumptionEffects(values.graphs.map(graph => graph.effects)));
+          finish?.({ value: values.records[0]! });
+        } catch (error) {
+          if (!(error instanceof ReferenceMiss)) { finish?.({ error: combined.aborted ? "Cancelled." : failure(error) }); throw error; }
+          checkPreparationSignal(combined);
+          const missing = graphRoots.find(record => record.sourceId === error.sourceId && record.id === error.recordId);
+          if (!missing) { finish?.({ error: failure(error) }); throw error; }
+          if (gate.active) {
+            const skipped = misses.get(gate.active) ?? new Set<string>();
+            skipped.add(recordIdentity(missing)); misses.set(gate.active, skipped);
+          }
+          // A precise missing explicit root keeps the legacy unavailable result.
+          // Required failures never become ReferenceMiss and cannot enter this path.
+          for (const record of graphRoots) if (recordIdentity(record) !== recordIdentity(missing)) await prepare(record, ctx, combined, policy);
+          finish?.({ skipped: true });
         }
-        // A precise missing explicit root keeps the legacy unavailable result.
-        // Required failures never become ReferenceMiss and cannot enter this path.
-        for (const record of graphRoots) if (recordIdentity(record) !== recordIdentity(missing)) await prepare(record, ctx, combined);
-        finish?.({ skipped: true });
       }
+      for (const record of selected) if (!options.prepareGraph || record.source !== "notion" || record.kind === "prompt")
+        await prepare(record, ctx, combined, record.source === "notion" ? policy : undefined);
+    } catch (error) {
+      if (!observedEffects.length) throw error;
+      const effects = combineConsumptionEffects([...observedEffects, errorConsumptionEffects(error)]);
+      throw Object.assign(error instanceof Error ? error : new Error(failure(error)), {
+        message: JSON.stringify({ error: failure(error), effects }),
+        details: { ...(error instanceof SourceError ? error.details : {}), effects },
+      });
     }
-    for (const record of selected) if (!options.prepareGraph || record.source !== "notion" || record.kind === "prompt") await prepare(record, ctx, combined);
   }
 
   function assertRecordSourceAvailable(record: SkillRecord, failures: readonly SourceFailure[] = sourceFailures): void {
@@ -778,11 +791,11 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
   }
 
-  async function prepare(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal): Promise<PreparedReference> {
+  async function prepare(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<PreparedReference> {
     const entry = gate.active;
     const key = recordIdentity(record);
     if (entry && misses.get(entry)?.has(key)) return { status: "miss" };
-    try { return { status: "ready", record: await activate(record, ctx, signal) }; }
+    try { return { status: "ready", record: await activate(record, ctx, signal, false, "hook", undefined, policy) }; }
     catch (error) {
       if (!(error instanceof ReferenceMiss)) throw error;
       checkPreparationSignal(signal);
@@ -1919,8 +1932,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     checkPreparationSignal(executionSignal);
     const prepared = await prepareRead({ toolName: "read", toolCallId, input }, ctx, executionSignal, "execute");
     if (prepared && "block" in prepared) throw Object.assign(new Error(prepared.reason), { details: { effects: prepared.effects, admission: prepared.admission } });
-    checkPreparationSignal(executionSignal);
     try {
+      checkPreparationSignal(executionSignal);
       const result = await read(prepared?.input ?? input, executionSignal);
       checkPreparationSignal(executionSignal);
       prepared?.assertCurrent?.();

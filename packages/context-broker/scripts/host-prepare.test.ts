@@ -9,11 +9,12 @@ import { createActivationFeedback } from "../src/activation-feedback";
 import { buildInjectedContextMessage } from "../src/index";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { createOmpHostAdapter } from "../src/omp-host-adapter";
+import type { HostCapabilities } from "../src/host-adapter";
 import { deduplicateSourceReads, deferredSourceEntries, sourceDeliveryReceipt, sourceBodyLoaded, sourceMessageText, sessionSourceBindings, withSessionSourceReceipts } from "../src/session-source-snapshot";
 import { materializeNotionEntryFile, publishNotionEntry } from "../src/notion-entry";
 import { projectCatalogDescriptions } from "../src/skill-catalog-projection";
 import { preparationFailureDetails, type PreparedHostGraph, type PreparationPurpose } from "../src/prepare-protocol";
-import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, MessageContent, NativeSkillGraphDefinition, NativeSkillPrepareDefinition, NativeSkillSearchDefinition, SessionEntry, SkillRecord } from "../src/types";
+import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, MessageContent, NativeReadExecutor, NativeSkillGraphDefinition, NativeSkillPrepareDefinition, NativeSkillSearchDefinition, SessionEntry, SkillRecord } from "../src/types";
 import type { SelectionMode } from "../src/session-graph";
 import { noConsumptionWrites, type ConsumptionEffects, type ConsumptionPolicy } from "../src/consumption-effects";
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -100,7 +101,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
       budget: { maxNodes: 64, maxDepth: 16, maxInstructionBytes: 1048576, maxContextBytes: 262144 },
       usage: { prepared_nodes: selected.length, instruction_bytes: selected.reduce((n, record) => n + Buffer.byteLength(record.body!), 0), context_bytes: 4000, max_depth: purpose === "use" ? 1 : 0 } };
   }
-  const install = async (prepareGraph: (purpose: PreparationPurpose, signal?: AbortSignal, policy?: ConsumptionPolicy) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference" | "buildPreparedPrompt">> = {}) => {
+  const install = async (prepareGraph: (purpose: PreparationPurpose, signal?: AbortSignal, policy?: ConsumptionPolicy) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference" | "buildPreparedPrompt" | "persistGraphs">> = {}, adapter?: HostCapabilities) => {
     let host: HostSkills;
     host = await installHostSkills(api, {
       config: { sources },
@@ -114,11 +115,11 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
         await writeFile(output, text);
       }, signal),
       prepareGraph: async (_records, _ctx, signal, purpose, _pins, _bindings, _mode, policy) => { calls.push(purpose); return prepareGraph(purpose, signal, policy); },
-      persistGraphs: (_graphs, _ctx, mode) => { persisted.push(mode); },
+      persistGraphs: discovery.persistGraphs ?? ((_graphs, _ctx, mode) => { persisted.push(mode); }),
       ...(withShortRefs ? { sessionGraph: () => ({ kind: "controlled-selected-graph", scope: identityScope }) } : {}),
       needsPreflightPrompt: text => text.includes("$root"),
       preflightPrompt: async (text, ctx, signal) => { if (text.includes("$root")) await host.prepareMany([root!], ctx, signal); },
-    }, hostKind === "omp" ? createOmpHostAdapter(api) : createPiHostAdapter(api));
+    }, adapter ?? (hostKind === "omp" ? createOmpHostAdapter(api) : createPiHostAdapter(api)));
     if (!search || !tool) throw new Error("Expected native graph tools");
     return { search, tool, graphTool, host };
   };
@@ -200,6 +201,55 @@ test("partial multi-source failure retains prior effects and cannot report zero 
   });
   await expect(tool.execute("partial-effects", { ref: f.root.ref }, undefined, undefined, f.ctx)).rejects.toMatchObject({
     details: { effects: { version: 1, remote_writes: "unknown", author_content: "unknown", retention: retained.retention } } });
+});
+
+test("dollar preflight failure keeps earlier source effects and the original denial", async () => {
+  const retained: ConsumptionEffects = { version: 1, remote_writes: "retained", author_content: "unchanged",
+    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "completed-retention", status: "confirmed" }] };
+  for (const secondEffects of [noConsumptionWrites(), undefined]) {
+    const f = await fixture(true);
+    await f.install(async (_purpose, _signal, policy) => {
+      policy?.observeEffects?.(retained);
+      throw new SourceError("ACCESS_DENIED", "second-source", undefined,
+        secondEffects ? { effects: secondEffects } : undefined);
+    }, { buildPreparedPrompt: async () => buildInjectedContextMessage(f.root, "root") });
+    const user: AgentMessage = { role: "user", content: "$root task" };
+    await f.emit("input", { source: "rpc", text: user.content }, f.ctx);
+    await f.emit("before_agent_start", { prompt: user.content, systemPrompt: "base" }, f.ctx);
+    await f.emit("agent_start", {}, f.ctx);
+    const error = await f.emit("context", { messages: [user] }, f.ctx).then(() => undefined, error => error);
+    const effects = { ...retained, remote_writes: secondEffects ? "retained" : "unknown", author_content: secondEffects ? "unchanged" : "unknown" };
+    expect(error).toBeInstanceOf(SourceError);
+    expect(error).toMatchObject({ code: "ACCESS_DENIED", sourceId: "second-source", details: { effects } });
+    expect(JSON.parse(error.message).effects).toEqual(effects);
+    expect(f.persisted).toEqual([]);
+  }
+});
+
+test("native cancellation after preparation preserves retention and admits no read", async () => {
+  const f = await fixture(), controller = new AbortController();
+  const retained: ConsumptionEffects = { version: 1, remote_writes: "retained", author_content: "unchanged",
+    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "completed-retention", status: "confirmed" }] };
+  const adapter = createPiHostAdapter(f.api);
+  let executeRead: NativeReadExecutor | undefined, nativeCalls = 0;
+  adapter.registerReadExecutor = execute => { executeRead = execute; return () => true; };
+  const { host } = await f.install(async (purpose, _signal, policy) => {
+    policy?.observeEffects?.(retained);
+    return [{ ...f.graph(purpose), effects: retained }];
+  }, { persistGraphs: () => { queueMicrotask(() => controller.abort()); } }, adapter);
+  await host.refresh(f.ctx);
+  if (!executeRead) throw new Error("Expected the native read executor");
+  const input = { path: f.root.ref }, toolCallId = "cancel-after-prepared";
+  const error = await executeRead(input, f.ctx, controller.signal, async () => {
+    nativeCalls++; return { content: [{ type: "text", text: f.root.body! }] };
+  }, toolCallId).then(() => undefined, error => error);
+  expect(controller.signal.aborted).toBe(true);
+  expect(nativeCalls).toBe(0);
+  expect(error).toMatchObject({ code: "SOURCE_ACTIVATION_CANCELLED", details: { effects: retained } });
+  expect(JSON.parse(error.message).effects).toEqual(retained);
+  const late = await f.emit("tool_result", { toolName: "read", toolCallId, input,
+    content: [{ type: "text", text: f.root.body! }], isError: false }, f.ctx);
+  expect(late.every(value => value === undefined)).toBe(true);
 });
 
 function exactDenial(record: SkillRecord, code: "CONTENT_DISABLED" | "ACCESS_DENIED" | "AUTH_REQUIRED" = "CONTENT_DISABLED") {
