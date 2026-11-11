@@ -33,4 +33,4 @@ F6 uses the actual metadata consumer and a controlled clock at TTL-1, TTL and su
 
 ## 组合日用流程与效果披露
 
-[flows](flows/README.md)复用同一运行器检查管理到模型输入的组成合同，另保留当前retention副作用不可见的反例。用`--suite flows`显式运行；不把这两项审阅模型算作本节原两项状态模型的已实施扩展，也不把候选报告规则当成模型行为保证。
+[flows](flows/README.md)复用同一运行器检查管理到模型输入的组成合同，保留旧 retention 副作用不可见的反例，并将 AH-953 的操作效果披露、严格只读和未知 ACK 单独建模。用`--suite flows`显式运行；Availability/ReadRace 的资格、顺序与会话撤销规则保持原状态空间，新的效果回执不充当资格证明。显式报告规则不能保证任意模型的自然语言回答。

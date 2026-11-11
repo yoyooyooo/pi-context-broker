@@ -10,7 +10,7 @@
 node scripts/verify-consumer-observations.mjs --out /new/absolute/flow-output --suite flows
 ```
 
-默认不传 `--suite` 时，原六个观察配置保持不变。新套件8个配置全部要求探索完成、性质有终态并匹配预期；`RetentionDisclosure.current` 失败是已发现且尚未修复的接口缺口。运行器成功只表示这些预期匹配，不表示全部当前模型都通过。
+默认不传 `--suite` 时，原六个观察配置保持不变。流程套件13个配置全部要求探索完成、性质有终态并匹配预期；`RetentionDisclosure.current` 保留历史接口缺口的反例。运行器成功表示所有预期匹配，历史失败不能改判成通过。
 
 ## ManagementToDelivery
 
@@ -22,11 +22,15 @@ node scripts/verify-consumer-observations.mjs --out /new/absolute/flow-output --
 
 ## RetentionDisclosure
 
-目前消费层允许保存原生编辑后的内容为不可变历史。真实路径中，作者先在Notion更新两个文件，后续current use发出6次成功POST留存内容。工具模型输出只有`ok/status/purpose/roots/records`，最终模型却报告“未写入”。
+消费层允许保存原生编辑后的内容为不可变历史。原真实路径中，作者先在Notion更新两个文件，后续current use发出6次成功POST留存内容。旧工具模型输出只有`ok/status/purpose/roots/records`，最终模型却报告“未写入”。原会话、HTTP与失败结论保持不变。
 
-新性质`ReadyReportsObservedRetention`要求已观察的留存副作用在调用者收到ready结果时可识别；现有结果缺少这项合同。`NoFalseZeroWriteReport`记录本次实际无证据的零写入断言。`current`配置展示两条反例；`proposal`仅是设计，分别补效果证据和遵循证据的报告；`claim-negative`说明有字段仍不能证明任意模型会正确报告。
+AH-953 的实施合同在 CLI consume/readSkill/prepareGraph 返回 version-1 `effects`：`remote_writes` 为 none、retained 或 unknown，另列作者正文是否未变及涉及的 Skill/File/operation。Broker 将同次操作回执交付到 `notion_use`、标量原生 read 与 Pi `$`/native 注入；缺失旧生产者回执保留 unknown，不从 HTTP200、文件已存在或固定快照的历史推导零写。失败包含已发生效果和未知结果，正文及完整来源 span 保持原样。
 
-此模型不说明必要retention属于越权内容覆盖，不要求删除留存行为来制造零写。严格只读、历史固定读取和允许留存的当前消费如何暴露给用户，需要单独决定和实现。诊断HTTP计数不是稳定公共语义，不把整份trace或大段提示词交给模型。
+`implemented` 检查正常固定读取和当前留存；`read-only` 检查首个语义写前拒绝；`unknown` 检查丢失 ACK 的失败披露。`ReadOnlyHasNoRemoteWrites` 和 `UnknownOutcomeIsDisclosed` 各有移除对应边界的负配置。SDK 的严格只读还要求代码导出与构建 manifest 都声明 effects version 1，在不兼容时不调用旧操作。
+
+`ReadyReportsObservedRetention` 要求 ready 能识别已观察留存。`NoFalseZeroWriteReport` 只约束模型里的显式报告规则；`current` 展示旧反例，`proposal` 保留原设计，`claim-negative` 继续证明有字段也不能保证任意 LLM 正确报告。真实模型仍须逐份审阅其实际输入与最终回答。
+
+此模型区分必要留存和作者修改，不删除历史来制造零写。严格调用通过 `readOnly: true`（CLI `--read-only`）进入原请求层无写边界：需要留存时在首个语义写前拒绝；固定或已留存内容可正常返回 none。诊断 HTTP 计数独立留在证据中，模型只收到最小语义回执。批量固定资源读取不在本切片新增标量参数的范围。
 
 ## 源码与证据维护
 

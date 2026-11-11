@@ -3,6 +3,7 @@ import { validateSkillPrepareProjection } from "./skill-context-projection-proof
 import { injectedSourceBodies, sessionSourceBindings } from "./session-source-snapshot";
 import type { PreparationBinding } from "./prepare-protocol";
 import type { AgentMessage } from "./types";
+import { isConsumptionEffects } from "./consumption-effects";
 
 export type CatalogDescription = SkillPreparationModelRelation & { source: string; scope: string };
 type Identify = (card: CatalogDescription, canonical?: { id: string; ref: string }) => string | undefined;
@@ -81,7 +82,13 @@ function nativeCards(message: AgentMessage, input: { identify: Identify; matches
     const [source, scope] = identity;
     const binding = sessionSourceBindings([message], scope).find(value => value.record.id === identity[4]);
     if (!binding || binding.body_sha256 !== proof.bodySha256) return [];
-    const suffix = content.slice(Number(proof.delivery.end)), prefix = (typeof message.content === "string" ? "\n\n" : "\n\n\n") + "<skill-directory>\n", end = "\n</skill-directory>";
+    let suffix = content.slice(Number(proof.delivery.end));
+    if (isConsumptionEffects(message.details.effects)) {
+      const effects = "\n\n<notion-effects>" + JSON.stringify(message.details.effects) + "</notion-effects>";
+      if (!suffix.endsWith(effects)) return [];
+      suffix = suffix.slice(0, -effects.length);
+    }
+    const prefix = (typeof message.content === "string" ? "\n\n" : "\n\n\n") + "<skill-directory>\n", end = "\n</skill-directory>";
     if (!suffix.startsWith(prefix) || !suffix.endsWith(end)) return [];
     const encoded = suffix.slice(prefix.length, -end.length), footer: unknown = JSON.parse(encoded);
     if (!object(footer) || Object.keys(footer).length !== 2 || typeof footer.ref !== "string"

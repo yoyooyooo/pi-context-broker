@@ -4,13 +4,23 @@
 
 本次调用者对照、已保留失败及分层验证见[新消费入口迁移记录](notion-consumption-contract-2026-11-05.md)。
 
-Pi 1.4 注册 `notion_list({query?, source?, limit?, cursor?})`、`notion_use({ref, refresh?})` 和原生 `read`。list 只返回候选元数据，`count`/`has_more` 表示当前查询分页，`coverage` 单独报告来源完整性；未知覆盖为 null，不把空页解释为完整空目录。`ref` 可为一个返回引用或一起需要的多个根。use 一次准备根与完整 Requires，read 只检查主文或精确资源，未选 Members 不读正文。普通本地 Skill 保留 Pi 原生路径。
+Pi 注册 `notion_list({query?, source?, limit?, cursor?})`、`notion_use({ref, refresh?, readOnly?})` 和原生 `read`。list 只返回候选元数据，`count`/`has_more` 表示当前查询分页，`coverage` 单独报告来源完整性；未知覆盖为 null，不把空页解释为完整空目录。`ref` 可为一个返回引用或一起需要的多个根。use 一次准备根与完整 Requires，read 只检查主文或精确资源，未选 Members 不读正文。普通本地 Skill 保留 Pi 原生路径。
 
 默认来源的完整目录与 Default View 都通过随包 `listCatalog` SDK 复用 core 查询和缓存，不启动目录 CLI，也不新增 Broker 缓存权威。显式 `source.command` 继续使用旧 CLI 合同及其派生目录缓存；管理命令、OMP 和其他明确兼容路径分别计量。不能据此宣称整个会话没有子进程或网络。
 
 `notion_use` 使用 Pi 的 `exposure: model-only`、`defaultActive: true`，只允许模型顶层调用。`notion_ctl` 为 `deferred`、默认不激活，按需导出固定 canonical ref 或显式 CLI source。旧 `skill_prepare` 会话回执仍按原验证规则读取，历史 toolName 和正文不重写。内部返回、摘要、截断和只落盘不形成完整外层交付；正式边界仍由实际 provider 的完整正文和有效证明决定。
 
 被动 `context-broker.notion-sdk` 观察目录/正文操作及安全请求指标；私有验证驱动可显式订阅 `context-broker.notion-sdk-result` 取得同一调用 ID 的实际返回值。默认运行不订阅原文结果，metrics 不含凭据或正文。现有消费专项包含新工具、分页/覆盖、旧版本回执和 SDK 缺导出反例；安装态、真实 Notion/模型与双机验收另留每次产物身份，以下历史结果不自动升级为新合同结果。
+
+## 消费效果与严格只读
+
+当前消费可能将原生编辑后的内容保存为不可变历史。version-1 `effects` 是这次操作的结果：`remote_writes` 为 `none`、`retained` 或 `unknown`，`author_content` 为 `unchanged` 或 `unknown`；`retention` 列出 Skill page、File、operation 及 confirmed/unknown 状态。它不是已选快照的历史写入清单，也不由 HTTP200、缓存命中或自然语言自述推导。
+
+`notion_use` 在结构化内容中返回 effects，标量原生 read 在完整原文后追加 `<notion-effects>`，Pi `$`/native 注入在同轮添加独立效果文本并保留到原生历史。主文 v3 和资源 v2 回执只覆盖原始内容 span；目录去重和资源去重保留效果文本。多来源部分失败、取消或丢失 ACK 继续披露先前已观察效果与未知状态。旧生产者缺少回执时不能称零写。
+
+`readOnly:true` 传给现有 CLI 请求层的语义写拦截，CLI 对应 `--read-only`。需要留存时以 `SHARED_OBSERVATION_REQUIRED` 在首个写前拒绝；内部不允许的写以 `NOTION_READ_ONLY` 失败。固定或已有留存的内容可返回 none。随包 SDK 与构建 manifest 均须声明消费效果 version 1，否则严格请求在调用前失败；显式 source.command 接收同一 CLI flag，旧命令不支持时显式失败。标量参数不改变原生本地读取、图片、分页或批量固定资源的原有合同。
+
+有限模型、故意破坏的反例及源码对应见 [RetentionDisclosure](../../../verification/models/consumer-observations/flows/README.md)。它检查效果披露和只读写边界，不证明任意 LLM 最终回答，也不将模型结果替代真实 Notion/Pi 的 Session、payload 和 HTTP 审计。
 
 ## 以下为此前产物的历史实现与证据
 

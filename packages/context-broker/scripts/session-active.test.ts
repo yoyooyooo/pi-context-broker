@@ -269,7 +269,9 @@ test("deferred slash selection preserves root and Requires receipts across nativ
       expect(JSON.stringify(f.entries.find(entry => entry.sourceEntry.id === "tool-0")!.sourceEntry)).toBe(rawTool);
     }
     expect(JSON.stringify(f.user)).toBe(originalUser);
-    expect(f.entries[0]!.messages[0]!.content).toEqual([...projectedContent, { type: "text", text: prepared.records.map(record => record.body!).join("\n\n") }]);
+    expect(f.entries[0]!.messages[0]!.content).toEqual([...projectedContent,
+      { type: "text", text: prepared.records.map(record => record.body!).join("\n\n") },
+      { type: "text", text: '<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown","retention":[]}</notion-effects>' }]);
     expect(f.entries.filter(entry => entry.sourceEntry.type === "message").map(entry => entry.sourceEntry.id)).toEqual([
       "user", "assistant-0", "tool-0", "assistant-1", "tool-1", "assistant-2", "tool-2",
     ]);

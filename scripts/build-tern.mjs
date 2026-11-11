@@ -57,6 +57,8 @@ if (readOutputProofVersion !== undefined && (readOutputProofVersion !== 1 || typ
   throw new Error("The selected ntn-skills SDK read output proof is incompatible");
 }
 const catalogDirectoryVersion = selectedSdkApi.CATALOG_DIRECTORY_CONTRACT_VERSION;
+const consumptionEffectsVersion = selectedSdkApi.CONSUMPTION_EFFECTS_VERSION;
+if (consumptionEffectsVersion !== undefined && consumptionEffectsVersion !== 1) throw new Error("Unsupported consumption effects contract");
 if (catalogDirectoryVersion !== undefined && (catalogDirectoryVersion !== 1 || typeof selectedSdkApi.listCatalog !== "function")) {
   throw new Error("The selected ntn-skills SDK catalog directory capability is incompatible");
 }
@@ -111,6 +113,7 @@ const runtimeManifest = { version: 1, package: "ntn-skills", package_version: se
   sdk_version: 1, consumer_contract_version: 1, ...(resourceReadVersion === undefined ? {} : { resource_read_contract_version: resourceReadVersion }),
   ...(readOutputProofVersion === undefined ? {} : { read_output_proof_version: readOutputProofVersion }),
   ...(catalogDirectoryVersion === undefined ? {} : { catalog_directory_contract_version: catalogDirectoryVersion }),
+  ...(consumptionEffectsVersion === undefined ? {} : { consumption_effects_version: consumptionEffectsVersion }),
   cli_sha256: createHash("sha256").update(cliCode).digest("hex"), sdk_sha256: createHash("sha256").update(sdkCode).digest("hex") };
 const licenseFiles = new Map();
 async function collectLicenses(name, from) {

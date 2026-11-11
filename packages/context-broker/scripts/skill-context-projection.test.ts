@@ -40,10 +40,26 @@ test("compilation keeps all author bytes and separates source from JSON-rendered
   expect(JSON.stringify(input)).toBe(before);
 });
 
+test("retention effects reach the model without changing body proofs", () => {
+  const input = fixture();
+  const effects = { version: 1 as const, remote_writes: "retained" as const, author_content: "unchanged" as const,
+    retention: [{ skill_page_id: "root-page", file_id: "main", operation_id: "retention-operation", status: "confirmed" as const }] };
+  const compiled = compileSkillPreparation({ ...input, effects });
+  expect(JSON.parse(compiled.content).effects).toEqual(effects);
+  const span = compiled.bodySpans[0]!;
+  expect(JSON.parse('"' + compiled.content.slice(span.start, span.end) + '"')).toBe(input.records[0]!.content);
+  expect(compiled.projection.records[0]!.source).toEqual(input.records[0]!.source);
+});
+
+test("missing legacy effects are unknown rather than a zero-write claim", () => {
+  expect(JSON.parse(compileSkillPreparation(fixture()).content).effects).toEqual({ version: 1,
+    remote_writes: "unknown", author_content: "unknown", retention: [] });
+});
+
 test("only generated machine fields leave the model envelope; every directory entry remains", () => {
   const input = fixture(), compiled = compileSkillPreparation(input), model: unknown = JSON.parse(compiled.content);
   if (!isSkillPreparationModel(model)) throw new Error("Expected model preparation");
-  expect(Object.keys(model)).toEqual(["ok", "status", "purpose", "roots", "records"]);
+  expect(Object.keys(model)).toEqual(["ok", "status", "purpose", "roots", "records", "effects"]);
   expect(Object.keys(model.records[0]!)).toEqual(["name", "kind", "ref", "content", "directory"]);
   const directory = model.records[0]!.directory!;
   expect(Object.keys(directory)).toEqual(["files", "required", "candidates", "references"]);

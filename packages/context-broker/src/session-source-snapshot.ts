@@ -117,7 +117,7 @@ function verifiedResourceReadProof(message: AgentMessage) {
   if (message.role !== "toolResult" || message.toolName !== "read" || message.isError === true || !object(message.details)
     || Array.isArray(message.content) && message.content.some(part => part.type !== "text")) return undefined;
   const proof = message.details.contextBrokerResource;
-  if (!object(proof) || proof.version !== 1 || proof.delivered_complete_text !== true || proof.loaded !== false
+  if (!object(proof) || ![1, 2].includes(Number(proof.version)) || proof.delivered_complete_text !== true || proof.loaded !== false
     || typeof proof.toolCallId !== "string" || !proof.toolCallId || proof.toolCallId !== message.toolCallId
     || typeof proof.scope !== "string" || !proof.scope || typeof proof.id !== "string" || !proof.id
     || !snapshot(proof.snapshot_id) || proof.file_id !== undefined && (typeof proof.file_id !== "string" || !proof.file_id)
@@ -128,6 +128,13 @@ function verifiedResourceReadProof(message: AgentMessage) {
       || reference.fileId !== proof.file_id || reference.path !== proof.path) return undefined;
   } catch { return undefined; }
   const text = sourceMessageText(message.content);
+  if (proof.version === 2) {
+    const delivery = proof.delivery;
+    if (!object(delivery) || delivery.start !== 0 || delivery.encoding !== "raw" || !Number.isSafeInteger(delivery.end)
+      || Number(delivery.end) < 0 || Number(delivery.end) > text.length) return undefined;
+    const body = text.slice(0, Number(delivery.end));
+    return hash(body) === proof.sha256 && Buffer.byteLength(body) === proof.bytes ? proof : undefined;
+  }
   return hash(text) === proof.sha256 && Buffer.byteLength(text) === proof.bytes ? proof : undefined;
 }
 
@@ -394,7 +401,7 @@ export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[]
       const fileIdentity = proof.file_id === undefined ? ["path", proof.path] : ["file_id", proof.file_id];
       const key = JSON.stringify([proof.scope, proof.id, proof.snapshot_id, fileIdentity, proof.sha256]);
       if (!resources.has(key)) resources.add(key);
-      else if (proof.bytes !== 0) replace(index, 0, sourceMessageText(message.content).length, resourceConfirmation);
+      else if (proof.bytes !== 0) replace(index, 0, proof.version === 2 && object(proof.delivery) ? Number(proof.delivery.end) : sourceMessageText(message.content).length, resourceConfirmation);
       return;
     }
     const batch = verifiedResourceBatchProof(message);

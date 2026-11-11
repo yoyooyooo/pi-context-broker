@@ -787,6 +787,26 @@ test('scalar receipts bind exact native results and reject forged identity, full
   }
 });
 
+test('scalar effects receipts retain exact native spans and reject missing or forged disclosure', () => {
+  const value = scalarFixture(), effects = { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] };
+  for (const [index, message] of value.messages.entries()) {
+    const call = value.calls[index];
+    message.details.effects = effects;
+    Object.assign(message.details.contextBrokerResource, { version: 2, delivery: { start: 0, end: call.expectedText.length, encoding: 'raw' } });
+    message.content.push({ type: 'text', text: '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>' });
+    assert.equal(assertResourceScalarResult(message, { batch: value.batch, call }).loaded, false);
+    for (const mutate of [
+      message => { message.content.pop(); },
+      message => { message.details.contextBrokerResource.delivery.end++; },
+      message => { message.content[0].text += 'changed'; },
+      message => { message.details.effects.remote_writes = 'retained'; },
+    ]) {
+      const invalid = structuredClone(message); mutate(invalid);
+      assert.throws(() => assertResourceScalarResult(invalid, { batch: value.batch, call }));
+    }
+  }
+});
+
 test('short-reference seed is owner/file metadata and cannot hide main delivery or activation', () => {
   const { batch } = scalarFixture(), selected = resourceScalarSelectedFixture(batch, '/owned/unmaterialized');
   assert.equal(Object.hasOwn(selected, 'body'), false); assert.deepEqual(selected.entryManifest.materialized_paths, []);

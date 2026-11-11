@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { parseNativeReference } from "./native-reference";
 import type { ContentRecord, SkillRecord } from "./types";
+import { consumptionEffects, type ConsumptionEffects } from "./consumption-effects";
 
 export type PreparationPurpose = "use" | "inspect";
 export type PreparationBudget = { maxNodes?: number; maxDepth?: number; maxInstructionBytes?: number; maxContextBytes?: number };
@@ -40,6 +41,7 @@ export type PreparedHostGraph = {
   records: SkillRecord[]; bindings: PreparationBinding[]; lock: PreparationGraphLock;
   budget: Required<PreparationBudget>;
   usage: { prepared_nodes: number; instruction_bytes: number; context_bytes: number; max_depth: number };
+  effects?: ConsumptionEffects;
 };
 const Sha = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/u));
 const Snapshot = Schema.String.check(Schema.isPattern(/^s_[a-f0-9]{64}$/u));
@@ -132,17 +134,19 @@ export function decodePreparedGraph(value: unknown, input: { purpose: Preparatio
   if (vector.purpose !== input.purpose || vector.scope !== ready.scope || !isDeepStrictEqual(vector.roots, rootIds)
     || !isDeepStrictEqual(vector.required, ready.required) || !isDeepStrictEqual(vector.bindings, ready.session_bindings)
     || hash(canonical(vector)) !== sha256) invalid();
-  return { ...ready, nodes, session_bindings: bindings, graph_lock: { ...ready.graph_lock, bindings } };
+  return { ...ready, nodes, effects: consumptionEffects(object(value) ? value.effects : undefined), session_bindings: bindings, graph_lock: { ...ready.graph_lock, bindings } };
 }
 
 /** Expose failure provenance and budgets without forwarding raw response bodies or URLs. */
 export type PreparationDenial = { scope: string; id: string; ref: string; code: "CONTENT_DISABLED" | "ACCESS_DENIED" | "AUTH_REQUIRED" };
-export function preparationFailureDetails(value: unknown): { preparation?: unknown; retry_after?: number; denials?: readonly PreparationDenial[] } | undefined {
+export function preparationFailureDetails(value: unknown): { preparation?: unknown; retry_after?: number; denials?: readonly PreparationDenial[]; effects?: ConsumptionEffects } | undefined {
   if (!value || typeof value !== "object") return undefined;
   const details = value as Record<string, unknown>;
+  const effects = details.effects === undefined ? undefined : consumptionEffects(details.effects);
   const retry = typeof details.retry_after === "number" && Number.isFinite(details.retry_after) ? details.retry_after : undefined;
   const raw = details.preparation;
-  if (!raw || typeof raw !== "object") return retry === undefined ? undefined : { retry_after: retry };
+  if (!raw || typeof raw !== "object") return retry === undefined && effects === undefined ? undefined
+    : { ...(retry === undefined ? {} : { retry_after: retry }), ...(effects === undefined ? {} : { effects }) };
   const preparation = raw as Record<string, unknown>;
   const nodes = Array.isArray(preparation.nodes) ? preparation.nodes.filter(object) : [];
   const denials: PreparationDenial[] = [];
@@ -166,6 +170,7 @@ export function preparationFailureDetails(value: unknown): { preparation?: unkno
   }
   return {
     ...(retry === undefined ? {} : { retry_after: retry }),
+    ...(effects === undefined ? {} : { effects }),
     ...(denials.length ? { denials } : {}),
     preparation: {
       version: preparation.version, status: preparation.status, purpose: preparation.purpose, scope: preparation.scope,

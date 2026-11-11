@@ -15,6 +15,7 @@ import { projectCatalogDescriptions } from "../src/skill-catalog-projection";
 import { preparationFailureDetails, type PreparedHostGraph, type PreparationPurpose } from "../src/prepare-protocol";
 import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, MessageContent, NativeSkillGraphDefinition, NativeSkillPrepareDefinition, NativeSkillSearchDefinition, SessionEntry, SkillRecord } from "../src/types";
 import type { SelectionMode } from "../src/session-graph";
+import { noConsumptionWrites, type ConsumptionEffects, type ConsumptionPolicy } from "../src/consumption-effects";
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 function canonical(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -99,7 +100,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
       budget: { maxNodes: 64, maxDepth: 16, maxInstructionBytes: 1048576, maxContextBytes: 262144 },
       usage: { prepared_nodes: selected.length, instruction_bytes: selected.reduce((n, record) => n + Buffer.byteLength(record.body!), 0), context_bytes: 4000, max_depth: purpose === "use" ? 1 : 0 } };
   }
-  const install = async (prepareGraph: (purpose: PreparationPurpose, signal?: AbortSignal) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference">> = {}) => {
+  const install = async (prepareGraph: (purpose: PreparationPurpose, signal?: AbortSignal, policy?: ConsumptionPolicy) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference" | "buildPreparedPrompt">> = {}) => {
     let host: HostSkills;
     host = await installHostSkills(api, {
       config: { sources },
@@ -112,7 +113,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
         resourceReads.push(file.ref);
         await writeFile(output, text);
       }, signal),
-      prepareGraph: async (_records, _ctx, signal, purpose) => { calls.push(purpose); return prepareGraph(purpose, signal); },
+      prepareGraph: async (_records, _ctx, signal, purpose, _pins, _bindings, _mode, policy) => { calls.push(purpose); return prepareGraph(purpose, signal, policy); },
       persistGraphs: (_graphs, _ctx, mode) => { persisted.push(mode); },
       ...(withShortRefs ? { sessionGraph: () => ({ kind: "controlled-selected-graph", scope: identityScope }) } : {}),
       needsPreflightPrompt: text => text.includes("$root"),
@@ -128,6 +129,78 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
   };
   return { ctx, records, root: root!, required: required!, member: member!, graph, calls, persisted, install, emit, session, resourceText, resourceReads, api, sources };
 }
+
+test("normal use and native inspect disclose effects and strict requests reach the same source boundary", async () => {
+  const f = await fixture();
+  const retained = { version: 1 as const, remote_writes: "retained" as const, author_content: "unchanged" as const,
+    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "op-root", status: "confirmed" as const },
+      { skill_page_id: "required", file_id: "main", operation_id: "op-required", status: "confirmed" as const }] };
+  const policies: boolean[] = [];
+  const { tool } = await f.install(async (purpose, _signal, policy) => {
+    policies.push(policy?.readOnly === true);
+    if (policy?.readOnly) throw new SourceError("NOTION_READ_ONLY", "controlled", undefined, { effects: noConsumptionWrites() });
+    const effects = purpose === "inspect" ? { ...retained, retention: retained.retention.slice(0, 1) } : retained;
+    policy?.observeEffects?.(effects);
+    return [{ ...f.graph(purpose), effects }];
+  });
+  const used = await tool.execute("effects-use", { ref: f.root.ref }, undefined, undefined, f.ctx);
+  expect(JSON.parse(sourceMessageText(used.content)).effects).toEqual(retained);
+  const inspected = await nativeRead(f, f.root.ref!, "effects-inspect");
+  expect(sourceMessageText(inspected.content)).toContain("<notion-effects>" + JSON.stringify({ ...retained, retention: retained.retention.slice(0, 1) }) + "</notion-effects>");
+  expect(sourceMessageText(inspected.content).slice(0, f.root.body!.length)).toBe(f.root.body);
+  await expect(tool.execute("effects-strict", { ref: f.root.ref, readOnly: true }, undefined, undefined, f.ctx))
+    .rejects.toMatchObject({ details: { effects: noConsumptionWrites() } });
+  const input = { path: f.root.ref!, readOnly: true };
+  const admission = await f.emit("tool_call", { toolName: "read", toolCallId: "strict-inspect", input }, f.ctx);
+  expect(admission).toContainEqual(expect.objectContaining({ block: true }));
+  expect(JSON.stringify(admission)).toContain('remote_writes\\":\\"none');
+  expect(input.path).toBe(f.root.ref);
+  expect(policies).toEqual([false, false, true, true]);
+});
+
+test("Pi dollar acquisition discloses its own effects in provider and native history without changing source proof", async () => {
+  const f = await fixture(true);
+  const retained = { version: 1 as const, remote_writes: "retained" as const, author_content: "unchanged" as const,
+    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "dollar-retention", status: "confirmed" as const }] };
+  let effects: ConsumptionEffects = retained;
+  await f.install(async purpose => [{ ...f.graph(purpose), effects }], {
+    buildPreparedPrompt: async () => buildInjectedContextMessage(f.root, "root"),
+  });
+  for (const [id, expected] of [["first", retained], ["second", noConsumptionWrites()]] as const) {
+    effects = expected;
+    const user: AgentMessage = { role: "user", content: "$root task " + id };
+    await f.emit("input", { source: "rpc", text: user.content }, f.ctx);
+    await f.emit("before_agent_start", { prompt: user.content, systemPrompt: "base" }, f.ctx);
+    await f.emit("agent_start", {}, f.ctx);
+    const outputs = await f.emit("context", { messages: [user] }, f.ctx);
+    const output = outputs.find(value => value && typeof value === "object" && "messages" in value && Array.isArray(value.messages));
+    if (!output || typeof output !== "object" || !("messages" in output) || !Array.isArray(output.messages)) throw new Error("Expected provider projection");
+    const delivered: AgentMessage[] = output.messages;
+    expect(sourceBodyLoaded(delivered, f.root)).toBe(true);
+    expect(delivered.filter(message => message.customType === "context-broker-consumption-effects"))
+      .toEqual([expect.objectContaining({ content: "<notion-effects>" + JSON.stringify(expected) + "</notion-effects>", details: { effects: expected } })]);
+    const persisted = deferredSourceEntries([{ sourceEntry: { id, type: "message", message: user }, messages: [user] }], id, delivered.slice(1));
+    const edit = persisted?.entries[0], receipt = persisted?.entries[1];
+    if (edit?.type !== "context_edit" || !edit.replacement || receipt?.type !== "custom") throw new Error("Expected native history and proof");
+    expect(sourceMessageText(edit.replacement.content)).toContain("<notion-effects>" + JSON.stringify(expected) + "</notion-effects>");
+    expect(sourceBodyLoaded(withSessionSourceReceipts([{ ...user, content: edit.replacement.content }],
+      [{ sourceEntry: { ...receipt, id: id + "-receipt" }, messages: [] }]), f.root)).toBe(true);
+    await f.emit("before_provider_request", {}, f.ctx);
+    await f.emit("after_provider_response", { status: 200 }, f.ctx);
+  }
+});
+
+test("partial multi-source failure retains prior effects and cannot report zero writes", async () => {
+  const f = await fixture();
+  const retained = { version: 1 as const, remote_writes: "retained" as const, author_content: "unchanged" as const,
+    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "done", status: "confirmed" as const }] };
+  const { tool } = await f.install(async (_purpose, _signal, policy) => {
+    policy?.observeEffects?.(retained);
+    throw new SourceError("NOTION_UNAVAILABLE", "second-source");
+  });
+  await expect(tool.execute("partial-effects", { ref: f.root.ref }, undefined, undefined, f.ctx)).rejects.toMatchObject({
+    details: { effects: { version: 1, remote_writes: "unknown", author_content: "unknown", retention: retained.retention } } });
+});
 
 function exactDenial(record: SkillRecord, code: "CONTENT_DISABLED" | "ACCESS_DENIED" | "AUTH_REQUIRED" = "CONTENT_DISABLED") {
   return new SourceError(code, record.sourceId!, undefined, preparationFailureDetails({ preparation: {
@@ -738,7 +811,7 @@ test("native metadata search stays known; explicit inspect and use deliver compl
   const inspected = await nativeRead(f, f.root.ref!, "inspect");
   expect(sourceMessageText(inspected.content).startsWith(f.root.body!)).toBe(true);
   expect(sourceMessageText(inspected.content)).not.toContain(f.required.body!);
-  expect(sourceMessageText(inspected.content)).toBe(f.root.body);
+  expect(sourceMessageText(inspected.content)).toBe(f.root.body + '\n\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown","retention":[]}</notion-effects>');
   const used = await tool.execute("use", { ref: f.root.ref }, undefined, undefined, f.ctx);
   const usage = JSON.parse(String(used.content[0]?.type === "text" ? used.content[0].text : ""));
   expect(usage.records.map((record: { name: string }) => record.name)).toEqual([f.root.name, f.required.name]);
@@ -779,6 +852,13 @@ test("failed exact-file validation and output budget do not commit an explicit r
   const g = await fixture(), tiny = await g.install(async purpose => [{ ...g.graph(purpose), budget: { ...g.graph(purpose).budget, maxContextBytes: 1 } }]);
   await expect(tiny.tool.execute("budget", { ref: g.root.ref, refresh: true }, undefined, undefined, g.ctx)).rejects.toThrow("PREPARE_CONTEXT_BUDGET");
   expect(g.persisted).toEqual([]);
+  const retained = { version: 1 as const, remote_writes: "retained" as const, author_content: "unchanged" as const,
+    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "before-budget-failure", status: "confirmed" as const }] };
+  const h = await fixture(), recorded = await h.install(async purpose => [{ ...h.graph(purpose), effects: retained,
+    budget: { ...h.graph(purpose).budget, maxContextBytes: 1 } }]);
+  await expect(recorded.tool.execute("effects-budget", { ref: h.root.ref }, undefined, undefined, h.ctx)).rejects.toMatchObject({
+    details: { effects: { retention: retained.retention, remote_writes: "unknown" } } });
+  expect(h.persisted).toEqual([]);
   await tool.execute("ready", { ref: f.root.ref, refresh: true }, undefined, undefined, f.ctx);
   expect(f.persisted).toEqual(["replace"]);
 });
@@ -927,7 +1007,7 @@ test("registered search to prepare to native read keeps one scope/version and ex
   const canonicalFile = f.root.entryManifest!.files.find(item => item.path === file.path)!.ref;
   const canonicalResource = await nativeRead(f, canonicalFile, "canonical-resource"), shortResource = await nativeRead(f, injectedFiles[0].ref, "short-resource");
   expect(sourceMessageText(shortResource.content)).toBe(sourceMessageText(canonicalResource.content));
-  expect(sourceMessageText(shortResource.content)).toBe(f.resourceText.get(f.root.id!));
+  expect(sourceMessageText(shortResource.content)).toBe(f.resourceText.get(f.root.id!) + '\n\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown","retention":[]}</notion-effects>');
   expect(shortResource.details).toMatchObject({ contextBrokerResource: { ref: canonicalFile, scope, snapshot_id: f.root.snapshotId,
     file_id: "guide-root", delivered_complete_text: true, loaded: false } });
   expect(sourceBodyLoaded([shortResource], f.root)).toBe(false);

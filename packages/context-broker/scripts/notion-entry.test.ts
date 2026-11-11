@@ -127,7 +127,8 @@ test("native resource tools resolve stable File ID and report materialization wi
   expect(result.details.original).toBe(true);
   expect(result.details.contextBrokerRead).toBeUndefined();
   expect(result.details.contextBrokerResource).toMatchObject({
-    version: 1, id: f.selected.id, scope: f.selected.sourceScope, snapshot_id: f.selected.snapshotId,
+    version: 2, id: f.selected.id, scope: f.selected.sourceScope, snapshot_id: f.selected.snapshotId,
+    delivery: { start: 0, end: content[0]!.text.length, encoding: "raw" },
     file_id: "guide", path: f.resource, ref: f.files[1]!.ref, bytes: f.files[1]!.bytes, sha256: f.files[1]!.sha256,
     delivered_complete_text: true, loaded: false,
   });

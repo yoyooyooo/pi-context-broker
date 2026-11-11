@@ -13,6 +13,27 @@ function measure(value, text, message) {
   assert.equal(value.bytes, Buffer.byteLength(text), message);
 }
 
+/** Independent public-receipt validation; actual writes still need source/HTTP evidence. */
+export function verifyConsumptionEffects(value) {
+  keys(value, ['version', 'remote_writes', 'author_content', 'retention'], 'Versioned consumption effects');
+  assert.equal(value.version, 1);
+  assert.ok(['none', 'retained', 'unknown'].includes(value.remote_writes));
+  assert.ok(['unchanged', 'unknown'].includes(value.author_content));
+  assert.ok(Array.isArray(value.retention));
+  for (const entry of value.retention) {
+    keys(entry, ['skill_page_id', 'file_id', 'operation_id', 'status'], 'Exact retention owner and operation');
+    for (const field of ['skill_page_id', 'file_id', 'operation_id']) assert.ok(typeof entry[field] === 'string' && entry[field]);
+    assert.ok(['confirmed', 'unknown'].includes(entry.status));
+  }
+  if (value.remote_writes === 'none') {
+    assert.equal(value.retention.length, 0); assert.equal(value.author_content, 'unchanged');
+  }
+  if (value.remote_writes === 'retained') {
+    assert.ok(value.retention.length > 0); assert.ok(value.retention.every(entry => entry.status === 'confirmed'));
+  }
+  return value;
+}
+
 /** Verify captured tool content independently of the production compiler.
  * Source authenticity still requires each caller's original source oracle.
  * A derived parent's hash is a link, not proof that the parent was observed. */
@@ -21,7 +42,8 @@ export function verifyPreparationEvidence(content, proof, toolCallId) {
   assert.ok(typeof toolCallId === 'string' && toolCallId.length > 0, 'Preparation tool call is missing');
   const model = JSON.parse(content);
   assert.equal(content, JSON.stringify(model), 'Preparation projection must use its deterministic JSON encoding');
-  keys(model, ['ok', 'status', 'purpose', 'roots', 'records'], 'Only compact preparation fields are model-visible');
+  keys(model, ['ok', 'status', 'purpose', 'roots', 'records', ...(model.effects === undefined ? [] : ['effects'])], 'Only compact preparation fields and effects are model-visible');
+  if (model.effects !== undefined) verifyConsumptionEffects(model.effects);
   assert.equal(model.ok, true); assert.equal(model.status, 'ready');
   assert.ok(['use', 'inspect'].includes(model.purpose));
   assert.ok(Array.isArray(model.roots) && model.roots.length > 0 && model.roots.length <= 64);
@@ -127,7 +149,14 @@ export function generatedCatalogCards(message) {
     assert.ok(Number.isSafeInteger(span.end) && span.end > 0 && span.end <= content.length);
     const body = content.slice(0, span.end);
     assert.equal(hash(body), receipt.bodySha256); assert.equal(Buffer.byteLength(body), receipt.bytes);
-    const footer = /^\n{2,3}<skill-directory>\n([\s\S]*)\n<\/skill-directory>$/.exec(content.slice(span.end));
+    let suffix = content.slice(span.end);
+    if (message.details.effects !== undefined) {
+      const effects = verifyConsumptionEffects(message.details.effects);
+      const footer = '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>';
+      assert.ok(suffix.endsWith(footer), 'Effects metadata must match the exact generated suffix');
+      suffix = suffix.slice(0, -footer.length);
+    }
+    const footer = /^\n{2,3}<skill-directory>\n([\s\S]*)\n<\/skill-directory>$/.exec(suffix);
     assert.ok(footer, 'Only the generated suffix after the complete author span supplies cards');
     const model = JSON.parse(footer[1]); keys(model, ['ref', 'directory'], 'Native generated directory');
     assert.equal(footer[1], JSON.stringify(model));

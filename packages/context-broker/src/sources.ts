@@ -4,10 +4,11 @@ import { resolve } from "node:path";
 import { buildRegistryFromRoots, normalizeKey } from "./skill-records";
 import { discoverNotionSource, discoverNotionCatalogAndDirectory, loadNotionSkill, SourceError, ReferenceMiss, sourceFailureMessage } from "./notion-source";
 import { validSharedIdentity } from "./shared-skill-identity";
+import type { ConsumptionPolicy } from "./consumption-effects";
 import type { ConfigFile, NotionDirectorySelection, NotionDirectoryObservation, NotionListObservation, SkillRecord, SourceConfig, SourcePolicy, ScanConfig, DiscoveryResult, SourceFailure } from "./types";
 
 export { SourceError } from "./notion-source";
-export type SourceOptions = { signal?: AbortSignal; stale?: boolean; refreshSourceIds?: readonly string[]; snapshotId?: string; directorySelections?: ReadonlyMap<string, NotionDirectorySelection> };
+export type SourceOptions = ConsumptionPolicy & { signal?: AbortSignal; stale?: boolean; refreshSourceIds?: readonly string[]; snapshotId?: string; directorySelections?: ReadonlyMap<string, NotionDirectorySelection> };
 
 export function hasEnabledNotionSource(config: Pick<ConfigFile, "sources">): boolean {
   return config.sources?.some(source => source.type === "notion" && source.enabled !== false) === true;

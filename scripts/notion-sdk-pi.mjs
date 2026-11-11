@@ -14,7 +14,7 @@ import { isolatedEnv, resolveHost, runCommand, writeFakeProvider, assertSupporte
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { safeRequestMetrics, providerSystemText } from './notion-default-context.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
-import { verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from './skill-preparation-evidence.mjs';
+import { verifyPreparationEvidence, verifyConsumptionEffects, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from './skill-preparation-evidence.mjs';
 
 export { providerSystemText, captureInjectionReceipts };
 
@@ -1117,10 +1117,17 @@ export function assertAmbiguityBodyTimeline(captures, { bodiesById, inspectedId,
 export function assertResourceScalarResult(message, { batch, call }) {
   assert.equal(message?.role, 'toolResult'); assert.equal(message.toolName, 'read'); assert.equal(message.isError, false);
   assert.equal(message.toolCallId, call.id);
-  assert.deepEqual(message.content, [{ type: 'text', text: call.expectedText }], 'Scalar reads preserve the native result, including BOM, CRLF and pagination');
-  if (message.structuredContent !== undefined) assert.equal(message.structuredContent, call.expectedText, 'Native structured output is preserved');
   const proof = message.details?.contextBrokerResource, { snapshot } = batch, { file } = call;
-  assert.ok(proof); assert.equal(proof.version, 1); assert.equal(proof.toolCallId, call.id); assert.equal(proof.loaded, false);
+  assert.ok(proof); assert.ok([1, 2].includes(proof.version));
+  const native = [{ type: 'text', text: call.expectedText }];
+  if (proof.version === 2) {
+    const effects = verifyConsumptionEffects(message.details.effects);
+    assert.deepEqual(proof.delivery, { start: 0, end: call.expectedText.length, encoding: 'raw' });
+    assert.deepEqual(message.content, [...native, { type: 'text', text: '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>' }],
+      'Only the exact effects receipt may follow the unchanged native result');
+  } else assert.deepEqual(message.content, native, 'Historical scalar reads preserve the native result, including BOM, CRLF and pagination');
+  if (message.structuredContent !== undefined) assert.equal(message.structuredContent, call.expectedText, 'Native structured output is preserved');
+  assert.equal(proof.toolCallId, call.id); assert.equal(proof.loaded, false);
   assert.equal(proof.id, snapshot.record.id); assert.equal(proof.scope, snapshot.scope);
   assert.equal(proof.snapshot_id, snapshot.snapshot_id); assert.equal(proof.version_id, snapshot.version_id);
   assert.equal(proof.ref, file.ref); assert.equal(proof.path, file.path); assert.equal(proof.file_id, file.file_id);

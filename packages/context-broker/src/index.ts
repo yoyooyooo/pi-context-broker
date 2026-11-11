@@ -1662,26 +1662,26 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     }, signal),
     lookupReference: (ctx, signal) => ownCatalog(owned => discoverSourceCatalog({ ...config, sources: config.sources?.filter(source => source.type === "notion") }, ctx.cwd, { signal: owned, refreshSourceIds: config.sources?.filter(source => source.type === "notion" && !source.discovery?.offline).map(source => source.id) }), signal),
     resolveNamedReference: (ref, ctx, signal, refresh) => ownCatalog(owned => resolveNotionReference(ref, notionSources(), ctx.cwd ?? process.cwd(), { signal: owned, refresh }), signal),
-    loadRecord: (record, signal, snapshotId) => snapshotId
-      ? sourceRuntime.foreground(() => loadSourceSkill(record, config, undefined, { signal, snapshotId }))
+    loadRecord: (record, signal, snapshotId, policy) => snapshotId || policy
+      ? sourceRuntime.foreground(() => loadSourceSkill(record, config, undefined, { signal, snapshotId, ...policy }))
       : sourceRuntime.load(record, signal),
-    loadResource: (record, path, ctx, signal) => sourceRuntime.foreground(async () => {
+    loadResource: (record, path, ctx, signal, policy) => sourceRuntime.foreground(async () => {
       const source = normalizeSources(config.sources)?.find(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false);
       if (!source || source.type !== "notion") throw new SourceError("SOURCE_UNAVAILABLE", record.sourceId ?? "notion");
-      return loadNotionResource(record, path, source, ctx.cwd ?? process.cwd(), signal, paths.host === "pi" ? "sdk" : undefined);
+      return loadNotionResource(record, path, source, ctx.cwd ?? process.cwd(), signal, paths.host === "pi" ? "sdk" : undefined, policy);
     }),
     readResources: (record, refs, ctx, signal) => sourceRuntime.foreground(async () => {
       const source = normalizeSources(config.sources)?.find(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false);
       if (paths.host !== "pi" || !source || source.type !== "notion") throw new SourceError("SOURCE_RESOURCE_BATCH_UNAVAILABLE", record.sourceId ?? "notion");
       return readNotionResources(record, refs, source, ctx.cwd ?? process.cwd(), signal);
     }),
-    readFixedResource: (record, ref, ctx, signal) => sourceRuntime.foreground(async () => {
+    readFixedResource: (record, ref, ctx, signal, policy) => sourceRuntime.foreground(async () => {
       if (paths.host !== "pi") return undefined;
       const source = normalizeSources(config.sources)?.find(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false);
       if (!source || source.type !== "notion") throw new SourceError("SOURCE_UNAVAILABLE", record.sourceId ?? "notion");
-      return readFixedNotionResource(record, ref, source, ctx.cwd ?? process.cwd(), signal, "sdk");
+      return readFixedNotionResource(record, ref, source, ctx.cwd ?? process.cwd(), signal, "sdk", policy);
     }),
-    prepareGraph: (records, ctx, signal, purpose, pins, pendingBindings, mode) => sourceRuntime.foreground(async () => {
+    prepareGraph: (records, ctx, signal, purpose, pins, pendingBindings, mode, policy) => sourceRuntime.foreground(async () => {
       const groups = new Map<string, SkillRecord[]>();
       for (const record of records) {
         if (!record.sourceId) throw new SourceError("SOURCE_IDENTITY_MISMATCH", "selection");
@@ -1712,6 +1712,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
         }
         prepared.push(await prepareNotionSkills(roots, source, ctx?.cwd ?? process.cwd(), {
           purpose, signal, rootPins, sessionBindings: [...bindings.values()], refresh: mode === "replace", transport: paths.host === "pi" ? "sdk" : undefined,
+          ...policy,
         }));
       }
       return prepared;

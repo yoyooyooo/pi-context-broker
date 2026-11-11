@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { PreparationDirectory, PreparationPurpose } from "./prepare-protocol";
 import type { ContentRecord } from "./types";
+import { consumptionEffects, isConsumptionEffects, type ConsumptionEffects } from "./consumption-effects.ts";
 
 /** This compiler changes the host envelope, never the CLI's source projection. */
 export const SKILL_PREPARATION_COMPILER = "context-broker/skill-prepare/v1" as const;
@@ -16,6 +17,7 @@ export type SkillPreparationModelRelation = {
 };
 export type SkillPreparationModel = {
   ok: true; status: "ready"; purpose: PreparationPurpose; roots: readonly string[];
+  effects?: ConsumptionEffects;
   records: readonly {
     name: string; kind: ContentRecord["kind"]; ref: string; content: string;
     directory?: SkillPreparationModelDirectory;
@@ -38,6 +40,7 @@ export type SkillPreparationProjection = {
 };
 export type SkillPreparationCompilationInput = {
   purpose: PreparationPurpose; roots: readonly string[];
+  effects?: ConsumptionEffects;
   records: readonly {
     name: string; kind: ContentRecord["kind"]; ref: string; content: string;
     source: SkillPreparationSourceIdentity; directory?: PreparationDirectory;
@@ -65,7 +68,8 @@ export function projectSkillDirectory(value: PreparationDirectory | undefined): 
 
 /** Exact generated schema. Author content is only ever an opaque string. */
 export function isSkillPreparationModel(value: unknown): value is SkillPreparationModel {
-  if (!object(value) || !keys(value, ["ok", "status", "purpose", "roots", "records"])
+  if (!object(value) || !keys(value, ["ok", "status", "purpose", "roots", "records", "effects"])
+    || value.effects !== undefined && !isConsumptionEffects(value.effects)
     || value.ok !== true || value.status !== "ready" || value.purpose !== "use" && value.purpose !== "inspect"
     || !Array.isArray(value.roots) || !value.roots.length || value.roots.some(ref => typeof ref !== "string" || !ref)
     || new Set(value.roots).size !== value.roots.length || !Array.isArray(value.records) || !value.records.length) return false;
@@ -105,7 +109,7 @@ export function renderSkillPreparationModel(model: SkillPreparationModel): { con
     bodySpans.push({ start, end: content.length, encoding: "json" });
     content += '"' + (record.directory === undefined ? "" : ',"directory":' + JSON.stringify(record.directory)) + "}";
   }
-  return { content: content + "]}", bodySpans };
+  return { content: content + "]" + (model.effects === undefined ? "" : ',"effects":' + JSON.stringify(model.effects)) + "}", bodySpans };
 }
 
 export function compileSkillPreparation(input: SkillPreparationCompilationInput): {
@@ -119,6 +123,7 @@ export function compileSkillPreparation(input: SkillPreparationCompilationInput)
       return { name: record.name, kind: record.kind, ref: record.ref, content: record.content,
         ...(record.directory === undefined ? {} : { directory: projectSkillDirectory(record.directory) }) };
     }),
+    effects: consumptionEffects(input.effects),
   };
   const rendered = renderSkillPreparationModel(model);
   const projection: SkillPreparationProjection = {

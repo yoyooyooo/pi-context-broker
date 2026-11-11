@@ -1,16 +1,32 @@
 {
   "version": 1,
-  "source_base": "d472dbd0cf708890a3a3e58951485ad87f14d28c",
+  "source_base": "1c11c57849f97d2c13b82eb8a62fe6b6065741c4",
   "kind": "composed_design_contracts_with_real_flow_replay_not_refinement_proof",
   "files": {
-    "packages/context-broker/src/host-skills.ts": "5b39350f485f82db334e6cd8189cbf13478f5685d9e7360500fc247ba5c1826c",
+    "packages/context-broker/src/host-skills.ts": "a5817735d089ebf188200d1451957587572779270610cde8713075b82e1f91ad",
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
-    "packages/context-broker/src/prepare-protocol.ts": "c3642c1bbae38f42fe74865f3b0c362fc9eac13ef7544bb7f651248402382806",
-    "packages/context-broker/src/skill-context-projection.ts": "64f183790385738ff42a2a3afa80928415a4d1a408481ddeec99f2fadb357f0f",
+    "packages/context-broker/src/prepare-protocol.ts": "a933a092d39d9abb860ce614c959b13c5e26c1cf830bdb1f9f715b0adf2c283a",
+    "packages/context-broker/src/skill-context-projection.ts": "15887381449784a0c8ffd8963e8967d900b9557a943e6d974506a8e55b9e11bf",
     "packages/context-broker/src/skill-context-projection-proof.ts": "08767ee5fcc9c10e5fe98fa3744213a2e73407784feff4ca8daf167bab6ce65d",
-    "packages/context-broker/src/notion-sdk.ts": "f7313306ca4d7c2f5af767e9c1f92720ae26962d75f4d5644352fd345b1c226e",
+    "packages/context-broker/src/notion-sdk.ts": "e3d634d7d2fab6c0077c5648bf967d5fe00f47301173c4db790a894b71476bb8",
     "packages/context-broker/src/resource-read-projection.ts": "12f951ea8dc0c23ef83555b2fa4e1d9f688939058f67af956af0c468c90d4f7c",
-    "packages/context-broker/src/session-source-snapshot.ts": "4da0ad3783290e5565617051c298870e6f06d57d82c85d9dc932bc800b837eda"
+    "packages/context-broker/src/session-source-snapshot.ts": "e946d3a437b29869546b0192d1fdbd693b2ac38b765b8e60b3763b8198547468",
+    "packages/context-broker/src/notion-source.ts": "b6fef48b510a7002e7b56ced8cd79006739f77a92ca86f033c0a55b60bdfae8e",
+    "packages/context-broker/src/index.ts": "93673be0d0b9bd6f975017be9e8558b336f07801b2b25f2c58aa5ec21525b82e",
+    "packages/context-broker/src/consumption-effects.ts": "4d831cbac5811c3634e24b0df3d406bd17f7a134318b39263b1048f261250a97",
+    "packages/context-broker/src/pi-host-adapter.ts": "3b809232e4b4b376c2e72b301506f7094c24a267f5924ef2e6b08ec2c14f6a12",
+    "packages/context-broker/src/skill-catalog-projection.ts": "7b407d448a44f6fea3c0776ef3f2cd5d73fd10c314b746fe2b1268663cd0f3b8",
+    "scripts/build-tern.mjs": "2040561cc25ec584bc907475ad23e88f6e4bee87773da50a41b189e2dbe2d81e",
+    "packages/context-broker/scripts/notion-sdk.test.ts": "6148918fa990b44306c9a2846ef4381789f8c36b3b7e4d22da3aa168667b8f55",
+    "packages/context-broker/scripts/skill-context-projection.test.ts": "8858838c508e8ef910ec254811e7339aa3cbaad937741045574f2f4398508380",
+    "packages/context-broker/scripts/host-prepare.test.ts": "4d99887ca2f3cbb9ae71d1fb83c1b789ff27e5f306ecd203bf7b06affe1b15db",
+    "packages/context-broker/tsconfig.json": "5b485daf61c3d2f793b77a9c8511a135f40988a402d1e0840b4e9d79a289646d",
+    "scripts/skill-preparation-evidence.mjs": "e3f25b4e62e125543c48f5263c178c69071163a54b404a8963aa11221df12bdf",
+    "scripts/skill-preparation-evidence.test.mjs": "3205a96b55844a40d2c1194ccb2485be4d570fd1e4f07156a2a8529676283275",
+    "scripts/notion-sdk-pi.mjs": "c4cafda43fa1b8b1b6fe73815dacc0814ff491db5299bac111d72dd11e8f1d84",
+    "scripts/notion-sdk-pi.test.mjs": "552a35175fadf707f35f2ad5766609ba41a5ee5eccccd92e6bf4c34a17af4c21",
+    "packages/context-broker/scripts/skill-model-surfaces.test.ts": "876b6c6650bed1f81068c71c1be630fb10ecb951e1cc1a7cb17797cc26d57d5b",
+    "packages/context-broker/scripts/session-active.test.ts": "651b81077ba4635f8267c7623f001a5e3e46d65901a4bc646b1b04f5a6b30dcd"
   },
   "cases": [
     [
@@ -65,6 +81,35 @@
       [
         "NoFalseZeroWriteReport"
       ]
+    ],
+    [
+      "RetentionDisclosure",
+      "implemented",
+      []
+    ],
+    [
+      "RetentionDisclosure",
+      "read-only",
+      []
+    ],
+    [
+      "RetentionDisclosure",
+      "unknown",
+      []
+    ],
+    [
+      "RetentionDisclosure",
+      "read-only-negative",
+      [
+        "ReadOnlyHasNoRemoteWrites"
+      ]
+    ],
+    [
+      "RetentionDisclosure",
+      "unknown-negative",
+      [
+        "UnknownOutcomeIsDisclosed"
+      ]
     ]
   ],
   "ManagementToDelivery": {
@@ -85,17 +130,26 @@
     ]
   },
   "RetentionDisclosure": {
-    "finding": "Current compact ready projection has no semantic indication of six confirmed retention POSTs; actual final model says no write",
-    "replay": "native-review.json binds actual native session lines44/48/52, toolCallId and six HTTP request IDs after direct Notion edits",
-    "properties": "ReadyReportsObservedRetention is a proposed caller-visible contract absent today; NoFalseZeroWriteReport records the actual false claim as a counterexample, not an assumption every model will behave that way",
-    "current": "Expected failure retained as an unresolved finding; successful runner means expected outcome matched, not product repaired",
-    "proposal": "Design only. Adds effect evidence AND constrains the reporter to use it. A new field alone cannot prove arbitrary LLM truthfulness",
-    "bound": "One current read after one external edit, one abstract retention event",
+    "finding": "Historical compact ready projection omitted six confirmed retention POSTs and the actual final answer claimed no write; keep the original current counterexample and native-review.json unchanged.",
+    "observed_source_owners": {
+      "request_effects": "CLI consume/readSkill/prepareGraph version-1 receipts are decoded by notion-source and prepare-protocol; absent or invalid legacy evidence is unknown.",
+      "strict_read_only": "notion-sdk verifies both SDK export and built manifest before dispatch; readOnly reaches the existing CLI semantic-write guard before a retention mutation.",
+      "public_delivery": "host-skills carries per-operation receipts in notion_use, scalar native read and Pi dollar/native injection. Source text and exact body spans remain intact; failures retain prior/unknown effects.",
+      "reporter": "NoFalseZeroWriteReport applies only to the modeled report rule that uses the receipt. claim-negative preserves a failing reporter even when effects are exposed."
+    },
+    "replay": "Historical native-review.json binds native session lines44/48/52 and six HTTP request IDs. New host-prepare and projection tests exercise public results, failed partial sources, strict denial and native history. The new live Pi replay is recorded separately in AH-953; unit/model results do not stand in for it.",
+    "properties": "ReadyReportsObservedRetention, ReadOnlyHasNoRemoteWrites and UnknownOutcomeIsDisclosed describe the implemented receipt/guard contract. NoFalseZeroWriteReport constrains the explicit abstract reporter, not arbitrary LLM answers.",
+    "current": "Expected historical failures are retained. They are not assertions that the new candidate still hides effects.",
+    "proposal": "Original proposed disclosure case retained for history. implemented additionally identifies the reviewed source owners and fixed-read, strict-rejection and lost-ACK paths.",
+    "negatives": "read-only-negative removes the write guard; unknown-negative omits uncertainty disclosure after a lost ACK; claim-negative makes an unsupported zero-write claim.",
+    "bound": "One fixed or current read, at most one external edit and one abstract retention event; ready, rejected-before-write and lost-ACK failure outcomes.",
     "excluded": [
-      "Whether every caller is authorized to permit retention",
       "Exact number/bytes of Records writes",
       "Execution of scripts/author commands",
+      "Every caller's retention authorization policy",
+      "Unbounded graphs, remote consistency and actual HTTP timing",
       "General LLM behavior or content truth"
-    ]
+    ],
+    "independent_verification": "Node evidence validators independently validate optional version-1 effects while retaining exact source/encoded spans and legacy receipts. Scalar v2 accepts only the untouched native result plus a matching semantic footer; malformed/false-zero receipts and altered spans fail. The projection module uses an explicit .ts runtime import so Node 24 evidence consumers can load the same compiler."
   }
 }
