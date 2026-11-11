@@ -47,6 +47,8 @@ CLI/SDK 的 version-1 `effects` 描述本次消费：`remote_writes` 为 none、
 
 2026-11-11 候选真实负例 `ah953-20261111-real-uUH0q5/notion-only-strict-fresh-cKJIB1`：模型没有按自然“不写入”要求传 `readOnly`，实际发生六次 retention 写入。effects 已出现在 provider 输入，最终回答却只说作者内容未修改，未主动披露历史写入。两处原工具说明现明确把用户只读/无写要求映射到 `readOnly:true`，并要求最终说明 retained/unknown；没有新增常驻指南、查询或工具。此改动不改变状态机、严格写边界或原文 span，因此沿用模型正负配置，不能用有限模型代替新的自然任务真实复验。原失败会话和请求保留，显式参数正测与自然语言遵从分别判断。
 
+后续错误封装复核又复现三个直接红例：`notion_use` 与 `$` 接收冻结的 SourceError，native read 接收真实 DOMException AbortError。旧出口修改原错误的只读 message/details 会抛 TypeError 并丢失 effects。三处现在新建错误回执并保留 cause、来源错误类型/code/source/exitCode/details；DOMException 保留名称和数字 code，不修改原错误。权限、写边界、取消、提交和正文交付均未改变。`readonly-error-envelope-{red,green,typecheck}.log` 保留三项原失败、48 项宿主通过及类型检查；模型不枚举 JavaScript 错误属性，因此同步双 coverage 的语义审阅和源码绑定，复用既有未改 TLA/cfg/view 结果，不宣称本次重跑。
+
 复用 .agents/skills/verify-notion-skills-integration、verify-context-broker 和 CLI 的 .cursor/skills/verify-ntn-skills。补丁先有能失败的直接反例，再跑必要回归及真实链路；不重复展开无关完整矩阵。每个交接包含 commit、文件列表、命令、exit/进程终局、原始输出和仍未覆盖的门槛。
 
 ### AH-623 当前目录身份与策略
