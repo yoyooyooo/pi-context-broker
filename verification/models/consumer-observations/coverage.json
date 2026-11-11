@@ -4,7 +4,7 @@
   "correspondence": "Reviewed source hashes bind the implemented transition owners. Finite-model results do not establish complete implementation refinement. The final commit, installed package and actual session identities belong to the execution receipt.",
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
-    "packages/context-broker/src/host-skills.ts": "1d9f9d2651bbfbf84f237b05c79313f5aab941e7ecfba54263889d4442b5b032",
+    "packages/context-broker/src/host-skills.ts": "ff3ecf492eb95474365ec9cde99e680e9c31538888b22cf1cea2a162385a4a02",
     "packages/context-broker/src/prepare-protocol.ts": "a933a092d39d9abb860ce614c959b13c5e26c1cf830bdb1f9f715b0adf2c283a",
     "packages/context-broker/src/notion-source.ts": "b6fef48b510a7002e7b56ced8cd79006739f77a92ca86f033c0a55b60bdfae8e",
     "packages/context-broker/src/index.ts": "93673be0d0b9bd6f975017be9e8558b336f07801b2b25f2c58aa5ec21525b82e",
@@ -111,7 +111,8 @@
     "issue": "AH-953",
     "transition_review": "Effect receipts and read-only policy are carried alongside the existing observation ticket. Qualification, exact denial attribution, generation checks, cancellation and graph commit ordering are unchanged; resource receipt v2 names only the original delivery span so an appended effects footer cannot count as source bytes.",
     "regressions": "host-prepare retains F1–F7, permission refusal, old-success-after-new-denial and session cancellation. Dollar receipt replay preserves sourceBodyLoaded and native history proof; the strict SDK capability gate runs before any operation.",
-    "effects_model": "flows/RetentionDisclosure.tla models this new effect dimension separately; Availability and ReadRace keep their existing state spaces and negative controls."
+    "effects_model": "flows/RetentionDisclosure.tla models this new effect dimension separately; Availability and ReadRace keep their existing state spaces and negative controls.",
+    "model_instruction_review": "The real AH-953 natural no-write counterexample omitted readOnly despite an available parameter, then omitted retained writes from its final report. Tool descriptions now explicitly map a user read-only/no-write request to readOnly:true and require retained/unknown effects in the final answer. This changes model-facing instructions only, not acquisition, qualification, cancellation or the read-only guard. Finite models cannot prove language-model compliance; a fresh real-session replay remains required."
   },
   "admission_diagnostics": {
     "issue": "AH-925",

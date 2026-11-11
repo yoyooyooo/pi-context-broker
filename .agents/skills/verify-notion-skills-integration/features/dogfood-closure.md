@@ -41,6 +41,8 @@ CLI/SDK 的 version-1 `effects` 描述本次消费：`remote_writes` 为 none、
 
 源代码回归覆盖投影缺字段、严格请求、不兼容生产者零调用、失败后的部分效果、原生正文/资源回执和 `$` 注入的原生历史。形式化复用 `verification/models/consumer-observations/flows` 的13个配置；原六个 availability/race 配置单独复跑。新增只读与未知 ACK 负配置必须分别击中对应性质；旧“零写”反例保留，模型不能证明任意 LLM 报告正确。实际 Pi 必须再验当前留存、稳定固定读取、严格拒绝及最终回答；未执行时不得关闭 AH-953。
 
+2026-11-11 候选真实负例 `ah953-20261111-real-uUH0q5/notion-only-strict-fresh-cKJIB1`：模型没有按自然“不写入”要求传 `readOnly`，实际发生六次 retention 写入。effects 已出现在 provider 输入，最终回答却只说作者内容未修改，未主动披露历史写入。两处原工具说明现明确把用户只读/无写要求映射到 `readOnly:true`，并要求最终说明 retained/unknown；没有新增常驻指南、查询或工具。此改动不改变状态机、严格写边界或原文 span，因此沿用模型正负配置，不能用有限模型代替新的自然任务真实复验。原失败会话和请求保留，显式参数正测与自然语言遵从分别判断。
+
 复用 .agents/skills/verify-notion-skills-integration、verify-context-broker 和 CLI 的 .cursor/skills/verify-ntn-skills。补丁先有能失败的直接反例，再跑必要回归及真实链路；不重复展开无关完整矩阵。每个交接包含 commit、文件列表、命令、exit/进程终局、原始输出和仍未覆盖的门槛。
 
 ### AH-623 当前目录身份与策略

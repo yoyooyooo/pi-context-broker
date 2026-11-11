@@ -60,7 +60,7 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
         const parameters: Record<string, unknown> = { type: "object", properties: { ...scalarProperties, paths } };
         const definition: PiReadDefinition = {
           ...native,
-          description: "For Notion introductions, summaries or inspection, copy a supplied Skill/resource ref into path. This reads content without loading Requires or activating its workflow. Current reads may retain history; the effects receipt distinguishes these writes from author edits. Set readOnly to forbid remote writes. " + native.description + " Alternatively, paths reads fixed resources of one owner and snapshot together; choose path or paths. Batch reads exclude offset/limit and the main entrypoint.",
+          description: "For Notion introductions, summaries or inspection, copy a supplied Skill/resource ref into path. This reads content without loading Requires or activating its workflow. Current reads may retain history. If the user requests read-only or no writes, pass readOnly:true with path; it forbids retention too and may refuse the read. In the final answer, report effects.remote_writes retained or unknown explicitly; author_content unchanged does not mean no writes. " + native.description + " Alternatively, paths reads fixed resources of one owner and snapshot together; choose path or paths. Batch reads exclude offset/limit and the main entrypoint.",
           parameters, defaultActive: activeTools().includes("read"),
           ...(native.outputSchema ? { outputSchema: { anyOf: [native.outputSchema, resourceOutputSchema] } } : {}),
           async execute(id, input, signal, onUpdate, context) {

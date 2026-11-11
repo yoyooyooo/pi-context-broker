@@ -3,7 +3,7 @@
   "source_base": "1c11c57849f97d2c13b82eb8a62fe6b6065741c4",
   "kind": "composed_design_contracts_with_real_flow_replay_not_refinement_proof",
   "files": {
-    "packages/context-broker/src/host-skills.ts": "1d9f9d2651bbfbf84f237b05c79313f5aab941e7ecfba54263889d4442b5b032",
+    "packages/context-broker/src/host-skills.ts": "ff3ecf492eb95474365ec9cde99e680e9c31538888b22cf1cea2a162385a4a02",
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/prepare-protocol.ts": "a933a092d39d9abb860ce614c959b13c5e26c1cf830bdb1f9f715b0adf2c283a",
     "packages/context-broker/src/skill-context-projection.ts": "15887381449784a0c8ffd8963e8967d900b9557a943e6d974506a8e55b9e11bf",
@@ -14,7 +14,7 @@
     "packages/context-broker/src/notion-source.ts": "b6fef48b510a7002e7b56ced8cd79006739f77a92ca86f033c0a55b60bdfae8e",
     "packages/context-broker/src/index.ts": "93673be0d0b9bd6f975017be9e8558b336f07801b2b25f2c58aa5ec21525b82e",
     "packages/context-broker/src/consumption-effects.ts": "4d831cbac5811c3634e24b0df3d406bd17f7a134318b39263b1048f261250a97",
-    "packages/context-broker/src/pi-host-adapter.ts": "3b809232e4b4b376c2e72b301506f7094c24a267f5924ef2e6b08ec2c14f6a12",
+    "packages/context-broker/src/pi-host-adapter.ts": "a80f3ed5979f3f4941345a1762f0e31896ca1f64a20c4d74398715656008eba0",
     "packages/context-broker/src/skill-catalog-projection.ts": "7b407d448a44f6fea3c0776ef3f2cd5d73fd10c314b746fe2b1268663cd0f3b8",
     "scripts/build-tern.mjs": "2040561cc25ec584bc907475ad23e88f6e4bee87773da50a41b189e2dbe2d81e",
     "packages/context-broker/scripts/notion-sdk.test.ts": "6148918fa990b44306c9a2846ef4381789f8c36b3b7e4d22da3aa168667b8f55",
@@ -150,7 +150,8 @@
       "Unbounded graphs, remote consistency and actual HTTP timing",
       "General LLM behavior or content truth"
     ],
-    "independent_verification": "Node evidence validators independently validate optional version-1 effects while retaining exact source/encoded spans and legacy receipts. Scalar v2 accepts only the untouched native result plus a matching semantic footer; malformed/false-zero receipts and altered spans fail. The projection module uses an explicit .ts runtime import so Node 24 evidence consumers can load the same compiler."
+    "independent_verification": "Node evidence validators independently validate optional version-1 effects while retaining exact source/encoded spans and legacy receipts. Scalar v2 accepts only the untouched native result plus a matching semantic footer; malformed/false-zero receipts and altered spans fail. The projection module uses an explicit .ts runtime import so Node 24 evidence consumers can load the same compiler.",
+    "model_instruction_review": "A real natural no-write request omitted readOnly and incurred six retention writes; the final answer mentioned unchanged author content but did not disclose retained writes. Both scalar read and notion_use descriptions now explicitly require readOnly:true for user read-only/no-write intent and retained/unknown disclosure in the final answer. Guard, effect state, body spans and finite-model transitions are unchanged. This instruction change needs real Pi verification and does not prove arbitrary LLM compliance."
   },
   "admission_diagnostics_review": {
     "issue": "AH-925",
