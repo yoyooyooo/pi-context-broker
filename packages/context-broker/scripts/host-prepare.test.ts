@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test, setSystemTime } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,7 +12,7 @@ import { createOmpHostAdapter } from "../src/omp-host-adapter";
 import { deduplicateSourceReads, deferredSourceEntries, sourceDeliveryReceipt, sourceBodyLoaded, sourceMessageText, sessionSourceBindings, withSessionSourceReceipts } from "../src/session-source-snapshot";
 import { materializeNotionEntryFile, publishNotionEntry } from "../src/notion-entry";
 import { projectCatalogDescriptions } from "../src/skill-catalog-projection";
-import type { PreparedHostGraph, PreparationPurpose } from "../src/prepare-protocol";
+import { preparationFailureDetails, type PreparedHostGraph, type PreparationPurpose } from "../src/prepare-protocol";
 import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, MessageContent, NativeSkillGraphDefinition, NativeSkillPrepareDefinition, NativeSkillSearchDefinition, SessionEntry, SkillRecord } from "../src/types";
 import type { SelectionMode } from "../src/session-graph";
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -89,7 +89,9 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
     appendEntry(customType, data) { session.entries.push({ type: "custom", customType, data }); },
     registerTool(value) { if (value.name === "skill_search" || value.name === "notion_list") search = value; if (value.name === "skill_prepare" || value.name === "notion_use") tool = value; if (value.name === "skill_graph" || value.name === "notion_ctl") graphTool = value; } };
   function graph(purpose: PreparationPurpose): PreparedHostGraph {
-    const selected = purpose === "use" ? [root!, required!] : [root!];
+    const validatedAt = Date.now();
+    const selected = (purpose === "use" ? [root!, required!] : [root!]).map(record => ({ ...record,
+      currentObservation: { origin: "remote" as const, validatedAt, validUntil: validatedAt + 60_000 } }));
     const vector = { version: 1 as const, kind: "observed_version_vector" as const, purpose, scope: identityScope, roots: [root!.id!],
       required: purpose === "use" ? [{ from: root!.id!, to: required!.id!, ref: required!.preparationBinding!.ref }] : [],
       bindings: selected.map(record => record.preparationBinding!) };
@@ -127,11 +129,19 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
   return { ctx, records, root: root!, required: required!, member: member!, graph, calls, persisted, install, emit, session, resourceText, resourceReads, api, sources };
 }
 
+function exactDenial(record: SkillRecord, code: "CONTENT_DISABLED" | "ACCESS_DENIED" | "AUTH_REQUIRED" = "CONTENT_DISABLED") {
+  return new SourceError(code, record.sourceId!, undefined, preparationFailureDetails({ preparation: {
+    version: 1, status: "failed", purpose: "use", scope: record.sourceScope,
+    nodes: [{ state: "failed", id: record.id, ref: record.ref, roles: ["root"], error: { code } }],
+    errors: [{ target: record.ref, code }],
+  } }));
+}
+
 test("a live disabled read corrects stale availability without extra discovery and permits re-enable retry", async () => {
   const f = await fixture(true);
   let remoteEnabled = false, metadataRequests = 0;
   const { host, search } = await f.install(async purpose => {
-    if (!remoteEnabled) throw new SourceError("CONTENT_DISABLED", "controlled");
+    if (!remoteEnabled) throw exactDenial(f.root);
     return [f.graph(purpose)];
   }, { getRecords: async () => {
     metadataRequests++;
@@ -985,4 +995,196 @@ test("short-ref tool admission cannot turn a saved locator into authority or a d
   const resource = prepared.records[0].directory.files.find((item: { path: string }) => item.path !== "SKILL.md").ref;
   await expect(tool.execute("resource-root", { ref: resource }, undefined, undefined, f.ctx)).rejects.toThrow("PREPARE_ROOT_NOT_MAIN");
   await expect(tool.execute("refresh-fixed", { ref: fixed, refresh: true }, undefined, undefined, f.ctx)).rejects.toThrow("PREPARE_VERSION_CONFLICT");
+});
+
+async function auditFixture() {
+  const f = await fixture(true);
+  const state = { enabled: true, metadataCalls: 0 };
+  const h = await f.install(async purpose => {
+    if (!state.enabled) throw exactDenial(f.root);
+    return [f.graph(purpose)];
+  }, { getRecords: async () => {
+    state.metadataCalls++;
+    return { records: f.records.map(record => ({ ...record, body: undefined, preparationBinding: undefined,
+      enabled: record === f.root ? state.enabled : true, defaultDiscovery: record === f.root, currentObservation: { origin: "remote", validatedAt: Date.now(), validUntil: Date.now() + 60_000 } })),
+      failures: [], lists: [{ sourceId: "controlled", policy: "default", exhaustive: true }] };
+  } });
+  await h.host.refresh(f.ctx);
+  const list = async (input: Record<string, unknown> = { query: "root" }) => {
+    const value = await h.search.execute("audit-list", input, undefined, undefined, f.ctx);
+    if (value.content[0]?.type !== "text") throw new Error("Expected list response");
+    return JSON.parse(value.content[0].text);
+  };
+  const disableRead = async () => {
+    state.enabled = false;
+    await expect(h.host.activate(f.root, f.ctx)).rejects.toMatchObject({ code: "CONTENT_DISABLED" });
+    expect((await list()).records[0].availability).toBe("disabled");
+  };
+  return { ...f, ...h, state, list, disableRead };
+}
+
+test("control: known disabled current read is corrected and a successful exact retry recovers", async () => {
+  const f = await auditFixture();
+  await f.disableRead();f.state.enabled = true;
+  await f.host.activate(f.root, f.ctx);
+  expect((await f.list()).records[0].availability).toBe("available");
+});
+
+test("F1: explicit successful metadata refresh supersedes an older disabled observation", async () => {
+  const f = await auditFixture();await f.disableRead();f.state.enabled = true;
+  const before = f.state.metadataCalls;f.host.invalidate();await f.host.refresh(f.ctx);
+  expect(f.state.metadataCalls).toBe(before + 1);
+  expect((await f.list()).records[0].availability).toBe("available");
+});
+
+test("F2: a direct notion_use denial updates the same current availability as read", async () => {
+  const f = await auditFixture();f.state.enabled = false;
+  await expect(f.tool.execute("use-denied", { ref: f.root.ref }, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "CONTENT_DISABLED" });
+  expect((await f.list()).records[0].availability).toBe("disabled");
+});
+
+test("F3: a successful notion_use after re-enable retires the prior disabled observation", async () => {
+  const f = await auditFixture();await f.disableRead();f.state.enabled = true;
+  const result = await f.tool.execute("use-reenabled", { ref: f.root.ref }, undefined, undefined, f.ctx);
+  expect(preparationDetails(result).purpose).toBe("use");
+  expect((await f.list()).records[0].availability).toBe("available");
+});
+
+test("F4: a newly started session does not inherit a previous session's contradicted denial", async () => {
+  const f = await auditFixture();await f.disableRead();f.state.enabled = true;
+  await f.emit("session_before_switch", {}, f.ctx);f.session.id = "new-session";
+  await f.emit("session_start", {}, f.ctx);await f.host.refresh(f.ctx);
+  expect((await f.list()).records[0].availability).toBe("available");
+});
+
+test("F5: changed advertised availability invalidates an earlier pagination cursor", async () => {
+  const f = await auditFixture();const first = await f.list({ limit: 1 });
+  expect(first.has_more).toBe(true);expect(typeof first.next_cursor).toBe("string");
+  await f.disableRead();
+  await expect(f.list({ limit: 1, cursor: first.next_cursor })).rejects.toMatchObject({ code: "CATALOG_CURSOR_INVALID" });
+});
+
+
+test("F7: a late older denial cannot overwrite a newer successful current read", async () => {
+  const f = await fixture(true);
+  const old = Promise.withResolvers<PreparedHostGraph[]>();let attempts = 0;
+  const { host, search } = await f.install(async purpose => {
+    attempts++;
+    return attempts === 1 ? old.promise : [f.graph(purpose)];
+  });
+  await host.refresh(f.ctx);
+  const first = host.activate(f.root, f.ctx, new AbortController().signal).catch(error => error);
+  while(attempts !== 1) await new Promise(resolve => setTimeout(resolve,0));
+  await host.activate(f.root, f.ctx, new AbortController().signal);
+  old.reject(exactDenial(f.root));
+  expect(await first).toBeInstanceOf(SourceError);
+  const out = await search.execute("after-delayed-denial", { query: "root" }, undefined, undefined, f.ctx);
+  if(out.content[0]?.type !== "text") throw new Error("Expected list response");
+  expect(JSON.parse(out.content[0].text).records[0].availability).toBe("available");
+});
+
+
+test("F6: list expiry is reached without an editor, warm access does not renew it and concurrent readers coalesce", async () => {
+  const f = await fixture(true);let calls = 0;let description = "before-edit";
+  const start = Date.now();setSystemTime(start);
+  try {
+    const h = await f.install(undefined, { getRecords: async () => {
+      calls++;const validatedAt = Date.now();
+      return { records: f.records.map(record => ({ ...record, description, body: undefined, preparationBinding: undefined,
+        currentObservation: { origin: "remote", validatedAt, validUntil: validatedAt + 1000 }, defaultDiscovery: true })), failures: [],
+        lists: [{ sourceId: "controlled", policy: "default", exhaustive: true, validatedAt: new Date(validatedAt).toISOString(), ageMs: 0, maxAgeMs: 1000, stale: false }] };
+    } });
+    await h.host.refresh(f.ctx);const before = calls;
+    const list = () => h.search.execute("ttl-list", {}, undefined, undefined, f.ctx);
+    description = "after-edit";setSystemTime(start + 999);
+    expect(JSON.stringify(await list())).toContain("before-edit");expect(calls).toBe(before);
+    setSystemTime(start + 1000);
+    const next = await Promise.all([list(),list(),list()]);
+    expect(next.every(result => JSON.stringify(result).includes("after-edit"))).toBe(true);
+    expect(calls).toBe(before + 1);expect(f.calls).toEqual([]);expect(f.resourceReads).toEqual([]);
+    setSystemTime(start + 1999);await list();expect(calls).toBe(before + 1);
+    setSystemTime(start + 2000);await list();expect(calls).toBe(before + 2);
+  } finally { setSystemTime(); }
+});
+
+test("fresh metadata without a body is not affected by Default Context outside an explicit View filter", async () => {
+  for (const enabled of [true,false]) for (const defaultContext of [true,false]) {
+    const f = await fixture(true);const {host,search} = await f.install(undefined,{getRecords:async()=>({
+      records:[{...f.root,body:undefined,preparationBinding:undefined,enabled,default_context:defaultContext,defaultDiscovery:true}],failures:[],
+    })});await host.refresh(f.ctx);
+    const result = await search.execute("flag-combination",{},undefined,undefined,f.ctx);
+    expect(JSON.stringify(result)).toContain(enabled?'"availability":"available"':'"availability":"disabled"');
+    const projection = JSON.stringify(await f.emit("context_with_system",{messages:[{role:"system",content:"Keep native policies"},{role:"user",content:"Show metadata only"}]},f.ctx));
+    expect(projection.includes("<name>root</name>")).toBe(enabled);
+    expect(f.calls).toEqual([]);expect(f.resourceReads).toEqual([]);
+  }
+});
+
+test("dependency denial changes only the exact child; unproven or foreign failures do not guess root availability", async () => {
+  const f = await fixture(true);let error: Error = exactDenial(f.required);
+  const {host,tool,search}=await f.install(async()=>{throw error;});await host.refresh(f.ctx);
+  await expect(tool.execute("required-denied",{ref:f.root.ref},undefined,undefined,f.ctx)).rejects.toMatchObject({code:"CONTENT_DISABLED"});
+  const read = async(query:string)=>JSON.parse(sourceMessageText((await search.execute("scope-check",{query},undefined,undefined,f.ctx)).content));
+  expect((await read("root")).records[0].availability).toBe("available");
+  expect((await read("required")).records[0].availability).toBe("disabled");
+  error=new SourceError("CONTENT_DISABLED","controlled");
+  await expect(host.activate(f.root,f.ctx)).rejects.toMatchObject({code:"CONTENT_DISABLED"});
+  expect((await read("root")).records[0].availability).toBe("available");
+  error=new SourceError("CONTENT_DISABLED","controlled",undefined,{denials:[{scope,id:f.root.id!,ref:f.member.ref!,code:"CONTENT_DISABLED"}]});
+  await expect(host.activate(f.root,f.ctx)).rejects.toMatchObject({code:"CONTENT_DISABLED"});
+  expect((await read("root")).records[0].availability).toBe("available");
+});
+
+test("permission refusal prevents reprojecting a verified old body without rewriting native history", async () => {
+  const f=await fixture(true);let denied=false;
+  const h=await f.install(async purpose=>{if(denied)throw exactDenial(f.root,"ACCESS_DENIED");return[f.graph(purpose)];});
+  await h.host.refresh(f.ctx);
+  const loaded=await h.tool.execute("original-use",{ref:f.root.ref},undefined,undefined,f.ctx);
+  const messages:AgentMessage[]=[{role:"toolResult",toolName:"notion_use",toolCallId:"original-use",...loaded}];
+  const before=JSON.stringify(messages);denied=true;
+  await expect(h.host.activate(f.root,f.ctx)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+  expect(()=>h.host.assertCanRestore(f.root)).toThrow();
+  const projected=await f.emit("context",{messages},f.ctx);
+  expect(JSON.stringify(projected)).not.toContain("Exact root");
+  expect(JSON.stringify(projected)).toContain("Source access is no longer available");
+  expect(JSON.stringify(messages)).toBe(before);
+});
+
+test("business disablement preserves delivered history but does not allow implicit restoration or fixed-pin use", async () => {
+  const f=await fixture(true);let state:"enabled"|"disabled"|"pin"="enabled";
+  const h=await f.install(async purpose=>{
+    if(state==="disabled")throw exactDenial(f.root);
+    const graph=f.graph(purpose);
+    return[state==="pin"?{...graph,records:graph.records.map(record=>({...record,currentObservation:undefined}))}:graph];
+  });await h.host.refresh(f.ctx);
+  const loaded=await h.tool.execute("first-use",{ref:f.root.ref},undefined,undefined,f.ctx);
+  const messages:AgentMessage[]=[{role:"toolResult",toolName:"notion_use",toolCallId:"first-use",...loaded}];
+  state="disabled";await expect(h.host.activate(f.root,f.ctx)).rejects.toMatchObject({code:"CONTENT_DISABLED"});
+  const before=JSON.stringify(messages);await f.emit("context",{messages},f.ctx);expect(JSON.stringify(messages)).toBe(before);
+  expect(()=>h.host.assertCanRestore(f.root)).toThrow();
+  state="pin";
+  await expect(h.tool.execute("fixed-use",{ref:f.root.preparationBinding!.ref},undefined,undefined,f.ctx)).rejects.toMatchObject({code:"CONTENT_DISABLED"});
+  const list=await h.search.execute("still-disabled",{query:"root"},undefined,undefined,f.ctx);
+  expect(sourceMessageText(list.content)).toContain('"availability":"disabled"');
+});
+
+test("an older successful read cannot commit after a newer exact denial", async () => {
+  const f=await fixture(true),older=Promise.withResolvers<PreparedHostGraph[]>();let attempts=0;
+  const h=await f.install(async()=>{attempts++;if(attempts===1)return older.promise;throw exactDenial(f.root);});await h.host.refresh(f.ctx);
+  const first=h.host.activate(f.root,f.ctx,new AbortController().signal).catch(error=>error);
+  while(attempts!==1)await new Promise(resolve=>setTimeout(resolve,0));
+  await expect(h.host.activate(f.root,f.ctx,new AbortController().signal)).rejects.toMatchObject({code:"CONTENT_DISABLED"});
+  older.resolve([f.graph("use")]);expect(await first).toMatchObject({code:"CONTENT_DISABLED"});expect(f.persisted).toEqual([]);
+});
+
+test("a list completed during an in-flight read is an earlier observation; a following list sees its exact denial", async () => {
+  const f=await fixture(true),pending=Promise.withResolvers<PreparedHostGraph[]>();let started=false;
+  const h=await f.install(async()=>{started=true;return pending.promise;});await h.host.refresh(f.ctx);
+  const read=h.host.activate(f.root,f.ctx,new AbortController().signal).catch(error=>error);
+  while(!started)await new Promise(resolve=>setTimeout(resolve,0));
+  const list=()=>h.search.execute("observed-order",{query:"root"},undefined,undefined,f.ctx);
+  const before=await list();expect(sourceMessageText(before.content)).toContain('"availability":"available"');
+  pending.reject(exactDenial(f.root));expect(await read).toMatchObject({code:"CONTENT_DISABLED"});
+  expect(sourceMessageText((await list()).content)).toContain('"availability":"disabled"');
+  expect(sourceMessageText(before.content)).toContain('"availability":"available"');
 });

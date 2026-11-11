@@ -332,6 +332,7 @@ export type NotionViewState =
   | { sourceId: string; origin: "session" | "configured" | "profile" | "first"; status: "error"; code: string };
 export type NotionListObservation = {
   sourceId: string;
+  scope?: string;
   exhaustive?: boolean;
   policy: "default" | "max_age" | "refresh" | "offline" | "pinned";
   validatedAt?: string;
@@ -444,6 +445,7 @@ export type SkillRecord = SkillMetadata & {
   defaultDiscovery?: boolean;
   versionId?: string;
   freshness?: unknown;
+  currentObservation?: import("./consumer-observation").CurrentEvidence;
   coverage?: unknown;
   sourceScope?: string;
   metadataIndexPath?: string;

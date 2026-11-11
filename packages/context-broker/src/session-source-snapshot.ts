@@ -334,7 +334,7 @@ function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number
         delivery: derived.records[recordIndex]!.delivery, loaded: derived.records[recordIndex]!.state === "source" } : record);
       return { ...message, details: { ...next, contextBrokerPreparation: { ...next.contextBrokerPreparation, records, projection: derived } } };
     }
-    if (projected[index] !== original && reason === "deduplicate") {
+    if (projected[index] !== original) {
       // A confirmation can equal a very short author body. Invalidate only the
       // provider copy explicitly instead of relying on different text hashes.
       const native = verifiedReadProof(original);
@@ -473,32 +473,47 @@ export function sessionSourceBindings(messages: AgentMessage[], scope: string): 
 
 /** Replace only verified superseded spans in the provider projection. Stored
  * native tool results and user messages are never rewritten. */
-export function projectSelectedSourceMessages(messages: AgentMessage[], selection: SessionSelection): AgentMessage[] {
+export function projectSelectedSourceMessages(messages: AgentMessage[], selection: SessionSelection,
+  unavailable?: (scope: string, id: string) => boolean): AgentMessage[] {
   const replacements = new Map<number, Replacement[]>();
-  function retired(proof: Record<string, unknown>): boolean {
-    let identity: unknown;
-    try { identity = JSON.parse(String(proof.contentIdentity ?? proof.identity)); } catch { return false; }
-    if (!Array.isArray(identity)) return false;
-    const scopeId = identity.length === 2 ? identity[0] : identity[1], id = identity.length === 2 ? identity[1] : identity[4];
-    if (typeof scopeId !== "string" || typeof id !== "string") return false;
+  function identityRetired(scopeId: string, id: string, snapshotId: unknown, bodySha256?: unknown): "unavailable" | "superseded" | undefined {
+    if (unavailable?.(scopeId, id)) return "unavailable";
     const scope = selection.scopes.get(scopeId);
-    if (!scope) return false;
+    if (!scope) return undefined;
     const binding = scope.bindings.get(id);
-    return binding ? binding.snapshot_id !== proof.snapshotId || binding.body_sha256 !== proof.bodySha256 : scope.retired.has(id);
+    return (binding ? binding.snapshot_id !== snapshotId || bodySha256 !== undefined && binding.body_sha256 !== bodySha256 : scope.retired.has(id)) ? "superseded" : undefined;
   }
-  function add(index: number, start: number, end: number, encoding: unknown) {
-    const text = "An explicit new selection superseded these Skill instructions. Use the currently selected graph and its fixed references.";
+  function retired(proof: Record<string, unknown>): "unavailable" | "superseded" | undefined {
+    let identity: unknown;
+    try { identity = JSON.parse(String(proof.contentIdentity ?? proof.identity)); } catch { return undefined; }
+    if (!Array.isArray(identity)) return undefined;
+    const scopeId = identity.length === 2 ? identity[0] : identity[1], id = identity.length === 2 ? identity[1] : identity[4];
+    if (typeof scopeId !== "string" || typeof id !== "string") return undefined;
+    return identityRetired(scopeId, id, proof.snapshotId, proof.bodySha256);
+  }
+  function add(index: number, start: number, end: number, encoding: unknown, reason: "unavailable" | "superseded") {
+    const text = reason === "unavailable" ? "Source access is no longer available in the current scope. These verified source bytes are withheld from this request."
+      : "An explicit new selection superseded these Skill instructions. Use the currently selected graph and its fixed references.";
     const replacement = { start, end, text: encoding === "json" ? JSON.stringify(text).slice(1, -1) : text };
     const list = replacements.get(index) ?? [];
     if (!list.some(item => item.start === start && item.end === end)) list.push(replacement);
     replacements.set(index, list);
   }
   injectedSnapshots(messages, (proof, index) => {
-    if (retired(proof) && object(proof.delivery)) add(index, Number(proof.delivery.start), Number(proof.delivery.end), proof.delivery.encoding);
+    const reason = retired(proof);
+    if (reason && object(proof.delivery)) add(index, Number(proof.delivery.start), Number(proof.delivery.end), proof.delivery.encoding, reason);
   });
   for (const [index, message] of messages.entries()) {
     const proof = verifiedReadProof(message);
-    if (proof && retired(proof)) add(index, 0, readProofEnd(proof, message), "raw");
+    const reason = proof && retired(proof);
+    if (proof && reason) add(index, 0, readProofEnd(proof, message), "raw", reason);
+    const resource = verifiedResourceReadProof(message);
+    const resourceReason = resource && identityRetired(String(resource.scope), String(resource.id), resource.snapshot_id);
+    if (resource && resourceReason) add(index, 0, sourceMessageText(message.content).length, "raw", resourceReason);
+    const batch = verifiedResourceBatchProof(message);
+    const batchReason = batch && identityRetired(batch.selection.scope, batch.selection.owner, batch.selection.snapshot_id);
+    if (batch && batchReason) for (const file of batch.files)
+      if (file.delivered_complete_text && file.delivery) add(index, file.delivery.start, file.delivery.end, "json", batchReason);
   }
   return replacements.size ? projectDeliverySpans(messages, replacements, "supersede") : messages;
 }

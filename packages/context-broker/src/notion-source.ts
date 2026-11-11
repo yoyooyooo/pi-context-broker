@@ -9,6 +9,7 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { normalizeKey } from "./skill-records";
 import { parseNativeReference, type NativeFileBinding } from "./native-reference";
+import { currentEvidence } from "./consumer-observation";
 import { decodePreparedGraph, preparationFailureDetails, type PreparationPurpose, type PreparationBinding, type PreparedHostGraph } from "./prepare-protocol";
 import { sharedSkillId, validSharedIdentity } from "./shared-skill-identity";
 import type { PrefetchBudget, PrefetchOutcome, PrefetchPlan } from "./prefetch-policy";
@@ -409,9 +410,17 @@ async function discoverNotionDirectory(source: NotionSource, cwd: string, option
     ? [source.database.replaceAll("-", "").toLowerCase()]
     : databases.filter(database => database.role === "content" && database.alias === source.database).map(database => database.id.replaceAll("-", "").toLowerCase());
   if (selectedDatabases && selectedDatabases.length !== 1) decodeError(source);
+  // An exact complete empty View query performs no row hydration, so Core
+  // correctly reports zero queried data sources. Keep the allocated query
+  // proof and bound View identity; an arbitrary missing coverage is not empty.
+  const verifiedEmptyView = result.records.length === 0 && coverage.exhaustive && coverage.failed_sources.length === 0
+    && coverage.queried_data_sources.length === 0 && object(result.view_query)
+    && typeof result.view_query.id === "string" && UUID.test(result.view_query.id)
+    && typeof result.view_query.expires_at === "string" && Number.isFinite(Date.parse(result.view_query.expires_at))
+    && result.view_query.total_count === 0;
   if (selected && (coverage.method !== "explicit_view" ||
     !databases.some(database => database.role === "content" && database.id === selected.database_id && database.sources.includes(selected.data_source_id)) ||
-    !coverage.queried_data_sources.includes(selected.data_source_id) ||
+    !coverage.queried_data_sources.includes(selected.data_source_id) && !verifiedEmptyView ||
     selectedDatabases !== undefined && !selectedDatabases.includes(selected.database_id.replaceAll("-", "").toLowerCase()))) decodeError(source);
   if (!selectedView && (result.profile !== undefined || result.capability_directory === true || result.view !== undefined || coverage.method === "explicit_view")) decodeError(source);
   if (selectedProfile !== undefined || result.profile !== undefined) {
@@ -466,7 +475,8 @@ async function discoverNotionDirectory(source: NotionSource, cwd: string, option
     const hostName = name.replace(/[^a-z0-9-]/g, "-");
     const stub = `---\nname: ${JSON.stringify(hostName)}\ndescription: ${JSON.stringify(item.description)}\n---\n`;
     if (!saved) await writeFile(path, stub, { flag: "wx", mode: 0o600 });
-    records.push({ ...item, source: "notion", aliases: [], autoloadEnabled: item.kind !== "prompt", normalizedName: item.alias, normalizedAliases: [], normalizedDescription: normalizeKey(item.description), path, metadataIndexPath: path, sourceId: source.id, token, selectionToken: `${name}@${namespace}`, sourceScope: scope, freshness: observedFreshness, coverage });
+    records.push({ ...item, source: "notion", aliases: [], autoloadEnabled: item.kind !== "prompt", normalizedName: item.alias, normalizedAliases: [], normalizedDescription: normalizeKey(item.description), path, metadataIndexPath: path, sourceId: source.id, token, selectionToken: `${name}@${namespace}`, sourceScope: scope, freshness: observedFreshness,
+      currentObservation: currentEvidence(observedFreshness, saved ? "local_cache" : result.source), coverage });
   }
   if (!saved && cache && order && (await catalogCache(source, cwd, options.signal))?.key === cache.key) {
     const published = join(cache.path, "published");
@@ -480,7 +490,9 @@ async function discoverNotionDirectory(source: NotionSource, cwd: string, option
     await rename(pending, join(published, order));
   }
   if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-  return { catalog: result, directory: Object.assign(attachList(records, source, observedFreshness, coverage.exhaustive), { failures, ...(selectedView ? { view: selected ?? null } : {}), ...(object(result.profile) ? { profileId: String(result.profile.profile_id) } : {}) }) };
+  const directory = attachList(records, source, observedFreshness, coverage.exhaustive);
+  directory.list.scope = scope;
+  return { catalog: result, directory: Object.assign(directory, { failures, ...(selectedView ? { view: selected ?? null } : {}), ...(object(result.profile) ? { profileId: String(result.profile.profile_id) } : {}) }) };
 }
 
 export async function discoverNotionSource(source: NotionSource, cwd: string, options: Options = {}): Promise<NotionDirectory> {
@@ -809,7 +821,7 @@ export async function loadNotionSkill(record: SkillRecord, source: NotionSource,
   if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
   const path = join(destination, entry);
   const body = await readFile(path, "utf8");
-  return { ...record, ...current, upstream: current.upstream, path, body, normalizedName: current.alias, normalizedDescription: normalizeKey(current.description), snapshotId: snapshot, versionId: version, freshness: observedFreshness, ...(fileBindings === undefined ? {} : { fileBindings }) };
+  return { ...record, ...current, upstream: current.upstream, path, body, normalizedName: current.alias, normalizedDescription: normalizeKey(current.description), snapshotId: snapshot, versionId: version, freshness: observedFreshness, currentObservation: currentEvidence(observedFreshness, read.source), ...(fileBindings === undefined ? {} : { fileBindings }) };
 }
 
 type GraphRequest = {
@@ -837,7 +849,8 @@ async function loadPreparedEntry(metadata: SkillRecord, node: PreparedNode, sour
     throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
   }
   const record: SkillRecord = { ...metadata, ...current, path: node.path, body: node.content,
-    snapshotId: node.binding.snapshot_id, versionId: node.binding.version_id, freshness: observedFreshness,
+    snapshotId: node.binding.snapshot_id, versionId: node.binding.version_id, freshness: node.freshness ?? observedFreshness,
+    currentObservation: currentEvidence(node.freshness, node.source),
     preparationBinding: node.binding, preparationDirectory: { files: node.files, required: node.required, candidates: node.candidates, references: node.references },
     ...(fileBindings === undefined ? {} : { fileBindings }),
   };
@@ -859,7 +872,8 @@ async function loadConsumedEntry(metadata: SkillRecord, node: PreparedNode, entr
     || mainBinding && (current.locator.type !== "shared_skill" || mainBinding.page_id !== current.locator.page_id)
     || fileBindings && !mainBinding || parseNativeReference(node.binding.ref).fileId !== mainBinding?.file_id) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
   const record: SkillRecord = { ...metadata, ...current, path: node.path, body: node.content,
-    snapshotId: node.binding.snapshot_id, versionId: node.binding.version_id, freshness: { policy: "pinned" },
+    snapshotId: node.binding.snapshot_id, versionId: node.binding.version_id, freshness: node.freshness ?? { policy: "pinned" },
+    currentObservation: currentEvidence(node.freshness, node.source),
     preparationBinding: node.binding, preparationDirectory: { files: node.files, required: node.required, candidates: node.candidates, references: node.references },
     ...(fileBindings === undefined ? {} : { fileBindings }),
   };

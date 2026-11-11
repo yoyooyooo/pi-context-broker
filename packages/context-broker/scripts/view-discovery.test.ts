@@ -191,3 +191,35 @@ test("Pi Notion directory keeps authored names and explicit sources without rena
   expect(legacy).toContain("<name>notion-one-review-rules</name>");
   expect(legacy).not.toContain("<source>");
 });
+
+test("Default Context affects discovery only through explicit View membership, not a second checkbox test", async () => {
+  const f=pairedView();const first={...f.selected,default_context:false};f.directory[0]=first;
+  const catalog={records:[first],failures:[]};
+  const included=await resolveViewDiscovery({sources:[f.source]},catalog,undefined,undefined,f.paired);
+  expect(included.records[0]?.defaultDiscovery).toBe(true);
+  // The Notion-selected View now excludes this record. Its authorized catalog
+  // entry remains available for an exact selection, rather than being deleted.
+  f.directory.splice(0,1);
+  const excluded=await resolveViewDiscovery({sources:[f.source]},catalog,undefined,undefined,f.paired);
+  expect(excluded.records[0]?.defaultDiscovery).toBe(false);expect(excluded.records[0]?.ref).toBe(first.ref);
+  const checked={...first,default_context:true};f.directory.push(checked);
+  const selected=await resolveViewDiscovery({sources:[f.source]},{records:[checked],failures:[]},undefined,undefined,f.paired);
+  expect(selected.records[0]?.defaultDiscovery).toBe(true);
+});
+
+test("a more recently verified View preserves its new metadata instead of restoring an older catalog description", async () => {
+  const f=pairedView(),now=Date.now();
+  const older={...f.selected,description:'old',currentObservation:{origin:'cache' as const,validatedAt:now-1000,validUntil:now+5000}};
+  f.directory[0]={...f.selected,description:'new',currentObservation:{origin:'remote',validatedAt:now,validUntil:now+5000}};
+  const result=await resolveViewDiscovery({sources:[f.source]},{records:[older],failures:[]},undefined,undefined,f.paired);
+  expect(result.records[0]?.description).toBe('new');expect(result.records[0]?.ref).toBe(older.ref);
+});
+
+test("View count states the current visible candidates explicitly, including zero after eligibility changes", () => {
+  const f = pairedView();if(!f.directory.view)throw new Error("Expected bound View");
+  const views = [{sourceId:f.source.id,origin:"configured" as const,status:"ready" as const,view:f.directory.view,count:1,partial:false}];
+  const empty=viewSystemPrompt("Native rules",[],[],new Set(),views);
+  expect(empty).toContain('count="0"');expect(empty).not.toContain("<skill>");expect(empty).not.toContain('status="error"');
+  const one=viewSystemPrompt("Native rules",[f.selected],[],new Set(),views);
+  expect(one).toContain('count="1"');expect(one).toContain("<skill>");
+});

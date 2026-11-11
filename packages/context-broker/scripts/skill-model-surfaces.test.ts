@@ -263,7 +263,8 @@ test("Pi search projects candidate choices while retaining source disambiguation
   for (const [index, record] of records.entries()) {
     const card = cards[index]!, machine = full[index]!;
     expect(card).toEqual({ ref: machine.ref, kind: record.kind, name: record.name, description: record.description,
-      source: record.sourceId, in_default_view: false, availability: record.enabled ? "available" : "disabled" });
+      source: record.sourceId, in_default_view: false, availability: record.enabled ? "available" : "disabled",
+      ...(record.enabled ? {} : { error_code: "CONTENT_DISABLED" }) });
     expect(machine).toEqual({ ...card, id: record.id, scope: record.sourceScope });
     const reference = h.bridge.resolve(h.ctx, string(card.ref));
     const candidate = parseNativeReference(reference.canonicalRef);

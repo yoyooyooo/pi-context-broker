@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "source_base": "38285e7ea5b872442acc5666a677cf0d10714a4b",
+  "correspondence": "Reviewed source hashes bind the implemented transition owners. Finite-model results do not establish complete implementation refinement. The final commit, installed package and actual session identities belong to the execution receipt.",
+  "files": {
+    "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
+    "packages/context-broker/src/host-skills.ts": "5b39350f485f82db334e6cd8189cbf13478f5685d9e7360500fc247ba5c1826c",
+    "packages/context-broker/src/prepare-protocol.ts": "c3642c1bbae38f42fe74865f3b0c362fc9eac13ef7544bb7f651248402382806",
+    "packages/context-broker/src/notion-source.ts": "013c4169974e36060f5fa82d6fd85a33826c174fcd57abba04725692ed1a5ce8",
+    "packages/context-broker/src/index.ts": "436af1de5f383ab13cdd0db1841beadc9539f19c5917dafc6baca038cfe868d7",
+    "packages/context-broker/src/view-discovery.ts": "15ba061763e6b5546d21551a7c0c2fc15a68626af1e47771cba539ef999b995d",
+    "packages/context-broker/src/view-prompt.ts": "8b2d21bcfb3662b4e742d51c13a625aaaa5a66ba7f4cf717c3f8cfed9704062a",
+    "packages/context-broker/src/session-source-snapshot.ts": "4da0ad3783290e5565617051c298870e6f06d57d82c85d9dc932bc800b837eda",
+    "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
+    "packages/context-broker/scripts/host-prepare.test.ts": "06271be3a37e93005a108f0c517800585e2ec13b9446655b5591fd84b1a55db5",
+    "packages/context-broker/scripts/native-read-session.test.ts": "c46a859f12f51dd6a4cfb3b7c054d1f8b896fd30722eecb3cad63feb2647b22d",
+    "packages/context-broker/scripts/resource-read-projection.test.ts": "965879126d2f5104ca23aeba14bcb99d12bbffba9e5c13f4b42b7c29d3ed6abc",
+    "packages/context-broker/scripts/view-discovery.test.ts": "0d285b1584a299a2c4a3298d7c0cc833810d64855a5f8604f12e793c0f367bcf"
+  },
+  "models": {
+    "Availability": {
+      "spec": "Availability.tla",
+      "bounds": "One record and one retained pagination cursor",
+      "properties": [
+        "KnownObservationAgrees",
+        "CursorCannotMixAvailability"
+      ],
+      "owners": {
+        "KnownObservationAgrees": [
+          "createConsumerObservations.observe",
+          "createConsumerObservations.deny",
+          "graphPreparation",
+          "refreshMetadata"
+        ],
+        "CursorCannotMixAvailability": [
+          "notion_list catalogKey effective availability, View and coverage"
+        ]
+      },
+      "replays": [
+        "F1",
+        "F2",
+        "F3",
+        "F4",
+        "F5"
+      ],
+      "negative": "Availability.cursor-negative.cfg"
+    },
+    "ReadRace": {
+      "spec": "ReadRace.tla",
+      "bounds": "Two in-flight reads and two session epochs",
+      "properties": [
+        "NewestObservationWins",
+        "NoCrossSessionPublication"
+      ],
+      "owners": [
+        "createConsumerObservations.begin/current/accept",
+        "graphPreparation publication and commit checks",
+        "host lifecycle generation and cancellation"
+      ],
+      "replays": [
+        "F7",
+        "older current success after a newer denial",
+        "retired session/cancelled operation"
+      ],
+      "negative": "ReadRace.generation-negative.cfg"
+    }
+  },
+  "outside_finite_models": [
+    {
+      "name": "actual validation time and cache origin",
+      "tests": [
+        "consumer-observation.test.ts",
+        "shared-notion-adapter.test.ts"
+      ],
+      "contract": "Caches retain their original validation time. Offline/fixed content never proves current eligibility. A later-started cache lookup does not outrank an earlier still-in-flight current denial."
+    },
+    {
+      "name": "metadata expiry and default fields",
+      "tests": [
+        "host-prepare.test.ts",
+        "view-discovery.test.ts",
+        "catalog-menu tests"
+      ],
+      "contract": "F6 uses controlled actual clocks and consumer calls; installed SDK HTTP and owned live View edits separately prove the transport path. Default Context remains an optional author/View filter; Enabled remains the availability switch."
+    },
+    {
+      "name": "complete graph and future delivery",
+      "tests": [
+        "host-prepare.test.ts",
+        "native-read-session.test.ts",
+        "resource-read-projection.test.ts"
+      ],
+      "contract": "Exact dependency failures do not deny the root. Failed replacement does not replace the graph. Known authorization denial withholds verified source spans on future requests. Explicit new selection retires old main and supporting-file spans but never edits native history."
+    }
+  ],
+  "excluded": [
+    "Remote HTTP linearizability",
+    "Arbitrary Notion workspace permissions",
+    "Unbounded Requires graphs or file trees",
+    "Cross-machine clocks and writers",
+    "Provider behavior beyond the recorded original sessions"
+  ],
+  "verification": [
+    "node scripts/verify-consumer-observations.mjs --out /new/absolute/model-output",
+    "node scripts/check-consumer-observation-mutations.mjs --out /new/absolute/mutation-output",
+    "bun test packages/context-broker/scripts/consumer-observation.test.ts packages/context-broker/scripts/host-prepare.test.ts --timeout 30000"
+  ]
+}

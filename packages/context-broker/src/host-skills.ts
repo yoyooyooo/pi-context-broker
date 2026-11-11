@@ -15,7 +15,7 @@ import { invocationText } from "./invocation-text";
 import { viewSystemPrompt, withoutViewMetadata } from "./view-prompt";
 import { hostCliScope } from "./host-command";
 import { notifyUnavailableReferences, renderUnavailableReferences } from "./unavailable-references";
-import { deduplicateSourceReads, deferredSourceEntries, nativeReadReceipt, sourceDeliveryReceipt, sourceMessageText, withSessionSourceReceipts } from "./session-source-snapshot";
+import { deduplicateSourceReads, deferredSourceEntries, nativeReadReceipt, sourceDeliveryReceipt, sourceMessageText, sessionSourceBindings, projectSelectedSourceMessages, withSessionSourceReceipts } from "./session-source-snapshot";
 import { parseNativeReference, nativeResourcePath, type ExactNativeReference } from "./native-reference";
 import type { PreparedHostGraph, PreparationPurpose, PreparationBinding, PreparationDirectory } from "./prepare-protocol";
 import type { SelectionMode } from "./session-graph";
@@ -26,10 +26,13 @@ import { projectCatalogDescriptions, type CatalogDescription } from "./skill-cat
 import { reduceSessionShortRefs, resolveSessionShortRef } from "./session-short-ref";
 import { compileResourceRead } from "./resource-read-projection";
 import { DEFAULT_RESOURCE_READ_BUDGET, RESOURCE_READ_MAX_CONTEXT_BYTES, type FixedResourceRead, type ResourceReadBatch, type ResourceReadFileIdentity } from "./resource-read-types";
+import { createConsumerObservations, type ObservationTicket } from "./consumer-observation";
+import { notionCatalogAction, notionCatalogRetryGapMs } from "./catalog-menu";
 
 export type HostSkillOptions = {
   config: ConfigFile;
   getRecords(ctx?: ExtensionContext, signal?: AbortSignal): Promise<DiscoveryResult<SkillRecord>>;
+  metadataInvalidated?(ctx: ExtensionContext): boolean;
   lookupReference?(ctx: ExtensionContext, signal?: AbortSignal): Promise<DiscoveryResult<SkillRecord>>;
   resolveNamedReference?(ref: string, ctx: ExtensionContext, signal?: AbortSignal, refresh?: boolean): Promise<{ record: SkillRecord; ref: string }>;
   loadRecord(record: SkillRecord, signal?: AbortSignal, snapshotId?: string): Promise<SkillRecord>;
@@ -65,6 +68,7 @@ export type HostSkills = {
   selectedModelReference(record: SkillRecord, ctx: ExtensionContext): string | undefined;
   selectedModelFiles(record: SkillRecord, ctx: ExtensionContext): PreparationDirectory["files"] | undefined;
   viewStatus(): readonly NotionViewState[];
+  assertCanRestore(record: SkillRecord): void;
 };
 
 export function hostSkillName(record: SkillRecord): string {
@@ -240,11 +244,11 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   let metadataFallback = false;
   let filesystemCache: string | undefined;
   const hostRecords = new Map<string, SkillRecord>();
-  // Live current reads can observe Notion disablement before an earlier catalog
-  // expires. Do not mutate the cached record: a later exact read must be able
-  // to revalidate the same candidate after an external re-enable.
-  const liveDisabled = new Set<string>();
-  const available = (record: SkillRecord) => record.enabled !== false && !liveDisabled.has(recordIdentity(record));
+  const observations = createConsumerObservations(() => generation);
+  const available = (record: SkillRecord) => observations.state(record) === "available";
+  let metadataLists: NonNullable<DiscoveryResult["lists"]> = [];
+  const catalogScopes = new Map<string, string>();
+  let metadataRetryAt = 0;
   let catalogPublication: Promise<void> = Promise.resolve();
   const nativeNames = new Map<string, SkillRecord>();
   const readRecords = new Map<string, SkillRecord>();
@@ -322,6 +326,20 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     } finally { signal.removeEventListener("abort", abort); }
   }
 
+  function revalidateMetadata(ctx: ExtensionContext): Promise<void> {
+    if (metadataPending) return metadataReadiness;
+    const sourceIds = (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false
+      && !source.discovery?.offline).map(source => source.id);
+    const expired = notionCatalogAction({ offline: false, sourceIds, observations: metadataLists,
+      failedSourceIds: sourceFailures.map(failure => failure.sourceId), now: Date.now(), retryAt: metadataRetryAt });
+    // A legacy metadata producer without freshness cannot acquire freshness by
+    // being read again. Its explicit refresh route remains available.
+    if (options.metadataInvalidated?.(ctx) || metadataLists.some(list => list.validatedAt !== undefined) && expired === "refresh") {
+      metadataReadiness = refreshMetadata(ctx, false, true);
+    }
+    return metadataReadiness;
+  }
+
   if (sourceToolsEnabled) host.registerTool?.({
     name: listToolName, label: piConsumption ? "List Notion Skills" : "Skill search",
     description: `Search the authorized Skill metadata directory, including items outside the default View. Returns ${piConsumption ? "Skill refs for read or notion_use" : "exact read references only"}; it does not load instructions or activate workflows.`,
@@ -336,6 +354,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     sourcePath: import.meta.url, defaultInactive: false,
     async execute(_id, input, signal, _onUpdate, ctx) {
       const readSignal = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
+      revalidateMetadata(ctx);
       await ready(readSignal);
       if (discoveryError) throw discoveryError;
       if ((input.query !== undefined || !piConsumption) && (typeof input.query !== "string" || input.query.length > 512)
@@ -353,7 +372,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         && (input.source === undefined || record.sourceId === input.source)
         && (!query || [record.name, record.alias, record.description].some(value => value?.toLocaleLowerCase().includes(query))));
       const catalogKey = createHash("sha256").update(JSON.stringify([query, input.source ?? null,
-        matches.map(record => [recordIdentity(record), record.ref, record.name, record.description, record.enabled]), coverage, failures])).digest("hex");
+        matches.map(record => [recordIdentity(record), record.ref, record.name, record.description, observations.state(record)]), views, coverage, failures])).digest("hex");
       let offset = 0;
       if (typeof input.cursor === "string") {
         const cursor = /^(0|[1-9][0-9]*)\.([a-f0-9]{64})$/.exec(input.cursor);
@@ -371,7 +390,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         records: selected.map(record => ({
           id: record.id, ref: references.get(record) ?? record.ref, kind: record.kind, name: record.name, description: record.description,
           source: record.sourceId, scope: record.sourceScope, in_default_view: record.defaultDiscovery === true,
-          availability: available(record) ? "available" : "disabled",
+          availability: observations.state(record),
+          ...(observations.denial(record) ? { error_code: observations.denial(record) } : {}),
         })),
         failures: (piConsumption ? failures : sourceFailures).map(({ sourceId, code }) => ({ source: sourceId, code })),
       };
@@ -466,15 +486,51 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
   }
 
+  function observeFailure(error: unknown, ticket: ObservationTicket, selected: readonly SkillRecord[], fixed: ReadonlySet<string> = new Set()): void {
+    if (!(error instanceof SourceError) || !observations.current(ticket)) return;
+    if (error.code === "AUTH_REQUIRED") {
+      const scopes = new Set(selected.filter(record => record.sourceId === error.sourceId).map(record => record.sourceScope));
+      for (const record of [...selected, ...hostRecords.values()])
+        if (record.sourceId === error.sourceId && scopes.has(record.sourceScope)) observations.deny(record, ticket, "AUTH_REQUIRED");
+    }
+    for (const denial of error.details?.denials ?? []) {
+      let reference: ExactNativeReference;
+      try { reference = parseNativeReference(denial.ref); } catch { continue; }
+      const target = [...selected, ...hostRecords.values()].find(record => {
+        if (record.sourceId !== error.sourceId || record.sourceScope !== denial.scope || !record.ref) return false;
+        const page = record.locator && (record.locator.type === "shared_skill" || record.locator.type === "notion_page") ? record.locator.page_id.replaceAll("-", "") : undefined;
+        const selector = reference.selector.replace(/^notion_page:/u, "").replaceAll("-", "");
+        return (record.id === denial.id || page !== undefined && selector === page)
+          && (reference.selector === parseNativeReference(record.ref).selector || page !== undefined && selector === page);
+      });
+      if (target && !(denial.code === "CONTENT_DISABLED" && (reference.snapshot || fixed.has(recordIdentity(target)))))
+        observations.deny(target, ticket, denial.code);
+    }
+  }
+
   async function graphPreparation(selected: readonly SkillRecord[], ctx: ExtensionContext | undefined, signal: AbortSignal, purpose: PreparationPurpose, pins?: ReadonlyMap<string, string>, mode: SelectionMode = "extend", commitNow = true): Promise<{ records: SkillRecord[]; graphs: PreparedHostGraph[]; commit(): void }> {
     const owner = gate.active, observedGeneration = generation;
     const observedSession = ctx?.sessionManager?.getSessionId?.();
     const bindings = mode === "replace" ? [] : [...owner?.prepared.values() ?? []].flatMap(record => record.preparationBinding ? [record.preparationBinding] : []);
-    const graphs = await options.prepareGraph!(selected, ctx, signal, purpose, pins, bindings, mode);
+    const ticket = observations.begin(signal);
+    const fixed = new Set([...selected, ...hostRecords.values()].filter(record => record.id && (pins?.has(record.id)
+      || mode !== "replace" && (bindings.some(binding => binding.record.id === record.id)
+        || ctx && options.sessionBinding?.(record, ctx)))).map(recordIdentity));
+    let graphs: PreparedHostGraph[];
+    try { graphs = await options.prepareGraph!(selected, ctx, signal, purpose, pins, bindings, mode); }
+    catch (error) { observeFailure(error, ticket, selected, fixed); throw error; }
     checkPreparationSignal(signal);
     if (generation !== observedGeneration || observedSession !== ctx?.sessionManager?.getSessionId?.()) throw preparationCancelled();
     if (owner) gate.assertCurrent(owner, ctx ?? owner.ctx);
     const values = graphs.flatMap(graph => graph.records);
+    const assertQualification = () => {
+      for (const record of values) {
+        const denial = observations.denial(record);
+        if (denial && (denial !== "CONTENT_DISABLED" || purpose === "use" || !fixed.has(recordIdentity(record))))
+          throw new SourceError(denial, record.sourceId ?? "selection");
+        if (!fixed.has(recordIdentity(record)) && !observations.canPublish(record, ticket)) throw preparationCancelled();
+      }
+    };
     const versions = new Map<string, string>();
     for (const record of values) {
       if (!record.sourceScope || !record.id || !record.snapshotId || !record.preparationBinding || typeof record.body !== "string") throw hostError("SOURCE_PREPARATION_INVALID");
@@ -486,6 +542,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const existing = owner?.prepared.get(key);
       if (mode !== "replace" && existing && (existing.snapshotId !== record.snapshotId || existing.body !== record.body)) throw hostError("SOURCE_SESSION_CONFLICT");
     }
+    for (const record of values) if (!fixed.has(recordIdentity(record))) observations.observe(record, ticket);
+    assertQualification();
     for (const record of values) {
       checkPreparationSignal(signal);
       const key = recordIdentity(record), metadata = hostRecords.get(key) ?? record;
@@ -499,6 +557,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       checkPreparationSignal(signal);
       if (generation !== observedGeneration || observedSession !== ctx?.sessionManager?.getSessionId?.()) throw preparationCancelled();
       if (owner) gate.assertCurrent(owner, ctx ?? owner.ctx);
+      assertQualification();
       // Exact root/File identity and response budgets are checked by the caller
       // before this transition. A failed refresh cannot replace the prior lock.
       if (deferredPiDiscovery && owner) {
@@ -562,6 +621,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
 
   function assertRecordSourceAvailable(record: SkillRecord, failures: readonly SourceFailure[] = sourceFailures): void {
     if (record.sourceId) {
+      const currentScope = catalogScopes.get(record.sourceId);
+      if (record.sourceScope && currentScope && record.sourceScope !== currentScope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", record.sourceId);
       const unavailable = failures.find(failure => failure.sourceId === record.sourceId && failure.blocking !== false);
       if (unavailable) throw new SourceError(unavailable.code, unavailable.sourceId);
     }
@@ -573,6 +634,9 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const binding = ctx ? options.sessionBinding?.(record, ctx) : undefined;
     const activeSnapshot = binding?.snapshot_id ?? (ctx ? options.sessionSnapshot?.(record, ctx) : undefined);
     if (requestedSnapshot && activeSnapshot && requestedSnapshot !== activeSnapshot) throw hostError("SOURCE_SESSION_CONFLICT");
+    const denied = observations.denial(record);
+    if ((requestedSnapshot || activeSnapshot) && denied && denied !== "CONTENT_DISABLED")
+      throw new SourceError(denied, record.sourceId ?? "selection");
     return { snapshot: requestedSnapshot ?? activeSnapshot, binding };
   }
 
@@ -580,6 +644,28 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const pinned = loaded.get(recordIdentity(record));
     return record.kind !== "prompt" && pinned && (!snapshot || pinned.record.snapshotId === snapshot)
       && ((ctx && options.isLoaded?.(pinned.record, ctx)) || (gate.active && pinned.owner === gate.active)) ? pinned.record : undefined;
+  }
+
+  function assertContextAccess(messages: AgentMessage[]): void {
+    const known = [...hostRecords.values(), ...readRecords.values(), ...[...loaded.values()].map(value => value.record)];
+    for (const scope of new Set(known.flatMap(record => record.sourceScope ? [record.sourceScope] : []))) {
+      for (const binding of sessionSourceBindings(messages, scope)) {
+        for (const record of known.filter(record => record.sourceScope === scope && record.id === binding.record.id)) {
+          assertRecordSourceAvailable(record);
+          const denial = observations.denial(record);
+          if (denial && denial !== "CONTENT_DISABLED") throw new SourceError(denial, record.sourceId ?? "selection");
+        }
+      }
+    }
+  }
+
+  function unavailableContextSource(scope: string, id: string): boolean {
+    const known = [...hostRecords.values(), ...readRecords.values(), ...[...loaded.values()].map(value => value.record)];
+    return known.filter(record => record.sourceScope === scope && record.id === id).some(record => {
+      try { assertRecordSourceAvailable(record); } catch { return true; }
+      const denial = observations.denial(record);
+      return denial !== undefined && denial !== "CONTENT_DISABLED";
+    });
   }
 
   async function activate(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal, waitForTool = false, readPhase: "hook" | "execute" = "hook", requestedSnapshot?: string): Promise<SkillRecord> {
@@ -597,6 +683,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
     record = hostRecords.get(key) ?? record;
     const selectedGeneration = generation;
+    const directObservation = observations.begin(signal);
+    const direct = !options.prepareGraph || record.source !== "notion" || record.kind === "prompt";
     const preparationOwner = gate.active;
     const existing = reusableLoadedSnapshot(record, ctx, sessionSnapshot);
     if (existing && !graphUse) { await publish(record, existing, signal); checkPreparationSignal(signal); return existing; }
@@ -624,6 +712,12 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (typeof result.body !== "string" || !result.body.trim()) throw hostError("SOURCE_BODY_MISSING");
       if (recordIdentity(result) !== key) throw hostError("SOURCE_IDENTITY_MISMATCH");
       if (sessionSnapshot && result.snapshotId !== sessionSnapshot) throw hostError("SOURCE_IDENTITY_MISMATCH");
+      if (direct && record.source === "notion") {
+        if (!sessionSnapshot) observations.observe(result, directObservation);
+        const denial = observations.denial(record);
+        if (denial && (denial !== "CONTENT_DISABLED" || !sessionSnapshot || !waitForTool)) throw new SourceError(denial, record.sourceId ?? "selection");
+        if (!sessionSnapshot && !observations.canPublish(record, directObservation)) throw preparationCancelled();
+      }
       if (options.config.sources?.some((source) => source.id === record.sourceId && source.type === "filesystem")) {
         filesystemCache ??= await mkdtemp(join(tmpdir(), "context-broker-host-"));
         const root = join(filesystemCache, ".snapshots", randomUUID());
@@ -660,12 +754,13 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       checkPreparationSignal(signal);
       if (!outcome.ok) throw outcome.error;
       if (generation !== selectedGeneration) throw preparationCancelled();
-      if (record.source === "notion" && !sessionSnapshot) liveDisabled.delete(key);
+      if (direct && !sessionSnapshot) observations.observe(outcome.value, directObservation);
       finish?.({ value: outcome.value });
       return outcome.value;
     } catch (error) {
-      if (record.source === "notion" && error instanceof SourceError && error.code === "CONTENT_DISABLED"
-        && !signal.aborted && generation === selectedGeneration) liveDisabled.add(key);
+      if (direct && error instanceof SourceError && (error.code === "CONTENT_DISABLED" && !sessionSnapshot
+        || error.code === "ACCESS_DENIED" || error.code === "AUTH_REQUIRED"))
+        observations.deny(record, directObservation, error.code);
       finish?.(error instanceof ReferenceMiss ? { skipped: true } : { error: signal?.aborted ? "Cancelled." : failure(error) });
       throw error;
     } finally {
@@ -781,17 +876,20 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     metadataFallback = !await adapter.registerCatalog(records, signal);
   }
 
-  async function refreshMetadata(ctx?: ExtensionContext, announce = true): Promise<void> {
+  async function refreshMetadata(ctx?: ExtensionContext, announce = true, preserveTurn = false): Promise<void> {
     const selectedGeneration = ++metadataGeneration;
     metadataController.abort();
     metadataController = new AbortController();
     const metadataSignal = metadataController.signal;
     metadataPending = true;
-    generation++;
-    lifecycleController.abort();
-    lifecycleController = new AbortController();
-    gate.cancel();
-    turnPrompts = undefined;
+    if (!preserveTurn) {
+      generation++;
+      lifecycleController.abort();
+      lifecycleController = new AbortController();
+      gate.cancel();
+      turnPrompts = undefined;
+    }
+    const observation = observations.begin(metadataSignal);
     try {
       const result = await options.getRecords(ctx, metadataSignal);
       if (metadataGeneration !== selectedGeneration) return;
@@ -824,6 +922,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       try {
         if (metadataGeneration !== selectedGeneration) return;
         sourceFailures = result.failures;
+        metadataLists = result.lists ?? [];
+        for (const list of metadataLists) if (list.scope) catalogScopes.set(list.sourceId, list.scope);
+        for (const record of next) if (record.sourceId && record.sourceScope) catalogScopes.set(record.sourceId, record.sourceScope);
+        metadataRetryAt = sourceFailures.length ? Date.now() + notionCatalogRetryGapMs : 0;
         catalogCoverage = new Map((result.lists ?? []).flatMap(list => typeof list.exhaustive === "boolean" ? [[list.sourceId, list.exhaustive]] : []));
         views = result.views ?? [];
         defaultRouters = next.filter(record => record.kind === "router" && record.defaultDiscovery === true);
@@ -832,6 +934,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         hostRecords.clear();
         for (const [name, record] of names) nativeNames.set(name, record);
         for (const record of next) {
+          observations.observe(record, observation);
           hostRecords.set(recordIdentity(record), record);
           readRecords.set(resolve(record.metadataIndexPath ?? record.path), record);
           readRecords.set(resolve(record.path), record);
@@ -846,11 +949,13 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         options.onMetadata?.(next);
         if (ctx) {
           for (const message of formatSourceFailures(sourceFailures)) ctx.ui?.notify?.(message, "warning");
-          if (announce) ctx.ui?.notify?.("context-broker: source metadata refreshed", "info");
+          if (announce) ctx.ui?.notify?.(sourceFailures.length || views.some(view => view.status === "error")
+            ? "context-broker: source metadata update incomplete; inspect the reported failures"
+            : "context-broker: source metadata refreshed", sourceFailures.length ? "warning" : "info");
         }
         // Pi projects this observation at each provider boundary; View switches do not reload the session.
       } finally { release(); }
-    } catch (error) { if (metadataGeneration === selectedGeneration) { discoveryError = error; if (ctx) notify(ctx, error); } }
+    } catch (error) { if (metadataGeneration === selectedGeneration) { discoveryError = error; metadataRetryAt = Date.now() + notionCatalogRetryGapMs; if (ctx) notify(ctx, error); } }
     finally { if (metadataGeneration === selectedGeneration) metadataPending = false; }
   }
 
@@ -969,6 +1074,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
           && entry.messages.some(message => message.role === "user"))?.sourceEntry.id;
         // A one-shot print has no later turn for a late default directory. Join
         // metadata only here, under the real operation's cancellation signal.
+        if (!run.prepared) revalidateMetadata(ctx);
         if (!run.prepared && (ctx.mode === "print" || ctx.mode === "json")) {
           await ready(AbortSignal.any([run.signal, lifecycleController.signal]));
           assertPiRun(run, ctx);
@@ -1000,6 +1106,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         messages = [...messages, projected];
       }
       messages = options.projectContext?.(messages, ctx, run?.graphs) ?? messages;
+      messages = projectSelectedSourceMessages(messages, { scopes: new Map() }, unavailableContextSource);
       if (run && options.restoreActive) {
         const restored = await options.restoreActive(messages, ctx, run.signal, run.graphs);
         assertPiRun(run, ctx);
@@ -1009,6 +1116,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         }
       }
       messages = deduplicateSourceReads(messages);
+      assertContextAccess(messages);
       if (run) {
         assertPiRun(run, ctx); run.contextMessages = messages;
         run.requestProjection = { count: run.projection?.length ?? 0, messages: projectionIndices.map(index => messages[index]!) };
@@ -1030,7 +1138,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     host.on("before_provider_request", (_event, ctx) => {
       const run = piRun;
       if (!run) return;
-      try { assertPiRun(run, ctx); run.requestPending = true; run.confirmedProjection = undefined; }
+      try { assertPiRun(run, ctx); assertContextAccess(run.contextMessages ?? []); run.requestPending = true; run.confirmedProjection = undefined; }
       catch (error) { if (piRun === run && generation === run.generation) ctx.abort?.(); throw error; }
     });
     host.on("after_provider_response", (event, ctx) => {
@@ -1824,6 +1932,11 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       throw error;
     }
   }, selectedModelReference: (record, ctx) => record.preparationBinding ? modelReference(record, ctx, true) : undefined,
+  assertCanRestore: record => {
+    assertRecordSourceAvailable(record);
+    const denial = observations.denial(record);
+    if (denial) throw new SourceError(denial, record.sourceId ?? "selection");
+  },
   selectedModelFiles: modelFiles,
   viewStatus: () => views, isNativeLoaded: (messages, record) => messages.some(message => {
     if (record.source === "notion") return false;

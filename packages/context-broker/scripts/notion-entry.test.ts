@@ -117,7 +117,8 @@ test("native resource tools resolve stable File ID and report materialization wi
   }, createPiHostAdapter(api));
   const emit = async (name: string, event: unknown) => { const result = []; for (const listener of events.get(name) ?? []) result.push(await listener(event as never, ctx)); return result; };
   const input = { path: f.files[1]!.ref.replace(f.resource, "old-spelling.md") };
-  await emit("tool_call", { toolName: "read", toolCallId: "resource", input });
+  const admission = await emit("tool_call", { toolName: "read", toolCallId: "resource", input });
+  expect(admission, JSON.stringify(admission)).not.toContainEqual(expect.objectContaining({ block: true }));
   expect(input.path).toBe(join(f.selected.entryManifest!.root, f.resource));
   expect(requested).toEqual([f.resource]);
   const content = [{ type: "text" as const, text: f.bytes.get(f.resource)!.toString("utf8") }];

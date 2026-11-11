@@ -49,11 +49,18 @@ const Purpose = Schema.Literals(["use", "inspect"]);
 const Binding = Schema.Struct({ record: Schema.Unknown, scope: Sha, snapshot_id: Snapshot, version_id: Schema.String, body_sha256: Sha, ref: Schema.String });
 const Edge = Schema.Struct({ from: Schema.String, to: Schema.String, ref: Schema.String });
 const DirectoryEntry = Schema.Struct({ id: Schema.String, ref: Schema.String, kind: Schema.String, name: Schema.String, description: Schema.String, availability: Schema.String });
+const Freshness = Schema.Struct({
+  policy: Schema.Literals(["default", "max_age", "refresh", "offline", "pinned"]),
+  validated_at: Schema.optional(Schema.String), age_ms: Schema.optional(Schema.Number),
+  max_age_ms: Schema.optional(Schema.Number), stale: Schema.optional(Schema.Boolean),
+  validation: Schema.optional(Schema.Literal("metadata")),
+});
 const Node = Schema.Union([
   Schema.Struct({ state: Schema.Literal("prepared"), id: Schema.String, ref: Schema.String, roles: Schema.Array(Schema.String),
     record: Schema.Unknown, binding: Binding, path: Schema.String, content: Schema.String, bytes: Natural, body_sha256: Sha,
     files: Schema.Array(Schema.Struct({ path: Schema.String, bytes: Natural, sha256: Sha, ref: Schema.String })),
-    required: Schema.Array(DirectoryEntry), candidates: Schema.Array(DirectoryEntry), references: Schema.Array(DirectoryEntry) }),
+    required: Schema.Array(DirectoryEntry), candidates: Schema.Array(DirectoryEntry), references: Schema.Array(DirectoryEntry),
+    source: Schema.optional(Schema.Literals(["notion", "local_cache", "local_snapshot"])), freshness: Schema.optional(Freshness) }),
   Schema.Struct({ state: Schema.Literal("known"), id: Schema.String, ref: Schema.String, roles: Schema.Array(Schema.String) }),
 ]);
 const Lock = Schema.Struct({ version: Schema.Literal(1), kind: Schema.Literal("observed_version_vector"), purpose: Purpose, scope: Sha,
@@ -129,15 +136,37 @@ export function decodePreparedGraph(value: unknown, input: { purpose: Preparatio
 }
 
 /** Expose failure provenance and budgets without forwarding raw response bodies or URLs. */
-export function preparationFailureDetails(value: unknown): { preparation?: unknown; retry_after?: number } | undefined {
+export type PreparationDenial = { scope: string; id: string; ref: string; code: "CONTENT_DISABLED" | "ACCESS_DENIED" | "AUTH_REQUIRED" };
+export function preparationFailureDetails(value: unknown): { preparation?: unknown; retry_after?: number; denials?: readonly PreparationDenial[] } | undefined {
   if (!value || typeof value !== "object") return undefined;
   const details = value as Record<string, unknown>;
   const retry = typeof details.retry_after === "number" && Number.isFinite(details.retry_after) ? details.retry_after : undefined;
   const raw = details.preparation;
   if (!raw || typeof raw !== "object") return retry === undefined ? undefined : { retry_after: retry };
   const preparation = raw as Record<string, unknown>;
+  const nodes = Array.isArray(preparation.nodes) ? preparation.nodes.filter(object) : [];
+  const denials: PreparationDenial[] = [];
+  if (typeof preparation.scope === "string" && /^[a-f0-9]{64}$/.test(preparation.scope)) {
+    const errors = [...nodes.filter(node => node.state === "failed").map(node => ({ node, error: node.error })),
+      ...(Array.isArray(preparation.errors) ? preparation.errors.filter(object).map(error => ({ node: undefined, error })) : [])];
+    for (const item of errors) {
+      const error = item.error;
+      if (!object(error)) continue;
+      const code = error.code;
+      if (code !== "CONTENT_DISABLED" && code !== "ACCESS_DENIED" && code !== "AUTH_REQUIRED") continue;
+      const identity = object(error.details) ? error.details.id : undefined;
+      const target = typeof identity === "string" ? nodes.find(node => node.id === identity) : item.node;
+      if (!target || typeof target.id !== "string" || typeof target.ref !== "string") continue;
+      // A parent's error can originate in a child. Retain only the exact
+      // failing node or explicit dependency identity, never the root guess.
+      if (target.state !== "failed") continue;
+      if (!denials.some(value => value.id === target.id && value.code === code))
+        denials.push({ scope: preparation.scope, id: target.id, ref: target.ref, code });
+    }
+  }
   return {
     ...(retry === undefined ? {} : { retry_after: retry }),
+    ...(denials.length ? { denials } : {}),
     preparation: {
       version: preparation.version, status: preparation.status, purpose: preparation.purpose, scope: preparation.scope,
       budget: preparation.budget, usage: preparation.usage,

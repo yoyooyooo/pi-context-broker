@@ -3330,7 +3330,7 @@ async function coldHttpSource(sample, path) {
   return path;
 }
 
-async function driveHttpTool(control, service, call) {
+async function driveHttpTool(control, service, call, knownDenial) {
   const before = await waitForSourceFinality(control.ledger, control.rpc.lifecycle[0].pid);
   assert.equal(before.complete, true);
   const eventCount = (await control.events()).length, providerCount = (await control.captures()).length,
@@ -3346,7 +3346,16 @@ async function driveHttpTool(control, service, call) {
   const events = (await control.events()).slice(eventCount), requests = service.requests.slice(requestCount);
   if (call.errorCode) {
     const failed = events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.status === 'failed');
-    assert.ok(failed.length > 0); assert.ok(failed.every(event => event.error_code === call.errorCode));
+    if (knownDenial) {
+      assert.equal(call.tool, 'read'); assert.equal(knownDenial.raw.toolName, 'notion_use'); assert.equal(knownDenial.raw.isError, true);
+      assert.ok(knownDenial.events.some(event => event.kind === 'sdk' && event.event === 'end' && event.status === 'failed' && event.error_code === call.errorCode));
+      assert.ok(knownDenial.requests.some(request => request.status === (call.errorCode === 'AUTH_REQUIRED' ? 401 : 403)));
+      const resource = new URL(call.args.path), owner = new URL(knownDenial.step.call.args.ref);
+      assert.equal(resource.protocol, 'skill:'); assert.equal(resource.hostname, owner.hostname); assert.ok(resource.searchParams.get('snapshot'));
+      assert.equal(requests.length, 0); assert.equal(events.filter(event => event.kind === 'sdk' && event.event === 'start').length, 0);
+      assert.equal(events.filter(event => event.kind === 'object_read' && event.event === 'start').length, 0);
+      assert.ok(textContent(raw.content).includes('(' + call.errorCode + ')'));
+    } else { assert.ok(failed.length > 0); assert.ok(failed.every(event => event.error_code === call.errorCode)); }
     for (const field of ['contextBrokerRead', 'contextBrokerResource', 'contextBrokerPreparation'])
       assert.equal(raw.details?.[field], undefined, 'An expected source error cannot become a delivery receipt');
   }
@@ -3762,15 +3771,16 @@ async function controlledHttpScenario(name, info, scratch, evidence) {
               assert.ok(main.requests.length > 0, 'Explicit maxAge=0 must actually revalidate the current observation');
               const resourceCall = (id, errorCode) => ({ id, tool: 'read', args: { path: original.resource.ref }, ...(errorCode ? { errorCode } : {}) });
               const useCall = (id, errorCode) => ({ id, tool: 'notion_use', args: { ref: sample.root_ref, refresh: true }, ...(errorCode ? { errorCode } : {}) });
-              const deniedPin = async (id, code) => {
-                const denied = await driveHttpTool(control, service, resourceCall(id, code)); steps.push(denied.step); errors.push(id);
+              const deniedPin = async (id, code, originalDenial) => {
+                const denied = await driveHttpTool(control, service, resourceCall(id, code), originalDenial); steps.push(denied.step); errors.push(id);
                 assert.equal(denied.requests.length, 0, 'Known denial must fence a fixed resource before source HTTP');
                 assert.equal(denied.events.filter(event => event.kind === 'object_read').length, 0, 'Known denial must precede local source object access');
               };
               await service.setPhase(label, { denyCurrent: true });
               const denied = await driveHttpTool(control, service, useCall('http-target-denied', 'ACCESS_DENIED'));
               steps.push(denied.step); errors.push('http-target-denied'); assert.ok(denied.requests.some(request => request.status === 403));
-              await deniedPin('http-target-denied-pin', 'ACCESS_DENIED');
+              assert.equal(bodyCount(denied.captures.at(-1).context, sample.oracle.cold.contents['SKILL.md']), 0, 'A known revoked source must not be resent with the tool error');
+              await deniedPin('http-target-denied-pin', 'ACCESS_DENIED', denied);
               await service.setPhase(label, { denyCurrent: false });
               const recovered = await driveHttpTool(control, service, useCall('http-target-recovered'));
               steps.push(recovered.step); httpUseProof(recovered, sample, original.binding); assert.ok(recovered.requests.length > 0);
@@ -3779,7 +3789,8 @@ async function controlledHttpScenario(name, info, scratch, evidence) {
               await service.setPhase(label, { denyAuthentication: true });
               const revoked = await driveHttpTool(control, service, useCall('http-scope-denied', 'AUTH_REQUIRED'));
               steps.push(revoked.step); errors.push('http-scope-denied'); assert.ok(revoked.requests.some(request => request.status === 401));
-              await deniedPin('http-scope-denied-pin', 'AUTH_REQUIRED');
+              assert.equal(bodyCount(revoked.captures.at(-1).context, sample.oracle.cold.contents['SKILL.md']), 0);
+              await deniedPin('http-scope-denied-pin', 'AUTH_REQUIRED', revoked);
               await service.setPhase(label, { denyAuthentication: false });
               const restored = await driveHttpTool(control, service, useCall('http-scope-recovered'));
               steps.push(restored.step); httpUseProof(restored, sample, original.binding); assert.ok(restored.requests.length > 0);

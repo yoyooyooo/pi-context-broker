@@ -527,3 +527,21 @@ node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/f
 正常宿主的 transport ledger 仍校验完整 hash 链、请求配对与零 observer error。所选模型请求必须有终态，并由每轮原始 payload、协议完成和实际回答证明应用完成；SDK/CLI source observer 必须完整结束。`transportCoverage` 单列 `allRequestsComplete` 和 `other.unknownRequestIds`，正常 MCP 等其它请求未结束不会被改成成功，也不代替 model/source 的硬门槛。原始 `transport_end.complete: false` 与其它请求的未知状态一并保留，不能据此声称整个宿主所有网络请求已完成。
 
 `passed` 仅表示本轮自动观测断言通过，`semanticReview: required` 始终保留，需另审原任务回答。helper 尚未运行的新候选不继承旧 gate；全局日用、真实库存、Mini 和 UI 不因本分支通过而关闭。复跑验证器本身：`node --test scripts/verify-pi-daily-candidate.test.mjs scripts/verify-pi-daily-installation.test.mjs`，正常 check 同时包含这两组反例。
+
+## Consumer observation consistency (AH-864)
+
+Use the existing host-prepare fixture and SDK/source/provider drivers. Before product changes, retain F1/F2/F3/F4/F5/F7 failures against 38285e7 and the successful exact-read recovery control. F6 is a separate actual-clock/request test, not a seventh proven failure. Each vertical slice updates this map and the corresponding model/code bindings.
+
+The coordinator owns current availability only. Source boundaries must preserve original validation evidence and distinguish current remote/cache observations from fixed historical content. No missing proof is promoted to a new permission or Enabled observation; graph failure attribution uses the exact failing node, not the requested root. Tests must provide the same evidence that the real SDK returns, and keep the original unmodified audit logs.
+
+Regression routes: shared current observation across read/use/metadata (CC1); lifecycle generation, scope and late callbacks (CC2); real TTL/default View/cursor and Default Context disposition (CC3); pinned graph commit and next-provider publication (CC4); repeated owned Notion edits with actual npm CLI/SDK/Pi worker sessions (CC5). Preserve complete body/resource counts, unchanged-warm network costs, cancellation and no-source controls. Do not add a second runner for each route.
+
+Finite models live in `verification/models/consumer-observations`. Preserve current and negative variants and their exact expected broken rules. The original candidate is a design sketch, not implementation proof. Source evidence, TTL clock experiments, installed artifacts and real model sessions remain independent. No all-provider/all-machine matrix or production-library sweep is required.
+
+### Consumer observation implementation gates
+
+Run the F1/F2/F3/F4/F5/F7 tests in `host-prepare.test.ts` with SDK-shaped current evidence and exact failed-node provenance. Keep the original audit's red transcript; a missing proof must not be turned into a current success to satisfy a test. `consumer-observation.test.ts` separately checks caches, fixed snapshots, same-generation ordering and dependency attribution.
+
+`verification/models/consumer-observations/README.md` owns the finite scope and source mapping. Use its pinned statechart/TLC runner and isolated code-guard mutation script before claiming formal correspondence. Model runs, production-function tests, actual installed HTTP, real Notion changes and `magpie/group/worker` sessions are distinct evidence levels.
+
+Default Context stays a normal optional View-filter attribute. Do not delete its schema or values. The four Enabled/Default Context combinations must preserve no-body discovery; explicit filtered Views retain their existing rules. Report the actual inspected Views and do not generalize their filters to unknown workspaces. Final daily validation must distinguish the CLI's `NTN_SKILLS_DEV_ROOT` selector from Pi's actual local package path and its bundled SDK hashes.

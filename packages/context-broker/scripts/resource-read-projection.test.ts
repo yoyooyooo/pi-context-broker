@@ -4,7 +4,7 @@ import {
   compileResourceRead, deriveResourceReadProjection, renderResourceReadModel, validateResourceReadProjection,
   type ResourceReadModel, type ResourceReadSelection, type ResourceReadSourceFile,
 } from "../src/resource-read-projection";
-import { deduplicateSourceReads, sessionSourceBindings, sourceMessageText } from "../src/session-source-snapshot";
+import { deduplicateSourceReads, sessionSourceBindings, sourceMessageText, projectSelectedSourceMessages } from "../src/session-source-snapshot";
 import type { AgentMessage } from "../src/types";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
@@ -156,4 +156,27 @@ test("derived batch proof requires a valid full parent and changes only chosen t
   expect(deriveResourceReadProjection(before, after, proof, [0, 0])).toBeUndefined();
   const renamed = { ...changed, files: changed.files.map((file, index) => index ? file : { ...file, path: "different.md" }) };
   expect(deriveResourceReadProjection(before, renderResourceReadModel(renamed).content, proof, [0])).toBeUndefined();
+});
+
+
+test("known permission revocation derives a complete non-source batch projection and keeps native history", () => {
+  const original=message("permission-batch"),before=JSON.stringify(original);
+  const projected=projectSelectedSourceMessages([original],{scopes:new Map()},(scope,owner)=>scope===selection.scope&&owner===selection.owner);
+  const text=sourceMessageText(projected[0]?.content);
+  expect(text).not.toContain("Exact resource");expect(text).not.toContain("第一行");
+  expect(text).toContain("Source access is no longer available");
+  expect(projected[0]?.structuredContent).toEqual(JSON.parse(text));
+  expect(JSON.stringify(original)).toBe(before);
+  expect(projected[0]?.toolCallId).toBe("permission-batch");
+});
+
+test("a changed selected owner snapshot retires every verified old batch resource without changing stored files", () => {
+  const original=message("old-fixed-batch"),before=JSON.stringify(original),next="s_"+"b".repeat(64);
+  const metadata={id:selection.owner,kind:"skill" as const,name:"Resources",alias:"resources",description:"Resources",enabled:true,default_context:false,entrypoint:"SKILL.md",ref:"skill://"+encodeURIComponent(selection.owner)+"/SKILL.md",locator:{type:"shared_skill" as const,library_id:"lib",skill_id:"resources",page_id:"main",database_id:"db",data_source_id:"data"}};
+  const binding={record:metadata,scope:selection.scope,snapshot_id:next,version_id:"version-2",body_sha256:hash("main-v2"),ref:metadata.ref+"?snapshot="+next};
+  const selected={scopes:new Map([[selection.scope,{scope:selection.scope,bindings:new Map([[selection.owner,binding]]),retired:new Map(),graphs:[],selectionId:"next"}]])};
+  const projected=projectSelectedSourceMessages([original],selected),text=sourceMessageText(projected[0]?.content);
+  expect(text).not.toContain("Exact resource");expect(text).not.toContain("第一行");expect(text).toContain("superseded");
+  expect(projected[0]?.structuredContent).toEqual(JSON.parse(text));expect(JSON.stringify(original)).toBe(before);
+  expect(projected[0]?.toolCallId).toBe("old-fixed-batch");
 });

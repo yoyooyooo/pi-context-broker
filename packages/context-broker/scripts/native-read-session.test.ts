@@ -584,3 +584,26 @@ test("SC04 candidate errors expose only safe metadata and reject mismatched fixe
     expect(f.entries).toHaveLength(persisted);
   } finally { await f.emit("session_shutdown"); }
 });
+
+test("known permission revocation withholds only verified scalar source bytes, not user text or foreign records", () => {
+  const own=resourceResult("revoked"),foreign=resourceResult("foreign",{scope:"another"});
+  const user:AgentMessage={role:"user",content:"Exact supporting resource.\n"};
+  const messages=[own,foreign,user],before=JSON.stringify(messages);
+  const projected=projectSelectedSourceMessages(messages,{scopes:new Map()},(scope,id)=>scope==='scope'&&id==='shared_skill:lib:skill');
+  expect(sourceMessageText(projected[0]?.content)).toContain('Source access is no longer available');
+  expect(projected[0]?.details).toMatchObject({contextBrokerResource:{delivered_complete_text:false,loaded:false}});
+  expect(projected[1]).toBe(foreign);expect(projected[2]).toBe(user);expect(JSON.stringify(messages)).toBe(before);
+});
+
+test("an explicit new main selection retires old scalar references while preserving current and foreign pins", () => {
+  const id="shared_skill:lib:skill",old=resourceResult("old-policy",{id}),current=resourceResult("new-policy",{id,snapshotId:b,body:"New policy\n"});
+  const foreign=resourceResult("other-owner",{id:"shared_skill:another:owner"});
+  const metadata={...record,id,alias:record.name,enabled:true,default_context:false,entrypoint:"SKILL.md",ref:"skill://shared_skill%3Alib%3Askill/SKILL.md"};
+  const binding={record:metadata,scope:"scope",snapshot_id:b,version_id:"new-version",body_sha256:createHash("sha256").update("New instructions").digest("hex"),ref:metadata.ref+"?snapshot="+b};
+  const selection={scopes:new Map([["scope",{scope:"scope",bindings:new Map([[id,binding]]),retired:new Map(),graphs:[],selectionId:"new-current"}]])};
+  const source=[old,current,foreign],before=JSON.stringify(source),projected=projectSelectedSourceMessages(source,selection);
+  expect(sourceMessageText(projected[0]?.content)).not.toContain("Exact supporting resource");
+  expect(sourceMessageText(projected[0]?.content)).toContain("superseded");
+  expect(projected[0]?.details).toMatchObject({contextBrokerResource:{delivered_complete_text:false}});
+  expect(projected[1]).toBe(current);expect(projected[2]).toBe(foreign);expect(JSON.stringify(source)).toBe(before);
+});

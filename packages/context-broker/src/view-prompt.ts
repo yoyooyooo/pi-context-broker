@@ -25,7 +25,7 @@ export function viewSystemPrompt(input: string | string[] | undefined, skills: r
   const prompt = withoutViewMetadata(Array.isArray(input) ? input.join("\n\n") : input ?? "", ownedPaths, cwd);
   if (!skills.length && !routers.length && !views.length) return prompt;
   const states = views.map(state => state.status === "ready"
-    ? `<view source="${xml(state.sourceId)}" id="${xml(state.view.id)}" database="${xml(state.view.database_id)}" origin="${state.origin}" partial="${state.partial}">${xml(state.view.name)}</view>`
+    ? `<view source="${xml(state.sourceId)}" id="${xml(state.view.id)}" database="${xml(state.view.database_id)}" origin="${state.origin}" count="${[...skills, ...routers].filter(record => record.sourceId === state.sourceId).length}" partial="${state.partial}">${xml(state.view.name)}</view>`
     : `<view source="${xml(state.sourceId)}" origin="${state.origin}" status="${state.status}"${state.status === "error" ? ` code="${xml(state.code)}"` : ""}/>`).join("\n");
   const entries = skills.map(record => {
     const shortRef = record.source === "notion" ? renderRef?.(record) : undefined;

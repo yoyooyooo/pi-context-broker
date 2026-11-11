@@ -1470,7 +1470,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   const autocompleteUis = new WeakSet<object>();
   let menuContext: ExtensionContext | undefined;
   let menuGeneration = 0;
-  const pairedCatalogGenerations = new WeakMap<DiscoveryResult, { menu: number; refresh: number }>();
+  const pairedCatalogGenerations = new WeakMap<DiscoveryResult, { menu: number; refresh: number; forceViewRefresh?: true }>();
   const catalogCwd = (cwd: string) => { try { return realpathSync(cwd); } catch { return resolve(cwd); } };
   const unseenChanges = (cwd: string) => new Map([...sourceChanges].filter(([id, version]) => (observedChangesByCwd.get(cwd)?.get(id) ?? 0) < version));
   const publishCatalog = (cwd: string, promise: Promise<DiscoveryResult>, changes = new Map<string, number>()) => {
@@ -1522,7 +1522,51 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       sourceRuntime.forgetSources(sourceIds);
     },
   });
-  const getDollarRegistry = async (cwd?: string) => (await getCatalog(cwd)).records;
+  const refreshCatalog = (cwd: string, current: DiscoveryResult, ctx?: ExtensionContext): Promise<DiscoveryResult> => {
+    const sourceIds = (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false && !source.discovery?.offline).map(source => source.id);
+    let pending = notionRefresh.get(cwd);
+    if (!pending) {
+      const generation = refreshGeneration;
+      const ownerMenu = menuGeneration;
+      const directorySelections = notionDirectorySelections(config, ctx);
+      const changes = unseenChanges(cwd);
+      pending = ownCatalog(async signal => {
+        try {
+          const next = await buildDiscoveryRegistry(config, cwd, { paths, signal, refreshSourceIds: [...changes.keys()], directorySelections });
+          if (generation !== refreshGeneration) return await getCatalog(cwd);
+          pairedCatalogGenerations.set(next, { menu: ownerMenu, refresh: generation });
+          const failed = next.failures.some((failure) => failure.blocking !== false && sourceIds.includes(failure.sourceId));
+          const unsafe = next.failures.some(failure => sourceIds.includes(failure.sourceId) && ["AUTH_REQUIRED", "ACCESS_DENIED", "CACHE_SCOPE_UNAVAILABLE", "SOURCE_IDENTITY_MISMATCH"].includes(failure.code));
+          const published = failed && !unsafe && current.records.some((record) => record.source === "notion")
+            ? { records: current.records, failures: next.failures, lists: current.lists }
+            : next;
+          const stillStale = notionCatalogAction({
+            offline: false,
+            sourceIds,
+            observations: published.lists ?? [],
+            failedSourceIds: published.failures.map((failure) => failure.sourceId),
+            now: Date.now(),
+          }) === "refresh";
+          if (failed || stillStale && !published.lists?.every(list => list.maxAgeMs === 0)) notionRetryAt.set(cwd, Date.now() + notionCatalogRetryGapMs);
+          else notionRetryAt.delete(cwd);
+          publishCatalog(cwd, Promise.resolve(published), changes);
+          return published;
+        } finally {
+          if (notionRefresh.get(cwd) === pending) notionRefresh.delete(cwd);
+        }
+      });
+      notionRefresh.set(cwd, pending);
+    }
+    return pending;
+  };
+  const currentCatalog = async (cwd = process.cwd(), ctx = menuContext): Promise<DiscoveryResult> => {
+    const key = catalogCwd(cwd), result = await getCatalog(key, ctx);
+    const sourceIds = (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false && !source.discovery?.offline).map(source => source.id);
+    const action = notionCatalogAction({ offline: false, sourceIds, observations: result.lists ?? [],
+      failedSourceIds: result.failures.map(failure => failure.sourceId), now: Date.now(), retryAt: notionRetryAt.get(key) });
+    return action === "refresh" ? refreshCatalog(key, result, ctx) : result;
+  };
+  const getDollarRegistry = async (cwd?: string) => (await currentCatalog(cwd)).records;
   const notionSources = () => (config.sources ?? []).filter((source): source is Extract<SourceConfig, { type: "notion" }> => source.type === "notion" && source.enabled !== false);
   const catalogError = (error: unknown) => error instanceof Error ? error.message : "context-broker source discovery failed";
   const dollarMenu = async (ctx: ExtensionContext): Promise<DollarMenu> => {
@@ -1556,36 +1600,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     });
     const failureNotice = formatSourceFailures(current.failures.filter((failure) => sourceIds.includes(failure.sourceId))).join("\n");
     if (action !== "refresh") return { records, notice: action === "wait" && failureNotice ? failureNotice : undefined };
-    let pending = notionRefresh.get(cwd);
-    if (!pending) {
-      const generation = refreshGeneration;
-      const changes = unseenChanges(cwd);
-      pending = ownCatalog(async signal => {
-        try {
-          const next = await buildDiscoveryRegistry(config, cwd, { paths, signal, refreshSourceIds: [...changes.keys()] });
-          if (generation !== refreshGeneration) return await getCatalog(cwd);
-          const failed = next.failures.some((failure) => failure.blocking !== false && sourceIds.includes(failure.sourceId));
-          const unsafe = next.failures.some(failure => sourceIds.includes(failure.sourceId) && ["AUTH_REQUIRED", "ACCESS_DENIED", "CACHE_SCOPE_UNAVAILABLE", "SOURCE_IDENTITY_MISMATCH"].includes(failure.code));
-          const published = failed && !unsafe && current.records.some((record) => record.source === "notion")
-            ? { records: current.records, failures: next.failures, lists: current.lists }
-            : next;
-          const stillStale = notionCatalogAction({
-            offline: false,
-            sourceIds,
-            observations: published.lists ?? [],
-            failedSourceIds: published.failures.map((failure) => failure.sourceId),
-            now: Date.now(),
-          }) === "refresh";
-          if (failed || stillStale) notionRetryAt.set(cwd, Date.now() + notionCatalogRetryGapMs);
-          else notionRetryAt.delete(cwd);
-          publishCatalog(cwd, Promise.resolve(published), changes);
-          return published;
-        } finally {
-          if (notionRefresh.get(cwd) === pending) notionRefresh.delete(cwd);
-        }
-      });
-      notionRefresh.set(cwd, pending);
-    }
+    const pending = refreshCatalog(cwd, current, ctx);
     const hasNotion = current.records.some((record) => record.source === "notion");
     return {
       records,
@@ -1628,11 +1643,12 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   });
   const host = await installHostSkills(pi, {
     config,
+    metadataInvalidated: ctx => unseenChanges(catalogCwd(ctx.cwd ?? process.cwd())).size > 0,
     getRecords: (ctx, signal) => ownCatalog(async owned => {
       // Pi supplies persisted View selection at session_start. Do not start a
       // context-free discovery that the first session immediately cancels.
       if (paths.host === "pi" && adapter.metadataDiscovery === "deferred" && ctx === undefined) return { records: [], failures: [] };
-      const result = await getCatalog(ctx?.cwd, ctx);
+      const result = await currentCatalog(ctx?.cwd, ctx);
       // Handoff only to this discovery generation. A cancellation or a later
       // session cannot retain a second authority for View freshness or permissions.
       const directories = result.directories;
@@ -1641,7 +1657,8 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       pairedCatalogGenerations.delete(result);
       owned.throwIfAborted();
       const paired = pairedGeneration?.menu === menuGeneration && pairedGeneration.refresh === refreshGeneration ? directories : undefined;
-      return resolveViewDiscovery(config, { records: result.records.filter((record): record is SkillRecord => Boolean(record.sourceId)), failures: result.failures, lists: result.lists }, ctx, owned, paired);
+      return resolveViewDiscovery(config, { records: result.records.filter((record): record is SkillRecord => Boolean(record.sourceId)), failures: result.failures, lists: result.lists }, ctx, owned, paired,
+        pairedGeneration?.menu === menuGeneration && pairedGeneration.refresh === refreshGeneration && pairedGeneration.forceViewRefresh === true);
     }, signal),
     lookupReference: (ctx, signal) => ownCatalog(owned => discoverSourceCatalog({ ...config, sources: config.sources?.filter(source => source.type === "notion") }, ctx.cwd, { signal: owned, refreshSourceIds: config.sources?.filter(source => source.type === "notion" && !source.discovery?.offline).map(source => source.id) }), signal),
     resolveNamedReference: (ref, ctx, signal, refresh) => ownCatalog(owned => resolveNotionReference(ref, notionSources(), ctx.cwd ?? process.cwd(), { signal: owned, refresh }), signal),
@@ -1703,7 +1720,14 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     sessionGraph: ctx => exportSessionSelection(ctx, projectSelectedSourceMessages(messagesFromActiveSessionContext(ctx), sessionSelection(ctx))),
     projectContext: (messages, ctx, pending) => projectSelectedSourceMessages(messages, paths.host === "pi" ? activeSelection(ctx, pending) : sessionSelection(ctx)),
     restoreActive: paths.host === "pi" ? async (messages, ctx, signal, pending) => {
-      const missing = missingActiveSources(ctx, messages, pending);
+      const restorable = (record: SkillRecord) => {
+        try { host.assertCanRestore(record); return true; }
+        catch (error) {
+          if (error instanceof SourceError && ["CONTENT_DISABLED", "ACCESS_DENIED", "AUTH_REQUIRED", "SOURCE_IDENTITY_MISMATCH", "SOURCE_UNAVAILABLE"].includes(error.code)) return false;
+          throw error;
+        }
+      };
+      const missing = missingActiveSources(ctx, messages, pending).filter(source => restorable(source.record));
       if (!missing.length) return undefined;
       const restored: SkillRecord[] = [];
       const groups = new Map<string, typeof missing>();
@@ -1723,7 +1747,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
         const first = group[0]!, sourceId = first.record.sourceId!;
         const source = normalizeSources(config.sources)?.find(value => value.id === sourceId && value.type === "notion" && value.enabled !== false);
         if (!source || source.type !== "notion") throw new SourceError("SOURCE_UNAVAILABLE", sourceId);
-        const fixed = [...active.sources.values()].filter(value => value.record.sourceId === sourceId && value.record.sourceScope === first.record.sourceScope);
+        const fixed = [...active.sources.values()].filter(value => value.record.sourceId === sourceId && value.record.sourceScope === first.record.sourceScope && restorable(value.record));
         // A restore observes exactly the confirmed vector. Inspect keeps every
         // fixed node as a root; it cannot traverse a newly changed Required edge.
         // Its graph is deliberately never installed as the active use graph.
@@ -1813,11 +1837,14 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   });
   const refresh = async (ctx: ExtensionContext) => {
     const selectedGeneration = ++refreshGeneration;
+    const ownerMenu = menuGeneration;
     host.invalidate();
     sourceRuntime.invalidate();
     registryPromise = buildRegistry(config, paths);
-    const result = await ownCatalog(signal => buildDiscoveryRegistry(config, ctx.cwd, { refresh: true, paths, signal }));
+    const result = await ownCatalog(signal => buildDiscoveryRegistry(config, ctx.cwd, { refresh: true, paths, signal,
+      directorySelections: notionDirectorySelections(config, ctx) }));
     if (selectedGeneration !== refreshGeneration) return;
+    pairedCatalogGenerations.set(result, { menu: ownerMenu, refresh: selectedGeneration, forceViewRefresh: true });
     dollarRegistryByCwd.clear();
     notionRetryAt.delete(catalogCwd(ctx.cwd ?? process.cwd()));
     publishCatalog(catalogCwd(ctx.cwd ?? process.cwd()), Promise.resolve(result), new Map(sourceChanges));
