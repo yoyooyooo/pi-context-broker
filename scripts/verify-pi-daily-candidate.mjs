@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
+import fs from 'node:fs';
 import { access, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
@@ -423,6 +424,161 @@ export function guardCandidateProject(api, { projectRoot, inspectProject }) {
   });
 }
 
+/** This opt-in changes delivery only. It grants no project, Store or author writes. */
+export function candidateArtifactOutputEnabled(config) {
+  if (config.artifactOutput === undefined || config.artifactOutput === false) return false;
+  assert.equal(config.artifactOutput, true);
+  assert.equal(config.project, 'owned-ticket-service', 'File delivery requires the fixed owned project');
+  for (const key of ['resumeFrom', 'publicCli', 'existingState', 'forkIntroductionResume'])
+    assert.equal(config[key], undefined, 'File delivery requires a fresh consumer task: ' + key);
+  return true;
+}
+
+export function candidateArtifactPrompt(prompt, outputRoot) {
+  if (!outputRoot) return prompt;
+  return prompt + '\n\n本轮独立文件产物目录：' + outputRoot
+    + '\n仅用原生 write/edit 将完整规程、参考和 helper 写入该目录下的相对项目路径；工具参数使用该目录内的绝对路径。所有文本使用 UTF-8，并以 LF 换行结尾。'
+    + '\n原项目源文件、证据目录与 Store 不允许写入；不执行项目或生成的 helper。Notion 的 read/notion_use 保持 readOnly:true。最终回复列明已交付文件及尚未执行的步骤。';
+}
+
+export function reviewCandidateArtifactPath(path, policy, filesystem) {
+  const fail = message => { throw new Error(message); };
+  const root = policy?.root;
+  if (typeof root !== 'string' || !/^\/private\/tmp\/notion-candidate-artifacts-[A-Za-z0-9]+$/u.test(root)
+    || filesystem.realpathSync(root) !== root) fail('Artifact root must be an owned ordinary directory, without symlinks');
+  const owned = filesystem.lstatSync(root);
+  if (!owned.isDirectory() || owned.dev !== policy.dev || owned.ino !== policy.ino) fail('Owned artifact directory identity changed');
+  if (typeof path !== 'string' || !path.startsWith(root + '/')) fail('Write only inside the disclosed owned artifact directory');
+  const name = path.slice(root.length + 1), parts = name.split('/');
+  if (!/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+$/u.test(name)
+    || parts.some(part => ['.', '..', '.pi', '.git', 'node_modules'].includes(part))
+    || policy.projectFiles.some(file => name === file || name.startsWith(file + '/') || file.startsWith(name + '/')))
+    fail('Artifact path cannot replace project sources, runtime settings or dependencies');
+  let current = root;
+  for (let index = 0; index < parts.length; index++) {
+    current += '/' + parts[index];
+    let stat;
+    try { stat = filesystem.lstatSync(current); } catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+    if (stat.isSymbolicLink() || filesystem.realpathSync(current) !== current) fail('Artifact paths cannot traverse a symlink');
+    if (index < parts.length - 1 ? !stat.isDirectory() : !stat.isFile() || stat.nlink !== 1)
+      fail('Artifact targets must be ordinary files without hard links');
+  }
+  return name;
+}
+
+export function guardCandidateArtifacts(api, { fs, crypto, output, policy, projectRoot, inspectProject, reviewPath }) {
+  const sha = value => crypto.createHash('sha256').update(value).digest('hex');
+  const pending = new Map(); let fd, failure;
+  try { fd = fs.openSync(output, 'wx', 0o600); } catch (error) { failure = error; }
+  const record = row => fs.writeSync(fd, JSON.stringify(row) + '\n');
+  api.on('tool_call', (event, ctx) => {
+    try {
+      if (failure) throw failure;
+      const input = event.input ?? {}, name = event.toolName;
+      if (['write', 'edit'].includes(name)) {
+        const keys = name === 'write' ? ['path', 'content'] : ['path', 'oldText', 'newText'];
+        if (Object.keys(input).length !== keys.length || keys.some(key => typeof input[key] !== 'string')) throw new Error('Use the native write/edit file schema');
+        const path = reviewPath(input.path, policy, fs);
+        if (name === 'edit' && !fs.existsSync(input.path)) throw new Error('Edit requires an existing owned file');
+        if (pending.has(event.toolCallId)) throw new Error('Duplicate native artifact call');
+        const call = { phase: 'tool_call', toolCallId: event.toolCallId, toolName: name, inputSha256: sha(JSON.stringify(input)), path, allowed: true };
+        record(call); pending.set(event.toolCallId, { ...call, input });
+      } else {
+        if (!['read', 'grep', 'find', 'ls', 'notion_list', 'notion_use', 'bash'].includes(name)) throw new Error('Only read-only consumption, bounded inventory and owned write/edit are allowed');
+        if (name === 'bash' && !inspectProject(input, ctx?.cwd, projectRoot)) throw new Error('Only the existing bounded project inventory is allowed');
+        if ((name === 'notion_use' || name === 'read' && (Array.isArray(input.paths) || /^(?:skill:\/\/|sr:|ntn-skills:\/\/)/u.test(input.path))) && input.readOnly !== true)
+          throw new Error('Notion consumption requires readOnly:true');
+      }
+    } catch (error) {
+      try { record({ phase: 'tool_call', toolCallId: event.toolCallId, toolName: event.toolName, allowed: false, reason: error.message }); } catch (ledgerError) { failure = ledgerError; }
+      return { block: true, reason: error.message };
+    }
+  });
+  api.on('tool_result', event => {
+    const call = pending.get(event.toolCallId); if (!call) return;
+    pending.delete(event.toolCallId);
+    try {
+      if (event.isError || event.toolName !== call.toolName) throw new Error('Native artifact write/edit failed');
+      reviewPath(call.input.path, policy, fs);
+      const bytes = fs.readFileSync(call.input.path);
+      if (call.toolName === 'write' && sha(bytes) !== sha(call.input.content)) throw new Error('Native write bytes differ from its complete content');
+      record({ phase: 'artifact_file', toolCallId: call.toolCallId, path: call.path, bytes: bytes.length, sha256: sha(bytes) });
+    } catch (error) { failure = error; try { record({ phase: 'artifact_error', toolCallId: call.toolCallId, reason: error.message }); } catch {} }
+  });
+  api.on('session_shutdown', () => {
+    if (fd === undefined) return;
+    try { record({ complete: !failure && pending.size === 0 }); } finally { fs.closeSync(fd); }
+  });
+}
+
+export function inspectCandidateArtifactGuard(nativeAudit, rows, artifactFiles) {
+  assert.equal(rows.at(-1)?.complete, true, 'Artifact guard must close without missing writes');
+  assert.ok(rows.every(row => row.allowed !== false && row.phase !== 'artifact_error'), 'An artifact task escaped its read/write boundary');
+  const calls = rows.filter(row => row.phase === 'tool_call'), native = nativeAudit.calls.filter(call => ['write', 'edit'].includes(call.name));
+  assert.equal(calls.length, native.length); assert.equal(new Set(calls.map(call => call.toolCallId)).size, calls.length);
+  for (const call of native) {
+    const allowed = calls.filter(row => row.toolCallId === call.id && row.toolName === call.name && row.allowed === true && row.inputSha256 === hash(JSON.stringify(call.arguments)));
+    assert.equal(allowed.length, 1, 'Bind each artifact approval to the actual native call'); assert.equal(call.isError, false);
+    assert.equal(rows.filter(row => row.phase === 'artifact_file' && row.toolCallId === call.id && row.path === allowed[0].path).length, 1);
+  }
+  const lastFiles = new Map(rows.filter(row => row.phase === 'artifact_file').map(row => [row.path, row]));
+  assert.equal(rows.filter(row => row.phase === 'artifact_file').length, native.length, 'Each native write/edit needs exactly one file result');
+  assert.equal(lastFiles.size, artifactFiles.files.length, 'Every actual artifact must come from a successful native write/edit');
+  for (const file of artifactFiles.files) {
+    assert.equal(lastFiles.get(file.path)?.sha256, file.sha256, 'Owned artifact changed after its native result');
+    assert.equal(lastFiles.get(file.path)?.bytes, file.bytes);
+  }
+  return native.map(call => call.id);
+}
+
+export async function retainCandidateArtifactFiles({ policy, evidence }) {
+  const files = [];
+  const walk = async directory => {
+    const stat = fs.lstatSync(directory);
+    assert.ok(stat.isDirectory() && fs.realpathSync(directory) === directory, 'Artifact directory cannot be a symlink');
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) await walk(path);
+      else {
+        assert.ok(entry.isFile(), 'Artifact files cannot be symlinks or special files');
+        const name = reviewCandidateArtifactPath(path, policy, fs), bytes = await readFile(path), evidencePath = 'owned-artifact-files/' + name;
+        await mkdir(dirname(join(evidence, evidencePath)), { recursive: true, mode: 0o700 });
+        await writeFile(join(evidence, evidencePath), bytes, { flag: 'wx', mode: 0o600 });
+        files.push({ path: name, bytes: bytes.length, sha256: hash(bytes), evidencePath });
+      }
+    }
+  };
+  await walk(policy.root);
+  const receipt = { version: 1, root: policy.root, files, proof: 'Exact native output bytes retained, including partial or failed runs; no completion or execution inferred' };
+  await save(join(evidence, 'owned-artifacts.json'), receipt);
+  return receipt;
+}
+
+export async function retainCandidateFilePlan({ evidence, project, final, prompt, artifactFiles }) {
+  assert.ok(final?.success && final.stopReason === 'stop' && final.text?.trim(), 'File delivery still requires a successful native final');
+  const nativeFinal = { path: join(evidence, 'native-artifact-final.md'), bytes: Buffer.byteLength(final.text), sha256: hash(final.text) };
+  await writeFile(nativeFinal.path, final.text, { flag: 'wx', mode: 0o600 });
+  await save(join(evidence, 'native-artifact-final.json'), nativeFinal);
+  assert.ok(artifactFiles.files.length && artifactFiles.files.some(file => /\.(?:mjs|cjs|js)$/u.test(file.path)), 'Complete files must include a Node helper for independent review');
+  let container = '# Owned file delivery container\n\nThis deterministic container is not the model final. The exact native final is retained separately.\n\nNative-final SHA-256: '
+    + nativeFinal.sha256 + '\nNative-final JSON: ' + JSON.stringify(final.text) + '\n\n';
+  for (const file of artifactFiles.files) {
+    const bytes = await readFile(join(evidence, file.evidencePath));
+    assert.equal(hash(bytes), file.sha256); assert.equal(bytes.length, file.bytes);
+    const content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+    assert.ok(content.trim() && content.endsWith('\n'), 'Complete UTF-8 artifact files must end in an LF newline; bytes are never normalized');
+    const fence = '`'.repeat(Math.max(4, ...[...content.matchAll(/`+/gu)].map(match => match[0].length + 1)));
+    container += 'File: ' + file.path + '\n' + fence + '\n' + content + fence + '\n\n';
+  }
+  const receipt = await retainGeneratedPlan({ evidence, project, final: { ...final, text: container }, prompt });
+  assert.deepEqual(receipt.files.map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })), artifactFiles.files.map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })));
+  receipt.delivery = { mode: 'owned-files', nativeFinal, artifactRoot: artifactFiles.root, manifest: 'owned-artifacts.json', container: 'deterministic file envelope including the complete native final as JSON; not a verbatim model final' };
+  receipt.proof = 'Successful native final and exact owned files retained separately; complete file envelope reuses the existing independently reviewed helper exercise; no execution inferred';
+  await writeFile(join(evidence, 'generated-plan.json'), JSON.stringify(receipt, null, 2) + '\n', { mode: 0o600 });
+  assert.equal(receipt.artifactStatus, 'complete-skill-files-retained', 'Missing Skill or referenced files cannot complete file delivery');
+  return receipt;
+}
+
 // Receipt events retain Broker-owned metadata and rendered hashes. The optional
 // payload directory retains complete provider input for an owned E2E audit;
 // headers and authentication configuration are never collected. Exact body
@@ -540,7 +696,7 @@ export function containsProof(value, expected) {
   return matches || Object.values(value).some(child => child && typeof child === 'object' && containsProof(child, expected));
 }
 
-export function validateCandidateTurn(turn, { costs, transport, tasks }, { approvedCliCalls = [] } = {}) {
+export function validateCandidateTurn(turn, { costs, transport, tasks }, { approvedCliCalls = [], approvedArtifactCalls = [] } = {}) {
   if (turn.toolCallCount !== undefined) {
     assert.ok(Number.isSafeInteger(turn.toolCallCount) && turn.toolCallCount >= 0);
     assert.equal(tasks.filter(event => event.phase === 'tool_call').length, turn.toolCallCount, 'Tool calls differ from this frozen turn intent');
@@ -579,15 +735,24 @@ export function validateCandidateTurn(turn, { costs, transport, tasks }, { appro
     && candidateProjectInspection(event.ownedProjectInspection.input, event.ownedProjectInspection.cwd, event.ownedProjectInspection.root)
     && hash(JSON.stringify(event.ownedProjectInspection.input)) === event.inputSha256);
   const executionCalls = tasks.filter(event => event.phase === 'tool_call' && event.executionTool && !projectInspections.includes(event));
+  assert.equal(new Set(approvedArtifactCalls).size, approvedArtifactCalls.length);
+  if (approvedArtifactCalls.length) {
+    assert.equal(turn.artifactOutput, true); assert.equal(turn.project, 'owned-ticket-service');
+    const writes = tasks.filter(event => event.phase === 'tool_call' && approvedArtifactCalls.includes(event.toolCallId));
+    assert.equal(writes.length, approvedArtifactCalls.length);
+    assert.ok(writes.every(event => ['write', 'edit'].includes(event.toolName) && !event.executionTool), 'File approval cannot authorize execution or other tools');
+  }
   assert.equal(new Set(approvedCliCalls).size, approvedCliCalls.length);
   assert.equal(executionCalls.length, approvedCliCalls.length, 'The inspected Skill must not execute unreviewed scripts or binaries');
   assert.ok(executionCalls.every(event => event.toolName === 'bash' && approvedCliCalls.includes(event.toolCallId)));
-  assert.equal(tasks.filter(event => event.phase === 'tool_call' && event.reviewedReadTool !== true && !approvedCliCalls.includes(event.toolCallId)).length, 0, 'An unreviewed tool cannot establish a read-only task');
+  assert.equal(tasks.filter(event => event.phase === 'tool_call' && event.reviewedReadTool !== true
+    && !approvedCliCalls.includes(event.toolCallId) && !approvedArtifactCalls.includes(event.toolCallId)).length, 0, 'An unreviewed tool cannot establish a read-only task');
   const final = tasks.filter(event => event.phase === 'assistant_final').at(-1);
   assert.ok(final?.success, 'This exact turn has no successful task answer');
   return { providerRequests: requests.length, lastPayloadSha256: last.payload.sha256, bodyOccurrences: actual.bodies, receiptVerifiedBodies: last.payload.verifiedBodyOccurrences,
     finalSha256: final.sha256, finalBytes: final.bytes, semanticReview: 'required', scriptExecutionToolCalls: executionCalls.length, ownedProjectInspectionToolCalls: projectInspections.length,
-    ...(approvedCliCalls.length ? { authorizedPublicCliToolCalls: approvedCliCalls.length } : {}) };
+    ...(approvedCliCalls.length ? { authorizedPublicCliToolCalls: approvedCliCalls.length } : {}),
+    ...(turn.artifactOutput ? { ownedArtifactWriteToolCalls: approvedArtifactCalls.length } : {}) };
 }
 
 /** Input has already passed readProviderTransport's complete ledger validation. */
@@ -947,6 +1112,7 @@ export async function runCandidatePrint(config) {
   assert.ok(['normal', 'notion-only'].includes(config.arm) && identifier(config.id));
   assert.ok(typeof config.prompt === 'string' && config.prompt.trim());
   assert.ok(config.project === undefined || config.project === 'owned-ticket-service');
+  const artifactOutput = candidateArtifactOutputEnabled(config);
   const completionBudgetSource = candidateCompletionBudgetSource(config.maxCompletionTokens);
   assert.equal(config.isolateResumeCwd, undefined, 'isolateResumeCwd cannot override native resume cwd; use explicit --fork via forkIntroductionResume');
   assert.ok(config.forkIntroductionResume === undefined || config.forkIntroductionResume === true);
@@ -1022,6 +1188,15 @@ export async function runCandidatePrint(config) {
     : previous?.launch.cwd ?? await mkdtemp('/private/tmp/notion-candidate-print-');
   if (previous) assert.equal(previous.project?.kind, config.project, 'A continuation must retain its original application');
   const project = previous?.project ?? (config.project ? { ...await createOwnedGraphProject(cwd), kind: config.project } : undefined);
+  let artifactPolicy, artifactOwnership;
+  if (artifactOutput) {
+    const outputRoot = await mkdtemp('/private/tmp/notion-candidate-artifacts-'), stat = fs.lstatSync(outputRoot);
+    artifactPolicy = { root: outputRoot, dev: stat.dev, ino: stat.ino, projectFiles: project.files.map(file => file.path) };
+    artifactOwnership = { version: 1, purpose: 'candidate-native-artifact-output', evidence, projectRoot: project.root, policy: artifactPolicy,
+      cleanup: 'After process close and evidence review, move only this exact owned directory to system Trash; preserve evidence' };
+    await save(join(evidence, 'artifact-output-ownership.json'), artifactOwnership);
+  }
+  const actualPrompt = candidateArtifactPrompt(config.prompt, artifactPolicy?.root);
   const control = join(evidence, 'observation'), sessions = join(evidence, 'sessions'), responses = join(control, 'sdk-responses'), payloads = join(control, 'provider-payloads');
   for (const path of [join(cwd, '.pi'), stateRoot, control, sessions, responses, payloads]) await mkdir(path, { recursive: true, mode: 0o700 });
   const projectSettings = packageRegistration.projectSettings;
@@ -1042,6 +1217,11 @@ export async function runCandidatePrint(config) {
   const cliGuard = join(control, 'public-cli-guard.mjs'), cliGuardLedger = join(control, 'public-cli-guard.jsonl');
   const inputGuard = join(control, 'input-identity-guard.mjs'), inputGuardLedger = join(control, 'input-identity-guard.jsonl');
   const existingReadGuard = join(control, 'existing-state-read-guard.mjs'), existingReadLedger = join(control, 'existing-state-read-guard.jsonl');
+  const artifactGuard = join(control, 'artifact-output-guard.mjs'), artifactLedger = join(control, 'artifact-output-guard.jsonl');
+  if (artifactPolicy) await writeFile(artifactGuard, "import fs from 'node:fs';import crypto from 'node:crypto';const reviewPath=" + reviewCandidateArtifactPath.toString()
+    + ';const inspectProject=' + candidateProjectInspection.toString() + ';export default api=>(' + guardCandidateArtifacts.toString()
+    + ')(api,{fs,crypto,reviewPath,inspectProject,output:' + JSON.stringify(artifactLedger) + ',policy:' + JSON.stringify(artifactPolicy)
+    + ',projectRoot:' + JSON.stringify(project.root) + '});\n', { flag: 'wx', mode: 0o600 });
   if (stateBinding.sourceState) await writeFile(existingReadGuard, "import fs from 'node:fs';const review=" + reviewCandidatePinnedRead.toString()
     + ';export default api=>(' + guardCandidateExistingReads.toString() + ')(api,{fs,review,output:' + JSON.stringify(existingReadLedger)
     + ',refs:' + JSON.stringify(stateBinding.sourceState.reads.map(read => read.ref)) + '});\n', { flag: 'wx', mode: 0o600 });
@@ -1076,6 +1256,7 @@ export async function runCandidatePrint(config) {
     '-e', costExtension, '-e', transportExtension, '-e', taskExtension];
   if (cliPolicy) args.push('-e', cliGuard);
   if (stateBinding.sourceState) args.push('-e', existingReadGuard);
+  if (artifactPolicy) args.push('-e', artifactGuard);
   if (project) {
     const guard = join(control, 'project-guard.mjs');
     await writeFile(guard, 'const inspectProject=' + candidateProjectInspection.toString() + ';export default api=>('
@@ -1089,11 +1270,13 @@ export async function runCandidatePrint(config) {
     const session = join(sessions, basename(previous.session.path));
     await writeFile(session, prefix, { flag: 'wx', mode: 0o600 }); args.push('--session', session);
   }
-  args.push('--', config.prompt);
+  args.push('--', actualPrompt);
   const before = { settings: await identity(settingsPath), source: await identity(sourcePath), packages: settings.packages,
     otherPackagesSha256: hash(JSON.stringify(settings.packages.filter((_, index) => index !== (config.packageIndex ?? 1)))) };
   const result = { version: 1, scope: config.scope, status: 'running', arm: config.arm, id: config.id, database: config.database,
     evidence, stateRoot, project, baselineFiles, runtime, ownership, before, host, hostArtifact: await identity(host.identity), expectedUserMessages: (previous?.expectedUserMessages ?? 0) + 1,
+    ...(artifactPolicy ? { artifactOutput: { ownership: artifactOwnership, guard: artifactLedger },
+      actualPrompt: { text: actualPrompt, bytes: Buffer.byteLength(actualPrompt), sha256: hash(actualPrompt), originalPromptSha256: hash(config.prompt) } } : {}),
     ...(stateBinding.sourceState ? { sourceState: stateBinding.sourceState, ownedPaths: stateBinding.ownedPaths } : {}),
     launch: { cwd, executable: host.file, args: [...host.prefix, ...args], normalHome: true, normalAgentDir: true, normalMcpAndExtensions: true,
       projectPackageOverrideOnly: !packageRegistration.reusesRegisteredBroker,
@@ -1113,7 +1296,11 @@ export async function runCandidatePrint(config) {
     sourceCoverage: 'The parent source observer does not observe shell grandchildren. Public CLI JSON/metrics and native tool results need a separate audit; missing child source traces remain unknown.' };
   await save(join(evidence, 'started.json'), result);
   const startedNs = process.hrtime.bigint().toString();
-  let stdout = '', stderr = '';
+  let stdout = '', stderr = '', artifactCaptureAttempted = false;
+  const captureArtifacts = async () => {
+    artifactCaptureAttempted = true;
+    result.artifactOutput.files = await retainCandidateArtifactFiles({ policy: artifactPolicy, evidence });
+  };
   try {
     result.process = await new Promise((resolveProcess, reject) => {
       const child = spawn(host.file, [...host.prefix, ...args], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -1125,6 +1312,7 @@ export async function runCandidatePrint(config) {
       child.once('close', (code, signal) => { clearTimeout(timer); resolveProcess({ pid: child.pid, code, signal, timedOut, startedNs, endedNs: process.hrtime.bigint().toString() }); });
     });
     assert.equal(result.process.code, 0, 'Native print process failed');
+    if (artifactPolicy) await captureArtifacts();
     if (introductionFork) {
       result.inputIdentityGuard = await readRows(inputGuardLedger);
       assert.equal(result.inputIdentityGuard.length, 1);
@@ -1162,17 +1350,27 @@ export async function runCandidatePrint(config) {
       });
       for (const call of result.nativeAudit.calls) assert.equal(guard.filter(entry => entry.toolCallId === call.id && entry.allowed).length, 1);
     }
-    result.assertions = validateCandidateTurn(config, { costs: cost.events, transport: wire, tasks: task }, { approvedCliCalls });
+    const approvedArtifactCalls = artifactPolicy
+      ? inspectCandidateArtifactGuard(result.nativeAudit, await readRows(artifactLedger), result.artifactOutput.files) : [];
+    result.assertions = validateCandidateTurn(config, { costs: cost.events, transport: wire, tasks: task }, { approvedCliCalls, approvedArtifactCalls });
     for (const event of task.filter(event => event.phase === 'provider_payload')) {
       const actual = await identity(event.payloadFile); assert.equal(actual.sha256, event.sha256); assert.equal(actual.bytes, event.bytes);
       if (completionBudgetSource) result.completionBudgetAudit.payloads.push({ ...inspectCandidateCompletionBudget(await json(actual.path)), file: actual });
     }
-    if (project) result.generatedPlan = await retainGeneratedPlan({ evidence, project,
-      final: task.filter(event => event.phase === 'assistant_final').at(-1), prompt: { sha256: hash(config.prompt) } });
+    if (project) {
+      const delivery = { evidence, project, final: task.filter(event => event.phase === 'assistant_final').at(-1), prompt: { sha256: hash(actualPrompt) } };
+      result.generatedPlan = artifactPolicy
+        ? await retainCandidateFilePlan({ ...delivery, artifactFiles: result.artifactOutput.files }) : await retainGeneratedPlan(delivery);
+    }
     result.status = 'passed';
   } catch (error) {
     result.status = 'failed'; result.error = { code: error.code ?? error.name, message: error.message };
   } finally {
+    if (artifactPolicy && !artifactCaptureAttempted) {
+      try { await captureArtifacts(); } catch (error) {
+        result.artifactOutput.captureError = { code: error.code ?? error.name, message: error.message }; result.status = 'failed';
+      }
+    }
     await writeFile(join(evidence, 'stdout.txt'), stdout, { flag: 'wx', mode: 0o600 });
     await writeFile(join(evidence, 'stderr.txt'), stderr, { flag: 'wx', mode: 0o600 });
     const hostState = await json(hostOutput).catch(() => null);

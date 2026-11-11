@@ -152,3 +152,15 @@ CLI最终验证脚本/测试/地图head为`0cf7002ac02e6d7df37f621f53a151255de81
 
 后续仅修复三条已证实的库存读取误拒绝：固定owned cwd内，仍限512字/60秒、最多三个pwd/ls/find库存命令；额外至多一个40字的纯ASCII单引号字面量echo标记，总段数不超过四。ls只允许已知的`.`、`src`、`test`、`.pi`目录；find仍以`.`为根、深度1–4，只列文件/目录，最多两个固定node_modules/.git排除，head至多300行。外路径、-L、内容搜索、-exec/-delete、重定向、替换和脚本执行继续拒绝，实际调用及inputSHA仍保留。三条原native反例在旧guard下全部RED，修复后连同existingStore/预算/默认/续问回归51/51 GREEN；没有新Pi/model/HTTP。这一机械修复尚未证明能解决生成超时，所有原failed及分母保持，不自动启动新A/B/D或连续调整cap。
 
+### 单次文件交付候选（驱动接线，真实任务尚未运行）
+
+`verify-pi-daily-candidate.mjs` 增加默认关闭的 `artifactOutput:true`，仅用于新的五文件 `owned-ticket-service` 消费任务，不能组合 resume、作者 CLI、existing-state 或 fork。runner 另建 `/private/tmp/notion-candidate-artifacts-*`，保存精确 ownership/dev/ino；动态路径与 UTF-8/LF 交付约束明示附加到原题，`result.actualPrompt` 保存实际文本、bytes/hash 和原 `config.prompt` hash。提示不提供目标叶子、ref 或业务答案。
+
+前置守卫只允许原生 `write/edit` 向该目录的安全项目相对路径写完整文件；源项目、证据、Store、外路径、父目录逃逸、symlink/hard-link、运行时配置及其他写/执行工具均拒绝。Notion `read/notion_use` 必须 `readOnly:true`；原有限库存命令不扩展。实际 native call/input hash、逐次落盘 bytes/hash 与最终文件逐一核对。失败与超时也保留完整 `owned-artifact-files/`、`owned-artifacts.json` 和原输出目录，不由 partial 升级结果。
+
+成功 native final 另存 `native-artifact-final.md`；只有其成功且文件齐全，才把实际文件封装为明确标记的 `generated-acceptance-plan.md` 并复用原 collector 与 `exercise --review`。容器含完整 final 的 JSON 与每个精确文件，`generatedPlan.delivery` 明确两类原件与 hash；独立 review 绑定 result/container/全文件后仍须读取原 final、审查并真实执行 Node helper。完整规程、参考、正文投递、原生 session/provider 和实际功能要求保持；文件存在不算完成。详细字段见[原产物执行合同](../../../../scripts/notion-skill-graph-acceptance.md#generated-artifacts-and-execution)。
+
+Pro/macOS 手动定向入口：`node --test scripts/verify-pi-daily-artifacts.test.mjs scripts/verify-pi-daily-candidate.test.mjs scripts/verify-pi-daily-budget.test.mjs scripts/verify-pi-daily-resume.test.mjs scripts/verify-pi-daily-fork.test.mjs`，本次 Node 24.20.0 下 60/60 通过。新增九例覆盖缺省/作用域、真实文件 write/edit、越界与链接反例、严格只读、ledger 故障、partial/无 final/缺资源拒绝、批准 ID 隔离，以及原 exercise 中受控 helper 的真实 loopback POST→GET→400。当前 `test:verification` 为显式清单，未加入新文件；不声称新增九例已在 Linux CI 执行。它们证明驱动边界，不证明真实模型能交付。该变化不改产品有限状态转移或产品源码，复用原 TLA/coverage，不新增形式化模型。
+
+后续由 root 先冻结一个 A/-ns 新构造；worker/high、五源文件、完整来源正文、自主选路和 600 秒终止保持。16 次 provider、40 次工具、累计 4,000,000 payload bytes 继续作为原终局质量门槛，不伪称 pre-send 限制；不叠加 v6 cap 干预。这个构造尚非已证明的 timeout 修复，原六失败及 v6 失败不改判。输出目录只在进程终局和证据审阅后按精确 ownership 做 Evidence→系统 Trash→Evidence；不删除证据、不扩全矩阵。
+
