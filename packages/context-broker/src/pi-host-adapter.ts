@@ -3,6 +3,7 @@ import type { HostCapabilities } from "./host-adapter";
 import type { ExtensionAPI, PiReadDefinition, SkillRecord } from "./types";
 import { installPiDollarAutocompleteEditor } from "./pi-dollar-editor";
 import { DEFAULT_RESOURCE_READ_BUDGET } from "./resource-read-types";
+import { consumptionEffectsJsonSchema } from "./consumption-effects";
 
 const escapeText = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 const PI_PACKAGE_NAME = "@earendil-works/pi-coding-agent";
@@ -15,6 +16,7 @@ async function loadPiReadFactory(): Promise<PiReadFactory | undefined> {
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const resourceOutputSchema = {
   type: "object", properties: {
+    effects: consumptionEffectsJsonSchema,
     status: { const: "ready" }, files: { type: "array", items: { anyOf: [
       { type: "object", properties: { kind: { const: "text" }, ref: { type: "string" }, path: { type: "string" }, content: { type: "string" } },
         required: ["kind", "ref", "path", "content"], additionalProperties: false },

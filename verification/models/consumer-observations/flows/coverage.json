@@ -13,8 +13,8 @@
     "packages/context-broker/src/session-source-snapshot.ts": "e946d3a437b29869546b0192d1fdbd693b2ac38b765b8e60b3763b8198547468",
     "packages/context-broker/src/notion-source.ts": "20a876a4e1db4676d252ed184ef35654a691a73902d7e3c846a9eb8e51a6a07d",
     "packages/context-broker/src/index.ts": "686e86bd08d7bb8f89ebf4bb9a45727c4952ef07c55e7505bf0916e50f2a4e95",
-    "packages/context-broker/src/consumption-effects.ts": "4d831cbac5811c3634e24b0df3d406bd17f7a134318b39263b1048f261250a97",
-    "packages/context-broker/src/pi-host-adapter.ts": "80e9955ce40b5e4a3846ecc549b4a16b5ab4e8b9632876f770af11a43d92c5c0",
+    "packages/context-broker/src/consumption-effects.ts": "5b10742bccfe19ccd4b52b06733baab9f730d84861e24299b0e3a73f81e73794",
+    "packages/context-broker/src/pi-host-adapter.ts": "ff4f213acd643c067b7fa000bd05f5ddd8981882ee3926cceadab3875e212ee0",
     "packages/context-broker/src/skill-catalog-projection.ts": "7b407d448a44f6fea3c0776ef3f2cd5d73fd10c314b746fe2b1268663cd0f3b8",
     "scripts/build-tern.mjs": "4839a90f0ed6a32b602b52ad13a0ea0d66baf40966eae41eee875c0683c413af",
     "packages/context-broker/scripts/notion-sdk.test.ts": "abafb99deda5928df533fabcfbb6f44cae89a8c88a71bfc3ea0ff8303aada17d",
@@ -29,7 +29,7 @@
     "packages/context-broker/scripts/session-active.test.ts": "651b81077ba4635f8267c7623f001a5e3e46d65901a4bc646b1b04f5a6b30dcd",
     "packages/context-broker/src/resource-read-types.ts": "fe42ca452633a4919aea0d23ff46789d4de742686f4290d53ca69b00074e92ab",
     "packages/context-broker/scripts/pi-read-adapter.test.ts": "b0a144a76ba38125d0b159a9ef281d918c87d0f4cf0961929562c6332151d292",
-    "packages/context-broker/scripts/resource-read-host.test.ts": "1e6d4378ad6b343881cbae7eb38ea1e3d3946f12d9f1af5f670ffd44b3588ebb",
+    "packages/context-broker/scripts/resource-read-host.test.ts": "aa69aa4d7750b2a460b7201b3210846da6327144c8508f1e90384aa7b78ab125",
     "packages/context-broker/scripts/resource-read-projection.test.ts": "210e5e4e50574f1a2f4a2dc0232091f68736f0885062cbc00282ca2f43056cdc",
     "packages/context-broker/scripts/fixed-resource-source.test.ts": "cd057a611b34ee7a85816ccad38951ec561a120747ad717ba0d75f76cb8f3aa1"
   },
@@ -194,6 +194,7 @@
       "Legacy or mismatched batch capability rejects strict dispatch with zero SDK calls",
       "CLI actual descendant semantic-write attempt reaches the normal transport once and reaches it zero times in strict mode"
     ],
+    "output_schema_followup": "Independent review found the closed Pi resource output schema omitted effects. Actual registered-schema validation rejected actual ready batch output at effects before the fix. The shared receipt schema now accepts ordinary unknown and strict none output, preserves the native scalar branch, and rejects malformed effects and extra output fields. Only the output declaration changes; model state, transitions and runtime effects guards are unchanged.",
     "bounds": "Direct source regressions and the candidate build establish only these implementation paths. Reuse unchanged TLA/cfg/statechart results without a fresh model claim. Original real A and frozen package remain unchanged; the independent actual Pi sample is recorded separately."
   }
 }

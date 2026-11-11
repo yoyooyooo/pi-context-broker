@@ -18,13 +18,14 @@
     "packages/context-broker/scripts/view-discovery.test.ts": "0d285b1584a299a2c4a3298d7c0cc833810d64855a5f8604f12e793c0f367bcf",
     "packages/context-broker/scripts/notion-entry.test.ts": "a9d8f07117389d176e35950605f545d66983c379296816e5b96480e86a241800",
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "c00400165c96b2bc07d47196ed10644add62696b918fe9e30d2aa6e9529323c8",
-    "packages/context-broker/src/pi-host-adapter.ts": "80e9955ce40b5e4a3846ecc549b4a16b5ab4e8b9632876f770af11a43d92c5c0",
+    "packages/context-broker/src/pi-host-adapter.ts": "ff4f213acd643c067b7fa000bd05f5ddd8981882ee3926cceadab3875e212ee0",
+    "packages/context-broker/src/consumption-effects.ts": "5b10742bccfe19ccd4b52b06733baab9f730d84861e24299b0e3a73f81e73794",
     "packages/context-broker/src/notion-sdk.ts": "2a062d638c1f13910052c4edf8a0a2250f608e00144f3c521edcec04a51cd9af",
     "packages/context-broker/src/resource-read-types.ts": "fe42ca452633a4919aea0d23ff46789d4de742686f4290d53ca69b00074e92ab",
     "packages/context-broker/src/resource-read-projection.ts": "c72d8749018ca97fbb8026568ae23831080b65e8d312ca8b454792327424183e",
     "scripts/build-tern.mjs": "4839a90f0ed6a32b602b52ad13a0ea0d66baf40966eae41eee875c0683c413af",
     "packages/context-broker/scripts/pi-read-adapter.test.ts": "b0a144a76ba38125d0b159a9ef281d918c87d0f4cf0961929562c6332151d292",
-    "packages/context-broker/scripts/resource-read-host.test.ts": "1e6d4378ad6b343881cbae7eb38ea1e3d3946f12d9f1af5f670ffd44b3588ebb",
+    "packages/context-broker/scripts/resource-read-host.test.ts": "aa69aa4d7750b2a460b7201b3210846da6327144c8508f1e90384aa7b78ab125",
     "packages/context-broker/scripts/fixed-resource-source.test.ts": "cd057a611b34ee7a85816ccad38951ec561a120747ad717ba0d75f76cb8f3aa1",
     "packages/context-broker/scripts/notion-sdk.test.ts": "abafb99deda5928df533fabcfbb6f44cae89a8c88a71bfc3ea0ff8303aada17d"
   },
@@ -179,6 +180,7 @@
       "Legacy or mismatched batch capability rejects strict dispatch with zero SDK calls",
       "CLI actual descendant semantic-write attempt reaches the normal transport once and reaches it zero times in strict mode"
     ],
+    "output_schema_followup": "Independent review found the closed Pi resource output schema omitted effects. Actual registered-schema validation rejected actual ready batch output at effects before the fix. The shared receipt schema now accepts ordinary unknown and strict none output, preserves the native scalar branch, and rejects malformed effects and extra output fields. Only the output declaration changes; model state, transitions and runtime effects guards are unchanged.",
     "bounds": "Direct source regressions and the candidate build establish only these implementation paths. Reuse unchanged TLA/cfg/statechart results without a fresh model claim. Original real A and frozen package remain unchanged; the independent actual Pi sample is recorded separately."
   }
 }
