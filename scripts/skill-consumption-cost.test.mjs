@@ -203,6 +203,41 @@ test('resource batch cost observes actual nonempty text spans and never binary o
   }
 });
 
+test('scalar resource v2 counts the exact native prefix and keeps effects outside source bytes', async () => {
+  const body = '\uFEFF# Reference\r\n完整正文 🧭 & "quoted"\r\n';
+  const effects = { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] };
+  const footer = '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>';
+  const proof = { version: 2, toolCallId: 'fixed-resource', id: 'original-owner', scope: 'original-scope',
+    ref: 'skill://original-owner/reference.md', path: 'reference.md', snapshot_id: 's_' + 'a'.repeat(64),
+    loaded: false, delivered_complete_text: true, bytes: Buffer.byteLength(body), sha256: sha(body),
+    delivery: { start: 0, end: body.length, encoding: 'raw' } };
+  const message = { role: 'toolResult', toolName: 'read', toolCallId: proof.toolCallId, isError: false,
+    content: [{ type: 'text', text: body }, { type: 'text', text: footer }], details: { effects, contextBrokerResource: proof } };
+  const payload = { messages: [{ role: 'tool', content: body + '\n' + footer }] };
+  const measured = await bodyObservation({ messages: [message], payload, serialized: true });
+  assert.deepEqual(measured.verifiedBodyOccurrences.map(item => [item.kind, item.sha256, item.bytes, item.occurrences]),
+    [['resource', sha(body), Buffer.byteLength(body), 1]]);
+  for (const mutate of [
+    value => { value.details.contextBrokerResource.delivery.start = 1; },
+    value => { value.details.contextBrokerResource.delivery.end++; },
+    value => { value.details.contextBrokerResource.delivery.encoding = 'json'; },
+    value => { value.details.contextBrokerResource.sha256 = sha(body + '\n' + footer); },
+    value => { value.details.contextBrokerResource.bytes++; },
+    value => { value.details.contextBrokerResource.loaded = true; },
+    value => { value.details.contextBrokerResource.files = []; },
+    value => { value.toolCallId = 'another-call'; },
+    value => { value.content[0].text = body.slice(0, -1); },
+    value => { value.content[1].text = 'detached footer'; },
+    value => { value.details.effects.remote_writes = 'unknown'; },
+  ]) {
+    const invalid = copy(message); mutate(invalid);
+    assert.deepEqual((await bodyObservation({ messages: [invalid], payload })).verifiedBodyOccurrences, []);
+  }
+  const legacy = copy(message); legacy.details.contextBrokerResource.version = 1; delete legacy.details.contextBrokerResource.delivery;
+  legacy.content = [{ type: 'text', text: body }];
+  assert.equal((await bodyObservation({ messages: [legacy], payload: { messages: [{ content: body }] } })).verifiedBodyOccurrences[0].occurrences, 1);
+});
+
 test('raw, XML and JSON representations count distinct spans and never count one span twice', async () => {
   for (const body of ['plain-complete-body', 'full "body"\n& <tag>']) {
     const message = preparedBody(body), xml = body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');

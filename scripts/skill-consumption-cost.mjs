@@ -154,15 +154,24 @@ export function observeConsumptionCost(api, settings) {
       for (const [kind, proof] of [['skill-body', details.contextBrokerRead], ['resource', details.contextBrokerResource]]) {
         if (!proof || proof.toolCallId !== message.toolCallId) continue;
         if (kind === 'resource') {
-          if (proof.version === 2) {
+          if (proof.version === 2 && ['files', 'selection', 'projection'].some(key => Object.hasOwn(proof, key))) {
             for (const file of resourceBatchFiles(proof, text)) rememberBody(bodyAt(text, file.delivery), file, kind);
             continue;
           }
-          if (proof.version !== 1 || proof.delivered_complete_text !== true || proof.loaded !== false
+          if (![1, 2].includes(proof.version) || proof.delivered_complete_text !== true || proof.loaded !== false
             || ![proof.scope, proof.id, proof.ref, proof.path].every(nonempty) || !pinned(proof.snapshot_id)) continue;
+          // Scalar v2 names the untouched source prefix before an effects footer;
+          // batch v2 above keeps its separate complete projection contract.
+          if (proof.version === 2) {
+            const native = Array.isArray(message.content) && message.content.length >= 2 ? textContent(message.content.slice(0, -1)) : undefined;
+            const footer = details.effects?.version === 1 ? '\n\n<notion-effects>' + JSON.stringify(details.effects) + '</notion-effects>' : undefined;
+            if (proof.delivery?.start !== 0 || proof.delivery?.encoding !== 'raw' || typeof native !== 'string'
+              || proof.delivery.end !== native.length || footer === undefined || message.content.at(-1)?.text !== footer) continue;
+          }
         } else if (![1, 2, 3].includes(proof.version) || !nonempty(proof.identity) || !pinned(proof.snapshotId)
           || proof.version === 3 && (proof.delivery?.start !== 0 || proof.delivery?.encoding !== 'raw')) continue;
-        rememberBody(kind === 'skill-body' && proof.version === 3 ? bodyAt(text, proof.delivery) : text, proof, kind);
+        const spanned = kind === 'skill-body' && proof.version === 3 || kind === 'resource' && proof.version === 2;
+        rememberBody(spanned ? bodyAt(text, proof.delivery) : text, proof, kind);
       }
     }
   };
