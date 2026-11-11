@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
-import { access, mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
@@ -684,9 +684,40 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
   return { status: result.status, scope: result.scope, evidence, error: result.error, turns: result.turns, semanticReview: result.semanticReview };
 }
 
+/** Read-only admission for an explicitly selected introduction-candidate cwd.
+ * The caller still binds the original passed result and reviews its semantics. */
+export async function inspectIsolatedIntroductionResume(previous, { oldSource, project }) {
+  assert.equal(previous?.scope, 'project-scoped-candidate-print');
+  assert.equal(previous.status, 'passed');
+  assert.equal(previous.project, undefined); assert.equal(project, undefined);
+  assert.equal(previous.expectedUserMessages, 1);
+  assert.equal(previous.assertions?.scriptExecutionToolCalls, 0);
+  assert.equal(previous.assertions?.ownedProjectInspectionToolCalls, 0);
+  const cwd = await realpath(previous.launch.cwd);
+  assert.match(cwd, /^\/(?:private\/)?tmp\/notion-candidate-print-[^/]+$/u);
+  assert.deepEqual(await readdir(cwd), ['.pi']);
+  assert.deepEqual(await readdir(join(cwd, '.pi')), ['settings.json']);
+  const settingsPath = join(cwd, '.pi/settings.json');
+  assert.equal(await realpath(settingsPath), settingsPath);
+  assert.equal(basename(previous.baselineFiles[0].realpath), 'package.json');
+  const originalBrokerRoot = resolve(previous.baselineFiles[0].realpath, '..');
+  const settings = await readFile(settingsPath);
+  assert.deepEqual(JSON.parse(settings), candidateProjectSettings(oldSource, originalBrokerRoot));
+  const native = await readFile(previous.session.path);
+  assert.equal(hash(native), previous.session.sha256);
+  const audit = inspectCandidatePrintSession(native.toString('utf8'), { provider: 'magpie', model: 'group/worker' });
+  assert.ok(audit.calls.every(call => call.name === 'notion_list'
+    || call.name === 'notion_use' && call.arguments.readOnly === true
+    || call.name === 'read' && call.arguments.readOnly === true && /^(?:sr:|skill:\/\/)/u.test(call.arguments.path)));
+  return { originalCwd: cwd, originalBrokerRoot,
+    settings: { path: settingsPath, bytes: settings.length, sha256: hash(settings) },
+    native: { path: previous.session.path, bytes: native.length, sha256: hash(native) } };
+}
+
 /** Run one real native print submission with the normal HOME and extensions.
- * The optional -ns arm changes only Pi's native Skill discovery. Each continuation
- * copies an owned session, preserving its prior evidence, and reuses its own Store.
+ * The optional -ns arm changes only Pi's native Skill discovery. A continuation
+ * preserves its original native evidence and reuses its owned Store. An explicit
+ * introduction candidate can use a new empty cwd, recorded as a changed condition.
  * This is a source candidate boundary, not an installed-package release gate. */
 export async function runCandidatePrint(config) {
   assert.equal(config.version, 1); assert.equal(config.scope, 'project-scoped-candidate-print');
@@ -694,6 +725,8 @@ export async function runCandidatePrint(config) {
   assert.ok(['normal', 'notion-only'].includes(config.arm) && identifier(config.id));
   assert.ok(typeof config.prompt === 'string' && config.prompt.trim());
   assert.ok(config.project === undefined || config.project === 'owned-ticket-service');
+  assert.ok(config.isolateResumeCwd === undefined || config.isolateResumeCwd === true);
+  if (config.isolateResumeCwd) assert.ok(config.resumeFrom);
   assert.ok(isAbsolute(config.evidenceRoot) && !inside(root, config.evidenceRoot));
   assert.ok(isAbsolute(config.brokerRoot) && config.sourceId && config.database);
   assert.ok(process.env.NOTION_API_TOKEN?.trim(), 'Use the already authorized Notion identity');
@@ -753,14 +786,17 @@ export async function runCandidatePrint(config) {
     assert.equal(previous.database, config.database); assert.equal(previous.runtime.sdk_sha256, runtime.sdk_sha256);
     assert.equal((await identity(previous.session.path)).sha256, previous.session.sha256);
   }
-  const cwd = previous?.launch.cwd ?? await mkdtemp('/private/tmp/notion-candidate-print-');
+  const isolatedResume = config.isolateResumeCwd
+    ? await inspectIsolatedIntroductionResume(previous, { oldSource, project: config.project }) : null;
+  const cwd = isolatedResume ? await mkdtemp('/private/tmp/notion-candidate-print-')
+    : previous?.launch.cwd ?? await mkdtemp('/private/tmp/notion-candidate-print-');
   if (previous) assert.equal(previous.project?.kind, config.project, 'A continuation must retain its original application');
   const project = previous?.project ?? (config.project ? { ...await createOwnedGraphProject(cwd), kind: config.project } : undefined);
   const stateRoot = previous?.stateRoot ?? join(evidence, 'owned-state');
   const control = join(evidence, 'observation'), sessions = join(evidence, 'sessions'), responses = join(control, 'sdk-responses'), payloads = join(control, 'provider-payloads');
   for (const path of [join(cwd, '.pi'), stateRoot, control, sessions, responses, payloads]) await mkdir(path, { recursive: true, mode: 0o700 });
   const projectSettings = candidateProjectSettings(oldSource, config.brokerRoot);
-  if (previous) assert.deepEqual(await json(join(cwd, '.pi/settings.json')), projectSettings);
+  if (previous && !isolatedResume) assert.deepEqual(await json(join(cwd, '.pi/settings.json')), projectSettings);
   else await save(join(cwd, '.pi/settings.json'), projectSettings);
   const sourceCache = join(stateRoot, 'broker-cache'), state = join(stateRoot, 'ntn/state');
   const source = candidateSourceConfig(originalSource, { sourceId: config.sourceId, database: config.database, cacheDir: sourceCache, viewId: config.viewId });
@@ -817,7 +853,10 @@ export async function runCandidatePrint(config) {
     launch: { cwd, executable: host.file, args: [...host.prefix, ...args], normalHome: true, normalAgentDir: true, normalMcpAndExtensions: true,
       projectPackageOverrideOnly: true, nativeSkillDiscovery: config.arm !== 'notion-only', sourceStateStartsEmpty: !previous && (!cliPolicy || cliPolicy.mode === 'owned-description-update'),
       cliDevRootOverride: null, inheritedCliDevRootOverrideRemoved: Boolean(process.env.NTN_SKILLS_DEV_ROOT),
-      previous: config.resumeFrom ?? null, sessionContinuation: previous ? 'copied-owned-linear-history-and-owned-warm-store; new-process' : 'new-session-and-process' },
+      previous: config.resumeFrom ?? null,
+      isolatedIntroductionResume: isolatedResume ? { ...isolatedResume, newCwd: cwd, newBrokerRoot: config.brokerRoot } : null,
+      sessionContinuation: isolatedResume ? 'copied-owned-linear-history-and-owned-warm-store; new-empty-cwd-and-candidate-package; new-process'
+        : previous ? 'copied-owned-linear-history-and-owned-warm-store; new-process' : 'new-session-and-process' },
     semanticReview: 'required', artifactBoundary: 'actual source package and bundled CLI/SDK; not an installed release gate' };
   if (cliPolicy) result.publicCli = { entry: cliProtected[0], stateRoots: cliPolicy.stateRoots, protectedFiles: cliProtected,
     policy: cliPolicy.mode === 'original-create-recovery'
@@ -885,7 +924,19 @@ export async function runCandidatePrint(config) {
     if (project) result.projectFilesUnchanged = (await Promise.all(project.files.map(async file => (await identity(join(project.root, file.path))).sha256 === file.sha256))).every(Boolean);
     if (cliPolicy) result.publicCliProtectedFilesUnchanged = (await Promise.all(cliProtected.map(async file => (await identity(file.path)).sha256 === file.sha256))).every(Boolean);
     if (previous) result.originalSessionUnchanged = (await identity(previous.session.path)).sha256 === previous.session.sha256;
-    if (!result.normalConfigurationUnchanged || !result.baselineFilesUnchanged || result.originalSessionUnchanged === false || result.projectFilesUnchanged === false || result.publicCliProtectedFilesUnchanged === false) result.status = 'failed';
+    if (isolatedResume) {
+      result.originalResumeResultUnchanged = (await identity(config.resumeFrom.path)).sha256 === config.resumeFrom.sha256;
+      try {
+        result.originalIntroductionCwdAfter = await inspectIsolatedIntroductionResume(previous, { oldSource, project: config.project });
+        assert.deepEqual(result.originalIntroductionCwdAfter, isolatedResume);
+        result.originalIntroductionCwdUnchanged = true;
+      } catch (error) {
+        result.originalIntroductionCwdUnchanged = false;
+        result.originalIntroductionCwdError = { code: error.code ?? error.name, message: error.message };
+      }
+    }
+    if (!result.normalConfigurationUnchanged || !result.baselineFilesUnchanged || result.originalSessionUnchanged === false || result.projectFilesUnchanged === false || result.publicCliProtectedFilesUnchanged === false
+      || result.originalResumeResultUnchanged === false || result.originalIntroductionCwdUnchanged === false) result.status = 'failed';
     await save(join(evidence, 'result.json'), result);
   }
   return { status: result.status, evidence, error: result.error, session: result.session, assertions: result.assertions };

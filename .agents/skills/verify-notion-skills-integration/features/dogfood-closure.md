@@ -98,5 +98,11 @@ how 作者原件经公开 read/dry-run 审阅后由 root 一次公开 write 并�
 
 原D-natural独立臂的用户句子完全没有Skill名称/handle；首请求仅默认目录，模型复制唯一create-verification-skill候选ref并以readOnly:true use。第二请求完整6,837 B主文，第三请求完整2,761/3,374/4,023 B参考，同owner/scope/pin/version/File ID与实际wire一致；阶段内5个已闭合SDK为25metadata/5body/0write。独立阶段报告 `reviews/e2e-final-v3-D-natural-discovery-phase-review.json` SHA256 `5ff27d9dd72b6cfa15a6e1b39315454066201c319e0cd4b76c82c5c28deb1164`；root再核6个日志前缀、3个实际payload/wire及完整正文，`root-D-natural-discovery-readback.json` SHA256 `8f8364acf8d95a64efaa23ebba182b2ae54ec36d3f20d732e122df8873b0883e`。这闭合AH-623无名称发现项，不把阶段通过改成AH-639整任务通过。
 
-23条失效声明的受审候选、正常doctor和公开find pstack 5/5保持；全局入口激活仍归AH-638。setup留出技术/10项覆盖通过但有两处解释偏差；A两臂、B两臂及D-natural独立臂的超时/无产物失败原样保留。warm观察器与模型对自动metadata的推断边界见成本地图，原warm failed不改判。完整生成产物及helper实驱未满足，AH-639/AH-638继续开放；AH-623可按六条既有验收关闭，未引入额外发现平台或模型。
+23条失效声明的受审候选、正常doctor和公开find pstack 5/5保持；全局入口激活仍归AH-638。最终16冷配置为8个technical passed、6个failed、2个窄侧not_run。已完成介绍中6份准确；setup留出覆盖全部10项但有两处解释偏差，D-named独立臂另把作者flag误推为运行时限制、把坐标偏好写成禁令，正常臂准确通过。A/B/D-natural两臂共6个任务均超时且无完整产物；完整正文和真实项目输入不能替代交付。独立strict batch协议通过，原warm failed不改判，A资源续问因没有合格产物保持not_run。终局原件索引为`final-v3-terminal-index.json`（SHA `928f4b1e738db8f76a9f9ae2ee8b7544f23fb64353f9a5c6ea7e47966769e55e`）；全部真实模型失败usage保持unknown，已完响应只计下界。完整生成产物及helper实驱未满足，AH-639/AH-638继续开放；AH-623按独立发现验收判断，未引入额外发现平台或模型。
+
+### 候选暖续问的空 cwd 接线
+
+原print续问对旧cwd的包映射做deepEqual，换候选包路径会在启动Pi前拒绝；`warm-v4-resume-contract-red.json`保留真实旧入口拒绝，0个Pi/model/source请求。默认续问继续保留该保护。仅显式`isolateResumeCwd`允许已独审、成功单轮的纯介绍换到新的空owned cwd：原任务不得有owned项目、执行或项目枚举，原native精确hash与只读来源工具须通过，原cwd只能有`.pi/settings.json`且包映射绑定原结果。原result/native/settings均不修改，结束后再次核hash；新的cwd与包映射明确记录，原owned Store继续复用，实际自动metadata按账本记录。
+
+`verify-pi-daily-resume.test.mjs`与原candidate测试共27项通过，覆盖原默认拒绝、项目/失败/已续问/执行型父任务、额外文件、错误settings和native前缀漂移。纯介绍语义由既有C1完整独审与本次冻结调用合同确定，不声称helper能自动理解任意任务。该驱动接线不改产品状态机或源码覆盖的有限转移；不新增TLA模型、不把回归通过当成v4真实通过。v4按新driver commit与原39ad包双身份单独冻结一次，沿原成功C1前缀，不带旧failed warm追加；新cwd属于条件变化，不能据此作同条件性能比较或回填v3分母。
 
