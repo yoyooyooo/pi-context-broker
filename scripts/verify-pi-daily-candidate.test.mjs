@@ -44,6 +44,17 @@ test('native print inspection does not accept fallback models, orphan results, p
   assert.throws(() => inspectCandidatePrintSession(jsonl(rows).trimEnd(), expectedPrintModel));
 });
 
+test('owned print continuation requires the frozen submission count and keeps earlier call identities', () => {
+  const rows = printSession();
+  rows.push({ type: 'message', id: 'followup', parentId: 'answer', message: { role: 'user', content: [{ type: 'text', text: 'Use the same pinned content.' }] } });
+  rows.push({ type: 'message', id: 'followup-answer', parentId: 'followup', message: { role: 'assistant', provider: 'magpie', model: 'group/worker', stopReason: 'stop', content: [{ type: 'text', text: 'The original fixed version.' }] } });
+  assert.throws(() => inspectCandidatePrintSession(jsonl(rows), expectedPrintModel));
+  const review = inspectCandidatePrintSession(jsonl(rows), { ...expectedPrintModel, expectedUserMessages: 2 });
+  assert.deepEqual(review.userLines, [3, 8]); assert.equal(review.calls[0].id, 'read-1');
+  assert.throws(() => inspectCandidatePrintSession(jsonl(rows), { ...expectedPrintModel, expectedUserMessages: 3 }));
+  assert.throws(() => inspectCandidatePrintSession(jsonl(rows), { ...expectedPrintModel, expectedUserMessages: 0 }));
+});
+
 test('an explicit retraction of a failed partial model response stays distinct from executed tools', () => {
   const rows = printSession();
   const failed = { ...structuredClone(rows[4]), id: 'partial', parentId: 'projection' };
@@ -116,6 +127,8 @@ test('a positive verdict binds full body, receipt, final answer, and the actual 
   stale.tasks.push({ phase: 'tool_call', toolName: 'notion_use', toolCallId: 'new', reviewedReadTool: true },
     { phase: 'tool_result', toolCallId: 'new', isError: true }, { phase: 'receipt', toolCallId: 'old', proofs: { contextBrokerPreparation: { purpose: 'use', toolCallId: 'old' } } });
   assert.throws(() => validateCandidateTurn({ ...turn, requireUse: true }, stale), /notion_use/u);
+  assert.equal(validateCandidateTurn({ ...turn, toolCallCount: 0 }, observed()).semanticReview, 'required');
+  assert.throws(() => validateCandidateTurn({ ...turn, toolCallCount: 0 }, stale), /frozen turn intent/u);
 });
 
 test('normal-host transport retains unknown other requests without mistaking them for incomplete model work', () => {

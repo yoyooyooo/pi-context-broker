@@ -528,6 +528,36 @@ node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/f
 
 `passed` 仅表示本轮自动观测断言通过，`semanticReview: required` 始终保留，需另审原任务回答。helper 尚未运行的新候选不继承旧 gate；全局日用、真实库存、Mini 和 UI 不因本分支通过而关闭。复跑验证器本身：`node --test scripts/verify-pi-daily-candidate.test.mjs scripts/verify-pi-daily-installation.test.mjs`，正常 check 同时包含这两组反例。
 
+## AH-956：正常 HOME 的原生 print 双臂
+
+使用既有 `scripts/verify-pi-daily-candidate.mjs` 导出的 `runCandidatePrint(config)`，从仓库根以 Node 调用；先冻结仓外 JSON。配置为 `version: 1`、`scope: "project-scoped-candidate-print"`，指定 `id`、`arm: "normal" | "notion-only"`、`model: "magpie/group/worker"`、`thinkingLevel: "high"`、`brokerRoot`、`sourceId`、自有 `database`、`ownershipReceipt: {path, sha256}`、`evidenceRoot` 与原始 `prompt`。`expectedBodies`、`bodies`、`proofs` 和 `requireUse` 沿用上节的独立 oracle 及完整投递断言；暖续问或纯介绍可冻结 `toolCallCount: 0`，真实额外调用即失败。每轮预算在首轮前冻结，默认 600000ms；失败保存后停止，不能另换模型或修改问题覆盖旧样本。
+
+`normal` 保留正常 HOME、全局 packages、Skill、MCP 与安全扩展；仅项目 package 映射换为显式候选。`notion-only` 只增加 Pi 正式 `-ns`，不能增加 `--no-extensions`、`--no-mcp` 或修改全局设置。两臂各用空 Store、独立源缓存与仓外中性 cwd；来源仍采用真实日用 5m discovery/activation 和 prefetch=false。冻结源码包、入口、嵌入 CLI/SDK 与 runtime manifest 的身份，不把源码路径称为独立安装包通过。正常臂必须实际发现 native Skill，独立臂必须零 native Skill command；完整 provider 输入仍需另审，不能仅由 argv 推断没有其它扩展偷渡本地目录或正文。
+
+正式包子进程必须显式删除继承的 `NTN_SKILLS_DEV_ROOT`，并记录这一进程级变化。CLI launcher 可由该变量转向另一个源码 checkout；仅记录被调用文件的 SHA 不足以证明实际执行版本。保留正常 HOME、认证与全局开发设置。Broker build 会重新 bundle/minify 指定 CLI/SDK，分别冻结输入入口与输出 manifest/bundle；不能要求重新打包前后字节相同。
+
+真实 `pi -p` 的后续轮用 `resumeFrom: {path, sha256}` 指向同 evidenceRoot 下成功的本 helper `result.json`。helper 复制自有原 Session，再复用其 Store；原 Session 字节与父链保持，明确这是同会话/暖 Store、**新进程**续接，不冒称同进程暖态。每轮即刻用原 `inspectCandidatePrintSession` 核对实际 model_change、所有 toolCallId/结果、失败/撤回与精确用户轮数；完整 provider JSON 与 cost hook、实际 Undici 已发送请求体 SHA/bytes 对账。源 SDK 原件、HTTP 账本与作者/旁路 oracle 成本单列。cold、warm、管理编辑后旧 pin、明确刷新和介绍任务的实际语义由人审核；`passed` 只表示该次自动门禁成立。未完成的真实样本保持 not_run/failed；本节没有预先声称 AH-956 通过。
+
+### 2026-11-11 真实双臂基线
+
+原件根为 `/Users/yoyo/Documents/code/personal/verification-evidence/ah956-20261111-Z3lomu`。`plan.json` 在模型请求前冻结两臂、五个原始问题、worker/high 与每轮 600000ms；`ownership-v1.json` 绑定同一自有 root、Requires 和参考文件。原 root 创建失败、自动链接的精确同页修复、原 operation 的公开 recovery review/apply 都保留，没有另建替代 root。旧 `ca8cc9` 的正式绑定冷读因原 `needs_review` 阻塞，之后仅采用 `ca8cc9 → e0e1510(AH740) → a76c593(AH922)` 的恢复协议，Broker 主体仍为 `1c11c57`，未混入 AH953/631/506。
+
+`baseline/recovery-protocol/freeze.json` 保留 Broker/CLI 两份归档及 89/69 个成员的逐字核验。`baseline-summary.json` 指向每轮配置、原生 Session、source SDK 原件、成本与语义 review；`baseline-isolation-audit.json` 在全部完成后另进程重读十个 Session 和十八个 provider payload。所有 `-ns` 输入均没有 Notion 目录外的 native Skill 目录、本地 Skill 根或 oracle 路径；正常臂实际保留 69 个 native Skill commands。每个实际 provider 请求均与已发送 HTTP 请求体 SHA/bytes 唯一配对，完整正文计数重新核对。
+
+| 原任务 | 两臂实际结果 | 成本与边界 |
+| --- | --- | --- |
+| 冷态自然使用 | 各三次 provider、两次工具调用；root 565B、Requires 332B、参考 188B 各一份；版本及 gate 正确 | 每臂 24 metadata + 6 body，零写入 |
+| 暖续问 | 各一次 provider，零工具；三份旧正文各一份 | 两臂均零 Notion HTTP；同 Session/Store、新进程 |
+| 作者更新后的旧 pin | 各一次 provider，零工具；回答仍为 QUARTZ-1 / CEDAR-1 / MICA，新正文零投递 | 仅启动目录复验，独立臂 8、正常臂 6 metadata；零正文与写入 |
+| 明确刷新 | 两臂各三次 provider，最终旧 root/参考零份、新 root/参考/Requires 各一份且新 pin 一致 | 独立臂发生 6 次历史保留写入，违反问题明确的“不写入”；正常臂随后读取已保留历史，零写入不能证明只读能力 |
+| 新会话 `$` 介绍 | 各一次 provider、零工具；root v2 与 Requires 各一份，参考正文零投递；没有执行工作流 | 每臂仍有 24 metadata + 6 body 的主机准备成本。正常臂把“报告包含”收紧成“报告只包含”，原措辞保留为语义注记 |
+
+总消费者账本为 18 次 provider、146 metadata、34 body、6 write。作者修改是另列的两次原生段落 PATCH，不能并入消费者成本或称为 UI 操作。v2 oracle 来自精确作者 ACK/原生 Markdown 回读，仅在旁路推导固定正文期望，没有预先用 current read 写入历史或播种消费者 Store。
+
+独立臂刷新 `notion-only-explicit-refresh-ouqNp2/independent-review.json` 明确为 `failed-strict-no-write-semantics`：模型回答仍声称“未写入”，实际六次写入不可抹除。AH953 候选必须使用新的原生编辑与独立会话验证 effects/readOnly。两次受开发 launcher 覆盖影响的早期 CLI 读取、错误的跨 bundle 字节相等检查、以及把恢复历史首条 resource receipt 当成本轮 receipt 的审计错误均留有单独勘误；后续必须按本轮 toolCallId 选择结果，不能删掉历史。
+
+验证器回归 `node --test scripts/verify-pi-daily-candidate.test.mjs scripts/verify-pi-daily-installation.test.mjs` 为 25/25。以上是源码候选的实际消费证明，不代表 UI、Mini、独立安装发布、AH639 自然产物执行或成本分布验收。Notion UI 仍在 TaskSpace 1 / p1 登录交接，详见 `notion-ui-login.json`，不能用 API 代替完成。
+
 ## Consumer observation consistency (AH-864)
 
 Use the existing host-prepare fixture and SDK/source/provider drivers. Before product changes, retain F1/F2/F3/F4/F5/F7 failures against 38285e7 and the successful exact-read recovery control. F6 is a separate actual-clock/request test, not a seventh proven failure. Each vertical slice updates this map and the corresponding model/code bindings.

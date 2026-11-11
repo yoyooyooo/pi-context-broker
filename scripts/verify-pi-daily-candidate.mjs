@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { access, mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,7 +27,8 @@ const { parse: parseYaml } = createRequire(new URL('../packages/context-broker/p
 
 /** Inspect a fresh linear native session independently of the model's answer.
  * Forked histories need the host's branch projector, not this print-session check. */
-export function inspectCandidatePrintSession(text, { provider, model }) {
+export function inspectCandidatePrintSession(text, { provider, model, expectedUserMessages = 1 }) {
+  assert.ok(Number.isSafeInteger(expectedUserMessages) && expectedUserMessages > 0);
   assert.ok(typeof text === 'string' && text.endsWith('\n'), 'Retain a complete native JSONL session');
   const rows = text.trimEnd().split('\n').map((line, index) => ({ value: JSON.parse(line), line: index + 1 }));
   assert.equal(rows[0]?.value.type, 'session');
@@ -78,7 +80,7 @@ export function inspectCandidatePrintSession(text, { provider, model }) {
         resultSha256: hash(JSON.stringify(message.content)) });
     }
   }
-  assert.ok(models.length > 0 && userLines.length === 1, 'Verify one fresh print submission with its recorded model');
+  assert.ok(models.length > 0 && userLines.length === expectedUserMessages, 'Verify the exact print submissions with their recorded model');
   assert.ok(finals.length > 0 && finals.at(-1).stopReason === 'stop' && finals.at(-1).bytes > 0, 'A process exit is not a successful final model response');
   assert.ok([...calls.values()].every(call => call.resultLine !== undefined || call.retractedLine !== undefined), 'A native tool call has no terminal result or explicit failed-response retraction');
   return { version: 1, sessionId: rows[0].value.id, sha256: hash(text), bytes: Buffer.byteLength(text),
@@ -135,10 +137,10 @@ export function candidateSourceConfig(original, { sourceId, database, cacheDir, 
   return config;
 }
 
-// Full receipt metadata and rendered hashes are retained for Broker-owned
-// deliveries. No user settings, arbitrary local read output, headers or model
-// request payloads are copied. Actual payload hashes and complete-body counts
-// come from the existing cost observer and are paired with Undici below.
+// Receipt events retain Broker-owned metadata and rendered hashes. The optional
+// payload directory retains complete provider input for an owned E2E audit;
+// headers and authentication configuration are never collected. Exact body
+// counts remain passive and are paired with actual Undici requests below.
 export function candidatePayloadBodies(value, expectedBodies) {
   const strings = [];
   const content = item => {
@@ -172,7 +174,7 @@ export function candidatePayloadBodies(value, expectedBodies) {
   });
 }
 
-export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspectPayload }) {
+export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspectPayload, payloadDirectory, hostOutput }) {
   const sha = value => crypto.createHash('sha256').update(value).digest('hex');
   const oracleStarted = process.hrtime.bigint();
   const expectedBodies = bodyFiles.map(file => {
@@ -182,7 +184,7 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
   });
   const fd = fs.openSync(output, 'wx', 0o600);
   const oracleReadMs = Number(process.hrtime.bigint() - oracleStarted) / 1e6;
-  let turn = 0, sequence = 0, previous = null, errors = 0, closed = false, observerWorkNs = 0n;
+  let turn = 0, sequence = 0, previous = null, errors = 0, closed = false, observerWorkNs = 0n, payloadNumber = 0;
   const record = (phase, fields = {}) => {
     const row = { sequence: ++sequence, previousSha256: previous, pid: process.pid, monotonicNs: process.hrtime.bigint().toString(), turn, phase, ...fields };
     row.eventSha256 = sha(JSON.stringify(row)); previous = row.eventSha256;
@@ -209,11 +211,19 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     // Always undefined: observation cannot block, transform or choose tools.
   });
   record('task_observer_start', { oracleReadMs, oracleSeededIntoSourceOrModel: false });
+  if (hostOutput) api.on('session_start', (_event, ctx) => {
+    fs.writeFileSync(hostOutput, JSON.stringify({ sessionId: ctx.sessionManager.getSessionId(), sessionFile: ctx.sessionManager.getSessionFile(),
+      model: { provider: ctx.model?.provider, id: ctx.model?.id }, pid: process.pid,
+      commands: api.getCommands().map(command => ({ name: command.name, source: command.source, sourceInfo: command.sourceInfo })) }) + '\n', { flag: 'wx', mode: 0o600 });
+  });
   on('input', () => { turn++; record('input'); });
   on('context_with_system', event => { for (const message of event.messages ?? []) receipt(message); });
   on('before_provider_request', event => {
     const payload = JSON.stringify(event.payload), toolNames = (event.payload?.tools ?? []).map(tool => tool.function?.name ?? tool.name).filter(name => typeof name === 'string');
+    const payloadFile = payloadDirectory ? payloadDirectory + '/payload-' + (++payloadNumber) + '.json' : undefined;
+    if (payloadFile) fs.writeFileSync(payloadFile, payload, { flag: 'wx', mode: 0o600 });
     record('provider_payload', { sha256: sha(payload), bytes: Buffer.byteLength(payload), bodies: inspectPayload(event.payload, expectedBodies), toolNames,
+      ...(payloadFile ? { payloadFile } : {}),
       notionCatalogPresent: payload.includes('<ntn-skills-view-catalog>'), notionGuidancePresent: payload.includes('<ntn-skills-guidance>') });
   });
   on('tool_call', event => {
@@ -242,6 +252,10 @@ export function containsProof(value, expected) {
 }
 
 export function validateCandidateTurn(turn, { costs, transport, tasks }) {
+  if (turn.toolCallCount !== undefined) {
+    assert.ok(Number.isSafeInteger(turn.toolCallCount) && turn.toolCallCount >= 0);
+    assert.equal(tasks.filter(event => event.phase === 'tool_call').length, turn.toolCallCount, 'Tool calls differ from this frozen turn intent');
+  }
   const requests = costs.filter(event => event.phase === 'provider_request');
   const sent = transport.filter(event => event.phase === 'request_sent');
   assert.ok(requests.length, 'No actual provider request was observed');
@@ -523,4 +537,153 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
     await save(join(evidence, 'result.json'), result);
   }
   return { status: result.status, scope: result.scope, evidence, error: result.error, turns: result.turns, semanticReview: result.semanticReview };
+}
+
+/** Run one real native print submission with the normal HOME and extensions.
+ * The optional -ns arm changes only Pi's native Skill discovery. Each continuation
+ * copies an owned session, preserving its prior evidence, and reuses its own Store.
+ * This is a source candidate boundary, not an installed-package release gate. */
+export async function runCandidatePrint(config) {
+  assert.equal(config.version, 1); assert.equal(config.scope, 'project-scoped-candidate-print');
+  assert.equal(config.model, 'magpie/group/worker'); assert.equal(config.thinkingLevel, 'high');
+  assert.ok(['normal', 'notion-only'].includes(config.arm) && identifier(config.id));
+  assert.ok(typeof config.prompt === 'string' && config.prompt.trim());
+  assert.ok(isAbsolute(config.evidenceRoot) && !inside(root, config.evidenceRoot));
+  assert.ok(isAbsolute(config.brokerRoot) && config.sourceId && config.database);
+  assert.ok(process.env.NOTION_API_TOKEN?.trim(), 'Use the already authorized Notion identity');
+  assert.ok(!process.env.NOTION_API_BASE_URL || process.env.NOTION_API_BASE_URL.replace(/\/$/u, '') === 'https://api.notion.com');
+  assert.ok(!process.env.PI_CODING_AGENT_DIR && !process.env.CONTEXT_BROKER_CONFIG, 'Keep normal HOME and agent configuration');
+  const identity = async path => { const bytes = await readFile(path); return { path, realpath: await realpath(path), bytes: bytes.length, sha256: hash(bytes) }; };
+  const settingsPath = join(homedir(), '.pi/agent/settings.json');
+  const sourcePath = join(homedir(), '.pi/agent/context-broker/config.yml');
+  const settings = await json(settingsPath), sourceBytes = await readFile(sourcePath);
+  const originalSource = parseYaml(sourceBytes.toString('utf8'));
+  const secretKeys = value => value && typeof value === 'object' && Object.entries(value).some(([key, child]) =>
+    /token|secret|password|authorization|api.?key/iu.test(key) || secretKeys(child));
+  assert.ok(!secretKeys(originalSource), 'Do not persist source configuration containing credentials');
+  const oldPackage = settings.packages?.[config.packageIndex ?? 1];
+  const oldSource = typeof oldPackage === 'string' ? oldPackage : oldPackage?.source;
+  assert.ok(isAbsolute(oldSource) && oldSource !== config.brokerRoot);
+  const ownership = await identity(config.ownershipReceipt.path);
+  assert.equal(ownership.sha256, config.ownershipReceipt.sha256);
+  assert.ok((await readFile(ownership.path, 'utf8')).includes(config.database), 'Bind the owned database receipt');
+  for (const body of config.expectedBodies ?? []) {
+    const actual = await identity(body.path);
+    assert.equal(actual.sha256, body.sha256); assert.equal(actual.bytes, body.bytes); assert.ok(body.bytes > 0);
+  }
+  const baselineFiles = await Promise.all(['package.json', 'src/index.ts', 'dist/ntn-skills.mjs', 'dist/ntn-skills-sdk.mjs', 'dist/ntn-skills-runtime.json'].map(path => identity(join(config.brokerRoot, path))));
+  const runtime = await json(join(config.brokerRoot, 'dist/ntn-skills-runtime.json'));
+  assert.equal(runtime.cli_sha256, baselineFiles[2].sha256); assert.equal(runtime.sdk_sha256, baselineFiles[3].sha256);
+  await mkdir(config.evidenceRoot, { recursive: true, mode: 0o700 });
+  const evidence = await mkdtemp(join(config.evidenceRoot, config.arm + '-' + config.id + '-'));
+  let previous;
+  if (config.resumeFrom) {
+    const artifact = await identity(config.resumeFrom.path); assert.equal(artifact.sha256, config.resumeFrom.sha256);
+    assert.ok(inside(await realpath(config.evidenceRoot), artifact.realpath));
+    previous = await json(artifact.path);
+    assert.equal(previous.scope, config.scope); assert.equal(previous.status, 'passed'); assert.equal(previous.arm, config.arm);
+    assert.equal(previous.database, config.database); assert.equal(previous.runtime.sdk_sha256, runtime.sdk_sha256);
+    assert.equal((await identity(previous.session.path)).sha256, previous.session.sha256);
+  }
+  const cwd = previous?.launch.cwd ?? await mkdtemp('/private/tmp/notion-candidate-print-');
+  const stateRoot = previous?.stateRoot ?? join(evidence, 'owned-state');
+  const control = join(evidence, 'observation'), sessions = join(evidence, 'sessions'), responses = join(control, 'sdk-responses'), payloads = join(control, 'provider-payloads');
+  for (const path of [join(cwd, '.pi'), stateRoot, control, sessions, responses, payloads]) await mkdir(path, { recursive: true, mode: 0o700 });
+  const projectSettings = candidateProjectSettings(oldSource, config.brokerRoot);
+  if (previous) assert.deepEqual(await json(join(cwd, '.pi/settings.json')), projectSettings);
+  else await save(join(cwd, '.pi/settings.json'), projectSettings);
+  const sourceCache = join(stateRoot, 'broker-cache'), state = join(stateRoot, 'ntn/state');
+  const source = candidateSourceConfig(originalSource, { sourceId: config.sourceId, database: config.database, cacheDir: sourceCache });
+  const observedSource = source.sources.find(source => source.id === config.sourceId);
+  assert.equal(observedSource.discovery?.maxAge, '5m'); assert.equal(observedSource.activation?.maxAge, '5m');
+  assert.equal(observedSource.prefetch, false);
+  await save(join(control, 'source-config.json'), source); await save(join(evidence, 'config.json'), config);
+  const clockId = randomUUID(), host = await resolveHost('pi');
+  const costs = join(control, 'cost.jsonl'), transport = join(control, 'transport.jsonl'), tasks = join(control, 'tasks.jsonl');
+  const sourceLedger = join(control, 'source.jsonl'), sdkLedger = join(control, 'sdk.jsonl'), hostOutput = join(control, 'host.json');
+  const costExtension = join(control, 'cost.mjs'), transportExtension = join(control, 'transport.mjs'), taskExtension = join(control, 'tasks.mjs');
+  const sourcePreload = join(control, 'source.mjs'), sdkPreload = join(control, 'sdk.mjs');
+  await writeFile(costExtension, consumptionCostExtensionSource({ output: costs, checkoutRoot: root, runId: clockId, sampleId: config.id, clockId }), { flag: 'wx', mode: 0o600 });
+  await writeFile(transportExtension, providerTransportExtensionSource({ output: transport, checkoutRoot: root, clockId }), { flag: 'wx', mode: 0o600 });
+  await writeFile(taskExtension, "import fs from 'node:fs';import crypto from 'node:crypto';const inspectPayload=" + candidatePayloadBodies.toString()
+    + ';export default api => (' + observeCandidateTask.toString() + ')(api,{fs,crypto,inspectPayload,output:' + JSON.stringify(tasks)
+    + ',bodyFiles:' + JSON.stringify(config.expectedBodies ?? []) + ',payloadDirectory:' + JSON.stringify(payloads) + ',hostOutput:' + JSON.stringify(hostOutput) + '});\n', { flag: 'wx', mode: 0o600 });
+  await writeFile(sourcePreload, sourceObserverPreloadSource({ output: sourceLedger, checkoutRoot: root, clockId, cliPath: baselineFiles[2].realpath, ownerParentPid: process.pid, ownerEntry: host.path }), { flag: 'wx', mode: 0o600 });
+  await writeFile(sdkPreload, "import fs from 'node:fs';import {channel} from 'node:diagnostics_channel';import {createHash} from 'node:crypto';import {isMainThread} from 'node:worker_threads';const hash=value=>createHash('sha256').update(value).digest('hex');\n"
+    + safeRequestMetrics.toString() + '\nif(isMainThread&&process.ppid===' + process.pid + '){const sdk=(' + observeGraphSdk.toString()
+    + ')({channel,fs,safeMetrics:safeRequestMetrics,paths:' + JSON.stringify({ ledger: sdkLedger, responses, outputRoot: sourceCache })
+    + '});let done=false;const finish=()=>{if(!done){done=true;sdk.close();}};process.once("beforeExit",finish);process.once("exit",finish);}\n', { flag: 'wx', mode: 0o600 });
+  const env = { ...process.env, CONTEXT_BROKER_CONFIG: join(control, 'source-config.json'), NTN_SKILLS_HOME: state,
+    NTN_SKILLS_CONFIG_HOME: join(stateRoot, 'ntn/config'), NTN_SKILLS_CACHE_HOME: join(stateRoot, 'ntn/cache'), NTN_SKILLS_DATA_HOME: join(stateRoot, 'ntn/data'),
+    NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000', NODE_OPTIONS: [process.env.NODE_OPTIONS, '--import=' + JSON.stringify(sourcePreload), '--import=' + JSON.stringify(sdkPreload)].filter(Boolean).join(' ') };
+  delete env.NTN_SKILLS_DEV_ROOT;
+  const args = ['-p', ...(config.arm === 'notion-only' ? ['-ns'] : []), '--approve', '--session-dir', sessions, '--model', config.model, '--thinking', config.thinkingLevel,
+    '-e', costExtension, '-e', transportExtension, '-e', taskExtension];
+  let prefix;
+  if (previous) {
+    prefix = await readFile(previous.session.path);
+    const session = join(sessions, basename(previous.session.path));
+    await writeFile(session, prefix, { flag: 'wx', mode: 0o600 }); args.push('--session', session);
+  }
+  args.push('--', config.prompt);
+  const before = { settings: await identity(settingsPath), source: await identity(sourcePath), packages: settings.packages,
+    otherPackagesSha256: hash(JSON.stringify(settings.packages.filter((_, index) => index !== (config.packageIndex ?? 1)))) };
+  const result = { version: 1, scope: config.scope, status: 'running', arm: config.arm, id: config.id, database: config.database,
+    evidence, stateRoot, baselineFiles, runtime, ownership, before, host, hostArtifact: await identity(host.identity), expectedUserMessages: (previous?.expectedUserMessages ?? 0) + 1,
+    launch: { cwd, executable: host.file, args: [...host.prefix, ...args], normalHome: true, normalAgentDir: true, normalMcpAndExtensions: true,
+      projectPackageOverrideOnly: true, nativeSkillDiscovery: config.arm !== 'notion-only', sourceStateStartsEmpty: !previous,
+      cliDevRootOverride: null, inheritedCliDevRootOverrideRemoved: Boolean(process.env.NTN_SKILLS_DEV_ROOT),
+      previous: config.resumeFrom ?? null, sessionContinuation: previous ? 'copied-owned-linear-history-and-owned-warm-store; new-process' : 'new-session-and-process' },
+    semanticReview: 'required', artifactBoundary: 'actual source package and bundled CLI/SDK; not an installed release gate' };
+  await save(join(evidence, 'started.json'), result);
+  const startedNs = process.hrtime.bigint().toString();
+  let stdout = '', stderr = '';
+  try {
+    result.process = await new Promise((resolveProcess, reject) => {
+      const child = spawn(host.file, [...host.prefix, ...args], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+      let timedOut = false;
+      const timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, config.timeoutMs ?? 600000);
+      child.stdout.on('data', chunk => { stdout += chunk.toString(); });
+      child.stderr.on('data', chunk => { stderr += chunk.toString(); });
+      child.once('error', error => { clearTimeout(timer); reject(error); });
+      child.once('close', (code, signal) => { clearTimeout(timer); resolveProcess({ pid: child.pid, code, signal, timedOut, startedNs, endedNs: process.hrtime.bigint().toString() }); });
+    });
+    assert.equal(result.process.code, 0, 'Native print process failed');
+    const actualHost = await json(hostOutput);
+    assert.equal(actualHost.model.provider, 'magpie'); assert.equal(actualHost.model.id, 'group/worker');
+    const brokers = actualHost.commands.filter(command => command.name === 'context-broker');
+    assert.equal(brokers.length, 1);
+    assert.ok(inside(await realpath(config.brokerRoot), await realpath(brokers[0].sourceInfo.path)));
+    result.autoload = brokers[0]; result.nativeSkillCommands = actualHost.commands.filter(command => command.source === 'skill');
+    if (config.arm === 'notion-only') assert.equal(result.nativeSkillCommands.length, 0, '-ns still discovered a native Skill');
+    else assert.ok(result.nativeSkillCommands.length > 0, 'Normal positive control lost its native Skills');
+    assert.ok(inside(sessions, resolve(actualHost.sessionFile)));
+    const sessionBytes = await readFile(actualHost.sessionFile);
+    if (prefix) assert.equal(hash(sessionBytes.subarray(0, prefix.length)), hash(prefix), 'The retained native history changed');
+    result.session = await identity(actualHost.sessionFile);
+    result.nativeAudit = inspectCandidatePrintSession(sessionBytes.toString('utf8'), { provider: 'magpie', model: 'group/worker', expectedUserMessages: result.expectedUserMessages });
+    const cost = await readConsumptionCostEvents(costs), wire = await readProviderTransport(transport), task = await readRows(tasks);
+    result.source = await readSourceObservation(sourceLedger); result.transportCoverage = candidateTransportCoverage(wire);
+    assert.equal(result.source.complete, true); assert.deepEqual(result.source.errors, []);
+    assert.ok(cost.events.at(-1)?.phase === 'observer_end' && cost.events.at(-1).complete);
+    assert.ok(task.at(-1)?.phase === 'task_observer_end' && task.at(-1).complete && task.at(-1).errors === 0);
+    result.assertions = validateCandidateTurn(config, { costs: cost.events, transport: wire, tasks: task });
+    for (const event of task.filter(event => event.phase === 'provider_payload')) {
+      const actual = await identity(event.payloadFile); assert.equal(actual.sha256, event.sha256); assert.equal(actual.bytes, event.bytes);
+    }
+    result.status = 'passed';
+  } catch (error) {
+    result.status = 'failed'; result.error = { code: error.code ?? error.name, message: error.message };
+  } finally {
+    await writeFile(join(evidence, 'stdout.txt'), stdout, { flag: 'wx', mode: 0o600 });
+    await writeFile(join(evidence, 'stderr.txt'), stderr, { flag: 'wx', mode: 0o600 });
+    const hostState = await json(hostOutput).catch(() => null);
+    if (!result.session && hostState?.sessionFile && await exists(hostState.sessionFile)) result.session = await identity(hostState.sessionFile);
+    result.normalConfigurationUnchanged = (await identity(settingsPath)).sha256 === before.settings.sha256 && (await identity(sourcePath)).sha256 === before.source.sha256;
+    result.baselineFilesUnchanged = (await Promise.all(baselineFiles.map(async file => (await identity(file.path)).sha256 === file.sha256))).every(Boolean);
+    if (previous) result.originalSessionUnchanged = (await identity(previous.session.path)).sha256 === previous.session.sha256;
+    if (!result.normalConfigurationUnchanged || !result.baselineFilesUnchanged || result.originalSessionUnchanged === false) result.status = 'failed';
+    await save(join(evidence, 'result.json'), result);
+  }
+  return { status: result.status, evidence, error: result.error, session: result.session, assertions: result.assertions };
 }
