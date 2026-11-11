@@ -808,6 +808,46 @@ test('scalar effects receipts retain exact native spans and reject missing or fo
   }
 });
 
+function controlledHttpResourceFixture(withEffects = true) {
+  const { batch, calls, messages } = scalarFixture(), call = calls[0], raw = messages[0];
+  if (withEffects) {
+    const effects = { version: 1, remote_writes: 'unknown', author_content: 'unknown', retention: [] };
+    raw.details.effects = effects;
+    Object.assign(raw.details.contextBrokerResource, { version: 2, delivery: { start: 0, end: call.expectedText.length, encoding: 'raw' } });
+    raw.content.push({ type: 'text', text: '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>' });
+  }
+  return { observed: { raw, step: { call: { id: call.id, tool: 'read', args: call.args } }, requests: [] },
+    sample: { resource_path: call.file.path, oracle: { cold: { root_id: batch.snapshot.record.id,
+      files: batch.snapshot.files, contents: { [call.file.path]: call.expectedText } } } }, binding: batch.snapshot };
+}
+
+test('controlled HTTP fixed resource preserves the complete body and exact operation effects', () => {
+  for (const withEffects of [false, true]) {
+    const value = controlledHttpResourceFixture(withEffects), before = JSON.stringify(value);
+    const proof = namedSdkProbe.httpFixedResourceProof(value.observed, value.sample, value.binding);
+    assert.equal(proof.snapshot_id, value.binding.snapshot_id);
+    assert.equal(proof.path, value.sample.resource_path);
+    assert.equal(proof.sha256, value.observed.raw.details.contextBrokerResource.sha256);
+    assert.equal(JSON.stringify(value), before);
+  }
+});
+
+test('controlled HTTP fixed resource rejects changed body, identity, span, disclosure and source requests', () => {
+  for (const mutate of [
+    value => { value.observed.raw.content[0].text += 'changed'; },
+    value => { value.observed.raw.details.contextBrokerResource.file_id = 'foreign'; },
+    value => { value.observed.raw.details.contextBrokerResource.scope = 'foreign'; },
+    value => { value.observed.raw.details.contextBrokerResource.delivery.end++; },
+    value => { value.observed.raw.content.pop(); },
+    value => { delete value.observed.raw.details.effects; },
+    value => { value.observed.raw.details.effects.remote_writes = 'none'; },
+    value => { value.observed.requests.push({ method: 'GET' }); },
+  ]) {
+    const value = controlledHttpResourceFixture(); mutate(value);
+    assert.throws(() => namedSdkProbe.httpFixedResourceProof(value.observed, value.sample, value.binding));
+  }
+});
+
 test('short-reference seed is owner/file metadata and cannot hide main delivery or activation', () => {
   const { batch } = scalarFixture(), selected = resourceScalarSelectedFixture(batch, '/owned/unmaterialized');
   assert.equal(Object.hasOwn(selected, 'body'), false); assert.deepEqual(selected.entryManifest.materialized_paths, []);

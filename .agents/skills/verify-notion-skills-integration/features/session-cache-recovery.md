@@ -346,6 +346,8 @@ SC08／SC20 的跨层场景复用 `scripts/notion-sdk-pi.mjs` 的 `http-cache-re
 
 403 必须由本次实际 owner page／markdown 请求收到；401 必须由实际身份校验收到。失败工具没有 `contextBrokerRead`／`Resource`／`Preparation` 成功证明；已知拒绝后固定资源在本地 object read 和来源 HTTP 之前失败。恢复后显式在线 use 成功、旧固定资源完整且不准备主文，scope／snapshot／version 不漂移。fixture `denyCurrent` 同时覆盖同一 root 的 page 和 markdown，避免 catalog 解析路线没有访问 page GET 时把“已设置注入开关”冒充真实 403。
 
+2026-11-11 的 CI run `43020706901` 在 `forced` 恢复后的固定资源处拒绝了合法 effects 尾注；原 `cold`／`warm`／`expired` 已通过，失败原件继续保留。该路径复用原 scalar receipt 验证：用独立正文 oracle 和实际计划的固定 ref 核对完整字节、owner／scope／snapshot／version／File、delivery span 与精确 effects 尾注。正文与 effects 分别证明，旧 SDK 的 unknown 保持 unknown；丢失尾注、篡改 span 或身份仍失败，固定资源恢复时的零 source HTTP 与拒绝时的零 object read 守卫不变。只重跑原受影响回归与同一 HTTP 门禁，模型状态和转移不变。
+
 中断场景为 `rate-limit`、`disconnect`、`cancel` 三个独立空缓存。429 和 partial disconnect 各只注入一次；同一 source body 必须有两个真实 HTTP attempts，SDK trace 顺序为 failure→success，最终正文实际进入 provider。重试属于原 SDK policy，不能把 controller 重启当 retry 或改变其预算。取消等待源客户端实际收到目标 markdown headers（保留 `markdown_version` query），发送真实 RPC `abort`，将送达／ack 时间与同一个 SDK interval 及原生 tool start/end 绑定；terminal、连接关闭、原生进程退出均闭合后，迟到放行和普通续问不得新增来源请求、激活回执或正文交付。
 
 部分响应有两个不同计量边界：HTTP service 的 `observed_response_bytes` 是服务端已写字节，只有 finish 才填写 `decoded_response_bytes`／完整 hash；SDK `response_bytes` 是客户端已接收 decoded 字节，失败或取消后已知的 prefix 不会消失。失败 attempt 可以有 32B 已接收，但完整响应长度仍未知且没有完整正文交付。不要把它改成成功、当完整正文或把已观察字节抹成 0／unknown。最终成本同时保留 failure/cancel attempt、成功 retry、工具往返和累计 serializer 输入，两个计量边界不相加。

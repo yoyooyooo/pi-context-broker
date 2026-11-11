@@ -3427,13 +3427,19 @@ function httpUseProof(observed, sample, expectedBinding) {
   return { binding: record.binding, body_sha256: record.bodySha256, bytes: record.bytes };
 }
 
-function httpFixedResourceProof(observed, sample, binding) {
-  const proof = observed.raw.details?.contextBrokerResource, expected = sample.oracle.cold.files.find(file => file.path === sample.resource_path);
-  assert.ok(proof); assert.equal(proof.id, sample.oracle.cold.root_id); assert.equal(proof.scope, binding.scope);
-  assert.equal(proof.snapshot_id, binding.snapshot_id); assert.equal(proof.version_id, binding.version_id);
-  assert.equal(proof.sha256, expected.sha256); assert.equal(proof.bytes, expected.bytes); assert.equal(proof.delivered_complete_text, true);
-  const content = textContent(observed.raw.content); assert.equal(content, sample.oracle.cold.contents[sample.resource_path]);
-  assert.equal(hash(content), expected.sha256); assert.equal(observed.requests.length, 0);
+export function httpFixedResourceProof(observed, sample, binding) {
+  const oracle = sample.oracle.cold, expected = oracle.files.find(file => file.path === sample.resource_path);
+  assert.ok(expected);
+  const planned = observed.step.call, ref = new URL(planned.args.path), fileId = ref.searchParams.get('file_id');
+  assert.equal(planned.tool, 'read'); assert.equal(ref.protocol, 'skill:');
+  assert.equal(decodeURIComponent(ref.hostname), oracle.root_id); assert.equal(decodeURIComponent(ref.pathname.slice(1)), expected.path);
+  assert.equal(ref.searchParams.get('snapshot'), binding.snapshot_id); assert.ok(fileId);
+  const snapshot = { record: { id: oracle.root_id }, scope: binding.scope, snapshot_id: binding.snapshot_id, version_id: binding.version_id };
+  const call = { ...planned, file: { ...expected, ref: planned.args.path, file_id: fileId },
+    expectedText: oracle.contents[sample.resource_path], completeText: true };
+  assertResourceScalarResult(observed.raw, { batch: { snapshot }, call });
+  assert.equal(hash(call.expectedText), expected.sha256); assert.equal(observed.requests.length, 0);
+  const proof = observed.raw.details.contextBrokerResource;
   return { snapshot_id: proof.snapshot_id, file_id: proof.file_id, path: proof.path, sha256: proof.sha256, bytes: proof.bytes };
 }
 
