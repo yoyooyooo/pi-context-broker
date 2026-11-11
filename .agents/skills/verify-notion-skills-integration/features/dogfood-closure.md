@@ -116,3 +116,13 @@ how 作者原件经公开 read/dry-run 审阅后由 root 一次公开 write 并�
 
 独立input guard在公开输入边界核单一Broker真实path/hash、实际cwd、worker/high、69 native命令与固定prompt hash；任何身份或文件/ledger异常都显式handled并记录失败，不能依赖宿主会吞掉的throw。guard注册前没有文件I/O，序列化函数无外部模块闭包，重复输入也拒绝；原observer保持被动。已有candidate/resume与新fork有界测试38/38通过，RED/GREEN均留存。直接调用已安装`SessionManager.forkFrom`的纯文件证明`warm-v5-file-fork-proof/result.json`（SHA `330fac63bbbd762c50622fc3ee8c85ca7b3ce1e51bdc7905b41f9c031d4b207d`）核150条原字节、35份原件/设置前后相等，0 Pi/model/HTTP；不冒充真实新包autoload或v5成功。后续唯一v5按新driver与原39ad包独立冻结，保留v3/v4失败与分母。仅此已证实接线，不新增配置平台、产品状态或有限模型证明。
 
+### 唯一 v5 真实终局与最终 CI 身份
+
+`normal-final-v5-C-warm-BeUhOX` 原driver与独立机械审均passed。freeze `823afcefd57ba2554ebeeb374a74f7d8ae63c207617ef567fd0a3a66a9101741`绑定driver `1750de8f1fecf10a444a9c7a78497d9cd1472f82`、39ad产品及ac24归档；实际guard/host/path/hash、worker/high、69 native、897 B guidance（SHA `abfdefd54d32a4bf7c9e4f17d6a14a49e636c46c49a95c42507613de6330bf4b`）与9份正文各1收据全部成立。新header的id/cwd/parentSession明确不同，原150条453156 B非header历史逐字同序；原35份原件/设置、210项非环境输入、92份driver副本、90个archive成员均经独立回读。它验证公开fork条件，不把失败的v4线性resume改为通过，也不作为同条件性能比较。
+
+本轮1个实际provider payload为216635 B，耗时79460.218792 ms，0工具、12 metadata/0 body/0 write，来源解码响应1196395 B，完整reported usage61733。继承历史正文的来源成本不重复计入本轮；分部token与美元费用仍unknown，其他扩展GET/SSE request7未闭合，不声明所有网络完成。最终2702 B回答完成了举例，但把作者`disable-model-invocation`推成当前运行时不会自动启动的保证，属于明确语义缺口；实际guidance已说明作者flag不能覆盖Notion可用性/权限。它不是本轮执行了禁止工作流的证据，也不因该缺口重跑。完整独审为`reviews/e2e-final-v5-C-warm-original-review.json`（SHA `13fbd8fa3320a72b63013b9f9d12a28742eadfe6f9ab82e9ebb56c6b7a0121dd`）和`reviews/e2e-final-v5-C-warm-integrity-semantic-review.json`（SHA `9c212f5c15cd14e61cecb13edf83febb23fc8a9ea33c9639da8e51a08326028b`）。
+
+原16冷配置仍为8 technical passed/6 failed/2 not_run，6个执行任务没有完整产物；旧warm与v4失败各自保留。`final-v3-daily-summary.json`（SHA `d69bf5972dc93b1f9b371f2fac5dbe8e611114fd1c067d2c3194cb791e10bf4a`）与独立成本审`reviews/independent-final-v3-cost-audit.json`（SHA `9e6e2477060a6ecf0ccf060733d60cfc0ebb75e99e51aa6e6215dcd80ecf85c8`）固定冷系列49 payload/7773058 B、960 HTTP/111375735 decoded B；失败整任务usage未知，不用已完成响应下界计算完整费用或总墙钟。
+
+CLI最终验证脚本/测试/地图head为`0cf7002ac02e6d7df37f621f53a151255de81aaf`，[CI117](https://github.com/yoyooyooo/notion-skills-cli/actions/runs/43026467694)四组Mac15/Ubuntu × Node22.22.3/24.20.0的check、fresh consumer及upload均success。回执`ah955-20261111/cli-ci-node22-20261111/records-counter-repair/root-ci117-final.json` SHA `fa306b76c0b5829c7f808855e1cb53b44f9b3e95fa6dad607c20b213c3f174ac`。v3/v4/v5实际冻结的CLI仍为9b03嵌入runtime（CLI48da02ec、SDK40bb943d），不把后续CI身份混作真实模型输入。
+
