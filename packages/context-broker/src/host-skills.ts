@@ -39,7 +39,7 @@ export type HostSkillOptions = {
   loadRecord(record: SkillRecord, signal?: AbortSignal, snapshotId?: string, policy?: ConsumptionPolicy): Promise<SkillRecord>;
   loadResource?(record: SkillRecord, path: string, ctx: ExtensionContext, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<string>;
   readFixedResource?(record: SkillRecord, ref: string, ctx: ExtensionContext, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<FixedResourceRead | undefined>;
-  readResources?(record: SkillRecord, refs: readonly string[], ctx: ExtensionContext, signal?: AbortSignal): Promise<ResourceReadBatch>;
+  readResources?(record: SkillRecord, refs: readonly string[], ctx: ExtensionContext, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<ResourceReadBatch>;
   prepareGraph?(records: readonly SkillRecord[], ctx: ExtensionContext | undefined, signal: AbortSignal | undefined, purpose: PreparationPurpose, pins?: ReadonlyMap<string, string>, bindings?: readonly PreparationBinding[], mode?: SelectionMode, policy?: ConsumptionPolicy): Promise<PreparedHostGraph[]>;
   persistGraphs?(graphs: readonly PreparedHostGraph[], ctx: ExtensionContext, mode: SelectionMode): void;
   sessionGraph?(ctx: ExtensionContext): unknown;
@@ -1863,9 +1863,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       return blocked(error, effects);
     }
   }
-  async function readResourceBatch(input: Record<string, unknown>, ctx: ExtensionContext, signal: AbortSignal, toolCallId: string) {
+  async function readResourceBatch(input: Record<string, unknown>, ctx: ExtensionContext, signal: AbortSignal, toolCallId: string, policy: ConsumptionPolicy) {
     if (adapter.paths.host !== "pi" || !options.readResources) throw hostError("SOURCE_RESOURCE_BATCH_UNAVAILABLE");
-    if (Object.keys(input).some(key => key !== "paths") || !Array.isArray(input.paths) || !input.paths.length
+    if (Object.keys(input).some(key => key !== "paths" && key !== "readOnly") || input.readOnly !== undefined && typeof input.readOnly !== "boolean"
+      || !Array.isArray(input.paths) || !input.paths.length
       || input.paths.some(value => typeof value !== "string" || !value)) throw hostError("INVALID_ARGUMENT");
     if (input.paths.length > DEFAULT_RESOURCE_READ_BUDGET.maxFiles) throw hostError("RESOURCE_FILE_BUDGET");
     const requested = input.paths as string[], observedGeneration = generation;
@@ -1900,7 +1901,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (value.reference.fileId === undefined && value.reference.path === record.entrypoint) throw hostError("RESOURCE_MAIN_NOT_ALLOWED");
     }
     const refs = resolved.map(value => value.canonicalRef);
-    const batch = await options.readResources(record, refs, ctx, signal); current();
+    const batch = await options.readResources(record, refs, ctx, signal, policy); current();
     if (batch.selection.scope !== record.sourceScope || batch.selection.owner !== record.id || batch.selection.snapshot_id !== first.snapshot
       || batch.files.length !== resolved.length) throw hostError("SOURCE_IDENTITY_MISMATCH");
     const files = new Set<string>(), filePaths = new Set<string>();
@@ -1922,20 +1923,22 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       }
       return file.ref;
     });
-    const result = compileResourceRead({ toolCallId, batch, modelRefs, maxContextBytes: RESOURCE_READ_MAX_CONTEXT_BYTES });
+    const result = compileResourceRead({ toolCallId, batch, modelRefs, maxContextBytes: RESOURCE_READ_MAX_CONTEXT_BYTES, effects: batch.effects });
     current();
-    return { ...result, details: { ...(result.details && typeof result.details === "object" ? result.details : {}),
+    return { ...result, details: { ...(result.details && typeof result.details === "object" ? result.details : {}), effects: batch.effects,
       contextBrokerResourceSource: { source_id: record.sourceId, result: batch.machine } } };
   }
   const readRunsInTool = sourceToolsEnabled ? adapter.registerReadExecutor?.(async (input, ctx, signal, read, toolCallId) => {
     const executionSignal = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
     if (Object.hasOwn(input, "paths")) {
       const deadline = AbortSignal.timeout(DEFAULT_RESOURCE_READ_BUDGET.timeBudgetMs);
-      try { return await readResourceBatch(input, ctx, AbortSignal.any([executionSignal, deadline]), toolCallId); }
+      const observedEffects: ConsumptionEffects[] = [];
+      try { return await readResourceBatch(input, ctx, AbortSignal.any([executionSignal, deadline]), toolCallId,
+        { readOnly: input.readOnly === true, observeEffects: effects => observedEffects.push(effects) }); }
       catch (error) {
-        if (executionSignal.aborted) throw hostError("SOURCE_CANCELLED");
-        if (deadline.aborted) throw hostError("RESOURCE_TIME_BUDGET");
-        throw error;
+        const cause = executionSignal.aborted ? hostError("SOURCE_CANCELLED") : deadline.aborted ? hostError("RESOURCE_TIME_BUDGET") : error;
+        const effects = combineConsumptionEffects([...observedEffects, errorConsumptionEffects(error)]);
+        throw consumptionFailure(cause, JSON.stringify({ error: failure(cause), effects }), effects);
       }
     }
     checkPreparationSignal(executionSignal);

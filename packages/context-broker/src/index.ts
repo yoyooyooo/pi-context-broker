@@ -1670,10 +1670,10 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       if (!source || source.type !== "notion") throw new SourceError("SOURCE_UNAVAILABLE", record.sourceId ?? "notion");
       return loadNotionResource(record, path, source, ctx.cwd ?? process.cwd(), signal, paths.host === "pi" ? "sdk" : undefined, policy);
     }),
-    readResources: (record, refs, ctx, signal) => sourceRuntime.foreground(async () => {
+    readResources: (record, refs, ctx, signal, policy) => sourceRuntime.foreground(async () => {
       const source = normalizeSources(config.sources)?.find(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false);
       if (paths.host !== "pi" || !source || source.type !== "notion") throw new SourceError("SOURCE_RESOURCE_BATCH_UNAVAILABLE", record.sourceId ?? "notion");
-      return readNotionResources(record, refs, source, ctx.cwd ?? process.cwd(), signal);
+      return readNotionResources(record, refs, source, ctx.cwd ?? process.cwd(), signal, policy);
     }),
     readFixedResource: (record, ref, ctx, signal, policy) => sourceRuntime.foreground(async () => {
       if (paths.host !== "pi") return undefined;

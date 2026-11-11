@@ -364,6 +364,12 @@ helper 输出中的 `cleanup` 布尔值表示本次命令是否请求清理；�
 
 独立验收要逐项核对：实际 `read` schema 能表达互斥 `path/paths` 且最多16个文件；每批一次 `read-resources`、无 `consume` 和逐文件 `read`；实际 JSON text 的完整 UTF-8/BOM/CRLF/empty bytes/hash；binary 由实际落盘文件复核且不标完整文本；每个 v2 receipt 的 toolCallId、owner/pin/File、整体 digest 与 JSON span一致；repeat 只在 provider 投影替换非空重复正文，原始会话结果仍完整，empty 保持空字符串，binary 元数据不变；没有主文 active/graph 绑定。
 
+AH-639 的真实 A v2 反例使用公开 schema 允许的三个 `sr:R` 与 `readOnly:true`，却在 Pi 参数守卫被拒绝，随后三个 scalar 读取成功。沿既有 `pi-read-adapter.test.ts`、`resource-read-host.test.ts`、`fixed-resource-source.test.ts` 与 `notion-sdk.test.ts` 先保存能重现旧行为的红例，再验证批量参数、宿主 source policy、SDK capability guard 和效果回执贯通。非法 `readOnly` 类型须在任何 source/native 调用前拒绝；严格请求遇到不兼容 SDK/manifest 须零 SDK 调用。继续核对一批一次操作、同 owner/pin/File、完整正文与原 v2 span，不能只放行参数或降级成多个 scalar read。旧批读生产者没有 effects 时保持 unknown；固定资源的 immutable 读取合同不授权留存或作者修改。
+
+严格批读独立核对 SDK `RESOURCE_READ_EFFECTS_VERSION = 1` 与 runtime `resource_read_effects_version: 1`，不能由 scalar effects 版本推断。CLI 批读沿原 `withConsumptionEffects` 和 `readOnlyNotion` 覆盖整个后代请求链。精确写前红例在选中对象读取后代尝试语义写：旧行为实际到 transport 一次，新严格行为必须在 scheduler 前拒绝且零写；普通控制保留一次调用。批读 ready、failed、cancelled 均保留本次 effects，模型 JSON 的 effects 位于原正文 span 外，repeat 投影仍保留它。
+
+该修复复用原消费状态、严格写边界和固定资源证明，没有新增模型状态或远端操作，不因参数接线重跑或扩展 TLC。原 `notion-only-A-notion-only-project-v2-o6OHOD` 会话和失败结论保留；定向回归与 typecheck 不能证明原自主任务已完成，也不替代新的真实模型样本。修复原件另存 `verification-evidence/ah955-20261111/ah639-batch-readonly`，冻结运行包不修改。
+
 `resource-batch` 故意直接输入canonical固定引用，所以它只证明批读与发现的短引用分别可用。实际 `sr:R[]` 用独立 variant 验证：
 
 ```bash

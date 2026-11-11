@@ -7,6 +7,7 @@ or activate its workflow.
 
 ```ts
 read({ paths: ["sr:R…", "sr:R…"] })
+read({ paths: ["sr:R…", "sr:R…"], readOnly: true })
 ```
 
 Use actual resource handles returned by the selected Skill directory. Canonical
@@ -57,6 +58,24 @@ It does not loop over `readSkill`, launch a CLI for every file, or invoke
 `RESOURCE_READ_CONTRACT_VERSION = 1`; old SDK/consumer v1 functions retain their
 contracts. A package lacking the new capability rejects a batch explicitly.
 
+### Strict read-only batches
+
+`readOnly` accepts a boolean with either `path` or `paths`. A strict batch carries
+the policy through the source adapter to SDK `readResources`; it remains one
+operation. Before dispatch, Broker requires both the SDK export
+`RESOURCE_READ_EFFECTS_VERSION = 1` and the matching runtime manifest field
+`resource_read_effects_version: 1`. Scalar effects support does not imply batch
+support. A missing or mismatched capability fails before entering the SDK, with
+zero source operations. The capable producer uses the existing semantic Notion
+write guard for every descendant request, refusing a write before transport.
+
+Every current batch exposes the producer's version-1 `effects` in model JSON and
+details. Ordinary legacy batches remain usable; missing effects are `unknown`.
+Failed or cancelled reads retain observed effects without delivering partial
+resources. Effects sit outside file-content spans and remain unchanged when a
+provider copy deduplicates repeated text. This does not authorize retention or
+author changes, prepare the main body, or replace fixed identity checks.
+
 ## Budgets and failure
 
 SDK defaults are 16 files, 1 MiB of selected source bytes, and a 30-second whole
@@ -73,7 +92,8 @@ proof, or obsolete session generation cannot emit a successful batch delivery.
 
 ## Model content and machine evidence
 
-The model receives canonical JSON with `status: "ready"` and ordered `files`:
+The model receives canonical JSON with `status: "ready"`, ordered `files` and the
+operation's `effects`:
 
 | Kind | Model fields | Delivery claim |
 | --- | --- | --- |

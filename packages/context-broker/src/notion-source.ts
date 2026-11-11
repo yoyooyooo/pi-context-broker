@@ -967,7 +967,7 @@ export async function loadNotionResource(record: SkillRecord, path: string, sour
 
 /** One SDK operation verifies the owner manifest and reads only the selected
  * resources. This path never prepares, opens or publishes the main Skill body. */
-export async function readNotionResources(record: SkillRecord, refs: readonly string[], source: NotionSource, cwd: string, signal?: AbortSignal): Promise<ResourceReadBatch> {
+export async function readNotionResources(record: SkillRecord, refs: readonly string[], source: NotionSource, cwd: string, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<ResourceReadBatch> {
   if (record.source !== "notion" || record.sourceId !== source.id || !record.id || !record.ref || !record.sourceScope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
   // A custom source command owns its transport. Do not silently switch its data
   // or credentials to the bundled SDK when it has no resource-batch contract.
@@ -975,10 +975,13 @@ export async function readNotionResources(record: SkillRecord, refs: readonly st
   if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
   const request = { version: 1, refs: [...refs], budget: DEFAULT_RESOURCE_READ_BUDGET };
   let value: unknown;
-  try { value = await readNotionResourcesSdk(request, { ...sdkOptions(source, cwd, signal), ...(source.activation?.offline ? { offline: true } : {}) }); }
+  try { value = await readNotionResourcesSdk(request, { ...sdkOptions(source, cwd, signal), ...(source.activation?.offline ? { offline: true } : {}), ...(policy?.readOnly ? { readOnly: true } : {}) }); }
   catch (error) { throw sdkFailure(error, source, "read", signal, record); }
-  if (signal?.aborted || object(value) && value.status === "cancelled") throw new SourceError("SOURCE_CANCELLED", source.id);
-  if (object(value) && value.status === "failed") throw sdkFailure(value.error, source, "read", signal, record);
+  const effects = consumptionEffects(object(value) ? value.effects : undefined);
+  policy?.observeEffects?.(effects);
+  if (signal?.aborted || object(value) && value.status === "cancelled") throw new SourceError("SOURCE_CANCELLED", source.id, undefined, { effects });
+  if (object(value) && value.status === "failed") throw sdkFailure(object(value.error) ? { ...value.error,
+    details: { ...(object(value.error.details) ? value.error.details : {}), effects } } : value.error, source, "read", signal, record);
   if (!object(value) || value.version !== 1 || value.status !== "ready" || !object(value.manifest) || !object(value.selection)
     || !Array.isArray(value.files) || value.files.length !== refs.length || !object(value.budget)
     || !isDeepStrictEqual(value.budget, DEFAULT_RESOURCE_READ_BUDGET) || typeof value.manifest_sha256 !== "string" || !HASH.test(value.manifest_sha256)) decodeError(source);
@@ -1015,7 +1018,7 @@ export async function readNotionResources(record: SkillRecord, refs: readonly st
   const files = await materializeNotionResourceBatch(resourceRecord, selected, await cacheRoot(source, cwd), target => privateDirectory(target, source), signal);
   if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
   return { selection: { scope: record.sourceScope, owner: current.id, snapshot_id: snapshotId, version_id: manifest.version_id },
-    ownerBinding, manifest, manifest_sha256: value.manifest_sha256, files, budget: { ...DEFAULT_RESOURCE_READ_BUDGET }, machine: value };
+    ownerBinding, manifest, manifest_sha256: value.manifest_sha256, files, budget: { ...DEFAULT_RESOURCE_READ_BUDGET }, machine: value, effects };
 }
 async function requestPreparedGraph(records: readonly SkillRecord[], source: NotionSource, cwd: string, input: GraphRequest) {
   if (!records.length || records.some(record => record.sourceId !== source.id || !record.id || !record.ref || !record.sourceScope)) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
