@@ -126,13 +126,19 @@ how 作者原件经公开 read/dry-run 审阅后由 root 一次公开 write 并�
 
 CLI最终验证脚本/测试/地图head为`0cf7002ac02e6d7df37f621f53a151255de81aaf`，[CI117](https://github.com/yoyooyooo/notion-skills-cli/actions/runs/43026467694)四组Mac15/Ubuntu × Node22.22.3/24.20.0的check、fresh consumer及upload均success。回执`ah955-20261111/cli-ci-node22-20261111/records-counter-repair/root-ci117-final.json` SHA `fa306b76c0b5829c7f808855e1cb53b44f9b3e95fa6dad607c20b213c3f174ac`。v3/v4/v5实际冻结的CLI仍为9b03嵌入runtime（CLI48da02ec、SDK40bb943d），不把后续CI身份混作真实模型输入。
 
-### 单次生成预算候选（尚未运行）
+### 单次生成预算候选（已完成唯一一次验证）
 
 六个原生成失败的最后请求已收到HTTP200；除A3时序异常外，其余五个在598–600秒附近仍有thinking_delta，无最终文本或完整usage。来源操作已在70.8–151.8秒闭合，四个样本没有guard拒绝；因此不把补目录grammar、批读或warm证明当作生成产物的前置。实际最后请求的max_completion_tokens为431972–456572，worker/high与外层600秒并存。原文、失败、分母与unknown不变；大上限是待判别的预算解释，不先宣称因果已证明。
 
-只准备默认关闭的`maxCompletionTokens: 32768`候选。它使用公开before_provider_request、独立策略扩展且先于被动cost/task观察器；只修改completion上限，保留更小的已有上限，不改变prompt、模型、thinking、工具、项目或全局配置。实际每个payload仍须worker/high、恰32768、无竞争max_tokens字段，并与真实wire的完整hash/bytes一致。原生final必须stop，且本候选拒绝历史中任何length，包括撤回后恢复为stop；安装版Pi原有自动压缩恢复行为和compaction设置保持不变，若发生仍留原事件并判失败，不能称零恢复。控制器只启动一次、零重试，超时/不完整文件继续失败。
+该`maxCompletionTokens: 32768`候选默认关闭。它使用公开before_provider_request、独立策略扩展且先于被动cost/task观察器；只修改completion上限，保留更小的已有上限，不改变prompt、模型、thinking、工具、项目或全局配置。实际每个payload仍须worker/high、恰32768、无竞争max_tokens字段，并与真实wire的完整hash/bytes一致。原生final必须stop，且本候选拒绝历史中任何length，包括撤回后恢复为stop；安装版Pi原有自动压缩恢复行为和compaction设置保持不变，若发生仍留原事件并判失败，不能称零恢复。控制器只启动一次、零重试，超时/不完整文件继续失败。
 
-候选只允许一次原A/-ns生成任务：同五文件项目SHA、原题、worker/high、600秒/16请求/40工具/4MB。使用当前已验39ad产品及嵌9b03运行时；相对旧A的guidance已由811变为897字节，这不是纯cap因果或同条件性能对照。完整文件出现后才按原独立审阅与真实helper实驱门槛验收。五项新增预算用例先因缺少实现而RED（不是旧模型超时的重现），随后与默认/续问/fork回归合计43/43 GREEN；覆盖默认关闭、错误cap、观察器顺序错误、后续改写和早先length拒绝。未获独审和root确认前不启动Pi/model；全局注册切换完成后才冻结普通HOME快照。不重开16配置，不改作者或项目guard。该预算策略属于模型驱动层，不改变任何产品有限状态转移，不新增TLA模型。
+候选只允许一次原A/-ns生成任务：同五文件项目SHA、原题、worker/high、600秒/16请求/40工具/4MB。使用当前已验39ad产品及嵌9b03运行时；相对旧A的guidance已由811变为897字节，这不是纯cap因果或同条件性能对照。完整文件出现后才按原独立审阅与真实helper实驱门槛验收。五项新增预算用例先因缺少实现而RED（不是旧模型超时的重现），随后与默认/续问/fork回归合计43/43 GREEN；覆盖默认关闭、错误cap、观察器顺序错误、后续改写和早先length拒绝。该次在独审、root许可和全局注册稳定后才冻结并启动；未重开16配置，未改作者或当次project guard。该预算策略属于模型驱动层，不改变任何产品有限状态转移，不新增TLA模型。
 
 正式公开Pi注册已将同一39ad产品保存为相对user agentDir的local路径，且位于第19槽。旧驱动要求不同的绝对路径，因而在派发前拒绝。限定适配遵循公开baseDir语义；唯一注册与冻结入口realpath/bytes/hash完全一致、无package过滤时直接复用，项目settings不再重复注册。旧不同路径的隔离设置与默认resume深比较保留。三项注册用例先RED再GREEN，含原回归合计46/46；真实settings只读准入核对前后字节相等、0 Pi/model/HTTP。新计划明确已激活候选的global baseline，不把该变化隐藏在纯预算对照中。
+
+唯一真实运行`final-v6-A-budget32768-notion-only-j4qMof`使用driver `60ad5983`，在原600秒超时后以143退出，实际闭合耗时601567.348167ms，保留failed。六份实际payload/wire均为worker/high、32768，累计743816B；14个native调用/结果完整配对，其中3条普通目录枚举被旧guard提前拒绝而未执行。完整六段来源正文（含三个参考）和五个项目文件均送达。来源账本为49 metadata/10 body/0 write，共59 HTTP、7208051 decoded bytes；没有final、stdout或生成文件，helper为not_run，未用原项目测试替代。
+
+最后request79在进程约150.869秒开始，至transport observer结束的未闭合窗口为449135.727583ms；HTTP200之后无request_end、assistant completion或reported usage。观察到2014个thinking事件，含2013个thinking_delta；被动observer对非text_delta摘要空字符串，所以其delta.bytes=0不表示没有思考内容，思考文本字节和token均unknown。该轮实际可见text_delta为0事件/0B；前五轮已报告177506 totalTokens，仅是已结束响应的下界，不能当全程usage或费用。53项冻结输入前后相同，449份原件已索引；完整报告`final-v6-A-budget32768-terminal-review-v2.json` SHA256 `04ab288703d39601516dcbd3dd49e2a7e3f0fbe3a556861f23eebc9a50788918`，root原件独审`reviews/root-final-v6-A-budget32768-raw-audit.json` SHA256 `4abfddd63aea10398dec69945197342f572a0a04365775f7496efd74debae457`。这些事实不证明服务端是否执行了cap，也不支持把生成未完成归因于来源缺失。
+
+后续仅修复三条已证实的库存读取误拒绝：固定owned cwd内，仍限512字/60秒、最多三个pwd/ls/find库存命令；额外至多一个40字的纯ASCII单引号字面量echo标记，总段数不超过四。ls只允许已知的`.`、`src`、`test`、`.pi`目录；find仍以`.`为根、深度1–4，只列文件/目录，最多两个固定node_modules/.git排除，head至多300行。外路径、-L、内容搜索、-exec/-delete、重定向、替换和脚本执行继续拒绝，实际调用及inputSHA仍保留。三条原native反例在旧guard下全部RED，修复后连同existingStore/预算/默认/续问回归51/51 GREEN；没有新Pi/model/HTTP。这一机械修复尚未证明能解决生成超时，所有原failed及分母保持，不自动启动新A/B/D或连续调整cap。
 

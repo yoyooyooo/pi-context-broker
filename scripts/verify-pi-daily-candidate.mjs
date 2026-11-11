@@ -404,18 +404,22 @@ export function candidateProjectInspection(input, cwd, projectRoot) {
     || typeof input.command !== 'string' || input.command.length > 512 || /[\r\n\0]/u.test(input.command)
     || input.timeout !== undefined && (!Number.isFinite(input.timeout) || input.timeout <= 0 || input.timeout > 60)) return false;
   const commands = input.command.trim().split(/\s*&&\s*/u);
-  if (!commands.length || commands.length > 3) return false;
-  return commands.every(command => {
+  if (!commands.length || commands.length > 4) return false;
+  let inventories = 0, markers = 0;
+  const allowed = commands.every(command => {
     const value = command.trim().replaceAll("'" + projectRoot + "'", '.').replaceAll('"' + projectRoot + '"', '.').replaceAll(projectRoot, '.');
-    return value === 'pwd' || /^ls(?: -(?:l|a|la|al))?(?: \.)?$/u.test(value)
-      || /^find \. -maxdepth [1-4] (?:-type f|-type d -o -type f)(?: \| head -(?:[1-9]|[1-9][0-9]|1[0-9]{2}|200))?$/u.test(value);
+    if (/^echo '[A-Za-z0-9 _.-]{1,40}'$/u.test(value)) return ++markers <= 1;
+    if (++inventories > 3) return false;
+    return value === 'pwd' || /^ls(?: -(?:l|a|la|al))?(?: (?:(?:\.\/)?(?:src|test|\.pi)|\.)){0,3}$/u.test(value)
+      || /^find \. -maxdepth [1-4] (?:-type f(?: -o -type d)?|-type d(?: -o -type f)?)(?: -not -path '\*\/(?:node_modules|\.git)\*'){0,2}(?: \| head -(?:[1-9]|[1-9][0-9]|[12][0-9]{2}|300))?$/u.test(value);
   });
+  return allowed && inventories > 0;
 }
 
 export function guardCandidateProject(api, { projectRoot, inspectProject }) {
   api.on('tool_call', (event, ctx) => {
     if (event.toolName === 'bash' && !inspectProject(event.input, ctx.cwd, projectRoot))
-      return { block: true, reason: 'This owned project task permits only pwd, ls and bounded find inventory within its fixed cwd. Project execution, content search, outside paths and other shell commands remain blocked.' };
+      return { block: true, reason: 'This owned project task permits only bounded pwd, ls and find inventory with an optional literal marker within its fixed cwd. Project execution, content search, outside paths and other shell commands remain blocked.' };
   });
 }
 

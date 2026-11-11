@@ -276,7 +276,10 @@ test('owned project inspection admits only its finite inventory vocabulary and e
   const root = '/private/tmp/notion-candidate-print-abc123';
   for (const command of ['pwd', 'ls -la', 'ls -la ' + root, "ls -la '" + root + "'", 'find . -maxdepth 3 -type f', 'ls -la && pwd && find . -maxdepth 3 -type d -o -type f | head -200'])
     assert.equal(candidateProjectInspection({ command }, root, root), true, command);
-  for (const command of ['ls /Users/yoyo/.agents/skills', 'find .. -maxdepth 3 -type f', 'ls -la; pwd', 'pwd || ls', 'ls $(pwd)', 'ls `pwd`', 'ls . > output', 'ls -R', 'find . -maxdepth 5 -type f', 'find . -maxdepth 3 -type f -exec node {} \\;', 'find . -maxdepth 3 -type f | head -201', 'node src/server.mjs', 'npm test', 'ntn-skills read target', 'cat README.md', 'pwd\nls', 'ls -la && pwd && pwd && pwd'])
+  for (const command of ['ls /Users/yoyo/.agents/skills', 'find .. -maxdepth 3 -type f', 'ls -la; pwd', 'pwd || ls', 'ls $(pwd)', 'ls `pwd`', 'ls . > output', 'ls -R', 'find . -maxdepth 5 -type f', 'find . -maxdepth 3 -type f -exec node {} \\;', 'find . -maxdepth 3 -type f | head -301', 'node src/server.mjs', 'npm test', 'ntn-skills read target', 'cat README.md', 'pwd\nls', 'ls -la && pwd && pwd && pwd',
+    'ls -L src', 'ls -la src ../..', 'ls -la src test .pi .', 'find . -maxdepth 3 -type f -delete',
+    "find . -maxdepth 3 -type f -not -path '../*'", "echo '---FILES---'", "echo '$(id)' && ls", "echo '`id`' && ls",
+    "echo 'first' && echo 'second' && ls", "echo '" + 'x'.repeat(41) + "' && ls"])
     assert.equal(candidateProjectInspection({ command }, root, root), false, command);
   assert.equal(candidateProjectInspection({ command: 'pwd' }, '/other', root), false);
   assert.equal(candidateProjectInspection({ command: 'pwd', cwd: root }, root, root), false);
@@ -284,6 +287,21 @@ test('owned project inspection admits only its finite inventory vocabulary and e
   assert.equal(handlers.get('tool_call')({ toolName: 'bash', input: { command: 'pwd' } }, { cwd: root }), undefined);
   assert.equal(handlers.get('tool_call')({ toolName: 'bash', input: { command: 'npm test' } }, { cwd: root }).block, true);
   assert.equal(handlers.get('tool_call')({ toolName: 'bash', input: { command: 'pwd' } }, { cwd: '/other' }).block, true);
+});
+
+// Real final-v6 native SHA e3506e3b2afc25982e3b23533738195c11196b77ecf5ff84b82032f1baaab1cb.
+// Each original call was refused before Bash execution. These tests only invoke
+// the finite classifier and guard; they do not execute the recorded shell text.
+for (const [name, command] of [
+  ['bounded filters and a literal marker', "ls -la && find . -maxdepth 3 -type d -not -path '*/node_modules*' -not -path '*/.git*' | head -200 && echo '---FILES---' && find . -maxdepth 3 -type f -not -path '*/node_modules*' -not -path '*/.git*' | head -300"],
+  ['file and directory type order', 'find . -maxdepth 4 -type f -o -type d'],
+  ['the existing fixture directories', 'ls -la src test .pi'],
+]) test('owned inventory admits the prior refused ' + name, () => {
+  const root = '/private/tmp/notion-candidate-print-abc123', input = { command, timeout: 15 };
+  assert.equal(candidateProjectInspection(input, root, root), true);
+  assert.equal(candidateProjectInspection(input, '/other', root), false);
+  const handlers = new Map(); guardCandidateProject({ on: (key, handler) => handlers.set(key, handler) }, { projectRoot: root, inspectProject: candidateProjectInspection });
+  assert.equal(handlers.get('tool_call')({ toolName: 'bash', input }, { cwd: root }), undefined);
 });
 
 test('only the owned project task can classify a hash-bound inventory call separately from script execution', () => {
