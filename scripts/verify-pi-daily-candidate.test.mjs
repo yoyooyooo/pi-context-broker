@@ -150,6 +150,26 @@ test('public CLI guard blocks before execution and confines native file reads to
   assert.deepEqual(records.map(record => record.allowed ?? record.complete), [true, false, true, false, true]);
 });
 
+test('public CLI guard admits only the exact host spill from an approved Bash result', () => {
+  const handlers = new Map(), records = [], spill = '/tmp/pi-bash-cbd1aed4d1a765d7.log';
+  candidateCliGuard({ on(name, fn) { handlers.set(name, fn); } }, { fs: { openSync: () => 1, writeSync: (_fd, text) => records.push(JSON.parse(text)), closeSync() {} },
+    output: '/evidence/guard.jsonl', policy: publicCli, review: reviewCandidateCliCommand });
+  const read = path => handlers.get('tool_call')({ toolName: 'read', toolCallId: 'read-' + records.length, input: { path } });
+  const result = { toolName: 'bash', toolCallId: 'approved', details: { fullOutputPath: spill, truncation: { truncated: true } } };
+  assert.equal(read(spill).block, true);
+  handlers.get('tool_result')(result); assert.equal(read(spill).block, true, 'An unmatched result cannot authorize a filesystem read');
+  assert.equal(handlers.get('tool_call')({ toolName: 'bash', toolCallId: 'approved', input: { command: reviewCommand } }), undefined);
+  handlers.get('tool_result')({ ...result, details: { ...result.details, fullOutputPath: '/unrelated/secret' } });
+  assert.equal(read('/unrelated/secret').block, true);
+  handlers.get('tool_result')({ ...result, details: { fullOutputPath: spill } }); assert.equal(read(spill).block, true);
+  const before = structuredClone(result); assert.equal(handlers.get('tool_result')(result), undefined); assert.deepEqual(result, before);
+  assert.equal(read(spill), undefined);
+  assert.equal(read('/tmp/pi-bash-0000000000000000.log').block, true);
+  assert.deepEqual(records.filter(row => row.phase === 'public-cli-output'), [
+    { phase: 'public-cli-output', sourceToolCallId: 'approved', artifactPath: spill, allowed: true },
+  ]);
+});
+
 test('exact body counts exclude tool definitions, details, and call arguments, reject partials, and detect duplicates', () => {
   const payload = { tools: [{ description: body }], messages: [{ role: 'assistant', tool_calls: [{ arguments: body }], details: { body } }, { role: 'tool', content: body }] };
   assert.equal(candidatePayloadBodies(payload, [file])[0].occurrences, 1);

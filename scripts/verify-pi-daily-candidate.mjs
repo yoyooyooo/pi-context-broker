@@ -217,12 +217,13 @@ export function reviewCandidateCliCommand(command, policy) {
 
 export function candidateCliGuard(api, { fs, output, policy, review }) {
   const fd = fs.openSync(output, 'wx', 0o600);
+  const approvedBashCalls = new Set(), publicOutputs = new Set(policy.inputFiles);
   api.on('tool_call', event => {
     try {
-      if (event.toolName === 'bash') review(event.input?.command, policy);
+      if (event.toolName === 'bash') { review(event.input?.command, policy); approvedBashCalls.add(event.toolCallId); }
       else if (event.toolName === 'read') {
         const value = event.input?.path;
-        if (!(policy.inputFiles.includes(value) || typeof value === 'string' && value.startsWith(policy.outputRoot + '/') && !value.split('/').includes('..')))
+        if (!(publicOutputs.has(value) || typeof value === 'string' && value.startsWith(policy.outputRoot + '/') && !value.split('/').includes('..')))
           throw new Error('Read only the disclosed original artifacts or owned public CLI outputs');
       } else throw new Error('This bounded management task uses only public CLI and artifact reads');
       fs.writeSync(fd, JSON.stringify({ toolCallId: event.toolCallId, toolName: event.toolName, allowed: true }) + '\n');
@@ -230,6 +231,13 @@ export function candidateCliGuard(api, { fs, output, policy, review }) {
       fs.writeSync(fd, JSON.stringify({ toolCallId: event.toolCallId, toolName: event.toolName, allowed: false, reason: error.message }) + '\n');
       return { block: true, reason: error.message };
     }
+  });
+  api.on('tool_result', event => {
+    const path = event.details?.fullOutputPath;
+    if (event.toolName !== 'bash' || !approvedBashCalls.has(event.toolCallId) || event.details?.truncation?.truncated !== true
+      || typeof path !== 'string' || !/^\/tmp\/pi-bash-[a-f0-9]{16}\.log$/u.test(path)) return;
+    publicOutputs.add(path);
+    fs.writeSync(fd, JSON.stringify({ phase: 'public-cli-output', sourceToolCallId: event.toolCallId, artifactPath: path, allowed: true }) + '\n');
   });
   api.on('session_shutdown', () => { fs.writeSync(fd, JSON.stringify({ complete: true }) + '\n'); fs.closeSync(fd); });
 }
