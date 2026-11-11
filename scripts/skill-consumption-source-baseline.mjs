@@ -353,7 +353,7 @@ async function trashMain(plan, item, node, runOperation) {
   const backup = join(directory, item.id + '.original.bin');
   await writeFile(backup, bytes, { flag: 'wx', mode: 0o600 });
   const before = await manifestInventory(state);
-  const trash = await runOperation(item.id + '-trash', ['/usr/bin/trash'], [object], { json: false, role: 'partial-state-setup' });
+  const trash = await runOperation(item.id + '-trash', ['/usr/bin/trash'], [object], { json: false, role: 'partial-state-setup', timeoutMs: 30000 });
   const after = await manifestInventory(state);
   const receipt = { version: 1, object, original: { bytes: bytes.length, sha256: sha(bytes), backup }, trash: trash.receipt.receiptPath,
     absentAfterTrash: !(await present(object)), manifestBefore: before, manifestAfter: after, manifestPreserved: same(before, after) };
