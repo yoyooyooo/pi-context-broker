@@ -540,6 +540,8 @@ node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/f
 
 AH922 的新 Agent 原操作恢复继续使用同一 helper，另显式冻结 `publicCli.mode: "original-create-recovery"`、公共 Node CLI 文件 SHA、原 plan SHA、原 main/entry/ref owner、原 Store 四个环境根，以及自有输出目录。公共帮助、原失败和原计划是 Agent 输入；审计 oracle 不进入输入。执行门禁只接受单条 `node <冻结入口> <公开参数>`，禁止壳组合、替代 plan/owner、任意脚本和私有 Store API；只允许公开恢复分支及同 owner 的严格只读核对。Agent 自己从帮助和真实结构化输出决定命令，driver 不替它生成 review、review ID 或恢复结果。
 
+门禁参数必须先对照冻结 CLI 的真实 `schema`/`--help`：恢复 review/apply/reconcile 默认输出 JSON，成功结果含 `request_metrics`，没有 `--json`/`--metrics` flags；只有 review 支持 `--output`。普通 read 使用它公开提供的 `--json --metrics --read-only`，相对路径从同 owner 已返回的固定 ref 解析。files 只放行同 owner 的固定 pin 和 `--metrics`，不允许 current listing 暗中保留历史。允许只读 schema 和原 operation show；show 的 `NATIVE_CREATE_PLAN_REQUIRED` 是公开转向提示，不是恢复成功。原型门禁误拒绝这些公开路径及要求不存在 flags 的失败会话必须保留，不能用辅助拒绝判断产品能力。源错误缺少完整请求 trace 时仍记 unknown，不能由预算或进程退出码补造完整分账。
+
 该管理模式把完整 native bash 调用逐条与门禁回执核对，并在结束后重算 CLI/原计划/原失败的 SHA。原 Store 是恢复前置，不能冒称空 Store。公共 CLI JSON 与 `--metrics` 另审；父进程 source observer 不覆盖 bash 孙进程，缺少实际 child source trace 时保持 unknown，不能把后台 SDK 的完整 ledger 当作 CLI 全覆盖。普通消费配置没有这个例外，仍要求零执行工具调用。
 
 ### 2026-11-11 真实双臂基线

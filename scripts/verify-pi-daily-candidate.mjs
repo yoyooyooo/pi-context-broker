@@ -159,28 +159,60 @@ export function reviewCandidateCliCommand(command, policy) {
     check(args.slice(0, -1).every(arg => /^[a-z][a-z-]*$/u.test(arg)), 'Help must contain only a public command path');
     return { kind: 'help', argv: words };
   }
+  if (args[0] === 'schema') {
+    check(args.slice(1).every(arg => /^[a-z][a-z-]*$/u.test(arg)), 'Schema inspection must name only a public command path');
+    return { kind: 'schema', argv: words };
+  }
+  if (args.slice(0, 3).join(' ') === 'ctl operation show') {
+    check(args.length === 4 && args[3] === policy.operationId, 'Inspect only the original operation');
+    return { kind: 'operation-show', argv: words };
+  }
   const withinOutput = value => typeof value === 'string' && value.startsWith(policy.outputRoot + '/')
     && !value.split('/').some(part => part === '.' || part === '..') && !value.endsWith('/');
-  const read = args[0] === 'read';
-  if (read) check(args[1] === policy.target || args[1]?.startsWith(policy.refPrefix), 'Read only the original owner');
-  else {
+  const read = args[0] === 'read', files = args[0] === 'files', consumer = read || files;
+  if (!consumer) {
     check(args.slice(0, 4).join(' ') === 'ctl library create recovery' && ['review', 'apply', 'reconcile'].includes(args[4]), 'Only the original create recovery is authorized');
-    check(args[5] === policy.originalPlan.path, 'Use the original immutable plan');
   }
-  const flags = new Map(), boolean = new Set(['--json', '--metrics', '--dry-run', '--read-only', '--authoring', '--refresh']);
-  const valued = new Set(read ? ['--database', '--output'] : ['--entry', '--target', '--output', '--review', '--review-id']);
-  for (let index = read ? 2 : 6; index < args.length; index++) {
-    const flag = args[index]; check(!flags.has(flag), 'Duplicate CLI option');
+  const kind = consumer ? args[0] : args[4], flags = new Map(), positional = [];
+  const boolean = new Set(read ? ['--json', '--metrics', '--read-only', '--refresh', '--offline'] : files ? ['--metrics', '--offline'] : kind === 'apply' ? ['--dry-run'] : []);
+  const valued = new Set(read ? ['--database', '--output', '--path', '--from'] : files ? ['--database', '--path'] : ['--entry', '--max-requests', '--max-bytes', '--duration-ms',
+    ...(kind === 'apply' ? ['--review', '--review-id'] : ['--target']), ...(kind === 'review' ? ['--output'] : [])]);
+  for (let index = consumer ? 1 : 5; index < args.length; index++) {
+    const flag = args[index];
+    if (!flag.startsWith('-')) { positional.push(flag); continue; }
+    check(!flags.has(flag), 'Duplicate CLI option');
     if (boolean.has(flag)) flags.set(flag, true);
     else { check(valued.has(flag) && typeof args[index + 1] === 'string' && !args[index + 1].startsWith('--'), 'Unknown public CLI option'); flags.set(flag, args[++index]); }
   }
-  check(flags.get(read ? '--database' : '--entry') === policy.database, 'Keep the exact reviewed library');
-  check(flags.get('--json') && flags.get('--metrics'), 'Retain complete public JSON and request metrics');
-  if (read) check(flags.get('--read-only'), 'Post-recovery inspection must prohibit remote writes');
+  check(positional.length === 1, 'Use the single public target argument');
+  check(flags.get(consumer ? '--database' : '--entry') === policy.database, 'Keep the exact reviewed library');
+  if (consumer) {
+    const owner = value => value === policy.target || value?.startsWith(policy.refPrefix);
+    const relativeFile = value => typeof value === 'string' && value.length > 0 && !value.startsWith('/') && !value.includes(':')
+      && !value.split('/').some(part => part === '' || part === '.' || part === '..');
+    check(owner(positional[0]) || relativeFile(positional[0]) && flags.get('--from')?.startsWith(policy.refPrefix), 'Read only the original owner');
+    if (flags.has('--from')) check(flags.get('--from').startsWith(policy.refPrefix) && relativeFile(positional[0]) && !flags.has('--path'), 'Resolve only an original owner relative file');
+    if (flags.has('--path')) check(relativeFile(flags.get('--path')), 'Use an original owner relative file path');
+    if (read) {
+      check(flags.get('--json') && flags.get('--metrics'), 'Read output needs its public JSON and metrics flags');
+      check(flags.get('--read-only'), 'Post-recovery inspection must prohibit remote writes');
+    } else check(positional[0].startsWith(policy.refPrefix) && /[?&]snapshot=s_[a-f0-9]{64}(?:&|$)/u.test(positional[0])
+      && flags.get('--metrics'), 'List only the original immutable owner pin with public metrics');
+    check(!(flags.has('--refresh') && flags.has('--offline')), 'Use one public freshness policy');
+  } else {
+    check(positional[0] === policy.originalPlan.path, 'Use the original immutable plan');
+    // These recovery commands always emit JSON with request_metrics; unlike
+    // read, their public schema has no --json, --metrics or arbitrary --output.
+    if (kind === 'apply') check(flags.has('--review') && flags.has('--review-id'), 'Use the saved public review and its exact identity');
+    else check(flags.has('--target'), 'Keep the original main page');
+    if (kind === 'review') check(flags.has('--output'), 'Save the complete public restoration review');
+    for (const [flag, maximum] of [['--max-requests', 2000], ['--max-bytes', 134217728], ['--duration-ms', 300000]])
+      if (flags.has(flag)) check(/^[1-9][0-9]*$/u.test(flags.get(flag)) && Number(flags.get(flag)) <= maximum, 'Keep the public recovery budget bounded');
+  }
   if (flags.has('--target')) check(flags.get('--target') === policy.target, 'Keep the original main page');
   for (const flag of ['--output', '--review']) if (flags.has(flag)) check(withinOutput(flags.get(flag)), 'CLI files must stay in the owned output directory');
   if (flags.has('--review-id')) check(/^create-restore-[0-9a-f]{64}$/u.test(flags.get('--review-id')), 'Use the public review identity');
-  return { kind: read ? 'read' : args[4], dryRun: flags.has('--dry-run'), argv: words };
+  return { kind, dryRun: flags.has('--dry-run'), argv: words };
 }
 
 export function candidateCliGuard(api, { fs, output, policy, review }) {
@@ -641,6 +673,7 @@ export async function runCandidatePrint(config) {
   const cliProtected = [];
   if (cliPolicy) {
     assert.equal(cliPolicy.mode, 'original-create-recovery'); assert.ok(!config.resumeFrom);
+    assert.ok(/^skill-create-[0-9a-f]{64}$/u.test(cliPolicy.operationId));
     assert.equal(cliPolicy.database, config.database); assert.ok(isAbsolute(cliPolicy.outputRoot) && inside(config.evidenceRoot, cliPolicy.outputRoot));
     assert.ok(cliPolicy.refPrefix.startsWith('skill://') && cliPolicy.refPrefix.endsWith('/'));
     assert.deepEqual(Object.keys(cliPolicy.stateRoots).sort(), ['NTN_SKILLS_HOME', 'NTN_SKILLS_CONFIG_HOME', 'NTN_SKILLS_CACHE_HOME', 'NTN_SKILLS_DATA_HOME'].sort());

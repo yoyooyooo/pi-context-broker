@@ -88,22 +88,30 @@ test('candidate source preserves local discovery and refuses ambiguous daily sou
   assert.throws(() => candidateSourceConfig({ ...original, sources: [{ ...original.sources[1], command: ['fake'] }] }, input));
 });
 
-const publicCli = { mode: 'original-create-recovery', entry: { path: '/frozen/ntn-skills.js' }, database: 'owned-library', target: 'original-page',
+const publicCli = { mode: 'original-create-recovery', operationId: 'original-operation', entry: { path: '/frozen/ntn-skills.js' }, database: 'owned-library', target: 'original-page',
   originalPlan: { path: '/evidence/original-plan.json' }, refPrefix: 'skill://original-owner/', outputRoot: '/evidence/agent-output',
   inputFiles: ['/evidence/original-plan.json', '/evidence/original-error.json'] };
 const cliCommand = 'node /frozen/ntn-skills.js';
-const reviewCommand = cliCommand + ' ctl library create recovery review /evidence/original-plan.json --entry owned-library --target original-page --output /evidence/agent-output/review.json --json --metrics';
+const reviewCommand = cliCommand + ' ctl library create recovery review /evidence/original-plan.json --entry owned-library --target original-page --output /evidence/agent-output/review.json';
 
 test('public CLI task permits help and only the bound original recovery and strict reads', () => {
   assert.equal(reviewCandidateCliCommand(cliCommand + ' --help', publicCli).kind, 'help');
   assert.equal(reviewCandidateCliCommand(cliCommand + ' ctl library create recovery apply --help', publicCli).kind, 'help');
+  assert.equal(reviewCandidateCliCommand(cliCommand + ' schema ctl operation show', publicCli).kind, 'schema');
+  assert.equal(reviewCandidateCliCommand(cliCommand + ' ctl operation show original-operation', publicCli).kind, 'operation-show');
   assert.equal(reviewCandidateCliCommand(reviewCommand, publicCli).kind, 'review');
-  const apply = cliCommand + ' ctl library create recovery apply /evidence/original-plan.json --entry owned-library --review /evidence/agent-output/review.json --review-id create-restore-' + 'a'.repeat(64) + ' --json --metrics';
+  assert.equal(reviewCandidateCliCommand(reviewCommand.replace(' /evidence/original-plan.json', '') + ' /evidence/original-plan.json', publicCli).kind, 'review');
+  const apply = cliCommand + ' ctl library create recovery apply /evidence/original-plan.json --entry owned-library --review /evidence/agent-output/review.json --review-id create-restore-' + 'a'.repeat(64);
   assert.equal(reviewCandidateCliCommand(apply + ' --dry-run', publicCli).dryRun, true);
   assert.equal(reviewCandidateCliCommand(apply, publicCli).dryRun, false);
+  assert.equal(reviewCandidateCliCommand(cliCommand + ' ctl library create recovery reconcile --entry owned-library --target original-page /evidence/original-plan.json', publicCli).kind, 'reconcile');
+  assert.equal(reviewCandidateCliCommand(reviewCommand + ' --max-requests 100 --duration-ms 60000', publicCli).kind, 'review');
   const read = cliCommand + " read 'skill://original-owner/references/policy.md?snapshot=fixed&file_id=original-file' --database owned-library --read-only --json --metrics";
   assert.equal(reviewCandidateCliCommand(read, publicCli).kind, 'read');
   assert.equal(reviewCandidateCliCommand(read, publicCli).argv[3], 'skill://original-owner/references/policy.md?snapshot=fixed&file_id=original-file');
+  assert.equal(reviewCandidateCliCommand(cliCommand + ' read --json --metrics --read-only --database owned-library --path references/policy.md original-page', publicCli).kind, 'read');
+  assert.equal(reviewCandidateCliCommand(cliCommand + " read references/policy.md --from 'skill://original-owner/SKILL.md?snapshot=fixed&file_id=original-file' --database owned-library --read-only --json --metrics", publicCli).kind, 'read');
+  assert.equal(reviewCandidateCliCommand(cliCommand + " files 'skill://original-owner/SKILL.md?snapshot=s_" + 'a'.repeat(64) + "&file_id=original-file' --database owned-library --metrics", publicCli).kind, 'files');
 });
 
 test('public CLI scope rejects shell composition, replacement plans, owners and unbounded output', () => {
@@ -117,8 +125,16 @@ test('public CLI scope rejects shell composition, replacement plans, owners and 
     reviewCommand.replace('/evidence/agent-output/review.json', '/evidence/original-plan.json'),
     reviewCommand.replace('/evidence/agent-output/review.json', '/evidence/agent-output/../outside.json'),
     cliCommand + ' --help > /tmp/overwrite', cliCommand + ' --help$(id)',
+    cliCommand + ' ctl operation show another-operation', cliCommand + ' ctl operation resume original-operation',
+    reviewCommand + ' --json --metrics', reviewCommand + ' --dry-run', reviewCommand + ' --max-requests 2001',
+    cliCommand + ' ctl library create recovery apply /evidence/original-plan.json --entry owned-library',
+    cliCommand + ' ctl library create recovery reconcile /evidence/original-plan.json --entry owned-library --target original-page --output /evidence/agent-output/unsupported.json',
     cliCommand + ' read original-page --database owned-library --json --metrics',
     cliCommand + ' read another-page --database owned-library --read-only --json --metrics',
+    cliCommand + " read references/policy.md --from skill://another-owner/SKILL.md --database owned-library --read-only --json --metrics",
+    cliCommand + ' read original-page --path ../outside --database owned-library --read-only --json --metrics',
+    cliCommand + ' files original-page --database owned-library --metrics',
+    cliCommand + " files 'skill://another-owner/SKILL.md?snapshot=s_" + 'a'.repeat(64) + "' --database owned-library --metrics",
   ]) assert.throws(() => reviewCandidateCliCommand(command, publicCli), command);
 });
 
