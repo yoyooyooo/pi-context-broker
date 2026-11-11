@@ -103,3 +103,33 @@ test('cap-only acceptance retains and rejects an earlier native length even afte
   const complete = structuredClone(rows); complete[3].message.stopReason = 'stop';
   assert.deepEqual(candidate.validateCandidateCompletionHistory(inspect(complete)), { nativeFinalResponses: 2, lengthResponses: 0 });
 });
+
+const registeredRoot = '/owned/home/.devspace/candidate', registeredEntry = Buffer.from('exact frozen Broker entry');
+const registration = { packageIndex: 1, agentDir: '/owned/home/.pi/agent', brokerRoot: registeredRoot,
+  brokerEntry: { realpath: registeredRoot + '/src/index.ts', bytes: registeredEntry.length, sha256: hash(registeredEntry) } };
+const registeredPackages = ['/unrelated/package', '../../.devspace/candidate'];
+const registrationIo = { realpath: async path => path, readFile: async path => path.endsWith('/package.json')
+  ? Buffer.from('{"name":"pi-context-broker"}') : registeredEntry };
+
+test('the public user-local relative registration reuses the exact current candidate without a duplicate project override', async () => {
+  const before = structuredClone(registeredPackages);
+  const binding = await candidate.inspectCandidatePackageRegistration(registeredPackages, registration, registrationIo);
+  assert.equal(binding.oldSource, registeredRoot); assert.equal(binding.reusesRegisteredBroker, true);
+  assert.deepEqual(binding.projectSettings, {}); assert.equal(binding.registeredEntry.sha256, hash(registeredEntry));
+  assert.deepEqual(registeredPackages, before);
+});
+
+test('a different existing absolute Broker retains the original candidate package isolation', async () => {
+  const binding = await candidate.inspectCandidatePackageRegistration(['/unrelated/package', '/old/broker'], registration, registrationIo);
+  assert.equal(binding.reusesRegisteredBroker, false); assert.equal(binding.oldSource, '/old/broker');
+  assert.deepEqual(binding.projectSettings, candidate.candidateProjectSettings('/old/broker', registeredRoot));
+});
+
+test('registered reuse rejects duplicate aliases, wrong slots, changed entry bytes and disabled package filters', async () => {
+  await assert.rejects(candidate.inspectCandidatePackageRegistration([...registeredPackages, registeredRoot], registration, registrationIo), /unique/);
+  await assert.rejects(candidate.inspectCandidatePackageRegistration(registeredPackages, { ...registration, packageIndex: 0 }, registrationIo), /already registered/);
+  await assert.rejects(candidate.inspectCandidatePackageRegistration(registeredPackages, { ...registration,
+    brokerEntry: { ...registration.brokerEntry, sha256: '0'.repeat(64) } }, registrationIo), /frozen Broker/);
+  await assert.rejects(candidate.inspectCandidatePackageRegistration(['/unrelated/package', { source: registeredPackages[1], extensions: [] }], registration, registrationIo), /unfiltered/);
+  await assert.rejects(candidate.inspectCandidatePackageRegistration(['/unrelated/package', 'npm:pi-context-broker'], registration, registrationIo), /local/);
+});

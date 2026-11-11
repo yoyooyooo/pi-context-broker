@@ -135,6 +135,41 @@ export function candidateProjectSettings(oldSource, candidateRoot) {
   return { packages: [{ source: oldSource, extensions: [] }, candidateRoot] };
 }
 
+/** Public user-local package paths are relative to Pi's agentDir. */
+export async function inspectCandidatePackageRegistration(packages, { packageIndex, agentDir, brokerRoot, brokerEntry }, io = { realpath, readFile }) {
+  assert.ok(Array.isArray(packages) && Number.isSafeInteger(packageIndex) && packageIndex >= 0);
+  assert.ok(isAbsolute(agentDir) && isAbsolute(brokerRoot));
+  const sourceOf = entry => typeof entry === 'string' ? entry : entry?.source;
+  const localPath = source => {
+    if (typeof source !== 'string') return undefined;
+    const value = source.trim();
+    if (!isAbsolute(value) && !value.startsWith('./') && !value.startsWith('../') && !value.startsWith('~/')) return undefined;
+    return resolve(agentDir, value.startsWith('~/') ? join(homedir(), value.slice(2)) : value);
+  };
+  const source = sourceOf(packages[packageIndex]), oldSource = localPath(source);
+  assert.ok(oldSource, 'Select the reviewed user-local Broker registration');
+  const candidateRoot = await io.realpath(brokerRoot), oldRoot = await io.realpath(oldSource);
+  const local = await Promise.all(packages.map(async (entry, index) => {
+    const path = localPath(sourceOf(entry)); return path ? { index, realpath: await io.realpath(path) } : null;
+  }));
+  const matching = local.filter(entry => entry?.realpath === candidateRoot);
+  assert.ok(matching.length <= 1, 'The registered candidate Broker must be unique');
+  const reusesRegisteredBroker = oldRoot === candidateRoot;
+  assert.ok(reusesRegisteredBroker || matching.length === 0, 'The candidate is already registered; select that exact package slot');
+  assert.equal(JSON.parse((await io.readFile(join(oldSource, 'package.json'))).toString('utf8')).name, 'pi-context-broker');
+  if (!reusesRegisteredBroker) return { source, oldSource, packageIndex, reusesRegisteredBroker,
+    projectSettings: candidateProjectSettings(oldSource, brokerRoot) };
+  assert.equal(matching[0]?.index, packageIndex);
+  assert.ok(typeof packages[packageIndex] === 'string' || Object.keys(packages[packageIndex]).every(key => key === 'source'),
+    'Reuse only the exact unfiltered public package registration');
+  const path = join(oldSource, 'src/index.ts'), bytes = await io.readFile(path);
+  const registeredEntry = { path, realpath: await io.realpath(path), bytes: bytes.length, sha256: hash(bytes) };
+  assert.equal(registeredEntry.realpath, brokerEntry.realpath, 'Registered entry must be the frozen Broker');
+  assert.equal(registeredEntry.bytes, brokerEntry.bytes, 'Registered entry bytes must match the frozen Broker');
+  assert.equal(registeredEntry.sha256, brokerEntry.sha256, 'Registered entry hash must match the frozen Broker');
+  return { source, oldSource, packageIndex, reusesRegisteredBroker, registeredEntry, projectSettings: {} };
+}
+
 export function candidateSourceConfig(original, { sourceId, database, cacheDir, viewId, noNotion = false }) {
   assert.ok(identifier(sourceId) && /^[a-f0-9-]{32,36}$/iu.test(database) && isAbsolute(cacheDir));
   assert.ok(viewId === undefined || typeof viewId === 'string' && /^[a-f0-9-]{32,36}$/iu.test(viewId), 'Use an explicit reviewed View ID');
@@ -829,9 +864,6 @@ export async function runCandidatePrint(config) {
   const secretKeys = value => value && typeof value === 'object' && Object.entries(value).some(([key, child]) =>
     /token|secret|password|authorization|api.?key/iu.test(key) || secretKeys(child));
   assert.ok(!secretKeys(originalSource), 'Do not persist source configuration containing credentials');
-  const oldPackage = settings.packages?.[config.packageIndex ?? 1];
-  const oldSource = typeof oldPackage === 'string' ? oldPackage : oldPackage?.source;
-  assert.ok(isAbsolute(oldSource) && oldSource !== config.brokerRoot);
   const ownership = await identity(config.ownershipReceipt.path);
   assert.equal(ownership.sha256, config.ownershipReceipt.sha256);
   assert.ok((await readFile(ownership.path, 'utf8')).includes(config.database), 'Bind the owned database receipt');
@@ -864,6 +896,9 @@ export async function runCandidatePrint(config) {
   const baselineFiles = await Promise.all(['package.json', 'src/index.ts', 'dist/ntn-skills.mjs', 'dist/ntn-skills-sdk.mjs', 'dist/ntn-skills-runtime.json'].map(path => identity(join(config.brokerRoot, path))));
   const runtime = await json(join(config.brokerRoot, 'dist/ntn-skills-runtime.json'));
   assert.equal(runtime.cli_sha256, baselineFiles[2].sha256); assert.equal(runtime.sdk_sha256, baselineFiles[3].sha256);
+  const packageRegistration = await inspectCandidatePackageRegistration(settings.packages, { packageIndex: config.packageIndex ?? 1,
+    agentDir: join(homedir(), '.pi/agent'), brokerRoot: config.brokerRoot, brokerEntry: baselineFiles[1] });
+  const oldSource = packageRegistration.oldSource;
   await mkdir(config.evidenceRoot, { recursive: true, mode: 0o700 });
   const evidence = await mkdtemp(join(config.evidenceRoot, config.arm + '-' + config.id + '-'));
   let previous;
@@ -884,7 +919,7 @@ export async function runCandidatePrint(config) {
   const stateRoot = previous?.stateRoot ?? join(evidence, 'owned-state');
   const control = join(evidence, 'observation'), sessions = join(evidence, 'sessions'), responses = join(control, 'sdk-responses'), payloads = join(control, 'provider-payloads');
   for (const path of [join(cwd, '.pi'), stateRoot, control, sessions, responses, payloads]) await mkdir(path, { recursive: true, mode: 0o700 });
-  const projectSettings = candidateProjectSettings(oldSource, config.brokerRoot);
+  const projectSettings = packageRegistration.projectSettings;
   if (previous && !introductionFork) assert.deepEqual(await json(join(cwd, '.pi/settings.json')), projectSettings);
   else await save(join(cwd, '.pi/settings.json'), projectSettings);
   const sourceCache = join(stateRoot, 'broker-cache'), state = join(stateRoot, 'ntn/state');
@@ -951,7 +986,9 @@ export async function runCandidatePrint(config) {
   const result = { version: 1, scope: config.scope, status: 'running', arm: config.arm, id: config.id, database: config.database,
     evidence, stateRoot, project, baselineFiles, runtime, ownership, before, host, hostArtifact: await identity(host.identity), expectedUserMessages: (previous?.expectedUserMessages ?? 0) + 1,
     launch: { cwd, executable: host.file, args: [...host.prefix, ...args], normalHome: true, normalAgentDir: true, normalMcpAndExtensions: true,
-      projectPackageOverrideOnly: true, nativeSkillDiscovery: config.arm !== 'notion-only', sourceStateStartsEmpty: !previous && (!cliPolicy || cliPolicy.mode === 'owned-description-update'),
+      projectPackageOverrideOnly: !packageRegistration.reusesRegisteredBroker,
+      ...(packageRegistration.reusesRegisteredBroker ? { registeredBroker: packageRegistration } : {}),
+      nativeSkillDiscovery: config.arm !== 'notion-only', sourceStateStartsEmpty: !previous && (!cliPolicy || cliPolicy.mode === 'owned-description-update'),
       cliDevRootOverride: null, inheritedCliDevRootOverrideRemoved: Boolean(process.env.NTN_SKILLS_DEV_ROOT),
       ...(completionBudgetSource ? { completionBudget: { maxCompletionTokens: config.maxCompletionTokens, policy: await identity(completionBudgetExtension) } } : {}),
       previous: config.resumeFrom ?? null,
