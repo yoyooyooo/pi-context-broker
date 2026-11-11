@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { candidatePlan, candidateProjectSettings, candidateSourceConfig, candidatePayloadBodies, observeCandidateTask, validateCandidateTurn, candidateTransportCoverage, containsProof, inspectCandidatePrintSession } from './verify-pi-daily-candidate.mjs';
+import { candidatePlan, candidateProjectSettings, candidateSourceConfig, candidatePayloadBodies, observeCandidateTask, validateCandidateTurn, candidateTransportCoverage, containsProof, inspectCandidatePrintSession, reviewCandidateCliCommand, candidateCliGuard } from './verify-pi-daily-candidate.mjs';
 
 const sha = text => createHash('sha256').update(text).digest('hex');
 const body = 'complete source <tag> & "quoted"\nlast line';
@@ -86,6 +86,52 @@ test('candidate source preserves local discovery and refuses ambiguous daily sou
   assert.throws(() => candidateSourceConfig({ ...original, ruleRoots: ['./relative'] }, input));
   assert.throws(() => candidateSourceConfig({ ...original, sources: [...original.sources, { id: 'extra', type: 'notion' }] }, input));
   assert.throws(() => candidateSourceConfig({ ...original, sources: [{ ...original.sources[1], command: ['fake'] }] }, input));
+});
+
+const publicCli = { mode: 'original-create-recovery', entry: { path: '/frozen/ntn-skills.js' }, database: 'owned-library', target: 'original-page',
+  originalPlan: { path: '/evidence/original-plan.json' }, refPrefix: 'skill://original-owner/', outputRoot: '/evidence/agent-output',
+  inputFiles: ['/evidence/original-plan.json', '/evidence/original-error.json'] };
+const cliCommand = 'node /frozen/ntn-skills.js';
+const reviewCommand = cliCommand + ' ctl library create recovery review /evidence/original-plan.json --entry owned-library --target original-page --output /evidence/agent-output/review.json --json --metrics';
+
+test('public CLI task permits help and only the bound original recovery and strict reads', () => {
+  assert.equal(reviewCandidateCliCommand(cliCommand + ' --help', publicCli).kind, 'help');
+  assert.equal(reviewCandidateCliCommand(cliCommand + ' ctl library create recovery apply --help', publicCli).kind, 'help');
+  assert.equal(reviewCandidateCliCommand(reviewCommand, publicCli).kind, 'review');
+  const apply = cliCommand + ' ctl library create recovery apply /evidence/original-plan.json --entry owned-library --review /evidence/agent-output/review.json --review-id create-restore-' + 'a'.repeat(64) + ' --json --metrics';
+  assert.equal(reviewCandidateCliCommand(apply + ' --dry-run', publicCli).dryRun, true);
+  assert.equal(reviewCandidateCliCommand(apply, publicCli).dryRun, false);
+  const read = cliCommand + " read 'skill://original-owner/references/policy.md?snapshot=fixed&file_id=original-file' --database owned-library --read-only --json --metrics";
+  assert.equal(reviewCandidateCliCommand(read, publicCli).kind, 'read');
+  assert.equal(reviewCandidateCliCommand(read, publicCli).argv[3], 'skill://original-owner/references/policy.md?snapshot=fixed&file_id=original-file');
+});
+
+test('public CLI scope rejects shell composition, replacement plans, owners and unbounded output', () => {
+  for (const command of [
+    reviewCommand + '; node other.js', reviewCommand + '\nnode other.js', reviewCommand + ' | cat',
+    'python private-store.py', reviewCommand.replace('/frozen/ntn-skills.js', '/other/cli.js'),
+    reviewCommand.replace('create recovery review /evidence/original-plan.json', 'create /replacement'),
+    reviewCommand.replace('/evidence/original-plan.json', '/evidence/replacement-plan.json'),
+    reviewCommand.replace('--entry owned-library', '--entry another-library'),
+    reviewCommand.replace('--target original-page', '--target replacement-page'),
+    reviewCommand.replace('/evidence/agent-output/review.json', '/evidence/original-plan.json'),
+    reviewCommand.replace('/evidence/agent-output/review.json', '/evidence/agent-output/../outside.json'),
+    cliCommand + ' --help > /tmp/overwrite', cliCommand + ' --help$(id)',
+    cliCommand + ' read original-page --database owned-library --json --metrics',
+    cliCommand + ' read another-page --database owned-library --read-only --json --metrics',
+  ]) assert.throws(() => reviewCandidateCliCommand(command, publicCli), command);
+});
+
+test('public CLI guard blocks before execution and confines native file reads to disclosed artifacts', () => {
+  const handlers = new Map(), records = [];
+  candidateCliGuard({ on(name, fn) { handlers.set(name, fn); } }, { fs: { openSync: () => 1, writeSync: (_fd, text) => records.push(JSON.parse(text)), closeSync() {} },
+    output: '/evidence/guard.jsonl', policy: publicCli, review: reviewCandidateCliCommand });
+  assert.equal(handlers.get('tool_call')({ toolName: 'bash', toolCallId: 'help', input: { command: cliCommand + ' --help' } }), undefined);
+  assert.equal(handlers.get('tool_call')({ toolName: 'bash', toolCallId: 'private', input: { command: 'python store.py' } }).block, true);
+  assert.equal(handlers.get('tool_call')({ toolName: 'read', toolCallId: 'plan', input: { path: publicCli.originalPlan.path } }), undefined);
+  assert.equal(handlers.get('tool_call')({ toolName: 'read', toolCallId: 'outside', input: { path: '/unrelated/secret' } }).block, true);
+  handlers.get('session_shutdown')({});
+  assert.deepEqual(records.map(record => record.allowed ?? record.complete), [true, false, true, false, true]);
 });
 
 test('exact body counts exclude tool definitions, details, and call arguments, reject partials, and detect duplicates', () => {

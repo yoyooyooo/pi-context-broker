@@ -538,6 +538,10 @@ node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/f
 
 真实 `pi -p` 的后续轮用 `resumeFrom: {path, sha256}` 指向同 evidenceRoot 下成功的本 helper `result.json`。helper 复制自有原 Session，再复用其 Store；原 Session 字节与父链保持，明确这是同会话/暖 Store、**新进程**续接，不冒称同进程暖态。每轮即刻用原 `inspectCandidatePrintSession` 核对实际 model_change、所有 toolCallId/结果、失败/撤回与精确用户轮数；完整 provider JSON 与 cost hook、实际 Undici 已发送请求体 SHA/bytes 对账。源 SDK 原件、HTTP 账本与作者/旁路 oracle 成本单列。cold、warm、管理编辑后旧 pin、明确刷新和介绍任务的实际语义由人审核；`passed` 只表示该次自动门禁成立。未完成的真实样本保持 not_run/failed；本节没有预先声称 AH-956 通过。
 
+AH922 的新 Agent 原操作恢复继续使用同一 helper，另显式冻结 `publicCli.mode: "original-create-recovery"`、公共 Node CLI 文件 SHA、原 plan SHA、原 main/entry/ref owner、原 Store 四个环境根，以及自有输出目录。公共帮助、原失败和原计划是 Agent 输入；审计 oracle 不进入输入。执行门禁只接受单条 `node <冻结入口> <公开参数>`，禁止壳组合、替代 plan/owner、任意脚本和私有 Store API；只允许公开恢复分支及同 owner 的严格只读核对。Agent 自己从帮助和真实结构化输出决定命令，driver 不替它生成 review、review ID 或恢复结果。
+
+该管理模式把完整 native bash 调用逐条与门禁回执核对，并在结束后重算 CLI/原计划/原失败的 SHA。原 Store 是恢复前置，不能冒称空 Store。公共 CLI JSON 与 `--metrics` 另审；父进程 source observer 不覆盖 bash 孙进程，缺少实际 child source trace 时保持 unknown，不能把后台 SDK 的完整 ledger 当作 CLI 全覆盖。普通消费配置没有这个例外，仍要求零执行工具调用。
+
 ### 2026-11-11 真实双臂基线
 
 原件根为 `/Users/yoyo/Documents/code/personal/verification-evidence/ah956-20261111-Z3lomu`。`plan.json` 在模型请求前冻结两臂、五个原始问题、worker/high 与每轮 600000ms；`ownership-v1.json` 绑定同一自有 root、Requires 和参考文件。原 root 创建失败、自动链接的精确同页修复、原 operation 的公开 recovery review/apply 都保留，没有另建替代 root。旧 `ca8cc9` 的正式绑定冷读因原 `needs_review` 阻塞，之后仅采用 `ca8cc9 → e0e1510(AH740) → a76c593(AH922)` 的恢复协议，Broker 主体仍为 `1c11c57`，未混入 AH953/631/506。

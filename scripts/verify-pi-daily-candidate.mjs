@@ -140,6 +140,68 @@ export function candidateSourceConfig(original, { sourceId, database, cacheDir, 
   return config;
 }
 
+/** A deliberately small shell subset for the owned original-create recovery.
+ * The public CLI still owns all recovery decisions, review IDs and Store writes. */
+export function reviewCandidateCliCommand(command, policy) {
+  const check = (value, message) => { if (!value) throw new Error(message); };
+  check(policy?.mode === 'original-create-recovery', 'Unknown public CLI task scope');
+  check(typeof command === 'string' && !/[\r\n\0\\]/u.test(command), 'Use one plain public CLI command');
+  const text = command.trim(), words = [], token = /\s*(?:'([^']*)'|"([^"$`\\]*)"|([^\s'"\\;&|`<>$()*?\[\]{}!~]+))/uy;
+  let at = 0;
+  while (at < text.length) {
+    token.lastIndex = at; const match = token.exec(text);
+    check(match && match.index === at && (token.lastIndex === text.length || /\s/u.test(text[token.lastIndex])), 'Shell composition is outside this task');
+    words.push(match[1] ?? match[2] ?? match[3]); at = token.lastIndex;
+  }
+  check(words[0] === 'node' && words[1] === policy.entry.path, 'Use the exact frozen public Node CLI entry');
+  const args = words.slice(2);
+  if (args.at(-1) === '--help') {
+    check(args.slice(0, -1).every(arg => /^[a-z][a-z-]*$/u.test(arg)), 'Help must contain only a public command path');
+    return { kind: 'help', argv: words };
+  }
+  const withinOutput = value => typeof value === 'string' && value.startsWith(policy.outputRoot + '/')
+    && !value.split('/').some(part => part === '.' || part === '..') && !value.endsWith('/');
+  const read = args[0] === 'read';
+  if (read) check(args[1] === policy.target || args[1]?.startsWith(policy.refPrefix), 'Read only the original owner');
+  else {
+    check(args.slice(0, 4).join(' ') === 'ctl library create recovery' && ['review', 'apply', 'reconcile'].includes(args[4]), 'Only the original create recovery is authorized');
+    check(args[5] === policy.originalPlan.path, 'Use the original immutable plan');
+  }
+  const flags = new Map(), boolean = new Set(['--json', '--metrics', '--dry-run', '--read-only', '--authoring', '--refresh']);
+  const valued = new Set(read ? ['--database', '--output'] : ['--entry', '--target', '--output', '--review', '--review-id']);
+  for (let index = read ? 2 : 6; index < args.length; index++) {
+    const flag = args[index]; check(!flags.has(flag), 'Duplicate CLI option');
+    if (boolean.has(flag)) flags.set(flag, true);
+    else { check(valued.has(flag) && typeof args[index + 1] === 'string' && !args[index + 1].startsWith('--'), 'Unknown public CLI option'); flags.set(flag, args[++index]); }
+  }
+  check(flags.get(read ? '--database' : '--entry') === policy.database, 'Keep the exact reviewed library');
+  check(flags.get('--json') && flags.get('--metrics'), 'Retain complete public JSON and request metrics');
+  if (read) check(flags.get('--read-only'), 'Post-recovery inspection must prohibit remote writes');
+  if (flags.has('--target')) check(flags.get('--target') === policy.target, 'Keep the original main page');
+  for (const flag of ['--output', '--review']) if (flags.has(flag)) check(withinOutput(flags.get(flag)), 'CLI files must stay in the owned output directory');
+  if (flags.has('--review-id')) check(/^create-restore-[0-9a-f]{64}$/u.test(flags.get('--review-id')), 'Use the public review identity');
+  return { kind: read ? 'read' : args[4], dryRun: flags.has('--dry-run'), argv: words };
+}
+
+export function candidateCliGuard(api, { fs, output, policy, review }) {
+  const fd = fs.openSync(output, 'wx', 0o600);
+  api.on('tool_call', event => {
+    try {
+      if (event.toolName === 'bash') review(event.input?.command, policy);
+      else if (event.toolName === 'read') {
+        const value = event.input?.path;
+        if (!(policy.inputFiles.includes(value) || typeof value === 'string' && value.startsWith(policy.outputRoot + '/') && !value.split('/').includes('..')))
+          throw new Error('Read only the disclosed original artifacts or owned public CLI outputs');
+      } else throw new Error('This bounded management task uses only public CLI and artifact reads');
+      fs.writeSync(fd, JSON.stringify({ toolCallId: event.toolCallId, toolName: event.toolName, allowed: true }) + '\n');
+    } catch (error) {
+      fs.writeSync(fd, JSON.stringify({ toolCallId: event.toolCallId, toolName: event.toolName, allowed: false, reason: error.message }) + '\n');
+      return { block: true, reason: error.message };
+    }
+  });
+  api.on('session_shutdown', () => { fs.writeSync(fd, JSON.stringify({ complete: true }) + '\n'); fs.closeSync(fd); });
+}
+
 // Receipt events retain Broker-owned metadata and rendered hashes. The optional
 // payload directory retains complete provider input for an owned E2E audit;
 // headers and authentication configuration are never collected. Exact body
@@ -254,7 +316,7 @@ export function containsProof(value, expected) {
   return matches || Object.values(value).some(child => child && typeof child === 'object' && containsProof(child, expected));
 }
 
-export function validateCandidateTurn(turn, { costs, transport, tasks }) {
+export function validateCandidateTurn(turn, { costs, transport, tasks }, { approvedCliCalls = [] } = {}) {
   if (turn.toolCallCount !== undefined) {
     assert.ok(Number.isSafeInteger(turn.toolCallCount) && turn.toolCallCount >= 0);
     assert.equal(tasks.filter(event => event.phase === 'tool_call').length, turn.toolCallCount, 'Tool calls differ from this frozen turn intent');
@@ -288,12 +350,16 @@ export function validateCandidateTurn(turn, { costs, transport, tasks }) {
     && tasks.some(event => event.phase === 'tool_result' && event.toolCallId === call.toolCallId && event.isError === false)
     && tasks.some(event => event.phase === 'receipt' && event.toolCallId === call.toolCallId && event.proofs.contextBrokerPreparation?.toolCallId === call.toolCallId
       && event.proofs.contextBrokerPreparation.purpose === 'use')), 'Natural application did not complete this turn\'s notion_use');
-  assert.equal(tasks.filter(event => event.phase === 'tool_call' && event.executionTool).length, 0, 'The inspected Skill must not execute scripts or binaries');
-  assert.equal(tasks.filter(event => event.phase === 'tool_call' && event.reviewedReadTool !== true).length, 0, 'An unreviewed tool cannot establish a read-only task');
+  const executionCalls = tasks.filter(event => event.phase === 'tool_call' && event.executionTool);
+  assert.equal(new Set(approvedCliCalls).size, approvedCliCalls.length);
+  assert.equal(executionCalls.length, approvedCliCalls.length, 'The inspected Skill must not execute unreviewed scripts or binaries');
+  assert.ok(executionCalls.every(event => event.toolName === 'bash' && approvedCliCalls.includes(event.toolCallId)));
+  assert.equal(tasks.filter(event => event.phase === 'tool_call' && event.reviewedReadTool !== true && !approvedCliCalls.includes(event.toolCallId)).length, 0, 'An unreviewed tool cannot establish a read-only task');
   const final = tasks.filter(event => event.phase === 'assistant_final').at(-1);
   assert.ok(final?.success, 'This exact turn has no successful task answer');
   return { providerRequests: requests.length, lastPayloadSha256: last.payload.sha256, bodyOccurrences: actual.bodies, receiptVerifiedBodies: last.payload.verifiedBodyOccurrences,
-    finalSha256: final.sha256, finalBytes: final.bytes, semanticReview: 'required', scriptExecutionToolCalls: 0 };
+    finalSha256: final.sha256, finalBytes: final.bytes, semanticReview: 'required', scriptExecutionToolCalls: executionCalls.length,
+    ...(approvedCliCalls.length ? { authorizedPublicCliToolCalls: approvedCliCalls.length } : {}) };
 }
 
 /** Input has already passed readProviderTransport's complete ledger validation. */
@@ -571,6 +637,21 @@ export async function runCandidatePrint(config) {
   const ownership = await identity(config.ownershipReceipt.path);
   assert.equal(ownership.sha256, config.ownershipReceipt.sha256);
   assert.ok((await readFile(ownership.path, 'utf8')).includes(config.database), 'Bind the owned database receipt');
+  const cliPolicy = config.publicCli;
+  const cliProtected = [];
+  if (cliPolicy) {
+    assert.equal(cliPolicy.mode, 'original-create-recovery'); assert.ok(!config.resumeFrom);
+    assert.equal(cliPolicy.database, config.database); assert.ok(isAbsolute(cliPolicy.outputRoot) && inside(config.evidenceRoot, cliPolicy.outputRoot));
+    assert.ok(cliPolicy.refPrefix.startsWith('skill://') && cliPolicy.refPrefix.endsWith('/'));
+    assert.deepEqual(Object.keys(cliPolicy.stateRoots).sort(), ['NTN_SKILLS_HOME', 'NTN_SKILLS_CONFIG_HOME', 'NTN_SKILLS_CACHE_HOME', 'NTN_SKILLS_DATA_HOME'].sort());
+    assert.ok(Object.values(cliPolicy.stateRoots).every(isAbsolute));
+    for (const expected of [cliPolicy.entry, cliPolicy.originalPlan, ...(cliPolicy.protectedFiles ?? [])]) {
+      const actual = await identity(expected.path); assert.equal(actual.sha256, expected.sha256); cliProtected.push(actual);
+    }
+    assert.ok(cliPolicy.inputFiles.includes(cliPolicy.originalPlan.path));
+    assert.ok(cliPolicy.inputFiles.every(file => cliProtected.some(protectedFile => protectedFile.path === file)));
+    await mkdir(cliPolicy.outputRoot, { recursive: true, mode: 0o700 });
+  }
   for (const body of config.expectedBodies ?? []) {
     const actual = await identity(body.path);
     assert.equal(actual.sha256, body.sha256); assert.equal(actual.bytes, body.bytes); assert.ok(body.bytes > 0);
@@ -609,6 +690,10 @@ export async function runCandidatePrint(config) {
   const sourceLedger = join(control, 'source.jsonl'), sdkLedger = join(control, 'sdk.jsonl'), hostOutput = join(control, 'host.json');
   const costExtension = join(control, 'cost.mjs'), transportExtension = join(control, 'transport.mjs'), taskExtension = join(control, 'tasks.mjs');
   const sourcePreload = join(control, 'source.mjs'), sdkPreload = join(control, 'sdk.mjs');
+  const cliGuard = join(control, 'public-cli-guard.mjs'), cliGuardLedger = join(control, 'public-cli-guard.jsonl');
+  if (cliPolicy) await writeFile(cliGuard, "import fs from 'node:fs';const review=" + reviewCandidateCliCommand.toString()
+    + ';export default api=>(' + candidateCliGuard.toString() + ')(api,{fs,review,output:' + JSON.stringify(cliGuardLedger)
+    + ',policy:' + JSON.stringify(cliPolicy) + '});\n', { flag: 'wx', mode: 0o600 });
   await writeFile(costExtension, consumptionCostExtensionSource({ output: costs, checkoutRoot: root, runId: clockId, sampleId: config.id, clockId }), { flag: 'wx', mode: 0o600 });
   await writeFile(transportExtension, providerTransportExtensionSource({ output: transport, checkoutRoot: root, clockId }), { flag: 'wx', mode: 0o600 });
   await writeFile(taskExtension, "import fs from 'node:fs';import crypto from 'node:crypto';const inspectPayload=" + candidatePayloadBodies.toString()
@@ -622,9 +707,11 @@ export async function runCandidatePrint(config) {
   const env = { ...process.env, CONTEXT_BROKER_CONFIG: join(control, 'source-config.json'), NTN_SKILLS_HOME: state,
     NTN_SKILLS_CONFIG_HOME: join(stateRoot, 'ntn/config'), NTN_SKILLS_CACHE_HOME: join(stateRoot, 'ntn/cache'), NTN_SKILLS_DATA_HOME: join(stateRoot, 'ntn/data'),
     NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000', NODE_OPTIONS: [process.env.NODE_OPTIONS, '--import=' + JSON.stringify(sourcePreload), '--import=' + JSON.stringify(sdkPreload)].filter(Boolean).join(' ') };
+  if (cliPolicy) Object.assign(env, cliPolicy.stateRoots);
   delete env.NTN_SKILLS_DEV_ROOT;
   const args = ['-p', ...(config.arm === 'notion-only' ? ['-ns'] : []), '--approve', '--session-dir', sessions, '--model', config.model, '--thinking', config.thinkingLevel,
     '-e', costExtension, '-e', transportExtension, '-e', taskExtension];
+  if (cliPolicy) args.push('-e', cliGuard);
   let prefix;
   if (previous) {
     prefix = await readFile(previous.session.path);
@@ -637,10 +724,13 @@ export async function runCandidatePrint(config) {
   const result = { version: 1, scope: config.scope, status: 'running', arm: config.arm, id: config.id, database: config.database,
     evidence, stateRoot, project, baselineFiles, runtime, ownership, before, host, hostArtifact: await identity(host.identity), expectedUserMessages: (previous?.expectedUserMessages ?? 0) + 1,
     launch: { cwd, executable: host.file, args: [...host.prefix, ...args], normalHome: true, normalAgentDir: true, normalMcpAndExtensions: true,
-      projectPackageOverrideOnly: true, nativeSkillDiscovery: config.arm !== 'notion-only', sourceStateStartsEmpty: !previous,
+      projectPackageOverrideOnly: true, nativeSkillDiscovery: config.arm !== 'notion-only', sourceStateStartsEmpty: !previous && !cliPolicy,
       cliDevRootOverride: null, inheritedCliDevRootOverrideRemoved: Boolean(process.env.NTN_SKILLS_DEV_ROOT),
       previous: config.resumeFrom ?? null, sessionContinuation: previous ? 'copied-owned-linear-history-and-owned-warm-store; new-process' : 'new-session-and-process' },
     semanticReview: 'required', artifactBoundary: 'actual source package and bundled CLI/SDK; not an installed release gate' };
+  if (cliPolicy) result.publicCli = { entry: cliProtected[0], stateRoots: cliPolicy.stateRoots, protectedFiles: cliProtected,
+    policy: 'Only the original create recovery and strict reads through the frozen public CLI; no shell composition or private Store API',
+    sourceCoverage: 'The parent source observer does not observe shell grandchildren. Public CLI JSON/metrics and native tool results need a separate audit; missing child source traces remain unknown.' };
   await save(join(evidence, 'started.json'), result);
   const startedNs = process.hrtime.bigint().toString();
   let stdout = '', stderr = '';
@@ -673,7 +763,17 @@ export async function runCandidatePrint(config) {
     assert.equal(result.source.complete, true); assert.deepEqual(result.source.errors, []);
     assert.ok(cost.events.at(-1)?.phase === 'observer_end' && cost.events.at(-1).complete);
     assert.ok(task.at(-1)?.phase === 'task_observer_end' && task.at(-1).complete && task.at(-1).errors === 0);
-    result.assertions = validateCandidateTurn(config, { costs: cost.events, transport: wire, tasks: task });
+    const approvedCliCalls = [];
+    if (cliPolicy) {
+      const guard = await readRows(cliGuardLedger); assert.equal(guard.at(-1)?.complete, true);
+      assert.ok(guard.slice(0, -1).every(entry => entry.allowed === true), 'A command escaped the frozen public CLI task');
+      result.publicCli.commands = result.nativeAudit.calls.filter(call => call.name === 'bash').map(call => {
+        const command = reviewCandidateCliCommand(call.arguments.command, cliPolicy);
+        approvedCliCalls.push(call.id); return { toolCallId: call.id, ...command, isError: call.isError };
+      });
+      for (const call of result.nativeAudit.calls) assert.equal(guard.filter(entry => entry.toolCallId === call.id && entry.allowed).length, 1);
+    }
+    result.assertions = validateCandidateTurn(config, { costs: cost.events, transport: wire, tasks: task }, { approvedCliCalls });
     for (const event of task.filter(event => event.phase === 'provider_payload')) {
       const actual = await identity(event.payloadFile); assert.equal(actual.sha256, event.sha256); assert.equal(actual.bytes, event.bytes);
     }
@@ -690,8 +790,9 @@ export async function runCandidatePrint(config) {
     result.normalConfigurationUnchanged = (await identity(settingsPath)).sha256 === before.settings.sha256 && (await identity(sourcePath)).sha256 === before.source.sha256;
     result.baselineFilesUnchanged = (await Promise.all(baselineFiles.map(async file => (await identity(file.path)).sha256 === file.sha256))).every(Boolean);
     if (project) result.projectFilesUnchanged = (await Promise.all(project.files.map(async file => (await identity(join(project.root, file.path))).sha256 === file.sha256))).every(Boolean);
+    if (cliPolicy) result.publicCliProtectedFilesUnchanged = (await Promise.all(cliProtected.map(async file => (await identity(file.path)).sha256 === file.sha256))).every(Boolean);
     if (previous) result.originalSessionUnchanged = (await identity(previous.session.path)).sha256 === previous.session.sha256;
-    if (!result.normalConfigurationUnchanged || !result.baselineFilesUnchanged || result.originalSessionUnchanged === false || result.projectFilesUnchanged === false) result.status = 'failed';
+    if (!result.normalConfigurationUnchanged || !result.baselineFilesUnchanged || result.originalSessionUnchanged === false || result.projectFilesUnchanged === false || result.publicCliProtectedFilesUnchanged === false) result.status = 'failed';
     await save(join(evidence, 'result.json'), result);
   }
   return { status: result.status, evidence, error: result.error, session: result.session, assertions: result.assertions };
