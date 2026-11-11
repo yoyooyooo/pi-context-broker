@@ -705,10 +705,19 @@ export async function inspectIsolatedIntroductionResume(previous, { oldSource, p
   assert.deepEqual(JSON.parse(settings), candidateProjectSettings(oldSource, originalBrokerRoot));
   const native = await readFile(previous.session.path);
   assert.equal(hash(native), previous.session.sha256);
-  const audit = inspectCandidatePrintSession(native.toString('utf8'), { provider: 'magpie', model: 'group/worker' });
-  assert.ok(audit.calls.every(call => call.name === 'notion_list'
-    || call.name === 'notion_use' && call.arguments.readOnly === true
-    || call.name === 'read' && call.arguments.readOnly === true && /^(?:sr:|skill:\/\/)/u.test(call.arguments.path)));
+  const nativeText = native.toString('utf8');
+  const audit = inspectCandidatePrintSession(nativeText, { provider: 'magpie', model: 'group/worker' });
+  const rows = nativeText.trimEnd().split('\n').map(JSON.parse);
+  const noWrites = effects => effects?.version === 1 && effects.remote_writes === 'none'
+    && effects.author_content === 'unchanged' && Array.isArray(effects.retention) && effects.retention.length === 0;
+  assert.ok(audit.calls.every(call => {
+    const result = rows[call.resultLine - 1]?.message;
+    if (result?.toolCallId !== call.id || result.isError !== false) return false;
+    const effects = result.details?.effects;
+    if (call.name === 'notion_list') return effects === undefined || noWrites(effects);
+    if (call.name !== 'notion_use' && !(call.name === 'read' && /^(?:sr:|skill:\/\/)/u.test(call.arguments.path))) return false;
+    return noWrites(effects);
+  }));
   return { originalCwd: cwd, originalBrokerRoot,
     settings: { path: settingsPath, bytes: settings.length, sha256: hash(settings) },
     native: { path: previous.session.path, bytes: native.length, sha256: hash(native) } };

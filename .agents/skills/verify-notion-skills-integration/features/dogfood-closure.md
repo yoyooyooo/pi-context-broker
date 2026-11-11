@@ -104,5 +104,7 @@ how 作者原件经公开 read/dry-run 审阅后由 root 一次公开 write 并�
 
 原print续问对旧cwd的包映射做deepEqual，换候选包路径会在启动Pi前拒绝；`warm-v4-resume-contract-red.json`保留真实旧入口拒绝，0个Pi/model/source请求。默认续问继续保留该保护。仅显式`isolateResumeCwd`允许已独审、成功单轮的纯介绍换到新的空owned cwd：原任务不得有owned项目、执行或项目枚举，原native精确hash与只读来源工具须通过，原cwd只能有`.pi/settings.json`且包映射绑定原结果。原result/native/settings均不修改，结束后再次核hash；新的cwd与包映射明确记录，原owned Store继续复用，实际自动metadata按账本记录。
 
-`verify-pi-daily-resume.test.mjs`与原candidate测试共27项通过，覆盖原默认拒绝、项目/失败/已续问/执行型父任务、额外文件、错误settings和native前缀漂移。纯介绍语义由既有C1完整独审与本次冻结调用合同确定，不声称helper能自动理解任意任务。该驱动接线不改产品状态机或源码覆盖的有限转移；不新增TLA模型、不把回归通过当成v4真实通过。v4按新driver commit与原39ad包双身份单独冻结一次，沿原成功C1前缀，不带旧failed warm追加；新cwd属于条件变化，不能据此作同条件性能比较或回填v3分母。
+初版27项回归通过后，真实C1准入揭示历史参数假设过严：原7个read均未传readOnly，但完整配对结果都有version1/none/unchanged/空retention。初版拒绝保留，不重写原7次调用。准入改为检查实际已闭合效果回执，缺失、unknown、retained、retention矛盾或isError均拒绝；只读目录查询按既有metadata语义单列。新增无flag但none正例和有flag却坏回执反例，`verify-pi-daily-resume.test.mjs`与原candidate测试现共28项通过，真实C1离线准入也通过，原result/native/settings前后hash相等；这些预检没有启动Pi/model/source。
+
+边界同时覆盖原默认拒绝、项目/失败/已续问/执行型父任务、额外文件、错误settings和native前缀漂移。纯介绍语义由既有C1完整独审与本次冻结调用合同确定，不声称helper能自动理解任意任务。该驱动接线不改产品状态机或源码覆盖的有限转移；不新增TLA模型、不把回归通过当成v4真实通过。v4按新driver commit与原39ad包双身份单独冻结一次，沿原成功C1前缀，不带旧failed warm追加；新cwd属于条件变化，不能据此作同条件性能比较或回填v3分母。
 

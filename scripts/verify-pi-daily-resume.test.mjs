@@ -19,8 +19,8 @@ test('a candidate-package warm introduction uses a new cwd only after binding it
     { type: 'session', id: 'owned-introduction', version: 3 },
     { type: 'model_change', id: 'model', parentId: null, provider: 'magpie', modelId: 'group/worker' },
     { type: 'message', id: 'user', parentId: 'model', message: { role: 'user', content: [{ type: 'text', text: 'Introduce the named Skill; do not execute it.' }] } },
-    { type: 'message', id: 'call', parentId: 'user', message: { role: 'assistant', provider: 'magpie', model: 'group/worker', stopReason: 'toolUse', content: [{ type: 'toolCall', id: 'read-1', name: 'read', arguments: { path: 'sr:Roriginal-reference', readOnly: true } }] } },
-    { type: 'message', id: 'result', parentId: 'call', message: { role: 'toolResult', toolName: 'read', toolCallId: 'read-1', isError: false, content: [{ type: 'text', text: 'Complete reference.' }] } },
+    { type: 'message', id: 'call', parentId: 'user', message: { role: 'assistant', provider: 'magpie', model: 'group/worker', stopReason: 'toolUse', content: [{ type: 'toolCall', id: 'read-1', name: 'read', arguments: { path: 'sr:Roriginal-reference' } }] } },
+    { type: 'message', id: 'result', parentId: 'call', message: { role: 'toolResult', toolName: 'read', toolCallId: 'read-1', isError: false, content: [{ type: 'text', text: 'Complete reference.' }], details: { effects: { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] } } } },
     { type: 'message', id: 'answer', parentId: 'result', message: { role: 'assistant', provider: 'magpie', model: 'group/worker', stopReason: 'stop', content: [{ type: 'text', text: 'The requested introduction.' }] } },
   ];
   const native = rows.map(row => JSON.stringify(row)).join('\n') + '\n';
@@ -68,5 +68,26 @@ test('a candidate-package warm introduction uses a new cwd only after binding it
     await writeFile(nativePath, native);
     const after = await inspectIsolatedIntroductionResume(previous, options);
     assert.equal(after.settings.sha256, sha(settings)); assert.equal(after.native.sha256, sha(native));
+  });
+  await t.test('a readOnly argument cannot replace complete successful none effects', async () => {
+    const none = { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] };
+    const variants = [
+      { effects: undefined, isError: false },
+      { effects: { ...none, remote_writes: 'unknown' }, isError: false },
+      { effects: { ...none, remote_writes: 'retained', retention: [{ snapshot_id: 'retained' }] }, isError: false },
+      { effects: { ...none, retention: [{ snapshot_id: 'inconsistent' }] }, isError: false },
+      { effects: none, isError: true },
+    ];
+    for (const [index, variant] of variants.entries()) {
+      const changed = structuredClone(rows);
+      changed[3].message.content[0].arguments.readOnly = true;
+      changed[4].message.details = { effects: variant.effects }; changed[4].message.isError = variant.isError;
+      const bytes = changed.map(row => JSON.stringify(row)).join('\n') + '\n';
+      await writeFile(nativePath, bytes);
+      await writeFile(join(proof, 'invalid-effects-' + index + '.jsonl'), bytes, { flag: 'wx' });
+      await assert.rejects(inspectIsolatedIntroductionResume({ ...previous, session: { path: nativePath, sha256: sha(bytes) } }, options));
+    }
+    await writeFile(nativePath, native);
+    assert.equal((await inspectIsolatedIntroductionResume(previous, options)).native.sha256, sha(native));
   });
 });

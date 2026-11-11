@@ -80,6 +80,7 @@
   "outside_finite_models": [
     {
       "name": "daily View and owned application experiment",
+      "isolated_resume_effects": "The original C1 calls omit readOnly; their immutable paired results explicitly prove version 1, remote_writes none, author_content unchanged and empty retention. Historical admission checks that completed disposition and isError false, not a requested flag. Missing/unknown/retained or inconsistent receipts fail closed. Existing metadata-only notion_list remains separately bounded. The first argument-based admission refusal, new RED/GREEN regressions and exact real-C1 offline admission remain recorded; none starts a model or source request.",
       "tests": [
         "scripts/verify-pi-daily-candidate.test.mjs",
         "scripts/verify-pi-daily-resume.test.mjs",
