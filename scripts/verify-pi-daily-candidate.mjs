@@ -26,14 +26,26 @@ const identifier = value => typeof value === 'string' && /^[A-Za-z0-9_.-]{1,120}
 const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value);
 const { parse: parseYaml } = createRequire(new URL('../packages/context-broker/package.json', import.meta.url))('yaml');
 
-/** Inspect a fresh linear native session independently of the model's answer.
- * Forked histories need the host's branch projector, not this print-session check. */
-export function inspectCandidatePrintSession(text, { provider, model, expectedUserMessages = 1 }) {
+/** Inspect a linear native session independently of the model's answer.
+ * Only an explicitly bound public full-history fork may have a parent header. */
+export function inspectCandidatePrintSession(text, { provider, model, expectedUserMessages = 1, fork }) {
   assert.ok(Number.isSafeInteger(expectedUserMessages) && expectedUserMessages > 0);
   assert.ok(typeof text === 'string' && text.endsWith('\n'), 'Retain a complete native JSONL session');
   const rows = text.trimEnd().split('\n').map((line, index) => ({ value: JSON.parse(line), line: index + 1 }));
   assert.equal(rows[0]?.value.type, 'session');
-  assert.ok(typeof rows[0].value.id === 'string' && !rows[0].value.parentSession, 'Use a fresh session, not a copied or forked history');
+  const header = rows[0].value;
+  assert.ok(typeof header.id === 'string');
+  if (fork) {
+    assert.equal(header.version, 3); assert.equal(header.parentSession, fork.parentSession); assert.equal(header.cwd, fork.cwd);
+    assert.ok(typeof fork.sourceSessionId === 'string' && header.id !== fork.sourceSessionId);
+    assert.ok(typeof header.timestamp === 'string' && Number.isFinite(Date.parse(header.timestamp)));
+    assert.ok(Number.isSafeInteger(fork.history.bytes) && fork.history.bytes > 0 && digest(fork.history.sha256));
+    const bytes = Buffer.from(text), offset = bytes.indexOf(10) + 1;
+    const retained = bytes.subarray(offset, offset + fork.history.bytes);
+    assert.equal(retained.length, fork.history.bytes); assert.equal(hash(retained), fork.history.sha256, 'The public fork changed its bound non-header history');
+    assert.equal(retained.at(-1), 10);
+    assert.equal(retained.toString('utf8').trimEnd().split('\n').length, fork.history.entries);
+  } else assert.ok(!header.parentSession, 'Use a fresh session, not an unbound forked history');
   const seen = new Set(), calls = new Map(), models = [], finals = [], userLines = [], projections = [];
   let previous = null;
   for (const { value: row, line } of rows.slice(1)) {
@@ -88,7 +100,8 @@ export function inspectCandidatePrintSession(text, { provider, model, expectedUs
     lines: rows.length, models, userLines, calls: [...calls.values()].filter(call => call.retractedLine === undefined),
     retractedCalls: [...calls.values()].filter(call => call.retractedLine !== undefined), projections, finals,
     errors: [...calls.values()].filter(call => call.isError).map(call => ({ id: call.id, name: call.name, line: call.resultLine })),
-    scope: 'fresh-native-session-identity-and-tool-flow; provider delivery and task semantics require separate observations' };
+    ...(fork ? { fork: { header, history: fork.history } } : {}),
+    scope: (fork ? 'bound-public-full-history-fork' : 'fresh-native-session') + '-identity-and-tool-flow; provider delivery and task semantics require separate observations' };
 }
 
 export function candidatePlan(config) {
@@ -684,9 +697,9 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
   return { status: result.status, scope: result.scope, evidence, error: result.error, turns: result.turns, semanticReview: result.semanticReview };
 }
 
-/** Read-only admission for an explicitly selected introduction-candidate cwd.
+/** Read-only admission for an explicitly reviewed public introduction fork.
  * The caller still binds the original passed result and reviews its semantics. */
-export async function inspectIsolatedIntroductionResume(previous, { oldSource, project }) {
+export async function inspectIntroductionForkSource(previous, { oldSource, project }) {
   assert.equal(previous?.scope, 'project-scoped-candidate-print');
   assert.equal(previous.status, 'passed');
   assert.equal(previous.project, undefined); assert.equal(project, undefined);
@@ -708,6 +721,10 @@ export async function inspectIsolatedIntroductionResume(previous, { oldSource, p
   const nativeText = native.toString('utf8');
   const audit = inspectCandidatePrintSession(nativeText, { provider: 'magpie', model: 'group/worker' });
   const rows = nativeText.trimEnd().split('\n').map(JSON.parse);
+  assert.equal(rows[0].cwd, cwd, 'The source header must name its reviewed original cwd');
+  const history = native.subarray(native.indexOf(10) + 1);
+  assert.ok(Buffer.from(rows.slice(1).map(row => JSON.stringify(row)).join('\n') + '\n').equals(history),
+    'Public fork serialization must preserve every original non-header byte');
   const noWrites = effects => effects?.version === 1 && effects.remote_writes === 'none'
     && effects.author_content === 'unchanged' && Array.isArray(effects.retention) && effects.retention.length === 0;
   assert.ok(audit.calls.every(call => {
@@ -720,13 +737,45 @@ export async function inspectIsolatedIntroductionResume(previous, { oldSource, p
   }));
   return { originalCwd: cwd, originalBrokerRoot,
     settings: { path: settingsPath, bytes: settings.length, sha256: hash(settings) },
-    native: { path: previous.session.path, bytes: native.length, sha256: hash(native) } };
+    native: { path: previous.session.path, realpath: await realpath(previous.session.path), bytes: native.length, sha256: hash(native) },
+    header: rows[0], history: { bytes: history.length, sha256: hash(history), entries: rows.length - 1 } };
+}
+
+/** Explicit pre-prompt identity gate. The observation extension stays passive. */
+export function guardCandidateInputIdentity(api, { fs, crypto, output, expected }) {
+  let inputs = 0;
+  api.on('input', (event, ctx) => {
+    const row = { version: 1, phase: 'input_identity_guard', input: ++inputs, allowed: false, expected, observed: {} };
+    try {
+      if (inputs !== 1) throw new Error('Only the frozen single introduction continuation is allowed');
+      const commands = api.getCommands(), brokers = commands.filter(command => command.name === 'context-broker');
+      row.observed.brokers = brokers.map(command => command.sourceInfo?.path);
+      if (brokers.length !== 1) throw new Error('Expected exactly one actual Broker command');
+      const entry = fs.realpathSync(brokers[0].sourceInfo.path);
+      row.observed.entry = { realpath: entry, sha256: entry === expected.entry.realpath
+        ? crypto.createHash('sha256').update(fs.readFileSync(entry)).digest('hex') : null };
+      Object.assign(row.observed, { cwd: fs.realpathSync(ctx.cwd), provider: ctx.model?.provider, model: ctx.model?.id,
+        thinkingLevel: api.getThinkingLevel(), nativeSkillCount: commands.filter(command => command.source === 'skill').length,
+        promptSha256: crypto.createHash('sha256').update(event.text).digest('hex') });
+      row.allowed = entry === expected.entry.realpath && row.observed.entry.sha256 === expected.entry.sha256
+        && row.observed.cwd === expected.cwd && row.observed.provider === expected.provider && row.observed.model === expected.model
+        && row.observed.thinkingLevel === expected.thinkingLevel && row.observed.nativeSkillCount === expected.nativeSkillCount
+        && !event.text.startsWith('/') && row.observed.promptSha256 === expected.promptSha256;
+      if (!row.allowed) throw new Error('The actual host or prompt differs from the frozen introduction candidate');
+    } catch (error) { row.allowed = false; row.error = { message: error?.message ?? String(error) }; }
+    try { fs.writeFileSync(output, JSON.stringify(row) + '\n', { flag: inputs === 1 ? 'wx' : 'a', mode: 0o600 }); }
+    catch (error) {
+      row.allowed = false; row.persistenceError = { message: error?.message ?? String(error) };
+      try { process.stderr.write(JSON.stringify(row) + '\n'); } catch { /* Still fail closed if both evidence outputs fail. */ }
+    }
+    return { action: row.allowed ? 'continue' : 'handled' };
+  });
 }
 
 /** Run one real native print submission with the normal HOME and extensions.
  * The optional -ns arm changes only Pi's native Skill discovery. A continuation
- * preserves its original native evidence and reuses its owned Store. An explicit
- * introduction candidate can use a new empty cwd, recorded as a changed condition.
+ * preserves its original native evidence and reuses its owned Store. An explicitly
+ * reviewed introduction may use the public --fork into a new empty cwd/header.
  * This is a source candidate boundary, not an installed-package release gate. */
 export async function runCandidatePrint(config) {
   assert.equal(config.version, 1); assert.equal(config.scope, 'project-scoped-candidate-print');
@@ -734,8 +783,13 @@ export async function runCandidatePrint(config) {
   assert.ok(['normal', 'notion-only'].includes(config.arm) && identifier(config.id));
   assert.ok(typeof config.prompt === 'string' && config.prompt.trim());
   assert.ok(config.project === undefined || config.project === 'owned-ticket-service');
-  assert.ok(config.isolateResumeCwd === undefined || config.isolateResumeCwd === true);
-  if (config.isolateResumeCwd) assert.ok(config.resumeFrom);
+  assert.equal(config.isolateResumeCwd, undefined, 'isolateResumeCwd cannot override native resume cwd; use explicit --fork via forkIntroductionResume');
+  assert.ok(config.forkIntroductionResume === undefined || config.forkIntroductionResume === true);
+  if (config.forkIntroductionResume) {
+    assert.ok(config.resumeFrom); assert.equal(config.arm, 'normal', 'The reviewed introduction fork retains normal native discovery');
+    assert.equal(config.project, undefined, 'Only the reviewed pure introduction may fork');
+    assert.ok(!config.prompt.trimStart().startsWith('/'), 'The introduction fork requires its fixed non-slash prompt');
+  }
   assert.ok(isAbsolute(config.evidenceRoot) && !inside(root, config.evidenceRoot));
   assert.ok(isAbsolute(config.brokerRoot) && config.sourceId && config.database);
   assert.ok(process.env.NOTION_API_TOKEN?.trim(), 'Use the already authorized Notion identity');
@@ -795,9 +849,9 @@ export async function runCandidatePrint(config) {
     assert.equal(previous.database, config.database); assert.equal(previous.runtime.sdk_sha256, runtime.sdk_sha256);
     assert.equal((await identity(previous.session.path)).sha256, previous.session.sha256);
   }
-  const isolatedResume = config.isolateResumeCwd
-    ? await inspectIsolatedIntroductionResume(previous, { oldSource, project: config.project }) : null;
-  const cwd = isolatedResume ? await mkdtemp('/private/tmp/notion-candidate-print-')
+  const introductionFork = config.forkIntroductionResume
+    ? await inspectIntroductionForkSource(previous, { oldSource, project: config.project }) : null;
+  const cwd = introductionFork ? await mkdtemp('/private/tmp/notion-candidate-print-')
     : previous?.launch.cwd ?? await mkdtemp('/private/tmp/notion-candidate-print-');
   if (previous) assert.equal(previous.project?.kind, config.project, 'A continuation must retain its original application');
   const project = previous?.project ?? (config.project ? { ...await createOwnedGraphProject(cwd), kind: config.project } : undefined);
@@ -805,7 +859,7 @@ export async function runCandidatePrint(config) {
   const control = join(evidence, 'observation'), sessions = join(evidence, 'sessions'), responses = join(control, 'sdk-responses'), payloads = join(control, 'provider-payloads');
   for (const path of [join(cwd, '.pi'), stateRoot, control, sessions, responses, payloads]) await mkdir(path, { recursive: true, mode: 0o700 });
   const projectSettings = candidateProjectSettings(oldSource, config.brokerRoot);
-  if (previous && !isolatedResume) assert.deepEqual(await json(join(cwd, '.pi/settings.json')), projectSettings);
+  if (previous && !introductionFork) assert.deepEqual(await json(join(cwd, '.pi/settings.json')), projectSettings);
   else await save(join(cwd, '.pi/settings.json'), projectSettings);
   const sourceCache = join(stateRoot, 'broker-cache'), state = join(stateRoot, 'ntn/state');
   const source = candidateSourceConfig(originalSource, { sourceId: config.sourceId, database: config.database, cacheDir: sourceCache, viewId: config.viewId });
@@ -819,6 +873,13 @@ export async function runCandidatePrint(config) {
   const costExtension = join(control, 'cost.mjs'), transportExtension = join(control, 'transport.mjs'), taskExtension = join(control, 'tasks.mjs');
   const sourcePreload = join(control, 'source.mjs'), sdkPreload = join(control, 'sdk.mjs');
   const cliGuard = join(control, 'public-cli-guard.mjs'), cliGuardLedger = join(control, 'public-cli-guard.jsonl');
+  const inputGuard = join(control, 'input-identity-guard.mjs'), inputGuardLedger = join(control, 'input-identity-guard.jsonl');
+  const forkBinding = introductionFork ? { parentSession: introductionFork.native.realpath, sourceSessionId: introductionFork.header.id,
+    cwd: await realpath(cwd), history: introductionFork.history } : null;
+  if (introductionFork) await writeFile(inputGuard, "import fs from 'node:fs';import crypto from 'node:crypto';export default api=>("
+    + guardCandidateInputIdentity.toString() + ')(api,{fs,crypto,output:' + JSON.stringify(inputGuardLedger) + ',expected:'
+    + JSON.stringify({ entry: baselineFiles[1], cwd: forkBinding.cwd, provider: 'magpie', model: 'group/worker', thinkingLevel: 'high',
+      nativeSkillCount: 69, promptSha256: hash(config.prompt) }) + '});\n', { flag: 'wx', mode: 0o600 });
   if (cliPolicy) await writeFile(cliGuard, "import fs from 'node:fs';const review=" + reviewCandidateCliCommand.toString()
     + ';export default api=>(' + candidateCliGuard.toString() + ')(api,{fs,review,output:' + JSON.stringify(cliGuardLedger)
     + ',policy:' + JSON.stringify(cliPolicy) + '});\n', { flag: 'wx', mode: 0o600 });
@@ -840,7 +901,7 @@ export async function runCandidatePrint(config) {
   if (cliPolicy) Object.assign(env, cliPolicy.stateRoots);
   delete env.NTN_SKILLS_DEV_ROOT;
   const args = ['-p', ...(config.arm === 'notion-only' ? ['-ns'] : []), '--approve', '--session-dir', sessions, '--model', config.model, '--thinking', config.thinkingLevel,
-    '-e', costExtension, '-e', transportExtension, '-e', taskExtension];
+    ...(introductionFork ? ['-e', inputGuard] : []), '-e', costExtension, '-e', transportExtension, '-e', taskExtension];
   if (cliPolicy) args.push('-e', cliGuard);
   if (project) {
     const guard = join(control, 'project-guard.mjs');
@@ -849,7 +910,8 @@ export async function runCandidatePrint(config) {
     args.push('-e', guard);
   }
   let prefix;
-  if (previous) {
+  if (introductionFork) args.push('--fork', forkBinding.parentSession);
+  else if (previous) {
     prefix = await readFile(previous.session.path);
     const session = join(sessions, basename(previous.session.path));
     await writeFile(session, prefix, { flag: 'wx', mode: 0o600 }); args.push('--session', session);
@@ -863,8 +925,8 @@ export async function runCandidatePrint(config) {
       projectPackageOverrideOnly: true, nativeSkillDiscovery: config.arm !== 'notion-only', sourceStateStartsEmpty: !previous && (!cliPolicy || cliPolicy.mode === 'owned-description-update'),
       cliDevRootOverride: null, inheritedCliDevRootOverrideRemoved: Boolean(process.env.NTN_SKILLS_DEV_ROOT),
       previous: config.resumeFrom ?? null,
-      isolatedIntroductionResume: isolatedResume ? { ...isolatedResume, newCwd: cwd, newBrokerRoot: config.brokerRoot } : null,
-      sessionContinuation: isolatedResume ? 'copied-owned-linear-history-and-owned-warm-store; new-empty-cwd-and-candidate-package; new-process'
+      introductionFork: introductionFork ? { ...introductionFork, newCwd: cwd, newBrokerRoot: config.brokerRoot, binding: forkBinding } : null,
+      sessionContinuation: introductionFork ? 'public-Pi-full-history-fork-and-owned-warm-store; new-header-cwd-and-candidate-package; new-process'
         : previous ? 'copied-owned-linear-history-and-owned-warm-store; new-process' : 'new-session-and-process' },
     semanticReview: 'required', artifactBoundary: 'actual source package and bundled CLI/SDK; not an installed release gate' };
   if (cliPolicy) result.publicCli = { entry: cliProtected[0], stateRoots: cliPolicy.stateRoots, protectedFiles: cliProtected,
@@ -886,6 +948,11 @@ export async function runCandidatePrint(config) {
       child.once('close', (code, signal) => { clearTimeout(timer); resolveProcess({ pid: child.pid, code, signal, timedOut, startedNs, endedNs: process.hrtime.bigint().toString() }); });
     });
     assert.equal(result.process.code, 0, 'Native print process failed');
+    if (introductionFork) {
+      result.inputIdentityGuard = await readRows(inputGuardLedger);
+      assert.equal(result.inputIdentityGuard.length, 1);
+      assert.equal(result.inputIdentityGuard[0].allowed, true, 'The pre-prompt candidate identity guard rejected the input');
+    }
     const actualHost = await json(hostOutput);
     assert.equal(actualHost.model.provider, 'magpie'); assert.equal(actualHost.model.id, 'group/worker');
     const brokers = actualHost.commands.filter(command => command.name === 'context-broker');
@@ -898,7 +965,8 @@ export async function runCandidatePrint(config) {
     const sessionBytes = await readFile(actualHost.sessionFile);
     if (prefix) assert.equal(hash(sessionBytes.subarray(0, prefix.length)), hash(prefix), 'The retained native history changed');
     result.session = await identity(actualHost.sessionFile);
-    result.nativeAudit = inspectCandidatePrintSession(sessionBytes.toString('utf8'), { provider: 'magpie', model: 'group/worker', expectedUserMessages: result.expectedUserMessages });
+    result.nativeAudit = inspectCandidatePrintSession(sessionBytes.toString('utf8'), { provider: 'magpie', model: 'group/worker', expectedUserMessages: result.expectedUserMessages,
+      ...(forkBinding ? { fork: forkBinding } : {}) });
     const cost = await readConsumptionCostEvents(costs), wire = await readProviderTransport(transport), task = await readRows(tasks);
     result.source = await readSourceObservation(sourceLedger); result.transportCoverage = candidateTransportCoverage(wire);
     assert.equal(result.source.complete, true); assert.deepEqual(result.source.errors, []);
@@ -933,11 +1001,11 @@ export async function runCandidatePrint(config) {
     if (project) result.projectFilesUnchanged = (await Promise.all(project.files.map(async file => (await identity(join(project.root, file.path))).sha256 === file.sha256))).every(Boolean);
     if (cliPolicy) result.publicCliProtectedFilesUnchanged = (await Promise.all(cliProtected.map(async file => (await identity(file.path)).sha256 === file.sha256))).every(Boolean);
     if (previous) result.originalSessionUnchanged = (await identity(previous.session.path)).sha256 === previous.session.sha256;
-    if (isolatedResume) {
+    if (introductionFork) {
       result.originalResumeResultUnchanged = (await identity(config.resumeFrom.path)).sha256 === config.resumeFrom.sha256;
       try {
-        result.originalIntroductionCwdAfter = await inspectIsolatedIntroductionResume(previous, { oldSource, project: config.project });
-        assert.deepEqual(result.originalIntroductionCwdAfter, isolatedResume);
+        result.originalIntroductionCwdAfter = await inspectIntroductionForkSource(previous, { oldSource, project: config.project });
+        assert.deepEqual(result.originalIntroductionCwdAfter, introductionFork);
         result.originalIntroductionCwdUnchanged = true;
       } catch (error) {
         result.originalIntroductionCwdUnchanged = false;

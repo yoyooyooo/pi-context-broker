@@ -100,11 +100,19 @@ how 作者原件经公开 read/dry-run 审阅后由 root 一次公开 write 并�
 
 23条失效声明的受审候选、正常doctor和公开find pstack 5/5保持；全局入口激活仍归AH-638。最终16冷配置为8个technical passed、6个failed、2个窄侧not_run。已完成介绍中6份准确；setup留出覆盖全部10项但有两处解释偏差，D-named独立臂另把作者flag误推为运行时限制、把坐标偏好写成禁令，正常臂准确通过。A/B/D-natural两臂共6个任务均超时且无完整产物；完整正文和真实项目输入不能替代交付。独立strict batch协议通过，原warm failed不改判，A资源续问因没有合格产物保持not_run。终局原件索引为`final-v3-terminal-index.json`（SHA `928f4b1e738db8f76a9f9ae2ee8b7544f23fb64353f9a5c6ea7e47966769e55e`）；全部真实模型失败usage保持unknown，已完响应只计下界。完整生成产物及helper实驱未满足，AH-639/AH-638继续开放；AH-623按独立发现验收判断，未引入额外发现平台或模型。
 
-### 候选暖续问的空 cwd 接线
+### 已保留失败的 v4 空 cwd 接线
 
 原print续问对旧cwd的包映射做deepEqual，换候选包路径会在启动Pi前拒绝；`warm-v4-resume-contract-red.json`保留真实旧入口拒绝，0个Pi/model/source请求。默认续问继续保留该保护。仅显式`isolateResumeCwd`允许已独审、成功单轮的纯介绍换到新的空owned cwd：原任务不得有owned项目、执行或项目枚举，原native精确hash与只读来源工具须通过，原cwd只能有`.pi/settings.json`且包映射绑定原结果。原result/native/settings均不修改，结束后再次核hash；新的cwd与包映射明确记录，原owned Store继续复用，实际自动metadata按账本记录。
 
 初版27项回归通过后，真实C1准入揭示历史参数假设过严：原7个read均未传readOnly，但完整配对结果都有version1/none/unchanged/空retention。初版拒绝保留，不重写原7次调用。准入改为检查实际已闭合效果回执，缺失、unknown、retained、retention矛盾或isError均拒绝；只读目录查询按既有metadata语义单列。新增无flag但none正例和有flag却坏回执反例，`verify-pi-daily-resume.test.mjs`与原candidate测试现共28项通过，真实C1离线准入也通过，原result/native/settings前后hash相等；这些预检没有启动Pi/model/source。
 
 边界同时覆盖原默认拒绝、项目/失败/已续问/执行型父任务、额外文件、错误settings和native前缀漂移。纯介绍语义由既有C1完整独审与本次冻结调用合同确定，不声称helper能自动理解任意任务。该驱动接线不改产品状态机或源码覆盖的有限转移；不新增TLA模型、不把回归通过当成v4真实通过。v4按新driver commit与原39ad包双身份单独冻结一次，沿原成功C1前缀，不带旧failed warm追加；新cwd属于条件变化，不能据此作同条件性能比较或回填v3分母。
+
+唯一v4终局为failed：实际host仍加载af7030f2，payload只有811 B旧guidance。新observer已恢复9份完整收据，不等于39ad产品指导通过；最终例子另有像素/性能排他句的准确性缺口。`final-v4-C-warm-summary.json`（SHA `204b070f55865d6608078d10254bcbff27436e709390e55c28235749b07bd232`）与两份独审完整保留。已安装Pi实际bundle证实`--session`取header.cwd再建project settings，spawn新cwd不能覆盖它；只读因果见`reviews/v4-autoload-causal-review.json`（SHA `2c85be78958ddfe05404cd7491011ca9276721d5ca718305d877b355121a53ae`）。旧`isolateResumeCwd`现于I/O/模型前拒绝，不能继续静默发送错误候选。
+
+### 已审纯介绍的公开 native fork
+
+显式`forkIntroductionResume`仅供本次已独审C1纯介绍正常臂，保留原effects准入、无owned项目和固定非slash原题。默认resume继续原settings deepEqual与copy/`--session`。新分支复用Pi公开`--fork`原C1绝对路径，复用原Store，另记新header/cwd/包映射；原C1的150条非header历史453156 B、SHA `c6633549425dfb8d2f4cf8d97291e39c4ce66599d74a910a326ca06e05692299`须逐字同序。原native/result/settings及34份不可变原件不变；新header明确核id/cwd/parentSession，未绑定fork仍拒绝，不能称整个原文件前缀相同。
+
+独立input guard在公开输入边界核单一Broker真实path/hash、实际cwd、worker/high、69 native命令与固定prompt hash；任何身份或文件/ledger异常都显式handled并记录失败，不能依赖宿主会吞掉的throw。guard注册前没有文件I/O，序列化函数无外部模块闭包，重复输入也拒绝；原observer保持被动。已有candidate/resume与新fork有界测试38/38通过，RED/GREEN均留存。直接调用已安装`SessionManager.forkFrom`的纯文件证明`warm-v5-file-fork-proof/result.json`（SHA `330fac63bbbd762c50622fc3ee8c85ca7b3ce1e51bdc7905b41f9c031d4b207d`）核150条原字节、35份原件/设置前后相等，0 Pi/model/HTTP；不冒充真实新包autoload或v5成功。后续唯一v5按新driver与原39ad包独立冻结，保留v3/v4失败与分母。仅此已证实接线，不新增配置平台、产品状态或有限模型证明。
 
