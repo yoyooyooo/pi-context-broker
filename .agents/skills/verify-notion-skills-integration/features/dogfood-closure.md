@@ -73,3 +73,20 @@ CLI/SDK 的 version-1 `effects` 描述本次消费：`remote_writes` 为 none、
 
 首个 A 独立臂真实调用 `ls -la && pwd && find . -maxdepth 3 -type d -o -type f | head -200`，只枚举 owned 项目。正常 Pi 指引要求用 bash 做文件枚举，而旧 print guard 把任何 bash 都算脚本执行。原任务禁止运行项目，并未禁止了解其文件；原样本仍保留旧 harness 的失败，不重标为通过。独立驱动修订仅对 `project: owned-ticket-service` 承认固定 cwd 中有限的 `pwd`、`ls`、有深度/输出上限的 `find` 组合；不解释通用 shell，不准内容搜索、外部路径、替换/重定向、项目或 CLI 执行。原 graph guard 没有可复用的 shell 白名单，因此沿用同一 Pi `tool_call` 阻断边界和五文件项目，不复制旧 graph runner。被动原件仍记 `executionTool: true`，另记 hash 绑定的目录检查，报告脚本执行与目录检查两个数量。此修订在新工作区冻结，只重验项目路线；C 的 View 对照继续原冻结驱动。任意其他 bash 在执行前拒绝，normal HOME/工具 schema 不改。正反例覆盖 changed cwd、外部 Skill 路径、substitution、redirection、第四个命令、超限 find/head 与 npm/node/CLI。
 
+### 已留存的失败、独立校准与 how-only 试点
+
+证据根为 `/Users/yoyo/Documents/code/personal/verification-evidence/ah623-639-638-20261111-daily`。所有已结束样本独立读取 native JSONL、完整工具参数/结果、来源 SDK trace 和实际 provider payload/wire，保留 `independent-observation-audit.json` 与 `timing-and-phase-accounting.json`。未完成响应的整任务 usage 为 unknown；已结束响应只能合计为下界。
+
+| 样本 | 实际终局 | 范围与保留原因 |
+| --- | --- | --- |
+| 原 A，`notion-only-A-notion-only-P8hFML` | failed，602.069秒 | 11工具、3请求、342059 B；正确自主选叶与完整读取不等于完成产物。旧 verifier 另把目录枚举计作禁止的执行；600秒内也没有完整 final，不能只归因为 harness。 |
+| A inventory 修订，`notion-only-A-notion-only-project-v2-o6OHOD` | failed，601.401秒 | 15工具、7请求、1053437 B；原枚举已有精确 owned-cwd/hash 回执。`read({paths:[3个sr:R],readOnly:true})` 被宿主参数判定拒绝；后续三个 scalar read 不能把整任务改为通过。另一条 `python3 -c` 仅计算80/81字符长度，被 guard 在执行前阻断，不误称业务执行。无完整产物，暂停第三次 A。 |
+| 原 C，`normal-pair1-C-baseline-opQInj` | failed，602.084秒 | 介绍任务读取 how 后扫描 agent 安装、委派并超时；child 已完成且独立保留原件/成本。原6个C的分母为1 failed、5 not_run，两个 heldout 也未运行。 |
+| 原 D-chat，`notion-only-D-chat-notion-only-ulzkDV` | failed，controller stop，340.595秒 | 原句含“今天一起把手头的工作做完”，具有续接意图；0工具门槛不适合作为纯闲聊判断。首请求无三个记忆 Skill 正文，模型依据既有目录/standing guidance 自主 use；不修改全局记忆规则。原 normal 对照保持 not_run。 |
+| 新独立问候校准“你好。”两臂 | passed | `-ns` 与 normal69 都是1请求、0工具、0 Skill正文。分别89323/124536 B、30.305/39.003秒；不是原D失败的替代，也不是纯Broker净开销对照。 |
+| how-only C，`normal-how-v2-pair1-C-baseline-VXMXOR` | passed，独立试点，128.570秒 | 3请求、2 scalar read、526684 B；poteto、unslop、create 与 README 完整，3550 B final 只介绍，无脚本或委派。两版 how 正文在全部 payload 都是0，因此不能把通过因果归于 how 改文。 |
+
+how 作者原件经公开 read/dry-run 审阅后由 root 一次公开 write 并原生完整读回，只有新增意图入口；native3290 B SHA `d225b0f007dd4d0c09f80e2e74bb2182bcd95a22bfe05a38b05bcf9ba4c74b6c`，consumer3622 B SHA `584998e556c1e44c5b747c80d7359de1b7283d547f6780d6f1fb1663315c897a`，pin `s_ce34a81d7f078bb80c7c1f389e47ed27d260f0c7c21a923b3bfae43267c8bb6b`。所有原规则、native链接、元数据、Members/Requires和参考字节均保留。poteto候选因公开 write plan 的64KiB限制未应用，原拒绝保留。
+
+`how-v2-formal-series-paused.json`（SHA `c1932bcb29906a6594fff46d82064e38a986a85dd2f5cf20be310be43cdb326b`）把已启动的1个通过样本单列试点，其余5个C与2个heldout不启动。正式三对及留出样本须等待同一个 batch只读修复版重新冻结；不把新旧runtime跨版本相减，不把较少首轮目录当作完整任务收益。当前没有完成的可比View对，也没有生成helper实驱成功，窄View尚无采用证据。源码和有限模型不能替代这些待完成门槛。
+
