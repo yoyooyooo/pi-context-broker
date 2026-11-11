@@ -71,3 +71,5 @@ CLI/SDK 的 version-1 `effects` 描述本次消费：`remote_writes` 为 none、
 
 生成产物继续走 `retainGeneratedPlan` 和独立 `exerciseReviewedGeneratedHelper`，先审完整 bytes/hash，再复制到独立 owned 项目执行一个真实生成的 Node helper，最后按原 Evidence→系统 Trash→Evidence 合同核对。现有 npm test 不能代替生成 helper 执行。本次驱动参数接线不改变消费 availability/race、效果与 pin 状态语义，沿用现有 TLA+/正负 cfg；source coverage 仅增加实际测试/证据对应，不虚构新的模型证明。
 
+首个 A 独立臂真实调用 `ls -la && pwd && find . -maxdepth 3 -type d -o -type f | head -200`，只枚举 owned 项目。正常 Pi 指引要求用 bash 做文件枚举，而旧 print guard 把任何 bash 都算脚本执行。原任务禁止运行项目，并未禁止了解其文件；原样本仍保留旧 harness 的失败，不重标为通过。独立驱动修订仅对 `project: owned-ticket-service` 承认固定 cwd 中有限的 `pwd`、`ls`、有深度/输出上限的 `find` 组合；不解释通用 shell，不准内容搜索、外部路径、替换/重定向、项目或 CLI 执行。原 graph guard 没有可复用的 shell 白名单，因此沿用同一 Pi `tool_call` 阻断边界和五文件项目，不复制旧 graph runner。被动原件仍记 `executionTool: true`，另记 hash 绑定的目录检查，报告脚本执行与目录检查两个数量。此修订在新工作区冻结，只重验项目路线；C 的 View 对照继续原冻结驱动。任意其他 bash 在执行前拒绝，normal HOME/工具 schema 不改。正反例覆盖 changed cwd、外部 Skill 路径、substitution、redirection、第四个命令、超限 find/head 与 npm/node/CLI。
+
