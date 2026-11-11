@@ -61,3 +61,13 @@ CLI/SDK 的 version-1 `effects` 描述本次消费：`remote_writes` 为 none、
 
 不永久删除文件，不用 git reset --hard、git clean 或批量 restore。临时材料通过系统 Trash 回收，原始证据和未知操作保持。日用最终继续现有 CLI shim/NTN_SKILLS_DEV_ROOT 与 Broker 源入口，不新增发行目录或第二套缓存系统。
 
+### AH-623 / AH-639 / AH-638 日用 View 配对实验
+
+本次仅在 `runCandidatePrint` 增加显式 `viewId`，映射原 source 的 `default_view_id`，以及复用原五文件 owned Ticket 项目。不同库不得隐式继承旧 View；同库显式选择现有 View，不修改远端 View 或权限。正常臂保留 HOME、69 native commands、原 packages/MCP/安全设置，23 条已证实失效声明仅使用原已审阅进程 overlay。`-ns` 单独记录为策略差异，不能加算成 View 收益。
+
+首轮前冻结固定 worker/high、同一 CLI/Broker/嵌 SDK/包哈希、任务全文、source scope、缓存空起点、tool exposure、成功门槛、预算与顺序。至少三对同一 C 原句冷运行比较原 Default View 与既有 poteto 单根 View，顺序宽窄、窄宽、宽窄；一个独立留出任务不参与调优。A/B 复用原 `frozenPrompt`，模型读取真实项目并生成完整 Skill 文件；私有 oracle 与审阅材料留在项目外。C、setup-pstack、多 Skill 介绍、D 无 `$` 名称/自然任务/闲聊按意图验收，不强迫执行工作流。
+
+每次运行事后独立核对原生 JSONL、实际模型/thinking、toolCallId、pin/File ID、完整正文和资源 hash、provider payload 与 wire hash。所有失败和未运行留在冻结分母。报告逐轮累计输入/usage、模型与工具轮数、source metadata/body/retention 请求与字节；未观测保持 unknown。明确效果、完整性或只读红线失败时不推荐候选，不能只凭首轮目录字节减少宣称改善。源码候选不证明全局日用激活、Notion UI 或物理 Mini。
+
+生成产物继续走 `retainGeneratedPlan` 和独立 `exerciseReviewedGeneratedHelper`，先审完整 bytes/hash，再复制到独立 owned 项目执行一个真实生成的 Node helper，最后按原 Evidence→系统 Trash→Evidence 合同核对。现有 npm test 不能代替生成 helper 执行。本次驱动参数接线不改变消费 availability/race、效果与 pin 状态语义，沿用现有 TLA+/正负 cfg；source coverage 仅增加实际测试/证据对应，不虚构新的模型证明。
+
