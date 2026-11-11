@@ -3,7 +3,7 @@
   "source_base": "1c11c57849f97d2c13b82eb8a62fe6b6065741c4",
   "kind": "composed_design_contracts_with_real_flow_replay_not_refinement_proof",
   "files": {
-    "packages/context-broker/src/host-skills.ts": "a5817735d089ebf188200d1451957587572779270610cde8713075b82e1f91ad",
+    "packages/context-broker/src/host-skills.ts": "1d9f9d2651bbfbf84f237b05c79313f5aab941e7ecfba54263889d4442b5b032",
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/prepare-protocol.ts": "a933a092d39d9abb860ce614c959b13c5e26c1cf830bdb1f9f715b0adf2c283a",
     "packages/context-broker/src/skill-context-projection.ts": "15887381449784a0c8ffd8963e8967d900b9557a943e6d974506a8e55b9e11bf",
@@ -151,5 +151,13 @@
       "General LLM behavior or content truth"
     ],
     "independent_verification": "Node evidence validators independently validate optional version-1 effects while retaining exact source/encoded spans and legacy receipts. Scalar v2 accepts only the untouched native result plus a matching semantic footer; malformed/false-zero receipts and altered spans fail. The projection module uses an explicit .ts runtime import so Node 24 evidence consumers can load the same compiler."
+  },
+  "admission_diagnostics_review": {
+    "issue": "AH-925",
+    "implementation_commit": "93ca4a714c87d22ad5124e066ff3b2f5562e2337",
+    "change": "Attach bounded phase/stage/code and lifecycle context to existing scalar read refusal decisions; preserve public ambiguity candidates.",
+    "ManagementToDelivery": "No graph preparation, selected version, resource identity, publication or body delivery transition changed.",
+    "RetentionDisclosure": "Read-only capability and request guard, observed/unknown effects, author-content distinction and reporting rules unchanged. Admission fields do not infer effects or authorize writes.",
+    "limits": "The unchanged finite model results cannot identify the missing admission cause of the historical cold-resource failure."
   }
 }

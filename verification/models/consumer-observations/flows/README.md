@@ -36,6 +36,10 @@ AH-953 的实施合同在 CLI consume/readSkill/prepareGraph 返回 version-1 `e
 
 `coverage.json`绑定实际Broker状态、协议与投影文件，并明确CLI管理步骤的抽象边界。源码hash变化先重审对应，不直接替换hash。真实原件、SDK trace、模型session、只读缓存统计和操作receipt按运行保留；数据写入权威仍由原管理operation负责。
 
+AH-925 的 `93ca4a714c87d22ad5124e066ff3b2f5562e2337` 只在原读取拒绝回执附带 stage/code、开始/当前 generation 和 signal 状态；公开消歧候选保留原结构。`ManagementToDelivery` 的完整准备、固定选择、参考归属和交付提交均未改变。`RetentionDisclosure` 的 readOnly 下传、首次写前拒绝、已观察及 unknown effects 也未改变，新增 admission 不参与效果推断或零写报告。此审阅同步本流程目录自己的 host-skills 源码绑定，不能以父目录 coverage 的更新替代；13 配置继续使用原模型与正负预期，原冷资源失败原因仍 unknown。
+
+2026-11-11 的绑定复核用原 statechart `c742dd61706fbacc1b95f1a20b7b988cf096ce6c` 与 TLC 1.7.4 完成全部13配置。`ah925-flows-source-binding/summary.json` 中每项 `matches: true`、探索完整且未截断；8个故意失败/历史反例配置仍命中原定性质，不把它们改称性质成立。原始报告、TLC 和 Mermaid 保留在 `/Users/yoyo/Documents/code/personal/verification-evidence/ah955-20261111/ah925-flows-source-binding`，命令终局在相邻 `ah925-cold-resource/flows-followup.json`。这次复跑不补足原冷资源故障缺失的 admission 原件。
+
 本次审阅起点：Broker `d472dbd0cf708890a3a3e58951485ad87f14d28c`；CLI `ca8cc946a662c486fee2817007d13763c3a57c0f`。Pro原件位于`verification-evidence/ah681-20261108/dogfood-flow-audit-5ZQLVa/`。本目录保存可再跑的模型和性质，不打包用户正文、认证、真实session或临时工具二进制。
 
 真实接口缺口回放：`native-review.json`连结原生44行use、48行toolResult、52行最终答复及六个POST请求ID。首先核对工具返回结构和原始HTTP，不能由自然语言模型的自述独立判定写入。其他故意破坏配置仅证明相应性质可失败，不能称为现产品另有四个Bug。
