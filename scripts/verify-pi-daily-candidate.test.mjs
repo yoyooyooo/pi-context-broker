@@ -38,6 +38,7 @@ test('native print inspection does not accept fallback models, orphan results, p
     value => { value[3].parentId = 'model'; },
     value => { value[3].targetId = 'not-in-session'; },
     value => { value[6].message.stopReason = 'error'; },
+    value => { value[6].message.stopReason = 'length'; },
     value => { value[0].parentSession = '/old/session.jsonl'; },
     value => { value.splice(5, 1); value[5].parentId = 'call'; },
   ]) { const changed = structuredClone(rows); mutate(changed); assert.throws(() => inspectCandidatePrintSession(jsonl(changed), expectedPrintModel)); }

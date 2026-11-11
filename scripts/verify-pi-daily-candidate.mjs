@@ -777,12 +777,38 @@ export function guardCandidateInputIdentity(api, { fs, crypto, output, expected 
  * preserves its original native evidence and reuses its owned Store. An explicitly
  * reviewed introduction may use the public --fork into a new empty cwd/header.
  * This is a source candidate boundary, not an installed-package release gate. */
+/** Explicit experimental policy, kept separate from passive payload capture. */
+export function candidateCompletionBudgetSource(maxCompletionTokens) {
+  if (maxCompletionTokens === undefined) return undefined;
+  assert.equal(maxCompletionTokens, 32768, 'The only reviewed completion-budget candidate is 32768');
+  return `export default api => api.on('before_provider_request', event => {
+  const payload = event.payload, prior = payload?.max_completion_tokens;
+  return { ...payload, max_completion_tokens: Number.isSafeInteger(prior) && prior > 0 ? Math.min(prior, 32768) : 32768 };
+});\n`;
+}
+
+export function inspectCandidateCompletionBudget(payload) {
+  assert.ok(payload && typeof payload === 'object' && !Array.isArray(payload));
+  assert.equal(payload.model, 'group/worker'); assert.equal(payload.reasoning_effort, 'high');
+  assert.equal(payload.max_completion_tokens, 32768, 'The actual candidate request must carry max_completion_tokens=32768');
+  assert.equal(Object.hasOwn(payload, 'max_tokens'), false, 'Do not combine completion budget fields');
+  return { model: payload.model, thinkingLevel: payload.reasoning_effort, maxCompletionTokens: payload.max_completion_tokens };
+}
+
+export function validateCandidateCompletionHistory(nativeAudit) {
+  assert.ok(Array.isArray(nativeAudit?.finals) && nativeAudit.finals.length > 0);
+  assert.ok(nativeAudit.finals.every(final => final.stopReason !== 'length'),
+    'The completion-budget candidate rejects every native length response, including a later recovered stop');
+  return { nativeFinalResponses: nativeAudit.finals.length, lengthResponses: 0 };
+}
+
 export async function runCandidatePrint(config) {
   assert.equal(config.version, 1); assert.equal(config.scope, 'project-scoped-candidate-print');
   assert.equal(config.model, 'magpie/group/worker'); assert.equal(config.thinkingLevel, 'high');
   assert.ok(['normal', 'notion-only'].includes(config.arm) && identifier(config.id));
   assert.ok(typeof config.prompt === 'string' && config.prompt.trim());
   assert.ok(config.project === undefined || config.project === 'owned-ticket-service');
+  const completionBudgetSource = candidateCompletionBudgetSource(config.maxCompletionTokens);
   assert.equal(config.isolateResumeCwd, undefined, 'isolateResumeCwd cannot override native resume cwd; use explicit --fork via forkIntroductionResume');
   assert.ok(config.forkIntroductionResume === undefined || config.forkIntroductionResume === true);
   if (config.forkIntroductionResume) {
@@ -871,6 +897,7 @@ export async function runCandidatePrint(config) {
   const costs = join(control, 'cost.jsonl'), transport = join(control, 'transport.jsonl'), tasks = join(control, 'tasks.jsonl');
   const sourceLedger = join(control, 'source.jsonl'), sdkLedger = join(control, 'sdk.jsonl'), hostOutput = join(control, 'host.json');
   const costExtension = join(control, 'cost.mjs'), transportExtension = join(control, 'transport.mjs'), taskExtension = join(control, 'tasks.mjs');
+  const completionBudgetExtension = join(control, 'completion-budget.mjs');
   const sourcePreload = join(control, 'source.mjs'), sdkPreload = join(control, 'sdk.mjs');
   const cliGuard = join(control, 'public-cli-guard.mjs'), cliGuardLedger = join(control, 'public-cli-guard.jsonl');
   const inputGuard = join(control, 'input-identity-guard.mjs'), inputGuardLedger = join(control, 'input-identity-guard.jsonl');
@@ -883,6 +910,7 @@ export async function runCandidatePrint(config) {
   if (cliPolicy) await writeFile(cliGuard, "import fs from 'node:fs';const review=" + reviewCandidateCliCommand.toString()
     + ';export default api=>(' + candidateCliGuard.toString() + ')(api,{fs,review,output:' + JSON.stringify(cliGuardLedger)
     + ',policy:' + JSON.stringify(cliPolicy) + '});\n', { flag: 'wx', mode: 0o600 });
+  if (completionBudgetSource) await writeFile(completionBudgetExtension, completionBudgetSource, { flag: 'wx', mode: 0o600 });
   await writeFile(costExtension, consumptionCostExtensionSource({ output: costs, checkoutRoot: root, runId: clockId, sampleId: config.id, clockId }), { flag: 'wx', mode: 0o600 });
   await writeFile(transportExtension, providerTransportExtensionSource({ output: transport, checkoutRoot: root, clockId }), { flag: 'wx', mode: 0o600 });
   await writeFile(taskExtension, "import fs from 'node:fs';import crypto from 'node:crypto';const inspectPayload=" + candidatePayloadBodies.toString()
@@ -901,7 +929,8 @@ export async function runCandidatePrint(config) {
   if (cliPolicy) Object.assign(env, cliPolicy.stateRoots);
   delete env.NTN_SKILLS_DEV_ROOT;
   const args = ['-p', ...(config.arm === 'notion-only' ? ['-ns'] : []), '--approve', '--session-dir', sessions, '--model', config.model, '--thinking', config.thinkingLevel,
-    ...(introductionFork ? ['-e', inputGuard] : []), '-e', costExtension, '-e', transportExtension, '-e', taskExtension];
+    ...(introductionFork ? ['-e', inputGuard] : []), ...(completionBudgetSource ? ['-e', completionBudgetExtension] : []),
+    '-e', costExtension, '-e', transportExtension, '-e', taskExtension];
   if (cliPolicy) args.push('-e', cliGuard);
   if (project) {
     const guard = join(control, 'project-guard.mjs');
@@ -924,6 +953,7 @@ export async function runCandidatePrint(config) {
     launch: { cwd, executable: host.file, args: [...host.prefix, ...args], normalHome: true, normalAgentDir: true, normalMcpAndExtensions: true,
       projectPackageOverrideOnly: true, nativeSkillDiscovery: config.arm !== 'notion-only', sourceStateStartsEmpty: !previous && (!cliPolicy || cliPolicy.mode === 'owned-description-update'),
       cliDevRootOverride: null, inheritedCliDevRootOverrideRemoved: Boolean(process.env.NTN_SKILLS_DEV_ROOT),
+      ...(completionBudgetSource ? { completionBudget: { maxCompletionTokens: config.maxCompletionTokens, policy: await identity(completionBudgetExtension) } } : {}),
       previous: config.resumeFrom ?? null,
       introductionFork: introductionFork ? { ...introductionFork, newCwd: cwd, newBrokerRoot: config.brokerRoot, binding: forkBinding } : null,
       sessionContinuation: introductionFork ? 'public-Pi-full-history-fork-and-owned-warm-store; new-header-cwd-and-candidate-package; new-process'
@@ -967,6 +997,7 @@ export async function runCandidatePrint(config) {
     result.session = await identity(actualHost.sessionFile);
     result.nativeAudit = inspectCandidatePrintSession(sessionBytes.toString('utf8'), { provider: 'magpie', model: 'group/worker', expectedUserMessages: result.expectedUserMessages,
       ...(forkBinding ? { fork: forkBinding } : {}) });
+    if (completionBudgetSource) result.completionBudgetAudit = { history: validateCandidateCompletionHistory(result.nativeAudit), payloads: [] };
     const cost = await readConsumptionCostEvents(costs), wire = await readProviderTransport(transport), task = await readRows(tasks);
     result.source = await readSourceObservation(sourceLedger); result.transportCoverage = candidateTransportCoverage(wire);
     assert.equal(result.source.complete, true); assert.deepEqual(result.source.errors, []);
@@ -985,6 +1016,7 @@ export async function runCandidatePrint(config) {
     result.assertions = validateCandidateTurn(config, { costs: cost.events, transport: wire, tasks: task }, { approvedCliCalls });
     for (const event of task.filter(event => event.phase === 'provider_payload')) {
       const actual = await identity(event.payloadFile); assert.equal(actual.sha256, event.sha256); assert.equal(actual.bytes, event.bytes);
+      if (completionBudgetSource) result.completionBudgetAudit.payloads.push({ ...inspectCandidateCompletionBudget(await json(actual.path)), file: actual });
     }
     if (project) result.generatedPlan = await retainGeneratedPlan({ evidence, project,
       final: task.filter(event => event.phase === 'assistant_final').at(-1), prompt: { sha256: hash(config.prompt) } });
