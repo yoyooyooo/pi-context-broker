@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import * as candidate from './verify-pi-daily-candidate.mjs';
 import { candidatePlan, candidateProjectSettings, candidateSourceConfig, candidateProjectInspection, guardCandidateProject, candidatePayloadBodies, observeCandidateTask, validateCandidateTurn, candidateTransportCoverage, containsProof, inspectCandidatePrintSession, reviewCandidateCliCommand, candidateCliGuard } from './verify-pi-daily-candidate.mjs';
 
 const sha = text => createHash('sha256').update(text).digest('hex');
@@ -301,4 +304,81 @@ test('task observer does not transform provider input or register tools/provider
   assert.equal(handlers.get('before_provider_request')({ payload }), undefined); assert.deepEqual(payload, before);
   assert.equal(writes.at(-1).bodies[0].occurrences, 1);
   handlers.get('session_shutdown')({}); assert.equal(writes.at(-1).complete, true);
+});
+
+test('normal-management state reuses only the existing process roots and never transfers cleanup or resume ownership', async t => {
+  const scratch = await mkdtemp('/tmp/notion-existing-state-proof-');
+  t.diagnostic(JSON.stringify({ ownedScratch: [scratch], cleanup: 'Retained for evidence-first system Trash cleanup.' }));
+  const roots = { NTN_SKILLS_HOME: '/normal/state/ntn-skills', NTN_SKILLS_CONFIG_HOME: '/normal/config/ntn-skills', NTN_SKILLS_CACHE_HOME: '/normal/cache/ntn-skills' };
+  const environment = { XDG_STATE_HOME: '/normal/state', XDG_CONFIG_HOME: '/normal/config', XDG_CACHE_HOME: '/normal/cache' };
+  const stateRoot = join(scratch, 'run-owned'), selected = [];
+  for (const [index, content] of ['before\n', 'edited\n'].entries()) {
+    const snapshot_id = 's_' + sha('snapshot-' + index), file_id = 'file-' + sha('reference');
+    const ref = 'skill://owner/references/render.md?snapshot=' + snapshot_id + '&file_id=' + file_id;
+    const value = { ok: true, record: { id: 'owner', locator: { database_id: 'owned-database' } }, scope: sha('scope'), snapshot_id,
+      version_id: sha('version-' + index), path: 'references/render.md', ref, source: 'local_snapshot', freshness: { policy: 'pinned' },
+      content, range: { start: 1, end: 2, total_lines: 2 }, has_more: false,
+      file_bindings: [{ path: 'references/render.md', file_id }], effects: { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] } };
+    const path = join(scratch, 'public-read-' + index + '.json'), bytes = JSON.stringify(value);
+    await writeFile(path, bytes, { flag: 'wx' }); selected.push({ path, sha256: sha(bytes), body: { bytes: Buffer.byteLength(content), sha256: sha(content) } });
+  }
+  const config = { database: 'owned-database', toolCallCount: 2, expectedBodies: selected.map(value => value.body),
+    existingState: { mode: 'normal-management', roots, managementReads: selected.map(({ path, sha256 }) => ({ path, sha256 })) } };
+  const options = { stateRoot, environment, home: '/normal/home' };
+  const before = await Promise.all(selected.map(value => readFile(value.path)));
+  const normal = await candidate.prepareCandidatePrintState({ ...config, arm: 'normal' }, options);
+  const isolated = await candidate.prepareCandidatePrintState({ ...config, arm: 'notion-only' }, options);
+  assert.deepEqual(normal, isolated); assert.deepEqual(normal.sourceState.roots, roots);
+  assert.equal(normal.sourceState.ownership, 'existing-user'); assert.equal(normal.sourceState.mode, 'normal-management');
+  assert.equal(normal.stateRoot, stateRoot); assert.deepEqual(normal.ownedPaths, [stateRoot]);
+  assert.deepEqual(normal.env, { ...roots, NTN_SKILLS_DATA_HOME: join(stateRoot, 'ntn/data') });
+  assert.equal(normal.sourceState.reads.length, 2);
+  const fresh = await candidate.prepareCandidatePrintState({}, options);
+  assert.equal(fresh.sourceState, undefined); assert.equal(fresh.env.NTN_SKILLS_HOME, join(stateRoot, 'ntn/state'));
+  assert.equal(fresh.env.NTN_SKILLS_CONFIG_HOME, join(stateRoot, 'ntn/config')); assert.equal(fresh.env.NTN_SKILLS_CACHE_HOME, join(stateRoot, 'ntn/cache'));
+  await assert.rejects(candidate.prepareCandidatePrintState({ ...config, existingState: { ...config.existingState, roots: { ...roots, NTN_SKILLS_HOME: '/replacement' } } }, options));
+  await assert.rejects(candidate.prepareCandidatePrintState(config, { ...options, environment: { ...environment, NTN_SKILLS_HOME: '/different-current-root' } }));
+  await assert.rejects(candidate.prepareCandidatePrintState(config, { ...options, stateRoot: '/normal' }));
+  await assert.rejects(candidate.prepareCandidatePrintState({ ...config, resumeFrom: { path: '/old/result.json', sha256: sha('old') } }, options));
+  await assert.rejects(candidate.prepareCandidatePrintState({}, { ...options, previous: { stateRoot, sourceState: normal.sourceState } }));
+  await assert.rejects(candidate.prepareCandidatePrintState({ ...config, publicCli: { mode: 'original-create-recovery' } }, options));
+  const wrongReceipt = structuredClone(config); wrongReceipt.existingState.managementReads[0].sha256 = sha('changed receipt');
+  await assert.rejects(candidate.prepareCandidatePrintState(wrongReceipt, options));
+  assert.deepEqual(await Promise.all(selected.map(value => readFile(value.path))), before);
+});
+
+test('existing-state reads block unintended tools before execution and require actual complete none-effects results', () => {
+  const refs = ['skill://owner/references/render.md?snapshot=old', 'skill://owner/references/render.md?snapshot=edited'];
+  const handlers = new Map(), rows = [];
+  let writeFails = false;
+  const fs = { openSync: () => 1, writeSync: (_fd, line) => { if (writeFails) throw new Error('receipt unavailable'); rows.push(JSON.parse(line)); }, closeSync: () => {} };
+  candidate.guardCandidateExistingReads({ on: (name, fn) => handlers.set(name, fn) }, { fs, output: '/owned/guard.jsonl', refs, review: candidate.reviewCandidatePinnedRead });
+  const invoke = (toolName, input, toolCallId = 'rejected') => handlers.get('tool_call')({ toolName, input, toolCallId });
+  for (const [toolName, input] of [
+    ['notion_use', { ref: refs[0], readOnly: true }], ['bash', { command: 'pwd' }],
+    ['read', { path: refs[0] }], ['read', { path: refs[0], readOnly: false }], ['read', { paths: refs, readOnly: true }],
+    ['read', { path: refs[0], readOnly: true, limit: 1 }], ['read', { path: '/private/oracle', readOnly: true }],
+  ]) assert.equal(invoke(toolName, input).block, true);
+  const input = { path: refs[0], readOnly: true }, original = structuredClone(input);
+  writeFails = true; assert.equal(invoke('read', input).block, true); writeFails = false;
+  assert.equal(invoke('read', input, 'old'), undefined); assert.deepEqual(input, original);
+  assert.equal(invoke('read', input).block, true);
+  assert.equal(invoke('read', { path: refs[1], readOnly: true }, 'edited'), undefined);
+  handlers.get('session_shutdown')(); assert.equal(rows.at(-1).complete, true);
+  const reads = refs.map((ref, index) => ({ ref, id: 'owner', scope: sha('scope'), snapshot_id: 'snapshot-' + index,
+    version_id: 'version-' + index, path: 'references/render.md', file_id: 'file', bytes: 7, sha256: sha('body-' + index), characters: 7 }));
+  const calls = reads.map((read, index) => ({ id: index ? 'edited' : 'old', name: 'read', arguments: { path: read.ref, readOnly: true }, isError: false }));
+  const native = reads.map((read, index) => ({ type: 'message', message: { role: 'toolResult', toolName: 'read', toolCallId: calls[index].id, isError: false,
+    details: { effects: { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] },
+      contextBrokerResource: { ...read, version: 2, toolCallId: calls[index].id, delivery: { start: 0, end: 7, encoding: 'raw' }, delivered_complete_text: true, loaded: false } } } }));
+  const audit = { calls, retractedCalls: [], errors: [] }, sourceState = { reads };
+  const approved = rows.filter(row => row.allowed === true).concat(rows.at(-1));
+  assert.equal(candidate.inspectCandidateExistingReads(sourceState, audit, jsonl(native), approved).reads, 2);
+  for (const effects of [undefined, { version: 1, remote_writes: 'unknown', author_content: 'unchanged', retention: [] }]) {
+    const changed = structuredClone(native); changed[0].message.details.effects = effects;
+    assert.throws(() => candidate.inspectCandidateExistingReads(sourceState, audit, jsonl(changed), approved));
+  }
+  const changed = structuredClone(native); changed[0].message.details.contextBrokerResource.snapshot_id = 'another-pin';
+  assert.throws(() => candidate.inspectCandidateExistingReads(sourceState, audit, jsonl(changed), approved));
+  assert.throws(() => candidate.inspectCandidateExistingReads(sourceState, audit, jsonl(native), rows));
 });

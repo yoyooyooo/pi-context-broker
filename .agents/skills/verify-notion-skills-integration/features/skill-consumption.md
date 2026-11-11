@@ -540,7 +540,7 @@ node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/f
 
 使用既有 `scripts/verify-pi-daily-candidate.mjs` 导出的 `runCandidatePrint(config)`，从仓库根以 Node 调用；先冻结仓外 JSON。配置为 `version: 1`、`scope: "project-scoped-candidate-print"`，指定 `id`、`arm: "normal" | "notion-only"`、`model: "magpie/group/worker"`、`thinkingLevel: "high"`、`brokerRoot`、`sourceId`、自有 `database`、`ownershipReceipt: {path, sha256}`、`evidenceRoot` 与原始 `prompt`。`expectedBodies`、`bodies`、`proofs` 和 `requireUse` 沿用上节的独立 oracle 及完整投递断言；暖续问或纯介绍可冻结 `toolCallCount: 0`，真实额外调用即失败。每轮预算在首轮前冻结，默认 600000ms；失败保存后停止，不能另换模型或修改问题覆盖旧样本。
 
-`normal` 保留正常 HOME、全局 packages、Skill、MCP 与安全扩展；仅项目 package 映射换为显式候选。`notion-only` 只增加 Pi 正式 `-ns`，不能增加 `--no-extensions`、`--no-mcp` 或修改全局设置。两臂各用空 Store、独立源缓存与仓外中性 cwd；来源仍采用真实日用 5m discovery/activation 和 prefetch=false。冻结源码包、入口、嵌入 CLI/SDK 与 runtime manifest 的身份，不把源码路径称为独立安装包通过。正常臂必须实际发现 native Skill，独立臂必须零 native Skill command；完整 provider 输入仍需另审，不能仅由 argv 推断没有其它扩展偷渡本地目录或正文。
+`normal` 保留正常 HOME、全局 packages、Skill、MCP 与安全扩展；仅项目 package 映射换为显式候选。`notion-only` 只增加 Pi 正式 `-ns`，不能增加 `--no-extensions`、`--no-mcp` 或修改全局设置。默认两臂各用空 Store、独立源缓存与仓外中性 cwd；来源仍采用真实日用 5m discovery/activation 和 prefetch=false。冻结源码包、入口、嵌入 CLI/SDK 与 runtime manifest 的身份，不把源码路径称为独立安装包通过。正常臂必须实际发现 native Skill，独立臂必须零 native Skill command；完整 provider 输入仍需另审，不能仅由 argv 推断没有其它扩展偷渡本地目录或正文。
 
 正式包子进程必须显式删除继承的 `NTN_SKILLS_DEV_ROOT`，并记录这一进程级变化。CLI launcher 可由该变量转向另一个源码 checkout；仅记录被调用文件的 SHA 不足以证明实际执行版本。保留正常 HOME、认证与全局开发设置。Broker build 会重新 bundle/minify 指定 CLI/SDK，分别冻结输入入口与输出 manifest/bundle；不能要求重新打包前后字节相同。
 
@@ -555,6 +555,14 @@ AH922 的新 Agent 原操作恢复继续使用同一 helper，另显式冻结 `p
 AH511 的冷作者只需同一 helper 的 `publicCli.mode: "owned-description-update"`：冻结独立 `managementIntent`、公共 CLI SHA、原 page/entry、唯一允许的新 Description 和全新四个状态根。Agent 从公开 help/schema 自己选择 update；先 dry-run 再一次真实更新的顺序由原生会话审计。门禁只接受原 page 的这一字段和这一完整值，拒绝 Enabled、Default Context、Name、Members、Requires 或任意恢复分支。update 使用公开默认 JSON，无额外 `--json`/`--metrics`；普通 read 继续严格只读。作者原件与完整 body oracle 分离。更新后的 `-ns` 与正常日用消费者使用同一最终候选和各自全新 Store，前者不加载本地 Skill 目录，后者保留全部日用扩展；两臂不重复管理写入。
 
 该管理模式把完整 native bash 调用逐条与门禁回执核对，并在结束后重算 CLI/原计划/原失败的 SHA。原 Store 是恢复前置，不能冒称空 Store。公共 CLI JSON 与 `--metrics` 另审；父进程 source observer 不覆盖 bash 孙进程，缺少实际 child source trace 时保持 unknown，不能把后台 SDK 的完整 ledger 当作 CLI 全覆盖。普通消费配置没有这个例外，仍要求零执行工具调用。
+
+### AH734：正常管理 Store 的固定 pin 消费
+
+仅显式 `existingState.mode: "normal-management"` 复用正常进程既有的 state/config/cache 三根；`roots` 冻结公开根解析结果，`managementReads` 引用两份已成功的完整固定 pin CLI JSON 的路径与 SHA。默认未配置仍为 fresh；该模式不兼容 resume 或 publicCli，不读取私有 Store 文件、复制 State/凭据、保存远端 snapshot 或把旁路正文注入模型。正常臂与 `-ns` 臂使用同一管理 Store、各自全新 Session 与 Broker 缓存。`NTN_SKILLS_DATA_HOME` 继续指向本轮 owned 目录，只用于本任务禁止的 builtin 安装，不是消费 Store 根。
+
+`stateRoot` 和 `ownedPaths` 只能指向本轮新建目录。外部 Store 在 `sourceState.ownership: "existing-user"` 单列，不进入 cleanup，也不能作为下一次 resume 的来源。预派发核对已有公开回执的完整正文、owner/scope/pin/FileID 与 none effects；实际两次调用只允许原 ref 的 scalar `read`、`readOnly: true`，原工具、SDK/provider/native 完整正文与效果审计仍保留。只读允许本地 SDK 观察缓存正常更新，不声称整个 SQLite 字节不变。
+
+两项新增回归先因接口缺失 RED，接线后与既有 fresh/resume/fork/注册及默认 cap 回归共 48/48 GREEN；覆盖根替换、默认 fresh、外部归属与错误 resume，以及严格工具门禁和真实结果的缺失/unknown effects。公开 29/30 回执的双臂纯本地准入通过，原 prompt 与两份正文身份不变；首次旁路探针把嵌套 proofs 当成平铺字段的错误保留，改用既有 `containsProof` 后通过，不算产品失败或修复。证据在 AH734 `consumer-store-driver-v2`；没有读私有 Store、启动 Pi/模型/来源请求，真实两臂仍 not_run，不推断 AH734 通过。此 driver 接线没有改变 Availability、ReadRace 或 RetentionDisclosure 的状态转换，复用原模型结果，不重跑或增加模型。
 
 ### 2026-11-11 真实双臂基线
 

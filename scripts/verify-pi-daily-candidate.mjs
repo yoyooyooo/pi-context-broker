@@ -188,6 +188,106 @@ export function candidateSourceConfig(original, { sourceId, database, cacheDir, 
   return config;
 }
 
+/** Reuse normal management state explicitly, without copying or inspecting private Store files. */
+export async function prepareCandidatePrintState(config, { stateRoot, previous, environment = process.env, home = homedir() }) {
+  assert.ok(isAbsolute(stateRoot));
+  assert.ok(previous?.sourceState?.ownership !== 'existing-user' && previous?.sourceState?.mode !== 'normal-management',
+    'An external management Store cannot become an owned resume origin');
+  const env = { NTN_SKILLS_HOME: join(stateRoot, 'ntn/state'), NTN_SKILLS_CONFIG_HOME: join(stateRoot, 'ntn/config'),
+    NTN_SKILLS_CACHE_HOME: join(stateRoot, 'ntn/cache'), NTN_SKILLS_DATA_HOME: join(stateRoot, 'ntn/data') };
+  if (config.existingState === undefined) return { stateRoot, ownedPaths: [stateRoot], env };
+  const policy = config.existingState;
+  assert.equal(policy.mode, 'normal-management');
+  assert.equal(config.resumeFrom, undefined); assert.equal(previous, undefined); assert.equal(config.publicCli, undefined);
+  assert.equal(config.toolCallCount, 2); assert.equal(config.requireUse, undefined);
+  const normalRoot = (name, xdg, suffix) => {
+    const explicit = environment[name], base = environment[xdg] ?? join(home, suffix);
+    assert.ok(isAbsolute(explicit ?? base), 'Normal management roots must be absolute before changing cwd');
+    return resolve(explicit ?? join(base, 'ntn-skills'));
+  };
+  const roots = { NTN_SKILLS_HOME: normalRoot('NTN_SKILLS_HOME', 'XDG_STATE_HOME', '.local/state'),
+    NTN_SKILLS_CONFIG_HOME: normalRoot('NTN_SKILLS_CONFIG_HOME', 'XDG_CONFIG_HOME', '.config'),
+    NTN_SKILLS_CACHE_HOME: normalRoot('NTN_SKILLS_CACHE_HOME', 'XDG_CACHE_HOME', '.cache') };
+  assert.deepEqual(policy.roots, roots, 'Use the current normal process roots, not substituted state');
+  for (const path of Object.values(roots)) assert.ok(!inside(stateRoot, path) && !inside(path, stateRoot), 'Owned cleanup paths must not overlap external state');
+  assert.ok(Array.isArray(policy.managementReads) && policy.managementReads.length === 2);
+  const reads = [];
+  for (const expected of policy.managementReads) {
+    assert.ok(isAbsolute(expected.path) && digest(expected.sha256));
+    const bytes = await readFile(expected.path); assert.equal(hash(bytes), expected.sha256, 'The public management receipt changed');
+    const value = JSON.parse(bytes.toString('utf8'));
+    assert.equal(value.ok, true); assert.equal(value.source, 'local_snapshot'); assert.equal(value.freshness?.policy, 'pinned');
+    assert.equal(value.record?.locator?.database_id, config.database);
+    assert.ok(digest(value.scope) && /^s_[a-f0-9]{64}$/u.test(value.snapshot_id) && digest(value.version_id));
+    assert.equal(typeof value.content, 'string'); assert.equal(value.has_more, false);
+    assert.deepEqual(value.range, { start: 1, end: value.content.split('\n').length, total_lines: value.content.split('\n').length });
+    assert.deepEqual(value.effects, { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] });
+    const url = new URL(value.ref), binding = value.file_bindings?.filter(file => file.path === value.path);
+    assert.equal(url.protocol, 'skill:'); assert.equal(decodeURIComponent(url.hostname), value.record.id);
+    assert.equal(decodeURIComponent(url.pathname.slice(1)), value.path); assert.equal(url.hash, '');
+    assert.equal(url.searchParams.get('snapshot'), value.snapshot_id); assert.equal([...url.searchParams].length, 2);
+    assert.equal(binding?.length, 1); assert.equal(url.searchParams.get('file_id'), binding[0].file_id);
+    assert.match(binding[0].file_id, /^file-[a-f0-9]{64}$/u);
+    const body = { bytes: Buffer.byteLength(value.content), sha256: hash(value.content) };
+    assert.ok(config.expectedBodies?.some(expected => expected.sha256 === body.sha256 && expected.bytes === body.bytes), 'Bind the existing complete public body expectation');
+    reads.push({ receipt: { path: expected.path, bytes: bytes.length, sha256: expected.sha256 }, ref: value.ref,
+      id: value.record.id, scope: value.scope, snapshot_id: value.snapshot_id, version_id: value.version_id,
+      path: value.path, file_id: binding[0].file_id, ...body, characters: value.content.length });
+  }
+  assert.equal(new Set(reads.map(read => read.ref)).size, 2);
+  for (const key of ['id', 'scope', 'path', 'file_id']) assert.equal(reads[0][key], reads[1][key], 'Read the two versions of the same original reference');
+  return { stateRoot, ownedPaths: [stateRoot], env: { ...env, ...roots },
+    sourceState: { mode: policy.mode, ownership: 'existing-user', roots, reads } };
+}
+
+export function reviewCandidatePinnedRead(toolName, input, refs) {
+  return toolName === 'read' && input !== null && typeof input === 'object' && !Array.isArray(input)
+    && Object.keys(input).length === 2 && Object.hasOwn(input, 'path') && Object.hasOwn(input, 'readOnly')
+    && input.readOnly === true && refs.includes(input.path);
+}
+
+export function guardCandidateExistingReads(api, { fs, output, refs, review }) {
+  let fd, failure;
+  try { fd = fs.openSync(output, 'wx', 0o600); } catch (error) { failure = error; }
+  const seen = new Set();
+  api.on('tool_call', event => {
+    try {
+      if (failure) throw failure;
+      if (!review(event.toolName, event.input, refs) || seen.has(event.input.path))
+        throw new Error('Read each of the two issued fixed references once with scalar read and readOnly:true; no other tools or arguments.');
+      fs.writeSync(fd, JSON.stringify({ toolCallId: event.toolCallId, toolName: event.toolName, ref: event.input.path, allowed: true }) + '\n');
+      seen.add(event.input.path);
+    } catch (error) {
+      try { fs.writeSync(fd, JSON.stringify({ toolCallId: event.toolCallId, toolName: event.toolName, allowed: false, reason: error.message }) + '\n'); } catch {}
+      return { block: true, reason: error.message };
+    }
+  });
+  api.on('session_shutdown', () => {
+    if (fd !== undefined) { fs.writeSync(fd, JSON.stringify({ complete: true }) + '\n'); fs.closeSync(fd); }
+  });
+}
+
+export function inspectCandidateExistingReads(sourceState, nativeAudit, text, guard) {
+  const reads = sourceState.reads, refs = reads.map(read => read.ref);
+  assert.equal(nativeAudit.calls.length, reads.length); assert.deepEqual(nativeAudit.errors, []); assert.deepEqual(nativeAudit.retractedCalls, []);
+  assert.equal(guard.length, reads.length + 1); assert.equal(guard.at(-1)?.complete, true);
+  const messages = text.trimEnd().split('\n').map(line => JSON.parse(line).message).filter(message => message?.role === 'toolResult');
+  for (const read of reads) {
+    const calls = nativeAudit.calls.filter(call => reviewCandidatePinnedRead(call.name, call.arguments, refs) && call.arguments.path === read.ref);
+    assert.equal(calls.length, 1); const call = calls[0];
+    assert.equal(guard.filter(row => row.allowed === true && row.toolCallId === call.id && row.toolName === 'read' && row.ref === read.ref).length, 1);
+    const results = messages.filter(message => message.toolCallId === call.id); assert.equal(results.length, 1);
+    assert.equal(results[0].toolName, 'read'); assert.notEqual(results[0].isError, true);
+    assert.deepEqual(results[0].details?.effects, { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] });
+    const proof = results[0].details.contextBrokerResource;
+    assert.equal(proof?.version, 2); assert.equal(proof.toolCallId, call.id);
+    for (const key of ['ref', 'id', 'scope', 'snapshot_id', 'version_id', 'path', 'file_id', 'bytes', 'sha256']) assert.equal(proof[key], read[key]);
+    assert.equal(proof.delivered_complete_text, true); assert.equal(proof.loaded, false);
+    assert.deepEqual(proof.delivery, { start: 0, end: read.characters, encoding: 'raw' });
+  }
+  return { reads: reads.length, eachReadOnly: true, toolResultEffects: 'none' };
+}
+
 /** A small shell subset for one frozen public author task.
  * The public CLI owns author decisions, operation identities and Store writes. */
 export function reviewCandidateCliCommand(command, policy) {
@@ -908,21 +1008,22 @@ export async function runCandidatePrint(config) {
     previous = await json(artifact.path);
     assert.equal(previous.scope, config.scope); assert.equal(previous.status, 'passed'); assert.equal(previous.arm, config.arm);
     assert.equal(previous.database, config.database); assert.equal(previous.runtime.sdk_sha256, runtime.sdk_sha256);
-    assert.equal((await identity(previous.session.path)).sha256, previous.session.sha256);
   }
+  const stateRoot = previous?.stateRoot ?? join(evidence, 'owned-state');
+  const stateBinding = await prepareCandidatePrintState(config, { stateRoot, previous });
+  if (previous) assert.equal((await identity(previous.session.path)).sha256, previous.session.sha256);
   const introductionFork = config.forkIntroductionResume
     ? await inspectIntroductionForkSource(previous, { oldSource, project: config.project }) : null;
   const cwd = introductionFork ? await mkdtemp('/private/tmp/notion-candidate-print-')
     : previous?.launch.cwd ?? await mkdtemp('/private/tmp/notion-candidate-print-');
   if (previous) assert.equal(previous.project?.kind, config.project, 'A continuation must retain its original application');
   const project = previous?.project ?? (config.project ? { ...await createOwnedGraphProject(cwd), kind: config.project } : undefined);
-  const stateRoot = previous?.stateRoot ?? join(evidence, 'owned-state');
   const control = join(evidence, 'observation'), sessions = join(evidence, 'sessions'), responses = join(control, 'sdk-responses'), payloads = join(control, 'provider-payloads');
   for (const path of [join(cwd, '.pi'), stateRoot, control, sessions, responses, payloads]) await mkdir(path, { recursive: true, mode: 0o700 });
   const projectSettings = packageRegistration.projectSettings;
   if (previous && !introductionFork) assert.deepEqual(await json(join(cwd, '.pi/settings.json')), projectSettings);
   else await save(join(cwd, '.pi/settings.json'), projectSettings);
-  const sourceCache = join(stateRoot, 'broker-cache'), state = join(stateRoot, 'ntn/state');
+  const sourceCache = join(stateRoot, 'broker-cache');
   const source = candidateSourceConfig(originalSource, { sourceId: config.sourceId, database: config.database, cacheDir: sourceCache, viewId: config.viewId });
   const observedSource = source.sources.find(source => source.id === config.sourceId);
   assert.equal(observedSource.discovery?.maxAge, '5m'); assert.equal(observedSource.activation?.maxAge, '5m');
@@ -936,6 +1037,10 @@ export async function runCandidatePrint(config) {
   const sourcePreload = join(control, 'source.mjs'), sdkPreload = join(control, 'sdk.mjs');
   const cliGuard = join(control, 'public-cli-guard.mjs'), cliGuardLedger = join(control, 'public-cli-guard.jsonl');
   const inputGuard = join(control, 'input-identity-guard.mjs'), inputGuardLedger = join(control, 'input-identity-guard.jsonl');
+  const existingReadGuard = join(control, 'existing-state-read-guard.mjs'), existingReadLedger = join(control, 'existing-state-read-guard.jsonl');
+  if (stateBinding.sourceState) await writeFile(existingReadGuard, "import fs from 'node:fs';const review=" + reviewCandidatePinnedRead.toString()
+    + ';export default api=>(' + guardCandidateExistingReads.toString() + ')(api,{fs,review,output:' + JSON.stringify(existingReadLedger)
+    + ',refs:' + JSON.stringify(stateBinding.sourceState.reads.map(read => read.ref)) + '});\n', { flag: 'wx', mode: 0o600 });
   const forkBinding = introductionFork ? { parentSession: introductionFork.native.realpath, sourceSessionId: introductionFork.header.id,
     cwd: await realpath(cwd), history: introductionFork.history } : null;
   if (introductionFork) await writeFile(inputGuard, "import fs from 'node:fs';import crypto from 'node:crypto';export default api=>("
@@ -958,8 +1063,7 @@ export async function runCandidatePrint(config) {
     + safeRequestMetrics.toString() + '\nif(isMainThread&&process.ppid===' + process.pid + '){const sdk=(' + observeGraphSdk.toString()
     + ')({channel,fs,safeMetrics:safeRequestMetrics,paths:' + JSON.stringify({ ledger: sdkLedger, responses, outputRoot: sourceCache })
     + '});let done=false;const finish=()=>{if(!done){done=true;sdk.close();}};process.once("beforeExit",finish);process.once("exit",finish);}\n', { flag: 'wx', mode: 0o600 });
-  const env = { ...process.env, CONTEXT_BROKER_CONFIG: join(control, 'source-config.json'), NTN_SKILLS_HOME: state,
-    NTN_SKILLS_CONFIG_HOME: join(stateRoot, 'ntn/config'), NTN_SKILLS_CACHE_HOME: join(stateRoot, 'ntn/cache'), NTN_SKILLS_DATA_HOME: join(stateRoot, 'ntn/data'),
+  const env = { ...process.env, CONTEXT_BROKER_CONFIG: join(control, 'source-config.json'), ...stateBinding.env,
     NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000', NODE_OPTIONS: [process.env.NODE_OPTIONS, '--import=' + JSON.stringify(sourcePreload), '--import=' + JSON.stringify(sdkPreload)].filter(Boolean).join(' ') };
   if (cliPolicy) Object.assign(env, cliPolicy.stateRoots);
   delete env.NTN_SKILLS_DEV_ROOT;
@@ -967,6 +1071,7 @@ export async function runCandidatePrint(config) {
     ...(introductionFork ? ['-e', inputGuard] : []), ...(completionBudgetSource ? ['-e', completionBudgetExtension] : []),
     '-e', costExtension, '-e', transportExtension, '-e', taskExtension];
   if (cliPolicy) args.push('-e', cliGuard);
+  if (stateBinding.sourceState) args.push('-e', existingReadGuard);
   if (project) {
     const guard = join(control, 'project-guard.mjs');
     await writeFile(guard, 'const inspectProject=' + candidateProjectInspection.toString() + ';export default api=>('
@@ -985,10 +1090,11 @@ export async function runCandidatePrint(config) {
     otherPackagesSha256: hash(JSON.stringify(settings.packages.filter((_, index) => index !== (config.packageIndex ?? 1)))) };
   const result = { version: 1, scope: config.scope, status: 'running', arm: config.arm, id: config.id, database: config.database,
     evidence, stateRoot, project, baselineFiles, runtime, ownership, before, host, hostArtifact: await identity(host.identity), expectedUserMessages: (previous?.expectedUserMessages ?? 0) + 1,
+    ...(stateBinding.sourceState ? { sourceState: stateBinding.sourceState, ownedPaths: stateBinding.ownedPaths } : {}),
     launch: { cwd, executable: host.file, args: [...host.prefix, ...args], normalHome: true, normalAgentDir: true, normalMcpAndExtensions: true,
       projectPackageOverrideOnly: !packageRegistration.reusesRegisteredBroker,
       ...(packageRegistration.reusesRegisteredBroker ? { registeredBroker: packageRegistration } : {}),
-      nativeSkillDiscovery: config.arm !== 'notion-only', sourceStateStartsEmpty: !previous && (!cliPolicy || cliPolicy.mode === 'owned-description-update'),
+      nativeSkillDiscovery: config.arm !== 'notion-only', sourceStateStartsEmpty: !stateBinding.sourceState && !previous && (!cliPolicy || cliPolicy.mode === 'owned-description-update'),
       cliDevRootOverride: null, inheritedCliDevRootOverrideRemoved: Boolean(process.env.NTN_SKILLS_DEV_ROOT),
       ...(completionBudgetSource ? { completionBudget: { maxCompletionTokens: config.maxCompletionTokens, policy: await identity(completionBudgetExtension) } } : {}),
       previous: config.resumeFrom ?? null,
@@ -1034,6 +1140,8 @@ export async function runCandidatePrint(config) {
     result.session = await identity(actualHost.sessionFile);
     result.nativeAudit = inspectCandidatePrintSession(sessionBytes.toString('utf8'), { provider: 'magpie', model: 'group/worker', expectedUserMessages: result.expectedUserMessages,
       ...(forkBinding ? { fork: forkBinding } : {}) });
+    if (stateBinding.sourceState) result.existingStateAudit = inspectCandidateExistingReads(stateBinding.sourceState, result.nativeAudit,
+      sessionBytes.toString('utf8'), await readRows(existingReadLedger));
     if (completionBudgetSource) result.completionBudgetAudit = { history: validateCandidateCompletionHistory(result.nativeAudit), payloads: [] };
     const cost = await readConsumptionCostEvents(costs), wire = await readProviderTransport(transport), task = await readRows(tasks);
     result.source = await readSourceObservation(sourceLedger); result.transportCoverage = candidateTransportCoverage(wire);
