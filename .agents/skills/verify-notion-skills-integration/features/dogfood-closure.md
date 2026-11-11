@@ -152,7 +152,7 @@ CLI最终验证脚本/测试/地图head为`0cf7002ac02e6d7df37f621f53a151255de81
 
 后续仅修复三条已证实的库存读取误拒绝：固定owned cwd内，仍限512字/60秒、最多三个pwd/ls/find库存命令；额外至多一个40字的纯ASCII单引号字面量echo标记，总段数不超过四。ls只允许已知的`.`、`src`、`test`、`.pi`目录；find仍以`.`为根、深度1–4，只列文件/目录，最多两个固定node_modules/.git排除，head至多300行。外路径、-L、内容搜索、-exec/-delete、重定向、替换和脚本执行继续拒绝，实际调用及inputSHA仍保留。三条原native反例在旧guard下全部RED，修复后连同existingStore/预算/默认/续问回归51/51 GREEN；没有新Pi/model/HTTP。这一机械修复尚未证明能解决生成超时，所有原failed及分母保持，不自动启动新A/B/D或连续调整cap。
 
-### 单次文件交付候选（驱动接线，真实任务尚未运行）
+### 文件交付候选冻结时的驱动合同
 
 `verify-pi-daily-candidate.mjs` 增加默认关闭的 `artifactOutput:true`，仅用于新的五文件 `owned-ticket-service` 消费任务，不能组合 resume、作者 CLI、existing-state 或 fork。runner 另建 `/private/tmp/notion-candidate-artifacts-*`，保存精确 ownership/dev/ino；动态路径与 UTF-8/LF 交付约束明示附加到原题，`result.actualPrompt` 保存实际文本、bytes/hash 和原 `config.prompt` hash。提示不提供目标叶子、ref 或业务答案。
 
@@ -163,4 +163,20 @@ CLI最终验证脚本/测试/地图head为`0cf7002ac02e6d7df37f621f53a151255de81
 Pro/macOS 手动定向入口：`node --test scripts/verify-pi-daily-artifacts.test.mjs scripts/verify-pi-daily-candidate.test.mjs scripts/verify-pi-daily-budget.test.mjs scripts/verify-pi-daily-resume.test.mjs scripts/verify-pi-daily-fork.test.mjs`，本次 Node 24.20.0 下 60/60 通过。新增九例覆盖缺省/作用域、真实文件 write/edit、越界与链接反例、严格只读、ledger 故障、partial/无 final/缺资源拒绝、批准 ID 隔离，以及原 exercise 中受控 helper 的真实 loopback POST→GET→400。当前 `test:verification` 为显式清单，未加入新文件；不声称新增九例已在 Linux CI 执行。它们证明驱动边界，不证明真实模型能交付。该变化不改产品有限状态转移或产品源码，复用原 TLA/coverage，不新增形式化模型。
 
 后续由 root 先冻结一个 A/-ns 新构造；worker/high、五源文件、完整来源正文、自主选路和 600 秒终止保持。16 次 provider、40 次工具、累计 4,000,000 payload bytes 继续作为原终局质量门槛，不伪称 pre-send 限制；不叠加 v6 cap 干预。这个构造尚非已证明的 timeout 修复，原六失败及 v6 失败不改判。输出目录只在进程终局和证据审阅后按精确 ownership 做 Evidence→系统 Trash→Evidence；不删除证据、不扩全矩阵。
+
+### v7 文件交付终局：未形成产物，候选不纳入日用主线
+
+上节是启动前冻结的合同。唯一 `notion-only-final-v7-A-files-notion-only-hbY2m8` 已在 driver `0f6a9cde36b1692e1ba8f92bbbd43128d24ed1cb`、正常 HOME、worker/high 下真实结束：进程实际闭合 `601446.713208 ms`、exit143/timeout；5 份真实 payload 共 `599465 B`，12 个 native tool calls/配对结果、3 个被拒绝的 Bash。无成功 final、无 write/edit 调用、独立产物目录为空，helper 实驱未运行。原 600 秒、16 payload、40 calls、4,000,000 B 门槛保持；实际超时不能截成 600 秒或改判通过。
+
+实际请求完整包含 Router、所选叶子及三份参考，五个项目文件也全部送达；`write/edit` 从首个 provider schema 就可见。三个拒绝是缺少已审深度的 find 组合、绝对路径 ls 与单独 echo，均未执行；后续已取得所有项目内容，现有证据不支持把这些拒绝单独定为生成超时原因。必要材料和工具可见不证明模型已经完成文件交付，也不证明所有运行时写入路径实际执行过。完整 usage/费用因最后请求未完整结束而保持 unknown，不能把已结束请求的用量当总量。
+
+完整来源账本为 37 metadata / 8 body / 0 write，共 45 HTTP、4725 request bytes、5225532 decoded response bytes。源项目、正常配置与日用产品文件的前后 hash 保持。冻结为 `final-v7-A-files-freeze.json`，15736 B，SHA256 `03287fdf411ed9f903e160eda21687ec06dd11b34f08d73dedebd42fc2ba3c87`；原件根在 `verification-evidence/ah623-639-638-20261111-daily/`。完整独立观察审查位于该 run 的 `independent-observation-audit-v7-files.json`，165794 B，SHA256 `8c0b44510200c2ce44c3fbad6b9edff99fb672359688c1178f3334e29b57dcc2`，保持 failed。
+
+独立成本补核绑定21份原件：前4次完成响应 reported totalTokens 为140594，只是下界。最后 wire64 收到 HTTP200/SSE，从 request_start 至 transport_end 的484287.024291 ms观察窗口内保留1次thinking_start和2896次thinking_delta，末条距观察器结束24.232208 ms；无 request_end、完成响应或usage。它证明SDK流仍活动，不证明具体思考文本、token量或内部根因。报告 `reviews/independent-v7-cost-terminal.json` 为34656 B，SHA256 `bfdd28522d4288da24c9096a9c76b6f4a4b7aa5d971558a557c50e4e8b9b8eb9`。
+
+完整独审还记录了候选的静态兼容缺口：五份真实payload中的Pi `edit` schema为 `{path, edits:[{oldText,newText}]}`，而0f6冻结guard只接受旧的 `{path,oldText,newText}`；`write`形状相符。受控edit正例使用旧模拟形状，不能证明当前native edit通过。实际零write/edit，不能把这个未触发缺口解释成无首写超时的原因；候选不作为已验证日用功能采用，也不以此自动启动重跑。逐条native/payload/source与完整项目/产物快照独审为 `reviews/independent-v7-terminal-mainline-review.json`，93190 B，SHA256 `47957be915360a4cc1e036fe3ace4038d157ffb80089d719c6bedc2b2b43ae7e`。
+
+同轮沿 v5 的继承历史补核了 C1 原 final entry `86e580ce`：它已含作者 editor flag 推导运行时保证、偏好稳定句柄推导禁用坐标的两句。原 C1 passed 审阅原件不改写；“六份介绍无准确性缺口”只代表旧审阅，不能继续作无条件当前结论。新增审阅 `reviews/root-v7-C1-inherited-accuracy-addendum.json`，3408 B，SHA256 `f70add6fafac95d966237025bbbcb7e024f0d9803cdae3eb97614f8e7c8099a0`；原16技术分母仍为8 passed/6 failed/2 not_run。
+
+本次停止这个未取得完整闭环的候选，不推断文件交付普遍无效或唯一内部根因。实现、定向测试与本终局地图仅保留在独立候选分支；不汇入 PR9/f2f7257，不再增加同类模型轮次或重开已完成 CI。AH-639、AH-638 继续开放，原目标、失败、unknown 与 not_run 保留；不把管理、投递或受控 helper 的通过代作任务质量通过。
 
