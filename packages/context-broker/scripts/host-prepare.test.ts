@@ -195,12 +195,16 @@ test("partial multi-source failure retains prior effects and cannot report zero 
   const f = await fixture();
   const retained = { version: 1 as const, remote_writes: "retained" as const, author_content: "unchanged" as const,
     retention: [{ skill_page_id: "root", file_id: "main", operation_id: "done", status: "confirmed" as const }] };
+  const original = Object.freeze(new SourceError("NOTION_UNAVAILABLE", "second-source", 23));
   const { tool } = await f.install(async (_purpose, _signal, policy) => {
     policy?.observeEffects?.(retained);
-    throw new SourceError("NOTION_UNAVAILABLE", "second-source");
+    throw original;
   });
-  await expect(tool.execute("partial-effects", { ref: f.root.ref }, undefined, undefined, f.ctx)).rejects.toMatchObject({
+  const error = await tool.execute("partial-effects", { ref: f.root.ref }, undefined, undefined, f.ctx).then(() => undefined, error => error);
+  expect(error).toBeInstanceOf(SourceError);
+  expect(error).toMatchObject({ code: "NOTION_UNAVAILABLE", sourceId: "second-source", exitCode: 23, cause: original,
     details: { effects: { version: 1, remote_writes: "unknown", author_content: "unknown", retention: retained.retention } } });
+  expect(original.details).toBeUndefined();
 });
 
 test("dollar preflight failure keeps earlier source effects and the original denial", async () => {
@@ -208,10 +212,11 @@ test("dollar preflight failure keeps earlier source effects and the original den
     retention: [{ skill_page_id: "root", file_id: "main", operation_id: "completed-retention", status: "confirmed" }] };
   for (const secondEffects of [noConsumptionWrites(), undefined]) {
     const f = await fixture(true);
+    const original = Object.freeze(new SourceError("ACCESS_DENIED", "second-source", undefined,
+      secondEffects ? { effects: secondEffects } : undefined));
     await f.install(async (_purpose, _signal, policy) => {
       policy?.observeEffects?.(retained);
-      throw new SourceError("ACCESS_DENIED", "second-source", undefined,
-        secondEffects ? { effects: secondEffects } : undefined);
+      throw original;
     }, { buildPreparedPrompt: async () => buildInjectedContextMessage(f.root, "root") });
     const user: AgentMessage = { role: "user", content: "$root task" };
     await f.emit("input", { source: "rpc", text: user.content }, f.ctx);
@@ -220,8 +225,9 @@ test("dollar preflight failure keeps earlier source effects and the original den
     const error = await f.emit("context", { messages: [user] }, f.ctx).then(() => undefined, error => error);
     const effects = { ...retained, remote_writes: secondEffects ? "retained" : "unknown", author_content: secondEffects ? "unchanged" : "unknown" };
     expect(error).toBeInstanceOf(SourceError);
-    expect(error).toMatchObject({ code: "ACCESS_DENIED", sourceId: "second-source", details: { effects } });
+    expect(error).toMatchObject({ code: "ACCESS_DENIED", sourceId: "second-source", cause: original, details: { effects } });
     expect(JSON.parse(error.message).effects).toEqual(effects);
+    expect(original.details?.effects).toBe(secondEffects);
     expect(f.persisted).toEqual([]);
   }
 });
@@ -247,6 +253,28 @@ test("native cancellation after preparation preserves retention and admits no re
   expect(nativeCalls).toBe(0);
   expect(error).toMatchObject({ code: "SOURCE_ACTIVATION_CANCELLED", details: { effects: retained } });
   expect(JSON.parse(error.message).effects).toEqual(retained);
+  const late = await f.emit("tool_result", { toolName: "read", toolCallId, input,
+    content: [{ type: "text", text: f.root.body! }], isError: false }, f.ctx);
+  expect(late.every(value => value === undefined)).toBe(true);
+});
+
+test("native DOMException keeps prepared effects without mutating the original error or delivering a body", async () => {
+  const f = await fixture();
+  const retained: ConsumptionEffects = { version: 1, remote_writes: "retained", author_content: "unchanged",
+    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "before-native-abort", status: "confirmed" }] };
+  const original = new DOMException("Native transport aborted", "AbortError");
+  const adapter = createPiHostAdapter(f.api);
+  let executeRead: NativeReadExecutor | undefined;
+  adapter.registerReadExecutor = execute => { executeRead = execute; return () => true; };
+  const { host } = await f.install(async purpose => [{ ...f.graph(purpose), effects: retained }], {}, adapter);
+  await host.refresh(f.ctx);
+  if (!executeRead) throw new Error("Expected the native read executor");
+  const input = { path: f.root.ref }, toolCallId = "native-domexception";
+  const error = await executeRead(input, f.ctx, undefined, async () => { throw original; }, toolCallId)
+    .then(() => undefined, error => error);
+  expect(error).toMatchObject({ name: "AbortError", code: original.code, cause: original, details: { effects: retained } });
+  expect(JSON.parse(error.message).effects).toEqual(retained);
+  expect(original.message).toBe("Native transport aborted");
   const late = await f.emit("tool_result", { toolName: "read", toolCallId, input,
     content: [{ type: "text", text: f.root.body! }], isError: false }, f.ctx);
   expect(late.every(value => value === undefined)).toBe(true);

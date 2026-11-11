@@ -87,6 +87,19 @@ function failure(error: unknown): string {
 function hostError(code: string): Error & { code: string } {
   return Object.assign(new Error(code), { code });
 }
+function consumptionFailure(error: unknown, message: string, effects: ConsumptionEffects): Error {
+  // Transport errors may expose getter-only fields; shared errors may be frozen.
+  const wrapped = error instanceof SourceReferenceAmbiguity
+    ? new SourceReferenceAmbiguity(error.sourceId, error.candidates, message)
+    : error instanceof SourceError ? new SourceError(error.code, error.sourceId, error.exitCode) : new Error(message);
+  Object.defineProperty(wrapped, "cause", { value: error, configurable: true, writable: true });
+  const code = error !== null && typeof error === "object" && "code" in error ? error.code : undefined;
+  return Object.assign(wrapped, {
+    message, ...(error instanceof Error ? { name: error.name } : {}),
+    ...(typeof code === "string" || typeof code === "number" ? { code } : {}),
+    details: { ...(error instanceof SourceError ? error.details : {}), effects },
+  });
+}
 function xml(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
@@ -632,10 +645,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     } catch (error) {
       if (!observedEffects.length) throw error;
       const effects = combineConsumptionEffects([...observedEffects, errorConsumptionEffects(error)]);
-      throw Object.assign(error instanceof Error ? error : new Error(failure(error)), {
-        message: JSON.stringify({ error: failure(error), effects }),
-        details: { ...(error instanceof SourceError ? error.details : {}), effects },
-      });
+      throw consumptionFailure(error, JSON.stringify({ error: failure(error), effects }), effects);
     }
   }
 
@@ -1601,8 +1611,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         if (!acquiring) throw error;
         const effects = combineConsumptionEffects([...observedEffects, errorConsumptionEffects(error)]);
         const message = JSON.stringify({ ok: false, status: signal?.aborted ? "cancelled" : "failed", error: failure(error), effects });
-        throw Object.assign(error instanceof Error ? error : new Error(message), { message,
-          details: { ...(error instanceof SourceError ? error.details : {}), effects } });
+        throw consumptionFailure(error, message, effects);
       }
     },
   });
@@ -1941,8 +1950,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     } catch (error) {
       pendingResourceReads.delete(toolCallId);
       pendingNativeReads.delete(toolCallId);
-      if (prepared?.effects) throw Object.assign(error instanceof Error ? error : new Error(failure(error)), {
-        message: JSON.stringify({ error: failure(error), effects: prepared.effects }), details: { effects: prepared.effects } });
+      if (prepared?.effects) throw consumptionFailure(error, JSON.stringify({ error: failure(error), effects: prepared.effects }), prepared.effects);
       throw error;
     }
   }) : undefined;
