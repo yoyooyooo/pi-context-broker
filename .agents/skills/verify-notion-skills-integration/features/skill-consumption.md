@@ -562,7 +562,11 @@ AH511 的冷作者只需同一 helper 的 `publicCli.mode: "owned-description-up
 
 `stateRoot` 和 `ownedPaths` 只能指向本轮新建目录。外部 Store 在 `sourceState.ownership: "existing-user"` 单列，不进入 cleanup，也不能作为下一次 resume 的来源。预派发核对已有公开回执的完整正文、owner/scope/pin/FileID 与 none effects；实际两次调用只允许原 ref 的 scalar `read`、`readOnly: true`，原工具、SDK/provider/native 完整正文与效果审计仍保留。只读允许本地 SDK 观察缓存正常更新，不声称整个 SQLite 字节不变。
 
-两项新增回归先因接口缺失 RED，接线后与既有 fresh/resume/fork/注册及默认 cap 回归共 48/48 GREEN；覆盖根替换、默认 fresh、外部归属与错误 resume，以及严格工具门禁和真实结果的缺失/unknown effects。公开 29/30 回执的双臂纯本地准入通过，原 prompt 与两份正文身份不变；首次旁路探针把嵌套 proofs 当成平铺字段的错误保留，改用既有 `containsProof` 后通过，不算产品失败或修复。证据在 AH734 `consumer-store-driver-v2`；没有读私有 Store、启动 Pi/模型/来源请求，真实两臂仍 not_run，不推断 AH734 通过。此 driver 接线没有改变 Availability、ReadRace 或 RetentionDisclosure 的状态转换，复用原模型结果，不重跑或增加模型。
+两项新增回归先因接口缺失 RED，接线后与既有 fresh/resume/fork/注册及默认 cap 回归共 48/48 GREEN；覆盖根替换、默认 fresh、外部归属与错误 resume，以及严格工具门禁和真实结果的缺失/unknown effects。公开 29/30 回执的双臂纯本地准入通过，原 prompt 与两份正文身份不变；首次旁路探针把嵌套 proofs 当成平铺字段的错误保留，改用既有 `containsProof` 后通过，不算产品失败或修复。准备阶段证据在 AH734 `consumer-store-driver-v2`，当时没有 Pi/模型/来源请求；其后的真实两臂另列如下。此 driver 接线没有改变 Availability、ReadRace 或 RetentionDisclosure 的状态转换，复用原模型结果，不重跑或增加模型。
+
+封存 v2 使用 driver `f7bce04`、实际全局39ad产品/9b03嵌入运行时、正常 HOME 和同一管理 Store；原 v1 因空 Store 不能证明旧 pin 可用而保持 not_run，没有复制 Store 或 oracle。`notion-only-ah734-v2-edited-oldpin-notion-only-B341TC` 与 `normal-ah734-v2-edited-oldpin-normal-7tJ25n` 按顺序各运行一次，均 exit0，技术与完整回答语义通过。各有恰2个 scalar readOnly read，按编辑后→编辑前取完整4319/3716 B；原生v2 span、owner/scope/FileID、各自pin/version、SDK正文、none effects及最终真实payload各1份均核对。全6份payload主文0，无use、激活、脚本或写入；独立臂0 native，正常臂69项name/source path/order与原全局回执完全一致。
+
+独立臂为65,617.48325 ms、3 payload/204,857 B、8 metadata/0 body/0 write、44,085 decoded B、完整reported usage59,810；正常臂为86,037.180416 ms、3 payload/310,503 B、0来源HTTP、完整usage85,689。两臂四次固定read均0HTTP；第二臂复用同一Store的暖目录，差额不是同曝光或同冷态性能收益。独立臂other GET/SSE6未闭合，费用及全扩展网络仍不作零或完整保证。两个812 B final准确区分新增段落/链接与旧正文；“只有一条”限定新增段落，“没有保留记录”限定本次effects，不抹除文件其他链接或历史留存。root直接原件审阅为`reviews/root-ah734-v2-native-provider-audit.json`（39,541 B，SHA256 `4095dfc891a3f3ac1e16a18d55772366edfa5208f2950ae3f93e6f3fa9d57051`）。本次管理恢复的最终机器反馈由CLI原操作证据另验，不从消费者通过推导正文写入成功。
 
 ### 2026-11-11 真实双臂基线
 
@@ -582,7 +586,7 @@ AH511 的冷作者只需同一 helper 的 `publicCli.mode: "owned-description-up
 
 独立臂刷新 `notion-only-explicit-refresh-ouqNp2/independent-review.json` 明确为 `failed-strict-no-write-semantics`：模型回答仍声称“未写入”，实际六次写入不可抹除。AH953 候选必须使用新的原生编辑与独立会话验证 effects/readOnly。两次受开发 launcher 覆盖影响的早期 CLI 读取、错误的跨 bundle 字节相等检查、以及把恢复历史首条 resource receipt 当成本轮 receipt 的审计错误均留有单独勘误；后续必须按本轮 toolCallId 选择结果，不能删掉历史。
 
-验证器回归 `node --test scripts/verify-pi-daily-candidate.test.mjs scripts/verify-pi-daily-installation.test.mjs` 为 25/25。以上是源码候选的实际消费证明，不代表 UI、Mini、独立安装发布、AH639 自然产物执行或成本分布验收。Notion UI 仍在 TaskSpace 1 / p1 登录交接，详见 `notion-ui-login.json`，不能用 API 代替完成。
+验证器回归 `node --test scripts/verify-pi-daily-candidate.test.mjs scripts/verify-pi-daily-installation.test.mjs` 为 25/25。以上是该次源码候选的实际消费证明，不代表 UI、Mini、独立安装发布、AH639 自然产物执行或成本分布验收。该次 TaskSpace 1 / p1 登录交接见 `notion-ui-login.json`；用户随后明确把本轮 AH734 管理入口改为正式 ntn CLI，历史 UI not_run 不改称通过。
 
 ## Consumer observation consistency (AH-864)
 

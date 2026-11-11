@@ -14,7 +14,17 @@
 
 ## 实施顺序
 
-首批 AH-956、AH-953、AH-922、AH-740 可独立推进。AH-511 在两个恢复边界稳定后交付正式作者链；AH-623 在基线后独立完成目录候选对照；AH-631 再测作者阶段请求复用，AH-506 测长期派生增长；AH-639 进行真实自主任务，AH-734 进行真正 Notion UI 操作，AH-638 汇总完整任务结果。AH-925 的冷资源失败有界排查并保留原反例，不阻塞无因果关系的实现，不得被遗漏或虚报已解决。
+首批 AH-956、AH-953、AH-922、AH-740 可独立推进。AH-511 在两个恢复边界稳定后交付正式作者链；AH-623 在基线后独立完成目录候选对照；AH-631 再测作者阶段请求复用，AH-506 测长期派生增长；AH-639 进行真实自主任务，AH-638 汇总完整任务结果。用户已明确把 AH-734 本轮管理入口改为 Devspace Pro 上正式 ntn CLI，不再要求浏览器登录；历史 UI not_run 不算通过。AH-925 已按有限调查和诊断交付完成，旧本地 host admission 因果仍未知；保留原反例与重开条件，不把等待未来同类失败变成无期限前置。
+
+## 当前全局入口与收口范围
+
+正式Pi remove/install已将第19槽切到`pi-context-broker-d5a49b33/packages/context-broker`，正常新进程唯一加载实际39ad源码；其他19包、非packages设置及69 native Skills的name/source path/order保持。原CLI shim的`NTN_SKILLS_DEV_ROOT`已切到`notion-skills-cli-cfe89f88`，FF到`ee4e712`后fresh Shell实际help仍核到新的原操作恢复参数。根目录和旧目录未清除，无main merge/npm发布。全局切换回执SHA `fa4b840307742c8216ac1d03c12b8c3c125631abb3885142fa7fa6aa26b2965a`，69项独立读回SHA `7594b5b3fb7dd22eae8581e80586e07509eb96e3fe82d21fe46a88cb4bde3ad8`；源码head、独立包、嵌9b03运行时与实际模型输入分开绑定。
+
+正常doctor的Namespace仍failed：精确23个外部本地ENOENT与原受审退役清单相同，公开find pstack实际5/5正确。Agent Kit PR964候选尚未main/live source admission；不要把受审overlay通过写成已部署，也不要与已完成的CLI/Broker激活混同。原自动doctor gate不接受这些local ENOENT，不声称该gate通过；有限范围独审SHA `79ea5fd610115699dbe400e0689c9d0db85c05300fa9ae16b95d044ab482f165`确认无新增Notion主线身份故障，不扩成fleet部署前置。
+
+AH734的正式ntn编辑、取消与原Source恢复保持同一owner/FileID；实际两臂固定新旧版本消费见本skill的`skill-consumption.md`，root完整native/provider/SDK复核SHA `4095dfc891a3f3ac1e16a18d55772366edfa5208f2950ae3f93e6f3fa9d57051`。CLI `ee4e712`修复原计划ID在正文dispatch前的持久回执以及旧processing/null反馈恢复；原source-run暂停和original applied事实独立保留，只有真实原操作reconcile/全文读回才能闭合反馈。六个原生成失败及唯一A cap失败仍缺产物和独立实驱；AH639和依赖的AH638不因此完成，也不把外部模型未完成升格为唯一根因已定位。
+
+实际反馈恢复已通过正常全局CLI完成：先dry-run核原`body-write-follow-a9b3…b8aa`及完整提交/来源/事件事实，再一次reconcile发布`verified_applied / ORIGINAL_VERIFIED`。正式ntn全文读回表明只有Management Receipt/Result改变，原生正文仍为SHA `e52cd60661c304240d1f61dbd1afb6c836da74adf6c4d433a68e9154d11c8fca`；公开request读回一致，再次reconcile为unchanged/remote_writes0。原正文操作未重派发，body_writes0；metadata反馈原操作为`source-op-40e801a058cc5275ba242fcf07161698c993f994879a214512a677323b0b9413`。主审`ah734-cli-replacement/39-management-closure-readback.json`为9,833 B、SHA `9b93c69b310cb4099dd72bc9d5170fbb9650bb5c8a64ede6a5ced33ab6460732`；编号21的原命令暂停结果保留，不改成原run成功。管理CLI完整HTTP细分未独立采集，不以命令数补造请求数。
 
 ## 真实 Pi 验收
 
@@ -98,7 +108,7 @@ how 作者原件经公开 read/dry-run 审阅后由 root 一次公开 write 并�
 
 原D-natural独立臂的用户句子完全没有Skill名称/handle；首请求仅默认目录，模型复制唯一create-verification-skill候选ref并以readOnly:true use。第二请求完整6,837 B主文，第三请求完整2,761/3,374/4,023 B参考，同owner/scope/pin/version/File ID与实际wire一致；阶段内5个已闭合SDK为25metadata/5body/0write。独立阶段报告 `reviews/e2e-final-v3-D-natural-discovery-phase-review.json` SHA256 `5ff27d9dd72b6cfa15a6e1b39315454066201c319e0cd4b76c82c5c28deb1164`；root再核6个日志前缀、3个实际payload/wire及完整正文，`root-D-natural-discovery-readback.json` SHA256 `8f8364acf8d95a64efaa23ebba182b2ae54ec36d3f20d732e122df8873b0883e`。这闭合AH-623无名称发现项，不把阶段通过改成AH-639整任务通过。
 
-23条失效声明的受审候选、正常doctor和公开find pstack 5/5保持；全局入口激活仍归AH-638。最终16冷配置为8个technical passed、6个failed、2个窄侧not_run。已完成介绍中6份准确；setup留出覆盖全部10项但有两处解释偏差，D-named独立臂另把作者flag误推为运行时限制、把坐标偏好写成禁令，正常臂准确通过。A/B/D-natural两臂共6个任务均超时且无完整产物；完整正文和真实项目输入不能替代交付。独立strict batch协议通过，原warm failed不改判，A资源续问因没有合格产物保持not_run。终局原件索引为`final-v3-terminal-index.json`（SHA `928f4b1e738db8f76a9f9ae2ee8b7544f23fb64353f9a5c6ea7e47966769e55e`）；全部真实模型失败usage保持unknown，已完响应只计下界。完整生成产物及helper实驱未满足，AH-639/AH-638继续开放；AH-623按独立发现验收判断，未引入额外发现平台或模型。
+当次23条失效声明的受审overlay、正常doctor和公开find pstack 5/5证据保持；Agent Kit候选仍待独立admission，当前CLI/Broker全局激活已按上方原件另验。最终16冷配置为8个technical passed、6个failed、2个窄侧not_run。已完成介绍中6份准确；setup留出覆盖全部10项但有两处解释偏差，D-named独立臂另把作者flag误推为运行时限制、把坐标偏好写成禁令，正常臂准确通过。A/B/D-natural两臂共6个任务均超时且无完整产物；完整正文和真实项目输入不能替代交付。独立strict batch协议通过，原warm failed不改判，A资源续问因没有合格产物保持not_run。终局原件索引为`final-v3-terminal-index.json`（SHA `928f4b1e738db8f76a9f9ae2ee8b7544f23fb64353f9a5c6ea7e47966769e55e`）；全部真实模型失败usage保持unknown，已完响应只计下界。完整生成产物及helper实驱未满足，AH-639/AH-638继续开放；AH-623按独立发现验收判断，未引入额外发现平台或模型。
 
 ### 已保留失败的 v4 空 cwd 接线
 
