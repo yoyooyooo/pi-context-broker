@@ -4,7 +4,7 @@
   "correspondence": "Reviewed source hashes bind the implemented transition owners. Finite-model results do not establish complete implementation refinement. The final commit, installed package and actual session identities belong to the execution receipt.",
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
-    "packages/context-broker/src/host-skills.ts": "ff3ecf492eb95474365ec9cde99e680e9c31538888b22cf1cea2a162385a4a02",
+    "packages/context-broker/src/host-skills.ts": "77de86f1b8c027ea1a2066a316b83f1bc388c87fcb0b1e0e71d3764d4e0246b4",
     "packages/context-broker/src/prepare-protocol.ts": "a933a092d39d9abb860ce614c959b13c5e26c1cf830bdb1f9f715b0adf2c283a",
     "packages/context-broker/src/notion-source.ts": "b6fef48b510a7002e7b56ced8cd79006739f77a92ca86f033c0a55b60bdfae8e",
     "packages/context-broker/src/index.ts": "93673be0d0b9bd6f975017be9e8558b336f07801b2b25f2c58aa5ec21525b82e",
@@ -12,7 +12,7 @@
     "packages/context-broker/src/view-prompt.ts": "8b2d21bcfb3662b4e742d51c13a625aaaa5a66ba7f4cf717c3f8cfed9704062a",
     "packages/context-broker/src/session-source-snapshot.ts": "e946d3a437b29869546b0192d1fdbd693b2ac38b765b8e60b3763b8198547468",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
-    "packages/context-broker/scripts/host-prepare.test.ts": "4d99887ca2f3cbb9ae71d1fb83c1b789ff27e5f306ecd203bf7b06affe1b15db",
+    "packages/context-broker/scripts/host-prepare.test.ts": "388c621fa8574a350db50825d98c4b061637c34325b76eb04ffb36f508af22dc",
     "packages/context-broker/scripts/native-read-session.test.ts": "c46a859f12f51dd6a4cfb3b7c054d1f8b896fd30722eecb3cad63feb2647b22d",
     "packages/context-broker/scripts/resource-read-projection.test.ts": "965879126d2f5104ca23aeba14bcb99d12bbffba9e5c13f4b42b7c29d3ed6abc",
     "packages/context-broker/scripts/view-discovery.test.ts": "0d285b1584a299a2c4a3298d7c0cc833810d64855a5f8604f12e793c0f367bcf",
@@ -112,7 +112,17 @@
     "transition_review": "Effect receipts and read-only policy are carried alongside the existing observation ticket. Qualification, exact denial attribution, generation checks, cancellation and graph commit ordering are unchanged; resource receipt v2 names only the original delivery span so an appended effects footer cannot count as source bytes.",
     "regressions": "host-prepare retains F1–F7, permission refusal, old-success-after-new-denial and session cancellation. Dollar receipt replay preserves sourceBodyLoaded and native history proof; the strict SDK capability gate runs before any operation.",
     "effects_model": "flows/RetentionDisclosure.tla models this new effect dimension separately; Availability and ReadRace keep their existing state spaces and negative controls.",
-    "model_instruction_review": "The real AH-953 natural no-write counterexample omitted readOnly despite an available parameter, then omitted retained writes from its final report. Tool descriptions now explicitly map a user read-only/no-write request to readOnly:true and require retained/unknown effects in the final answer. This changes model-facing instructions only, not acquisition, qualification, cancellation or the read-only guard. Finite models cannot prove language-model compliance; a fresh real-session replay remains required."
+    "model_instruction_review": "The real AH-953 natural no-write counterexample omitted readOnly despite an available parameter, then omitted retained writes from its final report. Tool descriptions now explicitly map a user read-only/no-write request to readOnly:true and require retained/unknown effects in the final answer. This changes model-facing instructions only, not acquisition, qualification, cancellation or the read-only guard. Finite models cannot prove language-model compliance; a fresh real-session replay remains required.",
+    "partial_cancel_review": {
+      "finding": "Independent review of 79ee07fe reproduced a dollar prepareMany partial-source error dropping earlier confirmed retention, and cancellation between prepareRead return and native execution bypassing the existing effects catch.",
+      "change": "prepareMany now supplies the existing per-operation effects observer through graph and Notion fallback acquisition, then combines prior effects with the original typed failure. Native post-preparation cancellation runs inside the original effects-preserving catch, which also clears pending read receipts. Filesystem loads keep their original policy-free route.",
+      "semantics": "No source write, readOnly gate, permission/identity decision, graph commit or delivery rule changes. The original error class/code/source and cancellation refusal remain. NoFalseZeroWriteReport and uncertainty disclosure retain their existing meanings; this repairs concrete implementation wiring rather than adding a new model transition.",
+      "regressions": [
+        "host-prepare: dollar partial source failure preserves earlier retention, precise denial and missing second-source effects as unknown",
+        "host-prepare: queueMicrotask cancellation after graph commit retains effects, invokes zero native reads and cannot attach a late body receipt"
+      ],
+      "bounds": "RetentionDisclosure still abstracts one acquisition and one retention event; it does not enumerate JavaScript microtask scheduling or multi-source request counts. Direct deterministic regressions establish these two implementation paths. Natural-language readOnly compliance and actual Pi final disclosure still require separate live evidence."
+    }
   },
   "admission_diagnostics": {
     "issue": "AH-925",

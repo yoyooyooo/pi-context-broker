@@ -33,6 +33,8 @@ F6 uses the actual metadata consumer and a controlled clock at TTL-1, TTL and su
 
 AH-925 adds no state transition: a blocked scalar read now names its existing admission stage, error code, generation and cancellation state. `notion-entry.test.ts` holds initial metadata and separately holds an already materialized resource across a session boundary; the former waits and succeeds, while the latter keeps the original input and produces no old delivery receipt. `scalar-resource-read-host.test.ts` retains exact owner/file rejection and checks that execute errors carry the same bounded diagnostic. These tests exercise the existing admission rules, so Availability/ReadRace and their negative configurations are unchanged. They do not identify the cause of the original cold-resource failure, whose admission result was not retained.
 
+The AH-953 partial-source and post-preparation cancellation regressions repair receipt propagation at the existing refusal boundaries. `prepareMany` retains the original typed denial while collecting earlier source effects, and the native executor's existing catch now also owns the final cancellation check. Permission, identity, generation, graph commit and no-late-delivery decisions are unchanged. Both coverage files bind these reviewed changes; the existing flow model's reporting/uncertainty contract is reused, while deterministic tests cover the concrete multi-source and microtask interleavings that the finite model does not enumerate.
+
 ## 组合日用流程与效果披露
 
 [flows](flows/README.md)复用同一运行器检查管理到模型输入的组成合同，保留旧 retention 副作用不可见的反例，并将 AH-953 的操作效果披露、严格只读和未知 ACK 单独建模。用`--suite flows`显式运行；Availability/ReadRace 的资格、顺序与会话撤销规则保持原状态空间，新的效果回执不充当资格证明。显式报告规则不能保证任意模型的自然语言回答。

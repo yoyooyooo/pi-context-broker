@@ -41,6 +41,10 @@ CLI/SDK 的 version-1 `effects` 描述本次消费：`remote_writes` 为 none、
 
 源代码回归覆盖投影缺字段、严格请求、不兼容生产者零调用、失败后的部分效果、原生正文/资源回执和 `$` 注入的原生历史。形式化复用 `verification/models/consumer-observations/flows` 的13个配置；原六个 availability/race 配置单独复跑。新增只读与未知 ACK 负配置必须分别击中对应性质；旧“零写”反例保留，模型不能证明任意 LLM 报告正确。实际 Pi 必须再验当前留存、稳定固定读取、严格拒绝及最终回答；未执行时不得关闭 AH-953。
 
+独立审阅的两个确定反例并入既有 `host-prepare.test.ts`：`$` 多源预加载中首源已经留存、后源拒绝时，调用级回执必须保留首源 Skill/File/operation，后源缺效果仍为 unknown；native read 在本地准备提交后、实际文件读取前取消，仍须拒绝读取并保留本次留存回执，不能附加晚到的正文证明。取消交错用提交后的 `queueMicrotask`，不靠 sleep 或重复压力。修订沿原 accumulator 与失败出口接线，不增加远端查询、自然语言解析或新的效果协议。固定资源校验失败保持保守 unknown。复跑 `bun test packages/context-broker/scripts/host-prepare.test.ts packages/context-broker/scripts/scalar-resource-read-host.test.ts packages/context-broker/scripts/pi-read-adapter.test.ts` 与 typecheck；红例、绿例和实际源码身份分别保留。
+
+该切片证据位于 `verification-evidence/ah955-20261111/ah953-partial-cancel-fix`：两正式红例先失败，目标集随后 67/67 通过；当前 `build:broker` 内的 typecheck 与既有 `input-guard.test.ts` 通过。新工作区第一次输入守卫因尚无随包 CLI 报 `HOST_CLI_UNAVAILABLE`，保留原日志，显式构建 CLI 输入后复跑通过。原冻结 statechart/TLC 的 flows 13 配置全部匹配预期，其中八个历史/负配置仍命中规定性质；未扩展或重解释其状态空间。这些源码和有限模型结果不替代真实 Pi、自然只读意图与最终披露复验。
+
 2026-11-11 候选真实负例 `ah953-20261111-real-uUH0q5/notion-only-strict-fresh-cKJIB1`：模型没有按自然“不写入”要求传 `readOnly`，实际发生六次 retention 写入。effects 已出现在 provider 输入，最终回答却只说作者内容未修改，未主动披露历史写入。两处原工具说明现明确把用户只读/无写要求映射到 `readOnly:true`，并要求最终说明 retained/unknown；没有新增常驻指南、查询或工具。此改动不改变状态机、严格写边界或原文 span，因此沿用模型正负配置，不能用有限模型代替新的自然任务真实复验。原失败会话和请求保留，显式参数正测与自然语言遵从分别判断。
 
 复用 .agents/skills/verify-notion-skills-integration、verify-context-broker 和 CLI 的 .cursor/skills/verify-ntn-skills。补丁先有能失败的直接反例，再跑必要回归及真实链路；不重复展开无关完整矩阵。每个交接包含 commit、文件列表、命令、exit/进程终局、原始输出和仍未覆盖的门槛。
