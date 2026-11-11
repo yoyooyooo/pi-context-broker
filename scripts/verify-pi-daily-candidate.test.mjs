@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { candidatePlan, candidateProjectSettings, candidateSourceConfig, candidatePayloadBodies, observeCandidateTask, validateCandidateTurn, candidateTransportCoverage, containsProof, inspectCandidatePrintSession, reviewCandidateCliCommand, candidateCliGuard } from './verify-pi-daily-candidate.mjs';
+import { candidatePlan, candidateProjectSettings, candidateSourceConfig, candidateProjectInspection, guardCandidateProject, candidatePayloadBodies, observeCandidateTask, validateCandidateTurn, candidateTransportCoverage, containsProof, inspectCandidatePrintSession, reviewCandidateCliCommand, candidateCliGuard } from './verify-pi-daily-candidate.mjs';
 
 const sha = text => createHash('sha256').update(text).digest('hex');
 const body = 'complete source <tag> & "quoted"\nlast line';
@@ -266,6 +266,30 @@ test('normal-host transport retains unknown other requests without mistaking the
 test('candidate plan is nonexecuting and rejects unfrozen body claims', () => {
   assert.equal(candidatePlan({ version: 1, scope: 'project-scoped-candidate-precheck', turns: [{ id: 'inspect', prompt: 'Original task' }] }).status, 'prepared_not_executed');
   assert.throws(() => candidatePlan({ version: 1, scope: 'project-scoped-candidate-precheck', turns: [{ id: 'inspect', prompt: 'Original task', bodies: [{ sha256: file.sha256, occurrences: 1 }] }] }));
+});
+
+test('owned project inspection admits only its finite inventory vocabulary and exact cwd', () => {
+  const root = '/private/tmp/notion-candidate-print-abc123';
+  for (const command of ['pwd', 'ls -la', 'ls -la ' + root, "ls -la '" + root + "'", 'find . -maxdepth 3 -type f', 'ls -la && pwd && find . -maxdepth 3 -type d -o -type f | head -200'])
+    assert.equal(candidateProjectInspection({ command }, root, root), true, command);
+  for (const command of ['ls /Users/yoyo/.agents/skills', 'find .. -maxdepth 3 -type f', 'ls -la; pwd', 'pwd || ls', 'ls $(pwd)', 'ls `pwd`', 'ls . > output', 'ls -R', 'find . -maxdepth 5 -type f', 'find . -maxdepth 3 -type f -exec node {} \\;', 'find . -maxdepth 3 -type f | head -201', 'node src/server.mjs', 'npm test', 'ntn-skills read target', 'cat README.md', 'pwd\nls', 'ls -la && pwd && pwd && pwd'])
+    assert.equal(candidateProjectInspection({ command }, root, root), false, command);
+  assert.equal(candidateProjectInspection({ command: 'pwd' }, '/other', root), false);
+  assert.equal(candidateProjectInspection({ command: 'pwd', cwd: root }, root, root), false);
+  const handlers = new Map(); guardCandidateProject({ on: (key, handler) => handlers.set(key, handler) }, { projectRoot: root, inspectProject: candidateProjectInspection });
+  assert.equal(handlers.get('tool_call')({ toolName: 'bash', input: { command: 'pwd' } }, { cwd: root }), undefined);
+  assert.equal(handlers.get('tool_call')({ toolName: 'bash', input: { command: 'npm test' } }, { cwd: root }).block, true);
+  assert.equal(handlers.get('tool_call')({ toolName: 'bash', input: { command: 'pwd' } }, { cwd: '/other' }).block, true);
+});
+
+test('only the owned project task can classify a hash-bound inventory call separately from script execution', () => {
+  const root = '/private/tmp/notion-candidate-print-abc123', input = { command: 'ls -la && pwd && find . -maxdepth 3 -type d -o -type f | head -200' };
+  const value = observed(); value.tasks.push({ phase: 'tool_call', toolName: 'bash', executionTool: true, reviewedReadTool: true,
+    inputSha256: sha(JSON.stringify(input)), ownedProjectInspection: { root, cwd: root, input } });
+  assert.throws(() => validateCandidateTurn({}, value));
+  assert.equal(validateCandidateTurn({ project: 'owned-ticket-service' }, value).ownedProjectInspectionToolCalls, 1);
+  value.tasks.at(-1).ownedProjectInspection.input.command = 'npm test';
+  assert.throws(() => validateCandidateTurn({ project: 'owned-ticket-service' }, value));
 });
 
 test('task observer does not transform provider input or register tools/providers', () => {

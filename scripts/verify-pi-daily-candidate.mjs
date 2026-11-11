@@ -247,6 +247,30 @@ export function candidateCliGuard(api, { fs, output, policy, review }) {
   api.on('session_shutdown', () => { fs.writeSync(fd, JSON.stringify({ complete: true }) + '\n'); fs.closeSync(fd); });
 }
 
+// This is a finite inventory vocabulary for the fixed owned application, not a
+// shell parser. No content search, executable, substitution or outside path is admitted.
+export function candidateProjectInspection(input, cwd, projectRoot) {
+  if (typeof projectRoot !== 'string' || !/^\/private\/tmp\/notion-candidate-print-[A-Za-z0-9]+$/u.test(projectRoot)
+    || cwd !== projectRoot || !input || typeof input !== 'object' || Array.isArray(input)
+    || Object.keys(input).some(key => !['command', 'timeout'].includes(key))
+    || typeof input.command !== 'string' || input.command.length > 512 || /[\r\n\0]/u.test(input.command)
+    || input.timeout !== undefined && (!Number.isFinite(input.timeout) || input.timeout <= 0 || input.timeout > 60)) return false;
+  const commands = input.command.trim().split(/\s*&&\s*/u);
+  if (!commands.length || commands.length > 3) return false;
+  return commands.every(command => {
+    const value = command.trim().replaceAll("'" + projectRoot + "'", '.').replaceAll('"' + projectRoot + '"', '.').replaceAll(projectRoot, '.');
+    return value === 'pwd' || /^ls(?: -(?:l|a|la|al))?(?: \.)?$/u.test(value)
+      || /^find \. -maxdepth [1-4] (?:-type f|-type d -o -type f)(?: \| head -(?:[1-9]|[1-9][0-9]|1[0-9]{2}|200))?$/u.test(value);
+  });
+}
+
+export function guardCandidateProject(api, { projectRoot, inspectProject }) {
+  api.on('tool_call', (event, ctx) => {
+    if (event.toolName === 'bash' && !inspectProject(event.input, ctx.cwd, projectRoot))
+      return { block: true, reason: 'This owned project task permits only pwd, ls and bounded find inventory within its fixed cwd. Project execution, content search, outside paths and other shell commands remain blocked.' };
+  });
+}
+
 // Receipt events retain Broker-owned metadata and rendered hashes. The optional
 // payload directory retains complete provider input for an owned E2E audit;
 // headers and authentication configuration are never collected. Exact body
@@ -284,7 +308,7 @@ export function candidatePayloadBodies(value, expectedBodies) {
   });
 }
 
-export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspectPayload, payloadDirectory, hostOutput }) {
+export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspectPayload, payloadDirectory, hostOutput, projectRoot, inspectProject }) {
   const sha = value => crypto.createHash('sha256').update(value).digest('hex');
   const oracleStarted = process.hrtime.bigint();
   const expectedBodies = bodyFiles.map(file => {
@@ -313,10 +337,10 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     record('receipt', { toolName: message.toolName, toolCallId: message.toolCallId, customType: message.customType,
       content: { bytes: Buffer.byteLength(body), sha256: sha(body) }, proofs });
   };
-  const on = (name, fn) => api.on(name, event => {
+  const on = (name, fn) => api.on(name, (event, ctx) => {
     if (closed) return;
     const started = process.hrtime.bigint();
-    try { fn(event); } catch { errors++; record('observer_error', { event: name }); }
+    try { fn(event, ctx); } catch { errors++; record('observer_error', { event: name }); }
     finally { observerWorkNs += process.hrtime.bigint() - started; }
     // Always undefined: observation cannot block, transform or choose tools.
   });
@@ -336,12 +360,15 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
       ...(payloadFile ? { payloadFile } : {}),
       notionCatalogPresent: payload.includes('<ntn-skills-view-catalog>'), notionGuidancePresent: payload.includes('<ntn-skills-guidance>') });
   });
-  on('tool_call', event => {
+  on('tool_call', (event, ctx) => {
     const input = event.input ?? {};
+    const inspection = event.toolName === 'bash' && projectRoot && inspectProject?.(input, ctx?.cwd, projectRoot)
+      ? { root: projectRoot, cwd: ctx.cwd, input } : undefined;
     const selectors = Object.fromEntries(['path', 'paths', 'ref', 'refs', 'query', 'id', 'ids'].filter(key => Object.hasOwn(input, key)).map(key => [key, input[key]]));
     record('tool_call', { toolName: event.toolName, toolCallId: event.toolCallId, inputSha256: sha(JSON.stringify(input)), selectors,
       executionTool: ['bash', 'powershell', 'codemode', 'execute', 'eval'].includes(event.toolName),
-      reviewedReadTool: ['read', 'grep', 'find', 'ls', 'notion_list', 'notion_use'].includes(event.toolName) });
+      reviewedReadTool: Boolean(inspection) || ['read', 'grep', 'find', 'ls', 'notion_list', 'notion_use'].includes(event.toolName),
+      ...(inspection ? { ownedProjectInspection: inspection } : {}) });
   });
   on('tool_result', event => { record('tool_result', { toolName: event.toolName, toolCallId: event.toolCallId, isError: event.isError === true }); receipt({ ...event, role: 'toolResult' }); });
   on('message_end', event => {
@@ -395,7 +422,11 @@ export function validateCandidateTurn(turn, { costs, transport, tasks }, { appro
     && tasks.some(event => event.phase === 'tool_result' && event.toolCallId === call.toolCallId && event.isError === false)
     && tasks.some(event => event.phase === 'receipt' && event.toolCallId === call.toolCallId && event.proofs.contextBrokerPreparation?.toolCallId === call.toolCallId
       && event.proofs.contextBrokerPreparation.purpose === 'use')), 'Natural application did not complete this turn\'s notion_use');
-  const executionCalls = tasks.filter(event => event.phase === 'tool_call' && event.executionTool);
+  const projectInspections = tasks.filter(event => event.phase === 'tool_call' && event.toolName === 'bash'
+    && turn.project === 'owned-ticket-service' && event.ownedProjectInspection
+    && candidateProjectInspection(event.ownedProjectInspection.input, event.ownedProjectInspection.cwd, event.ownedProjectInspection.root)
+    && hash(JSON.stringify(event.ownedProjectInspection.input)) === event.inputSha256);
+  const executionCalls = tasks.filter(event => event.phase === 'tool_call' && event.executionTool && !projectInspections.includes(event));
   assert.equal(new Set(approvedCliCalls).size, approvedCliCalls.length);
   assert.equal(executionCalls.length, approvedCliCalls.length, 'The inspected Skill must not execute unreviewed scripts or binaries');
   assert.ok(executionCalls.every(event => event.toolName === 'bash' && approvedCliCalls.includes(event.toolCallId)));
@@ -403,7 +434,7 @@ export function validateCandidateTurn(turn, { costs, transport, tasks }, { appro
   const final = tasks.filter(event => event.phase === 'assistant_final').at(-1);
   assert.ok(final?.success, 'This exact turn has no successful task answer');
   return { providerRequests: requests.length, lastPayloadSha256: last.payload.sha256, bodyOccurrences: actual.bodies, receiptVerifiedBodies: last.payload.verifiedBodyOccurrences,
-    finalSha256: final.sha256, finalBytes: final.bytes, semanticReview: 'required', scriptExecutionToolCalls: executionCalls.length,
+    finalSha256: final.sha256, finalBytes: final.bytes, semanticReview: 'required', scriptExecutionToolCalls: executionCalls.length, ownedProjectInspectionToolCalls: projectInspections.length,
     ...(approvedCliCalls.length ? { authorizedPublicCliToolCalls: approvedCliCalls.length } : {}) };
 }
 
@@ -749,8 +780,10 @@ export async function runCandidatePrint(config) {
   await writeFile(costExtension, consumptionCostExtensionSource({ output: costs, checkoutRoot: root, runId: clockId, sampleId: config.id, clockId }), { flag: 'wx', mode: 0o600 });
   await writeFile(transportExtension, providerTransportExtensionSource({ output: transport, checkoutRoot: root, clockId }), { flag: 'wx', mode: 0o600 });
   await writeFile(taskExtension, "import fs from 'node:fs';import crypto from 'node:crypto';const inspectPayload=" + candidatePayloadBodies.toString()
+    + ';const inspectProject=' + candidateProjectInspection.toString()
     + ';export default api => (' + observeCandidateTask.toString() + ')(api,{fs,crypto,inspectPayload,output:' + JSON.stringify(tasks)
-    + ',bodyFiles:' + JSON.stringify(config.expectedBodies ?? []) + ',payloadDirectory:' + JSON.stringify(payloads) + ',hostOutput:' + JSON.stringify(hostOutput) + '});\n', { flag: 'wx', mode: 0o600 });
+    + ',bodyFiles:' + JSON.stringify(config.expectedBodies ?? []) + ',payloadDirectory:' + JSON.stringify(payloads) + ',hostOutput:' + JSON.stringify(hostOutput)
+    + ',inspectProject,projectRoot:' + JSON.stringify(project?.root ?? null) + '});\n', { flag: 'wx', mode: 0o600 });
   await writeFile(sourcePreload, sourceObserverPreloadSource({ output: sourceLedger, checkoutRoot: root, clockId, cliPath: baselineFiles[2].realpath, ownerParentPid: process.pid, ownerEntry: host.path }), { flag: 'wx', mode: 0o600 });
   await writeFile(sdkPreload, "import fs from 'node:fs';import {channel} from 'node:diagnostics_channel';import {createHash} from 'node:crypto';import {isMainThread} from 'node:worker_threads';const hash=value=>createHash('sha256').update(value).digest('hex');\n"
     + safeRequestMetrics.toString() + '\nif(isMainThread&&process.ppid===' + process.pid + '){const sdk=(' + observeGraphSdk.toString()
@@ -764,6 +797,12 @@ export async function runCandidatePrint(config) {
   const args = ['-p', ...(config.arm === 'notion-only' ? ['-ns'] : []), '--approve', '--session-dir', sessions, '--model', config.model, '--thinking', config.thinkingLevel,
     '-e', costExtension, '-e', transportExtension, '-e', taskExtension];
   if (cliPolicy) args.push('-e', cliGuard);
+  if (project) {
+    const guard = join(control, 'project-guard.mjs');
+    await writeFile(guard, 'const inspectProject=' + candidateProjectInspection.toString() + ';export default api=>('
+      + guardCandidateProject.toString() + ')(api,{inspectProject,projectRoot:' + JSON.stringify(project.root) + '});\n', { flag: 'wx', mode: 0o600 });
+    args.push('-e', guard);
+  }
   let prefix;
   if (previous) {
     prefix = await readFile(previous.session.path);

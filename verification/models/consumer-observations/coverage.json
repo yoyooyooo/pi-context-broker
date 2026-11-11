@@ -74,7 +74,8 @@
         "scripts/verify-pi-daily-candidate.test.mjs",
         "scripts/notion-skill-graph-project.test.mjs"
       ],
-      "contract": "AH-623/AH-639/AH-638 use the existing default_view_id and owned five-file application. Same-library View preservation and explicit selection cannot silently carry an old View to another library. This driver wiring changes no Availability or ReadRace transition. Autonomous route quality, full artifacts, independent helper execution and paired total costs require actual worker/high sessions and payload/wire audits; the finite models cannot establish them."
+      "contract": "AH-623/AH-639/AH-638 use the existing default_view_id and owned five-file application. Same-library View preservation and explicit selection cannot silently carry an old View to another library. This driver wiring changes no Availability or ReadRace transition. Autonomous route quality, full artifacts, independent helper execution and paired total costs require actual worker/high sessions and payload/wire audits; the finite models cannot establish them.",
+      "project_inspection": "The original A real run used only owned-cwd ls/pwd/bounded-find, which the old print verifier classified as forbidden execution. Its original failure remains. A separate driver admits a finite inventory vocabulary for the existing owned application only, blocks other bash before execution, and retains the actual shell-call flag plus a separate hash-bound inspection receipt. It does not change product tools, Notion acquisition, effects, activation or permission semantics. Direct wrong-cwd, outside-path, substitution, redirection, executable and budget negatives cover this host-test boundary; no TLA transition or model success claim is added."
     },
     {
       "name": "actual validation time and cache origin",
