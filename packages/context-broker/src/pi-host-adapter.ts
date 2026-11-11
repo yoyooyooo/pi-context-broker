@@ -51,7 +51,7 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
         const paths = { type: "array", minItems: 1, maxItems: DEFAULT_RESOURCE_READ_BUDGET.maxFiles,
           items: { type: "string", pattern: resourceRef.source },
           description: "Copy complete resource refs verbatim from the selected Skill snapshot's resource directory. Every ref must identify a file in the same owner and snapshot. Reads all selected files in one operation without preparing the main body." };
-        const scalarProperties = { ...native.parameters.properties, readOnly: { type: "boolean", description: "For a Notion path, forbid remote writes, including history retention. Reject before writing if current content requires retention." }, path: {
+        const scalarProperties = { ...native.parameters.properties, readOnly: { type: "boolean", description: "For Notion path or paths, forbid remote writes, including history retention. Reject before writing if the producer cannot enforce this policy." }, path: {
           ...(object(native.parameters.properties.path) ? native.parameters.properties.path : { type: "string" }),
           description: "Local file path (relative or absolute), or an issued skill:// or sr: ref. Copy refs verbatim; never guess filesystem paths.",
         } };
@@ -60,14 +60,15 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
         const parameters: Record<string, unknown> = { type: "object", properties: { ...scalarProperties, paths } };
         const definition: PiReadDefinition = {
           ...native,
-          description: "For Notion introductions, summaries or inspection, copy a supplied Skill/resource ref into path. This reads content without loading Requires or activating its workflow. Current reads may retain history. If the user requests read-only or no writes, pass readOnly:true with path; it forbids retention too and may refuse the read. In the final answer, report effects.remote_writes retained or unknown explicitly; author_content unchanged does not mean no writes. " + native.description + " Alternatively, paths reads fixed resources of one owner and snapshot together; choose path or paths. Batch reads exclude offset/limit and the main entrypoint.",
+          description: "For Notion introductions, summaries or inspection, copy a supplied Skill/resource ref into path. This reads content without loading Requires or activating its workflow. Current reads may retain history. If the user requests read-only or no writes, pass readOnly:true with path or paths; it forbids retention too and may refuse the read. In the final answer, report effects.remote_writes retained or unknown explicitly; author_content unchanged does not mean no writes. " + native.description + " Alternatively, paths reads fixed resources of one owner and snapshot together; choose path or paths. Batch reads exclude offset/limit and the main entrypoint.",
           parameters, defaultActive: activeTools().includes("read"),
           ...(native.outputSchema ? { outputSchema: { anyOf: [native.outputSchema, resourceOutputSchema] } } : {}),
           async execute(id, input, signal, onUpdate, context) {
             const hasPath = Object.hasOwn(input, "path"), hasPaths = Object.hasOwn(input, "paths");
             if (hasPath === hasPaths
-              || hasPath && (typeof input.path !== "string" || input.readOnly !== undefined && typeof input.readOnly !== "boolean" || [input.offset, input.limit].some(value => value !== undefined && (typeof value !== "number" || !Number.isFinite(value))))
-              || hasPaths && (Object.keys(input).some(key => key !== "paths") || !Array.isArray(input.paths)
+              || input.readOnly !== undefined && typeof input.readOnly !== "boolean"
+              || hasPath && (typeof input.path !== "string" || [input.offset, input.limit].some(value => value !== undefined && (typeof value !== "number" || !Number.isFinite(value))))
+              || hasPaths && (Object.keys(input).some(key => key !== "paths" && key !== "readOnly") || !Array.isArray(input.paths)
                 || input.paths.length < 1 || input.paths.length > DEFAULT_RESOURCE_READ_BUDGET.maxFiles
                 || input.paths.some(value => typeof value !== "string" || !resourceRef.test(value)))) {
               throw Object.assign(new Error("Choose one file path or an explicit resource paths array"), { code: "INVALID_ARGUMENT" });

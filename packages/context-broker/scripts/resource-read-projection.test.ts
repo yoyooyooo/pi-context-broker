@@ -6,6 +6,7 @@ import {
 } from "../src/resource-read-projection";
 import { deduplicateSourceReads, sessionSourceBindings, sourceMessageText, projectSelectedSourceMessages } from "../src/session-source-snapshot";
 import type { AgentMessage } from "../src/types";
+import { noConsumptionWrites, type ConsumptionEffects } from "../src/consumption-effects";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 const selection: ResourceReadSelection = { scope: "resource-scope", owner: "shared_skill:lib:resources", snapshot_id: "s_" + "a".repeat(64), version_id: "b".repeat(64) };
@@ -57,6 +58,23 @@ test("model output budget measures the complete serialized result, including esc
   const input = { toolCallId: "boundary", batch: { selection, files }, modelRefs: files.map(value => value.ref) };
   expect(sourceMessageText(compileResourceRead({ ...input, maxContextBytes: bytes }).content)).toBe(text);
   expect(() => compileResourceRead({ ...input, maxContextBytes: bytes - 1 })).toThrow("model context byte budget");
+});
+
+test("batch effects remain outside complete body spans and survive provider deduplication", () => {
+  const effects: ConsumptionEffects = { version: 1, remote_writes: "retained", author_content: "unchanged",
+    retention: [{ skill_page_id: "owner", file_id: "a", operation_id: "retention", status: "confirmed" }] };
+  const result = compileResourceRead({ toolCallId: "effects", batch: { selection, files }, modelRefs: files.map(file => file.ref), maxContextBytes: 1_048_576, effects });
+  const text = sourceMessageText(result.content), proof = result.details.contextBrokerResource;
+  expect(JSON.parse(text).effects).toEqual(effects);
+  expect(validateResourceReadProjection(text, proof)).toEqual(proof);
+  expect(proof.files.map(file => file.delivery)).toEqual(compile().details.contextBrokerResource.files.map(file => file.delivery));
+  const observed: AgentMessage = { role: "toolResult", toolName: "read", toolCallId: "effects", ...result };
+  const projected = deduplicateSourceReads([message("earlier"), observed])[1]!;
+  expect(JSON.parse(sourceMessageText(projected.content)).effects).toEqual(effects);
+  expect(JSON.parse(sourceMessageText(projected.content)).files[0].content).toBe("Already available.");
+  const changed = renderResourceReadModel({ ...result.structuredContent, effects: noConsumptionWrites() }).content;
+  expect(validateResourceReadProjection(changed, proof)).toBeUndefined();
+  expect(deriveResourceReadProjection(text, changed, proof, [0])).toBeUndefined();
 });
 
 test("source hashes, stable File identities, output encoding and duplicates are checked before proof", () => {
