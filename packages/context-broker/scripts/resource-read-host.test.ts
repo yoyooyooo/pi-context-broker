@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { JsonSchema, Schema, SchemaRepresentation } from "effect";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -103,6 +104,7 @@ async function fixture() {
       manifest_complete: true, local_files_ready: false, materialized_paths: [] } };
   const short = createSessionShortRefHost(api);
   return { root, ref, files, metadata, selected, ctx, state, emit, short,
+    definition: () => tools.get("read")!.definition,
     result: async (result: Record<string, unknown>) => {
       const updates: unknown[] = [];
       for (const handler of events.get("tool_result") ?? []) updates.push(await handler({ toolName: "read", toolCallId: "batch-call", ...result } as never, ctx));
@@ -141,6 +143,24 @@ test("AH639 strict batch passes one policy and preserves complete issued-resourc
   expect(result.details).toHaveProperty("effects", effects);
   expect(f.state.entries).toHaveLength(entries);
   expect(f.state.mainReads).toBe(0); expect(f.state.scalarReads).toBe(0); expect(f.state.persisted).toBe(0);
+});
+
+test("ready batch effects satisfy the registered Pi output schema", async () => {
+  const f = await fixture(), paths = f.files.map(file => f.short.resource(f.ctx, f.selected, file.ref));
+  const registered = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))(f.definition().outputSchema);
+  const decode = Schema.decodeUnknownSync(SchemaRepresentation.fromJsonSchemaDocument(
+    JsonSchema.fromSchemaDraft2020_12(registered)), { onExcessProperty: "error" });
+  const ordinary = await f.read({ paths });
+  expect(ordinary.structuredContent).toHaveProperty("effects.remote_writes", "unknown");
+  expect(decode(ordinary.structuredContent)).toEqual(ordinary.structuredContent);
+  f.state.effects = noConsumptionWrites();
+  const strict = await f.read({ paths, readOnly: true });
+  expect(strict.structuredContent).toHaveProperty("effects.remote_writes", "none");
+  expect(decode(strict.structuredContent)).toEqual(strict.structuredContent);
+  expect(decode("native scalar output")).toBe("native scalar output");
+  const model = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))(strict.structuredContent);
+  expect(() => decode({ ...model, effects: { ...noConsumptionWrites(), version: "1" } })).toThrow();
+  expect(() => decode({ ...model, unexpected: true })).toThrow();
 });
 
 test("strict batch failure retains the producer's zero-write receipt without a body delivery", async () => {
