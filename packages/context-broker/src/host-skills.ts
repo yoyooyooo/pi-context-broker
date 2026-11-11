@@ -130,7 +130,12 @@ async function assertEntryFilePath(record: SkillRecord, path: string | undefined
   }
 }
 type ActivationOutcome<T> = { ok: true; value: T } | { ok: false; error: unknown };
-type PreparedReadResult = ToolCallResult & { assertCurrent?: () => void; effects?: ConsumptionEffects };
+type ReadAdmissionStage = "metadata" | "reference" | "preparation" | "resource" | "path_validation" | "admission";
+type ReadAdmission = {
+  version: 1; phase: "hook" | "execute"; stage: ReadAdmissionStage; code: string;
+  generation_started: number; generation_current: number; signal_aborted: boolean;
+};
+type PreparedReadResult = ToolCallResult & { assertCurrent?: () => void; effects?: ConsumptionEffects; admission?: ReadAdmission };
 type ResolvedHostReference = { reference: ExactNativeReference; canonicalRef: string; short?: HostShortRefResolution; record?: SkillRecord };
 type PendingResourceRead = {
   generation: number;
@@ -1685,14 +1690,34 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     return { input: { ...event.input, path: file.output }, assertCurrent: current, effects: consumptionEffects(effects) };
   }
 
+  function blockedRead(error: unknown, phase: ReadAdmission["phase"], stage: ReadAdmissionStage,
+    started: number, signal: AbortSignal, effects?: ConsumptionEffects, message?: string): PreparedReadResult {
+    const code = error && typeof error === "object" && "code" in error && typeof error.code === "string" && /^[A-Z_]+$/.test(error.code)
+      ? error.code : "SOURCE_ACTIVATION_FAILED";
+    const admission: ReadAdmission = { version: 1, phase, stage, code,
+      generation_started: started, generation_current: generation, signal_aborted: signal.aborted };
+    // The original native call retains its path and source selection. Report
+    // only the boundary facts here; a stage is not a new authority proof.
+    // Reference ambiguity is already a public JSON choice response. Preserve
+    // its top-level candidates; the admission remains available in details.
+    const reason = stage === "reference" && error instanceof SourceReferenceAmbiguity ? failure(error)
+      : JSON.stringify({ error: message ?? failure(error), ...(effects ? { effects } : {}), admission });
+    return { block: true, reason,
+      ...(effects ? { effects } : {}), admission };
+  }
+
   async function prepareRead(event: ToolCallEvent, ctx: ExtensionContext, signal: AbortSignal, readPhase: "hook" | "execute"): Promise<PreparedReadResult | undefined> {
     if (event.toolName !== "read" || !event.input || typeof event.input.path !== "string") return undefined;
     const requested = event.input.path;
+    const started = generation;
+    let stage: ReadAdmissionStage = "metadata";
+    const blocked = (error: unknown, effects?: ConsumptionEffects, message?: string) => blockedRead(error, readPhase, stage, started, signal, effects, message);
     const explicit = requested.startsWith("skill://") || isSessionShortRefInput(requested);
     // A plain file read does not acquire a remote Skill dependency. Published
     // broker locations are matched below and activate() retains their gate.
     try { if (!deferredPiDiscovery || explicit) await ready(signal); }
-    catch (error) { return { block: true, reason: failure(error) }; }
+    catch (error) { return blocked(error); }
+    stage = "reference";
     let selected: SkillRecord | undefined;
     let suffix = "";
     let reference = "";
@@ -1707,14 +1732,14 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         canonicalRef = resolved.canonicalRef;
         selected = await exactRecord(exactReference, ctx, signal, short, resolved.record);
         reference = exactReference.path;
-      } catch (error) { return { block: true, reason: failure(error) }; }
+      } catch (error) { return blocked(error); }
     } else {
       const raw = isAbsolute(requested) || requested.startsWith("~/") ? requested : join(ctx.cwd ?? process.cwd(), requested);
       let expanded = raw.startsWith("~/") ? join(homedir(), raw.slice(2)) : raw;
       try {
         const roots = new Set([...readRecords.values()].flatMap(record => record.entryManifest ? [record.entryManifest.root] : []));
         expanded = await canonicalEntryPath(expanded, roots, signal);
-      } catch (error) { return { block: true, reason: failure(error) }; }
+      } catch (error) { return blocked(error); }
       for (const [index, record] of readRecords) {
         const spellings = [index, index.startsWith(homedir() + sep) ? `~${index.slice(homedir().length)}` : index];
         const exact = spellings.find((path) => requested === path || requested.startsWith(`${path}:`));
@@ -1749,17 +1774,19 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const queryAt = reference.indexOf("?");
       if (queryAt >= 0) {
         const query = new URLSearchParams(reference.slice(queryAt + 1));
-        if ([...query.keys()].some(key => key !== "snapshot") || query.getAll("snapshot").length !== 1) return { block: true, reason: failure(hostError("SOURCE_REFERENCE_INVALID")) };
+        if ([...query.keys()].some(key => key !== "snapshot") || query.getAll("snapshot").length !== 1) return blocked(hostError("SOURCE_REFERENCE_INVALID"));
         retained ??= gate.active?.prepared.get(recordIdentity(selected)) ?? loaded.get(recordIdentity(selected))?.record;
-        if (query.get("snapshot") !== retained?.snapshotId) return { block: true, reason: "Requested snapshot is unavailable in the active invocation" };
+        if (query.get("snapshot") !== retained?.snapshotId) return blocked(hostError("SOURCE_SESSION_CONFLICT"), undefined, "Requested snapshot is unavailable in the active invocation");
         reference = reference.slice(0, queryAt);
       }
     }
     try {
       if (readPhase === "execute" && exactReference) {
+        stage = "resource";
         const fixed = await prepareFixedResourceRead(canonicalRef ? { ...event, input: { ...event.input, path: canonicalRef } } : event, ctx, signal, selected, exactReference, short);
         if (fixed) return fixed;
       }
+      stage = "preparation";
       const snapshot = retained ?? await activate(selected, ctx, signal, true, readPhase,
         exactReference?.snapshot ?? (selected.entryManifest ? selected.snapshotId : undefined), policy);
       if (retained) observedEffects.push(noConsumptionWrites());
@@ -1769,13 +1796,16 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         const root = snapshot.entryManifest.root;
         reference = relative(root, resolve(root, dirname(snapshot.entrypoint ?? "SKILL.md"), reference)).split(sep).join("/");
       }
+      stage = "path_validation";
       await assertEntryFilePath(snapshot, reference || snapshot.entrypoint, signal);
       let path = reference && reference !== (selected.entrypoint ?? "SKILL.md") ? resolve(dirname(snapshot.path), reference) : snapshot.path;
       if (snapshot.entryManifest && reference && reference !== snapshot.entrypoint) {
+        stage = "resource";
         if (!options.loadResource) throw hostError("SOURCE_RESOURCE_UNAVAILABLE");
         path = await options.loadResource(snapshot, reference, ctx, signal, policy);
       }
       if (explicit) {
+        stage = "path_validation";
         const entrypoint = selected.entrypoint ?? "SKILL.md";
         if (isAbsolute(entrypoint) || /[\\\u0000]/.test(entrypoint) || entrypoint.split("/").some(part => !part || part === "." || part === "..")) throw hostError("SOURCE_REFERENCE_INVALID");
         let root = resolve(snapshot.path);
@@ -1786,6 +1816,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         const within = relative(actualRoot, path);
         if (!within || within === ".." || within.startsWith(`..${sep}`) || isAbsolute(within) || !(await lstat(path)).isFile()) throw hostError("SOURCE_REFERENCE_INVALID");
       }
+      stage = "admission";
       checkPreparationSignal(signal);
       graphSelectionCommits.get(snapshot)?.();
       if (event.toolCallId && snapshot.entryManifest && reference && reference !== snapshot.entrypoint) {
@@ -1807,7 +1838,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       return { input: updated, effects: observedEffects.length ? combineConsumptionEffects(observedEffects) : consumptionEffects(undefined) };
     } catch (error) {
       const effects = combineConsumptionEffects([...observedEffects, errorConsumptionEffects(error)]);
-      return { block: true, reason: JSON.stringify({ error: failure(error), effects }), effects };
+      return blocked(error, effects);
     }
   }
   async function readResourceBatch(input: Record<string, unknown>, ctx: ExtensionContext, signal: AbortSignal, toolCallId: string) {
@@ -1887,7 +1918,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
     checkPreparationSignal(executionSignal);
     const prepared = await prepareRead({ toolName: "read", toolCallId, input }, ctx, executionSignal, "execute");
-    if (prepared && "block" in prepared) throw Object.assign(new Error(prepared.reason), { details: { effects: prepared.effects } });
+    if (prepared && "block" in prepared) throw Object.assign(new Error(prepared.reason), { details: { effects: prepared.effects, admission: prepared.admission } });
     checkPreparationSignal(executionSignal);
     try {
       const result = await read(prepared?.input ?? input, executionSignal);
@@ -1906,9 +1937,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (event.toolName === "read" && readRunsInTool?.()) return undefined;
     const operationSignal = deferredPiDiscovery && event.toolName === "read" ? ctx.signal : undefined;
     const readSignal = operationSignal ? AbortSignal.any([operationSignal, lifecycleController.signal]) : lifecycleController.signal;
+    const started = generation;
     const prepared = await prepareRead(event, ctx, readSignal, "hook");
     if (prepared && "block" in prepared) return prepared;
-    if (event.toolName === "read" && readSignal.aborted) return { block: true, reason: failure(preparationCancelled()) };
+    if (event.toolName === "read" && readSignal.aborted) return blockedRead(preparationCancelled(), "hook", "admission", started, readSignal, prepared?.effects);
     if (prepared) Object.assign(event.input, prepared.input);
     return prepared ? adapter.updatedRead(prepared.input) : undefined;
   });

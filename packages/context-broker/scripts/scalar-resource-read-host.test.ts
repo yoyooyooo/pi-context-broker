@@ -182,7 +182,15 @@ test("foreign scalar selections fail before native read and never trigger prepar
     value => ({ ...value, file: { ...value.file, ref: f.ref("references/guide.md", "other") } }),
     value => ({ ...value, file: { ...value.file, output: "relative.md" } }),
   ];
-  for (const transform of mutations) { f.state.transform = transform; await expect(f.read({ path: f.files[0]!.ref })).rejects.toThrow(); }
+  for (const transform of mutations) {
+    f.state.transform = transform;
+    const input = { path: f.files[0]!.ref };
+    await expect(f.read(input)).rejects.toMatchObject({ details: { admission: {
+      version: 1, phase: "execute", stage: "resource", code: expect.any(String), signal_aborted: false,
+      generation_started: expect.any(Number), generation_current: expect.any(Number),
+    } } });
+    expect(input.path).toBe(f.files[0]!.ref);
+  }
   expect(f.state.nativeInputs).toHaveLength(0); expect(f.state.mainReads + f.state.graphReads).toBe(0);
 });
 
