@@ -96,6 +96,20 @@ test('exact body counts exclude tool definitions, details, and call arguments, r
   assert.equal(candidatePayloadBodies({ messages: [{ content: JSON.stringify({ content: body }) }] }, [file])[0].occurrences, 1);
 });
 
+test('candidate View is explicit, remains in the same source, and cannot leak from a different library', () => {
+  const database = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const viewId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const original = { sources: [{ id: 'notion', type: 'notion', database, default_view_id: viewId, prefetch: false }] };
+  const input = { sourceId: 'notion', database, cacheDir: '/owned/cache' };
+  assert.equal(candidateSourceConfig(original, input).sources[0].default_view_id, viewId);
+  const selected = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  assert.equal(candidateSourceConfig(original, { ...input, viewId: selected }).sources[0].default_view_id, selected);
+  assert.equal(original.sources[0].default_view_id, viewId);
+  assert.throws(() => candidateSourceConfig(original, { ...input, database: selected }));
+  assert.equal(candidateSourceConfig(original, { ...input, database: selected, viewId }).sources[0].default_view_id, viewId);
+  for (const invalid of ['', 'first', null, true]) assert.throws(() => candidateSourceConfig(original, { ...input, viewId: invalid }));
+});
+
 test('proof matching cannot combine owner and snapshot from different records', () => {
   const values = [{ owner: 'correct', snapshot: 'wrong' }, { owner: 'wrong', snapshot: 'correct' }];
   assert.equal(containsProof(values, { owner: 'correct', snapshot: 'correct' }), false);

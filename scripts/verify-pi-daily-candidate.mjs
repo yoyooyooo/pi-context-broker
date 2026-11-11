@@ -14,6 +14,7 @@ import { sourceObserverPreloadSource, readSourceObservation } from './skill-cons
 import { observeGraphSdk } from './notion-skill-graph-model-evidence.mjs';
 import { observeOwnedObjectReads } from './notion-sdk-pi.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
+import { createOwnedGraphProject, retainGeneratedPlan } from './notion-skill-graph-project.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -121,8 +122,9 @@ export function candidateProjectSettings(oldSource, candidateRoot) {
   return { packages: [{ source: oldSource, extensions: [] }, candidateRoot] };
 }
 
-export function candidateSourceConfig(original, { sourceId, database, cacheDir, noNotion = false }) {
+export function candidateSourceConfig(original, { sourceId, database, cacheDir, viewId, noNotion = false }) {
   assert.ok(identifier(sourceId) && /^[a-f0-9-]{32,36}$/iu.test(database) && isAbsolute(cacheDir));
+  assert.ok(viewId === undefined || typeof viewId === 'string' && /^[a-f0-9-]{32,36}$/iu.test(viewId), 'Use an explicit reviewed View ID');
   const config = structuredClone(original);
   const matches = (config.sources ?? []).filter(source => source.id === sourceId && source.type === 'notion');
   assert.equal(matches.length, 1, 'The reviewed existing Notion source must be unique');
@@ -130,10 +132,11 @@ export function candidateSourceConfig(original, { sourceId, database, cacheDir, 
     'Another enabled Notion source needs an explicit reviewed scope');
   assert.equal(matches[0].command, undefined, 'The candidate must use its bundled SDK');
   assert.ok(matches[0].prefetch === undefined || matches[0].prefetch === false, 'Do not silently alter daily prefetch');
-  assert.equal(matches[0].default_view_id, undefined, 'A daily View cannot be carried into a different test library');
+  if (matches[0].database !== database && viewId === undefined)
+    assert.equal(matches[0].default_view_id, undefined, 'A daily View cannot be carried into a different test library');
   for (const key of ['skillRoots', 'extraSkillRoots', 'ruleRoots', 'discoveryCatalogs', 'extraDiscoveryCatalogs'])
     for (const path of config[key] ?? []) assert.ok(isAbsolute(path) || path.startsWith('~/'), 'Relative config paths need explicit scope review');
-  Object.assign(matches[0], { database, cacheDir, ...(noNotion ? { enabled: false } : {}) });
+  Object.assign(matches[0], { database, cacheDir, ...(viewId === undefined ? {} : { default_view_id: viewId }), ...(noNotion ? { enabled: false } : {}) });
   return config;
 }
 
@@ -548,6 +551,7 @@ export async function runCandidatePrint(config) {
   assert.equal(config.model, 'magpie/group/worker'); assert.equal(config.thinkingLevel, 'high');
   assert.ok(['normal', 'notion-only'].includes(config.arm) && identifier(config.id));
   assert.ok(typeof config.prompt === 'string' && config.prompt.trim());
+  assert.ok(config.project === undefined || config.project === 'owned-ticket-service');
   assert.ok(isAbsolute(config.evidenceRoot) && !inside(root, config.evidenceRoot));
   assert.ok(isAbsolute(config.brokerRoot) && config.sourceId && config.database);
   assert.ok(process.env.NOTION_API_TOKEN?.trim(), 'Use the already authorized Notion identity');
@@ -586,6 +590,8 @@ export async function runCandidatePrint(config) {
     assert.equal((await identity(previous.session.path)).sha256, previous.session.sha256);
   }
   const cwd = previous?.launch.cwd ?? await mkdtemp('/private/tmp/notion-candidate-print-');
+  if (previous) assert.equal(previous.project?.kind, config.project, 'A continuation must retain its original application');
+  const project = previous?.project ?? (config.project ? { ...await createOwnedGraphProject(cwd), kind: config.project } : undefined);
   const stateRoot = previous?.stateRoot ?? join(evidence, 'owned-state');
   const control = join(evidence, 'observation'), sessions = join(evidence, 'sessions'), responses = join(control, 'sdk-responses'), payloads = join(control, 'provider-payloads');
   for (const path of [join(cwd, '.pi'), stateRoot, control, sessions, responses, payloads]) await mkdir(path, { recursive: true, mode: 0o700 });
@@ -593,7 +599,7 @@ export async function runCandidatePrint(config) {
   if (previous) assert.deepEqual(await json(join(cwd, '.pi/settings.json')), projectSettings);
   else await save(join(cwd, '.pi/settings.json'), projectSettings);
   const sourceCache = join(stateRoot, 'broker-cache'), state = join(stateRoot, 'ntn/state');
-  const source = candidateSourceConfig(originalSource, { sourceId: config.sourceId, database: config.database, cacheDir: sourceCache });
+  const source = candidateSourceConfig(originalSource, { sourceId: config.sourceId, database: config.database, cacheDir: sourceCache, viewId: config.viewId });
   const observedSource = source.sources.find(source => source.id === config.sourceId);
   assert.equal(observedSource.discovery?.maxAge, '5m'); assert.equal(observedSource.activation?.maxAge, '5m');
   assert.equal(observedSource.prefetch, false);
@@ -629,7 +635,7 @@ export async function runCandidatePrint(config) {
   const before = { settings: await identity(settingsPath), source: await identity(sourcePath), packages: settings.packages,
     otherPackagesSha256: hash(JSON.stringify(settings.packages.filter((_, index) => index !== (config.packageIndex ?? 1)))) };
   const result = { version: 1, scope: config.scope, status: 'running', arm: config.arm, id: config.id, database: config.database,
-    evidence, stateRoot, baselineFiles, runtime, ownership, before, host, hostArtifact: await identity(host.identity), expectedUserMessages: (previous?.expectedUserMessages ?? 0) + 1,
+    evidence, stateRoot, project, baselineFiles, runtime, ownership, before, host, hostArtifact: await identity(host.identity), expectedUserMessages: (previous?.expectedUserMessages ?? 0) + 1,
     launch: { cwd, executable: host.file, args: [...host.prefix, ...args], normalHome: true, normalAgentDir: true, normalMcpAndExtensions: true,
       projectPackageOverrideOnly: true, nativeSkillDiscovery: config.arm !== 'notion-only', sourceStateStartsEmpty: !previous,
       cliDevRootOverride: null, inheritedCliDevRootOverrideRemoved: Boolean(process.env.NTN_SKILLS_DEV_ROOT),
@@ -671,6 +677,8 @@ export async function runCandidatePrint(config) {
     for (const event of task.filter(event => event.phase === 'provider_payload')) {
       const actual = await identity(event.payloadFile); assert.equal(actual.sha256, event.sha256); assert.equal(actual.bytes, event.bytes);
     }
+    if (project) result.generatedPlan = await retainGeneratedPlan({ evidence, project,
+      final: task.filter(event => event.phase === 'assistant_final').at(-1), prompt: { sha256: hash(config.prompt) } });
     result.status = 'passed';
   } catch (error) {
     result.status = 'failed'; result.error = { code: error.code ?? error.name, message: error.message };
@@ -681,8 +689,9 @@ export async function runCandidatePrint(config) {
     if (!result.session && hostState?.sessionFile && await exists(hostState.sessionFile)) result.session = await identity(hostState.sessionFile);
     result.normalConfigurationUnchanged = (await identity(settingsPath)).sha256 === before.settings.sha256 && (await identity(sourcePath)).sha256 === before.source.sha256;
     result.baselineFilesUnchanged = (await Promise.all(baselineFiles.map(async file => (await identity(file.path)).sha256 === file.sha256))).every(Boolean);
+    if (project) result.projectFilesUnchanged = (await Promise.all(project.files.map(async file => (await identity(join(project.root, file.path))).sha256 === file.sha256))).every(Boolean);
     if (previous) result.originalSessionUnchanged = (await identity(previous.session.path)).sha256 === previous.session.sha256;
-    if (!result.normalConfigurationUnchanged || !result.baselineFilesUnchanged || result.originalSessionUnchanged === false) result.status = 'failed';
+    if (!result.normalConfigurationUnchanged || !result.baselineFilesUnchanged || result.originalSessionUnchanged === false || result.projectFilesUnchanged === false) result.status = 'failed';
     await save(join(evidence, 'result.json'), result);
   }
   return { status: result.status, evidence, error: result.error, session: result.session, assertions: result.assertions };

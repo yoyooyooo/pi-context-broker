@@ -69,6 +69,14 @@
   },
   "outside_finite_models": [
     {
+      "name": "daily View and owned application experiment",
+      "tests": [
+        "scripts/verify-pi-daily-candidate.test.mjs",
+        "scripts/notion-skill-graph-project.test.mjs"
+      ],
+      "contract": "AH-623/AH-639/AH-638 use the existing default_view_id and owned five-file application. Same-library View preservation and explicit selection cannot silently carry an old View to another library. This driver wiring changes no Availability or ReadRace transition. Autonomous route quality, full artifacts, independent helper execution and paired total costs require actual worker/high sessions and payload/wire audits; the finite models cannot establish them."
+    },
+    {
       "name": "actual validation time and cache origin",
       "tests": [
         "consumer-observation.test.ts",
