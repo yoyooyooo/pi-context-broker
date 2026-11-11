@@ -368,6 +368,8 @@ AH-639 的真实 A v2 反例使用公开 schema 允许的三个 `sr:R` 与 `read
 
 严格批读独立核对 SDK `RESOURCE_READ_EFFECTS_VERSION = 1` 与 runtime `resource_read_effects_version: 1`，不能由 scalar effects 版本推断。CLI 批读沿原 `withConsumptionEffects` 和 `readOnlyNotion` 覆盖整个后代请求链。精确写前红例在选中对象读取后代尝试语义写：旧行为实际到 transport 一次，新严格行为必须在 scheduler 前拒绝且零写；普通控制保留一次调用。批读 ready、failed、cancelled 均保留本次 effects，模型 JSON 的 effects 位于原正文 span 外，repeat 投影仍保留它。
 
+独立审阅另发现注册的 Pi `outputSchema` 关闭额外字段却遗漏 `effects`。在现有 `resource-read-host.test.ts` 用实际注册 schema 校验实际批读 `structuredContent`，保留 native string 分支；普通 unknown 与严格 none 回执均须通过，非法 effects 字段须拒绝。使用已安装 Effect JSON Schema 解码器并显式拒绝额外字段，先保存旧 schema 红例再补声明；不以字段存在断言代替整个返回契约校验。该补充仅对齐既有输出字段，不改变消费状态或写边界，也不重跑模型。
+
 该修复复用原消费状态、严格写边界和固定资源证明，没有新增模型状态或远端操作，不因参数接线重跑或扩展 TLC。原 `notion-only-A-notion-only-project-v2-o6OHOD` 会话和失败结论保留；定向回归与 typecheck 不能证明原自主任务已完成，也不替代新的真实模型样本。修复原件另存 `verification-evidence/ah955-20261111/ah639-batch-readonly`，冻结运行包不修改。
 
 `resource-batch` 故意直接输入canonical固定引用，所以它只证明批读与发现的短引用分别可用。实际 `sr:R[]` 用独立 variant 验证：

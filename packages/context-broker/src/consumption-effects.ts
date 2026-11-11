@@ -6,6 +6,18 @@ export type ConsumptionEffects = {
   version: 1; remote_writes: "none" | "retained" | "unknown";
   author_content: "unchanged" | "unknown"; retention: readonly ConsumptionRetentionEffect[];
 };
+export const consumptionEffectsJsonSchema = {
+  type: "object", properties: {
+    version: { const: 1 }, remote_writes: { enum: ["none", "retained", "unknown"] },
+    author_content: { enum: ["unchanged", "unknown"] },
+    retention: { type: "array", items: {
+      type: "object", properties: {
+        skill_page_id: { type: "string", minLength: 1 }, file_id: { type: "string", minLength: 1 },
+        operation_id: { type: "string", minLength: 1 }, status: { enum: ["confirmed", "unknown"] },
+      }, required: ["skill_page_id", "file_id", "operation_id", "status"], additionalProperties: false,
+    } },
+  }, required: ["version", "remote_writes", "author_content", "retention"], additionalProperties: false,
+};
 export type ConsumptionPolicy = { readOnly?: boolean; observeEffects?: (effects: ConsumptionEffects) => void };
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 export const noConsumptionWrites = (): ConsumptionEffects => ({ version: 1, remote_writes: "none", author_content: "unchanged", retention: [] });
