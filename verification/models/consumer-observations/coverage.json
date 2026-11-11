@@ -78,6 +78,14 @@
       "project_inspection": "The original A real run used only owned-cwd ls/pwd/bounded-find, which the old print verifier classified as forbidden execution. Its original failure remains. A separate driver admits a finite inventory vocabulary for the existing owned application only, blocks other bash before execution, and retains the actual shell-call flag plus a separate hash-bound inspection receipt. It does not change product tools, Notion acquisition, effects, activation or permission semantics. Direct wrong-cwd, outside-path, substitution, redirection, executable and budget negatives cover this host-test boundary; no TLA transition or model success claim is added."
     },
     {
+      "name": "source baseline partial state setup",
+      "tests": [
+        "scripts/skill-consumption-source-baseline.test.mjs"
+      ],
+      "contract": "The partial-cache driver moves only a verified owned main object to system Trash. State-setup Trash uses the existing cleanup budget of 30000ms, independently of the frozen source CLI timeout. The original 2000ms fixture timeout killed Trash after 2017.613875ms and correctly retained an initial-state failure; an absent executedMainReads field must not be replaced with a fabricated zero. The unchanged four-state test must still reach SNAPSHOT_MISSING, preserve the manifest and original bytes, and execute no main read for the partial sample.",
+      "bounds": "This changes a verification cleanup subprocess budget only. It does not change product availability, source writes, batch-resource readOnly, Pi model budgets or any finite-model transition. The original failure and exact command receipt remain retained; no new TLA run or model acceptance is inferred."
+    },
+    {
       "name": "actual validation time and cache origin",
       "tests": [
         "consumer-observation.test.ts",

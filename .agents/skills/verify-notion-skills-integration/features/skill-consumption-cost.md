@@ -58,6 +58,10 @@ Plan 在远程读取前冻结 CLI/hash、方法、样本顺序和初态；执行
 
 Cold 每例为空的自有状态；warm 使用独立 setup 后的共享自有状态，固定 5m 策略。Expired 使用冻结的 `--max-age 1s` 和实际单调计时至少 1001ms 的等待，验证 freshness 回执；不是 `--refresh` 或 `--max-age 0` 的强制全量行为。Partial 仅把已验证的自有主文对象移入系统 Trash，保存原对象和 manifest，随后走原固定 pin；不得回退 current 或补做成功来替换失败。
 
+Partial 的 owned Trash 状态准备使用与最终 cleanup 相同的独立 30 秒进程预算；来源 CLI 的冻结 `timeoutMs` 保持原值，模型预算也不受影响。2026-11-11 集成测试的原反例在 `source-baseline-driver-test-SqSXfL/runs/source-20261111T111026624Z-26a34b63`：fixture 的 2 秒 CLI 预算误用于 `/usr/bin/trash`，2017.613875ms 后 SIGTERM。对象已移出、manifest 未变，但非正常终局仍正确使初始化失败，尚未启动固定读取；缺失的 `executedMainReads` 不能用 `?? 0` 冒充已验证零次读取。原 samples、Trash receipt/lifecycle 和 partial manifest 只读复制至 `verification-evidence/ah623-639-638-20261111-daily/diagnostics/source-baseline-trash-timeout/`，保留失败与未知请求成本。定向复验使用原 `node --test scripts/skill-consumption-source-baseline.test.mjs`，仍须真正取得 partial 的 `SNAPSHOT_MISSING`、零 main read 和完整原对象备份。本修正仅区分状态设置与被测来源命令的预算，不改变 Pi driver、产品批量读取合同或有限模型语义。
+
+独立候选的原测试文件一次复跑为 8/8，通过记录在同证据根 `source-baseline-green.log` 与 `green-review.json`（SHA-256 `361f0905e78705c674f20aede00160e02b364820befea7057cb5c5560c170f3e`）。新 plan 的来源 CLI 仍为 2000ms；Trash 正常退出0，后续 partial prepare 返回预期 `SNAPSHOT_MISSING`，样本仍是被保留的 failed，main read 为0、计划为1、manifest和原对象备份完整。此结果不代替真实来源或模型验收。
+
 ### SC11 的六样本采用门槛失败
 
 2026-11-05 的 `inspect-current` 实验按冻结的 C6→候选、候选→C6、C6→候选顺序执行，六次均为独立空 consumer state。C6 包 SHA-256 为 `84f79a9d28a7667f0a58b33e3c5a0598c7adc3349e8263c5976ee8143153c1e4`，候选包为 `b647882c074f8e09a9c6600a9408aee1f6778932f2f7abc73c12b214408ce348`。完整安装入口、SDK、Node、driver、输入、scope 和独立 oracle hash 均在原计划中冻结。
