@@ -544,6 +544,8 @@ AH922 的新 Agent 原操作恢复继续使用同一 helper，另显式冻结 `p
 
 原生 Bash 截断大段公开 JSON 时，完整 stdout 是该已批准调用的工具产物。仅登记同一已批准 `toolCallId` 的真实 Bash `tool_result.details.fullOutputPath`，再允许原生 read 读取这一精确 spill 文件；不开放 `/tmp` 或接受任意结果声称的路径。原始截断输出、原生会话、完整 spill 的路径/bytes/hash 与 approved argv 同时保留。事后发现的守卫误拒绝不得靠重做实际 apply 获得新一轮绿色；保留失败，使用独立语义审计与公开 reconcile/current read 核对原结果。
 
+AH511 的冷作者只需同一 helper 的 `publicCli.mode: "owned-description-update"`：冻结独立 `managementIntent`、公共 CLI SHA、原 page/entry、唯一允许的新 Description 和全新四个状态根。Agent 从公开 help/schema 自己选择 update；先 dry-run 再一次真实更新的顺序由原生会话审计。门禁只接受原 page 的这一字段和这一完整值，拒绝 Enabled、Default Context、Name、Members、Requires 或任意恢复分支。update 使用公开默认 JSON，无额外 `--json`/`--metrics`；普通 read 继续严格只读。作者原件与完整 body oracle 分离。更新后的 `-ns` 与正常日用消费者使用同一最终候选和各自全新 Store，前者不加载本地 Skill 目录，后者保留全部日用扩展；两臂不重复管理写入。
+
 该管理模式把完整 native bash 调用逐条与门禁回执核对，并在结束后重算 CLI/原计划/原失败的 SHA。原 Store 是恢复前置，不能冒称空 Store。公共 CLI JSON 与 `--metrics` 另审；父进程 source observer 不覆盖 bash 孙进程，缺少实际 child source trace 时保持 unknown，不能把后台 SDK 的完整 ledger 当作 CLI 全覆盖。普通消费配置没有这个例外，仍要求零执行工具调用。
 
 ### 2026-11-11 真实双臂基线

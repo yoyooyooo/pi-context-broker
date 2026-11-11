@@ -138,6 +138,21 @@ test('public CLI scope rejects shell composition, replacement plans, owners and 
   ]) assert.throws(() => reviewCandidateCliCommand(command, publicCli), command);
 });
 
+test('public author update permits one exact Description and rejects every extra mutation', () => {
+  const policy = { ...publicCli, mode: 'owned-description-update', description: 'Verified shared author workflow.' };
+  const command = cliCommand + ' update original-page --database owned-library --description "Verified shared author workflow."';
+  assert.equal(reviewCandidateCliCommand(command + ' --dry-run', policy).dryRun, true);
+  assert.equal(reviewCandidateCliCommand(command, policy).kind, 'update');
+  assert.equal(reviewCandidateCliCommand(command.replace(' original-page', '') + ' original-page', policy).kind, 'update');
+  assert.equal(reviewCandidateCliCommand(cliCommand + ' schema update', policy).kind, 'schema');
+  assert.equal(reviewCandidateCliCommand(cliCommand + ' read original-page --database owned-library --json --metrics --read-only', policy).kind, 'read');
+  for (const value of [command.replace('original-page', 'another-page'), command.replace('Verified shared', 'Unreviewed'),
+    command.replace('owned-library', 'another-library'), command + ' --enabled true', command + ' --default-context', command + ' --clear-requires',
+    command + ' --name replacement', command + ' --json --metrics', command + '; node private.js', reviewCommand,
+    cliCommand + ' ctl operation show original-operation']) assert.throws(() => reviewCandidateCliCommand(value, policy), value);
+  assert.throws(() => reviewCandidateCliCommand(command, publicCli));
+});
+
 test('public CLI guard blocks before execution and confines native file reads to disclosed artifacts', () => {
   const handlers = new Map(), records = [];
   candidateCliGuard({ on(name, fn) { handlers.set(name, fn); } }, { fs: { openSync: () => 1, writeSync: (_fd, text) => records.push(JSON.parse(text)), closeSync() {} },

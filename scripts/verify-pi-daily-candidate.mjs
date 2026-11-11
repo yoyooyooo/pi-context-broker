@@ -140,11 +140,11 @@ export function candidateSourceConfig(original, { sourceId, database, cacheDir, 
   return config;
 }
 
-/** A deliberately small shell subset for the owned original-create recovery.
- * The public CLI still owns all recovery decisions, review IDs and Store writes. */
+/** A small shell subset for one frozen public author task.
+ * The public CLI owns author decisions, operation identities and Store writes. */
 export function reviewCandidateCliCommand(command, policy) {
   const check = (value, message) => { if (!value) throw new Error(message); };
-  check(policy?.mode === 'original-create-recovery', 'Unknown public CLI task scope');
+  check(['original-create-recovery', 'owned-description-update'].includes(policy?.mode), 'Unknown public CLI task scope');
   check(typeof command === 'string' && !/[\r\n\0\\]/u.test(command), 'Use one plain public CLI command');
   const text = command.trim(), words = [], token = /\s*(?:'([^']*)'|"([^"$`\\]*)"|([^\s'"\\;&|`<>$()*?\[\]{}!~]+))/uy;
   let at = 0;
@@ -164,20 +164,22 @@ export function reviewCandidateCliCommand(command, policy) {
     return { kind: 'schema', argv: words };
   }
   if (args.slice(0, 3).join(' ') === 'ctl operation show') {
-    check(args.length === 4 && args[3] === policy.operationId, 'Inspect only the original operation');
+    check(policy.mode === 'original-create-recovery' && args.length === 4 && args[3] === policy.operationId, 'Inspect only the original operation');
     return { kind: 'operation-show', argv: words };
   }
   const withinOutput = value => typeof value === 'string' && value.startsWith(policy.outputRoot + '/')
     && !value.split('/').some(part => part === '.' || part === '..') && !value.endsWith('/');
   const read = args[0] === 'read', files = args[0] === 'files', consumer = read || files;
-  if (!consumer) {
+  const update = policy.mode === 'owned-description-update' && args[0] === 'update';
+  if (!consumer && !update) {
+    check(policy.mode === 'original-create-recovery', 'Only the exact description update is authorized');
     check(args.slice(0, 4).join(' ') === 'ctl library create recovery' && ['review', 'apply', 'reconcile'].includes(args[4]), 'Only the original create recovery is authorized');
   }
-  const kind = consumer ? args[0] : args[4], flags = new Map(), positional = [];
-  const boolean = new Set(read ? ['--json', '--metrics', '--read-only', '--refresh', '--offline'] : files ? ['--metrics', '--offline'] : kind === 'apply' ? ['--dry-run'] : []);
-  const valued = new Set(read ? ['--database', '--output', '--path', '--from'] : files ? ['--database', '--path'] : ['--entry', '--max-requests', '--max-bytes', '--duration-ms',
+  const kind = consumer || update ? args[0] : args[4], flags = new Map(), positional = [];
+  const boolean = new Set(read ? ['--json', '--metrics', '--read-only', '--refresh', '--offline'] : files ? ['--metrics', '--offline'] : update || kind === 'apply' ? ['--dry-run'] : []);
+  const valued = new Set(read ? ['--database', '--output', '--path', '--from'] : files ? ['--database', '--path'] : update ? ['--database', '--description'] : ['--entry', '--max-requests', '--max-bytes', '--duration-ms',
     ...(kind === 'apply' ? ['--review', '--review-id'] : ['--target']), ...(kind === 'review' ? ['--output'] : [])]);
-  for (let index = consumer ? 1 : 5; index < args.length; index++) {
+  for (let index = consumer || update ? 1 : 5; index < args.length; index++) {
     const flag = args[index];
     if (!flag.startsWith('-')) { positional.push(flag); continue; }
     check(!flags.has(flag), 'Duplicate CLI option');
@@ -185,8 +187,11 @@ export function reviewCandidateCliCommand(command, policy) {
     else { check(valued.has(flag) && typeof args[index + 1] === 'string' && !args[index + 1].startsWith('--'), 'Unknown public CLI option'); flags.set(flag, args[++index]); }
   }
   check(positional.length === 1, 'Use the single public target argument');
-  check(flags.get(consumer ? '--database' : '--entry') === policy.database, 'Keep the exact reviewed library');
-  if (consumer) {
+  check(flags.get(consumer || update ? '--database' : '--entry') === policy.database, 'Keep the exact reviewed library');
+  if (update) {
+    check(positional[0] === policy.target && typeof policy.description === 'string' && flags.get('--description') === policy.description,
+      'Update only the original page to the exact authorized Description');
+  } else if (consumer) {
     const owner = value => value === policy.target || value?.startsWith(policy.refPrefix);
     const relativeFile = value => typeof value === 'string' && value.length > 0 && !value.startsWith('/') && !value.includes(':')
       && !value.split('/').some(part => part === '' || part === '.' || part === '..');
@@ -680,16 +685,22 @@ export async function runCandidatePrint(config) {
   const cliPolicy = config.publicCli;
   const cliProtected = [];
   if (cliPolicy) {
-    assert.equal(cliPolicy.mode, 'original-create-recovery'); assert.ok(!config.resumeFrom);
-    assert.ok(/^skill-create-[0-9a-f]{64}$/u.test(cliPolicy.operationId));
+    assert.ok(['original-create-recovery', 'owned-description-update'].includes(cliPolicy.mode)); assert.ok(!config.resumeFrom);
+    if (cliPolicy.mode === 'original-create-recovery') assert.ok(/^skill-create-[0-9a-f]{64}$/u.test(cliPolicy.operationId));
+    else {
+      assert.ok(typeof cliPolicy.description === 'string' && cliPolicy.description.trim() && [...cliPolicy.description].length <= 2000);
+      assert.ok(Object.values(cliPolicy.stateRoots).every(isAbsolute));
+      for (const path of Object.values(cliPolicy.stateRoots)) assert.equal(await exists(path), false, 'The cold author task needs its own initially empty state roots');
+    }
     assert.equal(cliPolicy.database, config.database); assert.ok(isAbsolute(cliPolicy.outputRoot) && inside(config.evidenceRoot, cliPolicy.outputRoot));
     assert.ok(cliPolicy.refPrefix.startsWith('skill://') && cliPolicy.refPrefix.endsWith('/'));
     assert.deepEqual(Object.keys(cliPolicy.stateRoots).sort(), ['NTN_SKILLS_HOME', 'NTN_SKILLS_CONFIG_HOME', 'NTN_SKILLS_CACHE_HOME', 'NTN_SKILLS_DATA_HOME'].sort());
     assert.ok(Object.values(cliPolicy.stateRoots).every(isAbsolute));
-    for (const expected of [cliPolicy.entry, cliPolicy.originalPlan, ...(cliPolicy.protectedFiles ?? [])]) {
+    const intent = cliPolicy.mode === 'original-create-recovery' ? cliPolicy.originalPlan : cliPolicy.managementIntent;
+    for (const expected of [cliPolicy.entry, intent, ...(cliPolicy.protectedFiles ?? [])]) {
       const actual = await identity(expected.path); assert.equal(actual.sha256, expected.sha256); cliProtected.push(actual);
     }
-    assert.ok(cliPolicy.inputFiles.includes(cliPolicy.originalPlan.path));
+    assert.ok(cliPolicy.inputFiles.includes(intent.path));
     assert.ok(cliPolicy.inputFiles.every(file => cliProtected.some(protectedFile => protectedFile.path === file)));
     await mkdir(cliPolicy.outputRoot, { recursive: true, mode: 0o700 });
   }
@@ -765,12 +776,14 @@ export async function runCandidatePrint(config) {
   const result = { version: 1, scope: config.scope, status: 'running', arm: config.arm, id: config.id, database: config.database,
     evidence, stateRoot, project, baselineFiles, runtime, ownership, before, host, hostArtifact: await identity(host.identity), expectedUserMessages: (previous?.expectedUserMessages ?? 0) + 1,
     launch: { cwd, executable: host.file, args: [...host.prefix, ...args], normalHome: true, normalAgentDir: true, normalMcpAndExtensions: true,
-      projectPackageOverrideOnly: true, nativeSkillDiscovery: config.arm !== 'notion-only', sourceStateStartsEmpty: !previous && !cliPolicy,
+      projectPackageOverrideOnly: true, nativeSkillDiscovery: config.arm !== 'notion-only', sourceStateStartsEmpty: !previous && (!cliPolicy || cliPolicy.mode === 'owned-description-update'),
       cliDevRootOverride: null, inheritedCliDevRootOverrideRemoved: Boolean(process.env.NTN_SKILLS_DEV_ROOT),
       previous: config.resumeFrom ?? null, sessionContinuation: previous ? 'copied-owned-linear-history-and-owned-warm-store; new-process' : 'new-session-and-process' },
     semanticReview: 'required', artifactBoundary: 'actual source package and bundled CLI/SDK; not an installed release gate' };
   if (cliPolicy) result.publicCli = { entry: cliProtected[0], stateRoots: cliPolicy.stateRoots, protectedFiles: cliProtected,
-    policy: 'Only the original create recovery and strict reads through the frozen public CLI; no shell composition or private Store API',
+    policy: cliPolicy.mode === 'original-create-recovery'
+      ? 'Only the original create recovery and strict reads through the frozen public CLI; no shell composition or private Store API'
+      : 'Only one exact Description update on the original page and strict reads through the frozen public CLI; no other field, shell composition or private Store API',
     sourceCoverage: 'The parent source observer does not observe shell grandchildren. Public CLI JSON/metrics and native tool results need a separate audit; missing child source traces remain unknown.' };
   await save(join(evidence, 'started.json'), result);
   const startedNs = process.hrtime.bigint().toString();
