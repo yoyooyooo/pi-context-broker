@@ -18,6 +18,7 @@ const guidanceText = (messages: AgentMessage[]) => String(messages.find(message 
 test("native Pi guidance is a bounded routing contract, not a duplicated CLI tutorial", () => {
   const guidance = text(["read", "notion_list", "notion_use", "bash"]);
   expect(Buffer.byteLength(guidance)).toBeLessThanOrEqual(900);
+  expect(guidance).toContain("Zero tool calls/body reads does not imply zero automatic metadata requests or writes.");
   for (const boundary of ["candidates", "Local Skills", "availability", "read", "notion_use", "Requires", "Members", "snapshot", "sr:", "authorize", "Code mode"])
     expect(guidance).toContain(boundary);
   for (const extra of ["<cli", "--query", "refresh:true", "maxNodes", "/configured", "next_cursor", "tool_search", "doctor", "notion-skill-owner"])

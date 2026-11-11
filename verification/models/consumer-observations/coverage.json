@@ -7,7 +7,7 @@
     "packages/context-broker/src/host-skills.ts": "5ad556031ea1085363b7e75ab329a57ebedc0b1e44d2db3c0df9a551b312eca9",
     "packages/context-broker/src/prepare-protocol.ts": "a933a092d39d9abb860ce614c959b13c5e26c1cf830bdb1f9f715b0adf2c283a",
     "packages/context-broker/src/notion-source.ts": "20a876a4e1db4676d252ed184ef35654a691a73902d7e3c846a9eb8e51a6a07d",
-    "packages/context-broker/src/index.ts": "686e86bd08d7bb8f89ebf4bb9a45727c4952ef07c55e7505bf0916e50f2a4e95",
+    "packages/context-broker/src/index.ts": "ffcf274952dfcf143a119900943b787884a6eb78d84cd734c83db396bc05f6b3",
     "packages/context-broker/src/view-discovery.ts": "15ba061763e6b5546d21551a7c0c2fc15a68626af1e47771cba539ef999b995d",
     "packages/context-broker/src/view-prompt.ts": "8b2d21bcfb3662b4e742d51c13a625aaaa5a66ba7f4cf717c3f8cfed9704062a",
     "packages/context-broker/src/session-source-snapshot.ts": "e946d3a437b29869546b0192d1fdbd693b2ac38b765b8e60b3763b8198547468",
@@ -86,7 +86,7 @@
       ],
       "contract": "AH-623/AH-639/AH-638 use the existing default_view_id and owned five-file application. Same-library View preservation and explicit selection cannot silently carry an old View to another library. This driver wiring changes no Availability or ReadRace transition. Autonomous route quality, full artifacts, independent helper execution and paired total costs require actual worker/high sessions and payload/wire audits; the finite models cannot establish them.",
       "project_inspection": "The original A real run used only owned-cwd ls/pwd/bounded-find, which the old print verifier classified as forbidden execution. Its original failure remains. A separate driver admits a finite inventory vocabulary for the existing owned application only, blocks other bash before execution, and retains the actual shell-call flag plus a separate hash-bound inspection receipt. It does not change product tools, Notion acquisition, effects, activation or permission semantics. Direct wrong-cwd, outside-path, substitution, redirection, executable and budget negatives cover this host-test boundary; no TLA transition or model success claim is added.",
-      "real_observation_boundary": "The first two A runs both exceeded the frozen 600s without a complete artifact; the second also exposed strict batch readOnly argument rejection and separately blocked a benign arithmetic shell call. Original C failed introduction intent through delegation and timeout. Original D work-resumption wording cannot establish pure-chat zero-tool behavior; separate 你好。 samples passed both normal69 and -ns with zero tools. A later how-only C pilot passed with complete target/README delivery but never read how, so it is not causal evidence for that author change. Old failures and all not_run samples remain. Formal three-pair View and heldout work pauses for one common batch-fixed runtime; no completed View benefit or generated-helper execution is inferred. These model behavior and evidence conclusions are outside Availability, ReadRace and RetentionDisclosure finite state spaces."
+      "real_observation_boundary": "Earlier checkpoint: The first two A runs both exceeded the frozen 600s without a complete artifact; the second also exposed strict batch readOnly argument rejection and separately blocked a benign arithmetic shell call. Original C failed introduction intent through delegation and timeout. Original D work-resumption wording cannot establish pure-chat zero-tool behavior; separate 你好。 samples passed both normal69 and -ns with zero tools. A later how-only C pilot passed with complete target/README delivery but never read how, so it is not causal evidence for that author change. Old failures and all not_run samples remain. Formal three-pair View and heldout work pauses for one common batch-fixed runtime; no completed View benefit or generated-helper execution is inferred. These model behavior and evidence conclusions are outside Availability, ReadRace and RetentionDisclosure finite state spaces. Final-v3 subsequently completed two C pairs and one unpaired baseline: the original median-elapsed threshold is mathematically unattainable for narrow View (at least 22.036881% regression versus the allowed 20%), so baseline is retained and the remaining narrow pair/heldout cells remain not_run in the original denominator. An independently audited unnamed D-natural phase proves correct default-catalog selection and complete main/three-reference delivery; it closes AH-623 discovery, not the still-failed whole artifact task. A/B timeouts, heldout explanation defects and the original warm observer failure remain. No additional finite-model or whole-task success is implied."
     },
     {
       "name": "source baseline partial state setup",
@@ -182,5 +182,15 @@
     ],
     "output_schema_followup": "Independent review found the closed Pi resource output schema omitted effects. Actual registered-schema validation rejected actual ready batch output at effects before the fix. The shared receipt schema now accepts ordinary unknown and strict none output, preserves the native scalar branch, and rejects malformed effects and extra output fields. Only the output declaration changes; model state, transitions and runtime effects guards are unchanged.",
     "bounds": "Direct source regressions and the candidate build establish only these implementation paths. Reuse unchanged TLA/cfg/statechart results without a fresh model claim. Original real A and frozen package remain unchanged; the independent actual Pi sample is recorded separately."
+  },
+  "warm_resume_observation": {
+    "issue": "AH-639 / AH-638",
+    "finding": "The original C-warm new-process observer missed two effective native preparation receipts even though their complete source bodies were present in the actual provider request. Original failed outcome remains.",
+    "change": "Reuse captureInjectionReceipts with the current buildSessionProjection only; an in-memory sidecar passes persisted machine receipts to the existing user-hash, v2 identity/pin, full span/hash/bytes verifier. No provider mutation, full-history scan, source request or new persistent store. Modern Pi guidance distinguishes zero explicit tools/body reads from unobserved automatic metadata requests or writes.",
+    "regressions": [
+      "scripts/skill-consumption-cost.test.mjs",
+      "packages/context-broker/scripts/skill-guidance.test.ts"
+    ],
+    "finite_models": "No admission, authorization, selection, effect, retention or session transition changes. Availability, ReadRace and all composed flow TLA/cfg/view inputs are unchanged; their existing results are reused, not rerun or extended. This diagnostic and LLM explanation boundary requires separate actual-session evidence."
   }
 }

@@ -123,7 +123,7 @@ function preparedBody(body, version = 2, toolName = version === 1 ? 'skill_prepa
   return { role: 'toolResult', toolName, toolCallId: group.toolCallId, content: [{ type: 'text', text: content }], details: { contextBrokerPreparation: group } };
 }
 
-async function bodyObservation({ messages = [], payload, toolResult, serialized = false }) {
+async function bodyObservation({ messages = [], payload, toolResult, serialized = false, context }) {
   const handlers = new Map(), file = output();
   const api = { on: (name, callback) => handlers.set(name, callback) };
   const settings = { output: file, checkoutRoot: root, runId: 'body-run', sampleId: 'body', clockId: 'body-clock' };
@@ -134,7 +134,7 @@ async function bodyObservation({ messages = [], payload, toolResult, serialized 
   } else observeConsumptionCost(api, { fs, crypto, path, ...settings });
   const emit = (name, event) => {
     const before = copy(event); deepFreeze(event);
-    assert.equal(handlers.get(name)(event), undefined);
+    assert.equal(handlers.get(name)(event, context), undefined);
     assert.deepEqual(event, before);
   };
   if (toolResult) emit('tool_result', toolResult);
@@ -154,6 +154,68 @@ test('prepare JSON body occurrences use actual content, preserving Unicode/BOM/C
     assert.deepEqual(measured.verifiedBodyOccurrences.map(item => [item.sha256, item.bytes, item.occurrences]), [[sha(body), Buffer.byteLength(body), 1]]);
     assert.ok(!measured.raw.includes('quoted') && !measured.raw.includes('作者'));
   }
+});
+
+function resumedInjection() {
+  const bodies = ['\uFEFFRoot 完整 <source> & bytes\r\n', 'Requires 原文 🧭\r\n'];
+  let content = 'Previous user prompt 🧭\n';
+  const records = bodies.map((body, index) => {
+    const encoded = body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+    content += '<body>';
+    const start = content.length;
+    content += encoded + '</body>\n';
+    return { ...preparedBody(body).details.contextBrokerPreparation.records[0],
+      identity: JSON.stringify(['controlled', 'f'.repeat(64), 'skill', 'shared_skill', 'owner-' + index]),
+      delivery: { start, end: start + encoded.length, encoding: 'xml' } };
+  });
+  const data = { nativePromptSha256: sha(content), records };
+  const projection = { entries: [{ sourceEntry: { type: 'custom', customType: 'context-broker', id: 'effective-receipt', data } }] };
+  return { bodies, content, projection };
+}
+
+test('resumed native receipts recover exact current-context bodies without replacing provider data', async () => {
+  for (const serialized of [false, true]) {
+    const { bodies, content, projection } = resumedInjection();
+    const priorTool = preparedBody('Previously delivered tool body');
+    const messages = [{ role: 'user', content }, priorTool];
+    const payload = { messages: [{ role: 'user', content }, { role: 'tool', content: priorTool.content }] };
+    const context = deepFreeze({ sessionManager: { buildSessionProjection: () => projection,
+      getEntries: () => { throw new Error('Full session history is not effective context'); } } });
+    deepFreeze(projection);
+    const measured = await bodyObservation({ messages, payload, context, serialized });
+    const actual = Object.fromEntries(measured.verifiedBodyOccurrences.map(item => [item.sha256, [item.bytes, item.occurrences]]));
+    assert.deepEqual(actual, Object.fromEntries([...bodies, 'Previously delivered tool body'].map(body => [sha(body), [Buffer.byteLength(body), 1]])));
+    assert.equal(measured.sha256, sha(JSON.stringify(payload)));
+    assert.ok(!measured.raw.includes('完整') && !measured.raw.includes('Previously delivered tool body'));
+  }
+});
+
+test('resumed receipts require the effective projection, matching user hash and complete spans', async () => {
+  const base = resumedInjection();
+  const invalid = [
+    undefined,
+    { sessionManager: {} },
+    { sessionManager: { buildSessionProjection: () => ({ entries: [] }),
+      getEntries: () => { throw new Error('Non-effective history must not be scanned'); } } },
+  ];
+  for (const mutate of [
+    entry => { entry.customType = 'foreign'; },
+    entry => { entry.data.nativePromptSha256 = sha('summary'); },
+    entry => { for (const proof of entry.data.records) proof.delivery.end--; },
+    entry => { for (const proof of entry.data.records) proof.snapshotId = 'unfixed'; },
+  ]) {
+    const projection = copy(base.projection); mutate(projection.entries[0].sourceEntry);
+    invalid.push({ sessionManager: { buildSessionProjection: () => projection } });
+  }
+  for (const context of invalid) {
+    const messages = [{ role: 'user', content: base.content }];
+    const measured = await bodyObservation({ messages, payload: { messages }, context, serialized: true });
+    assert.deepEqual(measured.verifiedBodyOccurrences, []);
+  }
+  const messages = [{ role: 'user', content: base.content }];
+  const context = { sessionManager: { buildSessionProjection: () => base.projection } };
+  const summarized = await bodyObservation({ messages, context, payload: { messages: [{ role: 'user', content: 'Only a summary remains' }] } });
+  assert.deepEqual(summarized.verifiedBodyOccurrences.map(item => item.occurrences), [0, 0]);
 });
 
 test('current use and legacy prepare receipts stay explicit; nested, printed and truncated code results prove no delivery', async () => {

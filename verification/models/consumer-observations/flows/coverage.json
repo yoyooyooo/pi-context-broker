@@ -12,7 +12,7 @@
     "packages/context-broker/src/resource-read-projection.ts": "c72d8749018ca97fbb8026568ae23831080b65e8d312ca8b454792327424183e",
     "packages/context-broker/src/session-source-snapshot.ts": "e946d3a437b29869546b0192d1fdbd693b2ac38b765b8e60b3763b8198547468",
     "packages/context-broker/src/notion-source.ts": "20a876a4e1db4676d252ed184ef35654a691a73902d7e3c846a9eb8e51a6a07d",
-    "packages/context-broker/src/index.ts": "686e86bd08d7bb8f89ebf4bb9a45727c4952ef07c55e7505bf0916e50f2a4e95",
+    "packages/context-broker/src/index.ts": "ffcf274952dfcf143a119900943b787884a6eb78d84cd734c83db396bc05f6b3",
     "packages/context-broker/src/consumption-effects.ts": "5b10742bccfe19ccd4b52b06733baab9f730d84861e24299b0e3a73f81e73794",
     "packages/context-broker/src/pi-host-adapter.ts": "ff4f213acd643c067b7fa000bd05f5ddd8981882ee3926cceadab3875e212ee0",
     "packages/context-broker/src/skill-catalog-projection.ts": "7b407d448a44f6fea3c0776ef3f2cd5d73fd10c314b746fe2b1268663cd0f3b8",
@@ -197,5 +197,15 @@
     ],
     "output_schema_followup": "Independent review found the closed Pi resource output schema omitted effects. Actual registered-schema validation rejected actual ready batch output at effects before the fix. The shared receipt schema now accepts ordinary unknown and strict none output, preserves the native scalar branch, and rejects malformed effects and extra output fields. Only the output declaration changes; model state, transitions and runtime effects guards are unchanged.",
     "bounds": "Direct source regressions and the candidate build establish only these implementation paths. Reuse unchanged TLA/cfg/statechart results without a fresh model claim. Original real A and frozen package remain unchanged; the independent actual Pi sample is recorded separately."
+  },
+  "warm_resume_observation": {
+    "issue": "AH-639 / AH-638",
+    "finding": "The original C-warm new-process observer missed two effective native preparation receipts even though their complete source bodies were present in the actual provider request. Original failed outcome remains.",
+    "change": "Reuse captureInjectionReceipts with the current buildSessionProjection only; an in-memory sidecar passes persisted machine receipts to the existing user-hash, v2 identity/pin, full span/hash/bytes verifier. No provider mutation, full-history scan, source request or new persistent store. Modern Pi guidance distinguishes zero explicit tools/body reads from unobserved automatic metadata requests or writes.",
+    "regressions": [
+      "scripts/skill-consumption-cost.test.mjs",
+      "packages/context-broker/scripts/skill-guidance.test.ts"
+    ],
+    "finite_models": "No admission, authorization, selection, effect, retention or session transition changes. Availability, ReadRace and all composed flow TLA/cfg/view inputs are unchanged; their existing results are reused, not rerun or extended. This diagnostic and LLM explanation boundary requires separate actual-session evidence."
   }
 }

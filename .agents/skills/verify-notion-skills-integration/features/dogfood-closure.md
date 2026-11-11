@@ -90,5 +90,13 @@ A v2 的另一个独立产品反例是 `read({ paths: [三个已签发 sr:R], re
 
 how 作者原件经公开 read/dry-run 审阅后由 root 一次公开 write 并原生完整读回，只有新增意图入口；native3290 B SHA `d225b0f007dd4d0c09f80e2e74bb2182bcd95a22bfe05a38b05bcf9ba4c74b6c`，consumer3622 B SHA `584998e556c1e44c5b747c80d7359de1b7283d547f6780d6f1fb1663315c897a`，pin `s_ce34a81d7f078bb80c7c1f389e47ed27d260f0c7c21a923b3bfae43267c8bb6b`。所有原规则、native链接、元数据、Members/Requires和参考字节均保留。poteto候选因公开 write plan 的64KiB限制未应用，原拒绝保留。
 
-`how-v2-formal-series-paused.json`（SHA `c1932bcb29906a6594fff46d82064e38a986a85dd2f5cf20be310be43cdb326b`）把已启动的1个通过样本单列试点，其余5个C与2个heldout不启动。正式三对及留出样本须等待同一个 batch只读修复版重新冻结；不把新旧runtime跨版本相减，不把较少首轮目录当作完整任务收益。当前没有完成的可比View对，也没有生成helper实驱成功，窄View尚无采用证据。源码和有限模型不能替代这些待完成门槛。
+`how-v2-formal-series-paused.json`（SHA `c1932bcb29906a6594fff46d82064e38a986a85dd2f5cf20be310be43cdb326b`）把已启动的1个通过样本单列试点，其余5个C与2个heldout不启动。该旧检查点的正式三对及留出样本等待同一个 batch只读修复版重新冻结；不把新旧runtime跨版本相减，不把较少首轮目录当作完整任务收益。当时没有完成的可比View对，也没有生成helper实驱成功，窄View尚无采用证据。源码和有限模型不能替代这些门槛。
+
+### 最终 v3 的 View 裁决与 AH-623 发现验收
+
+共同 freeze `653f19f2be8bda096f9f58e041bfebaa6af34e6a9f606e0510980bbf68eac249` 的两个 C 对子均完成介绍任务。宽/窄两侧完整授权目录304条深比较相同，默认曝光74/1；宽侧50条描述省略均对应同次实际 provider 中完整同身份卡，正常69个native Skills保留。第一对输入749959/674889 B、耗时219392.32475/267739.550791 ms；第二对346247/857903 B、160695.65/282578.64225 ms。仅两对就使三次中位数的最小回退达22.036881%，超过原20%门槛，无论第三次取值都无法采用窄View。保留宽baseline，C3 narrow与heldout narrow保持not_run及原16冷配置分母；完成的C3 baseline不补成第三个对子。独立证明 `reviews/e2e-final-v3-two-pair-rejection-bound.json` SHA256 `fe781bde70927d5f4a878be55247439a1058f3fe8d0eef40f415b14e23f6fda3`。
+
+原D-natural独立臂的用户句子完全没有Skill名称/handle；首请求仅默认目录，模型复制唯一create-verification-skill候选ref并以readOnly:true use。第二请求完整6,837 B主文，第三请求完整2,761/3,374/4,023 B参考，同owner/scope/pin/version/File ID与实际wire一致；阶段内5个已闭合SDK为25metadata/5body/0write。独立阶段报告 `reviews/e2e-final-v3-D-natural-discovery-phase-review.json` SHA256 `5ff27d9dd72b6cfa15a6e1b39315454066201c319e0cd4b76c82c5c28deb1164`；root再核6个日志前缀、3个实际payload/wire及完整正文，`root-D-natural-discovery-readback.json` SHA256 `8f8364acf8d95a64efaa23ebba182b2ae54ec36d3f20d732e122df8873b0883e`。这闭合AH-623无名称发现项，不把阶段通过改成AH-639整任务通过。
+
+23条失效声明的受审候选、正常doctor和公开find pstack 5/5保持；全局入口激活仍归AH-638。setup留出技术/10项覆盖通过但有两处解释偏差；A两臂、B两臂及D-natural独立臂的超时/无产物失败原样保留。warm观察器与模型对自动metadata的推断边界见成本地图，原warm failed不改判。完整生成产物及helper实驱未满足，AH-639/AH-638继续开放；AH-623可按六条既有验收关闭，未引入额外发现平台或模型。
 
