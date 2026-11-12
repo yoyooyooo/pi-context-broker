@@ -3,10 +3,12 @@ import { isDeepStrictEqual } from "node:util";
 import { recordIdentity } from "./discovery-records";
 import { parseNativeReference } from "./native-reference";
 import type { AgentMessage, MessageContent, ProjectedSessionEntry, SessionBoundaryDraft, SkillRecord } from "./types";
-import { decodePreparationLock, isPreparationBinding, type PreparationBinding } from "./prepare-protocol";
+import { decodePreparationLock, isPreparationBinding, isPreparationDirectory, type PreparationBinding } from "./prepare-protocol";
 import type { SessionSelection } from "./session-graph";
 import { deriveSkillPrepareProjection, validateSkillPrepareProjection } from "./skill-context-projection-proof";
 import { deriveResourceReadProjection, validateResourceReadProjection } from "./resource-read-projection";
+import { isConsumptionEffects } from "./consumption-effects";
+import { isSkillPreparationDirectory, isSkillPreparationModel, projectSkillDirectory, type SkillPreparationModelDirectory } from "./skill-context-projection";
 
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -72,7 +74,8 @@ export function nativeReadReceipt(record: SkillRecord, toolCallId: string, conte
   if (!record.sourceId || !snapshot(record.snapshotId) || !toolCallId || !record.body || !text.startsWith(record.body) || (Array.isArray(content) && content.some(part => part.type !== "text"))) return undefined;
   return { version: text === record.body ? 2 : 3, identity: recordIdentity(record), contentIdentity: sourceContentIdentity(record), toolCallId, snapshotId: record.snapshotId,
     bodySha256: hash(record.body), bytes: Buffer.byteLength(record.body),
-    ...(text === record.body ? {} : { delivery: { start: 0, end: record.body.length, encoding: "raw" } }),
+    ...(text === record.body ? {} : { delivery: { start: 0, end: record.body.length, encoding: "raw" },
+      rendered: { sha256: hash(text), bytes: Buffer.byteLength(text) } }),
     ...(record.preparationBinding ? { binding: record.preparationBinding } : {}) };
 }
 
@@ -99,6 +102,8 @@ function verifiedReadProof(message: AgentMessage) {
   if (!object(proof) || proof.loaded === false || ![1, 2, 3].includes(Number(proof.version)) || typeof proof.identity !== "string"
     || typeof proof.toolCallId !== "string" || !proof.toolCallId || proof.toolCallId !== message.toolCallId || !snapshot(proof.snapshotId)) return undefined;
   const text = sourceMessageText(message.content);
+  if (proof.rendered !== undefined && (!object(proof.rendered) || proof.rendered.sha256 !== hash(text)
+    || proof.rendered.bytes !== Buffer.byteLength(text))) return undefined;
   if (proof.version === 3) {
     const delivery = proof.delivery;
     if (!object(delivery) || delivery.start !== 0 || delivery.encoding !== "raw" || !Number.isSafeInteger(delivery.end)
@@ -146,6 +151,8 @@ function verifiedResourceBatchProof(message: AgentMessage) {
 }
 
 function verifiedPreparationProjection(message: AgentMessage, proof: Record<string, unknown>) {
+  if (message.role !== "toolResult" || !["notion_use", "skill_prepare"].includes(message.toolName ?? "")
+    || message.isError === true || proof.version !== 2 || !message.toolCallId || proof.toolCallId !== message.toolCallId) return undefined;
   if (Array.isArray(message.content) && message.content.some(part => part.type !== "text")) return undefined;
   const text = sourceMessageText(message.content), projection = validateSkillPrepareProjection(text, proof.projection);
   if (!projection || !Array.isArray(proof.records) || proof.records.length !== projection.records.length
@@ -272,7 +279,8 @@ function deferredDeliveryRecords(messages: AgentMessage[]): Record<string, unkno
 }
 
 type Replacement = { start: number; end: number; text: string };
-function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number, Replacement[]>, reason: "deduplicate" | "supersede"): AgentMessage[] {
+function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number, Replacement[]>, reason: "deduplicate" | "supersede",
+  omittedDirectories: ReadonlyMap<number, readonly number[]> = new Map()): AgentMessage[] {
   const adjusted = new Map<Record<string, unknown>, Record<string, unknown> | null>();
   injectedSnapshots(messages, (proof, index) => {
     const spans = replacements.get(index);
@@ -333,7 +341,7 @@ function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number
       const changedIndices = verified.records.flatMap((record, recordIndex) => changes.some(change =>
         change.start < record.delivery.end && change.end > record.delivery.start) ? [recordIndex] : []);
       const derived = deriveSkillPrepareProjection(sourceMessageText(original.content), sourceMessageText(message.content),
-        verified, changedIndices, reason);
+        verified, changedIndices, reason, omittedDirectories.get(index));
       // A new content digest must never bless an invalid old receipt or an
       // unrelated metadata edit. Failed derivation keeps evidence invalid.
       if (!derived || !Array.isArray(preparation.records)) return { ...message, details: next };
@@ -345,7 +353,18 @@ function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number
       // A confirmation can equal a very short author body. Invalidate only the
       // provider copy explicitly instead of relying on different text hashes.
       const native = verifiedReadProof(original);
-      if (native && object(next)) return { ...message, details: { ...next, contextBrokerRead: { ...native, loaded: false } } };
+      if (native && object(next)) {
+        const end = readProofEnd(native, original), changedBody = (replacements.get(index) ?? []).some(span => span.start < end && span.end > 0);
+        const text = sourceMessageText(message.content);
+        const directory = nativeDirectory(original, native);
+        const directoryRemoved = directory && (replacements.get(index) ?? []).some(span =>
+          span.start === directory.start && span.end === directory.end && span.text === "");
+        const directoryText = directoryRemoved ? JSON.stringify(directory.directory) : undefined;
+        return { ...message, details: { ...next, contextBrokerRead: { ...native,
+          ...(changedBody ? { loaded: false } : {}),
+          ...(directoryText === undefined ? {} : { directoryOmitted: { sha256: hash(directoryText), bytes: Buffer.byteLength(directoryText) } }),
+          ...(native.rendered === undefined ? {} : { rendered: { sha256: hash(text), bytes: Buffer.byteLength(text) } }) } } };
+      }
       const resource = verifiedResourceReadProof(original);
       if (resource && object(next)) return { ...message, details: { ...next, contextBrokerResource: { ...resource, delivered_complete_text: false } } };
       const batch = verifiedResourceBatchProof(original);
@@ -362,6 +381,43 @@ function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number
   });
 }
 
+function generatedDirectoryMatches(value: SkillPreparationModelDirectory, canonical: unknown): boolean {
+  if (!isPreparationDirectory(canonical)) return false;
+  const normalized = projectSkillDirectory(canonical)!;
+  for (const group of ["files", "required", "candidates", "references"] as const) {
+    const expected = normalized[group], actual = value[group];
+    if (!Array.isArray(expected) || expected.length !== actual.length) return false;
+    if (actual.some((row, index) => {
+      const original = expected[index]!;
+      const fields = Object.keys(original).filter(key => key !== "ref");
+      return !isDeepStrictEqual(Object.keys(row).filter(key => key !== "ref").sort(), [...fields].sort())
+        || fields.some(field => Reflect.get(row, field) !== Reflect.get(original, field));
+    })) return false;
+  }
+  return true;
+}
+
+function nativeDirectory(message: AgentMessage, proof: Record<string, unknown>) {
+  if (proof.version !== 3 || !object(proof.rendered) || !isPreparationBinding(proof.binding)) return undefined;
+  const text = sourceMessageText(message.content), start = readProofEnd(proof, message);
+  let suffix = text.slice(start);
+  if (object(message.details) && isConsumptionEffects(message.details.effects)) {
+    const footer = "\n\n<notion-effects>" + JSON.stringify(message.details.effects) + "</notion-effects>";
+    if (!suffix.endsWith(footer)) return undefined;
+    suffix = suffix.slice(0, -footer.length);
+  }
+  const match = /^\n{2,3}<skill-directory>\n([\s\S]*)\n<\/skill-directory>$/.exec(suffix);
+  if (!match) return undefined;
+  try {
+    const value: unknown = JSON.parse(match[1]!);
+    if (!object(value) || Object.keys(value).length !== 2 || typeof value.ref !== "string"
+      || JSON.stringify(value) !== match[1] || !isSkillPreparationDirectory(value.directory)
+      || !generatedDirectoryMatches(value.directory, proof.directory)) return undefined;
+    if (value.ref !== proof.binding.ref && !/^sr:S[A-Za-z0-9_-]{22}$/.test(value.ref)) return undefined;
+    return { directory: value.directory, binding: proof.binding, start, end: start + suffix.length };
+  } catch { return undefined; }
+}
+
 /** Preserve every actual tool result and tool-call ID in session history. Only
  * the provider projection replaces an already available exact entry or resource copy with
  * a receipt-sized confirmation. Different snapshots/scopes and partial or
@@ -369,12 +425,43 @@ function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number
 export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[] {
   const seen = new Map<string, string>();
   const replacements = new Map<number, Replacement[]>();
+  const omittedDirectories = new Map<number, number[]>();
   const entryConfirmation = "Already loaded.", resourceConfirmation = "Already available.";
   function replace(index: number, start: number, end: number, text: string) {
     const spans = replacements.get(index) ?? [];
     if (!spans.some(span => span.start === start && span.end === end)) spans.push({ start, end, text });
     replacements.set(index, spans);
   }
+  const directories = new Set<string>();
+  const directoryKey = (binding: PreparationBinding, directory: SkillPreparationModelDirectory) =>
+    JSON.stringify([binding.scope, binding.record.id, binding.snapshot_id, binding.version_id, directory]);
+  // Match the body's preference for a verified preparation. Native footer text
+  // is generated material only when its complete output and binding are intact.
+  messages.forEach((message, index) => {
+    const proof = object(message.details) ? message.details.contextBrokerPreparation : undefined;
+    const projection = object(proof) ? verifiedPreparationProjection(message, proof) : undefined;
+    if (!object(proof) || !projection || !Array.isArray(proof.records)) return;
+    const text = sourceMessageText(message.content), model: unknown = JSON.parse(text);
+    if (!isSkillPreparationModel(model)) return;
+    for (const [recordIndex, record] of model.records.entries()) {
+      const receipt: unknown = proof.records[recordIndex];
+      if (!record.directory || !object(receipt) || !isPreparationBinding(receipt.binding)
+        || !generatedDirectoryMatches(record.directory, receipt.directory)) continue;
+      const key = directoryKey(receipt.binding, record.directory);
+      if (!directories.has(key)) { directories.add(key); continue; }
+      const start = projection.records[recordIndex]!.delivery.end + 1, encoded = ',"directory":' + JSON.stringify(record.directory);
+      if (text.slice(start, start + encoded.length) !== encoded) continue;
+      replace(index, start, start + encoded.length, "");
+      omittedDirectories.set(index, [...omittedDirectories.get(index) ?? [], recordIndex]);
+    }
+  });
+  messages.forEach((message, index) => {
+    const proof = verifiedReadProof(message), value = proof && nativeDirectory(message, proof);
+    if (!value) return;
+    const key = directoryKey(value.binding, value.directory);
+    if (!directories.has(key)) { directories.add(key); return; }
+    replace(index, value.start, value.end, "");
+  });
   // Prefer explicit complete instruction deliveries, then retain the first
   // native read when no delivery exists. Repeated prepare results are subject
   // to exactly the same scope/pin/hash proof as repeated native reads.
@@ -416,7 +503,7 @@ export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[]
       if (file.bytes !== 0) replace(index, file.delivery.start, file.delivery.end, JSON.stringify(resourceConfirmation).slice(1, -1));
     }
   });
-  return replacements.size ? projectDeliverySpans(messages, replacements, "deduplicate") : messages;
+  return replacements.size ? projectDeliverySpans(messages, replacements, "deduplicate", omittedDirectories) : messages;
 }
 
 export function nativeReadSnapshot(messages: AgentMessage[], record: SkillRecord): string | undefined {
@@ -516,7 +603,20 @@ export function projectSelectedSourceMessages(messages: AgentMessage[], selectio
     if (proof && reason) add(index, 0, readProofEnd(proof, message), "raw", reason);
     const resource = verifiedResourceReadProof(message);
     const resourceReason = resource && identityRetired(String(resource.scope), String(resource.id), resource.snapshot_id);
-    if (resource && resourceReason) add(index, 0, sourceMessageText(message.content).length, "raw", resourceReason);
+    if (resource && resourceReason) {
+      const text = sourceMessageText(message.content);
+      const end = resource.version === 2 && object(resource.delivery) ? Number(resource.delivery.end) : text.length;
+      const suffix = text.slice(end);
+      // Retire the source, not this acquisition's outcome. A generated footer
+      // must still match its operation receipt; never bless an arbitrary suffix.
+      if (suffix) {
+        const effects = object(message.details) ? message.details.effects : undefined;
+        const footer = isConsumptionEffects(effects) ? "\n\n<notion-effects>" + JSON.stringify(effects) + "</notion-effects>" : undefined;
+        if (!footer || suffix !== footer && suffix !== "\n" + footer)
+          throw Object.assign(new Error("Resource result footer is inconsistent"), { code: "SOURCE_CONTEXT_PROJECTION_INVALID" });
+      }
+      add(index, 0, end, "raw", resourceReason);
+    }
     const batch = verifiedResourceBatchProof(message);
     const batchReason = batch && identityRetired(batch.selection.scope, batch.selection.owner, batch.selection.snapshot_id);
     if (batch && batchReason) for (const file of batch.files)

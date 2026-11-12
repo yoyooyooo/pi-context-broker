@@ -18,6 +18,14 @@ export type PreparationGraphLock = {
   required: readonly { from: string; to: string; ref: string }[]; bindings: readonly PreparationBinding[]; sha256: string;
 };
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
+export function isPreparationDirectory(value: unknown): value is PreparationDirectory {
+  if (!object(value) || !Array.isArray(value.files) || value.files.some(file => !object(file)
+    || typeof file.path !== "string" || typeof file.ref !== "string" || typeof file.sha256 !== "string"
+    || !Number.isSafeInteger(file.bytes) || Number(file.bytes) < 0)) return false;
+  return ["required", "candidates", "references"].every(group => Array.isArray(value[group])
+    && value[group].every(row => object(row) && ["id", "ref", "kind", "name", "description", "availability"]
+      .every(key => typeof row[key] === "string")));
+}
 function isContentRecord(value: unknown): value is ContentRecord {
   if (!object(value) || !["skill", "router", "prompt"].includes(String(value.kind))
     || ["id", "name", "alias", "description", "entrypoint", "ref"].some(key => typeof value[key] !== "string")

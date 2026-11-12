@@ -13,6 +13,53 @@ function measure(value, text, message) {
   assert.equal(value.bytes, Buffer.byteLength(text), message);
 }
 
+function verifyPublicDirectory(projected, canonical) {
+  keys(projected, ['files', 'required', 'candidates', 'references'], 'Keep every directory group');
+  assert.ok(object(canonical));
+  for (const group of ['files', 'required', 'candidates', 'references']) {
+    assert.ok(Array.isArray(projected[group]) && Array.isArray(canonical[group]));
+    assert.equal(projected[group].length, canonical[group].length, 'Keep every directory row');
+  }
+  const fileIndex = relation => {
+    if (relation?.kind !== 'file' || relation.availability !== 'available') return -1;
+    let fixed = false;
+    try {
+      const ref = new URL(relation.ref);
+      fixed = ref.protocol === 'skill:' && ref.searchParams.getAll('snapshot').length === 1
+        && /^s_[a-f0-9]{64}$/u.test(ref.searchParams.get('snapshot'));
+    } catch {}
+    if (!fixed) return -1;
+    const matches = canonical.files.flatMap((file, index) => file.ref === relation.ref && file.path === relation.name ? [index] : []);
+    return matches.length === 1 ? matches[0] : -1;
+  };
+  for (const [index, file] of projected.files.entries()) {
+    keys(file, ['path', 'ref', 'bytes', ...(file.description === undefined ? [] : ['description'])], 'Public file object');
+    assert.equal(file.path, canonical.files[index].path); assert.equal(file.bytes, canonical.files[index].bytes);
+    assert.ok(typeof file.ref === 'string' && file.ref);
+    if (file.description !== undefined) {
+      const refs = canonical.references.filter(reference => fileIndex(reference) === index);
+      assert.ok(refs.length && refs.every(reference => reference.description === file.description), 'File description comes from its exact fixed reference');
+      assert.ok(projected.references.some(reference => Object.keys(reference).length === 1 && reference.ref === file.ref), 'A shared file description needs its reference edge');
+    }
+  }
+  for (const group of ['required', 'candidates', 'references']) {
+    for (const [index, card] of projected[group].entries()) {
+      const original = canonical[group][index];
+      if (group === 'references' && object(card) && Object.keys(card).length === 1) {
+        keys(card, ['ref'], 'Compact fixed file relation');
+        const file = fileIndex(original);
+        assert.ok(file >= 0, 'An unfixed or foreign reference keeps its independent card');
+        assert.equal(card.ref, projected.files[file].ref);
+        assert.equal(projected.files[file].description, original.description);
+        continue;
+      }
+      keys(card, ['ref', 'kind', 'name', 'description', 'availability'], 'Full relation metadata');
+      assert.ok(typeof card.ref === 'string' && card.ref);
+      for (const field of ['kind', 'name', 'description', 'availability']) assert.deepEqual(card[field], original[field]);
+    }
+  }
+}
+
 /** Independent public-receipt validation; actual writes still need source/HTTP evidence. */
 export function verifyConsumptionEffects(value) {
   keys(value, ['version', 'remote_writes', 'author_content', 'retention'], 'Versioned consumption effects');
@@ -60,9 +107,21 @@ export function verifyPreparationEvidence(content, proof, toolCallId) {
   measure(projection.rendered, content, 'Complete projection hash and byte count');
   assert.ok(Array.isArray(projection.records) && projection.records.length === model.records.length);
   if (projection.derived !== undefined) {
-    keys(projection.derived, ['reason', 'parentSha256'], 'Derived projection link');
+    keys(projection.derived, ['reason', 'parentSha256', ...(projection.derived.directories === undefined ? [] : ['directories'])], 'Derived projection link');
     assert.ok(['deduplicate', 'supersede'].includes(projection.derived.reason));
     assert.match(projection.derived.parentSha256, /^[a-f0-9]{64}$/u);
+    if (projection.derived.directories !== undefined) {
+      assert.ok(Array.isArray(projection.derived.directories) && projection.derived.directories.length);
+      const indices = new Set();
+      for (const directory of projection.derived.directories) {
+        keys(directory, ['index', 'sha256', 'bytes'], 'An omitted generated directory keeps an exact identity digest');
+        assert.ok(Number.isSafeInteger(directory.index) && directory.index >= 0 && directory.index < model.records.length
+          && !indices.has(directory.index));
+        indices.add(directory.index); assert.match(directory.sha256, /^[a-f0-9]{64}$/u);
+        assert.ok(Number.isSafeInteger(directory.bytes) && directory.bytes > 0);
+        assert.equal(model.records[directory.index].directory, undefined);
+      }
+    }
   }
   const seen = new Set();
   let cursor = content.indexOf('"records":[');
@@ -103,26 +162,76 @@ export function verifyPreparationEvidence(content, proof, toolCallId) {
       assert.notEqual(hash(decodedContent), mapping.source.sha256, 'A replacement cannot masquerade as the original source span');
     }
     const directory = receipt.directory;
-    assert.equal(record.directory === undefined, directory === undefined, 'Every canonical directory remains represented');
-    if (directory !== undefined) {
-      keys(record.directory, ['files', 'required', 'candidates', 'references'], 'Keep every directory group');
-      for (const group of ['files', 'required', 'candidates', 'references']) {
-        assert.ok(Array.isArray(directory[group]) && Array.isArray(record.directory[group]));
-        assert.equal(record.directory[group].length, directory[group].length, 'Keep every directory row');
-        for (let i = 0; i < directory[group].length; i++) {
-          const canonical = directory[group][i], projected = record.directory[group][i];
-          const fields = group === 'files' ? ['path', 'ref', 'bytes'] : ['ref', 'kind', 'name', 'description', 'availability'];
-          keys(projected, fields, 'Directory projection contains only public reading fields');
-          assert.ok(typeof projected.ref === 'string' && projected.ref.length > 0);
-          for (const key of fields.filter(key => key !== 'ref')) assert.deepEqual(projected[key], canonical[key]);
-        }
-      }
-    }
-    return { model: record, receipt, mapping, decodedContent };
+    const omittedDirectory = projection.derived?.directories?.find(value => value.index === index);
+    if (omittedDirectory) {
+      assert.ok(directory !== undefined, 'Omission applies only to an original generated directory');
+      assert.equal(record.directory, undefined);
+    } else assert.equal(record.directory === undefined, directory === undefined, 'Every non-reused canonical directory remains represented');
+    if (directory !== undefined && !omittedDirectory) verifyPublicDirectory(record.directory, directory);
+    return { model: record, receipt, mapping, decodedContent, ...(omittedDirectory ? { omittedDirectory } : {}) };
   });
   assert.ok(model.roots.every(ref => typeof ref === 'string' && seen.has(ref)), 'Every root has a prepared model record');
-  if (projection.derived) assert.ok(records.some(record => record.mapping.state === 'replaced'), 'A derived result must identify its changed records');
+  if (projection.derived) assert.ok(records.some(record => record.mapping.state === 'replaced' || record.omittedDirectory), 'A derived result must identify its changed objects');
   return { model, projection, records };
+}
+
+/** Every compacted generated directory must have an intact same-identity copy
+ * in this actual request. This independently checks the projector's omissions. */
+export function verifyGeneratedDirectoryReuse(messages) {
+  const present = new Set(), omitted = [], counts = new Map();
+  const key = (binding, sha256, bytes) => {
+    assert.ok(object(binding) && object(binding.record));
+    for (const field of ['scope', 'snapshot_id', 'version_id']) assert.ok(typeof binding[field] === 'string' && binding[field]);
+    assert.ok(typeof binding.record.id === 'string' && binding.record.id);
+    return JSON.stringify([binding.scope, binding.record.id, binding.snapshot_id, binding.version_id, sha256, bytes]);
+  };
+  const complete = (binding, directory) => {
+    const text = JSON.stringify(directory), id = key(binding, hash(text), Buffer.byteLength(text));
+    present.add(id); counts.set(id, (counts.get(id) ?? 0) + 1);
+  };
+  for (const message of messages) {
+    if (message.role !== 'toolResult' || message.isError || !message.toolCallId) continue;
+    const content = typeof message.content === 'string' ? message.content
+      : (message.content ?? []).filter(part => part.type === 'text').map(part => part.text).join('\n');
+    if (['notion_use', 'skill_prepare'].includes(message.toolName) && message.details?.contextBrokerPreparation?.version === 2) {
+      const verified = verifyPreparationEvidence(content, message.details.contextBrokerPreparation, message.toolCallId);
+      for (const record of verified.records) {
+        if (record.omittedDirectory) omitted.push(key(record.receipt.binding, record.omittedDirectory.sha256, record.omittedDirectory.bytes));
+        else if (record.model.directory !== undefined) complete(record.receipt.binding, record.model.directory);
+      }
+    } else if (message.toolName === 'read') {
+      const proof = message.details?.contextBrokerRead;
+      if (proof?.version !== 3 || !proof.rendered || !proof.binding) continue;
+      assert.equal(proof.toolCallId, message.toolCallId);
+      measure(proof.rendered, content, 'Native directory reuse belongs to the exact output');
+      if (proof.directoryOmitted !== undefined) {
+        keys(proof.directoryOmitted, ['sha256', 'bytes'], 'Native directory omission');
+        assert.match(proof.directoryOmitted.sha256, /^[a-f0-9]{64}$/u);
+        assert.ok(Number.isSafeInteger(proof.directoryOmitted.bytes) && proof.directoryOmitted.bytes > 0);
+        omitted.push(key(proof.binding, proof.directoryOmitted.sha256, proof.directoryOmitted.bytes));
+        continue;
+      }
+      if (proof.loaded === false) continue;
+      const end = proof.delivery?.end;
+      assert.ok(proof.delivery?.start === 0 && proof.delivery?.encoding === 'raw' && Number.isSafeInteger(end) && end > 0);
+      const body = content.slice(0, end);
+      assert.equal(hash(body), proof.bodySha256); assert.equal(Buffer.byteLength(body), proof.bytes);
+      let suffix = content.slice(end);
+      if (message.details.effects !== undefined) {
+        const footer = '\n\n<notion-effects>' + JSON.stringify(verifyConsumptionEffects(message.details.effects)) + '</notion-effects>';
+        assert.ok(suffix.endsWith(footer)); suffix = suffix.slice(0, -footer.length);
+      }
+      const match = /^\n{2,3}<skill-directory>\n([\s\S]*)\n<\/skill-directory>$/.exec(suffix);
+      if (!match) continue;
+      const value = JSON.parse(match[1]); keys(value, ['ref', 'directory'], 'Complete native directory');
+      assert.equal(JSON.stringify(value), match[1]);
+      verifyPublicDirectory(value.directory, proof.directory);
+      complete(proof.binding, value.directory);
+    }
+  }
+  for (const id of omitted) assert.ok(present.has(id), 'An omitted directory has no complete witness in this request');
+  for (const count of counts.values()) assert.equal(count, 1, 'A generated directory is duplicated in this request');
+  return { completeDirectories: present.size, omittedDirectories: omitted.length };
 }
 
 /** Inspect actual complete tool text independently of the request projection.
@@ -172,18 +281,16 @@ export function generatedCatalogCards(message) {
     assert.equal(identity[4], binding.record.id); assert.equal(binding.snapshot_id, receipt.snapshotId);
     assert.equal(binding.body_sha256, receipt.bodySha256); assert.equal(hash(body), binding.body_sha256);
     if (directory === undefined) return [];
-    keys(directory, ['files', 'required', 'candidates', 'references'], 'Complete generated directory');
+    verifyPublicDirectory(directory, receipt.directory);
     const result = [];
     for (const group of ['files', 'required', 'candidates', 'references']) {
       const canonical = receipt.directory?.[group];
       assert.ok(Array.isArray(directory[group]) && Array.isArray(canonical));
       assert.equal(directory[group].length, canonical.length);
       for (const [index, card] of directory[group].entries()) {
-        const original = canonical[index], fields = group === 'files' ? ['path', 'ref', 'bytes'] : ['ref', 'kind', 'name', 'description', 'availability'];
-        keys(card, fields, 'Every directory row keeps its public fields');
+        const original = canonical[index];
         assert.equal(typeof card.ref, 'string'); assert.equal(typeof original?.ref, 'string');
-        for (const key of fields.filter(key => key !== 'ref')) assert.deepEqual(card[key], original[key]);
-        if (group === 'files') continue;
+        if (group === 'files' || !Object.hasOwn(card, 'kind')) continue;
         for (const key of ['kind', 'name', 'description', 'availability']) assert.equal(typeof card[key], 'string');
         assert.equal(typeof original.id, 'string');
         // A selected/fixed relation is not a current discovery card, even for the

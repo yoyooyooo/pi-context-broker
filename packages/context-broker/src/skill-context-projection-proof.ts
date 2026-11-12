@@ -31,10 +31,18 @@ export function validateSkillPrepareProjection(text: string, value: unknown): Sk
     || value.version !== 1 || value.compiler !== SKILL_PREPARATION_COMPILER || value.sourceProjection !== "source-identity/v1"
     || !digest(value.rendered) || value.rendered.sha256 !== hash(text) || value.rendered.bytes !== Buffer.byteLength(text)
     || !Array.isArray(value.records) || !value.records.length) return undefined;
-  if (value.derived !== undefined && (!object(value.derived) || !keys(value.derived, ["reason", "parentSha256"])
+  if (value.derived !== undefined && (!object(value.derived) || !keys(value.derived, ["reason", "parentSha256", "directories"])
     || !["deduplicate", "supersede"].includes(String(value.derived.reason)) || !sha(value.derived.parentSha256))) return undefined;
   const parsed = model(text);
   if (!parsed || parsed.value.records.length !== value.records.length) return undefined;
+  if (object(value.derived) && value.derived.directories !== undefined) {
+    const directories = value.derived.directories;
+    if (!Array.isArray(directories) || !directories.length
+      || directories.some(item => !object(item) || !keys(item, ["index", "sha256", "bytes"])
+        || !natural(item.index) || Number(item.index) >= parsed.value.records.length || !sha(item.sha256) || !natural(item.bytes)
+        || parsed.value.records[Number(item.index)]!.directory !== undefined)
+      || new Set(directories.map(item => item.index)).size !== directories.length) return undefined;
+  }
   for (const [index, item] of value.records.entries()) {
     const record = parsed.value.records[index]!, span = parsed.bodySpans[index]!;
     if (!object(item) || !keys(item, ["index", "ref", "source", "rendered", "delivery", "state"])
@@ -62,14 +70,23 @@ export function deriveSkillPrepareProjection(
   value: unknown,
   changedIndices: readonly number[],
   reason: "deduplicate" | "supersede",
+  omittedDirectories: readonly number[] = [],
 ): SkillPreparationProjection | undefined {
   const before = validateSkillPrepareProjection(beforeText, value), parsedBefore = model(beforeText), parsedAfter = model(afterText);
   if (!before || !parsedBefore || !parsedAfter || !["deduplicate", "supersede"].includes(reason)
-    || !changedIndices.length || changedIndices.some(index => !Number.isSafeInteger(index) || index < 0 || index >= before.records.length)
-    || new Set(changedIndices).size !== changedIndices.length || parsedBefore.value.records.length !== parsedAfter.value.records.length) return undefined;
+    || !changedIndices.length && !omittedDirectories.length
+    || [...changedIndices, ...omittedDirectories].some(index => !Number.isSafeInteger(index) || index < 0 || index >= before.records.length)
+    || new Set(changedIndices).size !== changedIndices.length || new Set(omittedDirectories).size !== omittedDirectories.length
+    || omittedDirectories.some(index => parsedBefore.value.records[index]!.directory === undefined || parsedAfter.value.records[index]!.directory !== undefined)
+    || parsedBefore.value.records.length !== parsedAfter.value.records.length) return undefined;
   const changed = new Set(changedIndices);
-  const withoutBodies = (input: SkillPreparationModel) => ({ ...input, records: input.records.map(({ content: _content, ...record }) => record) });
-  if (!isDeepStrictEqual(withoutBodies(parsedBefore.value), withoutBodies(parsedAfter.value))) return undefined;
+  const withoutBodies = (input: SkillPreparationModel, omitted: readonly number[] = []) => ({ ...input,
+    records: input.records.map(({ content: _content, ...record }, index) => {
+      if (!omitted.includes(index)) return record;
+      const { directory: _directory, ...rest } = record;
+      return rest;
+    }) });
+  if (!isDeepStrictEqual(withoutBodies(parsedBefore.value, omittedDirectories), withoutBodies(parsedAfter.value))) return undefined;
   if (parsedBefore.value.records.some((record, index) => !changed.has(index) && record.content !== parsedAfter.value.records[index]!.content)) return undefined;
   const projection: SkillPreparationProjection = {
     ...before,
@@ -80,7 +97,13 @@ export function deriveSkillPrepareProjection(
         rendered: { sha256: hash(body), bytes: Buffer.byteLength(body) },
         state: changed.has(index) ? "replaced" : record.state };
     }),
-    derived: { reason, parentSha256: before.rendered.sha256 },
+    derived: { reason, parentSha256: before.rendered.sha256,
+      ...((before.derived?.directories?.length ?? 0) + omittedDirectories.length ? {
+        directories: [...before.derived?.directories ?? [], ...omittedDirectories.map(index => {
+          const text = JSON.stringify(parsedBefore.value.records[index]!.directory);
+          return { index, sha256: hash(text), bytes: Buffer.byteLength(text) };
+        })],
+      } : {}) },
   };
   return validateSkillPrepareProjection(afterText, projection);
 }

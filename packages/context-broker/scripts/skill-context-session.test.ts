@@ -3,8 +3,10 @@ import { createHash } from "node:crypto";
 import { recordIdentity } from "../src/discovery-records";
 import { compileSkillPreparation, renderSkillPreparationModel } from "../src/skill-context-projection";
 import { deriveSkillPrepareProjection, validateSkillPrepareProjection } from "../src/skill-context-projection-proof";
-import { deduplicateSourceReads, projectSelectedSourceMessages, sessionSourceBindings, sourceBodyLoaded, sourceDeliveryReceipt, sourceMessageText } from "../src/session-source-snapshot";
-import type { PreparationBinding } from "../src/prepare-protocol";
+import { deduplicateSourceReads, nativeReadReceipt, projectSelectedSourceMessages, sessionSourceBindings, sourceBodyLoaded, sourceDeliveryReceipt, sourceMessageText } from "../src/session-source-snapshot";
+import { verifyContextOnce } from "../../../scripts/context-once-evidence.mjs";
+import { verifyGeneratedDirectoryReuse } from "../../../scripts/skill-preparation-evidence.mjs";
+import type { PreparationBinding, PreparationDirectory } from "../src/prepare-protocol";
 import type { AgentMessage, ContentRecord, SkillRecord } from "../src/types";
 
 const hash = (text: string) => createHash("sha256").update(text).digest("hex"), scope = "a".repeat(64);
@@ -27,15 +29,24 @@ function record(name: string, body: string): SkillRecord & { preparationBinding:
 }
 const alpha = record("alpha", '\ufeff---\r\nname: alpha\r\n---\r\n## Members\r\n作者 <body> 标记和 "content":\\ 引号。🧭\r\n```json\r\n{"graphs":"author-owned"}\r\n```\r\n');
 const beta = record("beta", "不同的完整正文。\n" + alpha.body);
-function preparation(records = [alpha, beta], toolCallId = "prepare") {
+const directoryFor = (value: typeof alpha) => ({
+  files: [{ path: "references/guide.md", ref: value.preparationBinding.ref.replace("/SKILL.md?", "/references/guide.md?"), bytes: 23, sha256: hash("Controlled guide bytes.") }],
+  required: [], candidates: [], references: [],
+});
+const publicDirectoryFor = (value: typeof alpha) => ({
+  files: directoryFor(value).files.map(({ path, ref, bytes }) => ({ path, ref, bytes })), required: [], candidates: [], references: [],
+});
+function preparation(records = [alpha, beta], toolCallId = "prepare", withDirectory = false, directoryOverride?: PreparationDirectory) {
   const refs = records.map(value => value.preparationBinding.ref);
   const compiled = compileSkillPreparation({ purpose: "use", roots: refs, records: records.map(value => ({
     name: value.name, kind: value.kind!, ref: value.preparationBinding.ref, content: value.body,
     source: { identity: recordIdentity(value), sha256: hash(value.body), bytes: Buffer.byteLength(value.body) },
+    ...(withDirectory ? { directory: directoryOverride ?? directoryFor(value) } : {}),
   })) });
   const vector = { version: 1 as const, kind: "observed_version_vector" as const, purpose: "use" as const, scope,
     roots: records.map(value => value.id!).sort(), required: [], bindings: records.map(value => value.preparationBinding) };
-  const receipts = records.map((value, index) => sourceDeliveryReceipt(value, compiled.content, "json", compiled.bodySpans[index]!.start)!);
+  const receipts = records.map((value, index) => ({ ...sourceDeliveryReceipt(value, compiled.content, "json", compiled.bodySpans[index]!.start)!,
+    ...(withDirectory ? { directory: directoryOverride ?? directoryFor(value) } : {}) }));
   const details = { contextBrokerPreparation: { version: 2, toolCallId, purpose: "use", records: receipts,
     graphs: [{ scope, roots: vector.roots, graph_lock: { ...vector, sha256: hash(canonical(vector)) },
       budget: { maxNodes: 64, maxDepth: 16, maxInstructionBytes: 1048576, maxContextBytes: 262144 },
@@ -192,4 +203,97 @@ test("version-one historical tool receipts remain readable without manufacturing
     details: { contextBrokerPreparation: { version: 1, toolCallId: "legacy", records: [receipt] } } };
   expect(sourceBodyLoaded([message], alpha)).toBe(true);
   expect(sourceBodyLoaded([{ ...message, content: "hash only" }], alpha)).toBe(false);
+});
+
+for (const count of [1, 2, 10]) test(`CTX03 ${count} explicit use operations keep one full body and generated directory`, () => {
+  const original = Array.from({ length: count }, (_, index) => preparation([alpha], "repeat-" + index, true));
+  const saved = JSON.stringify(original), projected = deduplicateSourceReads(original);
+  const identity = { kind: "instruction", scope, owner: alpha.id!, version: alpha.snapshotId! };
+  const dirIdentity = { ...identity, kind: "directory" };
+  const occurrences = projected.flatMap((message, index) => {
+    const model = JSON.parse(sourceMessageText(message.content)), value = model.records[0];
+    return [
+      { identity, location: { message: index, selector: { kind: "json", path: ["records", 0, "content"] } },
+        state: value.content === alpha.body ? "complete" : "reference", value: "Already loaded." },
+      { identity: dirIdentity, location: { message: index, selector: { kind: "json", path: ["records", 0, "directory"] } },
+        state: value.directory === undefined ? "reference" : "complete", value: undefined },
+    ];
+  });
+  const measured = verifyContextOnce({ messages: projected,
+    expected: [{ identity, value: alpha.body }, { identity: dirIdentity, value: publicDirectoryFor(alpha) }], occurrences,
+    operations: projected.map((_, index) => ({ toolCallId: "repeat-" + index,
+      location: { message: index, selector: { kind: "json", path: ["effects"] } },
+      value: { version: 1, remote_writes: "unknown", author_content: "unknown", retention: [] } })) });
+  expect(measured.completeCopies).toBe(2);
+  expect(verifyGeneratedDirectoryReuse(projected)).toEqual({ completeDirectories: 1, omittedDirectories: count - 1 });
+  expect(JSON.stringify(original)).toBe(saved);
+  expect(sourceBodyLoaded(projected, alpha)).toBe(true);
+  expect(deduplicateSourceReads(projected)).toBe(projected);
+  for (const message of projected) expect(validateSkillPrepareProjection(sourceMessageText(message.content),
+    message.details?.contextBrokerPreparation.projection)).toBeDefined();
+  if (count > 1) expect(() => verifyGeneratedDirectoryReuse(projected.slice(1))).toThrow("no complete witness");
+  // A new projection after compaction starts from the surviving original result.
+  expect(JSON.parse(sourceMessageText(deduplicateSourceReads([original.at(-1)!])[0]!.content)).records[0].directory).toEqual(publicDirectoryFor(alpha));
+});
+
+test("CTX03 native read and use share one generated directory without removing effects or author bytes", () => {
+  const directory = publicDirectoryFor(alpha), effects = { version: 1, remote_writes: "none", author_content: "unchanged", retention: [] };
+  const footer = "\n\n<skill-directory>\n" + JSON.stringify({ ref: alpha.preparationBinding.ref, directory }) + "\n</skill-directory>";
+  const content = alpha.body + footer + "\n\n<notion-effects>" + JSON.stringify(effects) + "</notion-effects>";
+  const native = (id: string): AgentMessage => ({ role: "toolResult", toolName: "read", toolCallId: id, content,
+    details: { effects, contextBrokerRead: { ...nativeReadReceipt(alpha, id, content)!, directory: directoryFor(alpha) } } });
+  for (const originals of [[native("first"), preparation([alpha], "use", true), native("last")],
+    [preparation([alpha], "use", true), native("first"), native("last")]]) {
+    const saved = JSON.stringify(originals), projected = deduplicateSourceReads(originals);
+    const text = projected.map(message => sourceMessageText(message.content)).join("\n");
+    expect(text.split(JSON.stringify(directory)).length - 1).toBe(1);
+    expect(sourceBodyLoaded(projected, alpha)).toBe(true);
+    expect(verifyGeneratedDirectoryReuse(projected)).toEqual({ completeDirectories: 1, omittedDirectories: 2 });
+    expect(text.split('<notion-effects>').length - 1).toBe(2);
+    expect(JSON.stringify(originals)).toBe(saved);
+    expect(deduplicateSourceReads(projected)).toBe(projected);
+  }
+});
+
+test("CTX03 directory elision never blesses a corrupt parent or an unrelated metadata edit", () => {
+  const original = preparation([alpha, beta], "parent", true), before = sourceMessageText(original.content);
+  const model = JSON.parse(before); delete model.records[0].directory;
+  const after = renderSkillPreparationModel(model).content, proof = original.details.contextBrokerPreparation.projection;
+  expect(deriveSkillPrepareProjection(before, after, proof, [], "deduplicate", [0])).toBeDefined();
+  expect(deriveSkillPrepareProjection(before, after, proof, [], "deduplicate")).toBeUndefined();
+  expect(deriveSkillPrepareProjection(before, after, { ...proof, rendered: { ...proof.rendered, sha256: "0".repeat(64) } }, [], "deduplicate", [0])).toBeUndefined();
+  model.records[1].directory.files[0].ref = "unrelated-ref";
+  expect(deriveSkillPrepareProjection(before, renderSkillPreparationModel(model).content, proof, [], "deduplicate", [0])).toBeUndefined();
+});
+
+test("CTX03 user-carried, partial and detached directories cannot suppress a complete native result", () => {
+  const first = preparation([alpha], "first", true), next = preparation([alpha], "next", true);
+  const invalid: AgentMessage[] = [{ ...first, role: "user" }, { ...first, isError: true }, { ...first, toolCallId: "detached" },
+    { ...first, content: "Summary with loaded=true" }, { ...first, details: undefined }];
+  for (const message of invalid) {
+    const projected = deduplicateSourceReads([message, next]);
+    expect(JSON.parse(sourceMessageText(projected[1]?.content)).records[0].directory).toEqual(publicDirectoryFor(alpha));
+  }
+  const different = preparation([beta], "foreign", true);
+  expect(verifyGeneratedDirectoryReuse(deduplicateSourceReads([first, different])).completeDirectories).toBe(2);
+});
+
+test("CTX03 a reused directory digest must resolve to its exact current-request witness", () => {
+  const projected = deduplicateSourceReads([preparation([alpha], "first", true), preparation([alpha], "second", true)]);
+  const corrupted = structuredClone(projected);
+  const proof = corrupted[1]!.details!.contextBrokerPreparation;
+  proof.projection.derived.directories[0].sha256 = "0".repeat(64);
+  expect(() => verifyGeneratedDirectoryReuse(corrupted)).toThrow("no complete witness");
+});
+
+test("CTX03 normalized file relations retain independent canonical evidence across reuse", () => {
+  const directory = directoryFor(alpha), file = directory.files[0]!;
+  const normalized = { ...directory, references: [{ id: "guide", ref: file.ref, kind: "file", name: file.path,
+    description: "Read the complete guide when needed.", availability: "available" }] };
+  const messages = [preparation([alpha], "file-first", true, normalized), preparation([alpha], "file-second", true, normalized)];
+  const projected = deduplicateSourceReads(messages);
+  expect(verifyGeneratedDirectoryReuse(projected)).toEqual({ completeDirectories: 1, omittedDirectories: 1 });
+  const first = JSON.parse(sourceMessageText(projected[0]!.content));
+  expect(first.records[0].directory.references).toEqual([{ ref: file.ref }]);
+  expect(first.records[0].directory.files[0].description).toBe(normalized.references[0]!.description);
 });
