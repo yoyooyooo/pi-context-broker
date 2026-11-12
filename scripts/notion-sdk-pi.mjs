@@ -2241,7 +2241,7 @@ function observe() {
       ...(objects ? { active_object_reads: objects.pending_reads, object_read_errors: objects.errors } : {}) });
   });
 }
-async function observer(path) {
+export async function observer(path) {
   await writeFile(path, `import { isMainThread } from 'node:worker_threads';\nimport childProcess from 'node:child_process';\nimport { createHash } from 'node:crypto';\nimport { channel } from 'node:diagnostics_channel';\nimport fs, { appendFileSync } from 'node:fs';\nimport fsPromises from 'node:fs/promises';\nimport { syncBuiltinESMExports } from 'node:module';\n${safeRequestMetrics.toString()}\n${observeOwnedObjectReads.toString()}\n${observeSdkInitialization.toString()}\nif (isMainThread) (${observe.toString()})();\n`, { mode: 0o600 });
 }
 
@@ -2384,10 +2384,12 @@ export function assertControlledHttpCancellation(start, end, proof) {
   assert.equal(proof.tool_start.toolCallId, proof.tool_call_id); assert.equal(proof.tool_end.toolCallId, proof.tool_call_id);
   assert.equal(proof.tool_start.toolName, proof.tool_end.toolName); assert.equal(proof.tool_end.isError, true);
   assert.equal(proof.tool_start.toolName, start.operation === 'consume' ? 'notion_use' : 'read');
-  assert.deepEqual(proof.sdk_result, { version: 1, status: 'cancelled', reason: 'interrupted' }, 'A typed cancellation must not retain successful preparation or delivery fields');
+  const { effects, ...cancelled } = proof.sdk_result;
+  assert.deepEqual(cancelled, { version: 1, status: 'cancelled', reason: 'interrupted' }, 'A typed cancellation must not retain successful preparation or delivery fields');
+  if (effects !== undefined) verifyConsumptionEffects(effects);
   return { id: start.id, pid: start.observer_pid, tool_call_id: proof.tool_call_id,
     sent_monotonic_ns: proof.sent_monotonic_ns, completed_monotonic_ns: proof.completed_monotonic_ns,
-    rpc_response_id: proof.response.id };
+    rpc_response_id: proof.response.id, ...(effects === undefined ? {} : { effects }) };
 }
 
 export function reconcile(events, lifecycle, { bodyTransportRequired = true, sourceMode = 'offline', catalogLifecycle = [], expectedCatalogOutcome = 'completed', expectedFailedSdkIds = [], controlledCancellations = [] } = {}) {

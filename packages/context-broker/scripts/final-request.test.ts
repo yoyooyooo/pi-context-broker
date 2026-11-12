@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { expect, test } from "bun:test";
 import type { AgentMessage } from "../src/types";
+import { deferredSourceEntries, sourceBodyLoaded, sourceDeliveryReceipt, withSessionSourceReceipts } from "../src/session-source-snapshot";
 import {
   assessFinalRequestPayload,
   createFinalRequestLedger,
@@ -242,5 +243,62 @@ test("host mock context stays logical-only and a lost resource blocks persistenc
   } finally {
     await emit("session_shutdown", {});
     ledger.close();
+  }
+});
+
+test("restored deferred source keeps its user-role obligation privately through later mutable hooks", async () => {
+  const { installHostSkills } = await import("../src/host-skills.ts");
+  const { createPiHostAdapter } = await import("../src/pi-host-adapter.ts");
+  const record = { kind: "skill" as const, source: "notion" as const, sourceId: "owned", sourceScope: "scope", id: "record",
+    name: "restored", body: "RESTORED_SOURCE_BODY", snapshotId: snapshot, path: "/immutable/SKILL.md", description: "fixture",
+    aliases: [], normalizedName: "restored", normalizedDescription: "fixture", normalizedAliases: [], autoloadEnabled: false,
+    locator: { type: "shared_skill" as const, library_id: "lib", skill_id: "skill", page_id: "p", database_id: "db", data_source_id: "ds" } };
+  const original = { role: "user", content: "Use the selected Skill." };
+  const draft = deferredSourceEntries([{ sourceEntry: { id: "user-1", type: "message", message: original }, messages: [original] }], "user-1",
+    [{ role: "custom", customType: "context-broker", content: record.body, details: { records: [sourceDeliveryReceipt(record, record.body)] } }])!;
+  expect(draft.entries[0]?.type).toBe("context_edit");
+  const edited = draft.entries[0];
+  if (edited?.type !== "context_edit" || !edited.replacement) throw new Error("Expected real deferred edit");
+  const restored = { ...original, content: edited.replacement.content };
+  const receipt = draft.entries[1];
+  if (receipt?.type !== "custom") throw new Error("Expected real machine receipt");
+  const entries = [{ sourceEntry: { id: "user-1", type: "message" as const, message: restored }, messages: [restored] },
+    { sourceEntry: { id: "receipt-1", ...receipt }, messages: [] }];
+  expect(sourceBodyLoaded(withSessionSourceReceipts([restored], entries), record)).toBe(true);
+  for (const change of ["none", "role", "deleted", "mutate-returned"] as const) {
+    const controller = new AbortController(), ledger = createFinalRequestLedger();
+    const listeners = new Map<string, Array<(event: never, ctx: never) => unknown>>();
+    let confirmed = 0;
+    const api = { on(name: string, fn: (event: never, ctx: never) => unknown) { listeners.set(name, [...listeners.get(name) ?? [], fn]); } };
+    const ctx = { mode: "rpc" as const, signal: controller.signal, abort: () => controller.abort(),
+      model: { api: "openai-completions", baseUrl: "http://127.0.0.1:9/v1" },
+      sessionManager: { getSessionId: () => "restored-session", getBranch: () => [], buildSessionProjection: () => ({ entries, messages: [restored] }) } };
+    await installHostSkills(api, { config: {}, getRecords: async () => ({ records: [], failures: [] }), loadRecord: async value => value,
+      finalRequests: ledger, confirmDelivery: () => { confirmed++; } }, createPiHostAdapter(api));
+    const emit = async (name: string, event: unknown) => {
+      let result: { messages?: AgentMessage[] } | undefined;
+      for (const fn of listeners.get(name) ?? []) result = await fn(event as never, ctx as never) as typeof result ?? result;
+      return result;
+    };
+    try {
+      await emit("agent_start", {});
+      const context = await emit("context", { messages: [restored] });
+      const final = await emit("context_with_system", { messages: [{ role: "system", content: "rules", toolsAdded: [] }, ...context!.messages!] });
+      const messages = final!.messages!;
+      expect(messages.some(message => message.customType === "context-broker" && !message.content?.length)).toBe(false);
+      const user = messages.find(message => message.role === "user")!;
+      expect(user.details).toBeUndefined();
+      if (change === "mutate-returned") user.role = "assistant";
+      const actual = messages.flatMap(message => message === user && change === "deleted" ? [] : [{
+        role: message === user && change === "role" ? "assistant" : message.role === "custom" ? "user" : message.role,
+        content: message.content,
+      }]);
+      await emit("before_provider_request", { payload: payload(actual) });
+      expect(controller.signal.aborted).toBe(change !== "none");
+      await emit("after_provider_response", { status: 200, headers: {} });
+      expect(confirmed).toBe(change === "none" ? 1 : 0);
+      expect(ledger.recent().at(-1)?.wireConfirmed).toBe(false);
+      if (change !== "none") expect(ledger.recent().at(-1)?.errors).toContain("LOST_SOURCE_RESULT");
+    } finally { await emit("session_shutdown", {}); ledger.close(); }
   }
 });

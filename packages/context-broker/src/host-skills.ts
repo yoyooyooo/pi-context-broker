@@ -1168,7 +1168,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       messages = deduplicateSourceReads(messages);
       assertContextAccess(messages);
       if (run) {
-        assertPiRun(run, ctx); run.contextMessages = messages;
+        assertPiRun(run, ctx); run.contextMessages = structuredClone(messages); run.finalMessages = undefined;
         run.requestProjection = { count: run.projection?.length ?? 0, messages: projectionIndices.map(index => messages[index]!) };
       }
       // Receipt-only custom entries support validation above, never model input.
@@ -1467,7 +1467,21 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const finalMessages = cleaned.flatMap((message, index): AgentMessage[] => index === 0 && catalog
       ? [message, { role: "custom", customType: section, content: catalog, display: false, timestamp: 0 }]
       : [message]);
-    if (piRun) piRun.finalMessages = finalMessages;
+    if (piRun) {
+      const receipts = (piRun.contextMessages ?? []).filter(message => message.role === "custom"
+        && message.customType === "context-broker" && !sourceMessageText(message.content)
+        && message.details && typeof message.details === "object" && "nativePromptSha256" in message.details);
+      const users = new Set(finalMessages.filter(message => message.role === "user")
+        .map(message => createHash("sha256").update(sourceMessageText(message.content)).digest("hex")));
+      for (const receipt of receipts) {
+        if (!users.has(String(Reflect.get(receipt.details!, "nativePromptSha256")))) {
+          ctx.abort?.(); throw hostError("SOURCE_FINAL_PROJECTION_INVALID");
+        }
+      }
+      // The original receipt remains private. Later mutable hooks cannot change
+      // the expected user role/text by mutating the returned message objects.
+      piRun.finalMessages = structuredClone([...finalMessages, ...receipts]);
+    }
     return { messages: finalMessages };
   });
   async function exactRecord(reference: ExactNativeReference, ctx: ExtensionContext, signal: AbortSignal, short?: HostShortRefResolution, resolved?: SkillRecord): Promise<SkillRecord> {

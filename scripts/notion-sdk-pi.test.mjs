@@ -2278,6 +2278,16 @@ test('controlled HTTP body cancellation requires its actual RPC abort inside the
   const options = { sourceMode: 'controlled-http', controlledCancellations: [cancellation] };
   const result = reconcile(observed(fields), lifecycle, options);
   assert.equal(result.sdk_cancelled_bodies, 1); assert.equal(result.sdk_http, 1);
+  for (const effects of [
+    { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] },
+    { version: 1, remote_writes: 'unknown', author_content: 'unknown', retention: [] },
+  ]) {
+    const withEffects = { ...cancellation, sdk_result: { ...cancellation.sdk_result, effects } };
+    assert.equal(reconcile(observed(fields), lifecycle, { ...options, controlledCancellations: [withEffects] }).sdk_cancelled_bodies, 1);
+    const ledger = observed(fields);
+    assert.deepEqual(namedSdkProbe.assertControlledHttpCancellation(ledger.find(item => item.id === '42:2' && item.event === 'start'),
+      ledger.find(item => item.id === '42:2' && item.event === 'end'), withEffects).effects, effects);
+  }
   assert.throws(() => reconcile(observed(fields), lifecycle), /Only catalogue/);
   for (const changed of [
     { host_pid: 41 }, { sdk_id: '42:3' }, { sent_monotonic_ns: '3' },

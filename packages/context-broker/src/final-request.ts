@@ -194,6 +194,17 @@ export function finalRequestSources(messages: readonly AgentMessage[]): { source
     sources.push(source);
   };
   for (const message of messages) {
+    const privateReceipt = isObject(message.details) ? message.details : undefined;
+    if (receiptOnly(message) && privateReceipt && Array.isArray(privateReceipt.records)
+      && messages.some(user => user.role === "user" && sha256(messageText(user.content)) === privateReceipt.nativePromptSha256)) {
+      for (const receipt of privateReceipt.records) {
+        if (!isObject(receipt)) continue;
+        push({ identitySha256: sha256(String(receipt.contentIdentity ?? receipt.identity ?? "")),
+          snapshot: snapshotPin(receipt.snapshotId), bodySha256: hexHash(receipt.bodySha256),
+          state: receipt.loaded === true ? "copied" : "reused", remoteWrites: null, authorContent: null });
+      }
+      continue;
+    }
     if (!sourceTool(message) || !isObject(message.details)) continue;
     const details = message.details;
     const text = messageText(message.content);
@@ -249,9 +260,12 @@ const BROKER_CUSTOM = new Set(["context-broker", "skill-prompt-message", "contex
 
 function brokerTexts(messages: readonly AgentMessage[]): string[] {
   const texts: string[] = [];
+  const persistedUsers = new Set(messages.filter(receiptOnly).flatMap(message =>
+    isObject(message.details) && typeof message.details.nativePromptSha256 === "string" ? [message.details.nativePromptSha256] : []));
   for (const message of messages) {
-    if (message.role === "user" && isObject(message.details) && Array.isArray(message.details.records)
-      && message.details.records.some(item => isObject(item) && isObject(item.delivery))) {
+    if (message.role === "user" && (persistedUsers.has(sha256(messageText(message.content)))
+      || isObject(message.details) && Array.isArray(message.details.records)
+        && message.details.records.some(item => isObject(item) && isObject(item.delivery)))) {
       const text = messageText(message.content);
       if (text.length > 0) texts.push(text);
       continue;
