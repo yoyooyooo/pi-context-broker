@@ -238,3 +238,13 @@ v12 A 原结果 `notion-only-close4-v12-A-ref-and-correction-ibx2dL/result.json`
 
 三个新增功能反例先 RED，随后新三项与旧 loopback/默认 failed 拒绝两项合计 5/5 GREEN、0 skipped，原始 stdout 为 `verification-evidence/ah639-20261112-failed-final-artifact-exercise/green-attempt-1.stdout.log`，SHA `da93865d599101e1a61d7c83d43bfd71f96931e587518f7cd76060452f00faf1`。两份受控 helper fixture 真实执行并完成系统 Trash ECE；实际 v12 只调用只读准入，六文件和最后 final 字节相符，未执行真实 helper。正式生成物仍须 root 独立审阅、冻结实驱和按完整文件/stdout/summary/HTTP证据裁决。
 
+### 失败父运行的有序 write/edit 产物准入
+
+v13 B/normal procedure 原运行保持 failed/timeout143，实际 601829.295708 ms。原 native 已有一次 write 和一次三项 edit，二者均成功且各自 guard bytes/hash 完整；保全 helper 为 18905 B、SHA `7703bc6c49da03119edb182168d767236f26bad6c6617357d6b4d6a82d3d5814`。现有父准入将首次 write 与最终 retained 文件直接比较，并没有接受 edit，因而拒绝了合法的逐次修订；这不表示 helper 损坏，也不改判原超时。
+
+父准入按完整 native 顺序重建每个 retained 路径的文本，祖先种子只能来自先前已经审定的末态。每次 write/edit 都须与该调用唯一 artifact_file 的字节数和 SHA 相符，并复用既有 guard 对原生调用参数、成功结果和所有产物的完整绑定。edit 仅接受实际 `{path, edits:[{oldText,newText}]}` 形状，每个 oldText 必须在当时版本中唯一精确匹配；缺写入来源、未绑定 edit、外路径、错误或多匹配旧文均拒绝。历史 read 对照其发生时刻的版本，重放末态再与保全文件逐字比较。
+
+该修正仅扩展已审产物历史的准入，不执行 helper，不修改原 result/native/retained，也不改变两个祖先上限、原项目、来源 pin、只读远端边界或 600000 ms/8 payload/40 native/4000000 B。后续 single complete 仍省略 budgetMode 并保留原 failed 判定；正式文档生成与完整交付须另按原合同验收。验证限于真实 B 准入及该有序链的定向反例，不新增 runner 或模型调用。
+
+三个新增用例先取得 3/3 功能 RED，随后与受影响的旧 v9 单稿、v10 继承种子准入共 5/5 GREEN、0 skipped。新覆盖实际 B 的完整 write→三项 edit、edit 前的有界 read，以及错误/多匹配 oldText、未绑定 edit、外路径、缺 write 来源和中间版本 hash 错误的六类反例。原始 stdout 为 `verification-evidence/ah639-20261112-artifact-seed-edits/green-attempt-1.stdout.log`，2787 B，SHA `432281e49af6f4c2be57fbb7743b62360c5ccc7d681811bf306af3a1a739210c`。真实 B 只读准入回执为 daily `reviews/close4-v13-B-parent-admission.json`，9624 B，SHA `08f41b0f6ac0ad3aa1814fe3bd1554e36f795bdabcbfc51624491a972629677b`；父 non-header 162 entries/719585 B 完整保留，helper 只从 retained sourcePath 恢复，不依赖旧 live roots。这里没有运行模型或实际 B helper，不把准入通过算作缺失文档已经交付。
+

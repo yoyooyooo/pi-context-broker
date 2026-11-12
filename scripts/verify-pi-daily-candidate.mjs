@@ -1187,7 +1187,7 @@ export async function inspectArtifactForkSource(previous, depth = 0) {
   assert.ok(Buffer.from(rows.slice(1).map(row => JSON.stringify(row)).join('\n') + '\n').equals(history), 'The public fork must retain exact original non-header bytes');
   const seenFiles = new Set(ancestor?.projectFiles.map(file => file.path)), historicalRejectedCalls = [...(ancestor?.historicalRejectedCalls ?? [])];
   let artifactSeed;
-  const seedByPath = new Map(), rawGuard = [], acceptedBlocks = new Set();
+  const seedByPath = new Map(), artifactVersions = new Map(), rawGuard = [], acceptedBlocks = new Set();
   if (ancestor?.artifactSeed) assert.ok(previous.artifactOutput?.files?.files.length, 'The restored ancestor artifacts must remain retained');
   if (previous.artifactOutput?.files?.files.length) {
     assert.ok(ancestor, 'A retained draft must belong to the bound prior artifact fork');
@@ -1234,6 +1234,7 @@ export async function inspectArtifactForkSource(previous, depth = 0) {
       }
       const value = await readFile(path); assert.equal(value.length, file.bytes); assert.equal(hash(value), file.sha256, 'Retained artifact bytes changed');
       seedByPath.set(file.path, { ...file, sourcePath: path, text: value.toString('utf8') });
+      if (inherited) artifactVersions.set(file.path, value.toString('utf8'));
       inputs.push({ path, bytes: value.length, sha256: hash(value) });
     }
     artifactSeed = { sourceEvidence: previous.evidence, originalRoot: policy.root,
@@ -1268,11 +1269,30 @@ export async function inspectArtifactForkSource(previous, depth = 0) {
       const effects = call.name === 'notion_use' ? result.details?.contextBrokerPreparation?.effects ?? result.details?.effects : result.details?.effects;
       assert.equal(call.arguments.readOnly, true); assert.ok(noWrites(effects), 'Historical source effects must remain read-only'); continue;
     }
-    if (artifactSeed && call.name === 'write') {
-      assert.deepEqual(Object.keys(call.arguments).sort(), ['content', 'path']);
+    if (artifactSeed && ['write', 'edit'].includes(call.name)) {
+      assert.deepEqual(Object.keys(call.arguments).sort(), call.name === 'write' ? ['content', 'path'] : ['edits', 'path']);
       const file = [...seedByPath.values()].find(file => call.arguments.path === artifactSeed.originalRoot + '/' + file.path);
-      assert.ok(file, 'Historical writes must target a retained owned artifact');
-      assert.equal(hash(call.arguments.content), file.sha256); assert.equal(Buffer.byteLength(call.arguments.content), file.bytes); continue;
+      assert.ok(file, 'Historical writes and edits must target a retained owned artifact');
+      let current = artifactVersions.get(file.path);
+      if (call.name === 'write') {
+        assert.equal(typeof call.arguments.content, 'string'); current = call.arguments.content;
+      } else {
+        assert.equal(typeof current, 'string', 'Historical edit requires a prior bound write or inherited seed');
+        assert.ok(Array.isArray(call.arguments.edits) && call.arguments.edits.length, 'Use the native edit array schema');
+        for (const edit of call.arguments.edits) {
+          assert.ok(edit && typeof edit === 'object' && !Array.isArray(edit));
+          assert.deepEqual(Object.keys(edit).sort(), ['newText', 'oldText']);
+          assert.equal(typeof edit.oldText, 'string'); assert.equal(typeof edit.newText, 'string');
+          const index = current.indexOf(edit.oldText);
+          assert.ok(edit.oldText.length && index >= 0 && index === current.lastIndexOf(edit.oldText), 'Historical edit requires one unique exact oldText match');
+          current = current.slice(0, index) + edit.newText + current.slice(index + edit.oldText.length);
+        }
+      }
+      const retained = rawGuard.filter(row => row.phase === 'artifact_file' && row.toolCallId === call.id && row.path === file.path);
+      assert.equal(retained.length, 1, 'Each historical artifact version needs its unique guard result');
+      assert.equal(hash(current), retained[0].sha256, 'Historical artifact version differs from its guard result');
+      assert.equal(Buffer.byteLength(current), retained[0].bytes, 'Historical artifact version differs from its guard byte count');
+      artifactVersions.set(file.path, current); continue;
     }
     assert.equal(call.name, 'read', 'Historical generation cannot have unreviewed execution or writes');
     if (artifactSeed && call.arguments.path?.startsWith(artifactSeed.originalRoot + '/')) {
@@ -1281,7 +1301,9 @@ export async function inspectArtifactForkSource(previous, depth = 0) {
       assert.ok(Object.keys(call.arguments).every(key => ['path', 'offset', 'limit'].includes(key)));
       const offset = call.arguments.offset ?? 1, limit = call.arguments.limit;
       assert.ok(Number.isSafeInteger(offset) && offset > 0 && Number.isSafeInteger(limit) && limit > 0, 'Bind the reviewed bounded draft read');
-      const parts = file.text.split('\n'), end = Math.min(parts.length, offset - 1 + limit);
+      const current = artifactVersions.get(file.path);
+      assert.equal(typeof current, 'string', 'Historical artifact read requires a prior bound write or inherited seed');
+      const parts = current.split('\n'), end = Math.min(parts.length, offset - 1 + limit);
       const expected = parts.slice(offset - 1, end).join('\n') + (end < parts.length ? '\n\n[' + (parts.length - end) + ' more lines in file. Use offset=' + (end + 1) + ' to continue.]' : '');
       assert.equal(body, expected, 'Historical artifact read must match the retained draft bytes'); continue;
     }
@@ -1293,6 +1315,7 @@ export async function inspectArtifactForkSource(previous, depth = 0) {
   }
   assert.deepEqual([...seenFiles].sort(), Object.keys(ownedProjectFiles).sort(), 'The original history must contain the complete project');
   if (artifactSeed) {
+    for (const file of seedByPath.values()) assert.equal(artifactVersions.get(file.path), file.text, 'Replayed artifact must equal the exact retained final bytes');
     assert.ok(rawGuard.filter(row => row.allowed === false).every(row => acceptedBlocks.has(row.toolCallId)), 'Do not inherit an unreviewed rejected operation');
     artifactSeed.guardRows = [...(ancestor?.artifactSeed?.guardRows ?? []), ...rawGuard.filter(row => row.allowed !== false)];
     inspectCandidateArtifactGuard(audit, artifactSeed.guardRows, previous.artifactOutput.files);

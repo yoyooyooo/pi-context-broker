@@ -10,6 +10,7 @@ const json = async path => JSON.parse(await readFile(path, 'utf8'));
 const nativeText = rows => rows.map(row => JSON.stringify(row)).join('\n') + '\n';
 const parentPath = process.env.PI_ARTIFACT_RECOVERY_V9_RESULT;
 const restoredParentPath = process.env.PI_ARTIFACT_RECOVERY_V10_RESULT;
+const editedParentPath = process.env.PI_ARTIFACT_RECOVERY_V13_B_RESULT;
 const legacyParents = process.env.PI_ARTIFACT_RECOVERY_V3_PARENTS;
 const complete = [{ id: 'complete', prompt: '继续完成原完整任务，补齐文件与 helper；只生成，不执行。' }];
 const config = { artifactOutput: true, project: 'owned-ticket-service', timeoutMs: 600000,
@@ -90,6 +91,60 @@ test('actual-parent counterexamples reject unapproved write, outside read, unpro
     async ({ parent, evidence }) => { await writeFile(join(evidence, parent.artifactOutput.files.files[0].evidencePath), 'changed draft\n'); },
   ];
   for (const mutate of mutations) await assert.rejects(() => alteredParent(t, mutate).then(candidate.inspectArtifactForkSource));
+});
+
+test('actual B failed-parent admission retains the final helper after its bound write and three-block native edit', { skip: !editedParentPath }, async () => {
+  const original = await readFile(editedParentPath), parent = JSON.parse(original), native = await readFile(parent.session.path);
+  const proof = await candidate.inspectArtifactForkSource(parent);
+  assert.equal(proof.native.sha256, 'fb5364658957049e4b19d38d619ebf5f8de039bf7313363648aa7c0d8c3e7ac1');
+  assert.equal(proof.originalStatus, 'failed'); assert.equal(proof.artifactSeed.files.length, 1);
+  const file = proof.artifactSeed.files[0];
+  assert.equal(file.bytes, 18905); assert.equal(file.sha256, '7703bc6c49da03119edb182168d767236f26bad6c6617357d6b4d6a82d3d5814');
+  assert.equal(file.sourcePath, join(parent.evidence, file.evidencePath));
+  assert.deepEqual(proof.artifactSeed.guardRows.filter(row => row.phase === 'tool_call').map(row => row.toolName), ['write', 'edit']);
+  assert.equal(sha(await readFile(file.sourcePath)), file.sha256);
+  assert.deepEqual(await readFile(editedParentPath), original); assert.deepEqual(await readFile(parent.session.path), native);
+});
+
+test('B failed-parent reads bind the version present before its later native edit', { skip: !editedParentPath }, async t => {
+  const parent = await alteredParent(t, ({ rows }) => {
+    const write = rows.flatMap(row => row.message?.content ?? []).find(part => part.type === 'toolCall' && part.name === 'write');
+    const index = rows.findIndex(row => row.message?.toolCallId === write.id), previous = rows[index].id;
+    const parts = write.arguments.content.split('\n');
+    const text = parts.slice(189, 214).join('\n') + '\n\n[' + (parts.length - 214) + ' more lines in file. Use offset=215 to continue.]';
+    const call = { type: 'message', id: 'intermediate-read-call', parentId: previous, message: {
+      role: 'assistant', provider: 'magpie', model: 'group/worker', stopReason: 'toolUse',
+      content: [{ type: 'toolCall', id: 'intermediate-read', name: 'read', arguments: { path: write.arguments.path, offset: 190, limit: 25 } }] } };
+    const result = { type: 'message', id: 'intermediate-read-result', parentId: call.id, message: {
+      role: 'toolResult', toolCallId: 'intermediate-read', toolName: 'read', isError: false, content: [{ type: 'text', text }] } };
+    rows[index + 1].parentId = result.id; rows.splice(index + 1, 0, call, result);
+  }, editedParentPath);
+  assert.equal((await candidate.inspectArtifactForkSource(parent)).artifactSeed.files[0].bytes, 18905);
+});
+
+test('B failed-parent edits reject wrong or ambiguous old text, missing approvals, outside paths, missing writes and wrong intermediate hashes', { skip: !editedParentPath }, async t => {
+  await candidate.inspectArtifactForkSource(await alteredParent(t, () => {}, editedParentPath));
+  const mutateEdit = change => ({ rows, guard }) => {
+    const call = rows.flatMap(row => row.message?.content ?? []).find(part => part.type === 'toolCall' && part.name === 'edit');
+    change(call.arguments); guard.find(row => row.phase === 'tool_call' && row.toolCallId === call.id).inputSha256 = sha(JSON.stringify(call.arguments));
+  };
+  const mutations = [
+    [mutateEdit(input => { input.edits[0].oldText = 'missing exact old text'; }), /unique exact/u],
+    [mutateEdit(input => { input.edits[0].oldText = 'const'; }), /unique exact/u],
+    [({ guard }) => { guard.splice(guard.findIndex(row => row.phase === 'tool_call' && row.toolName === 'edit'), 1); }, /approval|Bind each|strictly equal/u],
+    [mutateEdit(input => { input.path = '/private/tmp/unowned/helper.mjs'; }), /retained owned artifact/u],
+    [({ rows, guard }) => {
+      const callRow = rows.find(row => Array.isArray(row.message?.content) && row.message.content.some(part => part.type === 'toolCall' && part.name === 'write'));
+      const call = callRow.message.content.find(part => part.type === 'toolCall' && part.name === 'write');
+      const result = rows.find(row => row.message?.toolCallId === call.id);
+      rows.find(row => row.parentId === result.id).parentId = callRow.parentId;
+      rows.splice(0, rows.length, ...rows.filter(row => row !== callRow && row !== result));
+      guard.splice(0, guard.length, ...guard.filter(row => row.toolCallId !== call.id));
+    }, /prior bound write/u],
+    [({ guard }) => { guard.find(row => row.phase === 'artifact_file').sha256 = '0'.repeat(64); }, /Historical artifact version/u],
+  ];
+  for (const [mutate, reason] of mutations)
+    await assert.rejects(() => alteredParent(t, mutate, editedParentPath).then(candidate.inspectArtifactForkSource), reason);
 });
 
 test('actual B/normal and D-natural/-ns read-only parents permit only the frozen guidance-only product transition', { skip: !parentPath || !legacyParents }, async () => {
