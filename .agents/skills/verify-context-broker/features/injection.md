@@ -1,5 +1,7 @@
 # 上下文发现与注入
 
+AH-1014 的目录、详情与资源唯一性同时遵循 [当前有效上下文合同](context-once.md)。正文去重通过不代表生成目录已去重；操作 effects 必须独立保留。
+
 用户在 prompt 中点名 Skill/Router 或匹配关键词规则，Context Broker 将上下文附加到当前会话；重复点名时不会追加第二份正文。
 
 ## Sub-features
