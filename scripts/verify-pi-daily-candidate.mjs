@@ -1119,7 +1119,7 @@ export function validateCandidateArtifactRecovery(config) {
   assert.deepEqual(Object.keys(recovery).sort(), ['parent', 'stages', 'timeoutMs']);
   assert.equal(recovery.timeoutMs, 600000);
   assert.ok(isAbsolute(recovery.parent?.path) && digest(recovery.parent?.sha256));
-  assert.deepEqual(recovery.stages?.map(stage => stage.id), ['procedure', 'complete']);
+  assert.ok(['procedure,complete', 'complete'].includes(recovery.stages?.map(stage => stage.id).join(',')), 'Use the existing two stages or one complete stage');
   for (const stage of recovery.stages) {
     assert.deepEqual(Object.keys(stage).sort(), ['id', 'prompt']);
     assert.ok(typeof stage.prompt === 'string' && stage.prompt.trim() && !stage.prompt.trimStart().startsWith('/'));
@@ -1142,12 +1142,66 @@ export async function inspectArtifactForkSource(previous) {
   assert.match(cwd, /^\/private\/tmp\/notion-candidate-print-[A-Za-z0-9]+$/u);
   const bytes = await readFile(previous.session.path); assert.equal(hash(bytes), previous.session.sha256);
   const text = bytes.toString('utf8'), rows = text.trimEnd().split('\n').map(JSON.parse);
+  const fork = previous.launch.artifactFork?.binding;
+  let ancestor, ancestorInput;
+  if (fork) {
+    const bound = previous.artifactRecoveryStage?.parentResult;
+    assert.ok(isAbsolute(bound?.path) && digest(bound?.sha256), 'Bind the prior artifact stage to its original result');
+    const sourceBytes = await readFile(bound.path); assert.equal(hash(sourceBytes), bound.sha256);
+    const source = JSON.parse(sourceBytes);
+    assert.equal(source.launch.artifactFork, undefined, 'Only the reviewed first artifact fork is admitted here');
+    ancestor = await inspectArtifactForkSource(source);
+    ancestorInput = { path: bound.path, bytes: sourceBytes.length, sha256: bound.sha256 };
+    assert.deepEqual(fork, { parentSession: ancestor.native.realpath, sourceSessionId: ancestor.header.id, cwd, history: ancestor.history });
+    assert.equal(previous.expectedUserMessages, source.expectedUserMessages + 1);
+    assert.equal(previous.originalSessionUnchanged, true); assert.equal(previous.originalArtifactParentUnchanged, true);
+  }
   const audit = inspectCandidatePrintSession(text, { provider: 'magpie', model: 'group/worker',
-    expectedUserMessages: previous.expectedUserMessages, requireFinal: false });
+    expectedUserMessages: previous.expectedUserMessages, requireFinal: false, ...(fork ? { fork } : {}) });
   assert.equal(rows[0].cwd, cwd);
   const history = bytes.subarray(bytes.indexOf(10) + 1);
   assert.ok(Buffer.from(rows.slice(1).map(row => JSON.stringify(row)).join('\n') + '\n').equals(history), 'The public fork must retain exact original non-header bytes');
-  const seenFiles = new Set(), historicalRejectedCalls = [];
+  const seenFiles = new Set(ancestor?.projectFiles.map(file => file.path)), historicalRejectedCalls = [...(ancestor?.historicalRejectedCalls ?? [])];
+  let artifactSeed;
+  const seedByPath = new Map(), rawGuard = [], acceptedBlocks = new Set();
+  if (previous.artifactOutput?.files?.files.length) {
+    assert.ok(ancestor, 'A retained draft must belong to the bound prior artifact fork');
+    const output = previous.artifactOutput, ownership = output.ownership, policy = ownership.policy;
+    assert.equal(ownership.evidence, previous.evidence); assert.equal(ownership.projectRoot, cwd);
+    assert.match(policy.root, /^\/private\/tmp\/notion-candidate-artifacts-[A-Za-z0-9]+$/u);
+    assert.deepEqual(policy.projectFiles, files.map(file => file.path)); assert.equal(output.files.root, policy.root);
+    assert.deepEqual(output.guardHistory, [output.guard], 'Retain the single reviewed draft-stage guard');
+    const inputs = [];
+    for (const [name, expected] of [['artifact-output-ownership.json', ownership], ['owned-artifacts.json', output.files]]) {
+      const path = join(previous.evidence, name), stat = fs.lstatSync(path);
+      assert.ok(stat.isFile() && stat.nlink === 1 && fs.realpathSync(path) === path);
+      const value = await readFile(path);
+      assert.deepEqual(JSON.parse(value), expected); inputs.push({ path, bytes: value.length, sha256: hash(value) });
+    }
+    assert.ok(inside(join(previous.evidence, 'observation'), output.guard));
+    assert.ok(fs.lstatSync(output.guard).isFile() && fs.lstatSync(output.guard).nlink === 1 && fs.realpathSync(output.guard) === output.guard);
+    const ledger = await readFile(output.guard); rawGuard.push(...ledger.toString('utf8').trimEnd().split('\n').map(JSON.parse));
+    inputs.push({ path: output.guard, bytes: ledger.length, sha256: hash(ledger) });
+    assert.equal(rawGuard.at(-1)?.complete, true); assert.ok(rawGuard.every(row => row.phase !== 'artifact_error'));
+    for (const file of output.files.files) {
+      assert.ok(/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+$/u.test(file.path)
+        && !file.path.split('/').some(part => ['.', '..', '.pi', '.git', 'node_modules'].includes(part)));
+      assert.ok(!files.some(source => file.path === source.path || file.path.startsWith(source.path + '/') || source.path.startsWith(file.path + '/')));
+      assert.equal(file.evidencePath, 'owned-artifact-files/' + file.path); assert.ok(!seedByPath.has(file.path));
+      let path = previous.evidence;
+      const parts = file.evidencePath.split('/');
+      for (const [index, part] of parts.entries()) {
+        path = join(path, part); const stat = fs.lstatSync(path);
+        assert.ok(!stat.isSymbolicLink() && fs.realpathSync(path) === path, 'Retained artifacts cannot traverse links');
+        assert.ok(index === parts.length - 1 ? stat.isFile() && stat.nlink === 1 : stat.isDirectory());
+      }
+      const value = await readFile(path); assert.equal(value.length, file.bytes); assert.equal(hash(value), file.sha256, 'Retained artifact bytes changed');
+      seedByPath.set(file.path, { ...file, sourcePath: path, text: value.toString('utf8') });
+      inputs.push({ path, bytes: value.length, sha256: hash(value) });
+    }
+    artifactSeed = { sourceEvidence: previous.evidence, originalRoot: policy.root,
+      files: [...seedByPath.values()].map(({ text: _text, ...file }) => file), inputs };
+  }
   const noWrites = effects => effects?.version === 1 && effects.remote_writes === 'none'
     && effects.author_content === 'unchanged' && Array.isArray(effects.retention) && effects.retention.length === 0;
   const knownRejections = new Set([
@@ -1155,9 +1209,15 @@ export async function inspectArtifactForkSource(previous) {
     'This owned project task permits only bounded pwd, ls and find inventory with an optional literal marker within its fixed cwd. Project execution, content search, outside paths and other shell commands remain blocked.',
   ]);
   for (const call of audit.calls) {
+    if (ancestor && call.callLine <= fork.history.entries + 1) continue;
     const result = rows[call.resultLine - 1].message;
     const body = (result.content ?? []).filter(part => part.type === 'text').map(part => part.text).join('\n');
     if (call.isError) {
+      if (artifactSeed && call.name === 'bash' && body === 'Only the existing bounded project inventory is allowed') {
+        assert.equal(rawGuard.filter(row => row.phase === 'tool_call' && row.toolCallId === call.id && row.toolName === 'bash'
+          && row.allowed === false && row.reason === body).length, 1, 'The prior Bash rejection needs its actual pre-execution guard');
+        acceptedBlocks.add(call.id); historicalRejectedCalls.push({ id: call.id, resultLine: call.resultLine, resultSha256: call.resultSha256 }); continue;
+      }
       assert.ok(call.name === 'bash' && knownRejections.has(body), 'Only the known pre-execution historical inventory rejection is admissible');
       historicalRejectedCalls.push({ id: call.id, resultLine: call.resultLine, resultSha256: call.resultSha256 }); continue;
     }
@@ -1171,7 +1231,23 @@ export async function inspectArtifactForkSource(previous) {
       const effects = call.name === 'notion_use' ? result.details?.contextBrokerPreparation?.effects ?? result.details?.effects : result.details?.effects;
       assert.equal(call.arguments.readOnly, true); assert.ok(noWrites(effects), 'Historical source effects must remain read-only'); continue;
     }
+    if (artifactSeed && call.name === 'write') {
+      assert.deepEqual(Object.keys(call.arguments).sort(), ['content', 'path']);
+      const file = [...seedByPath.values()].find(file => call.arguments.path === artifactSeed.originalRoot + '/' + file.path);
+      assert.ok(file, 'Historical writes must target a retained owned artifact');
+      assert.equal(hash(call.arguments.content), file.sha256); assert.equal(Buffer.byteLength(call.arguments.content), file.bytes); continue;
+    }
     assert.equal(call.name, 'read', 'Historical generation cannot have unreviewed execution or writes');
+    if (artifactSeed && call.arguments.path?.startsWith(artifactSeed.originalRoot + '/')) {
+      const file = seedByPath.get(call.arguments.path.slice(artifactSeed.originalRoot.length + 1));
+      assert.ok(file, 'Historical artifact reads must name a retained file');
+      assert.ok(Object.keys(call.arguments).every(key => ['path', 'offset', 'limit'].includes(key)));
+      const offset = call.arguments.offset ?? 1, limit = call.arguments.limit;
+      assert.ok(Number.isSafeInteger(offset) && offset > 0 && Number.isSafeInteger(limit) && limit > 0, 'Bind the reviewed bounded draft read');
+      const parts = file.text.split('\n'), end = Math.min(parts.length, offset - 1 + limit);
+      const expected = parts.slice(offset - 1, end).join('\n') + (end < parts.length ? '\n\n[' + (parts.length - end) + ' more lines in file. Use offset=' + (end + 1) + ' to continue.]' : '');
+      assert.equal(body, expected, 'Historical artifact read must match the retained draft bytes'); continue;
+    }
     const path = resolve(cwd, call.arguments.path), name = relative(cwd, path);
     assert.ok(Object.hasOwn(ownedProjectFiles, name) || name === '.pi/settings.json', 'Historical local reads must belong to the original project');
     if (Object.hasOwn(ownedProjectFiles, name)) {
@@ -1179,9 +1255,58 @@ export async function inspectArtifactForkSource(previous) {
     }
   }
   assert.deepEqual([...seenFiles].sort(), Object.keys(ownedProjectFiles).sort(), 'The original history must contain the complete project');
+  if (artifactSeed) {
+    assert.ok(rawGuard.filter(row => row.allowed === false).every(row => acceptedBlocks.has(row.toolCallId)), 'Do not inherit an unreviewed rejected operation');
+    artifactSeed.guardRows = rawGuard.filter(row => row.allowed !== false);
+    inspectCandidateArtifactGuard(audit, artifactSeed.guardRows, previous.artifactOutput.files);
+  }
   return { originalStatus: previous.status, originalCwd: cwd, projectFiles: files, projectSha256: previous.project.sha256,
     native: { path: previous.session.path, realpath: await realpath(previous.session.path), bytes: bytes.length, sha256: hash(bytes) },
-    header: rows[0], history: { bytes: history.length, sha256: hash(history), entries: rows.length - 1 }, historicalRejectedCalls };
+    header: rows[0], history: { bytes: history.length, sha256: hash(history), entries: rows.length - 1 }, historicalRejectedCalls,
+    ...(ancestor ? { ancestor: { result: ancestorInput, native: ancestor.native, history: ancestor.history } } : {}), ...(artifactSeed ? { artifactSeed } : {}) };
+}
+
+export async function restoreCandidateArtifactSeed(parent, { policy, evidence }) {
+  const files = [];
+  for (const file of parent.artifactSeed?.files ?? []) {
+    const bytes = await readFile(file.sourcePath); assert.equal(bytes.length, file.bytes); assert.equal(hash(bytes), file.sha256);
+    const path = join(policy.root, file.path); reviewCandidateArtifactPath(path, policy, fs);
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+    reviewCandidateArtifactPath(path, policy, fs); await writeFile(path, bytes, { flag: 'wx', mode: 0o600 });
+    reviewCandidateArtifactPath(path, policy, fs); assert.equal(hash(await readFile(path)), file.sha256);
+    files.push({ path: file.path, bytes: bytes.length, sha256: file.sha256, sourcePath: file.sourcePath, restoredPath: path });
+  }
+  const receipt = { version: 1, parentNative: parent.native, root: policy.root, files,
+    proof: 'Driver restored exact previously model-written bytes; no new model tool call or completed deliverable is inferred' };
+  await save(join(evidence, 'artifact-seed-restoration.json'), receipt); return receipt;
+}
+
+export async function inspectCandidateArtifactProduct(previous, baselineFiles, runtime) {
+  assert.deepEqual(previous.runtime, runtime, 'Recovery retains the original complete CLI/SDK runtime');
+  const identity = files => files.map(({ bytes, sha256 }) => ({ bytes, sha256 }));
+  const prior = identity(previous.baselineFiles), current = identity(baselineFiles);
+  if (JSON.stringify(prior) === JSON.stringify(current)) return { mode: 'identical-product-bytes', parent: previous.baselineFiles, current: baselineFiles, changedFiles: [] };
+  assert.deepEqual(prior.filter((_, index) => index !== 1), current.filter((_, index) => index !== 1));
+  assert.equal(prior[1].sha256, '686e86bd08d7bb8f89ebf4bb9a45727c4952ef07c55e7505bf0916e50f2a4e95');
+  assert.equal(current[1].sha256, 'ffcf274952dfcf143a119900943b787884a6eb78d84cd734c83db396bc05f6b3');
+  const oldBytes = await readFile(previous.baselineFiles[1].realpath), newBytes = await readFile(baselineFiles[1].realpath);
+  assert.equal(hash(oldBytes), prior[1].sha256); assert.equal(hash(newBytes), current[1].sha256);
+  const added = '      "Zero tool calls/body reads does not imply zero automatic metadata requests or writes.",\n';
+  assert.equal(newBytes.toString('utf8').replace(added, ''), oldBytes.toString('utf8'), 'Only the frozen guidance sentence may differ');
+  return { mode: 'frozen-guidance-only-transition', parent: previous.baselineFiles, current: baselineFiles, changedFiles: ['src/index.ts'] };
+}
+
+export async function inspectCandidateArtifactResume(previous) {
+  if (!previous?.launch.artifactFork) return null;
+  assert.equal(previous.status, 'passed'); assert.equal(previous.process.code, 0); assert.equal(previous.process.timedOut, false);
+  const { original, binding } = previous.launch.artifactFork, bytes = await readFile(original.path);
+  assert.equal(hash(bytes), original.sha256); assert.equal(bytes.length, original.bytes);
+  const rows = bytes.toString('utf8').trimEnd().split('\n').map(JSON.parse), history = bytes.subarray(bytes.indexOf(10) + 1);
+  assert.equal(binding.parentSession, await realpath(original.path)); assert.equal(binding.sourceSessionId, rows[0].id);
+  assert.deepEqual(binding.history, { bytes: history.length, sha256: hash(history), entries: rows.length - 1 });
+  const current = await readFile(previous.session.path); assert.equal(hash(current), previous.session.sha256);
+  inspectCandidatePrintSession(current.toString('utf8'), { provider: 'magpie', model: 'group/worker', expectedUserMessages: previous.expectedUserMessages, fork: binding });
+  return binding;
 }
 
 export function beginCandidateArtifactBudget(clock, now = process.hrtime.bigint()) {
@@ -1199,9 +1324,9 @@ export function remainingCandidateArtifactBudget(clock, now = process.hrtime.big
   return Math.max(0, Number((BigInt(clock.deadlineNs) - now) / 1000000n));
 }
 
-/** Exactly two stages share one clock. A first-phase final is never full-task success. */
+/** One complete stage or the original two stages share one clock. */
 export async function runCandidateArtifactStages(stages, clock, executeStage, now = () => process.hrtime.bigint()) {
-  assert.deepEqual(stages.map(stage => stage.id), ['procedure', 'complete']);
+  assert.ok(['procedure,complete', 'complete'].includes(stages.map(stage => stage.id).join(',')));
   const results = [];
   for (const [index, stage] of stages.entries()) {
     if (remainingCandidateArtifactBudget(clock, now()) <= 0 || index === 1 && results[0].status !== 'stage-completed') {
@@ -1218,7 +1343,9 @@ export async function runCandidateArtifactStages(stages, clock, executeStage, no
 }
 
 export function inspectCandidateArtifactRecoveryLimits(stages) {
-  assert.equal(stages.length, 2); assert.equal(stages[0].status, 'stage-completed'); assert.equal(stages[1].status, 'passed');
+  assert.ok([1, 2].includes(stages.length));
+  if (stages.length === 2) assert.equal(stages[0].status, 'stage-completed');
+  assert.equal(stages.at(-1).status, 'passed');
   const totals = { providerRequests: 0, toolCalls: 0, payloadBytes: 0 }, limits = artifactRecoveryLimits;
   for (const stage of stages) for (const key of Object.keys(totals)) {
     const value = stage.recoveryMetrics?.[key];
@@ -1237,7 +1364,9 @@ async function runCandidateArtifactRecovery(config) {
   assert.ok(isAbsolute(config.evidenceRoot) && !inside(root, config.evidenceRoot));
   const originalBytes = await readFile(recovery.parent.path); assert.equal(hash(originalBytes), recovery.parent.sha256);
   assert.ok(inside(await realpath(config.evidenceRoot), await realpath(recovery.parent.path)));
-  const original = JSON.parse(originalBytes), parent = await inspectArtifactForkSource(original);
+  const original = JSON.parse(originalBytes);
+  assert.equal(await realpath(original.evidence), await realpath(dirname(recovery.parent.path)));
+  const parent = await inspectArtifactForkSource(original);
   assert.equal(original.arm, config.arm); assert.equal(original.database, config.database);
   const evidence = await mkdtemp(join(config.evidenceRoot, config.arm + '-' + config.id + '-chain-'));
   await save(join(evidence, 'config.json'), config);
@@ -1260,13 +1389,15 @@ async function runCandidateArtifactRecovery(config) {
       return stageResult;
     });
     result.limits = inspectCandidateArtifactRecoveryLimits(result.stages);
-    assert.ok(BigInt(result.stages[1].process.endedNs) <= BigInt(clock.deadlineNs), 'The complete generation exceeded its shared deadline');
+    assert.ok(BigInt(result.stages.at(-1).process.endedNs) <= BigInt(clock.deadlineNs), 'The complete generation exceeded its shared deadline');
     result.generatedPlan = previous.generatedPlan; result.completeStage = previousResult; result.status = 'passed';
   } catch (error) {
     result.status = 'failed'; result.error = { code: error.code ?? error.name, message: error.message };
   } finally {
     result.parentUnchanged = hash(await readFile(recovery.parent.path)) === recovery.parent.sha256
       && hash(await readFile(parent.native.path)) === parent.native.sha256;
+    try { assert.deepEqual(await inspectArtifactForkSource(original), parent); }
+    catch { result.parentUnchanged = false; }
     if (!result.parentUnchanged) result.status = 'failed';
     result.finishedNs = process.hrtime.bigint().toString();
     await save(join(evidence, 'result.json'), result);
@@ -1343,7 +1474,7 @@ export async function runCandidatePrint(config, artifactStage) {
     agentDir: join(homedir(), '.pi/agent'), brokerRoot: config.brokerRoot, brokerEntry: baselineFiles[1] });
   await mkdir(config.evidenceRoot, { recursive: true, mode: 0o700 });
   const evidence = await mkdtemp(join(config.evidenceRoot, config.arm + '-' + config.id + '-'));
-  let previous = artifactStage?.previous;
+  let previous = artifactStage?.previous, artifactProduct;
   if (config.resumeFrom) {
     const artifact = await identity(config.resumeFrom.path); assert.equal(artifact.sha256, config.resumeFrom.sha256);
     assert.ok(inside(await realpath(config.evidenceRoot), artifact.realpath));
@@ -1353,9 +1484,7 @@ export async function runCandidatePrint(config, artifactStage) {
   }
   if (artifactStage) {
     assert.equal(previous.arm, config.arm); assert.equal(previous.database, config.database);
-    assert.deepEqual(previous.runtime, runtime, 'Artifact recovery retains the complete original product runtime');
-    assert.deepEqual(previous.baselineFiles.map(file => ({ bytes: file.bytes, sha256: file.sha256 })),
-      baselineFiles.map(file => ({ bytes: file.bytes, sha256: file.sha256 })), 'Artifact recovery retains all five product files');
+    artifactProduct = await inspectCandidateArtifactProduct(previous, baselineFiles, runtime);
     assert.equal(hash(await readFile(artifactStage.previousResult.path)), artifactStage.previousResult.sha256);
     if (artifactStage.index === 0) assert.deepEqual(await inspectArtifactForkSource(previous), artifactStage.parent);
     else assert.equal(previous.status, 'stage-completed');
@@ -1366,6 +1495,7 @@ export async function runCandidatePrint(config, artifactStage) {
   const introductionFork = config.forkIntroductionResume
     ? await inspectIntroductionForkSource(previous, { project: config.project }) : null;
   const publicFork = introductionFork ?? (artifactStage?.index === 0 ? artifactStage.parent : null);
+  const inheritedArtifactFork = !publicFork && !artifactStage ? await inspectCandidateArtifactResume(previous) : null;
   const cwd = publicFork ? await mkdtemp('/private/tmp/notion-candidate-print-')
     : previous?.launch.cwd ?? await mkdtemp('/private/tmp/notion-candidate-print-');
   if (previous) assert.equal(previous.project?.kind, config.project, 'A continuation must retain its original application');
@@ -1373,7 +1503,7 @@ export async function runCandidatePrint(config, artifactStage) {
     ? { ...await createOwnedGraphProject(cwd), kind: config.project }
     : previous?.project ?? (config.project ? { ...await createOwnedGraphProject(cwd), kind: config.project } : undefined);
   if (artifactStage) assert.equal(project.sha256, artifactStage.parent.projectSha256);
-  let artifactPolicy, artifactOwnership;
+  let artifactPolicy, artifactOwnership, artifactSeedReceipt;
   if (artifactOutput) {
     if (artifactStage?.index === 1) {
       artifactPolicy = previous.artifactOutput.ownership.policy;
@@ -1391,10 +1521,12 @@ export async function runCandidatePrint(config, artifactStage) {
         ...(artifactStage.index === 1 ? { createdByEvidence: previous.evidence } : {}) } : {}),
       cleanup: 'After process close and evidence review, move only this exact owned directory to system Trash; preserve evidence' };
     await save(join(evidence, 'artifact-output-ownership.json'), artifactOwnership);
+    if (artifactStage?.index === 0) artifactSeedReceipt = await restoreCandidateArtifactSeed(artifactStage.parent, { policy: artifactPolicy, evidence });
   }
   const stagePrompt = artifactStage ? config.prompt + '\n\n原完整任务及已经读取的来源继续有效。当前项目目录：' + cwd
     + (artifactStage.index === 0 ? '\n项目内容与原任务相同，原失败运行的临时项目和产物路径不再使用。'
       : '\n沿用第一阶段的项目和产物目录，保留并按需完善已经保存的文件。')
+    + (artifactSeedReceipt?.files.length ? '\n父运行保存的文件已逐字恢复到本轮产物目录；这些是尚未验收的草稿，可依原任务与已读来源修正或简化。旧绝对路径仅为历史，不作为新的写入目标。' : '')
     + '仅完成本阶段要求，不执行项目或 helper。' : config.prompt;
   const actualPrompt = candidateArtifactPrompt(stagePrompt, artifactPolicy?.root);
   const control = join(evidence, 'observation'), sessions = join(evidence, 'sessions'), responses = join(control, 'sdk-responses'), payloads = join(control, 'provider-payloads');
@@ -1426,8 +1558,9 @@ export async function runCandidatePrint(config, artifactStage) {
     + ';export default api=>(' + guardCandidateExistingReads.toString() + ')(api,{fs,review,output:' + JSON.stringify(existingReadLedger)
     + ',refs:' + JSON.stringify(stateBinding.sourceState.reads.map(read => read.ref)) + '});\n', { flag: 'wx', mode: 0o600 });
   const forkBinding = publicFork ? { parentSession: publicFork.native.realpath, sourceSessionId: publicFork.header.id,
-    cwd: await realpath(cwd), history: publicFork.history } : artifactStage?.previous.launch.artifactFork?.binding ?? null;
-  if (publicFork || artifactStage) await writeFile(inputGuard, "import fs from 'node:fs';import crypto from 'node:crypto';export default api=>("
+    cwd: await realpath(cwd), history: publicFork.history } : artifactStage?.previous.launch.artifactFork?.binding ?? inheritedArtifactFork;
+  const hasInputGuard = Boolean(publicFork || artifactStage || inheritedArtifactFork);
+  if (hasInputGuard) await writeFile(inputGuard, "import fs from 'node:fs';import crypto from 'node:crypto';export default api=>("
     + guardCandidateInputIdentity.toString() + ')(api,{fs,crypto,output:' + JSON.stringify(inputGuardLedger) + ',expected:'
     + JSON.stringify({ entry: baselineFiles[1], cwd: forkBinding.cwd, provider: 'magpie', model: 'group/worker', thinkingLevel: 'high',
       nativeSkillCount: config.arm === 'notion-only' ? 0 : 69, promptSha256: hash(actualPrompt) }) + '});\n', { flag: 'wx', mode: 0o600 });
@@ -1452,7 +1585,7 @@ export async function runCandidatePrint(config, artifactStage) {
   if (cliPolicy) Object.assign(env, cliPolicy.stateRoots);
   delete env.NTN_SKILLS_DEV_ROOT;
   const args = ['-p', ...(config.arm === 'notion-only' ? ['-ns'] : []), '--approve', '--session-dir', sessions, '--model', config.model, '--thinking', config.thinkingLevel,
-    ...(publicFork || artifactStage ? ['-e', inputGuard] : []), ...(completionBudgetSource ? ['-e', completionBudgetExtension] : []),
+    ...(hasInputGuard ? ['-e', inputGuard] : []), ...(completionBudgetSource ? ['-e', completionBudgetExtension] : []),
     '-e', costExtension, '-e', transportExtension, '-e', taskExtension];
   if (cliPolicy) args.push('-e', cliGuard);
   if (stateBinding.sourceState) args.push('-e', existingReadGuard);
@@ -1476,10 +1609,11 @@ export async function runCandidatePrint(config, artifactStage) {
   const result = { version: 1, scope: config.scope, status: 'running', arm: config.arm, id: config.id, database: config.database,
     evidence, stateRoot, project, baselineFiles, runtime, ownership, before, host, hostArtifact: await identity(host.identity), expectedUserMessages: (previous?.expectedUserMessages ?? 0) + 1,
     ...(artifactPolicy ? { artifactOutput: { ownership: artifactOwnership, guard: artifactLedger,
-      ...(artifactStage ? { guardHistory: [...(artifactStage.index === 1 ? previous.artifactOutput.guardHistory : []), artifactLedger] } : {}) },
+      ...(artifactStage ? { guardHistory: [...(artifactStage.index === 1 ? previous.artifactOutput.guardHistory : []), artifactLedger],
+        inheritedArtifactProof: artifactStage.parent.artifactSeed ?? null, seedRestoration: artifactSeedReceipt ?? null } : {}) },
       actualPrompt: { text: actualPrompt, bytes: Buffer.byteLength(actualPrompt), sha256: hash(actualPrompt), originalPromptSha256: hash(config.prompt) } } : {}),
     ...(artifactStage ? { artifactRecoveryStage: { chainEvidence: artifactStage.chainEvidence, stage: artifactStage.stageId,
-      index: artifactStage.index, parentResult: artifactStage.previousResult, fullTaskAcceptance: artifactStage.index === 0 ? 'not_applicable_draft_stage' : 'requires_whole_chain_and_independent_helper' } } : {}),
+      index: artifactStage.index, parentResult: artifactStage.previousResult, fullTaskAcceptance: artifactStage.stageId === 'procedure' ? 'not_applicable_draft_stage' : 'requires_whole_chain_and_independent_helper' } } : {}),
     ...(stateBinding.sourceState ? { sourceState: stateBinding.sourceState, ownedPaths: stateBinding.ownedPaths } : {}),
     launch: { cwd, executable: host.file, args: [...host.prefix, ...args], normalHome: true, normalAgentDir: true, normalMcpAndExtensions: true,
       projectPackageOverrideOnly: !packageRegistration.reusesRegisteredBroker,
@@ -1490,7 +1624,7 @@ export async function runCandidatePrint(config, artifactStage) {
       previous: config.resumeFrom ?? null,
       introductionFork: introductionFork ? { ...introductionFork, newCwd: cwd, newBrokerRoot: config.brokerRoot, binding: forkBinding } : null,
       ...(artifactStage ? { artifactFork: { original: artifactStage.parent.native, binding: forkBinding },
-        previous: artifactStage.previousResult } : {}),
+        previous: artifactStage.previousResult, productTransition: artifactProduct } : inheritedArtifactFork ? { artifactFork: previous.launch.artifactFork } : {}),
       sessionContinuation: publicFork ? 'public-Pi-full-history-fork-and-owned-warm-store; new-header-cwd-and-candidate-package; new-process'
         : previous ? 'copied-owned-linear-history-and-owned-warm-store; new-process' : 'new-session-and-process' },
     semanticReview: 'required', artifactBoundary: 'actual source package and bundled CLI/SDK; not an installed release gate' };
@@ -1521,7 +1655,7 @@ export async function runCandidatePrint(config, artifactStage) {
     });
     assert.equal(result.process.code, 0, 'Native print process failed');
     if (artifactPolicy) await captureArtifacts();
-    if (publicFork || artifactStage) {
+    if (hasInputGuard) {
       result.inputIdentityGuard = await readRows(inputGuardLedger);
       assert.equal(result.inputIdentityGuard.length, 1);
       assert.equal(result.inputIdentityGuard[0].allowed, true, 'The pre-prompt candidate identity guard rejected the input');
@@ -1559,7 +1693,7 @@ export async function runCandidatePrint(config, artifactStage) {
       for (const call of result.nativeAudit.calls) assert.equal(guard.filter(entry => entry.toolCallId === call.id && entry.allowed).length, 1);
     }
     const artifactRows = artifactPolicy ? (artifactStage
-      ? (await Promise.all(result.artifactOutput.guardHistory.map(readRows))).flat() : await readRows(artifactLedger)) : [];
+      ? [...(artifactStage.parent.artifactSeed?.guardRows ?? []), ...(await Promise.all(result.artifactOutput.guardHistory.map(readRows))).flat()] : await readRows(artifactLedger)) : [];
     const allArtifactCalls = artifactPolicy
       ? inspectCandidateArtifactGuard(result.nativeAudit, artifactRows, result.artifactOutput.files) : [];
     const currentCalls = new Set(task.filter(event => event.phase === 'tool_call').map(event => event.toolCallId));
@@ -1577,16 +1711,16 @@ export async function runCandidatePrint(config, artifactStage) {
       const actual = await identity(event.payloadFile); assert.equal(actual.sha256, event.sha256); assert.equal(actual.bytes, event.bytes);
       if (completionBudgetSource) result.completionBudgetAudit.payloads.push({ ...inspectCandidateCompletionBudget(await json(actual.path)), file: actual });
     }
-    if (project && artifactStage?.index !== 0) {
+    if (project && artifactStage?.stageId !== 'procedure') {
       const delivery = { evidence, project, final: task.filter(event => event.phase === 'assistant_final').at(-1), prompt: { sha256: hash(actualPrompt) } };
       result.generatedPlan = artifactPolicy
         ? await retainCandidateFilePlan({ ...delivery, artifactFiles: result.artifactOutput.files }) : await retainGeneratedPlan(delivery);
     }
-    if (artifactStage?.index === 0) {
+    if (artifactStage?.stageId === 'procedure') {
       assert.ok(result.artifactOutput.files.files.some(file => file.path.endsWith('/SKILL.md')), 'The procedure stage must deliver its actual Skill main');
       result.generatedPlan = { artifactStatus: 'draft-procedure-files-retained', executed: false, fullTaskAccepted: false };
     }
-    result.status = artifactStage?.index === 0 ? 'stage-completed' : 'passed';
+    result.status = artifactStage?.stageId === 'procedure' ? 'stage-completed' : 'passed';
   } catch (error) {
     result.status = error.code === 'ARTIFACT_RECOVERY_DEADLINE' ? 'not_run' : 'failed';
     result.error = { code: error.code ?? error.name, message: error.message };
