@@ -5070,12 +5070,17 @@ export function assertContextOnceLoop(captures, originals, { batch }) {
 export function latePayloadMutationSource(kind, output) {
   assert.ok(wireNegativeKinds.includes(kind)); assert.ok(isAbsolute(output));
   if (kind === 'restored-role') return `import fs from 'node:fs';import crypto from 'node:crypto';
-let turns=0;export default api=>{api.on('agent_start',()=>{turns++;});api.on('context_with_system',event=>{
+let turns=0;export default api=>{api.on('agent_start',()=>{turns++;});api.on('context_with_system',(event,ctx)=>{
  if(turns<2)return;const text=content=>typeof content==='string'?content:(content??[]).filter(part=>part.type==='text').map(part=>part.text).join('\\n');
  const message=event.messages.find(item=>item.role==='user'&&text(item.content).includes('<context-broker-record'));
  if(!message)throw new Error('RESTORED_SOURCE_NOT_FOUND');
  fs.writeFileSync(${JSON.stringify(output)},JSON.stringify({kind:'restored-role',original_user_sha256:crypto.createHash('sha256').update(text(message.content)).digest('hex'),role:'assistant'})+'\\n',{flag:'wx',mode:0o600});
- message.role='assistant';return {messages:event.messages};
+ message.role='assistant';
+ if(typeof message.content==='string')message.content=[{type:'text',text:message.content}];
+ message.api=ctx.model.api;message.provider=ctx.model.provider;message.model=ctx.model.id;
+ message.stopReason='stop';message.timestamp=message.timestamp??Date.now();
+ message.usage={input:0,output:0,cacheRead:0,cacheWrite:0,totalTokens:0,cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}};
+ return {messages:event.messages};
 });};\n`;
   return `import fs from 'node:fs'; import crypto from 'node:crypto';
 const hash=value=>crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');

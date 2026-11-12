@@ -3126,6 +3126,27 @@ function contextOnceFixture() {
   return { originals, captures, batch };
 }
 
+test('restored-role negative uses a valid assistant envelope so serializer failures cannot impersonate the guard', async () => {
+  const root = await mkdtemp(join(await systemTempRoot(), 'ctx-restored-role-envelope-'));
+  for (const split of [false, true]) {
+    const output = join(root, split ? 'blocks.json' : 'string.json');
+    const module = await import('data:text/javascript;charset=utf-8,' + encodeURIComponent(namedSdkProbe.latePayloadMutationSource('restored-role', output)));
+    const handlers = new Map(); module.default({ on(name, fn) { handlers.set(name, fn); } });
+    const source = '<context-broker-record>完整正文</context-broker-record>';
+    const message = { role: 'user', content: split ? [{ type: 'text', text: source }] : source };
+    const event = { messages: [message] }, ctx = { model: { api: 'openai-completions', provider: 'context-broker-e2e', id: 'fake' } };
+    handlers.get('agent_start')(); handlers.get('context_with_system')(event, ctx);
+    assert.equal(message.role, 'user');
+    handlers.get('agent_start')(); handlers.get('context_with_system')(event, ctx);
+    assert.equal(message.role, 'assistant'); assert.deepEqual(message.content, [{ type: 'text', text: source }]);
+    assert.deepEqual([message.api, message.provider, message.model], ['openai-completions', 'context-broker-e2e', 'fake']);
+    assert.equal(message.stopReason, 'stop'); assert.equal(message.usage.totalTokens, 0);
+    assert.ok(Number.isFinite(message.timestamp));
+    const proof = JSON.parse(await readFile(output, 'utf8'));
+    assert.equal(proof.original_user_sha256, createHash('sha256').update(source).digest('hex'));
+  }
+});
+
 test('CTX public-loop oracle checks every request against independent source and operation facts', () => {
   const value = contextOnceFixture(), before = JSON.stringify(value);
   const proof = namedSdkProbe.assertContextOnceLoop(value.captures, value.originals, { batch: value.batch });

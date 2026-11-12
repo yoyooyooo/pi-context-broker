@@ -23,7 +23,7 @@
     "packages/context-broker/tsconfig.json": "5b485daf61c3d2f793b77a9c8511a135f40988a402d1e0840b4e9d79a289646d",
     "scripts/skill-preparation-evidence.mjs": "a1c3ae9d40c4ca4ec407014ed13339c20caf66f2d918a4b988602053ea7bb3fb",
     "scripts/skill-preparation-evidence.test.mjs": "3205a96b55844a40d2c1194ccb2485be4d570fd1e4f07156a2a8529676283275",
-    "scripts/notion-sdk-pi.mjs": "c3d61335d8bb5915fe9c497bdfed3023f51fdac222296201cc807cf6633ca359",
+    "scripts/notion-sdk-pi.mjs": "2be6fa4f35fe4f3f78c81af8cfb66cf29a71dc19e0999ef39b88597f1907f006",
     "scripts/notion-sdk-pi.test.mjs": "bde119f38f5a78cf37248be1a57d6c122dbdc0ebefa1177d346ab341a10a1926",
     "packages/context-broker/scripts/skill-model-surfaces.test.ts": "876b6c6650bed1f81068c71c1be630fb10ecb951e1cc1a7cb17797cc26d57d5b",
     "packages/context-broker/scripts/session-active.test.ts": "651b81077ba4635f8267c7623f001a5e3e46d65901a4bc646b1b04f5a6b30dcd",
@@ -678,6 +678,12 @@
         }
       ],
       "scope": "Preparation operation effects are read from canonical nested contextBrokerPreparation.effects for truthful bounded diagnostics. No dispatch/graph/role/activation transition changed. Driver keeps explicit four counterexamples and source cancellation effects."
+    },
+    "restored_probe_envelope_review": {
+      "file": "scripts/notion-sdk-pi.mjs",
+      "before": "c3d61335d8bb5915fe9c497bdfed3023f51fdac222296201cc807cf6633ca359",
+      "after": "2be6fa4f35fe4f3f78c81af8cfb66cf29a71dc19e0999ef39b88597f1907f006",
+      "scope": "The restored-role counterexample now supplies a valid assistant model/usage/content envelope; it must reach the source-role guard instead of accidentally failing Pi serializer totalTokens access. Product logic/model transitions unchanged. Actual four-scene installed run passes; the prior failed run remains retained."
     }
   }
 }
