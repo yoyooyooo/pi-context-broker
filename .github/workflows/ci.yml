@@ -120,6 +120,7 @@ jobs:
             node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --scenario context-once --provider-backend "$backend" --out "$RUNNER_TEMP/pi15-context-once-$backend"
           done
           node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --scenario session-compaction --out "$RUNNER_TEMP/pi15-context-once-compaction"
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --scenario context-wire-negative --provider-backend http --out "$RUNNER_TEMP/pi15-context-once-wire-negative"
       - name: Preserve installed Pi SDK evidence
         if: always()
         uses: actions/upload-artifact@v4

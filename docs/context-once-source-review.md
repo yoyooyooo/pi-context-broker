@@ -71,3 +71,36 @@ the original configured rules and expected negative failures. Representation-onl
 changes do not justify a new abstract state machine, but they do require the
 current-request byte and object checks. A future change to actual provider
 acceptance or persistence must separately review `DeliveryBoundary`.
+
+## CTX final request boundary
+
+The later implementation retains the same abstract graph/lifecycle/turn/draft
+owners. `DeliveryBoundary.providerAccepted` is still logical response headers;
+it is not renamed to actual wire delivery. Its concrete precondition now also
+rejects a known mismatch between the checked serialized request and the entity
+observed from Node Undici. A dispatched mismatch remains a dispatch. Unsupported
+API/schema conversion/transport is explicitly non-wire coverage.
+
+The final check uses the Broker's own last legal projection, including generated
+catalog data, operation effects and normal tool declarations. Expectations are
+captured before later mutable hooks. Immutable machine receipts for restored
+user text remain in that private expectation, never in model input.
+
+An independent review of `1884c89` found that restored source text had no inline
+user details. The new ledger overlooked its separate nativePromptSha256 receipt
+and could certify an entity with that source reassigned to assistant. The focused
+real-deferred-drafts test was 12 pass / 1 fail before repair and 13 pass after.
+The correction in `e91dc8c` preserves and checks that original user obligation,
+including in-place mutation of the returned message. This is a concrete
+refinement defect; the finite model does not encode serialization roles.
+
+Actual installed Pi tests preserve duplicate/lost/schema post-hook failures and
+the restored-user-role counterexample separately from the passing public tool
+loop. The first three are known dispatches without a success proof; the restored
+case rejects the new request before sending while retaining its legitimate first
+turn. The original independent failing reproduction remains unchanged.
+
+State-machine source maps include the final-request module and its concrete
+tests as reviewed owners, without pretending that a model run checks their byte
+semantics. The original TLA/config rule sets and positive/negative outcomes are
+unchanged. Read the exact run manifest for current checked source identities.

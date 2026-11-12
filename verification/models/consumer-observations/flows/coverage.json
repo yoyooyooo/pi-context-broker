@@ -3,28 +3,28 @@
   "source_base": "1c11c57849f97d2c13b82eb8a62fe6b6065741c4",
   "kind": "composed_design_contracts_with_real_flow_replay_not_refinement_proof",
   "files": {
-    "packages/context-broker/src/host-skills.ts": "5ad556031ea1085363b7e75ab329a57ebedc0b1e44d2db3c0df9a551b312eca9",
+    "packages/context-broker/src/host-skills.ts": "14ad8253488ff98258ff7b47757fe7398f25577d7b6880f9dec9d76299898cdb",
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/prepare-protocol.ts": "722883c738809713ea5eaca582cd953233f56b95758df1f7f627453cbcdd8561",
     "packages/context-broker/src/skill-context-projection.ts": "2a14a36f498459f8cd7dd861f4130cc796b897b1261c126ccec609494ee5183b",
     "packages/context-broker/src/skill-context-projection-proof.ts": "6495388d79648064f0bf162c348acab0f77aa4a37bb4cb380a0415bd58f48db0",
     "packages/context-broker/src/notion-sdk.ts": "2a062d638c1f13910052c4edf8a0a2250f608e00144f3c521edcec04a51cd9af",
     "packages/context-broker/src/resource-read-projection.ts": "c72d8749018ca97fbb8026568ae23831080b65e8d312ca8b454792327424183e",
-    "packages/context-broker/src/session-source-snapshot.ts": "5bbff1194c6c76ee868ae27759ad2a7a03f063b2709f3fc44ced24d7ee778b04",
+    "packages/context-broker/src/session-source-snapshot.ts": "b23de4a16344620ff12e4e2bd3147d119fdfbffba37507b54434d7425d84c9a5",
     "packages/context-broker/src/notion-source.ts": "20a876a4e1db4676d252ed184ef35654a691a73902d7e3c846a9eb8e51a6a07d",
-    "packages/context-broker/src/index.ts": "ffcf274952dfcf143a119900943b787884a6eb78d84cd734c83db396bc05f6b3",
+    "packages/context-broker/src/index.ts": "bd5f955083bce00d4dd55d55be8e4b3b19f7e59d6c85876fc092a75398686789",
     "packages/context-broker/src/consumption-effects.ts": "5b10742bccfe19ccd4b52b06733baab9f730d84861e24299b0e3a73f81e73794",
     "packages/context-broker/src/pi-host-adapter.ts": "ff4f213acd643c067b7fa000bd05f5ddd8981882ee3926cceadab3875e212ee0",
     "packages/context-broker/src/skill-catalog-projection.ts": "660c4f4047f5acb59b5e82a7dd7990539bcebb26d4cd7e52c83b9576f13fdd15",
     "scripts/build-tern.mjs": "4839a90f0ed6a32b602b52ad13a0ea0d66baf40966eae41eee875c0683c413af",
     "packages/context-broker/scripts/notion-sdk.test.ts": "abafb99deda5928df533fabcfbb6f44cae89a8c88a71bfc3ea0ff8303aada17d",
     "packages/context-broker/scripts/skill-context-projection.test.ts": "a5499d23a597be28a5048f3b36bd904b2d0bb7f64db032890f07ac316acfcc61",
-    "packages/context-broker/scripts/host-prepare.test.ts": "917432ef445cec9d723a8e6609921e36f96bf30ee371df77bca0844e9fcb8748",
+    "packages/context-broker/scripts/host-prepare.test.ts": "6f88489ed58f7887e2a8189ccd08539dc7295c53abec10cf268039154001f752",
     "packages/context-broker/tsconfig.json": "5b485daf61c3d2f793b77a9c8511a135f40988a402d1e0840b4e9d79a289646d",
     "scripts/skill-preparation-evidence.mjs": "a1c3ae9d40c4ca4ec407014ed13339c20caf66f2d918a4b988602053ea7bb3fb",
     "scripts/skill-preparation-evidence.test.mjs": "3205a96b55844a40d2c1194ccb2485be4d570fd1e4f07156a2a8529676283275",
-    "scripts/notion-sdk-pi.mjs": "2acb374ada131e3c953a7495fd3472836d466c87e02fe1cc862bdb5374d3cec5",
-    "scripts/notion-sdk-pi.test.mjs": "2ee4bca756bb13d083a9c77448720c84cf184dde6e669e27d62a0d2c5d986dfe",
+    "scripts/notion-sdk-pi.mjs": "c3d61335d8bb5915fe9c497bdfed3023f51fdac222296201cc807cf6633ca359",
+    "scripts/notion-sdk-pi.test.mjs": "bde119f38f5a78cf37248be1a57d6c122dbdc0ebefa1177d346ab341a10a1926",
     "packages/context-broker/scripts/skill-model-surfaces.test.ts": "876b6c6650bed1f81068c71c1be630fb10ecb951e1cc1a7cb17797cc26d57d5b",
     "packages/context-broker/scripts/session-active.test.ts": "651b81077ba4635f8267c7623f001a5e3e46d65901a4bc646b1b04f5a6b30dcd",
     "packages/context-broker/src/resource-read-types.ts": "fe42ca452633a4919aea0d23ff46789d4de742686f4290d53ca69b00074e92ab",
@@ -32,7 +32,10 @@
     "packages/context-broker/scripts/resource-read-host.test.ts": "aa69aa4d7750b2a460b7201b3210846da6327144c8508f1e90384aa7b78ab125",
     "packages/context-broker/scripts/resource-read-projection.test.ts": "210e5e4e50574f1a2f4a2dc0232091f68736f0885062cbc00282ca2f43056cdc",
     "packages/context-broker/scripts/fixed-resource-source.test.ts": "cd057a611b34ee7a85816ccad38951ec561a120747ad717ba0d75f76cb8f3aa1",
-    "packages/context-broker/scripts/formal-effects-composition.test.ts": "ed05eec59ae651da86f48de20fe6749163227e49fa88d020f35cca81ff8871dd"
+    "packages/context-broker/scripts/formal-effects-composition.test.ts": "ed05eec59ae651da86f48de20fe6749163227e49fa88d020f35cca81ff8871dd",
+    "packages/context-broker/src/final-request.ts": "ba7db9fc301e115200b8ba6534ab332e0f90a1a5c3c4ceaef34389cdf0bd4b9c",
+    "packages/context-broker/scripts/final-request.test.ts": "85266fac06f8d4b3fbe88e92dadabf2f04a94a72e9aba6c2c421be4e05d84f85",
+    "packages/context-broker/scripts/final-request-undici.test.ts": "78671b59508bc648038400bebd5f4c569695a48aba7ce2d57ffa94fe509b5cdc"
   },
   "cases": [
     {
@@ -604,6 +607,77 @@
       ],
       "semantics": "Explicit .ts import supports the existing Node24 direct compiler consumer. Actual HTTP evidence now checks every omitted generated-directory digest against the same captured request; no product state transition changed.",
       "regression": "Root test:verification first failed ERR_MODULE_NOT_FOUND, after import fix 790 pass/1 existing skip. Concrete serializer counters remain separate from finite-model proof."
+    }
+  },
+  "ctx_final_request_review": {
+    "implementation": "e91dc8c7857e3f0094106fd01b73eec6cee621d5",
+    "review": "docs/context-once-source-review.md#ctx-final-request-boundary",
+    "source_changes": [
+      {
+        "path": "packages/context-broker/src/host-skills.ts",
+        "before": "5ad556031ea1085363b7e75ab329a57ebedc0b1e44d2db3c0df9a551b312eca9",
+        "after": "14ad8253488ff98258ff7b47757fe7398f25577d7b6880f9dec9d76299898cdb"
+      },
+      {
+        "path": "packages/context-broker/src/session-source-snapshot.ts",
+        "before": "5bbff1194c6c76ee868ae27759ad2a7a03f063b2709f3fc44ced24d7ee778b04",
+        "after": "b23de4a16344620ff12e4e2bd3147d119fdfbffba37507b54434d7425d84c9a5"
+      },
+      {
+        "path": "packages/context-broker/src/index.ts",
+        "before": "ffcf274952dfcf143a119900943b787884a6eb78d84cd734c83db396bc05f6b3",
+        "after": "bd5f955083bce00d4dd55d55be8e4b3b19f7e59d6c85876fc092a75398686789"
+      },
+      {
+        "path": "packages/context-broker/scripts/host-prepare.test.ts",
+        "before": "917432ef445cec9d723a8e6609921e36f96bf30ee371df77bca0844e9fcb8748",
+        "after": "6f88489ed58f7887e2a8189ccd08539dc7295c53abec10cf268039154001f752"
+      },
+      {
+        "path": "scripts/notion-sdk-pi.mjs",
+        "before": "2acb374ada131e3c953a7495fd3472836d466c87e02fe1cc862bdb5374d3cec5",
+        "after": "c3d61335d8bb5915fe9c497bdfed3023f51fdac222296201cc807cf6633ca359"
+      },
+      {
+        "path": "scripts/notion-sdk-pi.test.mjs",
+        "before": "2ee4bca756bb13d083a9c77448720c84cf184dde6e669e27d62a0d2c5d986dfe",
+        "after": "bde119f38f5a78cf37248be1a57d6c122dbdc0ebefa1177d346ab341a10a1926"
+      }
+    ],
+    "concrete_guard_owners": [
+      "packages/context-broker/src/final-request.ts",
+      "packages/context-broker/scripts/final-request.test.ts",
+      "packages/context-broker/scripts/final-request-undici.test.ts"
+    ],
+    "finite_models_unchanged": true,
+    "semantic_boundary": "DeliveryBoundary providerAccepted remains logical acceptance. Final request roles, serialized directory/schema/entity checks are concrete proof obligations; known mismatch rejects the new acceptance, unsupported transport is not wire proof. Fixed graph, branch, turn and projection ACK owners unchanged.",
+    "independent_review": "F1 at1884c89 restored-user proof omitted: retained original, actual deferred-drafts red12pass1fail then13pass. e91dc8c preserves private immutable obligation; real Pi restored-role counterexample passes.",
+    "not_proven_by_tlc": [
+      "Actual network dispatch",
+      "Actual role/JSON/XML bytes",
+      "Unrestricted LLM behavior",
+      "Source API eventual consistency"
+    ],
+    "driver_refinement": {
+      "file": "scripts/notion-sdk-pi.mjs",
+      "before": "c3d61335d8bb5915fe9c497bdfed3023f51fdac222296201cc807cf6633ca359",
+      "after": "c3d61335d8bb5915fe9c497bdfed3023f51fdac222296201cc807cf6633ca359",
+      "change": "Shared context-once and four final-role/entity negative scenes plus owned cleanup mapping; source state machine unchanged. Adds actual persisted-user role counterexample and preserves standalone effects on cancellation."
+    },
+    "final_diagnostic_review": {
+      "changed": [
+        {
+          "path": "packages/context-broker/src/final-request.ts",
+          "before": "a826ad7b363ac21aeae0f0274b6c8b7842ecdb6ef1226d2a96fcdb020d01935b",
+          "after": "ba7db9fc301e115200b8ba6534ab332e0f90a1a5c3c4ceaef34389cdf0bd4b9c"
+        },
+        {
+          "path": "packages/context-broker/scripts/final-request.test.ts",
+          "before": "fae0456b063e38a9eaea3202fdc910298be0acb5d7b39ecc8adc6b07a178b6f9",
+          "after": "85266fac06f8d4b3fbe88e92dadabf2f04a94a72e9aba6c2c421be4e05d84f85"
+        }
+      ],
+      "scope": "Preparation operation effects are read from canonical nested contextBrokerPreparation.effects for truthful bounded diagnostics. No dispatch/graph/role/activation transition changed. Driver keeps explicit four counterexamples and source cancellation effects."
     }
   }
 }

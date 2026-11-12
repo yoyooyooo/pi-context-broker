@@ -90,6 +90,14 @@ test("batch resource files stay inside the source pin cap", () => {
   expect(JSON.stringify(collected)).not.toContain("SECRET");
 });
 
+test("preparation diagnostics read this operation's effects from its canonical receipt", () => {
+  const message: AgentMessage = { role: "toolResult", toolName: "notion_use", toolCallId: "prepared", content: "opaque",
+    details: { contextBrokerPreparation: { effects: { version: 1, remote_writes: "retained", author_content: "unchanged", retention: [] },
+      records: [{ identity: "private-source", snapshotId: snapshot, bodySha256: sha("body"), loaded: true }],
+      projection: { records: [{ state: "source" }] } } } };
+  expect(finalRequestSources([message]).sources[0]).toMatchObject({ remoteWrites: "retained", authorContent: "unchanged", snapshot });
+});
+
 test("dropped custom effects are not treated as an absent delivery", () => {
   const messages: AgentMessage[] = [{ role: "custom", customType: "context-broker-consumption-effects", content: effectsText }];
   expect(assessFinalRequestPayload(messages, payload([{ role: "user", content: effectsText }]))).toBeUndefined();

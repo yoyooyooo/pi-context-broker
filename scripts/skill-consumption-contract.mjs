@@ -120,6 +120,7 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
         && onceLines.includes('for backend in in-process http; do')
         && onceLines.includes(onceCommand + ' --scenario context-once --provider-backend "$backend" --out "$RUNNER_TEMP/pi15-context-once-$backend"')
         && onceLines.includes(onceCommand + ' --scenario session-compaction --out "$RUNNER_TEMP/pi15-context-once-compaction"')
+        && onceLines.includes(onceCommand + ' --scenario context-wire-negative --provider-backend http --out "$RUNNER_TEMP/pi15-context-once-wire-negative"')
         && workflow.text.indexOf(contextOnce) > workflow.text.indexOf(installed)
         && retained.includes('${{ runner.temp }}/pi15-context-once-*/'),
         'GATE_CONTEXT_ONCE_MISSING', 'CI must drive both real Pi backends and compaction on the same installed package and preserve failed evidence.');

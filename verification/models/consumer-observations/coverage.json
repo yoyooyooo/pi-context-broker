@@ -4,18 +4,18 @@
   "correspondence": "Reviewed source hashes bind the implemented transition owners. Finite-model results do not establish complete implementation refinement. The final commit, installed package and actual session identities belong to the execution receipt.",
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
-    "packages/context-broker/src/host-skills.ts": "5ad556031ea1085363b7e75ab329a57ebedc0b1e44d2db3c0df9a551b312eca9",
+    "packages/context-broker/src/host-skills.ts": "14ad8253488ff98258ff7b47757fe7398f25577d7b6880f9dec9d76299898cdb",
     "packages/context-broker/src/prepare-protocol.ts": "722883c738809713ea5eaca582cd953233f56b95758df1f7f627453cbcdd8561",
     "packages/context-broker/src/notion-source.ts": "20a876a4e1db4676d252ed184ef35654a691a73902d7e3c846a9eb8e51a6a07d",
-    "packages/context-broker/src/index.ts": "ffcf274952dfcf143a119900943b787884a6eb78d84cd734c83db396bc05f6b3",
+    "packages/context-broker/src/index.ts": "bd5f955083bce00d4dd55d55be8e4b3b19f7e59d6c85876fc092a75398686789",
     "packages/context-broker/src/view-discovery.ts": "15ba061763e6b5546d21551a7c0c2fc15a68626af1e47771cba539ef999b995d",
-    "packages/context-broker/src/view-prompt.ts": "8b2d21bcfb3662b4e742d51c13a625aaaa5a66ba7f4cf717c3f8cfed9704062a",
-    "packages/context-broker/src/session-source-snapshot.ts": "5bbff1194c6c76ee868ae27759ad2a7a03f063b2709f3fc44ced24d7ee778b04",
+    "packages/context-broker/src/view-prompt.ts": "7d7ac614ccf857c7f3ed5723aebdd3c9fbb734259ef8cdcb509e09a341f451be",
+    "packages/context-broker/src/session-source-snapshot.ts": "b23de4a16344620ff12e4e2bd3147d119fdfbffba37507b54434d7425d84c9a5",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
-    "packages/context-broker/scripts/host-prepare.test.ts": "917432ef445cec9d723a8e6609921e36f96bf30ee371df77bca0844e9fcb8748",
+    "packages/context-broker/scripts/host-prepare.test.ts": "6f88489ed58f7887e2a8189ccd08539dc7295c53abec10cf268039154001f752",
     "packages/context-broker/scripts/native-read-session.test.ts": "f96e8e7dbf8865e2ea2e1f98f74377702045b7f2b8dceb89868906f7bce381cf",
     "packages/context-broker/scripts/resource-read-projection.test.ts": "210e5e4e50574f1a2f4a2dc0232091f68736f0885062cbc00282ca2f43056cdc",
-    "packages/context-broker/scripts/view-discovery.test.ts": "0d285b1584a299a2c4a3298d7c0cc833810d64855a5f8604f12e793c0f367bcf",
+    "packages/context-broker/scripts/view-discovery.test.ts": "3fba313d4920848082cda04896b825dfde8401f9e6bc8c1607ab3502b8458b7a",
     "packages/context-broker/scripts/notion-entry.test.ts": "a9d8f07117389d176e35950605f545d66983c379296816e5b96480e86a241800",
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "c00400165c96b2bc07d47196ed10644add62696b918fe9e30d2aa6e9529323c8",
     "packages/context-broker/src/pi-host-adapter.ts": "ff4f213acd643c067b7fa000bd05f5ddd8981882ee3926cceadab3875e212ee0",
@@ -27,7 +27,10 @@
     "packages/context-broker/scripts/pi-read-adapter.test.ts": "b0a144a76ba38125d0b159a9ef281d918c87d0f4cf0961929562c6332151d292",
     "packages/context-broker/scripts/resource-read-host.test.ts": "aa69aa4d7750b2a460b7201b3210846da6327144c8508f1e90384aa7b78ab125",
     "packages/context-broker/scripts/fixed-resource-source.test.ts": "cd057a611b34ee7a85816ccad38951ec561a120747ad717ba0d75f76cb8f3aa1",
-    "packages/context-broker/scripts/notion-sdk.test.ts": "abafb99deda5928df533fabcfbb6f44cae89a8c88a71bfc3ea0ff8303aada17d"
+    "packages/context-broker/scripts/notion-sdk.test.ts": "abafb99deda5928df533fabcfbb6f44cae89a8c88a71bfc3ea0ff8303aada17d",
+    "packages/context-broker/src/final-request.ts": "ba7db9fc301e115200b8ba6534ab332e0f90a1a5c3c4ceaef34389cdf0bd4b9c",
+    "packages/context-broker/scripts/final-request.test.ts": "85266fac06f8d4b3fbe88e92dadabf2f04a94a72e9aba6c2c421be4e05d84f85",
+    "packages/context-broker/scripts/final-request-undici.test.ts": "78671b59508bc648038400bebd5f4c569695a48aba7ce2d57ffa94fe509b5cdc"
   },
   "models": {
     "Availability": {
@@ -329,5 +332,70 @@
         "current": "f96e8e7dbf8865e2ea2e1f98f74377702045b7f2b8dceb89868906f7bce381cf"
       }
     ]
+  },
+  "ctx_final_request_review": {
+    "implementation": "e91dc8c7857e3f0094106fd01b73eec6cee621d5",
+    "review": "docs/context-once-source-review.md#ctx-final-request-boundary",
+    "source_changes": [
+      {
+        "path": "packages/context-broker/src/host-skills.ts",
+        "before": "5ad556031ea1085363b7e75ab329a57ebedc0b1e44d2db3c0df9a551b312eca9",
+        "after": "14ad8253488ff98258ff7b47757fe7398f25577d7b6880f9dec9d76299898cdb"
+      },
+      {
+        "path": "packages/context-broker/src/index.ts",
+        "before": "ffcf274952dfcf143a119900943b787884a6eb78d84cd734c83db396bc05f6b3",
+        "after": "bd5f955083bce00d4dd55d55be8e4b3b19f7e59d6c85876fc092a75398686789"
+      },
+      {
+        "path": "packages/context-broker/src/view-prompt.ts",
+        "before": "8b2d21bcfb3662b4e742d51c13a625aaaa5a66ba7f4cf717c3f8cfed9704062a",
+        "after": "7d7ac614ccf857c7f3ed5723aebdd3c9fbb734259ef8cdcb509e09a341f451be"
+      },
+      {
+        "path": "packages/context-broker/src/session-source-snapshot.ts",
+        "before": "5bbff1194c6c76ee868ae27759ad2a7a03f063b2709f3fc44ced24d7ee778b04",
+        "after": "b23de4a16344620ff12e4e2bd3147d119fdfbffba37507b54434d7425d84c9a5"
+      },
+      {
+        "path": "packages/context-broker/scripts/host-prepare.test.ts",
+        "before": "917432ef445cec9d723a8e6609921e36f96bf30ee371df77bca0844e9fcb8748",
+        "after": "6f88489ed58f7887e2a8189ccd08539dc7295c53abec10cf268039154001f752"
+      },
+      {
+        "path": "packages/context-broker/scripts/view-discovery.test.ts",
+        "before": "0d285b1584a299a2c4a3298d7c0cc833810d64855a5f8604f12e793c0f367bcf",
+        "after": "3fba313d4920848082cda04896b825dfde8401f9e6bc8c1607ab3502b8458b7a"
+      }
+    ],
+    "concrete_guard_owners": [
+      "packages/context-broker/src/final-request.ts",
+      "packages/context-broker/scripts/final-request.test.ts",
+      "packages/context-broker/scripts/final-request-undici.test.ts"
+    ],
+    "finite_models_unchanged": true,
+    "semantic_boundary": "DeliveryBoundary providerAccepted remains logical acceptance. Final request roles, serialized directory/schema/entity checks are concrete proof obligations; known mismatch rejects the new acceptance, unsupported transport is not wire proof. Fixed graph, branch, turn and projection ACK owners unchanged.",
+    "independent_review": "F1 at1884c89 restored-user proof omitted: retained original, actual deferred-drafts red12pass1fail then13pass. e91dc8c preserves private immutable obligation; real Pi restored-role counterexample passes.",
+    "not_proven_by_tlc": [
+      "Actual network dispatch",
+      "Actual role/JSON/XML bytes",
+      "Unrestricted LLM behavior",
+      "Source API eventual consistency"
+    ],
+    "final_diagnostic_review": {
+      "changed": [
+        {
+          "path": "packages/context-broker/src/final-request.ts",
+          "before": "a826ad7b363ac21aeae0f0274b6c8b7842ecdb6ef1226d2a96fcdb020d01935b",
+          "after": "ba7db9fc301e115200b8ba6534ab332e0f90a1a5c3c4ceaef34389cdf0bd4b9c"
+        },
+        {
+          "path": "packages/context-broker/scripts/final-request.test.ts",
+          "before": "fae0456b063e38a9eaea3202fdc910298be0acb5d7b39ecc8adc6b07a178b6f9",
+          "after": "85266fac06f8d4b3fbe88e92dadabf2f04a94a72e9aba6c2c421be4e05d84f85"
+        }
+      ],
+      "scope": "Preparation operation effects are read from canonical nested contextBrokerPreparation.effects for truthful bounded diagnostics. No dispatch/graph/role/activation transition changed. Driver keeps explicit four counterexamples and source cancellation effects."
+    }
   }
 }

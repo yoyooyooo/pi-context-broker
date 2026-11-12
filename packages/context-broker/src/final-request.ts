@@ -163,7 +163,9 @@ const HEX_HASH = /^[a-f0-9]{64}$/;
 const snapshotPin = (value: unknown): string | null => typeof value === "string" && SNAPSHOT_PIN.test(value) ? value : null;
 const hexHash = (value: unknown): string | null => typeof value === "string" && HEX_HASH.test(value) ? value : null;
 const effectFields = (details: Record<string, unknown> | undefined): Pick<FinalRequestSource, "remoteWrites" | "authorContent"> => {
-  const effects = details && isObject(details.effects) ? details.effects : undefined;
+  const preparation = details && isObject(details.contextBrokerPreparation) ? details.contextBrokerPreparation : undefined;
+  const effects = details && isObject(details.effects) ? details.effects
+    : preparation && isObject(preparation.effects) ? preparation.effects : undefined;
   const remoteWrites = effects && (effects.remote_writes === "none" || effects.remote_writes === "retained" || effects.remote_writes === "unknown") ? effects.remote_writes : null;
   const authorContent = effects && (effects.author_content === "unchanged" || effects.author_content === "unknown") ? effects.author_content : null;
   return { remoteWrites, authorContent };

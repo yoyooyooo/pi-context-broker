@@ -14,18 +14,21 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/discovery-records.ts": "eff63715fb90fe2d05b4ccf1bfd2eb2227f9ada5b0ea33fa7fca5379cb91c982",
-    "packages/context-broker/src/host-skills.ts": "5ad556031ea1085363b7e75ab329a57ebedc0b1e44d2db3c0df9a551b312eca9",
+    "packages/context-broker/src/host-skills.ts": "14ad8253488ff98258ff7b47757fe7398f25577d7b6880f9dec9d76299898cdb",
     "packages/context-broker/src/prepare-protocol.ts": "722883c738809713ea5eaca582cd953233f56b95758df1f7f627453cbcdd8561",
     "packages/context-broker/src/session-graph.ts": "8fd885fe2a335e2c524bde7007e7a417e1c227415e59e09560cb4943c2c3b7f5",
     "packages/context-broker/src/session-active.ts": "cbdb75e44d88d5f31f20ef470a4597a193fafa3200ed30f9b043c275fef631c2",
-    "packages/context-broker/src/session-source-snapshot.ts": "5bbff1194c6c76ee868ae27759ad2a7a03f063b2709f3fc44ced24d7ee778b04",
+    "packages/context-broker/src/session-source-snapshot.ts": "b23de4a16344620ff12e4e2bd3147d119fdfbffba37507b54434d7425d84c9a5",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
-    "packages/context-broker/scripts/host-prepare.test.ts": "917432ef445cec9d723a8e6609921e36f96bf30ee371df77bca0844e9fcb8748",
+    "packages/context-broker/scripts/host-prepare.test.ts": "6f88489ed58f7887e2a8189ccd08539dc7295c53abec10cf268039154001f752",
     "packages/context-broker/scripts/session-active.test.ts": "651b81077ba4635f8267c7623f001a5e3e46d65901a4bc646b1b04f5a6b30dcd",
     "packages/context-broker/scripts/native-read-session.test.ts": "f96e8e7dbf8865e2ea2e1f98f74377702045b7f2b8dceb89868906f7bce381cf",
-    "packages/context-broker/scripts/skill-context-session.test.ts": "820e748e04f9f2c732d2eb5b2625193940a0a71b9b8d92e4c424b54b80501b63",
+    "packages/context-broker/scripts/skill-context-session.test.ts": "21b17e113e4484ecff6ad5e365d100812f2a1b0289264d18ccd72b15aaff4762",
     "packages/context-broker/scripts/consumer-state.test.ts": "97b19d0f3ac167bfb30cd9dd4aa6959924784dcb13c4644221334bba390c5799",
-    "scripts/check-consumer-state-mutations.mjs": "663d89b30f23b360447cc3de04ec9278858a79d732a8c75d27d61bad0b8bf564"
+    "scripts/check-consumer-state-mutations.mjs": "663d89b30f23b360447cc3de04ec9278858a79d732a8c75d27d61bad0b8bf564",
+    "packages/context-broker/src/final-request.ts": "ba7db9fc301e115200b8ba6534ab332e0f90a1a5c3c4ceaef34389cdf0bd4b9c",
+    "packages/context-broker/scripts/final-request.test.ts": "85266fac06f8d4b3fbe88e92dadabf2f04a94a72e9aba6c2c421be4e05d84f85",
+    "packages/context-broker/scripts/final-request-undici.test.ts": "78671b59508bc648038400bebd5f4c569695a48aba7ce2d57ffa94fe509b5cdc"
   },
   "models": {
     "FreshnessPublication": {
@@ -60,12 +63,16 @@
       "owners": [
         "host-skills.ts assertPiRun/before_provider_request/after_provider_response/turn_end/acknowledgeProjection",
         "session-active.ts confirmActiveSources",
-        "session-source-snapshot.ts sourceBodyLoaded/deferredSourceEntries/withSessionSourceReceipts"
+        "session-source-snapshot.ts sourceBodyLoaded/deferredSourceEntries/withSessionSourceReceipts",
+        "final-request.ts assessFinalRequestPayload/createFinalRequestLedger; concrete request roles and entity digests outside finite variables"
       ],
       "atomicity": "Headers, turn completion, draft return, host apply/drop and later public projection acknowledgement are separate transitions. A 2xx response proves request acceptance and may record active delivery before stream completion. A later failed turn does not erase that historical acceptance. No draft is a persisted projection until observed in the public branch.",
       "replays": [
         "session-active.test.ts selected/partial inactivity, discarded drafts, failed/aborted/late/rewound deliveries",
-        "native-read-session.test.ts complete body, scope/pin/hash mismatches"
+        "native-read-session.test.ts complete body, scope/pin/hash mismatches",
+        "final-request.test.ts real deferred-drafts restoration and private role obligations",
+        "final-request-undici.test.ts actual Node entity positive/rewrite/concurrency",
+        "notion-sdk-pi.mjs context-wire-negative: duplicate/lost/schema/restored-role"
       ]
     }
   },
@@ -541,5 +548,60 @@
         "current": "820e748e04f9f2c732d2eb5b2625193940a0a71b9b8d92e4c424b54b80501b63"
       }
     ]
+  },
+  "ctx_final_request_review": {
+    "implementation": "e91dc8c7857e3f0094106fd01b73eec6cee621d5",
+    "review": "docs/context-once-source-review.md#ctx-final-request-boundary",
+    "source_changes": [
+      {
+        "path": "packages/context-broker/src/host-skills.ts",
+        "before": "5ad556031ea1085363b7e75ab329a57ebedc0b1e44d2db3c0df9a551b312eca9",
+        "after": "14ad8253488ff98258ff7b47757fe7398f25577d7b6880f9dec9d76299898cdb"
+      },
+      {
+        "path": "packages/context-broker/src/session-source-snapshot.ts",
+        "before": "5bbff1194c6c76ee868ae27759ad2a7a03f063b2709f3fc44ced24d7ee778b04",
+        "after": "b23de4a16344620ff12e4e2bd3147d119fdfbffba37507b54434d7425d84c9a5"
+      },
+      {
+        "path": "packages/context-broker/scripts/host-prepare.test.ts",
+        "before": "917432ef445cec9d723a8e6609921e36f96bf30ee371df77bca0844e9fcb8748",
+        "after": "6f88489ed58f7887e2a8189ccd08539dc7295c53abec10cf268039154001f752"
+      },
+      {
+        "path": "packages/context-broker/scripts/skill-context-session.test.ts",
+        "before": "820e748e04f9f2c732d2eb5b2625193940a0a71b9b8d92e4c424b54b80501b63",
+        "after": "21b17e113e4484ecff6ad5e365d100812f2a1b0289264d18ccd72b15aaff4762"
+      }
+    ],
+    "concrete_guard_owners": [
+      "packages/context-broker/src/final-request.ts",
+      "packages/context-broker/scripts/final-request.test.ts",
+      "packages/context-broker/scripts/final-request-undici.test.ts"
+    ],
+    "finite_models_unchanged": true,
+    "semantic_boundary": "DeliveryBoundary providerAccepted remains logical acceptance. Final request roles, serialized directory/schema/entity checks are concrete proof obligations; known mismatch rejects the new acceptance, unsupported transport is not wire proof. Fixed graph, branch, turn and projection ACK owners unchanged.",
+    "independent_review": "F1 at1884c89 restored-user proof omitted: retained original, actual deferred-drafts red12pass1fail then13pass. e91dc8c preserves private immutable obligation; real Pi restored-role counterexample passes.",
+    "not_proven_by_tlc": [
+      "Actual network dispatch",
+      "Actual role/JSON/XML bytes",
+      "Unrestricted LLM behavior",
+      "Source API eventual consistency"
+    ],
+    "final_diagnostic_review": {
+      "changed": [
+        {
+          "path": "packages/context-broker/src/final-request.ts",
+          "before": "a826ad7b363ac21aeae0f0274b6c8b7842ecdb6ef1226d2a96fcdb020d01935b",
+          "after": "ba7db9fc301e115200b8ba6534ab332e0f90a1a5c3c4ceaef34389cdf0bd4b9c"
+        },
+        {
+          "path": "packages/context-broker/scripts/final-request.test.ts",
+          "before": "fae0456b063e38a9eaea3202fdc910298be0acb5d7b39ecc8adc6b07a178b6f9",
+          "after": "85266fac06f8d4b3fbe88e92dadabf2f04a94a72e9aba6c2c421be4e05d84f85"
+        }
+      ],
+      "scope": "Preparation operation effects are read from canonical nested contextBrokerPreparation.effects for truthful bounded diagnostics. No dispatch/graph/role/activation transition changed. Driver keeps explicit four counterexamples and source cancellation effects."
+    }
   }
 }

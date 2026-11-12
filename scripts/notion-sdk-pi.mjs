@@ -27,6 +27,7 @@ const compactionScenarioName = 'session-compaction';
 const httpScenarioNames = ['http-directory', 'http-cache-recovery', 'http-interruption'];
 const contextOnceScenario = 'context-once';
 const wireNegativeScenario = 'context-wire-negative';
+const wireNegativeKinds = ['duplicate', 'lost', 'schema', 'restored-role'];
 const selectableScenarioNames = [contextOnceScenario, wireNegativeScenario, ...scenarioNames, ...nameScenarioNames, ambiguityScenarioName, compactionScenarioName, ...httpScenarioNames];
 const httpUsage = 'Controlled HTTP gates require --scenario http-directory|http-cache-recovery|http-interruption, the original current sdk-fixture.ts --catalog input and --source-http-helper ABSOLUTE_FROZEN_MODULE. They use actual Pi with the installed SDK, a shared owned loopback Notion fixture and a controlled provider. They remain separate from offline all14 and production live input; source.command stays absent.';
 export function controlledHttpOptions(options) {
@@ -4979,7 +4980,8 @@ async function retained(evidence, cleanup) {
     assert.equal(report.scratch, ownership.scratch); assert.equal(await realpath(ownership.evidence), evidence);
     assert.ok(ownership.scratch.startsWith(await systemTempRoot() + '/notion-sdk-pi-'));
     const plan = await json(join(evidence, 'plan.json'));
-    const allowed = plan.input_mode === 'live_notion_sdk' ? ['live-notion'] : selectableScenarioNames;
+    const allowed = plan.input_mode === 'live_notion_sdk' ? ['live-notion']
+      : [...selectableScenarioNames, ...wireNegativeKinds.map(kind => 'context-wire-' + kind)];
     assert.ok(Array.isArray(plan.scenarios) && plan.scenarios.length > 0 && plan.scenarios.every(name => allowed.includes(name)));
     assert.equal(new Set(plan.scenarios).size, plan.scenarios.length);
     for (const name of plan.scenarios) {
@@ -5066,7 +5068,15 @@ export function assertContextOnceLoop(captures, originals, { batch }) {
 }
 
 export function latePayloadMutationSource(kind, output) {
-  assert.ok(['duplicate', 'lost', 'schema'].includes(kind)); assert.ok(isAbsolute(output));
+  assert.ok(wireNegativeKinds.includes(kind)); assert.ok(isAbsolute(output));
+  if (kind === 'restored-role') return `import fs from 'node:fs';import crypto from 'node:crypto';
+let turns=0;export default api=>{api.on('agent_start',()=>{turns++;});api.on('context_with_system',event=>{
+ if(turns<2)return;const text=content=>typeof content==='string'?content:(content??[]).filter(part=>part.type==='text').map(part=>part.text).join('\\n');
+ const message=event.messages.find(item=>item.role==='user'&&text(item.content).includes('<context-broker-record'));
+ if(!message)throw new Error('RESTORED_SOURCE_NOT_FOUND');
+ fs.writeFileSync(${JSON.stringify(output)},JSON.stringify({kind:'restored-role',original_user_sha256:crypto.createHash('sha256').update(text(message.content)).digest('hex'),role:'assistant'})+'\\n',{flag:'wx',mode:0o600});
+ message.role='assistant';return {messages:event.messages};
+});};\n`;
   return `import fs from 'node:fs'; import crypto from 'node:crypto';
 const hash=value=>crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 let changed=false;
@@ -5163,7 +5173,19 @@ async function runContextOnceLoop(info, scratch, evidence, backend, mutation) {
       return text;
     };
     if (mutation) {
-      const outcome = await rpc.prompt('$resources@sdk-fixture Inspect the selected instructions only. Do not call any tools.').then(
+      const sourceProofEntries = async () => {
+        const all = [];
+        for (const file of await inventory(sessions)) if (file.path.endsWith('.jsonl')) all.push(...await rows(join(sessions, file.path)));
+        return all.filter(entry => ['context-broker-active-sources', 'context-broker-selected-graph'].includes(entry.customType));
+      };
+      let originalProofs = [];
+      if (mutation === 'restored-role') {
+        await rpc.prompt('$resources@sdk-fixture Inspect the selected instructions only. Do not call any tools.');
+        originalProofs = await sourceProofEntries();
+        assert.equal(server.requests.length, 1);
+      }
+      const outcome = await rpc.prompt(mutation === 'restored-role' ? 'Continue using the source already in this session.'
+        : '$resources@sdk-fixture Inspect the selected instructions only. Do not call any tools.').then(
         () => ({ ok: true }), error => ({ ok: false, message: String(error.message) }));
       assert.equal(outcome.ok, false, 'A later rewritten entity must not complete or confirm the selected source');
       const proof = await json(join(output, 'mutation.json'));
@@ -5171,16 +5193,21 @@ async function runContextOnceLoop(info, scratch, evidence, backend, mutation) {
       assert.equal(server.requests.length, 1);
       const request = server.requests[0]; assert.ok(request.entityFile && request.bytes > 0);
       const sent = await readFile(join(output, request.entityFile));
-      assert.equal(hash(sent), proof.after_sha256); assert.notEqual(proof.before_sha256, proof.after_sha256);
-      assert.match(diagnostic, /dispatched=true/u); assert.match(diagnostic, /PAYLOAD_REWRITTEN/u);
-      assert.doesNotMatch(diagnostic, /wire=true/u); assert.ok(diagnostic.includes('sent=' + hash(sent)));
+      if (mutation === 'restored-role') {
+        assert.equal(proof.role, 'assistant');
+        const rejected = diagnostic.trim().split('\n').at(-1);
+        assert.match(rejected, /LOST_SOURCE_RESULT/u); assert.match(rejected, /dispatched=false/u); assert.match(rejected, /wire=false/u);
+        assert.ok(diagnostic.includes('sent=' + hash(sent)), 'The valid original turn keeps its actual wire evidence');
+      } else {
+        assert.equal(hash(sent), proof.after_sha256); assert.notEqual(proof.before_sha256, proof.after_sha256);
+        assert.match(diagnostic, /dispatched=true/u); assert.match(diagnostic, /PAYLOAD_REWRITTEN/u);
+        assert.doesNotMatch(diagnostic, /wire=true/u); assert.ok(diagnostic.includes('sent=' + hash(sent)));
+      }
       assert.equal(rpc.frames.filter(frame => frame.type === 'tool_execution_start').length, 0);
-      const native = [];
-      for (const file of await inventory(sessions)) if (file.path.endsWith('.jsonl')) native.push(...await rows(join(sessions, file.path)));
-      for (const entry of native) assert.ok(!['context-broker-active-sources', 'context-broker-selected-graph'].includes(entry.customType),
-        'A mismatched injected request must not persist active or selected source receipts');
+      assert.deepEqual(await sourceProofEntries(), originalProofs, 'A rejected request cannot add or rewrite active/selected source proofs');
       loopResult = { name: scene, status: 'passed', provider_backend: backend, negative: mutation,
-        expected_abort: outcome, actual_entity: { bytes: sent.length, sha256: hash(sent) }, source_receipts_persisted: 0,
+        expected_abort: outcome, actual_entity: { bytes: sent.length, sha256: hash(sent) }, new_source_receipts_persisted: 0,
+        original_source_receipts: originalProofs.length,
         finality: 'Known real dispatch with rejected payload identity; not zero provider calls' };
     } else {
     await rpc.prompt('Use the resources Skill through notion_use, then read its advertised references/guide.md. Repeat that use and that resource read with the same visible handles.');
@@ -5315,7 +5342,7 @@ if (action === 'evidence' || action === 'cleanup') {
     const expectShortConfirmations = options['--expect-short-confirmations'] !== 'false';
     if ([contextOnceScenario, wireNegativeScenario].includes(options['--scenario'])) {
       const results = [];
-      for (const mutation of options['--scenario'] === wireNegativeScenario ? ['duplicate', 'lost', 'schema'] : [undefined])
+      for (const mutation of options['--scenario'] === wireNegativeScenario ? wireNegativeKinds : [undefined])
         results.push(await runContextOnceLoop(info, scratch, evidence, providerBackend, mutation));
       const result = { status: results.every(item => item.status === 'passed') ? 'passed' : 'failed',
         observer_finality: results.every(item => item.observer_finality === true) };

@@ -22,3 +22,5 @@ SelectionGraph 原正例的模型规则全部成立，但旧 view 把 statechart
 视图合并同语义 scenario、取消/会话换代及失效后的收口路径；所有命名动作仍返回标签，没有主动隐藏箭头。工具不绘制同一展示状态内的步骤，其中包含重复返回、等待、检查和终态保持；每图原报告列出该计数。不同显式违例组合和“已接受后离开分支”的状态保持分开，完整规则结果与最短反例留在原报告和原始 TLC 输出。展示转移数不包含起点箭头，manifest 另列含起点的计数。
 
 这些图是有限状态合同的投影，不证明实际 provider wire、生产 Notion 或任意 LLM 最终回答。完整复跑见 [消费者 Skill](../../../../.agents/skills/verify-notion-consumer-state/SKILL.md)，Pele 复现见 [维护合同](../../../../docs/formal-verification-maintenance.md#图形产物定位与复现)。
+
+AH-1014 的具体请求检查置于本图 `ReceiveHeaders` 的实现前置守卫：当前源角色和完整内容仍一致，支持的传输若已观察到实体不匹配则拒绝新增接受证明。图中的 provider 接受仍是 logical acceptance；`wire-confirmed` 由实际发送摘要单独证明。恢复后的 user 内容通过私有机器回执绑定，不能因正文移入 assistant 就签发成功。上述实际字节、角色和后置 hook 未加入有限模型变量，分别由 `context-wire-negative` 与源码回归覆盖；原图、原模型计数和历史反例保留原意。

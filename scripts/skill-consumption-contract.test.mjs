@@ -73,6 +73,7 @@ test('context-once gates reject omitted backends, swallowed failure and missing 
     text => text.replace('- name: Installed Pi current-context contract\n', '- name: Installed Pi current-context contract\n        continue-on-error: true\n'),
     text => text.replace('--out "$RUNNER_TEMP/pi15-context-once-$backend"', '--out "$RUNNER_TEMP/pi15-context-once-$backend" || true'),
     text => text.replace('--scenario session-compaction --out "$RUNNER_TEMP/pi15-context-once-compaction"', '--scenario native --out "$RUNNER_TEMP/pi15-context-once-compaction"'),
+    text => text.replace('--scenario context-wire-negative --provider-backend http', '--scenario context-once --provider-backend http'),
     text => text.replace('${{ runner.temp }}/pi15-context-once-*/', '${{ runner.temp }}/unrelated/'),
   ]) {
     const config = consumptionGateConfiguration(); config.workflows[0].text = mutate(config.workflows[0].text);
