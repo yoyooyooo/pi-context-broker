@@ -226,3 +226,15 @@ C1/v5另立 `close3-v9-targeted-correction-freeze.json`（SHA `38b467c76fd89a01b
 
 A两个根与两暖cwd均完成Evidence→系统Trash→Evidence；83份原件未变，Store/auth未读、未复制、未清理。回执SHA分别为 `24e84bad9e7988d50d3f3c251497fef067d0a5dfc1cd6796ba6a5649be56ec41` 和 `5ae97d7fc0dddee7e321aabb707ab461063bd89f0ab16bbbb4b90a866a9f4bd6`。代码及地图只在独立候选分支同步；日用Broker f2f7257、CLI ee4e712和原精确CI169/CI118保持。当前12子票仍10 Done、AH639/AH638 In Progress；完整生成、固定资源续读及helper实驱没有被介绍纠错替代。原16分母保持8 technical passed/6 failed/2 not_run。本次终局地图不改变有限模型状态语义，既有TLA/cfg/view结果复用，不宣称重新证明。
 
+### 完整失败运行 final 的独立产物实驱
+
+v12 A 原结果 `notion-only-close4-v12-A-ref-and-correction-ibx2dL/result.json` 保持 failed，SHA `a8996e4c1ab529ac77fac193db1be371f1fae76ad5cd0528a1de9cd3e464bea5`；进程在 682162.191084 ms 后以 SIGTERM 闭合，原 600000 ms 预算没有通过。原 native 最后一条 `832f74b7` 是完整 stop final，32907 B、SHA `2dbf297cfe0e0a3b60c4fe8d7ceae155594cf096150b8a8cb0151ec36041bf03`。既有 collector 已在独立 `reviews/close4-v12-A-final-retention/` 逐字保全全文及六份文件；该目录没有伪造的 model result。来源 journal 缺 end，整体来源覆盖仍 unknown，不能由 final、保全或后续实驱补成原运行通过。
+
+默认 `exerciseReviewedGeneratedHelper` 仍只接原 passed 结果。另设默认关闭的 review `artifactAdmission`，仅允许对已终局且正 PID 已不存在的 failed/timeout/SIGTERM 运行做 artifact-only 实驱。review 必须绑定原 failed result、原完整 session、最后当前用户输入之后的完整 stop final，以及独立 retention receipt；从 session 重算 final 正文字节，与保全文和既有扫描器提取的全部文件及 sourceSpan 一致。没有真实 final、选择旧祖先 final、改动文件或伪造任何绑定都在分配执行目录和 spawn 前拒绝；原结果、预算与所有失败事实不改写。
+
+显式分支只改变产物来源准入：继续原独立完整代码审阅、五文件项目副本、单 Node 入口、最多 20000 ms 与最多 2000 ms kill grace、隔离环境、全过程归档和 Evidence→系统 Trash→Evidence。执行结果明确原模型 failed 与独立 artifact-only 范围；不能靠 exit0 或 summary 自述关闭功能门槛，仍须审查完整文件、stdout、实际功能证据、summary 和遗漏。若 summary 写入失败但退出为零，按真实证据不足处理，不由进程退出码制造通过。
+
+定向反例覆盖默认 failed 拒绝、真实最后 final 的保全准入、错误 native/final/manifest 绑定、非 stop 或早期 final、仍存活的原 PID，以及执行/归档/清理后原 result 不变。该切片复用既有 helper executor 与 collector，不追加模型生成、runner、验证平台或新的产品状态模型；消费/来源 pin 状态没有变化，沿用原 TLA/cfg/view 结论并保留其有限边界。
+
+三个新增功能反例先 RED，随后新三项与旧 loopback/默认 failed 拒绝两项合计 5/5 GREEN、0 skipped，原始 stdout 为 `verification-evidence/ah639-20261112-failed-final-artifact-exercise/green-attempt-1.stdout.log`，SHA `da93865d599101e1a61d7c83d43bfd71f96931e587518f7cd76060452f00faf1`。两份受控 helper fixture 真实执行并完成系统 Trash ECE；实际 v12 只调用只读准入，六文件和最后 final 字节相符，未执行真实 helper。正式生成物仍须 root 独立审阅、冻结实驱和按完整文件/stdout/summary/HTTP证据裁决。
+

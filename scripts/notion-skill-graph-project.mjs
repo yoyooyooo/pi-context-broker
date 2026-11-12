@@ -213,27 +213,80 @@ async function ordinaryFile(path) {
   return readFile(path);
 }
 
-async function reviewedHelperInputs(evidence, reviewPath) {
+function retainedFailedFinal(original, result, retention, native) {
+  assert.equal(result.scope, 'project-scoped-candidate-print'); assert.equal(result.status, 'failed');
+  assert.ok(['normal', 'notion-only'].includes(result.arm)); assert.equal(result.generatedPlan, undefined);
+  assert.equal(result.process?.timedOut, true); assert.equal(result.process.signal, 'SIGTERM'); assert.notEqual(result.process.code, 0);
+  assert.ok(Number.isSafeInteger(result.process.pid) && result.process.pid > 0);
+  assert.ok(/^[0-9]+$/u.test(result.process.startedNs) && /^[0-9]+$/u.test(result.process.endedNs)
+    && BigInt(result.process.endedNs) > BigInt(result.process.startedNs), 'The failed source process must be terminal');
+  assert.equal(result.error?.code, 'ERR_ASSERTION'); assert.ok(result.error.message.startsWith('Native print process failed'));
+  assert.ok(!result.validationError && !result.sharedTechnicalFailure);
+  for (const field of ['normalConfigurationUnchanged', 'baselineFilesUnchanged', 'projectFilesUnchanged', 'originalSessionUnchanged']) assert.equal(result[field], true);
+  assert.equal(retention.version, 1); assert.equal(retention.kind, 'retained-complete-native-final');
+  assert.equal(retention.status, 'retained-not-executed'); assert.equal(retention.originalOutcomeUnchanged, true);
+  assert.deepEqual(retention.originalGeneration, { path: join(result.evidence, 'result.json'), bytes: original.length, sha256: hash(original),
+    status: result.status, process: result.process, error: result.error });
+  assert.deepEqual(retention.session, result.session);
+  assert.equal(native.length, result.session.bytes); assert.equal(hash(native), result.session.sha256);
+  const text = new TextDecoder('utf-8', { fatal: true }).decode(native); assert.ok(text.endsWith('\n'));
+  const rows = text.trimEnd().split('\n').map(JSON.parse), last = rows.at(-1), users = rows.filter(row => row.type === 'message' && row.message?.role === 'user');
+  assert.equal(users.length, result.expectedUserMessages); assert.ok(users.length > 0);
+  assert.equal(last?.type, 'message'); assert.equal(last.message?.role, 'assistant'); assert.equal(last.message.stopReason, 'stop', 'Only the real last complete stop final may supply artifacts');
+  const body = message => typeof message.content === 'string' ? message.content : (message.content ?? []).filter(part => part.type === 'text').map(part => part.text).join('\n');
+  const final = Buffer.from(body(last.message)); assert.ok(final.length > 0);
+  assert.deepEqual(retention.final, { entryId: last.id, stopReason: 'stop', bytes: final.length, sha256: hash(final) });
+  const prompt = Buffer.from(body(users.at(-1).message));
+  assert.deepEqual(retention.prompt, { bytes: prompt.length, sha256: hash(prompt) });
+  assert.equal(retention.generatedPlan.promptSha256, hash(prompt));
+  assert.equal(retention.generatedPlan.sha256, hash(final)); assert.equal(retention.generatedPlan.bytes, final.length);
+  return final;
+}
+
+/** Read-only admission; no execution directory or process is created here. */
+export async function reviewedHelperInputs(evidence, reviewPath) {
   assert.ok(isAbsolute(evidence) && isAbsolute(reviewPath), 'Use absolute evidence and independent review paths');
   assert.equal(await realpath(evidence), evidence);
   const original = await ordinaryFile(join(evidence, 'result.json')), result = JSON.parse(original);
   assert.equal(result.evidence, evidence);
-  assert.equal(result.status, 'passed', 'A failed graph/model prerequisite cannot authorize helper execution');
-  assert.ok(!result.error && !result.validationError && !result.sharedTechnicalFailure, 'A retained technical failure blocks helper execution');
-  assert.ok(!result.turns || result.turns.every(turn => turn.status === 'passed'), 'Every original turn must pass its technical prerequisite');
   assert.ok(!within(evidence, reviewPath) && !within(result.scratch ?? result.project.root, reviewPath)
     && !within(result.project.root, reviewPath), 'Independent review must stay outside consumer and generated evidence roots');
   const reviewBytes = await ordinaryFile(reviewPath), review = JSON.parse(reviewBytes);
   assert.equal(review.version, 1); assert.equal(review.purpose, 'generated-helper-exercise');
   assert.ok(typeof review.reviewer === 'string' && review.reviewer.trim());
   assert.equal(review.approvedForOwnedExercise, true, 'The controller must review the complete helper before exercise');
-  const receiptBytes = await ordinaryFile(join(evidence, 'generated-plan.json')), receipt = JSON.parse(receiptBytes);
-  assert.deepEqual(receipt, result.generatedPlan, 'Generated-file metadata must match the original model result');
+  let artifactEvidence = evidence, artifactAdmission, retention, retentionBytes, nativeBytes, sourceFinal;
+  if (review.artifactAdmission === undefined) {
+    assert.equal(result.status, 'passed', 'A failed graph/model prerequisite cannot authorize helper execution');
+    assert.ok(!result.error && !result.validationError && !result.sharedTechnicalFailure, 'A retained technical failure blocks helper execution');
+    assert.ok(!result.turns || result.turns.every(turn => turn.status === 'passed'), 'Every original turn must pass its technical prerequisite');
+  } else {
+    const admission = review.artifactAdmission;
+    assert.deepEqual(Object.keys(admission).sort(), ['mode', 'retention']);
+    assert.equal(admission.mode, 'reviewed-complete-failed-final');
+    assert.deepEqual(Object.keys(admission.retention).sort(), ['path', 'sha256']);
+    assert.ok(isAbsolute(admission.retention.path) && /^[a-f0-9]{64}$/u.test(admission.retention.sha256));
+    artifactEvidence = dirname(admission.retention.path);
+    assert.ok(!within(evidence, artifactEvidence) && !within(artifactEvidence, evidence)
+      && !within(result.scratch ?? result.project.root, artifactEvidence) && !within(artifactEvidence, reviewPath), 'Retained artifacts and independent review need separate evidence roots');
+    retentionBytes = await ordinaryFile(admission.retention.path); assert.equal(hash(retentionBytes), admission.retention.sha256);
+    retention = JSON.parse(retentionBytes);
+    assert.ok(within(evidence, result.session.path)); nativeBytes = await ordinaryFile(result.session.path);
+    sourceFinal = retainedFailedFinal(original, result, retention, nativeBytes);
+    let present = true;
+    try { process.kill(result.process.pid, 0); } catch (error) { if (error.code !== 'ESRCH') throw error; present = false; }
+    assert.equal(present, false, 'The original failed process must be absent before artifact exercise');
+    artifactAdmission = { mode: admission.mode, retention: { ...admission.retention, bytes: retentionBytes.length },
+      originalModelStatus: 'failed', arm: result.arm, sourceSession: result.session, final: retention.final };
+  }
+  const receiptBytes = await ordinaryFile(join(artifactEvidence, 'generated-plan.json')), receipt = JSON.parse(receiptBytes);
+  assert.deepEqual(receipt, retention?.generatedPlan ?? result.generatedPlan, 'Generated-file metadata must match its explicitly bound source');
   assert.equal(receipt.artifactStatus, 'complete-skill-files-retained', 'Incomplete generated files cannot be exercised');
-  assert.equal(receipt.path, join(evidence, 'generated-acceptance-plan.md'));
+  assert.equal(receipt.path, join(artifactEvidence, 'generated-acceptance-plan.md'));
   const plan = await ordinaryFile(receipt.path);
   assert.equal(hash(plan), receipt.sha256, 'The actual final bytes changed');
   assert.equal(plan.length, receipt.bytes);
+  if (sourceFinal) assert.ok(plan.equals(sourceFinal), 'Retained final must exactly equal the last native stop response');
   const expectedProject = Object.entries(ownedProjectFiles).map(([path, content]) => ({ path, sha256: hash(content), bytes: Buffer.byteLength(content) }));
   assert.deepEqual(result.project.files, expectedProject, 'Exercise must copy the original fixed application');
   assert.equal(result.project.sha256, hash(JSON.stringify(expectedProject)));
@@ -244,7 +297,7 @@ async function reviewedHelperInputs(evidence, reviewPath) {
   const files = [];
   for (const file of receipt.files) {
     generatedPath(file.path);
-    const bytes = await ordinaryFile(join(evidence, file.evidencePath));
+    const bytes = await ordinaryFile(join(artifactEvidence, file.evidencePath));
     assert.equal(hash(bytes), file.sha256, 'A retained generated file changed'); assert.equal(bytes.length, file.bytes);
     files.push({ ...file, content: bytes });
   }
@@ -263,7 +316,8 @@ async function reviewedHelperInputs(evidence, reviewPath) {
   assert.equal(review.command.args[0], entry.path, 'Node must execute the exact reviewed entry, without interpreter flags');
   assert.ok(Number.isSafeInteger(review.budget?.timeoutMs) && review.budget.timeoutMs > 0 && review.budget.timeoutMs <= 20000);
   assert.ok(Number.isSafeInteger(review.budget.killGraceMs) && review.budget.killGraceMs > 0 && review.budget.killGraceMs <= 2000);
-  return { result, original, receipt, receiptBytes, plan, files, parent, review, reviewBytes, entry };
+  return { result, original, receipt, receiptBytes, plan, files, parent, review, reviewBytes, entry,
+    ...(artifactAdmission ? { artifactAdmission, retentionBytes, nativeBytes } : {}) };
 }
 
 function processGroupPresent(pid) {
@@ -337,6 +391,7 @@ export async function exerciseReviewedGeneratedHelper(evidence, reviewPath) {
   const artifacts = [];
   const result = { version: 1, kind: 'generated-helper-exercise', status: 'running', stage: 'allocate-scratch', evidence: output, scratch: null,
     parent: input.parent, review: { path: reviewPath, sha256: hash(input.reviewBytes), reviewer: input.review.reviewer },
+    ...(input.artifactAdmission ? { artifactAdmission: input.artifactAdmission } : {}),
     project: null, installedFiles: [], entry: input.review.entry, command: input.review.command, budget: input.review.budget,
     productAcceptance: { status: 'independent-review-required', scope: 'Execution records one reviewed helper invocation; HTTP, feature behavior, omissions and side effects still require independent review' }, artifacts };
   await save(join(output, 'result.json'), result);
@@ -349,6 +404,7 @@ export async function exerciseReviewedGeneratedHelper(evidence, reviewPath) {
     for (const [path, bytes] of [
       ['ownership.json', Buffer.from(JSON.stringify(owner, null, 2) + '\n')], ['independent-review.json', input.reviewBytes],
       ['parent-result.json', input.original], ['parent-generated-plan.json', input.receiptBytes], ['generated-acceptance-plan.md', input.plan],
+      ...(input.artifactAdmission ? [['artifact-retention.json', input.retentionBytes], ['parent-native.jsonl', input.nativeBytes]] : []),
     ]) await retainExerciseFile(output, artifacts, path, bytes);
     result.stage = 'create-project';
     const project = result.project = await createOwnedGraphProject(join(scratch, 'project'));
@@ -410,6 +466,24 @@ export async function inspectGeneratedExercise(evidence) {
     const review = JSON.parse(await ordinaryFile(join(evidence, 'independent-review.json')));
     assert.deepEqual(result.parent, review.parent); assert.deepEqual(result.command, review.command);
     assert.deepEqual(result.entry, review.entry); assert.deepEqual(result.budget, review.budget);
+  }
+  if (result.artifactAdmission) {
+    const required = ['parent-result.json', 'artifact-retention.json', 'parent-native.jsonl', 'generated-acceptance-plan.md', 'parent-generated-plan.json', 'independent-review.json'];
+    if (!required.every(retained)) assert.ok(notRun, 'An artifact-only invocation must retain its original failed source and full native');
+    else {
+      const original = await ordinaryFile(join(evidence, 'parent-result.json')), parent = JSON.parse(original);
+      const retentionBytes = await ordinaryFile(join(evidence, 'artifact-retention.json')), retention = JSON.parse(retentionBytes);
+      const review = JSON.parse(await ordinaryFile(join(evidence, 'independent-review.json')));
+      assert.equal(result.artifactAdmission.mode, 'reviewed-complete-failed-final');
+      assert.deepEqual(review.artifactAdmission, { mode: result.artifactAdmission.mode,
+        retention: { path: result.artifactAdmission.retention.path, sha256: hash(retentionBytes) } });
+      assert.equal(result.artifactAdmission.retention.sha256, hash(retentionBytes)); assert.equal(result.artifactAdmission.retention.bytes, retentionBytes.length);
+      assert.equal(result.artifactAdmission.originalModelStatus, 'failed'); assert.equal(result.artifactAdmission.arm, parent.arm);
+      assert.deepEqual(result.artifactAdmission.sourceSession, parent.session); assert.deepEqual(result.artifactAdmission.final, retention.final);
+      const final = retainedFailedFinal(original, parent, retention, await ordinaryFile(join(evidence, 'parent-native.jsonl')));
+      assert.ok(final.equals(await ordinaryFile(join(evidence, 'generated-acceptance-plan.md'))));
+      assert.deepEqual(retention.generatedPlan, JSON.parse(await ordinaryFile(join(evidence, 'parent-generated-plan.json'))));
+    }
   }
   if (!notRun) assert.deepEqual(result.installedFiles, result.parent.files);
   for (const file of result.installedFiles) assert.equal(hash(await ordinaryFile(join(evidence, 'reviewed-files', generatedPath(file.path)))), file.sha256);
@@ -481,6 +555,12 @@ export async function verifyGeneratedExerciseAcceptance(parentResult, reference)
     evidencePreserved: true, resultSha256: reference.resultSha256 }, 'Final acceptance requires hash-bound Evidence → Trash → Evidence');
   assert.equal(result.parent.evidence, parentResult.evidence);
   assert.equal(result.parent.resultSha256, hash(await ordinaryFile(join(parentResult.evidence, 'result.json'))));
-  assert.equal(result.parent.planSha256, parentResult.generatedPlan.sha256);
-  return { evidence: reference.evidence, resultSha256: reference.resultSha256, execution: 'completed', acceptance: 'requires-independent-semantic-and-feature-review' };
+  if (result.artifactAdmission) {
+    assert.equal(parentResult.status, 'failed'); assert.equal(parentResult.generatedPlan, undefined);
+    assert.deepEqual(parentResult.session, result.artifactAdmission.sourceSession); assert.equal(parentResult.arm, result.artifactAdmission.arm);
+    assert.equal(hash(await ordinaryFile(parentResult.session.path)), parentResult.session.sha256);
+    assert.equal(result.parent.planSha256, result.artifactAdmission.final.sha256);
+  } else assert.equal(result.parent.planSha256, parentResult.generatedPlan.sha256);
+  return { evidence: reference.evidence, resultSha256: reference.resultSha256, execution: 'completed',
+    ...(result.artifactAdmission ? { scope: 'artifact-only', originalModelStatus: 'failed' } : {}), acceptance: 'requires-independent-semantic-and-feature-review' };
 }

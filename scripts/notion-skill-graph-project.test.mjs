@@ -649,3 +649,97 @@ test('a detached fixture pipe holder cannot keep the runner waiting or manufactu
   }
   await assert.rejects(readFile(join(result.evidence, 'cleanup.json')), error => error.code === 'ENOENT', 'No successful driver cleanup is invented');
 });
+
+async function failedFinalFixture(t, { stopReason = 'stop', laterUser = false, livePid = false } = {}) {
+  const value = await reviewedHelperFixture(t, { status: 'failed' });
+  const artifactEvidence = await evidence();
+  t.diagnostic('Owned failed-final retention: ' + JSON.stringify({ artifactEvidence }));
+  const text = await readFile(value.generatedPlan.path, 'utf8');
+  const generatedPlan = await retainGeneratedPlan({ evidence: artifactEvidence, final: { success: true, text }, prompt, project: value.project });
+  const terminated = spawnSync(process.execPath, ['-e', ''], { encoding: 'utf8' }); assert.equal(terminated.status, 0);
+  const rows = [{ type: 'session', id: 'controlled-failed-final', version: 3, cwd: value.project.root },
+    { type: 'message', id: 'current-user', parentId: null, message: { role: 'user', content: [{ type: 'text', text: 'unchanged natural task' }] } },
+    { type: 'message', id: 'current-final', parentId: 'current-user', message: { role: 'assistant', provider: 'magpie', model: 'group/worker', stopReason, content: [{ type: 'text', text }] } }];
+  if (laterUser) rows.push({ type: 'message', id: 'later-user', parentId: 'current-final', message: { role: 'user', content: [{ type: 'text', text: 'Another task without a final.' }] } });
+  const native = rows.map(row => JSON.stringify(row)).join('\n') + '\n', sessionPath = join(value.evidence, 'native.jsonl');
+  await writeFile(sessionPath, native);
+  const result = { ...value.result, scope: 'project-scoped-candidate-print', arm: 'notion-only', expectedUserMessages: laterUser ? 2 : 1,
+    process: { pid: livePid ? process.pid : terminated.pid, code: null, signal: 'SIGTERM', timedOut: true, startedNs: '1', endedNs: '600000000002' },
+    session: { path: sessionPath, realpath: sessionPath, bytes: Buffer.byteLength(native), sha256: hash(native) },
+    error: { code: 'ERR_ASSERTION', message: 'Native print process failed\n\nnull !== 0\n' },
+    normalConfigurationUnchanged: true, baselineFilesUnchanged: true, projectFilesUnchanged: true, originalSessionUnchanged: true };
+  delete result.generatedPlan;
+  const originalResult = Buffer.from(JSON.stringify(result, null, 2) + '\n'); await writeFile(join(value.evidence, 'result.json'), originalResult);
+  const retention = { version: 1, kind: 'retained-complete-native-final', status: 'retained-not-executed',
+    originalGeneration: { path: join(value.evidence, 'result.json'), bytes: originalResult.length, sha256: hash(originalResult), status: 'failed', process: result.process, error: result.error },
+    session: result.session, final: { entryId: 'current-final', stopReason, bytes: Buffer.byteLength(text), sha256: hash(text) },
+    prompt: { bytes: Buffer.byteLength('unchanged natural task'), sha256: prompt.sha256 }, generatedPlan, originalOutcomeUnchanged: true,
+    execution: 'not_run', sourceCoverage: 'Unknown remains unknown in this controlled fixture.' };
+  const retentionPath = join(artifactEvidence, 'retention.json'), retentionBytes = JSON.stringify(retention, null, 2) + '\n';
+  await writeFile(retentionPath, retentionBytes);
+  const review = { ...value.review, parent: { ...value.review.parent, resultSha256: hash(originalResult) },
+    artifactAdmission: { mode: 'reviewed-complete-failed-final', retention: { path: retentionPath, sha256: hash(retentionBytes) } } };
+  await writeFile(value.reviewPath, JSON.stringify(review, null, 2) + '\n');
+  return { ...value, result, originalResult, review, generatedPlan, artifactEvidence, retention, retentionPath };
+}
+
+test('artifact-only failed final uses the original helper executor and keeps the failed parent immutable through ECE', async t => {
+  const value = await failedFinalFixture(t);
+  const result = await graphProject.exerciseReviewedGeneratedHelper(value.evidence, value.reviewPath);
+  t.diagnostic('Owned generated-helper exercise: ' + JSON.stringify({ evidence: result.evidence, scratch: result.scratch }));
+  assert.equal(result.status, 'completed'); assert.equal(result.artifactAdmission.originalModelStatus, 'failed');
+  assert.equal(result.artifactAdmission.mode, 'reviewed-complete-failed-final');
+  assert.equal(result.productAcceptance.status, 'independent-review-required');
+  const report = JSON.parse(await readFile(join(result.evidence, 'owned-output/artifacts/feature.json'), 'utf8'));
+  assert.deepEqual(report.requests.map(row => [row.method, row.status]), [['POST', 201], ['GET', 200]]);
+  const reference = { evidence: result.evidence, resultSha256: hash(await readFile(join(result.evidence, 'result.json'))) };
+  await assert.rejects(graphProject.verifyGeneratedExerciseAcceptance(value.result, reference), /requires owned exercise cleanup/);
+  await graphProject.inspectGeneratedExercise(result.evidence);
+  if (systemTrashAvailable) {
+    await graphProject.cleanupGeneratedExercise(result.evidence); await graphProject.inspectGeneratedExercise(result.evidence);
+    const accepted = await graphProject.verifyGeneratedExerciseAcceptance(value.result, reference);
+    assert.equal(accepted.originalModelStatus, 'failed'); assert.equal(accepted.scope, 'artifact-only');
+  } else trashNotRun(t, result);
+  assert.deepEqual(await readFile(join(value.evidence, 'result.json')), value.originalResult);
+  assert.equal(JSON.parse(value.originalResult).generatedPlan, undefined);
+});
+
+test('artifact-only source rejects forged retention, missing last stop, changed artifacts and a live original PID before allocation', async t => {
+  const valid = await failedFinalFixture(t);
+  assert.equal((await graphProject.reviewedHelperInputs(valid.evidence, valid.reviewPath)).artifactAdmission.originalModelStatus, 'failed');
+  for (const [options, mutate] of [
+    [{}, async value => { value.review.artifactAdmission.retention.sha256 = '0'.repeat(64); await writeFile(value.reviewPath, JSON.stringify(value.review)); }],
+    [{ stopReason: 'length' }, async () => {}],
+    [{ laterUser: true }, async () => {}],
+    [{ livePid: true }, async () => {}],
+    [{}, async value => { await writeFile(value.generatedPlan.path, 'A replacement final that never came from the native session.'); }],
+    [{}, async value => { await writeFile(join(value.artifactEvidence, 'generated-files', value.entry), 'console.log("changed");\n'); }],
+  ]) {
+    const value = await failedFinalFixture(t, options); await mutate(value); const before = await readdir(value.root);
+    await assert.rejects(graphProject.exerciseReviewedGeneratedHelper(value.evidence, value.reviewPath));
+    assert.deepEqual(await readdir(value.root), before, 'Invalid source creates no execution evidence or scratch');
+    assert.deepEqual(await readFile(join(value.evidence, 'result.json')), value.originalResult);
+  }
+});
+
+test('actual v12 failed result and exact retained six-file final pass read-only artifact admission without executing the helper',
+  { skip: !process.env.PI_ARTIFACT_FAILED_FINAL_RETENTION }, async t => {
+    const retentionPath = process.env.PI_ARTIFACT_FAILED_FINAL_RETENTION, bytes = await readFile(retentionPath), retention = JSON.parse(bytes);
+    const parent = JSON.parse(await readFile(retention.originalGeneration.path, 'utf8'));
+    const reviewRoot = await evidence(), reviewPath = join(reviewRoot, 'read-only-admission-review.json');
+    t.diagnostic('Owned artifact admission review: ' + JSON.stringify({ reviewRoot, executed: false }));
+    const entry = retention.generatedPlan.files.find(file => /\.(?:mjs|cjs|js)$/.test(file.path));
+    const review = { version: 1, purpose: 'generated-helper-exercise', reviewer: 'Controlled read-only admission fixture; not the actual execution approval', approvedForOwnedExercise: true,
+      parent: { evidence: parent.evidence, resultSha256: retention.originalGeneration.sha256, planSha256: retention.generatedPlan.sha256,
+        projectSha256: parent.project.sha256, files: retention.generatedPlan.files.map(({ path, sha256, bytes }) => ({ path, sha256, bytes })) },
+      artifactAdmission: { mode: 'reviewed-complete-failed-final', retention: { path: retentionPath, sha256: hash(bytes) } },
+      entry: { path: entry.path, sha256: entry.sha256 }, command: { executable: await realpath(process.execPath), args: [entry.path] },
+      budget: { timeoutMs: 20000, killGraceMs: 2000 } };
+    await writeFile(reviewPath, JSON.stringify(review, null, 2) + '\n');
+    const input = await graphProject.reviewedHelperInputs(parent.evidence, reviewPath);
+    assert.equal(input.files.length, 6); assert.equal(input.artifactAdmission.originalModelStatus, 'failed');
+    assert.equal(input.entry.bytes, 15275); assert.equal(input.entry.sha256, '68ea879680c9641ae00ea6d226561632179b1e0e82b72ae18fae2aa6a8733eee');
+    assert.equal(input.receipt.sha256, '2dbf297cfe0e0a3b60c4fe8d7ceae155594cf096150b8a8cb0151ec36041bf03');
+    assert.equal(hash(await readFile(retention.originalGeneration.path)), retention.originalGeneration.sha256);
+    assert.equal(hash(await readFile(parent.session.path)), parent.session.sha256);
+  });
