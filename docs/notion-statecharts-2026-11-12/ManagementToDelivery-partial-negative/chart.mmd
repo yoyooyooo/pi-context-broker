@@ -1,0 +1,64 @@
+---
+title: "固定选择与抽象上下文"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: Breaks CompleteBeforeApplication
+    lg1: Path to the CompleteBeforeApplication bug
+  }
+  class lg0 breaks
+  class lg1 bugPath
+  s0: 作者输入尚未确认
+  s1: 已有完整管理回执
+  s2: 目录候选#65292;尚无正文
+  s3: 准备主文与必需依赖#65288;根未取#65292;必需未取#65289;
+  s4: 准备主文与必需依赖#65288;根未取#65292;必需已取#65289;
+  s5: 准备主文与必需依赖#65288;根已取#65292;必需未取#65289;
+  s6: 准备主文与必需依赖#65288;根已取#65292;必需已取#65289;
+  s7: 固定选择已提交#65306;缺少必需规则
+  s8: 固定参考已进入抽象上下文#65306;缺少必需规则
+  s9: 固定选择已提交
+  s10: Notion已更新#65292;原选择保留#65306;缺少必需规则
+  s11: 固定参考已进入抽象上下文
+  s12: Notion已更新#65292;原选择保留
+  s13: 普通续问完成#65292;检查固定版本#65306;缺少必需规则
+  s14: 普通续问完成#65292;检查固定版本
+  s15: 明确准备新版本#65306;缺少必需规则
+  s16: 新选择已提交#65292;待取新参考
+  s17: 明确准备新版本
+  s18: 新主文与新参考已进入抽象上下文
+  s19: 后续复用完成
+  [*] --> s0
+  s0 --> s1: 取得完整管理读回证据
+  s1 --> s2: 启动并发现目录
+  s2 --> s3: 明确使用该技能
+  s3 --> s4: 取得必需依赖
+  s3 --> s5: 取得主文
+  s4 --> s6: 取得主文
+  s5 --> s6: 取得必需依赖
+  s5 --> s7: 提交固定选择
+  s6 --> s9: 提交固定选择
+  s7 --> s8: 读取该选择的固定参考
+  s8 --> s10: 完成Notion内容修改
+  s9 --> s11: 读取该选择的固定参考
+  s10 --> s13: 普通续问
+  s11 --> s12: 完成Notion内容修改
+  s12 --> s14: 普通续问
+  s13 --> s15: 明确请求刷新
+  s14 --> s17: 明确请求刷新
+  s15 --> s16: 提交新选择并处理旧参考
+  s16 --> s18: 取得新选择的参考
+  s17 --> s16: 提交新选择并处理旧参考
+  s18 --> s19: 再次普通续问
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 bugPath
+  class s1 bugPath
+  class s2 bugPath
+  class s3 bugPath
+  class s5 bugPath
+  class s7 breaks
+  class s7 bugPath
+  class s8 breaks
+  class s10 breaks
+  class s13 breaks
+  class s15 breaks

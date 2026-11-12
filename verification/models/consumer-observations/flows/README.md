@@ -1,5 +1,7 @@
 # 管理到模型输入的组合审阅
 
+2026-11-12 的 [中文生成图、SVG、原报告与输入清单](../../../../docs/notion-statecharts-2026-11-12/README.md)已按同一模型和13组配置复跑。当前可读图册维护在 [Notion 验证策略](https://app.notion.com/p/4125636c236e819bba12c71af9a0c0f5)，后续维护由 [AH-1006](https://linear.app/yoyooyooo/issue/AH-1006)承接。该快照只调整展示词汇，不把抽象上下文、受控报告规则升级为真实模型回答证明。
+
 这组模型与原 Availability、ReadRace 共用 statechart/TLC 锁定和运行器，覆盖另一层问题：各模块正确时，它们连接起来是否仍兑现用户可观察的承诺。它们不替代资源管理模型、原生宿主测试或真实 Notion。
 
 ## 运行

@@ -1,0 +1,1038 @@
+{
+  "version": 1,
+  "date": "2026-11-12",
+  "timezone": "Asia/Manila",
+  "source_base": "f2f725703c5d6afe1d89c76148abfc3fbf521085",
+  "model_semantics_changed": false,
+  "scope": "13 existing flow configurations; state projection wording only; no new live/host/mutation run",
+  "statechart_commit": "c742dd61706fbacc1b95f1a20b7b988cf096ce6c",
+  "tlc_sha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+  "renderer": "pele@1.9.0",
+  "raw_summary_sha256": "9047f88902a2a9d34d24d219ac500ae4a60be7e30dd30573f7455c9ced313262",
+  "source_coverage_sha256": "b0e86f597b8ece57809cc6f3fe21acc968f2f1ac70a4f6fc658e322719801b91",
+  "complete": true,
+  "runs": [
+    {
+      "model": "ManagementToDelivery",
+      "variant": "implemented",
+      "states": {
+        "distinct": 15,
+        "initial": 1,
+        "complete": true,
+        "cut": false
+      },
+      "broken": [],
+      "expected": [],
+      "matches": true,
+      "rules": [
+        {
+          "name": "TypeOK",
+          "outcome": "holds"
+        },
+        {
+          "name": "CompleteBeforeApplication",
+          "outcome": "holds"
+        },
+        {
+          "name": "OrdinarySelectionStable",
+          "outcome": "holds"
+        },
+        {
+          "name": "ReferenceBelongsToSelection",
+          "outcome": "holds"
+        },
+        {
+          "name": "FreshFollowupReusesBody",
+          "outcome": "holds"
+        },
+        {
+          "name": "NoDeadlock",
+          "outcome": "holds"
+        }
+      ],
+      "inputs": [
+        {
+          "path": "verification/models/consumer-observations/flows/ManagementToDelivery.tla",
+          "sha256": "4e37c328201d26f3ef9194371a0a0ccf84bffad56ddc13f698d2f21c1ea0ae10"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/ManagementToDelivery.implemented.cfg",
+          "sha256": "f544a6cbd3815f9c2c223a702d4312bc6b91402d1ab3136f9c76e583d9b37ed9"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/ManagementToDelivery.view.mjs",
+          "sha256": "80917d6f3aec39cbcfbfe21026ea0029e64dbf3926ad36535544554892509c3c"
+        }
+      ],
+      "chart": {
+        "nodes": 15,
+        "arrows": 15,
+        "width": 504,
+        "height": 1713
+      },
+      "files": [
+        {
+          "path": "ManagementToDelivery-implemented/chart.mmd",
+          "bytes": 1331,
+          "sha256": "b1ea57ca37bde1292be11c9fa359dae87cfbcbe95d03112ebe70d9f43a8fe6ce"
+        },
+        {
+          "path": "ManagementToDelivery-implemented/report.md",
+          "bytes": 308,
+          "sha256": "e365023aad35c0b37701a93ebbeaacd3a7834777cc32c5cbff0a0c4412fe3b63"
+        },
+        {
+          "path": "ManagementToDelivery-implemented/chart.svg",
+          "bytes": 12230,
+          "sha256": "805c81a9e0e38439aeac0bfa72a473718731a959e75e8f6b8d831f84fdc643c8"
+        }
+      ]
+    },
+    {
+      "model": "ManagementToDelivery",
+      "variant": "partial-negative",
+      "states": {
+        "distinct": 23,
+        "initial": 1,
+        "complete": true,
+        "cut": false
+      },
+      "broken": [
+        "CompleteBeforeApplication"
+      ],
+      "expected": [
+        "CompleteBeforeApplication"
+      ],
+      "matches": true,
+      "rules": [
+        {
+          "name": "TypeOK",
+          "outcome": "holds"
+        },
+        {
+          "name": "CompleteBeforeApplication",
+          "outcome": "broken"
+        },
+        {
+          "name": "OrdinarySelectionStable",
+          "outcome": "holds"
+        },
+        {
+          "name": "ReferenceBelongsToSelection",
+          "outcome": "holds"
+        },
+        {
+          "name": "FreshFollowupReusesBody",
+          "outcome": "holds"
+        },
+        {
+          "name": "NoDeadlock",
+          "outcome": "holds"
+        }
+      ],
+      "inputs": [
+        {
+          "path": "verification/models/consumer-observations/flows/ManagementToDelivery.tla",
+          "sha256": "4e37c328201d26f3ef9194371a0a0ccf84bffad56ddc13f698d2f21c1ea0ae10"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/ManagementToDelivery.partial-negative.cfg",
+          "sha256": "347dd97e1dece9669aacf4b490fb0a190af7e95c872519f134ef22ebfbb022ff"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/ManagementToDelivery.view.mjs",
+          "sha256": "80917d6f3aec39cbcfbfe21026ea0029e64dbf3926ad36535544554892509c3c"
+        }
+      ],
+      "chart": {
+        "nodes": 20,
+        "arrows": 21,
+        "width": 872,
+        "height": 1904
+      },
+      "files": [
+        {
+          "path": "ManagementToDelivery-partial-negative/chart.mmd",
+          "bytes": 2335,
+          "sha256": "942e026a3b72879f0367587d7edac5f80751ddba37b21a14d70bb92f50964707"
+        },
+        {
+          "path": "ManagementToDelivery-partial-negative/report.md",
+          "bytes": 716,
+          "sha256": "3cd5cc2e9832ee29a3ac2efa9782cfebfb1611427875844f0c0358862935ea6b"
+        },
+        {
+          "path": "ManagementToDelivery-partial-negative/chart.svg",
+          "bytes": 18025,
+          "sha256": "4ec83405588790d7d4527989c34193f8540005a3a76e6ad527ae9acb4a9614ee"
+        }
+      ]
+    },
+    {
+      "model": "ManagementToDelivery",
+      "variant": "moving-pin-negative",
+      "states": {
+        "distinct": 15,
+        "initial": 1,
+        "complete": true,
+        "cut": false
+      },
+      "broken": [
+        "OrdinarySelectionStable"
+      ],
+      "expected": [
+        "OrdinarySelectionStable"
+      ],
+      "matches": true,
+      "rules": [
+        {
+          "name": "TypeOK",
+          "outcome": "holds"
+        },
+        {
+          "name": "CompleteBeforeApplication",
+          "outcome": "holds"
+        },
+        {
+          "name": "OrdinarySelectionStable",
+          "outcome": "broken"
+        },
+        {
+          "name": "ReferenceBelongsToSelection",
+          "outcome": "holds"
+        },
+        {
+          "name": "FreshFollowupReusesBody",
+          "outcome": "holds"
+        },
+        {
+          "name": "NoDeadlock",
+          "outcome": "holds"
+        }
+      ],
+      "inputs": [
+        {
+          "path": "verification/models/consumer-observations/flows/ManagementToDelivery.tla",
+          "sha256": "4e37c328201d26f3ef9194371a0a0ccf84bffad56ddc13f698d2f21c1ea0ae10"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/ManagementToDelivery.moving-pin-negative.cfg",
+          "sha256": "e540632f37d768828d221bf4b587b0a219af4d96ce3c482f808fe81aeb11352c"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/ManagementToDelivery.view.mjs",
+          "sha256": "80917d6f3aec39cbcfbfe21026ea0029e64dbf3926ad36535544554892509c3c"
+        }
+      ],
+      "chart": {
+        "nodes": 15,
+        "arrows": 15,
+        "width": 789,
+        "height": 1904
+      },
+      "files": [
+        {
+          "path": "ManagementToDelivery-moving-pin-negative/chart.mmd",
+          "bytes": 1982,
+          "sha256": "c82226a49bd0558ed53f7c72b3b9432f511bab56a06658f09bf22e68eaf79d5c"
+        },
+        {
+          "path": "ManagementToDelivery-moving-pin-negative/report.md",
+          "bytes": 989,
+          "sha256": "47971695a1abc42458046796b611d31afd62e6aac37ecf9eed405fbd3a6de27b"
+        },
+        {
+          "path": "ManagementToDelivery-moving-pin-negative/chart.svg",
+          "bytes": 14239,
+          "sha256": "9a39561f4ba266076e3caf8722af9b80e68962e43d572175685391c125df9094"
+        }
+      ]
+    },
+    {
+      "model": "ManagementToDelivery",
+      "variant": "mixed-reference-negative",
+      "states": {
+        "distinct": 15,
+        "initial": 1,
+        "complete": true,
+        "cut": false
+      },
+      "broken": [
+        "ReferenceBelongsToSelection"
+      ],
+      "expected": [
+        "ReferenceBelongsToSelection"
+      ],
+      "matches": true,
+      "rules": [
+        {
+          "name": "TypeOK",
+          "outcome": "holds"
+        },
+        {
+          "name": "CompleteBeforeApplication",
+          "outcome": "holds"
+        },
+        {
+          "name": "OrdinarySelectionStable",
+          "outcome": "holds"
+        },
+        {
+          "name": "ReferenceBelongsToSelection",
+          "outcome": "broken"
+        },
+        {
+          "name": "FreshFollowupReusesBody",
+          "outcome": "holds"
+        },
+        {
+          "name": "NoDeadlock",
+          "outcome": "holds"
+        }
+      ],
+      "inputs": [
+        {
+          "path": "verification/models/consumer-observations/flows/ManagementToDelivery.tla",
+          "sha256": "4e37c328201d26f3ef9194371a0a0ccf84bffad56ddc13f698d2f21c1ea0ae10"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/ManagementToDelivery.mixed-reference-negative.cfg",
+          "sha256": "afd93046dc948cad319b3cad8b4291636fb62a67a9732a053091064fd67540bd"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/ManagementToDelivery.view.mjs",
+          "sha256": "80917d6f3aec39cbcfbfe21026ea0029e64dbf3926ad36535544554892509c3c"
+        }
+      ],
+      "chart": {
+        "nodes": 15,
+        "arrows": 15,
+        "width": 876,
+        "height": 1868
+      },
+      "files": [
+        {
+          "path": "ManagementToDelivery-mixed-reference-negative/chart.mmd",
+          "bytes": 1860,
+          "sha256": "9a7f73458dffba9dc16777a02cf080b2041317c641810a4826240dd8050b49c9"
+        },
+        {
+          "path": "ManagementToDelivery-mixed-reference-negative/report.md",
+          "bytes": 1118,
+          "sha256": "f75f715a3815ffb8b0a6d84f4ae0258dcadf4a878f022453720a25c61b6e1ed1"
+        },
+        {
+          "path": "ManagementToDelivery-mixed-reference-negative/chart.svg",
+          "bytes": 13704,
+          "sha256": "dff6b8f81297d7e596f56cfca060271212a4e13e6cedae5470c6281130d91588"
+        }
+      ]
+    },
+    {
+      "model": "ManagementToDelivery",
+      "variant": "repeat-body-negative",
+      "states": {
+        "distinct": 15,
+        "initial": 1,
+        "complete": true,
+        "cut": false
+      },
+      "broken": [
+        "FreshFollowupReusesBody"
+      ],
+      "expected": [
+        "FreshFollowupReusesBody"
+      ],
+      "matches": true,
+      "rules": [
+        {
+          "name": "TypeOK",
+          "outcome": "holds"
+        },
+        {
+          "name": "CompleteBeforeApplication",
+          "outcome": "holds"
+        },
+        {
+          "name": "OrdinarySelectionStable",
+          "outcome": "holds"
+        },
+        {
+          "name": "ReferenceBelongsToSelection",
+          "outcome": "holds"
+        },
+        {
+          "name": "FreshFollowupReusesBody",
+          "outcome": "broken"
+        },
+        {
+          "name": "NoDeadlock",
+          "outcome": "holds"
+        }
+      ],
+      "inputs": [
+        {
+          "path": "verification/models/consumer-observations/flows/ManagementToDelivery.tla",
+          "sha256": "4e37c328201d26f3ef9194371a0a0ccf84bffad56ddc13f698d2f21c1ea0ae10"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/ManagementToDelivery.repeat-body-negative.cfg",
+          "sha256": "59426b80f5df1b02b22272c4aa02ad4a9863d1e14cb005805790883a0c58242c"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/ManagementToDelivery.view.mjs",
+          "sha256": "80917d6f3aec39cbcfbfe21026ea0029e64dbf3926ad36535544554892509c3c"
+        }
+      ],
+      "chart": {
+        "nodes": 15,
+        "arrows": 15,
+        "width": 835,
+        "height": 1904
+      },
+      "files": [
+        {
+          "path": "ManagementToDelivery-repeat-body-negative/chart.mmd",
+          "bytes": 2012,
+          "sha256": "6c0b8bb26902d076fafa42c29c9d55d7f241123881aa1fdd5444951bd5795dce"
+        },
+        {
+          "path": "ManagementToDelivery-repeat-body-negative/report.md",
+          "bytes": 995,
+          "sha256": "754006fd504e9b8e852746172574ae75ef535556450000bd991605216e66d957"
+        },
+        {
+          "path": "ManagementToDelivery-repeat-body-negative/chart.svg",
+          "bytes": 14269,
+          "sha256": "fda67972fbedd2646f16e5f5c761fc69bb96f46c73214504e1b23b7333220aa7"
+        }
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "variant": "current",
+      "states": {
+        "distinct": 8,
+        "initial": 1,
+        "complete": true,
+        "cut": false
+      },
+      "broken": [
+        "NoFalseZeroWriteReport",
+        "ReadyReportsObservedRetention"
+      ],
+      "expected": [
+        "NoFalseZeroWriteReport",
+        "ReadyReportsObservedRetention"
+      ],
+      "matches": true,
+      "rules": [
+        {
+          "name": "TypeOK",
+          "outcome": "holds"
+        },
+        {
+          "name": "ReadyReportsObservedRetention",
+          "outcome": "broken"
+        },
+        {
+          "name": "NoFalseZeroWriteReport",
+          "outcome": "broken"
+        },
+        {
+          "name": "ReadOnlyHasNoRemoteWrites",
+          "outcome": "holds"
+        },
+        {
+          "name": "UnknownOutcomeIsDisclosed",
+          "outcome": "holds"
+        },
+        {
+          "name": "NoDeadlock",
+          "outcome": "holds"
+        }
+      ],
+      "inputs": [
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.tla",
+          "sha256": "df5f870ea582e5263cd60abfa3d6b8d4c1ee5a77e2c4963a01b9b411acfb1e96"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.current.cfg",
+          "sha256": "1af97030af210b0b9ce9618fd73deb9c6b6cfece118e7a604b36dd5909500405"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.view.mjs",
+          "sha256": "3f168f654cc44c873f6e2f74b2aadfb2c014a1059c69715251d2cb999abd7727"
+        }
+      ],
+      "chart": {
+        "nodes": 8,
+        "arrows": 7,
+        "width": 911,
+        "height": 991
+      },
+      "files": [
+        {
+          "path": "RetentionDisclosure-current/chart.mmd",
+          "bytes": 1297,
+          "sha256": "ef60745e00a32e69d187a754844d76f4daca4a42b9508ed73036d64110c39564"
+        },
+        {
+          "path": "RetentionDisclosure-current/report.md",
+          "bytes": 1116,
+          "sha256": "575c70f25621957e79c7b9a33026558217caf31cad0d9aac9a2691f9619dc602"
+        },
+        {
+          "path": "RetentionDisclosure-current/chart.svg",
+          "bytes": 8889,
+          "sha256": "5f1c4abc87d459134ea2324e0f537a1c58581265de67c72817a3aad4be7e56d3"
+        }
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "variant": "proposal",
+      "states": {
+        "distinct": 8,
+        "initial": 1,
+        "complete": true,
+        "cut": false
+      },
+      "broken": [],
+      "expected": [],
+      "matches": true,
+      "rules": [
+        {
+          "name": "TypeOK",
+          "outcome": "holds"
+        },
+        {
+          "name": "ReadyReportsObservedRetention",
+          "outcome": "holds"
+        },
+        {
+          "name": "NoFalseZeroWriteReport",
+          "outcome": "holds"
+        },
+        {
+          "name": "ReadOnlyHasNoRemoteWrites",
+          "outcome": "holds"
+        },
+        {
+          "name": "UnknownOutcomeIsDisclosed",
+          "outcome": "holds"
+        },
+        {
+          "name": "NoDeadlock",
+          "outcome": "holds"
+        }
+      ],
+      "inputs": [
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.tla",
+          "sha256": "df5f870ea582e5263cd60abfa3d6b8d4c1ee5a77e2c4963a01b9b411acfb1e96"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.proposal.cfg",
+          "sha256": "b35296025efa6dcb5a790c98fd25c9181ff3ee3fd74886d97001aedc40aca68c"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.view.mjs",
+          "sha256": "3f168f654cc44c873f6e2f74b2aadfb2c014a1059c69715251d2cb999abd7727"
+        }
+      ],
+      "chart": {
+        "nodes": 8,
+        "arrows": 7,
+        "width": 480,
+        "height": 791
+      },
+      "files": [
+        {
+          "path": "RetentionDisclosure-proposal/chart.mmd",
+          "bytes": 780,
+          "sha256": "91bbc235187a60c2a5ac770e3d5041d8e6e313a357ba223e500b38727fcfde31"
+        },
+        {
+          "path": "RetentionDisclosure-proposal/report.md",
+          "bytes": 306,
+          "sha256": "b5c45ee05d63d27df50aa2da4eae6286f5a4468add2b13d3869bd4cfa2dd18ab"
+        },
+        {
+          "path": "RetentionDisclosure-proposal/chart.svg",
+          "bytes": 7248,
+          "sha256": "fbab6bf0bc7acd271ac99632b1324d58b2602bf094a763ffbc2490c9e48e70dc"
+        }
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "variant": "claim-negative",
+      "states": {
+        "distinct": 8,
+        "initial": 1,
+        "complete": true,
+        "cut": false
+      },
+      "broken": [
+        "NoFalseZeroWriteReport"
+      ],
+      "expected": [
+        "NoFalseZeroWriteReport"
+      ],
+      "matches": true,
+      "rules": [
+        {
+          "name": "TypeOK",
+          "outcome": "holds"
+        },
+        {
+          "name": "ReadyReportsObservedRetention",
+          "outcome": "holds"
+        },
+        {
+          "name": "NoFalseZeroWriteReport",
+          "outcome": "broken"
+        },
+        {
+          "name": "ReadOnlyHasNoRemoteWrites",
+          "outcome": "holds"
+        },
+        {
+          "name": "UnknownOutcomeIsDisclosed",
+          "outcome": "holds"
+        },
+        {
+          "name": "NoDeadlock",
+          "outcome": "holds"
+        }
+      ],
+      "inputs": [
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.tla",
+          "sha256": "df5f870ea582e5263cd60abfa3d6b8d4c1ee5a77e2c4963a01b9b411acfb1e96"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.claim-negative.cfg",
+          "sha256": "6ce8949fa4f39e9c000feffdea2fe15f89be44a14c11ae7d355477128cfce8b7"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.view.mjs",
+          "sha256": "3f168f654cc44c873f6e2f74b2aadfb2c014a1059c69715251d2cb999abd7727"
+        }
+      ],
+      "chart": {
+        "nodes": 8,
+        "arrows": 7,
+        "width": 787,
+        "height": 949
+      },
+      "files": [
+        {
+          "path": "RetentionDisclosure-claim-negative/chart.mmd",
+          "bytes": 1175,
+          "sha256": "ffb374369607b95276b1d642fdfbca01f442f06a00267ecf1da4f940392e2951"
+        },
+        {
+          "path": "RetentionDisclosure-claim-negative/report.md",
+          "bytes": 747,
+          "sha256": "dadd7138b787f87aa47618bab893f6ac257bc67777a66c5d209baadf7b12f19c"
+        },
+        {
+          "path": "RetentionDisclosure-claim-negative/chart.svg",
+          "bytes": 8625,
+          "sha256": "19c4de5129b2062fe14ab55251644fb3419507214c933ec087d9f3e684143c1d"
+        }
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "variant": "implemented",
+      "states": {
+        "distinct": 8,
+        "initial": 1,
+        "complete": true,
+        "cut": false
+      },
+      "broken": [],
+      "expected": [],
+      "matches": true,
+      "rules": [
+        {
+          "name": "TypeOK",
+          "outcome": "holds"
+        },
+        {
+          "name": "ReadyReportsObservedRetention",
+          "outcome": "holds"
+        },
+        {
+          "name": "NoFalseZeroWriteReport",
+          "outcome": "holds"
+        },
+        {
+          "name": "ReadOnlyHasNoRemoteWrites",
+          "outcome": "holds"
+        },
+        {
+          "name": "UnknownOutcomeIsDisclosed",
+          "outcome": "holds"
+        },
+        {
+          "name": "NoDeadlock",
+          "outcome": "holds"
+        }
+      ],
+      "inputs": [
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.tla",
+          "sha256": "df5f870ea582e5263cd60abfa3d6b8d4c1ee5a77e2c4963a01b9b411acfb1e96"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.implemented.cfg",
+          "sha256": "b35296025efa6dcb5a790c98fd25c9181ff3ee3fd74886d97001aedc40aca68c"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.view.mjs",
+          "sha256": "3f168f654cc44c873f6e2f74b2aadfb2c014a1059c69715251d2cb999abd7727"
+        }
+      ],
+      "chart": {
+        "nodes": 8,
+        "arrows": 7,
+        "width": 480,
+        "height": 791
+      },
+      "files": [
+        {
+          "path": "RetentionDisclosure-implemented/chart.mmd",
+          "bytes": 780,
+          "sha256": "91bbc235187a60c2a5ac770e3d5041d8e6e313a357ba223e500b38727fcfde31"
+        },
+        {
+          "path": "RetentionDisclosure-implemented/report.md",
+          "bytes": 306,
+          "sha256": "b5c45ee05d63d27df50aa2da4eae6286f5a4468add2b13d3869bd4cfa2dd18ab"
+        },
+        {
+          "path": "RetentionDisclosure-implemented/chart.svg",
+          "bytes": 7248,
+          "sha256": "fbab6bf0bc7acd271ac99632b1324d58b2602bf094a763ffbc2490c9e48e70dc"
+        }
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "variant": "read-only",
+      "states": {
+        "distinct": 7,
+        "initial": 1,
+        "complete": true,
+        "cut": false
+      },
+      "broken": [],
+      "expected": [],
+      "matches": true,
+      "rules": [
+        {
+          "name": "TypeOK",
+          "outcome": "holds"
+        },
+        {
+          "name": "ReadyReportsObservedRetention",
+          "outcome": "holds"
+        },
+        {
+          "name": "NoFalseZeroWriteReport",
+          "outcome": "holds"
+        },
+        {
+          "name": "ReadOnlyHasNoRemoteWrites",
+          "outcome": "holds"
+        },
+        {
+          "name": "UnknownOutcomeIsDisclosed",
+          "outcome": "holds"
+        },
+        {
+          "name": "NoDeadlock",
+          "outcome": "holds"
+        }
+      ],
+      "inputs": [
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.tla",
+          "sha256": "df5f870ea582e5263cd60abfa3d6b8d4c1ee5a77e2c4963a01b9b411acfb1e96"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.read-only.cfg",
+          "sha256": "26104f34790d9a303f5b10f5350c1b2b5913bad10c04890c7f1f96f9898b0a4e"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.view.mjs",
+          "sha256": "3f168f654cc44c873f6e2f74b2aadfb2c014a1059c69715251d2cb999abd7727"
+        }
+      ],
+      "chart": {
+        "nodes": 6,
+        "arrows": 6,
+        "width": 480,
+        "height": 660
+      },
+      "files": [
+        {
+          "path": "RetentionDisclosure-read-only/chart.mmd",
+          "bytes": 630,
+          "sha256": "3655e8cc807d31f829732ae03a3ade3a5490119352fa10d18c6f7d39c64f2503"
+        },
+        {
+          "path": "RetentionDisclosure-read-only/report.md",
+          "bytes": 306,
+          "sha256": "bfbf9d3faf3832d7e8d1d0f5bf9348226b0c947061f3f6ac1a55cd7d0df550e7"
+        },
+        {
+          "path": "RetentionDisclosure-read-only/chart.svg",
+          "bytes": 6316,
+          "sha256": "fd96b4cc103539df6b4fda897d237bfa9b3336e05f77c3437bba24c8ea3ceec8"
+        }
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "variant": "unknown",
+      "states": {
+        "distinct": 8,
+        "initial": 1,
+        "complete": true,
+        "cut": false
+      },
+      "broken": [],
+      "expected": [],
+      "matches": true,
+      "rules": [
+        {
+          "name": "TypeOK",
+          "outcome": "holds"
+        },
+        {
+          "name": "ReadyReportsObservedRetention",
+          "outcome": "holds"
+        },
+        {
+          "name": "NoFalseZeroWriteReport",
+          "outcome": "holds"
+        },
+        {
+          "name": "ReadOnlyHasNoRemoteWrites",
+          "outcome": "holds"
+        },
+        {
+          "name": "UnknownOutcomeIsDisclosed",
+          "outcome": "holds"
+        },
+        {
+          "name": "NoDeadlock",
+          "outcome": "holds"
+        }
+      ],
+      "inputs": [
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.tla",
+          "sha256": "df5f870ea582e5263cd60abfa3d6b8d4c1ee5a77e2c4963a01b9b411acfb1e96"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.unknown.cfg",
+          "sha256": "733c46d52221e1b61637d5902a2be8db1bbb25a835b0e2db328c9b79c3e042e1"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.view.mjs",
+          "sha256": "3f168f654cc44c873f6e2f74b2aadfb2c014a1059c69715251d2cb999abd7727"
+        }
+      ],
+      "chart": {
+        "nodes": 8,
+        "arrows": 7,
+        "width": 480,
+        "height": 812
+      },
+      "files": [
+        {
+          "path": "RetentionDisclosure-unknown/chart.mmd",
+          "bytes": 796,
+          "sha256": "ed7528404c947615c40867a3d2d3fa1d5a3e4bab19c84bdb13f3a3a0da01dcaf"
+        },
+        {
+          "path": "RetentionDisclosure-unknown/report.md",
+          "bytes": 306,
+          "sha256": "b5c45ee05d63d27df50aa2da4eae6286f5a4468add2b13d3869bd4cfa2dd18ab"
+        },
+        {
+          "path": "RetentionDisclosure-unknown/chart.svg",
+          "bytes": 7302,
+          "sha256": "3b3a3a7c252576c49fdb277f2e8f49063ac8eeaf11ff1562cc3352fb7de78ecc"
+        }
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "variant": "read-only-negative",
+      "states": {
+        "distinct": 8,
+        "initial": 1,
+        "complete": true,
+        "cut": false
+      },
+      "broken": [
+        "ReadOnlyHasNoRemoteWrites"
+      ],
+      "expected": [
+        "ReadOnlyHasNoRemoteWrites"
+      ],
+      "matches": true,
+      "rules": [
+        {
+          "name": "TypeOK",
+          "outcome": "holds"
+        },
+        {
+          "name": "ReadyReportsObservedRetention",
+          "outcome": "holds"
+        },
+        {
+          "name": "NoFalseZeroWriteReport",
+          "outcome": "holds"
+        },
+        {
+          "name": "ReadOnlyHasNoRemoteWrites",
+          "outcome": "broken"
+        },
+        {
+          "name": "UnknownOutcomeIsDisclosed",
+          "outcome": "holds"
+        },
+        {
+          "name": "NoDeadlock",
+          "outcome": "holds"
+        }
+      ],
+      "inputs": [
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.tla",
+          "sha256": "df5f870ea582e5263cd60abfa3d6b8d4c1ee5a77e2c4963a01b9b411acfb1e96"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.read-only-negative.cfg",
+          "sha256": "7d8a5a617af0de6a92cffac1aa08eae0def1e23dfad8afd337f492d085a30d86"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.view.mjs",
+          "sha256": "3f168f654cc44c873f6e2f74b2aadfb2c014a1059c69715251d2cb999abd7727"
+        }
+      ],
+      "chart": {
+        "nodes": 8,
+        "arrows": 7,
+        "width": 874,
+        "height": 928
+      },
+      "files": [
+        {
+          "path": "RetentionDisclosure-read-only-negative/chart.mmd",
+          "bytes": 1154,
+          "sha256": "2f5eb9ed3b5dc201e9968a47186d95a9945fec3ded29e771b6bbb5d4b110fe6e"
+        },
+        {
+          "path": "RetentionDisclosure-read-only-negative/report.md",
+          "bytes": 531,
+          "sha256": "b13ce337422251a8a47ddcdf77f36ab265047787764a0698131ada534842efb3"
+        },
+        {
+          "path": "RetentionDisclosure-read-only-negative/chart.svg",
+          "bytes": 8730,
+          "sha256": "27d23eb07412626a760ee2a3adad2ca4a9e90a80b2df29ccf43e863e38dc836b"
+        }
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "variant": "unknown-negative",
+      "states": {
+        "distinct": 8,
+        "initial": 1,
+        "complete": true,
+        "cut": false
+      },
+      "broken": [
+        "UnknownOutcomeIsDisclosed"
+      ],
+      "expected": [
+        "UnknownOutcomeIsDisclosed"
+      ],
+      "matches": true,
+      "rules": [
+        {
+          "name": "TypeOK",
+          "outcome": "holds"
+        },
+        {
+          "name": "ReadyReportsObservedRetention",
+          "outcome": "holds"
+        },
+        {
+          "name": "NoFalseZeroWriteReport",
+          "outcome": "holds"
+        },
+        {
+          "name": "ReadOnlyHasNoRemoteWrites",
+          "outcome": "holds"
+        },
+        {
+          "name": "UnknownOutcomeIsDisclosed",
+          "outcome": "broken"
+        },
+        {
+          "name": "NoDeadlock",
+          "outcome": "holds"
+        }
+      ],
+      "inputs": [
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.tla",
+          "sha256": "df5f870ea582e5263cd60abfa3d6b8d4c1ee5a77e2c4963a01b9b411acfb1e96"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.unknown-negative.cfg",
+          "sha256": "b6c9ac69b15fec5718d70ce10d5599c83ee6129b7ca9fa5be98b7e6b189ed6df"
+        },
+        {
+          "path": "verification/models/consumer-observations/flows/RetentionDisclosure.view.mjs",
+          "sha256": "3f168f654cc44c873f6e2f74b2aadfb2c014a1059c69715251d2cb999abd7727"
+        }
+      ],
+      "chart": {
+        "nodes": 7,
+        "arrows": 7,
+        "width": 1143,
+        "height": 910
+      },
+      "files": [
+        {
+          "path": "RetentionDisclosure-unknown-negative/chart.mmd",
+          "bytes": 1223,
+          "sha256": "209cdeb13ffa4d1d47ac1682575cbeedf57d8d9306f4f41b43e743ceb81c4f80"
+        },
+        {
+          "path": "RetentionDisclosure-unknown-negative/report.md",
+          "bytes": 612,
+          "sha256": "a5abf073b92c28584a1bc2107d9b5b47d4abfd853ceb7540c3ea170d883b6ff4"
+        },
+        {
+          "path": "RetentionDisclosure-unknown-negative/chart.svg",
+          "bytes": 8856,
+          "sha256": "89a8b340fd5f178fcdbe9cb3abe08fafe6f9c67eff4ed7016b2edf890f7ad76e"
+        }
+      ]
+    }
+  ]
+}
