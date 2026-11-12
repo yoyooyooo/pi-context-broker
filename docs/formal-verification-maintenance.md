@@ -78,4 +78,4 @@ console.log(JSON.stringify({ mermaid_sha256: sha(mmd), svg_sha256: sha(svg),
 RENDER
 ```
 
-展示前检查 SVG 的布局与文本，确认它与原 Mermaid 同源；把上述 hash、对应 summary/input hashes 和配置身份记入图册 manifest。图面文字不能误称实际 wire、权限或任意模型的最终回答。TLA tuple 在 view 中是从 1 开始的对象（例如 `v.selected[1]`），不能用数组字符串转换推断 pin 身份。复杂生命周期可在 view 中聚合，仍须保留最短坏路径和退出；图面修订后复跑受影响模型组的全部配置。
+展示前检查 SVG 的布局与文本，确认它与原 Mermaid 同源；把上述 hash、对应 summary/input hashes 和配置身份记入图册 manifest。图面文字不能误称实际 wire、权限或任意模型的最终回答。CTX06 的 DeliveryBoundary 保持原有阶段区分：logical-only 的 2xx 或进程内 mock 不是最终传输证明，不为此新增 TLA。TLA tuple 在 view 中是从 1 开始的对象（例如 `v.selected[1]`），不能用数组字符串转换推断 pin 身份。复杂生命周期可在 view 中聚合，仍须保留最短坏路径和退出；图面修订后复跑受影响模型组的全部配置。

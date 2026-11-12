@@ -48,6 +48,7 @@ import {
 } from "./discovery-records";
 import { discoverSourceCatalog, loadSourceSkill, normalizeSources, formatSourceFailures, hasEnabledNotionSource } from "./sources";
 import { diagnoseNotionSource, sourceFailureMessage, SourceError, ReferenceMiss, prepareNotionSkills, prefetchNotionSkills, loadNotionResource, readNotionResources, readFixedNotionResource, resolveNotionReference } from "./notion-source";
+import { createFinalRequestLedger, formatFinalRequestDiagnostic } from "./final-request";
 import { installHostSkills } from "./host-skills";
 import { resolveViewDiscovery, createViewCommands, notionDirectorySelections } from "./view-discovery";
 import { createSourceRuntime } from "./source-runtime";
@@ -1045,8 +1046,14 @@ function buildInjectedPayloadFromInjections(injections: ContextInjection[], conf
   const records = injections.map((injection, index) => {
     const segment = segments[index]!, start = segment.indexOf("<body>\n");
     const proof = start < 0 ? undefined : sourceDeliveryReceipt(injection.record, content, "xml", offset + start + "<body>\n".length);
+    const resourcesStart = segment.indexOf("<resources>"), resourcesEnd = segment.indexOf("</resources>");
+    const resources = proof && resourcesStart >= 0 && resourcesEnd > resourcesStart && resourcesEnd < start
+      ? segment.slice(resourcesStart, resourcesEnd + "</resources>".length) : undefined;
+    const resourcesDelivery = resources === undefined ? undefined : { start: offset + resourcesStart,
+      end: offset + resourcesEnd + "</resources>".length, sha256: createHash("sha256").update(resources).digest("hex"), bytes: Buffer.byteLength(resources) };
     offset += segment.length + 1;
     return { ...recordDetail(injection, config), ...proof,
+      ...(resourcesDelivery ? { resourcesDelivery } : {}),
       ...(proof && injection.record.preparationDirectory ? { directory: injection.record.preparationDirectory } : {}) };
   });
   return {
@@ -1422,7 +1429,7 @@ async function dispatchContextBrokerCommand(args: string, ctx: ExtensionContext,
   const dollarRegistry = await getDollarRegistry(ctx.cwd);
   const routers = dollarRegistry.filter((record) => recordKind(record) === "router").length;
   ctx.ui?.notify?.(
-    `context-broker status: ${registry.length} configured skills, ${dollarRegistry.length} $ records, ${routers} routers\ncommands: doctor, refresh, roots, catalogs, find <query>, explain <name>`,
+    `context-broker status: ${registry.length} configured skills, ${dollarRegistry.length} $ records, ${routers} routers\ncommands: doctor, refresh, roots, catalogs, find <query>, explain <name>, request`,
     registry.length > 0 || dollarRegistry.length > 0 ? "info" : "warning",
   );
 }
@@ -1642,8 +1649,10 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     sourceFiles: record => mode === "restored" || configuredPathMode(config) === "hash" || configuredPathMode(config) === "basename"
       || !pi.getActiveTools?.().includes("read") ? record.preparationDirectory?.files : host.selectedModelFiles(record, ctx),
   });
+  const finalRequests = createFinalRequestLedger();
   const host = await installHostSkills(pi, {
     config,
+    finalRequests,
     metadataInvalidated: ctx => unseenChanges(catalogCwd(ctx.cwd ?? process.cwd())).size > 0,
     getRecords: (ctx, signal) => ownCatalog(async owned => {
       // Pi supplies persisted View selection at session_start. Do not start a
@@ -1889,6 +1898,10 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       if (await viewCommand(args, ctx)) return;
       if (args.trim() === "sources") {
         ctx.ui?.notify?.(`context-broker sources: ${JSON.stringify({ prefetch: sourceRuntime.diagnostics() })}`, "info");
+        return;
+      }
+      if (args.trim() === "request") {
+        ctx.ui?.notify?.(formatFinalRequestDiagnostic(finalRequests), "info");
         return;
       }
       return dispatchContextBrokerCommand(args, ctx, config, getDollarRegistry, registryPromise, refresh, paths);

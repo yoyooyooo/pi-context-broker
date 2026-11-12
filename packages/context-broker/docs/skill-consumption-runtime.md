@@ -63,7 +63,7 @@ Pi input 阶段同步冻结用户已接受的身份、文本、参数和图片�
 - visible：本次实际 provider 输入中存在完整且精确匹配的正文跨度。
 - active：当前会话启用的 Skill / Router 规则；inspect 不产生 active。
 
-`before_provider_request` 只记录 pending。`after_provider_response` 在同一 invocation / session / generation、信号未取消且实际 2xx 时，确认已准备并完整投递的 active 集。这个事件表示响应 headers 已到达，**不代表响应流完成或模型任务成功**。迟到 headers 不能复活被取消的会话。完整正文通过公开 `sendMessage(triggerTurn:false)` 持久化，不引入下一轮 steering。
+`before_provider_request` 只记录 pending，并且不是最终载荷。`after_provider_response` 在同一 invocation / session / generation、信号未取消且实际 2xx 时，确认已准备并完整投递的 active 集。这个事件表示响应 headers 已到达，**不代表响应流完成、模型任务成功或最终 wire 投递**。普通 `openai-completions` 的 wire 回执还要求 Node Undici 实际发送的实体哈希与该 run 绑定的摘要一致；已知不一致不确认 active。进程内 mock 上下文即使得到 2xx 也只是 logical-only。同一模型端点上无法区分的并发请求记为 unknown，不能合成 wire 成功。迟到 headers 不能复活被取消的会话。完整正文通过公开 `sendMessage(triggerTurn:false)` 持久化，不引入下一轮 steering。
 
 普通后续消息保留 active。压缩移除必要正文时，从精确已选版本恢复；同一来源的固定 roots 合为一次 SDK inspect，既不改绑 current，也不重新计算 use 图。恢复成功后的下一条普通消息不重复准备。去重依据 scope、身份、snapshot、hash、编译器和实际完整消息跨度；Prompt 继续按每次显式任务处理。
 

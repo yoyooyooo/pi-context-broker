@@ -121,6 +121,42 @@ export function providerSystemText(context) {
   return [...content, ...sections.values()].filter(Boolean).join('\n\n');
 }
 
+function catalogCardAttributes(raw) {
+  return Object.fromEntries([...raw.matchAll(/([a-z]+)="([^"]*)"/g)].map(match => [match[1],
+    decodeCatalogText(match[2].replaceAll('&#13;', '\r').replaceAll('&#10;', '\n').replaceAll('&#9;', '\t'))]));
+}
+
+export function catalogCards(text) {
+  const grouped = [...text.matchAll(/<catalog-cards>([\s\S]*?)<\/catalog-cards>/g)].flatMap(block =>
+    [...block[1].matchAll(/<group\b([^>]*)>([\s\S]*?)<\/group>/g)].flatMap(group => {
+      const header = catalogCardAttributes(group[1]);
+      return [...group[2].matchAll(/<card\b([^>]*?)\/>|<card\b([^>]*)>([\s\S]*?)<\/card>/g)].map(card => {
+        const self = card[1] !== undefined, fields = catalogCardAttributes(self ? card[1] : card[2]);
+        return { kind: header.kind, name: fields.name, location: fields.location, ref: fields.ref,
+          source: fields.source ?? header.source, description: self ? undefined : decodeCatalogText(card[3]) };
+      });
+    }));
+  const legacySkills = [...text.matchAll(/<skill>([\s\S]*?)<\/skill>/g)].flatMap(match => {
+    const name = /<name>\s*([^<]*)\s*<\/name>/.exec(match[1])?.[1];
+    const location = /<location>\s*([^<]*)\s*<\/location>/.exec(match[1])?.[1];
+    if (name === undefined || location === undefined) return [];
+    const description = /<description>([\s\S]*?)<\/description>/.exec(match[1]);
+    const source = /<source>\s*([^<]*)\s*<\/source>/.exec(match[1])?.[1];
+    const ref = /<ref>\s*([^<]*)\s*<\/ref>/.exec(match[1])?.[1];
+    return [{ kind: 'skill', name: decodeCatalogText(name), location: decodeCatalogText(location),
+      ...(description ? { description: decodeCatalogText(description[1]) } : {}), ...(source !== undefined ? { source: decodeCatalogText(source) } : {}),
+      ...(ref !== undefined ? { ref: decodeCatalogText(ref) } : {}) }];
+  });
+  const legacyRouters = [...text.matchAll(/<router\b([^>]*)>([\s\S]*?)<\/router>/g)].map(match => {
+    const ref = /\bref="([^"]*)"/.exec(match[1])?.[1];
+    const name = /<name>\s*([^<]*)\s*<\/name>/.exec(match[2])?.[1] ?? '';
+    const description = /<description>([\s\S]*?)<\/description>/.exec(match[2]);
+    return { kind: 'router', name: decodeCatalogText(name), ...(ref !== undefined ? { ref: decodeCatalogText(ref) } : {}),
+      ...(description ? { description: decodeCatalogText(description[1]) } : {}) };
+  });
+  return [...grouped, ...legacySkills, ...legacyRouters];
+}
+
 export function nativeEntries(host, context) {
   const topLevel = host === 'omp' ? (Array.isArray(context.systemPrompt) ? context.systemPrompt.join('\n') : context.systemPrompt ?? '') : '';
   const text = [topLevel, providerSystemText(context)].filter(Boolean).join('\n');
@@ -131,6 +167,8 @@ export function nativeEntries(host, context) {
     return name && location ? [{ name: decodeCatalogText(name.trim()), filePath: decodeCatalogText(location.trim()),
       ...(source ? { source: decodeCatalogText(source.trim()) } : {}), catalog: 'prompt-metadata' }] : [];
   });
+  metadata.push(...catalogCards(text).flatMap(card => card.kind === 'skill' && card.name && card.location
+    ? [{ name: card.name, filePath: card.location, ...(card.source ? { source: card.source } : {}), catalog: 'prompt-metadata' }] : []));
   const native = host === 'omp' ? (context.tools ?? []).flatMap(tool => tool.tool?.session?.skills ?? []).map(item => ({ ...item, catalog: 'host-native' })) : [];
   return [...new Map([...metadata, ...native].map(item => [JSON.stringify([item.name, item.source ?? '', item.filePath]), item])).values()];
 }

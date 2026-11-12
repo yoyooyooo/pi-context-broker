@@ -6,6 +6,7 @@ import { deriveSkillPrepareProjection, validateSkillPrepareProjection } from "..
 import { deduplicateSourceReads, nativeReadReceipt, projectSelectedSourceMessages, sessionSourceBindings, sourceBodyLoaded, sourceDeliveryReceipt, sourceMessageText } from "../src/session-source-snapshot";
 import { verifyContextOnce } from "../../../scripts/context-once-evidence.mjs";
 import { verifyGeneratedDirectoryReuse } from "../../../scripts/skill-preparation-evidence.mjs";
+import { buildInjectedContextMessage } from "../src/index";
 import type { PreparationBinding, PreparationDirectory } from "../src/prepare-protocol";
 import type { AgentMessage, ContentRecord, SkillRecord } from "../src/types";
 
@@ -296,4 +297,26 @@ test("CTX03 normalized file relations retain independent canonical evidence acro
   const first = JSON.parse(sourceMessageText(projected[0]!.content));
   expect(first.records[0].directory.references).toEqual([{ ref: file.ref }]);
   expect(first.records[0].directory.files[0].description).toBe(normalized.references[0]!.description);
+});
+
+test("CTX03 dollar resource inventory reuses the exact full native/use directory without touching author text", () => {
+  const record = { ...alpha, preparationDirectory: directoryFor(alpha) };
+  const injection = () => buildInjectedContextMessage(record, "explicit", {}, { sourceReference: () => alpha.preparationBinding.ref });
+  for (const original of [[injection(), preparation([alpha], "use", true)], [preparation([alpha], "use", true), injection()],
+    [injection(), injection(), preparation([alpha], "use", true)]]) {
+    const stored = JSON.stringify(original), projected = deduplicateSourceReads(original);
+    const generated = projected.filter(message => message.role === "custom");
+    expect(generated.every(message => !sourceMessageText(message.content).includes("<resources>"))).toBe(true);
+    expect(sourceBodyLoaded(projected, alpha)).toBe(true);
+    expect(JSON.stringify(original)).toBe(stored);
+    expect(deduplicateSourceReads(projected)).toBe(projected);
+    const retained = projected.find(message => message.role === "toolResult")!;
+    expect(JSON.parse(sourceMessageText(retained.content)).records[0].directory).toEqual(publicDirectoryFor(alpha));
+  }
+  const same = [injection(), injection()], projected = deduplicateSourceReads(same);
+  expect(projected.filter(message => sourceMessageText(message.content).includes("<resources>"))).toHaveLength(1);
+  const foreign = preparation([beta], "foreign", true);
+  expect(sourceMessageText(deduplicateSourceReads([injection(), foreign])[0]!.content)).toContain("<resources>");
+  const forged = injection(); Reflect.set(forged.details!.records[0].resourcesDelivery, "sha256", "0".repeat(64));
+  expect(sourceMessageText(deduplicateSourceReads([forged, preparation([alpha], "use", true)])[0]!.content)).toContain("<resources>");
 });

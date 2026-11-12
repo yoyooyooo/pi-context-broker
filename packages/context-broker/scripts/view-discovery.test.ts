@@ -179,11 +179,11 @@ test("Pi Notion directory keeps authored names and explicit sources without rena
   const local = '<available_skills><skill><name>native-local</name><description>Local rules</description><location>/local/SKILL.md</location></skill></available_skills>';
   const before = JSON.stringify([first, second]);
   const prompt = viewSystemPrompt(local, [first, second], [], new Set(), [], "/cwd", value => value.ref, "notion_list", true);
-  expect(prompt.match(/<name>Review Rules<\/name>/g)).toHaveLength(2);
-  expect(prompt).toContain("<source>team-one</source>");
-  expect(prompt).toContain("<source>team-two</source>");
-  expect(prompt).toContain("<location>skill://one/SKILL.md</location>");
-  expect(prompt).toContain("<location>skill://two/SKILL.md</location>");
+  expect(prompt.match(/name="Review Rules"/g)).toHaveLength(2);
+  expect(prompt).toContain('source="team-one"');
+  expect(prompt).toContain('source="team-two"');
+  expect(prompt).toContain('location="skill://one/SKILL.md"');
+  expect(prompt).toContain('location="skill://two/SKILL.md"');
   expect(prompt).toContain(local);
   expect(prompt).not.toContain("notion-one-review-rules");
   expect(JSON.stringify([first, second])).toBe(before);
@@ -222,4 +222,34 @@ test("View count states the current visible candidates explicitly, including zer
   expect(empty).toContain('count="0"');expect(empty).not.toContain("<skill>");expect(empty).not.toContain('status="error"');
   const one=viewSystemPrompt("Native rules",[f.selected],[],new Set(),views);
   expect(one).toContain('count="1"');expect(one).toContain("<skill>");
+});
+
+test("grouped catalog cards round-trip names, descriptions, refs, kind, source and order", () => {
+  const decode = (value: string) => value.replaceAll("&#13;", "\r").replaceAll("&#10;", "\n").replaceAll("&#9;", "\t")
+    .replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+  const attrs = (raw: string) => Object.fromEntries([...raw.matchAll(/([a-z]+)="([^"]*)"/g)].map(match => [match[1], decode(match[2] ?? "")]));
+  const skill = (name: string, sourceId: string, description: string): SkillRecord => ({ ...record(name, "/owned/" + name + "/SKILL.md"),
+    source: "notion", sourceId, description, ref: "skill://" + name + "/SKILL.md" });
+  const first = skill("Alpha & \"one\"", "alpha", "Keep\n<full> & \"text\"\r\n");
+  const second = skill("Beta", "alpha", "");
+  const omitted = skill("Gamma", "beta", "Must stay out when reused");
+  const router: SkillRecord = { ...record("Route", "/owned/route/ROUTER.md"), source: "notion", kind: "router", ref: "skill://route/ROUTER.md", description: "Route <cards>." };
+  const prompt = viewSystemPrompt("", [first, second, omitted], [router], new Set(), [], "/cwd", value => "sr:" + value.name, "notion_list", true, value => value === omitted);
+  const block = /<catalog-cards>([\s\S]*?)<\/catalog-cards>/.exec(prompt)?.[1] ?? "";
+  const cards = [...block.matchAll(/<group\b([^>]*)>([\s\S]*?)<\/group>/g)].flatMap(group => {
+    const header = attrs(group[1] ?? "");
+    return [...(group[2] ?? "").matchAll(/<card\b([^>]*?)\/>|<card\b([^>]*)>([\s\S]*?)<\/card>/g)].map(card => {
+      const self = card[1] !== undefined, fields = attrs((self ? card[1] : card[2]) ?? "");
+      return { kind: header.kind, name: fields.name, source: fields.source ?? header.source, location: fields.location, ref: fields.ref,
+        description: self ? undefined : decode(card[3] ?? "") };
+    });
+  });
+  expect(cards.map(card => [card.kind, card.name, card.source, card.location, card.ref, card.description])).toEqual([
+    ["skill", first.name, "alpha", "sr:Alpha & \"one\"", undefined, first.description],
+    ["skill", second.name, "alpha", "sr:Beta", undefined, ""],
+    ["skill", omitted.name, "beta", "sr:Gamma", undefined, undefined],
+    ["router", router.name, undefined, undefined, "sr:Route", router.description],
+  ]);
+  expect(prompt).not.toContain(omitted.description);
+  expect(prompt).not.toContain("Must stay out");
 });

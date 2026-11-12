@@ -286,9 +286,17 @@ function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number
     const spans = replacements.get(index);
     if (!spans?.length || !object(proof.delivery)) return;
     const start = Number(proof.delivery.start), end = Number(proof.delivery.end);
-    if (spans.some(span => span.start < end && span.end > start)) { adjusted.set(proof, null); return; }
+    const bodyRemoved = spans.some(span => span.start < end && span.end > start);
     const shift = spans.filter(span => span.end <= start).reduce((sum, span) => sum + span.text.length - (span.end - span.start), 0);
-    if (shift) adjusted.set(proof, { ...proof, delivery: { ...proof.delivery, start: start + shift, end: end + shift } });
+    const resources = object(proof.resourcesDelivery) ? proof.resourcesDelivery : undefined;
+    const removed = resources && spans.some(span => span.start === resources.start && span.end === resources.end && !span.text);
+    const resourcesShift = resources ? spans.filter(span => span.end <= Number(resources.start))
+      .reduce((sum, span) => sum + span.text.length - (span.end - span.start), 0) : 0;
+    if (shift || bodyRemoved || removed || resourcesShift) adjusted.set(proof, { ...proof,
+      ...(bodyRemoved ? { loaded: false } : shift ? { delivery: { ...proof.delivery, start: start + shift, end: end + shift } } : {}),
+      ...(removed ? { resourcesDelivery: undefined, resourcesOmitted: { sha256: resources.sha256, bytes: resources.bytes } }
+        : resourcesShift ? { resourcesDelivery: { ...resources, start: Number(resources!.start) + resourcesShift, end: Number(resources!.end) + resourcesShift } } : {}),
+    });
   });
   const projected = messages.map((message, index) => {
     const spans = replacements.get(index);
@@ -399,6 +407,8 @@ function generatedDirectoryMatches(value: SkillPreparationModelDirectory, canoni
 
 function nativeDirectory(message: AgentMessage, proof: Record<string, unknown>) {
   if (proof.version !== 3 || !object(proof.rendered) || !isPreparationBinding(proof.binding)) return undefined;
+  if (proof.snapshotId !== proof.binding.snapshot_id || proof.bodySha256 !== proof.binding.body_sha256
+    || proof.contentIdentity !== JSON.stringify([proof.binding.scope, proof.binding.record.id])) return undefined;
   const text = sourceMessageText(message.content), start = readProofEnd(proof, message);
   let suffix = text.slice(start);
   if (object(message.details) && isConsumptionEffects(message.details.effects)) {
@@ -433,6 +443,10 @@ export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[]
     replacements.set(index, spans);
   }
   const directories = new Set<string>();
+  const supportDirectories = new Set<string>();
+  const supportKey = (binding: PreparationBinding, files: readonly { path: string; ref: string }[]) =>
+    JSON.stringify([binding.scope, binding.record.id, binding.snapshot_id, binding.version_id,
+      files.filter(file => file.path !== binding.record.entrypoint).map(({ path, ref }) => ({ path, ref }))]);
   const directoryKey = (binding: PreparationBinding, directory: SkillPreparationModelDirectory) =>
     JSON.stringify([binding.scope, binding.record.id, binding.snapshot_id, binding.version_id, directory]);
   // Match the body's preference for a verified preparation. Native footer text
@@ -448,6 +462,7 @@ export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[]
       if (!record.directory || !object(receipt) || !isPreparationBinding(receipt.binding)
         || !generatedDirectoryMatches(record.directory, receipt.directory)) continue;
       const key = directoryKey(receipt.binding, record.directory);
+      supportDirectories.add(supportKey(receipt.binding, record.directory.files));
       if (!directories.has(key)) { directories.add(key); continue; }
       const start = projection.records[recordIndex]!.delivery.end + 1, encoded = ',"directory":' + JSON.stringify(record.directory);
       if (text.slice(start, start + encoded.length) !== encoded) continue;
@@ -459,8 +474,31 @@ export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[]
     const proof = verifiedReadProof(message), value = proof && nativeDirectory(message, proof);
     if (!value) return;
     const key = directoryKey(value.binding, value.directory);
+    supportDirectories.add(supportKey(value.binding, value.directory.files));
     if (!directories.has(key)) { directories.add(key); return; }
     replace(index, value.start, value.end, "");
+  });
+  injectedSnapshots(messages, (proof, index) => {
+    const span = proof.resourcesDelivery;
+    if (!object(span) || !isPreparationBinding(proof.binding) || !isPreparationDirectory(proof.directory)
+      || proof.snapshotId !== proof.binding.snapshot_id || proof.bodySha256 !== proof.binding.body_sha256
+      || proof.contentIdentity !== JSON.stringify([proof.binding.scope, proof.binding.record.id])
+      || !Number.isSafeInteger(span.start) || !Number.isSafeInteger(span.end)
+      || Number(span.start) < 0 || Number(span.end) <= Number(span.start)
+      || !object(proof.delivery) || Number(span.end) > Number(proof.delivery.start)) return;
+    const text = sourceMessageText(messages[index]?.content), encoded = text.slice(Number(span.start), Number(span.end));
+    if (hash(encoded) !== span.sha256 || Buffer.byteLength(encoded) !== span.bytes
+      || !encoded.startsWith("<resources>") || !encoded.endsWith("</resources>")) return;
+    try {
+      const files: unknown = JSON.parse(unescaped(encoded.slice("<resources>".length, -"</resources>".length)));
+      const binding = proof.binding;
+      const original = proof.directory.files.filter(file => file.path !== binding.record.entrypoint);
+      if (!Array.isArray(files) || files.length !== original.length || files.some((file, n) =>
+        !object(file) || Object.keys(file).length !== 2 || file.path !== original[n]!.path || typeof file.ref !== "string")) return;
+      const key = supportKey(binding, files);
+      if (supportDirectories.has(key)) replace(index, Number(span.start), Number(span.end), "");
+      else supportDirectories.add(key);
+    } catch { /* Author tags or damaged generated receipts never justify omission. */ }
   });
   // Prefer explicit complete instruction deliveries, then retain the first
   // native read when no delivery exists. Repeated prepare results are subject

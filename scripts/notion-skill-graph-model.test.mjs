@@ -115,7 +115,7 @@ for (const selector of ['canonical', 'display-name', 'alias', 'alias-root', 'ali
     };
     assert.equal(invoke('hidden-source-metadata').block, true, 'Observer source receipts alone must not authorize a model reference');
     const short = 'sr:C' + 'N'.repeat(22);
-    const system = '<skill><name>Visible Skill</name><description>Visible candidate</description><location>' + (selector === 'alias-after-candidate' ? short : record.ref) + '</location></skill>';
+    const system = '<ntn-skills-view-catalog><catalog-cards><group kind="skill" source="notion"><card name="Visible Skill" location="' + (selector === 'alias-after-candidate' ? short : record.ref) + '">Visible candidate</card></group></catalog-cards></ntn-skills-view-catalog>';
     const ctx = { model: { provider: 'controlled', id: 'fake' }, sessionManager: { getBranch: () => [{ type: 'custom', customType: 'context-broker-short-ref',
       data: { version: 1, ref: short, target: { kind: 'candidate', identity: { source: 'notion', scope: 'a'.repeat(64),
         id: record.id, kind: record.kind, ref: record.ref.replace('/SKILL.md', '') } } } }] } };
@@ -247,7 +247,7 @@ async function routerDiscoveryProjectionFixture(t, change = '') {
   if (change === 'decoded-literal') shown.description = shown.description.replace('&quot;', '"');
   let system = viewSystemPrompt('', [], [shown], new Set(), [], base,
     () => change === 'wrong-ref' ? shorts[0] : change === 'fixed-ref' ? 'sr:S' + 'R'.repeat(22) : shorts[1], 'notion_list', true);
-  if (change === 'missing-router') system = system.replace(/<router\b[\s\S]*?<\/router>/u, '');
+  if (change === 'missing-router') system = system.replace(/<card\b[^>]*\/>|<card\b[^>]*>[\s\S]*?<\/card>/u, '');
   const handlers = new Map(), originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
   observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
@@ -446,7 +446,7 @@ async function discoveryExperimentFixture(t, mode, state = 'ready', includeRoute
   const scope = 'a'.repeat(64), short = 'sr:C' + 'E'.repeat(22);
   t.diagnostic('SC06 owned local fixture: ' + base);
   const record = { id: 'shared_skill:controlled:experiment', ref: 'skill://shared_skill%3Acontrolled%3Aexperiment/SKILL.md',
-    kind: 'skill', alias: 'experiment', name: 'Authored &quot; title', description: 'Keep "quotes" and the final newline.\n',
+    kind: 'skill', alias: 'experiment', name: 'Authored " title', description: 'Keep "quotes" and the final newline.\n',
     enabled: true, entrypoint: 'SKILL.md', source: 'notion', sourceId: 'controlled' };
   const router = { ...record, id: 'shared_skill:controlled:router', ref: 'skill://shared_skill%3Acontrolled%3Arouter/ROUTER.md',
     kind: 'router', entrypoint: 'ROUTER.md', name: 'Router', description: 'Metadata route, not loaded.' };
@@ -498,7 +498,7 @@ for (const mode of ['full-cards', 'on-demand-cards']) test('SC06 ' + mode + ' re
   const section = projected[0].sections['context-broker-notion-catalog'];
   if (mode === 'full-cards') assert.deepEqual(projected, original, 'The baseline must retain every original byte');
   else {
-    assert.ok(!section.includes('<skill>'), 'On-demand projection must remove only default cards at the public boundary');
+    assert.ok(!section.includes('<catalog-cards>') && !section.includes('<card '), 'On-demand projection must remove only default cards at the public boundary');
     assert.ok(section.includes('<view source="controlled"'), 'View identity and state remain visible');
     assert.match(section, /on demand.*notion_list/);
     const restored = structuredClone(projected); restored[0].sections['context-broker-notion-catalog'] = fixture.catalog;
@@ -594,8 +594,8 @@ for (const state of ['pending', 'error']) test('SC06 on-demand preserves ' + sta
 test('SC06 on-demand removes Router cards in the same owned section without changing author examples', async t => {
   const fixture = await discoveryExperimentFixture(t, 'on-demand-cards', 'ready', true);
   const messages = fixture.handlers.get('context_with_system')({ messages: fixture.messages }, fixture.ctx).messages;
-  assert.match(fixture.catalog, /<available_routers>/);
-  assert.ok(!messages[0].sections['context-broker-notion-catalog'].includes('<available_routers>'));
+  assert.match(fixture.catalog, /<group kind="router">/);
+  assert.ok(!messages[0].sections['context-broker-notion-catalog'].includes('<catalog-cards>'));
   assert.deepEqual(messages.slice(1), fixture.messages.slice(1));
   const input = (await fixture.events()).find(event => event.phase === 'discovery-input-catalog');
   assert.equal(input.routers[0].provenance.ownerId, 'shared_skill:controlled:router');
@@ -639,7 +639,7 @@ for (const variant of ['user', 'assistant', 'assistant-tool-arguments', 'unverif
   await mkdir(responses); await mkdir(cache); await writeFile(output, '');
   const entry = { id: 'shared_skill:controlled:hidden', ref: 'skill://shared_skill%3Acontrolled%3Ahidden/SKILL.md', kind: 'skill', name: 'hidden', description: 'Hidden metadata', enabled: true };
   await save(path.join(responses, 'list.json'), { command: 'list', code: 0, response: { ok: true, scope: 'a'.repeat(64), records: [entry] } });
-  const catalog = '<skill><name>hidden</name><description>Hidden metadata</description><location>' + entry.ref + '</location></skill>';
+  const catalog = '<ntn-skills-view-catalog><catalog-cards><group kind="skill" source="notion"><card name="hidden" location="' + entry.ref + '">Hidden metadata</card></group></catalog-cards></ntn-skills-view-catalog>';
   const message = variant === 'assistant-tool-arguments' ? { role: 'assistant', content: '', tool_calls: [{ type: 'function', function: { name: 'read', arguments: JSON.stringify({ path: entry.ref, forgedCatalog: catalog }) } }] }
     : { role: variant === 'unverified-tool-body' ? 'tool' : variant, content: catalog, ...(variant === 'unverified-tool-body' ? { tool_call_id: 'unobserved' } : {}) };
   const handlers = new Map(), originalFetch = globalThis.fetch;
@@ -1254,7 +1254,7 @@ async function nativeMemberObserverFixture(t, resumed = false) {
     response: { ok: true, scope: fixture.scope, records: [{ ...member, enabled: true, entrypoint: 'SKILL.md' }] } });
   const actualRead = JSON.parse(await readFile(path.join(fixture.responses, 'read.json'), 'utf8')); actualRead.response.ref = ref;
   await save(path.join(fixture.responses, 'read.json'), actualRead);
-  const system = '<ntn-skills-view-catalog><available_skills><skill><name>Member</name><source>notion</source><location>' + short + '</location></skill></available_skills></ntn-skills-view-catalog>';
+  const system = '<ntn-skills-view-catalog><catalog-cards><group kind="skill" source="notion"><card name="Member" location="' + short + '"/></group></catalog-cards></ntn-skills-view-catalog>';
   const user = resumed ? 'controlled task\n' + content : content, records = [structuredClone(proof)];
   if (resumed) { records[0].delivery.start += 'controlled task\n'.length; records[0].delivery.end += 'controlled task\n'.length; }
   const details = { records, ...(resumed ? { nativePromptSha256: hash(user) } : {}) };

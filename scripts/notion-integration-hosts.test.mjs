@@ -74,7 +74,7 @@ function partialViewSample() {
   const response = { ok: true, scope: fixture.scope, view: { id: firstViewId, database_id: database }, count: 1, records: [record],
     coverage: { method: 'explicit_view', exhaustive: false, failed_sources: [{ id: missingRef.split('/')[2], code: 'NOT_FOUND' }] } };
   const directory = '<ntn-skills-view-catalog><view source="notion" id="' + firstViewId + '" database="' + database + '" origin="first" partial="true">Default work</view>'
-    + '<available_skills><skill><name>UI Alpha</name><description>Use the selected workflow.</description><source>notion</source><location>' + ref + '</location></skill></available_skills></ntn-skills-view-catalog>';
+    + '<catalog-cards><group kind="skill" source="notion"><card name="UI Alpha" location="' + ref + '">Use the selected workflow.</card></group></catalog-cards></ntn-skills-view-catalog>';
   const entries = [{ id: 'candidate', type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref,
     target: { kind: 'candidate', identity: { source: 'notion', scope: fixture.scope, id: record.id, kind: record.kind, locator: record.locator, ref: 'skill://' + page } } } },
     { id: 'message', parentId: 'candidate', type: 'message', message: { role: 'user', content: 'Describe available names.' } }];
@@ -131,8 +131,8 @@ test('partial View evidence binds actual system metadata to its source and curre
   canonical.entries = [];
   assert.equal(verifyPartialViewCoverage(canonical).record.advertisedRef, sample.fixture.skillRef);
   const omp = structuredClone(sample); omp.host = 'omp'; omp.entries = [];
-  omp.context.messages[0].content = omp.context.messages[0].content.replace('<name>UI Alpha</name>', '<name>notion-ui-alpha</name>')
-    .replace('<source>notion</source>', '').replace(proof.record.advertisedRef, '/private/owned/SKILL.md').replace('</location>', '</location><ref>' + sample.fixture.skillRef + '</ref>');
+  omp.context.messages[0].content = '<ntn-skills-view-catalog><view source="notion" id="' + firstViewId + '" database="' + database + '" origin="first" partial="true">Default work</view>'
+    + '<available_skills><skill><name>notion-ui-alpha</name><description>Use the selected workflow.</description><location>/private/owned/SKILL.md</location><ref>' + sample.fixture.skillRef + '</ref></skill></available_skills></ntn-skills-view-catalog>';
   assert.equal(verifyPartialViewCoverage(omp).record.canonicalRef, sample.fixture.skillRef);
   omp.context = { systemPrompt: omp.context.messages[0].content, messages: [] };
   assert.equal(verifyPartialViewCoverage(omp).record.canonicalRef, sample.fixture.skillRef, 'OMP retains its top-level system prompt');
@@ -146,9 +146,9 @@ test('partial View evidence rejects empty, complete, all-library, body and forge
     value => { value.context.messages[0].content = value.context.messages[0].content.replace('partial="true"', 'partial="false"'); },
     value => { value.context.messages[0].content = value.context.messages[0].content.replace('source="notion"', 'source="other"'); },
     value => { value.context.messages[0].content = value.context.messages[0].content.replace(firstViewId, '88888888-8888-4888-8888-888888888888'); },
-    value => { value.context.messages[0].content = value.context.messages[0].content.replace(/<skill>[\s\S]*?<\/skill>/u, ''); },
-    value => { value.context.messages[0].content = value.context.messages[0].content.replace('</available_skills>', '<skill><name>Unselected</name><location>' + missingRef + '</location></skill></available_skills>'); },
-    value => { value.context.messages[0].content = value.context.messages[0].content.replace('</ntn-skills-view-catalog>', '<router ref="' + missingRef + '">Unselected</router></ntn-skills-view-catalog>'); },
+    value => { value.context.messages[0].content = value.context.messages[0].content.replace(/<card\b[^>]*>[\s\S]*?<\/card>/u, ''); },
+    value => { value.context.messages[0].content = value.context.messages[0].content.replace('</group>', '<card name="Unselected" location="' + missingRef + '"></card></group>'); },
+    value => { value.context.messages[0].content = value.context.messages[0].content.replace('</catalog-cards>', '<group kind="router"><card name="Unselected" ref="' + missingRef + '">Unselected</card></group></catalog-cards>'); },
     value => { value.context.messages[0].role = 'user'; },
     value => { value.context.messages.push({ role: 'user', content: value.fixture.canary }); },
     value => { value.entries = []; },
@@ -216,7 +216,7 @@ test('default verification keeps the existing two-host contract', () => {
 });
 
 test('provider metadata preserves author names, explicit sources and distinct same-name handles', () => {
-  const entry = (source, location) => '<skill><name>真实 Skill &amp; A</name><description>A &lt; B</description><source>' + source + '</source><location>' + location + '</location></skill>';
+  const entry = (source, location) => '<catalog-cards><group kind="skill" source="' + source + '"><card name="真实 Skill &amp; A" location="' + location + '">A &lt; B</card></group></catalog-cards>';
   const context = { messages: [{ role: 'system', content: entry('notion', 'sr:C' + 'a'.repeat(22)) + entry('notion', 'sr:C' + 'b'.repeat(22)) + entry('other', 'skill://shared_skill%3Aowner/SKILL.md?snapshot=s_fixed&amp;file_id=main') }] };
   assert.deepEqual(nativeEntries('pi', context), [
     { name: '真实 Skill & A', source: 'notion', filePath: 'sr:C' + 'a'.repeat(22), catalog: 'prompt-metadata' },

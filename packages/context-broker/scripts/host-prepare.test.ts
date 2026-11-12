@@ -309,11 +309,11 @@ test("a live disabled read corrects stale availability without extra discovery a
     { role: "system", content: "Native safety prompt" }, { role: "user", content: "Inspect root" },
   ] }, f.ctx));
   expect(await availability()).toBe("available");
-  expect(await catalog()).toContain("<name>root</name>");
+  expect(await catalog()).toContain('name=\\"root\\"');
   const before = metadataRequests;
   await expect(host.activate(f.root, f.ctx)).rejects.toMatchObject({ code: "CONTENT_DISABLED" });
   expect(await availability()).toBe("disabled");
-  expect(await catalog()).not.toContain("<name>root</name>");
+  expect(await catalog()).not.toContain('name=\\"root\\"');
   expect(f.root.enabled).toBe(true, "A failed live read must not turn the saved candidate into a permanently disabled record");
   expect(metadataRequests).toBe(before);
   expect(sourceFailureMessage("CONTENT_DISABLED")).toContain("Enabled=false");
@@ -323,7 +323,7 @@ test("a live disabled read corrects stale availability without extra discovery a
   remoteEnabled = true;
   expect((await host.activate(f.root, f.ctx)).body).toContain("Exact root");
   expect(await availability()).toBe("available");
-  expect(await catalog()).toContain("<name>root</name>");
+  expect(await catalog()).toContain('name=\\"root\\"');
   expect(metadataRequests).toBe(before);
 });
 
@@ -345,9 +345,9 @@ test("Pi projects the ready default catalog after explicit preparation, not the 
   const messages = [head, user], original = JSON.stringify(messages);
   const projected = await f.emit("context_with_system", { messages }, f.ctx);
   const actual = JSON.stringify(projected.length ? projected : { messages });
-  expect(actual).toContain("<name>root</name>");
-  expect(actual).toContain("<name>member</name>");
-  expect(actual).not.toContain("<name>required</name>");
+  expect(actual).toContain('name=\\"root\\"');
+  expect(actual).toContain('name=\\"member\\"');
+  expect(actual).not.toContain("name=\"required\"");
   expect(actual).not.toContain("Notion metadata is pending");
   expect(actual.split("<ntn-skills-view-catalog>")).toHaveLength(2);
   expect(actual).toContain("sr:C");
@@ -378,7 +378,7 @@ test("Pi default metadata survives an exact forced safety prompt without changin
   // Pi applies an exact before_agent_start override after final context hooks.
   const provider = [{ role: "system", content: forced, toolsAdded: head.toolsAdded },
     ...output.messages.filter((message: AgentMessage) => message.role !== "system")];
-  expect(JSON.stringify(provider)).toContain("<name>root</name>");
+  expect(JSON.stringify(provider)).toContain('name=\\"root\\"');
   expect(provider[0]).toEqual({ role: "system", content: forced, toolsAdded: head.toolsAdded });
   expect(provider).toContainEqual(user);
   expect(JSON.stringify(provider)).not.toContain(f.root.body!);
@@ -413,7 +413,7 @@ test("Pi keeps ordinary pending requests immediate and refreshes only its direct
   const original = JSON.stringify([stale, user, patch]);
   const ready = await f.emit("context_with_system", { messages: [stale, user, patch] }, f.ctx);
   const actual = JSON.stringify(ready);
-  expect(actual).toContain("<name>root</name>");
+  expect(actual).toContain('name=\\"root\\"');
   expect(actual).toContain("<name>local-native</name>");
   expect(actual).not.toContain("old-broker-index");
   expect(actual).not.toContain("obsolete state");
@@ -474,13 +474,13 @@ async function dollarCatalogFixture() {
 test("Pi dollar injection reuses an exact canonical card while retaining every source byte and default identity", async () => {
   const f = await dollarCatalogFixture(), input = [f.head, f.injected, f.requiredInjection], before = JSON.stringify(input);
   const initial = await catalogProjection(f, [f.head]), projected = await catalogProjection(f, input);
-  expect(initial.catalog).toContain('<description>Controlled member &lt;metadata&gt; &amp; &quot;原文&quot;.</description>');
-  expect(projected.catalog).not.toContain('<description>Controlled member');
-  expect(projected.catalog).toContain('<description>Controlled root</description>');
-  expect(projected.catalog).toContain('<description>Controlled required</description>');
-  expect(projected.catalog.match(/<skill>/g)).toHaveLength(3);
-  expect([...projected.catalog.matchAll(/<location>(.*?)<\/location>/g)].map(match => match[1]))
-    .toEqual([...initial.catalog.matchAll(/<location>(.*?)<\/location>/g)].map(match => match[1]));
+  expect(initial.catalog).toContain('Controlled member &lt;metadata&gt; &amp; "原文".');
+  expect(projected.catalog).not.toContain('Controlled member &lt;metadata&gt;');
+  expect(projected.catalog).toContain('>Controlled root</card>');
+  expect(projected.catalog).toContain('>Controlled required</card>');
+  expect(projected.catalog.match(/<card\b/g)).toHaveLength(3);
+  const locations = (catalog: string) => [...catalog.matchAll(/\blocation="([^"]*)"/g)].map(match => match[1]);
+  expect(locations(projected.catalog)).toEqual(locations(initial.catalog));
   expect(projected.messages.slice(2)).toEqual([f.injected, f.requiredInjection]);
   expect(JSON.stringify(input)).toBe(before);
   expect(sourceBodyLoaded(input, f.root)).toBe(true);
@@ -496,11 +496,11 @@ test("Pi dollar notion-page injection uses the binding's canonical selector with
     locator: { type: "notion_page", page_id: page, database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" } };
   const selected: SkillRecord = { ...f.root, ...record, preparationBinding: { ...original, record, ref: ref + "?snapshot=" + original.snapshot_id } };
   const injected = buildInjectedContextMessage(selected, selected.name), before = JSON.stringify(injected);
-  expect((await catalogProjection(f, [f.head, injected])).catalog).not.toContain('<description>Controlled member');
+  expect((await catalogProjection(f, [f.head, injected])).catalog).not.toContain('Controlled member &lt;metadata&gt;');
   expect(JSON.stringify(injected)).toBe(before);
   expect(sourceBodyLoaded([injected], selected)).toBe(true);
   const wrongMain = { ...selected, preparationBinding: { ...selected.preparationBinding!, ref: selected.preparationBinding!.ref.replace(page, "00000000-0000-4000-8000-000000000099") } };
-  expect((await catalogProjection(f, [f.head, buildInjectedContextMessage(wrongMain, wrongMain.name)])).catalog).toContain('<description>Controlled member');
+  expect((await catalogProjection(f, [f.head, buildInjectedContextMessage(wrongMain, wrongMain.name)])).catalog).toContain('Controlled member &lt;metadata&gt;');
   expect(f.calls).toEqual(["use"]);
 });
 
@@ -514,7 +514,7 @@ test("Pi dollar catalog reuse follows the actual restored body and rejects missi
   const restored: AgentMessage = { ...user, content: edit.replacement.content };
   const contextEntries = [{ sourceEntry: { ...receipt, id: "dollar-receipt" }, messages: [] }];
   const input = withSessionSourceReceipts([f.head, restored], contextEntries), before = JSON.stringify(input);
-  expect((await catalogProjection(f, input)).catalog).not.toContain('<description>Controlled member');
+  expect((await catalogProjection(f, input)).catalog).not.toContain('Controlled member &lt;metadata&gt;');
   expect(JSON.stringify(input)).toBe(before);
   expect(sourceBodyLoaded(input, f.root)).toBe(true);
   expect(sourceBodyLoaded(input, f.required)).toBe(true);
@@ -525,8 +525,8 @@ test("Pi dollar catalog reuse follows the actual restored body and rejects missi
     [f.head, { ...f.injected, content: sourceMessageText(f.injected.content).slice(1) }],
     withSessionSourceReceipts([f.head, { ...restored, content: "Compacted summary." }], contextEntries),
     withSessionSourceReceipts([f.head, { ...restored, content: sourceMessageText(restored.content).slice(0, -100) }], contextEntries),
-  ]) expect((await catalogProjection(f, messages)).catalog).toContain('<description>Controlled member');
-  expect((await catalogProjection(f, input)).catalog).not.toContain('<description>Controlled member');
+  ]) expect((await catalogProjection(f, messages)).catalog).toContain('Controlled member &lt;metadata&gt;');
+  expect((await catalogProjection(f, input)).catalog).not.toContain('Controlled member &lt;metadata&gt;');
   expect(f.calls).toEqual(["use"]);
   expect(f.resourceReads).toEqual([]);
 });
@@ -559,17 +559,17 @@ test("Pi deferred dollar catalog keeps native session proof across context hooks
   };
   for (const messages of [[restored], [restored, followup]]) {
     const catalog = await project(messages);
-    expect(catalog).not.toContain('<description>Controlled member');
-    expect(catalog).toContain('<description>Controlled root</description>');
-    expect(catalog).toContain('<description>Controlled required</description>');
-    expect(catalog.match(/<skill>/g)).toHaveLength(3);
+    expect(catalog).not.toContain('Controlled member &lt;metadata&gt;');
+    expect(catalog).toContain('>Controlled root</card>');
+    expect(catalog).toContain('>Controlled required</card>');
+    expect(catalog.match(/<card\b/g)).toHaveLength(3);
   }
   for (const messages of [[followup], [{ ...restored, content: "Compacted summary." }],
     [{ ...restored, content: sourceMessageText(restored.content).slice(0, -100) }]])
-    expect(await project(messages)).toContain('<description>Controlled member');
+    expect(await project(messages)).toContain('Controlled member &lt;metadata&gt;');
   expect(JSON.stringify({ entries, restored })).toBe(original);
   f.ctx.sessionManager.buildSessionProjection = () => ({ entries: [], messages: [restored] });
-  expect(await project([restored])).toContain('<description>Controlled member');
+  expect(await project([restored])).toContain('Controlled member &lt;metadata&gt;');
   expect(f.calls).toEqual(["use"]);
   expect(f.resourceReads).toEqual([]);
 });
@@ -593,12 +593,27 @@ test("Pi dollar catalog reuse rejects foreign identities, fixed relations and ch
   for (const mutate of mutations) {
     const changed = structuredClone(f.root); mutate(changed);
     const message = buildInjectedContextMessage(changed, changed.name);
-    expect((await catalogProjection(f, [f.head, message])).catalog).toContain('<description>Controlled member');
+    expect((await catalogProjection(f, [f.head, message])).catalog).toContain('Controlled member &lt;metadata&gt;');
   }
-  expect((await catalogProjection(f, [f.head, f.injected])).catalog).not.toContain('<description>Controlled member');
+  expect((await catalogProjection(f, [f.head, f.injected])).catalog).not.toContain('Controlled member &lt;metadata&gt;');
   expect(f.calls).toEqual(["use"]);
   expect(f.resourceReads).toEqual([]);
 });
+
+function catalogCards(catalog: string) {
+  const decode = (value: string) => value.replaceAll("&#13;", "\r").replaceAll("&#10;", "\n").replaceAll("&#9;", "\t")
+    .replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+  const attrs = (raw: string) => Object.fromEntries([...raw.matchAll(/([a-z]+)="([^"]*)"/g)].map(match => [match[1]!, decode(match[2]!)]));
+  return [...catalog.matchAll(/<group\b([^>]*)>([\s\S]*?)<\/group>/g)].flatMap(group => {
+    const header = attrs(group[1] ?? "");
+    return [...(group[2] ?? "").matchAll(/<card\b([^>]*?)\/>|<card\b([^>]*)>([\s\S]*?)<\/card>/g)].map(card => {
+      const self = card[1] !== undefined;
+      const fields = attrs((self ? card[1] : card[2]) ?? "");
+      return { name: fields.name, source: fields.source ?? header.source, location: fields.location,
+        description: self ? undefined : decode(card[3] ?? "") };
+    });
+  });
+}
 
 test("Pi dollar catalog reuse preserves same-name sources, owners and newly observed descriptions", async () => {
   const f = await fixture(true, false, "pi", scope, true), head: AgentMessage = { role: "system", content: "Native rules" };
@@ -614,18 +629,18 @@ test("Pi dollar catalog reuse preserves same-name sources, owners and newly obse
   await host.prepareMany([f.root], f.ctx);
   const injected = buildInjectedContextMessage(f.root, "root");
   const projected = await catalogProjection(f, [head, injected]);
-  const members = [...projected.catalog.matchAll(/<skill>([\s\S]*?)<\/skill>/g)].map(match => match[1]!).filter(card => card.includes("<name>member</name>"));
+  const members = catalogCards(projected.catalog).filter(card => card.name === "member");
   expect(members).toHaveLength(3);
-  const sameSource = members.filter(card => card.includes("<source>controlled</source>"));
+  const sameSource = members.filter(card => card.source === "controlled");
   expect(sameSource).toHaveLength(2);
-  expect(sameSource.filter(card => card.includes("<description>"))).toHaveLength(1);
-  expect(members.find(card => card.includes("<source>other-source</source>"))).toContain("<description>");
+  expect(sameSource.filter(card => card.description !== undefined)).toHaveLength(1);
+  expect(members.find(card => card.source === "other-source")?.description).toBeDefined();
   const before = sourceMessageText(injected.content);
   f.member.description = "New authoritative member description.";
   await host.refresh(f.ctx);
   const refreshed = await catalogProjection(f, [head, injected]);
-  expect(refreshed.catalog).toContain("<description>New authoritative member description.</description>");
-  expect(refreshed.catalog.match(/<description>/g)).toHaveLength(5);
+  expect(refreshed.catalog).toContain("New authoritative member description.");
+  expect(refreshed.catalog.match(/<\/card>/g)).toHaveLength(5);
   expect(sourceMessageText(injected.content)).toBe(before);
   expect(f.calls).toEqual(["use"]);
   expect(f.resourceReads).toEqual([]);
@@ -641,13 +656,13 @@ test("same current ref in two configured sources retains the unwitnessed source 
   await search.execute("alias-catalog", {}, undefined, undefined, f.ctx);
   const read = await nativeRead(f, f.root.ref!, "alias-inspect");
   const projected = await catalogProjection(f, [head, read]);
-  const cards = [...projected.catalog.matchAll(/<skill>([\s\S]*?)<\/skill>/g)].map(match => match[1]!);
-  const original = cards.find(card => card.includes("<name>member</name>") && card.includes("<source>controlled</source>"));
-  const other = cards.find(card => card.includes("<name>member</name>") && card.includes("<source>other-source</source>"));
+  const cards = catalogCards(projected.catalog);
+  const original = cards.find(card => card.name === "member" && card.source === "controlled");
+  const other = cards.find(card => card.name === "member" && card.source === "other-source");
   expect(original).toBeDefined(); expect(other).toBeDefined();
-  expect(/<location>([^<]+)<\/location>/.exec(original!)![1]).toBe(/<location>([^<]+)<\/location>/.exec(other!)![1]);
-  expect(original).not.toContain("<description>Controlled member</description>");
-  expect(other).toContain("<description>Controlled member</description>");
+  expect(original?.location).toBe(other?.location);
+  expect(original?.description).toBeUndefined();
+  expect(other?.description).toBe("Controlled member");
   expect(projected.messages).toContain(read);
   expect(f.calls).toEqual(["inspect"]);
 });
@@ -662,8 +677,8 @@ test("Pi native inspect reuses only its verified generated footer without changi
   const original = JSON.stringify(read), body = sourceMessageText(read.content);
   const list: AgentMessage = { role: "toolResult", toolName: "notion_list", toolCallId: "inspect-list", content: listed.content, details: listed.details, isError: false };
   const projected = await catalogProjection(f, [head, list, read]);
-  expect(projected.catalog).not.toContain("<description>Controlled member</description>");
-  expect(projected.catalog).toContain("<description>Controlled root</description>");
+  expect(projected.catalog).not.toContain('>Controlled member</card>');
+  expect(projected.catalog).toContain(">Controlled root</card>");
   expect(JSON.parse(projectedToolText(projected.messages, "inspect-list")).records[0].description).toBeUndefined();
   expect(projected.messages).toContain(read);
   expect(JSON.stringify(read)).toBe(original);
@@ -692,9 +707,9 @@ test("Pi native inspect reuses only its verified generated footer without changi
     { ...read, details: { ...details, contextBrokerRead: { ...proof, binding: { ...binding,
       record: { ...record, locator: { ...locator, library_id: "another-library" } } } } } },
   ]) {
-    expect((await catalogProjection(f, [head, candidate])).catalog).toContain("<description>Controlled member</description>");
+    expect((await catalogProjection(f, [head, candidate])).catalog).toContain('>Controlled member</card>');
   }
-  expect((await catalogProjection(f, [head])).catalog).toContain("<description>Controlled member</description>");
+  expect((await catalogProjection(f, [head])).catalog).toContain('>Controlled member</card>');
   expect(f.calls).toEqual(["inspect"]);
   expect(f.resourceReads).toEqual([]);
 });
@@ -715,11 +730,11 @@ test("Pi reuses complete same-request generated card descriptions without changi
   const user: AgentMessage = { role: "user", content: [{ type: "text", text: "Keep authored <skill-directory> tags." }, { type: "image", data: "unchanged-image" }] };
   const input = [head, user, list, use], before = JSON.stringify(input);
   const projected = await catalogProjection(f, input);
-  expect(projected.catalog).toContain("<name>member</name>");
-  expect(projected.catalog).not.toContain("<description>Controlled member</description>");
-  expect(projected.catalog).toContain("<description>Controlled root</description>");
-  expect(projected.catalog).toContain("<description>Controlled required</description>");
-  expect(projected.catalog.match(/<skill>/g)).toHaveLength(3);
+  expect(projected.catalog).toContain('name="member"');
+  expect(projected.catalog).not.toContain('>Controlled member</card>');
+  expect(projected.catalog).toContain(">Controlled root</card>");
+  expect(projected.catalog).toContain(">Controlled required</card>");
+  expect(projected.catalog.match(/<card\b/g)).toHaveLength(3);
   const model = JSON.parse(projectedToolText(projected.messages, "catalog-member"));
   const expected = JSON.parse(sourceMessageText(list.content));
   delete expected.records[0].description;
@@ -732,7 +747,7 @@ test("Pi reuses complete same-request generated card descriptions without changi
   expect(JSON.stringify(input)).toBe(before);
   expect(JSON.stringify(projected.messages[0])).toContain(local);
   const restored = await catalogProjection(f, [head, user, list]);
-  expect(restored.catalog).toContain("<description>Controlled member</description>");
+  expect(restored.catalog).toContain('>Controlled member</card>');
   expect(f.calls).toEqual(["use"]);
   expect(f.resourceReads).toEqual([]);
 });
@@ -758,7 +773,7 @@ test("Pi keeps descriptions for incomplete, foreign, fixed and stale generated c
   ];
   for (const candidate of invalid) {
     const before = JSON.stringify(candidate), projected = await catalogProjection(f, [head, candidate]);
-    expect(projected.catalog).toContain("<description>Controlled member</description>");
+    expect(projected.catalog).toContain('>Controlled member</card>');
     expect(projected.messages).toContain(candidate);
     expect(JSON.stringify(candidate)).toBe(before);
   }
@@ -767,18 +782,18 @@ test("Pi keeps descriptions for incomplete, foreign, fixed and stale generated c
   const foreignUse = await other.tool.execute("foreign", { ref: foreign.root.ref }, undefined, undefined, foreign.ctx);
   f.session.entries.push(...foreign.session.entries);
   expect((await catalogProjection(f, [head, { role: "toolResult", toolName: "notion_use", toolCallId: "foreign",
-    content: foreignUse.content, details: foreignUse.details, isError: false }])).catalog).toContain("<description>Controlled member</description>");
+    content: foreignUse.content, details: foreignUse.details, isError: false }])).catalog).toContain('>Controlled member</card>');
   f.root.preparationDirectory!.candidates[0]!.description = "A different metadata observation";
   const changed = await tool.execute("metadata-changed", { ref: f.root.ref }, undefined, undefined, f.ctx);
   expect((await catalogProjection(f, [head, { role: "toolResult", toolName: "notion_use", toolCallId: "metadata-changed",
-    content: changed.content, details: changed.details, isError: false }])).catalog).toContain("<description>Controlled member</description>");
+    content: changed.content, details: changed.details, isError: false }])).catalog).toContain('>Controlled member</card>');
   f.root.preparationDirectory!.candidates[0]!.description = f.member.description;
   f.root.preparationDirectory!.candidates[0]!.ref = f.member.ref + "?snapshot=s_" + hash("historical-member");
   const fixed = await tool.execute("fixed-candidate", { ref: f.root.ref }, undefined, undefined, f.ctx);
   expect((await catalogProjection(f, [head, { role: "toolResult", toolName: "notion_use", toolCallId: "fixed-candidate",
-    content: fixed.content, details: fixed.details, isError: false }])).catalog).toContain("<description>Controlled member</description>");
+    content: fixed.content, details: fixed.details, isError: false }])).catalog).toContain('>Controlled member</card>');
   f.session.entries = [];
-  expect((await catalogProjection(f, [head, use])).catalog).toContain("<description>Controlled member</description>");
+  expect((await catalogProjection(f, [head, use])).catalog).toContain('>Controlled member</card>');
   expect(f.calls).toEqual(["use", "use", "use"]);
   expect(f.resourceReads).toEqual([]);
 });
@@ -1273,7 +1288,7 @@ test("fresh metadata without a body is not affected by Default Context outside a
     const result = await search.execute("flag-combination",{},undefined,undefined,f.ctx);
     expect(JSON.stringify(result)).toContain(enabled?'"availability":"available"':'"availability":"disabled"');
     const projection = JSON.stringify(await f.emit("context_with_system",{messages:[{role:"system",content:"Keep native policies"},{role:"user",content:"Show metadata only"}]},f.ctx));
-    expect(projection.includes("<name>root</name>")).toBe(enabled);
+    expect(projection.includes('name=\\"root\\"')).toBe(enabled);
     expect(f.calls).toEqual([]);expect(f.resourceReads).toEqual([]);
   }
 });

@@ -29,6 +29,7 @@ import { DEFAULT_RESOURCE_READ_BUDGET, RESOURCE_READ_MAX_CONTEXT_BYTES, type Fix
 import { createConsumerObservations, type ObservationTicket } from "./consumer-observation";
 import { notionCatalogAction, notionCatalogRetryGapMs } from "./catalog-menu";
 import { combineConsumptionEffects, consumptionEffects, errorConsumptionEffects, noConsumptionWrites, type ConsumptionEffects, type ConsumptionPolicy } from "./consumption-effects";
+import { createFinalRequestLedger, type FinalRequestLedger } from "./final-request";
 
 export type HostSkillOptions = {
   config: ConfigFile;
@@ -56,6 +57,8 @@ export type HostSkillOptions = {
   sessionSnapshot?(record: SkillRecord, ctx: ExtensionContext): string | undefined;
   sessionBinding?(record: SkillRecord, ctx: ExtensionContext): PreparationBinding | undefined;
   onMetadata?(records: SkillRecord[]): void;
+  /** Shared with `/context-broker request`. Omitted installs a private ledger. */
+  finalRequests?: FinalRequestLedger;
 };
 export type PreparedReference = { status: "ready"; record: SkillRecord } | { status: "miss" };
 export type HostSkills = {
@@ -183,6 +186,8 @@ async function headlessActivation<T>(start: (signal: AbortSignal) => Promise<T>,
 }
 
 export async function installHostSkills(api: ExtensionAPI, options: HostSkillOptions, adapter: HostCapabilities): Promise<HostSkills> {
+  const ownsFinalRequests = options.finalRequests === undefined;
+  const finalRequests = options.finalRequests ?? createFinalRequestLedger();
   const host = api;
   const piConsumption = adapter.paths.host === "pi";
   const sourceToolsEnabled = !piConsumption || hasEnabledNotionSource(options.config);
@@ -297,12 +302,14 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     generation: number; sessionId: string | undefined; signal: AbortSignal; entry?: ActivePreparation;
     selectedNative?: SkillRecord; projection?: AgentMessage[];
     prepared: boolean; requestPending: boolean; confirmed: boolean; persisted: number;
+    wireBlock?: boolean;
     userEntryId?: string;
     requestProjection?: { count: number; messages: AgentMessage[] };
     confirmedProjection?: { count: number; messages: AgentMessage[] };
     pendingPersistence?: { count: number; nativePromptSha256: string };
     candidates: Map<string, SkillRecord>; graphs: Array<{ graphs: PreparedHostGraph[]; mode: SelectionMode }>;
     contextMessages?: AgentMessage[];
+    finalMessages?: AgentMessage[];
   };
   let piRun: PiRun | undefined;
   const pendingGraphs = new WeakMap<ActivePreparation, Array<{ graphs: PreparedHostGraph[]; mode: SelectionMode }>>();
@@ -1060,6 +1067,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     metadataController.abort();
     lifecycleController.abort();
     gate.cancel(false);
+    if (ownsFinalRequests) finalRequests.close();
+    else finalRequests.retire();
     const entry = gate.active;
     if (entry) gate.release(entry);
     handoff = undefined;
@@ -1176,15 +1185,45 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
   });
   if (deferredPiDiscovery) {
-    host.on("before_provider_request", (_event, ctx) => {
+    host.on("before_provider_request", (event, ctx) => {
       const run = piRun;
       if (!run) return;
-      try { assertPiRun(run, ctx); assertContextAccess(run.contextMessages ?? []); run.requestPending = true; run.confirmedProjection = undefined; }
+      try {
+        assertPiRun(run, ctx);
+        assertContextAccess(run.contextMessages ?? []);
+        const decision = finalRequests.inspect({
+          messages: run.finalMessages ?? run.contextMessages ?? [],
+          payload: event.payload,
+          api: ctx.model?.api,
+          baseUrl: ctx.model?.baseUrl,
+          sessionId: run.sessionId,
+          generation: run.generation,
+          signal: run.signal,
+        });
+        // A known serialized mismatch must not become active, selected, or persisted.
+        // Abort is the host's cancellation; the ledger still records a later send as dispatched.
+        if (decision.block) {
+          run.wireBlock = true;
+          run.requestPending = false;
+          run.confirmedProjection = undefined;
+          if (piRun === run && generation === run.generation) ctx.abort?.();
+          return;
+        }
+        run.wireBlock = false;
+        run.requestPending = true;
+        run.confirmedProjection = undefined;
+      }
       catch (error) { if (piRun === run && generation === run.generation) ctx.abort?.(); throw error; }
     });
     host.on("after_provider_response", (event, ctx) => {
       const run = piRun;
+      const provider = run ? finalRequests.observeProvider(run.signal, event.status, run.generation) : { blocked: false };
       if (!run?.requestPending || event.status < 200 || event.status >= 300) return;
+      if (run.wireBlock || provider.blocked) {
+        run.requestPending = false;
+        if (!run.signal.aborted && piRun === run && generation === run.generation) ctx.abort?.();
+        return;
+      }
       try {
         assertPiRun(run, ctx);
         if (!run.confirmed && run.entry) for (const staged of pendingGraphs.get(run.entry) ?? []) options.persistGraphs?.(staged.graphs, ctx, staged.mode);
@@ -1425,9 +1464,11 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     });
     // Pi may honor another extension's exact system prompt after this hook.
     // Keep directory data outside that prompt, without persisting another body.
-    return { messages: cleaned.flatMap((message, index): AgentMessage[] => index === 0 && catalog
+    const finalMessages = cleaned.flatMap((message, index): AgentMessage[] => index === 0 && catalog
       ? [message, { role: "custom", customType: section, content: catalog, display: false, timestamp: 0 }]
-      : [message]) };
+      : [message]);
+    if (piRun) piRun.finalMessages = finalMessages;
+    return { messages: finalMessages };
   });
   async function exactRecord(reference: ExactNativeReference, ctx: ExtensionContext, signal: AbortSignal, short?: HostShortRefResolution, resolved?: SkillRecord): Promise<SkillRecord> {
     const selector = reference.selector;

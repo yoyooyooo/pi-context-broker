@@ -173,9 +173,11 @@ function catalogScaleFixture(count = 101) {
   const section = 'Independent instructions stay unchanged.';
   const nativeSystem = section + '<available_skills><skill><name>' + native.name + '</name><description>' + native.description
     + '</description><location>' + native.path + '</location></skill></available_skills>';
-  const catalog = '<ntn-skills-view-catalog><view source="sdk-fixture" id="view-1" partial="false">Default</view>'
-    + records.map(record => '<skill><name>' + xml(record.name) + '</name><description>' + xml(record.description)
-      + '</description><source>sdk-fixture</source><location>' + record.ref + '</location></skill>').join('') + '</ntn-skills-view-catalog>';
+  const attr = value => xml(value).replaceAll('\r', '&#13;').replaceAll('\n', '&#10;').replaceAll('\t', '&#9;');
+  const body = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  const catalog = '<ntn-skills-view-catalog><view source="sdk-fixture" id="view-1" partial="false">Default</view><catalog-cards><group kind="skill" source="sdk-fixture">'
+    + records.map(record => '<card name="' + attr(record.name) + '" location="' + record.ref + '">' + body(record.description) + '</card>').join('')
+    + '</group></catalog-cards></ntn-skills-view-catalog>';
   const system = text => ({ role: 'system', content: nativeSystem + text, toolsAdded: ['read', 'notion_list', 'notion_use'].map(name => ({ name, parameters: { type: 'object' } })) });
   const captures = [{ requestId: '42:1', context: { messages: [system('<ntn-skills-discovery status="pending">Pending</ntn-skills-discovery>')] } }];
   const frames = [], messages = [], entries = records.map((record, index) => ({ type: 'custom', customType: 'context-broker-short-ref',
@@ -1014,9 +1016,9 @@ function defaultViewFixture() {
   const records = ['a', 'b'].map(name => ({ id: 'owner:' + name, kind: 'skill', name, description: 'Metadata', ref: 'skill://owner-' + name + '/SKILL.md' }));
   const fixture = { scope: 'fixture-scope', default_view: { id: 'view-1', records } };
   const discovery = { records: records.map((record, index) => ({ ...record, description: 'Metadata', source: 'sdk-fixture', in_default_view: true, ref: 'sr:C' + String(index).repeat(22) })) };
-  const catalog = '<ntn-skills-view-catalog><view source="sdk-fixture" id="view-1" partial="false">Default</view>'
-    + discovery.records.map(record => '<skill><name>' + record.name + '</name><description>Metadata</description><source>sdk-fixture</source><location>' + record.ref + '</location></skill>').join('')
-    + '</ntn-skills-view-catalog>';
+  const catalog = '<ntn-skills-view-catalog><view source="sdk-fixture" id="view-1" partial="false">Default</view><catalog-cards><group kind="skill" source="sdk-fixture">'
+    + discovery.records.map(record => '<card name="' + record.name + '" location="' + record.ref + '">Metadata</card>').join('')
+    + '</group></catalog-cards></ntn-skills-view-catalog>';
   const captures = [{ requestId: '1', context: { messages: [{ role: 'system', content: '<ntn-skills-discovery status="pending">Notion metadata is pending; this does not mean the directory is empty.</ntn-skills-discovery>' }] } },
     { requestId: '2', context: { messages: [{ role: 'system', content: catalog }] } }];
   const events = [{ kind: 'sdk_catalog', value: { scope: fixture.scope, view: { id: 'view-1' }, view_selection: 'first', count: 2, records,
@@ -1058,7 +1060,7 @@ test('Default View uses independent complete metadata when the same-provider dis
     value => { value.events.find(row => row.kind === 'sdk_catalog' && row.value.view).value.records[0].description = 'Different actual SDK metadata'; },
     value => { value.events.find(row => row.kind === 'sdk_catalog' && row.value.view).value.scope = 'foreign'; },
     value => { value.discovery.records[0].description = 'Invented discovery metadata'; },
-    value => { value.captures[0].context.messages[0].content = value.captures[0].context.messages[0].content.replace('<description>Metadata</description>', ''); },
+    value => { value.captures[0].context.messages[0].content = value.captures[0].context.messages[0].content.replace('>Metadata</card>', '/>'); },
   ]) {
     const invalid = compactDefaultDiscoveryFixture(); mutate(invalid);
     assert.throws(() => assertDefaultViewProjection(invalid.captures, invalid.discovery, invalid.events, invalid.fixture, invalid.bodies));
@@ -1179,9 +1181,9 @@ test('missing, partial, stale, duplicate or body-bearing default directories can
     value => { value.captures.pop(); },
     value => { value.captures[1].context.messages[0].content += 'Full private body'; },
     value => { value.captures[1].context.messages.push({ ...value.captures[1].context.messages[0] }); },
-    value => { value.captures[1].context.messages[0].content = value.captures[1].context.messages[0].content.replace('<name>a</name>', '<name>sdk-fixture-a</name>'); },
-    value => { value.captures[1].context.messages[0].content = value.captures[1].context.messages[0].content.replace('<source>sdk-fixture</source>', '<source>foreign</source>'); },
-    value => { value.captures[1].context.messages[0].content = value.captures[1].context.messages[0].content.replace('<source>sdk-fixture</source>', ''); },
+    value => { value.captures[1].context.messages[0].content = value.captures[1].context.messages[0].content.replace('name="a"', 'name="sdk-fixture-a"'); },
+    value => { value.captures[1].context.messages[0].content = value.captures[1].context.messages[0].content.replace(' source="sdk-fixture"', ' source="foreign"'); },
+    value => { value.captures[1].context.messages[0].content = value.captures[1].context.messages[0].content.replace(' source="sdk-fixture"', ''); },
   ]) {
     const value = defaultViewFixture(); mutate(value);
     assert.throws(() => assertDefaultViewProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies));
@@ -1551,7 +1553,7 @@ test('compact search omits only model id/scope while baseline observation cannot
 test('search descriptions may reuse an exact complete card in this actual provider system', () => {
   const message = searchProjectionFixture(), model = JSON.parse(message.content[0].text), record = message.details.records[0];
   delete model.records[0].description; message.content[0].text = JSON.stringify(model);
-  const system = '<ntn-skills-view-catalog><skill><name>a</name><description>Author description</description><source>sdk-fixture</source><location>' + record.ref + '</location></skill></ntn-skills-view-catalog>';
+  const system = '<ntn-skills-view-catalog><catalog-cards><group kind="skill" source="sdk-fixture"><card name="a" location="' + record.ref + '">Author description</card></group></catalog-cards></ntn-skills-view-catalog>';
   const context = { messages: [{ role: 'system', content: system }, message] }, before = JSON.stringify(context);
   assert.equal(assertSearchProjection(message, { scope: 'scope', context }).compact_contract, 'verified');
   assert.equal(JSON.stringify(context), before);
@@ -1583,7 +1585,7 @@ function nativeCatalogReuseFixture() {
       version: 3, identity: JSON.stringify(['sdk-fixture', scope, 'skill', 'shared_skill', snapshot.record.id]), toolCallId: 'complete-inspect',
       snapshotId: pin, bodySha256: hash(body), bytes: Buffer.byteLength(body), delivery: { start: 0, end: body.length, encoding: 'raw' }, binding, directory: canonical } } };
   const after = structuredClone(value.captures[0]); after.requestId = 'after-inspect';
-  after.context.messages[0].content = after.context.messages[0].content.replace('<name>b</name><description>Metadata</description>', '<name>b</name>');
+  after.context.messages[0].content = after.context.messages[0].content.replace('<card name="b" location="sr:C' + '1'.repeat(22) + '">Metadata</card>', '<card name="b" location="sr:C' + '1'.repeat(22) + '"/>');
   after.context.messages.push(read); value.captures.push(after);
   return { ...value, read, footer, binding };
 }
@@ -1676,7 +1678,7 @@ function injectedCatalogReuseFixture(deferred = false) {
   });
   const injected = { role: 'custom', customType: 'context-broker', content, details: { records: proofs } };
   const head = value.captures[1].context.messages[0];
-  head.content = head.content.replace('<name>b</name><description>Metadata</description>', '<name>b</name>');
+  head.content = head.content.replace('<card name="b" location="sr:C' + '1'.repeat(22) + '">Metadata</card>', '<card name="b" location="sr:C' + '1'.repeat(22) + '"/>');
   value.events[0].value.scope = scope;
   value.captures = [{ requestId: 'injected', context: { messages: [head, injected] } }];
   if (deferred) {
@@ -1812,7 +1814,7 @@ function textForTest(content) { return typeof content === 'string' ? content : (
 
 test('a frozen dollar overlap cannot pass while the provider still repeats its Default description', () => {
   const value = injectedCatalogReuseFixture();
-  value.captures[0].context.messages[0].content = value.captures[0].context.messages[0].content.replace('<name>b</name>', '<name>b</name><description>Metadata</description>');
+  value.captures[0].context.messages[0].content = value.captures[0].context.messages[0].content.replace('<card name="b" location="sr:C' + '1'.repeat(22) + '"/>', '<card name="b" location="sr:C' + '1'.repeat(22) + '">Metadata</card>');
   assert.throws(() => assertPreflightCatalogProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies), /must actually remove/);
 });
 
@@ -1904,7 +1906,7 @@ test('native compact footer retains direct resource refs and checks full hashes/
   }
 });
 
-function nativeRepeatFixture({ expectShort = true, structured = true, splitMain = false, effects = false } = {}) {
+function nativeRepeatFixture({ expectShort = true, structured = true, splitMain = false, effects = false, directoryReuse = false } = {}) {
   const { batch, messages } = scalarFixture(), native = nativeProjectionFixture();
   batch.main = native.body;
   Object.assign(batch.snapshot.files[0], { bytes: Buffer.byteLength(batch.main), sha256: createHash('sha256').update(batch.main).digest('hex') });
@@ -1918,13 +1920,13 @@ function nativeRepeatFixture({ expectShort = true, structured = true, splitMain 
     files: directory.files.map(({ path, bytes }, index) => ({ path, bytes, ref: index ? 'sr:R' + String(index).repeat(22) : advertisedMainRef })),
     required: directory.required.map(({ id, ...record }) => record) } };
   const footer = '<skill-directory>\n' + JSON.stringify(model) + '\n</skill-directory>';
-  const suffix = (splitMain ? '\n' : '\n\n') + footer;
+  const suffix = (splitMain ? directoryReuse ? '\n\n\n' : '\n' : '\n\n') + footer;
   const mainRef = directory.files[0].ref, resourceRef = model.directory.files.find(value => value.path === file.path).ref;
   const originals = ['sc15-main', 'sc15-resource', 'sc15-main-repeat', 'sc15-resource-repeat'].map((id, index) => {
     const message = structuredClone(index % 2 ? messages[0] : native.message); message.toolCallId = id;
     if (index % 2) message.details.contextBrokerResource.toolCallId = id;
     else {
-      message.content = splitMain ? [{ type: 'text', text: batch.main }, { type: 'text', text: footer }]
+      message.content = splitMain ? [{ type: 'text', text: batch.main }, { type: 'text', text: (directoryReuse ? '\n\n' : '') + footer }]
         : [{ type: 'text', text: batch.main + suffix }];
       Object.assign(message.details.contextBrokerRead, { version: 3, toolCallId: id, loaded: true,
         binding: { record: batch.snapshot.record, scope: batch.snapshot.scope, version_id: batch.snapshot.version_id },
@@ -1943,14 +1945,30 @@ function nativeRepeatFixture({ expectShort = true, structured = true, splitMain 
       message.content.push({ type: 'text', text: footer });
     } else message.content.at(-1).text += footer;
   }
+  if (directoryReuse) for (const index of [0, 2]) {
+    const message = originals[index], full = message.content.map(block => block.text).join('\n');
+    Object.assign(message.details.contextBrokerRead, { rendered: { sha256: createHash('sha256').update(full).digest('hex'), bytes: Buffer.byteLength(full) } });
+    message.details.contextBrokerRead.binding.snapshot_id = batch.snapshot.snapshot_id;
+  }
   const projected = structuredClone(originals);
   projected[2].content[0].text = (expectShort ? 'Already loaded.'
-    : `The complete Skill entry for snapshot ${batch.snapshot.snapshot_id} is already present in this active context. This successful repeated read verified the same entry bytes; use the existing instructions and their fixed resource directory.`) + (splitMain ? '' : suffix);
+    : `The complete Skill entry for snapshot ${batch.snapshot.snapshot_id} is already present in this active context. This successful repeated read verified the same entry bytes; use the existing instructions and their fixed resource directory.`) + originals[2].content[0].text.slice(batch.main.length);
   projected[3].content[0].text = expectShort ? 'Already available.'
     : `The complete Skill resource ${file.path} for snapshot ${batch.snapshot.snapshot_id} is already present in this active context. This successful repeated read verified the same resource bytes.`;
   if (expectShort) {
     projected[2].details.contextBrokerRead.loaded = false;
     projected[3].details.contextBrokerResource.delivered_complete_text = false;
+  }
+  if (directoryReuse) {
+    assert.equal(expectShort, true);
+    const message = projected[2];
+    if (splitMain) message.content[1].text = message.content[1].text.slice(footer.length + 2);
+    else message.content[0].text = message.content[0].text.replace(suffix, '');
+    const full = message.content.map(block => block.text).join('\n'), directoryText = JSON.stringify(model.directory);
+    Object.assign(message.details.contextBrokerRead, {
+      rendered: { sha256: createHash('sha256').update(full).digest('hex'), bytes: Buffer.byteLength(full) },
+      directoryOmitted: { sha256: createHash('sha256').update(directoryText).digest('hex'), bytes: Buffer.byteLength(directoryText) },
+    });
   }
   if (!structured) for (const message of projected) delete message.structuredContent;
   const search = { role: 'toolResult', toolName: 'notion_list', toolCallId: 'sc15-search', isError: false,
@@ -2054,6 +2072,30 @@ test('native repeat keeps each operation effects while comparing the same comple
   const lost = nativeRepeatFixture({ splitMain: true, effects: true });
   lost.captures.at(-1).context.messages.find(message => message.toolCallId === 'sc15-resource-repeat').content.pop();
   assert.throws(() => assertNativeRepeatProjection(lost.captures, lost.originals, { batch: lost.batch }));
+});
+
+test('CTX03 native repeat requires one complete directory witness and exact operation effects', () => {
+  for (const splitMain of [false, true]) for (const effects of [false, true]) {
+    const value = nativeRepeatFixture({ splitMain, effects, directoryReuse: true }), before = JSON.stringify(value);
+    const result = assertNativeRepeatProjection(value.captures, value.originals, { batch: value.batch, expectDirectoryReuse: true });
+    assert.equal(result.directory_reuse, 'same_request_witness_verified');
+    assert.deepEqual(result.requests.map(request => request.generated_directory_reuse.completeDirectories), [0, 0, 1, 1, 1, 1]);
+    assert.deepEqual(result.requests.map(request => request.generated_directory_reuse.omittedDirectories), [0, 0, 0, 0, 1, 1]);
+    assert.equal(JSON.stringify(value), before);
+  }
+});
+
+test('CTX03 native repeat rejects unproven, altered or duplicate directory reuse', () => {
+  for (const change of [
+    value => { delete value.originals[2].details.contextBrokerRead.rendered; },
+    value => { value.captures.at(-1).context.messages.find(message => message.toolCallId === 'sc15-main-repeat').details.contextBrokerRead.directoryOmitted.sha256 = '0'.repeat(64); },
+    value => { value.captures.at(-1).context.messages.find(message => message.toolCallId === 'sc15-main').content[1].text = 'Only a summary remains'; },
+    value => { value.captures.at(-1).context.messages.find(message => message.toolCallId === 'sc15-main-repeat').content[1].text = value.originals[2].content[1].text; },
+    value => { value.captures.at(-1).context.messages.find(message => message.toolCallId === 'sc15-main-repeat').content[1].text = ''; },
+  ]) {
+    const value = nativeRepeatFixture({ splitMain: true, effects: true, directoryReuse: true }); change(value);
+    assert.throws(() => assertNativeRepeatProjection(value.captures, value.originals, { batch: value.batch, expectDirectoryReuse: true }));
+  }
 });
 
 test('native repeat projection rejects lost source, changed directories, forged delivery markers and request drift', () => {
@@ -2255,7 +2297,7 @@ function controlledDirectoryFixture() {
   const record = { id: 'owned-root', name: 'HTTP fixture', description: 'Metadata only.' };
   const captures = [
     { requestId: '42:provider:1', context: { messages: [{ role: 'system', content: '<ntn-skills-discovery status="pending">pending</ntn-skills-discovery>' }] } },
-    { requestId: '42:provider:2', context: { messages: [{ role: 'system', content: '<ntn-skills-view-catalog><view id="owned-view" source="sdk-fixture" partial="false"><skill><name>HTTP fixture</name><description>Metadata only.</description><source>sdk-fixture</source><location>sr:Cabcdefghijklmnopqrstuv</location></skill></view></ntn-skills-view-catalog>' }] } },
+    { requestId: '42:provider:2', context: { messages: [{ role: 'system', content: '<ntn-skills-view-catalog><view id="owned-view" source="sdk-fixture" partial="false">Default</view><catalog-cards><group kind="skill" source="sdk-fixture"><card name="HTTP fixture" location="sr:Cabcdefghijklmnopqrstuv">Metadata only.</card></group></catalog-cards></ntn-skills-view-catalog>' }] } },
   ];
   const events = [
     { kind: 'object_observer_start', observer_pid: 42, coverage: ['node:fs.readFile', 'node:fs.readFileSync', 'node:fs/promises.readFile'] },
@@ -2977,6 +3019,43 @@ test('warm directory supports only terminal bundled metadata CLI calls for the o
   }
 });
 
+test('http public loop copies use and resource refs from visible tool text', () => {
+  const owner = 'sr:S' + 'a'.repeat(22), resource = 'sr:R' + 'b'.repeat(22), other = 'sr:R' + 'c'.repeat(22);
+  const plan = { owner: 'resources', source: 'sdk-fixture', resource_path: 'references/guide.md' };
+  const list = JSON.stringify({ records: [{ name: 'resources', source: 'sdk-fixture', availability: 'available', ref: owner }] });
+  const use = JSON.stringify({ records: [{ name: 'resources', ref: owner, directory: { files: [{ path: 'references/guide.md', ref: resource, bytes: 4 }] } }] });
+  const messages = [];
+  const next = () => namedSdkProbe.selectHttpPublicLoopCall({ messages }, plan);
+  assert.deepEqual(next(), { type: 'toolCall', id: 'sc10-search', name: 'notion_list', arguments: { query: '', source: 'sdk-fixture', limit: 20 } });
+  messages.push({ role: 'toolResult', toolCallId: 'sc10-search', isError: false, content: list });
+  assert.deepEqual(next().arguments, { ref: owner });
+  messages.push({ role: 'toolResult', toolCallId: 'http-use', isError: false, content: use });
+  assert.deepEqual(next().arguments, { path: resource });
+  messages.push({ role: 'toolResult', toolCallId: 'http-resource', isError: false, content: 'resource' });
+  assert.deepEqual(next().arguments, { ref: owner });
+  messages.push({ role: 'toolResult', toolCallId: 'http-use-repeat', isError: false, content: use });
+  assert.deepEqual(next().arguments, { path: resource });
+  messages.push({ role: 'toolResult', toolCallId: 'http-resource-repeat', isError: false, content: 'again' });
+  assert.equal(next(), null);
+  const replaced = structuredClone(messages).slice(0, 2);
+  replaced[1].content = use.replaceAll(resource, other);
+  assert.equal(namedSdkProbe.selectHttpPublicLoopCall({ messages: replaced }, plan).arguments.path, other);
+  const hidden = structuredClone(messages).slice(0, 1);
+  hidden[0].content = list.replaceAll(owner, 'not-a-ref');
+  assert.throws(() => namedSdkProbe.selectHttpPublicLoopCall({ messages: hidden }, plan), /HTTP_PUBLIC_OWNER_NOT_UNIQUE/);
+});
+
+test('both backends select the same explicit context-once scenario', () => {
+  assert.equal(namedSdkProbe.providerBackendOptions({}), 'in-process');
+  assert.equal(namedSdkProbe.providerBackendOptions({ '--provider-backend': 'in-process', '--scenario': 'all' }), 'in-process');
+  for (const backend of ['http', 'in-process'])
+    assert.equal(namedSdkProbe.providerBackendOptions({ '--provider-backend': backend, '--scenario': 'context-once', '--fixture': '/fixture.json' }), backend);
+  for (const options of [{ '--scenario': 'all' }, { '--scenario': 'native-repeat' }, { '--scenario': 'context-once', '--live-input': '/live.json' },
+    { '--scenario': 'context-once', '--source-http-helper': '/helper.mjs' }, { '--scenario': 'context-once', '--warm-directory': 'true' },
+    { '--scenario': 'context-once', '--expect-compact-context': 'false' }])
+    assert.throws(() => namedSdkProbe.providerBackendOptions({ '--provider-backend': 'http', '--fixture': '/fixture.json', ...options }));
+});
+
 test('warm directory option is explicit and cannot alter all14 live or held-startup scenarios', () => {
   assert.equal(namedSdkProbe.warmDirectoryOptions({}), false);
   assert.equal(namedSdkProbe.warmDirectoryOptions({ '--warm-directory': 'false', '--scenario': 'all' }), false);
@@ -2993,7 +3072,9 @@ test('warm directory proves actual first system cards and preserves historical p
   assert.deepEqual(current.provider_requests[0].records.map(record => record.id), ['owner:a', 'owner:b']);
   assert.equal(current.first_provider_body_copies, 0);
   const legacy = structuredClone(value.captures);
-  legacy[0].context.messages[0].content = legacy[0].context.messages[0].content.replaceAll('<name>', '<name>sdk-fixture-').replaceAll('<source>sdk-fixture</source>', '');
+  legacy[0].context.messages[0].content = '<ntn-skills-view-catalog><view source="sdk-fixture" id="view-1" partial="false">Default</view><available_skills>'
+    + value.discovery.records.map(record => '<skill><name>sdk-fixture-' + record.name + '</name><description>Metadata</description><location>' + record.ref + '</location></skill>').join('')
+    + '</available_skills></ntn-skills-view-catalog>';
   const old = namedSdkProbe.assertWarmDirectoryProjection(legacy, value.message, value.fixture, value.bodies, { transport: 'cli' });
   assert.deepEqual(old.provider_requests[0].records.map(record => [record.displayed_name, record.displayed_source]), [['sdk-fixture-a', null], ['sdk-fixture-b', null]]);
   assert.throws(() => namedSdkProbe.assertWarmDirectoryProjection(legacy, value.message, value.fixture, value.bodies));
@@ -3011,5 +3092,50 @@ test('warm directory rejects pending fake user directory wrong owner metadata an
   ]) {
     const value = warmDirectoryFixture(); mutate(value);
     assert.throws(() => namedSdkProbe.assertWarmDirectoryProjection(value.captures, value.message, value.fixture, value.bodies), { code: 'ERR_ASSERTION' });
+  }
+});
+
+function contextOnceFixture() {
+  const effects = { version: 1, remote_writes: 'unknown', author_content: 'unknown', retention: [] };
+  const main = 'Frozen complete main.\n', resource = 'Frozen complete guide.\n';
+  const batch = { main, files: [{ path: 'references/guide.md', content: resource, encoding: 'utf8' }], unselected: [] };
+  const model = { ok: true, status: 'ready', purpose: 'use', roots: ['sr:Smain'],
+    records: [{ name: 'resources', kind: 'skill', ref: 'sr:Smain', content: main,
+      directory: { files: [{ path: 'references/guide.md', ref: 'sr:Rguide', bytes: Buffer.byteLength(resource) }], required: [], candidates: [], references: [] } }], effects };
+  const ids = ['sc10-search', 'http-use', 'http-resource', 'http-use-repeat', 'http-resource-repeat'];
+  const originals = ids.map((toolCallId, index) => ({ role: 'toolResult', toolCallId,
+    toolName: index === 0 ? 'notion_list' : index % 2 ? 'notion_use' : 'read', isError: false,
+    content: index === 0 ? '{"records":[]}' : index % 2 ? JSON.stringify(model)
+      : resource + '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>', details: { effects } }));
+  const projected = structuredClone(originals), repeat = structuredClone(model);
+  repeat.records[0].content = 'Already loaded.'; delete repeat.records[0].directory;
+  projected[3].content = JSON.stringify(repeat);
+  projected[4].content = projected[4].content.replace(resource, 'Already available.');
+  const captures = Array.from({ length: 7 }, (_, index) => ({ requestId: index,
+    context: { messages: structuredClone(projected.slice(0, Math.min(index, 5))) } }));
+  return { originals, captures, batch };
+}
+
+test('CTX public-loop oracle checks every request against independent source and operation facts', () => {
+  const value = contextOnceFixture(), before = JSON.stringify(value);
+  const proof = namedSdkProbe.assertContextOnceLoop(value.captures, value.originals, { batch: value.batch });
+  assert.equal(proof.current_request_directory_unique, true);
+  assert.deepEqual(proof.requests.map(request => request.complete_directories), [0, 0, 1, 1, 1, 1, 1]);
+  assert.equal(JSON.stringify(value), before);
+});
+
+test('CTX public-loop oracle rejects duplicate/lost content, false zero and missing actual operations', () => {
+  for (const mutate of [
+    value => { value.captures.at(-1).context.messages[3].content = value.originals[3].content; },
+    value => { value.captures.at(-1).context.messages[1].content = value.captures.at(-1).context.messages[3].content; },
+    value => { value.captures.at(-1).context.messages[3].content = value.captures.at(-1).context.messages[3].content.replaceAll('unknown', 'none'); },
+    value => { value.captures.at(-1).context.messages[4].content = 'Already available.'; },
+    value => { value.captures.at(-1).context.messages.pop(); },
+    value => { value.captures.at(-1).context.messages[2].toolCallId = 'another-call'; },
+    value => { value.originals[1].content = value.originals[1].content.replace('Frozen complete main.', 'Summary.'); },
+    value => { value.captures.splice(2, 2); },
+  ]) {
+    const value = contextOnceFixture(); mutate(value);
+    assert.throws(() => namedSdkProbe.assertContextOnceLoop(value.captures, value.originals, { batch: value.batch }));
   }
 });

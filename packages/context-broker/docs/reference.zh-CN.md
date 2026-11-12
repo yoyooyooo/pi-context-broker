@@ -215,9 +215,9 @@ Notion 网页修改发生在 CLI 缓存之外。精确引用固定身份，不�
 
 Pi 在 input 边界锁定选中提交，待 `agent_start` 提供本次操作的 signal 后，在 `context` hook 内获取目录、图与正文。待提交记录保留原文、图片和已接受的身份。**Stop**、Escape、RPC `abort` 及切换会话都会取消这项获取。准备出错会中止宿主操作，失败或已失效的准备不能继续调用 provider。
 
-Pi 仅在当前请求未取消，且 `after_provider_response` 返回 2xx 状态时记录 active 指令。写入 `context-broker-active-sources` 前，会核对本次请求中的完整正文；Notion 记录还须匹配固定的 `use` 图。该事件发生在收到响应头时，早于响应流结束；它确认请求已被接收，不代表模型完成。缓存文件、`ready` 结果、选中图、摘要和仅展示的 loaded 日志都不能单独证明 active。[Skill 消费运行时](skill-consumption-runtime.md) 说明这些独立状态与兼容路径。
+Pi 仅在当前请求未取消，且 `after_provider_response` 返回 2xx 状态时记录 active 指令。写入 `context-broker-active-sources` 前，会核对本次请求中的完整正文；Notion 记录还须匹配固定的 `use` 图。该事件发生在收到响应头时，早于响应流结束；它只确认逻辑上的请求接受，不代表模型完成，也不是最终 wire 投递。`before_provider_request` 不是最后一次载荷修改：更晚的 handler 仍可替换 payload，响应事件也不含 body。普通 `openai-completions` HTTP 路由会先核对序列化后的工具结果和 Broker 拥有的 user/custom 投递，绑定实体摘要，并且只有 Node Undici 在该 run 的模型端点上观察到同一摘要时才记录 wire 回执。已知不一致不会确认 active、selected 或 persisted。已经发出的 body 保持 dispatched，不会被改写成 provider 状态 0。其他 API、mock provider 和非 Undici 传输明确不是 wire 证明。`/context-broker request` 最多打印 32 条内存记录，只含哈希、计数、固定 snapshot pin、copied/reused/retired、净化后的 `remote_writes`/`author_content` 和错误，不含源正文、path、ref 或密钥，也不新增模型工具。标量和批量 `contextBrokerResource` 与主文、preparation 一起核对。同一模型端点上无法归属到单一 run 的并发发送记为 unknown，不能变成 wire 成功。进程内 mock payload 即使 2xx 也只是 logical-only。缓存文件、`ready` 结果、选中图、摘要和仅展示的 loaded 日志都不能单独证明 active。[Skill 消费运行时](skill-consumption-runtime.md) 说明这些独立状态与兼容路径。
 
-Pi 1.4 只在启动或 reload 时通过 `resources_discover` 收集扩展资源路径，没有提供目录晚到后刷新原生 Skill 菜单的扩展 API。Broker 将晚到元数据放入当前请求的 `<ntn-skills-view-catalog>`，精确 `/skill:` 输入仍经过准备门控。`$` 补全是独立入口，不能证明原生菜单已经刷新。Broker 不为更新菜单自动 reload 当前会话。
+Pi 1.4 只在启动或 reload 时通过 `resources_discover` 收集扩展资源路径，没有提供目录晚到后刷新原生 Skill 菜单的扩展 API。Broker 将晚到元数据放入当前请求的 `<ntn-skills-view-catalog>`，精确 `/skill:` 输入仍经过准备门控。Pi 的 Notion 命名面把连续且来源相同的卡片放进 `<catalog-cards>`。每张卡片保留作者名称、完整描述、location 和可选 ref。自闭合卡片表示同一请求里已有完全相同的描述，所以这里省略。空元素表示作者描述本身为空。OMP 和其他非 Pi 面继续使用原来的 `<available_skills>` 与 `<available_routers>`。`$` 补全是独立入口，不能证明原生菜单已经刷新。Broker 不为更新菜单自动 reload 当前会话。
 
 OMP 保留原行为：查询目录时不阻塞编辑器，首次普通提交会在调用 provider 前等待当前 View。每轮 `before_agent_start` 生成一份 `<ntn-skills-view-catalog>`，按精确路径移除 Broker 自己的旧目录项，保留其他本地条目和会话正文。新建会话、列举或切换 View 均不自行调用模型。默认零预取预算不会在注册或切换目录时准备正文；显式预算可以在后台准备所选 View 的有限子集，不构成选择或激活。完整目录和 View 查询各自保留覆盖范围，新鲜度或某个页面可读都不能补成完整覆盖。
 

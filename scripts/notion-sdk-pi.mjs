@@ -3,16 +3,17 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
-import fs from 'node:fs';
+import fs, { readFileSync } from 'node:fs';
 import fsPromises, { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
-import { isolatedEnv, resolveHost, runCommand, writeFakeProvider, assertSupportedPiVersion } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
+import { isolatedEnv, resolveHost, runCommand, assertSupportedPiVersion } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
+import { contextFromCompletionRequest, renderHttpWrapper, renderInProcessWrapper, startLoopbackMock } from './mock-provider-adapter.mjs';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
-import { safeRequestMetrics, providerSystemText } from './notion-default-context.mjs';
+import { catalogCards, safeRequestMetrics, providerSystemText } from './notion-default-context.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
 import { verifyPreparationEvidence, verifyConsumptionEffects, verifyGeneratedDirectoryReuse, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from './skill-preparation-evidence.mjs';
 
@@ -24,7 +25,9 @@ const nameScenarioNames = ['name-references', 'name-reference-failed-source'];
 const ambiguityScenarioName = 'name-reference-ambiguity';
 const compactionScenarioName = 'session-compaction';
 const httpScenarioNames = ['http-directory', 'http-cache-recovery', 'http-interruption'];
-const selectableScenarioNames = [...scenarioNames, ...nameScenarioNames, ambiguityScenarioName, compactionScenarioName, ...httpScenarioNames];
+const contextOnceScenario = 'context-once';
+const wireNegativeScenario = 'context-wire-negative';
+const selectableScenarioNames = [contextOnceScenario, wireNegativeScenario, ...scenarioNames, ...nameScenarioNames, ambiguityScenarioName, compactionScenarioName, ...httpScenarioNames];
 const httpUsage = 'Controlled HTTP gates require --scenario http-directory|http-cache-recovery|http-interruption, the original current sdk-fixture.ts --catalog input and --source-http-helper ABSOLUTE_FROZEN_MODULE. They use actual Pi with the installed SDK, a shared owned loopback Notion fixture and a controlled provider. They remain separate from offline all14 and production live input; source.command stays absent.';
 export function controlledHttpOptions(options) {
   const scenario = options['--scenario'], helperPath = options['--source-http-helper'];
@@ -43,6 +46,20 @@ const compactionUsage = 'Explicit --scenario session-compaction reuses session-l
 const isLifecycleScenario = name => name === 'session-lifecycle' || name === compactionScenarioName;
 const nativeTools = ['read', 'notion_list', 'notion_use'];
 const scopedCommandTools = [...nativeTools, 'bash', 'tool_search'];
+const providerBackendUsage = 'Explicit --scenario context-once drives the same list/use/read/repeat/cancel sequence with --provider-backend in-process|http. HTTP uses the installed normal serializer and an owned loopback endpoint. Other scenarios retain their original in-process route. No real model is used.';
+export function providerBackendOptions(options) {
+  const backend = options['--provider-backend'] ?? 'in-process';
+  assert.ok(['in-process', 'http'].includes(backend), providerBackendUsage);
+  if (backend === 'http' || [contextOnceScenario, wireNegativeScenario].includes(options['--scenario'])) {
+    assert.ok([contextOnceScenario, wireNegativeScenario].includes(options['--scenario']), providerBackendUsage);
+    if (options['--scenario'] === wireNegativeScenario) assert.equal(backend, 'http', 'Wire mutation probes require real HTTP');
+    assert.ok(options['--fixture'] && !options['--live-input'] && !options['--source-http-helper'], providerBackendUsage);
+    assert.notEqual(options['--warm-directory'], 'true', providerBackendUsage);
+    for (const key of ['--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar', '--expect-short-confirmations'])
+      assert.notEqual(options[key], 'false', 'Context-once requires the current complete projection contract');
+  }
+  return backend;
+}
 const warmDirectoryUsage = 'Optional --warm-directory true waits for the existing offline metadata initialization before the unchanged first prompt, only with an explicit native, native-repeat or prepare scenario. This warm-directory comparison is separate from cold startup and all14; source startup time and all provider bytes remain in evidence.';
 export function warmDirectoryOptions(options) {
   if (options['--warm-directory'] !== 'true') return false;
@@ -401,12 +418,11 @@ export function assertProviderToolSequence(captures, frames, { expectedErrors = 
 
 function catalogDescriptionEvidence(context, expected, fixture, { generatedOnly = false, exclude, injectionContext } = {}) {
   if (!context || !/^sr:C[A-Za-z0-9_-]{22}$/u.test(expected.ref)) return undefined;
-  const messages = context.messages ?? [], xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+  const messages = context.messages ?? [];
   if (!generatedOnly) {
-    const system = providerCatalogText(context), card = '<skill><name>' + xml(expected.name) + '</name><description>' + xml(expected.description)
-      + '</description><source>' + xml(expected.source) + '</source><location>' + expected.ref + '</location></skill>';
-    const matches = [...system.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)].flatMap(block =>
-      [...block[1].matchAll(/<skill>[\s\S]*?<\/skill>/gu)].filter(match => match[0] === card));
+    const system = providerCatalogText(context);
+    const matches = catalogCards(system).filter(card => card.kind === 'skill' && card.name === expected.name && card.description === expected.description
+      && card.source === expected.source && card.location === expected.ref);
     if (expected.kind === 'skill' && matches.length === 1) return { origin: 'actual-default-card', ref: expected.ref, description: expected.description, system_sha256: hash(system) };
     for (const message of messages) {
       if (message === exclude || message.toolCallId === exclude?.toolCallId) continue;
@@ -626,11 +642,10 @@ function defaultViewProjection(captures, discovery, events, fixture, { sourceId 
     const view = attributes.find(value => value.source === sourceId);
     if (!view?.id) return { request_id: capture.requestId, state: view?.status ?? 'not_ready', code: view?.code ?? null };
     assert.equal(view.id, expected.id); assert.equal(view.partial, 'false');
-    const entries = [...catalog.matchAll(/<skill><name>([^<]+)<\/name>(?:<description>([^<]*)<\/description>)?<source>([^<]+)<\/source><location>([^<]+)<\/location><\/skill>/gu)];
+    const entries = catalogCards(catalog).filter(card => card.kind === 'skill');
     assert.equal(entries.length, expected.records.length);
-    assert.equal((catalog.match(/<skill>/gu) ?? []).length, entries.length);
+    assert.equal(catalogCards(catalog).length, entries.length);
     const reused = [];
-    const xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
     for (const record of expected.records) {
       const frozen = frozenRecords.get(record.id), actual = { ...frozen, scope: fixture.scope, source: sourceId,
         availability: frozen.enabled === false ? 'disabled' : 'available' };
@@ -639,16 +654,16 @@ function defaultViewProjection(captures, discovery, events, fixture, { sourceId 
         assert.ok(selected); assert.equal(selected.kind, frozen.kind);
         if (Object.hasOwn(selected, 'description')) assert.equal(selected.description, frozen.description);
       }
-      const matches = entries.filter(entry => entry[1] === xml(record.name) && entry[3] === actual.source);
+      const matches = entries.filter(entry => entry.name === record.name && entry.source === actual.source);
       assert.equal(matches.length, 1, 'Display the author name and explicit source, not the sanitized command token');
-      assert.match(matches[0][4], /^sr:C[A-Za-z0-9_-]{22}$/u);
-      if (matches[0][2] === undefined) {
-        const evidence = catalogDescriptionEvidence(capture.context, { ...actual, ref: matches[0][4] }, fixture,
+      assert.match(matches[0].location, /^sr:C[A-Za-z0-9_-]{22}$/u);
+      if (matches[0].description === undefined) {
+        const evidence = catalogDescriptionEvidence(capture.context, { ...actual, ref: matches[0].location }, fixture,
           { generatedOnly: true, injectionContext: injectionContexts?.get(capture.requestId) });
         assert.ok(evidence, 'Missing default description requires a complete same-request generated card'); reused.push(evidence);
-      } else assert.equal(matches[0][2], xml(actual.description));
-      if (discovery) assert.equal(matches[0][4], selected.ref);
-      assert.equal(texts.reduce((count, text) => count + text.split(matches[0][0]).length - 1, 0), 1);
+      } else assert.equal(matches[0].description, actual.description);
+      if (discovery) assert.equal(matches[0].location, selected.ref);
+      assert.equal(texts.reduce((count, text) => count + text.split(matches[0].location).length - 1, 0), 1);
     }
     return { request_id: capture.requestId, state: 'ready', records: entries.length, catalog_bytes: Buffer.byteLength(catalogs[0][0]), reused_descriptions: reused };
   });
@@ -696,7 +711,6 @@ export function assertWarmDirectoryProjection(captures, discoveryMessage, fixtur
   const full = discoveryMessage.details, expected = fixture.default_view.records;
   assert.deepEqual(full.failures, []); assert.equal(full.has_more, false);
   assert.deepEqual(full.records.filter(record => record.in_default_view).map(record => record.id).sort(), expected.map(record => record.id).sort());
-  const xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
   const observations = captures.map(capture => {
     const system = providerCatalogText(capture.context);
     assert.doesNotMatch(system, /<ntn-skills-discovery\b[^>]*status="pending"/u, 'Warm directory must be ready from the first actual provider');
@@ -705,25 +719,25 @@ export function assertWarmDirectoryProjection(captures, discoveryMessage, fixtur
     const views = [...catalogs[0][1].matchAll(/<view\b([^>]*)>/gu)]; assert.equal(views.length, 1);
     const view = Object.fromEntries([...views[0][1].matchAll(/([a-z_]+)="([^"]*)"/gu)].map(match => [match[1], match[2]]));
     assert.equal(view.source, sourceId); assert.equal(view.id, fixture.default_view.id); assert.equal(view.partial, 'false');
-    const cards = [...catalogs[0][1].matchAll(/<skill><name>([^<]+)<\/name>(?:<description>([^<]*)<\/description>)?(?:<source>([^<]+)<\/source>)?<location>([^<]+)<\/location><\/skill>/gu)];
-    assert.equal(cards.length, expected.length); assert.equal((catalogs[0][1].match(/<skill>/gu) ?? []).length, cards.length);
+    const cards = catalogCards(catalogs[0][1]).filter(card => card.kind === 'skill');
+    assert.equal(cards.length, expected.length); assert.equal(catalogCards(catalogs[0][1]).length, cards.length);
     const records = cards.map(card => {
-      const matches = full.records.filter(record => record.ref === card[4] && record.source === sourceId); assert.equal(matches.length, 1);
+      const matches = full.records.filter(record => record.ref === card.location && record.source === sourceId); assert.equal(matches.length, 1);
       const record = matches[0], frozen = fixture.snapshots.find(snapshot => snapshot.scope === fixture.scope && snapshot.record.id === record.id)?.record;
       assert.ok(frozen && expected.some(value => value.id === record.id)); assert.equal(record.scope, fixture.scope);
       assert.equal(record.name, frozen.name); assert.equal(record.description, frozen.description);
       assert.equal(record.in_default_view, true); assert.equal(record.availability, 'available');
-      assert.equal(card[1], xml(transport === 'cli' ? sourceId + '-' + frozen.name : frozen.name));
+      assert.equal(card.name, transport === 'cli' ? sourceId + '-' + frozen.name : frozen.name);
       let reuse;
-      if (card[2] === undefined) {
+      if (card.description === undefined) {
         assert.equal(transport, 'sdk', 'Legacy baseline rendering remains unchanged');
         reuse = catalogDescriptionEvidence(capture.context, record, fixture, { generatedOnly: true });
         assert.ok(reuse, 'Warm catalog omission requires a complete same-request generated card');
-      } else assert.equal(card[2], xml(frozen.description));
-      assert.equal(card[3], transport === 'cli' ? undefined : sourceId);
-      assert.match(card[4], /^sr:C[A-Za-z0-9_-]{22}$/u);
+      } else assert.equal(card.description, frozen.description);
+      assert.equal(card.source, transport === 'cli' ? undefined : sourceId);
+      assert.match(card.location, /^sr:C[A-Za-z0-9_-]{22}$/u);
       return { id: record.id, scope: record.scope, source: sourceId, name: record.name, description: record.description,
-        displayed_name: card[1], displayed_source: card[3] ?? null, ref: card[4], ...(reuse ? { description_reuse: reuse } : {}) };
+        displayed_name: card.name, displayed_source: card.source ?? null, ref: card.location, ...(reuse ? { description_reuse: reuse } : {}) };
     });
     assert.deepEqual(records.map(record => record.id).sort(), expected.map(record => record.id).sort());
     return { request_id: capture.requestId, state: 'ready', system_sha256: hash(system), system_bytes: Buffer.byteLength(system),
@@ -871,7 +885,7 @@ export function selectNativeRepeatCall(context, { mainRef, resourcePath }) {
   return null;
 }
 
-export function assertNativeRepeatProjection(captures, originals, { batch, expectShort = true }) {
+export function assertNativeRepeatProjection(captures, originals, { batch, expectShort = true, expectDirectoryReuse = false }) {
   const ids = ['sc15-main', 'sc15-resource', 'sc15-main-repeat', 'sc15-resource-repeat'];
   assert.deepEqual(originals.map(message => message.toolCallId), ids);
   assert.equal(captures.length, 6, 'Search and four native reads require six provider requests');
@@ -898,7 +912,28 @@ export function assertNativeRepeatProjection(captures, originals, { batch, expec
     : `The complete Skill resource ${file.path} for snapshot ${batch.snapshot.snapshot_id} is already present in this active context. This successful repeated read verified the same resource bytes.`;
   assert.ok(originals[2].content[0]?.type === 'text' && originals[2].content[0].text.startsWith(batch.main));
   const repeatedMainBlocks = originals[2].content.map((block, index) => index === 0
-    ? { ...block, text: mainConfirmation + block.text.slice(batch.main.length) } : block);
+    ? { ...block, text: mainConfirmation + block.text.slice(batch.main.length) } : { ...block });
+  if (expectDirectoryReuse) {
+    assert.equal(expectShort, true, 'Current directory reuse cannot certify a historical long-confirmation baseline');
+    const originalText = textContent(originals[2].content), rendered = originals[2].details.contextBrokerRead.rendered;
+    assert.deepEqual(rendered, { sha256: hash(originalText), bytes: Buffer.byteLength(originalText) }, 'Current native directory reuse starts with a complete original output');
+    // The independent fixture supplies the full generated footer. Remove only
+    // that span, preserving native block boundaries and this call's effects.
+    const target = suffix, start = batch.main.length, end = start + target.length;
+    let offset = 0;
+    for (const [index, block] of originals[2].content.entries()) {
+      assert.equal(block.type, 'text');
+      if (index) offset++;
+      const blockStart = offset, blockEnd = offset + block.text.length;
+      const from = Math.max(start, blockStart), to = Math.min(end, blockEnd);
+      if (to > from) {
+        const projected = repeatedMainBlocks[index];
+        const shift = index === 0 ? mainConfirmation.length - batch.main.length : 0;
+        projected.text = projected.text.slice(0, from - blockStart + shift) + projected.text.slice(to - blockStart + shift);
+      }
+      offset = blockEnd;
+    }
+  }
   const repeatedResourceBlocks = originals[3].content.map((block, index) => index === 0
     ? { ...block, text: resourceConfirmation + block.text.slice(file.content.length) } : block);
   const expectedBlocks = [originals[0].content, originals[1].content, repeatedMainBlocks, repeatedResourceBlocks];
@@ -909,8 +944,8 @@ export function assertNativeRepeatProjection(captures, originals, { batch, expec
       assert.equal(messages.length, index >= position + 2 ? 1 : 0, 'Every repeated read enters only its actual subsequent provider requests');
       if (!messages.length) continue;
       const message = messages[0]; assert.equal(message.isError, false); assert.equal(message.toolName, 'read');
-      assert.deepEqual(message.content, expectedBlocks[position], 'Only the repeated body changes; the original native block boundaries and directory remain intact');
-      assert.equal(textContent(message.content), expectedContent[position], 'The full native text projection preserves the exact directory suffix');
+      assert.deepEqual(message.content, expectedBlocks[position], 'The exact native projection preserves blocks and effects while reusing only declared content');
+      assert.equal(textContent(message.content), expectedContent[position], 'The full native text projection matches the independent source expectation');
       if (position < 2) assert.deepEqual(message.details, originals[position].details, 'The first complete delivery retains its original receipt');
       assert.deepEqual(message.details?.effects, originals[position].details?.effects, 'Provider projection retains this operation effects receipt');
       // Native v1/v3 receipts and structured output describe the original tool
@@ -919,14 +954,26 @@ export function assertNativeRepeatProjection(captures, originals, { batch, expec
       if (message.structuredContent !== undefined) assert.deepEqual(message.structuredContent, originals[position].structuredContent);
       if (position % 2) assert.equal(message.details.contextBrokerResource.loaded, false);
       if (expectShort && position === 2) assert.equal(message.details.contextBrokerRead.loaded, false, 'The repeated main projection cannot claim activation');
+      if (expectDirectoryReuse && position === 2) {
+        const directoryText = JSON.stringify(refs.directory), proof = message.details.contextBrokerRead;
+        assert.deepEqual(proof.directoryOmitted, { sha256: hash(directoryText), bytes: Buffer.byteLength(directoryText) });
+        const content = textContent(message.content);
+        assert.deepEqual(proof.rendered, { sha256: hash(content), bytes: Buffer.byteLength(content) });
+      }
       if (expectShort && position === 3) assert.equal(message.details.contextBrokerResource.delivered_complete_text, false, 'The confirmation is not a new complete resource delivery');
     }
     const mainCopies = bodyCount(capture.context, batch.main), resourceCopies = bodyCount(capture.context, file.content);
+    const directoryReuse = expectDirectoryReuse ? verifyGeneratedDirectoryReuse(capture.context.messages) : undefined;
+    if (directoryReuse) {
+      assert.equal(directoryReuse.completeDirectories, index >= 2 ? 1 : 0);
+      assert.equal(directoryReuse.omittedDirectories, index >= 4 ? 1 : 0);
+    }
     assert.equal(mainCopies, index >= 2 ? 1 : 0); assert.equal(resourceCopies, index >= 3 ? 1 : 0);
     for (const other of [...batch.files, ...batch.unselected].filter(value => value.path !== file.path && value.encoding !== 'base64' && value.content.length))
       assert.equal(bodyCount(capture.context, other.content), 0, 'Unrequested text is never delivered');
     return { request_id: capture.requestId, main_content_copies: mainCopies, resource_content_copies: resourceCopies,
       repeated_main_present: index >= 4, repeated_resource_present: index >= 5,
+      ...(directoryReuse ? { generated_directory_reuse: directoryReuse } : {}),
       structured_content_present: ids.filter(id => toolResult(capture.context, id)?.structuredContent !== undefined) };
   });
   return { expectation: expectShort ? 'short_confirmations_verified' : 'baseline_long_confirmations_recorded',
@@ -935,7 +982,8 @@ export function assertNativeRepeatProjection(captures, originals, { batch, expec
       native_content_blocks: originals[0].content.map(block => ({ type: block.type, ...(block.type === 'text' ? { bytes: Buffer.byteLength(block.text), sha256: hash(block.text) } : {}) })) },
     resource: { path: file.path, source_bytes: file.bytes, source_sha256: file.sha256, reads: resourceReads,
       confirmation: resourceConfirmation, confirmation_bytes: Buffer.byteLength(resourceConfirmation) },
-    requests, first_complete_content_preserved: true, original_directory_preserved: true, raw_native_structured_content_verified: true,
+    requests, first_complete_content_preserved: true, original_directory_preserved: true,
+    directory_reuse: expectDirectoryReuse ? 'same_request_witness_verified' : 'not_required_for_historical_baseline', raw_native_structured_content_verified: true,
     structured_content_boundary: 'Native RPC structured output is verified; provider/session fields are checked when present, and native Pi omission is recorded without injecting it' };
 }
 
@@ -1833,6 +1881,55 @@ export function selectControlledHttpCall(context, plan) {
   return null;
 }
 
+function visibleToolText(message) {
+  return typeof message?.content === 'string' ? message.content
+    : (message?.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
+}
+
+function visibleResourceRef(text, path) {
+  const value = JSON.parse(text);
+  const files = [];
+  for (const record of value.records ?? []) {
+    for (const file of record.directory?.files ?? []) files.push(file);
+  }
+  const matches = files.filter(file => file.path === path && typeof file.ref === 'string' && text.includes(file.ref));
+  if (matches.length !== 1 || !/^sr:R[A-Za-z0-9_-]{22}$/u.test(matches[0].ref)) throw new Error('HTTP_PUBLIC_RESOURCE_NOT_VISIBLE');
+  return matches[0].ref;
+}
+
+/** Tool choices for the live HTTP loop. Every ref is copied from tool text already in the transcript. */
+export function selectHttpPublicLoopCall(context, plan) {
+  if (!plan || typeof plan.owner !== 'string' || typeof plan.resource_path !== 'string' || plan.resource_path.length === 0)
+    throw new Error('HTTP_PUBLIC_PLAN_INVALID');
+  const source = plan.source ?? 'sdk-fixture';
+  const find = id => context.messages.find(message => message.role === 'toolResult' && message.toolCallId === id);
+  const call = (id, name, args) => ({ type: 'toolCall', id, name, arguments: args });
+  const search = find('sc10-search');
+  if (!search) return call('sc10-search', 'notion_list', { query: '', source, limit: 20 });
+  if (search.isError) throw new Error('HTTP_PUBLIC_LIST_FAILED');
+  const listed = visibleToolText(search);
+  const directory = JSON.parse(listed);
+  const owners = (directory.records ?? []).filter(record => record.name === plan.owner && record.source === source
+    && record.availability === 'available' && typeof record.ref === 'string'
+    && /^sr:[CS][A-Za-z0-9_-]{22}$/u.test(record.ref) && listed.includes(record.ref));
+  if (owners.length !== 1) throw new Error('HTTP_PUBLIC_OWNER_NOT_UNIQUE');
+  const ownerRef = owners[0].ref;
+  const used = find('http-use');
+  if (!used) return call('http-use', 'notion_use', { ref: ownerRef });
+  if (used.isError) throw new Error('HTTP_PUBLIC_USE_FAILED');
+  const resourceRef = visibleResourceRef(visibleToolText(used), plan.resource_path);
+  const read = find('http-resource');
+  if (!read) return call('http-resource', 'read', { path: resourceRef });
+  if (read.isError) throw new Error('HTTP_PUBLIC_RESOURCE_FAILED');
+  const repeatedUse = find('http-use-repeat');
+  if (!repeatedUse) return call('http-use-repeat', 'notion_use', { ref: owners[0].ref });
+  if (repeatedUse.isError) throw new Error('HTTP_PUBLIC_REPEAT_USE_FAILED');
+  const repeated = find('http-resource-repeat');
+  if (!repeated) return call('http-resource-repeat', 'read', { path: visibleResourceRef(visibleToolText(used), plan.resource_path) });
+  if (repeated.isError) throw new Error('HTTP_PUBLIC_REPEAT_READ_FAILED');
+  return null;
+}
+
 export function selectProviderCall(context, plan = JSON.parse(readFileSync(process.env.SC10_PI_TOOL_PLAN, 'utf8'))) {
   if (plan.mode === 'complete') return null;
   if (plan.mode === 'http-call') return selectControlledHttpCall(context, plan);
@@ -1842,6 +1939,7 @@ export function selectProviderCall(context, plan = JSON.parse(readFileSync(proce
   const parsed = result => { if (result.isError) throw new Error('CONTROLLED_TOOL_FAILED'); return JSON.parse(text(result.content)); };
   const call = (id, name, args) => ({ type: 'toolCall', id, name, arguments: args });
   if (plan.mode === 'live-consume') return selectLiveProviderCall(context, plan);
+  if (plan.mode === 'http-public-loop') return selectHttpPublicLoopCall(context, plan);
   if (['name-references', 'name-reference-failed-source', 'name-reference-ambiguity'].includes(plan.mode)) return selectNamedReferenceCall(context, plan);
   if (plan.mode === 'lifecycle-probe') return find(plan.id) ? null : call(plan.id, 'read', { path: plan.ref });
   if (['resource-scalar', 'resource-scalar-short-refs'].includes(plan.mode)) return selectScalarProviderCall(context, plan.calls);
@@ -1943,32 +2041,13 @@ export function selectLiveProviderCall(context, plan) {
   if (read.isError) throw new Error('LIVE_RESOURCE_FAILED');
   return null;
 }
-async function holdLifecycleResponse(options, hook) {
-  if (!JSON.parse(readFileSync(process.env.SC10_PI_TOOL_PLAN, 'utf8')).holdResponse) return false;
-  hook('response_held');
-  const aborted = () => hook('signal_aborted');
-  options.signal.addEventListener('abort', aborted, { once: true });
-  try {
-    if (options.signal.aborted) aborted();
-    while (JSON.parse(readFileSync(process.env.SC10_PI_TOOL_PLAN, 'utf8')).holdResponse)
-      await new Promise(resolve => setTimeout(resolve, 25));
-  } finally { options.signal.removeEventListener('abort', aborted); }
-  return true;
-}
-
-async function provider(base) {
-  const path = await writeFakeProvider(base);
-  let source = await readFile(path, 'utf8');
-  const replace = (before, after) => { assert.equal(source.split(before).length, 2, 'Provider fixture shape changed'); source = source.replace(before, after); };
-  replace('import { appendFileSync }', "import { createHash } from 'node:crypto';\nimport { channel } from 'node:diagnostics_channel';\nimport { appendFileSync, readFileSync }");
-  replace('function stream(model, context) {', `${currentProviderTools.toString()}\n${resourceRefsFromNative.toString()}\n${selectScalarProviderCall.toString()}\n${ambiguityCandidatesFromMessage.toString()}\n${selectNamedReferenceCall.toString()}\n${selectNativeRepeatCall.toString()}\n${selectLiveProviderCall.toString()}\n${selectCatalogScaleCall.toString()}\n${selectControlledHttpCall.toString()}\n${selectProviderCall.toString()}\n${holdLifecycleResponse.toString()}\nlet nextRequest = 0;\nfunction stream(model, context) {\n  const requestId = String(process.pid) + ':' + String(++nextRequest);\n  const hook = phase => appendFileSync(process.env.SC10_PI_PROVIDER_HOOKS, JSON.stringify({ requestId, phase, pid: process.pid, aborted: Boolean(options?.signal?.aborted), monotonic_ns: process.hrtime.bigint().toString() }) + '\\n', { mode: 0o600 });`);
-  replace('const payload = await options?.onPayload?.({ model: model.id, context }, model);', 'if (typeof options?.onPayload !== "function" || typeof options?.onResponse !== "function") throw new Error("PUBLIC_PROVIDER_HOOKS_REQUIRED");\n      hook("payload_start");\n      const payload = await options.onPayload({ model: model.id, context }, model);\n      hook("payload_end");');
-  replace('hook("payload_start");', 'hook("payload_start");\n      if (process.env.SC06_PI_CATALOG_RELEASE === "provider") channel("context-broker.verify-sdk-initialization-release").publish({ pid: process.pid, boundary: "provider" });');
-  replace('JSON.stringify({ model: model.id, context })', 'JSON.stringify({ requestId, model: model.id, context, capturedAtNs: process.hrtime.bigint().toString() })');
-  replace('await options?.onResponse?.({ status: 200, headers: { "x-fixture": "deterministic" } }, model);', 'const held = await holdLifecycleResponse(options, hook);\n      await options.onResponse({ status: 200, headers: { "x-fixture": "deterministic" } }, model);\n      if (held) hook("response_callback");\n      hook("response_end");');
-  replace('let sent = false;', `let sent = false;\n  let call, prepared = false;\n  async function prepareOutput() {\n    await request();\n    if (!prepared) { call = selectProviderCall(context); if (call) { output.content = [call]; output.stopReason = 'toolUse'; } prepared = true; }\n    return output;\n  }`);
-  replace('result: async () => { await request(); return output; }', 'result: prepareOutput');
-  replace('await request();\n      for (const event of events) yield event;', `await prepareOutput();\n      if (call) {\n        yield { type: 'start', partial: output };\n        yield { type: 'toolcall_start', contentIndex: 0, partial: output };\n        yield { type: 'toolcall_end', contentIndex: 0, toolCall: call, partial: output };\n        yield { type: 'done', reason: 'toolUse', message: output };\n      } else for (const event of events) yield event;`);
+export async function provider(base, { backend = 'in-process', serializerUrl } = {}) {
+  const path = join(base, 'fake-provider.mjs');
+  const helperUrl = pathToFileURL(join(import.meta.dirname, 'mock-provider-adapter.mjs')).href;
+  const source = backend === 'http'
+    ? renderHttpWrapper({ helperUrl, serializerUrl })
+    : renderInProcessWrapper({ helperUrl, driverUrl: pathToFileURL(fileURLToPath(import.meta.url)).href });
+  assert.equal(source.includes('function selectProviderCall'), false, 'Provider wrapper must import selection instead of pasting it');
   await writeFile(path, source, { mode: 0o600 });
   const catalogPackage = join(base, 'native-catalog-observer');
   await mkdir(catalogPackage);
@@ -3575,7 +3654,7 @@ export function assertControlledHttpDirectory(captures, events, { sample, hostPi
   const systems = captures.map(capture => providerCatalogText(capture.context));
   if (held) {
     assert.match(systems[0], /<ntn-skills-discovery status="pending">/u);
-    assert.doesNotMatch(systems[0], /<ntn-skills-view-catalog>[\s\S]*<skill>/u);
+    assert.doesNotMatch(systems[0], /<ntn-skills-view-catalog>[\s\S]*<card\b/u);
     assert.equal(held.provider_request_id, captures[0].requestId);
     assert.ok(BigInt(held.request_seen_monotonic_ns) <= BigInt(held.provider_payload_end_monotonic_ns));
     assert.ok(BigInt(held.provider_payload_end_monotonic_ns) < BigInt(held.released_monotonic_ns), 'Actual provider input must complete before the held HTTP response is released');
@@ -3591,16 +3670,15 @@ export function assertControlledHttpDirectory(captures, events, { sample, hostPi
     }
     const text = systems[1], blocks = [...text.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)];
     assert.equal(blocks.length, 1); assert.ok(blocks[0][1].includes('id="' + view.id + '"'));
-    const cards = [...blocks[0][1].matchAll(/<skill><name>([^<]+)<\/name>(?:<description>([^<]*)<\/description>)?<source>([^<]+)<\/source><location>([^<]+)<\/location><\/skill>/gu)];
+    const cards = catalogCards(blocks[0][1]).filter(card => card.kind === 'skill');
     assert.equal(cards.length, membership.member_record_ids.length);
-    const xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
     for (const record of catalogs.at(-1).value.records) {
-      const card = cards.filter(value => value[1] === xml(record.name) && value[2] === xml(record.description) && value[3] === 'sdk-fixture');
-      assert.equal(card.length, 1); assert.match(card[0][4], /^sr:C[A-Za-z0-9_-]{22}$/u);
+      const card = cards.filter(value => value.name === record.name && value.description === record.description && value.source === 'sdk-fixture');
+      assert.equal(card.length, 1); assert.match(card[0].location, /^sr:C[A-Za-z0-9_-]{22}$/u);
     }
   } else {
     assert.equal(catalogs.length, 0);
-    assert.doesNotMatch(systems[1], /<ntn-skills-view-catalog>[\s\S]*<skill>/u);
+    assert.doesNotMatch(systems[1], /<ntn-skills-view-catalog>[\s\S]*<card\b/u);
     const failures = events.filter(event => event.kind === 'sdk' && event.event === 'end');
     assert.ok(failures.length > 0);
     for (const terminal of failures) {
@@ -4217,7 +4295,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       }
       assert.equal(selectNativeRepeatCall(controlled, { mainRef: owner[0].ref, resourcePath: repeatPlan.resource_path }), null);
       nativeRepeatEvidence = { ...assertNativeRepeatProjection(captures, originalToolResults,
-        { batch: info.resourceBatch, expectShort: expectShortConfirmations }), originalToolResults };
+        { batch: info.resourceBatch, expectShort: expectShortConfirmations, expectDirectoryReuse: expectCompactContext }), originalToolResults };
     } else if (partialEntrypoint) {
       const sample = info.entrypoint, selected = sample.files.find(file => file.role === 'selected');
       const fromFrame = id => {
@@ -4926,23 +5004,286 @@ async function retained(evidence, cleanup) {
   }
   console.log(JSON.stringify({ status: 'preserved', functional_status: report.status, cleanup, evidence, retained_files: before.length }));
 }
+/** Frozen source bytes and actual tool results define expectations; no product
+ * projector or loaded flag constructs this request-content oracle. */
+export function assertContextOnceLoop(captures, originals, { batch }) {
+  const ids = ['sc10-search', 'http-use', 'http-resource', 'http-use-repeat', 'http-resource-repeat'];
+  assert.ok(captures.length === 6 || captures.length === 7, 'The complete public loop has six requests and at most one held cancellation');
+  assert.deepEqual(originals.map(message => message.toolCallId), ids);
+  const stored = JSON.stringify(originals), file = batch.files.find(item => item.encoding === 'utf8' && item.content.length > 0 && !item.content.startsWith('\ufeff'));
+  assert.ok(file && typeof batch.main === 'string' && batch.main.length);
+  const originalUses = [originals[1], originals[3]].map(message => {
+    assert.equal(message.toolName, 'notion_use'); assert.equal(message.isError, false);
+    const value = JSON.parse(visibleToolText(message));
+    assert.equal(value.ok, true); assert.equal(value.purpose, 'use'); assert.equal(value.records.length, 1);
+    assert.equal(value.records[0].content, batch.main, 'Original use returns complete frozen source bytes');
+    assert.ok(value.records[0].directory && Array.isArray(value.records[0].directory.files));
+    verifyConsumptionEffects(value.effects);
+    return value;
+  });
+  assert.deepEqual(originalUses[0].records, originalUses[1].records, 'Repeated use does not change the selected source or original directory');
+  const directory = originalUses[0].records[0].directory;
+  const expectedMain = originalUses[0], expectedRepeat = structuredClone(originalUses[1]);
+  expectedRepeat.records[0].content = 'Already loaded.'; delete expectedRepeat.records[0].directory;
+  const resourceText = [originals[2], originals[4]].map(message => {
+    assert.equal(message.toolName, 'read'); assert.equal(message.isError, false);
+    const text = visibleToolText(message);
+    assert.ok(text.startsWith(file.content), 'Each raw resource read preserves the entire frozen resource');
+    verifyConsumptionEffects(message.details.effects);
+    const footer = '\n\n<notion-effects>' + JSON.stringify(message.details.effects) + '</notion-effects>';
+    const suffix = text.slice(file.content.length);
+    assert.ok(suffix === footer || suffix === '\n' + footer, 'Only this operation effects may follow source bytes');
+    return text;
+  });
+  const observations = captures.map((capture, index) => {
+    const results = capture.context.messages.filter(message => message.role === 'toolResult');
+    assert.deepEqual(results.map(message => message.toolCallId), ids.slice(0, Math.min(index, ids.length)), 'Tool results enter their real subsequent requests exactly once');
+    let directories = 0;
+    for (const message of results) {
+      assert.notEqual(message.isError, true);
+      if (message.toolCallId === 'http-use' || message.toolCallId === 'http-use-repeat') {
+        const model = JSON.parse(visibleToolText(message));
+        assert.deepEqual(model, message.toolCallId === 'http-use' ? expectedMain : expectedRepeat,
+          'Only repeated source content and directory are omitted; operation facts stay exact');
+        if (model.records[0].directory) { assert.deepEqual(model.records[0].directory, directory); directories++; }
+      } else if (message.toolCallId === 'http-resource') assert.equal(visibleToolText(message), resourceText[0]);
+      else if (message.toolCallId === 'http-resource-repeat') assert.equal(visibleToolText(message), 'Already available.' + resourceText[1].slice(file.content.length));
+    }
+    assert.equal(directories, index >= 2 ? 1 : 0);
+    assert.equal(bodyCount(capture.context, batch.main), index >= 2 ? 1 : 0);
+    assert.equal(bodyCount(capture.context, file.content), index >= 3 ? 1 : 0);
+    for (const other of [...batch.files, ...batch.unselected].filter(item => item.path !== file.path && item.encoding !== 'base64' && item.content.length))
+      assert.equal(bodyCount(capture.context, other.content), 0, 'Unselected resources never enter the request');
+    return { request: capture.requestId, complete_main_copies: index >= 2 ? 1 : 0,
+      complete_resource_copies: index >= 3 ? 1 : 0, complete_directories: directories,
+      tool_results: results.length, model_text_bytes: Buffer.byteLength(capture.context.messages.map(visibleToolText).join('\n')) };
+  });
+  assert.equal(JSON.stringify(originals), stored, 'The independent checker cannot modify original tool results');
+  return { requests: observations, source_main_sha256: hash(batch.main), source_resource_sha256: hash(file.content),
+    complete_source_and_effects: true, current_request_directory_unique: true };
+}
+
+export function latePayloadMutationSource(kind, output) {
+  assert.ok(['duplicate', 'lost', 'schema'].includes(kind)); assert.ok(isAbsolute(output));
+  return `import fs from 'node:fs'; import crypto from 'node:crypto';
+const hash=value=>crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
+let changed=false;
+export default api=>api.on('before_provider_request',event=>{
+  if(changed)return; const before=event.payload; const next=structuredClone(before);
+  const text=content=>typeof content==='string'?content:(content??[]).filter(part=>part.type==='text').map(part=>part.text).join('\\n');
+  const index=next.messages.findIndex(message=>message.role==='user'&&text(message.content).includes('<context-broker-record'));
+  if(index<0)throw new Error('WIRE_PROBE_SOURCE_NOT_PRESENT');
+  const kind=${JSON.stringify(kind)};
+  if(kind==='duplicate')next.messages.splice(index+1,0,structuredClone(next.messages[index]));
+  else if(kind==='lost')next.messages.splice(index,1);
+  else {if(!next.tools?.[0]?.function)throw new Error('WIRE_PROBE_SCHEMA_NOT_PRESENT');next.tools[0].function.description+=' changed after Broker';}
+  changed=true; fs.writeFileSync(${JSON.stringify(output)},JSON.stringify({kind,before_sha256:hash(before),after_sha256:hash(next)})+'\\n',{flag:'wx',mode:0o600});
+  return next;
+});
+`;
+}
+
+async function runContextOnceLoop(info, scratch, evidence, backend, mutation) {
+  const scene = mutation ? 'context-wire-' + mutation : contextOnceScenario;
+  const base = join(scratch, scene), output = join(evidence, scene);
+  await mkdir(base, { recursive: true }); await mkdir(output, { mode: 0o700 });
+  const localSource = join(base, 'source');
+  await cp(info.fixture.cwd, localSource, { recursive: true, errorOnExist: true, force: false });
+  const agentDir = join(base, 'agent'), sessions = join(base, 'sessions');
+  await mkdir(join(agentDir, 'context-broker'), { recursive: true }); await mkdir(sessions);
+  const source = { type: 'notion', id: 'sdk-fixture', namespace: 'sdk-fixture', database: info.fixture.database,
+    discovery: { offline: true }, activation: { offline: true }, cacheDir: join(base, 'broker-cache'), prefetch: false };
+  assert.equal(Object.hasOwn(source, 'command'), false);
+  const config = join(agentDir, 'context-broker/config.yml');
+  await save(config, { sources: [source] }); await save(join(output, 'source.json'), source);
+  const repeatFile = info.resourceBatch?.files.find(file => file.encoding === 'utf8' && file.content.length > 0 && !file.content.startsWith('\ufeff'));
+  assert.ok(info.resourceBatch && repeatFile, 'The HTTP public loop needs the frozen resource fixture');
+  const toolPlan = join(base, 'tool-plan.json');
+  await publishToolPlan(toolPlan, { mode: 'http-public-loop', owner: info.resourceBatch.name, source: 'sdk-fixture', resource_path: repeatFile.path });
+  const previousPlan = process.env.SC10_PI_TOOL_PLAN;
+  process.env.SC10_PI_TOOL_PLAN = toolPlan;
+  const bodyDir = join(output, 'http-bodies');
+  await mkdir(bodyDir, { mode: 0o700 });
+  let bodyCount = 0;
+  const server = backend === 'http' ? await startLoopbackMock({
+    selectCall: context => mutation ? null : selectProviderCall(context),
+    onBody: async (record, body) => {
+      const name = String(++bodyCount).padStart(3, '0') + '.bin';
+      await writeFile(join(bodyDir, name), body, { mode: 0o600, flag: 'wx' });
+      record.entityFile = 'http-bodies/' + name;
+      record.entityBytes = body.length;
+    },
+    limits: { maxRequests: 16, maxBodyBytes: 16 * 1024 * 1024, requestTimeoutMs: 30_000, holdTimeoutMs: 120_000, maxInFlight: 1 },
+  }) : undefined;
+  const captureFile = join(output, 'provider-context.jsonl'), hookFile = join(output, 'provider-hooks.jsonl');
+  let rpc, failed, loopResult;
+  const readCaptures = async () => backend === 'http'
+    ? Promise.all(server.requests.filter(item => item.entityFile).map(async item => ({ requestId: item.entityFile,
+      context: contextFromCompletionRequest(await json(join(output, item.entityFile))) })))
+    : providerCaptures(captureFile);
+  const waitUntil = async (predicate, label) => {
+    const deadline = Date.now() + 30_000;
+    while (!await predicate()) { assert.ok(Date.now() < deadline, label); await new Promise(resolve => setTimeout(resolve, 25)); }
+  };
+  const fixtureEnv = { ...info.fixtureEnv };
+  for (const key of ['NTN_SKILLS_HOME', 'NTN_SKILLS_CONFIG_HOME', 'NTN_SKILLS_CACHE_HOME']) {
+    const original = resolve(info.fixture.cwd, fixtureEnv[key]);
+    assert.ok(original.startsWith(resolve(info.fixture.cwd) + '/'));
+    fixtureEnv[key] = join(localSource, original.slice(resolve(info.fixture.cwd).length + 1));
+  }
+  try {
+    const serializerUrl = pathToFileURL(info.serializerIdentity.serializer.path).href;
+    const providerFile = await provider(base, { backend, serializerUrl });
+    const ledger = join(output, 'observer.jsonl'), preload = join(base, 'observer.mjs');
+    await observer(preload);
+    const env = isolatedEnv({ base, agentDir, ...fixtureEnv, TMPDIR: await systemTempRoot(),
+      CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_CONFIG: config, ...(server ? { CTX_MOCK_PROVIDER_BASE_URL: server.baseUrl } : {}), SC10_PI_TOOL_PLAN: toolPlan,
+      SC10_PI_PROVIDER_HOOKS: hookFile, CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: captureFile,
+      SC10_PI_OBSERVER: ledger, SC10_PI_BUNDLED_CLI: join(info.packageRoot, 'dist/ntn-skills.mjs'), NODE_OPTIONS: `--import=${preload}` });
+    const argv = ['--no-extensions', '--no-skills', '--no-mcp', '--session-dir', sessions, '--tools', nativeTools.join(','),
+      '-e', providerFile, '-e', info.extension, '-e', join(base, 'native-catalog-observer/index.mjs'), '--model', 'context-broker-e2e/fake'];
+    if (mutation) {
+      const extension = join(base, 'late-payload.mjs');
+      await writeFile(extension, latePayloadMutationSource(mutation, join(output, 'mutation.json')), { flag: 'wx', mode: 0o600 });
+      argv.splice(-2, 0, '-e', extension);
+    }
+    await save(join(output, 'launch.json'), { host: info.host, argv, cwd: base, provider_backend: backend, base_url: server?.baseUrl ?? null,
+      serializer: info.serializerIdentity, pi: info.pi.version,
+      boundary: backend === 'http' ? 'Live Pi, normal installed serializer/parser and loopback HTTP; no replay.' : 'Live Pi with a controlled in-process provider; no HTTP transmission claim.' });
+    rpc = await startRpc({ host: 'pi', args: argv, cwd: base, env, timeoutMs: 120000 });
+    const diagnose = async () => {
+      const start = rpc.frames.length;
+      await rpc.command('prompt', { message: '/context-broker request' });
+      const get = () => rpc.frames.slice(start).find(frame => frame.type === 'extension_ui_request'
+        && frame.method === 'notify' && frame.message?.startsWith('context-broker request:'))?.message;
+      await waitUntil(() => Boolean(get()), 'The request diagnostic was not emitted');
+      const text = get(); await writeFile(join(output, 'final-request-diagnostic.txt'), text, { flag: 'wx', mode: 0o600 });
+      return text;
+    };
+    if (mutation) {
+      const outcome = await rpc.prompt('$resources@sdk-fixture Inspect the selected instructions only. Do not call any tools.').then(
+        () => ({ ok: true }), error => ({ ok: false, message: String(error.message) }));
+      assert.equal(outcome.ok, false, 'A later rewritten entity must not complete or confirm the selected source');
+      const proof = await json(join(output, 'mutation.json'));
+      const diagnostic = await diagnose();
+      assert.equal(server.requests.length, 1);
+      const request = server.requests[0]; assert.ok(request.entityFile && request.bytes > 0);
+      const sent = await readFile(join(output, request.entityFile));
+      assert.equal(hash(sent), proof.after_sha256); assert.notEqual(proof.before_sha256, proof.after_sha256);
+      assert.match(diagnostic, /dispatched=true/u); assert.match(diagnostic, /PAYLOAD_REWRITTEN/u);
+      assert.doesNotMatch(diagnostic, /wire=true/u); assert.ok(diagnostic.includes('sent=' + hash(sent)));
+      assert.equal(rpc.frames.filter(frame => frame.type === 'tool_execution_start').length, 0);
+      const native = [];
+      for (const file of await inventory(sessions)) if (file.path.endsWith('.jsonl')) native.push(...await rows(join(sessions, file.path)));
+      for (const entry of native) assert.ok(!['context-broker-active-sources', 'context-broker-selected-graph'].includes(entry.customType),
+        'A mismatched injected request must not persist active or selected source receipts');
+      loopResult = { name: scene, status: 'passed', provider_backend: backend, negative: mutation,
+        expected_abort: outcome, actual_entity: { bytes: sent.length, sha256: hash(sent) }, source_receipts_persisted: 0,
+        finality: 'Known real dispatch with rejected payload identity; not zero provider calls' };
+    } else {
+    await rpc.prompt('Use the resources Skill through notion_use, then read its advertised references/guide.md. Repeat that use and that resource read with the same visible handles.');
+    const starts = rpc.frames.filter(frame => frame.type === 'tool_execution_start');
+    assert.deepEqual(starts.map(frame => [frame.toolCallId, frame.toolName]), [
+      ['sc10-search', 'notion_list'], ['http-use', 'notion_use'], ['http-resource', 'read'],
+      ['http-use-repeat', 'notion_use'], ['http-resource-repeat', 'read'],
+    ]);
+    for (const call of starts.filter(item => item.toolName !== 'notion_list')) {
+      const prior = (await readCaptures()).find(capture => !capture.context.messages.some(message => message.role === 'toolResult' && message.toolCallId === call.toolCallId)
+        && capture.context.messages.filter(message => message.role === 'toolResult').length === starts.indexOf(call));
+      assert.ok(prior, 'Every call has its actual preceding provider input');
+      const ref = call.args.ref ?? call.args.path;
+      assert.ok(prior.context.messages.filter(message => message.role === 'toolResult').some(message => visibleToolText(message).includes(ref)),
+        'Each selected reference comes from this provider input');
+    }
+    const originals = starts.map(call => {
+      const frames = rpc.frames.filter(frame => frame.type === 'tool_execution_end' && frame.toolCallId === call.toolCallId);
+      assert.equal(frames.length, 1); assert.equal(frames[0].isError, false);
+      return { ...frames[0].result, role: 'toolResult', toolName: call.toolName, toolCallId: call.toolCallId, isError: false };
+    });
+    for (const message of originals.filter(message => message.toolName === 'notion_use'))
+      assertPreparedProjection(message, { snapshots: [info.resourceBatch.snapshot], bodies: new Map([[info.resourceBatch.name, info.resourceBatch.main]]), roots: [info.resourceBatch.name] });
+    await save(join(output, 'original-tool-results.json'), originals);
+    await save(join(output, 'source-oracle.json'), info.resourceBatch);
+    const beforeAbort = assertContextOnceLoop(await readCaptures(), originals, { batch: info.resourceBatch });
+    const diagnostic = await diagnose();
+    if (server) {
+      assert.match(diagnostic, /wire=true/u);
+      for (const request of server.requests) {
+        assert.ok(request.entityFile); const bytes = await readFile(join(output, request.entityFile));
+        assert.ok(diagnostic.includes('sent=' + hash(bytes)), 'The diagnostic binds each actual serialized HTTP request');
+      }
+    } else { assert.doesNotMatch(diagnostic, /wire=true/u); assert.match(diagnostic, /unsupported-api/u); }
+    if (server) server.control.hold();
+    else await publishToolPlan(toolPlan, { ...await json(toolPlan), holdResponse: true });
+    const pending = rpc.prompt('Stop after this turn without another tool.').then(() => ({ ok: true }), error => ({ ok: false, message: String(error.message) }));
+    await waitUntil(async () => server ? server.requests.some(request => request.phase === 'held')
+      : (await rows(hookFile)).some(event => event.phase === 'response_held'), 'The follow-up request never reached its held boundary');
+    const toolsBeforeAbort = starts.length;
+    const abortRequest = rpc.command('abort');
+    if (server) await waitUntil(() => server.requests.some(request => request.phase === 'cancelled'), 'Abort did not close the held response');
+    else {
+      await waitUntil(async () => (await rows(hookFile)).some(event => event.phase === 'signal_aborted'), 'Provider did not observe cancellation');
+      await publishToolPlan(toolPlan, { ...await json(toolPlan), holdResponse: false });
+    }
+    await abortRequest;
+    const outcome = await pending;
+    assert.equal(outcome.ok, false);
+    assert.equal(rpc.frames.filter(frame => frame.type === 'tool_execution_start').length, toolsBeforeAbort);
+    if (server) assert.ok(server.requests.filter(request => request.phase === 'cancelled').every(request => request.call === undefined));
+    const proof = assertContextOnceLoop(await readCaptures(), originals, { batch: info.resourceBatch });
+    await save(join(output, 'context-once-proof.json'), { before_abort: beforeAbort, after_abort: proof, backend,
+      actual_http: backend === 'http', model_usage: 'mock_not_real' });
+    failed = null;
+    loopResult = { name: contextOnceScenario, status: 'passed', provider_backend: backend,
+      pi: info.pi.version, serializer: info.serializerIdentity.serializer, base_url: server?.baseUrl ?? null,
+      tool_calls: starts.map(frame => ({ id: frame.toolCallId, name: frame.toolName, arguments: frame.args })),
+      cancel: { held: true, aborted: true, extra_tool_calls: 0, outcome },
+      boundary: 'Actual Pi RPC drove public notion_list, notion_use, and read. The mock copied refs from the serialized tool text. Capture replay did not run. No production model API was called.',
+      not_claimed: ['all14 oracle', 'real model', 'Tern UI', ...(backend === 'http' ? [] : ['Actual provider HTTP'])] };
+    }
+  } catch (error) {
+    failed = { code: error.code ?? error.name, message: String(error.message), stack: error.stack };
+    loopResult = { name: scene, status: 'failed', provider_backend: backend, error: failed };
+  } finally {
+    if (previousPlan === undefined) delete process.env.SC10_PI_TOOL_PLAN;
+    else process.env.SC10_PI_TOOL_PLAN = previousPlan;
+    if (rpc) {
+      await writeFile(join(output, 'rpc-frames.jsonl'), rpc.frames.map(frame => JSON.stringify(frame)).join('\n') + (rpc.frames.length ? '\n' : ''), { mode: 0o600 });
+      await cp(sessions, join(output, 'session-original'), { recursive: true, force: true });
+    }
+    if (server) await server.close().catch(error => { failed ??= { code: error.code ?? error.name, message: String(error.message) }; });
+    if (rpc) await rpc.stop().catch(error => { failed ??= { code: error.code ?? error.name, message: String(error.message) }; });
+  }
+  const finality = rpc ? await waitForSourceFinality(join(output, 'observer.jsonl'), rpc.lifecycle[0].pid, {
+    hostClosed: true, initialCatalog: { sourceId: source.id, database: source.database } }) : { complete: false, pending: [{ kind: 'rpc_absent' }] };
+  if (rpc) await save(join(output, 'rpc-lifecycle.json'), rpc.lifecycle);
+  const httpRequests = (server?.requests ?? []).map(({ visibleToolText, ...request }) => ({ ...request, visible_tool_bytes: Buffer.byteLength(visibleToolText ?? '') }));
+  await save(join(output, 'http-requests.json'), (server?.requests ?? []).map(({ visibleToolText, ...request }) => ({ ...request, visibleToolText })));
+  const result = { ...loopResult, observer_finality: finality.complete === true, source_finality: finality, http_requests: httpRequests,
+    ...((failed || !finality.complete) && loopResult.status === 'passed' ? { status: 'failed', cleanup_error: failed ?? { code: 'OBSERVER_INCOMPLETE' } } : {}) };
+  await save(join(output, 'result.json'), result);
+  return result;
+}
+
 async function main(argv) {
 const args = [...argv];
-if (args.some(value => ['--help', '-h', 'help'].includes(value))) { console.log(usage + '\n' + nameUsage + '\n' + warmDirectoryUsage + '\n' + compactionUsage + '\n' + catalogScaleUsage + '\n' + httpUsage); return; }
+if (args.some(value => ['--help', '-h', 'help'].includes(value))) { console.log(usage + '\n' + nameUsage + '\n' + warmDirectoryUsage + '\n' + compactionUsage + '\n' + catalogScaleUsage + '\n' + httpUsage + '\n' + providerBackendUsage); return; }
 const action = args.shift();
 assert.ok(['doctor', 'run', 'evidence', 'cleanup'].includes(action), usage);
 const options = {};
 for (let index = 0; index < args.length; index += 2) {
   const key = args[index], value = args[index + 1];
-  assert.ok(['--package', '--fixture', '--live-input', '--source-http-helper', '--out', '--evidence', '--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar', '--expect-short-confirmations', '--warm-directory', '--scenario'].includes(key) && value && !Object.hasOwn(options, key), usage);
+  assert.ok(['--package', '--fixture', '--live-input', '--source-http-helper', '--out', '--evidence', '--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar', '--expect-short-confirmations', '--warm-directory', '--provider-backend', '--scenario'].includes(key) && value && !Object.hasOwn(options, key), usage);
   if (['--expect-short-refs', '--expect-compact-context', '--expect-direct-scalar', '--expect-short-confirmations', '--warm-directory'].includes(key)) assert.ok(['true', 'false'].includes(value), usage);
   else if (key === '--scenario') assert.ok(value === 'all' || selectableScenarioNames.includes(value), usage + '\n' + nameUsage + '\n' + compactionUsage);
+  else if (key === '--provider-backend') assert.ok(['in-process', 'http'].includes(value), providerBackendUsage);
   else assert.ok(isAbsolute(value), usage);
   options[key] = value;
 }
 if (action === 'evidence' || action === 'cleanup') {
   assert.ok(options['--evidence'], usage); await retained(await realpath(options['--evidence']), action === 'cleanup');
 } else {
+  const providerBackend = providerBackendOptions(options);
   const warmDirectory = warmDirectoryOptions(options);
   if (options['--live-input']) assert.equal(options['--scenario'], undefined, 'Explicit live input selects one separate live-notion route; offline all remains unchanged');
   const info = await inspect(options);
@@ -4956,6 +5297,7 @@ if (action === 'evidence' || action === 'cleanup') {
     ...(info.live ? { artifact: info.live.artifact, installed_files: info.published, oracle: info.live.oracle, expected_default_records: info.catalog.count } : {}),
     ...(warmDirectory ? { comparison_cell: 'warm-directory', metadata_barrier: 'not_run', metadata_barrier_timeout_ms: 10000 } : {}),
     ...(info.catalogScale ? { catalog_scale: info.catalogScale, object_files: info.catalogObjects } : {}),
+    provider_backend: providerBackend, http_provider_loop: providerBackend === 'http' ? 'not_run' : 'not_selected',
     default_view: 'not_verified' }, null, 2));
   else {
     assert.ok(options['--out'], usage);
@@ -4969,6 +5311,25 @@ if (action === 'evidence' || action === 'cleanup') {
     const expectCompactContext = options['--expect-compact-context'] !== 'false';
     const expectDirectScalar = options['--expect-direct-scalar'] !== 'false';
     const expectShortConfirmations = options['--expect-short-confirmations'] !== 'false';
+    if ([contextOnceScenario, wireNegativeScenario].includes(options['--scenario'])) {
+      const results = [];
+      for (const mutation of options['--scenario'] === wireNegativeScenario ? ['duplicate', 'lost', 'schema'] : [undefined])
+        results.push(await runContextOnceLoop(info, scratch, evidence, providerBackend, mutation));
+      const result = { status: results.every(item => item.status === 'passed') ? 'passed' : 'failed',
+        observer_finality: results.every(item => item.observer_finality === true) };
+      const after = await productInventory(info.packageRoot); await save(join(evidence, 'package-after.json'), after);
+      const unchanged = JSON.stringify(after) === JSON.stringify(before);
+      const report = { version: 1, status: unchanged && result.status === 'passed' ? 'passed' : 'failed', package_unchanged: unchanged,
+        evidence_stable: result.observer_finality === true, provider_backend: providerBackend, scratch, evidence, results,
+        not_claimed: ['Offline all14 oracle', 'Capture to serializer replay', 'Real model', 'Native menu', 'Completing every CTX issue'] };
+      await save(join(evidence, 'plan.json'), { version: 1, provider_backend: providerBackend, scenarios: results.map(item => item.name), live_http_loop: providerBackend === 'http',
+        cleanup_contract: 'original-session-observer-and-entity-inventory', package: info.packageRoot, serializer: info.serializerIdentity });
+      await save(join(evidence, 'report.json'), report);
+      await save(join(evidence, report.evidence_stable ? 'retained.json' : 'retained-incomplete.json'), await inventory(evidence));
+      console.log(JSON.stringify({ status: report.status, evidence, scratch, provider_backend: providerBackend }));
+      process.exitCode = report.status === 'passed' ? 0 : 1;
+      return;
+    }
     const scenarios = info.live ? ['live-notion'] : options['--scenario'] && options['--scenario'] !== 'all' ? [options['--scenario']] : scenarioNames;
     await save(join(evidence, 'plan.json'), { version: 1, node: process.version, pi: info.pi.version, package: info.packageRoot, runtime: info.runtime, extension: info.extension, serializer: info.serializerIdentity,
       fixture: options['--fixture'], driver_sha256: hash(await readFile(fileURLToPath(import.meta.url))), source_command_configured: false,

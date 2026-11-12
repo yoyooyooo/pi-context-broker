@@ -42,3 +42,5 @@ node --test scripts/context-once-evidence.test.mjs
 source/owner/pin/文件身份不同不能因同名字或同字节而合并。省略依据必须仍在同一最终请求中；不能引用另一个省略标记或已被压缩的内容。字节与结构断言不证明模型自然选路质量。
 
 纯表示变化更新实现回归与本地图。状态语义变化同时审阅 consumer-state、组合模型、正负配置和源码映射；不能只更新 hash。每个切片通过 Pro `ntn` 同步受影响的 Notion 长期页并完整读回，保留所有失败和未执行范围。
+
+CTX06 的 DeliveryBoundary 不新增 TLA 状态。进程内 mock payload 和 `after_provider_response` 的 2xx 仍是 logical-only，不是最终传输证明。普通 `openai-completions` 只有 Node Undici 实际发送实体与绑定摘要一致才是 wire 回执。摘要不一致时请求保持 dispatched，但不确认 active、selected 或 persisted。`contextBrokerResource` 的标量/批量结果和 effects 与主文、preparation 一样核对。`/context-broker request` 只保留哈希身份、固定 snapshot pin、copied/reused/retired、`remote_writes`/`author_content`，不保存正文或 locator。
