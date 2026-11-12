@@ -198,7 +198,7 @@ v7、v8 均按原停止规则结束，停止此 v8 构造，不扩展 B/D 或 no
 旧cwd清理、已fork两轮和`-ns`限制先有定向RED；修正后candidate/budget/fork/resume共55/55 GREEN。四个真实父结果C1、D-named、setup各1轮，v5为2轮，全部离线准入通过且原config/result/native字节不变；回执`reviews/close2-20261112-semantic-plan/fork-real-parents-admission.json` SHA `a646803692f90a884d66f424742be8fa08035783ac59ac93a91187cc55b388d4`。该预检未启动Pi/model/来源请求、未读Store；它不证明真实纠错交付。四份草案统一只要求对照已读完整来源复核，不提供正确答案或逐题提示，各一次、零重试、顺序运行，仍待root冻结真实当前host。复核即使通过，也只证明会话最终交付，原冷首答、失败、分母及生成/helper门槛保持。本次只改已有driver接线，不改产品状态转移或增加有限模型。
 上述段落保留复核启动前状态。四次实际终局已在来源复核分支 `41101972da5fe6faa1bdce3d7e7bd601c36ee955` 及原件 `reviews/close2-v8-semantics/` 记录：技术核验4/4通过，内容判定C1/v5 failed、D-named passed、setup passed-with-notes；setup初评与补充复核均保留。它们不改原冷首答或生成任务判定。
 
-### v9 两阶段完整生成续接候选（驱动已验，真实运行待冻结）
+### v9 两阶段完整生成续接候选（启动前合同，原文保留）
 
 新增默认关闭的 `artifactRecovery` 只接受一个 SHA 绑定的原 failed/timeout 生成结果与固定 `procedure`、`complete` 两阶段。准入独立核验真实终局、原 native 完整调用/结果配对、五文件项目 manifest、来源只读效果、原臂和产品文件；不要求旧 native 有 final，也不合成 final。原 B/D 历史中被原项目守卫明确在执行前拒绝的 Bash 调用可原样保留，其他未闭合或越界历史不准入。v8 A 的完整 104 行历史可通过公开 fork 继承；超时请求未持久化的思考正文无法恢复，不能把空摘要或事件数量解释成具体进展。
 
@@ -213,4 +213,16 @@ v7、v8 均按原停止规则结束，停止此 v8 构造，不扩展 B/D 或 no
 该构造改变任务分段并使用已读历史，是新的完整生成续接候选；不称原冷任务 600 秒通过，不证明此前超时根因，也不叠加 completion cap 或展开新矩阵。完整产物出现后，仍须独立原文审阅、原受控 helper 实驱和整体 chain `passed` 才可收口。AH-639、AH-638 与全部原 failed、unknown、not_run 继续按实际证据保留。本次只改变已有验证 driver 编排，不改变产品有限状态转移，不新增验证平台或形式模型。
 
 本轮测试诊断明确列出的 45 个 owned 临时根已完成 Evidence→系统 Trash→Evidence：157 份常规文件/200451 B、74 子目录及 2 份 symlink 目标元数据先保留，链接从未跟随；45 次 `/usr/bin/trash` 全部退出 0，原路径全部不存在，原始测试与准入证据的 hash 均保持。只处理本轮确证 fixture，不递归原模型状态、Store/auth 或用户项目。清理回执为同目录 `cleanup-exact-test-roots/after.json`，11506 B，SHA256 `05a8cf5a41ce665f62e698442237f195f87060f37d85aab360cdfc23ac1909c4`。
+
+### v9 真实终局与两份定位暖纠错
+
+上述 v9 段落为启动前冻结合同，运行时绑定提交 `9c87ad659824b6baf19d10a3f83eb893a767ccc7`。唯一 A/-ns 链 `notion-only-close3-v9-A-staged-recovery-notion-only-chain-BLYnlx` 已失败：procedure 进程 `601772.78325 ms / timeout143`，6 payload / 1299378 B，5 次新 native（write 1、Bash 2、read 2）。两个 Bash 文件自检在执行前被拒绝，随后两个 native read 成功；0 final，complete not_run。实际保存 26314 B 的 `.cursor/skills/verify-ticket-service/SKILL.md`，SHA `f3ec7ecf5a116e67e7ef6ce46b97d61af71f250ff91bbf020348885051f96c49`。六个引用/helper 文件缺失，helper not_run；这是一个来源准确的草稿，不是完整任务通过。生命周期与清理设计关注点保留为待实现审阅事项，不虚构 helper 实际失败。
+
+独审逐字核对父非 header 全文327824 B/103条、新 native、实际6份 payload→wire、五文件项目与50项冻结输入；继承11个调用不算本轮新调用。前五个完整响应367926 reported tokens是下界，第六个未完成，完整usage及金额 unknown。来源只有12次metadata且0 mutation；list没有显式effects字段，不虚构新的effects:none。其他网络与后代请求的未知范围保留，不与SDK请求相加，也不把两次拒绝推定为唯一超时原因。终局审计 `reviews/close3-v9-A-terminal-independent/terminal-audit.json` SHA `d92bb5b757b2079d6f9e32ceda2e45dc840f2dab37a7f77260c6d0e3058e254f`，部分文件语义审阅SHA `c08782f59face16ffc32673063e94b9cedb13d85358b18bc4055150b04d0adbd`。本构造已停止，没有扩展其他五臂或提高原预算。
+
+C1/v5另立 `close3-v9-targeted-correction-freeze.json`（SHA `38b467c76fd89a01bd0d15c9dd4d921874680a6332bc91d9c7a9bbbe4a9cd2f5`），只引用各自上一答的问题句，不提供正确答案或后台计数；两例各一次、零重试、串行，沿既有介绍fork驱动41101972，不改产品或作者正文。完整历史与9份正文保持，正常69 Skills/worker-high成立。C1完整语义passed，准确区分显式调用、历史effects和无法证明的自动请求；v5 passed-with-notes，明确撤回Doctor等于用户路径证明，两处措辞歧义作为notes保留。两份原final字节及语义报告在 `reviews/close3-v9-targeted-semantics/`；C1报告SHA `140e4864e181fbf81754927cdb710cec7317dd5be363fdb01e84234514152843`，v5报告SHA `0a0c084eee01613853b08dbe59a49ce891fb3bd0219f9f37f2490bb647a6595a`。这些是明确定位干预后的当前交付恢复，不改原冷/暖/v8失败，不证明自主首答或同条件性能改善。
+
+两新暖运行合计287044.502709 ms、2 payload/501648 B、140637 tokens；C1实际12metadata，v5完整SDK trace为0来源HTTP，均0新工具/0正文重读/0来源mutation。与原8个介绍系列唯一路径合并后为10 run、17 payload/3262677 B、375来源HTTP、966972 tokens，C1祖先只计一次。三份本轮新增运行合计888817.285959 ms、8 payload/1801026 B、24来源HTTP，508563 tokens仍只是下界。独立汇总为 `reviews/root-close3-cost-summary.json`，耗时是运行耗时之和，其他网络与金额unknown，不比较p95或归因性能收益。
+
+A两个根与两暖cwd均完成Evidence→系统Trash→Evidence；83份原件未变，Store/auth未读、未复制、未清理。回执SHA分别为 `24e84bad9e7988d50d3f3c251497fef067d0a5dfc1cd6796ba6a5649be56ec41` 和 `5ae97d7fc0dddee7e321aabb707ab461063bd89f0ab16bbbb4b90a866a9f4bd6`。代码及地图只在独立候选分支同步；日用Broker f2f7257、CLI ee4e712和原精确CI169/CI118保持。当前12子票仍10 Done、AH639/AH638 In Progress；完整生成、固定资源续读及helper实驱没有被介绍纠错替代。原16分母保持8 technical passed/6 failed/2 not_run。本次终局地图不改变有限模型状态语义，既有TLA/cfg/view结果复用，不宣称重新证明。
 
