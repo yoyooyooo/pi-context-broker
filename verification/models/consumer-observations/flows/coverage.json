@@ -24,7 +24,7 @@
     "scripts/skill-preparation-evidence.mjs": "a1c3ae9d40c4ca4ec407014ed13339c20caf66f2d918a4b988602053ea7bb3fb",
     "scripts/skill-preparation-evidence.test.mjs": "3205a96b55844a40d2c1194ccb2485be4d570fd1e4f07156a2a8529676283275",
     "scripts/notion-sdk-pi.mjs": "2be6fa4f35fe4f3f78c81af8cfb66cf29a71dc19e0999ef39b88597f1907f006",
-    "scripts/notion-sdk-pi.test.mjs": "bde119f38f5a78cf37248be1a57d6c122dbdc0ebefa1177d346ab341a10a1926",
+    "scripts/notion-sdk-pi.test.mjs": "f5fc3ce23115627a91c4dbf1fb2f423fa54322801a20ab7e5d1a72cd5a4e2121",
     "packages/context-broker/scripts/skill-model-surfaces.test.ts": "876b6c6650bed1f81068c71c1be630fb10ecb951e1cc1a7cb17797cc26d57d5b",
     "packages/context-broker/scripts/session-active.test.ts": "651b81077ba4635f8267c7623f001a5e3e46d65901a4bc646b1b04f5a6b30dcd",
     "packages/context-broker/src/resource-read-types.ts": "fe42ca452633a4919aea0d23ff46789d4de742686f4290d53ca69b00074e92ab",
@@ -683,7 +683,13 @@
       "file": "scripts/notion-sdk-pi.mjs",
       "before": "c3d61335d8bb5915fe9c497bdfed3023f51fdac222296201cc807cf6633ca359",
       "after": "2be6fa4f35fe4f3f78c81af8cfb66cf29a71dc19e0999ef39b88597f1907f006",
-      "scope": "The restored-role counterexample now supplies a valid assistant model/usage/content envelope; it must reach the source-role guard instead of accidentally failing Pi serializer totalTokens access. Product logic/model transitions unchanged. Actual four-scene installed run passes; the prior failed run remains retained."
+      "scope": "The restored-role counterexample now supplies a valid assistant model/usage/content envelope; it must reach the source-role guard instead of accidentally failing Pi serializer totalTokens access. Product logic/model transitions unchanged. Actual four-scene installed run passes; the prior failed run remains retained.",
+      "test_owner": {
+        "file": "scripts/notion-sdk-pi.test.mjs",
+        "before": "bde119f38f5a78cf37248be1a57d6c122dbdc0ebefa1177d346ab341a10a1926",
+        "after": "f5fc3ce23115627a91c4dbf1fb2f423fa54322801a20ab7e5d1a72cd5a4e2121",
+        "semantics": "New exact test validates first turn untouched, second restored-role mutation carries legal assistant content/model/usage/stopReason and preserves source bytes. This verifies counterexample plumbing; no model transition or production logic changed."
+      }
     }
   }
 }
