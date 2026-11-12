@@ -156,5 +156,22 @@ CLI最终验证脚本/测试/地图head为`0cf7002ac02e6d7df37f621f53a151255de81
 
 公开fork现可续接已独审的多轮纯介绍，保留normal或`-ns`原臂与原Store引用。准入按原result绑定的session hash、实际正整数用户轮数、完整非header字节及已闭合工具效果核验；先前已fork的session必须通过其原`launch.introductionFork.binding`核header与历史前缀，未绑定parent仍拒绝。原cwd仅是归档身份，已清理目录或当前包注册变化不阻止新owned cwd的公开fork；不重建旧目录、不复制Store、不删改旧回答。项目、脚本和业务写任务仍不在该入口范围内，默认线性resume的settings保护不变。当前输入前核单一真实Broker path/hash、cwd、worker/high、固定prompt及normal69/`-ns`0命令；结束后再次核原result/session和来源历史。
 
-旧cwd清理、已fork两轮和`-ns`限制先有定向RED；修正后candidate/budget/fork/resume共55/55 GREEN。四个真实父结果C1、D-named、setup各1轮，v5为2轮，全部离线准入通过且原config/result/native字节不变；回执`reviews/close2-20261112-semantic-plan/fork-real-parents-admission.json` SHA `a646803692f90a884d66f424742be8fa08035783ac59ac93a91187cc55b388d4`。该预检未启动Pi/model/来源请求、未读Store；它不证明真实纠错交付。四份草案统一只要求对照已读完整来源复核，不提供正确答案或逐题提示，各一次、零重试、顺序运行，仍待root冻结真实当前host。复核即使通过，也只证明会话最终交付，原冷首答、失败、分母及生成/helper门槛保持。本次只改已有driver接线，不改产品状态转移或增加有限模型。
+旧cwd清理、已fork两轮和`-ns`限制先有定向RED；修正后candidate/budget/fork/resume共55/55 GREEN。四个真实父结果C1、D-named、setup各1轮，v5为2轮，全部离线准入通过且原config/result/native字节不变；回执`reviews/close2-20261112-semantic-plan/fork-real-parents-admission.json` SHA `a646803692f90a884d66f424742be8fa08035783ac59ac93a91187cc55b388d4`。该预检未启动Pi/model/来源请求、未读Store；它不证明真实纠错交付。四份草案统一只要求对照已读完整来源复核，不提供正确答案或逐题提示，各一次、零重试、顺序运行，随后按下述共同冻结实际运行。复核即使通过，也只证明会话最终交付，原冷首答、失败、分母及生成/helper门槛保持。本次只改已有driver接线，不改产品状态转移或增加有限模型。
+
+#### 四次真实来源复核终局（2026-11-12）
+
+共同冻结 `close2-v8-source-review-freeze.json`（30771 B，SHA `351c4be4b41244b09cd75a2a8c151b254aba081c7831c5512b8fe1ed87eeeea8`）绑定 driver `751147f7d4c7647d643a9d0fa5b39721621963e5`、日用 f2 注册的同一39ad产品、正常HOME及worker/high。四次均在原臂上顺序运行一次、零重试，600秒/8 payload/40 native调用/4MB预算不变；C1、setup、v5实际69个native Skills，D-named的`-ns`为0。统一续问只要求复核已读来源并给出完整替换回答，禁止重新读取或执行工作流，没有附带旧错误、正确答案或逐题提示。
+
+四次原driver与冻结技术独审均passed：实际输入guard、完整父历史字节、source身份和原件不变成立，每轮恰1 payload、0主动工具调用、12 metadata/0 body/0 write。12次自动metadata均在provider请求前闭合；0工具或0正文读取不表示后台来源请求为0。下表耗时取原result的进程start/end，不用wrapper耗时替代。
+
+| 样本与实际run | 进程耗时 ms | provider输入 B | 完整回答语义判定 | 已纠正与剩余边界 |
+| --- | ---: | ---: | --- | --- |
+| C1：`normal-close2-v8-C1-source-review-sUwNsu` | 188980.257375 | 216704 | failed | 作者flag的运行时保证与坐标禁令均已纠正，介绍内容覆盖通过；开头“本轮没有新的 Notion 读取”仍是过宽的整轮活动断言，与12次自动metadata不符。不是执行了禁止工作流的证据。 |
+| D-named：`notion-only-close2-v8-D-named-source-review-J4AMnL` | 145385.539959 | 103803 | passed | 两处旧误读已纠正，主文的用途、产物与条件覆盖。开头“本次未再读取，也未执行工作流”按用户要求及前文只读动作的语境理解为agent未主动重读/执行；0工具/0body相符，12次后台metadata另记。 |
+| setup：`normal-close2-v8-setup-source-review-HsGjAo` | 265394.610875 | 275528 | passed，保留两处非阻断歧义 | 十个实际提及Skill均覆盖，补回已有verify Skill或harness的豁免，Arena不再凭空要求人类挑底座。“一行一项”可承接角色行；“挑选者”可指评估一方。原文仍要求one line per role且cross-judge能看rubric；没有生成不相容配置或明说裁判看不到rubric，不能仅取最坏解释拒绝整答。 |
+| v5：`normal-close2-v8-v5-source-review-OKKTBh` | 183239.901834 | 222579 | failed | 原举例任务实质完成，旧flag保证及无来源硬排除已撤回；仍把Doctor本身归纳为“用户路径证明”。正文将只读可驱动性检查与实际Drive/Evidence分开，标为归纳不能支持这个推论。后文仍要求驱动一个功能，不声称已发生跳过驱动。 |
+
+完整新final及逐项来源独审在同一daily evidence的 `reviews/close2-v8-semantics/`：`C1.json` SHA `0c3552ecab372adabb830e4c8a0efec190bae26eb8ca96e8f8e4878b4c54e785`，`D-named.json` SHA `4f2f87806d70ed7dbf875e35c059c83c0adb491ce10d1e2ea5ce00f5b0cfdf51`，`v5.json` SHA `a12c46ce5c298998df56ee3402526ef5cea514ed3308e43d8b67b35183ec05a8`。setup初评 `setup.json`（SHA `eed72f26f6a3c34748feb82ffc01df597d0bfce29ce75608275a6b74cc36cf05`）仍逐字保留failed；`setup-review-addendum.json`（SHA `71f24c931e786c0561c38ee0ce20afe1d83323cf7ef655b332866fc0032d7479`）绑定初评和同一final，记录依据完整介绍上下文将采用结论修订为passed-with-notes。两处歧义未消除，这是审阅结论修订，不是模型重跑或删除失败。
+
+三份原冷回答、原v5回答和全部失败历史保留，既有分母不回填。此次只证明已读完整历史下的真实多轮复核结果，不能据两份最终通过推断稳定纠错、整个介绍矩阵通过或生成产物/helper门槛通过。当前C1与v5的局部准确性缺口仍明确保留；这次地图更新不改driver、冻结配置、作者来源或任何原始评审。
 
