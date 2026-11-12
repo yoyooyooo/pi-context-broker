@@ -245,6 +245,8 @@ test('loopback mock holds, releases, cancels, errors, and enforces bounds', asyn
     const released = await held;
     assert.equal(released.status, 200);
     assert.match(released.body, /tool_calls/);
+    assert.equal(released.body, server.requests.find(item => item.phase === 'responded').sse.join(''));
+    assert.equal(server.requests.find(item => item.phase === 'responded').sse.at(-1), 'data: [DONE]\n\n');
     control.fail('MOCK_PROVIDER_ERROR');
     const failed = await post({ authorization: 'Bearer fixture-no-secret', 'content-type': 'application/json' });
     assert.equal(failed.status, 500);
@@ -318,6 +320,8 @@ test('a received partial SSE can be interrupted before any completion or tool ca
     assert.equal(response.status, 200);
     const reader = response.body.getReader(), first = await reader.read();
     assert.match(Buffer.from(first.value).toString(), /"content":"partial"/u);
+    assert.equal(Buffer.from(first.value).toString(), server.requests[0].sse.join(''));
+    assert.ok(!server.requests[0].sse.includes('data: [DONE]\n\n'));
     assert.equal(server.requests[0].phase, 'stream-held');
     server.control.cancel();
     await assert.rejects(reader.read());

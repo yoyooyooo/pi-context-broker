@@ -196,19 +196,22 @@ export function createMockControl() {
 
 function sse(payload) { return `data: ${JSON.stringify(payload)}\n\n`; }
 
-function writeToolSse(response, call, modelId) {
+function writeToolSse(response, call, modelId, record) {
   const chunk = { id: 'chatcmpl-mock', object: 'chat.completion.chunk', created: 1, model: modelId };
   response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'close' });
+  record.sse = [];
+  const emit = value => { const bytes = sse(value); record.sse.push(bytes); response.write(bytes); };
   if (!call) {
-    response.write(sse({ ...chunk, choices: [{ index: 0, delta: { role: 'assistant', content: 'OK' }, finish_reason: null }] }));
-    response.write(sse({ ...chunk, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } }));
+    emit({ ...chunk, choices: [{ index: 0, delta: { role: 'assistant', content: 'OK' }, finish_reason: null }] });
+    emit({ ...chunk, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } });
   } else {
     const args = JSON.stringify(call.arguments ?? {});
-    response.write(sse({ ...chunk, choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: call.id, type: 'function', function: { name: call.name, arguments: '' } }] }, finish_reason: null }] }));
-    response.write(sse({ ...chunk, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: args } }] }, finish_reason: null }] }));
-    response.write(sse({ ...chunk, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } }));
+    emit({ ...chunk, choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: call.id, type: 'function', function: { name: call.name, arguments: '' } }] }, finish_reason: null }] });
+    emit({ ...chunk, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: args } }] }, finish_reason: null }] });
+    emit({ ...chunk, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } });
   }
-  response.end('data: [DONE]\n\n');
+  record.sse.push('data: [DONE]\n\n');
+  response.end(record.sse.at(-1));
 }
 
 function writeJson(response, status, message) {
@@ -306,8 +309,9 @@ export function startLoopbackMock({ selectCall, observe = () => {}, onBody, cont
         if (decision === 'error' || control.mode === 'error') return fail(500, control.error || 'MOCK_PROVIDER_ERROR');
         if (decision === 'interrupt') {
           response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
-          response.write(sse({ id: 'interrupted', object: 'chat.completion.chunk', created: 1, model: fixtureModelId,
-            choices: [{ index: 0, delta: { role: 'assistant', content: 'partial' }, finish_reason: null }] }));
+          record.sse = [sse({ id: 'interrupted', object: 'chat.completion.chunk', created: 1, model: fixtureModelId,
+            choices: [{ index: 0, delta: { role: 'assistant', content: 'partial' }, finish_reason: null }] })];
+          response.write(record.sse[0]);
           record.status = 200; record.phase = 'stream-held';
           control.hold();
           await control.gate(client.signal);
@@ -328,7 +332,7 @@ export function startLoopbackMock({ selectCall, observe = () => {}, onBody, cont
         record.contextMessages = context.messages.length;
         record.visibleToolText = context.messages.filter(message => message.role === 'toolResult').map(message => textOf(message.content)).join('\n');
         observe({ phase: 'responded', request: record });
-        writeToolSse(response, call, typeof parsed.model === 'string' ? parsed.model : fixtureModelId);
+        writeToolSse(response, call, typeof parsed.model === 'string' ? parsed.model : fixtureModelId, record);
       } finally {
         clearTimeout(holdTimer);
         socket?.off('close', onDisconnect);
