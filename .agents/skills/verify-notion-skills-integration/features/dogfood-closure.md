@@ -178,5 +178,11 @@ Pro/macOS 手动定向入口：`node --test scripts/verify-pi-daily-artifacts.te
 
 同轮沿 v5 的继承历史补核了 C1 原 final entry `86e580ce`：它已含作者 editor flag 推导运行时保证、偏好稳定句柄推导禁用坐标的两句。原 C1 passed 审阅原件不改写；“六份介绍无准确性缺口”只代表旧审阅，不能继续作无条件当前结论。新增审阅 `reviews/root-v7-C1-inherited-accuracy-addendum.json`，3408 B，SHA256 `f70add6fafac95d966237025bbbcb7e024f0d9803cdae3eb97614f8e7c8099a0`；原16技术分母仍为8 passed/6 failed/2 not_run。
 
+### v8 候选的原生 edit 接口修正
+
+独立 v8 候选将 artifact guard 的 edit 输入对齐真实 Pi 声明的 `{path, edits:[{oldText,newText}]}`：数组必须非空，每项只含两个字符串；旧标量形状、坏元素与额外字段在执行前拒绝。既有 owned 路径、链接、源文件只读边界、Bash 语法和拒绝即失败门槛均保持。先以真实数组形状取得三项 RED，再运行上节五个定向测试文件得到 62/62；Pro 的原始 stdout/stderr 位于 `verification-evidence/ah639-20261112-native-artifact-schema/`，`green.stdout.log` SHA256 `a6ecabc2f8f28d7183c2977823a19cbfc7aa8dd920bf6497b4116a49f8fae71f`。
+
+同一测试入口通过显式 `PI_ARTIFACT_NATIVE_TOOLS_DIR` 指向已安装 Pi 的 `dist/core/tools`，实际调用其默认 write/edit 实现，核对新建文件与两项替换后的完整字节，并证明外路径请求在候选守卫处拒绝、源文件不变。未设置该变量时该项明确 skipped；该证据证明已安装 native 工具实现与守卫兼容，未运行完整 Pi/provider 调度、真实模型或 Notion。v7 零 write/edit 的失败原件与未知超时原因保持，接口修正不证明生成任务已完成；v8 的任务、输入和预算另行冻结。
+
 本次停止这个未取得完整闭环的候选，不推断文件交付普遍无效或唯一内部根因。实现、定向测试与本终局地图仅保留在独立候选分支；不汇入 PR9/f2f7257，不再增加同类模型轮次或重开已完成 CI。AH-639、AH-638 继续开放，原目标、失败、unknown 与 not_run 保留；不把管理、投递或受控 helper 的通过代作任务质量通过。
 

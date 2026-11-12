@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, writeFile, symlink, link } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import * as candidate from './verify-pi-daily-candidate.mjs';
 import { createOwnedGraphProject, exerciseReviewedGeneratedHelper } from './notion-skill-graph-project.mjs';
 
@@ -52,21 +53,92 @@ test('file delivery is default-off and restricted to a fresh owned project task'
 test('native write/edit retain the exact authorized file and native call identities', async t => {
   const f = await fixture(t);
   await f.write('verification/SKILL.md', skill);
-  const input = { path: join(f.root, 'verification/SKILL.md'), oldText: '# Verify', newText: '# Verify tickets' };
+  const input = { path: join(f.root, 'verification/SKILL.md'), edits: [
+    { oldText: '# Verify', newText: '# Verify tickets' },
+    { oldText: '[Procedure]', newText: '[Ticket procedure]' },
+  ] };
+  const edited = input.edits.reduce((text, edit) => text.replace(edit.oldText, edit.newText), skill);
   assert.equal(f.handlers.get('tool_call')({ toolName: 'edit', toolCallId: 'edit-1', input }, { cwd: f.projectRoot }), undefined);
-  await writeFile(input.path, skill.replace(input.oldText, input.newText));
+  await writeFile(input.path, edited);
   f.handlers.get('tool_result')({ toolName: 'edit', toolCallId: 'edit-1', input, isError: false });
   f.calls.push({ id: 'edit-1', name: 'edit', arguments: input, isError: false });
   f.handlers.get('session_shutdown')();
   const files = await candidate.retainCandidateArtifactFiles({ policy: f.policy, evidence: f.evidence });
-  assert.equal(files.files[0].sha256, sha(skill.replace(input.oldText, input.newText)));
-  assert.equal(await readFile(join(f.evidence, files.files[0].evidencePath), 'utf8'), skill.replace(input.oldText, input.newText));
+  assert.equal(files.files[0].sha256, sha(edited));
+  assert.equal(await readFile(join(f.evidence, files.files[0].evidencePath), 'utf8'), edited);
   const rows = await f.rows();
   assert.deepEqual(candidate.inspectCandidateArtifactGuard({ calls: f.calls }, rows, files), ['write-0', 'edit-1']);
   const changed = structuredClone(f.calls); changed[0].arguments.content += 'changed';
   assert.throws(() => candidate.inspectCandidateArtifactGuard({ calls: changed }, rows, files));
   const drift = structuredClone(files); drift.files[0].sha256 = '0'.repeat(64);
   assert.throws(() => candidate.inspectCandidateArtifactGuard({ calls: f.calls }, rows, drift));
+});
+
+test('native edit schema rejects legacy scalar input and every malformed array item before execution', async t => {
+  const f = await fixture(t);
+  await f.write('verification/SKILL.md', skill);
+  const path = join(f.root, 'verification/SKILL.md');
+  const valid = { oldText: '# Verify', newText: '# Changed' };
+  const malformed = [
+    { path, ...valid }, { path }, { path, edits: null }, { path, edits: {} },
+    { path, edits: JSON.stringify([valid]) }, { path, edits: [] },
+    ...[null, [], 'text', {}, { oldText: 1, newText: 'x' }, { oldText: 'x', newText: 1 },
+      { ...valid, extra: true }].map(edit => ({ path, edits: [valid, edit] })),
+    { path, edits: [valid], oldText: valid.oldText, newText: valid.newText },
+  ];
+  for (const [index, input] of malformed.entries()) {
+    const rejected = f.handlers.get('tool_call')({ toolName: 'edit', toolCallId: 'invalid-' + index, input }, { cwd: f.projectRoot });
+    assert.equal(rejected?.block, true, JSON.stringify(input));
+  }
+  assert.equal(await readFile(path, 'utf8'), skill);
+  f.handlers.get('session_shutdown')();
+});
+
+test('installed Pi native write and multi-edit change owned bytes while outside calls stay blocked', {
+  skip: !process.env.PI_ARTIFACT_NATIVE_TOOLS_DIR && 'Set PI_ARTIFACT_NATIVE_TOOLS_DIR to an installed Pi dist/core/tools directory.',
+}, async t => {
+  const moduleRoot = process.env.PI_ARTIFACT_NATIVE_TOOLS_DIR;
+  const writePath = join(moduleRoot, 'write.js'), editPath = join(moduleRoot, 'edit.js');
+  const [{ createWriteToolDefinition }, { createEditToolDefinition }] = await Promise.all([
+    import(pathToFileURL(writePath).href), import(pathToFileURL(editPath).href),
+  ]);
+  const f = await fixture(t);
+  const tools = { write: createWriteToolDefinition(f.projectRoot), edit: createEditToolDefinition(f.projectRoot) };
+  assert.deepEqual(Object.keys(tools.write.parameters.properties), ['path', 'content']);
+  assert.deepEqual(Object.keys(tools.edit.parameters.properties), ['path', 'edits']);
+  const responses = [];
+  async function invoke(name, input, id) {
+    const rejected = f.handlers.get('tool_call')({ toolName: name, toolCallId: id, input }, { cwd: f.projectRoot });
+    if (rejected) return rejected;
+    const response = await tools[name].execute(id, input, new AbortController().signal, undefined, { cwd: f.projectRoot });
+    f.handlers.get('tool_result')({ toolName: name, toolCallId: id, input, isError: false });
+    f.calls.push({ id, name, arguments: input, isError: false });
+    responses.push({ id, name, input, response });
+    return response;
+  }
+  const path = join(f.root, 'verification/native.md'), initial = '# Native artifact\none: before\ntwo: before\n';
+  await invoke('write', { path, content: initial }, 'native-write');
+  assert.equal(await readFile(path, 'utf8'), initial);
+  const edits = [{ oldText: 'one: before', newText: 'one: after' }, { oldText: 'two: before', newText: 'two: after' }];
+  await invoke('edit', { path, edits }, 'native-edit');
+  const actual = await readFile(path, 'utf8');
+  assert.equal(actual, '# Native artifact\none: after\ntwo: after\n');
+  const outside = join(f.projectRoot, 'src/tickets.mjs'), original = await readFile(outside);
+  assert.equal((await invoke('write', { path: outside, content: 'must not write\n' }, 'outside-write')).block, true);
+  assert.equal((await invoke('edit', { path: outside, edits: [{ oldText: 'const tickets', newText: 'const changed' }] }, 'outside-edit')).block, true);
+  assert.deepEqual(await readFile(outside), original);
+  assert.equal(responses.length, 2);
+  f.handlers.get('session_shutdown')();
+  const files = await candidate.retainCandidateArtifactFiles({ policy: f.policy, evidence: f.evidence });
+  assert.equal(files.files[0].sha256, sha(actual));
+  assert.equal((await f.rows()).filter(row => row.phase === 'artifact_file').length, 2);
+  assert.throws(() => candidate.inspectCandidateArtifactGuard({ calls: f.calls }, fs.readFileSync(f.ledger, 'utf8').trim().split('\n').map(JSON.parse), files), /escaped its read\/write boundary/u);
+  t.diagnostic(JSON.stringify({ nativeImplementation: {
+    write: { path: writePath, sha256: sha(await readFile(writePath)) }, edit: { path: editPath, sha256: sha(await readFile(editPath)) },
+    schemas: { write: tools.write.parameters, edit: tools.edit.parameters }, responses, initial, actual,
+    afterSha256: sha(actual), sourceUnchangedSha256: sha(original), outsideCallsExecuted: 0,
+    boundary: 'Installed native tool implementations and candidate guard; not a full Pi/provider or real-model run.',
+  } }));
 });
 
 test('file guard rejects source, evidence, Store, traversal, aliases, symlinks and hard links before execution', async t => {

@@ -476,8 +476,13 @@ export function guardCandidateArtifacts(api, { fs, crypto, output, policy, proje
       if (failure) throw failure;
       const input = event.input ?? {}, name = event.toolName;
       if (['write', 'edit'].includes(name)) {
-        const keys = name === 'write' ? ['path', 'content'] : ['path', 'oldText', 'newText'];
-        if (Object.keys(input).length !== keys.length || keys.some(key => typeof input[key] !== 'string')) throw new Error('Use the native write/edit file schema');
+        const keys = name === 'write' ? ['path', 'content'] : ['path', 'edits'];
+        if (Object.keys(input).length !== keys.length || keys.some(key => !Object.hasOwn(input, key)) || typeof input.path !== 'string')
+          throw new Error('Use the native write/edit file schema');
+        if (name === 'write' ? typeof input.content !== 'string' : !Array.isArray(input.edits) || !input.edits.length
+          || input.edits.some(edit => !edit || typeof edit !== 'object' || Array.isArray(edit) || Object.keys(edit).length !== 2
+            || typeof edit.oldText !== 'string' || typeof edit.newText !== 'string'))
+          throw new Error('Use the native write/edit file schema');
         const path = reviewPath(input.path, policy, fs);
         if (name === 'edit' && !fs.existsSync(input.path)) throw new Error('Edit requires an existing owned file');
         if (pending.has(event.toolCallId)) throw new Error('Duplicate native artifact call');
