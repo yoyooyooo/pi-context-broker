@@ -4,14 +4,14 @@
 
 ## 呈现合同
 
-Pi 的模型可见结果保留 `ok/status/purpose`、明确根引用及每个已准备节点的 `name/kind/ref/content/directory`。正文是完整源字符串；编译器不解析或删改作者 frontmatter、Members 标题、XML、代码示例或其他指令。
+Pi 的初次模型可见结果保留 `ok/status/purpose`、明确根引用及每个已准备节点的 `name/kind/ref/content/directory`。正文是完整源字符串；编译器不解析或删改作者 frontmatter、Members 标题、XML、代码示例或其他指令。同一有效请求中的重复目录可以按下方 AH-1014 合同复用，不再次输出完整副本。
 
 | 内容 | 模型可见 | 机器回执 |
 | --- | --- | --- |
 | 所选根、Requires 完整正文 | 完整保留，当前有效上下文去重 | 绑定源 hash、字节数、身份、版本与实际正文位置 |
 | 主文和资源引用 | 当前分支短引用；无短引用能力时保留规范固定引用 | 完整 canonical binding、scope、owner、snapshot 和 File 身份 |
-| 文件目录 | 每行 `path/ref/bytes`，不裁剪行 | 完整文件 hash 和物化证明 |
-| Required、Members 与普通 references | 每行 `ref/kind/name/description/availability`，不裁剪行 | 完整关系身份与依赖锁 |
+| 文件目录 | 每行 `path/ref/bytes`；精确固定文件的关系描述可放在同一文件对象的 `description` | 完整文件 hash 和物化证明 |
+| Required、Members 与普通 references | 完整关系保留；已由同一固定文件对象表达的文件关系只保留 `ref`，不裁剪关系 | 完整关系身份与依赖锁 |
 | graph lock、预算、usage、机器路径、存储与版本字段 | 不再重复放入正常 prepare 的模型结果 | `details.contextBrokerPreparation` 保留；显式 `skill_graph` 仍可导出证明 |
 
 `inspect` 与 `use` 的准备语义沿用原合同。目录并不加载 Member 正文，短引用也不授予权限。OMP 保持旧版 v1 返回形状。后续 [Pi 搜索、注入与原生读取投影](skill-model-surfaces-verification-2026-11-05.md) 复用本节目录投影，保留各入口的完整源正文及原投递证明。
@@ -24,15 +24,27 @@ Broker 编译器标识为 `context-broker/skill-prepare/v1`。它与 CLI 的 `so
 
 加载判定核对实际工具 content、toolCallId、已知编译器、完整投影 hash、每条源 hash、片段 hash、canonical graph、purpose、roots、scope、owner 和 pin。只有完整实际正文可以形成 loaded；未知 compiler、坏 hash、移位 span、截断、错误工具结果或独立 details 都不能替代内容。
 
-重复 prepare 与显式新版本选择只改 provider 投影。派生回执须从通过完整验证的父投影计算，保留所有非正文结构，重算整份文本与各条位置；被替换正文的条目标为未加载。其余完整正文继续可验证。原始会话结果保持完整，压缩移除较早副本后，保留下来的原结果仍可提供全文。历史 v1 回执按原合同读取，不虚构其编译器证明。
+重复 prepare 与显式新版本选择只改 provider 投影。派生回执须从通过完整验证的父投影计算，除明确登记的重复目录外保留非正文结构，重算整份文本与各条位置；被替换正文的条目标为未加载。其余完整正文继续可验证。原始会话结果保持完整，压缩移除较早副本后，保留下来的原结果仍可提供全文。历史 v1 回执按原合同读取，不虚构其编译器证明。
 
-重复主文的确认统一为 `Already loaded.`，覆盖 prepare、已验证的注入正文和 native read；同一记录的名称、引用和目录仍在。只有当前 provider 消息集合内确有通过校验的同版本完整正文时才做替换，不能凭过去加载过的标记省略正文。重复 scalar 与 batch 资源使用 `Already available.`；空资源保持空内容。极短非空正文也继续去重，确认的固定开销独立记账，不以保留两份完整正文换取更小的局部字节数。
+重复主文的确认统一为 `Already loaded.`，覆盖 prepare、已验证的注入正文和 native read；同一记录的名称和引用仍在。目录仅在当前请求中有同身份、同版本的完整副本时省略。只有当前 provider 消息集合内确有通过校验的同版本完整正文时才做替换，不能凭过去加载过的标记省略正文。重复 scalar 与 batch 资源使用 `Already available.`；空资源保持空内容。极短非空正文也继续去重，确认的固定开销独立记账，不以保留两份完整正文换取更小的局部字节数。
 
 被替换的 provider 副本须明确不再证明正文投递，即使作者原文恰好等于确认文案。native 主文的副本标记 `loaded: false`，scalar 资源的副本标记 `delivered_complete_text: false`；验证器不将它们当成完整可见正文。原始 session 结果与证明保持完整，压缩或分支移除前一份正文后，重新投影保留下来的原始结果可以恢复全文。显式版本替换沿用独立的 supersede 语义。
 
 主文与 scalar 统一短确认后的实际 Pi 配对、原始 HTTP 差额和投影证明反例见[重复读取验证记录](repeat-read-consumption-verification-2026-11-05.md)。该记录同时单列 CLI 同次固定对象获取的收益，避免将对象读取减少与模型输入字节减少混为一项。
 
 输出预算施加于实际生成的模型文本，超预算在提交选择前失败。已有 SDK 权限、freshness、图预算和源完整性检查不降低。
+
+### AH-1014：正文、目录与操作事实分别维护
+
+准备结果的派生证明可以登记 `derived.directories`，每项包含被省略记录的 index、完整目录 SHA256 和字节数。独立验收器必须在同一请求中找到相同 scope、owner、snapshot、version 与目录内容的完整副本。省略标记不能证明另一个省略，压缩后重新从原生有效上下文计算。
+
+新的 native v3 回执对完整生成结果增加 rendered hash/bytes。目录 footer 只有通过这个整体绑定和 canonical 身份检查后才能省略；旧回执仍按原正文协议读取，不凭旧数据补造目录证明。目录省略保留 `directoryOmitted` 摘要，删除完整正文则仍标记未加载。
+
+同一固定文件在文件表和普通 references 中以完全相同 ref/path 出现时，生成的描述可以归入文件对象，关系改成 `ref` 边。未固定、外部 owner、不可用或描述冲突的关系保留原卡片。作者原文和其中链接不参与这一变换。
+
+每次读取的 effects 独立于内容。scalar 旧资源在刷新或权限变化后撤下时，只替换可信正文 span；生成 footer 必须与该次操作回执精确一致，未知结果不能转成零写入。任意或被改写的后缀拒绝投影。原会话内容与工具结果不改写。
+
+源码/有限模型对应说明见仓库的 `docs/context-once-source-review.md`；实际最终请求验收沿既有 SDK-Pi driver。下方是原投影批次的历史运行记录，不自动成为 AH-1014 的安装或真实模型结果。
 
 ## 验证方法
 

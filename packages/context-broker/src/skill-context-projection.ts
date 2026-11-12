@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { PreparationDirectory, PreparationPurpose } from "./prepare-protocol";
 import type { ContentRecord } from "./types";
 import { consumptionEffects, isConsumptionEffects, type ConsumptionEffects } from "./consumption-effects.ts";
-import { parseNativeReference } from "./native-reference";
+import { parseNativeReference } from "./native-reference.ts";
 
 /** This compiler changes the host envelope, never the CLI's source projection. */
 export const SKILL_PREPARATION_COMPILER = "context-broker/skill-prepare/v1" as const;

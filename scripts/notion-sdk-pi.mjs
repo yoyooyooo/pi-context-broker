@@ -14,7 +14,7 @@ import { isolatedEnv, resolveHost, runCommand, writeFakeProvider, assertSupporte
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { safeRequestMetrics, providerSystemText } from './notion-default-context.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
-import { verifyPreparationEvidence, verifyConsumptionEffects, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from './skill-preparation-evidence.mjs';
+import { verifyPreparationEvidence, verifyConsumptionEffects, verifyGeneratedDirectoryReuse, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from './skill-preparation-evidence.mjs';
 
 export { providerSystemText, captureInjectionReceipts };
 
@@ -233,7 +233,7 @@ export function assertPreparedProjection(message, { snapshots, bodies, roots = [
   const validated = verifyPreparationEvidence(content, proof, message.toolCallId), { model, projection } = validated;
   assert.equal(model.purpose, purpose); assert.equal(model.records.length, bodies.size);
   const ids = new Set(), references = new Map();
-  const verified = validated.records.map(({ model: record, receipt, mapping }) => {
+  const verified = validated.records.map(({ model: record, receipt, mapping, omittedDirectory }) => {
     const source = snapshots.find(snapshot => snapshot.record.id === receipt?.binding?.record?.id && snapshot.scope === receipt.binding.scope);
     assert.ok(source && bodies.has(source.record.name), 'The canonical receipt must identify an original selected source');
     const body = bodies.get(source.record.name);
@@ -254,7 +254,9 @@ export function assertPreparedProjection(message, { snapshots, bodies, roots = [
       assert.equal(projection.derived?.reason, 'deduplicate');
     }
     const directory = receipt.directory;
-    if (directory !== undefined) {
+    if (directory !== undefined && record.directory === undefined) {
+      assert.ok(omittedDirectory, 'A missing directory requires an explicit validated reuse receipt');
+    } else if (directory !== undefined) {
       for (const [index, actual] of record.directory.files.entries()) {
         const original = source.files.find(file => file.path === actual.path);
         assert.ok(original, 'Each advertised resource is owned by this selected snapshot');
@@ -321,6 +323,7 @@ export function assertProviderHttpRequest(payload, body, context) {
   assert.ok(Array.isArray(payload.messages));
   assert.equal(Object.hasOwn(payload, 'context'), false, 'A captured TranscriptContext is not an API request');
   for (const message of payload.messages) assert.equal(Object.hasOwn(message, 'details'), false, 'Host details must stay outside API messages');
+  const directoryReuse = verifyGeneratedDirectoryReuse(context.messages);
   const originalResults = context.messages.filter(message => message.role === 'toolResult');
   const apiResults = payload.messages.filter(message => message.role === 'tool');
   assert.equal(apiResults.length, originalResults.length, 'Every captured tool result must reach the serializer exactly once');
@@ -357,6 +360,7 @@ export function assertProviderHttpRequest(payload, body, context) {
     'Actual API schemas must describe precisely the active provider tools');
   const transcript = JSON.stringify(context), hostDetails = context.messages.filter(message => message.details !== undefined).map(message => JSON.stringify(message.details));
   return { request_bytes: body.length, request_sha256: hash(body), payload_matches_http: true, details_in_tool_messages: false,
+    generated_directory_reuse: directoryReuse,
     messages_json_bytes: Buffer.byteLength(messages), messages_sha256: hash(messages),
     tools_json_bytes: Buffer.byteLength(schema), tools_sha256: hash(schema), tools_schema: tools,
     tool_content_bytes: toolResults.reduce((total, result) => total + result.content_bytes, 0), tool_results: toolResults, tool_calls: toolCalls,
