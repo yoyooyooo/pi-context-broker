@@ -1,0 +1,64 @@
+---
+title: "两次获取的副作用交接"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: Breaks NoFalseZeroWriteReport or UnknownEffectIsSticky
+    lg1: Path to the NoFalseZeroWriteReport or UnknownEffectIsSticky bug
+  }
+  class lg0 breaks
+  class lg1 bugPath
+  s0: 检查 SDK 能力
+  s1: 来源一待获取
+  s2: 来源一已写等待回执
+  s3: 来源一完成
+  s4: 合并来源结果
+  s5: 来源二已写等待回执
+  s6: 失败或取消不提交新选择#65307;effects=none
+  s7: 完整图已准备
+  s8: 失败或取消不提交新选择#65307;effects=none#65307;未知被降级
+  s9: 失败或取消不提交新选择#65307;effects=retained
+  s10: 受控报告完成#65307;effects=none
+  s11: 完整新选择交接
+  s12: provider 接受回执输入
+  s13: 失败或取消不提交新选择#65307;effects=retained#65307;未知被降级
+  s14: 受控报告完成#65307;effects=none#65307;未知被降级#65307;错误零写声明
+  s15: 受控报告完成#65307;effects=retained
+  s16: 回合完成回执输入
+  s17: 受控报告完成#65307;effects=retained#65307;未知被降级
+  s18: 持久化回执输入
+  [*] --> s0
+  s0 --> s1: 开始获取
+  s1 --> s3: 来源一确认无写
+  s1 --> s2: 来源一留存写
+  s2 --> s3: 观察来源一回执
+  s3 --> s4: 来源二无写完成或失败取消
+  s3 --> s5: 来源二留存写
+  s4 --> s6: 保留累计事实
+  s4 --> s7: 保留累计事实
+  s5 --> s4: 来源二 ACK 未知 or 观察来源二回执
+  s6 --> s10: 按受控规则报告
+  s4 --> s8: 保留累计事实
+  s4 --> s9: 保留累计事实
+  s7 --> s11: 完整图提交
+  s8 --> s14: 按受控规则报告
+  s9 --> s15: 按受控规则报告
+  s4 --> s13: 保留累计事实
+  s11 --> s12: 下游提供接受回执
+  s12 --> s16: 下游提供完成回执
+  s13 --> s17: 按受控规则报告
+  s16 --> s18: 下游提供持久化回执
+  s18 --> s10: 按受控规则报告
+  s18 --> s15: 按受控规则报告
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 bugPath
+  class s1 bugPath
+  class s3 bugPath
+  class s4 bugPath
+  class s5 bugPath
+  class s8 breaks
+  class s8 bugPath
+  class s13 breaks
+  class s14 breaks
+  class s14 bugPath
+  class s17 breaks

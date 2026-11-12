@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "packageManager": "bun@1.2.17",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "build": "bun run --cwd packages/context-broker typecheck && bun scripts/build-tern.mjs",
     "build:broker": "bun run --cwd packages/context-broker typecheck && bun scripts/build-tern.mjs --target broker",
@@ -26,7 +28,9 @@
     "test:source-dependencies": "node scripts/verify-source-dependencies.mjs",
     "pack:dry": "bun scripts/pack.mjs --dry-run",
     "release": "bun scripts/release.ts",
-    "release:check": "bun scripts/release.ts --precheck"
+    "release:check": "bun scripts/release.ts --precheck",
+    "verify:formal": "node scripts/verify-consumer-observations.mjs",
+    "test:formal-contract": "node --test scripts/formal-result-contract.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

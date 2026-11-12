@@ -31,91 +31,380 @@
     "packages/context-broker/scripts/pi-read-adapter.test.ts": "b0a144a76ba38125d0b159a9ef281d918c87d0f4cf0961929562c6332151d292",
     "packages/context-broker/scripts/resource-read-host.test.ts": "aa69aa4d7750b2a460b7201b3210846da6327144c8508f1e90384aa7b78ab125",
     "packages/context-broker/scripts/resource-read-projection.test.ts": "210e5e4e50574f1a2f4a2dc0232091f68736f0885062cbc00282ca2f43056cdc",
-    "packages/context-broker/scripts/fixed-resource-source.test.ts": "cd057a611b34ee7a85816ccad38951ec561a120747ad717ba0d75f76cb8f3aa1"
+    "packages/context-broker/scripts/fixed-resource-source.test.ts": "cd057a611b34ee7a85816ccad38951ec561a120747ad717ba0d75f76cb8f3aa1",
+    "packages/context-broker/scripts/formal-effects-composition.test.ts": "ed05eec59ae651da86f48de20fe6749163227e49fa88d020f35cca81ff8871dd"
   },
   "cases": [
-    [
-      "ManagementToDelivery",
-      "implemented",
-      []
-    ],
-    [
-      "ManagementToDelivery",
-      "partial-negative",
-      [
+    {
+      "model": "ManagementToDelivery",
+      "config": "implemented",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "ManagementReceiptBeforePublish",
+        "CompleteBeforeApplication",
+        "OrdinarySelectionStable",
+        "ReferenceBelongsToSelection",
+        "FreshFollowupReusesBody",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "ManagementToDelivery",
+      "config": "partial-negative",
+      "expected_broken": [
         "CompleteBeforeApplication"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ManagementReceiptBeforePublish",
+        "CompleteBeforeApplication",
+        "OrdinarySelectionStable",
+        "ReferenceBelongsToSelection",
+        "FreshFollowupReusesBody",
+        "NoDeadlock"
       ]
-    ],
-    [
-      "ManagementToDelivery",
-      "moving-pin-negative",
-      [
+    },
+    {
+      "model": "ManagementToDelivery",
+      "config": "moving-pin-negative",
+      "expected_broken": [
         "OrdinarySelectionStable"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ManagementReceiptBeforePublish",
+        "CompleteBeforeApplication",
+        "OrdinarySelectionStable",
+        "ReferenceBelongsToSelection",
+        "FreshFollowupReusesBody",
+        "NoDeadlock"
       ]
-    ],
-    [
-      "ManagementToDelivery",
-      "mixed-reference-negative",
-      [
+    },
+    {
+      "model": "ManagementToDelivery",
+      "config": "mixed-reference-negative",
+      "expected_broken": [
         "ReferenceBelongsToSelection"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ManagementReceiptBeforePublish",
+        "CompleteBeforeApplication",
+        "OrdinarySelectionStable",
+        "ReferenceBelongsToSelection",
+        "FreshFollowupReusesBody",
+        "NoDeadlock"
       ]
-    ],
-    [
-      "ManagementToDelivery",
-      "repeat-body-negative",
-      [
+    },
+    {
+      "model": "ManagementToDelivery",
+      "config": "repeat-body-negative",
+      "expected_broken": [
         "FreshFollowupReusesBody"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ManagementReceiptBeforePublish",
+        "CompleteBeforeApplication",
+        "OrdinarySelectionStable",
+        "ReferenceBelongsToSelection",
+        "FreshFollowupReusesBody",
+        "NoDeadlock"
       ]
-    ],
-    [
-      "RetentionDisclosure",
-      "current",
-      [
+    },
+    {
+      "model": "RetentionDisclosure",
+      "config": "current",
+      "expected_broken": [
         "NoFalseZeroWriteReport",
         "ReadyReportsObservedRetention"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ReadyReportsObservedRetention",
+        "NoFalseZeroWriteReport",
+        "ReadOnlyHasNoRemoteWrites",
+        "UnknownOutcomeIsDisclosed",
+        "NoDeadlock"
       ]
-    ],
-    [
-      "RetentionDisclosure",
-      "proposal",
-      []
-    ],
-    [
-      "RetentionDisclosure",
-      "claim-negative",
-      [
+    },
+    {
+      "model": "RetentionDisclosure",
+      "config": "proposal",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "ReadyReportsObservedRetention",
+        "NoFalseZeroWriteReport",
+        "ReadOnlyHasNoRemoteWrites",
+        "UnknownOutcomeIsDisclosed",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "config": "claim-negative",
+      "expected_broken": [
         "NoFalseZeroWriteReport"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ReadyReportsObservedRetention",
+        "NoFalseZeroWriteReport",
+        "ReadOnlyHasNoRemoteWrites",
+        "UnknownOutcomeIsDisclosed",
+        "NoDeadlock"
       ]
-    ],
-    [
-      "RetentionDisclosure",
-      "implemented",
-      []
-    ],
-    [
-      "RetentionDisclosure",
-      "read-only",
-      []
-    ],
-    [
-      "RetentionDisclosure",
-      "unknown",
-      []
-    ],
-    [
-      "RetentionDisclosure",
-      "read-only-negative",
-      [
+    },
+    {
+      "model": "RetentionDisclosure",
+      "config": "implemented",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "ReadyReportsObservedRetention",
+        "NoFalseZeroWriteReport",
+        "ReadOnlyHasNoRemoteWrites",
+        "UnknownOutcomeIsDisclosed",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "config": "read-only",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "ReadyReportsObservedRetention",
+        "NoFalseZeroWriteReport",
+        "ReadOnlyHasNoRemoteWrites",
+        "UnknownOutcomeIsDisclosed",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "config": "unknown",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "ReadyReportsObservedRetention",
+        "NoFalseZeroWriteReport",
+        "ReadOnlyHasNoRemoteWrites",
+        "UnknownOutcomeIsDisclosed",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "config": "read-only-negative",
+      "expected_broken": [
         "ReadOnlyHasNoRemoteWrites"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ReadyReportsObservedRetention",
+        "NoFalseZeroWriteReport",
+        "ReadOnlyHasNoRemoteWrites",
+        "UnknownOutcomeIsDisclosed",
+        "NoDeadlock"
       ]
-    ],
-    [
-      "RetentionDisclosure",
-      "unknown-negative",
-      [
+    },
+    {
+      "model": "RetentionDisclosure",
+      "config": "unknown-negative",
+      "expected_broken": [
         "UnknownOutcomeIsDisclosed"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ReadyReportsObservedRetention",
+        "NoFalseZeroWriteReport",
+        "ReadOnlyHasNoRemoteWrites",
+        "UnknownOutcomeIsDisclosed",
+        "NoDeadlock"
       ]
-    ]
+    },
+    {
+      "model": "ManagementToDelivery",
+      "config": "unverified-management",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "ManagementReceiptBeforePublish",
+        "CompleteBeforeApplication",
+        "OrdinarySelectionStable",
+        "ReferenceBelongsToSelection",
+        "FreshFollowupReusesBody",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "ManagementToDelivery",
+      "config": "unverified-negative",
+      "expected_broken": [
+        "ManagementReceiptBeforePublish"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ManagementReceiptBeforePublish",
+        "CompleteBeforeApplication",
+        "OrdinarySelectionStable",
+        "ReferenceBelongsToSelection",
+        "FreshFollowupReusesBody",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "AcquisitionEffects",
+      "config": "implemented",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "ConfirmedFactsPreserved",
+        "UnknownEffectIsSticky",
+        "CompleteSelectionOnly",
+        "StrictReadOnlyHasNoWrites",
+        "CompatibleSdkBeforeDispatch",
+        "NoFalseZeroWriteReport",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "AcquisitionEffects",
+      "config": "read-only",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "ConfirmedFactsPreserved",
+        "UnknownEffectIsSticky",
+        "CompleteSelectionOnly",
+        "StrictReadOnlyHasNoWrites",
+        "CompatibleSdkBeforeDispatch",
+        "NoFalseZeroWriteReport",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "AcquisitionEffects",
+      "config": "legacy-rejected",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "ConfirmedFactsPreserved",
+        "UnknownEffectIsSticky",
+        "CompleteSelectionOnly",
+        "StrictReadOnlyHasNoWrites",
+        "CompatibleSdkBeforeDispatch",
+        "NoFalseZeroWriteReport",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "AcquisitionEffects",
+      "config": "lost-prior-negative",
+      "expected_broken": [
+        "ConfirmedFactsPreserved",
+        "NoFalseZeroWriteReport"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ConfirmedFactsPreserved",
+        "UnknownEffectIsSticky",
+        "CompleteSelectionOnly",
+        "StrictReadOnlyHasNoWrites",
+        "CompatibleSdkBeforeDispatch",
+        "NoFalseZeroWriteReport",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "AcquisitionEffects",
+      "config": "unknown-negative",
+      "expected_broken": [
+        "UnknownEffectIsSticky",
+        "NoFalseZeroWriteReport"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ConfirmedFactsPreserved",
+        "UnknownEffectIsSticky",
+        "CompleteSelectionOnly",
+        "StrictReadOnlyHasNoWrites",
+        "CompatibleSdkBeforeDispatch",
+        "NoFalseZeroWriteReport",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "AcquisitionEffects",
+      "config": "partial-selection-negative",
+      "expected_broken": [
+        "CompleteSelectionOnly"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ConfirmedFactsPreserved",
+        "UnknownEffectIsSticky",
+        "CompleteSelectionOnly",
+        "StrictReadOnlyHasNoWrites",
+        "CompatibleSdkBeforeDispatch",
+        "NoFalseZeroWriteReport",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "AcquisitionEffects",
+      "config": "read-only-negative",
+      "expected_broken": [
+        "StrictReadOnlyHasNoWrites"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ConfirmedFactsPreserved",
+        "UnknownEffectIsSticky",
+        "CompleteSelectionOnly",
+        "StrictReadOnlyHasNoWrites",
+        "CompatibleSdkBeforeDispatch",
+        "NoFalseZeroWriteReport",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "AcquisitionEffects",
+      "config": "legacy-dispatch-negative",
+      "expected_broken": [
+        "CompatibleSdkBeforeDispatch"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ConfirmedFactsPreserved",
+        "UnknownEffectIsSticky",
+        "CompleteSelectionOnly",
+        "StrictReadOnlyHasNoWrites",
+        "CompatibleSdkBeforeDispatch",
+        "NoFalseZeroWriteReport",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "AcquisitionEffects",
+      "config": "report-negative",
+      "expected_broken": [
+        "NoFalseZeroWriteReport"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ConfirmedFactsPreserved",
+        "UnknownEffectIsSticky",
+        "CompleteSelectionOnly",
+        "StrictReadOnlyHasNoWrites",
+        "CompatibleSdkBeforeDispatch",
+        "NoFalseZeroWriteReport",
+        "NoDeadlock"
+      ]
+    }
   ],
   "ManagementToDelivery": {
     "observed_source_owners": {
@@ -124,7 +413,7 @@
       "support_retirement": "host-skills/resource projection retires verified old main and reference spans",
       "cache": "Current evidence and SDK original validation timestamps; already valid fixed bodies are reused"
     },
-    "management_abstraction": "PublishVerified/EditInNotion only map to complete observed receipts, not an atomic remote multi-page transaction",
+    "management_abstraction": "PublishVerified requires CompleteManagementReceipt: either a verified original management completion or a separately completed independent acceptance. The producer guardian proves each within its scope; this port does not rewrite an original mismatch/unknown or create a global runtime gate. Rejected input stays blocked. context is an abstract placement, not HTTP or persisted wire evidence.",
     "replay": "An actual newly created root with one Requires and one reference; 5 real Pi turns, CLI edit v1→v2, original native JSONL and actual payload hashes",
     "bounds": "One root, one Requires, one reference, two selected revisions, one ordered edit cycle",
     "excluded": [
@@ -207,5 +496,43 @@
       "packages/context-broker/scripts/skill-guidance.test.ts"
     ],
     "finite_models": "No admission, authorization, selection, effect, retention or session transition changes. Availability, ReadRace and all composed flow TLA/cfg/view inputs are unchanged; their existing results are reused, not rerun or extended. This diagnostic and LLM explanation boundary requires separate actual-session evidence."
+  },
+  "maintenance": {
+    "owner_skill": ".agents/skills/verify-notion-skills-integration/SKILL.md",
+    "routing": "Relevant protected-source, model, config, view, coverage, runner and skill changes run this suite in formal CI. Use --model for a reviewed local slice.",
+    "view_only": "Rerun the affected existing positive/negative configs, retain exact bug paths and render with /statechart; no expanded proof claim.",
+    "model_semantics": "Review every declared rule, finite bound and environment/fairness assumption; keep exact expected negatives.",
+    "implementation_semantics": "Trace named functions and callers before updating hashes; run corresponding real-code regressions and guard mutations. Hash-only refresh cannot satisfy this review.",
+    "rule_inventory": "cases.expected_rules is a reviewed independent inventory. Do not regenerate it automatically from modified cfg files."
+  },
+  "formal_maintenance_review": {
+    "issue": "AH-1007",
+    "product_semantics_changed": false,
+    "basis": "Existing frozen config inventory migrated without changing TLA, cfg or protected source."
+  },
+  "AcquisitionEffects": {
+    "issue": "AH-1012",
+    "bounds": "Two ordered acquisitions, two possible confirmed retention identities, at most two semantic writes; second success, known failure, ACK unknown, or cancellation. Finite safety only.",
+    "producer_port": "operation-recovery IndependentAcceptance/RestoreFeedback completion preserves original operation identity and status. ManagementToDelivery accepts only a complete selected management receipt.",
+    "consumer_port": "consumer-state SelectionGraph/DeliveryBoundary own complete preparation, selected vector, provider 2xx, turn completion and actual persisted receipt. AcquisitionEffects gives these separate phases and carries cumulative effects across them; it does not synthesize wire proof.",
+    "owners": {
+      "effects": "packages/context-broker/src/consumption-effects.ts: consumptionEffects, errorConsumptionEffects, combineConsumptionEffects",
+      "partial_failure": "packages/context-broker/src/host-skills.ts: prepareMany observedEffects catch, prepareRead native cancellation catch",
+      "capability": "packages/context-broker/src/notion-sdk.ts: observed checks SDK export and built manifest before sdkStarted/run",
+      "semantic_write": "CLI packages/core/src/notion-readonly.ts and consumption-effects.ts; use producer regression mapping"
+    },
+    "real_regressions": [
+      "packages/context-broker/scripts/formal-effects-composition.test.ts",
+      "packages/context-broker/scripts/host-prepare.test.ts: partial multi-source failure, dollar preflight failure, native cancellation and immutable DOMException",
+      "packages/context-broker/scripts/notion-sdk.test.ts: strict scalar/batch capability rejects before any producer operation"
+    ],
+    "negative_rules": "Independent expected_rules and expected_broken are reviewed. Original RetentionDisclosure current/claim/read-only/unknown cases are unchanged.",
+    "excluded": [
+      "Unbounded graphs, distributed transactions, fairness or eventual remote consistency",
+      "Real provider/session evidence or actual live run",
+      "Arbitrary LLM prose: NoFalseZeroWriteReport constrains only Report",
+      "General cancellation interleavings; native post-commit cancellation is separately checked by the existing real host test"
+    ],
+    "maintenance": "Model semantics and actual guards are separate evidence lanes. Review ports with both domain owners; never regenerate expected rules or source hashes merely to obtain a pass."
   }
 }

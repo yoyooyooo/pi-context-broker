@@ -1,0 +1,91 @@
+name: Formal contracts
+
+on:
+  pull_request:
+    paths:
+      - "packages/**"
+      - "verification/**"
+      - "scripts/**"
+      - ".agents/skills/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/formal.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/**"
+      - "verification/**"
+      - "scripts/**"
+      - ".agents/skills/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/formal.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: formal-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  models:
+    name: Formal ${{ matrix.suite }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [observations, consumer-state, flows]
+    env:
+      PSTACK_STATECHART_ROOT: ${{ github.workspace }}/.formal-tools/pstack/pstack/skills/statechart
+      TLA2TOOLS: ${{ github.workspace }}/.formal-tools/tla2tools-1.7.4.jar
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout the frozen statechart implementation
+        uses: actions/checkout@v4
+        with:
+          repository: cursor/plugins
+          ref: c742dd61706fbacc1b95f1a20b7b988cf096ce6c
+          path: .formal-tools/pstack
+          sparse-checkout: pstack/skills/statechart
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.20.0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - run: bun install --frozen-lockfile
+      - name: Obtain the exact TLC jar
+        run: |
+          curl --fail --location --retry 2 --output "$TLA2TOOLS" https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
+          printf '%s  %s\n' 936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88 "$TLA2TOOLS" | sha256sum --check
+      - name: Reject incomplete and falsely green verification results
+        run: node --test scripts/formal-result-contract.test.mjs
+      - name: Check the tuple projection used by the selection diagram
+        if: matrix.suite == 'consumer-state'
+        run: node --test verification/models/consumer-state/SelectionGraph.view.test.mjs
+      - name: Check reviewed source, tool bytes, complete rule inventory and every case
+        run: node scripts/verify-consumer-observations.mjs --suite "${{ matrix.suite }}" --out "${{ runner.temp }}/formal-${{ matrix.suite }}"
+      - name: Replay the domain implementation regressions
+        run: |
+          case "${{ matrix.suite }}" in
+            observations) bun test packages/context-broker/scripts/consumer-observation.test.ts packages/context-broker/scripts/host-prepare.test.ts --timeout 30000 > "${{ runner.temp }}/formal-${{ matrix.suite }}/regressions.stdout" 2> "${{ runner.temp }}/formal-${{ matrix.suite }}/regressions.stderr" ;;
+            consumer-state) bun test packages/context-broker/scripts/consumer-state.test.ts packages/context-broker/scripts/session-active.test.ts packages/context-broker/scripts/host-prepare.test.ts --timeout 30000 > "${{ runner.temp }}/formal-${{ matrix.suite }}/regressions.stdout" 2> "${{ runner.temp }}/formal-${{ matrix.suite }}/regressions.stderr" ;;
+            flows) bun test packages/context-broker/scripts/formal-effects-composition.test.ts packages/context-broker/scripts/host-prepare.test.ts packages/context-broker/scripts/notion-sdk.test.ts --timeout 30000 > "${{ runner.temp }}/formal-${{ matrix.suite }}/regressions.stdout" 2> "${{ runner.temp }}/formal-${{ matrix.suite }}/regressions.stderr" ;;
+          esac
+      - name: Retain summaries, exact inputs, reports, TLC output and generated diagrams
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: formal-${{ matrix.suite }}-${{ github.sha }}
+          path: ${{ runner.temp }}/formal-${{ matrix.suite }}/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14

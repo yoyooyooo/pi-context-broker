@@ -203,5 +203,96 @@
       "packages/context-broker/scripts/skill-guidance.test.ts"
     ],
     "finite_models": "No admission, authorization, selection, effect, retention or session transition changes. Availability, ReadRace and all composed flow TLA/cfg/view inputs are unchanged; their existing results are reused, not rerun or extended. This diagnostic and LLM explanation boundary requires separate actual-session evidence."
+  },
+  "cases": [
+    {
+      "model": "Availability",
+      "config": "current",
+      "expected_broken": [
+        "KnownObservationAgrees",
+        "CursorCannotMixAvailability"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "KnownObservationAgrees",
+        "CursorCannotMixAvailability",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "Availability",
+      "config": "candidate",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "KnownObservationAgrees",
+        "CursorCannotMixAvailability",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "Availability",
+      "config": "cursor-negative",
+      "expected_broken": [
+        "CursorCannotMixAvailability"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "KnownObservationAgrees",
+        "CursorCannotMixAvailability",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "ReadRace",
+      "config": "current",
+      "expected_broken": [
+        "NewestObservationWins"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "NewestObservationWins",
+        "NoCrossSessionPublication",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "ReadRace",
+      "config": "candidate",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "NewestObservationWins",
+        "NoCrossSessionPublication",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "ReadRace",
+      "config": "generation-negative",
+      "expected_broken": [
+        "NewestObservationWins",
+        "NoCrossSessionPublication"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "NewestObservationWins",
+        "NoCrossSessionPublication",
+        "NoDeadlock"
+      ]
+    }
+  ],
+  "maintenance": {
+    "owner_skill": ".agents/skills/verify-notion-consumer-state/SKILL.md",
+    "routing": "Relevant protected-source, model, config, view, coverage, runner and skill changes run this suite in formal CI. Use --model for a reviewed local slice.",
+    "view_only": "Rerun the affected existing positive/negative configs, retain exact bug paths and render with /statechart; no expanded proof claim.",
+    "model_semantics": "Review every declared rule, finite bound and environment/fairness assumption; keep exact expected negatives.",
+    "implementation_semantics": "Trace named functions and callers before updating hashes; run corresponding real-code regressions and guard mutations. Hash-only refresh cannot satisfy this review.",
+    "rule_inventory": "cases.expected_rules is a reviewed independent inventory. Do not regenerate it automatically from modified cfg files."
+  },
+  "formal_maintenance_review": {
+    "issue": "AH-1007",
+    "product_semantics_changed": false,
+    "basis": "Existing frozen config inventory migrated without changing TLA, cfg or protected source."
   }
 }
