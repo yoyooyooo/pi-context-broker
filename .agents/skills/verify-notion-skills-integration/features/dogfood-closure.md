@@ -248,3 +248,32 @@ v13 B/normal procedure 原运行保持 failed/timeout143，实际 601829.295708 
 
 三个新增用例先取得 3/3 功能 RED，随后与受影响的旧 v9 单稿、v10 继承种子准入共 5/5 GREEN、0 skipped。新覆盖实际 B 的完整 write→三项 edit、edit 前的有界 read，以及错误/多匹配 oldText、未绑定 edit、外路径、缺 write 来源和中间版本 hash 错误的六类反例。原始 stdout 为 `verification-evidence/ah639-20261112-artifact-seed-edits/green-attempt-1.stdout.log`，2787 B，SHA `432281e49af6f4c2be57fbb7743b62360c5ccc7d681811bf306af3a1a739210c`。真实 B 只读准入回执为 daily `reviews/close4-v13-B-parent-admission.json`，9624 B，SHA `08f41b0f6ac0ad3aa1814fe3bd1554e36f795bdabcbfc51624491a972629677b`；父 non-header 162 entries/719585 B 完整保留，helper 只从 retained sourcePath 恢复，不依赖旧 live roots。这里没有运行模型或实际 B helper，不把准入通过算作缺失文档已经交付。
 
+
+### 2026-11-12 完整产物、实际功能与成本终局
+
+本节给出上述 v9、v12、v13 历史之后的当前技术验收。A / Notion-only、B / normal、D-natural / Notion-only 的完整交付、实际功能、原件保全与自有运行目录清理均已闭合。C1 / v5 的定点暖纠错及 D-named / setup 的来源复核沿用已接受的完整语义结果；全部原失败与限定继续保留。远端状态与全文读回由最终发布回执保存。
+
+| 路线 | 当前产物与真实行为 | 原模型判定边界 |
+| --- | --- | --- |
+| A / -ns | 六文件完整审阅；固定 README 2761 B 原生正文按同 scope/pin/versionRef/fileId 只读重读；helper 创建 201→返回 ID GET 200，另五个负例，完整 summary 与响应保全 | v12 原 failed / SIGTERM / timedOut 和 682162.191084 ms 不改；显式 complete-failed-final artifact-only admission 仅验收真实完整产物 |
+| B / normal | 六文件 38462 B；三次创建及真实 ID 查询、七个拒绝，共 13 个案例 | v13 failed 保留；v14 新 complete 输入 passed，467334.154667 ms、7 payload/2559322 B、6 新工具/0错误 |
+| D-natural / -ns | 六文件 43256 B；四次创建及四次真实 ID 查询、九个拒绝；13 主案例，8192 B→400 invalid_json，8193 B→413 too_large | v14 procedure failed、原链 complete not_run 保留；v15 新 complete 输入 passed，378910.005375 ms、8 payload/2210350 B、7 新工具/0错误 |
+
+三个 helper 执行器时间为 A 179 ms、B 3158 ms、D 3150 ms，均正常 code 0、自然输出 EOF、所属进程组 absent。端口 50034 / 60576 / 50226 已分别观察到 ECONNREFUSED；D 的 server PID 未记录，明确 unknown。功能通过依据完整实际响应和返回 ID 回读，Doctor/health 另列；原来源只要求实驱一个映射功能，其他地图及未走失败分支没有声称通过。A helper 的 summary 写失败可能仍 exit 0、B 序列化键顺序和大请求正文省略、D partial-timeout verdict/内部 timer 清理边界/两处文档措辞均保留在独立语义报告，当前固定路径没有缺失证据。
+
+A 使用完整原 native final；B/D 的 generated-acceptance-plan 是模型实际写出文件和 native final 的确定性归档封套，不等同逐字模型 final。B/D helper 沿用真实 procedure 产物，后续只补齐文档。worker/high、正常 HOME、normal 69 native Skills / -ns 0、完整父历史、来源与 pin 身份均经独审；consumer 没有得到正确实现、隐藏叶子 ref 或私有 oracle。A v12 source 缺 end，整个来源覆盖仍 unknown。
+
+本轮新增 8 个实际模型进程累计 34 payload/10758228 B、27 native/0 errors、4028749.704710 ms 进程耗时之和；reported tokens 下界3409997，3个响应 usage unknown。加4个选定旧祖先为12个唯一路径、52 payload/13692042 B、70 native/7 errors、6435310.261086 ms、tokens 下界4117271、7 unknown。这是选定谱系，不是全历史或用户端 wall time；继承历史、chain容器、not_run和helper不重复计入。当前 source98 与 other210可能重叠，严禁相加；D source SDK retry1010.740458ms与provider retry分开，超时唯一原因未知。金额、全网、wire bytes与provider queue/retry未知。
+
+原冷任务16 configured / 14 observed / 8 technical passed / 6 failed / 2 not_run保持；原8 technical passed并非8个完整语义通过。narrowView因既有中位回退下界22.036881233695027%超过20%继续拒绝，第三narrow/heldout仍not_run，baseline保留。不从暖纠错、分阶段或artifact-only恢复推导自主冷首答或同条件性能改善。
+
+运行代码提交2a1f8b10b465b745068b3c008e3728175d98c33f；四个有限切片的14/14、18/18、5/5、5/5检查存在重叠，详见implementation index，不声称42个唯一样本。只复用既有runCandidatePrint、产物collector与exerciseReviewedGeneratedHelper，未新增运行平台。消费/来源模型语义与TLA+/cfg/statechart输入未变，复用原有限结论，此轮未重新运行TLC。独立验证分支与日用产品分开，Broker/PR9 f2f725703c5d6afe1d89c76148abfc3fbf521085、CLI/PR8 ee4e712df6cd85fe268fbafe16d9d19a47794666保持，精确CI169/CI118沿用原成功回执。
+
+证据根为 Pro 的 `verification-evidence/ah623-639-638-20261111-daily/`。下列收据绑定原 result/native/source/payload、完整六文件、独立语义、实际功能与清理；A/B/D模型和helper自有根均经Evidence→系统Trash→Evidence，原件哈希保持，Store/auth未读取、复制或清理。
+
+- `reviews/close4-A-closure-receipt.json`，SHA256 `70c336bafeca2ec571402dd6104d4b5ef0f7b60e6f8107927e5ede8a943280ef`。
+- `reviews/close4-B-closure-receipt.json`，SHA256 `1b11cfe6f96371a431797c7de3fbc6aa436bc4ddcc341c67bb93fa9694ad843d`。
+- `reviews/close4-D-closure-receipt.json`，SHA256 `5fdf651c16ed722f166dd5dc97cd5d349c436da1a0123122523ccf8cd971b694`。
+- `reviews/close4-final-closure.json`，SHA256 `7c74498adbaf47387e2f713e6a0fd451dc87ca48b11097e528158a6334ac37ea`。
+- `reviews/close4-terminal-cost-summary.json`，SHA256 `cf37ed990960dbd800e9f5aa2c06237073c898b0f1bb40c130eb1e5cc154f4ca`。
+- `reviews/close4-implementation-proof-index.json`，SHA256 `a4d587d775bd41fe853b3a7f828dae1d5181ccd5599d86a8c79201184145ee37`。
