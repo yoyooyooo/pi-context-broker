@@ -198,3 +198,19 @@ v7、v8 均按原停止规则结束，停止此 v8 构造，不扩展 B/D 或 no
 旧cwd清理、已fork两轮和`-ns`限制先有定向RED；修正后candidate/budget/fork/resume共55/55 GREEN。四个真实父结果C1、D-named、setup各1轮，v5为2轮，全部离线准入通过且原config/result/native字节不变；回执`reviews/close2-20261112-semantic-plan/fork-real-parents-admission.json` SHA `a646803692f90a884d66f424742be8fa08035783ac59ac93a91187cc55b388d4`。该预检未启动Pi/model/来源请求、未读Store；它不证明真实纠错交付。四份草案统一只要求对照已读完整来源复核，不提供正确答案或逐题提示，各一次、零重试、顺序运行，仍待root冻结真实当前host。复核即使通过，也只证明会话最终交付，原冷首答、失败、分母及生成/helper门槛保持。本次只改已有driver接线，不改产品状态转移或增加有限模型。
 上述段落保留复核启动前状态。四次实际终局已在来源复核分支 `41101972da5fe6faa1bdce3d7e7bd601c36ee955` 及原件 `reviews/close2-v8-semantics/` 记录：技术核验4/4通过，内容判定C1/v5 failed、D-named passed、setup passed-with-notes；setup初评与补充复核均保留。它们不改原冷首答或生成任务判定。
 
+### v9 两阶段完整生成续接候选（驱动已验，真实运行待冻结）
+
+新增默认关闭的 `artifactRecovery` 只接受一个 SHA 绑定的原 failed/timeout 生成结果与固定 `procedure`、`complete` 两阶段。准入独立核验真实终局、原 native 完整调用/结果配对、五文件项目 manifest、来源只读效果、原臂和产品文件；不要求旧 native 有 final，也不合成 final。原 B/D 历史中被原项目守卫明确在执行前拒绝的 Bash 调用可原样保留，其他未闭合或越界历史不准入。v8 A 的完整 104 行历史可通过公开 fork 继承；超时请求未持久化的思考正文无法恢复，不能把空摘要或事件数量解释成具体进展。
+
+第一阶段以公开 `--fork` 进入新的同五文件 owned 项目和独立产物根，仅交付规程主文件；记录 `stage-completed` 和 `fullTaskAccepted:false`。第二阶段通过公开 `--session` 沿用第一阶段的项目、文件及完整 native，同时继续绑定最初 fork header 与原始历史，补齐引用、Node helper 和完整 final。两阶段提示保留原任务及来源，不提供叶子 ref 或业务答案；生成阶段仍不得执行项目或 helper。两份原生 session、provider、成本、文件快照和 ledger 均保留；第二阶段合并两份 ledger 验证最终全文件，只有完整原生 final 与既有 collector 均通过才生成可独立审阅的 plan。
+
+新两阶段总时间固定 `600000 ms`，在第一次 spawn 前启动单调时钟；第二阶段仅取得同一 deadline 的剩余量，中间耗时不重置。总门槛为 8 份 provider payload、40 次 native calls、4,000,000 payload bytes，旧历史不重复计入新成本。阶段边界若已耗尽数量或时间预算，第二阶段记 `not_run`；数量仍是事后验收上限，不声称每次派发前的硬 cap。新调用单独按本阶段 task observer IDs 核验，历史被拒绝命令不会伪装成本轮错误；本轮错误仍失败。完整来源是否真正进入每阶段实际 payload，必须在真实运行后回读原件核验，不能由父 session 曾读过推定。
+
+验证在 Node 24.20.0 下采用命令级 YAML 2.9.0 依赖绑定；最初两次模块加载失败单列，不作为功能 RED。7 项缺实现 RED 之后补齐定向边界，最终 recovery/artifacts/candidate/budget/resume/fork 六文件共 76/76 GREEN、0 skipped，含已安装 Pi 的真实 native write/edit 和原 helper loopback 用例。覆盖共享 deadline、阶段一耗尽预算阻止第二次派发、阶段一不能整票通过、继承错误与新调用分账、完整 fork 前缀及跨阶段 artifact ledger。原始 stdout 为 `verification-evidence/ah639-20261112-staged-artifact-recovery/green.stdout.log`，SHA256 `0f91a3834e7fcd1dea0e853b19a9c35e71f756dc07714d541da8983cb7f6b0d8`；这不是一次真实模型生成通过。
+
+只读准入已直接验证真实 v8 A，以及原 v3 A/B/D-natural 的六个 failed 父结果，保留所有原失败和拒绝事件；v8 实际 `notion_use` 的嵌套 preparation effects 形状先暴露准入错误，修正后回读通过。证据分别为同目录 `real-parent-admission-green.json`（SHA256 `bd3764b12df3b0665f018d5d8f47606162693cc1682c156b1d4ece8acacd4f35`）及 `original-parents-admission.json`（SHA256 `5692973d3124ffeb9ebb8b90deb52d35b1f8debdac13011f34fa58f9a22e77b1`）。本轮没有启动 Pi/model、Notion 请求或读取 Store。独立代码复核覆盖父准入、共享预算、阶段判定、成本分账与旧入口；产品五文件、默认 fresh/介绍入口和外写限制保持。
+
+该构造改变任务分段并使用已读历史，是新的完整生成续接候选；不称原冷任务 600 秒通过，不证明此前超时根因，也不叠加 completion cap 或展开新矩阵。完整产物出现后，仍须独立原文审阅、原受控 helper 实驱和整体 chain `passed` 才可收口。AH-639、AH-638 与全部原 failed、unknown、not_run 继续按实际证据保留。本次只改变已有验证 driver 编排，不改变产品有限状态转移，不新增验证平台或形式模型。
+
+本轮测试诊断明确列出的 45 个 owned 临时根已完成 Evidence→系统 Trash→Evidence：157 份常规文件/200451 B、74 子目录及 2 份 symlink 目标元数据先保留，链接从未跟随；45 次 `/usr/bin/trash` 全部退出 0，原路径全部不存在，原始测试与准入证据的 hash 均保持。只处理本轮确证 fixture，不递归原模型状态、Store/auth 或用户项目。清理回执为同目录 `cleanup-exact-test-roots/after.json`，11506 B，SHA256 `05a8cf5a41ce665f62e698442237f195f87060f37d85aab360cdfc23ac1909c4`。
+

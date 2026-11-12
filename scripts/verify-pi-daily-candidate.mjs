@@ -15,7 +15,7 @@ import { sourceObserverPreloadSource, readSourceObservation } from './skill-cons
 import { observeGraphSdk } from './notion-skill-graph-model-evidence.mjs';
 import { observeOwnedObjectReads } from './notion-sdk-pi.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
-import { createOwnedGraphProject, retainGeneratedPlan } from './notion-skill-graph-project.mjs';
+import { createOwnedGraphProject, ownedProjectFiles, retainGeneratedPlan } from './notion-skill-graph-project.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -29,7 +29,7 @@ const { parse: parseYaml } = createRequire(new URL('../packages/context-broker/p
 
 /** Inspect a linear native session independently of the model's answer.
  * Only an explicitly bound public full-history fork may have a parent header. */
-export function inspectCandidatePrintSession(text, { provider, model, expectedUserMessages = 1, fork }) {
+export function inspectCandidatePrintSession(text, { provider, model, expectedUserMessages = 1, fork, requireFinal = true }) {
   assert.ok(Number.isSafeInteger(expectedUserMessages) && expectedUserMessages > 0);
   assert.ok(typeof text === 'string' && text.endsWith('\n'), 'Retain a complete native JSONL session');
   const rows = text.trimEnd().split('\n').map((line, index) => ({ value: JSON.parse(line), line: index + 1 }));
@@ -95,7 +95,7 @@ export function inspectCandidatePrintSession(text, { provider, model, expectedUs
     }
   }
   assert.ok(models.length > 0 && userLines.length === expectedUserMessages, 'Verify the exact print submissions with their recorded model');
-  assert.ok(finals.length > 0 && finals.at(-1).stopReason === 'stop' && finals.at(-1).bytes > 0, 'A process exit is not a successful final model response');
+  if (requireFinal) assert.ok(finals.length > 0 && finals.at(-1).stopReason === 'stop' && finals.at(-1).bytes > 0, 'A process exit is not a successful final model response');
   assert.ok([...calls.values()].every(call => call.resultLine !== undefined || call.retractedLine !== undefined), 'A native tool call has no terminal result or explicit failed-response retraction');
   return { version: 1, sessionId: rows[0].value.id, sha256: hash(text), bytes: Buffer.byteLength(text),
     lines: rows.length, models, userLines, calls: [...calls.values()].filter(call => call.retractedLine === undefined),
@@ -1106,7 +1106,180 @@ export function validateCandidateCompletionHistory(nativeAudit) {
   return { nativeFinalResponses: nativeAudit.finals.length, lengthResponses: 0 };
 }
 
-export async function runCandidatePrint(config) {
+const artifactStageKey = Symbol('owned-artifact-recovery-stage');
+const artifactRecoveryLimits = Object.freeze({ providerRequests: 8, toolCalls: 40, payloadBytes: 4000000 });
+
+export function validateCandidateArtifactRecovery(config) {
+  const recovery = config.artifactRecovery;
+  assert.equal(config.artifactOutput, true); assert.equal(config.project, 'owned-ticket-service');
+  for (const key of ['resumeFrom', 'publicCli', 'existingState', 'forkIntroductionResume', 'maxCompletionTokens'])
+    assert.equal(config[key], undefined, 'Staged artifact recovery cannot combine ' + key);
+  assert.ok(config.timeoutMs === undefined || config.timeoutMs === 600000);
+  assert.ok(recovery && typeof recovery === 'object' && !Array.isArray(recovery));
+  assert.deepEqual(Object.keys(recovery).sort(), ['parent', 'stages', 'timeoutMs']);
+  assert.equal(recovery.timeoutMs, 600000);
+  assert.ok(isAbsolute(recovery.parent?.path) && digest(recovery.parent?.sha256));
+  assert.deepEqual(recovery.stages?.map(stage => stage.id), ['procedure', 'complete']);
+  for (const stage of recovery.stages) {
+    assert.deepEqual(Object.keys(stage).sort(), ['id', 'prompt']);
+    assert.ok(typeof stage.prompt === 'string' && stage.prompt.trim() && !stage.prompt.trimStart().startsWith('/'));
+  }
+  return recovery;
+}
+
+/** Read-only admission of a terminal, unsuccessful generation attempt.
+ * This binds the complete original history; it does not reclassify its verdict. */
+export async function inspectArtifactForkSource(previous) {
+  assert.equal(previous?.scope, 'project-scoped-candidate-print'); assert.equal(previous.status, 'failed');
+  assert.equal(previous.project?.kind, 'owned-ticket-service');
+  assert.equal(previous.process?.timedOut, true);
+  assert.ok(previous.process.code !== 0 && /^[0-9]+$/u.test(previous.process.startedNs) && /^[0-9]+$/u.test(previous.process.endedNs)
+    && BigInt(previous.process.endedNs) > BigInt(previous.process.startedNs), 'The original process must be terminal');
+  for (const field of ['normalConfigurationUnchanged', 'baselineFilesUnchanged', 'projectFilesUnchanged']) assert.equal(previous[field], true);
+  const files = Object.entries(ownedProjectFiles).map(([path, text]) => ({ path, sha256: hash(text), bytes: Buffer.byteLength(text) }));
+  assert.deepEqual(previous.project.files, files); assert.equal(previous.project.sha256, hash(JSON.stringify(files)));
+  const cwd = previous.launch.cwd;
+  assert.match(cwd, /^\/private\/tmp\/notion-candidate-print-[A-Za-z0-9]+$/u);
+  const bytes = await readFile(previous.session.path); assert.equal(hash(bytes), previous.session.sha256);
+  const text = bytes.toString('utf8'), rows = text.trimEnd().split('\n').map(JSON.parse);
+  const audit = inspectCandidatePrintSession(text, { provider: 'magpie', model: 'group/worker',
+    expectedUserMessages: previous.expectedUserMessages, requireFinal: false });
+  assert.equal(rows[0].cwd, cwd);
+  const history = bytes.subarray(bytes.indexOf(10) + 1);
+  assert.ok(Buffer.from(rows.slice(1).map(row => JSON.stringify(row)).join('\n') + '\n').equals(history), 'The public fork must retain exact original non-header bytes');
+  const seenFiles = new Set(), historicalRejectedCalls = [];
+  const noWrites = effects => effects?.version === 1 && effects.remote_writes === 'none'
+    && effects.author_content === 'unchanged' && Array.isArray(effects.retention) && effects.retention.length === 0;
+  const knownRejections = new Set([
+    'This owned project task permits only pwd, ls and bounded find inventory within its fixed cwd. Project execution, content search, outside paths and other shell commands remain blocked.',
+    'This owned project task permits only bounded pwd, ls and find inventory with an optional literal marker within its fixed cwd. Project execution, content search, outside paths and other shell commands remain blocked.',
+  ]);
+  for (const call of audit.calls) {
+    const result = rows[call.resultLine - 1].message;
+    const body = (result.content ?? []).filter(part => part.type === 'text').map(part => part.text).join('\n');
+    if (call.isError) {
+      assert.ok(call.name === 'bash' && knownRejections.has(body), 'Only the known pre-execution historical inventory rejection is admissible');
+      historicalRejectedCalls.push({ id: call.id, resultLine: call.resultLine, resultSha256: call.resultSha256 }); continue;
+    }
+    if (call.name === 'bash') {
+      assert.ok(candidateProjectInspection(call.arguments, cwd, cwd), 'Only read-only historical project inventory is admissible'); continue;
+    }
+    if (call.name === 'notion_list') {
+      assert.ok(result.details?.effects === undefined || noWrites(result.details.effects), 'Historical source effects must remain read-only'); continue;
+    }
+    if (call.name === 'notion_use' || call.name === 'read' && (Array.isArray(call.arguments.paths) || /^(?:sr:|skill:\/\/|ntn-skills:\/\/)/u.test(call.arguments.path))) {
+      const effects = call.name === 'notion_use' ? result.details?.contextBrokerPreparation?.effects ?? result.details?.effects : result.details?.effects;
+      assert.equal(call.arguments.readOnly, true); assert.ok(noWrites(effects), 'Historical source effects must remain read-only'); continue;
+    }
+    assert.equal(call.name, 'read', 'Historical generation cannot have unreviewed execution or writes');
+    const path = resolve(cwd, call.arguments.path), name = relative(cwd, path);
+    assert.ok(Object.hasOwn(ownedProjectFiles, name) || name === '.pi/settings.json', 'Historical local reads must belong to the original project');
+    if (Object.hasOwn(ownedProjectFiles, name)) {
+      assert.equal(hash(body), hash(ownedProjectFiles[name]), 'The original complete project file must have reached the native history'); seenFiles.add(name);
+    }
+  }
+  assert.deepEqual([...seenFiles].sort(), Object.keys(ownedProjectFiles).sort(), 'The original history must contain the complete project');
+  return { originalStatus: previous.status, originalCwd: cwd, projectFiles: files, projectSha256: previous.project.sha256,
+    native: { path: previous.session.path, realpath: await realpath(previous.session.path), bytes: bytes.length, sha256: hash(bytes) },
+    header: rows[0], history: { bytes: history.length, sha256: hash(history), entries: rows.length - 1 }, historicalRejectedCalls };
+}
+
+export function beginCandidateArtifactBudget(clock, now = process.hrtime.bigint()) {
+  assert.equal(clock.timeoutMs, 600000);
+  if (clock.startedNs === undefined) {
+    clock.startedNs = now.toString(); clock.deadlineNs = (now + BigInt(clock.timeoutMs) * 1000000n).toString();
+  }
+  return remainingCandidateArtifactBudget(clock, now);
+}
+
+export function remainingCandidateArtifactBudget(clock, now = process.hrtime.bigint()) {
+  assert.equal(clock.timeoutMs, 600000);
+  if (clock.startedNs === undefined) return clock.timeoutMs;
+  assert.equal(BigInt(clock.deadlineNs) - BigInt(clock.startedNs), BigInt(clock.timeoutMs) * 1000000n);
+  return Math.max(0, Number((BigInt(clock.deadlineNs) - now) / 1000000n));
+}
+
+/** Exactly two stages share one clock. A first-phase final is never full-task success. */
+export async function runCandidateArtifactStages(stages, clock, executeStage, now = () => process.hrtime.bigint()) {
+  assert.deepEqual(stages.map(stage => stage.id), ['procedure', 'complete']);
+  const results = [];
+  for (const [index, stage] of stages.entries()) {
+    if (remainingCandidateArtifactBudget(clock, now()) <= 0 || index === 1 && results[0].status !== 'stage-completed') {
+      results.push({ id: stage.id, status: 'not_run', reason: 'Prior stage incomplete or shared generation deadline exhausted' }); continue;
+    }
+    if (index === 1 && Object.entries(artifactRecoveryLimits).some(([key, limit]) =>
+      !Number.isSafeInteger(results[0].recoveryMetrics?.[key]) || results[0].recoveryMetrics[key] < 0 || results[0].recoveryMetrics[key] >= limit)) {
+      results.push({ id: stage.id, status: 'not_run', reason: 'First-stage call accounting is unavailable or the shared call budget is exhausted' }); continue;
+    }
+    try { results.push(await executeStage(stage, clock, index)); }
+    catch (error) { results.push({ id: stage.id, status: 'failed', error: { code: error.code ?? error.name, message: error.message } }); }
+  }
+  return results;
+}
+
+export function inspectCandidateArtifactRecoveryLimits(stages) {
+  assert.equal(stages.length, 2); assert.equal(stages[0].status, 'stage-completed'); assert.equal(stages[1].status, 'passed');
+  const totals = { providerRequests: 0, toolCalls: 0, payloadBytes: 0 }, limits = artifactRecoveryLimits;
+  for (const stage of stages) for (const key of Object.keys(totals)) {
+    const value = stage.recoveryMetrics?.[key];
+    assert.ok(Number.isSafeInteger(value) && value >= 0, 'Each stage needs its actual new-call accounting'); totals[key] += value;
+  }
+  for (const key of Object.keys(totals)) assert.ok(totals[key] <= limits[key], 'Staged artifact recovery exceeded total ' + key);
+  return { ...totals, limits, enforcement: 'post-run acceptance; not a pre-send cap' };
+}
+
+async function runCandidateArtifactRecovery(config) {
+  assert.equal(config.version, 1); assert.equal(config.scope, 'project-scoped-candidate-print');
+  assert.equal(config.model, 'magpie/group/worker'); assert.equal(config.thinkingLevel, 'high');
+  assert.ok(['normal', 'notion-only'].includes(config.arm) && identifier(config.id));
+  assert.ok(typeof config.prompt === 'string' && config.prompt.trim());
+  const recovery = validateCandidateArtifactRecovery(config);
+  assert.ok(isAbsolute(config.evidenceRoot) && !inside(root, config.evidenceRoot));
+  const originalBytes = await readFile(recovery.parent.path); assert.equal(hash(originalBytes), recovery.parent.sha256);
+  assert.ok(inside(await realpath(config.evidenceRoot), await realpath(recovery.parent.path)));
+  const original = JSON.parse(originalBytes), parent = await inspectArtifactForkSource(original);
+  assert.equal(original.arm, config.arm); assert.equal(original.database, config.database);
+  const evidence = await mkdtemp(join(config.evidenceRoot, config.arm + '-' + config.id + '-chain-'));
+  await save(join(evidence, 'config.json'), config);
+  const clock = { timeoutMs: recovery.timeoutMs }, result = { version: 1, scope: 'project-scoped-artifact-recovery',
+    status: 'running', evidence, parent: { ...recovery.parent, proof: parent }, clock, stages: [],
+    historicalVerdict: 'failed; unchanged', semanticReview: 'required', helperExercise: 'not_run' };
+  await save(join(evidence, 'started.json'), result);
+  let previous = original, previousResult = recovery.parent;
+  try {
+    result.stages = await runCandidateArtifactStages(recovery.stages, clock, async (stage, sharedClock, index) => {
+      const stageConfig = { ...config, id: config.id + '-' + stage.id, prompt: stage.prompt };
+      delete stageConfig.artifactRecovery;
+      const run = await runCandidatePrint(stageConfig, { key: artifactStageKey, index, stageId: stage.id, chainEvidence: evidence,
+        clock: sharedClock, previous, previousResult, parent, original });
+      const path = join(run.evidence, 'result.json'), bytes = await readFile(path);
+      previous = JSON.parse(bytes); previousResult = { path, sha256: hash(bytes) };
+      const stageResult = { id: stage.id, status: previous.status, evidence: run.evidence, result: previousResult,
+        session: previous.session, process: previous.process, recoveryMetrics: previous.recoveryMetrics };
+      await save(join(evidence, 'stage-' + (index + 1) + '.json'), stageResult);
+      return stageResult;
+    });
+    result.limits = inspectCandidateArtifactRecoveryLimits(result.stages);
+    assert.ok(BigInt(result.stages[1].process.endedNs) <= BigInt(clock.deadlineNs), 'The complete generation exceeded its shared deadline');
+    result.generatedPlan = previous.generatedPlan; result.completeStage = previousResult; result.status = 'passed';
+  } catch (error) {
+    result.status = 'failed'; result.error = { code: error.code ?? error.name, message: error.message };
+  } finally {
+    result.parentUnchanged = hash(await readFile(recovery.parent.path)) === recovery.parent.sha256
+      && hash(await readFile(parent.native.path)) === parent.native.sha256;
+    if (!result.parentUnchanged) result.status = 'failed';
+    result.finishedNs = process.hrtime.bigint().toString();
+    await save(join(evidence, 'result.json'), result);
+  }
+  return { status: result.status, evidence, error: result.error, stages: result.stages, completeStage: result.completeStage, limits: result.limits };
+}
+
+export async function runCandidatePrint(config, artifactStage) {
+  assert.ok(artifactStage === undefined || artifactStage.key === artifactStageKey, 'Artifact stages are owned by the recovery coordinator');
+  if (config.artifactRecovery !== undefined) {
+    assert.equal(artifactStage, undefined);
+    return runCandidateArtifactRecovery(config);
+  }
   assert.equal(config.version, 1); assert.equal(config.scope, 'project-scoped-candidate-print');
   assert.equal(config.model, 'magpie/group/worker'); assert.equal(config.thinkingLevel, 'high');
   assert.ok(['normal', 'notion-only'].includes(config.arm) && identifier(config.id));
@@ -1170,7 +1343,7 @@ export async function runCandidatePrint(config) {
     agentDir: join(homedir(), '.pi/agent'), brokerRoot: config.brokerRoot, brokerEntry: baselineFiles[1] });
   await mkdir(config.evidenceRoot, { recursive: true, mode: 0o700 });
   const evidence = await mkdtemp(join(config.evidenceRoot, config.arm + '-' + config.id + '-'));
-  let previous;
+  let previous = artifactStage?.previous;
   if (config.resumeFrom) {
     const artifact = await identity(config.resumeFrom.path); assert.equal(artifact.sha256, config.resumeFrom.sha256);
     assert.ok(inside(await realpath(config.evidenceRoot), artifact.realpath));
@@ -1178,28 +1351,56 @@ export async function runCandidatePrint(config) {
     assert.equal(previous.scope, config.scope); assert.equal(previous.status, 'passed'); assert.equal(previous.arm, config.arm);
     assert.equal(previous.database, config.database); assert.equal(previous.runtime.sdk_sha256, runtime.sdk_sha256);
   }
+  if (artifactStage) {
+    assert.equal(previous.arm, config.arm); assert.equal(previous.database, config.database);
+    assert.deepEqual(previous.runtime, runtime, 'Artifact recovery retains the complete original product runtime');
+    assert.deepEqual(previous.baselineFiles.map(file => ({ bytes: file.bytes, sha256: file.sha256 })),
+      baselineFiles.map(file => ({ bytes: file.bytes, sha256: file.sha256 })), 'Artifact recovery retains all five product files');
+    assert.equal(hash(await readFile(artifactStage.previousResult.path)), artifactStage.previousResult.sha256);
+    if (artifactStage.index === 0) assert.deepEqual(await inspectArtifactForkSource(previous), artifactStage.parent);
+    else assert.equal(previous.status, 'stage-completed');
+  }
   const stateRoot = previous?.stateRoot ?? join(evidence, 'owned-state');
   const stateBinding = await prepareCandidatePrintState(config, { stateRoot, previous });
   if (previous) assert.equal((await identity(previous.session.path)).sha256, previous.session.sha256);
   const introductionFork = config.forkIntroductionResume
     ? await inspectIntroductionForkSource(previous, { project: config.project }) : null;
-  const cwd = introductionFork ? await mkdtemp('/private/tmp/notion-candidate-print-')
+  const publicFork = introductionFork ?? (artifactStage?.index === 0 ? artifactStage.parent : null);
+  const cwd = publicFork ? await mkdtemp('/private/tmp/notion-candidate-print-')
     : previous?.launch.cwd ?? await mkdtemp('/private/tmp/notion-candidate-print-');
   if (previous) assert.equal(previous.project?.kind, config.project, 'A continuation must retain its original application');
-  const project = previous?.project ?? (config.project ? { ...await createOwnedGraphProject(cwd), kind: config.project } : undefined);
+  const project = artifactStage?.index === 0
+    ? { ...await createOwnedGraphProject(cwd), kind: config.project }
+    : previous?.project ?? (config.project ? { ...await createOwnedGraphProject(cwd), kind: config.project } : undefined);
+  if (artifactStage) assert.equal(project.sha256, artifactStage.parent.projectSha256);
   let artifactPolicy, artifactOwnership;
   if (artifactOutput) {
-    const outputRoot = await mkdtemp('/private/tmp/notion-candidate-artifacts-'), stat = fs.lstatSync(outputRoot);
-    artifactPolicy = { root: outputRoot, dev: stat.dev, ino: stat.ino, projectFiles: project.files.map(file => file.path) };
+    if (artifactStage?.index === 1) {
+      artifactPolicy = previous.artifactOutput.ownership.policy;
+      for (const file of previous.artifactOutput.files.files) {
+        const path = join(artifactPolicy.root, file.path);
+        reviewCandidateArtifactPath(path, artifactPolicy, fs);
+        assert.equal(hash(await readFile(path)), file.sha256, 'First-stage files changed before continuation');
+      }
+    } else {
+      const outputRoot = await mkdtemp('/private/tmp/notion-candidate-artifacts-'), stat = fs.lstatSync(outputRoot);
+      artifactPolicy = { root: outputRoot, dev: stat.dev, ino: stat.ino, projectFiles: project.files.map(file => file.path) };
+    }
     artifactOwnership = { version: 1, purpose: 'candidate-native-artifact-output', evidence, projectRoot: project.root, policy: artifactPolicy,
+      ...(artifactStage ? { chainEvidence: artifactStage.chainEvidence, stage: artifactStage.stageId,
+        ...(artifactStage.index === 1 ? { createdByEvidence: previous.evidence } : {}) } : {}),
       cleanup: 'After process close and evidence review, move only this exact owned directory to system Trash; preserve evidence' };
     await save(join(evidence, 'artifact-output-ownership.json'), artifactOwnership);
   }
-  const actualPrompt = candidateArtifactPrompt(config.prompt, artifactPolicy?.root);
+  const stagePrompt = artifactStage ? config.prompt + '\n\n原完整任务及已经读取的来源继续有效。当前项目目录：' + cwd
+    + (artifactStage.index === 0 ? '\n项目内容与原任务相同，原失败运行的临时项目和产物路径不再使用。'
+      : '\n沿用第一阶段的项目和产物目录，保留并按需完善已经保存的文件。')
+    + '仅完成本阶段要求，不执行项目或 helper。' : config.prompt;
+  const actualPrompt = candidateArtifactPrompt(stagePrompt, artifactPolicy?.root);
   const control = join(evidence, 'observation'), sessions = join(evidence, 'sessions'), responses = join(control, 'sdk-responses'), payloads = join(control, 'provider-payloads');
   for (const path of [join(cwd, '.pi'), stateRoot, control, sessions, responses, payloads]) await mkdir(path, { recursive: true, mode: 0o700 });
   const projectSettings = packageRegistration.projectSettings;
-  if (previous && !introductionFork) assert.deepEqual(await json(join(cwd, '.pi/settings.json')), projectSettings);
+  if (previous && !publicFork) assert.deepEqual(await json(join(cwd, '.pi/settings.json')), projectSettings);
   else await save(join(cwd, '.pi/settings.json'), projectSettings);
   const sourceCache = join(stateRoot, 'broker-cache');
   const source = candidateSourceConfig(originalSource, { sourceId: config.sourceId, database: config.database, cacheDir: sourceCache, viewId: config.viewId });
@@ -1224,12 +1425,12 @@ export async function runCandidatePrint(config) {
   if (stateBinding.sourceState) await writeFile(existingReadGuard, "import fs from 'node:fs';const review=" + reviewCandidatePinnedRead.toString()
     + ';export default api=>(' + guardCandidateExistingReads.toString() + ')(api,{fs,review,output:' + JSON.stringify(existingReadLedger)
     + ',refs:' + JSON.stringify(stateBinding.sourceState.reads.map(read => read.ref)) + '});\n', { flag: 'wx', mode: 0o600 });
-  const forkBinding = introductionFork ? { parentSession: introductionFork.native.realpath, sourceSessionId: introductionFork.header.id,
-    cwd: await realpath(cwd), history: introductionFork.history } : null;
-  if (introductionFork) await writeFile(inputGuard, "import fs from 'node:fs';import crypto from 'node:crypto';export default api=>("
+  const forkBinding = publicFork ? { parentSession: publicFork.native.realpath, sourceSessionId: publicFork.header.id,
+    cwd: await realpath(cwd), history: publicFork.history } : artifactStage?.previous.launch.artifactFork?.binding ?? null;
+  if (publicFork || artifactStage) await writeFile(inputGuard, "import fs from 'node:fs';import crypto from 'node:crypto';export default api=>("
     + guardCandidateInputIdentity.toString() + ')(api,{fs,crypto,output:' + JSON.stringify(inputGuardLedger) + ',expected:'
     + JSON.stringify({ entry: baselineFiles[1], cwd: forkBinding.cwd, provider: 'magpie', model: 'group/worker', thinkingLevel: 'high',
-      nativeSkillCount: config.arm === 'notion-only' ? 0 : 69, promptSha256: hash(config.prompt) }) + '});\n', { flag: 'wx', mode: 0o600 });
+      nativeSkillCount: config.arm === 'notion-only' ? 0 : 69, promptSha256: hash(actualPrompt) }) + '});\n', { flag: 'wx', mode: 0o600 });
   if (cliPolicy) await writeFile(cliGuard, "import fs from 'node:fs';const review=" + reviewCandidateCliCommand.toString()
     + ';export default api=>(' + candidateCliGuard.toString() + ')(api,{fs,review,output:' + JSON.stringify(cliGuardLedger)
     + ',policy:' + JSON.stringify(cliPolicy) + '});\n', { flag: 'wx', mode: 0o600 });
@@ -1251,7 +1452,7 @@ export async function runCandidatePrint(config) {
   if (cliPolicy) Object.assign(env, cliPolicy.stateRoots);
   delete env.NTN_SKILLS_DEV_ROOT;
   const args = ['-p', ...(config.arm === 'notion-only' ? ['-ns'] : []), '--approve', '--session-dir', sessions, '--model', config.model, '--thinking', config.thinkingLevel,
-    ...(introductionFork ? ['-e', inputGuard] : []), ...(completionBudgetSource ? ['-e', completionBudgetExtension] : []),
+    ...(publicFork || artifactStage ? ['-e', inputGuard] : []), ...(completionBudgetSource ? ['-e', completionBudgetExtension] : []),
     '-e', costExtension, '-e', transportExtension, '-e', taskExtension];
   if (cliPolicy) args.push('-e', cliGuard);
   if (stateBinding.sourceState) args.push('-e', existingReadGuard);
@@ -1263,7 +1464,7 @@ export async function runCandidatePrint(config) {
     args.push('-e', guard);
   }
   let prefix;
-  if (introductionFork) args.push('--fork', forkBinding.parentSession);
+  if (publicFork) args.push('--fork', forkBinding.parentSession);
   else if (previous) {
     prefix = await readFile(previous.session.path);
     const session = join(sessions, basename(previous.session.path));
@@ -1274,8 +1475,11 @@ export async function runCandidatePrint(config) {
     otherPackagesSha256: hash(JSON.stringify(settings.packages.filter((_, index) => index !== (config.packageIndex ?? 1)))) };
   const result = { version: 1, scope: config.scope, status: 'running', arm: config.arm, id: config.id, database: config.database,
     evidence, stateRoot, project, baselineFiles, runtime, ownership, before, host, hostArtifact: await identity(host.identity), expectedUserMessages: (previous?.expectedUserMessages ?? 0) + 1,
-    ...(artifactPolicy ? { artifactOutput: { ownership: artifactOwnership, guard: artifactLedger },
+    ...(artifactPolicy ? { artifactOutput: { ownership: artifactOwnership, guard: artifactLedger,
+      ...(artifactStage ? { guardHistory: [...(artifactStage.index === 1 ? previous.artifactOutput.guardHistory : []), artifactLedger] } : {}) },
       actualPrompt: { text: actualPrompt, bytes: Buffer.byteLength(actualPrompt), sha256: hash(actualPrompt), originalPromptSha256: hash(config.prompt) } } : {}),
+    ...(artifactStage ? { artifactRecoveryStage: { chainEvidence: artifactStage.chainEvidence, stage: artifactStage.stageId,
+      index: artifactStage.index, parentResult: artifactStage.previousResult, fullTaskAcceptance: artifactStage.index === 0 ? 'not_applicable_draft_stage' : 'requires_whole_chain_and_independent_helper' } } : {}),
     ...(stateBinding.sourceState ? { sourceState: stateBinding.sourceState, ownedPaths: stateBinding.ownedPaths } : {}),
     launch: { cwd, executable: host.file, args: [...host.prefix, ...args], normalHome: true, normalAgentDir: true, normalMcpAndExtensions: true,
       projectPackageOverrideOnly: !packageRegistration.reusesRegisteredBroker,
@@ -1285,7 +1489,9 @@ export async function runCandidatePrint(config) {
       ...(completionBudgetSource ? { completionBudget: { maxCompletionTokens: config.maxCompletionTokens, policy: await identity(completionBudgetExtension) } } : {}),
       previous: config.resumeFrom ?? null,
       introductionFork: introductionFork ? { ...introductionFork, newCwd: cwd, newBrokerRoot: config.brokerRoot, binding: forkBinding } : null,
-      sessionContinuation: introductionFork ? 'public-Pi-full-history-fork-and-owned-warm-store; new-header-cwd-and-candidate-package; new-process'
+      ...(artifactStage ? { artifactFork: { original: artifactStage.parent.native, binding: forkBinding },
+        previous: artifactStage.previousResult } : {}),
+      sessionContinuation: publicFork ? 'public-Pi-full-history-fork-and-owned-warm-store; new-header-cwd-and-candidate-package; new-process'
         : previous ? 'copied-owned-linear-history-and-owned-warm-store; new-process' : 'new-session-and-process' },
     semanticReview: 'required', artifactBoundary: 'actual source package and bundled CLI/SDK; not an installed release gate' };
   if (cliPolicy) result.publicCli = { entry: cliProtected[0], stateRoots: cliPolicy.stateRoots, protectedFiles: cliProtected,
@@ -1301,10 +1507,13 @@ export async function runCandidatePrint(config) {
     result.artifactOutput.files = await retainCandidateArtifactFiles({ policy: artifactPolicy, evidence });
   };
   try {
+    const timeoutMs = artifactStage ? beginCandidateArtifactBudget(artifactStage.clock) : config.timeoutMs ?? 600000;
+    if (artifactStage) result.recoveryBudget = { ...artifactStage.clock, remainingMsAtSpawn: timeoutMs };
+    if (timeoutMs <= 0) throw Object.assign(new Error('The shared generation deadline was exhausted before spawn'), { code: 'ARTIFACT_RECOVERY_DEADLINE' });
     result.process = await new Promise((resolveProcess, reject) => {
       const child = spawn(host.file, [...host.prefix, ...args], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
       let timedOut = false;
-      const timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, config.timeoutMs ?? 600000);
+      const timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, timeoutMs);
       child.stdout.on('data', chunk => { stdout += chunk.toString(); });
       child.stderr.on('data', chunk => { stderr += chunk.toString(); });
       child.once('error', error => { clearTimeout(timer); reject(error); });
@@ -1312,7 +1521,7 @@ export async function runCandidatePrint(config) {
     });
     assert.equal(result.process.code, 0, 'Native print process failed');
     if (artifactPolicy) await captureArtifacts();
-    if (introductionFork) {
+    if (publicFork || artifactStage) {
       result.inputIdentityGuard = await readRows(inputGuardLedger);
       assert.equal(result.inputIdentityGuard.length, 1);
       assert.equal(result.inputIdentityGuard[0].allowed, true, 'The pre-prompt candidate identity guard rejected the input');
@@ -1349,21 +1558,38 @@ export async function runCandidatePrint(config) {
       });
       for (const call of result.nativeAudit.calls) assert.equal(guard.filter(entry => entry.toolCallId === call.id && entry.allowed).length, 1);
     }
-    const approvedArtifactCalls = artifactPolicy
-      ? inspectCandidateArtifactGuard(result.nativeAudit, await readRows(artifactLedger), result.artifactOutput.files) : [];
+    const artifactRows = artifactPolicy ? (artifactStage
+      ? (await Promise.all(result.artifactOutput.guardHistory.map(readRows))).flat() : await readRows(artifactLedger)) : [];
+    const allArtifactCalls = artifactPolicy
+      ? inspectCandidateArtifactGuard(result.nativeAudit, artifactRows, result.artifactOutput.files) : [];
+    const currentCalls = new Set(task.filter(event => event.phase === 'tool_call').map(event => event.toolCallId));
+    if (artifactStage) {
+      const currentNativeCalls = result.nativeAudit.calls.filter(call => currentCalls.has(call.id));
+      assert.equal(currentNativeCalls.length, currentCalls.size, 'Every new stage call must retain its exact native result');
+      assert.ok(currentNativeCalls.every(call => !call.isError), 'New recovery-stage tool errors remain failures; only original historical rejections are inherited');
+      result.currentStageNativeCalls = currentNativeCalls.map(({ id, name, callLine, resultLine, isError }) => ({ id, name, callLine, resultLine, isError }));
+    }
+    const approvedArtifactCalls = artifactStage ? allArtifactCalls.filter(id => currentCalls.has(id)) : allArtifactCalls;
     result.assertions = validateCandidateTurn(config, { costs: cost.events, transport: wire, tasks: task }, { approvedCliCalls, approvedArtifactCalls });
+    if (artifactStage) result.recoveryMetrics = { providerRequests: cost.events.filter(event => event.phase === 'provider_request').length,
+      toolCalls: currentCalls.size, payloadBytes: cost.events.filter(event => event.phase === 'provider_request').reduce((sum, event) => sum + event.payload.bytes, 0) };
     for (const event of task.filter(event => event.phase === 'provider_payload')) {
       const actual = await identity(event.payloadFile); assert.equal(actual.sha256, event.sha256); assert.equal(actual.bytes, event.bytes);
       if (completionBudgetSource) result.completionBudgetAudit.payloads.push({ ...inspectCandidateCompletionBudget(await json(actual.path)), file: actual });
     }
-    if (project) {
+    if (project && artifactStage?.index !== 0) {
       const delivery = { evidence, project, final: task.filter(event => event.phase === 'assistant_final').at(-1), prompt: { sha256: hash(actualPrompt) } };
       result.generatedPlan = artifactPolicy
         ? await retainCandidateFilePlan({ ...delivery, artifactFiles: result.artifactOutput.files }) : await retainGeneratedPlan(delivery);
     }
-    result.status = 'passed';
+    if (artifactStage?.index === 0) {
+      assert.ok(result.artifactOutput.files.files.some(file => file.path.endsWith('/SKILL.md')), 'The procedure stage must deliver its actual Skill main');
+      result.generatedPlan = { artifactStatus: 'draft-procedure-files-retained', executed: false, fullTaskAccepted: false };
+    }
+    result.status = artifactStage?.index === 0 ? 'stage-completed' : 'passed';
   } catch (error) {
-    result.status = 'failed'; result.error = { code: error.code ?? error.name, message: error.message };
+    result.status = error.code === 'ARTIFACT_RECOVERY_DEADLINE' ? 'not_run' : 'failed';
+    result.error = { code: error.code ?? error.name, message: error.message };
   } finally {
     if (artifactPolicy && !artifactCaptureAttempted) {
       try { await captureArtifacts(); } catch (error) {
@@ -1379,6 +1605,8 @@ export async function runCandidatePrint(config) {
     if (project) result.projectFilesUnchanged = (await Promise.all(project.files.map(async file => (await identity(join(project.root, file.path))).sha256 === file.sha256))).every(Boolean);
     if (cliPolicy) result.publicCliProtectedFilesUnchanged = (await Promise.all(cliProtected.map(async file => (await identity(file.path)).sha256 === file.sha256))).every(Boolean);
     if (previous) result.originalSessionUnchanged = (await identity(previous.session.path)).sha256 === previous.session.sha256;
+    if (artifactStage) result.originalArtifactParentUnchanged = hash(await readFile(artifactStage.previousResult.path)) === artifactStage.previousResult.sha256
+      && hash(await readFile(artifactStage.parent.native.path)) === artifactStage.parent.native.sha256;
     if (introductionFork) {
       result.originalResumeResultUnchanged = (await identity(config.resumeFrom.path)).sha256 === config.resumeFrom.sha256;
       try {
@@ -1391,7 +1619,7 @@ export async function runCandidatePrint(config) {
       }
     }
     if (!result.normalConfigurationUnchanged || !result.baselineFilesUnchanged || result.originalSessionUnchanged === false || result.projectFilesUnchanged === false || result.publicCliProtectedFilesUnchanged === false
-      || result.originalResumeResultUnchanged === false || result.originalIntroductionSourceUnchanged === false) result.status = 'failed';
+      || result.originalResumeResultUnchanged === false || result.originalIntroductionSourceUnchanged === false || result.originalArtifactParentUnchanged === false) result.status = 'failed';
     await save(join(evidence, 'result.json'), result);
   }
   return { status: result.status, evidence, error: result.error, session: result.session, assertions: result.assertions };

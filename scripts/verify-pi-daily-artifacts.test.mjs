@@ -253,3 +253,26 @@ test('a successful final cannot promote a missing referenced file to a complete 
   assert.equal(receipt.artifactStatus, 'incomplete-generated-files'); assert.equal(receipt.executed, false);
   assert.equal(await readFile(join(f.evidence, 'native-artifact-final.md'), 'utf8'), 'Files ready.');
 });
+
+test('two stages bind inherited writes and new edits once while retaining the first-stage file snapshot', async t => {
+  const f = await fixture(t);
+  await f.write('verification/SKILL.md', skill);
+  f.handlers.get('session_shutdown')();
+  const firstRows = await f.rows(), first = await candidate.retainCandidateArtifactFiles({ policy: f.policy, evidence: f.evidence });
+  const nextEvidence = join(f.evidence, 'stage2'); await mkdir(nextEvidence);
+  const ledger = join(nextEvidence, 'artifact-guard.jsonl'), handlers = new Map();
+  candidate.guardCandidateArtifacts({ on: (name, fn) => handlers.set(name, fn) }, { fs, crypto: { createHash }, output: ledger,
+    policy: f.policy, projectRoot: f.projectRoot, inspectProject: candidate.candidateProjectInspection, reviewPath: candidate.reviewCandidateArtifactPath });
+  const input = { path: join(f.root, 'verification/SKILL.md'), edits: [{ oldText: '# Verify', newText: '# Verify completed' }] }, id = 'second-stage-edit';
+  assert.equal(handlers.get('tool_call')({ toolName: 'edit', toolCallId: id, input }, { cwd: f.projectRoot }), undefined);
+  const updated = skill.replace('# Verify', '# Verify completed'); await writeFile(input.path, updated);
+  handlers.get('tool_result')({ toolName: 'edit', toolCallId: id, isError: false });
+  handlers.get('session_shutdown')();
+  const secondRows = (await readFile(ledger, 'utf8')).trim().split('\n').map(JSON.parse);
+  const files = await candidate.retainCandidateArtifactFiles({ policy: f.policy, evidence: nextEvidence });
+  const audit = { calls: [...f.calls, { id, name: 'edit', arguments: input, isError: false }] };
+  assert.deepEqual(candidate.inspectCandidateArtifactGuard(audit, [...firstRows, ...secondRows], files), ['write-0', id]);
+  assert.throws(() => candidate.inspectCandidateArtifactGuard(audit, secondRows, files));
+  assert.equal(await readFile(join(f.evidence, first.files[0].evidencePath), 'utf8'), skill);
+  assert.equal(files.files[0].sha256, sha(updated));
+});
