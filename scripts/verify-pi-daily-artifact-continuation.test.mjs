@@ -9,6 +9,7 @@ const sha = value => createHash('sha256').update(value).digest('hex');
 const json = async path => JSON.parse(await readFile(path, 'utf8'));
 const nativeText = rows => rows.map(row => JSON.stringify(row)).join('\n') + '\n';
 const parentPath = process.env.PI_ARTIFACT_RECOVERY_V9_RESULT;
+const restoredParentPath = process.env.PI_ARTIFACT_RECOVERY_V10_RESULT;
 const legacyParents = process.env.PI_ARTIFACT_RECOVERY_V3_PARENTS;
 const complete = [{ id: 'complete', prompt: '继续完成原完整任务，补齐文件与 helper；只生成，不执行。' }];
 const config = { artifactOutput: true, project: 'owned-ticket-service', timeoutMs: 600000,
@@ -53,15 +54,15 @@ test('actual failed v9 native and retained draft are admitted, restored byte-exa
   assert.equal(sha(await readFile(parent.session.path)), parent.session.sha256);
 });
 
-async function alteredParent(t, mutate) {
-  const parent = await json(parentPath), evidence = await scratch(t);
+async function alteredParent(t, mutate, sourcePath = parentPath) {
+  const parent = await json(sourcePath), evidence = await scratch(t);
   const rows = (await readFile(parent.session.path, 'utf8')).trimEnd().split('\n').map(JSON.parse);
   const guard = (await readFile(parent.artifactOutput.guard, 'utf8')).trimEnd().split('\n').map(JSON.parse);
   parent.evidence = evidence; parent.artifactOutput.ownership.evidence = evidence;
   parent.artifactOutput.guard = join(evidence, 'observation/artifact-output-guard.jsonl');
   parent.artifactOutput.guardHistory = [parent.artifactOutput.guard];
   await mkdir(dirname(parent.artifactOutput.guard), { recursive: true });
-  const original = await json(parentPath);
+  const original = await json(sourcePath);
   for (const file of parent.artifactOutput.files.files) {
     const target = join(evidence, file.evidencePath); await mkdir(dirname(target), { recursive: true });
     await writeFile(target, await readFile(join(original.evidence, file.evidencePath)), { flag: 'wx' });
@@ -72,6 +73,7 @@ async function alteredParent(t, mutate) {
   await writeFile(parent.artifactOutput.guard, nativeText(guard), { flag: 'wx' });
   await writeFile(join(evidence, 'owned-artifacts.json'), JSON.stringify(parent.artifactOutput.files) + '\n', { flag: 'wx' });
   await writeFile(join(evidence, 'artifact-output-ownership.json'), JSON.stringify(parent.artifactOutput.ownership) + '\n', { flag: 'wx' });
+  if (parent.artifactOutput.seedRestoration) await writeFile(join(evidence, 'artifact-seed-restoration.json'), JSON.stringify(parent.artifactOutput.seedRestoration) + '\n', { flag: 'wx' });
   return parent;
 }
 
@@ -117,4 +119,96 @@ test('generic resource resume validates and retains an artifact fork binding ins
   assert.throws(() => candidate.inspectCandidatePrintSession(text, { provider: 'magpie', model: 'group/worker', expectedUserMessages: completed.expectedUserMessages }), /unbound fork/u);
   const changed = structuredClone(completed); changed.launch.artifactFork.binding.history.sha256 = '0'.repeat(64);
   await assert.rejects(() => candidate.inspectCandidateArtifactResume(changed));
+});
+
+const splitStages = [{ id: 'procedure', prompt: '本轮交付 Node helper 与精简主规程，其余引用仍待完成。' },
+  { id: 'complete', prompt: '补齐原任务的引用文件并给出完整最终交付。' }];
+const splitConfig = { ...config, artifactRecovery: { ...config.artifactRecovery, budgetMode: 'per-stage', stages: splitStages } };
+
+test('per-stage is explicit and gives exactly two independent 600-second model deadlines, excluding preparation', async () => {
+  assert.equal(candidate.validateCandidateArtifactRecovery(splitConfig).budgetMode, 'per-stage');
+  for (const change of [{ budgetMode: 'unbounded' }, { stages: complete }, { stages: splitStages.toReversed() }])
+    assert.throws(() => candidate.validateCandidateArtifactRecovery({ ...splitConfig, artifactRecovery: { ...splitConfig.artifactRecovery, ...change } }));
+  let now = 1000000000n;
+  const clock = { timeoutMs: 600000, budgetMode: 'per-stage' }, received = [];
+  const stages = await candidate.runCandidateArtifactStages(splitStages, clock, async (stage, own) => {
+    now += 20000000000n; // Separate setup work before each actual spawn.
+    assert.equal(candidate.beginCandidateArtifactBudget(own, now), 600000); received.push(own);
+    const startedNs = now.toString(); now += 590000000000n;
+    return { id: stage.id, status: stage.id === 'procedure' ? 'stage-completed' : 'passed',
+      process: { code: 0, timedOut: false, startedNs, endedNs: now.toString() },
+      recoveryMetrics: { providerRequests: 8, toolCalls: 40, payloadBytes: 4000000 } };
+  }, () => now);
+  assert.equal(stages.length, 2); assert.notEqual(received[0], received[1]);
+  assert.equal(clock.stageClocks.length, 2);
+  assert.equal(BigInt(received[1].startedNs) - BigInt(received[0].startedNs), 610000000000n);
+  assert.equal(received.reduce((sum, own) => sum + Number(BigInt(own.deadlineNs) - BigInt(own.startedNs)) / 1e6, 0), 1200000);
+  const totals = candidate.inspectCandidateArtifactRecoveryLimits(stages, { budgetMode: 'per-stage' });
+  assert.deepEqual(totals.limits, { providerRequests: 16, toolCalls: 80, payloadBytes: 8000000 });
+  assert.deepEqual(totals.perStageLimits, { providerRequests: 8, toolCalls: 40, payloadBytes: 4000000 });
+  assert.equal(totals.payloadBytes, 8000000);
+});
+
+test('per-stage failure, deadline overrun or per-input overflow stops the second invocation', async () => {
+  for (const change of [{ status: 'failed' }, { recoveryMetrics: { ...metrics, providerRequests: 9 } },
+    { recoveryMetrics: { ...metrics, payloadBytes: 4000001 } }, { endedNs: '601000000001' }]) {
+    let calls = 0;
+    const result = await candidate.runCandidateArtifactStages(splitStages, { timeoutMs: 600000, budgetMode: 'per-stage' }, async (_stage, own) => {
+      calls++; candidate.beginCandidateArtifactBudget(own, 1000000000n);
+      return { status: 'stage-completed', recoveryMetrics: metrics, ...change,
+        process: { code: 0, timedOut: false, startedNs: '1000000000', endedNs: change.endedNs ?? '2000000000' } };
+    }, () => 2000000000n);
+    assert.equal(calls, 1); assert.equal(result[1].status, 'not_run');
+  }
+  const stages = [{ status: 'stage-completed', recoveryMetrics: { ...metrics, providerRequests: 9 } },
+    { status: 'passed', recoveryMetrics: metrics }];
+  assert.throws(() => candidate.inspectCandidateArtifactRecoveryLimits(stages, { budgetMode: 'per-stage' }), /stage|input/u);
+});
+
+test('actual v10 admission retains both fork ancestors and verifies inherited guard plus byte-bound restoration', { skip: !restoredParentPath }, async t => {
+  const parent = await json(restoredParentPath), proof = await candidate.inspectArtifactForkSource(parent);
+  assert.equal(proof.native.sha256, 'dd6e9efa853362ca89720d1c3e42709e6b485f8b2a0cf89b5d93edc9a41e8bc2');
+  assert.equal(proof.history.sha256, '5b1ac32c41e9abe7de34f21ef38f6520cf275af2e717363b3f31070203d08b60');
+  assert.equal(proof.history.entries, 117); assert.equal(proof.historicalRejectedCalls.length, 2);
+  assert.equal(proof.ancestor.ancestor.native.sha256, '9e8a134cc2dc2a2e6cb25181edd4c41f654d9df3420f56f43d37a88ac4210b56');
+  assert.equal(proof.artifactSeed.files[0].sha256, 'f3ec7ecf5a116e67e7ef6ce46b97d61af71f250ff91bbf020348885051f96c49');
+  assert.equal(proof.artifactSeed.guardRows.filter(row => row.phase === 'artifact_file').length, 1);
+  assert.ok(proof.artifactSeed.inputs.some(file => file.path.endsWith('/artifact-seed-restoration.json')));
+  await candidate.inspectArtifactForkSource(await alteredParent(t, () => {}, restoredParentPath));
+  for (const mutate of [
+    ({ parent }) => { parent.artifactOutput.inheritedArtifactProof.guardRows = []; },
+    ({ parent }) => { parent.artifactOutput.seedRestoration.files[0].sourcePath = '/private/tmp/unreviewed/SKILL.md'; },
+    ({ parent }) => { parent.artifactOutput.seedRestoration.files[0].sha256 = '0'.repeat(64); },
+  ]) await assert.rejects(() => alteredParent(t, mutate, restoredParentPath).then(candidate.inspectArtifactForkSource));
+  const evidence = await scratch(t), rows = (await readFile(parent.session.path, 'utf8')).trimEnd().split('\n').map(JSON.parse);
+  const cwd = '/private/tmp/notion-candidate-print-thirdfork';
+  rows[0] = { ...rows[0], id: 'third-fork', cwd, parentSession: proof.native.realpath };
+  rows.push({ type: 'message', id: 'third-fork-user', parentId: rows.at(-1).id, message: { role: 'user', content: [{ type: 'text', text: 'Another input.' }] } });
+  const path = join(evidence, 'third-fork.jsonl'), text = nativeText(rows); await writeFile(path, text, { flag: 'wx' });
+  const third = { ...parent, expectedUserMessages: parent.expectedUserMessages + 1, session: { path, bytes: Buffer.byteLength(text), sha256: sha(text) },
+    artifactRecoveryStage: { ...parent.artifactRecoveryStage, parentResult: { path: restoredParentPath, sha256: sha(await readFile(restoredParentPath)) } },
+    launch: { ...parent.launch, cwd, artifactFork: { original: proof.native,
+      binding: { parentSession: proof.native.realpath, sourceSessionId: proof.header.id, cwd, history: proof.history } } } };
+  await assert.rejects(() => candidate.inspectArtifactForkSource(third), /two.*fork|fork.*depth/u);
+  assert.equal(sha(await readFile(parent.session.path)), parent.session.sha256);
+});
+
+test('new procedure requires current native delivery of both helper and Skill, while references stay pending', async t => {
+  const evidence = await scratch(t), root = '/private/tmp/notion-candidate-artifacts-procedure';
+  const files = [];
+  for (const [path, text] of [['.cursor/skills/check/SKILL.md', '# Procedure\n\nReference: refs/check.md (pending)\n'],
+    ['.cursor/skills/check/scripts/check.mjs', 'process.stdout.write("review only\\n");\n']]) {
+    const evidencePath = 'owned-artifact-files/' + path; await mkdir(dirname(join(evidence, evidencePath)), { recursive: true });
+    await writeFile(join(evidence, evidencePath), text, { flag: 'wx' });
+    files.push({ path, evidencePath, bytes: Buffer.byteLength(text), sha256: sha(text) });
+  }
+  const input = { evidence, artifactFiles: { root, files }, final: { success: true, stopReason: 'stop', text: 'Helper and procedure delivered; references pending.' },
+    currentNativeCalls: files.map((file, index) => ({ id: 'new-write-' + index, name: 'write', isError: false, arguments: { path: join(root, file.path) } })), requireHelper: true };
+  const receipt = await candidate.inspectCandidateProcedureDelivery(input);
+  assert.equal(receipt.fullTaskAccepted, false); assert.equal(receipt.executed, false);
+  await assert.rejects(() => candidate.inspectCandidateProcedureDelivery({ ...input, artifactFiles: { root, files: files.slice(0, 1) } }), /Node helper/u);
+  await assert.rejects(() => candidate.inspectCandidateProcedureDelivery({ ...input, currentNativeCalls: input.currentNativeCalls.slice(1) }), /current.*stage/u);
+  await assert.rejects(() => candidate.inspectCandidateProcedureDelivery({ ...input, final: { ...input.final, success: false } }), /final/u);
+  const legacy = await candidate.inspectCandidateProcedureDelivery({ evidence, artifactFiles: { root, files: files.slice(0, 1) } });
+  assert.equal(legacy.fullTaskAccepted, false, 'The old shared-budget procedure still accepts its original Skill-only stage');
 });

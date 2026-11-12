@@ -584,6 +584,25 @@ export async function retainCandidateFilePlan({ evidence, project, final, prompt
   return receipt;
 }
 
+export async function inspectCandidateProcedureDelivery({ evidence, artifactFiles, final, currentNativeCalls, requireHelper = false }) {
+  const skill = artifactFiles.files.find(file => file.path.endsWith('/SKILL.md'));
+  assert.ok(skill, 'The procedure stage must deliver its actual Skill main');
+  if (requireHelper) {
+    assert.ok(final?.success && final.stopReason === 'stop' && final.text?.trim(), 'The procedure needs a successful native final');
+    const helper = artifactFiles.files.find(file => /\.(?:mjs|cjs|js)$/u.test(file.path));
+    assert.ok(helper, 'The per-stage procedure must deliver an actual Node helper');
+    for (const file of [skill, helper]) {
+      assert.ok(currentNativeCalls?.some(call => ['write', 'edit'].includes(call.name) && !call.isError
+        && call.arguments.path === join(artifactFiles.root, file.path)), 'Both procedure files need a successful current-stage native write/edit');
+      const bytes = await readFile(join(evidence, file.evidencePath));
+      assert.equal(bytes.length, file.bytes); assert.equal(hash(bytes), file.sha256);
+      const content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+      assert.ok(content.trim() && content.endsWith('\n'), 'Procedure files must contain complete UTF-8 text ending in LF');
+    }
+  }
+  return { artifactStatus: 'draft-procedure-files-retained', executed: false, fullTaskAccepted: false };
+}
+
 // Receipt events retain Broker-owned metadata and rendered hashes. The optional
 // payload directory retains complete provider input for an owned E2E audit;
 // headers and authentication configuration are never collected. Exact body
@@ -1116,10 +1135,12 @@ export function validateCandidateArtifactRecovery(config) {
     assert.equal(config[key], undefined, 'Staged artifact recovery cannot combine ' + key);
   assert.ok(config.timeoutMs === undefined || config.timeoutMs === 600000);
   assert.ok(recovery && typeof recovery === 'object' && !Array.isArray(recovery));
-  assert.deepEqual(Object.keys(recovery).sort(), ['parent', 'stages', 'timeoutMs']);
+  assert.deepEqual(Object.keys(recovery).sort(), [...(Object.hasOwn(recovery, 'budgetMode') ? ['budgetMode'] : []), 'parent', 'stages', 'timeoutMs']);
+  assert.ok(recovery.budgetMode === undefined || recovery.budgetMode === 'per-stage', 'Only the explicit per-stage budget mode is supported');
   assert.equal(recovery.timeoutMs, 600000);
   assert.ok(isAbsolute(recovery.parent?.path) && digest(recovery.parent?.sha256));
   assert.ok(['procedure,complete', 'complete'].includes(recovery.stages?.map(stage => stage.id).join(',')), 'Use the existing two stages or one complete stage');
+  if (recovery.budgetMode === 'per-stage') assert.equal(recovery.stages.map(stage => stage.id).join(','), 'procedure,complete', 'Per-stage budgets require exactly two frozen inputs');
   for (const stage of recovery.stages) {
     assert.deepEqual(Object.keys(stage).sort(), ['id', 'prompt']);
     assert.ok(typeof stage.prompt === 'string' && stage.prompt.trim() && !stage.prompt.trimStart().startsWith('/'));
@@ -1129,7 +1150,8 @@ export function validateCandidateArtifactRecovery(config) {
 
 /** Read-only admission of a terminal, unsuccessful generation attempt.
  * This binds the complete original history; it does not reclassify its verdict. */
-export async function inspectArtifactForkSource(previous) {
+export async function inspectArtifactForkSource(previous, depth = 0) {
+  assert.ok(Number.isSafeInteger(depth) && depth >= 0 && depth <= 2, 'Only two reviewed artifact fork ancestors are supported');
   assert.equal(previous?.scope, 'project-scoped-candidate-print'); assert.equal(previous.status, 'failed');
   assert.equal(previous.project?.kind, 'owned-ticket-service');
   assert.equal(previous.process?.timedOut, true);
@@ -1145,14 +1167,16 @@ export async function inspectArtifactForkSource(previous) {
   const fork = previous.launch.artifactFork?.binding;
   let ancestor, ancestorInput;
   if (fork) {
+    assert.ok(depth < 2, 'Only two reviewed artifact fork ancestors are supported');
     const bound = previous.artifactRecoveryStage?.parentResult;
     assert.ok(isAbsolute(bound?.path) && digest(bound?.sha256), 'Bind the prior artifact stage to its original result');
     const sourceBytes = await readFile(bound.path); assert.equal(hash(sourceBytes), bound.sha256);
     const source = JSON.parse(sourceBytes);
-    assert.equal(source.launch.artifactFork, undefined, 'Only the reviewed first artifact fork is admitted here');
-    ancestor = await inspectArtifactForkSource(source);
+    ancestor = await inspectArtifactForkSource(source, depth + 1);
     ancestorInput = { path: bound.path, bytes: sourceBytes.length, sha256: bound.sha256 };
+    assert.deepEqual(previous.launch.artifactFork.original, ancestor.native);
     assert.deepEqual(fork, { parentSession: ancestor.native.realpath, sourceSessionId: ancestor.header.id, cwd, history: ancestor.history });
+    assert.equal(previous.arm, source.arm); assert.equal(previous.database, source.database);
     assert.equal(previous.expectedUserMessages, source.expectedUserMessages + 1);
     assert.equal(previous.originalSessionUnchanged, true); assert.equal(previous.originalArtifactParentUnchanged, true);
   }
@@ -1164,6 +1188,7 @@ export async function inspectArtifactForkSource(previous) {
   const seenFiles = new Set(ancestor?.projectFiles.map(file => file.path)), historicalRejectedCalls = [...(ancestor?.historicalRejectedCalls ?? [])];
   let artifactSeed;
   const seedByPath = new Map(), rawGuard = [], acceptedBlocks = new Set();
+  if (ancestor?.artifactSeed) assert.ok(previous.artifactOutput?.files?.files.length, 'The restored ancestor artifacts must remain retained');
   if (previous.artifactOutput?.files?.files.length) {
     assert.ok(ancestor, 'A retained draft must belong to the bound prior artifact fork');
     const output = previous.artifactOutput, ownership = output.ownership, policy = ownership.policy;
@@ -1171,8 +1196,20 @@ export async function inspectArtifactForkSource(previous) {
     assert.match(policy.root, /^\/private\/tmp\/notion-candidate-artifacts-[A-Za-z0-9]+$/u);
     assert.deepEqual(policy.projectFiles, files.map(file => file.path)); assert.equal(output.files.root, policy.root);
     assert.deepEqual(output.guardHistory, [output.guard], 'Retain the single reviewed draft-stage guard');
-    const inputs = [];
-    for (const [name, expected] of [['artifact-output-ownership.json', ownership], ['owned-artifacts.json', output.files]]) {
+    const inherited = ancestor.artifactSeed;
+    if (inherited) {
+      assert.deepEqual(output.inheritedArtifactProof, inherited, 'The inherited seed must match the fully reviewed ancestor');
+      assert.deepEqual(output.files.files, inherited.files.map(({ sourcePath: _sourcePath, ...file }) => file), 'The additional fork may only retain the exact restored draft');
+      assert.deepEqual(output.seedRestoration, { version: 1, parentNative: ancestor.native, root: policy.root,
+        files: inherited.files.map(file => ({ path: file.path, bytes: file.bytes, sha256: file.sha256,
+          sourcePath: file.sourcePath, restoredPath: join(policy.root, file.path) })),
+        proof: 'Driver restored exact previously model-written bytes; no new model tool call or completed deliverable is inferred' });
+      assert.ok(audit.calls.filter(call => call.callLine > fork.history.entries + 1).every(call => !['write', 'edit'].includes(call.name)),
+        'The additional fork cannot introduce unreviewed artifact writes or edits');
+    } else assert.ok(!output.inheritedArtifactProof, 'An inherited seed requires its independently reviewed ancestor');
+    const inputs = [...(inherited?.inputs ?? [])];
+    for (const [name, expected] of [['artifact-output-ownership.json', ownership], ['owned-artifacts.json', output.files],
+      ...(inherited ? [['artifact-seed-restoration.json', output.seedRestoration]] : [])]) {
       const path = join(previous.evidence, name), stat = fs.lstatSync(path);
       assert.ok(stat.isFile() && stat.nlink === 1 && fs.realpathSync(path) === path);
       const value = await readFile(path);
@@ -1257,13 +1294,14 @@ export async function inspectArtifactForkSource(previous) {
   assert.deepEqual([...seenFiles].sort(), Object.keys(ownedProjectFiles).sort(), 'The original history must contain the complete project');
   if (artifactSeed) {
     assert.ok(rawGuard.filter(row => row.allowed === false).every(row => acceptedBlocks.has(row.toolCallId)), 'Do not inherit an unreviewed rejected operation');
-    artifactSeed.guardRows = rawGuard.filter(row => row.allowed !== false);
+    artifactSeed.guardRows = [...(ancestor?.artifactSeed?.guardRows ?? []), ...rawGuard.filter(row => row.allowed !== false)];
     inspectCandidateArtifactGuard(audit, artifactSeed.guardRows, previous.artifactOutput.files);
   }
   return { originalStatus: previous.status, originalCwd: cwd, projectFiles: files, projectSha256: previous.project.sha256,
     native: { path: previous.session.path, realpath: await realpath(previous.session.path), bytes: bytes.length, sha256: hash(bytes) },
     header: rows[0], history: { bytes: history.length, sha256: hash(history), entries: rows.length - 1 }, historicalRejectedCalls,
-    ...(ancestor ? { ancestor: { result: ancestorInput, native: ancestor.native, history: ancestor.history } } : {}), ...(artifactSeed ? { artifactSeed } : {}) };
+    ...(ancestor ? { ancestor: { result: ancestorInput, native: ancestor.native, history: ancestor.history,
+      ...(ancestor.ancestor ? { ancestor: ancestor.ancestor } : {}) } } : {}), ...(artifactSeed ? { artifactSeed } : {}) };
 }
 
 export async function restoreCandidateArtifactSeed(parent, { policy, evidence }) {
@@ -1324,35 +1362,54 @@ export function remainingCandidateArtifactBudget(clock, now = process.hrtime.big
   return Math.max(0, Number((BigInt(clock.deadlineNs) - now) / 1000000n));
 }
 
-/** One complete stage or the original two stages share one clock. */
+/** Default recovery shares one clock; the explicit two-input mode owns one clock per spawn. */
 export async function runCandidateArtifactStages(stages, clock, executeStage, now = () => process.hrtime.bigint()) {
   assert.ok(['procedure,complete', 'complete'].includes(stages.map(stage => stage.id).join(',')));
+  assert.ok(clock.budgetMode === undefined || clock.budgetMode === 'per-stage');
+  const perStage = clock.budgetMode === 'per-stage';
+  if (perStage) {
+    assert.equal(stages.map(stage => stage.id).join(','), 'procedure,complete');
+    clock.stageClocks = [];
+  }
   const results = [];
   for (const [index, stage] of stages.entries()) {
-    if (remainingCandidateArtifactBudget(clock, now()) <= 0 || index === 1 && results[0].status !== 'stage-completed') {
+    if ((!perStage && remainingCandidateArtifactBudget(clock, now()) <= 0) || (index === 1 && results[0].status !== 'stage-completed')) {
       results.push({ id: stage.id, status: 'not_run', reason: 'Prior stage incomplete or shared generation deadline exhausted' }); continue;
     }
     if (index === 1 && Object.entries(artifactRecoveryLimits).some(([key, limit]) =>
-      !Number.isSafeInteger(results[0].recoveryMetrics?.[key]) || results[0].recoveryMetrics[key] < 0 || results[0].recoveryMetrics[key] >= limit)) {
-      results.push({ id: stage.id, status: 'not_run', reason: 'First-stage call accounting is unavailable or the shared call budget is exhausted' }); continue;
+      !Number.isSafeInteger(results[0].recoveryMetrics?.[key]) || results[0].recoveryMetrics[key] < 0
+      || (perStage ? results[0].recoveryMetrics[key] > limit : results[0].recoveryMetrics[key] >= limit))) {
+      results.push({ id: stage.id, status: 'not_run', reason: 'First-stage call accounting is unavailable or the applicable call budget is exhausted' }); continue;
     }
-    try { results.push(await executeStage(stage, clock, index)); }
+    if (perStage && index === 1 && (results[0].process?.code !== 0 || results[0].process?.timedOut !== false
+      || !/^[0-9]+$/u.test(results[0].process?.endedNs) || !/^[0-9]+$/u.test(clock.stageClocks[0]?.deadlineNs)
+      || BigInt(results[0].process.endedNs) > BigInt(clock.stageClocks[0].deadlineNs))) {
+      results.push({ id: stage.id, status: 'not_run', reason: 'First-stage process did not complete within its independent deadline' }); continue;
+    }
+    const stageClock = perStage ? { id: stage.id, timeoutMs: clock.timeoutMs } : clock;
+    if (perStage) clock.stageClocks.push(stageClock);
+    try { results.push(await executeStage(stage, stageClock, index)); }
     catch (error) { results.push({ id: stage.id, status: 'failed', error: { code: error.code ?? error.name, message: error.message } }); }
   }
   return results;
 }
 
-export function inspectCandidateArtifactRecoveryLimits(stages) {
+export function inspectCandidateArtifactRecoveryLimits(stages, { budgetMode } = {}) {
+  assert.ok(budgetMode === undefined || budgetMode === 'per-stage');
+  const perStage = budgetMode === 'per-stage';
   assert.ok([1, 2].includes(stages.length));
+  if (perStage) assert.equal(stages.length, 2);
   if (stages.length === 2) assert.equal(stages[0].status, 'stage-completed');
   assert.equal(stages.at(-1).status, 'passed');
-  const totals = { providerRequests: 0, toolCalls: 0, payloadBytes: 0 }, limits = artifactRecoveryLimits;
+  const totals = { providerRequests: 0, toolCalls: 0, payloadBytes: 0 };
+  const limits = perStage ? Object.fromEntries(Object.entries(artifactRecoveryLimits).map(([key, value]) => [key, value * 2])) : artifactRecoveryLimits;
   for (const stage of stages) for (const key of Object.keys(totals)) {
     const value = stage.recoveryMetrics?.[key];
     assert.ok(Number.isSafeInteger(value) && value >= 0, 'Each stage needs its actual new-call accounting'); totals[key] += value;
+    if (perStage) assert.ok(value <= artifactRecoveryLimits[key], 'Recovery stage exceeded its independent input ' + key);
   }
   for (const key of Object.keys(totals)) assert.ok(totals[key] <= limits[key], 'Staged artifact recovery exceeded total ' + key);
-  return { ...totals, limits, enforcement: 'post-run acceptance; not a pre-send cap' };
+  return { ...totals, limits, ...(perStage ? { perStageLimits: artifactRecoveryLimits } : {}), enforcement: 'post-run acceptance; not a pre-send cap' };
 }
 
 async function runCandidateArtifactRecovery(config) {
@@ -1370,26 +1427,34 @@ async function runCandidateArtifactRecovery(config) {
   assert.equal(original.arm, config.arm); assert.equal(original.database, config.database);
   const evidence = await mkdtemp(join(config.evidenceRoot, config.arm + '-' + config.id + '-chain-'));
   await save(join(evidence, 'config.json'), config);
-  const clock = { timeoutMs: recovery.timeoutMs }, result = { version: 1, scope: 'project-scoped-artifact-recovery',
+  const perStage = recovery.budgetMode === 'per-stage';
+  const clock = { timeoutMs: recovery.timeoutMs, ...(perStage ? { budgetMode: 'per-stage', declaredModelTimeoutMs: 1200000, stageClocks: [] } : {}) };
+  const result = { version: 1, scope: 'project-scoped-artifact-recovery',
     status: 'running', evidence, parent: { ...recovery.parent, proof: parent }, clock, stages: [],
+    ...(perStage ? { startedNs: process.hrtime.bigint().toString() } : {}),
     historicalVerdict: 'failed; unchanged', semanticReview: 'required', helperExercise: 'not_run' };
   await save(join(evidence, 'started.json'), result);
   let previous = original, previousResult = recovery.parent;
   try {
-    result.stages = await runCandidateArtifactStages(recovery.stages, clock, async (stage, sharedClock, index) => {
+    result.stages = await runCandidateArtifactStages(recovery.stages, clock, async (stage, stageClock, index) => {
+      const preparationStartedNs = process.hrtime.bigint().toString();
       const stageConfig = { ...config, id: config.id + '-' + stage.id, prompt: stage.prompt };
       delete stageConfig.artifactRecovery;
       const run = await runCandidatePrint(stageConfig, { key: artifactStageKey, index, stageId: stage.id, chainEvidence: evidence,
-        clock: sharedClock, previous, previousResult, parent, original });
+        clock: stageClock, budgetMode: recovery.budgetMode, previous, previousResult, parent, original });
       const path = join(run.evidence, 'result.json'), bytes = await readFile(path);
       previous = JSON.parse(bytes); previousResult = { path, sha256: hash(bytes) };
       const stageResult = { id: stage.id, status: previous.status, evidence: run.evidence, result: previousResult,
-        session: previous.session, process: previous.process, recoveryMetrics: previous.recoveryMetrics };
+        session: previous.session, process: previous.process, recoveryMetrics: previous.recoveryMetrics,
+        ...(perStage ? { recoveryBudget: previous.recoveryBudget, preparationStartedNs,
+          preparationMs: previous.process ? Number(BigInt(previous.process.startedNs) - BigInt(preparationStartedNs)) / 1e6 : null } : {}) };
       await save(join(evidence, 'stage-' + (index + 1) + '.json'), stageResult);
       return stageResult;
     });
-    result.limits = inspectCandidateArtifactRecoveryLimits(result.stages);
-    assert.ok(BigInt(result.stages.at(-1).process.endedNs) <= BigInt(clock.deadlineNs), 'The complete generation exceeded its shared deadline');
+    result.limits = inspectCandidateArtifactRecoveryLimits(result.stages, { budgetMode: recovery.budgetMode });
+    if (perStage) {
+      for (const [index, stage] of result.stages.entries()) assert.ok(BigInt(stage.process.endedNs) <= BigInt(clock.stageClocks[index].deadlineNs), 'A generation stage exceeded its independent deadline');
+    } else assert.ok(BigInt(result.stages.at(-1).process.endedNs) <= BigInt(clock.deadlineNs), 'The complete generation exceeded its shared deadline');
     result.generatedPlan = previous.generatedPlan; result.completeStage = previousResult; result.status = 'passed';
   } catch (error) {
     result.status = 'failed'; result.error = { code: error.code ?? error.name, message: error.message };
@@ -1400,6 +1465,12 @@ async function runCandidateArtifactRecovery(config) {
     catch { result.parentUnchanged = false; }
     if (!result.parentUnchanged) result.status = 'failed';
     result.finishedNs = process.hrtime.bigint().toString();
+    if (perStage) result.timing = { declaredModelTimeoutMs: 1200000,
+      actualProcessMs: result.stages.filter(stage => stage.process).reduce((sum, stage) => sum + Number(BigInt(stage.process.endedNs) - BigInt(stage.process.startedNs)) / 1e6, 0),
+      preparationMs: result.stages.reduce((sum, stage) => sum + (stage.preparationMs ?? 0), 0),
+      betweenStagesMs: result.stages[1]?.process ? Number(BigInt(result.stages[1].process.startedNs) - BigInt(result.stages[0].process.endedNs)) / 1e6 : null,
+      chainElapsedMs: Number(BigInt(result.finishedNs) - BigInt(result.startedNs)) / 1e6,
+      scope: 'Two independent model deadlines; preparation, inter-stage audit and shutdown may extend elapsed time beyond their declared sum' };
     await save(join(evidence, 'result.json'), result);
   }
   return { status: result.status, evidence, error: result.error, stages: result.stages, completeStage: result.completeStage, limits: result.limits };
@@ -1613,6 +1684,7 @@ export async function runCandidatePrint(config, artifactStage) {
         inheritedArtifactProof: artifactStage.parent.artifactSeed ?? null, seedRestoration: artifactSeedReceipt ?? null } : {}) },
       actualPrompt: { text: actualPrompt, bytes: Buffer.byteLength(actualPrompt), sha256: hash(actualPrompt), originalPromptSha256: hash(config.prompt) } } : {}),
     ...(artifactStage ? { artifactRecoveryStage: { chainEvidence: artifactStage.chainEvidence, stage: artifactStage.stageId,
+      ...(artifactStage.budgetMode ? { budgetMode: artifactStage.budgetMode } : {}),
       index: artifactStage.index, parentResult: artifactStage.previousResult, fullTaskAcceptance: artifactStage.stageId === 'procedure' ? 'not_applicable_draft_stage' : 'requires_whole_chain_and_independent_helper' } } : {}),
     ...(stateBinding.sourceState ? { sourceState: stateBinding.sourceState, ownedPaths: stateBinding.ownedPaths } : {}),
     launch: { cwd, executable: host.file, args: [...host.prefix, ...args], normalHome: true, normalAgentDir: true, normalMcpAndExtensions: true,
@@ -1642,7 +1714,8 @@ export async function runCandidatePrint(config, artifactStage) {
   };
   try {
     const timeoutMs = artifactStage ? beginCandidateArtifactBudget(artifactStage.clock) : config.timeoutMs ?? 600000;
-    if (artifactStage) result.recoveryBudget = { ...artifactStage.clock, remainingMsAtSpawn: timeoutMs };
+    if (artifactStage) result.recoveryBudget = { ...artifactStage.clock, remainingMsAtSpawn: timeoutMs,
+      ...(artifactStage.budgetMode ? { budgetMode: artifactStage.budgetMode } : {}) };
     if (timeoutMs <= 0) throw Object.assign(new Error('The shared generation deadline was exhausted before spawn'), { code: 'ARTIFACT_RECOVERY_DEADLINE' });
     result.process = await new Promise((resolveProcess, reject) => {
       const child = spawn(host.file, [...host.prefix, ...args], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -1707,6 +1780,12 @@ export async function runCandidatePrint(config, artifactStage) {
     result.assertions = validateCandidateTurn(config, { costs: cost.events, transport: wire, tasks: task }, { approvedCliCalls, approvedArtifactCalls });
     if (artifactStage) result.recoveryMetrics = { providerRequests: cost.events.filter(event => event.phase === 'provider_request').length,
       toolCalls: currentCalls.size, payloadBytes: cost.events.filter(event => event.phase === 'provider_request').reduce((sum, event) => sum + event.payload.bytes, 0) };
+    if (artifactStage?.budgetMode === 'per-stage') {
+      for (const [key, limit] of Object.entries(artifactRecoveryLimits)) assert.ok(Number.isSafeInteger(result.recoveryMetrics[key])
+        && result.recoveryMetrics[key] >= 0 && result.recoveryMetrics[key] <= limit, 'Recovery stage exceeded its independent input ' + key);
+      assert.equal(result.process.timedOut, false);
+      assert.ok(BigInt(result.process.endedNs) <= BigInt(artifactStage.clock.deadlineNs), 'Recovery stage exceeded its independent deadline');
+    }
     for (const event of task.filter(event => event.phase === 'provider_payload')) {
       const actual = await identity(event.payloadFile); assert.equal(actual.sha256, event.sha256); assert.equal(actual.bytes, event.bytes);
       if (completionBudgetSource) result.completionBudgetAudit.payloads.push({ ...inspectCandidateCompletionBudget(await json(actual.path)), file: actual });
@@ -1717,8 +1796,9 @@ export async function runCandidatePrint(config, artifactStage) {
         ? await retainCandidateFilePlan({ ...delivery, artifactFiles: result.artifactOutput.files }) : await retainGeneratedPlan(delivery);
     }
     if (artifactStage?.stageId === 'procedure') {
-      assert.ok(result.artifactOutput.files.files.some(file => file.path.endsWith('/SKILL.md')), 'The procedure stage must deliver its actual Skill main');
-      result.generatedPlan = { artifactStatus: 'draft-procedure-files-retained', executed: false, fullTaskAccepted: false };
+      result.generatedPlan = await inspectCandidateProcedureDelivery({ evidence, artifactFiles: result.artifactOutput.files,
+        final: task.filter(event => event.phase === 'assistant_final').at(-1),
+        currentNativeCalls: result.nativeAudit.calls.filter(call => currentCalls.has(call.id)), requireHelper: artifactStage.budgetMode === 'per-stage' });
     }
     result.status = artifactStage?.stageId === 'procedure' ? 'stage-completed' : 'passed';
   } catch (error) {
