@@ -122,7 +122,7 @@ how 作者原件经公开 read/dry-run 审阅后由 root 一次公开 write 并�
 
 ### 已审纯介绍的公开 native fork
 
-显式`forkIntroductionResume`仅供本次已独审C1纯介绍正常臂，保留原effects准入、无owned项目和固定非slash原题。默认resume继续原settings deepEqual与copy/`--session`。新分支复用Pi公开`--fork`原C1绝对路径，复用原Store，另记新header/cwd/包映射；原C1的150条非header历史453156 B、SHA `c6633549425dfb8d2f4cf8d97291e39c4ce66599d74a910a326ca06e05692299`须逐字同序。原native/result/settings及34份不可变原件不变；新header明确核id/cwd/parentSession，未绑定fork仍拒绝，不能称整个原文件前缀相同。
+v5当次显式`forkIntroductionResume`仅供已独审C1纯介绍正常臂，保留原effects准入、无owned项目和固定非slash原题。默认resume继续原settings deepEqual与copy/`--session`。新分支复用Pi公开`--fork`原C1绝对路径，复用原Store，另记新header/cwd/包映射；原C1的150条非header历史453156 B、SHA `c6633549425dfb8d2f4cf8d97291e39c4ce66599d74a910a326ca06e05692299`须逐字同序。原native/result/settings及34份不可变原件不变；新header明确核id/cwd/parentSession，未绑定fork仍拒绝，不能称整个原文件前缀相同。
 
 独立input guard在公开输入边界核单一Broker真实path/hash、实际cwd、worker/high、69 native命令与固定prompt hash；任何身份或文件/ledger异常都显式handled并记录失败，不能依赖宿主会吞掉的throw。guard注册前没有文件I/O，序列化函数无外部模块闭包，重复输入也拒绝；原observer保持被动。已有candidate/resume与新fork有界测试38/38通过，RED/GREEN均留存。直接调用已安装`SessionManager.forkFrom`的纯文件证明`warm-v5-file-fork-proof/result.json`（SHA `330fac63bbbd762c50622fc3ee8c85ca7b3ce1e51bdc7905b41f9c031d4b207d`）核150条原字节、35份原件/设置前后相等，0 Pi/model/HTTP；不冒充真实新包autoload或v5成功。后续唯一v5按新driver与原39ad包独立冻结，保留v3/v4失败与分母。仅此已证实接线，不新增配置平台、产品状态或有限模型证明。
 
@@ -151,4 +151,10 @@ CLI最终验证脚本/测试/地图head为`0cf7002ac02e6d7df37f621f53a151255de81
 最后request79在进程约150.869秒开始，至transport observer结束的未闭合窗口为449135.727583ms；HTTP200之后无request_end、assistant completion或reported usage。观察到2014个thinking事件，含2013个thinking_delta；被动observer对非text_delta摘要空字符串，所以其delta.bytes=0不表示没有思考内容，思考文本字节和token均unknown。该轮实际可见text_delta为0事件/0B；前五轮已报告177506 totalTokens，仅是已结束响应的下界，不能当全程usage或费用。53项冻结输入前后相同，449份原件已索引；完整报告`final-v6-A-budget32768-terminal-review-v2.json` SHA256 `04ab288703d39601516dcbd3dd49e2a7e3f0fbe3a556861f23eebc9a50788918`，root原件独审`reviews/root-final-v6-A-budget32768-raw-audit.json` SHA256 `4abfddd63aea10398dec69945197342f572a0a04365775f7496efd74debae457`。这些事实不证明服务端是否执行了cap，也不支持把生成未完成归因于来源缺失。
 
 后续仅修复三条已证实的库存读取误拒绝：固定owned cwd内，仍限512字/60秒、最多三个pwd/ls/find库存命令；额外至多一个40字的纯ASCII单引号字面量echo标记，总段数不超过四。ls只允许已知的`.`、`src`、`test`、`.pi`目录；find仍以`.`为根、深度1–4，只列文件/目录，最多两个固定node_modules/.git排除，head至多300行。外路径、-L、内容搜索、-exec/-delete、重定向、替换和脚本执行继续拒绝，实际调用及inputSHA仍保留。三条原native反例在旧guard下全部RED，修复后连同existingStore/预算/默认/续问回归51/51 GREEN；没有新Pi/model/HTTP。这一机械修复尚未证明能解决生成超时，所有原failed及分母保持，不自动启动新A/B/D或连续调整cap。
+
+### 已读来源的多轮介绍复核
+
+公开fork现可续接已独审的多轮纯介绍，保留normal或`-ns`原臂与原Store引用。准入按原result绑定的session hash、实际正整数用户轮数、完整非header字节及已闭合工具效果核验；先前已fork的session必须通过其原`launch.introductionFork.binding`核header与历史前缀，未绑定parent仍拒绝。原cwd仅是归档身份，已清理目录或当前包注册变化不阻止新owned cwd的公开fork；不重建旧目录、不复制Store、不删改旧回答。项目、脚本和业务写任务仍不在该入口范围内，默认线性resume的settings保护不变。当前输入前核单一真实Broker path/hash、cwd、worker/high、固定prompt及normal69/`-ns`0命令；结束后再次核原result/session和来源历史。
+
+旧cwd清理、已fork两轮和`-ns`限制先有定向RED；修正后candidate/budget/fork/resume共55/55 GREEN。四个真实父结果C1、D-named、setup各1轮，v5为2轮，全部离线准入通过且原config/result/native字节不变；回执`reviews/close2-20261112-semantic-plan/fork-real-parents-admission.json` SHA `a646803692f90a884d66f424742be8fa08035783ac59ac93a91187cc55b388d4`。该预检未启动Pi/model/来源请求、未读Store；它不证明真实纠错交付。四份草案统一只要求对照已读完整来源复核，不提供正确答案或逐题提示，各一次、零重试、顺序运行，仍待root冻结真实当前host。复核即使通过，也只证明会话最终交付，原冷首答、失败、分母及生成/helper门槛保持。本次只改已有driver接线，不改产品状态转移或增加有限模型。
 
