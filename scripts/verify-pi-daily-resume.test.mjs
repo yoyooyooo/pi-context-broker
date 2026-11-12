@@ -30,36 +30,76 @@ test('a public candidate introduction fork requires its unchanged reviewed owned
     assertions: { scriptExecutionToolCalls: 0, ownedProjectInspectionToolCalls: 0 },
     launch: { cwd }, baselineFiles: [{ realpath: '/frozen/v3-broker/package.json' }],
     session: { path: nativePath, sha256: sha(native) } };
-  const options = { oldSource: '/old/live-broker' };
+  const options = {};
 
   await t.test('default resume still rejects a changed candidate package mapping', async () => {
     assert.throws(() => assert.deepEqual(JSON.parse(settings), candidateProjectSettings('/old/live-broker', '/frozen/v4-broker')));
     const before = { settings: sha(await readFile(settingsPath)), native: sha(await readFile(nativePath)) };
     const review = await inspectIntroductionForkSource(previous, options);
     assert.equal(review.originalCwd, cwd); assert.equal(review.originalBrokerRoot, '/frozen/v3-broker');
-    assert.equal(review.settings.sha256, before.settings); assert.equal(review.native.sha256, before.native);
+    assert.equal(review.native.sha256, before.native);
     assert.equal(sha(await readFile(settingsPath)), before.settings); assert.equal(sha(await readFile(nativePath)), before.native);
   });
   await t.test('rejects both prior and requested owned application projects', async () => {
     await assert.rejects(inspectIntroductionForkSource({ ...previous, project: { kind: 'owned-ticket-service' } }, options));
     await assert.rejects(inspectIntroductionForkSource(previous, { ...options, project: 'owned-ticket-service' }));
   });
-  await t.test('rejects failed parents, already-continued histories and execution-capable prior tasks', async () => {
+  await t.test('rejects failed parents, wrong turn counts and execution-capable prior tasks', async () => {
     await assert.rejects(inspectIntroductionForkSource({ ...previous, status: 'failed' }, options));
-    await assert.rejects(inspectIntroductionForkSource({ ...previous, expectedUserMessages: 2 }, options));
+    for (const expectedUserMessages of [0, -1, 1.5, 2]) {
+      await assert.rejects(inspectIntroductionForkSource({ ...previous, expectedUserMessages }, options));
+    }
     await assert.rejects(inspectIntroductionForkSource({ ...previous, assertions: { ...previous.assertions, scriptExecutionToolCalls: 1 } }, options));
+    await assert.rejects(inspectIntroductionForkSource({ ...previous, assertions: { ...previous.assertions, ownedProjectInspectionToolCalls: 1 } }, options));
   });
-  await t.test('rejects extra original cwd content without copying or deleting it', async () => {
+  await t.test('does not inspect or alter unrelated content in the old cwd', async () => {
     const extra = join(cwd, 'README.md'); await writeFile(extra, 'not an empty introduction cwd\n', { flag: 'wx' });
-    await assert.rejects(inspectIntroductionForkSource(previous, options));
-    await rename(extra, join(proof, 'extra-cwd-file.md'));
+    try {
+      assert.equal((await inspectIntroductionForkSource(previous, options)).native.sha256, sha(native));
+      assert.equal(await readFile(extra, 'utf8'), 'not an empty introduction cwd\n');
+    } finally { await rename(extra, join(proof, 'extra-cwd-file.md')); }
   });
-  await t.test('rejects wrong original package settings', async () => {
+  await t.test('does not bind archived history to current old cwd settings or registration', async () => {
     const wrong = JSON.stringify(candidateProjectSettings('/old/live-broker', '/unbound/broker'));
     await writeFile(settingsPath, wrong);
-    await assert.rejects(inspectIntroductionForkSource(previous, options));
-    await writeFile(join(proof, 'wrong-settings.json'), wrong, { flag: 'wx' });
-    await writeFile(settingsPath, settings);
+    try {
+      assert.equal((await inspectIntroductionForkSource(previous, options)).native.sha256, sha(native));
+      assert.equal(await readFile(settingsPath, 'utf8'), wrong);
+    } finally {
+      await writeFile(join(proof, 'wrong-settings.json'), wrong, { flag: 'wx' });
+      await writeFile(settingsPath, settings);
+    }
+  });
+  await t.test('accepts the bound original session after its old cwd has been cleaned', async () => {
+    const retained = join(proof, 'retained-old-cwd');
+    await rename(cwd, retained);
+    try {
+      const review = await inspectIntroductionForkSource(previous, options);
+      assert.equal(review.originalCwd, cwd); assert.equal(review.native.sha256, sha(native));
+      await assert.rejects(realpath(cwd), { code: 'ENOENT' });
+    } finally { await rename(retained, cwd); }
+  });
+  await t.test('accepts every unchanged turn of an already-bound public fork', async () => {
+    const forkCwd = '/private/tmp/notion-candidate-print-already-cleaned';
+    const history = rows.slice(1).map(row => JSON.stringify(row)).join('\n') + '\n';
+    const binding = { parentSession: nativePath, sourceSessionId: rows[0].id, cwd: forkCwd,
+      history: { bytes: Buffer.byteLength(history), sha256: sha(history), entries: rows.length - 1 } };
+    const continued = [
+      { ...rows[0], id: 'continued-introduction', cwd: forkCwd, parentSession: nativePath }, ...rows.slice(1),
+      { type: 'message', id: 'user-2', parentId: 'answer', message: { role: 'user', content: [{ type: 'text', text: 'Review the preceding introduction against the sources already read.' }] } },
+      { type: 'message', id: 'answer-2', parentId: 'user-2', message: { role: 'assistant', provider: 'magpie', model: 'group/worker', stopReason: 'stop', content: [{ type: 'text', text: 'The complete reviewed introduction.' }] } },
+    ];
+    const bytes = continued.map(row => JSON.stringify(row)).join('\n') + '\n';
+    const path = join(proof, 'continued-native.jsonl'); await writeFile(path, bytes, { flag: 'wx' });
+    const parent = { ...previous, expectedUserMessages: 2, launch: { cwd: forkCwd, introductionFork: { binding } }, session: { path, sha256: sha(bytes) } };
+    const review = await inspectIntroductionForkSource(parent, options);
+    assert.equal(review.header.parentSession, nativePath); assert.equal(review.history.entries, continued.length - 1);
+    assert.equal(review.history.sha256, sha(bytes.slice(bytes.indexOf('\n') + 1)));
+    assert.equal(sha(await readFile(path)), sha(bytes)); assert.equal(sha(await readFile(nativePath)), sha(native));
+    await assert.rejects(inspectIntroductionForkSource({ ...parent, launch: { cwd: forkCwd } }, options));
+    for (const bad of [{ ...binding, parentSession: '/unbound.jsonl' }, { ...binding, history: { ...binding.history, sha256: '0'.repeat(64) } }]) {
+      await assert.rejects(inspectIntroductionForkSource({ ...parent, launch: { cwd: forkCwd, introductionFork: { binding: bad } } }, options));
+    }
   });
   await t.test('rejects original native prefix drift and accepts only its restored exact bytes', async () => {
     const drifted = native + '{}\n'; await writeFile(nativePath, drifted);
@@ -67,7 +107,7 @@ test('a public candidate introduction fork requires its unchanged reviewed owned
     await writeFile(join(proof, 'drifted-native.jsonl'), drifted, { flag: 'wx' });
     await writeFile(nativePath, native);
     const after = await inspectIntroductionForkSource(previous, options);
-    assert.equal(after.settings.sha256, sha(settings)); assert.equal(after.native.sha256, sha(native));
+    assert.equal(after.native.sha256, sha(native));
   });
   await t.test('a readOnly argument cannot replace complete successful none effects', async () => {
     const none = { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] };

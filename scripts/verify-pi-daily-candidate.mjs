@@ -1007,28 +1007,24 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
 }
 
 /** Read-only admission for an explicitly reviewed public introduction fork.
- * The caller still binds the original passed result and reviews its semantics. */
-export async function inspectIntroductionForkSource(previous, { oldSource, project }) {
+ * The caller binds the original passed result and reviews its semantics. Its
+ * complete native history is authoritative; the old cwd need not still exist. */
+export async function inspectIntroductionForkSource(previous, { project } = {}) {
   assert.equal(previous?.scope, 'project-scoped-candidate-print');
   assert.equal(previous.status, 'passed');
   assert.equal(previous.project, undefined); assert.equal(project, undefined);
-  assert.equal(previous.expectedUserMessages, 1);
+  assert.ok(Number.isSafeInteger(previous.expectedUserMessages) && previous.expectedUserMessages > 0);
   assert.equal(previous.assertions?.scriptExecutionToolCalls, 0);
   assert.equal(previous.assertions?.ownedProjectInspectionToolCalls, 0);
-  const cwd = await realpath(previous.launch.cwd);
+  const cwd = previous.launch.cwd;
   assert.match(cwd, /^\/(?:private\/)?tmp\/notion-candidate-print-[^/]+$/u);
-  assert.deepEqual(await readdir(cwd), ['.pi']);
-  assert.deepEqual(await readdir(join(cwd, '.pi')), ['settings.json']);
-  const settingsPath = join(cwd, '.pi/settings.json');
-  assert.equal(await realpath(settingsPath), settingsPath);
   assert.equal(basename(previous.baselineFiles[0].realpath), 'package.json');
   const originalBrokerRoot = resolve(previous.baselineFiles[0].realpath, '..');
-  const settings = await readFile(settingsPath);
-  assert.deepEqual(JSON.parse(settings), candidateProjectSettings(oldSource, originalBrokerRoot));
   const native = await readFile(previous.session.path);
   assert.equal(hash(native), previous.session.sha256);
   const nativeText = native.toString('utf8');
-  const audit = inspectCandidatePrintSession(nativeText, { provider: 'magpie', model: 'group/worker' });
+  const audit = inspectCandidatePrintSession(nativeText, { provider: 'magpie', model: 'group/worker',
+    expectedUserMessages: previous.expectedUserMessages, fork: previous.launch.introductionFork?.binding });
   const rows = nativeText.trimEnd().split('\n').map(JSON.parse);
   assert.equal(rows[0].cwd, cwd, 'The source header must name its reviewed original cwd');
   const history = native.subarray(native.indexOf(10) + 1);
@@ -1045,7 +1041,6 @@ export async function inspectIntroductionForkSource(previous, { oldSource, proje
     return noWrites(effects);
   }));
   return { originalCwd: cwd, originalBrokerRoot,
-    settings: { path: settingsPath, bytes: settings.length, sha256: hash(settings) },
     native: { path: previous.session.path, realpath: await realpath(previous.session.path), bytes: native.length, sha256: hash(native) },
     header: rows[0], history: { bytes: history.length, sha256: hash(history), entries: rows.length - 1 } };
 }
@@ -1122,7 +1117,7 @@ export async function runCandidatePrint(config) {
   assert.equal(config.isolateResumeCwd, undefined, 'isolateResumeCwd cannot override native resume cwd; use explicit --fork via forkIntroductionResume');
   assert.ok(config.forkIntroductionResume === undefined || config.forkIntroductionResume === true);
   if (config.forkIntroductionResume) {
-    assert.ok(config.resumeFrom); assert.equal(config.arm, 'normal', 'The reviewed introduction fork retains normal native discovery');
+    assert.ok(config.resumeFrom);
     assert.equal(config.project, undefined, 'Only the reviewed pure introduction may fork');
     assert.ok(!config.prompt.trimStart().startsWith('/'), 'The introduction fork requires its fixed non-slash prompt');
   }
@@ -1173,7 +1168,6 @@ export async function runCandidatePrint(config) {
   assert.equal(runtime.cli_sha256, baselineFiles[2].sha256); assert.equal(runtime.sdk_sha256, baselineFiles[3].sha256);
   const packageRegistration = await inspectCandidatePackageRegistration(settings.packages, { packageIndex: config.packageIndex ?? 1,
     agentDir: join(homedir(), '.pi/agent'), brokerRoot: config.brokerRoot, brokerEntry: baselineFiles[1] });
-  const oldSource = packageRegistration.oldSource;
   await mkdir(config.evidenceRoot, { recursive: true, mode: 0o700 });
   const evidence = await mkdtemp(join(config.evidenceRoot, config.arm + '-' + config.id + '-'));
   let previous;
@@ -1188,7 +1182,7 @@ export async function runCandidatePrint(config) {
   const stateBinding = await prepareCandidatePrintState(config, { stateRoot, previous });
   if (previous) assert.equal((await identity(previous.session.path)).sha256, previous.session.sha256);
   const introductionFork = config.forkIntroductionResume
-    ? await inspectIntroductionForkSource(previous, { oldSource, project: config.project }) : null;
+    ? await inspectIntroductionForkSource(previous, { project: config.project }) : null;
   const cwd = introductionFork ? await mkdtemp('/private/tmp/notion-candidate-print-')
     : previous?.launch.cwd ?? await mkdtemp('/private/tmp/notion-candidate-print-');
   if (previous) assert.equal(previous.project?.kind, config.project, 'A continuation must retain its original application');
@@ -1235,7 +1229,7 @@ export async function runCandidatePrint(config) {
   if (introductionFork) await writeFile(inputGuard, "import fs from 'node:fs';import crypto from 'node:crypto';export default api=>("
     + guardCandidateInputIdentity.toString() + ')(api,{fs,crypto,output:' + JSON.stringify(inputGuardLedger) + ',expected:'
     + JSON.stringify({ entry: baselineFiles[1], cwd: forkBinding.cwd, provider: 'magpie', model: 'group/worker', thinkingLevel: 'high',
-      nativeSkillCount: 69, promptSha256: hash(config.prompt) }) + '});\n', { flag: 'wx', mode: 0o600 });
+      nativeSkillCount: config.arm === 'notion-only' ? 0 : 69, promptSha256: hash(config.prompt) }) + '});\n', { flag: 'wx', mode: 0o600 });
   if (cliPolicy) await writeFile(cliGuard, "import fs from 'node:fs';const review=" + reviewCandidateCliCommand.toString()
     + ';export default api=>(' + candidateCliGuard.toString() + ')(api,{fs,review,output:' + JSON.stringify(cliGuardLedger)
     + ',policy:' + JSON.stringify(cliPolicy) + '});\n', { flag: 'wx', mode: 0o600 });
@@ -1388,16 +1382,16 @@ export async function runCandidatePrint(config) {
     if (introductionFork) {
       result.originalResumeResultUnchanged = (await identity(config.resumeFrom.path)).sha256 === config.resumeFrom.sha256;
       try {
-        result.originalIntroductionCwdAfter = await inspectIntroductionForkSource(previous, { oldSource, project: config.project });
-        assert.deepEqual(result.originalIntroductionCwdAfter, introductionFork);
-        result.originalIntroductionCwdUnchanged = true;
+        result.originalIntroductionSourceAfter = await inspectIntroductionForkSource(previous, { project: config.project });
+        assert.deepEqual(result.originalIntroductionSourceAfter, introductionFork);
+        result.originalIntroductionSourceUnchanged = true;
       } catch (error) {
-        result.originalIntroductionCwdUnchanged = false;
-        result.originalIntroductionCwdError = { code: error.code ?? error.name, message: error.message };
+        result.originalIntroductionSourceUnchanged = false;
+        result.originalIntroductionSourceError = { code: error.code ?? error.name, message: error.message };
       }
     }
     if (!result.normalConfigurationUnchanged || !result.baselineFilesUnchanged || result.originalSessionUnchanged === false || result.projectFilesUnchanged === false || result.publicCliProtectedFilesUnchanged === false
-      || result.originalResumeResultUnchanged === false || result.originalIntroductionCwdUnchanged === false) result.status = 'failed';
+      || result.originalResumeResultUnchanged === false || result.originalIntroductionSourceUnchanged === false) result.status = 'failed';
     await save(join(evidence, 'result.json'), result);
   }
   return { status: result.status, evidence, error: result.error, session: result.session, assertions: result.assertions };

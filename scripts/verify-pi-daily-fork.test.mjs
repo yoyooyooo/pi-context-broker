@@ -44,19 +44,30 @@ test('the disproven isolated linear resume option is rejected before filesystem/
     model: 'magpie/group/worker', thinkingLevel: 'high', prompt: '沿用刚才内容。', isolateResumeCwd: true, resumeFrom: {} }), /isolateResumeCwd.*--fork/u);
 });
 
-test('introduction fork rejects slash commands and non-normal/project paths before filesystem/auth/launch work', async () => {
+test('introduction fork rejects slash commands and project paths before filesystem/auth/launch work', async () => {
   const config = { version: 1, scope: 'project-scoped-candidate-print', id: 'fork', arm: 'normal', model: 'magpie/group/worker', thinkingLevel: 'high',
     prompt: '沿用刚才内容。', forkIntroductionResume: true, resumeFrom: {} };
   await assert.rejects(candidate.runCandidatePrint({ ...config, prompt: '/some-command' }), /non-slash/u);
-  await assert.rejects(candidate.runCandidatePrint({ ...config, arm: 'notion-only' }), /normal/u);
   await assert.rejects(candidate.runCandidatePrint({ ...config, project: 'owned-ticket-service' }), /introduction/u);
 });
 
-function guardFixture() {
+test('the notion-only introduction fork reaches the same auth boundary before any filesystem or launch work', async () => {
+  const token = process.env.NOTION_API_TOKEN;
+  delete process.env.NOTION_API_TOKEN;
+  try {
+    await assert.rejects(candidate.runCandidatePrint({ version: 1, scope: 'project-scoped-candidate-print', id: 'fork-ns', arm: 'notion-only',
+      model: 'magpie/group/worker', thinkingLevel: 'high', prompt: 'Review the previous introduction.', forkIntroductionResume: true, resumeFrom: {},
+      evidenceRoot: '/unopened-evidence', brokerRoot: '/unopened-broker', sourceId: 'owned', database: 'owned' }), /already authorized Notion identity/u);
+  } finally {
+    if (token === undefined) delete process.env.NOTION_API_TOKEN; else process.env.NOTION_API_TOKEN = token;
+  }
+});
+
+function guardFixture(nativeSkillCount = 69) {
   const bytes = Buffer.from('frozen broker entry\n'), entry = '/frozen/broker/src/index.ts', prompt = '沿用刚才内容，不执行工作流。';
-  const expected = { entry: { realpath: entry, sha256: sha(bytes) }, cwd: fork.cwd, promptSha256: sha(prompt), provider: 'magpie', model: 'group/worker', thinkingLevel: 'high', nativeSkillCount: 69 };
+  const expected = { entry: { realpath: entry, sha256: sha(bytes) }, cwd: fork.cwd, promptSha256: sha(prompt), provider: 'magpie', model: 'group/worker', thinkingLevel: 'high', nativeSkillCount };
   const handlers = new Map(), rows = [], commands = [{ name: 'context-broker', source: 'extension', sourceInfo: { path: entry } },
-    ...Array.from({ length: 69 }, (_, i) => ({ name: 'skill:' + i, source: 'skill' }))];
+    ...Array.from({ length: nativeSkillCount }, (_, i) => ({ name: 'skill:' + i, source: 'skill' }))];
   const api = { on: (name, fn) => handlers.set(name, fn), getCommands: () => commands, getThinkingLevel: () => 'high' };
   const fs = { realpathSync: path => path, readFileSync: () => bytes, writeFileSync: (_path, text) => rows.push(JSON.parse(text)),
     appendFileSync: (_path, text) => rows.push(JSON.parse(text)) };
@@ -74,6 +85,13 @@ test('the independent input guard passes only the exact public host identity and
   const f = guardFixture(), input = install(f);
   assert.deepEqual(input(), { action: 'continue' }); assert.equal(f.rows.length, 1); assert.equal(f.rows[0].allowed, true);
   assert.equal(f.rows[0].observed.nativeSkillCount, 69); assert.equal(f.rows[0].observed.entry.sha256, f.expected.entry.sha256);
+});
+
+test('the notion-only input guard requires exactly zero native Skill commands', () => {
+  const f = guardFixture(0);
+  assert.deepEqual(install(f)(), { action: 'continue' }); assert.equal(f.rows[0].observed.nativeSkillCount, 0);
+  const changed = guardFixture(0); changed.commands.push({ name: 'skill:unexpected', source: 'skill' });
+  assert.deepEqual(install(changed)(), { action: 'handled' }); assert.equal(changed.rows[0].allowed, false);
 });
 
 test('identity and prompt mismatches are recorded and explicitly handled before a provider call', () => {
