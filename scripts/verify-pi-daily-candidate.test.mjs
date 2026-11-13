@@ -766,3 +766,69 @@ test('existing-state reads block unintended tools before execution and require a
   assert.throws(() => candidate.inspectCandidateExistingReads(sourceState, audit, jsonl(changed), approved));
   assert.throws(() => candidate.inspectCandidateExistingReads(sourceState, audit, jsonl(native), rows));
 });
+
+test('paused target audit can resume its original run and report, without replacing scope or counters', () => {
+  const value = auditGuard(), rows = [], calls = [];
+  const submit = (id, command, report, exit = 0) => {
+    assert.equal(value.call(command, id), undefined);
+    const event = { role: 'toolResult', toolName: 'bash', toolCallId: id, isError: exit !== 0,
+      content: [{ type: 'text', text: JSON.stringify(report) + (exit ? '\n\nCommand exited with code ' + exit : '') }] };
+    rows.push({ type: 'message', message: event });
+    calls.push({ id, name: 'bash', arguments: { command }, callLine: calls.length * 2 + 1,
+      resultLine: calls.length * 2 + 2, resultSha256: sha(JSON.stringify(event.content)) });
+    value.handlers.get('tool_result')(event);
+  };
+  const paused = { ...auditReportFixture(), execution: 'paused', request_totals: { attempts: 3, request_bytes: 20, response_bytes: 30, elapsed_ms: 12, invocations: 1 },
+    next: { state: 'audit_paused', read_only: true, argv: ['ntn-skills', 'ctl', 'audit', 'resume', auditRunId] } };
+  submit('audit-1', auditCommand, paused, 75);
+  const resume = cliCommand + ' ctl audit resume ' + auditRunId + ' --entry owned-library --max-requests 20 --duration-ms 1000';
+  submit('resume-1', resume, { ...auditReportFixture(), request_totals: { attempts: 5, request_bytes: 40, response_bytes: 60, elapsed_ms: 20, invocations: 2 } }, 4);
+  assert.equal(value.call(cliCommand + ' ctl audit report ' + auditRunId, 'report'), undefined);
+  assert.equal(value.call(cliCommand + ' ctl audit resume ' + auditRunId, 'no-longer-paused').block, true);
+  const bindings = candidate.inspectCandidateAuditReportBindings(maintenanceCli, { calls }, jsonl(rows), value.records, () => { throw new Error('No spill'); });
+  assert.deepEqual(bindings.map(row => row.execution), ['paused', 'completed']);
+});
+
+test('paused audit authorizes only its observed read-only next, not another run, scope or budget', () => {
+  const value = auditGuard(); value.call(auditCommand, 'audit-1');
+  const report = { ...auditReportFixture(), execution: 'paused',
+    next: { read_only: true, argv: ['ntn-skills', 'ctl', 'audit', 'resume', auditRunId] } };
+  value.handlers.get('tool_result')({ toolName: 'bash', toolCallId: 'audit-1', isError: true,
+    content: [{ type: 'text', text: JSON.stringify(report) + '\n\nCommand exited with code 75' }] });
+  const resume = cliCommand + ' ctl audit resume ' + auditRunId;
+  for (const command of [resume.replace(auditRunId, 'audit-00000000-0000-0000-0000-000000000000'),
+    resume + ' --entry other-library', resume + ' --target another-page', resume + ' --all',
+    resume + ' --max-requests 501', resume + ' --max-bytes 67108865', resume + ' --duration-ms 120001',
+    cliCommand + ' ctl operation resume ' + auditRunId])
+    assert.equal(value.call(command, 'deny-' + command).block, true, command);
+  assert.equal(auditGuard().call(resume, 'foreign-session').block, true);
+  assert.equal(value.call(resume, 'resume-ok'), undefined);
+  assert.equal(value.call(resume, 'pending-original').block, true);
+});
+
+test('failed execution remains reportable but is not a completed audit or a resume authorization', () => {
+  const value = auditGuard(); value.call(auditCommand, 'audit-1');
+  value.handlers.get('tool_result')({ toolName: 'bash', toolCallId: 'audit-1', isError: true,
+    content: [{ type: 'text', text: JSON.stringify({ ...auditReportFixture(), execution: 'execution_failed' }) + '\n\nCommand exited with code 1' }] });
+  assert.equal(value.call(cliCommand + ' ctl audit report ' + auditRunId, 'report-failure'), undefined);
+  assert.equal(value.records.find(row => row.phase === 'public-cli-audit-report').execution, 'execution_failed');
+  assert.equal(value.call(cliCommand + ' ctl audit resume ' + auditRunId, 'resume-failure').block, true);
+});
+
+test('a resumed result cannot substitute a run or reset its cumulative accounting', () => {
+  for (const mutation of ['other-run', 'reset']) {
+    const value = auditGuard(); value.call(auditCommand, 'audit-1');
+    const totals = { attempts: 10, request_bytes: 20, response_bytes: 30, elapsed_ms: 40, invocations: 1 };
+    const paused = { ...auditReportFixture(), execution: 'paused', request_totals: totals,
+      next: { read_only: true, argv: ['ntn-skills', 'ctl', 'audit', 'resume', auditRunId] } };
+    const result = (id, report) => value.handlers.get('tool_result')({ toolName: 'bash', toolCallId: id, isError: true,
+      content: [{ type: 'text', text: JSON.stringify(report) + '\n\nCommand exited with code 75' }] });
+    result('audit-1', paused);
+    assert.equal(value.call(cliCommand + ' ctl audit resume ' + auditRunId, 'resume-1'), undefined);
+    const next = { ...auditReportFixture(), request_totals: { ...totals, attempts: mutation === 'reset' ? 1 : 11 } };
+    if (mutation === 'other-run') { next.run_id = 'audit-00000000-0000-0000-0000-000000000000'; next.next = { ...next.next, argv: ['ntn-skills', 'ctl', 'audit', 'report', next.run_id] }; }
+    result('resume-1', next);
+    assert.equal(value.call(cliCommand + ' ctl audit report ' + auditRunId, 'after-invalid').block, true);
+    assert.equal(value.records.filter(row => row.phase === 'public-cli-audit-report').length, 1);
+  }
+});

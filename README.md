@@ -81,6 +81,25 @@ omp -e ./packages/context-broker/src/index.ts
 
 The optional Tern companion has its own [release installation](#tern-completion).
 
+## Direct source dogfooding
+
+Use the current source checkout directly; no release channel or dated candidate install is needed. Build the CLI/SDK from your `notion-skills-cli` checkout, then select that exact build for the existing Broker build:
+
+```sh
+cd /absolute/notion-skills-cli
+bun install --frozen-lockfile
+bun run build
+export NTN_SKILLS_DEV_ROOT="$PWD"  # existing ntn-skills source-selection shim
+cd /absolute/pi-context-broker
+bun install --frozen-lockfile
+NTN_SKILLS_BUILD_ENTRY=/absolute/notion-skills-cli/packages/cli/dist/ntn-skills.js bun run build:broker
+pi install "$PWD/packages/context-broker"
+```
+
+Keep one Broker entry in Pi (`pi remove OLD_BROKER_SOURCE` removes a previous entry); preserve other extensions. Follow the Notion source configuration below with your own authorized library, then open a new Pi session. CLI edits run through its existing shim without rebuilding, but the default Broker SDK is bundled: rebuild CLI and `build:broker` at the same paths when that SDK input changes. No new launcher or version manager is involved. Without an installed CLI shim, `bun run /absolute/notion-skills-cli/scripts/dev.ts` runs the same commands directly.
+
+Use the [CLI source quick start](https://github.com/yoyooyooo/notion-skills-cli/blob/main/CONTRIBUTING.md#direct-source-dogfooding) for connection, owned library creation and the first Skill. A cold installation configures its own credentials and entry ID; it does not copy a maintainer's SQLite database or caches. For a code or wiring change, run its relevant regression and inspect the affected actual Session; do not require every platform/model or a formal release before daily use.
+
 ## Quick start
 
 ### 1. Configure a Skill directory

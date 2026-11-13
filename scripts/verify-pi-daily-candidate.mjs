@@ -292,7 +292,7 @@ export function inspectCandidateExistingReads(sourceState, nativeAudit, text, gu
 
 /** A small shell subset for one frozen public author task.
  * The public CLI owns author decisions, operation identities and Store writes. */
-export function reviewCandidateCliCommand(command, policy, observedAuditRunIds = []) {
+export function reviewCandidateCliCommand(command, policy, observedAudits = []) {
   const check = (value, message) => { if (!value) throw new Error(message); };
   check(['original-create-recovery', 'owned-description-update', 'owned-maintenance-readonly'].includes(policy?.mode), 'Unknown public CLI task scope');
   const maintenance = policy.mode === 'owned-maintenance-readonly';
@@ -332,9 +332,26 @@ export function reviewCandidateCliCommand(command, policy, observedAuditRunIds =
     check(path === undefined || ['SKILL.md', 'references/operations.md'].includes(path), 'Read only the two protected maintenance files');
     return { kind: 'builtin-read', argv: words };
   }
-  if (maintenance && args.slice(0, 3).join(' ') === 'ctl audit report') {
-    check(args.length === 4 && observedAuditRunIds.includes(args[3]), 'Read only a complete report returned by this session target audit, without flags');
-    return { kind: 'audit-report', argv: words };
+  if (maintenance && ['ctl audit report', 'ctl audit resume'].includes(args.slice(0, 3).join(' '))) {
+    const binding = observedAudits.findLast(row => row?.runId === args[3]
+      && row.target === policy.target && row.database === policy.database);
+    check(binding, 'Use a run observed through this session authorized target audit');
+    if (args[2] === 'report') {
+      check(args.length === 4, 'Read the exact retained report without flags');
+      return { kind: 'audit-report', runId: args[3], argv: words };
+    }
+    check(binding.execution === 'paused' && JSON.stringify(binding.nextArgv) === JSON.stringify(['ntn-skills', 'ctl', 'audit', 'resume', args[3]]),
+      'Resume only the original paused run through its observed read-only next');
+    const seen = new Set(), caps = { '--max-requests': 500, '--max-bytes': 67108864, '--duration-ms': 120000 };
+    for (let index = 4; index < args.length; index += 2) {
+      const flag = args[index], value = args[index + 1];
+      check(!seen.has(flag) && typeof value === 'string', 'Use one value for each public resume option');
+      seen.add(flag);
+      if (flag === '--entry') check(value === policy.database, 'The original library assertion cannot change');
+      else check(Object.hasOwn(caps, flag) && /^[1-9][0-9]*$/u.test(value) && Number(value) <= caps[flag],
+        'Keep the public per-invocation audit budget bounded');
+    }
+    return { kind: 'audit-resume', runId: args[3], argv: words };
   }
   if (maintenance && args[0] === 'ctl') {
     const audit = args.slice(0, 3).join(' ') === 'ctl audit run';
@@ -428,11 +445,16 @@ export function candidateAuditReportBinding(result, policy, { registeredPath, re
       if (result.isError === true) raw = raw.replace(/\n\nCommand exited with code [1-9][0-9]*$/u, '');
     }
     const report = JSON.parse(raw), id = report.run_id;
-    if (report.ok !== true || report.report_version !== 1 || report.execution !== 'completed' || report.remote_writes !== 0
+    if (report.ok !== true || report.report_version !== 1 || !['completed', 'paused', 'execution_failed'].includes(report.execution) || report.remote_writes !== 0
       || report.entry_id !== policy.database || report.selector?.kind !== 'skill' || report.selector.page_id !== policy.target
       || report.inspection_scope !== 'reachable_target' || typeof id !== 'string' || !/^audit-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(id)
-      || report.next?.read_only !== true || JSON.stringify(report.next.argv) !== JSON.stringify(['ntn-skills', 'ctl', 'audit', 'report', id])) return undefined;
+      || report.next?.read_only !== true || JSON.stringify(report.next.argv) !== JSON.stringify(['ntn-skills', 'ctl', 'audit', report.execution === 'paused' ? 'resume' : 'report', id])) return undefined;
+    const totals = report.request_totals;
+    if (totals !== undefined && (!totals || !['attempts', 'request_bytes', 'response_bytes', 'elapsed_ms', 'invocations']
+      .every(key => Number.isFinite(totals[key]) && totals[key] >= 0))) return undefined;
     return { runId: id, sourceToolCallId: result.toolCallId, target: policy.target, database: policy.database,
+      execution: report.execution, nextArgv: report.next.argv,
+      ...(totals === undefined ? {} : { requestTotals: totals }),
       resultSha256: sha(JSON.stringify(content)), reportSha256: sha(raw), reportBytes: Buffer.byteLength(raw),
       ...(registeredPath ? { artifactPath: registeredPath } : {}) };
   } catch { return undefined; }
@@ -441,11 +463,16 @@ export function candidateAuditReportBinding(result, policy, { registeredPath, re
 export function inspectCandidateAuditReportBindings(policy, nativeAudit, nativeText, guard, readFile) {
   const messages = nativeText.trimEnd().split('\n').map(JSON.parse).filter(row => row.type === 'message').map(row => row.message);
   const bindings = guard.filter(row => row.phase === 'public-cli-audit-report');
-  assert.equal(new Set(bindings.map(row => row.runId)).size, bindings.length);
+  assert.equal(new Set(bindings.map(row => row.sourceToolCallId)).size, bindings.length);
+  const previous = new Map();
   for (const row of bindings) {
     const call = nativeAudit.calls.find(call => call.id === row.sourceToolCallId);
     assert.ok(call && call.name === 'bash' && call.resultLine !== undefined);
-    assert.equal(reviewCandidateCliCommand(call.arguments.command, policy).kind, 'audit');
+    const authorized = [...previous.values()].filter(row => nativeAudit.calls.find(source => source.id === row.sourceToolCallId)?.resultLine < call.callLine);
+    const command = reviewCandidateCliCommand(call.arguments.command, policy, authorized);
+    assert.ok(['audit', 'audit-resume'].includes(command.kind));
+    if (command.kind === 'audit-resume') assert.equal(command.runId, row.runId);
+    else assert.ok(!previous.has(row.runId), 'A new audit cannot replace an observed run');
     assert.equal(guard.filter(event => event.toolCallId === call.id && event.allowed === true).length, 1);
     const originals = messages.filter(message => message.role === 'toolResult' && message.toolCallId === call.id);
     assert.equal(originals.length, 1); assert.equal(hash(JSON.stringify(originals[0].content)), call.resultSha256);
@@ -454,6 +481,10 @@ export function inspectCandidateAuditReportBindings(policy, nativeAudit, nativeT
     const observed = candidateAuditReportBinding(originals[0], policy, { registeredPath: spills[0]?.artifactPath, readFile, sha: hash });
     assert.ok(observed, 'An audit report needs its complete original same-call result');
     assert.deepEqual(row, { phase: 'public-cli-audit-report', allowed: true, ...observed });
+    const prior = previous.get(row.runId);
+    if (prior?.requestTotals && row.requestTotals) for (const key of ['attempts', 'request_bytes', 'response_bytes', 'elapsed_ms', 'invocations'])
+      assert.ok(row.requestTotals[key] >= prior.requestTotals[key], 'Resume cannot reset cumulative audit accounting');
+    previous.set(row.runId, row);
   }
   return bindings;
 }
@@ -514,7 +545,7 @@ export function candidateCliGuard(api, { fs, output, policy, review, maintenance
   let fd, failure;
   try { fd = fs.openSync(output, 'wx', 0o600); } catch (error) { failure = error; }
   const approvedBashCalls = new Set(), publicOutputs = new Set(policy.inputFiles);
-  const approvedAudits = new Set(), auditReports = new Map();
+  const approvedAudits = new Map(), auditReports = new Map(), pendingAudits = new Set();
   if (policy.mode === 'owned-maintenance-readonly') api.on('input', () => {
     try {
       if (failure) throw failure;
@@ -533,9 +564,13 @@ export function candidateCliGuard(api, { fs, output, policy, review, maintenance
     try {
       if (failure) throw failure;
       if (event.toolName === 'bash') {
-        const inspected = review(event.input?.command, policy, [...auditReports.keys()]);
+        const inspected = review(event.input?.command, policy, [...auditReports.values()]);
+        if (inspected.kind === 'audit-resume') {
+          if (pendingAudits.has(inspected.runId)) throw new Error('The original resume has not returned a complete result');
+          pendingAudits.add(inspected.runId);
+        }
         approvedBashCalls.add(event.toolCallId);
-        if (inspected.kind === 'audit') approvedAudits.add(event.toolCallId);
+        if (['audit', 'audit-resume'].includes(inspected.kind)) approvedAudits.set(event.toolCallId, inspected);
       }
       else if (event.toolName === 'read' && (publicOutputs.has(event.input?.path) || policy.mode === 'owned-maintenance-readonly' && policy.builtinFiles?.includes(event.input?.path)
         || typeof event.input?.path === 'string' && event.input.path.startsWith(policy.outputRoot + '/') && !event.input.path.split('/').includes('..'))) {
@@ -565,9 +600,16 @@ export function candidateCliGuard(api, { fs, output, policy, review, maintenance
       if (approvedAudits.has(event.toolCallId)) {
         const binding = auditReportBinding?.(event, policy, { registeredPath, readFile: file => fs.readFileSync(file, 'utf8'), sha });
         if (binding) {
-          if (auditReports.has(binding.runId)) throw new Error('An audit run must have one original result');
+          const command = approvedAudits.get(event.toolCallId), previous = auditReports.get(binding.runId);
+          if (command.kind === 'audit-resume') {
+            if (command.runId !== binding.runId || !previous) throw new Error('Resume must return its original run');
+            if (previous.requestTotals && binding.requestTotals) for (const key of ['attempts', 'request_bytes', 'response_bytes', 'elapsed_ms', 'invocations'])
+              if (binding.requestTotals[key] < previous.requestTotals[key]) throw new Error('Resume cannot reset cumulative audit accounting');
+          } else if (previous) throw new Error('A new audit cannot replace an observed run');
           fs.writeSync(fd, JSON.stringify({ phase: 'public-cli-audit-report', allowed: true, ...binding }) + '\n');
           auditReports.set(binding.runId, binding);
+          pendingAudits.delete(binding.runId);
+          approvedAudits.delete(event.toolCallId);
         }
       }
     } catch (error) { failure = error; }
@@ -1523,9 +1565,10 @@ export async function runCandidatePrint(config) {
       const auditReports = inspectCandidateAuditReportBindings(cliPolicy, result.nativeAudit, sessionBytes.toString('utf8'), guard, file => readFileSync(file, 'utf8'));
       if (auditReports.length) result.publicCli.auditReports = auditReports;
       result.publicCli.commands = result.nativeAudit.calls.filter(call => call.name === 'bash').map(call => {
-        const command = reviewCandidateCliCommand(call.arguments.command, cliPolicy, auditReports.map(report => report.runId));
-        if (command.kind === 'audit-report') {
-          const binding = auditReports.find(report => report.runId === command.argv.at(-1));
+        const priorReports = auditReports.filter(report => result.nativeAudit.calls.find(source => source.id === report.sourceToolCallId)?.resultLine < call.callLine);
+        const command = reviewCandidateCliCommand(call.arguments.command, cliPolicy, priorReports);
+        if (['audit-report', 'audit-resume'].includes(command.kind)) {
+          const binding = priorReports.findLast(report => report.runId === command.runId);
           assert.ok(result.nativeAudit.calls.find(source => source.id === binding.sourceToolCallId).resultLine < call.callLine);
           assert.ok(guard.indexOf(binding) < guard.findIndex(row => row.toolCallId === call.id));
         }

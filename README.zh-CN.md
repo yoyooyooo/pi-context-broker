@@ -81,6 +81,8 @@ omp -e ./packages/context-broker/src/index.ts
 
 可选 Tern 配套插件使用独立的 [Release 安装入口](#tern-补全)。
 
+[直接源码吃狗粮](README.md#direct-source-dogfooding)：沿现有 CLI shim 和 Pi 源码包入口使用当前实现，无需先发布。CLI 修改可直接执行；Broker 默认 SDK 来自构建产物，CLI/SDK 改动后在原路径重建 CLI 与 `build:broker`，再开启新会话。只保留一个 Broker 包入口，其他扩展不变。
+
 ## 快速开始
 
 ### 1. 配置 Skill 目录

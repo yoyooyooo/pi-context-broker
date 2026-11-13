@@ -1,13 +1,15 @@
-# 核心消费流程 Statechart
+# 核心消费流程 Statechart：历史快照
 
 这是 2026-11-12（Asia/Manila）发布到 [Notion 验证策略](https://app.notion.com/p/4125636c236e819bba12c71af9a0c0f5) 的可复现图件快照。项目第一入口是 [Notion Skills](https://app.notion.com/p/4125636c236e81f28894e4bbb4eab711)，后续维护由 [AH-1006](https://linear.app/yoyooyooo/issue/AH-1006) 跟踪。
 
-## 本次检查
+本目录只复述当时检查：ManagementToDelivery 的五组模型/config/view 在后续提交已变更；本轮 RetentionDisclosure 的 view 也已修正。历史 manifest 和图不改写。当前套件及运行方法见 [flows README](../../verification/models/consumer-observations/flows/README.md)，只读与 unknown 的当前图见 [局部修正](../statecharts/review-corrections/README.md)。
+
+## 历史检查
 
 - 产品源码基线：`f2f725703c5d6afe1d89c76148abfc3fbf521085`。
 - 使用现有 `verify-consumer-observations.mjs --suite flows`，完整执行 2 个模型、13 个正负配置。
-- TLA 和 config 保持原字节。本次仅修订 view：将抽象上下文与真实回答分开描述，将未披露效果与显式 unknown 分开显示。
-- 13 个配置全部符合原定预期；5 个正向配置的性质成立，8 个历史/故意破坏配置命中指定性质。
+- 相对于当时冻结输入，TLA 和 config 保持原字节；不声明与当前 checkout 相同。本次仅修订 view：将抽象上下文与真实回答分开描述，将未披露效果与显式 unknown 分开显示。
+- 13 个配置全部符合原定预期；5 次正向配置执行的性质成立（proposal 与 implemented 字节相同，只有 4 种独立正向输入），8 个历史/故意破坏配置命中指定性质。
 - 没有新执行产品 mutation、真实 Notion、Pi、provider 或性能实验。负例图不构成当前产品仍有该缺陷的断言。
 - `manifest.json` 保存每组状态数、性质结果、输入与图件 SHA256。完整原始 TLC 和初次标题呈现记录保留在 Pro 的 `verification-evidence/statecharts-20261112/broker/`。
 
@@ -34,7 +36,7 @@ RetentionDisclosure 限定一次读取和一次抽象留存事件。Report 是�
 
 ## 复现
 
-按 [模型 README](../../verification/models/consumer-observations/README.md) 设置固定 `PSTACK_STATECHART_ROOT` 与 `TLA2TOOLS`，在本提交运行：
+按 [模型 README](../../verification/models/consumer-observations/README.md) 设置固定 `PSTACK_STATECHART_ROOT` 与 `TLA2TOOLS`，执行下面命令得到当前 checkout 的结果（现在是 3 模型、24 配置），并非本历史图册的 13 次执行：
 
 ```sh
 node scripts/verify-consumer-observations.mjs --out /absolute/new/flow-output --suite flows

@@ -20,3 +20,9 @@ bun test packages/context-broker/scripts/formal-effects-composition.test.ts pack
 
 当前资格和实际交付的改变先走 [verify-notion-consumer-state](../../verify-notion-consumer-state/SKILL.md)；CLI ACK/独立接受的改变走另一仓库 verify-notion-operation-recovery，再核对本组合模型的输入前提。跨领域只复验变化的交接，不以更新 hash 替代实际审阅，不开启全批日用 E2E。
 
+
+## 图件与责任边界
+
+当前模型和输入以 [flows README](../../../../verification/models/consumer-observations/flows/README.md) 及 coverage 为准。[精选组合图](../../../../verification/models/consumer-observations/flows/charts/) 保留各自生成身份；[只读/未知的局部图面修正](../../../../docs/statecharts/review-corrections/README.md) 区分合法与违规终态。[2026-11-12 图册](../../../../docs/notion-statecharts-2026-11-12/README.md) 是历史快照，不能代替当前输入的执行结果。
+
+ManagementToDelivery 使用完整管理回执作为工作流前提，不新增全局运行时 gate。失败刷新保留原选择由 [SelectionGraph](../../../../verification/models/consumer-state/SelectionGraph.tla) 和对应宿主回归负责；这里不复制完整刷新状态机。模型没有表达的字节、网络或权限细节不因增加文案获得证明。

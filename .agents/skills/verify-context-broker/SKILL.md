@@ -13,6 +13,8 @@ Notion 请求引擎和多 Skill 图变更同时读取 [直连请求地图](../ve
 
 缺失引用改动按 [injection 的 Missing-reference regression route](features/injection.md#missing-reference-regression-route) 验收：普通未知文本原样透传；明确接受的引用失效时向用户与模型说明未加载，不能写 loaded 回执；权限、网络与完整性失败仍明确阻断。
 
+当前上下文唯一性与恢复见 [features/context-once.md](features/context-once.md)。组合模型见 [formal-composition](../verify-notion-skills-integration/features/formal-composition.md)。图册入口在该页区分当前结果和历史快照；不需要为导航修正运行其他宿主。
+
 ## Launch
 
 ```bash

@@ -7,6 +7,8 @@ description: "验证 Notion Skills source 与随包 Skill在 Pi/OMP、Tern 中�
 
 ## 有限状态合同与维护
 
+当前生成图的入口见 [组合地图](features/formal-composition.md) 和 [局部视图修正](../../../docs/statecharts/review-corrections/README.md)。2026-11-12 图册仅是历史快照，不以当前命令冒充当时输入。
+
 AH-1006 的组合交接由本 Skill 继续负责，见 [FV06 管理回执与 effects](features/formal-composition.md)。`ManagementToDelivery`、`RetentionDisclosure`、`AcquisitionEffects` 使用原 `scripts/verify-consumer-observations.mjs --suite flows`；目录资格、观察时间、固定选择和真实交付边界交给 [verify-notion-consumer-state](../verify-notion-consumer-state/SKILL.md)，使用 `observations` / `consumer-state` 两组。默认六个旧观察配置保留，`--model` 按完整模型组选择。
 
 先读 [维护合同](../../../docs/formal-verification-maintenance.md)。完整规则清单、固定工具、源码对应和实际 CI 原件必须可核对；源 hash 不得自动刷新放行。仅 view、模型语义和实现语义变化分别承担相应复验义务。模型与实际源码回归不代替下文的原生宿主、安装或真实 E2E；本批 guardian 不新建一个全链路总验证 Skill。

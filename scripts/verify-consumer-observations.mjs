@@ -120,7 +120,11 @@ try {
       path: path.relative(out, file), sha256: hash(fs.readFileSync(file)),
     }))
     const result = await check(spec, config)
-    const view = checkView(await import(pathToFileURL(viewFile)), inspect)
+    const viewModule = await import(pathToFileURL(viewFile))
+    // A display factory may bind constants from the same checked config.
+    // The checker, state space, rules and expected outcomes stay unchanged.
+    const view = checkView(typeof viewModule.forConfig === "function"
+      ? viewModule.forConfig(fs.readFileSync(config, "utf8")) : viewModule, inspect)
     const rendered = compile(result, view)
     for (const [file, parts] of rendered.files) {
       const fd = fs.openSync(path.join(destination, file), "wx")

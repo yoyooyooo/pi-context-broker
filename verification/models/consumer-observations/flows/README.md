@@ -1,6 +1,6 @@
 # 管理到模型输入的组合审阅
 
-2026-11-12 的 [中文生成图、SVG、原报告与输入清单](../../../../docs/notion-statecharts-2026-11-12/README.md)已按同一模型和13组配置复跑。当前可读图册维护在 [Notion 验证策略](https://app.notion.com/p/4125636c236e819bba12c71af9a0c0f5)，后续维护由 [AH-1006](https://linear.app/yoyooyooo/issue/AH-1006)承接。该快照只调整展示词汇，不把抽象上下文、受控报告规则升级为真实模型回答证明。
+2026-11-12 的 [中文图册](../../../../docs/notion-statecharts-2026-11-12/README.md) 保留当时 2 模型、13 配置的历史输入和结果。其后 ManagementToDelivery 加入管理回执前提，当前套件是 3 模型、24 配置；不要用当前命令声称复现历史图。当前模型入口见本页与 coverage，RetentionDisclosure 的 [局部视图修正](../../../../docs/statecharts/review-corrections/README.md) 单独保留当前生成结果。
 
 这组模型与原 Availability、ReadRace 共用 statechart/TLC 锁定和运行器，覆盖另一层问题：各模块正确时，它们连接起来是否仍兑现用户可观察的承诺。它们不替代资源管理模型、原生宿主测试或真实 Notion。
 
@@ -77,3 +77,9 @@ bun test packages/context-broker/scripts/formal-effects-composition.test.ts pack
 原真实 E2E 仍只引用上文的固定 session、HTTP/request IDs、源码和 evidence 身份。本批没有执行新的生产 Notion 或真实 LLM 回合。详见 [维护合同](../../../../docs/formal-verification-maintenance.md)。
 
 组合图中的 provider 接受、回合完成和持久化都是下游合同提供的回执输入，不是本模型生成或验证的线上原件。DeliveryBoundary 负责这些输入的实现边界；真实会话证据仍须沿原独立入口核对。
+
+## 配置计数与当前责任
+
+`RetentionDisclosure.proposal` 与 `implemented` 的 cfg 内容相同，保留两个历史调用名称，不计作两种独立行为覆盖。运行数描述实际调用，独立输入数另行区分。`current` 是修复前反例；`unknown` 的输出即使与某正例相同，也按自己的 cfg 身份记录。
+
+ManagementToDelivery 描述一条有界组合工作流；管理回执是输入前提，刷新失败/取消的选择保留由 `consumer-state/SelectionGraph` 及真实宿主回归负责。没有新增全局管理 gate，也不要求把所有已有分层模型合并。

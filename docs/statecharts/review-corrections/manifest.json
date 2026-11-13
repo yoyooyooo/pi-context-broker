@@ -1,0 +1,78 @@
+{
+  "kind": "RV2 display-only correction",
+  "checked_configs": 8,
+  "complete": true,
+  "all_expected_results_matched": true,
+  "runner_sha256": "306995d7778d3bb13086b4eacb20eb7ec11e98bd8469cff49f6eb0f85dca3011",
+  "tool_lock_sha256": "379937f0a64c7086a4d2d950dd0afad7dd37c3adc03e6286c2ace15d8b950cc6",
+  "summary_sha256": "a92218fd0cf0d0aebe2b90ceea9c5d1d9afba2676e79e1dd7ed18e424e3e17d6",
+  "renderer_sha256": "7c40a25eeaf4370fb56c03d9d8f6780051c9c39b6c6ca36d53239075117097f5",
+  "selected": [
+    {
+      "model": "RetentionDisclosure",
+      "config": "read-only-negative",
+      "states": {
+        "distinct": 8,
+        "initial": 1,
+        "complete": true,
+        "cut": false
+      },
+      "broken": [
+        "ReadOnlyHasNoRemoteWrites"
+      ],
+      "inputs": [
+        {
+          "path": "model-inputs/RetentionDisclosure.tla",
+          "sha256": "df5f870ea582e5263cd60abfa3d6b8d4c1ee5a77e2c4963a01b9b411acfb1e96"
+        },
+        {
+          "path": "model-inputs/RetentionDisclosure.read-only-negative.cfg",
+          "sha256": "7d8a5a617af0de6a92cffac1aa08eae0def1e23dfad8afd337f492d085a30d86"
+        },
+        {
+          "path": "model-inputs/RetentionDisclosure.view.mjs",
+          "sha256": "0e23db0b02241a9f542382fdcc87efc77617d241623f8d42e5597a57be6a771e"
+        }
+      ],
+      "name": "RetentionDisclosure-read-only-negative",
+      "mermaid_sha256": "1d0611ecffc48d6f4b7a0588f70775d64392f4327f649bba87e0a6b39dbbb6ac",
+      "svg_sha256": "dbc51448c004a0e96812264a33001ccbc9275078a2942d2bb7337f833df7a16b",
+      "report_sha256": "1748cb46a2a07952290c4ca1df29a43ae26ae4978cef7f0ba006091d32c46319",
+      "width": 886,
+      "height": 1051
+    },
+    {
+      "model": "RetentionDisclosure",
+      "config": "unknown-negative",
+      "states": {
+        "distinct": 8,
+        "initial": 1,
+        "complete": true,
+        "cut": false
+      },
+      "broken": [
+        "UnknownOutcomeIsDisclosed"
+      ],
+      "inputs": [
+        {
+          "path": "model-inputs/RetentionDisclosure.tla",
+          "sha256": "df5f870ea582e5263cd60abfa3d6b8d4c1ee5a77e2c4963a01b9b411acfb1e96"
+        },
+        {
+          "path": "model-inputs/RetentionDisclosure.unknown-negative.cfg",
+          "sha256": "b6c9ac69b15fec5718d70ce10d5599c83ee6129b7ca9fa5be98b7e6b189ed6df"
+        },
+        {
+          "path": "model-inputs/RetentionDisclosure.view.mjs",
+          "sha256": "0e23db0b02241a9f542382fdcc87efc77617d241623f8d42e5597a57be6a771e"
+        }
+      ],
+      "name": "RetentionDisclosure-unknown-negative",
+      "mermaid_sha256": "d16cd89e4ff5208a411903482e8894a50c400de46b7494cd1145318c291aee3d",
+      "svg_sha256": "713bb73f85bbf44f384e93bd15924ed7ddbe16e849a8bdae4997d48b62561354",
+      "report_sha256": "df15b92e7cb5e6b238a9994dd9ca6541cfc3ec0b58e84e04c63c2c10a2fddd59",
+      "width": 858,
+      "height": 970
+    }
+  ]
+}

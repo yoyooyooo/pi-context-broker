@@ -630,8 +630,16 @@ Default Context stays a normal optional View-filter attribute. Do not delete its
 
 从同一新建自有Skill的公开管理operation开始，串联cold source、5m实际cache policy、自然Agent选路、完整use/reference、暖续问、CLI修改、Notion原生修改、固定旧版与明确新版。复用本地图的被动SDK、cost、Undici和原生session观察器，不另起运营/遥测平台。作者操作、旁路私有oracle和消费成本分账；oracle不能预热消费Store或成为首轮答案提示。
 
-具体已运行范围与局部调优入口见[日用整链路审阅](../../../../packages/context-broker/docs/dogfood-flow-audit-2026-11-11.md)。可执行组合规格在`verification/models/consumer-observations/flows`，调用既有`verify-consumer-observations.mjs --out /new/absolute/output --suite flows`。新套件的RetentionDisclosure.current保留当前未修复副作用披露问题；匹配预期的负例不是产品通过。实际toolResult/HTTP/最终回答须共同复核该问题，不能只看模型文字。
+具体已运行范围与局部调优入口见[日用整链路审阅](../../../../packages/context-broker/docs/dogfood-flow-audit-2026-11-11.md)。可执行组合规格在`verification/models/consumer-observations/flows`，调用既有`verify-consumer-observations.mjs --out /new/absolute/output --suite flows`。RetentionDisclosure.current保留AH-953实施前的历史副作用披露反例；匹配预期的负例不是产品通过。实际toolResult/HTTP/最终回答须共同复核该问题，不能只看模型文字。
 
 每段保留管理op、精确record/snapshot、SDK requestId、toolCallId、实际provider payload SHA与cache初态。在原scope、源内容、模型路由和工具暴露一致时比较局部变化；不同默认View属于不同策略实验，不伪称同曝光净收益。纯续问零工具只说明Agent没重调，仍须计TTL到期的背景metadata；已知body不重取与总HTTP零是不同条件。正常MCP的未观测请求保持unknown，不为清空账本停用它们。
 
-若用户要严格不发生远端写入，不能从inspect/read/use名称推断。当前原生编辑观察可能触发保留写；公共语义尚缺最小效果披露，详见FLOW-EFFECT-01。不得以去掉必要留存、宽松校验、隐藏权限问题或追加全局长教程来制造“更小更快”的结果。
+若用户要严格不发生远端写入，不能从inspect/read/use名称推断。当前原生编辑观察可能触发保留写；公共接口已实现version-1 effects；FLOW-EFFECT-01保留修复前反例，不表示当前公共语义缺失。不得以去掉必要留存、宽松校验、隐藏权限问题或追加全局长教程来制造“更小更快”的结果。
+
+### RV3：原审计暂停与续跑
+
+`owned-maintenance-readonly` 的 guard 从本 Session 完整、同 owner/entry 的实际审计结果绑定 run。`paused` 的精确只读 `next.argv` 可继续同 run 的 `ctl audit resume`；completed/execution_failed 可离线 report，失败和 partial 仍保留原状态。正在执行或没有完整返回的 resume 不会获得第二次派发许可。
+
+可选 resume 参数只接受原 entry 断言和公开的每次调用预算（最多 500 请求、64 MiB、120 秒）；原任务总 deadline 不随续跑重启，实际 `request_totals` 累计不归零。每次预算不是全任务共享额度，缺失网络观察不填零。不得扩到 `--all`、别的 run/库/目标，或可写的 `ctl operation resume`。原生 Session 按先前真实结果逐条核对，不借用未来结果授权过去命令。
+
+复验使用 `node --test scripts/verify-pi-daily-candidate.test.mjs` 的暂停、续跑、报告及越界反例。无需为此再跑真实模型；历史四次 failed 结果不改写。
