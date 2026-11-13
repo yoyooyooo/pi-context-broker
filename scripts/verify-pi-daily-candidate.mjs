@@ -486,7 +486,7 @@ export function reviewCandidateMaintenanceTool(tool, input, policy, branch = [])
   };
   if (tool === 'tool_search') {
     fields(['query', 'limit']);
-    check(typeof input.query === 'string' && input.query.length <= 512 && /notion|ntn-skills/iu.test(input.query), 'Discover only the Notion maintenance capability');
+    check(typeof input.query === 'string' && input.query.length <= 512 && /notion|ntn-skills|\bntn skills maintain\b/iu.test(input.query), 'Discover only the Notion maintenance capability');
     check(input.limit === undefined || Number.isSafeInteger(input.limit) && input.limit >= 1 && input.limit <= 8, 'Keep tool discovery bounded');
   } else if (tool === 'notion_ctl') {
     fields(['cli_source']); check(input.cli_source === policy.sourceId, 'Discover only the reviewed source CLI');

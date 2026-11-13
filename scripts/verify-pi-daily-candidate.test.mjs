@@ -355,6 +355,8 @@ test('maintenance guard admits builtin discovery, exact CLI metadata and current
   const calls = [
     ['read', { path: maintenanceCli.builtinFiles[0] }],
     ['tool_search', { query: 'Notion management CLI source', limit: 1 }],
+    ['tool_search', { query: 'list_mcp_resources ntn skills maintain', limit: 5 }],
+    ['tool_search', { query: 'NTN SKILLS MAINTAIN', limit: 1 }],
     ['notion_ctl', { cli_source: 'notion' }],
     ['notion_list', { query: 'owned fixture', source: 'notion', limit: 1 }],
     ['notion_use', { ref: branch[0].data.ref, readOnly: true }],
@@ -382,6 +384,11 @@ test('maintenance guard fails before I/O for foreign handles, no readOnly, unrel
     ['notion_ctl', { refs: [] }],
     ['notion_list', { source: 'another-source' }],
     ['tool_search', { query: 'send email' }],
+    ['tool_search', { query: 'ntn skills' }],
+    ['tool_search', { query: 'ntn skills sync' }],
+    ['tool_search', { query: 'ntn skills maintainers' }],
+    ['tool_search', { query: 'notntn skills maintain' }],
+    ['tool_search', { query: 'ntn skills maintain', limit: 9 }],
     ['write', { path: '/evidence/new-file', content: 'not authorized' }],
   ]) assert.equal(handlers.get('tool_call')({ toolName, toolCallId: 'blocked-' + records.length, input }, ctx)?.block, true);
   branch[1].data.target.identity = { ...branch[1].data.target.identity, locator: { page_id: 'another-page', database_id: 'owned-library' } };
