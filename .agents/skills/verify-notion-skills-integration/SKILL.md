@@ -16,6 +16,8 @@ AH-617 消费链重构先读 [消费链验证地图](features/skill-consumption.
 
 AH-955 的本批实施同时遵循 [12 项日用收口合同](features/dogfood-closure.md)。实际 Pi 固定 `magpie/group/worker`，独立 `-ns` 与正常 HOME 两臂分开留证；效果披露的源码与有限模型通过不替代真实 Session、provider payload、Notion 写入和最终回答复核。
 
+AH-1033 的短代表任务沿 [公开维护检查与消费同轮双臂](features/skill-consumption.md#ah1033公开维护检查与消费同轮双臂)：从公开维护 Skill 和真实 next.argv 选择精确 owner 的只读 CLI，再实际 use 与读取参考。仅消费或 doctor 就绪不满足这一任务，不另建验证驱动。
+
 full catalog／Default View 的组合读取与 `$` 完整 Members 描述复用均沿用上述地图、原 SDK driver 和安装态 `http-directory`／`dollar` 场景。一个 SDK envelope 的两个 outcome 不能重复计费；去重必须由实际 provider 中的完整正文和来源绑定证明，不能由内部成功、标题或摘要推断。原始正文／Requires、目录身份／入口和失败样本保持完整。
 
 AH-561 的直连请求和跨 Skill 图先走 [request-engine](features/request-engine.md) 与 [skill-dependency-graph](features/skill-dependency-graph.md)，复用 `scripts/verify-skill-graph-contract.mjs` 的离线反例与 fail-before。该入口保存两条根选择提示、私有 oracle/trace 合同、三层缓存边界与五类证据；`contract-valid` 不代表真实模型通过。当前 live/model/helper 使用项目直连引擎和安全请求账本；每次交付必须重新取得真实服务、宿主和安装证据，既有历史回执保持原状。

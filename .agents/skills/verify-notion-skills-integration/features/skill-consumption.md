@@ -556,6 +556,18 @@ AH511 的冷作者只需同一 helper 的 `publicCli.mode: "owned-description-up
 
 该管理模式把完整 native bash 调用逐条与门禁回执核对，并在结束后重算 CLI/原计划/原失败的 SHA。原 Store 是恢复前置，不能冒称空 Store。公共 CLI JSON 与 `--metrics` 另审；父进程 source observer 不覆盖 bash 孙进程，缺少实际 child source trace 时保持 unknown，不能把后台 SDK 的完整 ledger 当作 CLI 全覆盖。普通消费配置没有这个例外，仍要求零执行工具调用。
 
+### AH1033：公开维护检查与消费同轮双臂
+
+复用同一个 `runCandidatePrint`，显式配置 `publicCli.mode: "owned-maintenance-readonly"`。冻结 `managementIntent` 的 path/SHA、唯一原 `operationId`、物理 `target`、`database`、canonical owner 的 `refPrefix`、`sourceId`、候选随包 `entry` 的 path/SHA、四个全新 `stateRoots`、`inputFiles` 和 owned `outputRoot`。intent 必须包含该 owner、库与原 operation；ownershipReceipt 绑定同一页。状态根位于本轮 evidenceRoot，不复用正常 Store 或其他臂；不与 resume/existingState 混用。CLI entry 必须与该候选 runtime manifest 的 bundled CLI 字节及 realpath 相同，不能把二次 bundle 前的输入入口混作实际 `notion_ctl` 的入口。
+
+任务只给公开 `ntn-skills-maintain` 名称、精确目标/原 operation 和自然目的，不能给模型命令答案、oracle 正文、marker 或叶子 ref。新策略从冻结候选包保护该 builtin 的 SKILL.md 和 operations.md；通过正常 `tool_search` 与唯一 `notion_ctl({cli_source})` 取得公开 CLI 前缀。不改默认工具集、packages、MCP、正常 HOME 或安全扩展。模型仍从公开 schema/help 和真实 next.argv 自己选择只读检查。
+
+原 tool_call guard 在执行前只放行目标级 `ctl audit run --target --entry`、原 operation 的 `show/reconcile --target --entry`、同 owner 的 `read --read-only --json --metrics`（可用 `--authoring`）及固定 pin 的 files。公共 help/schema 只显示接口。禁止 audit --all、另一库/owner/operation、resume、apply/adopt/update、shell 组合和私有 Store。显式 audit 预算不得高于公开默认 500 attempts / 64 MiB / 120 秒；模型仍使用原 600000 ms、worker/high，无额外 cap 或重试。
+
+同轮 notion_list 仅使用已冻结的来源，notion_use 与原生资源 read 必须 readOnly:true。opaque sr:C/S/R 的 owner 取当前公开 native Session branch 中的原短引用绑定，核对 canonical identity、物理 page 与 database；不读私有 Store，不凭 token 前缀放行其他 owner。输入派发前核实际候选 read executor 与公开 readOnly schema，避免落入宿主旧 hook 准备路径；不匹配或 guard ledger 不可写即阻断。此前两种 publicCli 作者任务的允许范围保持。
+
+原生 Session、完整工具参数/结果与错误、源请求、provider payload/wire、完整正文与重复抑制继续由同一组观察器留证。独立审阅必须确认 builtin 的实际读取、公开 CLI 前缀与目标 scope、每个 next.argv 的执行或明确只读拒绝、实际 notion_use、两份参考内容、effects 和最终回答。自动 passed 仍只是机械断言，不能用纯消费替代公开维护链；CLI 孙进程的 HTTP 只按其实际 JSON/metrics 计量，未观测保持 unknown。回归加入原 candidate 测试文件，涵盖合法正例、跨 owner/库/operation、写命令、缺 readOnly、外部文件、short-ref 归属与守卫失败。此改动只扩展既有验证驱动的任务范围，不改变产品状态机或有限模型转移，不新增模型或 E2E 框架。
+
 ### AH734：正常管理 Store 的固定 pin 消费
 
 仅显式 `existingState.mode: "normal-management"` 复用正常进程既有的 state/config/cache 三根；`roots` 冻结公开根解析结果，`managementReads` 引用两份已成功的完整固定 pin CLI JSON 的路径与 SHA。默认未配置仍为 fresh；该模式不兼容 resume 或 publicCli，不读取私有 Store 文件、复制 State/凭据、保存远端 snapshot 或把旁路正文注入模型。正常臂与 `-ns` 臂使用同一管理 Store、各自全新 Session 与 Broker 缓存。`NTN_SKILLS_DATA_HOME` 继续指向本轮 owned 目录，只用于本任务禁止的 builtin 安装，不是消费 Store 根。

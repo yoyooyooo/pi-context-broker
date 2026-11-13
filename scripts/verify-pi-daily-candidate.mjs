@@ -292,7 +292,8 @@ export function inspectCandidateExistingReads(sourceState, nativeAudit, text, gu
  * The public CLI owns author decisions, operation identities and Store writes. */
 export function reviewCandidateCliCommand(command, policy) {
   const check = (value, message) => { if (!value) throw new Error(message); };
-  check(['original-create-recovery', 'owned-description-update'].includes(policy?.mode), 'Unknown public CLI task scope');
+  check(['original-create-recovery', 'owned-description-update', 'owned-maintenance-readonly'].includes(policy?.mode), 'Unknown public CLI task scope');
+  const maintenance = policy.mode === 'owned-maintenance-readonly';
   check(typeof command === 'string' && !/[\r\n\0\\]/u.test(command), 'Use one plain public CLI command');
   const text = command.trim(), words = [], token = /\s*(?:'([^']*)'|"([^"$`\\]*)"|([^\s'"\\;&|`<>$()*?\[\]{}!~]+))/uy;
   let at = 0;
@@ -301,7 +302,7 @@ export function reviewCandidateCliCommand(command, policy) {
     check(match && match.index === at && (token.lastIndex === text.length || /\s/u.test(text[token.lastIndex])), 'Shell composition is outside this task');
     words.push(match[1] ?? match[2] ?? match[3]); at = token.lastIndex;
   }
-  check(words[0] === 'node' && words[1] === policy.entry.path, 'Use the exact frozen public Node CLI entry');
+  check((words[0] === 'node' || maintenance && words[0] === policy.nodeExecutable) && words[1] === policy.entry.path, 'Use the exact frozen public Node CLI entry');
   const args = words.slice(2);
   if (args.at(-1) === '--help') {
     check(args.slice(0, -1).every(arg => /^[a-z][a-z-]*$/u.test(arg)), 'Help must contain only a public command path');
@@ -310,6 +311,25 @@ export function reviewCandidateCliCommand(command, policy) {
   if (args[0] === 'schema') {
     check(args.slice(1).every(arg => /^[a-z][a-z-]*$/u.test(arg)), 'Schema inspection must name only a public command path');
     return { kind: 'schema', argv: words };
+  }
+  if (maintenance && args[0] === 'ctl') {
+    const audit = args.slice(0, 3).join(' ') === 'ctl audit run';
+    const operation = args.slice(0, 2).join(' ') === 'ctl operation' && ['show', 'reconcile'].includes(args[2]);
+    check(audit || operation, 'Only a targeted audit or the exact original operation observation is authorized');
+    const flags = new Map(), positional = [];
+    const valued = new Set(['--entry', '--target', ...(audit ? ['--depth', '--max-requests', '--max-bytes', '--duration-ms'] : [])]);
+    for (let index = 3; index < args.length; index++) {
+      const value = args[index];
+      if (!value.startsWith('-')) { positional.push(value); continue; }
+      check(valued.has(value) && !flags.has(value) && typeof args[index + 1] === 'string' && !args[index + 1].startsWith('-'), 'Unknown or repeated maintenance option');
+      flags.set(value, args[++index]);
+    }
+    check(flags.get('--entry') === policy.database && flags.get('--target') === policy.target, 'Keep the exact reviewed owner and library');
+    check(audit ? positional.length === 0 : positional.length === 1 && positional[0] === policy.operationId, 'Observe only the original operation');
+    if (flags.has('--depth')) check(['metadata', 'content', 'history'].includes(flags.get('--depth')), 'Use a public audit depth');
+    for (const [flag, maximum] of [['--max-requests', 500], ['--max-bytes', 67108864], ['--duration-ms', 120000]])
+      if (flags.has(flag)) check(/^[1-9][0-9]*$/u.test(flags.get(flag)) && Number(flags.get(flag)) <= maximum, 'Do not raise the public audit defaults');
+    return { kind: audit ? 'audit' : 'operation-' + args[2], argv: words };
   }
   if (args.slice(0, 3).join(' ') === 'ctl operation show') {
     check(policy.mode === 'original-create-recovery' && args.length === 4 && args[3] === policy.operationId, 'Inspect only the original operation');
@@ -320,11 +340,11 @@ export function reviewCandidateCliCommand(command, policy) {
   const read = args[0] === 'read', files = args[0] === 'files', consumer = read || files;
   const update = policy.mode === 'owned-description-update' && args[0] === 'update';
   if (!consumer && !update) {
-    check(policy.mode === 'original-create-recovery', 'Only the exact description update is authorized');
+    check(policy.mode === 'original-create-recovery', maintenance ? 'Only read-only maintenance commands are authorized' : 'Only the exact description update is authorized');
     check(args.slice(0, 4).join(' ') === 'ctl library create recovery' && ['review', 'apply', 'reconcile'].includes(args[4]), 'Only the original create recovery is authorized');
   }
   const kind = consumer || update ? args[0] : args[4], flags = new Map(), positional = [];
-  const boolean = new Set(read ? ['--json', '--metrics', '--read-only', '--refresh', '--offline'] : files ? ['--metrics', '--offline'] : update || kind === 'apply' ? ['--dry-run'] : []);
+  const boolean = new Set(read ? ['--json', '--metrics', '--read-only', '--refresh', '--offline', ...(maintenance ? ['--authoring'] : [])] : files ? ['--metrics', '--offline'] : update || kind === 'apply' ? ['--dry-run'] : []);
   const valued = new Set(read ? ['--database', '--output', '--path', '--from'] : files ? ['--database', '--path'] : update ? ['--database', '--description'] : ['--entry', '--max-requests', '--max-bytes', '--duration-ms',
     ...(kind === 'apply' ? ['--review', '--review-id'] : ['--target']), ...(kind === 'review' ? ['--output'] : [])]);
   for (let index = consumer || update ? 1 : 5; index < args.length; index++) {
@@ -368,20 +388,93 @@ export function reviewCandidateCliCommand(command, policy) {
   return { kind, dryRun: flags.has('--dry-run'), argv: words };
 }
 
-export function candidateCliGuard(api, { fs, output, policy, review }) {
-  const fd = fs.openSync(output, 'wx', 0o600);
-  const approvedBashCalls = new Set(), publicOutputs = new Set(policy.inputFiles);
-  api.on('tool_call', event => {
+/** Public native history binds opaque handles to the reviewed owner before I/O. */
+export function reviewCandidateMaintenanceTool(tool, input, policy, branch = []) {
+  const check = (value, message) => { if (!value) throw new Error(message); };
+  check(policy.mode === 'owned-maintenance-readonly' && input && typeof input === 'object' && !Array.isArray(input), 'Use the reviewed read-only maintenance task');
+  const fields = allowed => check(Object.keys(input).every(key => allowed.includes(key)), 'Unknown maintenance tool option');
+  const canonical = value => {
+    if (typeof value !== 'string' || !value.startsWith(policy.refPrefix)) return false;
     try {
+      const url = new URL(value), path = decodeURIComponent(url.pathname).slice(1);
+      return url.protocol === 'skill:' && !url.username && !url.password && !url.port && !url.hash
+        && path.length > 0 && !path.includes('\\') && !path.split('/').some(part => !part || part === '.' || part === '..')
+        && [...url.searchParams.keys()].every(key => ['snapshot', 'file_id'].includes(key));
+    } catch { return false; }
+  };
+  const ownerIdentity = identity => identity?.source === 'notion' && identity.id === decodeURIComponent(new URL(policy.refPrefix).hostname)
+    && identity.ref === policy.refPrefix.slice(0, -1) && identity.locator?.page_id === policy.target && identity.locator?.database_id === policy.database;
+  const reference = (value, selectedOnly = false) => {
+    if (!selectedOnly && canonical(value)) return true;
+    if (typeof value !== 'string' || !/^sr:[CSR][A-Za-z0-9_-]{22}$/u.test(value)) return false;
+    const matches = branch.filter(row => row.type === 'custom' && row.customType === 'context-broker-short-ref' && row.data?.version === 1 && row.data.ref === value);
+    if (matches.length !== 1) return false;
+    const target = matches[0].data.target;
+    if (target?.kind === 'candidate') return !selectedOnly && value.startsWith('sr:C') && ownerIdentity(target.identity);
+    if (target?.kind === 'selected') return value.startsWith('sr:S') && ownerIdentity(target.identity) && canonical(target.ref);
+    return !selectedOnly && value.startsWith('sr:R') && target?.kind === 'resource' && canonical(target.ref) && reference(target.owner, true);
+  };
+  if (tool === 'tool_search') {
+    fields(['query', 'limit']);
+    check(typeof input.query === 'string' && input.query.length <= 512 && /notion|ntn-skills/iu.test(input.query), 'Discover only the Notion maintenance capability');
+    check(input.limit === undefined || Number.isSafeInteger(input.limit) && input.limit >= 1 && input.limit <= 8, 'Keep tool discovery bounded');
+  } else if (tool === 'notion_ctl') {
+    fields(['cli_source']); check(input.cli_source === policy.sourceId, 'Discover only the reviewed source CLI');
+  } else if (tool === 'notion_list') {
+    fields(['query', 'source', 'limit', 'cursor']);
+    check(input.source === undefined || input.source === policy.sourceId, 'Keep the reviewed Notion source');
+    check(input.query === undefined || typeof input.query === 'string' && input.query.length <= 512, 'Use a bounded metadata query');
+    check(input.limit === undefined || Number.isSafeInteger(input.limit) && input.limit >= 1 && input.limit <= 100, 'Keep metadata discovery bounded');
+    check(input.cursor === undefined || typeof input.cursor === 'string', 'Use the public metadata cursor');
+  } else if (tool === 'notion_use') {
+    fields(['ref', 'refresh', 'readOnly']);
+    const refs = typeof input.ref === 'string' ? [input.ref] : input.ref;
+    check(input.readOnly === true && Array.isArray(refs) && refs.length > 0 && refs.length <= 64 && refs.every(value => reference(value)), 'Use only the reviewed owner with readOnly:true');
+    check(input.refresh === undefined || typeof input.refresh === 'boolean', 'Use the public refresh option');
+  } else if (tool === 'read') {
+    const batch = Object.hasOwn(input, 'paths'); fields(batch ? ['paths', 'readOnly'] : ['path', 'readOnly', 'offset', 'limit']);
+    const refs = batch ? input.paths : [input.path];
+    check(input.readOnly === true && Array.isArray(refs) && refs.length > 0 && refs.length <= 64 && refs.every(value => reference(value)), 'Read only the reviewed owner with readOnly:true');
+    for (const key of ['offset', 'limit']) check(input[key] === undefined || Number.isSafeInteger(input[key]) && input[key] >= 1, 'Use a public read range');
+  } else throw new Error('This task permits public maintenance discovery and strict owner reads only');
+  return { kind: tool };
+}
+
+export function candidateCliGuard(api, { fs, output, policy, review, maintenanceReview }) {
+  let fd, failure;
+  try { fd = fs.openSync(output, 'wx', 0o600); } catch (error) { failure = error; }
+  const approvedBashCalls = new Set(), publicOutputs = new Set(policy.inputFiles);
+  if (policy.mode === 'owned-maintenance-readonly') api.on('input', () => {
+    try {
+      if (failure) throw failure;
+      const reads = api.getAllTools?.().filter(tool => tool.name === 'read') ?? [];
+      if (reads.length !== 1 || reads[0].sourceInfo?.path !== policy.readExecutorPath
+        || reads[0].parameters?.properties?.readOnly?.type !== 'boolean')
+        throw new Error('The candidate native read executor must enforce readOnly inside tool execution before this task starts.');
+      fs.writeSync(fd, JSON.stringify({ phase: 'maintenance-admission', allowed: true }) + '\n');
+    } catch (error) {
+      failure = error;
+      try { fs.writeSync(fd, JSON.stringify({ phase: 'maintenance-admission', allowed: false, reason: error.message }) + '\n'); } catch {}
+      return { action: 'handled' };
+    }
+  });
+  api.on('tool_call', (event, ctx) => {
+    try {
+      if (failure) throw failure;
       if (event.toolName === 'bash') { review(event.input?.command, policy); approvedBashCalls.add(event.toolCallId); }
-      else if (event.toolName === 'read') {
+      else if (event.toolName === 'read' && (publicOutputs.has(event.input?.path) || policy.mode === 'owned-maintenance-readonly' && policy.builtinFiles?.includes(event.input?.path)
+        || typeof event.input?.path === 'string' && event.input.path.startsWith(policy.outputRoot + '/') && !event.input.path.split('/').includes('..'))) {
+        if (event.input.paths !== undefined) throw new Error('Local artifact reads use one exact path');
+      } else if (policy.mode === 'owned-maintenance-readonly') {
+        maintenanceReview(event.toolName, event.input, policy, ctx?.sessionManager?.getBranch?.() ?? []);
+      } else if (event.toolName === 'read') {
         const value = event.input?.path;
         if (!(publicOutputs.has(value) || typeof value === 'string' && value.startsWith(policy.outputRoot + '/') && !value.split('/').includes('..')))
           throw new Error('Read only the disclosed original artifacts or owned public CLI outputs');
       } else throw new Error('This bounded management task uses only public CLI and artifact reads');
       fs.writeSync(fd, JSON.stringify({ toolCallId: event.toolCallId, toolName: event.toolName, allowed: true }) + '\n');
     } catch (error) {
-      fs.writeSync(fd, JSON.stringify({ toolCallId: event.toolCallId, toolName: event.toolName, allowed: false, reason: error.message }) + '\n');
+      try { fs.writeSync(fd, JSON.stringify({ toolCallId: event.toolCallId, toolName: event.toolName, allowed: false, reason: error.message }) + '\n'); } catch { failure = error; }
       return { block: true, reason: error.message };
     }
   });
@@ -389,10 +482,12 @@ export function candidateCliGuard(api, { fs, output, policy, review }) {
     const path = event.details?.fullOutputPath;
     if (event.toolName !== 'bash' || !approvedBashCalls.has(event.toolCallId) || event.details?.truncation?.truncated !== true
       || typeof path !== 'string' || !/^\/tmp\/pi-bash-[a-f0-9]{16}\.log$/u.test(path)) return;
-    publicOutputs.add(path);
-    fs.writeSync(fd, JSON.stringify({ phase: 'public-cli-output', sourceToolCallId: event.toolCallId, artifactPath: path, allowed: true }) + '\n');
+    try {
+      fs.writeSync(fd, JSON.stringify({ phase: 'public-cli-output', sourceToolCallId: event.toolCallId, artifactPath: path, allowed: true }) + '\n');
+      publicOutputs.add(path);
+    } catch (error) { failure = error; }
   });
-  api.on('session_shutdown', () => { fs.writeSync(fd, JSON.stringify({ complete: true }) + '\n'); fs.closeSync(fd); });
+  api.on('session_shutdown', () => { if (fd !== undefined) { fs.writeSync(fd, JSON.stringify({ complete: !failure }) + '\n'); fs.closeSync(fd); } });
 }
 
 // This is a finite inventory vocabulary for the fixed owned application, not a
@@ -540,7 +635,7 @@ export function containsProof(value, expected) {
   return matches || Object.values(value).some(child => child && typeof child === 'object' && containsProof(child, expected));
 }
 
-export function validateCandidateTurn(turn, { costs, transport, tasks }, { approvedCliCalls = [] } = {}) {
+export function validateCandidateTurn(turn, { costs, transport, tasks }, { approvedCliCalls = [], approvedDiscoveryCalls = [] } = {}) {
   if (turn.toolCallCount !== undefined) {
     assert.ok(Number.isSafeInteger(turn.toolCallCount) && turn.toolCallCount >= 0);
     assert.equal(tasks.filter(event => event.phase === 'tool_call').length, turn.toolCallCount, 'Tool calls differ from this frozen turn intent');
@@ -580,14 +675,19 @@ export function validateCandidateTurn(turn, { costs, transport, tasks }, { appro
     && hash(JSON.stringify(event.ownedProjectInspection.input)) === event.inputSha256);
   const executionCalls = tasks.filter(event => event.phase === 'tool_call' && event.executionTool && !projectInspections.includes(event));
   assert.equal(new Set(approvedCliCalls).size, approvedCliCalls.length);
+  assert.equal(new Set(approvedDiscoveryCalls).size, approvedDiscoveryCalls.length);
+  for (const id of approvedDiscoveryCalls) assert.equal(tasks.filter(event => event.phase === 'tool_call' && event.toolCallId === id
+    && ['tool_search', 'notion_ctl'].includes(event.toolName) && !event.executionTool).length, 1, 'Only guarded metadata discovery is a maintenance read');
   assert.equal(executionCalls.length, approvedCliCalls.length, 'The inspected Skill must not execute unreviewed scripts or binaries');
   assert.ok(executionCalls.every(event => event.toolName === 'bash' && approvedCliCalls.includes(event.toolCallId)));
-  assert.equal(tasks.filter(event => event.phase === 'tool_call' && event.reviewedReadTool !== true && !approvedCliCalls.includes(event.toolCallId)).length, 0, 'An unreviewed tool cannot establish a read-only task');
+  assert.equal(tasks.filter(event => event.phase === 'tool_call' && event.reviewedReadTool !== true && !approvedCliCalls.includes(event.toolCallId)
+    && !approvedDiscoveryCalls.includes(event.toolCallId)).length, 0, 'An unreviewed tool cannot establish a read-only task');
   const final = tasks.filter(event => event.phase === 'assistant_final').at(-1);
   assert.ok(final?.success, 'This exact turn has no successful task answer');
   return { providerRequests: requests.length, lastPayloadSha256: last.payload.sha256, bodyOccurrences: actual.bodies, receiptVerifiedBodies: last.payload.verifiedBodyOccurrences,
     finalSha256: final.sha256, finalBytes: final.bytes, semanticReview: 'required', scriptExecutionToolCalls: executionCalls.length, ownedProjectInspectionToolCalls: projectInspections.length,
-    ...(approvedCliCalls.length ? { authorizedPublicCliToolCalls: approvedCliCalls.length } : {}) };
+    ...(approvedCliCalls.length ? { authorizedPublicCliToolCalls: approvedCliCalls.length } : {}),
+    ...(approvedDiscoveryCalls.length ? { authorizedMaintenanceDiscoveryCalls: approvedDiscoveryCalls.length } : {}) };
 }
 
 /** Input has already passed readProviderTransport's complete ledger validation. */
@@ -971,13 +1071,25 @@ export async function runCandidatePrint(config) {
   const ownership = await identity(config.ownershipReceipt.path);
   assert.equal(ownership.sha256, config.ownershipReceipt.sha256);
   assert.ok((await readFile(ownership.path, 'utf8')).includes(config.database), 'Bind the owned database receipt');
-  const cliPolicy = config.publicCli;
+  const cliPolicy = config.publicCli ? structuredClone(config.publicCli) : undefined;
   const cliProtected = [];
   if (cliPolicy) {
-    assert.ok(['original-create-recovery', 'owned-description-update'].includes(cliPolicy.mode)); assert.ok(!config.resumeFrom);
+    assert.ok(['original-create-recovery', 'owned-description-update', 'owned-maintenance-readonly'].includes(cliPolicy.mode)); assert.ok(!config.resumeFrom);
     if (cliPolicy.mode === 'original-create-recovery') assert.ok(/^skill-create-[0-9a-f]{64}$/u.test(cliPolicy.operationId));
     else {
-      assert.ok(typeof cliPolicy.description === 'string' && cliPolicy.description.trim() && [...cliPolicy.description].length <= 2000);
+      if (cliPolicy.mode === 'owned-description-update') assert.ok(typeof cliPolicy.description === 'string' && cliPolicy.description.trim() && [...cliPolicy.description].length <= 2000);
+      else {
+        assert.equal(config.existingState, undefined); assert.equal(cliPolicy.sourceId, config.sourceId);
+        assert.equal(cliPolicy.nodeExecutable, undefined, 'Use the actual verification Node runtime');
+        cliPolicy.nodeExecutable = process.execPath;
+        assert.equal(cliPolicy.readExecutorPath, undefined);
+        cliPolicy.readExecutorPath = join(config.brokerRoot, 'src/index.ts');
+        assert.ok(typeof cliPolicy.operationId === 'string' && /^[a-z][a-z0-9.-]{1,255}$/u.test(cliPolicy.operationId));
+        assert.ok((await readFile(ownership.path, 'utf8')).includes(cliPolicy.target), 'Bind the exact owned target receipt');
+        assert.equal(cliPolicy.builtinFiles, undefined, 'The maintenance Skill comes from the frozen candidate package');
+        cliPolicy.builtinFiles = ['SKILL.md', 'references/operations.md'].map(path => join(config.brokerRoot, 'dist/builtin-skills/ntn-skills-maintain', path));
+        for (const path of Object.values(cliPolicy.stateRoots)) assert.ok(inside(config.evidenceRoot, path), 'Keep maintenance state inside its owned evidence root');
+      }
       assert.ok(Object.values(cliPolicy.stateRoots).every(isAbsolute));
       for (const path of Object.values(cliPolicy.stateRoots)) assert.equal(await exists(path), false, 'The cold author task needs its own initially empty state roots');
     }
@@ -991,6 +1103,12 @@ export async function runCandidatePrint(config) {
     }
     assert.ok(cliPolicy.inputFiles.includes(intent.path));
     assert.ok(cliPolicy.inputFiles.every(file => cliProtected.some(protectedFile => protectedFile.path === file)));
+    if (cliPolicy.mode === 'owned-maintenance-readonly') {
+      const text = await readFile(intent.path, 'utf8');
+      for (const value of [cliPolicy.target, cliPolicy.database, cliPolicy.operationId]) assert.ok(text.includes(value), 'Freeze the exact read-only maintenance scope');
+      for (const path of cliPolicy.builtinFiles) cliProtected.push(await identity(path));
+      cliProtected.push(await identity(cliPolicy.nodeExecutable));
+    }
     await mkdir(cliPolicy.outputRoot, { recursive: true, mode: 0o700 });
   }
   for (const body of config.expectedBodies ?? []) {
@@ -1000,6 +1118,7 @@ export async function runCandidatePrint(config) {
   const baselineFiles = await Promise.all(['package.json', 'src/index.ts', 'dist/ntn-skills.mjs', 'dist/ntn-skills-sdk.mjs', 'dist/ntn-skills-runtime.json'].map(path => identity(join(config.brokerRoot, path))));
   const runtime = await json(join(config.brokerRoot, 'dist/ntn-skills-runtime.json'));
   assert.equal(runtime.cli_sha256, baselineFiles[2].sha256); assert.equal(runtime.sdk_sha256, baselineFiles[3].sha256);
+  if (cliPolicy?.mode === 'owned-maintenance-readonly') assert.deepEqual(cliProtected[0], baselineFiles[2], 'The discovered maintenance CLI must be this candidate bundled runtime');
   const packageRegistration = await inspectCandidatePackageRegistration(settings.packages, { packageIndex: config.packageIndex ?? 1,
     agentDir: join(homedir(), '.pi/agent'), brokerRoot: config.brokerRoot, brokerEntry: baselineFiles[1] });
   const oldSource = packageRegistration.oldSource;
@@ -1032,7 +1151,7 @@ export async function runCandidatePrint(config) {
   const observedSource = source.sources.find(source => source.id === config.sourceId);
   assert.equal(observedSource.discovery?.maxAge, '5m'); assert.equal(observedSource.activation?.maxAge, '5m');
   assert.equal(observedSource.prefetch, false);
-  await save(join(control, 'source-config.json'), source); await save(join(evidence, 'config.json'), config);
+  await save(join(control, 'source-config.json'), source); await save(join(evidence, 'config.json'), cliPolicy ? { ...config, publicCli: cliPolicy } : config);
   const clockId = randomUUID(), host = await resolveHost('pi');
   const costs = join(control, 'cost.jsonl'), transport = join(control, 'transport.jsonl'), tasks = join(control, 'tasks.jsonl');
   const sourceLedger = join(control, 'source.jsonl'), sdkLedger = join(control, 'sdk.jsonl'), hostOutput = join(control, 'host.json');
@@ -1052,7 +1171,8 @@ export async function runCandidatePrint(config) {
     + JSON.stringify({ entry: baselineFiles[1], cwd: forkBinding.cwd, provider: 'magpie', model: 'group/worker', thinkingLevel: 'high',
       nativeSkillCount: 69, promptSha256: hash(config.prompt) }) + '});\n', { flag: 'wx', mode: 0o600 });
   if (cliPolicy) await writeFile(cliGuard, "import fs from 'node:fs';const review=" + reviewCandidateCliCommand.toString()
-    + ';export default api=>(' + candidateCliGuard.toString() + ')(api,{fs,review,output:' + JSON.stringify(cliGuardLedger)
+    + ';const maintenanceReview=' + reviewCandidateMaintenanceTool.toString()
+    + ';export default api=>(' + candidateCliGuard.toString() + ')(api,{fs,review,maintenanceReview,output:' + JSON.stringify(cliGuardLedger)
     + ',policy:' + JSON.stringify(cliPolicy) + '});\n', { flag: 'wx', mode: 0o600 });
   if (completionBudgetSource) await writeFile(completionBudgetExtension, completionBudgetSource, { flag: 'wx', mode: 0o600 });
   await writeFile(costExtension, consumptionCostExtensionSource({ output: costs, checkoutRoot: root, runId: clockId, sampleId: config.id, clockId }), { flag: 'wx', mode: 0o600 });
@@ -1098,7 +1218,7 @@ export async function runCandidatePrint(config) {
     launch: { cwd, executable: host.file, args: [...host.prefix, ...args], normalHome: true, normalAgentDir: true, normalMcpAndExtensions: true,
       projectPackageOverrideOnly: !packageRegistration.reusesRegisteredBroker,
       ...(packageRegistration.reusesRegisteredBroker ? { registeredBroker: packageRegistration } : {}),
-      nativeSkillDiscovery: config.arm !== 'notion-only', sourceStateStartsEmpty: !stateBinding.sourceState && !previous && (!cliPolicy || cliPolicy.mode === 'owned-description-update'),
+      nativeSkillDiscovery: config.arm !== 'notion-only', sourceStateStartsEmpty: !stateBinding.sourceState && !previous && (!cliPolicy || cliPolicy.mode !== 'original-create-recovery'),
       cliDevRootOverride: null, inheritedCliDevRootOverrideRemoved: Boolean(process.env.NTN_SKILLS_DEV_ROOT),
       ...(completionBudgetSource ? { completionBudget: { maxCompletionTokens: config.maxCompletionTokens, policy: await identity(completionBudgetExtension) } } : {}),
       previous: config.resumeFrom ?? null,
@@ -1109,7 +1229,9 @@ export async function runCandidatePrint(config) {
   if (cliPolicy) result.publicCli = { entry: cliProtected[0], stateRoots: cliPolicy.stateRoots, protectedFiles: cliProtected,
     policy: cliPolicy.mode === 'original-create-recovery'
       ? 'Only the original create recovery and strict reads through the frozen public CLI; no shell composition or private Store API'
-      : 'Only one exact Description update on the original page and strict reads through the frozen public CLI; no other field, shell composition or private Store API',
+      : cliPolicy.mode === 'owned-maintenance-readonly'
+        ? 'Only exact-owner audits, original show/reconcile and strict reads; public builtin and CLI discovery; native owner handles checked against the current branch before I/O'
+        : 'Only one exact Description update on the original page and strict reads through the frozen public CLI; no other field, shell composition or private Store API',
     sourceCoverage: 'The parent source observer does not observe shell grandchildren. Public CLI JSON/metrics and native tool results need a separate audit; missing child source traces remain unknown.' };
   await save(join(evidence, 'started.json'), result);
   const startedNs = process.hrtime.bigint().toString();
@@ -1152,7 +1274,7 @@ export async function runCandidatePrint(config) {
     assert.equal(result.source.complete, true); assert.deepEqual(result.source.errors, []);
     assert.ok(cost.events.at(-1)?.phase === 'observer_end' && cost.events.at(-1).complete);
     assert.ok(task.at(-1)?.phase === 'task_observer_end' && task.at(-1).complete && task.at(-1).errors === 0);
-    const approvedCliCalls = [];
+    const approvedCliCalls = [], approvedDiscoveryCalls = [];
     if (cliPolicy) {
       const guard = await readRows(cliGuardLedger); assert.equal(guard.at(-1)?.complete, true);
       assert.ok(guard.slice(0, -1).every(entry => entry.allowed === true), 'A command escaped the frozen public CLI task');
@@ -1161,8 +1283,10 @@ export async function runCandidatePrint(config) {
         approvedCliCalls.push(call.id); return { toolCallId: call.id, ...command, isError: call.isError };
       });
       for (const call of result.nativeAudit.calls) assert.equal(guard.filter(entry => entry.toolCallId === call.id && entry.allowed).length, 1);
+      if (cliPolicy.mode === 'owned-maintenance-readonly') for (const call of result.nativeAudit.calls)
+        if (['tool_search', 'notion_ctl'].includes(call.name)) approvedDiscoveryCalls.push(call.id);
     }
-    result.assertions = validateCandidateTurn(config, { costs: cost.events, transport: wire, tasks: task }, { approvedCliCalls });
+    result.assertions = validateCandidateTurn(config, { costs: cost.events, transport: wire, tasks: task }, { approvedCliCalls, approvedDiscoveryCalls });
     for (const event of task.filter(event => event.phase === 'provider_payload')) {
       const actual = await identity(event.payloadFile); assert.equal(actual.sha256, event.sha256); assert.equal(actual.bytes, event.bytes);
       if (completionBudgetSource) result.completionBudgetAudit.payloads.push({ ...inspectCandidateCompletionBudget(await json(actual.path)), file: actual });

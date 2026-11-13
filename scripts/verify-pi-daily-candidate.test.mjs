@@ -189,6 +189,125 @@ test('public CLI guard admits only the exact host spill from an approved Bash re
   ]);
 });
 
+const maintenanceCli = { ...publicCli, mode: 'owned-maintenance-readonly', sourceId: 'notion', nodeExecutable: '/frozen/node',
+  builtinFiles: ['/frozen/builtin-skills/ntn-skills-maintain/SKILL.md', '/frozen/builtin-skills/ntn-skills-maintain/references/operations.md'] };
+const maintenanceBranch = () => {
+  const identity = { source: 'notion', id: 'original-owner', ref: 'skill://original-owner',
+    locator: { type: 'shared_skill', page_id: 'original-page', database_id: 'owned-library' } };
+  return [
+    { type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref: 'sr:C' + 'A'.repeat(22), target: { kind: 'candidate', identity } } },
+    { type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref: 'sr:S' + 'A'.repeat(22), target: { kind: 'selected', identity,
+      snapshot_id: 's_' + 'a'.repeat(64), ref: 'skill://original-owner/SKILL.md?snapshot=s_' + 'a'.repeat(64) } } },
+    { type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref: 'sr:R' + 'A'.repeat(22), target: { kind: 'resource',
+      owner: 'sr:S' + 'A'.repeat(22), ref: 'skill://original-owner/references/one.md?snapshot=s_' + 'a'.repeat(64) } } },
+  ];
+};
+
+test('read-only maintenance uses the scoped public audit, original operation and authoring read', () => {
+  for (const command of [
+    cliCommand + ' --help', cliCommand + ' schema ctl audit run',
+    cliCommand + ' ctl audit run --entry owned-library --target original-page --depth history --max-requests 80 --duration-ms 60000 --max-bytes 8388608',
+    cliCommand + ' ctl operation show original-operation --target original-page --entry owned-library',
+    cliCommand + ' ctl operation reconcile original-operation --entry owned-library --target original-page',
+    cliCommand + ' read original-page --database owned-library --authoring --read-only --json --metrics',
+    cliCommand + " read 'skill://original-owner/references/one.md?snapshot=s_" + 'a'.repeat(64) + "' --database owned-library --read-only --json --metrics",
+  ]) assert.ok(reviewCandidateCliCommand(command, maintenanceCli).kind, command);
+  assert.equal(reviewCandidateCliCommand('/frozen/node /frozen/ntn-skills.js --help', maintenanceCli).kind, 'help');
+  assert.throws(() => reviewCandidateCliCommand('/other/node /frozen/ntn-skills.js --help', maintenanceCli));
+  assert.throws(() => reviewCandidateCliCommand('/frozen/node /frozen/ntn-skills.js --help', publicCli));
+});
+
+test('read-only maintenance rejects another owner, library, operation, mutations and unscoped audits', () => {
+  for (const command of [
+    cliCommand + ' ctl audit run --entry another-library --target original-page',
+    cliCommand + ' ctl audit run --entry owned-library --target another-page',
+    cliCommand + ' ctl audit run --entry owned-library --all',
+    cliCommand + ' ctl audit run --entry owned-library --target original-page --max-requests 501',
+    cliCommand + ' ctl operation show another-operation --target original-page --entry owned-library',
+    cliCommand + ' ctl operation reconcile original-operation --target another-page --entry owned-library',
+    cliCommand + ' ctl operation resume original-operation --target original-page --entry owned-library',
+    cliCommand + ' read original-page --database owned-library --authoring --json --metrics',
+    cliCommand + ' read another-page --database owned-library --read-only --json --metrics',
+    cliCommand + ' update original-page --database owned-library --enabled true',
+    cliCommand + ' adopt original-page --database owned-library',
+    cliCommand + ' apply original-page --database owned-library --input /tmp/tree',
+    cliCommand + ' --help; node /private/store.js',
+  ]) assert.throws(() => reviewCandidateCliCommand(command, maintenanceCli), command);
+});
+
+test('maintenance guard admits builtin discovery, exact CLI metadata and current owner short refs', () => {
+  const handlers = new Map(), records = [], branch = maintenanceBranch();
+  candidateCliGuard({ on(name, fn) { handlers.set(name, fn); } }, { fs: { openSync: () => 1, writeSync: (_fd, text) => records.push(JSON.parse(text)), closeSync() {} },
+    output: '/evidence/guard.jsonl', policy: maintenanceCli, review: reviewCandidateCliCommand, maintenanceReview: candidate.reviewCandidateMaintenanceTool });
+  const ctx = { sessionManager: { getBranch: () => branch } };
+  const calls = [
+    ['read', { path: maintenanceCli.builtinFiles[0] }],
+    ['tool_search', { query: 'Notion management CLI source', limit: 1 }],
+    ['notion_ctl', { cli_source: 'notion' }],
+    ['notion_list', { query: 'owned fixture', source: 'notion', limit: 1 }],
+    ['notion_use', { ref: branch[0].data.ref, readOnly: true }],
+    ['read', { path: branch[2].data.ref, readOnly: true }],
+    ['read', { paths: [branch[2].data.ref], readOnly: true }],
+    ['read', { path: 'skill://original-owner/references/one.md', readOnly: true }],
+  ];
+  for (const [toolName, input] of calls) assert.equal(handlers.get('tool_call')({ toolName, toolCallId: 'call-' + records.length, input }, ctx), undefined);
+  handlers.get('session_shutdown')({});
+  assert.ok(records.every(row => row.allowed === true || row.complete === true));
+});
+
+test('maintenance guard fails before I/O for foreign handles, no readOnly, unrelated files or tools', () => {
+  const handlers = new Map(), records = [], branch = maintenanceBranch();
+  candidateCliGuard({ on(name, fn) { handlers.set(name, fn); } }, { fs: { openSync: () => 1, writeSync: (_fd, text) => records.push(JSON.parse(text)), closeSync() {} },
+    output: '/evidence/guard.jsonl', policy: maintenanceCli, review: reviewCandidateCliCommand, maintenanceReview: candidate.reviewCandidateMaintenanceTool });
+  const ctx = { sessionManager: { getBranch: () => branch } };
+  for (const [toolName, input] of [
+    ['read', { path: '/unrelated/secret', readOnly: true }],
+    ['read', { path: 'skill://another-owner/SKILL.md', readOnly: true }],
+    ['read', { path: branch[2].data.ref }],
+    ['notion_use', { ref: branch[0].data.ref, readOnly: false }],
+    ['notion_use', { ref: 'sr:C' + 'B'.repeat(22), readOnly: true }],
+    ['notion_ctl', { cli_source: 'another-source' }],
+    ['notion_ctl', { refs: [] }],
+    ['notion_list', { source: 'another-source' }],
+    ['tool_search', { query: 'send email' }],
+    ['write', { path: '/evidence/new-file', content: 'not authorized' }],
+  ]) assert.equal(handlers.get('tool_call')({ toolName, toolCallId: 'blocked-' + records.length, input }, ctx)?.block, true);
+  branch[1].data.target.identity = { ...branch[1].data.target.identity, locator: { page_id: 'another-page', database_id: 'owned-library' } };
+  assert.equal(handlers.get('tool_call')({ toolName: 'read', toolCallId: 'foreign-resource', input: { path: branch[2].data.ref, readOnly: true } }, ctx)?.block, true);
+  handlers.get('session_shutdown')({});
+});
+
+test('maintenance policy survives serialization without product-module or private Store access', () => {
+  const review = new Function('return (' + candidate.reviewCandidateMaintenanceTool.toString() + ')')();
+  assert.ok(review('notion_use', { ref: maintenanceBranch()[0].data.ref, readOnly: true }, maintenanceCli, maintenanceBranch()));
+  assert.throws(() => review('notion_use', { ref: maintenanceBranch()[0].data.ref, readOnly: true }, maintenanceCli, []));
+});
+
+test('maintenance builtin allowance does not broaden original author guards', () => {
+  const handlers = new Map();
+  candidateCliGuard({ on(name, fn) { handlers.set(name, fn); } }, { fs: { openSync: () => 1, writeSync() {}, closeSync() {} },
+    output: '/evidence/guard.jsonl', policy: { ...publicCli, builtinFiles: maintenanceCli.builtinFiles }, review: reviewCandidateCliCommand });
+  assert.equal(handlers.get('tool_call')({ toolName: 'read', toolCallId: 'outside-old-task', input: { path: maintenanceCli.builtinFiles[0] } })?.block, true);
+});
+
+test('maintenance starts only with the actual candidate native read executor and fails closed on ledger errors', () => {
+  const policy = { ...maintenanceCli, readExecutorPath: '/frozen/broker/src/index.ts' };
+  const create = (tools, failOpen = false) => {
+    const handlers = new Map(), rows = [];
+    candidateCliGuard({ on(name, fn) { handlers.set(name, fn); }, getAllTools: () => tools }, {
+      fs: { openSync() { if (failOpen) throw new Error('ledger unavailable'); return 1; }, writeSync(_fd, text) { rows.push(JSON.parse(text)); }, closeSync() {} },
+      output: '/evidence/guard.jsonl', policy, review: reviewCandidateCliCommand, maintenanceReview: candidate.reviewCandidateMaintenanceTool });
+    return { handlers, rows };
+  };
+  const read = { name: 'read', sourceInfo: { path: policy.readExecutorPath }, parameters: { properties: { readOnly: { type: 'boolean' } } } };
+  const good = create([read]); assert.equal(good.handlers.get('input')({}), undefined);
+  assert.deepEqual(good.rows, [{ phase: 'maintenance-admission', allowed: true }]);
+  for (const item of [create([]), create([{ ...read, sourceInfo: { path: '/other/read.ts' } }]), create([read], true)]) {
+    assert.deepEqual(item.handlers.get('input')({}), { action: 'handled' });
+    assert.equal(item.handlers.get('tool_call')({ toolName: 'bash', toolCallId: 'blocked', input: { command: cliCommand + ' --help' } })?.block, true);
+  }
+});
+
 test('exact body counts exclude tool definitions, details, and call arguments, reject partials, and detect duplicates', () => {
   const payload = { tools: [{ description: body }], messages: [{ role: 'assistant', tool_calls: [{ arguments: body }], details: { body } }, { role: 'tool', content: body }] };
   assert.equal(candidatePayloadBodies(payload, [file])[0].occurrences, 1);
@@ -244,6 +363,17 @@ test('a positive verdict binds full body, receipt, final answer, and the actual 
   assert.throws(() => validateCandidateTurn({ ...turn, requireUse: true }, stale), /notion_use/u);
   assert.equal(validateCandidateTurn({ ...turn, toolCallCount: 0 }, observed()).semanticReview, 'required');
   assert.throws(() => validateCandidateTurn({ ...turn, toolCallCount: 0 }, stale), /frozen turn intent/u);
+});
+
+test('only pre-dispatch guarded discovery receives the maintenance read exception', () => {
+  const value = observed();
+  value.tasks.push({ phase: 'tool_call', toolName: 'notion_ctl', toolCallId: 'cli-scope', executionTool: false, reviewedReadTool: false });
+  assert.throws(() => validateCandidateTurn({}, value));
+  assert.equal(validateCandidateTurn({}, value, { approvedDiscoveryCalls: ['cli-scope'] }).authorizedMaintenanceDiscoveryCalls, 1);
+  value.tasks.at(-1).toolName = 'edit';
+  assert.throws(() => validateCandidateTurn({}, value, { approvedDiscoveryCalls: ['cli-scope'] }));
+  value.tasks.at(-1).toolName = 'bash'; value.tasks.at(-1).executionTool = true;
+  assert.throws(() => validateCandidateTurn({}, value, { approvedDiscoveryCalls: ['cli-scope'] }));
 });
 
 test('normal-host transport retains unknown other requests without mistaking them for incomplete model work', () => {
