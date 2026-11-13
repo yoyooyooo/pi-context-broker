@@ -308,6 +308,123 @@ test('maintenance starts only with the actual candidate native read executor and
   }
 });
 
+function maintenancePayloadFixture() {
+  const owner = 'shared_skill:owned-library:owned-skill', scope = 'a'.repeat(64), snapshot = 's_' + 'b'.repeat(64), version = 'c'.repeat(64);
+  const expectedBodies = ['Main complete authored body.', 'First complete reference.', 'Second complete reference.'].map((text, index) => {
+    const path = ['SKILL.md', 'guides/one.md', 'references/two.md'][index], file_id = 'file-' + String(index + 1).repeat(64);
+    return { path: '/oracle/' + path, text, sha256: sha(text), bytes: Buffer.byteLength(text), binding: { owner, scope,
+      snapshot_id: snapshot, version_id: version, path, file_id, ref: 'skill://' + encodeURIComponent(owner) + '/' + path + '?snapshot=' + snapshot + '&file_id=' + file_id } };
+  });
+  const config = { requireUse: true, expectedBodies, bodies: expectedBodies.map(body => ({ sha256: body.sha256, occurrences: 1 })),
+    publicCli: { ...maintenanceCli, refPrefix: 'skill://' + encodeURIComponent(owner) + '/', bodyCountScope: 'broker-plus-unchanged-cli' },
+    proofs: [{ binding: { record: { id: owner }, snapshot_id: snapshot } }, ...expectedBodies.slice(1).map(body => ({ scope, snapshot_id: snapshot, file_id: body.binding.file_id, sha256: body.sha256 }))] };
+  const nativeMessages = [], calls = [], tasks = [], guard = [], messages = [];
+  const add = (id, name, args, content, details = {}) => {
+    const parts = typeof content === 'string' ? [{ type: 'text', text: content }] : content;
+    const text = parts.map(part => part.text).join('\n');
+    nativeMessages.push({ type: 'message', message: { role: 'toolResult', toolCallId: id, toolName: name, content: parts, details, isError: false } });
+    calls.push({ id, name, arguments: args, resultSha256: sha(JSON.stringify(parts)), isError: false });
+    messages.push({ role: 'assistant', content: null, tool_calls: [{ id, type: 'function', function: { name, arguments: JSON.stringify(args) } }] },
+      { role: 'tool', tool_call_id: id, content: text });
+    tasks.push({ phase: 'tool_call', toolCallId: id, toolName: name, executionTool: name === 'bash', reviewedReadTool: name !== 'bash' },
+      { phase: 'tool_result', toolCallId: id, toolName: name, isError: false });
+    const proofs = Object.fromEntries(Object.entries(details).filter(([key]) => key.startsWith('contextBroker')));
+    if (Object.keys(proofs).length) tasks.push({ phase: 'receipt', toolCallId: id, toolName: name, content: { sha256: sha(text), bytes: Buffer.byteLength(text) }, proofs });
+    guard.push({ toolCallId: id, toolName: name, allowed: true });
+  };
+  const body = expectedBodies[0], ref = 'sr:S' + 'A'.repeat(22);
+  const record = { id: owner, kind: 'skill', locator: { type: 'shared_skill', page_id: config.publicCli.target, database_id: config.publicCli.database } };
+  const binding = { record, scope, snapshot_id: snapshot, version_id: version, body_sha256: body.sha256, ref: body.binding.ref };
+  const content = JSON.stringify({ ok: true, status: 'ready', purpose: 'use', roots: [ref], records: [{ name: 'Owned', kind: 'skill', ref, content: body.text }] });
+  const encoded = JSON.stringify(body.text).slice(1, -1), start = content.indexOf('"content":' + JSON.stringify(body.text)) + '"content":"'.length;
+  const delivery = { start, end: start + encoded.length, encoding: 'json' }, identity = JSON.stringify(['notion', scope, 'skill', 'shared_skill', owner]);
+  add('use-main', 'notion_use', { ref, readOnly: true }, content, { contextBrokerPreparation: { version: 2, toolCallId: 'use-main', purpose: 'use', graphs: [{}],
+    records: [{ version: 2, identity, binding, snapshotId: snapshot, bodySha256: body.sha256, bytes: body.bytes, loaded: true, delivery }],
+    projection: { version: 1, compiler: 'context-broker/skill-prepare/v1', sourceProjection: 'source-identity/v1', rendered: { sha256: sha(content), bytes: Buffer.byteLength(content) },
+      records: [{ index: 0, ref, source: { identity, sha256: body.sha256, bytes: body.bytes }, rendered: { sha256: sha(encoded), bytes: Buffer.byteLength(encoded) }, delivery, state: 'source' }] } } });
+  const effects = { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] };
+  for (const [index, body] of expectedBodies.slice(1).entries()) {
+    const id = 'reference-' + index, b = body.binding;
+    add(id, 'read', { path: b.ref, readOnly: true }, [{ type: 'text', text: body.text }, { type: 'text', text: '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>' }],
+      { effects, contextBrokerResource: { version: 2, toolCallId: id, id: owner, scope, snapshot_id: snapshot, version_id: version,
+        ref: b.ref, path: b.path, file_id: b.file_id, sha256: body.sha256, bytes: body.bytes, loaded: false, delivered_complete_text: true,
+        delivery: { start: 0, end: body.text.length, encoding: 'raw' } } });
+  }
+  add('cli-read', 'bash', { command: cliCommand + ' read original-page --database owned-library --read-only --json --metrics' },
+    JSON.stringify({ main: expectedBodies[0].text, reference: expectedBodies[1].text }));
+  return { config, payload: { model: 'group/worker', messages }, nativeAudit: { calls }, nativeMessages, tasks, guard,
+    approvedCliCalls: ['cli-read'], add,
+    inspect() { return candidate.inspectCandidateMaintenancePayload(this.config, { payload: this.payload, nativeAudit: this.nativeAudit,
+      nativeText: this.nativeMessages.map(row => JSON.stringify(row)).join('\n') + '\n', tasks: this.tasks, guard: this.guard, approvedCliCalls: this.approvedCliCalls }); } };
+}
+
+test('maintenance counts immutable CLI originals separately from exact Broker receipts', () => {
+  const fixture = maintenancePayloadFixture(), result = fixture.inspect();
+  assert.deepEqual(result.bodies.map(body => [body.total, body.broker, body.cli]), [[2, 1, 1], [2, 1, 1], [1, 1, 0]]);
+  assert.deepEqual(result.cliResults.map(result => result.toolCallId), ['cli-read']);
+  assert.equal(result.payloadSha256, sha(JSON.stringify(fixture.payload)));
+  const original = fixture.payload.messages.find(message => message.tool_call_id === 'cli-read').content;
+  assert.equal(original, fixture.nativeMessages.at(-1).message.content[0].text, 'Observation does not rewrite CLI results');
+  const value = observed(), counts = candidate.candidatePayloadBodies(fixture.payload, fixture.config.expectedBodies);
+  value.costs[0].payload.verifiedBodyOccurrences = counts;
+  value.tasks[0].bodies = counts; value.tasks.push(...fixture.tasks);
+  result.payloadSha256 = 'payload';
+  const checked = validateCandidateTurn(fixture.config, value, { approvedCliCalls: fixture.approvedCliCalls, maintenanceBodies: result });
+  assert.equal(checked.maintenanceBodyAccounting.scope, 'broker-plus-unchanged-cli');
+  assert.throws(() => validateCandidateTurn({ ...fixture.config, publicCli: undefined }, value, { approvedCliCalls: fixture.approvedCliCalls, maintenanceBodies: result }), /count|occurrence|strictEqual|outside/iu);
+});
+
+test('maintenance accounting rejects missing receipts, duplicate Broker bodies and forged or changed CLI origins', () => {
+  for (const mutate of [
+    value => { value.tasks = value.tasks.filter(row => row.phase !== 'receipt' || row.toolCallId !== 'reference-0'); },
+    value => { value.payload.messages.push({ role: 'user', content: value.config.expectedBodies[0].text }); },
+    value => { value.payload.messages.push(structuredClone(value.payload.messages.find(row => row.tool_call_id === 'use-main'))); },
+    value => { const original = value.nativeMessages.find(row => row.message.toolCallId === 'use-main').message, details = structuredClone(original.details);
+      details.contextBrokerPreparation.toolCallId = 'use-again'; value.add('use-again', 'notion_use', { ref: 'sr:S' + 'A'.repeat(22), readOnly: true }, original.content, details); },
+    value => { value.payload.messages = value.payload.messages.filter(row => row.tool_call_id !== 'use-main'); },
+    value => { value.payload.messages.find(row => row.tool_call_id === 'cli-read').tool_call_id = 'unobserved-cli'; },
+    value => { value.payload.messages.find(row => row.tool_call_id === 'cli-read').content += '\nchanged'; },
+    value => { value.payload.messages = value.payload.messages.filter(row => row.tool_call_id !== 'cli-read'); },
+    value => { value.approvedCliCalls = []; },
+    value => { value.payload.messages.find(row => row.tool_calls?.[0].id === 'cli-read').tool_calls[0].function.arguments = '{}'; },
+    value => { value.tasks.find(row => row.phase === 'receipt' && row.toolCallId === 'reference-0').proofs.contextBrokerResource.file_id = 'foreign'; },
+    value => { value.tasks.find(row => row.phase === 'receipt' && row.toolCallId === 'reference-0').proofs.contextBrokerResource.delivery.end--; },
+    value => { value.tasks.find(row => row.phase === 'receipt' && row.toolCallId === 'reference-0').proofs.contextBrokerResource.delivery.end += 0.5; },
+    value => { value.config.bodies = []; },
+    value => { value.config.bodies[0].receiptRequired = false; },
+    value => { value.config.publicCli.mode = 'owned-description-update'; },
+    value => { value.payload.input = value.payload.messages; delete value.payload.messages; },
+  ]) { const value = maintenancePayloadFixture(); mutate(value); assert.throws(() => value.inspect()); }
+});
+
+test('only a guard-registered exact CLI spill read can explain additional body copies', () => {
+  const value = maintenancePayloadFixture(), path = '/tmp/pi-bash-' + '1'.repeat(16) + '.log';
+  Object.assign(value.nativeMessages.at(-1).message.details, { fullOutputPath: path, truncation: { truncated: true } });
+  value.guard.push({ phase: 'public-cli-output', sourceToolCallId: 'cli-read', artifactPath: path, allowed: true });
+  value.add('spill-read', 'read', { path }, value.config.expectedBodies[2].text);
+  assert.deepEqual(value.inspect().bodies.map(body => [body.total, body.broker, body.cli]), [[2, 1, 1], [2, 1, 1], [2, 1, 1]]);
+  value.guard.find(row => row.phase === 'public-cli-output').sourceToolCallId = 'foreign';
+  assert.throws(() => value.inspect());
+});
+
+test('maintenance resource batches bind every complete span to its frozen file and owner', () => {
+  const value = maintenancePayloadFixture(), removed = new Set(['reference-0', 'reference-1']);
+  for (const array of [value.nativeMessages, value.nativeAudit.calls, value.tasks, value.guard, value.payload.messages])
+    array.splice(0, array.length, ...array.filter(row => !removed.has(row.message?.toolCallId ?? row.toolCallId ?? row.id ?? row.tool_call_id ?? row.tool_calls?.[0].id)));
+  const bodies = value.config.expectedBodies.slice(1), files = bodies.map((body, index) => ({ kind: 'text', ref: 'sr:R' + String(index + 1).repeat(22), path: body.binding.path, content: body.text }));
+  const content = JSON.stringify({ status: 'ready', files });
+  const proof = { version: 2, toolCallId: 'ref-batch', loaded: false,
+    selection: { owner: bodies[0].binding.owner, scope: bodies[0].binding.scope, snapshot_id: bodies[0].binding.snapshot_id, version_id: bodies[0].binding.version_id },
+    files: bodies.map((body, index) => {
+      const encoded = JSON.stringify(body.text).slice(1, -1), start = content.indexOf('"content":' + JSON.stringify(body.text)) + '"content":"'.length;
+      return { index, path: body.binding.path, ref: body.binding.ref, model_ref: files[index].ref, file_id: body.binding.file_id, sha256: body.sha256, bytes: body.bytes,
+        loaded: false, delivered_complete_text: true, state: 'source', encoding: 'utf8', delivery: { start, end: start + encoded.length, encoding: 'json' } };
+    }), projection: { version: 1, compiler: 'context-broker/resource-read/v1', rendered: { sha256: sha(content), bytes: Buffer.byteLength(content) } } };
+  value.add('ref-batch', 'read', { paths: bodies.map(body => body.binding.ref), readOnly: true }, content, { contextBrokerResource: proof });
+  assert.deepEqual(value.inspect().bodies.map(body => [body.total, body.broker, body.cli]), [[2, 1, 1], [2, 1, 1], [1, 1, 0]]);
+  proof.selection.snapshot_id = 's_' + 'f'.repeat(64); assert.throws(() => value.inspect());
+});
+
 test('exact body counts exclude tool definitions, details, and call arguments, reject partials, and detect duplicates', () => {
   const payload = { tools: [{ description: body }], messages: [{ role: 'assistant', tool_calls: [{ arguments: body }], details: { body } }, { role: 'tool', content: body }] };
   assert.equal(candidatePayloadBodies(payload, [file])[0].occurrences, 1);

@@ -15,6 +15,7 @@ import { observeGraphSdk } from './notion-skill-graph-model-evidence.mjs';
 import { observeOwnedObjectReads } from './notion-sdk-pi.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { createOwnedGraphProject, retainGeneratedPlan } from './notion-skill-graph-project.mjs';
+import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -635,7 +636,153 @@ export function containsProof(value, expected) {
   return matches || Object.values(value).some(child => child && typeof child === 'object' && containsProof(child, expected));
 }
 
-export function validateCandidateTurn(turn, { costs, transport, tasks }, { approvedCliCalls = [], approvedDiscoveryCalls = [] } = {}) {
+export function candidateMaintenanceBodyContract(config) {
+  const policy = config.publicCli;
+  assert.equal(policy?.mode, 'owned-maintenance-readonly'); assert.equal(policy.bodyCountScope, 'broker-plus-unchanged-cli');
+  assert.equal(config.requireUse, true); assert.equal(config.expectedBodies?.length, 3); assert.equal(config.bodies?.length, 3);
+  assert.ok(Array.isArray(config.proofs) && config.proofs.length >= 3 && config.proofs.every(proof => proof && Object.keys(proof).length));
+  assert.equal(new Set(config.bodies.map(body => body.sha256)).size, 3);
+  assert.equal(new Set(config.expectedBodies.map(body => body.sha256)).size, 3);
+  for (const body of config.expectedBodies) {
+    const expected = config.bodies.find(item => item.sha256 === body.sha256), binding = body.binding;
+    assert.ok(expected && digest(body.sha256) && Number.isSafeInteger(body.bytes) && body.bytes > 0);
+    assert.equal(expected.occurrences, 1); assert.notEqual(expected.receiptRequired, false);
+    assert.equal(binding?.owner, decodeURIComponent(new URL(policy.refPrefix).hostname));
+    assert.ok(digest(binding.scope) && /^s_[a-f0-9]{64}$/u.test(binding.snapshot_id) && digest(binding.version_id));
+    assert.ok(/^file-[a-f0-9]{64}$/u.test(binding.file_id));
+    const ref = new URL(binding.ref);
+    assert.equal(ref.protocol, 'skill:'); assert.equal(decodeURIComponent(ref.hostname), binding.owner);
+    assert.equal(ref.username, ''); assert.equal(ref.password, ''); assert.equal(ref.port, '');
+    assert.equal(decodeURIComponent(ref.pathname.slice(1)), binding.path);
+    assert.equal(ref.searchParams.get('snapshot'), binding.snapshot_id); assert.equal(ref.searchParams.get('file_id'), binding.file_id);
+    assert.equal([...ref.searchParams].length, 2); assert.equal(ref.hash, '');
+  }
+  assert.equal(config.expectedBodies.filter(body => body.binding.path === 'SKILL.md').length, 1);
+  for (const key of ['path', 'file_id', 'ref']) assert.equal(new Set(config.expectedBodies.map(body => body.binding[key])).size, 3);
+  for (const key of ['owner', 'scope', 'snapshot_id', 'version_id']) assert.equal(new Set(config.expectedBodies.map(body => body.binding[key])).size, 1);
+  return config.expectedBodies;
+}
+
+/** This task uses worker's actual OpenAI messages format. Unknown mappings fail;
+ * untrusted CLI results remain byte-for-byte present, never projected away. */
+export function inspectCandidateMaintenancePayload(config, { payload, nativeAudit, nativeText, tasks, guard, approvedCliCalls }) {
+  const bodies = candidateMaintenanceBodyContract(config), policy = config.publicCli;
+  for (const body of bodies) { assert.equal(hash(body.text), body.sha256); assert.equal(Buffer.byteLength(body.text), body.bytes); }
+  assert.equal(payload.model, 'group/worker'); assert.ok(Array.isArray(payload.messages));
+  assert.equal(payload.input, undefined); assert.equal(payload.contents, undefined);
+  const originals = nativeText.trimEnd().split('\n').map(JSON.parse).filter(row => row.type === 'message' && row.message.role === 'toolResult').map(row => row.message);
+  const native = new Map(), provider = new Map(), cli = new Set(approvedCliCalls), cliResults = [], brokerResults = [];
+  const text = message => { assert.ok(Array.isArray(message.content) && message.content.every(part => part.type === 'text' && typeof part.text === 'string'));
+    return message.content.map(part => part.text).join('\n'); };
+  for (const call of nativeAudit.calls) {
+    const matched = originals.filter(message => message.toolCallId === call.id);
+    assert.equal(matched.length, 1); assert.equal(matched[0].toolName, call.name); assert.equal(hash(JSON.stringify(matched[0].content)), call.resultSha256);
+    native.set(call.id, { call, message: matched[0] });
+  }
+  for (const id of cli) assert.equal(native.get(id)?.call.name, 'bash');
+  for (const row of guard.filter(row => row.phase === 'public-cli-output' && row.allowed)) {
+    const source = native.get(row.sourceToolCallId);
+    assert.ok(cli.has(row.sourceToolCallId) && source?.message.details?.truncation?.truncated === true);
+    assert.equal(source.message.details.fullOutputPath, row.artifactPath);
+    for (const call of nativeAudit.calls.filter(call => call.name === 'read' && call.arguments.path === row.artifactPath)) {
+      assert.equal(guard.filter(row => row.toolCallId === call.id && row.allowed).length, 1); cli.add(call.id);
+    }
+  }
+  for (const message of payload.messages.filter(message => message.role === 'tool')) {
+    const id = message.tool_call_id;
+    assert.ok(typeof id === 'string' && native.has(id) && !provider.has(id), 'Provider tool result must map once to the exact native toolCallId');
+    assert.equal(typeof message.content, 'string', 'Unknown worker tool-result content encoding'); provider.set(id, message);
+  }
+  const cliCounts = new Map(bodies.map(body => [body.sha256, 0])), brokerCounts = new Map(cliCounts);
+  for (const id of cli) {
+    const original = native.get(id), message = provider.get(id);
+    assert.ok(original && message, 'Every approved CLI result must remain in the provider request');
+    const calls = payload.messages.filter(message => message.role === 'assistant').flatMap(message => message.tool_calls ?? []).filter(call => call.id === id);
+    assert.equal(calls.length, 1); assert.equal(calls[0].type, 'function'); assert.equal(calls[0].function.name, original.call.name);
+    assert.deepEqual(JSON.parse(calls[0].function.arguments), original.call.arguments, 'The provider CLI call must retain its original arguments');
+    assert.equal(message.content, text(original.message), 'The complete original CLI output must remain unchanged');
+    const counts = candidatePayloadBodies({ messages: [message] }, bodies);
+    for (const body of counts) cliCounts.set(body.sha256, cliCounts.get(body.sha256) + body.occurrences);
+    cliResults.push({ toolCallId: id, toolName: original.call.name, contentSha256: hash(message.content), bytes: Buffer.byteLength(message.content), bodies: counts });
+  }
+  const bind = (body, value) => {
+    const expected = body.binding;
+    for (const [key, actual] of Object.entries(value)) assert.equal(actual, expected[key], 'The complete body must retain its frozen ' + key);
+  };
+  for (const [id, message] of provider) {
+    if (cli.has(id)) continue;
+    const counts = candidatePayloadBodies({ messages: [message] }, bodies);
+    if (counts.every(body => body.occurrences === 0)) continue;
+    const original = native.get(id); assert.ok(['notion_use', 'read'].includes(original.call.name) && !original.message.isError);
+    const matches = tasks.filter(event => event.phase === 'receipt' && event.toolCallId === id && event.toolName === original.call.name
+      && event.content.sha256 === hash(message.content) && event.content.bytes === Buffer.byteLength(message.content));
+    const proofs = [...new Map(matches.map(event => [JSON.stringify(event.proofs), event.proofs])).values()];
+    assert.equal(proofs.length, 1, 'The actual provider text needs one same-call observed Broker receipt');
+    const local = new Map(bodies.map(body => [body.sha256, 0]));
+    const span = delivery => {
+      assert.ok(Number.isSafeInteger(delivery?.start) && Number.isSafeInteger(delivery.end) && delivery.start >= 0
+        && delivery.end > delivery.start && delivery.end <= message.content.length, 'A delivery needs its actual complete text span');
+      return message.content.slice(delivery.start, delivery.end);
+    };
+    const full = (value, expectedHash, expectedBytes) => {
+      const body = bodies.find(body => body.sha256 === expectedHash);
+      assert.ok(body, 'Only the three frozen complete bodies belong to this task');
+      assert.equal(value, body.text); assert.equal(Buffer.byteLength(value), expectedBytes); assert.equal(expectedBytes, body.bytes);
+      local.set(body.sha256, local.get(body.sha256) + 1); return body;
+    };
+    const main = (value, receipt) => {
+      const body = full(value, receipt.bodySha256, receipt.bytes), binding = receipt.binding;
+      assert.equal(body.binding.path, 'SKILL.md'); assert.equal(binding.record.locator.page_id, policy.target); assert.equal(binding.record.locator.database_id, policy.database);
+      bind(body, { owner: binding.record.id, scope: binding.scope, snapshot_id: binding.snapshot_id, version_id: binding.version_id, ref: binding.ref });
+      assert.equal(binding.body_sha256, body.sha256);
+    };
+    if (original.call.name === 'notion_use') {
+      const verified = verifyPreparationEvidence(message.content, proofs[0].contextBrokerPreparation, id);
+      assert.equal(verified.model.purpose, 'use');
+      for (const record of verified.records.filter(record => record.mapping.state === 'source')) main(record.decodedContent, record.receipt);
+    } else if (proofs[0].contextBrokerRead) {
+      const proof = proofs[0].contextBrokerRead;
+      assert.equal(proof.version, 3); assert.equal(proof.toolCallId, id); assert.notEqual(proof.loaded, false);
+      assert.equal(proof.delivery.start, 0); assert.equal(proof.delivery.encoding, 'raw');
+      main(span(proof.delivery), proof);
+    } else {
+      const proof = proofs[0].contextBrokerResource;
+      assert.equal(proof?.version, 2); assert.equal(proof.toolCallId, id); assert.equal(proof.loaded, false);
+      if (Array.isArray(proof.files)) {
+        const model = JSON.parse(message.content), projection = proof.projection;
+        assert.equal(projection.version, 1); assert.equal(projection.compiler, 'context-broker/resource-read/v1');
+        assert.equal(projection.rendered.sha256, hash(message.content)); assert.equal(projection.rendered.bytes, Buffer.byteLength(message.content));
+        assert.equal(model.status, 'ready'); assert.equal(model.files.length, proof.files.length);
+        for (const [index, file] of proof.files.entries()) assert.equal(file.index, index);
+        for (const file of proof.files.filter(file => file.state === 'source' && file.delivered_complete_text === true)) {
+          const rendered = model.files[file.index]; assert.equal(rendered.kind, 'text'); assert.equal(rendered.ref, file.model_ref); assert.equal(rendered.path, file.path);
+          assert.equal(file.loaded, false); assert.equal(file.encoding, 'utf8');
+          assert.equal(file.delivery.encoding, 'json'); assert.equal(span(file.delivery), JSON.stringify(rendered.content).slice(1, -1));
+          const body = full(rendered.content, file.sha256, file.bytes);
+          bind(body, { owner: proof.selection.owner, scope: proof.selection.scope, snapshot_id: proof.selection.snapshot_id, version_id: proof.selection.version_id,
+            path: file.path, file_id: file.file_id, ref: file.ref });
+        }
+      } else {
+        assert.equal(proof.delivered_complete_text, true); assert.equal(proof.delivery.start, 0); assert.equal(proof.delivery.encoding, 'raw');
+        const body = full(span(proof.delivery), proof.sha256, proof.bytes);
+        assert.equal(message.content, text(original.message), 'A complete scalar resource keeps the original native result');
+        bind(body, { owner: proof.id, scope: proof.scope, snapshot_id: proof.snapshot_id, version_id: proof.version_id, path: proof.path, file_id: proof.file_id, ref: proof.ref });
+      }
+    }
+    for (const body of counts) { assert.equal(body.occurrences, local.get(body.sha256), 'Body text outside the verified Broker delivery span is not another receipt');
+      brokerCounts.set(body.sha256, brokerCounts.get(body.sha256) + body.occurrences); }
+    brokerResults.push({ toolCallId: id, contentSha256: hash(message.content), bodies: counts });
+  }
+  const counted = candidatePayloadBodies(payload, bodies).map(body => {
+    const broker = brokerCounts.get(body.sha256), cli = cliCounts.get(body.sha256);
+    assert.equal(broker, 1, 'Each complete frozen body must occur once in the Broker receipt domain');
+    assert.equal(body.occurrences, broker + cli, 'Every full payload copy must have its exact Broker or unchanged CLI origin');
+    return { sha256: body.sha256, total: body.occurrences, broker, cli };
+  });
+  return { scope: policy.bodyCountScope, payloadSha256: hash(JSON.stringify(payload)), bodies: counted, cliResults, brokerResults };
+}
+
+export function validateCandidateTurn(turn, { costs, transport, tasks }, { approvedCliCalls = [], approvedDiscoveryCalls = [], maintenanceBodies } = {}) {
   if (turn.toolCallCount !== undefined) {
     assert.ok(Number.isSafeInteger(turn.toolCallCount) && turn.toolCallCount >= 0);
     assert.equal(tasks.filter(event => event.phase === 'tool_call').length, turn.toolCallCount, 'Tool calls differ from this frozen turn intent');
@@ -654,12 +801,20 @@ export function validateCandidateTurn(turn, { costs, transport, tasks }, { appro
   }
   const last = requests.at(-1);
   const actual = tasks.filter(event => event.phase === 'provider_payload' && event.sha256 === last.payload.sha256).at(-1);
+  const maintenance = turn.publicCli?.mode === 'owned-maintenance-readonly';
+  if (maintenance) {
+    candidateMaintenanceBodyContract(turn); assert.equal(maintenanceBodies?.scope, turn.publicCli.bodyCountScope);
+    assert.equal(maintenanceBodies.payloadSha256, last.payload.sha256);
+  } else assert.equal(maintenanceBodies, undefined, 'Maintenance accounting is outside the ordinary body-count contract');
   for (const expected of turn.bodies ?? []) {
     const counted = actual.bodies.filter(body => body.sha256 === expected.sha256);
-    assert.equal(counted.length, 1, 'Frozen body was not independently observed'); assert.equal(counted[0].occurrences, expected.occurrences);
+    const attributed = maintenanceBodies?.bodies.find(body => body.sha256 === expected.sha256);
+    if (maintenance) { assert.equal(attributed?.broker, expected.occurrences); assert.equal(attributed.total, attributed.broker + attributed.cli); }
+    const total = maintenance ? attributed.total : expected.occurrences;
+    assert.equal(counted.length, 1, 'Frozen body was not independently observed'); assert.equal(counted[0].occurrences, total);
     if (expected.occurrences > 0 && expected.receiptRequired !== false) {
       const observed = last.payload.verifiedBodyOccurrences.filter(body => body.sha256 === expected.sha256);
-      assert.equal(observed.length, 1, 'Missing exact receipt-verified full body'); assert.equal(observed[0].occurrences, expected.occurrences);
+      assert.equal(observed.length, 1, 'Missing exact receipt-verified full body'); assert.equal(observed[0].occurrences, total);
     }
     if (expected.occurrences === 0) for (const event of tasks.filter(event => event.phase === 'provider_payload'))
       assert.equal(event.bodies.find(body => body.sha256 === expected.sha256)?.occurrences, 0, 'Forbidden full body reached an earlier provider request');
@@ -687,7 +842,8 @@ export function validateCandidateTurn(turn, { costs, transport, tasks }, { appro
   return { providerRequests: requests.length, lastPayloadSha256: last.payload.sha256, bodyOccurrences: actual.bodies, receiptVerifiedBodies: last.payload.verifiedBodyOccurrences,
     finalSha256: final.sha256, finalBytes: final.bytes, semanticReview: 'required', scriptExecutionToolCalls: executionCalls.length, ownedProjectInspectionToolCalls: projectInspections.length,
     ...(approvedCliCalls.length ? { authorizedPublicCliToolCalls: approvedCliCalls.length } : {}),
-    ...(approvedDiscoveryCalls.length ? { authorizedMaintenanceDiscoveryCalls: approvedDiscoveryCalls.length } : {}) };
+    ...(approvedDiscoveryCalls.length ? { authorizedMaintenanceDiscoveryCalls: approvedDiscoveryCalls.length } : {}),
+    ...(maintenance ? { maintenanceBodyAccounting: maintenanceBodies } : {}) };
 }
 
 /** Input has already passed readProviderTransport's complete ledger validation. */
@@ -1079,6 +1235,7 @@ export async function runCandidatePrint(config) {
     else {
       if (cliPolicy.mode === 'owned-description-update') assert.ok(typeof cliPolicy.description === 'string' && cliPolicy.description.trim() && [...cliPolicy.description].length <= 2000);
       else {
+        candidateMaintenanceBodyContract(config);
         assert.equal(config.existingState, undefined); assert.equal(cliPolicy.sourceId, config.sourceId);
         assert.equal(cliPolicy.nodeExecutable, undefined, 'Use the actual verification Node runtime');
         cliPolicy.nodeExecutable = process.execPath;
@@ -1286,7 +1443,16 @@ export async function runCandidatePrint(config) {
       if (cliPolicy.mode === 'owned-maintenance-readonly') for (const call of result.nativeAudit.calls)
         if (['tool_search', 'notion_ctl'].includes(call.name)) approvedDiscoveryCalls.push(call.id);
     }
-    result.assertions = validateCandidateTurn(config, { costs: cost.events, transport: wire, tasks: task }, { approvedCliCalls, approvedDiscoveryCalls });
+    let maintenanceBodies;
+    if (cliPolicy?.mode === 'owned-maintenance-readonly') {
+      const last = cost.events.filter(event => event.phase === 'provider_request').at(-1);
+      const event = task.filter(event => event.phase === 'provider_payload' && event.sha256 === last?.payload.sha256).at(-1);
+      const payload = await readFile(event.payloadFile); assert.equal(hash(payload), event.sha256); assert.equal(payload.length, event.bytes);
+      const expectedBodies = await Promise.all(config.expectedBodies.map(async body => ({ ...body, text: await readFile(body.path, 'utf8') })));
+      maintenanceBodies = inspectCandidateMaintenancePayload({ ...config, expectedBodies }, { payload: JSON.parse(payload.toString('utf8')),
+        nativeAudit: result.nativeAudit, nativeText: sessionBytes.toString('utf8'), tasks: task, guard: await readRows(cliGuardLedger), approvedCliCalls });
+    }
+    result.assertions = validateCandidateTurn(config, { costs: cost.events, transport: wire, tasks: task }, { approvedCliCalls, approvedDiscoveryCalls, maintenanceBodies });
     for (const event of task.filter(event => event.phase === 'provider_payload')) {
       const actual = await identity(event.payloadFile); assert.equal(actual.sha256, event.sha256); assert.equal(actual.bytes, event.bytes);
       if (completionBudgetSource) result.completionBudgetAudit.payloads.push({ ...inspectCandidateCompletionBudget(await json(actual.path)), file: actual });

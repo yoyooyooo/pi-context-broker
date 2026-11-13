@@ -568,6 +568,12 @@ AH511 的冷作者只需同一 helper 的 `publicCli.mode: "owned-description-up
 
 原生 Session、完整工具参数/结果与错误、源请求、provider payload/wire、完整正文与重复抑制继续由同一组观察器留证。独立审阅必须确认 builtin 的实际读取、公开 CLI 前缀与目标 scope、每个 next.argv 的执行或明确只读拒绝、实际 notion_use、两份参考内容、effects 和最终回答。自动 passed 仍只是机械断言，不能用纯消费替代公开维护链；CLI 孙进程的 HTTP 只按其实际 JSON/metrics 计量，未观测保持 unknown。回归加入原 candidate 测试文件，涵盖合法正例、跨 owner/库/operation、写命令、缺 readOnly、外部文件、short-ref 归属与守卫失败。此改动只扩展既有验证驱动的任务范围，不改变产品状态机或有限模型转移，不新增模型或 E2E 框架。
 
+混合维护任务还必须在派发前显式冻结 `publicCli.bodyCountScope: "broker-plus-unchanged-cli"`。恰好三份完整 `expectedBodies` 各带独立源读取确定的 `binding: {owner, scope, snapshot_id, version_id, path, file_id, ref}`；一份 SKILL.md 与两个不同的 File ID/逻辑路径，处于同一固定 owner/snapshot/version。`bodies` 每项 `occurrences: 1`，`requireUse: true`，对应 owner/pin/File proofs 不可省略，禁止空断言或 `receiptRequired: false`。这些 oracle 文件只交给观察器，不能交给模型或填入工具输出。
+
+此处的 1 专指实际 provider 中由同 toolCallId、同完整消息 SHA/字节数的已观测 Broker receipt 所证明的完整投递。最终全 payload 原始次数必须严格等于该 Broker 副本加已授权 CLI 原件的副本数。CLI 原件按原生 call/result、实际 provider `tool_call_id`、原参数与完整文本逐条绑定，一条原件只对应一条 provider 消息；只有同一 Bash 结果登记的精确 spill 读取可沿用该归属。所有 CLI 原件必须完整保留，不能因正文相同而裁剪、归类或改写。当前只接受实际 worker 的 OpenAI `messages` 形态，未知映射、缺原件、双 Broker、无 receipt 或无法归属的正文均失败。
+
+原 `bodyOccurrences` 与 `verifiedBodyOccurrences` 都仍是全 payload 计数；后者仅表示其正文曾经通过 receipt 校验，不代表已经按工具消息分域。新 `maintenanceBodyAccounting` 单独报告 total/broker/cli 与每条来源绑定，不改变原两个指标，不修改普通消费模式的 exactly-once 断言。运行后不能为通过样本修改冻结关系或预期。
+
 ### AH734：正常管理 Store 的固定 pin 消费
 
 仅显式 `existingState.mode: "normal-management"` 复用正常进程既有的 state/config/cache 三根；`roots` 冻结公开根解析结果，`managementReads` 引用两份已成功的完整固定 pin CLI JSON 的路径与 SHA。默认未配置仍为 fresh；该模式不兼容 resume 或 publicCli，不读取私有 Store 文件、复制 State/凭据、保存远端 snapshot 或把旁路正文注入模型。正常臂与 `-ns` 臂使用同一管理 Store、各自全新 Session 与 Broker 缓存。`NTN_SKILLS_DATA_HOME` 继续指向本轮 owned 目录，只用于本任务禁止的 builtin 安装，不是消费 Store 根。
