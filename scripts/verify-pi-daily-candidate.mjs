@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { access, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
@@ -291,7 +292,7 @@ export function inspectCandidateExistingReads(sourceState, nativeAudit, text, gu
 
 /** A small shell subset for one frozen public author task.
  * The public CLI owns author decisions, operation identities and Store writes. */
-export function reviewCandidateCliCommand(command, policy) {
+export function reviewCandidateCliCommand(command, policy, observedAuditRunIds = []) {
   const check = (value, message) => { if (!value) throw new Error(message); };
   check(['original-create-recovery', 'owned-description-update', 'owned-maintenance-readonly'].includes(policy?.mode), 'Unknown public CLI task scope');
   const maintenance = policy.mode === 'owned-maintenance-readonly';
@@ -312,6 +313,28 @@ export function reviewCandidateCliCommand(command, policy) {
   if (args[0] === 'schema') {
     check(args.slice(1).every(arg => /^[a-z][a-z-]*$/u.test(arg)), 'Schema inspection must name only a public command path');
     return { kind: 'schema', argv: words };
+  }
+  if (maintenance && args.slice(0, 2).join(' ') === 'ctl builtin') {
+    if (args[2] === 'list') {
+      check(args.length === 3, 'List only this frozen package catalog without installation options');
+      return { kind: 'builtin-list', argv: words };
+    }
+    check(args[2] === 'read', 'Builtin installation or status is outside this task');
+    const positional = []; let path;
+    for (let index = 3; index < args.length; index++) {
+      if (!args[index].startsWith('-')) positional.push(args[index]);
+      else {
+        check(args[index] === '--path' && path === undefined && typeof args[index + 1] === 'string', 'Use only one packaged builtin path');
+        path = args[++index];
+      }
+    }
+    check(positional.length === 1 && positional[0] === 'notion/ntn-skills-maintain', 'Read only the reviewed maintenance builtin');
+    check(path === undefined || ['SKILL.md', 'references/operations.md'].includes(path), 'Read only the two protected maintenance files');
+    return { kind: 'builtin-read', argv: words };
+  }
+  if (maintenance && args.slice(0, 3).join(' ') === 'ctl audit report') {
+    check(args.length === 4 && observedAuditRunIds.includes(args[3]), 'Read only a complete report returned by this session target audit, without flags');
+    return { kind: 'audit-report', argv: words };
   }
   if (maintenance && args[0] === 'ctl') {
     const audit = args.slice(0, 3).join(' ') === 'ctl audit run';
@@ -389,6 +412,52 @@ export function reviewCandidateCliCommand(command, policy) {
   return { kind, dryRun: flags.has('--dry-run'), argv: words };
 }
 
+/** A warning exit can still return a complete read-only audit. Never infer a
+ * run ID from truncated text, a prompt, another command, or an arbitrary file. */
+export function candidateAuditReportBinding(result, policy, { registeredPath, readFile, sha }) {
+  if (policy.mode !== 'owned-maintenance-readonly' || result.toolName !== 'bash' || typeof result.toolCallId !== 'string' || typeof sha !== 'function') return undefined;
+  try {
+    const content = result.content;
+    if (!Array.isArray(content) || !content.every(part => part.type === 'text' && typeof part.text === 'string')) return undefined;
+    let raw = content.map(part => part.text).join('\n');
+    if (result.details?.truncation?.truncated === true) {
+      if (registeredPath !== result.details.fullOutputPath || !/^\/tmp\/pi-bash-[a-f0-9]{16}\.log$/u.test(registeredPath ?? '')) return undefined;
+      raw = readFile(registeredPath);
+    } else {
+      if (registeredPath !== undefined) return undefined;
+      if (result.isError === true) raw = raw.replace(/\n\nCommand exited with code [1-9][0-9]*$/u, '');
+    }
+    const report = JSON.parse(raw), id = report.run_id;
+    if (report.ok !== true || report.report_version !== 1 || report.execution !== 'completed' || report.remote_writes !== 0
+      || report.entry_id !== policy.database || report.selector?.kind !== 'skill' || report.selector.page_id !== policy.target
+      || report.inspection_scope !== 'reachable_target' || typeof id !== 'string' || !/^audit-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(id)
+      || report.next?.read_only !== true || JSON.stringify(report.next.argv) !== JSON.stringify(['ntn-skills', 'ctl', 'audit', 'report', id])) return undefined;
+    return { runId: id, sourceToolCallId: result.toolCallId, target: policy.target, database: policy.database,
+      resultSha256: sha(JSON.stringify(content)), reportSha256: sha(raw), reportBytes: Buffer.byteLength(raw),
+      ...(registeredPath ? { artifactPath: registeredPath } : {}) };
+  } catch { return undefined; }
+}
+
+export function inspectCandidateAuditReportBindings(policy, nativeAudit, nativeText, guard, readFile) {
+  const messages = nativeText.trimEnd().split('\n').map(JSON.parse).filter(row => row.type === 'message').map(row => row.message);
+  const bindings = guard.filter(row => row.phase === 'public-cli-audit-report');
+  assert.equal(new Set(bindings.map(row => row.runId)).size, bindings.length);
+  for (const row of bindings) {
+    const call = nativeAudit.calls.find(call => call.id === row.sourceToolCallId);
+    assert.ok(call && call.name === 'bash' && call.resultLine !== undefined);
+    assert.equal(reviewCandidateCliCommand(call.arguments.command, policy).kind, 'audit');
+    assert.equal(guard.filter(event => event.toolCallId === call.id && event.allowed === true).length, 1);
+    const originals = messages.filter(message => message.role === 'toolResult' && message.toolCallId === call.id);
+    assert.equal(originals.length, 1); assert.equal(hash(JSON.stringify(originals[0].content)), call.resultSha256);
+    const spills = guard.filter(event => event.phase === 'public-cli-output' && event.sourceToolCallId === call.id && event.allowed === true);
+    assert.ok(spills.length <= 1);
+    const observed = candidateAuditReportBinding(originals[0], policy, { registeredPath: spills[0]?.artifactPath, readFile, sha: hash });
+    assert.ok(observed, 'An audit report needs its complete original same-call result');
+    assert.deepEqual(row, { phase: 'public-cli-audit-report', allowed: true, ...observed });
+  }
+  return bindings;
+}
+
 /** Public native history binds opaque handles to the reviewed owner before I/O. */
 export function reviewCandidateMaintenanceTool(tool, input, policy, branch = []) {
   const check = (value, message) => { if (!value) throw new Error(message); };
@@ -441,10 +510,11 @@ export function reviewCandidateMaintenanceTool(tool, input, policy, branch = [])
   return { kind: tool };
 }
 
-export function candidateCliGuard(api, { fs, output, policy, review, maintenanceReview }) {
+export function candidateCliGuard(api, { fs, output, policy, review, maintenanceReview, auditReportBinding, sha }) {
   let fd, failure;
   try { fd = fs.openSync(output, 'wx', 0o600); } catch (error) { failure = error; }
   const approvedBashCalls = new Set(), publicOutputs = new Set(policy.inputFiles);
+  const approvedAudits = new Set(), auditReports = new Map();
   if (policy.mode === 'owned-maintenance-readonly') api.on('input', () => {
     try {
       if (failure) throw failure;
@@ -462,7 +532,11 @@ export function candidateCliGuard(api, { fs, output, policy, review, maintenance
   api.on('tool_call', (event, ctx) => {
     try {
       if (failure) throw failure;
-      if (event.toolName === 'bash') { review(event.input?.command, policy); approvedBashCalls.add(event.toolCallId); }
+      if (event.toolName === 'bash') {
+        const inspected = review(event.input?.command, policy, [...auditReports.keys()]);
+        approvedBashCalls.add(event.toolCallId);
+        if (inspected.kind === 'audit') approvedAudits.add(event.toolCallId);
+      }
       else if (event.toolName === 'read' && (publicOutputs.has(event.input?.path) || policy.mode === 'owned-maintenance-readonly' && policy.builtinFiles?.includes(event.input?.path)
         || typeof event.input?.path === 'string' && event.input.path.startsWith(policy.outputRoot + '/') && !event.input.path.split('/').includes('..'))) {
         if (event.input.paths !== undefined) throw new Error('Local artifact reads use one exact path');
@@ -481,11 +555,21 @@ export function candidateCliGuard(api, { fs, output, policy, review, maintenance
   });
   api.on('tool_result', event => {
     const path = event.details?.fullOutputPath;
-    if (event.toolName !== 'bash' || !approvedBashCalls.has(event.toolCallId) || event.details?.truncation?.truncated !== true
-      || typeof path !== 'string' || !/^\/tmp\/pi-bash-[a-f0-9]{16}\.log$/u.test(path)) return;
+    if (event.toolName !== 'bash' || !approvedBashCalls.has(event.toolCallId)) return;
     try {
-      fs.writeSync(fd, JSON.stringify({ phase: 'public-cli-output', sourceToolCallId: event.toolCallId, artifactPath: path, allowed: true }) + '\n');
-      publicOutputs.add(path);
+      let registeredPath;
+      if (event.details?.truncation?.truncated === true && typeof path === 'string' && /^\/tmp\/pi-bash-[a-f0-9]{16}\.log$/u.test(path)) {
+        fs.writeSync(fd, JSON.stringify({ phase: 'public-cli-output', sourceToolCallId: event.toolCallId, artifactPath: path, allowed: true }) + '\n');
+        publicOutputs.add(path); registeredPath = path;
+      }
+      if (approvedAudits.has(event.toolCallId)) {
+        const binding = auditReportBinding?.(event, policy, { registeredPath, readFile: file => fs.readFileSync(file, 'utf8'), sha });
+        if (binding) {
+          if (auditReports.has(binding.runId)) throw new Error('An audit run must have one original result');
+          fs.writeSync(fd, JSON.stringify({ phase: 'public-cli-audit-report', allowed: true, ...binding }) + '\n');
+          auditReports.set(binding.runId, binding);
+        }
+      }
     } catch (error) { failure = error; }
   });
   api.on('session_shutdown', () => { if (fd !== undefined) { fs.writeSync(fd, JSON.stringify({ complete: !failure }) + '\n'); fs.closeSync(fd); } });
@@ -1327,9 +1411,10 @@ export async function runCandidatePrint(config) {
     + guardCandidateInputIdentity.toString() + ')(api,{fs,crypto,output:' + JSON.stringify(inputGuardLedger) + ',expected:'
     + JSON.stringify({ entry: baselineFiles[1], cwd: forkBinding.cwd, provider: 'magpie', model: 'group/worker', thinkingLevel: 'high',
       nativeSkillCount: 69, promptSha256: hash(config.prompt) }) + '});\n', { flag: 'wx', mode: 0o600 });
-  if (cliPolicy) await writeFile(cliGuard, "import fs from 'node:fs';const review=" + reviewCandidateCliCommand.toString()
+  if (cliPolicy) await writeFile(cliGuard, "import fs from 'node:fs';import crypto from 'node:crypto';const sha=value=>crypto.createHash('sha256').update(value).digest('hex');const review=" + reviewCandidateCliCommand.toString()
     + ';const maintenanceReview=' + reviewCandidateMaintenanceTool.toString()
-    + ';export default api=>(' + candidateCliGuard.toString() + ')(api,{fs,review,maintenanceReview,output:' + JSON.stringify(cliGuardLedger)
+    + ';const auditReportBinding=' + candidateAuditReportBinding.toString()
+    + ';export default api=>(' + candidateCliGuard.toString() + ')(api,{fs,review,maintenanceReview,auditReportBinding,sha,output:' + JSON.stringify(cliGuardLedger)
     + ',policy:' + JSON.stringify(cliPolicy) + '});\n', { flag: 'wx', mode: 0o600 });
   if (completionBudgetSource) await writeFile(completionBudgetExtension, completionBudgetSource, { flag: 'wx', mode: 0o600 });
   await writeFile(costExtension, consumptionCostExtensionSource({ output: costs, checkoutRoot: root, runId: clockId, sampleId: config.id, clockId }), { flag: 'wx', mode: 0o600 });
@@ -1435,8 +1520,15 @@ export async function runCandidatePrint(config) {
     if (cliPolicy) {
       const guard = await readRows(cliGuardLedger); assert.equal(guard.at(-1)?.complete, true);
       assert.ok(guard.slice(0, -1).every(entry => entry.allowed === true), 'A command escaped the frozen public CLI task');
+      const auditReports = inspectCandidateAuditReportBindings(cliPolicy, result.nativeAudit, sessionBytes.toString('utf8'), guard, file => readFileSync(file, 'utf8'));
+      if (auditReports.length) result.publicCli.auditReports = auditReports;
       result.publicCli.commands = result.nativeAudit.calls.filter(call => call.name === 'bash').map(call => {
-        const command = reviewCandidateCliCommand(call.arguments.command, cliPolicy);
+        const command = reviewCandidateCliCommand(call.arguments.command, cliPolicy, auditReports.map(report => report.runId));
+        if (command.kind === 'audit-report') {
+          const binding = auditReports.find(report => report.runId === command.argv.at(-1));
+          assert.ok(result.nativeAudit.calls.find(source => source.id === binding.sourceToolCallId).resultLine < call.callLine);
+          assert.ok(guard.indexOf(binding) < guard.findIndex(row => row.toolCallId === call.id));
+        }
         approvedCliCalls.push(call.id); return { toolCallId: call.id, ...command, isError: call.isError };
       });
       for (const call of result.nativeAudit.calls) assert.equal(guard.filter(entry => entry.toolCallId === call.id && entry.allowed).length, 1);

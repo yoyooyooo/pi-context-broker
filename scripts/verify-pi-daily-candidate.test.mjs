@@ -235,6 +235,118 @@ test('read-only maintenance rejects another owner, library, operation, mutations
   ]) assert.throws(() => reviewCandidateCliCommand(command, maintenanceCli), command);
 });
 
+test('maintenance public builtin discovery admits the installed local interface and only its protected files', () => {
+  for (const suffix of ['ctl builtin list', 'ctl builtin read notion/ntn-skills-maintain',
+    'ctl builtin read notion/ntn-skills-maintain --path SKILL.md',
+    'ctl builtin read --path references/operations.md notion/ntn-skills-maintain']) {
+    assert.ok(reviewCandidateCliCommand(cliCommand + ' ' + suffix, maintenanceCli).kind.startsWith('builtin-'));
+    assert.throws(() => reviewCandidateCliCommand(cliCommand + ' ' + suffix, publicCli));
+  }
+  for (const suffix of [
+    'ctl builtin list --agent-dir /another/root', 'ctl builtin list --json',
+    'ctl builtin read notion/ntn-skills', 'ctl builtin read notion/ntn-skills-sync',
+    'ctl builtin read notion/ntn-skills-maintain --path ../SKILL.md',
+    'ctl builtin read notion/ntn-skills-maintain --path /etc/passwd',
+    'ctl builtin read notion/ntn-skills-maintain --path references/other.md',
+    'ctl builtin read notion/ntn-skills-maintain --path SKILL.md --path SKILL.md',
+    'ctl builtin read notion/ntn-skills-maintain --agent-dir /another/root',
+    'ctl builtin read notion/ntn-skills-maintain --json',
+    'ctl builtin install notion/ntn-skills-maintain', 'ctl builtin status notion/ntn-skills-maintain',
+  ]) assert.throws(() => reviewCandidateCliCommand(cliCommand + ' ' + suffix, maintenanceCli), suffix);
+});
+
+const auditRunId = 'audit-33a07e13-071b-4071-a6b4-d76c92834a5a';
+const auditCommand = cliCommand + ' ctl audit run --entry owned-library --target original-page --depth history';
+const auditReportFixture = () => ({ ok: true, report_version: 1, rules_version: 'resource-audit-v3', run_id: auditRunId,
+  entry_id: 'owned-library', selector: { kind: 'skill', page_id: 'original-page' }, inspection_scope: 'reachable_target',
+  execution: 'completed', coverage: 'partial', severity: { error: 0, warning: 1, info: 0 }, remote_writes: 0,
+  next: { state: 'inspect_retained_report', argv: ['ntn-skills', 'ctl', 'audit', 'report', auditRunId], read_only: true } });
+const auditGuard = () => {
+  const handlers = new Map(), records = [], files = new Map(), reads = [];
+  const guard = new Function('return (' + candidateCliGuard.toString() + ')')();
+  guard({ on(name, fn) { handlers.set(name, fn); } }, { fs: { openSync: () => 1,
+    writeSync: (_fd, value) => records.push(JSON.parse(value)), closeSync() {},
+    readFileSync(path) { reads.push(path); if (!files.has(path)) throw new Error('missing original'); return files.get(path); } },
+  output: '/evidence/guard.jsonl', policy: maintenanceCli, sha,
+  review: new Function('return (' + reviewCandidateCliCommand.toString() + ')')(),
+  auditReportBinding: new Function('return (' + candidate.candidateAuditReportBinding.toString() + ')')() });
+  return { handlers, records, files, reads,
+    call(command, id) { return handlers.get('tool_call')({ toolName: 'bash', toolCallId: id, input: { command } }); } };
+};
+
+test('an actual warning exit 4 report binds through its registered complete spill before the next command', () => {
+  const value = auditGuard(), spill = '/tmp/pi-bash-' + '1'.repeat(16) + '.log', raw = JSON.stringify(auditReportFixture()) + '\n';
+  value.files.set(spill, raw);
+  assert.equal(value.call(auditCommand, 'audit-1'), undefined);
+  const event = { toolName: 'bash', toolCallId: 'audit-1', isError: true,
+    content: [{ type: 'text', text: 'truncated report tail\n\nCommand exited with code 4' }],
+    details: { truncation: { truncated: true }, fullOutputPath: spill } };
+  value.handlers.get('tool_result')(event);
+  assert.deepEqual(value.reads, [spill]);
+  const binding = value.records.find(row => row.phase === 'public-cli-audit-report');
+  assert.equal(binding.runId, auditRunId); assert.equal(binding.sourceToolCallId, 'audit-1');
+  assert.equal(binding.reportSha256, sha(raw)); assert.equal(binding.reportBytes, Buffer.byteLength(raw));
+  assert.equal(binding.resultSha256, sha(JSON.stringify(event.content)));
+  assert.equal(value.call(cliCommand + ' ctl audit report ' + auditRunId, 'report-1'), undefined);
+  const native = { calls: [{ id: 'audit-1', name: 'bash', arguments: { command: auditCommand }, callLine: 3, resultLine: 4,
+    resultSha256: sha(JSON.stringify(event.content)) }] };
+  const session = jsonl([{ type: 'message', message: { role: 'toolResult', ...event } }]);
+  const inspect = (history = session, rows = value.records) => candidate.inspectCandidateAuditReportBindings(maintenanceCli, native, history, rows, file => value.files.get(file));
+  assert.deepEqual(inspect(), [binding]);
+  assert.throws(() => inspect(session.replace('truncated report tail', 'changed original result')));
+  assert.throws(() => inspect(session, value.records.map(row => row === binding ? { ...row, reportSha256: '0'.repeat(64) } : row)));
+  value.files.set(spill, JSON.stringify({ ...auditReportFixture(), selector: { kind: 'skill', page_id: 'another-page' } }));
+  assert.throws(() => inspect());
+});
+
+test('reports cannot be preseeded or escape the actual session audit and no report flags are admitted', () => {
+  const value = auditGuard(), command = cliCommand + ' ctl audit report ' + auditRunId;
+  assert.equal(value.call(command, 'before-audit').block, true);
+  assert.throws(() => reviewCandidateCliCommand(command, { ...maintenanceCli, observedAuditRunIds: [auditRunId] }));
+  assert.throws(() => reviewCandidateCliCommand(command, publicCli, [auditRunId]));
+  assert.equal(value.call(cliCommand + ' --help', 'not-an-audit'), undefined);
+  value.handlers.get('tool_result')({ toolName: 'bash', toolCallId: 'not-an-audit', isError: false,
+    content: [{ type: 'text', text: JSON.stringify(auditReportFixture()) }] });
+  assert.equal(value.call(command, 'unrelated-command-result').block, true);
+  assert.equal(value.call(auditCommand, 'audit-1'), undefined);
+  value.handlers.get('tool_result')({ toolName: 'bash', toolCallId: 'audit-1', isError: true,
+    content: [{ type: 'text', text: JSON.stringify(auditReportFixture()) + '\n\nCommand exited with code 4' }] });
+  assert.equal(value.call(command, 'bound-report'), undefined);
+  assert.deepEqual(value.reads, []);
+  for (const suffix of [' --entry owned-library', ' --output /owned/report.json', ' --json', ' extra'])
+    assert.equal(value.call(command + suffix, 'flag-' + suffix).block, true);
+  assert.equal(value.call(cliCommand + ' ctl audit report audit-00000000-0000-0000-0000-000000000000', 'foreign-run').block, true);
+  assert.equal(value.call(cliCommand + ' ctl audit resume ' + auditRunId, 'resume').block, true);
+});
+
+test('incomplete, unregistered, foreign or mutating audit evidence never grants report access', () => {
+  const spill = '/tmp/pi-bash-' + '2'.repeat(16) + '.log';
+  assert.equal(candidate.candidateAuditReportBinding({ toolName: 'bash', toolCallId: 'audit-1', isError: false,
+    content: [{ type: 'text', text: JSON.stringify(auditReportFixture()) }] }, maintenanceCli,
+  { registeredPath: spill, readFile() { throw new Error('Must not read an unrelated spill'); }, sha }), undefined);
+  for (const mutate of [
+    report => { report.ok = false; }, report => { report.execution = 'paused'; }, report => { report.remote_writes = 1; },
+    report => { report.entry_id = 'another-library'; }, report => { report.selector.page_id = 'another-page'; },
+    report => { report.selector.kind = 'all'; }, report => { report.next.read_only = false; },
+    report => { report.next.argv.push('--output', '/owned/file'); }, report => { delete report.run_id; },
+  ]) {
+    const value = auditGuard(), report = auditReportFixture(); mutate(report);
+    value.files.set(spill, JSON.stringify(report)); value.call(auditCommand, 'audit-1');
+    value.handlers.get('tool_result')({ toolName: 'bash', toolCallId: 'audit-1', isError: true,
+      content: [{ type: 'text', text: 'truncated' }], details: { truncation: { truncated: true }, fullOutputPath: spill } });
+    assert.equal(value.call(cliCommand + ' ctl audit report ' + auditRunId, 'report-1').block, true);
+  }
+  for (const missing of [true, false]) {
+    const value = auditGuard(); value.call(auditCommand, 'audit-1');
+    if (!missing) value.files.set(spill, '{"ok":true,"run_id":"' + auditRunId);
+    value.handlers.get('tool_result')({ toolName: 'bash', toolCallId: 'audit-1', isError: true,
+      content: [{ type: 'text', text: JSON.stringify(auditReportFixture()) }],
+      details: { truncation: { truncated: true }, fullOutputPath: missing ? '/unregistered/private-report' : spill } });
+    assert.equal(value.call(cliCommand + ' ctl audit report ' + auditRunId, 'report-1').block, true);
+    if (missing) assert.deepEqual(value.reads, []);
+  }
+});
+
 test('maintenance guard admits builtin discovery, exact CLI metadata and current owner short refs', () => {
   const handlers = new Map(), records = [], branch = maintenanceBranch();
   candidateCliGuard({ on(name, fn) { handlers.set(name, fn); } }, { fs: { openSync: () => 1, writeSync: (_fd, text) => records.push(JSON.parse(text)), closeSync() {} },

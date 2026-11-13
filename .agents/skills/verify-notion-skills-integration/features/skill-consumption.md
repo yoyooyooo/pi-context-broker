@@ -562,7 +562,9 @@ AH511 的冷作者只需同一 helper 的 `publicCli.mode: "owned-description-up
 
 任务只给公开 `ntn-skills-maintain` 名称、精确目标/原 operation 和自然目的，不能给模型命令答案、oracle 正文、marker 或叶子 ref。新策略从冻结候选包保护该 builtin 的 SKILL.md 和 operations.md；通过正常 `tool_search` 与唯一 `notion_ctl({cli_source})` 取得公开 CLI 前缀。不改默认工具集、packages、MCP、正常 HOME 或安全扩展。模型仍从公开 schema/help 和真实 next.argv 自己选择只读检查。
 
-原 tool_call guard 在执行前只放行目标级 `ctl audit run --target --entry`、原 operation 的 `show/reconcile --target --entry`、同 owner 的 `read --read-only --json --metrics`（可用 `--authoring`）及固定 pin 的 files。公共 help/schema 只显示接口。禁止 audit --all、另一库/owner/operation、resume、apply/adopt/update、shell 组合和私有 Store。显式 audit 预算不得高于公开默认 500 attempts / 64 MiB / 120 秒；模型仍使用原 600000 ms、worker/high，无额外 cap 或重试。
+原 tool_call guard 在执行前放行目标级 `ctl audit run --target --entry`、原 operation 的 `show/reconcile --target --entry`、同 owner 的 `read --read-only --json --metrics`（可用 `--authoring`）及固定 pin 的 files。包内公开发现仅允许无参数 `ctl builtin list`，以及 `ctl builtin read notion/ntn-skills-maintain`：默认或显式 `--path SKILL.md`，另一许可路径为 `references/operations.md`。不开放其它 builtin、文件、agent-dir、status 或安装操作。公共 help/schema 只显示接口。禁止 audit --all、另一库/owner/operation、resume、apply/adopt/update、shell 组合和私有 Store。显式 audit 预算不得高于公开默认 500 attempts / 64 MiB / 120 秒；模型仍使用原 600000 ms、worker/high，无额外 cap 或重试。
+
+`ctl audit report RUN_ID` 只接受本 Session 已授权目标 audit 的实际完整结果所返回的 ID，禁止所有 report flags、预填历史 ID 和输出写入。原生 toolCallId、结果 hash、精确 entry/target、`ok:true`、`execution:completed`、`remote_writes:0` 和真实只读 next.argv 必须一致；截断输出只沿同一 Bash 结果已登记的精确 fullOutputPath 读取完整原件。warning/partial 可令 Bash 返回 exit 4 与 isError:true，不据此丢弃已完成的 JSON；没有完整原件则不授予续读。运行后再次将该绑定对回原 Session 与保留的 spill，且 audit 结果必须早于 report 调用。该许可只读原本地 checkpoint，不声称进程零文件系统活动或补全 CLI 孙进程网络观测。修正验收许可后的模型调用须另存为暖修正尝试，保留原拒绝/超时，不能覆盖首尝试。
 
 同轮 notion_list 仅使用已冻结的来源，notion_use 与原生资源 read 必须 readOnly:true。opaque sr:C/S/R 的 owner 取当前公开 native Session branch 中的原短引用绑定，核对 canonical identity、物理 page 与 database；不读私有 Store，不凭 token 前缀放行其他 owner。输入派发前核实际候选 read executor 与公开 readOnly schema，避免落入宿主旧 hook 准备路径；不匹配或 guard ledger 不可写即阻断。此前两种 publicCli 作者任务的允许范围保持。
 
