@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { safeRequestMetrics } from './notion-default-context.mjs';
+import { captureInjectionReceipts } from './skill-preparation-evidence.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const canonical = value => JSON.stringify(value, (_, item) => item && typeof item === 'object' && !Array.isArray(item)
@@ -12,8 +13,8 @@ const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value
 const unique = values => [...new Set(values)];
 const sum = values => values.every(finite) ? values.reduce((a, b) => a + b, 0) : null;
 
-/** Pi 1.4 observer. This function is deliberately self-contained so an owned Pi
- * process can install its source without a dependency on this repository.
+/** Pi 1.4 observer. This function and the existing receipt collector are emitted
+ * together so an owned Pi process needs no runtime dependency on this repository.
  *
  * The driver supplies Node fs/crypto/path, an existing external output directory,
  * and a clockId shared with its process.hrtime.bigint() submission receipt.
@@ -154,15 +155,24 @@ export function observeConsumptionCost(api, settings) {
       for (const [kind, proof] of [['skill-body', details.contextBrokerRead], ['resource', details.contextBrokerResource]]) {
         if (!proof || proof.toolCallId !== message.toolCallId) continue;
         if (kind === 'resource') {
-          if (proof.version === 2) {
+          if (proof.version === 2 && ['files', 'selection', 'projection'].some(key => Object.hasOwn(proof, key))) {
             for (const file of resourceBatchFiles(proof, text)) rememberBody(bodyAt(text, file.delivery), file, kind);
             continue;
           }
-          if (proof.version !== 1 || proof.delivered_complete_text !== true || proof.loaded !== false
+          if (![1, 2].includes(proof.version) || proof.delivered_complete_text !== true || proof.loaded !== false
             || ![proof.scope, proof.id, proof.ref, proof.path].every(nonempty) || !pinned(proof.snapshot_id)) continue;
+          // Scalar v2 names the untouched source prefix before an effects footer;
+          // batch v2 above keeps its separate complete projection contract.
+          if (proof.version === 2) {
+            const native = Array.isArray(message.content) && message.content.length >= 2 ? textContent(message.content.slice(0, -1)) : undefined;
+            const footer = details.effects?.version === 1 ? '\n\n<notion-effects>' + JSON.stringify(details.effects) + '</notion-effects>' : undefined;
+            if (proof.delivery?.start !== 0 || proof.delivery?.encoding !== 'raw' || typeof native !== 'string'
+              || proof.delivery.end !== native.length || footer === undefined || message.content.at(-1)?.text !== footer) continue;
+          }
         } else if (![1, 2, 3].includes(proof.version) || !nonempty(proof.identity) || !pinned(proof.snapshotId)
           || proof.version === 3 && (proof.delivery?.start !== 0 || proof.delivery?.encoding !== 'raw')) continue;
-        rememberBody(kind === 'skill-body' && proof.version === 3 ? bodyAt(text, proof.delivery) : text, proof, kind);
+        const spanned = kind === 'skill-body' && proof.version === 3 || kind === 'resource' && proof.version === 2;
+        rememberBody(spanned ? bodyAt(text, proof.delivery) : text, proof, kind);
       }
     }
   };
@@ -244,8 +254,13 @@ export function observeConsumptionCost(api, settings) {
     text: textMeasure(String(event.text ?? '')), images: jsonMeasure(event.images ?? []), imageCount: Array.isArray(event.images) ? event.images.length : 0,
     method: 'input-at-observer-hook-position-driver-retains-original-submission' }); });
   on('agent_start', () => append('agent_start', { turn }));
-  for (const phase of ['context', 'context_with_system']) on(phase, event => {
-    remember(event.messages); append(phase, { turn, messages: jsonMeasure(event.messages),
+  for (const phase of ['context', 'context_with_system']) on(phase, (event, context) => {
+    const messages = event.messages ?? [];
+    const inherited = captureInjectionReceipts(messages, context?.sessionManager?.buildSessionProjection?.()).persisted;
+    // Machine receipts stay in memory; remember still binds them to actual user
+    // text and verifies the original pin, complete span, hash and byte count.
+    remember([...messages, ...inherited.map(({ data }) => ({ role: 'custom', customType: 'context-broker', content: '', details: data }))]);
+    append(phase, { turn, messages: jsonMeasure(event.messages),
       components: (event.messages ?? []).map(message => ({ role: ['system', 'user', 'assistant', 'toolResult', 'custom'].includes(message.role) ? message.role : 'other',
         content: jsonMeasure(message.content) })), method: phase === 'context_with_system' ? 'post-context-hooks-with-system' : 'at-observer-context-hook-position' });
   });
@@ -278,7 +293,7 @@ export function observeConsumptionCost(api, settings) {
 export function consumptionCostExtensionSource(settings) {
   const allowed = ['output', 'checkoutRoot', 'runId', 'sampleId', 'clockId'];
   if (Object.keys(settings).some(key => !allowed.includes(key))) throw new Error('COST_EXTENSION_SETTINGS_INVALID');
-  return `import fs from 'node:fs';\nimport crypto from 'node:crypto';\nimport path from 'node:path';\nexport default api => { (${observeConsumptionCost.toString()})(api, {fs, crypto, path, ...${JSON.stringify(settings)}}); };\n`;
+  return `import fs from 'node:fs';\nimport crypto, { createHash } from 'node:crypto';\nimport path from 'node:path';\n${captureInjectionReceipts.toString()}\nexport default api => { (${observeConsumptionCost.toString()})(api, {fs, crypto, path, ...${JSON.stringify(settings)}}); };\n`;
 }
 
 export async function readConsumptionCostEvents(file) {

@@ -81,6 +81,25 @@ omp -e ./packages/context-broker/src/index.ts
 
 The optional Tern companion has its own [release installation](#tern-completion).
 
+## Direct source dogfooding
+
+Use the current source checkout directly; no release channel or dated candidate install is needed. Build the CLI/SDK from your `notion-skills-cli` checkout, then select that exact build for the existing Broker build:
+
+```sh
+cd /absolute/notion-skills-cli
+bun install --frozen-lockfile
+bun run build
+export NTN_SKILLS_DEV_ROOT="$PWD"  # existing ntn-skills source-selection shim
+cd /absolute/pi-context-broker
+bun install --frozen-lockfile
+NTN_SKILLS_BUILD_ENTRY=/absolute/notion-skills-cli/packages/cli/dist/ntn-skills.js bun run build:broker
+pi install "$PWD/packages/context-broker"
+```
+
+Keep one Broker entry in Pi (`pi remove OLD_BROKER_SOURCE` removes a previous entry); preserve other extensions. Follow the Notion source configuration below with your own authorized library, then open a new Pi session. CLI edits run through its existing shim without rebuilding, but the default Broker SDK is bundled: rebuild CLI and `build:broker` at the same paths when that SDK input changes. No new launcher or version manager is involved. Without an installed CLI shim, `bun run /absolute/notion-skills-cli/scripts/dev.ts` runs the same commands directly.
+
+Use the [CLI source quick start](https://github.com/yoyooyooo/notion-skills-cli/blob/main/CONTRIBUTING.md#direct-source-dogfooding) for connection, owned library creation and the first Skill. A cold installation configures its own credentials and entry ID; it does not copy a maintainer's SQLite database or caches. For a code or wiring change, run its relevant regression and inspect the affected actual Session; do not require every platform/model or a formal release before daily use.
+
 ## Quick start
 
 ### 1. Configure a Skill directory
@@ -134,7 +153,7 @@ $design-review review this API boundary
 
 Enter reserves the submission while leaving the draft editable. The native composer shows running and **Stop**; **Stop** or Escape cancels preparation. Enter during preparation does not submit the edited draft. In Pi, selected content is prepared in the cancellable `context` stage, after the host creates the agent operation. RPC `abort` also cancels that work. Successful preparation includes the original prompt, images, and complete selected Skill bodies in the first provider request. Preparation failure or cancellation prevents that request; a session switch also prevents late dispatch.
 
-Pi confirms a selected Skill as active when `after_provider_response` receives 2xx response headers and the complete body matches the request's fixed selection. This confirms request acceptance, not completion of the model's response. Cached bytes and a ready preparation result do not establish active state.
+Pi confirms a selected Skill as active when `after_provider_response` receives 2xx response headers and the complete body matches the request's fixed selection. This confirms logical request acceptance, not completion of the model's response and not final wire delivery. Ordinary `openai-completions` wire proof is a separate Node Undici entity-hash check; other transports are not reported as wire-confirmed. Cached bytes and a ready preparation result do not establish active state.
 
 Unknown simple `$name` and `$name@namespace`, amounts and paths such as `$bunfs/root/chunks/cli-nxfh2cp0.js` remain ordinary text without a failure notification. A previously accepted choice or full identity token that is unavailable produces explicit user/model **not loaded** feedback. Other valid Skill/Prompt/Router references, original text and images still proceed once. Ambiguity and actual selected-record permission, network, catalog or integrity errors block activation; no other source is selected silently.
 

@@ -5,7 +5,20 @@ description: "验证 Notion Skills source 与随包 Skill在 Pi/OMP、Tern 中�
 
 # Verify Notion Skills Integration
 
+## 有限状态合同与维护
+
+当前生成图的入口见 [组合地图](features/formal-composition.md) 和 [局部视图修正](../../../docs/statecharts/review-corrections/README.md)。2026-11-12 图册仅是历史快照，不以当前命令冒充当时输入。
+
+AH-1006 的组合交接由本 Skill 继续负责，见 [FV06 管理回执与 effects](features/formal-composition.md)。`ManagementToDelivery`、`RetentionDisclosure`、`AcquisitionEffects` 使用原 `scripts/verify-consumer-observations.mjs --suite flows`；目录资格、观察时间、固定选择和真实交付边界交给 [verify-notion-consumer-state](../verify-notion-consumer-state/SKILL.md)，使用 `observations` / `consumer-state` 两组。默认六个旧观察配置保留，`--model` 按完整模型组选择。
+
+先读 [维护合同](../../../docs/formal-verification-maintenance.md)。完整规则清单、固定工具、源码对应和实际 CI 原件必须可核对；源 hash 不得自动刷新放行。仅 view、模型语义和实现语义变化分别承担相应复验义务。模型与实际源码回归不代替下文的原生宿主、安装或真实 E2E；本批 guardian 不新建一个全链路总验证 Skill。
+
+
 AH-617 消费链重构先读 [消费链验证地图](features/skill-consumption.md)。按 `agent-cli-ref-20261105` 复用既有 Pi harness，统一 SC01–26、J01–26、反例与证据保留；未执行的路线保持 draft/not_run，不能由旧 Gate 推断新产物通过。Pi 默认工具为 `notion_list`、`notion_use` 与原生 `read`；`notion_ctl` 按需发现，OMP 历史工具单列。
+
+AH-955 的本批实施同时遵循 [12 项日用收口合同](features/dogfood-closure.md)。实际 Pi 固定 `magpie/group/worker`，独立 `-ns` 与正常 HOME 两臂分开留证；效果披露的源码与有限模型通过不替代真实 Session、provider payload、Notion 写入和最终回答复核。
+
+AH-1033 的短代表任务沿 [公开维护检查与消费同轮双臂](features/skill-consumption.md#ah1033公开维护检查与消费同轮双臂)：从公开维护 Skill 和真实 next.argv 选择精确 owner 的只读 CLI，再实际 use 与读取参考。仅消费或 doctor 就绪不满足这一任务，不另建验证驱动。
 
 full catalog／Default View 的组合读取与 `$` 完整 Members 描述复用均沿用上述地图、原 SDK driver 和安装态 `http-directory`／`dollar` 场景。一个 SDK envelope 的两个 outcome 不能重复计费；去重必须由实际 provider 中的完整正文和来源绑定证明，不能由内部成功、标题或摘要推断。原始正文／Requires、目录身份／入口和失败样本保持完整。
 
@@ -19,6 +32,7 @@ AH-561 的直连请求和跨 Skill 图先走 [request-engine](features/request-e
 
 | 功能地图 | Feature IDs |
 | --- | --- |
+| [本批日用实施与效果披露](features/dogfood-closure.md) | DF01–12 / AH-955 |
 | [消费链验证、场景与成本边界](features/skill-consumption.md) | SC-VERIFY-01～03；SC01–26 / J01–26 |
 | [直连请求引擎](features/request-engine.md) | NG-VC-01、NG-RE-02～05/21 |
 | [Skill 依赖图](features/skill-dependency-graph.md) | NG-SG-06～20 |
@@ -166,6 +180,8 @@ node scripts/verify-daily-notion-ui.mjs --database UUID --skill-ref skill://PAGE
 生命周期 selection 必须与既有真实目录回执的完整 value 一致；重名时包含 page ID。首个受控草稿恰好是 `$`，metadata gate 放行后不重输即出现候选，再追加目标前缀。该额外证据见 `manifest.lifecycle.firstBareDollarMenu` 和 `lifecycle-cold-first-input-bare-dollar-menu` 截图。
 
 随包 Skill 使用 [内容地图](features/builtin-management.md)，复用现有 distribution/source/editor 路径。独立 npm/Tern 产物在未配置 Notion source、全局 CLI 和中央 Skill 安装时，三份内建 Skill 仍可经普通 `$` 发现、加载正文与相对资源；多来源操作使用各自真实 argv/database。`/ntn-skills` 命令镜像、管理面板和 save 桥已退役。
+
+AH-714 的正常 HOME 候选预验收复用 `verify-pi-daily-installation.mjs candidate-plan|candidate-run`，先读[项目范围候选 autoload](features/skill-consumption.md#项目范围候选-autoload)。它保留其余日用 packages、原有本地 Skill、MCP 和 context，以正式项目 package 配置替换一个 Broker，并使用真实 SDK/模型；该层不代表全局日用安装或真实库存已经验收。原 SC20 的隔离 `--no-*` 驱动不能代替此路径。
 
 ## Evidence
 

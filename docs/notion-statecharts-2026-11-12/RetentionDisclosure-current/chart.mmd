@@ -1,0 +1,35 @@
+---
+title: "读取结果与副作用回执"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: Breaks NoFalseZeroWriteReport or ReadyReportsObservedRetention
+    lg1: Path to the NoFalseZeroWriteReport or ReadyReportsObservedRetention bug
+  }
+  class lg0 breaks
+  class lg1 bugPath
+  s0: 已有固定版本
+  s1: 工具返回完整正文#65307;未披露效果
+  s2: Notion正文已经修改
+  s3: 请求当前完整内容
+  s4: 受控报告规则已输出#65307;未披露效果#65307;报告零写入
+  s5: 内部留存已发生远端写入
+  s6: 工具返回完整正文#65307;未披露效果#65306;留存副作用未披露
+  s7: 受控报告规则已输出#65307;未披露效果#65307;报告零写入#65306;留存副作用未披露#12289;错误声称零写入
+  [*] --> s0
+  s0 --> s1: 读取已验证固定版本
+  s0 --> s2: 人修改Notion正文
+  s1 --> s4: 按模型规定的报告规则输出
+  s2 --> s3: 明确取得当前版
+  s3 --> s5: 留存已观察版本
+  s5 --> s6: 返回正文及本次效果
+  s6 --> s7: 按模型规定的报告规则输出
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 bugPath
+  class s2 bugPath
+  class s3 bugPath
+  class s5 bugPath
+  class s6 breaks
+  class s6 bugPath
+  class s7 breaks
+  class s7 bugPath

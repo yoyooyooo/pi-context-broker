@@ -81,6 +81,8 @@ omp -e ./packages/context-broker/src/index.ts
 
 可选 Tern 配套插件使用独立的 [Release 安装入口](#tern-补全)。
 
+[直接源码吃狗粮](README.md#direct-source-dogfooding)：沿现有 CLI shim 和 Pi 源码包入口使用当前实现，无需先发布。CLI 修改可直接执行；Broker 默认 SDK 来自构建产物，CLI/SDK 改动后在原路径重建 CLI 与 `build:broker`，再开启新会话。只保留一个 Broker 包入口，其他扩展不变。
+
 ## 快速开始
 
 ### 1. 配置 Skill 目录
@@ -134,7 +136,7 @@ $design-review review this API boundary
 
 按 Enter 即锁定本次提交，草稿仍可编辑。原生编辑器显示 running 与 **Stop**；点击 **Stop** 或按 Escape 可取消准备。期间再按 Enter 不会提交编辑后的草稿。Pi 在宿主创建 agent operation 后，于可取消的 `context` 阶段准备选中内容，RPC `abort` 也会取消这项工作。准备成功后，首个 provider 请求包含原提示词、图片及完整选中 Skill 正文。准备失败或取消会阻止该请求，切换会话也会阻止迟到结果派发。
 
-Pi 仅在 `after_provider_response` 收到 2xx 响应头，且完整正文与本次请求的固定选择匹配后，才确认 Skill 为 active。这表示请求已被接收，不表示模型响应已经完成。缓存字节和 ready 准备结果都不能单独证明 active。
+Pi 仅在 `after_provider_response` 收到 2xx 响应头，且完整正文与本次请求的固定选择匹配后，才确认 Skill 为 active。这只表示逻辑上的请求接受，不表示模型响应已经完成，也不是最终 wire 投递。普通 `openai-completions` 的 wire 证明是单独的 Node Undici 实体哈希核对；其他传输不会被记成 wire 已确认。缓存字节和 ready 准备结果都不能单独证明 active。
 
 未知简单 `$name`、`$name@namespace`、金额和 `$bunfs/root/chunks/cli-nxfh2cp0.js` 等路径保持普通文本，不产生失败提示。之前已接受的选择或完整身份 token 不可用时，用户与模型都会收到明确的“未加载”反馈；其他有效 Skill/Prompt/Router、原文与图片仍只派发一次。歧义及实际已选记录的权限、网络、目录或完整性错误仍阻断，不悄然改选其他来源。
 

@@ -199,13 +199,25 @@ Source 操作不设总时限。每次网络尝试独立计时；分页、重试�
 
 来源失败保留脱敏的 source/code/message。认证、网络和响应格式失败仍使该来源不可用；合法的部分目录则保留精确记录，附带非阻断的 `CATALOG_INCOMPLETE` 提示，并使用页面限定 token，不能据此证明无结果或名字唯一。默认 View 失败时，默认目录为空且显示修复方法，完整目录中的精确显式选择仍可用。实际正文交付仍检查选中记录的权限和快照完整性。本地 Skill 和普通聊天继续工作，不把失效的显式 View 偷换为其他 View 或全库。
 
-Pi 注册扩展和编辑器后在后台发现元数据。普通输入和无关的原生文件读取不等待冷目录、慢请求或发现失败。系统提示明确标记目录仍在等待或暂不可用，并提供 `notion_list` 入口；pending 不表示目录为空。后台请求仍计入发现成本。显式 `$`、精确 `/skill:` 输入、`notion_list`、`notion_use` 和 Notion read 继续检查所需目录、权限、身份和固定快照。选择失败阻断部分指令派发，已替换会话的旧准备不能迟到发布。普通续接保留已经 active 的指令及其选中快照。
+Pi 注册扩展和编辑器后在后台发现元数据。交互式和 RPC 的普通输入、无关的原生文件读取不等待冷目录、慢请求或发现失败。一次性 `pi -p` 的 print 或 JSON 提交则在首次可取消的 context 阶段等待已有目录请求，再发送第一条模型请求。此处只等待元数据，不加载正文；取消或切换会话会停止等待，目录失败仍明确显示不可用，不解释为空目录。
+
+当前目录作为一份临时目录数据消息加入最终请求，只包含名称、描述、来源身份和准确引用，不包含未选正文。其他扩展提供精确系统提示时，这份目录仍然可用，安全规则和工具声明保持不变。重复投影只替换 Broker 自己的目录，不追加目录历史或改写原生会话。目录仍在等待或暂不可用时提供 `notion_list` 入口；pending 不表示目录为空。后台请求仍计入发现成本。显式 `$`、精确 `/skill:` 输入、`notion_list`、`notion_use` 和 Notion read 继续检查所需目录、权限、身份和固定快照。选择失败阻断部分指令派发，已替换会话的旧准备不能迟到发布。普通续接保留已经 active 的指令及其选中快照。
+
+当前有效请求中，同一身份、同一版本的完整 Skill 与资源正文只保留一份。重复 `read` 或 `notion_use` 仍执行用户明确要求的操作，但模型投影可复用已存在的完整正文和生成目录，只保留必要确认与各次 effects。只有同一请求中存在可信完整副本时才能省略，摘要或历史 loaded 标记不能替代全文。原始会话和工具结果保持完整。撤下旧正文也不抹掉已经发生或尚未确认的操作结果。详见[正文与模型投影](skill-consumption-projection.md)。
+
+Notion 网页修改发生在 CLI 缓存之外。精确引用固定身份，不承诺每次联网：当前读取可以复用仍合格的观察，固定读取保留历史。Broker 保留 SDK 原始验证时间和 remote/cache 来源，metadata、read 与 use 共用同一 scoped 资格观察；旧缓存或历史 pin 不能清除较新的拒绝。精确依赖失败只更新实际依赖，不猜成根节点禁用。取消、旧代次与同代次迟到旧请求均不能覆盖已经接受的新验证。
+
+公开 `notion_list` 和首轮提交上下文能到达原目录 TTL，不依赖编辑器补全。命中不续期，并发到期核对复用已有请求所有者；交互输入保留 pending 非阻塞，print/JSON 在可取消边界等待。`/context-broker refresh` 明确重取当前目录和 View；失败保留错误或 partial，不把旧结果称作新鲜成功或空目录。分页摘要包括实际 availability、View 与覆盖，状态变化后不能静默拼接两代分页。
+
+当前资格、固定选择与已经交付的文字分别处理。已知禁用阻止新的应用与隐式恢复，不删除已交付的历史解释。已知权限拒绝或认证 scope 变更阻止 Broker 后续受控投递／恢复相应已验证正文，不改写原 session，也不声称能撤回已经发送的请求。明确新选择须完整通过固定文件、身份与响应预算校验才替换旧图，失败保留原选择。
+
+`Default Context` 明确保留为可选的作者组织／View 筛选属性，不作为第二个可用开关或全文注入开关。保留现有值、稳定 schema 和作者读写入口，因为真实 View 与其他集成可以使用它。没有筛选它的 View 中，切换该字段没有独立效果；明确筛选它的 View 则按正常目录新鲜度改变成员。`Enabled=false` 不能被它解禁。本批不重命名、删除字段，也不强制隐藏用户管理视图中的列。
 
 Pi 在 input 边界锁定选中提交，待 `agent_start` 提供本次操作的 signal 后，在 `context` hook 内获取目录、图与正文。待提交记录保留原文、图片和已接受的身份。**Stop**、Escape、RPC `abort` 及切换会话都会取消这项获取。准备出错会中止宿主操作，失败或已失效的准备不能继续调用 provider。
 
-Pi 仅在当前请求未取消，且 `after_provider_response` 返回 2xx 状态时记录 active 指令。写入 `context-broker-active-sources` 前，会核对本次请求中的完整正文；Notion 记录还须匹配固定的 `use` 图。该事件发生在收到响应头时，早于响应流结束；它确认请求已被接收，不代表模型完成。缓存文件、`ready` 结果、选中图、摘要和仅展示的 loaded 日志都不能单独证明 active。[Skill 消费运行时](skill-consumption-runtime.md) 说明这些独立状态与兼容路径。
+Pi 仅在当前请求未取消，且 `after_provider_response` 返回 2xx 状态时记录 active 指令。写入 `context-broker-active-sources` 前，会核对本次请求中的完整正文；Notion 记录还须匹配固定的 `use` 图。该事件发生在收到响应头时，早于响应流结束；它只确认逻辑上的请求接受，不代表模型完成，也不是最终 wire 投递。`before_provider_request` 不是最后一次载荷修改：更晚的 handler 仍可替换 payload，响应事件也不含 body。普通 `openai-completions` HTTP 路由会先核对序列化后的工具结果和 Broker 拥有的 user/custom 投递，绑定实体摘要，并且只有 Node Undici 在该 run 的模型端点上观察到同一摘要时才记录 wire 回执。已知不一致不会确认 active、selected 或 persisted。已经发出的 body 保持 dispatched，不会被改写成 provider 状态 0。其他 API、mock provider 和非 Undici 传输明确不是 wire 证明。`/context-broker request` 最多打印 32 条内存记录，只含哈希、计数、固定 snapshot pin、copied/reused/retired、净化后的 `remote_writes`/`author_content` 和错误，不含源正文、path、ref 或密钥，也不新增模型工具。标量和批量 `contextBrokerResource` 与主文、preparation 一起核对。同一模型端点上无法归属到单一 run 的并发发送记为 unknown，不能变成 wire 成功。进程内 mock payload 即使 2xx 也只是 logical-only。缓存文件、`ready` 结果、选中图、摘要和仅展示的 loaded 日志都不能单独证明 active。[Skill 消费运行时](skill-consumption-runtime.md) 说明这些独立状态与兼容路径。
 
-Pi 1.4 只在启动或 reload 时通过 `resources_discover` 收集扩展资源路径，没有提供目录晚到后刷新原生 Skill 菜单的扩展 API。Broker 将晚到元数据放入当前请求的 `<ntn-skills-view-catalog>`，精确 `/skill:` 输入仍经过准备门控。`$` 补全是独立入口，不能证明原生菜单已经刷新。Broker 不为更新菜单自动 reload 当前会话。
+Pi 1.4 只在启动或 reload 时通过 `resources_discover` 收集扩展资源路径，没有提供目录晚到后刷新原生 Skill 菜单的扩展 API。Broker 将晚到元数据放入当前请求的 `<ntn-skills-view-catalog>`，精确 `/skill:` 输入仍经过准备门控。Pi 的 Notion 命名面把连续且来源相同的卡片放进 `<catalog-cards>`。每张卡片保留作者名称、完整描述、location 和可选 ref。自闭合卡片表示同一请求里已有完全相同的描述，所以这里省略。空元素表示作者描述本身为空。OMP 和其他非 Pi 面继续使用原来的 `<available_skills>` 与 `<available_routers>`。`$` 补全是独立入口，不能证明原生菜单已经刷新。Broker 不为更新菜单自动 reload 当前会话。
 
 OMP 保留原行为：查询目录时不阻塞编辑器，首次普通提交会在调用 provider 前等待当前 View。每轮 `before_agent_start` 生成一份 `<ntn-skills-view-catalog>`，按精确路径移除 Broker 自己的旧目录项，保留其他本地条目和会话正文。新建会话、列举或切换 View 均不自行调用模型。默认零预取预算不会在注册或切换目录时准备正文；显式预算可以在后台准备所选 View 的有限子集，不构成选择或激活。完整目录和 View 查询各自保留覆盖范围，新鲜度或某个页面可读都不能补成完整覆盖。
 
@@ -255,6 +267,8 @@ OMP 保留既有宿主协议的 `skill_search`、`skill_prepare({roots,purpose})
 绑定先写入分支记录，再对外显示，并在 resume 时重放。当前分支没有的引用明确失败。每次使用仍校验当前授权来源、完整 owner 身份及固定快照。未知、格式错误、scope 不符或 owner 不匹配的引用不能回退为文件系统读取或当前内容。分配引用本身不读取或激活正文；`sr:S`、`sr:R` 也不证明已经投递。
 
 ### 宿主发现与选中激活
+
+Notion 用法指引由 Broker 在运行时负责，不在全局 `AGENTS.md` 或 `CLAUDE.md` 重复常驻；这些文件只保留跨 Agent 的偏好与行为规范。正常 Pi 指引只讲选路和授权边界，分页、刷新与参数细节留在工具定义中，具体工作流留在选定的 Skill 正文中。原生能力不足时才补充对应来源的 CLI 后备路径。没有启用 Notion source 时，不注入 Notion 指引、目录或工具。
 
 Pi 在 provider 派发前根据公开的 active-tool 列表生成 `<ntn-skills-guidance>`。日常消费使用 `notion_list`、原生 `read` 与 `notion_use`；本地 Skill 保留原生发现和读取。原生读取接受准确的 `sr:C`、`sr:S`、`sr:R` 和 canonical `skill://` 引用。原生发现与读取齐全时，不附上重复 CLI argv 或 shell 模板。缺少能力时，仅在 `bash` 已启用的情况下提供所选来源的 CLI 后备说明；指引不会启用工具。管理使用上文按需发现的 `notion_ctl`。普通续问复用完整正文，当前明确要求的 read/use 仍通过可用且已授权的入口执行。介绍与检查把指令当作内容，不采用其中的工作流或前置检查。`notion_use` 保持模型直接调用；Code mode 内层成功不能证明模型收到完整正文。
 

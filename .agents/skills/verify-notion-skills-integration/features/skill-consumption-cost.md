@@ -17,6 +17,14 @@
 
 正文观察只扫描实际 message content（包含 JSON 编码的 prepare 正文），排除 details、tool schema 和 assistant tool arguments；raw/XML/JSON 的同一物理片段不重复计数。known body 必须来自 owned receipt 和匹配的非空 toolCallId，v2 compiler/hash/span 也要匹配。该统计仍不替代完整功能投递判断。真实 Pi 的 TranscriptContext 可带内部 details，受控捕获的总 JSON 大小不能当模型 HTTP body；serializer/localhost HTTP 的字节和真实模型 HTTP/token 分开报告。
 
+### AH-639：新进程暖续问的既有回执
+
+final-v3 C-warm 的两条自动准备回执仍存在于原生会话当前有效投影，完整正文也已进入真实 provider；新成本观察器仅扫描转换后的 messages，因而漏计这两条，而七条旧工具证明仍可验证。修正复用 `captureInjectionReceipts`，只从当前 `buildSessionProjection()` 取得既有 machine receipt，作为内存 sidecar 交给原 `remember`；仍须匹配本次实际 user 文本的 `nativePromptSha256`、v2 身份/pin、完整 span、正文 hash 与 bytes。不得扫描全历史、修改 provider、复制正文给模型或增加来源请求；缺 API、非有效分支、摘要、错误 hash/span 均不能形成证明。历史正文复用不增加本轮来源成本。
+
+先用现有 `skill-consumption-cost.test.mjs` 的真实 hook 形状和序列化扩展检测旧行为，保留原工具证明，并验证缺 API、非有效 projection、错误 hash/span 及 provider 截断均不被误计。现代 Pi guidance 补充零显式工具/正文读取不能推出零自动 metadata 请求或写入，仍守原 900 B 上限。原 C-warm 的 failed 与其最终表述缺口保持；离线修正不代替独立候选的真实续问。此改动只修诊断回执来源与说明，不改变准入、授权、固定版本、效果或会话状态机；既有模型输入不变，coverage 仅更新实际相关源码绑定并说明此边界。
+
+本次两个成本反例与 guidance 反例先失败，原两文件随后分别 24/24、13/13 通过，类型检查通过；guidance 实测 811→897 B。独立审阅无阻断项，并以原 C-warm native/tool messages、完整合并 user 和实际 216,548 B payload 回放序列化观察器：原七条工具正文保留，两条自动正文恢复，九条各一次，原 payload/native 字节不变。旧运行未保存实际 projection API 输出，因此该回放明确使用已独审有效 sourceEntry 的受控 API seam，不声称证明真实新进程恢复。原件在 `verification-evidence/ah955-20261111/warm-receipt-boundary`，独立报告 `ah623-639-638-20261111-daily/reviews/e2e-root-warm-receipt-patch-review.json` SHA256 `a37149280242b96f2ccefd1611e1ae126cc90676de698bb91a213f58a8c63eee`。原失败与后续真实候选分别记账。
+
 未知值用 null。provider hook JSON、CLI 解码 JSON、压缩后的 HTTP entity、ZIP 文件和 TCP/TLS wire 是不同单位。模型 HTTP observer 只有 identity content-encoding 才将 entity bytes 作为 decoded response bytes；wire bytes 始终不可从这些 hooks 推得。usage 的 input、output、cacheRead、cacheWrite、totalTokens 分开记录，不用字符数估计 token。Notion SDK / CLI 的重试和队列等待沿用公开 request_metrics；模型 SDK 内部等待或其它未观察字段仍为 null。
 
 ## Launch 与 Doctor
@@ -57,6 +65,10 @@ node scripts/skill-consumption-source-baseline.mjs run --run /absolute/reported-
 Plan 在远程读取前冻结 CLI/hash、方法、样本顺序和初态；执行拒绝被修改的 driver 或 CLI，不重复执行同一个 run。首个实际 cold 样本建立源身份锚，之后的 scope/snapshot/version/hash 漂移必须失败；不由 oracle 预热 consumer。独立 oracle 有自己的状态根与成本账本。
 
 Cold 每例为空的自有状态；warm 使用独立 setup 后的共享自有状态，固定 5m 策略。Expired 使用冻结的 `--max-age 1s` 和实际单调计时至少 1001ms 的等待，验证 freshness 回执；不是 `--refresh` 或 `--max-age 0` 的强制全量行为。Partial 仅把已验证的自有主文对象移入系统 Trash，保存原对象和 manifest，随后走原固定 pin；不得回退 current 或补做成功来替换失败。
+
+Partial 的 owned Trash 状态准备使用与最终 cleanup 相同的独立 30 秒进程预算；来源 CLI 的冻结 `timeoutMs` 保持原值，模型预算也不受影响。2026-11-11 集成测试的原反例在 `source-baseline-driver-test-SqSXfL/runs/source-20261111T111026624Z-26a34b63`：fixture 的 2 秒 CLI 预算误用于 `/usr/bin/trash`，2017.613875ms 后 SIGTERM。对象已移出、manifest 未变，但非正常终局仍正确使初始化失败，尚未启动固定读取；缺失的 `executedMainReads` 不能用 `?? 0` 冒充已验证零次读取。原 samples、Trash receipt/lifecycle 和 partial manifest 只读复制至 `verification-evidence/ah623-639-638-20261111-daily/diagnostics/source-baseline-trash-timeout/`，保留失败与未知请求成本。定向复验使用原 `node --test scripts/skill-consumption-source-baseline.test.mjs`，仍须真正取得 partial 的 `SNAPSHOT_MISSING`、零 main read 和完整原对象备份。本修正仅区分状态设置与被测来源命令的预算，不改变 Pi driver、产品批量读取合同或有限模型语义。
+
+独立候选的原测试文件一次复跑为 8/8，通过记录在同证据根 `source-baseline-green.log` 与 `green-review.json`（SHA-256 `361f0905e78705c674f20aede00160e02b364820befea7057cb5c5560c170f3e`）。新 plan 的来源 CLI 仍为 2000ms；Trash 正常退出0，后续 partial prepare 返回预期 `SNAPSHOT_MISSING`，样本仍是被保留的 failed，main read 为0、计划为1、manifest和原对象备份完整。此结果不代替真实来源或模型验收。
 
 ### SC11 的六样本采用门槛失败
 

@@ -201,6 +201,8 @@ export type ExtensionContext = {
   };
   cwd?: string;
   mode?: "tui" | "rpc" | "print" | "json";
+  /** Present on Pi's live context. Absent in tests that only drive logical acceptance. */
+  model?: { api?: string; baseUrl?: string; provider?: string; id?: string };
   /** Pi's current agent-operation signal, exposed in event and tool contexts. */
   signal?: AbortSignal;
   abort?(): void;
@@ -332,6 +334,7 @@ export type NotionViewState =
   | { sourceId: string; origin: "session" | "configured" | "profile" | "first"; status: "error"; code: string };
 export type NotionListObservation = {
   sourceId: string;
+  scope?: string;
   exhaustive?: boolean;
   policy: "default" | "max_age" | "refresh" | "offline" | "pinned";
   validatedAt?: string;
@@ -444,6 +447,7 @@ export type SkillRecord = SkillMetadata & {
   defaultDiscovery?: boolean;
   versionId?: string;
   freshness?: unknown;
+  currentObservation?: import("./consumer-observation").CurrentEvidence;
   coverage?: unknown;
   sourceScope?: string;
   metadataIndexPath?: string;

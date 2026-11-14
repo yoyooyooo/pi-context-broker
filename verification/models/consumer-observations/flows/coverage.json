@@ -1,0 +1,695 @@
+{
+  "version": 1,
+  "source_base": "1c11c57849f97d2c13b82eb8a62fe6b6065741c4",
+  "kind": "composed_design_contracts_with_real_flow_replay_not_refinement_proof",
+  "files": {
+    "packages/context-broker/src/host-skills.ts": "14ad8253488ff98258ff7b47757fe7398f25577d7b6880f9dec9d76299898cdb",
+    "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
+    "packages/context-broker/src/prepare-protocol.ts": "722883c738809713ea5eaca582cd953233f56b95758df1f7f627453cbcdd8561",
+    "packages/context-broker/src/skill-context-projection.ts": "2a14a36f498459f8cd7dd861f4130cc796b897b1261c126ccec609494ee5183b",
+    "packages/context-broker/src/skill-context-projection-proof.ts": "6495388d79648064f0bf162c348acab0f77aa4a37bb4cb380a0415bd58f48db0",
+    "packages/context-broker/src/notion-sdk.ts": "2a062d638c1f13910052c4edf8a0a2250f608e00144f3c521edcec04a51cd9af",
+    "packages/context-broker/src/resource-read-projection.ts": "c72d8749018ca97fbb8026568ae23831080b65e8d312ca8b454792327424183e",
+    "packages/context-broker/src/session-source-snapshot.ts": "b23de4a16344620ff12e4e2bd3147d119fdfbffba37507b54434d7425d84c9a5",
+    "packages/context-broker/src/notion-source.ts": "20a876a4e1db4676d252ed184ef35654a691a73902d7e3c846a9eb8e51a6a07d",
+    "packages/context-broker/src/index.ts": "bd5f955083bce00d4dd55d55be8e4b3b19f7e59d6c85876fc092a75398686789",
+    "packages/context-broker/src/consumption-effects.ts": "5b10742bccfe19ccd4b52b06733baab9f730d84861e24299b0e3a73f81e73794",
+    "packages/context-broker/src/pi-host-adapter.ts": "ff4f213acd643c067b7fa000bd05f5ddd8981882ee3926cceadab3875e212ee0",
+    "packages/context-broker/src/skill-catalog-projection.ts": "660c4f4047f5acb59b5e82a7dd7990539bcebb26d4cd7e52c83b9576f13fdd15",
+    "scripts/build-tern.mjs": "4839a90f0ed6a32b602b52ad13a0ea0d66baf40966eae41eee875c0683c413af",
+    "packages/context-broker/scripts/notion-sdk.test.ts": "abafb99deda5928df533fabcfbb6f44cae89a8c88a71bfc3ea0ff8303aada17d",
+    "packages/context-broker/scripts/skill-context-projection.test.ts": "a5499d23a597be28a5048f3b36bd904b2d0bb7f64db032890f07ac316acfcc61",
+    "packages/context-broker/scripts/host-prepare.test.ts": "6f88489ed58f7887e2a8189ccd08539dc7295c53abec10cf268039154001f752",
+    "packages/context-broker/tsconfig.json": "5b485daf61c3d2f793b77a9c8511a135f40988a402d1e0840b4e9d79a289646d",
+    "scripts/skill-preparation-evidence.mjs": "a1c3ae9d40c4ca4ec407014ed13339c20caf66f2d918a4b988602053ea7bb3fb",
+    "scripts/skill-preparation-evidence.test.mjs": "3205a96b55844a40d2c1194ccb2485be4d570fd1e4f07156a2a8529676283275",
+    "scripts/notion-sdk-pi.mjs": "2be6fa4f35fe4f3f78c81af8cfb66cf29a71dc19e0999ef39b88597f1907f006",
+    "scripts/notion-sdk-pi.test.mjs": "f5fc3ce23115627a91c4dbf1fb2f423fa54322801a20ab7e5d1a72cd5a4e2121",
+    "packages/context-broker/scripts/skill-model-surfaces.test.ts": "876b6c6650bed1f81068c71c1be630fb10ecb951e1cc1a7cb17797cc26d57d5b",
+    "packages/context-broker/scripts/session-active.test.ts": "651b81077ba4635f8267c7623f001a5e3e46d65901a4bc646b1b04f5a6b30dcd",
+    "packages/context-broker/src/resource-read-types.ts": "fe42ca452633a4919aea0d23ff46789d4de742686f4290d53ca69b00074e92ab",
+    "packages/context-broker/scripts/pi-read-adapter.test.ts": "b0a144a76ba38125d0b159a9ef281d918c87d0f4cf0961929562c6332151d292",
+    "packages/context-broker/scripts/resource-read-host.test.ts": "aa69aa4d7750b2a460b7201b3210846da6327144c8508f1e90384aa7b78ab125",
+    "packages/context-broker/scripts/resource-read-projection.test.ts": "210e5e4e50574f1a2f4a2dc0232091f68736f0885062cbc00282ca2f43056cdc",
+    "packages/context-broker/scripts/fixed-resource-source.test.ts": "cd057a611b34ee7a85816ccad38951ec561a120747ad717ba0d75f76cb8f3aa1",
+    "packages/context-broker/scripts/formal-effects-composition.test.ts": "ed05eec59ae651da86f48de20fe6749163227e49fa88d020f35cca81ff8871dd",
+    "packages/context-broker/src/final-request.ts": "ba7db9fc301e115200b8ba6534ab332e0f90a1a5c3c4ceaef34389cdf0bd4b9c",
+    "packages/context-broker/scripts/final-request.test.ts": "85266fac06f8d4b3fbe88e92dadabf2f04a94a72e9aba6c2c421be4e05d84f85",
+    "packages/context-broker/scripts/final-request-undici.test.ts": "78671b59508bc648038400bebd5f4c569695a48aba7ce2d57ffa94fe509b5cdc"
+  },
+  "cases": [
+    {
+      "model": "ManagementToDelivery",
+      "config": "implemented",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "ManagementReceiptBeforePublish",
+        "CompleteBeforeApplication",
+        "OrdinarySelectionStable",
+        "ReferenceBelongsToSelection",
+        "FreshFollowupReusesBody",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "ManagementToDelivery",
+      "config": "partial-negative",
+      "expected_broken": [
+        "CompleteBeforeApplication"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ManagementReceiptBeforePublish",
+        "CompleteBeforeApplication",
+        "OrdinarySelectionStable",
+        "ReferenceBelongsToSelection",
+        "FreshFollowupReusesBody",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "ManagementToDelivery",
+      "config": "moving-pin-negative",
+      "expected_broken": [
+        "OrdinarySelectionStable"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ManagementReceiptBeforePublish",
+        "CompleteBeforeApplication",
+        "OrdinarySelectionStable",
+        "ReferenceBelongsToSelection",
+        "FreshFollowupReusesBody",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "ManagementToDelivery",
+      "config": "mixed-reference-negative",
+      "expected_broken": [
+        "ReferenceBelongsToSelection"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ManagementReceiptBeforePublish",
+        "CompleteBeforeApplication",
+        "OrdinarySelectionStable",
+        "ReferenceBelongsToSelection",
+        "FreshFollowupReusesBody",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "ManagementToDelivery",
+      "config": "repeat-body-negative",
+      "expected_broken": [
+        "FreshFollowupReusesBody"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ManagementReceiptBeforePublish",
+        "CompleteBeforeApplication",
+        "OrdinarySelectionStable",
+        "ReferenceBelongsToSelection",
+        "FreshFollowupReusesBody",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "config": "current",
+      "expected_broken": [
+        "NoFalseZeroWriteReport",
+        "ReadyReportsObservedRetention"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ReadyReportsObservedRetention",
+        "NoFalseZeroWriteReport",
+        "ReadOnlyHasNoRemoteWrites",
+        "UnknownOutcomeIsDisclosed",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "config": "proposal",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "ReadyReportsObservedRetention",
+        "NoFalseZeroWriteReport",
+        "ReadOnlyHasNoRemoteWrites",
+        "UnknownOutcomeIsDisclosed",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "config": "claim-negative",
+      "expected_broken": [
+        "NoFalseZeroWriteReport"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ReadyReportsObservedRetention",
+        "NoFalseZeroWriteReport",
+        "ReadOnlyHasNoRemoteWrites",
+        "UnknownOutcomeIsDisclosed",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "config": "implemented",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "ReadyReportsObservedRetention",
+        "NoFalseZeroWriteReport",
+        "ReadOnlyHasNoRemoteWrites",
+        "UnknownOutcomeIsDisclosed",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "config": "read-only",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "ReadyReportsObservedRetention",
+        "NoFalseZeroWriteReport",
+        "ReadOnlyHasNoRemoteWrites",
+        "UnknownOutcomeIsDisclosed",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "config": "unknown",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "ReadyReportsObservedRetention",
+        "NoFalseZeroWriteReport",
+        "ReadOnlyHasNoRemoteWrites",
+        "UnknownOutcomeIsDisclosed",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "config": "read-only-negative",
+      "expected_broken": [
+        "ReadOnlyHasNoRemoteWrites"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ReadyReportsObservedRetention",
+        "NoFalseZeroWriteReport",
+        "ReadOnlyHasNoRemoteWrites",
+        "UnknownOutcomeIsDisclosed",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RetentionDisclosure",
+      "config": "unknown-negative",
+      "expected_broken": [
+        "UnknownOutcomeIsDisclosed"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ReadyReportsObservedRetention",
+        "NoFalseZeroWriteReport",
+        "ReadOnlyHasNoRemoteWrites",
+        "UnknownOutcomeIsDisclosed",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "ManagementToDelivery",
+      "config": "unverified-management",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "ManagementReceiptBeforePublish",
+        "CompleteBeforeApplication",
+        "OrdinarySelectionStable",
+        "ReferenceBelongsToSelection",
+        "FreshFollowupReusesBody",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "ManagementToDelivery",
+      "config": "unverified-negative",
+      "expected_broken": [
+        "ManagementReceiptBeforePublish"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ManagementReceiptBeforePublish",
+        "CompleteBeforeApplication",
+        "OrdinarySelectionStable",
+        "ReferenceBelongsToSelection",
+        "FreshFollowupReusesBody",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "AcquisitionEffects",
+      "config": "implemented",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "ConfirmedFactsPreserved",
+        "UnknownEffectIsSticky",
+        "CompleteSelectionOnly",
+        "StrictReadOnlyHasNoWrites",
+        "CompatibleSdkBeforeDispatch",
+        "NoFalseZeroWriteReport",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "AcquisitionEffects",
+      "config": "read-only",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "ConfirmedFactsPreserved",
+        "UnknownEffectIsSticky",
+        "CompleteSelectionOnly",
+        "StrictReadOnlyHasNoWrites",
+        "CompatibleSdkBeforeDispatch",
+        "NoFalseZeroWriteReport",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "AcquisitionEffects",
+      "config": "legacy-rejected",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "ConfirmedFactsPreserved",
+        "UnknownEffectIsSticky",
+        "CompleteSelectionOnly",
+        "StrictReadOnlyHasNoWrites",
+        "CompatibleSdkBeforeDispatch",
+        "NoFalseZeroWriteReport",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "AcquisitionEffects",
+      "config": "lost-prior-negative",
+      "expected_broken": [
+        "ConfirmedFactsPreserved",
+        "NoFalseZeroWriteReport"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ConfirmedFactsPreserved",
+        "UnknownEffectIsSticky",
+        "CompleteSelectionOnly",
+        "StrictReadOnlyHasNoWrites",
+        "CompatibleSdkBeforeDispatch",
+        "NoFalseZeroWriteReport",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "AcquisitionEffects",
+      "config": "unknown-negative",
+      "expected_broken": [
+        "UnknownEffectIsSticky",
+        "NoFalseZeroWriteReport"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ConfirmedFactsPreserved",
+        "UnknownEffectIsSticky",
+        "CompleteSelectionOnly",
+        "StrictReadOnlyHasNoWrites",
+        "CompatibleSdkBeforeDispatch",
+        "NoFalseZeroWriteReport",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "AcquisitionEffects",
+      "config": "partial-selection-negative",
+      "expected_broken": [
+        "CompleteSelectionOnly"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ConfirmedFactsPreserved",
+        "UnknownEffectIsSticky",
+        "CompleteSelectionOnly",
+        "StrictReadOnlyHasNoWrites",
+        "CompatibleSdkBeforeDispatch",
+        "NoFalseZeroWriteReport",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "AcquisitionEffects",
+      "config": "read-only-negative",
+      "expected_broken": [
+        "StrictReadOnlyHasNoWrites"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ConfirmedFactsPreserved",
+        "UnknownEffectIsSticky",
+        "CompleteSelectionOnly",
+        "StrictReadOnlyHasNoWrites",
+        "CompatibleSdkBeforeDispatch",
+        "NoFalseZeroWriteReport",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "AcquisitionEffects",
+      "config": "legacy-dispatch-negative",
+      "expected_broken": [
+        "CompatibleSdkBeforeDispatch"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ConfirmedFactsPreserved",
+        "UnknownEffectIsSticky",
+        "CompleteSelectionOnly",
+        "StrictReadOnlyHasNoWrites",
+        "CompatibleSdkBeforeDispatch",
+        "NoFalseZeroWriteReport",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "AcquisitionEffects",
+      "config": "report-negative",
+      "expected_broken": [
+        "NoFalseZeroWriteReport"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "ConfirmedFactsPreserved",
+        "UnknownEffectIsSticky",
+        "CompleteSelectionOnly",
+        "StrictReadOnlyHasNoWrites",
+        "CompatibleSdkBeforeDispatch",
+        "NoFalseZeroWriteReport",
+        "NoDeadlock"
+      ]
+    }
+  ],
+  "ManagementToDelivery": {
+    "observed_source_owners": {
+      "selection_commit": "host-skills.graphPreparation and decoder require complete graph before local commit",
+      "old_session": "selected graph and source-snapshot helpers preserve fixed versions",
+      "support_retirement": "host-skills/resource projection retires verified old main and reference spans",
+      "cache": "Current evidence and SDK original validation timestamps; already valid fixed bodies are reused"
+    },
+    "management_abstraction": "PublishVerified requires CompleteManagementReceipt: either a verified original management completion or a separately completed independent acceptance. The producer guardian proves each within its scope; this port does not rewrite an original mismatch/unknown or create a global runtime gate. Rejected input stays blocked. context is an abstract placement, not HTTP or persisted wire evidence.",
+    "replay": "An actual newly created root with one Requires and one reference; 5 real Pi turns, CLI edit v1→v2, original native JSONL and actual payload hashes",
+    "bounds": "One root, one Requires, one reference, two selected revisions, one ordered edit cycle",
+    "excluded": [
+      "Actual request budgets or p95; model counts logical acquisitions",
+      "HTTP errors/unknown write recovery",
+      "Credential revocation and cross-machine clocks",
+      "All agent choices or unbounded graph/tree shapes"
+    ]
+  },
+  "RetentionDisclosure": {
+    "finding": "Historical compact ready projection omitted six confirmed retention POSTs and the actual final answer claimed no write; keep the original current counterexample and native-review.json unchanged.",
+    "observed_source_owners": {
+      "request_effects": "CLI consume/readSkill/prepareGraph version-1 receipts are decoded by notion-source and prepare-protocol; absent or invalid legacy evidence is unknown.",
+      "strict_read_only": "notion-sdk verifies both SDK export and built manifest before dispatch; readOnly reaches the existing CLI semantic-write guard before a retention mutation.",
+      "public_delivery": "host-skills carries per-operation receipts in notion_use, scalar native read and Pi dollar/native injection. Source text and exact body spans remain intact; failures retain prior/unknown effects.",
+      "reporter": "NoFalseZeroWriteReport applies only to the modeled report rule that uses the receipt. claim-negative preserves a failing reporter even when effects are exposed."
+    },
+    "replay": "Historical native-review.json binds native session lines44/48/52 and six HTTP request IDs. New host-prepare and projection tests exercise public results, failed partial sources, strict denial and native history. The new live Pi replay is recorded separately in AH-953; unit/model results do not stand in for it.",
+    "properties": "ReadyReportsObservedRetention, ReadOnlyHasNoRemoteWrites and UnknownOutcomeIsDisclosed describe the implemented receipt/guard contract. NoFalseZeroWriteReport constrains the explicit abstract reporter, not arbitrary LLM answers.",
+    "current": "Expected historical failures are retained. They are not assertions that the new candidate still hides effects.",
+    "proposal": "Original proposed disclosure case retained for history. implemented additionally identifies the reviewed source owners and fixed-read, strict-rejection and lost-ACK paths.",
+    "negatives": "read-only-negative removes the write guard; unknown-negative omits uncertainty disclosure after a lost ACK; claim-negative makes an unsupported zero-write claim.",
+    "bound": "One fixed or current read, at most one external edit and one abstract retention event; ready, rejected-before-write and lost-ACK failure outcomes.",
+    "excluded": [
+      "Exact number/bytes of Records writes",
+      "Execution of scripts/author commands",
+      "Every caller's retention authorization policy",
+      "Unbounded graphs, remote consistency and actual HTTP timing",
+      "General LLM behavior or content truth"
+    ],
+    "independent_verification": "Node evidence validators independently validate optional version-1 effects while retaining exact source/encoded spans and legacy receipts. Scalar v2 accepts only the untouched native result plus a matching semantic footer; malformed/false-zero receipts and altered spans fail. The projection module uses an explicit .ts runtime import so Node 24 evidence consumers can load the same compiler.",
+    "model_instruction_review": "A real natural no-write request omitted readOnly and incurred six retention writes; the final answer mentioned unchanged author content but did not disclose retained writes. Both scalar read and notion_use descriptions now explicitly require readOnly:true for user read-only/no-write intent and retained/unknown disclosure in the final answer. Guard, effect state, body spans and finite-model transitions are unchanged. This instruction change needs real Pi verification and does not prove arbitrary LLM compliance.",
+    "readonly_error_review": {
+      "finding": "The three effects failure exits mutated incoming Error.message/details. A real DOMException AbortError exposes getter-only message, and a frozen SourceError also throws a new TypeError, dropping the original denial and observed effects.",
+      "change": "All three exits now create a fresh wrapper with the original cause. SourceError code/source/exitCode/details and SourceReferenceAmbiguity candidates remain available; generic errors keep their name and scalar code. The original error is never mutated.",
+      "semantics": "No acquisition, authorization, source write, readOnly gate, cancellation, graph commit or delivery decision changes. This repairs the existing NoFalseZeroWriteReport/error-disclosure implementation boundary, with no new finite-model state or transition.",
+      "regressions": "Three pre-fix failures cover notion_use with a frozen source failure, dollar partial acquisition with known-none or unknown later effects, and native DOMException after retained preparation with no late body receipt. All 48 host-prepare tests and typecheck pass.",
+      "bounds": "Readonly JavaScript error properties and object freezing are not enumerated by RetentionDisclosure. Reuse the unchanged model/cfg/view results; do not claim a fresh model execution or general LLM compliance."
+    },
+    "partial_cancel_review": {
+      "finding": "Independent review of 79ee07fe reproduced a dollar prepareMany partial-source error dropping earlier confirmed retention, and cancellation between prepareRead return and native execution bypassing the existing effects catch.",
+      "change": "prepareMany now supplies the existing per-operation effects observer through graph and Notion fallback acquisition, then combines prior effects with the original typed failure. Native post-preparation cancellation runs inside the original effects-preserving catch, which also clears pending read receipts. Filesystem loads keep their original policy-free route.",
+      "semantics": "No source write, readOnly gate, permission/identity decision, graph commit or delivery rule changes. The original error class/code/source and cancellation refusal remain. NoFalseZeroWriteReport and uncertainty disclosure retain their existing meanings; this repairs concrete implementation wiring rather than adding a new model transition.",
+      "regressions": [
+        "host-prepare: dollar partial source failure preserves earlier retention, precise denial and missing second-source effects as unknown",
+        "host-prepare: queueMicrotask cancellation after graph commit retains effects, invokes zero native reads and cannot attach a late body receipt"
+      ],
+      "bounds": "RetentionDisclosure still abstracts one acquisition and one retention event; it does not enumerate JavaScript microtask scheduling or multi-source request counts. Direct deterministic regressions establish these two implementation paths. Natural-language readOnly compliance and actual Pi final disclosure still require separate live evidence."
+    }
+  },
+  "admission_diagnostics_review": {
+    "issue": "AH-925",
+    "implementation_commit": "93ca4a714c87d22ad5124e066ff3b2f5562e2337",
+    "change": "Attach bounded phase/stage/code and lifecycle context to existing scalar read refusal decisions; preserve public ambiguity candidates.",
+    "ManagementToDelivery": "No graph preparation, selected version, resource identity, publication or body delivery transition changed.",
+    "RetentionDisclosure": "Read-only capability and request guard, observed/unknown effects, author-content distinction and reporting rules unchanged. Admission fields do not infer effects or authorize writes.",
+    "limits": "The unchanged finite model results cannot identify the missing admission cause of the historical cold-resource failure."
+  },
+  "batch_readonly_review": {
+    "issue": "AH-639",
+    "installed_effects_contract_followup": "The original installed Pi artifact gate exposed stale verifier expectations after the package-doc link was repaired: batch public effects were rejected, native-repeat compared per-operation effects for equality, and partial-entrypoint compared complete output with bare source. The existing driver now validates each effects receipt separately while preserving source oracles, exact body spans, block boundaries, raw/session equality and provider disclosure. Targeted negative controls reject missing, malformed or mismatched receipts and lost provider effects. No runtime, model state or transition changes; reuse existing model results without a TLC rerun.",
+    "counterexample": "A v2 called read with three issued sr:R refs and readOnly:true, both public schema fields. The Pi adapter rejected the combination before the host; three later scalar reads succeeded. The original timed-out task remains failed.",
+    "change": "Allow the existing boolean policy in batch admission and pass it through host/source to SDK readResources. Require both RESOURCE_READ_EFFECTS_VERSION=1 and resource_read_effects_version=1 before strict SDK dispatch. The producer reuses withConsumptionEffects/readOnlyNotion; ordinary legacy results keep unknown effects.",
+    "semantics": "Existing owner/pin/File admission, whole-body JSON spans, cancellation, active-main exclusion and source-write policy retain their meanings. Effects are outside resource spans and remain in provider deduplication. This fixes concrete argument and capability wiring; no new finite-model state or transition.",
+    "regressions": [
+      "Exact three-handle public call; invalid policy types rejected before source/native I/O",
+      "One batch/source operation with complete bytes, identities, spans and effects; immutable error receipt",
+      "Legacy or mismatched batch capability rejects strict dispatch with zero SDK calls",
+      "CLI actual descendant semantic-write attempt reaches the normal transport once and reaches it zero times in strict mode"
+    ],
+    "output_schema_followup": "Independent review found the closed Pi resource output schema omitted effects. Actual registered-schema validation rejected actual ready batch output at effects before the fix. The shared receipt schema now accepts ordinary unknown and strict none output, preserves the native scalar branch, and rejects malformed effects and extra output fields. Only the output declaration changes; model state, transitions and runtime effects guards are unchanged.",
+    "bounds": "Direct source regressions and the candidate build establish only these implementation paths. Reuse unchanged TLA/cfg/statechart results without a fresh model claim. Original real A and frozen package remain unchanged; the independent actual Pi sample is recorded separately."
+  },
+  "warm_resume_observation": {
+    "issue": "AH-639 / AH-638",
+    "finding": "The original C-warm new-process observer missed two effective native preparation receipts even though their complete source bodies were present in the actual provider request. Original failed outcome remains.",
+    "change": "Reuse captureInjectionReceipts with the current buildSessionProjection only; an in-memory sidecar passes persisted machine receipts to the existing user-hash, v2 identity/pin, full span/hash/bytes verifier. No provider mutation, full-history scan, source request or new persistent store. Modern Pi guidance distinguishes zero explicit tools/body reads from unobserved automatic metadata requests or writes.",
+    "regressions": [
+      "scripts/skill-consumption-cost.test.mjs",
+      "packages/context-broker/scripts/skill-guidance.test.ts"
+    ],
+    "finite_models": "No admission, authorization, selection, effect, retention or session transition changes. Availability, ReadRace and all composed flow TLA/cfg/view inputs are unchanged; their existing results are reused, not rerun or extended. This diagnostic and LLM explanation boundary requires separate actual-session evidence."
+  },
+  "maintenance": {
+    "owner_skill": ".agents/skills/verify-notion-skills-integration/SKILL.md",
+    "routing": "Relevant protected-source, model, config, view, coverage, runner and skill changes run this suite in formal CI. Use --model for a reviewed local slice.",
+    "view_only": "Rerun the affected existing positive/negative configs, retain exact bug paths and render with /statechart; no expanded proof claim.",
+    "model_semantics": "Review every declared rule, finite bound and environment/fairness assumption; keep exact expected negatives.",
+    "implementation_semantics": "Trace named functions and callers before updating hashes; run corresponding real-code regressions and guard mutations. Hash-only refresh cannot satisfy this review.",
+    "rule_inventory": "cases.expected_rules is a reviewed independent inventory. Do not regenerate it automatically from modified cfg files."
+  },
+  "formal_maintenance_review": {
+    "issue": "AH-1007",
+    "product_semantics_changed": false,
+    "basis": "Existing frozen config inventory migrated without changing TLA, cfg or protected source."
+  },
+  "AcquisitionEffects": {
+    "issue": "AH-1012",
+    "bounds": "Two ordered acquisitions, two possible confirmed retention identities, at most two semantic writes; second success, known failure, ACK unknown, or cancellation. Finite safety only.",
+    "producer_port": "operation-recovery IndependentAcceptance/RestoreFeedback completion preserves original operation identity and status. ManagementToDelivery accepts only a complete selected management receipt.",
+    "consumer_port": "consumer-state SelectionGraph/DeliveryBoundary own complete preparation, selected vector, provider 2xx, turn completion and actual persisted receipt. AcquisitionEffects gives these separate phases and carries cumulative effects across them; it does not synthesize wire proof.",
+    "owners": {
+      "effects": "packages/context-broker/src/consumption-effects.ts: consumptionEffects, errorConsumptionEffects, combineConsumptionEffects",
+      "partial_failure": "packages/context-broker/src/host-skills.ts: prepareMany observedEffects catch, prepareRead native cancellation catch",
+      "capability": "packages/context-broker/src/notion-sdk.ts: observed checks SDK export and built manifest before sdkStarted/run",
+      "semantic_write": "CLI packages/core/src/notion-readonly.ts and consumption-effects.ts; use producer regression mapping"
+    },
+    "real_regressions": [
+      "packages/context-broker/scripts/formal-effects-composition.test.ts",
+      "packages/context-broker/scripts/host-prepare.test.ts: partial multi-source failure, dollar preflight failure, native cancellation and immutable DOMException",
+      "packages/context-broker/scripts/notion-sdk.test.ts: strict scalar/batch capability rejects before any producer operation"
+    ],
+    "negative_rules": "Independent expected_rules and expected_broken are reviewed. Original RetentionDisclosure current/claim/read-only/unknown cases are unchanged.",
+    "excluded": [
+      "Unbounded graphs, distributed transactions, fairness or eventual remote consistency",
+      "Real provider/session evidence or actual live run",
+      "Arbitrary LLM prose: NoFalseZeroWriteReport constrains only Report",
+      "General cancellation interleavings; native post-commit cancellation is separately checked by the existing real host test"
+    ],
+    "maintenance": "Model semantics and actual guards are separate evidence lanes. Review ports with both domain owners; never regenerate expected rules or source hashes merely to obtain a pass."
+  },
+  "context_once_review": {
+    "issue": [
+      "AH-1015",
+      "AH-1016",
+      "AH-1017"
+    ],
+    "product_candidate": "1ddf50cd1aab95c216e393f2718a01725653731f",
+    "review": "docs/context-once-source-review.md",
+    "semantics": "Scope/owner/pin/graph/permission/activation transitions unchanged; scalar retirement preserves operation facts and directory omission requires a matching current-request witness. Exact generated bytes are outside finite model variables and require concrete independent regressions.",
+    "evidence": {
+      "source_tests": 124,
+      "oracle_tests": 187,
+      "typecheck": "passed",
+      "serializer_scope": "actual installed Pi1.5 serializer to loopback HTTP, not a live Pi session",
+      "serializer_entity_bytes": 1614
+    },
+    "historical_rules_and_cases": "unchanged; negative counterexamples retained",
+    "reviewed_files": [
+      {
+        "path": "packages/context-broker/src/prepare-protocol.ts",
+        "previous": "a933a092d39d9abb860ce614c959b13c5e26c1cf830bdb1f9f715b0adf2c283a",
+        "current": "722883c738809713ea5eaca582cd953233f56b95758df1f7f627453cbcdd8561"
+      },
+      {
+        "path": "packages/context-broker/src/skill-context-projection.ts",
+        "previous": "15887381449784a0c8ffd8963e8967d900b9557a943e6d974506a8e55b9e11bf",
+        "current": "ac08ed5220951c7e5fe065ea2f4e18265716cec494fa20134e2577903e1e999b"
+      },
+      {
+        "path": "packages/context-broker/src/skill-context-projection-proof.ts",
+        "previous": "08767ee5fcc9c10e5fe98fa3744213a2e73407784feff4ca8daf167bab6ce65d",
+        "current": "6495388d79648064f0bf162c348acab0f77aa4a37bb4cb380a0415bd58f48db0"
+      },
+      {
+        "path": "packages/context-broker/src/session-source-snapshot.ts",
+        "previous": "e946d3a437b29869546b0192d1fdbd693b2ac38b765b8e60b3763b8198547468",
+        "current": "5bbff1194c6c76ee868ae27759ad2a7a03f063b2709f3fc44ced24d7ee778b04"
+      },
+      {
+        "path": "packages/context-broker/src/skill-catalog-projection.ts",
+        "previous": "7b407d448a44f6fea3c0776ef3f2cd5d73fd10c314b746fe2b1268663cd0f3b8",
+        "current": "660c4f4047f5acb59b5e82a7dd7990539bcebb26d4cd7e52c83b9576f13fdd15"
+      },
+      {
+        "path": "packages/context-broker/scripts/skill-context-projection.test.ts",
+        "previous": "8858838c508e8ef910ec254811e7339aa3cbaad937741045574f2f4398508380",
+        "current": "a5499d23a597be28a5048f3b36bd904b2d0bb7f64db032890f07ac316acfcc61"
+      },
+      {
+        "path": "scripts/skill-preparation-evidence.mjs",
+        "previous": "e3f25b4e62e125543c48f5263c178c69071163a54b404a8963aa11221df12bdf",
+        "current": "a1c3ae9d40c4ca4ec407014ed13339c20caf66f2d918a4b988602053ea7bb3fb"
+      }
+    ],
+    "node_and_wire_review": {
+      "changes": [
+        {
+          "file": "packages/context-broker/src/skill-context-projection.ts",
+          "before": "ac08ed5220951c7e5fe065ea2f4e18265716cec494fa20134e2577903e1e999b",
+          "after": "2a14a36f498459f8cd7dd861f4130cc796b897b1261c126ccec609494ee5183b"
+        },
+        {
+          "file": "scripts/notion-sdk-pi.mjs",
+          "before": "30f9c52c688ed8f42c2b10bb24bb31620c91b38095fd9b3e5798230c5bc0cc2f",
+          "after": "2acb374ada131e3c953a7495fd3472836d466c87e02fe1cc862bdb5374d3cec5"
+        }
+      ],
+      "semantics": "Explicit .ts import supports the existing Node24 direct compiler consumer. Actual HTTP evidence now checks every omitted generated-directory digest against the same captured request; no product state transition changed.",
+      "regression": "Root test:verification first failed ERR_MODULE_NOT_FOUND, after import fix 790 pass/1 existing skip. Concrete serializer counters remain separate from finite-model proof."
+    }
+  },
+  "ctx_final_request_review": {
+    "implementation": "e91dc8c7857e3f0094106fd01b73eec6cee621d5",
+    "review": "docs/context-once-source-review.md#ctx-final-request-boundary",
+    "source_changes": [
+      {
+        "path": "packages/context-broker/src/host-skills.ts",
+        "before": "5ad556031ea1085363b7e75ab329a57ebedc0b1e44d2db3c0df9a551b312eca9",
+        "after": "14ad8253488ff98258ff7b47757fe7398f25577d7b6880f9dec9d76299898cdb"
+      },
+      {
+        "path": "packages/context-broker/src/session-source-snapshot.ts",
+        "before": "5bbff1194c6c76ee868ae27759ad2a7a03f063b2709f3fc44ced24d7ee778b04",
+        "after": "b23de4a16344620ff12e4e2bd3147d119fdfbffba37507b54434d7425d84c9a5"
+      },
+      {
+        "path": "packages/context-broker/src/index.ts",
+        "before": "ffcf274952dfcf143a119900943b787884a6eb78d84cd734c83db396bc05f6b3",
+        "after": "bd5f955083bce00d4dd55d55be8e4b3b19f7e59d6c85876fc092a75398686789"
+      },
+      {
+        "path": "packages/context-broker/scripts/host-prepare.test.ts",
+        "before": "917432ef445cec9d723a8e6609921e36f96bf30ee371df77bca0844e9fcb8748",
+        "after": "6f88489ed58f7887e2a8189ccd08539dc7295c53abec10cf268039154001f752"
+      },
+      {
+        "path": "scripts/notion-sdk-pi.mjs",
+        "before": "2acb374ada131e3c953a7495fd3472836d466c87e02fe1cc862bdb5374d3cec5",
+        "after": "c3d61335d8bb5915fe9c497bdfed3023f51fdac222296201cc807cf6633ca359"
+      },
+      {
+        "path": "scripts/notion-sdk-pi.test.mjs",
+        "before": "2ee4bca756bb13d083a9c77448720c84cf184dde6e669e27d62a0d2c5d986dfe",
+        "after": "bde119f38f5a78cf37248be1a57d6c122dbdc0ebefa1177d346ab341a10a1926"
+      }
+    ],
+    "concrete_guard_owners": [
+      "packages/context-broker/src/final-request.ts",
+      "packages/context-broker/scripts/final-request.test.ts",
+      "packages/context-broker/scripts/final-request-undici.test.ts"
+    ],
+    "finite_models_unchanged": true,
+    "semantic_boundary": "DeliveryBoundary providerAccepted remains logical acceptance. Final request roles, serialized directory/schema/entity checks are concrete proof obligations; known mismatch rejects the new acceptance, unsupported transport is not wire proof. Fixed graph, branch, turn and projection ACK owners unchanged.",
+    "independent_review": "F1 at1884c89 restored-user proof omitted: retained original, actual deferred-drafts red12pass1fail then13pass. e91dc8c preserves private immutable obligation; real Pi restored-role counterexample passes.",
+    "not_proven_by_tlc": [
+      "Actual network dispatch",
+      "Actual role/JSON/XML bytes",
+      "Unrestricted LLM behavior",
+      "Source API eventual consistency"
+    ],
+    "driver_refinement": {
+      "file": "scripts/notion-sdk-pi.mjs",
+      "before": "c3d61335d8bb5915fe9c497bdfed3023f51fdac222296201cc807cf6633ca359",
+      "after": "c3d61335d8bb5915fe9c497bdfed3023f51fdac222296201cc807cf6633ca359",
+      "change": "Shared context-once and four final-role/entity negative scenes plus owned cleanup mapping; source state machine unchanged. Adds actual persisted-user role counterexample and preserves standalone effects on cancellation."
+    },
+    "final_diagnostic_review": {
+      "changed": [
+        {
+          "path": "packages/context-broker/src/final-request.ts",
+          "before": "a826ad7b363ac21aeae0f0274b6c8b7842ecdb6ef1226d2a96fcdb020d01935b",
+          "after": "ba7db9fc301e115200b8ba6534ab332e0f90a1a5c3c4ceaef34389cdf0bd4b9c"
+        },
+        {
+          "path": "packages/context-broker/scripts/final-request.test.ts",
+          "before": "fae0456b063e38a9eaea3202fdc910298be0acb5d7b39ecc8adc6b07a178b6f9",
+          "after": "85266fac06f8d4b3fbe88e92dadabf2f04a94a72e9aba6c2c421be4e05d84f85"
+        }
+      ],
+      "scope": "Preparation operation effects are read from canonical nested contextBrokerPreparation.effects for truthful bounded diagnostics. No dispatch/graph/role/activation transition changed. Driver keeps explicit four counterexamples and source cancellation effects."
+    },
+    "restored_probe_envelope_review": {
+      "file": "scripts/notion-sdk-pi.mjs",
+      "before": "c3d61335d8bb5915fe9c497bdfed3023f51fdac222296201cc807cf6633ca359",
+      "after": "2be6fa4f35fe4f3f78c81af8cfb66cf29a71dc19e0999ef39b88597f1907f006",
+      "scope": "The restored-role counterexample now supplies a valid assistant model/usage/content envelope; it must reach the source-role guard instead of accidentally failing Pi serializer totalTokens access. Product logic/model transitions unchanged. Actual four-scene installed run passes; the prior failed run remains retained.",
+      "test_owner": {
+        "file": "scripts/notion-sdk-pi.test.mjs",
+        "before": "bde119f38f5a78cf37248be1a57d6c122dbdc0ebefa1177d346ab341a10a1926",
+        "after": "f5fc3ce23115627a91c4dbf1fb2f423fa54322801a20ab7e5d1a72cd5a4e2121",
+        "semantics": "New exact test validates first turn untouched, second restored-role mutation carries legal assistant content/model/usage/stopReason and preserves source bytes. This verifies counterexample plumbing; no model transition or production logic changed."
+      }
+    }
+  }
+}

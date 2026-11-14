@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { compileSkillPreparation, isSkillPreparationModel, renderSkillPreparationModel, SKILL_PREPARATION_COMPILER,
-  type SkillPreparationCompilationInput } from "../src/skill-context-projection";
+  projectSkillDirectory, type SkillPreparationCompilationInput } from "../src/skill-context-projection";
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 function fixture(): SkillPreparationCompilationInput {
@@ -40,17 +40,33 @@ test("compilation keeps all author bytes and separates source from JSON-rendered
   expect(JSON.stringify(input)).toBe(before);
 });
 
+test("retention effects reach the model without changing body proofs", () => {
+  const input = fixture();
+  const effects = { version: 1 as const, remote_writes: "retained" as const, author_content: "unchanged" as const,
+    retention: [{ skill_page_id: "root-page", file_id: "main", operation_id: "retention-operation", status: "confirmed" as const }] };
+  const compiled = compileSkillPreparation({ ...input, effects });
+  expect(JSON.parse(compiled.content).effects).toEqual(effects);
+  const span = compiled.bodySpans[0]!;
+  expect(JSON.parse('"' + compiled.content.slice(span.start, span.end) + '"')).toBe(input.records[0]!.content);
+  expect(compiled.projection.records[0]!.source).toEqual(input.records[0]!.source);
+});
+
+test("missing legacy effects are unknown rather than a zero-write claim", () => {
+  expect(JSON.parse(compileSkillPreparation(fixture()).content).effects).toEqual({ version: 1,
+    remote_writes: "unknown", author_content: "unknown", retention: [] });
+});
+
 test("only generated machine fields leave the model envelope; every directory entry remains", () => {
   const input = fixture(), compiled = compileSkillPreparation(input), model: unknown = JSON.parse(compiled.content);
   if (!isSkillPreparationModel(model)) throw new Error("Expected model preparation");
-  expect(Object.keys(model)).toEqual(["ok", "status", "purpose", "roots", "records"]);
+  expect(Object.keys(model)).toEqual(["ok", "status", "purpose", "roots", "records", "effects"]);
   expect(Object.keys(model.records[0]!)).toEqual(["name", "kind", "ref", "content", "directory"]);
   const directory = model.records[0]!.directory!;
   expect(Object.keys(directory)).toEqual(["files", "required", "candidates", "references"]);
   expect(directory.files).toEqual(input.records[0]!.directory!.files.map(({ path, ref, bytes }) => ({ path, ref, bytes })));
   expect(directory.candidates).toEqual(input.records[0]!.directory!.candidates.map(({ ref, kind, name, description, availability }) => ({ ref, kind, name, description, availability })));
   expect(directory.references[0]!.ref).toBe(input.records[0]!.directory!.references[0]!.ref);
-  expect(directory.references[0]!.availability).toBe("unavailable");
+  expect(directory.references[0]).toMatchObject({ availability: "unavailable" });
   expect(directory.required).toEqual([]);
   expect(model.records[0]!.content).toContain('"body_sha256":"author example"');
   expect(model.records[0]!.content).toContain("## Members");
@@ -110,4 +126,35 @@ test("generated schema rejects unrecognized envelope fields while source strings
     files: [{ ...model.records[0].directory.files[0], sha256: "0".repeat(64) }] } }] })).toBe(false);
   expect(isSkillPreparationModel({ ...model, purpose: "execute" })).toBe(false);
   expect(isSkillPreparationModel({ ...model, records: [{ ...model.records[0], content: { text: "source" } }] })).toBe(false);
+});
+
+test("CTX03 an exact fixed file object carries its description once and preserves the reference edge", () => {
+  const input = fixture(), record = input.records[0]!, file = record.directory!.files[1]!;
+  const reference = { id: "file-id", ref: file.ref, kind: "file", name: file.path,
+    description: "This is the complete resource description. 🧭", availability: "available" };
+  const directory = { ...record.directory!, references: [reference] }, original = JSON.stringify(directory);
+  const projected = projectSkillDirectory(directory)!;
+  expect(projected.files[1]).toEqual({ path: file.path, ref: file.ref, bytes: file.bytes, description: reference.description });
+  expect(projected.references).toEqual([{ ref: file.ref }]);
+  expect(JSON.stringify(projected).split(reference.description).length - 1).toBe(1);
+  const compiled = compileSkillPreparation({ ...input, records: [{ ...record, directory }] });
+  expect(isSkillPreparationModel(JSON.parse(compiled.content))).toBe(true);
+  expect(JSON.parse(compiled.content).records[0].content).toBe(record.content);
+  expect(JSON.stringify(directory)).toBe(original);
+});
+
+test("CTX03 unfixed, unavailable, ambiguous and foreign file references keep their full independent cards", () => {
+  const input = fixture(), original = input.records[0]!.directory!, file = original.files[1]!;
+  const base = { id: "file-id", ref: file.ref, kind: "file", name: file.path, description: "Description", availability: "available" };
+  for (const changed of [{ ref: "skill://current/references/guide.md" }, { ref: "sr:R" + "f".repeat(22) },
+    { name: "other/path.md" }, { availability: "unavailable" }, { kind: "skill" }]) {
+    const reference = { ...base, ...changed }, directory = { ...original, references: [reference] };
+    const { id: _id, ...expected } = reference;
+    expect(projectSkillDirectory(directory)!.references).toEqual([expected]);
+  }
+  const ambiguous = { ...original, references: [base, { ...base, description: "Different meaning" }] };
+  expect(projectSkillDirectory(ambiguous)!.references.every(reference => "description" in reference)).toBe(true);
+  const unpinned = { ...original, files: [{ ...file, ref: "skill://current/references/guide.md" }],
+    references: [{ ...base, ref: "skill://current/references/guide.md" }] };
+  expect(projectSkillDirectory(unpinned)!.references[0]).toHaveProperty("description");
 });

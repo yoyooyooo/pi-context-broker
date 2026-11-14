@@ -25,6 +25,7 @@ type Options = {
   lines?: string;
   output?: string;
   refresh?: boolean;
+  readOnly?: boolean;
   offline?: boolean;
   maxAge?: number;
   view?: string;
@@ -46,6 +47,8 @@ type Sdk = {
   READ_OUTPUT_PROOF_VERSION?: number;
   CATALOG_DIRECTORY_CONTRACT_VERSION?: number;
   RESOURCE_READ_CONTRACT_VERSION?: number;
+  RESOURCE_READ_EFFECTS_VERSION?: number;
+  CONSUMPTION_EFFECTS_VERSION?: number;
   readResources?: (input: unknown, options?: RuntimeOptions) => Promise<unknown>;
   decodeResourceReadResult?: (value: unknown, expected?: unknown) => Promise<unknown>;
   parseDuration: (input: string) => number;
@@ -57,6 +60,8 @@ let bundledSdk: Promise<Sdk> | undefined;
 let resourceContractVersion: unknown;
 let readOutputProofVersion: unknown;
 let catalogDirectoryContractVersion: unknown;
+let consumptionEffectsVersion: unknown;
+let resourceEffectsVersion: unknown;
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -86,6 +91,8 @@ async function loadBundledSdk(): Promise<Sdk> {
     resourceContractVersion = manifest.resource_read_contract_version;
     readOutputProofVersion = manifest.read_output_proof_version;
     catalogDirectoryContractVersion = manifest.catalog_directory_contract_version;
+    consumptionEffectsVersion = manifest.consumption_effects_version;
+    resourceEffectsVersion = manifest.resource_read_effects_version;
     return sdk;
   })();
   try { return await bundledSdk; }
@@ -107,6 +114,9 @@ async function observed(operation: "consume" | "read" | "read-resources" | "list
   if (enabled) observations.publish({ version: 1, event: "start", id, operation, ...attribution, pid: process.pid, monotonic_ns: started.toString() });
   try {
     const sdk = await loadBundledSdk();
+    if (options.readOnly && (sdk.CONSUMPTION_EFFECTS_VERSION !== 1 || consumptionEffectsVersion !== 1)) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
+    if (options.readOnly && operation === "read-resources"
+      && (sdk.RESOURCE_READ_EFFECTS_VERSION !== 1 || resourceEffectsVersion !== 1)) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     if (operation === "list" && typeof sdk.listCatalog !== "function") throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     if (operation === "list" && options.directory !== undefined
       && (sdk.CATALOG_DIRECTORY_CONTRACT_VERSION !== 1 || catalogDirectoryContractVersion !== 1)) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");

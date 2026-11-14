@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { parseNativeReference } from "./native-reference";
 import type { ContentRecord, SkillRecord } from "./types";
+import { consumptionEffects, type ConsumptionEffects } from "./consumption-effects";
 
 export type PreparationPurpose = "use" | "inspect";
 export type PreparationBudget = { maxNodes?: number; maxDepth?: number; maxInstructionBytes?: number; maxContextBytes?: number };
@@ -17,6 +18,14 @@ export type PreparationGraphLock = {
   required: readonly { from: string; to: string; ref: string }[]; bindings: readonly PreparationBinding[]; sha256: string;
 };
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
+export function isPreparationDirectory(value: unknown): value is PreparationDirectory {
+  if (!object(value) || !Array.isArray(value.files) || value.files.some(file => !object(file)
+    || typeof file.path !== "string" || typeof file.ref !== "string" || typeof file.sha256 !== "string"
+    || !Number.isSafeInteger(file.bytes) || Number(file.bytes) < 0)) return false;
+  return ["required", "candidates", "references"].every(group => Array.isArray(value[group])
+    && value[group].every(row => object(row) && ["id", "ref", "kind", "name", "description", "availability"]
+      .every(key => typeof row[key] === "string")));
+}
 function isContentRecord(value: unknown): value is ContentRecord {
   if (!object(value) || !["skill", "router", "prompt"].includes(String(value.kind))
     || ["id", "name", "alias", "description", "entrypoint", "ref"].some(key => typeof value[key] !== "string")
@@ -40,6 +49,7 @@ export type PreparedHostGraph = {
   records: SkillRecord[]; bindings: PreparationBinding[]; lock: PreparationGraphLock;
   budget: Required<PreparationBudget>;
   usage: { prepared_nodes: number; instruction_bytes: number; context_bytes: number; max_depth: number };
+  effects?: ConsumptionEffects;
 };
 const Sha = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/u));
 const Snapshot = Schema.String.check(Schema.isPattern(/^s_[a-f0-9]{64}$/u));
@@ -49,11 +59,18 @@ const Purpose = Schema.Literals(["use", "inspect"]);
 const Binding = Schema.Struct({ record: Schema.Unknown, scope: Sha, snapshot_id: Snapshot, version_id: Schema.String, body_sha256: Sha, ref: Schema.String });
 const Edge = Schema.Struct({ from: Schema.String, to: Schema.String, ref: Schema.String });
 const DirectoryEntry = Schema.Struct({ id: Schema.String, ref: Schema.String, kind: Schema.String, name: Schema.String, description: Schema.String, availability: Schema.String });
+const Freshness = Schema.Struct({
+  policy: Schema.Literals(["default", "max_age", "refresh", "offline", "pinned"]),
+  validated_at: Schema.optional(Schema.String), age_ms: Schema.optional(Schema.Number),
+  max_age_ms: Schema.optional(Schema.Number), stale: Schema.optional(Schema.Boolean),
+  validation: Schema.optional(Schema.Literal("metadata")),
+});
 const Node = Schema.Union([
   Schema.Struct({ state: Schema.Literal("prepared"), id: Schema.String, ref: Schema.String, roles: Schema.Array(Schema.String),
     record: Schema.Unknown, binding: Binding, path: Schema.String, content: Schema.String, bytes: Natural, body_sha256: Sha,
     files: Schema.Array(Schema.Struct({ path: Schema.String, bytes: Natural, sha256: Sha, ref: Schema.String })),
-    required: Schema.Array(DirectoryEntry), candidates: Schema.Array(DirectoryEntry), references: Schema.Array(DirectoryEntry) }),
+    required: Schema.Array(DirectoryEntry), candidates: Schema.Array(DirectoryEntry), references: Schema.Array(DirectoryEntry),
+    source: Schema.optional(Schema.Literals(["notion", "local_cache", "local_snapshot"])), freshness: Schema.optional(Freshness) }),
   Schema.Struct({ state: Schema.Literal("known"), id: Schema.String, ref: Schema.String, roles: Schema.Array(Schema.String) }),
 ]);
 const Lock = Schema.Struct({ version: Schema.Literal(1), kind: Schema.Literal("observed_version_vector"), purpose: Purpose, scope: Sha,
@@ -125,19 +142,44 @@ export function decodePreparedGraph(value: unknown, input: { purpose: Preparatio
   if (vector.purpose !== input.purpose || vector.scope !== ready.scope || !isDeepStrictEqual(vector.roots, rootIds)
     || !isDeepStrictEqual(vector.required, ready.required) || !isDeepStrictEqual(vector.bindings, ready.session_bindings)
     || hash(canonical(vector)) !== sha256) invalid();
-  return { ...ready, nodes, session_bindings: bindings, graph_lock: { ...ready.graph_lock, bindings } };
+  return { ...ready, nodes, effects: consumptionEffects(object(value) ? value.effects : undefined), session_bindings: bindings, graph_lock: { ...ready.graph_lock, bindings } };
 }
 
 /** Expose failure provenance and budgets without forwarding raw response bodies or URLs. */
-export function preparationFailureDetails(value: unknown): { preparation?: unknown; retry_after?: number } | undefined {
+export type PreparationDenial = { scope: string; id: string; ref: string; code: "CONTENT_DISABLED" | "ACCESS_DENIED" | "AUTH_REQUIRED" };
+export function preparationFailureDetails(value: unknown): { preparation?: unknown; retry_after?: number; denials?: readonly PreparationDenial[]; effects?: ConsumptionEffects } | undefined {
   if (!value || typeof value !== "object") return undefined;
   const details = value as Record<string, unknown>;
+  const effects = details.effects === undefined ? undefined : consumptionEffects(details.effects);
   const retry = typeof details.retry_after === "number" && Number.isFinite(details.retry_after) ? details.retry_after : undefined;
   const raw = details.preparation;
-  if (!raw || typeof raw !== "object") return retry === undefined ? undefined : { retry_after: retry };
+  if (!raw || typeof raw !== "object") return retry === undefined && effects === undefined ? undefined
+    : { ...(retry === undefined ? {} : { retry_after: retry }), ...(effects === undefined ? {} : { effects }) };
   const preparation = raw as Record<string, unknown>;
+  const nodes = Array.isArray(preparation.nodes) ? preparation.nodes.filter(object) : [];
+  const denials: PreparationDenial[] = [];
+  if (typeof preparation.scope === "string" && /^[a-f0-9]{64}$/.test(preparation.scope)) {
+    const errors = [...nodes.filter(node => node.state === "failed").map(node => ({ node, error: node.error })),
+      ...(Array.isArray(preparation.errors) ? preparation.errors.filter(object).map(error => ({ node: undefined, error })) : [])];
+    for (const item of errors) {
+      const error = item.error;
+      if (!object(error)) continue;
+      const code = error.code;
+      if (code !== "CONTENT_DISABLED" && code !== "ACCESS_DENIED" && code !== "AUTH_REQUIRED") continue;
+      const identity = object(error.details) ? error.details.id : undefined;
+      const target = typeof identity === "string" ? nodes.find(node => node.id === identity) : item.node;
+      if (!target || typeof target.id !== "string" || typeof target.ref !== "string") continue;
+      // A parent's error can originate in a child. Retain only the exact
+      // failing node or explicit dependency identity, never the root guess.
+      if (target.state !== "failed") continue;
+      if (!denials.some(value => value.id === target.id && value.code === code))
+        denials.push({ scope: preparation.scope, id: target.id, ref: target.ref, code });
+    }
+  }
   return {
     ...(retry === undefined ? {} : { retry_after: retry }),
+    ...(effects === undefined ? {} : { effects }),
+    ...(denials.length ? { denials } : {}),
     preparation: {
       version: preparation.version, status: preparation.status, purpose: preparation.purpose, scope: preparation.scope,
       budget: preparation.budget, usage: preparation.usage,

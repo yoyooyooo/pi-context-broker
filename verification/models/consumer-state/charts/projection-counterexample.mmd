@@ -1,0 +1,57 @@
+---
+title: "交付回执的接受 完成与实际持久化"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: Breaks PublicProjectionBeforePersistence
+    lg1: Path to the PublicProjectionBeforePersistence bug
+  }
+  class lg0 breaks
+  class lg1 bugPath
+  s0: 已准备并选择 尚无交付证明
+  state "尚无完整图接受事实" as s1 {
+    s2: 等待本次 provider 响应
+    s3: provider 未接受#65292;不新增回执
+    s4: provider 已接受#65292;图证明不完整
+  }
+  s5: 操作失效#65292;等待拒绝新证明
+  state "已有完整图接受事实" as s6 {
+    s7: 2xx 已接受完整固定图
+    s8: turn 未完成#65292;保留接受事实
+    s9: turn 已完成#65292;尚未持久化
+  }
+  s10: 结束#65306;未新增持久化回执
+  state "操作已取消或换代" as s11 {
+    s12: 等待收口#65306;保留已发生的接受事实
+    s13: 结束#65306;保留已发生的接受事实
+  }
+  state "原分支已离开" as s14 {
+    s15: 等待收口#65306;接受事实保留在历史
+    s16: 结束#65306;接受事实保留在历史
+  }
+  s17: 结束#65306;操作失效#65292;未新增证明
+  s18: 违例#65306;未观察到公开投影
+  [*] --> s0
+  s0 --> s2: 发送选定的 root 与 Requires
+  s2 --> s7: 观察响应头与完整图证明
+  s2 --> s4: 观察响应头与完整图证明
+  s2 --> s3: 观察 turn 结束状态 or 观察响应头与完整图证明
+  s3 --> s10: 尝试生成边界 draft#65292;或拒绝
+  s7 --> s8: 观察 turn 结束状态
+  s7 --> s9: 观察 turn 结束状态
+  s8 --> s10: 尝试生成边界 draft#65292;或拒绝
+  s5 --> s17: 尝试生成边界 draft#65292;或拒绝
+  s4 --> s10: 尝试生成边界 draft#65292;或拒绝
+  s9 --> s18: 尝试生成边界 draft#65292;或拒绝
+  s12 --> s13: 尝试生成边界 draft#65292;或拒绝
+  s15 --> s16: 尝试生成边界 draft#65292;或拒绝
+  s1 --> s5: 取消 换代或回退
+  s6 --> s12: 取消或会话换代
+  s6 --> s15: 回退分支
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 bugPath
+  class s2 bugPath
+  class s7 bugPath
+  class s9 bugPath
+  class s18 breaks
+  class s18 bugPath

@@ -7,7 +7,7 @@ import { channel } from "node:diagnostics_channel";
 
 // These fixtures exercise the loading/observation boundary only. Actual SDK
 // runtime, package and Pi proofs use independently installed ntn-skills builds.
-async function fixture(options: { sdk?: boolean; sdkVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number; readProofVersion?: number; readProofManifestVersion?: number; directoryVersion?: number; directoryManifestVersion?: number; catalog?: boolean; catalogFailure?: "typed" | "returned" | "untyped" | "unsafe"; resolver?: boolean; files?: boolean } = {}) {
+async function fixture(options: { sdk?: boolean; sdkVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number; resourceEffectsVersion?: number; resourceEffectsManifestVersion?: number; readProofVersion?: number; readProofManifestVersion?: number; directoryVersion?: number; directoryManifestVersion?: number; effectsVersion?: number; effectsManifestVersion?: number; catalog?: boolean; catalogFailure?: "typed" | "returned" | "untyped" | "unsafe"; resolver?: boolean; files?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "broker-sdk-boundary-"));
   await mkdir(join(root, "src")); await mkdir(join(root, "dist"));
   await copyFile(new URL("../src/notion-sdk.ts", import.meta.url), join(root, "src/notion-sdk.ts"));
@@ -18,6 +18,8 @@ export const CONSUMER_CONTRACT_VERSION = 1;
 export const PACKAGE_VERSION = ${JSON.stringify(options.packageVersion ?? "fixture-1")};
 ${options.readProofVersion === undefined ? "" : `export const READ_OUTPUT_PROOF_VERSION = ${options.readProofVersion};`}
 ${options.directoryVersion === undefined ? "" : `export const CATALOG_DIRECTORY_CONTRACT_VERSION = ${options.directoryVersion};`}
+${options.effectsVersion === undefined ? "" : `export const CONSUMPTION_EFFECTS_VERSION = ${options.effectsVersion};`}
+${options.resourceEffectsVersion === undefined ? "" : `export const RESOURCE_READ_EFFECTS_VERSION = ${options.resourceEffectsVersion};`}
 export const calls = [];
 export function parseDuration(value) { return value === '1s' ? 1000 : 0; }
 export function decodeConsumeResult() { throw new Error('consume already decoded; duplicate decoder invocation'); }
@@ -71,6 +73,8 @@ export async function readResources(input, options) {
     package_version: options.manifestVersion ?? options.packageVersion ?? "fixture-1", sdk_version: 1, consumer_contract_version: 1,
     ...(options.resourceVersion === undefined ? {} : { resource_read_contract_version: options.resourceManifestVersion ?? options.resourceVersion }),
     ...(options.readProofVersion === undefined && options.readProofManifestVersion === undefined ? {} : { read_output_proof_version: options.readProofManifestVersion ?? options.readProofVersion }),
+    ...(options.effectsVersion === undefined && options.effectsManifestVersion === undefined ? {} : { consumption_effects_version: options.effectsManifestVersion ?? options.effectsVersion }),
+    ...(options.resourceEffectsVersion === undefined && options.resourceEffectsManifestVersion === undefined ? {} : { resource_read_effects_version: options.resourceEffectsManifestVersion ?? options.resourceEffectsVersion }),
     ...(options.directoryVersion === undefined && options.directoryManifestVersion === undefined ? {} : { catalog_directory_contract_version: options.directoryManifestVersion ?? options.directoryVersion }) }));
   const boundary = await import(pathToFileURL(join(root, "src/notion-sdk.ts")).href);
   return { root, boundary, module };
@@ -79,6 +83,20 @@ export async function readResources(input, options) {
 test("missing bundled SDK fails without selecting another CLI or SDK", async () => {
   const { boundary } = await fixture({ sdk: false });
   await expect(boundary.consumeNotionSdk({}, {})).rejects.toMatchObject({ code: "SOURCE_SDK_UNAVAILABLE" });
+});
+
+test("strict read-only requires matching SDK and manifest capability before any operation", async () => {
+  for (const options of [{}, { effectsVersion: 1, effectsManifestVersion: 2 }, { effectsVersion: 2, effectsManifestVersion: 1 }]) {
+    const { boundary, module } = await fixture(options), sdk = await import(pathToFileURL(module).href);
+    await expect(boundary.consumeNotionSdk({}, { readOnly: true })).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+    await expect(boundary.readNotionSdk("skill://fixed", { readOnly: true })).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+    expect(sdk.calls).toHaveLength(0);
+  }
+  const { boundary, module } = await fixture({ effectsVersion: 1 });
+  await boundary.consumeNotionSdk({}, { readOnly: true });
+  await boundary.readNotionSdk("skill://fixed", { readOnly: true });
+  const sdk = await import(pathToFileURL(module).href);
+  expect(sdk.calls.map((call: { options: { readOnly?: boolean } }) => call.options.readOnly)).toEqual([true, true]);
 });
 
 test("paired catalog discovery is feature-detected without an operation and stays one SDK call", async () => {
@@ -91,6 +109,20 @@ test("paired catalog discovery is feature-detected without an operation and stay
   expect(sdk.calls).toHaveLength(1);
   expect(sdk.calls[0].options.directory).toEqual({ view: "selected" });
   expect(sdk.calls[0].options.sourceId).toBeUndefined();
+});
+
+test("strict resource batches require their own SDK and manifest capability before dispatch", async () => {
+  for (const options of [{}, { resourceEffectsVersion: 1, resourceEffectsManifestVersion: 2 }, { resourceEffectsVersion: 2, resourceEffectsManifestVersion: 1 }]) {
+    const { boundary, module } = await fixture({ resourceVersion: 1, effectsVersion: 1, ...options });
+    const sdk = await import(pathToFileURL(module).href);
+    await expect(boundary.readNotionResourcesSdk({ version: 1, refs: ["resource"] }, { readOnly: true })).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+    expect(sdk.calls).toHaveLength(0);
+  }
+  const { boundary, module } = await fixture({ resourceVersion: 1, effectsVersion: 1, resourceEffectsVersion: 1 });
+  await boundary.readNotionResourcesSdk({ version: 1, refs: ["resource"] }, { readOnly: true });
+  const sdk = await import(pathToFileURL(module).href);
+  expect(sdk.calls).toHaveLength(1);
+  expect(sdk.calls[0]).toMatchObject({ operation: "read-resources", options: { readOnly: true } });
 });
 
 test("old SDK catalog remains usable while mixed or unknown paired contracts fail before an operation", async () => {

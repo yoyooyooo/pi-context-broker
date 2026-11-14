@@ -66,6 +66,33 @@ else throw Error('Unexpected body/export operation');
   const context = { sources: config.sources, records: metadata.records, failures: metadata.failures };
   const pinned = { ...remote, ref: remote.ref + "?snapshot=s_" + "c".repeat(64) };
   assert.equal(resolveCatalogReference(pinned, context, "skill").sourceId, source.id);
+  // AH-623: a legacy current-page reference may normalize only through the
+  // unique current credential-scoped record at that exact physical location.
+  const legacyRecord = metadata.records.find(record => record.sourceId === source.id && record.id === remote.id)!;
+  const sharedId = "shared_skill:test-library:import-" + page.replaceAll("-", "");
+  const sharedRecord = { ...legacyRecord, id: sharedId,
+    locator: { type: "shared_skill" as const, page_id: page, database_id: db, data_source_id: ds, library_id: "test-library", skill_id: "import-" + page.replaceAll("-", "") },
+    ref: "skill://" + encodeURIComponent(sharedId) + "/SKILL.md" };
+  const migratedContext = { ...context, records: [sharedRecord] };
+  assert.equal(resolveCatalogReference(remote, migratedContext, "skill"), sharedRecord);
+  assert.throws(() => resolveCatalogReference(pinned, migratedContext, "skill"), { code: "SOURCE_IDENTITY_MISMATCH" }, "A physical page match cannot migrate a historical pin");
+  for (const locator of [{ ...remote.locator, database_id: ds }, { ...remote.locator, data_source_id: db }])
+    assert.throws(() => resolveCatalogReference({ ...remote, locator }, migratedContext, "skill"), { code: "SOURCE_IDENTITY_MISMATCH" });
+  assert.throws(() => resolveCatalogReference(remote, { ...migratedContext, records: [{ ...sharedRecord, enabled: false }] }, "skill"), { code: "CATALOG_MEMBER_UNAVAILABLE" });
+  assert.throws(() => resolveCatalogReference(remote, { ...migratedContext, failures: [{ sourceId: source.id, code: "NOTION_UNAUTHORIZED", message: "denied" }] }, "skill"), { code: "NOTION_UNAUTHORIZED" });
+  assert.throws(() => resolveCatalogReference(remote, { ...migratedContext, records: [legacyRecord, sharedRecord] }, "skill"), { code: "CATALOG_MEMBER_AMBIGUOUS" });
+  assert.throws(() => resolveCatalogReference(remote, { ...migratedContext, records: [sharedRecord, { ...sharedRecord, sourceId: secondSource.id }], sources: [source, { ...secondSource, namespace: source.namespace }] }, "skill"), { code: "CATALOG_MEMBER_AMBIGUOUS" });
+  for (const broken of [
+    { ...sharedRecord, id: sharedId + "-other" },
+    { ...sharedRecord, ref: remote.ref },
+    { ...sharedRecord, sourceScope: "invalid" },
+    { ...sharedRecord, kind: "router" as const },
+  ]) assert.throws(() => resolveCatalogReference(remote, { ...migratedContext, records: [broken] }, "skill"), { code: "SOURCE_IDENTITY_MISMATCH" });
+  const migratedMember = readDiscoveryCatalog(catalog, [], {}, migratedContext)[0]!.members!.find(member => member.type === "remote" && member.source.namespace === "production")!;
+  assert.equal(migratedMember.id, sharedRecord.id);
+  assert.equal(migratedMember.ref, sharedRecord.ref);
+  assert.deepEqual(migratedMember.type === "remote" && migratedMember.locator, sharedRecord.locator);
+  assert.equal(migratedMember.unavailable, undefined);
   assert.throws(() => parseCatalogMember({ ...remote, scope: "a".repeat(64) }), /Unknown catalog member field/);
   assert.throws(() => parseCatalogMember({ ...remote, path: "/fake/cache/SKILL.md" }), /Unknown catalog member field/);
   assert.throws(() => parseCatalogMember({ ...remote, ref: "skill://" + routerPage + "/SKILL.md" }), /ref\/identity mismatch/);
@@ -92,6 +119,11 @@ else throw Error('Unexpected body/export operation');
   assert.equal(direct.ref, remoteRouter.ref);
   assert.equal(direct.body, undefined);
   assert.equal(direct.members, undefined);
+  const sharedRouterId = "shared_skill:test-library:import-" + routerPage.replaceAll("-", "");
+  const sharedRouter = { ...sharedRecord, id: sharedRouterId, kind: "router" as const, entrypoint: "ROUTER.md",
+    locator: { ...sharedRecord.locator, page_id: routerPage, skill_id: "import-" + routerPage.replaceAll("-", "") },
+    ref: "skill://" + encodeURIComponent(sharedRouterId) + "/ROUTER.md" };
+  assert.equal(readDiscoveryCatalog(catalog, [], {}, { ...context, records: [sharedRouter] })[0]!.ref, sharedRouter.ref);
   assert.equal((await buildRawDollarRegistry(config, root)).records.filter(record => record.id === remoteRouter.id && record.sourceId === source.id).length, 1, "Direct remote Router reference preserves one raw registry record");
   await writeFile(catalog, JSON.stringify({ records: [{ kind: "router", name: "local-only", members: [{ type: "local", path: local }] }] }));
   assert.equal(readDiscoveryCatalog(catalog)[0]!.members![0]!.name, "local-helper", "Local catalog remains independent of source discovery");

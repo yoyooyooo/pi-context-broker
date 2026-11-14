@@ -49,7 +49,7 @@
 
 | ID | 动作 | 主要断言 |
 | --- | --- | --- |
-| J01 | 全冷普通消息，目录延迟/失败 | provider先于目录完成；正文读取0 |
+| J01 | 全冷普通消息，目录延迟/失败 | 交互/RPC允许pending且不阻塞；一次性print/json首轮在可取消context等待目录或明确失败；均不预读正文 |
 | J02 | 暖目录普通消息 | 仅轻量发现；后台成本独立计 |
 | J03 | 暖缓存新会话显式激活 | 策略允许时远端0；根/Requires各一份 |
 | J04 | 全冷根与共享Requires | 只读所选闭包；Members正文0 |
@@ -135,7 +135,46 @@ SC26 的常规门禁先跑 `NTN_SKILLS_BUILD_ENTRY=ABSOLUTE_INSTALLED_CLI bun ru
 
 独立 Pi 安装沿原 control 入口执行 `node .agents/skills/verify-context-broker/scripts/control.mjs doctor distribution-pi`，再 `run distribution-pi`。该路径只允许精确 Pi 1.4.0／1.5.0，实际版本分别留证；未知版本仍失败。使用 `verify-artifacts.mjs --host pi` 打包 Broker 并在空 consumer 中 npm install，保留 package/CLI/SDK/实际Pi identity、RPC、provider 和进程终局。通用命令不带 fixture 时，manifest 的 `defaultSdk` 必须明确 `not_run`。完整默认 SDK 安装验收直接为原命令增加 `--fixture ABSOLUTE_FIXTURE_JSON --require-sdk`，检查同包 all14 的 plan/result/每景 terminal 和未改动身份；参见[分发门禁](../../verify-context-broker/features/distribution.md)。CI 主 Pi 1.5.0，兼容步骤用 owned Pi 1.4.0 跑原 native print／continue 和同 installed 路径的 all14；发布仍单 job。`CONTEXT_BROKER_CANDIDATE_DIR` 可指向一个已冻结的绝对包目录；未给时打包当前完整源码。它不构建 Tern、不验真实 Notion或模型，OMP 由独立 `--host omp` 结果负责。私有 evidence 保存在输出目录，后续原件hash与回收规则相同。
 
-正常默认目录必须在 source.command absent 下通过 SDK list 获取完整 View 元数据，未选正文读取为零；custom command、CACHE_MISSING、pending 或非零子进程只各自证明对应分支。非阻塞冷启动允许第一任务的 provider 保留 pending，`notion_list` 等待并交付真实目录；下一普通用户 turn 重建 ready 默认目录。每个 turn 单独记录，不把第一轮 pending 当作 Default View 成功。额外 list 允许已授权范围，默认 View 不变成永久搜索边界。live 驱动不主动编辑不等于产品 current read 永不写入；首次 adoption/retention、稳定未变、真实 notion_write 分组记录，unknown 操作不重放。
+正常默认目录必须在 source.command absent 下通过 SDK list 获取完整 View 元数据，未选正文读取为零；custom command、CACHE_MISSING、pending 或非零子进程只各自证明对应分支。交互/RPC非阻塞冷启动允许首轮pending，`notion_list`等待并交付目录，下一普通turn重建ready目录。一次性 `pi -p` 的print/json首轮没有后续任务来接收迟到目录，必须在已有可取消context边界等待元数据，再发送实际目录或明确unavailable状态。注册、input与普通本地读取不因此等待正文。默认目录通过一份临时元数据消息交付，不依赖会被其他扩展forceSystemPrompt覆盖的系统段落；必须保留安全提示与工具声明。每个turn单独记录，不能把pending当Default View成功。额外list允许已授权范围，默认View不变成永久搜索边界。live驱动不主动编辑不等于产品current read永不写入；首次adoption/retention、稳定未变、真实notion_write分组记录，unknown操作不重放。
+
+### Drive：正常 print 会话与原生 session 复核
+
+提示词收缩同时核对共享 `AGENTS.md`／`CLAUDE.md` 与运行时指引是否重复。安装包不负责向全局规则写静态教程；若任务明确批准清理旧标记，只改那个区块，保留符号链接、权限和其余规范。原生 list/read/use 路径的常驻指引由 `skill-guidance.test.ts` 的字节上限及语义边界约束，CLI 后备只在对应能力缺失时出现；不得以裁剪正文、关闭工具或跳过权限检查来缩减上下文。
+
+同一原始任务至少进行基线与修改后新会话对比，记录实际请求中的静态副本数、完整动态指引字节数、目录份数和正文份数。重复验证默认目录、主动 `$` 的只读介绍，以及先 use 后读取固定参考的自然任务。原生 session、工具调用／结果和实际 provider/SDK 证据共同决定通过；进程 exit0 和模型自述不是替代品。日用切换直接更新已授权安装位置，不另建 release 轮换或回滚体系。
+
+在已准备的项目范围候选中，保留正常HOME、其他包、安全扩展、MCP和本地Skill，仅替换
+当前Broker包及声明的自有Notion库。使用用户指定模型，不因失败切换模型或把RPC结果
+当print结果。每个场景用新的session目录；默认目录、显式`$`、不带`$`的自然选路分开。
+
+```bash
+pi -p --mode json --model magpie/group/worker \
+  --session-dir "$RUN/sessions" -- '原始只读任务'
+```
+
+同时运行现有cost/provider/SDK被动观察器，保留原始stdout、session JSONL和逐请求
+body计数。目录场景不得调用工具或加载正文；显式场景应从所选主文给出的`sr:R`读取
+同一snapshot资源；自然应用场景必须实际调用`notion_use`，不能只靠模型声称已加载。
+真实provider输入的正文应完整且不重复，脚本与二进制不得被自动执行。
+
+`inspectCandidatePrintSession` 读取新建线性session，核对精确model_change和assistant
+model、用户提交、context_edit目标、每个toolCallId与对应toolResult、错误及最后终态。
+它返回原文件hash和行号，不读取或信任回答中的“已完成”声明；分支/复制历史、截断
+JSONL、孤立工具结果和模型回退必须拒绝。任务语义和实际provider交付仍独立判断。
+宿主用原生`context_edit`明确撤回失败的部分模型响应时，单列`retractedCalls`并保留
+失败行，不能算成已执行工具或全程无错；再与实际工具事件和SDK记录核对是否派发。
+
+```js
+import { readFile } from 'node:fs/promises';
+import { inspectCandidatePrintSession } from './scripts/verify-pi-daily-candidate.mjs';
+const review = inspectCandidatePrintSession(await readFile(sessionPath, 'utf8'), {
+  provider: 'magpie', model: 'group/worker',
+});
+```
+
+先检查实际请求，不以某个`context_with_system`观察器的中间输出冒充最后输入。
+正常扩展按顺序执行，Pi还可能在全部handler之后应用精确系统提示。诊断loader可以
+记录这条边界，但正式复测必须撤掉诊断改写，使用原Pi运行时和正常包自动加载。
 
 ### Drive：SC25 / SC26 默认 SDK、Code mode 与精确资源
 
@@ -325,6 +364,14 @@ helper 输出中的 `cleanup` 布尔值表示本次命令是否请求清理；�
 
 独立验收要逐项核对：实际 `read` schema 能表达互斥 `path/paths` 且最多16个文件；每批一次 `read-resources`、无 `consume` 和逐文件 `read`；实际 JSON text 的完整 UTF-8/BOM/CRLF/empty bytes/hash；binary 由实际落盘文件复核且不标完整文本；每个 v2 receipt 的 toolCallId、owner/pin/File、整体 digest 与 JSON span一致；repeat 只在 provider 投影替换非空重复正文，原始会话结果仍完整，empty 保持空字符串，binary 元数据不变；没有主文 active/graph 绑定。
 
+AH-639 的真实 A v2 反例使用公开 schema 允许的三个 `sr:R` 与 `readOnly:true`，却在 Pi 参数守卫被拒绝，随后三个 scalar 读取成功。沿既有 `pi-read-adapter.test.ts`、`resource-read-host.test.ts`、`fixed-resource-source.test.ts` 与 `notion-sdk.test.ts` 先保存能重现旧行为的红例，再验证批量参数、宿主 source policy、SDK capability guard 和效果回执贯通。非法 `readOnly` 类型须在任何 source/native 调用前拒绝；严格请求遇到不兼容 SDK/manifest 须零 SDK 调用。继续核对一批一次操作、同 owner/pin/File、完整正文与原 v2 span，不能只放行参数或降级成多个 scalar read。旧批读生产者没有 effects 时保持 unknown；固定资源的 immutable 读取合同不授权留存或作者修改。
+
+严格批读独立核对 SDK `RESOURCE_READ_EFFECTS_VERSION = 1` 与 runtime `resource_read_effects_version: 1`，不能由 scalar effects 版本推断。CLI 批读沿原 `withConsumptionEffects` 和 `readOnlyNotion` 覆盖整个后代请求链。精确写前红例在选中对象读取后代尝试语义写：旧行为实际到 transport 一次，新严格行为必须在 scheduler 前拒绝且零写；普通控制保留一次调用。批读 ready、failed、cancelled 均保留本次 effects，模型 JSON 的 effects 位于原正文 span 外，repeat 投影仍保留它。
+
+独立审阅另发现注册的 Pi `outputSchema` 关闭额外字段却遗漏 `effects`。在现有 `resource-read-host.test.ts` 用实际注册 schema 校验实际批读 `structuredContent`，保留 native string 分支；普通 unknown 与严格 none 回执均须通过，非法 effects 字段须拒绝。使用已安装 Effect JSON Schema 解码器并显式拒绝额外字段，先保存旧 schema 红例再补声明；不以字段存在断言代替整个返回契约校验。该补充仅对齐既有输出字段，不改变消费状态或写边界，也不重跑模型。
+
+该修复复用原消费状态、严格写边界和固定资源证明，没有新增模型状态或远端操作，不因参数接线重跑或扩展 TLC。原 `notion-only-A-notion-only-project-v2-o6OHOD` 会话和失败结论保留；定向回归与 typecheck 不能证明原自主任务已完成，也不替代新的真实模型样本。修复原件另存 `verification-evidence/ah955-20261111/ah639-batch-readonly`，冻结运行包不修改。
+
 `resource-batch` 故意直接输入canonical固定引用，所以它只证明批读与发现的短引用分别可用。实际 `sr:R[]` 用独立 variant 验证：
 
 ```bash
@@ -424,3 +471,175 @@ Notion metadata/current-body/retained-body/write、附件与模型 HTTP 分开�
 原图 observer 会约束工具和任务文件，不能直接冒充 SC02 的纯成本 observer。[成本规程](skill-consumption-cost.md) 使用被动 provider hooks、Undici diagnostics 与 source request_metrics，保持工具和输入不变；失败与未知值不参与有效改善结论。
 
 每次报告 passed、failed、blocked、not_run、not_applicable；后者必须有理由。失败不会因 cleanup 成功变为 passed，历史 Gate 也不能代替新包。规程本身由独立新会话读取后执行同一路径，提交该会话的真实命令与清理后证据，才完成 SC-VERIFY-03。
+
+## 项目范围候选 autoload
+
+AH-714 的增量预验收沿用正常 Pi HOME/agentDir、全部其他 packages、MCP、context、tools 和真实已存在的本地 Skill。只在仓外 owned 验证项目创建 `.pi/settings.json`：同一旧 Broker 的绝对 source 以 `extensions: []` 过滤，另以正常 package 声明加载独立安装候选。目标扩展不经 `-e` 注入；`-e` 只加载被动观察器。沿公开 `CONTEXT_BROKER_CONFIG` 复制已审阅的来源配置，只替换一个 Notion entry 和它的 owned cache；local roots、rules、catalogs 保持，任何相对配置路径、其他启用 Notion source 或显式 source.command 均拒绝，先补范围审阅。
+
+这条路径称为 `project-scoped-candidate-precheck`。它不更改全局 package slot、CLI shim 或认证，不证明全局日用安装已经切换。AH-718 实际库存与最终日用层、物理 Mini、Notion UI 继续单列。真实本地同名条目须先从现存文件及实际 `get_commands` 证明；不能生成一个测试副本再称为“原本已有 @local”。新 owned Notion canary 可以沿公开 admission 使用已有本地 Skill 的同名，但 setup 必须明示，不改原本地文件、不复制其私有正文到 Notion。
+
+### 构建与输入绑定
+
+先取得最终 CLI/SDK 独立安装包及其归档 SHA。正式 builder 从 `NTN_SKILLS_BUILD_ENTRY` 所属 `ntn-skills/package.json` 解析同包 `./sdk`，检查合同与 Effect 依赖，分别 bundle 两者；嵌入 SHA 通常不同于原始 CLI/SDK，不能用直接字节相等替代这条输入链。
+
+```bash
+NTN_SKILLS_BUILD_ENTRY=/absolute/final-cli/node_modules/ntn-skills/dist/ntn-skills.js bun scripts/build-tern.mjs --target broker --package-out /absolute/new-broker-package
+# 在 new-broker-package 内运行；输出目录由本次 run 独占。
+npm pack --ignore-scripts --json --pack-destination /absolute/owned-archives
+# 回到 Broker checkout；使用刚生成的归档，不重打包、不改日用 vendor。
+NTN_SKILLS_BUILD_ENTRY=/absolute/final-cli/node_modules/ntn-skills/dist/ntn-skills.js CONTEXT_BROKER_CANDIDATE_DIR=/absolute/owned-archives node scripts/verify-artifacts.mjs --host pi
+```
+
+保留 builder 原命令/stdout/stderr、输入 package manifest/CLI/SDK hash，以及该次 `verify-artifacts` 的 `manifest.json`。其实际 `package.installed` 是候选根；artifact gate 与 daily helper 都检查 archive→安装成员→嵌入 runtime。不要手改 `dist/ntn-skills*` 或 runtime manifest。`verify-artifacts` 的受控 provider 不等于下面的真实模型验收。
+
+### 冻结配置与运行
+
+```bash
+node scripts/verify-pi-daily-installation.mjs candidate-plan --config /absolute/frozen-candidate.json
+node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/frozen-candidate.json --live
+```
+
+`candidate-plan` 不创建会话或访问服务；`candidate-run` 必须显式 `--live`。配置放仓外，`version: 1`、`scope: "project-scoped-candidate-precheck"`，字段如下：
+
+| 字段 | 冻结内容 |
+| --- | --- |
+| `brokerRoot`、`brokerArchive`、`brokerArchiveSha256` | 本次独立安装 Broker 根、真实归档及 SHA |
+| `embeddedCliSha256`、`embeddedSdkSha256` | 安装包内实际文件的 SHA |
+| `cliRoot`、`cliArchive`、`cliArchiveSha256`、`cliEntrySha256` | 作为 builder 输入的同一 CLI/SDK 包 |
+| `artifactReceipt: {path, sha256}` | 上述实际 artifact gate 的成功 `manifest.json`；必须是 Pi、explicit input、同一 archive 与 runtime |
+| `oldBrokerRoot`、`packageIndex` | 当前正常 settings 的目标包，默认 index 1；其余 packages 保持 |
+| `sourceId`、`database`、`ownershipReceipt: {path, sha256}` | 既有 source ID、新 owned entry、绑定该 entry 的公开创建回执 |
+| `localSkill: {path, sha256, name}` | 真实原有同名 Skill 主文，按 realpath 与实际 native command 交叉核对 |
+| `contextFiles` | 可选现存上下文文件绝对路径，只保存身份/hash，不拷正文 |
+| `expectedBodies` | `{path, sha256, bytes}` 数组，独立源 oracle 的完整非空 UTF-8 文件；观察器只读比较，不种入 source cache、工具结果或 provider |
+| `model`、`thinkingLevel` | `magpie/group/flash`、`high`；须由真实 get_state 与请求证明 |
+| `turns` | 预先冻结的 `{id, prompt, bodies, proofs, requireUse, forbiddenObjectSha256s}` 序列；同进程按序提交，任一失败停止，后续保持 not_run |
+| `evidenceRoot`、`rpcTimeoutMs` | 仓外证据根、可选 RPC deadline，默认 300000ms |
+
+每个 `bodies` 项为 `{sha256, occurrences}`；必要 root/Requires 与目标资源为 1，未选 Member/另一来源 canary 为 0。必须由 `expectedBodies` 提供独立原始字节。默认另要求当前 receipt 校验的完整正文；只有原生本地控制路径可以明确标 `receiptRequired: false`，其来源仍须由实际 local command/path/read 与独立文件身份人审核对。`proofs` 是实际 Broker receipt 中必须同对象匹配的 owner/snapshot/File ID 等字段子集，不能把不同记录拼成一个通过。
+
+`requireUse: true` 要求模型实际调用 `notion_use`，并有同一 toolCallId 的成功结果与 use receipt；只 read、旧轮回执、工具齐备或模型自述应用都失败。任务问题与预期在首次运行前冻结，失败后不改题、不补一次成功覆盖。本预验收只接受实际 `read/grep/find/ls/notion_list/notion_use` 调用；执行型或其他未审工具保留失败，不能据其声称脚本未执行。观察器不阻断或改写正常工具集，脚本和 binary 不可为验收自动执行。
+
+取消项用 `cancel: {operation: "consume" | "read" | "read-resources", providerRequestsBeforeAbort: 0, timeoutMs: 30000}`，其中 provider 数按实际场景预先冻结。观察到该真实 SDK 操作仍在进行时才发原生 `abort`，要求同一 operation 的 cancelled 完成和 abort 后零新增 provider；未捕捉到在途窗口就是未完成，不注入延迟来冒充真实服务时序。`forbiddenObjectSha256s` 的零读结论须同时有选中对象的实际 callback read 正控制。
+
+后端更新前后续接用 `resumeFrom: {path, sha256}` 指向前次 owned 成功 `result.json`。helper 校验前次 CLI/SDK/entry 和原 session hash，只复制本 helper 自建的 session 到新 owned 文件，保留原件，再调用真实 Pi `--session`；重用前次 owned source cache，明确是 warm resume，不当作空状态恢复。`noNotion: true` 将该唯一 source 标 disabled，仍保留其他配置；要求实际 provider 无 Notion 工具/catalog/guidance、SDK/CLI source 调用为零，本地 Skill 保持可用。
+
+无启用 Notion source 是产品能力边界。Pi 不注册 `notion_list/notion_use/notion_ctl`，不安装 Notion 专用 `read` 包装，也不投递 Notion guidance；原生 `read`、其它插件、filesystem source 和 `@local` 保留。重新加载扩展后按新配置重新决定这些能力；从已启用配置续接到禁用配置时，provider 投影去掉旧 Broker guidance，原 session、用户原文与本地正文不改。零 source、全 disabled、仅 filesystem、混合 source，以及 disabled→enabled→disabled 的重新加载由 `notion-consumption-tools.test.ts` 和 `skill-guidance.test.ts` 覆盖，真实安装/模型仍需独立重验。
+
+2026-11-08 的真实反例保留在 `~/Documents/code/personal/verification-evidence/ah681-20261108/broker-candidate-bab838e-a4a9a6d7/normal-pi-a/daily-candidate-0bFgWG`：真实本地全文一份、一次 provider 请求和任务回答成立，但 disabled source 仍暴露 Notion tools/guidance，不能把局部正控制当作本条件通过。正常 MCP 的其它 HTTP 请求与所选模型/SDK 边界分别记账；其它请求在观察器关闭时未结束不伪造完成，也不通过关闭正常 MCP 来制造全局零在途。
+
+### 证据与裁决
+
+复用 `skill-consumption-cost.mjs`、`skill-consumption-provider.mjs`、`skill-consumption-source-observer.mjs`、`observeGraphSdk` 与 `observeOwnedObjectReads`。观察器返回 undefined，不改 provider payload、工具集、SDK 参数或响应，不用 handler/fake provider。实际 payload 的 SHA/bytes 必须与 Undici 已发送 request body 一致，完整正文 raw/XML/JSON span 去重计数；details、schema、assistant arguments 不算模型正文。完整 SDK 输出、文件 proof、source requests、对象读取、每轮 final 与失败 verdict 分别留存。模型 HTTP entity bytes 不当 TCP/TLS wire bytes，source unknown outcome 不重放。
+
+正常宿主的 transport ledger 仍校验完整 hash 链、请求配对与零 observer error。所选模型请求必须有终态，并由每轮原始 payload、协议完成和实际回答证明应用完成；SDK/CLI source observer 必须完整结束。`transportCoverage` 单列 `allRequestsComplete` 和 `other.unknownRequestIds`，正常 MCP 等其它请求未结束不会被改成成功，也不代替 model/source 的硬门槛。原始 `transport_end.complete: false` 与其它请求的未知状态一并保留，不能据此声称整个宿主所有网络请求已完成。
+
+`passed` 仅表示本轮自动观测断言通过，`semanticReview: required` 始终保留，需另审原任务回答。helper 尚未运行的新候选不继承旧 gate；全局日用、真实库存、Mini 和 UI 不因本分支通过而关闭。复跑验证器本身：`node --test scripts/verify-pi-daily-candidate.test.mjs scripts/verify-pi-daily-installation.test.mjs`，正常 check 同时包含这两组反例。
+
+## AH-956：正常 HOME 的原生 print 双臂
+
+使用既有 `scripts/verify-pi-daily-candidate.mjs` 导出的 `runCandidatePrint(config)`，从仓库根以 Node 调用；先冻结仓外 JSON。配置为 `version: 1`、`scope: "project-scoped-candidate-print"`，指定 `id`、`arm: "normal" | "notion-only"`、`model: "magpie/group/worker"`、`thinkingLevel: "high"`、`brokerRoot`、`sourceId`、自有 `database`、`ownershipReceipt: {path, sha256}`、`evidenceRoot` 与原始 `prompt`。`expectedBodies`、`bodies`、`proofs` 和 `requireUse` 沿用上节的独立 oracle 及完整投递断言；暖续问或纯介绍可冻结 `toolCallCount: 0`，真实额外调用即失败。每轮预算在首轮前冻结，默认 600000ms；失败保存后停止，不能另换模型或修改问题覆盖旧样本。
+
+`normal` 保留正常 HOME、全局 packages、Skill、MCP 与安全扩展；仅项目 package 映射换为显式候选。`notion-only` 只增加 Pi 正式 `-ns`，不能增加 `--no-extensions`、`--no-mcp` 或修改全局设置。默认两臂各用空 Store、独立源缓存与仓外中性 cwd；来源仍采用真实日用 5m discovery/activation 和 prefetch=false。冻结源码包、入口、嵌入 CLI/SDK 与 runtime manifest 的身份，不把源码路径称为独立安装包通过。正常臂必须实际发现 native Skill，独立臂必须零 native Skill command；完整 provider 输入仍需另审，不能仅由 argv 推断没有其它扩展偷渡本地目录或正文。
+
+正式包子进程必须显式删除继承的 `NTN_SKILLS_DEV_ROOT`，并记录这一进程级变化。CLI launcher 可由该变量转向另一个源码 checkout；仅记录被调用文件的 SHA 不足以证明实际执行版本。保留正常 HOME、认证与全局开发设置。Broker build 会重新 bundle/minify 指定 CLI/SDK，分别冻结输入入口与输出 manifest/bundle；不能要求重新打包前后字节相同。
+
+真实 `pi -p` 的后续轮用 `resumeFrom: {path, sha256}` 指向同 evidenceRoot 下成功的本 helper `result.json`。helper 复制自有原 Session，再复用其 Store；原 Session 字节与父链保持，明确这是同会话/暖 Store、**新进程**续接，不冒称同进程暖态。每轮即刻用原 `inspectCandidatePrintSession` 核对实际 model_change、所有 toolCallId/结果、失败/撤回与精确用户轮数；完整 provider JSON 与 cost hook、实际 Undici 已发送请求体 SHA/bytes 对账。源 SDK 原件、HTTP 账本与作者/旁路 oracle 成本单列。cold、warm、管理编辑后旧 pin、明确刷新和介绍任务的实际语义由人审核；`passed` 只表示该次自动门禁成立。未完成的真实样本保持 not_run/failed；本节没有预先声称 AH-956 通过。
+
+AH922 的新 Agent 原操作恢复继续使用同一 helper，另显式冻结 `publicCli.mode: "original-create-recovery"`、公共 Node CLI 文件 SHA、原 plan SHA、原 main/entry/ref owner、原 Store 四个环境根，以及自有输出目录。公共帮助、原失败和原计划是 Agent 输入；审计 oracle 不进入输入。执行门禁只接受单条 `node <冻结入口> <公开参数>`，禁止壳组合、替代 plan/owner、任意脚本和私有 Store API；只允许公开恢复分支及同 owner 的严格只读核对。Agent 自己从帮助和真实结构化输出决定命令，driver 不替它生成 review、review ID 或恢复结果。
+
+门禁参数必须先对照冻结 CLI 的真实 `schema`/`--help`：恢复 review/apply/reconcile 默认输出 JSON，成功结果含 `request_metrics`，没有 `--json`/`--metrics` flags；只有 review 支持 `--output`。普通 read 使用它公开提供的 `--json --metrics --read-only`，相对路径从同 owner 已返回的固定 ref 解析。files 只放行同 owner 的固定 pin 和 `--metrics`，不允许 current listing 暗中保留历史。允许只读 schema 和原 operation show；show 的 `NATIVE_CREATE_PLAN_REQUIRED` 是公开转向提示，不是恢复成功。原型门禁误拒绝这些公开路径及要求不存在 flags 的失败会话必须保留，不能用辅助拒绝判断产品能力。源错误缺少完整请求 trace 时仍记 unknown，不能由预算或进程退出码补造完整分账。
+
+原生 Bash 截断大段公开 JSON 时，完整 stdout 是该已批准调用的工具产物。仅登记同一已批准 `toolCallId` 的真实 Bash `tool_result.details.fullOutputPath`，再允许原生 read 读取这一精确 spill 文件；不开放 `/tmp` 或接受任意结果声称的路径。原始截断输出、原生会话、完整 spill 的路径/bytes/hash 与 approved argv 同时保留。事后发现的守卫误拒绝不得靠重做实际 apply 获得新一轮绿色；保留失败，使用独立语义审计与公开 reconcile/current read 核对原结果。
+
+AH511 的冷作者只需同一 helper 的 `publicCli.mode: "owned-description-update"`：冻结独立 `managementIntent`、公共 CLI SHA、原 page/entry、唯一允许的新 Description 和全新四个状态根。Agent 从公开 help/schema 自己选择 update；先 dry-run 再一次真实更新的顺序由原生会话审计。门禁只接受原 page 的这一字段和这一完整值，拒绝 Enabled、Default Context、Name、Members、Requires 或任意恢复分支。update 使用公开默认 JSON，无额外 `--json`/`--metrics`；普通 read 继续严格只读。作者原件与完整 body oracle 分离。更新后的 `-ns` 与正常日用消费者使用同一最终候选和各自全新 Store，前者不加载本地 Skill 目录，后者保留全部日用扩展；两臂不重复管理写入。
+
+该管理模式把完整 native bash 调用逐条与门禁回执核对，并在结束后重算 CLI/原计划/原失败的 SHA。原 Store 是恢复前置，不能冒称空 Store。公共 CLI JSON 与 `--metrics` 另审；父进程 source observer 不覆盖 bash 孙进程，缺少实际 child source trace 时保持 unknown，不能把后台 SDK 的完整 ledger 当作 CLI 全覆盖。普通消费配置没有这个例外，仍要求零执行工具调用。
+
+### AH1033：公开维护检查与消费同轮双臂
+
+复用同一个 `runCandidatePrint`，显式配置 `publicCli.mode: "owned-maintenance-readonly"`。冻结 `managementIntent` 的 path/SHA、唯一原 `operationId`、物理 `target`、`database`、canonical owner 的 `refPrefix`、`sourceId`、候选随包 `entry` 的 path/SHA、四个全新 `stateRoots`、`inputFiles` 和 owned `outputRoot`。intent 必须包含该 owner、库与原 operation；ownershipReceipt 绑定同一页。状态根位于本轮 evidenceRoot，不复用正常 Store 或其他臂；不与 resume/existingState 混用。CLI entry 必须与该候选 runtime manifest 的 bundled CLI 字节及 realpath 相同，不能把二次 bundle 前的输入入口混作实际 `notion_ctl` 的入口。
+
+任务只给公开 `ntn-skills-maintain` 名称、精确目标/原 operation 和自然目的，不能给模型命令答案、oracle 正文、marker 或叶子 ref。新策略从冻结候选包保护该 builtin 的 SKILL.md 和 operations.md；通过正常 `tool_search` 与唯一 `notion_ctl({cli_source})` 取得公开 CLI 前缀。不改默认工具集、packages、MCP、正常 HOME 或安全扩展。模型仍从公开 schema/help 和真实 next.argv 自己选择只读检查。
+
+原 tool_call guard 在执行前放行目标级 `ctl audit run --target --entry`、原 operation 的 `show/reconcile --target --entry`、同 owner 的 `read --read-only --json --metrics`（可用 `--authoring`）及固定 pin 的 files。包内公开发现仅允许无参数 `ctl builtin list`，以及 `ctl builtin read notion/ntn-skills-maintain`：默认或显式 `--path SKILL.md`，另一许可路径为 `references/operations.md`。不开放其它 builtin、文件、agent-dir、status 或安装操作。公共 help/schema 只显示接口。禁止 audit --all、另一库/owner/operation、resume、apply/adopt/update、shell 组合和私有 Store。显式 audit 预算不得高于公开默认 500 attempts / 64 MiB / 120 秒；模型仍使用原 600000 ms、worker/high，无额外 cap 或重试。
+
+`ctl audit report RUN_ID` 只接受本 Session 已授权目标 audit 的实际完整结果所返回的 ID，禁止所有 report flags、预填历史 ID 和输出写入。原生 toolCallId、结果 hash、精确 entry/target、`ok:true`、`execution:completed`、`remote_writes:0` 和真实只读 next.argv 必须一致；截断输出只沿同一 Bash 结果已登记的精确 fullOutputPath 读取完整原件。warning/partial 可令 Bash 返回 exit 4 与 isError:true，不据此丢弃已完成的 JSON；没有完整原件则不授予续读。运行后再次将该绑定对回原 Session 与保留的 spill，且 audit 结果必须早于 report 调用。该许可只读原本地 checkpoint，不声称进程零文件系统活动或补全 CLI 孙进程网络观测。修正验收许可后的模型调用须另存为暖修正尝试，保留原拒绝/超时，不能覆盖首尝试。
+
+同轮 notion_list 仅使用已冻结的来源，notion_use 与原生资源 read 必须 readOnly:true。opaque sr:C/S/R 的 owner 取当前公开 native Session branch 中的原短引用绑定，核对 canonical identity、物理 page 与 database；不读私有 Store，不凭 token 前缀放行其他 owner。输入派发前核实际候选 read executor 与公开 readOnly schema，避免落入宿主旧 hook 准备路径；不匹配或 guard ledger 不可写即阻断。此前两种 publicCli 作者任务的允许范围保持。
+
+原生 Session、完整工具参数/结果与错误、源请求、provider payload/wire、完整正文与重复抑制继续由同一组观察器留证。独立审阅必须确认 builtin 的实际读取、公开 CLI 前缀与目标 scope、每个 next.argv 的执行或明确只读拒绝、实际 notion_use、两份参考内容、effects 和最终回答。自动 passed 仍只是机械断言，不能用纯消费替代公开维护链；CLI 孙进程的 HTTP 只按其实际 JSON/metrics 计量，未观测保持 unknown。回归加入原 candidate 测试文件，涵盖合法正例、跨 owner/库/operation、写命令、缺 readOnly、外部文件、short-ref 归属与守卫失败。此改动只扩展既有验证驱动的任务范围，不改变产品状态机或有限模型转移，不新增模型或 E2E 框架。
+
+混合维护任务还必须在派发前显式冻结 `publicCli.bodyCountScope: "broker-plus-unchanged-cli"`。恰好三份完整 `expectedBodies` 各带独立源读取确定的 `binding: {owner, scope, snapshot_id, version_id, path, file_id, ref}`；一份 SKILL.md 与两个不同的 File ID/逻辑路径，处于同一固定 owner/snapshot/version。`bodies` 每项 `occurrences: 1`，`requireUse: true`，对应 owner/pin/File proofs 不可省略，禁止空断言或 `receiptRequired: false`。这些 oracle 文件只交给观察器，不能交给模型或填入工具输出。
+
+此处的 1 专指实际 provider 中由同 toolCallId、同完整消息 SHA/字节数的已观测 Broker receipt 所证明的完整投递。最终全 payload 原始次数必须严格等于该 Broker 副本加已授权 CLI 原件的副本数。CLI 原件按原生 call/result、实际 provider `tool_call_id`、原参数与完整文本逐条绑定，一条原件只对应一条 provider 消息；只有同一 Bash 结果登记的精确 spill 读取可沿用该归属。所有 CLI 原件必须完整保留，不能因正文相同而裁剪、归类或改写。当前只接受实际 worker 的 OpenAI `messages` 形态，未知映射、缺原件、双 Broker、无 receipt 或无法归属的正文均失败。
+
+原 `bodyOccurrences` 与 `verifiedBodyOccurrences` 都仍是全 payload 计数；后者仅表示其正文曾经通过 receipt 校验，不代表已经按工具消息分域。新 `maintenanceBodyAccounting` 单独报告 total/broker/cli 与每条来源绑定，不改变原两个指标，不修改普通消费模式的 exactly-once 断言。运行后不能为通过样本修改冻结关系或预期。
+
+### AH734：正常管理 Store 的固定 pin 消费
+
+仅显式 `existingState.mode: "normal-management"` 复用正常进程既有的 state/config/cache 三根；`roots` 冻结公开根解析结果，`managementReads` 引用两份已成功的完整固定 pin CLI JSON 的路径与 SHA。默认未配置仍为 fresh；该模式不兼容 resume 或 publicCli，不读取私有 Store 文件、复制 State/凭据、保存远端 snapshot 或把旁路正文注入模型。正常臂与 `-ns` 臂使用同一管理 Store、各自全新 Session 与 Broker 缓存。`NTN_SKILLS_DATA_HOME` 继续指向本轮 owned 目录，只用于本任务禁止的 builtin 安装，不是消费 Store 根。
+
+`stateRoot` 和 `ownedPaths` 只能指向本轮新建目录。外部 Store 在 `sourceState.ownership: "existing-user"` 单列，不进入 cleanup，也不能作为下一次 resume 的来源。预派发核对已有公开回执的完整正文、owner/scope/pin/FileID 与 none effects；实际两次调用只允许原 ref 的 scalar `read`、`readOnly: true`，原工具、SDK/provider/native 完整正文与效果审计仍保留。只读允许本地 SDK 观察缓存正常更新，不声称整个 SQLite 字节不变。
+
+两项新增回归先因接口缺失 RED，接线后与既有 fresh/resume/fork/注册及默认 cap 回归共 48/48 GREEN；覆盖根替换、默认 fresh、外部归属与错误 resume，以及严格工具门禁和真实结果的缺失/unknown effects。公开 29/30 回执的双臂纯本地准入通过，原 prompt 与两份正文身份不变；首次旁路探针把嵌套 proofs 当成平铺字段的错误保留，改用既有 `containsProof` 后通过，不算产品失败或修复。准备阶段证据在 AH734 `consumer-store-driver-v2`，当时没有 Pi/模型/来源请求；其后的真实两臂另列如下。此 driver 接线没有改变 Availability、ReadRace 或 RetentionDisclosure 的状态转换，复用原模型结果，不重跑或增加模型。
+
+封存 v2 使用 driver `f7bce04`、实际全局39ad产品/9b03嵌入运行时、正常 HOME 和同一管理 Store；原 v1 因空 Store 不能证明旧 pin 可用而保持 not_run，没有复制 Store 或 oracle。`notion-only-ah734-v2-edited-oldpin-notion-only-B341TC` 与 `normal-ah734-v2-edited-oldpin-normal-7tJ25n` 按顺序各运行一次，均 exit0，技术与完整回答语义通过。各有恰2个 scalar readOnly read，按编辑后→编辑前取完整4319/3716 B；原生v2 span、owner/scope/FileID、各自pin/version、SDK正文、none effects及最终真实payload各1份均核对。全6份payload主文0，无use、激活、脚本或写入；独立臂0 native，正常臂69项name/source path/order与原全局回执完全一致。
+
+独立臂为65,617.48325 ms、3 payload/204,857 B、8 metadata/0 body/0 write、44,085 decoded B、完整reported usage59,810；正常臂为86,037.180416 ms、3 payload/310,503 B、0来源HTTP、完整usage85,689。两臂四次固定read均0HTTP；第二臂复用同一Store的暖目录，差额不是同曝光或同冷态性能收益。独立臂other GET/SSE6未闭合，费用及全扩展网络仍不作零或完整保证。两个812 B final准确区分新增段落/链接与旧正文；“只有一条”限定新增段落，“没有保留记录”限定本次effects，不抹除文件其他链接或历史留存。root直接原件审阅为`reviews/root-ah734-v2-native-provider-audit.json`（39,541 B，SHA256 `4095dfc891a3f3ac1e16a18d55772366edfa5208f2950ae3f93e6f3fa9d57051`）。本次管理恢复的最终机器反馈由CLI原操作证据另验，不从消费者通过推导正文写入成功。
+
+### 2026-11-11 真实双臂基线
+
+原件根为 `/Users/yoyo/Documents/code/personal/verification-evidence/ah956-20261111-Z3lomu`。`plan.json` 在模型请求前冻结两臂、五个原始问题、worker/high 与每轮 600000ms；`ownership-v1.json` 绑定同一自有 root、Requires 和参考文件。原 root 创建失败、自动链接的精确同页修复、原 operation 的公开 recovery review/apply 都保留，没有另建替代 root。旧 `ca8cc9` 的正式绑定冷读因原 `needs_review` 阻塞，之后仅采用 `ca8cc9 → e0e1510(AH740) → a76c593(AH922)` 的恢复协议，Broker 主体仍为 `1c11c57`，未混入 AH953/631/506。
+
+`baseline/recovery-protocol/freeze.json` 保留 Broker/CLI 两份归档及 89/69 个成员的逐字核验。`baseline-summary.json` 指向每轮配置、原生 Session、source SDK 原件、成本与语义 review；`baseline-isolation-audit.json` 在全部完成后另进程重读十个 Session 和十八个 provider payload。所有 `-ns` 输入均没有 Notion 目录外的 native Skill 目录、本地 Skill 根或 oracle 路径；正常臂实际保留 69 个 native Skill commands。每个实际 provider 请求均与已发送 HTTP 请求体 SHA/bytes 唯一配对，完整正文计数重新核对。
+
+| 原任务 | 两臂实际结果 | 成本与边界 |
+| --- | --- | --- |
+| 冷态自然使用 | 各三次 provider、两次工具调用；root 565B、Requires 332B、参考 188B 各一份；版本及 gate 正确 | 每臂 24 metadata + 6 body，零写入 |
+| 暖续问 | 各一次 provider，零工具；三份旧正文各一份 | 两臂均零 Notion HTTP；同 Session/Store、新进程 |
+| 作者更新后的旧 pin | 各一次 provider，零工具；回答仍为 QUARTZ-1 / CEDAR-1 / MICA，新正文零投递 | 仅启动目录复验，独立臂 8、正常臂 6 metadata；零正文与写入 |
+| 明确刷新 | 两臂各三次 provider，最终旧 root/参考零份、新 root/参考/Requires 各一份且新 pin 一致 | 独立臂发生 6 次历史保留写入，违反问题明确的“不写入”；正常臂随后读取已保留历史，零写入不能证明只读能力 |
+| 新会话 `$` 介绍 | 各一次 provider、零工具；root v2 与 Requires 各一份，参考正文零投递；没有执行工作流 | 每臂仍有 24 metadata + 6 body 的主机准备成本。正常臂把“报告包含”收紧成“报告只包含”，原措辞保留为语义注记 |
+
+总消费者账本为 18 次 provider、146 metadata、34 body、6 write。作者修改是另列的两次原生段落 PATCH，不能并入消费者成本或称为 UI 操作。v2 oracle 来自精确作者 ACK/原生 Markdown 回读，仅在旁路推导固定正文期望，没有预先用 current read 写入历史或播种消费者 Store。
+
+独立臂刷新 `notion-only-explicit-refresh-ouqNp2/independent-review.json` 明确为 `failed-strict-no-write-semantics`：模型回答仍声称“未写入”，实际六次写入不可抹除。AH953 候选必须使用新的原生编辑与独立会话验证 effects/readOnly。两次受开发 launcher 覆盖影响的早期 CLI 读取、错误的跨 bundle 字节相等检查、以及把恢复历史首条 resource receipt 当成本轮 receipt 的审计错误均留有单独勘误；后续必须按本轮 toolCallId 选择结果，不能删掉历史。
+
+验证器回归 `node --test scripts/verify-pi-daily-candidate.test.mjs scripts/verify-pi-daily-installation.test.mjs` 为 25/25。以上是该次源码候选的实际消费证明，不代表 UI、Mini、独立安装发布、AH639 自然产物执行或成本分布验收。该次 TaskSpace 1 / p1 登录交接见 `notion-ui-login.json`；用户随后明确把本轮 AH734 管理入口改为正式 ntn CLI，历史 UI not_run 不改称通过。
+
+## Consumer observation consistency (AH-864)
+
+Use the existing host-prepare fixture and SDK/source/provider drivers. Before product changes, retain F1/F2/F3/F4/F5/F7 failures against 38285e7 and the successful exact-read recovery control. F6 is a separate actual-clock/request test, not a seventh proven failure. Each vertical slice updates this map and the corresponding model/code bindings.
+
+The coordinator owns current availability only. Source boundaries must preserve original validation evidence and distinguish current remote/cache observations from fixed historical content. No missing proof is promoted to a new permission or Enabled observation; graph failure attribution uses the exact failing node, not the requested root. Tests must provide the same evidence that the real SDK returns, and keep the original unmodified audit logs.
+
+Regression routes: shared current observation across read/use/metadata (CC1); lifecycle generation, scope and late callbacks (CC2); real TTL/default View/cursor and Default Context disposition (CC3); pinned graph commit and next-provider publication (CC4); repeated owned Notion edits with actual npm CLI/SDK/Pi worker sessions (CC5). Preserve complete body/resource counts, unchanged-warm network costs, cancellation and no-source controls. Do not add a second runner for each route.
+
+Finite models live in `verification/models/consumer-observations`. Preserve current and negative variants and their exact expected broken rules. The original candidate is a design sketch, not implementation proof. Source evidence, TTL clock experiments, installed artifacts and real model sessions remain independent. No all-provider/all-machine matrix or production-library sweep is required.
+
+### Consumer observation implementation gates
+
+Run the F1/F2/F3/F4/F5/F7 tests in `host-prepare.test.ts` with SDK-shaped current evidence and exact failed-node provenance. Keep the original audit's red transcript; a missing proof must not be turned into a current success to satisfy a test. `consumer-observation.test.ts` separately checks caches, fixed snapshots, same-generation ordering and dependency attribution.
+
+`verification/models/consumer-observations/README.md` owns the finite scope and source mapping. Use its pinned statechart/TLC runner and isolated code-guard mutation script before claiming formal correspondence. Model runs, production-function tests, actual installed HTTP, real Notion changes and `magpie/group/worker` sessions are distinct evidence levels.
+
+Default Context stays a normal optional View-filter attribute. Do not delete its schema or values. The four Enabled/Default Context combinations must preserve no-body discovery; explicit filtered Views retain their existing rules. Report the actual inspected Views and do not generalize their filters to unknown workspaces. Final daily validation must distinguish the CLI's `NTN_SKILLS_DEV_ROOT` selector from Pi's actual local package path and its bundled SDK hashes.
+
+## 管理到实际消费的日用组合审阅
+
+从同一新建自有Skill的公开管理operation开始，串联cold source、5m实际cache policy、自然Agent选路、完整use/reference、暖续问、CLI修改、Notion原生修改、固定旧版与明确新版。复用本地图的被动SDK、cost、Undici和原生session观察器，不另起运营/遥测平台。作者操作、旁路私有oracle和消费成本分账；oracle不能预热消费Store或成为首轮答案提示。
+
+具体已运行范围与局部调优入口见[日用整链路审阅](../../../../packages/context-broker/docs/dogfood-flow-audit-2026-11-11.md)。可执行组合规格在`verification/models/consumer-observations/flows`，调用既有`verify-consumer-observations.mjs --out /new/absolute/output --suite flows`。RetentionDisclosure.current保留AH-953实施前的历史副作用披露反例；匹配预期的负例不是产品通过。实际toolResult/HTTP/最终回答须共同复核该问题，不能只看模型文字。
+
+每段保留管理op、精确record/snapshot、SDK requestId、toolCallId、实际provider payload SHA与cache初态。在原scope、源内容、模型路由和工具暴露一致时比较局部变化；不同默认View属于不同策略实验，不伪称同曝光净收益。纯续问零工具只说明Agent没重调，仍须计TTL到期的背景metadata；已知body不重取与总HTTP零是不同条件。正常MCP的未观测请求保持unknown，不为清空账本停用它们。
+
+若用户要严格不发生远端写入，不能从inspect/read/use名称推断。当前原生编辑观察可能触发保留写；公共接口已实现version-1 effects；FLOW-EFFECT-01保留修复前反例，不表示当前公共语义缺失。不得以去掉必要留存、宽松校验、隐藏权限问题或追加全局长教程来制造“更小更快”的结果。
+
+### RV3：原审计暂停与续跑
+
+`owned-maintenance-readonly` 的 guard 从本 Session 完整、同 owner/entry 的实际审计结果绑定 run。`paused` 的精确只读 `next.argv` 可继续同 run 的 `ctl audit resume`；completed/execution_failed 可离线 report，失败和 partial 仍保留原状态。正在执行或没有完整返回的 resume 不会获得第二次派发许可。
+
+可选 resume 参数只接受原 entry 断言和公开的每次调用预算（最多 500 请求、64 MiB、120 秒）；原任务总 deadline 不随续跑重启，实际 `request_totals` 累计不归零。每次预算不是全任务共享额度，缺失网络观察不填零。不得扩到 `--all`、别的 run/库/目标，或可写的 `ctl operation resume`。原生 Session 按先前真实结果逐条核对，不借用未来结果授权过去命令。
+
+复验使用 `node --test scripts/verify-pi-daily-candidate.test.mjs` 的暂停、续跑、报告及越界反例。无需为此再跑真实模型；历史四次 failed 结果不改写。

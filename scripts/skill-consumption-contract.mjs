@@ -28,6 +28,9 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
     'native-read-session', 'host-prepare', 'view-discovery', 'skill-context-projection', 'skill-context-session', 'skill-model-surfaces'];
   for (const name of required) check(config.packageScripts['test:consumption']?.split(' ').includes('scripts/' + name + '.test.ts'),
     'GATE_TEST_MISSING', 'Required consumption regression is absent: ' + name);
+  for (const path of ['scripts/context-once-evidence.test.mjs', 'scripts/mock-provider-adapter.test.mjs',
+    'scripts/catalog-representation.test.mjs', 'packages/context-broker/scripts/final-request-undici.test.ts'])
+    check(config.rootScripts['test:verification']?.split(' ').includes(path), 'GATE_CONTEXT_ONCE_MISSING', 'Current-request verification is missing: ' + path);
   check(config.workflows.length === 2 && new Set(config.workflows.map(row => row.name)).size === 2,
     'GATE_WORKFLOW_MISSING', 'Check both CI and publish gates.');
   const sourceRevisions = [];
@@ -109,6 +112,18 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
         && retained.includes('${{ runner.temp }}/pi15-http-*-evidence/')
         && retained.includes('${{ runner.temp }}/pi14-http-directory-evidence/'),
         'GATE_CONTROLLED_HTTP_MISSING', 'CI must exercise all three actual Pi1.5 HTTP scenes and Pi1.4 directory on the same installed package, retaining source and provider evidence.');
+      const contextOnce = step('Installed Pi current-context contract');
+      const onceLines = runLines(contextOnce);
+      const onceCommand = 'node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json"';
+      check(unconditional(contextOnce)
+        && contextOnce.includes('BROKER_INSTALLED_PACKAGE: ${{ steps.installed-pi.outputs.package }}')
+        && onceLines.includes('for backend in in-process http; do')
+        && onceLines.includes(onceCommand + ' --scenario context-once --provider-backend "$backend" --out "$RUNNER_TEMP/pi15-context-once-$backend"')
+        && onceLines.includes(onceCommand + ' --scenario session-compaction --out "$RUNNER_TEMP/pi15-context-once-compaction"')
+        && onceLines.includes(onceCommand + ' --scenario context-wire-negative --provider-backend http --out "$RUNNER_TEMP/pi15-context-once-wire-negative"')
+        && workflow.text.indexOf(contextOnce) > workflow.text.indexOf(installed)
+        && retained.includes('${{ runner.temp }}/pi15-context-once-*/'),
+        'GATE_CONTEXT_ONCE_MISSING', 'CI must drive both real Pi backends and compaction on the same installed package and preserve failed evidence.');
     } else check(!/^    strategy:/mu.test(workflow.text), 'GATE_PUBLISH_MATRIX', 'Publishing remains a single job, not a host-version matrix.');
   }
   check(new Set(sourceRevisions).size === 1, 'GATE_SDK_BUILD_INPUT_DRIFT', 'CI and publish must use the same frozen CLI revision.');

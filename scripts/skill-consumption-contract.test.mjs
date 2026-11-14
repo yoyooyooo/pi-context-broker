@@ -65,6 +65,25 @@ test('controlled HTTP gates retain all primary scenes and the compatibility dire
   assert.deepEqual(validateConsumptionGates().controlledHttp, { primary: ['http-directory', 'http-cache-recovery', 'http-interruption'], compatibility: ['http-directory'] });
 });
 
+test('context-once gates reject omitted backends, swallowed failure and missing retained originals', () => {
+  for (const mutate of [
+    text => text.replace('for backend in in-process http; do', 'for backend in http; do'),
+    text => text.replace('--scenario context-once --provider-backend "$backend"', '--scenario native-repeat --provider-backend "$backend"'),
+    text => text.replace('- name: Installed Pi current-context contract\n', '- name: Installed Pi current-context contract\n        if: false\n'),
+    text => text.replace('- name: Installed Pi current-context contract\n', '- name: Installed Pi current-context contract\n        continue-on-error: true\n'),
+    text => text.replace('--out "$RUNNER_TEMP/pi15-context-once-$backend"', '--out "$RUNNER_TEMP/pi15-context-once-$backend" || true'),
+    text => text.replace('--scenario session-compaction --out "$RUNNER_TEMP/pi15-context-once-compaction"', '--scenario native --out "$RUNNER_TEMP/pi15-context-once-compaction"'),
+    text => text.replace('--scenario context-wire-negative --provider-backend http', '--scenario context-once --provider-backend http'),
+    text => text.replace('${{ runner.temp }}/pi15-context-once-*/', '${{ runner.temp }}/unrelated/'),
+  ]) {
+    const config = consumptionGateConfiguration(); config.workflows[0].text = mutate(config.workflows[0].text);
+    assert.throws(() => validateConsumptionGates(config), { code: 'GATE_CONTEXT_ONCE_MISSING' });
+  }
+  const config = consumptionGateConfiguration();
+  config.rootScripts['test:verification'] = config.rootScripts['test:verification'].replace('scripts/context-once-evidence.test.mjs', '');
+  assert.throws(() => validateConsumptionGates(config), { code: 'GATE_CONTEXT_ONCE_MISSING' });
+});
+
 test('controlled HTTP gates reject missing scenes, helper, package routing, unconditional execution or retained evidence', () => {
   for (const mutate of [
     text => text.replace('for scenario in http-directory http-cache-recovery http-interruption; do', 'for scenario in http-directory http-interruption; do'),

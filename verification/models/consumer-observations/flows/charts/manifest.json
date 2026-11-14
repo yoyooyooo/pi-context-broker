@@ -1,0 +1,366 @@
+{
+  "version": 1,
+  "generated_at": "2026-11-12T10:42:23.860Z",
+  "scope": "Finite composition models; no live E2E or arbitrary LLM claim",
+  "renderer": {
+    "name": "pele",
+    "version": "1.9.0",
+    "options": {
+      "limit": 1000000,
+      "outputLimit": 8000000,
+      "maxEdges": 10000
+    },
+    "stylesheet_sha256": "badd8b23686ba7d66ae36659ed8e520eb1d1c3f82daf2a67cc6f38b047a43304"
+  },
+  "charts": [
+    {
+      "name": "management-receipt",
+      "model": "ManagementToDelivery",
+      "config": "implemented",
+      "mermaid": "management-receipt.mmd",
+      "svg": "management-receipt.svg",
+      "report": "management-receipt.report.md",
+      "mermaid_sha256": "ade89c03b74b33caeeadf012f0e74397610dae96d911812105e21f11ebf932c3",
+      "svg_sha256": "813549638188fb3925a0647ee2cee68b35ca219992ae22fdcb0a09ef62cb4c07",
+      "report_sha256": "4f6542b1ddf065a587802ebc2890e327e232b34b1f46b798bb060f4355a2e42c",
+      "width": 504,
+      "height": 1713,
+      "arrows": 16,
+      "evidence_run": "/Users/yoyo/Documents/code/personal/verification-evidence/ah1006-20261112/flows/management-01",
+      "raw_summary_sha256": "2925e349da10c1039ff4bf5d18cbc219f2b4072281402f21cdd551ccbbeed061",
+      "checkout_commit": "394d08fdf7aee7a9894b5c0aaf146299bb946f44",
+      "source_commit": "1c11c57849f97d2c13b82eb8a62fe6b6065741c4",
+      "source_hashes": {
+        "packages/context-broker/src/host-skills.ts": "5ad556031ea1085363b7e75ab329a57ebedc0b1e44d2db3c0df9a551b312eca9",
+        "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
+        "packages/context-broker/src/prepare-protocol.ts": "a933a092d39d9abb860ce614c959b13c5e26c1cf830bdb1f9f715b0adf2c283a",
+        "packages/context-broker/src/skill-context-projection.ts": "15887381449784a0c8ffd8963e8967d900b9557a943e6d974506a8e55b9e11bf",
+        "packages/context-broker/src/skill-context-projection-proof.ts": "08767ee5fcc9c10e5fe98fa3744213a2e73407784feff4ca8daf167bab6ce65d",
+        "packages/context-broker/src/notion-sdk.ts": "2a062d638c1f13910052c4edf8a0a2250f608e00144f3c521edcec04a51cd9af",
+        "packages/context-broker/src/resource-read-projection.ts": "c72d8749018ca97fbb8026568ae23831080b65e8d312ca8b454792327424183e",
+        "packages/context-broker/src/session-source-snapshot.ts": "e946d3a437b29869546b0192d1fdbd693b2ac38b765b8e60b3763b8198547468",
+        "packages/context-broker/src/notion-source.ts": "20a876a4e1db4676d252ed184ef35654a691a73902d7e3c846a9eb8e51a6a07d",
+        "packages/context-broker/src/index.ts": "ffcf274952dfcf143a119900943b787884a6eb78d84cd734c83db396bc05f6b3",
+        "packages/context-broker/src/consumption-effects.ts": "5b10742bccfe19ccd4b52b06733baab9f730d84861e24299b0e3a73f81e73794",
+        "packages/context-broker/src/pi-host-adapter.ts": "ff4f213acd643c067b7fa000bd05f5ddd8981882ee3926cceadab3875e212ee0",
+        "packages/context-broker/src/skill-catalog-projection.ts": "7b407d448a44f6fea3c0776ef3f2cd5d73fd10c314b746fe2b1268663cd0f3b8",
+        "scripts/build-tern.mjs": "4839a90f0ed6a32b602b52ad13a0ea0d66baf40966eae41eee875c0683c413af",
+        "packages/context-broker/scripts/notion-sdk.test.ts": "abafb99deda5928df533fabcfbb6f44cae89a8c88a71bfc3ea0ff8303aada17d",
+        "packages/context-broker/scripts/skill-context-projection.test.ts": "8858838c508e8ef910ec254811e7339aa3cbaad937741045574f2f4398508380",
+        "packages/context-broker/scripts/host-prepare.test.ts": "917432ef445cec9d723a8e6609921e36f96bf30ee371df77bca0844e9fcb8748",
+        "packages/context-broker/tsconfig.json": "5b485daf61c3d2f793b77a9c8511a135f40988a402d1e0840b4e9d79a289646d",
+        "scripts/skill-preparation-evidence.mjs": "e3f25b4e62e125543c48f5263c178c69071163a54b404a8963aa11221df12bdf",
+        "scripts/skill-preparation-evidence.test.mjs": "3205a96b55844a40d2c1194ccb2485be4d570fd1e4f07156a2a8529676283275",
+        "scripts/notion-sdk-pi.mjs": "30f9c52c688ed8f42c2b10bb24bb31620c91b38095fd9b3e5798230c5bc0cc2f",
+        "scripts/notion-sdk-pi.test.mjs": "2ee4bca756bb13d083a9c77448720c84cf184dde6e669e27d62a0d2c5d986dfe",
+        "packages/context-broker/scripts/skill-model-surfaces.test.ts": "876b6c6650bed1f81068c71c1be630fb10ecb951e1cc1a7cb17797cc26d57d5b",
+        "packages/context-broker/scripts/session-active.test.ts": "651b81077ba4635f8267c7623f001a5e3e46d65901a4bc646b1b04f5a6b30dcd",
+        "packages/context-broker/src/resource-read-types.ts": "fe42ca452633a4919aea0d23ff46789d4de742686f4290d53ca69b00074e92ab",
+        "packages/context-broker/scripts/pi-read-adapter.test.ts": "b0a144a76ba38125d0b159a9ef281d918c87d0f4cf0961929562c6332151d292",
+        "packages/context-broker/scripts/resource-read-host.test.ts": "aa69aa4d7750b2a460b7201b3210846da6327144c8508f1e90384aa7b78ab125",
+        "packages/context-broker/scripts/resource-read-projection.test.ts": "210e5e4e50574f1a2f4a2dc0232091f68736f0885062cbc00282ca2f43056cdc",
+        "packages/context-broker/scripts/fixed-resource-source.test.ts": "cd057a611b34ee7a85816ccad38951ec561a120747ad717ba0d75f76cb8f3aa1",
+        "packages/context-broker/scripts/formal-effects-composition.test.ts": "ed05eec59ae651da86f48de20fe6749163227e49fa88d020f35cca81ff8871dd"
+      },
+      "coverage_sha256": "68ce8905bbcd898fd94d734d05f6e8e858841d0e42cd8e6fa2d80633ae85e99e",
+      "runner_sha256": "c1fd27702df646f4a1eeed1895bdc7f3491505dde4bd0eb9c92641d9ca926e1f",
+      "tool_lock_sha256": "379937f0a64c7086a4d2d950dd0afad7dd37c3adc03e6286c2ace15d8b950cc6",
+      "pstack_commit": "c742dd61706fbacc1b95f1a20b7b988cf096ce6c",
+      "tlc_sha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+      "inputs": [
+        {
+          "path": "model-inputs/ManagementToDelivery.tla",
+          "sha256": "41e373fc580dcbce7aa1851bd7754bea34285abf46bb767549c1306dd0adfe94"
+        },
+        {
+          "path": "model-inputs/ManagementToDelivery.implemented.cfg",
+          "sha256": "a74b89cbc55bf38c3116b01e3b98f28a6536e9d6350af67da38136283adc4702"
+        },
+        {
+          "path": "model-inputs/ManagementToDelivery.view.mjs",
+          "sha256": "41885799e126093324ce7dd2c5de73749a1542c7d5352034883352957d928992"
+        }
+      ],
+      "states": {
+        "distinct": 15,
+        "initial": 1,
+        "complete": true,
+        "cut": false
+      },
+      "broken": [],
+      "expected_rules": [
+        "CompleteBeforeApplication",
+        "FreshFollowupReusesBody",
+        "ManagementReceiptBeforePublish",
+        "NoDeadlock",
+        "OrdinarySelectionStable",
+        "ReferenceBelongsToSelection",
+        "TypeOK"
+      ]
+    },
+    {
+      "name": "two-acquisition-effects",
+      "model": "AcquisitionEffects",
+      "config": "implemented",
+      "mermaid": "two-acquisition-effects.mmd",
+      "svg": "two-acquisition-effects.svg",
+      "report": "two-acquisition-effects.report.md",
+      "mermaid_sha256": "547c3da5f9d8a15ce8ff4deed0f8175f3ab001861ee514d92a5dda33dec906b0",
+      "svg_sha256": "2de9295da68ebfadc6cd3ee640799c3f27360ada09af79cd577de5e9043605c4",
+      "report_sha256": "7116a96169551632d58ec83137d5ab536b40b8eeacf98d4e73c862bc8289e7f2",
+      "width": 936,
+      "height": 1516,
+      "arrows": 21,
+      "evidence_run": "/Users/yoyo/Documents/code/personal/verification-evidence/ah1006-20261112/flows/models-view-03",
+      "raw_summary_sha256": "46063c9f6628cec5b300cde07eb064a92208b6d694059b771f020126a27a3297",
+      "checkout_commit": "394d08fdf7aee7a9894b5c0aaf146299bb946f44",
+      "source_commit": "1c11c57849f97d2c13b82eb8a62fe6b6065741c4",
+      "source_hashes": {
+        "packages/context-broker/src/host-skills.ts": "5ad556031ea1085363b7e75ab329a57ebedc0b1e44d2db3c0df9a551b312eca9",
+        "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
+        "packages/context-broker/src/prepare-protocol.ts": "a933a092d39d9abb860ce614c959b13c5e26c1cf830bdb1f9f715b0adf2c283a",
+        "packages/context-broker/src/skill-context-projection.ts": "15887381449784a0c8ffd8963e8967d900b9557a943e6d974506a8e55b9e11bf",
+        "packages/context-broker/src/skill-context-projection-proof.ts": "08767ee5fcc9c10e5fe98fa3744213a2e73407784feff4ca8daf167bab6ce65d",
+        "packages/context-broker/src/notion-sdk.ts": "2a062d638c1f13910052c4edf8a0a2250f608e00144f3c521edcec04a51cd9af",
+        "packages/context-broker/src/resource-read-projection.ts": "c72d8749018ca97fbb8026568ae23831080b65e8d312ca8b454792327424183e",
+        "packages/context-broker/src/session-source-snapshot.ts": "e946d3a437b29869546b0192d1fdbd693b2ac38b765b8e60b3763b8198547468",
+        "packages/context-broker/src/notion-source.ts": "20a876a4e1db4676d252ed184ef35654a691a73902d7e3c846a9eb8e51a6a07d",
+        "packages/context-broker/src/index.ts": "ffcf274952dfcf143a119900943b787884a6eb78d84cd734c83db396bc05f6b3",
+        "packages/context-broker/src/consumption-effects.ts": "5b10742bccfe19ccd4b52b06733baab9f730d84861e24299b0e3a73f81e73794",
+        "packages/context-broker/src/pi-host-adapter.ts": "ff4f213acd643c067b7fa000bd05f5ddd8981882ee3926cceadab3875e212ee0",
+        "packages/context-broker/src/skill-catalog-projection.ts": "7b407d448a44f6fea3c0776ef3f2cd5d73fd10c314b746fe2b1268663cd0f3b8",
+        "scripts/build-tern.mjs": "4839a90f0ed6a32b602b52ad13a0ea0d66baf40966eae41eee875c0683c413af",
+        "packages/context-broker/scripts/notion-sdk.test.ts": "abafb99deda5928df533fabcfbb6f44cae89a8c88a71bfc3ea0ff8303aada17d",
+        "packages/context-broker/scripts/skill-context-projection.test.ts": "8858838c508e8ef910ec254811e7339aa3cbaad937741045574f2f4398508380",
+        "packages/context-broker/scripts/host-prepare.test.ts": "917432ef445cec9d723a8e6609921e36f96bf30ee371df77bca0844e9fcb8748",
+        "packages/context-broker/tsconfig.json": "5b485daf61c3d2f793b77a9c8511a135f40988a402d1e0840b4e9d79a289646d",
+        "scripts/skill-preparation-evidence.mjs": "e3f25b4e62e125543c48f5263c178c69071163a54b404a8963aa11221df12bdf",
+        "scripts/skill-preparation-evidence.test.mjs": "3205a96b55844a40d2c1194ccb2485be4d570fd1e4f07156a2a8529676283275",
+        "scripts/notion-sdk-pi.mjs": "30f9c52c688ed8f42c2b10bb24bb31620c91b38095fd9b3e5798230c5bc0cc2f",
+        "scripts/notion-sdk-pi.test.mjs": "2ee4bca756bb13d083a9c77448720c84cf184dde6e669e27d62a0d2c5d986dfe",
+        "packages/context-broker/scripts/skill-model-surfaces.test.ts": "876b6c6650bed1f81068c71c1be630fb10ecb951e1cc1a7cb17797cc26d57d5b",
+        "packages/context-broker/scripts/session-active.test.ts": "651b81077ba4635f8267c7623f001a5e3e46d65901a4bc646b1b04f5a6b30dcd",
+        "packages/context-broker/src/resource-read-types.ts": "fe42ca452633a4919aea0d23ff46789d4de742686f4290d53ca69b00074e92ab",
+        "packages/context-broker/scripts/pi-read-adapter.test.ts": "b0a144a76ba38125d0b159a9ef281d918c87d0f4cf0961929562c6332151d292",
+        "packages/context-broker/scripts/resource-read-host.test.ts": "aa69aa4d7750b2a460b7201b3210846da6327144c8508f1e90384aa7b78ab125",
+        "packages/context-broker/scripts/resource-read-projection.test.ts": "210e5e4e50574f1a2f4a2dc0232091f68736f0885062cbc00282ca2f43056cdc",
+        "packages/context-broker/scripts/fixed-resource-source.test.ts": "cd057a611b34ee7a85816ccad38951ec561a120747ad717ba0d75f76cb8f3aa1",
+        "packages/context-broker/scripts/formal-effects-composition.test.ts": "ed05eec59ae651da86f48de20fe6749163227e49fa88d020f35cca81ff8871dd"
+      },
+      "coverage_sha256": "cc946b29bdfdb11d56fb5dedf9e1fea9cc540bff9b03eb664ba7e6a65cb46c68",
+      "runner_sha256": "c1fd27702df646f4a1eeed1895bdc7f3491505dde4bd0eb9c92641d9ca926e1f",
+      "tool_lock_sha256": "379937f0a64c7086a4d2d950dd0afad7dd37c3adc03e6286c2ace15d8b950cc6",
+      "pstack_commit": "c742dd61706fbacc1b95f1a20b7b988cf096ce6c",
+      "tlc_sha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+      "inputs": [
+        {
+          "path": "model-inputs/AcquisitionEffects.tla",
+          "sha256": "f4bceadb55f24a89cfbfeed20e6cce303bc9fa46a96038175e7a4afc45f55b48"
+        },
+        {
+          "path": "model-inputs/AcquisitionEffects.implemented.cfg",
+          "sha256": "a1e3c85f5de02811eca41f1bf4d0a188e9f8625764bd2e25b7ac57f7ee3ef63c"
+        },
+        {
+          "path": "model-inputs/AcquisitionEffects.view.mjs",
+          "sha256": "7df3d0d8b5c1e2612e81f452cfe1c5fff1e5522ed2d6c502cd6108e42315e842"
+        }
+      ],
+      "states": {
+        "distinct": 85,
+        "initial": 10,
+        "complete": true,
+        "cut": false
+      },
+      "broken": [],
+      "expected_rules": [
+        "CompatibleSdkBeforeDispatch",
+        "CompleteSelectionOnly",
+        "ConfirmedFactsPreserved",
+        "NoDeadlock",
+        "NoFalseZeroWriteReport",
+        "StrictReadOnlyHasNoWrites",
+        "TypeOK",
+        "UnknownEffectIsSticky"
+      ]
+    },
+    {
+      "name": "lost-prior-effects",
+      "model": "AcquisitionEffects",
+      "config": "lost-prior-negative",
+      "mermaid": "lost-prior-effects.mmd",
+      "svg": "lost-prior-effects.svg",
+      "report": "lost-prior-effects.report.md",
+      "mermaid_sha256": "ff7d8f3c0c70d42997242b8f2419cefe4083851a75571fd22eb0e90525b9d081",
+      "svg_sha256": "01ec35b23677a03bba74eeb2904f4baaa43e6187735af9ca26133080b9474bee",
+      "report_sha256": "ef640389429ccc6f0ef8e403da9a3f984edc6216b630962ebe5bea776492a232",
+      "width": 1213,
+      "height": 1716,
+      "arrows": 23,
+      "evidence_run": "/Users/yoyo/Documents/code/personal/verification-evidence/ah1006-20261112/flows/models-view-03",
+      "raw_summary_sha256": "46063c9f6628cec5b300cde07eb064a92208b6d694059b771f020126a27a3297",
+      "checkout_commit": "394d08fdf7aee7a9894b5c0aaf146299bb946f44",
+      "source_commit": "1c11c57849f97d2c13b82eb8a62fe6b6065741c4",
+      "source_hashes": {
+        "packages/context-broker/src/host-skills.ts": "5ad556031ea1085363b7e75ab329a57ebedc0b1e44d2db3c0df9a551b312eca9",
+        "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
+        "packages/context-broker/src/prepare-protocol.ts": "a933a092d39d9abb860ce614c959b13c5e26c1cf830bdb1f9f715b0adf2c283a",
+        "packages/context-broker/src/skill-context-projection.ts": "15887381449784a0c8ffd8963e8967d900b9557a943e6d974506a8e55b9e11bf",
+        "packages/context-broker/src/skill-context-projection-proof.ts": "08767ee5fcc9c10e5fe98fa3744213a2e73407784feff4ca8daf167bab6ce65d",
+        "packages/context-broker/src/notion-sdk.ts": "2a062d638c1f13910052c4edf8a0a2250f608e00144f3c521edcec04a51cd9af",
+        "packages/context-broker/src/resource-read-projection.ts": "c72d8749018ca97fbb8026568ae23831080b65e8d312ca8b454792327424183e",
+        "packages/context-broker/src/session-source-snapshot.ts": "e946d3a437b29869546b0192d1fdbd693b2ac38b765b8e60b3763b8198547468",
+        "packages/context-broker/src/notion-source.ts": "20a876a4e1db4676d252ed184ef35654a691a73902d7e3c846a9eb8e51a6a07d",
+        "packages/context-broker/src/index.ts": "ffcf274952dfcf143a119900943b787884a6eb78d84cd734c83db396bc05f6b3",
+        "packages/context-broker/src/consumption-effects.ts": "5b10742bccfe19ccd4b52b06733baab9f730d84861e24299b0e3a73f81e73794",
+        "packages/context-broker/src/pi-host-adapter.ts": "ff4f213acd643c067b7fa000bd05f5ddd8981882ee3926cceadab3875e212ee0",
+        "packages/context-broker/src/skill-catalog-projection.ts": "7b407d448a44f6fea3c0776ef3f2cd5d73fd10c314b746fe2b1268663cd0f3b8",
+        "scripts/build-tern.mjs": "4839a90f0ed6a32b602b52ad13a0ea0d66baf40966eae41eee875c0683c413af",
+        "packages/context-broker/scripts/notion-sdk.test.ts": "abafb99deda5928df533fabcfbb6f44cae89a8c88a71bfc3ea0ff8303aada17d",
+        "packages/context-broker/scripts/skill-context-projection.test.ts": "8858838c508e8ef910ec254811e7339aa3cbaad937741045574f2f4398508380",
+        "packages/context-broker/scripts/host-prepare.test.ts": "917432ef445cec9d723a8e6609921e36f96bf30ee371df77bca0844e9fcb8748",
+        "packages/context-broker/tsconfig.json": "5b485daf61c3d2f793b77a9c8511a135f40988a402d1e0840b4e9d79a289646d",
+        "scripts/skill-preparation-evidence.mjs": "e3f25b4e62e125543c48f5263c178c69071163a54b404a8963aa11221df12bdf",
+        "scripts/skill-preparation-evidence.test.mjs": "3205a96b55844a40d2c1194ccb2485be4d570fd1e4f07156a2a8529676283275",
+        "scripts/notion-sdk-pi.mjs": "30f9c52c688ed8f42c2b10bb24bb31620c91b38095fd9b3e5798230c5bc0cc2f",
+        "scripts/notion-sdk-pi.test.mjs": "2ee4bca756bb13d083a9c77448720c84cf184dde6e669e27d62a0d2c5d986dfe",
+        "packages/context-broker/scripts/skill-model-surfaces.test.ts": "876b6c6650bed1f81068c71c1be630fb10ecb951e1cc1a7cb17797cc26d57d5b",
+        "packages/context-broker/scripts/session-active.test.ts": "651b81077ba4635f8267c7623f001a5e3e46d65901a4bc646b1b04f5a6b30dcd",
+        "packages/context-broker/src/resource-read-types.ts": "fe42ca452633a4919aea0d23ff46789d4de742686f4290d53ca69b00074e92ab",
+        "packages/context-broker/scripts/pi-read-adapter.test.ts": "b0a144a76ba38125d0b159a9ef281d918c87d0f4cf0961929562c6332151d292",
+        "packages/context-broker/scripts/resource-read-host.test.ts": "aa69aa4d7750b2a460b7201b3210846da6327144c8508f1e90384aa7b78ab125",
+        "packages/context-broker/scripts/resource-read-projection.test.ts": "210e5e4e50574f1a2f4a2dc0232091f68736f0885062cbc00282ca2f43056cdc",
+        "packages/context-broker/scripts/fixed-resource-source.test.ts": "cd057a611b34ee7a85816ccad38951ec561a120747ad717ba0d75f76cb8f3aa1",
+        "packages/context-broker/scripts/formal-effects-composition.test.ts": "ed05eec59ae651da86f48de20fe6749163227e49fa88d020f35cca81ff8871dd"
+      },
+      "coverage_sha256": "cc946b29bdfdb11d56fb5dedf9e1fea9cc540bff9b03eb664ba7e6a65cb46c68",
+      "runner_sha256": "c1fd27702df646f4a1eeed1895bdc7f3491505dde4bd0eb9c92641d9ca926e1f",
+      "tool_lock_sha256": "379937f0a64c7086a4d2d950dd0afad7dd37c3adc03e6286c2ace15d8b950cc6",
+      "pstack_commit": "c742dd61706fbacc1b95f1a20b7b988cf096ce6c",
+      "tlc_sha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+      "inputs": [
+        {
+          "path": "model-inputs/AcquisitionEffects.tla",
+          "sha256": "f4bceadb55f24a89cfbfeed20e6cce303bc9fa46a96038175e7a4afc45f55b48"
+        },
+        {
+          "path": "model-inputs/AcquisitionEffects.lost-prior-negative.cfg",
+          "sha256": "6409a3adc030852f8daeba3ba6da3b6270f3ce5ab664473cff690218cf73edf5"
+        },
+        {
+          "path": "model-inputs/AcquisitionEffects.view.mjs",
+          "sha256": "7df3d0d8b5c1e2612e81f452cfe1c5fff1e5522ed2d6c502cd6108e42315e842"
+        }
+      ],
+      "states": {
+        "distinct": 85,
+        "initial": 10,
+        "complete": true,
+        "cut": false
+      },
+      "broken": [
+        "ConfirmedFactsPreserved",
+        "NoFalseZeroWriteReport"
+      ],
+      "expected_rules": [
+        "CompatibleSdkBeforeDispatch",
+        "CompleteSelectionOnly",
+        "ConfirmedFactsPreserved",
+        "NoDeadlock",
+        "NoFalseZeroWriteReport",
+        "StrictReadOnlyHasNoWrites",
+        "TypeOK",
+        "UnknownEffectIsSticky"
+      ]
+    },
+    {
+      "name": "unknown-cannot-collapse",
+      "model": "AcquisitionEffects",
+      "config": "unknown-negative",
+      "mermaid": "unknown-cannot-collapse.mmd",
+      "svg": "unknown-cannot-collapse.svg",
+      "report": "unknown-cannot-collapse.report.md",
+      "mermaid_sha256": "1f4d99b12054a37fc86f66a912c5a1fb7eaaf5d7ef846961169f0cbd540924ec",
+      "svg_sha256": "dac26e9a524b4d23c3505e799a83a617d28c4e0178c91ee6f2ffb209dfe6cd72",
+      "report_sha256": "f7597b5a7f33e9ca57e7d4cac12aa6de9cc33a6416e567f5fa60af4962d30952",
+      "width": 1203,
+      "height": 1695,
+      "arrows": 23,
+      "evidence_run": "/Users/yoyo/Documents/code/personal/verification-evidence/ah1006-20261112/flows/models-view-03",
+      "raw_summary_sha256": "46063c9f6628cec5b300cde07eb064a92208b6d694059b771f020126a27a3297",
+      "checkout_commit": "394d08fdf7aee7a9894b5c0aaf146299bb946f44",
+      "source_commit": "1c11c57849f97d2c13b82eb8a62fe6b6065741c4",
+      "source_hashes": {
+        "packages/context-broker/src/host-skills.ts": "5ad556031ea1085363b7e75ab329a57ebedc0b1e44d2db3c0df9a551b312eca9",
+        "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
+        "packages/context-broker/src/prepare-protocol.ts": "a933a092d39d9abb860ce614c959b13c5e26c1cf830bdb1f9f715b0adf2c283a",
+        "packages/context-broker/src/skill-context-projection.ts": "15887381449784a0c8ffd8963e8967d900b9557a943e6d974506a8e55b9e11bf",
+        "packages/context-broker/src/skill-context-projection-proof.ts": "08767ee5fcc9c10e5fe98fa3744213a2e73407784feff4ca8daf167bab6ce65d",
+        "packages/context-broker/src/notion-sdk.ts": "2a062d638c1f13910052c4edf8a0a2250f608e00144f3c521edcec04a51cd9af",
+        "packages/context-broker/src/resource-read-projection.ts": "c72d8749018ca97fbb8026568ae23831080b65e8d312ca8b454792327424183e",
+        "packages/context-broker/src/session-source-snapshot.ts": "e946d3a437b29869546b0192d1fdbd693b2ac38b765b8e60b3763b8198547468",
+        "packages/context-broker/src/notion-source.ts": "20a876a4e1db4676d252ed184ef35654a691a73902d7e3c846a9eb8e51a6a07d",
+        "packages/context-broker/src/index.ts": "ffcf274952dfcf143a119900943b787884a6eb78d84cd734c83db396bc05f6b3",
+        "packages/context-broker/src/consumption-effects.ts": "5b10742bccfe19ccd4b52b06733baab9f730d84861e24299b0e3a73f81e73794",
+        "packages/context-broker/src/pi-host-adapter.ts": "ff4f213acd643c067b7fa000bd05f5ddd8981882ee3926cceadab3875e212ee0",
+        "packages/context-broker/src/skill-catalog-projection.ts": "7b407d448a44f6fea3c0776ef3f2cd5d73fd10c314b746fe2b1268663cd0f3b8",
+        "scripts/build-tern.mjs": "4839a90f0ed6a32b602b52ad13a0ea0d66baf40966eae41eee875c0683c413af",
+        "packages/context-broker/scripts/notion-sdk.test.ts": "abafb99deda5928df533fabcfbb6f44cae89a8c88a71bfc3ea0ff8303aada17d",
+        "packages/context-broker/scripts/skill-context-projection.test.ts": "8858838c508e8ef910ec254811e7339aa3cbaad937741045574f2f4398508380",
+        "packages/context-broker/scripts/host-prepare.test.ts": "917432ef445cec9d723a8e6609921e36f96bf30ee371df77bca0844e9fcb8748",
+        "packages/context-broker/tsconfig.json": "5b485daf61c3d2f793b77a9c8511a135f40988a402d1e0840b4e9d79a289646d",
+        "scripts/skill-preparation-evidence.mjs": "e3f25b4e62e125543c48f5263c178c69071163a54b404a8963aa11221df12bdf",
+        "scripts/skill-preparation-evidence.test.mjs": "3205a96b55844a40d2c1194ccb2485be4d570fd1e4f07156a2a8529676283275",
+        "scripts/notion-sdk-pi.mjs": "30f9c52c688ed8f42c2b10bb24bb31620c91b38095fd9b3e5798230c5bc0cc2f",
+        "scripts/notion-sdk-pi.test.mjs": "2ee4bca756bb13d083a9c77448720c84cf184dde6e669e27d62a0d2c5d986dfe",
+        "packages/context-broker/scripts/skill-model-surfaces.test.ts": "876b6c6650bed1f81068c71c1be630fb10ecb951e1cc1a7cb17797cc26d57d5b",
+        "packages/context-broker/scripts/session-active.test.ts": "651b81077ba4635f8267c7623f001a5e3e46d65901a4bc646b1b04f5a6b30dcd",
+        "packages/context-broker/src/resource-read-types.ts": "fe42ca452633a4919aea0d23ff46789d4de742686f4290d53ca69b00074e92ab",
+        "packages/context-broker/scripts/pi-read-adapter.test.ts": "b0a144a76ba38125d0b159a9ef281d918c87d0f4cf0961929562c6332151d292",
+        "packages/context-broker/scripts/resource-read-host.test.ts": "aa69aa4d7750b2a460b7201b3210846da6327144c8508f1e90384aa7b78ab125",
+        "packages/context-broker/scripts/resource-read-projection.test.ts": "210e5e4e50574f1a2f4a2dc0232091f68736f0885062cbc00282ca2f43056cdc",
+        "packages/context-broker/scripts/fixed-resource-source.test.ts": "cd057a611b34ee7a85816ccad38951ec561a120747ad717ba0d75f76cb8f3aa1",
+        "packages/context-broker/scripts/formal-effects-composition.test.ts": "ed05eec59ae651da86f48de20fe6749163227e49fa88d020f35cca81ff8871dd"
+      },
+      "coverage_sha256": "cc946b29bdfdb11d56fb5dedf9e1fea9cc540bff9b03eb664ba7e6a65cb46c68",
+      "runner_sha256": "c1fd27702df646f4a1eeed1895bdc7f3491505dde4bd0eb9c92641d9ca926e1f",
+      "tool_lock_sha256": "379937f0a64c7086a4d2d950dd0afad7dd37c3adc03e6286c2ace15d8b950cc6",
+      "pstack_commit": "c742dd61706fbacc1b95f1a20b7b988cf096ce6c",
+      "tlc_sha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+      "inputs": [
+        {
+          "path": "model-inputs/AcquisitionEffects.tla",
+          "sha256": "f4bceadb55f24a89cfbfeed20e6cce303bc9fa46a96038175e7a4afc45f55b48"
+        },
+        {
+          "path": "model-inputs/AcquisitionEffects.unknown-negative.cfg",
+          "sha256": "e274deb086be3a87ca8694fadfb5a494e194cc7a9ec32441a6e0337a9e05f9b4"
+        },
+        {
+          "path": "model-inputs/AcquisitionEffects.view.mjs",
+          "sha256": "7df3d0d8b5c1e2612e81f452cfe1c5fff1e5522ed2d6c502cd6108e42315e842"
+        }
+      ],
+      "states": {
+        "distinct": 85,
+        "initial": 10,
+        "complete": true,
+        "cut": false
+      },
+      "broken": [
+        "NoFalseZeroWriteReport",
+        "UnknownEffectIsSticky"
+      ],
+      "expected_rules": [
+        "CompatibleSdkBeforeDispatch",
+        "CompleteSelectionOnly",
+        "ConfirmedFactsPreserved",
+        "NoDeadlock",
+        "NoFalseZeroWriteReport",
+        "StrictReadOnlyHasNoWrites",
+        "TypeOK",
+        "UnknownEffectIsSticky"
+      ]
+    }
+  ]
+}

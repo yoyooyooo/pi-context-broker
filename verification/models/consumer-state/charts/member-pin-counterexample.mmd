@@ -1,0 +1,37 @@
+---
+title: "固定选择与完整成员 pin 检查"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: Breaks EachMemberKeepsOwnPin
+    lg1: Path to the EachMemberKeepsOwnPin bug
+  }
+  class lg0 breaks
+  class lg1 bugPath
+  state "当前操作" as s0 {
+    s1: 保留旧选择#65292;等待准备
+    s2: 图已准备#65292;检查尚未完成
+    s3: 预算已检查#65292;身份待检查
+    s4: 身份已检查#65292;预算待检查
+    s5: 身份与预算均已检查
+  }
+  s6: 操作失效#65292;等待拒绝提交
+  s7: 拒绝替换#65292;旧组合保留 root v1 / Requires v2
+  s8: 违例#65306;根 pin 覆盖了依赖 pin
+  [*] --> s1
+  s1 --> s2: 收到准备图
+  s2 --> s3: 检查输出预算
+  s2 --> s4: 检查 scope#12289;snapshot#12289;hash 与闭包
+  s3 --> s5: 检查 scope#12289;snapshot#12289;hash 与闭包
+  s4 --> s5: 检查输出预算
+  s5 --> s7: 尝试最终提交
+  s5 --> s8: 尝试最终提交
+  s6 --> s7: 尝试最终提交
+  s0 --> s6: 取消或会话换代
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s1 bugPath
+  class s2 bugPath
+  class s3 bugPath
+  class s5 bugPath
+  class s8 breaks
+  class s8 bugPath

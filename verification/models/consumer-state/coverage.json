@@ -1,0 +1,607 @@
+{
+  "version": 1,
+  "source_base": "394d08fdf7aee7a9894b5c0aaf146299bb946f44",
+  "kind": "Finite consumer-state contracts tied to reviewed implementation owners and controlled real-code replays. Model checks do not prove complete implementation refinement, real Notion behavior, arbitrary host behavior, model completion, or cross-machine consistency.",
+  "maintenance": {
+    "skill": ".agents/skills/verify-notion-consumer-state/SKILL.md",
+    "owner": "verify-notion-consumer-state",
+    "issues": [
+      "AH-1010",
+      "AH-1011"
+    ],
+    "legacy": "Availability/ReadRace and their original current/candidate/cursor/generation controls remain under consumer-observations without changes."
+  },
+  "files": {
+    "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
+    "packages/context-broker/src/discovery-records.ts": "eff63715fb90fe2d05b4ccf1bfd2eb2227f9ada5b0ea33fa7fca5379cb91c982",
+    "packages/context-broker/src/host-skills.ts": "14ad8253488ff98258ff7b47757fe7398f25577d7b6880f9dec9d76299898cdb",
+    "packages/context-broker/src/prepare-protocol.ts": "722883c738809713ea5eaca582cd953233f56b95758df1f7f627453cbcdd8561",
+    "packages/context-broker/src/session-graph.ts": "8fd885fe2a335e2c524bde7007e7a417e1c227415e59e09560cb4943c2c3b7f5",
+    "packages/context-broker/src/session-active.ts": "cbdb75e44d88d5f31f20ef470a4597a193fafa3200ed30f9b043c275fef631c2",
+    "packages/context-broker/src/session-source-snapshot.ts": "b23de4a16344620ff12e4e2bd3147d119fdfbffba37507b54434d7425d84c9a5",
+    "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
+    "packages/context-broker/scripts/host-prepare.test.ts": "6f88489ed58f7887e2a8189ccd08539dc7295c53abec10cf268039154001f752",
+    "packages/context-broker/scripts/session-active.test.ts": "651b81077ba4635f8267c7623f001a5e3e46d65901a4bc646b1b04f5a6b30dcd",
+    "packages/context-broker/scripts/native-read-session.test.ts": "f96e8e7dbf8865e2ea2e1f98f74377702045b7f2b8dceb89868906f7bce381cf",
+    "packages/context-broker/scripts/skill-context-session.test.ts": "21b17e113e4484ecff6ad5e365d100812f2a1b0289264d18ccd72b15aaff4762",
+    "packages/context-broker/scripts/consumer-state.test.ts": "97b19d0f3ac167bfb30cd9dd4aa6959924784dcb13c4644221334bba390c5799",
+    "scripts/check-consumer-state-mutations.mjs": "663d89b30f23b360447cc3de04ec9278858a79d732a8c75d27d61bad0b8bf564",
+    "packages/context-broker/src/final-request.ts": "ba7db9fc301e115200b8ba6534ab332e0f90a1a5c3c4ceaef34389cdf0bd4b9c",
+    "packages/context-broker/scripts/final-request.test.ts": "85266fac06f8d4b3fbe88e92dadabf2f04a94a72e9aba6c2c421be4e05d84f85",
+    "packages/context-broker/scripts/final-request-undici.test.ts": "78671b59508bc648038400bebd5f4c569695a48aba7ce2d57ffa94fe509b5cdc"
+  },
+  "models": {
+    "FreshnessPublication": {
+      "bounds": "Two abstract clock positions (2,3), original validation ticks (1,2,3), one pending request plus one cache return, two generations, two scopes and root/Requires failure targets. Initial prior evidence and the pending ticket are explicit bounded premises.",
+      "owners": [
+        "consumer-observation.ts currentEvidence/createConsumerObservations.begin/current/accept/observe/deny/canPublish",
+        "host-skills.ts observeFailure and graphPreparation",
+        "discovery-records.ts recordIdentity"
+      ],
+      "atomicity": "Receive represents synchronous evidence admission and map publication after asynchronous acquisition; original validation evidence is supplied by the CLI. Clock advances and lifecycle cancellation may interleave before either bounded return. This does not model remote acquisition as atomic.",
+      "replays": [
+        "consumer-observation.test.ts (original evidence, old cache, same scope, cancellation/generation, child failure)",
+        "host-prepare.test.ts F1-F7, exact dependency denial, older success after newer denial"
+      ]
+    },
+    "SelectionGraph": {
+      "bounds": "One prior root/Requires vector <1,2>, one replacement <2,1>, one prepare, independent identity/budget checks, one final commit, at most one generation change and cancellation.",
+      "owners": [
+        "host-skills.ts graphPreparation and its delayed commit",
+        "prepare-protocol.ts decodePreparedGraph/decodePreparationLock",
+        "session-graph.ts persistSessionSelection/reduceSessionSelection"
+      ],
+      "atomicity": "Prepare, identity validation, output budget validation and final guarded commit are separate steps. Commit is synchronous. In deferred Pi the approved graph remains staged until the provider hook; this model's selected vector denotes the approved fixed selection, not provider acceptance or durable activation.",
+      "replays": [
+        "host-prepare.test.ts failed exact-file validation and output budget",
+        "session-active.test.ts pending refreshed projection and complete root/Requires vectors",
+        "skill-context-session.test.ts graph/projection identity mismatches"
+      ]
+    },
+    "DeliveryBoundary": {
+      "bounds": "A previously validated selected root v2/Requires v1 graph; one initial request, at most one retry after discarded drafts, one lifecycle event among cancel/switch/rewind, and one current branch plus its rewind. Full/partial and exact/mismatched identity, response and turn outcomes are finite scenarios.",
+      "owners": [
+        "host-skills.ts assertPiRun/before_provider_request/after_provider_response/turn_end/acknowledgeProjection",
+        "session-active.ts confirmActiveSources",
+        "session-source-snapshot.ts sourceBodyLoaded/deferredSourceEntries/withSessionSourceReceipts",
+        "final-request.ts assessFinalRequestPayload/createFinalRequestLedger; concrete request roles and entity digests outside finite variables"
+      ],
+      "atomicity": "Headers, turn completion, draft return, host apply/drop and later public projection acknowledgement are separate transitions. A 2xx response proves request acceptance and may record active delivery before stream completion. A later failed turn does not erase that historical acceptance. No draft is a persisted projection until observed in the public branch.",
+      "replays": [
+        "session-active.test.ts selected/partial inactivity, discarded drafts, failed/aborted/late/rewound deliveries",
+        "native-read-session.test.ts complete body, scope/pin/hash mismatches",
+        "final-request.test.ts real deferred-drafts restoration and private role obligations",
+        "final-request-undici.test.ts actual Node entity positive/rewrite/concurrency",
+        "notion-sdk-pi.mjs context-wire-negative: duplicate/lost/schema/restored-role"
+      ]
+    }
+  },
+  "cases": [
+    {
+      "model": "FreshnessPublication",
+      "config": "candidate",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "FreshnessPublication",
+      "config": "renewal-negative",
+      "expected_broken": [
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "NewerEvidenceSurvives"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "FreshnessPublication",
+      "config": "expiry-negative",
+      "expected_broken": [
+        "ExpiredCacheCannotPublish"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "FreshnessPublication",
+      "config": "fixed-negative",
+      "expected_broken": [
+        "FixedContentIsNotCurrent"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "FreshnessPublication",
+      "config": "order-negative",
+      "expected_broken": [
+        "NewerEvidenceSurvives"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "FreshnessPublication",
+      "config": "generation-negative",
+      "expected_broken": [
+        "NoRetiredPublication"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "FreshnessPublication",
+      "config": "cancel-negative",
+      "expected_broken": [
+        "NoCancelledPublication"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "FreshnessPublication",
+      "config": "scope-negative",
+      "expected_broken": [
+        "ScopeIsExact"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "FreshnessPublication",
+      "config": "attribution-negative",
+      "expected_broken": [
+        "DependencyFailureIsLocal"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "FreshnessPublication",
+      "config": "unknown-negative",
+      "expected_broken": [
+        "UnknownIsNotPermission"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "SelectionGraph",
+      "config": "candidate",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection",
+        "NoRetiredSelection",
+        "EachMemberKeepsOwnPin",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "SelectionGraph",
+      "config": "unchecked-negative",
+      "expected_broken": [
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection",
+        "NoRetiredSelection",
+        "EachMemberKeepsOwnPin",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "SelectionGraph",
+      "config": "identity-negative",
+      "expected_broken": [
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection",
+        "NoRetiredSelection",
+        "EachMemberKeepsOwnPin",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "SelectionGraph",
+      "config": "budget-negative",
+      "expected_broken": [
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection",
+        "NoRetiredSelection",
+        "EachMemberKeepsOwnPin",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "SelectionGraph",
+      "config": "closure-negative",
+      "expected_broken": [
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection",
+        "NoRetiredSelection",
+        "EachMemberKeepsOwnPin",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "SelectionGraph",
+      "config": "lifecycle-negative",
+      "expected_broken": [
+        "NoRetiredSelection"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection",
+        "NoRetiredSelection",
+        "EachMemberKeepsOwnPin",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "SelectionGraph",
+      "config": "pins-negative",
+      "expected_broken": [
+        "EachMemberKeepsOwnPin"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection",
+        "NoRetiredSelection",
+        "EachMemberKeepsOwnPin",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "DeliveryBoundary",
+      "config": "candidate",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "CompleteBoundGraphForActive",
+        "ProviderAcceptanceBeforeProof",
+        "CompletionBeforePersistence",
+        "PublicProjectionBeforePersistence",
+        "NoRetiredDeliveryProof",
+        "CurrentBranchOwnsProof",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "DeliveryBoundary",
+      "config": "acceptance-negative",
+      "expected_broken": [
+        "ProviderAcceptanceBeforeProof"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CompleteBoundGraphForActive",
+        "ProviderAcceptanceBeforeProof",
+        "CompletionBeforePersistence",
+        "PublicProjectionBeforePersistence",
+        "NoRetiredDeliveryProof",
+        "CurrentBranchOwnsProof",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "DeliveryBoundary",
+      "config": "graph-negative",
+      "expected_broken": [
+        "CompleteBoundGraphForActive"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CompleteBoundGraphForActive",
+        "ProviderAcceptanceBeforeProof",
+        "CompletionBeforePersistence",
+        "PublicProjectionBeforePersistence",
+        "NoRetiredDeliveryProof",
+        "CurrentBranchOwnsProof",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "DeliveryBoundary",
+      "config": "completion-negative",
+      "expected_broken": [
+        "CompletionBeforePersistence"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CompleteBoundGraphForActive",
+        "ProviderAcceptanceBeforeProof",
+        "CompletionBeforePersistence",
+        "PublicProjectionBeforePersistence",
+        "NoRetiredDeliveryProof",
+        "CurrentBranchOwnsProof",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "DeliveryBoundary",
+      "config": "projection-negative",
+      "expected_broken": [
+        "PublicProjectionBeforePersistence"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CompleteBoundGraphForActive",
+        "ProviderAcceptanceBeforeProof",
+        "CompletionBeforePersistence",
+        "PublicProjectionBeforePersistence",
+        "NoRetiredDeliveryProof",
+        "CurrentBranchOwnsProof",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "DeliveryBoundary",
+      "config": "lifecycle-negative",
+      "expected_broken": [
+        "NoRetiredDeliveryProof"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CompleteBoundGraphForActive",
+        "ProviderAcceptanceBeforeProof",
+        "CompletionBeforePersistence",
+        "PublicProjectionBeforePersistence",
+        "NoRetiredDeliveryProof",
+        "CurrentBranchOwnsProof",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "DeliveryBoundary",
+      "config": "branch-negative",
+      "expected_broken": [
+        "CurrentBranchOwnsProof"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CompleteBoundGraphForActive",
+        "ProviderAcceptanceBeforeProof",
+        "CompletionBeforePersistence",
+        "PublicProjectionBeforePersistence",
+        "NoRetiredDeliveryProof",
+        "CurrentBranchOwnsProof",
+        "NoDeadlock"
+      ]
+    }
+  ],
+  "excluded": [
+    "Unbounded time or Requires/session history",
+    "HTTP/server linearizability and arbitrary permission inference",
+    "Complete host lifecycle or arbitrary user/LLM behavior",
+    "Physical Mini and cross-machine evidence",
+    "Effects and operation recovery, which keep their existing separate owners"
+  ],
+  "context_once_review": {
+    "issue": [
+      "AH-1015",
+      "AH-1016",
+      "AH-1017"
+    ],
+    "product_candidate": "1ddf50cd1aab95c216e393f2718a01725653731f",
+    "review": "docs/context-once-source-review.md",
+    "semantics": "Scope/owner/pin/graph/permission/activation transitions unchanged; scalar retirement preserves operation facts and directory omission requires a matching current-request witness. Exact generated bytes are outside finite model variables and require concrete independent regressions.",
+    "evidence": {
+      "source_tests": 124,
+      "oracle_tests": 187,
+      "typecheck": "passed",
+      "serializer_scope": "actual installed Pi1.5 serializer to loopback HTTP, not a live Pi session",
+      "serializer_entity_bytes": 1614
+    },
+    "historical_rules_and_cases": "unchanged; negative counterexamples retained",
+    "reviewed_files": [
+      {
+        "path": "packages/context-broker/src/prepare-protocol.ts",
+        "previous": "a933a092d39d9abb860ce614c959b13c5e26c1cf830bdb1f9f715b0adf2c283a",
+        "current": "722883c738809713ea5eaca582cd953233f56b95758df1f7f627453cbcdd8561"
+      },
+      {
+        "path": "packages/context-broker/src/session-source-snapshot.ts",
+        "previous": "e946d3a437b29869546b0192d1fdbd693b2ac38b765b8e60b3763b8198547468",
+        "current": "5bbff1194c6c76ee868ae27759ad2a7a03f063b2709f3fc44ced24d7ee778b04"
+      },
+      {
+        "path": "packages/context-broker/scripts/native-read-session.test.ts",
+        "previous": "c46a859f12f51dd6a4cfb3b7c054d1f8b896fd30722eecb3cad63feb2647b22d",
+        "current": "f96e8e7dbf8865e2ea2e1f98f74377702045b7f2b8dceb89868906f7bce381cf"
+      },
+      {
+        "path": "packages/context-broker/scripts/skill-context-session.test.ts",
+        "previous": "cce3cdf5730e65ee327f1789aeaf80124e106cbb060e8129946c997a9b6f7186",
+        "current": "820e748e04f9f2c732d2eb5b2625193940a0a71b9b8d92e4c424b54b80501b63"
+      }
+    ]
+  },
+  "ctx_final_request_review": {
+    "implementation": "e91dc8c7857e3f0094106fd01b73eec6cee621d5",
+    "review": "docs/context-once-source-review.md#ctx-final-request-boundary",
+    "source_changes": [
+      {
+        "path": "packages/context-broker/src/host-skills.ts",
+        "before": "5ad556031ea1085363b7e75ab329a57ebedc0b1e44d2db3c0df9a551b312eca9",
+        "after": "14ad8253488ff98258ff7b47757fe7398f25577d7b6880f9dec9d76299898cdb"
+      },
+      {
+        "path": "packages/context-broker/src/session-source-snapshot.ts",
+        "before": "5bbff1194c6c76ee868ae27759ad2a7a03f063b2709f3fc44ced24d7ee778b04",
+        "after": "b23de4a16344620ff12e4e2bd3147d119fdfbffba37507b54434d7425d84c9a5"
+      },
+      {
+        "path": "packages/context-broker/scripts/host-prepare.test.ts",
+        "before": "917432ef445cec9d723a8e6609921e36f96bf30ee371df77bca0844e9fcb8748",
+        "after": "6f88489ed58f7887e2a8189ccd08539dc7295c53abec10cf268039154001f752"
+      },
+      {
+        "path": "packages/context-broker/scripts/skill-context-session.test.ts",
+        "before": "820e748e04f9f2c732d2eb5b2625193940a0a71b9b8d92e4c424b54b80501b63",
+        "after": "21b17e113e4484ecff6ad5e365d100812f2a1b0289264d18ccd72b15aaff4762"
+      }
+    ],
+    "concrete_guard_owners": [
+      "packages/context-broker/src/final-request.ts",
+      "packages/context-broker/scripts/final-request.test.ts",
+      "packages/context-broker/scripts/final-request-undici.test.ts"
+    ],
+    "finite_models_unchanged": true,
+    "semantic_boundary": "DeliveryBoundary providerAccepted remains logical acceptance. Final request roles, serialized directory/schema/entity checks are concrete proof obligations; known mismatch rejects the new acceptance, unsupported transport is not wire proof. Fixed graph, branch, turn and projection ACK owners unchanged.",
+    "independent_review": "F1 at1884c89 restored-user proof omitted: retained original, actual deferred-drafts red12pass1fail then13pass. e91dc8c preserves private immutable obligation; real Pi restored-role counterexample passes.",
+    "not_proven_by_tlc": [
+      "Actual network dispatch",
+      "Actual role/JSON/XML bytes",
+      "Unrestricted LLM behavior",
+      "Source API eventual consistency"
+    ],
+    "final_diagnostic_review": {
+      "changed": [
+        {
+          "path": "packages/context-broker/src/final-request.ts",
+          "before": "a826ad7b363ac21aeae0f0274b6c8b7842ecdb6ef1226d2a96fcdb020d01935b",
+          "after": "ba7db9fc301e115200b8ba6534ab332e0f90a1a5c3c4ceaef34389cdf0bd4b9c"
+        },
+        {
+          "path": "packages/context-broker/scripts/final-request.test.ts",
+          "before": "fae0456b063e38a9eaea3202fdc910298be0acb5d7b39ecc8adc6b07a178b6f9",
+          "after": "85266fac06f8d4b3fbe88e92dadabf2f04a94a72e9aba6c2c421be4e05d84f85"
+        }
+      ],
+      "scope": "Preparation operation effects are read from canonical nested contextBrokerPreparation.effects for truthful bounded diagnostics. No dispatch/graph/role/activation transition changed. Driver keeps explicit four counterexamples and source cancellation effects."
+    }
+  }
+}

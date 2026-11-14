@@ -1,19 +1,22 @@
-import { expect, test } from "bun:test";
+import { expect, test, setSystemTime } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installHostSkills, type HostSkills, type HostSkillOptions } from "../src/host-skills";
+import { SourceError, sourceFailureMessage } from "../src/notion-source";
 import { createActivationFeedback } from "../src/activation-feedback";
 import { buildInjectedContextMessage } from "../src/index";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { createOmpHostAdapter } from "../src/omp-host-adapter";
+import type { HostCapabilities } from "../src/host-adapter";
 import { deduplicateSourceReads, deferredSourceEntries, sourceDeliveryReceipt, sourceBodyLoaded, sourceMessageText, sessionSourceBindings, withSessionSourceReceipts } from "../src/session-source-snapshot";
 import { materializeNotionEntryFile, publishNotionEntry } from "../src/notion-entry";
 import { projectCatalogDescriptions } from "../src/skill-catalog-projection";
-import type { PreparedHostGraph, PreparationPurpose } from "../src/prepare-protocol";
-import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, MessageContent, NativeSkillGraphDefinition, NativeSkillPrepareDefinition, NativeSkillSearchDefinition, SessionEntry, SkillRecord } from "../src/types";
+import { preparationFailureDetails, type PreparedHostGraph, type PreparationPurpose } from "../src/prepare-protocol";
+import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, MessageContent, NativeReadExecutor, NativeSkillGraphDefinition, NativeSkillPrepareDefinition, NativeSkillSearchDefinition, SessionEntry, SkillRecord } from "../src/types";
 import type { SelectionMode } from "../src/session-graph";
+import { noConsumptionWrites, type ConsumptionEffects, type ConsumptionPolicy } from "../src/consumption-effects";
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 function canonical(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -88,7 +91,9 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
     appendEntry(customType, data) { session.entries.push({ type: "custom", customType, data }); },
     registerTool(value) { if (value.name === "skill_search" || value.name === "notion_list") search = value; if (value.name === "skill_prepare" || value.name === "notion_use") tool = value; if (value.name === "skill_graph" || value.name === "notion_ctl") graphTool = value; } };
   function graph(purpose: PreparationPurpose): PreparedHostGraph {
-    const selected = purpose === "use" ? [root!, required!] : [root!];
+    const validatedAt = Date.now();
+    const selected = (purpose === "use" ? [root!, required!] : [root!]).map(record => ({ ...record,
+      currentObservation: { origin: "remote" as const, validatedAt, validUntil: validatedAt + 60_000 } }));
     const vector = { version: 1 as const, kind: "observed_version_vector" as const, purpose, scope: identityScope, roots: [root!.id!],
       required: purpose === "use" ? [{ from: root!.id!, to: required!.id!, ref: required!.preparationBinding!.ref }] : [],
       bindings: selected.map(record => record.preparationBinding!) };
@@ -96,7 +101,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
       budget: { maxNodes: 64, maxDepth: 16, maxInstructionBytes: 1048576, maxContextBytes: 262144 },
       usage: { prepared_nodes: selected.length, instruction_bytes: selected.reduce((n, record) => n + Buffer.byteLength(record.body!), 0), context_bytes: 4000, max_depth: purpose === "use" ? 1 : 0 } };
   }
-  const install = async (prepareGraph: (purpose: PreparationPurpose, signal?: AbortSignal) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference">> = {}) => {
+  const install = async (prepareGraph: (purpose: PreparationPurpose, signal?: AbortSignal, policy?: ConsumptionPolicy) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference" | "buildPreparedPrompt" | "persistGraphs">> = {}, adapter?: HostCapabilities) => {
     let host: HostSkills;
     host = await installHostSkills(api, {
       config: { sources },
@@ -109,12 +114,12 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
         resourceReads.push(file.ref);
         await writeFile(output, text);
       }, signal),
-      prepareGraph: async (_records, _ctx, signal, purpose) => { calls.push(purpose); return prepareGraph(purpose, signal); },
-      persistGraphs: (_graphs, _ctx, mode) => { persisted.push(mode); },
+      prepareGraph: async (_records, _ctx, signal, purpose, _pins, _bindings, _mode, policy) => { calls.push(purpose); return prepareGraph(purpose, signal, policy); },
+      persistGraphs: discovery.persistGraphs ?? ((_graphs, _ctx, mode) => { persisted.push(mode); }),
       ...(withShortRefs ? { sessionGraph: () => ({ kind: "controlled-selected-graph", scope: identityScope }) } : {}),
       needsPreflightPrompt: text => text.includes("$root"),
       preflightPrompt: async (text, ctx, signal) => { if (text.includes("$root")) await host.prepareMany([root!], ctx, signal); },
-    }, hostKind === "omp" ? createOmpHostAdapter(api) : createPiHostAdapter(api));
+    }, adapter ?? (hostKind === "omp" ? createOmpHostAdapter(api) : createPiHostAdapter(api)));
     if (!search || !tool) throw new Error("Expected native graph tools");
     return { search, tool, graphTool, host };
   };
@@ -125,6 +130,202 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
   };
   return { ctx, records, root: root!, required: required!, member: member!, graph, calls, persisted, install, emit, session, resourceText, resourceReads, api, sources };
 }
+
+test("normal use and native inspect disclose effects and strict requests reach the same source boundary", async () => {
+  const f = await fixture();
+  const retained = { version: 1 as const, remote_writes: "retained" as const, author_content: "unchanged" as const,
+    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "op-root", status: "confirmed" as const },
+      { skill_page_id: "required", file_id: "main", operation_id: "op-required", status: "confirmed" as const }] };
+  const policies: boolean[] = [];
+  const { tool } = await f.install(async (purpose, _signal, policy) => {
+    policies.push(policy?.readOnly === true);
+    if (policy?.readOnly) throw new SourceError("NOTION_READ_ONLY", "controlled", undefined, { effects: noConsumptionWrites() });
+    const effects = purpose === "inspect" ? { ...retained, retention: retained.retention.slice(0, 1) } : retained;
+    policy?.observeEffects?.(effects);
+    return [{ ...f.graph(purpose), effects }];
+  });
+  const used = await tool.execute("effects-use", { ref: f.root.ref }, undefined, undefined, f.ctx);
+  expect(JSON.parse(sourceMessageText(used.content)).effects).toEqual(retained);
+  const inspected = await nativeRead(f, f.root.ref!, "effects-inspect");
+  expect(sourceMessageText(inspected.content)).toContain("<notion-effects>" + JSON.stringify({ ...retained, retention: retained.retention.slice(0, 1) }) + "</notion-effects>");
+  expect(sourceMessageText(inspected.content).slice(0, f.root.body!.length)).toBe(f.root.body);
+  await expect(tool.execute("effects-strict", { ref: f.root.ref, readOnly: true }, undefined, undefined, f.ctx))
+    .rejects.toMatchObject({ details: { effects: noConsumptionWrites() } });
+  const input = { path: f.root.ref!, readOnly: true };
+  const admission = await f.emit("tool_call", { toolName: "read", toolCallId: "strict-inspect", input }, f.ctx);
+  expect(admission).toContainEqual(expect.objectContaining({ block: true }));
+  expect(JSON.stringify(admission)).toContain('remote_writes\\":\\"none');
+  expect(input.path).toBe(f.root.ref);
+  expect(policies).toEqual([false, false, true, true]);
+});
+
+test("Pi dollar acquisition discloses its own effects in provider and native history without changing source proof", async () => {
+  const f = await fixture(true);
+  const retained = { version: 1 as const, remote_writes: "retained" as const, author_content: "unchanged" as const,
+    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "dollar-retention", status: "confirmed" as const }] };
+  let effects: ConsumptionEffects = retained;
+  await f.install(async purpose => [{ ...f.graph(purpose), effects }], {
+    buildPreparedPrompt: async () => buildInjectedContextMessage(f.root, "root"),
+  });
+  for (const [id, expected] of [["first", retained], ["second", noConsumptionWrites()]] as const) {
+    effects = expected;
+    const user: AgentMessage = { role: "user", content: "$root task " + id };
+    await f.emit("input", { source: "rpc", text: user.content }, f.ctx);
+    await f.emit("before_agent_start", { prompt: user.content, systemPrompt: "base" }, f.ctx);
+    await f.emit("agent_start", {}, f.ctx);
+    const outputs = await f.emit("context", { messages: [user] }, f.ctx);
+    const output = outputs.find(value => value && typeof value === "object" && "messages" in value && Array.isArray(value.messages));
+    if (!output || typeof output !== "object" || !("messages" in output) || !Array.isArray(output.messages)) throw new Error("Expected provider projection");
+    const delivered: AgentMessage[] = output.messages;
+    expect(sourceBodyLoaded(delivered, f.root)).toBe(true);
+    expect(delivered.filter(message => message.customType === "context-broker-consumption-effects"))
+      .toEqual([expect.objectContaining({ content: "<notion-effects>" + JSON.stringify(expected) + "</notion-effects>", details: { effects: expected } })]);
+    const persisted = deferredSourceEntries([{ sourceEntry: { id, type: "message", message: user }, messages: [user] }], id, delivered.slice(1));
+    const edit = persisted?.entries[0], receipt = persisted?.entries[1];
+    if (edit?.type !== "context_edit" || !edit.replacement || receipt?.type !== "custom") throw new Error("Expected native history and proof");
+    expect(sourceMessageText(edit.replacement.content)).toContain("<notion-effects>" + JSON.stringify(expected) + "</notion-effects>");
+    expect(sourceBodyLoaded(withSessionSourceReceipts([{ ...user, content: edit.replacement.content }],
+      [{ sourceEntry: { ...receipt, id: id + "-receipt" }, messages: [] }]), f.root)).toBe(true);
+    await f.emit("before_provider_request", {}, f.ctx);
+    await f.emit("after_provider_response", { status: 200 }, f.ctx);
+  }
+});
+
+test("partial multi-source failure retains prior effects and cannot report zero writes", async () => {
+  const f = await fixture();
+  const retained = { version: 1 as const, remote_writes: "retained" as const, author_content: "unchanged" as const,
+    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "done", status: "confirmed" as const }] };
+  const original = Object.freeze(new SourceError("NOTION_UNAVAILABLE", "second-source", 23));
+  const { tool } = await f.install(async (_purpose, _signal, policy) => {
+    policy?.observeEffects?.(retained);
+    throw original;
+  });
+  const error = await tool.execute("partial-effects", { ref: f.root.ref }, undefined, undefined, f.ctx).then(() => undefined, error => error);
+  expect(error).toBeInstanceOf(SourceError);
+  expect(error).toMatchObject({ code: "NOTION_UNAVAILABLE", sourceId: "second-source", exitCode: 23, cause: original,
+    details: { effects: { version: 1, remote_writes: "unknown", author_content: "unknown", retention: retained.retention } } });
+  expect(original.details).toBeUndefined();
+});
+
+test("dollar preflight failure keeps earlier source effects and the original denial", async () => {
+  const retained: ConsumptionEffects = { version: 1, remote_writes: "retained", author_content: "unchanged",
+    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "completed-retention", status: "confirmed" }] };
+  for (const secondEffects of [noConsumptionWrites(), undefined]) {
+    const f = await fixture(true);
+    const original = Object.freeze(new SourceError("ACCESS_DENIED", "second-source", undefined,
+      secondEffects ? { effects: secondEffects } : undefined));
+    await f.install(async (_purpose, _signal, policy) => {
+      policy?.observeEffects?.(retained);
+      throw original;
+    }, { buildPreparedPrompt: async () => buildInjectedContextMessage(f.root, "root") });
+    const user: AgentMessage = { role: "user", content: "$root task" };
+    await f.emit("input", { source: "rpc", text: user.content }, f.ctx);
+    await f.emit("before_agent_start", { prompt: user.content, systemPrompt: "base" }, f.ctx);
+    await f.emit("agent_start", {}, f.ctx);
+    const error = await f.emit("context", { messages: [user] }, f.ctx).then(() => undefined, error => error);
+    const effects = { ...retained, remote_writes: secondEffects ? "retained" : "unknown", author_content: secondEffects ? "unchanged" : "unknown" };
+    expect(error).toBeInstanceOf(SourceError);
+    expect(error).toMatchObject({ code: "ACCESS_DENIED", sourceId: "second-source", cause: original, details: { effects } });
+    expect(JSON.parse(error.message).effects).toEqual(effects);
+    expect(original.details?.effects).toBe(secondEffects);
+    expect(f.persisted).toEqual([]);
+  }
+});
+
+test("native cancellation after preparation preserves retention and admits no read", async () => {
+  const f = await fixture(), controller = new AbortController();
+  const retained: ConsumptionEffects = { version: 1, remote_writes: "retained", author_content: "unchanged",
+    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "completed-retention", status: "confirmed" }] };
+  const adapter = createPiHostAdapter(f.api);
+  let executeRead: NativeReadExecutor | undefined, nativeCalls = 0;
+  adapter.registerReadExecutor = execute => { executeRead = execute; return () => true; };
+  const { host } = await f.install(async (purpose, _signal, policy) => {
+    policy?.observeEffects?.(retained);
+    return [{ ...f.graph(purpose), effects: retained }];
+  }, { persistGraphs: () => { queueMicrotask(() => controller.abort()); } }, adapter);
+  await host.refresh(f.ctx);
+  if (!executeRead) throw new Error("Expected the native read executor");
+  const input = { path: f.root.ref }, toolCallId = "cancel-after-prepared";
+  const error = await executeRead(input, f.ctx, controller.signal, async () => {
+    nativeCalls++; return { content: [{ type: "text", text: f.root.body! }] };
+  }, toolCallId).then(() => undefined, error => error);
+  expect(controller.signal.aborted).toBe(true);
+  expect(nativeCalls).toBe(0);
+  expect(error).toMatchObject({ code: "SOURCE_ACTIVATION_CANCELLED", details: { effects: retained } });
+  expect(JSON.parse(error.message).effects).toEqual(retained);
+  const late = await f.emit("tool_result", { toolName: "read", toolCallId, input,
+    content: [{ type: "text", text: f.root.body! }], isError: false }, f.ctx);
+  expect(late.every(value => value === undefined)).toBe(true);
+});
+
+test("native DOMException keeps prepared effects without mutating the original error or delivering a body", async () => {
+  const f = await fixture();
+  const retained: ConsumptionEffects = { version: 1, remote_writes: "retained", author_content: "unchanged",
+    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "before-native-abort", status: "confirmed" }] };
+  const original = new DOMException("Native transport aborted", "AbortError");
+  const adapter = createPiHostAdapter(f.api);
+  let executeRead: NativeReadExecutor | undefined;
+  adapter.registerReadExecutor = execute => { executeRead = execute; return () => true; };
+  const { host } = await f.install(async purpose => [{ ...f.graph(purpose), effects: retained }], {}, adapter);
+  await host.refresh(f.ctx);
+  if (!executeRead) throw new Error("Expected the native read executor");
+  const input = { path: f.root.ref }, toolCallId = "native-domexception";
+  const error = await executeRead(input, f.ctx, undefined, async () => { throw original; }, toolCallId)
+    .then(() => undefined, error => error);
+  expect(error).toMatchObject({ name: "AbortError", code: original.code, cause: original, details: { effects: retained } });
+  expect(JSON.parse(error.message).effects).toEqual(retained);
+  expect(original.message).toBe("Native transport aborted");
+  const late = await f.emit("tool_result", { toolName: "read", toolCallId, input,
+    content: [{ type: "text", text: f.root.body! }], isError: false }, f.ctx);
+  expect(late.every(value => value === undefined)).toBe(true);
+});
+
+function exactDenial(record: SkillRecord, code: "CONTENT_DISABLED" | "ACCESS_DENIED" | "AUTH_REQUIRED" = "CONTENT_DISABLED") {
+  return new SourceError(code, record.sourceId!, undefined, preparationFailureDetails({ preparation: {
+    version: 1, status: "failed", purpose: "use", scope: record.sourceScope,
+    nodes: [{ state: "failed", id: record.id, ref: record.ref, roles: ["root"], error: { code } }],
+    errors: [{ target: record.ref, code }],
+  } }));
+}
+
+test("a live disabled read corrects stale availability without extra discovery and permits re-enable retry", async () => {
+  const f = await fixture(true);
+  let remoteEnabled = false, metadataRequests = 0;
+  const { host, search } = await f.install(async purpose => {
+    if (!remoteEnabled) throw exactDenial(f.root);
+    return [f.graph(purpose)];
+  }, { getRecords: async () => {
+    metadataRequests++;
+    return { records: f.records.map(record => ({ ...record, body: undefined, preparationBinding: undefined,
+      defaultDiscovery: record === f.root })), failures: [], lists: [{ sourceId: "controlled", policy: "default", exhaustive: true }] };
+  } });
+  await host.refresh(f.ctx);
+  const availability = async () => {
+    const output = await search.execute("lookup", { query: "root" }, undefined, undefined, f.ctx);
+    if (output.content[0]?.type !== "text") throw new Error("Expected metadata JSON");
+    return JSON.parse(output.content[0].text).records[0]?.availability;
+  };
+  const catalog = async () => JSON.stringify(await f.emit("context_with_system", { messages: [
+    { role: "system", content: "Native safety prompt" }, { role: "user", content: "Inspect root" },
+  ] }, f.ctx));
+  expect(await availability()).toBe("available");
+  expect(await catalog()).toContain('name=\\"root\\"');
+  const before = metadataRequests;
+  await expect(host.activate(f.root, f.ctx)).rejects.toMatchObject({ code: "CONTENT_DISABLED" });
+  expect(await availability()).toBe("disabled");
+  expect(await catalog()).not.toContain('name=\\"root\\"');
+  expect(f.root.enabled).toBe(true, "A failed live read must not turn the saved candidate into a permanently disabled record");
+  expect(metadataRequests).toBe(before);
+  expect(sourceFailureMessage("CONTENT_DISABLED")).toContain("Enabled=false");
+  expect(sourceFailureMessage("CONTENT_DISABLED")).not.toContain("source configuration");
+  const blocked = await f.emit("tool_call", { toolName: "read", toolCallId: "disabled-retry", input: { path: f.root.ref } }, f.ctx);
+  expect(JSON.stringify(blocked)).toContain("context-broker Skill disabled (CONTENT_DISABLED)");
+  remoteEnabled = true;
+  expect((await host.activate(f.root, f.ctx)).body).toContain("Exact root");
+  expect(await availability()).toBe("available");
+  expect(await catalog()).toContain('name=\\"root\\"');
+  expect(metadataRequests).toBe(before);
+});
 
 test("Pi projects the ready default catalog after explicit preparation, not the earlier pending observation", async () => {
   const f = await fixture(true), metadata = Promise.withResolvers<Awaited<ReturnType<HostSkillOptions["getRecords"]>>>();
@@ -144,22 +345,52 @@ test("Pi projects the ready default catalog after explicit preparation, not the 
   const messages = [head, user], original = JSON.stringify(messages);
   const projected = await f.emit("context_with_system", { messages }, f.ctx);
   const actual = JSON.stringify(projected.length ? projected : { messages });
-  expect(actual).toContain("<name>root</name>");
-  expect(actual).toContain("<name>member</name>");
-  expect(actual).not.toContain("<name>required</name>");
+  expect(actual).toContain('name=\\"root\\"');
+  expect(actual).toContain('name=\\"member\\"');
+  expect(actual).not.toContain("name=\"required\"");
   expect(actual).not.toContain("Notion metadata is pending");
   expect(actual.split("<ntn-skills-view-catalog>")).toHaveLength(2);
   expect(actual).toContain("sr:C");
   expect(before).not.toEqual(expect.arrayContaining([expect.objectContaining({ systemPrompt: expect.anything() })]));
   expect(projected).toEqual([expect.objectContaining({ messages: [expect.objectContaining({
     content: head.content, sections: expect.objectContaining(head.sections), toolsAdded: head.toolsAdded,
-  }), user] })]);
+  }), expect.objectContaining({ role: "custom", customType: "context-broker-notion-catalog" }), user] })]);
   expect(JSON.stringify(messages)).toBe(original);
   expect(f.calls).toEqual(["use"]);
   expect(f.resourceReads).toEqual([]);
 });
 
-test("Pi keeps ordinary pending requests immediate and refreshes only owned system metadata on a later request", async () => {
+test("Pi default metadata survives an exact forced safety prompt without changing that prompt or loading bodies", async () => {
+  const f = await fixture(true);
+  const { search } = await f.install(undefined, { getRecords: async () => ({
+    records: f.records.map(record => ({ ...record, body: undefined, preparationBinding: undefined,
+      defaultDiscovery: record === f.root })), failures: [],
+  }) });
+  await search.execute("initial-directory", { query: "root" }, undefined, undefined, f.ctx);
+  const forced = "Native rules\n<safe-delete-policy>Preserve deletion protections exactly.</safe-delete-policy>";
+  const head = { role: "system", content: "Native rules", sections: { local: "Existing local rules" },
+    toolsAdded: [{ name: "read" }] };
+  const user = { role: "user", content: "Report the default directory without loading any Skill." };
+  const input = [head, user], before = JSON.stringify(input);
+  const outputs = await f.emit("context_with_system", { messages: input }, f.ctx);
+  const output = outputs.find(value => value && typeof value === "object" && "messages" in value && Array.isArray(value.messages));
+  if (!output || typeof output !== "object" || !("messages" in output) || !Array.isArray(output.messages)) throw new Error("Expected final Broker projection");
+  // Pi applies an exact before_agent_start override after final context hooks.
+  const provider = [{ role: "system", content: forced, toolsAdded: head.toolsAdded },
+    ...output.messages.filter((message: AgentMessage) => message.role !== "system")];
+  expect(JSON.stringify(provider)).toContain('name=\\"root\\"');
+  expect(provider[0]).toEqual({ role: "system", content: forced, toolsAdded: head.toolsAdded });
+  expect(provider).toContainEqual(user);
+  expect(JSON.stringify(provider)).not.toContain(f.root.body!);
+  expect(JSON.stringify(input)).toBe(before);
+  const repeated = await f.emit("context_with_system", { messages: output.messages }, f.ctx);
+  expect(repeated).toEqual(outputs);
+  expect(JSON.stringify(repeated).split("<ntn-skills-view-catalog>")).toHaveLength(2);
+  expect(f.calls).toEqual([]);
+  expect(f.resourceReads).toEqual([]);
+});
+
+test("Pi keeps ordinary pending requests immediate and refreshes only its directory metadata on a later request", async () => {
   const f = await fixture(true), metadata = Promise.withResolvers<Awaited<ReturnType<HostSkillOptions["getRecords"]>>>();
   const { search } = await f.install(undefined, { getRecords: () => metadata.promise });
   const local = "<available_skills><skill><name>local-native</name><location>/local/skill/SKILL.md</location></skill></available_skills>";
@@ -182,14 +413,14 @@ test("Pi keeps ordinary pending requests immediate and refreshes only owned syst
   const original = JSON.stringify([stale, user, patch]);
   const ready = await f.emit("context_with_system", { messages: [stale, user, patch] }, f.ctx);
   const actual = JSON.stringify(ready);
-  expect(actual).toContain("<name>root</name>");
+  expect(actual).toContain('name=\\"root\\"');
   expect(actual).toContain("<name>local-native</name>");
   expect(actual).not.toContain("old-broker-index");
   expect(actual).not.toContain("obsolete state");
   expect(actual).not.toContain("obsolete catalog");
   expect(actual).not.toContain("Notion metadata is pending");
   expect(ready).toEqual([expect.objectContaining({ messages: [expect.objectContaining({ toolsAdded: head.toolsAdded,
-    sections: expect.objectContaining({ other: null }) }), user, patch] })]);
+    sections: expect.objectContaining({ other: null }) }), expect.objectContaining({ role: "custom", customType: "context-broker-notion-catalog" }), user, patch] })]);
   expect(JSON.stringify([stale, user, patch])).toBe(original);
   expect(f.calls).toEqual([]);
   expect(f.resourceReads).toEqual([]);
@@ -202,9 +433,11 @@ async function catalogProjection(f: Awaited<ReturnType<typeof fixture>>, input: 
   const messages: unknown[] = output.messages;
   const head = messages.find(value => value !== null && typeof value === "object" && "role" in value && value.role === "system");
   if (!head || typeof head !== "object") throw new Error("Expected the native system message");
-  if (!("sections" in head) || !head.sections || typeof head.sections !== "object" || !("context-broker-notion-catalog" in head.sections)) return { messages, catalog: "" };
-  if (typeof head.sections["context-broker-notion-catalog"] !== "string") throw new Error("Expected generated catalog text");
-  return { messages, catalog: head.sections["context-broker-notion-catalog"] };
+  const catalog = messages.find(value => value && typeof value === "object" && "role" in value && value.role === "custom"
+    && "customType" in value && value.customType === "context-broker-notion-catalog");
+  if (catalog === undefined) return { messages, catalog: "" };
+  if (!catalog || typeof catalog !== "object" || !("content" in catalog) || typeof catalog.content !== "string") throw new Error("Expected generated catalog text");
+  return { messages, catalog: catalog.content };
 }
 
 function projectedToolText(messages: readonly unknown[], id: string): string {
@@ -241,14 +474,14 @@ async function dollarCatalogFixture() {
 test("Pi dollar injection reuses an exact canonical card while retaining every source byte and default identity", async () => {
   const f = await dollarCatalogFixture(), input = [f.head, f.injected, f.requiredInjection], before = JSON.stringify(input);
   const initial = await catalogProjection(f, [f.head]), projected = await catalogProjection(f, input);
-  expect(initial.catalog).toContain('<description>Controlled member &lt;metadata&gt; &amp; &quot;原文&quot;.</description>');
-  expect(projected.catalog).not.toContain('<description>Controlled member');
-  expect(projected.catalog).toContain('<description>Controlled root</description>');
-  expect(projected.catalog).toContain('<description>Controlled required</description>');
-  expect(projected.catalog.match(/<skill>/g)).toHaveLength(3);
-  expect([...projected.catalog.matchAll(/<location>(.*?)<\/location>/g)].map(match => match[1]))
-    .toEqual([...initial.catalog.matchAll(/<location>(.*?)<\/location>/g)].map(match => match[1]));
-  expect(projected.messages.slice(1)).toEqual([f.injected, f.requiredInjection]);
+  expect(initial.catalog).toContain('Controlled member &lt;metadata&gt; &amp; "原文".');
+  expect(projected.catalog).not.toContain('Controlled member &lt;metadata&gt;');
+  expect(projected.catalog).toContain('>Controlled root</card>');
+  expect(projected.catalog).toContain('>Controlled required</card>');
+  expect(projected.catalog.match(/<card\b/g)).toHaveLength(3);
+  const locations = (catalog: string) => [...catalog.matchAll(/\blocation="([^"]*)"/g)].map(match => match[1]);
+  expect(locations(projected.catalog)).toEqual(locations(initial.catalog));
+  expect(projected.messages.slice(2)).toEqual([f.injected, f.requiredInjection]);
   expect(JSON.stringify(input)).toBe(before);
   expect(sourceBodyLoaded(input, f.root)).toBe(true);
   expect(sourceBodyLoaded(input, f.required)).toBe(true);
@@ -263,11 +496,11 @@ test("Pi dollar notion-page injection uses the binding's canonical selector with
     locator: { type: "notion_page", page_id: page, database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" } };
   const selected: SkillRecord = { ...f.root, ...record, preparationBinding: { ...original, record, ref: ref + "?snapshot=" + original.snapshot_id } };
   const injected = buildInjectedContextMessage(selected, selected.name), before = JSON.stringify(injected);
-  expect((await catalogProjection(f, [f.head, injected])).catalog).not.toContain('<description>Controlled member');
+  expect((await catalogProjection(f, [f.head, injected])).catalog).not.toContain('Controlled member &lt;metadata&gt;');
   expect(JSON.stringify(injected)).toBe(before);
   expect(sourceBodyLoaded([injected], selected)).toBe(true);
   const wrongMain = { ...selected, preparationBinding: { ...selected.preparationBinding!, ref: selected.preparationBinding!.ref.replace(page, "00000000-0000-4000-8000-000000000099") } };
-  expect((await catalogProjection(f, [f.head, buildInjectedContextMessage(wrongMain, wrongMain.name)])).catalog).toContain('<description>Controlled member');
+  expect((await catalogProjection(f, [f.head, buildInjectedContextMessage(wrongMain, wrongMain.name)])).catalog).toContain('Controlled member &lt;metadata&gt;');
   expect(f.calls).toEqual(["use"]);
 });
 
@@ -281,7 +514,7 @@ test("Pi dollar catalog reuse follows the actual restored body and rejects missi
   const restored: AgentMessage = { ...user, content: edit.replacement.content };
   const contextEntries = [{ sourceEntry: { ...receipt, id: "dollar-receipt" }, messages: [] }];
   const input = withSessionSourceReceipts([f.head, restored], contextEntries), before = JSON.stringify(input);
-  expect((await catalogProjection(f, input)).catalog).not.toContain('<description>Controlled member');
+  expect((await catalogProjection(f, input)).catalog).not.toContain('Controlled member &lt;metadata&gt;');
   expect(JSON.stringify(input)).toBe(before);
   expect(sourceBodyLoaded(input, f.root)).toBe(true);
   expect(sourceBodyLoaded(input, f.required)).toBe(true);
@@ -292,8 +525,8 @@ test("Pi dollar catalog reuse follows the actual restored body and rejects missi
     [f.head, { ...f.injected, content: sourceMessageText(f.injected.content).slice(1) }],
     withSessionSourceReceipts([f.head, { ...restored, content: "Compacted summary." }], contextEntries),
     withSessionSourceReceipts([f.head, { ...restored, content: sourceMessageText(restored.content).slice(0, -100) }], contextEntries),
-  ]) expect((await catalogProjection(f, messages)).catalog).toContain('<description>Controlled member');
-  expect((await catalogProjection(f, input)).catalog).not.toContain('<description>Controlled member');
+  ]) expect((await catalogProjection(f, messages)).catalog).toContain('Controlled member &lt;metadata&gt;');
+  expect((await catalogProjection(f, input)).catalog).not.toContain('Controlled member &lt;metadata&gt;');
   expect(f.calls).toEqual(["use"]);
   expect(f.resourceReads).toEqual([]);
 });
@@ -318,25 +551,25 @@ test("Pi deferred dollar catalog keeps native session proof across context hooks
     expect(result.messages).toEqual(messages);
     expect(result.messages.some(message => message.role === "custom")).toBe(false);
     const projected = await catalogProjection(f, [f.head, ...result.messages]);
-    expect(projected.messages).toHaveLength(messages.length + 1);
-    expect(projected.messages.slice(1)).toEqual(messages);
+    expect(projected.messages).toHaveLength(messages.length + 2);
+    expect(projected.messages.slice(2)).toEqual(messages);
     expect(JSON.stringify(projected.messages)).not.toContain("nativePromptSha256");
     expect(JSON.stringify(projected.messages)).not.toContain("bodySha256");
     return projected.catalog;
   };
   for (const messages of [[restored], [restored, followup]]) {
     const catalog = await project(messages);
-    expect(catalog).not.toContain('<description>Controlled member');
-    expect(catalog).toContain('<description>Controlled root</description>');
-    expect(catalog).toContain('<description>Controlled required</description>');
-    expect(catalog.match(/<skill>/g)).toHaveLength(3);
+    expect(catalog).not.toContain('Controlled member &lt;metadata&gt;');
+    expect(catalog).toContain('>Controlled root</card>');
+    expect(catalog).toContain('>Controlled required</card>');
+    expect(catalog.match(/<card\b/g)).toHaveLength(3);
   }
   for (const messages of [[followup], [{ ...restored, content: "Compacted summary." }],
     [{ ...restored, content: sourceMessageText(restored.content).slice(0, -100) }]])
-    expect(await project(messages)).toContain('<description>Controlled member');
+    expect(await project(messages)).toContain('Controlled member &lt;metadata&gt;');
   expect(JSON.stringify({ entries, restored })).toBe(original);
   f.ctx.sessionManager.buildSessionProjection = () => ({ entries: [], messages: [restored] });
-  expect(await project([restored])).toContain('<description>Controlled member');
+  expect(await project([restored])).toContain('Controlled member &lt;metadata&gt;');
   expect(f.calls).toEqual(["use"]);
   expect(f.resourceReads).toEqual([]);
 });
@@ -360,12 +593,27 @@ test("Pi dollar catalog reuse rejects foreign identities, fixed relations and ch
   for (const mutate of mutations) {
     const changed = structuredClone(f.root); mutate(changed);
     const message = buildInjectedContextMessage(changed, changed.name);
-    expect((await catalogProjection(f, [f.head, message])).catalog).toContain('<description>Controlled member');
+    expect((await catalogProjection(f, [f.head, message])).catalog).toContain('Controlled member &lt;metadata&gt;');
   }
-  expect((await catalogProjection(f, [f.head, f.injected])).catalog).not.toContain('<description>Controlled member');
+  expect((await catalogProjection(f, [f.head, f.injected])).catalog).not.toContain('Controlled member &lt;metadata&gt;');
   expect(f.calls).toEqual(["use"]);
   expect(f.resourceReads).toEqual([]);
 });
+
+function catalogCards(catalog: string) {
+  const decode = (value: string) => value.replaceAll("&#13;", "\r").replaceAll("&#10;", "\n").replaceAll("&#9;", "\t")
+    .replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+  const attrs = (raw: string) => Object.fromEntries([...raw.matchAll(/([a-z]+)="([^"]*)"/g)].map(match => [match[1]!, decode(match[2]!)]));
+  return [...catalog.matchAll(/<group\b([^>]*)>([\s\S]*?)<\/group>/g)].flatMap(group => {
+    const header = attrs(group[1] ?? "");
+    return [...(group[2] ?? "").matchAll(/<card\b([^>]*?)\/>|<card\b([^>]*)>([\s\S]*?)<\/card>/g)].map(card => {
+      const self = card[1] !== undefined;
+      const fields = attrs((self ? card[1] : card[2]) ?? "");
+      return { name: fields.name, source: fields.source ?? header.source, location: fields.location,
+        description: self ? undefined : decode(card[3] ?? "") };
+    });
+  });
+}
 
 test("Pi dollar catalog reuse preserves same-name sources, owners and newly observed descriptions", async () => {
   const f = await fixture(true, false, "pi", scope, true), head: AgentMessage = { role: "system", content: "Native rules" };
@@ -381,18 +629,18 @@ test("Pi dollar catalog reuse preserves same-name sources, owners and newly obse
   await host.prepareMany([f.root], f.ctx);
   const injected = buildInjectedContextMessage(f.root, "root");
   const projected = await catalogProjection(f, [head, injected]);
-  const members = [...projected.catalog.matchAll(/<skill>([\s\S]*?)<\/skill>/g)].map(match => match[1]!).filter(card => card.includes("<name>member</name>"));
+  const members = catalogCards(projected.catalog).filter(card => card.name === "member");
   expect(members).toHaveLength(3);
-  const sameSource = members.filter(card => card.includes("<source>controlled</source>"));
+  const sameSource = members.filter(card => card.source === "controlled");
   expect(sameSource).toHaveLength(2);
-  expect(sameSource.filter(card => card.includes("<description>"))).toHaveLength(1);
-  expect(members.find(card => card.includes("<source>other-source</source>"))).toContain("<description>");
+  expect(sameSource.filter(card => card.description !== undefined)).toHaveLength(1);
+  expect(members.find(card => card.source === "other-source")?.description).toBeDefined();
   const before = sourceMessageText(injected.content);
   f.member.description = "New authoritative member description.";
   await host.refresh(f.ctx);
   const refreshed = await catalogProjection(f, [head, injected]);
-  expect(refreshed.catalog).toContain("<description>New authoritative member description.</description>");
-  expect(refreshed.catalog.match(/<description>/g)).toHaveLength(5);
+  expect(refreshed.catalog).toContain("New authoritative member description.");
+  expect(refreshed.catalog.match(/<\/card>/g)).toHaveLength(5);
   expect(sourceMessageText(injected.content)).toBe(before);
   expect(f.calls).toEqual(["use"]);
   expect(f.resourceReads).toEqual([]);
@@ -408,13 +656,13 @@ test("same current ref in two configured sources retains the unwitnessed source 
   await search.execute("alias-catalog", {}, undefined, undefined, f.ctx);
   const read = await nativeRead(f, f.root.ref!, "alias-inspect");
   const projected = await catalogProjection(f, [head, read]);
-  const cards = [...projected.catalog.matchAll(/<skill>([\s\S]*?)<\/skill>/g)].map(match => match[1]!);
-  const original = cards.find(card => card.includes("<name>member</name>") && card.includes("<source>controlled</source>"));
-  const other = cards.find(card => card.includes("<name>member</name>") && card.includes("<source>other-source</source>"));
+  const cards = catalogCards(projected.catalog);
+  const original = cards.find(card => card.name === "member" && card.source === "controlled");
+  const other = cards.find(card => card.name === "member" && card.source === "other-source");
   expect(original).toBeDefined(); expect(other).toBeDefined();
-  expect(/<location>([^<]+)<\/location>/.exec(original!)![1]).toBe(/<location>([^<]+)<\/location>/.exec(other!)![1]);
-  expect(original).not.toContain("<description>Controlled member</description>");
-  expect(other).toContain("<description>Controlled member</description>");
+  expect(original?.location).toBe(other?.location);
+  expect(original?.description).toBeUndefined();
+  expect(other?.description).toBe("Controlled member");
   expect(projected.messages).toContain(read);
   expect(f.calls).toEqual(["inspect"]);
 });
@@ -429,8 +677,8 @@ test("Pi native inspect reuses only its verified generated footer without changi
   const original = JSON.stringify(read), body = sourceMessageText(read.content);
   const list: AgentMessage = { role: "toolResult", toolName: "notion_list", toolCallId: "inspect-list", content: listed.content, details: listed.details, isError: false };
   const projected = await catalogProjection(f, [head, list, read]);
-  expect(projected.catalog).not.toContain("<description>Controlled member</description>");
-  expect(projected.catalog).toContain("<description>Controlled root</description>");
+  expect(projected.catalog).not.toContain('>Controlled member</card>');
+  expect(projected.catalog).toContain(">Controlled root</card>");
   expect(JSON.parse(projectedToolText(projected.messages, "inspect-list")).records[0].description).toBeUndefined();
   expect(projected.messages).toContain(read);
   expect(JSON.stringify(read)).toBe(original);
@@ -459,9 +707,9 @@ test("Pi native inspect reuses only its verified generated footer without changi
     { ...read, details: { ...details, contextBrokerRead: { ...proof, binding: { ...binding,
       record: { ...record, locator: { ...locator, library_id: "another-library" } } } } } },
   ]) {
-    expect((await catalogProjection(f, [head, candidate])).catalog).toContain("<description>Controlled member</description>");
+    expect((await catalogProjection(f, [head, candidate])).catalog).toContain('>Controlled member</card>');
   }
-  expect((await catalogProjection(f, [head])).catalog).toContain("<description>Controlled member</description>");
+  expect((await catalogProjection(f, [head])).catalog).toContain('>Controlled member</card>');
   expect(f.calls).toEqual(["inspect"]);
   expect(f.resourceReads).toEqual([]);
 });
@@ -482,11 +730,11 @@ test("Pi reuses complete same-request generated card descriptions without changi
   const user: AgentMessage = { role: "user", content: [{ type: "text", text: "Keep authored <skill-directory> tags." }, { type: "image", data: "unchanged-image" }] };
   const input = [head, user, list, use], before = JSON.stringify(input);
   const projected = await catalogProjection(f, input);
-  expect(projected.catalog).toContain("<name>member</name>");
-  expect(projected.catalog).not.toContain("<description>Controlled member</description>");
-  expect(projected.catalog).toContain("<description>Controlled root</description>");
-  expect(projected.catalog).toContain("<description>Controlled required</description>");
-  expect(projected.catalog.match(/<skill>/g)).toHaveLength(3);
+  expect(projected.catalog).toContain('name="member"');
+  expect(projected.catalog).not.toContain('>Controlled member</card>');
+  expect(projected.catalog).toContain(">Controlled root</card>");
+  expect(projected.catalog).toContain(">Controlled required</card>");
+  expect(projected.catalog.match(/<card\b/g)).toHaveLength(3);
   const model = JSON.parse(projectedToolText(projected.messages, "catalog-member"));
   const expected = JSON.parse(sourceMessageText(list.content));
   delete expected.records[0].description;
@@ -499,7 +747,7 @@ test("Pi reuses complete same-request generated card descriptions without changi
   expect(JSON.stringify(input)).toBe(before);
   expect(JSON.stringify(projected.messages[0])).toContain(local);
   const restored = await catalogProjection(f, [head, user, list]);
-  expect(restored.catalog).toContain("<description>Controlled member</description>");
+  expect(restored.catalog).toContain('>Controlled member</card>');
   expect(f.calls).toEqual(["use"]);
   expect(f.resourceReads).toEqual([]);
 });
@@ -525,7 +773,7 @@ test("Pi keeps descriptions for incomplete, foreign, fixed and stale generated c
   ];
   for (const candidate of invalid) {
     const before = JSON.stringify(candidate), projected = await catalogProjection(f, [head, candidate]);
-    expect(projected.catalog).toContain("<description>Controlled member</description>");
+    expect(projected.catalog).toContain('>Controlled member</card>');
     expect(projected.messages).toContain(candidate);
     expect(JSON.stringify(candidate)).toBe(before);
   }
@@ -534,18 +782,18 @@ test("Pi keeps descriptions for incomplete, foreign, fixed and stale generated c
   const foreignUse = await other.tool.execute("foreign", { ref: foreign.root.ref }, undefined, undefined, foreign.ctx);
   f.session.entries.push(...foreign.session.entries);
   expect((await catalogProjection(f, [head, { role: "toolResult", toolName: "notion_use", toolCallId: "foreign",
-    content: foreignUse.content, details: foreignUse.details, isError: false }])).catalog).toContain("<description>Controlled member</description>");
+    content: foreignUse.content, details: foreignUse.details, isError: false }])).catalog).toContain('>Controlled member</card>');
   f.root.preparationDirectory!.candidates[0]!.description = "A different metadata observation";
   const changed = await tool.execute("metadata-changed", { ref: f.root.ref }, undefined, undefined, f.ctx);
   expect((await catalogProjection(f, [head, { role: "toolResult", toolName: "notion_use", toolCallId: "metadata-changed",
-    content: changed.content, details: changed.details, isError: false }])).catalog).toContain("<description>Controlled member</description>");
+    content: changed.content, details: changed.details, isError: false }])).catalog).toContain('>Controlled member</card>');
   f.root.preparationDirectory!.candidates[0]!.description = f.member.description;
   f.root.preparationDirectory!.candidates[0]!.ref = f.member.ref + "?snapshot=s_" + hash("historical-member");
   const fixed = await tool.execute("fixed-candidate", { ref: f.root.ref }, undefined, undefined, f.ctx);
   expect((await catalogProjection(f, [head, { role: "toolResult", toolName: "notion_use", toolCallId: "fixed-candidate",
-    content: fixed.content, details: fixed.details, isError: false }])).catalog).toContain("<description>Controlled member</description>");
+    content: fixed.content, details: fixed.details, isError: false }])).catalog).toContain('>Controlled member</card>');
   f.session.entries = [];
-  expect((await catalogProjection(f, [head, use])).catalog).toContain("<description>Controlled member</description>");
+  expect((await catalogProjection(f, [head, use])).catalog).toContain('>Controlled member</card>');
   expect(f.calls).toEqual(["use", "use", "use"]);
   expect(f.resourceReads).toEqual([]);
 });
@@ -656,7 +904,7 @@ test("native metadata search stays known; explicit inspect and use deliver compl
   const inspected = await nativeRead(f, f.root.ref!, "inspect");
   expect(sourceMessageText(inspected.content).startsWith(f.root.body!)).toBe(true);
   expect(sourceMessageText(inspected.content)).not.toContain(f.required.body!);
-  expect(sourceMessageText(inspected.content)).toBe(f.root.body);
+  expect(sourceMessageText(inspected.content)).toBe(f.root.body + '\n\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown","retention":[]}</notion-effects>');
   const used = await tool.execute("use", { ref: f.root.ref }, undefined, undefined, f.ctx);
   const usage = JSON.parse(String(used.content[0]?.type === "text" ? used.content[0].text : ""));
   expect(usage.records.map((record: { name: string }) => record.name)).toEqual([f.root.name, f.required.name]);
@@ -697,6 +945,13 @@ test("failed exact-file validation and output budget do not commit an explicit r
   const g = await fixture(), tiny = await g.install(async purpose => [{ ...g.graph(purpose), budget: { ...g.graph(purpose).budget, maxContextBytes: 1 } }]);
   await expect(tiny.tool.execute("budget", { ref: g.root.ref, refresh: true }, undefined, undefined, g.ctx)).rejects.toThrow("PREPARE_CONTEXT_BUDGET");
   expect(g.persisted).toEqual([]);
+  const retained = { version: 1 as const, remote_writes: "retained" as const, author_content: "unchanged" as const,
+    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "before-budget-failure", status: "confirmed" as const }] };
+  const h = await fixture(), recorded = await h.install(async purpose => [{ ...h.graph(purpose), effects: retained,
+    budget: { ...h.graph(purpose).budget, maxContextBytes: 1 } }]);
+  await expect(recorded.tool.execute("effects-budget", { ref: h.root.ref }, undefined, undefined, h.ctx)).rejects.toMatchObject({
+    details: { effects: { retention: retained.retention, remote_writes: "unknown" } } });
+  expect(h.persisted).toEqual([]);
   await tool.execute("ready", { ref: f.root.ref, refresh: true }, undefined, undefined, f.ctx);
   expect(f.persisted).toEqual(["replace"]);
 });
@@ -845,7 +1100,7 @@ test("registered search to prepare to native read keeps one scope/version and ex
   const canonicalFile = f.root.entryManifest!.files.find(item => item.path === file.path)!.ref;
   const canonicalResource = await nativeRead(f, canonicalFile, "canonical-resource"), shortResource = await nativeRead(f, injectedFiles[0].ref, "short-resource");
   expect(sourceMessageText(shortResource.content)).toBe(sourceMessageText(canonicalResource.content));
-  expect(sourceMessageText(shortResource.content)).toBe(f.resourceText.get(f.root.id!));
+  expect(sourceMessageText(shortResource.content)).toBe(f.resourceText.get(f.root.id!) + '\n\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown","retention":[]}</notion-effects>');
   expect(shortResource.details).toMatchObject({ contextBrokerResource: { ref: canonicalFile, scope, snapshot_id: f.root.snapshotId,
     file_id: "guide-root", delivered_complete_text: true, loaded: false } });
   expect(sourceBodyLoaded([shortResource], f.root)).toBe(false);
@@ -913,4 +1168,196 @@ test("short-ref tool admission cannot turn a saved locator into authority or a d
   const resource = prepared.records[0].directory.files.find((item: { path: string }) => item.path !== "SKILL.md").ref;
   await expect(tool.execute("resource-root", { ref: resource }, undefined, undefined, f.ctx)).rejects.toThrow("PREPARE_ROOT_NOT_MAIN");
   await expect(tool.execute("refresh-fixed", { ref: fixed, refresh: true }, undefined, undefined, f.ctx)).rejects.toThrow("PREPARE_VERSION_CONFLICT");
+});
+
+async function auditFixture() {
+  const f = await fixture(true);
+  const state = { enabled: true, metadataCalls: 0 };
+  const h = await f.install(async purpose => {
+    if (!state.enabled) throw exactDenial(f.root);
+    return [f.graph(purpose)];
+  }, { getRecords: async () => {
+    state.metadataCalls++;
+    return { records: f.records.map(record => ({ ...record, body: undefined, preparationBinding: undefined,
+      enabled: record === f.root ? state.enabled : true, defaultDiscovery: record === f.root, currentObservation: { origin: "remote", validatedAt: Date.now(), validUntil: Date.now() + 60_000 } })),
+      failures: [], lists: [{ sourceId: "controlled", policy: "default", exhaustive: true }] };
+  } });
+  await h.host.refresh(f.ctx);
+  const list = async (input: Record<string, unknown> = { query: "root" }) => {
+    const value = await h.search.execute("audit-list", input, undefined, undefined, f.ctx);
+    if (value.content[0]?.type !== "text") throw new Error("Expected list response");
+    return JSON.parse(value.content[0].text);
+  };
+  const disableRead = async () => {
+    state.enabled = false;
+    await expect(h.host.activate(f.root, f.ctx)).rejects.toMatchObject({ code: "CONTENT_DISABLED" });
+    expect((await list()).records[0].availability).toBe("disabled");
+  };
+  return { ...f, ...h, state, list, disableRead };
+}
+
+test("control: known disabled current read is corrected and a successful exact retry recovers", async () => {
+  const f = await auditFixture();
+  await f.disableRead();f.state.enabled = true;
+  await f.host.activate(f.root, f.ctx);
+  expect((await f.list()).records[0].availability).toBe("available");
+});
+
+test("F1: explicit successful metadata refresh supersedes an older disabled observation", async () => {
+  const f = await auditFixture();await f.disableRead();f.state.enabled = true;
+  const before = f.state.metadataCalls;f.host.invalidate();await f.host.refresh(f.ctx);
+  expect(f.state.metadataCalls).toBe(before + 1);
+  expect((await f.list()).records[0].availability).toBe("available");
+});
+
+test("F2: a direct notion_use denial updates the same current availability as read", async () => {
+  const f = await auditFixture();f.state.enabled = false;
+  await expect(f.tool.execute("use-denied", { ref: f.root.ref }, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "CONTENT_DISABLED" });
+  expect((await f.list()).records[0].availability).toBe("disabled");
+});
+
+test("F3: a successful notion_use after re-enable retires the prior disabled observation", async () => {
+  const f = await auditFixture();await f.disableRead();f.state.enabled = true;
+  const result = await f.tool.execute("use-reenabled", { ref: f.root.ref }, undefined, undefined, f.ctx);
+  expect(preparationDetails(result).purpose).toBe("use");
+  expect((await f.list()).records[0].availability).toBe("available");
+});
+
+test("F4: a newly started session does not inherit a previous session's contradicted denial", async () => {
+  const f = await auditFixture();await f.disableRead();f.state.enabled = true;
+  await f.emit("session_before_switch", {}, f.ctx);f.session.id = "new-session";
+  await f.emit("session_start", {}, f.ctx);await f.host.refresh(f.ctx);
+  expect((await f.list()).records[0].availability).toBe("available");
+});
+
+test("F5: changed advertised availability invalidates an earlier pagination cursor", async () => {
+  const f = await auditFixture();const first = await f.list({ limit: 1 });
+  expect(first.has_more).toBe(true);expect(typeof first.next_cursor).toBe("string");
+  await f.disableRead();
+  await expect(f.list({ limit: 1, cursor: first.next_cursor })).rejects.toMatchObject({ code: "CATALOG_CURSOR_INVALID" });
+});
+
+
+test("F7: a late older denial cannot overwrite a newer successful current read", async () => {
+  const f = await fixture(true);
+  const old = Promise.withResolvers<PreparedHostGraph[]>();let attempts = 0;
+  const { host, search } = await f.install(async purpose => {
+    attempts++;
+    return attempts === 1 ? old.promise : [f.graph(purpose)];
+  });
+  await host.refresh(f.ctx);
+  const first = host.activate(f.root, f.ctx, new AbortController().signal).catch(error => error);
+  while(attempts !== 1) await new Promise(resolve => setTimeout(resolve,0));
+  await host.activate(f.root, f.ctx, new AbortController().signal);
+  old.reject(exactDenial(f.root));
+  expect(await first).toBeInstanceOf(SourceError);
+  const out = await search.execute("after-delayed-denial", { query: "root" }, undefined, undefined, f.ctx);
+  if(out.content[0]?.type !== "text") throw new Error("Expected list response");
+  expect(JSON.parse(out.content[0].text).records[0].availability).toBe("available");
+});
+
+
+test("F6: list expiry is reached without an editor, warm access does not renew it and concurrent readers coalesce", async () => {
+  const f = await fixture(true);let calls = 0;let description = "before-edit";
+  const start = Date.now();setSystemTime(start);
+  try {
+    const h = await f.install(undefined, { getRecords: async () => {
+      calls++;const validatedAt = Date.now();
+      return { records: f.records.map(record => ({ ...record, description, body: undefined, preparationBinding: undefined,
+        currentObservation: { origin: "remote", validatedAt, validUntil: validatedAt + 1000 }, defaultDiscovery: true })), failures: [],
+        lists: [{ sourceId: "controlled", policy: "default", exhaustive: true, validatedAt: new Date(validatedAt).toISOString(), ageMs: 0, maxAgeMs: 1000, stale: false }] };
+    } });
+    await h.host.refresh(f.ctx);const before = calls;
+    const list = () => h.search.execute("ttl-list", {}, undefined, undefined, f.ctx);
+    description = "after-edit";setSystemTime(start + 999);
+    expect(JSON.stringify(await list())).toContain("before-edit");expect(calls).toBe(before);
+    setSystemTime(start + 1000);
+    const next = await Promise.all([list(),list(),list()]);
+    expect(next.every(result => JSON.stringify(result).includes("after-edit"))).toBe(true);
+    expect(calls).toBe(before + 1);expect(f.calls).toEqual([]);expect(f.resourceReads).toEqual([]);
+    setSystemTime(start + 1999);await list();expect(calls).toBe(before + 1);
+    setSystemTime(start + 2000);await list();expect(calls).toBe(before + 2);
+  } finally { setSystemTime(); }
+});
+
+test("fresh metadata without a body is not affected by Default Context outside an explicit View filter", async () => {
+  for (const enabled of [true,false]) for (const defaultContext of [true,false]) {
+    const f = await fixture(true);const {host,search} = await f.install(undefined,{getRecords:async()=>({
+      records:[{...f.root,body:undefined,preparationBinding:undefined,enabled,default_context:defaultContext,defaultDiscovery:true}],failures:[],
+    })});await host.refresh(f.ctx);
+    const result = await search.execute("flag-combination",{},undefined,undefined,f.ctx);
+    expect(JSON.stringify(result)).toContain(enabled?'"availability":"available"':'"availability":"disabled"');
+    const projection = JSON.stringify(await f.emit("context_with_system",{messages:[{role:"system",content:"Keep native policies"},{role:"user",content:"Show metadata only"}]},f.ctx));
+    expect(projection.includes('name=\\"root\\"')).toBe(enabled);
+    expect(f.calls).toEqual([]);expect(f.resourceReads).toEqual([]);
+  }
+});
+
+test("dependency denial changes only the exact child; unproven or foreign failures do not guess root availability", async () => {
+  const f = await fixture(true);let error: Error = exactDenial(f.required);
+  const {host,tool,search}=await f.install(async()=>{throw error;});await host.refresh(f.ctx);
+  await expect(tool.execute("required-denied",{ref:f.root.ref},undefined,undefined,f.ctx)).rejects.toMatchObject({code:"CONTENT_DISABLED"});
+  const read = async(query:string)=>JSON.parse(sourceMessageText((await search.execute("scope-check",{query},undefined,undefined,f.ctx)).content));
+  expect((await read("root")).records[0].availability).toBe("available");
+  expect((await read("required")).records[0].availability).toBe("disabled");
+  error=new SourceError("CONTENT_DISABLED","controlled");
+  await expect(host.activate(f.root,f.ctx)).rejects.toMatchObject({code:"CONTENT_DISABLED"});
+  expect((await read("root")).records[0].availability).toBe("available");
+  error=new SourceError("CONTENT_DISABLED","controlled",undefined,{denials:[{scope,id:f.root.id!,ref:f.member.ref!,code:"CONTENT_DISABLED"}]});
+  await expect(host.activate(f.root,f.ctx)).rejects.toMatchObject({code:"CONTENT_DISABLED"});
+  expect((await read("root")).records[0].availability).toBe("available");
+});
+
+test("permission refusal prevents reprojecting a verified old body without rewriting native history", async () => {
+  const f=await fixture(true);let denied=false;
+  const h=await f.install(async purpose=>{if(denied)throw exactDenial(f.root,"ACCESS_DENIED");return[f.graph(purpose)];});
+  await h.host.refresh(f.ctx);
+  const loaded=await h.tool.execute("original-use",{ref:f.root.ref},undefined,undefined,f.ctx);
+  const messages:AgentMessage[]=[{role:"toolResult",toolName:"notion_use",toolCallId:"original-use",...loaded}];
+  const before=JSON.stringify(messages);denied=true;
+  await expect(h.host.activate(f.root,f.ctx)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+  expect(()=>h.host.assertCanRestore(f.root)).toThrow();
+  const projected=await f.emit("context",{messages},f.ctx);
+  expect(JSON.stringify(projected)).not.toContain("Exact root");
+  expect(JSON.stringify(projected)).toContain("Source access is no longer available");
+  expect(JSON.stringify(messages)).toBe(before);
+});
+
+test("business disablement preserves delivered history but does not allow implicit restoration or fixed-pin use", async () => {
+  const f=await fixture(true);let state:"enabled"|"disabled"|"pin"="enabled";
+  const h=await f.install(async purpose=>{
+    if(state==="disabled")throw exactDenial(f.root);
+    const graph=f.graph(purpose);
+    return[state==="pin"?{...graph,records:graph.records.map(record=>({...record,currentObservation:undefined}))}:graph];
+  });await h.host.refresh(f.ctx);
+  const loaded=await h.tool.execute("first-use",{ref:f.root.ref},undefined,undefined,f.ctx);
+  const messages:AgentMessage[]=[{role:"toolResult",toolName:"notion_use",toolCallId:"first-use",...loaded}];
+  state="disabled";await expect(h.host.activate(f.root,f.ctx)).rejects.toMatchObject({code:"CONTENT_DISABLED"});
+  const before=JSON.stringify(messages);await f.emit("context",{messages},f.ctx);expect(JSON.stringify(messages)).toBe(before);
+  expect(()=>h.host.assertCanRestore(f.root)).toThrow();
+  state="pin";
+  await expect(h.tool.execute("fixed-use",{ref:f.root.preparationBinding!.ref},undefined,undefined,f.ctx)).rejects.toMatchObject({code:"CONTENT_DISABLED"});
+  const list=await h.search.execute("still-disabled",{query:"root"},undefined,undefined,f.ctx);
+  expect(sourceMessageText(list.content)).toContain('"availability":"disabled"');
+});
+
+test("an older successful read cannot commit after a newer exact denial", async () => {
+  const f=await fixture(true),older=Promise.withResolvers<PreparedHostGraph[]>();let attempts=0;
+  const h=await f.install(async()=>{attempts++;if(attempts===1)return older.promise;throw exactDenial(f.root);});await h.host.refresh(f.ctx);
+  const first=h.host.activate(f.root,f.ctx,new AbortController().signal).catch(error=>error);
+  while(attempts!==1)await new Promise(resolve=>setTimeout(resolve,0));
+  await expect(h.host.activate(f.root,f.ctx,new AbortController().signal)).rejects.toMatchObject({code:"CONTENT_DISABLED"});
+  older.resolve([f.graph("use")]);expect(await first).toMatchObject({code:"CONTENT_DISABLED"});expect(f.persisted).toEqual([]);
+});
+
+test("a list completed during an in-flight read is an earlier observation; a following list sees its exact denial", async () => {
+  const f=await fixture(true),pending=Promise.withResolvers<PreparedHostGraph[]>();let started=false;
+  const h=await f.install(async()=>{started=true;return pending.promise;});await h.host.refresh(f.ctx);
+  const read=h.host.activate(f.root,f.ctx,new AbortController().signal).catch(error=>error);
+  while(!started)await new Promise(resolve=>setTimeout(resolve,0));
+  const list=()=>h.search.execute("observed-order",{query:"root"},undefined,undefined,f.ctx);
+  const before=await list();expect(sourceMessageText(before.content)).toContain('"availability":"available"');
+  pending.reject(exactDenial(f.root));expect(await read).toMatchObject({code:"CONTENT_DISABLED"});
+  expect(sourceMessageText((await list()).content)).toContain('"availability":"disabled"');
+  expect(sourceMessageText(before.content)).toContain('"availability":"available"');
 });

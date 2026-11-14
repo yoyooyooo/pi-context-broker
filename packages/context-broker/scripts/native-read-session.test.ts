@@ -11,6 +11,7 @@ import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { recordIdentity } from "../src/discovery-records";
 import { compileResourceRead } from "../src/resource-read-projection";
 import { SourceError, SourceReferenceAmbiguity } from "../src/notion-source";
+import { noConsumptionWrites, unknownConsumptionEffects, type ConsumptionEffects } from "../src/consumption-effects";
 import type { AgentMessage, ExtensionAPI, ExtensionContext, SessionEntry, SkillRecord } from "../src/types";
 const a = "s_" + "a".repeat(64), b = "s_" + "b".repeat(64);
 const record = { kind: "skill", sourceId: "notion", sourceScope: "scope", source: "notion", id: "record", name: "example", token: "notion/example", path: "/immutable/SKILL.md", metadataIndexPath: "/metadata/SKILL.md", description: "Example", aliases: [], normalizedName: "example", normalizedDescription: "example", normalizedAliases: [], autoloadEnabled: false, body: "---\nname: example\n---\nExact native instructions.\n", snapshotId: a, locator: { type: "shared_skill", library_id: "lib", skill_id: "skill", page_id: "p", database_id: "d", data_source_id: "ds" } } satisfies SkillRecord;
@@ -320,10 +321,10 @@ test("real hook sequence marks only the completed entry result and reuses its ac
   const input = { path: metadata.path };
   await emit("tool_call", { toolName: "read", toolCallId: "read-1", input });
   const returned = await emit("tool_result", { toolName: "read", toolCallId: "read-1", input, content: [{ type: "text", text: record.body }], isError: false, details: { original: true } });
-  const annotated = returned.find((value): value is { details: unknown } => !!value && typeof value === "object" && "details" in value);
+  const annotated = returned.find((value): value is { details: unknown; content?: AgentMessage["content"] } => !!value && typeof value === "object" && "details" in value);
   expect(annotated).toBeDefined();
   expect((annotated!.details as Record<string, unknown>).original).toBe(true);
-  messages.push({ ...result(), details: annotated!.details });
+  messages.push({ ...result(), content: annotated!.content ?? result().content, details: annotated!.details });
   await host.activate(metadata, ctx);
   expect(loads).toEqual([undefined]);
   await emit("session_start", { type: "session_start" }); await host.refresh(ctx);
@@ -583,4 +584,71 @@ test("SC04 candidate errors expose only safe metadata and reject mismatched fixe
     expect(ordinary).not.toContain("PRIVATE_TOKEN"); expect(ordinary).not.toContain('"candidates"');
     expect(f.entries).toHaveLength(persisted);
   } finally { await f.emit("session_shutdown"); }
+});
+
+test("known permission revocation withholds only verified scalar source bytes, not user text or foreign records", () => {
+  const own=resourceResult("revoked"),foreign=resourceResult("foreign",{scope:"another"});
+  const user:AgentMessage={role:"user",content:"Exact supporting resource.\n"};
+  const messages=[own,foreign,user],before=JSON.stringify(messages);
+  const projected=projectSelectedSourceMessages(messages,{scopes:new Map()},(scope,id)=>scope==='scope'&&id==='shared_skill:lib:skill');
+  expect(sourceMessageText(projected[0]?.content)).toContain('Source access is no longer available');
+  expect(projected[0]?.details).toMatchObject({contextBrokerResource:{delivered_complete_text:false,loaded:false}});
+  expect(projected[1]).toBe(foreign);expect(projected[2]).toBe(user);expect(JSON.stringify(messages)).toBe(before);
+});
+
+test("an explicit new main selection retires old scalar references while preserving current and foreign pins", () => {
+  const id="shared_skill:lib:skill",old=resourceResult("old-policy",{id}),current=resourceResult("new-policy",{id,snapshotId:b,body:"New policy\n"});
+  const foreign=resourceResult("other-owner",{id:"shared_skill:another:owner"});
+  const metadata={...record,id,alias:record.name,enabled:true,default_context:false,entrypoint:"SKILL.md",ref:"skill://shared_skill%3Alib%3Askill/SKILL.md"};
+  const binding={record:metadata,scope:"scope",snapshot_id:b,version_id:"new-version",body_sha256:createHash("sha256").update("New instructions").digest("hex"),ref:metadata.ref+"?snapshot="+b};
+  const selection={scopes:new Map([["scope",{scope:"scope",bindings:new Map([[id,binding]]),retired:new Map(),graphs:[],selectionId:"new-current"}]])};
+  const source=[old,current,foreign],before=JSON.stringify(source),projected=projectSelectedSourceMessages(source,selection);
+  expect(sourceMessageText(projected[0]?.content)).not.toContain("Exact supporting resource");
+  expect(sourceMessageText(projected[0]?.content)).toContain("superseded");
+  expect(projected[0]?.details).toMatchObject({contextBrokerResource:{delivered_complete_text:false}});
+  expect(projected[1]).toBe(current);expect(projected[2]).toBe(foreign);expect(JSON.stringify(source)).toBe(before);
+});
+
+test("CTX02 scalar retirement preserves this operation's effects outside the verified source span", () => {
+  const retained: ConsumptionEffects = { version: 1, remote_writes: "retained", author_content: "unchanged",
+    retention: [{ skill_page_id: "owner", file_id: "guide", operation_id: "original-acquisition", status: "confirmed" }] };
+  for (const effects of [noConsumptionWrites(), retained, unknownConsumptionEffects()]) {
+    for (const blocks of [false, true]) {
+      const original = resourceResult("effects-retirement");
+      const body = sourceMessageText(original.content), footer = "\n\n<notion-effects>" + JSON.stringify(effects) + "</notion-effects>";
+      const message: AgentMessage = { ...original,
+        content: blocks ? [...original.content, { type: "text", text: footer }] : body + footer,
+        details: { effects, contextBrokerResource: { ...original.details.contextBrokerResource, version: 2,
+          delivery: { start: 0, end: body.length, encoding: "raw" } } } };
+      const stored = JSON.stringify(message);
+      const metadata = { ...record, id: "shared_skill:lib:skill", alias: record.name, default_context: false,
+        entrypoint: "SKILL.md", ref: "skill://shared_skill%3Alib%3Askill/SKILL.md" };
+      const binding = { record: metadata, scope: "scope", snapshot_id: b, version_id: "new-version",
+        body_sha256: createHash("sha256").update("New instructions").digest("hex"), ref: metadata.ref + "?snapshot=" + b };
+      const selection = { scopes: new Map([["scope", { scope: "scope", bindings: new Map([[metadata.id, binding]]),
+        retired: new Map(), graphs: [], selectionId: "new" }]]) };
+      for (const projected of [projectSelectedSourceMessages([message], selection),
+        projectSelectedSourceMessages([message], { scopes: new Map() }, (scope, id) => scope === "scope" && id === metadata.id)]) {
+        const text = sourceMessageText(projected[0]?.content);
+        expect(text).not.toContain(body);
+        expect(text.endsWith(footer)).toBe(true);
+        expect(text).toContain(JSON.stringify(effects));
+        expect(projected[0]?.toolCallId).toBe(original.toolCallId);
+        expect(projected[0]?.details).toMatchObject({ effects, contextBrokerResource: { delivered_complete_text: false, loaded: false } });
+      }
+      expect(JSON.stringify(message)).toBe(stored);
+    }
+  }
+});
+
+test("CTX02 retirement cannot preserve an altered or unbound generated effects footer", () => {
+  const original = resourceResult("altered-effects"), body = sourceMessageText(original.content);
+  const effects = unknownConsumptionEffects();
+  const details = { effects, contextBrokerResource: { ...original.details.contextBrokerResource, version: 2,
+    delivery: { start: 0, end: body.length, encoding: "raw" } } };
+  for (const suffix of ["\n\n<notion-effects>" + JSON.stringify(noConsumptionWrites()) + "</notion-effects>",
+    "\nUntrusted suffix with old source bytes: " + body, "\n\n<notion-effects>unknown</notion-effects>"]) {
+    const message: AgentMessage = { ...original, content: body + suffix, details };
+    expect(() => projectSelectedSourceMessages([message], { scopes: new Map() }, () => true)).toThrow("Resource result footer is inconsistent");
+  }
 });

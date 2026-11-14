@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { isolatedEnv } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { database, firstViewId, secondViewId, unflaggedAlias, unflaggedCanary, missingCanary, missingRef } from './notion-integration-fixture.mjs';
-import { nativeEntries, verifyPreparedProviderBody, providerSystemText } from './notion-default-context.mjs';
+import { catalogCards, nativeEntries, verifyPreparedProviderBody, providerSystemText } from './notion-default-context.mjs';
 import { decodeCatalogText } from './notion-integration-hosts.mjs';
 
 const save = (path, data) => writeFile(path, JSON.stringify(data, null, 2) + '\n', { mode: 0o600 });
@@ -74,17 +74,17 @@ export function verifyPartialViewCoverage({ host, context, response, entries, fi
   assert.equal(views.length, 1);
   const attributes = Object.fromEntries([...views[0][1].matchAll(/([a-z_]+)="([^"]*)"/gu)].map(match => [match[1], decodeCatalogText(match[2])]));
   assert.deepEqual(attributes, { source: 'notion', id: firstViewId, database, origin: 'first', partial: 'true' });
-  const cards = [...directory.matchAll(/<skill>([\s\S]*?)<\/skill>/gu)];
+  const cards = catalogCards(directory).filter(card => card.kind === 'skill');
   assert.equal(cards.length, 1, 'Partial coverage must preserve the exact returned member, not all-library or empty fallback');
-  assert.equal([...directory.matchAll(/<router\b/gu)].length, 0, 'An unrelated Router cannot enter the selected View');
-  const card = cards[0][1], field = tag => decodeCatalogText(new RegExp('<' + tag + '>([\\s\\S]*?)</' + tag + '>').exec(card)?.[1] ?? '');
-  assert.equal(field('name'), host === 'pi' ? record.name : 'notion-' + record.alias);
-  assert.equal(field('description'), record.description);
-  const ref = field('location'); assert.ok(ref);
+  assert.equal(catalogCards(directory).some(card => card.kind === 'router'), false, 'An unrelated Router cannot enter the selected View');
+  const card = cards[0];
+  assert.equal(card.name, host === 'pi' ? record.name : 'notion-' + record.alias);
+  assert.equal(card.description, record.description);
+  const ref = card.location; assert.ok(ref);
   const branch = retainedBranch(entries);
   assert.equal(branch.filter(entry => ['context-broker-selected-graph', 'context-broker-active-sources'].includes(entry.customType)).length, 0, 'Metadata cannot activate or confirm a Skill');
   if (host === 'pi') {
-    assert.equal(field('source'), 'notion');
+    assert.equal(card.source, 'notion');
     if (ref.startsWith('sr:')) {
       assert.match(ref, /^sr:C[A-Za-z0-9_-]{22}$/u);
       const bindings = branch.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-short-ref' && entry.data?.ref === ref);
@@ -92,7 +92,7 @@ export function verifyPartialViewCoverage({ host, context, response, entries, fi
       const expected = { kind: 'candidate', identity: { source: 'notion', scope: response.scope, id: record.id, kind: record.kind, locator: record.locator, ref: owner } };
       for (const binding of bindings) { assert.equal(binding.data.version, 1); assert.deepEqual(binding.data.target, expected); }
     } else assert.equal(ref, record.ref, 'A canonical entry must retain the exact source owner and main path');
-  } else assert.equal(field('ref'), record.ref, 'The OMP native path must advertise the same canonical owner');
+  } else assert.equal(card.ref, record.ref, 'The OMP native path must advertise the same canonical owner');
   for (const marker of [fixture.marker ?? fixture.canary, unflaggedCanary, missingCanary, fixture.resourceCanary, 'LOCAL_BODY_NOT_AUTOMATIC_413']) {
     assert.ok(typeof marker === 'string' && marker.length > 0);
     assert.equal(occurrences(context, marker), 0, 'Partial metadata must not contain any Skill or resource body');

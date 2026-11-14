@@ -3,14 +3,16 @@
   "private": true,
   "type": "module",
   "packageManager": "bun@1.2.17",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "build": "bun run --cwd packages/context-broker typecheck && bun scripts/build-tern.mjs",
     "build:broker": "bun run --cwd packages/context-broker typecheck && bun scripts/build-tern.mjs --target broker",
     "pack:broker": "bun scripts/pack.mjs --target broker",
     "typecheck": "bun run --cwd packages/context-broker typecheck",
     "check": "bun run test:verification && bun run build && bun run --cwd packages/context-broker check && bun packages/context-broker/scripts/completion.test.ts",
-    "test:verification": "node --test scripts/notion-integration-hosts.test.mjs scripts/pack-target.test.mjs scripts/notion-model-cache.test.mjs scripts/skill-consumption-contract.test.mjs scripts/skill-consumption-cost.test.mjs scripts/skill-consumption-startup.test.mjs scripts/skill-consumption-provider.test.mjs scripts/skill-consumption-model-baseline.test.mjs scripts/skill-consumption-source-baseline.test.mjs scripts/skill-consumption-source-observer.test.mjs scripts/notion-sdk-pi.test.mjs scripts/skill-preparation-evidence.test.mjs scripts/verify-skill-graph-contract.test.mjs scripts/notion-skill-graph-model.test.mjs scripts/notion-skill-graph-model-evidence.test.mjs scripts/notion-skill-graph-host-index.test.mjs scripts/notion-skill-graph-project.test.mjs scripts/notion-skill-graph-delivery.test.mjs",
+    "test:verification": "node --test packages/context-broker/scripts/final-request-undici.test.ts scripts/catalog-representation.test.mjs scripts/mock-provider-adapter.test.mjs scripts/context-once-evidence.test.mjs scripts/notion-integration-hosts.test.mjs scripts/pack-target.test.mjs scripts/notion-model-cache.test.mjs scripts/skill-consumption-contract.test.mjs scripts/skill-consumption-cost.test.mjs scripts/skill-consumption-startup.test.mjs scripts/skill-consumption-provider.test.mjs scripts/skill-consumption-model-baseline.test.mjs scripts/skill-consumption-source-baseline.test.mjs scripts/skill-consumption-source-observer.test.mjs scripts/notion-sdk-pi.test.mjs scripts/skill-preparation-evidence.test.mjs scripts/verify-skill-graph-contract.test.mjs scripts/notion-skill-graph-model.test.mjs scripts/notion-skill-graph-model-evidence.test.mjs scripts/notion-skill-graph-host-index.test.mjs scripts/notion-skill-graph-project.test.mjs scripts/notion-skill-graph-delivery.test.mjs scripts/verify-pi-daily-candidate.test.mjs scripts/verify-pi-daily-installation.test.mjs",
     "check:broker": "bun run test:verification && bun run build:broker && bun run --cwd packages/context-broker check && bun packages/context-broker/scripts/completion.test.ts",
     "test": "bun run check",
     "test:host": "bun run --cwd packages/context-broker test:host",
@@ -26,7 +28,9 @@
     "test:source-dependencies": "node scripts/verify-source-dependencies.mjs",
     "pack:dry": "bun scripts/pack.mjs --dry-run",
     "release": "bun scripts/release.ts",
-    "release:check": "bun scripts/release.ts --precheck"
+    "release:check": "bun scripts/release.ts --precheck",
+    "verify:formal": "node scripts/verify-consumer-observations.mjs",
+    "test:formal-contract": "node --test scripts/formal-result-contract.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

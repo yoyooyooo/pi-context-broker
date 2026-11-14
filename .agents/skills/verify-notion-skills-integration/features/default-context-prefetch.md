@@ -22,7 +22,7 @@ Source 的可选 `profile_id` 必须同时配置显式 `database`。默认目录
 | 场景 | 可观察结果 |
 | --- | --- |
 | 新建会话、列举 Views、查询当前 View | provider 请求数为 0，未向会话写入默认目录正文或完整 Skill |
-| 第一条普通消息 | 一个当前目录，只有名称/描述/位置；未预载 Skill 正文 |
+| 第一条普通消息 | 一个当前目录，只有名称/描述/位置；未预载 Skill 正文。Pi Notion 命名面使用分组 `<catalog-cards>`，OMP 与其他非 Pi 面保留原 `<available_skills>` / `<available_routers>`。两种形状的名称、完整描述、引用、kind、source 和顺序必须一致 |
 | 首发前选另一个 View | 第一条模型请求直接使用该 View，无旧目录残留 |
 | 从 A 切换 B | 下一轮目录替换；B 内未勾选 checkbox 的 Skill 可见，A 外条目不再默认公布 |
 | 显式调用 View 外的 Skill | 完整 `$` 选择有效，正文只加载一次 |

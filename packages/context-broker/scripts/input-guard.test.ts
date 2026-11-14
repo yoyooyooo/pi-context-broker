@@ -86,7 +86,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       const [projection] = await emit("context_with_system", { messages: [{ role: "system", content: "base" }] });
       const messages = object(projection).messages;
       assert.ok(Array.isArray(messages));
-      return messages.filter(message => object(message).role === "system").flatMap(message => {
+      return messages.filter(message => object(message).role === "system" || object(message).customType === "context-broker-notion-catalog").flatMap(message => {
         const value = object(message), sections = value.sections;
         return [value.content, ...Object.values(sections && typeof sections === "object" ? sections : {})]
           .filter(text => typeof text === "string");
@@ -133,6 +133,54 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       await f.search();
       assert.equal(await f.adapter.registerCatalog([record]), false, "Late paths are not a refreshed Pi native catalog");
       assert.deepEqual(await f.emit("input", { source: "rpc", text: "$missing@unknownsource unchanged" }), [{ action: "continue" }], "An unresolved literal reference retains soft-miss pass-through after discovery");
+      assert.deepEqual(f.loads, []);
+    } finally { await f.close(); }
+  }
+  for (const mode of ["print", "json"] as const) {
+    const f = fixture();
+    f.ctx.mode = mode;
+    try {
+      await bounded(f.installed, "Print extension registration must not block on metadata");
+      const submitted = await bounded(f.begin("Describe the available default directory"), "Print input must reach its cancellable operation");
+      let finished = false;
+      const context = submitted.project().then(value => { finished = true; return value; });
+      await turn();
+      assert.equal(finished, false, "The first print provider context must await its default metadata");
+      assert.deepEqual(f.loads, [], "Default cognition must not prepare any instruction body");
+      f.resolve(0, [{ ...record, defaultDiscovery: true }]);
+      await bounded(context, "Print context must continue after the original metadata request");
+      const prompt = await f.systemPrompt();
+      assert.match(prompt, /Startup fixture/);
+      assert.doesNotMatch(prompt, /status="pending"/);
+      assert.doesNotMatch(prompt, new RegExp(body));
+      assert.equal(f.requests.length, 1);
+      assert.deepEqual(f.loads, []);
+    } finally { await f.close(); }
+  }
+  for (const boundary of ["abort", "session-switch", "failure"] as const) {
+    const f = fixture();
+    f.ctx.mode = "print";
+    try {
+      await f.installed;
+      const submitted = await f.begin("Describe the current directory without loading bodies");
+      let finished = false;
+      const context = submitted.project().then(value => { finished = true; return value; });
+      await turn();
+      assert.equal(finished, false);
+      if (boundary === "failure") {
+        f.requests[0]!.reject(new SourceError("ACCESS_DENIED", "fixture"));
+        await bounded(context, "A failed default directory must not hang print mode");
+        assert.match(await f.systemPrompt(), /status="unavailable"/);
+        assert.equal(f.aborts(), 0, "An unselected unavailable source does not cancel an ordinary task");
+      } else if (boundary === "abort") {
+        f.stop();
+        await bounded(context, "Print cancellation must not wait for directory I/O");
+      } else {
+        await f.emit("session_before_switch");
+        f.move();
+        await assert.rejects(bounded(context, "The old print operation must settle at session replacement"), /cancelled/i);
+        assert.equal(f.aborts(), 0, "The replaced operation cannot abort the new session");
+      }
       assert.deepEqual(f.loads, []);
     } finally { await f.close(); }
   }

@@ -68,7 +68,7 @@ async function fixture(protectMain = true, withSessionBinding = false) {
     getSessionId: () => state.id, getSessionFile: () => state.file, getBranch: () => state.entries,
   } };
   const host = await installHostSkills(api, {
-    config: {}, getRecords: async () => ({ records: [metadata], failures: state.failures }),
+    config: { sources: [{ id: "notion", type: "notion", prefetch: false }] }, getRecords: async () => ({ records: [metadata], failures: state.failures }),
     sessionSnapshot: () => { state.snapshotReads++; return state.snapshot; },
     ...(withSessionBinding ? { sessionBinding: () => { state.bindingReads++; return state.binding; } } : {}),
     isLoaded: () => state.loaded, onPreparation: entry => { state.entry = entry; },
@@ -108,8 +108,10 @@ test("a fixed scalar resource delegates every native option and result without p
   expect(result).toBe(native); expect(f.state.nativeInputs).toEqual([{ ...input, path: f.files[0]!.output }]);
   expect(input.path).toBe(f.files[0]!.ref); expect(f.state.calls).toEqual([f.files[0]!.ref]);
   const delivered = await f.finish("scalar-call", input, result);
-  expect(delivered.content).toBe(native.content);
-  expect(delivered.details).toMatchObject({ native: true, contextBrokerResource: { version: 1, loaded: false, delivered_complete_text: true,
+  expect(delivered.content.slice(0, native.content.length)).toEqual(native.content);
+  expect(delivered.content.at(-1)).toEqual({ type: "text", text: '\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown","retention":[]}</notion-effects>' });
+  expect(delivered.details).toMatchObject({ native: true, contextBrokerResource: { version: 2, loaded: false, delivered_complete_text: true,
+    delivery: { start: 0, end: f.text.length, encoding: "raw" },
     id: f.metadata.id, scope: f.metadata.sourceScope, snapshot_id: f.selected.snapshotId, file_id: "guide", sha256: hash(f.text) } });
   const messages: AgentMessage[] = [{ role: "toolResult", toolName: "read", toolCallId: "scalar-call", ...delivered }];
   expect(sessionSourceSnapshot(messages, f.metadata)).toBeUndefined(); expect(sessionSourceBindings(messages, f.metadata.sourceScope!)).toEqual([]);
@@ -127,7 +129,8 @@ test("native partial text, empty files and images retain their content and truth
     const input = { path: f.files[index]!.ref, offset: 2, limit: 1 };
     f.state.nativeResult = { ...native, content: [...native.content] };
     const result = await f.read(input), delivered = await f.finish("scalar-call", input, result);
-    expect(result).toBe(f.state.nativeResult); expect(delivered.content).toEqual(native.content);
+    expect(result).toBe(f.state.nativeResult); expect(delivered.content.slice(0, native.content.length)).toEqual(native.content);
+    expect(delivered.content.at(-1)).toEqual({ type: "text", text: '\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown","retention":[]}</notion-effects>' });
     expect(delivered.details).toHaveProperty("contextBrokerResource.delivered_complete_text", complete);
     expect(delivered.details).toHaveProperty("contextBrokerResource.loaded", false);
   }
@@ -179,7 +182,15 @@ test("foreign scalar selections fail before native read and never trigger prepar
     value => ({ ...value, file: { ...value.file, ref: f.ref("references/guide.md", "other") } }),
     value => ({ ...value, file: { ...value.file, output: "relative.md" } }),
   ];
-  for (const transform of mutations) { f.state.transform = transform; await expect(f.read({ path: f.files[0]!.ref })).rejects.toThrow(); }
+  for (const transform of mutations) {
+    f.state.transform = transform;
+    const input = { path: f.files[0]!.ref };
+    await expect(f.read(input)).rejects.toMatchObject({ details: { admission: {
+      version: 1, phase: "execute", stage: "resource", code: expect.any(String), signal_aborted: false,
+      generation_started: expect.any(Number), generation_current: expect.any(Number),
+    } } });
+    expect(input.path).toBe(f.files[0]!.ref);
+  }
   expect(f.state.nativeInputs).toHaveLength(0); expect(f.state.mainReads + f.state.graphReads).toBe(0);
 });
 

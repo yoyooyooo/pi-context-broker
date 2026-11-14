@@ -173,9 +173,11 @@ function catalogScaleFixture(count = 101) {
   const section = 'Independent instructions stay unchanged.';
   const nativeSystem = section + '<available_skills><skill><name>' + native.name + '</name><description>' + native.description
     + '</description><location>' + native.path + '</location></skill></available_skills>';
-  const catalog = '<ntn-skills-view-catalog><view source="sdk-fixture" id="view-1" partial="false">Default</view>'
-    + records.map(record => '<skill><name>' + xml(record.name) + '</name><description>' + xml(record.description)
-      + '</description><source>sdk-fixture</source><location>' + record.ref + '</location></skill>').join('') + '</ntn-skills-view-catalog>';
+  const attr = value => xml(value).replaceAll('\r', '&#13;').replaceAll('\n', '&#10;').replaceAll('\t', '&#9;');
+  const body = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  const catalog = '<ntn-skills-view-catalog><view source="sdk-fixture" id="view-1" partial="false">Default</view><catalog-cards><group kind="skill" source="sdk-fixture">'
+    + records.map(record => '<card name="' + attr(record.name) + '" location="' + record.ref + '">' + body(record.description) + '</card>').join('')
+    + '</group></catalog-cards></ntn-skills-view-catalog>';
   const system = text => ({ role: 'system', content: nativeSystem + text, toolsAdded: ['read', 'notion_list', 'notion_use'].map(name => ({ name, parameters: { type: 'object' } })) });
   const captures = [{ requestId: '42:1', context: { messages: [system('<ntn-skills-discovery status="pending">Pending</ntn-skills-discovery>')] } }];
   const frames = [], messages = [], entries = records.map((record, index) => ({ type: 'custom', customType: 'context-broker-short-ref',
@@ -614,7 +616,7 @@ test('owned object observation preserves callback, promise and sync results and 
   assert.equal(events.filter(event => event.kind === 'object_read' && event.event === 'end' && event.code === 'ENOENT').length, 3);
 });
 
-function resourceFixture(state = 'source') {
+function resourceFixture(state = 'source', effects) {
   const hash = value => createHash('sha256').update(value).digest('hex');
   const snapshot = { scope: 'scope', record: { id: 'shared_skill:fixture:resources' }, snapshot_id: 's_' + 'a'.repeat(64), version_id: 'b'.repeat(64) };
   const source = [
@@ -630,7 +632,8 @@ function resourceFixture(state = 'source') {
   });
   const model = { status: 'ready', files: files.map(file => file.encoding === 'base64'
     ? { kind: 'binary', ref: file.ref, path: file.path, bytes: file.bytes, sha256: file.sha256, output: '/owned/cache/' + file.path }
-    : { kind: 'text', ref: file.ref, path: file.path, content: state === 'replaced' && file.content.length ? 'Already available.' : file.content }) };
+    : { kind: 'text', ref: file.ref, path: file.path, content: state === 'replaced' && file.content.length ? 'Already available.' : file.content }),
+    ...(effects === undefined ? {} : { effects }) };
   const text = JSON.stringify(model);
   const proof = { version: 2, toolCallId: 'resources-' + state, loaded: false,
     selection: { scope: snapshot.scope, owner: snapshot.record.id, snapshot_id: snapshot.snapshot_id, version_id: snapshot.version_id },
@@ -646,7 +649,7 @@ function resourceFixture(state = 'source') {
       ...(state === 'replaced' ? { derived: { reason: 'deduplicate', parentSha256: 'c'.repeat(64) } } : {}) },
   };
   return { batch: { files, snapshot }, message: { role: 'toolResult', toolName: 'read', toolCallId: proof.toolCallId, isError: false,
-    content: [{ type: 'text', text }], structuredContent: model, details: { contextBrokerResource: proof } } };
+    content: [{ type: 'text', text }], structuredContent: model, details: { contextBrokerResource: proof, ...(effects === undefined ? {} : { effects }) } } };
 }
 
 function scalarFixture() {
@@ -787,6 +790,66 @@ test('scalar receipts bind exact native results and reject forged identity, full
   }
 });
 
+test('scalar effects receipts retain exact native spans and reject missing or forged disclosure', () => {
+  const value = scalarFixture(), effects = { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] };
+  for (const [index, message] of value.messages.entries()) {
+    const call = value.calls[index];
+    message.details.effects = effects;
+    Object.assign(message.details.contextBrokerResource, { version: 2, delivery: { start: 0, end: call.expectedText.length, encoding: 'raw' } });
+    message.content.push({ type: 'text', text: '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>' });
+    assert.equal(assertResourceScalarResult(message, { batch: value.batch, call }).loaded, false);
+    for (const mutate of [
+      message => { message.content.pop(); },
+      message => { message.details.contextBrokerResource.delivery.end++; },
+      message => { message.content[0].text += 'changed'; },
+      message => { message.details.effects.remote_writes = 'retained'; },
+    ]) {
+      const invalid = structuredClone(message); mutate(invalid);
+      assert.throws(() => assertResourceScalarResult(invalid, { batch: value.batch, call }));
+    }
+  }
+});
+
+function controlledHttpResourceFixture(withEffects = true) {
+  const { batch, calls, messages } = scalarFixture(), call = calls[0], raw = messages[0];
+  if (withEffects) {
+    const effects = { version: 1, remote_writes: 'unknown', author_content: 'unknown', retention: [] };
+    raw.details.effects = effects;
+    Object.assign(raw.details.contextBrokerResource, { version: 2, delivery: { start: 0, end: call.expectedText.length, encoding: 'raw' } });
+    raw.content.push({ type: 'text', text: '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>' });
+  }
+  return { observed: { raw, step: { call: { id: call.id, tool: 'read', args: call.args } }, requests: [] },
+    sample: { resource_path: call.file.path, oracle: { cold: { root_id: batch.snapshot.record.id,
+      files: batch.snapshot.files, contents: { [call.file.path]: call.expectedText } } } }, binding: batch.snapshot };
+}
+
+test('controlled HTTP fixed resource preserves the complete body and exact operation effects', () => {
+  for (const withEffects of [false, true]) {
+    const value = controlledHttpResourceFixture(withEffects), before = JSON.stringify(value);
+    const proof = namedSdkProbe.httpFixedResourceProof(value.observed, value.sample, value.binding);
+    assert.equal(proof.snapshot_id, value.binding.snapshot_id);
+    assert.equal(proof.path, value.sample.resource_path);
+    assert.equal(proof.sha256, value.observed.raw.details.contextBrokerResource.sha256);
+    assert.equal(JSON.stringify(value), before);
+  }
+});
+
+test('controlled HTTP fixed resource rejects changed body, identity, span, disclosure and source requests', () => {
+  for (const mutate of [
+    value => { value.observed.raw.content[0].text += 'changed'; },
+    value => { value.observed.raw.details.contextBrokerResource.file_id = 'foreign'; },
+    value => { value.observed.raw.details.contextBrokerResource.scope = 'foreign'; },
+    value => { value.observed.raw.details.contextBrokerResource.delivery.end++; },
+    value => { value.observed.raw.content.pop(); },
+    value => { delete value.observed.raw.details.effects; },
+    value => { value.observed.raw.details.effects.remote_writes = 'none'; },
+    value => { value.observed.requests.push({ method: 'GET' }); },
+  ]) {
+    const value = controlledHttpResourceFixture(); mutate(value);
+    assert.throws(() => namedSdkProbe.httpFixedResourceProof(value.observed, value.sample, value.binding));
+  }
+});
+
 test('short-reference seed is owner/file metadata and cannot hide main delivery or activation', () => {
   const { batch } = scalarFixture(), selected = resourceScalarSelectedFixture(batch, '/owned/unmaterialized');
   assert.equal(Object.hasOwn(selected, 'body'), false); assert.deepEqual(selected.entryManifest.materialized_paths, []);
@@ -855,6 +918,25 @@ test('resource evidence verifies actual UTF-8, BOM/CRLF, zero-length spans and b
   assert.equal(result.files[3].delivered_complete_text, false);
   assert.equal(result.files[3].delivery, undefined);
   assert.equal(JSON.stringify(message), before);
+});
+
+test('batch effects are validated against the receipt outside unchanged source spans', () => {
+  const effects = { version: 1, remote_writes: 'unknown', author_content: 'unknown', retention: [] };
+  for (const state of ['source', 'replaced']) {
+    const value = resourceFixture(state, effects);
+    assert.deepEqual(assertResourceBatchProjection(value.message, { batch: value.batch, state }).effects, effects);
+  }
+  for (const mutate of [
+    message => { delete message.details.effects; },
+    message => { delete message.structuredContent.effects; },
+    message => { message.details.effects = { ...effects, remote_writes: 'none', author_content: 'unchanged' }; },
+    message => { message.structuredContent.effects.version = 2; },
+  ]) {
+    const value = resourceFixture('source', structuredClone(effects)); mutate(value.message);
+    const text = JSON.stringify(value.message.structuredContent); value.message.content[0].text = text;
+    value.message.details.contextBrokerResource.projection.rendered = { sha256: createHash('sha256').update(text).digest('hex'), bytes: Buffer.byteLength(text) };
+    assert.throws(() => assertResourceBatchProjection(value.message, { batch: value.batch }));
+  }
 });
 
 test('resource evidence rejects partial sets, forged identity, wrong spans and leaking binary content', () => {
@@ -934,9 +1016,9 @@ function defaultViewFixture() {
   const records = ['a', 'b'].map(name => ({ id: 'owner:' + name, kind: 'skill', name, description: 'Metadata', ref: 'skill://owner-' + name + '/SKILL.md' }));
   const fixture = { scope: 'fixture-scope', default_view: { id: 'view-1', records } };
   const discovery = { records: records.map((record, index) => ({ ...record, description: 'Metadata', source: 'sdk-fixture', in_default_view: true, ref: 'sr:C' + String(index).repeat(22) })) };
-  const catalog = '<ntn-skills-view-catalog><view source="sdk-fixture" id="view-1" partial="false">Default</view>'
-    + discovery.records.map(record => '<skill><name>' + record.name + '</name><description>Metadata</description><source>sdk-fixture</source><location>' + record.ref + '</location></skill>').join('')
-    + '</ntn-skills-view-catalog>';
+  const catalog = '<ntn-skills-view-catalog><view source="sdk-fixture" id="view-1" partial="false">Default</view><catalog-cards><group kind="skill" source="sdk-fixture">'
+    + discovery.records.map(record => '<card name="' + record.name + '" location="' + record.ref + '">Metadata</card>').join('')
+    + '</group></catalog-cards></ntn-skills-view-catalog>';
   const captures = [{ requestId: '1', context: { messages: [{ role: 'system', content: '<ntn-skills-discovery status="pending">Notion metadata is pending; this does not mean the directory is empty.</ntn-skills-discovery>' }] } },
     { requestId: '2', context: { messages: [{ role: 'system', content: catalog }] } }];
   const events = [{ kind: 'sdk_catalog', value: { scope: fixture.scope, view: { id: 'view-1' }, view_selection: 'first', count: 2, records,
@@ -978,7 +1060,7 @@ test('Default View uses independent complete metadata when the same-provider dis
     value => { value.events.find(row => row.kind === 'sdk_catalog' && row.value.view).value.records[0].description = 'Different actual SDK metadata'; },
     value => { value.events.find(row => row.kind === 'sdk_catalog' && row.value.view).value.scope = 'foreign'; },
     value => { value.discovery.records[0].description = 'Invented discovery metadata'; },
-    value => { value.captures[0].context.messages[0].content = value.captures[0].context.messages[0].content.replace('<description>Metadata</description>', ''); },
+    value => { value.captures[0].context.messages[0].content = value.captures[0].context.messages[0].content.replace('>Metadata</card>', '/>'); },
   ]) {
     const invalid = compactDefaultDiscoveryFixture(); mutate(invalid);
     assert.throws(() => assertDefaultViewProjection(invalid.captures, invalid.discovery, invalid.events, invalid.fixture, invalid.bodies));
@@ -1015,6 +1097,36 @@ test('catalog projection reads current public system sections and retires replac
   forged[1].context.messages[1].sections.catalog = null;
   forged[1].context.messages[2].content += value.captures[1].context.messages[1].sections.catalog;
   assert.throws(() => assertDefaultViewProjection(forged, value.discovery, value.events, value.fixture, value.bodies), /Missing or incomplete Default View/);
+});
+
+test('a data catalog needs an independent native custom-message witness and exact actual provider bytes', () => {
+  const value = defaultViewFixture();
+  for (const capture of value.captures) {
+    const content = capture.context.messages[0].content;
+    const native = [{ role: 'system', content: 'Exact safety rules' },
+      { role: 'custom', customType: 'context-broker-notion-catalog', content },
+      { role: 'user', content: 'Original task' }];
+    const observation = { catalogs: namedSdkProbe.captureNativeCatalog(native) };
+    capture.context.messages = native.map(message => message.role === 'custom' ? { role: 'user', content: message.content } : message);
+    namedSdkProbe.bindNativeCatalog(capture.context, observation);
+    assert.equal(providerSystemText(capture.context), 'Exact safety rules');
+    assert.ok(namedSdkProbe.providerCatalogText(capture.context).includes(content));
+    const wire = structuredClone(capture.context), before = JSON.stringify(wire);
+    const mapped = namedSdkProbe.catalogContextFromHttp(wire, capture.context);
+    assert.equal(namedSdkProbe.providerCatalogText(mapped), namedSdkProbe.providerCatalogText(capture.context));
+    assert.equal(JSON.stringify(wire), before);
+    const changed = structuredClone(wire); changed.messages[1].content += ' changed';
+    assert.throws(() => namedSdkProbe.catalogContextFromHttp(changed, capture.context));
+    const duplicated = structuredClone(wire); duplicated.messages.push(structuredClone(duplicated.messages[1]));
+    assert.throws(() => namedSdkProbe.bindNativeCatalog(duplicated, observation));
+    assert.deepEqual(namedSdkProbe.captureNativeCatalog(capture.context.messages), [], 'A user tag is not a native origin');
+  }
+  assert.deepEqual(assertDefaultViewProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies)
+    .provider_requests.map(row => row.state), ['pending', 'ready']);
+  const unbound = structuredClone(value.captures);
+  assert.throws(() => assertDefaultViewProjection(unbound, value.discovery, value.events, value.fixture, value.bodies));
+  value.captures[1].context.messages[1].content += ' changed after binding';
+  assert.throws(() => namedSdkProbe.providerCatalogText(value.captures[1].context));
 });
 test('explicit preflight cannot pass with a pending first request or missing selected Required body', () => {
   const sample = () => {
@@ -1069,9 +1181,9 @@ test('missing, partial, stale, duplicate or body-bearing default directories can
     value => { value.captures.pop(); },
     value => { value.captures[1].context.messages[0].content += 'Full private body'; },
     value => { value.captures[1].context.messages.push({ ...value.captures[1].context.messages[0] }); },
-    value => { value.captures[1].context.messages[0].content = value.captures[1].context.messages[0].content.replace('<name>a</name>', '<name>sdk-fixture-a</name>'); },
-    value => { value.captures[1].context.messages[0].content = value.captures[1].context.messages[0].content.replace('<source>sdk-fixture</source>', '<source>foreign</source>'); },
-    value => { value.captures[1].context.messages[0].content = value.captures[1].context.messages[0].content.replace('<source>sdk-fixture</source>', ''); },
+    value => { value.captures[1].context.messages[0].content = value.captures[1].context.messages[0].content.replace('name="a"', 'name="sdk-fixture-a"'); },
+    value => { value.captures[1].context.messages[0].content = value.captures[1].context.messages[0].content.replace(' source="sdk-fixture"', ' source="foreign"'); },
+    value => { value.captures[1].context.messages[0].content = value.captures[1].context.messages[0].content.replace(' source="sdk-fixture"', ''); },
   ]) {
     const value = defaultViewFixture(); mutate(value);
     assert.throws(() => assertDefaultViewProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies));
@@ -1441,7 +1553,7 @@ test('compact search omits only model id/scope while baseline observation cannot
 test('search descriptions may reuse an exact complete card in this actual provider system', () => {
   const message = searchProjectionFixture(), model = JSON.parse(message.content[0].text), record = message.details.records[0];
   delete model.records[0].description; message.content[0].text = JSON.stringify(model);
-  const system = '<ntn-skills-view-catalog><skill><name>a</name><description>Author description</description><source>sdk-fixture</source><location>' + record.ref + '</location></skill></ntn-skills-view-catalog>';
+  const system = '<ntn-skills-view-catalog><catalog-cards><group kind="skill" source="sdk-fixture"><card name="a" location="' + record.ref + '">Author description</card></group></catalog-cards></ntn-skills-view-catalog>';
   const context = { messages: [{ role: 'system', content: system }, message] }, before = JSON.stringify(context);
   assert.equal(assertSearchProjection(message, { scope: 'scope', context }).compact_contract, 'verified');
   assert.equal(JSON.stringify(context), before);
@@ -1473,7 +1585,7 @@ function nativeCatalogReuseFixture() {
       version: 3, identity: JSON.stringify(['sdk-fixture', scope, 'skill', 'shared_skill', snapshot.record.id]), toolCallId: 'complete-inspect',
       snapshotId: pin, bodySha256: hash(body), bytes: Buffer.byteLength(body), delivery: { start: 0, end: body.length, encoding: 'raw' }, binding, directory: canonical } } };
   const after = structuredClone(value.captures[0]); after.requestId = 'after-inspect';
-  after.context.messages[0].content = after.context.messages[0].content.replace('<name>b</name><description>Metadata</description>', '<name>b</name>');
+  after.context.messages[0].content = after.context.messages[0].content.replace('<card name="b" location="sr:C' + '1'.repeat(22) + '">Metadata</card>', '<card name="b" location="sr:C' + '1'.repeat(22) + '"/>');
   after.context.messages.push(read); value.captures.push(after);
   return { ...value, read, footer, binding };
 }
@@ -1566,7 +1678,7 @@ function injectedCatalogReuseFixture(deferred = false) {
   });
   const injected = { role: 'custom', customType: 'context-broker', content, details: { records: proofs } };
   const head = value.captures[1].context.messages[0];
-  head.content = head.content.replace('<name>b</name><description>Metadata</description>', '<name>b</name>');
+  head.content = head.content.replace('<card name="b" location="sr:C' + '1'.repeat(22) + '">Metadata</card>', '<card name="b" location="sr:C' + '1'.repeat(22) + '"/>');
   value.events[0].value.scope = scope;
   value.captures = [{ requestId: 'injected', context: { messages: [head, injected] } }];
   if (deferred) {
@@ -1702,7 +1814,7 @@ function textForTest(content) { return typeof content === 'string' ? content : (
 
 test('a frozen dollar overlap cannot pass while the provider still repeats its Default description', () => {
   const value = injectedCatalogReuseFixture();
-  value.captures[0].context.messages[0].content = value.captures[0].context.messages[0].content.replace('<name>b</name>', '<name>b</name><description>Metadata</description>');
+  value.captures[0].context.messages[0].content = value.captures[0].context.messages[0].content.replace('<card name="b" location="sr:C' + '1'.repeat(22) + '"/>', '<card name="b" location="sr:C' + '1'.repeat(22) + '">Metadata</card>');
   assert.throws(() => assertPreflightCatalogProjection(value.captures, value.discovery, value.events, value.fixture, value.bodies), /must actually remove/);
 });
 
@@ -1794,7 +1906,7 @@ test('native compact footer retains direct resource refs and checks full hashes/
   }
 });
 
-function nativeRepeatFixture({ expectShort = true, structured = true, splitMain = false } = {}) {
+function nativeRepeatFixture({ expectShort = true, structured = true, splitMain = false, effects = false, directoryReuse = false } = {}) {
   const { batch, messages } = scalarFixture(), native = nativeProjectionFixture();
   batch.main = native.body;
   Object.assign(batch.snapshot.files[0], { bytes: Buffer.byteLength(batch.main), sha256: createHash('sha256').update(batch.main).digest('hex') });
@@ -1808,13 +1920,13 @@ function nativeRepeatFixture({ expectShort = true, structured = true, splitMain 
     files: directory.files.map(({ path, bytes }, index) => ({ path, bytes, ref: index ? 'sr:R' + String(index).repeat(22) : advertisedMainRef })),
     required: directory.required.map(({ id, ...record }) => record) } };
   const footer = '<skill-directory>\n' + JSON.stringify(model) + '\n</skill-directory>';
-  const suffix = (splitMain ? '\n' : '\n\n') + footer;
+  const suffix = (splitMain ? directoryReuse ? '\n\n\n' : '\n' : '\n\n') + footer;
   const mainRef = directory.files[0].ref, resourceRef = model.directory.files.find(value => value.path === file.path).ref;
   const originals = ['sc15-main', 'sc15-resource', 'sc15-main-repeat', 'sc15-resource-repeat'].map((id, index) => {
     const message = structuredClone(index % 2 ? messages[0] : native.message); message.toolCallId = id;
     if (index % 2) message.details.contextBrokerResource.toolCallId = id;
     else {
-      message.content = splitMain ? [{ type: 'text', text: batch.main }, { type: 'text', text: footer }]
+      message.content = splitMain ? [{ type: 'text', text: batch.main }, { type: 'text', text: (directoryReuse ? '\n\n' : '') + footer }]
         : [{ type: 'text', text: batch.main + suffix }];
       Object.assign(message.details.contextBrokerRead, { version: 3, toolCallId: id, loaded: true,
         binding: { record: batch.snapshot.record, scope: batch.snapshot.scope, version_id: batch.snapshot.version_id },
@@ -1823,14 +1935,40 @@ function nativeRepeatFixture({ expectShort = true, structured = true, splitMain 
     }
     return message;
   });
+  if (effects) for (const [index, message] of originals.entries()) {
+    message.details.effects = index === 2
+      ? { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] }
+      : { version: 1, remote_writes: 'unknown', author_content: 'unknown', retention: [] };
+    const footer = '\n\n<notion-effects>' + JSON.stringify(message.details.effects) + '</notion-effects>';
+    if (index % 2) {
+      Object.assign(message.details.contextBrokerResource, { version: 2, delivery: { start: 0, end: file.content.length, encoding: 'raw' } });
+      message.content.push({ type: 'text', text: footer });
+    } else message.content.at(-1).text += footer;
+  }
+  if (directoryReuse) for (const index of [0, 2]) {
+    const message = originals[index], full = message.content.map(block => block.text).join('\n');
+    Object.assign(message.details.contextBrokerRead, { rendered: { sha256: createHash('sha256').update(full).digest('hex'), bytes: Buffer.byteLength(full) } });
+    message.details.contextBrokerRead.binding.snapshot_id = batch.snapshot.snapshot_id;
+  }
   const projected = structuredClone(originals);
   projected[2].content[0].text = (expectShort ? 'Already loaded.'
-    : `The complete Skill entry for snapshot ${batch.snapshot.snapshot_id} is already present in this active context. This successful repeated read verified the same entry bytes; use the existing instructions and their fixed resource directory.`) + (splitMain ? '' : suffix);
+    : `The complete Skill entry for snapshot ${batch.snapshot.snapshot_id} is already present in this active context. This successful repeated read verified the same entry bytes; use the existing instructions and their fixed resource directory.`) + originals[2].content[0].text.slice(batch.main.length);
   projected[3].content[0].text = expectShort ? 'Already available.'
     : `The complete Skill resource ${file.path} for snapshot ${batch.snapshot.snapshot_id} is already present in this active context. This successful repeated read verified the same resource bytes.`;
   if (expectShort) {
     projected[2].details.contextBrokerRead.loaded = false;
     projected[3].details.contextBrokerResource.delivered_complete_text = false;
+  }
+  if (directoryReuse) {
+    assert.equal(expectShort, true);
+    const message = projected[2];
+    if (splitMain) message.content[1].text = message.content[1].text.slice(footer.length + 2);
+    else message.content[0].text = message.content[0].text.replace(suffix, '');
+    const full = message.content.map(block => block.text).join('\n'), directoryText = JSON.stringify(model.directory);
+    Object.assign(message.details.contextBrokerRead, {
+      rendered: { sha256: createHash('sha256').update(full).digest('hex'), bytes: Buffer.byteLength(full) },
+      directoryOmitted: { sha256: createHash('sha256').update(directoryText).digest('hex'), bytes: Buffer.byteLength(directoryText) },
+    });
   }
   if (!structured) for (const message of projected) delete message.structuredContent;
   const search = { role: 'toolResult', toolName: 'notion_list', toolCallId: 'sc15-search', isError: false,
@@ -1916,6 +2054,47 @@ test('native repeat projection preserves separate directory blocks even when fla
       const message = value.captures[5].context.messages.find(message => message.toolCallId === id); mutate(message);
       assert.throws(() => assertNativeRepeatProjection(value.captures, value.originals, { batch: value.batch, expectShort }), label);
     }
+  }
+});
+
+test('native repeat keeps each operation effects while comparing the same complete body and directory', () => {
+  const value = nativeRepeatFixture({ splitMain: true, effects: true }), before = JSON.stringify(value);
+  assertNativeRepeatProjection(value.captures, value.originals, { batch: value.batch });
+  assert.equal(JSON.stringify(value), before);
+  for (const mutate of [
+    message => { message.content.at(-1).text = message.content.at(-1).text.replace(/\n\n<notion-effects>.*<\/notion-effects>$/u, ''); },
+    message => { message.details.effects = { version: 1, remote_writes: 'unknown', author_content: 'unknown', retention: [] }; },
+  ]) {
+    const sample = nativeRepeatFixture({ splitMain: true, effects: true });
+    mutate(sample.captures.at(-1).context.messages.find(message => message.toolCallId === 'sc15-main-repeat'));
+    assert.throws(() => assertNativeRepeatProjection(sample.captures, sample.originals, { batch: sample.batch }));
+  }
+  const lost = nativeRepeatFixture({ splitMain: true, effects: true });
+  lost.captures.at(-1).context.messages.find(message => message.toolCallId === 'sc15-resource-repeat').content.pop();
+  assert.throws(() => assertNativeRepeatProjection(lost.captures, lost.originals, { batch: lost.batch }));
+});
+
+test('CTX03 native repeat requires one complete directory witness and exact operation effects', () => {
+  for (const splitMain of [false, true]) for (const effects of [false, true]) {
+    const value = nativeRepeatFixture({ splitMain, effects, directoryReuse: true }), before = JSON.stringify(value);
+    const result = assertNativeRepeatProjection(value.captures, value.originals, { batch: value.batch, expectDirectoryReuse: true });
+    assert.equal(result.directory_reuse, 'same_request_witness_verified');
+    assert.deepEqual(result.requests.map(request => request.generated_directory_reuse.completeDirectories), [0, 0, 1, 1, 1, 1]);
+    assert.deepEqual(result.requests.map(request => request.generated_directory_reuse.omittedDirectories), [0, 0, 0, 0, 1, 1]);
+    assert.equal(JSON.stringify(value), before);
+  }
+});
+
+test('CTX03 native repeat rejects unproven, altered or duplicate directory reuse', () => {
+  for (const change of [
+    value => { delete value.originals[2].details.contextBrokerRead.rendered; },
+    value => { value.captures.at(-1).context.messages.find(message => message.toolCallId === 'sc15-main-repeat').details.contextBrokerRead.directoryOmitted.sha256 = '0'.repeat(64); },
+    value => { value.captures.at(-1).context.messages.find(message => message.toolCallId === 'sc15-main').content[1].text = 'Only a summary remains'; },
+    value => { value.captures.at(-1).context.messages.find(message => message.toolCallId === 'sc15-main-repeat').content[1].text = value.originals[2].content[1].text; },
+    value => { value.captures.at(-1).context.messages.find(message => message.toolCallId === 'sc15-main-repeat').content[1].text = ''; },
+  ]) {
+    const value = nativeRepeatFixture({ splitMain: true, effects: true, directoryReuse: true }); change(value);
+    assert.throws(() => assertNativeRepeatProjection(value.captures, value.originals, { batch: value.batch, expectDirectoryReuse: true }));
   }
 });
 
@@ -2099,6 +2278,16 @@ test('controlled HTTP body cancellation requires its actual RPC abort inside the
   const options = { sourceMode: 'controlled-http', controlledCancellations: [cancellation] };
   const result = reconcile(observed(fields), lifecycle, options);
   assert.equal(result.sdk_cancelled_bodies, 1); assert.equal(result.sdk_http, 1);
+  for (const effects of [
+    { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] },
+    { version: 1, remote_writes: 'unknown', author_content: 'unknown', retention: [] },
+  ]) {
+    const withEffects = { ...cancellation, sdk_result: { ...cancellation.sdk_result, effects } };
+    assert.equal(reconcile(observed(fields), lifecycle, { ...options, controlledCancellations: [withEffects] }).sdk_cancelled_bodies, 1);
+    const ledger = observed(fields);
+    assert.deepEqual(namedSdkProbe.assertControlledHttpCancellation(ledger.find(item => item.id === '42:2' && item.event === 'start'),
+      ledger.find(item => item.id === '42:2' && item.event === 'end'), withEffects).effects, effects);
+  }
   assert.throws(() => reconcile(observed(fields), lifecycle), /Only catalogue/);
   for (const changed of [
     { host_pid: 41 }, { sdk_id: '42:3' }, { sent_monotonic_ns: '3' },
@@ -2118,7 +2307,7 @@ function controlledDirectoryFixture() {
   const record = { id: 'owned-root', name: 'HTTP fixture', description: 'Metadata only.' };
   const captures = [
     { requestId: '42:provider:1', context: { messages: [{ role: 'system', content: '<ntn-skills-discovery status="pending">pending</ntn-skills-discovery>' }] } },
-    { requestId: '42:provider:2', context: { messages: [{ role: 'system', content: '<ntn-skills-view-catalog><view id="owned-view" source="sdk-fixture" partial="false"><skill><name>HTTP fixture</name><description>Metadata only.</description><source>sdk-fixture</source><location>sr:Cabcdefghijklmnopqrstuv</location></skill></view></ntn-skills-view-catalog>' }] } },
+    { requestId: '42:provider:2', context: { messages: [{ role: 'system', content: '<ntn-skills-view-catalog><view id="owned-view" source="sdk-fixture" partial="false">Default</view><catalog-cards><group kind="skill" source="sdk-fixture"><card name="HTTP fixture" location="sr:Cabcdefghijklmnopqrstuv">Metadata only.</card></group></catalog-cards></ntn-skills-view-catalog>' }] } },
   ];
   const events = [
     { kind: 'object_observer_start', observer_pid: 42, coverage: ['node:fs.readFile', 'node:fs.readFileSync', 'node:fs/promises.readFile'] },
@@ -2840,6 +3029,43 @@ test('warm directory supports only terminal bundled metadata CLI calls for the o
   }
 });
 
+test('http public loop copies use and resource refs from visible tool text', () => {
+  const owner = 'sr:S' + 'a'.repeat(22), resource = 'sr:R' + 'b'.repeat(22), other = 'sr:R' + 'c'.repeat(22);
+  const plan = { owner: 'resources', source: 'sdk-fixture', resource_path: 'references/guide.md' };
+  const list = JSON.stringify({ records: [{ name: 'resources', source: 'sdk-fixture', availability: 'available', ref: owner }] });
+  const use = JSON.stringify({ records: [{ name: 'resources', ref: owner, directory: { files: [{ path: 'references/guide.md', ref: resource, bytes: 4 }] } }] });
+  const messages = [];
+  const next = () => namedSdkProbe.selectHttpPublicLoopCall({ messages }, plan);
+  assert.deepEqual(next(), { type: 'toolCall', id: 'sc10-search', name: 'notion_list', arguments: { query: '', source: 'sdk-fixture', limit: 20 } });
+  messages.push({ role: 'toolResult', toolCallId: 'sc10-search', isError: false, content: list });
+  assert.deepEqual(next().arguments, { ref: owner });
+  messages.push({ role: 'toolResult', toolCallId: 'http-use', isError: false, content: use });
+  assert.deepEqual(next().arguments, { path: resource });
+  messages.push({ role: 'toolResult', toolCallId: 'http-resource', isError: false, content: 'resource' });
+  assert.deepEqual(next().arguments, { ref: owner });
+  messages.push({ role: 'toolResult', toolCallId: 'http-use-repeat', isError: false, content: use });
+  assert.deepEqual(next().arguments, { path: resource });
+  messages.push({ role: 'toolResult', toolCallId: 'http-resource-repeat', isError: false, content: 'again' });
+  assert.equal(next(), null);
+  const replaced = structuredClone(messages).slice(0, 2);
+  replaced[1].content = use.replaceAll(resource, other);
+  assert.equal(namedSdkProbe.selectHttpPublicLoopCall({ messages: replaced }, plan).arguments.path, other);
+  const hidden = structuredClone(messages).slice(0, 1);
+  hidden[0].content = list.replaceAll(owner, 'not-a-ref');
+  assert.throws(() => namedSdkProbe.selectHttpPublicLoopCall({ messages: hidden }, plan), /HTTP_PUBLIC_OWNER_NOT_UNIQUE/);
+});
+
+test('both backends select the same explicit context-once scenario', () => {
+  assert.equal(namedSdkProbe.providerBackendOptions({}), 'in-process');
+  assert.equal(namedSdkProbe.providerBackendOptions({ '--provider-backend': 'in-process', '--scenario': 'all' }), 'in-process');
+  for (const backend of ['http', 'in-process'])
+    assert.equal(namedSdkProbe.providerBackendOptions({ '--provider-backend': backend, '--scenario': 'context-once', '--fixture': '/fixture.json' }), backend);
+  for (const options of [{ '--scenario': 'all' }, { '--scenario': 'native-repeat' }, { '--scenario': 'context-once', '--live-input': '/live.json' },
+    { '--scenario': 'context-once', '--source-http-helper': '/helper.mjs' }, { '--scenario': 'context-once', '--warm-directory': 'true' },
+    { '--scenario': 'context-once', '--expect-compact-context': 'false' }])
+    assert.throws(() => namedSdkProbe.providerBackendOptions({ '--provider-backend': 'http', '--fixture': '/fixture.json', ...options }));
+});
+
 test('warm directory option is explicit and cannot alter all14 live or held-startup scenarios', () => {
   assert.equal(namedSdkProbe.warmDirectoryOptions({}), false);
   assert.equal(namedSdkProbe.warmDirectoryOptions({ '--warm-directory': 'false', '--scenario': 'all' }), false);
@@ -2856,7 +3082,9 @@ test('warm directory proves actual first system cards and preserves historical p
   assert.deepEqual(current.provider_requests[0].records.map(record => record.id), ['owner:a', 'owner:b']);
   assert.equal(current.first_provider_body_copies, 0);
   const legacy = structuredClone(value.captures);
-  legacy[0].context.messages[0].content = legacy[0].context.messages[0].content.replaceAll('<name>', '<name>sdk-fixture-').replaceAll('<source>sdk-fixture</source>', '');
+  legacy[0].context.messages[0].content = '<ntn-skills-view-catalog><view source="sdk-fixture" id="view-1" partial="false">Default</view><available_skills>'
+    + value.discovery.records.map(record => '<skill><name>sdk-fixture-' + record.name + '</name><description>Metadata</description><location>' + record.ref + '</location></skill>').join('')
+    + '</available_skills></ntn-skills-view-catalog>';
   const old = namedSdkProbe.assertWarmDirectoryProjection(legacy, value.message, value.fixture, value.bodies, { transport: 'cli' });
   assert.deepEqual(old.provider_requests[0].records.map(record => [record.displayed_name, record.displayed_source]), [['sdk-fixture-a', null], ['sdk-fixture-b', null]]);
   assert.throws(() => namedSdkProbe.assertWarmDirectoryProjection(legacy, value.message, value.fixture, value.bodies));
@@ -2874,5 +3102,71 @@ test('warm directory rejects pending fake user directory wrong owner metadata an
   ]) {
     const value = warmDirectoryFixture(); mutate(value);
     assert.throws(() => namedSdkProbe.assertWarmDirectoryProjection(value.captures, value.message, value.fixture, value.bodies), { code: 'ERR_ASSERTION' });
+  }
+});
+
+function contextOnceFixture() {
+  const effects = { version: 1, remote_writes: 'unknown', author_content: 'unknown', retention: [] };
+  const main = 'Frozen complete main.\n', resource = 'Frozen complete guide.\n';
+  const batch = { main, files: [{ path: 'references/guide.md', content: resource, encoding: 'utf8' }], unselected: [] };
+  const model = { ok: true, status: 'ready', purpose: 'use', roots: ['sr:Smain'],
+    records: [{ name: 'resources', kind: 'skill', ref: 'sr:Smain', content: main,
+      directory: { files: [{ path: 'references/guide.md', ref: 'sr:Rguide', bytes: Buffer.byteLength(resource) }], required: [], candidates: [], references: [] } }], effects };
+  const ids = ['sc10-search', 'http-use', 'http-resource', 'http-use-repeat', 'http-resource-repeat'];
+  const originals = ids.map((toolCallId, index) => ({ role: 'toolResult', toolCallId,
+    toolName: index === 0 ? 'notion_list' : index % 2 ? 'notion_use' : 'read', isError: false,
+    content: index === 0 ? '{"records":[]}' : index % 2 ? JSON.stringify(model)
+      : resource + '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>', details: { effects } }));
+  const projected = structuredClone(originals), repeat = structuredClone(model);
+  repeat.records[0].content = 'Already loaded.'; delete repeat.records[0].directory;
+  projected[3].content = JSON.stringify(repeat);
+  projected[4].content = projected[4].content.replace(resource, 'Already available.');
+  const captures = Array.from({ length: 7 }, (_, index) => ({ requestId: index,
+    context: { messages: structuredClone(projected.slice(0, Math.min(index, 5))) } }));
+  return { originals, captures, batch };
+}
+
+test('restored-role negative uses a valid assistant envelope so serializer failures cannot impersonate the guard', async () => {
+  const root = await mkdtemp(join(await systemTempRoot(), 'ctx-restored-role-envelope-'));
+  for (const split of [false, true]) {
+    const output = join(root, split ? 'blocks.json' : 'string.json');
+    const module = await import('data:text/javascript;charset=utf-8,' + encodeURIComponent(namedSdkProbe.latePayloadMutationSource('restored-role', output)));
+    const handlers = new Map(); module.default({ on(name, fn) { handlers.set(name, fn); } });
+    const source = '<context-broker-record>完整正文</context-broker-record>';
+    const message = { role: 'user', content: split ? [{ type: 'text', text: source }] : source };
+    const event = { messages: [message] }, ctx = { model: { api: 'openai-completions', provider: 'context-broker-e2e', id: 'fake' } };
+    handlers.get('agent_start')(); handlers.get('context_with_system')(event, ctx);
+    assert.equal(message.role, 'user');
+    handlers.get('agent_start')(); handlers.get('context_with_system')(event, ctx);
+    assert.equal(message.role, 'assistant'); assert.deepEqual(message.content, [{ type: 'text', text: source }]);
+    assert.deepEqual([message.api, message.provider, message.model], ['openai-completions', 'context-broker-e2e', 'fake']);
+    assert.equal(message.stopReason, 'stop'); assert.equal(message.usage.totalTokens, 0);
+    assert.ok(Number.isFinite(message.timestamp));
+    const proof = JSON.parse(await readFile(output, 'utf8'));
+    assert.equal(proof.original_user_sha256, createHash('sha256').update(source).digest('hex'));
+  }
+});
+
+test('CTX public-loop oracle checks every request against independent source and operation facts', () => {
+  const value = contextOnceFixture(), before = JSON.stringify(value);
+  const proof = namedSdkProbe.assertContextOnceLoop(value.captures, value.originals, { batch: value.batch });
+  assert.equal(proof.current_request_directory_unique, true);
+  assert.deepEqual(proof.requests.map(request => request.complete_directories), [0, 0, 1, 1, 1, 1, 1]);
+  assert.equal(JSON.stringify(value), before);
+});
+
+test('CTX public-loop oracle rejects duplicate/lost content, false zero and missing actual operations', () => {
+  for (const mutate of [
+    value => { value.captures.at(-1).context.messages[3].content = value.originals[3].content; },
+    value => { value.captures.at(-1).context.messages[1].content = value.captures.at(-1).context.messages[3].content; },
+    value => { value.captures.at(-1).context.messages[3].content = value.captures.at(-1).context.messages[3].content.replaceAll('unknown', 'none'); },
+    value => { value.captures.at(-1).context.messages[4].content = 'Already available.'; },
+    value => { value.captures.at(-1).context.messages.pop(); },
+    value => { value.captures.at(-1).context.messages[2].toolCallId = 'another-call'; },
+    value => { value.originals[1].content = value.originals[1].content.replace('Frozen complete main.', 'Summary.'); },
+    value => { value.captures.splice(2, 2); },
+  ]) {
+    const value = contextOnceFixture(); mutate(value);
+    assert.throws(() => namedSdkProbe.assertContextOnceLoop(value.captures, value.originals, { batch: value.batch }));
   }
 });

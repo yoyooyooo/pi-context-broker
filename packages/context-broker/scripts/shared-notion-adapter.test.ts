@@ -987,3 +987,30 @@ for (const selected of ["prompt-history", "prompt-rejects", "router-member", "mi
     expect(await nativeKindsObserverCase(selected)).toEqual({ selected, status: "passed" });
   });
 }
+
+test("a verified empty View needs no data-source hydration query but is not an invalid directory", async () => {
+  const f = await fixture();
+  const empty = { ...listing([], "view"), coverage: { method: "explicit_view", exhaustive: true, search_index_limited: false,
+    queried_data_sources: [], failed_sources: [] }, view_query: { id: uuid(90), expires_at: new Date(Date.now() + 60_000).toISOString(), total_count: 0 } };
+  f.state.explicit = empty; await f.save();
+  const selected = await discoverNotionSource(f.source, f.root, { view });
+  expect(selected).toHaveLength(0); expect(selected.view?.id).toBe(view); expect(selected.list.exhaustive).toBe(true);
+  for (const change of [{ view_query: undefined }, { view_query: { ...empty.view_query, total_count: 1 } },
+    { coverage: { ...empty.coverage, queried_data_sources: [uuid(99)] } }]) {
+    f.state.explicit = { ...empty, ...change }; await f.save();
+    await expect(discoverNotionSource(f.source, f.root, { view })).rejects.toMatchObject({ code: "SOURCE_RESPONSE_INVALID" });
+  }
+});
+
+test("explicit metadata refresh reaches the selected View fallback and never repeats a fresh paired result", async () => {
+  const f = await fixture(), source = { ...f.source, default_view_id: view };
+  const catalog = { records: await discoverNotionSource(source, f.root), failures: [] };
+  await f.clearCalls();
+  const result = await resolveViewDiscovery({ sources: [source] }, catalog, { cwd: f.root }, undefined, undefined, true);
+  expect(result.views?.[0]).toMatchObject({ status: "ready", origin: "configured" });
+  expect(await f.calls()).toEqual([["list", "--database", database, "--view", view, "--refresh"]]);
+  const directory = await discoverNotionSource(source, f.root, { view, refresh: true }); await f.clearCalls();
+  const paired = new Map<string, NotionDirectoryObservation>([[source.id, { selection: { view }, outcome: { ok: true, value: directory } }]]);
+  const reused = await resolveViewDiscovery({ sources: [source] }, catalog, { cwd: f.root }, undefined, paired, true);
+  expect(reused.views?.[0]).toMatchObject({ status: "ready" }); expect(await f.calls()).toEqual([]);
+});

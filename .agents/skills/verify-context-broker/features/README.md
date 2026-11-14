@@ -4,7 +4,7 @@
 
 ## Baseline preconditions
 
-- 已安装依赖并完成 `bun run build`；Node.js 22.x 中的 22.22.3+，或 24.20.0+、仅用于构建的 Bun、目标宿主在 PATH。
+- 已安装依赖；Pi 主线完成 `NTN_SKILLS_BUILD_ENTRY=ABSOLUTE_CLI bun run build:broker`，只有涉及其他宿主时才运行 `bun run build`；Node.js 22.x 中的 22.22.3+，或 24.20.0+、仅用于构建的 Bun、目标宿主在 PATH。
 - 执行 `node .agents/skills/verify-context-broker/scripts/control.mjs doctor <功能参数>`，要求退出 0、`status: ready`，记录实际版本。
 - 运行助手每次新建证据目录；原始 runner 每次新建配置、session 和 fixture。不要复用用户正在工作的实例。
 - CLI/RPC 在隔离 HOME、白名单环境中用受控 provider；UI 需要 macOS、Tern 登录和原生窗口；真实模型使用已有 magpie 登录。
@@ -25,6 +25,8 @@
 - run 完成后执行 `control.mjs evidence`，验证 teardown 后证据保留。Tern 核对 `cleanup.json`、`owned-processes.json`、`host-processes.jsonl` 与 `omp-exit.json` 的真实退出。Pi PTY 核对各冷会话 `actions.json`、原始 `.ansi`、`provider.jsonl`、`driver-exit.json` 与 `cleanup.json`。清理不能改变功能 failed/未运行状态。
 - 一条路径通过不扩大为全部功能通过。此地图里说明的覆盖边界必须在报告中保留。
 
+当前上下文唯一性与恢复见 [context-once.md](context-once.md)。组合模型见 [formal-composition](../../verify-notion-skills-integration/features/formal-composition.md)。图册入口在该页区分当前结果和历史快照；不需要为导航修正运行其他宿主。
+
 ## Features
 
 | 功能 | 参数 | 功能地图 |
@@ -34,6 +36,7 @@
 | Router 与普通 Skill 两条独立图消费 | `verify-skill-graph-contract.mjs evaluate`，只检查原始 observer 合同 | [skill-dependency-graph](../../verify-notion-skills-integration/features/skill-dependency-graph.md)，NG-SG-06～20；contract-valid 不替代真实运行 |
 | 发现、规则、默认 CLI XML 指引和注入 | `injection` | [上下文注入](injection.md) |
 | 自动补全和手动搜索 | `editor` | [编辑器补全](editor.md) |
+| 已有 Tern 三种 surface（仅涉及相应宿主时使用） | `tern-pi`、`tern-omp-terminal`、`tern-omp-native` | [Three surfaces](editor.md#three-surfaces) |
 | 去重与会话变化 | `lifecycle` | [会话生命周期](lifecycle.md) |
 | 指令效果与默认摘要器 | `model` | [真实模型](model.md) |
 | 安装产物与发布门禁 | `distribution` | [分发和发布](distribution.md) |

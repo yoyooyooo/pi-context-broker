@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yoyooyooo/notion-skills-cli
-          ref: 97ba806db80a842cd33d7327e99745d32b476e97
+          ref: 4580b7d6d692013091d5c66e90d703d51fd5fb10
           path: .verification/ntn-skills-cli
           persist-credentials: false
       - name: Set up Bun
@@ -112,6 +112,15 @@ jobs:
           done
           node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-ambiguity-fixture/fixture.json" --scenario name-reference-ambiguity --out "$RUNNER_TEMP/pi14-name-reference-ambiguity-evidence"
           node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --scenario http-directory --out "$RUNNER_TEMP/pi14-http-directory-evidence"
+      - name: Installed Pi current-context contract
+        env:
+          BROKER_INSTALLED_PACKAGE: ${{ steps.installed-pi.outputs.package }}
+        run: |
+          for backend in in-process http; do
+            node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --scenario context-once --provider-backend "$backend" --out "$RUNNER_TEMP/pi15-context-once-$backend"
+          done
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --scenario session-compaction --out "$RUNNER_TEMP/pi15-context-once-compaction"
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --scenario context-wire-negative --provider-backend http --out "$RUNNER_TEMP/pi15-context-once-wire-negative"
       - name: Preserve installed Pi SDK evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -130,6 +139,7 @@ jobs:
             ${{ runner.temp }}/pi14-name-reference-ambiguity-evidence/
             ${{ runner.temp }}/pi15-http-*-evidence/
             ${{ runner.temp }}/pi14-http-directory-evidence/
+            ${{ runner.temp }}/pi15-context-once-*/
             ${{ runner.temp }}/installed-pi-artifact.log
           include-hidden-files: true
           if-no-files-found: warn

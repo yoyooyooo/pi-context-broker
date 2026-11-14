@@ -9,6 +9,8 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { normalizeKey } from "./skill-records";
 import { parseNativeReference, type NativeFileBinding } from "./native-reference";
+import { currentEvidence } from "./consumer-observation";
+import { consumptionEffects, errorConsumptionEffects, noConsumptionWrites, type ConsumptionPolicy } from "./consumption-effects";
 import { decodePreparedGraph, preparationFailureDetails, type PreparationPurpose, type PreparationBinding, type PreparedHostGraph } from "./prepare-protocol";
 import { sharedSkillId, validSharedIdentity } from "./shared-skill-identity";
 import type { PrefetchBudget, PrefetchOutcome, PrefetchPlan } from "./prefetch-policy";
@@ -18,7 +20,7 @@ import { DEFAULT_RESOURCE_READ_BUDGET, type FixedResourceRead, type ResourceRead
 import type { ContentRecord, NotionDirectory, NotionDirectorySelection, NotionDirectoryOutcome, NotionListObservation, NotionView, SkillRecord, SourceConfig, SourcePolicy, SourceFailure } from "./types";
 
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
-type Options = { signal?: AbortSignal; refresh?: boolean; stale?: boolean; view?: string; defaultView?: boolean; snapshotId?: string };
+type Options = ConsumptionPolicy & { signal?: AbortSignal; refresh?: boolean; stale?: boolean; view?: string; defaultView?: boolean; snapshotId?: string };
 type Json = Record<string, unknown>;
 const PageLocator = Schema.Struct({ type: Schema.Literal("notion_page"), page_id: Schema.String, database_id: Schema.String, data_source_id: Schema.String });
 const SubscriptionLocator = Schema.Struct({ type: Schema.Literal("notion_subscription"), subscription_id: Schema.String, database_id: Schema.String, data_source_id: Schema.String, target_database_id: Schema.String });
@@ -117,8 +119,8 @@ function sdkOptions(source: NotionSource, cwd: string, signal?: AbortSignal) {
     ...(source.requestTimeoutMs === undefined ? {} : { NTN_SKILLS_REQUEST_TIMEOUT_MS: String(source.requestTimeoutMs) }) } };
 }
 function sdkFailure(error: unknown, source: NotionSource, operation: "prepare" | "read" | "list", signal?: AbortSignal, selected?: SkillRecord): Error {
-  if (signal?.aborted || object(error) && error.code === "CANCELLED") return new SourceError("SOURCE_CANCELLED", source.id);
-  if (error instanceof NotionSdkError) return new SourceError(error.code, source.id);
+  if (signal?.aborted || object(error) && error.code === "CANCELLED") return new SourceError("SOURCE_CANCELLED", source.id, undefined, { effects: errorConsumptionEffects(error) });
+  if (error instanceof NotionSdkError) return new SourceError(error.code, source.id, undefined, { effects: noConsumptionWrites() });
   if (!object(error)) return new SourceError("SOURCE_SDK_FAILED", source.id);
   const details = object(error.details) ? error.details : undefined;
   const preparation = object(details?.preparation) ? details.preparation : undefined;
@@ -132,7 +134,7 @@ function sdkFailure(error: unknown, source: NotionSource, operation: "prepare" |
   const code = typeof error.code === "string" && (CLI_CODES[error.code] === true
     || /^RESOURCE_[A-Z_]+$/.test(error.code) || error.code === "SNAPSHOT_NOT_MATERIALIZED"
     || operation === "prepare" && /^(?:PREPARE_[A-Z_]+|CONSUME_[A-Z_]+|SHARED_[A-Z_]+|NOTION_PREFETCH_(?:DEFERRED|WRITE_FORBIDDEN))$/.test(error.code)) ? error.code : "SOURCE_SDK_FAILED";
-  return new SourceError(code, source.id, undefined, operation === "prepare" ? preparationFailureDetails(details) : undefined);
+  return new SourceError(code, source.id, undefined, { ...preparationFailureDetails(details), effects: errorConsumptionEffects(error) });
 }
 
 function sourceCommand(source: NotionSource): string[] {
@@ -156,6 +158,7 @@ export function sourceFailureMessage(code: string): string {
     case "NOTION_QUEUE_FULL": return "The shared Notion request queue is full. Let the current work finish, then retry this read.";
     case "NOTION_SCHEDULER_UNAVAILABLE": return "The shared Notion request scheduler is unavailable. Check the local scheduler state and run /context-broker doctor.";
     case "ACCESS_DENIED": return "Grant the existing Notion connection read access to the selected database.";
+    case "CONTENT_DISABLED": return "The Skill is disabled (Enabled=false) in Notion. This is not a source connection failure. Enable it before retrying the exact read; catalog metadata may remain cached until refreshed.";
     default: return "Check the source configuration and access, then run /context-broker refresh.";
   }
 }
@@ -218,7 +221,7 @@ async function run(source: NotionSource, cwd: string, args: string[], signal?: A
         }
         const externalCode = typeof value.error.code === "string" && (CLI_CODES[value.error.code] === true
           || args[0] === "prepare" && /^(?:PREPARE_[A-Z_]+|SHARED_[A-Z_]+|NOTION_PREFETCH_(?:DEFERRED|WRITE_FORBIDDEN))$/.test(value.error.code)) ? value.error.code : "SOURCE_COMMAND_FAILED";
-        reject(new SourceError(externalCode, source.id, code ?? undefined, args[0] === "prepare" ? preparationFailureDetails(details) : undefined)); return;
+        reject(new SourceError(externalCode, source.id, code ?? undefined, preparationFailureDetails(details))); return;
       }
       if (code !== 0 || value.ok !== true) { reject(new SourceError("SOURCE_COMMAND_FAILED", source.id, code ?? undefined)); return; }
       resolveResult(value);
@@ -253,6 +256,8 @@ const CATALOG_ORDER = /^[0-9]{20}$/;
 const MAX_CATALOG_ORDER = "18446744073709551615";
 type CatalogCache = { key: string; path: string; maxAgeMs: number };
 CLI_CODES.LIST_CURSOR_STALE = true;
+CLI_CODES.NOTION_READ_ONLY = true;
+CLI_CODES.SHARED_OBSERVATION_REQUIRED = true;
 async function catalogCache(source: NotionSource, cwd: string, signal?: AbortSignal): Promise<CatalogCache | undefined> {
   if (source.discovery?.offline) return undefined;
   try {
@@ -408,9 +413,17 @@ async function discoverNotionDirectory(source: NotionSource, cwd: string, option
     ? [source.database.replaceAll("-", "").toLowerCase()]
     : databases.filter(database => database.role === "content" && database.alias === source.database).map(database => database.id.replaceAll("-", "").toLowerCase());
   if (selectedDatabases && selectedDatabases.length !== 1) decodeError(source);
+  // An exact complete empty View query performs no row hydration, so Core
+  // correctly reports zero queried data sources. Keep the allocated query
+  // proof and bound View identity; an arbitrary missing coverage is not empty.
+  const verifiedEmptyView = result.records.length === 0 && coverage.exhaustive && coverage.failed_sources.length === 0
+    && coverage.queried_data_sources.length === 0 && object(result.view_query)
+    && typeof result.view_query.id === "string" && UUID.test(result.view_query.id)
+    && typeof result.view_query.expires_at === "string" && Number.isFinite(Date.parse(result.view_query.expires_at))
+    && result.view_query.total_count === 0;
   if (selected && (coverage.method !== "explicit_view" ||
     !databases.some(database => database.role === "content" && database.id === selected.database_id && database.sources.includes(selected.data_source_id)) ||
-    !coverage.queried_data_sources.includes(selected.data_source_id) ||
+    !coverage.queried_data_sources.includes(selected.data_source_id) && !verifiedEmptyView ||
     selectedDatabases !== undefined && !selectedDatabases.includes(selected.database_id.replaceAll("-", "").toLowerCase()))) decodeError(source);
   if (!selectedView && (result.profile !== undefined || result.capability_directory === true || result.view !== undefined || coverage.method === "explicit_view")) decodeError(source);
   if (selectedProfile !== undefined || result.profile !== undefined) {
@@ -465,7 +478,8 @@ async function discoverNotionDirectory(source: NotionSource, cwd: string, option
     const hostName = name.replace(/[^a-z0-9-]/g, "-");
     const stub = `---\nname: ${JSON.stringify(hostName)}\ndescription: ${JSON.stringify(item.description)}\n---\n`;
     if (!saved) await writeFile(path, stub, { flag: "wx", mode: 0o600 });
-    records.push({ ...item, source: "notion", aliases: [], autoloadEnabled: item.kind !== "prompt", normalizedName: item.alias, normalizedAliases: [], normalizedDescription: normalizeKey(item.description), path, metadataIndexPath: path, sourceId: source.id, token, selectionToken: `${name}@${namespace}`, sourceScope: scope, freshness: observedFreshness, coverage });
+    records.push({ ...item, source: "notion", aliases: [], autoloadEnabled: item.kind !== "prompt", normalizedName: item.alias, normalizedAliases: [], normalizedDescription: normalizeKey(item.description), path, metadataIndexPath: path, sourceId: source.id, token, selectionToken: `${name}@${namespace}`, sourceScope: scope, freshness: observedFreshness,
+      currentObservation: currentEvidence(observedFreshness, saved ? "local_cache" : result.source), coverage });
   }
   if (!saved && cache && order && (await catalogCache(source, cwd, options.signal))?.key === cache.key) {
     const published = join(cache.path, "published");
@@ -479,7 +493,9 @@ async function discoverNotionDirectory(source: NotionSource, cwd: string, option
     await rename(pending, join(published, order));
   }
   if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-  return { catalog: result, directory: Object.assign(attachList(records, source, observedFreshness, coverage.exhaustive), { failures, ...(selectedView ? { view: selected ?? null } : {}), ...(object(result.profile) ? { profileId: String(result.profile.profile_id) } : {}) }) };
+  const directory = attachList(records, source, observedFreshness, coverage.exhaustive);
+  directory.list.scope = scope;
+  return { catalog: result, directory: Object.assign(directory, { failures, ...(selectedView ? { view: selected ?? null } : {}), ...(object(result.profile) ? { profileId: String(result.profile.profile_id) } : {}) }) };
 }
 
 export async function discoverNotionSource(source: NotionSource, cwd: string, options: Options = {}): Promise<NotionDirectory> {
@@ -716,7 +732,8 @@ export async function loadNotionSkill(record: SkillRecord, source: NotionSource,
   if (selected.enabled === false) throw new SourceError("CONTENT_DISABLED", source.id);
   const sameIdentity = (item: ContentRecord) => item.id === selected.id && item.kind === selected.kind && isDeepStrictEqual(item.locator, selected.locator) && item.entrypoint === selected.entrypoint && item.ref === selected.ref;
   if (options.snapshotId !== undefined && !SNAPSHOT.test(options.snapshotId)) throw new SourceError("SOURCE_REFERENCE_INVALID", source.id);
-  const read = await run(source, cwd, ["read", options.snapshotId ? `${record.ref}?snapshot=${options.snapshotId}` : record.ref, ...(source.database ? ["--database", source.database] : []), ...(options.snapshotId ? [] : policyArgs(source.activation))], options.signal, record.locator.type === "notion_page" || record.locator.type === "shared_skill" ? record.locator.page_id : undefined);
+  const read = await run(source, cwd, ["read", options.snapshotId ? `${record.ref}?snapshot=${options.snapshotId}` : record.ref, ...(source.database ? ["--database", source.database] : []), ...(options.snapshotId ? [] : policyArgs(source.activation)), ...(options.readOnly ? ["--read-only"] : [])], options.signal, record.locator.type === "notion_page" || record.locator.type === "shared_skill" ? record.locator.page_id : undefined);
+  options.observeEffects?.(consumptionEffects(read.effects));
   if ("skill" in read || "skill_name" in read) decodeError(source);
   const current = contentRecord(read.record, source);
   if (current.enabled === false) throw new SourceError("CONTENT_DISABLED", source.id);
@@ -808,10 +825,10 @@ export async function loadNotionSkill(record: SkillRecord, source: NotionSource,
   if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
   const path = join(destination, entry);
   const body = await readFile(path, "utf8");
-  return { ...record, ...current, upstream: current.upstream, path, body, normalizedName: current.alias, normalizedDescription: normalizeKey(current.description), snapshotId: snapshot, versionId: version, freshness: observedFreshness, ...(fileBindings === undefined ? {} : { fileBindings }) };
+  return { ...record, ...current, upstream: current.upstream, path, body, normalizedName: current.alias, normalizedDescription: normalizeKey(current.description), snapshotId: snapshot, versionId: version, freshness: observedFreshness, currentObservation: currentEvidence(observedFreshness, read.source), ...(fileBindings === undefined ? {} : { fileBindings }) };
 }
 
-type GraphRequest = {
+type GraphRequest = ConsumptionPolicy & {
   purpose: PreparationPurpose; sessionBindings?: readonly PreparationBinding[]; signal?: AbortSignal; rootPins?: ReadonlyMap<string, string>; refresh?: boolean;
   prefetch?: PrefetchBudget; transport?: "sdk";
 };
@@ -836,7 +853,8 @@ async function loadPreparedEntry(metadata: SkillRecord, node: PreparedNode, sour
     throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
   }
   const record: SkillRecord = { ...metadata, ...current, path: node.path, body: node.content,
-    snapshotId: node.binding.snapshot_id, versionId: node.binding.version_id, freshness: observedFreshness,
+    snapshotId: node.binding.snapshot_id, versionId: node.binding.version_id, freshness: node.freshness ?? observedFreshness,
+    currentObservation: currentEvidence(node.freshness, node.source),
     preparationBinding: node.binding, preparationDirectory: { files: node.files, required: node.required, candidates: node.candidates, references: node.references },
     ...(fileBindings === undefined ? {} : { fileBindings }),
   };
@@ -858,7 +876,8 @@ async function loadConsumedEntry(metadata: SkillRecord, node: PreparedNode, entr
     || mainBinding && (current.locator.type !== "shared_skill" || mainBinding.page_id !== current.locator.page_id)
     || fileBindings && !mainBinding || parseNativeReference(node.binding.ref).fileId !== mainBinding?.file_id) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
   const record: SkillRecord = { ...metadata, ...current, path: node.path, body: node.content,
-    snapshotId: node.binding.snapshot_id, versionId: node.binding.version_id, freshness: { policy: "pinned" },
+    snapshotId: node.binding.snapshot_id, versionId: node.binding.version_id, freshness: node.freshness ?? { policy: "pinned" },
+    currentObservation: currentEvidence(node.freshness, node.source),
     preparationBinding: node.binding, preparationDirectory: { files: node.files, required: node.required, candidates: node.candidates, references: node.references },
     ...(fileBindings === undefined ? {} : { fileBindings }),
   };
@@ -875,7 +894,7 @@ function fixedOwnerBinding(record: ContentRecord, scope: string, snapshot: strin
 
 /** A single scalar SDK operation materializes the exact resource for native read.
  * Unsupported transports and main File aliases retain their existing route. */
-export async function readFixedNotionResource(record: SkillRecord, fixedRef: string, source: NotionSource, cwd: string, signal?: AbortSignal, transport?: "sdk"): Promise<FixedResourceRead | undefined> {
+export async function readFixedNotionResource(record: SkillRecord, fixedRef: string, source: NotionSource, cwd: string, signal?: AbortSignal, transport?: "sdk", policy?: ConsumptionPolicy): Promise<FixedResourceRead | undefined> {
   if (transport !== "sdk" || source.command) return undefined;
   if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
   if (record.source !== "notion" || record.sourceId !== source.id || !record.id || !record.ref || !record.sourceScope || !HASH.test(record.sourceScope))
@@ -890,8 +909,9 @@ export async function readFixedNotionResource(record: SkillRecord, fixedRef: str
   await privateDirectory(stage, source);
   const output = join(stage, "file");
   let value: unknown;
-  try { value = await readNotionSdk(fixedRef, { ...sdkOptions(source, cwd, signal), output, ...(source.activation?.offline ? { offline: true } : {}) }); }
+  try { value = await readNotionSdk(fixedRef, { ...sdkOptions(source, cwd, signal), output, ...(source.activation?.offline ? { offline: true } : {}), ...(policy?.readOnly ? { readOnly: true } : {}) }); }
   catch (error) { throw sdkFailure(error, source, "read", signal, record); }
+  policy?.observeEffects?.(consumptionEffects(object(value) ? value.effects : undefined));
   if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
   if (!object(value) || typeof value.sha256 !== "string" || !HASH.test(value.sha256)
     || typeof value.entrypoint_sha256 !== "string" || !HASH.test(value.entrypoint_sha256)
@@ -921,18 +941,19 @@ export async function readFixedNotionResource(record: SkillRecord, fixedRef: str
     entrypoint: current.entrypoint, file: materialized };
 }
 
-export async function loadNotionResource(record: SkillRecord, path: string, source: NotionSource, cwd: string, signal?: AbortSignal, transport?: "sdk"): Promise<string> {
+export async function loadNotionResource(record: SkillRecord, path: string, source: NotionSource, cwd: string, signal?: AbortSignal, transport?: "sdk", policy?: ConsumptionPolicy): Promise<string> {
   if (record.sourceId !== source.id || !record.entryManifest || !record.snapshotId || !record.sourceScope || !record.preparationBinding)
     throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
   return materializeNotionEntryFile(record, path, target => privateDirectory(target, source), async (file, output) => {
     let response: Json;
     if (transport === "sdk" && !source.command) {
       let value: unknown;
-      try { value = await readNotionSdk(file.ref, { ...sdkOptions(source, cwd, signal), output }); }
+      try { value = await readNotionSdk(file.ref, { ...sdkOptions(source, cwd, signal), output, ...(policy?.readOnly ? { readOnly: true } : {}) }); }
       catch (error) { throw sdkFailure(error, source, "read", signal); }
       if (!object(value)) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
       response = value;
-    } else response = await run(source, cwd, ["read", file.ref, "--output", output, ...(source.database ? ["--database", source.database] : [])], signal);
+    } else response = await run(source, cwd, ["read", file.ref, "--output", output, ...(source.database ? ["--database", source.database] : []), ...(policy?.readOnly ? ["--read-only"] : [])], signal);
+    policy?.observeEffects?.(consumptionEffects(response.effects));
     const current = contentRecord(response.record, source);
     if (!isDeepStrictEqual(current, record.preparationBinding!.record) || response.scope !== record.sourceScope ||
       response.snapshot_id !== record.snapshotId || response.version_id !== record.versionId ||
@@ -946,7 +967,7 @@ export async function loadNotionResource(record: SkillRecord, path: string, sour
 
 /** One SDK operation verifies the owner manifest and reads only the selected
  * resources. This path never prepares, opens or publishes the main Skill body. */
-export async function readNotionResources(record: SkillRecord, refs: readonly string[], source: NotionSource, cwd: string, signal?: AbortSignal): Promise<ResourceReadBatch> {
+export async function readNotionResources(record: SkillRecord, refs: readonly string[], source: NotionSource, cwd: string, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<ResourceReadBatch> {
   if (record.source !== "notion" || record.sourceId !== source.id || !record.id || !record.ref || !record.sourceScope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
   // A custom source command owns its transport. Do not silently switch its data
   // or credentials to the bundled SDK when it has no resource-batch contract.
@@ -954,10 +975,13 @@ export async function readNotionResources(record: SkillRecord, refs: readonly st
   if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
   const request = { version: 1, refs: [...refs], budget: DEFAULT_RESOURCE_READ_BUDGET };
   let value: unknown;
-  try { value = await readNotionResourcesSdk(request, { ...sdkOptions(source, cwd, signal), ...(source.activation?.offline ? { offline: true } : {}) }); }
+  try { value = await readNotionResourcesSdk(request, { ...sdkOptions(source, cwd, signal), ...(source.activation?.offline ? { offline: true } : {}), ...(policy?.readOnly ? { readOnly: true } : {}) }); }
   catch (error) { throw sdkFailure(error, source, "read", signal, record); }
-  if (signal?.aborted || object(value) && value.status === "cancelled") throw new SourceError("SOURCE_CANCELLED", source.id);
-  if (object(value) && value.status === "failed") throw sdkFailure(value.error, source, "read", signal, record);
+  const effects = consumptionEffects(object(value) ? value.effects : undefined);
+  policy?.observeEffects?.(effects);
+  if (signal?.aborted || object(value) && value.status === "cancelled") throw new SourceError("SOURCE_CANCELLED", source.id, undefined, { effects });
+  if (object(value) && value.status === "failed") throw sdkFailure(object(value.error) ? { ...value.error,
+    details: { ...(object(value.error.details) ? value.error.details : {}), effects } } : value.error, source, "read", signal, record);
   if (!object(value) || value.version !== 1 || value.status !== "ready" || !object(value.manifest) || !object(value.selection)
     || !Array.isArray(value.files) || value.files.length !== refs.length || !object(value.budget)
     || !isDeepStrictEqual(value.budget, DEFAULT_RESOURCE_READ_BUDGET) || typeof value.manifest_sha256 !== "string" || !HASH.test(value.manifest_sha256)) decodeError(source);
@@ -994,7 +1018,7 @@ export async function readNotionResources(record: SkillRecord, refs: readonly st
   const files = await materializeNotionResourceBatch(resourceRecord, selected, await cacheRoot(source, cwd), target => privateDirectory(target, source), signal);
   if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
   return { selection: { scope: record.sourceScope, owner: current.id, snapshot_id: snapshotId, version_id: manifest.version_id },
-    ownerBinding, manifest, manifest_sha256: value.manifest_sha256, files, budget: { ...DEFAULT_RESOURCE_READ_BUDGET }, machine: value };
+    ownerBinding, manifest, manifest_sha256: value.manifest_sha256, files, budget: { ...DEFAULT_RESOURCE_READ_BUDGET }, machine: value, effects };
 }
 async function requestPreparedGraph(records: readonly SkillRecord[], source: NotionSource, cwd: string, input: GraphRequest) {
   if (!records.length || records.some(record => record.sourceId !== source.id || !record.id || !record.ref || !record.sourceScope)) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
@@ -1005,14 +1029,17 @@ async function requestPreparedGraph(records: readonly SkillRecord[], source: Not
       ...(input.sessionBindings?.length ? { sessionBindings: input.sessionBindings } : {}),
       ...(source.preparation ? { budget: source.preparation } : {}) };
     let response: unknown;
-    try { response = await consumeNotionSdk(request, { ...sdkOptions(source, cwd, input.signal), ...(input.prefetch ? { execution: { priority: "prefetch",
+    try { response = await consumeNotionSdk(request, { ...sdkOptions(source, cwd, input.signal), ...(input.readOnly ? { readOnly: true } : {}), ...(input.prefetch ? { execution: { priority: "prefetch",
       timeBudgetMs: input.prefetch.maxTimeMs, queueBudgetMs: Math.min(1000, input.prefetch.maxTimeMs), rateShare: input.prefetch.rateShare } } : {}) }); }
     catch (error) { throw sdkFailure(error, source, "prepare", input.signal, records.length === 1 ? records[0] : undefined); }
-    if (input.signal?.aborted || object(response) && response.status === "cancelled") throw new SourceError("SOURCE_CANCELLED", source.id);
-    if (object(response) && response.status === "failed") throw sdkFailure(response.error, source, "prepare", input.signal, records.length === 1 ? records[0] : undefined);
+    const effects = consumptionEffects(object(response) ? response.effects : undefined);
+    input.observeEffects?.(effects);
+    if (input.signal?.aborted || object(response) && response.status === "cancelled") throw new SourceError("SOURCE_CANCELLED", source.id, undefined, { effects });
+    if (object(response) && response.status === "failed") throw sdkFailure(object(response.error) ? { ...response.error,
+      details: { ...(object(response.error.details) ? response.error.details : {}), effects } } : response.error, source, "prepare", input.signal, records.length === 1 ? records[0] : undefined);
     if (!object(response) || response.version !== 1 || response.status !== "ready" || !object(response.preparation) || !Array.isArray(response.entries)) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
     let ready: ReturnType<typeof decodePreparedGraph>;
-    try { ready = decodePreparedGraph({ ...response.preparation, ok: true }, { purpose: input.purpose, roots: records }, value => contentRecord(value, source)); }
+    try { ready = decodePreparedGraph({ ...response.preparation, ok: true, effects }, { purpose: input.purpose, roots: records }, value => contentRecord(value, source)); }
     catch (error) { if (error instanceof SourceError) throw error; throw new SourceError("SOURCE_PREPARATION_INVALID", source.id); }
     const entries = new Map<string, Json>();
     for (const entry of response.entries) {
@@ -1023,7 +1050,7 @@ async function requestPreparedGraph(records: readonly SkillRecord[], source: Not
     return { ready, entries };
   }
   const args = ["prepare", ...targets, "--purpose", input.purpose,
-    ...(source.database ? ["--database", source.database] : []), ...policyArgs(source.activation, input.refresh)];
+    ...(source.database ? ["--database", source.database] : []), ...policyArgs(source.activation, input.refresh), ...(input.readOnly ? ["--read-only"] : [])];
   if (input.prefetch) args.push("--priority", "prefetch", "--time-budget-ms", String(input.prefetch.maxTimeMs),
     "--queue-budget-ms", String(Math.min(1000, input.prefetch.maxTimeMs)), "--rate-share", String(input.prefetch.rateShare));
   if (input.sessionBindings?.length) {
@@ -1043,6 +1070,7 @@ async function requestPreparedGraph(records: readonly SkillRecord[], source: Not
   const single = records.length === 1 ? records[0] : undefined;
   const response = await run(source, cwd, args, input.signal,
     single?.locator?.type === "shared_skill" || single?.locator?.type === "notion_page" ? single.locator.page_id : undefined, single?.id);
+  input.observeEffects?.(consumptionEffects(response.effects));
   let ready: ReturnType<typeof decodePreparedGraph>;
   try { ready = decodePreparedGraph(response, { purpose: input.purpose, roots: records }, value => contentRecord(value, source)); }
   catch (error) {
@@ -1097,6 +1125,6 @@ export async function prepareNotionSkills(records: readonly SkillRecord[], sourc
   }
   return {
     purpose: ready.purpose, scope: ready.scope, sourceId: source.id, roots: ready.roots.map(root => root.id),
-    records: prepared, bindings: ready.session_bindings, lock: ready.graph_lock, budget: ready.budget, usage: ready.usage,
+    records: prepared, bindings: ready.session_bindings, lock: ready.graph_lock, budget: ready.budget, usage: ready.usage, effects: ready.effects,
   };
 }

@@ -5,23 +5,28 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ContentRecord, SkillRecord, SourceConfig } from "../src/types";
+import { noConsumptionWrites, unknownConsumptionEffects, type ConsumptionEffects, type ConsumptionPolicy } from "../src/consumption-effects";
+import { DEFAULT_RESOURCE_READ_BUDGET } from "../src/resource-read-types";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 const exists = (path: string) => stat(path).then(() => true, () => false);
 
 // Isolated bundled SDK fixtures exercise the source/storage boundary. They never
 // replace the repository SDK or contact Notion; each copy owns its module cache.
-async function fixture(options: { proofVersion?: number | null; bytes?: Uint8Array } = {}) {
+async function fixture(options: { proofVersion?: number | null; bytes?: Uint8Array; resourceEffectsVersion?: number | null } = {}) {
   const evidence = process.env.CONTEXT_BROKER_FIXED_RESOURCE_EVIDENCE ?? tmpdir();
   await mkdir(evidence, { recursive: true });
   const root = await realpath(await mkdtemp(join(evidence, "fixed-resource-source-")));
   await cp(new URL("../src", import.meta.url), join(root, "src"), { recursive: true });
   await symlink(fileURLToPath(new URL("../node_modules", import.meta.url)), join(root, "node_modules"), "dir");
   const proofVersion = options.proofVersion === undefined ? 1 : options.proofVersion;
+  const resourceEffectsVersion = options.resourceEffectsVersion === undefined ? 1 : options.resourceEffectsVersion;
   const sdkPath = join(root, "src/ntn-skills-sdk.mjs");
   await writeFile(sdkPath, `
 import { writeFile, symlink } from 'node:fs/promises';
 export const SDK_VERSION = 1, CONSUMER_CONTRACT_VERSION = 1, PACKAGE_VERSION = 'fixed-resource-fixture';
+export const RESOURCE_READ_CONTRACT_VERSION = 1, CONSUMPTION_EFFECTS_VERSION = 1;
+${resourceEffectsVersion === null ? "" : `export const RESOURCE_READ_EFFECTS_VERSION = ${resourceEffectsVersion};`}
 ${proofVersion === null ? "" : `export const READ_OUTPUT_PROOF_VERSION = ${proofVersion};`}
 export const calls = [];
 let state;
@@ -29,6 +34,11 @@ export function configure(value) { state = value; }
 export function parseDuration() { return 0; }
 export function consume() { throw new Error('main preparation must not run'); }
 export function decodeConsumeResult() { throw new Error('main decoder must not run'); }
+export function decodeResourceReadResult() { throw new Error('resource decoder must not run twice'); }
+export async function readResources(input, options) {
+  calls.push({ input, options });
+  return state.batchResponse;
+}
 export async function readSkill(target, options) {
   calls.push({ target, options });
   if (state.symlink) await symlink(state.symlink, options.output);
@@ -39,7 +49,9 @@ export async function readSkill(target, options) {
 }
 `);
   await writeFile(join(root, "src/ntn-skills-runtime.json"), JSON.stringify({ version: 1, package: "ntn-skills", package_version: "fixed-resource-fixture",
-    sdk_version: 1, consumer_contract_version: 1, ...(proofVersion === null ? {} : { read_output_proof_version: proofVersion }) }));
+    sdk_version: 1, consumer_contract_version: 1, resource_read_contract_version: 1, consumption_effects_version: 1,
+    ...(resourceEffectsVersion === null ? {} : { resource_read_effects_version: resourceEffectsVersion }),
+    ...(proofVersion === null ? {} : { read_output_proof_version: proofVersion }) }));
   const sdk = await import(pathToFileURL(sdkPath).href);
   const boundary = await import(pathToFileURL(join(root, "src/notion-source.ts")).href);
   const id = "shared_skill:fixed-resource:owner", scope = hash("fixed resource scope"), version = hash("fixed resource version");
@@ -57,12 +69,46 @@ export async function readSkill(target, options) {
     bytes: bytes.length, sha256: hash(bytes), entrypoint_sha256: hash("independent main commitment"),
     file_bindings: [{ file_id: "main", path: main, page_id: "00000000-0000-4000-8000-000000000001" },
       { file_id: "guide", path, page_id: "00000000-0000-4000-8000-000000000002" }] };
-  const state = { bytes, response, overrides: {} as Record<string, unknown>, afterWrite: undefined as (() => void) | undefined, symlink: undefined as string | undefined };
+  const state = { bytes, response, overrides: {} as Record<string, unknown>, afterWrite: undefined as (() => void) | undefined, symlink: undefined as string | undefined, batchResponse: undefined as unknown };
   sdk.configure(state);
   const resourceRoot = join(source.cacheDir!, "scopes", scope, "records", hash(id), "resources", snapshot, "tree");
   const read = (fixedRef = ref, signal?: AbortSignal) => boundary.readFixedNotionResource(record, fixedRef, source, root, signal, "sdk");
-  return { root, sdk, boundary, source, record, content, response, state, ref, prefix, snapshot, path, main, bytes, resourceRoot, read };
+  const readBatch = (policy?: ConsumptionPolicy) => {
+    const manifest = { complete: true, scope, snapshot_id: snapshot, version_id: version, record: content, entrypoint: main,
+      file_bindings: response.file_bindings, files: [
+        { path: main, bytes: Buffer.byteLength("independent main commitment"), sha256: response.entrypoint_sha256 },
+        { path, bytes: bytes.length, sha256: hash(bytes) },
+      ] };
+    state.batchResponse ??= { version: 1, status: "ready", manifest, manifest_sha256: hash(JSON.stringify(manifest)),
+      selection: { scope, owner: id, snapshot_id: snapshot, version_id: version }, budget: DEFAULT_RESOURCE_READ_BUDGET,
+      files: [{ requested_ref: ref, ref, path, file_id: "guide", bytes: bytes.length, sha256: hash(bytes), encoding: "utf8", content: bytes.toString("utf8") }],
+      ...(resourceEffectsVersion === null ? {} : { effects: noConsumptionWrites() }) };
+    return boundary.readNotionResources(record, [ref], source, root, undefined, policy);
+  };
+  return { root, sdk, boundary, source, record, content, response, state, ref, prefix, snapshot, path, main, bytes, resourceRoot, read, readBatch };
 }
+
+test("batch source forwards strict policy and keeps the SDK effects with exact fixed bytes", async () => {
+  const f = await fixture(), observed: ConsumptionEffects[] = [];
+  const result = await f.readBatch({ readOnly: true, observeEffects: effects => observed.push(effects) });
+  expect(f.sdk.calls).toHaveLength(1);
+  expect(f.sdk.calls[0]).toMatchObject({ input: { version: 1, refs: [f.ref] }, options: { readOnly: true } });
+  expect(result.effects).toEqual(noConsumptionWrites()); expect(observed).toEqual([noConsumptionWrites()]);
+  expect(result.files[0]).toMatchObject({ requested_ref: f.ref, ref: f.ref, file_id: "guide", bytes: f.bytes.length, sha256: hash(f.bytes), content: f.bytes.toString("utf8") });
+  expect(result.selection).toEqual({ scope: f.record.sourceScope, owner: f.record.id, snapshot_id: f.snapshot, version_id: f.response.version_id });
+  const effects = noConsumptionWrites();
+  f.state.batchResponse = { version: 1, status: "failed", effects,
+    error: Object.freeze({ code: "NOTION_READ_ONLY", message: "semantic write forbidden", details: { effects } }) };
+  await expect(f.readBatch({ readOnly: true })).rejects.toMatchObject({ code: "NOTION_READ_ONLY", details: { effects } });
+});
+
+test("a legacy batch producer refuses strict dispatch and keeps ordinary missing effects unknown", async () => {
+  const f = await fixture({ resourceEffectsVersion: null });
+  await expect(f.readBatch({ readOnly: true })).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE", details: { effects: noConsumptionWrites() } });
+  expect(f.sdk.calls).toHaveLength(0); expect(await exists(f.source.cacheDir!)).toBe(false);
+  const result = await f.readBatch();
+  expect(f.sdk.calls).toHaveLength(1); expect(result.effects).toEqual(unknownConsumptionEffects());
+});
 
 test("one scalar output read publishes exact text with an independent owner commitment and no entry", async () => {
   const f = await fixture(), result = await f.read();
