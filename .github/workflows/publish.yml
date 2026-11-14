@@ -36,7 +36,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yoyooyooo/notion-skills-cli
-          ref: 524029d9a4faae8eccb457f55256e1fc699625ea
+          ref: 4580b7d6d692013091d5c66e90d703d51fd5fb10
           path: .verification/ntn-skills-cli
           persist-credentials: false
       - name: Set up Bun
