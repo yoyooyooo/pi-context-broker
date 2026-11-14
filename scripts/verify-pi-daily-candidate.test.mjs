@@ -255,6 +255,34 @@ test('maintenance public builtin discovery admits the installed local interface 
   ]) assert.throws(() => reviewCandidateCliCommand(cliCommand + ' ' + suffix, maintenanceCli), suffix);
 });
 
+test('an onboarding inspection reads the setup reference and validates only its existing library', () => {
+  for (const suffix of [
+    'ctl builtin read notion/ntn-skills-maintain --path references/setup.md',
+    'ctl library init --entry owned-library',
+    'ctl library inspect owned-library',
+    'ctl library sources list --entry owned-library',
+    'list --database owned-library --refresh --json',
+    'list --database owned-library --query original --limit 10 --json',
+  ]) assert.ok(reviewCandidateCliCommand(cliCommand + ' ' + suffix, maintenanceCli).kind, suffix);
+  for (const suffix of [
+    'ctl library init --parent owned-page', 'ctl library init --entry another-library',
+    'ctl library init --entry owned-library --parent owned-page',
+    'ctl library sources init --entry owned-library',
+    'ctl library sources list --entry another-library',
+    'ctl library inspect another-library', 'list --json',
+    'list --database another-library --json', 'list --database owned-library --limit 1000 --json',
+    'ctl database register skills --database owned-library',
+  ]) assert.throws(() => reviewCandidateCliCommand(cliCommand + ' ' + suffix, maintenanceCli), suffix);
+});
+
+test('read-only onboarding uses public JSON without turning optional metrics into an authorization rule', () => {
+  const command = cliCommand + ' read original-page --database owned-library --read-only --json';
+  assert.equal(reviewCandidateCliCommand(command, maintenanceCli).kind, 'read');
+  assert.throws(() => reviewCandidateCliCommand(command.replace(' --read-only', ''), maintenanceCli));
+  assert.throws(() => reviewCandidateCliCommand(command.replace(' --json', ''), maintenanceCli));
+  assert.throws(() => reviewCandidateCliCommand(command.replace('original-page', 'other-page'), maintenanceCli));
+});
+
 const auditRunId = 'audit-33a07e13-071b-4071-a6b4-d76c92834a5a';
 const auditCommand = cliCommand + ' ctl audit run --entry owned-library --target original-page --depth history';
 const auditReportFixture = () => ({ ok: true, report_version: 1, rules_version: 'resource-audit-v3', run_id: auditRunId,

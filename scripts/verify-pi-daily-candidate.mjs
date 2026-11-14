@@ -329,8 +329,36 @@ export function reviewCandidateCliCommand(command, policy, observedAudits = []) 
       }
     }
     check(positional.length === 1 && positional[0] === 'notion/ntn-skills-maintain', 'Read only the reviewed maintenance builtin');
-    check(path === undefined || ['SKILL.md', 'references/operations.md'].includes(path), 'Read only the two protected maintenance files');
+    check(path === undefined || ['SKILL.md', 'references/operations.md', 'references/setup.md'].includes(path), 'Read only the protected maintenance files');
     return { kind: 'builtin-read', argv: words };
+  }
+  if (maintenance && args.slice(0, 3).join(' ') === 'ctl library init') {
+    check(args.length === 5 && args[3] === '--entry' && args[4] === policy.database,
+      'Validate only the existing owned library; parent initialization and schema changes are outside this task');
+    return { kind: 'library-attach-readonly', argv: words };
+  }
+  if (maintenance && args.slice(0, 3).join(' ') === 'ctl library inspect') {
+    check(args.length === 4 && args[3] === policy.database, 'Read only the owned library descriptor');
+    return { kind: 'library-inspect', argv: words };
+  }
+  if (maintenance && args.slice(0, 4).join(' ') === 'ctl library sources list') {
+    check(args.length === 6 && args[4] === '--entry' && args[5] === policy.database, 'List only the owned library sources');
+    return { kind: 'source-list', argv: words };
+  }
+  if (maintenance && args[0] === 'list') {
+    const flags = new Map();
+    for (let index = 1; index < args.length; index++) {
+      const flag = args[index]; check(!flags.has(flag), 'Duplicate catalog option');
+      if (['--json', '--metrics', '--refresh'].includes(flag)) flags.set(flag, true);
+      else {
+        check(['--database', '--query', '--limit'].includes(flag) && typeof args[index + 1] === 'string', 'Use only public bounded catalog options');
+        flags.set(flag, args[++index]);
+      }
+    }
+    check(flags.get('--database') === policy.database && flags.get('--json'), 'Keep the exact owned library and structured catalog');
+    if (flags.has('--limit')) check(/^[1-9][0-9]*$/u.test(flags.get('--limit')) && Number(flags.get('--limit')) <= 100, 'Keep the metadata query bounded');
+    if (flags.has('--query')) check(flags.get('--query').length <= 512, 'Keep the task query bounded');
+    return { kind: 'catalog-list', argv: words };
   }
   if (maintenance && ['ctl audit report', 'ctl audit resume'].includes(args.slice(0, 3).join(' '))) {
     const binding = observedAudits.findLast(row => row?.runId === args[3]
@@ -408,7 +436,7 @@ export function reviewCandidateCliCommand(command, policy, observedAudits = []) 
     if (flags.has('--from')) check(flags.get('--from').startsWith(policy.refPrefix) && relativeFile(positional[0]) && !flags.has('--path'), 'Resolve only an original owner relative file');
     if (flags.has('--path')) check(relativeFile(flags.get('--path')), 'Use an original owner relative file path');
     if (read) {
-      check(flags.get('--json') && flags.get('--metrics'), 'Read output needs its public JSON and metrics flags');
+      check(flags.get('--json') && (maintenance || flags.get('--metrics')), 'Read output needs public JSON; measured non-maintenance arms also require metrics');
       check(flags.get('--read-only'), 'Post-recovery inspection must prohibit remote writes');
     } else check(positional[0].startsWith(policy.refPrefix) && /[?&]snapshot=s_[a-f0-9]{64}(?:&|$)/u.test(positional[0])
       && flags.get('--metrics'), 'List only the original immutable owner pin with public metrics');
@@ -1370,7 +1398,7 @@ export async function runCandidatePrint(config) {
         assert.ok(typeof cliPolicy.operationId === 'string' && /^[a-z][a-z0-9.-]{1,255}$/u.test(cliPolicy.operationId));
         assert.ok((await readFile(ownership.path, 'utf8')).includes(cliPolicy.target), 'Bind the exact owned target receipt');
         assert.equal(cliPolicy.builtinFiles, undefined, 'The maintenance Skill comes from the frozen candidate package');
-        cliPolicy.builtinFiles = ['SKILL.md', 'references/operations.md'].map(path => join(config.brokerRoot, 'dist/builtin-skills/ntn-skills-maintain', path));
+        cliPolicy.builtinFiles = ['SKILL.md', 'references/operations.md', 'references/setup.md'].map(path => join(config.brokerRoot, 'dist/builtin-skills/ntn-skills-maintain', path));
         for (const path of Object.values(cliPolicy.stateRoots)) assert.ok(inside(config.evidenceRoot, path), 'Keep maintenance state inside its owned evidence root');
       }
       assert.ok(Object.values(cliPolicy.stateRoots).every(isAbsolute));
