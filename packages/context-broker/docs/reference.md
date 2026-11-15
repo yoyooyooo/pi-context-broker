@@ -486,6 +486,7 @@ Router injection:
 /context-broker doctor
 /context-broker refresh
 /context-broker sources
+/context-broker connect SOURCE ENTRY --config /absolute/config.json
 /context-broker roots
 /context-broker catalogs
 /context-broker find <query>
@@ -497,6 +498,8 @@ Use subcommands, not colon-style command names. Pi uses colon suffixes for comma
 `/context-broker find <query>` lists every matching record with its selector, kind, source and full path, including records that share one selector. It does not inject a record.
 
 `/context-broker sources` reports local preparation jobs: queued/running/ready/error/cancelled state, generation, snapshot/version IDs, CLI freshness and safe error codes. It makes no model request; ready means prepared bytes, not instructions loaded into the conversation.
+
+`connect` previews one explicitly selected config file and returns the exact apply command. Saving a source requires that unchanged preview digest; repeat configuration is a no-op and conflicting sources fail. Restart Pi with that config to observe connection readiness. No credentials or global config are selected implicitly. The deferred `notion_ctl` tool supports `working_set:show|budget|release`; see [Session controls and first connection](skill-consumption-runtime.md#当前工作集预算与显式释放).
 
 ## Security and privacy
 

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { recordIdentity } from "./discovery-records";
 import { decodePreparationLock, isPreparationBinding, type PreparationGraphLock } from "./prepare-protocol";
-import { reduceSessionSelection, SESSION_GRAPH_ENTRY, sessionSelection, type SessionSelection, type SelectionMode } from "./session-graph";
+import { reduceSessionSelection, SESSION_GRAPH_ENTRY, SESSION_RELEASE_ENTRY, decodeRootRelease, sessionSelection, type SessionSelection, type SelectionMode, type ReleasedRoot } from "./session-graph";
 import { sourceBodyLoaded, sourceContentIdentity, sourceDeliveryLoaded } from "./session-source-snapshot";
 import type { AgentMessage, ExtensionAPI, ExtensionContext, SessionEntry, SkillRecord } from "./types";
 
@@ -14,9 +14,9 @@ export type ActiveSource = {
 };
 type Activation = {
   version: 1; schema_version: 1; compiler_version: 1; activation_id: string;
-  mode: SelectionMode; graphs: PreparationGraphLock[]; sources: ActiveSource[];
+  mode: SelectionMode; graphs: PreparationGraphLock[]; sources: ActiveSource[]; selected_roots?: ReleasedRoot[];
 };
-export type ActiveSources = { sources: Map<string, ActiveSource>; selection: SessionSelection };
+export type ActiveSources = { sources: Map<string, ActiveSource>; history: Map<string, ActiveSource>; selection: SessionSelection };
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const invalid = () => Object.assign(new Error("Invalid active Skill delivery receipt"), { code: "SOURCE_SESSION_ACTIVE_INVALID" });
@@ -56,24 +56,45 @@ function decode(value: unknown): Activation {
     if (!sources.some(source => source.record.sourceScope === binding.scope && source.record.id === binding.record.id
       && source.snapshotId === binding.snapshot_id && source.bodySha256 === binding.body_sha256)) throw invalid();
   }
+  const selected_roots = value.selected_roots === undefined ? undefined
+    : decodeRootRelease({ version: 1, release_id: value.activation_id, roots: value.selected_roots }).roots;
+  if (selected_roots?.some(root => !graphs.some(graph => graph.scope === root.scope && graph.roots.includes(root.id)))) throw invalid();
   return { version: 1, schema_version: 1, compiler_version: 1, activation_id: value.activation_id,
-    mode: value.mode === "replace" ? "replace" : "extend", graphs, sources };
+    mode: value.mode === "replace" ? "replace" : "extend", graphs, sources, ...(selected_roots ? { selected_roots } : {}) };
 }
 
 export function reduceActiveSources(branch: readonly SessionEntry[]): ActiveSources {
-  const sources = new Map<string, ActiveSource>(), selections: SessionEntry[] = [];
+  const sources = new Map<string, ActiveSource>(), history = new Map<string, ActiveSource>(), selections: SessionEntry[] = [];
   for (const entry of branch) {
+    if (entry.type === "custom" && entry.customType === SESSION_RELEASE_ENTRY) {
+      decodeRootRelease(entry.data);
+      selections.push(entry);
+      const selected = reduceSessionSelection(selections);
+      for (const [identity, source] of sources) {
+        const scope = source.record.sourceScope && selected.scopes.get(source.record.sourceScope);
+        if (scope && !scope.bindings.has(source.record.id!)) sources.delete(identity);
+      }
+      continue;
+    }
     if (entry.type !== "custom" || entry.customType !== SESSION_ACTIVE_ENTRY) continue;
     const activation = decode(entry.data);
     if (activation.mode === "replace") {
       const scopes = new Set(activation.graphs.map(graph => graph.scope));
       for (const [identity, source] of sources) if (source.record.sourceScope && scopes.has(source.record.sourceScope)) sources.delete(identity);
     }
-    for (const source of activation.sources) sources.set(source.contentIdentity, source);
+    for (const source of activation.sources) {
+      sources.set(source.contentIdentity, source);
+      history.set(JSON.stringify([source.contentIdentity, source.snapshotId, source.bodySha256]), source);
+    }
     if (activation.graphs.length) selections.push({ type: "custom", customType: SESSION_GRAPH_ENTRY,
       data: { ...activation, selection_id: activation.activation_id } });
   }
-  return { sources, selection: reduceSessionSelection(selections) };
+  const selection = reduceSessionSelection(selections);
+  for (const [identity, source] of sources) {
+    const scope = source.record.sourceScope && selection.scopes.get(source.record.sourceScope);
+    if (scope && !scope.bindings.has(source.record.id!)) sources.delete(identity);
+  }
+  return { sources, history, selection };
 }
 export function activeSources(ctx: ExtensionContext): ActiveSources {
   return reduceActiveSources(ctx.sessionManager?.getBranch?.() ?? []);
@@ -88,15 +109,16 @@ export function activeSelection(ctx: ExtensionContext, pending: readonly { graph
       if (graph.purpose !== "use") continue;
       let scope = selection.scopes.get(graph.scope);
       if (!scope) {
-        scope = { scope: graph.scope, bindings: new Map(), retired: new Map(), graphs: [], selectionId: "pending-provider" };
+        scope = { scope: graph.scope, bindings: new Map(), retired: new Map(), graphs: [], roots: new Set(), selectionId: "pending-provider" };
         selection.scopes.set(graph.scope, scope);
       }
       if (transition.mode === "replace" && !replaced.has(graph.scope)) {
         for (const [id, binding] of scope.bindings) scope.retired.set(id, binding);
-        scope.bindings.clear(); scope.graphs = []; replaced.add(graph.scope);
+        scope.bindings.clear(); scope.graphs = []; scope.roots.clear(); replaced.add(graph.scope);
       }
       for (const binding of graph.bindings) scope.bindings.set(binding.record.id, binding);
       if (!scope.graphs.some(previous => previous.sha256 === graph.sha256)) scope.graphs.push(graph);
+      for (const id of graph.roots) scope.roots.add(id);
     }
   }
   return selection;
@@ -121,15 +143,18 @@ export function confirmActiveSources(api: ExtensionAPI, ctx: ExtensionContext, r
     return { identity: recordIdentity(record), contentIdentity, snapshotId: record.snapshotId ?? "local_" + bodySha256,
       bodySha256, bytes: Buffer.byteLength(body!), record: metadata };
   });
+  const selected_roots = [...selected.scopes.values()].flatMap(scope => [...scope.roots]
+    .filter(id => graphs.some(graph => graph.scope === scope.scope && graph.roots.includes(id))).map(id => ({ scope: scope.scope, id })));
   if (!sources.length || sources.every(source => {
     const previous = active.sources.get(source.contentIdentity);
     return previous?.snapshotId === source.snapshotId && previous.bodySha256 === source.bodySha256;
-  })) return;
+  }) && selected_roots.every(root => active.selection.scopes.get(root.scope)?.roots.has(root.id))) return;
   const mode = sources.some(source => {
     const previous = active.sources.get(source.contentIdentity);
     return source.record.source === "notion" && previous && (previous.snapshotId !== source.snapshotId || previous.bodySha256 !== source.bodySha256);
   }) ? "replace" : "extend";
-  const data = decode({ version: 1, schema_version: 1, compiler_version: 1, activation_id: randomUUID(), mode, graphs, sources });
+  const data = decode({ version: 1, schema_version: 1, compiler_version: 1, activation_id: randomUUID(), mode, graphs, sources,
+    ...(selected_roots.length ? { selected_roots } : {}) });
   reduceActiveSources([...ctx.sessionManager.getBranch(), { type: "custom", customType: SESSION_ACTIVE_ENTRY, data }]);
   api.appendEntry(SESSION_ACTIVE_ENTRY, data);
 }

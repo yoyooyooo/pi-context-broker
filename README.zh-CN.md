@@ -20,6 +20,8 @@ Pi 1.4 的 Notion 消费入口为 `notion_list`、原生 `read` 和 `notion_use`
 
 Pi 可用一次 `read({ paths: [...] })` 读取同一 Skill 快照中最多 16 个选中资源，输入使用固定 `sr:R` 句柄或带 snapshot 的 `skill://` 文件引用。文本完整交付；二进制返回已验证的文件信息与本地路径。普通 `read({ path, offset?, limit? })` 保持 Pi 原生行为。选择、预算和投递语义见[固定资源批读](./packages/context-broker/docs/fixed-resource-batches.md)。
 
+Pi 按需发现的 `notion_ctl` 还管理当前 Notion 工作集。`working_set:"show"` 显示活跃根、共享 Requires 和 UTF-8 指令字节；`"budget"` 加 `max_bytes` 设置明确的 Session 上限；`"release"` 加准确 `roots` 停止应用这些根，其他根仍需要的依赖会保留。释放保留原始会话历史、固定快照与 Notion 数据，默认不自动淘汰。详见[工作集控制](./packages/context-broker/docs/skill-consumption-runtime.md#当前工作集预算与显式释放)。
+
 Tern/OMP 加载选中的 source Skill 时，在会话中追加持久、可折叠的 `Read ntn-skills://<alias>` 记录，显示来源、耗时及 `running`、`done` 或 `error` 状态。展示目标省略 namespace，重名时保留页面后缀。终态记录完成后保留，resume 时恢复；未完成的旧记录标为中断。`ntn-skills://` 仅为展示标识，真实读取仍使用 `skill://`。记录及展开详情不进入 provider 消息、压缩或 branch 摘要。其他终端使用文字反馈。启用 Notion source 即可发现和使用，无需安装 builtin。详见[激活合同](./packages/context-broker/docs/reference.zh-CN.md#内置-sources)。
 
 | 记录 | 来源 | 模型收到的内容 |
@@ -145,6 +147,8 @@ Pi 仅在 `after_provider_response` 收到 2xx 响应头，且完整正文与本
 OMP（包括 Tern 中运行的 OMP）将有效上下文中的完整 Skill 正文视为已读。`$` 注入标明调用引用、source 的原生宿主名与资源目录，模型可直接使用正文，仅在需要时读取附加资源。目录路径继续遵守 `pathMode` 隐私设置。详见[宿主消费合同](./packages/context-broker/docs/reference.zh-CN.md#宿主发现与选中激活)。
 
 ### 添加 Notion source
+
+CLI 的 init/attach 返回库 entry 后，执行 `/context-broker connect personal ENTRY --config /absolute/project/config.json`，先预览连接到 Pi 的配置。返回的 apply 命令包含同一文件与预览摘要；执行后，用指向该文件的 `CONTEXT_BROKER_CONFIG` 重启 Pi。没有显式文件或环境覆盖时要求先选文件，不隐式选择全局配置。结果分别报告配置保存、远端是否核验、是否需要重载和正文是否投递；连接本身不改凭据。
 
 插件已包含 `ntn-skills`，无需全局安装。项目 HTTP 引擎直接使用已有 token，优先选择 `config.token`，再选择 `NOTION_API_TOKEN`。向同一份 broker config 添加 source：
 

@@ -38,6 +38,8 @@ Prepare、InspectIdentity、InspectBudget、Commit 分开，不能将异步准�
 
 ## DeliveryBoundary
 
+NXT12 对 SelectionGraph 增加 retained + new closure 的有限字节预算前提及 `ReleaseActiveRoot` 代次动作；DeliveryBoundary 同样建模显式释放，使有效 root 投影变为 0，但保留历史 active 接受事实。完整共享 Requires 可达性、精确 UTF-8 并集和旧 fixed ref 拒绝由 `session-active.test.ts` 与实际 Pi 回放负责，不能从这个单根有限模型推导。两模型仍使用原完整正反配置清单，源对应见 coverage 的 `nxt12_review`。
+
 初始前提是前一模型已经选定 root v2/Requires v1，且有旧确认向量可保留。active 表示本次完整图曾被 provider 接受这个历史事实；有效 branch 的派生版本另算。rewind 恢复旧有效向量，不能借用离开当前 branch 的确认。
 
 | 状态/动作 | 实际边界 | 不能推断 |

@@ -4,10 +4,10 @@
   "correspondence": "Reviewed source hashes bind the implemented transition owners. Finite-model results do not establish complete implementation refinement. The final commit, installed package and actual session identities belong to the execution receipt.",
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
-    "packages/context-broker/src/host-skills.ts": "14ad8253488ff98258ff7b47757fe7398f25577d7b6880f9dec9d76299898cdb",
+    "packages/context-broker/src/host-skills.ts": "51ad2a1b29ae54a2f6263c7039785e3b5c8fe0f9d08b7cee1c3dbe4aa6bd68ea",
     "packages/context-broker/src/prepare-protocol.ts": "722883c738809713ea5eaca582cd953233f56b95758df1f7f627453cbcdd8561",
     "packages/context-broker/src/notion-source.ts": "20a876a4e1db4676d252ed184ef35654a691a73902d7e3c846a9eb8e51a6a07d",
-    "packages/context-broker/src/index.ts": "bd5f955083bce00d4dd55d55be8e4b3b19f7e59d6c85876fc092a75398686789",
+    "packages/context-broker/src/index.ts": "928081fac524f888f58f815a33bd5c318de1be1b63dece6f2f9eb252296f0ff7",
     "packages/context-broker/src/view-discovery.ts": "15ba061763e6b5546d21551a7c0c2fc15a68626af1e47771cba539ef999b995d",
     "packages/context-broker/src/view-prompt.ts": "7d7ac614ccf857c7f3ed5723aebdd3c9fbb734259ef8cdcb509e09a341f451be",
     "packages/context-broker/src/session-source-snapshot.ts": "b23de4a16344620ff12e4e2bd3147d119fdfbffba37507b54434d7425d84c9a5",
@@ -397,5 +397,15 @@
       ],
       "scope": "Preparation operation effects are read from canonical nested contextBrokerPreparation.effects for truthful bounded diagnostics. No dispatch/graph/role/activation transition changed. Driver keeps explicit four counterexamples and source cancellation effects."
     }
+  },
+  "nxt_delivery_review": {
+    "issues": ["AH-1023", "AH-1056", "AH-1057", "AH-1050"],
+    "reviewed_owners": {
+      "host-skills.ts": "Working-set admission runs after existing qualification and before staging/commit. Explicit root release increments the existing generation and clears pending reads/graphs so late acquisition fails the existing lifecycle guards; the concrete public-tool race regression asserts no republishing. Availability identities, denial/current evidence and cursor ownership are unchanged.",
+      "index.ts": "Adds explicit local source-connection command routing and bounded same-owner/snapshot batch guidance. Connection preview/apply does no remote operation and does not publish current/body evidence. No source catalog selection, projection ACK or read receipt logic changed."
+    },
+    "finite_models_unchanged": ["Availability", "ReadRace"],
+    "semantic_boundary": "Their existing generation-retirement transition covers the new release cause; selection reachability, explicit budget and effective delivery changes are maintained in consumer-state SelectionGraph/DeliveryBoundary. Exact path bytes, connection filesystem races and real HTTP serializer outcomes remain concrete obligations.",
+    "concrete_replays": "315 consumption tests and 3 actual Node request-entity tests pass. Installed Pi 1.5.2 HTTP working-set and context-once loops pass; same-owner/snapshot resource batch with session short refs passes installed Pi plus full serializer replay. No real model or production-network claim follows from these controlled-provider runs."
   }
 }

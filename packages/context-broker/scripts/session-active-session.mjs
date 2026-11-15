@@ -15,6 +15,7 @@ const { SessionManager } = await import(pathToFileURL(sessionModule).href);
 const active = await jiti.import(fileURLToPath(new URL('../src/session-active.ts', import.meta.url)));
 const graphs = await jiti.import(fileURLToPath(new URL('../src/session-graph.ts', import.meta.url)));
 const receipts = await jiti.import(fileURLToPath(new URL('../src/session-source-snapshot.ts', import.meta.url)));
+const workingSet = await jiti.import(fileURLToPath(new URL('../src/session-working-set.ts', import.meta.url)));
 const hash = text => createHash('sha256').update(text).digest('hex');
 const canonical = value => value === null || typeof value !== 'object' ? JSON.stringify(value) : Array.isArray(value) ? '[' + value.map(canonical).join(',') + ']'
   : '{' + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => JSON.stringify(key) + ':' + canonical(item)).join(',') + '}';
@@ -27,7 +28,7 @@ const state = manager => [...active.activeSources(context(manager)).sources.valu
 const confirmations = manager => manager.getBranch().filter(entry => entry.type === 'custom' && entry.customType === active.SESSION_ACTIVE_ENTRY);
 if (args[0] === 'resume') {
   const manager = SessionManager.open(args[1]);
-  process.stdout.write(JSON.stringify({ state: state(manager), confirmations: confirmations(manager).map(entry => entry.data.activation_id), missing: active.missingActiveSources(context(manager), messages(manager)).map(source => source.snapshotId) }));
+  process.stdout.write(JSON.stringify({ state: state(manager), confirmations: confirmations(manager).map(entry => entry.data.activation_id), missing: active.missingActiveSources(context(manager), messages(manager)).map(source => source.snapshotId), working_set: workingSet.exportWorkingSet(context(manager), messages(manager)) }));
   process.exit(0);
 }
 const evidenceRoot = option('--evidence-root');
@@ -35,8 +36,8 @@ assert.ok(isAbsolute(evidenceRoot ?? ''), 'Pass --evidence-root with the persist
 await mkdir(evidenceRoot, { recursive: true });
 const directory = await mkdtemp(join(evidenceRoot, 'session-active-session-')), sessions = join(directory, 'sessions');
 const scope = 'e'.repeat(64);
-function prepared(revision) {
-  const records = ['root', 'required'].map(name => {
+function prepared(revision, rootName = 'root') {
+  const records = [rootName, 'required'].map(name => {
     const id = 'shared_skill:controlled:' + name;
     const metadata = { id, kind: 'skill', name, alias: name, description: name, enabled: true, default_context: false,
       entrypoint: 'SKILL.md', ref: 'skill://' + encodeURIComponent(id) + '/SKILL.md',
@@ -123,12 +124,40 @@ const fresh = SessionManager.create(directory, sessions);
 fresh.appendMessage({ role: 'user', content: 'New session.', timestamp: Date.now() });
 assert.deepEqual(state(fresh), []); check('new_session_does_not_inherit_active_bindings');
 
-const inputs = await Promise.all(['session-active.ts', 'session-graph.ts', 'session-source-snapshot.ts'].map(async name => {
+const work = SessionManager.create(directory, sessions), shared = prepared('A', 'second');
+work.appendMessage({ role: 'user', content: 'Use root and second with their shared Requires.', timestamp: Date.now() });
+for (const graph of [a, shared]) {
+  graphs.persistSessionSelection(api(work), context(work), [graph], 'extend');
+  deliver(work, graph.records); confirm(work, graph);
+}
+const beforeRelease = workingSet.exportWorkingSet(context(work), messages(work)), beforeReleaseLeaf = work.getLeafId();
+assert.equal(beforeRelease.roots.length, 2); assert.equal(beforeRelease.nodes.length, 3);
+workingSet.setWorkingSetBudget(api(work), context(work), beforeRelease.active.instruction_bytes);
+workingSet.releaseWorkingSetRoots(api(work), context(work), [a.records[0].preparationBinding.ref]);
+const workFile = work.getSessionFile(), released = restart(workFile).working_set;
+assert.deepEqual(released.nodes.map(node => node.name).sort(), ['required', 'second']);
+assert.equal(released.budget.max_instruction_bytes, beforeRelease.active.instruction_bytes);
+assert.deepEqual(released.history, beforeRelease.history); check('release_budget_and_shared_requires_survive_independent_process_resume');
+const workResume = SessionManager.open(workFile);
+workResume.appendCompaction('The user released root. This text is not an activation receipt.', null, 0);
+assert.deepEqual(active.missingActiveSources(context(workResume), messages(workResume)).map(source => source.record.name).sort(), ['required', 'second']);
+deliver(workResume, shared.records); confirm(workResume, shared);
+assert.deepEqual(restart(workFile).working_set.nodes.map(node => node.name).sort(), ['required', 'second']);
+check('compaction_restore_never_resurrects_released_root');
+graphs.persistSessionSelection(api(workResume), context(workResume), [a], 'extend');
+deliver(workResume, a.records); confirm(workResume, a, [{ graphs: [a], mode: 'extend' }]);
+assert.equal(restart(workFile).working_set.roots.length, 2); check('explicit_reuse_restores_root_without_new_history_version');
+const beforeReleaseFork = SessionManager.open(workFile).createBranchedSession(beforeReleaseLeaf);
+assert.equal(restart(beforeReleaseFork).working_set.roots.length, 2);
+assert.equal(restart(beforeReleaseFork).working_set.budget.max_instruction_bytes, null);
+check('fork_before_release_owns_its_original_roots_and_budget');
+
+const inputs = await Promise.all(['session-active.ts', 'session-graph.ts', 'session-source-snapshot.ts', 'session-working-set.ts'].map(async name => {
   const path = fileURLToPath(new URL('../src/' + name, import.meta.url)); return { path, sha256: hash(await readFile(path)) };
 }));
 const result = { status: 'passed', boundary: 'Actual installed Pi SessionManager and independent Node resume processes; controlled canonical graph and delivery fixtures. No agent/provider/Notion or real-model compaction.',
   sessionModule, sessionModuleSha256: hash(await readFile(sessionModule)), driverSha256: hash(await readFile(fileURLToPath(import.meta.url))), inputs,
-  checks, originalFile, forkFile, siblingFile, stateA, stateB,
+  checks, originalFile, forkFile, siblingFile, workFile, beforeReleaseFork, stateA, stateB,
   cleanup: { retainedOwnedEvidence: directory, liveOwnedProcesses: 0, persistentSessionsAreEvidence: true } };
 await writeFile(join(directory, 'result.json'), JSON.stringify(result, null, 2) + '\n', { mode: 0o600 });
 process.stdout.write(JSON.stringify({ status: result.status, evidence: directory, checks }, null, 2) + '\n');

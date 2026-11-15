@@ -460,6 +460,7 @@ Router 注入：
 /context-broker doctor
 /context-broker refresh
 /context-broker sources
+/context-broker connect SOURCE ENTRY --config /absolute/config.json
 /context-broker roots
 /context-broker catalogs
 /context-broker find <query>

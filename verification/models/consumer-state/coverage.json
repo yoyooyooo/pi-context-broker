@@ -7,28 +7,32 @@
     "owner": "verify-notion-consumer-state",
     "issues": [
       "AH-1010",
-      "AH-1011"
+      "AH-1011",
+      "AH-1023",
+      "AH-1050"
     ],
     "legacy": "Availability/ReadRace and their original current/candidate/cursor/generation controls remain under consumer-observations without changes."
   },
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/discovery-records.ts": "eff63715fb90fe2d05b4ccf1bfd2eb2227f9ada5b0ea33fa7fca5379cb91c982",
-    "packages/context-broker/src/host-skills.ts": "14ad8253488ff98258ff7b47757fe7398f25577d7b6880f9dec9d76299898cdb",
+    "packages/context-broker/src/host-skills.ts": "51ad2a1b29ae54a2f6263c7039785e3b5c8fe0f9d08b7cee1c3dbe4aa6bd68ea",
     "packages/context-broker/src/prepare-protocol.ts": "722883c738809713ea5eaca582cd953233f56b95758df1f7f627453cbcdd8561",
-    "packages/context-broker/src/session-graph.ts": "8fd885fe2a335e2c524bde7007e7a417e1c227415e59e09560cb4943c2c3b7f5",
-    "packages/context-broker/src/session-active.ts": "cbdb75e44d88d5f31f20ef470a4597a193fafa3200ed30f9b043c275fef631c2",
+    "packages/context-broker/src/session-graph.ts": "4074cdfd6ef695fed633896bc780c00993b4d3014c40fee42c5095df4e8d9fc1",
+    "packages/context-broker/src/session-active.ts": "68f046a982d288162cff49f120cf3d88e1f88cb5cac8ddda14937acba8f055d8",
     "packages/context-broker/src/session-source-snapshot.ts": "b23de4a16344620ff12e4e2bd3147d119fdfbffba37507b54434d7425d84c9a5",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
     "packages/context-broker/scripts/host-prepare.test.ts": "6f88489ed58f7887e2a8189ccd08539dc7295c53abec10cf268039154001f752",
-    "packages/context-broker/scripts/session-active.test.ts": "651b81077ba4635f8267c7623f001a5e3e46d65901a4bc646b1b04f5a6b30dcd",
+    "packages/context-broker/scripts/session-active.test.ts": "e8e6ef47984d4759b0319487599ecc668c0a13a9acce74c43128ed9b4687299a",
     "packages/context-broker/scripts/native-read-session.test.ts": "f96e8e7dbf8865e2ea2e1f98f74377702045b7f2b8dceb89868906f7bce381cf",
     "packages/context-broker/scripts/skill-context-session.test.ts": "21b17e113e4484ecff6ad5e365d100812f2a1b0289264d18ccd72b15aaff4762",
     "packages/context-broker/scripts/consumer-state.test.ts": "97b19d0f3ac167bfb30cd9dd4aa6959924784dcb13c4644221334bba390c5799",
     "scripts/check-consumer-state-mutations.mjs": "663d89b30f23b360447cc3de04ec9278858a79d732a8c75d27d61bad0b8bf564",
     "packages/context-broker/src/final-request.ts": "ba7db9fc301e115200b8ba6534ab332e0f90a1a5c3c4ceaef34389cdf0bd4b9c",
     "packages/context-broker/scripts/final-request.test.ts": "85266fac06f8d4b3fbe88e92dadabf2f04a94a72e9aba6c2c421be4e05d84f85",
-    "packages/context-broker/scripts/final-request-undici.test.ts": "78671b59508bc648038400bebd5f4c569695a48aba7ce2d57ffa94fe509b5cdc"
+    "packages/context-broker/scripts/final-request-undici.test.ts": "78671b59508bc648038400bebd5f4c569695a48aba7ce2d57ffa94fe509b5cdc",
+    "packages/context-broker/src/session-working-set.ts": "83999553c4d7bcf6cf52aadd874b3f559725b6354c51be3111eb3c5ea1270d5a",
+    "packages/context-broker/scripts/session-active-session.mjs": "a0b3d76adddb20b81858d876c4fdd81c45a66360dee55a877895b1d6348a40b5"
   },
   "models": {
     "FreshnessPublication": {
@@ -45,26 +49,29 @@
       ]
     },
     "SelectionGraph": {
-      "bounds": "One prior root/Requires vector <1,2>, one replacement <2,1>, one prepare, independent identity/budget checks, one final commit, at most one generation change and cancellation.",
+      "bounds": "One prior root/Requires vector <1,2>, one replacement <2,1>, separate complete-closure and retained-plus-new working-set budget premises, one prepare, independent checks and one final commit. One generation change can be caused by explicit release while acquisition is pending.",
       "owners": [
         "host-skills.ts graphPreparation and its delayed commit",
         "prepare-protocol.ts decodePreparedGraph/decodePreparationLock",
-        "session-graph.ts persistSessionSelection/reduceSessionSelection"
+        "session-graph.ts persistSessionSelection/reduceSessionSelection",
+        "session-working-set.ts assertWorkingSetBudget/releaseWorkingSetRoots; exact shared closure and ref matching are concrete replay obligations"
       ],
       "atomicity": "Prepare, identity validation, output budget validation and final guarded commit are separate steps. Commit is synchronous. In deferred Pi the approved graph remains staged until the provider hook; this model's selected vector denotes the approved fixed selection, not provider acceptance or durable activation.",
       "replays": [
         "host-prepare.test.ts failed exact-file validation and output budget",
         "session-active.test.ts pending refreshed projection and complete root/Requires vectors",
-        "skill-context-session.test.ts graph/projection identity mismatches"
+        "skill-context-session.test.ts graph/projection identity mismatches",
+        "session-active.test.ts NXT12 complete union, shared Requires, stale fixed release; session-active-session.mjs independent installed Pi resume, compaction and branch ownership"
       ]
     },
     "DeliveryBoundary": {
-      "bounds": "A previously validated selected root v2/Requires v1 graph; one initial request, at most one retry after discarded drafts, one lifecycle event among cancel/switch/rewind, and one current branch plus its rewind. Full/partial and exact/mismatched identity, response and turn outcomes are finite scenarios.",
+      "bounds": "A previously validated selected root v2/Requires v1 graph; one initial request, at most one retry after discarded drafts, one lifecycle event among cancel/switch/rewind, and one current branch plus its rewind. Full/partial and exact/mismatched identity, response and turn outcomes are finite scenarios. Explicit release retires this root's effective projection and advances the request generation; the historical provider acceptance remains distinct.",
       "owners": [
         "host-skills.ts assertPiRun/before_provider_request/after_provider_response/turn_end/acknowledgeProjection",
         "session-active.ts confirmActiveSources",
         "session-source-snapshot.ts sourceBodyLoaded/deferredSourceEntries/withSessionSourceReceipts",
-        "final-request.ts assessFinalRequestPayload/createFinalRequestLedger; concrete request roles and entity digests outside finite variables"
+        "final-request.ts assessFinalRequestPayload/createFinalRequestLedger; concrete request roles and entity digests outside finite variables",
+        "session-graph.ts applyRootRelease; host-skills.ts notion_ctl working_set release resets pending graphs/candidates and advances generation"
       ],
       "atomicity": "Headers, turn completion, draft return, host apply/drop and later public projection acknowledgement are separate transitions. A 2xx response proves request acceptance and may record active delivery before stream completion. A later failed turn does not erase that historical acceptance. No draft is a persisted projection until observed in the public branch.",
       "replays": [
@@ -72,7 +79,8 @@
         "native-read-session.test.ts complete body, scope/pin/hash mismatches",
         "final-request.test.ts real deferred-drafts restoration and private role obligations",
         "final-request-undici.test.ts actual Node entity positive/rewrite/concurrency",
-        "notion-sdk-pi.mjs context-wire-negative: duplicate/lost/schema/restored-role"
+        "notion-sdk-pi.mjs context-wire-negative: duplicate/lost/schema/restored-role",
+        "notion-sdk-pi.mjs --scenario working-set --provider-backend http: actual public tools and serialized release/reuse timeline"
       ]
     }
   },
@@ -603,5 +611,24 @@
       ],
       "scope": "Preparation operation effects are read from canonical nested contextBrokerPreparation.effects for truthful bounded diagnostics. No dispatch/graph/role/activation transition changed. Driver keeps explicit four counterexamples and source cancellation effects."
     }
+  },
+  "nxt12_review": {
+    "issues": [
+      "AH-1023",
+      "AH-1050"
+    ],
+    "semantic_changes": [
+      "SelectionGraph adds a bounded retained-plus-new instruction-byte budget case and explicit release during acquisition.",
+      "DeliveryBoundary adds explicit release, generation retirement and an absent effective root without deleting historical acceptance."
+    ],
+    "unchanged": "Existing invariant/config inventories are retained; each model's complete positive and negative cases must still pass their exact expected-rule sets.",
+    "concrete_only": [
+      "Exact UTF-8 union counting and shared Requires reachability",
+      "Rejecting an old fixed ref while a newer version of that root remains active",
+      "Actual final serialized source bodies, original Session history and independent process resume"
+    ],
+    "budget_policy": "No default automatic eviction. Explicit Session byte budget gates a complete additional closure; unknown measurement fails admission when a limit is set.",
+    "final_review": "Concrete release candidates measure the closure that actually becomes unreachable; retaining a root as another root's Requires reports zero reclaimed instructions. Old fixed refs cannot release a newer binding, and a currently required node is rejected before historical idempotence. Budget refusal preserves measured acquisition effects. The public tool schema uses a literal null branch so the installed host cannot coerce an invalid zero budget into disabling the limit.",
+    "concrete_replays": "Installed Pi 1.5.2 normal HTTP serializer: 14 requests, 13 public tool calls; repeat body count remains one, release removes only the unreachable root, reuse restores it, over-budget content never enters a request, original Session history remains. Installed SessionManager independent-process resume/compaction/fork covers release and budget restoration. These are concrete evidence, not additional TLC claims."
   }
 }

@@ -28,6 +28,8 @@ Pi 主线构建成功应输出 `Built standalone broker package`，产物包括 
 
 跨仓开发先构建 CLI，再以 `NTN_SKILLS_BUILD_ENTRY=/absolute/notion-skills-cli/packages/cli/dist/ntn-skills.js bun run build:broker` 构建 Broker；正式验收优先选择独立安装 CLI entry。产物内含独立 CLI/SDK 与三份完整 Skill/参考资源；当前 CI / publish 从精确 commit 构建同一 CLI 输入，两个 workflow 的 ref 必须一致。已有 npm 版本没有新 SDK 能力时不得静默用它代替。无需中央 Skill 目录或宿主命令镜像。
 
+NXT06/NXT12 复用实际 Pi 命令 `/context-broker connect SOURCE ENTRY --config ABSOLUTE_FILE` 与公开 `notion_ctl working_set`。连接只预览或保存选定文件，不修改用户全局配置；保存配置、远端就绪和完整正文交付各自检查。安装后用原 `notion-sdk-pi.mjs --scenario working-set --provider-backend http` 核预算拒绝、共享 Requires、release/再 use 和实际序列化正文；已安装 SessionManager 的恢复门槛仍单列。Pi 1.5.2 的公开 context/provider/projection 接口另有本批实际验证，不能把版本放行本身写成通过。
+
 安装门禁记录显式 CLI 输入的 package manifest、CLI 与 SDK SHA，核对打包前后未变化，再验证独立安装 runtime manifest 中的版本与两个 bundle 的实际 SHA。显式源码候选的版本可以不同于 devDependency 中已发布的旧 CLI，但不得跳过输入绑定或字节校验；未指定输入时仍要求声明的发布依赖版本。错包、错版本与改字节均有负例。Artifact 还实查 `list/read/use` schema、`ctl` 运维入口、包内说明链接及真实 Pi 的普通选择；该层不宣称真实 Notion 或模型任务成功。
 
 本项目没有独立常驻服务器。CLI harness 每次创建临时 HOME、agentDir、sessionDir，加载仓库扩展，在 Pi/OMP 的 print 或 RPC 模式提交真实 prompt。启动器会在 HOME 隔离前解析 Volta 的真实入口，再用 Node 执行 Node CLI；不要把 HOME 改回用户目录来绕过启动问题。

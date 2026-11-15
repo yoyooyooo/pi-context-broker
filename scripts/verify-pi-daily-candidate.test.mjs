@@ -277,7 +277,13 @@ test('an onboarding inspection reads the setup reference and validates only its 
 
 test('read-only onboarding uses public JSON without turning optional metrics into an authorization rule', () => {
   const command = cliCommand + ' read original-page --database owned-library --read-only --json';
-  assert.equal(reviewCandidateCliCommand(command, maintenanceCli).kind, 'read');
+  for (const policy of [maintenanceCli, publicCli]) {
+    assert.equal(reviewCandidateCliCommand(command, policy).kind, 'read');
+    assert.equal(reviewCandidateCliCommand(command + ' --metrics', policy).kind, 'read');
+    const files = cliCommand + " files '" + policy.refPrefix + '?snapshot=s_' + 'a'.repeat(64) + "' --database owned-library";
+    assert.equal(reviewCandidateCliCommand(files, policy).kind, 'files');
+    assert.equal(reviewCandidateCliCommand(files + ' --metrics', policy).kind, 'files');
+  }
   assert.throws(() => reviewCandidateCliCommand(command.replace(' --read-only', ''), maintenanceCli));
   assert.throws(() => reviewCandidateCliCommand(command.replace(' --json', ''), maintenanceCli));
   assert.throws(() => reviewCandidateCliCommand(command.replace('original-page', 'other-page'), maintenanceCli));

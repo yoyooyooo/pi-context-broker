@@ -4,6 +4,10 @@
 
 ## SC08/SC12：A/B 会话与失败恢复
 
+NXT12 新增显式活跃工作集控制，复用 `notion-sdk-pi.mjs run --package ABSOLUTE_INSTALLED_BROKER --fixture ABSOLUTE_CATALOG_FIXTURE --scenario working-set --provider-backend http --out NEW_ABSOLUTE_EVIDENCE`。它从真实 list 返回的 refs 使用 a/b，共享 base；重复 use、完整工作集预算拒绝 c、释放 a、保留 b/base、再 use a，并逐条核实际 HTTP entity 中有效正文为 0/1 份。保持独立于原 all14，生产模型和真实 Notion另验。`session-active-session.mjs` 负责同一实现的独立 Node resume/fork/compaction；保留旧失败，不用新状态对象冒充原 Session。
+
+NXT11 容量证据只覆盖 Core 明确声明的可重建 derived SQLite 数据，Broker 固定导出/物化目录属于外部保护域。回收后仍须用原 fixed ref 核对同 pin/bytes；release 只改 Session 当前指令，不回收缓存。不能把 logical bytes 下降、进程热缓存或完整历史文件大小互相替代，也不宣称总磁盘硬上限。
+
 复用 `scripts/notion-skill-graph-session.mjs` 和 `scripts/notion-skill-graph-service.mjs`，用独立安装的 Pi、Broker、CLI 驱动真实 RPC／公开工具／HTTPS transport。服务端只复用冻结 CLI 源码的受控 Notion fixture，消费者始终执行独立安装 CLI。它是显式 `source.command` 与受控 provider 的证据；默认 SDK、真实 Notion、实模和正常自加载分别验收。
 
 本分支保留原七景，并增加两条失败门槛：

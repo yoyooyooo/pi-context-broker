@@ -20,6 +20,10 @@ AH-955 的本批实施同时遵循 [12 项日用收口合同](features/dogfood-c
 
 AH-1033 的短代表任务沿 [公开维护检查与消费同轮双臂](features/skill-consumption.md#ah1033公开维护检查与消费同轮双臂)：从公开维护 Skill 和真实 next.argv 选择精确 owner 的只读 CLI，再实际 use 与读取参考。仅消费或 doctor 就绪不满足这一任务，不另建验证驱动。
 
+AH-1050 跨仓交付以 CLI 的 `.cursor/skills/verify-ntn-skills/features/nxt-delivery.md` 为共享合同。Broker 的冷连接预览与明确 apply 由 `source-connection.test.ts` 和实际 `/context-broker connect` 验证；工作集、共享 Requires、预算、release/再 use/恢复复用 [会话地图](features/session-cache-recovery.md) 的 `working-set` 和安装 SessionManager 入口。路由/批读与重复有效正文继续用原 context-once/resource-batch，同包 CLI/SDK 的 schema 组合不能仅由各仓单测推断。真实模型的任务、次数与预算由本批冻结输入决定，不继承其他票的默认值。
+
+本批真实同库旅程由 `scripts/nxt-pi-delivery.mjs doctor|controlled|model ABSOLUTE_CONFIG [TASK_ID]` 组合原 RPC、SDK observer、normal serializer 和 task observer。配置绑定独立最终包、基线、源/目标、仅供观察的真实 canonical 字节与冻结任务文件；不能用 author input 代替经 Notion 规范化的正文。`controlled` 的失败刷新是显式隔离传输拒绝，compact 使用真实 Pi 生命周期与受控摘要；两者不代表真实权限拒绝或模型摘要质量。三个自然任务每项仅一次、总至多10次 provider dispatch、每次4096 output tokens，原件与失败保留。`before_provider_request` 的异常会被 Pi 捕获，故预算另在实际 fetch 边界拒绝超额；默认旧模型门槛不变。所有子进程删除 `NTN_SKILLS_DEV_ROOT`，不得赋空值；未连接客户端启动时不把不存在的 config 当作已选择配置，保存之后再以该精确路径重启。
+
 full catalog／Default View 的组合读取与 `$` 完整 Members 描述复用均沿用上述地图、原 SDK driver 和安装态 `http-directory`／`dollar` 场景。一个 SDK envelope 的两个 outcome 不能重复计费；去重必须由实际 provider 中的完整正文和来源绑定证明，不能由内部成功、标题或摘要推断。原始正文／Requires、目录身份／入口和失败样本保持完整。
 
 AH-561 的直连请求和跨 Skill 图先走 [request-engine](features/request-engine.md) 与 [skill-dependency-graph](features/skill-dependency-graph.md)，复用 `scripts/verify-skill-graph-contract.mjs` 的离线反例与 fail-before。该入口保存两条根选择提示、私有 oracle/trace 合同、三层缓存边界与五类证据；`contract-valid` 不代表真实模型通过。当前 live/model/helper 使用项目直连引擎和安全请求账本；每次交付必须重新取得真实服务、宿主和安装证据，既有历史回执保持原状。

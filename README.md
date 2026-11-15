@@ -20,6 +20,8 @@ Pi 1.4 consumes Notion Skills through `notion_list`, native `read`, and `notion_
 
 Pi can read up to 16 selected resources in one `read({ paths: [...] })` call using fixed `sr:R` handles or pinned `skill://` file refs from the same Skill snapshot. Text arrives in full; binary resources provide verified file metadata and a local path. Ordinary `read({ path, offset?, limit? })` keeps Pi's native behavior. See [fixed resource batches](./packages/context-broker/docs/fixed-resource-batches.md) for selection, budgets and delivery semantics.
 
+Pi's deferred `notion_ctl` also manages the current Notion working set. `working_set: "show"` reports active roots, shared Requires and UTF-8 instruction bytes; `"budget"` with `max_bytes` sets an explicit Session limit; `"release"` with exact `roots` stops applying those roots. Shared dependencies remain while another active root needs them. Release preserves the original Session history, fixed snapshots and Notion data. The default has no automatic eviction. See [working-set controls](./packages/context-broker/docs/skill-consumption-runtime.md#当前工作集预算与显式释放).
+
 In Tern/OMP, loading a selected source Skill adds a persistent, collapsible transcript record, `Read ntn-skills://<alias>`, with its source, elapsed time, and `running`, `done`, or `error` state. The target omits the namespace and retains a page suffix when needed. Terminal records remain after completion and resume restores them; an unfinished record is marked interrupted. `ntn-skills://` is a display identifier. Real reads still use `skill://`. The record and its expanded details never enter provider messages, compaction, or branch summaries. Other terminals use text feedback; enabling a Notion source is sufficient for discovery and use, without a builtin installation. See the [activation contract](./packages/context-broker/docs/reference.md#built-in-sources).
 
 | Record | Source | What the model receives |
@@ -162,6 +164,8 @@ The next model request includes the Skill content. Submitting the same record th
 OMP, including Tern-hosted OMP, treats a complete Skill body in the active context as already read. Dollar injection identifies the invocation, native source Skill name and resource directory, so the model can use the body directly and read additional resources only when needed. Directory paths retain `pathMode` redaction. See the [host consumption contract](./packages/context-broker/docs/reference.md#host-discovery-and-selected-activation).
 
 ### Add a Notion source
+
+After the CLI's init/attach returns a library entry, run `/context-broker connect personal ENTRY --config /absolute/project/config.json` to preview connecting it to Pi. The returned apply command names the same file and preview digest; execute it to save the source, then restart Pi with `CONTEXT_BROKER_CONFIG` pointing to that file. With no explicit file or environment override, the command asks you to choose one. It reports configuration saved separately from remote readiness and body delivery. The connection does not edit credentials or a global configuration implicitly.
 
 The plugin includes `ntn-skills`; no global `ntn-skills` installation is needed. Its direct HTTP engine uses the existing project token (`config.token`, then `NOTION_API_TOKEN`). Add a source to the same broker config:
 

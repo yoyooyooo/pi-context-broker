@@ -68,6 +68,8 @@ mutation 输出目录本身须不存在；保留父目录及原始失败/恢复 
 
 ## 证明边界
 
+NXT12 工作集变更复用 SelectionGraph/DeliveryBoundary。执行每个受影响模型的完整配置，并跑 `session-active.test.ts` 中完整并集预算、共享 Requires、旧 pin、释放与正在准备的旧 use 回归。`session-active-session.mjs` 验证实际安装 SessionManager 的独立进程 resume/fork/compaction；`scripts/notion-sdk-pi.mjs --scenario working-set --provider-backend http` 另验实际 RPC、公开工具和序列化请求正文。三层各自留证；不要将状态层成功写成真实模型或真实 Notion 成功。主合同位于 CLI 仓库 `.cursor/skills/verify-ntn-skills/features/nxt-delivery.md`。
+
 这些模型是有限设计合同，真实代码回归与守卫破坏是独立的实现证据；源码 hash 只绑定审阅版本。资格可变，固定内容不可变；固定 pin、已选择、已准备均不是当前授权或交付证明。2xx 接受也不是模型完成；boundary draft 不是已持久化回执。
 
 本入口不访问真实 Notion、调用模型或安装宿主，不证明 HTTP 线性一致性、任意权限/墙钟/跨机竞态、任意宿主行为或 LLM 的最终描述。effects 与跨域组合继续用 [verify-notion-skills-integration](../verify-notion-skills-integration/SKILL.md)，完整宿主/UI/安装验证继续用 [verify-context-broker](../verify-context-broker/SKILL.md)。

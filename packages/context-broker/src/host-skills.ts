@@ -30,6 +30,7 @@ import { createConsumerObservations, type ObservationTicket } from "./consumer-o
 import { notionCatalogAction, notionCatalogRetryGapMs } from "./catalog-menu";
 import { combineConsumptionEffects, consumptionEffects, errorConsumptionEffects, noConsumptionWrites, type ConsumptionEffects, type ConsumptionPolicy } from "./consumption-effects";
 import { createFinalRequestLedger, type FinalRequestLedger } from "./final-request";
+import { assertWorkingSetBudget, exportWorkingSet, releaseWorkingSetRoots, setWorkingSetBudget, WorkingSetBudgetError } from "./session-working-set";
 
 export type HostSkillOptions = {
   config: ConfigFile;
@@ -587,6 +588,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       assertQualification();
       // Exact root/File identity and response budgets are checked by the caller
       // before this transition. A failed refresh cannot replace the prior lock.
+      if (ctx && purpose === "use") assertWorkingSetBudget(ctx, [...piRun?.graphs ?? [], { graphs, mode }], combineConsumptionEffects(graphs.map(graph => graph.effects)));
       if (deferredPiDiscovery && owner) {
         const staged = pendingGraphs.get(owner) ?? [];
         staged.push({ graphs, mode }); pendingGraphs.set(owner, staged);
@@ -1665,25 +1667,69 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       } catch (error) {
         if (!acquiring) throw error;
         const effects = combineConsumptionEffects([...observedEffects, errorConsumptionEffects(error)]);
-        const message = JSON.stringify({ ok: false, status: signal?.aborted ? "cancelled" : "failed", error: failure(error), effects });
+        const message = JSON.stringify({ ok: false, status: signal?.aborted ? "cancelled" : "failed", error: failure(error), effects,
+          ...(error instanceof WorkingSetBudgetError ? { working_set: error.details.working_set } : {}) });
         throw consumptionFailure(error, message, effects);
       }
     },
   });
   if (sourceToolsEnabled && options.sessionGraph) host.registerTool?.({
     name: controlToolName, label: piConsumption ? "Notion management" : "Selected Skill graph",
-    description: "Export this branch's immutable Skill graph and delivery proofs without machine paths. Alternatively, request cli_source for one exact configured Notion source's host-local CLI command prefix and database scope when an authorized maintenance/sync action needs it. This metadata query does not execute commands or grant authorization; cli_source requires active bash and cannot be combined with refs.",
+    description: "Inspect this branch's Skill graph or working_set. working_set show lists confirmed roots, Requires, visible instruction bytes and the session budget; budget explicitly sets max_bytes, null disables it; release retires only the supplied fixed roots and preserves shared Requires, Session history and Notion. Alternatively request cli_source for one exact configured Notion source's host-local CLI prefix when an authorized maintenance/source task needs it. These operations do not execute CLI commands or grant authorization. Choose only one operation.",
     parameters: { type: "object", properties: {
       refs: { type: "array", maxItems: 64, items: { type: "string" }, description: "Optional fixed sr:S/sr:R references to export as canonical identity and exact version proofs for independent validation." },
       cli_source: { type: "string", minLength: 1, description: "Exact enabled Notion source ID from host guidance. Return its host-local command prefix without execution; do not select a source implicitly." },
+      working_set: { type: "string", enum: ["show", "budget", "release"], description: "Inspect, explicitly budget, or release this session's Notion root/Requires working set. No remote writes or historical deletion." },
+      roots: { type: "array", minItems: 1, maxItems: 64, items: { type: "string" }, description: "For release only. Copy fixed root refs from working_set show or selected sr:S refs. Required-only nodes cannot be released directly." },
+      // A literal null branch prevents the host's schema converter from
+      // coercing an invalid numeric zero into a request to disable the budget.
+      max_bytes: { anyOf: [{ type: "integer", minimum: 1 }, { enum: [null] }], description: "For budget only. Complete active instruction closure in UTF-8 bytes, not tokens. Explicit null disables the budget. No automatic eviction or truncation." },
     }, additionalProperties: false },
     strict: true, readsSkillUris: false, loadMode: piConsumption ? "discoverable" : "essential", approval: () => "read", approvalCacheTargets: () => undefined,
     sourcePath: import.meta.url, defaultInactive: piConsumption,
     ...(piConsumption ? { exposure: "deferred" as const, defaultActive: false } : {}),
     async execute(_id, input, signal, _update, ctx) {
       checkPreparationSignal(signal);
-      if (Object.keys(input).some(key => key !== "refs" && key !== "cli_source") || input.refs !== undefined && (!Array.isArray(input.refs) || input.refs.length > 64
+      if (Object.keys(input).some(key => !["refs", "cli_source", "working_set", "roots", "max_bytes"].includes(key)) || input.refs !== undefined && (!Array.isArray(input.refs) || input.refs.length > 64
         || input.refs.some(value => typeof value !== "string"))) throw hostError("INVALID_ARGUMENT");
+      if (input.working_set !== undefined) {
+        if (!piConsumption || !["show", "budget", "release"].includes(String(input.working_set)) || input.refs !== undefined || input.cli_source !== undefined) throw hostError("INVALID_ARGUMENT");
+        let changed = false;
+        if (input.working_set === "show") {
+          if (input.roots !== undefined || input.max_bytes !== undefined) throw hostError("INVALID_ARGUMENT");
+        } else if (input.working_set === "budget") {
+          if (input.roots !== undefined || input.max_bytes !== null && typeof input.max_bytes !== "number") throw hostError("INVALID_ARGUMENT");
+          changed = setWorkingSetBudget(host, ctx, input.max_bytes);
+        } else {
+          if (input.max_bytes !== undefined || !Array.isArray(input.roots) || input.roots.some(ref => typeof ref !== "string")) throw hostError("INVALID_ARGUMENT");
+          const roots = input.roots.map(ref => {
+            if (!isSessionShortRefInput(ref)) return ref;
+            const resolved = shortRefs.resolve(ctx, ref);
+            if (resolved.kind !== "selected") throw hostError("SOURCE_RELEASE_FIXED_ROOT_REQUIRED");
+            return resolved.canonicalRef;
+          });
+          changed = releaseWorkingSetRoots(host, ctx, roots).changed;
+          if (changed) {
+            // Retire all acquisition generations before another asynchronous
+            // result can publish the released selection. The current model
+            // operation continues with a fresh projection on its next request.
+            generation++;
+            loaded.clear(); pendingNativeReads.clear(); pendingResourceReads.clear();
+            const entry = gate.active;
+            if (entry) { entry.prepared.clear(); preparedForUse.delete(entry); pendingGraphs.delete(entry); }
+            if (piRun) {
+              piRun.generation = generation; piRun.candidates.clear(); piRun.graphs = [];
+              piRun.requestPending = false; piRun.confirmedProjection = undefined;
+              if (piRun.entry) pendingGraphs.delete(piRun.entry);
+            }
+          }
+        }
+        const projection = ctx.sessionManager?.buildSessionProjection?.();
+        const messages = withSessionSourceReceipts(projection?.messages ?? ctx.sessionManager?.buildSessionContext?.().messages ?? [], projection?.entries ?? []);
+        const result = { ...exportWorkingSet(ctx, messages), action: input.working_set, changed };
+        return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
+      }
+      if (input.roots !== undefined || input.max_bytes !== undefined) throw hostError("INVALID_ARGUMENT");
       if (input.cli_source !== undefined) {
         if (typeof input.cli_source !== "string" || !input.cli_source.length || input.refs !== undefined) throw hostError("INVALID_ARGUMENT");
         const active = host.getActiveTools?.();

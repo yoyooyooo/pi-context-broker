@@ -436,10 +436,10 @@ export function reviewCandidateCliCommand(command, policy, observedAudits = []) 
     if (flags.has('--from')) check(flags.get('--from').startsWith(policy.refPrefix) && relativeFile(positional[0]) && !flags.has('--path'), 'Resolve only an original owner relative file');
     if (flags.has('--path')) check(relativeFile(flags.get('--path')), 'Use an original owner relative file path');
     if (read) {
-      check(flags.get('--json') && (maintenance || flags.get('--metrics')), 'Read output needs public JSON; measured non-maintenance arms also require metrics');
+      check(flags.get('--json'), 'Read output needs public JSON; optional metrics never grant authorization');
       check(flags.get('--read-only'), 'Post-recovery inspection must prohibit remote writes');
-    } else check(positional[0].startsWith(policy.refPrefix) && /[?&]snapshot=s_[a-f0-9]{64}(?:&|$)/u.test(positional[0])
-      && flags.get('--metrics'), 'List only the original immutable owner pin with public metrics');
+    } else check(positional[0].startsWith(policy.refPrefix) && /[?&]snapshot=s_[a-f0-9]{64}(?:&|$)/u.test(positional[0]),
+      'List only the original immutable owner pin');
     check(!(flags.has('--refresh') && flags.has('--offline')), 'Use one public freshness policy');
   } else {
     check(positional[0] === policy.originalPlan.path, 'Use the original immutable plan');

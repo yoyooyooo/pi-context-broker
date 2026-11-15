@@ -26,9 +26,10 @@ const ambiguityScenarioName = 'name-reference-ambiguity';
 const compactionScenarioName = 'session-compaction';
 const httpScenarioNames = ['http-directory', 'http-cache-recovery', 'http-interruption'];
 const contextOnceScenario = 'context-once';
+const workingSetScenario = 'working-set';
 const wireNegativeScenario = 'context-wire-negative';
 const wireNegativeKinds = ['duplicate', 'lost', 'schema', 'restored-role'];
-const selectableScenarioNames = [contextOnceScenario, wireNegativeScenario, ...scenarioNames, ...nameScenarioNames, ambiguityScenarioName, compactionScenarioName, ...httpScenarioNames];
+const selectableScenarioNames = [contextOnceScenario, workingSetScenario, wireNegativeScenario, ...scenarioNames, ...nameScenarioNames, ambiguityScenarioName, compactionScenarioName, ...httpScenarioNames];
 const httpUsage = 'Controlled HTTP gates require --scenario http-directory|http-cache-recovery|http-interruption, the original current sdk-fixture.ts --catalog input and --source-http-helper ABSOLUTE_FROZEN_MODULE. They use actual Pi with the installed SDK, a shared owned loopback Notion fixture and a controlled provider. They remain separate from offline all14 and production live input; source.command stays absent.';
 export function controlledHttpOptions(options) {
   const scenario = options['--scenario'], helperPath = options['--source-http-helper'];
@@ -47,12 +48,12 @@ const compactionUsage = 'Explicit --scenario session-compaction reuses session-l
 const isLifecycleScenario = name => name === 'session-lifecycle' || name === compactionScenarioName;
 const nativeTools = ['read', 'notion_list', 'notion_use'];
 const scopedCommandTools = [...nativeTools, 'bash', 'tool_search'];
-const providerBackendUsage = 'Explicit --scenario context-once drives the same list/use/read/repeat/cancel sequence with --provider-backend in-process|http. HTTP uses the installed normal serializer and an owned loopback endpoint. Other scenarios retain their original in-process route. No real model is used.';
+const providerBackendUsage = 'Explicit --scenario context-once or working-set accepts --provider-backend in-process|http. context-once covers list/use/read/repeat/cancel; working-set covers whole-closure budgets, release and re-use. HTTP uses the installed normal serializer and an owned loopback endpoint. Other scenarios retain their original in-process route. No real model is used.';
 export function providerBackendOptions(options) {
   const backend = options['--provider-backend'] ?? 'in-process';
   assert.ok(['in-process', 'http'].includes(backend), providerBackendUsage);
-  if (backend === 'http' || [contextOnceScenario, wireNegativeScenario].includes(options['--scenario'])) {
-    assert.ok([contextOnceScenario, wireNegativeScenario].includes(options['--scenario']), providerBackendUsage);
+  if (backend === 'http' || [contextOnceScenario, workingSetScenario, wireNegativeScenario].includes(options['--scenario'])) {
+    assert.ok([contextOnceScenario, workingSetScenario, wireNegativeScenario].includes(options['--scenario']), providerBackendUsage);
     if (options['--scenario'] === wireNegativeScenario) assert.equal(backend, 'http', 'Wire mutation probes require real HTTP');
     assert.ok(options['--fixture'] && !options['--live-input'] && !options['--source-http-helper'], providerBackendUsage);
     assert.notEqual(options['--warm-directory'], 'true', providerBackendUsage);
@@ -1931,6 +1932,53 @@ export function selectHttpPublicLoopCall(context, plan) {
   return null;
 }
 
+/** Uses only refs and byte counts already exposed by this actual provider input. */
+export function selectWorkingSetCall(context) {
+  const find = id => context.messages.find(message => message.role === 'toolResult' && message.toolCallId === id);
+  const call = (id, name, args) => ({ type: 'toolCall', id, name, arguments: args });
+  const value = id => {
+    const message = find(id);
+    if (!message || message.isError) throw new Error('WORKING_SET_TOOL_FAILED:' + id);
+    const parsed = JSON.parse(visibleToolText(message));
+    if (parsed.ok === false) throw new Error('WORKING_SET_TOOL_FAILED:' + id + ':' + parsed.error);
+    return parsed;
+  };
+  if (!find('ws-list')) return call('ws-list', 'notion_list', { query: '', source: 'sdk-fixture', limit: 20 });
+  const records = value('ws-list').records;
+  const ref = name => {
+    const rows = records.filter(record => record.name === name && record.source === 'sdk-fixture' && record.availability === 'available');
+    if (rows.length !== 1 || typeof rows[0].ref !== 'string') throw new Error('WORKING_SET_OWNER_NOT_UNIQUE');
+    return rows[0].ref;
+  };
+  for (const [id, name] of [['ws-a', 'a'], ['ws-a-repeat', 'a'], ['ws-b', 'b']]) {
+    if (!find(id)) return call(id, 'notion_use', { ref: ref(name) });
+    value(id);
+  }
+  if (!find('ws-discover')) return call('ws-discover', 'tool_search', { query: 'notion_ctl active working set budget release', limit: 1 });
+  if (find('ws-discover').isError || !currentProviderTools(context).some(tool => tool.name === 'notion_ctl')) throw new Error('WORKING_SET_CONTROL_UNAVAILABLE');
+  if (!find('ws-show')) return call('ws-show', 'notion_ctl', { working_set: 'show' });
+  const original = value('ws-show');
+  if (!Number.isSafeInteger(original.active?.instruction_bytes) || original.active.instruction_bytes <= 0) throw new Error('WORKING_SET_MEASUREMENT_MISSING');
+  if (!find('ws-budget')) return call('ws-budget', 'notion_ctl', { working_set: 'budget', max_bytes: original.active.instruction_bytes });
+  value('ws-budget');
+  if (!find('ws-invalid-budget')) return call('ws-invalid-budget', 'notion_ctl', { working_set: 'budget', max_bytes: 0 });
+  if (!visibleToolText(find('ws-invalid-budget')).includes('Validation failed')) throw new Error('WORKING_SET_INVALID_BUDGET_COERCED');
+  if (!find('ws-over-budget')) return call('ws-over-budget', 'notion_use', { ref: ref('c') });
+  const rejected = JSON.parse(visibleToolText(find('ws-over-budget')));
+  if (rejected.ok !== false || !String(rejected.error).includes('SOURCE_WORKING_SET_BUDGET')) throw new Error('WORKING_SET_BUDGET_NOT_ENFORCED');
+  const root = original.nodes.filter(node => node.name === 'a' && node.root);
+  if (root.length !== 1 || !original.roots.includes(root[0].ref)) throw new Error('WORKING_SET_ROOT_NOT_VISIBLE');
+  if (!find('ws-release')) return call('ws-release', 'notion_ctl', { working_set: 'release', roots: [root[0].ref] });
+  value('ws-release');
+  if (!find('ws-after-release')) return call('ws-after-release', 'notion_ctl', { working_set: 'show' });
+  value('ws-after-release');
+  if (!find('ws-reuse')) return call('ws-reuse', 'notion_use', { ref: ref('a') });
+  value('ws-reuse');
+  if (!find('ws-final')) return call('ws-final', 'notion_ctl', { working_set: 'show' });
+  value('ws-final');
+  return null;
+}
+
 export function selectProviderCall(context, plan = JSON.parse(readFileSync(process.env.SC10_PI_TOOL_PLAN, 'utf8'))) {
   if (plan.mode === 'complete') return null;
   if (plan.mode === 'http-call') return selectControlledHttpCall(context, plan);
@@ -1941,6 +1989,7 @@ export function selectProviderCall(context, plan = JSON.parse(readFileSync(proce
   const call = (id, name, args) => ({ type: 'toolCall', id, name, arguments: args });
   if (plan.mode === 'live-consume') return selectLiveProviderCall(context, plan);
   if (plan.mode === 'http-public-loop') return selectHttpPublicLoopCall(context, plan);
+  if (plan.mode === 'working-set') return selectWorkingSetCall(context);
   if (['name-references', 'name-reference-failed-source', 'name-reference-ambiguity'].includes(plan.mode)) return selectNamedReferenceCall(context, plan);
   if (plan.mode === 'lifecycle-probe') return find(plan.id) ? null : call(plan.id, 'read', { path: plan.ref });
   if (['resource-scalar', 'resource-scalar-short-refs'].includes(plan.mode)) return selectScalarProviderCall(context, plan.calls);
@@ -2294,9 +2343,13 @@ function initialDirectoryReady(events, hostPid, { fixture, sourceId, transport, 
   return completed.includes('ordinary') && completed.includes('default');
 }
 
-export function sourceFinality(events, hostPid, { hostClosed = false, initialDirectory, initialCatalog } = {}) {
+export function sourceFinality(events, hostPid, { hostClosed = false, initialDirectory, initialCatalog, approvedShellCommands = [] } = {}) {
   const pending = [];
   const starts = events.filter(event => event.kind === 'observer_start');
+  assert.ok(Array.isArray(approvedShellCommands) && approvedShellCommands.every(value => value && typeof value.command === 'string'
+    && value.command.length > 0 && Number.isSafeInteger(value.nodeProcesses) && value.nodeProcesses >= 0));
+  const approved = new Map(approvedShellCommands.map(value => [value.command, value.nodeProcesses])), children = [];
+  for (const event of events.filter(event => event.kind === 'alternate_child_api')) pending.push({ kind: 'unobserved_child_api', pid: event.observer_pid, api: event.api });
   if (starts.filter(event => event.observer_pid === hostPid).length !== 1) pending.push({ kind: 'host_observer_start', pid: hostPid });
   for (const start of events.filter(event => event.kind === 'child_start')) {
     const spawned = events.filter(event => event.kind === 'child_spawn' && event.id === start.id && event.observer_pid === start.observer_pid);
@@ -2304,10 +2357,29 @@ export function sourceFinality(events, hostPid, { hostClosed = false, initialDir
     if (spawned.length !== 1 || !Number.isInteger(pid) || pid <= 0) { pending.push({ kind: 'child_identity', id: start.id }); continue; }
     const closed = events.filter(event => event.kind === 'child_close' && event.id === start.id && event.child_pid === pid && event.observer_pid === start.observer_pid);
     if (closed.length !== 1) pending.push({ kind: 'child_close', id: start.id, pid });
-    if (starts.filter(event => event.observer_pid === pid && event.parent_pid === start.observer_pid).length !== 1) pending.push({ kind: 'child_observer_start', id: start.id, pid });
+    // Only the caller's exact reviewed shell command may introduce an observed
+    // non-Node parent. Every other child still needs its own Node observer.
+    const shell = closed.length === 1 && start.executable === '/bin/bash' && Array.isArray(start.argv)
+      && start.argv.length === 2 && start.argv[0] === '-c' && approved.has(start.argv[1]);
+    children.push({ start, pid, shell });
+    if (shell) {
+      const observed = starts.filter(event => event.observer_pid === pid && event.parent_pid === start.observer_pid || event.parent_pid === pid).length;
+      if (observed !== approved.get(start.argv[1])) pending.push({ kind: 'shell_observer_count', id: start.id, pid, expected: approved.get(start.argv[1]), observed });
+    }
+    if (!shell && starts.filter(event => event.observer_pid === pid && event.parent_pid === start.observer_pid).length !== 1)
+      pending.push({ kind: 'child_observer_start', id: start.id, pid });
   }
+  const rooted = (pid, ancestors = new Set()) => {
+    const owners = starts.filter(event => event.observer_pid === pid);
+    if (owners.length !== 1 || ancestors.has(pid)) return false;
+    if (pid === hostPid) return true;
+    const parent = owners[0].parent_pid, seen = new Set(ancestors).add(pid);
+    return children.some(child => child.pid === pid && child.start.observer_pid === parent && rooted(parent, seen))
+      || children.some(child => child.shell && child.pid === parent && rooted(child.start.observer_pid, seen));
+  };
+  for (const child of children) if (!rooted(child.start.observer_pid)) pending.push({ kind: 'child_parent', id: child.start.id, pid: child.pid });
   for (const start of starts) {
-    if (start.observer_pid !== hostPid && !events.some(event => event.kind === 'child_spawn' && event.child_pid === start.observer_pid && event.observer_pid === start.parent_pid))
+    if (start.observer_pid !== hostPid && !rooted(start.observer_pid))
       pending.push({ kind: 'unbound_observer', pid: start.observer_pid });
     if (!hostClosed && start.observer_pid === hostPid) continue;
     const ended = events.filter(event => event.kind === 'observer_end' && event.observer_pid === start.observer_pid);
@@ -2315,6 +2387,8 @@ export function sourceFinality(events, hostPid, { hostClosed = false, initialDir
       || (ended[0].active_initializations ?? 0) !== 0
       || (ended[0].active_object_reads ?? 0) !== 0 || (ended[0].object_read_errors ?? 0) !== 0) pending.push({ kind: 'observer_end', pid: start.observer_pid });
   }
+  for (const end of events.filter(event => event.kind === 'observer_end')) if (starts.filter(start => start.observer_pid === end.observer_pid).length !== 1)
+    pending.push({ kind: 'unmatched_observer_end', pid: end.observer_pid });
   for (const start of events.filter(event => event.kind === 'sdk' && event.event === 'start')) {
     if (events.filter(event => event.kind === 'sdk' && event.event === 'end' && event.id === start.id && event.observer_pid === start.observer_pid).length !== 1)
       pending.push({ kind: 'sdk_end', id: start.id, pid: start.observer_pid });
@@ -2330,7 +2404,9 @@ export function sourceFinality(events, hostPid, { hostClosed = false, initialDir
   }
   if (initialDirectory && !initialDirectoryReady(events, hostPid, initialDirectory)) pending.push({ kind: 'initial_default_directory' });
   return { complete: pending.length === 0, host_pid: hostPid, host_closed: hostClosed,
-    observer_processes: starts.length, source_children: events.filter(event => event.kind === 'child_start').length, pending };
+    observer_processes: starts.length, source_children: events.filter(event => event.kind === 'child_start').length, pending,
+    ...(approved.size === 0 ? {} : { approved_shell_children: children.filter(child => child.shell)
+      .map(child => ({ id: child.start.id, pid: child.pid, parent_pid: child.start.observer_pid })) }) };
 }
 
 async function waitForSourceFinality(path, hostPid, options = {}) {
@@ -4030,6 +4106,18 @@ async function controlledHttpScenario(name, info, scratch, evidence) {
   await save(join(output, 'result.json'), result); return result;
 }
 
+async function installToolDiscoverySettings(info, agentDir, activeTools) {
+  const path = join(info.piPackageRoot, 'dist/extensions/tool-search/index.js');
+  const implementation = join(info.piPackageRoot, 'dist/extensions/tool-search/tool.js');
+  // --tools is a hard registry filter; defaultTools keeps deferred control discoverable.
+  const settings = join(agentDir, 'settings.json');
+  await save(settings, { defaultTools: activeTools });
+  return { extension: { path, sha256: hash(await readFile(path)) },
+    implementation: { path: implementation, sha256: hash(await readFile(implementation)) },
+    settings: { path: settings, sha256: hash(await readFile(settings)) }, initial_tools: activeTools,
+    mechanism: 'Installed official tool_search; owned settings.defaultTools, no hard tool allowlist or manual control activation' };
+}
+
 async function scenario(name, info, scratch, evidence, expectShortRefs, expectCompactContext, expectDirectScalar, expectShortConfirmations, warmDirectory = false) {
   const catalogProjection = ['dollar', 'default-view'].includes(name);
   const catalogScale = info.catalogScale;
@@ -4119,19 +4207,7 @@ async function scenario(name, info, scratch, evidence, expectShortRefs, expectCo
       : scalarScenario || namedScenario || catalogScale ? { SC13_PI_OBJECT_ROOT: join(fixtureEnv.NTN_SKILLS_HOME, 'objects') } : {}),
     SC10_PI_BUNDLED_CLI: join(info.packageRoot, 'dist/ntn-skills.mjs'), NODE_OPTIONS: `--import=${preload}` });
   const activeTools = name === 'scoped-command' ? scopedCommandTools : codemode ? [...nativeTools, 'codemode'] : nativeTools;
-  let toolDiscovery;
-  if (name === 'scoped-command') {
-    const path = join(info.piPackageRoot, 'dist/extensions/tool-search/index.js');
-    const implementation = join(info.piPackageRoot, 'dist/extensions/tool-search/tool.js');
-    // --tools is a hard registry filter for non-MCP tools. Public defaultTools
-    // selects the initial loadout while keeping deferred control discoverable.
-    const settings = join(agentDir, 'settings.json');
-    await save(settings, { defaultTools: activeTools });
-    toolDiscovery = { extension: { path, sha256: hash(await readFile(path)) },
-      implementation: { path: implementation, sha256: hash(await readFile(implementation)) },
-      settings: { path: settings, sha256: hash(await readFile(settings)) }, initial_tools: activeTools,
-      mechanism: 'Installed official tool_search; owned settings.defaultTools, no hard tool allowlist or manual control activation' };
-  }
+  const toolDiscovery = name === 'scoped-command' ? await installToolDiscoverySettings(info, agentDir, activeTools) : undefined;
   const argv = ['--no-extensions', '--session-dir', sessions, ...(scalarSeed ? ['--session', scalarSeed.path] : []),
     ...(nativeSkill ? ['--skill', nativeSkill.path] : []),
     ...(toolDiscovery ? [] : ['--tools', activeTools.join(',')]), '-e', fakeProvider,
@@ -5100,8 +5176,8 @@ export default api=>api.on('before_provider_request',event=>{
 `;
 }
 
-async function runContextOnceLoop(info, scratch, evidence, backend, mutation) {
-  const scene = mutation ? 'context-wire-' + mutation : contextOnceScenario;
+async function runContextOnceLoop(info, scratch, evidence, backend, mutation, workingSet = false) {
+  const scene = mutation ? 'context-wire-' + mutation : workingSet ? workingSetScenario : contextOnceScenario;
   const base = join(scratch, scene), output = join(evidence, scene);
   await mkdir(base, { recursive: true }); await mkdir(output, { mode: 0o700 });
   const localSource = join(base, 'source');
@@ -5116,21 +5192,21 @@ async function runContextOnceLoop(info, scratch, evidence, backend, mutation) {
   const repeatFile = info.resourceBatch?.files.find(file => file.encoding === 'utf8' && file.content.length > 0 && !file.content.startsWith('\ufeff'));
   assert.ok(info.resourceBatch && repeatFile, 'The HTTP public loop needs the frozen resource fixture');
   const toolPlan = join(base, 'tool-plan.json');
-  await publishToolPlan(toolPlan, { mode: 'http-public-loop', owner: info.resourceBatch.name, source: 'sdk-fixture', resource_path: repeatFile.path });
+  await publishToolPlan(toolPlan, { mode: workingSet ? 'working-set' : 'http-public-loop', owner: info.resourceBatch.name, source: 'sdk-fixture', resource_path: repeatFile.path });
   const previousPlan = process.env.SC10_PI_TOOL_PLAN;
   process.env.SC10_PI_TOOL_PLAN = toolPlan;
   const bodyDir = join(output, 'http-bodies');
   await mkdir(bodyDir, { mode: 0o700 });
-  let bodyCount = 0;
+  let requestBodyCount = 0;
   const server = backend === 'http' ? await startLoopbackMock({
     selectCall: context => mutation ? null : selectProviderCall(context),
     onBody: async (record, body) => {
-      const name = String(++bodyCount).padStart(3, '0') + '.bin';
+      const name = String(++requestBodyCount).padStart(3, '0') + '.bin';
       await writeFile(join(bodyDir, name), body, { mode: 0o600, flag: 'wx' });
       record.entityFile = 'http-bodies/' + name;
       record.entityBytes = body.length;
     },
-    limits: { maxRequests: 16, maxBodyBytes: 16 * 1024 * 1024, requestTimeoutMs: 30_000, holdTimeoutMs: 120_000, maxInFlight: 1 },
+    limits: { maxRequests: workingSet ? 24 : 16, maxBodyBytes: 16 * 1024 * 1024, requestTimeoutMs: 30_000, holdTimeoutMs: 120_000, maxInFlight: 1 },
   }) : undefined;
   const captureFile = join(output, 'provider-context.jsonl'), hookFile = join(output, 'provider-hooks.jsonl');
   let rpc, failed, loopResult;
@@ -5157,15 +5233,18 @@ async function runContextOnceLoop(info, scratch, evidence, backend, mutation) {
       CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_CONFIG: config, ...(server ? { CTX_MOCK_PROVIDER_BASE_URL: server.baseUrl } : {}), SC10_PI_TOOL_PLAN: toolPlan,
       SC10_PI_PROVIDER_HOOKS: hookFile, CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: captureFile,
       SC10_PI_OBSERVER: ledger, SC10_PI_BUNDLED_CLI: join(info.packageRoot, 'dist/ntn-skills.mjs'), NODE_OPTIONS: `--import=${preload}` });
-    const argv = ['--no-extensions', '--no-skills', '--no-mcp', '--session-dir', sessions, '--tools', nativeTools.join(','),
-      '-e', providerFile, '-e', info.extension, '-e', join(base, 'native-catalog-observer/index.mjs'), '--model', 'context-broker-e2e/fake'];
+    const toolDiscovery = workingSet ? await installToolDiscoverySettings(info, agentDir, [...nativeTools, 'tool_search']) : undefined;
+    const argv = ['--no-extensions', '--no-skills', '--no-mcp', '--session-dir', sessions,
+      ...(toolDiscovery ? [] : ['--tools', nativeTools.join(',')]),
+      '-e', providerFile, '-e', info.extension, ...(toolDiscovery ? ['-e', toolDiscovery.extension.path] : []),
+      '-e', join(base, 'native-catalog-observer/index.mjs'), '--model', 'context-broker-e2e/fake'];
     if (mutation) {
       const extension = join(base, 'late-payload.mjs');
       await writeFile(extension, latePayloadMutationSource(mutation, join(output, 'mutation.json')), { flag: 'wx', mode: 0o600 });
       argv.splice(-2, 0, '-e', extension);
     }
     await save(join(output, 'launch.json'), { host: info.host, argv, cwd: base, provider_backend: backend, base_url: server?.baseUrl ?? null,
-      serializer: info.serializerIdentity, pi: info.pi.version,
+      serializer: info.serializerIdentity, pi: info.pi.version, ...(toolDiscovery ? { deferred_discovery: toolDiscovery } : {}),
       boundary: backend === 'http' ? 'Live Pi, normal installed serializer/parser and loopback HTTP; no replay.' : 'Live Pi with a controlled in-process provider; no HTTP transmission claim.' });
     rpc = await startRpc({ host: 'pi', args: argv, cwd: base, env, timeoutMs: 120000 });
     const diagnose = async () => {
@@ -5214,6 +5293,53 @@ async function runContextOnceLoop(info, scratch, evidence, backend, mutation) {
         expected_abort: outcome, actual_entity: { bytes: sent.length, sha256: hash(sent) }, new_source_receipts_persisted: 0,
         original_source_receipts: originalProofs.length,
         finality: 'Known real dispatch with rejected payload identity; not zero provider calls' };
+    } else if (workingSet) {
+      await rpc.prompt('Use a twice, then b. Show the active working set and set its exact instruction-byte budget. Try adding c, then release a while retaining b and its Requires, inspect the working set, and explicitly use a again.');
+      const starts = rpc.frames.filter(frame => frame.type === 'tool_execution_start');
+      assert.deepEqual(starts.map(frame => frame.toolCallId), ['ws-list', 'ws-a', 'ws-a-repeat', 'ws-b', 'ws-discover', 'ws-show', 'ws-budget', 'ws-invalid-budget', 'ws-over-budget', 'ws-release', 'ws-after-release', 'ws-reuse', 'ws-final']);
+      const ends = rpc.frames.filter(frame => frame.type === 'tool_execution_end');
+      const control = id => {
+        const matches = ends.filter(frame => frame.toolCallId === id);
+        assert.equal(matches.length, 1); assert.equal(matches[0].isError, false);
+        return JSON.parse(visibleToolText(matches[0].result));
+      };
+      const before = control('ws-show'), released = control('ws-after-release'), restored = control('ws-final');
+      assert.deepEqual(before.nodes.map(node => node.name).sort(), ['a', 'b', 'base']);
+      assert.deepEqual(released.nodes.map(node => node.name).sort(), ['b', 'base']);
+      assert.deepEqual(restored.nodes.map(node => node.name).sort(), ['a', 'b', 'base']);
+      assert.equal(before.roots.length, 2); assert.equal(released.roots.length, 1); assert.equal(restored.roots.length, 2);
+      assert.equal(released.history.versions, before.history.versions); assert.equal(restored.history.versions, before.history.versions);
+      assert.equal(restored.budget.max_instruction_bytes, before.active.instruction_bytes);
+      assert.equal(ends.find(frame => frame.toolCallId === 'ws-over-budget').isError, true);
+      const budgetFailure = JSON.parse(visibleToolText(ends.find(frame => frame.toolCallId === 'ws-over-budget').result));
+      assert.equal(budgetFailure.effects.remote_writes, 'none');
+      assert.equal(budgetFailure.working_set.budget.status, 'exceeded');
+      assert.equal(ends.find(frame => frame.toolCallId === 'ws-invalid-budget').isError, true);
+      const captures = await readCaptures(), timeline = [];
+      for (const capture of captures) {
+        const ids = new Set(capture.context.messages.filter(message => message.role === 'toolResult').map(message => message.toolCallId));
+        const counts = {};
+        for (const name of ['a', 'b', 'base', 'c']) {
+          const body = info.bodiesById.get('shared_skill:sdk-library:' + name); assert.ok(body);
+          const expected = name === 'a' ? Number(ids.has('ws-a') && (!ids.has('ws-release') || ids.has('ws-reuse')))
+            : name === 'b' ? Number(ids.has('ws-b')) : name === 'base' ? Number(ids.has('ws-a')) : 0;
+          counts[name] = bodyCount(capture.context, body);
+          assert.equal(counts[name], expected, `Working-set ${name} effective instructions at ${capture.requestId}`);
+        }
+        timeline.push({ request_id: capture.requestId, copies: counts });
+      }
+      const diagnostic = await diagnose();
+      if (server) assert.match(diagnostic, /wire=true/u);
+      const journals = [];
+      for (const file of await inventory(sessions)) if (file.path.endsWith('.jsonl')) journals.push(...await rows(join(sessions, file.path)));
+      assert.equal(journals.filter(entry => entry.customType === 'context-broker-released-roots').length, 1);
+      assert.ok(journals.some(entry => entry.type === 'message' && entry.message?.toolCallId === 'ws-a'), 'Original source tool history remains in the public Session');
+      await save(join(output, 'working-set-proof.json'), { before, released, restored, timeline, raw_history_preserved: true, model_usage: 'controlled_not_real' });
+      failed = null;
+      loopResult = { name: scene, status: 'passed', provider_backend: backend, pi: info.pi.version,
+        serializer: info.serializerIdentity.serializer, provider_requests: captures.length, tool_calls: starts.length,
+        shared_required_preserved: true, complete_budget_rejection: true, release_then_reuse: true,
+        boundary: 'Actual Pi RPC, public list/use/ctl tools and final provider inputs; HTTP uses the installed normal serializer. Process resume is covered by the separate installed SessionManager gate. No real model or Notion HTTP.' };
     } else {
     await rpc.prompt('Use the resources Skill through notion_use, then read its advertised references/guide.md. Repeat that use and that resource read with the same visible handles.');
     const starts = rpc.frames.filter(frame => frame.type === 'tool_execution_start');
@@ -5345,10 +5471,10 @@ if (action === 'evidence' || action === 'cleanup') {
     const expectCompactContext = options['--expect-compact-context'] !== 'false';
     const expectDirectScalar = options['--expect-direct-scalar'] !== 'false';
     const expectShortConfirmations = options['--expect-short-confirmations'] !== 'false';
-    if ([contextOnceScenario, wireNegativeScenario].includes(options['--scenario'])) {
+    if ([contextOnceScenario, workingSetScenario, wireNegativeScenario].includes(options['--scenario'])) {
       const results = [];
       for (const mutation of options['--scenario'] === wireNegativeScenario ? wireNegativeKinds : [undefined])
-        results.push(await runContextOnceLoop(info, scratch, evidence, providerBackend, mutation));
+        results.push(await runContextOnceLoop(info, scratch, evidence, providerBackend, mutation, options['--scenario'] === workingSetScenario));
       const result = { status: results.every(item => item.status === 'passed') ? 'passed' : 'failed',
         observer_finality: results.every(item => item.observer_finality === true) };
       const after = await productInventory(info.packageRoot); await save(join(evidence, 'package-after.json'), after);
