@@ -38,8 +38,8 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
     check(!/\$\{\{\s*runner\./u.test(workflow.text.split(/^    steps:\s*$/mu)[0]), 'GATE_RUNNER_CONTEXT_SCOPE',
       workflow.name + ' must use runner context only in steps, not workflow or job env.');
     check(workflow.text.includes('run: bun run check'), 'GATE_CHECK_MISSING', workflow.name + ' must execute the normal check.');
-    check(workflow.text.includes('run: npm install --global @oh-my-pi/pi-coding-agent@18.10.3 @earendil-works/pi-coding-agent@1.5.0'),
-      'GATE_PI_VERSION', workflow.name + ' must install the primary Pi 1.5.0 exactly.');
+    check(workflow.text.includes('run: npm install --global @oh-my-pi/pi-coding-agent@18.10.3 @earendil-works/pi-coding-agent@1.5.2'),
+      'GATE_PI_VERSION', workflow.name + ' must install the primary Pi 1.5.2 exactly.');
     const source = /repository: yoyooyooo\/notion-skills-cli\s+ref: ([a-f0-9]{40})\s+path: \.verification\/ntn-skills-cli/u.exec(workflow.text);
     check(source && workflow.text.includes('NTN_SKILLS_BUILD_ENTRY: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/cli/dist/ntn-skills.js')
       && /working-directory: \.verification\/ntn-skills-cli\s+run: \|\s+bun install --frozen-lockfile\s+bun run build/u.test(workflow.text),
@@ -83,7 +83,7 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
         && compatibility.includes('node packages/context-broker/scripts/context-broker-host-e2e.mjs pi\n')
         && compatibility.includes('node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --scenario all --out "$RUNNER_TEMP/pi14-sdk-evidence"')
         && installed.includes('shell: bash') && installed.includes('id: installed-pi')
-        && installed.includes("assert.equal(manifest.hostIdentity.version, '1.5.0')")
+        && installed.includes("assert.equal(manifest.hostIdentity.version, '1.5.2')")
         && installed.includes("assert.equal(manifest.defaultSdk.status, 'passed')")
         && installed.includes("'package=' + manifest.package.installed")
         && retained.includes('${{ runner.temp }}/pi14-sdk-evidence/') && retained.includes('/tmp/context-broker-host-e2e-*/'),
@@ -127,7 +127,7 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
     } else check(!/^    strategy:/mu.test(workflow.text), 'GATE_PUBLISH_MATRIX', 'Publishing remains a single job, not a host-version matrix.');
   }
   check(new Set(sourceRevisions).size === 1, 'GATE_SDK_BUILD_INPUT_DRIFT', 'CI and publish must use the same frozen CLI revision.');
-  return { status: 'gate-wiring-valid', supportedPi: ['1.4.0', '1.5.0'], primaryPi: '1.5.0', requiredTests: required.length,
+  return { status: 'gate-wiring-valid', supportedPi: ['1.4.0', '1.5.0', '1.5.2'], primaryPi: '1.5.2', requiredTests: required.length,
     cliSourceRevision: sourceRevisions[0], installedSdk: 'required_all14', installedNames: 'required_two_scenarios',
     installedAmbiguity: 'required_scenario',
     controlledHttp: { primary: ['http-directory', 'http-cache-recovery', 'http-interruption'], compatibility: ['http-directory'] },

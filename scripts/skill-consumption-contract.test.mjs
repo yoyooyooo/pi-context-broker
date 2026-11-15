@@ -5,19 +5,22 @@ import { fileURLToPath } from 'node:url';
 import { consumptionFixture, evaluateConsumptionEvidence, selfTest, validateMap, expandCoverage, consumptionGateConfiguration, validateConsumptionGates } from './skill-consumption-contract.mjs';
 import { assertSupportedPiVersion } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 
-test('installed Pi acceptance admits only the two explicitly supported releases', () => {
-  for (const version of ['1.4.0', '1.5.0']) assert.doesNotThrow(() => assertSupportedPiVersion(version));
+test('installed Pi acceptance admits only the explicitly supported releases', () => {
+  for (const version of ['1.4.0', '1.5.0', '1.5.2']) assert.doesNotThrow(() => assertSupportedPiVersion(version));
   for (const version of ['1.4.1', '1.5.1', '1.6.0', '1.5.0-beta.1', '1.5', 'v1.5.0', '', undefined])
     assert.throws(() => assertSupportedPiVersion(version), /must be exactly/);
 });
 
 test('normal checks and both workflows retain consumption and real Pi installation gates', () => {
   assert.equal(validateConsumptionGates().status, 'gate-wiring-valid');
+  assert.equal(validateConsumptionGates().primaryPi, '1.5.2');
+  assert.deepEqual(validateConsumptionGates().supportedPi, ['1.4.0', '1.5.0', '1.5.2']);
   for (const [mutate, code] of [
     [value => { value.packageScripts.check = 'bun run test'; }, 'GATE_CONSUMPTION_MISSING'],
     [value => { value.rootScripts['check:broker'] = 'bun run build:broker'; }, 'GATE_PACKAGE_CHECK_MISSING'],
     [value => { value.packageScripts['test:consumption'] = value.packageScripts['test:consumption'].replace('scripts/session-active.test.ts', ''); }, 'GATE_TEST_MISSING'],
-    [value => { value.workflows[0].text = value.workflows[0].text.replace('@earendil-works/pi-coding-agent@1.5.0', '@earendil-works/pi-coding-agent@1.5.1'); }, 'GATE_PI_VERSION'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('@earendil-works/pi-coding-agent@1.5.2', '@earendil-works/pi-coding-agent@1.5.1'); }, 'GATE_PI_VERSION'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('@earendil-works/pi-coding-agent@1.5.2', '@earendil-works/pi-coding-agent@1.5.0'); }, 'GATE_PI_VERSION'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('@earendil-works/pi-coding-agent@1.4.0', '@earendil-works/pi-coding-agent@1.4.1'); }, 'GATE_PI_COMPATIBILITY_MISSING'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('- name: Pi 1.4 compatibility\n', '- name: Pi 1.4 compatibility\n        if: false\n'); }, 'GATE_PI_COMPATIBILITY_MISSING'],
     [value => { value.workflows[0].text = value.workflows[0].text.replaceAll('BROKER_INSTALLED_PACKAGE: ${{ steps.installed-pi.outputs.package }}', 'BROKER_INSTALLED_PACKAGE: packages/context-broker'); }, 'GATE_PI_COMPATIBILITY_MISSING'],
