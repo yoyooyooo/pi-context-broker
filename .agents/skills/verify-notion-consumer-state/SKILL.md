@@ -5,6 +5,10 @@ description: "维护和验证 Notion 消费者的当前资格、缓存原始验�
 
 # Verify Notion Consumer State
 
+## 管理与消费的跨仓验证路由
+
+[验证交接表](../../../docs/verification-routing.md) 明确 CLI 的管理、消费、来源接手三入口与本仓原 guardian 的职责。本 Skill 仍负责原宿主/状态/组合范围；不复制 CLI 的作者操作测试，不由 Source ready、目录项或一次read推断完整投递。
+
 在仓库根目录执行。先读 [合同与源码对应](references/contracts.md)，确认本次触及资格、选择或交付中的哪一层。一个 Skill 维护多个小模型；不能把这些状态合成一个成功字段。
 
 ## 状态所有者

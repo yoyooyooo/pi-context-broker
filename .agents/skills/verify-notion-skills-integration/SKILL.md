@@ -5,6 +5,10 @@ description: "验证 Notion Skills source 与随包 Skill在 Pi/OMP、Tern 中�
 
 # Verify Notion Skills Integration
 
+## 管理与消费的跨仓验证路由
+
+[验证交接表](../../../docs/verification-routing.md) 明确 CLI 的管理、消费、来源接手三入口与本仓原 guardian 的职责。本 Skill 仍负责原宿主/状态/组合范围；不复制 CLI 的作者操作测试，不由 Source ready、目录项或一次read推断完整投递。
+
 ## 有限状态合同与维护
 
 当前生成图的入口见 [组合地图](features/formal-composition.md) 和 [局部视图修正](../../../docs/statecharts/review-corrections/README.md)。2026-11-12 图册仅是历史快照，不以当前命令冒充当时输入。

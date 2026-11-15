@@ -5,6 +5,10 @@ description: "验证 Context Broker 的 Pi/OMP 注入、会话生命周期、随
 
 # Verify Context Broker
 
+## 管理与消费的跨仓验证路由
+
+[验证交接表](../../../docs/verification-routing.md) 明确 CLI 的管理、消费、来源接手三入口与本仓原 guardian 的职责。本 Skill 仍负责原宿主/状态/组合范围；不复制 CLI 的作者操作测试，不由 Source ready、目录项或一次read推断完整投递。
+
 AH-617 消费链重构先读 [消费链验证地图](../verify-notion-skills-integration/features/skill-consumption.md)。当前合同为 `agent-cli-ref-20261105`，覆盖 SC01–26、J01–26。复用现有 Pi 入口，保留源/投影/投递/active 与各证明层的区别；新场景未跑时不得继承旧 Gate 的通过结论。
 
 Notion 请求引擎和多 Skill 图变更同时读取 [直连请求地图](../verify-notion-skills-integration/features/request-engine.md) 与 [依赖图地图](../verify-notion-skills-integration/features/skill-dependency-graph.md)。NG-VC-01 复用一份 `scripts/verify-skill-graph-contract.mjs`，先记录原生 CLI fail-before 和反例自检，再逐层取得真实服务、模型、UI、安装证据。图 Gate A/B 不复用 AH-560 单 Skill 成功结论；当前 helper 只消费项目 HTTP 引擎和显式安全账本。

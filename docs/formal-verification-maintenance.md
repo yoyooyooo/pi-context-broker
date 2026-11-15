@@ -2,13 +2,15 @@
 
 AH-1006 把现有有限模型接入持续维护。仓库中的 TLA/config/view、独立规则清单和源码对应是可执行事实；Notion 项目入口解释状态和边界，Linear 跟踪需要实施的变更。三者引用同一提交和运行身份，不相互替代。
 
+实现验证的管理/消费/来源分域见 [验证交接表](verification-routing.md)。本页继续只拥有既有有限模型、守卫和状态图；新执行Skill不自动获得新形式化性质。
+
 ## 领域所有权与运行路由
 
 | 领域 | 所有者 | 原运行器套件 | 触发边界 |
 | --- | --- | --- | --- |
 | CLI 资源生命周期 | verify-notion-resource-lifecycle | lifecycle | 正文归属、导入、原操作选择、只读审计 |
 | CLI 原操作恢复与独立接受 | verify-notion-operation-recovery | operation-recovery | ACK/Records 前缀、未知原操作、独立接受、业务反馈 |
-| CLI 请求引擎 | verify-ntn-skills 的 request-engine-formal feature | request-engine | producer ownership、取消、共享身份、queue/operation/attempt 预算与重试 |
+| CLI 请求引擎 | verify-notion-consumption 路由的原 request-engine-formal feature | request-engine | producer ownership、取消、共享身份、queue/operation/attempt 预算与重试 |
 | Broker 当前资格与交付 | verify-notion-consumer-state | observations、consumer-state | 观察时间与资格、固定图、会话/取消、真实交付证明边界 |
 | 跨系统交接与 effects | verify-notion-skills-integration | flows | 完整管理回执、两来源部分失败、累计效果、严格只读、受控报告 |
 
