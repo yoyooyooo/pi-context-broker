@@ -7,8 +7,23 @@ import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
-import { nxtTransportSource, reviewNxtCli, nxtModelGuard } from './nxt-pi-delivery.mjs';
+import { createHash } from 'node:crypto';
+import { nxtTransportSource, reviewNxtCli, nxtModelGuard, validateNxtFixture } from './nxt-pi-delivery.mjs';
 import { observer, sourceFinality } from './notion-sdk-pi.mjs';
+
+test('SRC19 observation requires an exact enabled owned receipt and cannot reopen the old NXT tasks', () => {
+  const source={entry:'4195636c-236e-8104-aafa-f7366fe421ce',target:'41b5636c-236e-81c3-8291-c77b25ac76d1',name:'owned-overlay',refPrefix:'skill://owned/'};
+  const config={version:2,kind:'nxt-pi-delivery',scenario:'git-document-overlay',source,tasks:[{id:'read-use',prompts:['Inspect the selected documents without edits.']}]};
+  const receipt={ok:true,status:'applied',record:{kind:'skill',enabled:true,name:source.name,ref:'skill://owned/SKILL.md',locator:{type:'shared_skill',database_id:source.entry,page_id:source.target}}};
+  validateNxtFixture(config,receipt);
+  for(const mutate of [x=>x.record.enabled=false,x=>x.status='planned',x=>x.record.locator.page_id='foreign',x=>x.record.locator.database_id='foreign',x=>x.record.ref='skill://foreign/SKILL.md']) {
+    const changed=structuredClone(receipt);mutate(changed);assert.throws(()=>validateNxtFixture(config,changed));
+  }
+  for(const change of [{version:3},{scenario:'arbitrary'},{tasks:[{id:'maintenance',prompts:['Write.']}]},{tasks:[{id:'read-use',prompts:['Read.','Read again.']}]}])
+    assert.throws(()=>validateNxtFixture({...config,...change},receipt));
+  const legacy={version:1,kind:'nxt-pi-delivery',source:{entry:source.entry,target:'4195636c-236e-81e0-be28-ed9a783bd84a',name:'nxt-journey'}};
+  validateNxtFixture(legacy);assert.throws(()=>validateNxtFixture({...legacy,source}));
+});
 
 test('NXT real fetch boundary refuses invalid model, output cap and request eleven before dispatch', async t => {
   const base = await mkdtemp(join(tmpdir(), 'nxt-pi-budget-')), controlPath = join(base, 'control.json'), preload = join(base, 'transport.mjs');
@@ -161,4 +176,26 @@ for(const command of ${JSON.stringify([command, list])})await new Promise((resol
   ]) assert.equal(sourceFinality(changed, hostPid, options).complete, false);
   assert.equal(sourceFinality(events, hostPid, { ...options, approvedShellCommands: [{ command: list, nodeProcesses: 0 }] }).complete, false);
   t.diagnostic('Local actual process-tree evidence retained: ' + base);
+});
+
+test('SRC19 seals only its hash-bound SDK credential child, redacts stdout, and rejects missing or foreign process proof', async t => {
+  const base=await mkdtemp(join(tmpdir(),'src19-gh-probe-')), executable=join(base,'gh'), preload=join(base,'observer.mjs'), ledger=join(base,'source.jsonl');
+  const secret='LOCAL_TEST_CREDENTIAL_NOT_REAL';
+  await writeFile(executable, '#!/bin/sh\nprintf '+secret+'\nexit 1\n', {mode:0o700});
+  const probe={executable,identity:fs.realpathSync(executable),sha256:createHash('sha256').update(await readFile(executable)).digest('hex')};
+  await observer(preload,{gitCredentialProbe:probe});
+  const host=join(base,'host.mjs');
+  await writeFile(host,`import {spawn} from 'node:child_process';import {channel} from 'node:diagnostics_channel';
+const event={id:'owned-sdk',operation:'consume'};channel('context-broker.notion-sdk').publish({...event,event:'start'});
+await new Promise((resolve,reject)=>{const child=spawn('gh',['auth','token','--hostname','github.com']);child.stdout.resume();child.stderr.resume();child.once('error',reject);child.once('close',()=>resolve());});
+channel('context-broker.notion-sdk').publish({...event,event:'end',status:'completed'});\n`);
+  await promisify(execFile)(process.execPath,[host],{env:{PATH:base,HOME:base,SC10_PI_OBSERVER:ledger,NODE_OPTIONS:'--import='+preload},timeout:30000});
+  const raw=await readFile(ledger,'utf8'),events=raw.trim().split('\n').map(JSON.parse),pid=events[0].observer_pid,options={hostClosed:true,gitCredentialProbe:probe};
+  assert.equal(raw.includes(secret),false);assert.equal(raw.includes(createHash('sha256').update(secret).digest('hex')),false);
+  assert.equal(sourceFinality(events,pid,{hostClosed:true}).complete,false);
+  const complete=sourceFinality(events,pid,options);assert.equal(complete.complete,true);assert.equal(complete.native_credential_probes.length,1);
+  for(const changed of [events.filter(e=>e.kind!=='child_close'),events.filter(e=>e.kind!=='child_spawn'),events.filter(e=>!(e.kind==='sdk'&&e.event==='end')),
+    events.map(e=>e.kind==='child_start'?{...e,argv:['api','user']}:e),events.map(e=>e.kind==='child_start'?{...e,credential_probe:{...e.credential_probe,sha256:'0'.repeat(64)}}:e),
+    events.map(e=>e.kind==='child_close'?{...e,signal:'SIGTERM'}:e)])assert.equal(sourceFinality(changed,pid,options).complete,false);
+  t.diagnostic('Owned synthetic native credential process proof: '+base);
 });

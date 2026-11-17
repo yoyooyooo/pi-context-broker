@@ -193,6 +193,8 @@ Source 操作不设总时限。每次网络尝试独立计时；分页、重试�
 
 随包 SDK 声明 catalog-directory v1 时，首次完整目录与 Default View 共用一次 SDK operation。两份投影各自保留成功或 typed failure，全库中的无关失败不会隐藏有效 View。Broker 仅在当前会话与刷新代次消费这份组合观察一次；后续 View 变化仍走原发现路径，不新增持久目录或 TTL。旧 SDK 保留分开的 catalog 与 View 调用。
 
+GitHub 来源允许同一 Skill 混合消费：仅被用户编辑的整份文档由 Notion 接管，其余主文、reference、脚本或图片仍取固定 Git 版本。归属和单文件 `restore-follow` 由 CLI/SDK 的共享文件协议负责，Broker 只消费该协议返回的完整快照和固定引用。切换页面、清缓存或上游更新不自动解除 custom；已有会话继续保留原 pin。无需把全部上游文件复制到 Notion 才能使用。
+
 认证沿用 `ntn-skills` 项目已有 token；需要显式配置时，通过可信秘密输入管道执行 `ntn-skills ctl config set-token --stdin`。CLI 优先选择 saved token，再选择非空 `NOTION_API_TOKEN`；缺少凭据返回 `AUTH_REQUIRED`。Broker 和 Tern 配置没有 token 字段。自定义 `command` 必须遵守相同 CLI JSON 合同。
 
 构建把独立 `ntn-skills` CLI、三份工作流 Skill、运行依赖与许可声明随两个产品分发。Pi 的 SDK 与 CLI 来自同一份选定的 `ntn-skills` 包，具体版本由[构建输入](../CONTRIBUTING.md#bundling-cli-and-skills)决定。在线 Notion source 使用项目自己的 HTTP 引擎。`/context-broker doctor` 调用所选 command 的 `ctl doctor --database ID`，要求 `transport: direct_http`、`notion_api_version: 2026-03-11` 及有效认证，可能填充缓存。无 database 的 CLI doctor 只检查认证。Offline Notion 发现要求已有完整缓存，随包 Skill 则无需 Notion 访问或这些缓存。自定义 source `command` 保持 doctor 与 list/prepare/read/export JSON 合同。

@@ -2215,7 +2215,7 @@ export function observeSdkInitialization({ fs, configPath, record, subscribe }) 
   return { pending: () => held.size };
 }
 
-function observe() {
+function observe(gitCredentialProbe) {
   const ledger = process.env.SC10_PI_OBSERVER;
   const cli = process.env.SC10_PI_BUNDLED_CLI;
   let sequence = 0, previous = null, nextChild = 0;
@@ -2260,18 +2260,34 @@ function observe() {
     const id = `${process.pid}:${++nextChild}`;
     const operation = argv.find(value => ['list', 'views', 'ctl', 'prepare', 'read', 'files', 'export'].includes(value)) ?? null;
     const bundled = argv.includes(cli) || values[0] === cli;
-    record({ kind: 'child_start', id, api: 'spawn', bundled, operation, executable: values[0], argv });
+    const credentialCommand = ['gh', gitCredentialProbe?.executable].includes(values[0])
+      && JSON.stringify(argv) === JSON.stringify(['auth', 'token', '--hostname', 'github.com']);
+    let credentialProbe;
+    if (credentialCommand && gitCredentialProbe && activeSdk.size && values[2]?.shell !== true) {
+      const candidates = values[0] === 'gh'
+        ? (values[2]?.env?.PATH ?? process.env.PATH ?? '').split(path.delimiter).map(dir => path.join(dir, 'gh')) : [values[0]];
+      const executable = candidates.find(candidate => { try { fs.accessSync(candidate, fs.constants.X_OK); return true; } catch { return false; } });
+      if (executable) {
+        const identity = fs.realpathSync(executable), sha256 = createHash('sha256').update(fs.readFileSync(identity)).digest('hex');
+        if (identity === gitCredentialProbe.identity && sha256 === gitCredentialProbe.sha256)
+          credentialProbe = { identity, sha256, sdk_ids: [...activeSdk] };
+      }
+    }
+    record({ kind: 'child_start', id, api: 'spawn', bundled, operation, executable: values[0], argv,
+      ...(credentialProbe ? { credential_probe: credentialProbe } : {}) });
     const child = originalSpawn.apply(this, values);
     record({ kind: 'child_spawn', id, child_pid: child.pid ?? null });
     activeChildren.add(id);
     const chunks = []; let bytes = 0; const digest = createHash('sha256');
-    child.stdout?.on('data', chunk => { const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); bytes += value.length; digest.update(value); if (bytes <= 16 * 1024 * 1024) chunks.push(value); });
+    child.stdout?.on('data', chunk => { const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); bytes += value.length;
+      if (!credentialCommand) { digest.update(value); if (bytes <= 16 * 1024 * 1024) chunks.push(value); } });
     child.once('error', error => record({ kind: 'child_error', id, code: error.code ?? 'UNKNOWN' }));
     child.once('close', (code, signal) => {
       activeChildren.delete(id);
       let metrics = null;
       try { if (bytes <= 16 * 1024 * 1024) metrics = safeRequestMetrics(JSON.parse(Buffer.concat(chunks).toString('utf8')).request_metrics) ?? null; } catch { /* Unknown is not zero. */ }
-      record({ kind: 'child_close', id, child_pid: child.pid ?? null, code, signal, stdout_bytes: bytes, stdout_sha256: digest.digest('hex'), request_metrics: metrics });
+      record({ kind: 'child_close', id, child_pid: child.pid ?? null, code, signal, stdout_bytes: bytes,
+        ...(credentialCommand ? { stdout_redacted: true } : { stdout_sha256: digest.digest('hex') }), request_metrics: metrics });
     });
     return child;
   };
@@ -2291,8 +2307,8 @@ function observe() {
       ...(objects ? { active_object_reads: objects.pending_reads, object_read_errors: objects.errors } : {}) });
   });
 }
-export async function observer(path) {
-  await writeFile(path, `import { isMainThread } from 'node:worker_threads';\nimport childProcess from 'node:child_process';\nimport { createHash } from 'node:crypto';\nimport { channel } from 'node:diagnostics_channel';\nimport fs, { appendFileSync } from 'node:fs';\nimport fsPromises from 'node:fs/promises';\nimport { syncBuiltinESMExports } from 'node:module';\n${safeRequestMetrics.toString()}\n${observeOwnedObjectReads.toString()}\n${observeSdkInitialization.toString()}\nif (isMainThread) (${observe.toString()})();\n`, { mode: 0o600 });
+export async function observer(outputPath, { gitCredentialProbe } = {}) {
+  await writeFile(outputPath, `import { isMainThread } from 'node:worker_threads';\nimport childProcess from 'node:child_process';\nimport { createHash } from 'node:crypto';\nimport { channel } from 'node:diagnostics_channel';\nimport fs, { appendFileSync } from 'node:fs';\nimport fsPromises from 'node:fs/promises';\nimport path from 'node:path';\nimport { syncBuiltinESMExports } from 'node:module';\n${safeRequestMetrics.toString()}\n${observeOwnedObjectReads.toString()}\n${observeSdkInitialization.toString()}\nif (isMainThread) (${observe.toString()})(${JSON.stringify(gitCredentialProbe) ?? 'undefined'});\n`, { mode: 0o600 });
 }
 
 function initialDirectoryReady(events, hostPid, { fixture, sourceId, transport, bundledCli }) {
@@ -2343,7 +2359,7 @@ function initialDirectoryReady(events, hostPid, { fixture, sourceId, transport, 
   return completed.includes('ordinary') && completed.includes('default');
 }
 
-export function sourceFinality(events, hostPid, { hostClosed = false, initialDirectory, initialCatalog, approvedShellCommands = [] } = {}) {
+export function sourceFinality(events, hostPid, { hostClosed = false, initialDirectory, initialCatalog, approvedShellCommands = [], gitCredentialProbe } = {}) {
   const pending = [];
   const starts = events.filter(event => event.kind === 'observer_start');
   assert.ok(Array.isArray(approvedShellCommands) && approvedShellCommands.every(value => value && typeof value.command === 'string'
@@ -2366,7 +2382,18 @@ export function sourceFinality(events, hostPid, { hostClosed = false, initialDir
       const observed = starts.filter(event => event.observer_pid === pid && event.parent_pid === start.observer_pid || event.parent_pid === pid).length;
       if (observed !== approved.get(start.argv[1])) pending.push({ kind: 'shell_observer_count', id: start.id, pid, expected: approved.get(start.argv[1]), observed });
     }
-    if (!shell && starts.filter(event => event.observer_pid === pid && event.parent_pid === start.observer_pid).length !== 1)
+    const credential = gitCredentialProbe && closed.length === 1 && closed[0].stdout_redacted === true
+      && [0, 1].includes(closed[0].code) && closed[0].signal == null
+      && ['gh', gitCredentialProbe.executable].includes(start.executable)
+      && JSON.stringify(start.argv) === JSON.stringify(['auth', 'token', '--hostname', 'github.com'])
+      && start.credential_probe?.identity === gitCredentialProbe.identity && start.credential_probe?.sha256 === gitCredentialProbe.sha256
+      && Array.isArray(start.credential_probe.sdk_ids)
+      && start.credential_probe.sdk_ids.some(id => events.some(event => event.kind === 'sdk' && event.event === 'start'
+        && event.id === id && event.observer_pid === start.observer_pid && event.sequence < start.sequence)
+        && events.some(event => event.kind === 'sdk' && event.event === 'end' && event.id === id
+          && event.observer_pid === start.observer_pid && event.sequence > closed[0].sequence));
+    if (credential) children.at(-1).credential = true;
+    if (!shell && !credential && starts.filter(event => event.observer_pid === pid && event.parent_pid === start.observer_pid).length !== 1)
       pending.push({ kind: 'child_observer_start', id: start.id, pid });
   }
   const rooted = (pid, ancestors = new Set()) => {
@@ -2405,6 +2432,8 @@ export function sourceFinality(events, hostPid, { hostClosed = false, initialDir
   if (initialDirectory && !initialDirectoryReady(events, hostPid, initialDirectory)) pending.push({ kind: 'initial_default_directory' });
   return { complete: pending.length === 0, host_pid: hostPid, host_closed: hostClosed,
     observer_processes: starts.length, source_children: events.filter(event => event.kind === 'child_start').length, pending,
+    ...(gitCredentialProbe ? { native_credential_probes: children.filter(child => child.credential).map(child => ({ id: child.start.id, pid: child.pid,
+      boundary: 'Exact hash-bound local credential command returned; no credential stdout or internal HTTP claim' })) } : {}),
     ...(approved.size === 0 ? {} : { approved_shell_children: children.filter(child => child.shell)
       .map(child => ({ id: child.start.id, pid: child.pid, parent_pid: child.start.observer_pid })) }) };
 }

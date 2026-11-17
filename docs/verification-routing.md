@@ -21,6 +21,14 @@ Source接纳默认disabled：主表存在和authoring只读成功不代表普通
 
 ## 证据交接
 
+Git 来源的接管粒度是单份文档：改过的主文或 reference 整份从 Notion 消费，未改文件仍取已选 Git commit。CLI 的 mixed acquisition v3 和原文件归属/恢复协议拥有这个决定，Broker 不再判定哪份归 Git 或 Notion，也不把整个 Skill 重新导入 Files/Records。验收同一候选包的 SDK `consume`、资源 `read` 和真实 Pi 的完整正文/固定引用；主文未改与主文接管分开覆盖，旧会话 pin 保持原字节。
+
+SRC19 的实库新任务与旧 NXT 自然失败分开留证。安装命令及子进程显式删除 `NTN_SKILLS_DEV_ROOT`，同时记录真正加载的 CLI/SDK/Broker 路径与 hash；只传新包路径仍可能被继承的开发 shim 重定向。不能把受控源测试、源码工作树或旧 SDK 的成功当成本次安装验收。
+
+SRC19 使用原 NXT runner 的显式 v2 输入：必须绑定正式启用回执的 hash、原 Skill/page/library/name/ref，且只允许一个新的只读混合文档任务。v1 的原目标、任务和失败不变；同样保留每任务一次、最多十个实际模型请求和每请求 4096 输出 token，重试关闭。输入与最终 package/hash 在执行前冻结，旧失败不覆盖。
+
+实际 Git 消费会通过既有 SDK 调用本机 `gh auth token --hostname github.com`。该原生命令不会加载 Node 观察器。SRC19 doctor 先固定所选 gh 可执行文件的真实路径和 SHA；观察器仅对相同二进制、精确参数、活动 SDK 范围内的 spawn 记录独立类型，并要求原 PID、close、外层 SDK end 全部存在。它不保存凭据 stdout 或摘要，不把该进程算作 CLI 正文读取，也不推断其内部 HTTP。未声明探测、不同命令/二进制、缺关闭或未终结 SDK 仍保持不完整。原默认子进程规则不放宽，只有显式 v2 场景传入这一受限合同；代码反例与实际受控 Session 分别留证。此观察器修正不改变产品归属、派发、权限或状态模型的有限性质。
+
 至少记录两仓commit/必要脏树hash、精确CLI/SDK和Broker包hash、范围/原计划、当前资格、snapshot/version、effects、实际HTTP/完整body、Session及终局。源测试、受控服务、独立安装、真实Notion、真实Pi、自然模型、第二物理机分别用passed/failed/blocked/not_run，不可代证。
 
 共享Requires、目录延迟加载、重复正文、取消/晚到、fork/resume/compaction、冷暖成本仍由原消费地图和guardian负责。一次库对账不能替代这些反例；旧模型/当前结果/历史失败保持原来范围。

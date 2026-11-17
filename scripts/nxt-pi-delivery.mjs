@@ -95,16 +95,47 @@ export async function freezeNxtOracle(cli, receipt, output, reuse) {
   await save(join(output, 'manifest.json'), result); return { status: 'prepared', manifest: join(output, 'manifest.json'), source, oracle };
 }
 
-export async function inspectNxtInput(config) {
-  assert.equal(config.version, 1); assert.equal(config.kind, 'nxt-pi-delivery');
-  for (const key of ['packageRoot', 'evidenceRoot', 'baselinePath']) assert.ok(isAbsolute(config[key]), key);
+/** The original NXT fixture remains fixed. A separate SRC19 observation binds
+ * its exact owned page to a retained public enable receipt, not a guessed name.
+ * It may run one read-only task; old onboarding/maintenance attempts stay final. */
+export function validateNxtFixture(config, receipt) {
+  assert.equal(config.kind, 'nxt-pi-delivery');
   assert.equal(config.source.entry, '4195636c-236e-8104-aafa-f7366fe421ce');
-  assert.equal(config.source.target, '4195636c-236e-81e0-be28-ed9a783bd84a');
-  assert.equal(config.source.name, 'nxt-journey');
+  if (config.version === 1) {
+    assert.equal(config.source.target, '4195636c-236e-81e0-be28-ed9a783bd84a');
+    assert.equal(config.source.name, 'nxt-journey');
+    assert.equal(config.fixtureReceipt, undefined);
+    return;
+  }
+  assert.equal(config.version, 2); assert.equal(config.scenario, 'git-document-overlay');
+  assert.equal(receipt?.ok, true); assert.equal(receipt?.status, 'applied');
+  const record=receipt.record;
+  assert.equal(record?.kind, 'skill'); assert.equal(record?.enabled, true);
+  assert.equal(record?.locator?.type, 'shared_skill');
+  assert.equal(record.locator.database_id, config.source.entry);
+  assert.equal(record.locator.page_id, config.source.target);
+  assert.equal(record.name, config.source.name);
+  const ref=new URL(record.ref);
+  assert.equal(config.source.refPrefix, ref.protocol+'//'+ref.host+'/');
+  assert.notEqual(config.source.target, '4195636c-236e-81e0-be28-ed9a783bd84a');
+  assert.deepEqual(config.tasks.map(task=>task.id), ['read-use']);
+  assert.equal(config.tasks[0].prompts.length, 1);
+}
+
+export async function inspectNxtInput(config) {
+  for (const key of ['packageRoot', 'evidenceRoot', 'baselinePath']) assert.ok(isAbsolute(config[key]), key);
+  let fixtureReceipt;
+  if(config.version===2) {
+    assert.ok(isAbsolute(config.fixtureReceipt?.path));
+    assert.equal((await identity(config.fixtureReceipt.path)).sha256,config.fixtureReceipt.sha256);
+    fixtureReceipt=await json(config.fixtureReceipt.path);
+  }
+  validateNxtFixture(config,fixtureReceipt);
   assert.match(config.source.id, /^[a-z][a-z0-9-]{0,63}$/u);
   const baseline = await json(config.baselinePath);
   assert.deepEqual(baseline.model, { provider: 'magpie', model: 'group/worker', runs_per_task: 1, max_turns: 10,
-    max_output_tokens_per_turn: 4096, tasks: ['cold onboarding and safe connection choice', 'one complete maintenance intent', 'read vs use and two references'],
+    max_output_tokens_per_turn: 4096, tasks: config.version===2 ? ['read-only Git/Notion document overlay']
+      : ['cold onboarding and safe connection choice', 'one complete maintenance intent', 'read vs use and two references'],
     failures_retained: true, rerun_for_green: false });
   const packageRoot = await realpath(config.packageRoot), manifest = await json(join(packageRoot, 'package.json'));
   assert.equal(manifest.name, 'pi-context-broker');
@@ -135,8 +166,15 @@ export async function inspectNxtInput(config) {
   const harness = await Promise.all(['scripts/nxt-pi-delivery.mjs', 'scripts/notion-sdk-pi.mjs', 'scripts/verify-pi-daily-candidate.mjs',
     'scripts/mock-provider-adapter.mjs', 'scripts/notion-default-context.mjs', 'packages/context-broker/scripts/context-broker-rpc-harness.mjs',
     'packages/context-broker/scripts/context-broker-e2e-fixture.mjs'].map(path => identity(resolve(import.meta.dirname, '..', path))));
+  let gitCredentialProbe;
+  if (config.version === 2) {
+    const gh = await resolveHost('gh'); assert.equal(gh.prefix.length, 0);
+    const binary = await identity(gh.identity); harness.push(binary);
+    gitCredentialProbe = { executable: gh.file, identity: binary.path, sha256: binary.sha256 };
+  }
   return { packageRoot, publicFiles, publicDirectories, extension, runtime, cli, sdk, host, piRoot, pi: pi.version,
-    serializer: await resolveInstalledPiSerializer(piRoot, pi.version), baseline: await identity(config.baselinePath), sentinels: baseline.sentinels, harness };
+    serializer: await resolveInstalledPiSerializer(piRoot, pi.version), baseline: await identity(config.baselinePath), sentinels: baseline.sentinels, harness,
+    ...(gitCredentialProbe ? { gitCredentialProbe } : {}) };
 }
 
 /** Actual fetch dispatch enforces the frozen request budget; Pi catches errors
@@ -266,7 +304,7 @@ export async function runNxtControlled(config, info) {
   let rpc, processNumber = 0, sessionFile, failed; const processes = [], observations = [];
   const launch = async resume => {
     const processOutput = join(state.output, 'process-' + (++processNumber)); await mkdir(processOutput);
-    const preload = join(processOutput, 'source-observer.mjs'); await observer(preload);
+    const preload = join(processOutput, 'source-observer.mjs'); await observer(preload, { gitCredentialProbe: info.gitCredentialProbe });
     const env = { ...state.env, SC10_PI_OBSERVER: join(processOutput, 'source.jsonl'), SC10_PI_BUNDLED_CLI: info.cli.path,
       NODE_OPTIONS: `--import=${JSON.stringify(state.transport)} --import=${JSON.stringify(preload)}` };
     delete env.NTN_SKILLS_DEV_ROOT;
@@ -284,7 +322,7 @@ export async function runNxtControlled(config, info) {
     const current = processes.at(-1); await rpc.closeInput();
     await save(join(current.output, 'rpc.json'), rpc.frames); await save(join(current.output, 'process.json'), { pid: current.pid, args: current.args, lifecycle: rpc.lifecycle, sessionFile });
     const events = await rows(join(current.output, 'source.jsonl'));
-    const finality = sourceFinality(events, current.pid, { hostClosed: true }); assert.equal(finality.complete, true);
+    const finality = sourceFinality(events, current.pid, { hostClosed: true, gitCredentialProbe: info.gitCredentialProbe }); assert.equal(finality.complete, true);
     const accounting = sourceAccounting(events); assert.ok(accounting.every(call => call.sourceWriteAttempts === 0), 'The controlled consumer must not write Notion');
     await save(join(current.output, 'source-finality.json'), { ...finality, accounting }); current.closed = true; delete current.rpc; rpc = undefined;
   };
@@ -552,7 +590,7 @@ export async function runNxtModel(config, taskId, info) {
     modelConfiguration: await identity(modelsPath), provider: 'magpie', model: 'group/worker', thinking: 'medium', runs: 1, maxRequests: 10, maxOutputTokens: 4096, frozenTasks,
     nativeAutoCompaction: false, realModelRetries: false, completionCapRegistration: 'before selected Broker extension',
     boundary: 'Isolated installed Pi and selected package via explicit extension argument; normal daily package autoload is verified separately by the controlled journey.' });
-  const preload = join(state.base, 'source-observer.mjs'); await observer(preload);
+  const preload = join(state.base, 'source-observer.mjs'); await observer(preload, { gitCredentialProbe: info.gitCredentialProbe });
   const sourceLedger = join(state.output, 'source.jsonl');
   const guard = join(state.base, 'guard.mjs'), tasks = join(state.output, 'tasks.jsonl'), payloads = join(state.output, 'hook-payloads'); await mkdir(payloads);
   const helper = pathToFileURL(import.meta.filename).href, candidate = pathToFileURL(resolve(import.meta.dirname, 'verify-pi-daily-candidate.mjs')).href;
@@ -581,7 +619,7 @@ export async function runNxtModel(config, taskId, info) {
       return { command: matching[0].arguments.command, nodeProcesses };
     });
     const events = await rows(sourceLedger);
-    return { ...sourceFinality(events, rpc.lifecycle[0].pid, { hostClosed: true, approvedShellCommands }), accounting: sourceAccounting(events) };
+    return { ...sourceFinality(events, rpc.lifecycle[0].pid, { hostClosed: true, approvedShellCommands, gitCredentialProbe: info.gitCredentialProbe }), accounting: sourceAccounting(events) };
   };
   try {
     rpc = await startRpc({ host: 'pi', cwd: state.base, env, args, timeoutMs: 240000 });

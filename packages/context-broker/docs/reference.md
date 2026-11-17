@@ -257,6 +257,8 @@ Unknown bare `$name`, simple `$name@namespace`, amounts, paths such as `$bunfs/r
 
 Pi publishes opaque references from the current session branch for Notion records. They are locators, not credentials or filesystem paths.
 
+A GitHub-backed Skill may combine Git and Notion documents. Editing one document transfers that whole document to Notion; unchanged main instructions, references, scripts and images keep their selected immutable Git source. The shared CLI/SDK file protocol owns adoption and per-file `restore-follow`. Broker consumes its complete snapshot and fixed references rather than maintaining a second ownership decision. Cache changes, upstream updates and later sessions do not release custom ownership, and already selected session pins remain unchanged. Whole-package copying into Notion is not a consumption prerequisite.
+
 | Prefix | Binding | Available through |
 | --- | --- | --- |
 | `sr:C` | An authorized catalog candidate; no selected snapshot | `notion_list` and View metadata |

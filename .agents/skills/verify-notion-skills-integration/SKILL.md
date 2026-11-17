@@ -56,6 +56,8 @@ AH-561 的直连请求和跨 Skill 图先走 [request-engine](features/request-e
 
 ## Pi 单宿主主线
 
+SRC19 文档级 Git/Notion 混合消费遵循[交接合同](../../../docs/verification-routing.md#证据交接)。用同一最终 CLI/SDK 构建并独立安装 Broker，核对未改主文/资源的 Git hash 与仅修改 reference 的 Notion hash；不得由 snapshot ready 推断实际投递。主文接管、单文件 restore-follow、上游更新保留 custom 由 CLI 原 guardian 验收。新混合任务单独冻结输入和预算，保留旧 NXT 自然任务失败、不增加其重试；所有安装/子进程删除 `NTN_SKILLS_DEV_ROOT`，不要赋空值或改用户日用配置。
+
 `--host pi` 可用于普通 deterministic、live、live-fixture、installed、model，以及 default-context、view-discovery、native-kinds 分支。Doctor 只探测选定宿主，run 只启动该宿主；manifest 记录 `selectedHosts`，OMP 标为未选，不要求安装 OMP/Tern。默认不传仍为双宿主。`--shared-catalog` 和 `--cache-lifecycle` 本身验证跨宿主/原生编辑器，拒绝单宿主筛选，不能降级后宣称通过。仅 Pi 时不会启动 OMP 的 source-lifecycle helper。
 
 先构建 CLI，然后用 `NTN_SKILLS_BUILD_ENTRY=ABSOLUTE_CLI bun run build:broker` 只构建 npm Broker，或 `NTN_SKILLS_BUILD_ENTRY=ABSOLUTE_CLI bun scripts/pack.mjs --target broker --out-dir ABSOLUTE_OUTPUT` 打包。此路径不安装 Tern 运行时，也不修改 Tern 产物；默认 build/pack 仍包含两种产物。
