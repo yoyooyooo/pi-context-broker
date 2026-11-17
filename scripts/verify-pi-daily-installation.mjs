@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { constants } from 'node:fs';
 import { access, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
@@ -28,6 +29,7 @@ function plan(config) {
     settings: join(homedir(), '.pi/agent/settings.json'), expected_package_index: config.packageIndex ?? 1,
     expected_package_count: config.packageCount ?? 21, broker_root: config.brokerRoot ?? null,
     cli_root: config.cliRoot ?? null, required_artifacts: ['brokerRoot', 'brokerArchive', 'brokerArchiveSha256', 'embeddedCliSha256', 'embeddedSdkSha256', 'cliRoot', 'cliArchive', 'cliArchiveSha256', 'cliEntrySha256'],
+    cli_lookup: { selection: 'ntn-skills on the unchanged PATH', expected_path: config.cliShim ?? null, volta_identity: config.voltaIdentity ?? null },
     pi_arguments: ['--mode', 'rpc', '--session-dir', '<new owned directory>'],
     rpc_commands: ['get_state', 'get_commands', '/context-broker find ' + (config.findQuery ?? 'pstack'), '/context-broker doctor', 'get_state'],
     expected_find_record: config.expectedFindRecord ?? null,
@@ -125,6 +127,53 @@ async function packageClosure(root, archive, expectedHash) {
   return { root, archive: archiveIdentity, file_count: files.length, files, sha256: hash(JSON.stringify(files)) };
 }
 
+export async function verifyDailyPackageSource(spec, settingsPath, brokerRoot) {
+  assert.equal(typeof spec, 'string');
+  // Pi resolves a user settings package relative to its agent directory.
+  const path = await realpath(resolve(dirname(settingsPath), spec));
+  assert.equal(path, await realpath(brokerRoot), 'The daily package slot has not been switched to the final Broker');
+  return { selected_package: spec, resolved_package: path };
+}
+
+async function executableOnPath(name, env) {
+  for (const directory of (env.PATH ?? '').split(delimiter)) {
+    const path = resolve(directory, name);
+    try { await access(path, constants.X_OK); return path; }
+    catch (error) { if (!['ENOENT', 'EACCES', 'ENOTDIR'].includes(error.code)) throw error; }
+  }
+  throw new Error(`${name}: executable not found on the normal PATH`);
+}
+
+export async function verifyDailyCliShim(config, env = process.env) {
+  const standalone = await fileIdentity(join(config.cliRoot, 'dist/ntn-skills.js'));
+  assert.equal(standalone.sha256, config.cliEntrySha256);
+  const selected = await executableOnPath('ntn-skills', env);
+  if (config.cliShim) assert.equal(selected, resolve(config.cliShim), 'The configured CLI shim differs from the normal PATH selection');
+  const shim = await fileIdentity(selected);
+  let resolution;
+  if (shim.realpath === standalone.realpath) {
+    assert.equal(shim.sha256, standalone.sha256);
+    resolution = { kind: 'direct', entry: standalone };
+  } else {
+    const volta = await fileIdentity(await executableOnPath('volta', env));
+    const dispatcher = await fileIdentity(join(dirname(volta.realpath), 'volta-shim'));
+    assert.equal(volta.sha256, config.voltaIdentity?.executable_sha256, 'Freeze the actual Volta executable SHA before daily verification');
+    assert.equal(dispatcher.sha256, config.voltaIdentity?.dispatcher_sha256, 'Freeze the actual Volta dispatcher SHA before daily verification');
+    assert.equal(shim.realpath, dispatcher.realpath, 'The selected CLI is not the actual Volta dispatcher');
+    assert.equal(shim.sha256, dispatcher.sha256);
+    const argv = [volta.path, 'which', 'ntn-skills'];
+    const path = execFileSync(argv[0], argv.slice(1), {
+      env, encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+    assert.ok(isAbsolute(path) && !/[\r\n]/u.test(path), 'Volta must resolve one absolute CLI entry');
+    const entry = await fileIdentity(path);
+    assert.equal(entry.realpath, standalone.realpath, 'Volta resolved a different installed CLI');
+    assert.equal(entry.sha256, config.cliEntrySha256, 'The Volta-resolved CLI bytes changed');
+    resolution = { kind: 'volta', argv, executable: volta, dispatcher, entry };
+  }
+  return { ...shim, resolution, references_final_cli: true, executed_by_harness: false };
+}
+
 async function configurationSnapshot(config) {
   const agent = join(homedir(), '.pi/agent'), settingsPath = join(agent, 'settings.json');
   if (process.env.PI_CODING_AGENT_DIR) assert.equal(await realpath(process.env.PI_CODING_AGENT_DIR), await realpath(agent), 'Use the normal daily Pi agent directory');
@@ -137,8 +186,7 @@ async function configurationSnapshot(config) {
   assert.equal(settings.packages?.length, config.packageCount ?? 21);
   const index = config.packageIndex ?? 1, selected = settings.packages[index];
   const spec = typeof selected === 'string' ? selected : selected?.source;
-  assert.equal(typeof spec, 'string');
-  assert.equal(await realpath(spec), await realpath(config.brokerRoot), 'The daily package slot has not been switched to the final Broker');
+  const selectedIdentity = await verifyDailyPackageSource(spec, settingsPath, config.brokerRoot);
   const candidates = ['.yml', '.yaml', '.json'].map(ext => join(agent, 'context-broker', 'config' + ext));
   const sourcePath = (await Promise.all(candidates.map(async path => await exists(path) ? path : undefined))).find(Boolean);
   assert.ok(sourcePath, 'The existing daily source configuration is required');
@@ -153,7 +201,7 @@ async function configurationSnapshot(config) {
     assert.ok(source.prefetch === false || source.prefetch === undefined, 'This metadata-only run requires disabled prefetch');
   }
   return {
-    settings: { path: settingsPath, sha256: hash(raw), packages: settings.packages.length, selected_index: index, selected_package: spec, other_packages_sha256: hash(JSON.stringify(settings.packages.filter((_, i) => i !== index))) },
+    settings: { path: settingsPath, sha256: hash(raw), packages: settings.packages.length, selected_index: index, ...selectedIdentity, other_packages_sha256: hash(JSON.stringify(settings.packages.filter((_, i) => i !== index))) },
     source: { path: sourcePath, sha256: hash(sourceBytes), sources: sources.map(source => ({ id: source.id, type: source.type, database: source.database, default_view_id: source.default_view_id, profile_id: source.profile_id, prefetch: source.prefetch ?? false, command_configured: false })) },
   };
 }
@@ -335,10 +383,8 @@ async function run(config) {
     assert.equal(sdkManifest.cli_sha256, embedded.sha256); assert.equal(sdkManifest.sdk_sha256, embeddedSdk.sha256);
     const standalone = await fileIdentity(join(config.cliRoot, 'dist/ntn-skills.js'));
     assert.equal(standalone.sha256, config.cliEntrySha256);
-    const shim = await fileIdentity(config.cliShim ?? join(homedir(), '.local/bin/ntn-skills'));
-    const shimReferencesFinalCli = inside(await realpath(config.cliRoot), shim.realpath) || (await readFile(shim.path, 'utf8')).includes(standalone.path);
-    assert.ok(shimReferencesFinalCli, 'The daily CLI shim has not been switched to the final CLI');
-    result.artifacts = { broker: { root: broker.root, archive_sha256: broker.archive.sha256, published_files: broker.file_count, files_sha256: broker.sha256 }, embedded, embeddedSdk, sdkManifest, standalone, cli_shim: { ...shim, references_final_cli: shimReferencesFinalCli, executed_by_harness: false } };
+    const shim = await verifyDailyCliShim(config);
+    result.artifacts = { broker: { root: broker.root, archive_sha256: broker.archive.sha256, published_files: broker.file_count, files_sha256: broker.sha256 }, embedded, embeddedSdk, sdkManifest, standalone, cli_shim: shim };
     result.configuration_before = before;
     const host = await resolveHost('pi'); result.host = host;
     assert.ok(host.identity.includes('/@earendil-works/pi-coding-agent/'), 'The daily host must be actual Pi');
@@ -449,7 +495,8 @@ async function run(config) {
       if (!result.broker_files_unchanged) result.status = 'failed';
     }
     if (result.artifacts?.cli_shim) {
-      result.cli_shim_unchanged = hash(await readFile(result.artifacts.cli_shim.path)) === result.artifacts.cli_shim.sha256;
+      result.cli_shim_after = await verifyDailyCliShim(config).catch(() => ({ validation_failed: true }));
+      result.cli_shim_unchanged = JSON.stringify(result.cli_shim_after) === JSON.stringify(result.artifacts.cli_shim);
       if (!result.cli_shim_unchanged) result.status = 'failed';
     }
     if (result.namespace_diagnostics_review) {

@@ -1,6 +1,113 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { delimiter, join, relative } from 'node:path';
 import test from 'node:test';
-import { classifyDailyHttp, classifyDailyNotionRequest, validateDailyDoctor, validateDailyFind } from './verify-pi-daily-installation.mjs';
+import { classifyDailyHttp, classifyDailyNotionRequest, validateDailyDoctor, validateDailyFind, verifyDailyCliShim, verifyDailyPackageSource } from './verify-pi-daily-installation.mjs';
+
+async function installationFixture() {
+  const root = await mkdtemp(join(tmpdir(), 'daily-installation-identity-'));
+  const agent = join(root, '.pi/agent'), broker = join(root, '.local/share/broker');
+  const cliRoot = join(root, 'cli'), bin = join(root, '.volta/bin');
+  await Promise.all([agent, broker, join(cliRoot, 'dist'), bin].map(path => mkdir(path, { recursive: true })));
+  const entry = join(cliRoot, 'dist/ntn-skills.js'), content = '#!/usr/bin/env node\nthrow new Error("The CLI must not execute in identity tests");\n';
+  await writeFile(entry, content, { mode: 0o755 });
+  const resolution = join(root, 'volta-resolution.txt');
+  const selected = join(root, 'image/bin/ntn-skills');
+  await mkdir(join(root, 'image/bin'), { recursive: true });
+  await symlink(entry, selected);
+  await writeFile(resolution, selected + '\n');
+  await writeFile(join(bin, 'volta'), `#!${process.execPath}\nconst fs = require('node:fs');\nif (process.argv.slice(2).join(' ') !== 'which ntn-skills' || process.env.DAILY_LOOKUP_SENTINEL !== 'preserved') process.exit(7);\nprocess.stdout.write(fs.readFileSync(${JSON.stringify(resolution)}, 'utf8'));\n`, { mode: 0o755 });
+  await writeFile(join(bin, 'volta-shim'), 'fixture Volta dispatcher: never executed\n', { mode: 0o755 });
+  const shim = join(bin, 'ntn-skills');
+  await symlink('volta-shim', shim);
+  return {
+    root, agent, broker, cliRoot, bin, entry, selected, resolution, shim,
+    env: { PATH: bin, DAILY_LOOKUP_SENTINEL: 'preserved' },
+    config: {
+      cliRoot, cliShim: shim, cliEntrySha256: createHash('sha256').update(content).digest('hex'),
+      voltaIdentity: {
+        executable_sha256: createHash('sha256').update(await readFile(join(bin, 'volta'))).digest('hex'),
+        dispatcher_sha256: createHash('sha256').update(await readFile(join(bin, 'volta-shim'))).digest('hex'),
+      },
+    },
+  };
+}
+
+test('daily relative package source resolves from the settings agent directory, independently of cwd', async () => {
+  const f = await installationFixture();
+  const spec = relative(f.agent, f.broker);
+  assert.notEqual(process.cwd(), f.agent);
+  assert.deepEqual(await verifyDailyPackageSource(spec, join(f.agent, 'settings.json'), f.broker), {
+    selected_package: spec, resolved_package: await realpath(f.broker),
+  });
+});
+
+test('daily Volta shim uses official which resolution and binds the exact frozen CLI bytes', async () => {
+  const f = await installationFixture();
+  const identity = await verifyDailyCliShim(f.config, f.env);
+  assert.equal(identity.resolution.kind, 'volta');
+  assert.deepEqual(identity.resolution.argv, [join(f.bin, 'volta'), 'which', 'ntn-skills']);
+  assert.equal(identity.resolution.entry.realpath, await realpath(f.entry));
+  assert.equal(identity.resolution.entry.sha256, f.config.cliEntrySha256);
+  assert.equal(identity.executed_by_harness, false);
+});
+
+test('daily package identity accepts an absolute source and rejects a different slot or agent-relative target', async () => {
+  const f = await installationFixture();
+  assert.equal((await verifyDailyPackageSource(f.broker, join(f.agent, 'settings.json'), f.broker)).resolved_package, await realpath(f.broker));
+  await assert.rejects(verifyDailyPackageSource(f.cliRoot, join(f.agent, 'settings.json'), f.broker), /final Broker/);
+  await assert.rejects(verifyDailyPackageSource(relative(f.agent, f.broker), join(f.root, 'another-agent/settings.json'), f.broker));
+});
+
+test('daily direct CLI selection resolves exactly to the frozen entry and hash', async () => {
+  const f = await installationFixture(), bin = join(f.root, 'direct-bin');
+  await mkdir(bin);
+  const shim = join(bin, 'ntn-skills');
+  await symlink(f.entry, shim);
+  const config = { ...f.config, cliShim: shim }, env = { PATH: bin };
+  assert.equal((await verifyDailyCliShim(config, env)).resolution.kind, 'direct');
+  await assert.rejects(verifyDailyCliShim({ ...config, cliEntrySha256: '0'.repeat(64) }, env));
+});
+
+test('daily CLI identity rejects a wrapper containing the final bundle path and a shadowed PATH selection', async () => {
+  const f = await installationFixture(), bin = join(f.root, 'shadow-bin');
+  await mkdir(bin);
+  const wrapper = join(bin, 'ntn-skills');
+  await writeFile(wrapper, `#!/bin/sh\n# ${f.entry}\nexit 0\n`, { mode: 0o755 });
+  const env = { ...f.env, PATH: bin + delimiter + f.bin };
+  await assert.rejects(verifyDailyCliShim({ ...f.config, cliShim: wrapper }, env), /actual Volta dispatcher/);
+  await assert.rejects(verifyDailyCliShim(f.config, env), /normal PATH selection/);
+});
+
+test('daily Volta resolution rejects a different entry even with identical bytes and rejects ambiguous output', async () => {
+  const f = await installationFixture(), other = join(f.cliRoot, 'dist/other.js');
+  await writeFile(other, await readFile(f.entry), { mode: 0o755 });
+  await writeFile(f.resolution, other + '\n');
+  await assert.rejects(verifyDailyCliShim(f.config, f.env), /different installed CLI/);
+  await writeFile(f.resolution, f.selected + '\n' + f.entry + '\n');
+  await assert.rejects(verifyDailyCliShim(f.config, f.env), /one absolute CLI entry/);
+});
+
+test('daily identity reread detects changed frozen entry bytes and a changed Volta mapping', async () => {
+  const f = await installationFixture();
+  const initial = await verifyDailyCliShim(f.config, f.env);
+  assert.deepEqual(await verifyDailyCliShim(f.config, f.env), initial);
+  await writeFile(f.entry, (await readFile(f.entry, 'utf8')) + '// changed\n');
+  await assert.rejects(verifyDailyCliShim(f.config, f.env));
+  await writeFile(f.resolution, f.broker + '\n');
+  const changedHash = createHash('sha256').update(await readFile(f.entry)).digest('hex');
+  await assert.rejects(verifyDailyCliShim({ ...f.config, cliEntrySha256: changedHash }, f.env));
+});
+
+test('daily Volta identity requires reviewed executable and dispatcher bytes, not their path names', async () => {
+  const f = await installationFixture();
+  await assert.rejects(verifyDailyCliShim({ ...f.config, voltaIdentity: undefined }, f.env), /actual Volta executable SHA/);
+  await assert.rejects(verifyDailyCliShim({ ...f.config, voltaIdentity: { ...f.config.voltaIdentity, dispatcher_sha256: '0'.repeat(64) } }, f.env), /actual Volta dispatcher SHA/);
+  await writeFile(join(f.bin, 'volta'), (await readFile(join(f.bin, 'volta'), 'utf8')) + '// changed\n');
+  await assert.rejects(verifyDailyCliShim(f.config, f.env), /actual Volta executable SHA/);
+});
 
 const selected = { selection: 'required-router@notion', kind: 'router', source: 'notion', page: 'current-page' };
 const finding = 'context-broker find: required-router -> 1/1\n$required-router@notion\n  kind: router\n  source: notion\n  page: current-page';
