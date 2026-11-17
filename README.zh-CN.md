@@ -26,6 +26,8 @@ Broker 找到 `design-review`，将对应上下文发送给模型；只要正文
 
 维护现有 Skill 时，先用 `read PAGE_ID --database ENTRY --authoring --read-only` 取得固定引用，再用 `apply RETURNED_PIN --database ENTRY --input DIR --dry-run` 预览一份完整维护意图。目录可同时包含修改的主文和新增 reference，未提供的文件保持；只有用户授权后才提交写入。完整规则见随包维护 Skill。
 
+对于输出较长的维护操作，可以在 `apply --dry-run` 和已授权的正式 `apply` 后追加 `--compact`。它保留原操作 ID、固定引用、核验结果和汇总请求量，只在 Agent 可见标准输出中省略冗长的逐 HTTP 请求轨迹；默认输出保持原样。完整预览获得当前用户准确授权后，重复读取未改变的基线属于可选步骤。
+
 ## 为什么使用它
 
 Context Broker 先提供技能名称和描述，再按任务加载选中的正文。Notion 来源依次使用会话选择的 View、配置的 `default_view_id`、API 返回的第一个 View。`Default Context` 只是普通属性，由 View 筛选决定是否使用它。完整 `$`、搜索和显式读取仍能使用 View 外的技能。启动可以准备元数据和快照，不发起模型请求，也不激活正文。

@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { nxtTransportSource, reviewNxtCli, nxtModelGuard, validateNxtFixture } from './nxt-pi-delivery.mjs';
 import { observer, sourceFinality } from './notion-sdk-pi.mjs';
+import { safeRequestMetrics } from './notion-default-context.mjs';
 
 test('published readmes route existing-library setup and combined maintenance before long product details', async () => {
   for (const [file,boundary] of [['README.md','## Why use it'],['README.zh-CN.md','## 为什么使用它']]) {
@@ -38,6 +39,31 @@ test('SRC19 observation requires an exact enabled owned receipt and cannot reope
     assert.throws(()=>validateNxtFixture({...config,...change},receipt));
   const legacy={version:1,kind:'nxt-pi-delivery',source:{entry:source.entry,target:'4195636c-236e-81e0-be28-ed9a783bd84a',name:'nxt-journey'}};
   validateNxtFixture(legacy);assert.throws(()=>validateNxtFixture({...legacy,source}));
+});
+
+test('NXT owned natural maintenance fixture is one new explicitly proven page, not the already modified historical target', () => {
+  const source={id:'nxt',entry:'4195636c-236e-8104-aafa-f7366fe421ce',target:'4195636c-236e-81e0-be28-ed9a783bd84a',name:'nxt-journey'};
+  const page='41c5636c-236e-8101-aabb-ccddeeff9988',path='/owned/create-apply.json',sha256='a'.repeat(64);
+  const prefix='skill://shared_skill%3Alibrary-1%3Askill-1/';
+  const task={id:'maintenance',target:page,refPrefix:prefix,input:'/owned/new-input',ownership:{path,sha256},
+    inputFiles:[{path:'/owned/new-input/SKILL.md'},{path:'/owned/new-input/references/model-maintenance.md'}],
+    prompts:['Maintain the owned page.'],expected:{changed:['SKILL.md'],added:['references/model-maintenance.md'],otherFiles:'unchanged',remoteWrites:'not_started'}};
+  const config={version:3,kind:'nxt-pi-delivery',scenario:'owned-natural-maintenance',source,
+    tasks:[task],fixtureReceipt:{path,sha256}};
+  const receipt={ok:true,verified:true,create_operation_id:'skill-create-'+'b'.repeat(64),
+    record:{kind:'skill',enabled:true,name:'nxt-natural-maintenance-20261117',ref:prefix+'SKILL.md',
+      locator:{type:'shared_skill',database_id:source.entry,page_id:page}},
+    file_bindings:[{path:'SKILL.md'},{path:'references/baseline.md'}]};
+  validateNxtFixture(config,receipt);
+  for(const mutate of [
+    x=>x.verified=false,x=>x.record.enabled=false,x=>x.record.name='nxt-model-maintenance',
+    x=>x.record.locator.page_id='4195636c-236e-81e8-b798-cf623fd25118',
+    x=>x.record.locator.database_id='foreign',x=>x.file_bindings.push({path:'references/model-maintenance.md'}),
+  ]){const invalid=structuredClone(receipt);mutate(invalid);assert.throws(()=>validateNxtFixture(config,invalid));}
+  for(const changed of [{scenario:'git-document-overlay'},{tasks:[{...task,id:'onboarding'}]},
+    {tasks:[{...task,ownership:{path:'/foreign',sha256}}]},
+    {tasks:[{...task,inputFiles:task.inputFiles.slice(0,1)}]}])
+    assert.throws(()=>validateNxtFixture({...config,...changed},receipt));
 });
 
 test('NXT real fetch boundary refuses invalid model, output cap and request eleven before dispatch', async t => {
@@ -116,9 +142,33 @@ test('NXT native public reads admit the two rejected owned paths and refuse exte
 test('NXT model CLI guard binds actual apply to the separately owned pin and frozen input', () => {
   assert.equal(reviewNxtCli(apply, policy).kind, 'apply');
   assert.equal(reviewNxtCli(apply + ' --dry-run', policy).kind, 'apply-preview');
+  assert.throws(() => reviewNxtCli(apply + ' --dry-run --compact', policy),
+    'A strict HTTP source audit cannot use a presentation receipt missing the per-attempt trace');
+  assert.throws(() => reviewNxtCli(apply + ' --compact', policy),
+    'The existing fixed-budget NXT acceptance requires the complete default transport trace');
+  assert.throws(() => reviewNxtCli('node /owned/ntn-skills.mjs read page --database db --read-only --compact', policy));
   for (const wrong of [apply.replace('owner/', 'foreign/'), apply.replace('/owned/input', '/global'), apply.replace(pin, 'page'), apply + '; echo escaped', apply + ' --remove SKILL.md'])
     assert.throws(() => reviewNxtCli(wrong, policy));
   assert.throws(() => reviewNxtCli(apply, { ...policy, task: 'onboarding' }));
+});
+
+test('compact apply output never masquerades as a complete NXT request ledger', () => {
+  const full = {
+    trace_enabled: true,
+    trace_dropped: 0,
+    total_requests: 1,
+    trace: [{
+      event: 'attempt', attempt: 1, kind: 'notion_metadata',
+      method: 'GET', outcome: 'success', started_ms: 0, duration_ms: 2,
+      request_bytes: 0, response_bytes: 364, http_status: 200,
+      retry_after_seconds: null, request_id: null, rate_limit_reason: null, target: null,
+    }],
+  };
+  assert.equal(safeRequestMetrics(full).complete, true);
+  const compact = { ...full, trace: undefined, trace_omitted_from_output: true, trace_entries: 1 };
+  assert.equal(safeRequestMetrics(compact), undefined,
+    'An output presentation with only aggregate counts has unknown per-request proof, not zero requests');
+  assert.equal(safeRequestMetrics({ ...full, trace: [], trace_omitted_from_output: true })?.complete, false);
 });
 
 test('NXT public read output flags are not authority and exact maintenance authoring permits its retained history', () => {

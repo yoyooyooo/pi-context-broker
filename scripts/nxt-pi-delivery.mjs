@@ -107,6 +107,36 @@ export function validateNxtFixture(config, receipt) {
     assert.equal(config.fixtureReceipt, undefined);
     return;
   }
+  if (config.version === 3) {
+    assert.equal(config.scenario, 'owned-natural-maintenance');
+    assert.equal(config.source.target, '4195636c-236e-81e0-be28-ed9a783bd84a');
+    assert.equal(config.source.name, 'nxt-journey');
+    assert.equal(receipt?.ok, true);
+    assert.equal(receipt?.verified, true);
+    assert.match(receipt.create_operation_id, /^skill-create-[a-f0-9]{64}$/u);
+    const record = receipt.record;
+    assert.equal(record?.kind, 'skill');
+    assert.equal(record?.enabled, true);
+    assert.equal(record?.locator?.type, 'shared_skill');
+    assert.equal(record?.locator?.database_id, config.source.entry);
+    assert.equal(record?.locator?.page_id, config.tasks[0]?.target);
+    assert.equal(record?.name, 'nxt-natural-maintenance-20261117');
+    assert.notEqual(record.locator.page_id, config.source.target);
+    assert.notEqual(record.locator.page_id, '4195636c-236e-81e8-b798-cf623fd25118');
+    const ref = new URL(record.ref);
+    assert.equal(config.tasks[0]?.refPrefix, ref.protocol + '//' + ref.host + '/');
+    assert.deepEqual(config.tasks.map(task => task.id), ['maintenance']);
+    assert.equal(config.tasks[0].prompts.length, 1);
+    assert.equal(config.tasks[0].ownership.path, config.fixtureReceipt?.path);
+    assert.equal(config.tasks[0].ownership.sha256, config.fixtureReceipt?.sha256);
+    assert.deepEqual(config.tasks[0].expected, {
+      changed: ['SKILL.md'], added: ['references/model-maintenance.md'], otherFiles: 'unchanged', remoteWrites: 'not_started',
+    });
+    assert.deepEqual(config.tasks[0].inputFiles.map(file => file.path.slice(config.tasks[0].input.length + 1)).sort(),
+      ['SKILL.md', 'references/model-maintenance.md']);
+    assert.deepEqual(receipt.file_bindings.map(binding => binding.path).sort(), ['SKILL.md', 'references/baseline.md']);
+    return;
+  }
   assert.equal(config.version, 2); assert.equal(config.scenario, 'git-document-overlay');
   assert.equal(receipt?.ok, true); assert.equal(receipt?.status, 'applied');
   const record=receipt.record;
@@ -125,7 +155,7 @@ export function validateNxtFixture(config, receipt) {
 export async function inspectNxtInput(config) {
   for (const key of ['packageRoot', 'evidenceRoot', 'baselinePath']) assert.ok(isAbsolute(config[key]), key);
   let fixtureReceipt;
-  if(config.version===2) {
+  if(config.version===2 || config.version===3) {
     assert.ok(isAbsolute(config.fixtureReceipt?.path));
     assert.equal((await identity(config.fixtureReceipt.path)).sha256,config.fixtureReceipt.sha256);
     fixtureReceipt=await json(config.fixtureReceipt.path);

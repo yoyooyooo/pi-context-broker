@@ -27,6 +27,8 @@ SRC19 的实库新任务与旧 NXT 自然失败分开留证。安装命令及子
 
 SRC19 使用原 NXT runner 的显式 v2 输入：必须绑定正式启用回执的 hash、原 Skill/page/library/name/ref，且只允许一个新的只读混合文档任务。v1 的原目标、任务和失败不变；同样保留每任务一次、最多十个实际模型请求和每请求 4096 输出 token，重试关闭。输入与最终 package/hash 在执行前冻结，旧失败不覆盖。
 
+2026-11-17 独立 owned 的 v3 自然维护确实完成了一次原 CLI `apply` 写入并返回 complete+verified，但其最后一轮之后没有额度再产生合格 final：原第 11 次模型 dispatch 被 10 次预算拒绝，这不是操作未提交。此例同时量得一次 114 请求、111 KB 的 CLI 完整 stdout，其中约 109 KB 是逐请求 trace。产品新增可选 `apply --compact`，仅从 Agent 可见回执中省略 trace，保留验证结果、操作 ID 和 aggregated metrics；旧用户默认输出不变。**严格 NXT HTTP 来源审计仍要求原始逐请求 trace，所以现有 NXT guard 明确拒绝 --compact。** 已通过源观察器证明 compact 缺 trace 时是未观察、绝非零请求；若要同时获得精简 Agent 输出与完整 NXT 溯源，需经过另一个明确授权的真实独立请求证据通路，不从摘要推断。安全 guard 不放宽。**不利用这个工具提示修补历史 Session，也不为追绿增加旧任务模型轮次**。原提交及独立读回、Notion正文表示差异、N09空机器历史pin失败的完整证据仍需独立持有。
+
 实际 Git 消费会通过既有 SDK 调用本机 `gh auth token --hostname github.com`。该原生命令不会加载 Node 观察器。SRC19 doctor 先固定所选 gh 可执行文件的真实路径和 SHA；观察器仅对相同二进制、精确参数、活动 SDK 范围内的 spawn 记录独立类型，并要求原 PID、close、外层 SDK end 全部存在。它不保存凭据 stdout 或摘要，不把该进程算作 CLI 正文读取，也不推断其内部 HTTP。未声明探测、不同命令/二进制、缺关闭或未终结 SDK 仍保持不完整。原默认子进程规则不放宽，只有显式 v2 场景传入这一受限合同；代码反例与实际受控 Session 分别留证。此观察器修正不改变产品归属、派发、权限或状态模型的有限性质。
 
 至少记录两仓commit/必要脏树hash、精确CLI/SDK和Broker包hash、范围/原计划、当前资格、snapshot/version、effects、实际HTTP/完整body、Session及终局。源测试、受控服务、独立安装、真实Notion、真实Pi、自然模型、第二物理机分别用passed/failed/blocked/not_run，不可代证。

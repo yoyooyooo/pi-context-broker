@@ -26,6 +26,8 @@ Given only this package's CLI path, run `node /absolute/package/dist/ntn-skills.
 
 For existing Skill edits, obtain the fixed author reference with `read PAGE_ID --database ENTRY --authoring --read-only`, then preview one complete intent with `apply RETURNED_PIN --database ENTRY --input DIR --dry-run`. The input directory may contain a changed main and a new reference; omitted files remain unchanged. Submit writes only after authorization, following the bundled maintenance Skill.
 
+For long operations, append `--compact` to `apply --dry-run` and the corresponding authorized `apply`. This preserves the original operation ID, fixed refs and verified state but omits the detailed HTTP attempt trace from the agent-visible stdout. The full unmodified output remains the default. An optional extra baseline read is not required after an exact already-authorized preview.
+
 ## Why use it
 
 Agent setups accumulate review checklists, runbooks and team workflows. Context Broker publishes names and descriptions before loading selected bodies. A Notion source uses a session-selected View, its configured `default_view_id`, or the first View in API order. `Default Context` is an ordinary checkbox used only by saved View filters. Full `$` selection, search and explicit reads remain available outside that View. Startup may prepare metadata and snapshots; it never sends a model request or activates bodies.
