@@ -11,6 +11,9 @@
     "guard_regression": "scripts/nxt-pi-delivery.test.mjs: local actual shell descendants and foreign/unended/missing-parent cases; scripts/notion-sdk-pi.test.mjs: existing source-finality boundaries"
   },
   "files": {
+    "scripts/nxt-pi-delivery.mjs": "6b9dc05f25b5dddaaec2ce70e6325468599d9cb02b7dbc818c79a52e371e9dd7",
+    "scripts/nxt-pi-delivery.test.mjs": "6f813c7e4ae714bcaf0427accb64a82e9c5956333f55f9c39fa41d196739fa17",
+    "scripts/notion-default-context.mjs": "1ab696eb8daefb60bcd04b9dc532439fe907cf5b853f0af9d74a10f14592928b",
     "packages/context-broker/src/host-skills.ts": "51ad2a1b29ae54a2f6263c7039785e3b5c8fe0f9d08b7cee1c3dbe4aa6bd68ea",
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/prepare-protocol.ts": "722883c738809713ea5eaca582cd953233f56b95758df1f7f627453cbcdd8561",
@@ -715,6 +718,29 @@
       "Concrete process observation is outside the finite AcquisitionEffects model.",
       "No authority to write Notion, change global credentials, retry an old natural task or infer original operation ACK.",
       "Natural model semantics require separate raw Session and final wire review."
+    ]
+  },
+  "nxt_owned_author_compact_audit_review": {
+    "issue": "AH-1063, AH-500, AH-509",
+    "implementation_commit": "f478a373413fec936baeacb5eb5db02b8c5f63f3",
+    "cli_implementation_commit": "15558851ca9d106538a2781af7f83acc761c5e4a",
+    "document": "docs/verification-routing.md",
+    "changed_tracked_files": [],
+    "new_concrete_context": [
+      "scripts/nxt-pi-delivery.mjs",
+      "scripts/nxt-pi-delivery.test.mjs",
+      "scripts/notion-default-context.mjs"
+    ],
+    "natural_owned_model": "A dedicated newly created owned Skill actually received one verified public apply by the model, and independent current export preserved original baseline. Model final response failed because the frozen tenth request had been consumed; the eleventh was correctly refused. Original model failure and write receipt retained. A cold independent old fixed pin returned SNAPSHOT_MISSING; no remote history success inferred.",
+    "presentation_contract": "Optional apply --compact is for ordinary Agent presentation; it cannot supply full HTTP request evidence. Strict NXT tool grammar still rejects it for audit; safeRequestMetrics of aggregate-only output returns undefined (unknown), never zero. Original strict source finality and guard negative cases unchanged.",
+    "evidence": "12 guarded NXT tests/0 failures with actual native credential and aggregate-only request negative, real model/Sessions, independent current and old pin proof.",
+    "finite_models_configs_cases_expected_rules_changed": false,
+    "not_claimed": [
+      "No natural final answer achieved",
+      "No new Pi model run after compact flag",
+      "No accepted compact NXT HTTP provenance",
+      "No historical cold machine recovery",
+      "No authorization to merge main or publish"
     ]
   }
 }
