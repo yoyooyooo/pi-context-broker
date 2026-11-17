@@ -16,7 +16,7 @@ import { createOwnedGraphProject, inspectOwnedGraphProject, retainGeneratedPlan,
 import { verifyRetainedSourceProof } from './notion-skill-retained-proof.mjs';
 import { createPiHelpBoundary } from './notion-pi-help.mjs';
 import { graphSourceViews, graphSourceAccounting } from './notion-skill-graph-model-evidence.mjs';
-import { verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from './skill-preparation-evidence.mjs';
+import { verifyConsumptionEffects, verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from './skill-preparation-evidence.mjs';
 
 const helper = fileURLToPath(import.meta.url);
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -40,7 +40,7 @@ export async function graphHarnessIdentity() {
 
 export function graphObserverModule(settings, referenceParser) {
   return "import * as fs from 'node:fs';\nimport * as crypto from 'node:crypto';\nimport * as path from 'node:path';\nimport { graphSourceViews } from " + JSON.stringify(new URL('./notion-skill-graph-model-evidence.mjs', import.meta.url).href)
-    + ';\nimport { verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from ' + JSON.stringify(new URL('./skill-preparation-evidence.mjs', import.meta.url).href)
+    + ';\nimport { verifyConsumptionEffects, verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from ' + JSON.stringify(new URL('./skill-preparation-evidence.mjs', import.meta.url).href)
     + ';\nimport { dailyRouteContract } from ' + JSON.stringify(new URL('./verify-skill-graph-contract.mjs', import.meta.url).href)
     + ';\nimport { parseNativeReference } from ' + JSON.stringify(referenceParser)
     + ';\nimport { validateResourceReadProjection } from ' + JSON.stringify(new URL('./resource-read-projection.ts', referenceParser).href)
@@ -138,6 +138,12 @@ export function observeGraphGate(api, settings) {
   const inside = (parent, child) => { const value = relative(parent, child); return value === '' || (!value.startsWith('../') && value !== '..' && !isAbsolute(value)); };
   const canonical = value => value === null || typeof value !== 'object' ? JSON.stringify(value) : Array.isArray(value) ? '[' + value.map(canonical).join(',') + ']' : '{' + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => JSON.stringify(key) + ':' + canonical(item)).join(',') + '}';
   const same = (a, b) => canonical(a) === canonical(b);
+  const directoryFiles = files => files.map(file => {
+    const { mode, ...publicFile } = file;
+    if (!same(Object.keys(publicFile).sort(), ['bytes', 'path', 'ref', 'sha256'])
+      || mode !== undefined && !['100644', '100755'].includes(mode)) throw new Error('Unknown source file directory shape');
+    return publicFile;
+  });
   const modelProfile = settings.modelProfile === undefined ? undefined : dailyRouteContract(settings.modelProfile);
   if (modelProfile && (!same(settings.modelProfile, modelProfile) || settings.model !== modelProfile.model))
     throw new Error('Daily observer requires the exact frozen model profile');
@@ -753,7 +759,7 @@ export function observeGraphGate(api, settings) {
       if (!node || !file || item.content !== file.content || !refMatchesFile(resolveMainReference(parseRef(item.ref)), file)
         || proof.bodySha256 !== file.sha256
         || proof.bytes !== file.bytes || proof.snapshotId !== file.snapshot || !same(proof.binding, node.binding)
-        || !same(proof.directory?.files, node.files)
+        || !same(proof.directory?.files, directoryFiles(node.files))
         || !['required', 'candidates', 'references'].every(key => same(proof.directory?.[key], node[key].map(({ id, ref, kind, name, description, availability }) => ({ id, ref, kind, name, description, availability }))))) throw new Error('Prepared main differs from its actual source, manifest or delivery span');
       verifyDirectoryRefs(item.directory, proof.directory);
       const explicitRoot = graph.roots.includes(owner);
@@ -1278,7 +1284,8 @@ export function observeGraphGate(api, settings) {
       && Object.keys(input).every(key => ['query', 'source', 'limit', 'cursor'].includes(key));
     const preparation = event.toolName === 'notion_use' && discoveredBefore && requested.length <= 64
       && (input.refresh === undefined || typeof input.refresh === 'boolean')
-      && Object.keys(input).every(key => ['ref', 'refresh'].includes(key))
+      && (input.readOnly === undefined || typeof input.readOnly === 'boolean')
+      && Object.keys(input).every(key => ['ref', 'refresh', 'readOnly'].includes(key))
       && Array.isArray(selectedRoots) && same(selectedRoots.map(item => item.ref), requested) && selectedRoots.every(({ ref, parsed }) => {
         if (!parsed || ref.startsWith('sr:R')) return false;
         const views = sourceViews(), records = [...views.directories.flatMap(item => item.value.records ?? []), ...views.entries.map(item => item.value.record)];
@@ -1368,14 +1375,35 @@ export function observeGraphGate(api, settings) {
     }
     let body = content, nativeProofError;
     const nativeProof = event.details?.contextBrokerRead;
-    if (nativeProof?.version === 3) {
-      const span = nativeProof.delivery;
-      if (span?.start !== 0 || span.encoding !== 'raw' || !Number.isSafeInteger(span.end) || span.end <= 0 || span.end > content.length) nativeProofError = 'Native main lacks its complete source span';
-      else body = content.slice(0, span.end);
-    }
+    const resourceProof = event.details?.contextBrokerResource;
+    const spanProof = nativeProof?.version === 3 ? nativeProof : resourceProof?.version === 2 ? resourceProof : undefined;
+    let suffix = '';
+    try {
+      if (spanProof) {
+        const span = spanProof.delivery;
+        if (span?.start !== 0 || span.encoding !== 'raw' || !Number.isSafeInteger(span.end) || span.end < 0 || span.end > content.length)
+          throw new Error('Native read lacks its complete source span');
+        body = content.slice(0, span.end); suffix = content.slice(span.end);
+        if (event.details.effects !== undefined) {
+          const effects = verifyConsumptionEffects(event.details.effects);
+          const footer = '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>';
+          if (!suffix.endsWith(footer)) throw new Error('Native effects differ from the complete disclosed suffix');
+          suffix = suffix.slice(0, -footer.length);
+        }
+      } else if (resourceProof || event.details?.effects !== undefined) throw new Error('Native effects need an observed delivery span');
+      if (resourceProof && (spanProof !== resourceProof || resourceProof.toolCallId !== event.toolCallId
+        || resourceProof.delivered_complete_text !== true || resourceProof.loaded !== false
+        || digest(body) !== resourceProof.sha256 || Buffer.byteLength(body) !== resourceProof.bytes
+        || !['', '\n'].includes(suffix))) throw new Error('Native resource differs from its full source span');
+    } catch (error) { nativeProofError = error.message; }
     const claim = resolveSubmittedName(call?.claim);
     const named = call?.claim?.kind === 'submitted-name';
-    let target = call?.allowed && (!named || claim) ? targetFor(call.input, body, { expected: call.expected, selection: named ? claim : undefined }) : undefined;
+    let target = !nativeProofError && call?.allowed && (!named || claim) ? targetFor(call.input, body, { expected: call.expected, selection: named ? claim : undefined }) : undefined;
+    if (target && resourceProof && (target.role !== 'resource' || resourceProof.id !== target.ownerId || resourceProof.scope !== target.scope
+      || resourceProof.snapshot_id !== target.snapshot || resourceProof.version_id !== target.version || resourceProof.ref !== target.ref
+      || resourceProof.path !== target.path || resourceProof.file_id !== target.fileId)) {
+      nativeProofError = 'Native resource changed its selected owner, snapshot or file'; target = undefined;
+    }
     if (target && !call.expected && !matchesClaim(claim, target)) target = undefined;
     if (target?.role === 'entrypoint' && (settings.sourceMode === 'sdk' || nativeProof)) {
       try {
@@ -1385,11 +1413,11 @@ export function observeGraphGate(api, settings) {
           || nativeProof.snapshotId !== target.snapshot || nativeProof.bodySha256 !== target.sha256 || nativeProof.bytes !== target.bytes
           || !same(nativeProof.binding, node.binding) || nativeProof.loaded === true) throw new Error(nativeProofError ?? 'Native inspection receipt differs from the actual source entry');
         if (nativeProof.version === 3) {
-          const footer = /^\n{2,3}<skill-directory>\n([\s\S]*)\n<\/skill-directory>$/.exec(content.slice(body.length));
+          const footer = /^\n{2,3}<skill-directory>\n([\s\S]*)\n<\/skill-directory>$/.exec(suffix);
           if (!footer) throw new Error('Native inspection has an unverified footer');
           const model = JSON.parse(footer[1]);
           if (!same(Object.keys(model).sort(), ['directory', 'ref']) || !refMatchesFile(resolveMainReference(parseRef(model.ref)), target)) throw new Error('Native inspection main reference changed');
-          const directory = { files: node.files, ...Object.fromEntries(['required', 'candidates', 'references'].map(key => [key,
+          const directory = { files: directoryFiles(node.files), ...Object.fromEntries(['required', 'candidates', 'references'].map(key => [key,
             node[key].map(({ id, ref, kind, name, description, availability }) => ({ id, ref, kind, name, description, availability }))])) };
           if (!same(nativeProof.directory, directory)) throw new Error('Native inspection lost the canonical directory');
           verifyDirectoryRefs(model.directory, directory);

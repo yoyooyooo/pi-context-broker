@@ -643,3 +643,11 @@ Default Context stays a normal optional View-filter attribute. Do not delete its
 可选 resume 参数只接受原 entry 断言和公开的每次调用预算（最多 500 请求、64 MiB、120 秒）；原任务总 deadline 不随续跑重启，实际 `request_totals` 累计不归零。每次预算不是全任务共享额度，缺失网络观察不填零。不得扩到 `--all`、别的 run/库/目标，或可写的 `ctl operation resume`。原生 Session 按先前真实结果逐条核对，不借用未来结果授权过去命令。
 
 复验使用 `node --test scripts/verify-pi-daily-candidate.test.mjs` 的暂停、续跑、报告及越界反例。无需为此再跑真实模型；历史四次 failed 结果不改写。
+
+### 实际 SDK 资源与宿主回执观察
+
+使用已有 `graphObserverModule` 时，把被动 Source/SDK 观察器放在 Broker 之前注册，宿主回执观察器放在 Broker 之后注册。Broker 的 `tool_result` hook 会追加完整正文回执、固定资源目录及 effects；读取转换前的事件不能据此拒绝随后已经合法披露的资源。原生 Session、原观察日志和失败必须保留，离线修复不能改写过去的实际投递结论。
+
+Source manifest 的文件 mode 保留在来源证明中；宿主目录的公开字段是 path、bytes、sha256、ref。观察器按该明确投影比对，不把 model 目录缺少 mode 当成内容损坏，也不忽略未知来源字段或非法 mode。主文和 scalar resource 以各自原始 delivery span 核 bytes/hash，另严格校验 `<notion-effects>` 后缀与结构化回执相同；后缀不计作作者文件字节。resource 的 owner、scope、snapshot、version、File ID 仍逐项绑定来源。
+
+复验沿 `scripts/notion-skill-graph-model-evidence.test.mjs` 的真实回执形状及错误 effects、owner、pin、截断正文反例，并运行原 graph-model、graph-delivery、skill-preparation-evidence 回归。公开 `notion_use.readOnly` 仅接受布尔值；严格只读任务仍另外检查完整请求账本与 effects。此处修正的是验收观察器，未改变宿主产品、安装产物或有限模型语义；测试通过不代表新的真实会话已经通过。
