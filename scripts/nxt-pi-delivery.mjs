@@ -416,6 +416,28 @@ export async function runNxtControlled(config, info) {
     await call('nxt-two-references', 'read', { paths: references.map(file => refFor(file.logical_path)), readOnly: true }, Object.fromEntries(bodies.map(file => [file.logical_path, 1])));
     phase = 'ordinary'; await rpc.prompt('Continue the ordinary conversation without reading or applying any Skill again.'); await observe(phase, Object.fromEntries(bodies.map(file => [file.logical_path, 1])));
     await call('nxt-control-discovery', 'tool_search', { query: 'notion_ctl working set', limit: 1 }, { 'SKILL.md': 1 });
+    if (config.controlledCliScope === true) {
+      const current = processes.at(-1); assert.ok(current && !current.closed);
+      const sourceBefore = await rows(join(current.output, 'source.jsonl'));
+      const transportBefore = await rows(join(state.output, 'transport.jsonl'));
+      const scope = JSON.parse(text(await call('nxt-cli-source', 'notion_ctl', { cli_source: config.source.id }, { 'SKILL.md': 1 })));
+      assert.equal(scope.kind, 'host_cli_scope'); assert.equal(scope.sourceId, config.source.id);
+      assert.equal(scope.database, config.source.entry); assert.equal(scope.executed, false);
+      assert.equal(scope.command.length, 2); assert.equal(scope.command[1], info.cli.path);
+      const processStart = sourceBefore.find(event => event.kind === 'observer_start' && event.observer_pid === current.pid);
+      assert.ok(processStart); assert.equal(scope.command[0], processStart.exec_path);
+      const rejected = await call('nxt-cli-source-unavailable', 'notion_ctl', { cli_source: 'not-a-configured-source' }, { 'SKILL.md': 1 }, true);
+      assert.ok(text(rejected).includes('HOST_SOURCE_UNAVAILABLE'));
+      const sourceAfter = await rows(join(current.output, 'source.jsonl'));
+      const transportAfter = await rows(join(state.output, 'transport.jsonl'));
+      const newSource = sourceAfter.slice(sourceBefore.length);
+      assert.equal(newSource.filter(event => event.kind === 'sdk' || event.kind === 'child_start').length, 0,
+        'A source command locator must not consume a Skill, start CLI work, or contact a provider');
+      assert.equal(transportAfter.slice(transportBefore.length).filter(event => event.phase === 'source-request').length, 0);
+      await save(join(state.output, 'cli-source-proof.json'), { status: 'passed', sourceId: scope.sourceId,
+        database: scope.database, command: scope.command, executed: false, actual_tool_calls: 2,
+        source_requests: 0, source_sdk_calls: 0, child_processes: 0, unavailable_source_rejected: true });
+    }
     const beforeFailure = JSON.parse(text(await call('nxt-before-refresh', 'notion_ctl', { working_set: 'show' }, { 'SKILL.md': 1 })));
     await publishToolPlan(state.controlPath, { failRefresh: true });
     await call('nxt-failed-refresh', 'notion_use', { ref: candidate, refresh: true, readOnly: true }, { 'SKILL.md': 1 }, true);

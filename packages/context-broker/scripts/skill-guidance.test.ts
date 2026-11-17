@@ -51,6 +51,46 @@ test("normal Pi maintenance routes to the explicit task CLI without advertising 
   expect(readonly).not.toContain("ctl builtin read");
 });
 
+test("deferred native management exposes only exact enabled source IDs when a CLI must be located", async () => {
+  const normal = ["read", "notion_list", "notion_use", "bash"];
+  const native = [...normal, "notion_ctl"];
+  const hidden = text(normal), discovered = text(native);
+  expect(hidden).not.toContain("cli_source");
+  expect(discovered).toContain("notion_ctl cli_source");
+  expect(discovered).toContain('["alpha","beta"]');
+  expect(discovered).toContain("Choose explicitly");
+  expect(discovered).toContain("no execution or authorization");
+  for (const forbidden of ["/configured", "database-a", "database-b", "disabled", "must-not-appear", '"local"'])
+    expect(discovered).not.toContain(forbidden);
+  expect(Buffer.byteLength(hidden)).toBeLessThanOrEqual(900);
+  expect(Buffer.byteLength(discovered)).toBeLessThanOrEqual(1200);
+  expect(text(native.filter(tool => tool !== "bash"))).not.toContain("cli_source");
+  const h = await graphHarness();
+  h.tools(native);
+  const result = resultJson(await h.invoke({ cli_source: "beta" }));
+  expect(result).toEqual({ kind: "host_cli_scope", sourceId: "beta", command: config.sources![1]!.command,
+    database: "database-b", executed: false });
+  expect(h.counts()).toEqual({ graphReads: 0, loads: 0, appends: 0 });
+});
+
+test("source-ID routing is projected once only after native management discovery and disappears without shell", async () => {
+  const h = guidanceHarness();
+  const original: AgentMessage[] = [{ role: "user", content: "Maintain the chosen source, but do not guess a global CLI." }];
+  h.tools(["read", "notion_list", "notion_use", "bash"]);
+  const normal = await h.project("context_with_system", original);
+  expect(guidanceText(normal)).not.toContain("cli_source");
+  h.tools(["read", "notion_list", "notion_use", "notion_ctl", "bash"]);
+  const discovered = await h.project("context_with_system", normal);
+  expect(guidanceText(discovered)).toContain('["alpha","beta"]');
+  expect(discovered.filter(message => message.customType === "ntn-skills-guidance")).toHaveLength(1);
+  expect(await h.project("context_with_system", discovered)).toBe(discovered);
+  h.tools(["read", "notion_list", "notion_use", "notion_ctl"]);
+  const noShell = await h.project("context_with_system", discovered);
+  expect(guidanceText(noShell)).not.toContain("cli_source");
+  expect(noShell[0]).toBe(original[0]);
+  expect(guidanceText(normal)).not.toContain("cli_source");
+});
+
 test("native consumption keeps exact references and operation intent without machine commands", () => {
   const guidance = text(full);
   for (const ref of ["sr:C", "sr:S", "sr:R", "skill://"]) expect(guidance).toContain(ref);

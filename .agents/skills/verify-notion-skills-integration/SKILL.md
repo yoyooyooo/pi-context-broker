@@ -56,6 +56,8 @@ AH-561 的直连请求和跨 Skill 图先走 [request-engine](features/request-e
 
 ## Pi 单宿主主线
 
+原生管理工具发现后，来源CLI选路通过同一NXT controlled配置的 `controlledCliScope: true` 覆盖：精确来源返回已安装CLI/数据库且executed=false，未知来源typed拒绝；阶段内HTTP、SDK和子进程计数均不得增加。现有guidance suite同时覆盖多来源、禁用/foreign/重复ID、无shell、动态工具发现/撤销、单份context及默认<=900B上限。只返回locator，不加载正文或直接执行CLI；不要为了验证再跑一轮自然维护或复制生产数据。
+
 四柱候选的compact验证复用原NXT原生Session/provider/source observers：需先证明所选SDK和CLI的command_output_proof v1、完整原HTTP账本及实际closed stdout hash/length一致，再授权该固定目标的compact参数。旧aggregate-only负例仍拒绝。新版本只读准备窗口复用不延长TTL、不穿过写入guard；独立暖读零请求不续期，迟到producer/取消/外来Store/凭据都需有原负例。报告分别给HTTP数、源响应字节、local对象增长、模型工具步数和实际provider bytes；不缩View或省略正文来虚降成本。
 
 SRC19 文档级 Git/Notion 混合消费遵循[交接合同](../../../docs/verification-routing.md#证据交接)。用同一最终 CLI/SDK 构建并独立安装 Broker，核对未改主文/资源的 Git hash 与仅修改 reference 的 Notion hash；不得由 snapshot ready 推断实际投递。主文接管、单文件 restore-follow、上游更新保留 custom 由 CLI 原 guardian 验收。新混合任务单独冻结输入和预算，保留旧 NXT 自然任务失败、不增加其重试；所有安装/子进程删除 `NTN_SKILLS_DEV_ROOT`，不要赋空值或改用户日用配置。

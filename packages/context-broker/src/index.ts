@@ -823,6 +823,9 @@ function hasCliGuidance(messages: AgentMessage[], guidance: Omit<AgentMessage, "
 function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit<AgentMessage, "role" | "timestamp"> {
   if (tools.has("notion_list") || tools.has("notion_use") || tools.has("notion_ctl")) {
     const read = tools.has("read"), list = tools.has("notion_list"), use = tools.has("notion_use");
+    const cliSources = tools.has("notion_ctl") && tools.has("bash")
+      ? (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false).map(source => source.id)
+      : [];
     const content = [
       "<ntn-skills-guidance>",
       "Directories are candidates; Local Skills keep native routes. Source editor flags do not override Notion tool availability or permissions.",
@@ -833,6 +836,7 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
       ...(use ? ["notion_use loads roots and Requires; Members stay candidates. Call outside Code mode."] : []),
       ...(tools.has("bash") ? ["Maintenance: use the task's CLI (node for .js/.mjs), then ctl builtin read notion/ntn-skills-maintain; never activate the edited item."] : []),
       ...(tools.has("notion_ctl") ? ["notion_ctl working_set manages active roots and byte budgets; release preserves shared Requires, history and cache."] : []),
+      ...(cliSources.length ? [`No task CLI? notion_ctl cli_source returns its command/scope; no execution or authorization. Choose explicitly from ${JSON.stringify(cliSources)}.`] : []),
       ...((!read || !list) && tools.has("bash") ? (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false).map(source => {
         const scope = hostCliScope([source]);
         return `Unavailable native operations can use this source's CLI: ${JSON.stringify({ source: source.id, command: scope.command, database: scope.database, operations: [...(!list ? ["list --query TEXT --json"] : []), ...(!read ? ["read REF --json"] : [])] })}. CLI refs must be canonical; session sr: handles belong to this Pi session.`;
