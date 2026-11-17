@@ -31,7 +31,7 @@
     "packages/context-broker/tsconfig.json": "5b485daf61c3d2f793b77a9c8511a135f40988a402d1e0840b4e9d79a289646d",
     "scripts/skill-preparation-evidence.mjs": "a1c3ae9d40c4ca4ec407014ed13339c20caf66f2d918a4b988602053ea7bb3fb",
     "scripts/skill-preparation-evidence.test.mjs": "3205a96b55844a40d2c1194ccb2485be4d570fd1e4f07156a2a8529676283275",
-    "scripts/notion-sdk-pi.mjs": "60ec415be64ad28f4abe814b21989a3eb2b59812b45a49d31349dd3016cfb5f6",
+    "scripts/notion-sdk-pi.mjs": "04a41ef8871551084452079ab4fe1143a8ab0b9a031213892452f8aaf3ce2e69",
     "scripts/notion-sdk-pi.test.mjs": "f5fc3ce23115627a91c4dbf1fb2f423fa54322801a20ab7e5d1a72cd5a4e2121",
     "packages/context-broker/scripts/skill-model-surfaces.test.ts": "876b6c6650bed1f81068c71c1be630fb10ecb951e1cc1a7cb17797cc26d57d5b",
     "packages/context-broker/scripts/session-active.test.ts": "e8e6ef47984d4759b0319487599ecc668c0a13a9acce74c43128ed9b4687299a",
@@ -699,5 +699,22 @@
         "semantics": "New exact test validates first turn untouched, second restored-role mutation carries legal assistant content/model/usage/stopReason and preserves source bytes. This verifies counterexample plumbing; no model transition or production logic changed."
       }
     }
+  },
+  "src19_native_credential_observer_review": {
+    "issue": "AH-1063",
+    "implementation_commit": "78aa4aaf833edbf1230cc17a3143ee118d3ca722",
+    "cli_commit": "9741082a9795ee6ca2dc166c1f6de8f8a500882b",
+    "document": "docs/verification-routing.md",
+    "reviewed_bindings": [
+      "scripts/notion-sdk-pi.mjs"
+    ],
+    "semantics": "Existing source finality remains strict by default. SRC19 explicitly verifies the local gh binary hash and exact auth-token command inside an active SDK call, requires matching PID/close and SDK end, and never records credential stdout/digest. This native child is not a CLI body read or a proof of internal HTTP. Original NXT v1 tasks and budgets unchanged; v2 owned receipt permits only one new read-only overlay task.",
+    "model_cases_rules_changed": false,
+    "evidence": "184 source-observer/harness tests including real local child positive and missing/foreign proof negatives; actual installed Pi mixed sources, refresh, release and resume controlled run passed.",
+    "limits": [
+      "Concrete process observation is outside the finite AcquisitionEffects model.",
+      "No authority to write Notion, change global credentials, retry an old natural task or infer original operation ACK.",
+      "Natural model semantics require separate raw Session and final wire review."
+    ]
   }
 }
