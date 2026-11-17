@@ -11,6 +11,18 @@ import { createHash } from 'node:crypto';
 import { nxtTransportSource, reviewNxtCli, nxtModelGuard, validateNxtFixture } from './nxt-pi-delivery.mjs';
 import { observer, sourceFinality } from './notion-sdk-pi.mjs';
 
+test('published readmes route existing-library setup and combined maintenance before long product details', async () => {
+  for (const [file,boundary] of [['README.md','## Why use it'],['README.zh-CN.md','## 为什么使用它']]) {
+    const body=await readFile(new URL('../packages/context-broker/'+file,import.meta.url),'utf8');
+    const intro=body.slice(0,body.indexOf(boundary));
+    for(const command of ['/context-broker connect personal ENTRY --config /absolute/config.json',
+      'ctl builtin read notion/ntn-skills-maintain --path references/setup.md','ctl library inspect ENTRY',
+      'read PAGE_ID --database ENTRY --authoring --read-only','apply RETURNED_PIN --database ENTRY --input DIR --dry-run'])
+      assert.ok(intro.includes(command),file+': '+command);
+    assert.ok(intro.split('\n').length<55,'The first screen should route without a source or schema crawl');
+  }
+});
+
 test('SRC19 observation requires an exact enabled owned receipt and cannot reopen the old NXT tasks', () => {
   const source={entry:'4195636c-236e-8104-aafa-f7366fe421ce',target:'41b5636c-236e-81c3-8291-c77b25ac76d1',name:'owned-overlay',refPrefix:'skill://owned/'};
   const config={version:2,kind:'nxt-pi-delivery',scenario:'git-document-overlay',source,tasks:[{id:'read-use',prompts:['Inspect the selected documents without edits.']}]};
