@@ -3,15 +3,15 @@
   "source_base": "1c11c57849f97d2c13b82eb8a62fe6b6065741c4",
   "correspondence": "Reviewed source hashes bind the implemented transition owners. Finite-model results do not establish complete implementation refinement. The final commit, installed package and actual session identities belong to the execution receipt.",
   "files": {
-    "packages/context-broker/scripts/skill-guidance.test.ts": "3c644ddcde7e3687237e2b46d3e9289c9f9ced7aed6dda9075dc868e92c2c0aa",
+    "packages/context-broker/scripts/skill-guidance.test.ts": "b688e564996c93254f9699bab0045516d12a54693b8cd3207dab97759d8f6664",
     "scripts/notion-sdk-pi.mjs": "e6e4d600d830f39b432e03cdae6700a87ab65b2240ad0b99fae991880f7efa39",
-    "scripts/nxt-pi-delivery.mjs": "8fd8ba5ffd6e9211af90d7964da54e7160cc417757eb0acef3bf5b7545fc336d",
+    "scripts/nxt-pi-delivery.mjs": "948c4e8cadf5385b0016ff6cfe1c6f4d4acc80020a9bd18117d54612a78322f6",
     "scripts/nxt-pi-delivery.test.mjs": "c4310aee986f6e258b24ecd36a9bfcad40ade35892d8dbdb2da1958d808e7264",
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/host-skills.ts": "51ad2a1b29ae54a2f6263c7039785e3b5c8fe0f9d08b7cee1c3dbe4aa6bd68ea",
     "packages/context-broker/src/prepare-protocol.ts": "722883c738809713ea5eaca582cd953233f56b95758df1f7f627453cbcdd8561",
     "packages/context-broker/src/notion-source.ts": "20a876a4e1db4676d252ed184ef35654a691a73902d7e3c846a9eb8e51a6a07d",
-    "packages/context-broker/src/index.ts": "ee300a10c0a72f5c88fcb61a2b0decaafc3c86995489b86407bcc60637d7a0c2",
+    "packages/context-broker/src/index.ts": "3ec048c3a6f27716e2d992fe6f49d54ac660078370e00385f37dc6fbfe11efae",
     "packages/context-broker/src/view-discovery.ts": "15ba061763e6b5546d21551a7c0c2fc15a68626af1e47771cba539ef999b995d",
     "packages/context-broker/src/view-prompt.ts": "7d7ac614ccf857c7f3ed5723aebdd3c9fbb734259ef8cdcb509e09a341f451be",
     "packages/context-broker/src/session-source-snapshot.ts": "b23de4a16344620ff12e4e2bd3147d119fdfbffba37507b54434d7425d84c9a5",
@@ -458,6 +458,25 @@
       "No cross-physical-machine history recovery proof",
       "101 actual author requests still include original safety checks; compact changes model-visible bytes, not transport retries",
       "CI/run identity must match the final exact commit, never reuse earlier CI status"
+    ]
+  },
+  "four_pillars_source_cli_locator_review": {
+    "issue": "AH-1063",
+    "implementation_commit": "ff63f06bf1ad9bab08355e29d3ff2cfdefb65579",
+    "document": "docs/verification-routing.md",
+    "reviewed_changed_sources": [
+      "packages/context-broker/scripts/skill-guidance.test.ts",
+      "scripts/nxt-pi-delivery.mjs",
+      "packages/context-broker/src/index.ts"
+    ],
+    "semantics": "Only the native model-visible guidance gains the existing cli_source route and exact enabled source IDs after notion_ctl AND bash are active. Default guidance remains 891 bytes; the original command locator, permission/ambiguity/cancellation guards and all state transitions are unchanged. No CLI paths or database are exposed until explicitly selecting one source.",
+    "concrete_evidence": "Two fail-before native guidance regressions; 79 routing/model-surface tests with 1079 assertions; 318 consumption tests with 3129 assertions and 3 actual serializer tests; 36 NXT/routing contract tests. Actual installed Pi with same CLI/SDK and host-skills bytes passed 33 controlled provider requests, 18 phases and 4 closed native processes; exact source success and unknown source refusal cost 0 source HTTP/SDK/children and 0 business writes. Final provider input contains one guidance at 891 or 1132 bytes and no duplicated full bodies.",
+    "previous_failure": "PKYWx3 controlled run stopped before the new checks due to observation-local ReferenceError; immutable original kept. Corrected original observer rerun rh2YAt passed without any model or business mutation.",
+    "finite_models_configs_cases_views_expected_rules_changed": false,
+    "nonclaims": [
+      "This small source-locator patch did not rerun or relabel the original 8-request natural maintenance sample.",
+      "Source hashes map reviewed implementation context; they do not prove arbitrary source configuration or provider behavior.",
+      "Configured command identity is a locator, not execution or write authority."
     ]
   }
 }
