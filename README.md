@@ -12,6 +12,20 @@ $design-review review this API boundary
 
 The broker resolves `design-review`, sends its context to the model, and avoids appending another copy while that context remains in the active session branch.
 
+## Connect an existing Notion library
+
+An existing library needs neither new tables nor a local Skill directory. Preview its connection in Pi:
+
+```text
+/context-broker connect personal ENTRY --config /absolute/config.json
+```
+
+Use the existing Skills library entry and the user's chosen project configuration path. A preview writes no configuration. After authorization, execute its exact returned `--apply` command and reload Pi with that same file. Library validation, configuration saved, Pi connected and body actually read are separate observations.
+
+Given only this package's CLI path, run `node /absolute/package/dist/ntn-skills.mjs ctl builtin read notion/ntn-skills-maintain --path references/setup.md` for the complete offline guide. No schema crawl, source search or Notion login is needed to read it. `ctl library inspect ENTRY` checks the descriptor without creating a library or connecting Pi.
+
+For existing Skill edits, obtain the fixed author reference with `read PAGE_ID --database ENTRY --authoring --read-only`, then preview one complete intent with `apply RETURNED_PIN --database ENTRY --input DIR --dry-run`. The input directory may contain a changed main and a new reference; omitted files remain unchanged. Submit writes only after authorization, following the bundled maintenance Skill.
+
 ## Why use it
 
 Agent setups accumulate review checklists, runbooks and team workflows. Context Broker publishes names and descriptions before loading selected bodies. A Notion source uses a session-selected View, its configured `default_view_id`, or the first View in API order. `Default Context` is an ordinary checkbox used only by saved View filters. Full `$` selection, search and explicit reads remain available outside that View. Startup may prepare metadata and snapshots; it never sends a model request or activates bodies.

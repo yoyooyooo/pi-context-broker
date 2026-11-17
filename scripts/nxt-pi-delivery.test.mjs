@@ -13,7 +13,10 @@ import { observer, sourceFinality } from './notion-sdk-pi.mjs';
 
 test('published readmes route existing-library setup and combined maintenance before long product details', async () => {
   for (const [file,boundary] of [['README.md','## Why use it'],['README.zh-CN.md','## 为什么使用它']]) {
-    const body=await readFile(new URL('../packages/context-broker/'+file,import.meta.url),'utf8');
+    // The publishable package copies the repository-root README files during
+    // packaging. packages/context-broker/README* are ignored local build
+    // outputs and do not exist in a clean GitHub Actions checkout.
+    const body=await readFile(new URL('../'+file,import.meta.url),'utf8');
     const intro=body.slice(0,body.indexOf(boundary));
     for(const command of ['/context-broker connect personal ENTRY --config /absolute/config.json',
       'ctl builtin read notion/ntn-skills-maintain --path references/setup.md','ctl library inspect ENTRY',

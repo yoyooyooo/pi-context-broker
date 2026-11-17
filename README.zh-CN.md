@@ -12,6 +12,20 @@ $design-review review this API boundary
 
 Broker 找到 `design-review`，将对应上下文发送给模型；只要正文仍在当前会话分支的有效上下文中，就不会重复追加。
 
+## 连接已有 Notion 库
+
+已有库不必重新建表，也不必先配置本地 Skill 目录。在 Pi 中先预览：
+
+```text
+/context-broker connect personal ENTRY --config /absolute/config.json
+```
+
+`ENTRY` 是现有 Skills 库入口，配置路径使用用户选定的项目路径。预览不写配置；获得授权后执行它返回的精确 `--apply` 命令，并让 Pi 重新加载同一配置文件。库验证、配置保存、Pi 连接和实际正文读取分别报告，不能互相替代。
+
+只拿到本包 CLI 路径时，用 `node /absolute/package/dist/ntn-skills.mjs ctl builtin read notion/ntn-skills-maintain --path references/setup.md` 离线取得完整上手指引；无需遍历所有 schema、搜索源码或先登录 Notion。单纯检查库使用 `ctl library inspect ENTRY`，不会新建库或连接 Pi。
+
+维护现有 Skill 时，先用 `read PAGE_ID --database ENTRY --authoring --read-only` 取得固定引用，再用 `apply RETURNED_PIN --database ENTRY --input DIR --dry-run` 预览一份完整维护意图。目录可同时包含修改的主文和新增 reference，未提供的文件保持；只有用户授权后才提交写入。完整规则见随包维护 Skill。
+
 ## 为什么使用它
 
 Context Broker 先提供技能名称和描述，再按任务加载选中的正文。Notion 来源依次使用会话选择的 View、配置的 `default_view_id`、API 返回的第一个 View。`Default Context` 只是普通属性，由 View 筛选决定是否使用它。完整 `$`、搜索和显式读取仍能使用 View 外的技能。启动可以准备元数据和快照，不发起模型请求，也不激活正文。
