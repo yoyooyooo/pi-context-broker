@@ -38,6 +38,19 @@ test("native capability fallback alone adds exact CLI scope without teaching una
   expect(text(["notion_list", "notion_use"])).not.toContain("<cli");
 });
 
+test("normal Pi maintenance routes to the explicit task CLI without advertising commands when shell is unavailable", () => {
+  const routed = text(["read", "notion_list", "notion_use", "bash"]);
+  expect(routed).toContain("Maintenance: use the task's CLI");
+  expect(routed).toContain("ctl builtin read notion/ntn-skills-maintain");
+  expect(routed).toContain("never activate the edited item");
+  expect(routed).toContain("node for .js/.mjs");
+  expect(routed).not.toContain("/configured");
+  expect(routed).not.toContain("/must-not-appear");
+  const readonly = text(["read", "notion_list", "notion_use"]);
+  expect(readonly).not.toContain("Maintenance:");
+  expect(readonly).not.toContain("ctl builtin read");
+});
+
 test("native consumption keeps exact references and operation intent without machine commands", () => {
   const guidance = text(full);
   for (const ref of ["sr:C", "sr:S", "sr:R", "skill://"]) expect(guidance).toContain(ref);
@@ -152,7 +165,7 @@ test("Notion source flags are scoped to native installations without rewriting s
   expect(guidance).toContain("Source editor flags do not override Notion tool availability or permissions");
   expect(guidance).toContain("Local Skills keep native routes");
   expect(guidance).toContain("Loading does not authorize commands, writes or delegation");
-  expect(guidance).toContain("read inspects entries/resources without activation");
+  expect(guidance).toContain("read inspects, not activates");
   expect(projected[0]).toBe(system);
   expect(projected).toContain(source);
   expect(JSON.stringify(history)).toBe(original);

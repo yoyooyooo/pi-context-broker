@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { nxtTransportSource, reviewNxtCli, nxtModelGuard, validateNxtFixture } from './nxt-pi-delivery.mjs';
-import { observer, sourceFinality } from './notion-sdk-pi.mjs';
+import { observer, sourceFinality, closedCliMetrics } from './notion-sdk-pi.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
 
 test('published readmes route existing-library setup and combined maintenance before long product details', async () => {
@@ -55,6 +55,15 @@ test('NXT owned natural maintenance fixture is one new explicitly proven page, n
       locator:{type:'shared_skill',database_id:source.entry,page_id:page}},
     file_bindings:[{path:'SKILL.md'},{path:'references/baseline.md'}]};
   validateNxtFixture(config,receipt);
+  const measured={...config,version:4,commandOutputProof:1};
+  const newReceipt={...receipt,record:{...receipt.record,name:'nxt-daily-performance-20261117'}};
+  validateNxtFixture(measured,newReceipt);
+  assert.throws(()=>validateNxtFixture({...measured,commandOutputProof:undefined},newReceipt));
+  assert.throws(()=>validateNxtFixture(measured,receipt));
+  validateNxtFixture({...measured,fixtureName:'nxt-daily-performance-20261117-host'},
+    {...newReceipt,record:{...newReceipt.record,name:'nxt-daily-performance-20261117-host'}});
+  assert.throws(()=>validateNxtFixture({...measured,fixtureName:'foreign-production'},newReceipt));
+  assert.throws(()=>validateNxtFixture({...measured,fixtureName:'nxt-daily-performance-20261117-host'},newReceipt));
   for(const mutate of [
     x=>x.verified=false,x=>x.record.enabled=false,x=>x.record.name='nxt-model-maintenance',
     x=>x.record.locator.page_id='4195636c-236e-81e8-b798-cf623fd25118',
@@ -146,6 +155,9 @@ test('NXT model CLI guard binds actual apply to the separately owned pin and fro
     'A strict HTTP source audit cannot use a presentation receipt missing the per-attempt trace');
   assert.throws(() => reviewNxtCli(apply + ' --compact', policy),
     'The existing fixed-budget NXT acceptance requires the complete default transport trace');
+  assert.equal(reviewNxtCli(apply + ' --compact', { ...policy, commandOutputProof: 1 }).kind, 'apply');
+  assert.equal(reviewNxtCli(apply + ' --dry-run --compact', { ...policy, commandOutputProof: 1 }).kind, 'apply-preview');
+  assert.throws(() => reviewNxtCli(apply + ' --compact', { ...policy, commandOutputProof: 2 }));
   assert.throws(() => reviewNxtCli('node /owned/ntn-skills.mjs read page --database db --read-only --compact', policy));
   for (const wrong of [apply.replace('owner/', 'foreign/'), apply.replace('/owned/input', '/global'), apply.replace(pin, 'page'), apply + '; echo escaped', apply + ' --remove SKILL.md'])
     assert.throws(() => reviewNxtCli(wrong, policy));
@@ -169,6 +181,44 @@ test('compact apply output never masquerades as a complete NXT request ledger', 
   assert.equal(safeRequestMetrics(compact), undefined,
     'An output presentation with only aggregate counts has unknown per-request proof, not zero requests');
   assert.equal(safeRequestMetrics({ ...full, trace: [], trace_omitted_from_output: true })?.complete, false);
+});
+
+test('a closed compact Node command retains its complete independent ledger only with exact original stdout and process proof', async t => {
+  const base=await mkdtemp(join(tmpdir(),'nxt-compact-proof-')), preload=join(base,'observer.mjs'),ledger=join(base,'source.jsonl');
+  await observer(preload);
+  const metrics={trace_enabled:true,trace_dropped:0,total_requests:1,trace:[{
+    event:'attempt',attempt:1,kind:'notion_metadata',method:'GET',outcome:'success',started_ms:0,duration_ms:2,
+    request_bytes:0,response_bytes:364,http_status:200,retry_after_seconds:null,request_id:null,rate_limit_reason:null,target:null,
+  }]};
+  const cli=join(base,'owned-cli.mjs'),host=join(base,'host.mjs');
+  const body='NOT_A_SECRET_DO_NOT_COPY_BODY_TO_DIAGNOSTICS';
+  await writeFile(cli,`import {channel} from 'node:diagnostics_channel';import{createHash}from'node:crypto';
+const output=JSON.stringify({ok:true,status:'applied',verified:true,content:${JSON.stringify(body)},request_metrics:{total_requests:1,trace_omitted_from_output:true,trace_entries:1}})+'\\n';
+channel('ntn-skills.command-output').publish({version:1,event:'result',operation:'apply',status:'applied',projected:true,output_sha256:createHash('sha256').update(output).digest('hex'),output_bytes:Buffer.byteLength(output),request_metrics:${JSON.stringify(metrics)}});
+process.stdout.write(output);\n`);
+  await writeFile(host,`import {spawn}from'node:child_process';await new Promise((resolve,reject)=>{const child=spawn(process.execPath,[${JSON.stringify(cli)}],{stdio:['ignore','pipe','pipe']});child.stdout.resume();child.stderr.resume();child.once('error',reject);child.once('close',resolve);});\n`);
+  await promisify(execFile)(process.execPath,[host],{env:{PATH:process.env.PATH,HOME:base,SC10_PI_OBSERVER:ledger,SC10_PI_BUNDLED_CLI:cli,NODE_OPTIONS:'--import='+preload},timeout:30000});
+  const raw=await readFile(ledger,'utf8'),events=raw.trim().split('\n').map(JSON.parse),pid=events[0].observer_pid;
+  assert.equal(raw.includes(body),false,'The independent ledger excludes author content');
+  assert.equal(sourceFinality(events,pid,{hostClosed:true}).complete,true);
+  const close=events.find(row=>row.kind==='child_close'),diagnostic=events.find(row=>row.kind==='cli_result');
+  assert.equal(close.request_metrics,null,'Compact stdout alone still proves no complete trace');
+  assert.equal(diagnostic.projected,true);
+  assert.equal(closedCliMetrics(events,close).total_requests,1);
+  assert.deepEqual(closedCliMetrics(events,close).trace,safeRequestMetrics(metrics).trace);
+  for(const changed of [
+    events.filter(row=>row.kind!=='cli_result'),events.filter(row=>!(row.kind==='observer_end'&&row.observer_pid===diagnostic.observer_pid)),
+    [...events,diagnostic],events.map(row=>row===diagnostic?{...row,output_sha256:'0'.repeat(64)}:row),
+    events.map(row=>row===diagnostic?{...row,output_bytes:diagnostic.output_bytes+1}:row),
+    events.map(row=>row===diagnostic?{...row,request_metrics:{...row.request_metrics,complete:false}}:row),
+    events.map(row=>row===diagnostic?{...row,request_metrics:{...row.request_metrics,total_requests:2}}:row),
+    events.map(row=>row===diagnostic?{...row,request_metrics:{...row.request_metrics,trace:[]}}:row),
+    events.map(row=>row===diagnostic?{...row,observer_pid:999999}:row),
+  ])assert.equal(closedCliMetrics(changed,close),undefined);
+  assert.equal(closedCliMetrics(events,{...close,code:1}),undefined);
+  assert.equal(closedCliMetrics(events,{...close,signal:'SIGTERM'}),undefined);
+  assert.equal(closedCliMetrics(events,{...close,request_metrics:{...diagnostic.request_metrics,total_requests:99}}),undefined);
+  t.diagnostic('Original independent Node stdout/ledger fixture: '+base);
 });
 
 test('NXT public read output flags are not authority and exact maintenance authoring permits its retained history', () => {

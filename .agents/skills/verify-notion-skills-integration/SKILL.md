@@ -56,6 +56,8 @@ AH-561 的直连请求和跨 Skill 图先走 [request-engine](features/request-e
 
 ## Pi 单宿主主线
 
+四柱候选的compact验证复用原NXT原生Session/provider/source observers：需先证明所选SDK和CLI的command_output_proof v1、完整原HTTP账本及实际closed stdout hash/length一致，再授权该固定目标的compact参数。旧aggregate-only负例仍拒绝。新版本只读准备窗口复用不延长TTL、不穿过写入guard；独立暖读零请求不续期，迟到producer/取消/外来Store/凭据都需有原负例。报告分别给HTTP数、源响应字节、local对象增长、模型工具步数和实际provider bytes；不缩View或省略正文来虚降成本。
+
 SRC19 文档级 Git/Notion 混合消费遵循[交接合同](../../../docs/verification-routing.md#证据交接)。用同一最终 CLI/SDK 构建并独立安装 Broker，核对未改主文/资源的 Git hash 与仅修改 reference 的 Notion hash；不得由 snapshot ready 推断实际投递。主文接管、单文件 restore-follow、上游更新保留 custom 由 CLI 原 guardian 验收。新混合任务单独冻结输入和预算，保留旧 NXT 自然任务失败、不增加其重试；所有安装/子进程删除 `NTN_SKILLS_DEV_ROOT`，不要赋空值或改用户日用配置。
 
 `--host pi` 可用于普通 deterministic、live、live-fixture、installed、model，以及 default-context、view-discovery、native-kinds 分支。Doctor 只探测选定宿主，run 只启动该宿主；manifest 记录 `selectedHosts`，OMP 标为未选，不要求安装 OMP/Tern。默认不传仍为双宿主。`--shared-catalog` 和 `--cache-lifecycle` 本身验证跨宿主/原生编辑器，拒绝单宿主筛选，不能降级后宣称通过。仅 Pi 时不会启动 OMP 的 source-lifecycle helper。

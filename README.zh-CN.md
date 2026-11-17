@@ -24,9 +24,9 @@ Broker 找到 `design-review`，将对应上下文发送给模型；只要正文
 
 只拿到本包 CLI 路径时，用 `node /absolute/package/dist/ntn-skills.mjs ctl builtin read notion/ntn-skills-maintain --path references/setup.md` 离线取得完整上手指引；无需遍历所有 schema、搜索源码或先登录 Notion。单纯检查库使用 `ctl library inspect ENTRY`，不会新建库或连接 Pi。
 
-维护现有 Skill 时，先用 `read PAGE_ID --database ENTRY --authoring --read-only` 取得固定引用，再用 `apply RETURNED_PIN --database ENTRY --input DIR --dry-run` 预览一份完整维护意图。目录可同时包含修改的主文和新增 reference，未提供的文件保持；只有用户授权后才提交写入。完整规则见随包维护 Skill。
+维护现有 Skill 时，先读随包的简短维护指引，再用 `read PAGE_ID --database ENTRY --authoring --read-only` 取得固定引用。用户已明确授权该目标和完整输入时，执行 `apply RETURNED_PIN --database ENTRY --input DIR --compact`；正式 apply 本身会在派发前校验整棵树。用户要求预览、授权缺失或意图不清时，改用 `apply RETURNED_PIN --database ENTRY --input DIR --dry-run` 并停在预览，不能把预览当作写入授权。目录可同时包含修改的主文和新增 reference，未提供的文件保持。
 
-对于输出较长的维护操作，可以在 `apply --dry-run` 和已授权的正式 `apply` 后追加 `--compact`。它保留原操作 ID、固定引用、核验结果和汇总请求量，只在 Agent 可见标准输出中省略冗长的逐 HTTP 请求轨迹；默认输出保持原样。完整预览获得当前用户准确授权后，重复读取未改变的基线属于可选步骤。
+`--compact` 保留原操作 ID、固定引用、核验结果和汇总成本，只在模型可见输出中省略逐 HTTP 轨迹，默认完整输出不变。逐请求审计必须使用完整输出，或已安装的 command-output proof v1 集成：独立原始账本须与正常结束进程的 stdout 哈希和长度一致。不要为了重复核验成功 apply 而再次读取未改基线或导出；应向用户报告真实结果。
 
 ## 为什么使用它
 

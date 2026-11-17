@@ -8,7 +8,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { isolatedEnv, resolveHost, assertSupportedPiVersion } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
-import { bodyCount, observer, provider, publishToolPlan, resolveInstalledPiSerializer, sourceFinality } from './notion-sdk-pi.mjs';
+import { bodyCount, observer, provider, publishToolPlan, resolveInstalledPiSerializer, sourceFinality, closedCliMetrics } from './notion-sdk-pi.mjs';
 import { contextFromCompletionRequest, startLoopbackMock } from './mock-provider-adapter.mjs';
 import { candidatePayloadBodies, observeCandidateTask, reviewCandidateMaintenanceTool } from './verify-pi-daily-candidate.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
@@ -107,8 +107,9 @@ export function validateNxtFixture(config, receipt) {
     assert.equal(config.fixtureReceipt, undefined);
     return;
   }
-  if (config.version === 3) {
+  if (config.version === 3 || config.version === 4) {
     assert.equal(config.scenario, 'owned-natural-maintenance');
+    if (config.version === 4) assert.equal(config.commandOutputProof, 1);
     assert.equal(config.source.target, '4195636c-236e-81e0-be28-ed9a783bd84a');
     assert.equal(config.source.name, 'nxt-journey');
     assert.equal(receipt?.ok, true);
@@ -120,9 +121,15 @@ export function validateNxtFixture(config, receipt) {
     assert.equal(record?.locator?.type, 'shared_skill');
     assert.equal(record?.locator?.database_id, config.source.entry);
     assert.equal(record?.locator?.page_id, config.tasks[0]?.target);
-    assert.equal(record?.name, 'nxt-natural-maintenance-20261117');
+    const fixtureName = config.version === 3 ? 'nxt-natural-maintenance-20261117'
+      : config.fixtureName ?? 'nxt-daily-performance-20261117';
+    if (config.version === 4) assert.match(fixtureName, /^nxt-daily-performance-20261117(?:-[a-z0-9]{1,16})?$/u);
+    assert.equal(record?.name, fixtureName);
     assert.notEqual(record.locator.page_id, config.source.target);
     assert.notEqual(record.locator.page_id, '4195636c-236e-81e8-b798-cf623fd25118');
+    if (config.version === 4) assert.notEqual(record.locator.page_id, '41b5636c-236e-811f-a9b9-ec874cd47dde');
+    if (config.version === 4 && fixtureName !== 'nxt-daily-performance-20261117')
+      assert.notEqual(record.locator.page_id, '41b5636c-236e-8132-85ac-c881f9ae5a49', 'Do not replay the already maintained four-pillar fixture');
     const ref = new URL(record.ref);
     assert.equal(config.tasks[0]?.refPrefix, ref.protocol + '//' + ref.host + '/');
     assert.deepEqual(config.tasks.map(task => task.id), ['maintenance']);
@@ -155,7 +162,7 @@ export function validateNxtFixture(config, receipt) {
 export async function inspectNxtInput(config) {
   for (const key of ['packageRoot', 'evidenceRoot', 'baselinePath']) assert.ok(isAbsolute(config[key]), key);
   let fixtureReceipt;
-  if(config.version===2 || config.version===3) {
+  if(config.version===2 || config.version===3 || config.version===4) {
     assert.ok(isAbsolute(config.fixtureReceipt?.path));
     assert.equal((await identity(config.fixtureReceipt.path)).sha256,config.fixtureReceipt.sha256);
     fixtureReceipt=await json(config.fixtureReceipt.path);
@@ -183,6 +190,12 @@ export async function inspectNxtInput(config) {
   const runtime = await json(join(packageRoot, 'dist/ntn-skills-runtime.json'));
   const cli = await identity(join(packageRoot, 'dist/ntn-skills.mjs')), sdk = await identity(join(packageRoot, 'dist/ntn-skills-sdk.mjs'));
   assert.equal(cli.sha256, runtime.cli_sha256); assert.equal(sdk.sha256, runtime.sdk_sha256);
+  if (config.commandOutputProof !== undefined) {
+    assert.equal(config.commandOutputProof, 1);
+    assert.equal(runtime.command_output_proof_version, 1, 'Compact auditing requires the exact installed CLI proof capability');
+    const selectedSdk = await import(pathToFileURL(sdk.path).href);
+    assert.equal(selectedSdk.COMMAND_OUTPUT_PROOF_VERSION, 1);
+  }
   assert.ok(config.oracle.length >= 3 && mainFile(config));
   for (const file of config.oracle) { const actual = await identity(file.path); assert.equal(actual.sha256, file.sha256); assert.equal(actual.bytes, file.bytes); }
   for (const sentinel of baseline.sentinels) assert.equal((await identity(sentinel.path)).sha256, sentinel.sha256, 'Daily configuration changed');
@@ -312,6 +325,26 @@ function sourceAccounting(events) {
     const trace = metrics.trace.filter(row => row.event === 'attempt'); assert.equal(trace.length, metrics.total_requests);
     return { id: event.id, operation: event.operation, status: event.status, error: event.error_code,
       request_metrics: metrics, sourceWriteAttempts: trace.filter(row => row.request_kind === 'notion_write').length };
+  });
+}
+
+export function compactCommandAccounting(events, reviewedCommands) {
+  const ordinals = new Map();
+  return reviewedCommands.map(command => {
+    const starts = events.filter(event => event.kind === 'child_start' && event.executable === '/bin/bash'
+      && JSON.stringify(event.argv) === JSON.stringify(['-c', command]));
+    assert.equal(starts.length, reviewedCommands.filter(value => value === command).length,
+      'Every compact write/preview must retain its exact original dispatch');
+    const ordinal = ordinals.get(command) ?? 0; ordinals.set(command, ordinal + 1);
+    const start = starts[ordinal];
+    const closes = events.filter(event => event.kind === 'child_close' && event.id === start.id
+      && event.observer_pid === start.observer_pid);
+    assert.equal(closes.length, 1, 'No closed stdout, no delivery evidence');
+    const metrics = closedCliMetrics(events, closes[0]);
+    assert.equal(metrics?.complete, true, 'Aggregate-only or unmatched compact stdout is not full HTTP observation');
+    return { id: start.id, operation: 'apply', source: 'closed-stdout-bound-cli-diagnostics',
+      output_sha256: closes[0].stdout_sha256, output_bytes: closes[0].stdout_bytes, request_metrics: metrics,
+      sourceWriteAttempts: metrics.trace.filter(row => row.event === 'attempt' && row.request_kind === 'notion_write').length };
   });
 }
 
@@ -501,7 +534,7 @@ function reviewNxtCliArgv(words, policy) {
     return { kind: 'local-diagnostics', argv: words };
   }
   const flags = new Map(), positional = [];
-  const boolean = new Set(['--json', '--read-only', '--authoring', '--metrics', '--refresh', '--dry-run']);
+  const boolean = new Set(['--json', '--read-only', '--authoring', '--metrics', '--refresh', '--dry-run', '--compact']);
   for (let index = 1; index < args.length; index++) {
     const item = args[index];
     if (!item.startsWith('--')) { positional.push(item); continue; }
@@ -530,7 +563,9 @@ function reviewNxtCliArgv(words, policy) {
   assert.equal(policy.task, 'maintenance'); assert.equal(args[0], 'apply');
   assert.ok(target.startsWith(policy.refPrefix) && new URL(target).pathname === '/SKILL.md' && /^s_[a-f0-9]{64}$/u.test(new URL(target).searchParams.get('snapshot')));
   assert.equal(flags.get('--input'), policy.input);
-  assert.ok([...flags.keys()].every(key => ['--database', '--input', '--dry-run', '--description'].includes(key)));
+  assert.ok([...flags.keys()].every(key => ['--database', '--input', '--dry-run', '--description', '--compact'].includes(key)));
+  if (flags.has('--compact')) assert.equal(policy.commandOutputProof, 1,
+    'The frozen installed candidate requires separately complete, stdout-bound CLI metrics');
   if (flags.has('--description')) assert.equal(flags.get('--description'), policy.description);
   return { kind: flags.get('--dry-run') ? 'apply-preview' : 'apply', argv: words };
 }
@@ -592,6 +627,7 @@ export async function runNxtModel(config, taskId, info) {
   const endpoint = new URL(selected.baseUrl); assert.ok(!endpoint.username && !endpoint.password && !endpoint.search);
   const state = await setup(config, info, 'model-' + taskId, { model: true });
   const policy = { task: taskId, node: process.execPath, cli: info.cli.path, database: config.source.entry, sourceId: config.source.id,
+    ...(config.commandOutputProof === 1 ? { commandOutputProof: 1 } : {}),
     target: task.target ?? config.source.target, refPrefix: task.refPrefix ?? config.source.refPrefix,
     input: task.input, description: task.description,
     ownedRoot: state.base, localRoots: { config: state.env.NTN_SKILLS_CONFIG_HOME, state: state.env.NTN_SKILLS_HOME,
@@ -649,7 +685,10 @@ export async function runNxtModel(config, taskId, info) {
       return { command: matching[0].arguments.command, nodeProcesses };
     });
     const events = await rows(sourceLedger);
-    return { ...sourceFinality(events, rpc.lifecycle[0].pid, { hostClosed: true, approvedShellCommands, gitCredentialProbe: info.gitCredentialProbe }), accounting: sourceAccounting(events) };
+    const compactCommands = reviewed.filter(row => row.tool === 'bash' && row.allowed === true && ['apply','apply-preview'].includes(row.kind)
+      && row.argv?.includes('--compact')).map(row => calls.find(call => call.id === row.toolCallId).arguments.command);
+    return { ...sourceFinality(events, rpc.lifecycle[0].pid, { hostClosed: true, approvedShellCommands, gitCredentialProbe: info.gitCredentialProbe }),
+      accounting: sourceAccounting(events), compact_command_accounting: compactCommandAccounting(events, compactCommands) };
   };
   try {
     rpc = await startRpc({ host: 'pi', cwd: state.base, env, args, timeoutMs: 240000 });

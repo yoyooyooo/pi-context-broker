@@ -57,6 +57,10 @@ if (readOutputProofVersion !== undefined && (readOutputProofVersion !== 1 || typ
   throw new Error("The selected ntn-skills SDK read output proof is incompatible");
 }
 const catalogDirectoryVersion = selectedSdkApi.CATALOG_DIRECTORY_CONTRACT_VERSION;
+const commandOutputProofVersion = selectedSdkApi.COMMAND_OUTPUT_PROOF_VERSION;
+if (commandOutputProofVersion !== undefined && commandOutputProofVersion !== 1) {
+  throw new Error("The selected CLI output observation contract is incompatible");
+}
 const consumptionEffectsVersion = selectedSdkApi.CONSUMPTION_EFFECTS_VERSION;
 if (consumptionEffectsVersion !== undefined && consumptionEffectsVersion !== 1) throw new Error("Unsupported consumption effects contract");
 const resourceEffectsVersion = selectedSdkApi.RESOURCE_READ_EFFECTS_VERSION;
@@ -117,6 +121,7 @@ const runtimeManifest = { version: 1, package: "ntn-skills", package_version: se
   sdk_version: 1, consumer_contract_version: 1, ...(resourceReadVersion === undefined ? {} : { resource_read_contract_version: resourceReadVersion }),
   ...(readOutputProofVersion === undefined ? {} : { read_output_proof_version: readOutputProofVersion }),
   ...(catalogDirectoryVersion === undefined ? {} : { catalog_directory_contract_version: catalogDirectoryVersion }),
+  ...(commandOutputProofVersion === undefined ? {} : { command_output_proof_version: commandOutputProofVersion }),
   ...(consumptionEffectsVersion === undefined ? {} : { consumption_effects_version: consumptionEffectsVersion }),
   ...(resourceEffectsVersion === undefined ? {} : { resource_read_effects_version: resourceEffectsVersion }),
   cli_sha256: createHash("sha256").update(cliCode).digest("hex"), sdk_sha256: createHash("sha256").update(sdkCode).digest("hex") };

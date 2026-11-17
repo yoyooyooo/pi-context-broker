@@ -2226,6 +2226,17 @@ function observe(gitCredentialProbe) {
     appendFileSync(ledger, JSON.stringify({ ...value, sha256: previous }) + '\n', { mode: 0o600 });
   };
   record({ kind: 'observer_start', exec_path: process.execPath, parent_pid: process.ppid });
+  channel('ntn-skills.command-output').subscribe(event => {
+    if (!event || event.version !== 1 || event.event !== 'result' || typeof event.projected !== 'boolean'
+      || typeof event.output_sha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(event.output_sha256)
+      || !Number.isSafeInteger(event.output_bytes) || event.output_bytes < 1) {
+      record({ kind: 'cli_result_invalid' }); return;
+    }
+    record({ kind: 'cli_result', output_sha256: event.output_sha256, output_bytes: event.output_bytes,
+      operation: typeof event.operation === 'string' && /^[a-z][a-z_-]{0,63}$/u.test(event.operation) ? event.operation : null,
+      status: typeof event.status === 'string' && /^[a-z][a-z_-]{0,63}$/u.test(event.status) ? event.status : null,
+      projected: event.projected, request_metrics: safeRequestMetrics(event.request_metrics) ?? null });
+  });
   const sourceHeaders = event => {
     if (String(event.request?.origin) !== process.env.NOTION_API_BASE_URL) return;
     record({ kind: 'source_http_headers', method: event.request.method, path: event.request.path,
@@ -2311,6 +2322,34 @@ export async function observer(outputPath, { gitCredentialProbe } = {}) {
   await writeFile(outputPath, `import { isMainThread } from 'node:worker_threads';\nimport childProcess from 'node:child_process';\nimport { createHash } from 'node:crypto';\nimport { channel } from 'node:diagnostics_channel';\nimport fs, { appendFileSync } from 'node:fs';\nimport fsPromises from 'node:fs/promises';\nimport path from 'node:path';\nimport { syncBuiltinESMExports } from 'node:module';\n${safeRequestMetrics.toString()}\n${observeOwnedObjectReads.toString()}\n${observeSdkInitialization.toString()}\nif (isMainThread) (${observe.toString()})(${JSON.stringify(gitCredentialProbe) ?? 'undefined'});\n`, { mode: 0o600 });
 }
 
+/** A compact command has no complete trace in stdout. Its independently
+ * observed ledger is admissible only when it matches one closed process's
+ * actual stdout hash and length. sourceFinality checks the process tree. */
+export function closedCliMetrics(events, closed) {
+  if (closed?.kind !== 'child_close' || closed.code !== 0 || closed.signal !== null
+    || !Number.isSafeInteger(closed.child_pid) || typeof closed.stdout_sha256 !== 'string') return undefined;
+  const candidates = events.filter(event => event.kind === 'cli_result'
+    && (event.observer_pid === closed.child_pid || events.some(start => start.kind === 'observer_start'
+      && start.observer_pid === event.observer_pid && start.parent_pid === closed.child_pid)));
+  if (candidates.length === 0) return closed.request_metrics?.complete === true ? closed.request_metrics : undefined;
+  if (candidates.length !== 1) return undefined;
+  const original = candidates[0];
+  const begins = events.filter(event => event.kind === 'observer_start' && event.observer_pid === original.observer_pid);
+  const endings = events.filter(event => event.kind === 'observer_end' && event.observer_pid === original.observer_pid);
+  if (begins.length !== 1 || endings.length !== 1 || endings[0].code !== 0 || endings[0].active_sdk !== 0 || endings[0].active_children !== 0
+    || begins[0].sequence >= original.sequence || endings[0].sequence <= original.sequence
+    || original.output_sha256 !== closed.stdout_sha256 || original.output_bytes !== closed.stdout_bytes
+    || original.request_metrics?.complete !== true
+    || events.some(event => event.kind === 'cli_result_invalid' && event.observer_pid === original.observer_pid)) return undefined;
+  if (closed.request_metrics && JSON.stringify(closed.request_metrics) !== JSON.stringify(original.request_metrics)) return undefined;
+  const attempts = original.request_metrics.trace?.filter(row => row.event === 'attempt');
+  if (!attempts || !Number.isSafeInteger(original.request_metrics.total_requests)
+    || attempts.length !== original.request_metrics.total_requests || original.request_metrics.trace_dropped !== 0
+    || new Set(attempts.map(row => row.attempt)).size !== attempts.length
+    || attempts.some(row => !Number.isSafeInteger(row.attempt) || row.attempt < 1 || row.attempt > attempts.length)) return undefined;
+  return original.request_metrics;
+}
+
 function initialDirectoryReady(events, hostPid, { fixture, sourceId, transport, bundledCli }) {
   assert.ok(['sdk', 'cli'].includes(transport));
   assert.ok(fixture.default_view?.records.length && fixture.catalog_records?.length);
@@ -2361,6 +2400,8 @@ function initialDirectoryReady(events, hostPid, { fixture, sourceId, transport, 
 
 export function sourceFinality(events, hostPid, { hostClosed = false, initialDirectory, initialCatalog, approvedShellCommands = [], gitCredentialProbe } = {}) {
   const pending = [];
+  for (const event of events.filter(event => event.kind === 'cli_result_invalid'))
+    pending.push({ kind: 'invalid_cli_output_observation', pid: event.observer_pid });
   const starts = events.filter(event => event.kind === 'observer_start');
   assert.ok(Array.isArray(approvedShellCommands) && approvedShellCommands.every(value => value && typeof value.command === 'string'
     && value.command.length > 0 && Number.isSafeInteger(value.nodeProcesses) && value.nodeProcesses >= 0));
