@@ -24,7 +24,7 @@ async function fixture(options: { proofVersion?: number | null; bytes?: Uint8Arr
   const sdkPath = join(root, "src/ntn-skills-sdk.mjs");
   await writeFile(sdkPath, `
 import { writeFile, symlink } from 'node:fs/promises';
-export const SDK_VERSION = 1, CONSUMER_CONTRACT_VERSION = 1, PACKAGE_VERSION = 'fixed-resource-fixture';
+export const SDK_VERSION = 2, CONSUMER_CONTRACT_VERSION = 1, PACKAGE_VERSION = 'fixed-resource-fixture';
 export const RESOURCE_READ_CONTRACT_VERSION = 1, CONSUMPTION_EFFECTS_VERSION = 1;
 ${resourceEffectsVersion === null ? "" : `export const RESOURCE_READ_EFFECTS_VERSION = ${resourceEffectsVersion};`}
 ${proofVersion === null ? "" : `export const READ_OUTPUT_PROOF_VERSION = ${proofVersion};`}
@@ -49,7 +49,7 @@ export async function readSkill(target, options) {
 }
 `);
   await writeFile(join(root, "src/ntn-skills-runtime.json"), JSON.stringify({ version: 1, package: "ntn-skills", package_version: "fixed-resource-fixture",
-    sdk_version: 1, consumer_contract_version: 1, resource_read_contract_version: 1, consumption_effects_version: 1,
+    sdk_version: 2, consumer_contract_version: 1, resource_read_contract_version: 1, consumption_effects_version: 1,
     ...(resourceEffectsVersion === null ? {} : { resource_read_effects_version: resourceEffectsVersion }),
     ...(proofVersion === null ? {} : { read_output_proof_version: proofVersion }) }));
   const sdk = await import(pathToFileURL(sdkPath).href);
@@ -88,11 +88,12 @@ export async function readSkill(target, options) {
   return { root, sdk, boundary, source, record, content, response, state, ref, prefix, snapshot, path, main, bytes, resourceRoot, read, readBatch };
 }
 
-test("batch source forwards strict policy and keeps the SDK effects with exact fixed bytes", async () => {
+test("batch source keeps zero-write effects and omits retired SDK options with exact fixed bytes", async () => {
   const f = await fixture(), observed: ConsumptionEffects[] = [];
   const result = await f.readBatch({ readOnly: true, observeEffects: effects => observed.push(effects) });
   expect(f.sdk.calls).toHaveLength(1);
-  expect(f.sdk.calls[0]).toMatchObject({ input: { version: 1, refs: [f.ref] }, options: { readOnly: true } });
+  expect(f.sdk.calls[0]).toMatchObject({ input: { version: 1, refs: [f.ref] } });
+  expect(f.sdk.calls[0].options).not.toHaveProperty("readOnly");
   expect(result.effects).toEqual(noConsumptionWrites()); expect(observed).toEqual([noConsumptionWrites()]);
   expect(result.files[0]).toMatchObject({ requested_ref: f.ref, ref: f.ref, file_id: "guide", bytes: f.bytes.length, sha256: hash(f.bytes), content: f.bytes.toString("utf8") });
   expect(result.selection).toEqual({ scope: f.record.sourceScope, owner: f.record.id, snapshot_id: f.snapshot, version_id: f.response.version_id });

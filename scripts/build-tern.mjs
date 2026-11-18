@@ -49,7 +49,7 @@ if (typeof sdkImport !== "string" || !sdkImport.startsWith("./")) throw new Erro
 const sdkEntry = resolve(selectedCli.directory, sdkImport);
 const selectedSdkApi = await import(pathToFileURL(sdkEntry).href);
 const requiredConstants = {
-  SDK_VERSION: 1, CONSUMER_CONTRACT_VERSION: 1, CONSUMPTION_EFFECTS_VERSION: 1,
+  SDK_VERSION: 2, CONSUMER_CONTRACT_VERSION: 1, CONSUMPTION_EFFECTS_VERSION: 1,
   CATALOG_DIRECTORY_CONTRACT_VERSION: 1, READ_OUTPUT_PROOF_VERSION: 1,
   RESOURCE_READ_CONTRACT_VERSION: 1, RESOURCE_READ_EFFECTS_VERSION: 1,
 };
@@ -115,7 +115,7 @@ const sdkResult = await build({
 if (!sdkResult.success || !sdkResult.outputs[0]) throw new AggregateError(sdkResult.logs, "Notion SDK build failed");
 const sdkCode = await sdkResult.outputs[0].text();
 const runtimeManifest = { version: 1, package: "ntn-skills", package_version: selectedCli.metadata.version,
-  sdk_version: 1, consumer_contract_version: 1, ...(resourceReadVersion === undefined ? {} : { resource_read_contract_version: resourceReadVersion }),
+  sdk_version: 2, consumer_contract_version: 1, ...(resourceReadVersion === undefined ? {} : { resource_read_contract_version: resourceReadVersion }),
   ...(readOutputProofVersion === undefined ? {} : { read_output_proof_version: readOutputProofVersion }),
   ...(catalogDirectoryVersion === undefined ? {} : { catalog_directory_contract_version: catalogDirectoryVersion }),
   ...(commandOutputProofVersion === undefined ? {} : { command_output_proof_version: commandOutputProofVersion }),

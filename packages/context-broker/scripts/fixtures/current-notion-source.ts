@@ -13,7 +13,7 @@ const canonical = (value: unknown): string => value === null || typeof value !==
   : "{" + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
 const uuid = (n: number) => "00000000-0000-4000-8000-" + n.toString().padStart(12, "0");
 type Input = { version: 1; targets: string[]; purpose: "use" | "inspect"; freshness: { policy: string }; budget?: Record<string, number> };
-type Runtime = { database?: string; directory?: { view?: string; profile?: string }; defaultView?: boolean; view?: string; profile?: string; maxAge?: number; refresh?: boolean; offline?: boolean; readOnly?: boolean; output?: string; signal?: AbortSignal; execution?: Record<string, unknown> };
+type Runtime = { database?: string; directory?: { view?: string; profile?: string }; defaultView?: boolean; view?: string; profile?: string; maxAge?: number; refresh?: boolean; offline?: boolean; output?: string; signal?: AbortSignal; execution?: Record<string, unknown> };
 type Call = { operation: string; input?: Input; target?: string; options: Runtime };
 
 // Only the external SDK operation is controlled. The source adapter, graph
@@ -25,7 +25,7 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
   await writeFile(join(root, "src/ntn-skills.mjs"), "throw new Error('Unexpected management command in SDK source fixture');\n");
   const module = join(root, "src/ntn-skills-sdk.mjs");
   await writeFile(module, [
-    "export const SDK_VERSION=1, CONSUMER_CONTRACT_VERSION=1, PACKAGE_VERSION='current-source-fixture';",
+    "export const SDK_VERSION=2, CONSUMER_CONTRACT_VERSION=1, PACKAGE_VERSION='current-source-fixture';",
     "export const CONSUMPTION_EFFECTS_VERSION=1, READ_OUTPUT_PROOF_VERSION=1, CATALOG_DIRECTORY_CONTRACT_VERSION=1;",
     "export const calls=[]; let state; export function configure(value){state=value;}",
     "export function parseDuration(value){return value==='1s'?1000:0;}",
@@ -37,7 +37,7 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
     "export async function listCatalog(options){calls.push({operation:'list',options}); return state.list(options);}",
   ].join("\n"));
   await writeFile(join(root, "src/ntn-skills-runtime.json"), JSON.stringify({ version: 1, package: "ntn-skills", package_version: "current-source-fixture",
-    sdk_version: 1, consumer_contract_version: 1, consumption_effects_version: 1, read_output_proof_version: 1, catalog_directory_contract_version: 1 }));
+    sdk_version: 2, consumer_contract_version: 1, consumption_effects_version: 1, read_output_proof_version: 1, catalog_directory_contract_version: 1 }));
   const sdk = await import(pathToFileURL(module).href);
   const boundary: typeof import("../../src/notion-source") = await import(pathToFileURL(join(root, "src/notion-source.ts")).href);
   const offset = (fixture.identity ?? 0) * 100, library = fixture.identity === undefined ? "current-source" : "current-source-" + fixture.identity;

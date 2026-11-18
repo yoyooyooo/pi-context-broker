@@ -1,17 +1,11 @@
 #!/usr/bin/env node
-import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
-import { selfTest as graphSelfTest } from './verify-skill-graph-contract.mjs';
 
-const map = JSON.parse(readFileSync(new URL('./skill-consumption-scenarios.json', import.meta.url), 'utf8'));
-const sha = value => createHash('sha256').update(value).digest('hex');
 const check = (condition, code, message) => {
   if (!condition) throw Object.assign(new Error(message), { code });
 };
-const key = value => JSON.stringify([value.scope, value.ref, value.snapshot]);
 
 export function consumptionGateConfiguration() {
   const json = path => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
@@ -20,282 +14,79 @@ export function consumptionGateConfiguration() {
 }
 
 export function validateConsumptionGates(config = consumptionGateConfiguration()) {
-  for (const name of ['check', 'check:broker']) check(config.rootScripts[name]?.includes('bun run --cwd packages/context-broker check'),
-    'GATE_PACKAGE_CHECK_MISSING', name + ' must reach the actual package check.');
+  for (const name of ['check', 'check:broker']) {
+    check(config.rootScripts[name]?.includes('bun run --cwd packages/context-broker check'),
+      'GATE_PACKAGE_CHECK_MISSING', name + ' must reach the actual package check.');
+    check(config.rootScripts[name]?.includes('bun run build:broker'),
+      'GATE_BROKER_TARGET_MISSING', name + ' must use the current Broker target.');
+  }
   check(config.packageScripts.check?.split('&&').map(command => command.trim()).includes('bun run test:consumption'),
-    'GATE_CONSUMPTION_MISSING', 'Normal package check must execute test:consumption and propagate its exit status.');
-  const required = ['notion-consumption-tools', 'pi-read-adapter', 'fixed-resource-source', 'session-short-ref-host', 'session-active',
-    'native-read-session', 'host-prepare', 'view-discovery', 'skill-context-projection', 'skill-context-session', 'skill-model-surfaces'];
+    'GATE_CONSUMPTION_MISSING', 'Package check must execute consumption tests.');
+  const required = ['notion-sdk', 'notion-consumption-tools', 'pi-read-adapter', 'fixed-resource-source',
+    'resource-read-host', 'session-active', 'native-read-session', 'host-prepare', 'skill-context-session'];
   for (const name of required) check(config.packageScripts['test:consumption']?.split(' ').includes('scripts/' + name + '.test.ts'),
     'GATE_TEST_MISSING', 'Required consumption regression is absent: ' + name);
-  for (const path of ['scripts/context-once-evidence.test.mjs', 'scripts/mock-provider-adapter.test.mjs',
-    'scripts/catalog-representation.test.mjs', 'packages/context-broker/scripts/final-request-undici.test.ts'])
-    check(config.rootScripts['test:verification']?.split(' ').includes(path), 'GATE_CONTEXT_ONCE_MISSING', 'Current-request verification is missing: ' + path);
+  for (const path of ['scripts/pack-target.test.mjs', 'scripts/skill-consumption-contract.test.mjs',
+    'scripts/verification-skill-routing.test.mjs', 'scripts/context-once-evidence.test.mjs',
+    'scripts/catalog-representation.test.mjs',
+    'packages/context-broker/scripts/final-request-undici.test.ts'])
+    check(config.rootScripts['test:verification']?.split(' ').includes(path), 'GATE_VERIFICATION_MISSING',
+      'Required current check is absent: ' + path);
   check(config.workflows.length === 2 && new Set(config.workflows.map(row => row.name)).size === 2,
-    'GATE_WORKFLOW_MISSING', 'Check both CI and publish gates.');
-  const sourceRevisions = [];
+    'GATE_WORKFLOW_MISSING', 'Check CI and publish.');
+  const revisions = [];
   for (const workflow of config.workflows) {
-    check(!/\$\{\{\s*runner\./u.test(workflow.text.split(/^    steps:\s*$/mu)[0]), 'GATE_RUNNER_CONTEXT_SCOPE',
-      workflow.name + ' must use runner context only in steps, not workflow or job env.');
-    check(workflow.text.includes('run: bun run check'), 'GATE_CHECK_MISSING', workflow.name + ' must execute the normal check.');
-    check(workflow.text.includes('run: npm install --global @oh-my-pi/pi-coding-agent@18.10.3 @earendil-works/pi-coding-agent@1.5.2'),
-      'GATE_PI_VERSION', workflow.name + ' must install the primary Pi 1.5.2 exactly.');
-    const source = /repository: yoyooyooo\/notion-skills-cli\s+ref: ([a-f0-9]{40})\s+path: \.verification\/ntn-skills-cli/u.exec(workflow.text);
-    check(source && workflow.text.includes('NTN_SKILLS_BUILD_ENTRY: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/cli/dist/ntn-skills.js')
-      && /working-directory: \.verification\/ntn-skills-cli\s+run: \|\s+bun install --frozen-lockfile\s+bun run build/u.test(workflow.text),
-      'GATE_SDK_BUILD_INPUT_MISSING', workflow.name + ' must build its SDK-capable CLI from an explicit immutable checkout.');
-    check(workflow.text.includes('bun-version: 1.4.3'), 'GATE_BUN_VERSION', workflow.name + ' must use the CLI package manager version.');
-    sourceRevisions.push(source[1]);
-    for (const host of ['pi', 'omp']) check(workflow.text.includes('node scripts/verify-artifacts.mjs --host ' + host),
-      'GATE_INSTALLED_HOST_MISSING', workflow.name + ' needs the actual installed ' + host + ' gate.');
-    const steps = workflow.text.split(/(?=^      - name: )/mu);
+    const text = workflow.text;
+    const source = /repository: yoyooyooo\/notion-skills-cli\s+ref: ([a-f0-9]{40})\s+path: \.verification\/ntn-skills-cli/u.exec(text);
+    check(source && text.includes('NTN_SKILLS_BUILD_ENTRY: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/cli/dist/ntn-skills.js')
+      && text.includes('CONTEXT_BROKER_GRAPH_CORE: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/core/src')
+      && /working-directory: \.verification\/ntn-skills-cli\s+run: \|\s+bun install --frozen-lockfile\s+bun run build/u.test(text),
+      'GATE_SDK_BUILD_INPUT_MISSING', workflow.name + ' must build and decode with one pinned current CLI.');
+    revisions.push(source[1]);
+    check(text.includes('bun-version: 1.4.3') && text.includes('node-version: 24.20.0'),
+      'GATE_TOOLCHAIN_VERSION', workflow.name + ' must use the pinned toolchain.');
+    check(text.includes('run: bun run check:broker'), 'GATE_CHECK_MISSING', workflow.name + ' must run the current package check.');
+    check(!/--distinct-names|--ambiguous-names|--name-fixture|--ambiguity-fixture|--host omp|pi14|Pi 1\.4|@oh-my-pi|notion-sdk-pi\.mjs|context-broker-host-e2e|tern-context-broker\.tar/u.test(text),
+      'GATE_RETIRED_PATH', workflow.name + ' may not restore old fixture or deferred host gates.');
+    const steps = text.split(/(?=^      - name: )/mu);
     const step = name => steps.find(value => value.startsWith('      - name: ' + name + '\n')) ?? '';
-    const fixture = step('Create controlled SDK fixture'), installed = step('Installed Pi artifact regression');
-    const unconditional = value => !/\n        (?:if|continue-on-error):/u.test(value);
-    check(fixture.includes('run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-sdk-fixture" --catalog')
-      && unconditional(fixture) && workflow.text.indexOf(fixture) < workflow.text.indexOf(installed),
-      'GATE_SDK_FIXTURE_MISSING', workflow.name + ' must create the controlled catalog fixture from its pinned CLI source.');
-    check(installed.includes('node scripts/verify-artifacts.mjs --host pi --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --require-sdk')
-      && unconditional(installed), 'GATE_INSTALLED_SDK_MISSING', workflow.name + ' must require actual default SDK Pi execution against that fixture.');
-    const retained = step('Preserve installed Pi SDK evidence');
+    const unconditional = value => !/\n        (?:if|continue-on-error):/u.test(value) && !/\|\|\s*true/u.test(value);
+    const fixture = step('Create current SDK fixture'), installed = step('Installed current SDK consumption');
+    check(fixture.includes('run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-current-fixture" --catalog')
+      && unconditional(fixture) && text.indexOf(fixture) < text.indexOf(installed)
+      && (text.match(/sdk-fixture\.ts/g) ?? []).length === 1,
+      'GATE_CURRENT_FIXTURE_MISSING', workflow.name + ' must create exactly one current service fixture.');
+    check(installed.includes('run: node scripts/verify-artifacts.mjs --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs"')
+      && unconditional(installed), 'GATE_INSTALLED_SDK_MISSING', workflow.name + ' must run the actual installed SDK/Broker over current HTTP.');
+    const retained = step('Preserve current SDK results');
     check(retained.includes('if: always()') && retained.includes('uses: actions/upload-artifact@v4')
-      && retained.includes('/tmp/broker-artifacts-*/') && retained.includes('/tmp/notion-sdk-pi-*/')
-      && retained.includes('${{ runner.temp }}/ntn-skills-sdk-fixture/') && retained.includes('include-hidden-files: true'),
-      'GATE_SDK_EVIDENCE_MISSING', workflow.name + ' must always retain owned installation, SDK RPC and fixture evidence.');
-    const nameFixture = step('Create controlled name SDK fixture');
-    check(nameFixture.includes('run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-name-fixture" --catalog --distinct-names')
-      && unconditional(nameFixture) && workflow.text.indexOf(nameFixture) < workflow.text.indexOf(installed)
-      && installed.includes(' --name-fixture "$RUNNER_TEMP/ntn-skills-name-fixture/fixture.json"')
-      && retained.includes('${{ runner.temp }}/ntn-skills-name-fixture/'),
-      'GATE_INSTALLED_NAMES_MISSING', workflow.name + ' must require both named-reference scenarios from the distinct fixture on the same installed package and retain their evidence.');
-    const ambiguityFixture = step('Create controlled ambiguity SDK fixture');
-    check(ambiguityFixture.includes('run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-ambiguity-fixture" --catalog --ambiguous-names')
-      && unconditional(ambiguityFixture) && workflow.text.indexOf(ambiguityFixture) < workflow.text.indexOf(installed)
-      && installed.includes(' --ambiguity-fixture "$RUNNER_TEMP/ntn-skills-ambiguity-fixture/fixture.json"')
-      && retained.includes('${{ runner.temp }}/ntn-skills-ambiguity-fixture/'),
-      'GATE_INSTALLED_AMBIGUITY_MISSING', workflow.name + ' must require the actionable ambiguity scenario from its own complete catalog fixture and retain its evidence.');
-    if (workflow.name === 'ci') {
-      const compatibility = step('Pi 1.4 compatibility');
-      check(unconditional(compatibility) && compatibility.includes('@earendil-works/pi-coding-agent@1.4.0')
-        && compatibility.includes('export PATH="$RUNNER_TEMP/pi14-compat/node_modules/.bin:$PATH"')
-        && compatibility.includes('test "$(pi --version)" = "1.4.0"')
-        && compatibility.includes('BROKER_INSTALLED_PACKAGE: ${{ steps.installed-pi.outputs.package }}')
-        && compatibility.includes('node packages/context-broker/scripts/context-broker-host-e2e.mjs pi\n')
-        && compatibility.includes('node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --scenario all --out "$RUNNER_TEMP/pi14-sdk-evidence"')
-        && installed.includes('shell: bash') && installed.includes('id: installed-pi')
-        && installed.includes("assert.equal(manifest.hostIdentity.version, '1.5.2')")
-        && installed.includes("assert.equal(manifest.defaultSdk.status, 'passed')")
-        && installed.includes("'package=' + manifest.package.installed")
-        && retained.includes('${{ runner.temp }}/pi14-sdk-evidence/') && retained.includes('/tmp/context-broker-host-e2e-*/'),
-        'GATE_PI_COMPATIBILITY_MISSING', 'CI must exercise owned Pi 1.4 native print/continue and SDK all14 using the same independently installed Broker.');
-      check(compatibility.includes('for scenario in name-references name-reference-failed-source; do')
-        && compatibility.includes('node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-name-fixture/fixture.json" --scenario "$scenario" --out "$RUNNER_TEMP/pi14-$scenario-evidence"')
-        && installed.includes("assert.equal(manifest.namedSdk.status, 'passed')")
-        && retained.includes('${{ runner.temp }}/pi14-name-references-evidence/')
-        && retained.includes('${{ runner.temp }}/pi14-name-reference-failed-source-evidence/'),
-        'GATE_INSTALLED_NAMES_MISSING', 'Both supported Pi releases must execute the two named-reference scenarios on the same independent package.');
-      check(compatibility.includes('node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-ambiguity-fixture/fixture.json" --scenario name-reference-ambiguity --out "$RUNNER_TEMP/pi14-name-reference-ambiguity-evidence"')
-        && installed.includes("assert.equal(manifest.ambiguitySdk.status, 'passed')")
-        && retained.includes('${{ runner.temp }}/pi14-name-reference-ambiguity-evidence/'),
-        'GATE_INSTALLED_AMBIGUITY_MISSING', 'Both supported Pi releases must verify actionable ambiguity on the same independently installed package.');
-      const controlled = step('Installed Pi controlled HTTP consumption');
-      const httpCommand = 'node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs"';
-      const runLines = value => value.split('\n        run: |\n')[1]?.split('\n').map(line => line.trim()) ?? [];
-      const controlledLines = runLines(controlled), compatibilityLines = runLines(compatibility);
-      check(unconditional(controlled)
-        && controlled.includes('BROKER_INSTALLED_PACKAGE: ${{ steps.installed-pi.outputs.package }}')
-        && controlledLines.includes('for scenario in http-directory http-cache-recovery http-interruption; do')
-        && controlledLines.includes(httpCommand + ' --scenario "$scenario" --out "$RUNNER_TEMP/pi15-$scenario-evidence"')
-        && workflow.text.indexOf(installed) < workflow.text.indexOf(controlled)
-        && workflow.text.indexOf(controlled) < workflow.text.indexOf(compatibility)
-        && compatibilityLines.includes(httpCommand + ' --scenario http-directory --out "$RUNNER_TEMP/pi14-http-directory-evidence"')
-        && retained.includes('${{ runner.temp }}/pi15-http-*-evidence/')
-        && retained.includes('${{ runner.temp }}/pi14-http-directory-evidence/'),
-        'GATE_CONTROLLED_HTTP_MISSING', 'CI must exercise all three actual Pi1.5 HTTP scenes and Pi1.4 directory on the same installed package, retaining source and provider evidence.');
-      const contextOnce = step('Installed Pi current-context contract');
-      const onceLines = runLines(contextOnce);
-      const onceCommand = 'node scripts/notion-sdk-pi.mjs run --package "$BROKER_INSTALLED_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-sdk-fixture/fixture.json"';
-      check(unconditional(contextOnce)
-        && contextOnce.includes('BROKER_INSTALLED_PACKAGE: ${{ steps.installed-pi.outputs.package }}')
-        && onceLines.includes('for backend in in-process http; do')
-        && onceLines.includes(onceCommand + ' --scenario context-once --provider-backend "$backend" --out "$RUNNER_TEMP/pi15-context-once-$backend"')
-        && onceLines.includes(onceCommand + ' --scenario session-compaction --out "$RUNNER_TEMP/pi15-context-once-compaction"')
-        && onceLines.includes(onceCommand + ' --scenario context-wire-negative --provider-backend http --out "$RUNNER_TEMP/pi15-context-once-wire-negative"')
-        && workflow.text.indexOf(contextOnce) > workflow.text.indexOf(installed)
-        && retained.includes('${{ runner.temp }}/pi15-context-once-*/'),
-        'GATE_CONTEXT_ONCE_MISSING', 'CI must drive both real Pi backends and compaction on the same installed package and preserve failed evidence.');
-    } else check(!/^    strategy:/mu.test(workflow.text), 'GATE_PUBLISH_MATRIX', 'Publishing remains a single job, not a host-version matrix.');
-  }
-  check(new Set(sourceRevisions).size === 1, 'GATE_SDK_BUILD_INPUT_DRIFT', 'CI and publish must use the same frozen CLI revision.');
-  return { status: 'gate-wiring-valid', supportedPi: ['1.4.0', '1.5.0', '1.5.2'], primaryPi: '1.5.2', requiredTests: required.length,
-    cliSourceRevision: sourceRevisions[0], installedSdk: 'required_all14', installedNames: 'required_two_scenarios',
-    installedAmbiguity: 'required_scenario',
-    controlledHttp: { primary: ['http-directory', 'http-cache-recovery', 'http-interruption'], compatibility: ['http-directory'] },
-    runtimeAcceptance: 'not-inferred', boundary: 'Wiring is checked here; actual test logs and installed host runs remain separate evidence.' };
-}
-
-export function validateMap() {
-  check(map.schema === 'skill-consumption-map/v1', 'MAP_SCHEMA', 'Unknown scenario map.');
-  check(map.contract === 'agent-cli-ref-20261105', 'MAP_CONTRACT', 'Use the calibrated public consumption contract.');
-  check(map.tasks.length === 26 && new Set(map.tasks.map(row => row.id)).size === 26,
-    'TASK_COVERAGE', 'SC01–26 must each occur once.');
-  check(map.journeys.length === 26 && new Set(map.journeys.map(row => row.id)).size === 26,
-    'JOURNEY_COVERAGE', 'J01–26 must each occur once.');
-  for (let i = 1; i <= 26; i++) {
-    const task = map.tasks.find(row => row.id === 'SC' + String(i).padStart(2, '0'));
-    check(task && /^AH-\d+$/.test(task.issue) && task.featurePrefix && task.recipeStatus === 'draft',
-      'TASK_COVERAGE', 'Every planned feature needs an issue and an explicit draft recipe status.');
-    for (const journey of task.journeys) check(map.journeys.some(row => row.id === journey && row.tasks.includes(task.id)),
-      'MAP_LINK', 'Task/journey links must agree.');
-  }
-  for (const row of map.journeys) {
-    check(row.required === true && row.status === 'not_run' && row.tasks.length > 0,
-      'JOURNEY_STATUS', 'The plan is not execution evidence.');
-    for (const task of row.tasks) check(map.tasks.some(value => value.id === task && value.journeys.includes(row.id)),
-      'MAP_LINK', 'Journey/task links must agree.');
-  }
-  return { status: 'map-valid', tasks: map.tasks.length, journeys: map.journeys.length,
-    tuples: expandCoverage().length, productAcceptance: 'not-inferred' };
-}
-
-export function expandCoverage() {
-  const rows = [];
-  for (const cache of map.axes.cache) for (const session of map.axes.session)
-    for (const entry of map.axes.entry) for (const intent of map.axes.intent) {
-      let reason = null;
-      if (intent === 'none' && entry !== 'ordinary') reason = 'No Skill intent has no explicit Skill entry.';
-      else if (entry === 'list' && intent !== 'discover') reason = 'List returns candidates, not content or active instructions.';
-      else if (entry === 'use' && intent !== 'use') reason = 'Use returns the Required closure; read is the inspection entry.';
-      else if (entry === 'ordinary' && ['inspect', 'use'].includes(intent)) reason = 'Record the actual subsequent inspection/activation tool separately.';
-      else if (['dollar', 'native'].includes(entry) && intent !== 'use') reason = 'Explicit host activation has use intent.';
-      else if (['cli', 'sdk'].includes(entry) && session !== 'new') reason = 'Direct clients have no Pi session lifecycle; cover their host caller.';
-      rows.push({ cache, session, entry, intent, status: reason ? 'not_applicable' : 'not_run', reason });
-    }
-  return rows;
-}
-
-// A normalized observation contract, never a product/SDK wire format.
-// SC03 must freeze deterministic projection semantics before another compiler is accepted.
-export function evaluateConsumptionEvidence(value) {
-  check(value?.schema === 'skill-consumption-evidence/v1', 'EVIDENCE_SCHEMA', 'Unknown evidence schema.');
-  check(Array.isArray(value.observerErrors) && value.observerErrors.length === 0, 'OBSERVER_FAILURE', 'Observer errors invalidate claims.');
-  check(value.isolation?.oracleWarmedConsumer === false, 'ORACLE_WARMING', 'Oracle must not warm consumer state.');
-  check(Array.isArray(value.isolation.hiddenLocalCopies) && value.isolation.hiddenLocalCopies.length === 0,
-    'LOCAL_COPY', 'Hidden copies invalidate autonomous discovery.');
-  check(value.isolation.forcedToolArguments === false, 'FORCED_TOOLS', 'Observation must not choose model tools.');
-  for (const channel of ['notion', 'attachments', 'provider']) {
-    const ledger = value.transport?.[channel];
-    check(ledger?.observed === true && ledger.complete === true && Array.isArray(ledger.attempts),
-      'TRANSPORT_INCOMPLETE', channel + ' must have a complete observed ledger, including an observed empty one.');
-  }
-  check(Array.isArray(value.processes) && value.processes.length > 0 &&
-    value.processes.every(row => row.spawnObserved === true && row.closeObserved === true),
-    'PROCESS_EVIDENCE', 'Spawn and close must both be observed.');
-  check(Array.isArray(value.samples?.expected) && value.samples.expected.length > 0 &&
-    Array.isArray(value.samples.retained) && value.samples.expected.every(id => value.samples.retained.includes(id)),
-    'SAMPLE_LOSS', 'Retain failed, blocked and successful samples.');
-  check(Array.isArray(value.cleanup?.expectedEvidence) && value.cleanup.expectedEvidence.length > 0 &&
-    Array.isArray(value.cleanup.retainedEvidence) &&
-    value.cleanup.expectedEvidence.every(row => value.cleanup.retainedEvidence.some(other => other.path === row.path && other.sha256 === row.sha256)),
-    'EVIDENCE_LOSS', 'Cleanup cannot discard or alter evidence.');
-  check(Array.isArray(value.providerInputs) && value.providerInputs.length > 0 && value.providerInputs.every(row => typeof row === 'string'),
-    'PROVIDER_MISSING', 'Loaded logs are not observed provider inputs.');
-  check(Array.isArray(value.sources) && Array.isArray(value.projections) && Array.isArray(value.deliveries),
-    'CONTENT_SCHEMA', 'Source, projection and delivery observations are separate.');
-  for (const source of value.sources) {
-    check(typeof source.content === 'string' && sha(source.content) === source.sha256 &&
-      Buffer.byteLength(source.content) === source.bytes, 'SOURCE_HASH', 'Source bytes/hash disagree.');
-    check(source.scope && source.ref && source.snapshot, 'SOURCE_IDENTITY', 'Source identity is incomplete.');
-  }
-  for (const projection of value.projections) {
-    const source = value.sources.find(row => key(row) === key(projection));
-    check(source && projection.sourceSha256 === source.sha256, 'PROJECTION_SOURCE', 'Projection has no matching verified source.');
-    check(typeof projection.content === 'string' && sha(projection.content) === projection.sha256 &&
-      Buffer.byteLength(projection.content) === projection.bytes, 'PROJECTION_HASH', 'Projection bytes/hash disagree.');
-    check(projection.compiler === 'source-identity/v1' && projection.content === source.content,
-      'PROJECTION_CONTRACT_DRAFT', 'New compiled projections need the separately frozen SC03 contract; keep old graph proof intact.');
-    const delivery = value.deliveries.find(row => row.projectionSha256 === projection.sha256);
-    check(delivery, 'DELIVERY_MISSING', 'Cached or materialized bytes are not delivery.');
-    check(key(delivery) === key(projection), 'DELIVERY_IDENTITY', 'Delivered scope/ref/snapshot disagree.');
-    const input = value.providerInputs[delivery.requestIndex];
-    check(typeof input === 'string' && Number.isInteger(delivery.start) && Number.isInteger(delivery.end) &&
-      delivery.start >= 0 && delivery.end > delivery.start &&
-      input.slice(delivery.start, delivery.end) === projection.content,
-      'DELIVERY_BYTES', 'Exact provider span does not contain complete projected bytes.');
-    for (const request of value.providerInputs) {
-      check(request.split(projection.content).length - 1 <= 1, 'DUPLICATE_BODY', 'A provider input contains the same complete body more than once.');
+      && retained.includes('/tmp/broker-artifacts-*/') && retained.includes('${{ runner.temp }}/ntn-skills-current-fixture/')
+      && retained.includes('include-hidden-files: true'), 'GATE_RESULTS_MISSING', workflow.name + ' must preserve actual package and HTTP results.');
+    if (workflow.name === 'publish') {
+      check(!/^    strategy:/mu.test(text), 'GATE_PUBLISH_MATRIX', 'Publishing remains a single job.');
+      check(text.includes('environment: npm-publish') && text.includes('run: bun scripts/pack.mjs --target broker')
+        && text.includes('npm publish --registry https://registry.npmjs.org --access public --provenance'),
+        'GATE_RELEASE_POLICY_MISSING', 'Keep the existing release approval and publication boundary.');
     }
   }
-  return { status: 'evidence-contract-valid', productAcceptance: 'not-inferred', sources: value.sources.length,
-    projections: value.projections.length, deliveries: value.deliveries.length,
-    boundary: 'Normalized observations require raw artifacts and an actual run. This checker does not execute Pi, Notion or a model.' };
-}
-
-export function consumptionFixture() {
-  const content = 'Controlled complete Skill body. Read the feature map before verification.';
-  const identity = { scope: 'controlled-credential-library', ref: 'skill://fixture/SKILL.md', snapshot: 'fixed-fixture-v1' };
-  const source = { ...identity, content, sha256: sha(content), bytes: Buffer.byteLength(content) };
-  const projection = { ...source, sourceSha256: source.sha256, compiler: 'source-identity/v1' };
-  const retained = [{ path: 'provider.jsonl', sha256: sha('controlled-provider-observation') }];
-  return { schema: 'skill-consumption-evidence/v1', observerErrors: [],
-    isolation: { oracleWarmedConsumer: false, hiddenLocalCopies: [], forcedToolArguments: false },
-    transport: Object.fromEntries(['notion', 'attachments', 'provider'].map(channel => [channel, { observed: true, complete: true, attempts: [] }])),
-    processes: [{ spawnObserved: true, closeObserved: true }],
-    samples: { expected: ['successful-run', 'failed-run'], retained: ['successful-run', 'failed-run'] },
-    cleanup: { expectedEvidence: retained, retainedEvidence: structuredClone(retained) },
-    sources: [source], projections: [projection], providerInputs: ['Instructions:\n' + content],
-    deliveries: [{ ...identity, projectionSha256: projection.sha256, requestIndex: 0, start: 'Instructions:\n'.length, end: 'Instructions:\n'.length + content.length }] };
-}
-
-export function selfTest() {
-  const cases = [];
-  const positive = consumptionFixture();
-  assert.equal(evaluateConsumptionEvidence(positive).status, 'evidence-contract-valid');
-  const negatives = [
-    ['loaded-log-only', 'PROVIDER_MISSING', value => { value.providerInputs = []; }],
-    ['cached-not-delivered', 'DELIVERY_MISSING', value => { value.deliveries = []; }],
-    ['summary-not-body', 'DELIVERY_BYTES', value => { value.providerInputs[0] = 'loaded: summary'; }],
-    ['wrong-source-hash', 'SOURCE_HASH', value => { value.sources[0].content += ' changed'; }],
-    ['wrong-scope', 'DELIVERY_IDENTITY', value => { value.deliveries[0].scope = 'other'; }],
-    ['wrong-version', 'DELIVERY_IDENTITY', value => { value.deliveries[0].snapshot = 'other'; }],
-    ['bad-projection-source', 'PROJECTION_SOURCE', value => { value.projections[0].sourceSha256 = 'wrong'; }],
-    ['bad-projection-hash', 'PROJECTION_HASH', value => { value.projections[0].content += ' changed'; }],
-    ['unfrozen-projection', 'PROJECTION_CONTRACT_DRAFT', value => { value.projections[0].compiler = 'draft'; }],
-    ['duplicate-body', 'DUPLICATE_BODY', value => { value.providerInputs[0] += value.projections[0].content; }],
-    ['oracle-prewarming', 'ORACLE_WARMING', value => { value.isolation.oracleWarmedConsumer = true; }],
-    ['forced-tools', 'FORCED_TOOLS', value => { value.isolation.forcedToolArguments = true; }],
-    ['hidden-copy', 'LOCAL_COPY', value => { value.isolation.hiddenLocalCopies = ['renamed']; }],
-    ['truncated-notion-trace', 'TRANSPORT_INCOMPLETE', value => { value.transport.notion.complete = false; }],
-    ['missing-attachment-ledger', 'TRANSPORT_INCOMPLETE', value => { delete value.transport.attachments; }],
-    ['observer-error', 'OBSERVER_FAILURE', value => { value.observerErrors = ['lost frame']; }],
-    ['unobserved-close', 'PROCESS_EVIDENCE', value => { value.processes[0].closeObserved = false; }],
-    ['failed-sample-deleted', 'SAMPLE_LOSS', value => { value.samples.retained = ['successful-run']; }],
-    ['cleanup-deletes-evidence', 'EVIDENCE_LOSS', value => { value.cleanup.retainedEvidence = []; }],
-  ];
-  for (const [id, code, mutate] of negatives) {
-    const fixture = consumptionFixture(); mutate(fixture);
-    assert.throws(() => evaluateConsumptionEvidence(fixture), { code }, id);
-    cases.push({ id, status: 'passed', rejectedWith: code, evidenceKind: 'controlled' });
-  }
-  return { schema: 'skill-consumption-self-test/v1', status: 'passed', productAcceptance: 'not-inferred',
-    gates: validateConsumptionGates(), map: validateMap(), graph: graphSelfTest(), consumption: { tests: cases.length, cases } };
+  check(new Set(revisions).size === 1, 'GATE_SDK_BUILD_INPUT_DRIFT', 'CI and publish must pin the same CLI revision.');
+  return { status: 'gate-wiring-valid', sdkVersion: 2, requiredTests: required.length,
+    cliSourceRevision: revisions[0], installedSdk: 'required_current_http',
+    piSession: 'not_run', providerModel: 'not_run', deferredHosts: ['OMP', 'Tern'],
+    boundary: 'Wiring checks do not establish actual package execution or Pi daily-use acceptance.' };
 }
 
 function main(argv) {
-  const [action, path] = argv;
-  if (!action || ['-h', '--help', 'help'].includes(action)) {
-    console.log('Usage: node scripts/skill-consumption-contract.mjs self-test | check-map | check-gates | coverage | evaluate EVIDENCE.json');
-    console.log('Offline/read-only. No run directories, production API calls, model calls or product acceptance claims.');
+  if (argv.length === 1 && argv[0] === 'check-gates') {
+    console.log(JSON.stringify(validateConsumptionGates(), null, 2));
     return;
   }
-  let result;
-  if (action === 'self-test') result = selfTest();
-  else if (action === 'check-map') result = validateMap();
-  else if (action === 'check-gates') result = validateConsumptionGates();
-  else if (action === 'coverage') result = { ...validateMap(), cases: expandCoverage() };
-  else if (action === 'evaluate' && path) result = evaluateConsumptionEvidence(JSON.parse(readFileSync(path, 'utf8')));
-  else throw new Error('Unknown action or missing evidence file; use --help.');
-  console.log(JSON.stringify(result, null, 2));
+  if (!argv.length || argv.length === 1 && ['help', '--help', '-h'].includes(argv[0])) {
+    console.log('Usage: node scripts/skill-consumption-contract.mjs check-gates');
+    console.log('Current wiring only. Actual package execution and Pi daily use require their own results.');
+    return;
+  }
+  throw new Error('Retired matrix/evidence action. Use check-gates for the current bounded route.');
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try { main(process.argv.slice(2)); }

@@ -11,6 +11,9 @@ export function verifyBundledRuntime({ manifest, cliBytes, sdkBytes, expectedVer
   assert.equal(manifest.version, 1, "Unknown bundled runtime manifest");
   assert.equal(manifest.package, "ntn-skills", "Unexpected bundled package identity");
   assert.equal(manifest.package_version, expectedVersion, "Bundled runtime must match its frozen build input version");
+  assert.equal(manifest.sdk_version, 2, "Only the current SDK v2 is supported");
+  for (const capability of ["consumer_contract_version", "consumption_effects_version", "catalog_directory_contract_version", "read_output_proof_version", "resource_read_contract_version", "resource_read_effects_version"])
+    assert.equal(manifest[capability], 1, `Current runtime capability is required: ${capability}`);
   const hashes = { cli: createHash("sha256").update(cliBytes).digest("hex"), sdk: createHash("sha256").update(sdkBytes).digest("hex") };
   assert.equal(manifest.cli_sha256, hashes.cli, "Bundled CLI bytes do not match its frozen runtime manifest");
   assert.equal(manifest.sdk_sha256, hashes.sdk, "Bundled SDK bytes do not match its frozen runtime manifest");
@@ -24,12 +27,12 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
   // No user npm config, NODE_PATH, NODE_OPTIONS, alternate CLI or host helper.
   const env = { PATH: `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`, HOME: home, TMPDIR: base, LANG: "en_US.UTF-8" };
   const receipts = [];
-  async function run(argv, cwd) {
+  async function run(argv, cwd, expectedExit = 0) {
     const result = spawnSync(argv[0], argv.slice(1), { cwd, env, encoding: "utf8", timeout: 360_000, maxBuffer: 32 * 1024 * 1024 });
     const receipt = { argv, cwd, status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "", error: result.error?.message };
     receipts.push(receipt);
     await writeFile(join(base, "commands.json"), JSON.stringify(receipts, null, 2) + "\n");
-    assert.equal(result.status, 0, `${argv.join(" ")}: ${receipt.stderr}; ${receipt.error ?? ""}`);
+    assert.equal(result.status, expectedExit, `${argv.join(" ")}: ${receipt.stderr}; ${receipt.error ?? ""}`);
     return receipt.stdout;
   }
   await run([process.execPath, "--version"], base);
@@ -123,8 +126,9 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
   ]) {
     const cwd = join(base, label + "-cwd");
     await mkdir(cwd);
-    const cli = async args => JSON.parse(await run([process.execPath, entry, ...args], cwd));
-    assert.equal((await cli(["schema", "read"])).ok, true);
+    const cli = async (args, expectedExit = 0) => JSON.parse(await run([process.execPath, entry, ...args], cwd, expectedExit));
+    for (const command of ["list", "read", "use", "files", "export"])
+      assert.equal((await cli(["schema", command])).ok, true);
     // These public fallbacks must resolve package resources with an empty HOME,
     // outside the checkout and without a global CLI or installed central Skills.
     const catalog = await cli(["ctl", "builtin", "list"]);
@@ -147,15 +151,15 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
     assert.ok((await cli(["ctl", "builtin", "list"])).skills.every(skill => skill.installation.state === "not_installed"), `${label}: reading packaged resources must not install central Skills`);
     assert.equal((await cli(["ctl", "config", "set", "cache_policy.read_max_age_ms", "0"])).ok, true);
     assert.equal((await cli(["ctl", "config", "show"])).config.cache_policy.read_max_age_ms, 0);
-    // The frozen CLI still exposes its retained operation journal at this public path.
-    assert.equal((await cli(["operation", "list"])).ok, true);
-    assert.equal((await cli(["ctl", "backup", "--output", join(base, label + "-backup")])).verified, true);
+    // Retired mutation/history routes must not return a usable schema.
+    for (const command of ["operation", "ctl backup", "ctl repair", "ctl sources"])
+      assert.equal((await cli(["schema", ...command.split(" ")], 2)).ok, false);
   }
   console.log(`Strict default-peer ${tern ? "Broker/Tern" : "Broker"} closure verified: ${base}`);
   return { base, installed, tern, builtins: { names: builtinNames, npmRoot: npmBuiltins, ternRoot: ternBuiltins } };
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [brokerArchive, ternArchive, brokerManifest] = process.argv.slice(2);
-  assert.ok(brokerArchive && ternArchive, "Usage: node scripts/verify-package-closure.mjs BROKER.tgz TERN.tar.gz [dependency-only-package.json]");
+  assert.ok(brokerArchive, "Usage: node scripts/verify-package-closure.mjs BROKER.tgz [TERN.tar.gz] [dependency-only-package.json]");
   await verifyPackageClosure({ brokerArchive, ternArchive, brokerManifest });
 }

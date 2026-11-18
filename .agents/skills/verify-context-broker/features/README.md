@@ -39,7 +39,7 @@
 | 已有 Tern 三种 surface（仅涉及相应宿主时使用） | `tern-pi`、`tern-omp-terminal`、`tern-omp-native` | [Three surfaces](editor.md#three-surfaces) |
 | 去重与会话变化 | `lifecycle` | [会话生命周期](lifecycle.md) |
 | 指令效果与默认摘要器 | `model` | [真实模型](model.md) |
-| 安装产物与发布门禁 | `distribution` | [分发和发布](distribution.md) |
+| 安装产物与发布门禁 | `verify-artifacts`，显式 current fixture | [分发和发布](distribution.md) |
 | Notion source与默认宿主Skill、持久 Read 记录与 preparation 提交锁 | `source` | [Source发现与激活](source.md) |
 | Notion 默认 View 目录与后台准备 | 独立 `verify-notion-integration.mjs --view-discovery true`；旧预取 fixture 用 `--default-context true` | [默认上下文与后台预取](../../verify-notion-skills-integration/features/default-context-prefetch.md) |
 | Notion CLI 正文缓存、跨会话/进程复用与远端修改 | 独立 `verify-notion-integration.mjs --mode live-fixture --cache-lifecycle true` | [会话缓存与恢复 NS-SESSION-09～12](../../verify-notion-skills-integration/features/session-cache-recovery.md) |
@@ -47,7 +47,7 @@
 | Notion原生补全与手动选择 | `notion-editor` | [跨仓补全地图](../../verify-notion-skills-integration/features/dollar-completion-selection.md) |
 | Pi 原生终端候选、草稿、提交与双向切换 | 独立 `verify-pi-pty.mjs doctor\|run` | [Pi 独立终端](../../verify-notion-skills-integration/features/dollar-completion-selection.md#pi-独立终端)；真实 PTY + 受控 source/provider，不能证明 live Notion/模型 |
 | 日常安装的真实 Notion 菜单与消费 | 独立 `verify-daily-notion-ui.mjs --mode captured\|model` | [日常安装与原生菜单](../../verify-notion-skills-integration/features/daily-installation-ui.md) |
-| 随包 Skill 发现、正文和资源消费 | `distribution`、`source`、`editor` | [随包 Skill](../../verify-notion-skills-integration/features/builtin-management.md) |
+| 随包 Skill 正文和资源消费 | `verify-artifacts`；实际宿主另行验收 | [分发和发布](distribution.md) |
 
 查询排序/namespace/Router 规则等逻辑还应执行已有 `bun run check`。该检查不证明界面、真实模型或远端 CI。产品新增入口时，更新对应地图，不默默将其并入旧入口的通过结论。
 

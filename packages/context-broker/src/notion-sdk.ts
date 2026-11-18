@@ -25,7 +25,6 @@ type Options = {
   lines?: string;
   output?: string;
   refresh?: boolean;
-  readOnly?: boolean;
   offline?: boolean;
   maxAge?: number;
   view?: string;
@@ -35,7 +34,7 @@ type Options = {
 };
 type RuntimeOptions = Omit<Options, "sourceId"> & { metrics?: boolean; onRequestMetrics?: (snapshot: unknown) => void };
 type Sdk = {
-  SDK_VERSION: 1;
+  SDK_VERSION: 2;
   CONSUMER_CONTRACT_VERSION: 1;
   PACKAGE_VERSION: string;
   consume: (input: unknown, options?: RuntimeOptions) => Promise<unknown>;
@@ -70,7 +69,7 @@ function observationErrorCode(error: unknown): string | null {
   return object(error) && typeof error.code === "string" && /^[A-Z][A-Z0-9_]{0,127}$/.test(error.code) ? error.code : null;
 }
 function compatible(value: unknown): value is Sdk {
-  return object(value) && value.SDK_VERSION === 1 && value.CONSUMER_CONTRACT_VERSION === 1
+  return object(value) && value.SDK_VERSION === 2 && value.CONSUMER_CONTRACT_VERSION === 1
     && typeof value.PACKAGE_VERSION === "string" && value.PACKAGE_VERSION.length > 0
     && typeof value.consume === "function" && typeof value.decodeConsumeResult === "function" && typeof value.readSkill === "function" && typeof value.parseDuration === "function";
 }
@@ -114,8 +113,8 @@ async function observed(operation: "consume" | "read" | "read-resources" | "list
   if (enabled) observations.publish({ version: 1, event: "start", id, operation, ...attribution, pid: process.pid, monotonic_ns: started.toString() });
   try {
     const sdk = await loadBundledSdk();
-    if (options.readOnly && (sdk.CONSUMPTION_EFFECTS_VERSION !== 1 || consumptionEffectsVersion !== 1)) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
-    if (options.readOnly && operation === "read-resources"
+    if (sdk.CONSUMPTION_EFFECTS_VERSION !== 1 || consumptionEffectsVersion !== 1) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
+    if (operation === "read-resources"
       && (sdk.RESOURCE_READ_EFFECTS_VERSION !== 1 || resourceEffectsVersion !== 1)) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     if (operation === "list" && typeof sdk.listCatalog !== "function") throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     if (operation === "list" && options.directory !== undefined

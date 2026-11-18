@@ -115,7 +115,7 @@ async function sdkFreshness(source: NotionSource, refresh?: boolean) {
   return { policy: "max_age", max_age_ms };
 }
 function sdkOptions(source: NotionSource, cwd: string, signal?: AbortSignal) {
-  return { sourceId: source.id, database: source.database, cwd, signal, readOnly: true, env: { ...process.env,
+  return { sourceId: source.id, database: source.database, cwd, signal, env: { ...process.env,
     ...(source.requestTimeoutMs === undefined ? {} : { NTN_SKILLS_REQUEST_TIMEOUT_MS: String(source.requestTimeoutMs) }) } };
 }
 function sdkFailure(error: unknown, source: NotionSource, operation: "prepare" | "read" | "list", signal?: AbortSignal, selected?: SkillRecord): Error {
@@ -133,7 +133,7 @@ function sdkFailure(error: unknown, source: NotionSource, operation: "prepare" |
     && selectedPage && missingPage?.replaceAll("-", "").toLowerCase() === selectedPage.replaceAll("-", "").toLowerCase()) return new ReferenceMiss(source.id, selected?.id);
   const receivedCode = error.code === "SKILL_DISABLED" ? "CONTENT_DISABLED" : error.code;
   const code = typeof receivedCode === "string" && (CLI_CODES[receivedCode] === true
-    || /^RESOURCE_[A-Z_]+$/.test(receivedCode) || receivedCode === "SNAPSHOT_NOT_MATERIALIZED"
+    || /^(?:CURRENT|RESOURCE)_[A-Z_]+$/.test(receivedCode) || receivedCode === "SNAPSHOT_NOT_MATERIALIZED"
     || operation === "prepare" && /^(?:PREPARE_[A-Z_]+|CONSUME_[A-Z_]+|SHARED_[A-Z_]+|NOTION_PREFETCH_(?:DEFERRED|WRITE_FORBIDDEN))$/.test(receivedCode)) ? receivedCode : "SOURCE_SDK_FAILED";
   return new SourceError(code, source.id, undefined, { ...preparationFailureDetails(details), effects: errorConsumptionEffects(error) });
 }

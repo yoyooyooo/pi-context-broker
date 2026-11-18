@@ -15,6 +15,8 @@ CLI路径分别为 `.cursor/skills/verify-notion-management/SKILL.md`、`.cursor
 
 ## 选择最小完整范围
 
+当前配对只接受 SDK v2，普通消费恒零语义写入，SDK 不接收 `readOnly`。两仓同一 CLI commit 构建的独立 Broker 包使用 current HTTP fixture 验证完整目录、正文与资源、身份和取消；不预植历史快照，不增加总验证器。现有安装入口不启动 Pi，会话/provider/model、真实 Notion 与 OMP/Tern 明确 not_run。实际 Pi 日用留在 AH-1063，真实表切换后验收。以下历史样本保留原时间和边界，不是当前 writer、adoption 或历史恢复能力的说明。
+
 只改文档路由，运行本仓 `node --test scripts/verification-skill-routing.test.mjs` 和已有合同检查。只改CLI内部语义且SDK/宿主合同不变，跑对应CLI领域及安装代表。影响交接时，先取得CLI实际身份、完整输入和原操作结果，再用同一候选构建Broker，选原Pi驱动。实际模型次数与预算沿原任务冻结合同，不因验证Skill拆分增加一轮自然模型重试。
 
 Source接纳默认disabled：主表存在和authoring只读成功不代表普通目录曝光，目录展示不代表正文已给模型。原管理任务partial/unknown要逐项保留；当前读取相同不能制造原ACK。须分别保存原正文、Notion投影、固定消费内容及实际serializer发送内容。

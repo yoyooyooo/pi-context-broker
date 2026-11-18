@@ -37,7 +37,9 @@ test("one paired SDK operation produces independent metadata projections without
     expect(records[0]?.sourceScope).toBe(f.selected.sourceScope);
     expect(await readFile(records[0]!.path, "utf8")).not.toContain(f.body);
   }
-  expect(f.calls).toHaveLength(1); expect(f.calls[0]).toMatchObject({ operation: "list", options: { readOnly: true, directory: {} } });
+  expect(f.calls).toHaveLength(1); expect(f.calls[0]?.operation).toBe("list");
+  expect(f.calls[0]?.options.directory).toEqual({});
+  expect(Object.hasOwn(f.calls[0]!.options, "readOnly")).toBe(false);
   expect(await exists(join(f.source.cacheDir!, "catalogs-v4"))).toBe(false);
 });
 

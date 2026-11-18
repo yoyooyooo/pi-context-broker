@@ -11,8 +11,8 @@ description: "验证 Notion Skills source 与随包 Skill在 Pi/OMP、Tern 中�
 
 1. 从当前源码运行消费检查，核对完整 manifest、稳定 File 绑定、精确 owner/scope、取消、只读 effects 和每轮 Prompt 投递。`CONTEXT_BROKER_GRAPH_CORE` 必须指向本轮配对 CLI 源码，完整清单负例才会经过真实 SDK decoder；未设时该项会明确 skip。
 2. 用同一个完整 CLI/SDK 包构建隔离 Broker 产物，核对 runtime manifest、版本、实际 hash 和全部必需 capability。已发布旧 CLI 缺 SDK 时停止，不回退。构建通过不等于安装通过。
-3. 复用 `scripts/verify-notion-sdk-installed.mjs` 检查独立包与当前 SDK fixture。它保留多根/Requires、二进制、跨 scope/物理 owner、坏依赖和两处取消检查；不再比较旧 CLI transport。
-4. 实际 Pi 继续用原 `scripts/notion-sdk-pi.mjs` 的受影响场景核对 provider、serializer、原生资源读取与取消。日用切换另外核对 Pi 有效配置实际指向的安装目录；工作树或旧安装成功不算当前安装成功。真实 Notion、真实模型与未运行宿主分别报告，不互相代替。
+3. 复用 `scripts/verify-artifacts.mjs --fixture ABS --source-http-helper ABS`，内部沿用 `verify-notion-sdk-installed.mjs` 检查真实独立包与 current HTTP fixture。只验当前分页目录/完整 Files、主文、warm cache、use、标量与批量资源、跨 scope/物理 owner 和两处取消；不预植 snapshot/cache，不运行旧多根 fixture。
+4. 安装 SDK 检查不启动 Pi 会话，Pi/provider/model 必须记为 not_run。实际 Pi 留在 AH-1063，真实表切换后按当前合同调整原入口，再核对 provider、serializer、原生资源读取、取消与有效配置真正指向的安装。不要用旧 fixture 补齐当前验收；工作树或旧安装成功不能代替日用成功。
 
 ~~~sh
 bun run test:consumption
@@ -20,7 +20,7 @@ CONTEXT_BROKER_GRAPH_CORE=/absolute/current/notion-skills-cli/packages/core/src 
 bun run typecheck
 ~~~
 
-Source ready、完整文件目录、文件在本地、正文已交付、当前 turn 成功仍为不同状态。SDK 内部保持 `readOnly:true`，Pi `read`/`notion_use` 的公开输入不再接受该字段；旧参数须在 I/O 前明确拒绝。若当前 CLI 需要 adoption 写入才可消费，应报告上线阻断，不临时打开写入。Profile 只认当前 `fingerprint`，不维护修订链。只增加与本次改动直接相关的负例，不把所有历史功能地图串成一次旗舰验收。
+Source ready、完整文件目录、文件在本地、正文已交付、当前 turn 成功仍为不同状态。SDK 只接受 v2，runtime manifest 必须一致，消费恒为零语义写入。SDK 不再有 `readOnly` 输入，Pi `read`/`notion_use` 的公开输入也不接受该字段；旧参数须在 I/O 前明确拒绝。普通读取不进行 adoption、retention 或历史修复。Profile 只认当前 `fingerprint`，不维护修订链。只增加与本次改动直接相关的负例，不把所有历史功能地图串成一次旗舰验收。
 
 ## 管理与消费的跨仓验证路由
 

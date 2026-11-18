@@ -189,9 +189,9 @@ Source 操作不设总时限。每次网络尝试独立计时；分页和限流�
 
 Notion 元数据统一使用 `listCatalog`。Skill/Router 准备、Prompt 直接加载和有预算的预取均调用 `consume`；支持文件使用 `readSkill` 或当前批量资源操作。配对 SDK 一次返回完整 manifest 与准确主文，Broker 首次只物化主文，保留所有 File 绑定供按需续读；`manifest_complete` 不代表全部文件已经在本地。Prompt 每次显式提交取得本轮内容。`source.command`、CLI prepare/read 回退和完整 export 快照路径已移除。旧包或不完整的包明确失败，需要一起升级配对 CLI/SDK 与 Broker。OMP/Tern 延后。
 
-当前配对 SDK 必须支持 catalog-directory v1。首次完整目录与 Default View 共用一次 operation，两份投影各自保留结果，全库中的无关失败不会隐藏有效 View。Broker 在当前会话和刷新代次内消费该组合观察，后续 View 变化使用同一 SDK 合同。缺少能力在调用前失败，不保留旧 SDK 的两次调用路径。
+配对 runtime 只接受 SDK v2，SDK 与 runtime 清单的能力必须一致。消费恒为零语义写入，不再接收 `readOnly` 参数。catalog-directory v1 在一次操作中提供完整目录与 Default View 两份独立投影，全库无关失败不会隐藏有效 View；缺少能力在调用前失败。
 
-GitHub 来源允许同一 Skill 混合消费：仅被用户编辑的整份文档由 Notion 接管，其余主文、reference、脚本或图片仍取固定 Git 版本。归属和单文件 `restore-follow` 由 CLI/SDK 的共享文件协议负责，Broker 只消费该协议返回的完整快照和固定引用。切换页面、清缓存或上游更新不自动解除 custom；已有会话继续保留原 pin。无需把全部上游文件复制到 Notion 才能使用。
+Git-only 与混合 Skill 都暴露完整的当前文件目录。CLI/SDK 以每文件显式 native、resource 或 source descriptor 决定权威；编辑 Notion 阅读投影不会自动接管 Git/resource 内容，主文以 Notion 为权威。Broker 只消费准确正文和 File 绑定，不执行 adoption、不维护第二套归属。Notion 页面历史和 Git 历史不属于该消费协议。
 
 认证沿用 `ntn-skills` 项目已有 token；需要显式配置时，通过可信秘密输入管道执行 `ntn-skills ctl config set-token --stdin`。CLI 优先选择 saved token，再选择非空 `NOTION_API_TOKEN`；缺少凭据返回 `AUTH_REQUIRED`。Broker 和 Tern 配置没有 token 字段。
 
@@ -318,17 +318,17 @@ Pi 保留已接受的原生 `/skill:` 输入与图片，不由宿主提前执行
 
 原生命令参数包含所选 `$` 引用时，同一轮也只发送一份正文。Pi 首次激活与复用均完整保留空格、Tab 或换行分隔后的参数。
 
-Pi 默认 Notion Skill/Router 路径对每个来源图调用一次随包 SDK `consume`。SDK 从同次准备返回已校验的图、完整主文与不可变 manifest；Broker 核对已接受的根、scope、物理 owner 和文件绑定后发布入口。该路径不逐节点启动 CLI read，也不在 SDK 内重复这些读取。每次 SDK 操作独立持有 environment、cwd、runtime 与 abort signal。SDK 缺失或版本不兼容分别返回 `SOURCE_SDK_UNAVAILABLE`、`SOURCE_SDK_INCOMPATIBLE`，不回退 CLI。OMP 和显式 custom command 保留公开 CLI `prepare` 后逐主文精确固定 `read` 的校验。
+Pi 的 Notion Skill/Router 路径对每个来源图调用一次 SDK v2 `consume`，同次取得已校验的图、完整主文和完整文件 manifest。Broker 发布入口前核对根、scope、物理 owner 与 File 绑定。每次操作独立持有 environment、cwd、runtime 与 abort signal。缺失或不兼容的 SDK 明确返回 `SOURCE_SDK_UNAVAILABLE` 或 `SOURCE_SDK_INCOMPATIBLE`，无 CLI 回退；OMP/Tern 工作延后。
 
-完整文件 manifest 带有确切 ref、File ID、hash 与字节数，宿主初始只保存主文。`entries/SNAPSHOT/.broker-entry.json` 的 `entry` 回执与兼容完整快照的 `snapshots/SNAPSHOT/.broker-snapshot.json` 分开管理。Pi 默认资源路径通过 SDK `readSkill` 读取 manifest 中固定的 File ref，并写入自有 output；CLI 兼容路径使用 `read --output`。两条路径都核对 scope、owner、snapshot、version、File ID 和完整 bytes/hash，只发布所请求文件。二进制资源保持字节。未知路径、中断输出和不匹配结果不能变为 ready，也不能回退当前内容。
+完整文件 manifest 带有准确 ref、File ID、hash 与字节数，宿主初始只在 `entry` 投影中保存主文。标量资源使用 SDK `readSkill` 的准确 File ref 与自有 output，批量资源使用 `readResources`。两者都核对 scope、owner、选定内容、File ID 与完整 bytes/hash，只发布请求文件；二进制保持字节。未知路径、中断输出和不匹配结果不能成为 ready。缓存字节缺失时，只有当前权威仍匹配所选内容才可重新取得，不提供远端历史快照恢复。
 
 公开准备结果分别报告 `manifest_complete`、`local_files_ready`、`materialized_paths` 和 `loaded`。成功的原生资源结果携带 `contextBrokerResource`，包含确切文件身份与 hash；仅当实际返回文本包含完整预期字节时，`delivered_complete_text` 才为 true。资源回执不是主指令 loaded 回执。即使没有下载资源分块，当前元数据或权限校验仍可能发起请求。
 
-Prompt 等兼容直接加载仍要求完整固定快照导出：入口必须与固定 `read` 的字节一致，每文件 hash、长度和角色必须匹配完整清单，portable manifest 只接受 v2。缓存回执 v3 保留完整导出合同；v2 目录改名保留在 `.invalidated-*`，然后重建一次。仅入口 ready 的回执不能满足该合同。CLI `export --projection snapshot` 仍要求所有文件；默认 `source` 导出保留 authored portable 字节，是独立视图。所有缓存形式都隔离凭据 scope、record 和 snapshot。诊断只暴露安全错误码与退出状态，不回显 subprocess 原始 stderr 或秘密。
+Prompt 同样使用 SDK `consume`，不再有完整 export 兼容路径。缓存只是所选操作的可丢弃本地材料，按凭据 scope、owner 和所选内容隔离。诊断仅暴露安全错误码，不回显原始 stderr 或凭据。
 
 Filesystem source 扫描本地文件以提取 frontmatter，只将元数据发布到进程私有的临时 index；metadata-only 目录不表示 scanner 不读取原文件字节。首次选中激活会将完整 Skill 目录复制为进程 snapshot，保留资源；原生 read、原生命令与 `$` 共用这份选中副本。该 filesystem snapshot 不要求 Notion export receipt，selection 也不跨进程持久化。
 
-激活后的原生宿主发现发布独立 alias 主文，frontmatter 的 `name` 改为 qualified 宿主名；没有 frontmatter 时，添加 name/description header，正文保持原样。兼容完整快照保留复制的资源树；仅入口 ready 的快照只发布主文和 `host_index` 身份回执，其中分别记录原始与发布字节的 hash，并明确 `loaded:false`。资源通过已校验的不可变 manifest 解析，包括嵌套主文目录之外的资源。公布的 metadata 目录指向 alias 入口目录，Broker read 拦截返回 canonical snapshot 路径或内容。发布 alias 不刷新或加载选中快照。
+激活后的原生宿主发现发布独立 alias 主文，frontmatter 的 name 改为 qualified 宿主名；没有 frontmatter 时添加 name/description header，正文保持原样。入口投影只发布主文与 `host_index` 身份回执，记录原始/发布 hash 并明确 `loaded:false`。资源通过已校验的完整 manifest 解析。发布 alias 不刷新所选内容，也不代表已向模型交付。
 
 修改配置或扩展代码后重启宿主（OMP 用 `/restart`）。选中正文仍在有效上下文时，原生 read、原生 `/skill:` 与 `$` 复用该 pinned snapshot。Pi 按需从固定快照恢复已确认 active 内容；没有 active 确认的选择仍遵循 activation 策略。OMP 在正文离开上下文后，复用准备字节前仍检查 read 策略。进程内映射不延长 freshness，也不代表上下文已加载。`/context-broker refresh` 刷新元数据、取消旧代际准备、发布新宿主 discovery generation 并清除进程内激活映射，不重新执行扩展代码、替换会话内容或推进已确认 active 的快照。新会话遵循当前 activation 策略。Discovery freshness、准备结果 freshness、pinned resources 与 active 会话上下文是独立状态。
 

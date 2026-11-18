@@ -30,7 +30,8 @@ test("current Skill, Router and Prompt loads use one SDK consume and retain the 
     expect(loaded.body).toBe(f.body); expect(await readFile(loaded.path, "utf8")).toBe(f.body);
     expect(loaded.entryManifest).toMatchObject({ manifest_complete: true, local_files_ready: false, materialized_paths: [f.record.entrypoint] });
     expect(loaded.entryManifest?.files).toEqual([...f.files].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-    expect(f.calls).toHaveLength(1); expect(f.calls[0]).toMatchObject({ operation: "consume", input: { purpose: "inspect", freshness: { policy: "max_age", max_age_ms: 1000 } }, options: { readOnly: true } });
+    expect(f.calls).toHaveLength(1); expect(f.calls[0]).toMatchObject({ operation: "consume", input: { purpose: "inspect", freshness: { policy: "max_age", max_age_ms: 1000 } } });
+    expect(f.calls[0]!.options).not.toHaveProperty("readOnly");
     expect(await exists(join(f.source.cacheDir!, "snapshots"))).toBe(false);
     for (const file of f.files.slice(1)) {
       expect(await exists(join(loaded.entryManifest!.root, file.path))).toBe(false);
@@ -109,7 +110,8 @@ test("background prefetch uses the same bounded SDK operation without publishing
     budget: { maxNodes: 1, maxDepth: 0, maxBytes: 65536, maxTimeMs: 5000, rateShare: 0.1 } }, f.root, signal);
   expect(result.preparedNodes).toBe(1); expect(f.calls).toHaveLength(1);
   expect(f.calls[0]).toMatchObject({ operation: "consume", input: { purpose: "inspect", budget: { maxNodes: 1, maxDepth: 0, maxInstructionBytes: 65536 } },
-    options: { readOnly: true, signal, execution: { priority: "prefetch", timeBudgetMs: 5000, queueBudgetMs: 1000, rateShare: 0.1 } } });
+    options: { signal, execution: { priority: "prefetch", timeBudgetMs: 5000, queueBudgetMs: 1000, rateShare: 0.1 } } });
+  expect(f.calls[0]!.options).not.toHaveProperty("readOnly");
   expect(await exists(f.source.cacheDir!)).toBe(false);
 });
 

@@ -3,10 +3,6 @@ import { createHash } from "node:crypto";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
-import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
-import { resolveHost } from "./context-broker-e2e-fixture.mjs";
 import { createFinalRequestLedger } from "../src/final-request.ts";
 
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -98,35 +94,6 @@ test("same-endpoint concurrent dispatches stay unknown", async () => {
   assert.equal(ledger.observeProvider(left.signal, 200, 1).blocked, true);
   assert.equal(ledger.observeProvider(right.signal, 200, 1).blocked, true);
   assert.equal(ledger.recent().every(row => row.wireConfirmed === false && row.errors.includes("CONCURRENT_UNBOUND")), true);
-  ledger.close();
-  endpoint.server.close();
-});
-
-test("the installed OpenAI completions serializer matches the sent Undici entity", async () => {
-  const endpoint = await listen();
-  const ledger = createFinalRequestLedger();
-  const signal = new AbortController().signal;
-  const body = payload("openai client");
-  ledger.inspect({
-    messages: [{ role: "user", content: "openai client" }], payload: body, api: "openai-completions",
-    baseUrl: endpoint.url, sessionId: "serializer", generation: 1, signal,
-  });
-  const host = await resolveHost("pi");
-  let root = dirname(host.identity);
-  for (;;) {
-    try {
-      if (JSON.parse(await readFile(join(root, "package.json"), "utf8")).name === "@earendil-works/pi-coding-agent") break;
-    } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-    assert.notEqual(root, dirname(root), "Find the actual installed Pi package"); root = dirname(root);
-  }
-  const { createRequire } = await import("node:module");
-  const require = createRequire(join(root, "package.json"));
-  const openai = await import(pathToFileURL(require.resolve("openai")).href);
-  const client = new openai.default({ apiKey: "test-key", baseURL: endpoint.url });
-  await client.chat.completions.create(body, { maxRetries: 0 }).then(() => undefined, () => undefined);
-  assert.equal(ledger.observeProvider(signal, 200, 1).blocked, false);
-  assert.equal(endpoint.bodies[0]!.toString("utf8"), JSON.stringify(body));
-  assert.equal(ledger.recent().at(-1)!.wireConfirmed, true);
   ledger.close();
   endpoint.server.close();
 });
