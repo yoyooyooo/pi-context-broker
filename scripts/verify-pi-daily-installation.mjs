@@ -50,6 +50,7 @@ function installPassiveObserver(config) {
   const cp = require('node:child_process');
   const path = require('node:path');
   const crypto = require('node:crypto');
+  const zlib = require('node:zlib');
   const digest = value => crypto.createHash('sha256').update(value).digest('hex');
   const file = path.join(config.directory, `observer-${process.pid}.jsonl`);
   const write = value => fs.appendFileSync(file, JSON.stringify({ at: new Date().toISOString(), pid: process.pid, ...value }) + '\n', { mode: 0o600 });
@@ -83,27 +84,105 @@ function installPassiveObserver(config) {
     });
     return result;
   };
-  const nativeFetch = globalThis.fetch;
-  let sequence = 0;
-  if (typeof nativeFetch === 'function') globalThis.fetch = function(...args) {
-    const input = args[0], init = args[1];
-    const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
-    const method = String(init?.method ?? input?.method ?? 'GET').toUpperCase();
-    const id = `${process.pid}:${++sequence}`;
-    const body = init?.body;
-    const requestBytes = typeof body === 'string' ? Buffer.byteLength(body) : body instanceof Uint8Array ? body.byteLength : body == null ? 0 : null;
-    const requestHash = typeof body === 'string' || body instanceof Uint8Array ? digest(body) : body == null ? digest('') : null;
-    write({ event: 'http_start', id, method, origin: url.origin, path: url.pathname, request_bytes: requestBytes, request_sha256: requestHash });
-    return Reflect.apply(nativeFetch, this, args).then(response => {
-      const requestId = response.headers.get('x-request-id') ?? response.headers.get('request-id');
-      write({ event: 'http_end', id, status: response.status,
-        response_request_id: typeof requestId === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(requestId) ? requestId : null });
-      return response;
-    }, error => {
-      write({ event: 'http_error', id, code: error?.code ?? error?.name ?? 'unknown' });
-      throw error;
-    });
+  // Observe the actual transport, including SDKs and extensions that retain a
+  // fetch reference before this preload. Wrapping globalThis.fetch misses those
+  // requests. Diagnostics neither replace fetch nor consume response streams.
+  const diagnostics = require('node:diagnostics_channel');
+  const requests = new Map(), active = new Set();
+  let sequence = 0, observerErrors = 0;
+  const subscribe = (name, callback) => diagnostics.subscribe('undici:request:' + name, event => {
+    try { callback(event); }
+    catch { observerErrors++; write({ event: 'http_observer_error', channel: name }); }
+  });
+  const requestOf = request => {
+    const row = requests.get(request);
+    if (!row || !active.has(request)) throw new Error('UNOBSERVED_REQUEST');
+    return row;
   };
+  const bodyLimit = 16 * 1024 * 1024;
+  const bodyIdOrigins = new Set(config.responseRequestIdBodyOrigins ?? ['https://api.notion.com']);
+  const validRequestId = value => typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(value);
+  subscribe('create', ({ request }) => {
+    const url = new URL(String(request.path), String(request.origin));
+    if (requests.has(request)) throw new Error('DUPLICATE_REQUEST');
+    const row = { id: `${process.pid}:${++sequence}`, at: new Date().toISOString(), started_ms: performance.now(),
+      method: request.method, origin: url.origin, path: url.pathname, bytes: 0,
+      hash: crypto.createHash('sha256'), sent: false, status: null, responseId: null,
+      responseIdSource: null, encoding: 'identity', json: false, responseBytes: 0, responseChunks: [] };
+    requests.set(request, row);
+    active.add(request);
+    // Creation precedes connection and TLS errors. Retain its identity even if
+    // no request body is sent and consequently no response ID can exist.
+    write({ event: 'http_created', id: row.id, at: row.at, started_ms: row.started_ms,
+      method: row.method, origin: row.origin, path: row.path });
+  });
+  subscribe('bodyChunkSent', ({ request, chunk }) => {
+    const row = requestOf(request);
+    if (row.sent) throw new Error('REQUEST_BODY_ALREADY_FINISHED');
+    row.bytes += Buffer.byteLength(chunk); row.hash.update(chunk);
+  });
+  subscribe('bodySent', ({ request }) => {
+    const row = requestOf(request);
+    if (row.sent) throw new Error('DUPLICATE_REQUEST_BODY');
+    row.sent = true;
+    write({ event: 'http_start', id: row.id, at: row.at, method: row.method, origin: row.origin, path: row.path,
+      started_ms: row.started_ms, request_bytes: row.bytes, request_sha256: row.hash.digest('hex'), observation: 'undici-request-body-sent' });
+  });
+  subscribe('headers', ({ request, response }) => {
+    const row = requestOf(request), headers = response.headers;
+    if (row.status !== null) throw new Error('DUPLICATE_RESPONSE_HEADERS');
+    row.status = response.statusCode;
+    for (let i = 0; i + 1 < headers.length; i += 2) {
+      const decode = value => ArrayBuffer.isView(value) ? Buffer.from(value.buffer, value.byteOffset, value.byteLength).toString('utf8') : String(value);
+      const name = decode(headers[i]).toLowerCase(), value = decode(headers[i + 1]);
+      if (['x-request-id', 'request-id'].includes(name) && validRequestId(value)) { row.responseId = value; row.responseIdSource = 'response-header'; }
+      if (name === 'content-type') row.json = bodyIdOrigins.has(row.origin) && /^application\/json(?:\s*;|$)/iu.test(value);
+      if (name === 'content-encoding') row.encoding = value.toLowerCase();
+    }
+  });
+  subscribe('bodyChunkReceived', ({ request, chunk }) => {
+    const row = requestOf(request);
+    row.responseBytes += chunk.byteLength;
+    // Only bounded JSON from the exact Notion origin is retained privately.
+    // Loopback tests may explicitly inject their own origin. No response body
+    // is written to the ledger or substituted for the consumer's stream.
+    if (row.json && row.responseId === null && row.responseBytes <= bodyLimit) row.responseChunks.push(Buffer.from(chunk));
+    else row.responseChunks.length = 0;
+  });
+  subscribe('trailers', ({ request }) => {
+    const row = requestOf(request);
+    if (!row.sent || row.status === null) throw new Error('INCOMPLETE_HTTP');
+    active.delete(request);
+    if (row.responseId === null && row.json && row.responseBytes <= bodyLimit) {
+      try {
+        let body = Buffer.concat(row.responseChunks);
+        const decode = { gzip: zlib.gunzipSync, deflate: zlib.inflateSync, br: zlib.brotliDecompressSync }[row.encoding];
+        if (decode) body = decode(body, { maxOutputLength: bodyLimit });
+        else if (row.encoding !== 'identity') throw new Error('UNKNOWN_RESPONSE_ENCODING');
+        const value = JSON.parse(body.toString('utf8'))?.request_id;
+        if (validRequestId(value)) { row.responseId = value; row.responseIdSource = 'response-json'; }
+      } catch { /* Missing IDs remain unknown; no heuristic attribution. */ }
+    }
+    row.responseChunks.length = 0;
+    write({ event: 'http_end', id: row.id, status: row.status, response_request_id: row.responseId,
+      response_request_id_source: row.responseIdSource, ended_ms: performance.now(), observation: 'undici-response-trailers' });
+  });
+  subscribe('error', ({ request, error }) => {
+    const row = requestOf(request); active.delete(request);
+    row.responseChunks.length = 0;
+    write({ event: 'http_error', id: row.id, code: error?.code ?? error?.name ?? 'unknown',
+      method: row.method, origin: row.origin, path: row.path, started_ms: row.started_ms, ended_ms: performance.now(),
+      request_body_sent: row.sent, sent_request_bytes: row.bytes, status: row.status, response_request_id: row.responseId,
+      error: { name: error?.name ?? null, code: error?.code ?? null, message: error?.message ?? null,
+        errno: error?.errno ?? null, syscall: error?.syscall ?? null } });
+  });
+  process.once('exit', () => write({ event: 'http_observer_end', errors: observerErrors,
+    complete: observerErrors === 0 && active.size === 0,
+    pending: [...active].map(request => requests.get(request).id), method: 'undici-diagnostics-channel' }));
+}
+
+export function dailyObserverPreloadSource(config) {
+  return `(${installPassiveObserver.toString()})(${JSON.stringify(config)});\n`;
 }
 
 async function packageClosure(root, archive, expectedHash) {
@@ -260,6 +339,7 @@ export function validateDailyDoctor(reports, review, sourceDatabaseIds, required
 }
 
 export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObservation } = {}) {
+  assert.ok(!observed.some(row => row.event === 'http_observer_error'), 'Independent HTTP observer contains invalid evidence');
   const parents = new Map();
   for (const row of observed) {
     if (row.event === 'process_start' && Number.isInteger(row.ppid)) parents.set(row.pid, row.ppid);
@@ -389,7 +469,7 @@ async function run(config) {
     const host = await resolveHost('pi'); result.host = host;
     assert.ok(host.identity.includes('/@earendil-works/pi-coding-agent/'), 'The daily host must be actual Pi');
     const preload = join(evidence, 'observe-process.cjs');
-    await writeFile(preload, `(${installPassiveObserver.toString()})(${JSON.stringify({ directory: observerDir, cliEntry: embedded.realpath })});\n`, { mode: 0o600 });
+    await writeFile(preload, dailyObserverPreloadSource({ directory: observerDir, cliEntry: embedded.realpath }), { mode: 0o600 });
     const sdkPreload = join(evidence, 'observe-source.mjs'), sourceLedger = join(evidence, 'source-operations.jsonl');
     await writeFile(sdkPreload, sourceObserverPreloadSource({ output: sourceLedger, checkoutRoot: resolve(fileURLToPath(new URL('..', import.meta.url))),
       clockId: 'daily-' + Date.now(), cliPath: embedded.realpath, ownerParentPid: process.pid, ownerEntry: host.path }), { mode: 0o600 });

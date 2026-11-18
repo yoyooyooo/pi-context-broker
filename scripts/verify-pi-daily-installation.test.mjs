@@ -1,10 +1,142 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join, relative } from 'node:path';
 import test from 'node:test';
-import { classifyDailyHttp, classifyDailyNotionRequest, validateDailyDoctor, validateDailyFind, verifyDailyCliShim, verifyDailyPackageSource } from './verify-pi-daily-installation.mjs';
+import { classifyDailyHttp, classifyDailyNotionRequest, dailyObserverPreloadSource, validateDailyDoctor, validateDailyFind, verifyDailyCliShim, verifyDailyPackageSource } from './verify-pi-daily-installation.mjs';
+
+test('daily HTTP observation includes retained fetch references without changing responses or double counting', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'daily-http-observer-'));
+  const preload = dailyObserverPreloadSource({ directory, cliEntry: join(directory, 'unused-cli.js') });
+  const child = `
+    const http = require('node:http'), vm = require('node:vm');
+    const retainedFetch = globalThis.fetch;
+    vm.runInThisContext(${JSON.stringify(preload)});
+    if (globalThis.fetch !== retainedFetch) throw new Error('Observer replaced fetch');
+    const server = http.createServer(async (req, res) => {
+      let body = ''; for await (const chunk of req) body += chunk;
+      res.writeHead(200, {'x-request-id': '${sdkRequestId}'}); res.end(body);
+    });
+    (async () => {
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+      try {
+        const url = 'http://127.0.0.1:' + server.address().port + '/metadata';
+        for (const fetch of [retainedFetch, globalThis.fetch]) {
+          const response = await fetch(url, {method: 'POST', body: '{"unicode":"数据"}'});
+          if (await response.text() !== '{"unicode":"数据"}') throw new Error('Observer changed response');
+        }
+      } finally { await new Promise(resolve => server.close(resolve)); }
+    })().catch(error => { console.error(error); process.exitCode = 1; });
+  `;
+  execFileSync(process.execPath, ['-e', child], { timeout: 15000, stdio: 'pipe' });
+  const files = await readdir(directory);
+  const rows = (await Promise.all(files.map(file => readFile(join(directory, file), 'utf8')))).flatMap(text => text.trim().split('\n').map(JSON.parse));
+  const requests = rows.filter(row => row.event === 'http_start');
+  assert.equal(requests.length, 2, 'Both retained and current fetch must have independent transport evidence');
+  assert.equal(rows.filter(row => row.event === 'http_end').length, 2);
+  assert.ok(requests.every(row => row.request_bytes === Buffer.byteLength('{"unicode":"数据"}')));
+  assert.ok(rows.filter(row => row.event === 'http_end').every(row => row.status === 200 && row.response_request_id === sdkRequestId));
+  assert.ok(rows.some(row => row.event === 'http_observer_end' && row.complete === true && row.errors === 0));
+});
+
+test('daily transport preserves an aborted response as failure after headers', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'daily-http-aborted-'));
+  const preload = dailyObserverPreloadSource({ directory, cliEntry: join(directory, 'unused-cli.js') });
+  const child = `
+    const http = require('node:http'), vm = require('node:vm');
+    vm.runInThisContext(${JSON.stringify(preload)});
+    const server = http.createServer((req, res) => {
+      res.writeHead(200, {'content-length': '100', 'x-request-id': '${sdkRequestId}'});
+      res.write('x'); setTimeout(() => res.destroy(), 10);
+    });
+    (async () => {
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+      try {
+        const response = await fetch('http://127.0.0.1:' + server.address().port + '/metadata');
+        try { await response.text(); throw new Error('Expected an interrupted response'); }
+        catch (error) { if (error.message === 'Expected an interrupted response') throw error; }
+      } finally { await new Promise(resolve => server.close(resolve)); }
+    })().catch(error => { console.error(error); process.exitCode = 1; });
+  `;
+  execFileSync(process.execPath, ['-e', child], { timeout: 15000, stdio: 'pipe' });
+  const rows = (await Promise.all((await readdir(directory)).map(file => readFile(join(directory, file), 'utf8')))).flatMap(text => text.trim().split('\n').map(JSON.parse));
+  assert.equal(rows.filter(row => row.event === 'http_start').length, 1);
+  assert.equal(rows.filter(row => row.event === 'http_error').length, 1);
+  assert.equal(rows.filter(row => row.event === 'http_end').length, 0, 'Response headers alone do not establish complete delivery');
+  assert.ok(rows.some(row => row.event === 'http_observer_end' && row.complete === true && row.errors === 0));
+});
+
+test('a pre-send connection failure retains request identity and terminal error without inventing a response ID', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'daily-http-connect-failure-'));
+  const preload = dailyObserverPreloadSource({ directory, cliEntry: join(directory, 'unused-cli.js') });
+  const child = `
+    const http = require('node:http'), vm = require('node:vm');
+    vm.runInThisContext(${JSON.stringify(preload)});
+    const server = http.createServer();
+    (async () => {
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+      const port = server.address().port;
+      await new Promise(resolve => server.close(resolve));
+      try { await fetch('http://127.0.0.1:' + port + '/metadata'); throw new Error('Expected connection failure'); }
+      catch (error) { if (error.cause?.code !== 'ECONNREFUSED') throw error; }
+    })().catch(error => { console.error(error); process.exitCode = 1; });
+  `;
+  execFileSync(process.execPath, ['-e', child], { timeout: 15000, stdio: 'pipe' });
+  const rows = (await Promise.all((await readdir(directory)).map(file => readFile(join(directory, file), 'utf8')))).flatMap(text => text.trim().split('\n').map(JSON.parse));
+  const created = rows.filter(row => row.event === 'http_created'), failed = rows.filter(row => row.event === 'http_error');
+  assert.equal(created.length, 1); assert.equal(failed.length, 1);
+  assert.equal(rows.filter(row => row.event === 'http_start' || row.event === 'http_end').length, 0);
+  for (const field of ['id', 'pid', 'method', 'origin', 'path', 'started_ms']) assert.equal(failed[0][field], created[0][field]);
+  assert.equal(failed[0].method, 'GET'); assert.equal(failed[0].path, '/metadata');
+  assert.equal(failed[0].code, 'ECONNREFUSED'); assert.equal(failed[0].error.code, 'ECONNREFUSED');
+  assert.match(failed[0].error.message, /ECONNREFUSED/);
+  assert.equal(failed[0].status, null); assert.equal(failed[0].response_request_id, null);
+  assert.equal(failed[0].request_body_sent, false); assert.equal(failed[0].sent_request_bytes, 0);
+  assert.ok(failed[0].ended_ms >= failed[0].started_ms);
+  assert.ok(rows.some(row => row.event === 'http_observer_end' && row.complete === true && row.errors === 0));
+});
+
+async function observeJsonResponseBodyId(allowLoopback) {
+  const directory = await mkdtemp(join(tmpdir(), 'daily-http-body-id-'));
+  const preload = dailyObserverPreloadSource({ directory, cliEntry: join(directory, 'unused-cli.js'),
+    ...(allowLoopback ? { responseRequestIdBodyOrigins: ['http://127.0.0.1:__PORT__'] } : {}) });
+  const child = `
+    const http = require('node:http'), vm = require('node:vm'), zlib = require('node:zlib');
+    const body = JSON.stringify({request_id: '${sdkRequestId}', value: '数据'});
+    const server = http.createServer((req, res) => {
+      res.writeHead(200, {'content-type': 'application/json', 'content-encoding': 'gzip'}); res.end(zlib.gzipSync(body));
+    });
+    (async () => {
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+      vm.runInThisContext(${JSON.stringify(preload)}.replace('http://127.0.0.1:__PORT__', 'http://127.0.0.1:' + server.address().port));
+      try {
+        const response = await fetch('http://127.0.0.1:' + server.address().port + '/metadata');
+        if (await response.text() !== body) throw new Error('Observer changed response');
+      } finally { await new Promise(resolve => server.close(resolve)); }
+    })().catch(error => { console.error(error); process.exitCode = 1; });
+  `;
+  execFileSync(process.execPath, ['-e', child], { timeout: 15000, stdio: 'pipe' });
+  const raw = (await Promise.all((await readdir(directory)).map(file => readFile(join(directory, file), 'utf8')))).join('');
+  const rows = raw.trim().split('\n').map(JSON.parse), completed = rows.filter(row => row.event === 'http_end');
+  assert.equal(completed.length, 1);
+  assert.equal(raw.includes('数据'), false, 'Private response bodies must not be persisted');
+  assert.ok(rows.some(row => row.event === 'http_observer_end' && row.complete === true && row.errors === 0));
+  return completed[0];
+}
+
+test('a complete JSON response may carry its server request ID in a compressed body', async () => {
+  const completed = await observeJsonResponseBodyId(true);
+  assert.equal(completed.response_request_id, sdkRequestId);
+  assert.equal(completed.response_request_id_source, 'response-json');
+});
+
+test('the production observer never parses a JSON request ID from an unrelated origin', async () => {
+  const completed = await observeJsonResponseBodyId(false);
+  assert.equal(completed.response_request_id, null);
+  assert.equal(completed.response_request_id_source, null);
+});
 
 async function installationFixture() {
   const root = await mkdtemp(join(tmpdir(), 'daily-installation-identity-'));

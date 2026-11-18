@@ -22,6 +22,21 @@ const printSession = () => [
 const jsonl = rows => rows.map(row => JSON.stringify(row)).join('\n') + '\n';
 const expectedPrintModel = { provider: 'magpie', model: 'group/worker' };
 
+test('the small read task can use flash-free without accepting a silent model fallback', () => {
+  const model = candidate.candidatePrintModel({ model: 'magpie/group/flash-free', thinkingLevel: 'off' });
+  assert.deepEqual(model, { provider: 'magpie', model: 'group/flash-free' });
+  assert.throws(() => inspectCandidatePrintSession(jsonl(printSession()), model));
+  const rows = printSession().map(row => ({ ...row,
+    ...(row.type === 'model_change' ? { modelId: model.model } : {}),
+    ...(row.message?.role === 'assistant' ? { message: { ...row.message, model: model.model } } : {}) }));
+  assert.deepEqual(inspectCandidatePrintSession(jsonl(rows), model).errors, []);
+  for (const config of [
+    { model: 'magpie/group/flash', thinkingLevel: 'off' },
+    { model: 'magpie/group/flash-free', thinkingLevel: 'high' },
+    { model: 'magpie/group/flash-free', thinkingLevel: 'off', maxCompletionTokens: 32768 },
+  ]) assert.throws(() => candidate.candidatePrintModel(config));
+});
+
 test('native print inspection binds actual model, tool-call/result IDs and context projections to session lines', () => {
   const source = jsonl(printSession()), inspected = inspectCandidatePrintSession(source, expectedPrintModel);
   assert.equal(inspected.sha256, sha(source)); assert.equal(inspected.lines, 7);

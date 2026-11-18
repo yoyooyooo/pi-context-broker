@@ -1351,9 +1351,18 @@ export function validateCandidateCompletionHistory(nativeAudit) {
   return { nativeFinalResponses: nativeAudit.finals.length, lengthResponses: 0 };
 }
 
+export function candidatePrintModel(config) {
+  assert.ok(['magpie/group/worker', 'magpie/group/flash-free'].includes(config.model), 'Use an explicitly reviewed model');
+  const model = config.model.slice('magpie/'.length);
+  assert.equal(config.thinkingLevel, model === 'group/worker' ? 'high' : 'off');
+  if (config.publicCli || config.project || config.resumeFrom || config.maxCompletionTokens !== undefined)
+    assert.equal(model, 'group/worker', 'Existing authoring, continuation, and budget experiments retain their reviewed worker model');
+  return { provider: 'magpie', model };
+}
+
 export async function runCandidatePrint(config) {
   assert.equal(config.version, 1); assert.equal(config.scope, 'project-scoped-candidate-print');
-  assert.equal(config.model, 'magpie/group/worker'); assert.equal(config.thinkingLevel, 'high');
+  const selectedModel = candidatePrintModel(config);
   assert.ok(['normal', 'notion-only'].includes(config.arm) && identifier(config.id));
   assert.ok(typeof config.prompt === 'string' && config.prompt.trim());
   assert.ok(config.project === undefined || config.project === 'owned-ticket-service');
@@ -1565,7 +1574,7 @@ export async function runCandidatePrint(config) {
       assert.equal(result.inputIdentityGuard[0].allowed, true, 'The pre-prompt candidate identity guard rejected the input');
     }
     const actualHost = await json(hostOutput);
-    assert.equal(actualHost.model.provider, 'magpie'); assert.equal(actualHost.model.id, 'group/worker');
+    assert.equal(actualHost.model.provider, selectedModel.provider); assert.equal(actualHost.model.id, selectedModel.model);
     const brokers = actualHost.commands.filter(command => command.name === 'context-broker');
     assert.equal(brokers.length, 1);
     assert.ok(inside(await realpath(config.brokerRoot), await realpath(brokers[0].sourceInfo.path)));
@@ -1576,7 +1585,7 @@ export async function runCandidatePrint(config) {
     const sessionBytes = await readFile(actualHost.sessionFile);
     if (prefix) assert.equal(hash(sessionBytes.subarray(0, prefix.length)), hash(prefix), 'The retained native history changed');
     result.session = await identity(actualHost.sessionFile);
-    result.nativeAudit = inspectCandidatePrintSession(sessionBytes.toString('utf8'), { provider: 'magpie', model: 'group/worker', expectedUserMessages: result.expectedUserMessages,
+    result.nativeAudit = inspectCandidatePrintSession(sessionBytes.toString('utf8'), { ...selectedModel, expectedUserMessages: result.expectedUserMessages,
       ...(forkBinding ? { fork: forkBinding } : {}) });
     if (stateBinding.sourceState) result.existingStateAudit = inspectCandidateExistingReads(stateBinding.sourceState, result.nativeAudit,
       sessionBytes.toString('utf8'), await readRows(existingReadLedger));
