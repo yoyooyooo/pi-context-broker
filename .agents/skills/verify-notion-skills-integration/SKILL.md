@@ -5,6 +5,23 @@ description: "验证 Notion Skills source 与随包 Skill在 Pi/OMP、Tern 中�
 
 # Verify Notion Skills Integration
 
+## next 单轨有限验收
+
+本轮按此入口选择受影响检查；后文保留的旧宿主场景、历史运行记录和专项地图不能自动升级为本轮门槛。OMP/Tern 延后，当前实现不支持 `source.command`、CLI prepare/read 消费、完整 export 回退或旧 snapshot reader。不要为跑通历史夹具恢复这些路径，也不增加总验证 runner。
+
+1. 从当前源码运行消费检查，核对完整 manifest、稳定 File 绑定、精确 owner/scope、取消、只读 effects 和每轮 Prompt 投递。`CONTEXT_BROKER_GRAPH_CORE` 必须指向本轮配对 CLI 源码，完整清单负例才会经过真实 SDK decoder；未设时该项会明确 skip。
+2. 用同一个完整 CLI/SDK 包构建隔离 Broker 产物，核对 runtime manifest、版本、实际 hash 和全部必需 capability。已发布旧 CLI 缺 SDK 时停止，不回退。构建通过不等于安装通过。
+3. 复用 `scripts/verify-notion-sdk-installed.mjs` 检查独立包与当前 SDK fixture。它保留多根/Requires、二进制、跨 scope/物理 owner、坏依赖和两处取消检查；不再比较旧 CLI transport。
+4. 实际 Pi 继续用原 `scripts/notion-sdk-pi.mjs` 的受影响场景核对 provider、serializer、原生资源读取与取消。日用切换另外核对 Pi 有效配置实际指向的安装目录；工作树或旧安装成功不算当前安装成功。真实 Notion、真实模型与未运行宿主分别报告，不互相代替。
+
+~~~sh
+bun run test:consumption
+CONTEXT_BROKER_GRAPH_CORE=/absolute/current/notion-skills-cli/packages/core/src bun test packages/context-broker/scripts/notion-source-sdk.test.ts packages/context-broker/scripts/shared-notion-adapter.test.ts packages/context-broker/scripts/catalog-cache.test.ts packages/context-broker/scripts/notion-entry.test.ts
+bun run typecheck
+~~~
+
+Source ready、完整文件目录、文件在本地、正文已交付、当前 turn 成功仍为不同状态。保持 `readOnly:true`；若当前 CLI 需要 adoption 写入才可消费，应报告上线阻断，不临时打开写入。Profile 只认当前 `fingerprint`，不维护修订链。只增加与本次改动直接相关的负例，不把所有历史功能地图串成一次旗舰验收。
+
 ## 管理与消费的跨仓验证路由
 
 [验证交接表](../../../docs/verification-routing.md) 明确 CLI 的管理、消费、来源接手三入口与本仓原 guardian 的职责。本 Skill 仍负责原宿主/状态/组合范围；不复制 CLI 的作者操作测试，不由 Source ready、目录项或一次read推断完整投递。
@@ -62,7 +79,7 @@ AH-561 的直连请求和跨 Skill 图先走 [request-engine](features/request-e
 
 SRC19 文档级 Git/Notion 混合消费遵循[交接合同](../../../docs/verification-routing.md#证据交接)。用同一最终 CLI/SDK 构建并独立安装 Broker，核对未改主文/资源的 Git hash 与仅修改 reference 的 Notion hash；不得由 snapshot ready 推断实际投递。主文接管、单文件 restore-follow、上游更新保留 custom 由 CLI 原 guardian 验收。新混合任务单独冻结输入和预算，保留旧 NXT 自然任务失败、不增加其重试；所有安装/子进程删除 `NTN_SKILLS_DEV_ROOT`，不要赋空值或改用户日用配置。
 
-`--host pi` 可用于普通 deterministic、live、live-fixture、installed、model，以及 default-context、view-discovery、native-kinds 分支。Doctor 只探测选定宿主，run 只启动该宿主；manifest 记录 `selectedHosts`，OMP 标为未选，不要求安装 OMP/Tern。默认不传仍为双宿主。`--shared-catalog` 和 `--cache-lifecycle` 本身验证跨宿主/原生编辑器，拒绝单宿主筛选，不能降级后宣称通过。仅 Pi 时不会启动 OMP 的 source-lifecycle helper。
+`--host pi` 可用于普通 deterministic、live、live-fixture、installed、model，以及 default-context、view-discovery、native-kinds 分支。Doctor 只探测选定宿主，run 只启动该宿主；manifest 记录 `selectedHosts`，OMP 标为未选，不要求安装 OMP/Tern。默认不传仍为双宿主。旧 CLI 共享目录专项已退役；`--cache-lifecycle` 为历史跨宿主/原生编辑器专项，本轮不执行，不以单宿主结果替代。仅 Pi 时不会启动 OMP 的 source-lifecycle helper。
 
 先构建 CLI，然后用 `NTN_SKILLS_BUILD_ENTRY=ABSOLUTE_CLI bun run build:broker` 只构建 npm Broker，或 `NTN_SKILLS_BUILD_ENTRY=ABSOLUTE_CLI bun scripts/pack.mjs --target broker --out-dir ABSOLUTE_OUTPUT` 打包。此路径不安装 Tern 运行时，也不修改 Tern 产物；默认 build/pack 仍包含两种产物。
 
@@ -131,7 +148,7 @@ node scripts/verify-notion-integration.mjs run --mode installed --package /absol
 
 `--cache-lifecycle true` 仅适用于 live-fixture，独立于 `--default-context`。验证实际 Pi/OMP 终端和 Tern/OMP 原生 `$` 的空 CLI 缓存、重复消费、新会话/新进程，以及直接修改 owned Notion 正文/资源后的发布检查、精确版本接受、默认五分钟过期与会话固定版本，证据按 [NS-SESSION-09～12](features/session-cache-recovery.md) 分别审阅。
 
-跨项目/宿主共享目录使用 `node scripts/verify-notion-integration.mjs run --mode deterministic --shared-catalog true`，按[共享 Notion 缓存地图](features/session-cache-recovery.md#共享-notion-缓存)运行 Doctor、审阅 `shared-catalog-result.json` 和双宿主 provider/RPC，再执行原 evidence/cleanup。它验证等价远端选择的一份目录/导出、共享刷新、旧会话固定 A 与新会话共用 B；不访问真实 Notion、不证明原生菜单或真实模型。CLI identity 与 TTL/身份负例使用地图所列两仓回归入口。
+共享目录的当前所有者为配对 SDK/core。Broker 只验证 SDK 的原始 freshness、scope、View/Profile 与文件投影，不再维护第二份目录权威。按[共享 Notion 缓存地图](features/session-cache-recovery.md#共享-notion-缓存)运行当前函数回归；HTTP 复用由 core 原请求账本证明，实际 Pi 投递由原 SDK driver 证明。
 
 并发 catalog/snapshot 发布与真实 Pi/OMP 首次正文使用本 Skill 的 [NS-SESSION-16～21](features/session-cache-recovery.md#并发发布与首次正文)。先运行 `node .agents/skills/verify-notion-skills-integration/scripts/verify-cache-concurrency.mjs doctor --mode storage`，再用 `run --mode storage --case catalog-order,snapshot-race` 保留 fail-before；修复后以同一命令取得 pass-after，并运行 `--case snapshot-mismatch` 及 `--case catalog-equal-time,catalog-clock-rollback`。实际双宿主另用 `doctor --mode hosts` 与 `run --mode hosts --case host-first-body`，必须先完成两个真实宿主 discovery，再并发首次 `$`。两种 mode 使用隔离的受控 source，不需要凭据；snapshot 允许重复 read/export，要求两个 load 的完整字节一致且 active cache 无 losing stage。Doctor/run 每次输出各自 evidence，使用该 runner 的 `evidence`、`cleanup`、再次 `evidence`，保留所有独立失败。地图给出完整命令、显式 gate、逐项证据与证明边界。
 

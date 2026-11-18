@@ -32,7 +32,7 @@ Broker 找到 `design-review`，将对应上下文发送给模型；只要正文
 
 Context Broker 先提供技能名称和描述，再按任务加载选中的正文。Notion 来源依次使用会话选择的 View、配置的 `default_view_id`、API 返回的第一个 View。`Default Context` 只是普通属性，由 View 筛选决定是否使用它。完整 `$`、搜索和显式读取仍能使用 View 外的技能。启动可以准备元数据和快照，不发起模型请求，也不激活正文。
 
-Pi 1.4 的 Notion 消费入口为 `notion_list`、原生 `read` 和 `notion_use`。list 只发现元数据；read 检查主文或资源；use 一次取得根与完整 Requires，Members 仍按需选择。普通本地 Skill 使用 Pi 原生发现和读取。默认 Notion 目录与消费共用随包 SDK；显式 `source.command` 保留兼容路径。每次 provider 输入保留一份与当前工具匹配的精简 `<ntn-skills-guidance>`。管理工具 `notion_ctl` 按需发现，OMP 保留既有接口。
+Pi 1.4 的 Notion 消费入口为 `notion_list`、原生 `read` 和 `notion_use`。list 只发现元数据；read 检查主文或资源；use 一次取得根与完整 Requires，Members 仍按需选择。普通本地 Skill 使用 Pi 原生发现和读取。全部 Notion 目录与消费共用随包 SDK；旧 `source.command` 配置明确拒绝。每次 provider 输入保留一份与当前工具匹配的精简 `<ntn-skills-guidance>`。管理工具 `notion_ctl` 按需发现，OMP/Tern 在 `next` 延后。
 
 Pi 可用一次 `read({ paths: [...] })` 读取同一 Skill 快照中最多 16 个选中资源，输入使用固定 `sr:R` 句柄或带 snapshot 的 `skill://` 文件引用。文本完整交付；二进制返回已验证的文件信息与本地路径。普通 `read({ path, offset?, limit? })` 保持 Pi 原生行为。选择、预算和投递语义见[固定资源批读](./packages/context-broker/docs/fixed-resource-batches.md)。
 
@@ -179,7 +179,7 @@ sources:
     prefetch: false
 ```
 
-本 checkout 的 Pi 在省略 `source.command` 时使用随包的进程内 `ntn-skills` SDK。完整目录与 Default View 使用 SDK `listCatalog`；每个来源的一次 `consume` 准备选中的 Skill/Router 图，不再启动 `prepare` 后逐节点启动 `read`。按需资源通过 SDK `readSkill` 读取固定 File 引用。诊断、显式 custom command、OMP、Prompt 加载及已配置预取保留 CLI 路径。SDK 缺失或不兼容时明确失败，不回退 CLI。
+`next` 的 Notion 消费统一使用随包进程内 SDK，覆盖元数据、Skill/Router/Prompt 主文、支持文件和有预算的预取。一次 `consume` 负责准备和完整文件目录，首次仅物化选中主文，支持文件沿已验证的固定 File 引用按需读取。Prompt 每次显式提交重新取得本轮内容。诊断和明确管理保留配对 CLI。`source.command`、CLI prepare/read 链和完整 export 回退均已退役；包缺失或不匹配时明确要求升级。OMP/Tern 延后。
 
 Pi 通过 `notion_list`、`notion_use` 与原生 `read` 提供会话引用：`sr:C` 表示目录候选，`sr:S` 表示固定的选中主文，`sr:R` 表示属于该选择的资源。原样复制返回的引用。`notion_use` 仅向模型顶层开放，不能从 Code mode 内部调用；准备成功与实际完整交付分别验证。这些引用属于当前会话分支，使用时仍检查来源授权和身份。准备、投递与恢复边界见 [Skill 消费运行时](./packages/context-broker/docs/skill-consumption-runtime.md)。
 
@@ -189,7 +189,7 @@ Pi 通过 `notion_list`、`notion_use` 与原生 `read` 提供会话引用：`sr
 
 Notion 缓存按凭据和远端目录身份共用。全库目录与 View 成员使用不同缓存选择，不会因会话筛选缩小其他会话的 `$` 候选。View 选择写入当前会话分支，进程续接时恢复；新会话独立解析默认值。共享刷新保留已加载工作流的固定快照。[缓存合同](./packages/context-broker/docs/reference.zh-CN.md#内置-sources)。
 
-执行 `/context-broker doctor` 检查官方 CLI 版本、能力、认证和 source 访问。缺少依赖或访问失败只将对应 source 标记为不可用，本地 Skill、正常 source 和普通聊天继续工作；激活不可用 source 中已选的已知记录时阻断提交并提示修复方法。未知简单引用即使使用该 source 的 namespace 也原样透传；已接受或完整身份的引用会明确报告未加载。修复后执行 `/context-broker refresh`。显式配置 `command` 会覆盖包内 CLI，其安装由使用者负责。
+执行 `/context-broker doctor` 检查官方 CLI 版本、能力、认证和 source 访问。缺少依赖或访问失败只将对应 source 标记为不可用，本地 Skill、正常 source 和普通聊天继续工作；激活不可用 source 中已选的已知记录时阻断提交并提示修复方法。未知简单引用即使使用该 source 的 namespace 也原样透传；已接受或完整身份的引用会明确报告未加载。修复后执行 `/context-broker refresh`。管理 CLI 固定来自同一随包产物，不允许 source 覆写。
 
 `/context-broker sources` 显示后台准备状态、snapshot/version ID、CLI freshness 与安全错误码；`ready` 只表示内容已准备，不代表指令已加载到会话。
 
@@ -237,7 +237,7 @@ tern plugin list --json
 
 ## 隐私与支持
 
-Broker 使用宿主 agent 的本地权限。选中的 Skill 内容会发送到你配置的模型 provider，并保存在会话历史中；Router 暴露成员 metadata 和路径，成员正文另行加载。请使用可信 roots、catalogs、source commands 与 Notion databases。Notion 凭据由 `ntn-skills` 管理；元数据与选中的正文/资源缓存在本地。Source 错误只暴露安全错误码，不回显原始 stderr 或秘密。路径默认尽量采用 home-relative；`pathMode: hash` 可以进一步隐藏路径，decision 日志默认不记录路径。
+Broker 使用宿主 agent 的本地权限。选中的 Skill 内容会发送到你配置的模型 provider，并保存在会话历史中；Router 暴露成员 metadata 和路径，成员正文另行加载。请使用可信 roots、catalogs 与 Notion databases。Notion 凭据由 `ntn-skills` 管理；元数据与选中的正文/资源缓存在本地。Source 错误只暴露安全错误码，不回显原始 stderr 或秘密。路径默认尽量采用 home-relative；`pathMode: hash` 可以进一步隐藏路径，decision 日志默认不记录路径。
 
 本地 Pi/OMP 检查在 macOS 运行过，CI 在 Linux 运行 CLI 和产物检查。Windows path-list 分隔符已适配，但 Windows 运行行为尚未验证。Tern 原生 UI 检查需要 macOS；手动配套插件不支持远程 pane 或 Tern web client。
 

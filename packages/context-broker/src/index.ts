@@ -1338,7 +1338,7 @@ async function formatContextBrokerDoctor(config: ConfigFile, cwd = process.cwd()
   const sourceHealth: string[] = [];
   diagnostics.push(...formatSourceFailures(failures));
   for (const source of normalizeSources(config.sources) ?? []) {
-    if (source.enabled === false || source.type !== "notion" || source.command || failures.some(failure => failure.sourceId === source.id)) continue;
+    if (source.enabled === false || source.type !== "notion" || failures.some(failure => failure.sourceId === source.id)) continue;
     try {
       const health = await diagnoseNotionSource(source, cwd);
       sourceHealth.push(`Source ${source.id}: direct Notion API ${health.version}, authentication available`);
@@ -1686,7 +1686,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     loadResource: (record, path, ctx, signal, policy) => sourceRuntime.foreground(async () => {
       const source = normalizeSources(config.sources)?.find(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false);
       if (!source || source.type !== "notion") throw new SourceError("SOURCE_UNAVAILABLE", record.sourceId ?? "notion");
-      return loadNotionResource(record, path, source, ctx.cwd ?? process.cwd(), signal, paths.host === "pi" ? "sdk" : undefined, policy);
+      return loadNotionResource(record, path, source, ctx.cwd ?? process.cwd(), signal, policy);
     }),
     readResources: (record, refs, ctx, signal, policy) => sourceRuntime.foreground(async () => {
       const source = normalizeSources(config.sources)?.find(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false);
@@ -1697,7 +1697,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       if (paths.host !== "pi") return undefined;
       const source = normalizeSources(config.sources)?.find(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false);
       if (!source || source.type !== "notion") throw new SourceError("SOURCE_UNAVAILABLE", record.sourceId ?? "notion");
-      return readFixedNotionResource(record, ref, source, ctx.cwd ?? process.cwd(), signal, "sdk", policy);
+      return readFixedNotionResource(record, ref, source, ctx.cwd ?? process.cwd(), signal, policy);
     }),
     prepareGraph: (records, ctx, signal, purpose, pins, pendingBindings, mode, policy) => sourceRuntime.foreground(async () => {
       const groups = new Map<string, SkillRecord[]>();
@@ -1729,7 +1729,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
           bindings.set(binding.record.id, binding);
         }
         prepared.push(await prepareNotionSkills(roots, source, ctx?.cwd ?? process.cwd(), {
-          purpose, signal, rootPins, sessionBindings: [...bindings.values()], refresh: mode === "replace", transport: paths.host === "pi" ? "sdk" : undefined,
+          purpose, signal, rootPins, sessionBindings: [...bindings.values()], refresh: mode === "replace",
           ...policy,
         }));
       }
@@ -1771,7 +1771,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
         // fixed node as a root; it cannot traverse a newly changed Required edge.
         // Its graph is deliberately never installed as the active use graph.
         const compiled = await sourceRuntime.foreground(() => prepareNotionSkills(fixed.map(value => value.record), source, ctx.cwd ?? process.cwd(), {
-          purpose: "inspect", signal, transport: "sdk",
+          purpose: "inspect", signal,
           rootPins: new Map(fixed.map(value => [value.record.id!, value.snapshotId])),
           sessionBindings: fixed.map(value => value.record.preparationBinding!),
         }));

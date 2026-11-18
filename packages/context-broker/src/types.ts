@@ -304,7 +304,6 @@ export type SourceConfig = {
   | { type: "filesystem"; roots: string[]; scan?: ScanConfig; requireAutoload?: boolean }
   | {
       type: "notion";
-      command?: string | string[];
       database?: string;
       default_view_id?: string;
       profile_id?: string;

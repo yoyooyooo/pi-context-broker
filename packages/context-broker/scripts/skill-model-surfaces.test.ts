@@ -230,11 +230,6 @@ test("canonical restored delivery retains fixed relative-resource routing withou
   const native = sourceMessageText(buildCliGuidance({}, nativeTools).content);
   expect(native).toContain("keep owner/snapshot, change only the path");
   expect(native).toContain("omit the main file_id");
-  const config: ConfigFile = { sources: [{ id: "alpha", type: "notion", command: ["/configured/node", "/configured/skills.mjs"] }] };
-  const fallback = sourceMessageText(buildCliGuidance(config, ["bash"]).content);
-  expect(fallback).toContain("/configured/skills.mjs");
-  expect(fallback).toContain("<read-args>");
-  expect(fallback).toContain("CLI commands cannot resolve session sr: handles");
 });
 
 test("undefined presentation references preserve legacy local and unavailable-native guidance exactly", () => {

@@ -204,9 +204,6 @@ live-fixture 恢复 recipe：`node scripts/verify-notion-integration.mjs run --m
 | NS-SESSION-10 | 首次 `$` 后同会话重复、`/new` 和退出后的新进程 | provider 正文一份；后两者复用完整 immutable export，Notion 正文请求为零，CLI `validated_at` 不前移。CLI 进程调用与实际 Notion HTTP 分开计数。 |
 | NS-SESSION-11 | 父控用公开 `read --refresh`、固定 ref 的 source export、公开 pinned `apply` 发布自建正文和 guide 的 B，再强读回验 | 有效旧会话继续 A；新会话在各自默认五分钟有效期内仍 A。只修改 create 回执所属对象；不重发未知写入、不手工改 marker。此分支证明正式发布后的缓存行为，不计 external-editor 验收。 |
 | NS-SESSION-12 | 按每端实际 `validated_at` 等待默认 300000 ms 过期后再次使用 | 已加载旧会话仍 A；新会话实际请求 Notion 并导出不同的 B snapshot；真实 read 工具消费同一 B snapshot 的 guide，资源读取不再请求 Notion。使用真实时钟、默认策略和完整 HTTP 账本。原生编辑的未发布修改另按下方独立 recipe 取证。 |
-| NS-SESSION-13 | `--mode deterministic --shared-catalog true`：不同 cwd、Pi/OMP、source ID/namespace、命令拼写和等价 database selector | 两个真实宿主首次 `$` 均消费正确完整正文；只建立一份 catalog/index 和一次 immutable export，第二端不新增 list/export，不推进原始 `validated_at`。独立宿主会话与 provider 捕获分别保留。 |
-| NS-SESSION-14 | 同一 shared-catalog run 在一端 `/context-broker refresh`，保留两个已加载会话，再分别启动两个新进程 | 共享 catalog 选择新的不可变观察；两端旧会话仍 A，新会话读取 B，另一宿主复用同一 B export，正文各一份。此处 Notion transport/provider 为受控 fixture，不宣称真实远端编辑或真实模型通过。 |
-| NS-SESSION-15 | CLI identity 回归与 Broker catalog-cache 回归 | 等价数据库 selector 共用身份；凭据和远端查询范围变化隔离；本地 TTL、创建偏好、namespace、项目路径、命令拼写不分区；按当前策略从原始校验时间重算 TTL，过期/强制刷新在另一端可见，旧格式和损坏目录重建。 |
 | NS-SESSION-16 | `storage --case catalog-order`，旧 list 回应完成后挡住 stdout，新 discovery 先完成并发布，再放行旧回应 | 共享 catalog 的 alias、原始 `validated_at`、indexId 均保留新观察；另一个独立进程 lookup 仍见新 alias/时间，两次 discovery 返回的 metadata 路径仍可读。 |
 | NS-SESSION-17 | `storage --case snapshot-race`，两个独立 API 进程同时首次 read/export | 两个完整 export 均已写完各自 stage 后，先放行 A 并等其 load 完成，再放行 B；两个 load 都成功且返回同一路径/快照，body 与 read 原件逐字节相同；最终仅一个完整 immutable snapshot，active cache 不留 losing `.stage-*`。允许重复 read/export。 |
 | NS-SESSION-18 | `hosts --case host-first-body`，真实 Pi/OMP 各自完成 discovery 后并发首次 `$` | discovery 后无正文 read/export 和 provider；两个实际宿主在 read/export gate 上都就绪后依次放行。两次首次提交均成功，各 provider 含同一完整固定正文及 frontmatter 恰好一次；最终 inventory/resource hash 与 receipt 完整匹配且无 losing stage。只证明受控 source/provider 与实际宿主投递。 |
@@ -246,21 +243,14 @@ node scripts/verify-notion-integration.mjs run --mode live-fixture --cache-lifec
 
 ## 共享 Notion 缓存
 
-Notion 的 `Default Context` 只控制默认目录和后台准备，不表示项目归属。默认全局 cache 按凭据与实际远端目录复用；namespace/source ID 属于调用和宿主注册。显式 `cacheDir` 仍控制存储位置。不要为验收给 Notion 增加项目字段，也不要把会话固定版本当作可变远端内容的项目分叉。
+当前目录权威属于 SDK/core。Broker 不再维护自己的共享 catalog index、CLI 身份缓存或完整 export 快照；本地目录仅是可丢弃的 metadata/main/file 投影。原始验证时间不由进程启动或投影复用续期，权限与 scope 失败不借本地文件变成成功。
 
-从 Broker checkout 根目录运行：
+~~~sh
+bun test packages/context-broker/scripts/catalog-cache.test.ts packages/context-broker/scripts/shared-notion-adapter.test.ts
+CONTEXT_BROKER_GRAPH_CORE=/absolute/current/notion-skills-cli/packages/core/src bun test packages/context-broker/scripts/notion-source-sdk.test.ts packages/context-broker/scripts/notion-entry.test.ts
+~~~
 
-```bash
-node scripts/verify-notion-integration.mjs doctor --mode deterministic --shared-catalog true
-node scripts/verify-notion-integration.mjs run --mode deterministic --shared-catalog true
-bun packages/context-broker/scripts/catalog-cache.test.ts
-```
-
-共享专项复用现有 integration 的 Doctor、RPC、provider 捕获、进程 ledger、evidence/cleanup。`scripts/notion-shared-catalog.mjs` 在独立项目目录启动真实 Pi 和 OMP，以同一受控 source/cache 验证 NS-SESSION-13～14；保留 `shared-catalog-result.json` 和四个 `shared-*-provider.jsonl`/`-rpc.json`/`-decisions.jsonl`，核对 index、原始校验时间、A/B snapshot 和 list/export 增量。RPC 收口后主动 teardown 不冒充自然退出。该 route 不执行原生菜单、真实 Notion 或真实模型；原生菜单刷新/失败仍跑 `node scripts/verify-native-ui.mjs --catalog-cache` 和 `--catalog-cache-failure`。
-
-NS-SESSION-15 的 CLI 边界从 CLI checkout 执行 `bun test packages/cli/test/cli.test.ts --test-name-pattern 'consumer catalog identity'`，对应 [C20](https://github.com/yoyooyooo/notion-skills-cli/blob/main/.cursor/skills/verify-ntn-skills/features/sync-cache-verification-plan.md#cache-time-and-identity-matrix)。CLI 的 `ctl cache identity --database SELECTOR` 必须与实际 list 选择一致；不加入 cwd、命令字节/mtime、PATH、cache roots 或整份本地 config。Broker 回归使用独立 CLI 子进程，并验证身份隔离、共享刷新、策略 TTL 和损坏恢复；实际宿主投递只由上述 shared-catalog run 证明。
-
-用本次真实 evidence 路径执行 `evidence`、`cleanup`、再次 `evidence`，保留失败记录。修改 Skill 只维护规程；只有具体运行回执才能记录通过。
+第一组验证目录身份、freshness 和策略透传；第二组验证完整 manifest、main-only 初始物化、支持文件逐项读取、Prompt 每轮重新交付，以及错误/取消不发布 ready。核心跨进程缓存、HTTP 预算与重试复用 core 原入口，实际 Pi/provider 复用原 SDK driver。不得从受控函数测试推断这些边界通过。旧 NS-SESSION-13～21 的 CLI 目录/完整 export 方案和跨宿主驱动不属于当前 next 门槛；历史回执不改写。
 
 ## 并发发布与首次正文
 

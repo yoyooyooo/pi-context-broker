@@ -2,29 +2,33 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { discoverSourceCatalog, loadSourceSkill } from "../src/sources";
+import { currentNotionFixture } from "./fixtures/current-notion-source";
+import { pathToFileURL } from "node:url";
 import { parseCatalogMember, readDiscoveryCatalog, validateDiscoveryRecords, resolveCatalogReference } from "../src/discovery-records";
-import { buildDiscoveryRegistry, buildRawDollarRegistry, buildInjectedPayload, matchDiscoveryRecord, parseInvocations } from "../src/index";
+
 import type { CatalogRemoteReference, ConfigFile } from "../src/types";
 
-const root = await mkdtemp(join(tmpdir(), "broker-remote-catalog-"));
+const runtime = await currentNotionFixture(), root = runtime.root;
+const { discoverSourceCatalog, loadSourceSkill } = runtime.sources;
+const { buildDiscoveryRegistry, buildRawDollarRegistry, buildInjectedPayload, matchDiscoveryRecord, parseInvocations } =
+  await import(pathToFileURL(join(root, "src/index.ts")).href);
 try {
-  const log = join(root, "calls.jsonl"), fixture = join(root, "source.mjs"), catalog = join(root, "catalog.json");
+  const catalog = join(root, "catalog.json");
   const page = "11111111-1111-4111-8111-111111111111", routerPage = "11111111-1111-4111-8111-111111111112";
   const db = "22222222-2222-4222-8222-222222222222", ds = "33333333-3333-4333-8333-333333333333";
-  await writeFile(fixture, `import {appendFile} from 'node:fs/promises';
-const [log,mode,...args]=process.argv.slice(2); await appendFile(log,JSON.stringify({mode,args})+'\\n');
-const scope='a'.repeat(64), db=${JSON.stringify(db)}, ds=${JSON.stringify(ds)};
-const records=[['${page}','skill','Precise','precise'],['${routerPage}','router','Remote Router','remote-router']].map(([page,kind,name,alias])=>({id:'notion_page:'+page,kind,name,alias,description:'registered '+alias,default_context:false,entrypoint:kind==='skill'?'SKILL.md':'ROUTER.md',locator:{type:'notion_page',page_id:page,database_id:db,data_source_id:ds},ref:'skill://'+page+'/'+(kind==='skill'?'SKILL.md':'ROUTER.md')}));
-if(mode==='offline'){console.log(JSON.stringify({ok:false,error:{code:'CACHE_MISSING'}}));process.exitCode=1;}
-else if(args[0]==='list')console.log(JSON.stringify({ok:true,scope,fetched_at:0,records,count:records.length,databases:[{database_id:db,title:'Fixture',alias:'fixture',data_source_ids:[ds]}],coverage:{method:'explicit_database',exhaustive:true,search_index_limited:false,queried_data_sources:[ds],failed_sources:[]},freshness:{policy:'default',validated_at:new Date(0).toISOString(),age_ms:0,max_age_ms:60000,stale:false}}));
-else if(args[0]==='read')console.log(JSON.stringify({ok:true,scope:'b'.repeat(64),record:records[0],snapshot_id:'s_'+'c'.repeat(64),version_id:'v1'}));
-else throw Error('Unexpected body/export operation');
-`);
+  const initialRecords = [[page, "skill", "Precise", "precise"], [routerPage, "router", "Remote Router", "remote-router"]].map(([owner, kind, name, alias]) => ({
+    id: "notion_page:" + owner, kind, name, alias, description: "registered " + alias, default_context: false,
+    entrypoint: kind === "skill" ? "SKILL.md" : "ROUTER.md", locator: { type: "notion_page", page_id: owner, database_id: db, data_source_id: ds },
+    ref: "skill://" + owner + "/" + (kind === "skill" ? "SKILL.md" : "ROUTER.md") }));
+  runtime.state.catalog = { ...runtime.state.catalog, scope: "a".repeat(64), records: initialRecords, count: 2,
+    databases: [{ database_id: db, title: "Fixture", alias: "fixture", role: "content", data_source_ids: [ds] }],
+    coverage: { method: "explicit_database", exhaustive: true, search_index_limited: false, queried_data_sources: [ds], failed_sources: [] } };
+  const list = runtime.state.list;
+  runtime.state.list = options => { if (options.offline) throw Object.assign(Error("offline fixture"), { code: "CACHE_MISSING" }); return list(options); };
   const local = join(root, "local", "SKILL.md");
   await mkdir(join(root, "local"));
   await writeFile(local, "---\nname: local-helper\ndescription: protected local capability\n---\nLOCAL BODY MUST NOT ENTER INDEX\n");
-  const source = { type: "notion" as const, id: "machine-source-id", namespace: "production", command: [process.execPath, fixture, log, "online"], cacheDir: join(root, "cache") };
+  const source = { type: "notion" as const, id: "machine-source-id", namespace: "production", cacheDir: join(root, "cache") };
   const secondSource = { ...source, id: "second-id", namespace: "secondary" };
   const config: ConfigFile = { skillRoots: [join(root, "local")], discoveryCatalogs: [catalog], sources: [source, secondSource] };
   const remote: CatalogRemoteReference = { type: "remote", source: { namespace: "production" }, id: "notion_page:" + page, locator: { type: "notion_page", page_id: page, database_id: db, data_source_id: ds }, ref: "skill://" + page + "/SKILL.md" };
@@ -106,8 +110,8 @@ else throw Error('Unexpected body/export operation');
   const unknownId = "11111111-1111-4111-8111-111111111199";
   const unknownRecord = { ...remote, id: "notion_page:" + unknownId, locator: { ...remote.locator, page_id: unknownId }, ref: "skill://" + unknownId + "/SKILL.md" };
   assert.throws(() => resolveCatalogReference(unknownRecord, context, "skill"), { code: "CATALOG_MEMBER_UNAVAILABLE" });
-  await assert.rejects(loadSourceSkill(metadata.records.find(record => record.id === remote.id)!, config, root), { code: "SOURCE_IDENTITY_MISMATCH" });
-  const offline = { ...source, command: [process.execPath, fixture, log, "offline"], discovery: { offline: true } };
+  await assert.rejects(loadSourceSkill(metadata.records.find(record => record.id === remote.id)!, config, root), { code: "SOURCE_PREPARATION_INVALID" });
+  const offline = { ...source, discovery: { offline: true } };
   const unavailable = await discoverSourceCatalog({ sources: [offline] }, root);
   const offlineRouter = readDiscoveryCatalog(catalog, [], {}, { sources: [offline], records: unavailable.records, failures: unavailable.failures })[0]!;
   assert.equal(offlineRouter.members!.length, 3);
@@ -162,30 +166,15 @@ else throw Error('Unexpected body/export operation');
   assert.ok(validateDiscoveryRecords(readDiscoveryCatalog(catalog, [], { maxSkillBytes: 1 })).some(error => error.includes("LOCAL_ENTRY_TOO_LARGE") && error.includes("scan_size_limit")));
   await writeFile(catalog, JSON.stringify({ records: [{ kind: "router", ...remoteRouter, ref: remoteRouter.ref + "?snapshot=s_" + "c".repeat(64) }] }));
   assert.throws(() => readDiscoveryCatalog(catalog, [], {}, context), /canonical unpinned/);
-  const calls = (await readFile(log, "utf8")).trim().split("\n").map(line => JSON.parse(line));
-  assert.equal(calls.filter(call => call.args[0] === "read").length, 1, "Only explicit scope mismatch activation reads a body");
+  assert.ok(runtime.calls.every(call => call.operation === "list" || call.operation === "consume"));
   // Frozen real metadata/body; only producer role/coverage is projected below.
   const captured = JSON.parse(await readFile(new URL("./fixtures/upstream-catalog.json", import.meta.url), "utf8"));
   const routerRead = captured.routerRead;
   const upstream = routerRead.record;
   const upstreamDatabase = { database_id: upstream.locator.database_id, title: "Upstream", alias: "upstream", role: "upstream", data_source_ids: [upstream.locator.data_source_id] };
   const corrected = { ...captured.catalog, records: [upstream], count: 1, databases: [...captured.catalog.databases, upstreamDatabase], coverage: { ...captured.catalog.coverage, queried_data_sources: [...captured.catalog.coverage.queried_data_sources, upstream.locator.data_source_id] } };
-  const responsePath = join(root, "upstream-response.json"), upstreamAdapter = join(root, "upstream-source.mjs");
-  await writeFile(responsePath, JSON.stringify(corrected));
-  await writeFile(upstreamAdapter, `import {appendFile,readFile,mkdir,writeFile} from 'node:fs/promises';
-import {createHash} from 'node:crypto'; import {join} from 'node:path';
-const [log,response,...args]=process.argv.slice(2); await appendFile(log,JSON.stringify({mode:'upstream',args})+'\\n');
-const read=${JSON.stringify(routerRead)};
-if(args[0]==='list') console.log(await readFile(response,'utf8'));
-else if(args[0]==='read') console.log(JSON.stringify(read));
-else if(args[0]==='export') {
- const output=args[args.indexOf('--output')+1]; await mkdir(output,{recursive:true});
- const manifest=JSON.stringify({format:'ntn-skills',version:2,kind:read.record.kind,main:read.entrypoint,name:read.record.name,description:read.record.description});
- const files=[]; for(const [path,content,role] of [[read.entrypoint,read.content,'entrypoint'],['.ntn-skills.json',manifest,'manifest']]) { await writeFile(join(output,path),content); files.push({path,bytes:Buffer.byteLength(content),hash:createHash('sha256').update(content).digest('hex'),role}); }
- console.log(JSON.stringify({ok:true,operation:'export',format:'directory',projection:'snapshot',output,reused:false,record:read.record,scope:read.scope,snapshot_id:read.snapshot_id,version_id:read.version_id,entrypoint:read.entrypoint,main_path:read.entrypoint,ref:read.ref,content_id:'d'.repeat(64),freshness:{policy:'pinned'},files}));
-} else throw Error('Unexpected command');
-`);
-  const upstreamSource = { ...source, id: "runner-source", namespace: "runner", command: [process.execPath, upstreamAdapter, log, responsePath], cacheDir: join(root, "runner-cache") };
+  runtime.state.catalog = corrected;
+  const upstreamSource = { ...source, id: "runner-source", namespace: "runner", cacheDir: join(root, "runner-cache") };
   const upstreamConfig = { sources: [upstreamSource] };
   const upstreamMetadata = await discoverSourceCatalog(upstreamConfig, root);
   assert.deepEqual(upstreamMetadata.failures, []);
@@ -205,17 +194,6 @@ else if(args[0]==='export') {
   assert.throws(() => matchDiscoveryRecord(upstream.alias + "@runner", upstreamMetadata.records), { code: "CATALOG_INCOMPLETE" }, "Search-limited discovery cannot establish short-alias uniqueness");
   assert.equal(exactUpstream.decision, "inject");
   if (exactUpstream.decision === "inject") assert.equal(exactUpstream.record.ref, upstream.ref);
-  const beforeActivation = (await readFile(log, "utf8")).trim().split("\n").map(line => JSON.parse(line)).filter(call => call.mode === "upstream");
-  assert.equal(beforeActivation.some(call => ["read", "export"].includes(call.args[0])), false, "Discovery and registration never read a body");
-  const activated = await loadSourceSkill(candidate, upstreamConfig, root);
-  assert.equal(activated.body, routerRead.content);
-  assert.equal(activated.snapshotId, routerRead.snapshot_id);
-  assert.equal(activated.sourceId, upstreamSource.id);
-  assert.equal(activated.sourceScope, routerRead.scope);
-  const activationCalls = (await readFile(log, "utf8")).trim().split("\n").map(line => JSON.parse(line)).filter(call => call.mode === "upstream" && ["read", "export"].includes(call.args[0]));
-  assert.equal(activationCalls[0].args[1], upstream.ref, "Activation uses the exact registered upstream ref");
-  assert.equal(activationCalls[1].args[1], routerRead.snapshot_id);
-  await assert.rejects(loadSourceSkill({ ...candidate, sourceScope: "b".repeat(64) }, upstreamConfig, root), { code: "SOURCE_IDENTITY_MISMATCH" });
   await assert.rejects(loadSourceSkill({ ...candidate, sourceId: "unknown-source" }, upstreamConfig, root), { code: "SOURCE_UNAVAILABLE" });
   assert.throws(() => resolveCatalogReference({ ...upstreamReference, source: { namespace: "unknown" } }, { sources: upstreamConfig.sources, ...upstreamMetadata }, "router"), { code: "SOURCE_UNAVAILABLE" });
   for (const database of [upstream.locator.target_database_id, upstream.locator.target_database_id.replaceAll("-", "").toUpperCase(), "content-d9091165"]) {
@@ -225,9 +203,9 @@ else if(args[0]==='export') {
   }
   const absentTarget = structuredClone(corrected);
   absentTarget.databases = [upstreamDatabase];
-  await writeFile(responsePath, JSON.stringify(absentTarget));
+  runtime.state.catalog = absentTarget;
   assert.equal((await discoverSourceCatalog(upstreamConfig, root)).records.length, 1, "Unscoped search-limited catalog need not discover the target content DB");
-  await writeFile(responsePath, JSON.stringify(corrected));
+  runtime.state.catalog = corrected;
   for (const database of [upstream.locator.database_id, "upstream", db]) {
     const rejected = await discoverSourceCatalog({ sources: [{ ...upstreamSource, database }] }, root);
     assert.equal(rejected.records.length, 0);
@@ -244,7 +222,7 @@ else if(args[0]==='export') {
     { ...corrected, records: [{ id: "notion_page:" + page, kind: "skill", locator: { type: "notion_page", page_id: page, database_id: upstreamDatabase.database_id, data_source_id: upstream.locator.data_source_id }, name: "Precise", alias: "precise", description: "wrong role", default_context: false, entrypoint: "SKILL.md", ref: "skill://" + page + "/SKILL.md" }] },
   ];
   for (const invalidCatalog of invalidCatalogs) {
-    await writeFile(responsePath, JSON.stringify(invalidCatalog));
+    runtime.state.catalog = invalidCatalog;
     const rejected = await discoverSourceCatalog(upstreamConfig, root);
     assert.equal(rejected.records.length, 0);
     assert.deepEqual(rejected.failures.map(failure => [failure.sourceId, failure.namespace, failure.code]), [[upstreamSource.id, "runner", "SOURCE_RESPONSE_INVALID"]]);
@@ -257,7 +235,7 @@ else if(args[0]==='export') {
   assert.equal(currentList.coverage.failed_sources.length, 2);
   assert.ok(currentList.databases.some((database: { role: string }) => database.role === "upstream"));
   assert.ok(currentList.coverage.queried_data_sources.includes(upstream.locator.data_source_id));
-  await writeFile(responsePath, currentListBytes);
+  runtime.state.catalog = currentList;
   const incomplete = await discoverSourceCatalog(upstreamConfig, root);
   assert.equal(incomplete.records.length, currentList.records.length, "A partial source preserves exact valid records");
   assert.equal(incomplete.failures[0]!.blocking, false);
@@ -270,7 +248,7 @@ else if(args[0]==='export') {
   assert.throws(() => resolveCatalogReference(upstreamReference, { sources: upstreamConfig.sources, ...incomplete }, "router"), { code: "CATALOG_INCOMPLETE" });
   // Search coverage can be incomplete without a failed request. Display tokens
   // must still carry identity, so a typed short alias cannot establish uniqueness.
-  await writeFile(responsePath, JSON.stringify({ ...currentList, coverage: { ...currentList.coverage, method: "search_and_registered", exhaustive: false, failed_sources: [], search_index_limited: true } }));
+  runtime.state.catalog = { ...currentList, coverage: { ...currentList.coverage, method: "search_and_registered", exhaustive: false, failed_sources: [], search_index_limited: true } };
   const searchLimited = await discoverSourceCatalog(upstreamConfig, root);
   assert.deepEqual(searchLimited.failures, []);
   const limitedRecord = searchLimited.records.find(record => record.sourceId === upstreamSource.id && record.id === retained.id)!;
@@ -278,13 +256,13 @@ else if(args[0]==='export') {
   assert.notEqual(limitedRecord.selectionToken, `${limitedRecord.alias}@${upstreamSource.namespace}`, "Incomplete coverage never emits a short selector as an exact identity");
   assert.equal(matchDiscoveryRecord(limitedRecord.selectionToken!, searchLimited.records).decision, "inject", "A returned exact identity remains usable with search-limited coverage");
   assert.throws(() => matchDiscoveryRecord(`${limitedRecord.alias}@${upstreamSource.namespace}`, searchLimited.records), { code: "CATALOG_INCOMPLETE" });
-  await writeFile(responsePath, JSON.stringify({ ...corrected, scope: "invalid-scope" }));
+  runtime.state.catalog = { ...corrected, scope: "invalid-scope" };
   const invalidScope = await discoverSourceCatalog(upstreamConfig, root);
   assert.equal(invalidScope.records.length, 0);
   assert.equal(invalidScope.failures[0]!.code, "SOURCE_RESPONSE_INVALID");
   const contentDatabase = captured.catalog.databases[0];
   const pageRecord = { id: "notion_page:" + page, kind: "skill", locator: { type: "notion_page", page_id: page, database_id: contentDatabase.database_id, data_source_id: contentDatabase.data_source_ids[0] }, name: "Precise", alias: "precise", description: "content page", default_context: false, entrypoint: "SKILL.md", ref: "skill://" + page + "/SKILL.md" };
-  await writeFile(responsePath, JSON.stringify({ ...corrected, records: [pageRecord] }));
+  runtime.state.catalog = { ...corrected, records: [pageRecord] };
   assert.equal((await discoverSourceCatalog({ sources: [{ ...upstreamSource, database: contentDatabase.alias }] }, root)).records.length, 1);
   assert.equal((await discoverSourceCatalog({ sources: [{ ...upstreamSource, database: upstreamDatabase.database_id }] }, root)).failures[0]!.code, "SOURCE_RESPONSE_INVALID");
   console.log("remote catalog consumer checks passed: scoped source metadata/localFS/mixed unavailable/ambiguity/ref scope/no body/precise invocation");

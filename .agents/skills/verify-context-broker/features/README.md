@@ -43,7 +43,7 @@
 | Notion source与默认宿主Skill、持久 Read 记录与 preparation 提交锁 | `source` | [Source发现与激活](source.md) |
 | Notion 默认 View 目录与后台准备 | 独立 `verify-notion-integration.mjs --view-discovery true`；旧预取 fixture 用 `--default-context true` | [默认上下文与后台预取](../../verify-notion-skills-integration/features/default-context-prefetch.md) |
 | Notion CLI 正文缓存、跨会话/进程复用与远端修改 | 独立 `verify-notion-integration.mjs --mode live-fixture --cache-lifecycle true` | [会话缓存与恢复 NS-SESSION-09～12](../../verify-notion-skills-integration/features/session-cache-recovery.md) |
-| Notion 跨项目/宿主共用目录与导出、共享刷新与会话固定版本 | 独立 `verify-notion-integration.mjs --mode deterministic --shared-catalog true` | [共享缓存 NS-SESSION-13～15](../../verify-notion-skills-integration/features/session-cache-recovery.md#共享-notion-缓存)；真实 Pi/OMP + 受控 source/provider |
+| Notion 当前目录归属、原始 freshness 与文件投影 | 现有 `catalog-cache`、`shared-notion-adapter`、`notion-source-sdk` 回归 | [共享缓存](../../verify-notion-skills-integration/features/session-cache-recovery.md#共享-notion-缓存)；SDK/core 管缓存，实际 Pi 另验 |
 | Notion原生补全与手动选择 | `notion-editor` | [跨仓补全地图](../../verify-notion-skills-integration/features/dollar-completion-selection.md) |
 | Pi 原生终端候选、草稿、提交与双向切换 | 独立 `verify-pi-pty.mjs doctor\|run` | [Pi 独立终端](../../verify-notion-skills-integration/features/dollar-completion-selection.md#pi-独立终端)；真实 PTY + 受控 source/provider，不能证明 live Notion/模型 |
 | 日常安装的真实 Notion 菜单与消费 | 独立 `verify-daily-notion-ui.mjs --mode captured\|model` | [日常安装与原生菜单](../../verify-notion-skills-integration/features/daily-installation-ui.md) |

@@ -84,13 +84,6 @@
         "type": { "const": "notion" },
         "enabled": { "type": "boolean", "default": true },
         "namespace": { "$ref": "#/$defs/sourceName", "description": "Defaults to id." },
-        "command": {
-          "oneOf": [
-            { "$ref": "#/$defs/nonemptyString" },
-            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/nonemptyString" } }
-          ],
-          "description": "Omit to use the packaged ntn-skills CLI. Override with an executable or executable plus fixed arguments; no shell expansion."
-        },
         "database": { "$ref": "#/$defs/nonemptyString" },
         "cacheDir": { "$ref": "#/$defs/nonemptyString" },
         "discovery": { "$ref": "#/$defs/sourcePolicy" },

@@ -11,6 +11,10 @@ description: "维护和验证 Notion 消费者的当前资格、缓存原始验�
 
 在仓库根目录执行。先读 [合同与源码对应](references/contracts.md)，确认本次触及资格、选择或交付中的哪一层。一个 Skill 维护多个小模型；不能把这些状态合成一个成功字段。
 
+## next 本轮边界
+
+消费 transport 收敛先运行 [现有 integration Skill 的有限入口](../verify-notion-skills-integration/SKILL.md#next-单轨有限验收)。本 Skill 仍维护资格、取消、代次和投递状态；只有这些语义或守卫实际变化时才选择相应小模型复验。不得仅为清理旧 CLI fixture 重跑所有模型、自动改源码 hash 或增加一层验证平台。保持当前身份、完整 manifest 和只读约束；OMP/Tern 本轮未运行。
+
 ## 状态所有者
 
 | 状态 | 实际所有者 | 本入口 |

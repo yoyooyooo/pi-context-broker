@@ -143,58 +143,13 @@ export function observe(api, settings) {
         if (!files.has(raw.entrypoint) || [...paths].some(path => !declaredFiles.has(path)) || raw.ref !== declaredFiles.get(raw.entrypoint)?.ref) return;
         const inventory = dir => readdirSync(dir, { withFileTypes: true }).every(entry => { const path = join(dir, entry.name); return entry.isDirectory() ? inventory(path) : entry.isFile() && declaredFiles.has(relative(tree, path).split(sep).join('/')); });
         if (!inventory(tree)) return;
-        exports.push({ directory: tree, receipt: { projection: 'entry', manifest_complete: true, scope: raw.scope, snapshot: raw.snapshot_id, notionVersion: raw.version_id, entry: raw.entrypoint, record: { id: raw.id } }, files, declaredFiles, partial: true, receiptSha256: hash(readFileSync(receiptPath)) });
+        exports.push({ directory: tree, receipt: { projection: 'entry', manifest_complete: true, scope: raw.scope, snapshot: raw.snapshot_id, notionVersion: raw.version_id, entry: raw.entrypoint, record: { id: raw.id } }, files, declaredFiles, receiptSha256: hash(readFileSync(receiptPath)) });
       } catch { /* An unverified entry manifest does not authorize any read. */ }
-    };
-    const validate = directory => {
-      try {
-        directory = realpathSync(directory);
-        if (!within(cache, directory)) return;
-        const receiptPath = join(directory, '.broker-snapshot.json');
-        if (realpathSync(receiptPath) !== receiptPath) return;
-        const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
-        if (!keys(receipt, 'version projection scope record snapshot notionVersion contentId entry files') || receipt.version !== 3 || receipt.projection !== 'snapshot' || !digest.test(receipt.scope) || !snapshotId.test(receipt.snapshot) || typeof receipt.notionVersion !== 'string' || !receipt.notionVersion || receipt.notionVersion.includes('\0') || !digest.test(receipt.contentId)) return;
-        const record = receipt.record;
-        if (!object(record) || !object(record.locator)) return;
-        const locator = record.locator;
-        const subscription = locator.type === 'notion_subscription';
-        const shared = locator.type === 'shared_skill';
-        if (!keys(record, 'id kind locator name alias description default_context entrypoint ref' + (shared || record.enabled !== undefined ? ' enabled' : '') + (record.upstream !== undefined ? ' upstream' : ''))) return;
-        if ((shared && record.enabled !== true) || (!shared && record.enabled !== undefined && record.enabled !== true)) return;
-        if (!keys(locator, subscription ? 'type subscription_id database_id data_source_id target_database_id' : 'type page_id database_id data_source_id' + (shared ? ' library_id skill_id' : ''))) return;
-        const identity = subscription ? locator.subscription_id : locator.page_id;
-        if (!['notion_page', 'notion_subscription', 'shared_skill'].includes(locator.type) || !uuid.test(identity) || !uuid.test(locator.database_id) || !uuid.test(locator.data_source_id) || (subscription && (!uuid.test(locator.target_database_id) || record.kind !== 'router'))) return;
-        if (shared && (typeof locator.library_id !== 'string' || !sharedId.test(locator.library_id) || typeof locator.skill_id !== 'string' || !sharedId.test(locator.skill_id) || !selected.locator || Object.entries(selected.locator).some(([key, value]) => locator[key] !== value))) return;
-        const stableIdentity = shared ? 'shared_skill:' + encodeURIComponent(locator.library_id) + ':' + encodeURIComponent(locator.skill_id) : locator.type + ':' + identity;
-        if (record.id !== stableIdentity || record.id !== selected.id || record.kind !== selected.kind || record.entrypoint !== selected.entry || record.ref !== selected.ref || record.alias !== alias || typeof record.name !== 'string' || !/\S/u.test(record.name) || typeof record.description !== 'string' || typeof record.default_context !== 'boolean') return;
-        if (record.upstream !== undefined && (!keys(record.upstream, 'repo') || locator.type !== 'notion_page' || record.kind !== 'skill' || typeof record.upstream.repo !== 'string' || !/\S/u.test(record.upstream.repo) || /[/\\\p{Cc}\p{Cf}\p{Cs}]/u.test(record.upstream.repo))) return;
-        if (/[\p{Cc}\p{Cf}\p{Cs}]/u.test(record.name) || Object.values(record).some(value => typeof value === 'string' && value.includes('\0'))) return;
-        const expectedDirectory = join(sourceCache, 'scopes', receipt.scope, 'records', hash(record.id), 'snapshots', receipt.snapshot);
-        if (directory !== expectedDirectory || realpathSync(expectedDirectory) !== expectedDirectory || receipt.entry !== record.entrypoint || !Array.isArray(receipt.files)) return;
-        const files = new Map();
-        for (const item of receipt.files) {
-          if (!keys(item, 'path bytes hash') || !portable(item.path) || item.path === '.broker-snapshot.json' || files.has(item.path) || !Number.isSafeInteger(item.bytes) || item.bytes < 0 || !digest.test(item.hash)) return;
-          const path = join(directory, item.path);
-          if (realpathSync(path) !== path || !within(directory, path) || !statSync(path).isFile()) return;
-          const bytes = readFileSync(path);
-          if (bytes.length !== item.bytes || hash(bytes) !== item.hash) return;
-          files.set(item.path, { path, bytes });
-        }
-        if (!files.has(receipt.entry) || !files.has('.ntn-skills.json')) return;
-        const inventory = dir => readdirSync(dir, { withFileTypes: true }).every(entry => {
-          const path = join(dir, entry.name);
-          if (entry.isDirectory()) return inventory(path);
-          return entry.isFile() && (path === receiptPath || files.has(relative(directory, path).split(sep).join('/')));
-        });
-        if (!inventory(directory)) return;
-        exports.push({ directory, receipt, files });
-      } catch {}
     };
     const walk = directory => {
       for (const entry of readdirSync(directory, { withFileTypes: true })) {
         const path = join(directory, entry.name);
         if (entry.isDirectory()) walk(path);
-        else if (entry.isFile() && entry.name === '.broker-snapshot.json') validate(directory);
         else if (entry.isFile() && entry.name === '.broker-entry.json') validateEntry(directory);
       }
     };
@@ -205,7 +160,7 @@ export function observe(api, settings) {
     const file = exported.files.get(entry) ?? exported.declaredFiles?.get(entry);
     if (!file) return undefined;
     const role = entry === exported.receipt.entry ? 'entrypoint' : entry === '.ntn-skills.json' ? 'manifest' : entry === 'ntn-skills-source.zip' ? 'source_bundle' : 'resource';
-    return { kind: role === 'entrypoint' ? 'skill' : role === 'manifest' ? 'metadata' : role === 'source_bundle' ? 'source-bundle' : 'resource', role, path: file.path, snapshot: exported.receipt.snapshot, version: exported.receipt.notionVersion, scope: exported.receipt.scope, recordId: exported.receipt.record.id, entry, fileBody: Buffer.isBuffer(file.bytes) ? file.bytes.toString('utf8') : undefined, fileId: file.fileId, materialization: exported.receipt.projection, manifestComplete: exported.partial ? exported.receipt.manifest_complete === true : true };
+    return { kind: role === 'entrypoint' ? 'skill' : role === 'manifest' ? 'metadata' : role === 'source_bundle' ? 'source-bundle' : 'resource', role, path: file.path, snapshot: exported.receipt.snapshot, version: exported.receipt.notionVersion, scope: exported.receipt.scope, recordId: exported.receipt.record.id, entry, fileBody: Buffer.isBuffer(file.bytes) ? file.bytes.toString('utf8') : undefined, fileId: file.fileId, materialization: exported.receipt.projection, manifestComplete: exported.receipt.manifest_complete === true };
   };
   const shortReference = input => {
     if (!/^sr:[CSR][A-Za-z0-9_-]{22}$/.test(input) || !advertisedShortRefs.has(input)) return undefined;
@@ -264,7 +219,7 @@ export function observe(api, settings) {
         if (match[1] !== encodeURIComponent(target)) return undefined;
       } else if (/[/?#:]/.test(target.replace(/^upstream:/, ''))) return undefined;
       const entry = reference[0] || selected.entry;
-      if (!portable(entry) || /[:?#]/.test(entry) || entry === '.broker-snapshot.json') return undefined;
+      if (!portable(entry) || /[:?#]/.test(entry)) return undefined;
       const query = new URLSearchParams(reference[1]);
       if ([...query.keys()].some(key => !['snapshot', 'file_id'].includes(key)) || query.getAll('snapshot').length > 1 || query.getAll('file_id').length > 1) return undefined;
       const snapshot = query.get('snapshot');
@@ -299,7 +254,7 @@ export function observe(api, settings) {
         const targets = new Map(entries.map(entry => targetFor(candidates[0], entry)).filter(Boolean).map(target => [target.path, target]));
         return targets.size === 1 ? targets.values().next().value : undefined;
       }
-      for (const exported of exportedFiles()) if (exported.partial && exported.receipt.scope === activeScope && exported.receipt.snapshot === activeSnapshot && within(exported.directory, absolute)) {
+      for (const exported of exportedFiles()) if (exported.receipt.scope === activeScope && exported.receipt.snapshot === activeSnapshot && within(exported.directory, absolute)) {
         const target = targetFor(exported, relative(exported.directory, absolute).split(sep).join('/'));
         if (target) return target;
       }
@@ -308,7 +263,7 @@ export function observe(api, settings) {
     try { file = realpathSync(absolute); } catch { return undefined; }
     // Default metadata is owned by the live host, outside the source export cache.
     // An advertised path permits only this read; success still requires canonical
-    // snapshot receipt verification and complete returned-byte equality below.
+    // current entry manifest verification and complete returned-byte equality below.
     if (advertisedEntries.has(absolute) && statSync(file).isFile()) return { kind: 'metadata', role: 'index', path: absolute, recordId: selected.id };
     if (file !== absolute || !within(cache, file) || !statSync(file).isFile()) return undefined;
     for (const exported of exportedFiles()) {

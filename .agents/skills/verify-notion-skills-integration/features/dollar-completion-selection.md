@@ -39,7 +39,7 @@ node scripts/verify-native-ui.mjs --catalog-cache-failure
 
 ## 目录新鲜度
 
-NS-SELECT-05 与 NS-SELECT-06 来自 CLI `list` 原始 `validated_at`、`age_ms`、`max_age_ms` 和 `stale`；新进程不能重置年龄。默认目录 TTL 为 60 秒。`ctl cache identity --database SELECTOR` 的本地凭据/远端目录摘要标识共享持久 index；等价 database selector、不同 cwd、Pi/OMP、source 标签和命令写法共用目录，身份或远端查询范围变化才隔离。自定义 command 不支持该能力时正常 list。`packages/context-broker/scripts/catalog-cache.test.ts` 覆盖独立冷/暖进程、跨项目/宿主/命令复用、当前策略 TTL、共享刷新、凭据隔离和损坏重建；实际双宿主投递沿[共享缓存地图](session-cache-recovery.md#共享-notion-缓存)执行。`catalog-menu.test.ts` 覆盖缓存先出现、提示行不可接受和同菜单刷新。正文仍按激活策略校验 scope 和固定快照。确定性双宿主与 fixture UI 不证明真实 Notion TTL；checkout 验证不代表另一份日常安装。
+NS-SELECT-05 与 NS-SELECT-06 使用配对 SDK 返回的原始 `validated_at`、`age_ms`、`max_age_ms` 和 `stale`；Broker 不重新计时，也不另建目录 index 或 CLI identity 缓存。`catalog-cache.test.ts` 检查 freshness、maxAge/refresh/offline 透传，以及失败不能用旧主文投影冒充成功；scope 与 View/Profile 归属由 `shared-notion-adapter.test.ts` 检查。`catalog-menu.test.ts` 仍检查缓存候选、不可接受的提示行和菜单刷新。核心跨进程缓存和请求数属于 CLI/core 原验证入口，真实 Pi 的候选、Tab 和 provider 投递须另外实驱。
 
 `list` 必须返回 `records`，且响应里不能有 `skills`。带 `skills` 的整表会被拒绝，页面存在也不会出现在 `$`。2026-10-19 的日常入口曾因此看不到 `resin`；该页 id 是 `3fb5636c-236e-814e-8f88-e4e8e00f051a`，引用是 `skill://3fb5636c-236e-814e-8f88-e4e8e00f051a/SKILL.md`。
 

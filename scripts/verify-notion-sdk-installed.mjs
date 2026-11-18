@@ -42,7 +42,7 @@ if (!worker) {
   const runtime = JSON.parse(await readFile(join(packageRoot, 'dist/ntn-skills-runtime.json'), 'utf8'));
   await writeFile(join(out, 'plan.json'), JSON.stringify({ version: 1, node: process.version, packageRoot, fixture: options.get('--fixture'),
     runtime, driver_sha256: hash(await readFile(fileURLToPath(import.meta.url))), scenarios: ['one-root', 'two-roots', 'three-roots', 'binary-resource', 'wrong-scope', 'wrong-physical-owner', 'broken-required', 'cancel-before-sdk', 'cancel-before-materialization'],
-    scope: 'Controlled offline snapshots; actual installed Node SDK/Broker and custom CLI comparison. This is not live Notion or real-model evidence.' }, null, 2) + '\n');
+    scope: 'Controlled offline snapshots; actual installed Node SDK/Broker. This is not live Notion or real-model evidence.' }, null, 2) + '\n');
   const child = childProcess.spawn(process.execPath, [fileURLToPath(import.meta.url), '--worker', ...args], {
     cwd: out, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -115,7 +115,7 @@ if (!worker) {
   }
   for (const [name, count] of [['one-root', 1], ['two-roots', 2], ['three-roots', 3]]) await scenario(name, async () => {
     const childBefore = processEvents.length, sdkBefore = sdkEvents.length;
-    const sdk = await prepareNotionSkills(roots.slice(0, count), source, fixture.cwd, { purpose: 'use', rootPins, transport: 'sdk' });
+    const sdk = await prepareNotionSkills(roots.slice(0, count), source, fixture.cwd, { purpose: 'use', rootPins });
     const observed = sdkEvents.slice(sdkBefore);
     assert.equal(processEvents.length, childBefore, 'Default SDK preparation must not spawn any CLI node read');
     assert.equal(observed.filter(e => e.event === 'start').length, 1);
@@ -125,39 +125,33 @@ if (!worker) {
     assert.equal(sdk.records.length, count + 1, 'Shared Required is prepared once');
     assert.equal(sdk.records.filter(record => record.id.endsWith(':base')).length, 1);
     for (const record of sdk.records) assert.equal(await readFile(record.path, 'utf8'), record.body);
-    const comparisonBefore = processEvents.length;
-    const cli = await prepareNotionSkills(roots.slice(0, count), { ...source, cacheDir: join(out, 'cli-host-cache'), command: [process.execPath, join(packageRoot, 'dist/ntn-skills.mjs')] }, fixture.cwd, { purpose: 'use', rootPins, transport: 'sdk' });
-    const cliProcesses = processEvents.slice(comparisonBefore);
-    assert.deepEqual(proof(sdk), proof(cli)); assert.deepEqual(sdk.lock, cli.lock);
-    assert.equal(cliProcesses.filter(e => e.event === 'start').length, count + 2);
-    assert.equal(cliProcesses.filter(e => e.event === 'start' && e.operation === 'read').length, count + 1);
     graphs.set(count, sdk);
-    return { default_sdk_children: 0, default_sdk_http: 0, default_sdk_calls: 1, custom_cli_children: count + 2, prepared_nodes: sdk.records.length,
+    return { default_sdk_children: 0, default_sdk_http: 0, default_sdk_calls: 1, prepared_nodes: sdk.records.length,
       bodies_sha256: hash(JSON.stringify(proof(sdk).map(({ id, body }) => ({ id, body })))), graph_lock: sdk.lock.sha256 };
   });
   await scenario('binary-resource', async () => {
     const record = graphs.get(1).records.find(record => record.id === roots[0].id), before = processEvents.length;
-    const path = await loadNotionResource(record, 'assets/sample.bin', source, fixture.cwd, undefined, 'sdk');
+    const path = await loadNotionResource(record, 'assets/sample.bin', source, fixture.cwd, undefined);
     const bytes = await readFile(path);
     assert.equal(bytes.length, fixture.resource.bytes); assert.equal(hash(bytes), fixture.resource.sha256);
     assert.equal(processEvents.length, before); assert.equal(record.entryManifest.local_files_ready, true);
     return { bytes: bytes.length, sha256: hash(bytes), default_sdk_children: 0 };
   });
   await scenario('wrong-scope', async () => {
-    await assert.rejects(prepareNotionSkills([{ ...roots[0], sourceScope: 'f'.repeat(64) }], source, fixture.cwd, { purpose: 'use', rootPins, transport: 'sdk' }), { code: 'SOURCE_PREPARATION_INVALID' });
+    await assert.rejects(prepareNotionSkills([{ ...roots[0], sourceScope: 'f'.repeat(64) }], source, fixture.cwd, { purpose: 'use', rootPins }), { code: 'SOURCE_PREPARATION_INVALID' });
   });
   await scenario('wrong-physical-owner', async () => {
     const foreign = records.find(record => record.id.includes('sdk-foreign-library'));
-    await assert.rejects(prepareNotionSkills([{ ...roots[0], locator: { ...roots[0].locator, page_id: foreign.locator.page_id } }], source, fixture.cwd, { purpose: 'use', rootPins, transport: 'sdk' }), { code: 'SOURCE_PREPARATION_INVALID' });
+    await assert.rejects(prepareNotionSkills([{ ...roots[0], locator: { ...roots[0].locator, page_id: foreign.locator.page_id } }], source, fixture.cwd, { purpose: 'use', rootPins }), { code: 'SOURCE_PREPARATION_INVALID' });
   });
   await scenario('broken-required', async () => {
     const broken = records.find(record => fixture.broken.startsWith(record.ref + '?'));
-    await assert.rejects(prepareNotionSkills([broken], source, fixture.cwd, { purpose: 'use', rootPins, transport: 'sdk' }), error => /^(PREPARE_|SNAPSHOT_|CACHE_)/.test(error.code));
+    await assert.rejects(prepareNotionSkills([broken], source, fixture.cwd, { purpose: 'use', rootPins }), error => /^(PREPARE_|SNAPSHOT_|CACHE_)/.test(error.code));
   });
   await scenario('cancel-before-sdk', async () => {
     const controller = new AbortController(); controller.abort();
     const before = sdkEvents.length;
-    await assert.rejects(prepareNotionSkills(roots.slice(0, 1), source, fixture.cwd, { purpose: 'use', rootPins, transport: 'sdk', signal: controller.signal }), { code: 'SOURCE_CANCELLED' });
+    await assert.rejects(prepareNotionSkills(roots.slice(0, 1), source, fixture.cwd, { purpose: 'use', rootPins, signal: controller.signal }), { code: 'SOURCE_CANCELLED' });
     assert.equal(sdkEvents.length, before);
   });
   await scenario('cancel-before-materialization', async () => {
@@ -165,11 +159,11 @@ if (!worker) {
     const cancel = event => { if (event.event === 'end' && event.operation === 'consume') controller.abort(); };
     topic.subscribe(cancel);
     try {
-      await assert.rejects(prepareNotionSkills(roots.slice(0, 1), { ...source, cacheDir: cancelledCache }, fixture.cwd, { purpose: 'use', rootPins, transport: 'sdk', signal: controller.signal }), { code: 'SOURCE_CANCELLED' });
+      await assert.rejects(prepareNotionSkills(roots.slice(0, 1), { ...source, cacheDir: cancelledCache }, fixture.cwd, { purpose: 'use', rootPins, signal: controller.signal }), { code: 'SOURCE_CANCELLED' });
       await assert.rejects(readdir(cancelledCache), { code: 'ENOENT' });
     } finally { topic.unsubscribe(cancel); }
   });
   assert.equal(processEvents.filter(e => e.event === 'start').length, processEvents.filter(e => e.event === 'close').length);
   await writeFile(join(out, 'result.json'), JSON.stringify({ status: 'passed', node: process.version, cases: results, sdk_calls: sdkEvents.filter(e => e.event === 'start').length,
-    custom_cli_children: processEvents.filter(e => e.event === 'start').length, child_closes: processEvents.filter(e => e.event === 'close').length }, null, 2) + '\n');
+    child_starts: processEvents.filter(e => e.event === 'start').length, child_closes: processEvents.filter(e => e.event === 'close').length }, null, 2) + '\n');
 }

@@ -41,7 +41,7 @@ try {
 
   // A bundled file remains readable offline, but it must not be offered as a
   // Notion workflow until an enabled Notion source opts into that feature.
-  const disabledNotion: ConfigFile = { sources: [{ type: "notion", id: "disabled-notion", enabled: false, command: join(root, "missing-cli") }] };
+  const disabledNotion: ConfigFile = { sources: [{ type: "notion", id: "disabled-notion", enabled: false }] };
   for (const inactive of [{}, { sources: [] }, config, disabledNotion] satisfies ConfigFile[]) {
     assert.deepEqual(configuredBundledBuiltinRecords(inactive), [], "No enabled Notion source means no bundled candidates");
     const standard = await buildRegistry({ ...inactive, requireAutoload: false });
@@ -59,7 +59,7 @@ try {
   assert.ok(filesystemOnly.records.some(record => record.sourceId === "user-source" && record.name === "ntn-skills-maintain"),
     "Hiding packaged Notion workflows must not hide a user-owned, same-name filesystem source");
 
-  const awaitingConnection: ConfigFile = { sources: [{ type: "notion", id: "notion-setup", command: join(root, "missing-cli") }] };
+  const awaitingConnection: ConfigFile = { sources: [{ type: "notion", id: "notion-setup", database: "00000000-0000-4000-8000-000000000099", discovery: { offline: true } }] };
   assert.equal(configuredBundledBuiltinRecords(awaitingConnection).length, 3, "Configured Notion enables offline setup workflows even without credentials");
   const unconnected = await buildDollarRegistry(awaitingConnection, root);
   assert.equal(unconnected.records.filter(isBundledBuiltin).length, 3);
@@ -96,14 +96,14 @@ try {
   assert.equal(matchDiscoveryRecord("not-a-skill", registry).decision, "skip");
 
   const guidance = buildCliGuidance({ sources: [
-    { type: "notion", id: "first", command: ["first-cli", "--profile", "one"], database: "one" },
-    { type: "notion", id: "second", command: ["second-cli", "--profile", "two"], database: "two" },
+    { type: "notion", id: "first", database: "one" },
+    { type: "notion", id: "second", database: "two" },
   ] });
   const content = String(guidance.content);
   assert.match(content, /source="first"/);
   assert.match(content, /source="second"/);
-  assert.match(content, /first-cli/);
-  assert.match(content, /second-cli/);
+  assert.match(content, /database="one"/);
+  assert.match(content, /database="two"/);
   assert.match(content, /never choose the first source implicitly/);
 
   console.log("bundled builtin checks passed: Notion opt-in gates all discovery and detached completion, disconnected setup still works, offline files/resources, independent source identities and CLI guidance");

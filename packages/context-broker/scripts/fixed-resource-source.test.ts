@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ContentRecord, SkillRecord, SourceConfig } from "../src/types";
-import { noConsumptionWrites, unknownConsumptionEffects, type ConsumptionEffects, type ConsumptionPolicy } from "../src/consumption-effects";
+import { noConsumptionWrites, type ConsumptionEffects, type ConsumptionPolicy } from "../src/consumption-effects";
 import { DEFAULT_RESOURCE_READ_BUDGET } from "../src/resource-read-types";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
@@ -72,7 +72,7 @@ export async function readSkill(target, options) {
   const state = { bytes, response, overrides: {} as Record<string, unknown>, afterWrite: undefined as (() => void) | undefined, symlink: undefined as string | undefined, batchResponse: undefined as unknown };
   sdk.configure(state);
   const resourceRoot = join(source.cacheDir!, "scopes", scope, "records", hash(id), "resources", snapshot, "tree");
-  const read = (fixedRef = ref, signal?: AbortSignal) => boundary.readFixedNotionResource(record, fixedRef, source, root, signal, "sdk");
+  const read = (fixedRef = ref, signal?: AbortSignal) => boundary.readFixedNotionResource(record, fixedRef, source, root, signal);
   const readBatch = (policy?: ConsumptionPolicy) => {
     const manifest = { complete: true, scope, snapshot_id: snapshot, version_id: version, record: content, entrypoint: main,
       file_bindings: response.file_bindings, files: [
@@ -102,12 +102,12 @@ test("batch source forwards strict policy and keeps the SDK effects with exact f
   await expect(f.readBatch({ readOnly: true })).rejects.toMatchObject({ code: "NOTION_READ_ONLY", details: { effects } });
 });
 
-test("a legacy batch producer refuses strict dispatch and keeps ordinary missing effects unknown", async () => {
+test("a producer missing the current effects contract is rejected before any batch dispatch", async () => {
   const f = await fixture({ resourceEffectsVersion: null });
   await expect(f.readBatch({ readOnly: true })).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE", details: { effects: noConsumptionWrites() } });
   expect(f.sdk.calls).toHaveLength(0); expect(await exists(f.source.cacheDir!)).toBe(false);
-  const result = await f.readBatch();
-  expect(f.sdk.calls).toHaveLength(1); expect(result.effects).toEqual(unknownConsumptionEffects());
+  await expect(f.readBatch()).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+  expect(f.sdk.calls).toHaveLength(0);
 });
 
 test("one scalar output read publishes exact text with an independent owner commitment and no entry", async () => {
@@ -146,15 +146,13 @@ test("stable File IDs accept old path hints and main aliases retain the main rou
   expect(main.sdk.calls).toHaveLength(1); expect(await exists(main.resourceRoot)).toBe(false);
 });
 
-test("older SDKs and custom transports fall back before reading or staging a resource", async () => {
+test("an old SDK fails explicitly and never publishes a resource or uses another transport", async () => {
   const f = await fixture({ proofVersion: null });
-  expect(await f.read()).toBeUndefined();
-  expect(await f.boundary.readFixedNotionResource(f.record, f.ref, f.source, f.root)).toBeUndefined();
-  expect(await f.boundary.readFixedNotionResource(f.record, f.ref, { ...f.source, command: ["must-not-run"] }, f.root, undefined, "sdk")).toBeUndefined();
-  expect(f.sdk.calls).toHaveLength(0); expect(await exists(f.source.cacheDir!)).toBe(false);
+  await expect(f.read()).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+  expect(f.sdk.calls).toHaveLength(0); expect(await exists(f.resourceRoot)).toBe(false);
   const incompatible = await fixture({ proofVersion: 2 });
   await expect(incompatible.read()).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
-  expect(incompatible.sdk.calls).toHaveLength(0); expect(await exists(incompatible.source.cacheDir!)).toBe(false);
+  expect(incompatible.sdk.calls).toHaveLength(0); expect(await exists(incompatible.resourceRoot)).toBe(false);
 });
 
 test("scalar output rejects foreign identities and malformed proof before immutable publication", async () => {

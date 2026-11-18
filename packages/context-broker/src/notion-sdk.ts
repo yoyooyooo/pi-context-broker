@@ -120,6 +120,8 @@ async function observed(operation: "consume" | "read" | "read-resources" | "list
     if (operation === "list" && typeof sdk.listCatalog !== "function") throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     if (operation === "list" && options.directory !== undefined
       && (sdk.CATALOG_DIRECTORY_CONTRACT_VERSION !== 1 || catalogDirectoryContractVersion !== 1)) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
+    if (operation === "read" && options.output !== undefined
+      && (sdk.READ_OUTPUT_PROOF_VERSION !== 1 || readOutputProofVersion !== 1)) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     if (operation === "files" && typeof sdk.listSkill !== "function") throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     if (operation === "read-resources" && (sdk.RESOURCE_READ_CONTRACT_VERSION !== 1 || resourceContractVersion !== 1
       || typeof sdk.readResources !== "function" || typeof sdk.decodeResourceReadResult !== "function")) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
@@ -158,13 +160,6 @@ export function readNotionSdk(target: string, options: Options): Promise<unknown
 export function listNotionCatalogSdk(options: Options): Promise<unknown> {
   return observed("list", options, (sdk, runtime) => sdk.listCatalog!(runtime));
 }
-/** A paired directory shares only this SDK operation's metadata observation. */
-export async function supportsNotionSdkCatalogDirectory(): Promise<boolean> {
-  const sdk = await loadBundledSdk();
-  if (sdk.CATALOG_DIRECTORY_CONTRACT_VERSION === undefined && catalogDirectoryContractVersion === undefined) return false;
-  if (sdk.CATALOG_DIRECTORY_CONTRACT_VERSION !== 1 || catalogDirectoryContractVersion !== 1) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
-  return true;
-}
 /** The shared resolver is pure; it never acquires another SDK runtime or source. */
 export async function resolveNotionCatalogReferenceSdk(target: string, catalog: unknown): Promise<unknown> {
   const sdk = await loadBundledSdk();
@@ -175,16 +170,8 @@ export async function resolveNotionCatalogReferenceSdk(target: string, catalog: 
 export function listNotionFilesSdk(target: string, options: Options): Promise<unknown> {
   return observed("files", options, (sdk, runtime) => sdk.listSkill!(target, runtime));
 }
-/** Feature detection loads code only; an older SDK never starts a speculative read. */
-export async function supportsNotionSdkReadOutputProof(): Promise<boolean> {
-  const sdk = await loadBundledSdk();
-  if (sdk.READ_OUTPUT_PROOF_VERSION === undefined && readOutputProofVersion === undefined) return false;
-  if (sdk.READ_OUTPUT_PROOF_VERSION !== 1 || readOutputProofVersion !== 1) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
-  return true;
-}
 export function readNotionResourcesSdk(input: unknown, options: Options): Promise<unknown> {
-  // This additive capability is checked only when used. The SDK has already
-  // decoded and verified the full result; older SDKs still support scalar read.
+  // The current SDK has already decoded and verified the complete result.
   return observed("read-resources", options, (sdk, runtime) => sdk.readResources!(input, runtime));
 }
 export async function parseNotionSdkDuration(input: string): Promise<number> {

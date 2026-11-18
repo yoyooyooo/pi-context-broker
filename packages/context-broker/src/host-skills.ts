@@ -468,19 +468,11 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         if (!target.startsWith(ownedRoot)) throw hostError("SOURCE_INDEX_CONFLICT");
       }
       if (!state.isDirectory() && !state.isSymbolicLink()) throw hostError("SOURCE_INDEX_CONFLICT");
-      let snapshotRoot = snapshot.entryManifest?.root ?? dirname(resolve(snapshot.path));
       const notion = options.config.sources?.some((source) => source.id === record.sourceId && source.type === "notion");
-      while (notion && !snapshot.entryManifest) {
-        try { await lstat(join(snapshotRoot, ".broker-snapshot.json")); break; }
-        catch (error) {
-          if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ENOENT") throw error;
-          const parent = dirname(snapshotRoot);
-          if (parent === snapshotRoot) throw hostError("SOURCE_SNAPSHOT_RECEIPT_MISSING");
-          snapshotRoot = parent;
-        }
-      }
-      // Full exports retain their complete tree. Entry-ready indexes contain only
-      // the main; resource reads resolve through its verified immutable manifest.
+      if (notion && !snapshot.entryManifest) throw hostError("SOURCE_CACHE_VERSION_UNSUPPORTED");
+      const snapshotRoot = snapshot.entryManifest?.root ?? dirname(resolve(snapshot.path));
+      // Notion indexes contain the main; resource reads use the complete verified
+      // file manifest. Local filesystem sources retain their own directory tree.
       const indexRoot = dirname(dirname(directory));
       const publishedRoot = join(indexRoot, ".host-snapshots", randomUUID());
       await mkdir(dirname(publishedRoot), { recursive: true, mode: 0o700 });
@@ -1792,15 +1784,13 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     };
     const initial = current();
     retainedSnapshot = initial.existing; retainedBinding = initial.binding;
-    // Older prepared records without independent file proof keep their existing
-    // native route; a current manifest can be checked without preparing again.
-    if (retainedSnapshot && (!retainedSnapshot.preparationBinding || !retainedSnapshot.entryManifest?.manifest_complete)) return undefined;
+    if (retainedSnapshot && (!retainedSnapshot.preparationBinding || !retainedSnapshot.entryManifest?.manifest_complete))
+      throw hostError("SOURCE_CACHE_VERSION_UNSUPPORTED");
     const ref = short?.canonicalRef ?? event.input.path as string;
     let effects: ConsumptionEffects | undefined;
     resource = await options.readFixedResource(record, ref, ctx, signal, { readOnly: event.input.readOnly === true, observeEffects: value => { effects = value; } });
     current();
-    // An older SDK, a custom transport, or an actual main File ID retains the
-    // existing preparation path. Source validation failures never fall back.
+    // A main File alias uses entry preparation. Source validation failures never fall back.
     if (!resource) return undefined;
     const file = resource.file, actual = parseNativeReference(file.ref);
     if (resource.selection.scope !== record.sourceScope || resource.selection.owner !== record.id || resource.selection.snapshot_id !== reference.snapshot

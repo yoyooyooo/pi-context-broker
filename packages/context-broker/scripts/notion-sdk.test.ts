@@ -99,9 +99,8 @@ test("strict read-only requires matching SDK and manifest capability before any 
   expect(sdk.calls.map((call: { options: { readOnly?: boolean } }) => call.options.readOnly)).toEqual([true, true]);
 });
 
-test("paired catalog discovery is feature-detected without an operation and stays one SDK call", async () => {
+test("paired catalog discovery stays one SDK call", async () => {
   const { boundary, module } = await fixture({ catalog: true, directoryVersion: 1 });
-  expect(await boundary.supportsNotionSdkCatalogDirectory()).toBe(true);
   const sdk = await import(pathToFileURL(module).href);
   expect(sdk.calls).toHaveLength(0);
   const result = await boundary.listNotionCatalogSdk({ sourceId: "source", database: "db", directory: { view: "selected" }, env: { SDK_TEST_ID: "scope" } });
@@ -125,15 +124,12 @@ test("strict resource batches require their own SDK and manifest capability befo
   expect(sdk.calls[0]).toMatchObject({ operation: "read-resources", options: { readOnly: true } });
 });
 
-test("old SDK catalog remains usable while mixed or unknown paired contracts fail before an operation", async () => {
+test("missing, mixed or unknown paired contracts fail before an operation", async () => {
   const old = await fixture({ catalog: true });
-  expect(await old.boundary.supportsNotionSdkCatalogDirectory()).toBe(false);
-  expect(await old.boundary.listNotionCatalogSdk({})).toMatchObject({ records: [], count: 0 });
   await expect(old.boundary.listNotionCatalogSdk({ directory: {} })).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
-  expect((await import(pathToFileURL(old.module).href)).calls).toHaveLength(1);
+  expect((await import(pathToFileURL(old.module).href)).calls).toHaveLength(0);
   for (const versions of [{ directoryVersion: 2 }, { directoryVersion: 1, directoryManifestVersion: 2 }, { directoryManifestVersion: 1 }]) {
     const value = await fixture({ catalog: true, ...versions });
-    await expect(value.boundary.supportsNotionSdkCatalogDirectory()).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
     await expect(value.boundary.listNotionCatalogSdk({ directory: {} })).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
     expect((await import(pathToFileURL(value.module).href)).calls).toHaveLength(0);
   }
@@ -164,7 +160,7 @@ test("concurrent calls keep caller cwd, captured environment and cancellation se
 });
 
 test("passive metrics distinguish unobserved initialization from a measured zero", async () => {
-  const { boundary } = await fixture();
+  const { boundary } = await fixture({ readProofVersion: 1 });
   const observations: unknown[] = [];
   const topic = channel("context-broker.notion-sdk");
   const collect = (value: unknown) => observations.push(value);
@@ -342,12 +338,11 @@ test("the resource version must match the adjacent manifest without disabling co
   expect(await boundary.consumeNotionSdk({}, {})).toMatchObject({ status: "ready" });
 });
 
-test("scalar output proof is detected without entering an older or current SDK runtime", async () => {
+test("scalar output requires the current proof contract before entering the SDK runtime", async () => {
   const older = await fixture();
-  expect(await older.boundary.supportsNotionSdkReadOutputProof()).toBe(false);
+  await expect(older.boundary.readNotionSdk("fixed-resource", { output: "/selected/output" })).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
   expect((await import(pathToFileURL(older.module).href)).calls).toHaveLength(0);
   const current = await fixture({ readProofVersion: 1 });
-  expect(await current.boundary.supportsNotionSdkReadOutputProof()).toBe(true);
   expect((await import(pathToFileURL(current.module).href)).calls).toHaveLength(0);
   await current.boundary.readNotionSdk("fixed-resource", { output: "/selected/output" });
   expect((await import(pathToFileURL(current.module).href)).calls).toHaveLength(1);
@@ -356,7 +351,7 @@ test("scalar output proof is detected without entering an older or current SDK r
 test("advertised scalar output proof must agree with its bundled manifest", async () => {
   for (const options of [{ readProofVersion: 2 }, { readProofVersion: 1, readProofManifestVersion: 2 }, { readProofManifestVersion: 1 }]) {
     const { boundary, module } = await fixture(options);
-    await expect(boundary.supportsNotionSdkReadOutputProof()).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+    await expect(boundary.readNotionSdk("fixed-resource", { output: "/selected/output" })).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
     expect((await import(pathToFileURL(module).href)).calls).toHaveLength(0);
     expect(await boundary.consumeNotionSdk({}, {})).toMatchObject({ status: "ready" });
   }

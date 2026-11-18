@@ -12,7 +12,7 @@ deterministic/installed 也通过双宿主发现 filesystem source，覆盖 meta
 | NS-CFG-04 | 使用 database UUID 进入 live-fixture，创建独立测试页并消费与归档 | 唯一动态 name 的真实页及 `references/guide.md` 有 create/read/list/export 与双宿主捕获；finally 仅 archive 本次页及 child pages，GET 确认并记录 `live-fixture-create.json`、`live-fixture-cleanup.json`。只读 live 不足以通过。 |
 | NS-CFG-05 | `bun run test:source-dependencies` 启动双宿主，或原脚本 `--host pi` 单列；实际 custom list 覆盖缺 command、API 不可达、不兼容目录结构、非 JSON 输出和未认证；修复 command / 移除唯一非法目录字段并 refresh | 启动/doctor 保留实际发现失败；不兼容结构须由 decoder 拒绝，移除旧 `skills` 字段后同进程 doctor 恢复 ok，完整 argv 留存。普通聊天、本地与正常 source 可用，未知引用保持 literal 且不读正文。custom command 不做默认 bundled doctor 协议探测；SDK/CLI 错配由独立安装负例另验。已选已知记录失败阻断 provider 由 NS-CFG-06 的真实选择路径负责。 |
 | NS-CFG-06 | `node scripts/verify-native-ui.mjs --source-dependencies` 启动自建 Tern/OMP，配置缺失 executable 与另一条正常 source | 启动错误可见，普通聊天、本地自动补全和手动 picker 可用；失败 namespace 中未知引用原样派发且无 source read/export。Tab 接受正常 source 的已知候选后注入 read 失败，显示 `ACCESS_DENIED` 且 provider 不增加；保留动作、截图与 cleanup 回执。 |
-| NS-CFG-07 | `--mode deterministic --shared-catalog true` 启动不同项目的实际 Pi/OMP | 同一凭据/远端选择共用目录，命令与 namespace 变化仅影响调用/显示；另一端复用刷新后的目录和 immutable export，原始校验时间不续期。完整步骤与证明边界见[共享缓存地图](session-cache-recovery.md#共享-notion-缓存)。 |
+| NS-CFG-07 | 当前 SDK 目录与缓存回归 | 目录权威属于 SDK/core；Broker 保留 scope、原始 freshness 与 View/Profile 绑定，错误不能用旧投影代替。实际 Pi 投递另验，见[共享缓存地图](session-cache-recovery.md#共享-notion-缓存)。 |
 
 默认目录筛选、后台预取与未勾选项显式调用使用 [View 默认目录专项](default-context-prefetch.md)。`Default Context` 缺失或未勾选均为 false。普通 live/model 的原生目录规程要求目标页属于当前 View，不能修改用户已有页以满足验收。live-fixture 只勾选所属测试页。
 

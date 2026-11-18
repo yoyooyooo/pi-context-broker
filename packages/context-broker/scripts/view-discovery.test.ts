@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createNotionFixture, database, firstViewId, secondViewId } from "../../../scripts/notion-integration-fixture.mjs";
-import { listNotionViews } from "../src/notion-source";
+import { currentNotionFixture } from "./fixtures/current-notion-source";
 import { notionDirectorySelections, resolveViewDiscovery, sessionViews, VIEW_SELECTION_ENTRY } from "../src/view-discovery";
 import { viewSystemPrompt } from "../src/view-prompt";
 import { normalizeSources } from "../src/sources";
@@ -15,7 +15,7 @@ const record = (name: string, path: string): SkillRecord => ({ name, path, alias
 
 function pairedView() {
   const page = "11111111-1111-4111-8111-111111111111", dataSource = "22222222-2222-4222-8222-222222222222";
-  const source: Extract<SourceConfig, { type: "notion" }> = { id: "paired", type: "notion", command: ["must-not-spawn-paired-directory"] };
+  const source: Extract<SourceConfig, { type: "notion" }> = { id: "paired", type: "notion" };
   const selected: SkillRecord = { ...record("Paired member", "/owned/paired/SKILL.md"), id: "notion_page:" + page,
     source: "notion", sourceId: source.id, sourceScope: "a".repeat(64), kind: "skill", ref: "skill://" + page + "/SKILL.md",
     locator: { type: "notion_page", page_id: page, database_id: database, data_source_id: dataSource } };
@@ -72,7 +72,12 @@ test("paired failed or empty directory stays distinct and cancellation publishes
 test("source View listing calls the public ctl route with its exact scope and policy", async () => {
   const root = await mkdtemp(join(tmpdir(), "broker-ctl-views-"));
   const fixture = await createNotionFixture(root);
-  const views = await listNotionViews({ id: "controlled", type: "notion", command: fixture.command, database, discovery: { offline: true } }, root);
+  const runtime = await currentNotionFixture();
+  await writeFile(join(runtime.root, "src/ntn-skills.mjs"),
+    "import { spawnSync } from 'node:child_process';\n" +
+    "const command = " + JSON.stringify(fixture.command) + ";\n" +
+    "const result = spawnSync(command[0], [...command.slice(1), ...process.argv.slice(2)], { stdio: 'inherit' }); process.exitCode = result.status ?? 1;\n");
+  const views = await runtime.boundary.listNotionViews({ id: "controlled", type: "notion", database, discovery: { offline: true } }, root);
   expect(views.map(view => view.id)).toEqual([firstViewId, secondViewId]);
   const calls = (await readFile(fixture.callsPath, "utf8")).trim().split("\n").map(JSON.parse);
   expect(calls).toHaveLength(1);

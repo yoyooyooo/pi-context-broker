@@ -2,22 +2,24 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { decodeCliWriteOutput, installCliWriteInvalidation } from "../src/cli-write-invalidation";
-import contextBroker from "../src/index";
+import { currentNotionFixture } from "./fixtures/current-notion-source";
+import { pathToFileURL } from "node:url";
+const runtime = await currentNotionFixture();
+const { decodeCliWriteOutput, installCliWriteInvalidation } = await import(pathToFileURL(join(runtime.root, "src/cli-write-invalidation.ts")).href);
+const { hostCliScope } = await import(pathToFileURL(join(runtime.root, "src/host-command.ts")).href);
 import type { AutocompleteProvider, ExtensionAPI, ExtensionContext, SkillRecord, SourceConfig } from "../src/types";
 
 type Listener = (event: never, ctx: ExtensionContext) => unknown;
 const db = "22222222-2222-4222-8222-222222222222", otherDb = "22222222-2222-4222-8222-222222222223";
 const page = "11111111-1111-4111-8111-111111111111", ds = "33333333-3333-4333-8333-333333333333", auth = "a".repeat(64);
 const locator = { type: "notion_page" as const, page_id: page, database_id: db, data_source_id: ds };
-const prefix = ["/tools/node", "/tools with spaces/ntn-skills.mjs"];
+const prefix = hostCliScope().command;
 const quote = (word: string) => "'" + word.replaceAll("'", "'\\''") + "'";
 const command = (...args: string[]) => [...prefix, ...args].map(quote).join(" ");
 const sources: SourceConfig[] = [
-  { id: "personal", type: "notion", command: prefix, database: db },
-  { id: "second", type: "notion", command: prefix, database: otherDb },
-  { id: "alias", type: "notion", command: prefix, database: "library" },
-  { id: "other-command", type: "notion", command: ["/other/ntn-skills"], database: db },
+  { id: "personal", type: "notion", database: db },
+  { id: "second", type: "notion", database: otherDb },
+  { id: "alias", type: "notion", database: "library" },
 ];
 const records = ["personal", "alias"].map(sourceId => ({ sourceId, sourceScope: auth, locator } as SkillRecord));
 const receipt = { ok: true, operation: "replace", action: "update", verified: true, reused: false, scope: auth, record: { id: "notion_page:" + page, locator }, snapshot_id: "s_" + "b".repeat(64) };
@@ -34,7 +36,7 @@ async function result(cmd: string, value: unknown, isError = false) {
   await emit("tool_result", { toolName: "bash", toolCallId, input: {}, content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }], isError });
 }
 await result(command("apply", "s_baseline", "--input", "/staged", "--database", db), receipt);
-assert.deepEqual(changed.pop(), ["personal", "alias"], "All matching sources for this command and content DB become dirty; another command/database does not");
+assert.deepEqual(changed.pop(), ["personal", "alias"], "All sources scoped to the verified content database become dirty");
 for (const cmd of [
   command("read", "s_baseline"), command("sync", "upstream", "status"), command("sync", "upstream", "plan"), command("sync", "local", "check"),
   "echo " + command("apply", "s_baseline"), command("apply", "s_baseline") + " && echo done",
@@ -201,72 +203,8 @@ for (const [label, cmd, value] of migratedCalls) {
 assert.deepEqual(migratedChanges, migratedCalls.map(([label, _cmd, _value, expected]) => [label, expected]),
   "New ctl callers and replace refresh the exact source only after verified changes; unknown and read-only outcomes remain inert");
 
-// Exercise the real directory owner and its on-disk cache, not just receipt classification.
-const root = await mkdtemp(join(tmpdir(), "broker-write-invalidation-"));
-const previous = { ...process.env };
-const previousCwd = process.cwd();
-try {
-  process.chdir(root);
-  const fixture = join(root, "source.mjs"), state = join(root, "state.json"), log = join(root, "calls.jsonl"), config = join(root, "broker.json");
-  await writeFile(fixture, `import {readFile,appendFile} from 'node:fs/promises';
-const [state,log,...args]=process.argv.slice(2); await appendFile(log,JSON.stringify(args)+'\\n');
-const database=args[args.indexOf('--database')+1], alias=JSON.parse(await readFile(state,'utf8'))[database];
-if(args[0]==='ctl')console.log(JSON.stringify({ok:true,identity:database.replaceAll('-','').padEnd(64,'0'),catalog_max_age_ms:3600000}));
-else if(args[0]==='list')console.log(JSON.stringify({ok:true,scope:'${auth}',fetched_at:Date.now(),records:[{id:'notion_page:${page}',kind:'skill',name:alias,alias,description:'verified metadata',default_context:false,entrypoint:'SKILL.md',locator:{type:'notion_page',page_id:'${page}',database_id:database,data_source_id:'${ds}'},ref:'skill://${page}/SKILL.md'}],count:1,databases:[{database_id:database,title:'Fixture',alias:'fixture',data_source_ids:['${ds}']}],coverage:{method:'explicit_database',exhaustive:true,search_index_limited:false,queried_data_sources:['${ds}'],failed_sources:[]},freshness:{policy:args.includes('--refresh')?'refresh':'default',validated_at:new Date().toISOString(),age_ms:0,max_age_ms:3600000,stale:false}}));
-else throw Error('Unexpected command');
-`);
-  const runtimePrefix = [process.execPath, fixture, state, log];
-  await mkdir(join(root, "home"));
-  await mkdir(join(root, "agent"));
-  await writeFile(state, JSON.stringify({ [db]: "before-write", [otherDb]: "untouched" }));
-  await writeFile(config, JSON.stringify({ skillRoots: [], sources: [
-    { id: "personal", namespace: "notion", type: "notion", command: runtimePrefix, database: db, cacheDir: join(root, "cache") },
-    { id: "second", namespace: "second", type: "notion", command: runtimePrefix, database: otherDb, cacheDir: join(root, "cache") },
-  ] }));
-  process.env.HOME = join(root, "home");
-  process.env.PI_CODING_AGENT_DIR = join(root, "agent");
-  process.env.CONTEXT_BROKER_CONFIG = config;
-  delete process.env.CONTEXT_BROKER_ROOTS;
-  const events = new Map<string, Listener[]>();
-  let provider: AutocompleteProvider | undefined;
-  const current: AutocompleteProvider = { getSuggestions: async () => null, applyCompletion: () => { throw Error("Unexpected native completion"); } };
-  const runtimeContext: ExtensionContext = { cwd: root, mode: "rpc", hasUI: false, sessionManager: { getSessionId: () => "catalog-session", getEntries: () => [] }, ui: { addAutocompleteProvider(factory) { provider = factory(current); } } };
-  const runtimeApi: ExtensionAPI = { pi: {}, on(name, handler) { events.set(name, [...(events.get(name) ?? []), handler as unknown as Listener]); }, registerCommand() {} };
-  const dispatch = async (name: string, event: unknown) => { for (const listener of events.get(name) ?? []) await listener(event as never, runtimeContext); };
-  await contextBroker(runtimeApi);
-  await dispatch("session_start", { type: "session_start" });
-  const selections = async () => (await provider!.getSuggestions(["$"], 0, 1, undefined, () => {}))?.items.map(item => item.value) ?? [];
-  // Session View discovery is a separate asynchronous owner; this assertion concerns the ordinary $ directory.
-  const fullCatalogCalls = async () => (await readFile(log, "utf8")).trim().split("\n").map(line => JSON.parse(line) as string[])
-    .filter(args => args[0] === "list" && !args.includes("--default-view") && !args.includes("--view"));
-  assert.ok((await selections()).includes("$before-write@notion"));
-  const callsBefore = await fullCatalogCalls();
-  await writeFile(state, JSON.stringify({ [db]: "after-write", [otherDb]: "untouched" }));
-  await dispatch("tool_call", { toolName: "bash", toolCallId: "write", input: { command: [...runtimePrefix, "replace", "s_baseline", "--database", db].map(quote).join(" ") } });
-  await dispatch("tool_result", { toolName: "bash", toolCallId: "write", input: {}, content: JSON.stringify(receipt), isError: false });
-  const next = await selections();
-  assert.ok(next.includes("$after-write@notion"), "The next ordinary selection sees the renamed Skill without manual refresh");
-  assert.ok(!next.includes("$before-write@notion"));
-  assert.ok(next.includes("$untouched@second"));
-  const callsAfter = (await fullCatalogCalls()).slice(callsBefore.length);
-  assert.equal(callsAfter.length, 1, "An unrelated source reuses its existing directory cache");
-  assert.ok(callsAfter[0]!.includes(db));
-  assert.ok(callsAfter[0]!.includes("--refresh"), "A verified write bypasses the affected source's stale disk directory");
-  const beforeResume = await fullCatalogCalls();
-  await writeFile(state, JSON.stringify({ [db]: "after-recovery", [otherDb]: "untouched" }));
-  await dispatch("tool_call", { toolName: "bash", toolCallId: "resume", input: { command: [...runtimePrefix, "ctl", "operation", "resume", publication].map(quote).join(" ") } });
-  await dispatch("tool_result", { toolName: "bash", toolCallId: "resume", input: {}, content: JSON.stringify(resumeResult), isError: false });
-  const recovered = await selections();
-  assert.ok(recovered.includes("$after-recovery@notion"), "Verified original-operation recovery refreshes the next selection without manual intervention");
-  assert.ok(!recovered.includes("$after-write@notion"));
-  assert.ok(recovered.includes("$untouched@second"));
-  const resumedCalls = (await fullCatalogCalls()).slice(beforeResume.length);
-  assert.equal(resumedCalls.length, 2, "Recovery without source scope conservatively rereads this CLI's configured sources");
-  assert.ok(resumedCalls.every(args => args.includes("--refresh")));
-  await dispatch("session_shutdown", { type: "session_shutdown" });
-} finally {
-  process.chdir(previousCwd);
-  for (const key of Object.keys(process.env)) if (!(key in previous)) delete process.env[key];
-  Object.assign(process.env, previous);
-}
+// Current source invalidation is checked above against the bundled CLI prefix.
+// Metadata cache ownership and freshness belong to the paired SDK; current
+// discovery and consume regressions live in shared-notion-adapter and
+// notion-source-sdk tests, without the removed CLI catalog receipt cache.
 console.log("CLI write invalidation checks passed");

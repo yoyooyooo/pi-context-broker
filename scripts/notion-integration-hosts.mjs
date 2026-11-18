@@ -4,12 +4,12 @@ import assert from 'node:assert/strict';
  * A Pi-only run must neither probe nor launch an unrelated installed host.
  * Cross-host cache and native-editor scenarios remain explicitly multi-host.
  */
-export function selectIntegrationHosts({ host, sharedCatalog = false, cacheLifecycle = false }) {
+export function selectIntegrationHosts({ host, cacheLifecycle = false }) {
   if (host !== undefined && !['pi', 'omp'].includes(host)) {
     throw new Error('--host must be pi or omp; omit it to run both hosts');
   }
-  if (host !== undefined && (sharedCatalog || cacheLifecycle)) {
-    throw new Error('--host cannot narrow shared-catalog or cache-lifecycle: those scenarios require multiple hosts');
+  if (host !== undefined && cacheLifecycle) {
+    throw new Error('--host cannot narrow cache-lifecycle: those scenarios require multiple hosts');
   }
   return host === undefined ? ['pi', 'omp'] : [host];
 }

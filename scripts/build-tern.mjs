@@ -48,28 +48,25 @@ const sdkImport = typeof sdkExport === "string" ? sdkExport : sdkExport?.import;
 if (typeof sdkImport !== "string" || !sdkImport.startsWith("./")) throw new Error("The selected ntn-skills package must include the Node ESM ntn-skills/sdk export; select a complete compatible package with NTN_SKILLS_BUILD_ENTRY");
 const sdkEntry = resolve(selectedCli.directory, sdkImport);
 const selectedSdkApi = await import(pathToFileURL(sdkEntry).href);
+const requiredConstants = {
+  SDK_VERSION: 1, CONSUMER_CONTRACT_VERSION: 1, CONSUMPTION_EFFECTS_VERSION: 1,
+  CATALOG_DIRECTORY_CONTRACT_VERSION: 1, READ_OUTPUT_PROOF_VERSION: 1,
+  RESOURCE_READ_CONTRACT_VERSION: 1, RESOURCE_READ_EFFECTS_VERSION: 1,
+};
+for (const [name, version] of Object.entries(requiredConstants)) {
+  if (selectedSdkApi[name] !== version) throw new Error(`The current paired ntn-skills SDK requires ${name}=${version}; upgrade the complete selected package`);
+}
+for (const name of ['consume', 'decodeConsumeResult', 'listCatalog', 'listSkill', 'resolveCatalogReference', 'readSkill', 'readResources', 'decodeResourceReadResult', 'parseDuration']) {
+  if (typeof selectedSdkApi[name] !== 'function') throw new Error(`The current paired ntn-skills SDK must export ${name}`);
+}
+if (selectedSdkApi.PACKAGE_VERSION !== selectedCli.metadata.version) throw new Error('CLI and SDK package versions differ');
 const resourceReadVersion = selectedSdkApi.RESOURCE_READ_CONTRACT_VERSION;
-if (resourceReadVersion !== undefined && (resourceReadVersion !== 1 || typeof selectedSdkApi.readResources !== "function" || typeof selectedSdkApi.decodeResourceReadResult !== "function")) {
-  throw new Error("The selected ntn-skills SDK resource-read capability is incompatible");
-}
 const readOutputProofVersion = selectedSdkApi.READ_OUTPUT_PROOF_VERSION;
-if (readOutputProofVersion !== undefined && (readOutputProofVersion !== 1 || typeof selectedSdkApi.readSkill !== "function")) {
-  throw new Error("The selected ntn-skills SDK read output proof is incompatible");
-}
 const catalogDirectoryVersion = selectedSdkApi.CATALOG_DIRECTORY_CONTRACT_VERSION;
-const commandOutputProofVersion = selectedSdkApi.COMMAND_OUTPUT_PROOF_VERSION;
-if (commandOutputProofVersion !== undefined && commandOutputProofVersion !== 1) {
-  throw new Error("The selected CLI output observation contract is incompatible");
-}
 const consumptionEffectsVersion = selectedSdkApi.CONSUMPTION_EFFECTS_VERSION;
-if (consumptionEffectsVersion !== undefined && consumptionEffectsVersion !== 1) throw new Error("Unsupported consumption effects contract");
 const resourceEffectsVersion = selectedSdkApi.RESOURCE_READ_EFFECTS_VERSION;
-if (resourceEffectsVersion !== undefined && (resourceEffectsVersion !== 1 || resourceReadVersion !== 1 || consumptionEffectsVersion !== 1)) {
-  throw new Error("The selected ntn-skills SDK resource-read effects capability is incompatible");
-}
-if (catalogDirectoryVersion !== undefined && (catalogDirectoryVersion !== 1 || typeof selectedSdkApi.listCatalog !== "function")) {
-  throw new Error("The selected ntn-skills SDK catalog directory capability is incompatible");
-}
+const commandOutputProofVersion = selectedSdkApi.COMMAND_OUTPUT_PROOF_VERSION;
+if (commandOutputProofVersion !== undefined && commandOutputProofVersion !== 1) throw new Error('The selected CLI output observation contract is incompatible');
 const selectedSdk = await findPackage("ntn-skills", sdkEntry);
 if (await realpath(selectedSdk.directory) !== await realpath(selectedCli.directory)) throw new Error("CLI and SDK must come from the same selected ntn-skills package");
 const brokerMetadata = JSON.parse(await readFile(join(broker, "package.json"), "utf8"));

@@ -1,15 +1,20 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { buildCliGuidance, buildInjectedPayload, installSkillGuidance } from "../src/index";
-import { installHostSkills } from "../src/host-skills";
+import { currentNotionFixture } from "./fixtures/current-notion-source";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+const runtime = await currentNotionFixture();
+const { buildCliGuidance, buildInjectedPayload, installSkillGuidance } = await import(pathToFileURL(join(runtime.root, "src/index.ts")).href);
+const { installHostSkills } = await import(pathToFileURL(join(runtime.root, "src/host-skills.ts")).href);
+const { hostCliScope } = await import(pathToFileURL(join(runtime.root, "src/host-command.ts")).href);
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import type { AgentMessage, ConfigFile, ContextResult, ExtensionAPI, ExtensionContext, NativeSkillGraphDefinition, SkillRecord } from "../src/types";
 
 const full = ["read", "skill_search", "skill_prepare", "skill_graph", "bash"];
 const config: ConfigFile = { sources: [
-  { id: "alpha", type: "notion", command: ["/configured alpha/node", "/configured alpha/cli.mjs"], database: "database-a" },
-  { id: "beta", type: "notion", command: ["/configured beta/node", "/configured beta/cli.mjs", "--profile", "selected"], database: "database-b" },
-  { id: "disabled", type: "notion", command: "/must-not-appear", enabled: false },
+  { id: "alpha", type: "notion", database: "database-a" },
+  { id: "beta", type: "notion", database: "database-b" },
+  { id: "disabled", type: "notion", enabled: false },
   { id: "local", type: "filesystem", roots: [] },
 ] };
 const text = (tools?: readonly string[]) => String(buildCliGuidance(config, tools).content);
@@ -29,7 +34,7 @@ test("native Pi guidance is a bounded routing contract, not a duplicated CLI tut
 test("native capability fallback alone adds exact CLI scope without teaching unavailable operations", () => {
   const baseline = text(["read", "notion_list", "notion_use", "bash"]);
   const partial = text(["notion_list", "notion_use", "bash"]);
-  expect(partial).toContain("/configured alpha/node");
+  expect(partial).toContain("ntn-skills.mjs");
   expect(partial).toContain("database-b");
   expect(partial).not.toContain("/must-not-appear");
   expect(partial).toContain("read REF");
@@ -68,7 +73,7 @@ test("deferred native management exposes only exact enabled source IDs when a CL
   const h = await graphHarness();
   h.tools(native);
   const result = resultJson(await h.invoke({ cli_source: "beta" }));
-  expect(result).toEqual({ kind: "host_cli_scope", sourceId: "beta", command: config.sources![1]!.command,
+  expect(result).toEqual({ kind: "host_cli_scope", sourceId: "beta", command: hostCliScope([config.sources![1]!]).command,
     database: "database-b", executed: false });
   expect(h.counts()).toEqual({ graphReads: 0, loads: 0, appends: 0 });
 });
@@ -106,7 +111,7 @@ test("native consumption keeps exact references and operation intent without mac
 
 test("fallback follows missing operations and never advertises disabled tools or shell", () => {
   const shell = text(["bash"]);
-  expect(shell).toContain("/configured beta/cli.mjs");
+  expect(shell).toContain("ntn-skills.mjs");
   expect(shell).toContain("<list-args>"); expect(shell).toContain("<read-args>");
   expect(shell).toContain("database-b"); expect(shell).not.toContain("cli_source");
   expect(shell).not.toContain("Use read with"); expect(shell).not.toContain("Use skill_prepare");
@@ -183,7 +188,7 @@ test("each final context projects current capabilities without mutating history,
   expect(guidanceText(native)).not.toContain("/configured");
   h.tools(["bash"]);
   const fallback = await h.project("context_with_system", native);
-  expect(guidanceText(fallback)).toContain("/configured alpha/node");
+  expect(guidanceText(fallback)).toContain("ntn-skills.mjs");
   expect(guidanceText(native)).not.toContain("/configured");
   h.tools([]);
   const unavailable = await h.project("context_with_system", fallback);
@@ -271,7 +276,7 @@ const resultJson = (result: Awaited<ReturnType<Awaited<ReturnType<typeof graphHa
 test("cli_source returns only the requested host-local scope without loading, execution or graph mutation", async () => {
   const h = await graphHarness();
   const result = await h.invoke({ cli_source: "beta" });
-  expect(resultJson(result)).toEqual({ kind: "host_cli_scope", sourceId: "beta", command: ["/configured beta/node", "/configured beta/cli.mjs", "--profile", "selected"], database: "database-b", executed: false });
+  expect(resultJson(result)).toEqual({ kind: "host_cli_scope", sourceId: "beta", command: hostCliScope([config.sources![1]!]).command, database: "database-b", executed: false });
   expect(result.details).toEqual(resultJson(result));
   expect(h.counts()).toEqual({ graphReads: 0, loads: 0, appends: 0 });
   expect(resultJson(await h.invoke({}))).toEqual({ portable: true });
@@ -297,7 +302,7 @@ test("cli_source rejects ambiguous/disabled/foreign scopes, inactive tools and m
   }
   const unknown = await graphHarness(config, false);
   await expect(unknown.invoke({ cli_source: "beta" })).rejects.toThrow("HOST_CLI_TOOL_UNAVAILABLE");
-  const ambiguous = await graphHarness({ sources: [{ id: "same", type: "notion", command: "/one" }, { id: "same", type: "notion", command: "/two" }] });
+  const ambiguous = await graphHarness({ sources: [{ id: "same", type: "notion" }, { id: "same", type: "notion" }] });
   await expect(ambiguous.invoke({ cli_source: "same" })).rejects.toThrow("HOST_SOURCE_AMBIGUOUS");
   const cancelled = new AbortController(); cancelled.abort();
   await expect(h.invoke({ cli_source: "beta" }, cancelled.signal)).rejects.toThrow();

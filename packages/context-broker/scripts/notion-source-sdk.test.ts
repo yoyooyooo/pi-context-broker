@@ -1,0 +1,127 @@
+import { expect, test } from "bun:test";
+import { readFile, stat } from "node:fs/promises";
+import { join } from "node:path";
+import { noConsumptionWrites } from "../src/consumption-effects";
+import { normalizeSources } from "../src/sources";
+import { sourceFailureMessage } from "../src/notion-source";
+import { installHostSkills, type HostSkills } from "../src/host-skills";
+import { createPiHostAdapter } from "../src/pi-host-adapter";
+import { buildInjectedContextMessage } from "../src/index";
+import { sourceMessageText } from "../src/session-source-snapshot";
+import type { AgentMessage, ExtensionAPI, ExtensionContext } from "../src/types";
+
+import { currentNotionFixture as fixture } from "./fixtures/current-notion-source";
+import { createHash } from "node:crypto";
+
+const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+const uuid = (n: number) => "00000000-0000-4000-8000-" + n.toString().padStart(12, "0");
+const exists = (path: string) => stat(path).then(() => true, () => false);
+
+test("custom Notion CLI configuration is retired with an actionable upgrade error", () => {
+  for (const command of ["ntn-skills", ["node", "/old/ntn-skills.js"]])
+    expect(() => normalizeSources([{ type: "notion", id: "current", command }])).toThrow(expect.objectContaining({ code: "SOURCE_COMMAND_UNSUPPORTED" }));
+  expect(sourceFailureMessage("SOURCE_COMMAND_UNSUPPORTED")).toContain("Remove that override");
+  expect(normalizeSources([{ type: "notion", id: "current", database: uuid(10) }])?.[0]).not.toHaveProperty("command");
+});
+
+test("current Skill, Router and Prompt loads use one SDK consume and retain the complete file directory", async () => {
+  for (const kind of ["skill", "router", "prompt"] as const) {
+    const f = await fixture(kind), loaded = await f.boundary.loadNotionSkill(f.selected, f.source, f.root);
+    expect(loaded.body).toBe(f.body); expect(await readFile(loaded.path, "utf8")).toBe(f.body);
+    expect(loaded.entryManifest).toMatchObject({ manifest_complete: true, local_files_ready: false, materialized_paths: [f.record.entrypoint] });
+    expect(loaded.entryManifest?.files).toEqual([...f.files].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    expect(f.calls).toHaveLength(1); expect(f.calls[0]).toMatchObject({ operation: "consume", input: { purpose: "inspect", freshness: { policy: "max_age", max_age_ms: 1000 } }, options: { readOnly: true } });
+    expect(await exists(join(f.source.cacheDir!, "snapshots"))).toBe(false);
+    for (const file of f.files.slice(1)) {
+      expect(await exists(join(loaded.entryManifest!.root, file.path))).toBe(false);
+      const path = await f.boundary.loadNotionResource(loaded, file.path, f.source, f.root);
+      expect(await readFile(path)).toEqual(f.bytes.get(file.path));
+    }
+    expect(loaded.entryManifest?.local_files_ready).toBe(true);
+    expect(f.calls.map(call => call.operation)).toEqual(["consume", "read", "read"]);
+    if (process.env.CONTEXT_BROKER_GRAPH_CORE) expect(f.state.decoded).toBe(1);
+  }
+});
+
+test("Pi explicitly submits Prompt source bytes in both turns without activating it as a Skill", async () => {
+  const f = await fixture("prompt");
+  const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
+  const api: ExtensionAPI = { on(name, listener) { events.set(name, [...events.get(name) ?? [], listener]); } };
+  const ctx: ExtensionContext = { cwd: f.root, hasUI: false, mode: "rpc" };
+  const emit = async (name: string, event: unknown) => Promise.all((events.get(name) ?? []).map(listener => listener(event as never, ctx)));
+  let host: HostSkills;
+  let skillGraphCalls = 0, activated = 0;
+  host = await installHostSkills(api, {
+    config: { sources: [f.source] },
+    getRecords: async () => ({ records: [f.selected], failures: [] }),
+    loadRecord: (record, signal, snapshotId, policy) => f.boundary.loadNotionSkill(record, f.source, f.root, { signal, snapshotId, ...policy }),
+    prepareGraph: async () => { skillGraphCalls++; throw Error("Prompt must not expand Skill Requires"); },
+    needsPreflightPrompt: text => text.includes("$entry"),
+    preflightPrompt: async (_text, context, signal) => host.prepareMany([f.selected], context, signal),
+    buildPreparedPrompt: async (_text, _context, _signal, prepared) => {
+      expect(prepared).toHaveLength(1); expect(prepared[0]?.kind).toBe("prompt");
+      expect(prepared[0]?.autoloadEnabled).toBe(false);
+      return buildInjectedContextMessage(prepared[0]!, "entry");
+    },
+    confirmDelivery: records => { activated += records.length; },
+  }, createPiHostAdapter(api));
+  for (const turn of [1, 2]) {
+    const user: AgentMessage = { role: "user", content: "$entry task " + turn };
+    await emit("input", { source: "rpc", text: user.content });
+    await emit("before_agent_start", { prompt: user.content, systemPrompt: "base" });
+    await emit("agent_start", {});
+    const values = await emit("context", { messages: [user] });
+    const projection = values.find((value): value is { messages: AgentMessage[] } => Boolean(value && typeof value === "object" && "messages" in value));
+    expect(projection).toBeDefined();
+    const delivered = projection!.messages.map(message => sourceMessageText(message.content)).join("\n");
+    expect(delivered.split(f.body)).toHaveLength(2);
+    expect(f.calls).toHaveLength(turn);
+    await emit("before_provider_request", {});
+    await emit("after_provider_response", { status: 200 });
+    await emit("agent_end", {});
+  }
+  expect(f.calls.map(call => call.operation)).toEqual(["consume", "consume"]);
+  expect(skillGraphCalls).toBe(0); expect(activated).toBe(0);
+  if (process.env.CONTEXT_BROKER_GRAPH_CORE) expect(f.state.decoded).toBe(2);
+});
+
+test.skipIf(!process.env.CONTEXT_BROKER_GRAPH_CORE)("a partial or inconsistent manifest cannot be published as a complete entry", async () => {
+  for (const defect of ["incomplete", "missing-resource", "bad-hash"] as const) {
+    const f = await fixture();
+    f.state.transform = value => {
+      const entry = value.entries[0]!;
+      if (defect === "incomplete") entry.manifest.complete = false;
+      else if (defect === "missing-resource") {
+        entry.manifest.files.pop();
+        entry.manifest_sha256 = f.manifestHash(entry.manifest);
+      }
+      else entry.manifest_sha256 = hash("wrong manifest");
+      return value;
+    };
+    await expect(f.boundary.loadNotionSkill(f.selected, f.source, f.root)).rejects.toBeDefined();
+    expect(f.calls).toHaveLength(1); expect(await exists(f.source.cacheDir!)).toBe(false);
+  }
+});
+
+test("background prefetch uses the same bounded SDK operation without publishing a host tree", async () => {
+  const f = await fixture(), signal = new AbortController().signal;
+  const result = await f.boundary.prefetchNotionSkills({ source: f.source, records: [f.selected],
+    budget: { maxNodes: 1, maxDepth: 0, maxBytes: 65536, maxTimeMs: 5000, rateShare: 0.1 } }, f.root, signal);
+  expect(result.preparedNodes).toBe(1); expect(f.calls).toHaveLength(1);
+  expect(f.calls[0]).toMatchObject({ operation: "consume", input: { purpose: "inspect", budget: { maxNodes: 1, maxDepth: 0, maxInstructionBytes: 65536 } },
+    options: { readOnly: true, signal, execution: { priority: "prefetch", timeBudgetMs: 5000, queueBudgetMs: 1000, rateShare: 0.1 } } });
+  expect(await exists(f.source.cacheDir!)).toBe(false);
+});
+
+test("SDK failures, cancellation and foreign scopes never publish a ready entry or start a second transport", async () => {
+  const denied = await fixture();
+  denied.state.transform = () => ({ version: 1, status: "failed", effects: noConsumptionWrites(), error: { code: "ACCESS_DENIED", message: "denied" } });
+  await expect(denied.boundary.loadNotionSkill(denied.selected, denied.source, denied.root)).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+  expect(denied.calls).toHaveLength(1); expect(await exists(denied.source.cacheDir!)).toBe(false);
+  const cancelled = await fixture(), controller = new AbortController(); cancelled.state.afterConsume = () => controller.abort();
+  await expect(cancelled.boundary.loadNotionSkill(cancelled.selected, cancelled.source, cancelled.root, { signal: controller.signal })).rejects.toMatchObject({ code: "SOURCE_CANCELLED" });
+  expect(cancelled.calls).toHaveLength(1); expect(await exists(cancelled.source.cacheDir!)).toBe(false);
+  const foreign = await fixture();
+  await expect(foreign.boundary.loadNotionSkill({ ...foreign.selected, sourceScope: hash("foreign") }, foreign.source, foreign.root)).rejects.toMatchObject({ code: "SOURCE_PREPARATION_INVALID" });
+  expect(foreign.calls).toHaveLength(1); expect(await exists(foreign.source.cacheDir!)).toBe(false);
+});

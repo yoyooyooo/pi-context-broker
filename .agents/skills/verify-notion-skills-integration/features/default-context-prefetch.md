@@ -92,7 +92,7 @@ node scripts/verify-notion-integration.mjs evidence --evidence /absolute/run
 
 沿原 `scripts/notion-default-context.mjs` 驱动，不另建验证平台。`--default-context true` 是验证分支开关，不能把产品的 `prefetch: true` 解释成自动下载。产品省略预取、`false` 和旧 `true` 均为零预算；专项分别验证三种配置仍有默认目录、没有正文准备。正例显式使用 `{ maxNodes: 1, maxBytes: 65536, maxDepth: 0, maxTimeMs: 5000, rateShare: 0.1 }`，不修改用户配置。Prompt 继续排除默认发现和预取。
 
-配置预取目前沿 public CLI `prepare --purpose inspect --priority prefetch`，即使日常 Pi 正文消费使用 SDK，也不能把这条兼容执行路径记成 SDK 请求。受控 fixture 的调用日志保留 `command` 与原始 `args`；`ctl views` 等新入口和旧 alias 共用一层分发，不能只凭规范化后的 operation 名称宣称调用方已迁移。
+配置预取统一调用配对 SDK `consume`，purpose 为 inspect，并传递 priority、queueBudget、timeBudget、rateShare 与取消信号。当前 `notion-source-sdk.test.ts` 检查一轮调用、预算、只读和无宿主投影；`source-runtime.test.ts` 检查前后台调度与取消。旧受控 CLI 专项不能作为当前 SDK 通过的证据，迁移实际 Pi 驱动前保持未运行。
 
 调用账本按真实 CLI 输出合同加观测参数：`prepare` / `ctl prepare` 自带 JSON，只追加 `--metrics`，不支持 `--json`；`use` 采集机器证据则需要 `--json --metrics`。fixture 同样拒绝非法 `prepare --json`，避免受控专项掩盖已在独立 C6 包实际 PTY 中观察到的 parser 失败。故障原件与修复后原 PTY 验证分别保留，不通过重打包改变对照。
 
@@ -114,7 +114,7 @@ fixture 仍以 View 的 checkbox 筛选模拟成员变化；checkbox 本身不�
 
 旧专项的全目录 export、后台 `ready` / `loaded`、前后台共用一个下载和 Broker `cacheDir` 冷并发发布，属于已替换的物化模型。当前预取只暖 CLI/core 缓存，产出 `prepared` 元数据；它不发布主机目录、不选择会话版本、不自动展开 Requires 或读取未选 Members。本专项记录旧断言退役原因，不把删除旧断言计为对应能力通过。
 
-安装包、真实 Pi/OMP、公开 RPC、provider payload、取消及 owned 子进程终界是本专项的实驱边界。受控 CLI 返回冻结 wire receipt；它没有真实 core 缓存或 Notion HTTP，不能证明跨进程缓存复用、HTTP 请求下降或远端权限行为。缺少 `request_metrics` 时账本保留 `null` / `sourceMetricsComplete: false`，不补零。核心有界预算与时序 oracle 继续复用 `source-runtime.test.ts` 和 `prepare-adapter.test.ts`；真实源/SDK取消与恢复沿 `session-cache-recovery.md` 和 `activation-snapshot-resources.md` 各自留证。
+安装包、真实 Pi/OMP、公开 RPC、provider payload、取消及 owned 子进程终界是本专项的实驱边界。受控 CLI 返回冻结 wire receipt；它没有真实 core 缓存或 Notion HTTP，不能证明跨进程缓存复用、HTTP 请求下降或远端权限行为。缺少 `request_metrics` 时账本保留 `null` / `sourceMetricsComplete: false`，不补零。核心有界预算与时序 oracle 继续复用 `source-runtime.test.ts` 和 `notion-source-sdk.test.ts`；真实源/SDK取消与恢复沿 `session-cache-recovery.md` 和 `activation-snapshot-resources.md` 各自留证。
 
 每次运行保留 `*-default-context-result.json`、provider/RPC/lifecycle、`safe-source-requests.jsonl`、`source-cli-calls.jsonl`、准备后的原生 session 副本和安装身份。先检查 Evidence，再仅清理 manifest 所有的 scratch，最后重新检查 Evidence；原失败和原件 hash 保留。独立安装、真实 Notion、真实模型各自列出 pass / not run，不互相替代。
 

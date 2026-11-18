@@ -263,7 +263,7 @@ for (const host of ['pi', 'omp']) {
   test(`${host} selection contains no implicit sibling host`, () => {
     assert.deepEqual(selectIntegrationHosts({ host }), [host]);
   });
-  for (const feature of ['sharedCatalog', 'cacheLifecycle']) {
+  for (const feature of ['cacheLifecycle']) {
     test(`${feature} cannot claim cross-host acceptance from ${host} alone`, () => {
       assert.throws(() => selectIntegrationHosts({ host, [feature]: true }), /require multiple hosts/);
     });
@@ -284,7 +284,7 @@ test('each default selection is independently owned', () => {
 
 test('runner uses selected hosts for probes and all per-host acceptance branches', async () => {
   const source = await readFile(new URL('./verify-notion-integration.mjs', import.meta.url), 'utf8');
-  assert.ok(source.includes('selectIntegrationHosts({ host: options.host, sharedCatalog, cacheLifecycle })'));
+  assert.ok(source.includes('selectIntegrationHosts({ host: options.host, cacheLifecycle })'));
   assert.ok(source.includes("if(selectedHosts.includes('omp'))manifest.branches.push(await runSourceLifecycle"));
   assert.ok(!source.includes("for(const host of ['pi','omp'])"));
   assert.ok(!source.includes("mode==='model'?modelHosts"));
