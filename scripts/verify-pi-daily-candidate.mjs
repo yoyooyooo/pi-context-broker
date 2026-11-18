@@ -521,6 +521,7 @@ export function inspectCandidateAuditReportBindings(policy, nativeAudit, nativeT
 export function reviewCandidateMaintenanceTool(tool, input, policy, branch = []) {
   const check = (value, message) => { if (!value) throw new Error(message); };
   check(policy.mode === 'owned-maintenance-readonly' && input && typeof input === 'object' && !Array.isArray(input), 'Use the reviewed read-only maintenance task');
+  check(!Object.hasOwn(input, 'readOnly'), 'readOnly is not a current public tool option; omit it. Notion consumption does not write remotely.');
   const fields = allowed => check(Object.keys(input).every(key => allowed.includes(key)), 'Unknown maintenance tool option');
   const canonical = value => {
     if (typeof value !== 'string' || !value.startsWith(policy.refPrefix)) return false;
@@ -556,14 +557,14 @@ export function reviewCandidateMaintenanceTool(tool, input, policy, branch = [])
     check(input.limit === undefined || Number.isSafeInteger(input.limit) && input.limit >= 1 && input.limit <= 100, 'Keep metadata discovery bounded');
     check(input.cursor === undefined || typeof input.cursor === 'string', 'Use the public metadata cursor');
   } else if (tool === 'notion_use') {
-    fields(['ref', 'refresh', 'readOnly']);
+    fields(['ref', 'refresh']);
     const refs = typeof input.ref === 'string' ? [input.ref] : input.ref;
-    check(input.readOnly === true && Array.isArray(refs) && refs.length > 0 && refs.length <= 64 && refs.every(value => reference(value)), 'Use only the reviewed owner with readOnly:true');
+    check(Array.isArray(refs) && refs.length > 0 && refs.length <= 64 && refs.every(value => reference(value)), 'Use only the reviewed owner');
     check(input.refresh === undefined || typeof input.refresh === 'boolean', 'Use the public refresh option');
   } else if (tool === 'read') {
-    const batch = Object.hasOwn(input, 'paths'); fields(batch ? ['paths', 'readOnly'] : ['path', 'readOnly', 'offset', 'limit']);
+    const batch = Object.hasOwn(input, 'paths'); fields(batch ? ['paths'] : ['path', 'offset', 'limit']);
     const refs = batch ? input.paths : [input.path];
-    check(input.readOnly === true && Array.isArray(refs) && refs.length > 0 && refs.length <= 64 && refs.every(value => reference(value)), 'Read only the reviewed owner with readOnly:true');
+    check(Array.isArray(refs) && refs.length > 0 && refs.length <= 64 && refs.every(value => reference(value)), 'Read only the reviewed owner');
     for (const key of ['offset', 'limit']) check(input[key] === undefined || Number.isSafeInteger(input[key]) && input[key] >= 1, 'Use a public read range');
   } else throw new Error('This task permits public maintenance discovery and strict owner reads only');
   return { kind: tool };
@@ -578,9 +579,11 @@ export function candidateCliGuard(api, { fs, output, policy, review, maintenance
     try {
       if (failure) throw failure;
       const reads = api.getAllTools?.().filter(tool => tool.name === 'read') ?? [];
+      const parameters = reads[0]?.parameters, properties = parameters?.properties;
       if (reads.length !== 1 || reads[0].sourceInfo?.path !== policy.readExecutorPath
-        || reads[0].parameters?.properties?.readOnly?.type !== 'boolean')
-        throw new Error('The candidate native read executor must enforce readOnly inside tool execution before this task starts.');
+        || parameters?.type !== 'object' || properties?.path?.type !== 'string' || properties?.paths?.type !== 'array'
+        || Object.hasOwn(properties, 'readOnly'))
+        throw new Error('The candidate native read executor must expose current path/paths without readOnly before this task starts.');
       fs.writeSync(fd, JSON.stringify({ phase: 'maintenance-admission', allowed: true }) + '\n');
     } catch (error) {
       failure = error;
@@ -591,6 +594,8 @@ export function candidateCliGuard(api, { fs, output, policy, review, maintenance
   api.on('tool_call', (event, ctx) => {
     try {
       if (failure) throw failure;
+      if (policy.mode === 'owned-maintenance-readonly' && Object.hasOwn(event.input ?? {}, 'readOnly'))
+        throw new Error('readOnly is not a current public tool option; omit it. Notion consumption does not write remotely.');
       if (event.toolName === 'bash') {
         const inspected = review(event.input?.command, policy, [...auditReports.values()]);
         if (inspected.kind === 'audit-resume') {

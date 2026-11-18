@@ -410,10 +410,10 @@ export async function runNxtControlled(config, info) {
     const list = JSON.parse(text(await call('nxt-list', 'notion_list', { query: config.source.name, source: config.source.id, limit: 20 }, { 'SKILL.md': 0 })));
     const matching = list.records.filter(record => record.name === config.source.name && record.source === config.source.id && record.availability === 'available'); assert.equal(matching.length, 1);
     const candidate = matching[0].ref;
-    const used = JSON.parse(text(await call('nxt-use', 'notion_use', { ref: candidate, readOnly: true }, { 'SKILL.md': 1 })));
+    const used = JSON.parse(text(await call('nxt-use', 'notion_use', { ref: candidate }, { 'SKILL.md': 1 })));
     assert.equal(used.records.length, 1); assert.equal(used.records[0].content, rootBody.text);
     const directory = used.records[0].directory, refFor = path => { const found = directory.files.filter(file => file.path === path); assert.equal(found.length, 1); return found[0].ref; };
-    await call('nxt-two-references', 'read', { paths: references.map(file => refFor(file.logical_path)), readOnly: true }, Object.fromEntries(bodies.map(file => [file.logical_path, 1])));
+    await call('nxt-two-references', 'read', { paths: references.map(file => refFor(file.logical_path)) }, Object.fromEntries(bodies.map(file => [file.logical_path, 1])));
     phase = 'ordinary'; await rpc.prompt('Continue the ordinary conversation without reading or applying any Skill again.'); await observe(phase, Object.fromEntries(bodies.map(file => [file.logical_path, 1])));
     await call('nxt-control-discovery', 'tool_search', { query: 'notion_ctl working set', limit: 1 }, { 'SKILL.md': 1 });
     if (config.controlledCliScope === true) {
@@ -440,12 +440,12 @@ export async function runNxtControlled(config, info) {
     }
     const beforeFailure = JSON.parse(text(await call('nxt-before-refresh', 'notion_ctl', { working_set: 'show' }, { 'SKILL.md': 1 })));
     await publishToolPlan(state.controlPath, { failRefresh: true });
-    await call('nxt-failed-refresh', 'notion_use', { ref: candidate, refresh: true, readOnly: true }, { 'SKILL.md': 1 }, true);
+    await call('nxt-failed-refresh', 'notion_use', { ref: candidate, refresh: true }, { 'SKILL.md': 1 }, true);
     assert.ok((await rows(join(state.output, 'transport.jsonl'))).some(row => row.phase === 'controlled-source-failure'));
     await publishToolPlan(state.controlPath, { failRefresh: false });
     const afterFailure = JSON.parse(text(await call('nxt-after-failed-refresh', 'notion_ctl', { working_set: 'show' }, { 'SKILL.md': 1 })));
     assert.deepEqual(afterFailure.nodes, beforeFailure.nodes, 'A failed refresh cannot replace any active scope, pin or body');
-    const refreshed = JSON.parse(text(await call('nxt-successful-refresh', 'notion_use', { ref: candidate, refresh: true, readOnly: true }, { 'SKILL.md': 1 })));
+    const refreshed = JSON.parse(text(await call('nxt-successful-refresh', 'notion_use', { ref: candidate, refresh: true }, { 'SKILL.md': 1 })));
     assert.equal(refreshed.records[0].content, rootBody.text);
     const before = JSON.parse(text(await call('nxt-working-set', 'notion_ctl', { working_set: 'show' }, { 'SKILL.md': 1 })));
     assert.equal(before.roots.length, 1);
@@ -455,7 +455,7 @@ export async function runNxtControlled(config, info) {
     assert.deepEqual((await readFile(sessionFile)).subarray(0, originalHistory.length), originalHistory, 'Release must retain the original native Session bytes');
     await close(); await launch(true);
     phase = 'resume-released'; await rpc.prompt('Continue the ordinary conversation without applying any Skill.'); await observe(phase, { 'SKILL.md': 0 });
-    await call('nxt-reuse', 'notion_use', { ref: candidate, readOnly: true }, { 'SKILL.md': 1 });
+    await call('nxt-reuse', 'notion_use', { ref: candidate }, { 'SKILL.md': 1 });
     phase = 'before-compact'; await rpc.prompt('Keep only this neutral continuation note for the conversation.');
     const native = await rows(sessionFile), lastUser = native.filter(entry => entry.type === 'message' && entry.message.role === 'user').at(-1); assert.ok(lastUser);
     await publishToolPlan(state.controlPath, { failRefresh: false, compact: true, firstKeptEntryId: lastUser.id });

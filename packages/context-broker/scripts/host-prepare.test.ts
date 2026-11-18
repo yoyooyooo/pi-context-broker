@@ -131,32 +131,40 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
   return { ctx, records, root: root!, required: required!, member: member!, graph, calls, persisted, install, emit, session, resourceText, resourceReads, api, sources };
 }
 
-test("normal use and native inspect disclose effects and strict requests reach the same source boundary", async () => {
+test("Pi use and native inspect always forbid writes and reject the retired policy input", async () => {
   const f = await fixture();
-  const retained = { version: 1 as const, remote_writes: "retained" as const, author_content: "unchanged" as const,
-    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "op-root", status: "confirmed" as const },
-      { skill_page_id: "required", file_id: "main", operation_id: "op-required", status: "confirmed" as const }] };
+  const effects = noConsumptionWrites();
   const policies: boolean[] = [];
+  let requiresWrite = false;
   const { tool } = await f.install(async (purpose, _signal, policy) => {
     policies.push(policy?.readOnly === true);
-    if (policy?.readOnly) throw new SourceError("NOTION_READ_ONLY", "controlled", undefined, { effects: noConsumptionWrites() });
-    const effects = purpose === "inspect" ? { ...retained, retention: retained.retention.slice(0, 1) } : retained;
+    if (requiresWrite) throw new SourceError("NOTION_READ_ONLY", "controlled", undefined, { effects });
     policy?.observeEffects?.(effects);
     return [{ ...f.graph(purpose), effects }];
   });
+  expect(tool.parameters).not.toHaveProperty("properties.readOnly");
+  expect(tool.description).not.toMatch(/retain history|pass readOnly|versions remain/);
   const used = await tool.execute("effects-use", { ref: f.root.ref }, undefined, undefined, f.ctx);
-  expect(JSON.parse(sourceMessageText(used.content)).effects).toEqual(retained);
+  expect(JSON.parse(sourceMessageText(used.content)).effects).toEqual(effects);
   const inspected = await nativeRead(f, f.root.ref!, "effects-inspect");
-  expect(sourceMessageText(inspected.content)).toContain("<notion-effects>" + JSON.stringify({ ...retained, retention: retained.retention.slice(0, 1) }) + "</notion-effects>");
+  expect(sourceMessageText(inspected.content)).toContain("<notion-effects>" + JSON.stringify(effects) + "</notion-effects>");
   expect(sourceMessageText(inspected.content).slice(0, f.root.body!.length)).toBe(f.root.body);
-  await expect(tool.execute("effects-strict", { ref: f.root.ref, readOnly: true }, undefined, undefined, f.ctx))
-    .rejects.toMatchObject({ details: { effects: noConsumptionWrites() } });
-  const input = { path: f.root.ref!, readOnly: true };
+  for (const readOnly of [true, false, undefined]) {
+    await expect(tool.execute("retired-policy", { ref: f.root.ref, readOnly }, undefined, undefined, f.ctx))
+      .rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    const invalid = await f.emit("tool_call", { toolName: "read", input: { path: f.root.ref!, readOnly } }, f.ctx);
+    expect(invalid).toContainEqual(expect.objectContaining({ block: true, admission: expect.objectContaining({ code: "INVALID_ARGUMENT" }) }));
+  }
+  expect(policies).toEqual([true, true]);
+  requiresWrite = true;
+  await expect(tool.execute("write-refused", { ref: f.root.ref }, undefined, undefined, f.ctx))
+    .rejects.toMatchObject({ details: { effects } });
+  const input = { path: f.root.ref! };
   const admission = await f.emit("tool_call", { toolName: "read", toolCallId: "strict-inspect", input }, f.ctx);
   expect(admission).toContainEqual(expect.objectContaining({ block: true }));
   expect(JSON.stringify(admission)).toContain('remote_writes\\":\\"none');
   expect(input.path).toBe(f.root.ref);
-  expect(policies).toEqual([false, false, true, true]);
+  expect(policies).toEqual([true, true, true, true]);
 });
 
 test("Pi dollar acquisition discloses its own effects in provider and native history without changing source proof", async () => {

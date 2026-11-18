@@ -1154,6 +1154,7 @@ test('actual metadata may introduce an exact ref while guessed roots, forged res
     handlers.get('tool_result')({ toolName: 'notion_list', toolCallId: 'search', content: [{ type: 'text', text: content }], details: result, isError: false });
     assert.equal(invoke('prepare', 'notion_use', { ref: record.ref }), undefined);
     assert.equal(invoke('multiple', 'notion_use', { ref: [record.ref] }), undefined);
+    for (const readOnly of [true, false]) assert.equal(invoke('retired-policy-' + readOnly, 'notion_use', { ref: record.ref, readOnly }).block, true);
     assert.equal(invoke('inspect', 'read', { path: record.ref }), undefined);
     assert.equal(invoke('hidden-inspect', 'notion_use', { ref: record.ref, purpose: 'inspect' }).block, true);
     assert.equal(invoke('guessed', 'notion_use', { ref: 'member' }).block, true);

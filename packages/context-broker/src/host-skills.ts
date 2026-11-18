@@ -1553,16 +1553,15 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   if (sourceToolsEnabled && options.prepareGraph) host.registerTool?.({
     name: useToolName, label: piConsumption ? "Use Notion Skills" : "Prepare Skills",
     description: piConsumption
-      ? "Load a Notion Skill and its Requires to apply its instructions to the user's task. To introduce, summarize or inspect a Skill, use read instead. Copy a supplied ref, or pass several refs together. Members remain candidates. Loading does not authorize executing a workflow. Current reads may retain history. If the user requests read-only or no writes, pass readOnly:true; it forbids retention too and may refuse the read. In the final answer, report effects.remote_writes retained or unknown explicitly; author_content unchanged does not mean no writes."
+      ? "Load a Notion Skill and its Requires to apply its instructions to the user's task. To introduce, summarize or inspect a Skill, use read instead. Copy a supplied ref, or pass several refs together. Members remain candidates. Loading does not authorize executing a workflow. Notion consumption does not write to Notion. If a selected ref is no longer available, obtain its current candidate ref and select it again."
       : "Prepare exact Skill roots. Use purpose use to load complete root and Required instructions before executing a workflow; inspect reads only roots and does not activate their dependencies. Members and ordinary references remain directories.",
     parameters: piConsumption ? { type: "object", properties: {
       ref: { anyOf: [{ type: "string" }, { type: "array", minItems: 1, maxItems: 64, items: { type: "string" } }], description: "A supplied sr:C/sr:S or skill://<name-or-id>/<main> ref, or several refs needed together. Prefer returned canonical refs for later actions." },
       refresh: { type: "boolean", description: "Explicitly select current versions after a complete successful load. Requires unfixed refs; failure keeps the previous selection." },
-      readOnly: { type: "boolean", description: "Forbid every remote write, including history retention. Reject before writing when the requested content needs retention." },
     }, required: ["ref"], additionalProperties: false } : { type: "object", properties: {
       roots: { type: "array", minItems: 1, maxItems: 64, items: { type: "string" }, description: "Copy exact session sr:C/sr:S references or canonical skill:// main-entry references from metadata or a previous result." },
       purpose: { type: "string", enum: ["use", "inspect"], description: "Explicit operation intent; inspection does not authorize workflow execution." },
-      refresh: { type: "boolean", description: "Explicitly begin a new selection for these scopes after successful online preparation. Requires unfixed root refs; existing versions remain in history." },
+      refresh: { type: "boolean", description: "Explicitly begin a new selection for these scopes after successful online preparation. Requires unfixed root refs; failure keeps the previous selection." },
       readOnly: { type: "boolean", description: "Forbid remote writes, including history retention." },
     }, required: ["roots", "purpose"], additionalProperties: false },
     strict: true, readsSkillUris: true, loadMode: "essential", approval: () => "read", approvalCacheTargets: () => undefined,
@@ -1573,12 +1572,12 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       let acquiring = false;
       try {
       const combined = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
-      await ready(combined);
       const requested = piConsumption ? typeof input.ref === "string" ? [input.ref] : input.ref : input.roots;
       if ((!piConsumption && !["use", "inspect"].includes(String(input.purpose))) || !Array.isArray(requested) || !requested.length || requested.length > 64
         || requested.some(value => typeof value !== "string") || input.refresh !== undefined && typeof input.refresh !== "boolean"
         || input.readOnly !== undefined && typeof input.readOnly !== "boolean"
-        || Object.keys(input).some(key => !(piConsumption ? ["ref", "refresh", "readOnly"] : ["roots", "purpose", "refresh", "readOnly"]).includes(key))) throw hostError("INVALID_ARGUMENT");
+        || Object.keys(input).some(key => !(piConsumption ? ["ref", "refresh"] : ["roots", "purpose", "refresh", "readOnly"]).includes(key))) throw hostError("INVALID_ARGUMENT");
+      await ready(combined);
       for (const raw of requested) {
         const { reference, short } = resolveReference(String(raw), ctx);
         if (short?.kind === "resource") throw hostError("PREPARE_ROOT_NOT_MAIN");
@@ -1598,7 +1597,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const purpose = piConsumption || input.purpose === "use" ? "use" : "inspect";
       acquiring = true;
       const prepared = await graphPreparation(roots, ctx, combined, purpose, pins, input.refresh === true ? "replace" : "extend", false,
-        { readOnly: input.readOnly === true, observeEffects: effects => observedEffects.push(effects) });
+        { readOnly: piConsumption || input.readOnly === true, observeEffects: effects => observedEffects.push(effects) });
       const effects = combineConsumptionEffects(prepared.graphs.map(graph => graph.effects));
       observedEffects.push(effects);
       for (let index = 0; index < requested.length; index++) {
@@ -1788,7 +1787,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       throw hostError("SOURCE_CACHE_VERSION_UNSUPPORTED");
     const ref = short?.canonicalRef ?? event.input.path as string;
     let effects: ConsumptionEffects | undefined;
-    resource = await options.readFixedResource(record, ref, ctx, signal, { readOnly: event.input.readOnly === true, observeEffects: value => { effects = value; } });
+    resource = await options.readFixedResource(record, ref, ctx, signal, { readOnly: piConsumption || event.input.readOnly === true, observeEffects: value => { effects = value; } });
     current();
     // A main File alias uses entry preparation. Source validation failures never fall back.
     if (!resource) return undefined;
@@ -1825,6 +1824,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const started = generation;
     let stage: ReadAdmissionStage = "metadata";
     const blocked = (error: unknown, effects?: ConsumptionEffects, message?: string) => blockedRead(error, readPhase, stage, started, signal, effects, message);
+    if (piConsumption && Object.hasOwn(event.input, "readOnly")) return blocked(hostError("INVALID_ARGUMENT"));
     const explicit = requested.startsWith("skill://") || isSessionShortRefInput(requested);
     // A plain file read does not acquire a remote Skill dependency. Published
     // broker locations are matched below and activate() retains their gate.
@@ -1880,7 +1880,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
     if (!selected) return undefined;
     const observedEffects: ConsumptionEffects[] = [];
-    const policy: ConsumptionPolicy = { readOnly: event.input.readOnly === true, observeEffects: effects => observedEffects.push(effects) };
+    const policy: ConsumptionPolicy = { readOnly: piConsumption || event.input.readOnly === true, observeEffects: effects => observedEffects.push(effects) };
     let retained: SkillRecord | undefined;
     if (!explicit) {
       retained = selected.kind === "prompt" && !turnPrompts?.signal.aborted ? turnPrompts?.snapshots.get(recordIdentity(selected)) : undefined;
@@ -1956,7 +1956,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   }
   async function readResourceBatch(input: Record<string, unknown>, ctx: ExtensionContext, signal: AbortSignal, toolCallId: string, policy: ConsumptionPolicy) {
     if (adapter.paths.host !== "pi" || !options.readResources) throw hostError("SOURCE_RESOURCE_BATCH_UNAVAILABLE");
-    if (Object.keys(input).some(key => key !== "paths" && key !== "readOnly") || input.readOnly !== undefined && typeof input.readOnly !== "boolean"
+    if (Object.keys(input).some(key => key !== "paths")
       || !Array.isArray(input.paths) || !input.paths.length
       || input.paths.some(value => typeof value !== "string" || !value)) throw hostError("INVALID_ARGUMENT");
     if (input.paths.length > DEFAULT_RESOURCE_READ_BUDGET.maxFiles) throw hostError("RESOURCE_FILE_BUDGET");
@@ -2025,7 +2025,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const deadline = AbortSignal.timeout(DEFAULT_RESOURCE_READ_BUDGET.timeBudgetMs);
       const observedEffects: ConsumptionEffects[] = [];
       try { return await readResourceBatch(input, ctx, AbortSignal.any([executionSignal, deadline]), toolCallId,
-        { readOnly: input.readOnly === true, observeEffects: effects => observedEffects.push(effects) }); }
+        { readOnly: true, observeEffects: effects => observedEffects.push(effects) }); }
       catch (error) {
         const cause = executionSignal.aborted ? hostError("SOURCE_CANCELLED") : deadline.aborted ? hostError("RESOURCE_TIME_BUDGET") : error;
         const effects = combineConsumptionEffects([...observedEffects, errorConsumptionEffects(error)]);

@@ -7,7 +7,6 @@ or activate its workflow.
 
 ```ts
 read({ paths: ["sr:R…", "sr:R…"] })
-read({ paths: ["sr:R…", "sr:R…"], readOnly: true })
 ```
 
 Use actual resource handles returned by the selected Skill directory. Canonical
@@ -44,9 +43,9 @@ Native content, pagination, images and structured results remain native; the
 v1 resource receipt compares the actual returned text with the whole file and
 always has `loaded: false`. A direct resource has no prepared entry manifest.
 
-SDKs that do not advertise this additive capability retain the previous route,
-without a speculative SDK read. Custom commands and non-Pi hosts also retain
-their routes. Canonical paths naming the main entrypoint use the existing main
+The paired SDK must advertise this capability. Missing capability fails before
+dispatch; there is no custom command or old SDK route. OMP/Tern are deferred.
+Canonical paths naming the main entrypoint use the existing main
 route, including when they carry a File ID; this avoids an extra main read.
 A stale main-path hint whose File ID identifies a resource still resolves on
 that existing route. A resource-path hint whose File ID identifies the main
@@ -54,15 +53,17 @@ is recognized by the source and continues through normal main preparation.
 
 One batch enters one source-runtime operation and one SDK `readResources` call.
 It does not loop over `readSkill`, launch a CLI for every file, or invoke
-`skill_prepare`. The default bundled SDK advertises independent
-`RESOURCE_READ_CONTRACT_VERSION = 1`; old SDK/consumer v1 functions retain their
-contracts. A package lacking the new capability rejects a batch explicitly.
+`notion_use`. The bundled SDK advertises independent
+`RESOURCE_READ_CONTRACT_VERSION = 1`. A package lacking the capability rejects
+a batch explicitly.
 
-### Strict read-only batches
+### Consumption without remote writes
 
-`readOnly` accepts a boolean with either `path` or `paths`. A strict batch carries
-the policy through the source adapter to SDK `readResources`; it remains one
-operation. Before dispatch, Broker requires both the SDK export
+Pi `read` and `notion_use` do not expose a write-policy switch. Supplying the
+retired `readOnly` key fails with `INVALID_ARGUMENT` before source or native I/O.
+Every Notion consumption passes `readOnly: true` internally to the paired SDK.
+The policy reaches `readResources` in one operation. Before dispatch, Broker
+requires both the SDK export
 `RESOURCE_READ_EFFECTS_VERSION = 1` and the matching runtime manifest field
 `resource_read_effects_version: 1`. Scalar effects support does not imply batch
 support. A missing or mismatched capability fails before entering the SDK, with
@@ -70,11 +71,13 @@ zero source operations. The capable producer uses the existing semantic Notion
 write guard for every descendant request, refusing a write before transport.
 
 Every current batch exposes the producer's version-1 `effects` in model JSON and
-details. Ordinary legacy batches remain usable; missing effects are `unknown`.
+details. Missing observations remain `unknown` and never prove zero writes.
 Failed or cancelled reads retain observed effects without delivering partial
 resources. Effects sit outside file-content spans and remain unchanged when a
-provider copy deduplicates repeated text. This does not authorize retention or
-author changes, prepare the main body, or replace fixed identity checks.
+provider copy deduplicates repeated text. A producer path that still requires
+adoption or retention is refused. If a fixed selection is no longer available,
+select the current candidate again. None of these operations prepares the main
+body or replaces fixed identity checks.
 
 ## Budgets and failure
 

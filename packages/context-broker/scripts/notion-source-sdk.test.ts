@@ -113,6 +113,32 @@ test("background prefetch uses the same bounded SDK operation without publishing
   expect(await exists(f.source.cacheDir!)).toBe(false);
 });
 
+test("current acquisition failures retain their next action across catalog, body and resource operations", async () => {
+  const f = await fixture(), loaded = await f.boundary.loadNotionSkill(f.selected, f.source, f.root);
+  for (const [received, code, action] of [
+    ["SKILL_DISABLED", "CONTENT_DISABLED", "disabled"],
+    ["CACHE_REFRESH_REQUIRED", "CACHE_REFRESH_REQUIRED", "Refresh the source online"],
+    ["CURRENT_SOURCE_REQUIRED", "CURRENT_SOURCE_REQUIRED", "Migrate its current content"],
+    ["SHARED_ACQUISITION_SCOPE", "SHARED_ACQUISITION_SCOPE", "select its current content"],
+    ["SHARED_SOURCE_MISSING", "SHARED_SOURCE_MISSING", "select its current content"],
+    ["SHARED_SOURCE_CONFLICT", "SHARED_SOURCE_CONFLICT", "select its current content"],
+    ["SOURCE_MATERIALIZATION_INCOMPLETE", "SOURCE_MATERIALIZATION_INCOMPLETE", "Inspect the source content"],
+    ["SHARED_RESOURCE_CONTENT_INVALID", "SHARED_RESOURCE_CONTENT_INVALID", "Inspect the source content"],
+  ] as const) {
+    f.state.list = async () => { throw { code: received }; };
+    f.state.read = async () => { throw { code: received }; };
+    f.state.transform = () => ({ version: 1, status: "failed", effects: noConsumptionWrites(), error: { code: received, message: "controlled current failure" } });
+    await expect(f.boundary.discoverNotionSource(f.source, f.root)).rejects.toMatchObject({ code });
+    await expect(f.boundary.loadNotionSkill(f.selected, f.source, f.root)).rejects.toMatchObject({ code });
+    await expect(f.boundary.loadNotionResource(loaded, f.files[1]!.path, f.source, f.root)).rejects.toMatchObject({ code });
+    expect(sourceFailureMessage(code)).toContain(action);
+  }
+  f.state.read = async () => { throw { code: "UNRECOGNIZED_ERROR", message: "private source detail" }; };
+  await expect(f.boundary.loadNotionResource(loaded, f.files[1]!.path, f.source, f.root)).rejects.toMatchObject({ code: "SOURCE_SDK_FAILED" });
+  expect(await exists(join(loaded.entryManifest!.root, f.files[1]!.path))).toBe(false);
+  expect(loaded.entryManifest?.local_files_ready).toBe(false);
+});
+
 test("SDK failures, cancellation and foreign scopes never publish a ready entry or start a second transport", async () => {
   const denied = await fixture();
   denied.state.transform = () => ({ version: 1, status: "failed", effects: noConsumptionWrites(), error: { code: "ACCESS_DENIED", message: "denied" } });

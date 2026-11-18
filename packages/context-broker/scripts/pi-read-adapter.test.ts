@@ -64,21 +64,32 @@ test("Pi read advertises an object schema without provider-rejected top-level co
   expect(Object.keys(schema).filter(key => ["oneOf", "anyOf", "allOf", "enum", "const", "not"].includes(key))).toEqual([]);
   expect(schema.properties).toHaveProperty("path");
   expect(schema.properties).toHaveProperty("paths");
+  expect(schema.properties).not.toHaveProperty("readOnly");
 });
 
-test("AH639 public batch read preserves the three issued refs and explicit read-only policy", async () => {
+test("AH639 public batch read preserves the three issued refs", async () => {
   const f = fixture(), calls: unknown[] = [];
   const paths = ["sr:RouocPFZv5M2VY1whhsEmpw", "sr:RTewfftdPpctkYChWg0myJA", "sr:R6LBduFSn5Pij6sdLTsoEZg"];
   const batch = { content: [{ type: "text" as const, text: "batch" }] };
   f.adapter.registerReadExecutor!(async (input, _ctx, _signal, _read, id) => { calls.push({ id, input }); return batch; });
   await f.start();
-  expect(f.current().parameters).toMatchObject({ properties: { paths: { type: "array" }, readOnly: { type: "boolean" } } });
+  expect(f.current().parameters).toMatchObject({ properties: { paths: { type: "array" } } });
   const id = "call-56bb786b-68ea-44cc-af6a-8b9ce087776b-3__rk16__T8Q_3Wz_5W-D8F5y";
-  for (const readOnly of [true, false]) {
-    expect(await f.current().execute(id, { paths, readOnly }, undefined, undefined, f.ctx)).toBe(batch);
-    expect(calls.at(-1)).toEqual({ id, input: { paths, readOnly } });
+  expect(await f.current().execute(id, { paths }, undefined, undefined, f.ctx)).toBe(batch);
+  expect(calls).toEqual([{ id, input: { paths } }]); expect(f.calls).toHaveLength(0);
+});
+
+test("Pi rejects the retired readOnly key before scalar or batch preparation and native I/O", async () => {
+  const f = fixture(), ref = "sr:R" + "a".repeat(22);
+  let preparations = 0;
+  f.adapter.registerReadExecutor!((input, _ctx, signal, read) => { preparations++; return read(input, signal); });
+  await f.start();
+  for (const readOnly of [true, false, undefined, "true", null, 1]) {
+    for (const input of [{ path: "local.md", readOnly }, { path: ref, readOnly }, { paths: [ref], readOnly }]) {
+      await expect(f.current().execute("retired-argument", input, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "INVALID_ARGUMENT", message: expect.stringContaining("readOnly is not supported") });
+    }
   }
-  expect(calls).toHaveLength(2); expect(f.calls).toHaveLength(0);
+  expect(preparations).toBe(0); expect(f.calls).toHaveLength(0);
 });
 
 test("Pi read rejects invalid scalar and batch arguments before shared preparation or native I/O", async () => {
@@ -93,7 +104,6 @@ test("Pi read rejects invalid scalar and batch arguments before shared preparati
     { paths: [null] }, { paths: [7] }, { paths: [""] }, { paths: ["references/one.md"] },
     { paths: ["sr:R"] }, { paths: ["sr:C" + "a".repeat(22)] }, { paths: [ref], offset: 2 },
     { paths: [ref], limit: 3 }, { paths: [ref], extra: true }, { paths: Array.from({ length: 17 }, () => ref) },
-    { paths: [ref], readOnly: "true" }, { paths: [ref], readOnly: null }, { paths: [ref], readOnly: 1 },
   ]) {
     await expect(f.current().execute("invalid", input, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
   }
@@ -124,6 +134,10 @@ test("Pi scalar read advertises issued Skill refs without changing the native de
   expect(schema.properties.path.description).toContain("verbatim");
   expect(f.current().description).toStartWith("For Notion introductions, summaries or inspection,");
   expect(f.current().description).toContain("without loading Requires or activating its workflow");
+  expect(f.current().description).toContain("Notion reads do not write to the remote library");
+  expect(f.current().description).toContain("select the Skill again and copy its current refs");
+  expect(f.current().description).not.toContain("readOnly");
+  expect(f.current().description).not.toContain("retain history");
   expect(JSON.stringify(f.native.parameters)).toBe(before);
 });
 

@@ -408,27 +408,27 @@ test('maintenance guard admits builtin discovery, exact CLI metadata and current
     ['tool_search', { query: 'NTN SKILLS MAINTAIN', limit: 1 }],
     ['notion_ctl', { cli_source: 'notion' }],
     ['notion_list', { query: 'owned fixture', source: 'notion', limit: 1 }],
-    ['notion_use', { ref: branch[0].data.ref, readOnly: true }],
-    ['read', { path: branch[2].data.ref, readOnly: true }],
-    ['read', { paths: [branch[2].data.ref], readOnly: true }],
-    ['read', { path: 'skill://original-owner/references/one.md', readOnly: true }],
+    ['notion_use', { ref: branch[0].data.ref }],
+    ['read', { path: branch[2].data.ref }],
+    ['read', { paths: [branch[2].data.ref] }],
+    ['read', { path: 'skill://original-owner/references/one.md' }],
   ];
   for (const [toolName, input] of calls) assert.equal(handlers.get('tool_call')({ toolName, toolCallId: 'call-' + records.length, input }, ctx), undefined);
   handlers.get('session_shutdown')({});
   assert.ok(records.every(row => row.allowed === true || row.complete === true));
 });
 
-test('maintenance guard fails before I/O for foreign handles, no readOnly, unrelated files or tools', () => {
+test('maintenance guard fails before I/O for foreign handles, conflicting paths, unrelated files or tools', () => {
   const handlers = new Map(), records = [], branch = maintenanceBranch();
   candidateCliGuard({ on(name, fn) { handlers.set(name, fn); } }, { fs: { openSync: () => 1, writeSync: (_fd, text) => records.push(JSON.parse(text)), closeSync() {} },
     output: '/evidence/guard.jsonl', policy: maintenanceCli, review: reviewCandidateCliCommand, maintenanceReview: candidate.reviewCandidateMaintenanceTool });
   const ctx = { sessionManager: { getBranch: () => branch } };
   for (const [toolName, input] of [
-    ['read', { path: '/unrelated/secret', readOnly: true }],
-    ['read', { path: 'skill://another-owner/SKILL.md', readOnly: true }],
-    ['read', { path: branch[2].data.ref }],
-    ['notion_use', { ref: branch[0].data.ref, readOnly: false }],
-    ['notion_use', { ref: 'sr:C' + 'B'.repeat(22), readOnly: true }],
+    ['read', { path: '/unrelated/secret' }],
+    ['read', { path: 'skill://another-owner/SKILL.md' }],
+    ['read', { path: branch[2].data.ref, paths: [branch[2].data.ref] }],
+    ['read', { paths: [branch[2].data.ref], limit: 1 }],
+    ['notion_use', { ref: 'sr:C' + 'B'.repeat(22) }],
     ['notion_ctl', { cli_source: 'another-source' }],
     ['notion_ctl', { refs: [] }],
     ['notion_list', { source: 'another-source' }],
@@ -441,14 +441,46 @@ test('maintenance guard fails before I/O for foreign handles, no readOnly, unrel
     ['write', { path: '/evidence/new-file', content: 'not authorized' }],
   ]) assert.equal(handlers.get('tool_call')({ toolName, toolCallId: 'blocked-' + records.length, input }, ctx)?.block, true);
   branch[1].data.target.identity = { ...branch[1].data.target.identity, locator: { page_id: 'another-page', database_id: 'owned-library' } };
-  assert.equal(handlers.get('tool_call')({ toolName: 'read', toolCallId: 'foreign-resource', input: { path: branch[2].data.ref, readOnly: true } }, ctx)?.block, true);
+  assert.equal(handlers.get('tool_call')({ toolName: 'read', toolCallId: 'foreign-resource', input: { path: branch[2].data.ref } }, ctx)?.block, true);
   handlers.get('session_shutdown')({});
 });
 
 test('maintenance policy survives serialization without product-module or private Store access', () => {
   const review = new Function('return (' + candidate.reviewCandidateMaintenanceTool.toString() + ')')();
-  assert.ok(review('notion_use', { ref: maintenanceBranch()[0].data.ref, readOnly: true }, maintenanceCli, maintenanceBranch()));
-  assert.throws(() => review('notion_use', { ref: maintenanceBranch()[0].data.ref, readOnly: true }, maintenanceCli, []));
+  assert.ok(review('notion_use', { ref: maintenanceBranch()[0].data.ref }, maintenanceCli, maintenanceBranch()));
+  assert.throws(() => review('notion_use', { ref: maintenanceBranch()[0].data.ref }, maintenanceCli, []));
+});
+
+test('maintenance rejects the retired readOnly key for owner tools and otherwise allowed local files', () => {
+  const handlers = new Map(), rows = [], branch = maintenanceBranch();
+  const review = new Function('return (' + candidate.reviewCandidateMaintenanceTool.toString() + ')')();
+  const guard = new Function('return (' + candidateCliGuard.toString() + ')')();
+  guard({ on(name, fn) { handlers.set(name, fn); } }, {
+    fs: { openSync: () => 1, writeSync: (_fd, text) => rows.push(JSON.parse(text)), closeSync() {} },
+    output: '/evidence/guard.jsonl', policy: maintenanceCli, review: reviewCandidateCliCommand, maintenanceReview: review });
+  const ctx = { sessionManager: { getBranch: () => branch } };
+  for (const readOnly of [true, false, undefined]) {
+    for (const [toolName, input] of [
+      ['notion_use', { ref: branch[0].data.ref, readOnly }],
+      ['read', { path: branch[2].data.ref, readOnly }],
+      ['read', { paths: [branch[2].data.ref], readOnly }],
+    ]) assert.throws(() => review(toolName, input, maintenanceCli, branch), /readOnly is not a current public tool option/u);
+    for (const [toolName, input] of [
+      ['notion_use', { ref: branch[0].data.ref, readOnly }],
+      ['read', { path: branch[2].data.ref, readOnly }],
+      ['read', { paths: [branch[2].data.ref], readOnly }],
+      ['read', { path: maintenanceCli.builtinFiles[0], readOnly }],
+      ['read', { path: maintenanceCli.inputFiles[0], readOnly }],
+      ['read', { path: maintenanceCli.outputRoot + '/approved.json', readOnly }],
+    ]) {
+      const original = structuredClone(input);
+      const result = handlers.get('tool_call')({ toolName, toolCallId: 'retired-' + rows.length, input }, ctx);
+      assert.equal(result?.block, true); assert.match(result.reason, /readOnly is not a current public tool option/u);
+      assert.deepEqual(input, original);
+    }
+  }
+  assert.ok(rows.length > 0 && rows.every(row => row.allowed === false));
+  handlers.get('session_shutdown')({});
 });
 
 test('maintenance builtin allowance does not broaden original author guards', () => {
@@ -467,10 +499,14 @@ test('maintenance starts only with the actual candidate native read executor and
       output: '/evidence/guard.jsonl', policy, review: reviewCandidateCliCommand, maintenanceReview: candidate.reviewCandidateMaintenanceTool });
     return { handlers, rows };
   };
-  const read = { name: 'read', sourceInfo: { path: policy.readExecutorPath }, parameters: { properties: { readOnly: { type: 'boolean' } } } };
+  const read = { name: 'read', sourceInfo: { path: policy.readExecutorPath }, parameters: { type: 'object', properties: { path: { type: 'string' }, paths: { type: 'array' } } } };
   const good = create([read]); assert.equal(good.handlers.get('input')({}), undefined);
   assert.deepEqual(good.rows, [{ phase: 'maintenance-admission', allowed: true }]);
-  for (const item of [create([]), create([{ ...read, sourceInfo: { path: '/other/read.ts' } }]), create([read], true)]) {
+  for (const item of [create([]), create([read, read]), create([{ ...read, sourceInfo: { path: '/other/read.ts' } }]),
+    create([{ ...read, parameters: { type: 'object', properties: { path: { type: 'string' } } } }]),
+    create([{ ...read, parameters: { properties: read.parameters.properties } }]),
+    ...[{ type: 'boolean' }, undefined].map(readOnly => create([{ ...read, parameters: { ...read.parameters, properties: { ...read.parameters.properties, readOnly } } }])),
+    create([read], true)]) {
     assert.deepEqual(item.handlers.get('input')({}), { action: 'handled' });
     assert.equal(item.handlers.get('tool_call')({ toolName: 'bash', toolCallId: 'blocked', input: { command: cliCommand + ' --help' } })?.block, true);
   }
@@ -506,14 +542,14 @@ function maintenancePayloadFixture() {
   const content = JSON.stringify({ ok: true, status: 'ready', purpose: 'use', roots: [ref], records: [{ name: 'Owned', kind: 'skill', ref, content: body.text }] });
   const encoded = JSON.stringify(body.text).slice(1, -1), start = content.indexOf('"content":' + JSON.stringify(body.text)) + '"content":"'.length;
   const delivery = { start, end: start + encoded.length, encoding: 'json' }, identity = JSON.stringify(['notion', scope, 'skill', 'shared_skill', owner]);
-  add('use-main', 'notion_use', { ref, readOnly: true }, content, { contextBrokerPreparation: { version: 2, toolCallId: 'use-main', purpose: 'use', graphs: [{}],
+  add('use-main', 'notion_use', { ref }, content, { contextBrokerPreparation: { version: 2, toolCallId: 'use-main', purpose: 'use', graphs: [{}],
     records: [{ version: 2, identity, binding, snapshotId: snapshot, bodySha256: body.sha256, bytes: body.bytes, loaded: true, delivery }],
     projection: { version: 1, compiler: 'context-broker/skill-prepare/v1', sourceProjection: 'source-identity/v1', rendered: { sha256: sha(content), bytes: Buffer.byteLength(content) },
       records: [{ index: 0, ref, source: { identity, sha256: body.sha256, bytes: body.bytes }, rendered: { sha256: sha(encoded), bytes: Buffer.byteLength(encoded) }, delivery, state: 'source' }] } } });
   const effects = { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] };
   for (const [index, body] of expectedBodies.slice(1).entries()) {
     const id = 'reference-' + index, b = body.binding;
-    add(id, 'read', { path: b.ref, readOnly: true }, [{ type: 'text', text: body.text }, { type: 'text', text: '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>' }],
+    add(id, 'read', { path: b.ref }, [{ type: 'text', text: body.text }, { type: 'text', text: '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>' }],
       { effects, contextBrokerResource: { version: 2, toolCallId: id, id: owner, scope, snapshot_id: snapshot, version_id: version,
         ref: b.ref, path: b.path, file_id: b.file_id, sha256: body.sha256, bytes: body.bytes, loaded: false, delivered_complete_text: true,
         delivery: { start: 0, end: body.text.length, encoding: 'raw' } } });
@@ -548,7 +584,7 @@ test('maintenance accounting rejects missing receipts, duplicate Broker bodies a
     value => { value.payload.messages.push({ role: 'user', content: value.config.expectedBodies[0].text }); },
     value => { value.payload.messages.push(structuredClone(value.payload.messages.find(row => row.tool_call_id === 'use-main'))); },
     value => { const original = value.nativeMessages.find(row => row.message.toolCallId === 'use-main').message, details = structuredClone(original.details);
-      details.contextBrokerPreparation.toolCallId = 'use-again'; value.add('use-again', 'notion_use', { ref: 'sr:S' + 'A'.repeat(22), readOnly: true }, original.content, details); },
+      details.contextBrokerPreparation.toolCallId = 'use-again'; value.add('use-again', 'notion_use', { ref: 'sr:S' + 'A'.repeat(22) }, original.content, details); },
     value => { value.payload.messages = value.payload.messages.filter(row => row.tool_call_id !== 'use-main'); },
     value => { value.payload.messages.find(row => row.tool_call_id === 'cli-read').tool_call_id = 'unobserved-cli'; },
     value => { value.payload.messages.find(row => row.tool_call_id === 'cli-read').content += '\nchanged'; },
@@ -588,7 +624,7 @@ test('maintenance resource batches bind every complete span to its frozen file a
       return { index, path: body.binding.path, ref: body.binding.ref, model_ref: files[index].ref, file_id: body.binding.file_id, sha256: body.sha256, bytes: body.bytes,
         loaded: false, delivered_complete_text: true, state: 'source', encoding: 'utf8', delivery: { start, end: start + encoded.length, encoding: 'json' } };
     }), projection: { version: 1, compiler: 'context-broker/resource-read/v1', rendered: { sha256: sha(content), bytes: Buffer.byteLength(content) } } };
-  value.add('ref-batch', 'read', { paths: bodies.map(body => body.binding.ref), readOnly: true }, content, { contextBrokerResource: proof });
+  value.add('ref-batch', 'read', { paths: bodies.map(body => body.binding.ref) }, content, { contextBrokerResource: proof });
   assert.deepEqual(value.inspect().bodies.map(body => [body.total, body.broker, body.cli]), [[2, 1, 1], [2, 1, 1], [1, 1, 0]]);
   proof.selection.snapshot_id = 's_' + 'f'.repeat(64); assert.throws(() => value.inspect());
 });

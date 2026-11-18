@@ -244,7 +244,8 @@ test('Pi observer verifies source modes and effect-bearing native main and scala
     assert.equal(invoke('before-provider-main', { path: candidate })?.block, true);
     const tools = GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } }));
     handlers.get('before_provider_request')({ payload: { tools, messages: [{ role: 'system', content: system }] } }, ctx);
-    assert.equal(invoke('main', { path: candidate, readOnly: true }), undefined, 'Actual provider metadata identity authorizes the native request before source acquisition');
+    for (const readOnly of [true, false]) assert.equal(invoke('retired-policy-' + readOnly, { path: candidate, readOnly }).block, true);
+    assert.equal(invoke('main', { path: candidate }), undefined, 'Actual provider metadata identity authorizes the native request before source acquisition');
     const prior = sourceFixture('parent');
     prior.value.preparation.nodes.push({ id: fixture.id, state: 'candidate', record: fixture.record });
     await save(path.join(responses, '0-prior-consume.json'), rawReceipt('consume', prior.value));
@@ -264,7 +265,7 @@ test('Pi observer verifies source modes and effect-bearing native main and scala
     handlers.get('tool_result')({ toolName: 'read', toolCallId: 'main', content: [{ type: 'text', text: content }], details: { effects, contextBrokerRead: {
       version: 3, toolCallId: 'main', snapshotId: fixture.snapshot, bodySha256: hash(fixture.body), bytes: Buffer.byteLength(fixture.body), binding: fixture.binding,
       delivery: { start: 0, end: fixture.body.length, encoding: 'raw' }, directory } } }, ctx);
-    assert.equal(invoke('guide', { path: resourceRef, readOnly: true }), undefined);
+    assert.equal(invoke('guide', { path: resourceRef }), undefined);
     await save(path.join(responses, 'read.json'), { ...rawReceipt('read', { record: fixture.record, scope: fixture.scope, snapshot_id: fixture.snapshot,
       version_id: fixture.version, path: 'guide.md', ref: fixture.files[1].ref, bytes: fixture.files[1].bytes, sha256: fixture.files[1].sha256,
       entrypoint_sha256: hash(fixture.body), file_bindings: fixture.bindings }), outputEvidence: { path: path.join(cache, 'already-produced'),
@@ -287,7 +288,7 @@ test('Pi observer verifies source modes and effect-bearing native main and scala
       ['wrong-resource-pin', result => { result.details.contextBrokerResource.snapshot_id = 's_' + 'e'.repeat(64); }],
       ['missing-resource-bytes', result => { result.content[0].text = fixture.resource.slice(1) + effectsFooter; }],
     ]) {
-      assert.equal(invoke(id, { path: resourceRef, readOnly: true }), undefined);
+      assert.equal(invoke(id, { path: resourceRef }), undefined);
       const result = { toolName: 'read', toolCallId: id, content: [{ type: 'text', text: resourceContent }], details: resourceDetails(id) };
       mutate(result); handlers.get('tool_result')(result, ctx);
       assert.equal((await lines(output)).find(row => row.phase === 'tool-result' && row.toolCallId === id)?.complete, false, id);

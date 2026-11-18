@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
@@ -11,6 +11,7 @@ import { buildCliGuidance, buildDollarRegistry, buildRawDollarRegistry, buildReg
 import { skillRecordFromFile } from "../src/skill-records";
 import { discoverSources, loadSourceSkill } from "../src/sources";
 import type { ConfigFile, SkillRecord } from "../src/types";
+import { preserveTemp } from "./context-broker-e2e-fixture.mjs";
 
 const root = await mkdtemp(join(tmpdir(), "broker-bundled-"));
 try {
@@ -108,5 +109,5 @@ try {
 
   console.log("bundled builtin checks passed: Notion opt-in gates all discovery and detached completion, disconnected setup still works, offline files/resources, independent source identities and CLI guidance");
 } finally {
-  await rm(root, { recursive: true, force: true });
+  preserveTemp(root);
 }

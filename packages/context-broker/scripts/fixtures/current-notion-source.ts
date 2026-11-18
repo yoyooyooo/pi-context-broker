@@ -18,7 +18,7 @@ type Call = { operation: string; input?: Input; target?: string; options: Runtim
 
 // Only the external SDK operation is controlled. The source adapter, graph
 // decoder, entry/file manifest checks and materialization run unchanged.
-export async function currentNotionFixture(kind: ContentKind = "skill") {
+export async function currentNotionFixture(kind: ContentKind = "skill", fixture: { identity?: number; name?: string; body?: string } = {}) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "broker-current-source-")));
   await cp(new URL("../../src", import.meta.url), join(root, "src"), { recursive: true });
   await symlink(fileURLToPath(new URL("../../node_modules", import.meta.url)), join(root, "node_modules"), "dir");
@@ -40,18 +40,19 @@ export async function currentNotionFixture(kind: ContentKind = "skill") {
     sdk_version: 1, consumer_contract_version: 1, consumption_effects_version: 1, read_output_proof_version: 1, catalog_directory_contract_version: 1 }));
   const sdk = await import(pathToFileURL(module).href);
   const boundary: typeof import("../../src/notion-source") = await import(pathToFileURL(join(root, "src/notion-source.ts")).href);
-  const scope = hash("authorized source"), id = "shared_skill:current-source:entry", main = { skill: "SKILL.md", router: "ROUTER.md", prompt: "PROMPT.md" }[kind];
-  const body = "\ufeff# Current " + kind + "\r\nKeep all author bytes.\r\n";
+  const offset = (fixture.identity ?? 0) * 100, library = fixture.identity === undefined ? "current-source" : "current-source-" + fixture.identity;
+  const scope = hash("authorized source"), id = "shared_skill:" + library + ":entry", main = { skill: "SKILL.md", router: "ROUTER.md", prompt: "PROMPT.md" }[kind];
+  const body = fixture.body ?? "\ufeff# Current " + kind + "\r\nKeep all author bytes.\r\n";
   const version = hash(body), snapshot = "s_" + hash(JSON.stringify([scope, id, version]));
-  const record: ContentRecord = { id, kind, name: "entry", alias: "entry", description: "Current source", default_context: false, enabled: true,
+  const record: ContentRecord = { id, kind, name: fixture.name ?? "entry", alias: fixture.name ?? "entry", description: "Current source", default_context: false, enabled: true,
     entrypoint: main, ref: "skill://" + encodeURIComponent(id) + "/" + main,
-    locator: { type: "shared_skill", library_id: "current-source", skill_id: "entry", page_id: uuid(1), database_id: uuid(10), data_source_id: uuid(11) } };
+    locator: { type: "shared_skill", library_id: library, skill_id: "entry", page_id: uuid(offset + 1), database_id: uuid(offset + 10), data_source_id: uuid(offset + 11) } };
   const bytes = new Map([[main, Buffer.from(body)], ["references/guide.md", Buffer.from("完整参考正文。\r\n")], ["assets/data.bin", Buffer.from([0, 255, 13, 10])]]);
-  const bindings = [...bytes.keys()].map((path, index) => ({ path, file_id: "file-" + index, page_id: uuid(index + 1) }));
+  const bindings = [...bytes.keys()].map((path, index) => ({ path, file_id: "file-" + index, page_id: uuid(offset + index + 1) }));
   const files = [...bytes].map(([path, value], index) => ({ path, bytes: value.length, sha256: hash(value),
     ref: "skill://" + encodeURIComponent(id) + "/" + path + "?snapshot=" + snapshot + "&file_id=file-" + index }));
   const binding = { record, scope, snapshot_id: snapshot, version_id: version, body_sha256: hash(body), ref: files[0]!.ref };
-  const source: Extract<SourceConfig, { type: "notion" }> = { type: "notion", id: "notion", database: uuid(10), cacheDir: join(root, "cache"), activation: { maxAge: "1s" }, prefetch: false };
+  const source: Extract<SourceConfig, { type: "notion" }> = { type: "notion", id: "notion", database: uuid(offset + 10), cacheDir: join(root, "cache"), activation: { maxAge: "1s" }, prefetch: false };
   const selected: SkillRecord = { ...record, source: "notion", sourceId: source.id, sourceScope: scope, path: join(root, "metadata", main),
     aliases: [], normalizedAliases: [], normalizedName: record.alias, normalizedDescription: record.description, autoloadEnabled: kind !== "prompt" };
   function result(input: Input) {
@@ -99,8 +100,8 @@ export async function currentNotionFixture(kind: ContentKind = "skill") {
     decoded: 0,
     catalog: { records: [record], count: 1, fetched_at: Date.now(), scope,
       freshness: { policy: "max_age", validated_at: new Date().toISOString(), age_ms: 0, max_age_ms: 1000, stale: false },
-      databases: [{ database_id: uuid(10), title: "Current", alias: "current", role: "content", data_source_ids: [uuid(11)] }],
-      coverage: { method: "explicit_database", exhaustive: true, search_index_limited: false, queried_data_sources: [uuid(11)], failed_sources: [] } },
+      databases: [{ database_id: uuid(offset + 10), title: "Current", alias: "current", role: "content", data_source_ids: [uuid(offset + 11)] }],
+      coverage: { method: "explicit_database", exhaustive: true, search_index_limited: false, queried_data_sources: [uuid(offset + 11)], failed_sources: [] } },
     async consume(input: Input, _options: Runtime) {
       const value = state.transform(result(input));
       const verified = decoder ? await decoder(value, input) : value;

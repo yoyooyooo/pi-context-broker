@@ -4,7 +4,7 @@
 
 本次调用者对照、已保留失败及分层验证见[新消费入口迁移记录](notion-consumption-contract-2026-11-05.md)。
 
-Pi 注册 `notion_list({query?, source?, limit?, cursor?})`、`notion_use({ref, refresh?, readOnly?})` 和原生 `read`。list 只返回候选元数据，`count`/`has_more` 表示当前查询分页，`coverage` 单独报告来源完整性；未知覆盖为 null，不把空页解释为完整空目录。`ref` 可为一个返回引用或一起需要的多个根。use 一次准备根与完整 Requires，read 只检查主文或精确资源，未选 Members 不读正文。普通本地 Skill 保留 Pi 原生路径。
+Pi 注册 `notion_list({query?, source?, limit?, cursor?})`、`notion_use({ref, refresh?})` 和原生 `read`。list 只返回候选元数据，`count`/`has_more` 表示当前查询分页，`coverage` 单独报告来源完整性；未知覆盖为 null，不把空页解释为完整空目录。`ref` 可为一个返回引用或一起需要的多个根。use 一次准备根与完整 Requires，read 只检查主文或精确资源，未选 Members 不读正文。普通本地 Skill 保留 Pi 原生路径。
 
 完整目录与 Default View 通过随包 `listCatalog` SDK 复用 core 查询和缓存。Skill/Router、Prompt 及有预算的预取统一进入 `consume`；首次物化主文并保留完整 File 目录，子文件沿准确绑定按需读取。`source.command`、CLI prepare/read 与完整 export 消费路径已删除，旧 SDK capability 缺失直接失败。管理和 doctor 保留配对 CLI。OMP/Tern 延后；本文历史结果不代表其当前可用性。
 
@@ -12,13 +12,15 @@ Pi 注册 `notion_list({query?, source?, limit?, cursor?})`、`notion_use({ref, 
 
 被动 `context-broker.notion-sdk` 观察目录/正文操作及安全请求指标；私有验证驱动可显式订阅 `context-broker.notion-sdk-result` 取得同一调用 ID 的实际返回值。默认运行不订阅原文结果，metrics 不含凭据或正文。现有消费专项包含新工具、分页/覆盖、旧版本回执和 SDK 缺导出反例；安装态、真实 Notion/模型与双机验收另留每次产物身份，以下历史结果不自动升级为新合同结果。
 
-## 消费效果与严格只读
+## 消费不写远端
 
-Broker 的当前 SDK 消费强制 `readOnly:true`。仍需要 Records adoption 的 core 分支会明确拒绝，属于上线前必须收敛的剩余工作，不通过关闭只读保护绕过。version-1 `effects` 记录本次操作结果：`remote_writes` 为 `none`、`retained` 或 `unknown`，`author_content` 为 `unchanged` 或 `unknown`；`retention` 列出 Skill page、File、operation 及 confirmed/unknown 状态。它不是已选快照的历史写入清单，也不由 HTTP200、缓存命中或自然语言自述推导。
+Pi `read` 与 `notion_use` 不再公开 `readOnly` 开关。携带该旧参数时，无论值为 true 或 false，都在读取前返回 `INVALID_ARGUMENT`。Broker 内部向 SDK 固定传 `readOnly:true`，普通消费始终不写 Notion。仍需要 Records adoption 的 core 分支会明确拒绝，属于上线前必须收敛的剩余工作，不通过关闭保护绕过。旧选择失效时，获取当前候选 ref 并重新选择，不承诺恢复历史内容。
+
+version-1 `effects` 继续记录实际观察：`remote_writes` 为 `none`、`retained` 或 `unknown`，`author_content` 为 `unchanged` 或 `unknown`。其中 retained/unknown 用于披露异常或无法确定的写入结果，不能将它们算作零写验收通过。它不是已选快照的历史写入清单，也不由 HTTP200、缓存命中或自然语言自述推导。
 
 `notion_use` 在结构化内容中返回 effects，标量原生 read 在完整原文后追加 `<notion-effects>`，Pi `$`/native 注入在同轮添加独立效果文本并保留到原生历史。主文 v3 和资源 v2 回执只覆盖原始内容 span；目录去重和资源去重保留效果文本。多来源部分失败、取消或丢失 ACK 继续披露先前已观察效果与未知状态。旧生产者缺少回执时不能称零写。
 
-`readOnly:true` 传给现有 CLI 请求层的语义写拦截，CLI 对应 `--read-only`。需要留存时以 `SHARED_OBSERVATION_REQUIRED` 在首个写前拒绝；内部不允许的写以 `NOTION_READ_ONLY` 失败。固定或已有留存的内容可返回 none。随包 SDK 与构建 manifest 均须声明消费效果 version 1，否则严格请求在调用前失败；旧 `source.command` 在配置入口即拒绝。标量参数不改变原生本地读取、图片、分页或批量固定资源的原有合同。
+内部 `readOnly:true` 进入 SDK 请求层的语义写拦截；管理 CLI 另有 `--read-only` 参数。尚未收敛的 adoption 分支会在首个写前拒绝，不允许的语义写以 `NOTION_READ_ONLY` 失败。随包 SDK 与构建 manifest 均须声明消费效果 version 1，否则在调用前失败；旧 `source.command` 在配置入口即拒绝。本次不改变原生本地读取、图片、分页或批量固定资源的身份与字节合同。
 
 有限模型、故意破坏的反例及源码对应见 [RetentionDisclosure](https://github.com/yoyooyooo/pi-context-broker/blob/4fde322f94e3b74f400f18fa46e4aa5ebf4f6a97/verification/models/consumer-observations/flows/README.md)。它检查效果披露和只读写边界，不证明任意 LLM 最终回答，也不将模型结果替代真实 Notion/Pi 的 Session、payload 和 HTTP 审计。
 

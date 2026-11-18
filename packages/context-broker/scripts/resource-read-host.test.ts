@@ -69,8 +69,9 @@ async function fixture() {
     loadRecord: async () => { state.mainReads++; throw new Error("Resource reads cannot load the main entry"); },
     prepareGraph: async () => { state.mainReads++; throw new Error("Resource reads cannot prepare a graph"); },
     persistGraphs: () => { state.persisted++; },
-    readFixedResource: async (_record, input) => {
+    readFixedResource: async (_record, input, _ctx, _signal, policy) => {
       state.fixedCalls.push(input);
+      state.readOnly.push(policy?.readOnly);
       const selected = files[0]!;
       if (parseNativeReference(input).path !== selected.path) throw new Error("Unexpected scalar resource");
       return { selection: { scope, owner: id, snapshot_id: snapshot, version_id: version }, ownerBinding, entrypoint: content.entrypoint,
@@ -128,11 +129,11 @@ test("one resource batch delivers exact selected text and binary metadata withou
   expect(result.structuredContent).toHaveProperty("effects.remote_writes", "unknown");
 });
 
-test("AH639 strict batch passes one policy and preserves complete issued-resource receipts", async () => {
+test("every Pi batch forbids writes and preserves complete issued-resource receipts", async () => {
   const f = await fixture(), paths = f.files.map(file => f.short.resource(f.ctx, f.selected, file.ref));
   const entries = f.state.entries.length, effects = noConsumptionWrites();
   f.state.effects = effects;
-  const result = await f.read({ paths, readOnly: true }), text = sourceMessageText(result.content);
+  const result = await f.read({ paths }), text = sourceMessageText(result.content);
   expect(f.state.readOnly).toEqual([true]); expect(f.state.calls).toEqual([f.files.map(file => file.ref)]);
   const proof = validateResourceReadProjection(text, (result.details as { contextBrokerResource: unknown }).contextBrokerResource);
   expect(proof).toBeDefined();
@@ -154,7 +155,7 @@ test("ready batch effects satisfy the registered Pi output schema", async () => 
   expect(ordinary.structuredContent).toHaveProperty("effects.remote_writes", "unknown");
   expect(decode(ordinary.structuredContent)).toEqual(ordinary.structuredContent);
   f.state.effects = noConsumptionWrites();
-  const strict = await f.read({ paths, readOnly: true });
+  const strict = await f.read({ paths });
   expect(strict.structuredContent).toHaveProperty("effects.remote_writes", "none");
   expect(decode(strict.structuredContent)).toEqual(strict.structuredContent);
   expect(decode("native scalar output")).toBe("native scalar output");
@@ -163,11 +164,11 @@ test("ready batch effects satisfy the registered Pi output schema", async () => 
   expect(() => decode({ ...model, unexpected: true })).toThrow();
 });
 
-test("strict batch failure retains the producer's zero-write receipt without a body delivery", async () => {
+test("a producer requiring writes fails an ordinary batch without a body delivery", async () => {
   const f = await fixture(), effects = noConsumptionWrites();
   const original = Object.freeze(Object.assign(new Error("Strict source refused a semantic write"), { code: "NOTION_READ_ONLY", details: { effects } }));
   f.state.failure = original;
-  await expect(f.read({ paths: f.files.map(file => file.ref), readOnly: true })).rejects.toMatchObject({
+  await expect(f.read({ paths: f.files.map(file => file.ref) })).rejects.toMatchObject({
     code: "NOTION_READ_ONLY", details: { effects }, cause: original,
   });
   expect(f.state.readOnly).toEqual([true]); expect(f.state.calls).toHaveLength(1);
@@ -183,6 +184,7 @@ test("SC25 scalar fixed-name resources deliver the exact file without preparing 
     contextBrokerResource: expect.objectContaining({ delivered_complete_text: true, loaded: false, ref: f.files[0]!.ref }),
   }) })]));
   expect(f.state.nameCalls).toEqual([input]); expect(f.state.fixedCalls).toEqual([f.ref("references/a.md")]);
+  expect(f.state.readOnly).toEqual([true]);
   expect(f.state.scalarReads).toBe(1); expect(f.state.calls).toHaveLength(0); expect(f.state.mainReads).toBe(0); expect(f.state.persisted).toBe(0);
 });
 
@@ -204,6 +206,7 @@ test("batch admission rejects invalid modes and identities before any SDK operat
   for (const input of [
     { paths: [] }, { path: first, paths: [first] }, { paths: [first], offset: 1 }, { paths: ["/local/file"] },
     { paths: [first], readOnly: "true" }, { paths: [first], readOnly: null },
+    { paths: [first], readOnly: true }, { paths: [first], readOnly: false }, { paths: [first], readOnly: undefined },
     { paths: [first.split("?")[0]!] }, { paths: [selected] }, { paths: [first, first] },
     { paths: [first, first.replace("references/a.md", "old.md")] },
     { paths: [first, f.files[1]!.ref.replace(/snapshot=s_[a-f0-9]+/, "snapshot=s_" + hash("other"))] },
@@ -234,7 +237,7 @@ test("short resource refs retain their owner commitment without a main body or n
 
 test("foreign source results and late results after cancellation or session switch cannot deliver a batch", async () => {
   const wrong = await fixture(); wrong.state.transform = batch => ({ ...batch, selection: { ...batch.selection, scope: hash("foreign") } });
-  await expect(wrong.read({ paths: [wrong.files[0]!.ref], readOnly: true })).rejects.toMatchObject({ code: "SOURCE_IDENTITY_MISMATCH" });
+  await expect(wrong.read({ paths: [wrong.files[0]!.ref] })).rejects.toMatchObject({ code: "SOURCE_IDENTITY_MISMATCH" });
   for (const boundary of ["abort", "session"] as const) {
     const f = await fixture(), waiting = Promise.withResolvers<void>(), entered = Promise.withResolvers<void>(), controller = new AbortController();
     f.state.wait = () => { entered.resolve(); return waiting.promise; };

@@ -131,9 +131,10 @@ function sdkFailure(error: unknown, source: NotionSource, operation: "prepare" |
   const selectedPage = selected?.locator?.type === "shared_skill" || selected?.locator?.type === "notion_page" ? selected.locator.page_id : undefined;
   if ((operation === "read" || rootOnlyFailure) && error.code === "NOT_FOUND" && details?.notion_code === "object_not_found"
     && selectedPage && missingPage?.replaceAll("-", "").toLowerCase() === selectedPage.replaceAll("-", "").toLowerCase()) return new ReferenceMiss(source.id, selected?.id);
-  const code = typeof error.code === "string" && (CLI_CODES[error.code] === true
-    || /^RESOURCE_[A-Z_]+$/.test(error.code) || error.code === "SNAPSHOT_NOT_MATERIALIZED"
-    || operation === "prepare" && /^(?:PREPARE_[A-Z_]+|CONSUME_[A-Z_]+|SHARED_[A-Z_]+|NOTION_PREFETCH_(?:DEFERRED|WRITE_FORBIDDEN))$/.test(error.code)) ? error.code : "SOURCE_SDK_FAILED";
+  const receivedCode = error.code === "SKILL_DISABLED" ? "CONTENT_DISABLED" : error.code;
+  const code = typeof receivedCode === "string" && (CLI_CODES[receivedCode] === true
+    || /^RESOURCE_[A-Z_]+$/.test(receivedCode) || receivedCode === "SNAPSHOT_NOT_MATERIALIZED"
+    || operation === "prepare" && /^(?:PREPARE_[A-Z_]+|CONSUME_[A-Z_]+|SHARED_[A-Z_]+|NOTION_PREFETCH_(?:DEFERRED|WRITE_FORBIDDEN))$/.test(receivedCode)) ? receivedCode : "SOURCE_SDK_FAILED";
   return new SourceError(code, source.id, undefined, { ...preparationFailureDetails(details), effects: errorConsumptionEffects(error) });
 }
 
@@ -153,6 +154,13 @@ export function sourceFailureMessage(code: string): string {
     case "SOURCE_CACHE_VERSION_UNSUPPORTED":
     case "SNAPSHOT_MISSING":
     case "SNAPSHOT_NOT_MATERIALIZED": return "This selection is no longer available. Refresh the source and select its current content again.";
+    case "CACHE_REFRESH_REQUIRED": return "The local selection uses an older cache contract. Refresh the source online and select its current content again.";
+    case "CURRENT_SOURCE_REQUIRED": return "This Skill selects a retired snapshot source. Migrate its current content before reading it.";
+    case "SHARED_ACQUISITION_SCOPE": return "The selected content no longer matches this source and library. Refresh this source and select its current content again.";
+    case "SHARED_SOURCE_MISSING":
+    case "SHARED_SOURCE_CONFLICT": return "The selected source is unavailable or has changed. Refresh the source and select its current content again.";
+    case "SOURCE_MATERIALIZATION_INCOMPLETE":
+    case "SHARED_RESOURCE_CONTENT_INVALID": return "The selected resource failed its complete file check. Inspect the source content, then refresh and select it again.";
     case "SOURCE_SDK_UNAVAILABLE":
     case "SOURCE_SDK_INCOMPATIBLE": return "The bundled ntn-skills SDK is missing or incompatible. Reinstall the complete pi-context-broker package.";
     case "NOTION_UNAVAILABLE": return "The direct Notion API request could not complete. Check the connection and run /context-broker doctor.";
@@ -257,6 +265,8 @@ async function privateDirectory(path: string, source: NotionSource): Promise<voi
 CLI_CODES.LIST_CURSOR_STALE = true;
 CLI_CODES.NOTION_READ_ONLY = true;
 CLI_CODES.SHARED_OBSERVATION_REQUIRED = true;
+for (const code of ["CURRENT_SOURCE_REQUIRED", "CACHE_REFRESH_REQUIRED", "SHARED_ACQUISITION_SCOPE", "SHARED_SOURCE_MISSING", "SHARED_SOURCE_CONFLICT", "SOURCE_MATERIALIZATION_INCOMPLETE", "SHARED_RESOURCE_CONTENT_INVALID"])
+  CLI_CODES[code] = true;
 
 async function catalogPolicy(source: NotionSource, refresh?: boolean) {
   return refresh ? { refresh: true } : source.discovery?.offline ? { offline: true }

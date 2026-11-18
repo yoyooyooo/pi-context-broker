@@ -1284,14 +1284,13 @@ export function observeGraphGate(api, settings) {
       && Object.keys(input).every(key => ['query', 'source', 'limit', 'cursor'].includes(key));
     const preparation = event.toolName === 'notion_use' && discoveredBefore && requested.length <= 64
       && (input.refresh === undefined || typeof input.refresh === 'boolean')
-      && (input.readOnly === undefined || typeof input.readOnly === 'boolean')
-      && Object.keys(input).every(key => ['ref', 'refresh', 'readOnly'].includes(key))
+      && Object.keys(input).every(key => ['ref', 'refresh'].includes(key))
       && Array.isArray(selectedRoots) && same(selectedRoots.map(item => item.ref), requested) && selectedRoots.every(({ ref, parsed }) => {
         if (!parsed || ref.startsWith('sr:R')) return false;
         const views = sourceViews(), records = [...views.directories.flatMap(item => item.value.records ?? []), ...views.entries.map(item => item.value.record)];
         return records.some(record => record.id === parsed.selector && settings.parseNativeReference(record.ref).path === parsed.path && ['skill', 'router'].includes(record.kind));
       });
-    const allowed = toolSurface().tools.includes(event.toolName) && authored?.tool === event.toolName && (event.toolName === 'read' && (discoveredBefore || Boolean(project) || Boolean(help) || Boolean(validationAttempt)) || metadata || preparation);
+    const allowed = toolSurface().tools.includes(event.toolName) && authored?.tool === event.toolName && (event.toolName === 'read' && !Object.hasOwn(payload ?? {}, 'readOnly') && (discoveredBefore || Boolean(project) || Boolean(help) || Boolean(validationAttempt)) || metadata || preparation);
     const category = !allowed ? 'blocked' : validationAttempt ? 'invalid-short-ref' : help ? 'host-help' : project ? 'project' : metadata ? 'metadata' : preparation ? 'preparation' : batch ? 'resource-batch' : 'skill';
     const authoredProof = authored ? { authoredSequence: authored.sequence, authoredAt: authored.at, argumentsSha256: authored.argumentsSha256 } : {};
     calls.set(event.toolCallId, { toolCallId: event.toolCallId, input, projectPath, category, discovered: discoveredBefore, expected, claim, selectedRoots, validationAttempt, ...authoredProof, origin: authored ? 'model' : 'unknown', sequence: sequence + 1, allowed });

@@ -20,7 +20,7 @@ CONTEXT_BROKER_GRAPH_CORE=/absolute/current/notion-skills-cli/packages/core/src 
 bun run typecheck
 ~~~
 
-Source ready、完整文件目录、文件在本地、正文已交付、当前 turn 成功仍为不同状态。保持 `readOnly:true`；若当前 CLI 需要 adoption 写入才可消费，应报告上线阻断，不临时打开写入。Profile 只认当前 `fingerprint`，不维护修订链。只增加与本次改动直接相关的负例，不把所有历史功能地图串成一次旗舰验收。
+Source ready、完整文件目录、文件在本地、正文已交付、当前 turn 成功仍为不同状态。SDK 内部保持 `readOnly:true`，Pi `read`/`notion_use` 的公开输入不再接受该字段；旧参数须在 I/O 前明确拒绝。若当前 CLI 需要 adoption 写入才可消费，应报告上线阻断，不临时打开写入。Profile 只认当前 `fingerprint`，不维护修订链。只增加与本次改动直接相关的负例，不把所有历史功能地图串成一次旗舰验收。
 
 ## 管理与消费的跨仓验证路由
 

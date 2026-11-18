@@ -42,7 +42,7 @@ if (!worker) {
   const runtime = JSON.parse(await readFile(join(packageRoot, 'dist/ntn-skills-runtime.json'), 'utf8'));
   await writeFile(join(out, 'plan.json'), JSON.stringify({ version: 1, node: process.version, packageRoot, fixture: options.get('--fixture'),
     runtime, driver_sha256: hash(await readFile(fileURLToPath(import.meta.url))), scenarios: ['one-root', 'two-roots', 'three-roots', 'binary-resource', 'wrong-scope', 'wrong-physical-owner', 'broken-required', 'cancel-before-sdk', 'cancel-before-materialization'],
-    scope: 'Controlled offline snapshots; actual installed Node SDK/Broker. This is not live Notion or real-model evidence.' }, null, 2) + '\n');
+    scope: 'Controlled offline snapshots; actual selected package Node SDK/Broker. Package presence does not prove installation or an active Pi configuration; this is not live Notion or real-model evidence.' }, null, 2) + '\n');
   const child = childProcess.spawn(process.execPath, [fileURLToPath(import.meta.url), '--worker', ...args], {
     cwd: out, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'],
   });

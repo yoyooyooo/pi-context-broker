@@ -110,7 +110,10 @@ try {
   const unknownId = "11111111-1111-4111-8111-111111111199";
   const unknownRecord = { ...remote, id: "notion_page:" + unknownId, locator: { ...remote.locator, page_id: unknownId }, ref: "skill://" + unknownId + "/SKILL.md" };
   assert.throws(() => resolveCatalogReference(unknownRecord, context, "skill"), { code: "CATALOG_MEMBER_UNAVAILABLE" });
-  await assert.rejects(loadSourceSkill(metadata.records.find(record => record.id === remote.id)!, config, root), { code: "SOURCE_PREPARATION_INVALID" });
+  // The real SDK decoder rejects the foreign request before Broker's graph guard.
+  await assert.rejects(loadSourceSkill(metadata.records.find(record => record.id === remote.id)!, config, root), {
+    code: process.env.CONTEXT_BROKER_GRAPH_CORE ? "CONSUME_INVALID_PROOF" : "SOURCE_PREPARATION_INVALID",
+  });
   const offline = { ...source, discovery: { offline: true } };
   const unavailable = await discoverSourceCatalog({ sources: [offline] }, root);
   const offlineRouter = readDiscoveryCatalog(catalog, [], {}, { sources: [offline], records: unavailable.records, failures: unavailable.failures })[0]!;
