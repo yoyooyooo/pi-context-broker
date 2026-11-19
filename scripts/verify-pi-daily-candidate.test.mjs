@@ -546,7 +546,7 @@ function maintenancePayloadFixture() {
     records: [{ version: 2, identity, binding, snapshotId: snapshot, bodySha256: body.sha256, bytes: body.bytes, loaded: true, delivery }],
     projection: { version: 1, compiler: 'context-broker/skill-prepare/v1', sourceProjection: 'source-identity/v1', rendered: { sha256: sha(content), bytes: Buffer.byteLength(content) },
       records: [{ index: 0, ref, source: { identity, sha256: body.sha256, bytes: body.bytes }, rendered: { sha256: sha(encoded), bytes: Buffer.byteLength(encoded) }, delivery, state: 'source' }] } } });
-  const effects = { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] };
+  const effects = { version: 1, remote_writes: 'none', author_content: 'unchanged' };
   for (const [index, body] of expectedBodies.slice(1).entries()) {
     const id = 'reference-' + index, b = body.binding;
     add(id, 'read', { path: b.ref }, [{ type: 'text', text: body.text }, { type: 'text', text: '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>' }],
@@ -787,7 +787,7 @@ test('normal-management state reuses only the existing process roots and never t
     const value = { ok: true, record: { id: 'owner', locator: { database_id: 'owned-database' } }, scope: sha('scope'), snapshot_id,
       version_id: sha('version-' + index), path: 'references/render.md', ref, source: 'local_snapshot', freshness: { policy: 'pinned' },
       content, range: { start: 1, end: 2, total_lines: 2 }, has_more: false,
-      file_bindings: [{ path: 'references/render.md', file_id }], effects: { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] } };
+      file_bindings: [{ path: 'references/render.md', file_id }], effects: { version: 1, remote_writes: 'none', author_content: 'unchanged' } };
     const path = join(scratch, 'public-read-' + index + '.json'), bytes = JSON.stringify(value);
     await writeFile(path, bytes, { flag: 'wx' }); selected.push({ path, sha256: sha(bytes), body: { bytes: Buffer.byteLength(content), sha256: sha(content) } });
   }
@@ -838,12 +838,12 @@ test('existing-state reads block unintended tools before execution and require a
     version_id: 'version-' + index, path: 'references/render.md', file_id: 'file', bytes: 7, sha256: sha('body-' + index), characters: 7 }));
   const calls = reads.map((read, index) => ({ id: index ? 'edited' : 'old', name: 'read', arguments: { path: read.ref, readOnly: true }, isError: false }));
   const native = reads.map((read, index) => ({ type: 'message', message: { role: 'toolResult', toolName: 'read', toolCallId: calls[index].id, isError: false,
-    details: { effects: { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] },
+    details: { effects: { version: 1, remote_writes: 'none', author_content: 'unchanged' },
       contextBrokerResource: { ...read, version: 2, toolCallId: calls[index].id, delivery: { start: 0, end: 7, encoding: 'raw' }, delivered_complete_text: true, loaded: false } } } }));
   const audit = { calls, retractedCalls: [], errors: [] }, sourceState = { reads };
   const approved = rows.filter(row => row.allowed === true).concat(rows.at(-1));
   assert.equal(candidate.inspectCandidateExistingReads(sourceState, audit, jsonl(native), approved).reads, 2);
-  for (const effects of [undefined, { version: 1, remote_writes: 'unknown', author_content: 'unchanged', retention: [] }]) {
+  for (const effects of [undefined, { version: 1, remote_writes: 'unknown', author_content: 'unchanged' }]) {
     const changed = structuredClone(native); changed[0].message.details.effects = effects;
     assert.throws(() => candidate.inspectCandidateExistingReads(sourceState, audit, jsonl(changed), approved));
   }

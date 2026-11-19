@@ -161,6 +161,11 @@ test("ready batch effects satisfy the registered Pi output schema", async () => 
   expect(decode("native scalar output")).toBe("native scalar output");
   const model = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))(strict.structuredContent);
   expect(() => decode({ ...model, effects: { ...noConsumptionWrites(), version: "1" } })).toThrow();
+  expect(() => decode({ ...model, effects: { ...noConsumptionWrites(), retention: [] } })).toThrow();
+  expect(() => decode({ ...model, effects: { ...noConsumptionWrites(), remote_writes: "retained" } })).toThrow();
+  expect(() => decode({ ...model, effects: { ...noConsumptionWrites(), author_content: "unknown" } })).toThrow();
+  const unknownUnchanged = { ...model, effects: { version: 1, remote_writes: "unknown", author_content: "unchanged" } };
+  expect(decode(unknownUnchanged)).toEqual(unknownUnchanged);
   expect(() => decode({ ...model, unexpected: true })).toThrow();
 });
 

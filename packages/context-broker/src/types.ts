@@ -373,8 +373,6 @@ export type SkillMetadata = {
 export type ContentKind = "skill" | "router" | "prompt";
 export type ContentLocator =
   | { type: "shared_skill"; page_id: string; database_id: string; data_source_id: string; library_id: string; skill_id: string }
-  | { type: "notion_page"; page_id: string; database_id: string; data_source_id: string }
-  | { type: "notion_subscription"; subscription_id: string; database_id: string; data_source_id: string; target_database_id: string }
   | { type: "local"; id: string; entry: string };
 
 /** Public CLI wire. Display names and materialized paths never identify content. */
@@ -389,7 +387,6 @@ export type ContentRecord = {
   enabled?: boolean;
   entrypoint: string;
   ref: string;
-  upstream?: { repo: string };
 };
 
 export type CatalogRemoteReference = {
@@ -432,7 +429,6 @@ export type SkillRecord = SkillMetadata & {
   ref?: string;
   default_context?: boolean;
   enabled?: boolean;
-  upstream?: ContentRecord["upstream"];
   source?: "local" | "notion";
   path: string;
   normalizedName: string;

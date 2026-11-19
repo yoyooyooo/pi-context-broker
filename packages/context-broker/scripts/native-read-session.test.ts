@@ -610,9 +610,7 @@ test("an explicit new main selection retires old scalar references while preserv
 });
 
 test("CTX02 scalar retirement preserves this operation's effects outside the verified source span", () => {
-  const retained: ConsumptionEffects = { version: 1, remote_writes: "retained", author_content: "unchanged",
-    retention: [{ skill_page_id: "owner", file_id: "guide", operation_id: "original-acquisition", status: "confirmed" }] };
-  for (const effects of [noConsumptionWrites(), retained, unknownConsumptionEffects()]) {
+  for (const effects of [noConsumptionWrites(), unknownConsumptionEffects()]) {
     for (const blocks of [false, true]) {
       const original = resourceResult("effects-retirement");
       const body = sourceMessageText(original.content), footer = "\n\n<notion-effects>" + JSON.stringify(effects) + "</notion-effects>";

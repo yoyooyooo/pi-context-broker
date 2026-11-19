@@ -1,64 +1,21 @@
-# 上下文发现与注入
+# 当前发现、选择与注入
 
-AH-1014 的目录、详情与资源唯一性同时遵循 [当前有效上下文合同](context-once.md)。正文去重通过不代表生成目录已去重；操作 effects 必须独立保留。
+当前 remote 来源通过 SDK 提供完整 metadata。目录出现只说明可发现；只有用户或模型实际选择并完成当前 acquisition 后，完整正文才可进入本次请求。普通聊天不自动接受候选，默认上下文也必须遵守本次实际 View 和预算。
 
-用户在 prompt 中点名 Skill/Router 或匹配关键词规则，Context Broker 将上下文附加到当前会话；重复点名时不会追加第二份正文。
+## 当前回归
 
-## Sub-features
+`bun run check:broker` 覆盖已有 input-guard、accepted-selections、host-prepare、native-read-session、skill-context-session 与 guidance 测试。局部改动直接运行对应文件，不增加入口包装器。
 
-- `inject-dollar`：中文/emoji 正文中连续两个 `$name` 都加载，第二次提交保持每个正文一份。
-- `inject-rules`：默认 agentDir 下的 config/rules 生效；两个 roots 含同名 Skill 时只消费首个 root 的正文，关键词加载第一项，后续 `$name@local` 加载第二项。global-config runner 同时将 `CONTEXT_BROKER_HOST` 设为另一宿主，仍须使用当前宿主的提交与正文协议。
-- `inject-discovery`：alias、Router 优先、namespace、显式 `router:` 规则由现有逻辑回归覆盖。
-- `inject-persistence`：跨进程 `--continue` 保留已加载记录，单一持久会话。
-- `inject-source`：配置source后默认宿主目录只含metadata；首次read、native /skill或$触发完整snapshot，provider可见正文。执行 `node .agents/skills/verify-context-broker/scripts/control.mjs run source`；CLI fixture不证明真实Notion，live走[source地图](source.md)。
-- `inject-loaded-omp`：OMP/Tern 的完整 Skill 正文满足使用前读取要求；自然的技能介绍不应再次列缓存目录、读入口或包清单，资源任务仍可按提供目录读取参考文件。日常真实 `$` 入口使用[日常安装地图](../../verify-notion-skills-integration/features/daily-installation-ui.md)的 model dollar 路径，观察实际工具行为；仅检查 payload 文案不能证明模型行为。Pi 保留宿主原有提示，真实发现与资源消费走[source 地图](source.md)的独立 model 路径，终端选择另走[Pi 终端规程](../../verify-notion-skills-integration/features/dollar-completion-selection.md#pi-独立终端)。
-- `inject-cli-guidance`：Pi 按真实 active tools 生成 `<ntn-skills-guidance>`；原生消费齐全时不注入 CLI argv 模板，缺失操作仅在 bash 可用时给对应后备路径。维护命令通过按需发现的 `notion_ctl({cli_source:"SOURCE_ID"})` 显式取得，要求工具实际启用、来源确切且未禁用，与 refs 证明导出互斥；普通无工具 profile 不广告不可调用的 list/use/ctl。默认导出继续不含机器路径；命令元数据不执行任何操作。工具切换时仅替换 provider 投影中的旧 owned guidance，历史 JSONL 不变。OMP 的 legacy skill_graph 与历史合同单列。host runner 分别检查实际 provider、能力变化与持久原件，不预加载正文。
-- `inject-pi-consumption`：Pi 在 input 同步冻结选择/text/images，context 在真实运行信号下完成准备；默认 Notion Skill/Router 走随包 SDK。C/S/R 短引用继续核对 scope、物理身份、固定版本和权限；完整 source bytes 与 body-free 目录分开。实际 RPC/PTY、独立安装 SDK-Pi 与完整启动证据见[运行时记录](../../../../packages/context-broker/docs/skill-consumption-runtime.md)。
-- `inject-prepare-projection`：Pi 顶层 `notion_use({ref:string|string[]})` 用确定性 compiler 输出完整正文与精简资源/关系目录；完整 canonical graph/hash/materialization 留 details。v2 回执核对实际 content、toolCallId、source/rendered hash、UTF-16 span 与 UTF-8 bytes；未知 compiler、partial、假 details 和降级到 v1 均不能成为完整投递。重复/retire 只从已验证父投影派生，剩余正文仍可验证，原 JSONL 不改。OMP legacy skill_prepare 与旧会话仅作显式兼容，Pi 不默认注册旧名。用消费专项与独立安装 SDK-Pi 的重复 use、真实 provider serializer/HTTP 路线验收，见[投影记录](../../../../packages/context-broker/docs/skill-consumption-projection.md)。
-
-## How to get to it (user POV)
-
-- Pi 或 OMP 输入 `$design-context`；引用可紧接正文，多引用可出现在一条 prompt。
-- 在 broker config 指定 roots/catalogs，通过 alias 或规则关键词请求上下文。
-- 输入 `$router-name`，或命中配置中的显式 `router:<name>` 规则目标。
-- 重新启动宿主时加 `--continue`，继续已保存会话。
-
-## Driving it with control.mjs
-
-Preconditions:
-
-- Node.js 22.x 中的 22.22.3+，或 24.20.0+、仅用于构建的 Bun、Pi、OMP 可执行；`control.mjs doctor injection` ready。
-- 配置、Skill 和模型 fixture 由 runner 创建，不读取用户的全局 broker 配置。
-
-- **双宿主提交与续接。** 执行 `node .agents/skills/verify-context-broker/scripts/control.mjs run injection`。OMP 使用 RPC 用户输入，Pi 使用 print；随后退出并 `--continue` 再次提交 `中文😀先使用$design-context，再用$review-context。请一起评审`。两次 provider 上下文中的两个 fixture marker 与完整 CLI 指引都分别恰好一份；持久会话只有一条 CLI 指引，decision 为一次合并注入、随后两条 already-loaded skip。OMP print/bootstrap 不替代用户输入边界的激活验收。
-- **默认配置、规则与宿主覆盖。** 同一命令随后执行 global-config runner，OMP 走 RPC 用户输入，Pi 走 print；也可独立运行 `node packages/context-broker/scripts/context-broker-global-config-e2e.mjs`。两宿主分别将 `CONTEXT_BROKER_HOST` 设为另一宿主，保留显式 agentDir；两个 roots 提供同名且正文不同的 Skill，先提交 `load first`，再继续并提交 `$second-context@local`。第一份正文两次都只有一份，第二份第一次为零、第二次为一，后置 root 的两个 marker 均不得进入 provider；session 中恰好两个 broker custom message。覆盖项只影响默认路径，不能改变当前宿主的提示、输入返回或资源指引。编辑器装配另按[编辑器地图](editor.md)的 Tern 与 Pi 入口验收；本路径不证明 UI。
-- **发现与 Router。** 执行 `bun run check` 覆盖 alias/ranking/Router index/规则类型/隐私边界。原生 Skill/Router 混合提交另走 [编辑器地图](editor.md)。逻辑回归通过不能声称 Pi/OMP 所有 Router 入口均已实际驱动。
-- **证据。** manifest 指向 `context-broker-host-e2e-*` 与 `context-broker-config-e2e-*`：每个 host 下的 `provider-context.jsonl`、`decisions.jsonl`、`sessions/*.jsonl`。确认只有真实 `.jsonl` 被计入，锁文件不能当 session。结束后运行 `control.mjs evidence` 核对 transcript 和证据目录仍在。
-
-## Gotchas
-
-- 在 fixture HOME 中直接运行 Volta shim 可能递归。使用已有 harness 的真实入口解析，不取消 HOME 隔离。
-- 已加载正文仍随有效会话发送；skip 不是 provider 中正文为零。
-- `$` 自动补全与提交注入是两个入口，发现成功不证明注入成功。
-- `/context-broker` diagnostics 是观察入口，host runner 没有实际驱动它的全部子命令；命令改动需单独驱动受影响命令并保存输出。
-- Router 只提供成员索引；不能把成员 Skill 全文出现当成 Router 正常注入结果。
-- 已选记录的权限、网络、目录不完整、响应及完整性失败仍显式失败。明确接受的记录返回 typed target-not-found 时，保留原用户材料与其他成功上下文，同时写入用户可见和模型可见的 not-loaded 说明；该说明不是 loaded 回执。普通未知文本不触发 source read。
-- 本地记录与 source 同名时，补全使用 `$name@local` 与 `$name@namespace`；裸名按歧义拒绝且显示候选引用。`node scripts/verify-native-ui.mjs --name-collision` 验证本地与 source 胶囊实际提交、所选正文、local 不触发 source read/export，以及裸名拒绝时不新增 provider 请求。
-
-## AH258–260 shared content acceptance
-
-Router cleanly replaces domain Router in config/types/catalog/UI/payload/session markers, with explicit historical asset conversion only. Inject Router own body/member index/resources, never members automatically. Prompt enters each explicit submission user-task content and never system/native/default/auto context. Skill/Router loaded state follows active identity context; same-name records remain independent.
-
-No execution is claimed by this map update; final owner runs and retains the evidence.
+保留以下状态区分：完整目录与部分目录；未选择与已接受；准备完成与已投递；本地固定文件与当前远端资格；provider 接受与 turn 完成。目录 stub、loaded 标记、日志中的 inject 字样和工具 receipt 都不能单独证明全文已进入模型请求。
 
 ## Missing-reference regression route
 
-Pi 的受控延迟/失败/Stop/压缩恢复另从 `node scripts/notion-startup-flow.mjs --help`、`run --extension ABSOLUTE_ENTRY --evidence-root ABSOLUTE_PARENT` 驱动；默认 SDK 入口为 `node scripts/notion-sdk-pi.mjs --help`。记录 source.command 是否真正缺省、SDK 与目录 CLI 的独立数量；自定义 command 的成功不能代替默认路径。RPC abort 已在 context 准备路径验证 provider=0，历史 input-preflight 失败仍保留在原 run。provider 2xx headers、完整正文投递与最终模型成功分别报告。
+普通未知字面引用保持原文。用户明确接受的引用随后失效时，必须说明未加载，不能签发 loaded/active 结果。身份、scope、enabled、权限、缺失页面与正文完整性失败必须阻断该选择，且不能污染其他正常来源。
 
-默认 SDK 的真实 fork/clone/tree/compact/跨进程 resume 与晚到取消复用 `notion-sdk-pi.mjs --scenario session-lifecycle`，完整 recipe 和证明边界见[会话恢复地图](../../verify-notion-skills-integration/features/session-cache-recovery.md#sc08-sc22-pi-默认-sdk-会话恢复)。受控摘要只测试实际 Pi 压缩与固定恢复，不认证模型摘要质量；已派发后取消保留那次 provider 输入和 prepared metadata，但禁止写 active/graph，不能记作派发前 provider=0。
+当前 exact logical ID、物理 UUID/URL 输入和来源 namespace 各有边界：物理 UUID 是输入选择方式，不是接受旧 `notion_page` locator 的理由。相同名称跨 Source 保持独立；本地和 builtin 的真实读取守卫也必须保留。
 
-Use the existing dual-host injection/source routes above and the integration [selection map](../../verify-notion-skills-integration/features/dollar-completion-selection.md#missing-reference-regression-route); extend owned fixtures rather than inventing a runner flag. In each Pi/OMP surface submit literal `$bunfs/root/chunks/cli-nxfh2cp0.js`, unknown bare alias, `$unknown@notion`, `$unknown@unknown-source` and `$unknown-source/unknown` both alone and mixed with valid Skill/Prompt/Router selectors. Preserve exact Unicode text and real images. Submit two rounds: one provider dispatch per accepted round, valid records prepared once per round, Skill/Router active-context deduplication and fresh Prompt task content on the second round; Router member bodies remain absent.
+## 实际 Pi
 
-Unknown literal aliases require no missing-reference toast, source read/export or cross-source fallback. Accepted exact selections require visible not-loaded feedback and model context on typed not-found; an exact manual token absent from the catalog reports catalog-unavailable without inventing a remote response. Preserve original text/images and other loaded content, and never mark a missing item loaded. Repeated context in one submission emits no duplicate explanation; a later submission can retry. Permission/network/incomplete/integrity failures still produce zero dispatch. Exercise Stop/Escape and session changes during delayed preparation, then require zero late dispatch and a successful next draft. A next draft's accepted choice must survive the prior turn ending. Bootstrap text, escaped references and fenced examples remain non-activating.
+实际注入使用已保留的 `scripts/notion-sdk-pi.mjs`，先读其帮助并选择匹配安装与当前输入。它覆盖的 SDK、工具、RPC 与 provider/serializer 层分别记录。日用有效配置与真实服务另按 [日用地图](../../verify-notion-skills-integration/features/daily-installation-ui.md)；原生终端菜单与真实模型不得由源码通过推断。
 
-
+会话变化沿 [lifecycle](lifecycle.md)，正文唯一性沿 [context-once](context-once.md)。OMP/Tern 延期，无本轮双宿主结论。

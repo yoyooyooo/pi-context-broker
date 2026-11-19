@@ -30,14 +30,13 @@ function isContentRecord(value: unknown): value is ContentRecord {
   if (!object(value) || !["skill", "router", "prompt"].includes(String(value.kind))
     || ["id", "name", "alias", "description", "entrypoint", "ref"].some(key => typeof value[key] !== "string")
     || typeof value.default_context !== "boolean" || value.enabled !== undefined && typeof value.enabled !== "boolean"
-    || value.upstream !== undefined && (!object(value.upstream) || typeof value.upstream.repo !== "string")
+    || value.upstream !== undefined
     || !object(value.locator)) return false;
   const locator = value.locator;
   if (locator.type === "local") return typeof locator.id === "string" && typeof locator.entry === "string";
   if (typeof locator.database_id !== "string" || typeof locator.data_source_id !== "string") return false;
-  if (locator.type === "notion_subscription") return typeof locator.subscription_id === "string" && typeof locator.target_database_id === "string";
-  return typeof locator.page_id === "string" && (locator.type === "notion_page"
-    || locator.type === "shared_skill" && typeof locator.library_id === "string" && typeof locator.skill_id === "string");
+  return locator.type === "shared_skill" && typeof value.enabled === "boolean" && typeof locator.page_id === "string"
+    && typeof locator.library_id === "string" && typeof locator.skill_id === "string";
 }
 export function isPreparationBinding(value: unknown): value is PreparationBinding {
   return object(value) && isContentRecord(value.record) && typeof value.scope === "string" && /^[a-f0-9]{64}$/.test(value.scope)

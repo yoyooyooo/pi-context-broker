@@ -267,7 +267,7 @@ test('resource batch cost observes actual nonempty text spans and never binary o
 
 test('scalar resource v2 counts the exact native prefix and keeps effects outside source bytes', async () => {
   const body = '\uFEFF# Reference\r\n完整正文 🧭 & "quoted"\r\n';
-  const effects = { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] };
+  const effects = { version: 1, remote_writes: 'none', author_content: 'unchanged' };
   const footer = '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>';
   const proof = { version: 2, toolCallId: 'fixed-resource', id: 'original-owner', scope: 'original-scope',
     ref: 'skill://original-owner/reference.md', path: 'reference.md', snapshot_id: 's_' + 'a'.repeat(64),

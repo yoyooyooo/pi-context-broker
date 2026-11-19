@@ -62,22 +62,11 @@ function verifyPublicDirectory(projected, canonical) {
 
 /** Independent public-receipt validation; actual writes still need source/HTTP evidence. */
 export function verifyConsumptionEffects(value) {
-  keys(value, ['version', 'remote_writes', 'author_content', 'retention'], 'Versioned consumption effects');
+  keys(value, ['version', 'remote_writes', 'author_content'], 'Current consumption effects');
   assert.equal(value.version, 1);
-  assert.ok(['none', 'retained', 'unknown'].includes(value.remote_writes));
+  assert.ok(['none', 'unknown'].includes(value.remote_writes));
   assert.ok(['unchanged', 'unknown'].includes(value.author_content));
-  assert.ok(Array.isArray(value.retention));
-  for (const entry of value.retention) {
-    keys(entry, ['skill_page_id', 'file_id', 'operation_id', 'status'], 'Exact retention owner and operation');
-    for (const field of ['skill_page_id', 'file_id', 'operation_id']) assert.ok(typeof entry[field] === 'string' && entry[field]);
-    assert.ok(['confirmed', 'unknown'].includes(entry.status));
-  }
-  if (value.remote_writes === 'none') {
-    assert.equal(value.retention.length, 0); assert.equal(value.author_content, 'unchanged');
-  }
-  if (value.remote_writes === 'retained') {
-    assert.ok(value.retention.length > 0); assert.ok(value.retention.every(entry => entry.status === 'confirmed'));
-  }
+  if (value.remote_writes === 'none') assert.equal(value.author_content, 'unchanged');
   return value;
 }
 

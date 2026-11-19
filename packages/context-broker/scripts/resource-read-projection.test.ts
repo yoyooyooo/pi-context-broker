@@ -61,8 +61,7 @@ test("model output budget measures the complete serialized result, including esc
 });
 
 test("batch effects remain outside complete body spans and survive provider deduplication", () => {
-  const effects: ConsumptionEffects = { version: 1, remote_writes: "retained", author_content: "unchanged",
-    retention: [{ skill_page_id: "owner", file_id: "a", operation_id: "retention", status: "confirmed" }] };
+  const effects = { version: 1 as const, remote_writes: "unknown" as const, author_content: "unchanged" as const };
   const result = compileResourceRead({ toolCallId: "effects", batch: { selection, files }, modelRefs: files.map(file => file.ref), maxContextBytes: 1_048_576, effects });
   const text = sourceMessageText(result.content), proof = result.details.contextBrokerResource;
   expect(JSON.parse(text).effects).toEqual(effects);

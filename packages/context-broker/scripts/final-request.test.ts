@@ -12,7 +12,7 @@ import {
 } from "../src/final-request";
 
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
-const effectsText = "<notion-effects>{\"remote_writes\":\"none\"}</notion-effects>";
+const effectsText = "<notion-effects>{\"version\":1,\"remote_writes\":\"none\",\"author_content\":\"unchanged\"}</notion-effects>";
 const sourceBody = "SOURCE_BODY_ONCE";
 const snapshot = "s_" + "a".repeat(64);
 
@@ -28,7 +28,7 @@ function resourceTool(content: string, fields: Record<string, unknown> = {}): Ag
   return {
     role: "toolResult", toolName: "read", toolCallId: "res-1", content,
     details: {
-      effects: { version: 1, remote_writes: "none", author_content: "unchanged", retention: [] },
+      effects: { version: 1, remote_writes: "none", author_content: "unchanged" },
       contextBrokerResource: {
         version: 1, toolCallId: "res-1", id: "page-SECRET", scope: "scope-SECRET", snapshot_id: snapshot,
         file_id: "file-SECRET", path: "references/SECRET.md", ref: "skill://SECRET",
@@ -92,10 +92,28 @@ test("batch resource files stay inside the source pin cap", () => {
 
 test("preparation diagnostics read this operation's effects from its canonical receipt", () => {
   const message: AgentMessage = { role: "toolResult", toolName: "notion_use", toolCallId: "prepared", content: "opaque",
-    details: { contextBrokerPreparation: { effects: { version: 1, remote_writes: "retained", author_content: "unchanged", retention: [] },
+    details: { contextBrokerPreparation: { effects: { version: 1, remote_writes: "unknown", author_content: "unchanged" },
       records: [{ identity: "private-source", snapshotId: snapshot, bodySha256: sha("body"), loaded: true }],
       projection: { records: [{ state: "source" }] } } } };
-  expect(finalRequestSources([message]).sources[0]).toMatchObject({ remoteWrites: "retained", authorContent: "unchanged", snapshot });
+  expect(finalRequestSources([message]).sources[0]).toMatchObject({ remoteWrites: "unknown", authorContent: "unchanged", snapshot });
+});
+
+test("old and incomplete effects cannot establish a current final-request receipt", () => {
+  const none = { version: 1, remote_writes: "none", author_content: "unchanged" };
+  for (const effects of [
+    { ...none, retention: [] }, { ...none, remote_writes: "retained" },
+    { ...none, author_content: "unknown" }, { version: 1, remote_writes: "none" },
+  ]) {
+    const message = resourceTool(sourceBody);
+    message.details = { ...message.details as object, effects };
+    expect(finalRequestSources([message]).sources[0]).toMatchObject({ remoteWrites: "unknown", authorContent: "unknown" });
+    expect(assessFinalRequestPayload([message], payload([{ role: "tool", tool_call_id: "res-1", content: sourceBody }]))).toBe("INVALID_EFFECTS");
+  }
+  const missing = sourceTool();
+  expect(finalRequestSources([missing]).sources[0]).toMatchObject({ remoteWrites: "unknown", authorContent: "unknown" });
+  const mixed = resourceTool(sourceBody);
+  mixed.details = { ...mixed.details as object, contextBrokerPreparation: { effects: { version: 1, remote_writes: "unknown", author_content: "unchanged" } } };
+  expect(finalRequestSources([mixed]).sources[0]).toMatchObject({ remoteWrites: "unknown", authorContent: "unchanged" });
 });
 
 test("dropped custom effects are not treated as an absent delivery", () => {

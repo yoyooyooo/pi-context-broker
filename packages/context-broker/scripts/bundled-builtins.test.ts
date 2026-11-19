@@ -74,8 +74,9 @@ try {
   const configured = await discoverSources(config, root);
   const remote: SkillRecord = {
     ...target, source: "notion", sourceId: "remote",
-    id: "notion_page:11111111-1111-4111-8111-111111111111",
-    locator: { type: "notion_page", page_id: "11111111-1111-4111-8111-111111111111", database_id: "22222222-2222-4222-8222-222222222222", data_source_id: "33333333-3333-4333-8333-333333333333" },
+    id: "shared_skill:configured:maintain", enabled: true,
+    ref: "skill://shared_skill%3Aconfigured%3Amaintain/SKILL.md",
+    locator: { type: "shared_skill", library_id: "configured", skill_id: "maintain", page_id: "11111111-1111-4111-8111-111111111111", database_id: "22222222-2222-4222-8222-222222222222", data_source_id: "33333333-3333-4333-8333-333333333333" },
     path: "", body: undefined,
     token: "builtin/ntn-skills-maintain",
     selectionToken: "ntn-skills-maintain@builtin",

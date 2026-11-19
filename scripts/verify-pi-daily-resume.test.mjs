@@ -20,7 +20,7 @@ test('a public candidate introduction fork requires its unchanged reviewed owned
     { type: 'model_change', id: 'model', parentId: null, provider: 'magpie', modelId: 'group/worker' },
     { type: 'message', id: 'user', parentId: 'model', message: { role: 'user', content: [{ type: 'text', text: 'Introduce the named Skill; do not execute it.' }] } },
     { type: 'message', id: 'call', parentId: 'user', message: { role: 'assistant', provider: 'magpie', model: 'group/worker', stopReason: 'toolUse', content: [{ type: 'toolCall', id: 'read-1', name: 'read', arguments: { path: 'sr:Roriginal-reference' } }] } },
-    { type: 'message', id: 'result', parentId: 'call', message: { role: 'toolResult', toolName: 'read', toolCallId: 'read-1', isError: false, content: [{ type: 'text', text: 'Complete reference.' }], details: { effects: { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] } } } },
+    { type: 'message', id: 'result', parentId: 'call', message: { role: 'toolResult', toolName: 'read', toolCallId: 'read-1', isError: false, content: [{ type: 'text', text: 'Complete reference.' }], details: { effects: { version: 1, remote_writes: 'none', author_content: 'unchanged' } } } },
     { type: 'message', id: 'answer', parentId: 'result', message: { role: 'assistant', provider: 'magpie', model: 'group/worker', stopReason: 'stop', content: [{ type: 'text', text: 'The requested introduction.' }] } },
   ];
   const native = rows.map(row => JSON.stringify(row)).join('\n') + '\n';
@@ -70,12 +70,13 @@ test('a public candidate introduction fork requires its unchanged reviewed owned
     assert.equal(after.settings.sha256, sha(settings)); assert.equal(after.native.sha256, sha(native));
   });
   await t.test('a readOnly argument cannot replace complete successful none effects', async () => {
-    const none = { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] };
+    const none = { version: 1, remote_writes: 'none', author_content: 'unchanged' };
     const variants = [
       { effects: undefined, isError: false },
       { effects: { ...none, remote_writes: 'unknown' }, isError: false },
       { effects: { ...none, remote_writes: 'retained', retention: [{ snapshot_id: 'retained' }] }, isError: false },
       { effects: { ...none, retention: [{ snapshot_id: 'inconsistent' }] }, isError: false },
+      { effects: { ...none, retention: [] }, isError: false },
       { effects: none, isError: true },
     ];
     for (const [index, variant] of variants.entries()) {

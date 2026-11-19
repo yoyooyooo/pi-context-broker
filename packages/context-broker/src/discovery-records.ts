@@ -22,8 +22,7 @@ function encodeSelectionId(id: string): string {
   return encodeURIComponent(id).replace(/[!'()*]/g, character => "%" + character.charCodeAt(0).toString(16).toUpperCase());
 }
 function preciseSelector(record: DiscoveryRecord): string {
-  return record.locator?.type === "notion_page" || record.locator?.type === "shared_skill" ? record.locator.page_id.replaceAll("-", "")
-    : record.locator?.type === "notion_subscription" ? record.locator.subscription_id.replaceAll("-", "")
+  return record.locator?.type === "shared_skill" ? record.locator.page_id.replaceAll("-", "")
     : encodeSelectionId(record.id ?? "local:" + resolve(record.path));
 }
 function recordNamespace(record: DiscoveryRecord): string {
@@ -327,32 +326,24 @@ export function parseCatalogMember(value: unknown): RawCatalogMember {
   exactKeys(value.source, ["namespace"]);
   if (!isRecord(value.locator)) throw new Error("Remote member requires stable locator");
   const locator = value.locator;
-  const subscription = locator.type === "notion_subscription";
-  const shared = locator.type === "shared_skill";
-  if (locator.type !== "notion_page" && !subscription && !shared) throw new Error("Invalid remote member locator");
-  const keys = subscription ? ["type", "subscription_id", "database_id", "data_source_id", "target_database_id"] : ["type", "page_id", "database_id", "data_source_id", ...(shared ? ["library_id", "skill_id"] : [])];
+  if (locator.type !== "shared_skill") throw new Error("Invalid remote member locator");
+  const keys = ["type", "page_id", "database_id", "data_source_id", "library_id", "skill_id"];
   exactKeys(locator, keys);
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   if (keys.filter(key => !["type", "library_id", "skill_id"].includes(key)).some(key => typeof locator[key] !== "string" || !uuid.test(locator[key] as string))) throw new Error("Invalid remote member stable identity");
-  const id = subscription ? locator.subscription_id : locator.page_id;
-  const identity = shared && typeof locator.library_id === "string" && typeof locator.skill_id === "string"
-    ? sharedSkillId(locator.library_id, locator.skill_id) : shared ? undefined : `${locator.type}:${id}`;
+  const identity = typeof locator.library_id === "string" && typeof locator.skill_id === "string"
+    ? sharedSkillId(locator.library_id, locator.skill_id) : undefined;
   if (identity === undefined) throw new Error("Invalid shared member identity");
-  const selector = shared ? identity : subscription ? `upstream:${id}` : id;
-  const prefix = `skill://${encodeURIComponent(selector as string)}/`;
+  const prefix = `skill://${encodeURIComponent(identity)}/`;
   if (value.id !== identity || typeof value.ref !== "string" || !value.ref.startsWith(prefix) || !/^(SKILL|ROUTER|PROMPT)\.md(?:\?snapshot=s_[0-9a-f]{64})?$/.test(value.ref.slice(prefix.length))) throw new Error("Remote member ref/identity mismatch");
   return value as CatalogRemoteReference;
 }
 
 export function resolveCatalogReference(reference: CatalogRemoteReference, context: CatalogResolutionContext, kind: "skill" | "router"): SkillRecord {
   const sources = (context.sources ?? []).filter(source => source.enabled !== false && source.type === "notion" && (source.namespace ?? source.id) === reference.source.namespace);
-  const sameLegacyPage = (record: SkillRecord) => reference.locator.type === "notion_page" && record.locator?.type === "shared_skill"
-    && reference.locator.page_id === record.locator.page_id;
   const observedCandidates = (context.records ?? []).filter(record => record.source === "notion" && record.enabled !== false && sources.some(source => source.id === record.sourceId)
-    && (record.id === reference.id || sameLegacyPage(record)));
-  const candidates = observedCandidates.filter(record => sameLegacyPage(record)
-    ? record.locator?.type === "shared_skill" && reference.locator.database_id === record.locator.database_id && reference.locator.data_source_id === record.locator.data_source_id
-    : record.locator && Object.entries(reference.locator).every(([key, value]) => record.locator![key as keyof typeof record.locator] === value) && Object.keys(record.locator).length === Object.keys(reference.locator).length);
+    && record.id === reference.id);
+  const candidates = observedCandidates.filter(record => record.locator && Object.entries(reference.locator).every(([key, value]) => record.locator![key as keyof typeof record.locator] === value) && Object.keys(record.locator).length === Object.keys(reference.locator).length);
   const candidateLabels = observedCandidates.map(record => `${record.sourceId}:${record.id}:${JSON.stringify(record.locator)}`);
   const fail = (code: string, message: string): never => { throw new CatalogReferenceError(code, message, candidateLabels); };
   if (!sources.length) fail("SOURCE_UNAVAILABLE", `No enabled configured Notion source for namespace ${reference.source.namespace}`);
@@ -363,14 +354,7 @@ export function resolveCatalogReference(reference: CatalogRemoteReference, conte
   if (!record) fail(observedCandidates.length ? "SOURCE_IDENTITY_MISMATCH" : "CATALOG_MEMBER_UNAVAILABLE", `Record ${reference.id} with the declared locator absent from current credential-scoped catalog for ${reference.source.namespace}`);
   const observed = record!;
   const locator = observed.locator;
-  // The current catalog grants this mapping. A page match cannot transfer a
-  // historical snapshot between identity protocols or another physical source.
-  const exactEntry = sameLegacyPage(observed) && locator?.type === "shared_skill" && reference.locator.type === "notion_page"
-    ? reference.id === "notion_page:" + locator.page_id
-      && reference.ref === `skill://${locator.page_id}/${observed.entrypoint}`
-      && observed.id === sharedSkillId(locator.library_id, locator.skill_id)
-      && observed.ref === `skill://${encodeURIComponent(observed.id ?? "")}/${observed.entrypoint}`
-    : observed.ref === reference.ref.split("?")[0];
+  const exactEntry = observed.ref === reference.ref.split("?")[0];
   if (!observed.sourceScope || !/^[0-9a-f]{64}$/.test(observed.sourceScope) || !locator || observed.kind !== kind || !exactEntry) fail("SOURCE_IDENTITY_MISMATCH", `Reference does not match current ${kind} record ${reference.id}`);
   return observed;
 }
@@ -402,10 +386,9 @@ function memberFromRaw(value: unknown, catalogDir: string, scan: ScanConfig, con
   if (raw.type === "remote") {
     try {
       const record = resolveCatalogReference(raw, context, "skill");
-      const migrated = record.id !== raw.id;
       return { type: "remote", source: raw.source, sourceId: record.sourceId, sourceScope: record.sourceScope, id: record.id,
-        locator: migrated && record.locator?.type === "shared_skill" ? record.locator : raw.locator,
-        kind: "skill", ref: migrated ? record.ref ?? raw.ref : raw.ref, name: record.name, description: record.description, aliases: record.aliases };
+        locator: raw.locator,
+        kind: "skill", ref: raw.ref, name: record.name, description: record.description, aliases: record.aliases };
     } catch (error) {
       if (!(error instanceof CatalogReferenceError)) throw error;
       return { ...raw, kind: "skill", name: raw.id, description: `Unavailable: ${error.message}`, unavailable: { code: error.code, message: error.message, candidates: error.candidates } };

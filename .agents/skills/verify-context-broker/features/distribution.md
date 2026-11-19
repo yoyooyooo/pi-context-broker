@@ -21,7 +21,7 @@ NTN_SKILLS_BUILD_ENTRY=/absolute/installed/ntn-skills/dist/ntn-skills.js node sc
 
 ## Pi 正常日用身份与 SDK 来源归因
 
-日用验收核对 Pi 有效配置真正加载的安装目录、同包 SDK 身份、完整正文和资源交付、取消及实际 provider/serializer。真实 Notion、实际 Pi 会话和自然模型分别报告。历史 `notion-sdk-pi.mjs`、旧场景地图及旧 all14 结果不进入当前 CI，也不能用旧 fixture 复活已经退役的产品路径。按当前合同调整原实际 Pi 入口后再执行 AH-1063。
+日用验收核对Pi有效配置真正加载的安装目录、同包SDK身份、完整正文和资源交付、取消及实际provider/serializer。使用保留的 `scripts/notion-sdk-pi.mjs`、`scripts/verify-pi-daily-installation.mjs` 与候选助手；真实Notion、实际Pi会话和自然模型分别报告。CI安装路径不启动Pi，AH-1063在真实表切换后实际执行。原生终端专项未验收，OMP/Tern延期。
 
 ## Gotchas
 

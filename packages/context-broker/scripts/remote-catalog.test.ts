@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { currentNotionFixture } from "./fixtures/current-notion-source";
 import { pathToFileURL } from "node:url";
 import { parseCatalogMember, readDiscoveryCatalog, validateDiscoveryRecords, resolveCatalogReference } from "../src/discovery-records";
 
-import type { CatalogRemoteReference, ConfigFile } from "../src/types";
+import type { CatalogRemoteReference, ConfigFile, ContentKind } from "../src/types";
 
 const runtime = await currentNotionFixture(), root = runtime.root;
 const { discoverSourceCatalog, loadSourceSkill } = runtime.sources;
@@ -16,10 +15,13 @@ try {
   const catalog = join(root, "catalog.json");
   const page = "11111111-1111-4111-8111-111111111111", routerPage = "11111111-1111-4111-8111-111111111112";
   const db = "22222222-2222-4222-8222-222222222222", ds = "33333333-3333-4333-8333-333333333333";
-  const initialRecords = [[page, "skill", "Precise", "precise"], [routerPage, "router", "Remote Router", "remote-router"]].map(([owner, kind, name, alias]) => ({
-    id: "notion_page:" + owner, kind, name, alias, description: "registered " + alias, default_context: false,
-    entrypoint: kind === "skill" ? "SKILL.md" : "ROUTER.md", locator: { type: "notion_page", page_id: owner, database_id: db, data_source_id: ds },
-    ref: "skill://" + owner + "/" + (kind === "skill" ? "SKILL.md" : "ROUTER.md") }));
+  const identity = (owner: string) => "shared_skill:catalog:" + owner;
+  const current = (owner: string, kind: ContentKind, name: string, alias: string) => ({
+    id: identity(owner), kind, name, alias, description: "registered " + alias, default_context: false, enabled: true,
+    entrypoint: kind === "skill" ? "SKILL.md" : "ROUTER.md",
+    locator: { type: "shared_skill" as const, library_id: "catalog", skill_id: owner, page_id: owner, database_id: db, data_source_id: ds },
+    ref: "skill://" + encodeURIComponent(identity(owner)) + "/" + (kind === "skill" ? "SKILL.md" : "ROUTER.md") });
+  const initialRecords = [current(page, "skill", "Precise", "precise"), current(routerPage, "router", "Remote Router", "remote-router")];
   runtime.state.catalog = { ...runtime.state.catalog, scope: "a".repeat(64), records: initialRecords, count: 2,
     databases: [{ database_id: db, title: "Fixture", alias: "fixture", role: "content", data_source_ids: [ds] }],
     coverage: { method: "explicit_database", exhaustive: true, search_index_limited: false, queried_data_sources: [ds], failed_sources: [] } };
@@ -31,7 +33,7 @@ try {
   const source = { type: "notion" as const, id: "machine-source-id", namespace: "production", cacheDir: join(root, "cache") };
   const secondSource = { ...source, id: "second-id", namespace: "secondary" };
   const config: ConfigFile = { skillRoots: [join(root, "local")], discoveryCatalogs: [catalog], sources: [source, secondSource] };
-  const remote: CatalogRemoteReference = { type: "remote", source: { namespace: "production" }, id: "notion_page:" + page, locator: { type: "notion_page", page_id: page, database_id: db, data_source_id: ds }, ref: "skill://" + page + "/SKILL.md" };
+  const remote: CatalogRemoteReference = { type: "remote", source: { namespace: "production" }, id: initialRecords[0]!.id, locator: initialRecords[0]!.locator, ref: initialRecords[0]!.ref };
   const missing = { ...remote, source: { namespace: "unknown" } };
   await writeFile(catalog, JSON.stringify({ records: [{ kind: "router", name: "mixed", description: "mixed index", members: [{ type: "local", path: local }, remote, missing] }] }));
   const metadata = await discoverSourceCatalog(config, root);
@@ -70,33 +72,29 @@ try {
   const context = { sources: config.sources, records: metadata.records, failures: metadata.failures };
   const pinned = { ...remote, ref: remote.ref + "?snapshot=s_" + "c".repeat(64) };
   assert.equal(resolveCatalogReference(pinned, context, "skill").sourceId, source.id);
-  // AH-623: a legacy current-page reference may normalize only through the
-  // unique current credential-scoped record at that exact physical location.
-  const legacyRecord = metadata.records.find(record => record.sourceId === source.id && record.id === remote.id)!;
-  const sharedId = "shared_skill:test-library:import-" + page.replaceAll("-", "");
-  const sharedRecord = { ...legacyRecord, id: sharedId,
-    locator: { type: "shared_skill" as const, page_id: page, database_id: db, data_source_id: ds, library_id: "test-library", skill_id: "import-" + page.replaceAll("-", "") },
-    ref: "skill://" + encodeURIComponent(sharedId) + "/SKILL.md" };
-  const migratedContext = { ...context, records: [sharedRecord] };
-  assert.equal(resolveCatalogReference(remote, migratedContext, "skill"), sharedRecord);
-  assert.throws(() => resolveCatalogReference(pinned, migratedContext, "skill"), { code: "SOURCE_IDENTITY_MISMATCH" }, "A physical page match cannot migrate a historical pin");
-  for (const locator of [{ ...remote.locator, database_id: ds }, { ...remote.locator, data_source_id: db }])
-    assert.throws(() => resolveCatalogReference({ ...remote, locator }, migratedContext, "skill"), { code: "SOURCE_IDENTITY_MISMATCH" });
-  assert.throws(() => resolveCatalogReference(remote, { ...migratedContext, records: [{ ...sharedRecord, enabled: false }] }, "skill"), { code: "CATALOG_MEMBER_UNAVAILABLE" });
-  assert.throws(() => resolveCatalogReference(remote, { ...migratedContext, failures: [{ sourceId: source.id, code: "NOTION_UNAUTHORIZED", message: "denied" }] }, "skill"), { code: "NOTION_UNAUTHORIZED" });
-  assert.throws(() => resolveCatalogReference(remote, { ...migratedContext, records: [legacyRecord, sharedRecord] }, "skill"), { code: "CATALOG_MEMBER_AMBIGUOUS" });
-  assert.throws(() => resolveCatalogReference(remote, { ...migratedContext, records: [sharedRecord, { ...sharedRecord, sourceId: secondSource.id }], sources: [source, { ...secondSource, namespace: source.namespace }] }, "skill"), { code: "CATALOG_MEMBER_AMBIGUOUS" });
+  const selectedRecord = metadata.records.find(record => record.sourceId === source.id && record.id === remote.id)!;
+  const selectedContext = { ...context, records: [selectedRecord] };
+  assert.equal(resolveCatalogReference(remote, selectedContext, "skill"), selectedRecord);
+  const retired = [
+    { ...remote, id: "notion_page:" + page, locator: { type: "notion_page", page_id: page, database_id: db, data_source_id: ds }, ref: "skill://" + page + "/SKILL.md" },
+    { ...remote, id: "notion_subscription:" + page, locator: { type: "notion_subscription", subscription_id: page, database_id: db, data_source_id: ds, target_database_id: db }, ref: "skill://" + encodeURIComponent("upstream:" + page) + "/ROUTER.md" },
+  ];
+  for (const declaration of retired) {
+    assert.throws(() => parseCatalogMember(declaration), /locator/, "Retired locators cannot be normalized through a matching current page");
+    await writeFile(catalog, JSON.stringify({ records: [{ kind: "router", name: "retired", members: [declaration] }] }));
+    assert.throws(() => readDiscoveryCatalog(catalog, [], {}, selectedContext), /locator/);
+  }
+  await writeFile(catalog, JSON.stringify({ records: [{ kind: "router", name: "mixed", description: "mixed index", members: [{ type: "local", path: local }, remote, missing] }] }));
+  assert.throws(() => resolveCatalogReference(remote, { ...selectedContext, records: [{ ...selectedRecord, enabled: false }] }, "skill"), { code: "CATALOG_MEMBER_UNAVAILABLE" });
+  assert.throws(() => resolveCatalogReference(remote, { ...selectedContext, failures: [{ sourceId: source.id, code: "NOTION_UNAUTHORIZED", message: "denied" }] }, "skill"), { code: "NOTION_UNAUTHORIZED" });
+  assert.throws(() => resolveCatalogReference(remote, { ...selectedContext, records: [selectedRecord, { ...selectedRecord }] }, "skill"), { code: "CATALOG_MEMBER_AMBIGUOUS" });
+  assert.throws(() => resolveCatalogReference(remote, { ...selectedContext, records: [{ ...selectedRecord, id: selectedRecord.id + "-other" }] }, "skill"), { code: "CATALOG_MEMBER_UNAVAILABLE" });
   for (const broken of [
-    { ...sharedRecord, id: sharedId + "-other" },
-    { ...sharedRecord, ref: remote.ref },
-    { ...sharedRecord, sourceScope: "invalid" },
-    { ...sharedRecord, kind: "router" as const },
-  ]) assert.throws(() => resolveCatalogReference(remote, { ...migratedContext, records: [broken] }, "skill"), { code: "SOURCE_IDENTITY_MISMATCH" });
-  const migratedMember = readDiscoveryCatalog(catalog, [], {}, migratedContext)[0]!.members!.find(member => member.type === "remote" && member.source.namespace === "production")!;
-  assert.equal(migratedMember.id, sharedRecord.id);
-  assert.equal(migratedMember.ref, sharedRecord.ref);
-  assert.deepEqual(migratedMember.type === "remote" && migratedMember.locator, sharedRecord.locator);
-  assert.equal(migratedMember.unavailable, undefined);
+    { ...selectedRecord, ref: "skill://" + page + "/SKILL.md" },
+    { ...selectedRecord, sourceScope: "invalid" },
+    { ...selectedRecord, kind: "router" as const },
+    { ...selectedRecord, locator: { ...remote.locator, page_id: routerPage } },
+  ]) assert.throws(() => resolveCatalogReference(remote, { ...selectedContext, records: [broken] }, "skill"), { code: "SOURCE_IDENTITY_MISMATCH" });
   assert.throws(() => parseCatalogMember({ ...remote, scope: "a".repeat(64) }), /Unknown catalog member field/);
   assert.throws(() => parseCatalogMember({ ...remote, path: "/fake/cache/SKILL.md" }), /Unknown catalog member field/);
   assert.throws(() => parseCatalogMember({ ...remote, ref: "skill://" + routerPage + "/SKILL.md" }), /ref\/identity mismatch/);
@@ -108,7 +106,7 @@ try {
   assert.equal(resolveCatalogReference(remote, { ...duplicates, records: metadata.records.map(record => record === secondRecord ? { ...record, locator: { ...remote.locator, database_id: ds } } : record) }, "skill").sourceId, source.id, "Full locator resolves sources sharing a namespace");
   assert.throws(() => resolveCatalogReference(remote, { ...context, records: metadata.records.map(record => ({ ...record, sourceScope: "invalid" })) }, "skill"), { code: "SOURCE_IDENTITY_MISMATCH" });
   const unknownId = "11111111-1111-4111-8111-111111111199";
-  const unknownRecord = { ...remote, id: "notion_page:" + unknownId, locator: { ...remote.locator, page_id: unknownId }, ref: "skill://" + unknownId + "/SKILL.md" };
+  const unknownRecord = { ...remote, id: identity(unknownId), locator: { ...remote.locator, page_id: unknownId, skill_id: unknownId }, ref: "skill://" + encodeURIComponent(identity(unknownId)) + "/SKILL.md" };
   assert.throws(() => resolveCatalogReference(unknownRecord, context, "skill"), { code: "CATALOG_MEMBER_UNAVAILABLE" });
   // The real SDK decoder rejects the foreign request before Broker's graph guard.
   await assert.rejects(loadSourceSkill(metadata.records.find(record => record.id === remote.id)!, config, root), {
@@ -119,18 +117,13 @@ try {
   const offlineRouter = readDiscoveryCatalog(catalog, [], {}, { sources: [offline], records: unavailable.records, failures: unavailable.failures })[0]!;
   assert.equal(offlineRouter.members!.length, 3);
   assert.ok(validateDiscoveryRecords([offlineRouter]).some(error => error.includes("CACHE_MISSING")));
-  const remoteRouter = { ...remote, id: "notion_page:" + routerPage, locator: { type: "notion_page", page_id: routerPage, database_id: db, data_source_id: ds }, ref: "skill://" + routerPage + "/ROUTER.md" };
+  const remoteRouter = { ...remote, id: initialRecords[1]!.id, locator: initialRecords[1]!.locator, ref: initialRecords[1]!.ref };
   await writeFile(catalog, JSON.stringify({ records: [{ kind: "router", ...remoteRouter }] }));
   const direct = readDiscoveryCatalog(catalog, [], {}, context)[0]!;
   assert.equal(direct.sourceId, source.id);
   assert.equal(direct.ref, remoteRouter.ref);
   assert.equal(direct.body, undefined);
   assert.equal(direct.members, undefined);
-  const sharedRouterId = "shared_skill:test-library:import-" + routerPage.replaceAll("-", "");
-  const sharedRouter = { ...sharedRecord, id: sharedRouterId, kind: "router" as const, entrypoint: "ROUTER.md",
-    locator: { ...sharedRecord.locator, page_id: routerPage, skill_id: "import-" + routerPage.replaceAll("-", "") },
-    ref: "skill://" + encodeURIComponent(sharedRouterId) + "/ROUTER.md" };
-  assert.equal(readDiscoveryCatalog(catalog, [], {}, { ...context, records: [sharedRouter] })[0]!.ref, sharedRouter.ref);
   assert.equal((await buildRawDollarRegistry(config, root)).records.filter(record => record.id === remoteRouter.id && record.sourceId === source.id).length, 1, "Direct remote Router reference preserves one raw registry record");
   await writeFile(catalog, JSON.stringify({ records: [{ kind: "router", name: "local-only", members: [{ type: "local", path: local }] }] }));
   assert.equal(readDiscoveryCatalog(catalog)[0]!.members![0]!.name, "local-helper", "Local catalog remains independent of source discovery");
@@ -170,104 +163,57 @@ try {
   await writeFile(catalog, JSON.stringify({ records: [{ kind: "router", ...remoteRouter, ref: remoteRouter.ref + "?snapshot=s_" + "c".repeat(64) }] }));
   assert.throws(() => readDiscoveryCatalog(catalog, [], {}, context), /canonical unpinned/);
   assert.ok(runtime.calls.every(call => call.operation === "list" || call.operation === "consume"));
-  // Frozen real metadata/body; only producer role/coverage is projected below.
-  const captured = JSON.parse(await readFile(new URL("./fixtures/upstream-catalog.json", import.meta.url), "utf8"));
-  const routerRead = captured.routerRead;
-  const upstream = routerRead.record;
-  const upstreamDatabase = { database_id: upstream.locator.database_id, title: "Upstream", alias: "upstream", role: "upstream", data_source_ids: [upstream.locator.data_source_id] };
-  const corrected = { ...captured.catalog, records: [upstream], count: 1, databases: [...captured.catalog.databases, upstreamDatabase], coverage: { ...captured.catalog.coverage, queried_data_sources: [...captured.catalog.coverage.queried_data_sources, upstream.locator.data_source_id] } };
-  runtime.state.catalog = corrected;
-  const upstreamSource = { ...source, id: "runner-source", namespace: "runner", cacheDir: join(root, "runner-cache") };
-  const upstreamConfig = { sources: [upstreamSource] };
-  const upstreamMetadata = await discoverSourceCatalog(upstreamConfig, root);
-  assert.deepEqual(upstreamMetadata.failures, []);
-  assert.equal(upstreamMetadata.records.length, 1);
-  const upstreamRecord = upstreamMetadata.records[0]!;
-  assert.equal(upstreamRecord.body, undefined);
-  assert.equal(upstreamRecord.sourceId, upstreamSource.id);
-  assert.equal(upstreamRecord.sourceScope, routerRead.scope);
-  const upstreamIdentity = upstream.locator.type === "notion_subscription" ? upstream.locator.subscription_id : upstream.locator.page_id;
-  assert.equal(upstreamRecord.selectionToken, upstream.alias + "@" + upstreamIdentity.replaceAll("-", "") + "@runner", "The captured search-limited catalog exposes an exact returned identity");
-  const upstreamReference: CatalogRemoteReference = { type: "remote", source: { namespace: "runner" }, id: upstream.id, locator: upstream.locator, ref: upstream.ref };
-  const candidate = resolveCatalogReference(upstreamReference, { sources: upstreamConfig.sources, ...upstreamMetadata }, "router");
-  assert.equal(candidate.sourceId, upstreamSource.id);
-  assert.equal(candidate.ref, upstream.ref);
-  assert.equal(candidate.sourceScope, routerRead.scope);
-  const exactUpstream = matchDiscoveryRecord(upstreamRecord.selectionToken!, upstreamMetadata.records);
-  assert.throws(() => matchDiscoveryRecord(upstream.alias + "@runner", upstreamMetadata.records), { code: "CATALOG_INCOMPLETE" }, "Search-limited discovery cannot establish short-alias uniqueness");
-  assert.equal(exactUpstream.decision, "inject");
-  if (exactUpstream.decision === "inject") assert.equal(exactUpstream.record.ref, upstream.ref);
-  await assert.rejects(loadSourceSkill({ ...candidate, sourceId: "unknown-source" }, upstreamConfig, root), { code: "SOURCE_UNAVAILABLE" });
-  assert.throws(() => resolveCatalogReference({ ...upstreamReference, source: { namespace: "unknown" } }, { sources: upstreamConfig.sources, ...upstreamMetadata }, "router"), { code: "SOURCE_UNAVAILABLE" });
-  for (const database of [upstream.locator.target_database_id, upstream.locator.target_database_id.replaceAll("-", "").toUpperCase(), "content-d9091165"]) {
-    const selected = await discoverSourceCatalog({ sources: [{ ...upstreamSource, database }] }, root);
-    assert.deepEqual(selected.failures, [], "Explicit content selection accepts subscription target " + database);
-    assert.equal(selected.records.length, 1);
+  const currentCatalog = structuredClone(runtime.state.catalog);
+  const selectedSource = { ...source, id: "runner-source", namespace: "runner", cacheDir: join(root, "runner-cache") };
+  const selectedConfig = { sources: [selectedSource] };
+  for (const database of [db, db.replaceAll("-", "").toUpperCase(), "fixture"]) {
+    runtime.state.catalog = currentCatalog;
+    const observed = await discoverSourceCatalog({ sources: [{ ...selectedSource, database }] }, root);
+    assert.deepEqual(observed.failures, []);
+    assert.equal(observed.records.length, initialRecords.length, "Current physical and configured alias selectors retain the complete directory");
   }
-  const absentTarget = structuredClone(corrected);
-  absentTarget.databases = [upstreamDatabase];
-  runtime.state.catalog = absentTarget;
-  assert.equal((await discoverSourceCatalog(upstreamConfig, root)).records.length, 1, "Unscoped search-limited catalog need not discover the target content DB");
-  runtime.state.catalog = corrected;
-  for (const database of [upstream.locator.database_id, "upstream", db]) {
-    const rejected = await discoverSourceCatalog({ sources: [{ ...upstreamSource, database }] }, root);
-    assert.equal(rejected.records.length, 0);
-    assert.equal(rejected.failures[0]!.code, "SOURCE_RESPONSE_INVALID");
-  }
-  const invalidCatalogs = [
-    { ...corrected, databases: captured.catalog.databases },
-    { ...corrected, databases: [...captured.catalog.databases, { ...upstreamDatabase, role: "content" }] },
-    { ...corrected, databases: [...captured.catalog.databases, { ...upstreamDatabase, role: "unknown" }] },
-    { ...corrected, databases: [...captured.catalog.databases, { ...upstreamDatabase, role: undefined }] },
-    { ...corrected, databases: [...captured.catalog.databases, { ...upstreamDatabase, data_source_ids: [ds] }] },
-    { ...corrected, coverage: captured.catalog.coverage },
-    { ...corrected, records: [{ ...upstream, locator: { ...upstream.locator, database_id: db } }] },
-    { ...corrected, records: [{ id: "notion_page:" + page, kind: "skill", locator: { type: "notion_page", page_id: page, database_id: upstreamDatabase.database_id, data_source_id: upstream.locator.data_source_id }, name: "Precise", alias: "precise", description: "wrong role", default_context: false, entrypoint: "SKILL.md", ref: "skill://" + page + "/SKILL.md" }] },
-  ];
-  for (const invalidCatalog of invalidCatalogs) {
+  const retiredPage = { ...initialRecords[0], id: retired[0]!.id, locator: retired[0]!.locator, ref: retired[0]!.ref };
+  const retiredSubscription = { ...initialRecords[1], id: retired[1]!.id, locator: retired[1]!.locator, ref: retired[1]!.ref };
+  for (const invalidCatalog of [
+    { ...currentCatalog, databases: [] },
+    { ...currentCatalog, databases: [{ ...currentCatalog.databases[0], role: "upstream" }] },
+    { ...currentCatalog, databases: [{ ...currentCatalog.databases[0], role: "unknown" }] },
+    { ...currentCatalog, databases: [{ ...currentCatalog.databases[0], data_source_ids: [db] }] },
+    { ...currentCatalog, coverage: { ...currentCatalog.coverage, queried_data_sources: [] } },
+    { ...currentCatalog, records: [{ ...initialRecords[0], locator: { ...remote.locator, database_id: ds } }], count: 1 },
+    { ...currentCatalog, records: [retiredPage], count: 1 },
+    { ...currentCatalog, records: [retiredSubscription], count: 1 },
+    { ...currentCatalog, records: [{ ...initialRecords[0], upstream: { repo: "retired-repo" } }], count: 1 },
+  ]) {
     runtime.state.catalog = invalidCatalog;
-    const rejected = await discoverSourceCatalog(upstreamConfig, root);
+    const rejected = await discoverSourceCatalog(selectedConfig, root);
     assert.equal(rejected.records.length, 0);
-    assert.deepEqual(rejected.failures.map(failure => [failure.sourceId, failure.namespace, failure.code]), [[upstreamSource.id, "runner", "SOURCE_RESPONSE_INVALID"]]);
+    assert.deepEqual(rejected.failures.map(failure => [failure.sourceId, failure.namespace, failure.code]), [[selectedSource.id, "runner", "SOURCE_RESPONSE_INVALID"]]);
   }
-  // Exact control/fixes/content-directory/current-list.json receipt, SHA-256
-  // 2c1924999510cc3709add9fab03abf6babb7396ceb494b00caf998c142caa2a2.
-  // Preserve both real remote failures; healthy activation above is controlled.
-  const currentListBytes = await readFile(new URL("./fixtures/upstream-current-list.json", import.meta.url), "utf8");
-  const currentList = JSON.parse(currentListBytes);
-  assert.equal(currentList.coverage.failed_sources.length, 2);
-  assert.ok(currentList.databases.some((database: { role: string }) => database.role === "upstream"));
-  assert.ok(currentList.coverage.queried_data_sources.includes(upstream.locator.data_source_id));
-  runtime.state.catalog = currentList;
-  const incomplete = await discoverSourceCatalog(upstreamConfig, root);
-  assert.equal(incomplete.records.length, currentList.records.length, "A partial source preserves exact valid records");
+  runtime.state.catalog = { ...currentCatalog, coverage: { ...currentCatalog.coverage, exhaustive: false, failed_sources: [
+    { id: "unavailable-one", code: "ACCESS_DENIED" }, { id: "unavailable-two", code: "NOTION_REQUEST_FAILED" },
+  ] } };
+  const incomplete = await discoverSourceCatalog(selectedConfig, root);
+  assert.equal(incomplete.records.length, initialRecords.length, "A partial source preserves exact valid current records");
   assert.equal(incomplete.failures[0]!.blocking, false);
-  const retained = incomplete.records.find(record => record.sourceId === upstreamSource.id && record.id === currentList.records[0].id)!;
-  assert.ok(retained, "The retained record belongs to the selected incomplete source");
+  const retained = incomplete.records.find(record => record.id === remote.id)!;
+  assert.ok(retained);
   assert.equal(matchDiscoveryRecord(retained.selectionToken!, incomplete.records).decision, "inject", "An accepted exact page-qualified token remains usable");
-  assert.throws(() => matchDiscoveryRecord(`${retained.alias}@${upstreamSource.namespace}`, incomplete.records), { code: "CATALOG_INCOMPLETE" }, "Partial discovery must not prove a short alias unique");
-  assert.equal(matchDiscoveryRecord(`${retained.alias}@${source.namespace}`, incomplete.records).reason, "not-found", "An unrelated unknown namespace remains ordinary text");
-  assert.deepEqual(incomplete.failures.map(failure => [failure.sourceId, failure.namespace, failure.code]), [[upstreamSource.id, "runner", "CATALOG_INCOMPLETE"]]);
-  assert.throws(() => resolveCatalogReference(upstreamReference, { sources: upstreamConfig.sources, ...incomplete }, "router"), { code: "CATALOG_INCOMPLETE" });
-  // Search coverage can be incomplete without a failed request. Display tokens
-  // must still carry identity, so a typed short alias cannot establish uniqueness.
-  runtime.state.catalog = { ...currentList, coverage: { ...currentList.coverage, method: "search_and_registered", exhaustive: false, failed_sources: [], search_index_limited: true } };
-  const searchLimited = await discoverSourceCatalog(upstreamConfig, root);
+  assert.throws(() => matchDiscoveryRecord(`${retained.alias}@runner`, incomplete.records), { code: "CATALOG_INCOMPLETE" });
+  assert.equal(matchDiscoveryRecord(`${retained.alias}@production`, incomplete.records).reason, "not-found");
+  assert.deepEqual(incomplete.failures.map(failure => [failure.sourceId, failure.namespace, failure.code]), [[selectedSource.id, "runner", "CATALOG_INCOMPLETE"]]);
+  assert.throws(() => resolveCatalogReference({ ...remote, source: { namespace: "runner" } }, { sources: selectedConfig.sources, ...incomplete }, "skill"), { code: "CATALOG_INCOMPLETE" });
+  runtime.state.catalog = { ...currentCatalog, coverage: { ...currentCatalog.coverage, method: "search_and_registered", exhaustive: false, failed_sources: [], search_index_limited: true } };
+  const searchLimited = await discoverSourceCatalog(selectedConfig, root);
   assert.deepEqual(searchLimited.failures, []);
-  const limitedRecord = searchLimited.records.find(record => record.sourceId === upstreamSource.id && record.id === retained.id)!;
-  assert.ok(limitedRecord);
-  assert.notEqual(limitedRecord.selectionToken, `${limitedRecord.alias}@${upstreamSource.namespace}`, "Incomplete coverage never emits a short selector as an exact identity");
-  assert.equal(matchDiscoveryRecord(limitedRecord.selectionToken!, searchLimited.records).decision, "inject", "A returned exact identity remains usable with search-limited coverage");
-  assert.throws(() => matchDiscoveryRecord(`${limitedRecord.alias}@${upstreamSource.namespace}`, searchLimited.records), { code: "CATALOG_INCOMPLETE" });
-  runtime.state.catalog = { ...corrected, scope: "invalid-scope" };
-  const invalidScope = await discoverSourceCatalog(upstreamConfig, root);
-  assert.equal(invalidScope.records.length, 0);
-  assert.equal(invalidScope.failures[0]!.code, "SOURCE_RESPONSE_INVALID");
-  const contentDatabase = captured.catalog.databases[0];
-  const pageRecord = { id: "notion_page:" + page, kind: "skill", locator: { type: "notion_page", page_id: page, database_id: contentDatabase.database_id, data_source_id: contentDatabase.data_source_ids[0] }, name: "Precise", alias: "precise", description: "content page", default_context: false, entrypoint: "SKILL.md", ref: "skill://" + page + "/SKILL.md" };
-  runtime.state.catalog = { ...corrected, records: [pageRecord] };
-  assert.equal((await discoverSourceCatalog({ sources: [{ ...upstreamSource, database: contentDatabase.alias }] }, root)).records.length, 1);
-  assert.equal((await discoverSourceCatalog({ sources: [{ ...upstreamSource, database: upstreamDatabase.database_id }] }, root)).failures[0]!.code, "SOURCE_RESPONSE_INVALID");
+  const limitedRecord = searchLimited.records.find(record => record.id === retained.id)!;
+  assert.notEqual(limitedRecord.selectionToken, `${limitedRecord.alias}@runner`);
+  assert.equal(matchDiscoveryRecord(limitedRecord.selectionToken!, searchLimited.records).decision, "inject");
+  assert.throws(() => matchDiscoveryRecord(`${limitedRecord.alias}@runner`, searchLimited.records), { code: "CATALOG_INCOMPLETE" });
+  runtime.state.catalog = { ...currentCatalog, scope: "invalid-scope" };
+  assert.equal((await discoverSourceCatalog(selectedConfig, root)).failures[0]!.code, "SOURCE_RESPONSE_INVALID");
+  runtime.state.catalog = currentCatalog;
+  assert.equal((await discoverSourceCatalog({ sources: [{ ...selectedSource, database: ds }] }, root)).failures[0]!.code, "SOURCE_RESPONSE_INVALID");
   console.log("remote catalog consumer checks passed: scoped source metadata/localFS/mixed unavailable/ambiguity/ref scope/no body/precise invocation");
 } finally {
   console.log(`Remote catalog evidence retained: ${root}`);

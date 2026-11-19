@@ -40,10 +40,9 @@ test("compilation keeps all author bytes and separates source from JSON-rendered
   expect(JSON.stringify(input)).toBe(before);
 });
 
-test("retention effects reach the model without changing body proofs", () => {
+test("unknown current effects reach the model without changing body proofs", () => {
   const input = fixture();
-  const effects = { version: 1 as const, remote_writes: "retained" as const, author_content: "unchanged" as const,
-    retention: [{ skill_page_id: "root-page", file_id: "main", operation_id: "retention-operation", status: "confirmed" as const }] };
+  const effects = { version: 1 as const, remote_writes: "unknown" as const, author_content: "unchanged" as const };
   const compiled = compileSkillPreparation({ ...input, effects });
   expect(JSON.parse(compiled.content).effects).toEqual(effects);
   const span = compiled.bodySpans[0]!;
@@ -51,9 +50,9 @@ test("retention effects reach the model without changing body proofs", () => {
   expect(compiled.projection.records[0]!.source).toEqual(input.records[0]!.source);
 });
 
-test("missing legacy effects are unknown rather than a zero-write claim", () => {
+test("missing effects are unknown rather than a zero-write claim", () => {
   expect(JSON.parse(compileSkillPreparation(fixture()).content).effects).toEqual({ version: 1,
-    remote_writes: "unknown", author_content: "unknown", retention: [] });
+    remote_writes: "unknown", author_content: "unknown" });
 });
 
 test("only generated machine fields leave the model envelope; every directory entry remains", () => {

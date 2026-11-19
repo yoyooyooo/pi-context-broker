@@ -9,7 +9,7 @@
 | Source 配置、成员发现与接纳 | CLI `.cursor/skills/verify-notion-source-onboarding/SKILL.md` | 成员曝光、默认 disabled、依赖或当前来源绑定变化 |
 | 资格、请求顺序、固定选择、provider/turn/投影 | [consumer state](../.agents/skills/verify-notion-consumer-state/SKILL.md) | 对应 observations / consumer-state 模型与真实守卫 |
 | CLI/SDK 配对、当前消费、独立安装包 | [integration](../.agents/skills/verify-notion-skills-integration/SKILL.md) | 跨仓合同或实际安装字节变化 |
-| 其他宿主注入、生命周期和分发 | [context broker](../.agents/skills/verify-context-broker/SKILL.md) | 仅验证本次选择的宿主和功能 |
+| 当前Pi行为、生命周期和分发 | [context broker](../.agents/skills/verify-context-broker/SKILL.md) | 仅验证本次选择的宿主和功能 |
 
 CLI feature 归属由其 `verification/skill-domains.json` 维护。Broker 三项入口分别是 `.agents/skills/verify-notion-consumer-state/SKILL.md`、`.agents/skills/verify-notion-skills-integration/SKILL.md`、`.agents/skills/verify-context-broker/SKILL.md`。
 
@@ -26,6 +26,8 @@ CLI feature 归属由其 `verification/skill-domains.json` 维护。Broker 三�
 Source 接纳默认 disabled。Source ready、目录完整、本地固定字节、完整正文交付、provider 接受、turn 完成和宿主公开投影必须分开判断。本地旧 pin 不承诺远端历史恢复；明确重新选择后才获取当前内容。
 
 管理结果 partial/unknown 保持原意图和实际状态；当前读取相同不能制造原ACK。消费端失效必须绑定当前 library/entry 与 operation，不按同名 Skill 猜测。模型、回执摘要和 HTTP 2xx 都不能代替实际 serializer 中的完整正文。
+
+当前源码直接运行 `bun run check:broker`；安装直接复用 `scripts/verify-artifacts.mjs` 与 `scripts/verify-notion-sdk-installed.mjs`。实际Pi保留 `scripts/notion-sdk-pi.mjs`、`scripts/verify-pi-daily-installation.mjs` 和 `scripts/verify-pi-daily-candidate.mjs`。旧双宿主controller及CLI fixture/UI/PTY入口已退役，没有新的包装runner。原生终端专项本轮未验收。
 
 报告只记录本次实际候选、所选范围、结果和具体限制。源码测试、受控 HTTP、独立安装、真实 Notion、Pi 会话、provider/model 分别判断。安装入口不启动 Pi；真实日用沿 AH-1063 在真实表切换后执行。OMP/Tern 延期，不作为当前 Pi 主线的默认前置。
 

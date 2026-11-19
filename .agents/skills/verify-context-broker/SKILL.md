@@ -1,140 +1,54 @@
 ---
 name: verify-context-broker
-description: "验证 Context Broker 的 Pi/OMP 注入、会话生命周期、随包 Skill 发现与消费、OMP/Tern 原生补全、真实模型效果及独立安装包。修改这些行为、升级宿主或验收产物时使用。"
+description: "验证当前 Context Broker 的 Pi 注入、目录与资源消费、会话生命周期和独立安装包。修改这些行为或验收产物时使用；真实 Pi 日用、模型效果与原生终端分别验收，OMP/Tern 延期。"
 ---
 
 # Verify Context Broker
 
-## next 单轨有限验收
+## 选择当前入口
 
-先按 [integration Skill 的当前入口](../verify-notion-skills-integration/SKILL.md#next-单轨有限验收)选择源码、配对产物和实际 Pi 的受影响检查。保留身份、完整 manifest、取消与投递约束；OMP/Tern 延后，不恢复 `source.command`、CLI 消费或完整 export 回退以运行旧夹具。后文历史运行记录和专项地图不自动构成本轮门槛，不另建总验证 runner。日用切换必须核对 Pi 有效配置实际使用的安装，工作树成功不算安装成功。
+从 [功能地图](features/README.md) 选择受影响的范围，复用已有测试和实际宿主助手。当前只有 `next` 协议：远端身份是 `shared_skill`，消费经同包 SDK v2。`source.command`、旧 CLI 正文消费和 export 回退都不属于有效验证输入。
 
-## 管理与消费的跨仓验证路由
+[验证交接表](../../../docs/verification-routing.md) 指定 CLI 管理、消费、Source 接手与 Broker 的职责。本文负责 Broker 用户行为与集成边界；作者正文和 Notion 四表治理交给 CLI 原有领域 Skill。
 
-[验证交接表](../../../docs/verification-routing.md) 明确 CLI 的管理、消费、来源接手三入口与本仓原 guardian 的职责。本 Skill 仍负责原宿主/状态/组合范围；不复制 CLI 的作者操作测试，不由 Source ready、目录项或一次read推断完整投递。
-
-AH-617 消费链重构先读 [消费链验证地图](../verify-notion-skills-integration/features/skill-consumption.md)。历史场景索引为 `agent-cli-ref-20261105`，当前 transport 合同以前述 next 入口为准；原索引覆盖 SC01–26、J01–26。复用现有 Pi 入口，保留源/投影/投递/active 与各证明层的区别；新场景未跑时不得继承旧 Gate 的通过结论。
-
-Notion 请求引擎和多 Skill 图变更同时读取 [直连请求地图](../verify-notion-skills-integration/features/request-engine.md) 与 [依赖图地图](../verify-notion-skills-integration/features/skill-dependency-graph.md)。NG-VC-01 复用一份 `scripts/verify-skill-graph-contract.mjs`，先记录原生 CLI fail-before 和反例自检，再逐层取得真实服务、模型、UI、安装证据。图 Gate A/B 不复用 AH-560 单 Skill 成功结论；当前 helper 只消费项目 HTTP 引擎和显式安全账本。
-
-面向首次接手本仓库的 agent。所有命令从仓库根目录执行；先读 [功能地图](features/README.md)，按改动选择功能，使用已有 harness 驱动真实宿主。Skill 和地图在 `.agents` 下维护，不修改全局 Skill 或用户的运行配置。
-
-缺失引用改动按 [injection 的 Missing-reference regression route](features/injection.md#missing-reference-regression-route) 验收：普通未知文本原样透传；明确接受的引用失效时向用户与模型说明未加载，不能写 loaded 回执；权限、网络与完整性失败仍明确阻断。
-
-当前上下文唯一性与恢复见 [features/context-once.md](features/context-once.md)。资格、固定选择和交付模型由 [consumer-state Skill](../verify-notion-consumer-state/SKILL.md) 维护；实际 SDK/安装另沿 integration。导航修正无需运行其他宿主。
-
-## Launch
-
-```bash
-bun install --frozen-lockfile
-NTN_SKILLS_BUILD_ENTRY=ABSOLUTE_INSTALLED_CLI bun run build:broker
-```
-
-Pi 主线构建成功应输出 `Built standalone broker package`，产物包括 `packages/context-broker/dist/completion.mjs` 和相邻 CLI/SDK/runtime 清单。只有任务明确涉及全宿主时才运行 `bun run build`，它还会更新 Tern query。依赖已安装且当前改动已构建时不重复安装或构建。构建会更新根 README/CONTRIBUTING/SECURITY/CHANGELOG 的 npm 分发投影，不把生成副本当成另一个文档来源；broker 双语参考在 `packages/context-broker/docs` 直接维护，Tern 双语指南随 GitHub 目录与归档分发。
-
-仅交付 Pi 主线时，使用 `NTN_SKILLS_BUILD_ENTRY=ABSOLUTE_CLI bun run build:broker`，不构建或安装 Tern；打包对应 `bun scripts/pack.mjs --target broker --out-dir ABSOLUTE_OUTPUT`。Notion integration 的普通 run/doctor 支持 `--host pi`，未选宿主明确未运行。跨宿主缓存专项仍要求其完整矩阵，不能用 Pi 结果替代。
-
-跨仓开发先构建 CLI，再以 `NTN_SKILLS_BUILD_ENTRY=/absolute/notion-skills-cli/packages/cli/dist/ntn-skills.js bun run build:broker` 构建 Broker；正式验收优先选择独立安装 CLI entry。产物内含独立 CLI/SDK 与三份完整 Skill/参考资源；当前 CI / publish 从精确 commit 构建同一 CLI 输入，两个 workflow 的 ref 必须一致。已有 npm 版本没有新 SDK 能力时不得静默用它代替。无需中央 Skill 目录或宿主命令镜像。
-
-NXT06/NXT12 复用实际 Pi 命令 `/context-broker connect SOURCE ENTRY --config ABSOLUTE_FILE` 与公开 `notion_ctl working_set`。连接只预览或保存选定文件，不修改用户全局配置；保存配置、远端就绪和完整正文交付各自检查。安装后用原 `notion-sdk-pi.mjs --scenario working-set --provider-backend http` 核预算拒绝、共享 Requires、release/再 use 和实际序列化正文；已安装 SessionManager 的恢复门槛仍单列。Pi 1.5.2 的公开 context/provider/projection 接口另有本批实际验证，不能把版本放行本身写成通过。
-
-安装门禁记录显式 CLI 输入的 package manifest、CLI 与 SDK SHA，核对打包前后未变化，再验证独立安装 runtime manifest 中的版本与两个 bundle 的实际 SHA。显式源码候选的版本可以不同于 devDependency 中已发布的旧 CLI，但不得跳过输入绑定或字节校验；未指定输入时仍要求声明的发布依赖版本。错包、错版本与改字节均有负例。Artifact 实查 current `list/read/use/files/export` schema、退役命令拒绝、包内说明链接，以及独立安装 Broker/SDK 的受控 HTTP 消费。SDK 必须为 v2，普通消费恒零语义写入。该层不启动 Pi 会话，真实 Notion、Pi、provider/model 均另列 not_run。
-
-本项目没有独立常驻服务器。CLI harness 每次创建临时 HOME、agentDir、sessionDir，加载仓库扩展，在 Pi/OMP 的 print 或 RPC 模式提交真实 prompt。启动器会在 HOME 隔离前解析 Volta 的真实入口，再用 Node 执行 Node CLI；不要把 HOME 改回用户目录来绕过启动问题。
-
-原生 UI 由 `scripts/verify-native-ui.mjs` 启动独立 Tern daemon 和窗口，使用唯一 `control.sock`、`daemon.sock`、`TERN_CONFIG_DIR`、broker config 和 agentDir。就绪条件依次为自有 daemon socket、window control ready、`tern ctl ready` 的 shell prompt、`.sf-editor` 出现。该路径要求 macOS、Tern 0.8.3+、OMP 18.10.3+；它复用 OS 的 Tern 登录和进程 PATH，不能称为无凭据环境。只操作本次 control endpoint，不操作用户已有窗口。
-
-通用 `model` 路径使用已有 OMP 登录与模型配置；Notion integration 的 `--mode model` 默认分别启动 Pi 与 OMP，也可用 `--host pi|omp` 单独执行。Broker 配置、缓存和 session 放在临时目录。只调用 `magpie/group/flash-free`，不主动改用户模型或凭据；成功的实际响应才证明认证可用。两条入口的覆盖范围分别报告。
-
-## Doctor
-Harness help is safe before setup: `node .agents/skills/verify-context-broker/scripts/control.mjs --help`, `node scripts/verify-notion-integration.mjs --help`, `node scripts/verify-native-ui.mjs --help`, and `node scripts/verify-pi-pty.mjs --help` exit before creating a run or launching a host. Doctor uses a unique owned temporary HOME and XDG/application roots; its output names retained probe scratch for system-Trash cleanup. It does not prove authentication.
-
-
-先执行与目标功能匹配的只读检查；任何异常先重跑 Doctor，再查该次证据：
-
-```bash
-node .agents/skills/verify-context-broker/scripts/control.mjs doctor editor
-```
-
-最后一个参数可为 `injection`、`editor`、`lifecycle`、`model`、`source`、`notion-editor`。安装验证直接使用[安装地图](features/distribution.md#默认-sdk-的-ci-安装门禁)中的现有入口和明确 current fixture。Doctor 输出 Node 版本、实际 host executable/arguments、宿主版本、所需工具、平台以及构建产物 hash。要求 `status: ready` 和退出码 0。它不启动会话、不调用模型、不证明认证或功能成功。
-
-CLI/RPC helpers 只用 Node.js 22.x 中的 22.22.3+，或 24.20.0+ 启动；Bun 用于构建和已有单元测试。CI 使用 Node.js 24.20.0、Bun 1.4.3。当前只验 Broker/SDK v2 配对，实际 Pi 会话与 OMP/Tern 延后；不再保留 Pi 1.4 兼容门禁。见[安装地图](features/distribution.md#默认-sdk-的-ci-安装门禁)。Doctor 记录本机实际版本并按所选入口的冻结合同检查，不支持的版本为 blocked。其他本机专项可记录差异独立运行，不能替代所声明的候选与远端 CI 结果。
-
-先运行 `node scripts/skill-consumption-contract.mjs check-gates` 检查常规 check、CI/publish、配对 CLI commit、current HTTP 安装入口与必要 consumption 集的接线。再运行 `bun run check:broker` 实际执行；接线检查本身不证明测试通过。`test:consumption` 从 package check 进入，原 test 中重复的 native-read/session、host-prepare 和 view-discovery 已归到这一处。
-
-## Drive
-
-```bash
-node .agents/skills/verify-context-broker/scripts/control.mjs run editor
-```
-
-`run` 自动执行该功能的 Doctor，使用现有脚本，串行执行同一功能的所有命令，任一失败停止，并保留本次证据。不要每次都运行全部功能；按地图覆盖所有受本次改动影响的入口。
-
-| 功能参数 | 实际执行 | 能证明什么 |
+| 变化 | 现有入口 | 必须保留的结论边界 |
 | --- | --- | --- |
-| `injection` | 双宿主 host-e2e + global-config-e2e | 默认 CLI XML、多引用注入、重复、关键词规则、默认 agentDir 配置与持久续接；OMP 使用 RPC 用户输入、Pi 使用 print |
-| `editor` | verify-native-ui | 长名称宽下拉与窄窗口边界、自动胶囊、胶囊内点击不弹下拉、删除/撤销、Skill/Router 混合提交与重复、手动 Unicode 替换/取消/焦点变化 |
-| `lifecycle` | lifecycle-e2e | 同进程、fork、回退、续接、压缩保留/移除正文与仅标记摘要、XML 示例后首次加载；普通消息上的默认 CLI 引导恢复 |
-| `model` | verify-real-model | Skill 指令效果、真实默认摘要器、压缩后再次注入、每个普通请求的一份 CLI XML、实际请求 model selector |
-| `source` | verify-notion-integration deterministic | source metadata、默认宿主Skill目录、真实read/native /skill、延迟activation、资源与持久续接；受控CLI不证明远端Notion |
-| `notion-editor` | verify-native-ui --notion | `$alias@namespace` 的原生自动补全、chip、手动选择与 provider 正文 |
+| 当前目录、选择、注入、资源、会话状态 | `bun run check:broker`，按改动先跑对应测试 | 源码回归不证明实际安装或 Pi 会话 |
+| 跨仓 SDK、包内运行时、安装后的 HTTP 消费 | [integration Skill](../verify-notion-skills-integration/SKILL.md)；`scripts/verify-artifacts.mjs` | 同一 CLI/SDK 候选，实际独立安装与 current HTTP |
+| 资格、固定选择、取消、provider/turn/投影状态 | [consumer-state Skill](../verify-notion-consumer-state/SKILL.md) | 审模型、受保护 guard 与反例；不刷新 hash 放行 |
+| 实际 Pi 的 SDK/工具/serializer 行为 | `scripts/notion-sdk-pi.mjs` 现有入口 | 记录所选场景与实际安装；受控 provider 不证明模型理解 |
+| 真实 Notion 与日用 Pi | `scripts/verify-pi-daily-installation.mjs`、`scripts/verify-pi-daily-candidate.mjs` | AH-1063；有效配置、实际包、正文/资源、取消与模型结果分别记录 |
 
-`model` 发起真实网络请求；只在当前任务需要且已有授权覆盖此模型时执行。无授权或登录缺失时完成其余可达路径并记录未运行。独立安装的生产依赖需要 npm 网络；发布行为只在测试创建的临时 Git 仓库运行。
+OMP/Tern 产品代码保留，当前验收延期。旧双宿主控制器、旧 CLI fixture 总入口和旧原生 UI/PTY 驱动已删除。真实 Pi 助手仍在；原生终端菜单、光标和 UI 操作没有本轮成绩，不能由源码、RPC 或安装包结果推断。
 
-Notion/source 改动还需读取 [source地图](features/source.md) 和 [跨仓联动Skill](../verify-notion-skills-integration/SKILL.md)。`source` 使用无凭据CLI executable fixture并实际启动双宿主；真实 Notion、真实模型和独立安装有单独 mode，必须分别报告。live 驱动不额外创建 fixture 或主动编辑；current SDK v2 消费恒为零语义写入；读取不会首次 retention/adoption 或写 Records。旧 live/CLI fixture 路径已退出本轮门禁，不能用其结果代表当前实现。
+## 构建和源码检查
 
-随包内容按 [随包 Skill 地图](../verify-notion-skills-integration/features/builtin-management.md) 复用 `distribution`、`source` 与 `editor`。安装后直接从 `$` 选择三份 `ntn-skills` Skill，明确内建身份使用 `@builtin`。检查完整正文、相对资源、同名来源消歧及实际 CLI/source 指引。
+所有命令从 Broker 根目录执行。先选定同一提交的完整 CLI/SDK 包，按 integration Skill 设置 `NTN_SKILLS_BUILD_ENTRY` 与真实 decoder 的 `CONTEXT_BROKER_GRAPH_CORE`。不混用发布版和源码候选，不把 `NTN_SKILLS_DEV_ROOT` 带入子进程。
 
-日常 Tern/OMP 的真实 Notion Skill 没出现在菜单时，另用 [日常安装与原生菜单地图](../verify-notion-skills-integration/features/daily-installation-ui.md)：`node scripts/verify-daily-notion-ui.mjs --database UUID --skill-ref skill://PAGE/SKILL.md --mode captured`。该独立入口读取 actual daily source 与 installed broker/companion，在自建 Tern 中验 `/skill:`、`$` 胶囊和手动搜索真实提交；不通过 checkout fixture 代替日常可用性。`--mode model --model provider/model --model-prompt TEXT` 使用当前已授权模型验证显式菜单激活后的正文消费与成功响应；与上述固定模型的通用 `model` route 分别报告。日常配置或 extension 安装变化后已有 OMP 必须 `/restart`。
-
-OMP/Tern 已加载正文消费使用日常 model route 的 `--invocation dollar --model-prompt '介绍这个 skill'`。在新会话接受真实 `$` 胶囊后检查模型直接回答，且实际开放的 `read`/`glob` 未被用于重读入口或确认包清单。Pi 使用独立宿主与原生终端，按[补全地图](../verify-notion-skills-integration/features/dollar-completion-selection.md#pi-独立终端)核对 `$`、原生 `/skill:` 和双向切换；普通文本补全不以 Tern 胶囊验收。资源任务另以 integration `--mode model --host pi` 检查模型自主读取入口和固定快照资源。该检查验证模型行为；源码中的提示和确定性 provider 捕获只能证明投递，不能替代真实模型路径。
-Pi terminal automation now has a reusable entry: `node scripts/verify-pi-pty.mjs doctor`, then `node scripts/verify-pi-pty.mjs run`. It starts two cold real PTYs and sends prefix → Tab → task/Enter for `$ui-alpha@notion` and `/skill:notion-ui-alpha`, including both switch directions. The source executable and provider remain controlled fixtures. Doctor refuses unsupported installed Pi flags. An installed broker can be selected with `--extension /absolute/installed/entry`. Evidence is raw terminal bytes and exact key actions, not synthesized screenshots or real-model proof.
-
-
-修改 Adapter 时复用现有地图。`injection` 核对反向 `CONTEXT_BROKER_HOST` 覆盖后当前宿主协议不变；`source` 核对 cold native、双向 `$`、资源与回执；默认上下文专项和 `--notion-loading` 核对取消与下一次提交。编辑器装配同时使用 `editor` 与 Pi 独立终端规程。只补受影响步骤和观察结果，不为内部重构新增独立 Skill 或复制同一套验收。
-
-扩展改动的代码检查仍用 `bun run check`，编译或单元测试不能代替上述宿主/界面路径。修改 OMP 扩展后使用 `/restart`；`/reload-plugins` 不重新执行已加载扩展。Tern companion 的修改使用 `tern plugin reload`，不能用它代替 OMP 重启。
-
-## Evidence
-
-每次 `run` 输出 `Verification evidence: <绝对目录>`。目录位于系统临时目录，名称以 `broker-verification-<功能>-` 开头，包含 `manifest.json` 和按命令分开的 stdout/stderr transcript。manifest 记录本次功能、Doctor 的实际版本/入口、每条命令、时间、退出码/信号、原始 runner 证据目录；只记录执行过的路径。既有脚本和它们的行为断言负责判定通过，助手不复制这些断言。
-
-清理后执行下面的命令，把最后一个参数换成刚输出的真实绝对目录：
-
-```text
-node .agents/skills/verify-context-broker/scripts/control.mjs evidence <本次绝对目录>
+```sh
+node scripts/skill-consumption-contract.mjs check-gates
+bun run check:broker
 ```
 
-要求 `status: preserved`。该检查证明命令完成且 transcript/证据目录仍存在，不代替人工阅读截图或核对 provider 内容。
+接线检查只验证实际 check、CI/publish 和安装路径连接正确；第二条才执行 Broker 当前检查。仅修改局部逻辑时先跑地图指定的现有测试；满足所需范围后不重复全套。`build:broker` 只构建当前 Broker，不隐式构建 Tern。
 
-证明标准：
+## 实际 Pi 与日用
 
-- 对应用户入口 → 实际动作 → 可观察状态变化；不能只截最后一屏或只看 `inject` 日志。
-- 补全出现、草稿接受 `$name`、broker 判断、provider 收到正文、模型执行指令分别证明不同环节。明确验到了哪一层。
-- 去重计数检查实际 provider messages，正常应有一份正文；不能把会话包含旧正文误报为“重复注入”。
-- 用户/助手/工具中的 XML 示例、摘要里的标记都不是正文加载证据。fork/回退/压缩按当前有效上下文判断。
-- 确定性 provider 替代的是已有 provider 边界的外部服务。生命周期 fixture 控制摘要内容和保留边界，宿主压缩准备、branch、persist、conversion 仍真实运行；它不证明默认 LLM 摘要器。只有 `model` 的 `fromExtension: false` 和传输证据证明真实默认摘要路径。
-- 原生 UI 保留 `shots/live/*.png` 和 `*.layout.json`，结合操作 transcript 与 `provider.jsonl` 判断；手动选择成功还必须证明没有新增 provider 请求。
-- 真实模型只记录 selector、fixture canary 计数和状态；不记录请求 URL、header、token。不要把真实用户配置、会话或凭据拷进证据包。
-- 独立安装应在解包目录运行；checkout 通过不证明归档完整。未运行 Pi 包安装不能由 OMP 安装结果代替。
-- `--dry-run`/`--precheck` 不等于完全无副作用：当前 release 在输出计划前会 fetch/prune tags 和查询 npm。不要在用户工作树运行发布来证明测试；使用临时仓库的 release.test 观察 Git refs 和 push hook。
+实际 Pi 场景读取原助手的公开参数：
 
-## Cleanup
+```sh
+node scripts/notion-sdk-pi.mjs --help
+node scripts/verify-pi-daily-installation.mjs candidate-plan --config /absolute/current-candidate.json
+```
 
-原始 runner 在 `finally` 中结束自己启动的 RPC、窗口和 daemon。print 进程应自然退出；RPC 的 SIGTERM/SIGKILL 是行为完成后的主动 teardown，不能冒充自然成功退出。integration 的 `owned-processes.jsonl` 保留实际 spawn/close 事件，cleanup 在每个持有宿主的 close 证据齐全后才回收 scratch。Tern runner 另保留 `host-processes.jsonl`、`omp-pid.json`、`omp-exit.json` 与直接 Tern children 的退出状态；`cleanup.stopped` 由观察到的退出生成。Pi PTY `cleanup.json` 分别记录自然退出、实际 returncode、主动信号及 PTY 关闭；强制退出不能冒充自然成功。
+候选配置应指向有效 Pi 配置实际使用的安装、当前 Notion 库和本轮自有输出。计划结果不是执行结果。真实表切换与日用安装就绪后，按 [日用地图](../verify-notion-skills-integration/features/daily-installation-ui.md) 执行已有 candidate-run；不用旧 CLI fixture 填补缺失输入。
 
-成功和失败均保留证据、session、截图与 scratch fixture。不要按进程名批量 kill，不驱动/关闭其他 endpoint，不在失败后 reset/clean 用户工作树。运行结束但发现自有进程仍在时，核对 `owned-processes.json` 的 PID、command、唯一 socket 后只处理该实例；PID 已复用时不能依据旧记录发送信号。
+缺失引用、取消与会话恢复分别沿 [injection](features/injection.md)、[lifecycle](features/lifecycle.md)；当前请求只保留一份必要正文沿 [context-once](features/context-once.md)。模型效果沿 [model](features/model.md)，只在已有授权覆盖的 provider/model 上运行。
 
-需要释放磁盘时，先确认 runner 已结束、证据已审阅，再移到经过验证的系统废纸篓。macOS 使用 `/usr/bin/trash <本次绝对目录>`；其他系统先确认回收站实现。禁止永久删除，禁止在 cleanup 删除证据。
+## 结果与清理
 
-## Helpers
+分别报告 Source ready、目录完整、固定文件、正文进入实际 provider/serializer、turn 完成和宿主投影。源码测试、受控 HTTP、独立安装、真实 Pi、真实 Notion和模型效果不能相互代填。权限或完整性失败必须保持失败；不因为缓存中有旧文件就恢复当前资格。
 
-唯一新增助手为可执行的 `scripts/control.mjs`，使用方式就是上述 `doctor`、`run`、`evidence`。它按自身路径定位仓库根目录，复用已有 Node runner。Doctor 不探测真实模型认证；run 不安装宿主、不发布、不改全局配置。脚本原始证据格式由对应功能地图说明。
-Pi PTY helper 使用 `.agents/skills/verify-context-broker/scripts/pi-pty-driver.py` 与 `terminal_screen.py`（Python 3 stdlib，无新增依赖）。`node scripts/verify-pi-pty.mjs evidence --evidence ABSOLUTE_DIRECTORY` 区分 `functionalStatus` 与证据保留；审阅后 `cleanup --evidence ABSOLUTE_DIRECTORY` 只将关联 scratch 进 `/usr/bin/trash`，再执行 evidence。候选/草稿 `.ansi` 是真实终端增量，`.screen.json` 是完整流经 VT 光标/擦除/滚动处理后的当前字符屏幕；判定当前编辑框前缀及其下选中候选后才发 Tab，再核对接受后的完整草稿，禁止 raw substring 命中启动目录或历史 token 算成功。完整 `terminal.ansi` 与 `actions.json` 一起审阅。Scratch/cwd/TMPDIR 使用无 `.agents` 祖先的系统临时根；`--evidence-root ABSOLUTE_DIRECTORY` 仅控制证据父目录，不改变 Skills 发现范围。父子命令补全、取消/Stop、真实服务与真实模型尚须各自后续场景，不由这一基线推断通过。
+保留实际命令、候选身份、退出结果和原助手产生的必要诊断；不新增总 manifest、历史版本或统一证据平台。只用本轮自有绝对目录，不改用户全局配置、凭据或正在使用的会话。清理先确认自有进程已退出，再将对应 scratch 移入系统 Trash；保留失败结果，不执行永久删除、批量 kill 或 git clean/reset。
 
-Pi 的 ready 要同时满足完整当前帧中空编辑框、fake footer、精确的 `[Skills] notion-ui-alpha` 与后续非空 `[Extensions]`，以及本次 fixture 的 list/read/export-completed 调用和 broker 最终快照 receipt/bytes/hash。`pi_readiness.py` 只读已有 source 调用和已发布快照，不向真实应用注入测试状态；源目录未完成的早期空框不能触发首次输入。保留 `source-readiness.json` 和 source CLI JSONL；不加固定 sleep，两个冷方向仍须实际输入、候选、Tab 和 Enter。
-
-共享 `resolveHost()` 返回可执行 `file`/`prefix`、命令 `path` 与单独 `identity` realpath。普通 shell/shebang/symlink 保留合法命令拼写；Volta 在 HOME 隔离前经 `volta which <basename>` 解析实际入口，简单 Node shebang 才转换为显式 Node argv。installed npm 与绝对 `/usr/bin/trash` 复用该策略，不能直接执行 `volta-shim` identity。
-
-
-维护时使用 `/maintain-verification-skill`，同时更新地图里的入口、命令和证明边界。UI selectors、宿主协议或脚本变化后，重跑受影响功能，确认清理后证据仍存在。
+仅改 Skill/路由时运行已有 `node --test scripts/verification-skill-routing.test.mjs scripts/skill-consumption-contract.test.mjs`。作者的结构检查与独立 agent 冷启动评估分开，后者未做时记录 `instruction_evaluation:not_run`。

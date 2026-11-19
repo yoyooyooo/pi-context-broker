@@ -16,7 +16,7 @@ import { observeGraphSdk } from './notion-skill-graph-model-evidence.mjs';
 import { observeOwnedObjectReads } from './notion-sdk-pi.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { createOwnedGraphProject, retainGeneratedPlan } from './notion-skill-graph-project.mjs';
-import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
+import { verifyPreparationEvidence, verifyConsumptionEffects } from './skill-preparation-evidence.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -223,7 +223,7 @@ export async function prepareCandidatePrintState(config, { stateRoot, previous, 
     assert.ok(digest(value.scope) && /^s_[a-f0-9]{64}$/u.test(value.snapshot_id) && digest(value.version_id));
     assert.equal(typeof value.content, 'string'); assert.equal(value.has_more, false);
     assert.deepEqual(value.range, { start: 1, end: value.content.split('\n').length, total_lines: value.content.split('\n').length });
-    assert.deepEqual(value.effects, { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] });
+    assert.deepEqual(value.effects, { version: 1, remote_writes: 'none', author_content: 'unchanged' });
     const url = new URL(value.ref), binding = value.file_bindings?.filter(file => file.path === value.path);
     assert.equal(url.protocol, 'skill:'); assert.equal(decodeURIComponent(url.hostname), value.record.id);
     assert.equal(decodeURIComponent(url.pathname.slice(1)), value.path); assert.equal(url.hash, '');
@@ -280,7 +280,7 @@ export function inspectCandidateExistingReads(sourceState, nativeAudit, text, gu
     assert.equal(guard.filter(row => row.allowed === true && row.toolCallId === call.id && row.toolName === 'read' && row.ref === read.ref).length, 1);
     const results = messages.filter(message => message.toolCallId === call.id); assert.equal(results.length, 1);
     assert.equal(results[0].toolName, 'read'); assert.notEqual(results[0].isError, true);
-    assert.deepEqual(results[0].details?.effects, { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] });
+    assert.deepEqual(results[0].details?.effects, { version: 1, remote_writes: 'none', author_content: 'unchanged' });
     const proof = results[0].details.contextBrokerResource;
     assert.equal(proof?.version, 2); assert.equal(proof.toolCallId, call.id);
     for (const key of ['ref', 'id', 'scope', 'snapshot_id', 'version_id', 'path', 'file_id', 'bytes', 'sha256']) assert.equal(proof[key], read[key]);
@@ -1279,8 +1279,10 @@ export async function inspectIntroductionForkSource(previous, { oldSource, proje
   const history = native.subarray(native.indexOf(10) + 1);
   assert.ok(Buffer.from(rows.slice(1).map(row => JSON.stringify(row)).join('\n') + '\n').equals(history),
     'Public fork serialization must preserve every original non-header byte');
-  const noWrites = effects => effects?.version === 1 && effects.remote_writes === 'none'
-    && effects.author_content === 'unchanged' && Array.isArray(effects.retention) && effects.retention.length === 0;
+  const noWrites = effects => {
+    try { return verifyConsumptionEffects(effects).remote_writes === 'none'; }
+    catch { return false; }
+  };
   assert.ok(audit.calls.every(call => {
     const result = rows[call.resultLine - 1]?.message;
     if (result?.toolCallId !== call.id || result.isError !== false) return false;

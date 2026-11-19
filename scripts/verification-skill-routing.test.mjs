@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { readFileSync, statSync } from "node:fs"
+import { readFileSync, readdirSync, statSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import test from "node:test"
@@ -50,4 +50,33 @@ test("lost owners, proof boundaries and CI routing cannot silently disappear", (
   assert.throws(() => verify(document, contents.map(([path, content]) => [path,
     content.replace("../../../docs/verification-routing.md", "missing-handoff.md")]), scripts))
   assert.throws(() => verify(document, contents, { ...scripts, "test:verification": "node --test unrelated.mjs" }))
+})
+
+function currentDocuments() {
+  const documents = [...skills, "docs/verification-routing.md", "CONTRIBUTING.md"]
+  for (const skill of ["verify-context-broker", "verify-notion-skills-integration"]) {
+    const directory = `.agents/skills/${skill}/features`
+    for (const file of readdirSync(resolve(root, directory)))
+      if (file.endsWith(".md")) documents.push(`${directory}/${file}`)
+  }
+  return documents.map(path => [path, read(path)])
+}
+
+function verifyCurrentRoutes(documents) {
+  for (const [path, content] of documents) {
+    for (const match of content.matchAll(/\[[^\]]*\]\(([^)]+)\)/gu)) {
+      const target = match[1].split("#")[0]
+      if (!target || /^[a-z]+:/iu.test(target)) continue
+      assert.ok(statSync(resolve(root, dirname(path), target)).isFile(), `${path}: missing link ${target}`)
+    }
+    for (const match of content.matchAll(/(?<![\w./-])((?:packages\/context-broker\/|\.agents\/skills\/[\w-]+\/)?scripts\/[\w./-]+\.(?:mjs|ts|py))\b/gu))
+      assert.ok(statSync(resolve(root, match[1])).isFile(), `${path}: missing executable route ${match[1]}`)
+  }
+}
+
+test("current verification maps resolve their links and existing executable routes", () => {
+  const documents = currentDocuments()
+  verifyCurrentRoutes(documents)
+  assert.throws(() => verifyCurrentRoutes([[skills[0], "[missing](missing-route.md)"]]))
+  assert.throws(() => verifyCurrentRoutes([[skills[0], "node scripts/missing-current-route.mjs"]]))
 })

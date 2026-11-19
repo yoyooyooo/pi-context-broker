@@ -215,8 +215,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   }
   async function resolveToolReference(value: string, ctx: ExtensionContext, signal: AbortSignal, refresh?: boolean): Promise<ResolvedHostReference> {
     const resolved = resolveReference(value, ctx), requested = resolved.reference;
-    const canonical = /^(shared_skill:[^:]+:.+|(?:notion_subscription|upstream):[a-f0-9-]+)$/u.test(requested.selector)
-      || /^[a-f0-9]{32}$/iu.test(requested.selector.replace(/^notion_page:/u, "").replaceAll("-", ""));
+    const canonical = /^shared_skill:[^:]+:.+$/u.test(requested.selector)
+      || /^[a-f0-9]{32}$/iu.test(requested.selector.replaceAll("-", ""));
     if (resolved.short || canonical || !options.resolveNamedReference)
       return { ...resolved, canonicalRef: resolved.short?.canonicalRef ?? value };
     const observedGeneration = generation, sessionId = ctx.sessionManager?.getSessionId?.(), sessionFile = ctx.sessionManager?.getSessionFile?.();
@@ -518,8 +518,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       try { reference = parseNativeReference(denial.ref); } catch { continue; }
       const target = [...selected, ...hostRecords.values()].find(record => {
         if (record.sourceId !== error.sourceId || record.sourceScope !== denial.scope || !record.ref) return false;
-        const page = record.locator && (record.locator.type === "shared_skill" || record.locator.type === "notion_page") ? record.locator.page_id.replaceAll("-", "") : undefined;
-        const selector = reference.selector.replace(/^notion_page:/u, "").replaceAll("-", "");
+        const page = record.locator?.type === "shared_skill" ? record.locator.page_id.replaceAll("-", "") : undefined;
+        const selector = reference.selector.replaceAll("-", "");
         return (record.id === denial.id || page !== undefined && selector === page)
           && (reference.selector === parseNativeReference(record.ref).selector || page !== undefined && selector === page);
       });

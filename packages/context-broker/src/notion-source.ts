@@ -22,10 +22,8 @@ import type { ContentRecord, NotionDirectory, NotionDirectorySelection, NotionDi
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
 type Options = ConsumptionPolicy & { signal?: AbortSignal; refresh?: boolean; stale?: boolean; view?: string; defaultView?: boolean; snapshotId?: string };
 type Json = Record<string, unknown>;
-const PageLocator = Schema.Struct({ type: Schema.Literal("notion_page"), page_id: Schema.String, database_id: Schema.String, data_source_id: Schema.String });
-const SubscriptionLocator = Schema.Struct({ type: Schema.Literal("notion_subscription"), subscription_id: Schema.String, database_id: Schema.String, data_source_id: Schema.String, target_database_id: Schema.String });
 const SharedLocator = Schema.Struct({ type: Schema.Literal("shared_skill"), page_id: Schema.String, database_id: Schema.String, data_source_id: Schema.String, library_id: Schema.String, skill_id: Schema.String });
-const ContentSchema = Schema.Struct({ id: Schema.String, kind: Schema.Literals(["skill", "router", "prompt"]), locator: Schema.Union([PageLocator, SubscriptionLocator, SharedLocator]), name: Schema.String, alias: Schema.String, description: Schema.String, default_context: Schema.Boolean, enabled: Schema.optional(Schema.Boolean), entrypoint: Schema.String, ref: Schema.String, upstream: Schema.optional(Schema.Struct({ repo: Schema.String })) });
+const ContentSchema = Schema.Struct({ id: Schema.String, kind: Schema.Literals(["skill", "router", "prompt"]), locator: SharedLocator, name: Schema.String, alias: Schema.String, description: Schema.String, default_context: Schema.Boolean, enabled: Schema.Boolean, entrypoint: Schema.String, ref: Schema.String });
 const UUID = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
 const HASH = /^[0-9a-f]{64}$/;
 const SNAPSHOT = /^s_[0-9a-f]{64}$/;
@@ -75,20 +73,17 @@ function validAlias(alias: string): boolean {
   try { return !/[\p{Cc}\p{Cf}\p{Cs}]/u.test(decodeURIComponent(alias)); }
   catch { return false; }
 }
-function contentRecord(value: unknown, source: NotionSource): ContentRecord {
-  let item: ContentRecord;
+function contentRecord(value: unknown, source: NotionSource): typeof ContentSchema.Type {
+  let item: typeof ContentSchema.Type;
   try { item = Schema.decodeUnknownSync(ContentSchema)(value, { onExcessProperty: "error" }); }
   catch { return decodeError(source); }
   const locator = item.locator;
-  if (locator.type === "local") return decodeError(source);
-  const page = locator.type === "notion_subscription" ? locator.subscription_id : locator.page_id;
+  const page = locator.page_id;
   const canonical = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   const entrypoint = { skill: "SKILL.md", router: "ROUTER.md", prompt: "PROMPT.md" }[item.kind];
-  const identity = locator.type === "shared_skill" ? sharedSkillId(locator.library_id, locator.skill_id) : locator.type + ":" + page;
-  if (identity === undefined || locator.type === "shared_skill" && typeof item.enabled !== "boolean") decodeError(source);
-  const selector = locator.type === "shared_skill" ? identity : locator.type === "notion_page" ? page : "upstream:" + page;
-  if (!canonical.test(page) || !canonical.test(locator.database_id) || !canonical.test(locator.data_source_id) || (locator.type === "notion_subscription" && (!canonical.test(locator.target_database_id) || item.kind !== "router")) || item.id !== identity || item.entrypoint !== entrypoint || item.ref !== "skill://" + encodeURIComponent(selector) + "/" + entrypoint || !/\S/u.test(item.name) || /[\p{Cc}\p{Cf}\p{Cs}]/u.test(item.name) || !validAlias(item.alias) || Object.values(item).some(value => typeof value === "string" && value.includes("\0"))) decodeError(source);
-  if (item.upstream && (item.kind !== "skill" || locator.type !== "notion_page" || !/\S/u.test(item.upstream.repo) || /[/\\\p{Cc}\p{Cf}\p{Cs}]/u.test(item.upstream.repo))) decodeError(source);
+  const identity = sharedSkillId(locator.library_id, locator.skill_id);
+  if (identity === undefined) decodeError(source);
+  if (!canonical.test(page) || !canonical.test(locator.database_id) || !canonical.test(locator.data_source_id) || item.id !== identity || item.entrypoint !== entrypoint || item.ref !== "skill://" + encodeURIComponent(identity) + "/" + entrypoint || !/\S/u.test(item.name) || /[\p{Cc}\p{Cf}\p{Cs}]/u.test(item.name) || !validAlias(item.alias) || Object.values(item).some(value => typeof value === "string" && value.includes("\0"))) decodeError(source);
   return item;
 }
 function freshness(value: unknown, source: NotionSource): Json {
@@ -128,7 +123,7 @@ function sdkFailure(error: unknown, source: NotionSource, operation: "prepare" |
     && Array.isArray(preparation.nodes) && preparation.nodes.length === 1 && preparation.nodes.every(node => object(node) && node.state === "failed"
       && Array.isArray(node.roles) && node.roles.length === 1 && node.roles[0] === "root");
   const missingPage = typeof details?.path === "string" ? /^v1\/pages\/([0-9a-f-]+)$/i.exec(details.path)?.[1] : undefined;
-  const selectedPage = selected?.locator?.type === "shared_skill" || selected?.locator?.type === "notion_page" ? selected.locator.page_id : undefined;
+  const selectedPage = selected?.locator?.type === "shared_skill" ? selected.locator.page_id : undefined;
   if ((operation === "read" || rootOnlyFailure) && error.code === "NOT_FOUND" && details?.notion_code === "object_not_found"
     && selectedPage && missingPage?.replaceAll("-", "").toLowerCase() === selectedPage.replaceAll("-", "").toLowerCase()) return new ReferenceMiss(source.id, selected?.id);
   const receivedCode = error.code === "SKILL_DISABLED" ? "CONTENT_DISABLED" : error.code;
@@ -155,6 +150,7 @@ export function sourceFailureMessage(code: string): string {
     case "SNAPSHOT_MISSING":
     case "SNAPSHOT_NOT_MATERIALIZED": return "This selection is no longer available. Refresh the source and select its current content again.";
     case "CACHE_REFRESH_REQUIRED": return "The local selection uses an older cache contract. Refresh the source online and select its current content again.";
+    case "STATE_CUTOVER_REQUIRED": return "The local state or configuration uses a retired contract. Choose a fresh NTN_SKILLS_HOME and, if the configuration contains retired bindings, NTN_SKILLS_CONFIG_HOME. Keep the old roots and objects intact for read-only extraction.";
     case "CURRENT_SOURCE_REQUIRED": return "This Skill selects a retired snapshot source. Migrate its current content before reading it.";
     case "SHARED_ACQUISITION_SCOPE": return "The selected content no longer matches this source and library. Refresh this source and select its current content again.";
     case "SHARED_SOURCE_MISSING":
@@ -265,7 +261,7 @@ async function privateDirectory(path: string, source: NotionSource): Promise<voi
 CLI_CODES.LIST_CURSOR_STALE = true;
 CLI_CODES.NOTION_READ_ONLY = true;
 CLI_CODES.SHARED_OBSERVATION_REQUIRED = true;
-for (const code of ["CURRENT_SOURCE_REQUIRED", "CACHE_REFRESH_REQUIRED", "SHARED_ACQUISITION_SCOPE", "SHARED_SOURCE_MISSING", "SHARED_SOURCE_CONFLICT", "SOURCE_MATERIALIZATION_INCOMPLETE", "SHARED_RESOURCE_CONTENT_INVALID"])
+for (const code of ["CURRENT_SOURCE_REQUIRED", "CACHE_REFRESH_REQUIRED", "STATE_CUTOVER_REQUIRED", "SHARED_ACQUISITION_SCOPE", "SHARED_SOURCE_MISSING", "SHARED_SOURCE_CONFLICT", "SOURCE_MATERIALIZATION_INCOMPLETE", "SHARED_RESOURCE_CONTENT_INVALID"])
   CLI_CODES[code] = true;
 
 async function catalogPolicy(source: NotionSource, refresh?: boolean) {
@@ -294,7 +290,7 @@ async function discoverNotionDirectory(source: NotionSource, cwd: string, option
   if (!HASH.test(scope) || "skills" in result || !Array.isArray(result.records) || !Array.isArray(result.databases) || result.count !== result.records.length || typeof result.fetched_at !== "number" || !Number.isSafeInteger(result.fetched_at) || result.fetched_at < 0) decodeError(source);
   const observedFreshness = freshness(result.freshness, source);
   const databases = result.databases.map((value) => {
-    if (!object(value) || typeof value.database_id !== "string" || !UUID.test(value.database_id) || typeof value.title !== "string" || typeof value.alias !== "string" || (value.role !== undefined && value.role !== "content" && value.role !== "upstream") || !Array.isArray(value.data_source_ids) || !value.data_source_ids.every((id) => typeof id === "string" && UUID.test(id))) decodeError(source);
+    if (!object(value) || typeof value.database_id !== "string" || !UUID.test(value.database_id) || typeof value.title !== "string" || typeof value.alias !== "string" || (value.role !== undefined && value.role !== "content") || !Array.isArray(value.data_source_ids) || !value.data_source_ids.every((id) => typeof id === "string" && UUID.test(id))) decodeError(source);
     return { id: value.database_id, alias: value.alias, role: value.role ?? "content", sources: value.data_source_ids as string[] };
   });
   const coverage = result.coverage;
@@ -340,16 +336,11 @@ async function discoverNotionDirectory(source: NotionSource, cwd: string, option
   for (const item of skills) {
     const page = createHash("sha256").update(item.id).digest("hex");
     const locator = item.locator;
-    if (locator.type === "local") decodeError(source);
-    if (locator.type === "shared_skill") {
-      if (sharedPages.has(locator.page_id)) decodeError(source);
-      sharedPages.add(locator.page_id);
-    }
-    if (object(result.profile) && (locator.type !== "shared_skill" || locator.library_id !== result.profile.library_id || locator.database_id.replaceAll("-", "").toLowerCase() !== String(result.profile.library_entry).replaceAll("-", "").toLowerCase())) decodeError(source);
-    const role = locator.type === "notion_subscription" ? "upstream" : "content";
-    const target = locator.type === "notion_subscription" ? locator.target_database_id : locator.database_id;
+    if (sharedPages.has(locator.page_id)) decodeError(source);
+    sharedPages.add(locator.page_id);
+    if (object(result.profile) && (locator.library_id !== result.profile.library_id || locator.database_id.replaceAll("-", "").toLowerCase() !== String(result.profile.library_entry).replaceAll("-", "").toLowerCase())) decodeError(source);
     if (selected && (locator.database_id !== selected.database_id || locator.data_source_id !== selected.data_source_id)) decodeError(source);
-    if (seen.has(page) || !coverage.queried_data_sources.includes(locator.data_source_id) || !databases.some(database => database.id === locator.database_id && database.role === role && database.sources.includes(locator.data_source_id)) || (selectedDatabases && !selectedDatabases.includes(target.replaceAll("-", "").toLowerCase()))) decodeError(source);
+    if (seen.has(page) || !coverage.queried_data_sources.includes(locator.data_source_id) || !databases.some(database => database.id === locator.database_id && database.sources.includes(locator.data_source_id)) || (selectedDatabases && !selectedDatabases.includes(locator.database_id.replaceAll("-", "").toLowerCase()))) decodeError(source);
     seen.add(page);
     counts.set(item.alias, (counts.get(item.alias) ?? 0) + 1);
   }
@@ -364,7 +355,7 @@ async function discoverNotionDirectory(source: NotionSource, cwd: string, option
     await privateDirectory(dir, source);
     const path = join(dir, item.entrypoint);
     const namespace = source.namespace ?? source.id;
-    const selector = item.locator.type === "notion_page" || item.locator.type === "shared_skill" ? item.locator.page_id : item.locator.type === "notion_subscription" ? item.locator.subscription_id : item.id;
+    const selector = item.locator.page_id;
     const name = `${item.alias}${counts.get(item.alias)! > 1 || !coverage.exhaustive ? `@${selector.replaceAll("-", "")}` : ""}`;
     const token = `${namespace}/${name}`;
     const hostName = name.replace(/[^a-z0-9-]/g, "-");
@@ -467,8 +458,7 @@ async function resolveNotionReferenceInSource(input: string, source: NotionSourc
   if (value.entrypoint !== record.entrypoint || main.selector !== owner.selector || main.path !== record.entrypoint || main.snapshot !== requested.snapshot
     || freshness(value.freshness, source).policy !== "pinned") decodeError(source);
   if (source.database !== undefined) {
-    const target = record.locator.type === "notion_subscription" ? record.locator.target_database_id
-      : record.locator.type === "local" ? undefined : record.locator.database_id;
+    const target = record.locator.database_id;
     const database = UUID.test(source.database) ? source.database : undefined;
     // The bundled Core already resolves aliases and checks this binding for
     // SDK files. UUIDs can also be checked without another source operation.

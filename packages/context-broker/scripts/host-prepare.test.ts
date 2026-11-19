@@ -16,7 +16,7 @@ import { projectCatalogDescriptions } from "../src/skill-catalog-projection";
 import { preparationFailureDetails, type PreparedHostGraph, type PreparationPurpose } from "../src/prepare-protocol";
 import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, MessageContent, NativeReadExecutor, NativeSkillGraphDefinition, NativeSkillPrepareDefinition, NativeSkillSearchDefinition, SessionEntry, SkillRecord } from "../src/types";
 import type { SelectionMode } from "../src/session-graph";
-import { combineConsumptionEffects, noConsumptionWrites, type ConsumptionEffects, type ConsumptionPolicy } from "../src/consumption-effects";
+import { combineConsumptionEffects, consumptionEffects, isConsumptionEffects, noConsumptionWrites, unknownConsumptionEffects, type ConsumptionEffects, type ConsumptionPolicy } from "../src/consumption-effects";
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 function canonical(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -169,13 +169,12 @@ test("Pi use and native inspect always forbid writes and reject the retired poli
 
 test("Pi dollar acquisition discloses its own effects in provider and native history without changing source proof", async () => {
   const f = await fixture(true);
-  const retained = { version: 1 as const, remote_writes: "retained" as const, author_content: "unchanged" as const,
-    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "dollar-retention", status: "confirmed" as const }] };
-  let effects: ConsumptionEffects = retained;
+  const observed: ConsumptionEffects = { version: 1, remote_writes: "unknown", author_content: "unchanged" };
+  let effects: ConsumptionEffects = observed;
   await f.install(async purpose => [{ ...f.graph(purpose), effects }], {
     buildPreparedPrompt: async () => buildInjectedContextMessage(f.root, "root"),
   });
-  for (const [id, expected] of [["first", retained], ["second", noConsumptionWrites()]] as const) {
+  for (const [id, expected] of [["first", observed], ["second", noConsumptionWrites()]] as const) {
     effects = expected;
     const user: AgentMessage = { role: "user", content: "$root task " + id };
     await f.emit("input", { source: "rpc", text: user.content }, f.ctx);
@@ -201,29 +200,27 @@ test("Pi dollar acquisition discloses its own effects in provider and native his
 
 test("partial multi-source failure retains prior effects and cannot report zero writes", async () => {
   const f = await fixture();
-  const retained = { version: 1 as const, remote_writes: "retained" as const, author_content: "unchanged" as const,
-    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "done", status: "confirmed" as const }] };
+  const observed: ConsumptionEffects = { version: 1, remote_writes: "unknown", author_content: "unchanged" };
   const original = Object.freeze(new SourceError("NOTION_UNAVAILABLE", "second-source", 23));
   const { tool } = await f.install(async (_purpose, _signal, policy) => {
-    policy?.observeEffects?.(retained);
+    policy?.observeEffects?.(observed);
     throw original;
   });
   const error = await tool.execute("partial-effects", { ref: f.root.ref }, undefined, undefined, f.ctx).then(() => undefined, error => error);
   expect(error).toBeInstanceOf(SourceError);
   expect(error).toMatchObject({ code: "NOTION_UNAVAILABLE", sourceId: "second-source", exitCode: 23, cause: original,
-    details: { effects: { version: 1, remote_writes: "unknown", author_content: "unknown", retention: retained.retention } } });
+    details: { effects: { version: 1, remote_writes: "unknown", author_content: "unknown" } } });
   expect(original.details).toBeUndefined();
 });
 
 test("dollar preflight failure keeps earlier source effects and the original denial", async () => {
-  const retained: ConsumptionEffects = { version: 1, remote_writes: "retained", author_content: "unchanged",
-    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "completed-retention", status: "confirmed" }] };
+  const observed: ConsumptionEffects = { version: 1, remote_writes: "unknown", author_content: "unchanged" };
   for (const secondEffects of [noConsumptionWrites(), undefined]) {
     const f = await fixture(true);
     const original = Object.freeze(new SourceError("ACCESS_DENIED", "second-source", undefined,
       secondEffects ? { effects: secondEffects } : undefined));
     await f.install(async (_purpose, _signal, policy) => {
-      policy?.observeEffects?.(retained);
+      policy?.observeEffects?.(observed);
       throw original;
     }, { buildPreparedPrompt: async () => buildInjectedContextMessage(f.root, "root") });
     const user: AgentMessage = { role: "user", content: "$root task" };
@@ -231,7 +228,7 @@ test("dollar preflight failure keeps earlier source effects and the original den
     await f.emit("before_agent_start", { prompt: user.content, systemPrompt: "base" }, f.ctx);
     await f.emit("agent_start", {}, f.ctx);
     const error = await f.emit("context", { messages: [user] }, f.ctx).then(() => undefined, error => error);
-    const effects = { ...retained, remote_writes: secondEffects ? "retained" : "unknown", author_content: secondEffects ? "unchanged" : "unknown" };
+    const effects = { ...observed, remote_writes: "unknown", author_content: secondEffects ? "unchanged" : "unknown" };
     expect(error).toBeInstanceOf(SourceError);
     expect(error).toMatchObject({ code: "ACCESS_DENIED", sourceId: "second-source", cause: original, details: { effects } });
     expect(JSON.parse(error.message).effects).toEqual(effects);
@@ -240,16 +237,15 @@ test("dollar preflight failure keeps earlier source effects and the original den
   }
 });
 
-test("native cancellation after preparation preserves retention and admits no read", async () => {
+test("native cancellation after preparation preserves unknown effects and admits no read", async () => {
   const f = await fixture(), controller = new AbortController();
-  const retained: ConsumptionEffects = { version: 1, remote_writes: "retained", author_content: "unchanged",
-    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "completed-retention", status: "confirmed" }] };
+  const observed: ConsumptionEffects = { version: 1, remote_writes: "unknown", author_content: "unchanged" };
   const adapter = createPiHostAdapter(f.api);
   let executeRead: NativeReadExecutor | undefined, nativeCalls = 0;
   adapter.registerReadExecutor = execute => { executeRead = execute; return () => true; };
   const { host } = await f.install(async (purpose, _signal, policy) => {
-    policy?.observeEffects?.(retained);
-    return [{ ...f.graph(purpose), effects: retained }];
+    policy?.observeEffects?.(observed);
+    return [{ ...f.graph(purpose), effects: observed }];
   }, { persistGraphs: () => { queueMicrotask(() => controller.abort()); } }, adapter);
   await host.refresh(f.ctx);
   if (!executeRead) throw new Error("Expected the native read executor");
@@ -259,8 +255,8 @@ test("native cancellation after preparation preserves retention and admits no re
   }, toolCallId).then(() => undefined, error => error);
   expect(controller.signal.aborted).toBe(true);
   expect(nativeCalls).toBe(0);
-  expect(error).toMatchObject({ code: "SOURCE_ACTIVATION_CANCELLED", details: { effects: retained } });
-  expect(JSON.parse(error.message).effects).toEqual(retained);
+  expect(error).toMatchObject({ code: "SOURCE_ACTIVATION_CANCELLED", details: { effects: observed } });
+  expect(JSON.parse(error.message).effects).toEqual(observed);
   const late = await f.emit("tool_result", { toolName: "read", toolCallId, input,
     content: [{ type: "text", text: f.root.body! }], isError: false }, f.ctx);
   expect(late.every(value => value === undefined)).toBe(true);
@@ -268,20 +264,19 @@ test("native cancellation after preparation preserves retention and admits no re
 
 test("native DOMException keeps prepared effects without mutating the original error or delivering a body", async () => {
   const f = await fixture();
-  const retained: ConsumptionEffects = { version: 1, remote_writes: "retained", author_content: "unchanged",
-    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "before-native-abort", status: "confirmed" }] };
+  const observed: ConsumptionEffects = { version: 1, remote_writes: "unknown", author_content: "unchanged" };
   const original = new DOMException("Native transport aborted", "AbortError");
   const adapter = createPiHostAdapter(f.api);
   let executeRead: NativeReadExecutor | undefined;
   adapter.registerReadExecutor = execute => { executeRead = execute; return () => true; };
-  const { host } = await f.install(async purpose => [{ ...f.graph(purpose), effects: retained }], {}, adapter);
+  const { host } = await f.install(async purpose => [{ ...f.graph(purpose), effects: observed }], {}, adapter);
   await host.refresh(f.ctx);
   if (!executeRead) throw new Error("Expected the native read executor");
   const input = { path: f.root.ref }, toolCallId = "native-domexception";
   const error = await executeRead(input, f.ctx, undefined, async () => { throw original; }, toolCallId)
     .then(() => undefined, error => error);
-  expect(error).toMatchObject({ name: "AbortError", code: original.code, cause: original, details: { effects: retained } });
-  expect(JSON.parse(error.message).effects).toEqual(retained);
+  expect(error).toMatchObject({ name: "AbortError", code: original.code, cause: original, details: { effects: observed } });
+  expect(JSON.parse(error.message).effects).toEqual(observed);
   expect(original.message).toBe("Native transport aborted");
   const late = await f.emit("tool_result", { toolName: "read", toolCallId, input,
     content: [{ type: "text", text: f.root.body! }], isError: false }, f.ctx);
@@ -497,17 +492,15 @@ test("Pi dollar injection reuses an exact canonical card while retaining every s
   expect(f.resourceReads).toEqual([]);
 });
 
-test("Pi dollar notion-page injection uses the binding's canonical selector without confusing its logical record ID", async () => {
+test("Pi dollar injection uses the current logical selector without confusing it with the physical page UUID", async () => {
   const f = await dollarCatalogFixture(), original = f.root.preparationBinding!;
-  const page = "00000000-0000-4000-8000-000000000001", ref = "skill://" + page + "/SKILL.md";
-  const record: ContentRecord = { ...original.record, id: "notion_page:" + page, ref,
-    locator: { type: "notion_page", page_id: page, database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" } };
+  const record = original.record, ref = record.ref;
   const selected: SkillRecord = { ...f.root, ...record, preparationBinding: { ...original, record, ref: ref + "?snapshot=" + original.snapshot_id } };
   const injected = buildInjectedContextMessage(selected, selected.name), before = JSON.stringify(injected);
   expect((await catalogProjection(f, [f.head, injected])).catalog).not.toContain('Controlled member &lt;metadata&gt;');
   expect(JSON.stringify(injected)).toBe(before);
   expect(sourceBodyLoaded([injected], selected)).toBe(true);
-  const wrongMain = { ...selected, preparationBinding: { ...selected.preparationBinding!, ref: selected.preparationBinding!.ref.replace(page, "00000000-0000-4000-8000-000000000099") } };
+  const wrongMain = { ...selected, preparationBinding: { ...selected.preparationBinding!, ref: selected.preparationBinding!.ref.replace(encodeURIComponent(record.id), "00000000-0000-4000-8000-000000000001") } };
   expect((await catalogProjection(f, [f.head, buildInjectedContextMessage(wrongMain, wrongMain.name)])).catalog).toContain('Controlled member &lt;metadata&gt;');
   expect(f.calls).toEqual(["use"]);
 });
@@ -912,7 +905,7 @@ test("native metadata search stays known; explicit inspect and use deliver compl
   const inspected = await nativeRead(f, f.root.ref!, "inspect");
   expect(sourceMessageText(inspected.content).startsWith(f.root.body!)).toBe(true);
   expect(sourceMessageText(inspected.content)).not.toContain(f.required.body!);
-  expect(sourceMessageText(inspected.content)).toBe(f.root.body + '\n\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown","retention":[]}</notion-effects>');
+  expect(sourceMessageText(inspected.content)).toBe(f.root.body + '\n\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown"}</notion-effects>');
   const used = await tool.execute("use", { ref: f.root.ref }, undefined, undefined, f.ctx);
   const usage = JSON.parse(String(used.content[0]?.type === "text" ? used.content[0].text : ""));
   expect(usage.records.map((record: { name: string }) => record.name)).toEqual([f.root.name, f.required.name]);
@@ -953,12 +946,11 @@ test("failed exact-file validation and output budget do not commit an explicit r
   const g = await fixture(), tiny = await g.install(async purpose => [{ ...g.graph(purpose), budget: { ...g.graph(purpose).budget, maxContextBytes: 1 } }]);
   await expect(tiny.tool.execute("budget", { ref: g.root.ref, refresh: true }, undefined, undefined, g.ctx)).rejects.toThrow("PREPARE_CONTEXT_BUDGET");
   expect(g.persisted).toEqual([]);
-  const retained = { version: 1 as const, remote_writes: "retained" as const, author_content: "unchanged" as const,
-    retention: [{ skill_page_id: "root", file_id: "main", operation_id: "before-budget-failure", status: "confirmed" as const }] };
-  const h = await fixture(), recorded = await h.install(async purpose => [{ ...h.graph(purpose), effects: retained,
+  const observed: ConsumptionEffects = { version: 1, remote_writes: "unknown", author_content: "unchanged" };
+  const h = await fixture(), recorded = await h.install(async purpose => [{ ...h.graph(purpose), effects: observed,
     budget: { ...h.graph(purpose).budget, maxContextBytes: 1 } }]);
   await expect(recorded.tool.execute("effects-budget", { ref: h.root.ref }, undefined, undefined, h.ctx)).rejects.toMatchObject({
-    details: { effects: { retention: retained.retention, remote_writes: "unknown" } } });
+    details: { effects: { remote_writes: "unknown" } } });
   expect(h.persisted).toEqual([]);
   await tool.execute("ready", { ref: f.root.ref, refresh: true }, undefined, undefined, f.ctx);
   expect(f.persisted).toEqual(["replace"]);
@@ -1108,7 +1100,7 @@ test("registered search to prepare to native read keeps one scope/version and ex
   const canonicalFile = f.root.entryManifest!.files.find(item => item.path === file.path)!.ref;
   const canonicalResource = await nativeRead(f, canonicalFile, "canonical-resource"), shortResource = await nativeRead(f, injectedFiles[0].ref, "short-resource");
   expect(sourceMessageText(shortResource.content)).toBe(sourceMessageText(canonicalResource.content));
-  expect(sourceMessageText(shortResource.content)).toBe(f.resourceText.get(f.root.id!) + '\n\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown","retention":[]}</notion-effects>');
+  expect(sourceMessageText(shortResource.content)).toBe(f.resourceText.get(f.root.id!) + '\n\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown"}</notion-effects>');
   expect(shortResource.details).toMatchObject({ contextBrokerResource: { ref: canonicalFile, scope, snapshot_id: f.root.snapshotId,
     file_id: "guide-root", delivered_complete_text: true, loaded: false } });
   expect(sourceBodyLoaded([shortResource], f.root)).toBe(false);
@@ -1370,51 +1362,36 @@ test("a list completed during an in-flight read is an earlier observation; a fol
   expect(sourceMessageText(before.content)).toContain('"availability":"available"');
 });
 
-// Host receipt aggregation remains a concrete defensive boundary. Current SDK v2 consumption does not create retention writes.
-const first: ConsumptionEffects = Object.freeze({
-  version: 1, remote_writes: "retained", author_content: "unchanged",
-  retention: Object.freeze([Object.freeze({ skill_page_id: "root", file_id: "body", operation_id: "original-op", status: "confirmed" as const })]),
-});
-const later: ConsumptionEffects = {
-  version: 1, remote_writes: "retained", author_content: "unchanged",
-  retention: [{ skill_page_id: "dependency", file_id: "body", operation_id: "second-op", status: "confirmed" }],
-};
+// Current observations remain conservative across partial failure and later success.
+const first: ConsumptionEffects = Object.freeze({ version: 1, remote_writes: "unknown", author_content: "unchanged" });
 
-test("two acquisitions preserve the first receipt through none, unknown and later retained effects", () => {
-  const cases: { later: ConsumptionEffects | undefined; writes: string; author: string; retention: unknown[] }[] = [
-    { later: noConsumptionWrites(), writes: "retained", author: "unchanged", retention: [...first.retention] },
-    { later: undefined, writes: "unknown", author: "unknown", retention: [...first.retention] },
-    { later: { version: 1, remote_writes: "unknown", author_content: "unchanged", retention: [] },
-      writes: "unknown", author: "unchanged", retention: [...first.retention] },
-    { later, writes: "retained", author: "unchanged", retention: [...first.retention, ...later.retention] },
-  ];
+test("unknown current effects cannot be overwritten by later zero-write observations", () => {
   const original = JSON.stringify(first);
-  for (const item of cases) expect(combineConsumptionEffects([first, item.later])).toEqual({
-    version: 1, remote_writes: item.writes, author_content: item.author, retention: item.retention,
-  });
+  expect(combineConsumptionEffects([first, noConsumptionWrites()])).toEqual(first);
+  expect(combineConsumptionEffects([noConsumptionWrites(), first])).toEqual(first);
+  expect(combineConsumptionEffects([first, undefined, noConsumptionWrites()])).toEqual(unknownConsumptionEffects());
+  expect(combineConsumptionEffects([first, unknownConsumptionEffects(), noConsumptionWrites()])).toEqual(unknownConsumptionEffects());
+  expect(combineConsumptionEffects([noConsumptionWrites(), noConsumptionWrites()])).toEqual(noConsumptionWrites());
+  expect(combineConsumptionEffects([])).toEqual(unknownConsumptionEffects());
   expect(JSON.stringify(first)).toBe(original);
 });
 
-test("retention identity includes source, file and original operation without losing unknown status", () => {
-  const receipts: ConsumptionEffects[] = [
-    first,
-    { version: 1, remote_writes: "retained", author_content: "unchanged", retention: [
-      { skill_page_id: "other-root", file_id: "body", operation_id: "original-op", status: "confirmed" },
-      { skill_page_id: "root", file_id: "other-file", operation_id: "original-op", status: "confirmed" },
-      { skill_page_id: "root", file_id: "body", operation_id: "independent-op", status: "confirmed" },
+test("current effects reject old retention receipts, extra fields and incomplete zero-write claims", () => {
+  for (const value of [
+    undefined, null, {}, { version: 1, remote_writes: "none" },
+    { ...noConsumptionWrites(), author_content: "unknown" },
+    { ...noConsumptionWrites(), version: 2 },
+    { ...noConsumptionWrites(), retention: [] },
+    { ...noConsumptionWrites(), remote_writes: "retained", retention: [
+      { skill_page_id: "root", file_id: "body", operation_id: "old-operation", status: "confirmed" },
     ] },
-    { version: 1, remote_writes: "unknown", author_content: "unchanged", retention: [
-      { skill_page_id: "root", file_id: "body", operation_id: "original-op", status: "unknown" },
-    ] },
-    first,
-  ];
-  expect(combineConsumptionEffects(receipts)).toEqual({
-    version: 1, remote_writes: "unknown", author_content: "unchanged", retention: [
-      { skill_page_id: "root", file_id: "body", operation_id: "original-op", status: "unknown" },
-      { skill_page_id: "other-root", file_id: "body", operation_id: "original-op", status: "confirmed" },
-      { skill_page_id: "root", file_id: "other-file", operation_id: "original-op", status: "confirmed" },
-      { skill_page_id: "root", file_id: "body", operation_id: "independent-op", status: "confirmed" },
-    ],
-  });
-  expect(first.retention[0]?.status).toBe("confirmed");
+    { ...noConsumptionWrites(), extra: true },
+  ]) {
+    expect(isConsumptionEffects(value)).toBe(false);
+    expect(consumptionEffects(value)).toEqual(unknownConsumptionEffects());
+  }
+  for (const value of [noConsumptionWrites(), first, unknownConsumptionEffects()]) {
+    expect(isConsumptionEffects(value)).toBe(true);
+    expect(consumptionEffects(value)).toBe(value);
+  }
 });

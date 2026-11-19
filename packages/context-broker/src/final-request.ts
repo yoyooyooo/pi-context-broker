@@ -2,6 +2,7 @@ import { createHash, type Hash } from "node:crypto";
 import diagnostics from "node:diagnostics_channel";
 import { isDeepStrictEqual } from "node:util";
 import type { AgentMessage } from "./types";
+import { combineConsumptionEffects, consumptionEffects, isConsumptionEffects } from "./consumption-effects.ts";
 
 /** Logical provider acceptance, turn completion, and persistence stay separate.
  * This ledger only records whether the normal openai-completions HTTP entity
@@ -57,7 +58,7 @@ export type FinalRequestSource = {
   snapshot: string | null;
   bodySha256: string | null;
   state: "copied" | "reused" | "retired";
-  remoteWrites: "none" | "retained" | "unknown" | null;
+  remoteWrites: "none" | "unknown" | null;
   authorContent: "unchanged" | "unknown" | null;
 };
 
@@ -162,13 +163,13 @@ const SNAPSHOT_PIN = /^(?:s_|local_)[a-f0-9]{64}$/;
 const HEX_HASH = /^[a-f0-9]{64}$/;
 const snapshotPin = (value: unknown): string | null => typeof value === "string" && SNAPSHOT_PIN.test(value) ? value : null;
 const hexHash = (value: unknown): string | null => typeof value === "string" && HEX_HASH.test(value) ? value : null;
-const effectFields = (details: Record<string, unknown> | undefined): Pick<FinalRequestSource, "remoteWrites" | "authorContent"> => {
+const operationEffectValues = (details: Record<string, unknown> | undefined): unknown[] => {
   const preparation = details && isObject(details.contextBrokerPreparation) ? details.contextBrokerPreparation : undefined;
-  const effects = details && isObject(details.effects) ? details.effects
-    : preparation && isObject(preparation.effects) ? preparation.effects : undefined;
-  const remoteWrites = effects && (effects.remote_writes === "none" || effects.remote_writes === "retained" || effects.remote_writes === "unknown") ? effects.remote_writes : null;
-  const authorContent = effects && (effects.author_content === "unchanged" || effects.author_content === "unknown") ? effects.author_content : null;
-  return { remoteWrites, authorContent };
+  return [details?.effects, preparation?.effects].filter(value => value !== undefined);
+};
+const effectFields = (details: Record<string, unknown> | undefined): Pick<FinalRequestSource, "remoteWrites" | "authorContent"> => {
+  const effects = combineConsumptionEffects(operationEffectValues(details).map(consumptionEffects));
+  return { remoteWrites: effects.remote_writes, authorContent: effects.author_content };
 };
 
 function deliveryState(text: string, bodySha: string | null, bytes: unknown, deliveredComplete: unknown): FinalRequestSource["state"] {
@@ -182,9 +183,9 @@ function deliveryState(text: string, bodySha: string | null, bytes: unknown, del
 }
 
 function effectsMarker(message: AgentMessage): string | undefined {
-  if (!isObject(message.details) || !isObject(message.details.effects)) return undefined;
-  const writes = message.details.effects.remote_writes;
-  return writes === "none" || writes === "retained" || writes === "unknown" ? `"remote_writes":"${writes}"` : undefined;
+  const values = operationEffectValues(isObject(message.details) ? message.details : undefined);
+  if (!values.length) return undefined;
+  return `"remote_writes":"${combineConsumptionEffects(values.map(consumptionEffects)).remote_writes}"`;
 }
 
 /** Hashed identity, fixed snapshot pin, and sanitized effect flags. No body, path, ref, or page id. */
@@ -298,6 +299,8 @@ type ToolPair = { id: string; content: string; source: boolean; effectsMarker?: 
  * captured. Identity is toolCallId, not text similarity. */
 export function assessFinalRequestPayload(messages: readonly AgentMessage[], payload: unknown): string | undefined {
   if (!isObject(payload) || !Array.isArray(payload.messages) || payload.messages.some(item => !isObject(item))) return "UNSUPPORTED_PAYLOAD";
+  if (messages.some(message => sourceTool(message) && operationEffectValues(isObject(message.details) ? message.details : undefined)
+    .some(value => !isConsumptionEffects(value)))) return "INVALID_EFFECTS";
   const payloadMessages = payload.messages;
   const payloadTexts = payloadMessages.filter(message => message.role === "user").map(message => messageText(message.content));
   const actualCounts = countTexts(payloadTexts);

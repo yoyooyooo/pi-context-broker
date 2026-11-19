@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "source_base": "66b568587fd8e2d45d1ab7cdc86fc601945ded12",
+  "source_base": "fd7ebf718f26ec0a2b060cb8a968cb3f209061b2",
   "correspondence": "Current consumer state contracts. SDK v2 acquisition is a read-only input port; these models do not represent Notion retention writes, remote history/version management, management completion or independent acceptance.",
   "maintenance": {
     "owner_skill": ".agents/skills/verify-notion-consumer-state/SKILL.md",
@@ -10,21 +10,21 @@
   },
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
-    "packages/context-broker/src/discovery-records.ts": "eff63715fb90fe2d05b4ccf1bfd2eb2227f9ada5b0ea33fa7fca5379cb91c982",
-    "packages/context-broker/src/host-skills.ts": "43ca4df5225e2b797776b911a2fafba0c45c8cb92aafa2ee3f72255ae7840da4",
-    "packages/context-broker/src/prepare-protocol.ts": "722883c738809713ea5eaca582cd953233f56b95758df1f7f627453cbcdd8561",
+    "packages/context-broker/src/discovery-records.ts": "3b8b8abee88e2eba5de3421e76e446de91412b7f7d4b6b71394fede5dd878bab",
+    "packages/context-broker/src/host-skills.ts": "b9146357a84aa57cc6bfdf008ac19c0e130c79d3f67cdf5c896f7a203bd8a130",
+    "packages/context-broker/src/prepare-protocol.ts": "08c95e6be4925f00ea5ab33ba0a99e997366d11a871f88f29093f98b8976a27c",
     "packages/context-broker/src/session-graph.ts": "4074cdfd6ef695fed633896bc780c00993b4d3014c40fee42c5095df4e8d9fc1",
     "packages/context-broker/src/session-active.ts": "68f046a982d288162cff49f120cf3d88e1f88cb5cac8ddda14937acba8f055d8",
     "packages/context-broker/src/session-source-snapshot.ts": "b23de4a16344620ff12e4e2bd3147d119fdfbffba37507b54434d7425d84c9a5",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
-    "packages/context-broker/scripts/host-prepare.test.ts": "16c93f07d1a6c573e1164b70e4e5acd4d76917dcbaf292a7f4e2087b03c4a8eb",
-    "packages/context-broker/scripts/session-active.test.ts": "e8e6ef47984d4759b0319487599ecc668c0a13a9acce74c43128ed9b4687299a",
-    "packages/context-broker/scripts/native-read-session.test.ts": "f96e8e7dbf8865e2ea2e1f98f74377702045b7f2b8dceb89868906f7bce381cf",
-    "packages/context-broker/scripts/skill-context-session.test.ts": "21b17e113e4484ecff6ad5e365d100812f2a1b0289264d18ccd72b15aaff4762",
+    "packages/context-broker/scripts/host-prepare.test.ts": "dc4116ff6294d8617aae4cfad279515dcafba115bf71df99c5c9578c2679aef4",
+    "packages/context-broker/scripts/session-active.test.ts": "5b1995a7c959a06d64cd3b4c3828d697795445c6f139ec0b357e007d41a5fd30",
+    "packages/context-broker/scripts/native-read-session.test.ts": "2e172ede1eaf050f5196e4c568c145b2837776577b869ac226bdefce56f688e9",
+    "packages/context-broker/scripts/skill-context-session.test.ts": "71b2d3ba5d5937e164a6fa08c8ebfd0fc183019d00a8495a220a7cdee4d9c897",
     "packages/context-broker/scripts/consumer-state.test.ts": "97b19d0f3ac167bfb30cd9dd4aa6959924784dcb13c4644221334bba390c5799",
     "scripts/check-consumer-state-mutations.mjs": "663d89b30f23b360447cc3de04ec9278858a79d732a8c75d27d61bad0b8bf564",
-    "packages/context-broker/src/final-request.ts": "ba7db9fc301e115200b8ba6534ab332e0f90a1a5c3c4ceaef34389cdf0bd4b9c",
-    "packages/context-broker/scripts/final-request.test.ts": "85266fac06f8d4b3fbe88e92dadabf2f04a94a72e9aba6c2c421be4e05d84f85",
+    "packages/context-broker/src/final-request.ts": "e1205558f4943c6c3a11bb344e818a49129e77c9b921d708e76b9bb2e2fcdaf3",
+    "packages/context-broker/scripts/final-request.test.ts": "79d2c6c79766099d0edd2ccdb85fc62498a7c00226198ddd32ad4dde74e09608",
     "packages/context-broker/scripts/final-request-undici.test.ts": "df1417ddf319180c89725f188107dde9b0eb8089aa12759b17d539bfd2bd7555",
     "packages/context-broker/src/session-working-set.ts": "83999553c4d7bcf6cf52aadd874b3f559725b6354c51be3111eb3c5ea1270d5a",
     "packages/context-broker/scripts/session-active-session.mjs": "a0b3d76adddb20b81858d876c4fdd81c45a66360dee55a877895b1d6348a40b5"
@@ -512,8 +512,11 @@
   ],
   "current_source_review": {
     "host_skills": "Current Notion materialization requires a complete entry manifest; older receipt scanning/fallback was removed. Pi use/read/resource inputs reject retired readOnly and internally always select no-write policy. Qualification, request ordering, cursor state, final graph commit, cancellation, provider acceptance, turn completion and public projection guards are unchanged.",
-    "host_prepare_tests": "The existing admission regression now checks unconditional no-write Pi consumption and pre-I/O rejection of the retired option. The two distinct receipt aggregation tests moved into this existing test file without changing their assertions; supplied receipt aggregation remains a defensive host boundary, not a modeled current SDK write.",
+    "host_prepare_tests": "The canonical-binding regression now uses the actual shared_skill record and keeps the physical-page substitution as a negative. It still observes one current use, complete source-body ownership and an unchanged injected message. Existing failure-attribution, incomplete-body, budget, cancellation, provider/turn and projection assertions remain in place.",
     "transport_boundary": "The installed OpenAI serializer case was removed from final-request-undici.test.ts during host deferral; its real Node HTTP entity checks remain. No installed serializer or real Pi result is claimed by these finite models.",
-    "scope": "The exact TLA/config/view bytes, model bounds, cases and expected rules are unchanged. Build/pin, user guidance, historical driver scores and unrelated producer files are not formal premises."
+    "scope": "The exact TLA/config/view bytes, model bounds, cases and expected rules are unchanged. Build/pin, user guidance, historical driver scores and unrelated producer files are not formal premises.",
+    "identity_contract": "Reviewed the diff from fd7ebf718f26ec0a2b060cb8a968cb3f209061b2: remote preparation and catalog members accept only explicit shared_skill identities with current enablement. Implicit notion_page/subscription/upstream mapping is removed. Canonical raw page UUID input still qualifies against the current physical owner. Exact source, scope, locator and ref equality remain required; no changed request ordering, cancellation, graph commit, delivery or public projection guard.",
+    "compiled_preparation_fixture": "Current shared_skill fixtures declare Enabled explicitly. The unchanged complete-body, exact-span, deduplication and directory-reuse assertions pass with the current binding; deleting Enabled remains a negative in the existing malformed-projection matrix. No delivery algorithm or model rule changed.",
+    "current_effects_contract": "The current SDK and host effects contract now has exactly version, remote_writes and author_content. Retained-history outcomes and retention arrays are rejected. Existing cancellation, partial-source failure, source-span retirement, exact-body and receipt-preservation cases use current none/unknown observations; unknown remains dominant and absent observations are unknown. Final-request validation rejects explicit malformed effects before payload acceptance and combines top-level/preparation observations conservatively. Actual HTTP entity and delivery guards remain in place. The effects field schema and diagnostic aggregation are concrete regression obligations outside the finite models; no model, bound, case inventory, expected rule or mutation target changed."
   }
 }

@@ -791,7 +791,7 @@ test('scalar receipts bind exact native results and reject forged identity, full
 });
 
 test('scalar effects receipts retain exact native spans and reject missing or forged disclosure', () => {
-  const value = scalarFixture(), effects = { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] };
+  const value = scalarFixture(), effects = { version: 1, remote_writes: 'none', author_content: 'unchanged' };
   for (const [index, message] of value.messages.entries()) {
     const call = value.calls[index];
     message.details.effects = effects;
@@ -813,7 +813,7 @@ test('scalar effects receipts retain exact native spans and reject missing or fo
 function controlledHttpResourceFixture(withEffects = true) {
   const { batch, calls, messages } = scalarFixture(), call = calls[0], raw = messages[0];
   if (withEffects) {
-    const effects = { version: 1, remote_writes: 'unknown', author_content: 'unknown', retention: [] };
+    const effects = { version: 1, remote_writes: 'unknown', author_content: 'unknown' };
     raw.details.effects = effects;
     Object.assign(raw.details.contextBrokerResource, { version: 2, delivery: { start: 0, end: call.expectedText.length, encoding: 'raw' } });
     raw.content.push({ type: 'text', text: '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>' });
@@ -921,7 +921,7 @@ test('resource evidence verifies actual UTF-8, BOM/CRLF, zero-length spans and b
 });
 
 test('batch effects are validated against the receipt outside unchanged source spans', () => {
-  const effects = { version: 1, remote_writes: 'unknown', author_content: 'unknown', retention: [] };
+  const effects = { version: 1, remote_writes: 'unknown', author_content: 'unknown' };
   for (const state of ['source', 'replaced']) {
     const value = resourceFixture(state, effects);
     assert.deepEqual(assertResourceBatchProjection(value.message, { batch: value.batch, state }).effects, effects);
@@ -1937,8 +1937,8 @@ function nativeRepeatFixture({ expectShort = true, structured = true, splitMain 
   });
   if (effects) for (const [index, message] of originals.entries()) {
     message.details.effects = index === 2
-      ? { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] }
-      : { version: 1, remote_writes: 'unknown', author_content: 'unknown', retention: [] };
+      ? { version: 1, remote_writes: 'none', author_content: 'unchanged' }
+      : { version: 1, remote_writes: 'unknown', author_content: 'unknown' };
     const footer = '\n\n<notion-effects>' + JSON.stringify(message.details.effects) + '</notion-effects>';
     if (index % 2) {
       Object.assign(message.details.contextBrokerResource, { version: 2, delivery: { start: 0, end: file.content.length, encoding: 'raw' } });
@@ -2063,7 +2063,7 @@ test('native repeat keeps each operation effects while comparing the same comple
   assert.equal(JSON.stringify(value), before);
   for (const mutate of [
     message => { message.content.at(-1).text = message.content.at(-1).text.replace(/\n\n<notion-effects>.*<\/notion-effects>$/u, ''); },
-    message => { message.details.effects = { version: 1, remote_writes: 'unknown', author_content: 'unknown', retention: [] }; },
+    message => { message.details.effects = { version: 1, remote_writes: 'unknown', author_content: 'unknown' }; },
   ]) {
     const sample = nativeRepeatFixture({ splitMain: true, effects: true });
     mutate(sample.captures.at(-1).context.messages.find(message => message.toolCallId === 'sc15-main-repeat'));
@@ -2279,8 +2279,8 @@ test('controlled HTTP body cancellation requires its actual RPC abort inside the
   const result = reconcile(observed(fields), lifecycle, options);
   assert.equal(result.sdk_cancelled_bodies, 1); assert.equal(result.sdk_http, 1);
   for (const effects of [
-    { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] },
-    { version: 1, remote_writes: 'unknown', author_content: 'unknown', retention: [] },
+    { version: 1, remote_writes: 'none', author_content: 'unchanged' },
+    { version: 1, remote_writes: 'unknown', author_content: 'unknown' },
   ]) {
     const withEffects = { ...cancellation, sdk_result: { ...cancellation.sdk_result, effects } };
     assert.equal(reconcile(observed(fields), lifecycle, { ...options, controlledCancellations: [withEffects] }).sdk_cancelled_bodies, 1);
@@ -3106,7 +3106,7 @@ test('warm directory rejects pending fake user directory wrong owner metadata an
 });
 
 function contextOnceFixture() {
-  const effects = { version: 1, remote_writes: 'unknown', author_content: 'unknown', retention: [] };
+  const effects = { version: 1, remote_writes: 'unknown', author_content: 'unknown' };
   const main = 'Frozen complete main.\n', resource = 'Frozen complete guide.\n';
   const batch = { main, files: [{ path: 'references/guide.md', content: resource, encoding: 'utf8' }], unselected: [] };
   const model = { ok: true, status: 'ready', purpose: 'use', roots: ['sr:Smain'],

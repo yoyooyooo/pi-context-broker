@@ -220,7 +220,7 @@ test('Pi observer verifies source modes and effect-bearing native main and scala
   const fixture = sourceFixture(), root = await mkdtemp(path.join(await systemTempRoot(), 'graph-sdk-native-'));
   fixture.files.forEach((file, index) => { file.mode = index ? '100755' : '100644'; fixture.manifest.files[index].mode = file.mode; });
   fixture.entry.manifest_sha256 = hash(canonical(fixture.manifest));
-  const effects = { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] };
+  const effects = { version: 1, remote_writes: 'none', author_content: 'unchanged' };
   const effectsFooter = '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>';
   const cache = path.join(root, 'cache'), responses = path.join(root, 'responses'), output = path.join(root, 'observer.jsonl');
   await Promise.all([cache, responses].map(directory => mkdir(directory))); await writeFile(output, '');

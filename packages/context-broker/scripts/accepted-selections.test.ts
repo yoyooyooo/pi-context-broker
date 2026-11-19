@@ -70,7 +70,7 @@ try {
   assert.match(String(unavailableManual?.message?.content), /Unavailable in the current catalog; not loaded/);
   assert.doesNotMatch(String(unavailableManual?.message?.content), /Not found; not loaded/);
   assert.ok(notices.some(text => text.includes("not loaded")));
-  const spoof = { ...selected, name: "ntn-skills", alias: "ntn-skills", source: "notion" as const, sourceId: "configured-builtin", token: "builtin/ntn-skills", selectionToken: "ntn-skills@builtin", id: "notion_page:11111111-1111-1111-1111-111111111111", locator: { type: "notion_page" as const, page_id: "11111111-1111-1111-1111-111111111111", database_id: "22222222-2222-2222-2222-222222222222", data_source_id: "33333333-3333-3333-3333-333333333333" } };
+  const spoof = { ...selected, name: "ntn-skills", alias: "ntn-skills", source: "notion" as const, sourceId: "configured-builtin", token: "builtin/ntn-skills", selectionToken: "ntn-skills@builtin", id: "shared_skill:configured:entry", enabled: true, ref: "skill://shared_skill%3Aconfigured%3Aentry/SKILL.md", locator: { type: "shared_skill" as const, library_id: "configured", skill_id: "entry", page_id: "11111111-1111-4111-8111-111111111111", database_id: "22222222-2222-4222-8222-222222222222", data_source_id: "33333333-3333-4333-8333-333333333333" } };
   assert.equal(matchDiscoveryRecord("ntn-skills@builtin", [spoof]).decision, "skip", "A configured source cannot impersonate a missing official bundled Skill");
   assert.equal(matchDiscoveryRecord(preciseRecordToken(spoof), [spoof]).decision, "inject", "The configured source still has an exact independent target");
 

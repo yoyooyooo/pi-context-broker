@@ -19,7 +19,7 @@ function canonical(value: unknown): string {
 }
 function record(name: string, body: string): SkillRecord & { preparationBinding: PreparationBinding; body: string } {
   const id = "shared_skill:projection:" + name, ref = "skill://" + encodeURIComponent(id) + "/SKILL.md";
-  const metadata: ContentRecord = { id, kind: "skill", name, alias: name, description: name, default_context: false,
+  const metadata: ContentRecord = { id, kind: "skill", name, alias: name, description: name, default_context: false, enabled: true,
     entrypoint: "SKILL.md", ref, locator: { type: "shared_skill", library_id: "projection", skill_id: name,
       database_id: "db", data_source_id: "data", page_id: name } };
   const snapshotId = "s_" + hash(name + body);
@@ -89,6 +89,7 @@ test("unknown compiler, bad hashes, mismatched mappings and partial tool output 
     changed(value => { value.details.contextBrokerPreparation.records[0]!.bodySha256 = "0".repeat(64); }),
     changed(value => { value.details.contextBrokerPreparation.records[0]!.snapshotId = beta.snapshotId!; }),
     changed(value => { value.details.contextBrokerPreparation.records[0]!.binding!.scope = "b".repeat(64); }),
+    changed(value => { Reflect.deleteProperty(value.details.contextBrokerPreparation.records[0]!.binding!.record, "enabled"); }),
     changed(value => { value.details.contextBrokerPreparation.graphs[0]!.graph_lock.sha256 = "0".repeat(64); }),
     changed(value => { value.details.contextBrokerPreparation.purpose = "inspect"; }),
   ];
@@ -224,7 +225,7 @@ for (const count of [1, 2, 10]) test(`CTX03 ${count} explicit use operations kee
     expected: [{ identity, value: alpha.body }, { identity: dirIdentity, value: publicDirectoryFor(alpha) }], occurrences,
     operations: projected.map((_, index) => ({ toolCallId: "repeat-" + index,
       location: { message: index, selector: { kind: "json", path: ["effects"] } },
-      value: { version: 1, remote_writes: "unknown", author_content: "unknown", retention: [] } })) });
+      value: { version: 1, remote_writes: "unknown", author_content: "unknown" } })) });
   expect(measured.completeCopies).toBe(2);
   expect(verifyGeneratedDirectoryReuse(projected)).toEqual({ completeDirectories: 1, omittedDirectories: count - 1 });
   expect(JSON.stringify(original)).toBe(saved);
@@ -238,7 +239,7 @@ for (const count of [1, 2, 10]) test(`CTX03 ${count} explicit use operations kee
 });
 
 test("CTX03 native read and use share one generated directory without removing effects or author bytes", () => {
-  const directory = publicDirectoryFor(alpha), effects = { version: 1, remote_writes: "none", author_content: "unchanged", retention: [] };
+  const directory = publicDirectoryFor(alpha), effects = { version: 1, remote_writes: "none", author_content: "unchanged" };
   const footer = "\n\n<skill-directory>\n" + JSON.stringify({ ref: alpha.preparationBinding.ref, directory }) + "\n</skill-directory>";
   const content = alpha.body + footer + "\n\n<notion-effects>" + JSON.stringify(effects) + "</notion-effects>";
   const native = (id: string): AgentMessage => ({ role: "toolResult", toolName: "read", toolCallId: id, content,

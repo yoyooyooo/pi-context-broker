@@ -37,15 +37,15 @@ node --test scripts/context-once-evidence.test.mjs
 
 ## Gotchas
 
-新增断言必须先在原缺陷上失败。当前基线已知重复目录随读取次数增长，以及 scalar 资源退役误删 effects。历史 112 项源码测试和 167 项 driver 测试通过不代表本批合同通过。
+新增断言必须先在原缺陷上失败。历史通过数量不代表当前候选。变更需保留目录重复、scalar资源effects与完整投递的相关反例。
 
 source/owner/pin/文件身份不同不能因同名字或同字节而合并。省略依据必须仍在同一最终请求中；不能引用另一个省略标记或已被压缩的内容。字节与结构断言不证明模型自然选路质量。
 
-纯表示变化更新实现回归与本地图。状态语义变化同时审阅 consumer-state、组合模型、正负配置和源码映射；不能只更新 hash。每个切片通过 Pro `ntn` 同步受影响的 Notion 长期页并完整读回，保留所有失败和未执行范围。
+纯表示变化更新实现回归与本地图。状态语义变化同时审阅现有observations/consumer-state、正负配置和源码映射；不能只更新 hash。每个切片通过 Pro `ntn` 同步受影响的 Notion 长期页并完整读回，保留所有失败和未执行范围。
 
 CTX06 的 DeliveryBoundary 不新增 TLA 状态。进程内 mock payload 和 `after_provider_response` 的 2xx 仍是 logical-only，不是最终传输证明。普通 `openai-completions` 只有 Node Undici 实际发送实体与绑定摘要一致才是 wire 回执。摘要不一致时请求保持 dispatched，但不确认 active、selected 或 persisted。`contextBrokerResource` 的标量/批量结果和 effects 与主文、preparation 一样核对。`/context-broker request` 只保留哈希身份、固定 snapshot pin、copied/reused/retired、`remote_writes`/`author_content`，不保存正文或 locator。
 
-## Current installed gates
+## 实际 Pi 的按需场景
 
 冻结独立安装包、CLI/SDK、Pi 和 fixture 身份后，使用同一个入口：
 
@@ -56,13 +56,13 @@ node scripts/notion-sdk-pi.mjs run --package "$BROKER" --fixture "$FIXTURE" --sc
 node scripts/notion-sdk-pi.mjs run --package "$BROKER" --fixture "$FIXTURE" --scenario session-compaction --out "$OUT/compaction"
 ```
 
-`context-once` 的两个 backend 共用 `list → use → read → use → read → held/abort` 决策与独立来源断言。HTTP arm 捕获实际请求实体，核对每次主文、资源、目录各一份及各次 effects；fast arm 不冒称发送 HTTP。两者都保留原始 Session、SDK 终局和工具 callId。原 `all` 仍是 14 场景，未把新门槛塞入旧分母。
+`context-once` 的两个 backend 共用 `list → use → read → use → read → held/abort` 决策与独立来源断言。HTTP arm 捕获实际请求实体，核对每次主文、资源、目录各一份及各次 effects；fast arm 不冒称发送 HTTP。两者都保留原始 Session、SDK 终局和工具 callId。按实际选定场景报告，不把旧all计数或历史结果写成当前门槛。
 
 `context-wire-negative` 实驱四种反例：投影后重复正文、丢失正文、修改 schema，以及先成功持久化后把恢复正文的 user 角色改成 assistant。前三者已发送但拒绝签发 wire 成功；最后一个在发送前拒绝第二次请求，保留首轮真实接受事实。所有反例都必须保留原件，且不能新增 active/selected 回执。
 
 恢复后的正文由独立的 `nativePromptSha256` 机器回执绑定，user 消息本身没有内联详情。验收必须使用真实 `deferredSourceEntries` 和原生续问，不能只用手造 `details.records`。回执留在私有检查上下文，预期输入在后续可变 hook 前固定，不发给模型。普通用户引用或同文 assistant 回答不充当该 user 角色义务。
 
-相关 CI 同时运行根 oracle、普通消费专项、安装 all14、controlled HTTP 三景及以上门槛；`check-gates` 的负例拒绝遗漏场景、吞掉失败和缺证据上传。取消 SDK 结果可保留独立 effects，但不能带成功 preparation/delivery 字段。`none/retained/unknown` 不因取消被改写。
+当前CI执行根oracle、普通消费专项和独立安装/current HTTP；不启动实际Pi。上面的实际Pi场景按受影响范围单列执行，未运行保持not_run。`check-gates`只核对当前接线，不把旧场景分母恢复为门槛。取消 SDK 结果可保留独立 effects，但不能带成功 preparation/delivery 字段。`none/retained/unknown` 不因取消被改写。
 
 实际服务和真实模型仍独立执行。管理编辑只能针对已有归属证明的自有对象，并通过 Pro 正式 `ntn`，保存编辑前后完整读回。普通续问保留旧 pin，显式 refresh 后完整新图才替换。真实模型用冻结短任务检查自然选路、完整内容、只读效果和原生 Session；不得把 Mock 的 OK、合成 usage 或一次改正后的答案算冷首答成功。
 

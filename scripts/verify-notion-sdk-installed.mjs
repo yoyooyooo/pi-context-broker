@@ -27,7 +27,7 @@ assert.equal(fixture.kind, 'current-notion-service');
 assert.ok(fixture.expected.catalog_count > 0 && fixture.expected.file_count > 100);
 assert.ok(!('snapshots' in fixture) && !('scope' in fixture), 'Only current service facts are accepted');
 const hash = value => createHash('sha256').update(value).digest('hex');
-const noWrites = { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] };
+const noWrites = { version: 1, remote_writes: 'none', author_content: 'unchanged' };
 let out = options.get('--out');
 async function inventory() {
   const files = [];

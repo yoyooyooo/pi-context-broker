@@ -109,7 +109,7 @@ test("a fixed scalar resource delegates every native option and result without p
   expect(input.path).toBe(f.files[0]!.ref); expect(f.state.calls).toEqual([f.files[0]!.ref]);
   const delivered = await f.finish("scalar-call", input, result);
   expect(delivered.content.slice(0, native.content.length)).toEqual(native.content);
-  expect(delivered.content.at(-1)).toEqual({ type: "text", text: '\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown","retention":[]}</notion-effects>' });
+  expect(delivered.content.at(-1)).toEqual({ type: "text", text: '\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown"}</notion-effects>' });
   expect(delivered.details).toMatchObject({ native: true, contextBrokerResource: { version: 2, loaded: false, delivered_complete_text: true,
     delivery: { start: 0, end: f.text.length, encoding: "raw" },
     id: f.metadata.id, scope: f.metadata.sourceScope, snapshot_id: f.selected.snapshotId, file_id: "guide", sha256: hash(f.text) } });
@@ -130,7 +130,7 @@ test("native partial text, empty files and images retain their content and truth
     f.state.nativeResult = { ...native, content: [...native.content] };
     const result = await f.read(input), delivered = await f.finish("scalar-call", input, result);
     expect(result).toBe(f.state.nativeResult); expect(delivered.content.slice(0, native.content.length)).toEqual(native.content);
-    expect(delivered.content.at(-1)).toEqual({ type: "text", text: '\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown","retention":[]}</notion-effects>' });
+    expect(delivered.content.at(-1)).toEqual({ type: "text", text: '\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown"}</notion-effects>' });
     expect(delivered.details).toHaveProperty("contextBrokerResource.delivered_complete_text", complete);
     expect(delivered.details).toHaveProperty("contextBrokerResource.loaded", false);
   }

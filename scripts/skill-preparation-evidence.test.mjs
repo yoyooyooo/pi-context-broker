@@ -130,18 +130,26 @@ test('independent evidence verifier preserves authored Unicode, BOM, CRLF and li
 });
 
 test('effects extend the compact envelope without weakening body proof or accepting false zero receipts', () => {
-  const value = fixture();
-  value.model.effects = { version: 1, remote_writes: 'retained', author_content: 'unchanged',
-    retention: [{ skill_page_id: 'owner', file_id: 'main', operation_id: 'op', status: 'confirmed' }] };
-  repack(value);
-  assert.deepEqual(verify(value).model.effects, value.model.effects);
-  assert.deepEqual(verify(value).records.map(record => record.decodedContent), bodies);
-  for (const mutate of [
-    effects => { effects.version = 2; }, effects => { effects.remote_writes = 'none'; },
-    effects => { effects.retention[0].status = 'unknown'; }, effects => { delete effects.retention[0].operation_id; },
+  for (const effects of [
+    { version: 1, remote_writes: 'none', author_content: 'unchanged' },
+    { version: 1, remote_writes: 'unknown', author_content: 'unchanged' },
+    { version: 1, remote_writes: 'unknown', author_content: 'unknown' },
   ]) {
-    const invalid = structuredClone(value); mutate(invalid.model.effects); repack(invalid);
-    assert.throws(() => verify(invalid));
+    const value = fixture(); value.model.effects = effects; repack(value);
+    assert.deepEqual(verify(value).model.effects, effects);
+    assert.deepEqual(verify(value).records.map(record => record.decodedContent), bodies);
+  }
+  for (const effects of [
+    { version: 1, remote_writes: 'none' },
+    { version: 1, remote_writes: 'none', author_content: 'unknown' },
+    { version: 2, remote_writes: 'none', author_content: 'unchanged' },
+    { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] },
+    { version: 1, remote_writes: 'retained', author_content: 'unchanged',
+      retention: [{ skill_page_id: 'owner', file_id: 'main', operation_id: 'old', status: 'confirmed' }] },
+    { version: 1, remote_writes: 'none', author_content: 'unchanged', extra: true },
+  ]) {
+    const value = fixture(); value.model.effects = effects; repack(value);
+    assert.throws(() => verify(value));
   }
 });
 

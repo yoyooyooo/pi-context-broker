@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "source_base": "66b568587fd8e2d45d1ab7cdc86fc601945ded12",
+  "source_base": "fd7ebf718f26ec0a2b060cb8a968cb3f209061b2",
   "correspondence": "Current consumer state contracts. SDK v2 acquisition is a read-only input port; these models do not represent Notion retention writes, remote history/version management, management completion or independent acceptance.",
   "maintenance": {
     "owner_skill": ".agents/skills/verify-notion-consumer-state/SKILL.md",
@@ -10,11 +10,11 @@
   },
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
-    "packages/context-broker/src/discovery-records.ts": "eff63715fb90fe2d05b4ccf1bfd2eb2227f9ada5b0ea33fa7fca5379cb91c982",
-    "packages/context-broker/src/host-skills.ts": "43ca4df5225e2b797776b911a2fafba0c45c8cb92aafa2ee3f72255ae7840da4",
-    "packages/context-broker/src/prepare-protocol.ts": "722883c738809713ea5eaca582cd953233f56b95758df1f7f627453cbcdd8561",
+    "packages/context-broker/src/discovery-records.ts": "3b8b8abee88e2eba5de3421e76e446de91412b7f7d4b6b71394fede5dd878bab",
+    "packages/context-broker/src/host-skills.ts": "b9146357a84aa57cc6bfdf008ac19c0e130c79d3f67cdf5c896f7a203bd8a130",
+    "packages/context-broker/src/prepare-protocol.ts": "08c95e6be4925f00ea5ab33ba0a99e997366d11a871f88f29093f98b8976a27c",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
-    "packages/context-broker/scripts/host-prepare.test.ts": "16c93f07d1a6c573e1164b70e4e5acd4d76917dcbaf292a7f4e2087b03c4a8eb",
+    "packages/context-broker/scripts/host-prepare.test.ts": "dc4116ff6294d8617aae4cfad279515dcafba115bf71df99c5c9578c2679aef4",
     "scripts/check-consumer-observation-mutations.mjs": "a34d906997d213187d48af500f3af0c5a61fd9233d5dd11b35268c2611f8cf51"
   },
   "models": {
@@ -150,9 +150,11 @@
   ],
   "current_source_review": {
     "host_skills": "Current Notion materialization requires a complete entry manifest; older receipt scanning/fallback was removed. Pi use/read/resource inputs reject retired readOnly and internally always select no-write policy. Qualification, request ordering, cursor state, final graph commit, cancellation, provider acceptance, turn completion and public projection guards are unchanged.",
-    "host_prepare_tests": "The existing admission regression now checks unconditional no-write Pi consumption and pre-I/O rejection of the retired option. The two distinct receipt aggregation tests moved into this existing test file without changing their assertions; supplied receipt aggregation remains a defensive host boundary, not a modeled current SDK write.",
+    "host_prepare_tests": "The canonical-binding regression now uses the actual shared_skill record and keeps the physical-page substitution as a negative. It still observes one current use, complete source-body ownership and an unchanged injected message. Existing failure-attribution, incomplete-body, budget, cancellation, provider/turn and projection assertions remain in place.",
     "transport_boundary": "The installed OpenAI serializer case was removed from final-request-undici.test.ts during host deferral; its real Node HTTP entity checks remain. No installed serializer or real Pi result is claimed by these finite models.",
-    "scope": "The exact TLA/config/view bytes, model bounds, cases and expected rules are unchanged. Build/pin, user guidance, historical driver scores and unrelated producer files are not formal premises."
+    "scope": "The exact TLA/config/view bytes, model bounds, cases and expected rules are unchanged. Build/pin, user guidance, historical driver scores and unrelated producer files are not formal premises.",
+    "identity_contract": "Reviewed the diff from fd7ebf718f26ec0a2b060cb8a968cb3f209061b2: remote preparation and catalog members accept only explicit shared_skill identities with current enablement. Implicit notion_page/subscription/upstream mapping is removed. Canonical raw page UUID input still qualifies against the current physical owner. Exact source, scope, locator and ref equality remain required; no changed request ordering, cancellation, graph commit, delivery or public projection guard.",
+    "current_effects_contract": "The current SDK and host effects contract now has exactly version, remote_writes and author_content. Retained-history outcomes and retention arrays are rejected. Existing cancellation, partial-source failure, source-span retirement, exact-body and receipt-preservation cases use current none/unknown observations; unknown remains dominant and absent observations are unknown. Final-request validation rejects explicit malformed effects before payload acceptance and combines top-level/preparation observations conservatively. Actual HTTP entity and delivery guards remain in place. The effects field schema and diagnostic aggregation are concrete regression obligations outside the finite models; no model, bound, case inventory, expected rule or mutation target changed."
   },
   "outside_finite_models": [
     {

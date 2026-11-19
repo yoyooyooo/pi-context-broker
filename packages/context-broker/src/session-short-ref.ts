@@ -72,18 +72,12 @@ function canonical(value: ExactNativeReference): string {
 function locator(value: unknown): RemoteLocator {
   if (!object(value)) fail();
   if (value.type === "local") fail("SHORT_REF_UNSUPPORTED");
-  if (!["shared_skill", "notion_page", "notion_subscription"].includes(String(value.type))) fail();
-  const common = ["type", "database_id", "data_source_id"];
-  const extra = value.type === "shared_skill" ? ["page_id", "library_id", "skill_id"]
-    : value.type === "notion_page" ? ["page_id"] : ["subscription_id", "target_database_id"];
-  fields(value, [...common, ...extra]);
-  for (const key of ["database_id", "data_source_id", ...(value.type === "notion_subscription" ? ["subscription_id", "target_database_id"] : ["page_id"])]) {
+  if (value.type !== "shared_skill") fail();
+  fields(value, ["type", "database_id", "data_source_id", "page_id", "library_id", "skill_id"]);
+  for (const key of ["database_id", "data_source_id", "page_id"]) {
     if (typeof value[key] !== "string" || !UUID.test(value[key])) fail();
   }
   const database_id = String(value.database_id), data_source_id = String(value.data_source_id);
-  if (value.type === "notion_page") return { type: "notion_page", database_id, data_source_id, page_id: String(value.page_id) };
-  if (value.type === "notion_subscription") return { type: "notion_subscription", database_id, data_source_id,
-    subscription_id: String(value.subscription_id), target_database_id: String(value.target_database_id) };
   const library_id = text(value.library_id), skill_id = text(value.skill_id);
   if (!sharedSkillId(library_id, skill_id)) fail();
   return { type: "shared_skill", database_id, data_source_id, page_id: String(value.page_id), library_id, skill_id };
@@ -94,11 +88,8 @@ function identity(value: unknown): ShortRefIdentity {
   if (value.source !== "notion" || typeof value.scope !== "string" || !HASH.test(value.scope)
     || !["skill", "router", "prompt"].includes(String(value.kind))) fail();
   const sourceLocator = locator(value.locator), ref = reference(value.ref);
-  const id = sourceLocator.type === "shared_skill" ? sharedSkillId(sourceLocator.library_id, sourceLocator.skill_id)!
-    : sourceLocator.type + ":" + (sourceLocator.type === "notion_page" ? sourceLocator.page_id : sourceLocator.subscription_id);
-  const selector = sourceLocator.type === "shared_skill" ? id : sourceLocator.type === "notion_page" ? sourceLocator.page_id : "upstream:" + sourceLocator.subscription_id;
-  if (value.id !== id || ref.selector !== selector || ref.path || ref.snapshot !== undefined || ref.fileId !== undefined
-    || sourceLocator.type === "notion_subscription" && value.kind !== "router") fail();
+  const id = sharedSkillId(sourceLocator.library_id, sourceLocator.skill_id)!;
+  if (value.id !== id || ref.selector !== id || ref.path || ref.snapshot !== undefined || ref.fileId !== undefined) fail();
   return Object.freeze({ source: "notion", scope: value.scope, id, kind: value.kind as ContentRecord["kind"],
     locator: Object.freeze(sourceLocator), ref: canonical(ref) });
 }
