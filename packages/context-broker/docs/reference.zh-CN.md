@@ -276,9 +276,9 @@ OMP 与没有公开工具能力 API 的宿主保留既有 CLI 指引。argv 与�
 
 会话 `sr:` 句柄归属 Broker，独立 CLI 不接受它们。CLI 后备路径使用已返回的 canonical 引用或已选 snapshot/path。只有会话句柄时，可用所选来源的 CLI `list`，按确切 record 身份取得同一候选的 canonical 引用；不由名称猜身份，也不向 `sr:` 追加路径。资源优先复制系统返回的 canonical ref。
 
-宿主只观察当前随包 CLI 的字面 `ctl library import` 调用。完整 current 结果必须匹配 operation、稳定 Skill、物理页面和 library/database/data-source 身份。成功 `applied` 只让对应配置来源在下一次发现时刷新。普通 `unchanged` 不刷新；同 operation 的显式 `--resume` 返回 `unchanged` 时可以重新读取此前写入的可见性。数据库 ID、HTTP(S) Notion URL 和精确配置别名采用同一归属，旗标接受当前 CLI parser 的等价语法，但拒绝重复参数、真正的 dry-run 和复合 shell。
+宿主观察当前随包 CLI 的字面 `ctl library import` 与 `ctl library source apply/refresh` 调用。import 结果必须匹配 operation、稳定 Skill、物理页面和 library/database/data-source 身份；Source 结果还要核对父 Source 与同库全部受影响的 ready Skill，不把 Source 页面当 Skill 页面。成功 `applied` 只让对应配置来源在下一次发现时刷新。普通 `unchanged` 不刷新；同 operation 的显式 `--resume` 返回 `unchanged` 时可以重新读取此前写入的可见性。数据库 ID、HTTP(S) Notion URL 和精确配置别名采用同一归属。旗标接受等价语法及 import 的多个不同 `--native PATH`；拒绝重复单值参数、重复 native 路径、真正的 dry-run 和复合 shell。
 
-导入失败时，如果错误携带已经确认且匹配的 operation 与 Skill 上下文，也可让目录失效，因为部分内容可能已经写入；错误仍是错误。识别到真实宿主截断 footer 且 entry 能精确归属时，只保守刷新一次，不声明成功，不补读 artifact。没有 operation 上下文的本地预检失败、未知输出、多个 JSON 或 JSON 正文内的截断标记都不算完成写入。
+写入失败时，如果错误携带已确认且匹配的当前 operation，也可让目录失效，因为部分内容可能已经写入。import 要匹配 Skill 上下文；Source 要匹配有限父意图与输入指纹，子任务不能冒充父任务；错误仍是错误。识别到真实宿主截断 footer 且 entry 能精确归属时，只保守刷新一次，不声明成功，不补读 artifact 或声明文件。没有 operation 上下文的本地预检失败、未知输出、多个 JSON 或 JSON 正文内的截断标记都不算完成写入。
 
 自动刷新保留来源 offline 策略，不取消已接受草稿，不替换会话已经选择的内容。宿主观察之外的写入继续依赖正常时效或 `/context-broker refresh`。旧 create/apply/sync 回执、独立 operation 路由与 OMP artifact 跟随已从此 observer 退役。
 

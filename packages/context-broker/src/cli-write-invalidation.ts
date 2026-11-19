@@ -3,7 +3,10 @@ import { validSharedIdentity } from "./shared-skill-identity";
 import type { ExtensionAPI, ExtensionContext, MessageContent, SkillRecord, SourceConfig } from "./types";
 
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
-type Invocation = { entry: string; skillId: string; sources: NotionSource[] }
+type InvocationTarget = { route: "import"; skillId: string }
+  | { route: "source-apply" }
+  | { route: "source-refresh"; sourceId: string };
+type Invocation = { entry: string; sources: NotionSource[] } & InvocationTarget
   & ({ kind: "apply"; operationId?: string } | { kind: "resume"; operationId: string });
 type Library = { libraryId: string; databaseId: string; dataSourceId: string };
 type SourceBinding = { source: NotionSource } & (
@@ -11,12 +14,16 @@ type SourceBinding = { source: NotionSource } & (
   | { kind: "invalid" }
   | { kind: "known"; library: Library; pages: Map<string, string> }
 );
-type CurrentWrite = { library: Library; pageId: string; status: "applied" | "unchanged" };
+type CurrentSkillWrite = { library: Library; skillId: string; pageId: string; status: "applied" | "unchanged" };
+type CurrentWrite = { library: Library; pages: ReadonlyMap<string, string>; status: "applied" | "unchanged" };
 type CallState = { kind: "pending"; command: string; invocation: Invocation } | { kind: "settled" };
 
 const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const uuid = (value: unknown): string | undefined => typeof value === "string" && /^(?:[a-f\d]{32}|[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12})$/i.test(value) ? value.replaceAll("-", "").toLowerCase() : undefined;
 const sameLibrary = (left: Library, right: Library) => left.libraryId === right.libraryId && left.databaseId === right.databaseId && left.dataSourceId === right.dataSourceId;
+const hash = (value: unknown): value is string => typeof value === "string" && /^[a-f\d]{64}$/.test(value);
+const sourceIdentity = (value: unknown): value is string => typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$/.test(value)
+  && !/^(?:snapshot-|bundle-|source-plan-)/.test(value) && !/^source-[a-f\d]{64}$/.test(value);
 const booleanLiteral = (value: string | undefined): boolean | undefined => value === undefined ? undefined
   : ["true", "yes", "on", "1", "y"].includes(value) ? true : ["false", "no", "off", "0", "n"].includes(value) ? false : undefined;
 // Effect's Int CLI primitive first accepts a finite decimal/exponent string.
@@ -73,11 +80,18 @@ function invocation(command: string, sources: NotionSource[]): Invocation | unde
   try { prefix = hostCliScope().command; } catch { return undefined; }
   if (!prefix.every((value, index) => argv[index] === value)) return undefined;
   const args = argv.slice(prefix.length);
-  if (args[0] !== "ctl" || args[1] !== "library" || args[2] !== "import") return undefined;
+  if (args[0] !== "ctl" || args[1] !== "library") return undefined;
+  let route: InvocationTarget["route"];
+  if (args[2] === "import") route = "import";
+  else if (args[2] === "source" && args[3] === "apply") route = "source-apply";
+  else if (args[2] === "source" && args[3] === "refresh") route = "source-refresh";
+  else return undefined;
   const values = new Map<string, string>();
-  const singleton = new Set(["entry", "skill-id", "operation", "name", "description", "max-requests", "max-bytes", "timeout"]);
+  const singleton = new Set(["entry", "operation", "max-requests", "max-bytes", "timeout",
+    ...(route === "import" ? ["skill-id", "name", "description"] : [])]);
+  const native = new Set<string>();
   let input: string | undefined;
-  for (let index = 3; index < args.length; index++) {
+  for (let index = route === "import" ? 3 : 4; index < args.length; index++) {
     const arg = args[index]!;
     if (arg === "--") {
       const operands = args.slice(index + 1);
@@ -90,6 +104,13 @@ function invocation(command: string, sources: NotionSource[]): Invocation | unde
       let name = arg.slice(2, equal < 0 ? undefined : equal);
       const negated = name === "no-resume" || name === "no-dry-run";
       if (negated) name = name.slice(3);
+      if (name === "native") {
+        if (route !== "import") return undefined;
+        const value = equal < 0 ? args[++index] : arg.slice(equal + 1);
+        if (value === undefined || !value.length || equal < 0 && value.startsWith("--") || native.has(value)) return undefined;
+        native.add(value);
+        continue;
+      }
       if (values.has(name)) return undefined;
       if (name === "resume" || name === "dry-run") {
         const next = booleanLiteral(args[index + 1]);
@@ -110,11 +131,20 @@ function invocation(command: string, sources: NotionSource[]): Invocation | unde
       input = arg;
     }
   }
-  const entry = values.get("entry"), skillId = values.get("skill-id"), operationId = values.get("operation");
-  if (input === undefined || !entry?.trim() || entry.startsWith("notion_page:") || !validSharedIdentity(skillId) || operationId !== undefined && !validSharedIdentity(operationId)) return undefined;
+  const entry = values.get("entry"), operationId = values.get("operation");
+  if (input === undefined || !entry?.trim() || entry.startsWith("notion_page:") || operationId !== undefined && !validSharedIdentity(operationId)) return undefined;
+  let target: InvocationTarget;
+  if (route === "import") {
+    const skillId = values.get("skill-id");
+    if (!validSharedIdentity(skillId)) return undefined;
+    target = { route, skillId };
+  } else if (route === "source-refresh") {
+    if (!sourceIdentity(input)) return undefined;
+    target = { route, sourceId: input };
+  } else target = { route };
   if (values.get("dry-run") === "true") return undefined;
-  if (values.get("resume") === "true") return operationId === undefined ? undefined : { kind: "resume", entry, skillId, operationId, sources };
-  return { kind: "apply", entry, skillId, operationId, sources };
+  if (values.get("resume") === "true") return operationId === undefined ? undefined : { ...target, kind: "resume", entry, operationId, sources };
+  return { ...target, kind: "apply", entry, operationId, sources };
 }
 
 function library(value: unknown): Library | undefined {
@@ -139,16 +169,48 @@ function sourceBinding(source: NotionSource, records: SkillRecord[]): SourceBind
 }
 
 function operationMatches(call: Invocation, value: Record<string, unknown>): boolean {
-  return validSharedIdentity(value.operation_id) && value.skill_id === call.skillId && (call.operationId === undefined || value.operation_id === call.operationId);
+  if (!validSharedIdentity(value.operation_id) || call.operationId !== undefined && value.operation_id !== call.operationId) return false;
+  if (call.route === "import") return value.skill_id === call.skillId;
+  return sourceIdentity(value.source_id) && (call.route === "source-apply" || value.source_id === call.sourceId);
+}
+
+function currentSkillWrite(result: Record<string, unknown>): CurrentSkillWrite | undefined {
+  if (result.contract !== "current" || result.state !== "ready" || result.dry_run === true ||
+      result.status !== "applied" && result.status !== "unchanged" || !validSharedIdentity(result.skill_id) ||
+      !validSharedIdentity(result.operation_id) || !hash(result.input_sha256) ||
+      typeof result.files !== "number" || !Number.isSafeInteger(result.files) || result.files < 1) return undefined;
+  const owner = library(result.library), pageId = uuid(result.page_id);
+  return owner && pageId ? { library: owner, skillId: result.skill_id, pageId, status: result.status } : undefined;
+}
+
+function currentSourceWrite(result: Record<string, unknown>): CurrentWrite | undefined {
+  if (result.version !== 1 || result.contract !== "current" || result.state !== "ready" || result.dry_run === true ||
+      result.status !== "applied" && result.status !== "unchanged" || !sourceIdentity(result.source_id) ||
+      !hash(result.input_sha256) || !hash(result.configuration_sha256) || !hash(result.revision) ||
+      typeof result.resolved_commit !== "string" || !/^[a-f\d]{40}$/.test(result.resolved_commit) ||
+      !Array.isArray(result.affected_skill_ids) || !Array.isArray(result.targets)) return undefined;
+  const owner = library(result.library), sourcePage = uuid(result.source_page_id), sourceTable = uuid(result.sources_data_source_id);
+  if (!owner || !sourcePage || !sourceTable || sourceTable === owner.dataSourceId) return undefined;
+  const affected = new Set<string>(), pages = new Map<string, string>(), physicalPages = new Set<string>();
+  for (const id of result.affected_skill_ids) {
+    if (!validSharedIdentity(id) || affected.has(id)) return undefined;
+    affected.add(id);
+  }
+  for (const raw of result.targets) {
+    const target = isObject(raw) ? currentSkillWrite(raw) : undefined;
+    if (!target || !sameLibrary(owner, target.library) || !affected.has(target.skillId) ||
+        result.status === "unchanged" && target.status !== "unchanged" ||
+        pages.has(target.skillId) || physicalPages.has(target.pageId) || target.pageId === sourcePage) return undefined;
+    pages.set(target.skillId, target.pageId); physicalPages.add(target.pageId);
+  }
+  return pages.size === affected.size ? { library: owner, pages, status: result.status } : undefined;
 }
 
 function currentWrite(call: Invocation, result: Record<string, unknown>): CurrentWrite | undefined {
-  if (result.ok !== true || result.contract !== "current" || result.state !== "ready" || result.dry_run === true ||
-      result.status !== "applied" && result.status !== "unchanged" || !operationMatches(call, result) ||
-      typeof result.input_sha256 !== "string" || !/^[a-f\d]{64}$/.test(result.input_sha256) ||
-      typeof result.files !== "number" || !Number.isSafeInteger(result.files) || result.files < 1) return undefined;
-  const owner = library(result.library), pageId = uuid(result.page_id);
-  return owner && pageId ? { library: owner, pageId, status: result.status } : undefined;
+  if (result.ok !== true || !operationMatches(call, result)) return undefined;
+  if (call.route !== "import") return currentSourceWrite(result);
+  const target = currentSkillWrite(result);
+  return target ? { library: target.library, pages: new Map([[target.skillId, target.pageId]]), status: target.status } : undefined;
 }
 
 function successfulSources(call: Invocation, result: CurrentWrite, bindings: SourceBinding[]): string[] {
@@ -159,7 +221,7 @@ function successfulSources(call: Invocation, result: CurrentWrite, bindings: Sou
     const configured = entryId(binding.source.database);
     if (configured && configured !== result.library.databaseId) return false;
     if (binding.kind === "known") return sameLibrary(binding.library, result.library) &&
-      (!binding.pages.has(call.skillId) || binding.pages.get(call.skillId) === result.pageId);
+      [...result.pages].every(([skill, page]) => !binding.pages.has(skill) || binding.pages.get(skill) === page);
     return configured === result.library.databaseId || binding.source.database === call.entry;
   });
   // Aliases are exact configured entries, never display names or an inferred CLI alias.
@@ -187,7 +249,13 @@ function affectedSources(call: Invocation, output: CliOutput, records: SkillReco
   const result = output.result;
   if (result.ok === false) {
     const error = result.error;
-    return isObject(error) && isObject(error.details) && operationMatches(call, error.details) ? entrySources(call, bindings) : [];
+    if (!isObject(error) || !isObject(error.details) || !operationMatches(call, error.details)) return [];
+    if (call.route !== "import") {
+      const details = error.details;
+      if (!isObject(details.owner) || details.owner.kind !== "source" || details.owner.id !== details.source_id ||
+          !hash(details.input_sha256) || details.next !== "reconcile_current") return [];
+    }
+    return entrySources(call, bindings);
   }
   const written = currentWrite(call, result);
   return written && (written.status === "applied" || call.kind === "resume") ? successfulSources(call, written, bindings) : [];

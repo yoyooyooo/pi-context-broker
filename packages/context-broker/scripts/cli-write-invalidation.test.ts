@@ -57,6 +57,10 @@ await result(currentCommand, current);
 changedLibrary("Only configured sources bound to the current physical and logical library become dirty");
 await result(command(...args, "--name", "作者's name", "--description", "", "--max-requests", "100", "--max-bytes=4096", "--timeout", "1000"), current);
 changedLibrary("All current singleton metadata/budget flags preserve the exact import owner");
+await result(command(...args, "--native", "SKILL.md", "--native=references/guide [literal].md"), current);
+changedLibrary("Distinct repeatable native paths retain the current import owner without reading its input");
+await result(command(...args, "--native=SKILL.md", "--native", "references/guide.md", "--resume"), { ...current, status: "unchanged" });
+changedLibrary("Native imports preserve the same-intent resume visibility boundary");
 for (const flags of [
   ["--max-requests", "+100", "--max-bytes=1e3", "--timeout", "100.0"],
   ["--max-requests=.1e3", "--max-bytes", "1E+3", "--timeout=1000e-1"],
@@ -115,6 +119,8 @@ for (const cmd of [
   command(...args, "--help"), command(...args, "--progress"), command(...args, "--unknown", "value"),
   command(...args, "--entry=" + db), command(...args, "--skill-id", skill), command(...args, "--operation=" + operation),
   command(...args, "--name", "one", "--name=two"), command(...args, "--description", "one", "--description=two"),
+  command(...args, "--native", ""), command(...args, "--native="), command(...args, "--native"),
+  command(...args, "--native", "--resume"), command(...args, "--native=SKILL.md", "--native", "SKILL.md"),
   command(...args, "--max-requests", "1", "--max-requests=2"), command(...args, "--max-bytes", "0"),
   command(...args, "--max-requests=-1"), command(...args, "--timeout=1.2"), command(...args, "--timeout=1s"),
   command(...args, "--max-requests=0x64"), command(...args, "--timeout=1e999"), command(...args, "--timeout= 100 "),
@@ -280,6 +286,97 @@ for (const event of ["session_shutdown", "session_switch", "session_tree", "sess
 }
 assert.deepEqual(changed.splice(0), [], "Every session boundary discards late result ownership");
 
+const managedSource = "git-repository", sourcePage = "44444444-4444-4444-8444-444444444444", sourceTable = "55555555-5555-4555-8555-555555555555";
+const secondSkill = "skill:two", secondPage = "11111111-1111-4111-8111-111111111112";
+const { ok: _targetOk, ...firstTarget } = current;
+const sourceTargets = [{ ...firstTarget, operation_id: "source-target:first" },
+  { ...firstTarget, skill_id: secondSkill, page_id: secondPage, operation_id: "source-target:second" }];
+const sourceCurrent = { ok: true, version: 1, contract: "current", status: "applied", state: "ready", library,
+  source_id: managedSource, source_page_id: sourcePage, sources_data_source_id: sourceTable, operation_id: operation,
+  input_sha256: "c".repeat(64), configuration_sha256: "d".repeat(64), revision: "e".repeat(64), resolved_commit: "f".repeat(40),
+  affected_skill_ids: [skill, secondSkill], targets: sourceTargets };
+const sourceUnchanged = { ...sourceCurrent, status: "unchanged", targets: sourceTargets.map(target => ({ ...target, status: "unchanged" })) };
+const sourceDetails = { operation_id: operation, owner: { kind: "source", id: managedSource }, source_id: managedSource,
+  input_sha256: sourceCurrent.input_sha256, next: "reconcile_current" };
+const sourcePending = { ok: false, error: { code: "WRITE_OUTCOME_UNKNOWN", details: sourceDetails } };
+const sourceArgs = (route: "apply" | "refresh", entry = db) => ["ctl", "library", "source", route,
+  route === "apply" ? "/not-opened/source.json" : managedSource, "--entry", entry, "--operation", operation];
+for (const route of ["apply", "refresh"] as const) {
+  const sourceCommand = command(...sourceArgs(route));
+  await result(sourceCommand, sourceCurrent);
+  changedLibrary("One Source operation with two exact targets invalidates the library once, not once per Skill");
+  await result(command(...sourceArgs(route), "--no-dry-run", "--resume=false", "--max-requests=1e2", "--timeout", "1000"), sourceCurrent);
+  changedLibrary("Source routes preserve the same literal Boolean and bounded integer forms");
+  await result(sourceCommand, sourceUnchanged);
+  assert.deepEqual(changed.splice(0), [], "An ordinary unchanged Source intent does not invalidate");
+  await result(command(...sourceArgs(route), "--resume=true"), sourceUnchanged);
+  changedLibrary("A same-intent Source resume recovers earlier visibility");
+  await result(sourceCommand, sourcePending, true);
+  changedLibrary("An unknown Source parent operation requests a reread without claiming completion");
+  await result(sourceCommand, truncated, true);
+  changedLibrary("Actual host truncation of an owned Source command conservatively dirties only its entry");
+  for (const entry of entryUrls) {
+    await result(command(...sourceArgs(route, entry)), sourceCurrent);
+    changedLibrary("Source success uses the exact configured Notion URL library");
+  }
+  for (const cmd of [
+    command(...sourceArgs(route), "--dry-run"), command(...sourceArgs(route), "--dry-run=yes"),
+    command(...sourceArgs(route), "--entry", db), command(...sourceArgs(route), "--operation", operation),
+    command(...sourceArgs(route), "--skill-id", skill), command(...sourceArgs(route), "--name", "visible"),
+    command(...sourceArgs(route), "--description", "metadata"), command(...sourceArgs(route), "--unknown"),
+    command(...sourceArgs(route), "--native", "SKILL.md"), command(...sourceArgs(route), "--native=SKILL.md"),
+    command(...sourceArgs(route), "--timeout", "0"), command(...sourceArgs(route), "extra"),
+    sourceCommand + " && echo done", sourceCommand + " | cat",
+    command("ctl", "library", "source", route, route === "apply" ? "/source.json" : managedSource, "--entry", db, "--resume"),
+  ]) await result(cmd, sourceCurrent);
+  assert.deepEqual(changed.splice(0), [], "Source previews, import-only flags, duplicate inputs and shell compounds cannot own a write");
+  for (const output of [current, { ...sourceCurrent, state: "pending" }, { ...sourceCurrent, source_page_id: page },
+    { ...sourceCurrent, source_id: "source-plan-retired" }, { ...sourceCurrent, resolved_commit: "bad" },
+    { ...sourceCurrent, revision: "bad" }, { ...sourceCurrent, configuration_sha256: "bad" },
+    { ...sourceCurrent, operation_id: "another-parent" }, { ...sourceCurrent, affected_skill_ids: [skill] },
+    { ...sourceCurrent, affected_skill_ids: [skill, skill] }, { ...sourceCurrent, targets: [sourceTargets[0], sourceTargets[0]] },
+    { ...sourceCurrent, targets: [sourceTargets[0], { ...sourceTargets[1], page_id: page }] },
+    { ...sourceCurrent, targets: [{ ...sourceTargets[0], page_id: secondPage }, { ...sourceTargets[1], page_id: "11111111-1111-4111-8111-111111111113" }] },
+    { ...sourceCurrent, targets: [sourceTargets[0], { ...sourceTargets[1], library: { ...library, database_id: otherDb } }] },
+    { ...sourceCurrent, targets: [sourceTargets[0], { ...sourceTargets[1], state: "pending" }] },
+    { ...sourceCurrent, status: "unchanged" },
+  ]) await result(sourceCommand, output);
+  assert.deepEqual(changed.splice(0), [], "A Source result must independently bind its current owner and every exact affected Skill");
+  for (const details of [
+    { ...sourceDetails, owner: { kind: "skill", id: skill }, skill_id: skill },
+    { ...sourceDetails, owner: { kind: "source", id: "another-source" } },
+    { ...sourceDetails, operation_id: "source-target:first" }, { ...sourceDetails, input_sha256: undefined },
+    { ...sourceDetails, next: undefined },
+  ]) await result(sourceCommand, { ok: false, error: { code: "WRITE_OUTCOME_UNKNOWN", details } }, true);
+  assert.deepEqual(changed.splice(0), [], "A child result or incomplete finite parent cannot borrow the Source invocation");
+  for (const output of [sourceCurrent, sourcePending, truncated])
+    await result(command(...sourceArgs(route, "unregistered-alias")), output, true);
+  assert.deepEqual(changed.splice(0), [], "Source writes do not infer an unregistered CLI alias from a returned library");
+}
+for (const id of ["../bad", "git:repository", "snapshot-old", "bundle-old", "source-plan-old", "source-" + "a".repeat(64)])
+  await result(command("ctl", "library", "source", "refresh", id, "--entry", db, "--operation", operation), { ...sourceCurrent, source_id: id });
+await result(command("ctl", "library", "source", "refresh", "another-source", "--entry", db, "--operation", operation), sourceCurrent);
+await result(command("ctl", "library", "source", "refresh", "another-source", "--entry", db, "--operation", operation), sourcePending, true);
+await result(currentCommand, sourceCurrent);
+assert.deepEqual(changed.splice(0), [], "Source identities follow current Source grammar and never become Skill or legacy owners");
+await result(command("ctl", "library", "source", "apply", "--entry", db, "--operation", operation, "--", "--literal-source.json"), sourceCurrent);
+changedLibrary("A Source declaration filename after the delimiter remains one literal input and is never opened by the observer");
+await result(command("ctl", "library", "source", "apply", "/source.json", "--entry", "library"), sourcePending, true);
+changedLibrary("An automatically allocated finite Source parent can invalidate the exact configured alias");
+const otherLibrary = { library_id: "new-library", database_id: otherDb, data_source_id: "33333333-3333-4333-8333-333333333334" };
+await result(command(...sourceArgs("apply", otherDb)), { ...sourceCurrent, library: otherLibrary, affected_skill_ids: ["new-skill"],
+  targets: [{ ...sourceTargets[0], skill_id: "new-skill", library: otherLibrary }] });
+assert.deepEqual(changed.splice(0), [["second"]], "A first Source write can invalidate an exact database before any Skill is cached");
+const sourceCall = { toolName: "bash", toolCallId: "source-owned", input: { command: command(...sourceArgs("refresh")) } };
+await emit("tool_call", sourceCall);
+await emit("tool_call", sourceCall);
+await emit("tool_result", { ...sourceCall, content: JSON.stringify(sourceCurrent) }, otherCtx);
+assert.deepEqual(changed.splice(0), [], "A different session cannot consume a Source result");
+await emit("tool_result", { ...sourceCall, content: JSON.stringify(sourceCurrent) });
+changedLibrary("The original Source invocation invalidates exactly once");
+await emit("tool_result", { ...sourceCall, content: JSON.stringify(sourceCurrent) });
+assert.deepEqual(changed.splice(0), [], "Repeated Source results cannot invalidate twice");
+
 records = [record("alias", { type: "notion_page", page_id: page, database_id: db, data_source_id: ds })];
 await result(currentCommand, current);
 assert.deepEqual(changed.splice(0), [["personal"]], "Old page locators cannot bind a configured alias to the current library");
@@ -290,4 +387,4 @@ await result(command("ctl", "library", "import", "/staged", "--entry", "library"
 await result(command("ctl", "library", "import", "/staged", "--entry", "library", "--skill-id", skill), pending, true);
 assert.deepEqual(changed.splice(0), [], "Conflicting current page ownership cannot authorize an alias or another source");
 assert.equal(runtime.calls.length, 0, "The observer executes no CLI or SDK calls and never injects content");
-console.log("Current CLI import invalidation checks passed");
+console.log("Current CLI import and Source invalidation checks passed");

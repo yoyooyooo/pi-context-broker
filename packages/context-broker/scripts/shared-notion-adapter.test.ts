@@ -160,7 +160,11 @@ test("shared identity encoding and exact selectors preserve the logical and phys
 
 const importOperation = "current-import:adapter";
 const currentLibrary = { library_id: "current-source", database_id: database, data_source_id: dataSource };
-async function observeWrite(result: Json, options: { resume?: boolean; isError?: boolean; entry?: string; operation?: string } = {}) {
+async function observeWrite(result: Json, options: {
+  resume?: boolean; isError?: boolean; entry?: string; operation?: string;
+  native?: string[];
+  source?: { kind: "apply" } | { kind: "refresh"; sourceId: string };
+} = {}) {
   const handlers = new Map<string, unknown>(), changed: string[][] = [];
   const api: ExtensionAPI = { on(event, handler) { handlers.set(event, handler); } };
   const f = await currentNotionFixture();
@@ -172,8 +176,12 @@ async function observeWrite(result: Json, options: { resume?: boolean; isError?:
   const call = handlers.get("tool_call"), finish = handlers.get("tool_result");
   if (typeof call !== "function" || typeof finish !== "function") throw new Error("Expected installed write-observer handlers");
   const quoted = (argument: string) => "'" + argument.replaceAll("'", "'\\''") + "'";
-  const input = { command: [...hostCliScope([source]).command, "ctl", "library", "import", "/staged",
-    "--entry", options.entry ?? database, "--skill-id", "entry", "--operation", options.operation ?? importOperation,
+  const route = options.source === undefined ? ["import", "/staged", "--skill-id", "entry"]
+    : options.source.kind === "apply" ? ["source", "apply", "/not-opened/source.json"]
+    : ["source", "refresh", options.source.sourceId];
+  const input = { command: [...hostCliScope([source]).command, "ctl", "library", ...route,
+    "--entry", options.entry ?? database, "--operation", options.operation ?? importOperation,
+    ...(options.native ?? []).flatMap(path => ["--native", path]),
     ...(options.resume ? ["--resume"] : [])].map(quoted).join(" ") };
   await call({ toolName: "bash", toolCallId: "write-1", input }, context);
   await finish({ toolName: "bash", toolCallId: "write-1", input, content: JSON.stringify(result), isError: options.isError ?? false }, context);
@@ -187,6 +195,12 @@ function currentImportResult(): Json {
 
 test("a complete current import invalidates the same library used by the SDK directory", async () => {
   expect(await observeWrite(currentImportResult())).toEqual([["shared"]]);
+});
+
+test("native imports and their same-intent resumes invalidate the current SDK directory", async () => {
+  const native = ["SKILL.md", "references/guide.md"];
+  expect(await observeWrite(currentImportResult(), { native })).toEqual([["shared"]]);
+  expect(await observeWrite({ ...currentImportResult(), status: "unchanged" }, { native, resume: true })).toEqual([["shared"]]);
 });
 
 const invalidImports: [string, (result: Json) => Json][] = [
@@ -232,4 +246,66 @@ test("a configured display name or old publication receipt never binds a current
   expect(await observeWrite(currentImportResult(), { entry: "entry" })).toEqual([]);
   expect(await observeWrite({ ok: true, verified: true, operation: "apply", status: "applied", record: sharedRecord(), scope,
     apply_operation_id: "skill-apply-" + "e".repeat(64) + "." + "f".repeat(64), changes: { files: ["SKILL.md"], removed: [] } })).toEqual([]);
+});
+
+const managedSourceId = "git-repository";
+function currentSourceResult(status: "applied" | "unchanged" = "applied"): Json {
+  const { ok: _ok, ...target } = currentImportResult();
+  return { ok: true, version: 1, contract: "current", status, state: "ready",
+    library: currentLibrary, sources_data_source_id: uuid(12), source_id: managedSourceId, source_page_id: uuid(90),
+    operation_id: importOperation, input_sha256: "d".repeat(64), configuration_sha256: "e".repeat(64),
+    revision: "f".repeat(64), resolved_commit: "a".repeat(40), affected_skill_ids: ["entry", "new-entry"],
+    targets: [{ ...target, status }, { ...target, status, skill_id: "new-entry", page_id: uuid(2), operation_id: "source-target:second" }] };
+}
+
+test("one Source apply or refresh invalidates its exact SDK library after all current targets complete", async () => {
+  expect(await observeWrite(currentSourceResult(), { source: { kind: "apply" } })).toEqual([["shared"]]);
+  expect(await observeWrite(currentSourceResult(), { source: { kind: "refresh", sourceId: managedSourceId } })).toEqual([["shared"]]);
+  expect(await observeWrite(currentSourceResult(), { source: { kind: "refresh", sourceId: "another-source" } })).toEqual([]);
+  expect(await observeWrite(currentSourceResult())).toEqual([]);
+  expect(await observeWrite(currentImportResult(), { source: { kind: "apply" } })).toEqual([]);
+});
+
+const invalidSourceWrites: [string, (result: Json) => Json][] = [
+  ["non-ready Source", result => ({ ...result, state: "pending" })],
+  ["Source inspection", result => ({ ...result, status: "inspected", remote_writes: 0 })],
+  ["missing Source page", result => ({ ...result, source_page_id: null })],
+  ["invalid Source identity", result => ({ ...result, source_id: "../source" })],
+  ["missing Source table", result => ({ ...result, sources_data_source_id: undefined })],
+  ["Skills table used for Source", result => ({ ...result, sources_data_source_id: dataSource })],
+  ["foreign library", result => ({ ...result, library: { ...currentLibrary, library_id: "another-library" } })],
+  ["incomplete target set", result => ({ ...result, affected_skill_ids: ["entry", "new-entry", "missing"] })],
+  ["duplicate affected identity", result => ({ ...result, affected_skill_ids: ["entry", "entry"] })],
+  ["missing completed targets", result => ({ ...result, targets: [] })],
+  ["missing exact commit", result => ({ ...result, resolved_commit: undefined })],
+  ["missing declaration hash", result => ({ ...result, configuration_sha256: undefined })],
+];
+test.each(invalidSourceWrites)("Source invalidation refuses %s", async (_name, change) => {
+  expect(await observeWrite(change(currentSourceResult()), { source: { kind: "apply" } })).toEqual([]);
+});
+
+test("Source no-op apply is inert while same-intent resume recovers prior visibility", async () => {
+  const unchanged = currentSourceResult("unchanged");
+  expect(await observeWrite(unchanged, { source: { kind: "apply" } })).toEqual([]);
+  expect(await observeWrite(unchanged, { source: { kind: "refresh", sourceId: managedSourceId } })).toEqual([]);
+  expect(await observeWrite(unchanged, { source: { kind: "apply" }, resume: true })).toEqual([["shared"]]);
+  expect(await observeWrite(unchanged, { source: { kind: "refresh", sourceId: managedSourceId }, resume: true })).toEqual([["shared"]]);
+});
+
+test("a Source outcome unknown uses its finite parent intent without claiming a child or completion", async () => {
+  const details = { owner: { kind: "source", id: managedSourceId }, source_id: managedSourceId,
+    operation_id: importOperation, input_sha256: "d".repeat(64), next: "reconcile_current" };
+  const unknown = { ok: false, error: { code: "WRITE_OUTCOME_UNKNOWN", details } };
+  for (const isError of [false, true])
+    expect(await observeWrite(unknown, { source: { kind: "apply" }, isError })).toEqual([["shared"]]);
+  expect(await observeWrite(unknown, { source: { kind: "refresh", sourceId: managedSourceId } })).toEqual([["shared"]]);
+  expect(await observeWrite(unknown, { source: { kind: "refresh", sourceId: "another-source" } })).toEqual([]);
+  expect(await observeWrite(unknown, { source: { kind: "apply" }, operation: "another-intent" })).toEqual([]);
+  expect(await observeWrite(unknown, { source: { kind: "apply" }, entry: uuid(99) })).toEqual([]);
+  for (const changed of [
+    { ...details, owner: { kind: "skill", id: "entry" }, skill_id: "entry" },
+    { ...details, owner: { kind: "source", id: "another-source" } },
+    { ...details, operation_id: undefined }, { ...details, input_sha256: undefined }, { ...details, next: undefined },
+  ]) expect(await observeWrite({ ok: false, error: { details: changed } }, { source: { kind: "apply" } })).toEqual([]);
+  expect(await observeWrite({ ok: false, error: { code: "INVALID_ARGUMENT" } }, { source: { kind: "apply" } })).toEqual([]);
 });
