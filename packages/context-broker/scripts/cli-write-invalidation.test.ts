@@ -291,7 +291,7 @@ const secondSkill = "skill:two", secondPage = "11111111-1111-4111-8111-111111111
 const { ok: _targetOk, ...firstTarget } = current;
 const sourceTargets = [{ ...firstTarget, operation_id: "source-target:first" },
   { ...firstTarget, skill_id: secondSkill, page_id: secondPage, operation_id: "source-target:second" }];
-const sourceCurrent = { ok: true, version: 1, contract: "current", status: "applied", state: "ready", library,
+const sourceCurrent = { ok: true, version: 1, contract: "current", action: "declaration", status: "applied", state: "ready", library,
   source_id: managedSource, source_page_id: sourcePage, sources_data_source_id: sourceTable, operation_id: operation,
   input_sha256: "c".repeat(64), configuration_sha256: "d".repeat(64), revision: "e".repeat(64), resolved_commit: "f".repeat(40),
   affected_skill_ids: [skill, secondSkill], targets: sourceTargets };
@@ -376,6 +376,108 @@ await emit("tool_result", { ...sourceCall, content: JSON.stringify(sourceCurrent
 changedLibrary("The original Source invocation invalidates exactly once");
 await emit("tool_result", { ...sourceCall, content: JSON.stringify(sourceCurrent) });
 assert.deepEqual(changed.splice(0), [], "Repeated Source results cannot invalidate twice");
+
+// New Source actions retain the exact owner but have distinct completion shapes.
+const { resolved_commit: _commit, ...sourceBase } = sourceCurrent;
+const metadataTargets = sourceTargets.map(target => ({ skill_id: target.skill_id, skill_page_id: target.page_id }));
+for (const verb of ["enable", "disable"] as const) {
+  const argv = ["ctl", "library", "source", verb, managedSource, "--entry", db, "--operation", operation];
+  const value = { ...sourceBase, action: "enabled", enabled: verb === "enable", targets: metadataTargets };
+  await result(command(...argv), value);
+  changedLibrary("Source eligibility changes invalidate current discovery without pretending to rewrite child bodies");
+  await result(command(...argv), { ...value, status: "unchanged" });
+  assert.deepEqual(changed.splice(0), [], "An unchanged ordinary eligibility request does not invalidate");
+  for (const mode of [["--resume"], ["--supersede", "prior-source-intent"]]) {
+    await result(command(...argv, ...mode), { ...value, status: "unchanged" });
+    changedLibrary("A resumed or explicitly superseded eligibility intent recovers current visibility");
+  }
+  for (const invalid of [
+    { ...value, action: undefined }, { ...value, action: "declaration" },
+    { ...value, enabled: verb !== "enable" }, { ...value, enabled: undefined },
+    { ...value, targets: sourceTargets }, { ...value, targets: [{ ...metadataTargets[0], state: "ready" }, metadataTargets[1]] },
+    { ...value, targets: [{ ...metadataTargets[0], skill_page_id: sourcePage }, metadataTargets[1]] },
+    { ...value, affected_skill_ids: [skill, secondSkill, "missing"] },
+    { ...value, status: "inspected", remote_writes: 0 }, { ...value, state: "removed" },
+    sourceCurrent,
+  ]) await result(command(...argv), invalid);
+  assert.deepEqual(changed.splice(0), [], "Eligibility results bind the requested Boolean and exact metadata target shape");
+  await result(command(...argv), sourcePending, true);
+  changedLibrary("An unfinished eligibility action retains its Source parent invalidation scope");
+}
+const removeArgs = ["ctl", "library", "source", "remove", managedSource, "--entry", db, "--operation", operation];
+const removed = { ...sourceBase, action: "remove", state: "removed", status: "removed", targets: metadataTargets };
+await result(command(...removeArgs), removed);
+changedLibrary("Confirmed Source retirement invalidates its exact library");
+await result(command(...removeArgs, "--resume"), removed);
+changedLibrary("Reconciled retirement remains a removed Source, not a ready Skill");
+await result(command(...removeArgs), { ...removed, affected_skill_ids: [], targets: [] });
+changedLibrary("An unreferenced Source can be retired with an honestly empty target set");
+for (const invalid of [
+  { ...removed, state: "ready" }, { ...removed, status: "applied" }, { ...removed, action: "enabled" },
+  { ...removed, action: undefined }, { ...removed, targets: sourceTargets }, { ...removed, targets: [] },
+  { ...removed, targets: metadataTargets.map(target => ({ skill_id: target.skill_id, page_id: target.skill_page_id })) },
+  sourceCurrent,
+]) await result(command(...removeArgs), invalid);
+assert.deepEqual(changed.splice(0), [], "Only removed completion with complete metadata bindings proves retirement");
+await result(command(...removeArgs), sourcePending, true);
+changedLibrary("Unknown Source Trash acknowledgement causes a conservative reread, not completion");
+
+const sourcePath = "skills/alpha/guide [literal].md", selectedFile = "file:guide";
+for (const verb of ["takeover", "restore-follow"] as const) {
+  const argv = ["ctl", "library", "source", verb, managedSource, sourcePath,
+    "--entry", db, "--operation", operation, "--skill-id", skill, "--file-id", selectedFile];
+  const value = { ...sourceBase, action: verb === "takeover" ? "takeover" : "restore_follow",
+    file_id: selectedFile, source_path: sourcePath, affected_skill_ids: [skill], targets: [sourceTargets[0]] };
+  await result(command(...argv), value);
+  changedLibrary("Exact Source file transfers bind one ready target without requiring a fabricated Git discovery result");
+  if (verb === "takeover") {
+    for (const authority of ["native", "resource"]) {
+      await result(command(...argv, "--as=" + authority), value);
+      changedLibrary("Explicit current takeover authority retains the same observed target");
+    }
+  }
+  await result(command(...argv, "--resume"), { ...value, status: "unchanged", targets: [{ ...sourceTargets[0], status: "unchanged" }] });
+  changedLibrary("File-transfer resume recovers visibility while preserving the exact selected File");
+  await result(command(...argv), sourcePending, true);
+  changedLibrary("Unknown file transfer remains a finite parent Source error");
+  for (const invalid of [
+    { ...value, action: "declaration" }, { ...value, action: verb === "takeover" ? "restore_follow" : "takeover" },
+    { ...value, file_id: "another-file" }, { ...value, source_path: "skills/other/guide.md" },
+    { ...value, targets: metadataTargets.slice(0, 1) }, { ...value, affected_skill_ids: [secondSkill] },
+    { ...value, affected_skill_ids: [skill, secondSkill], targets: sourceTargets },
+    { ...value, targets: [{ ...sourceTargets[0], state: "pending" }] }, sourceCurrent,
+  ]) await result(command(...argv), invalid);
+  for (const flags of [["--native", "SKILL.md"], ["--file-id", selectedFile], ["--as", "source"], ["--dry-run"]])
+    await result(command(...argv, ...flags), value);
+  if (verb === "restore-follow") await result(command(...argv, "--as", "resource"), value);
+  for (const path of ["", "../outside", "/absolute", "a//b", "a/./b", "a/../b", "C:/outside", "a\\b"])
+    await result(command("ctl", "library", "source", verb, managedSource, path,
+      "--entry", db, "--operation", operation, "--skill-id", skill, "--file-id", selectedFile), { ...value, source_path: path });
+  assert.deepEqual(changed.splice(0), [], "File-transfer outputs and flags cannot substitute another action, path, File or Skill");
+}
+
+for (const [argv, value, failure] of [[args, current, pending], [sourceArgs("apply"), sourceCurrent, sourcePending]] as const) {
+  const superseded = command(...argv, "--supersede", "predecessor-intent");
+  await result(superseded, value);
+  changedLibrary("A completed supersede must identify the new current operation");
+  const noOp = "targets" in value ? sourceUnchanged : { ...current, status: "unchanged" };
+  await result(superseded, noOp);
+  changedLibrary("A supersede no-op still refreshes visibility from the explicitly reconciled predecessor");
+  await result(superseded, failure, true);
+  changedLibrary("An error after supersede handoff uses the new operation context");
+  await result(superseded, { ...failure, error: { ...failure.error, details: { ...failure.error.details, operation_id: "predecessor-intent" } } }, true);
+  changedLibrary("Before handoff an explicitly named predecessor error permits only conservative invalidation");
+  await result(superseded, { ...value, operation_id: "predecessor-intent" });
+  for (const flags of [
+    ["--supersede", operation], ["--supersede", "predecessor-intent", "--resume"],
+    ["--supersede", "predecessor-intent", "--dry-run"], ["--supersede", ""],
+    ["--supersede", "bad predecessor"], ["--supersede", "old", "--supersede", "other"],
+  ]) await result(command(...argv, ...flags), value);
+  assert.deepEqual(changed.splice(0), [], "Predecessor success and ambiguous supersede flags cannot claim the new write");
+}
+for (const verb of ["enable", "disable", "remove"])
+  await result(command("ctl", "library", "source", verb, managedSource, "--entry", db, "--supersede", "old"), removed);
+assert.deepEqual(changed.splice(0), [], "Source supersede requires an explicit distinct new operation");
 
 records = [record("alias", { type: "notion_page", page_id: page, database_id: db, data_source_id: ds })];
 await result(currentCommand, current);

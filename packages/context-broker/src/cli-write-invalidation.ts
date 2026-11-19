@@ -5,9 +5,12 @@ import type { ExtensionAPI, ExtensionContext, MessageContent, SkillRecord, Sourc
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
 type InvocationTarget = { route: "import"; skillId: string }
   | { route: "source-apply" }
-  | { route: "source-refresh"; sourceId: string };
+  | { route: "source-refresh" | "source-enable" | "source-disable" | "source-remove"; sourceId: string }
+  | { route: "source-takeover"; sourceId: string; skillId: string; fileId: string; sourcePath: string; to: "native" | "resource" }
+  | { route: "source-restore-follow"; sourceId: string; skillId: string; fileId: string; sourcePath: string };
 type Invocation = { entry: string; sources: NotionSource[] } & InvocationTarget
-  & ({ kind: "apply"; operationId?: string } | { kind: "resume"; operationId: string });
+  & ({ kind: "apply"; operationId?: string } | { kind: "resume"; operationId: string }
+    | { kind: "supersede"; operationId: string; predecessor: string });
 type Library = { libraryId: string; databaseId: string; dataSourceId: string };
 type SourceBinding = { source: NotionSource } & (
   | { kind: "unknown" }
@@ -15,7 +18,7 @@ type SourceBinding = { source: NotionSource } & (
   | { kind: "known"; library: Library; pages: Map<string, string> }
 );
 type CurrentSkillWrite = { library: Library; skillId: string; pageId: string; status: "applied" | "unchanged" };
-type CurrentWrite = { library: Library; pages: ReadonlyMap<string, string>; status: "applied" | "unchanged" };
+type CurrentWrite = { library: Library; pages: ReadonlyMap<string, string>; status: "applied" | "unchanged" | "removed" };
 type CallState = { kind: "pending"; command: string; invocation: Invocation } | { kind: "settled" };
 
 const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -83,20 +86,30 @@ function invocation(command: string, sources: NotionSource[]): Invocation | unde
   if (args[0] !== "ctl" || args[1] !== "library") return undefined;
   let route: InvocationTarget["route"];
   if (args[2] === "import") route = "import";
-  else if (args[2] === "source" && args[3] === "apply") route = "source-apply";
-  else if (args[2] === "source" && args[3] === "refresh") route = "source-refresh";
-  else return undefined;
+  else if (args[2] === "source") {
+    switch (args[3]) {
+      case "apply": route = "source-apply"; break;
+      case "refresh": route = "source-refresh"; break;
+      case "enable": route = "source-enable"; break;
+      case "disable": route = "source-disable"; break;
+      case "remove": route = "source-remove"; break;
+      case "takeover": route = "source-takeover"; break;
+      case "restore-follow": route = "source-restore-follow"; break;
+      default: return undefined;
+    }
+  } else return undefined;
+  const fileAction = route === "source-takeover" || route === "source-restore-follow";
   const values = new Map<string, string>();
-  const singleton = new Set(["entry", "operation", "max-requests", "max-bytes", "timeout",
-    ...(route === "import" ? ["skill-id", "name", "description"] : [])]);
-  const native = new Set<string>();
-  let input: string | undefined;
+  const singleton = new Set(["entry", "operation", "supersede", "max-requests", "max-bytes", "timeout",
+    ...(route === "import" ? ["skill-id", "name", "description"] : fileAction ? ["skill-id", "file-id"] : []),
+    ...(route === "source-takeover" ? ["as"] : [])]);
+  const native = new Set<string>(), operands: string[] = [];
   for (let index = route === "import" ? 3 : 4; index < args.length; index++) {
     const arg = args[index]!;
     if (arg === "--") {
-      const operands = args.slice(index + 1);
-      if (operands.length > 1 || operands.length === 1 && (input !== undefined || !operands[0])) return undefined;
-      input ??= operands[0];
+      const remaining = args.slice(index + 1);
+      if (remaining.some(value => !value.length)) return undefined;
+      operands.push(...remaining);
       break;
     }
     if (arg.startsWith("--")) {
@@ -127,22 +140,37 @@ function invocation(command: string, sources: NotionSource[]): Invocation | unde
       if (["max-requests", "max-bytes", "timeout"].includes(name) && !positiveInteger(value)) return undefined;
       values.set(name, value);
     } else {
-      if (arg.startsWith("-") || !arg.length || input !== undefined) return undefined;
-      input = arg;
+      if (arg.startsWith("-") || !arg.length) return undefined;
+      operands.push(arg);
     }
   }
-  const entry = values.get("entry"), operationId = values.get("operation");
-  if (input === undefined || !entry?.trim() || entry.startsWith("notion_page:") || operationId !== undefined && !validSharedIdentity(operationId)) return undefined;
+  const entry = values.get("entry"), operationId = values.get("operation"), predecessor = values.get("supersede");
+  const input = operands[0];
+  if (operands.length !== (fileAction ? 2 : 1) || input === undefined || !entry?.trim() || entry.startsWith("notion_page:") || operationId !== undefined && !validSharedIdentity(operationId)) return undefined;
   let target: InvocationTarget;
   if (route === "import") {
     const skillId = values.get("skill-id");
     if (!validSharedIdentity(skillId)) return undefined;
     target = { route, skillId };
-  } else if (route === "source-refresh") {
+  } else if (route === "source-apply") target = { route };
+  else {
     if (!sourceIdentity(input)) return undefined;
-    target = { route, sourceId: input };
-  } else target = { route };
+    if (route === "source-takeover" || route === "source-restore-follow") {
+      const skillId = values.get("skill-id"), fileId = values.get("file-id"), sourcePath = operands[1];
+      if (!validSharedIdentity(skillId) || !validSharedIdentity(fileId) || !sourcePath || sourcePath.length > 4096 ||
+          /[\\\u0000-\u001f\u007f-\u009f]/u.test(sourcePath) || /^[a-z]:/i.test(sourcePath) ||
+          sourcePath.split("/").some(part => !part || part === "." || part === "..")) return undefined;
+      if (route === "source-takeover") {
+        const to = values.get("as") ?? "resource";
+        if (to !== "native" && to !== "resource") return undefined;
+        target = { route, sourceId: input, skillId, fileId, sourcePath, to };
+      } else target = { route, sourceId: input, skillId, fileId, sourcePath };
+    } else target = { route, sourceId: input };
+  }
   if (values.get("dry-run") === "true") return undefined;
+  if (predecessor !== undefined) return !validSharedIdentity(predecessor) || operationId === undefined ||
+    operationId === predecessor || values.get("resume") === "true" ? undefined
+    : { ...target, kind: "supersede", entry, operationId, predecessor, sources };
   if (values.get("resume") === "true") return operationId === undefined ? undefined : { ...target, kind: "resume", entry, operationId, sources };
   return { ...target, kind: "apply", entry, operationId, sources };
 }
@@ -168,8 +196,9 @@ function sourceBinding(source: NotionSource, records: SkillRecord[]): SourceBind
   return known ? { kind: "known", source, library: known, pages } : { kind: "unknown", source };
 }
 
-function operationMatches(call: Invocation, value: Record<string, unknown>): boolean {
-  if (!validSharedIdentity(value.operation_id) || call.operationId !== undefined && value.operation_id !== call.operationId) return false;
+function operationMatches(call: Invocation, value: Record<string, unknown>, failed = false): boolean {
+  if (!validSharedIdentity(value.operation_id) || call.operationId !== undefined && value.operation_id !== call.operationId &&
+      !(failed && call.kind === "supersede" && value.operation_id === call.predecessor)) return false;
   if (call.route === "import") return value.skill_id === call.skillId;
   return sourceIdentity(value.source_id) && (call.route === "source-apply" || value.source_id === call.sourceId);
 }
@@ -183,32 +212,62 @@ function currentSkillWrite(result: Record<string, unknown>): CurrentSkillWrite |
   return owner && pageId ? { library: owner, skillId: result.skill_id, pageId, status: result.status } : undefined;
 }
 
-function currentSourceWrite(result: Record<string, unknown>): CurrentWrite | undefined {
-  if (result.version !== 1 || result.contract !== "current" || result.state !== "ready" || result.dry_run === true ||
-      result.status !== "applied" && result.status !== "unchanged" || !sourceIdentity(result.source_id) ||
+function currentSourceWrite(call: Exclude<Invocation, { route: "import" }>, result: Record<string, unknown>): CurrentWrite | undefined {
+  if (result.version !== 1 || result.contract !== "current" || result.dry_run === true || !sourceIdentity(result.source_id) ||
       !hash(result.input_sha256) || !hash(result.configuration_sha256) || !hash(result.revision) ||
-      typeof result.resolved_commit !== "string" || !/^[a-f\d]{40}$/.test(result.resolved_commit) ||
       !Array.isArray(result.affected_skill_ids) || !Array.isArray(result.targets)) return undefined;
   const owner = library(result.library), sourcePage = uuid(result.source_page_id), sourceTable = uuid(result.sources_data_source_id);
   if (!owner || !sourcePage || !sourceTable || sourceTable === owner.dataSourceId) return undefined;
+  switch (call.route) {
+    case "source-apply":
+    case "source-refresh":
+      if (result.action !== "declaration" || typeof result.resolved_commit !== "string" || !/^[a-f\d]{40}$/.test(result.resolved_commit)) return undefined;
+      break;
+    case "source-enable":
+    case "source-disable":
+      if (result.action !== "enabled" || result.enabled !== (call.route === "source-enable")) return undefined;
+      break;
+    case "source-remove":
+      if (result.action !== "remove") return undefined;
+      break;
+    case "source-takeover":
+    case "source-restore-follow":
+      if (result.action !== (call.route === "source-takeover" ? "takeover" : "restore_follow") ||
+          result.file_id !== call.fileId || result.source_path !== call.sourcePath ||
+          result.affected_skill_ids.length !== 1 || result.affected_skill_ids[0] !== call.skillId) return undefined;
+      break;
+  }
+  if (call.route === "source-remove") {
+    if (result.state !== "removed" || result.status !== "removed") return undefined;
+  } else if (result.state !== "ready" || result.status !== "applied" && result.status !== "unchanged") return undefined;
+  const metadataTargets = call.route === "source-enable" || call.route === "source-disable" || call.route === "source-remove";
   const affected = new Set<string>(), pages = new Map<string, string>(), physicalPages = new Set<string>();
   for (const id of result.affected_skill_ids) {
     if (!validSharedIdentity(id) || affected.has(id)) return undefined;
     affected.add(id);
   }
   for (const raw of result.targets) {
-    const target = isObject(raw) ? currentSkillWrite(raw) : undefined;
-    if (!target || !sameLibrary(owner, target.library) || !affected.has(target.skillId) ||
-        result.status === "unchanged" && target.status !== "unchanged" ||
-        pages.has(target.skillId) || physicalPages.has(target.pageId) || target.pageId === sourcePage) return undefined;
-    pages.set(target.skillId, target.pageId); physicalPages.add(target.pageId);
+    if (!isObject(raw)) return undefined;
+    let skillId: string, pageId: string;
+    if (metadataTargets) {
+      const physical = uuid(raw.skill_page_id);
+      if (!validSharedIdentity(raw.skill_id) || !physical ||
+          Object.keys(raw).some(key => key !== "skill_id" && key !== "skill_page_id")) return undefined;
+      skillId = raw.skill_id; pageId = physical;
+    } else {
+      const target = currentSkillWrite(raw);
+      if (!target || !sameLibrary(owner, target.library) || result.status === "unchanged" && target.status !== "unchanged") return undefined;
+      skillId = target.skillId; pageId = target.pageId;
+    }
+    if (!affected.has(skillId) || pages.has(skillId) || physicalPages.has(pageId) || pageId === sourcePage) return undefined;
+    pages.set(skillId, pageId); physicalPages.add(pageId);
   }
   return pages.size === affected.size ? { library: owner, pages, status: result.status } : undefined;
 }
 
 function currentWrite(call: Invocation, result: Record<string, unknown>): CurrentWrite | undefined {
   if (result.ok !== true || !operationMatches(call, result)) return undefined;
-  if (call.route !== "import") return currentSourceWrite(result);
+  if (call.route !== "import") return currentSourceWrite(call, result);
   const target = currentSkillWrite(result);
   return target ? { library: target.library, pages: new Map([[target.skillId, target.pageId]]), status: target.status } : undefined;
 }
@@ -249,7 +308,7 @@ function affectedSources(call: Invocation, output: CliOutput, records: SkillReco
   const result = output.result;
   if (result.ok === false) {
     const error = result.error;
-    if (!isObject(error) || !isObject(error.details) || !operationMatches(call, error.details)) return [];
+    if (!isObject(error) || !isObject(error.details) || !operationMatches(call, error.details, true)) return [];
     if (call.route !== "import") {
       const details = error.details;
       if (!isObject(details.owner) || details.owner.kind !== "source" || details.owner.id !== details.source_id ||
@@ -258,7 +317,7 @@ function affectedSources(call: Invocation, output: CliOutput, records: SkillReco
     return entrySources(call, bindings);
   }
   const written = currentWrite(call, result);
-  return written && (written.status === "applied" || call.kind === "resume") ? successfulSources(call, written, bindings) : [];
+  return written && (written.status !== "unchanged" || call.kind !== "apply") ? successfulSources(call, written, bindings) : [];
 }
 
 function text(content: MessageContent | undefined): string {
