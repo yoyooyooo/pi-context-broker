@@ -129,6 +129,21 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
     const cli = async (args, expectedExit = 0) => JSON.parse(await run([process.execPath, entry, ...args], cwd, expectedExit));
     for (const command of ["list", "read", "use", "files", "export"])
       assert.equal((await cli(["schema", command])).ok, true);
+    const currentImport = await cli(["schema", "ctl", "library", "import"]);
+    assert.equal(currentImport.ok, true, `${label}: current Skill import schema is unavailable`);
+    assert.deepEqual(currentImport.command, ["ctl", "library", "import"]);
+    for (const [name, kind, type, required] of [
+      ["input", "argument", "string", true],
+      ["entry", "flag", "string", true],
+      ["skill-id", "flag", "string", true],
+      ["operation", "flag", "string", false],
+      ["resume", "flag", "boolean", false],
+      ["dry-run", "flag", "boolean", false],
+    ]) {
+      const parameter = currentImport.schema.parameters.find(parameter => parameter.name === name);
+      assert.deepEqual(parameter && { kind: parameter.kind, type: parameter.type, required: parameter.required },
+        { kind, type, required }, `${label}: current Skill import parameter ${name} has an invalid schema`);
+    }
     // These public fallbacks must resolve package resources with an empty HOME,
     // outside the checkout and without a global CLI or installed central Skills.
     const catalog = await cli(["ctl", "builtin", "list"]);
