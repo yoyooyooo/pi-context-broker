@@ -10,7 +10,7 @@ import { inspect } from "node:util"
 import { assertFormalCase, assertFormalResult, inspectFormalResult } from "./formal-result-contract.mjs"
 
 const repository = path.resolve(import.meta.dirname, "..")
-const suites = {"observations":"verification/models/consumer-observations","flows":"verification/models/consumer-observations/flows","consumer-state":"verification/models/consumer-state"}
+const suites = {"observations":"verification/models/consumer-observations","consumer-state":"verification/models/consumer-state"}
 const defaultSuite = "observations"
 const lockFile = "verification/models/consumer-observations/tool-lock.json"
 const configExtension = ".cfg"

@@ -1,19 +1,17 @@
 # Consumer state
 
-Project owner: [.agents/skills/verify-notion-consumer-state](../../../.agents/skills/verify-notion-consumer-state/SKILL.md).
+Owner: [.agents/skills/verify-notion-consumer-state](../../../.agents/skills/verify-notion-consumer-state/SKILL.md).
 
-This directory adds three bounded contracts while retaining the existing Availability/ReadRace suite in consumer-observations. The complete case inventory lives only in coverage.json. Every candidate must finish with all declared rules and NoDeadlock holding; each negative must break exactly its declared rule set. Syntax errors, timeouts, incomplete/cut spaces and unknown rule outcomes fail the runner.
+These three bounded contracts complement Availability/ReadRace. The complete case inventory and independent expected rules live in `coverage.json`. Candidates must satisfy every declared rule and NoDeadlock. Each negative must break exactly its declared set. Parse errors, timeouts, incomplete spaces and unknown outcomes fail.
 
-| Model | New contract | Independent implementation evidence |
+| Model | Contract | Independent implementation checks |
 | --- | --- | --- |
-| FreshnessPublication | Original validation/expiry, remote/cache/fixed/unknown evidence, request/lifecycle/identity publication and exact failure target | Controlled clock, equal-time ordering, existing F1–F7 and source/target guards |
-| SelectionGraph | Validate identity, budget and complete root/Requires before final selection; independent member pins | Existing failed refresh/budget tests, mixed vectors, actual early-commit and pin mutations |
-| DeliveryBoundary | Provider acceptance, complete source proof, turn completion, host draft decision and actual projection ACK | Real registered hooks, discarded drafts, session/rewind identities and guarded receipt tests |
+| FreshnessPublication | Original validation/expiry, remote/cache/fixed/unknown evidence, request/lifecycle/identity publication and exact failure target | Controlled clock, equal-time order, F1–F7 and source/target guards |
+| SelectionGraph | Validate identity, budget and complete root/Requires before final selection; independent member pins | Failed refresh, budget, mixed vectors, early commit and pin mutations |
+| DeliveryBoundary | Provider acceptance, complete source proof, turn completion, host draft decision and actual projection ACK | Registered hooks, discarded drafts, session/rewind identities and receipt guards |
 
-Read the Skill's contracts reference for state owners, atomic boundaries and explicit finite assumptions. Source hashes bind reviewed implementation bytes; they do not establish complete implementation refinement. Product code is not changed by this verification slice.
+Read the Skill's contracts reference for atomic boundaries and finite assumptions. Hashes bind reviewed implementation bytes; they do not establish full implementation refinement. Fixed pins describe verified local selections, not remote version management or guaranteed historical recovery.
 
-Run the Skill's doctor then its full run from the repository root. Use the already frozen statechart/TLC installation and retain output outside the repository. The underlying stable model runner supports --suite consumer-state and --model FreshnessPublication, SelectionGraph or DeliveryBoundary.
+Run the Skill's doctor and full run from the repository root with the pinned statechart/TLC installation. Keep outputs outside the repository. The existing runner supports `--suite consumer-state` and `--model FreshnessPublication`, `SelectionGraph` or `DeliveryBoundary` for a targeted investigation.
 
-The original failed syntax attempt, successful model runs and all actual guard mutation baseline/failure/restoration transcripts remain in execution evidence. A final delivered receipt must identify the actual checkout and input hashes; do not reuse counts from an earlier draft after changing model inputs.
-
-AH-1014 adds concrete final-request guards; see [the reviewed source boundary](../../../docs/context-once-source-review.md#ctx-final-request-boundary). `DeliveryBoundary.providerAccepted` still denotes logical headers, not a wire receipt. Actual serialized source roles, directory counts, JSON schemas and entity digests remain concrete regression obligations outside this finite abstraction. The four installed HTTP counterexamples include a real persisted-user restoration; a hash of a wrongly accepted entity is not sufficient source proof.
+`DeliveryBoundary.providerAccepted` denotes logical headers, not a wire receipt. Actual source roles, directory counts, JSON schemas, body completeness and HTTP entity digests remain concrete regression obligations. `final-request-undici.test.ts` checks real Node HTTP entities; installed Pi serializer and live provider behavior belong to the separate integration scope and must be executed before claiming them.

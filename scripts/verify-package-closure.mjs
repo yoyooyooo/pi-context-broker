@@ -139,6 +139,9 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
       ["operation", "flag", "string", false],
       ["resume", "flag", "boolean", false],
       ["dry-run", "flag", "boolean", false],
+      ["max-requests", "flag", "integer", false],
+      ["max-bytes", "flag", "integer", false],
+      ["timeout", "flag", "integer", false],
     ]) {
       const parameter = currentImport.schema.parameters.find(parameter => parameter.name === name);
       assert.deepEqual(parameter && { kind: parameter.kind, type: parameter.type, required: parameter.required },

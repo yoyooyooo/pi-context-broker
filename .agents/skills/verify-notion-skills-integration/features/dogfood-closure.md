@@ -45,21 +45,15 @@ AH734的正式ntn编辑、取消与原Source恢复保持同一owner/FileID；实
 
 ## 验证与交付
 
-### AH-953 消费效果合同
+### 当前消费效果与状态边界
 
-CLI/SDK 的 version-1 `effects` 描述本次消费：`remote_writes` 为 none、retained 或 unknown；作者正文状态、Skill/File/operation 与确认状态单列。Broker 的 `notion_use`、标量 `read` 与 Pi `$`/native 注入必须把这份最小回执交给实际 provider，原正文和来源证明 span 保持完整。旧生产者缺字段归 unknown；多来源部分失败仍包含先前效果。严格 `readOnly` 先核对 SDK 与构建 manifest 能力，再由原请求层在首个语义写前拒绝，不能静默降级。批量固定资源仍使用原 immutable 合同。
+当前 SDK v2 消费恒零语义写入，不提供 `readOnly` 开关，不隐式 retention/adoption。实际配对、完整资源和独立安装按本 Skill 的当前入口检查；旧消费写入流程及其组合模型已退役。
 
-源代码回归覆盖投影缺字段、严格请求、不兼容生产者零调用、失败后的部分效果、原生正文/资源回执和 `$` 注入的原生历史。形式化复用 `verification/models/consumer-observations/flows` 的13个配置；原六个 availability/race 配置单独复跑。新增只读与未知 ACK 负配置必须分别击中对应性质；旧“零写”反例保留，模型不能证明任意 LLM 报告正确。实际 Pi 必须再验当前留存、稳定固定读取、严格拒绝及最终回答；未执行时不得关闭 AH-953。
+保留真实守卫：不兼容 SDK 在调用前拒绝；多源部分失败不丢失此前提供的 effects；取消后不得晚到正文证明；冻结 SourceError 与 DOMException 不得在错误封装时被修改。`host-prepare.test.ts` 保留部分失败、取消及回执组合反例，`notion-sdk.test.ts` 检查无 readOnly 参数的必需能力门槛。
 
-独立审阅的两个确定反例并入既有 `host-prepare.test.ts`：`$` 多源预加载中首源已经留存、后源拒绝时，调用级回执必须保留首源 Skill/File/operation，后源缺效果仍为 unknown；native read 在本地准备提交后、实际文件读取前取消，仍须拒绝读取并保留本次留存回执，不能附加晚到的正文证明。取消交错用提交后的 `queueMicrotask`，不靠 sleep 或重复压力。修订沿原 accumulator 与失败出口接线，不增加远端查询、自然语言解析或新的效果协议。固定资源校验失败保持保守 unknown。复跑 `bun test packages/context-broker/scripts/host-prepare.test.ts packages/context-broker/scripts/scalar-resource-read-host.test.ts packages/context-broker/scripts/pi-read-adapter.test.ts` 与 typecheck；红例、绿例和实际源码身份分别保留。
+资格、请求顺序、固定图和交付继续由 [consumer-state Skill](../../verify-notion-consumer-state/SKILL.md) 的 observations / consumer-state 检查。保持原模型、独立规则清单和真实 guard，不把 receipt 聚合或实际 HTTP 当成它们已经形式证明的性质。
 
-该切片证据位于 `verification-evidence/ah955-20261111/ah953-partial-cancel-fix`：两正式红例先失败，目标集随后 67/67 通过；当前 `build:broker` 内的 typecheck 与既有 `input-guard.test.ts` 通过。新工作区第一次输入守卫因尚无随包 CLI 报 `HOST_CLI_UNAVAILABLE`，保留原日志，显式构建 CLI 输入后复跑通过。原冻结 statechart/TLC 的 flows 13 配置全部匹配预期，其中八个历史/负配置仍命中规定性质；未扩展或重解释其状态空间。这些源码和有限模型结果不替代真实 Pi、自然只读意图与最终披露复验。
-
-2026-11-11 候选真实负例 `ah953-20261111-real-uUH0q5/notion-only-strict-fresh-cKJIB1`：模型没有按自然“不写入”要求传 `readOnly`，实际发生六次 retention 写入。effects 已出现在 provider 输入，最终回答却只说作者内容未修改，未主动披露历史写入。两处原工具说明现明确把用户只读/无写要求映射到 `readOnly:true`，并要求最终说明 retained/unknown；没有新增常驻指南、查询或工具。此改动不改变状态机、严格写边界或原文 span，因此沿用模型正负配置，不能用有限模型代替新的自然任务真实复验。原失败会话和请求保留，显式参数正测与自然语言遵从分别判断。
-
-后续错误封装复核又复现三个直接红例：`notion_use` 与 `$` 接收冻结的 SourceError，native read 接收真实 DOMException AbortError。旧出口修改原错误的只读 message/details 会抛 TypeError 并丢失 effects。三处现在新建错误回执并保留 cause、来源错误类型/code/source/exitCode/details；DOMException 保留名称和数字 code，不修改原错误。权限、写边界、取消、提交和正文交付均未改变。`readonly-error-envelope-{red,green,typecheck}.log` 保留三项原失败、48 项宿主通过及类型检查；模型不枚举 JavaScript 错误属性，因此同步双 coverage 的语义审阅和源码绑定，复用既有未改 TLA/cfg/view 结果，不宣称本次重跑。
-
-复用 .agents/skills/verify-notion-skills-integration、verify-context-broker 和 CLI 的 .cursor/skills/verify-ntn-skills。补丁先有能失败的直接反例，再跑必要回归及真实链路；不重复展开无关完整矩阵。每个交接包含 commit、文件列表、命令、exit/进程终局、原始输出和仍未覆盖的门槛。
+实际 Pi、真实 Notion 与模型最终描述沿 AH-1063 的当前候选执行；未执行时保持 not_run。无需为此复制旧验证成绩或恢复旧多宿主流程。
 
 ### AH-623 当前目录身份与策略
 

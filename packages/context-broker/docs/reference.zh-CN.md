@@ -276,7 +276,11 @@ OMP 与没有公开工具能力 API 的宿主保留既有 CLI 指引。argv 与�
 
 会话 `sr:` 句柄归属 Broker，独立 CLI 不接受它们。CLI 后备路径使用已返回的 canonical 引用或已选 snapshot/path。只有会话句柄时，可用所选来源的 CLI `list`，按确切 record 身份取得同一候选的 canonical 引用；不由名称猜身份，也不向 `sr:` 追加路径。资源优先复制系统返回的 canonical ref。
 
-宿主观察配置中真实 CLI argv 返回的完整成功 JSON。已验证的内容创建/更新、upstream 成员变更和 local sync push，只让对应内容数据库与来源命令的目录在下一次选择时刷新。`ctl operation resume ID`（兼容旧 `operation resume ID`）返回已验证的 publication 或 upstream 终态时，必须与参数中的 canonical operation ID 一致；恢复结果未给 source 范围时，同一配置 CLI 的来源在下一次发现时重读。重复恢复已完成操作也可触发这次保守重读，不据此推断发生了新写入。保留来源的 offline 策略。Read/status/plan/check、operation show/list/reconcile、dry run、普通 mutation 的 reuse/unchanged 和失败都不触发刷新。OMP 截断 stdout 时，沿其公布的 `artifact://` 读取保留原 CLI 调用归属，取得完整结果后才处理。复合 shell 命令、宿主工具之外的写入或始终不完整的输出，继续依赖目录正常时效或 `/context-broker refresh`。自动刷新不取消已接受草稿，不替换会话已经加载的快照。
+宿主只观察当前随包 CLI 的字面 `ctl library import` 调用。完整 current 结果必须匹配 operation、稳定 Skill、物理页面和 library/database/data-source 身份。成功 `applied` 只让对应配置来源在下一次发现时刷新。普通 `unchanged` 不刷新；同 operation 的显式 `--resume` 返回 `unchanged` 时可以重新读取此前写入的可见性。数据库 ID、HTTP(S) Notion URL 和精确配置别名采用同一归属，旗标接受当前 CLI parser 的等价语法，但拒绝重复参数、真正的 dry-run 和复合 shell。
+
+导入失败时，如果错误携带已经确认且匹配的 operation 与 Skill 上下文，也可让目录失效，因为部分内容可能已经写入；错误仍是错误。识别到真实宿主截断 footer 且 entry 能精确归属时，只保守刷新一次，不声明成功，不补读 artifact。没有 operation 上下文的本地预检失败、未知输出、多个 JSON 或 JSON 正文内的截断标记都不算完成写入。
+
+自动刷新保留来源 offline 策略，不取消已接受草稿，不替换会话已经选择的内容。宿主观察之外的写入继续依赖正常时效或 `/context-broker refresh`。旧 create/apply/sync 回执、独立 operation 路由与 OMP artifact 跟随已从此 observer 退役。
 
 CLI 成功读取返回顶层 `content`（正文）、pinned `ref`（相对 `read --from` 的基准）和 `snapshot_id`（`files` 的目标）；`record` 是元数据。资源使用清单返回的文件 ref/path。介绍与摘要只描述工作流，不执行其准备、仓库检查或运行步骤。
 

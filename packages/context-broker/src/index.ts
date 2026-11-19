@@ -1527,7 +1527,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     records: () => [...dollarRegistryByCwd.values()].flatMap(entry => entry.status === "ready"
       ? entry.result.records.filter((record): record is SkillRecord => Boolean(record.sourceId)) : []),
     changed(sourceIds, ctx) {
-      // Publication generations fence old directory requests without cancelling an accepted draft.
+      // Current import changes fence old directory requests without cancelling an accepted draft.
       refreshGeneration++;
       for (const id of sourceIds) sourceChanges.set(id, refreshGeneration);
       for (const cwd of new Set([...dollarRegistryByCwd.keys(), catalogCwd(ctx.cwd ?? process.cwd())])) {

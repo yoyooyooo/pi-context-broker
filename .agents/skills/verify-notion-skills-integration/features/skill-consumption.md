@@ -582,7 +582,7 @@ AH511 的冷作者只需同一 helper 的 `publicCli.mode: "owned-description-up
 
 `stateRoot` 和 `ownedPaths` 只能指向本轮新建目录。外部 Store 在 `sourceState.ownership: "existing-user"` 单列，不进入 cleanup，也不能作为下一次 resume 的来源。预派发核对已有公开回执的完整正文、owner/scope/pin/FileID 与 none effects；实际两次调用只允许原 ref 的 scalar `read`、`readOnly: true`，原工具、SDK/provider/native 完整正文与效果审计仍保留。只读允许本地 SDK 观察缓存正常更新，不声称整个 SQLite 字节不变。
 
-两项新增回归先因接口缺失 RED，接线后与既有 fresh/resume/fork/注册及默认 cap 回归共 48/48 GREEN；覆盖根替换、默认 fresh、外部归属与错误 resume，以及严格工具门禁和真实结果的缺失/unknown effects。公开 29/30 回执的双臂纯本地准入通过，原 prompt 与两份正文身份不变；首次旁路探针把嵌套 proofs 当成平铺字段的错误保留，改用既有 `containsProof` 后通过，不算产品失败或修复。准备阶段证据在 AH734 `consumer-store-driver-v2`，当时没有 Pi/模型/来源请求；其后的真实两臂另列如下。此 driver 接线没有改变 Availability、ReadRace 或 RetentionDisclosure 的状态转换，复用原模型结果，不重跑或增加模型。
+本地状态根隔离、错误 resume、工具门禁和缺失/unknown effects 由具体 driver 回归检查；它们不自动改变有限资格模型，也不以旧结果证明当前安装或远端行为。当前实现和安装按本 Skill 顶层入口重新绑定。
 
 封存 v2 使用 driver `f7bce04`、实际全局39ad产品/9b03嵌入运行时、正常 HOME 和同一管理 Store；原 v1 因空 Store 不能证明旧 pin 可用而保持 not_run，没有复制 Store 或 oracle。`notion-only-ah734-v2-edited-oldpin-notion-only-B341TC` 与 `normal-ah734-v2-edited-oldpin-normal-7tJ25n` 按顺序各运行一次，均 exit0，技术与完整回答语义通过。各有恰2个 scalar readOnly read，按编辑后→编辑前取完整4319/3716 B；原生v2 span、owner/scope/FileID、各自pin/version、SDK正文、none effects及最终真实payload各1份均核对。全6份payload主文0，无use、激活、脚本或写入；独立臂0 native，正常臂69项name/source path/order与原全局回执完全一致。
 
@@ -626,15 +626,13 @@ Run the F1/F2/F3/F4/F5/F7 tests in `host-prepare.test.ts` with SDK-shaped curren
 
 Default Context stays a normal optional View-filter attribute. Do not delete its schema or values. The four Enabled/Default Context combinations must preserve no-body discovery; explicit filtered Views retain their existing rules. Report the actual inspected Views and do not generalize their filters to unknown workspaces. Final daily validation must distinguish the CLI's `NTN_SKILLS_DEV_ROOT` selector from Pi's actual local package path and its bundled SDK hashes.
 
-## 管理到实际消费的日用组合审阅
+## 管理到实际消费的日用交接
 
-从同一新建自有Skill的公开管理operation开始，串联cold source、5m实际cache policy、自然Agent选路、完整use/reference、暖续问、CLI修改、Notion原生修改、固定旧版与明确新版。复用本地图的被动SDK、cost、Undici和原生session观察器，不另起运营/遥测平台。作者操作、旁路私有oracle和消费成本分账；oracle不能预热消费Store或成为首轮答案提示。
+当前入口见 [integration Skill](../SKILL.md)。先绑定同一 current CLI/SDK 和 Broker 包，再按变化验证完整目录、use/resource、当前 import 失效及实际安装 HTTP。普通消费恒零语义写入，不触发 retention，也不恢复旧独立管理回执接受流程。
 
-具体已运行范围与局部调优入口见[日用整链路审阅](../../../../packages/context-broker/docs/dogfood-flow-audit-2026-11-11.md)。可执行组合规格在`verification/models/consumer-observations/flows`，调用既有`verify-consumer-observations.mjs --out /new/absolute/output --suite flows`。RetentionDisclosure.current保留AH-953实施前的历史副作用披露反例；匹配预期的负例不是产品通过。实际toolResult/HTTP/最终回答须共同复核该问题，不能只看模型文字。
+真实日用沿 AH-1063 在表切换后执行。管理写入与消费读分别计量；Source ready、目录曝光、本地已选字节、完整 serializer 正文与当前 turn 成功分别核对。已有本地固定内容与明确重新选择当前内容分开判断，不承诺远端历史恢复。
 
-每段保留管理op、精确record/snapshot、SDK requestId、toolCallId、实际provider payload SHA与cache初态。在原scope、源内容、模型路由和工具暴露一致时比较局部变化；不同默认View属于不同策略实验，不伪称同曝光净收益。纯续问零工具只说明Agent没重调，仍须计TTL到期的背景metadata；已知body不重取与总HTTP零是不同条件。正常MCP的未观测请求保持unknown，不为清空账本停用它们。
-
-若用户要严格不发生远端写入，不能从inspect/read/use名称推断。当前原生编辑观察可能触发保留写；公共接口已实现version-1 effects；FLOW-EFFECT-01保留修复前反例，不表示当前公共语义缺失。不得以去掉必要留存、宽松校验、隐藏权限问题或追加全局长教程来制造“更小更快”的结果。
+资格、固定图和交付使用 [consumer-state Skill](../../verify-notion-consumer-state/SKILL.md) 的既有小模型和真实守卫。SDK capability、import 目录失效和实际 HTTP 由对应实现测试拥有，不增设组合总模型。未观测请求保持 unknown，缓存命中不能冒充总 HTTP 为零。
 
 ### RV3：原审计暂停与续跑
 

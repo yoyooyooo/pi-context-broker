@@ -1,40 +1,21 @@
 {
   "version": 1,
-  "source_base": "1c11c57849f97d2c13b82eb8a62fe6b6065741c4",
-  "correspondence": "Reviewed source hashes bind the implemented transition owners. Finite-model results do not establish complete implementation refinement. The final commit, installed package and actual session identities belong to the execution receipt.",
+  "source_base": "66b568587fd8e2d45d1ab7cdc86fc601945ded12",
+  "correspondence": "Current consumer state contracts. SDK v2 acquisition is a read-only input port; these models do not represent Notion retention writes, remote history/version management, management completion or independent acceptance.",
+  "maintenance": {
+    "owner_skill": ".agents/skills/verify-notion-consumer-state/SKILL.md",
+    "routing": "Use the existing observations or consumer-state suite and its exact cases inventory. Current SDK, package pins and installation are checked by verify-notion-skills-integration.",
+    "source_review": "Review changed owner functions and their actual guards before updating any source hash. Hashes bind the reviewed bytes; they do not establish implementation refinement.",
+    "rule_inventory": "cases.expected_rules is the independent complete rule inventory. Missing, additional, unchecked or unexpected broken rules fail; do not regenerate expectations from changed configurations."
+  },
   "files": {
-    "packages/context-broker/scripts/skill-guidance.test.ts": "b688e564996c93254f9699bab0045516d12a54693b8cd3207dab97759d8f6664",
-    "scripts/notion-sdk-pi.mjs": "e6e4d600d830f39b432e03cdae6700a87ab65b2240ad0b99fae991880f7efa39",
-    "scripts/nxt-pi-delivery.mjs": "948c4e8cadf5385b0016ff6cfe1c6f4d4acc80020a9bd18117d54612a78322f6",
-    "scripts/nxt-pi-delivery.test.mjs": "c4310aee986f6e258b24ecd36a9bfcad40ade35892d8dbdb2da1958d808e7264",
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
-    "packages/context-broker/src/host-skills.ts": "51ad2a1b29ae54a2f6263c7039785e3b5c8fe0f9d08b7cee1c3dbe4aa6bd68ea",
+    "packages/context-broker/src/discovery-records.ts": "eff63715fb90fe2d05b4ccf1bfd2eb2227f9ada5b0ea33fa7fca5379cb91c982",
+    "packages/context-broker/src/host-skills.ts": "43ca4df5225e2b797776b911a2fafba0c45c8cb92aafa2ee3f72255ae7840da4",
     "packages/context-broker/src/prepare-protocol.ts": "722883c738809713ea5eaca582cd953233f56b95758df1f7f627453cbcdd8561",
-    "packages/context-broker/src/notion-source.ts": "20a876a4e1db4676d252ed184ef35654a691a73902d7e3c846a9eb8e51a6a07d",
-    "packages/context-broker/src/index.ts": "3ec048c3a6f27716e2d992fe6f49d54ac660078370e00385f37dc6fbfe11efae",
-    "packages/context-broker/src/view-discovery.ts": "15ba061763e6b5546d21551a7c0c2fc15a68626af1e47771cba539ef999b995d",
-    "packages/context-broker/src/view-prompt.ts": "7d7ac614ccf857c7f3ed5723aebdd3c9fbb734259ef8cdcb509e09a341f451be",
-    "packages/context-broker/src/session-source-snapshot.ts": "b23de4a16344620ff12e4e2bd3147d119fdfbffba37507b54434d7425d84c9a5",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
-    "packages/context-broker/scripts/host-prepare.test.ts": "6f88489ed58f7887e2a8189ccd08539dc7295c53abec10cf268039154001f752",
-    "packages/context-broker/scripts/native-read-session.test.ts": "f96e8e7dbf8865e2ea2e1f98f74377702045b7f2b8dceb89868906f7bce381cf",
-    "packages/context-broker/scripts/resource-read-projection.test.ts": "210e5e4e50574f1a2f4a2dc0232091f68736f0885062cbc00282ca2f43056cdc",
-    "packages/context-broker/scripts/view-discovery.test.ts": "3fba313d4920848082cda04896b825dfde8401f9e6bc8c1607ab3502b8458b7a",
-    "packages/context-broker/scripts/notion-entry.test.ts": "a9d8f07117389d176e35950605f545d66983c379296816e5b96480e86a241800",
-    "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "c00400165c96b2bc07d47196ed10644add62696b918fe9e30d2aa6e9529323c8",
-    "packages/context-broker/src/pi-host-adapter.ts": "ff4f213acd643c067b7fa000bd05f5ddd8981882ee3926cceadab3875e212ee0",
-    "packages/context-broker/src/consumption-effects.ts": "5b10742bccfe19ccd4b52b06733baab9f730d84861e24299b0e3a73f81e73794",
-    "packages/context-broker/src/notion-sdk.ts": "2a062d638c1f13910052c4edf8a0a2250f608e00144f3c521edcec04a51cd9af",
-    "packages/context-broker/src/resource-read-types.ts": "fe42ca452633a4919aea0d23ff46789d4de742686f4290d53ca69b00074e92ab",
-    "packages/context-broker/src/resource-read-projection.ts": "c72d8749018ca97fbb8026568ae23831080b65e8d312ca8b454792327424183e",
-    "scripts/build-tern.mjs": "f5f0df7c14bcc255930aa698c33fc502248f6c2308ae94fd359bcaf79b65ad14",
-    "packages/context-broker/scripts/pi-read-adapter.test.ts": "b0a144a76ba38125d0b159a9ef281d918c87d0f4cf0961929562c6332151d292",
-    "packages/context-broker/scripts/resource-read-host.test.ts": "aa69aa4d7750b2a460b7201b3210846da6327144c8508f1e90384aa7b78ab125",
-    "packages/context-broker/scripts/fixed-resource-source.test.ts": "cd057a611b34ee7a85816ccad38951ec561a120747ad717ba0d75f76cb8f3aa1",
-    "packages/context-broker/scripts/notion-sdk.test.ts": "abafb99deda5928df533fabcfbb6f44cae89a8c88a71bfc3ea0ff8303aada17d",
-    "packages/context-broker/src/final-request.ts": "ba7db9fc301e115200b8ba6534ab332e0f90a1a5c3c4ceaef34389cdf0bd4b9c",
-    "packages/context-broker/scripts/final-request.test.ts": "85266fac06f8d4b3fbe88e92dadabf2f04a94a72e9aba6c2c421be4e05d84f85",
-    "packages/context-broker/scripts/final-request-undici.test.ts": "78671b59508bc648038400bebd5f4c569695a48aba7ce2d57ffa94fe509b5cdc"
+    "packages/context-broker/scripts/host-prepare.test.ts": "16c93f07d1a6c573e1164b70e4e5acd4d76917dcbaf292a7f4e2087b03c4a8eb",
+    "scripts/check-consumer-observation-mutations.mjs": "a34d906997d213187d48af500f3af0c5a61fd9233d5dd11b35268c2611f8cf51"
   },
   "models": {
     "Availability": {
@@ -83,133 +64,6 @@
       ],
       "negative": "ReadRace.generation-negative.cfg"
     }
-  },
-  "outside_finite_models": [
-    {
-      "name": "daily View and owned application experiment",
-      "normal_management_store_candidate": "The explicit AH734 normal-management branch reuses the three current public state/config/cache roots and two existing complete fixed-pin CLI receipts; it adds no empty-Store or cross-machine prerequisite. External ownership stays outside owned cleanup/resume and default fresh remains unchanged. Two new boundary tests first failed because the interfaces were absent, then passed; with the affected existing fresh/resume/fork/registration/default-cap regressions the result is48/48. They cover root substitution/ownership/resume and exact scalar readOnly admission with complete actual none effects. A pure local admission of original public receipts29/30 passed for both arm configs with their original prompt and body identities; it read no private Store and made no Pi/model/source request. The first auxiliary probe's mistaken flat-versus-nested proof assertion is retained separately and corrected via existing containsProof, not a product change. No state or credential copying, remote snapshot archive, model-body injection, product transition or new finite-model claim is added. The subsequent sealed v2 runs each executed once with f7b driver, actual global39ad product and bundled9b03: both technical and final semantic reviews passed. Each has exactly2 scalar readOnly calls with full4319/3716-byte bodies, exact owner/scope/FileID and distinct pin/version, complete native v2 spans and matching SDK/provider/wire identity. All6 payloads have zero main body and no use/script; actual native inventories are0 and the unchanged69 name/source-path/order. Root raw review SHA2564095dfc891a3f3ac1e16a18d55772366edfa5208f2950ae3f93e6f3fa9d57051. Sequential reuse warms the shared normal Store;65.61748325s/204857B/8metadata and86.037180416s/310503B/0sourceHTTP are not a same-cold-state performance comparison. All4 fixed reads have none effects and0HTTP; first-arm other GET/SSE6 remains incomplete. Actual request feedback recovery is separately verified by CLI, not inferred from consumer success.",
-      "isolated_resume_effects": "The original C1 calls omit readOnly; their immutable paired results explicitly prove version 1, remote_writes none, author_content unchanged and empty retention. Historical admission checks that completed disposition and isError false, not a requested flag. Missing/unknown/retained or inconsistent receipts fail closed. Existing metadata-only notion_list remains separately bounded. The first argument-based admission refusal, new RED/GREEN regressions and exact real-C1 offline admission remain recorded; none starts a model or source request.",
-      "tests": [
-        "scripts/verify-pi-daily-candidate.test.mjs",
-        "scripts/verify-pi-daily-budget.test.mjs",
-        "scripts/verify-pi-daily-resume.test.mjs",
-        "scripts/verify-pi-daily-fork.test.mjs",
-        "scripts/notion-skill-graph-project.test.mjs"
-      ],
-      "isolated_introduction_resume": "Historical v4 failed its actual package identity gate: native --session resolves project resources from stored header.cwd, so changing only spawn cwd still loaded the old af7030f2 Broker and 811-byte guidance. All nine receipts recovered by the explicitly injected new observer are a separate fact. Original v4, its semantic accuracy gap and all v3 verdicts remain unchanged. The disproven isolateResumeCwd option is now rejected before I/O or model dispatch; the default linear resume and package-settings deepEqual remain unchanged.",
-      "native_introduction_fork": "Only the explicitly reviewed C1 introduction uses forkIntroductionResume and the existing public --fork entry in the normal69 arm. Existing no-project/successful-single-turn/effects-none/original-settings admission remains. A new header binds new id/cwd/parentSession while all 150 original non-header entries, 453156 bytes with SHA256 c6633549425dfb8d2f4cf8d97291e39c4ce66599d74a910a326ca06e05692299, remain byte-identical and ordered; the original 34 files and settings are untouched. An independent input guard checks the single actual Broker realpath/hash, cwd, worker/high, 69 native Skills and frozen non-slash prompt hash. Missing/mismatched identity, file errors and receipt-write errors explicitly return handled; throwing alone cannot enforce this host boundary. Observation stays passive. The 38 bounded regressions and installed SessionManager.forkFrom pure-file proof do not start Pi/model/HTTP and do not establish v5 model success. New header/cwd/package conditions exclude same-condition performance claims. No Availability, ReadRace or RetentionDisclosure transition changes or new TLA model are claimed.",
-      "native_fork_real_outcome": "The single final-v5-C-warm-BeUhOX run and independent mechanical review passed: actual 39ad Broker, exact input guard, 897-byte guidance and nine complete body receipts each once; new header with all 150 original non-header entries intact, 35 parent files/settings and frozen inputs unchanged. Current costs are 1 payload/216635 bytes, 79460.218792 ms, 0 tools, 12 metadata/0 body/0 write HTTP, 1196395 decoded bytes and complete reported usage61733. Other GET/SSE request7 remains incomplete; component tokens and dollars are unknown. The final completed examples but inferred a current runtime auto-start guarantee from the author disable-model-invocation flag despite actual guidance; preserve that one semantic gap separately from technical passed. No rerun, no same-condition performance claim and no change to any v3/v4 failure or original16 denominator. Independent integrity/semantic receipt SHA256 9c212f5c15cd14e61cecb13edf83febb23fc8a9ea33c9639da8e51a08326028b. CLI CI117 at 0cf7002ac02e6d7df37f621f53a151255de81aaf passed all four macOS15/Ubuntu and Node22.22.3/24.20.0 check/fresh-consumer/upload groups; those later test/docs changes are distinct from the actual v3/v4/v5 9b03 bundled runtime. No product transition or finite-model proof is added.",
-      "completion_budget_candidate": "One explicit default-off32768 candidate has now completed as failed: final-v6-A-budget32768-notion-only-j4qMof used driver60ad5983/current39ad/bundled9b03 and the original A/-ns prompt, five-file SHA, worker/high and600s/16 requests/40 tools/4MB. Six actual captured/wire payloads all carried32768, totaling743816 bytes. The process timed out with143 and closed after601567.348167ms;14 native call/result pairs include3 ordinary inventory requests refused before execution. Six source bodies, including all3 references, and all5 project files were complete. Source49 metadata/10 body/0 write totals59 HTTP/7208051 decoded bytes. There was no final, stdout or generated file; helper remains not_run. Last request79 hadHTTP200 but no request_end/completion/usage within449135.727583ms of observed open lifetime. Its2014 thinking events include2013 deltas; the observer deliberately summarizes an empty string for non-text_delta, so delta.bytes0 does not establish zero thinking text or tokens. Visible text_delta was0 events/0 bytes. First5 reported totalTokens177506 is only a completed-response lower bound; complete usage/dollars remain unknown.53 frozen inputs were unchanged and449 raw files indexed. Terminal report SHA25604ab288703d39601516dcbd3dd49e2a7e3f0fbe3a556861f23eebc9a50788918 and root raw audit SHA2564abfddd63aea10398dec69945197342f572a0a04365775f7496efd74debae457 retain the failure. Product guidance/global registration differences exclude pure-cap causality claims; server cap enforcement and the timeout cause are unproved. Source absence is not supported. No new matrix/retry, old verdict change, or finite-model transition claim.",
-      "inventory_refusal_correction": "After the unique failed A, three exact native inventory refusals reproduce RED under the frozen guard. The bounded correction retains the owned cwd,512-character/60-second limits and at most3 inventory commands, plus at most1 ASCII literal echo marker of40 characters (4 total segments). ls operands are limited to the existing fixture directories . /src/test/.pi; find remains rooted at . with depth1–4 and file/directory types, at most2 fixed node_modules/.git exclusions and head at most300. Outside paths,-L, content search,-exec/-delete, redirection, substitution and executable scripts remain blocked. Input hashes and execution-tool call records are retained. The3 regressions plus existingStore/default/cap/resume/fork tests pass51/51; no new Pi/model/HTTP was run. This mechanical guard correction is not proof that generation will complete within the budget and does not change the original failed run or authorize automatic new model attempts.",
-      "registered_candidate_binding": "The completed public Pi install stores current39ad as a local path relative to user agentDir in package slot19. The old different-absolute-path prerequisite would reject before dispatch. A bounded registration reader now normalizes that public baseDir, requires a unique unfiltered registration and exact frozen entry realpath/bytes/hash, then reuses it with empty project settings instead of a duplicate override. A different old Broker retains existing project isolation and default resume deepEqual remains. Three registration RED/GREEN tests plus prior regressions are46/46; the actual current settings admission is read-only and byte-identical before/after, with zero Pi/model/HTTP. The new global baseline is explicit and is not a pure completion-cap comparison. No product or finite-model transition changes.",
-      "contract": "AH-623/AH-639/AH-638 use the existing default_view_id and owned five-file application. Same-library View preservation and explicit selection cannot silently carry an old View to another library. This driver wiring changes no Availability or ReadRace transition. Autonomous route quality, full artifacts, independent helper execution and paired total costs require actual worker/high sessions and payload/wire audits; the finite models cannot establish them.",
-      "project_inspection": "The original A real run used only owned-cwd ls/pwd/bounded-find, which the old print verifier classified as forbidden execution. Its original failure remains. A separate driver admits a finite inventory vocabulary for the existing owned application only, blocks other bash before execution, and retains the actual shell-call flag plus a separate hash-bound inspection receipt. It does not change product tools, Notion acquisition, effects, activation or permission semantics. Direct wrong-cwd, outside-path, substitution, redirection, executable and budget negatives cover this host-test boundary; no TLA transition or model success claim is added.",
-      "real_observation_boundary": "Earlier checkpoint: The first two A runs both exceeded the frozen 600s without a complete artifact; the second also exposed strict batch readOnly argument rejection and separately blocked a benign arithmetic shell call. Original C failed introduction intent through delegation and timeout. Original D work-resumption wording cannot establish pure-chat zero-tool behavior; separate 你好。 samples passed both normal69 and -ns with zero tools. A later how-only C pilot passed with complete target/README delivery but never read how, so it is not causal evidence for that author change. Old failures and all not_run samples remain. Formal three-pair View and heldout work pauses for one common batch-fixed runtime; no completed View benefit or generated-helper execution is inferred. These model behavior and evidence conclusions are outside Availability, ReadRace and RetentionDisclosure finite state spaces. Final-v3 subsequently completed two C pairs and one unpaired baseline: the original median-elapsed threshold is mathematically unattainable for narrow View (at least 22.036881% regression versus the allowed 20%), so baseline is retained and the remaining narrow pair/heldout cells remain not_run in the original denominator. An independently audited unnamed D-natural phase proves correct default-catalog selection and complete main/three-reference delivery; it closes AH-623 discovery, not the still-failed whole artifact task. A/B timeouts, heldout explanation defects and the original warm observer failure remain. No additional finite-model or whole-task success is implied."
-    },
-    {
-      "name": "source baseline partial state setup",
-      "tests": [
-        "scripts/skill-consumption-source-baseline.test.mjs"
-      ],
-      "contract": "The partial-cache driver moves only a verified owned main object to system Trash. State-setup Trash uses the existing cleanup budget of 30000ms, independently of the frozen source CLI timeout. The original 2000ms fixture timeout killed Trash after 2017.613875ms and correctly retained an initial-state failure; an absent executedMainReads field must not be replaced with a fabricated zero. The unchanged four-state test must still reach SNAPSHOT_MISSING, preserve the manifest and original bytes, and execute no main read for the partial sample.",
-      "bounds": "This changes a verification cleanup subprocess budget only. It does not change product availability, source writes, batch-resource readOnly, Pi model budgets or any finite-model transition. The original failure and exact command receipt remain retained; no new TLA run or model acceptance is inferred."
-    },
-    {
-      "name": "actual validation time and cache origin",
-      "tests": [
-        "consumer-observation.test.ts",
-        "shared-notion-adapter.test.ts"
-      ],
-      "contract": "Caches retain their original validation time. Offline/fixed content never proves current eligibility. A later-started cache lookup does not outrank an earlier still-in-flight current denial."
-    },
-    {
-      "name": "metadata expiry and default fields",
-      "tests": [
-        "host-prepare.test.ts",
-        "view-discovery.test.ts",
-        "catalog-menu tests"
-      ],
-      "contract": "F6 uses controlled actual clocks and consumer calls; installed SDK HTTP and owned live View edits separately prove the transport path. Default Context remains an optional author/View filter; Enabled remains the availability switch."
-    },
-    {
-      "name": "complete graph and future delivery",
-      "tests": [
-        "host-prepare.test.ts",
-        "native-read-session.test.ts",
-        "resource-read-projection.test.ts"
-      ],
-      "contract": "Exact dependency failures do not deny the root. Failed replacement does not replace the graph. Known authorization denial withholds verified source spans on future requests. Explicit new selection retires old main and supporting-file spans but never edits native history."
-    }
-  ],
-  "excluded": [
-    "Remote HTTP linearizability",
-    "Arbitrary Notion workspace permissions",
-    "Unbounded Requires graphs or file trees",
-    "Cross-machine clocks and writers",
-    "Provider behavior beyond the recorded original sessions"
-  ],
-  "verification": [
-    "node scripts/verify-consumer-observations.mjs --out /new/absolute/model-output",
-    "node scripts/check-consumer-observation-mutations.mjs --out /new/absolute/mutation-output",
-    "bun test packages/context-broker/scripts/consumer-observation.test.ts packages/context-broker/scripts/host-prepare.test.ts --timeout 30000"
-  ],
-  "reviewed_changes": {
-    "issue": "AH-953",
-    "transition_review": "Effect receipts and read-only policy are carried alongside the existing observation ticket. Qualification, exact denial attribution, generation checks, cancellation and graph commit ordering are unchanged; resource receipt v2 names only the original delivery span so an appended effects footer cannot count as source bytes.",
-    "regressions": "host-prepare retains F1–F7, permission refusal, old-success-after-new-denial and session cancellation. Dollar receipt replay preserves sourceBodyLoaded and native history proof; the strict SDK capability gate runs before any operation.",
-    "effects_model": "flows/RetentionDisclosure.tla models this new effect dimension separately; Availability and ReadRace keep their existing state spaces and negative controls.",
-    "model_instruction_review": "The real AH-953 natural no-write counterexample omitted readOnly despite an available parameter, then omitted retained writes from its final report. Tool descriptions now explicitly map a user read-only/no-write request to readOnly:true and require retained/unknown effects in the final answer. This changes model-facing instructions only, not acquisition, qualification, cancellation or the read-only guard. Finite models cannot prove language-model compliance; a fresh real-session replay remains required.",
-    "readonly_error_review": {
-      "finding": "The three effects failure exits mutated incoming Error.message/details. A real DOMException AbortError exposes getter-only message, and a frozen SourceError also throws a new TypeError, dropping the original denial and observed effects.",
-      "change": "All three exits now create a fresh wrapper with the original cause. SourceError code/source/exitCode/details and SourceReferenceAmbiguity candidates remain available; generic errors keep their name and scalar code. The original error is never mutated.",
-      "semantics": "No acquisition, authorization, source write, readOnly gate, cancellation, graph commit or delivery decision changes. This repairs the existing NoFalseZeroWriteReport/error-disclosure implementation boundary, with no new finite-model state or transition.",
-      "regressions": "Three pre-fix failures cover notion_use with a frozen source failure, dollar partial acquisition with known-none or unknown later effects, and native DOMException after retained preparation with no late body receipt. All 48 host-prepare tests and typecheck pass.",
-      "bounds": "Readonly JavaScript error properties and object freezing are not enumerated by RetentionDisclosure. Reuse the unchanged model/cfg/view results; do not claim a fresh model execution or general LLM compliance."
-    },
-    "partial_cancel_review": {
-      "finding": "Independent review of 79ee07fe reproduced a dollar prepareMany partial-source error dropping earlier confirmed retention, and cancellation between prepareRead return and native execution bypassing the existing effects catch.",
-      "change": "prepareMany now supplies the existing per-operation effects observer through graph and Notion fallback acquisition, then combines prior effects with the original typed failure. Native post-preparation cancellation runs inside the original effects-preserving catch, which also clears pending read receipts. Filesystem loads keep their original policy-free route.",
-      "semantics": "No source write, readOnly gate, permission/identity decision, graph commit or delivery rule changes. The original error class/code/source and cancellation refusal remain. NoFalseZeroWriteReport and uncertainty disclosure retain their existing meanings; this repairs concrete implementation wiring rather than adding a new model transition.",
-      "regressions": [
-        "host-prepare: dollar partial source failure preserves earlier retention, precise denial and missing second-source effects as unknown",
-        "host-prepare: queueMicrotask cancellation after graph commit retains effects, invokes zero native reads and cannot attach a late body receipt"
-      ],
-      "bounds": "RetentionDisclosure still abstracts one acquisition and one retention event; it does not enumerate JavaScript microtask scheduling or multi-source request counts. Direct deterministic regressions establish these two implementation paths. Natural-language readOnly compliance and actual Pi final disclosure still require separate live evidence."
-    }
-  },
-  "admission_diagnostics": {
-    "issue": "AH-925",
-    "transition_review": "Only existing blocked-read reports gain stage/code and lifecycle generation/cancellation context. No metadata ordering, scope, permission, identity, publication, cancellation or delivery decision changes.",
-    "replays": [
-      "notion-entry.test.ts: cold metadata gate and resource completed before session cancellation",
-      "scalar-resource-read-host.test.ts: exact owner/file failures retain execute diagnostic"
-    ],
-    "historical_cause": "unknown; original admission result/reason was not retained",
-    "finite_models": "Availability and ReadRace state spaces and negative controls are unchanged; this diagnostic slice does not claim a model proof of the old failure."
-  },
-  "batch_readonly_review": {
-    "issue": "AH-639",
-    "counterexample": "A v2 called read with three issued sr:R refs and readOnly:true, both public schema fields. The Pi adapter rejected the combination before the host; three later scalar reads succeeded. The original timed-out task remains failed.",
-    "change": "Allow the existing boolean policy in batch admission and pass it through host/source to SDK readResources. Require both RESOURCE_READ_EFFECTS_VERSION=1 and resource_read_effects_version=1 before strict SDK dispatch. The producer reuses withConsumptionEffects/readOnlyNotion; ordinary legacy results keep unknown effects.",
-    "semantics": "Existing owner/pin/File admission, whole-body JSON spans, cancellation, active-main exclusion and source-write policy retain their meanings. Effects are outside resource spans and remain in provider deduplication. This fixes concrete argument and capability wiring; no new finite-model state or transition.",
-    "regressions": [
-      "Exact three-handle public call; invalid policy types rejected before source/native I/O",
-      "One batch/source operation with complete bytes, identities, spans and effects; immutable error receipt",
-      "Legacy or mismatched batch capability rejects strict dispatch with zero SDK calls",
-      "CLI actual descendant semantic-write attempt reaches the normal transport once and reaches it zero times in strict mode"
-    ],
-    "output_schema_followup": "Independent review found the closed Pi resource output schema omitted effects. Actual registered-schema validation rejected actual ready batch output at effects before the fix. The shared receipt schema now accepts ordinary unknown and strict none output, preserves the native scalar branch, and rejects malformed effects and extra output fields. Only the output declaration changes; model state, transitions and runtime effects guards are unchanged.",
-    "bounds": "Direct source regressions and the candidate build establish only these implementation paths. Reuse unchanged TLA/cfg/statechart results without a fresh model claim. Original real A and frozen package remain unchanged; the independent actual Pi sample is recorded separately."
-  },
-  "warm_resume_observation": {
-    "issue": "AH-639 / AH-638",
-    "finding": "The original C-warm new-process observer missed two effective native preparation receipts even though their complete source bodies were present in the actual provider request. Original failed outcome remains.",
-    "change": "Reuse captureInjectionReceipts with the current buildSessionProjection only; an in-memory sidecar passes persisted machine receipts to the existing user-hash, v2 identity/pin, full span/hash/bytes verifier. No provider mutation, full-history scan, source request or new persistent store. Modern Pi guidance distinguishes zero explicit tools/body reads from unobserved automatic metadata requests or writes.",
-    "regressions": [
-      "scripts/skill-consumption-cost.test.mjs",
-      "packages/context-broker/scripts/skill-guidance.test.ts"
-    ],
-    "finite_models": "No admission, authorization, selection, effect, retention or session transition changes. Availability, ReadRace and all composed flow TLA/cfg/view inputs are unchanged; their existing results are reused, not rerun or extended. This diagnostic and LLM explanation boundary requires separate actual-session evidence."
   },
   "cases": [
     {
@@ -289,194 +143,43 @@
       ]
     }
   ],
-  "maintenance": {
-    "owner_skill": ".agents/skills/verify-notion-consumer-state/SKILL.md",
-    "routing": "Relevant protected-source, model, config, view, coverage, runner and skill changes run this suite in formal CI. Use --model for a reviewed local slice.",
-    "view_only": "Rerun the affected existing positive/negative configs, retain exact bug paths and render with /statechart; no expanded proof claim.",
-    "model_semantics": "Review every declared rule, finite bound and environment/fairness assumption; keep exact expected negatives.",
-    "implementation_semantics": "Trace named functions and callers before updating hashes; run corresponding real-code regressions and guard mutations. Hash-only refresh cannot satisfy this review.",
-    "rule_inventory": "cases.expected_rules is a reviewed independent inventory. Do not regenerate it automatically from modified cfg files."
+  "excluded": [
+    "SDK transport and decoder implementation, installed CLI/SDK version and package hashes, management command observation and catalog invalidation, prompt guidance and actual Pi/provider runs are outside the finite state model. Their existing integration and direct regression gates remain separate.",
+    "Selected content pins mean locally verified immutable content. They do not promise remote historical recovery, create Notion history, or extend current permission evidence.",
+    "Source/target identity, wall-clock behavior, HTTP consistency and serialized provider bytes retain their concrete test obligations; finite exploration does not prove arbitrary production interleavings."
+  ],
+  "current_source_review": {
+    "host_skills": "Current Notion materialization requires a complete entry manifest; older receipt scanning/fallback was removed. Pi use/read/resource inputs reject retired readOnly and internally always select no-write policy. Qualification, request ordering, cursor state, final graph commit, cancellation, provider acceptance, turn completion and public projection guards are unchanged.",
+    "host_prepare_tests": "The existing admission regression now checks unconditional no-write Pi consumption and pre-I/O rejection of the retired option. The two distinct receipt aggregation tests moved into this existing test file without changing their assertions; supplied receipt aggregation remains a defensive host boundary, not a modeled current SDK write.",
+    "transport_boundary": "The installed OpenAI serializer case was removed from final-request-undici.test.ts during host deferral; its real Node HTTP entity checks remain. No installed serializer or real Pi result is claimed by these finite models.",
+    "scope": "The exact TLA/config/view bytes, model bounds, cases and expected rules are unchanged. Build/pin, user guidance, historical driver scores and unrelated producer files are not formal premises."
   },
-  "formal_maintenance_review": {
-    "issue": "AH-1007",
-    "product_semantics_changed": false,
-    "basis": "Existing frozen config inventory migrated without changing TLA, cfg or protected source."
-  },
-  "context_once_review": {
-    "issue": [
-      "AH-1015",
-      "AH-1016",
-      "AH-1017"
-    ],
-    "product_candidate": "1ddf50cd1aab95c216e393f2718a01725653731f",
-    "review": "docs/context-once-source-review.md",
-    "semantics": "Scope/owner/pin/graph/permission/activation transitions unchanged; scalar retirement preserves operation facts and directory omission requires a matching current-request witness. Exact generated bytes are outside finite model variables and require concrete independent regressions.",
-    "evidence": {
-      "source_tests": 124,
-      "oracle_tests": 187,
-      "typecheck": "passed",
-      "serializer_scope": "actual installed Pi1.5 serializer to loopback HTTP, not a live Pi session",
-      "serializer_entity_bytes": 1614
-    },
-    "historical_rules_and_cases": "unchanged; negative counterexamples retained",
-    "reviewed_files": [
-      {
-        "path": "packages/context-broker/src/prepare-protocol.ts",
-        "previous": "a933a092d39d9abb860ce614c959b13c5e26c1cf830bdb1f9f715b0adf2c283a",
-        "current": "722883c738809713ea5eaca582cd953233f56b95758df1f7f627453cbcdd8561"
-      },
-      {
-        "path": "packages/context-broker/src/session-source-snapshot.ts",
-        "previous": "e946d3a437b29869546b0192d1fdbd693b2ac38b765b8e60b3763b8198547468",
-        "current": "5bbff1194c6c76ee868ae27759ad2a7a03f063b2709f3fc44ced24d7ee778b04"
-      },
-      {
-        "path": "packages/context-broker/scripts/native-read-session.test.ts",
-        "previous": "c46a859f12f51dd6a4cfb3b7c054d1f8b896fd30722eecb3cad63feb2647b22d",
-        "current": "f96e8e7dbf8865e2ea2e1f98f74377702045b7f2b8dceb89868906f7bce381cf"
-      }
-    ]
-  },
-  "ctx_final_request_review": {
-    "implementation": "e91dc8c7857e3f0094106fd01b73eec6cee621d5",
-    "review": "docs/context-once-source-review.md#ctx-final-request-boundary",
-    "source_changes": [
-      {
-        "path": "packages/context-broker/src/host-skills.ts",
-        "before": "5ad556031ea1085363b7e75ab329a57ebedc0b1e44d2db3c0df9a551b312eca9",
-        "after": "14ad8253488ff98258ff7b47757fe7398f25577d7b6880f9dec9d76299898cdb"
-      },
-      {
-        "path": "packages/context-broker/src/index.ts",
-        "before": "ffcf274952dfcf143a119900943b787884a6eb78d84cd734c83db396bc05f6b3",
-        "after": "bd5f955083bce00d4dd55d55be8e4b3b19f7e59d6c85876fc092a75398686789"
-      },
-      {
-        "path": "packages/context-broker/src/view-prompt.ts",
-        "before": "8b2d21bcfb3662b4e742d51c13a625aaaa5a66ba7f4cf717c3f8cfed9704062a",
-        "after": "7d7ac614ccf857c7f3ed5723aebdd3c9fbb734259ef8cdcb509e09a341f451be"
-      },
-      {
-        "path": "packages/context-broker/src/session-source-snapshot.ts",
-        "before": "5bbff1194c6c76ee868ae27759ad2a7a03f063b2709f3fc44ced24d7ee778b04",
-        "after": "b23de4a16344620ff12e4e2bd3147d119fdfbffba37507b54434d7425d84c9a5"
-      },
-      {
-        "path": "packages/context-broker/scripts/host-prepare.test.ts",
-        "before": "917432ef445cec9d723a8e6609921e36f96bf30ee371df77bca0844e9fcb8748",
-        "after": "6f88489ed58f7887e2a8189ccd08539dc7295c53abec10cf268039154001f752"
-      },
-      {
-        "path": "packages/context-broker/scripts/view-discovery.test.ts",
-        "before": "0d285b1584a299a2c4a3298d7c0cc833810d64855a5f8604f12e793c0f367bcf",
-        "after": "3fba313d4920848082cda04896b825dfde8401f9e6bc8c1607ab3502b8458b7a"
-      }
-    ],
-    "concrete_guard_owners": [
-      "packages/context-broker/src/final-request.ts",
-      "packages/context-broker/scripts/final-request.test.ts",
-      "packages/context-broker/scripts/final-request-undici.test.ts"
-    ],
-    "finite_models_unchanged": true,
-    "semantic_boundary": "DeliveryBoundary providerAccepted remains logical acceptance. Final request roles, serialized directory/schema/entity checks are concrete proof obligations; known mismatch rejects the new acceptance, unsupported transport is not wire proof. Fixed graph, branch, turn and projection ACK owners unchanged.",
-    "independent_review": "F1 at1884c89 restored-user proof omitted: retained original, actual deferred-drafts red12pass1fail then13pass. e91dc8c preserves private immutable obligation; real Pi restored-role counterexample passes.",
-    "not_proven_by_tlc": [
-      "Actual network dispatch",
-      "Actual role/JSON/XML bytes",
-      "Unrestricted LLM behavior",
-      "Source API eventual consistency"
-    ],
-    "final_diagnostic_review": {
-      "changed": [
-        {
-          "path": "packages/context-broker/src/final-request.ts",
-          "before": "a826ad7b363ac21aeae0f0274b6c8b7842ecdb6ef1226d2a96fcdb020d01935b",
-          "after": "ba7db9fc301e115200b8ba6534ab332e0f90a1a5c3c4ceaef34389cdf0bd4b9c"
-        },
-        {
-          "path": "packages/context-broker/scripts/final-request.test.ts",
-          "before": "fae0456b063e38a9eaea3202fdc910298be0acb5d7b39ecc8adc6b07a178b6f9",
-          "after": "85266fac06f8d4b3fbe88e92dadabf2f04a94a72e9aba6c2c421be4e05d84f85"
-        }
+  "outside_finite_models": [
+    {
+      "name": "actual validation time and cache origin",
+      "tests": [
+        "consumer-observation.test.ts",
+        "shared-notion-adapter.test.ts"
       ],
-      "scope": "Preparation operation effects are read from canonical nested contextBrokerPreparation.effects for truthful bounded diagnostics. No dispatch/graph/role/activation transition changed. Driver keeps explicit four counterexamples and source cancellation effects."
+      "contract": "Caches retain their original validation time. Offline/fixed content never proves current eligibility. A later-started cache lookup does not outrank an earlier still-in-flight current denial."
+    },
+    {
+      "name": "metadata expiry and default fields",
+      "tests": [
+        "host-prepare.test.ts",
+        "view-discovery.test.ts",
+        "catalog-menu tests"
+      ],
+      "contract": "F6 uses the actual metadata consumer and controlled clocks. Current SDK transport and installed package checks are separate. Default Context remains an optional author/View filter; Enabled remains the availability switch."
+    },
+    {
+      "name": "complete graph and future delivery",
+      "tests": [
+        "host-prepare.test.ts",
+        "native-read-session.test.ts",
+        "resource-read-projection.test.ts"
+      ],
+      "contract": "Exact dependency failures do not deny the root. Failed replacement does not replace the graph. Known authorization denial withholds verified source spans on future requests. Explicit new selection retires old main and supporting-file spans but never edits native history."
     }
-  },
-  "nxt_delivery_review": {
-    "issues": ["AH-1023", "AH-1056", "AH-1057", "AH-1050"],
-    "reviewed_owners": {
-      "host-skills.ts": "Working-set admission runs after existing qualification and before staging/commit. Explicit root release increments the existing generation and clears pending reads/graphs so late acquisition fails the existing lifecycle guards; the concrete public-tool race regression asserts no republishing. Availability identities, denial/current evidence and cursor ownership are unchanged.",
-      "index.ts": "Adds explicit local source-connection command routing and bounded same-owner/snapshot batch guidance. Connection preview/apply does no remote operation and does not publish current/body evidence. No source catalog selection, projection ACK or read receipt logic changed."
-    },
-    "finite_models_unchanged": ["Availability", "ReadRace"],
-    "semantic_boundary": "Their existing generation-retirement transition covers the new release cause; selection reachability, explicit budget and effective delivery changes are maintained in consumer-state SelectionGraph/DeliveryBoundary. Exact path bytes, connection filesystem races and real HTTP serializer outcomes remain concrete obligations.",
-    "concrete_replays": "315 consumption tests and 3 actual Node request-entity tests pass. Installed Pi 1.5.2 HTTP working-set and context-once loops pass; same-owner/snapshot resource batch with session short refs passes installed Pi plus full serializer replay. No real model or production-network claim follows from these controlled-provider runs."
-  },
-  "four_pillars_daily_delivery_review": {
-    "issue": "AH-500 / AH-1063",
-    "implementation_commit": "86aaf0916156347c4628e07f689b0d06dcda6cc7",
-    "cli_exact_commit": "ca46da47f5046c6b1b30848d6bb99b979dbc61b7",
-    "document": "docs/verification-routing.md",
-    "reviewed_changed_sources": [
-      "packages/context-broker/src/index.ts",
-      "scripts/build-tern.mjs"
-    ],
-    "new_correspondence_files": [
-      "packages/context-broker/scripts/skill-guidance.test.ts",
-      "scripts/notion-sdk-pi.mjs",
-      "scripts/nxt-pi-delivery.mjs",
-      "scripts/nxt-pi-delivery.test.mjs"
-    ],
-    "native_route": "Same active-tool-dependent guidance projection; bounded default891B includes explicit maintenance versus activation distinction. Optional management discovery gives1007B; exactly one current guidance block. Existing history and source bodies unchanged.",
-    "command_observer": "Same-process full original metrics with exact final stdout SHA/length, accepted only for one closed normally exited observed child/process lineage with complete trace. Missing/duplicate/foreign/altered/partial aggregate-only evidence stays unknown, never zero. Legacy guard remains; new frozen proof-v1 config binds exact installed CLI and SDK.",
-    "natural_evidence": {
-      "model": "magpie/group/worker",
-      "requests": 8,
-      "request_cap": 10,
-      "retries": 0,
-      "final_answer": "independent exact target/files/operationID/ref semantic PASS",
-      "apply_http": 101,
-      "apply_writes": 14,
-      "model_output_bytes": 9101,
-      "original_failures": "retained",
-      "guard_refusals": 4,
-      "tool_calls": 11
-    },
-    "controlled_evidence": {
-      "provider_requests": 29,
-      "phase_observations": 16,
-      "closed_processes": 4,
-      "consumer_writes": 0,
-      "body_duplicates": 0,
-      "release_resume_compaction": "passed",
-      "provider": "actual installed normal serializer to controlled loopback; separate from natural model"
-    },
-    "tests": "203 observer/NXT/routing/formal-contract Node tests; 316 consumption tests +3 actual Node/serializer tests; source typecheck; installed real Notion/Session/HTTP evidence retained privately.",
-    "finite_model_states_rules_configs_negative_cases_unchanged": true,
-    "limitations": [
-      "Single successful natural sample, not a statistical success rate",
-      "No cross-physical-machine history recovery proof",
-      "101 actual author requests still include original safety checks; compact changes model-visible bytes, not transport retries",
-      "CI/run identity must match the final exact commit, never reuse earlier CI status"
-    ]
-  },
-  "four_pillars_source_cli_locator_review": {
-    "issue": "AH-1063",
-    "implementation_commit": "ff63f06bf1ad9bab08355e29d3ff2cfdefb65579",
-    "document": "docs/verification-routing.md",
-    "reviewed_changed_sources": [
-      "packages/context-broker/scripts/skill-guidance.test.ts",
-      "scripts/nxt-pi-delivery.mjs",
-      "packages/context-broker/src/index.ts"
-    ],
-    "semantics": "Only the native model-visible guidance gains the existing cli_source route and exact enabled source IDs after notion_ctl AND bash are active. Default guidance remains 891 bytes; the original command locator, permission/ambiguity/cancellation guards and all state transitions are unchanged. No CLI paths or database are exposed until explicitly selecting one source.",
-    "concrete_evidence": "Two fail-before native guidance regressions; 79 routing/model-surface tests with 1079 assertions; 318 consumption tests with 3129 assertions and 3 actual serializer tests; 36 NXT/routing contract tests. Actual installed Pi with same CLI/SDK and host-skills bytes passed 33 controlled provider requests, 18 phases and 4 closed native processes; exact source success and unknown source refusal cost 0 source HTTP/SDK/children and 0 business writes. Final provider input contains one guidance at 891 or 1132 bytes and no duplicated full bodies.",
-    "previous_failure": "PKYWx3 controlled run stopped before the new checks due to observation-local ReferenceError; immutable original kept. Corrected original observer rerun rh2YAt passed without any model or business mutation.",
-    "finite_models_configs_cases_views_expected_rules_changed": false,
-    "nonclaims": [
-      "This small source-locator patch did not rerun or relabel the original 8-request natural maintenance sample.",
-      "Source hashes map reviewed implementation context; they do not prove arbitrary source configuration or provider behavior.",
-      "Configured command identity is a locator, not execution or write authority."
-    ]
-  }
+  ]
 }

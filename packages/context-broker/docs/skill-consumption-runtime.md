@@ -14,15 +14,13 @@ Pi 注册 `notion_list({query?, source?, limit?, cursor?})`、`notion_use({ref, 
 
 ## 消费不写远端
 
-Pi `read` 与 `notion_use` 不再公开 `readOnly` 开关。携带该旧参数时，无论值为 true 或 false，都在读取前返回 `INVALID_ARGUMENT`。Broker 内部向 SDK 固定传 `readOnly:true`，普通消费始终不写 Notion。仍需要 Records adoption 的 core 分支会明确拒绝，属于上线前必须收敛的剩余工作，不通过关闭保护绕过。旧选择失效时，获取当前候选 ref 并重新选择，不承诺恢复历史内容。
+Pi `read` 与 `notion_use` 不公开 `readOnly`。携带该旧参数时，无论值为 true 或 false，都在 I/O 前返回 `INVALID_ARGUMENT`。随包 SDK v2 不接收这个参数，当前消费恒零语义写入，不通过首次读取 retention/adoption 或写 Records。旧选择缺少所需本地字节时，明确获取当前候选并重新选择，不承诺远端历史恢复。
 
-version-1 `effects` 继续记录实际观察：`remote_writes` 为 `none`、`retained` 或 `unknown`，`author_content` 为 `unchanged` 或 `unknown`。其中 retained/unknown 用于披露异常或无法确定的写入结果，不能将它们算作零写验收通过。它不是已选快照的历史写入清单，也不由 HTTP200、缓存命中或自然语言自述推导。
+SDK 与构建 manifest 必须具备匹配的消费能力，缺失时在操作前拒绝；旧 `source.command` 同样在配置入口拒绝。此边界由 `notion-sdk.test.ts` 的无 readOnly 能力门槛和当前独立安装 HTTP 检查验证，不依赖用户选一个保护开关。
 
-`notion_use` 在结构化内容中返回 effects，标量原生 read 在完整原文后追加 `<notion-effects>`，Pi `$`/native 注入在同轮添加独立效果文本并保留到原生历史。主文 v3 和资源 v2 回执只覆盖原始内容 span；目录去重和资源去重保留效果文本。多来源部分失败、取消或丢失 ACK 继续披露先前已观察效果与未知状态。旧生产者缺少回执时不能称零写。
+version-1 `effects` 描述本次实际观察。当前正常消费必须为 `remote_writes: none`；retained/unknown 仍可用于防御性处理已提供回执，不能被聚合成零写或冒充当前消费验收通过。`notion_use`、原生 read 和注入的效果文字保留原正文 span；多源失败与取消不得丢失先前回执。其实现回归归 `host-prepare.test.ts` 等实际 owner。
 
-内部 `readOnly:true` 进入 SDK 请求层的语义写拦截；管理 CLI 另有 `--read-only` 参数。尚未收敛的 adoption 分支会在首个写前拒绝，不允许的语义写以 `NOTION_READ_ONLY` 失败。随包 SDK 与构建 manifest 均须声明消费效果 version 1，否则在调用前失败；旧 `source.command` 在配置入口即拒绝。本次不改变原生本地读取、图片、分页或批量固定资源的身份与字节合同。
-
-有限模型、故意破坏的反例及源码对应见 [RetentionDisclosure](https://github.com/yoyooyooo/pi-context-broker/blob/4fde322f94e3b74f400f18fa46e4aa5ebf4f6a97/verification/models/consumer-observations/flows/README.md)。它检查效果披露和只读写边界，不证明任意 LLM 最终回答，也不将模型结果替代真实 Notion/Pi 的 Session、payload 和 HTTP 审计。
+资格、固定选择和交付的有限边界见 [consumer-state Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-consumer-state/SKILL.md)。模型不证明 SDK 的实际 HTTP、serializer 或 LLM 最终回答；这些按 [integration Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-skills-integration/SKILL.md) 单独验收。
 
 ## 当前工作集预算与显式释放
 

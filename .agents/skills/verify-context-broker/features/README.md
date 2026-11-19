@@ -25,7 +25,7 @@
 - run 完成后执行 `control.mjs evidence`，验证 teardown 后证据保留。Tern 核对 `cleanup.json`、`owned-processes.json`、`host-processes.jsonl` 与 `omp-exit.json` 的真实退出。Pi PTY 核对各冷会话 `actions.json`、原始 `.ansi`、`provider.jsonl`、`driver-exit.json` 与 `cleanup.json`。清理不能改变功能 failed/未运行状态。
 - 一条路径通过不扩大为全部功能通过。此地图里说明的覆盖边界必须在报告中保留。
 
-当前上下文唯一性与恢复见 [context-once.md](context-once.md)。组合模型见 [formal-composition](../../verify-notion-skills-integration/features/formal-composition.md)。图册入口在该页区分当前结果和历史快照；不需要为导航修正运行其他宿主。
+当前上下文唯一性与恢复见 [context-once.md](context-once.md)。资格、固定选择和交付模型由 [consumer-state Skill](../../verify-notion-consumer-state/SKILL.md) 维护；实际 SDK/安装另沿 integration。导航修正无需运行其他宿主。
 
 ## Features
 

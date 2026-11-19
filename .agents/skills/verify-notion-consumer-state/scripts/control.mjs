@@ -45,7 +45,7 @@ if (command === "evidence") {
   for (const step of manifest.steps) for (const stream of ["stdout", "stderr"]) {
     assert.equal(hashFile(path.join(out, step[stream])), step[stream + "Sha256"], "Evidence transcript changed");
   }
-  for (const name of ["legacy-models", "models", "legacy-mutations", "mutations"]) {
+  for (const name of ["observations", "models", "observation-mutations", "mutations"]) {
     assert.equal(JSON.parse(fs.readFileSync(path.join(out, name, "summary.json"), "utf8")).complete, true, name + " incomplete");
   }
   console.log(JSON.stringify({ status: "preserved", complete: true, manifest: manifestFile, manifestSha256: hashFile(manifestFile) }, null, 2));
@@ -78,10 +78,10 @@ try {
   state.inputHashes = Object.fromEntries([...inputs].sort().map(file => [file, hashFile(path.join(repository, file))]));
   save();
   const tasks = [
-    ["legacy-models", process.execPath, ["scripts/verify-consumer-observations.mjs", "--suite", "observations", "--out", path.join(out, "legacy-models")]],
+    ["observations", process.execPath, ["scripts/verify-consumer-observations.mjs", "--suite", "observations", "--out", path.join(out, "observations")]],
     ["models", process.execPath, ["scripts/verify-consumer-observations.mjs", "--suite", "consumer-state", "--out", path.join(out, "models")]],
     ["regressions", "bun", ["test", ...["consumer-observation", "consumer-state", "host-prepare", "session-active", "native-read-session", "skill-context-session"].map(name => "packages/context-broker/scripts/" + name + ".test.ts"), "--timeout", "30000"]],
-    ["legacy-mutations", process.execPath, ["scripts/check-consumer-observation-mutations.mjs", "--out", path.join(out, "legacy-mutations")]],
+    ["observation-mutations", process.execPath, ["scripts/check-consumer-observation-mutations.mjs", "--out", path.join(out, "observation-mutations")]],
     ["mutations", process.execPath, ["scripts/check-consumer-state-mutations.mjs", "--out", path.join(out, "mutations")]],
   ];
   for (const [name, executable, argv] of tasks) {

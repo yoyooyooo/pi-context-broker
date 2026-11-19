@@ -1,210 +1,293 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { currentNotionFixture } from "./fixtures/current-notion-source";
 import { pathToFileURL } from "node:url";
+import { currentNotionFixture } from "./fixtures/current-notion-source";
+import type { ContentRecord, ExtensionAPI, ExtensionContext, SkillRecord, SourceConfig } from "../src/types";
+
 const runtime = await currentNotionFixture();
 const { decodeCliWriteOutput, installCliWriteInvalidation } = await import(pathToFileURL(join(runtime.root, "src/cli-write-invalidation.ts")).href);
 const { hostCliScope } = await import(pathToFileURL(join(runtime.root, "src/host-command.ts")).href);
-import type { AutocompleteProvider, ExtensionAPI, ExtensionContext, SkillRecord, SourceConfig } from "../src/types";
-
-type Listener = (event: never, ctx: ExtensionContext) => unknown;
 const db = "22222222-2222-4222-8222-222222222222", otherDb = "22222222-2222-4222-8222-222222222223";
-const page = "11111111-1111-4111-8111-111111111111", ds = "33333333-3333-4333-8333-333333333333", auth = "a".repeat(64);
-const locator = { type: "notion_page" as const, page_id: page, database_id: db, data_source_id: ds };
+const page = "11111111-1111-4111-8111-111111111111", ds = "33333333-3333-4333-8333-333333333333";
+const operation = "import:current-1", skill = "skill:one", library = { library_id: "lib:current", database_id: db, data_source_id: ds };
 const prefix = hostCliScope().command;
 const quote = (word: string) => "'" + word.replaceAll("'", "'\\''") + "'";
 const command = (...args: string[]) => [...prefix, ...args].map(quote).join(" ");
+const args = ["ctl", "library", "import", "/staged", "--entry", db, "--skill-id", skill, "--operation", operation];
+const currentCommand = command(...args);
+const atEntry = (entry: string) => command("ctl", "library", "import", "/staged", "--entry", entry, "--skill-id", skill, "--operation", operation);
+const entryUrls = [
+  "https://www.notion.so/Library-" + db.replaceAll("-", "") + "?v=ignored",
+  "https://app.notion.com/p/team/library-" + db.replaceAll("-", "") + "?source=copy_link",
+  "https://team.notion.site/" + db.replaceAll("-", "").toUpperCase() + "/#section",
+];
+const current = { ok: true, contract: "current", status: "applied", operation_id: operation, skill_id: skill, page_id: page,
+  input_sha256: "a".repeat(64), files: 3, state: "ready", library };
 const sources: SourceConfig[] = [
   { id: "personal", type: "notion", database: db },
   { id: "second", type: "notion", database: otherDb },
   { id: "alias", type: "notion", database: "library" },
+  { id: "disabled", type: "notion", database: db, enabled: false },
+  { id: "unbound", type: "notion" },
 ];
-const records = ["personal", "alias"].map(sourceId => ({ sourceId, sourceScope: auth, locator } as SkillRecord));
-const receipt = { ok: true, operation: "replace", action: "update", verified: true, reused: false, scope: auth, record: { id: "notion_page:" + page, locator }, snapshot_id: "s_" + "b".repeat(64) };
-const listeners = new Map<string, Listener[]>();
-const changed: string[][] = [];
+function record(sourceId: string, locator: ContentRecord["locator"] = { type: "shared_skill", ...library, skill_id: skill, page_id: page }): SkillRecord {
+  return { id: "shared_skill:lib%3Acurrent:skill%3Aone", kind: "skill", name: "visible name", alias: "visible-name", description: "Current item",
+    default_context: false, enabled: true, entrypoint: "SKILL.md", ref: "skill://shared_skill%3Alib%253Acurrent%3Askill%253Aone/SKILL.md",
+    locator, source: "notion", sourceId, sourceScope: "b".repeat(64), aliases: [], autoloadEnabled: true,
+    path: "/metadata/SKILL.md", normalizedName: "visible-name", normalizedAliases: [], normalizedDescription: "Current item" };
+}
+let records = [record("personal"), record("alias")];
+const listeners = new Map<string, unknown[]>(), changed: string[][] = [];
 const ctx: ExtensionContext = { cwd: "/owned", sessionManager: { getSessionId: () => "write-session" } };
-const api: ExtensionAPI = { on(name, handler) { listeners.set(name, [...(listeners.get(name) ?? []), handler as unknown as Listener]); } };
-const emit = async (name: string, event: unknown) => { for (const handler of listeners.get(name) ?? []) await handler(event as never, ctx); };
+const otherCtx: ExtensionContext = { sessionManager: { getSessionId: () => "different-session" } };
+const api: ExtensionAPI = { on(name, handler) { listeners.set(name, [...(listeners.get(name) ?? []), handler]); } };
+const emit = async (name: string, event: unknown, context = ctx) => {
+  for (const handler of listeners.get(name) ?? []) { if (typeof handler !== "function") throw Error("Expected listener"); await handler(event, context); }
+};
 installCliWriteInvalidation(api, { sources, records: () => records, changed: ids => changed.push(ids) });
 let nextId = 0;
-async function result(cmd: string, value: unknown, isError = false) {
-  const toolCallId = "call-" + nextId++;
-  await emit("tool_call", { toolName: "bash", toolCallId, input: { command: cmd } });
-  await emit("tool_result", { toolName: "bash", toolCallId, input: {}, content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }], isError });
+async function result(cmd: string, value: unknown, isError = false, context = ctx) {
+  const toolCallId = "call-" + nextId++, input = { command: cmd };
+  await emit("tool_call", { toolName: "bash", toolCallId, input }, context);
+  await emit("tool_result", { toolName: "bash", toolCallId, input, content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }], isError }, context);
 }
-await result(command("apply", "s_baseline", "--input", "/staged", "--database", db), receipt);
-assert.deepEqual(changed.pop(), ["personal", "alias"], "All sources scoped to the verified content database become dirty");
-for (const cmd of [
-  command("read", "s_baseline"), command("sync", "upstream", "status"), command("sync", "upstream", "plan"), command("sync", "local", "check"),
-  "echo " + command("apply", "s_baseline"), command("apply", "s_baseline") + " && echo done",
-  command("apply", "s_baseline") + "\necho done", command("apply", "$(selector)" ).replace("'$(selector)'", "$(selector)"),
-  command("apply", "s_baseline", "--dry-run"), command("apply", "s_baseline", "--database", otherDb),
-]) await result(cmd, receipt);
-for (const value of [
-  { ...receipt, ok: false }, { ...receipt, verified: false }, { ...receipt, dry_run: true },
-  { ...receipt, action: "reuse", reused: true }, { ...receipt, action: "unchanged" }, { ...receipt, reused: true },
-  { ...receipt, scope: "c".repeat(64) }, { ...receipt, record: { locator: { ...locator, database_id: otherDb } } },
-  "truncated {\"ok\":true",
-]) await result(command("apply", "s_baseline", "--database", db), value);
-await result(command("apply", "s_baseline"), receipt, true);
-assert.equal(changed.length, 0, "Reads, previews, unchanged/failed writes, mismatched scope and compound shell output cannot mark a source dirty");
+const changedLibrary = (message: string) => assert.deepEqual(changed.splice(0), [["personal", "alias"]], message);
 
-// Hosts merge CLI stdout with the exact PublicationProgress JSONL written to stderr.
-const publication = "p_44444444-4444-4444-8444-444444444444";
-const progressedReceipt = { ...receipt, operation_id: publication };
-const progress = (status = "completed", operation_id = publication) => ({ operation_id, stage: "verify", status, elapsed_ms: 15.25, stage_ms: 2.5 });
-const jsonl = (...lines: unknown[]) => lines.map(line => typeof line === "string" ? line : JSON.stringify(line)).join("\n");
+await result(currentCommand, current);
+changedLibrary("Only configured sources bound to the current physical and logical library become dirty");
+await result(command(...args, "--name", "作者's name", "--description", "", "--max-requests", "100", "--max-bytes=4096", "--timeout", "1000"), current);
+changedLibrary("All current singleton metadata/budget flags preserve the exact import owner");
+for (const flags of [
+  ["--max-requests", "+100", "--max-bytes=1e3", "--timeout", "100.0"],
+  ["--max-requests=.1e3", "--max-bytes", "1E+3", "--timeout=1000e-1"],
+  ["--no-dry-run"], ["--no-resume"], ["--resume=false"],
+]) {
+  await result(command(...args, ...flags), current);
+  changedLibrary("The current parser's equivalent integer and false Boolean forms still own one apply");
+}
+for (const literal of ["true", "yes", "on", "1", "y"]) {
+  for (const flag of [["--resume=" + literal], ["--resume", literal]]) {
+    await result(command(...args, ...flag), { ...current, status: "unchanged" });
+    changedLibrary("Every current true Boolean form retains resume visibility semantics");
+  }
+}
+for (const literal of ["false", "no", "off", "0", "n"]) {
+  for (const flag of [["--dry-run=" + literal], ["--dry-run", literal]]) {
+    await result(command(...args, ...flag), current);
+    changedLibrary("A parser-recognized false dry-run value is an actual apply, not a preview");
+  }
+  await result(command(...args, "--resume=" + literal), { ...current, status: "unchanged" });
+}
+assert.deepEqual(changed.splice(0), [], "False resume forms cannot turn an ordinary no-op into a recovery refresh");
+for (const cmd of [
+  command(...args, "--"),
+  command("ctl", "library", "import", "--entry", db, "--skill-id", skill, "--operation", operation, "--", "--literal-directory"),
+]) {
+  await result(cmd, current);
+  changedLibrary("The current end-of-options delimiter preserves exactly one literal input");
+}
+await result(command("ctl", "library", "import", "/path with spaces/$(literal)", "--entry=library", "--skill-id=" + skill, "--description=--dry-run"), current);
+changedLibrary("Single-quoted literal paths and flag-looking metadata values do not become shell expansion or a dry run");
+await result(command("ctl", "library", "import", "/staged", "--entry", db.replaceAll("-", "").toUpperCase(), "--skill-id", skill), current);
+changedLibrary("Physical UUID spelling is normalized without inferring a name");
+for (const entry of entryUrls) {
+  await result(atEntry(entry), current);
+  changedLibrary("A current Notion URL selects the same exact physical entry as the configured UUID");
+}
+await result(command("ctl", "library", "import", "/staged", "--entry", otherDb, "--skill-id", "new-skill"), {
+  ...current, skill_id: "new-skill", page_id: "11111111-1111-4111-8111-111111111112", library: { ...library, library_id: "other-library", database_id: otherDb },
+});
+assert.deepEqual(changed.splice(0), [["second"]], "A first import can invalidate an exact configured database without a prior record");
+
+for (const cmd of [
+  command("list", "--entry", db), command("read", "skill://entry/SKILL.md"),
+  command("create", "/staged", "--database", db), command("apply", "/staged", "--database", db),
+  command("replace", "/staged"), command("write", page), command("update", page),
+  command("ctl", "sync", "local", "run", "binding"), command("ctl", "sync", "upstream", "run"),
+  command("ctl", "operation", "resume", operation), command("ctl", "ctl", "library", "import", "/staged"),
+  "echo " + currentCommand, "env " + currentCommand, "node /other-cli " + args.map(quote).join(" "),
+  currentCommand + " && echo done", currentCommand + "; echo done", currentCommand + " | cat", currentCommand + " > /tmp/output",
+  command(...args, "--no-dry-run", "--max-requests=1e2") + " && echo done",
+  currentCommand + "\necho done", currentCommand + "\r\necho done", currentCommand + " # comment",
+  currentCommand.replace("'/staged'", "$(selector)"), currentCommand.replace("'/staged'", '"$(selector)"'),
+  currentCommand.replace("'/staged'", "`selector`"), currentCommand.replace("'/staged'", "'bad\0path'"),
+  currentCommand.replace("'/staged'", "'bad\npath'"), command(...args, "--dry-run"),
+  command(...args, "--help"), command(...args, "--progress"), command(...args, "--unknown", "value"),
+  command(...args, "--entry=" + db), command(...args, "--skill-id", skill), command(...args, "--operation=" + operation),
+  command(...args, "--name", "one", "--name=two"), command(...args, "--description", "one", "--description=two"),
+  command(...args, "--max-requests", "1", "--max-requests=2"), command(...args, "--max-bytes", "0"),
+  command(...args, "--max-requests=-1"), command(...args, "--timeout=1.2"), command(...args, "--timeout=1s"),
+  command(...args, "--max-requests=0x64"), command(...args, "--timeout=1e999"), command(...args, "--timeout= 100 "),
+  command(...args, "--max-bytes=100."), command(...args, "--timeout=100+100"),
+  command(...args, "--max-bytes=9007199254740992"), command(...args, "extra-input"), command(...args, "--resume", "--resume"),
+  command(...args, "--", "extra-input"), command(...args, "--", "--resume"),
+  command(...args, "--resume=true", "--no-resume"), command(...args, "--no-resume", "--resume=false"),
+  command(...args, "--dry-run=false", "--no-dry-run"), command(...args, "--no-dry-run", "--dry-run", "false"),
+  command(...args, "--no-resume=false"), command(...args, "--no-resume", "false"),
+  command(...args, "--no-dry-run=true"), command(...args, "--no-dry-run", "true"),
+  command(...args, "--resume=True"), command(...args, "--dry-run=maybe"),
+  ...["true", "yes", "on", "1", "y"].flatMap(value => [command(...args, "--dry-run=" + value), command(...args, "--dry-run", value)]),
+  command("ctl", "library", "import", "/staged", "--entry", db, "--skill-id", skill, "--resume"),
+  command("ctl", "library", "import", "/staged", "--entry", db, "--skill-id", skill, "--resume=yes"),
+  command("ctl", "library", "import", "/staged", "--skill-id", skill),
+  command("ctl", "library", "import", "/staged", "--entry", db),
+  command("ctl", "library", "import", "--entry", db, "--skill-id", skill),
+  command("ctl", "library", "import", "/staged", "--entry", db, "--skill-id", "../bad"),
+  command("ctl", "library", "import", "/staged", "--entry", db, "--skill-id", skill, "--operation", "../bad"),
+  command("ctl", "library", "import", "/staged", "--entry", "visible-name", "--skill-id", skill),
+  command("ctl", "library", "import", "/staged", "--entry", "unregistered-alias", "--skill-id", skill),
+  command("ctl", "library", "import", "/staged", "--entry", otherDb, "--skill-id", skill),
+]) await result(cmd, current);
+assert.deepEqual(changed.splice(0), [], "Reads, retired routes, shell constructs, unknown/duplicate flags and unowned entries are inert");
+
+for (const value of [
+  { ...current, contract: "other" }, { ...current, state: "partial" }, { ...current, status: "unknown" },
+  { ...current, dry_run: true }, { ...current, ok: false }, { ...current, skill_id: "other-skill" },
+  { ...current, operation_id: "other-operation" }, { ...current, operation_id: "../bad" }, { ...current, operation_id: undefined },
+  { ...current, input_sha256: "bad" }, { ...current, files: 0 }, { ...current, files: 1.5 },
+  { ...current, page_id: skill }, { ...current, page_id: "11111111-1111-4111-8111-111111111112" },
+  { ...current, library: undefined }, { ...current, library: { ...library, library_id: "../bad" } },
+  { ...current, library: { ...library, library_id: "another-library" } },
+  { ...current, library: { ...library, database_id: otherDb } },
+  { ...current, library: { ...library, data_source_id: "33333333-3333-4333-8333-333333333334" } },
+  { ok: true, verified: true, operation: "replace", action: "update", reused: false, record: records[0], scope: "b".repeat(64) },
+]) await result(currentCommand, value);
+assert.deepEqual(changed.splice(0), [], "Malformed or mismatched current identities cannot borrow an old receipt or configured name");
+await result(currentCommand, { ...current, status: "unchanged" });
+assert.deepEqual(changed.splice(0), [], "An ordinary exact re-import has no semantic change to invalidate");
+await result(command(...args, "--resume"), { ...current, status: "unchanged" });
+changedLibrary("Resume can recover visibility of an earlier write even when reconciliation now reports unchanged");
+await result(currentCommand, current, true);
+changedLibrary("A valid applied current result still requests a reread when the host reports an error; the observer does not change that result");
+
+const pending = { ok: false, error: { code: "CURRENT_WRITE_OUTCOME_UNKNOWN", details: { operation_id: operation, skill_id: skill } } };
+for (const entry of entryUrls) {
+  await result(atEntry(entry), pending, true);
+  changedLibrary("A partial operation selected by Notion URL still invalidates its exact configured database");
+}
+for (const isError of [false, true]) {
+  await result(currentCommand, pending, isError);
+  changedLibrary("Unknown operation context invalidates the exact entry even for host isError");
+}
+await result(command("ctl", "library", "import", "/staged", "--entry", "library", "--skill-id", skill), pending, true);
+changedLibrary("An automatically allocated operation can invalidate its exact configured alias");
+for (const value of [
+  { ok: false, error: { code: "INVALID_ARGUMENT" } },
+  { ok: false, error: { code: "CURRENT_WRITE_OUTCOME_UNKNOWN", details: { skill_id: skill } } },
+  { ok: false, error: { details: { operation_id: "../bad", skill_id: skill } } },
+  { ok: false, error: { details: { operation_id: "other-operation", skill_id: skill } } },
+  { ok: false, error: { details: { operation_id: operation, skill_id: "other-skill" } } },
+  { ok: false, details: { operation_id: operation, skill_id: skill } },
+]) await result(currentCommand, value, true);
+await result(command("ctl", "library", "import", "/staged", "--entry", "unregistered-alias", "--skill-id", skill), pending, true);
+assert.deepEqual(changed.splice(0), [], "Local preflight failures and mismatched operation context do not invalidate a directory");
+
 const sqliteWarning = "(node:7778) ExperimentalWarning: SQLite is an experimental feature and might change at any time";
 const sqliteHint = "(Use `node --trace-warnings ...` to show where the warning was created)";
-const progressCommand = command("apply", "s_baseline", "--progress", "--database", db);
+const jsonl = (...lines: unknown[]) => lines.map(line => typeof line === "string" ? line : JSON.stringify(line)).join("\n");
+for (const output of [JSON.stringify(current, null, 2), jsonl(sqliteWarning, sqliteHint, current), jsonl(current, sqliteWarning, sqliteHint), jsonl(sqliteWarning, JSON.stringify(current, null, 2))]) {
+  assert.deepEqual(decodeCliWriteOutput(output), { status: "complete", result: current });
+  await result(currentCommand, output);
+  changedLibrary("One complete current JSON object survives only the exact observed SQLite warning");
+}
+const progress = { operation_id: operation, stage: "write", status: "completed", elapsed_ms: 1, stage_ms: 1 };
 for (const output of [
-  jsonl(progress("started"), progress(), progressedReceipt),
-  jsonl(sqliteWarning, sqliteHint, progress(), progressedReceipt),
-  jsonl(progressedReceipt, progress(), sqliteWarning, sqliteHint),
+  "", "truncated {\"ok\":true", JSON.stringify([current]), jsonl(current, current), jsonl(progress, current),
+  jsonl({ other: true }, current), jsonl("unexpected text", current), jsonl(sqliteHint, current),
+  jsonl("(node:7778) ExperimentalWarning: Another experimental feature", current),
+  jsonl(sqliteWarning, "unexpected text", sqliteHint, current), jsonl(sqliteWarning, current, sqliteHint),
 ]) {
-  await result(progressCommand, output);
-  assert.deepEqual(changed.pop(), ["personal", "alias"], "One complete same-operation receipt survives known stderr progress/warnings");
+  assert.equal(decodeCliWriteOutput(output).status, "invalid");
+  await result(currentCommand, output);
 }
-await result(command("apply", "s_baseline"), jsonl(sqliteWarning, sqliteHint, receipt));
-assert.deepEqual(changed.pop(), ["personal", "alias"], "The precise Node SQLite warning does not require --progress");
-assert.deepEqual(decodeCliWriteOutput(JSON.stringify(receipt, null, 2)), { status: "complete", result: receipt }, "Pure JSON keeps its original whitespace-tolerant fast path");
-await result(command("apply", "s_baseline"), jsonl(progress(), progressedReceipt));
-assert.equal(changed.length, 0, "JSONL progress requires the actual literal --progress argv");
-for (const output of [
-  jsonl(progress("completed", "p_another"), progressedReceipt),
-  jsonl(progress(), progress("completed", "p_another"), progressedReceipt),
-  jsonl(progress(), receipt),
-  jsonl(progress(), progressedReceipt, progressedReceipt),
-  jsonl({ ...progress(), extra: "unknown" }, progressedReceipt),
-  jsonl({ ...progress(), elapsed_ms: -1 }, progressedReceipt),
-  jsonl({ ...progress(), stage_ms: null }, progressedReceipt),
-  jsonl(progress("unknown"), progressedReceipt),
-  jsonl({ ...progress(), status: ["started"] }, progressedReceipt),
-  jsonl({ ...progress(), stage: "" }, progressedReceipt),
-  jsonl({ message: "other JSON" }, progressedReceipt),
-  jsonl("Unrecognized stderr text", progressedReceipt),
-  jsonl("(node:7778) ExperimentalWarning: Another experimental feature", progressedReceipt),
-  jsonl(sqliteHint, progressedReceipt),
-  jsonl(progress(), '{"ok":true,"operation":"replace",…'),
+assert.deepEqual(changed.splice(0), [], "Noise, progress, extra JSON and unowned warning hints are rejected");
+
+const marker = "\n\n[Some lines truncated to 768 bytes. Use artifact://1:raw:1-1 to read line 1 whole]";
+const truncated = '{"ok":true,"contract":"current",…' + marker;
+assert.deepEqual(decodeCliWriteOutput(truncated), { status: "truncated" });
+for (const entry of entryUrls) {
+  await result(atEntry(entry), truncated);
+  changedLibrary("A real host truncation with a current Notion URL permits only the same conservative reread");
+}
+for (const entry of [
+  "https://www.notion.so/" + otherDb.replaceAll("-", ""),
+  "https://www.notion.so.evil.example/" + db.replaceAll("-", ""),
+  "https://evil.example/https://notion.so/" + db.replaceAll("-", ""),
+  "https://notion.so@evil.example/" + db.replaceAll("-", ""),
+  "https://notion.so/not-a-page?entry=" + db.replaceAll("-", ""),
+  "https://notion.so/not-a-page#" + db.replaceAll("-", ""),
+  "https://notion.so/" + db.replaceAll("-", "") + "/child",
+  "ftp://notion.so/" + db.replaceAll("-", ""),
+  "text-with-" + db.replaceAll("-", "") + "-inside",
+  "notion_page:" + db,
 ]) {
-  assert.equal(decodeCliWriteOutput(output, { progress: true }).status, "invalid");
-  await result(progressCommand, output);
+  await result(atEntry(entry), current);
+  assert.deepEqual(changed.splice(0), [], "A foreign or invalid URL cannot borrow a successful result's database");
+  await result(atEntry(entry), pending, true);
+  await result(atEntry(entry), truncated);
+  assert.deepEqual(changed.splice(0), entry === "https://www.notion.so/" + otherDb.replaceAll("-", "") ? [["second"], ["second"]] : [],
+    "Errors and truncation can affect only the actual URL entry, never another result's database or an embedded ID");
 }
-for (const ending of [{ ...progressedReceipt, reused: true, action: "reuse" }, { ...progressedReceipt, verified: false }, { ok: false, error: { code: "WRITE_OUTCOME_UNKNOWN" } }]) {
-  await result(progressCommand, jsonl(progress(), ending));
+for (const embedded of [
+  { ...current, status: "unchanged", input: { description: marker } },
+  { ok: false, error: { message: marker } },
+  { ok: true, authored: '{"ok":true,"contract":"current",…' + marker },
+]) {
+  assert.deepEqual(decodeCliWriteOutput(JSON.stringify(embedded)), { status: "complete", result: embedded });
+  await result(currentCommand, embedded);
 }
-assert.equal(changed.length, 0, "No unknown/mixed operation, extra final, noise, truncation or unsuccessful outcome becomes a change");
-
-// A public resume result confirms recovery, without claiming another content mutation.
-const resumeResult = { ok: true, domain: "publication", operation_id: publication, state: "completed", verified: true,
-  resume_supported: true, next: { argv: ["ntn-skills", "operation", "resume", publication], reason: "Continue the retained publication under its original guards." },
-  result: { operation: "replace", page_id: page, effects: [], creation_recovery: [], creation_discovery: [], upload_recovery: [] } };
-const resumeCommand = command("operation", "resume", publication, "--progress");
-for (const output of [resumeResult, resumeResult, jsonl(progress(), resumeResult)]) {
-  await result(resumeCommand, output);
-  assert.deepEqual(changed.pop(), ["personal", "second", "alias"], "Verified recovery rereads only sources using this CLI, including a repeated completed operation with no source scope");
+assert.deepEqual(changed.splice(0), [], "A host-looking marker embedded in any valid JSON content never becomes truncation or success");
+for (const output of [truncated.replace("Some lines truncated", "Output truncated"), truncated.replace("…", "..."), jsonl(progress, truncated), jsonl(current, truncated), JSON.stringify(current) + marker, '{"authored":true,…' + marker]) {
+  assert.equal(decodeCliWriteOutput(output).status, "invalid");
+  await result(currentCommand, output);
 }
-await result(command("operation", "resume", "--progress", publication), resumeResult);
-assert.deepEqual(changed.pop(), ["personal", "second", "alias"]);
-for (const domain of ["sync_upstream", "subscription_add", "subscription_update", "subscription_remove", "upstream_fork", "upstream_track"]) {
-  await result(resumeCommand, { ...resumeResult, domain, state: "verified" });
-  assert.deepEqual(changed.pop(), ["personal", "second", "alias"], "Public upstream recovery uses its existing verified terminal state");
+await result(command("ctl", "library", "import", "/staged", "--entry", "unregistered-alias", "--skill-id", skill), truncated);
+assert.deepEqual(changed.splice(0), [], "Only the observed host footer on one current call and an attributable entry permits a conservative reread");
+await emit("tool_call", { toolName: "bash", toolCallId: "long", input: { command: currentCommand } });
+await emit("tool_result", { toolName: "bash", toolCallId: "long", input: {}, content: truncated, isError: true });
+changedLibrary("Host truncation conservatively invalidates once without declaring the write completed");
+await emit("tool_result", { toolName: "bash", toolCallId: "long", input: {}, content: JSON.stringify(current) });
+await emit("tool_call", { toolName: "read", toolCallId: "artifact", input: { path: "artifact://1:raw:1-1" } });
+await emit("tool_result", { toolName: "read", toolCallId: "artifact", input: {}, content: JSON.stringify(current) });
+assert.deepEqual(changed.splice(0), [], "There is no artifact follow-up or second trigger after a truncated result");
+
+const call = { toolName: "bash", toolCallId: "owned", input: { command: currentCommand } };
+const finish = { toolName: "bash", toolCallId: "owned", input: {}, content: JSON.stringify(current) };
+await emit("tool_call", call);
+await emit("tool_call", call);
+await emit("tool_result", finish, otherCtx);
+await emit("tool_result", { ...finish, toolName: "read" });
+assert.deepEqual(changed.splice(0), [], "Another session or tool cannot take a pending bash result owner");
+await emit("tool_result", finish);
+changedLibrary("The original session and tool retain their one pending current call");
+await emit("tool_result", finish);
+await emit("tool_call", call);
+await emit("tool_result", finish);
+assert.deepEqual(changed.splice(0), [], "Duplicated call and result events never trigger twice");
+await result(currentCommand, current, false, {});
+assert.deepEqual(changed.splice(0), [], "Missing session identity cannot own a write result");
+await emit("tool_call", { ...call, toolCallId: "replaced" });
+await emit("tool_call", { ...call, toolCallId: "replaced", input: { command: command("list") } });
+await emit("tool_result", { ...finish, toolCallId: "replaced" });
+await emit("tool_call", { ...call, toolCallId: "wrong-input" });
+await emit("tool_result", { ...finish, toolCallId: "wrong-input", input: { command: command("list") } });
+assert.deepEqual(changed.splice(0), [], "A reused call ID or mismatched host input cannot replace the original command owner");
+for (const event of ["session_shutdown", "session_switch", "session_tree", "session_branch"]) {
+  const toolCallId = "boundary-" + event;
+  await emit("tool_call", { ...call, toolCallId });
+  await emit(event, {});
+  await emit("tool_result", { ...finish, toolCallId });
 }
-for (const cmd of [
-  command("operation", "show", publication), command("operation", "reconcile", publication), command("operation", "list"),
-  command("operation", "resume"), command("operation", "resume", publication, "another-id"),
-  command("operation", "resume", publication, "--database", db), command("operation", "resume", publication, "--dry-run"),
-  command("operation", "resume", publication) + " && echo done", "/other-cli operation resume " + publication,
-]) await result(cmd, resumeResult);
-for (const value of [
-  { ...resumeResult, ok: false }, { ...resumeResult, verified: false }, { ...resumeResult, dry_run: true },
-  { ...resumeResult, operation_id: "p_other" }, { ...resumeResult, state: "unknown" }, { ...resumeResult, state: "running" },
-  { ...resumeResult, state: "failed" }, { ...resumeResult, state: "verified" },
-  { ...resumeResult, domain: "sync_upstream" }, { ...resumeResult, domain: "sync_local" },
-  { ...resumeResult, domain: "database_init" }, { ...resumeResult, domain: ["publication"] },
-  { ...resumeResult, state: ["completed"] },
-]) await result(resumeCommand, value);
-await result(resumeCommand, resumeResult, true);
-assert.equal(changed.length, 0, "Only the exact resumed operation and its allowed verified terminal state can request a conservative reread");
+assert.deepEqual(changed.splice(0), [], "Every session boundary discards late result ownership");
 
-const { action: _action, reused: _reused, ...baseUpdate } = receipt;
-const updateReceipt = { ...baseUpdate, operation: "update", effects: { properties: ["default-context"] } };
-await result(command("update", page, "--default-context"), updateReceipt);
-assert.deepEqual(changed.pop(), ["personal", "alias"], "Metadata update retains its existing verified property-PATCH result contract");
-for (const value of [
-  { ...updateReceipt, effects: { properties: [] } }, { ...updateReceipt, verified: false },
-  { ...updateReceipt, dry_run: true }, { ...updateReceipt, action: "unchanged" }, { ...updateReceipt, reused: true },
-]) await result(command("update", page, "--default-context"), value);
-assert.equal(changed.length, 0);
-
-// Actual OMP stdout truncation and its subsequent full-line artifact read retain the original CLI owner.
-await emit("tool_call", { toolName: "bash", toolCallId: "long", input: { command: command("apply", "s_baseline", "--database", db) } });
-await emit("tool_result", { toolName: "bash", toolCallId: "long", input: {}, content: [{ type: "text", text: '{"ok":true,"operation":"replace","record":{"description":"literal artifact://2 from authored content"},…\n\n[Some lines truncated to 768 bytes. Use artifact://1:raw:1-1 to read line 1 whole]' }], isError: false });
-assert.equal(changed.length, 0, "Opaque/truncated output is not a verified write");
-for (const [toolCallId, path] of [["wrong", "artifact://2:raw:1-1"], ["complete", "artifact://1:raw:1-1"], ["repeated", "artifact://1:raw:1-1"]]) {
-  await emit("tool_call", { toolName: "read", toolCallId, input: { path } });
-  await emit("tool_result", { toolName: "read", toolCallId, input: { path }, content: JSON.stringify(receipt), isError: false });
-  if (toolCallId === "wrong") assert.equal(changed.length, 0, "An authored artifact-looking string does not grant the tool result an output owner");
-}
-assert.deepEqual(changed.splice(0), [["personal", "alias"]], "Only the linked complete receipt invalidates, exactly once");
-
-for (const [id, original, completed, expected] of [
-  ["progress-artifact", jsonl(progress(), '{"ok":true,"operation":"replace",…'), progressedReceipt, 1],
-  ["wrong-operation-artifact", jsonl(progress("completed", "p_another"), '{"ok":true,"operation":"replace",…'), progressedReceipt, 0],
-  ["unknown-output-artifact", jsonl({ unexpected: true }, '{"ok":true,"operation":"replace",…'), progressedReceipt, 0],
-  ["extra-final-artifact", jsonl(progressedReceipt, '{"ok":true,"operation":"replace",…'), progressedReceipt, 0],
-] as const) {
-  const path = `artifact://${id}:raw:2-2`;
-  await emit("tool_call", { toolName: "bash", toolCallId: id, input: { command: progressCommand } });
-  await emit("tool_result", { toolName: "bash", toolCallId: id, input: {}, content: original + `\n\n[Some lines truncated to 768 bytes. Use ${path} to read line 2 whole]`, isError: false });
-  assert.equal(changed.length, 0, "A truncated receipt never marks a source dirty");
-  await emit("tool_call", { toolName: "read", toolCallId: id + "-read", input: { path } });
-  await emit("tool_result", { toolName: "read", toolCallId: id + "-read", input: { path }, content: JSON.stringify(completed), isError: false });
-  assert.equal(changed.length, expected, "Artifact completion retains the original call's known progress identity and rejects earlier noise");
-  changed.length = 0;
-}
-
-const upstream = (created: number) => ({ ok: true, verified: true, results: [{ operation: { state: "verified", database_id: otherDb, target_database_id: db, scope: auth }, members: { created, updated: 0, restored: 0, unchanged: 3 } }] });
-await result(command("sync", "upstream", "run"), upstream(0));
-assert.equal(changed.length, 0);
-await result(command("sync", "upstream", "run"), upstream(1));
-assert.deepEqual(changed.pop(), ["personal", "alias"], "Upstream content target, not subscription database, is refreshed");
-const local = (action: string) => ({ ok: true, mode: "run", outcome: "complete", verified: true, targets: [{ phase: "verified", verified: true, bindings: [{ action, stage: "complete", verified: true, page_id: page, database_id: db, scope: auth }] }] });
-for (const action of ["pull", "unchanged", "advance_baseline"]) await result(command("sync", "local", "run", "binding"), local(action));
-assert.equal(changed.length, 0, "Successful reads and baseline-only local sync do not imply a Notion mutation");
-await result(command("sync", "local", "run", "binding"), local("push"));
-assert.deepEqual(changed.pop(), ["personal", "alias"]);
-await result(command("sync", "local", "connect", page, "--from", "local"), { ...local("push"), binding: { page_id: page } });
-assert.deepEqual(changed.pop(), ["personal", "alias"], "Connect forwards the same verified run result; only a push changes Notion");
-
-const migratedCalls: [string, string, unknown, string[][]][] = [
-  ["replace", command("replace", "s_baseline", "--input", "/staged", "--database", db), receipt, [["personal", "alias"]]],
-  ["ctl operation resume", command("ctl", "operation", "resume", publication), resumeResult, [["personal", "second", "alias"]]],
-  ["ctl sync upstream", command("ctl", "sync", "upstream", "run"), upstream(1), [["personal", "alias"]]],
-  ["ctl sync local", command("ctl", "sync", "local", "run", "binding"), local("push"), [["personal", "alias"]]],
-  ["ctl resume unknown", command("ctl", "operation", "resume", publication), { ...resumeResult, state: "unknown" }, []],
-  ["ctl resume other operation", command("ctl", "operation", "resume", "p_other"), resumeResult, []],
-  ["ctl resume dry run", command("ctl", "operation", "resume", publication, "--dry-run"), resumeResult, []],
-  ["ctl status", command("ctl", "sync", "upstream", "status"), upstream(1), []],
-  ["ctl local read", command("ctl", "sync", "local", "run", "binding"), local("pull"), []],
-  ["replace dry run", command("replace", "s_baseline", "--dry-run"), receipt, []],
-  ["replace reused", command("replace", "s_baseline"), { ...receipt, reused: true }, []],
-  ["invalid ctl author", command("ctl", "replace", "s_baseline"), receipt, []],
-  ["nested ctl", command("ctl", "ctl", "operation", "resume", publication), resumeResult, []],
-];
-const migratedChanges: [string, string[][]][] = [];
-for (const [label, cmd, value] of migratedCalls) {
-  await result(cmd, value);
-  migratedChanges.push([label, changed.splice(0)]);
-}
-assert.deepEqual(migratedChanges, migratedCalls.map(([label, _cmd, _value, expected]) => [label, expected]),
-  "New ctl callers and replace refresh the exact source only after verified changes; unknown and read-only outcomes remain inert");
-
-// Current source invalidation is checked above against the bundled CLI prefix.
-// Metadata cache ownership and freshness belong to the paired SDK; current
-// discovery and consume regressions live in shared-notion-adapter and
-// notion-source-sdk tests, without the removed CLI catalog receipt cache.
-console.log("CLI write invalidation checks passed");
+records = [record("alias", { type: "notion_page", page_id: page, database_id: db, data_source_id: ds })];
+await result(currentCommand, current);
+assert.deepEqual(changed.splice(0), [["personal"]], "Old page locators cannot bind a configured alias to the current library");
+await result(command("ctl", "library", "import", "/staged", "--entry", "library", "--skill-id", skill), pending, true);
+assert.deepEqual(changed.splice(0), [["alias"]], "An exact configured alias can still be invalidated without inventing an unknown physical binding");
+records = [record("alias", { type: "shared_skill", ...library, skill_id: skill, page_id: page }), record("alias", { type: "shared_skill", ...library, skill_id: skill, page_id: "11111111-1111-4111-8111-111111111112" })];
+await result(command("ctl", "library", "import", "/staged", "--entry", "library", "--skill-id", skill), current);
+await result(command("ctl", "library", "import", "/staged", "--entry", "library", "--skill-id", skill), pending, true);
+assert.deepEqual(changed.splice(0), [], "Conflicting current page ownership cannot authorize an alias or another source");
+assert.equal(runtime.calls.length, 0, "The observer executes no CLI or SDK calls and never injects content");
+console.log("Current CLI import invalidation checks passed");

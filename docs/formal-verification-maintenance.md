@@ -1,51 +1,42 @@
 # 形式化验证维护合同
 
-AH-1006 把现有有限模型接入持续维护。仓库中的 TLA/config/view、独立规则清单和源码对应是可执行事实；Notion 项目入口解释状态和边界，Linear 跟踪需要实施的变更。三者引用同一提交和运行身份，不相互替代。
+维护仍对应当前实现的有限模型、真实守卫和独立规则清单。模型结果、实现测试、安装包与真实服务各有边界；不建立内容版本管理，也不在仓库累计历史验证成绩。
 
-实现验证的管理/消费/来源分域见 [验证交接表](verification-routing.md)。本页继续只拥有既有有限模型、守卫和状态图；新执行Skill不自动获得新形式化性质。
+## 所有权与运行路由
 
-## 领域所有权与运行路由
-
-| 领域 | 所有者 | 原运行器套件 | 触发边界 |
-| --- | --- | --- | --- |
-| CLI 资源生命周期 | verify-notion-resource-lifecycle | lifecycle | 正文归属、导入、原操作选择、只读审计 |
-| CLI 原操作恢复与独立接受 | verify-notion-operation-recovery | operation-recovery | ACK/Records 前缀、未知原操作、独立接受、业务反馈 |
-| CLI 请求引擎 | verify-notion-consumption 路由的原 request-engine-formal feature | request-engine | producer ownership、取消、共享身份、queue/operation/attempt 预算与重试 |
-| Broker 当前资格与交付 | verify-notion-consumer-state | observations、consumer-state | 观察时间与资格、固定图、会话/取消、真实交付证明边界 |
-| 跨系统交接与 effects | verify-notion-skills-integration | flows | 完整管理回执、两来源部分失败、累计效果、严格只读、受控报告 |
-
-不新增全链路总验证 Skill。跨域变更由原集成 Skill 核对输入输出合同，并请求具体领域 owner 复核；一个领域通过不自动构成另一领域或真实 E2E 通过。
-
-## 每次结果必须能回答什么
-
-每组 coverage 的 `cases.expected_rules` 是独立审阅过的完整规则名清单，包含安全性、已声明的时序性质和 `NoDeadlock`。配置删掉一条性质也必须失败，不能从变更后的 config 自动生成新清单。正例要求 broken 为空；历史和故意破坏的负例要求 broken 集合精确一致，多一条或少一条都失败。
-
-原运行器先核对 protected source bytes、固定 TLC jar 和 statechart 的 31 个工具文件，再快照本轮模型输入。`summary.json` 保存 checkout/source commit、运行器与合同 hash、coverage/tool-lock/source hash、每项 TLA/config/view hash、完整规则结果与探索状态。缺工具、语法/解析错误、工具异常退出、超时、cut、未检查规则、错误性质和不完整结果均不得视为通过。读取原始 `report.md`、TLC 输出和生成 `chart.mmd`，不能只看 shell exit 0。
-
-模型输出必须是新建或预先创建的空绝对目录。真实 mutation 的输出要求按各入口执行；effects/consumer 入口要求输出目录本身尚不存在。每次失败保留原目录，下次改用新目录；不覆盖 summary，不把旧失败重写成成功。实际 mutation 在独立副本或独立工作树进行，必须记录原件通过、真实行为断言失败、精确恢复后通过及原工作树未变。语法错误或装配失败不算成功捕获守卫。
-
-## 三类变更的复验义务
-
-| 变更 | 必须审阅 | 最小必要复验 |
+| 当前领域 | 入口 | 套件与边界 |
 | --- | --- | --- |
-| 仅 view 或展示文字 | 聚合是否保持原可达关系、退出与最短坏路径；未隐藏性质相关状态 | 同一受影响模型全部原正负配置、重新生成 Mermaid/Pele SVG、视觉检查和新图 manifest |
-| 模型、配置或性质语义 | 原子步骤、有限域、环境与公平性假设、所有完整规则及独立负例 | 受影响模型全部配置；新增性质必须可由相应坏行为打破；更新源码对应说明 |
-| 实现语义或受保护测试 | 实际函数/调用方、原始 authority、回执与代码 guard；属于模型漂移还是产品缺陷 | 当前源码回归、相关真实 guard 破坏/恢复、受影响模型；跨域时加最小组合回归 |
+| Broker 资格与交付 | verify-notion-consumer-state | observations 的 Availability/ReadRace；consumer-state 的 FreshnessPublication/SelectionGraph/DeliveryBoundary |
+| CLI 请求引擎 | CLI verify-notion-consumption | CLI 原 request-engine runner；预算、取消与请求调度由其 owner 维护 |
+| 当前管理、来源与消费 | 各仓既有领域测试和 integration Skill | current operation、SDK、import 失效与实际包检查；不由已退役模型代证 |
 
-源码漂移默认阻断。哈希不是自动放行开关：先理解差异，再更新模型/映射或明确未建模边界，最后记录已审阅的源码基准和精确 hash。只更新 hash 不满足维护合同。纯测试新增需说明它检查哪个实际行为，不能默认为产品语义改变。
+完整路由见 [验证交接表](verification-routing.md)。跨域变更执行相交的必要检查，不新增全链路总验证 Skill。当前 SDK v2 消费恒零语义写入；旧隐式 retention、readOnly 开关和独立管理回执接受流程已退出形式化入口。
 
-## CI 与证据留存
+## 结果合同
 
-`.github/workflows/formal.yml` 按仓库的三个领域矩阵执行；相关源文件、模型、配置、view、清单、运行器、Skill、依赖或 workflow 变化均触发。每个 job 固定工具字节并执行完整套件，默认入口与 `--model` 选择性入口共用同一实现。`formal-*` artifact 保留 summary、输入快照、原报告、原 TLC 与 Mermaid。CI artifact 是短期运行原件，最终审阅清单与精选生成图随 git 提交保存；原 Pro 回放目录继续保留。
+每套 coverage 的 `cases.expected_rules` 是独立审阅的完整清单，含安全性、已声明的时序性质和 NoDeadlock。不得从变更后的 config 自动生成期待。正例 broken 为空；故意破坏的负例要求 broken 集合精确一致，多一条或少一条均失败。
 
-CI 是否通过以该具体提交的实际 workflow 结果为准，不能由本地执行推断。变更只建模已有实现时，不据此声称发布、安装、生产库存操作、真实 provider 或日用 E2E 再次通过。
+既有 runner 先核 protected source bytes、固定 TLC 和完整 statechart 工具字节，再执行当前输入。缺工具、语法错误、工具异常、超时、cut、未检查规则和不完整结果均失败。读取报告和原 TLC 结果，不能只看退出码。
 
-## Skill 的成立与退役
+输出使用仓库外新建或预建的空绝对目录；mutation 输出自身须不存在。失败诊断保留在本轮输出，下次用新目录。真实 mutation 在隔离副本内要求 baseline 通过、行为断言失败、精确恢复后通过，并核 active checkout 未变；装配或解析错误不能代替行为检出。
 
-新增 guardian 必须有明确代码 owner、独立正负模型、真实守卫回放、可发现的现有入口和一次无作者上下文的冷启动执行。冷启动范围按实际选择记录；只跑一个切片不称为整个领域的新完整回放。模型/工具不能执行时保留 draft/blocked，不以文档完整代替通过。
+## 变更复验
 
-后续新增 guardian 的理由应是稳定、独立维护的状态边界和不同触发范围；同一 owner 内增加一个模型或 feature 通常足够。替换旧模型时先迁移入口、覆盖与历史引用，再明确退役旧入口；旧反例和旧 operation 的事实继续保留，不删除它们来制造整洁。
+| 变更 | 审阅和必要检查 |
+| --- | --- |
+| view/展示 | 不隐藏性质相关状态、退出或最短坏路径；执行该模型全部配置，实际生成并检查所展示的图 |
+| 模型/config/性质 | 核原子步骤、有限域、环境、公平性、完整规则和独立负例；执行受影响模型全部配置 |
+| 实现/受保护测试 | 追到真实 owner、caller 和 guard；运行相关代码回归、真实守卫破坏/恢复及对应模型 |
 
+源码漂移默认阻断。先读 diff、判断模型映射或产品缺陷，再更新精确 hash。仅刷新 hash 不算审阅。source coverage 只绑定实际状态 owner、守卫和必要测试；包 pin/build、指导文案与安装配置由各自集成检查负责，不伪装成有限模型的证明前提。
+
+## CI 和 Skill
+
+`.github/workflows/formal.yml` 运行 observations 与 consumer-state 两个 suite，沿同一 runner 和独立规则清单。短期 artifact 保存本次报告、输入、原 TLC 和 Mermaid；不维护多份旧图或历史成绩。远端结果以具体提交的实际 workflow 为准，本地通过不能代替远端 CI。
+
+优先扩已有 owner 的模型或测试。新增独立 guardian 必须有独立维护边界和实际反例需求；不能只为聚合结果新建平台。模型退役时同时删除专属 runner 路由、Skill、图册和悬挂引用，将仍有效的实现检查放回其真实 owner。Git 保留代码演进，不用产品内版本层或旧证明账本维持过渡设计。
+
+Skill 指令评估与作者测试分开：新 agent 按任务和入口执行所选切片；未做时写 `instruction_evaluation:not_run`。模型或工具未完成则明确 blocked/failed，不把文档完整当作通过。
 
 ## 图形产物定位与复现
 
@@ -80,4 +71,4 @@ console.log(JSON.stringify({ mermaid_sha256: sha(mmd), svg_sha256: sha(svg),
 RENDER
 ```
 
-展示前检查 SVG 的布局与文本，确认它与原 Mermaid 同源；把上述 hash、对应 summary/input hashes 和配置身份记入图册 manifest。图面文字不能误称实际 wire、权限或任意模型的最终回答。CTX06 的 DeliveryBoundary 保持原有阶段区分：logical-only 的 2xx 或进程内 mock 不是最终传输证明，不为此新增 TLA。TLA tuple 在 view 中是从 1 开始的对象（例如 `v.selected[1]`），不能用数组字符串转换推断 pin 身份。复杂生命周期可在 view 中聚合，仍须保留最短坏路径和退出；图面修订后复跑受影响模型组的全部配置。
+展示前检查 SVG 的布局与文本，确认它与原 Mermaid 同源；在本次输出中保留对应 summary、输入和配置身份。图面文字不能误称实际 wire、权限或任意模型的最终回答。DeliveryBoundary 保持原有阶段区分：logical-only 的 2xx 或进程内 mock 不是最终传输证明，不为此新增 TLA。TLA tuple 在 view 中是从 1 开始的对象（例如 `v.selected[1]`），不能用数组字符串转换推断 pin 身份。复杂生命周期可在 view 中聚合，仍须保留最短坏路径和退出；图面修订后复跑受影响模型组的全部配置。

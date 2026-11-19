@@ -74,7 +74,7 @@ AH-1063 在真实表切换后选定匹配安装，核对有效配置、实际 pr
 
 沿用[形式化维护合同](../../../docs/formal-verification-maintenance.md)，先审阅当前实现、模型和受保护 guard 的对应关系。
 旧 SHA gate 未通过时如实记录阻断；不得自动刷新 hash 放行，也不由旧图或旧结果宣称当前性质已验证。
-只复验受影响且已建立当前映射的模型。不要为此修复或运行 legacy feature 全图。
+当前保留 observations 与 consumer-state，两套由 [consumer-state Skill](../verify-notion-consumer-state/SKILL.md) 维护。只复验受影响且已建立当前映射的模型；SDK capability、import 失效和实际包仍由实现检查负责。不要恢复旧 flows 或运行 legacy feature 全图。
 仅修改本入口或验证路由，运行现有检查：
 
 ```sh

@@ -4,11 +4,11 @@
 
 先判断改动的是资格证据、固定选择、完整交付还是宿主投影持久化，再看对应模型和真实回放。资格、选择和交付是正交状态；一个模型通过不能代替另一个状态所有者的证据。
 
-## 原资产和新增范围
+## 当前模型范围
 
-Availability/ReadRace 留在 verification/models/consumer-observations，原六配置及历史失败不改写。它们约束资格一致性、有效分页 cursor、请求顺序和两代会话；F1–F7 与原两项真实守卫 mutation 继续执行。
+Availability/ReadRace 留在 verification/models/consumer-observations，完整配置及故意保留的缺陷反例不改写。它们约束资格一致性、有效分页 cursor、请求顺序和两代会话；F1–F7 与原两项真实守卫 mutation 继续执行。
 
-verification/models/consumer-state/coverage.json 是新增三模型、24 配置的唯一 cases 清单，绑定真实源码和受控回归。不得在 Skill 或 CI 复制另一份配置列表。新增模型补此前明确未建模的有限时间、来源、精确身份/失败目标，以及 fixed graph 和 provider/boundary 交接；不是把旧测试换名算新证明。
+verification/models/consumer-state/coverage.json 是三模型的唯一 cases 清单，绑定真实源码和受控回归。不得在 Skill 或 CI 复制另一份配置列表。这些模型覆盖有限时间、来源、精确身份/失败目标，以及 fixed graph 和 provider/boundary 交接。
 
 ## FreshnessPublication
 
@@ -28,7 +28,7 @@ verification/models/consumer-state/coverage.json 是新增三模型、24 配置�
 
 ## SelectionGraph
 
-一个 root 和一个 Requires，各有两个本地版本序号。旧向量为 root v1/Requires v2，新向量为 root v2/Requires v1；序号不表示两个身份共享 snapshot/hash。负配置复制 root pin 到 child，会破坏 EachMemberKeepsOwnPin。
+一个 root 和一个 Requires，各有两个本地已验证选择的序号；不承诺远端历史恢复。旧向量为 root v1/Requires v2，新向量为 root v2/Requires v1；序号不表示两个身份共享 snapshot/hash。负配置复制 root pin 到 child，会破坏 EachMemberKeepsOwnPin。
 
 Prepare、InspectIdentity、InspectBudget、Commit 分开，不能将异步准备和最终发布画成一个原子写。模型覆盖 scope/snapshot/hash 不匹配、缺依赖、预算超限、取消/代次切换及未先检查的 commit。失败替换保留旧向量。
 
@@ -38,7 +38,7 @@ Prepare、InspectIdentity、InspectBudget、Commit 分开，不能将异步准�
 
 ## DeliveryBoundary
 
-NXT12 对 SelectionGraph 增加 retained + new closure 的有限字节预算前提及 `ReleaseActiveRoot` 代次动作；DeliveryBoundary 同样建模显式释放，使有效 root 投影变为 0，但保留历史 active 接受事实。完整共享 Requires 可达性、精确 UTF-8 并集和旧 fixed ref 拒绝由 `session-active.test.ts` 与实际 Pi 回放负责，不能从这个单根有限模型推导。两模型仍使用原完整正反配置清单，源对应见 coverage 的 `nxt12_review`。
+SelectionGraph 包含 retained + new closure 的有限字节预算前提及 `ReleaseActiveRoot` 代次动作；DeliveryBoundary 同样建模显式释放，使有效 root 投影变为 0，但保留历史 active 接受事实。完整共享 Requires 可达性、精确 UTF-8 并集和旧 fixed ref 拒绝由 `session-active.test.ts` 与实际 Pi 回放负责，不能从这个单根有限模型推导。两模型仍使用原完整正反配置清单，源对应见 coverage 的 `nxt12_review`。
 
 初始前提是前一模型已经选定 root v2/Requires v1，且有旧确认向量可保留。active 表示本次完整图曾被 provider 接受这个历史事实；有效 branch 的派生版本另算。rewind 恢复旧有效向量，不能借用离开当前 branch 的确认。
 
@@ -58,7 +58,7 @@ NXT12 对 SelectionGraph 增加 retained + new closure 的有限字节预算前�
 
 ## 守卫破坏与诊断
 
-scripts/check-consumer-state-mutations.mjs 为每个实际守卫创建隔离 package 副本，链接既有依赖，只在副本内改一处。每个 case 保存源码/测试 hash、完整 argv、stdout/stderr 与 baseline/mutated/restored 退出状态。新入口还运行原 check-consumer-observation-mutations.mjs，保留旧 order/cursor 反例。
+scripts/check-consumer-state-mutations.mjs 为每个实际守卫创建隔离 package 副本，链接既有依赖，只在副本内改一处。每个 case 保存源码/测试 hash、完整 argv、stdout/stderr 与 baseline/mutated/restored 退出状态。入口还运行 check-consumer-observation-mutations.mjs，保留旧 order/cursor 反例。
 
 每个模型业务性质有明确损坏配置；实际守卫 mutation 证明这些回放能发现对应实现退化，并非逐行形式化 refinement。NoRetiredSelection 的实现证据包含原受控取消/会话回放，其模型 lifecycle 负配置不冒称已经移除所有冗余生产守卫。类型、parser、模块加载或依赖问题必须单列，不能算检出行为缺陷。
 
@@ -68,4 +68,4 @@ scripts/check-consumer-state-mutations.mjs 为每个实际守卫创建隔离 pac
 
 模型由稳定 scripts/verify-consumer-observations.mjs 转交 /statechart，并复用原 tool-lock；模型输入、生成 Mermaid、每规则 TLC 输出与 report 都进入新证据目录。只用 Pele 将生成 Mermaid 渲染为 SVG，图册与正文必须标注来源 spec/config/view、状态规模和有限边界。
 
-共享 CI 门禁由 AH-1007 的现有 runner/result contract 维护；本 Skill 仅维护消费者域。操作 ACK/recovery、HTTP RequestEngine、effects/管理到交付组合保持各自所有者。新图不是实际 provider wire 或完整线上链路成功的证明。
+共享 CI 门禁沿既有 runner/result contract；本 Skill 仅维护消费者状态。当前管理 operation、HTTP RequestEngine、SDK capability、import 失效和实际安装各归其现有测试。新图不证明实际 provider wire 或完整线上链路成功。

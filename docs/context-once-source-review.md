@@ -15,9 +15,9 @@ view; original user messages and tool results are unchanged.
 Scalar resource retirement now replaces the verified source span rather than the
 entire tool text. A remaining generated effects footer must exactly match this
 operation's structured effects. An altered or unbound suffix is rejected. This
-implements the existing retention-disclosure obligation at a previously unchecked
-serialization boundary. `RetentionDisclosure` and `AcquisitionEffects` retain
-their original transitions, positive cases and historical counterexamples.
+protects the concrete effects serialization boundary. Current SDK v2 consumption
+performs no semantic writes; defensive receipt aggregation and footer integrity
+remain implementation tests, outside the retained consumer-state models.
 
 Preparation and native-read directories are reused only when the current request
 contains a complete matching generated directory for the same scope, owner,

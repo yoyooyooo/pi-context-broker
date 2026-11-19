@@ -1,23 +1,46 @@
 import { hostCliScope } from "./host-command";
-import { sharedSkillId } from "./shared-skill-identity";
+import { validSharedIdentity } from "./shared-skill-identity";
 import type { ExtensionAPI, ExtensionContext, MessageContent, SkillRecord, SourceConfig } from "./types";
 
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
-type WriteKind = "content" | "upstream" | "local";
-type Invocation = { sources: NotionSource[]; consumed: boolean; progress: boolean; progressOperationId?: string }
-  & ({ kind: WriteKind; database?: string } | { kind: "resume"; operationId: string });
-type ChangedTarget = { database: string; scope: string };
-const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-const uuid = (value: unknown): string | undefined => typeof value === "string" && /^(?:[a-f\d]{32}|[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12})$/i.test(value) ? value.replaceAll("-", "").toLowerCase() : undefined;
-const scope = (value: unknown): string | undefined => typeof value === "string" && /^[a-f\d]{64}$/.test(value) ? value : undefined;
+type Invocation = { entry: string; skillId: string; sources: NotionSource[] }
+  & ({ kind: "apply"; operationId?: string } | { kind: "resume"; operationId: string });
+type Library = { libraryId: string; databaseId: string; dataSourceId: string };
+type SourceBinding = { source: NotionSource } & (
+  | { kind: "unknown" }
+  | { kind: "invalid" }
+  | { kind: "known"; library: Library; pages: Map<string, string> }
+);
+type CurrentWrite = { library: Library; pageId: string; status: "applied" | "unchanged" };
+type CallState = { kind: "pending"; command: string; invocation: Invocation } | { kind: "settled" };
 
-/** Decode one literal shell argv. Compound commands and expansions have no single CLI receipt owner. */
+const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
+const uuid = (value: unknown): string | undefined => typeof value === "string" && /^(?:[a-f\d]{32}|[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12})$/i.test(value) ? value.replaceAll("-", "").toLowerCase() : undefined;
+const sameLibrary = (left: Library, right: Library) => left.libraryId === right.libraryId && left.databaseId === right.databaseId && left.dataSourceId === right.dataSourceId;
+const booleanLiteral = (value: string | undefined): boolean | undefined => value === undefined ? undefined
+  : ["true", "yes", "on", "1", "y"].includes(value) ? true : ["false", "no", "off", "0", "n"].includes(value) ? false : undefined;
+// Effect's Int CLI primitive first accepts a finite decimal/exponent string.
+const positiveInteger = (value: string) => /^[+-]?\d*\.?\d+(?:[Ee][+-]?\d+)?$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0;
+
+/** Match current Notion URL host/path boundaries; aliases remain exact strings. */
+function entryId(value: unknown): string | undefined {
+  const id = uuid(value);
+  if (id || typeof value !== "string") return id;
+  try {
+    const url = new URL(value);
+    if (!["https:", "http:"].includes(url.protocol) || !/(^|\.)notion\.(com|site|so)$/.test(url.hostname)) return undefined;
+    return uuid(/([a-f\d]{32})\/?$/i.exec(url.pathname)?.[1]);
+  } catch { return undefined; }
+}
+
+/** Decode one literal shell argv. Expansions and compound commands have no single owner. */
 function literalArgv(command: string): string[] | undefined {
   command = command.trim();
   const result: string[] = [];
   let word = "", started = false, quote: "'" | '"' | undefined;
   for (let index = 0; index < command.length; index++) {
     const char = command[index]!;
+    if (char === "\0" || char === "\n" || char === "\r") return undefined;
     if (quote === "'") {
       if (char === "'") quote = undefined;
       else word += char;
@@ -25,15 +48,14 @@ function literalArgv(command: string): string[] | undefined {
     }
     if (char === "\\") {
       const next = command[++index];
-      if (next === undefined || next === "\n") return undefined;
+      if (next === undefined || ["\n", "\r", "\0"].includes(next)) return undefined;
       if (quote === '"' && !['"', "\\", "$", "`"].includes(next)) word += "\\";
       word += next;
       started = true;
     } else if (char === quote) quote = undefined;
-    else if (char === "$" || char === "`" || char === "\0") return undefined;
+    else if (char === "$" || char === "`") return undefined;
     else if (quote === '"') word += char;
     else if (char === "'" || char === '"') { quote = char; started = true; }
-    else if (char === "\n" || char === "\r") return undefined;
     else if (/\s/.test(char)) {
       if (started) { result.push(word); word = ""; started = false; }
     } else if (/[;&|<>(){}*?\[~]/.test(char) || char === "#" && !started) return undefined;
@@ -46,237 +68,207 @@ function literalArgv(command: string): string[] | undefined {
 
 function invocation(command: string, sources: NotionSource[]): Invocation | undefined {
   const argv = literalArgv(command);
-  if (!argv) return undefined;
-  const matching = sources.flatMap(source => {
-    try {
-      const prefix = hostCliScope([source]).command;
-      return prefix.every((value, index) => argv[index] === value) ? [{ source, length: prefix.length }] : [];
-    } catch { return []; }
-  });
-  if (!matching.length || new Set(matching.map(item => item.length)).size !== 1) return undefined;
-  const commandArgs = argv.slice(matching[0]!.length);
-  if (commandArgs[0] === "ctl" && !["operation", "sync"].includes(commandArgs[1] ?? "")) return undefined;
-  const args = commandArgs[0] === "ctl" ? commandArgs.slice(1) : commandArgs;
-  if (args.some(arg => ["--dry-run", "--help", "-h"].includes(arg))) return undefined;
-  if (args[0] === "operation" && args[1] === "resume") {
-    const ids = args.slice(2).filter(arg => !["--progress", "--new-artifact", "--retry-metadata"].includes(arg));
-    if (ids.length !== 1 || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(ids[0]!)) return undefined;
-    return { kind: "resume", operationId: ids[0]!, sources: matching.map(item => item.source), consumed: false, progress: argv.includes("--progress") };
-  }
-  const kind: WriteKind | undefined = ["create", "apply", "replace", "write", "update"].includes(args[0] ?? "") ? "content"
-    : args[0] === "sync" && args[1] === "upstream" && ["run", "connect"].includes(args[2] ?? "") ? "upstream"
-    : args[0] === "sync" && args[1] === "local" && ["run", "connect", "apply"].includes(args[2] ?? "") ? "local" : undefined;
-  if (!kind) return undefined;
-  let database: string | undefined;
-  for (let index = 0; index < args.length; index++) {
+  if (!argv || !sources.length) return undefined;
+  let prefix: string[];
+  try { prefix = hostCliScope().command; } catch { return undefined; }
+  if (!prefix.every((value, index) => argv[index] === value)) return undefined;
+  const args = argv.slice(prefix.length);
+  if (args[0] !== "ctl" || args[1] !== "library" || args[2] !== "import") return undefined;
+  const values = new Map<string, string>();
+  const singleton = new Set(["entry", "skill-id", "operation", "name", "description", "max-requests", "max-bytes", "timeout"]);
+  let input: string | undefined;
+  for (let index = 3; index < args.length; index++) {
     const arg = args[index]!;
-    if (arg !== "--database" && !arg.startsWith("--database=")) continue;
-    if (database !== undefined) return undefined;
-    database = arg === "--database" ? args[++index] : arg.slice("--database=".length);
-    if (!database || database.startsWith("--")) return undefined;
-  }
-  return { kind, sources: matching.map(item => item.source), database, consumed: false, progress: argv.includes("--progress") };
-}
-
-function changedTargets(value: unknown, kind: WriteKind): ChangedTarget[] {
-  const result = object(value);
-  if (result.ok !== true || result.dry_run === true) return [];
-  const target = (database: unknown, auth: unknown): ChangedTarget[] => {
-    const id = uuid(database), identity = scope(auth);
-    return id && identity ? [{ database: id, scope: identity }] : [];
-  };
-  if (kind === "content") {
-    if (result.verified !== true || result.reused === true || ["unchanged", "reuse"].includes(String(result.action))) return [];
-    const record = object(result.record), locator = object(record.locator);
-    if (locator.type === "shared_skill") {
-      const identity = typeof locator.library_id === "string" && typeof locator.skill_id === "string" ? sharedSkillId(locator.library_id, locator.skill_id) : undefined;
-      const entrypoint = record.kind === "skill" ? "SKILL.md" : record.kind === "router" ? "ROUTER.md" : record.kind === "prompt" ? "PROMPT.md" : undefined;
-      const canonical = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
-      if (identity === undefined || record.id !== identity || typeof record.enabled !== "boolean" || entrypoint === undefined ||
-        record.entrypoint !== entrypoint || record.ref !== `skill://${encodeURIComponent(identity)}/${entrypoint}` ||
-        [locator.page_id, locator.database_id, locator.data_source_id].some(value => typeof value !== "string" || !canonical.test(value)) ||
-        Object.keys(locator).some(key => !["type", "page_id", "database_id", "data_source_id", "library_id", "skill_id"].includes(key))) return [];
+    if (arg === "--") {
+      const operands = args.slice(index + 1);
+      if (operands.length > 1 || operands.length === 1 && (input !== undefined || !operands[0])) return undefined;
+      input ??= operands[0];
+      break;
     }
-    const properties = object(result.effects).properties;
-    const sharedMetadata = locator.type === "shared_skill" && result.status === "applied" && result.action === "updated" &&
-      typeof result.metadata_operation_id === "string" && /^metadata-write-[a-f0-9]{64}$/.test(result.metadata_operation_id) &&
-      result.operation_id === result.metadata_operation_id && Array.isArray(result.changed_fields) && result.changed_fields.length > 0 &&
-      result.changed_fields.every(field => ["Name", "Description", "Default Context", "Members", "Source"].includes(String(field)));
-    const sharedSnapshot = locator.type === "shared_skill" && typeof result.snapshot_id === "string" && /^s_[a-f0-9]{64}$/.test(result.snapshot_id) && typeof result.version_id === "string" && result.version_id.length > 0;
-    const sharedWrite = sharedSnapshot && result.operation === "write" && result.action === "updated" && result.unchanged === false && result.status === undefined &&
-      typeof result.body_write_operation_id === "string" && /^body-write-adopt-[a-f0-9]{64}\.[a-f0-9]{64}$/.test(result.body_write_operation_id) &&
-      typeof result.candidate_sha256 === "string" && /^[a-f0-9]{64}$/.test(result.candidate_sha256);
-    const changes = object(result.changes);
-    const sharedApply = sharedSnapshot && ["apply", "replace"].includes(String(result.operation)) && result.status === "applied" &&
-      typeof result.apply_operation_id === "string" && /^(?:skill-apply|file-management-(?:add|delete))-[a-f0-9]{64}\.[a-f0-9]{64}$/.test(result.apply_operation_id) &&
-      Array.isArray(changes.files) && changes.files.every(path => typeof path === "string" && path.length > 0) &&
-      Array.isArray(changes.removed) && changes.removed.every(path => typeof path === "string" && path.length > 0);
-    const sharedCreate = locator.type === "shared_skill" && result.operation === "create" && result.action === "create" && result.reused === false &&
-      typeof result.create_operation_id === "string" && /^skill-create-[a-f0-9]{64}$/.test(result.create_operation_id);
-    const written = locator.type === "shared_skill" ? sharedMetadata || sharedWrite || sharedApply || sharedCreate : result.operation === "update"
-      // update reports the property PATCH that actually ran; it currently has no semantic no-op branch.
-      ? Array.isArray(properties) && properties.length > 0 && properties.every(value => typeof value === "string" && value.length > 0)
-      : result.reused === false && ["create", "replace", "write"].includes(String(result.operation)) && ["create", "update"].includes(String(result.action));
-    if (!written) return [];
-    return (locator.type === "notion_page" || locator.type === "shared_skill") && uuid(locator.page_id) ? target(locator.database_id, result.scope) : [];
+    if (arg.startsWith("--")) {
+      const equal = arg.indexOf("=");
+      let name = arg.slice(2, equal < 0 ? undefined : equal);
+      const negated = name === "no-resume" || name === "no-dry-run";
+      if (negated) name = name.slice(3);
+      if (values.has(name)) return undefined;
+      if (name === "resume" || name === "dry-run") {
+        const next = booleanLiteral(args[index + 1]);
+        if (negated && (equal >= 0 || next !== undefined)) return undefined;
+        const value = negated ? false : equal >= 0 ? booleanLiteral(arg.slice(equal + 1)) : next ?? true;
+        if (value === undefined) return undefined;
+        if (!negated && equal < 0 && next !== undefined) index++;
+        values.set(name, String(value));
+        continue;
+      }
+      if (!singleton.has(name)) return undefined;
+      const value = equal < 0 ? args[++index] : arg.slice(equal + 1);
+      if (value === undefined || equal < 0 && value.startsWith("--") || !value.length && name !== "description" && name !== "name") return undefined;
+      if (["max-requests", "max-bytes", "timeout"].includes(name) && !positiveInteger(value)) return undefined;
+      values.set(name, value);
+    } else {
+      if (arg.startsWith("-") || !arg.length || input !== undefined) return undefined;
+      input = arg;
+    }
   }
-  if (kind === "upstream") {
-    if (result.verified !== true || !Array.isArray(result.results)) return [];
-    return result.results.flatMap(value => {
-      const item = object(value), operation = object(item.operation), members = object(item.members);
-      const counts = [members.created, members.updated, members.restored];
-      if (operation.state !== "verified" || item.error_code || !counts.every(count => Number.isSafeInteger(count) && (count as number) >= 0) || !counts.some(count => (count as number) > 0)) return [];
-      // operation.database_id is the subscription library, not the changed content library.
-      return target(operation.target_database_id, operation.scope);
-    });
-  }
-  const changedBindings = (value: unknown): ChangedTarget[] => !Array.isArray(value) ? [] : value.flatMap(value => {
-    const binding = object(value);
-    return binding.action === "push" && binding.verified === true && binding.stage === "complete" && uuid(binding.page_id)
-      ? target(binding.database_id, binding.scope) : [];
-  });
-  if (result.mode === "run") {
-    if (result.verified !== true || result.outcome !== "complete" || !Array.isArray(result.targets)) return [];
-    return result.targets.flatMap(value => {
-      const item = object(value);
-      return item.phase === "verified" && item.verified === true && !item.failure ? changedBindings(item.bindings) : [];
-    });
-  }
-  return result.verified === true ? changedBindings(result.bindings) : [];
+  const entry = values.get("entry"), skillId = values.get("skill-id"), operationId = values.get("operation");
+  if (input === undefined || !entry?.trim() || entry.startsWith("notion_page:") || !validSharedIdentity(skillId) || operationId !== undefined && !validSharedIdentity(operationId)) return undefined;
+  if (values.get("dry-run") === "true") return undefined;
+  if (values.get("resume") === "true") return operationId === undefined ? undefined : { kind: "resume", entry, skillId, operationId, sources };
+  return { kind: "apply", entry, skillId, operationId, sources };
 }
 
-function affectedSources(call: Invocation, result: unknown, records: SkillRecord[]): string[] {
-  if (call.kind === "resume") {
-    const value = object(result);
-    const state = value.domain === "publication" ? "completed"
-      : typeof value.domain === "string" && ["sync_upstream", "subscription_add", "subscription_update", "subscription_remove", "upstream_fork", "upstream_track"].includes(value.domain) ? "verified" : undefined;
-    if (!state || value.ok !== true || value.dry_run === true || value.verified !== true || value.state !== state || value.operation_id !== call.operationId) return [];
-    // Public recovery may omit source scope. Re-read matching CLI sources conservatively;
-    // even an already completed resume can recover visibility of an earlier write.
-    return call.sources.map(source => source.id);
+function library(value: unknown): Library | undefined {
+  if (!isObject(value) || !validSharedIdentity(value.library_id)) return undefined;
+  const databaseId = uuid(value.database_id), dataSourceId = uuid(value.data_source_id);
+  return databaseId && dataSourceId ? { libraryId: value.library_id, databaseId, dataSourceId } : undefined;
+}
+
+function sourceBinding(source: NotionSource, records: SkillRecord[]): SourceBinding {
+  let known: Library | undefined;
+  const pages = new Map<string, string>();
+  for (const record of records) {
+    if (record.sourceId !== source.id || record.locator?.type !== "shared_skill") continue;
+    const current = library(record.locator), page = uuid(record.locator.page_id), skill = record.locator.skill_id;
+    if (!current || !page || !validSharedIdentity(skill) || known && !sameLibrary(known, current) || pages.has(skill) && pages.get(skill) !== page) return { kind: "invalid", source };
+    known = current;
+    pages.set(skill, page);
   }
-  const targets = changedTargets(result, call.kind);
-  const selectedDatabase = uuid(call.database);
-  return call.sources.filter(source => targets.some(target => {
-    if (selectedDatabase && selectedDatabase !== target.database) return false;
-    const known = records.filter(record => record.sourceId === source.id);
-    const scopes = known.flatMap(record => record.sourceScope ? [record.sourceScope] : []);
-    if (scopes.length && !scopes.includes(target.scope)) return false;
-    if (!source.database) return true;
-    const configured = uuid(source.database);
-    if (configured) return configured === target.database;
-    if (source.database === call.database) return true;
-    return known.some(record => record.sourceScope === target.scope && record.locator && record.locator.type !== "local" &&
-      uuid(record.locator.type === "notion_subscription" ? record.locator.target_database_id : record.locator.database_id) === target.database);
-  })).map(source => source.id);
+  const configured = entryId(source.database);
+  if (known && configured && known.databaseId !== configured) return { kind: "invalid", source };
+  return known ? { kind: "known", source, library: known, pages } : { kind: "unknown", source };
+}
+
+function operationMatches(call: Invocation, value: Record<string, unknown>): boolean {
+  return validSharedIdentity(value.operation_id) && value.skill_id === call.skillId && (call.operationId === undefined || value.operation_id === call.operationId);
+}
+
+function currentWrite(call: Invocation, result: Record<string, unknown>): CurrentWrite | undefined {
+  if (result.ok !== true || result.contract !== "current" || result.state !== "ready" || result.dry_run === true ||
+      result.status !== "applied" && result.status !== "unchanged" || !operationMatches(call, result) ||
+      typeof result.input_sha256 !== "string" || !/^[a-f\d]{64}$/.test(result.input_sha256) ||
+      typeof result.files !== "number" || !Number.isSafeInteger(result.files) || result.files < 1) return undefined;
+  const owner = library(result.library), pageId = uuid(result.page_id);
+  return owner && pageId ? { library: owner, pageId, status: result.status } : undefined;
+}
+
+function successfulSources(call: Invocation, result: CurrentWrite, bindings: SourceBinding[]): string[] {
+  const database = entryId(call.entry);
+  if (database && database !== result.library.databaseId) return [];
+  const matching = bindings.filter(binding => {
+    if (binding.kind === "invalid") return false;
+    const configured = entryId(binding.source.database);
+    if (configured && configured !== result.library.databaseId) return false;
+    if (binding.kind === "known") return sameLibrary(binding.library, result.library) &&
+      (!binding.pages.has(call.skillId) || binding.pages.get(call.skillId) === result.pageId);
+    return configured === result.library.databaseId || binding.source.database === call.entry;
+  });
+  // Aliases are exact configured entries, never display names or an inferred CLI alias.
+  if (!database && !matching.some(binding => binding.source.database === call.entry)) return [];
+  return matching.map(binding => binding.source.id);
+}
+
+/** An unknown write can require a reread without proving completion or another mutation. */
+function entrySources(call: Invocation, bindings: SourceBinding[]): string[] {
+  const selected = entryId(call.entry);
+  if (selected) return bindings.filter(binding => binding.kind !== "invalid" &&
+    (entryId(binding.source.database) === selected || binding.kind === "known" && binding.library.databaseId === selected)).map(binding => binding.source.id);
+  const exact = bindings.filter(binding => binding.kind !== "invalid" && binding.source.database === call.entry);
+  const known = exact.flatMap(binding => binding.kind === "known" ? [binding.library] : []);
+  if (known.some(value => !sameLibrary(value, known[0]!))) return [];
+  const owner = known[0];
+  return bindings.filter(binding => exact.includes(binding) || owner && binding.kind !== "invalid" &&
+    (binding.kind === "known" ? sameLibrary(binding.library, owner) : entryId(binding.source.database) === owner.databaseId)).map(binding => binding.source.id);
+}
+
+function affectedSources(call: Invocation, output: CliOutput, records: SkillRecord[]): string[] {
+  if (output.status === "invalid") return [];
+  const bindings = call.sources.map(source => sourceBinding(source, records));
+  if (output.status === "truncated") return entrySources(call, bindings);
+  const result = output.result;
+  if (result.ok === false) {
+    const error = result.error;
+    return isObject(error) && isObject(error.details) && operationMatches(call, error.details) ? entrySources(call, bindings) : [];
+  }
+  const written = currentWrite(call, result);
+  return written && (written.status === "applied" || call.kind === "resume") ? successfulSources(call, written, bindings) : [];
 }
 
 function text(content: MessageContent | undefined): string {
-  return typeof content === "string" ? content : (content ?? []).filter(part => part.type === "text").map(part => (part as { text: string }).text).join("\n");
+  return typeof content === "string" ? content : (content ?? []).flatMap(part => part.type === "text" && typeof part.text === "string" ? [part.text] : []).join("\n");
 }
 
-export type CliOutput = { status: "complete"; result: Record<string, unknown> }
-  | { status: "pending"; operationId?: string; artifact?: string }
-  | { status: "invalid" };
+export type CliOutput = { status: "complete"; result: Record<string, unknown> } | { status: "truncated" } | { status: "invalid" };
 
-/** CLI stdout is one final JSON object; --progress stderr is PublicationProgress JSONL. */
-export function decodeCliWriteOutput(body: string, options: { progress?: boolean; operationId?: string } = {}): CliOutput {
-  const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-  const progressFields = new Set(["operation_id", "stage", "status", "elapsed_ms", "stage_ms"]);
+/** One final JSON object, optionally merged with the observed Node SQLite warning. */
+export function decodeCliWriteOutput(body: string): CliOutput {
+  const parse = (value: string): Record<string, unknown> | undefined => {
+    try { const parsed: unknown = JSON.parse(value); return isObject(parsed) && typeof parsed.ok === "boolean" ? parsed : undefined; }
+    catch { return undefined; }
+  };
+  const complete = parse(body);
+  if (complete) return { status: "complete", result: complete };
   const sqliteWarning = /^\(node:\d+\) ExperimentalWarning: SQLite is an experimental feature and might change at any time$/;
   const sqliteHint = "(Use `node --trace-warnings ...` to show where the warning was created)";
-  const complete = (result: Record<string, unknown>, operationId?: string): CliOutput => operationId !== undefined && result.operation_id !== operationId
-    ? { status: "invalid" } : { status: "complete", result };
-  try {
-    const result = object(JSON.parse(body));
-    if (typeof result.ok === "boolean") return complete(result, options.operationId);
-  } catch { /* A host can merge stdout with progress and Node's SQLite warning. */ }
-  const footer = /\n\n\[Some lines truncated to \d+ bytes\. Use (artifact:\/\/[a-z\d_-]+):raw:\d+-\d+ to read lines? \d+(?:-\d+)? whole\]\s*$/i.exec(body);
-  const lines = (footer ? body.slice(0, footer.index) : body).split(/\r?\n/);
-  let final: Record<string, unknown> | undefined;
-  let operationId = options.operationId;
-  let truncated = 0;
-  let warningHint = false;
-  for (const raw of lines) {
+  const lines: string[] = [];
+  let warning = false;
+  for (const raw of body.split(/\r?\n/)) {
     const line = raw.trim();
-    if (!line) continue;
-    if (sqliteWarning.test(line)) { warningHint = true; continue; }
+    if (sqliteWarning.test(line)) { warning = true; continue; }
     if (line === sqliteHint) {
-      if (!warningHint) return { status: "invalid" };
-      warningHint = false;
+      if (!warning) return { status: "invalid" };
+      warning = false;
       continue;
     }
-    warningHint = false;
-    let value: unknown;
-    try { value = JSON.parse(line); }
-    catch {
-      // Only the host's observed truncation footer can authorize an artifact follow-up.
-      // The prefix itself never proves that the operation completed.
-      if (footer && line.startsWith("{") && line.endsWith("…")) { truncated++; continue; }
-      return { status: "invalid" };
-    }
-    const item = object(value);
-    if (typeof item.ok === "boolean") {
-      if (final) return { status: "invalid" };
-      final = item;
-      continue;
-    }
-    if (options.progress !== true || Object.keys(item).length !== progressFields.size || !Object.keys(item).every(key => progressFields.has(key)) ||
-        typeof item.operation_id !== "string" || !item.operation_id.trim() || typeof item.stage !== "string" || !item.stage.trim() ||
-        typeof item.status !== "string" || !["started", "completed", "failed"].includes(item.status) ||
-        typeof item.elapsed_ms !== "number" || !Number.isFinite(item.elapsed_ms) || item.elapsed_ms < 0 ||
-        typeof item.stage_ms !== "number" || !Number.isFinite(item.stage_ms) || item.stage_ms < 0) return { status: "invalid" };
-    if (operationId !== undefined && operationId !== item.operation_id) return { status: "invalid" };
-    operationId = item.operation_id;
+    warning = false;
+    lines.push(raw);
   }
-  if (footer) {
-    // Multiple truncated objects or an additional final object cannot establish one final receipt.
-    if (truncated !== 1 || final) return { status: "invalid" };
-    return { status: "pending", operationId, artifact: footer[1] };
-  }
-  return final ? complete(final, operationId) : { status: "pending", operationId };
+  const cleaned = lines.join("\n").trim(), result = parse(cleaned);
+  if (result) return { status: "complete", result };
+  // Only the actual host footer permits a conservative reread. Never follow its artifact.
+  const footer = /\n\n\[Some lines truncated to \d+ bytes\. Use artifact:\/\/[a-z\d_-]+:raw:\d+-\d+ to read lines? \d+(?:-\d+)? whole\]$/.exec(cleaned);
+  if (!footer) return { status: "invalid" };
+  const prefix = cleaned.slice(0, footer.index).trim();
+  return /^\{\s*"ok"\s*:\s*(?:true|false)\s*,[^\r\n]*…$/.test(prefix) ? { status: "truncated" } : { status: "invalid" };
 }
 
-/** Observe existing host tools; never execute CLI commands or invalidate an active submission. */
+/** Observe existing bash calls; never run the CLI, follow artifacts or change an active submission. */
 export function installCliWriteInvalidation(api: ExtensionAPI, options: {
   sources: SourceConfig[];
   records(): SkillRecord[];
   changed(sourceIds: string[], ctx: ExtensionContext): void;
 }): void {
   const sources = options.sources.filter((source): source is NotionSource => source.type === "notion" && source.enabled !== false);
-  const calls = new Map<string, Invocation>();
-  const artifacts = new Map<string, Invocation>();
-  const key = (id: string, ctx: ExtensionContext) => JSON.stringify([ctx.sessionManager?.getSessionId?.(), id]);
-  const retain = (map: Map<string, Invocation>, id: string, call: Invocation) => {
-    map.set(id, call);
-    if (map.size > 128) map.delete(map.keys().next().value!);
+  const calls = new Map<string, CallState>();
+  const key = (id: string | undefined, ctx: ExtensionContext): string | undefined => {
+    const session = ctx.sessionManager?.getSessionId?.();
+    return id && session ? JSON.stringify([session, id]) : undefined;
+  };
+  const retain = (id: string, state: CallState) => {
+    calls.set(id, state);
+    const oldest = calls.keys().next();
+    if (calls.size > 128 && !oldest.done) calls.delete(oldest.value);
   };
   api.on("tool_call", (event, ctx): undefined => {
-    if (!event.toolCallId) return;
-    let call: Invocation | undefined;
-    if (event.toolName === "bash" && typeof event.input.command === "string") call = invocation(event.input.command, sources);
-    if (event.toolName === "read" && typeof event.input.path === "string") {
-      const artifact = /^artifact:\/\/[a-z\d_-]+/i.exec(event.input.path)?.[0];
-      if (artifact) call = artifacts.get(key(artifact, ctx));
-    }
-    if (call && !call.consumed) retain(calls, key(event.toolCallId, ctx), call);
-  });
-  api.on("tool_result", (event, ctx) => {
-    if (!event.toolCallId) return;
-    const id = key(event.toolCallId, ctx), call = calls.get(id);
-    calls.delete(id);
-    if (!call || call.consumed || event.isError) return;
-    const output = decodeCliWriteOutput(text(event.content), { progress: call.progress, operationId: call.progressOperationId });
-    if (output.status === "pending") {
-      call.progressOperationId = output.operationId;
-      if (output.artifact) retain(artifacts, key(output.artifact, ctx), call);
+    if (event.toolName !== "bash" || typeof event.input.command !== "string") return;
+    const id = key(event.toolCallId, ctx);
+    if (!id) return;
+    const previous = calls.get(id);
+    if (previous) {
+      if (previous.kind === "pending" && previous.command !== event.input.command) retain(id, { kind: "settled" });
       return;
     }
-    call.consumed = true;
-    for (const [artifact, owner] of artifacts) if (owner === call) artifacts.delete(artifact);
-    if (output.status !== "complete") return;
-    const ids = affectedSources(call, output.result, options.records());
-    if (ids.length) options.changed(ids, ctx);
+    const call = invocation(event.input.command, sources);
+    if (call) retain(id, { kind: "pending", command: event.input.command, invocation: call });
   });
-  for (const event of ["session_shutdown", "session_switch", "session_tree", "session_branch"] as const) api.on(event, () => { calls.clear(); artifacts.clear(); });
+  api.on("tool_result", (event, ctx) => {
+    if (event.toolName !== "bash") return;
+    const id = key(event.toolCallId, ctx), state = id ? calls.get(id) : undefined;
+    if (!id || state?.kind !== "pending") return;
+    retain(id, { kind: "settled" });
+    if (typeof event.input.command === "string" && event.input.command !== state.command) return;
+    const output = decodeCliWriteOutput(text(event.content));
+    const ids = affectedSources(state.invocation, output, options.records());
+    if (ids.length) options.changed([...new Set(ids)], ctx);
+  });
+  for (const event of ["session_shutdown", "session_switch", "session_tree", "session_branch"] as const) api.on(event, () => { calls.clear(); });
 }

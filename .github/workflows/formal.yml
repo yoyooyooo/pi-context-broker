@@ -37,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [observations, consumer-state, flows]
+        suite: [observations, consumer-state]
     env:
       PSTACK_STATECHART_ROOT: ${{ github.workspace }}/.formal-tools/pstack/pstack/skills/statechart
       TLA2TOOLS: ${{ github.workspace }}/.formal-tools/tla2tools-1.7.4.jar
@@ -78,7 +78,6 @@ jobs:
           case "${{ matrix.suite }}" in
             observations) bun test packages/context-broker/scripts/consumer-observation.test.ts packages/context-broker/scripts/host-prepare.test.ts --timeout 30000 > "${{ runner.temp }}/formal-${{ matrix.suite }}/regressions.stdout" 2> "${{ runner.temp }}/formal-${{ matrix.suite }}/regressions.stderr" ;;
             consumer-state) bun test packages/context-broker/scripts/consumer-state.test.ts packages/context-broker/scripts/session-active.test.ts packages/context-broker/scripts/host-prepare.test.ts --timeout 30000 > "${{ runner.temp }}/formal-${{ matrix.suite }}/regressions.stdout" 2> "${{ runner.temp }}/formal-${{ matrix.suite }}/regressions.stderr" ;;
-            flows) bun test packages/context-broker/scripts/formal-effects-composition.test.ts packages/context-broker/scripts/host-prepare.test.ts packages/context-broker/scripts/notion-sdk.test.ts --timeout 30000 > "${{ runner.temp }}/formal-${{ matrix.suite }}/regressions.stdout" 2> "${{ runner.temp }}/formal-${{ matrix.suite }}/regressions.stderr" ;;
           esac
       - name: Retain summaries, exact inputs, reports, TLC output and generated diagrams
         if: always()

@@ -11,7 +11,7 @@ import type { ContentRecord, ExtensionAPI, ExtensionContext, SkillRecord, Source
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
 type Json = Record<string, unknown>;
 const uuid = (n: number) => "00000000-0000-4000-8000-" + n.toString().padStart(12, "0");
-const database = uuid(10), dataSource = uuid(11), page = uuid(1), scope = "a".repeat(64), snapshot = "s_" + "b".repeat(64);
+const database = uuid(10), dataSource = uuid(11), page = uuid(1), scope = "a".repeat(64);
 const exists = (path: string) => stat(path).then(() => true, () => false);
 function sharedRecord(): ContentRecord {
   return { id: "shared_skill:current-source:entry", kind: "skill", name: "entry", alias: "entry", description: "Current shared item", default_context: false, enabled: true,
@@ -158,7 +158,9 @@ test("shared identity encoding and exact selectors preserve the logical and phys
     expect(() => normalizeSources([raw])).toThrow();
 });
 
-async function observeWrite(result: Json, operation = "update") {
+const importOperation = "current-import:adapter";
+const currentLibrary = { library_id: "current-source", database_id: database, data_source_id: dataSource };
+async function observeWrite(result: Json, options: { resume?: boolean; isError?: boolean; entry?: string; operation?: string } = {}) {
   const handlers = new Map<string, unknown>(), changed: string[][] = [];
   const api: ExtensionAPI = { on(event, handler) { handlers.set(event, handler); } };
   const f = await currentNotionFixture();
@@ -170,74 +172,64 @@ async function observeWrite(result: Json, operation = "update") {
   const call = handlers.get("tool_call"), finish = handlers.get("tool_result");
   if (typeof call !== "function" || typeof finish !== "function") throw new Error("Expected installed write-observer handlers");
   const quoted = (argument: string) => "'" + argument.replaceAll("'", "'\\''") + "'";
-  const input = { command: [...hostCliScope([source]).command, operation, sharedRecord().ref, "--database", database].map(quoted).join(" ") };
+  const input = { command: [...hostCliScope([source]).command, "ctl", "library", "import", "/staged",
+    "--entry", options.entry ?? database, "--skill-id", "entry", "--operation", options.operation ?? importOperation,
+    ...(options.resume ? ["--resume"] : [])].map(quoted).join(" ") };
   await call({ toolName: "bash", toolCallId: "write-1", input }, context);
-  await finish({ toolName: "bash", toolCallId: "write-1", input, content: JSON.stringify(result), isError: false }, context);
+  await finish({ toolName: "bash", toolCallId: "write-1", input, content: JSON.stringify(result), isError: options.isError ?? false }, context);
+  expect(f.calls).toHaveLength(0);
   return changed;
 }
-function metadataReceipt(): Json {
-  const operation = `metadata-write-${"e".repeat(64)}`;
-  return { ok: true, verified: true, status: "applied", operation: "update", action: "updated", operation_id: operation, metadata_operation_id: operation, changed_fields: ["Name"], record: sharedRecord(), scope };
+function currentImportResult(): Json {
+  return { ok: true, contract: "current", status: "applied", state: "ready", operation_id: importOperation,
+    skill_id: "entry", page_id: page, input_sha256: "c".repeat(64), files: 3, library: currentLibrary };
 }
 
-test("verified shared metadata updates invalidate their configured library using the real page locator", async () => {
-  expect(await observeWrite(metadataReceipt())).toEqual([["shared"]]);
+test("a complete current import invalidates the same library used by the SDK directory", async () => {
+  expect(await observeWrite(currentImportResult())).toEqual([["shared"]]);
 });
 
-const invalidReceipts: [string, (receipt: Json) => Json][] = [
-  ["unverified", receipt => ({ ...receipt, verified: false })],
-  ["unknown original outcome", receipt => ({ ...receipt, status: "unknown" })],
-  ["dry run", receipt => ({ ...receipt, dry_run: true })],
-  ["mismatched original operation", receipt => ({ ...receipt, operation_id: `metadata-write-${"f".repeat(64)}` })],
-  ["empty properties", receipt => ({ ...receipt, changed_fields: [] })],
-  ["different credential scope", receipt => ({ ...receipt, scope: "f".repeat(64) })],
-  ["logical id used as page", receipt => ({ ...receipt, record: { ...sharedRecord(), locator: { ...sharedRecord().locator, page_id: "skill:one" } } })],
-  ["missing stable identity", receipt => ({ ...receipt, record: { ...sharedRecord(), id: undefined, locator: { ...sharedRecord().locator, library_id: "../bad" } } })],
-  ["wrong canonical ref", receipt => ({ ...receipt, record: { ...sharedRecord(), ref: `skill://${page}/SKILL.md` } })],
+const invalidImports: [string, (result: Json) => Json][] = [
+  ["non-current contract", result => ({ ...result, contract: "snapshot" })],
+  ["unknown original outcome", result => ({ ...result, status: "unknown" })],
+  ["incomplete state", result => ({ ...result, state: "pending" })],
+  ["dry run", result => ({ ...result, dry_run: true })],
+  ["mismatched original operation", result => ({ ...result, operation_id: "another-import" })],
+  ["missing operation identity", result => ({ ...result, operation_id: undefined })],
+  ["different stable Skill", result => ({ ...result, skill_id: "another-entry" })],
+  ["logical id used as page", result => ({ ...result, page_id: "entry" })],
+  ["different physical page", result => ({ ...result, page_id: uuid(99) })],
+  ["different library identity", result => ({ ...result, library: { ...currentLibrary, library_id: "another-library" } })],
+  ["different database", result => ({ ...result, library: { ...currentLibrary, database_id: uuid(99) } })],
+  ["different data source", result => ({ ...result, library: { ...currentLibrary, data_source_id: uuid(99) } })],
+  ["invalid logical library", result => ({ ...result, library: { ...currentLibrary, library_id: "../bad" } })],
+  ["missing library binding", result => ({ ...result, library: undefined })],
+  ["empty complete tree", result => ({ ...result, files: 0 })],
+  ["invalid complete input hash", result => ({ ...result, input_sha256: "not-a-hash" })],
 ];
-test.each(invalidReceipts)("shared invalidation refuses %s", async (_name, change) => {
-  expect(await observeWrite(change(metadataReceipt()))).toEqual([]);
+test.each(invalidImports)("current invalidation refuses %s", async (_name, change) => {
+  expect(await observeWrite(change(currentImportResult()))).toEqual([]);
 });
 
-function sharedWriteReceipt(): Json {
-  return { ok: true, verified: true, operation: "write", action: "updated", unchanged: false,
-    record: sharedRecord(), scope, snapshot_id: snapshot, version_id: "verified-current-version",
-    body_write_operation_id: `body-write-adopt-${"e".repeat(64)}.${"f".repeat(64)}`, candidate_sha256: "c".repeat(64) };
-}
-function sharedApplyReceipt(): Json {
-  return { ok: true, verified: true, operation: "apply", status: "applied", record: sharedRecord(), scope,
-    snapshot_id: snapshot, version_id: "verified-current-version", apply_operation_id: `skill-apply-${"e".repeat(64)}.${"f".repeat(64)}`,
-    changes: { files: ["SKILL.md", "references/updated.md"], removed: [] } };
-}
-
-test("verified shared write and apply refresh discovery using their own public receipts", async () => {
-  expect(await observeWrite(sharedWriteReceipt(), "write")).toEqual([["shared"]]);
-  expect(await observeWrite(sharedApplyReceipt(), "apply")).toEqual([["shared"]]);
-  expect(await observeWrite({ ...sharedApplyReceipt(), operation: "replace" }, "apply")).toEqual([["shared"]]);
-  expect(await observeWrite({ ...sharedApplyReceipt(), changes: { files: [], removed: [] } }, "apply")).toEqual([["shared"]]);
+test("ordinary unchanged imports are inert, while exact resume may recover earlier write visibility", async () => {
+  const unchanged = { ...currentImportResult(), status: "unchanged" };
+  expect(await observeWrite(unchanged)).toEqual([]);
+  expect(await observeWrite(unchanged, { resume: true })).toEqual([["shared"]]);
+  expect(await observeWrite(unchanged, { resume: true, operation: "other-import" })).toEqual([]);
 });
 
-test("a shared one-file layout apply uses its original lifecycle identity", async () => {
-  expect(await observeWrite({ ...sharedApplyReceipt(), apply_operation_id: `file-management-delete-${"e".repeat(64)}.${"f".repeat(64)}`,
-    changes: { files: [], removed: ["references/removed.md"] } }, "apply")).toEqual([["shared"]]);
+test("a failed current operation dirties its directory without claiming successful completion", async () => {
+  const failure = { ok: false, error: { code: "CURRENT_WRITE_OUTCOME_UNKNOWN", details: { operation_id: importOperation, skill_id: "entry" } } };
+  expect(await observeWrite(failure, { isError: true })).toEqual([["shared"]]);
+  expect(await observeWrite(failure, { isError: false })).toEqual([["shared"]]);
+  expect(await observeWrite(failure, { isError: true, operation: "another-import" })).toEqual([]);
+  expect(await observeWrite(failure, { isError: true, entry: uuid(99) })).toEqual([]);
+  expect(await observeWrite({ ok: false, error: { code: "INVALID_ARGUMENT" } }, { isError: true })).toEqual([]);
+  expect(await observeWrite({ ok: false, error: { details: { operation_id: importOperation, skill_id: "different-entry" } } }, { isError: true })).toEqual([]);
 });
 
-test("unresolved, unchanged and planned shared body or batch operations never refresh discovery", async () => {
-  for (const result of [
-    { ...sharedWriteReceipt(), action: "unchanged", unchanged: true },
-    { ...sharedWriteReceipt(), status: "unknown" },
-    { ...sharedWriteReceipt(), body_write_operation_id: undefined },
-    { ...sharedApplyReceipt(), status: "partial" },
-    { ...sharedApplyReceipt(), status: "unchanged", unchanged: true },
-    { ...sharedApplyReceipt(), status: "planned", dry_run: true },
-    { ...sharedApplyReceipt(), apply_operation_id: "foreign-operation" },
-    { ...sharedApplyReceipt(), verified: false },
-  ]) expect(await observeWrite(result, String(result.operation))).toEqual([]);
-});
-
-test("shared create refreshes only a verified newly created Skill, not a reuse or missing original identity", async () => {
-  const created = { ...sharedApplyReceipt(), operation: "create", action: "create", create_operation_id: `skill-create-${"e".repeat(64)}`, reused: false };
-  expect(await observeWrite(created, "create")).toEqual([["shared"]]);
-  expect(await observeWrite({ ...created, reused: true }, "create")).toEqual([]);
-  expect(await observeWrite({ ...created, create_operation_id: undefined }, "create")).toEqual([]);
+test("a configured display name or old publication receipt never binds a current import", async () => {
+  expect(await observeWrite(currentImportResult(), { entry: "entry" })).toEqual([]);
+  expect(await observeWrite({ ok: true, verified: true, operation: "apply", status: "applied", record: sharedRecord(), scope,
+    apply_operation_id: "skill-apply-" + "e".repeat(64) + "." + "f".repeat(64), changes: { files: ["SKILL.md"], removed: [] } })).toEqual([]);
 });
