@@ -416,16 +416,23 @@ test('SDK HTTP rejects absent, ambiguous, failed or mismatched receipt evidence'
     new Set(), new Set([10]), { sourceObservation: sdkObservation() }));
 });
 
-test('metadata and an explicit doctor body probe are accounted separately', () => {
-  const request = { origin: 'https://api.notion.com', pid: 20, method: 'GET', path: '/v1/pages/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/markdown' };
-  assert.equal(classifyDailyNotionRequest(request, 20), 'doctor-body');
-  assert.equal(classifyDailyNotionRequest({ ...request, pid: 30, method: 'POST', path: '/v1/views/view-id/queries' }, 20), 'metadata');
+test('startup, find and doctor allow read-only Notion metadata', () => {
+  for (const pid of [10, 20, 30]) {
+    const request = { origin: 'https://api.notion.com', pid, method: 'GET', path: '/v1/pages/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' };
+    assert.equal(classifyDailyNotionRequest(request), 'metadata');
+    assert.equal(classifyDailyNotionRequest({ ...request, method: 'POST', path: '/v1/views/view-id/queries' }), 'metadata');
+    assert.equal(classifyDailyNotionRequest({ ...request, method: 'POST', path: '/v1/data_sources/source-id/query' }), 'metadata');
+    assert.equal(classifyDailyNotionRequest({ ...request, method: 'POST', path: '/v1/search' }), 'metadata');
+  }
 });
 
-test('body reads outside the doctor and writes from any source process remain forbidden', () => {
-  const request = { origin: 'https://api.notion.com', pid: 20, method: 'GET', path: '/v1/pages/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/markdown' };
-  assert.throws(() => classifyDailyNotionRequest({ ...request, pid: 30 }, 20));
-  assert.throws(() => classifyDailyNotionRequest({ ...request, method: 'PATCH' }, 20));
-  assert.throws(() => classifyDailyNotionRequest({ ...request, method: 'DELETE', path: '/v1/pages/page-id' }, 20));
-  assert.throws(() => classifyDailyNotionRequest({ ...request, origin: 'https://example.com' }, 20));
+test('doctor and other source processes reject body reads and every semantic write', () => {
+  for (const pid of [10, 20, 30]) {
+    const request = { origin: 'https://api.notion.com', pid, method: 'GET', path: '/v1/pages/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' };
+    for (const path of [request.path + '/markdown', '/v1/blocks/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', '/v1/blocks/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/children'])
+      assert.throws(() => classifyDailyNotionRequest({ ...request, path }), /must not load Skill bodies/u);
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'])
+      assert.throws(() => classifyDailyNotionRequest({ ...request, method }), /remote mutation/u);
+    assert.throws(() => classifyDailyNotionRequest({ ...request, origin: 'https://example.com' }), /Unexpected provider/u);
+  }
 });

@@ -34,9 +34,9 @@ function plan(config) {
     rpc_commands: ['get_state', 'get_commands', '/context-broker find ' + (config.findQuery ?? 'pstack'), '/context-broker doctor', 'get_state'],
     expected_find_record: config.expectedFindRecord ?? null,
     reviewed_external_namespace_diagnostics: config.namespaceDiagnosticsReview ?? null,
-    observation: 'Actual get_commands.sourceInfo, published-file SHA closure and passive SDK/process/HTTP observation. SDK attempts pair with independent HTTP response request IDs; unpaired host HTTP remains unknown. Startup/find remain metadata-only; the explicit doctor --database CLI may probe one current Skill as documented by the public CLI. No source.command substitution or target -e argument.',
+    observation: 'Actual get_commands.sourceInfo, published-file SHA closure and passive SDK/process/HTTP observation. SDK attempts pair with independent HTTP response request IDs; unpaired host HTTP remains unknown. Startup/find/doctor read metadata only. No source.command substitution or target -e argument.',
     preserved: ['HOME and normal agent directory', 'all settings packages and extensions', 'source/auth/model configuration', 'existing sessions', 'PATH and source.command'],
-    forbidden: ['provider or tool execution', 'Notion writes or body loading outside the explicit doctor process', 'official ntn invocation', 'Tern execution', 'user-session restart'],
+    forbidden: ['provider or tool execution', 'Notion writes or Skill body loading', 'official ntn invocation', 'Tern execution', 'user-session restart'],
     execution: 'Run only after root activates the final immutable package and CLI shim. Supply final package paths/hashes; run refuses an old settings package before launching Pi.',
   };
 }
@@ -415,15 +415,10 @@ export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObserv
   return { source, sdk, otherPlugins };
 }
 
-export function classifyDailyNotionRequest(request, doctorPid) {
+export function classifyDailyNotionRequest(request) {
   assert.equal(request.origin, 'https://api.notion.com', 'Unexpected provider/external HTTP in the verified Notion consumer');
-  const body = /\/(?:markdown|children)$/u.test(request.path);
-  if (body) {
-    assert.equal(request.pid, doctorPid, 'Startup/find must not load current Skill bodies');
-    assert.equal(request.method, 'GET', 'The explicit doctor probe is read-only');
-    assert.ok(/^\/v1\/(?:pages\/[0-9a-f-]+\/markdown|blocks\/[0-9a-f-]+\/children)$/u.test(request.path));
-    return 'doctor-body';
-  }
+  const body = /^\/v1\/blocks(?:\/|$)/u.test(request.path) || /\/(?:markdown|children)(?:\/|$)/u.test(request.path);
+  assert.equal(body, false, 'Startup/find/doctor must not load Skill bodies');
   const readonly = ['GET', 'HEAD'].includes(request.method) || request.method === 'POST' && (/^\/v1\/(?:data_sources|databases)\/[^/]+\/query$/u.test(request.path) || /^\/v1\/views\/[^/]+\/queries$/u.test(request.path) || request.path === '/v1/search');
   assert.ok(readonly, 'A remote mutation was observed in the Notion consumer');
   return 'metadata';
@@ -528,11 +523,10 @@ async function run(config) {
     }
     const doctors = spawned.filter(row => row.cli_args[0] === 'ctl' && row.cli_args[1] === 'doctor');
     assert.equal(doctors.length, 1, 'One explicit source doctor probe is expected');
-    assert.ok(doctors[0].at >= result.phases.find(phase => phase.command.endsWith('doctor')).startedAt, 'The doctor body probe must follow its explicit command');
+    assert.ok(doctors[0].at >= result.phases.find(phase => phase.command.endsWith('doctor')).startedAt, 'The doctor probe must follow its explicit command');
     const doctor = observed.find(row => row.event === 'child_close' && row.child_pid === doctors[0].child_pid && row.bundled_cli && row.receipt?.ok === true && row.receipt.transport === 'direct_http' && row.receipt.notion_api_version === '2026-03-11');
     assert.ok(doctor, 'No actual successful direct-HTTP doctor receipt');
-    assert.equal(doctor.receipt.skill_read?.checked, true);
-    assert.equal(doctor.receipt.skill_read?.available, true);
+    assert.equal(doctor.receipt.skill_read?.checked, false);
     const owned = (await readFile(processLedger, 'utf8')).split('\n').filter(Boolean).map(JSON.parse);
     const sourceObservation = await readSourceObservation(sourceLedger);
     const sdkOperations = sourceObservation.events.filter(row => row.kind === 'sdk' && row.phase === 'started');
@@ -540,22 +534,19 @@ async function run(config) {
     const partition = classifyDailyHttp(observed, new Set(spawned.map(row => row.child_pid)), new Set(owned.filter(row => row.event === 'spawn').map(row => row.pid)), { sourceObservation });
     const http = partition.source;
     result.other_plugin_http = partition.otherPlugins.map(request => ({ ...request, process: observed.find(row => row.event === 'process_start' && row.pid === request.pid), outcome: observed.find(row => ['http_end', 'http_error'].includes(row.event) && row.id === request.id) }));
-    result.http_accounting_scope = 'Default bundled SDK attempts are paired by PID, response request ID, method, status and request bytes. The explicit doctor uses its verified bundled CLI process tree. Other configured plugin child-process HTTP is separate; other host HTTP is unattributed and rejected. Worker transport is outside this passive process observer.';
+    result.http_accounting_scope = 'Default bundled SDK attempts are paired by PID, response request ID, method, status and request bytes. The explicit metadata-only doctor uses its verified bundled CLI process tree. Other configured plugin child-process HTTP is separate; other host HTTP is unattributed and rejected. Worker transport is outside this passive process observer.';
     assert.ok(http.length, 'No real HTTP metadata request was observed');
-    const diagnosticBodyRequests = [];
     for (const request of http) {
-      if (classifyDailyNotionRequest(request, doctor.child_pid) === 'doctor-body') diagnosticBodyRequests.push(request);
+      classifyDailyNotionRequest(request);
       assert.ok(observed.some(row => row.event === 'http_end' && row.id === request.id && row.status >= 200 && row.status < 300), 'An observed Notion request did not complete with HTTP 2xx');
     }
     assert.ok(!observed.some(row => row.event === 'spawn' && basename(row.executable ?? '') === 'ntn'), 'Official ntn was invoked');
     result.actual_default_sdk = { entry: embeddedSdk.realpath, sha256: embeddedSdk.sha256, operations: sdkOperations,
       http: partition.sdk, source_observation_complete: sourceObservation.complete, source_command_overridden: false, catalog_cli_children: 0 };
     result.explicit_doctor_cli = { entry: embedded.realpath, sha256: embedded.sha256, processes: spawned.map(row => ({ parent_pid: row.pid, pid: row.child_pid, executable: row.executable, script: row.script, args: row.cli_args })), doctor: doctor.receipt, path_cli_used_for_default_source: false };
-    result.metadata_http_requests = http.length - diagnosticBodyRequests.length;
-    result.diagnostic_body_requests = diagnosticBodyRequests;
-    result.startup_and_find_body_reads = 0;
+    result.metadata_http_requests = http.length;
     result.provider_invocations = 0; result.tool_invocations = 0; result.remote_mutations = 0;
-    result.current_body_reads = diagnosticBodyRequests.length;
+    result.current_body_reads = 0;
     result.status = 'passed';
   } catch (error) {
     result.status = 'failed'; result.error = { code: error.code ?? 'DAILY_VERIFICATION_FAILED', message: error.message };
