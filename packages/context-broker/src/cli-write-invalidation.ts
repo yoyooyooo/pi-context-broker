@@ -255,9 +255,19 @@ function currentSourceWrite(call: Exclude<Invocation, { route: "import" }>, resu
           Object.keys(raw).some(key => key !== "skill_id" && key !== "skill_page_id")) return undefined;
       skillId = raw.skill_id; pageId = physical;
     } else {
-      const target = currentSkillWrite(raw);
-      if (!target || !sameLibrary(owner, target.library) || result.status === "unchanged" && target.status !== "unchanged") return undefined;
-      skillId = target.skillId; pageId = target.pageId;
+      if (raw.state === "removed") {
+        const physical = uuid(raw.page_id), targetLibrary = library(raw.library);
+        if (call.route !== "source-apply" && call.route !== "source-refresh" ||
+            result.status !== "applied" || raw.contract !== "current" || raw.status !== "removed" ||
+            raw.files !== 0 || !validSharedIdentity(raw.skill_id) || !physical ||
+            !validSharedIdentity(raw.operation_id) || !hash(raw.input_sha256) ||
+            !targetLibrary || !sameLibrary(owner, targetLibrary)) return undefined;
+        skillId = raw.skill_id; pageId = physical;
+      } else {
+        const target = currentSkillWrite(raw);
+        if (!target || !sameLibrary(owner, target.library) || result.status === "unchanged" && target.status !== "unchanged") return undefined;
+        skillId = target.skillId; pageId = target.pageId;
+      }
     }
     if (!affected.has(skillId) || pages.has(skillId) || physicalPages.has(pageId) || pageId === sourcePage) return undefined;
     pages.set(skillId, pageId); physicalPages.add(pageId);
@@ -279,8 +289,9 @@ function successfulSources(call: Invocation, result: CurrentWrite, bindings: Sou
     if (binding.kind === "invalid") return false;
     const configured = entryId(binding.source.database);
     if (configured && configured !== result.library.databaseId) return false;
-    if (binding.kind === "known") return sameLibrary(binding.library, result.library) &&
-      [...result.pages].every(([skill, page]) => !binding.pages.has(skill) || binding.pages.get(skill) === page);
+    // Rebuilding a deleted Skill keeps its stable identity but changes the page.
+    // This result only schedules a scoped reread; it never adopts returned content.
+    if (binding.kind === "known") return sameLibrary(binding.library, result.library);
     return configured === result.library.databaseId || binding.source.database === call.entry;
   });
   // Aliases are exact configured entries, never display names or an inferred CLI alias.

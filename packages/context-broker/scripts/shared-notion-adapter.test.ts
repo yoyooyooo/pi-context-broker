@@ -202,6 +202,10 @@ test("a complete current import invalidates the same library used by the SDK dir
   expect(await observeWrite(currentImportResult())).toEqual([["shared"]]);
 });
 
+test("rebuilding the same stable Skill on a new page refreshes discovery without adopting returned content", async () => {
+  expect(await observeWrite({ ...currentImportResult(), page_id: uuid(99) })).toEqual([["shared"]]);
+});
+
 test("native imports and their same-intent resumes invalidate the current SDK directory", async () => {
   const native = ["SKILL.md", "references/guide.md"];
   expect(await observeWrite(currentImportResult(), { native })).toEqual([["shared"]]);
@@ -217,7 +221,6 @@ const invalidImports: [string, (result: Json) => Json][] = [
   ["missing operation identity", result => ({ ...result, operation_id: undefined })],
   ["different stable Skill", result => ({ ...result, skill_id: "another-entry" })],
   ["logical id used as page", result => ({ ...result, page_id: "entry" })],
-  ["different physical page", result => ({ ...result, page_id: uuid(99) })],
   ["different library identity", result => ({ ...result, library: { ...currentLibrary, library_id: "another-library" } })],
   ["different database", result => ({ ...result, library: { ...currentLibrary, database_id: uuid(99) } })],
   ["different data source", result => ({ ...result, library: { ...currentLibrary, data_source_id: uuid(99) } })],
@@ -269,6 +272,18 @@ test("one Source apply or refresh invalidates its exact SDK library after all cu
   expect(await observeWrite(currentSourceResult(), { source: { kind: "refresh", sourceId: "another-source" } })).toEqual([]);
   expect(await observeWrite(currentSourceResult())).toEqual([]);
   expect(await observeWrite(currentImportResult(), { source: { kind: "apply" } })).toEqual([]);
+});
+
+test("completed upstream member deletion invalidates discovery after partial or complete retirement", async () => {
+  const value = currentSourceResult();
+  const targets = value.targets as Json[];
+  const removed = (target: Json): Json => ({ ...target, state: "removed", status: "removed", files: 0 });
+  expect(await observeWrite({ ...value, targets: [targets[0], removed(targets[1]!)] },
+    { source: { kind: "refresh", sourceId: managedSourceId } })).toEqual([["shared"]]);
+  expect(await observeWrite({ ...value, targets: targets.map(removed) },
+    { source: { kind: "refresh", sourceId: managedSourceId } })).toEqual([["shared"]]);
+  expect(await observeWrite({ ...value, targets: [targets[0], { ...removed(targets[1]!), files: 1 }] },
+    { source: { kind: "refresh", sourceId: managedSourceId } })).toEqual([]);
 });
 
 const invalidSourceWrites: [string, (result: Json) => Json][] = [

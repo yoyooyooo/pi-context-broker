@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | 作者正文、Files/Records、完整导入与当前 operation | CLI `.cursor/skills/verify-notion-management/SKILL.md` | 当前目录或已选内容失效，需要核对消费方刷新 |
 | list/read/use、当前快照、本地固定资源、请求预算 | CLI `.cursor/skills/verify-notion-consumption/SKILL.md` | SDK 字段、缓存资格或实际正文发生变化 |
-| Source 配置、成员发现与接纳 | CLI `.cursor/skills/verify-notion-source-onboarding/SKILL.md` | 成员曝光、默认 disabled、依赖或当前来源绑定变化 |
+| Source 配置、成员发现与接纳 | CLI `.cursor/skills/verify-notion-source-onboarding/SKILL.md` | 成员曝光、启停、依赖或当前来源绑定变化 |
 | 资格、请求顺序、固定选择、provider/turn/投影 | [consumer state](../.agents/skills/verify-notion-consumer-state/SKILL.md) | 对应 observations / consumer-state 模型与真实守卫 |
 | CLI/SDK 配对、当前消费、独立安装包 | [integration](../.agents/skills/verify-notion-skills-integration/SKILL.md) | 跨仓合同或实际安装字节变化 |
 | 当前Pi行为、生命周期和分发 | [context broker](../.agents/skills/verify-context-broker/SKILL.md) | 仅验证本次选择的宿主和功能 |
@@ -23,7 +23,7 @@ CLI feature 归属由其 `verification/skill-domains.json` 维护。Broker 三�
 
 ## 结果交接
 
-Source 接纳默认 disabled。Source ready、目录完整、本地固定字节、完整正文交付、provider 接受、turn 完成和宿主公开投影必须分开判断。本地旧 pin 不承诺远端历史恢复；明确重新选择后才获取当前内容。
+消费资格同时遵循当前 Source 与 Skill 的 Enabled；disabled 的当前来源不能因目录缓存或本地旧 pin 被重新启用。Source ready、目录完整、本地固定字节、完整正文交付、provider 接受、turn 完成和宿主公开投影必须分开判断。本地旧 pin 不承诺远端历史恢复；明确重新选择后才获取当前内容。
 
 管理结果 partial/unknown 保持原意图和实际状态；当前读取相同不能制造原ACK。消费端失效必须绑定当前 library/entry 与 operation，不按同名 Skill 猜测。模型、回执摘要和 HTTP 2xx 都不能代替实际 serializer 中的完整正文。
 

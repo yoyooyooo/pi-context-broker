@@ -151,7 +151,7 @@ for (const value of [
   { ...current, dry_run: true }, { ...current, ok: false }, { ...current, skill_id: "other-skill" },
   { ...current, operation_id: "other-operation" }, { ...current, operation_id: "../bad" }, { ...current, operation_id: undefined },
   { ...current, input_sha256: "bad" }, { ...current, files: 0 }, { ...current, files: 1.5 },
-  { ...current, page_id: skill }, { ...current, page_id: "11111111-1111-4111-8111-111111111112" },
+  { ...current, page_id: skill },
   { ...current, library: undefined }, { ...current, library: { ...library, library_id: "../bad" } },
   { ...current, library: { ...library, library_id: "another-library" } },
   { ...current, library: { ...library, database_id: otherDb } },
@@ -159,6 +159,8 @@ for (const value of [
   { ok: true, verified: true, operation: "replace", action: "update", reused: false, record: records[0], scope: "b".repeat(64) },
 ]) await result(currentCommand, value);
 assert.deepEqual(changed.splice(0), [], "Malformed or mismatched current identities cannot borrow an old receipt or configured name");
+await result(currentCommand, { ...current, page_id: "11111111-1111-4111-8111-111111111119" });
+changedLibrary("Recreating a deleted Skill under the same stable identity invalidates its old physical-page cache");
 await result(currentCommand, { ...current, status: "unchanged" });
 assert.deepEqual(changed.splice(0), [], "An ordinary exact re-import has no semantic change to invalidate");
 await result(command(...args, "--resume"), { ...current, status: "unchanged" });
@@ -305,6 +307,25 @@ for (const route of ["apply", "refresh"] as const) {
   const sourceCommand = command(...sourceArgs(route));
   await result(sourceCommand, sourceCurrent);
   changedLibrary("One Source operation with two exact targets invalidates the library once, not once per Skill");
+  await result(sourceCommand, { ...sourceCurrent, targets: [
+    { ...sourceTargets[0], page_id: "11111111-1111-4111-8111-111111111113" }, sourceTargets[1],
+  ] });
+  changedLibrary("A rebuilt Source member triggers discovery even when its old page is cached");
+  const removedTarget = { ...sourceTargets[0], status: "removed", state: "removed", files: 0 };
+  await result(sourceCommand, { ...sourceCurrent, targets: [removedTarget, sourceTargets[1]] });
+  changedLibrary("A synchronized upstream deletion invalidates the library with the complete affected member set");
+  await result(sourceCommand, { ...sourceCurrent, targets: sourceTargets.map(target => ({
+    ...target, status: "removed", state: "removed", files: 0,
+  })) });
+  changedLibrary("A complete empty upstream selection retires every member and invalidates once");
+  for (const invalidTarget of [
+    { ...removedTarget, files: 1 }, { ...removedTarget, status: "applied" },
+    { ...removedTarget, state: "ready" }, { ...removedTarget, page_id: managedSource },
+    { ...removedTarget, input_sha256: "bad" }, { ...removedTarget, operation_id: "../bad" },
+    { ...removedTarget, library: { ...library, database_id: otherDb } },
+  ]) await result(sourceCommand, { ...sourceCurrent, targets: [invalidTarget, sourceTargets[1]] });
+  await result(sourceCommand, { ...sourceUnchanged, targets: [removedTarget, sourceUnchanged.targets[1]] });
+  assert.deepEqual(changed.splice(0), [], "A retirement must prove removed state, zero remaining files and exact current scope; it cannot be an unchanged result");
   await result(command(...sourceArgs(route), "--no-dry-run", "--resume=false", "--max-requests=1e2", "--timeout", "1000"), sourceCurrent);
   changedLibrary("Source routes preserve the same literal Boolean and bounded integer forms");
   await result(sourceCommand, sourceUnchanged);
@@ -336,7 +357,6 @@ for (const route of ["apply", "refresh"] as const) {
     { ...sourceCurrent, operation_id: "another-parent" }, { ...sourceCurrent, affected_skill_ids: [skill] },
     { ...sourceCurrent, affected_skill_ids: [skill, skill] }, { ...sourceCurrent, targets: [sourceTargets[0], sourceTargets[0]] },
     { ...sourceCurrent, targets: [sourceTargets[0], { ...sourceTargets[1], page_id: page }] },
-    { ...sourceCurrent, targets: [{ ...sourceTargets[0], page_id: secondPage }, { ...sourceTargets[1], page_id: "11111111-1111-4111-8111-111111111113" }] },
     { ...sourceCurrent, targets: [sourceTargets[0], { ...sourceTargets[1], library: { ...library, database_id: otherDb } }] },
     { ...sourceCurrent, targets: [sourceTargets[0], { ...sourceTargets[1], state: "pending" }] },
     { ...sourceCurrent, status: "unchanged" },

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, realpath, symlink, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { delimiter, join, relative } from 'node:path';
+import { delimiter, dirname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { classifyDailyHttp, classifyDailyNotionRequest, dailyObserverPreloadSource, validateDailyDoctor, validateDailyFind, verifyDailyCliShim, verifyDailyPackageSource } from './verify-pi-daily-installation.mjs';
 
@@ -166,6 +167,65 @@ async function installationFixture() {
     },
   };
 }
+
+test('daily plan and launched host receive -ns without replacing normal HOME or settings', async () => {
+  const f = await installationFixture(), digest = value => createHash('sha256').update(value).digest('hex');
+  const settingsPath = join(f.agent, 'settings.json'), sourcePath = join(f.agent, 'context-broker/config.json');
+  const skillPath = join(f.agent, 'skills/kept/SKILL.md'), skill = '# Existing global skill\n';
+  const settings = { packages: ['npm:kept-plugin', relative(f.agent, f.broker)], defaultModel: 'kept-model' };
+  const source = { sources: [{ id: 'notion', type: 'notion', database: 'fixture-database', prefetch: false }] };
+  await Promise.all([dirname(sourcePath), dirname(skillPath), join(f.broker, 'dist')].map(path => mkdir(path, { recursive: true })));
+  await writeFile(settingsPath, JSON.stringify(settings));
+  await writeFile(sourcePath, JSON.stringify(source));
+  await writeFile(skillPath, skill);
+  const embeddedCli = 'throw new Error("Fixture CLI must not execute");\n', embeddedSdk = 'throw new Error("Fixture SDK must not execute");\n';
+  await writeFile(join(f.broker, 'dist/ntn-skills.mjs'), embeddedCli);
+  await writeFile(join(f.broker, 'dist/ntn-skills-sdk.mjs'), embeddedSdk);
+  await writeFile(join(f.broker, 'dist/ntn-skills-runtime.json'), JSON.stringify({ version: 1, package: 'ntn-skills', cli_sha256: digest(embeddedCli), sdk_sha256: digest(embeddedSdk) }));
+  const config = { ...f.config, version: 1, packageCount: 2, packageIndex: 1, brokerRoot: f.broker,
+    embeddedCliSha256: digest(embeddedCli), embeddedSdkSha256: digest(embeddedSdk), evidenceRoot: join(f.root, 'evidence') };
+  for (const [name, root] of [['broker', f.broker], ['cli', f.cliRoot]]) {
+    const staging = join(f.root, name + '-archive'), archive = join(f.root, name + '.tgz');
+    await cp(root, join(staging, 'package'), { recursive: true });
+    execFileSync('tar', ['-czf', archive, '-C', staging, 'package'], { env: { PATH: process.env.PATH, COPYFILE_DISABLE: '1' } });
+    config[name + 'Archive'] = archive;
+    config[name + 'ArchiveSha256'] = digest(await readFile(archive));
+  }
+  const host = join(f.root, 'host/@earendil-works/pi-coding-agent/cli.cjs'), bin = join(f.root, 'host-bin');
+  const receipt = join(f.root, 'host-launch.json');
+  await Promise.all([dirname(host), bin].map(path => mkdir(path, { recursive: true })));
+  // This controlled host records the real launch boundary, then exits before
+  // RPC, extension loading or any model/network operation can take place.
+  await writeFile(host, `#!/usr/bin/env node\nconst fs = require('node:fs'), path = require('node:path'), os = require('node:os');
+const settingsPath = path.join(os.homedir(), '.pi/agent/settings.json');
+fs.writeFileSync(${JSON.stringify(receipt)}, JSON.stringify({ args: process.argv.slice(2), home: process.env.HOME,
+  agentOverride: process.env.PI_CODING_AGENT_DIR ?? null, sourceOverride: process.env.CONTEXT_BROKER_CONFIG ?? null,
+  settingsPath, settings: JSON.parse(fs.readFileSync(settingsPath, 'utf8')) }));
+process.exit(17);\n`, { mode: 0o755 });
+  await symlink(host, join(bin, 'pi'));
+  const configPath = join(f.root, 'config.json');
+  await writeFile(configPath, JSON.stringify(config));
+  const entry = fileURLToPath(new URL('./verify-pi-daily-installation.mjs', import.meta.url));
+  const env = { ...f.env, HOME: f.root, PATH: [bin, f.bin, dirname(process.execPath), '/usr/bin', '/bin'].join(delimiter) };
+  const planned = JSON.parse(execFileSync(process.execPath, [entry, 'plan', '--config', configPath], { env, encoding: 'utf8' }));
+  assert.deepEqual(planned.pi_arguments, ['--mode', 'rpc', '-ns', '--session-dir', '<new owned directory>']);
+  assert.equal(planned.settings, settingsPath);
+  const launched = spawnSync(process.execPath, [entry, 'run', '--config', configPath], { env, encoding: 'utf8', timeout: 15000 });
+  assert.equal(launched.error, undefined);
+  assert.equal(launched.status, 1, launched.stderr);
+  const result = JSON.parse(launched.stdout);
+  assert.match(result.error.message, /RPC exited \(code=17,/);
+  const observed = JSON.parse(await readFile(receipt, 'utf8'));
+  assert.deepEqual(observed.args, ['--mode', 'rpc', '-ns', '--session-dir', join(result.evidence, 'sessions')]);
+  assert.equal(observed.home, f.root);
+  assert.equal(observed.agentOverride, null);
+  assert.equal(observed.sourceOverride, null);
+  assert.equal(observed.settingsPath, settingsPath);
+  assert.deepEqual(observed.settings, settings);
+  assert.equal(await readFile(settingsPath, 'utf8'), JSON.stringify(settings));
+  assert.equal(await readFile(sourcePath, 'utf8'), JSON.stringify(source));
+  assert.equal(await readFile(skillPath, 'utf8'), skill);
+});
 
 test('daily relative package source resolves from the settings agent directory, independently of cwd', async () => {
   const f = await installationFixture();

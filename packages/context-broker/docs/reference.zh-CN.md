@@ -276,7 +276,7 @@ OMP 与没有公开工具能力 API 的宿主保留既有 CLI 指引。argv 与�
 
 会话 `sr:` 句柄归属 Broker，独立 CLI 不接受它们。CLI 后备路径使用已返回的 canonical 引用或已选 snapshot/path。只有会话句柄时，可用所选来源的 CLI `list`，按确切 record 身份取得同一候选的 canonical 引用；不由名称猜身份，也不向 `sr:` 追加路径。资源优先复制系统返回的 canonical ref。
 
-宿主观察当前随包 CLI 的字面 `ctl library import` 和 `ctl library source` 调用。Source 动作为 `apply`、`refresh`、`enable`、`disable`、`remove`、`takeover` 和 `restore-follow`。结果必须匹配实际命令、operation 及准确的 library/database/data-source 身份。import 核对稳定 Skill 和物理页面；Source 声明与文件接管核对全部 ready 子结果，文件动作还要匹配 Source 路径、稳定 File 和目标 Skill。启停结果须匹配请求的布尔值及准确的 metadata target 绑定；移除必须返回 `action: remove`、`state: removed`、`status: removed`，ready 子任务回执不能证明 Source 已清退。Source 页面始终不作为 Skill 页面。
+宿主观察当前随包 CLI 的字面 `ctl library import` 和 `ctl library source` 调用。Source 动作为 `apply`、`refresh`、`enable`、`disable`、`remove`、`takeover` 和 `restore-follow`。结果必须匹配实际命令、operation 及准确的 library/database/data-source 身份。import 核对稳定 Skill、合法物理页面与准确库归属。删除后重建可以改变物理 page ID；结果只触发重新发现，不直接提供替换正文。Source 声明核对全部子结果：仍存在的成员为 ready，上游删除的成员为 removed 且 files=0，删空也按此收敛。文件接管仍要求 ready 子结果，并匹配 Source 路径、稳定 File 和目标 Skill。启停结果须匹配请求的布尔值及准确的 metadata target 绑定；移除必须返回 `action: remove`、`state: removed`、`status: removed`，ready 子任务回执不能证明 Source 已清退。Source 页面始终不作为 Skill 页面。
 
 成功 `applied` 或 `removed` 只让对应配置来源在下一次发现时刷新。普通 `unchanged` 不刷新；同 operation 的显式 `--resume`，以及 `--supersede OLD --operation NEW`，返回 unchanged 时可恢复此前写入的可见性。supersede 要求新旧身份不同，并与 resume、真正的 dry-run 互斥。数据库 ID、HTTP(S) Notion URL 和精确配置别名采用同一归属。旗标接受等价语法、import 的多个不同 `--native PATH` 以及精确文件接管参数。takeover 默认 resource，`--as native` 明确选择可编辑正文。拒绝重复单值参数、重复 native 路径、动作不支持的旗标、真正的 dry-run 和复合 shell。
 

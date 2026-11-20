@@ -30,7 +30,7 @@ function plan(config) {
     expected_package_count: config.packageCount ?? 21, broker_root: config.brokerRoot ?? null,
     cli_root: config.cliRoot ?? null, required_artifacts: ['brokerRoot', 'brokerArchive', 'brokerArchiveSha256', 'embeddedCliSha256', 'embeddedSdkSha256', 'cliRoot', 'cliArchive', 'cliArchiveSha256', 'cliEntrySha256'],
     cli_lookup: { selection: 'ntn-skills on the unchanged PATH', expected_path: config.cliShim ?? null, volta_identity: config.voltaIdentity ?? null },
-    pi_arguments: ['--mode', 'rpc', '--session-dir', '<new owned directory>'],
+    pi_arguments: ['--mode', 'rpc', '-ns', '--session-dir', '<new owned directory>'],
     rpc_commands: ['get_state', 'get_commands', '/context-broker find ' + (config.findQuery ?? 'pstack'), '/context-broker doctor', 'get_state'],
     expected_find_record: config.expectedFindRecord ?? null,
     reviewed_external_namespace_diagnostics: config.namespaceDiagnosticsReview ?? null,
@@ -476,7 +476,7 @@ async function run(config) {
     const processLedger = join(evidence, 'owned-processes.jsonl');
     await writeFile(processLedger, '', { flag: 'wx', mode: 0o600 });
     const env = { ...process.env, BROKER_E2E_PROCESS_LEDGER: processLedger, NODE_OPTIONS: [process.env.NODE_OPTIONS, '--require=' + JSON.stringify(preload), '--import=' + JSON.stringify(sdkPreload)].filter(Boolean).join(' ') };
-    const args = ['--session-dir', sessions];
+    const args = ['-ns', '--session-dir', sessions];
     result.launch = { host: 'pi', cwd, args: ['--mode', 'rpc', ...args], normal_user_settings: true, preexisting_node_options_preserved: Boolean(process.env.NODE_OPTIONS), observer_sha256: hash(await readFile(preload)), source_observer_sha256: hash(await readFile(sdkPreload)) };
     await save(join(evidence, 'result.json'), result);
     rpc = await startRpc({ host: 'pi', cwd, env, args, timeoutMs: 120000 });
