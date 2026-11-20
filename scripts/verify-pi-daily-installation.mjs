@@ -34,7 +34,7 @@ function plan(config) {
     rpc_commands: ['get_state', 'get_commands', '/context-broker find ' + (config.findQuery ?? 'pstack'), '/context-broker doctor', 'get_state'],
     expected_find_record: config.expectedFindRecord ?? null,
     reviewed_external_namespace_diagnostics: config.namespaceDiagnosticsReview ?? null,
-    observation: 'Actual get_commands.sourceInfo, published-file SHA closure and passive SDK/process/HTTP observation. SDK attempts pair with independent HTTP response request IDs; unpaired host HTTP remains unknown. Startup/find/doctor read metadata only. No source.command substitution or target -e argument.',
+    observation: 'Actual get_commands.sourceInfo, published-file SHA closure and passive SDK/process/HTTP observation. Every host Notion request and SDK attempt needs an exact independent HTTP match. Other host HTTP remains unattributed, with failures retained separately. Startup/find/doctor read Notion metadata only; this check does not establish all Pi/plugin HTTP success or zero external traffic. No source.command substitution or target -e argument.',
     preserved: ['HOME and normal agent directory', 'all settings packages and extensions', 'source/auth/model configuration', 'existing sessions', 'PATH and source.command'],
     forbidden: ['provider or tool execution', 'Notion writes or Skill body loading', 'official ntn invocation', 'Tern execution', 'user-session restart'],
     execution: 'Run only after root activates the final immutable package and CLI shim. Supply final package paths/hashes; run refuses an old settings package before launching Pi.',
@@ -381,7 +381,7 @@ export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObserv
       assert.equal(metrics[0].total_requests, events.filter(event => event.phase === 'attempt' && event.requestId === operation.requestId).length);
     }
   }
-  const source = [], sdk = [], otherPlugins = [];
+  const source = [], sdk = [], otherPlugins = [], unattributedHostHttp = [];
   for (const request of observed.filter(row => row.event === 'http_start')) {
     let pid = request.pid, role;
     const visited = new Set();
@@ -392,6 +392,16 @@ export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObserv
       pid = parents.get(pid);
     }
     if (role === 'host') {
+      const origin = new URL(request.origin);
+      assert.ok(['http:', 'https:'].includes(origin.protocol) && origin.origin === request.origin, 'Host HTTP has no exact origin');
+      const outcomes = observed.filter(row => ['http_end', 'http_error'].includes(row.event) && row.id === request.id && row.pid === request.pid);
+      const hasSdkAttempt = outcomes.some(row => sdkAttempts.has(row.response_request_id));
+      // The target includes every Notion request and every declared SDK attempt.
+      // Other host traffic stays unknown; it cannot satisfy or hide an SDK attempt.
+      if (origin.hostname !== 'api.notion.com' && !hasSdkAttempt) {
+        unattributedHostHttp.push({ ...request, outcomes });
+        continue;
+      }
       const terminal = observed.filter(row => row.event === 'http_end' && row.id === request.id && row.pid === request.pid);
       assert.equal(terminal.length, 1, 'Host HTTP needs one independent response');
       const match = sdkAttempts.get(terminal[0].response_request_id);
@@ -412,7 +422,7 @@ export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObserv
     }
   }
   assert.equal(matchedSdk.size, sdkAttempts.size, 'An SDK attempt lacks independent HTTP evidence');
-  return { source, sdk, otherPlugins };
+  return { source, sdk, otherPlugins, unattributedHostHttp };
 }
 
 export function classifyDailyNotionRequest(request) {
@@ -534,7 +544,8 @@ async function run(config) {
     const partition = classifyDailyHttp(observed, new Set(spawned.map(row => row.child_pid)), new Set(owned.filter(row => row.event === 'spawn').map(row => row.pid)), { sourceObservation });
     const http = partition.source;
     result.other_plugin_http = partition.otherPlugins.map(request => ({ ...request, process: observed.find(row => row.event === 'process_start' && row.pid === request.pid), outcome: observed.find(row => ['http_end', 'http_error'].includes(row.event) && row.id === request.id) }));
-    result.http_accounting_scope = 'Default bundled SDK attempts are paired by PID, response request ID, method, status and request bytes. The explicit metadata-only doctor uses its verified bundled CLI process tree. Other configured plugin child-process HTTP is separate; other host HTTP is unattributed and rejected. Worker transport is outside this passive process observer.';
+    result.unattributed_host_http = partition.unattributedHostHttp;
+    result.http_accounting_scope = 'The verified target includes every host request to api.notion.com, every complete SDK attempt and the verified bundled CLI process tree. SDK attempts are paired by PID, response request ID, method, status and request bytes. Other plugin child-process HTTP is separate. Non-Notion host HTTP without SDK attribution remains in unattributed_host_http with its original failures or missing outcomes; it is excluded from target costs and does not establish global Pi/plugin health or zero external traffic. Worker transport is outside this passive process observer.';
     assert.ok(http.length, 'No real HTTP metadata request was observed');
     for (const request of http) {
       classifyDailyNotionRequest(request);

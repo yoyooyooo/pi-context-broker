@@ -368,6 +368,7 @@ test('host, unknown, or cyclic ancestry cannot conceal HTTP as other-plugin traf
   for (const rows of [
     [{ event: 'http_start', pid: 10 }],
     [{ event: 'http_start', pid: 99 }],
+    [{ event: 'http_start', pid: 99, origin: 'https://external.example', id: 'unknown' }],
     [{ event: 'process_start', pid: 40, ppid: 41 }, { event: 'process_start', pid: 41, ppid: 40 }, { event: 'http_start', pid: 40 }],
   ]) assert.throws(() => classifyDailyHttp(rows, new Set([20]), new Set([10])));
 });
@@ -414,6 +415,42 @@ test('SDK HTTP rejects absent, ambiguous, failed or mismatched receipt evidence'
   ]) assert.throws(() => classifyDailyHttp(sdkHttp, new Set(), new Set([10]), { sourceObservation: changed }));
   assert.throws(() => classifyDailyHttp([...sdkHttp, { ...sdkHttp[0], id: '10:2' }, { ...sdkHttp[1], id: '10:2' }],
     new Set(), new Set([10]), { sourceObservation: sdkObservation() }));
+});
+
+test('every host Notion request still needs an exact SDK match', () => {
+  for (const origin of ['https://api.notion.com', 'http://api.notion.com', 'https://api.notion.com:8443']) {
+    const request = { ...sdkHttp[0], origin };
+    const response = { ...sdkHttp[1], response_request_id: null };
+    assert.throws(() => classifyDailyHttp([request, response], new Set(), new Set([10])), /no exact SDK request ID match/u);
+  }
+});
+
+test('non-Notion host traffic retains failures and missing outcomes outside target costs', () => {
+  const unauthorized = { event: 'http_start', pid: 10, id: '10:external-1', origin: 'https://mcp.external.example', path: '/mcp', method: 'POST', request_bytes: 161 };
+  const unauthorizedEnd = { event: 'http_end', pid: 10, id: unauthorized.id, status: 401, response_request_id: null };
+  const stream = { ...unauthorized, id: '10:external-2', method: 'GET', request_bytes: 0 };
+  const streamError = { event: 'http_error', pid: 10, id: stream.id, status: 200, response_request_id: null, code: 20, error: { name: 'AbortError', message: 'stream aborted' } };
+  const pending = { ...stream, id: '10:external-3' };
+  const external = [unauthorized, unauthorizedEnd, stream, streamError, pending];
+  const result = classifyDailyHttp([...sdkHttp, ...external], new Set(), new Set([10]), { sourceObservation: sdkObservation() });
+  assert.deepEqual(result.source.map(row => row.id), ['10:1']);
+  assert.equal(result.sdk.length, 1);
+  assert.deepEqual(result.otherPlugins, []);
+  assert.deepEqual(result.unattributedHostHttp, [
+    { ...unauthorized, outcomes: [unauthorizedEnd] },
+    { ...stream, outcomes: [streamError] },
+    { ...pending, outcomes: [] },
+  ]);
+  assert.throws(() => classifyDailyHttp(external, new Set(), new Set([10]), { sourceObservation: sdkObservation() }), /SDK attempt lacks independent HTTP evidence/u);
+});
+
+test('an SDK-attributed external provider stays in scope and fails Notion metadata verification', () => {
+  const request = { ...sdkHttp[0], origin: 'https://provider.example', path: '/content' };
+  const result = classifyDailyHttp([request, sdkHttp[1]], new Set(), new Set([10]), { sourceObservation: sdkObservation() });
+  assert.equal(result.source.length, 1);
+  assert.deepEqual(result.unattributedHostHttp, []);
+  assert.throws(() => classifyDailyNotionRequest(result.source[0]), /Unexpected provider/u);
+  assert.throws(() => classifyDailyHttp([{ ...request, pid: 11 }, { ...sdkHttp[1], pid: 11 }], new Set(), new Set([10, 11]), { sourceObservation: sdkObservation() }), /no exact SDK request ID match/u);
 });
 
 test('startup, find and doctor allow read-only Notion metadata', () => {
