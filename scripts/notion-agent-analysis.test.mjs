@@ -417,15 +417,51 @@ test('model catalog visibility binds the actual advertised ref to logical owner'
   assert.equal((await f.run([{ kind: 'visibility', object: 'remote', stage: 'model-catalog' }])).status, 'failed');
 });
 
-test('a pending view needs actual source timing, not just an old pending label', async () => {
-  const f = fixture(); f.binding.private.objects.remote = { kind: 'notion', name: 'remote', owner: 'skill-remote', scope: 'a'.repeat(64), versions: {} };
-  const task = addMetadata(f, '<ntn-skills-discovery status="pending">metadata pending</ntn-skills-discovery><ntn-skills-guidance>instructions</ntn-skills-guidance>');
+function pendingSourceFixture() {
+  const f = fixture({ bodies: { 'remote@A/SKILL.md': 'business text' } });
+  f.bindRemote('remote', 'A', 'remote@A/SKILL.md');
+  f.binding.private.objects.remote.name = 'Remote rates';
+  const task = addMetadata(f, '<ntn-skills-discovery status="pending">pending</ntn-skills-discovery><ntn-skills-guidance>notion_list</ntn-skills-guidance>');
   task.monotonicNs = '200';
-  f.observed.source = [{ phase: 'started', kind: 'sdk', operation: 'list', requestId: 'catalog', monotonicNs: '100' },
-    { phase: 'completed', kind: 'sdk', operation: 'list', requestId: 'catalog', monotonicNs: '300' }];
-  assert.equal((await f.run([{ kind: 'visibility', object: 'remote', stage: 'source-pending' }])).status, 'passed');
+  const sourceId = 'notion-target', database = '01234567-89ab-cdef-0123-456789abcdef';
+  const bytes = Buffer.from(JSON.stringify({ sources: [{ type: 'notion', id: sourceId, database }] })), path = '/owned/private/source-config.json';
+  f.files.set(path, bytes);
+  f.binding.private.fixture = { entry: database };
+  f.observed.visibility = { source: { sourceId, database, configArtifact: { path, sha256: hash(bytes), bytes: bytes.length } } };
+  f.observed.source = [{ phase: 'started', kind: 'sdk', operation: 'list', requestId: 'catalog', monotonicNs: '100', source_id: sourceId, database },
+    { phase: 'completed', kind: 'sdk', operation: 'list', requestId: 'catalog', monotonicNs: '300', source_id: sourceId, database }];
+  return f;
+}
+
+test('a pending view needs actual target-source timing, not just an old pending label', async () => {
+  const f = pendingSourceFixture();
+  f.observed.visibility.source.database = f.observed.visibility.source.database.replaceAll('-', '').toUpperCase();
+  const result = await f.run([{ kind: 'visibility', object: 'remote', stage: 'source-pending' }]);
+  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
   f.observed.source[1].monotonicNs = '150';
   assert.equal((await f.run([{ kind: 'visibility', object: 'remote', stage: 'source-pending' }])).status, 'failed');
+});
+
+test('pending visibility cannot borrow another Source list or fabricate attribution for old diagnostics', async () => {
+  for (const mutate of [
+    f => { f.observed.source[0].source_id = f.observed.source[1].source_id = 'other-source'; },
+    f => { f.observed.source[0].database = f.observed.source[1].database = 'another-library'; },
+    f => { for (const row of f.observed.source) { delete row.source_id; delete row.database; } },
+    f => { f.observed.source[0].monotonicNs = '250'; },
+    f => { f.observed.source[1].source_id = 'other-source'; },
+    f => { f.binding.private.fixture.entry = 'other-library'; },
+  ]) {
+    const f = pendingSourceFixture(); mutate(f);
+    assert.notEqual((await f.run([{ kind: 'visibility', object: 'remote', stage: 'source-pending' }])).status, 'passed');
+  }
+});
+
+test('pending visibility binds the real source configuration artifact', async () => {
+  const f = pendingSourceFixture(), artifact = f.observed.visibility.source.configArtifact;
+  f.files.set(artifact.path, Buffer.from('{"sources":[]}'));
+  const result = await f.run([{ kind: 'visibility', object: 'remote', stage: 'source-pending' }]);
+  assert.equal(result.status, 'failed');
+  assert.ok(result.assertions.some(row => row.code === 'ARTIFACT_CHANGED'));
 });
 
 test('an equivalent copy is allowed only through an actually proven owner', async () => {

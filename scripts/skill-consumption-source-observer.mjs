@@ -56,19 +56,28 @@ export function observeSourceTransport(settings) {
       || typeof event.id !== 'string' || !/^[a-f0-9-]{36}$/i.test(event.id) || event.pid !== process.pid
       || typeof event.monotonic_ns !== 'string' || !/^\d+$/.test(event.monotonic_ns)) throw new Error('SDK_EVENT_INVALID');
     const requestId = 'sdk:' + process.pid + ':' + event.id;
+    // These are the SDK's public routing fields, not inferred configuration.
+    // Absence remains absence for older diagnostics; explicit null stays null.
+    const attribution = Object.fromEntries(['source_id', 'database'].filter(key => Object.hasOwn(event, key)).map(key => {
+      const value = event[key];
+      if (value !== null && (typeof value !== 'string' || !value.trim() || value.length > 1024 || /[\u0000-\u001f\u007f]/u.test(value)))
+        throw new Error('SDK_SOURCE_ATTRIBUTION_INVALID');
+      return [key, value];
+    }));
     if (event.event === 'start') {
       if (operations.has(requestId)) throw new Error('SDK_DUPLICATE_START');
-      operations.set(requestId, { kind: 'sdk', operation: event.operation, started: event.monotonic_ns, ended: false });
-      record('started', { kind: 'sdk', requestId, pid: process.pid, operation: event.operation, sourceMonotonicNs: event.monotonic_ns });
+      operations.set(requestId, { kind: 'sdk', operation: event.operation, started: event.monotonic_ns, attribution, ended: false });
+      record('started', { kind: 'sdk', requestId, pid: process.pid, operation: event.operation, ...attribution, sourceMonotonicNs: event.monotonic_ns });
       return;
     }
     const operation = operations.get(requestId);
     if (!operation || operation.ended || operation.operation !== event.operation || BigInt(event.monotonic_ns) < BigInt(operation.started)
       || !['completed', 'failed', 'cancelled'].includes(event.status) || typeof event.sdk_started !== 'boolean' || typeof event.metrics_observed !== 'boolean'
       || typeof event.elapsed_ms !== 'number' || !Number.isFinite(event.elapsed_ms) || event.elapsed_ms < 0) throw new Error('SDK_END_INVALID');
+    if (JSON.stringify(operation.attribution) !== JSON.stringify(attribution)) throw new Error('SDK_SOURCE_ATTRIBUTION_CHANGED');
     metrics(requestId, event.request_metrics, event.metrics_observed);
     operation.ended = true;
-    record('completed', { kind: 'sdk', requestId, pid: process.pid, operation: event.operation, status: event.status,
+    record('completed', { kind: 'sdk', requestId, pid: process.pid, operation: event.operation, ...attribution, status: event.status,
       sdkStarted: event.sdk_started, sourceMonotonicNs: event.monotonic_ns, elapsedMs: event.elapsed_ms });
   });
   subscribe('tracing:child_process.spawn:start', ({ process: child, options }) => {
@@ -243,11 +252,21 @@ export async function readSourceObservation(file, { final = true } = {}) {
       }
     } else if (event.phase === 'started') {
       if (!['cli', 'sdk'].includes(event.kind) || typeof event.requestId !== 'string' || operations.has(event.requestId)) errors.push('duplicate-or-invalid-start');
-      operations.set(event.requestId, { kind: event.kind, completed: 0, metrics: 0, attempts: new Set() });
+      const attribution = Object.fromEntries(['source_id', 'database'].filter(key => Object.hasOwn(event, key)).map(key => [key, event[key]]));
+      if (event.kind === 'sdk' && Object.values(attribution).some(value => value !== null &&
+        (typeof value !== 'string' || !value.trim() || value.length > 1024 || /[\u0000-\u001f\u007f]/u.test(value))))
+        errors.push('invalid-sdk-source-attribution');
+      operations.set(event.requestId, { kind: event.kind, attribution, completed: 0, metrics: 0, attempts: new Set() });
     } else if (['metrics', 'completed', 'attempt', 'wait', 'child-started', 'stdout_unobserved', 'spawn_error'].includes(event.phase)) {
       const operation = operations.get(event.requestId);
       if (!operation || operation.completed) errors.push('unpaired-operation-event');
-      if (event.phase === 'completed' && operation) { operation.completed++; if (event.kind !== operation.kind) errors.push('changed-operation-kind'); }
+      if (event.phase === 'completed' && operation) {
+        operation.completed++;
+        if (event.kind !== operation.kind) errors.push('changed-operation-kind');
+        const attribution = Object.fromEntries(['source_id', 'database'].filter(key => Object.hasOwn(event, key)).map(key => [key, event[key]]));
+        if (operation.kind === 'sdk' && JSON.stringify(attribution) !== JSON.stringify(operation.attribution))
+          errors.push('changed-sdk-source-attribution');
+      }
       if (event.phase === 'attempt' && operation) {
         if (event.kind !== 'http' || !Number.isSafeInteger(event.attempt) || event.attempt < 1 || operation.attempts.has(event.attempt)) errors.push('invalid-attempt');
         operation.attempts.add(event.attempt);

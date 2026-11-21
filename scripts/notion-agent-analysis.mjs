@@ -191,6 +191,9 @@ class EvidenceError extends Error {
 const demand = (condition, code, message, details) => { if (!condition) throw new EvidenceError('failed', code, message, details); };
 const need = (condition, code, message, details) => { if (!condition) throw new EvidenceError('blocked', code, message, details); };
 const numeric = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+const databaseKey = value => typeof value === 'string' && /^[a-f0-9]{32}$/iu.test(value.replaceAll('-', ''))
+  ? value.replaceAll('-', '').toLowerCase() : value;
+const sameDatabase = (left, right) => nonempty(left) && nonempty(right) && databaseKey(left) === databaseKey(right);
 const xmlText = value => value.replaceAll('&quot;', '"').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&')
   .replace(/&#(\d+);/gu, (_match, value) => String.fromCodePoint(Number(value)));
 function catalogCards(text) {
@@ -591,15 +594,34 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
         }
         const delivery = requireDelivery();
         if (expected.stage === 'source-pending') {
-          const first = delivery.requests[0];
+          const first = delivery.requests[0], source = observed.visibility?.source;
+          need(item.kind === 'notion' && nonempty(item.owner) && digest(item.scope), 'PENDING_OBJECT_IDENTITY_MISSING',
+            'A pending target must be an independently bound Notion object');
+          need(nonempty(source?.sourceId) && nonempty(source.database), 'PENDING_SOURCE_BINDING_MISSING',
+            'Retain the actual configured target Source and database');
+          const config = JSON.parse((await verifiedArtifact(source.configArtifact, readArtifact)).toString('utf8'));
+          const configured = config.sources?.filter(item => item.type === 'notion' && item.enabled !== false && item.id === source.sourceId);
+          need(configured?.length === 1 && sameDatabase(configured[0].database, source.database) &&
+            sameDatabase(privateBindings.fixture?.entry, source.database), 'PENDING_SOURCE_SCOPE_MISMATCH',
+          'The real enabled source configuration and independently read fixture library must agree');
           need(/^\d+$/u.test(first.monotonicNs ?? '') && Array.isArray(observed.source), 'PENDING_TIMING_MISSING', 'Pending discovery needs actual source and request clocks');
-          const pending = observed.source.filter(row => row.phase === 'started' && row.kind === 'sdk' && row.operation === 'list' &&
+          const belongs = row => row.kind === 'sdk' && row.operation === 'list' && row.source_id === source.sourceId &&
+            sameDatabase(row.database, source.database);
+          const pending = observed.source.filter(row => row.phase === 'started' && belongs(row) &&
             /^\d+$/u.test(row.monotonicNs ?? '') && BigInt(row.monotonicNs) <= BigInt(first.monotonicNs)).filter(row =>
               !observed.source.some(end => end.phase === 'completed' && end.requestId === row.requestId &&
                 /^\d+$/u.test(end.monotonicNs ?? '') && BigInt(end.monotonicNs) <= BigInt(first.monotonicNs)));
           demand(pending.length > 0 && /<ntn-skills-discovery\b[^>]*status="pending"/u.test(first.metadataText) &&
-            /<ntn-skills-guidance\b/u.test(first.metadataText), 'SOURCE_NOT_PENDING', 'The first real request did not expose a pending Notion source');
-          return { object: expected.object, payloadSha256: first.sha256, pendingOperations: pending.map(row => row.requestId) };
+            /<ntn-skills-guidance\b/u.test(first.metadataText), 'SOURCE_NOT_PENDING', 'The first real request did not expose its target Notion source while loading');
+          for (const operation of pending) {
+            const ends = observed.source.filter(row => row.phase === 'completed' && row.requestId === operation.requestId);
+            need(ends.length === 1 && belongs(ends[0]) && /^\d+$/u.test(ends[0].monotonicNs ?? '') &&
+              BigInt(ends[0].monotonicNs) > BigInt(first.monotonicNs), 'PENDING_SOURCE_TERMINAL_MISSING',
+            'The same target-source operation must retain its real later completion');
+          }
+          return { object: expected.object, sourceId: source.sourceId, database: source.database,
+            configArtifact: source.configArtifact, payloadSha256: first.sha256, pendingOperations: pending.map(row => row.requestId) };
+
         }
         need(expected.stage === 'model-catalog', 'VISIBILITY_STAGE_UNSUPPORTED', 'Unsupported visibility stage');
         need(item.kind === 'notion' && nonempty(item.owner) && digest(item.scope), 'CATALOG_IDENTITY_MISSING', 'Notion catalog visibility needs its logical owner and source scope');
