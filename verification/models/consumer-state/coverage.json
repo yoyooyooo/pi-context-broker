@@ -35,7 +35,7 @@
     "packages/context-broker/src/pi-host-adapter.ts": "934605789805d5761451a0b4e694e7255dc08f6ef330c6682ccae68d321e9045",
     "packages/context-broker/scripts/host-refresh.test.ts": "b3b754cf8acd080a33c63ccf7f5f1fe5d9eaf364ad90737ebd2d8efbd5883029",
     "packages/context-broker/scripts/session-refresh.test.ts": "9d00f8ecbe392dbd3367ef51dcaffa325cb709986f1128e90d3f542894175a89",
-    "packages/context-broker/scripts/session-recovery.test.ts": "12f639c0716c4b92031dab5cc241148377b4d5a604859078bf8daff0d748fa52",
+    "packages/context-broker/scripts/session-recovery.test.ts": "b247e1a41ad21b2a0b124ec22cc8da4487adcf3eb0d9ad883bff5bbbc70ece88",
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "858cf3fcf02255e49641af3cc4794445eaa85aca5a27c2e6fbee8dac38bd4dd1",
     "packages/context-broker/scripts/resource-read-projection.test.ts": "e739a9e24612e40517934ac425fa33240db75303eea63b1a399e405f9d330cf0",
     "packages/context-broker/scripts/notion-source-sdk.test.ts": "4c60d0ea85459d52fa443ef7df325105c3f4c1f266f7a9f0d9bee09f7d84ba97",
@@ -717,7 +717,8 @@
       "scope": "Reviewed actual host-skills refresh input admission and all twelve added host-refresh/host-prepare regressions. A same verified selection Requires-only binding cannot become an independent root through refresh; explicit ordinary use, first/new roots, released graphs and inspect remain valid. Pending selected use protects role without claiming activation.",
       "identity": "Bare references acquire early roles only with one enabled Notion source and one confirmed current scope. Multiple current source scopes preserve original ambiguity until exact owner/scope/locator resolution. The initial two-source false-conflict reproduction is retained; current tests cover ambiguity and uniquely resolved owner.",
       "preservation": "A bounded recoverable ROOT_ROLE_CONFLICT returns before preparation, changes no selection/active/body, grants no availability and invents no disabled or authorization fact. Original observation publication, complete closure, atomic graph replacement, cancellation, provider acceptance and projection guards are unchanged.",
-      "proof_limit": "This is host input-admission regression evidence, not a new finite-model variable or natural-language intent proof. Model/config/view bytes, bounds, independent expected_rules and existing mutation targets are unchanged. The controlled fixture does not prove actual SDK decoding, live Notion or natural routing; fresh real trials report functional, root-role and tool-necessity axes separately."
+      "proof_limit": "This is host input-admission regression evidence, not a new finite-model variable or natural-language intent proof. Model/config/view bytes, bounds, independent expected_rules and existing mutation targets are unchanged. The controlled fixture does not prove actual SDK decoding, live Notion or natural routing; fresh real trials report functional, root-role and tool-necessity axes separately.",
+      "adjacent_callers": "Full check and formal regressions on 690f905 exposed two old recovery cases that refreshed a Required-only node to induce authorization/business denial. Migrate only their input to the actual task root, explicitly retain the Required failure identity and add exact scope/id/ref/code denial assertions. Original unsafe-payload blocking, next-request continuation, independent closure and intact fixed Disabled restoration assertions remain unchanged. Production/model/guard bytes are unchanged; original failed runs are retained."
     }
   }
 }

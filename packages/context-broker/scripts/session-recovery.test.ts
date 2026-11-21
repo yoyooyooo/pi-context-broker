@@ -109,9 +109,12 @@ test("authorization discovered after context still blocks that unsafe payload an
   try {
     const graph = await h.seed(["root", "independent"]);
     const unsafe = await h.turn("Continue.", graph.records, async () => {
-      h.f.state.consume = async () => h.failed("ACCESS_DENIED");
-      await expect(h.tool("notion_use").execute("late-denial", { ref: h.record("required").ref, refresh: true }, undefined, undefined, h.ctx))
-        .rejects.toMatchObject({ code: "ACCESS_DENIED" });
+      const required = h.record("required");
+      h.f.state.consume = async () => h.failed("ACCESS_DENIED", required);
+      // Refresh the task root; the observed refusal belongs to its Required child.
+      const denied = await h.tool("notion_use").execute("late-denial", { ref: h.record("root").ref, refresh: true }, undefined, undefined, h.ctx).catch(error => error);
+      expect(denied.code).toBe("ACCESS_DENIED");
+      expect(denied.details.denials).toEqual([{ scope: required.sourceScope, id: required.id, ref: required.ref, code: "ACCESS_DENIED" }]);
     });
     expect(unsafe.provider).toBe(false); expect(unsafe.aborted).toBe(true);
     const next = await h.turn("Continue the independent task.", graph.records);
@@ -268,9 +271,11 @@ test("known business Disabled permits complete fixed restoration while current u
   const h = await activeNotionSession();
   try {
     const graph = await h.seed();
-    h.f.state.consume = async input => input.purpose === "use" ? h.failed("CONTENT_DISABLED") : h.ready(input);
-    await expect(h.tool("notion_use").execute("disable-current", { ref: h.record("required").ref, refresh: true }, undefined, undefined, h.ctx))
-      .rejects.toMatchObject({ code: "CONTENT_DISABLED" });
+    const required = h.record("required");
+    h.f.state.consume = async input => input.purpose === "use" ? h.failed("CONTENT_DISABLED", required) : h.ready(input);
+    const disabled = await h.tool("notion_use").execute("disable-current", { ref: h.record("root").ref, refresh: true }, undefined, undefined, h.ctx).catch(error => error);
+    expect(disabled.code).toBe("CONTENT_DISABLED");
+    expect(disabled.details.denials).toEqual([{ scope: required.sourceScope, id: required.id, ref: required.ref, code: "CONTENT_DISABLED" }]);
     const restored = await h.turn("Continue the same task after compact.");
     expect(restored.error).toBeUndefined(); expect(restored.provider).toBe(true); expect(restored.aborts).toBe(0);
     for (const record of graph.records) expect(JSON.stringify(restored.messages)).toContain(record.body!.trim());
