@@ -228,8 +228,9 @@ test("canonical restored delivery retains fixed relative-resource routing withou
     assertSourceSpan(message, record);
   }
   const native = sourceMessageText(buildCliGuidance({}, nativeTools).content);
-  expect(native).toContain("keep owner/snapshot, change only the path");
-  expect(native).toContain("omit the main file_id");
+  expect(native).toContain("Keep resource owner/snapshot");
+  expect(native).toContain("never edit sr: handles");
+  expect(native).toContain("Use paths for same-snapshot files");
 });
 
 test("undefined presentation references preserve legacy local and unavailable-native guidance exactly", () => {
