@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import { access, mkdir, mkdtemp, realpath, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { blockShape, fixtureTextMeaning, readAgentFixture, runAgentFixtureEvent, cleanupAgentFixtures } from './notion-agent-fixtures.mjs';
+import { blockShape, fixtureTextMeaning, readAgentFixture, runAgentFixtureEvent, cleanupAgentFixtures, prepareAgentFilteredView } from './notion-agent-fixtures.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const exists = path => access(path).then(() => true, () => false);
@@ -111,7 +111,7 @@ test('external builtin bindings cannot be mutated or included in cleanup writes'
 });
 
 
-test('repeated source teardown independently reads retired identities without resurrecting Source', async t => {
+test('bounded reader retries and repeated teardown do not resurrect a retired Source', async t => {
   if (!(await exists('/usr/bin/trash'))) return;
   const { bindings, context } = await fixture(t);
   const sourcePageId = '11111111-1111-1111-1111-111111111111', skillPageId = '22222222-2222-2222-2222-222222222222';
@@ -122,7 +122,9 @@ test('repeated source teardown independently reads retired identities without re
     records: { data_source_id: '55555555-5555-5555-5555-555555555555', property_ids: { Origin: 'origin' } } };
   const previousFetch = globalThis.fetch, previousToken = process.env.NOTION_API_TOKEN, reads = [];
   process.env.NOTION_API_TOKEN = 'fixture-unit-test-token';
+  let transportFailures = 0;
   globalThis.fetch = async (url, options) => {
+    if (transportFailures++ < 2) throw new TypeError('controlled read transport failure');
     const pathname = new URL(url).pathname;
     if (options.method === 'POST') {
       assert.ok(pathname.endsWith('/query'), 'Teardown must not create anything after Source retirement');
@@ -143,6 +145,8 @@ test('repeated source teardown independently reads retired identities without re
       assert.deepEqual(proof.retired.map(row => row.id).sort(), [sourcePageId, skillPageId, filePageId, recordPageId].sort());
     }
     assert.equal(reads.length, 10);
+    const attempts = (await readFile(join(context.root, 'network-attempts.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.deepEqual(attempts.slice(0, 3).map(value => [value.attempt, value.retry]), [[1, true], [2, true], [3, false]]);
   } finally {
     globalThis.fetch = previousFetch;
     if (previousToken === undefined) delete process.env.NOTION_API_TOKEN; else process.env.NOTION_API_TOKEN = previousToken;
@@ -162,6 +166,30 @@ test('View teardown refuses an identity from the pre-existing view inventory', a
   };
   try { await assert.rejects(cleanupAgentFixtures(bindings, { subjectExited: true }), /Never delete a pre-existing View/u); }
   finally {
+    globalThis.fetch = previousFetch;
+    if (previousToken === undefined) delete process.env.NOTION_API_TOKEN; else process.env.NOTION_API_TOKEN = previousToken;
+  }
+});
+
+
+test('an unknown View CREATE outcome is recorded and never automatically replayed', async t => {
+  const { bindings, context } = await fixture(t), databaseId = '11111111-1111-1111-1111-111111111111';
+  context.entry = databaseId;
+  context.library = { skills: { database_id: databaseId, data_source_id: '22222222-2222-2222-2222-222222222222', property_ids: { 'Skill ID': 'skill-id' } } };
+  const previousFetch = globalThis.fetch, previousToken = process.env.NOTION_API_TOKEN;
+  process.env.NOTION_API_TOKEN = 'fixture-unit-test-token'; let creates = 0;
+  globalThis.fetch = async (_url, options) => {
+    if (options.method === 'GET') return Response.json({ results: [{ id: '33333333-3333-3333-3333-333333333333' }], has_more: false });
+    assert.equal(options.method, 'POST'); creates++; throw new TypeError('controlled unknown create outcome');
+  };
+  try {
+    await assert.rejects(prepareAgentFilteredView(bindings), error => error.code === 'AGENT_FIXTURE_NOTION_TRANSPORT'
+      && error.details.outcome === 'unknown-no-automatic-replay' && error.details.attempt === 1);
+    assert.equal(creates, 1);
+    assert.equal((await json(join(context.root, 'bindings.json'))).private.fixture.view.name, context.view.name, 'Ownership intent must survive an unknown response');
+    const attempts = (await readFile(join(context.root, 'network-attempts.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.equal(attempts.at(-1).retry, false); assert.equal(attempts.at(-1).readOnly, false);
+  } finally {
     globalThis.fetch = previousFetch;
     if (previousToken === undefined) delete process.env.NOTION_API_TOKEN; else process.env.NOTION_API_TOKEN = previousToken;
   }
