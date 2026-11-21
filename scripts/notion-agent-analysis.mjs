@@ -167,7 +167,7 @@ export function inspectNotionAgentSession(text, options = {}) {
 
 /** Serialize the real product reducers. Callers load those reducers from the
  * exact candidate, so this analyzer does not implement a second selection engine. */
-export function captureNotionAgentSelection({ sessionId, leafId, branchSha256, selection, active }) {
+export function captureNotionAgentSelection({ sessionId, leafId, branchSha256, selection, active, shortRefs }) {
   assert.ok(nonempty(sessionId) && (leafId === null || nonempty(leafId)) && digest(branchSha256));
   assert.ok(selection?.scopes instanceof Map && active?.sources instanceof Map, 'Use the actual product selection and active reducers');
   return { version: 1, sessionId, leafId, branchSha256,
@@ -175,7 +175,11 @@ export function captureNotionAgentSelection({ sessionId, leafId, branchSha256, s
       assert.ok(scope.bindings instanceof Map && scope.roots instanceof Set && Array.isArray(scope.graphs));
       return { scope: scope.scope, roots: [...scope.roots], bindings: [...scope.bindings.values()], graphLocks: scope.graphs };
     }),
-    active: [...active.sources.values()] };
+    active: [...active.sources.values()],
+    ...(shortRefs === undefined ? {} : (() => {
+      assert.ok(shortRefs.bindings instanceof Map, 'Use the actual product short-reference reducer');
+      return { shortRefs: [...shortRefs.bindings].map(([ref, target]) => ({ ref, target })) };
+    })()) };
 }
 
 class EvidenceError extends Error {
@@ -184,6 +188,22 @@ class EvidenceError extends Error {
 const demand = (condition, code, message, details) => { if (!condition) throw new EvidenceError('failed', code, message, details); };
 const need = (condition, code, message, details) => { if (!condition) throw new EvidenceError('blocked', code, message, details); };
 const numeric = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+const xmlText = value => value.replaceAll('&quot;', '"').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&')
+  .replace(/&#(\d+);/gu, (_match, value) => String.fromCodePoint(Number(value)));
+function catalogCards(text) {
+  const cards = [];
+  for (const section of text.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)) {
+    for (const card of section[1].matchAll(/<card\b([^>]*)(?:\/>|>([\s\S]*?)<\/card>)/gu)) {
+      const attributes = Object.fromEntries([...card[1].matchAll(/([a-z_]+)="([^"]*)"/gu)].map(match => [match[1], xmlText(match[2])]));
+      if (attributes.name && (attributes.location || attributes.ref)) cards.push({ name: attributes.name, ref: attributes.location ?? attributes.ref });
+    }
+    for (const card of section[1].matchAll(/<skill>([\s\S]*?)<\/skill>/gu)) {
+      const name = /<name>([\s\S]*?)<\/name>/u.exec(card[1])?.[1], ref = /<(?:location|ref)>([\s\S]*?)<\/(?:location|ref)>/u.exec(card[1])?.[1];
+      if (name && ref) cards.push({ name: xmlText(name), ref: xmlText(ref) });
+    }
+  }
+  return cards;
+}
 const normalized = value => String(value).normalize('NFKC').replace(/\s+/gu, ' ').toLocaleLowerCase('en-US').trim();
 const statusOf = items => items.some(item => item.status === 'failed') ? 'failed' : items.some(item => item.status === 'blocked') ? 'blocked' : 'passed';
 const proofValues = tasks => tasks.filter(row => row.phase === 'receipt').flatMap(row => Object.values(row.proofs ?? {}));
@@ -327,6 +347,7 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
         bodyObservation.push({ sha256: body.sha256, method: observer.length ? 'observer-and-independent-raw-payload-count' : 'independent-raw-payload-count-only' });
       }
       payloads.push({ request: request.request, wireRequestId: sent.id, sha256: task.sha256, bytes: task.bytes, bodies, bodyObservation,
+        monotonicNs: task.monotonicNs, metadataText: (payload.messages ?? []).filter(message => ['user', 'system'].includes(message.role)).map(message => textOf(message.content)).join('\n'),
         verifiedBodies: request.payload.verifiedBodyOccurrences, usage: message.usage, completion: providerApplicationCompletion(end, message),
         selection: observed.selectionSnapshots?.find(row => row.payloadSha256 === task.sha256)?.selection });
     }
@@ -386,6 +407,49 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       case 'completed':
         need(shared.final && shared.delivery, 'TURN_COMPLETION_UNPROVEN', 'Provider and native completion are both required');
         return { finalSha256: shared.final.sha256 };
+      case 'visibility': {
+        const item = privateBindings.objects[expected.object];
+        need(item, 'OBJECT_BINDING_MISSING', 'Visibility needs an actual target object');
+        const name = item.name ?? bindings.public[expected.object + '.name'];
+        need(nonempty(name), 'OBJECT_NAME_MISSING', 'Visibility needs the actual public object name');
+        if (expected.stage === 'native-discovery') {
+          need(item.kind === 'local' && isAbsolute(item.path ?? ''), 'NATIVE_IDENTITY_MISSING', 'Native discovery must bind an actual local Skill');
+          const artifact = observed.visibility?.nativeCommands;
+          const commands = JSON.parse((await verifiedArtifact(artifact, readArtifact)).toString('utf8'));
+          need(Array.isArray(commands), 'NATIVE_COMMANDS_MISSING', 'Read the actual native command inventory');
+          const matches = commands.filter(command => command.source === 'skill' && command.name === 'skill:' + name && command.sourceInfo?.path === item.path);
+          demand(matches.length === 1, 'NATIVE_TARGET_NOT_DISCOVERED', 'The exact target was not discovered through native Skill loading');
+          return { object: expected.object, path: item.path, artifact };
+        }
+        const delivery = requireDelivery();
+        if (expected.stage === 'source-pending') {
+          const first = delivery.requests[0];
+          need(/^\d+$/u.test(first.monotonicNs ?? '') && Array.isArray(observed.source), 'PENDING_TIMING_MISSING', 'Pending discovery needs actual source and request clocks');
+          const pending = observed.source.filter(row => row.phase === 'started' && row.kind === 'sdk' && row.operation === 'list' &&
+            /^\d+$/u.test(row.monotonicNs ?? '') && BigInt(row.monotonicNs) <= BigInt(first.monotonicNs)).filter(row =>
+              !observed.source.some(end => end.phase === 'completed' && end.requestId === row.requestId &&
+                /^\d+$/u.test(end.monotonicNs ?? '') && BigInt(end.monotonicNs) <= BigInt(first.monotonicNs)));
+          demand(pending.length > 0 && /<ntn-skills-discovery\b[^>]*status="pending"/u.test(first.metadataText) &&
+            /<ntn-skills-guidance\b/u.test(first.metadataText), 'SOURCE_NOT_PENDING', 'The first real request did not expose a pending Notion source');
+          return { object: expected.object, payloadSha256: first.sha256, pendingOperations: pending.map(row => row.requestId) };
+        }
+        need(expected.stage === 'model-catalog', 'VISIBILITY_STAGE_UNSUPPORTED', 'Unsupported visibility stage');
+        need(item.kind === 'notion' && nonempty(item.owner) && digest(item.scope), 'CATALOG_IDENTITY_MISSING', 'Notion catalog visibility needs its logical owner and source scope');
+        const matches = [];
+        for (const payload of delivery.requests) {
+          const refs = payload.selection?.shortRefs;
+          need(Array.isArray(refs), 'SHORT_REF_OBSERVATION_MISSING', 'Catalog short refs must come from the same actual request branch');
+          for (const card of catalogCards(payload.metadataText)) {
+            if (card.name !== name) continue;
+            const resolved = refs.find(row => row.ref === card.ref)?.target;
+            if (['candidate', 'selected'].includes(resolved?.kind) && resolved.identity?.source === 'notion' &&
+              resolved.identity.id === item.owner && resolved.identity.scope === item.scope)
+              matches.push({ payloadSha256: payload.sha256, ref: card.ref, owner: item.owner, scope: item.scope });
+          }
+        }
+        demand(matches.length > 0, 'CATALOG_TARGET_NOT_VISIBLE', 'The exact target was absent from the actual model-visible catalog');
+        return { object: expected.object, matches };
+      }
       case 'tool-attempts': {
         const attempts = [...shared.attempts.values()].filter(call => call.name === expected.tool);
         demand(expected.min === undefined || attempts.length >= expected.min, 'TOOL_ATTEMPTS_TOO_FEW', 'Required actual tool attempts are missing');
@@ -429,6 +493,12 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
             proof.id === target.owner && proof.scope === target.scope && proof.snapshot_id === target.snapshot_id &&
             proof.version_id === target.version_id && proof.path === expected.path && proof.sha256 === body.sha256 && proof.bytes === body.bytes &&
             proof.delivered_complete_text === true
+          ) || (
+            proof.selection?.owner === target.owner && proof.selection.scope === target.scope && proof.selection.snapshot_id === target.snapshot_id &&
+            proof.selection.version_id === target.version_id && Array.isArray(proof.files) && proof.files.some(file =>
+              file.path === expected.path && file.sha256 === body.sha256 && file.bytes === body.bytes && file.delivered_complete_text === true &&
+              file.state === 'source' && file.encoding === 'utf8') &&
+            delivery.last.verifiedBodies?.some(value => value.sha256 === body.sha256 && value.occurrences > 0)
           ) || (
             expected.path === 'SKILL.md' && sameIdentity(proof.binding, target) && proof.binding.record.entrypoint === expected.path &&
             proof.snapshotId === target.snapshot_id && proof.bodySha256 === body.sha256 && proof.bytes === body.bytes &&
@@ -487,7 +557,6 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
         const source = observed.source;
         demand(source.filter(row => row.phase === 'attempt').every(row => row.request_kind !== 'notion_write' && !['PATCH', 'PUT', 'DELETE'].includes(row.method)),
           'UNAUTHORIZED_SEMANTIC_WRITE', 'Source transport attempted a Notion mutation');
-        need(!source.some(row => row.phase === 'unmatched_child_start'), 'CHILD_TRANSPORT_UNKNOWN', 'A descendant transport was not observed');
         for (const start of source.filter(row => row.phase === 'started')) {
           const metric = source.filter(row => row.phase === 'metrics' && row.requestId === start.requestId);
           need(metric.length === 1 && metric[0].observed === true && metric[0].complete === true &&
@@ -496,12 +565,15 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
           need(source.some(row => row.phase === 'completed' && row.requestId === start.requestId), 'SOURCE_OPERATION_INCOMPLETE', 'Source operation did not finish');
         }
         for (const call of shared.attempts.values()) {
-          const readOnly = ['read', 'grep', 'find', 'ls', 'notion_list', 'notion_use'].includes(call.name) ||
+          const readOnly = ['read', 'grep', 'find', 'ls', 'notion_list', 'notion_use', 'tool_search'].includes(call.name) ||
             call.name === 'notion_ctl' && object(call.arguments) && (call.arguments.working_set === 'show' || nonempty(call.arguments.cli_source)) &&
             Object.keys(call.arguments).every(key => ['working_set', 'cli_source'].includes(key));
           need(readOnly, 'TOOL_EFFECTS_UNKNOWN', 'An executed tool can write but its effects were not independently observed', { tool: call.name, toolCallId: call.id });
         }
-        return { semanticWrites: 0, coverage: 'complete-subject-SDK-and-read-only-tool-attempts', backgroundCatalogRequests: source.filter(row => row.phase === 'started' && row.operation === 'list').length };
+        return { semanticWrites: 0, coverage: 'subject-tool-operations-with-complete-SDK-metrics',
+          backgroundCatalogRequests: source.filter(row => row.phase === 'started' && row.operation === 'list').length,
+          backgroundChildren: source.filter(row => row.phase === 'unmatched_child_start').map(row => ({ childId: row.childId, transport: 'unknown' })),
+          notClaimed: 'all-host/plugin/descendant traffic; any subject execution tool still requires complete independent effects evidence' };
       }
       default: throw new EvidenceError('blocked', 'ASSERTION_UNSUPPORTED', 'Unsupported assertion ' + expected.kind);
     }
@@ -514,7 +586,7 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
     efficiency: { actualToolAttempts: shared.attempts.size, failedToolAttempts: [...shared.attempts.values()].filter(call => call.result?.isError).length,
       providerRequests: shared.delivery?.requests.length ?? null, usage: shared.delivery?.usage ?? null,
       accounting: 'one terminal usage per actual request; native/stdout copies are not summed' },
-    delivery: shared.delivery ? { requests: shared.delivery.requests.map(({ usage, selection, ...row }) => row),
+    delivery: shared.delivery ? { requests: shared.delivery.requests.map(({ usage, selection, metadataText, ...row }) => row),
       lastPayloadSha256: shared.delivery.last.sha256 } : null,
     session: observed.session ? { sessionId: observed.session.sessionId, leafId: observed.session.leafId,
       branchSha256: observed.session.branchSha256, currentUserId: observed.session.currentUserId } : null };
