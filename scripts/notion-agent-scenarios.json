@@ -4086,6 +4086,11 @@
               "kind": "completed"
             },
             {
+              "kind": "body",
+              "body": "paired-maintain@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
               "kind": "no-semantic-writes"
             },
             {

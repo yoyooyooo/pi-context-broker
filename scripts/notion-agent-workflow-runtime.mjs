@@ -82,10 +82,24 @@ async function input(config) {
   // Package paths are controller facts. A connected Notion projection may have
   // identical bytes or a similar Git path, so a basename is not package proof.
   const packagePaths = [join(cliCheckout, 'skills/notion/ntn-skills-maintain'),
-    join(config.brokerRoot, 'dist/builtin-skills/ntn-skills-maintain')];
+    join(config.brokerRoot, 'dist/builtin-skills/ntn-skills-maintain'),
+    join(homedir(), '.local/lib/node_modules/ntn-skills/skills/notion/ntn-skills-maintain')];
   const actualPackagePaths = [];
-  for (const path of packagePaths) if (await exists(join(path, 'SKILL.md'))) actualPackagePaths.push(path, await realpath(path));
+  for (const path of packagePaths) if (await exists(join(path, 'SKILL.md'))) {
+    actualPackagePaths.push(path, await realpath(path));
+    if (inside(homedir(), path)) actualPackagePaths.push('~/' + relative(homedir(), path));
+  }
   if (actualPackagePaths.length) bindings.private.facts['package-maintenance-path'] = { anyOf: [...new Set(actualPackagePaths)] };
+  const declared = corpus.scenarios.find(item => item.id === config.scenarioId);
+  if (corpus.fixtures[declared?.fixture]?.environment?.offline === true) {
+    const path = join(config.brokerRoot, 'dist/builtin-skills/ntn-skills-maintain/SKILL.md');
+    const file = await identity(path), body = 'paired-maintain@A/SKILL.md';
+    assert.equal(bindings.private.objects['paired-maintain'], undefined, 'The paired package owner is reserved for the actual loaded candidate');
+    bindings.private.objects['paired-maintain'] = { kind: 'local', name: 'ntn-skills-maintain', path,
+      owner: 'package:' + file.realpath, currentVersion: 'A', versions: { A: { bodyKeys: [body] } } };
+    bindings.private.bodies[body] = { ...file, observedPath: path, object: 'paired-maintain', version: 'A',
+      resourcePath: 'SKILL.md', origin: 'paired-package' };
+  }
   const scenario = bindAgentScenario(corpus, config.scenarioId, bindings, { profile: config.profile });
   assert.ok(bindings.private.fixture?.root && bindings.private.fixture?.runId, 'Use a real owned fixture binding');
   assert.equal(bindings.private.fixture.entry.replaceAll('-', ''), config.database.replaceAll('-', ''), 'The fixture and candidate must use the same library');
@@ -119,8 +133,8 @@ async function sourceIdentity(path, repository) {
 
 async function writeObservers(control, config, host, sourceCache, bodies, index) {
   await mkdir(control, { recursive: true, mode: 0o700 });
-  const payloads = join(control, 'payloads'), branches = join(control, 'branches'), responses = join(control, 'sdk-responses');
-  for (const path of [payloads, branches, responses]) await mkdir(path, { mode: 0o700 });
+  const payloads = join(control, 'payloads'), branches = join(control, 'branches'), responses = join(control, 'sdk-responses'), toolResults = join(control, 'tool-results');
+  for (const path of [payloads, branches, responses, toolResults]) await mkdir(path, { mode: 0o700 });
   const files = Object.fromEntries(['cost', 'transport', 'tasks', 'source', 'sdk'].map(name => [name, join(control, name + '.jsonl')]));
   const extensions = ['cost', 'transport', 'tasks'].map(name => join(control, name + '.mjs'));
   const clockId = randomUUID();
@@ -128,7 +142,8 @@ async function writeObservers(control, config, host, sourceCache, bodies, index)
   await writeFile(extensions[1], providerTransportExtensionSource({ output: files.transport, checkoutRoot: root, clockId }), { flag: 'wx', mode: 0o600 });
   await writeFile(extensions[2], "import fs from 'node:fs';import crypto from 'node:crypto';const inspectPayload=" + candidatePayloadBodies.toString()
     + ';export default api=>(' + observeCandidateTask.toString() + ')(api,{fs,crypto,inspectPayload,output:' + JSON.stringify(files.tasks)
-    + ',bodyFiles:' + JSON.stringify(bodies.filter(body => body.bytes > 0)) + ',payloadDirectory:' + JSON.stringify(payloads) + ',branchDirectory:' + JSON.stringify(branches) + '});\n', { flag: 'wx', mode: 0o600 });
+    + ',bodyFiles:' + JSON.stringify(bodies.filter(body => body.bytes > 0)) + ',payloadDirectory:' + JSON.stringify(payloads) + ',branchDirectory:' + JSON.stringify(branches)
+    + ',toolResultDirectory:' + JSON.stringify(toolResults) + '});\n', { flag: 'wx', mode: 0o600 });
   const sourcePreload = join(control, 'source.mjs'), sdkPreload = join(control, 'sdk.mjs');
   await writeFile(sourcePreload, sourceObserverPreloadSource({ output: files.source, checkoutRoot: root, clockId,
     cliPath: join(config.brokerRoot, 'dist/ntn-skills.mjs'), ownerParentPid: process.pid, ownerEntry: host.path }), { flag: 'wx', mode: 0o600 });
@@ -149,6 +164,11 @@ export async function runAgentWorkflow(config) {
   const plan = await planAgentWorkflow(config), runId = randomUUID();
   await mkdir(config.evidenceRoot, { recursive: true, mode: 0o700 });
   const evidence = await mkdtemp(join(config.evidenceRoot, config.profile + '-' + config.scenarioId + '-'));
+  for (const body of Object.values(bindings.private.bodies).filter(body => body.origin === 'paired-package')) {
+    const bytes = await readFile(body.path); assert.equal(sha(bytes), body.sha256);
+    const directory = join(evidence, 'oracles'); await mkdir(directory, { recursive: true, mode: 0o700 });
+    const path = join(directory, body.sha256); await writeFile(path, bytes, { flag: 'wx', mode: 0o600 }); body.path = path; body.realpath = path;
+  }
   const fixture = bindings.private.fixture;
   const ownership = await json(join(fixture.root, 'ownership.json'));
   assert.equal(ownership.runId, fixture.runId); assert.equal(ownership.token, fixture.ownership.token);
@@ -168,7 +188,11 @@ export async function runAgentWorkflow(config) {
   verifyBundledRuntime({ manifest: runtime, cliBytes: await readFile(baseline[2].path), sdkBytes: await readFile(baseline[3].path), expectedVersion: cliManifest.version });
   const build = await json(join(config.brokerRoot, 'dist/next-build.json'));
   for (const file of build.selected_cli.files) assert.equal((await identity(join(config.cliRoot, file.path))).sha256, file.sha256, 'Selected CLI/SDK build input changed: ' + file.path);
-  for (const file of build.artifacts.files) assert.equal((await identity(join(config.brokerRoot, file.path))).sha256, file.sha256, 'Embedded build artifact changed: ' + file.path);
+  const loadedPackageFiles = [];
+  for (const file of build.artifacts.files) {
+    const actual = await identity(join(config.brokerRoot, file.path));
+    assert.equal(actual.sha256, file.sha256, 'Embedded build artifact changed: ' + file.path); loadedPackageFiles.push(actual);
+  }
   const registration = await inspectCandidatePackageRegistration(settings.packages, { packageIndex: config.packageIndex ?? 1,
     agentDir: join(homedir(), '.pi/agent'), brokerRoot: config.brokerRoot, brokerEntry: baseline[1] });
   const cwd = fixture.projectRoot ?? join(evidence, 'workspace'), sessions = join(evidence, 'sessions'), stateRoot = join(evidence, 'owned-state');
@@ -203,7 +227,7 @@ export async function runAgentWorkflow(config) {
     selection: reduceSessionSelection(value.entries), active: reduceActiveSources(value.entries), shortRefs: reduceSessionShortRefs(value.entries) });
   const result = { version: 1, scope: config.scope, status: 'running', runId, evidence, startedAt: new Date().toISOString(), plan,
     sourceTuple: await Promise.all([sourceIdentity(config.brokerRoot, 'broker'), sourceIdentity(config.cliRoot, 'cli')]),
-    baseline, cliFiles, runtime, build, host, hostArtifact: await identity(host.identity), before, registration,
+    baseline, cliFiles, loadedPackageFiles, runtime, build, host, hostArtifact: await identity(host.identity), before, registration,
     configuration: { normalHome: true, normalAgentDir: true, normalMcpAndExtensions: true, profile: config.profile, ownStateOnly: true, model: 'magpie/group/worker', thinkingLevel: 'high' },
     segments: [], events: [], turns: scenario.turns.map(turn => ({ id: turn.id, status: 'not_run' })), retestOf: config.retestOf ?? null };
   await save(join(evidence, 'config.json'), config); await save(join(evidence, 'initial-bindings.json'), bindings); await save(join(evidence, 'initial-state.json'), { cache: 'cold', stateRoot, ownedStateRoot, sourceCache, oracle: 'independent', createdAt: result.startedAt });
@@ -356,7 +380,7 @@ export async function runAgentWorkflow(config) {
     try { await analyzeObserved(); }
     catch (error) { result.analysisError = { code: error.code ?? error.name, message: error.message }; result.status = 'failed'; }
     result.normalConfigurationUnchanged = (await identity(settingsPath)).sha256 === before.settings.sha256 && (await identity(sourcePath)).sha256 === before.source.sha256;
-    result.loadedFilesUnchanged = (await Promise.all([...baseline, ...cliFiles].map(async file => (await identity(file.path)).sha256 === file.sha256))).every(Boolean);
+    result.loadedFilesUnchanged = (await Promise.all([...baseline, ...cliFiles, ...loadedPackageFiles].map(async file => (await identity(file.path)).sha256 === file.sha256))).every(Boolean);
     result.sourceTupleAfter = await Promise.all([sourceIdentity(config.brokerRoot, 'broker'), sourceIdentity(config.cliRoot, 'cli')]);
     result.sourceUnchanged = JSON.stringify(result.sourceTupleAfter) === JSON.stringify(result.sourceTuple);
     if (!result.normalConfigurationUnchanged || !result.loadedFilesUnchanged || !result.sourceUnchanged) result.status = 'failed';
