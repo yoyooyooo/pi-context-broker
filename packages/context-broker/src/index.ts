@@ -783,6 +783,10 @@ function messagesFromActiveSessionContext(ctx: ExtensionContext): AgentMessage[]
   return Array.isArray(activeMessages) ? activeMessages : [];
 }
 
+function maintenanceGuidance(reader: "read" | "CLI read", discovery: "notion_list" | "skill_search" | "CLI list" | undefined): string {
+  return `Maintenance: ${reader} ntn-skills-maintain's supplied Notion ref in the task's source/library; absent/pending: ${discovery ? `${discovery} there` : "report unavailable discovery"}. Never activate the edited item. Builtins: explicit offline/bootstrap only.`;
+}
+
 function buildCliGuidance(config: ConfigFile, activeTools?: readonly string[]): Omit<AgentMessage, "role" | "timestamp"> {
   if (activeTools !== undefined) return buildToolGuidance(config, new Set(activeTools));
   const sources = (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false);
@@ -806,7 +810,8 @@ function buildCliGuidance(config: ConfigFile, activeTools?: readonly string[]): 
       ].join("\n");
     }),
     "Append an argument array to its cli executable argv, replacing TERM/EXACT_REF/SNAPSHOT/RELATIVE with task values. Keep the supplied database scope on list/read/files.",
-    "Each cli scope belongs to the named source and database. Use the scope matching the selected content or explicitly requested target; never choose the first source implicitly. For writes, follow the ordinary bundled maintenance or sync Skill and the same CLI scope.",
+    "Each cli scope belongs to the named source and database. Use the scope matching the selected content or explicitly requested target; never choose the first source implicitly. Keep maintenance instruction discovery, reads and authorized writes in that scope. Failed or partial discovery does not prove absence.",
+    ...(sources.length ? [maintenanceGuidance("read", "CLI list")] : ["For explicitly requested bootstrap or offline help without a connected source, use the supplied CLI with ctl builtin read notion/ntn-skills-maintain. This reads packaged instructions, not a Notion projection."]),
     "A successful read returns top-level content (the body), pinned ref, and snapshot_id (the files/resource-read target). The record field is metadata. Keep JSON output so ok/error and snapshot identity can be checked.",
     "Choose from supplied metadata; otherwise search with a short name or keyword, broadening an empty query. Select one suitable record before reading its body. Discover through metadata or the CLI, not cache directories.",
     "A complete Skill body supplied by the host/Broker or a successful read is already read. Use it directly. For introductions and summaries, do not reread the entry, list its cache directory, or inspect package/agent metadata.",
@@ -829,12 +834,12 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
       : [];
     const content = [
       "<ntn-skills-guidance>",
-      "Local @Skills follow native routes; Use Notion only for extra content. Directories list candidates. Editor flags do not change Notion availability or permissions.",
-      "Reuse complete content; refresh only on requested updates. Inspection does not activate; loading authorizes no commands, writes or delegation.",
-      ...(list ? ["notion_list searches beyond the default View; failed/partial is not absence."] : []),
+      "Local @Skills stay native; use Notion only for extra content. Editor flags do not change availability or permissions.",
+      "Reuse complete content; refresh only on request. Inspection does not activate; loading authorizes no commands, writes or delegation.",
+      list ? "notion_list searches beyond the default View; failed/partial is not absence." : "Failed/partial discovery is not absence.",
       ...(read ? ["read(path) inspects. refresh:true inspects latest main without changing task pins. Keep owner/snapshot; never edit sr: handles. paths reads same-snapshot files."] : []),
-      ...(use ? ["Apply with notion_use(ref); Requires load automatically. refresh:true adopts latest on request; refresh conflicting roots together. Members are candidates. Outside Code mode."] : []),
-      ...(tools.has("bash") ? ["Maintenance: use the task's CLI (node for .js/.mjs), then ctl builtin read notion/ntn-skills-maintain; never activate the edited item."] : []),
+      ...(use ? ["notion_use(ref) applies with Requires; refresh:true adopts latest on request; refresh conflicting roots together. Members are candidates. Outside Code mode."] : []),
+      ...(read || tools.has("bash") ? [maintenanceGuidance(read ? "read" : "CLI read", list ? "notion_list" : tools.has("bash") ? "CLI list" : undefined)] : []),
       ...(tools.has("notion_ctl") ? ["notion_ctl working_set manages active roots and byte budgets; release preserves shared Requires, history and cache."] : []),
       ...(cliSources.length ? [`No task CLI? notion_ctl cli_source returns its command/scope; no execution or authorization. Choose explicitly from ${JSON.stringify(cliSources)}.`] : []),
       ...((!read || !list) && tools.has("bash") ? (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false).map(source => {
@@ -859,11 +864,14 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
     ...(prepare ? ["Use skill_prepare with exact roots and purpose inspect to inspect only those roots, or purpose use to prepare the complete Required closure for an authorized workflow. An existing preparation does not replace a skill_prepare operation explicitly requested by the current user. Members remain candidates until selected; inspection does not activate Requires or authorize execution."] : ["An explicit host Skill selection may already supply its prepared Required closure. Do not infer that inspecting one entry prepared its dependencies."]),
     ...(graph ? ["skill_graph exports this branch's fixed identities and delivery evidence. Selected versions persist across restart and compaction; use existing supplied bodies and resource refs."] : []),
     ...(prepare ? ["An explicit skill_prepare refresh:true with unfixed roots starts a new selection only after complete preparation; it does not rewrite original tool history."] : []),
+    ...(sources.length && (read || bash) ? [maintenanceGuidance(read ? "read" : "CLI read", search ? "skill_search" : bash ? "CLI list" : undefined)] : []),
     ...(bash && graph && sources.length ? [
       `For a user-requested maintenance or sync action that requires the CLI, request skill_graph with cli_source set to the exact configured source ID. Available source IDs: ${JSON.stringify(sources.map(source => source.id))}. This returns the host-local command prefix and database scope without executing anything or granting authorization. Append the requested command's arguments to that prefix; do not assume a global ntn-skills command is installed or probe package paths. Choose the intended target source explicitly, never the first source.`,
     ] : []),
     ...(fallback ? [
       "The following CLI fallback covers currently unavailable native discovery/read operations. It is not a request to run commands or check the environment. Use only the selected source and its supplied database scope; keep JSON output and check ok/error.",
+      "Failed or partial discovery does not prove absence. Packaged maintenance instructions are only an explicit offline/bootstrap route, not a response to discovery failure.",
+      ...(!sources.length ? ["With no connected source, explicitly requested bootstrap/offline help can use the supplied CLI with ctl builtin read notion/ntn-skills-maintain."] : []),
       "CLI commands cannot resolve session sr: handles. Use a canonical ref returned by that source's CLI metadata or a fixed snapshot/path from a successful preparation. If native read and prepare are unavailable, use this source's list command to obtain the same candidate's canonical ref, matching its exact record identity rather than guessing a name.",
       ...(sources.length ? sources.map(source => hostCliScope([source])) : [hostCliScope()]).map(scope => {
         const database = scope.database ? ["--database", scope.database] : [];

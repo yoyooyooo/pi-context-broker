@@ -22,11 +22,9 @@ Broker 找到 `design-review`，将对应上下文发送给模型；只要正文
 
 `ENTRY` 是现有 Skills 库入口，配置路径使用用户选定的项目路径。预览不写配置；获得授权后执行它返回的精确 `--apply` 命令，并让 Pi 重新加载同一配置文件。库验证、配置保存、Pi 连接和实际正文读取分别报告，不能互相替代。
 
-只拿到本包 CLI 路径时，用 `node /absolute/package/dist/ntn-skills.mjs ctl builtin read notion/ntn-skills-maintain --path references/setup.md` 离线取得完整上手指引；无需遍历所有 schema、搜索源码或先登录 Notion。单纯检查库使用 `ctl library inspect ENTRY`，不会新建库或连接 Pi。
+尚未连接 Notion source，或明确要求离线上手说明时，用已提供的本包 CLI 路径执行 `node /absolute/package/dist/ntn-skills.mjs ctl builtin read notion/ntn-skills-maintain --path references/setup.md`。它读取完整包内指引，无需访问 Notion。单纯检查库使用 `ctl library inspect ENTRY`，不会新建库或连接 Pi。
 
-维护现有 Skill 时，先读随包的简短维护指引，再用 `read PAGE_ID --database ENTRY --authoring --read-only` 取得固定引用。用户已明确授权该目标和完整输入时，执行 `apply RETURNED_PIN --database ENTRY --input DIR --compact`；正式 apply 本身会在派发前校验整棵树。用户要求预览、授权缺失或意图不清时，改用 `apply RETURNED_PIN --database ENTRY --input DIR --dry-run` 并停在预览，不能把预览当作写入授权。目录可同时包含修改的主文和新增 reference，未提供的文件保持。
-
-`--compact` 保留原操作 ID、固定引用、核验结果和汇总成本，只在模型可见输出中省略逐 HTTP 轨迹，默认完整输出不变。逐请求审计必须使用完整输出，或已安装的 command-output proof v1 集成：独立原始账本须与正常结束进程的 stdout 哈希和长度一致。不要为了重复核验成功 apply 而再次读取未改基线或导出；应向用户报告真实结果。
+连接完成后，按下文从选定 Notion 库读取维护工作流。当前原生创建使用 `ctl library skill create INPUT --entry ENTRY --skill-id SKILL_ID`，更新使用 `ctl library skill update TARGET --entry ENTRY --input LOCAL_FILE`。CLI 负责必要字段、支持文件、关系和核验。使用所选来源的 executable 与库范围；用户要求预览时加 `--dry-run`。读取被编辑目标用于检查，不激活其工作流。
 
 ## 为什么使用它
 
@@ -57,16 +55,20 @@ CLI 目录只返回 `records`，每条必须包含 `id/kind/locator/name/alias/d
 旧 Bundle catalog 和 session 标记通过 `node scripts/migrate-content-assets.mjs INPUT OUTPUT` 显式转换。运行时只接受 Router；转换写独立输出，保留不可变快照和资源路径。
 转换只修改 catalog 记录字段及已识别的 Broker session details，包括结构化 Router 引用和来源回执身份。正文、snapshot ID、资源路径及未知嵌套数据即使含 `bundle:` 或 `kind="bundle"` 也原样保留。混合 catalog 结构及非法 member 会拒绝；原件和已存在输出不会被覆盖。
 
-## 用随包 Skill 维护与同步
+## 维护与同步
 
-安装包始终携带三份 Skill：`$ntn-skills@builtin`、`$ntn-skills-maintain@builtin` 和 `$ntn-skills-sync@builtin`，以及完整的参考文件。只有配置了至少一个未禁用的 `type: notion` source，才会在普通 `$` 候选中显示它们；尚未连通 Notion 或完成认证也能离线读取包内正文与资源，无需先发布到 Notion 或另行安装。没有启用 Notion source 时不显示这三条 builtin 补全。
+维护已连接的库时，优先用普通 `read` 读取该 Notion source 中 `ntn-skills-maintain` 已提供的精确引用；已经完整加载的指引直接复用。默认目录尚未就绪或未包含该项时，用 `notion_list` 按名称和任务来源发现，再读取返回的引用。失败或部分发现不能证明不存在，也不能据此静默换成包内副本。指引发现、读取与已授权写入保持在同一目标 source/library，其他来源的同名项仍是独立身份。
+
+原生工具不可用时，同一任务 CLI 的普通 `list --database ENTRY --query ntn-skills-maintain` 和 `read EXACT_REF --database ENTRY` 提供这条路线。CLI 使用规范 `skill://` 引用，不能消费会话 `sr:` 句柄。已有会话继续使用选中的指令版本，只在明确要求时查看或采用新内容。
+
+安装包另带 `$ntn-skills@builtin`、`$ntn-skills-maintain@builtin` 和 `$ntn-skills-sync@builtin`，供明确的初始化或离线使用。只有配置了至少一个未禁用的 `type: notion` source，才在 `$` 候选中显示它们；尚未连通 Notion 或完成认证也能读取包内正文与资源，但这不替代已连接库的普通读取路线。没有启用 Notion source 时不显示 builtin 补全，仍可用已提供的 CLI 读取上文的初始化指引。
 
 ```text
-$ntn-skills-maintain@builtin 把这段对话中可复用的方法整理为 Skill，保存到我的 Notion 库。
-$ntn-skills-sync@builtin 检查已连接来源，预览这次需要执行的同步。
+把这段对话中可复用的方法整理为 Skill，保存到已连接的 Notion 库。
+检查选定库的来源，预览这次需要执行的同步。
 ```
 
-当前 Agent 读取选中的工作流，取得目标来源的真实 CLI argv 与数据库范围。Pi 在启用 `bash` 后，可按需发现并调用 `notion_ctl({cli_source:"SOURCE_ID"})` 获取当前机器的调用元数据；取得该信息不会执行命令或授予工作流权限。配置多个 Notion source 时须明确选择目标，不隐式取第一个。命令和资源用法由 `$ntn-skills@builtin` 提供。Notion 写入与同步沿用 CLI 自身的预览、精确目标和操作结果合同。通过配置的 CLI 观察到已验证的真实写入后，Broker 在下一次普通选择时刷新对应来源目录，新建或改名后的 Skill 无需人工刷新即可发现。已加载快照和已接受草稿保持原有归属。
+当前 Agent 读取选中的工作流，取得目标来源的真实 CLI argv 与数据库范围。Pi 在启用 `bash` 后，可按需发现并调用 `notion_ctl({cli_source:"SOURCE_ID"})` 获取当前机器的调用元数据；取得该信息不会执行命令或授予工作流权限。配置多个 Notion source 时须明确选择目标，不隐式取第一个。Notion 写入与同步沿用 CLI 自身的预览、精确目标和操作结果合同。通过配置的 CLI 观察到已验证的真实写入后，Broker 在下一次普通选择时刷新对应来源目录，新建或改名后的 Skill 无需人工刷新即可发现。已加载快照和已接受草稿保持原有归属。
 
 `/context-broker` 保留 View 选择、元数据刷新与诊断。旧 `/ntn-skills` 命令镜像、专用 `save` 和 Tern 管理面板已退役。把自然语言要求与附件留在普通 prompt 中；选择 Skill 只编辑草稿。
 

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { installHostSkills, type HostSkills, type HostSkillOptions } from "../src/host-skills";
 import { SourceError, sourceFailureMessage } from "../src/notion-source";
 import { createActivationFeedback } from "../src/activation-feedback";
-import { buildInjectedContextMessage } from "../src/index";
+import { buildCliGuidance, buildInjectedContextMessage, installSkillGuidance } from "../src/index";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { createOmpHostAdapter } from "../src/omp-host-adapter";
 import type { HostCapabilities } from "../src/host-adapter";
@@ -432,6 +432,37 @@ test("Pi keeps ordinary pending requests immediate and refreshes only its direct
     sections: expect.objectContaining({ other: null }) }), expect.objectContaining({ role: "custom", customType: "context-broker-notion-catalog" }), user, patch] })]);
   expect(JSON.stringify([stale, user, patch])).toBe(original);
   expect(f.calls).toEqual([]);
+  expect(f.resourceReads).toEqual([]);
+});
+
+test("cold maintenance guidance uses scoped Notion discovery before its default directory arrives", async () => {
+  const f = await fixture(true), metadata = Promise.withResolvers<Awaited<ReturnType<HostSkillOptions["getRecords"]>>>();
+  f.api.getActiveTools = () => ["read", "notion_list", "notion_use", "bash"];
+  const { search } = await f.install(undefined, { getRecords: () => metadata.promise });
+  installSkillGuidance(f.api, { sources: f.sources }, { host: "pi" });
+  const user = { role: "user", content: "Add a Skill to this Notion library." };
+  const before = await f.emit("before_agent_start", { prompt: user.content, systemPrompt: "Native instructions" }, f.ctx);
+  const expected = buildCliGuidance({ sources: f.sources }, f.api.getActiveTools());
+  expect(before).toContainEqual({ message: expected });
+  const guidance: AgentMessage = { ...expected, role: "custom" };
+  const messages = [{ role: "system", content: "Native instructions" }, user, guidance];
+  const pending = await catalogProjection(f, messages);
+  expect(pending.catalog).toContain("Notion metadata is pending");
+  expect(sourceMessageText(guidance.content)).toContain("absent/pending: notion_list there");
+  expect(sourceMessageText(guidance.content)).toContain("task's source/library");
+  expect(sourceMessageText(guidance.content)).not.toContain("ctl builtin read");
+  metadata.resolve({ records: [{ ...f.root, name: "ntn-skills-maintain", alias: "ntn-skills-maintain",
+    normalizedName: "ntn-skills-maintain", body: undefined, preparationBinding: undefined, defaultDiscovery: true }], failures: [] });
+  const listed = await search.execute("maintenance-discovery", { query: "ntn-skills-maintain", source: "controlled" }, undefined, undefined, f.ctx);
+  const ready = await catalogProjection(f, messages);
+  expect(ready.catalog).toContain('name="ntn-skills-maintain"');
+  expect(ready.catalog).toContain('source="controlled"');
+  const ref = /location="(sr:C[A-Za-z0-9_-]+)"/.exec(ready.catalog)?.[1];
+  if (!ref) throw new Error("Expected the scoped maintenance candidate's short reference");
+  expect(sourceMessageText(listed.content)).toContain(ref);
+  expect(ready.catalog).not.toContain("metadata is pending");
+  expect(f.calls).toEqual([]);
+  expect(f.persisted).toEqual([]);
   expect(f.resourceReads).toEqual([]);
 });
 

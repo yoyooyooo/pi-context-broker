@@ -87,8 +87,8 @@ test("Pi guidance uses list, native read and use without exposing machine proof 
   for (const legacy of ["skill_search", "skill_prepare", "skill_graph", "<cli", "purpose use", "graph_lock"])
     expect(guidance).not.toContain(legacy);
   expect(guidance).toContain("authorizes no commands, writes or delegation");
-  expect(guidance).toContain("Local @Skills follow native routes");
-  expect(guidance).toContain("Use Notion only for extra content");
+  expect(guidance).toContain("Local @Skills stay native");
+  expect(guidance).toContain("use Notion only for extra content");
 });
 
 test("an empty metadata page retains incomplete or unknown source coverage", async () => {

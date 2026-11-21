@@ -26,9 +26,9 @@ test("native Pi guidance is a bounded routing contract, not a duplicated CLI tut
   expect(guidance).not.toContain("Zero tool calls/body reads");
   expect(guidance).toContain("refresh:true inspects latest main without changing task pins");
   expect(guidance).toContain("refresh:true adopts latest on request");
-  expect(guidance).toContain("Reuse complete content; refresh only on requested updates");
+  expect(guidance).toContain("Reuse complete content; refresh only on request");
   expect(guidance).toContain("read(path) inspects");
-  expect(guidance).toContain("Apply with notion_use(ref); Requires load automatically");
+  expect(guidance).toContain("notion_use(ref) applies with Requires");
   for (const boundary of ["candidates", "Local @Skills", "availability", "read", "notion_use", "Requires", "Members", "snapshot", "sr:", "authorize", "Code mode"])
     expect(guidance).toContain(boundary);
   for (const extra of ["<cli", "--query", "maxNodes", "/configured", "next_cursor", "tool_search", "doctor", "notion-skill-owner"])
@@ -48,17 +48,36 @@ test("native capability fallback alone adds exact CLI scope without teaching una
   expect(text(["notion_list", "notion_use"])).not.toContain("<cli");
 });
 
-test("normal Pi maintenance routes to the explicit task CLI without advertising commands when shell is unavailable", () => {
+test("maintenance reads the connected Notion workflow before any management command", () => {
   const routed = text(["read", "notion_list", "notion_use", "bash"]);
-  expect(routed).toContain("Maintenance: use the task's CLI");
-  expect(routed).toContain("ctl builtin read notion/ntn-skills-maintain");
-  expect(routed).toContain("never activate the edited item");
-  expect(routed).toContain("node for .js/.mjs");
+  expect(routed).toContain("read ntn-skills-maintain's supplied Notion ref");
+  expect(routed).toContain("task's source/library");
+  expect(routed).toContain("absent/pending: notion_list there");
+  expect(routed).toContain("failed/partial is not absence");
+  expect(routed).toContain("Never activate the edited item");
+  expect(routed).toContain("Builtins: explicit offline/bootstrap only");
+  expect(routed).not.toContain("ctl builtin read");
   expect(routed).not.toContain("/configured");
   expect(routed).not.toContain("/must-not-appear");
   const readonly = text(["read", "notion_list", "notion_use"]);
-  expect(readonly).not.toContain("Maintenance:");
+  expect(readonly).toContain("read ntn-skills-maintain's supplied Notion ref");
   expect(readonly).not.toContain("ctl builtin read");
+});
+
+test("maintenance preserves native capability limits and explicit offline/bootstrap fallback", () => {
+  expect(text(["notion_list", "notion_use", "bash"])).toContain("Maintenance: CLI read");
+  expect(text(["read", "notion_use", "bash"])).toContain("absent/pending: CLI list there");
+  expect(text(["read", "notion_use"])).toContain("report unavailable discovery");
+  expect(text(["notion_list", "notion_use"])).not.toContain("Maintenance:");
+  expect(text(["bash"])).toContain("task's source/library");
+  expect(text(["bash"])).not.toContain("ctl builtin read");
+  for (const tools of [undefined, ["bash"]]) {
+    const bootstrap = String(buildCliGuidance({ sources: [] }, tools).content);
+    expect(bootstrap).toContain("bootstrap");
+    expect(bootstrap).toContain("offline");
+    expect(bootstrap).toContain("ctl builtin read notion/ntn-skills-maintain");
+    expect(bootstrap).not.toContain("ntn-skills-maintain's supplied Notion ref");
+  }
 });
 
 test("deferred native management exposes only exact enabled source IDs when a CLI must be located", async () => {
@@ -212,8 +231,8 @@ test("Notion source flags are scoped to native installations without rewriting s
   const projected = await h.project("context", history);
   const guidance = guidanceText(projected);
   expect(guidance).toContain("beyond the default View");
-  expect(guidance).toContain("Editor flags do not change Notion availability or permissions");
-  expect(guidance).toContain("Local @Skills follow native routes; Use Notion only for extra content");
+  expect(guidance).toContain("Editor flags do not change availability or permissions");
+  expect(guidance).toContain("Local @Skills stay native; use Notion only for extra content");
   expect(guidance).toContain("loading authorizes no commands, writes or delegation");
   expect(guidance).toContain("read(path) inspects.");
   expect(guidance).toContain("Inspection does not activate;");
