@@ -131,6 +131,7 @@ export function validateAgentAssertion(assertion) {
     completed: [[], []],
     'tool-attempts': [['tool', 'min', 'max'], ['tool']],
     'forbidden-tool-input': [['tool', 'facts'], ['tool', 'facts']],
+    'source-network-attempts': [['min', 'max'], []],
     body: [['body', 'occurrences', 'receiptRequired', 'scope'], ['body', 'occurrences']],
     selection: [['object', 'version'], ['object']],
     'selection-any': [['objects'], ['objects']],
@@ -147,8 +148,8 @@ export function validateAgentAssertion(assertion) {
     string(assertion.tool, 'forbidden-tool-input.tool');
     strings(assertion.facts, 'forbidden-tool-input.facts');
   }
-  if (assertion.kind === 'tool-attempts') {
-    string(assertion.tool, 'expect.tool');
+  if (assertion.kind === 'tool-attempts' || assertion.kind === 'source-network-attempts') {
+    if (assertion.kind === 'tool-attempts') string(assertion.tool, 'expect.tool');
     assert.ok(assertion.min !== undefined || assertion.max !== undefined, 'tool-attempts requires a boundary');
     for (const key of ['min', 'max']) if (assertion[key] !== undefined)
       assert.ok(Number.isSafeInteger(assertion[key]) && assertion[key] >= 0, 'tool-attempts.' + key + ' must be a nonnegative integer');
@@ -197,6 +198,8 @@ export function validateAgentEvent(event) {
     'remove-owned': [['object'], ['object']],
     'restore-projection': [['object'], ['object']],
     'trash-projection': [['object'], ['object']],
+    'interrupt-source-write': [['object', 'maxRequests'], ['object']],
+    'resume-source-write': [['object'], ['object']],
     readback: [['object', 'receipt'], ['object', 'receipt']],
     restart: [['mode'], ['mode']],
     fork: [['turn'], ['turn']],
@@ -205,6 +208,8 @@ export function validateAgentEvent(event) {
   }[event.kind];
   assert.ok(shape, 'before: unsupported event ' + event.kind);
   keys(event, ['kind', ...shape[0]], ['kind', ...shape[1]], 'before.' + event.kind);
+  if (event.kind === 'interrupt-source-write' && event.maxRequests !== undefined)
+    assert.ok(Number.isSafeInteger(event.maxRequests) && event.maxRequests > 0, 'Source interruption requires a positive request budget');
   if (event.object !== undefined) id(event.object, 'before.object');
   if (event.version !== undefined) version(event.version, 'before.version');
   if (event.kind === 'set-enabled') {
@@ -257,8 +262,12 @@ export function validateAgentCorpus(corpus) {
       assert.ok(!turns.has(turn.id), scenario.id + ': duplicate turn ' + turn.id);
       for (const event of turn.before ?? []) {
         if (event.kind === 'fork') assert.ok(turns.has(event.turn), scenario.id + ': fork must name an earlier completed turn');
-        if (event.object !== undefined) {
+        if (event.kind === 'interrupt-source-write' && event.maxRequests !== undefined)
+    assert.ok(Number.isSafeInteger(event.maxRequests) && event.maxRequests > 0, 'Source interruption requires a positive request budget');
+  if (event.object !== undefined) {
           assert.ok(aliases.has(event.object), scenario.id + ': unknown event object ' + event.object);
+          if (['interrupt-source-write', 'resume-source-write', 'trash-projection', 'restore-projection'].includes(event.kind))
+            assert.equal(aliases.get(event.object).placement, 'source', scenario.id + ': Source events require a Source object');
           if (event.version !== undefined) assert.ok(own(aliases.get(event.object).versions, event.version), scenario.id + ': unknown event version');
         }
       }

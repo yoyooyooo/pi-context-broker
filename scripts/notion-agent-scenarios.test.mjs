@@ -68,6 +68,8 @@ test('typos, impossible limits and unsupported event structures fail before a mo
     { kind: 'tool-attempts', tool: 'notion_use' },
     { kind: 'tool-attempts', tool: 'notion_use', min: 2, max: 0 },
     { kind: 'tool-attempts', tool: 'notion_use', max: -1 },
+    { kind: 'source-network-attempts', max: -1 },
+    { kind: 'source-network-attempts' },
     { kind: 'body', body: 'a', occurrences: 0, unknown: true },
     { kind: 'body', body: 'a', occurrences: 1, scope: 'historical' },
     { kind: 'output', all: ['same'], none: ['same'] },
@@ -82,8 +84,10 @@ test('typos, impossible limits and unsupported event structures fail before a mo
     { kind: 'restart', mode: 'pretend' },
     { kind: 'publish-version', object: 'remote', version: 'B', command: 'anything' },
     { kind: 'fault', object: 'remote', mode: 'disable-all-validation' },
+    { kind: 'interrupt-source-write', object: 'remote', maxRequests: 0 },
   ]) assert.throws(() => validateAgentEvent(value));
   assert.doesNotThrow(() => validateAgentAssertion({ kind: 'tool-attempts', tool: 'notion_use', max: 0 }));
+  assert.doesNotThrow(() => validateAgentAssertion({ kind: 'source-network-attempts', max: 0 }));
 });
 
 test('corpus checks logical references, profile preconditions and real file structure', () => {
@@ -133,7 +137,8 @@ test('the checked-in corpus keeps required journeys, real environment profiles a
     'mixed-native-slash', 'mixed-broker-explicit', 'cold-maintenance-consultation', 'connected-maintenance-filtered-view',
     'explicit-offline-bootstrap', 'lifecycle-inspect-adopt', 'lifecycle-resume-fork-compact', 'lifecycle-recovery-failure',
     'lifecycle-shared-requires', 'lifecycle-enabled-default-context', 'management-native-crud',
-    'management-register-existing', 'management-description-flags-resource', 'management-upstream-delete-restore'])
+    'management-register-existing', 'management-description-flags-resource', 'management-upstream-delete-restore',
+    'management-source-applying-resume', 'cold-maintenance-unauthorized'])
     assert.ok(required.some(scenario => scenario.id === id), 'Missing agreed user journey ' + id);
   const local = required.find(scenario => scenario.id === 'mixed-explicit-global');
   assert.deepEqual(local.profiles, ['daily']);

@@ -91,7 +91,7 @@ fixture 包含有限 kind、对象/版本/完整文件树、公开业务材料�
 | version / scope | 1 / notion-agent-workflow |
 | scenarioFile / scenarioId / profile | 校验后的长期语料、选中 case、daily 或 no-native-skills |
 | bindingsFile | 本轮真实 fixture 绑定 JSON |
-| brokerRoot / cliRoot | 实际配对包目录，不是任意同版本副本 |
+| brokerRoot / cliRoot | 当前 next checkout 的 packages/context-broker 与 packages/cli；CLI checkout 提供同一份 verification 索引，不用任意同版本 npm 副本代替 |
 | sourceId / database / packageIndex | 正常配置中所选 Notion source、库与真实 Broker 注册位置 |
 | evidenceRoot | 本轮自有原始结果根 |
 | model / thinkingLevel | magpie/group/worker / high |
@@ -107,9 +107,9 @@ daily 正常加载全局与项目 native Skills、其他扩展/MCP；no-native-s
 
 每轮只含 id、自然 prompt、可选 before 与 expect。prompt 仅展开双花括号中的公开字符串。binder 校验键；未来出版版本的真实 scope/snapshot/version 在事件完成后才绑定。bindAgentTurn 每轮使用当时的真实状态，不将逻辑 A/B 标签当成真实哈希。
 
-有限事件由 validateAgentEvent 校验：发布指定版本、调整启停、删除自有对象、独立读回、删除/恢复阅读投影，以及真实 restart/fork/compact 和自有故障。事件必须由真实命令或 RPC 完成，有独立读回屏障。任意 shell、未知字段、通用循环、动态生成的用户救援都不属于事件。
+有限事件由 validateAgentEvent 校验：发布指定版本、调整启停、删除自有对象、独立读回、删除/恢复阅读投影、真实 Source writer 预算中断及原 operation 恢复，以及真实 restart/fork/compact 和自有故障。事件必须由真实命令或 RPC 完成，有独立读回屏障。任意 shell、未知字段、通用循环、动态生成的用户救援都不属于事件。
 
-fork 从指定先前用户 turn 之前分叉；保留此前有效分支。compact 使用真正的公开操作，不手写 JSONL 或替换成新空会话。失败注入只能操作自有 Store/对象；必须保留发生事实及恢复范围。
+fork 从指定先前用户 turn 之前分叉；保留此前有效分支。compact 使用真正的公开操作，不手写 JSONL 或替换成新空会话。失败注入只能操作自有 Store/对象；必须保留发生事实及恢复范围。Source applying 旅程从尚不存在的自有 Source 开始：公开 writer 在真实请求预算内中断，独立确认相同 Operation 和 applying 后才提交模型请求；随后用同一声明与 operation 恢复并读回完整 A。它不宣称旧 pin 或 A→B 行为，也不能靠手工写状态伪造中断。
 
 私有 expect 使用有限 kind：
 
@@ -118,6 +118,8 @@ fork 从指定先前用户 turn 之前分叉；保留此前有效分支。compac
 | completed | 请求实际发送、provider 完成、非空有效响应 |
 | visibility | 精确 native-discovery、当前 model-catalog 或真实 source-pending 时序 |
 | tool-attempts | 指定工具真实尝试的上下界，失败与撤回也计入 |
+| forbidden-tool-input | 实际工具参数不得触及声明的安装包路径或命令；失败尝试也计，不能按同名目录误伤合法 Notion Git 缓存 |
+| source-network-attempts | 完整 source 观测中的实际 Notion HTTP 尝试；未知 CLI 子进程流量保持 blocked，不能以语义写为零推断没有联网 |
 | body / resource | 当前请求中的完整主文/资源及精确归属 |
 | selection / selection-any | 指定逻辑对象/版本或明确允许的等价集合 |
 | output / clarification | 必要业务事实、禁止事实或预写澄清主题，不比较整段标准答案 |
