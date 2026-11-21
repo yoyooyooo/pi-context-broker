@@ -245,6 +245,8 @@ export async function runAgentWorkflow(config) {
     segments: [], events: [], turns: scenario.turns.map(turn => ({ id: turn.id, status: 'not_run' })), retestOf: config.retestOf ?? null };
   await save(join(evidence, 'config.json'), config); await save(join(evidence, 'initial-bindings.json'), bindings); await save(join(evidence, 'initial-state.json'), { cache: 'cold', stateRoot, ownedStateRoot, sourceCache, oracle: 'independent', createdAt: result.startedAt });
   await save(join(evidence, 'started.json'), result);
+  const implementation = { version: 1, candidateArtifact: await identity(join(evidence, 'started.json')),
+    configArtifact: await identity(join(evidence, 'config.json')) };
   let rpc, segment, currentSession, segmentIndex = 0;
   const forkBindings = new Map();
   const start = async resume => {
@@ -359,7 +361,7 @@ export async function runAgentWorkflow(config) {
       const observed = { costs: slice(await rows(segment.observer.files.cost), startedNs, endedNs), transport: slice(await rows(segment.observer.files.transport), startedNs, endedNs),
         tasks: slice(await rows(segment.observer.files.tasks), startedNs, endedNs), source: await rows(segment.observer.files.source),
         session: native, selection: snapshot, selectionSnapshots: [], readbacks: {}, sourceCoverage: false,
-        visibility: { nativeCommands: segment.commandsArtifact, source: sourceObservation } };
+        visibility: { nativeCommands: segment.commandsArtifact, source: sourceObservation }, implementation };
       for (const payload of observed.tasks.filter(event => event.phase === 'provider_payload')) {
         assert.ok(payload.branch); const actual = await identity(payload.branch.path); assert.equal(actual.sha256, payload.branch.sha256);
         observed.selectionSnapshots.push({ payloadSha256: payload.sha256, selection: selection(await json(actual.path)) });

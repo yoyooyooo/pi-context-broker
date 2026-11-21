@@ -867,6 +867,31 @@ test('binary resources keep exact identity without becoming UTF-8 model text or 
   assert.throws(() => observeCandidateTask(api, { ...options, bodyFiles: [{ ...binary, sha256: '0'.repeat(64) }] }), /Frozen body bytes changed/u);
 });
 
+test('interaction provenance snapshots actual registered files without altering the tool or its inputs', () => {
+  const handlers = new Map(), writes = [], saved = new Map(), baseDir = '/installed/ask-user';
+  const source = { path: baseDir + '/src/index.ts', baseDir, origin: 'package', source: baseDir };
+  const sourceBytes = new Map(['package.json', 'src/index.ts', 'src/prompt.ts', 'src/notify.ts'].map(path =>
+    [baseDir + '/' + path, Buffer.from(path === 'package.json' ? '{"name":"@yoyo/ask-user-pi"}' : path)]));
+  const fs = { openSync: () => 1, readFileSync: path => sourceBytes.get(path), existsSync: path => saved.has(path),
+    writeFileSync: (path, bytes) => { assert.ok(path.startsWith('/owned/tool-results/')); saved.set(path, bytes); },
+    writeSync: (_fd, line) => writes.push(JSON.parse(line)), closeSync: () => {} };
+  observeCandidateTask({ on: (name, fn) => handlers.set(name, fn), getAllTools: () => [{ name: 'ask_user', sourceInfo: source }] },
+    { fs, crypto: { createHash }, output: '/owned/tasks.jsonl', bodyFiles: [], inspectPayload: candidatePayloadBodies, toolResultDirectory: '/owned/tool-results' });
+  const event = { toolName: 'ask_user', toolCallId: 'actual-call', input: { question: 'Which source?' } }, before = structuredClone(event);
+  handlers.get('tool_call')(event, { mode: 'rpc' });
+  assert.deepEqual(event, before);
+  const result = writes.at(-1); assert.equal(result.toolImplementation.runtimeMode, 'rpc');
+  assert.equal(result.toolImplementation.files.length, 4);
+  for (const file of result.toolImplementation.files) {
+    assert.equal(file.artifact.sha256, sha(sourceBytes.get(file.path)));
+    assert.deepEqual(saved.get(file.artifact.path), sourceBytes.get(file.path));
+  }
+  sourceBytes.set(baseDir + '/package.json', Buffer.from('{"name":"different-extension"}'));
+  handlers.get('tool_call')({ ...event, toolCallId: 'other-call' }, { mode: 'rpc' });
+  assert.equal(writes.at(-1).toolImplementation, undefined);
+  handlers.get('session_shutdown')({}); assert.equal(writes.at(-1).complete, true);
+});
+
 test('normal-management state reuses only the existing process roots and never transfers cleanup or resume ownership', async t => {
   const scratch = await mkdtemp('/tmp/notion-existing-state-proof-');
   t.diagnostic(JSON.stringify({ ownedScratch: [scratch], cleanup: 'Retained for evidence-first system Trash cleanup.' }));
