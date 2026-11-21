@@ -541,6 +541,7 @@ test('unsupported assertions remain explicit instead of becoming empty success',
 
 test('newly published body can be counted from the bound raw request after startup', async () => {
   const f = fixture({ bodies: { 'remote@B/SKILL.md': 'newly published business text' } });
+  f.bindRemote('remote', 'B', 'remote@B/SKILL.md');
   f.observed.tasks[0].bodies = [];
   const result = await f.run([{ kind: 'body', body: 'remote@B/SKILL.md', occurrences: 1 }]);
   assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
@@ -935,4 +936,39 @@ test('a resource receipt detached from its actual tool message cannot prove deli
   const result = await f.run([{ kind: 'resource', object: 'remote', version: 'A', path: 'rates.md' }]);
   assert.equal(result.status, 'blocked');
   assert.ok(result.assertions.some(row => row.code === 'WRONG_RESOURCE_OWNER'));
+});
+
+test('body delivery counts exclude historical creation inputs but retain raw exposure metrics', async () => {
+  const key = 'native@A/SKILL.md', text = 'same complete creation and source bytes';
+  const f = fixture({ bodies: { [key]: text } });
+  f.bindRemote('native', 'A', key);
+  rewritePayloads(f, payload => payload.messages.unshift({ role: 'tool', tool_call_id: 'historical-create-input', content: text }));
+  const result = await f.run([{ kind: 'body', body: key, occurrences: 1 }]);
+  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+  assert.deepEqual(result.assertions.find(row => row.kind === 'body').details.counts.map(row =>
+    [row.actual, row.rawOccurrences]), [[1, 2]]);
+  assert.equal((await f.run([{ kind: 'body', body: key, occurrences: 1, receiptRequired: false }])).status, 'failed');
+  assert.equal((await f.run([{ kind: 'body', body: key, occurrences: 0 }])).status, 'failed');
+});
+
+test('body delivery counts use exact owner and version even when main bytes are equal', async () => {
+  const f = fixture({ bodies: { 'remote@A/SKILL.md': 'same main bytes', 'remote@B/SKILL.md': 'same main bytes' } });
+  const a = f.bindRemote('remote', 'A', 'remote@A/SKILL.md');
+  f.bindRemote('remote', 'B', 'remote@B/SKILL.md');
+  const expected = [{ kind: 'body', body: 'remote@A/SKILL.md', occurrences: 1 }];
+  assert.equal((await f.run(expected)).status, 'passed');
+  rewritePayloads(f, payload => { payload.messages = payload.messages.filter(message => !String(message.content).includes(a.snapshot_id)); });
+  const replaced = await f.run(expected);
+  assert.equal(replaced.status, 'blocked');
+  assert.equal(replaced.assertions.find(row => row.kind === 'body').details.actual, 0);
+  assert.equal(replaced.assertions.find(row => row.kind === 'body').details.rawOccurrences, 1);
+});
+
+test('two actual deliveries of the same logical file remain a duplicate', async () => {
+  const f = fixture({ bodies: { 'remote@A/SKILL.md': 'complete main bytes' } });
+  f.bindRemote('remote', 'A', 'remote@A/SKILL.md');
+  rewritePayloads(f, payload => payload.messages.push({ ...payload.messages.at(-1) }));
+  const result = await f.run([{ kind: 'body', body: 'remote@A/SKILL.md', occurrences: 1 }]);
+  assert.equal(result.status, 'failed');
+  assert.equal(result.assertions.find(row => row.kind === 'body').details.actual, 2);
 });

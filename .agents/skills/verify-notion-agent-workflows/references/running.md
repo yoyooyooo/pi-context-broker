@@ -153,3 +153,9 @@ readAgentFixture(bindings, alias, {version, key, state, properties, projection})
 checkAgentContractCoverage 只读取配对 CLI 的当前索引，检查每个 C 声明都有正确 T 映射。它不把一个自然 case 提升为整个 T 的证明。每个 T 可生成一张原有薄回执，raw_evidence 指向同一真实运行；实际成本按运行身份去重。
 
 全批报告逐项列出所有 required 场景/profile、所选 holdout、首败与复验。各自报告准备、发现、模型、CLI、当前实际交付与真实效果，保留 failed/blocked/not_run。记录哪一部分只是结构检查、作者实跑或独立 Agent 使用；未运行的真实入口不能从同一 hash、旧成绩或其他层级外推。
+
+### Body counts and logical delivery
+
+A positive `body` assertion with the default `receiptRequired: true` counts complete deliveries of the exact bound owner, scope, snapshot, version and file path. For a local Skill it counts the exact successful local read response. Creation inputs retained in history and byte-identical files belonging to another owner or version do not count as that delivery. Two deliveries of the same logical file still fail an expected count of one.
+
+The report also retains independent whole-payload text counts for cost and exposure analysis. `occurrences: 0` always prohibits the complete bytes throughout all requests in the turn, regardless of receipt. Use `receiptRequired: false` when the contract specifically concerns raw text occurrence counts. Selection and resource assertions continue to require their own exact receipts and active task graph.
