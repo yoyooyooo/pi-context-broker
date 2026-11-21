@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import { access, mkdir, mkdtemp, realpath, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { blockShape, fixtureTextMeaning, readAgentFixture, runAgentFixtureEvent, cleanupAgentFixtures, prepareAgentFilteredView } from './notion-agent-fixtures.mjs';
+import { blockShape, fixtureTextMeaning, readAgentFixture, runAgentFixtureEvent, cleanupAgentFixtures, prepareAgentFilteredView, prepareAgentFixtures } from './notion-agent-fixtures.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const exists = path => access(path).then(() => true, () => false);
@@ -287,4 +287,140 @@ test('Source lifecycle events require an owned Source and a verified pending int
   bindings.private.fixture.objects.selected = { id: 'selected', placement: 'source', currentVersion: 'absent' };
   await assert.rejects(runAgentFixtureEvent({ kind: 'resume-source-write', object: 'selected' }, { bindings }), /verified real interruption/u);
   assert.equal(bindings.private.fixture.objects.selected.sourceOperation, undefined);
+});
+
+// This finite process/API double checks fixture orchestration, not live Notion acceptance.
+async function preparationHarness(t) {
+  const { root } = await fixture(t), statePath = join(root, 'public-cli-state.json'), cliPath = join(root, 'public-cli.mjs');
+  const entry = '11111111-1111-4111-8111-111111111111';
+  const ids = Object.fromEntries(['Name', 'Description', 'Skill ID', 'Current State', 'Operation', 'Enabled', 'Default Context', 'Requires', 'Members'].map(key => [key, key]));
+  const library = { library_id: 'unit-library', skills: { database_id: entry, data_source_id: entry, property_ids: ids },
+    files: { data_source_id: '22222222-2222-4222-8222-222222222222', property_ids: { Skill: 'Skill' } },
+    records: { data_source_id: '33333333-3333-4333-8333-333333333333', property_ids: { Skill: 'Skill' } } };
+  await writeJson(statePath, { library, records: [], calls: [] });
+  await writeFile(cliPath, `import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+const path=${JSON.stringify(statePath)},state=JSON.parse(await readFile(path,'utf8')),args=process.argv.slice(2);
+const one=key=>args[args.indexOf(key)+1],many=key=>args.flatMap((arg,i)=>arg===key?[args[i+1]]:[]);
+state.calls.push(args);
+let value;
+if(args[0]==='ctl'&&args[2]==='inspect')value={ok:true,library:state.library};
+else if(args[0]==='ctl'&&args[2]==='skill'){
+  const action=args[3];assert.ok(['create','update'].includes(action));
+  const requires=many('--requires'),members=many('--members');
+  for(const id of [...requires,...members])assert.ok(state.records.some(row=>row.id===id),'Relation target is not physically ready');
+  if(action==='create'){
+    const record={id:'00000000-0000-4000-8000-'+String(state.records.length+1).padStart(12,'0'),name:one('--name'),description:one('--description'),skillId:one('--skill-id'),content:await readFile(join(args[4],'SKILL.md'),'utf8'),requires,members,enabled:args.includes('--enabled')?one('--enabled')==='true':true,defaultContext:args.includes('--default-context')?one('--default-context')==='true':false};
+    state.records.push(record);value={ok:true,page_id:record.id};
+  }else{
+    const record=state.records.find(row=>row.id===args[4]);assert.ok(record);
+    if(args.includes('--requires'))record.requires=requires;
+    if(args.includes('--members'))record.members=members;
+    value={ok:true,page_id:record.id};
+  }
+}else if(args[0]==='read'){
+  const record=state.records.find(row=>row.id===args[1]);assert.ok(record);assert.equal(record.enabled,true,'Disabled content cannot be consumed');
+  value={ok:true,has_more:false,path:'SKILL.md',content:record.content,ref:'unit:'+record.id,snapshot_id:'snapshot:'+record.id,version_id:'version:'+record.id,scope:'unit-scope',record:{id:record.skillId,locator:{page_id:record.id,skill_id:record.skillId}},effects:{remote_writes:'none'}};
+}else if(args[0]==='files')value={ok:true,files:[{path:'SKILL.md',mode:'100644'}]};
+else throw Error('Unexpected CLI request '+JSON.stringify(args));
+await writeFile(path,JSON.stringify(state));process.stdout.write(JSON.stringify(value)+'\\n');
+`);
+  const previousFetch = globalThis.fetch, previousToken = process.env.NOTION_API_TOKEN, networkCalls = [];
+  process.env.NOTION_API_TOKEN = 'fixture-unit-test-token';
+  globalThis.fetch = async (url, options) => {
+    const pathname = new URL(url).pathname, state = await json(statePath);
+    networkCalls.push({ pathname, method: options.method });
+    if (pathname.startsWith('/v1/pages/')) {
+      assert.equal(options.method, 'GET'); const row = state.records.find(record => pathname.endsWith(record.id)); assert.ok(row);
+      const text = (name, value) => ({ id: name, rich_text: [{ plain_text: value }] });
+      return Response.json({ id: row.id, url: 'https://www.notion.so/' + row.id, properties: {
+        Name: { id: 'Name', title: [{ plain_text: row.name }] }, Description: text('Description', row.description),
+        'Skill ID': text('Skill ID', row.skillId), 'Current State': text('Current State', 'ready'), Operation: text('Operation', ''),
+        Enabled: { id: 'Enabled', checkbox: row.enabled }, 'Default Context': { id: 'Default Context', checkbox: row.defaultContext },
+        Requires: { id: 'Requires', relation: row.requires.map(id => ({ id })) }, Members: { id: 'Members', relation: row.members.map(id => ({ id })) },
+      } });
+    }
+    assert.ok(pathname.endsWith('/query') || pathname.endsWith('/children'));
+    if (pathname.includes(library.files.data_source_id)) return Response.json({ results: state.files ?? [], has_more: false });
+    if (pathname.includes(library.records.data_source_id)) return Response.json({ results: state.resources ?? [], has_more: false });
+    return Response.json({ results: [], has_more: false });
+  };
+  t.after(() => { globalThis.fetch = previousFetch; if (previousToken === undefined) delete process.env.NOTION_API_TOKEN; else process.env.NOTION_API_TOKEN = previousToken; });
+  return { root, statePath, networkCalls, options: { runId: 'preparation-test', root: join(root, 'prepared'), entry, cli: cliPath } };
+}
+
+const managedObject = (id, relations = {}) => ({ id, name: id, description: 'Business instructions for ' + id,
+  placement: 'notion', initial: 'A', versions: { A: { files: [{ path: 'SKILL.md', content: '# ' + id + '\n\nFollow the business rule.\n' }], ...relations } } });
+
+test('preparation creates a forward Member and Requires before their consumer through public CLI arguments', async t => {
+  const harness = await preparationHarness(t);
+  const recipe = { kind: 'versioned-graph', objects: [managedObject('required'), managedObject('consumer', { requires: ['required'], members: ['optional'] }), managedObject('optional')] };
+  const bindings = await prepareAgentFixtures({ ...harness.options, recipe });
+  const state = await json(harness.statePath), creates = state.calls.filter(args => args[3] === 'create');
+  assert.equal(creates.length, 3);
+  assert.deepEqual(state.records.map(row => row.name.split('-').slice(0, -1).join('-')), ['required', 'optional', 'consumer']);
+  const consumer = state.records.find(row => row.skillId.endsWith('-consumer'));
+  assert.deepEqual(consumer.requires, [bindings.private.objects.required.pageId]);
+  assert.deepEqual(consumer.members, [bindings.private.objects.optional.pageId]);
+  assert.equal(state.calls.some(args => args[3] === 'update'), false, 'An acyclic graph needs no second write phase');
+  assert.equal(bindings.private.fixture.observedReadbacks.consumer.status, 'passed');
+});
+
+test('Members cycles use a second public write phase without weakening Requires ordering', async t => {
+  for (const kind of ['members-only', 'members-and-requires']) await t.test(kind, async t => {
+    const harness = await preparationHarness(t);
+    const left = kind === 'members-only' ? { members: ['right'] } : { requires: ['right'] };
+    const recipe = { kind: 'versioned-graph', objects: [managedObject('left', left), managedObject('right', { members: ['left'] })] };
+    const bindings = await prepareAgentFixtures({ ...harness.options, recipe }), state = await json(harness.statePath);
+    const updates = state.calls.filter(args => args[3] === 'update');
+    assert.equal(updates.length, 1); assert.equal(updates[0].includes('--requires'), false, 'Deferred Members must not replace Requires');
+    assert.ok(state.calls.findIndex(args => args[0] === 'read') > state.calls.findIndex(args => args[3] === 'update'),
+      'Version readbacks must observe the completed graph');
+    for (const object of recipe.objects) {
+      const record = state.records.find(row => row.skillId.endsWith('-' + object.id));
+      for (const field of ['requires', 'members']) assert.deepEqual(record[field],
+        (object.versions.A[field] ?? []).map(alias => bindings.private.objects[alias].pageId));
+      assert.equal(bindings.private.fixture.observedReadbacks[object.id].status, 'passed');
+    }
+  });
+});
+
+test('invalid initial relation graphs fail before inspecting or creating a remote object', async t => {
+  const cases = [
+    { name: 'requires-cycle', objects: [managedObject('left', { requires: ['right'] }), managedObject('right', { requires: ['left'] })], code: 'AGENT_FIXTURE_RELATION_CYCLE' },
+    { name: 'self-member', objects: [managedObject('left', { members: ['left'] })], code: 'AGENT_FIXTURE_RELATION_INVALID' },
+    ...['absent', 'unmanaged', 'local', 'disabled'].map(name => {
+      const target = managedObject('target');
+      if (['absent', 'unmanaged'].includes(name)) target.initial = name;
+      if (name === 'local') target.placement = 'project';
+      if (name === 'disabled') target.versions.A.enabled = false;
+      return { name, objects: [managedObject('owner', { members: ['target'] }), target], code: 'AGENT_FIXTURE_RELATION_INVALID' };
+    }),
+  ];
+  for (const example of cases) await t.test(example.name, async t => {
+    const harness = await preparationHarness(t);
+    await assert.rejects(prepareAgentFixtures({ ...harness.options, recipe: { kind: 'versioned-graph', objects: example.objects } }), error => error.code === example.code);
+    assert.equal(await exists(harness.options.root), false, 'Reject an impossible setup before creating ownership or changing state');
+    assert.deepEqual((await json(harness.statePath)).calls, []);
+  });
+});
+
+test('disabled preparation verifies metadata and owned child identities without consuming a body version', async t => {
+  const harness = await preparationHarness(t), object = managedObject('off', { enabled: false, defaultContext: true });
+  object.versions.A.files.push({ path: 'references/details.md', content: '# Supporting details\n' });
+  const state = await json(harness.statePath);
+  state.files = [{ id: '44444444-4444-4444-8444-444444444444' }];
+  state.resources = [{ id: '55555555-5555-4555-8555-555555555555' }];
+  await writeJson(harness.statePath, state);
+  const bindings = await prepareAgentFixtures({ ...harness.options, recipe: { kind: 'native-management', objects: [object] } });
+  const receipt = bindings.private.fixture.observedReadbacks.off;
+  assert.equal(receipt.status, 'passed'); assert.equal(receipt.observed.metadataOnly, true);
+  assert.deepEqual(receipt.observed.properties, { enabled: false, defaultContext: true });
+  assert.deepEqual(bindings.private.fixture.objects.off.knownChildren.map(child => child.pageId).sort(), [...state.files, ...state.resources].map(row => row.id).sort());
+  assert.equal(bindings.private.objects.off.versions.A.version_id, undefined, 'Metadata is not proof of a consumed content version');
+  await assert.rejects(readAgentFixture(bindings, 'off', { version: 'A' }), /A disabled body cannot be read as current content/u);
+  await assert.rejects(readAgentFixture(bindings, 'off', { version: 'A', properties: { enabled: false } }), /Metadata-only disabled readback cannot prove a new content version/u);
+  assert.equal((await json(harness.statePath)).calls.some(args => ['read', 'files', 'use'].includes(args[0])), false);
+  assert.equal(harness.networkCalls.some(call => call.pathname.endsWith('/children')), false, 'Disabled verification must not inspect author body blocks');
 });

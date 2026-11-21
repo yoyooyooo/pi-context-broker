@@ -296,16 +296,17 @@ async function captureReadback(bindings, alias, { version, key = alias, state = 
   assert.equal(propertyText(row, ids, 'Operation'), '', 'Product left an operation marker');
   const files = await pages(context, 'files', { property: context.library.files.property_ids.Skill, relation: { contains: row.id } });
   const records = await pages(context, 'records', { property: context.library.records.property_ids.Skill, relation: { contains: row.id } });
-  const body = await tree(context, row.id);
+  owned.knownChildren = [...files.map(file => ({ pageId: file.id, kind: 'file' })), ...records.map(record => ({ pageId: record.id, kind: 'record' }))];
   if (pick(row, ids, 'Enabled')?.checkbox === false) {
     assert.equal(properties?.enabled, false, 'A disabled body cannot be read as current content');
     assert.equal(version, undefined, 'Metadata-only disabled readback cannot prove a new content version');
-    const captured = await capture(context, receiptPath, { row, files, records, body, observedAt: clock() });
+    const captured = await capture(context, receiptPath, { row, files, records, observedAt: clock() });
     const result = { status: 'passed', object: { owner: identity.owner }, artifact: captured,
       observed: { state: 'present', ready: true, operationEmpty: true, properties, metadataOnly: true },
       assertions: [{ id: 'independent-live-metadata', status: 'passed' }], externalRepair: false };
     return sealReadback(context, key, result);
   }
+  const body = await tree(context, row.id);
   const main = await cli(context, ['read', row.id, '--database', context.entry, '--refresh', '--json'], 'read-main');
   assert.equal(main.value.ok, true); assert.equal(main.value.has_more, false); assert.equal(typeof main.value.content, 'string');
   assert.equal(main.value.effects?.remote_writes, 'none', 'A consumption read reported semantic writes');
@@ -356,7 +357,6 @@ async function captureReadback(bindings, alias, { version, key = alias, state = 
   identity.versions[label] = { ref: main.value.ref, snapshot_id: main.value.snapshot_id, version_id: main.value.version_id,
     bodyKeys: observedFiles.map(file => file.bodyKey), readback: key };
   identity.currentVersion = label; owned.currentVersion = label;
-  owned.knownChildren = [...files.map(file => ({ pageId: file.id, kind: 'file' })), ...records.map(record => ({ pageId: record.id, kind: 'record' }))];
   let observedProjection;
   if (owned.placement === 'source') {
     const projected = [{ path: 'SKILL.md', body: blockShape(body) }];
@@ -513,16 +513,55 @@ async function prepareAbsentSourceOracle(bindings, object, declaration) {
   });
 }
 
+/** Resolve physical relation prerequisites before preparation can make any remote changes. */
+export function planAgentFixturePreparation(recipe) {
+  validateAgentFixtureRecipe(recipe);
+  const objects = new Map(recipe.objects.map(object => [object.id, object]));
+  const initial = object => object.versions[object.initial] ?? {};
+  for (const object of recipe.objects) {
+    for (const field of ['requires', 'members']) for (const alias of initial(object)[field] ?? []) {
+      const target = objects.get(alias);
+      if (object.placement !== 'notion' || alias === object.id)
+        throw fail('AGENT_FIXTURE_RELATION_INVALID', 'Initial relations need a native Notion owner and a different target.', { object: object.id, field, target: alias });
+      if (!['notion', 'source', 'builtin'].includes(target.placement) || ['absent', 'unmanaged'].includes(target.initial) || initial(target).enabled === false)
+        throw fail('AGENT_FIXTURE_RELATION_INVALID', 'An initial relation target must become an enabled, ready Notion Skill.', { object: object.id, field, target: alias });
+    }
+  }
+  const orderFor = fields => {
+    const remaining = new Set(objects.keys()), completed = new Set(), order = [];
+    while (remaining.size) {
+      const before = remaining.size;
+      for (const object of recipe.objects) {
+        if (!remaining.has(object.id)) continue;
+        const targets = fields.flatMap(field => initial(object)[field] ?? []);
+        if (!targets.every(alias => completed.has(alias))) continue;
+        order.push(object.id); completed.add(object.id); remaining.delete(object.id);
+      }
+      if (remaining.size === before) return null;
+    }
+    return order;
+  };
+  const requiredOrder = orderFor(['requires']);
+  if (!requiredOrder) throw fail('AGENT_FIXTURE_RELATION_CYCLE', 'Initial Requires must form an acyclic dependency graph.');
+  const ordered = orderFor(['requires', 'members']);
+  if (ordered) return { order: ordered, deferredMembers: [] };
+  // Members may form cycles. Create ready pages in Requires order, then attach only
+  // the complete Members sets whose targets were not ready at their owner's creation.
+  const positions = new Map(requiredOrder.map((alias, index) => [alias, index]));
+  return { order: requiredOrder, deferredMembers: requiredOrder.filter(alias =>
+    (initial(objects.get(alias)).members ?? []).some(target => positions.get(target) > positions.get(alias))) };
+}
+
 /** Prepare one owned real fixture. The library is never replaced and global configuration is never edited. */
 export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cliPath, node = process.execPath, globalSkillsRoot = join(homedir(), '.agents/skills'), apiVersion = '2026-03-11' }) {
-  validateAgentFixtureRecipe(recipe);
+  const preparationPlan = planAgentFixturePreparation(recipe);
   for (const object of recipe.objects) if (['global', 'project'].includes(object.placement))
     assert.ok(/^[a-z0-9][a-z0-9-]*$/u.test(object.name), 'Native fixture names must be safe lowercase invocation names');
   assert.ok(isAbsolute(globalSkillsRoot), 'Use an absolute native global Skill root');
   assert.ok(id(runId) && pageId(entry) && isAbsolute(root) && isAbsolute(cliPath) && isAbsolute(node));
   assert.ok(!(await exists(root)), 'Use a fresh fixture root; resume from its bindings instead');
   await mkdir(root, { recursive: true, mode: 0o700 }); root = await realpath(root);
-  const context = { version: 1, runId, root, entry, cli: await realpath(cliPath), node: await realpath(node), apiVersion, recipe,
+  const context = { version: 1, runId, root, entry, cli: await realpath(cliPath), node: await realpath(node), apiVersion, recipe, preparationPlan,
     env: { NTN_SKILLS_HOME: join(root, 'state'), NTN_SKILLS_CACHE_HOME: join(root, 'cache'), NTN_SKILLS_DATA_HOME: join(root, 'data') },
     objects: {}, projectRoot: join(root, 'project'), observedReadbacks: {}, ownership: { runId, root, token: randomUUID(), createdAt: new Date().toISOString(), globalDirectories: [] } };
   await save(join(root, 'ownership.json'), context.ownership);
@@ -530,6 +569,13 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
   const inspect = await cli(context, ['ctl', 'library', 'inspect', entry], 'inspect-library'); context.library = inspect.value.library;
   assert.equal(context.library.skills.database_id.replaceAll('-', ''), entry.replaceAll('-', ''));
   const bindings = { version: 1, public: { ...(recipe.public ?? {}) }, private: { fixture: context, objects: {}, bodies: {}, facts: recipe.facts ?? {}, readbacks: structuredClone(recipe.readbacks ?? {}) } };
+  const captureInitialReadback = async (alias, version) => {
+    const owned = context.objects[alias], input = owned.versionInputs[version];
+    const options = owned.placement === 'notion' && input?.enabled === false
+      ? { properties: { enabled: false, ...(input.defaultContext === undefined ? {} : { defaultContext: input.defaultContext }) } }
+      : { version };
+    return captureReadback(bindings, alias, options);
+  };
   try {
     for (const object of recipe.objects) {
       const suffix = sha(runId).slice(0, 8), name = object.placement === 'builtin' ? object.name : object.name + '-' + suffix;
@@ -550,7 +596,9 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
         bindings.private.objects[object.id].versions[version] = { bodyKeys };
       }
     }
-    for (const object of recipe.objects) {
+    const deferredMembers = new Set(preparationPlan.deferredMembers), finalReadbacks = [];
+    for (const alias of preparationPlan.order) {
+      const object = recipe.objects.find(object => object.id === alias);
       const owned = context.objects[object.id], identity = bindings.private.objects[object.id];
       if (['global', 'project'].includes(object.placement)) {
         assert.ok(owned.versionInputs[object.initial], 'Local fixture requires a concrete initial version');
@@ -644,12 +692,22 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
       } else {
         const input = owned.versionInputs[object.initial]; assert.ok(input);
         const created = await cli(context, ['ctl', 'library', 'skill', 'create', input.directory, '--entry', entry, '--skill-id', owned.skillId,
-          '--name', owned.name, '--description', object.description, ...relationArgs(context, input)], 'create');
+          '--name', owned.name, '--description', object.description,
+          ...relationArgs(context, deferredMembers.has(object.id) ? { ...input, members: [] } : input)], 'create');
         owned.pageId = created.value.page_id; assert.ok(pageId(owned.pageId));
       }
-      await captureReadback(bindings, object.id, { version: object.initial });
+      if (deferredMembers.size) finalReadbacks.push({ object: object.id, version: object.initial });
+      else await captureInitialReadback(object.id, object.initial);
       await persist(bindings);
     }
+    for (const alias of preparationPlan.deferredMembers) {
+      const owned = context.objects[alias], input = owned.versionInputs[owned.currentVersion];
+      await cli(context, ['ctl', 'library', 'skill', 'update', owned.pageId, '--entry', entry,
+        ...relationArgs(context, { requires: [], members: input.members })], 'bind-initial-members');
+      await persist(bindings);
+    }
+    // Freeze versions only after every deferred relation is attached.
+    for (const readback of finalReadbacks) await captureInitialReadback(readback.object, readback.version);
     if (recipe.environment?.catalog === 'filtered-view') await prepareAgentFilteredView(bindings);
     await persist(bindings);
     return bindings;
