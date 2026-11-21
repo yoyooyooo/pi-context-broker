@@ -477,6 +477,20 @@ for (const [reason, options] of [
   assert.ok(result.assertions.some(row => row.code === 'LOCAL_BODY_DELIVERY_MISSING'));
 });
 
+test('local resources require the actual tool delivery, not an assistant echo', async () => {
+  const success = nativeLocalFixture();
+  assert.equal((await success.run([{ kind: 'resource', object: 'local', version: 'A', path: 'SKILL.md' }])).status, 'passed');
+  const echo = nativeLocalFixture({ deliveryRole: 'assistant' });
+  const result = await echo.run([{ kind: 'resource', object: 'local', version: 'A', path: 'SKILL.md' }]);
+  assert.equal(result.status, 'blocked');
+  assert.ok(result.assertions.some(row => row.code === 'LOCAL_RESOURCE_DELIVERY_MISSING'));
+});
+
+test('local resource identity accepts a normalized actual path within the exact owner', async () => {
+  const f = nativeLocalFixture({ actualPath: '../global/skill/SKILL.md' });
+  assert.equal((await f.run([{ kind: 'resource', object: 'local', version: 'A', path: 'SKILL.md' }])).status, 'passed');
+});
+
 function sourceOperation(attempts = []) {
   return [{ phase: 'started', kind: 'sdk', requestId: 'sdk:owned', operation: 'list' },
     ...attempts.map((attempt, index) => ({ phase: 'attempt', requestId: 'sdk:owned', attempt: index + 1,
