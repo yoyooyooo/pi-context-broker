@@ -69,8 +69,9 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
           async execute(id, input, signal, onUpdate, context) {
             if (Object.hasOwn(input, "readOnly")) throw Object.assign(new Error("readOnly is not supported. Omit it; Notion reads do not write to the remote library."), { code: "INVALID_ARGUMENT" });
             const hasPath = Object.hasOwn(input, "path"), hasPaths = Object.hasOwn(input, "paths");
-            if (Object.keys(input).some(key => !Object.hasOwn(scalarProperties, key) && key !== "paths" && key !== "refresh")
-              || hasPath === hasPaths
+            // The native reader owns its options. Reject the other Notion
+            // tool's selector here without filtering native passthrough fields.
+            if (Object.hasOwn(input, "ref") || hasPath === hasPaths
               || input.refresh !== undefined && typeof input.refresh !== "boolean"
               || input.refresh === true && (typeof input.path !== "string" || !/^(?:skill:\/\/|sr:[CS][A-Za-z0-9_-]{22}$)/.test(input.path))
               || hasPath && (typeof input.path !== "string" || [input.offset, input.limit].some(value => value !== undefined && (typeof value !== "number" || !Number.isFinite(value))))
