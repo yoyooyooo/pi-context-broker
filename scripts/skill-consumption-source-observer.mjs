@@ -75,10 +75,13 @@ export function observeSourceTransport(settings) {
       || !['completed', 'failed', 'cancelled'].includes(event.status) || typeof event.sdk_started !== 'boolean' || typeof event.metrics_observed !== 'boolean'
       || typeof event.elapsed_ms !== 'number' || !Number.isFinite(event.elapsed_ms) || event.elapsed_ms < 0) throw new Error('SDK_END_INVALID');
     if (JSON.stringify(operation.attribution) !== JSON.stringify(attribution)) throw new Error('SDK_SOURCE_ATTRIBUTION_CHANGED');
+    if (event.error_code !== undefined && event.error_code !== null
+      && (typeof event.error_code !== 'string' || !/^[A-Z][A-Z0-9_]{0,127}$/u.test(event.error_code))) throw new Error('SDK_ERROR_CODE_INVALID');
     metrics(requestId, event.request_metrics, event.metrics_observed);
     operation.ended = true;
     record('completed', { kind: 'sdk', requestId, pid: process.pid, operation: event.operation, ...attribution, status: event.status,
-      sdkStarted: event.sdk_started, sourceMonotonicNs: event.monotonic_ns, elapsedMs: event.elapsed_ms });
+      sdkStarted: event.sdk_started, sourceMonotonicNs: event.monotonic_ns, elapsedMs: event.elapsed_ms,
+      ...(Object.hasOwn(event, 'error_code') ? { errorCode: event.error_code } : {}) });
   });
   subscribe('tracing:child_process.spawn:start', ({ process: child, options }) => {
     const args = options?.args;

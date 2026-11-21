@@ -55,6 +55,8 @@ A/B 旅程依次为：采用 A → 外部发布 B 并读回 → 普通继续 A �
 
 不支持的事件、错误版本、缺绑定、未触发的时序前提和 transport 观测缺口都必须显露。目录 pending 场景须证明真实首次请求早于目录完成；已经 ready 的运行不填作 pending 成绩。
 
+Store 故障先用同一固定 snapshot 的公开离线读取证明正文可读，再隔离本轮 Store，并证明同一读取出现 STATE_UNAVAILABLE。重启后的实际 SDK 目录也必须以同一错误终结；取消、未开始或其他错误不能代替故障前提。恢复时再用同一读取核验正文与身份。只移走 manifest 仍可能从 SQLite 合法恢复，不能据此宣称不可恢复状态已命中。
+
 ## 判定当前实际行为
 
 阅读本次分析结果及其原件，不只看退出码。沿 scripts/notion-agent-analysis.mjs 关联有效 session 分支、工具调用与结果、当前请求、provider 完成和独立业务读回。

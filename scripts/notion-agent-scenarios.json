@@ -4705,7 +4705,7 @@
             {
               "kind": "fault",
               "object": "remote",
-              "mode": "missing-manifest"
+              "mode": "store-unavailable"
             },
             {
               "kind": "restart",
@@ -5461,7 +5461,7 @@
         },
         {
           "id": "use",
-          "prompt": "现在用 Notion 的 {{native.name}} 检查：交接负责人是周，验收日期为2026-11-22。",
+          "prompt": "现在用 Notion 的 {{native.name}} 检查：交接负责人是周明，验收日期为2026-11-22。",
           "expect": [
             {
               "kind": "completed"

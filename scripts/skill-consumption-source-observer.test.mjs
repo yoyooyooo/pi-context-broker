@@ -136,7 +136,7 @@ test('SDK observations retain explicit zero-attempt metrics and failed or pendin
   publishSdk(zero, 'end', { elapsed_ms: 0, status: 'completed', sdk_started: true, metrics_observed: true,
     request_metrics: { trace_enabled: true, total_requests: 0, trace_dropped: 0, trace: [] } });
   publishSdk(failure, 'start');
-  publishSdk(failure, 'end', { elapsed_ms: 3, status: 'failed', sdk_started: false, metrics_observed: false, request_metrics: null });
+  publishSdk(failure, 'end', { elapsed_ms: 3, status: 'failed', error_code: 'STATE_UNAVAILABLE', sdk_started: false, metrics_observed: false, request_metrics: null });
   publishSdk(pending, 'start'); observer.finish();
   const trace = await readSourceObservation(item.output);
   assert.equal(trace.complete, false); assert.deepEqual(trace.errors, []);
@@ -144,6 +144,8 @@ test('SDK observations retain explicit zero-attempt metrics and failed or pendin
   assert.equal(metric(zero).total_requests, 0); assert.equal(metric(zero).complete, true);
   assert.equal(metric(failure).total_requests, null); assert.equal(metric(failure).observed, false);
   assert.equal(trace.events.find(row => row.phase === 'completed' && row.requestId.endsWith(failure)).status, 'failed');
+  assert.equal(trace.events.find(row => row.phase === 'completed' && row.requestId.endsWith(failure)).errorCode, 'STATE_UNAVAILABLE');
+  assert.equal(Object.hasOwn(trace.events.find(row => row.phase === 'completed' && row.requestId.endsWith(zero)), 'errorCode'), false);
   assert.deepEqual(trace.events.at(-1).pendingRequestIds, ['sdk:' + process.pid + ':' + pending]);
   assert.equal(trace.events.at(-1).sdkStarts, 3); assert.equal(trace.events.at(-1).cliStarts, 0);
 });

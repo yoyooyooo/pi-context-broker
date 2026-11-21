@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { access, mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+import { access, lstat, mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createRequire } from 'node:module';
@@ -41,7 +41,34 @@ export function workflowSourceSlice(events, startedNs, endedNs) {
   return events.filter(row => ids.has(row.requestId) || !row.requestId && time(row) >= BigInt(startedNs) && time(row) <= BigInt(endedNs));
 }
 
-async function awaitCatalog(file, timeoutMs, { pendingOnly = false, sourceId, database } = {}) {
+export async function workflowCatalogFault(bindings, ownedStateRoot) {
+  const fixture = bindings.private.fixture;
+  const faults = (fixture.faults ?? []).filter(fault => fault.mode === 'store-unavailable' && fault.source === ownedStateRoot && fault.status === 'active');
+  assert.ok(faults.length <= 1, 'Only one verified outage may own the runtime Store');
+  if (!faults.length) return undefined;
+  const fault = faults[0], proof = fault.proof;
+  assert.equal(fault.probe?.roots?.NTN_SKILLS_HOME, ownedStateRoot);
+  assert.equal(proof?.before?.status, 'passed');
+  assert.deepEqual(proof.before.observed, { ...fault.probe.selected, totalRequests: 0, remoteWrites: 'none' });
+  assert.equal(proof?.after?.status, 'failed'); assert.equal(proof.after.expected, true);
+  assert.equal(proof.after.code, 'STATE_UNAVAILABLE');
+  assert.equal(proof.after.details?.phase, 'sqlite_state'); assert.equal(proof.after.details?.native_code, 'ENOTDIR');
+  assert.equal(proof?.blocker?.kind, 'regular-file'); assert.equal(proof.blocker.observedPath, ownedStateRoot);
+  assert.equal(proof.blocker.readPath, join(ownedStateRoot, 'state.sqlite')); assert.equal(proof.blocker.readError, 'ENOTDIR');
+  for (const artifact of [proof.before.command, proof.after.command, proof.blocker.artifact]) {
+    assert.ok(artifact && inside(fixture.root, artifact.path), 'Fault proof must belong to the owned fixture');
+    const actual = await identity(artifact.path); assert.equal(actual.sha256, artifact.sha256); assert.equal(actual.bytes, artifact.bytes);
+  }
+  const blocker = await lstat(ownedStateRoot);
+  assert.ok(blocker.isFile() && !blocker.isSymbolicLink(), 'The runtime Store outage is no longer active');
+  assert.equal((await identity(ownedStateRoot)).sha256, proof.blocker.artifact.sha256);
+  assert.deepEqual(await json(ownedStateRoot), { fixtureFault: fixture.ownership.token, restoreFrom: fault.target });
+  await assert.rejects(readFile(join(ownedStateRoot, 'state.sqlite')), { code: 'ENOTDIR' });
+  return { mode: 'store-unavailable', expectedErrorCode: 'STATE_UNAVAILABLE', proof };
+}
+
+export async function awaitWorkflowCatalog(file, timeoutMs, { pendingOnly = false, sourceId, database, expectedFailure } = {}) {
+  assert.ok(!pendingOnly || !expectedFailure, 'A catalog cannot be both pending and a verified failure');
   const startedAt = performance.now();
   while (performance.now() - startedAt < timeoutMs) {
     const events = await rows(file);
@@ -58,10 +85,19 @@ async function awaitCatalog(file, timeoutMs, { pendingOnly = false, sourceId, da
       continue;
     }
     const completed = events.find(row => row.phase === 'completed' && starts.some(start => start.requestId === row.requestId));
-    if (completed) { assert.equal(completed.status, 'completed', 'Normal catalog preparation failed'); return { requestId: completed.requestId, completedNs: completed.monotonicNs, waitedMs: performance.now() - startedAt }; }
+    if (completed) {
+      if (expectedFailure) {
+        assert.equal(expectedFailure.mode, 'store-unavailable'); assert.equal(expectedFailure.expectedErrorCode, 'STATE_UNAVAILABLE');
+        assert.equal(completed.status, 'failed', 'The verified outage must fail the actual SDK catalog request');
+        assert.equal(completed.sdkStarted, true, 'The actual SDK must reach the faulted Store');
+        assert.equal(completed.errorCode, expectedFailure.expectedErrorCode, 'The actual catalog failed for another reason');
+      } else assert.equal(completed.status, 'completed', 'Normal catalog preparation failed');
+      return { requestId: completed.requestId, completedNs: completed.monotonicNs, waitedMs: performance.now() - startedAt,
+        ...(expectedFailure ? { ...expectedFailure, observedStatus: completed.status, observedErrorCode: completed.errorCode } : {}) };
+    }
     await new Promise(resolveDelay => setTimeout(resolveDelay, 100));
   }
-  throw new Error('Normal source catalog did not finish within its bounded startup window');
+  throw new Error('Source catalog did not reach its required terminal state within the bounded startup window');
 }
 
 async function command(argv, cwd) {
@@ -290,9 +326,10 @@ export async function runAgentWorkflow(config) {
     segment.commandsArtifact = await identity(join(control, 'commands.json'));
     const catalogMode = scenario.fixture.environment?.catalog ?? 'normal';
     if (['normal', 'filtered-view'].includes(catalogMode) && !scenario.fixture.environment?.offline)
-      segment.catalogBarrier = await awaitCatalog(observer.files.source, config.catalogTimeoutMs ?? 90000, { sourceId: config.sourceId, database: config.database });
+      segment.catalogBarrier = await awaitWorkflowCatalog(observer.files.source, config.catalogTimeoutMs ?? 90000,
+        { sourceId: config.sourceId, database: config.database, expectedFailure: await workflowCatalogFault(bindings, ownedStateRoot) });
     else if (catalogMode === 'pending')
-      segment.catalogBarrier = await awaitCatalog(observer.files.source, config.catalogTimeoutMs ?? 90000,
+      segment.catalogBarrier = await awaitWorkflowCatalog(observer.files.source, config.catalogTimeoutMs ?? 90000,
         { pendingOnly: true, sourceId: config.sourceId, database: config.database });
     else segment.catalogBarrier = { mode: catalogMode, waited: false };
   };
@@ -367,7 +404,7 @@ export async function runAgentWorkflow(config) {
         } else if (event.kind === 'compact') {
           action.result = await rpc.command('compact');
           const entries = await rpc.command('get_entries'); assert.ok(entries.entries.some(entry => entry.type === 'compaction'), 'RPC compact did not persist a compaction');
-        } else action.result = await runAgentFixtureEvent(event, { bindings, bindingsPath: config.bindingsFile, ownedStateRoot });
+        } else action.result = await runAgentFixtureEvent(event, { bindings, bindingsPath: config.bindingsFile, ownedStateRoot, runtimeEnv: env });
         action.finishedNs = process.hrtime.bigint().toString(); result.events.push(action);
         await save(join(evidence, 'event-' + result.events.length + '.json'), action);
       }
