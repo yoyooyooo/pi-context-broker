@@ -28,7 +28,7 @@
     "packages/context-broker/scripts/final-request-undici.test.ts": "df1417ddf319180c89725f188107dde9b0eb8089aa12759b17d539bfd2bd7555",
     "packages/context-broker/src/session-working-set.ts": "4792c1b3e1ecdbbfd77918f2f9ddf074cfe197e8fbed265a5796cd59671bd36c",
     "packages/context-broker/scripts/session-active-session.mjs": "a0b3d76adddb20b81858d876c4fdd81c45a66360dee55a877895b1d6348a40b5",
-    "packages/context-broker/src/index.ts": "fc7e9da772b8b90430f1b4573fabb08aa2ecb3679761140af050f2b5f6c2c270",
+    "packages/context-broker/src/index.ts": "651b0a1765fbc620703b446d3557d1fef7a43a3ace2e0931734d9ac4d5b3a334",
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "f0a338ce686cfd88c1ce564ccdec0e34b5b0b868aa617620950e9d5fb6d0a0ad",
     "packages/context-broker/src/notion-source.ts": "e87fc9d5f6d09f3c034c365bc9bc8f1c8964af32ccc3c691127cacd2d3218827",
@@ -742,6 +742,13 @@
       ],
       "proof_limit": "URL lexical normalization and natural language choice are concrete input and usage boundaries outside finite model variables. TLA, configs, views, bounds, expected rules, cases, tool lock and mutation targets remain unchanged. Reviewed whole-file hashes do not establish refinement or natural model compliance; those require separate actual runs.",
       "concurrent_base": "Rebased onto 0336b4a, retaining the separately reviewed task-root role guards and explicit metadata refresh. URL resolution keeps role checks before resolution and after exact owner binding. Metadata refresh remains independent of selected content pins; the merged guidance retains both refresh and source-choice instructions. Concrete combined regressions and finite gates must run on the resulting candidate."
+    },
+    "lazy_cli_scope_guidance": {
+      "reviewed_from": "590617b3f87a253768563ca674009c6a09e5a585",
+      "reviewed_change": "f4f82106eee33f4e421bb34211c87a180467f836",
+      "scope": "Read buildToolGuidance and packagedMaintenanceGuidance with the native/lazy/active capability and prompt-budget tests. When bash and actual enabled Notion sources are available, an active notion_ctl exposes cli_source directly; otherwise tool_search discovers that existing tool. The returned paired command and explicit source scope are required; no PATH change or command execution is introduced.",
+      "unchanged_guards": "This change only advertises the existing control route and compresses repeated text. Selection, current root roles, Requires acquisition, freshness, authorization, resource ownership, cancellation, commit and delivery guards remain unchanged. Inspection/latest adoption, exact page URLs, true source ambiguity, metadata refresh and explicit offline boundaries remain advertised.",
+      "proof_limit": "Natural model route choice and actual child CLI identity need real-session evidence. No finite model rules, bounds, cases or mutation targets changed."
     }
   }
 }
