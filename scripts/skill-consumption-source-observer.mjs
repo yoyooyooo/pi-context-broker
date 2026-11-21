@@ -174,13 +174,81 @@ export function observeSourceTransport(settings) {
   return { finish };
 }
 
-/** NODE_OPTIONS is inherited by CLI children; PID/entry/thread guards keep the
- * observer in this driver-owned Pi process without changing child environment. */
+/** A child reports its own Node entry. This observes inherited NODE_OPTIONS;
+ * it neither wraps process creation nor claims coverage of other descendants. */
+export function observeSourceProcess(settings) {
+  const { fs, crypto, path, processDirectory, checkoutRoot, clockId, owner } = settings;
+  const directory = fs.realpathSync(processDirectory), root = fs.realpathSync(checkoutRoot);
+  const relative = path.relative(root, directory);
+  if (!path.isAbsolute(processDirectory) || relative === '' || relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative))
+    throw new Error('SOURCE_PROCESS_EVIDENCE_MUST_BE_OUTSIDE_CHECKOUT');
+  const hash = value => crypto.createHash('sha256').update(value).digest('hex');
+  const fileIdentity = file => {
+    const realpath = fs.realpathSync(file), fd = fs.openSync(realpath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+    try {
+      const before = fs.fstatSync(fd);
+      if (!before.isFile() || before.size > 64 * 1024 * 1024) throw new Error('ENTRY_UNREADABLE');
+      const bytes = fs.readFileSync(fd), after = fs.fstatSync(fd);
+      if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs || bytes.length !== after.size)
+        throw new Error('ENTRY_CHANGED');
+      return { path: path.resolve(file), realpath, sha256: hash(bytes), bytes: bytes.length };
+    } finally { fs.closeSync(fd); }
+  };
+  const capture = () => {
+    // node -e may put an arbitrary filename in argv[1]. It is not a file entry.
+    if (process.execArgv.some(arg => /^(?:-e|-p|-c|--eval(?:=|$)|--print(?:=|$)|--check$|--test$|--run(?:=|$))/.test(arg)))
+      return { entryMode: 'non-file', entry: null, cli: null };
+    if (typeof process.argv[1] !== 'string' || process.argv[1] === '-') return { entryMode: 'unknown', entry: null, cli: null };
+    try {
+      const entry = fileIdentity(process.argv[1]);
+      let cli = /^ntn-skills\.(?:mjs|cjs|js)$/.test(path.basename(entry.realpath)) ? { basis: 'entry-name' } : null;
+      let parent = path.dirname(entry.realpath);
+      for (let depth = 0; depth < 4; depth++) {
+        const manifestPath = path.join(parent, 'package.json');
+        if (fs.existsSync(manifestPath)) {
+          const bytes = fs.readFileSync(manifestPath);
+          if (bytes.length > 1024 * 1024) break;
+          const manifest = JSON.parse(bytes.toString('utf8'));
+          const bin = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.['ntn-skills'];
+          if (manifest.name === 'ntn-skills' && typeof bin === 'string' && fs.realpathSync(path.resolve(parent, bin)) === entry.realpath)
+            cli = { basis: 'package-bin', manifest: fileIdentity(manifestPath) };
+          break;
+        }
+        const next = path.dirname(parent); if (next === parent) break; parent = next;
+      }
+      return { entryMode: 'file', entry, cli };
+    } catch { return { entryMode: 'unknown', entry: null, cli: null }; }
+  };
+  const processId = process.pid + '-' + crypto.randomUUID();
+  const file = path.join(directory, 'process-' + processId + '.jsonl');
+  const fd = fs.openSync(file, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW ?? 0), 0o600);
+  fs.fchmodSync(fd, 0o600);
+  let sequence = 0, previous = null, closed = false;
+  const record = (phase, details) => {
+    const row = { version: 1, sequence: ++sequence, previousSha256: previous, clockId,
+      monotonicNs: process.hrtime.bigint().toString(), phase, processId, pid: process.pid, parentPid: process.ppid, ...details };
+    row.eventSha256 = hash(JSON.stringify(row)); previous = row.eventSha256;
+    fs.writeSync(fd, JSON.stringify(row) + '\n');
+  };
+  record('process_start', { owner: owner === true, node: process.versions.node, ...capture() });
+  const finish = code => {
+    if (closed) return;
+    try { record('process_end', { exitCode: code, ...capture() }); }
+    catch { /* A missing terminal stays incomplete evidence. */ }
+    finally { closed = true; process.off('exit', finish); try { fs.closeSync(fd); } catch {} }
+  };
+  process.once('exit', finish);
+  return { file, finish };
+}
+
+/** The transport observer stays in the driver-owned Pi. Optional per-process
+ * identity records include real Node descendants without changing their env. */
 export function sourceObserverPreloadSource(settings) {
   return "import diagnostics from 'node:diagnostics_channel';\nimport fs from 'node:fs';\nimport crypto from 'node:crypto';\nimport path from 'node:path';\nimport {errorMonitor} from 'node:events';\nimport {isMainThread} from 'node:worker_threads';\n"
     + 'const settings = ' + JSON.stringify(settings) + ';\n'
     + 'let owned=false; try { owned=isMainThread && process.ppid===settings.ownerParentPid && fs.realpathSync(process.argv[1])===fs.realpathSync(settings.ownerEntry); } catch {}\n'
-    + 'if(owned) { try { const safeRequestMetrics = (' + safeRequestMetrics.toString() + '); (' + observeSourceTransport.toString() + ')( {...settings,diagnostics,fs,crypto,path,errorMonitor,safeRequestMetrics} ); } catch { /* Missing observation is reported by the driver. */ } }\n';
+    + 'if(owned) { try { const safeRequestMetrics = (' + safeRequestMetrics.toString() + '); (' + observeSourceTransport.toString() + ')( {...settings,diagnostics,fs,crypto,path,errorMonitor,safeRequestMetrics} ); } catch { /* Missing observation is reported by the driver. */ } }\n'
+    + 'if(isMainThread&&settings.processDirectory) { try { (' + observeSourceProcess.toString() + ')({...settings,fs,crypto,path,owner:owned}); } catch { /* Missing process identity remains unknown. */ } }\n';
 }
 
 /** Invalid or partial observations remain available to the driver, but never
@@ -188,6 +256,11 @@ export function sourceObserverPreloadSource(settings) {
 export async function readSourceObservation(file, { final = true } = {}) {
   let text;
   try { text = await readFile(file, 'utf8'); } catch (error) { if (error.code === 'ENOENT') return { events: [], complete: false, errors: ['missing-observer'] }; throw error; }
+  return parseSourceObservation(text, { final });
+}
+
+/** Revalidate already sealed parent evidence without rereading a mutable file. */
+export function parseSourceObservation(text, { final = true } = {}) {
   const errors = [], events = [];
   if (text && !text.endsWith('\n')) errors.push('truncated-line');
   const lines = text.split('\n'); lines.pop();
