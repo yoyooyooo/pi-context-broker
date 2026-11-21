@@ -139,7 +139,8 @@ test("deferred native management exposes only exact enabled source IDs when a CL
   h.tools(native);
   const result = resultJson(await h.invoke({ cli_source: "beta" }));
   expect(result).toEqual({ kind: "host_cli_scope", sourceId: "beta", command: hostCliScope([config.sources![1]!]).command,
-    database: "database-b", executed: false });
+    database: "database-b", executed: false,
+    execution: { default_cli_timeout_ms: 600_000, guidance: expect.any(String) } });
   expect(h.counts()).toEqual({ graphReads: 0, loads: 0, appends: 0 });
 });
 
@@ -396,11 +397,33 @@ const resultJson = (result: Awaited<ReturnType<Awaited<ReturnType<typeof graphHa
 test("cli_source returns only the requested host-local scope without loading, execution or graph mutation", async () => {
   const h = await graphHarness();
   const result = await h.invoke({ cli_source: "beta" });
-  expect(resultJson(result)).toEqual({ kind: "host_cli_scope", sourceId: "beta", command: hostCliScope([config.sources![1]!]).command, database: "database-b", executed: false });
+  expect(resultJson(result)).toEqual({ kind: "host_cli_scope", sourceId: "beta", command: hostCliScope([config.sources![1]!]).command,
+    database: "database-b", executed: false,
+    execution: { default_cli_timeout_ms: 600_000, guidance: expect.any(String) } });
   expect(result.details).toEqual(resultJson(result));
   expect(h.counts()).toEqual({ graphReads: 0, loads: 0, appends: 0 });
   expect(resultJson(await h.invoke({}))).toEqual({ portable: true });
   expect(resultJson(await h.invoke({ refs: [] }))).toEqual({ graph: { portable: true }, references: [] });
+});
+
+test("explicit CLI discovery carries execution budget and durable waiting guidance without lengthening routing prompts", async () => {
+  const h = await graphHarness();
+  const result = resultJson(await h.invoke({ cli_source: "alpha" }));
+  expect(result.command).toEqual(hostCliScope([config.sources![0]!]).command);
+  expect(result.sourceId).toBe("alpha"); expect(result.database).toBe("database-a");
+  expect(result.execution.default_cli_timeout_ms).toBe(600_000);
+  for (const requirement of ["600 seconds", "--timeout is in milliseconds", "startup and completion margin",
+    "persistent background job", "original Store and credential scope", "same process's terminal result",
+    "polling timeout is not completion", "do not kill or repeat the write"])
+    expect(result.execution.guidance).toContain(requirement);
+  for (const tools of [["read", "notion_list", "notion_use", "tool_search", "bash"],
+    ["read", "notion_list", "notion_use", "notion_ctl", "bash"]]) {
+    expect(text(tools)).not.toContain("default_cli_timeout_ms");
+    expect(text(tools)).not.toContain("600 seconds");
+    expect(text(tools)).not.toContain("persistent background job");
+  }
+  expect(result.executed).toBe(false);
+  expect(h.counts()).toEqual({ graphReads: 0, loads: 0, appends: 0 });
 });
 
 test("default source command resolves the actual bundle rather than a global ntn-skills binary", async () => {

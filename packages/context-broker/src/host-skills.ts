@@ -1902,7 +1902,14 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         const sources = (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false && source.id === input.cli_source);
         if (!sources.length) throw hostError("HOST_SOURCE_UNAVAILABLE");
         if (sources.length !== 1) throw hostError("HOST_SOURCE_AMBIGUOUS");
-        const result = { kind: "host_cli_scope", ...hostCliScope(sources), executed: false };
+        const result = { kind: "host_cli_scope", ...hostCliScope(sources), executed: false,
+          execution: {
+            default_cli_timeout_ms: 600_000,
+            guidance: "The default CLI budget is 600 seconds; an explicit CLI --timeout is in milliseconds. "
+              + "For authorized writes, give the host execution window that budget plus startup and completion margin. "
+              + "If the tool cannot wait that long, use a persistent background job, keep its original Store and credential scope, "
+              + "and await the same process's terminal result. A short polling timeout is not completion; do not kill or repeat the write just because a wait ended.",
+          } };
         return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
       }
       const graph = options.sessionGraph!(ctx);
