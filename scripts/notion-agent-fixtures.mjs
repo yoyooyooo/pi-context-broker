@@ -79,14 +79,37 @@ async function request(context, path, { method = 'GET', body, fixtureMutation = 
   const configRoot = process.env.NTN_SKILLS_CONFIG_HOME ?? join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'ntn-skills');
   const token = process.env.NOTION_API_TOKEN ?? (await json(join(configRoot, 'config.json'))).token;
   assert.ok(typeof token === 'string' && token.length > 0, 'Notion credentials are unavailable');
-  const result = await fetch('https://api.notion.com/' + path, {
-    method, signal: AbortSignal.timeout(60000),
-    headers: { authorization: 'Bearer ' + token, 'Notion-Version': context.apiVersion, 'Content-Type': 'application/json' },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const value = await result.json();
-  if (!result.ok) throw fail('AGENT_FIXTURE_NOTION_READBACK', 'Independent Notion request failed.', { method, path, status: result.status, code: value.code, message: value.message });
-  return value;
+  const readOnly = method === 'GET' || isQuery, maximumAttempts = readOnly ? 3 : 1;
+  for (let attempt = 1; attempt <= maximumAttempts; attempt++) {
+    const started = clock(); let result, value, failure;
+    try {
+      result = await fetch('https://api.notion.com/' + path, {
+        method, signal: AbortSignal.timeout(60000),
+        headers: { authorization: 'Bearer ' + token, 'Notion-Version': context.apiVersion, 'Content-Type': 'application/json' },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      value = await result.json();
+    } catch (error) { failure = error; }
+    const transient = failure !== undefined || result.status === 429 || result.status >= 500;
+    const retry = readOnly && transient && attempt < maximumAttempts;
+    await appendFile(join(context.root, 'network-attempts.jsonl'), JSON.stringify({
+      method, path, attempt, maximumAttempts, started, completed: clock(), readOnly, retry,
+      status: result?.status ?? null, ...(failure ? { error: { name: failure.name, message: failure.message, cause: failure.cause?.code } } : {}),
+    }) + '\n', { mode: 0o600 });
+    if (retry) {
+      const retryAfter = Number(result?.headers.get('retry-after'));
+      await new Promise(resolve => setTimeout(resolve, Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(2000, retryAfter * 1000) : attempt * 250));
+      continue;
+    }
+    if (failure) throw fail('AGENT_FIXTURE_NOTION_TRANSPORT', 'Independent Notion request transport failed.', {
+      method, path, attempt, readOnly, outcome: readOnly ? 'unobserved' : 'unknown-no-automatic-replay',
+      cause: failure.cause?.code, message: failure.message,
+    });
+    if (!result.ok) throw fail('AGENT_FIXTURE_NOTION_READBACK', 'Independent Notion request failed.', {
+      method, path, status: result.status, code: value.code, message: value.message, attempt,
+    });
+    return value;
+  }
 }
 
 async function pages(context, section, filter) {
