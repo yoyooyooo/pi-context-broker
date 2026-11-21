@@ -1,11 +1,79 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { access, mkdir, mkdtemp, readFile, realpath, rename, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { agentWorkflowArgs, agentWorkflowProjectSettings, workflowSourceSlice, workflowCatalogFault, awaitWorkflowCatalog } from './notion-agent-workflow-runtime.mjs';
+import { agentWorkflowArgs, agentWorkflowProjectSettings, prepareWorkflowTemporaryEnvironment, workflowSourceSlice, workflowCatalogFault, awaitWorkflowCatalog } from './notion-agent-workflow-runtime.mjs';
 import { validateCandidateTurn } from './verify-pi-daily-candidate.mjs';
+
+const execute = promisify(execFile);
+async function temporaryFixture(t) {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'workflow-temporary-')));
+  if (await access('/usr/bin/trash').then(() => true, () => false)) t.after(() => execute('/usr/bin/trash', [root]));
+  const ownership = { runId: 'temporary-test', root, token: 'owned-temporary-token', temporaryRoot: join(root, 'temporary') };
+  await mkdir(ownership.temporaryRoot); await writeFile(join(root, 'ownership.json'), JSON.stringify(ownership));
+  const projectRoot = join(root, 'project'); await mkdir(projectRoot);
+  return { root, runId: ownership.runId, ownership, projectRoot };
+}
+
+test('explicit TMPDIR shell templates and Node temporary APIs retain inputs without changing the caller environment', async t => {
+  const fixture = await temporaryFixture(t);
+  const inherited = { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: '/inherited-temporary-root' }, before = { ...inherited };
+  const { env, projectContext } = await prepareWorkflowTemporaryEnvironment(fixture, inherited);
+  assert.deepEqual(inherited, before);
+  assert.deepEqual(env, { ...before, TMPDIR: fixture.ownership.temporaryRoot });
+  assert.equal(projectContext.path, join(fixture.projectRoot, 'AGENTS.md'));
+  const context = await readFile(projectContext.path);
+  assert.equal(createHash('sha256').update(context).digest('hex'), projectContext.sha256);
+  assert.equal(context.length, projectContext.bytes);
+  const shell = (await execute('/bin/sh', ['-c', 'mktemp -d "${TMPDIR%/}/work.XXXXXX"'], { env })).stdout.trim();
+  const node = (await execute(process.execPath, ['-e', 'const fs=require("node:fs"),os=require("node:os"),path=require("node:path");console.log(fs.mkdtempSync(path.join(os.tmpdir(),"node-")))'], { env })).stdout.trim();
+  for (const path of [shell, node]) {
+    assert.ok(path.startsWith(fixture.ownership.temporaryRoot + '/'), 'Temporary API escaped owned evidence: ' + path);
+    assert.equal(await realpath(path), path);
+    await writeFile(join(path, 'operation-input.md'), '# Preserve exact retry input\n');
+    assert.equal(await readFile(join(path, 'operation-input.md'), 'utf8'), '# Preserve exact retry input\n');
+  }
+});
+
+test('temporary evidence rejects missing ownership, a foreign token, an escaped path and a symlink', async t => {
+  for (const mode of ['missing', 'foreign-token', 'outside-root', 'symlink']) await t.test(mode, async t => {
+    const fixture = await temporaryFixture(t), marker = join(fixture.root, 'ownership.json');
+    if (mode === 'missing') {
+      delete fixture.ownership.temporaryRoot;
+      await writeFile(marker, JSON.stringify(fixture.ownership));
+    } else if (mode === 'foreign-token') {
+      fixture.ownership.token = 'someone-else';
+    } else if (mode === 'outside-root') {
+      fixture.ownership.temporaryRoot = join(fixture.root, '..', 'outside');
+      await writeFile(marker, JSON.stringify(fixture.ownership));
+    } else {
+      const preserved = join(fixture.root, 'preserved');
+      await rename(fixture.ownership.temporaryRoot, preserved);
+      await symlink(preserved, fixture.ownership.temporaryRoot);
+    }
+    await assert.rejects(prepareWorkflowTemporaryEnvironment(fixture, {}));
+  });
+});
+
+test('temporary context refuses an existing native context file and a project outside its owner', async t => {
+  for (const name of ['AGENTS.override.md', 'AGENTS.md', 'AGENTS.MD', 'CLAUDE.md', 'CLAUDE.MD']) await t.test(name, async t => {
+    const fixture = await temporaryFixture(t), path = join(fixture.projectRoot, name), content = '# Existing project instructions\n';
+    await writeFile(path, content);
+    await assert.rejects(prepareWorkflowTemporaryEnvironment(fixture, {}), /existing project context/u);
+    assert.equal(await readFile(path, 'utf8'), content);
+  });
+  const fixture = await temporaryFixture(t);
+  fixture.projectRoot = fixture.root;
+  await assert.rejects(prepareWorkflowTemporaryEnvironment(fixture, {}), /owned project/u);
+  const linked = await temporaryFixture(t), original = join(linked.root, 'original-project');
+  await rename(linked.projectRoot, original); await symlink(original, linked.projectRoot);
+  await assert.rejects(prepareWorkflowTemporaryEnvironment(linked, {}), /project cannot be a symlink/u);
+  await assert.rejects(readFile(join(original, 'AGENTS.md')), { code: 'ENOENT' });
+});
 
 test('daily and no-native-skills use the same real worker and retain normal extension discovery', () => {
   const config = { model: 'magpie/group/worker', thinkingLevel: 'high', profile: 'daily' };

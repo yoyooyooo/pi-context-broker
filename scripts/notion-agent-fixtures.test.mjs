@@ -66,6 +66,28 @@ test('native meaning normalization permits line endings but keeps words and synt
   assert.notEqual(fixtureTextMeaning('# Title\n\nA [link](https://a.example)'), fixtureTextMeaning('# Title\n\nA [link](https://b.example)'));
 });
 
+test('fixture teardown retains temporary operation inputs and records their ownership with the evidence', async t => {
+  const { root, bindings, context } = await fixture(t);
+  context.objects = {};
+  context.ownership.temporaryRoot = join(root, 'temporary');
+  await mkdir(context.ownership.temporaryRoot);
+  await writeJson(join(root, 'ownership.json'), context.ownership);
+  const input = join(context.ownership.temporaryRoot, 'unfinished-operation-input.md'), content = '# Exact resumable input\n';
+  await writeFile(input, content);
+  await writeJson(join(root, 'bindings.json'), bindings); const before = await readFile(join(root, 'bindings.json'));
+  await assert.rejects(cleanupAgentFixtures(bindings, { subjectExited: false }), /Stop the owned subject/u);
+  // No disposable objects exist: the executable must never be invoked for retained evidence.
+  const result = await cleanupAgentFixtures(bindings, { subjectExited: true, trash: process.execPath, preserveBindings: true });
+  assert.deepEqual(result.results, []);
+  assert.equal(result.retainedEvidence.temporaryRoot, context.ownership.temporaryRoot);
+  assert.equal(result.retainedEvidence.policy, 'retain-inputs-oracles-stores-and-temporary-files');
+  assert.equal(await readFile(input, 'utf8'), content);
+  assert.deepEqual(await readFile(join(root, 'bindings.json')), before);
+  const receipt = await json(result.artifact.path);
+  assert.deepEqual(receipt.retainedEvidence, result.retainedEvidence);
+  assert.equal(hash(await readFile(result.artifact.path)), result.artifact.sha256);
+});
+
 test('readback seals the actual receipt and binds local body keys to relative paths', async t => {
   const { root, bindings, context } = await fixture(t);
   const directory = join(root, 'skill'), input = join(root, 'input.md'), content = '# Real local rule\n';

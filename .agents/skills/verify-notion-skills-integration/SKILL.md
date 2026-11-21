@@ -12,6 +12,8 @@ OMP/Tern 延期；不恢复 `source.command`、CLI 正文消费、完整 export 
 [验证交接表](../../../docs/verification-routing.md) 指定 CLI 管理、消费、来源接手与 Broker 的负责人。
 本 Skill 检查跨仓消费和安装包，不复制作者操作验收。自然用户旅程、混合来源选路与日常管理闭环交给 [工作流验证 Skill](../verify-notion-agent-workflows/SKILL.md)。当前feature地图直接指向现役SDK、安装与实际Pi入口。
 
+项目级自然旅程沿工作流入口 candidate-plan → candidate-run：plan 校验输入与合同，run 在启动 Pi 前自动核对所选 CLI/SDK 与随包产物身份。无需为这条路径自行导入预检函数或执行正式双机交付；单独诊断包边界时才使用下文的现有检查。
+
 ## 1. 绑定同一份 CLI/SDK
 
 先确认两个仓库的实际提交及未提交改动。选择最终 CLI 提交构建出的完整 CLI/SDK 包，

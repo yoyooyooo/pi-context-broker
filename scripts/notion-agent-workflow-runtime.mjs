@@ -118,6 +118,34 @@ export function agentWorkflowArgs(config, sessions, extensions) {
     '--provider', 'magpie', '--model', 'group/worker', '--thinking', 'high', ...extensions.flatMap(path => ['-e', path])];
 }
 
+/** Bind retained temporary files and disclose the convention through native project context. */
+export async function prepareWorkflowTemporaryEnvironment(fixture, env) {
+  assert.equal(await realpath(fixture.root), fixture.root, 'Fixture root cannot be a symlink');
+  const ownership = await json(join(fixture.root, 'ownership.json'));
+  assert.equal(ownership.root, fixture.root); assert.equal(ownership.runId, fixture.runId);
+  assert.ok(typeof fixture.ownership.token === 'string' && fixture.ownership.token.length > 0);
+  assert.equal(ownership.token, fixture.ownership.token);
+  assert.equal(ownership.temporaryRoot, join(fixture.root, 'temporary'), 'Prepare a fixture with owned temporary evidence before running');
+  assert.equal(fixture.ownership.temporaryRoot, ownership.temporaryRoot);
+  assert.equal(await realpath(ownership.temporaryRoot), ownership.temporaryRoot, 'Temporary evidence cannot be a symlink');
+  assert.ok((await lstat(ownership.temporaryRoot)).isDirectory());
+  assert.equal(fixture.projectRoot, join(fixture.root, 'project'), 'Use the owned project for temporary-file context');
+  assert.equal(await realpath(fixture.projectRoot), fixture.projectRoot, 'The owned project cannot be a symlink');
+  for (const name of ['AGENTS.override.md', 'AGENTS.md', 'AGENTS.MD', 'CLAUDE.md', 'CLAUDE.MD']) {
+    const present = await lstat(join(fixture.projectRoot, name)).then(() => true, error => {
+      if (error.code === 'ENOENT') return false;
+      throw error;
+    });
+    assert.equal(present, false, 'Do not replace or shadow existing project context');
+  }
+  const path = join(fixture.projectRoot, 'AGENTS.md');
+  await writeFile(path, '# Temporary work files\n\n'
+    + 'Keep temporary work files under the supplied TMPDIR and preserve exact inputs needed to repeat or continue an operation.\n'
+    + 'For shell work, use an explicit template such as `mktemp -d "${TMPDIR%/}/work.XXXXXX"`; on macOS, bare `mktemp -d` may ignore TMPDIR.\n'
+    + 'Leave these files in place after the task for later review or continuation.\n', { flag: 'wx', mode: 0o600 });
+  return { env: { ...env, TMPDIR: ownership.temporaryRoot }, projectContext: await identity(path) };
+}
+
 export function agentWorkflowProjectSettings(settings, scenario) {
   const budgets = new Set(scenario.turns.flatMap(turn => (turn.before ?? [])
     .filter(event => event.kind === 'compact' && event.keepRecentTokens !== undefined).map(event => event.keepRecentTokens)));
@@ -235,8 +263,7 @@ export async function runAgentWorkflow(config) {
     const path = join(directory, body.sha256); await writeFile(path, bytes, { flag: 'wx', mode: 0o600 }); body.path = path; body.realpath = path;
   }
   const fixture = bindings.private.fixture;
-  const ownership = await json(join(fixture.root, 'ownership.json'));
-  assert.equal(ownership.runId, fixture.runId); assert.equal(ownership.token, fixture.ownership.token);
+  const { env: inheritedEnv, projectContext } = await prepareWorkflowTemporaryEnvironment(fixture, process.env);
   const settingsPath = join(homedir(), '.pi/agent/settings.json'), sourcePath = join(homedir(), '.pi/agent/context-broker/config.yml');
   const settings = await json(settingsPath), before = { settings: await identity(settingsPath), source: await identity(sourcePath) };
   const { parse } = createRequire(new URL('../packages/context-broker/package.json', import.meta.url))('yaml');
@@ -278,7 +305,7 @@ export async function runAgentWorkflow(config) {
   }
   await save(sourceConfigPath, candidateSource);
   const sourceObservation = { sourceId: config.sourceId, database: config.database, configArtifact: await identity(sourceConfigPath) };
-  const env = { ...process.env, CONTEXT_BROKER_CONFIG: sourceConfigPath, NTN_SKILLS_HOME: ownedStateRoot,
+  const env = { ...inheritedEnv, CONTEXT_BROKER_CONFIG: sourceConfigPath, NTN_SKILLS_HOME: ownedStateRoot,
     NTN_SKILLS_CONFIG_HOME: join(stateRoot, 'config'), NTN_SKILLS_CACHE_HOME: join(stateRoot, 'cache'), NTN_SKILLS_DATA_HOME: join(stateRoot, 'data'),
     NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000', BROKER_E2E_PROCESS_LEDGER: join(evidence, 'owned-processes.jsonl') };
   delete env.NTN_SKILLS_DEV_ROOT;
@@ -294,9 +321,12 @@ export async function runAgentWorkflow(config) {
   const result = { version: 1, scope: config.scope, status: 'running', runId, evidence, startedAt: new Date().toISOString(), plan,
     sourceTuple: await Promise.all([sourceIdentity(config.brokerRoot, 'broker'), sourceIdentity(config.cliRoot, 'cli')]),
     baseline, cliFiles, loadedPackageFiles, runtime, build, host, hostArtifact: await identity(host.identity), before, registration,
-    configuration: { normalHome: true, normalAgentDir: true, normalMcpAndExtensions: true, profile: config.profile, ownStateOnly: true, model: 'magpie/group/worker', thinkingLevel: 'high' },
+    configuration: { normalHome: true, normalAgentDir: true, normalMcpAndExtensions: true, profile: config.profile, ownStateOnly: true,
+      temporaryRoot: env.TMPDIR, projectContext, temporaryFiles: 'environment-convention-not-sandbox', model: 'magpie/group/worker', thinkingLevel: 'high' },
     segments: [], events: [], turns: scenario.turns.map(turn => ({ id: turn.id, status: 'not_run' })), retestOf: config.retestOf ?? null };
-  await save(join(evidence, 'config.json'), config); await save(join(evidence, 'initial-bindings.json'), bindings); await save(join(evidence, 'initial-state.json'), { cache: 'cold', stateRoot, ownedStateRoot, sourceCache, oracle: 'independent', createdAt: result.startedAt });
+  await save(join(evidence, 'config.json'), config); await save(join(evidence, 'initial-bindings.json'), bindings); await save(join(evidence, 'initial-state.json'), {
+    cache: 'cold', stateRoot, ownedStateRoot, sourceCache, temporaryRoot: env.TMPDIR, projectContext,
+    temporaryFiles: 'environment-convention-not-sandbox', oracle: 'independent', createdAt: result.startedAt });
   await save(join(evidence, 'started.json'), result);
   const implementation = { version: 1, candidateArtifact: await identity(join(evidence, 'started.json')),
     configArtifact: await identity(join(evidence, 'config.json')) };

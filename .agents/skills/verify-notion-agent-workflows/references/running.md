@@ -47,7 +47,7 @@ fixture 包含有限 kind、对象/版本/完整文件树、公开业务材料�
       "packageIndex": 0
     }
 
-从正常 settings 的 packages 中核对实际 Broker 注册位置，packageIndex 从零开始；不能复制示例值。先按 integration Skill 核源码、构建与 embedded CLI/SDK 的同一身份。
+从正常 settings 的 packages 中核对实际 Broker 注册位置，packageIndex 从零开始；不能复制示例值。candidate-plan 校验本次语料、绑定和合同映射；candidate-run 在启动 Pi 前自动验证所选 CLI/SDK 与 embedded bundle 的版本、能力和字节，并记录源码身份。候选运行无需自行 import 内部预检函数，也不需要执行双机安装交付；只有独立包诊断或安装交付另走 [integration Skill](../../verify-notion-skills-integration/SKILL.md)。
 
 可在 Broker 根目录直接调用模块准备单个场景。这是现役运行器的输入准备，不是另一个执行入口：
 
@@ -101,6 +101,10 @@ fixture 包含有限 kind、对象/版本/完整文件树、公开业务材料�
 
 cwd 来自 bindings.private.fixture.projectRoot；ownership 来自 fixtureRoot/ownership.json，不由调用者随意声明。不要把 token、正确答案、期望工具调用或私有字段塞入 prompt、system prompt、context 文件或模型环境提示。
 
+准备函数同时创建 ownership.temporaryRoot，固定为 fixtureRoot/temporary。运行器只接受这一本轮目录作为 TMPDIR，拒绝外部路径或符号链接。它在全新自有项目写入简短 AGENTS.md，说明临时文件位置、shell 显式模板与精确输入保留约定；已有原生项目说明则拒绝覆盖。initial-state.json 与 result.configuration 记录路径、说明文件哈希和这项计划内环境差异。
+
+Node 等遵守 TMPDIR 的临时文件 API 会使用这个目录。macOS 裸 mktemp -d 可能忽略 TMPDIR，因此原生项目说明要求 shell 使用显式模板 `mktemp -d "${TMPDIR%/}/work.XXXXXX"`。这只是临时材料约定，不是文件系统沙箱；硬编码其他路径仍可能越界，不能据 TMPDIR 声称全部文件已收口。不改 PATH，不加载验证 Skill 或 oracle，不改变业务 prompt。正常 HOME、全局 Skill 与扩展发现保持原样，不扫描系统临时目录推测所有权。
+
 明确离线检查安装包的场景由运行器绑定 `paired-maintain@A/SKILL.md`：原件来自本轮 Broker 的实际配对包，并在观测目录冻结。这个私有绑定只用于核对真实 native read 和 provider 请求，不预加载正文；旧全局包的目录存在不能证明它属于当前候选。
 
 daily 正常加载全局与项目 native Skills、其他扩展/MCP；no-native-skills 只关闭默认 native 发现，仍需如实记录 Broker local 与可读路径。正式请求和响应必须证明实际 worker 路由；模型配置标签、RPC success 和进程退出零均不足以通过。
@@ -143,11 +147,11 @@ readAgentFixture(bindings, alias, {version, key, state, properties, projection})
 
 不要在读回中修字段、清 pending、补关联、重新投影或执行新的管理操作。若被测 Agent 声称完成后需要这些修补，保存失败。预定 teardown 只在场景判断完成后收回所有自有测试对象。
 
-确认所有本轮 Pi 进程已退出，再调用：
+根据运行结果中的进程 close 回执确认所有本轮 Pi 已退出；最后一句回答或短等待返回不代表退出。然后调用：
 
-    cleanupAgentFixtures(bindings, { subjectExited: true, trash: '/usr/bin/trash' })
+    cleanupAgentFixtures(bindings, { subjectExited: true, trash: '/usr/bin/trash', preserveBindings: true })
 
-只清理 ownership 中的自有对象；external builtin 跳过。文件目录只能移入系统 Trash。保留运行原件与首败关系；不要清理用户会话、全局配置、非自有 Skill 或另一个活跃运行的状态。
+保存完整返回回执。preserveBindings 保留原绑定文件，把退场期间的身份检查另存为补充原件。只回收 ownership 中的自有 Notion 对象及全局或项目 Skill；external builtin 跳过，文件目录只移入系统 Trash。retainedEvidence 明确保留本轮输入、oracle、Store、项目配置和 temporary 材料，不把这些复核或恢复所需的原件再删掉。无需再写本地清理脚本或扫描系统临时目录。保留运行原件与首败关系；不要清理用户会话、全局配置、非自有 Skill 或另一个活跃运行的状态。
 
 ## 覆盖与结果边界
 

@@ -62,6 +62,12 @@ async function assertOwnership(context) {
   const ownership = await json(join(context.root, 'ownership.json'));
   assert.equal(ownership.runId, context.runId); assert.equal(ownership.token, context.ownership.token);
   assert.equal(ownership.root, context.root);
+  if (ownership.temporaryRoot !== undefined || context.ownership.temporaryRoot !== undefined) {
+    assert.equal(ownership.temporaryRoot, join(context.root, 'temporary'), 'Temporary evidence must stay under its fixture root');
+    assert.equal(context.ownership.temporaryRoot, ownership.temporaryRoot);
+    assert.equal(await realpath(ownership.temporaryRoot), ownership.temporaryRoot, 'Temporary evidence cannot be a symlink');
+    assert.ok((await lstat(ownership.temporaryRoot)).isDirectory());
+  }
   return ownership;
 }
 
@@ -575,9 +581,9 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
   await mkdir(root, { recursive: true, mode: 0o700 }); root = await realpath(root);
   const context = { version: 1, runId, root, entry, cli: await realpath(cliPath), node: await realpath(node), apiVersion, recipe, preparationPlan,
     env: { NTN_SKILLS_HOME: join(root, 'state'), NTN_SKILLS_CACHE_HOME: join(root, 'cache'), NTN_SKILLS_DATA_HOME: join(root, 'data') },
-    objects: {}, projectRoot: join(root, 'project'), observedReadbacks: {}, ownership: { runId, root, token: randomUUID(), createdAt: new Date().toISOString(), globalDirectories: [] } };
+    objects: {}, projectRoot: join(root, 'project'), observedReadbacks: {}, ownership: { runId, root, token: randomUUID(), createdAt: new Date().toISOString(), globalDirectories: [], temporaryRoot: join(root, 'temporary') } };
   await save(join(root, 'ownership.json'), context.ownership);
-  for (const path of ['commands', 'readbacks', 'inputs', 'quarantine', 'project/.agents/skills']) await mkdir(join(root, path), { recursive: true, mode: 0o700 });
+  for (const path of ['commands', 'readbacks', 'inputs', 'quarantine', 'temporary', 'project/.agents/skills']) await mkdir(join(root, path), { recursive: true, mode: 0o700 });
   const inspect = await cli(context, ['ctl', 'library', 'inspect', entry], 'inspect-library'); context.library = inspect.value.library;
   assert.equal(context.library.skills.database_id.replaceAll('-', ''), entry.replaceAll('-', ''));
   const bindings = { version: 1, public: { ...(recipe.public ?? {}) }, private: { fixture: context, objects: {}, bodies: {}, facts: recipe.facts ?? {}, readbacks: structuredClone(recipe.readbacks ?? {}) } };
@@ -1008,7 +1014,7 @@ export async function readAgentFixture(bindings, object, options = {}) {
 export async function cleanupAgentFixtures(bindings, { subjectExited, trash = '/usr/bin/trash', preserveBindings = false } = {}) {
   assert.equal(subjectExited, true, 'Stop the owned subject before fixture cleanup');
   assert.equal(typeof preserveBindings, 'boolean');
-  const context = bindings.private.fixture; await assertOwnership(context);
+  const context = bindings.private.fixture, ownership = await assertOwnership(context);
   assert.ok(isAbsolute(trash) && await exists(trash), 'A verified system Trash executable is required');
   const results = [], bindingsArtifacts = [];
   const persistCleanup = async () => {
@@ -1110,7 +1116,9 @@ export async function cleanupAgentFixtures(bindings, { subjectExited, trash = '/
   }
   if (preserveBindings) await persistCleanup();
   const retained = preserveBindings ? { bindingsArtifacts } : {};
-  const path = join(context.root, 'cleanup-' + randomUUID() + '.json'); await save(path, { results, at: clock(), semantics: 'owned-fixture-teardown-not-product-repair', ...retained });
+  const retainedEvidence = { root: context.root, policy: 'retain-inputs-oracles-stores-and-temporary-files',
+    ...(ownership.temporaryRoot ? { temporaryRoot: ownership.temporaryRoot } : {}) };
+  const path = join(context.root, 'cleanup-' + randomUUID() + '.json'); await save(path, { results, at: clock(), semantics: 'owned-fixture-teardown-not-product-repair', retainedEvidence, ...retained });
   if (!preserveBindings) await persist(bindings);
-  return { results, artifact: await artifact(path), ...retained };
+  return { results, artifact: await artifact(path), retainedEvidence, ...retained };
 }
