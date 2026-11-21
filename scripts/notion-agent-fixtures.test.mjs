@@ -194,3 +194,12 @@ test('an unknown View CREATE outcome is recorded and never automatically replaye
     if (previousToken === undefined) delete process.env.NOTION_API_TOKEN; else process.env.NOTION_API_TOKEN = previousToken;
   }
 });
+
+
+test('Source lifecycle events require an owned Source and a verified pending intent', async t => {
+  const { bindings } = await fixture(t);
+  await assert.rejects(runAgentFixtureEvent({ kind: 'interrupt-source-write', object: 'selected' }, { bindings }), /source/u);
+  bindings.private.fixture.objects.selected = { id: 'selected', placement: 'source', currentVersion: 'absent' };
+  await assert.rejects(runAgentFixtureEvent({ kind: 'resume-source-write', object: 'selected' }, { bindings }), /verified real interruption/u);
+  assert.equal(bindings.private.fixture.objects.selected.sourceOperation, undefined);
+});
