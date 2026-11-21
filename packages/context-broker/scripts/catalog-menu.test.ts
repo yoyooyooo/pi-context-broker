@@ -22,6 +22,7 @@ assert.deepEqual(notionListFreshness(fresh, at + 60_000), { policy: "default", v
 assert.equal(notionListFreshness({ ...fresh, ageMs: 30_000 }, at + 1_000).age_ms, 30_000);
 assert.equal(notionListFreshness({ ...fresh, policy: "offline", stale: true }, at + 120_000).stale, true);
 assert.equal(notionListFreshness(fresh, at - 1).age_ms, null);
+assert.equal(notionListFreshness(fresh, at - 1).stale, null, "An unknown age cannot prove fresh metadata after clock rollback");
 assert.deepEqual(notionListFreshness(undefined, at), { policy: null, validated_at: null, age_ms: null, max_age_ms: null, stale: null });
 assert.equal(notionCatalogAction({ offline: false, sourceIds: ["notion"], observations: [fresh], failedSourceIds: [], now: at + 1_000 }), "use");
 assert.equal(notionCatalogAction({ offline: true, sourceIds: ["notion"], observations: [], failedSourceIds: ["notion"], now: at }), "use");

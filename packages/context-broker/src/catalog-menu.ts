@@ -24,7 +24,7 @@ export function notionListFreshness(observation: NotionListObservation | undefin
     age_ms: currentAge,
     max_age_ms: observation?.maxAgeMs ?? null,
     stale: observation?.stale === true ? true : currentAge !== null && observation?.maxAgeMs !== undefined
-      ? currentAge >= observation.maxAgeMs : observation?.stale ?? null,
+      ? currentAge >= observation.maxAgeMs : null,
   };
 }
 

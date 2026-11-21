@@ -27,8 +27,8 @@ test("native Pi guidance is a bounded routing contract, not a duplicated CLI tut
   expect(guidance).toContain("refresh:true checks latest main; pins fixed");
   expect(guidance).toContain("refresh:true adopts latest on request");
   expect(guidance).toContain("Reuse complete content");
-  expect(guidance).toContain("refresh:true after writes or for latest metadata");
-  expect(guidance).toContain("preserving pins");
+  expect(guidance).toContain("refresh:true after writes");
+  expect(guidance).toContain("keeping pins");
   expect(guidance).toContain("Check freshness");
   expect(guidance).toContain("read(path) inspects");
   expect(guidance).toContain("notion_use(ref) applies with Requires");
