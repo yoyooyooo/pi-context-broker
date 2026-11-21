@@ -476,3 +476,57 @@ for (const [reason, options] of [
   assert.equal(result.status, 'blocked');
   assert.ok(result.assertions.some(row => row.code === 'LOCAL_BODY_DELIVERY_MISSING'));
 });
+
+function sourceOperation(attempts = []) {
+  return [{ phase: 'started', kind: 'sdk', requestId: 'sdk:owned', operation: 'list' },
+    ...attempts.map((attempt, index) => ({ phase: 'attempt', requestId: 'sdk:owned', attempt: index + 1,
+      request_kind: 'notion_metadata', method: 'GET', ...attempt })),
+    { phase: 'metrics', requestId: 'sdk:owned', observed: true, complete: true, total_requests: attempts.length },
+    { phase: 'completed', kind: 'sdk', requestId: 'sdk:owned', status: attempts.some(item => item.status === 403) ? 'failed' : 'completed' }];
+}
+
+test('offline source assertion measures zero actual source attempts through complete metrics', async () => {
+  const f = fixture({ calls: [{ name: 'read', arguments: { path: '/owned/package/skill/SKILL.md' } }] });
+  f.observed.source = sourceOperation();
+  const result = await f.run([{ kind: 'source-network-attempts', max: 0 }]);
+  assert.equal(result.status, 'passed');
+  assert.equal(result.assertions.find(item => item.kind === 'source-network-attempts').details.actual, 0);
+});
+
+test('an authorization-failed HTTP attempt is still network access', async () => {
+  const f = fixture(); f.observed.source = sourceOperation([{ status: 403 }]);
+  const result = await f.run([{ kind: 'source-network-attempts', max: 0 }]);
+  assert.equal(result.status, 'failed');
+  assert.ok(result.assertions.some(item => item.code === 'SOURCE_NETWORK_ATTEMPTS_TOO_MANY'));
+  assert.equal((await f.run([{ kind: 'source-network-attempts', min: 1, max: 1 }])).status, 'passed');
+});
+
+test('missing request metrics cannot prove offline even with an empty visible trace', async () => {
+  const f = fixture(); f.observed.source = sourceOperation().filter(row => row.phase !== 'metrics');
+  assert.equal((await f.run([{ kind: 'source-network-attempts', max: 0 }])).status, 'blocked');
+});
+
+test('zero observed SDK traffic cannot stand in for a CLI child of a bash tool', async () => {
+  const f = fixture({ calls: [{ name: 'bash', arguments: { command: 'node /owned/cli.mjs ctl builtin read maintain' } }] });
+  f.observed.source = sourceOperation();
+  const result = await f.run([{ kind: 'source-network-attempts', max: 0 }]);
+  assert.equal(result.status, 'blocked');
+  assert.ok(result.assertions.some(item => item.code === 'TOOL_EFFECTS_UNKNOWN'));
+});
+
+test('complete child effects need an explicit measured network metric as well as zero semantic writes', async () => {
+  const f = fixture({ calls: [{ name: 'bash', arguments: { command: 'node /owned/cli.mjs ctl builtin read maintain' } }] });
+  const bind = value => {
+    const bytes = Buffer.from(JSON.stringify(value)), path = '/owned/private/effects.json';
+    f.files.set(path, bytes); f.observed.effects = { ...value, artifact: { path, sha256: hash(bytes), bytes: bytes.length } };
+  };
+  const value = { coverage: 'all-subject-notion-operations', complete: true, semanticWrites: 0, externalRepair: false };
+  bind(value);
+  const unknown = await f.run([{ kind: 'source-network-attempts', max: 0 }]);
+  assert.equal(unknown.status, 'blocked');
+  assert.ok(unknown.assertions.some(item => item.code === 'SOURCE_NETWORK_METRIC_MISSING'));
+  bind({ ...value, notionHttpAttempts: 0 });
+  assert.equal((await f.run([{ kind: 'source-network-attempts', max: 0 }, { kind: 'no-semantic-writes' }])).status, 'passed');
+  bind({ ...value, notionHttpAttempts: 1 });
+  assert.equal((await f.run([{ kind: 'source-network-attempts', max: 0 }])).status, 'failed');
+});
