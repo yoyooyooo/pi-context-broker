@@ -21,6 +21,33 @@ const sessionTypes = new Set(['message', 'thinking_level_change', 'model_change'
   'branch_summary', 'custom', 'label', 'session_info', 'custom_message', 'context_edit']);
 const roles = new Set(['system', 'user', 'assistant', 'toolResult', 'custom', 'bashExecution', 'branchSummary', 'compactionSummary']);
 
+function projectNativeBranch(branch) {
+  const latestCompaction = branch.filter(entry => entry.value.type === 'compaction').at(-1);
+  let kept = branch;
+  if (latestCompaction) {
+    const index = branch.indexOf(latestCompaction), first = branch.findIndex(entry => entry.value.id === latestCompaction.value.firstKeptEntryId);
+    kept = [latestCompaction, ...branch.slice(first, index).filter(entry => !(entry.value.type === 'message' && entry.value.message.role === 'system')),
+      ...branch.slice(index + 1)];
+  }
+  const edits = new Map(kept.filter(entry => entry.value.type === 'context_edit').map(entry => [entry.value.targetId, entry]));
+  const contributions = [];
+  for (const [index, { value: row, line }] of kept.entries()) {
+    const edit = edits.get(row.id)?.value;
+    if (edit?.replacement === null) continue;
+    let role, content, details;
+    if (row.type === 'message') { role = row.message.role; content = row.message.content ?? (role === 'system' ? '' : []); details = row.message.details; }
+    else if (row.type === 'custom_message') { role = 'custom'; content = row.content ?? []; details = row.details; }
+    else if (row.type === 'branch_summary') { role = 'branchSummary'; content = row.summary; }
+    else if (row.type === 'compaction' && index === 0) {
+      if (row.systemMessage) contributions.push({ entryId: row.id, line, role: 'system', content: row.systemMessage.content ?? '', checkpoint: true });
+      role = 'compactionSummary'; content = row.summary;
+    } else continue;
+    if (edit && ['user', 'assistant', 'toolResult', 'custom'].includes(role)) content = edit.replacement.content;
+    contributions.push({ entryId: row.id, line, role, content, ...(details === undefined ? {} : { details }), ...(edit ? { editedBy: edit.id } : {}) });
+  }
+  return { latestCompaction, kept, contributions };
+}
+
 /** Inspect the actual append-only Pi v3 tree. This models persisted context, not
  * the final provider payload: context hooks can still change that payload. */
 export function inspectNotionAgentSession(text, options = {}) {
@@ -135,29 +162,7 @@ export function inspectNotionAgentSession(text, options = {}) {
       call.retractedLine !== undefined && call.contextEdits.some(edit => edit.active)), 'An active native tool call has no result or explicit failed-response retraction');
   }
 
-  const latestCompaction = branch.filter(entry => entry.value.type === 'compaction').at(-1);
-  let kept = branch;
-  if (latestCompaction) {
-    const index = branch.indexOf(latestCompaction), first = branch.findIndex(entry => entry.value.id === latestCompaction.value.firstKeptEntryId);
-    kept = [latestCompaction, ...branch.slice(first, index).filter(entry => !(entry.value.type === 'message' && entry.value.message.role === 'system')),
-      ...branch.slice(index + 1)];
-  }
-  const edits = new Map(kept.filter(entry => entry.value.type === 'context_edit').map(entry => [entry.value.targetId, entry]));
-  const contributions = [];
-  for (const [index, { value: row, line }] of kept.entries()) {
-    const edit = edits.get(row.id)?.value;
-    if (edit?.replacement === null) continue;
-    let role, content, details;
-    if (row.type === 'message') { role = row.message.role; content = row.message.content ?? (role === 'system' ? '' : []); details = row.message.details; }
-    else if (row.type === 'custom_message') { role = 'custom'; content = row.content ?? []; details = row.details; }
-    else if (row.type === 'branch_summary') { role = 'branchSummary'; content = row.summary; }
-    else if (row.type === 'compaction' && index === 0) {
-      if (row.systemMessage) contributions.push({ entryId: row.id, line, role: 'system', content: row.systemMessage.content ?? '', checkpoint: true });
-      role = 'compactionSummary'; content = row.summary;
-    } else continue;
-    if (edit && ['user', 'assistant', 'toolResult', 'custom'].includes(role)) content = edit.replacement.content;
-    contributions.push({ entryId: row.id, line, role, content, ...(details === undefined ? {} : { details }), ...(edit ? { editedBy: edit.id } : {}) });
-  }
+  const { latestCompaction, kept, contributions } = projectNativeBranch(branch);
   return { version: 1, supported: true, sessionId: header.id, header, sha256: hash(text), bytes: Buffer.byteLength(text),
     lines: rows.length, leafId, branched, branchEntryIds: branch.map(entry => entry.value.id), branchEntries: branch.map(entry => entry.value),
     branchSha256: hash(JSON.stringify(branch.map(entry => entry.value))), activeUserLines, userLines, currentUserId: activeUserLines.at(-1)?.entryId ?? null,
@@ -440,6 +445,42 @@ async function proveAskUserNoUi(call, session, readArtifact) {
     resultSha256: hash(content), coverage: 'reviewed-non-TUI-return-before-notification' };
 }
 
+/** Deferred injection is persisted as a native context edit plus a machine
+ * receipt. It has no context-hook message on later requests. Read only the
+ * sealed branch that existed before this request's actual response. */
+async function nativeSourceReceipts(artifact, session, responseEntryId, readArtifact) {
+  if (artifact === undefined) return { receipts: [], rejected: [] };
+  const snapshot = JSON.parse((await verifiedArtifact(artifact, readArtifact)).toString('utf8'));
+  need(object(snapshot) && snapshot.sessionId === session.sessionId && snapshot.sessionId === artifact.sessionId &&
+    snapshot.leafId === artifact.leafId && Array.isArray(snapshot.entries),
+  'SOURCE_RECEIPT_BRANCH_MISMATCH', 'The retained source receipt needs this request\'s actual native session branch');
+  const branch = session.branchEntries, leafIndex = branch.findIndex(entry => entry.id === snapshot.leafId);
+  need(leafIndex >= 0 && isDeepStrictEqual(snapshot.entries, branch.slice(0, leafIndex + 1)),
+    'SOURCE_RECEIPT_BRANCH_MISMATCH', 'A sibling or changed branch cannot supply source delivery identity');
+  const responseIndex = branch.findIndex(entry => entry.id === responseEntryId);
+  need(responseIndex > leafIndex, 'SOURCE_RECEIPT_FROM_FUTURE', 'A receipt appended after the actual response cannot prove its input');
+  const { kept, contributions } = projectNativeBranch(snapshot.entries.map((value, index) => ({ value, line: index + 2 })));
+  const retained = new Map(kept.map(entry => [entry.value.id, entry.value])), receipts = [], rejected = [];
+  for (const { value: entry } of kept) {
+    if (entry.type !== 'custom' || entry.customType !== 'context-broker' || !object(entry.data) ||
+      entry.data.nativePromptSha256 === undefined) continue;
+    try {
+      const data = entry.data, edit = retained.get(entry.parentId);
+      assert.ok(digest(data.nativePromptSha256) && Array.isArray(data.records) && data.records.length,
+        'A deferred source receipt needs its complete native prompt identity and records');
+      assert.ok(edit?.type === 'context_edit' && object(edit.replacement), 'A deferred source receipt must follow its native context edit');
+      const user = contributions.find(row => row.entryId === edit.targetId && row.role === 'user');
+      assert.ok(user && hash(textOf(edit.replacement.content)) === data.nativePromptSha256 &&
+        hash(textOf(user.content)) === data.nativePromptSha256, 'The exact projected user content is no longer retained');
+      receipts.push({ phase: 'receipt', customType: 'context-broker', proofs: { custom: data },
+        native: { kind: 'deferred-source-projection', receiptEntryId: entry.id, contextEditEntryId: edit.id,
+          userEntryId: user.entryId, nativePromptSha256: data.nativePromptSha256,
+          branchArtifact: { path: artifact.path, sha256: artifact.sha256, bytes: artifact.bytes } } });
+    } catch (error) { rejected.push({ receiptEntryId: entry.id, reason: error.message }); }
+  }
+  return { receipts, rejected };
+}
+
 function boundNotionDeliveries(payload, tasks, frozenBodies) {
   const deliveries = new Map(), rejected = [];
   const decode = (text, span) => {
@@ -472,7 +513,8 @@ function boundNotionDeliveries(payload, tasks, frozenBodies) {
         const value = { owner: binding.record.id, scope: binding.scope, snapshot_id: binding.snapshot_id,
           version_id: binding.version_id, path, sha256, bytes: frozen.bytes, purpose,
           messageIndex: index, ...(receipt.toolCallId ? { toolCallId: receipt.toolCallId } : { customType: receipt.customType }),
-          content: { sha256: hash(text), bytes: Buffer.byteLength(text) }, delivery: span };
+          content: { sha256: hash(text), bytes: Buffer.byteLength(text) }, delivery: span,
+          ...(receipt.native ? { native: receipt.native } : {}) };
         deliveries.set(JSON.stringify([index, span.start, span.end, value.scope, value.owner, value.snapshot_id, path]), value);
       };
       try {
@@ -732,9 +774,11 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
           provenance: calls.map(call => ({ toolCallId: call.id, resultEntryId: call.native.resultEntryId,
             ...(call.history ? { history: call.history } : { currentTurn: true }) })) });
       }
-      const notion = boundNotionDeliveries(payload, tasks, uniqueBodies);
+      const native = uniqueBodies.size ? await nativeSourceReceipts(task.branch, observed.session, nativeMatches[0].entryId, readArtifact)
+        : { receipts: [], rejected: [] };
+      const notion = boundNotionDeliveries(payload, [...tasks, ...native.receipts], uniqueBodies);
       payloads.push({ request: request.request, wireRequestId: sent.id, sha256: task.sha256, bytes: task.bytes, bodies, bodyObservation, nativeReadBodies,
-        notionDeliveries: notion.deliveries, rejectedNotionReceipts: notion.rejected,
+        notionDeliveries: notion.deliveries, rejectedNotionReceipts: [...notion.rejected, ...native.rejected],
         monotonicNs: task.monotonicNs, metadataText: (payload.messages ?? []).filter(message => ['user', 'system'].includes(message.role)).map(message => textOf(message.content)).join('\n'),
         verifiedBodies: request.payload.verifiedBodyOccurrences, usage: message.usage, completion: providerApplicationCompletion(end, message),
         selection: observed.selectionSnapshots?.find(row => row.payloadSha256 === task.sha256)?.selection });

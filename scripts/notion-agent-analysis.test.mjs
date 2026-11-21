@@ -225,6 +225,49 @@ function fixture({ calls = [], answerText = '合计：100 元', bodies = {}, sco
   return { files, entries, bodyFiles, binding, observed, run, bindRemote };
 }
 
+function deferredSourceFixture(mode = 'same-turn') {
+  const f = fixture({ bodies: { 'remote@A/SKILL.md': '完整规则：票面金额 < 100 & 保留来源。' } });
+  f.bindRemote('remote', 'A', 'remote@A/SKILL.md', 'exact-owner', false);
+  const body = f.binding.private.bodies['remote@A/SKILL.md'], binding = f.observed.selection.scopes[0].bindings[0];
+  const prefix = '<source>\n', source = prefix + f.files.get(body.path).toString('utf8')
+    .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;') + '\n</source>';
+  const content = [{ type: 'text', text: user.message.content }, { type: 'text', text: source }];
+  const prompt = content.map(part => part.text).join('\n'), start = user.message.content.length + 1 + prefix.length;
+  const record = { version: 2, loaded: true, snapshotId: binding.snapshot_id, bodySha256: body.sha256, bytes: body.bytes,
+    binding: structuredClone(binding), delivery: { start, end: prompt.length - '\n</source>'.length, encoding: 'xml' } };
+  const edit = entry('source-edit', 'u', 'context_edit', { targetId: 'u', replacement: { content } });
+  const receipt = entry('source-receipt', edit.id, 'custom', { customType: 'context-broker',
+    data: { nativePromptSha256: hash(prompt), records: [record] } });
+  const branch = [model, user, edit, receipt];
+  if (mode !== 'same-turn') {
+    branch.push(answer('prior-answer', receipt.id));
+    if (mode === 'compact-kept') branch.push(entry('checkpoint', 'prior-answer', 'compaction', {
+      summary: '继续原始工作', firstKeptEntryId: 'u', tokensBefore: 1000 }));
+    branch.push(message('next-user', branch.at(-1).id, 'user', '继续按刚才的原规则计算。'));
+    if (mode === 'compact-removed') branch.push(entry('checkpoint', 'next-user', 'compaction', {
+      summary: '规则全文已移出', firstKeptEntryId: 'next-user', tokensBefore: 1000 }));
+  }
+  const sealBranch = (entries = branch) => {
+    const leafId = entries.at(-1).id, value = { sessionId: f.observed.session.sessionId, leafId, entries };
+    const bytes = Buffer.from(JSON.stringify(value)), path = '/owned/evidence/request-branch.json';
+    f.files.set(path, bytes);
+    f.observed.tasks.find(row => row.phase === 'provider_payload').branch = {
+      path, bytes: bytes.length, sha256: hash(bytes), sessionId: value.sessionId, leafId };
+  };
+  const setSession = (entries = [...branch, answer('final', branch.at(-1).id)]) => {
+    f.observed.session = inspect(entries);
+    Object.assign(f.observed.selection, { leafId: f.observed.session.leafId, branchSha256: f.observed.session.branchSha256 });
+  };
+  setSession(); sealBranch();
+  rewritePayloads(f, payload => {
+    payload.messages[0].content = '';
+    payload.messages[1].content = content;
+    if (mode !== 'same-turn') payload.messages.push({ role: 'user', content: '继续按刚才的原规则计算。' });
+  });
+  return { ...f, branch, edit, receipt, record, content, source, sealBranch, setSession,
+    expectations: [{ kind: 'selection', object: 'remote', version: 'A' }, { kind: 'body', body: 'remote@A/SKILL.md', occurrences: 1 }] };
+}
+
 test('completed real-evidence shape passes facts and zero tool attempts', async () => {
   const f = fixture();
   const result = await f.run([{ kind: 'completed' }, { kind: 'output', all: ['total'] },
@@ -299,6 +342,94 @@ test('a matching body plus actual exact selection passes without requiring Notio
   f.bindRemote('remote', 'A', 'remote@A/SKILL.md');
   const result = await f.run([{ kind: 'selection', object: 'remote', version: 'A' }, { kind: 'output', all: ['total'] }]);
   assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+});
+
+test('deferred native source receipts prove merged context after a tool turn, compaction and resume', async () => {
+  for (const mode of ['same-turn', 'compact-kept', 'resume']) {
+    const f = deferredSourceFixture(mode);
+    // A context-hook receipt was for a standalone custom message. It does not
+    // match the subsequent merged native user message and cannot be guessed.
+    f.observed.tasks.push({ phase: 'receipt', customType: 'context-broker',
+      content: { sha256: hash(f.source), bytes: Buffer.byteLength(f.source) },
+      proofs: { custom: { ...f.record, delivery: { ...f.record.delivery, start: 9, end: 20 } } } });
+    const result = await f.run(f.expectations);
+    assert.equal(result.status, 'passed', mode + ': ' + JSON.stringify(result.assertions));
+    const deliveries = result.delivery.requests[0].notionDeliveries;
+    assert.equal(deliveries.length, 1);
+    assert.equal(deliveries[0].owner, 'exact-owner');
+    assert.equal(deliveries[0].native.receiptEntryId, 'source-receipt');
+    assert.equal(deliveries[0].native.contextEditEntryId, 'source-edit');
+    assert.equal(deliveries[0].native.userEntryId, 'u');
+    assert.equal(deliveries[0].native.branchArtifact.sha256, f.observed.tasks[0].branch.sha256);
+  }
+});
+
+test('compacted or omitted native source receipts cannot prove a matching wire copy', async () => {
+  const compacted = deferredSourceFixture('compact-removed');
+  assert.equal((await compacted.run(compacted.expectations)).status, 'blocked');
+  const omitted = deferredSourceFixture();
+  omitted.branch.push(entry('omit-source', 'source-receipt', 'context_edit', { targetId: 'u', replacement: null }));
+  omitted.setSession(); omitted.sealBranch();
+  const result = await omitted.run(omitted.expectations);
+  assert.equal(result.status, 'blocked');
+  assert.ok(result.assertions.some(row => row.code === 'BODY_RECEIPT_MISSING'));
+  assert.match(result.delivery.requests[0].rejectedNotionReceipts[0].reason, /no longer retained/u);
+});
+
+test('a native source receipt needs the exact prompt hash, body span and binding', async () => {
+  for (const damage of ['prompt-hash', 'span', 'body-hash', 'owner', 'version']) {
+    const f = deferredSourceFixture();
+    if (damage === 'prompt-hash') f.receipt.data.nativePromptSha256 = '0'.repeat(64);
+    if (damage === 'span') f.record.delivery.start += 1;
+    if (damage === 'body-hash') f.record.bodySha256 = '0'.repeat(64);
+    if (damage === 'owner') f.record.binding.record.id = 'another-owner';
+    if (damage === 'version') f.record.binding.version_id = '0'.repeat(64);
+    f.setSession(); f.sealBranch();
+    assert.equal((await f.run(f.expectations)).status, 'blocked', damage);
+  }
+});
+
+test('later user edits invalidate the old machine receipt even if wire still contains its old text', async () => {
+  const f = deferredSourceFixture();
+  f.branch.push(entry('replace-source', 'source-receipt', 'context_edit', { targetId: 'u', replacement: { content: '新的用户内容' } }));
+  f.setSession(); f.sealBranch();
+  assert.equal((await f.run(f.expectations)).status, 'blocked');
+});
+
+test('source receipt identity cannot come from a different session or sibling branch', async () => {
+  for (const damage of ['session', 'sibling']) {
+    const f = deferredSourceFixture();
+    if (damage === 'sibling') f.sealBranch([...f.branch.slice(0, -1), { ...f.receipt, id: 'sibling-receipt' }]);
+    else {
+      const task = f.observed.tasks[0], snapshot = JSON.parse(f.files.get(task.branch.path));
+      snapshot.sessionId = 'another-session';
+      const bytes = Buffer.from(JSON.stringify(snapshot));
+      f.files.set(task.branch.path, bytes); Object.assign(task.branch, { bytes: bytes.length, sha256: hash(bytes), sessionId: snapshot.sessionId });
+    }
+    const result = await f.run(f.expectations);
+    assert.equal(result.status, 'blocked');
+    assert.ok(result.assertions.some(row => row.code === 'SOURCE_RECEIPT_BRANCH_MISMATCH'), damage);
+  }
+});
+
+test('a receipt only appended after the response cannot retroactively prove its request', async () => {
+  const f = deferredSourceFixture();
+  const later = [model, user, answer('final', 'u'), { ...f.edit, parentId: 'final' }, f.receipt];
+  f.setSession(later); f.sealBranch(later);
+  const result = await f.run(f.expectations);
+  assert.equal(result.status, 'blocked');
+  assert.ok(result.assertions.some(row => row.code === 'SOURCE_RECEIPT_FROM_FUTURE'));
+});
+
+test('a deferred receipt requires unmodified sealed branch bytes and actual wire delivery', async () => {
+  const changed = deferredSourceFixture();
+  changed.files.set(changed.observed.tasks[0].branch.path, Buffer.from('{}'));
+  assert.equal((await changed.run(changed.expectations)).status, 'failed');
+  const absent = deferredSourceFixture(); delete absent.observed.tasks[0].branch;
+  assert.equal((await absent.run(absent.expectations)).status, 'blocked');
+  const wire = deferredSourceFixture();
+  rewritePayloads(wire, payload => { payload.messages[1].content = '原规则未投递'; });
+  assert.notEqual((await wire.run(wire.expectations)).status, 'passed');
 });
 
 test('resource proof binds owner and version independently from content equality', async () => {
