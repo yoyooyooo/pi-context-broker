@@ -114,18 +114,27 @@ test("maintenance preserves native capability limits and explicit offline/bootst
 
 test("deferred native management exposes only exact enabled source IDs when a CLI must be located", async () => {
   const normal = ["read", "notion_list", "notion_use", "bash"];
+  const lazy = [...normal, "tool_search"];
   const native = [...normal, "notion_ctl"];
-  const hidden = text(normal), discovered = text(native);
+  const hidden = text(normal), discoverable = text(lazy), discovered = text(native);
   expect(hidden).not.toContain("cli_source");
+  expect(discoverable).toContain("tool_search for notion_ctl, then its cli_source");
+  expect(discoverable).not.toContain("notion_ctl working_set");
   expect(discovered).toContain("notion_ctl cli_source");
-  expect(discovered).toContain('["alpha","beta"]');
-  expect(discovered).toContain("Choose explicitly");
-  expect(discovered).toContain("no execution or authorization");
-  for (const forbidden of ["/configured", "database-a", "database-b", "disabled", "must-not-appear", '"local"'])
-    expect(discovered).not.toContain(forbidden);
+  expect(discovered).not.toContain("tool_search");
+  for (const routed of [discoverable, discovered]) {
+    expect(routed).toContain('["alpha","beta"]');
+    expect(routed).toContain("Choose explicitly");
+    expect(routed).toContain("use returned command/scope, never a global CLI");
+    expect(routed).toContain("No execution or authorization");
+    for (const forbidden of ["/configured", "database-a", "database-b", "disabled", "must-not-appear", '"local"'])
+      expect(routed).not.toContain(forbidden);
+  }
   expect(Buffer.byteLength(hidden)).toBeLessThanOrEqual(1500);
+  expect(Buffer.byteLength(discoverable)).toBeLessThanOrEqual(1500);
   expect(Buffer.byteLength(discovered)).toBeLessThanOrEqual(1800);
-  expect(text(native.filter(tool => tool !== "bash"))).not.toContain("cli_source");
+  for (const tools of [lazy, native]) expect(text(tools.filter(tool => tool !== "bash"))).not.toContain("cli_source");
+  expect(String(buildCliGuidance({ sources: [] }, lazy).content)).not.toContain("cli_source");
   const h = await graphHarness();
   h.tools(native);
   const result = resultJson(await h.invoke({ cli_source: "beta" }));
@@ -134,22 +143,30 @@ test("deferred native management exposes only exact enabled source IDs when a CL
   expect(h.counts()).toEqual({ graphReads: 0, loads: 0, appends: 0 });
 });
 
-test("source-ID routing is projected once only after native management discovery and disappears without shell", async () => {
+test("source-ID routing follows lazy discovery, activation and missing shell without changing history", async () => {
   const h = guidanceHarness();
   const original: AgentMessage[] = [{ role: "user", content: "Maintain the chosen source, but do not guess a global CLI." }];
   h.tools(["read", "notion_list", "notion_use", "bash"]);
   const normal = await h.project("context_with_system", original);
   expect(guidanceText(normal)).not.toContain("cli_source");
-  h.tools(["read", "notion_list", "notion_use", "notion_ctl", "bash"]);
-  const discovered = await h.project("context_with_system", normal);
+  h.tools(["read", "notion_list", "notion_use", "bash", "tool_search"]);
+  const lazy = await h.project("context_with_system", normal);
+  expect(guidanceText(lazy)).toContain("tool_search for notion_ctl, then its cli_source");
+  expect(lazy.filter(message => message.customType === "ntn-skills-guidance")).toHaveLength(1);
+  expect(await h.project("context_with_system", lazy)).toBe(lazy);
+  h.tools(["read", "notion_list", "notion_use", "notion_ctl", "bash", "tool_search"]);
+  const discovered = await h.project("context_with_system", lazy);
   expect(guidanceText(discovered)).toContain('["alpha","beta"]');
+  expect(guidanceText(discovered)).toContain("CLI management: notion_ctl cli_source");
+  expect(guidanceText(discovered)).not.toContain("tool_search");
   expect(discovered.filter(message => message.customType === "ntn-skills-guidance")).toHaveLength(1);
   expect(await h.project("context_with_system", discovered)).toBe(discovered);
-  h.tools(["read", "notion_list", "notion_use", "notion_ctl"]);
+  h.tools(["read", "notion_list", "notion_use", "notion_ctl", "tool_search"]);
   const noShell = await h.project("context_with_system", discovered);
   expect(guidanceText(noShell)).not.toContain("cli_source");
   expect(noShell[0]).toBe(original[0]);
   expect(guidanceText(normal)).not.toContain("cli_source");
+  expect(guidanceText(lazy)).toContain("tool_search for notion_ctl");
 });
 
 test("native consumption keeps exact references and operation intent without machine commands", () => {
@@ -211,7 +228,7 @@ test("cold and offline Pi guidance exposes the paired package entry without prel
     const message = String(before?.message?.content);
     expect(message).toContain(JSON.stringify(packageEntry));
     expect(message).toContain("explicit offline/bootstrap/installed-package");
-    expect(message).toContain("Pending/failed Notion access does not authorize");
+    expect(message).toContain("No fallback for pending/failed Notion");
     expect(message).toContain("never search other installations");
     expect(message).toContain("task's source/library");
     expect(message).not.toContain(privatePackageBody.trim());
