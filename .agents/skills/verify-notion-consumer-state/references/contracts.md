@@ -74,6 +74,16 @@ ConversationCanContinue 使用局部动作的弱公平，并假定用户继续�
 
 源码对应 `session-recovery.ts`、`index.ts`、`host-skills.ts` 及完整闭包和 fixed-read proof。`check-consumer-state-mutations.mjs` 在隔离副本移除对应隔离、闭包、业务开关、权限和取消守卫，必须得到行为断言失败；模型通过与真实守卫检出分别报告。
 
+恢复正文的 root/Requires 角色从同一次 `activeSelection(ctx, pending)` 推导，
+完整 binding 核对后才展示；尚未投递的新 selected 图不覆盖原 active 角色。
+`selectedTaskRole` 同时服务恢复和 read 状态投影，不维护第二份 selection。
+`session-recovery.test.ts` 与 `read-intent-status.test.ts` 检查这些实际文本边界；
+有限模型不证明 Agent 能理解角色，也不证明自然任务选路成功。
+
+`host-refresh.test.ts` 另核公开 use/read 的精确关系诊断：SDK 明确观察到
+Requires disabled 才显示 Enabled=false；缺失、不可访问或库外仍保持未知，
+不得转成授权拒绝。公开诊断不携带原始响应或凭据，也不改变原固定任务。
+
 ## 守卫破坏与诊断
 
 scripts/check-consumer-state-mutations.mjs 为每个实际守卫创建隔离 package 副本，链接既有依赖，只在副本内改一处。每个 case 保存源码/测试 hash、完整 argv、stdout/stderr 与 baseline/mutated/restored 退出状态。入口还运行 check-consumer-observation-mutations.mjs，保留旧 order/cursor 反例。

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { sessionSourceSnapshot, sessionSourceBindings, sourceContentIdentity, sourceDeliveryReceipt, sourceBodyLoaded, projectSelectedSourceMessages, withSessionSourceReceipts } from "./session-source-snapshot";
-import { sessionSelection, selectedBinding, selectedClosure, samePreparationBinding, persistSessionSelection, exportSessionSelection, type SessionSelection } from "./session-graph";
+import { sessionSelection, selectedBinding, selectedTaskRole, persistSessionSelection, exportSessionSelection, type SessionSelection } from "./session-graph";
 import { activeSelection, confirmActiveSources } from "./session-active";
 import { createActiveSourceRestorer } from "./session-recovery";
 import { checkPreparationSignal, isPreparationCancelled } from "./skill-preparation";
@@ -109,7 +109,7 @@ const DEFAULT_PATH_MODE: PathMode = "home-relative";
 type SkillInjectionPresentation = Pick<HostCapabilities, "skillInstructions"> & {
   sourceReference?(record: SkillRecord): string | undefined;
   sourceFiles?(record: SkillRecord): readonly { path: string; ref: string }[] | undefined;
-  sourceTaskRole?(record: SkillRecord): { role: "root" } | { role: "required"; required_by: readonly string[] } | undefined;
+  sourceTaskRole?(record: SkillRecord): { role: "root"; required_by?: readonly string[] } | { role: "required"; required_by: readonly string[] } | undefined;
 };
 const DOLLAR_SKILL_PATTERN = "(?:^|[^\\w\\\\$])\\$(?<query>[^\\s$]+?)(?=$|[\\s,，。!！？?；;、:：)）\\]】}]|\\.+(?=$|[\\s,，。!！？?；;、:：)）\\]】}]))";
 const DEFAULT_RULES: InvocationRule[] = [
@@ -1652,13 +1652,10 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   const injectionPresentation = (ctx: ExtensionContext, mode: "selected" | "restored" = "selected", restoredSelection?: SessionSelection): SkillInjectionPresentation => ({
     ...adapter,
     sourceTaskRole: record => {
-      if (mode !== "restored" || record.source !== "notion" || !record.preparationBinding) return undefined;
-      const scope = restoredSelection?.scopes.get(record.preparationBinding.scope), binding = scope?.bindings.get(record.id!);
-      if (!scope || !binding || !samePreparationBinding(binding, record.preparationBinding)) return undefined;
-      if (scope.roots.has(binding.record.id)) return { role: "root" };
-      const required_by = [...scope.roots].filter(root => selectedClosure(scope, [root]).has(binding.record.id))
-        .flatMap(root => { const owner = scope.bindings.get(root); return owner ? [owner.ref] : []; }).sort();
-      return required_by.length ? { role: "required", required_by } : undefined;
+      if (mode !== "restored" || record.source !== "notion" || !record.preparationBinding || !restoredSelection) return undefined;
+      const selected = selectedTaskRole(restoredSelection, record.preparationBinding);
+      if (!selected) return undefined;
+      return selected.required_by ? { role: selected.roles[0], required_by: selected.required_by } : { role: "root" };
     },
     sourceReference: record => {
       if (paths.host !== "pi" || record.source !== "notion" || !record.preparationBinding) return undefined;
