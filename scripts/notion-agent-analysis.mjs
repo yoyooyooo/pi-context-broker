@@ -224,6 +224,33 @@ async function verifiedArtifact(artifact, readArtifact) {
   demand(bytes.length === artifact.bytes && hash(bytes) === artifact.sha256, 'ARTIFACT_CHANGED', 'Observed artifact bytes changed', { path: artifact.path });
   return bytes;
 }
+async function observedBrokerToolOwner(observed, readArtifact) {
+  const implementation = observed.implementation;
+  need(implementation?.version === 1, 'TOOL_IMPLEMENTATION_UNKNOWN', 'Broker effects need the actual frozen candidate identity');
+  const candidate = JSON.parse((await verifiedArtifact(implementation.candidateArtifact, readArtifact)).toString('utf8'));
+  const config = JSON.parse((await verifiedArtifact(implementation.configArtifact, readArtifact)).toString('utf8'));
+  need(candidate?.version === 1 && isAbsolute(config?.brokerRoot ?? '') && Array.isArray(candidate.baseline) &&
+    Array.isArray(candidate.sourceTuple), 'TOOL_IMPLEMENTATION_UNKNOWN', 'The candidate and configuration must identify the executed Broker');
+  const root = resolve(config.brokerRoot), selected = candidate.sourceTuple.filter(item => item.repository === 'broker');
+  need(selected.length === 1 && /^[a-f0-9]{40}$/u.test(selected[0].commit ?? '') && selected[0].dirty === false && digest(selected[0].tree_sha256),
+    'TOOL_IMPLEMENTATION_UNKNOWN', 'The Broker tool owner must be the clean frozen candidate');
+  const entry = candidate.baseline.filter(item => item.path === join(root, 'src/index.ts'));
+  const manifest = candidate.baseline.filter(item => item.path === join(root, 'package.json'));
+  need(entry.length === 1 && manifest.length === 1, 'TOOL_IMPLEMENTATION_UNKNOWN', 'The candidate must bind one Broker entry and package');
+  await verifiedArtifact(entry[0], readArtifact);
+  const pkg = JSON.parse((await verifiedArtifact(manifest[0], readArtifact)).toString('utf8'));
+  need(pkg.name === 'pi-context-broker' && Array.isArray(pkg.pi?.extensions) && pkg.pi.extensions.includes('./src/index.ts'),
+    'TOOL_IMPLEMENTATION_UNKNOWN', 'The selected package must register the actual Broker entry');
+  const commands = JSON.parse((await verifiedArtifact(observed.visibility?.nativeCommands, readArtifact)).toString('utf8'));
+  need(Array.isArray(commands), 'TOOL_IMPLEMENTATION_UNKNOWN', 'Broker effects require the observed host command registration');
+  const registrations = commands.filter(command => command.name === 'context-broker');
+  const source = registrations[0]?.sourceInfo;
+  need(registrations.length === 1 && source?.origin === 'package' && ['project', 'user'].includes(source.scope) &&
+    source.baseDir === root && source.source === root && source.path === entry[0].path,
+  'TOOL_IMPLEMENTATION_UNKNOWN', 'The live host must register this exact frozen Broker package');
+  return { source, commit: selected[0].commit, entrySha256: entry[0].sha256 };
+}
+
 // This reviewed package has a non-TUI early return before its optional network
 // notification. A name, a claimed "read-only" result, or a matching source path
 // alone cannot establish that the branch ran. Changed implementations need a new
@@ -593,7 +620,8 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
     return fact.anyOf.some(value => normalized(shared.final.text).includes(normalized(value)));
   };
 
-  const interactionProofs = new Map();
+  const interactionProofs = new Map(), toolOwners = new Map();
+  let brokerOwner;
   const sourceRequests = async () => {
     need(shared.toolObservation, 'TOOL_OBSERVATION_UNPROVEN', 'Source effects require complete actual tool observations');
     need(observed.sourceCoverage === true && Array.isArray(observed.source), 'SOURCE_COVERAGE_MISSING', 'Complete source observation is required for source effects');
@@ -610,16 +638,30 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       need(source.filter(row => row.phase === 'completed' && row.requestId === start.requestId).length === 1,
         'SOURCE_OPERATION_INCOMPLETE', 'Source operation did not finish exactly once');
     }
-    for (const call of shared.attempts.values()) if (call.name === 'ask_user' && !interactionProofs.has(call.id))
-      interactionProofs.set(call.id, await proveAskUserNoUi(call, observed.session, readArtifact));
-    const readOnly = call => interactionProofs.has(call.id) || ['read', 'grep', 'find', 'ls', 'notion_list', 'notion_use', 'tool_search'].includes(call.name) ||
-      call.name === 'notion_ctl' && object(call.arguments) && (call.arguments.working_set === 'show' || nonempty(call.arguments.cli_source)) &&
-      Object.keys(call.arguments).every(key => ['working_set', 'cli_source'].includes(key)) ||
+    for (const call of shared.attempts.values()) {
+      if (call.name === 'ask_user' && !interactionProofs.has(call.id))
+        interactionProofs.set(call.id, await proveAskUserNoUi(call, observed.session, readArtifact));
+      const source = call.event.toolSource;
+      if (['read', 'grep', 'find', 'ls', 'tool_search'].includes(call.name) &&
+        source?.source === 'builtin' && source.path === 'builtin:' + call.name) {
+        toolOwners.set(call.id, { toolCallId: call.id, owner: 'builtin', path: source.path });
+      } else if (['read', 'notion_list', 'notion_use', 'notion_ctl'].includes(call.name)) {
+        brokerOwner ??= observedBrokerToolOwner(observed, readArtifact);
+        const expected = await brokerOwner;
+        need(source && ['path', 'source', 'scope', 'origin', 'baseDir'].every(key => source[key] === expected.source[key]),
+          'TOOL_IMPLEMENTATION_UNKNOWN', 'A familiar tool name cannot impersonate the frozen Broker owner', { tool: call.name, toolCallId: call.id });
+        toolOwners.set(call.id, { toolCallId: call.id, owner: 'broker', path: source.path,
+          commit: expected.commit, entrySha256: expected.entrySha256 });
+      }
+    }
+    const readOnly = call => interactionProofs.has(call.id) || toolOwners.has(call.id) &&
+      (call.name !== 'notion_ctl' || object(call.arguments) && (call.arguments.working_set === 'show' || nonempty(call.arguments.cli_source)) &&
+        Object.keys(call.arguments).every(key => ['working_set', 'cli_source'].includes(key))) ||
       call.name === 'codemode' && inspectNotionAgentReadOnlyContainer(call, shared.correlation, readOnly).readOnly;
     for (const call of shared.attempts.values())
       need(readOnly(call), 'TOOL_EFFECTS_UNKNOWN', 'An executed tool has effects outside the observed SDK boundary', { tool: call.name, toolCallId: call.id });
     return { source, attempts, coverage: 'subject-tool-operations-with-complete-SDK-metrics',
-      interactions: [...interactionProofs.values()],
+      interactions: [...interactionProofs.values()], implementations: [...toolOwners.values()],
       backgroundChildren: source.filter(row => row.phase === 'unmatched_child_start').map(row => ({ childId: row.childId, transport: 'unknown' })),
       notClaimed: 'all-host/plugin/descendant traffic; any subject execution tool still requires complete independent effects evidence' };
   };
