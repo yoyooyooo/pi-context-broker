@@ -45,7 +45,7 @@ function validateFacts(value, where) {
 
 /** Validate preparation instructions, never execute them or guess an upstream schema. */
 export function validateAgentFixtureRecipe(recipe) {
-  keys(recipe, ['kind', 'objects', 'public', 'facts', 'readbacks'], ['kind', 'objects'], 'fixture');
+  keys(recipe, ['kind', 'objects', 'public', 'facts', 'readbacks', 'environment'], ['kind', 'objects'], 'fixture');
   assert.ok(AGENT_FIXTURE_KINDS.includes(recipe.kind), 'fixture: unsupported kind ' + recipe.kind);
   assert.ok(Array.isArray(recipe.objects), 'fixture.objects must be an array');
   const aliases = new Set();
@@ -54,7 +54,7 @@ export function validateAgentFixtureRecipe(recipe) {
       ['id', 'name', 'description', 'placement', 'initial', 'versions'], 'fixture.object');
     id(item.id, 'fixture.object.id'); assert.ok(!aliases.has(item.id), 'fixture: duplicate object ' + item.id); aliases.add(item.id);
     string(item.name, item.id + '.name'); string(item.description, item.id + '.description');
-    assert.ok(['notion', 'global', 'project', 'source'].includes(item.placement), item.id + ': unsupported placement');
+    assert.ok(['notion', 'global', 'project', 'source', 'builtin'].includes(item.placement), item.id + ': unsupported placement');
     object(item.versions, item.id + '.versions');
     assert.ok(Object.keys(item.versions).length > 0, item.id + ': missing versions');
     assert.ok(['absent', 'unmanaged'].includes(item.initial) || own(item.versions, item.initial), item.id + ': unknown initial version');
@@ -67,7 +67,7 @@ export function validateAgentFixtureRecipe(recipe) {
     for (const [label, value] of Object.entries(item.versions)) {
       version(label, item.id + '.version');
       keys(value, ['files', 'requires', 'members', 'enabled', 'defaultContext'], ['files'], item.id + '@' + label);
-      assert.ok(Array.isArray(value.files) && value.files.length > 0, item.id + '@' + label + ': missing files');
+      assert.ok(Array.isArray(value.files) && (value.files.length > 0 || ['source', 'builtin'].includes(item.placement)), item.id + '@' + label + ': missing files');
       const paths = new Set();
       for (const file of value.files) {
         keys(file, ['path', 'content', 'encoding', 'mode'], ['path', 'content'], item.id + '.file');
@@ -79,7 +79,7 @@ export function validateAgentFixtureRecipe(recipe) {
           item.id + ': base64 content is not canonical');
         assert.ok(file.mode === undefined || ['100644', '100755'].includes(file.mode), item.id + ': unsupported file mode');
       }
-      assert.ok(paths.has('SKILL.md'), item.id + '@' + label + ': complete Skill tree requires SKILL.md');
+      assert.ok(paths.has('SKILL.md') || ['source', 'builtin'].includes(item.placement) && value.files.length === 0, item.id + '@' + label + ': complete Skill tree requires SKILL.md');
       for (const property of ['requires', 'members']) if (value[property] !== undefined) strings(value[property], item.id + '.' + property, { empty: true, check: id });
       for (const property of ['enabled', 'defaultContext']) if (value[property] !== undefined)
         assert.equal(typeof value[property], 'boolean', item.id + '.' + property + ' must be boolean');
@@ -88,15 +88,32 @@ export function validateAgentFixtureRecipe(recipe) {
   for (const item of recipe.objects) for (const value of Object.values(item.versions))
     for (const alias of [...(value.requires ?? []), ...(value.members ?? [])])
       assert.ok(aliases.has(alias), item.id + ': missing dependency object ' + alias);
+  if (recipe.environment !== undefined) {
+    keys(recipe.environment, ['catalog', 'offline'], ['catalog'], 'fixture.environment');
+    assert.ok(['normal', 'pending', 'unauthorized', 'partial-view'].includes(recipe.environment.catalog), 'Unsupported catalog precondition');
+    if (recipe.environment.offline !== undefined) assert.equal(typeof recipe.environment.offline, 'boolean');
+  }
   if (recipe.public !== undefined) validatePublic(recipe.public, 'fixture.public');
   if (recipe.facts !== undefined) validateFacts(recipe.facts, 'fixture.facts');
   if (recipe.readbacks !== undefined) {
     object(recipe.readbacks, 'fixture.readbacks');
     for (const [key, declaration] of Object.entries(recipe.readbacks)) {
       string(key, 'fixture.readbacks key');
-      keys(declaration, ['object', 'version', 'state'], ['object', 'state'], 'fixture.readbacks.' + key);
+      keys(declaration, ['object', 'version', 'state', 'properties', 'projection'], ['object', 'state'], 'fixture.readbacks.' + key);
       assert.ok(aliases.has(declaration.object), 'Unknown readback object ' + declaration.object);
       assert.ok(['present', 'absent'].includes(declaration.state), 'Readback state must be present or absent');
+      if (declaration.projection !== undefined) {
+        assert.ok(['same-as-baseline', 'absent'].includes(declaration.projection), 'Unsupported projection readback');
+        assert.equal(recipe.objects.find(item => item.id === declaration.object).placement, 'source', 'Projection readback requires a Source object');
+      }
+      if (declaration.properties !== undefined) {
+        keys(declaration.properties, ['description', 'enabled', 'defaultContext'], [], 'readback.properties');
+        assert.ok(Object.keys(declaration.properties).length > 0, 'readback.properties must not be empty');
+        if (declaration.properties.description !== undefined) string(declaration.properties.description, 'readback.description');
+        for (const key of ['enabled', 'defaultContext']) if (declaration.properties[key] !== undefined)
+          assert.equal(typeof declaration.properties[key], 'boolean', 'readback.' + key + ' must be boolean');
+        assert.equal(declaration.state, 'present', 'An absent object cannot have current metadata');
+      }
       if (declaration.version !== undefined) {
         version(declaration.version, 'readback.version');
         const target = recipe.objects.find(item => item.id === declaration.object);
@@ -115,6 +132,8 @@ export function validateAgentAssertion(assertion) {
     'tool-attempts': [['tool', 'min', 'max'], ['tool']],
     body: [['body', 'occurrences', 'receiptRequired', 'scope'], ['body', 'occurrences']],
     selection: [['object', 'version'], ['object']],
+    'selection-any': [['objects'], ['objects']],
+    visibility: [['object', 'stage'], ['object', 'stage']],
     resource: [['object', 'path', 'version'], ['object', 'path']],
     output: [['all', 'none', 'any'], []],
     'no-semantic-writes': [[], []],
@@ -135,6 +154,20 @@ export function validateAgentAssertion(assertion) {
     assert.ok(Number.isSafeInteger(assertion.occurrences) && assertion.occurrences >= 0, 'body.occurrences must be a nonnegative integer');
     if (assertion.receiptRequired !== undefined) assert.equal(typeof assertion.receiptRequired, 'boolean');
     if (assertion.scope !== undefined) assert.ok(['final', 'all'].includes(assertion.scope), 'body.scope must be final or all');
+  }
+  if (assertion.kind === 'visibility') {
+    id(assertion.object, 'visibility.object');
+    assert.ok(['native-discovery', 'model-catalog', 'source-pending'].includes(assertion.stage), 'Unsupported visibility stage');
+  }
+  if (assertion.kind === 'selection-any') {
+    assert.ok(Array.isArray(assertion.objects) && assertion.objects.length > 0, 'selection-any requires allowed identities');
+    const choices = new Set();
+    for (const choice of assertion.objects) {
+      keys(choice, ['object', 'version'], ['object'], 'selection-any.choice');
+      validateAgentAssertion({ kind: 'selection', ...choice });
+      const key = choice.object + '@' + (choice.version ?? '');
+      assert.ok(!choices.has(key), 'selection-any contains duplicate identities'); choices.add(key);
+    }
   }
   if (['selection', 'resource'].includes(assertion.kind)) {
     id(assertion.object, 'expect.object');
@@ -158,6 +191,7 @@ export function validateAgentEvent(event) {
     'set-enabled': [['object', 'enabled', 'defaultContext'], ['object', 'enabled']],
     'remove-owned': [['object'], ['object']],
     'restore-projection': [['object'], ['object']],
+    'trash-projection': [['object'], ['object']],
     readback: [['object', 'receipt'], ['object', 'receipt']],
     restart: [['mode'], ['mode']],
     fork: [['turn'], ['turn']],
@@ -223,7 +257,7 @@ export function validateAgentCorpus(corpus) {
           if (event.version !== undefined) assert.ok(own(aliases.get(event.object).versions, event.version), scenario.id + ': unknown event version');
         }
       }
-      for (const assertion of turn.expect) if (assertion.object !== undefined) {
+      for (const assertion of turn.expect.flatMap(expected => expected.kind === 'selection-any' ? expected.objects : [expected])) if (assertion.object !== undefined) {
         assert.ok(aliases.has(assertion.object), scenario.id + ': unknown expected object ' + assertion.object);
         if (assertion.version !== undefined) assert.ok(own(aliases.get(assertion.object).versions, assertion.version), scenario.id + ': unknown expected version');
       }
@@ -284,7 +318,7 @@ export function bindAgentTurn(turn, bindings) {
     assert.ok(own(bindings.public, key), 'Missing public binding ' + key);
     return bindings.public[key];
   });
-  for (const expected of turn.expect) {
+  for (const expected of turn.expect.flatMap(expected => expected.kind === 'selection-any' ? expected.objects : [expected])) {
     if (expected.body !== undefined) assert.ok(own(bindings.private.bodies, expected.body), 'Missing private body ' + expected.body);
     if (expected.object !== undefined) {
       const identity = bindings.private.objects[expected.object];
