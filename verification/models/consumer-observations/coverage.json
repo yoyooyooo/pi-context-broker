@@ -11,8 +11,8 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/discovery-records.ts": "3b8b8abee88e2eba5de3421e76e446de91412b7f7d4b6b71394fede5dd878bab",
-    "packages/context-broker/src/host-skills.ts": "bddd2b345c52df9ddd1bb83a6029258c14e628b4fc0025572a0820caa80bf81a",
-    "packages/context-broker/src/prepare-protocol.ts": "6c0229a5217726416e3bd719faaf7d922c40f479ca03d6a9ab0ef1275be903f4",
+    "packages/context-broker/src/host-skills.ts": "212957c884d31776fe46142f9e40b87a33a531d1300b80d795354788c973361d",
+    "packages/context-broker/src/prepare-protocol.ts": "ae06d35b831250f1ce2cc2b818f162e69e5af3d1ed861c26c20ce103a99effe2",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
     "packages/context-broker/scripts/host-prepare.test.ts": "ce17ea58dd60df728b1994142b62cf41d173c44ebf4f676905b856c2d8fd2876",
     "scripts/check-consumer-observation-mutations.mjs": "a34d906997d213187d48af500f3af0c5a61fd9233d5dd11b35268c2611f8cf51"
@@ -189,6 +189,15 @@
     "method": "Read changed owner functions, delayed commits, exact identity guards, source projection, failed recovery isolation and actual regression assertions before binding these source hashes. Hash correspondence is not an implementation refinement proof.",
     "unchanged_guards": "Current evidence original validation time, request order, generation, cancellation and precise source denial ownership remain intact. Business Enabled is exempted only for intact previously confirmed fixed bytes; authorization is never exempted.",
     "resource_path": "Reviewed the acquisition path change against the deterministic same-inode hardlink alias reproduction. Canonical parent directory plus the selected basename preserves logical resource identity; within-root and lstat.isFile remain mandatory. Leaf/parent symlink substitution, outer alias, content hash, cancellation and concurrent reads have concrete regressions. Filesystem/runtime behavior is outside the finite models; no model rule, bound or mutation target is changed.",
-    "natural_guidance": "Reviewed the change from bd3cb59: task application directly loads roots and automatic Requires, successful complete reads are reused, requested inspect/adopt updates remain distinct, and read(path) versus notion_use(ref) is explicit. The advertised native read schema excludes unknown fields; its execution boundary explicitly rejects a ref alias while continuing to delegate native options to the native reader. The full regression caught a too-broad option filter and that filter was removed rather than weakening the native passthrough fixture. No selection, freshness, authorization, cancellation, recovery, delivery or commit guard changed. Natural task quality and tool necessity are separate observed regression obligations outside these finite models."
+    "natural_guidance": "Reviewed the change from bd3cb59: task application directly loads roots and automatic Requires, successful complete reads are reused, requested inspect/adopt updates remain distinct, and read(path) versus notion_use(ref) is explicit. The advertised native read schema excludes unknown fields; its execution boundary explicitly rejects a ref alias while continuing to delegate native options to the native reader. The full regression caught a too-broad option filter and that filter was removed rather than weakening the native passthrough fixture. No selection, freshness, authorization, cancellation, recovery, delivery or commit guard changed. Natural task quality and tool necessity are separate observed regression obligations outside these finite models.",
+    "live_relation_and_read_state": {
+      "reviewed_from": "c73c9d6b8990cbeb979587f542c140dfa4fa047e",
+      "reviewed_through": "6f572b780a5370ab74a60bcc3eee253b819c95c4",
+      "diagnostics": "Public use/read preserve bounded Requires/Members provenance; only explicit disabled is named. Missing/inaccessible/outside remains unknown. No new denial, selection transition, raw response or credential forwarding.",
+      "roles": "The same selectedTaskRole helper projects exact bindings from existing use graphs for restoration and read results. Restoration uses active plus this request pending use, never an undelivered replacement. Root, Required and shared dual roles are explicit.",
+      "read_operation": "The original full main prefix and private inspection receipt purpose are preserved. A separate per-operation public status reports inspect, unchanged activation and no Requires acquisition by this read. Historical status cannot rebuild current selection. One parser strips the exact private-bound footer for both directory projections; directory reuse retains operation facts.",
+      "guard_review": "Original observation order/time, availability, graph commit, cancellation, complete closure, body/payload and provider acknowledgement guards are unchanged. Reviewed 392725 public refresh cases include unchanged root plus changed Requires and independent roots.",
+      "proof_limit": "These presentation and process-result facts are deterministic implementation obligations, outside finite model variables. No model rules, bounds, expected cases or guard mutations are weakened. Natural model behaviour and real service timelines require fresh execution."
+    }
   }
 }

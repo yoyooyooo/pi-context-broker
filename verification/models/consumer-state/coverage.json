@@ -11,11 +11,11 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/discovery-records.ts": "3b8b8abee88e2eba5de3421e76e446de91412b7f7d4b6b71394fede5dd878bab",
-    "packages/context-broker/src/host-skills.ts": "bddd2b345c52df9ddd1bb83a6029258c14e628b4fc0025572a0820caa80bf81a",
-    "packages/context-broker/src/prepare-protocol.ts": "6c0229a5217726416e3bd719faaf7d922c40f479ca03d6a9ab0ef1275be903f4",
-    "packages/context-broker/src/session-graph.ts": "bf707af4ea21ef0084a128b80f6359f2e7ec75665cb43c0ee4f900ce72bb12b3",
+    "packages/context-broker/src/host-skills.ts": "212957c884d31776fe46142f9e40b87a33a531d1300b80d795354788c973361d",
+    "packages/context-broker/src/prepare-protocol.ts": "ae06d35b831250f1ce2cc2b818f162e69e5af3d1ed861c26c20ce103a99effe2",
+    "packages/context-broker/src/session-graph.ts": "f2e1ddf48aa59ab10346f1d6327379217309e48235b644ba3bf494b3963162f0",
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
-    "packages/context-broker/src/session-source-snapshot.ts": "43ed85889a86b3e0a708469a7be24a9ce199b8d5575b08343e313a909b74a3c8",
+    "packages/context-broker/src/session-source-snapshot.ts": "6ac7c29f29ecc5aca851c836cbb113d5a1f611d1856b2fe268570efcd056c3b1",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
     "packages/context-broker/scripts/host-prepare.test.ts": "ce17ea58dd60df728b1994142b62cf41d173c44ebf4f676905b856c2d8fd2876",
     "packages/context-broker/scripts/session-active.test.ts": "8c028ee53bf86b253dee9a63ce6e15a8e27c811de25e4cc9936f37ab134e0e90",
@@ -28,20 +28,22 @@
     "packages/context-broker/scripts/final-request-undici.test.ts": "df1417ddf319180c89725f188107dde9b0eb8089aa12759b17d539bfd2bd7555",
     "packages/context-broker/src/session-working-set.ts": "4792c1b3e1ecdbbfd77918f2f9ddf074cfe197e8fbed265a5796cd59671bd36c",
     "packages/context-broker/scripts/session-active-session.mjs": "a0b3d76adddb20b81858d876c4fdd81c45a66360dee55a877895b1d6348a40b5",
-    "packages/context-broker/src/index.ts": "eec654c7df66d100c6731f736abe8c8f9db703c24401bacdfc3d7c7eba68fab3",
-    "packages/context-broker/src/session-recovery.ts": "88dc7824f28f473974250952288312464f4385812caa83232679f7c694121c99",
+    "packages/context-broker/src/index.ts": "fc8218a58506becd15dbef90a3ec419dbfb8bb823a33acac4c8432b742b069d6",
+    "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "f0a338ce686cfd88c1ce564ccdec0e34b5b0b868aa617620950e9d5fb6d0a0ad",
-    "packages/context-broker/src/notion-source.ts": "f4d5f5778250dbc5335f5533cd7bc6cebb2f18acc9c9126f6eace6048f0347aa",
+    "packages/context-broker/src/notion-source.ts": "022a7d72187a300fc024f4b84a394653d3ff8c9c68d7c09bf6bc4e96a4e39b68",
     "packages/context-broker/src/pi-host-adapter.ts": "934605789805d5761451a0b4e694e7255dc08f6ef330c6682ccae68d321e9045",
-    "packages/context-broker/scripts/host-refresh.test.ts": "d25778872172ab5768b7bcc3de374ac48ae3b55e725cb118a32cd5c6f4faada5",
+    "packages/context-broker/scripts/host-refresh.test.ts": "6417d552f551b671bad08ded991d082988de0bf5ecb6b84c21aa57159eda12ec",
     "packages/context-broker/scripts/session-refresh.test.ts": "9d00f8ecbe392dbd3367ef51dcaffa325cb709986f1128e90d3f542894175a89",
-    "packages/context-broker/scripts/session-recovery.test.ts": "af7ee971939db47dccb7fb107d6d3c80520cad66cc29b857aeae1d6233257931",
+    "packages/context-broker/scripts/session-recovery.test.ts": "12f639c0716c4b92031dab5cc241148377b4d5a604859078bf8daff0d748fa52",
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "858cf3fcf02255e49641af3cc4794445eaa85aca5a27c2e6fbee8dac38bd4dd1",
     "packages/context-broker/scripts/resource-read-projection.test.ts": "e739a9e24612e40517934ac425fa33240db75303eea63b1a399e405f9d330cf0",
-    "packages/context-broker/scripts/notion-source-sdk.test.ts": "a9b4b8096f13d17fd8fcfcf6cb72bae3a3d4110e5d16cfb58742882d35c9d134",
+    "packages/context-broker/scripts/notion-source-sdk.test.ts": "4c60d0ea85459d52fa443ef7df325105c3f4c1f266f7a9f0d9bee09f7d84ba97",
     "packages/context-broker/scripts/pi-read-adapter.test.ts": "5c8ff7848720a7f0e1b2205893d755addef1ed1220dc37ef3d660312b9abf128",
-    "packages/context-broker/scripts/fixtures/active-notion-session.ts": "b92dfe89e5f86e93938639b9b07e1ea5859d68ecffc1e7651d7c32e5e8659d05",
-    "packages/context-broker/scripts/notion-entry.test.ts": "dfaac5e5d7d0ea7996dba91427cd16568d2933c94f5d4cd03ff3a1ad9a0c3c6f"
+    "packages/context-broker/scripts/fixtures/active-notion-session.ts": "ab84fec451c2b6f6a335ea18070b4fdc1fb4ff5ba3b694e48cba1808ea565600",
+    "packages/context-broker/scripts/notion-entry.test.ts": "dfaac5e5d7d0ea7996dba91427cd16568d2933c94f5d4cd03ff3a1ad9a0c3c6f",
+    "packages/context-broker/src/skill-catalog-projection.ts": "6d26296f67f8fd54374ee0c3dd0078173ad1c2b5da09499fabfafaf89b584c2e",
+    "packages/context-broker/scripts/read-intent-status.test.ts": "a7f9efed5d60515cfa667c1baf40d6e4dc289bd0a57731189c48d31c1a941393"
   },
   "models": {
     "FreshnessPublication": {
@@ -92,7 +94,8 @@
         "final-request-undici.test.ts actual Node entity positive/rewrite/concurrency",
         "final-request.test.ts actual working_set report shape, session_effects separation, lost/modified management tool result and malformed consumption effects",
         "notion-sdk-pi.mjs --scenario working-set: current SDK v2, actual public Pi tools, source HTTP and installed serializer; execution is separate evidence",
-        "final-request.test.ts: persisted management facts on three ordinary turns, exact wire protection and operation-owned consumption effects; actual 128-entry historical Pi branch replay remains separate execution evidence"
+        "final-request.test.ts: persisted management facts on three ordinary turns, exact wire protection and operation-owned consumption effects; actual 128-entry historical Pi branch replay remains separate execution evidence",
+        "read-intent-status.test.ts: inspect/use distinction, exact-version and shared root/Required roles, pending is not confirmed, public/private status binding and both directory projections"
       ]
     },
     "RecoveryClosure": {
@@ -109,7 +112,8 @@
         "session-recovery.test.ts: actual index hooks for missing snapshots, business-disabled originals, shared Requires and independent roots",
         "session-recovery.test.ts: permission/cancellation during restore and repeated prompts",
         "check-consumer-state-mutations.mjs: actual closure and isolation guards (bound after implementation review)",
-        "host-refresh.test.ts current main/resource inspection does not activate; scalar-resource-read-host.test.ts branch/file/authorization proofs for content-only inspection"
+        "host-refresh.test.ts current main/resource inspection does not activate; scalar-resource-read-host.test.ts branch/file/authorization proofs for content-only inspection",
+        "session-recovery.test.ts: restored root/Requires ownership follows active plus pending use, not an undelivered newer selected graph; original bodies remain exact"
       ]
     }
   },
@@ -688,6 +692,15 @@
     "management_effects": "Reviewed c68d980 to current operationEffectValues: metadata/management generic effects do not claim consumption. An explicit source-receipt field disables that exemption so any present consumption effects remain strictly validated. This does not introduce a general receipt-structure validator. Actual management tool messages still require exact, single wire delivery; no history rewrite, version branch or alternate schema decoder.",
     "resource_path": "Reviewed the acquisition path change against the deterministic same-inode hardlink alias reproduction. Canonical parent directory plus the selected basename preserves logical resource identity; within-root and lstat.isFile remain mandatory. Leaf/parent symlink substitution, outer alias, content hash, cancellation and concurrent reads have concrete regressions. Filesystem/runtime behavior is outside the finite models; no model rule, bound or mutation target is changed.",
     "natural_guidance": "Reviewed the change from bd3cb59: task application directly loads roots and automatic Requires, successful complete reads are reused, requested inspect/adopt updates remain distinct, and read(path) versus notion_use(ref) is explicit. The advertised native read schema excludes unknown fields; its execution boundary explicitly rejects a ref alias while continuing to delegate native options to the native reader. The full regression caught a too-broad option filter and that filter was removed rather than weakening the native passthrough fixture. No selection, freshness, authorization, cancellation, recovery, delivery or commit guard changed. Natural task quality and tool necessity are separate observed regression obligations outside these finite models.",
-    "latest_inspection_guidance": "Reviewed the description-only change from 9513596: read's latest-version cue now applies to requested inspection, while applying a chosen Skill routes directly to notion_use for the root and Requires. Explicit comparison remains available. The changed regression checks the actual advertised description; native option delegation, schemas, runtime guards, model rules, configurations and mutation targets are unchanged. The preceding natural read-refresh-before-use failure remains failed; this wording and its contract test do not establish a successful natural replay."
+    "latest_inspection_guidance": "Reviewed the description-only change from 9513596: read's latest-version cue now applies to requested inspection, while applying a chosen Skill routes directly to notion_use for the root and Requires. Explicit comparison remains available. The changed regression checks the actual advertised description; native option delegation, schemas, runtime guards, model rules, configurations and mutation targets are unchanged. The preceding natural read-refresh-before-use failure remains failed; this wording and its contract test do not establish a successful natural replay.",
+    "live_relation_and_read_state": {
+      "reviewed_from": "c73c9d6b8990cbeb979587f542c140dfa4fa047e",
+      "reviewed_through": "6f572b780a5370ab74a60bcc3eee253b819c95c4",
+      "diagnostics": "Public use/read preserve bounded Requires/Members provenance; only explicit disabled is named. Missing/inaccessible/outside remains unknown. No new denial, selection transition, raw response or credential forwarding.",
+      "roles": "The same selectedTaskRole helper projects exact bindings from existing use graphs for restoration and read results. Restoration uses active plus this request pending use, never an undelivered replacement. Root, Required and shared dual roles are explicit.",
+      "read_operation": "The original full main prefix and private inspection receipt purpose are preserved. A separate per-operation public status reports inspect, unchanged activation and no Requires acquisition by this read. Historical status cannot rebuild current selection. One parser strips the exact private-bound footer for both directory projections; directory reuse retains operation facts.",
+      "guard_review": "Original observation order/time, availability, graph commit, cancellation, complete closure, body/payload and provider acknowledgement guards are unchanged. Reviewed 392725 public refresh cases include unchanged root plus changed Requires and independent roots.",
+      "proof_limit": "These presentation and process-result facts are deterministic implementation obligations, outside finite model variables. No model rules, bounds, expected cases or guard mutations are weakened. Natural model behaviour and real service timelines require fresh execution."
+    }
   }
 }
