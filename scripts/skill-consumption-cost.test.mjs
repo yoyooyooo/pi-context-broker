@@ -83,6 +83,72 @@ const sample = (observed, overrides = {}) => summarizeConsumptionSample({ id: 'a
   events: observed.events, submission: observed.submission, source: source(), outcome, ...overrides });
 const run = samples => ({ plan: freezeConsumptionPlan({ conditions, samples: samples.map(item => item.scenario) }), samples });
 
+function forkApi() {
+  const handlers = new Map(); let disposed = false;
+  return { handlers, api: { on(name, callback) {
+    assert.equal(disposed, false); const group = handlers.get(name) ?? new Set(); group.add(callback); handlers.set(name, group);
+    return () => { group.delete(callback); if (!group.size) handlers.delete(name); };
+  } }, emit(name, event = {}, context) {
+    for (const callback of [...(handlers.get(name) ?? [])]) assert.equal(callback(event, context), undefined);
+  }, dispose() { disposed = true; handlers.clear(); } };
+}
+
+test('serialized cost observer survives Pi fork API replacement without reopening the ledger or resetting request counters', async () => {
+  const file = output(), extension = path.join(scratch, 'fork-cost-' + serial + '.mjs');
+  const settings = { output: file, checkoutRoot: root, runId: 'run', sampleId: 'a', clockId: 'host-boot' };
+  fs.writeFileSync(extension, consumptionCostExtensionSource(settings));
+  const old = forkApi(), next = forkApi();
+  const first = await import(pathToFileURL(extension).href + '?first'); first.default(old.api); first.default(old.api);
+  const body = 'original private body before fork', model = { model: { provider: 'fixture', id: 'fixture' } };
+  const turn = (surface, messages) => {
+    surface.emit('input', { source: 'rpc', text: 'continue' }); surface.emit('agent_start');
+    surface.emit('context_with_system', { messages });
+    surface.emit('before_provider_request', { payload: { model: 'fixture', messages: [{ role: 'user', content: body }] } }, model);
+    const message = { role: 'assistant', stopReason: 'stop', content: [{ type: 'text', text: 'Requested work completed.' }], usage: reportedUsage };
+    surface.emit('message_update', { assistantMessageEvent: { type: 'text_delta', delta: 'Completed.' } });
+    surface.emit('message_end', { message }); surface.emit('agent_end', { messages: [message] });
+  };
+  turn(old, [preparedBody(body)]);
+  const prefix = fs.readFileSync(file), inode = fs.statSync(file).ino, staleInput = [...old.handlers.get('input')][0];
+  old.emit('session_shutdown', { type: 'session_shutdown', reason: 'fork', targetSessionFile: '/private/fork-target.jsonl' });
+  assert.equal(old.handlers.size, 0); old.dispose();
+  const boundary = (await readConsumptionCostEvents(file)).events;
+  assert.equal(boundary.at(-1).phase, 'session_shutdown'); assert.equal(boundary.at(-1).reason, 'fork');
+  assert.equal(boundary.some(row => row.phase === 'observer_end'), false);
+  const second = await import(pathToFileURL(extension).href + '?reloaded'); second.default(next.api); second.default(next.api);
+  staleInput({ text: 'stale callback', source: 'rpc' }); turn(next, []);
+  next.emit('session_shutdown', { type: 'session_shutdown', reason: 'quit' });
+  const observed = await readConsumptionCostEvents(file), events = observed.events;
+  assert.equal(fs.statSync(file).ino, inode); assert.ok(fs.readFileSync(file).subarray(0, prefix.length).equals(prefix));
+  assert.equal(events.filter(row => row.phase === 'observer_start').length, 1);
+  assert.equal(events.filter(row => row.phase === 'observer_end').length, 1);
+  assert.equal(events.filter(row => row.phase === 'observer_rebind').length, 1);
+  assert.deepEqual(events.filter(row => row.phase === 'input').map(row => row.turn), [1, 2]);
+  assert.deepEqual(events.filter(row => row.phase === 'provider_request').map(row => row.request), [1, 2]);
+  assert.deepEqual(events.filter(row => row.phase === 'message_update').map(row => row.firstEffectiveText), [true, true]);
+  assert.equal(events.filter(row => row.phase === 'provider_request')[1].payload.verifiedBodyOccurrences[0].firstObservedTurn, 1);
+  const submission = { promptSha256: conditions.promptSha256, monotonicNs: events[0].monotonicNs,
+    clockId: 'host-boot', evidenceSha256: sha('fork-driver') };
+  assert.equal(sample({ ...observed, submission }).valid, true);
+  assert.equal(fs.readFileSync(file, 'utf8').includes('/private/fork-target.jsonl'), false);
+  assert.throws(() => second.default(forkApi().api), /CLOSED/);
+  assert.throws(() => observeConsumptionCost(forkApi().api, { fs, crypto, path, ...settings }), /EEXIST/);
+});
+
+test('a cost fork cannot finish successfully without rebind and refuses unrelated replacement APIs', async () => {
+  const old = forkApi(), next = forkApi(), file = output();
+  const observer = observeConsumptionCost(old.api, { fs, crypto, path, output: file, checkoutRoot: root,
+    runId: 'run', sampleId: 'a', clockId: 'host-boot' });
+  assert.throws(() => observer.bind(next.api), /REBIND_WITHOUT_FORK/);
+  old.emit('session_shutdown', { reason: 'fork', targetSessionFile: '/private/fork.jsonl' });
+  assert.throws(() => observer.bind(old.api), /REBIND_WITHOUT_FORK/);
+  observer.finish();
+  const observed = await readConsumptionCostEvents(file);
+  assert.equal(observed.events.at(-1).complete, false);
+  assert.equal(observed.events.at(-1).pendingForkRebind, true);
+  assert.ok(sample(observed).errors.includes('COST_FORK_LIFECYCLE_INVALID'));
+});
+
 test('model identity and thinking observations come from actual hooks and responses beside their own usage', async () => {
   const payload = deepFreeze({ model: 'group/flash', reasoning_effort: 'high', messages: [{ role: 'user', content: 'task' }] });
   const context = deepFreeze({ model: { provider: 'magpie', id: 'group/flash' } });

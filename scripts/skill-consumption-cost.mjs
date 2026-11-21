@@ -232,20 +232,40 @@ export function observeConsumptionCost(api, settings) {
       diagnosticSpans: spans, verifiedBodyOccurrences: bodies, diagnosticMethod: 'nonadditive-content-spans-and-receipt-verified-exact-matches', tokens: null,
       tokenMethod: 'per-component-tokenization-unavailable-use-reported-request-usage' };
   };
-  const on = (phase, handle) => api.on(phase, (event, context) => {
-    if (closed) return;
-    const started = clock();
-    try { handle(event, context); }
-    catch {
-      errors++;
-      try { append('observer_error', { observedPhase: phase }); } catch { /* Evidence is incomplete; the product proceeds unchanged. */ }
-    } finally { workNs += clock() - started; }
-    // Returning undefined preserves every transforming/cancellable hook's input.
-  });
+  const handlers = [], unsubscribers = [], seenApis = new WeakSet();
+  let boundApi, binding = 0, pendingForkRebind = false;
+  const on = (phase, handle) => handlers.push([phase, handle]);
+  const detach = () => {
+    boundApi = undefined;
+    for (const unsubscribe of unsubscribers.splice(0)) unsubscribe();
+  };
+  const bind = nextApi => {
+    if (closed) throw new Error('COST_OBSERVER_CLOSED');
+    if (boundApi === nextApi) return;
+    if (binding && (!pendingForkRebind || seenApis.has(nextApi))) throw new Error('COST_OBSERVER_REBIND_WITHOUT_FORK');
+    const prior = binding; boundApi = nextApi; seenApis.add(nextApi); binding++; pendingForkRebind = false;
+    for (const [phase, handle] of handlers) {
+      const unsubscribe = nextApi.on(phase, (event, context) => {
+        if (closed || boundApi !== nextApi) return;
+        const started = clock();
+        try { handle(event, context); }
+        catch {
+          errors++;
+          try { append('observer_error', { observedPhase: phase }); } catch { /* Evidence is incomplete; the product proceeds unchanged. */ }
+        } finally { workNs += clock() - started; }
+        // Returning undefined preserves every transforming/cancellable hook's input.
+      });
+      if (typeof unsubscribe === 'function') unsubscribers.push(unsubscribe);
+    }
+    if (prior) append('observer_rebind', { reason: 'fork', binding });
+  };
   const finish = () => {
     if (closed) return;
-    try { append('observer_end', { complete: errors === 0, errors, priorEventCount: sequence,
-      observedPhases: [...phases], observerWorkMs: Number(workNs) / 1e6 }); }
+    try {
+      detach();
+      append('observer_end', { complete: errors === 0 && !pendingForkRebind, errors, priorEventCount: sequence,
+        pendingForkRebind, observedPhases: [...phases], observerWorkMs: Number(workNs) / 1e6 });
+    }
     finally { closed = true; fs.closeSync(fd); }
   };
   append('observer_start', { clockMethod: 'node-process-hrtime-bigint', contentPolicy: 'content-hash-and-byte-counts-with-actual-model-identifiers',
@@ -286,14 +306,21 @@ export function observeConsumptionCost(api, settings) {
     remember(event.messages); const last = [...(event.messages ?? [])].reverse().find(message => message.role === 'assistant');
     append('agent_end', { turn, request, messages: jsonMeasure(event.messages), final: last ? assistant(last) : null });
   });
-  on('session_shutdown', () => { append('session_shutdown'); finish(); });
-  return { finish, status: () => ({ closed, errors, events: sequence }) };
+  on('session_shutdown', event => {
+    const reason = ['quit', 'reload', 'new', 'resume', 'fork'].includes(event?.reason) ? event.reason : 'unknown';
+    append('session_shutdown', { reason, binding,
+      targetSessionFile: typeof event?.targetSessionFile === 'string' ? textMeasure(event.targetSessionFile) : null });
+    if (reason === 'fork') { pendingForkRebind = true; detach(); }
+    else finish();
+  });
+  bind(api);
+  return { bind, finish, status: () => ({ closed, errors, events: sequence, binding, pendingForkRebind }) };
 }
 
 export function consumptionCostExtensionSource(settings) {
   const allowed = ['output', 'checkoutRoot', 'runId', 'sampleId', 'clockId'];
   if (Object.keys(settings).some(key => !allowed.includes(key))) throw new Error('COST_EXTENSION_SETTINGS_INVALID');
-  return `import fs from 'node:fs';\nimport crypto, { createHash } from 'node:crypto';\nimport path from 'node:path';\n${captureInjectionReceipts.toString()}\nexport default api => { (${observeConsumptionCost.toString()})(api, {fs, crypto, path, ...${JSON.stringify(settings)}}); };\n`;
+  return `import fs from 'node:fs';\nimport crypto, { createHash } from 'node:crypto';\nimport path from 'node:path';\n${captureInjectionReceipts.toString()}\nconst settings = ${JSON.stringify(settings)};\nconst registry = globalThis[Symbol.for('context-broker.consumption-cost-observers.v1')] ??= new Map();\nexport default api => {\n  const key = path.resolve(settings.output), identity = JSON.stringify(settings), prior = registry.get(key);\n  if (prior) {\n    if (prior.identity !== identity) throw new Error('COST_OBSERVER_SETTINGS_CHANGED');\n    prior.observer.bind(api);\n  } else {\n    const observer = (${observeConsumptionCost.toString()})(api, {fs, crypto, path, ...settings});\n    registry.set(key, {identity, observer});\n  }\n};\n`;
 }
 
 export async function readConsumptionCostEvents(file) {
@@ -330,7 +357,7 @@ export function freezeConsumptionPlan({ conditions, samples }) {
 function traceErrors(events) {
   const errors = [];
   if (!Array.isArray(events) || events[0]?.phase !== 'observer_start' || events.at(-1)?.phase !== 'observer_end') return ['COST_TRACE_INCOMPLETE'];
-  let previous = null, time = -1n;
+  let previous = null, time = -1n, pendingFork = false, binding = 1;
   for (const [index, event] of events.entries()) {
     const { eventSha256, ...body } = event;
     if (event.sequence !== index + 1 || event.previousSha256 !== previous || !digest(eventSha256) || hash(JSON.stringify(body)) !== eventSha256)
@@ -339,11 +366,20 @@ function traceErrors(events) {
     else time = BigInt(event.monotonicNs);
     if (event.runId !== events[0].runId || event.sampleId !== events[0].sampleId || event.clockId !== events[0].clockId)
       errors.push('COST_TRACE_IDENTITY_CHANGED');
+    if (event.phase === 'session_shutdown' && event.reason === 'fork') {
+      if (pendingFork || event.binding !== binding) errors.push('COST_FORK_LIFECYCLE_INVALID');
+      pendingFork = true;
+    } else if (event.phase === 'observer_rebind') {
+      if (!pendingFork || event.reason !== 'fork' || event.binding !== binding + 1) errors.push('COST_FORK_LIFECYCLE_INVALID');
+      pendingFork = false; binding = event.binding;
+    }
     previous = eventSha256;
   }
   const end = events.at(-1);
   if (end.complete !== true || end.errors !== 0 || end.priorEventCount !== events.length - 1 || events.some(event => event.phase === 'observer_error'))
     errors.push('COST_OBSERVER_FAILED');
+  if (pendingFork || end.pendingForkRebind !== undefined && end.pendingForkRebind !== pendingFork)
+    errors.push('COST_FORK_LIFECYCLE_INVALID');
   return unique(errors);
 }
 

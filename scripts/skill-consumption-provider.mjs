@@ -120,8 +120,9 @@ export function observeProviderTransport(api, settings) {
   const finish = () => {
     if (closed) return;
     try {
+      detach();
       for (const [name, callback] of subscriptions) diagnostics.unsubscribe(name, callback);
-      record('transport_end', { errors, complete: errors === 0 && active.size === 0, attempts: rows.size,
+      record('transport_end', { errors, complete: errors === 0 && active.size === 0 && !pendingForkRebind, attempts: rows.size, pendingForkRebind,
         incompleteRequestIds: [...active].map(request => rows.get(request).id), selectedModel,
         retryWaitMs: null, queueWaitMs: null, wireBytes: null,
         waitMethod: 'SDK-application-waits-not-observable-through-undici' });
@@ -133,18 +134,46 @@ export function observeProviderTransport(api, settings) {
     modelOrigin = model?.baseUrl ? new URL(model.baseUrl).origin : undefined;
     modelApi = model?.api === 'openai-completions' ? 'openai-completions' : model?.api ? 'other' : null;
   };
-  api.on('session_start', (_event, ctx) => {
+  const handlers = [], unsubscribers = [], seenApis = new WeakSet();
+  let boundApi, binding = 0, pendingForkRebind = false;
+  const on = (name, handle) => handlers.push([name, handle]);
+  const detach = () => {
+    boundApi = undefined;
+    for (const unsubscribe of unsubscribers.splice(0)) unsubscribe();
+  };
+  const bind = nextApi => {
+    if (closed) throw new Error('PROVIDER_OBSERVER_CLOSED');
+    if (boundApi === nextApi) return;
+    if (binding && (!pendingForkRebind || seenApis.has(nextApi))) throw new Error('PROVIDER_OBSERVER_REBIND_WITHOUT_FORK');
+    const prior = binding; boundApi = nextApi; seenApis.add(nextApi); binding++; pendingForkRebind = false;
+    for (const [name, handle] of handlers) {
+      const unsubscribe = nextApi.on(name, (event, context) => {
+        if (closed || boundApi !== nextApi) return;
+        handle(event, context);
+      });
+      if (typeof unsubscribe === 'function') unsubscribers.push(unsubscribe);
+    }
+    if (prior) record('observer_rebind', { reason: 'fork', binding });
+  };
+  on('session_start', (_event, ctx) => {
     try {
       selectModel(ctx);
       record('model_selected', { modelSha256: selectedModel, originSha256: modelOrigin ? hash(modelOrigin) : null });
     } catch { errors++; record('observer_error', { channel: 'session_start' }); }
   });
-  api.on('before_provider_request', (_event, ctx) => {
+  on('before_provider_request', (_event, ctx) => {
     try { selectModel(ctx); }
     catch { modelApi = null; errors++; record('observer_error', { channel: 'before_provider_request' }); }
   });
-  api.on('session_shutdown', finish);
-  return { finish };
+  on('session_shutdown', event => {
+    const reason = ['quit', 'reload', 'new', 'resume', 'fork'].includes(event?.reason) ? event.reason : 'unknown';
+    record('session_shutdown', { reason, binding,
+      targetSessionFileSha256: typeof event?.targetSessionFile === 'string' ? hash(event.targetSessionFile) : null });
+    if (reason === 'fork') { pendingForkRebind = true; detach(); }
+    else finish();
+  });
+  bind(api);
+  return { bind, finish };
 }
 
 /** The caller binds this terminal and assistant message to one exact request.
@@ -165,7 +194,17 @@ export function providerApplicationCompletion(end, message) {
 
 export function providerTransportExtensionSource(settings) {
   return "import diagnostics from 'node:diagnostics_channel';\nimport fs from 'node:fs';\nimport crypto from 'node:crypto';\nimport path from 'node:path';\n"
-    + 'export default api => { (' + observeProviderTransport.toString() + ')(api, {diagnostics,fs,crypto,path,...' + JSON.stringify(settings) + '}); };\n';
+    + 'const settings = ' + JSON.stringify(settings) + ';\n'
+    + "const registry = globalThis[Symbol.for('context-broker.provider-transport-observers.v1')] ??= new Map();\n"
+    + 'export default api => {\n'
+    + '  const key = path.resolve(settings.output), identity = JSON.stringify(settings), prior = registry.get(key);\n'
+    + '  if (prior) {\n'
+    + "    if (prior.identity !== identity) throw new Error('PROVIDER_OBSERVER_SETTINGS_CHANGED');\n"
+    + '    prior.observer.bind(api);\n'
+    + '  } else {\n'
+    + '    const observer = (' + observeProviderTransport.toString() + ')(api, {diagnostics,fs,crypto,path,...settings});\n'
+    + '    registry.set(key, {identity, observer});\n'
+    + '  }\n};\n';
 }
 
 export async function readProviderTransport(file) {
@@ -178,7 +217,7 @@ export async function readProviderTransport(file) {
   require(events.length >= 2 && events[0]?.phase === 'transport_start' && events.at(-1)?.phase === 'transport_end');
   const clock = events[0].clockId, requests = new Map();
   require(typeof clock === 'string' && clock.length > 0);
-  let previous = null, lastTime = -1n, observerErrors = 0;
+  let previous = null, lastTime = -1n, observerErrors = 0, pendingFork = false, binding = 1;
   for (const [index, event] of events.entries()) {
     require(event && typeof event === 'object' && !Array.isArray(event));
     require(event.version === 1 && event.sequence === index + 1 && event.previousSha256 === previous && event.clockId === clock);
@@ -190,6 +229,14 @@ export async function readProviderTransport(file) {
       case 'transport_start': require(index === 0); break;
       case 'transport_end': require(index === events.length - 1); break;
       case 'model_selected': break;
+      case 'session_shutdown':
+        require(['quit', 'reload', 'new', 'resume', 'fork', 'unknown'].includes(event.reason));
+        if (event.reason === 'fork') { require(!pendingFork && event.binding === binding); pendingFork = true; }
+        break;
+      case 'observer_rebind':
+        require(pendingFork && event.reason === 'fork' && event.binding === binding + 1);
+        pendingFork = false; binding = event.binding;
+        break;
       case 'observer_error': observerErrors++; break;
       case 'request_start':
         require(Number.isSafeInteger(event.id) && event.id === requests.size + 1 && !requests.has(event.id));
@@ -215,7 +262,8 @@ export async function readProviderTransport(file) {
     && new Set(end.incompleteRequestIds).size === open.length && end.incompleteRequestIds.every(id => open.includes(id)));
   // A captured HTTP failure is a valid terminal observation. Only observer errors
   // or requests without a terminal make the trace incomplete.
-  require(end.complete === (observerErrors === 0 && open.length === 0));
+  require(end.pendingForkRebind === undefined ? !pendingFork : end.pendingForkRebind === pendingFork);
+  require(end.complete === (observerErrors === 0 && open.length === 0 && !pendingFork));
   return events;
 }
 
