@@ -986,7 +986,11 @@ export async function runAgentFixtureEvent(event, { bindings, bindingsPath, owne
 }
 
 export async function readAgentFixture(bindings, object, options = {}) {
-  const result = await captureReadback(bindings, object, options); await persist(bindings); return result;
+  const { preserveBindings = false, ...readback } = options;
+  assert.equal(typeof preserveBindings, 'boolean');
+  const result = await captureReadback(bindings, object, readback);
+  if (!preserveBindings) await persist(bindings);
+  return result;
 }
 
 /** Cleanup only declared fixture ownership, after subject processes have exited. Keep all evidence. */

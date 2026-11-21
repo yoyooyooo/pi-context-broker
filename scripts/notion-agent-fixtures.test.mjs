@@ -93,6 +93,18 @@ test('unknown event and arbitrary command fields are rejected before touching st
   });
 });
 
+test('a supplemental full readback can preserve the original binding bytes', async t => {
+  const { root, bindings, context } = await fixture(t), directory = join(root, 'skill'), content = '# Preserved history\n';
+  await mkdir(directory); const input = join(directory, 'SKILL.md'); await writeFile(input, content);
+  context.objects.selected = { id: 'selected', placement: 'project', directory, currentVersion: 'A',
+    versionInputs: { A: { files: [{ path: 'SKILL.md', input, sha256: hash(content), bytes: Buffer.byteLength(content), mode: '100644' }] } } };
+  const path = join(root, 'bindings.json'); await writeJson(path, bindings); const original = await readFile(path);
+  const result = await readAgentFixture(bindings, 'selected', { version: 'A', preserveBindings: true });
+  assert.deepEqual(await readFile(path), original);
+  assert.equal(result.status, 'passed'); assert.equal((await json(result.artifact.path)).status, 'passed');
+  assert.ok(bindings.private.bodies['selected@A/SKILL.md'], 'Observed identities remain available for a separate supplemental binding');
+});
+
 test('missing-object event quarantines only the selected exact object', async t => {
   const { bindings, state } = await fixture(t), content = '# Selected bytes\n', digest = hash(content);
   bindings.private.bodies['selected@A/SKILL.md'] = { path: join(state, 'objects', digest), sha256: digest, bytes: content.length, object: 'selected', resourcePath: 'SKILL.md' };
