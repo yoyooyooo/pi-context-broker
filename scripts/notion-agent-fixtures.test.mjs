@@ -366,6 +366,7 @@ import {join} from 'node:path';
 const path=${JSON.stringify(statePath)},state=JSON.parse(await readFile(path,'utf8')),args=process.argv.slice(2);
 const one=key=>args[args.indexOf(key)+1],many=key=>args.flatMap((arg,i)=>arg===key?[args[i+1]]:[]);
 state.calls.push(args);
+state.stores??=[];state.stores.push(process.env.NTN_SKILLS_HOME);
 let value;
 if(args[0]==='ctl'&&args[2]==='inspect')value={ok:true,library:state.library};
 else if(args[0]==='ctl'&&args[2]==='skill'){
@@ -379,11 +380,14 @@ else if(args[0]==='ctl'&&args[2]==='skill'){
     const record=state.records.find(row=>row.id===args[4]);assert.ok(record);
     if(args.includes('--requires'))record.requires=requires;
     if(args.includes('--members'))record.members=members;
+    if(args.includes('--enabled'))record.enabled=one('--enabled')==='true';
+    if(args.includes('--default-context'))record.defaultContext=one('--default-context')==='true';
     value={ok:true,page_id:record.id};
   }
 }else if(args[0]==='read'){
   const record=state.records.find(row=>row.id===args[1]);assert.ok(record);assert.equal(record.enabled,true,'Disabled content cannot be consumed');
-  value={ok:true,has_more:false,path:'SKILL.md',content:record.content,ref:'unit:'+record.id,snapshot_id:'snapshot:'+record.id,version_id:'version:'+record.id,scope:'unit-scope',record:{id:record.skillId,locator:{page_id:record.id,skill_id:record.skillId}},effects:{remote_writes:'none'}};
+  if(state.failRead){value={ok:false,error:{code:'STATE_UNAVAILABLE'}};process.exitCode=1;}
+  else value={ok:true,has_more:false,path:'SKILL.md',content:record.content,ref:'unit:'+record.id,snapshot_id:'snapshot:'+record.id,version_id:'version:'+record.id,scope:'unit-scope',record:{id:record.skillId,locator:{page_id:record.id,skill_id:record.skillId}},effects:{remote_writes:'none'}};
 }else if(args[0]==='files')value={ok:true,files:[{path:'SKILL.md',mode:'100644'}]};
 else throw Error('Unexpected CLI request '+JSON.stringify(args));
 await writeFile(path,JSON.stringify(state));process.stdout.write(JSON.stringify(value)+'\\n');
@@ -485,4 +489,39 @@ test('disabled preparation verifies metadata and owned child identities without 
   await assert.rejects(readAgentFixture(bindings, 'off', { version: 'A', properties: { enabled: false } }), /Metadata-only disabled readback cannot prove a new content version/u);
   assert.equal((await json(harness.statePath)).calls.some(args => ['read', 'files', 'use'].includes(args[0])), false);
   assert.equal(harness.networkCalls.some(call => call.pathname.endsWith('/children')), false, 'Disabled verification must not inspect author body blocks');
+});
+
+test('enabling an initially disabled Skill binds its actual current body and persists independent flag expectations', async t => {
+  const harness = await preparationHarness(t), object = managedObject('off', { enabled: false, defaultContext: false });
+  const bindings = await prepareAgentFixtures({ ...harness.options, recipe: { kind: 'native-management', objects: [object] } });
+  assert.equal(bindings.private.objects.off.versions.A.snapshot_id, undefined);
+  const result = await runAgentFixtureEvent({ kind: 'set-enabled', object: 'off', enabled: true, defaultContext: true }, { bindings });
+  assert.equal(result.status, 'passed'); assert.equal(result.result.readback.status, 'passed');
+  assert.deepEqual(result.result.readback.observed.properties, { enabled: true, defaultContext: true });
+  const page = bindings.private.objects.off.pageId, selected = bindings.private.objects.off.versions.A;
+  assert.equal(selected.snapshot_id, 'snapshot:' + page); assert.equal(selected.version_id, 'version:' + page);
+  const observed = bindings.private.bodies['off@A/SKILL.md'];
+  assert.equal(hash(await readFile(observed.path)), observed.sha256);
+  assert.equal(bindings.private.fixture.objects.off.versionInputs.A.enabled, false, 'The initial version recipe is immutable evidence');
+  const restored = await json(join(harness.options.root, 'bindings.json'));
+  const later = await readAgentFixture(restored, 'off', { version: 'A', key: 'current-enabled' });
+  assert.equal(later.object.snapshot_id, selected.snapshot_id);
+  const state = await json(harness.statePath);
+  assert.ok(state.calls.some(args => args[0] === 'read'));
+  assert.ok(state.calls.some(args => args[0] === 'files'));
+  assert.ok(state.stores.every(root => root === join(harness.options.root, 'state')), 'Only the control Store receives readback snapshots');
+  const beforeDisable = state.calls.filter(args => ['read', 'files'].includes(args[0])).length;
+  await runAgentFixtureEvent({ kind: 'set-enabled', object: 'off', enabled: false }, { bindings: restored });
+  assert.equal((await json(harness.statePath)).calls.filter(args => ['read', 'files'].includes(args[0])).length, beforeDisable);
+  assert.equal(restored.private.objects.off.versions.A.snapshot_id, selected.snapshot_id, 'Disabling preserves historical evidence without a new current read');
+});
+
+test('a failed current read after enabling cannot publish a body version', async t => {
+  const harness = await preparationHarness(t), object = managedObject('off', { enabled: false });
+  const bindings = await prepareAgentFixtures({ ...harness.options, recipe: { kind: 'native-management', objects: [object] } });
+  const state = await json(harness.statePath); state.failRead = true; await writeJson(harness.statePath, state);
+  await assert.rejects(runAgentFixtureEvent({ kind: 'set-enabled', object: 'off', enabled: true }, { bindings }), error => error.code === 'AGENT_FIXTURE_CLI_FAILED');
+  assert.equal(bindings.private.objects.off.versions.A.snapshot_id, undefined);
+  assert.equal(bindings.private.objects.off.versions.A.version_id, undefined);
+  assert.equal((await json(harness.statePath)).records[0].enabled, true, 'The successful public mutation remains visible even though evidence acquisition failed');
 });

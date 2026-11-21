@@ -320,8 +320,9 @@ async function captureReadback(bindings, alias, { version, key = alias, state = 
       const relation = pick(row, ids, name); assert.ok(relation && relation.has_more !== true, 'Incomplete relation readback');
       assert.deepEqual((relation.relation ?? []).map(item => item.id).sort(), aliases.map(alias => context.objects[alias].pageId).sort(), 'A required relationship differs');
     }
-    if (expectedVersion.enabled !== undefined) assert.equal(pick(row, ids, 'Enabled')?.checkbox, expectedVersion.enabled);
-    if (expectedVersion.defaultContext !== undefined) assert.equal(pick(row, ids, 'Default Context')?.checkbox, expectedVersion.defaultContext);
+    const metadata = { ...expectedVersion, ...owned.currentProperties, ...properties };
+    if (metadata.enabled !== undefined) assert.equal(pick(row, ids, 'Enabled')?.checkbox, metadata.enabled);
+    if (metadata.defaultContext !== undefined) assert.equal(pick(row, ids, 'Default Context')?.checkbox, metadata.defaultContext);
   }
   const outputDirectory = join(context.root, 'readbacks', alias + '-' + randomUUID()); await mkdir(outputDirectory, { mode: 0o700 });
   const versionFiles = owned.versionInputs[label]?.files ?? [];
@@ -734,6 +735,8 @@ async function publishVersion(bindings, event) {
   if (input.defaultContext !== undefined) args.push('--default-context', String(input.defaultContext));
   const result = await cli(context, args, 'publish-version');
   owned.currentVersion = event.version;
+  owned.currentProperties = { ...owned.currentProperties, ...Object.fromEntries(['enabled', 'defaultContext']
+    .filter(field => input[field] !== undefined).map(field => [field, input[field]])) };
   const readback = await captureReadback(bindings, event.object, { version: event.version, key: event.object + '@' + event.version });
   return { command: result.artifact, readback };
 }
@@ -937,7 +940,12 @@ export async function runAgentFixtureEvent(event, { bindings, bindingsPath, owne
       const row = await request(context, 'v1/pages/' + owned.pageId);
       assert.equal(pick(row, context.library.skills.property_ids, 'Enabled')?.checkbox, event.enabled);
       if (event.defaultContext !== undefined) assert.equal(pick(row, context.library.skills.property_ids, 'Default Context')?.checkbox, event.defaultContext);
+      owned.currentProperties = { ...owned.currentProperties, enabled: event.enabled,
+        ...(event.defaultContext === undefined ? {} : { defaultContext: event.defaultContext }) };
       record.result = { command: result.artifact, row };
+      if (event.enabled) record.result.readback = await captureReadback(bindings, event.object, {
+        version: owned.currentVersion, key: event.object + '-enabled', properties: owned.currentProperties,
+      });
     }
     if (event.kind === 'remove-owned') {
       assert.equal(owned.placement, 'notion');
