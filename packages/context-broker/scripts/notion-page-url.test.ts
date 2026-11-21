@@ -100,15 +100,17 @@ test("a URL read or use preserves the old pin until explicit refresh and retains
   } finally { await h.close(); }
 });
 
-test("URL use rejects a changed current permission and never replaces the prior selected graph", async () => {
+test("URL read and use retain current source failure codes and the prior selected graph", async () => {
   const h = await activeNotionSession();
   try {
     const old = await h.seed(), root = old.records.find(record => record.name === "root")!, url = pageUrl(root.locator!.page_id);
     const before = h.f.calls.filter(call => call.operation === "consume").length;
-    h.f.state.list = () => { throw { code: "ACCESS_DENIED" }; };
-    await expect(h.tool("notion_use").execute("denied-url", { ref: url }, undefined, undefined, h.ctx)).rejects.toMatchObject({ code: "ACCESS_DENIED" });
-    await expect(h.read(url)).rejects.toThrow("ACCESS_DENIED");
-    expect(h.f.calls.filter(call => call.operation === "consume")).toHaveLength(before);
-    expect(h.selected().scopes.get(root.sourceScope!)?.bindings.get(root.id!)?.snapshot_id).toBe(root.snapshotId);
+    for (const code of ["RATE_LIMITED", "NOTION_UNAVAILABLE", "ACCESS_DENIED"]) {
+      h.f.state.list = () => { throw { code }; };
+      await expect(h.tool("notion_use").execute("failed-url-" + code, { ref: url }, undefined, undefined, h.ctx)).rejects.toMatchObject({ code });
+      await expect(h.read(url)).rejects.toThrow(code);
+      expect(h.f.calls.filter(call => call.operation === "consume")).toHaveLength(before);
+      expect(h.selected().scopes.get(root.sourceScope!)?.bindings.get(root.id!)?.snapshot_id).toBe(root.snapshotId);
+    }
   } finally { await h.close(); }
 });

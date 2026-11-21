@@ -30,9 +30,13 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
   await mkdir(join(root, "startup-fixed"));
   const body = "STARTUP_SELECTED_BODY_V1";
   await writeFile(path, body);
+  // A canonical owner reaches exact metadata lookup directly. A physical page
+  // UUID instead requires the authorized page-to-owner resolver, which this
+  // focused discovery fixture deliberately does not provide.
+  const owner = "shared_skill:startup:entry";
   const record: SkillRecord = {
-    kind: "skill", id: "11111111-1111-4111-8111-111111111111", sourceId: "fixture", source: "notion", sourceScope: "startup-scope",
-    ref: "skill://11111111-1111-4111-8111-111111111111/SKILL.md", entrypoint: "SKILL.md",
+    kind: "skill", id: owner, sourceId: "fixture", source: "notion", sourceScope: "startup-scope",
+    ref: "skill://" + encodeURIComponent(owner) + "/SKILL.md", entrypoint: "SKILL.md",
     name: "startup", token: "fixture/startup", path, description: "Startup fixture", aliases: [],
     normalizedName: "startup", normalizedAliases: [], normalizedDescription: "startup fixture", autoloadEnabled: false, defaultDiscovery: false,
   };
@@ -252,7 +256,8 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       const context = accepted.project();
       await turn();
       assert.deepEqual(f.loads, []);
-      f.resolve(1, [{ ...record, id: "22222222-2222-4222-8222-222222222222", ref: "skill://22222222-2222-4222-8222-222222222222/SKILL.md" }]);
+      const replacement = "shared_skill:startup:replacement";
+      f.resolve(1, [{ ...record, id: replacement, ref: "skill://" + encodeURIComponent(replacement) + "/SKILL.md" }]);
       await refreshing;
       await context;
       assert.match(accepted.submitted, /accepted identity/);
