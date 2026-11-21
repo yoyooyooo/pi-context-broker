@@ -7,6 +7,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { providerApplicationCompletion } from './skill-consumption-provider.mjs';
 import { validateAgentAssertion, validateAgentBindings } from './notion-agent-scenarios.mjs';
 import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer } from './notion-agent-tool-lineage.mjs';
+import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -208,7 +209,6 @@ function catalogCards(text) {
 }
 const normalized = value => String(value).normalize('NFKC').replace(/\s+/gu, ' ').toLocaleLowerCase('en-US').trim();
 const statusOf = items => items.some(item => item.status === 'failed') ? 'failed' : items.some(item => item.status === 'blocked') ? 'blocked' : 'passed';
-const proofValues = tasks => tasks.filter(row => row.phase === 'receipt').flatMap(row => Object.values(row.proofs ?? {}));
 const sameIdentity = (binding, target) => binding?.record?.id === target.owner && binding.scope === target.scope &&
   binding.snapshot_id === target.snapshot_id && binding.version_id === target.version_id;
 
@@ -221,6 +221,94 @@ async function verifiedArtifact(artifact, readArtifact) {
   demand(bytes.length === artifact.bytes && hash(bytes) === artifact.sha256, 'ARTIFACT_CHANGED', 'Observed artifact bytes changed', { path: artifact.path });
   return bytes;
 }
+function boundNotionDeliveries(payload, tasks, frozenBodies) {
+  const deliveries = new Map(), rejected = [];
+  const decode = (text, span) => {
+    assert.ok(object(span) && Number.isSafeInteger(span.start) && Number.isSafeInteger(span.end) &&
+      span.start >= 0 && span.end > span.start && span.end <= text.length, 'A source delivery needs its exact complete text span');
+    const value = text.slice(span.start, span.end);
+    if (span.encoding === 'raw') return value;
+    if (span.encoding === 'json') return JSON.parse('"' + value + '"');
+    if (span.encoding === 'xml') return value.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
+    throw new Error('Unknown source delivery encoding');
+  };
+  for (const receipt of tasks.filter(row => row.phase === 'receipt')) {
+    const custom = receipt.proofs?.custom;
+    for (const [index, message] of (payload.messages ?? []).entries()) {
+      const text = textOf(message.content);
+      const sameText = receipt.content?.sha256 === hash(text) && receipt.content.bytes === Buffer.byteLength(text);
+      const matches = nonempty(receipt.toolCallId) ? message.role === 'tool' && message.tool_call_id === receipt.toolCallId && sameText
+        : ['context-broker', 'skill-prompt-message'].includes(receipt.customType) && message.role === 'user' &&
+          (digest(custom?.nativePromptSha256) ? custom.nativePromptSha256 === hash(text) : sameText);
+      if (!matches) continue;
+      const add = (binding, path, proof, span, purpose) => {
+        const sha256 = proof.bodySha256 ?? proof.sha256, frozen = frozenBodies.get(sha256);
+        if (!frozen) return;
+        assert.ok(object(binding?.record) && nonempty(binding.record.id) && digest(binding.scope) &&
+          /^s_[a-f0-9]{64}$/u.test(binding.snapshot_id) && digest(binding.version_id) && nonempty(path),
+        'The delivered body needs its real logical owner, scope, version and path');
+        assert.equal(proof.bytes, frozen.bytes);
+        const body = decode(text, span);
+        assert.equal(body, frozen.text, 'The bound source span differs from the independently frozen bytes');
+        const value = { owner: binding.record.id, scope: binding.scope, snapshot_id: binding.snapshot_id,
+          version_id: binding.version_id, path, sha256, bytes: frozen.bytes, purpose,
+          messageIndex: index, ...(receipt.toolCallId ? { toolCallId: receipt.toolCallId } : { customType: receipt.customType }),
+          content: { sha256: hash(text), bytes: Buffer.byteLength(text) }, delivery: span };
+        deliveries.set(JSON.stringify([index, span.start, span.end, value.scope, value.owner, value.snapshot_id, path]), value);
+      };
+      try {
+        const prepared = receipt.proofs?.contextBrokerPreparation;
+        if (prepared && ['notion_use', 'skill_prepare'].includes(receipt.toolName)) {
+          const result = verifyPreparationEvidence(text, prepared, receipt.toolCallId);
+          for (const record of result.records.filter(record => record.mapping.state === 'source'))
+            add(record.receipt.binding, record.receipt.binding.record.entrypoint, record.receipt, record.mapping.delivery, prepared.purpose);
+        }
+        const main = receipt.proofs?.contextBrokerRead;
+        if (main && receipt.toolName === 'read' && main.toolCallId === receipt.toolCallId) {
+          assert.equal(main.version, 3, 'Main inspection needs the current spanned read receipt');
+          assert.equal(main.rendered?.sha256, hash(text)); assert.equal(main.rendered?.bytes, Buffer.byteLength(text));
+          assert.equal(main.snapshotId, main.binding?.snapshot_id); assert.equal(main.bodySha256, main.binding?.body_sha256);
+          add(main.binding, main.binding?.record?.entrypoint, main, main.delivery, main.purpose);
+        }
+        const resource = receipt.proofs?.contextBrokerResource;
+        if (resource && receipt.toolName === 'read' && resource.toolCallId === receipt.toolCallId) {
+          assert.equal(resource.version, 2); assert.equal(resource.loaded, false);
+          if (Array.isArray(resource.files)) {
+            assert.equal(resource.projection?.version, 1);
+            assert.equal(resource.projection.compiler, 'context-broker/resource-read/v1');
+            assert.equal(resource.projection.rendered?.sha256, hash(text));
+            assert.equal(resource.projection.rendered?.bytes, Buffer.byteLength(text));
+            const model = JSON.parse(text);
+            assert.equal(model.status, 'ready'); assert.equal(model.files.length, resource.files.length);
+            const binding = { record: { id: resource.selection.owner }, ...resource.selection };
+            for (const [fileIndex, file] of resource.files.entries()) {
+              if (file.state !== 'source' || file.encoding !== 'utf8' || file.delivered_complete_text !== true) continue;
+              const rendered = model.files[fileIndex];
+              assert.equal(file.index, fileIndex); assert.equal(rendered.kind, 'text');
+              assert.equal(rendered.path, file.path); assert.equal(rendered.ref, file.model_ref);
+              assert.equal(rendered.content, decode(text, file.delivery));
+              add(binding, file.path, file, file.delivery, resource.purpose);
+            }
+          } else {
+            assert.equal(resource.delivered_complete_text, true);
+            add({ record: { id: resource.id }, scope: resource.scope, snapshot_id: resource.snapshot_id,
+              version_id: resource.version_id }, resource.path, resource, resource.delivery, resource.purpose);
+          }
+        }
+        if (custom) for (const record of custom.records ?? [custom]) {
+          if (record.version !== 2 || record.loaded !== true) continue;
+          assert.equal(record.snapshotId, record.binding?.snapshot_id);
+          assert.equal(record.bodySha256, record.binding?.body_sha256);
+          add(record.binding, record.binding?.record?.entrypoint, record, record.delivery, record.purpose);
+        }
+      } catch (error) {
+        rejected.push({ messageIndex: index, toolCallId: receipt.toolCallId, customType: receipt.customType, reason: error.message });
+      }
+    }
+  }
+  return { deliveries: [...deliveries.values()], rejected };
+}
+
 function resolveObject(privateBindings, alias, versionLabel) {
   const item = privateBindings.objects[alias];
   need(item && object(item.versions), 'OBJECT_BINDING_MISSING', 'No real object binding for ' + alias);
@@ -380,7 +468,9 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
           'NATIVE_BODY_METRIC_MISSING', 'The actual native tool response requires an independent full-body count');
         nativeReadBodies.push({ body: key, path, sha256: frozen.sha256, occurrences: count.occurrences, toolCallIds: calls.map(call => call.id), deliveryToolCallIds: [...ids] });
       }
+      const notion = boundNotionDeliveries(payload, tasks, uniqueBodies);
       payloads.push({ request: request.request, wireRequestId: sent.id, sha256: task.sha256, bytes: task.bytes, bodies, bodyObservation, nativeReadBodies,
+        notionDeliveries: notion.deliveries, rejectedNotionReceipts: notion.rejected,
         monotonicNs: task.monotonicNs, metadataText: (payload.messages ?? []).filter(message => ['user', 'system'].includes(message.role)).map(message => textOf(message.content)).join('\n'),
         verifiedBodies: request.payload.verifiedBodyOccurrences, usage: message.usage, completion: providerApplicationCompletion(end, message),
         selection: observed.selectionSnapshots?.find(row => row.payloadSha256 === task.sha256)?.selection });
@@ -423,6 +513,15 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       const matches = selection.scopes.flatMap(scope => scope.bindings).filter(binding => sameIdentity(binding, target));
       demand(matches.length === 1, 'WRONG_SELECTION', 'Actual selected logical identity/version differs', { expected: target });
       demand(matches[0].body_sha256 === body.sha256, 'SELECTED_BODY_IDENTITY_MISMATCH', 'Selected main bytes differ from the frozen version');
+      const graphs = selection.scopes.flatMap(scope => scope.graphLocks ?? []);
+      demand(graphs.some(graph => graph.purpose === 'use' && graph.roots?.includes(target.owner) &&
+        graph.bindings?.some(binding => sameIdentity(binding, target))), 'TASK_SELECTION_MISSING',
+      'Inspection or a saved binding is not an adopted task selection');
+      need(delivery.last.notionDeliveries.some(proof => proof.owner === target.owner && proof.scope === target.scope &&
+        proof.snapshot_id === target.snapshot_id && proof.version_id === target.version_id &&
+        proof.path === 'SKILL.md' && proof.sha256 === body.sha256 && proof.bytes === body.bytes),
+      'SELECTED_BODY_DELIVERY_MISSING', 'The selected version needs its own receipt-bound body in this actual request',
+      { target, rejected: delivery.last.rejectedNotionReceipts });
     } else {
       const active = selection.active.some(source => ['local', 'filesystem'].includes(source.record?.source) && source.record.path === target.path && source.bodySha256 === body.sha256);
       const read = [...shared.attempts.values()].some(call => call.name === 'read' && call.arguments?.path === target.path && call.result?.isError === false);
@@ -582,22 +681,11 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
         const body = privateBindings.bodies[keys[0]];
         demand(bodyCount(keys[0], delivery.last) > 0, 'RESOURCE_BODY_MISSING', 'Required full resource is absent from the actual request');
         if (target.kind === 'notion') {
-          const matches = proofValues(tasks).filter(proof => (
-            proof.id === target.owner && proof.scope === target.scope && proof.snapshot_id === target.snapshot_id &&
-            proof.version_id === target.version_id && proof.path === expected.path && proof.sha256 === body.sha256 && proof.bytes === body.bytes &&
-            proof.delivered_complete_text === true
-          ) || (
-            proof.selection?.owner === target.owner && proof.selection.scope === target.scope && proof.selection.snapshot_id === target.snapshot_id &&
-            proof.selection.version_id === target.version_id && Array.isArray(proof.files) && proof.files.some(file =>
-              file.path === expected.path && file.sha256 === body.sha256 && file.bytes === body.bytes && file.delivered_complete_text === true &&
-              file.state === 'source' && file.encoding === 'utf8') &&
-            delivery.last.verifiedBodies?.some(value => value.sha256 === body.sha256 && value.occurrences > 0)
-          ) || (
-            expected.path === 'SKILL.md' && sameIdentity(proof.binding, target) && proof.binding.record.entrypoint === expected.path &&
-            proof.snapshotId === target.snapshot_id && proof.bodySha256 === body.sha256 && proof.bytes === body.bytes &&
-            nonempty(proof.toolCallId) && delivery.last.verifiedBodies?.some(value => value.sha256 === body.sha256 && value.occurrences > 0)
-          ));
-          demand(matches.length > 0, 'WRONG_RESOURCE_OWNER', 'No complete read receipt for the chosen logical owner and version');
+          need(delivery.last.notionDeliveries.some(proof => proof.owner === target.owner && proof.scope === target.scope &&
+            proof.snapshot_id === target.snapshot_id && proof.version_id === target.version_id && proof.path === expected.path &&
+            proof.sha256 === body.sha256 && proof.bytes === body.bytes), 'WRONG_RESOURCE_OWNER',
+          'The complete resource needs an exact owner/version receipt bound to its actual payload message',
+          { target, path: expected.path, rejected: delivery.last.rejectedNotionReceipts });
         } else {
           const path = localBodyPath(keys[0]);
           const proofs = delivery.last.nativeReadBodies.filter(row => row.body === keys[0] && row.path === path);

@@ -115,6 +115,27 @@ test('selection capture serializes actual maps without synthesizing state', () =
 
 // These are deterministic verifier fixtures, not real-model acceptance results.
 const oracle = candidatePayloadBodies;
+function rewritePayloads(f, change) {
+  for (const [index, request] of f.observed.costs.filter(row => row.phase === 'provider_request').entries()) {
+    const task = f.observed.tasks.find(row => row.phase === 'provider_payload' && row.sha256 === request.payload.sha256);
+    const sent = f.observed.transport.find(row => row.phase === 'request_sent' && row.id === index + 1);
+    const payload = JSON.parse(f.files.get(task.payloadFile).toString('utf8'));
+    change(payload, index);
+    const bytes = Buffer.from(JSON.stringify(payload)), sha256 = hash(bytes), counts = oracle(payload, f.bodyFiles);
+    f.files.set(task.payloadFile, bytes);
+    Object.assign(task, { sha256, bytes: bytes.length, bodies: counts });
+    Object.assign(request.payload, { sha256, bytes: bytes.length, verifiedBodyOccurrences: counts });
+    Object.assign(sent, { requestBodySha256: sha256, requestBodyBytes: bytes.length });
+  }
+}
+function bindReadDelivery(f, content, proofs, toolCallId = 't0') {
+  const row = { phase: 'receipt', toolName: 'read', toolCallId, content: { sha256: hash(content), bytes: Buffer.byteLength(content) }, proofs };
+  f.observed.tasks.push(row);
+  rewritePayloads(f, (payload, index) => {
+    if (index > 0) payload.messages.push({ role: 'tool', tool_call_id: toolCallId, content });
+  });
+  return row;
+}
 function fixture({ calls = [], answerText = '合计：100 元', bodies = {}, scope = 'a'.repeat(64) } = {}) {
   const files = new Map(), bodyFiles = [];
   const bodyBindings = Object.fromEntries(Object.entries(bodies).map(([key, text]) => {
@@ -161,12 +182,24 @@ function fixture({ calls = [], answerText = '合计：100 元', bodies = {}, sco
     selection: { version: 1, sessionId: session.sessionId, leafId: session.leafId, branchSha256: session.branchSha256, scopes: [], active: [] } };
   const run = expect => analyzeNotionAgentTurn({ id: 'test-turn', expect }, observed, binding, { inspectPayload: oracle,
     readArtifact: async path => { if (!files.has(path)) throw new Error('missing artifact ' + path); return files.get(path); } });
-  const bindRemote = (alias, version, textKey, owner = 'skill-' + alias) => {
+  const bindRemote = (alias, version, textKey, owner = 'skill-' + alias, deliver = true) => {
     const body = bodyBindings[textKey], snapshot_id = 's_' + hash(alias + version), version_id = hash(version + alias);
     binding.private.objects[alias] = { kind: 'notion', owner, scope, currentVersion: version,
-      versions: { [version]: { snapshot_id, version_id, bodyKeys: Object.keys(bodyBindings).filter(key => key.startsWith(alias + '@' + version + '/')) } } };
-    const selected = { record: { id: owner }, scope, snapshot_id, version_id, body_sha256: body.sha256 };
-    observed.selection.scopes.push({ scope, roots: [owner], bindings: [selected], graphLocks: [] });
+      versions: { ...binding.private.objects[alias]?.versions,
+        [version]: { snapshot_id, version_id, bodyKeys: Object.keys(bodyBindings).filter(key => key.startsWith(alias + '@' + version + '/')) } } };
+    const selected = { record: { id: owner, entrypoint: 'SKILL.md' }, scope, snapshot_id, version_id, body_sha256: body.sha256 };
+    observed.selection.scopes.push({ scope, roots: [owner], bindings: [selected],
+      graphLocks: [{ purpose: 'use', roots: [owner], bindings: [selected] }] });
+    if (deliver) {
+      const original = files.get(body.path).toString('utf8'), prefix = 'Source ' + owner + ' ' + snapshot_id + '\n', content = prefix + original;
+      tasks.push({ phase: 'receipt', customType: 'context-broker', content: { sha256: hash(content), bytes: Buffer.byteLength(content) },
+        proofs: { custom: { version: 2, loaded: true, snapshotId: snapshot_id, bodySha256: body.sha256, bytes: body.bytes,
+          binding: selected, delivery: { start: prefix.length, end: content.length, encoding: 'raw' } } } });
+      rewritePayloads({ observed, files, bodyFiles }, payload => {
+        payload.messages[0].content = payload.messages[0].content.replace(original, '');
+        payload.messages.push({ role: 'user', content });
+      });
+    }
     return { owner, scope, snapshot_id, version_id };
   };
   return { files, entries, bodyFiles, binding, observed, run, bindRemote };
@@ -249,12 +282,16 @@ test('a matching body plus actual exact selection passes without requiring Notio
 });
 
 test('resource proof binds owner and version independently from content equality', async () => {
-  const f = fixture({ bodies: { 'remote@A/SKILL.md': 'business text', 'remote@A/rates.md': 'rate is 100' } });
+  const content = 'rate is 100';
+  const f = fixture({ calls: [{ name: 'read', result: content }],
+    bodies: { 'remote@A/SKILL.md': 'business text', 'remote@A/rates.md': content } });
   const target = f.bindRemote('remote', 'A', 'remote@A/SKILL.md'), body = f.binding.private.bodies['remote@A/rates.md'];
-  f.observed.tasks.push({ phase: 'receipt', proofs: { contextBrokerResource: { ...target, id: 'wrong-owner', path: 'rates.md',
-    sha256: body.sha256, bytes: body.bytes, delivered_complete_text: true } } });
-  assert.equal((await f.run([{ kind: 'resource', object: 'remote', version: 'A', path: 'rates.md' }])).status, 'failed');
-  f.observed.tasks.at(-1).proofs.contextBrokerResource.id = target.owner;
+  const proof = { version: 2, toolCallId: 't0', loaded: false, id: 'wrong-owner', scope: target.scope,
+    snapshot_id: target.snapshot_id, version_id: target.version_id, path: 'rates.md', sha256: body.sha256, bytes: body.bytes,
+    delivered_complete_text: true, delivery: { start: 0, end: content.length, encoding: 'raw' } };
+  bindReadDelivery(f, content, { contextBrokerResource: proof });
+  assert.notEqual((await f.run([{ kind: 'resource', object: 'remote', version: 'A', path: 'rates.md' }])).status, 'passed');
+  proof.id = target.owner;
   assert.equal((await f.run([{ kind: 'resource', object: 'remote', version: 'A', path: 'rates.md' }])).status, 'passed');
 });
 
@@ -321,20 +358,21 @@ test('newly published body can be counted from the bound raw request after start
 });
 
 test('connected main-document inspection proves read ownership without adoption', async () => {
-  const f = fixture({ calls: [{ name: 'read', arguments: { path: 'sr:document' } }],
-    bodies: { 'guidance@A/SKILL.md': 'current connected maintenance guidance' } });
-  const target = f.bindRemote('guidance', 'A', 'guidance@A/SKILL.md');
-  const body = f.binding.private.bodies['guidance@A/SKILL.md'];
-  const binding = { record: { id: target.owner, entrypoint: 'SKILL.md' }, scope: target.scope,
-    snapshot_id: target.snapshot_id, version_id: target.version_id };
+  const content = 'current connected maintenance guidance';
+  const f = fixture({ calls: [{ name: 'read', arguments: { path: 'sr:guidance' }, result: content }],
+    bodies: { 'guidance@A/SKILL.md': content } });
+  const target = f.bindRemote('guidance', 'A', 'guidance@A/SKILL.md', 'skill-guidance', false), body = f.binding.private.bodies['guidance@A/SKILL.md'];
+  const binding = f.observed.selection.scopes[0].bindings[0];
   f.observed.selection.scopes = [];
-  f.observed.tasks.push({ phase: 'receipt', proofs: { contextBrokerRead: { binding, snapshotId: target.snapshot_id,
-    bodySha256: body.sha256, bytes: body.bytes, toolCallId: 't0', purpose: 'inspect' } } });
+  const proof = { version: 3, toolCallId: 't0', binding, snapshotId: target.snapshot_id,
+    bodySha256: body.sha256, bytes: body.bytes, purpose: 'inspect', delivery: { start: 0, end: content.length, encoding: 'raw' },
+    rendered: { sha256: hash(content), bytes: Buffer.byteLength(content) } };
+  bindReadDelivery(f, content, { contextBrokerRead: proof });
   const result = await f.run([{ kind: 'resource', object: 'guidance', version: 'A', path: 'SKILL.md' },
     { kind: 'tool-attempts', tool: 'notion_use', max: 0 }]);
   assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
-  f.observed.tasks.at(-1).proofs.contextBrokerRead.binding.record.id = 'same-name-package-copy';
-  assert.equal((await f.run([{ kind: 'resource', object: 'guidance', version: 'A', path: 'SKILL.md' }])).status, 'failed');
+  proof.binding = { ...binding, record: { ...binding.record, id: 'package-counterfeit' } };
+  assert.notEqual((await f.run([{ kind: 'resource', object: 'guidance', version: 'A', path: 'SKILL.md' }])).status, 'passed');
 });
 
 function addMetadata(f, text, index = 0) {
@@ -402,15 +440,22 @@ test('an equivalent copy is allowed only through an actually proven owner', asyn
 });
 
 test('a batch resource read preserves logical owner and complete source bytes', async () => {
-  const f = fixture({ bodies: { 'remote@A/SKILL.md': 'business text', 'remote@A/rates.md': 'rate is 100' } });
+  const source = 'rate is 100', model = { status: 'ready', files: [{ kind: 'text', path: 'rates.md', ref: 'sr:resource', content: source }] };
+  const content = JSON.stringify(model);
+  const f = fixture({ calls: [{ name: 'read', result: content }],
+    bodies: { 'remote@A/SKILL.md': 'business text', 'remote@A/rates.md': source } });
   const target = f.bindRemote('remote', 'A', 'remote@A/SKILL.md'), body = f.binding.private.bodies['remote@A/rates.md'];
-  const proof = { version: 2, toolCallId: 'read-batch', loaded: false,
+  const start = content.indexOf(JSON.stringify(source)) + 1;
+  const proof = { version: 2, toolCallId: 't0', loaded: false,
     selection: { owner: target.owner, scope: target.scope, snapshot_id: target.snapshot_id, version_id: target.version_id },
-    files: [{ path: 'rates.md', sha256: body.sha256, bytes: body.bytes, state: 'source', encoding: 'utf8', delivered_complete_text: true }] };
-  f.observed.tasks.push({ phase: 'receipt', proofs: { contextBrokerResource: proof } });
+    projection: { version: 1, compiler: 'context-broker/resource-read/v1', rendered: { sha256: hash(content), bytes: Buffer.byteLength(content) } },
+    files: [{ index: 0, path: 'rates.md', model_ref: 'sr:resource', sha256: body.sha256, bytes: body.bytes,
+      delivered_complete_text: true, state: 'source', encoding: 'utf8',
+      delivery: { start, end: start + JSON.stringify(source).length - 2, encoding: 'json' } }] };
+  bindReadDelivery(f, content, { contextBrokerResource: proof });
   assert.equal((await f.run([{ kind: 'resource', object: 'remote', version: 'A', path: 'rates.md' }])).status, 'passed');
   proof.selection.version_id = 'e'.repeat(64);
-  assert.equal((await f.run([{ kind: 'resource', object: 'remote', version: 'A', path: 'rates.md' }])).status, 'failed');
+  assert.notEqual((await f.run([{ kind: 'resource', object: 'remote', version: 'A', path: 'rates.md' }])).status, 'passed');
 });
 
 test('forbidden package inputs count failed actual attempts and leave other operations allowed', async () => {
@@ -618,4 +663,49 @@ test('retracted native proposals count toward cognition guards without inventing
   assert.equal(result.assertions.find(row => row.kind === 'tool-attempts').status, 'failed');
   assert.equal(result.assertions.find(row => row.kind === 'forbidden-tool-input').status, 'failed');
   assert.equal(result.assertions.find(row => row.kind === 'no-semantic-writes').status, 'passed');
+});
+
+
+test('identical main text from two snapshots stays distinct while the task remains on A', async () => {
+  const f = fixture({ bodies: { 'remote@A/SKILL.md': 'unchanged main bytes', 'remote@B/SKILL.md': 'unchanged main bytes' } });
+  const a = f.bindRemote('remote', 'A', 'remote@A/SKILL.md');
+  const b = f.bindRemote('remote', 'B', 'remote@B/SKILL.md');
+  f.observed.selection.scopes.pop(); // The current task retains A; B was inspected separately.
+  const expect = [{ kind: 'selection', object: 'remote', version: 'A' },
+    { kind: 'resource', object: 'remote', version: 'B', path: 'SKILL.md' }];
+  const complete = await f.run(expect);
+  assert.equal(complete.status, 'passed', JSON.stringify(complete.assertions));
+  const delivery = complete.assertions.find(row => row.kind === 'actual-provider-delivery').details.last;
+  assert.equal(delivery.bodies[0].occurrences, 2);
+  assert.deepEqual(new Set(delivery.notionDeliveries.map(row => row.snapshot_id)), new Set([a.snapshot_id, b.snapshot_id]));
+  rewritePayloads(f, payload => { payload.messages = payload.messages.filter(message => !String(message.content).includes(a.snapshot_id)); });
+  const replaced = await f.run(expect);
+  assert.equal(replaced.status, 'blocked');
+  assert.ok(replaced.assertions.some(row => row.code === 'SELECTED_BODY_DELIVERY_MISSING'));
+  assert.equal(replaced.assertions.find(row => row.kind === 'actual-provider-delivery').details.last.bodies[0].occurrences, 1);
+  assert.equal(replaced.assertions.find(row => row.kind === 'resource').status, 'passed');
+});
+
+test('an inspection binding and delivered body do not impersonate task adoption', async () => {
+  const f = fixture({ bodies: { 'remote@A/SKILL.md': 'business instructions' } });
+  f.bindRemote('remote', 'A', 'remote@A/SKILL.md');
+  f.observed.selection.scopes[0].graphLocks[0].purpose = 'inspect';
+  const result = await f.run([{ kind: 'selection', object: 'remote', version: 'A' }]);
+  assert.equal(result.status, 'failed');
+  assert.ok(result.assertions.some(row => row.code === 'TASK_SELECTION_MISSING'));
+});
+
+test('a resource receipt detached from its actual tool message cannot prove delivery', async () => {
+  const content = 'resource bytes';
+  const f = fixture({ calls: [{ name: 'read', result: content }],
+    bodies: { 'remote@A/SKILL.md': 'main', 'remote@A/rates.md': content } });
+  const target = f.bindRemote('remote', 'A', 'remote@A/SKILL.md'), body = f.binding.private.bodies['remote@A/rates.md'];
+  const proof = { version: 2, toolCallId: 't0', loaded: false, id: target.owner, scope: target.scope,
+    snapshot_id: target.snapshot_id, version_id: target.version_id, path: 'rates.md', sha256: body.sha256, bytes: body.bytes,
+    delivered_complete_text: true, delivery: { start: 0, end: content.length, encoding: 'raw' } };
+  bindReadDelivery(f, content, { contextBrokerResource: proof });
+  rewritePayloads(f, payload => { for (const message of payload.messages.filter(message => message.role === 'tool')) message.tool_call_id = 'different-call'; });
+  const result = await f.run([{ kind: 'resource', object: 'remote', version: 'A', path: 'rates.md' }]);
+  assert.equal(result.status, 'blocked');
+  assert.ok(result.assertions.some(row => row.code === 'WRONG_RESOURCE_OWNER'));
 });
