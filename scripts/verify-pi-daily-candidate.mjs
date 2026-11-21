@@ -791,9 +791,28 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
       ? { root: projectRoot, cwd: ctx.cwd, input } : undefined;
     const selectors = Object.fromEntries(['path', 'paths', 'ref', 'refs', 'query', 'id', 'ids', 'refresh'].filter(key => Object.hasOwn(input, key)).map(key => [key, input[key]]));
     const toolSource = typeof api.getAllTools === 'function' ? api.getAllTools().find(tool => tool.name === event.toolName)?.sourceInfo : undefined;
+    let toolImplementation;
+    if (event.toolName === 'ask_user' && toolResultDirectory && toolSource?.origin === 'package' &&
+      typeof toolSource.baseDir === 'string' && toolSource.path === toolSource.baseDir + '/src/index.ts') {
+      try {
+        const manifest = fs.readFileSync(toolSource.baseDir + '/package.json');
+        if (JSON.parse(manifest.toString('utf8')).name === '@yoyo/ask-user-pi') {
+          const files = ['package.json', 'src/index.ts', 'src/prompt.ts', 'src/notify.ts'].map(relativePath => {
+            const path = toolSource.baseDir + '/' + relativePath, bytes = relativePath === 'package.json' ? manifest : fs.readFileSync(path);
+            const sha256 = sha(bytes), saved = toolResultDirectory + '/implementation-' + sha256;
+            if (!fs.existsSync(saved)) fs.writeFileSync(saved, bytes, { flag: 'wx', mode: 0o600 });
+            return { relativePath, path, artifact: { path: saved, sha256, bytes: bytes.length } };
+          });
+          toolImplementation = { version: 1, runtimeMode: ctx?.mode, files };
+        }
+      } catch (error) {
+        toolImplementation = { version: 1, error: { name: error.name, message: error.message } };
+      }
+    }
     record('tool_call', { toolName: event.toolName, toolCallId: event.toolCallId,
       ...(event.parentToolCallId === undefined ? {} : { parentToolCallId: event.parentToolCallId }),
       ...(toolSource === undefined ? {} : { toolSource }),
+      ...(toolImplementation === undefined ? {} : { toolImplementation }),
       inputSha256: sha(JSON.stringify(input)), selectors,
       executionTool: ['bash', 'powershell', 'codemode', 'execute', 'eval'].includes(event.toolName),
       reviewedReadTool: Boolean(inspection) || ['read', 'grep', 'find', 'ls', 'notion_list', 'notion_use'].includes(event.toolName),
