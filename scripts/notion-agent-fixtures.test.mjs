@@ -109,3 +109,60 @@ test('external builtin bindings cannot be mutated or included in cleanup writes'
   const cleanup = await cleanupAgentFixtures(bindings, { subjectExited: true });
   assert.deepEqual(cleanup.results, [{ object: 'selected', action: 'external-read-only-preserved', status: 'passed' }]);
 });
+
+
+test('repeated source teardown independently reads retired identities without resurrecting Source', async t => {
+  if (!(await exists('/usr/bin/trash'))) return;
+  const { bindings, context } = await fixture(t);
+  const sourcePageId = '11111111-1111-1111-1111-111111111111', skillPageId = '22222222-2222-2222-2222-222222222222';
+  const filePageId = '33333333-3333-3333-3333-333333333333', recordPageId = '44444444-4444-4444-4444-444444444444';
+  context.objects.selected = { id: 'selected', placement: 'source', sourceId: 'owned-source', sourcePageId, pageId: skillPageId,
+    knownChildren: [{ kind: 'file', pageId: filePageId }], sourceRecordIds: [recordPageId] };
+  context.library = { sources: { property_ids: { 'Source ID': 'source-id' } },
+    records: { data_source_id: '55555555-5555-5555-5555-555555555555', property_ids: { Origin: 'origin' } } };
+  const previousFetch = globalThis.fetch, previousToken = process.env.NOTION_API_TOKEN, reads = [];
+  process.env.NOTION_API_TOKEN = 'fixture-unit-test-token';
+  globalThis.fetch = async (url, options) => {
+    const pathname = new URL(url).pathname;
+    if (options.method === 'POST') {
+      assert.ok(pathname.endsWith('/query'), 'Teardown must not create anything after Source retirement');
+      return Response.json({ results: [], has_more: false });
+    }
+    assert.equal(options.method, 'GET', 'Teardown must not mutate an already retired Source');
+    const id = pathname.split('/').at(-1);
+    assert.ok([sourcePageId, skillPageId, filePageId, recordPageId].includes(id)); reads.push(id);
+    return Response.json({ id, in_trash: true, properties: id === sourcePageId ? {
+      'Source ID': { id: 'source-id', rich_text: [{ plain_text: 'owned-source' }] },
+    } : {} });
+  };
+  try {
+    for (let count = 0; count < 2; count++) {
+      const result = await cleanupAgentFixtures(bindings, { subjectExited: true });
+      assert.deepEqual(result.results[0].commands, []);
+      const proof = await json(result.results[0].readback.path);
+      assert.deepEqual(proof.retired.map(row => row.id).sort(), [sourcePageId, skillPageId, filePageId, recordPageId].sort());
+    }
+    assert.equal(reads.length, 10);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousToken === undefined) delete process.env.NOTION_API_TOKEN; else process.env.NOTION_API_TOKEN = previousToken;
+  }
+});
+
+test('View teardown refuses an identity from the pre-existing view inventory', async t => {
+  if (!(await exists('/usr/bin/trash'))) return;
+  const { bindings, context } = await fixture(t), viewId = '11111111-1111-1111-1111-111111111111';
+  context.library = { skills: { database_id: '22222222-2222-2222-2222-222222222222' } };
+  context.viewId = viewId; context.view = { name: 'fixture-owned-name', originalViewIds: [viewId] };
+  const previousFetch = globalThis.fetch, previousToken = process.env.NOTION_API_TOKEN;
+  process.env.NOTION_API_TOKEN = 'fixture-unit-test-token';
+  globalThis.fetch = async (url, options) => {
+    assert.equal(options.method, 'GET'); assert.equal(new URL(url).pathname, '/v1/views');
+    return Response.json({ results: [{ id: viewId }], has_more: false });
+  };
+  try { await assert.rejects(cleanupAgentFixtures(bindings, { subjectExited: true }), /Never delete a pre-existing View/u); }
+  finally {
+    globalThis.fetch = previousFetch;
+    if (previousToken === undefined) delete process.env.NOTION_API_TOKEN; else process.env.NOTION_API_TOKEN = previousToken;
+  }
+});

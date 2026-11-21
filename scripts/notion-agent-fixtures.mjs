@@ -73,8 +73,8 @@ async function persist(bindings, path) {
 }
 
 async function request(context, path, { method = 'GET', body, fixtureMutation = false } = {}) {
-  assert.ok(/^v1\/(?:pages|blocks|data_sources)\//u.test(path) || path === 'v1/pages');
-  const isQuery = method === 'POST' && /^v1\/data_sources\/[a-f0-9-]+\/query$/iu.test(path);
+  assert.ok(/^v1\/(?:pages|blocks|data_sources)\//u.test(path) || path === 'v1/pages' || /^v1\/views(?:\/|\?|$)/u.test(path));
+  const isQuery = method === 'POST' && (/^v1\/data_sources\/[a-f0-9-]+\/query$/iu.test(path) || /^v1\/views\/[a-f0-9-]+\/queries$/iu.test(path));
   assert.ok(method === 'GET' || isQuery || fixtureMutation, 'The independent reader cannot perform product writes');
   const configRoot = process.env.NTN_SKILLS_CONFIG_HOME ?? join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'ntn-skills');
   const token = process.env.NOTION_API_TOKEN ?? (await json(join(configRoot, 'config.json'))).token;
@@ -85,7 +85,7 @@ async function request(context, path, { method = 'GET', body, fixtureMutation = 
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const value = await result.json();
-  if (!result.ok) throw fail('AGENT_FIXTURE_NOTION_READBACK', 'Independent Notion request failed.', { method, path, status: result.status, code: value.code });
+  if (!result.ok) throw fail('AGENT_FIXTURE_NOTION_READBACK', 'Independent Notion request failed.', { method, path, status: result.status, code: value.code, message: value.message });
   return value;
 }
 
@@ -344,7 +344,14 @@ async function captureReadback(bindings, alias, { version, key = alias, state = 
     if (!owned.projectionBaseline) owned.projectionBaseline = observedProjection;
     if (projection === 'same-as-baseline') assert.equal(observedProjection.sha256, owned.projectionBaseline.sha256, 'Restored reading projection differs from the baseline');
   } else assert.equal(projection, undefined, 'Projection assertions require a source fixture');
-  if (owned.wasUnmanaged && owned.unmanagedBodyShape) assert.deepEqual(blockShape(body), owned.unmanagedBodyShape, 'Registration changed author content');
+  if (owned.wasUnmanaged && owned.unmanagedBodyShape) {
+    assert.deepEqual(blockShape(body), owned.unmanagedBodyShape, 'Registration changed author content');
+    for (const file of files) {
+      const path = propertyText(file, context.library.files.property_ids, 'Path');
+      const expectedBody = owned.unmanagedBodyShapes?.[path]; assert.ok(expectedBody, 'Registration introduced an unexpected supporting file');
+      assert.deepEqual(blockShape(await tree(context, file.id)), expectedBody, 'Registration changed supporting author content');
+    }
+  }
   const captured = await capture(context, receiptPath, { row, files, records, body, main: main.value, directory: fileList.value, observedFiles, observedProjection,
     commandArtifacts: [main.artifact, fileList.artifact], observedAt: clock() });
   const result = { status: 'passed', object: { owner: identity.owner, scope: main.value.scope, snapshot_id: main.value.snapshot_id, version_id: main.value.version_id },
@@ -352,6 +359,71 @@ async function captureReadback(bindings, alias, { version, key = alias, state = 
     assertions: [{ id: 'independent-live-ready-state', status: 'passed' }, { id: 'complete-current-consumption', status: 'passed' }, { id: 'normal-consumption-zero-writes', status: 'passed' }],
     externalRepair: false };
   bindings.private.readbacks[key] ??= { object: alias, state: expected === 'absent' ? 'absent' : 'present', ...(expected === 'absent' ? {} : { version: label }) }; return sealReadback(context, key, result);
+}
+
+async function listViews(context) {
+  const output = []; let cursor;
+  do {
+    const query = new URLSearchParams({ database_id: context.library.skills.database_id, page_size: '100', ...(cursor ? { start_cursor: cursor } : {}) });
+    const value = await request(context, 'v1/views?' + query);
+    assert.ok(Array.isArray(value.results), 'View inventory must be complete');
+    output.push(...value.results);
+    assert.ok(!value.has_more || typeof value.next_cursor === 'string' && value.next_cursor !== cursor);
+    cursor = value.has_more ? value.next_cursor : undefined;
+  } while (cursor);
+  return output;
+}
+
+/** A complete owned filtered View is different from a failed or partial source observation. */
+export async function prepareAgentFilteredView(bindings) {
+  const context = bindings.private.fixture; await assertOwnership(context);
+  assert.equal(context.viewId, undefined, 'A fixture may own only one View');
+  const before = await listViews(context);
+  assert.ok(before.length > 0, 'Do not create a test View in a database without an existing user View');
+  const selected = Object.values(context.objects).find(object => !object.external && object.pageId && object.placement !== 'global' && object.placement !== 'project');
+  const filter = { property: context.library.skills.property_ids['Skill ID'], rich_text: { equals: selected?.skillId ?? 'agent-workflow-empty-' + context.runId } };
+  const name = 'Agent workflow ' + context.runId + ' ' + context.ownership.token.slice(0, 8);
+  context.view = { name, filter, originalViewIds: before.map(view => view.id), expectedPageIds: selected ? [selected.pageId] : [] };
+  await persist(bindings);
+  const created = await request(context, 'v1/views', { method: 'POST', fixtureMutation: true, body: {
+    database_id: context.library.skills.database_id, data_source_id: context.library.skills.data_source_id,
+    name, type: 'table', filter, position: { type: 'end' },
+  } });
+  assert.ok(pageId(created.id)); context.viewId = created.id; context.view.id = created.id;
+  await persist(bindings);
+  const actual = await request(context, 'v1/views/' + created.id), after = await listViews(context);
+  assert.equal(actual.parent?.database_id?.replaceAll('-', ''), context.entry.replaceAll('-', ''));
+  assert.equal(actual.name, name);
+  assert.deepEqual(after.filter(view => context.view.originalViewIds.includes(view.id)).map(view => view.id), context.view.originalViewIds, 'Creating the owned View changed existing view order');
+  const listed = await cli(context, ['list', '--database', context.entry, '--view', created.id, '--refresh', '--limit', '500', '--json'], 'verify-filtered-view');
+  assert.equal(listed.value.has_more, false, 'This bounded filtered fixture must be complete');
+  assert.equal(listed.value.coverage?.exhaustive, true); assert.deepEqual(listed.value.coverage?.failed_sources, []);
+  assert.deepEqual(listed.value.records.map(record => record.locator.page_id).sort(), context.view.expectedPageIds.slice().sort(), 'The owned filtered View has unexpected members');
+  context.view.receipt = await capture(context, join(context.root, 'readbacks', 'filtered-view-created.json'), { before, created, actual, after, filter, selection: listed.value, command: listed.artifact, at: clock() });
+  await persist(bindings);
+  return { id: created.id, status: 'passed', artifact: context.view.receipt };
+}
+
+async function cleanupFilteredView(context) {
+  if (!context.view || context.view.cleaned) return null;
+  const before = await listViews(context);
+  if (!context.viewId) {
+    const matches = before.filter(view => view.name === context.view.name);
+    assert.ok(matches.length <= 1, 'Uncertain View creation produced ambiguous ownership');
+    if (!matches.length) return { action: 'view-creation-had-no-effect', status: 'passed' };
+    context.viewId = matches[0].id;
+  }
+  assert.ok(!context.view.originalViewIds.includes(context.viewId), 'Never delete a pre-existing View');
+  const actual = await request(context, 'v1/views/' + context.viewId);
+  assert.equal(actual.name, context.view.name); assert.equal(actual.parent?.database_id?.replaceAll('-', ''), context.entry.replaceAll('-', ''));
+  const removed = await request(context, 'v1/views/' + context.viewId, { method: 'DELETE', fixtureMutation: true });
+  assert.equal(removed.id, context.viewId);
+  const after = await listViews(context);
+  assert.equal(after.some(view => view.id === context.viewId), false, 'The owned View is still present');
+  assert.deepEqual(after.filter(view => context.view.originalViewIds.includes(view.id)).map(view => view.id), context.view.originalViewIds, 'View cleanup changed existing view order');
+  context.view.cleaned = true;
+  const receipt = await capture(context, join(context.root, 'readbacks', 'filtered-view-cleaned.json'), { before, actual, removed, after, at: clock() });
+  return { action: 'owned-filtered-view-delete', status: 'passed', artifact: receipt };
 }
 
 /** Prepare one owned real fixture. The library is never replaced and global configuration is never edited. */
@@ -425,6 +497,9 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
         const selected = found[0]; assert.equal(selected.locator?.type, 'shared_skill'); assert.ok(pageId(selected.locator.page_id));
         owned.pageId = selected.locator.page_id; owned.skillId = selected.locator.skill_id; owned.external = true; owned.readOnly = true;
         identity.external = true; identity.readOnly = true; identity.skillId = owned.skillId; identity.name = selected.name;
+        const packagedGuidance = join(dirname(dirname(context.cli)), 'skills/notion/ntn-skills-maintain/SKILL.md');
+        assert.ok(await exists(packagedGuidance), 'The paired CLI package guidance path is unavailable');
+        bindings.private.facts['package-maintenance-path'] = { anyOf: [await realpath(packagedGuidance)] };
         await captureReadback(bindings, object.id, { version: object.initial });
         continue;
       }
@@ -436,6 +511,10 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
       if (object.initial === 'unmanaged') {
         const input = owned.versionInputs[Object.keys(owned.versionInputs)[0]], main = input.files.find(file => file.path === 'SKILL.md');
         assert.ok(main, 'Unmanaged fixture needs its main content');
+        for (const file of input.files) {
+          assert.match(file.path, /\.(md|markdown)$/iu, 'Unmanaged registration fixtures must retain native authority');
+          assert.ok(withoutFrontmatter((await readFile(file.input)).toString()).length <= 1900, 'Use bounded unmanaged prose fixtures');
+        }
         const content = withoutFrontmatter((await readFile(main.input)).toString());
         assert.ok(content.length <= 1900, 'Use a bounded unmanaged prose fixture');
         const row = await request(context, 'v1/pages', { method: 'POST', fixtureMutation: true, body: {
@@ -446,7 +525,21 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
         owned.pageId = row.id; identity.pageId = row.id; identity.owner = 'notion_page:' + row.id;
         identity.url = row.url; bindings.public[object.id + '.url'] = row.url;
         const unmanagedBody = await tree(context, row.id); owned.unmanagedBodyShape = blockShape(unmanagedBody);
-        await capture(context, join(root, 'readbacks', object.id + '-unmanaged.json'), { row, body: unmanagedBody, source: 'explicit-unmanaged-test-fixture' });
+        owned.unmanagedBodyShapes = { 'SKILL.md': owned.unmanagedBodyShape };
+        const unmanagedFiles = [];
+        for (const file of input.files.filter(file => file.path !== 'SKILL.md')) {
+          const content = withoutFrontmatter((await readFile(file.input)).toString()), ids = context.library.files.property_ids;
+          const supporting = await request(context, 'v1/pages', { method: 'POST', fixtureMutation: true, body: {
+            parent: { type: 'data_source_id', data_source_id: context.library.files.data_source_id },
+            properties: { [ids.Name]: { title: rich(file.path) }, [ids.Path]: { rich_text: rich(file.path) }, [ids.Skill]: { relation: [{ id: row.id }] } },
+            children: [{ object: 'block', type: 'paragraph', paragraph: { rich_text: rich(content) } }],
+          } });
+          const originalBody = await tree(context, supporting.id);
+          owned.unmanagedBodyShapes[file.path] = blockShape(originalBody);
+          owned.knownChildren.push({ pageId: supporting.id, kind: 'file' });
+          unmanagedFiles.push({ path: file.path, row: supporting, body: originalBody });
+        }
+        await capture(context, join(root, 'readbacks', object.id + '-unmanaged.json'), { row, body: unmanagedBody, files: unmanagedFiles, source: 'explicit-unmanaged-test-fixture' });
         continue;
       }
       if (object.placement === 'source') {
@@ -470,6 +563,7 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
       await captureReadback(bindings, object.id, { version: object.initial });
       await persist(bindings);
     }
+    if (recipe.environment?.catalog === 'filtered-view') await prepareAgentFilteredView(bindings);
     await persist(bindings);
     return bindings;
   } catch (error) {
@@ -575,7 +669,7 @@ export async function runAgentFixtureEvent(event, { bindings, bindingsPath, owne
       const row = await request(context, 'v1/pages/' + owned.pageId);
       assert.equal(propertyText(row, context.library.skills.property_ids, 'Skill ID'), owned.skillId);
       const blocks = await children(context, owned.pageId);
-      for (const block of blocks) await request(context, 'v1/blocks/' + block.id, { method: 'PATCH', body: { archived: true }, fixtureMutation: true });
+      for (const block of blocks) await request(context, 'v1/blocks/' + block.id, { method: 'PATCH', body: { in_trash: true }, fixtureMutation: true });
       await request(context, 'v1/pages/' + owned.pageId, { method: 'PATCH', body: { in_trash: true }, fixtureMutation: true });
       const readback = await request(context, 'v1/pages/' + owned.pageId);
       assert.ok(readback.in_trash === true || readback.archived === true);
@@ -609,6 +703,7 @@ export async function cleanupAgentFixtures(bindings, { subjectExited, trash = '/
   const context = bindings.private.fixture; await assertOwnership(context);
   assert.ok(isAbsolute(trash) && await exists(trash), 'A verified system Trash executable is required');
   const results = [];
+  const viewCleanup = await cleanupFilteredView(context); if (viewCleanup) results.push(viewCleanup);
   for (const fault of [...(context.faults ?? [])].reverse()) {
     if (!(await exists(fault.target))) continue;
     if (await exists(fault.source)) {
@@ -630,22 +725,44 @@ export async function cleanupAgentFixtures(bindings, { subjectExited, trash = '/
     }
     if (!owned.pageId) { const row = await actualSkill(context, owned); if (!row) continue; }
     if (owned.placement === 'source') {
-      const declaration = await json(owned.declarationPath); declaration.definition.selection = { ...declaration.definition.selection, roots: [], include: [], exclude: ['**'], mapping: {} }; declaration.contributions = [];
-      const path = join(context.root, 'inputs', owned.id + '-retire-source.json'); await save(path, declaration);
-      const empty = await cli(context, ['ctl', 'library', 'source', 'apply', path, '--entry', context.entry], 'retire-source-members');
-      const removed = await cli(context, ['ctl', 'library', 'source', 'remove', owned.sourceId, '--entry', context.entry], 'remove-source');
-      results.push({ object: owned.id, action: 'source-cleanup', status: 'passed', commands: [empty.artifact, removed.artifact] });
+      const sourceBefore = await request(context, 'v1/pages/' + owned.sourcePageId);
+      assert.equal(propertyText(sourceBefore, context.library.sources.property_ids, 'Source ID'), owned.sourceId);
+      const sourceRecords = await pages(context, 'records', { property: context.library.records.property_ids.Origin, relation: { contains: owned.sourcePageId } });
+      owned.sourceRecordIds = [...new Set([...(owned.sourceRecordIds ?? []), ...sourceRecords.map(record => record.id)])];
+      await persist(bindings); // Preserve exact retired identities before the first writer may trash them.
+      const commands = [];
+      if (!(sourceBefore.in_trash || sourceBefore.archived)) {
+        const declaration = await json(owned.declarationPath);
+        // An empty selected set still needs its original valid discovery root.
+        declaration.definition.selection = { ...declaration.definition.selection, include: [], exclude: ['**'], mapping: {} }; declaration.contributions = [];
+        const path = join(context.root, 'inputs', owned.id + '-retire-source-' + randomUUID() + '.json'); await save(path, declaration);
+        const empty = await cli(context, ['ctl', 'library', 'source', 'apply', path, '--entry', context.entry], 'retire-source-members');
+        const removed = await cli(context, ['ctl', 'library', 'source', 'remove', owned.sourceId, '--entry', context.entry], 'remove-source');
+        commands.push(empty.artifact, removed.artifact);
+      }
+      const retired = [];
+      for (const id of [...new Set([owned.pageId, owned.sourcePageId, ...(owned.knownChildren ?? []).map(child => child.pageId), ...owned.sourceRecordIds])]) {
+        const current = await request(context, 'v1/pages/' + id);
+        assert.ok(current.in_trash || current.archived, 'Source teardown left a known owned page live'); retired.push(current);
+      }
+      const readback = await capture(context, join(context.root, 'readbacks', owned.id + '-source-cleanup-' + randomUUID() + '.json'), { sourceBefore, sourceRecords, retired, at: clock() });
+      owned.cleanupReadback = readback;
+      results.push({ object: owned.id, action: 'source-cleanup', status: 'passed', commands, readback });
     } else {
       const row = await request(context, 'v1/pages/' + owned.pageId);
       if (owned.wasUnmanaged && !propertyText(row, context.library.skills.property_ids, 'Current State')) {
         assert.equal(propertyText(row, context.library.skills.property_ids, 'Operation'), '', 'Preserve unfinished registration evidence');
+        for (const child of owned.knownChildren ?? []) {
+          assert.equal(child.kind, 'file');
+          await request(context, 'v1/pages/' + child.pageId, { method: 'PATCH', body: { in_trash: true }, fixtureMutation: true });
+        }
         await request(context, 'v1/pages/' + owned.pageId, { method: 'PATCH', body: { in_trash: true }, fixtureMutation: true });
         const retired = await request(context, 'v1/pages/' + owned.pageId);
         assert.ok(retired.in_trash || retired.archived);
         results.push({ object: owned.id, action: 'unmanaged-test-fixture-trash', status: 'passed', productRepair: false });
         continue;
       }
-      if (row.in_trash || row.archived) { results.push({ object: owned.id, action: 'already-trashed', status: 'passed' }); continue; }
+      if (row.in_trash || row.archived) { const readback = await captureReadback(bindings, owned.id, { key: owned.id + '-cleanup', expected: 'absent' }); results.push({ object: owned.id, action: 'already-trashed', status: 'passed', readback }); continue; }
       const removed = await cli(context, ['ctl', 'library', 'skill', 'remove', owned.pageId, '--entry', context.entry], 'cleanup-owned');
       assert.equal(removed.value.cleanup_verified, true);
       const readback = await captureReadback(bindings, owned.id, { key: owned.id + '-cleanup', expected: 'absent' });
