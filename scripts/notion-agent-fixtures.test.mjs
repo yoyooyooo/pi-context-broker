@@ -172,6 +172,45 @@ test('View teardown refuses an identity from the pre-existing view inventory', a
 });
 
 
+test('View teardown preserves the immediate non-owned inventory across independent fixture lifetimes', async t => {
+  if (!(await exists('/usr/bin/trash'))) return;
+  for (const mode of ['unchanged', 'reordered', 'lost']) await t.test(mode, async t => {
+    const { bindings, context } = await fixture(t);
+    const databaseId = '11111111-1111-1111-1111-111111111111', ownedId = '22222222-2222-2222-2222-222222222222';
+    const userA = '33333333-3333-3333-3333-333333333333', userB = '44444444-4444-4444-4444-444444444444';
+    const retiredOther = '55555555-5555-5555-5555-555555555555', newerOther = '66666666-6666-6666-6666-666666666666';
+    context.entry = databaseId; context.library = { skills: { database_id: databaseId } }; context.objects = {};
+    context.viewId = ownedId; context.view = { name: 'owned-view', originalViewIds: [userA, retiredOther, userB] };
+    const before = [userA, newerOther, ownedId, userB], preserved = [userA, newerOther, userB];
+    const after = mode === 'unchanged' ? preserved : mode === 'reordered' ? [userB, newerOther, userA] : [userA, newerOther];
+    const previousFetch = globalThis.fetch, previousToken = process.env.NOTION_API_TOKEN; let lists = 0, deletes = 0;
+    process.env.NOTION_API_TOKEN = 'fixture-unit-test-token';
+    globalThis.fetch = async (url, options) => {
+      const pathname = new URL(url).pathname;
+      if (pathname === '/v1/views') {
+        assert.equal(options.method, 'GET');
+        return Response.json({ results: (++lists === 1 ? before : after).map(id => ({ id })), has_more: false });
+      }
+      assert.equal(pathname, '/v1/views/' + ownedId, 'Only the exact owned View can be addressed');
+      if (options.method === 'DELETE') { deletes++; return Response.json({ id: ownedId }); }
+      assert.equal(options.method, 'GET');
+      return Response.json({ id: ownedId, name: 'owned-view', parent: { database_id: databaseId } });
+    };
+    try {
+      if (mode === 'unchanged') {
+        const result = await cleanupAgentFixtures(bindings, { subjectExited: true });
+        assert.equal(result.results[0].status, 'passed');
+        const proof = await json(result.results[0].artifact.path);
+        assert.deepEqual(proof.after.map(view => view.id), preserved);
+      } else await assert.rejects(cleanupAgentFixtures(bindings, { subjectExited: true }), /View cleanup changed/u);
+      assert.equal(deletes, 1); assert.equal(lists, 2);
+    } finally {
+      globalThis.fetch = previousFetch;
+      if (previousToken === undefined) delete process.env.NOTION_API_TOKEN; else process.env.NOTION_API_TOKEN = previousToken;
+    }
+  });
+});
+
 test('an unknown View CREATE outcome is recorded and never automatically replayed', async t => {
   const { bindings, context } = await fixture(t), databaseId = '11111111-1111-1111-1111-111111111111';
   context.entry = databaseId;
