@@ -17,7 +17,7 @@
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
     "packages/context-broker/src/session-source-snapshot.ts": "6ac7c29f29ecc5aca851c836cbb113d5a1f611d1856b2fe268570efcd056c3b1",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
-    "packages/context-broker/scripts/host-prepare.test.ts": "faa35c5b2d6fb064e299f1403d9724873d5cc7d61275ca1dd3a908d7842d8993",
+    "packages/context-broker/scripts/host-prepare.test.ts": "7e0620a3599045eb4b96e3eb205806df0eade3dc79fc1b6b7509c3505f37e841",
     "packages/context-broker/scripts/session-active.test.ts": "8c028ee53bf86b253dee9a63ce6e15a8e27c811de25e4cc9936f37ab134e0e90",
     "packages/context-broker/scripts/native-read-session.test.ts": "ef967d31fe6ea68167c548a75c8df69791a4001da874e0b2e034a415207a597b",
     "packages/context-broker/scripts/skill-context-session.test.ts": "71b2d3ba5d5937e164a6fa08c8ebfd0fc183019d00a8495a220a7cdee4d9c897",
@@ -28,7 +28,7 @@
     "packages/context-broker/scripts/final-request-undici.test.ts": "df1417ddf319180c89725f188107dde9b0eb8089aa12759b17d539bfd2bd7555",
     "packages/context-broker/src/session-working-set.ts": "4792c1b3e1ecdbbfd77918f2f9ddf074cfe197e8fbed265a5796cd59671bd36c",
     "packages/context-broker/scripts/session-active-session.mjs": "a0b3d76adddb20b81858d876c4fdd81c45a66360dee55a877895b1d6348a40b5",
-    "packages/context-broker/src/index.ts": "fc8218a58506becd15dbef90a3ec419dbfb8bb823a33acac4c8432b742b069d6",
+    "packages/context-broker/src/index.ts": "47bbaf36c2b04982c5ab5bf07a7401683304c794cbd36e83676e7c226f334de5",
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "f0a338ce686cfd88c1ce564ccdec0e34b5b0b868aa617620950e9d5fb6d0a0ad",
     "packages/context-broker/src/notion-source.ts": "022a7d72187a300fc024f4b84a394653d3ff8c9c68d7c09bf6bc4e96a4e39b68",
@@ -702,6 +702,13 @@
       "guard_review": "Original observation order/time, availability, graph commit, cancellation, complete closure, body/payload and provider acknowledgement guards are unchanged. Reviewed 392725 public refresh cases include unchanged root plus changed Requires and independent roots.",
       "proof_limit": "These presentation and process-result facts are deterministic implementation obligations, outside finite model variables. No model rules, bounds, expected cases or guard mutations are weakened. Natural model behaviour and real service timelines require fresh execution."
     },
-    "complete_read_expectations": "Reviewed the two exact complete-body assertions after 8665525 formal regressions and the full consumption suite exposed stale footer expectations. Both now compare the entire original body plus the precise inspection-only operation status and effects. Partial and resource read expectations remain unchanged. No production code, model, case, guard or assertion strength changed."
+    "complete_read_expectations": "Reviewed the two exact complete-body assertions after 8665525 formal regressions and the full consumption suite exposed stale footer expectations. Both now compare the entire original body plus the precise inspection-only operation status and effects. Partial and resource read expectations remain unchanged. No production code, model, case, guard or assertion strength changed.",
+    "connected_maintenance_guidance": {
+      "reviewed_from": "67e6af33d41ef2d91bbeb2b1cb9ed6f51140693e",
+      "reviewed_through": "8cab5df427725ba65bab7535faae6b7119abab52",
+      "scope": "Reviewed the actual merged index.ts and host-prepare.test.ts diffs. Connected maintenance discovery remains scoped; read only inspects and applying the maintenance root loads Requires through an available current use route. The edited target remains inspection-only. Native local routing and enabled-source injection gates are unchanged. CLI fallback metadata uses canonical refs, not session handles.",
+      "guards": "No observation ordering, original validation time, exact owner/scope, selection commit, cancellation, complete-closure recovery, provider acknowledgement or final projection guard changed. The cold directory regression proves scoped metadata discovery only; its acquisition/persistence/resource counters remain empty. Existing exact read-status and Root/Required assertions remain unchanged.",
+      "proof_limit": "Guidance text, capability routing and natural model compliance are not finite-model variables. TLA/config/view bytes, bounds, cases, expected_rules and guard mutations are unchanged. Hashes bind reviewed bytes and do not prove model refinement or natural task success."
+    }
   }
 }

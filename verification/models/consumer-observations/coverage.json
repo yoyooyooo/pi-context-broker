@@ -14,7 +14,7 @@
     "packages/context-broker/src/host-skills.ts": "212957c884d31776fe46142f9e40b87a33a531d1300b80d795354788c973361d",
     "packages/context-broker/src/prepare-protocol.ts": "ae06d35b831250f1ce2cc2b818f162e69e5af3d1ed861c26c20ce103a99effe2",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
-    "packages/context-broker/scripts/host-prepare.test.ts": "faa35c5b2d6fb064e299f1403d9724873d5cc7d61275ca1dd3a908d7842d8993",
+    "packages/context-broker/scripts/host-prepare.test.ts": "7e0620a3599045eb4b96e3eb205806df0eade3dc79fc1b6b7509c3505f37e841",
     "scripts/check-consumer-observation-mutations.mjs": "a34d906997d213187d48af500f3af0c5a61fd9233d5dd11b35268c2611f8cf51"
   },
   "models": {
@@ -199,6 +199,13 @@
       "guard_review": "Original observation order/time, availability, graph commit, cancellation, complete closure, body/payload and provider acknowledgement guards are unchanged. Reviewed 392725 public refresh cases include unchanged root plus changed Requires and independent roots.",
       "proof_limit": "These presentation and process-result facts are deterministic implementation obligations, outside finite model variables. No model rules, bounds, expected cases or guard mutations are weakened. Natural model behaviour and real service timelines require fresh execution."
     },
-    "complete_read_expectations": "Reviewed the two exact complete-body assertions after 8665525 formal regressions and the full consumption suite exposed stale footer expectations. Both now compare the entire original body plus the precise inspection-only operation status and effects. Partial and resource read expectations remain unchanged. No production code, model, case, guard or assertion strength changed."
+    "complete_read_expectations": "Reviewed the two exact complete-body assertions after 8665525 formal regressions and the full consumption suite exposed stale footer expectations. Both now compare the entire original body plus the precise inspection-only operation status and effects. Partial and resource read expectations remain unchanged. No production code, model, case, guard or assertion strength changed.",
+    "connected_maintenance_guidance": {
+      "reviewed_from": "67e6af33d41ef2d91bbeb2b1cb9ed6f51140693e",
+      "reviewed_through": "8cab5df427725ba65bab7535faae6b7119abab52",
+      "scope": "Reviewed the actual merged index.ts and host-prepare.test.ts diffs. Connected maintenance discovery remains scoped; read only inspects and applying the maintenance root loads Requires through an available current use route. The edited target remains inspection-only. Native local routing and enabled-source injection gates are unchanged. CLI fallback metadata uses canonical refs, not session handles.",
+      "guards": "No observation ordering, original validation time, exact owner/scope, selection commit, cancellation, complete-closure recovery, provider acknowledgement or final projection guard changed. The cold directory regression proves scoped metadata discovery only; its acquisition/persistence/resource counters remain empty. Existing exact read-status and Root/Required assertions remain unchanged.",
+      "proof_limit": "Guidance text, capability routing and natural model compliance are not finite-model variables. TLA/config/view bytes, bounds, cases, expected_rules and guard mutations are unchanged. Hashes bind reviewed bytes and do not prove model refinement or natural task success."
+    }
   }
 }
