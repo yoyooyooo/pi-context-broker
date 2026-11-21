@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createAcceptedSelections } from "../src/accepted-selections";
@@ -41,7 +41,7 @@ try {
   const submission = new AbortController();
   selections.capture(ctx, submission.signal, ["selected-skill"]);
   assert.equal(selections.forContext(ctx).size, 0, "Submission consumes the draft choice before asynchronous preparation");
-  await rm(join(selectedRoot, "SKILL.md"));
+  await rename(join(selectedRoot, "SKILL.md"), join(root, "retained-selected-SKILL.md"));
   const prompt = "$selected-skill $other-skill $ordinary-unknown keep the original material";
   const result = await invokeBeforeAgentStart({ prompt, systemPrompt: "" }, ctx, Promise.resolve([]), { pathMode: "hash" }, Promise.resolve([other]), undefined, undefined, {}, selections.forSubmission(submission.signal));
   assert.match(String(result?.message?.content), /context-broker-unavailable/);
@@ -147,5 +147,5 @@ try {
   }
   console.log("accepted selection checks passed: gate-owned acceptance across concurrent drafts, session isolation, exact manual tokens, model/UI missing feedback, per-submission retry, ordinary unknown text");
 } finally {
-  await rm(root, { recursive: true, force: true });
+  await rename(root, root + ".retained");
 }
