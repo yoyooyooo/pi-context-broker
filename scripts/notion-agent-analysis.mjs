@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { isAbsolute } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { homedir } from 'node:os';
 import { isDeepStrictEqual } from 'node:util';
 import { providerApplicationCompletion } from './skill-consumption-provider.mjs';
 import { validateAgentAssertion, validateAgentBindings } from './notion-agent-scenarios.mjs';
@@ -261,7 +262,7 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
   if (!configValid) return { version: 1, turnId: turn.id, status: statusOf(assertions), assertions };
   const { costs, transport, tasks } = observed, privateBindings = bindings.private;
   shared.attempts = new Map();
-  await check('tool-attempt-observation', () => {
+  shared.toolObservation = await check('tool-attempt-observation', () => {
     for (const row of tasks.filter(row => row.phase === 'tool_call')) {
       need(nonempty(row.toolCallId) && nonempty(row.toolName), 'TOOL_IDENTITY_MISSING', 'An actual tool attempt has no identity');
       need(!shared.attempts.has(row.toolCallId), 'TOOL_ATTEMPT_DUPLICATED', 'Tool observation cannot count duplicate callbacks as new attempts');
@@ -280,6 +281,21 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
     return { attempts: shared.attempts.size, errors: [...shared.attempts.values()].filter(call => call.result?.isError).length,
       retractedProposals: native.filter(call => call.retractedLine !== undefined && !shared.attempts.has(call.id)).length };
   });
+
+  const localBodyPath = key => {
+    const body = privateBindings.bodies[key];
+    const owners = Object.values(privateBindings.objects).filter(item => item.kind === 'local' &&
+      Object.values(item.versions).some(version => version.bodyKeys?.includes(key)));
+    if (!owners.length) return undefined;
+    need(owners.length === 1 && isAbsolute(owners[0].path ?? ''), 'LOCAL_BODY_OWNER_MISSING', 'A local body needs one actual owner path');
+    const resource = body.resourcePath ?? (key.endsWith('/SKILL.md') ? 'SKILL.md' : undefined);
+    need(nonempty(resource), 'LOCAL_BODY_PATH_MISSING', 'A local resource needs its exact logical path');
+    const path = resolve(dirname(owners[0].path), resource);
+    need(body.observedPath === undefined || body.observedPath === path, 'LOCAL_BODY_PATH_MISMATCH', 'The observed local file does not belong to its bound owner');
+    return path;
+  };
+  const actualReadPath = value => typeof value === 'string'
+    ? value.startsWith('~/') ? join(homedir(), value.slice(2)) : resolve(observed.session.header.cwd, value) : undefined;
 
   shared.delivery = await check('actual-provider-delivery', async () => {
     const requests = costs.filter(row => row.phase === 'provider_request'), used = new Set(), payloads = [], nativeUsed = new Set();
@@ -346,7 +362,23 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
         demand(observer.every(value => value.occurrences === body.occurrences), 'BODY_OBSERVATION_MISMATCH', 'Independent payload read differs from the task observer');
         bodyObservation.push({ sha256: body.sha256, method: observer.length ? 'observer-and-independent-raw-payload-count' : 'independent-raw-payload-count-only' });
       }
-      payloads.push({ request: request.request, wireRequestId: sent.id, sha256: task.sha256, bytes: task.bytes, bodies, bodyObservation,
+      const nativeReadBodies = [];
+      for (const key of bodyKeys) {
+        const path = localBodyPath(key);
+        if (!path) continue;
+        need(shared.toolObservation, 'TOOL_OBSERVATION_UNPROVEN', 'Native local body delivery needs complete actual tool observations');
+        const frozen = uniqueBodies.get(privateBindings.bodies[key].sha256);
+        const calls = [...shared.attempts.values()].filter(call => call.name === 'read' && call.result?.isError === false &&
+          call.native?.isError === false && actualReadPath(call.arguments?.path) === path &&
+          textOf(observed.session.branchEntries.find(entry => entry.id === call.native.resultEntryId)?.message?.content).includes(frozen.text));
+        const ids = new Set(calls.map(call => call.id));
+        const messages = (payload.messages ?? []).filter(message => message.role === 'tool' && ids.has(message.tool_call_id));
+        const count = inspectPayload({ ...payload, messages }, [frozen])[0];
+        need(count && count.sha256 === frozen.sha256 && Number.isSafeInteger(count.occurrences) && count.occurrences >= 0,
+          'NATIVE_BODY_METRIC_MISSING', 'The actual native tool response requires an independent full-body count');
+        nativeReadBodies.push({ body: key, path, sha256: frozen.sha256, occurrences: count.occurrences, toolCallIds: [...ids] });
+      }
+      payloads.push({ request: request.request, wireRequestId: sent.id, sha256: task.sha256, bytes: task.bytes, bodies, bodyObservation, nativeReadBodies,
         monotonicNs: task.monotonicNs, metadataText: (payload.messages ?? []).filter(message => ['user', 'system'].includes(message.role)).map(message => textOf(message.content)).join('\n'),
         verifiedBodies: request.payload.verifiedBodyOccurrences, usage: message.usage, completion: providerApplicationCompletion(end, message),
         selection: observed.selectionSnapshots?.find(row => row.payloadSha256 === task.sha256)?.selection });
@@ -450,7 +482,23 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
         demand(matches.length > 0, 'CATALOG_TARGET_NOT_VISIBLE', 'The exact target was absent from the actual model-visible catalog');
         return { object: expected.object, matches };
       }
+      case 'forbidden-tool-input': {
+        need(shared.toolObservation, 'TOOL_OBSERVATION_UNPROVEN', 'Forbidden inputs require complete actual tool observations');
+        const facts = expected.facts.map(key => {
+          const fact = privateBindings.facts[key];
+          need(fact?.anyOf?.length, 'FACT_BINDING_MISSING', 'Missing private forbidden input ' + key);
+          return { key, literals: fact.anyOf };
+        });
+        const found = [...shared.attempts.values()].filter(call => call.name === expected.tool).flatMap(call => {
+          const input = normalized(JSON.stringify(call.arguments));
+          return facts.filter(fact => fact.literals.some(value => input.includes(normalized(value))))
+            .map(fact => ({ toolCallId: call.id, fact: fact.key, isError: call.result?.isError }));
+        });
+        demand(!found.length, 'FORBIDDEN_TOOL_INPUT', 'An actual tool attempt used a forbidden package or fallback input', { found });
+        return { tool: expected.tool, facts: expected.facts, matches: 0 };
+      }
       case 'tool-attempts': {
+        need(shared.toolObservation, 'TOOL_OBSERVATION_UNPROVEN', 'Attempt counts require complete actual tool observations');
         const attempts = [...shared.attempts.values()].filter(call => call.name === expected.tool);
         demand(expected.min === undefined || attempts.length >= expected.min, 'TOOL_ATTEMPTS_TOO_FEW', 'Required actual tool attempts are missing');
         demand(expected.max === undefined || attempts.length <= expected.max, 'TOOL_ATTEMPTS_TOO_MANY', 'Forbidden or unnecessary actual tool attempts occurred');
@@ -463,8 +511,15 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
           demand(bodyCount(expected.body, payload) === expected.occurrences, 'BODY_OCCURRENCE_MISMATCH', 'Required full-body count differs in an actual request',
             { body: expected.body, payloadSha256: payload.sha256, expected: expected.occurrences, actual: bodyCount(expected.body, payload) });
           if (expected.occurrences > 0 && expected.receiptRequired !== false) {
-            const body = privateBindings.bodies[expected.body], proof = payload.verifiedBodies?.filter(row => row.sha256 === body.sha256);
-            need(proof?.length === 1 && proof[0].occurrences === expected.occurrences, 'BODY_RECEIPT_MISSING', 'Full bytes have no corresponding receipt-verified body');
+            const body = privateBindings.bodies[expected.body], localPath = localBodyPath(expected.body);
+            if (localPath) {
+              const proof = payload.nativeReadBodies.filter(row => row.body === expected.body && row.path === localPath);
+              need(proof.length === 1 && proof[0].occurrences === expected.occurrences, 'LOCAL_BODY_DELIVERY_MISSING',
+                'Full local bytes require their successful actual read response in this payload');
+            } else {
+              const proof = payload.verifiedBodies?.filter(row => row.sha256 === body.sha256);
+              need(proof?.length === 1 && proof[0].occurrences === expected.occurrences, 'BODY_RECEIPT_MISSING', 'Full bytes have no corresponding receipt-verified body');
+            }
           }
         }
         return { body: expected.body, payloads: payloads.map(row => row.sha256), occurrences: expected.occurrences };
