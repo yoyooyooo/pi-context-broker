@@ -588,7 +588,7 @@ async function loadConsumedEntry(metadata: SkillRecord, node: PreparedNode, entr
     || body.bytes !== node.bytes || body.has_more !== false || !object(body.range) || body.range.start !== 1
     || body.range.end !== body.range.total_lines || !Number.isSafeInteger(body.range.total_lines) || Number(body.range.total_lines) < 1
     || mainBinding && (current.locator.type !== "shared_skill" || mainBinding.page_id !== current.locator.page_id)
-    || fileBindings && !mainBinding || parseNativeReference(node.binding.ref).fileId !== mainBinding?.file_id) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
+    || parseNativeReference(node.binding.ref).fileId !== mainBinding?.file_id) throw new SourceError("SOURCE_PREPARATION_INVALID", source.id);
   const record: SkillRecord = { ...metadata, ...current, path: node.path, body: node.content,
     snapshotId: node.binding.snapshot_id, versionId: node.binding.version_id, freshness: node.freshness ?? { policy: "pinned" },
     currentObservation: currentEvidence(node.freshness, node.source),

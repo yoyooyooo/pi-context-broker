@@ -18,7 +18,7 @@ type Call = { operation: string; input?: Input; target?: string; options: Runtim
 
 // Only the external SDK operation is controlled. The source adapter, graph
 // decoder, entry/file manifest checks and materialization run unchanged.
-export async function currentNotionFixture(kind: ContentKind = "skill", fixture: { identity?: number; name?: string; body?: string } = {}) {
+export async function currentNotionFixture(kind: ContentKind = "skill", fixture: { identity?: number; name?: string; body?: string; boundPaths?: readonly string[] } = {}) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "broker-current-source-")));
   await cp(new URL("../../src", import.meta.url), join(root, "src"), { recursive: true });
   await symlink(fileURLToPath(new URL("../../node_modules", import.meta.url)), join(root, "node_modules"), "dir");
@@ -48,9 +48,13 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
     entrypoint: main, ref: "skill://" + encodeURIComponent(id) + "/" + main,
     locator: { type: "shared_skill", library_id: library, skill_id: "entry", page_id: uuid(offset + 1), database_id: uuid(offset + 10), data_source_id: uuid(offset + 11) } };
   const bytes = new Map([[main, Buffer.from(body)], ["references/guide.md", Buffer.from("完整参考正文。\r\n")], ["assets/data.bin", Buffer.from([0, 255, 13, 10])]]);
-  const bindings = [...bytes.keys()].map((path, index) => ({ path, file_id: "file-" + index, page_id: uuid(offset + index + 1) }));
-  const files = [...bytes].map(([path, value], index) => ({ path, bytes: value.length, sha256: hash(value),
-    ref: "skill://" + encodeURIComponent(id) + "/" + path + "?snapshot=" + snapshot + "&file_id=file-" + index }));
+  const bindings = [...bytes.keys()].map((path, index) => ({ path, file_id: "file-" + index, page_id: uuid(offset + index + 1) }))
+    .filter(binding => fixture.boundPaths === undefined || fixture.boundPaths.includes(binding.path));
+  const files = [...bytes].map(([path, value]) => {
+    const binding = bindings.find(item => item.path === path);
+    return { path, bytes: value.length, sha256: hash(value),
+      ref: "skill://" + encodeURIComponent(id) + "/" + path + "?snapshot=" + snapshot + (binding ? "&file_id=" + binding.file_id : "") };
+  });
   const binding = { record, scope, snapshot_id: snapshot, version_id: version, body_sha256: hash(body), ref: files[0]!.ref };
   const source: Extract<SourceConfig, { type: "notion" }> = { type: "notion", id: "notion", database: uuid(offset + 10), cacheDir: join(root, "cache"), activation: { maxAge: "1s" }, prefetch: false };
   const selected: SkillRecord = { ...record, source: "notion", sourceId: source.id, sourceScope: scope, path: join(root, "metadata", main),

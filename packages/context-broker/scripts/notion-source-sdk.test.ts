@@ -44,6 +44,26 @@ test("current Skill, Router and Prompt loads use one SDK consume and retain the 
   }
 });
 
+test("Source main and sparse Notion bindings retain every source path and exact resource bytes", async () => {
+  for (const boundPaths of [[], ["references/guide.md"]]) {
+    const f = await fixture("skill", { boundPaths });
+    const loaded = await f.boundary.loadNotionSkill(f.selected, f.source, f.root);
+    expect(loaded.body).toBe(f.body);
+    expect(await readFile(loaded.path, "utf8")).toBe(f.body);
+    expect(loaded.preparationBinding?.ref).not.toContain("file_id=");
+    expect(loaded.fileBindings?.map(binding => binding.path)).toEqual(boundPaths);
+    expect(loaded.entryManifest?.files).toEqual([...f.files].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    for (const file of f.files) expect(file.ref.includes("file_id=")).toBe(boundPaths.includes(file.path));
+    for (const file of f.files.slice(1)) {
+      const path = await f.boundary.loadNotionResource(loaded, file.path, f.source, f.root);
+      expect(await readFile(path)).toEqual(f.bytes.get(file.path));
+    }
+    expect(loaded.entryManifest?.local_files_ready).toBe(true);
+    expect(f.calls.map(call => call.operation)).toEqual(["consume", "read", "read"]);
+    if (process.env.CONTEXT_BROKER_GRAPH_CORE) expect(f.state.decoded).toBe(1);
+  }
+});
+
 test("Pi explicitly submits Prompt source bytes in both turns without activating it as a Skill", async () => {
   const f = await fixture("prompt");
   const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
