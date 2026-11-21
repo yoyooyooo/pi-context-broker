@@ -269,12 +269,17 @@ test('zero semantic writes needs complete metrics and descendant coverage', asyn
   assert.equal((await f.run([{ kind: 'no-semantic-writes' }])).status, 'blocked');
   f.observed.source = [{ phase: 'attempt', request_kind: 'notion_write', method: 'PATCH' }];
   assert.equal((await f.run([{ kind: 'no-semantic-writes' }])).status, 'failed');
-  f.observed.source = [{ phase: 'unmatched_child_start', childId: 'shell' }];
-  assert.equal((await f.run([{ kind: 'no-semantic-writes' }])).status, 'blocked');
+  f.observed.source = [{ phase: 'unmatched_child_start', childId: 'background-hook' }];
+  const result = await f.run([{ kind: 'no-semantic-writes' }]);
+  assert.equal(result.status, 'passed');
+  const effect = result.assertions.find(row => row.kind === 'no-semantic-writes').details;
+  assert.equal(effect.coverage, 'subject-tool-operations-with-complete-SDK-metrics');
+  assert.deepEqual(effect.backgroundChildren, [{ childId: 'background-hook', transport: 'unknown' }]);
 });
 
 test('a shell command is not assumed read-only because its final answer says so', async () => {
   const f = fixture({ calls: [{ name: 'bash', arguments: { command: 'anything' } }] });
+  f.observed.source = [{ phase: 'unmatched_child_start', childId: 'subject-shell' }];
   const result = await f.run([{ kind: 'no-semantic-writes' }]);
   assert.equal(result.status, 'blocked');
   assert.ok(result.assertions.some(item => item.code === 'TOOL_EFFECTS_UNKNOWN'));
@@ -334,4 +339,80 @@ test('connected main-document inspection proves read ownership without adoption'
   assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
   f.observed.tasks.at(-1).proofs.contextBrokerRead.binding.record.id = 'same-name-package-copy';
   assert.equal((await f.run([{ kind: 'resource', object: 'guidance', version: 'A', path: 'SKILL.md' }])).status, 'failed');
+});
+
+function addMetadata(f, text, index = 0) {
+  const task = f.observed.tasks.filter(row => row.phase === 'provider_payload')[index], old = task.sha256;
+  const payload = JSON.parse(f.files.get(task.payloadFile));
+  payload.messages.push({ role: 'user', content: text });
+  const bytes = Buffer.from(JSON.stringify(payload)), sha256 = hash(bytes);
+  f.files.set(task.payloadFile, bytes);
+  task.sha256 = sha256; task.bytes = bytes.length;
+  const request = f.observed.costs.find(row => row.phase === 'provider_request' && row.payload.sha256 === old);
+  request.payload.sha256 = sha256; request.payload.bytes = bytes.length;
+  const sent = f.observed.transport.find(row => row.phase === 'request_sent' && row.requestBodySha256 === old);
+  sent.requestBodySha256 = sha256; sent.requestBodyBytes = bytes.length;
+  return task;
+}
+
+test('native visibility proves the target path, not a positive total command count', async () => {
+  const f = fixture();
+  f.binding.private.objects.local = { kind: 'local', owner: 'local:/owned/skill/SKILL.md', name: 'fixture-name',
+    path: '/owned/skill/SKILL.md', currentVersion: 'A', versions: { A: { bodyKeys: [] } } };
+  const store = commands => {
+    const bytes = Buffer.from(JSON.stringify(commands)), artifact = { path: '/owned/native-commands.json', sha256: hash(bytes), bytes: bytes.length };
+    f.files.set(artifact.path, bytes); f.observed.visibility = { nativeCommands: artifact };
+  };
+  store([{ name: 'skill:fixture-name', source: 'skill', sourceInfo: { path: '/owned/other/SKILL.md' } }]);
+  assert.equal((await f.run([{ kind: 'visibility', object: 'local', stage: 'native-discovery' }])).status, 'failed');
+  store([{ name: 'skill:fixture-name', source: 'skill', sourceInfo: { path: '/owned/skill/SKILL.md' } }]);
+  assert.equal((await f.run([{ kind: 'visibility', object: 'local', stage: 'native-discovery' }])).status, 'passed');
+});
+
+test('model catalog visibility binds the actual advertised ref to logical owner', async () => {
+  const f = fixture({ bodies: { 'remote@A/SKILL.md': 'business text' } });
+  const target = f.bindRemote('remote', 'A', 'remote@A/SKILL.md');
+  f.binding.private.objects.remote.name = '远端费率';
+  const ref = 'sr:CAAAAAAAAAAAAAAAAAAAAAA';
+  const task = addMetadata(f, '<ntn-skills-view-catalog><catalog-cards><group kind="skill" source="notion"><card name="远端费率" location="' + ref + '">规则</card></group></catalog-cards></ntn-skills-view-catalog>');
+  const selection = { ...f.observed.selection, shortRefs: [{ ref, target: { kind: 'candidate', identity: {
+    source: 'notion', scope: target.scope, id: target.owner } } }] };
+  f.observed.selectionSnapshots = [{ payloadSha256: task.sha256, selection }];
+  assert.equal((await f.run([{ kind: 'visibility', object: 'remote', stage: 'model-catalog' }])).status, 'passed');
+  selection.shortRefs[0].target.identity.id = 'same-name-other-owner';
+  assert.equal((await f.run([{ kind: 'visibility', object: 'remote', stage: 'model-catalog' }])).status, 'failed');
+});
+
+test('a pending view needs actual source timing, not just an old pending label', async () => {
+  const f = fixture(); f.binding.private.objects.remote = { kind: 'notion', name: 'remote', owner: 'skill-remote', scope: 'a'.repeat(64), versions: {} };
+  const task = addMetadata(f, '<ntn-skills-discovery status="pending">metadata pending</ntn-skills-discovery><ntn-skills-guidance>instructions</ntn-skills-guidance>');
+  task.monotonicNs = '200';
+  f.observed.source = [{ phase: 'started', kind: 'sdk', operation: 'list', requestId: 'catalog', monotonicNs: '100' },
+    { phase: 'completed', kind: 'sdk', operation: 'list', requestId: 'catalog', monotonicNs: '300' }];
+  assert.equal((await f.run([{ kind: 'visibility', object: 'remote', stage: 'source-pending' }])).status, 'passed');
+  f.observed.source[1].monotonicNs = '150';
+  assert.equal((await f.run([{ kind: 'visibility', object: 'remote', stage: 'source-pending' }])).status, 'failed');
+});
+
+test('an equivalent copy is allowed only through an actually proven owner', async () => {
+  const f = fixture({ bodies: { 'remote@A/SKILL.md': 'same business text', 'other@A/SKILL.md': 'same business text' } });
+  f.bindRemote('remote', 'A', 'remote@A/SKILL.md');
+  f.bindRemote('other', 'A', 'other@A/SKILL.md');
+  f.observed.selection.scopes.splice(1, 1);
+  const result = await f.run([{ kind: 'selection-any', objects: [{ object: 'remote', version: 'A' }, { object: 'other', version: 'A' }] }]);
+  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+  f.observed.selection.scopes[0].bindings[0].record.id = 'unrelated';
+  assert.equal((await f.run([{ kind: 'selection-any', objects: [{ object: 'remote', version: 'A' }, { object: 'other', version: 'A' }] }])).status, 'failed');
+});
+
+test('a batch resource read preserves logical owner and complete source bytes', async () => {
+  const f = fixture({ bodies: { 'remote@A/SKILL.md': 'business text', 'remote@A/rates.md': 'rate is 100' } });
+  const target = f.bindRemote('remote', 'A', 'remote@A/SKILL.md'), body = f.binding.private.bodies['remote@A/rates.md'];
+  const proof = { version: 2, toolCallId: 'read-batch', loaded: false,
+    selection: { owner: target.owner, scope: target.scope, snapshot_id: target.snapshot_id, version_id: target.version_id },
+    files: [{ path: 'rates.md', sha256: body.sha256, bytes: body.bytes, state: 'source', encoding: 'utf8', delivered_complete_text: true }] };
+  f.observed.tasks.push({ phase: 'receipt', proofs: { contextBrokerResource: proof } });
+  assert.equal((await f.run([{ kind: 'resource', object: 'remote', version: 'A', path: 'rates.md' }])).status, 'passed');
+  proof.selection.version_id = 'e'.repeat(64);
+  assert.equal((await f.run([{ kind: 'resource', object: 'remote', version: 'A', path: 'rates.md' }])).status, 'failed');
 });
