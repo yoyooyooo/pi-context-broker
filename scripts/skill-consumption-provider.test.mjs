@@ -7,8 +7,82 @@ import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';
 import { gzipSync } from 'node:zlib';
+import { pathToFileURL } from 'node:url';
 import { observeProviderTransport, readProviderTransport } from './skill-consumption-provider.mjs';
 import * as providerObserver from './skill-consumption-provider.mjs';
+
+function forkApi() {
+  const handlers = new Map(); let disposed = false;
+  return { handlers, api: { on(name, callback) {
+    assert.equal(disposed, false); const group = handlers.get(name) ?? new Set(); group.add(callback); handlers.set(name, group);
+    return () => { group.delete(callback); if (!group.size) handlers.delete(name); };
+  } }, emit(name, event = {}, context) {
+    for (const callback of [...(handlers.get(name) ?? [])]) assert.equal(callback(event, context), undefined);
+  }, dispose() { disposed = true; handlers.clear(); } };
+}
+
+test('serialized transport observer rebinds after real fork reason without duplicate diagnostics or request IDs', async () => {
+  const base = fs.mkdtempSync(path.join(tmpdir(), 'provider-fork-')), output = path.join(base, 'transport.jsonl');
+  const extension = path.join(base, 'observer.mjs'), settings = { output, checkoutRoot: process.cwd(), clockId: 'fork-test' };
+  fs.writeFileSync(extension, providerObserver.providerTransportExtensionSource(settings));
+  const old = forkApi(), next = forkApi(), first = await import(pathToFileURL(extension).href + '?first');
+  first.default(old.api); first.default(old.api);
+  const context = { model: { provider: 'fixture', id: 'before', baseUrl: 'https://before.invalid', api: 'openai-completions' } };
+  old.emit('session_start', { reason: 'startup' }, context);
+  const emit = (name, value) => diagnostics.channel('undici:request:' + name).publish(value);
+  const started = () => {
+    const request = { origin: context.model.baseUrl, method: 'POST', path: '/completions' };
+    emit('create', { request }); emit('bodyChunkSent', { request, chunk: Buffer.from('body') }); emit('bodySent', { request });
+    return request;
+  };
+  const ended = request => {
+    emit('headers', { request, response: { statusCode: 200, headers: [] } });
+    emit('bodyChunkReceived', { request, chunk: Buffer.from('reply') }); emit('trailers', { request });
+  };
+  const request = started(), prefix = fs.readFileSync(output), inode = fs.statSync(output).ino;
+  const staleSelect = [...old.handlers.get('before_provider_request')][0];
+  old.emit('session_shutdown', { type: 'session_shutdown', reason: 'fork', targetSessionFile: '/private/target.jsonl' });
+  assert.equal(old.handlers.size, 0); old.dispose();
+  ended(request); // An already observed transport may close while the new API loads.
+  assert.equal(fs.readFileSync(output, 'utf8').includes('transport_end'), false);
+  const second = await import(pathToFileURL(extension).href + '?reloaded'); second.default(next.api); second.default(next.api);
+  context.model = { ...context.model, id: 'after', baseUrl: 'https://after.invalid' };
+  next.emit('session_start', { reason: 'fork' }, context);
+  staleSelect({}, { model: { provider: 'wrong', id: 'stale', baseUrl: 'https://stale.invalid' } });
+  ended(started()); next.emit('session_shutdown', { type: 'session_shutdown', reason: 'quit' });
+  const rows = await readProviderTransport(output);
+  assert.equal(fs.statSync(output).ino, inode); assert.ok(fs.readFileSync(output).subarray(0, prefix.length).equals(prefix));
+  assert.deepEqual(rows.filter(row => row.phase === 'request_start').map(row => [row.id, row.category]), [[1, 'model'], [2, 'model']]);
+  assert.equal(rows.filter(row => row.phase === 'transport_start').length, 1);
+  assert.equal(rows.filter(row => row.phase === 'observer_rebind').length, 1);
+  assert.equal(rows.filter(row => row.phase === 'transport_end').length, 1);
+  assert.equal(rows.at(-1).attempts, 2); assert.equal(rows.at(-1).complete, true);
+  assert.equal(rows.at(-1).selectedModel, crypto.createHash('sha256').update('fixture/after').digest('hex'));
+  const finalBytes = fs.readFileSync(output); emit('create', { request: {} });
+  assert.ok(fs.readFileSync(output).equals(finalBytes));
+  assert.equal(finalBytes.includes(Buffer.from('/private/target.jsonl')), false);
+  assert.throws(() => second.default(forkApi().api), /CLOSED/);
+  const missing = rows.filter(row => row.phase !== 'observer_rebind'), changed = path.join(base, 'missing-rebind.jsonl');
+  fs.writeFileSync(changed, reseal(missing).map(row => JSON.stringify(row)).join('\n') + '\n');
+  await assert.rejects(() => readProviderTransport(changed), /PROVIDER_TRACE_INVALID/);
+});
+
+test('transport subscriptions and unfinished requests survive a fork and cannot seal as complete without rebind', async () => {
+  const base = fs.mkdtempSync(path.join(tmpdir(), 'provider-fork-missing-')), output = path.join(base, 'transport.jsonl');
+  const callbacks = new Map(), old = forkApi(), next = forkApi(); let subscriptions = 0, unsubscriptions = 0;
+  const observer = observeProviderTransport(old.api, { fs, crypto, path, output, checkoutRoot: process.cwd(), clockId: 'fork-missing',
+    diagnostics: { subscribe(name, callback) { subscriptions++; callbacks.set(name, callback); },
+      unsubscribe(name, callback) { assert.equal(callbacks.get(name), callback); unsubscriptions++; callbacks.delete(name); } } });
+  assert.throws(() => observer.bind(next.api), /REBIND_WITHOUT_FORK/);
+  old.emit('session_shutdown', { reason: 'fork', targetSessionFile: '/private/target.jsonl' });
+  assert.equal(unsubscriptions, 0); assert.throws(() => observer.bind(old.api), /REBIND_WITHOUT_FORK/);
+  observer.bind(next.api); assert.equal(subscriptions, 7); assert.equal(unsubscriptions, 0);
+  callbacks.get('undici:request:create')({ request: { origin: 'https://fixture.invalid', path: '/', method: 'POST' } });
+  next.emit('session_shutdown', { reason: 'fork' }); observer.finish();
+  const rows = await readProviderTransport(output);
+  assert.equal(rows.at(-1).complete, false); assert.equal(rows.at(-1).pendingForkRebind, true);
+  assert.deepEqual(rows.at(-1).incompleteRequestIds, [1]); assert.equal(unsubscriptions, 7);
+});
 
 test('passive provider diagnostics preserve fetch, exact request and decoded response while counting HTTP entities', async t => {
   const base = fs.mkdtempSync(path.join(tmpdir(), 'consumption-provider-test-'));
