@@ -90,7 +90,7 @@ export function validateAgentFixtureRecipe(recipe) {
       assert.ok(aliases.has(alias), item.id + ': missing dependency object ' + alias);
   if (recipe.environment !== undefined) {
     keys(recipe.environment, ['catalog', 'offline'], ['catalog'], 'fixture.environment');
-    assert.ok(['normal', 'pending', 'unauthorized', 'partial-view'].includes(recipe.environment.catalog), 'Unsupported catalog precondition');
+    assert.ok(['normal', 'pending', 'unauthorized', 'filtered-view'].includes(recipe.environment.catalog), 'Unsupported catalog precondition');
     if (recipe.environment.offline !== undefined) assert.equal(typeof recipe.environment.offline, 'boolean');
   }
   if (recipe.public !== undefined) validatePublic(recipe.public, 'fixture.public');
@@ -130,6 +130,7 @@ export function validateAgentAssertion(assertion) {
   const shape = {
     completed: [[], []],
     'tool-attempts': [['tool', 'min', 'max'], ['tool']],
+    'forbidden-tool-input': [['tool', 'facts'], ['tool', 'facts']],
     body: [['body', 'occurrences', 'receiptRequired', 'scope'], ['body', 'occurrences']],
     selection: [['object', 'version'], ['object']],
     'selection-any': [['objects'], ['objects']],
@@ -142,6 +143,10 @@ export function validateAgentAssertion(assertion) {
   }[assertion.kind];
   assert.ok(shape, 'expect: unsupported assertion ' + assertion.kind);
   keys(assertion, ['kind', ...shape[0]], ['kind', ...shape[1]], 'expect.' + assertion.kind);
+  if (assertion.kind === 'forbidden-tool-input') {
+    string(assertion.tool, 'forbidden-tool-input.tool');
+    strings(assertion.facts, 'forbidden-tool-input.facts');
+  }
   if (assertion.kind === 'tool-attempts') {
     string(assertion.tool, 'expect.tool');
     assert.ok(assertion.min !== undefined || assertion.max !== undefined, 'tool-attempts requires a boundary');
@@ -325,7 +330,7 @@ export function bindAgentTurn(turn, bindings) {
       assert.ok(identity, 'Missing private identity ' + expected.object);
       if (expected.version !== undefined) assert.ok(own(identity.versions, expected.version), 'Missing planned version ' + expected.object + '@' + expected.version);
     }
-    for (const fact of [...(expected.all ?? []), ...(expected.none ?? []), ...(expected.any ?? [])])
+    for (const fact of [...(expected.all ?? []), ...(expected.none ?? []), ...(expected.any ?? []), ...(expected.facts ?? [])])
       assert.ok(own(bindings.private.facts, fact), 'Missing private fact ' + fact);
     if (expected.kind === 'clarification') assert.ok(own(bindings.private.facts, expected.topic), 'Missing clarification topic ' + expected.topic);
     if (expected.kind === 'business-readback') assert.ok(own(bindings.private.readbacks ?? {}, expected.receipt), 'Missing declared readback ' + expected.receipt);
@@ -341,4 +346,32 @@ export function bindAgentScenario(corpus, scenarioId, bindings, { profile } = {}
   return { id: scenario.id, contract_ids: [...scenario.contract_ids], profile,
     fixture: structuredClone(corpus.fixtures[scenario.fixture]),
     turns: scenario.turns.map(turn => bindAgentTurn(turn, bindings)), bindings };
+}
+
+/** Resolve claims against the paired CLI's one current contract index.
+ * Mapping is not proof of an entire T scenario: each receipt retains the actual natural case in raw evidence. */
+export function checkAgentContractCoverage(corpus, contractIndex) {
+  validateAgentCorpus(corpus);
+  object(contractIndex, 'paired CLI contract index');
+  assert.equal(contractIndex.version, 2, 'Use the current paired CLI contract index');
+  assert.ok(Array.isArray(contractIndex.contracts) && Array.isArray(contractIndex.scenarios), 'Missing paired contract/scenario definitions');
+  const contracts = new Map(contractIndex.contracts.map(item => [item.id, item]));
+  const scenarios = new Map(contractIndex.scenarios.map(item => [item.id, item]));
+  return corpus.scenarios.map(scenario => {
+    const claims = scenario.contract_ids.filter(value => value.startsWith('C'));
+    const cases = scenario.contract_ids.filter(value => value.startsWith('T'));
+    assert.ok(claims.length && cases.length, scenario.id + ': declare both C claims and current T slices');
+    for (const claim of claims) assert.ok(contracts.has(claim), scenario.id + ': unknown current contract ' + claim);
+    const mapped = cases.map(id => {
+      const definition = scenarios.get(id);
+      assert.ok(definition && Array.isArray(definition.contracts), scenario.id + ': unknown current scenario ' + id);
+      const contract_ids = claims.filter(claim => definition.contracts.includes(claim));
+      assert.ok(contract_ids.length, scenario.id + ': ' + id + ' maps none of the declared claims');
+      return { scenario_id: id, contract_ids };
+    });
+    for (const claim of claims) assert.ok(mapped.some(item => item.contract_ids.includes(claim)),
+      scenario.id + ': no current T mapping for ' + claim);
+    return { id: scenario.id, mappings: mapped,
+      scope: 'declared natural journey slice; the mapping does not establish the entire current T contract' };
+  });
 }

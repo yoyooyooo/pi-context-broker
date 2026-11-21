@@ -1054,7 +1054,7 @@
         "catalog": "pending"
       }
     },
-    "consultation-partial-view": {
+    "consultation-filtered-view": {
       "kind": "native-management",
       "objects": [
         {
@@ -1167,7 +1167,7 @@
         }
       },
       "environment": {
-        "catalog": "partial-view"
+        "catalog": "filtered-view"
       }
     },
     "consultation-offline": {
@@ -3090,6 +3090,128 @@
           "state": "present"
         }
       }
+    },
+    "consultation-unauthorized": {
+      "kind": "native-management",
+      "objects": [
+        {
+          "id": "maintain",
+          "name": "ntn-skills-maintain",
+          "description": "Connected library maintenance guidance",
+          "placement": "builtin",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": []
+            }
+          }
+        }
+      ],
+      "facts": {
+        "total-local": {
+          "anyOf": [
+            "合计：80元",
+            "合计：80 元",
+            "合计:80元",
+            "合计: 80元"
+          ]
+        },
+        "total-remote-a": {
+          "anyOf": [
+            "合计：100元",
+            "合计：100 元",
+            "合计:100元",
+            "合计: 100元"
+          ]
+        },
+        "total-remote-b": {
+          "anyOf": [
+            "合计：90元",
+            "合计：90 元",
+            "合计:90元",
+            "合计: 90元"
+          ]
+        },
+        "source-question": {
+          "anyOf": [
+            "哪一份",
+            "哪一个",
+            "本地还是",
+            "Notion 还是",
+            "需要确认",
+            "选择哪",
+            "使用哪",
+            "请确认"
+          ]
+        },
+        "unavailable": {
+          "anyOf": [
+            "无法",
+            "不可用",
+            "不能",
+            "缺失",
+            "未找到",
+            "不存在",
+            "失败"
+          ]
+        },
+        "maintenance": {
+          "anyOf": [
+            "创建",
+            "新增",
+            "添加"
+          ]
+        },
+        "description-question": {
+          "anyOf": [
+            "名称",
+            "用途",
+            "内容",
+            "做什么"
+          ]
+        },
+        "rate-a": {
+          "anyOf": [
+            "80元",
+            "80 元"
+          ]
+        },
+        "rate-b": {
+          "anyOf": [
+            "60元",
+            "60 元"
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            "12"
+          ]
+        },
+        "dependency-question": {
+          "anyOf": [
+            "共享",
+            "共同",
+            "依赖",
+            "两份"
+          ]
+        },
+        "offline": {
+          "anyOf": [
+            "离线",
+            "本地",
+            "安装包"
+          ]
+        },
+        "package-builtin-command": {
+          "anyOf": [
+            " builtin ",
+            "\"builtin\""
+          ]
+        }
+      },
+      "environment": {
+        "catalog": "unauthorized"
+      }
     }
   },
   "scenarios": [
@@ -3202,7 +3324,6 @@
       "fixture": "travel",
       "contract_ids": [
         "C08",
-        "C06",
         "T22"
       ],
       "profiles": [
@@ -3315,7 +3436,8 @@
       "contract_ids": [
         "C06",
         "C08",
-        "T06"
+        "T06",
+        "T22"
       ],
       "profiles": [
         "daily",
@@ -3462,7 +3584,6 @@
       "fixture": "pending-travel",
       "contract_ids": [
         "C08",
-        "C09",
         "T22"
       ],
       "profiles": [
@@ -3514,7 +3635,6 @@
       "fixture": "unauthorized-travel",
       "contract_ids": [
         "C08",
-        "C03",
         "T22"
       ],
       "profiles": [
@@ -3561,7 +3681,6 @@
       "fixture": "unauthorized-travel",
       "contract_ids": [
         "C08",
-        "C03",
         "T22"
       ],
       "profiles": [
@@ -3811,11 +3930,10 @@
       ]
     },
     {
-      "id": "connected-maintenance-partial-view",
-      "fixture": "consultation-partial-view",
+      "id": "connected-maintenance-filtered-view",
+      "fixture": "consultation-filtered-view",
       "contract_ids": [
         "C08",
-        "C05",
         "T22"
       ],
       "profiles": [
@@ -3863,7 +3981,7 @@
       "fixture": "consultation-offline",
       "contract_ids": [
         "C08",
-        "C10"
+        "T22"
       ],
       "profiles": [
         "daily"
@@ -3896,7 +4014,6 @@
       "contract_ids": [
         "C01",
         "C02",
-        "C04",
         "T16",
         "T17"
       ],
@@ -4224,7 +4341,6 @@
       "fixture": "versions",
       "contract_ids": [
         "C01",
-        "C04",
         "C07c",
         "T13"
       ],
@@ -4819,12 +4935,14 @@
       "id": "management-native-crud",
       "fixture": "native-crud",
       "contract_ids": [
+        "C01",
+        "C02",
         "C06",
-        "C07b",
         "C08",
         "T06",
         "T16",
-        "T17"
+        "T17",
+        "T22"
       ],
       "profiles": [
         "daily",
@@ -5013,7 +5131,8 @@
       "contract_ids": [
         "C06",
         "C08",
-        "T06"
+        "T06",
+        "T22"
       ],
       "profiles": [
         "daily"
@@ -5070,8 +5189,9 @@
       "id": "holdout-notion-business-layout",
       "fixture": "holdout-travel",
       "contract_ids": [
-        "C08",
         "C06",
+        "C08",
+        "T06",
         "T22"
       ],
       "profiles": [
@@ -5172,7 +5292,8 @@
       "contract_ids": [
         "C06",
         "C08",
-        "T06"
+        "T06",
+        "T22"
       ],
       "profiles": [
         "daily"
@@ -5243,10 +5364,10 @@
       "fixture": "upstream-pdf",
       "contract_ids": [
         "C06",
-        "C07b",
         "C08",
+        "T06",
         "T07",
-        "T15"
+        "T22"
       ],
       "profiles": [
         "daily",
@@ -5343,10 +5464,10 @@
       "fixture": "upstream-authoring",
       "contract_ids": [
         "C06",
-        "C07b",
         "C08",
+        "T06",
         "T07",
-        "T15"
+        "T22"
       ],
       "profiles": [
         "daily"
@@ -5459,7 +5580,8 @@
         "C06",
         "C08",
         "T06",
-        "T19"
+        "T19",
+        "T22"
       ],
       "profiles": [
         "daily"
@@ -5522,6 +5644,72 @@
             {
               "kind": "business-readback",
               "receipt": "protected"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cold-maintenance-unauthorized",
+      "fixture": "consultation-unauthorized",
+      "contract_ids": [
+        "C08",
+        "T22"
+      ],
+      "profiles": [
+        "daily",
+        "no-native-skills"
+      ],
+      "turns": [
+        {
+          "id": "first",
+          "prompt": "我想在 Notion 添加一个 Skill。请先确认当前连接库里的维护说明，再告诉我需要提供什么；连接不可用就说明，不要修改任何页面。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "unavailable"
+              ]
+            },
+            {
+              "kind": "tool-attempts",
+              "tool": "notion_use",
+              "max": 0
+            },
+            {
+              "kind": "body",
+              "body": "maintain@A/SKILL.md",
+              "occurrences": 0,
+              "scope": "all",
+              "receiptRequired": false
+            },
+            {
+              "kind": "forbidden-tool-input",
+              "tool": "read",
+              "facts": [
+                "package-maintenance-path"
+              ]
+            },
+            {
+              "kind": "forbidden-tool-input",
+              "tool": "bash",
+              "facts": [
+                "package-maintenance-path",
+                "package-builtin-command"
+              ]
+            },
+            {
+              "kind": "forbidden-tool-input",
+              "tool": "notion_ctl",
+              "facts": [
+                "package-builtin-command"
+              ]
             }
           ]
         }
