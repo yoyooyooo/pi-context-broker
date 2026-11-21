@@ -3212,6 +3212,97 @@
       "environment": {
         "catalog": "unauthorized"
       }
+    },
+    "upstream-applying": {
+      "kind": "upstream-projection",
+      "objects": [
+        {
+          "id": "upstream",
+          "name": "upstream-pdf",
+          "description": "Read and review a fixed upstream Skill",
+          "placement": "source",
+          "initial": "absent",
+          "versions": {
+            "A": {
+              "files": []
+            }
+          },
+          "source": {
+            "declaration": {
+              "version": 1,
+              "definition": {
+                "version": 1,
+                "source_id": "fixture-upstream-pdf",
+                "name": "upstream-pdf",
+                "description": "Read and review a Skill from its fixed upstream repository.",
+                "enabled": true,
+                "policy": "pinned",
+                "adapter": {
+                  "type": "git",
+                  "url": "https://github.com/openai/skills.git",
+                  "ref": "49f948faa9258a0c61caceaf225e179651397431"
+                },
+                "selection": {
+                  "roots": [
+                    "skills/.curated/pdf"
+                  ],
+                  "include": [],
+                  "exclude": [],
+                  "mapping": {}
+                },
+                "options": {}
+              },
+              "contributions": []
+            },
+            "memberKey": "skills/.curated/pdf"
+          }
+        }
+      ],
+      "readbacks": {
+        "ready": {
+          "object": "upstream",
+          "version": "A",
+          "state": "present"
+        }
+      },
+      "facts": {
+        "pdf-check": {
+          "anyOf": [
+            "渲染",
+            "PNG",
+            "图片"
+          ]
+        },
+        "name-lowercase": {
+          "anyOf": [
+            "小写",
+            "lowercase"
+          ]
+        },
+        "name-length": {
+          "anyOf": [
+            "64"
+          ]
+        },
+        "description-length": {
+          "anyOf": [
+            "1024",
+            "1,024"
+          ]
+        },
+        "source-unavailable": {
+          "anyOf": [
+            "尚未",
+            "未就绪",
+            "进行中",
+            "同步中",
+            "不可用",
+            "无法",
+            "未完成",
+            "失败"
+          ]
+        }
+      }
     }
   },
   "scenarios": [
@@ -4003,6 +4094,10 @@
                 "offline",
                 "maintenance"
               ]
+            },
+            {
+              "kind": "source-network-attempts",
+              "max": 0
             }
           ]
         }
@@ -5710,6 +5805,92 @@
               "facts": [
                 "package-builtin-command"
               ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "management-source-applying-resume",
+      "fixture": "upstream-applying",
+      "contract_ids": [
+        "C06",
+        "C07b",
+        "C08",
+        "T09",
+        "T22"
+      ],
+      "profiles": [
+        "daily",
+        "no-native-skills"
+      ],
+      "turns": [
+        {
+          "id": "while-applying",
+          "before": [
+            {
+              "kind": "interrupt-source-write",
+              "object": "upstream"
+            }
+          ],
+          "prompt": "Notion 里的 {{upstream.name}} 刚开始同步。请检查当前能否采用它；如果上游尚未就绪，如实说明即可，先不要替我修改同步状态或换成本地同名版本。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "source-unavailable"
+              ]
+            },
+            {
+              "kind": "body",
+              "body": "upstream@A/SKILL.md",
+              "occurrences": 0,
+              "scope": "all",
+              "receiptRequired": false
+            }
+          ]
+        },
+        {
+          "id": "after-resume",
+          "before": [
+            {
+              "kind": "resume-source-write",
+              "object": "upstream"
+            }
+          ],
+          "prompt": "刚才的同步已经恢复并完成。现在请采用 Notion 的 {{upstream.name}}，给我 PDF 输出后的版面检查步骤。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "upstream",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "upstream@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "pdf-check"
+              ]
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "ready"
             }
           ]
         }

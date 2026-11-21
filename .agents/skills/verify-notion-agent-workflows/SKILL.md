@@ -21,7 +21,7 @@ description: "用真实 Pi 和 magpie/group/worker 验证自然用户怎样发�
 | 冷启动、builtin 维护说明 | cold-maintenance-consultation、connected-maintenance-filtered-view；明确离线诉求另跑 explicit-offline-bootstrap |
 | 版本、支持文件、会话恢复 | lifecycle-inspect-adopt；再选依赖共享、来源切换、fork/compact/resume 或故障后三轮 |
 | 原生管理 | management-native-crud、management-register-existing、management-description-flags-resource |
-| 上游投影与完整资源树 | management-upstream-delete-restore；再跑 holdout-upstream-scripts-restore |
+| 上游投影与完整资源树 | management-upstream-delete-restore、management-source-applying-resume；再跑 holdout-upstream-scripts-restore |
 | 全批验收 | selectAgentScenarios(corpus, {selection:'required'}) 的全部适用组合及对应 holdout；未运行项不能汇总通过 |
 
 holdout- 前缀是保留到修复后使用的输入；它们改变业务材料组织、资源路径、内容格式或上游仓库。不要先用留出输入调提示词。离线检查是明确来源诉求的独立分支，不能替代远端可见的本地充分负例，也不证明两机日用安装。
