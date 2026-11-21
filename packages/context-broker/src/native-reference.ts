@@ -30,6 +30,31 @@ export function parseNativeReference(value: string): ExactNativeReference {
   } catch { throw invalid(); }
 }
 
+/** A public Notion page address selects a physical page, never its v query's View. */
+export function notionPageId(value: string): string | undefined {
+  const uuid = /^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/iu;
+  let id = value;
+  if (!uuid.test(id)) {
+    try {
+      if (/[\p{Cc}\p{Cf}\p{Cs}]/u.test(value)) return undefined;
+      const url = new URL(value);
+      if (!["https:", "http:"].includes(url.protocol) || !/(^|\.)notion\.(com|site|so)$/u.test(url.hostname)
+        || url.username || url.password || url.port) return undefined;
+      const segment = url.pathname.replace(/\/$/u, "").split("/").at(-1) ?? "";
+      id = /(?:^|-)([a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/iu.exec(segment)?.[1] ?? "";
+    } catch { return undefined; }
+  }
+  if (!uuid.test(id)) return undefined;
+  const compact = id.replaceAll("-", "").toLowerCase();
+  return [compact.slice(0, 8), compact.slice(8, 12), compact.slice(12, 16), compact.slice(16, 20), compact.slice(20)].join("-");
+}
+
+/** User-facing addresses are normalized before entering the canonical ref protocol. */
+export function parseNotionReference(value: string): ExactNativeReference {
+  const page = notionPageId(value);
+  return page ? { selector: page, path: "" } : parseNativeReference(value);
+}
+
 /** Stable file identity wins over its former path; the selected snapshot owns the binding. */
 export function nativeResourcePath(reference: ExactNativeReference, record: SkillRecord): string {
   if (!record.ref || parseNativeReference(record.ref).selector !== reference.selector) throw invalid();

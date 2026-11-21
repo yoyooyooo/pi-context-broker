@@ -16,7 +16,7 @@ import { viewSystemPrompt, withoutViewMetadata } from "./view-prompt";
 import { hostCliScope } from "./host-command";
 import { notifyUnavailableReferences, renderUnavailableReferences } from "./unavailable-references";
 import { deduplicateSourceReads, deferredSourceEntries, nativeReadReceipt, notionReadStatusFooter, type NotionReadStatus, sourceDeliveryReceipt, sourceMessageText, contextSourceIdentities, inspectedResource, projectSelectedSourceMessages, withSessionSourceReceipts } from "./session-source-snapshot";
-import { parseNativeReference, nativeResourcePath, type ExactNativeReference } from "./native-reference";
+import { parseNativeReference, parseNotionReference, notionPageId, nativeResourcePath, type ExactNativeReference } from "./native-reference";
 import { preparationFailureDetails, type PreparedHostGraph, type PreparationPurpose, type PreparationBinding, type PreparationDirectory } from "./prepare-protocol";
 import { applySelectionGraphs, samePreparationBinding, sessionSelection, selectedTaskRole, type SelectionMode } from "./session-graph";
 import { publicEntryMaterialization } from "./notion-entry";
@@ -216,16 +216,17 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     return new Map(candidates.map((record, index) => [record, refs[index]!]));
   }
   function resolveReference(value: string, ctx: ExtensionContext): { reference: ExactNativeReference; short?: HostShortRefResolution } {
-    if (!isSessionShortRefInput(value)) return { reference: parseNativeReference(value) };
+    if (!isSessionShortRefInput(value)) return { reference: parseNotionReference(value) };
     const short = shortRefs.resolve(ctx, value);
     return { reference: parseNativeReference(short.canonicalRef), short };
   }
   async function resolveToolReference(value: string, ctx: ExtensionContext, signal: AbortSignal, refresh?: boolean): Promise<ResolvedHostReference> {
     const resolved = resolveReference(value, ctx), requested = resolved.reference;
-    const canonical = /^shared_skill:[^:]+:.+$/u.test(requested.selector)
-      || /^[a-f0-9]{32}$/iu.test(requested.selector.replaceAll("-", ""));
-    if (resolved.short || canonical || !options.resolveNamedReference)
+    const physicalPage = notionPageId(requested.selector);
+    const canonical = /^shared_skill:[^:]+:.+$/u.test(requested.selector);
+    if (resolved.short || canonical || !physicalPage && !options.resolveNamedReference)
       return { ...resolved, canonicalRef: resolved.short?.canonicalRef ?? value };
+    if (!options.resolveNamedReference) throw hostError("SOURCE_REFERENCE_MISSING");
     const observedGeneration = generation, sessionId = ctx.sessionManager?.getSessionId?.(), sessionFile = ctx.sessionManager?.getSessionFile?.();
     const current = () => {
       checkPreparationSignal(signal);
@@ -235,7 +236,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const reference = parseNativeReference(selected.ref), record = selected.record;
       if (record.source !== "notion" || !record.sourceId || !record.sourceScope || !record.ref || record.enabled === false
         || reference.selector !== parseNativeReference(record.ref).selector || reference.snapshot !== requested.snapshot
-        || reference.path !== (requested.path || record.entrypoint) || requested.fileId !== undefined && reference.fileId !== requested.fileId)
+        || reference.path !== (requested.path || record.entrypoint) || requested.fileId !== undefined && reference.fileId !== requested.fileId
+        || physicalPage !== undefined && (record.locator?.type !== "shared_skill" || notionPageId(record.locator.page_id) !== physicalPage))
         throw hostError("SOURCE_IDENTITY_MISMATCH");
       return { reference, canonicalRef: selected.ref, record };
     };
@@ -1710,7 +1712,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       ? "Load task roots directly to apply their instructions; no preliminary read is needed. Requires load automatically: do not add them as independent roots unless independently requested. To introduce, summarize or inspect a Skill, use read instead. Copy a supplied ref, or pass task roots together. Use refresh:true only for a requested update; the supplied current or fixed main ref locates the same owner's latest version. Refresh roots with conflicting shared Requires together. Members remain candidates. Loading does not authorize executing a workflow. Notion consumption does not write to Notion."
       : "Prepare exact Skill roots. Use purpose use to load complete root and Required instructions before executing a workflow; inspect reads only roots and does not activate their dependencies. Members and ordinary references remain directories.",
     parameters: piConsumption ? { type: "object", properties: {
-      ref: { anyOf: [{ type: "string" }, { type: "array", minItems: 1, maxItems: 64, items: { type: "string" } }], description: "Supplied sr:C/sr:S or skill://<name-or-id>/<main> refs for task roots. Requires are included automatically. Prefer returned canonical refs for later actions." },
+      ref: { anyOf: [{ type: "string" }, { type: "array", minItems: 1, maxItems: 64, items: { type: "string" } }], description: "Supplied sr:C/sr:S or skill://<name-or-id>/<main> refs, or exact Notion Skill page URLs for task roots. Requires are included automatically. Prefer returned canonical refs for later actions." },
       refresh: { type: "boolean", description: "Explicitly adopt current versions for only these roots after a complete successful load. Existing Requires-only nodes cannot become independent roots through refresh; explicitly use them without refresh first. Accepts the supplied sr:C/sr:S or main ref unchanged, for example {ref:[REF_A,REF_B],refresh:true} for shared roots. Failure keeps the previous selection." },
     }, required: ["ref"], additionalProperties: false } : { type: "object", properties: {
       roots: { type: "array", minItems: 1, maxItems: 64, items: { type: "string" }, description: "Copy exact session sr:C/sr:S references or canonical skill:// main-entry references from metadata or a previous result." },
@@ -2016,7 +2018,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     let stage: ReadAdmissionStage = "metadata";
     const blocked = (error: unknown, effects?: ConsumptionEffects, message?: string) => blockedRead(error, readPhase, stage, started, signal, effects, message);
     if (piConsumption && Object.hasOwn(event.input, "readOnly")) return blocked(hostError("INVALID_ARGUMENT"));
-    const explicit = requested.startsWith("skill://") || isSessionShortRefInput(requested);
+    const explicit = requested.startsWith("skill://") || isSessionShortRefInput(requested) || notionPageId(requested) !== undefined;
     if (event.input.refresh !== undefined && typeof event.input.refresh !== "boolean" || event.input.refresh === true && !explicit) return blocked(hostError("INVALID_ARGUMENT"));
     const refresh = event.input.refresh === true;
     // A plain file read does not acquire a remote Skill dependency. Published

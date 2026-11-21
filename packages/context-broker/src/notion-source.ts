@@ -8,7 +8,7 @@ import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { normalizeKey } from "./skill-records";
-import { parseNativeReference, type NativeFileBinding } from "./native-reference";
+import { parseNativeReference, parseNotionReference, notionPageId, type NativeFileBinding } from "./native-reference";
 import { currentEvidence } from "./consumer-observation";
 import { consumptionEffects, errorConsumptionEffects, noConsumptionWrites, type ConsumptionPolicy } from "./consumption-effects";
 import { decodePreparedGraph, preparationFailureDetails, type PreparationPurpose, type PreparationBinding, type PreparedHostGraph } from "./prepare-protocol";
@@ -431,7 +431,7 @@ export async function discoverNotionCatalogAndDirectory(source: NotionSource, cw
 /** Resolve names before entering the exact owner path. This never prepares a body. */
 export async function resolveNotionReferenceInSource(input: string, source: NotionSource, cwd: string, options: Pick<Options, "signal" | "refresh">): Promise<{ record: SkillRecord; ref: string }> {
   if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
-  const requested = parseNativeReference(input);
+  const requested = parseNotionReference(input);
   if (!requested.snapshot) {
     const { catalog, directory } = await discoverNotionDirectory(source, cwd, options);
     const selectedReference = (resolved: unknown) => {
@@ -444,6 +444,25 @@ export async function resolveNotionReferenceInSource(input: string, source: Noti
         || canonical.fileId !== requested.fileId) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
       return { record: selected, ref: resolved.ref };
     };
+    const physicalPage = notionPageId(requested.selector);
+    if (physicalPage !== undefined) {
+      // An exact physical address does not assert name uniqueness. Use only the
+      // owner observed in this authorized catalog, including its enabled state.
+      const records = Array.isArray(catalog.records) ? catalog.records.map(value => contentRecord(value, source)) : decodeError(source);
+      const matches = records.filter(record => notionPageId(record.locator.page_id) === physicalPage);
+      if (matches.length > 1) decodeError(source);
+      const record = matches[0];
+      if (!record) {
+        if (!object(catalog.coverage) || catalog.coverage.exhaustive !== true) throw new SourceError("CATALOG_INCOMPLETE", source.id);
+        throw new SourceError("SKILL_NOT_FOUND", source.id);
+      }
+      if (record.enabled === false) throw new SourceError("CONTENT_DISABLED", source.id);
+      const owner = parseNativeReference(record.ref);
+      const query = requested.fileId === undefined ? "" : "?file_id=" + encodeURIComponent(requested.fileId);
+      const ref = "skill://" + encodeURIComponent(owner.selector) + "/"
+        + (requested.path || record.entrypoint).split("/").map(encodeURIComponent).join("/") + query;
+      return selectedReference({ record, scope: catalog.scope, ref });
+    }
     let resolved: unknown;
     try { resolved = await resolveNotionCatalogReferenceSdk(input, catalog); }
     catch (error) {
@@ -475,7 +494,8 @@ export async function resolveNotionReferenceInSource(input: string, source: Noti
   if (!object(value) || !Array.isArray(value.files) || value.snapshot_id !== requested.snapshot || !HASH.test(String(value.scope))
     || typeof value.version_id !== "string" || !value.version_id) decodeError(source);
   const record = contentRecord(value.record, source), owner = parseNativeReference(record.ref), main = parseNativeReference(text(value.ref, source));
-  if (![record.name, record.alias, record.id, owner.selector].includes(requested.selector)) throw new SourceError("SNAPSHOT_CONFLICT", source.id);
+  if (![record.name, record.alias, record.id, owner.selector, notionPageId(record.locator.page_id)]
+    .includes(notionPageId(requested.selector) ?? requested.selector)) throw new SourceError("SNAPSHOT_CONFLICT", source.id);
   if (record.enabled === false) throw new SourceError("CONTENT_DISABLED", source.id);
   if (value.entrypoint !== record.entrypoint || main.selector !== owner.selector || main.path !== record.entrypoint || main.snapshot !== requested.snapshot
     || freshness(value.freshness, source).policy !== "pinned") decodeError(source);
@@ -509,7 +529,7 @@ export async function resolveNotionReferenceInSource(input: string, source: Noti
 /** Each configured source is an independent authority, even for the same logical ID. */
 export async function resolveNotionReference(input: string, sources: readonly NotionSource[], cwd: string, options: Pick<Options, "signal" | "refresh"> = {}): Promise<{ record: SkillRecord; ref: string }> {
   const matches: Array<{ record: SkillRecord; ref: string }> = [];
-  const fixed = parseNativeReference(input).snapshot !== undefined;
+  const fixed = parseNotionReference(input).snapshot !== undefined;
   let missingSnapshot: SourceError | undefined;
   for (const source of sources) {
     if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
