@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { fileInventory } from './next-build-identity.mjs';
 import { verifyCurrentBuild, verifyNextWorktreePair } from './verify-next-worktrees.mjs';
@@ -12,6 +13,24 @@ import { aggregateDailyDeliveries, validateDailyReceipt } from './verify-pi-dail
 
 const save = (path, value) => writeFile(path, JSON.stringify(value) + '\n');
 const git = (root, ...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
+test('help is read-only and needs no config, checkout or PATH tools', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'next-worktree-help-'));
+  for (const flag of ['--help', '-h']) {
+    const result = spawnSync(process.execPath, [fileURLToPath(new URL('./verify-next-worktrees.mjs', import.meta.url)), flag], {
+      cwd, env: { ...process.env, PATH: cwd }, encoding: 'utf8', timeout: 5000,
+    });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, '');
+    assert.match(result.stdout, /--config ABSOLUTE_CONFIG\.json/);
+    assert.match(result.stdout, /worktrees\.cli.*worktrees\.broker/);
+    assert.match(result.stdout, /real origin\/next/);
+    assert.match(result.stdout, /actual_pi_process:not_run/);
+    assert.match(result.stdout, /does not.*launch Pi/i);
+  }
+  assert.deepEqual(await readdir(cwd), []);
+});
+
 async function fixture() {
   const parent = await mkdtemp(join(tmpdir(), 'next-worktree-gate-'));
   const cli = join(parent, 'cli'), broker = join(parent, 'broker');

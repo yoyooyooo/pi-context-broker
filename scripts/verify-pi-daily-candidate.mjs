@@ -17,6 +17,7 @@ import { observeOwnedObjectReads } from './notion-sdk-observers.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { createOwnedGraphProject, retainGeneratedPlan } from './notion-skill-graph-project.mjs';
 import { verifyPreparationEvidence, verifyConsumptionEffects } from './skill-preparation-evidence.mjs';
+import { verifyBundledRuntime } from './verify-package-closure.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -1055,6 +1056,30 @@ async function normalSnapshot(config, fileIdentity) {
     local, context }, source, oldSource };
 }
 
+export function validateCandidateArtifactReceipt(artifact, actual) {
+  assert.equal(artifact.version, 2, 'Use the current verify-artifacts manifest without translating a retired receipt');
+  assert.equal(artifact.status, 'passed'); assert.equal(artifact.error, undefined);
+  assert.equal(artifact.host, undefined, 'Installed HTTP evidence does not certify a Pi host');
+  const started = Date.parse(artifact.startedAt), finished = Date.parse(artifact.finishedAt);
+  assert.ok(Number.isFinite(started) && Number.isFinite(finished) && finished >= started, 'The artifact run must have completed');
+  assert.deepEqual(artifact.buildInput, actual.buildInput, 'The artifact must bind the actual raw CLI, SDK and package manifest');
+  assert.deepEqual(artifact.package, actual.package, 'Use the exact independently installed Broker and archive');
+  assert.deepEqual(artifact.runtime, actual.runtime, 'The artifact runtime must match the actual bundled bytes and capabilities');
+  const notRun = ['Pi session', 'provider/model', 'live Notion', 'OMP', 'Tern'];
+  assert.deepEqual(artifact.notRun, notRun);
+  const installed = artifact.currentSdk;
+  assert.ok(installed && installed.status === 'passed' && installed.error === undefined, 'Current installed SDK evidence is required');
+  assert.equal(installed.package_unchanged, true);
+  const { hashes, ...runtime } = actual.runtime;
+  assert.deepEqual(installed.runtime, runtime, 'The installed SDK run used a different runtime');
+  assert.deepEqual(installed.not_run, notRun);
+  assert.ok(Array.isArray(installed.cases) && installed.cases.length > 0
+    && installed.cases.every(result => typeof result.name === 'string' && result.name && result.status === 'passed')
+    && new Set(installed.cases.map(result => result.name)).size === installed.cases.length, 'Every recorded current SDK case must pass');
+  for (const key of ['sdk_calls', 'http_requests']) assert.ok(Number.isSafeInteger(installed[key]) && installed[key] > 0, 'Missing actual installed ' + key);
+  assert.equal(installed.child_starts, 0); assert.equal(installed.semantic_writes, 0);
+}
+
 export async function runCandidate(config, { packageClosure, fileIdentity }) {
   const plan = candidatePlan(config);
   for (const key of ['brokerRoot', 'brokerArchive', 'brokerArchiveSha256', 'embeddedCliSha256', 'embeddedSdkSha256', 'cliRoot', 'cliArchive', 'cliArchiveSha256', 'cliEntrySha256', 'oldBrokerRoot', 'evidenceRoot'])
@@ -1080,15 +1105,22 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
   assert.equal(standalone.sha256, config.cliEntrySha256); assert.equal(runtime.cli_sha256, embedded.sha256); assert.equal(runtime.sdk_sha256, sdk.sha256);
   const artifactReceipt = await fileIdentity(config.artifactReceipt.path); assert.equal(artifactReceipt.sha256, config.artifactReceipt.sha256);
   const artifact = await json(artifactReceipt.path);
-  assert.equal(artifact.status, 'passed'); assert.equal(artifact.host, 'pi'); assert.equal(artifact.buildInput.mode, 'explicit');
-  assert.equal(artifact.buildInput.package, 'ntn-skills'); assert.equal(artifact.buildInput.cli.sha256, standalone.sha256);
   const cliManifestPath = join(config.cliRoot, 'package.json'), cliManifest = await json(cliManifestPath);
   const exportedSdk = cliManifest.exports?.['./sdk'], sdkImport = typeof exportedSdk === 'string' ? exportedSdk : exportedSdk?.import;
   assert.ok(typeof sdkImport === 'string' && sdkImport.startsWith('./'));
   const inputSdk = await fileIdentity(resolve(config.cliRoot, sdkImport)); assert.ok(inside(await realpath(config.cliRoot), inputSdk.realpath));
-  assert.equal(artifact.buildInput.manifest.sha256, (await fileIdentity(cliManifestPath)).sha256);
-  assert.equal(artifact.buildInput.sdk.sha256, inputSdk.sha256); assert.equal(artifact.runtime.cli.sha256, embedded.sha256); assert.equal(artifact.runtime.sdk.sha256, sdk.sha256);
-  assert.equal(artifact.package.archive.sha256, broker.archive.sha256);
+  assert.equal(cliManifest.name, 'ntn-skills');
+  const brokerManifest = await json(join(config.brokerRoot, 'package.json'));
+  assert.equal(brokerManifest.name, 'pi-context-broker');
+  const receiptIdentity = file => ({ path: file.realpath, bytes: file.bytes, sha256: file.sha256 });
+  const hashes = verifyBundledRuntime({ manifest: runtime, expectedVersion: cliManifest.version,
+    cliBytes: await readFile(embedded.path), sdkBytes: await readFile(sdk.path) });
+  validateCandidateArtifactReceipt(artifact, {
+    buildInput: { package: cliManifest.name, version: cliManifest.version, manifest: receiptIdentity(await fileIdentity(cliManifestPath)),
+      cli: receiptIdentity(standalone), sdk: receiptIdentity(inputSdk) },
+    package: { name: brokerManifest.name, version: brokerManifest.version, installed: await realpath(config.brokerRoot), archive: receiptIdentity(broker.archive) },
+    runtime: { ...runtime, hashes },
+  });
   const harness = await Promise.all([
     'scripts/verify-pi-daily-installation.mjs', 'scripts/verify-pi-daily-candidate.mjs', 'scripts/skill-consumption-cost.mjs',
     'scripts/skill-consumption-provider.mjs', 'scripts/skill-consumption-source-observer.mjs', 'scripts/notion-skill-graph-model-evidence.mjs',

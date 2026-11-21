@@ -107,6 +107,27 @@ export async function verifyNextWorktreePair(config) {
     actual_pi_process: 'not_run' };
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  if (process.argv.length === 3 && ['--help', '-h'].includes(process.argv[2])) {
+    console.log(`Usage:
+  node scripts/verify-next-worktrees.mjs --config ABSOLUTE_CONFIG.json
+  node scripts/verify-next-worktrees.mjs --help
+
+Config requires cliRoot and brokerRoot pointing to their packages directories,
+plus worktrees.cli and worktrees.broker, each with an absolute root and complete
+40-character target commit. Commit and build both next worktrees first.
+
+Verification checks clean next branches, exact commits, current source/build
+bytes, the raw and embedded CLI/SDK, and a stable machine fingerprint. It queries
+the real origin/next with a 10-second non-interactive budget for each repository.
+Missing machine identity or unavailable remote access produces blocked.
+
+The version:2 receipt has scope:next-worktree-source-and-build and
+actual_pi_process:not_run. This command does not build, install or launch Pi.
+Continue with the daily installation plan/run on each machine and aggregate
+their current receipts. See docs/next-worktree-delivery.md.
+Help reads no config, probes no machine identity and starts no child process.`);
+    process.exit(0);
+  }
   assert.equal(process.argv[2], '--config'); assert.equal(process.argv.length, 4);
   try { console.log(JSON.stringify(await verifyNextWorktreePair(await json(resolve(process.argv[3]))), null, 2)); }
   catch (error) {
