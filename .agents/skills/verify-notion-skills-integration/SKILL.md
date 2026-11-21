@@ -10,7 +10,7 @@ description: "验证当前配对 CLI/SDK 与 Broker 的消费合同、完整目�
 只验证当前 `next` 单轨。复用现有检查和安装入口，不新增总验证 runner。
 OMP/Tern 延期；不恢复 `source.command`、CLI 正文消费、完整 export 回退或旧 snapshot reader。
 [验证交接表](../../../docs/verification-routing.md) 指定 CLI 管理、消费、来源接手与 Broker 的负责人。
-本 Skill 检查跨仓消费和安装包，不复制作者操作验收。当前feature地图直接指向现役SDK、安装与实际Pi入口。
+本 Skill 检查跨仓消费和安装包，不复制作者操作验收。自然用户旅程、混合来源选路与日常管理闭环交给 [工作流验证 Skill](../verify-notion-agent-workflows/SKILL.md)。当前feature地图直接指向现役SDK、安装与实际Pi入口。
 
 ## 1. 绑定同一份 CLI/SDK
 

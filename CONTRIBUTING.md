@@ -26,7 +26,8 @@ Start at the [Broker verification Skill](https://github.com/yoyooyooo/pi-context
 - SDK pairing and independent installation use the [integration Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-skills-integration/SKILL.md).
 - Eligibility, request order, fixed selection and delivery state use the [consumer-state Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-consumer-state/SKILL.md) and its existing model/guard mapping.
 - Actual Pi SDK/provider/serializer scenarios use `scripts/notion-sdk-pi.mjs` with its explicit installed-package inputs.
-- Real Notion and the effective daily Pi installation use `scripts/verify-pi-daily-installation.mjs` and `scripts/verify-pi-daily-candidate.mjs` under AH-1063.
+- Real Notion and the effective daily Pi installation use the public `scripts/verify-pi-daily-installation.mjs` actions under AH-1197/AH-637; `scripts/verify-pi-daily-candidate.mjs` is its internal implementation.
+- Natural user journeys, mixed local/Notion selection and management use the [workflow verification Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-agent-workflows/SKILL.md) under AH-1196/AH-1198. Both applicable profiles run real `magpie/group/worker`; the corpus, private bindings and raw results stay separate.
 
 The old default dual-host controller, CLI-consumption fixtures and UI/PTY/model wrappers are retired. Do not restore `source.command`, old locators, `readOnly` or export fallback to make a test run. The controlled `ctl views` stub is only a management boundary; it cannot stand in for SDK consumption.
 
