@@ -96,6 +96,9 @@ async function input(config) {
   assert.equal(config.version, 1); assert.equal(config.scope, 'notion-agent-workflow');
   const fields = ['version', 'scope', 'scenarioFile', 'scenarioId', 'profile', 'bindingsFile', 'brokerRoot', 'cliRoot', 'sourceId', 'database', 'packageIndex', 'evidenceRoot', 'model', 'thinkingLevel', 'timeoutMs', 'catalogTimeoutMs', 'viewId', 'retestOf'];
   assert.ok(Object.keys(config).every(key => fields.includes(key)), 'Unsupported natural workflow configuration field');
+  for (const key of ['timeoutMs', 'catalogTimeoutMs']) if (config[key] !== undefined)
+    assert.ok(Number.isSafeInteger(config[key]) && config[key] > 0 && config[key] <= 2_147_483_647,
+      key + ' must be a positive supported timer duration');
   for (const key of ['scenarioFile', 'bindingsFile', 'brokerRoot', 'cliRoot', 'evidenceRoot']) assert.ok(isAbsolute(config[key]), key + ' must be absolute');
   assert.ok(!inside(root, config.evidenceRoot), 'Keep run evidence outside the checkout');
   agentWorkflowArgs(config, '/sessions', []);
@@ -139,6 +142,7 @@ export async function planAgentWorkflow(config) {
     differences: [...(config.profile === 'no-native-skills' ? ['-ns disables default Pi native discovery; Broker local and explicit reads remain'] : []),
       ...(projectOverrides.compaction ? ['Owned project compaction.keepRecentTokens=' + projectOverrides.compaction.keepRecentTokens + '; real RPC compaction and model summarization remain unchanged'] : [])],
     projectOverrides,
+    limits: { promptTimeoutMs: config.timeoutMs ?? 1_800_000, catalogTimeoutMs: config.catalogTimeoutMs ?? 90000 },
     oracle: 'controller-only files; no tools, expected answers or verification Skill inserted into subject prompts',
     scopeBoundary: 'project candidate using the real daily environment; not a two-machine installed-delivery result' };
 }
@@ -268,7 +272,9 @@ export async function runAgentWorkflow(config) {
     const args = agentWorkflowArgs(config, sessions, observer.extensions);
     if (resume) args.push('--session', resume);
     const actualEnv = { ...env, NODE_OPTIONS: [process.env.NODE_OPTIONS, ...observer.preloads.map(path => '--import=' + JSON.stringify(path))].filter(Boolean).join(' ') };
-    rpc = await startRpc({ host: 'pi', cwd, env: actualEnv, args, timeoutMs: config.timeoutMs ?? 600000 });
+    // A public management command already has a ten-minute finite budget. A
+    // natural turn may inspect, execute and read it back before responding.
+    rpc = await startRpc({ host: 'pi', cwd, env: actualEnv, args, timeoutMs: plan.limits.promptTimeoutMs });
     const state = await rpc.command('get_state');
     assert.equal(state.model?.provider, 'magpie'); assert.equal(state.model?.id, 'group/worker'); assert.equal(state.thinkingLevel, 'high');
     assert.ok(inside(sessions, resolve(state.sessionFile)), 'Pi must persist the owned session');

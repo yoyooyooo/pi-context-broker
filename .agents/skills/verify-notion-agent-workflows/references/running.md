@@ -95,7 +95,7 @@ fixture 包含有限 kind、对象/版本/完整文件树、公开业务材料�
 | sourceId / database / packageIndex | 正常配置中所选 Notion source、库与真实 Broker 注册位置 |
 | evidenceRoot | 本轮自有原始结果根 |
 | model / thinkingLevel | magpie/group/worker / high |
-| timeoutMs / catalogTimeoutMs | 可选有界等待预算，不能无限重试 |
+| timeoutMs / catalogTimeoutMs | 可选有界等待预算；每轮默认 30 分钟，目录默认 90 秒，实际值写入计划。公开管理命令自身可等待 10 分钟，每轮须额外容纳检查、读回和模型响应；不能无限重试 |
 | viewId | 可选的本轮真实 View 绑定；filtered-view 不能用假返回值代替 |
 | retestOf | 可选，关联保留的首次失败原件 |
 
