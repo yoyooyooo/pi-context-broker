@@ -213,6 +213,57 @@ function catalogCards(text) {
   return cards;
 }
 const normalized = value => String(value).normalize('NFKC').replace(/\s+/gu, ' ').toLocaleLowerCase('en-US').trim();
+
+// A topic elsewhere in the answer cannot lend an unrelated question or a word
+// such as "confirm" to this assertion. Requests for material may be imperative;
+// a question mark is not required. This returns the actual matching clause.
+function clarificationRequest(text, alternatives) {
+  const topics = alternatives.map(normalized);
+  const prose = text.replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/gu, '\n\n')
+    .replace(/\[([^\]]+)\]\([^\n)]+\)/gu, '$1').replace(/https?:\/\/[^\s<>()]+/gu, '')
+    .replace(/\*\*|__|`/gu, '').normalize('NFKC');
+  const clean = value => value.replace(/^\s*(?:(?:[-*+]|\d+[.)])\s+|#{1,6}\s+)/u, '').trim();
+  const matches = value => topics.filter(topic => normalized(value).includes(topic));
+  const negated = value => /(?:不需要|无需|不用|不必|不要|别再|不知道|不确定|无法确认)|\b(?:do not|does not|don't|doesn't|need not|needn't|must not|mustn't|should not|shouldn't|no need|not required|not necessary)\b/iu.test(value);
+  const definition = value => /(?:字段说明|用于|用来|表示|代表|指的是|例如|比如|示例|举例)|\b(?:means|represents|describes|for example)\b/iu.test(value);
+  const imperative = value => /^(?:(?:请|麻烦|劳烦)(?:你|您)?\s*)?(?:告诉我|给我|发给我|发我|提供|补充|上传|发送|分享|确认|选择|告知|说明)/u.test(value)
+    || /^(?:(?:请|麻烦)?(?:你|您)?(?:可以|需要)?\s*)?(?:把|将).+(?:发(?:送)?|传|贴|交)(?:给)?我/u.test(value)
+    || /^(?:需要|希望)(?:你|您)(?:提供|补充|告诉我|给我|发给我)/u.test(value)
+    || /^(?:please\s+)?(?:tell me|send me|give me|provide|share|specify|choose|confirm)\b/iu.test(value)
+    || /^(?:can|could|would|will)\s+you\s+(?:tell|send|give|provide|share|specify|choose|confirm)\b/iu.test(value);
+  const form = value => {
+    if (negated(value)) return null;
+    if (imperative(value)) return 'request';
+    const tail = normalized(value).replace(/[:：]\s*$/u, '');
+    const statement = /^(?:我|我们)(?:已经|已)?(?:知道|了解|明确|确定)/u.test(tail);
+    const implicitQuestion = /(?:哪(?:里|儿)?|什么|多少|何时|何处)$/u.test(tail)
+      || /^(?:是否|能否|可否|如何|怎么|怎样)/u.test(tail)
+      || /(?:哪个|哪份|哪种|哪些|什么|多少)/u.test(tail) && matches(value).some(topic => tail.endsWith(topic));
+    if (!statement && !definition(value) && (/[?？]/u.test(value) || implicitQuestion
+      || /^(?:which|what|where|when|how)\b/iu.test(value))) return 'question';
+    return null;
+  };
+  for (const block of prose.split(/\n\s*\n/u)) {
+    const lines = block.split('\n');
+    for (let index = 0; index < lines.length; index++) {
+      const header = clean(lines[index]);
+      if (!/:\s*$/u.test(header) || form(header) !== 'request') continue;
+      for (const line of lines.slice(index + 1)) {
+        if (!/^\s*(?:[-*+]|\d+[.)])\s+/u.test(line)) break;
+        const item = clean(line), found = matches(item);
+        if (found.length && !negated(item)) return { form: 'request-list', text: header + '\n' + item, topics: found };
+      }
+    }
+    for (const sentence of block.split(/(?<=[。！？!?；;\n])|(?<=\.)\s+/u)) {
+      for (const part of sentence.split(/[，,]/u)) {
+        const clause = clean(part), found = matches(clause), kind = form(clause);
+        if (found.length && kind) return { form: kind, text: clause, topics: found };
+      }
+    }
+  }
+  return null;
+}
+
 const statusOf = items => items.some(item => item.status === 'failed') ? 'failed' : items.some(item => item.status === 'blocked') ? 'blocked' : 'passed';
 const sameIdentity = (binding, target) => binding?.record?.id === target.owner && binding.scope === target.scope &&
   binding.snapshot_id === target.snapshot_id && binding.version_id === target.version_id;
@@ -914,10 +965,12 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
           'BUSINESS_FACT_MISMATCH', 'The answer violates private necessary facts', { all, none, any });
         return { all, none, any, method: 'necessary-facts-with-alternatives; not-whole-answer-equality' };
       }
-      case 'clarification':
-        demand(factFound(expected.topic) && /[?？]|(?:请|需要|哪(?:个|一|种)|选择|确认|which|please provide|tell me)/iu.test(shared.final.text),
+      case 'clarification': {
+        const request = factFound(expected.topic) && clarificationRequest(shared.final.text, privateBindings.facts[expected.topic].anyOf);
+        demand(request,
           'CLARIFICATION_MISSING', 'The necessary business clarification was not asked');
-        return { topic: expected.topic };
+        return { topic: expected.topic, request };
+      }
       case 'business-readback': {
         const declaration = privateBindings.readbacks?.[expected.receipt], receipt = observed.readbacks?.[expected.receipt];
         need(declaration && receipt, 'READBACK_MISSING', 'A declared readback is not an observed business result');

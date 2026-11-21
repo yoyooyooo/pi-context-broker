@@ -375,6 +375,58 @@ test('tool discovery binds the real hyphenated Pi builtin path and rejects same-
   }
 });
 
+test('business clarification accepts topical questions and material requests without imposing one sentence form', async () => {
+  for (const [answerText, topics] of [
+    ['把名称、用途和执行步骤发我。', ['名称', '用途']],
+    ['麻烦提供发票金额。', ['金额']],
+    ['请告诉我用途。', ['用途']],
+    ['不用改页面，请把用途发给我。', ['用途']],
+    ['名称是什么？', ['名称']],
+    ['名称是什么', ['名称']],
+    ['使用哪个版本', ['版本']],
+    ['看内容现在在哪：', ['内容']],
+    ['**请提供以下信息：**\n- 名称\n- 用途', ['名称', '用途']],
+    ['Can you send me the deployment region?', ['region']],
+    ['Send me the desired region.', ['region']],
+    ['Please provide the expected timeout.', ['timeout']],
+    ['The tool requires configuration. Which version should I use?', ['version']],
+    ['确认这次使用的版本。', ['版本']],
+  ]) {
+    const f = fixture({ answerText }); f.binding.private.facts.question = { anyOf: topics };
+    const result = await f.run([{ kind: 'clarification', topic: 'question' }]);
+    assert.equal(result.status, 'passed', answerText);
+    const request = result.assertions.find(row => row.kind === 'clarification').details.request;
+    assert.ok(request.text && request.topics.length);
+  }
+});
+
+test('negation, unrelated questions and plain field descriptions cannot stand in for clarification', async () => {
+  for (const [answerText, topics] of [
+    ['名称用于检索。今天过得怎么样？', ['名称']],
+    ['名称已经确定，几点开会？', ['名称']],
+    ['名称、用途和内容是必填字段。', ['名称', '用途', '内容']],
+    ['不用提供名称。', ['名称']],
+    ['不需要你告诉我用途。', ['用途']],
+    ['不要给我名称。', ['名称']],
+    ['I do not need the target region.', ['region']],
+    ['Please do not provide a timeout.', ['timeout']],
+    ['The name describes what the skill does.', ['name']],
+    ['我可以起草名称给你确认。', ['名称']],
+    ['```text\n请提供名称。\n```', ['名称']],
+    ['名称见 https://example.test/help?mode=confirm 。', ['名称']],
+    ['例如：名称是什么？', ['名称']],
+    ['哪个版本都可以，我先用本地。', ['版本']],
+    ['我知道名称是什么。', ['名称']],
+    ['我知道名称是什么', ['名称']],
+    ['名称解释了如何配置。', ['名称']],
+  ]) {
+    const f = fixture({ answerText }); f.binding.private.facts.question = { anyOf: topics };
+    const result = await f.run([{ kind: 'clarification', topic: 'question' }]);
+    assert.equal(result.status, 'failed', answerText);
+    assert.ok(result.assertions.some(row => row.code === 'CLARIFICATION_MISSING'));
+  }
+});
+
 test('a same-name Broker replacement cannot borrow the actual candidate owner', async () => {
   const f = fixture({ calls: [{ name: 'notion_list' }] });
   f.observed.tasks.find(row => row.phase === 'tool_call').toolSource.path = '/another/package/src/index.ts';
