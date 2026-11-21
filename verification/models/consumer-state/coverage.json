@@ -11,13 +11,13 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/discovery-records.ts": "3b8b8abee88e2eba5de3421e76e446de91412b7f7d4b6b71394fede5dd878bab",
-    "packages/context-broker/src/host-skills.ts": "c4a93179f0c8d34e45afed9c5a3b90c5a4b752c1b98a5088b7d78668cadd2d84",
+    "packages/context-broker/src/host-skills.ts": "9e62cd3acc4c5f820fd20b4d52b9596e6a7a1d4f4db9f636be0856f13d4abc8f",
     "packages/context-broker/src/prepare-protocol.ts": "ae06d35b831250f1ce2cc2b818f162e69e5af3d1ed861c26c20ce103a99effe2",
     "packages/context-broker/src/session-graph.ts": "f2e1ddf48aa59ab10346f1d6327379217309e48235b644ba3bf494b3963162f0",
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
     "packages/context-broker/src/session-source-snapshot.ts": "6ac7c29f29ecc5aca851c836cbb113d5a1f611d1856b2fe268570efcd056c3b1",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
-    "packages/context-broker/scripts/host-prepare.test.ts": "c632e220fd2c0493cf1f3d04ed5643edeea9ecfb9876819c353a3f5a1c9a96ad",
+    "packages/context-broker/scripts/host-prepare.test.ts": "e1b4a080907c52dd666cccca0049143cd0dfa1965ceb54257745c50f1355c6af",
     "packages/context-broker/scripts/session-active.test.ts": "8c028ee53bf86b253dee9a63ce6e15a8e27c811de25e4cc9936f37ab134e0e90",
     "packages/context-broker/scripts/native-read-session.test.ts": "ef967d31fe6ea68167c548a75c8df69791a4001da874e0b2e034a415207a597b",
     "packages/context-broker/scripts/skill-context-session.test.ts": "71b2d3ba5d5937e164a6fa08c8ebfd0fc183019d00a8495a220a7cdee4d9c897",
@@ -28,12 +28,12 @@
     "packages/context-broker/scripts/final-request-undici.test.ts": "df1417ddf319180c89725f188107dde9b0eb8089aa12759b17d539bfd2bd7555",
     "packages/context-broker/src/session-working-set.ts": "4792c1b3e1ecdbbfd77918f2f9ddf074cfe197e8fbed265a5796cd59671bd36c",
     "packages/context-broker/scripts/session-active-session.mjs": "a0b3d76adddb20b81858d876c4fdd81c45a66360dee55a877895b1d6348a40b5",
-    "packages/context-broker/src/index.ts": "5f04dcd1f407fae95c5762dc7c5dc4d18452114e4cebb9a43b5bc3a46bfd6d18",
+    "packages/context-broker/src/index.ts": "46f8fa308c04f5c52d4e8e89745cc9655899d39752bd78af330c4804c9dfc1d6",
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "f0a338ce686cfd88c1ce564ccdec0e34b5b0b868aa617620950e9d5fb6d0a0ad",
     "packages/context-broker/src/notion-source.ts": "022a7d72187a300fc024f4b84a394653d3ff8c9c68d7c09bf6bc4e96a4e39b68",
     "packages/context-broker/src/pi-host-adapter.ts": "934605789805d5761451a0b4e694e7255dc08f6ef330c6682ccae68d321e9045",
-    "packages/context-broker/scripts/host-refresh.test.ts": "b3b754cf8acd080a33c63ccf7f5f1fe5d9eaf364ad90737ebd2d8efbd5883029",
+    "packages/context-broker/scripts/host-refresh.test.ts": "9fa1c0d79ab375e386a582e77c363f277b5e0ff2b6b0828f327fe90f1036b2e5",
     "packages/context-broker/scripts/session-refresh.test.ts": "9d00f8ecbe392dbd3367ef51dcaffa325cb709986f1128e90d3f542894175a89",
     "packages/context-broker/scripts/session-recovery.test.ts": "b247e1a41ad21b2a0b124ec22cc8da4487adcf3eb0d9ad883bff5bbbc70ece88",
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "858cf3fcf02255e49641af3cc4794445eaa85aca5a27c2e6fbee8dac38bd4dd1",
@@ -719,6 +719,13 @@
       "preservation": "A bounded recoverable ROOT_ROLE_CONFLICT returns before preparation, changes no selection/active/body, grants no availability and invents no disabled or authorization fact. Original observation publication, complete closure, atomic graph replacement, cancellation, provider acceptance and projection guards are unchanged.",
       "proof_limit": "This is host input-admission regression evidence, not a new finite-model variable or natural-language intent proof. Model/config/view bytes, bounds, independent expected_rules and existing mutation targets are unchanged. The controlled fixture does not prove actual SDK decoding, live Notion or natural routing; fresh real trials report functional, root-role and tool-necessity axes separately.",
       "adjacent_callers": "Full check and formal regressions on 690f905 exposed two old recovery cases that refreshed a Required-only node to induce authorization/business denial. Migrate only their input to the actual task root, explicitly retain the Required failure identity and add exact scope/id/ref/code denial assertions. Original unsafe-payload blocking, next-request continuation, independent closure and intact fixed Disabled restoration assertions remain unchanged. Production/model/guard bytes are unchanged; original failed runs are retained."
+    },
+    "metadata_discovery_refresh": {
+      "reviewed_from": "59e966576ab6d378f116a1638589d28d5c87c875",
+      "owners": "Reviewed the actual host-skills ready/revalidateMetadata/refreshMetadata and notion_list input/publication path, index invalidateCatalogSources/getRecords generation loop and cancellation-before-paired-View handoff, catalog-menu public freshness projection, and strict native Skill receipt observer. Explicit metadata refresh preserves host task/lifecycle generation, selected and active graph bindings, fixed refs and delivery state while retiring the previous metadata signal. The concurrent root-role admission from 59e9665 is preserved.",
+      "guards": "Existing evidence admission still uses original validation time, request ordering, lifecycle generation, cancellation and exact source/failure ownership. The new metadata publication epoch in catalogKey is an additional concrete fence: an old cursor is invalid after refresh even when directory bytes and effective availability match. No qualification, graph commit, provider acceptance, complete-closure recovery or final delivery guard is weakened.",
+      "replays": "host-refresh exercises production index/host/adapter with controlled external SDK: a new enabled DefaultContext=false Skill outside the View is discoverable before TTL, SDK refresh is requested, old selected/active bindings and fixed reads survive, same-content refresh invalidates cursor, failed/partial observations remain explicit, and verified native create during acquisition makes the first ordinary list follow the new catalog. host-prepare covers noncooperative retired producers, shared waiter cancellation, overlapping source requests and session fences; catalog-cache/menu cover source-scoped refresh, offline, original timestamp and elapsed age; cli-write-invalidation covers exact native CRUD commands, receipts, no-ops and negative ownership/argv cases.",
+      "proof_limit": "Availability models candidate/effective availability, not directory membership or metadata publication epochs. ReadRace models two reads and two session epochs, not Promise readiness or acquisition scheduling. FreshnessPublication.Receive remains synchronous admission after asynchronous acquisition. Refresh union/coalescing, waiter wake-up, write-during-query retry, paired View handoff, SDK policy, public freshness and management receipt invalidation are concrete regression obligations outside the finite models. Model/config/view bytes, bounds, case inventory, independent expected_rules and all original mutation targets are unchanged."
     }
   }
 }

@@ -7,7 +7,8 @@
 | 变化 | 既有文件/入口 | 关键守卫 |
 | --- | --- | --- |
 | SDK 合同与错误 | notion-source-sdk、notion-sdk、notion-entry | 必需 capability、精确身份、permission、cutover error |
-| 目录与缓存 | shared-notion-adapter、catalog-cache、remote-catalog | 完整分页、原验证时间、scope/credential 隔离、失败不续 TTL |
+| 目录与缓存 | shared-notion-adapter、catalog-cache、catalog-menu、host-refresh、remote-catalog | 完整分页、原验证时间、显式 metadata refresh、scope/credential 隔离、失败不续 TTL |
+| 写后目录失效 | cli-write-invalidation、host-refresh | 同包 literal argv、native CRUD/Source/import 回执、精确库与目标、在途目录换代；不推断任意 shell |
 | View | view-discovery | API 顺序、明确选择、空 View、部分覆盖与禁止 fallback |
 | 激活与资源 | host-prepare、fixed-resource-source、resource-read-host | 完整 manifest、owner/File、取消和迟到结果 |
 | 真实独立安装 | verify-artifacts / verify-notion-sdk-installed | 实际安装包与 current HTTP，零 CLI 正文子进程、零语义写入 |

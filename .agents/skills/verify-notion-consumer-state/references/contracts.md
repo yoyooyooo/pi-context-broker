@@ -26,6 +26,12 @@ verification/models/consumer-state/coverage.json 是当前四个模型的唯一 
 | scope、目标归因 | recordIdentity；prepare-protocol.preparationFailureDetails；host-skills.observeFailure | 原 scope 与 dependency denial 回归 |
 | 真实 metadata 到期 | host-skills metadata consumer | 原 F6，TTL-1/TTL/后续访问和并发读者 |
 
+### 显式刷新发现目录
+
+`notion_list refresh:true` 复用 index 的目录 owner 和同包 SDK，仅推进目录请求与发布；它保持 host 任务 `generation`、selected/active 图、固定引用与交付状态，并取消旧 metadata signal。`metadataGeneration` 新加入分页 cursor，即使目录字节和有效资格没变，旧 cursor 也不能跨一次成功刷新继续。它是具体实现的额外发布守卫；Availability 仅建模单条候选与有效资格，ReadRace 只有请求顺序和两个 session epochs，不能把 metadata epoch 等同于其中的会话 epoch。
+
+`FreshnessPublication.Receive` 仍对应异步获取完成后的同步证据准入；它不建模 SDK 请求、写后失效、View 交接或 Promise 等待。`host-refresh.test.ts` 经 production index/adapter 验证 TTL 内新条目、失败/partial、自动写入在途失效、固定选择及随后普通回合；`host-prepare.test.ts` 验证不配合取消的旧 producer、等待者取消、重叠来源合并和 session fence。`catalog-cache.test.ts` 检查精确来源强刷和 offline 策略，`catalog-menu.test.ts` 检查公开 age 随原始验证时刻前进、缺失观察不变成新验证。native CRUD 回执与 literal argv 由 `cli-write-invalidation.test.ts` 检查。这些是实现义务，不扩张现有有限模型的证明范围；保留全部原规则、负例和真实 guard mutations。
+
 ## SelectionGraph
 
 一个 root 和一个 Requires，各有两个本地已验证选择的序号；不承诺远端历史恢复。旧向量为 root v1/Requires v2，新向量为 root v2/Requires v1；序号不表示两个身份共享 snapshot/hash。负配置复制 root pin 到 child，会破坏 EachMemberKeepsOwnPin。

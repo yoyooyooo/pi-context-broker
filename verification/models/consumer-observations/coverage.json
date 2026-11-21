@@ -11,10 +11,10 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/discovery-records.ts": "3b8b8abee88e2eba5de3421e76e446de91412b7f7d4b6b71394fede5dd878bab",
-    "packages/context-broker/src/host-skills.ts": "c4a93179f0c8d34e45afed9c5a3b90c5a4b752c1b98a5088b7d78668cadd2d84",
+    "packages/context-broker/src/host-skills.ts": "9e62cd3acc4c5f820fd20b4d52b9596e6a7a1d4f4db9f636be0856f13d4abc8f",
     "packages/context-broker/src/prepare-protocol.ts": "ae06d35b831250f1ce2cc2b818f162e69e5af3d1ed861c26c20ce103a99effe2",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
-    "packages/context-broker/scripts/host-prepare.test.ts": "c632e220fd2c0493cf1f3d04ed5643edeea9ecfb9876819c353a3f5a1c9a96ad",
+    "packages/context-broker/scripts/host-prepare.test.ts": "e1b4a080907c52dd666cccca0049143cd0dfa1965ceb54257745c50f1355c6af",
     "scripts/check-consumer-observation-mutations.mjs": "a34d906997d213187d48af500f3af0c5a61fd9233d5dd11b35268c2611f8cf51"
   },
   "models": {
@@ -182,6 +182,17 @@
         "resource-read-projection.test.ts"
       ],
       "contract": "Exact dependency failures do not deny the root. Failed replacement does not replace the graph. Known authorization denial withholds verified source spans on future requests. Explicit new selection retires old main and supporting-file spans but never edits native history."
+    },
+    {
+      "name": "explicit metadata discovery and native write invalidation",
+      "tests": [
+        "host-refresh.test.ts",
+        "host-prepare.test.ts",
+        "catalog-cache.test.ts",
+        "catalog-menu.test.ts",
+        "cli-write-invalidation.test.ts"
+      ],
+      "contract": "Availability models candidate/effective availability, not directory membership or metadata publication epochs. ReadRace models two reads and two session epochs, not Promise readiness or acquisition scheduling. FreshnessPublication.Receive remains synchronous admission after asynchronous acquisition. Refresh union/coalescing, waiter wake-up, write-during-query retry, paired View handoff, SDK policy, public freshness and management receipt invalidation are concrete regression obligations outside the finite models. Model/config/view bytes, bounds, case inventory, independent expected_rules and all original mutation targets are unchanged."
     }
   ],
   "current_review": {
@@ -214,6 +225,13 @@
       "identity": "Bare references acquire early roles only with one enabled Notion source and one confirmed current scope. Multiple current source scopes preserve original ambiguity until exact owner/scope/locator resolution. The initial two-source false-conflict reproduction is retained; current tests cover ambiguity and uniquely resolved owner.",
       "preservation": "A bounded recoverable ROOT_ROLE_CONFLICT returns before preparation, changes no selection/active/body, grants no availability and invents no disabled or authorization fact. Original observation publication, complete closure, atomic graph replacement, cancellation, provider acceptance and projection guards are unchanged.",
       "proof_limit": "This is host input-admission regression evidence, not a new finite-model variable or natural-language intent proof. Model/config/view bytes, bounds, independent expected_rules and existing mutation targets are unchanged. The controlled fixture does not prove actual SDK decoding, live Notion or natural routing; fresh real trials report functional, root-role and tool-necessity axes separately."
+    },
+    "metadata_discovery_refresh": {
+      "reviewed_from": "59e966576ab6d378f116a1638589d28d5c87c875",
+      "owners": "Reviewed the actual host-skills ready/revalidateMetadata/refreshMetadata and notion_list input/publication path, index invalidateCatalogSources/getRecords generation loop and cancellation-before-paired-View handoff, catalog-menu public freshness projection, and strict native Skill receipt observer. Explicit metadata refresh preserves host task/lifecycle generation, selected and active graph bindings, fixed refs and delivery state while retiring the previous metadata signal. The concurrent root-role admission from 59e9665 is preserved.",
+      "guards": "Existing evidence admission still uses original validation time, request ordering, lifecycle generation, cancellation and exact source/failure ownership. The new metadata publication epoch in catalogKey is an additional concrete fence: an old cursor is invalid after refresh even when directory bytes and effective availability match. No qualification, graph commit, provider acceptance, complete-closure recovery or final delivery guard is weakened.",
+      "replays": "host-refresh exercises production index/host/adapter with controlled external SDK: a new enabled DefaultContext=false Skill outside the View is discoverable before TTL, SDK refresh is requested, old selected/active bindings and fixed reads survive, same-content refresh invalidates cursor, failed/partial observations remain explicit, and verified native create during acquisition makes the first ordinary list follow the new catalog. host-prepare covers noncooperative retired producers, shared waiter cancellation, overlapping source requests and session fences; catalog-cache/menu cover source-scoped refresh, offline, original timestamp and elapsed age; cli-write-invalidation covers exact native CRUD commands, receipts, no-ops and negative ownership/argv cases.",
+      "proof_limit": "Availability models candidate/effective availability, not directory membership or metadata publication epochs. ReadRace models two reads and two session epochs, not Promise readiness or acquisition scheduling. FreshnessPublication.Receive remains synchronous admission after asynchronous acquisition. Refresh union/coalescing, waiter wake-up, write-during-query retry, paired View handoff, SDK policy, public freshness and management receipt invalidation are concrete regression obligations outside the finite models. Model/config/view bytes, bounds, case inventory, independent expected_rules and all original mutation targets are unchanged."
     }
   }
 }
