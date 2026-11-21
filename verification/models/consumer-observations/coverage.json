@@ -14,7 +14,7 @@
     "packages/context-broker/src/host-skills.ts": "bddd2b345c52df9ddd1bb83a6029258c14e628b4fc0025572a0820caa80bf81a",
     "packages/context-broker/src/prepare-protocol.ts": "6c0229a5217726416e3bd719faaf7d922c40f479ca03d6a9ab0ef1275be903f4",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
-    "packages/context-broker/scripts/host-prepare.test.ts": "ce17ea58dd60df728b1994142b62cf41d173c44ebf4f676905b856c2d8fd2876",
+    "packages/context-broker/scripts/host-prepare.test.ts": "f0a834cbebc6900e81c0cd68bef7215cd36344b4a4d3e0c20ace5dcc51a777cb",
     "scripts/check-consumer-observation-mutations.mjs": "a34d906997d213187d48af500f3af0c5a61fd9233d5dd11b35268c2611f8cf51"
   },
   "models": {
@@ -185,6 +185,7 @@
     }
   ],
   "current_review": {
+    "maintenance_guidance": "Reviewed c73c9d6b8990cbeb979587f542c140dfa4fa047e through 776a7cb65e593459d6e69d0013515445c9a171e5. index.ts changes only the pure maintenanceGuidance text helper and message-content selection in buildCliGuidance/buildToolGuidance; its other 91 named functions and all remaining top-level statements are byte-identical. installSkillGuidance, provider projection, createActiveSourceRestorer and its fixed-owner, authorization and cancellation checks are unchanged. The added host-prepare case exercises pending metadata, scoped discovery and the same returned catalog ref through actual Pi hooks, and asserts no preparation, selection persistence or resource-body read. Existing tests and helpers are unchanged apart from the additional guidance imports. The observation, host, graph, active-source and recovery owners retain their exact baseline bytes. Guidance quality remains an implementation and natural-task obligation outside the finite models. Model inputs, bounds, cases, independent expected_rules, tool lock and all production mutation targets are unchanged; these whole-file hashes bind the reviewed bytes without claiming that instruction text is a modeled state or a refinement proof.",
     "reviewed_from": "8cce7fa105b8df6a485fe2b8ef419fc6ab597cb0",
     "method": "Read changed owner functions, delayed commits, exact identity guards, source projection, failed recovery isolation and actual regression assertions before binding these source hashes. Hash correspondence is not an implementation refinement proof.",
     "unchanged_guards": "Current evidence original validation time, request order, generation, cancellation and precise source denial ownership remain intact. Business Enabled is exempted only for intact previously confirmed fixed bytes; authorization is never exempted.",
