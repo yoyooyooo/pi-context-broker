@@ -696,8 +696,9 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       if (call.name === 'ask_user' && !interactionProofs.has(call.id))
         interactionProofs.set(call.id, await proveAskUserNoUi(call, observed.session, readArtifact));
       const source = call.event.toolSource;
+      const builtinPath = call.name === 'tool_search' ? 'builtin:tool-search' : 'builtin:' + call.name;
       if (['read', 'grep', 'find', 'ls', 'tool_search'].includes(call.name) &&
-        source?.source === 'builtin' && source.path === 'builtin:' + call.name) {
+        source?.source === 'builtin' && source.path === builtinPath) {
         toolOwners.set(call.id, { toolCallId: call.id, owner: 'builtin', path: source.path });
       } else if (['read', 'notion_list', 'notion_use', 'notion_ctl'].includes(call.name)) {
         brokerOwner ??= observedBrokerToolOwner(observed, readArtifact);
