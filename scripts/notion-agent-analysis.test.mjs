@@ -511,6 +511,13 @@ test('business clarification accepts topical questions and material requests wit
     ['把名称、用途和执行步骤发我。', ['名称', '用途']],
     ['麻烦提供发票金额。', ['金额']],
     ['请告诉我用途。', ['用途']],
+    ['先告诉我用途。', ['用途']],
+    ['请先提供名称。', ['名称']],
+    ['首先请说明用途。', ['用途']],
+    ['麻烦您接下来把名称发给我。', ['名称']],
+    ['随后给我用途。', ['用途']],
+    ['然后确认名称。', ['名称']],
+    ['再提供用途。', ['用途']],
     ['不用改页面，请把用途发给我。', ['用途']],
     ['名称是什么？', ['名称']],
     ['名称是什么', ['名称']],
@@ -539,6 +546,12 @@ test('negation, unrelated questions and plain field descriptions cannot stand in
     ['不用提供名称。', ['名称']],
     ['不需要你告诉我用途。', ['用途']],
     ['不要给我名称。', ['名称']],
+    ['先不要告诉我用途。', ['用途']],
+    ['请先不用提供名称。', ['名称']],
+    ['首先我已经知道用途是什么。', ['用途']],
+    ['首先我已经知道用途是什么', ['用途']],
+    ['先告诉我天气。名称可由我拟定。', ['名称']],
+    ['接下来是名称、用途和内容。', ['名称', '用途', '内容']],
     ['I do not need the target region.', ['region']],
     ['Please do not provide a timeout.', ['timeout']],
     ['The name describes what the skill does.', ['name']],
@@ -555,6 +568,34 @@ test('negation, unrelated questions and plain field descriptions cannot stand in
     const result = await f.run([{ kind: 'clarification', topic: 'question' }]);
     assert.equal(result.status, 'failed', answerText);
     assert.ok(result.assertions.some(row => row.code === 'CLARIFICATION_MISSING'));
+  }
+});
+
+test('the business brief oracle accepts purpose and deliverables but not implementation setup requests', async () => {
+  const corpus = JSON.parse(readFileSync(new URL('./notion-agent-scenarios.json', import.meta.url), 'utf8'));
+  const facts = Object.values(corpus.fixtures).map(recipe => recipe.facts?.['description-question']).filter(Boolean);
+  assert.ok(facts.length > 0);
+  assert.equal(new Set(facts.map(fact => JSON.stringify(fact))).size, 1, 'business brief topics stay consistent across fixtures');
+  for (const [answerText, status] of [
+    ['先告诉我这个 Skill 要解决什么问题。', 'passed'],
+    ['请先说明希望解决哪类业务问题。', 'passed'],
+    ['首先请告诉我目的和业务目标。', 'passed'],
+    ['麻烦您先提供输入材料和预期结果。', 'passed'],
+    ['接下来请说明输入信息与输出结果。', 'passed'],
+    ['请先把交付物的要求发我。', 'passed'],
+    ['随后告诉我期望的产出。', 'passed'],
+    ['请先提供 CLI 输出。', 'failed'],
+    ['先给我输入目录路径。', 'failed'],
+    ['目的、业务目标、输入材料、输出结果是待填字段。', 'failed'],
+    ['首先不用提供预期结果。', 'failed'],
+    ['我已经知道要解决什么问题。', 'failed'],
+    ['业务目标已经确定，今天几点开会？', 'failed'],
+    ['先告诉我天气。输出结果是模板里的字段。', 'failed'],
+  ]) {
+    const f = fixture({ answerText }); f.binding.private.facts.question = facts[0];
+    const result = await f.run([{ kind: 'clarification', topic: 'question' }]);
+    assert.equal(result.status, status, answerText);
+    if (status === 'failed') assert.ok(result.assertions.some(row => row.code === 'CLARIFICATION_MISSING'));
   }
 });
 

@@ -231,15 +231,22 @@ function clarificationRequest(text, alternatives) {
   const matches = value => topics.filter(topic => normalized(value).includes(topic));
   const negated = value => /(?:不需要|无需|不用|不必|不要|别再|不知道|不确定|无法确认)|\b(?:do not|does not|don't|doesn't|need not|needn't|must not|mustn't|should not|shouldn't|no need|not required|not necessary)\b/iu.test(value);
   const definition = value => /(?:字段说明|用于|用来|表示|代表|指的是|例如|比如|示例|举例)|\b(?:means|represents|describes|for example)\b/iu.test(value);
-  const imperative = value => /^(?:(?:请|麻烦|劳烦)(?:你|您)?\s*)?(?:告诉我|给我|发给我|发我|提供|补充|上传|发送|分享|确认|选择|告知|说明)/u.test(value)
-    || /^(?:(?:请|麻烦)?(?:你|您)?(?:可以|需要)?\s*)?(?:把|将).+(?:发(?:送)?|传|贴|交)(?:给)?我/u.test(value)
-    || /^(?:需要|希望)(?:你|您)(?:提供|补充|告诉我|给我|发给我)/u.test(value)
-    || /^(?:please\s+)?(?:tell me|send me|give me|provide|share|specify|choose|confirm)\b/iu.test(value)
-    || /^(?:can|could|would|will)\s+you\s+(?:tell|send|give|provide|share|specify|choose|confirm)\b/iu.test(value);
+  const sequenceLead = /^(?:首先|接下来|随后|然后|先|再)\s*/u;
+  const imperative = value => {
+    // Timing may precede or follow politeness. It changes neither the requested
+    // topic nor negation, which is checked on the original clause below.
+    const request = value.replace(sequenceLead, '')
+      .replace(/^(?:请|麻烦|劳烦)(?:你|您)?\s*/u, '').replace(sequenceLead, '');
+    return /^(?:告诉我|给我|发给我|发我|提供|补充|上传|发送|分享|确认|选择|告知|说明)/u.test(request)
+      || /^(?:(?:你|您)?(?:可以|需要)?\s*)?(?:把|将).+(?:发(?:送)?|传|贴|交)(?:给)?我/u.test(request)
+      || /^(?:需要|希望)(?:你|您)(?:提供|补充|告诉我|给我|发给我)/u.test(request)
+      || /^(?:please\s+)?(?:tell me|send me|give me|provide|share|specify|choose|confirm)\b/iu.test(value)
+      || /^(?:can|could|would|will)\s+you\s+(?:tell|send|give|provide|share|specify|choose|confirm)\b/iu.test(value);
+  };
   const form = value => {
     if (negated(value)) return null;
     if (imperative(value)) return 'request';
-    const tail = normalized(value).replace(/[:：]\s*$/u, '');
+    const tail = normalized(value.replace(sequenceLead, '')).replace(/[:：]\s*$/u, '');
     const statement = /^(?:我|我们)(?:已经|已)?(?:知道|了解|明确|确定)/u.test(tail);
     const implicitQuestion = /(?:哪(?:里|儿)?|什么|多少|何时|何处)$/u.test(tail)
       || /^(?:是否|能否|可否|如何|怎么|怎样)/u.test(tail)
