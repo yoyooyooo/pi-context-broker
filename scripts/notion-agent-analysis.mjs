@@ -224,6 +224,61 @@ async function verifiedArtifact(artifact, readArtifact) {
   demand(bytes.length === artifact.bytes && hash(bytes) === artifact.sha256, 'ARTIFACT_CHANGED', 'Observed artifact bytes changed', { path: artifact.path });
   return bytes;
 }
+// This reviewed package has a non-TUI early return before its optional network
+// notification. A name, a claimed "read-only" result, or a matching source path
+// alone cannot establish that the branch ran. Changed implementations need a new
+// review; this profile is deliberately not supplied by the subject or its oracle.
+const askUserNoUiProfile = Object.freeze({
+  id: '@yoyo/ask-user-pi:23ec9aee:no-ui',
+  files: {
+    'package.json': { sha256: 'd944aeac21c5c77120c4c9819d4ecbb41d8171b7abe605d5fd3a4b5b38525b27', bytes: 853 },
+    'src/index.ts': { sha256: '25a275c8cb5883688808b9c2c643043f3b8e657742ce72710974a28316d12fbd', bytes: 11381 },
+    'src/prompt.ts': { sha256: '231eabae6d14214ab851af666f4588f8a772a96888b655218c1cd13165cfbcda', bytes: 1833 },
+    'src/notify.ts': { sha256: 'ad97c5337073c5e5567c5b6ca2f79e874163e1a3ca8aa83b396ae7082b84b4ce', bytes: 3398 },
+  },
+});
+async function proveAskUserNoUi(call, session, readArtifact) {
+  const source = call.event?.toolSource, implementation = call.event?.toolImplementation;
+  need(source?.origin === 'package' && ['user', 'project'].includes(source.scope) &&
+    isAbsolute(source.baseDir ?? '') && source.source === source.baseDir &&
+    source.path === resolve(source.baseDir, 'src/index.ts'),
+  'INTERACTION_IMPLEMENTATION_UNKNOWN', 'An interaction name is not evidence of its actual package implementation');
+  need(implementation?.version === 1 && ['rpc', 'json', 'print'].includes(implementation.runtimeMode) &&
+    Array.isArray(implementation.files) && implementation.files.length === Object.keys(askUserNoUiProfile.files).length,
+  'INTERACTION_IMPLEMENTATION_UNKNOWN', 'The observed non-TUI invocation needs its sealed implementation and imports');
+  const seen = new Set();
+  for (const file of implementation.files) {
+    const reviewed = askUserNoUiProfile.files[file.relativePath];
+    need(reviewed && !seen.has(file.relativePath) && file.path === resolve(source.baseDir, file.relativePath) &&
+      file.artifact?.sha256 === reviewed.sha256 && file.artifact.bytes === reviewed.bytes,
+    'INTERACTION_IMPLEMENTATION_UNKNOWN', 'Only the reviewed complete implementation can establish the interaction effects');
+    seen.add(file.relativePath);
+    await verifiedArtifact(file.artifact, readArtifact);
+  }
+  const input = call.arguments;
+  need(object(input) && nonempty(input.question) && Object.keys(input).every(key => ['question', 'options'].includes(key)) &&
+    Array.isArray(input.options) && input.options.length >= 2 && input.options.length <= 5 &&
+    input.options.every(option => object(option) && nonempty(option.label) &&
+      (option.description === undefined || typeof option.description === 'string') &&
+      Object.keys(option).every(key => ['label', 'description'].includes(key))),
+  'INTERACTION_INPUT_UNPROVEN', 'The interaction arguments must match the reviewed parameter contract');
+  need(call.provenance?.kind === 'native-tool-call' && call.native?.isError === false && call.result?.isError === false,
+    'INTERACTION_RESULT_UNPROVEN', 'The no-UI path needs its own completed native tool result');
+  const native = session.branchEntries.find(entry => entry.id === call.native.resultEntryId)?.message;
+  const expectedContent = [{ type: 'text', text: 'No interactive UI is available. Ask the user in plain text instead.' }];
+  need(native?.role === 'toolResult' && native.toolName === 'ask_user' && native.toolCallId === call.id &&
+    isDeepStrictEqual(native.content, expectedContent) && isDeepStrictEqual(native.details, {
+      question: input.question, options: input.options.map(option => option.label), answer: null, wasCustom: false, cancelled: true,
+    }),
+  'INTERACTION_RESULT_UNPROVEN', 'Only the actual no-UI early return proves that the notification branch was not entered');
+  const content = await verifiedArtifact(call.result.contentArtifact, readArtifact), encoded = JSON.stringify(native.content);
+  demand(content.toString('utf8') === encoded && call.result.content?.sha256 === hash(content) &&
+    call.result.content.bytes === content.length,
+  'INTERACTION_RESULT_CHANGED', 'The native no-UI result differs from the independently observed tool result');
+  return { toolCallId: call.id, profile: askUserNoUiProfile.id, runtimeMode: implementation.runtimeMode,
+    resultSha256: hash(content), coverage: 'reviewed-non-TUI-return-before-notification' };
+}
+
 function boundNotionDeliveries(payload, tasks, frozenBodies) {
   const deliveries = new Map(), rejected = [];
   const decode = (text, span) => {
@@ -538,7 +593,8 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
     return fact.anyOf.some(value => normalized(shared.final.text).includes(normalized(value)));
   };
 
-  const sourceRequests = () => {
+  const interactionProofs = new Map();
+  const sourceRequests = async () => {
     need(shared.toolObservation, 'TOOL_OBSERVATION_UNPROVEN', 'Source effects require complete actual tool observations');
     need(observed.sourceCoverage === true && Array.isArray(observed.source), 'SOURCE_COVERAGE_MISSING', 'Complete source observation is required for source effects');
     const source = observed.source, starts = source.filter(row => row.phase === 'started'), attempts = source.filter(row => row.phase === 'attempt');
@@ -554,13 +610,16 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       need(source.filter(row => row.phase === 'completed' && row.requestId === start.requestId).length === 1,
         'SOURCE_OPERATION_INCOMPLETE', 'Source operation did not finish exactly once');
     }
-    const readOnly = call => ['read', 'grep', 'find', 'ls', 'notion_list', 'notion_use', 'tool_search'].includes(call.name) ||
+    for (const call of shared.attempts.values()) if (call.name === 'ask_user' && !interactionProofs.has(call.id))
+      interactionProofs.set(call.id, await proveAskUserNoUi(call, observed.session, readArtifact));
+    const readOnly = call => interactionProofs.has(call.id) || ['read', 'grep', 'find', 'ls', 'notion_list', 'notion_use', 'tool_search'].includes(call.name) ||
       call.name === 'notion_ctl' && object(call.arguments) && (call.arguments.working_set === 'show' || nonempty(call.arguments.cli_source)) &&
       Object.keys(call.arguments).every(key => ['working_set', 'cli_source'].includes(key)) ||
       call.name === 'codemode' && inspectNotionAgentReadOnlyContainer(call, shared.correlation, readOnly).readOnly;
     for (const call of shared.attempts.values())
       need(readOnly(call), 'TOOL_EFFECTS_UNKNOWN', 'An executed tool has effects outside the observed SDK boundary', { tool: call.name, toolCallId: call.id });
     return { source, attempts, coverage: 'subject-tool-operations-with-complete-SDK-metrics',
+      interactions: [...interactionProofs.values()],
       backgroundChildren: source.filter(row => row.phase === 'unmatched_child_start').map(row => ({ childId: row.childId, transport: 'unknown' })),
       notClaimed: 'all-host/plugin/descendant traffic; any subject execution tool still requires complete independent effects evidence' };
   };
@@ -758,7 +817,7 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
           count = effects.notionHttpAttempts;
           details = { coverage: effects.coverage, artifact: effects.artifact };
         } else {
-          const observedRequests = sourceRequests();
+          const observedRequests = await sourceRequests();
           count = observedRequests.attempts.length;
           const { source: _source, attempts: _attempts, ...scope } = observedRequests;
           details = scope;
@@ -778,7 +837,7 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
         demand((observed.source ?? []).filter(row => row.phase === 'attempt')
           .every(row => row.request_kind !== 'notion_write' && !['PATCH', 'PUT', 'DELETE'].includes(row.method)),
           'UNAUTHORIZED_SEMANTIC_WRITE', 'Source transport attempted a Notion mutation');
-        const { source, attempts: _attempts, ...details } = sourceRequests();
+        const { source, attempts: _attempts, ...details } = await sourceRequests();
         return { semanticWrites: 0, ...details,
           backgroundCatalogRequests: source.filter(row => row.phase === 'started' && row.operation === 'list').length };
       }

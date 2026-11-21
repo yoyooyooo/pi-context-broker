@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { inspectNotionAgentSession, captureNotionAgentSelection, analyzeNotionAgentTurn } from './notion-agent-analysis.mjs';
 import { candidatePayloadBodies } from './verify-pi-daily-candidate.mjs';
 
@@ -316,6 +317,106 @@ test('a shell command is not assumed read-only because its final answer says so'
   const result = await f.run([{ kind: 'no-semantic-writes' }]);
   assert.equal(result.status, 'blocked');
   assert.ok(result.assertions.some(item => item.code === 'TOOL_EFFECTS_UNKNOWN'));
+});
+
+function interactionFixture() {
+  const input = { question: '本地和 Notion 都有同名 Skill，这次使用哪个版本？', options: [{ label: '本地版' }, { label: 'Notion 版' }] };
+  const text = 'No interactive UI is available. Ask the user in plain text instead.';
+  const f = fixture({ calls: [{ name: 'ask_user', arguments: input, result: text }] });
+  const source = '/owned/extensions/ask-user-pi', event = f.observed.tasks.find(row => row.phase === 'tool_call');
+  event.toolSource = { path: source + '/src/index.ts', source, scope: 'user', origin: 'package', baseDir: source };
+  const snapshot = JSON.parse(readFileSync(new URL('./fixtures/ask-user-rpc-implementation.json', import.meta.url), 'utf8'));
+  event.toolImplementation = { version: 1, runtimeMode: 'rpc', files: Object.entries(snapshot.files).map(([relativePath, text]) => {
+    const bytes = Buffer.from(text), artifact = { path: '/owned/evidence/implementation/' + relativePath, sha256: hash(bytes), bytes: bytes.length };
+    f.files.set(artifact.path, bytes);
+    return { relativePath, path: source + '/' + relativePath, artifact };
+  }) };
+  const terminal = f.entries.find(row => row.id === 'result-0');
+  terminal.message.details = { question: input.question, options: input.options.map(option => option.label),
+    answer: null, wasCustom: false, cancelled: true };
+  f.observed.session = inspect(f.entries);
+  const content = Buffer.from(JSON.stringify(terminal.message.content)), result = f.observed.tasks.find(row => row.phase === 'tool_result');
+  result.content = { sha256: hash(content), bytes: content.length };
+  result.contentArtifact = { path: '/owned/evidence/ask-result.json', ...result.content };
+  f.files.set(result.contentArtifact.path, content);
+  return { ...f, event, result, terminal };
+}
+
+test('a reviewed RPC interaction proves its actual no-UI return before notification', async () => {
+  const f = interactionFixture();
+  const result = await f.run([{ kind: 'no-semantic-writes' }, { kind: 'source-network-attempts', max: 0 },
+    { kind: 'tool-attempts', tool: 'ask_user', min: 1, max: 1 }]);
+  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+  const effects = result.assertions.find(row => row.kind === 'no-semantic-writes').details;
+  assert.deepEqual(effects.interactions.map(row => ({ toolCallId: row.toolCallId, mode: row.runtimeMode })),
+    [{ toolCallId: 't0', mode: 'rpc' }]);
+});
+
+test('the same interaction name and no-UI text cannot replace implementation evidence', async () => {
+  const f = interactionFixture();
+  delete f.event.toolImplementation;
+  const result = await f.run([{ kind: 'no-semantic-writes' }]);
+  assert.equal(result.status, 'blocked');
+  assert.ok(result.assertions.some(row => row.code === 'INTERACTION_IMPLEMENTATION_UNKNOWN'));
+});
+
+test('a same-name replacement package cannot inherit the reviewed effects', async () => {
+  const f = interactionFixture();
+  f.event.toolSource = { path: 'mcp:other/ask_user', origin: 'mcp', scope: 'user' };
+  const result = await f.run([{ kind: 'no-semantic-writes' }, { kind: 'source-network-attempts', max: 0 }]);
+  assert.equal(result.status, 'blocked');
+  assert.ok(result.assertions.some(row => row.code === 'INTERACTION_IMPLEMENTATION_UNKNOWN'));
+});
+
+test('a changed implementation stays unknown even when its new artifact is correctly sealed', async () => {
+  const f = interactionFixture(), file = f.event.toolImplementation.files.find(row => row.relativePath === 'src/index.ts');
+  const changed = Buffer.concat([f.files.get(file.artifact.path), Buffer.from('\n// new implementation\n')]);
+  f.files.set(file.artifact.path, changed);
+  file.artifact = { ...file.artifact, sha256: hash(changed), bytes: changed.length };
+  const result = await f.run([{ kind: 'no-semantic-writes' }]);
+  assert.equal(result.status, 'blocked');
+  assert.ok(result.assertions.some(row => row.code === 'INTERACTION_IMPLEMENTATION_UNKNOWN'));
+});
+
+test('missing imports and mismatched package paths cannot prove an interaction profile', async () => {
+  for (const mutation of [
+    f => { f.event.toolImplementation.files.pop(); },
+    f => { f.event.toolImplementation.files[0].path = '/different-package/package.json'; },
+    f => { f.event.toolImplementation.files[0] = f.event.toolImplementation.files[1]; },
+  ]) {
+    const f = interactionFixture(); mutation(f);
+    assert.equal((await f.run([{ kind: 'no-semantic-writes' }])).status, 'blocked');
+  }
+});
+
+test('TUI interactions are not classified as no-network even if a result claims no UI', async () => {
+  const f = interactionFixture(); f.event.toolImplementation.runtimeMode = 'tui';
+  const result = await f.run([{ kind: 'source-network-attempts', max: 0 }]);
+  assert.equal(result.status, 'blocked');
+  assert.ok(result.assertions.some(row => row.code === 'INTERACTION_IMPLEMENTATION_UNKNOWN'));
+});
+
+test('a completed interactive answer cannot substitute for the native no-UI early return', async () => {
+  const f = interactionFixture();
+  f.terminal.message.details.answer = 'Notion 版'; f.terminal.message.details.cancelled = false;
+  f.observed.session = inspect(f.entries);
+  const result = await f.run([{ kind: 'no-semantic-writes' }]);
+  assert.equal(result.status, 'blocked');
+  assert.ok(result.assertions.some(row => row.code === 'INTERACTION_RESULT_UNPROVEN'));
+});
+
+test('the no-UI return must agree with the independent tool-result bytes', async () => {
+  const f = interactionFixture();
+  f.files.set(f.result.contentArtifact.path, Buffer.from('[{"type":"text","text":"a different return"}]'));
+  const result = await f.run([{ kind: 'no-semantic-writes' }]);
+  assert.equal(result.status, 'failed');
+  assert.ok(result.assertions.some(row => row.code === 'ARTIFACT_CHANGED'));
+});
+
+test('a reviewed interaction cannot hide an observed Notion write', async () => {
+  const f = interactionFixture();
+  f.observed.source = [{ phase: 'attempt', request_kind: 'notion_write', method: 'PATCH' }];
+  assert.equal((await f.run([{ kind: 'no-semantic-writes' }])).status, 'failed');
 });
 
 test('independent business readback rejects repair and changed identity', async () => {
