@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { agentWorkflowArgs, workflowSourceSlice } from './notion-agent-workflow-runtime.mjs';
+import { agentWorkflowArgs, agentWorkflowProjectSettings, workflowSourceSlice } from './notion-agent-workflow-runtime.mjs';
 import { validateCandidateTurn } from './verify-pi-daily-candidate.mjs';
 
 test('daily and no-native-skills use the same real worker and retain normal extension discovery', () => {
@@ -24,6 +24,18 @@ test('source attribution retains complete overlapping operations and excludes an
   assert.deepEqual([...new Set(actual.map(row => row.requestId))], ['background-list', 'read']);
   assert.equal(actual.filter(row => row.requestId === 'background-list').length, 4);
   assert.ok(!actual.some(row => row.method === 'PATCH'));
+});
+
+test('declared compact budget changes only the owned project and is consistent for the whole session', () => {
+  const settings = { packages: ['normal-package'], compaction: { enabled: true } }, before = structuredClone(settings);
+  const ordinary = { turns: [{ id: 'continue' }] };
+  assert.deepEqual(agentWorkflowProjectSettings(settings, ordinary), settings);
+  const compact = { turns: [{ before: [{ kind: 'compact', keepRecentTokens: 128 }] }] };
+  assert.deepEqual(agentWorkflowProjectSettings(settings, compact), { ...settings, compaction: { enabled: true, keepRecentTokens: 128 } });
+  assert.deepEqual(settings, before);
+  assert.throws(() => agentWorkflowProjectSettings(settings, { turns: [{ before: [
+    { kind: 'compact', keepRecentTokens: 128 }, { kind: 'compact', keepRecentTokens: 256 },
+  ] }] }), /one declared compaction/u);
 });
 
 test('negative notion_use means zero actual attempts, including a failed or guard-rejected call', () => {
