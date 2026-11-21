@@ -165,4 +165,4 @@ checkAgentContractCoverage 只读取配对 CLI 的当前索引，检查每个 C 
 
 报告另保留整个请求里的全文出现次数，供成本和暴露分析。`occurrences: 0` 始终检查该轮全部请求中的原始全文，无论是否有回执。只有约束本身针对原始文字计数时才使用 `receiptRequired: false`。selection 和 resource 仍各自需要精确回执及实际任务状态。
 
-管理写入轮使用 `candidate-cli` 要求实际执行冻结的配对 CLI。运行器只被动记录真实 Node 子进程入口，不改 PATH 或模型指令；检查入口实路径、SHA、字节数及进程归属。这个证明不代表任意 shell 的写入或网络效果都已覆盖，未知效果仍保留 blocked。已执行了别的 CLI，即使最后对象正确，也不能算当前候选通过。
+管理写入轮使用 `candidate-cli` 要求实际执行冻结的配对 CLI。CLI 进程观察器只被动记录真实 Node 子进程入口，不改 PATH 或模型指令；检查入口实路径、SHA、字节数及进程归属。这个证明不代表任意 shell 的写入或网络效果都已覆盖，未知效果仍保留 blocked。已执行了别的 CLI，即使最后对象正确，也不能算当前候选通过。
