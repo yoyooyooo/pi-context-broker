@@ -22,18 +22,14 @@ const printSession = () => [
 const jsonl = rows => rows.map(row => JSON.stringify(row)).join('\n') + '\n';
 const expectedPrintModel = { provider: 'magpie', model: 'group/worker' };
 
-test('the small read task can use flash-free without accepting a silent model fallback', () => {
-  const model = candidate.candidatePrintModel({ model: 'magpie/group/flash-free', thinkingLevel: 'off' });
-  assert.deepEqual(model, { provider: 'magpie', model: 'group/flash-free' });
-  assert.throws(() => inspectCandidatePrintSession(jsonl(printSession()), model));
-  const rows = printSession().map(row => ({ ...row,
-    ...(row.type === 'model_change' ? { modelId: model.model } : {}),
-    ...(row.message?.role === 'assistant' ? { message: { ...row.message, model: model.model } } : {}) }));
-  assert.deepEqual(inspectCandidatePrintSession(jsonl(rows), model).errors, []);
+test('formal print tasks bind worker and reject model substitution before launch', () => {
+  const model = candidate.candidatePrintModel({ model: 'magpie/group/worker', thinkingLevel: 'high' });
+  assert.deepEqual(model, { provider: 'magpie', model: 'group/worker' });
+  assert.deepEqual(inspectCandidatePrintSession(jsonl(printSession()), model).errors, []);
   for (const config of [
-    { model: 'magpie/group/flash', thinkingLevel: 'off' },
-    { model: 'magpie/group/flash-free', thinkingLevel: 'high' },
-    { model: 'magpie/group/flash-free', thinkingLevel: 'off', maxCompletionTokens: 32768 },
+    { model: 'magpie/group/flash', thinkingLevel: 'high' },
+    { model: 'magpie/group/flash-free', thinkingLevel: 'off' },
+    { model: 'magpie/group/worker', thinkingLevel: 'off' },
   ]) assert.throws(() => candidate.candidatePrintModel(config));
 });
 
@@ -873,8 +869,8 @@ test('normal-management state reuses only the existing process roots and never t
     existingState: { mode: 'normal-management', roots, managementReads: selected.map(({ path, sha256 }) => ({ path, sha256 })) } };
   const options = { stateRoot, environment, home: '/normal/home' };
   const before = await Promise.all(selected.map(value => readFile(value.path)));
-  const normal = await candidate.prepareCandidatePrintState({ ...config, arm: 'normal' }, options);
-  const isolated = await candidate.prepareCandidatePrintState({ ...config, arm: 'notion-only' }, options);
+  const normal = await candidate.prepareCandidatePrintState({ ...config, arm: 'daily' }, options);
+  const isolated = await candidate.prepareCandidatePrintState({ ...config, arm: 'no-native-skills' }, options);
   assert.deepEqual(normal, isolated); assert.deepEqual(normal.sourceState.roots, roots);
   assert.equal(normal.sourceState.ownership, 'existing-user'); assert.equal(normal.sourceState.mode, 'normal-management');
   assert.equal(normal.stateRoot, stateRoot); assert.deepEqual(normal.ownedPaths, [stateRoot]);

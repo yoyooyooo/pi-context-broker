@@ -108,6 +108,7 @@ export function inspectCandidatePrintSession(text, { provider, model, expectedUs
 }
 
 export function candidatePlan(config) {
+  if (config.scope === 'notion-agent-workflow') return import('./notion-agent-workflow-runtime.mjs').then(({ planAgentWorkflow }) => planAgentWorkflow(config));
   assert.equal(config.version, 1);
   assert.equal(config.scope, 'project-scoped-candidate-precheck');
   assert.ok(Array.isArray(config.turns) && config.turns.length > 0);
@@ -716,7 +717,7 @@ export function candidatePayloadBodies(value, expectedBodies) {
   });
 }
 
-export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspectPayload, payloadDirectory, hostOutput, projectRoot, inspectProject }) {
+export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspectPayload, payloadDirectory, branchDirectory, hostOutput, projectRoot, inspectProject }) {
   const sha = value => crypto.createHash('sha256').update(value).digest('hex');
   const oracleStarted = process.hrtime.bigint();
   const expectedBodies = bodyFiles.map(file => {
@@ -760,19 +761,27 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
   });
   on('input', () => { turn++; record('input'); });
   on('context_with_system', event => { for (const message of event.messages ?? []) receipt(message); });
-  on('before_provider_request', event => {
+  on('before_provider_request', (event, ctx) => {
     const payload = JSON.stringify(event.payload), toolNames = (event.payload?.tools ?? []).map(tool => tool.function?.name ?? tool.name).filter(name => typeof name === 'string');
     const payloadFile = payloadDirectory ? payloadDirectory + '/payload-' + (++payloadNumber) + '.json' : undefined;
     if (payloadFile) fs.writeFileSync(payloadFile, payload, { flag: 'wx', mode: 0o600 });
+    let branch;
+    if (branchDirectory) {
+      const value = { sessionId: ctx.sessionManager.getSessionId(), leafId: ctx.sessionManager.getLeafId(), entries: ctx.sessionManager.getBranch() };
+      const bytes = JSON.stringify(value), path = branchDirectory + '/branch-' + payloadNumber + '.json';
+      fs.writeFileSync(path, bytes, { flag: 'wx', mode: 0o600 });
+      branch = { path, bytes: Buffer.byteLength(bytes), sha256: sha(bytes), sessionId: value.sessionId, leafId: value.leafId };
+    }
     record('provider_payload', { sha256: sha(payload), bytes: Buffer.byteLength(payload), bodies: inspectPayload(event.payload, expectedBodies), toolNames,
       ...(payloadFile ? { payloadFile } : {}),
+      ...(branch ? { branch } : {}),
       notionCatalogPresent: payload.includes('<ntn-skills-view-catalog>'), notionGuidancePresent: payload.includes('<ntn-skills-guidance>') });
   });
   on('tool_call', (event, ctx) => {
     const input = event.input ?? {};
     const inspection = event.toolName === 'bash' && projectRoot && inspectProject?.(input, ctx?.cwd, projectRoot)
       ? { root: projectRoot, cwd: ctx.cwd, input } : undefined;
-    const selectors = Object.fromEntries(['path', 'paths', 'ref', 'refs', 'query', 'id', 'ids'].filter(key => Object.hasOwn(input, key)).map(key => [key, input[key]]));
+    const selectors = Object.fromEntries(['path', 'paths', 'ref', 'refs', 'query', 'id', 'ids', 'refresh'].filter(key => Object.hasOwn(input, key)).map(key => [key, input[key]]));
     record('tool_call', { toolName: event.toolName, toolCallId: event.toolCallId, inputSha256: sha(JSON.stringify(input)), selectors,
       executionTool: ['bash', 'powershell', 'codemode', 'execute', 'eval'].includes(event.toolName),
       reviewedReadTool: Boolean(inspection) || ['read', 'grep', 'find', 'ls', 'notion_list', 'notion_use'].includes(event.toolName),
@@ -784,7 +793,7 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     if (message?.role !== 'assistant' || !['stop', 'length', 'error', 'aborted'].includes(message.stopReason)) return;
     const value = text(message.content);
     record('assistant_final', { text: value, sha256: sha(value), bytes: Buffer.byteLength(value), stopReason: message.stopReason,
-      success: ['stop', 'length'].includes(message.stopReason) && value.trim().length > 0 });
+      success: message.stopReason === 'stop' && value.trim().length > 0 });
   });
   on('session_shutdown', () => { record('task_observer_end', { errors, complete: errors === 0, observerWorkMs: Number(observerWorkNs) / 1e6 }); closed = true; fs.closeSync(fd); });
 }
@@ -943,6 +952,8 @@ export function inspectCandidateMaintenancePayload(config, { payload, nativeAudi
 }
 
 export function validateCandidateTurn(turn, { costs, transport, tasks }, { approvedCliCalls = [], approvedDiscoveryCalls = [], maintenanceBodies } = {}) {
+  if (turn.requireUse === false) assert.equal(tasks.filter(event => event.phase === 'tool_call' && event.toolName === 'notion_use').length, 0,
+    'An unnecessary notion_use attempt occurred, including rejected or failed attempts');
   if (turn.toolCallCount !== undefined) {
     assert.ok(Number.isSafeInteger(turn.toolCallCount) && turn.toolCallCount >= 0);
     assert.equal(tasks.filter(event => event.phase === 'tool_call').length, turn.toolCallCount, 'Tool calls differ from this frozen turn intent');
@@ -1081,10 +1092,11 @@ export function validateCandidateArtifactReceipt(artifact, actual) {
 }
 
 export async function runCandidate(config, { packageClosure, fileIdentity }) {
+  if (config.scope === 'notion-agent-workflow') return (await import('./notion-agent-workflow-runtime.mjs')).runAgentWorkflow(config);
   const plan = candidatePlan(config);
   for (const key of ['brokerRoot', 'brokerArchive', 'brokerArchiveSha256', 'embeddedCliSha256', 'embeddedSdkSha256', 'cliRoot', 'cliArchive', 'cliArchiveSha256', 'cliEntrySha256', 'oldBrokerRoot', 'evidenceRoot'])
     assert.equal(typeof config[key], 'string', 'Missing final candidate artifact: ' + key);
-  assert.equal(config.model, 'magpie/group/flash'); assert.equal(config.thinkingLevel, 'high');
+  assert.equal(config.model, 'magpie/group/worker'); assert.equal(config.thinkingLevel, 'high');
   assert.ok(process.env.NOTION_API_TOKEN?.trim(), 'Owned source state requires the already inherited Notion credential');
   assert.ok(config.localSkill && isAbsolute(config.localSkill.path) && digest(config.localSkill.sha256) && identifier(config.localSkill.name));
   for (const body of config.expectedBodies ?? []) {
@@ -1182,7 +1194,7 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
     const initial = await rpc.command('get_state');
     result.launch.readyNs = process.hrtime.bigint().toString(); result.launch.spawnReturnNs = rpc.lifecycle[0].monotonicNs;
     result.launch.readyAfterSpawnMs = Number(BigInt(result.launch.readyNs) - BigInt(result.launch.spawnReturnNs)) / 1e6;
-    assert.equal(initial.model?.provider, 'magpie'); assert.equal(initial.model?.id, 'group/flash'); assert.equal(initial.thinkingLevel, 'high');
+    assert.equal(initial.model?.provider, 'magpie'); assert.equal(initial.model?.id, 'group/worker'); assert.equal(initial.thinkingLevel, 'high');
     result.session = { sessionId: initial.sessionId, sessionFile: initial.sessionFile };
     assert.ok(inside(sessions, resolve(initial.sessionFile)));
     const commands = (await rpc.command('get_commands')).commands;
@@ -1391,9 +1403,9 @@ export function validateCandidateCompletionHistory(nativeAudit) {
 }
 
 export function candidatePrintModel(config) {
-  assert.ok(['magpie/group/worker', 'magpie/group/flash-free'].includes(config.model), 'Use an explicitly reviewed model');
+  assert.equal(config.model, 'magpie/group/worker', 'Natural verification requires the real worker model');
   const model = config.model.slice('magpie/'.length);
-  assert.equal(config.thinkingLevel, model === 'group/worker' ? 'high' : 'off');
+  assert.equal(config.thinkingLevel, 'high');
   if (config.publicCli || config.project || config.resumeFrom || config.maxCompletionTokens !== undefined)
     assert.equal(model, 'group/worker', 'Existing authoring, continuation, and budget experiments retain their reviewed worker model');
   return { provider: 'magpie', model };
@@ -1402,14 +1414,14 @@ export function candidatePrintModel(config) {
 export async function runCandidatePrint(config) {
   assert.equal(config.version, 1); assert.equal(config.scope, 'project-scoped-candidate-print');
   const selectedModel = candidatePrintModel(config);
-  assert.ok(['normal', 'notion-only'].includes(config.arm) && identifier(config.id));
+  assert.ok(['daily', 'no-native-skills'].includes(config.arm) && identifier(config.id));
   assert.ok(typeof config.prompt === 'string' && config.prompt.trim());
   assert.ok(config.project === undefined || config.project === 'owned-ticket-service');
   const completionBudgetSource = candidateCompletionBudgetSource(config.maxCompletionTokens);
   assert.equal(config.isolateResumeCwd, undefined, 'isolateResumeCwd cannot override native resume cwd; use explicit --fork via forkIntroductionResume');
   assert.ok(config.forkIntroductionResume === undefined || config.forkIntroductionResume === true);
   if (config.forkIntroductionResume) {
-    assert.ok(config.resumeFrom); assert.equal(config.arm, 'normal', 'The reviewed introduction fork retains normal native discovery');
+    assert.ok(config.resumeFrom); assert.equal(config.arm, 'daily', 'The reviewed introduction fork retains normal native discovery');
     assert.equal(config.project, undefined, 'Only the reviewed pure introduction may fork');
     assert.ok(!config.prompt.trimStart().startsWith('/'), 'The introduction fork requires its fixed non-slash prompt');
   }
@@ -1551,7 +1563,7 @@ export async function runCandidatePrint(config) {
     NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000', NODE_OPTIONS: [process.env.NODE_OPTIONS, '--import=' + JSON.stringify(sourcePreload), '--import=' + JSON.stringify(sdkPreload)].filter(Boolean).join(' ') };
   if (cliPolicy) Object.assign(env, cliPolicy.stateRoots);
   delete env.NTN_SKILLS_DEV_ROOT;
-  const args = ['-p', ...(config.arm === 'notion-only' ? ['-ns'] : []), '--approve', '--session-dir', sessions, '--model', config.model, '--thinking', config.thinkingLevel,
+  const args = ['-p', ...(config.arm === 'no-native-skills' ? ['-ns'] : []), '--approve', '--session-dir', sessions, '--model', config.model, '--thinking', config.thinkingLevel,
     ...(introductionFork ? ['-e', inputGuard] : []), ...(completionBudgetSource ? ['-e', completionBudgetExtension] : []),
     '-e', costExtension, '-e', transportExtension, '-e', taskExtension];
   if (cliPolicy) args.push('-e', cliGuard);
@@ -1578,7 +1590,7 @@ export async function runCandidatePrint(config) {
     launch: { cwd, executable: host.file, args: [...host.prefix, ...args], normalHome: true, normalAgentDir: true, normalMcpAndExtensions: true,
       projectPackageOverrideOnly: !packageRegistration.reusesRegisteredBroker,
       ...(packageRegistration.reusesRegisteredBroker ? { registeredBroker: packageRegistration } : {}),
-      nativeSkillDiscovery: config.arm !== 'notion-only', sourceStateStartsEmpty: !stateBinding.sourceState && !previous && (!cliPolicy || cliPolicy.mode !== 'original-create-recovery'),
+      nativeSkillDiscovery: config.arm !== 'no-native-skills', sourceStateStartsEmpty: !stateBinding.sourceState && !previous && (!cliPolicy || cliPolicy.mode !== 'original-create-recovery'),
       cliDevRootOverride: null, inheritedCliDevRootOverrideRemoved: Boolean(process.env.NTN_SKILLS_DEV_ROOT),
       ...(completionBudgetSource ? { completionBudget: { maxCompletionTokens: config.maxCompletionTokens, policy: await identity(completionBudgetExtension) } } : {}),
       previous: config.resumeFrom ?? null,
@@ -1618,7 +1630,7 @@ export async function runCandidatePrint(config) {
     assert.equal(brokers.length, 1);
     assert.ok(inside(await realpath(config.brokerRoot), await realpath(brokers[0].sourceInfo.path)));
     result.autoload = brokers[0]; result.nativeSkillCommands = actualHost.commands.filter(command => command.source === 'skill');
-    if (config.arm === 'notion-only') assert.equal(result.nativeSkillCommands.length, 0, '-ns still discovered a native Skill');
+    if (config.arm === 'no-native-skills') assert.equal(result.nativeSkillCommands.length, 0, '-ns still discovered a native Skill');
     else assert.ok(result.nativeSkillCommands.length > 0, 'Normal positive control lost its native Skills');
     assert.ok(inside(sessions, resolve(actualHost.sessionFile)));
     const sessionBytes = await readFile(actualHost.sessionFile);

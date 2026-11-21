@@ -40,15 +40,15 @@ test('fork inspection rejects wrong parent/cwd/id, reordered or changed history 
 });
 
 test('the disproven isolated linear resume option is rejected before filesystem/auth/launch work', async () => {
-  await assert.rejects(candidate.runCandidatePrint({ version: 1, scope: 'project-scoped-candidate-print', id: 'old-resume', arm: 'normal',
+  await assert.rejects(candidate.runCandidatePrint({ version: 1, scope: 'project-scoped-candidate-print', id: 'old-resume', arm: 'daily',
     model: 'magpie/group/worker', thinkingLevel: 'high', prompt: '沿用刚才内容。', isolateResumeCwd: true, resumeFrom: {} }), /isolateResumeCwd.*--fork/u);
 });
 
 test('introduction fork rejects slash commands and non-normal/project paths before filesystem/auth/launch work', async () => {
-  const config = { version: 1, scope: 'project-scoped-candidate-print', id: 'fork', arm: 'normal', model: 'magpie/group/worker', thinkingLevel: 'high',
+  const config = { version: 1, scope: 'project-scoped-candidate-print', id: 'fork', arm: 'daily', model: 'magpie/group/worker', thinkingLevel: 'high',
     prompt: '沿用刚才内容。', forkIntroductionResume: true, resumeFrom: {} };
   await assert.rejects(candidate.runCandidatePrint({ ...config, prompt: '/some-command' }), /non-slash/u);
-  await assert.rejects(candidate.runCandidatePrint({ ...config, arm: 'notion-only' }), /normal/u);
+  await assert.rejects(candidate.runCandidatePrint({ ...config, arm: 'no-native-skills' }), /normal/u);
   await assert.rejects(candidate.runCandidatePrint({ ...config, project: 'owned-ticket-service' }), /introduction/u);
 });
 
