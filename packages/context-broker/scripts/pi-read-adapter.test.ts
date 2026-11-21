@@ -134,10 +134,13 @@ test("Pi scalar read advertises issued Skill refs without changing the native de
   expect(schema.properties.path.description).toContain("skill://");
   expect(schema.properties.path.description).toContain("sr:");
   expect(schema.properties.path.description).toContain("verbatim");
-  expect(f.current().description).toStartWith("For Notion introductions, summaries or inspection,");
+  expect(f.current().description).toStartWith("For Notion introductions, summaries, comparisons or inspection,");
   expect(f.current().description).toContain("without loading Requires or activating its workflow");
   expect(f.current().description).toContain("Notion reads do not write to the remote library");
   expect(f.current().description).toContain("use refresh:true with the supplied main Skill ref");
+  expect(f.current().description).toContain("applying a chosen Skill, call notion_use directly");
+  expect(f.current().description).toContain("For a requested latest-version inspection");
+  expect(f.current().description).not.toContain("When the user requests latest content");
   expect(f.current().description).not.toContain("readOnly");
   expect(f.current().description).not.toContain("retain history");
   expect(JSON.stringify(f.native.parameters)).toBe(before);
