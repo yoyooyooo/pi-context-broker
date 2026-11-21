@@ -427,6 +427,7 @@ async function logicalReferenceFixture(options: { use?: boolean; shortRefs?: boo
     resolveNamedReference: async (value: string, _ctx: ExtensionContext, signal?: AbortSignal, refresh?: boolean) => {
       state.calls.push(value); state.refreshes.push(refresh); return state.resolve(value, signal);
     },
+    resolveCurrentRoot: async () => ({ record: { ...owner, body: undefined }, ref: owner.ref! }),
     loadRecord: async (_record, _signal, pin) => { state.loads.push(pin); return owner; },
     ...(options.use ? { prepareGraph: async (records: readonly SkillRecord[]) => {
       state.graphRoots.push(records.map(record => record.ref));
@@ -456,10 +457,10 @@ test("SC25 use resolves names into exact canonical roots and applies refresh to 
     await expect(f.use({ ref: names[0], refresh: true })).rejects.toMatchObject({ code: "CONTROLLED_PREPARATION" });
     expect(f.state.refreshes.at(-1)).toBe(true);
     const calls = f.state.calls.length;
-    await expect(f.use({ ref: "skill://URI%20Example/SKILL.md?snapshot=" + a, refresh: true })).rejects.toMatchObject({ code: "PREPARE_VERSION_CONFLICT" });
-    expect(f.state.calls).toHaveLength(calls); expect(f.state.graphRoots).toHaveLength(2);
+    await expect(f.use({ ref: "skill://URI%20Example/SKILL.md?snapshot=" + a, refresh: true })).rejects.toMatchObject({ code: "CONTROLLED_PREPARATION" });
+    expect(f.state.calls).toHaveLength(calls + 1); expect(f.state.graphRoots).toHaveLength(3);
     await expect(f.use({ ref: f.owner.ref })).rejects.toMatchObject({ code: "CONTROLLED_PREPARATION" });
-    expect(f.state.calls).toHaveLength(calls);
+    expect(f.state.calls).toHaveLength(calls + 1);
   } finally { await f.emit("session_shutdown"); }
 });
 
@@ -590,7 +591,7 @@ test("known permission revocation withholds only verified scalar source bytes, n
   const own=resourceResult("revoked"),foreign=resourceResult("foreign",{scope:"another"});
   const user:AgentMessage={role:"user",content:"Exact supporting resource.\n"};
   const messages=[own,foreign,user],before=JSON.stringify(messages);
-  const projected=projectSelectedSourceMessages(messages,{scopes:new Map()},(scope,id)=>scope==='scope'&&id==='shared_skill:lib:skill');
+  const projected=projectSelectedSourceMessages(messages,{scopes:new Map()},(scope,id)=>scope==='scope'&&id==='shared_skill:lib:skill' ? "unavailable" : undefined);
   expect(sourceMessageText(projected[0]?.content)).toContain('Source access is no longer available');
   expect(projected[0]?.details).toMatchObject({contextBrokerResource:{delivered_complete_text:false,loaded:false}});
   expect(projected[1]).toBe(foreign);expect(projected[2]).toBe(user);expect(JSON.stringify(messages)).toBe(before);
@@ -626,7 +627,7 @@ test("CTX02 scalar retirement preserves this operation's effects outside the ver
       const selection = { scopes: new Map([["scope", { scope: "scope", bindings: new Map([[metadata.id, binding]]),
         retired: new Map(), graphs: [], selectionId: "new" }]]) };
       for (const projected of [projectSelectedSourceMessages([message], selection),
-        projectSelectedSourceMessages([message], { scopes: new Map() }, (scope, id) => scope === "scope" && id === metadata.id)]) {
+        projectSelectedSourceMessages([message], { scopes: new Map() }, (scope, id) => scope === "scope" && id === metadata.id ? "unavailable" : undefined)]) {
         const text = sourceMessageText(projected[0]?.content);
         expect(text).not.toContain(body);
         expect(text.endsWith(footer)).toBe(true);
@@ -647,6 +648,6 @@ test("CTX02 retirement cannot preserve an altered or unbound generated effects f
   for (const suffix of ["\n\n<notion-effects>" + JSON.stringify(noConsumptionWrites()) + "</notion-effects>",
     "\nUntrusted suffix with old source bytes: " + body, "\n\n<notion-effects>unknown</notion-effects>"]) {
     const message: AgentMessage = { ...original, content: body + suffix, details };
-    expect(() => projectSelectedSourceMessages([message], { scopes: new Map() }, () => true)).toThrow("Resource result footer is inconsistent");
+    expect(() => projectSelectedSourceMessages([message], { scopes: new Map() }, () => "unavailable")).toThrow("Resource result footer is inconsistent");
   }
 });

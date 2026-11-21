@@ -1,30 +1,34 @@
-# Current-context candidate
+# Current-context acceptance
 
-This candidate keeps complete same-version Notion instructions, generated
-directories and requested resources once in the effective outgoing request.
-Explicit repeated operations still run and retain their own effects. Original
-session entries, author text, images and tool call identities are not rewritten
-to manufacture a smaller history.
+The consumer keeps complete same-version instructions, generated directories and
+requested resources once in each outgoing request. Explicit repeated operations
+still run and retain their own results. Current-version inspection can coexist
+with an older active selection; it is content for comparison and does not
+activate a new instruction graph.
 
-## Scope
+## Evidence levels
 
-The installed gates use Pi 1.5.0, Node 24.20.0 and the pinned CLI/SDK input in
-`.github/workflows/ci.yml`. Pi 1.4 compatibility remains a separate gate. A wire
-receipt covers normal OpenAI-completions JSON tool schemas over Node Undici;
-strict/grammar conversion, other APIs and other transports are not silently
-classified as equivalent proof. Logical acceptance, completed turns and native
-projection persistence remain separate facts.
+The installed package, actual Pi, controlled service, natural model and ordinary
+daily entry each require their own evidence. The current Pi driver uses an
+installed SDK v2, current Notion service facts and the installed Pi
+OpenAI-completions serializer over loopback HTTP. It records exact versions and
+hashes rather than inferring them from a checkout or a prior successful run.
 
-`/context-broker request` displays at most 32 recent in-memory request summaries.
-It retains hashes, counts, fixed pins, source reuse state and operation effects,
-not private source bodies, locators, credentials or whole request payloads. It is
-not a model tool. A known entity mismatch prevents new delivery confirmation,
-even when the request has already been sent.
+A wire receipt covers the actual Node Undici entity, tool schema and required
+message roles. Logical acceptance, completed turns and persisted native
+projection remain separate facts. Other APIs and transports need their own
+proof. The driver does not certify live Notion, natural model choices or the
+user's ordinary `pi -ns` launch.
 
-## Reproduce without production credentials
+`/context-broker request` retains up to 32 in-memory summaries containing hashes,
+counts, fixed pins, reuse state and operation effects. It does not retain source
+bodies, locators, credentials or full payloads. A known entity mismatch prevents
+new delivery confirmation even if the request has already been sent.
 
-Use the CLI checkout at the exact revision declared by CI. From that checkout,
-build the CLI/SDK and create the existing offline catalog fixture:
+## Build and install the paired candidate
+
+Use the exact CLI revision declared for this candidate. Build with a supported
+Node and the repository's Bun version, then generate current service facts:
 
 ```sh
 bun install --frozen-lockfile
@@ -32,9 +36,8 @@ bun run build
 node scripts/sdk-fixture.ts --outdir "$FIXTURE_ROOT" --catalog
 ```
 
-From this repository, build and pack with that explicit input, then install the
-archive in a fresh owned npm consumer. Do not substitute a source checkout for
-the installed package:
+From the Broker checkout, build with that explicit raw CLI input, pack and
+install the archive in a fresh owned npm consumer:
 
 ```sh
 export NTN_SKILLS_BUILD_ENTRY="$CLI_ROOT/packages/cli/dist/ntn-skills.js"
@@ -43,38 +46,46 @@ bun run build:broker
 bun scripts/pack.mjs --target broker --out-dir "$ARCHIVE_ROOT"
 ```
 
-Set `BROKER` to the resulting consumer's installed `pi-context-broker` directory,
-`FIXTURE` to the generated `fixture.json`, and `OUT` to a new owned evidence root.
+Set `BROKER` to the installed package directory, `FIXTURE` to its current
+`fixture.json`, `PI` to one supported installed Pi entry and `OUT` to a new
+absolute evidence directory. The HTTP helper must come from the same CLI
+checkout that produced the bundled SDK:
 
 ```sh
-node scripts/notion-sdk-pi.mjs doctor --package "$BROKER" --fixture "$FIXTURE"
-node scripts/notion-sdk-pi.mjs run --package "$BROKER" --fixture "$FIXTURE" --scenario all --out "$OUT/all14"
-node scripts/notion-sdk-pi.mjs run --package "$BROKER" --fixture "$FIXTURE" --scenario context-once --provider-backend in-process --out "$OUT/fast"
-node scripts/notion-sdk-pi.mjs run --package "$BROKER" --fixture "$FIXTURE" --scenario context-once --provider-backend http --out "$OUT/http"
-node scripts/notion-sdk-pi.mjs run --package "$BROKER" --fixture "$FIXTURE" --scenario context-wire-negative --provider-backend http --out "$OUT/negative"
-node scripts/notion-sdk-pi.mjs run --package "$BROKER" --fixture "$FIXTURE" --scenario session-compaction --out "$OUT/compaction"
+node scripts/notion-sdk-pi.mjs doctor --package "$BROKER" --fixture "$FIXTURE" --source-http-helper "$CLI_ROOT/scripts/sdk-source-fixture.mjs" --pi "$PI"
+node scripts/notion-sdk-pi.mjs run --package "$BROKER" --fixture "$FIXTURE" --source-http-helper "$CLI_ROOT/scripts/sdk-source-fixture.mjs" --pi "$PI" --scenario all --out "$OUT"
+node scripts/notion-sdk-pi.mjs evidence --evidence "$OUT"
 ```
 
-The two context-once backends share the public list/use/read/repeat/cancel
-scenario. Only the HTTP backend proves actual normal serializer traffic. The
-negative gate injects duplicate, missing, schema-rewritten and restored-user-role
-failures. These must fail delivery while the gate itself passes by observing the
-specified rejection. A successful mock answer or process exit alone is not
-acceptance.
+The only current scenarios are:
 
-Use the existing `evidence`, `cleanup`, then `evidence` actions for each retained
-run. Cleanup requires a fully ended owned process and moves only its scratch to
-the verified system Trash. It never deletes evidence. The actual service and
-real-model paths require separate authorization and frozen source identities;
-the offline commands do not establish either.
+| Scenario | Main obligations |
+| --- | --- |
+| `default-view` | Default Context membership and Enabled eligibility changes remain metadata operations; no source body is fetched before use. |
+| `http-cache-recovery` | Ordinary continuation keeps the selected root/Requires after source edits and expired metadata TTL; read-refresh compares without adoption; use-refresh adopts a complete current closure; cache clear and missing fixed bytes after compaction do not prevent later prompts. |
+| `http-interruption` | Abort an actual held Notion body request, continue the same Pi session and explicitly retry without accepting cancelled delivery. |
+| `working-set` | Two roots share one Required node; release retains the surviving closure; compaction restores it; an over-budget addition fails without eviction. |
 
-## Maintenance and limits
+The service fixture adds mutable source facts, never preseeded consumer
+snapshots, bindings or cache. Public refs come from the actual visible catalog
+and tool results. The provider controls decisions; original source text, RPC
+frames, SDK operation terminal events and HTTP request entities remain
+independent observations.
 
-The [context-once verification map](../.agents/skills/verify-context-broker/features/context-once.md)
-owns exact invariants and CI routing. The [source review](context-once-source-review.md)
-separates finite models from byte/role/entity checks. The original failed
-independent review and its successful F1 repair review remain distinct evidence.
+`all` means these four scenarios. Removed SDK v1 fixtures, old scenarios and
+provider-backend flags are rejected. Evidence and failed runs are retained;
+there is no cleanup action in this driver. Negative entity/role/schema cases
+remain in the explicit source and Node transport tests, not an implied removed
+Pi scenario.
 
-This is a reviewable candidate, not an automatic npm release or global daily
-installation change. Different Skills can still accumulate in a long session;
-aggregate active-workset budgets and explicit release are tracked separately.
+## Maintenance
+
+The [context verification map](../.agents/skills/verify-context-broker/features/context-once.md)
+owns the invariants and routes. The [source review](context-once-source-review.md)
+separates finite state models from byte, role and entity checks. The
+[next worktree delivery contract](next-worktree-delivery.md) owns the paired
+commits, build provenance and ordinary-process readback on Pro and Mini.
+
+Report each result at its actual layer. A current controlled Pi pass is useful
+evidence; it does not close natural-agent routing, real service timelines or
+daily entry synchronization.

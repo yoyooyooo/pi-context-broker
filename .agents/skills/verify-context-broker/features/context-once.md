@@ -1,69 +1,98 @@
 # CTX 当前有效上下文中的唯一内容
 
-归属 AH-1014。此地图维护本批合同，不替代 [injection](injection.md) 和 integration 的真实宿主、安装及服务证据。
+当前归属 AH-1188 的验收整顿；AH-1014 保留为历史依据。本地图维护内容、
+身份与最终请求合同，真实安装、服务、自然模型和普通日用入口沿各自验证层报告。
 
-## Sub-features
+## 合同
 
 | 对象 | 身份 | 本请求合同 |
 | --- | --- | --- |
-| 默认目录和候选卡片 | 来源、作用域、对象、元数据版本 | 当前完整目录一份；描述可复用同请求内的可信完整对象 |
+| 默认目录和候选卡片 | 来源、作用域、对象、元数据版本 | 当前完整目录一份；Default Context 不自动消费正文 |
 | Skill 与 Requires | scope、owner、snapshot、正文 hash | 每份必要全文一份；未选 Members 正文为零 |
 | 资源 | scope、owner、snapshot、File ID 或精确路径、hash | 按需完整读取；同一来源版本只保留一份 |
-| 生成目录与关系 | owner、snapshot、完整目录内容 | 对象描述一份，关系保留引用，不重复整张卡片 |
-| 操作结果 | toolCallId、原 operation | 每次结果独立保留，unknown 不变 none |
-| 指引 | 本次实际可用工具集合 | 一份当前指引；不预载运维说明 |
+| 明确检查最新版 | 完整主文证明及其精确目录 | 可以与旧 pin 共存；不成为 active 指令，也不绕过真实权限 |
+| 生成目录与关系 | owner、snapshot、完整目录内容 | 对象描述一份，关系保留引用 |
+| 操作结果 | toolCallId、原 operation | 各次结果独立保留；未知消费 effects 不改成 none |
+| 指引 | 本次实际可用工具集合 | 一份当前指引；本地 Skill 走原生入口，不诱导额外 notion_use |
 
-重复 ref 字符串和真实工具调用不算重复正文。用户明确要求再 read 或 use 时仍执行。作者正文、用户原话、每次 Prompt 任务内容和原始 Session 不做文本相似性去重。
+重复 ref 字符串和真实工具调用不算重复正文。用户明确要求再 read 或 use 时
+仍执行。作者正文、用户原话、每次 Prompt 任务内容和原始 Session 不做文本
+相似性去重。同一请求去重与连续请求携带必要历史分开计量。
 
-同一请求内的重复与连续请求携带必要历史分开计量。未发生上下文变化时不追加相同全文。压缩后全文仍在则复用；全文消失或只剩摘要、loaded 标记时按需恢复原固定版本。fork、切分支、明确刷新和权限变化均以当前有效上下文为准。
+Notion 内容变动、metadata TTL 到期和 Default Context 变动不替换旧会话选择。
+`read refresh:true` 只检查当前内容；`notion_use refresh:true` 在完整成功后
+替换指定 roots。共享 Requires 冲突必须给出相关 roots，失败保留旧图。
+Enabled=false 不抹掉已有完整固定正文；真实认证或权限拒绝仍移除对应投影。
 
-## How to get to it (user POV)
+压缩后全文仍在则复用；只剩摘要或 loaded 标记时尝试恢复原固定版本。恢复
+缺失按完整 Required 闭包降级，保留独立 roots。总恢复预算限制一次请求的等待，
+warning 不成为永久 abort；fork、切分支、取消和晚到结果遵守当前 generation。
 
-在新 `-ns` 会话发现一个 Skill，使用后读取其参考文件。普通续问复用已有内容。再次明确 read/use 仍执行，但只增加必要回执。随后从管理端修改自有对象，核对普通续问的旧 pin 与明确刷新后的新选择。
+## 验证入口
 
-## Driving it with the existing harness
-
-先执行独立验收器的正负控制：
-
-```sh
-node --test scripts/context-once-evidence.test.mjs
-```
-
-`scripts/context-once-evidence.mjs` 只从实际 message content 的明确位置读取值。调用者将位置和身份绑定到独立冻结的来源原件；不能调用产品投影器来生成预期答案。原始 session details 不能冒充模型正文。输出中的未测 wire、source 与模型成本保持 unknown。
-
-源码回归继续使用 native-read-session、resource-read-projection、skill-context-session、host-prepare。真实 Pi 沿 `scripts/notion-sdk-pi.mjs` 现有入口运行。Mock Provider 仅替换模型决策，工具、Broker、SDK、Pi 会话与 serializer 保持真实。受控引用必须来自实际可见目录或工具结果，不能从私有 oracle 注入。
-
-测量固定内容、View、权限、工具集合、cache age、模型路由与预算。分别记录 source 请求、源正文 bytes、生成结构 bytes、实际 HTTP bytes 和真实模型 usage。1、2、10 次重复访问应为一份完整内容与目录，加各次必要回执，不要求新操作后总字节完全不变。
-
-## Gotchas
-
-新增断言必须先在原缺陷上失败。历史通过数量不代表当前候选。变更需保留目录重复、scalar资源effects与完整投递的相关反例。
-
-source/owner/pin/文件身份不同不能因同名字或同字节而合并。省略依据必须仍在同一最终请求中；不能引用另一个省略标记或已被压缩的内容。字节与结构断言不证明模型自然选路质量。
-
-纯表示变化更新实现回归与本地图。状态语义变化同时审阅现有observations/consumer-state、正负配置和源码映射；不能只更新 hash。每个切片通过 Pro `ntn` 同步受影响的 Notion 长期页并完整读回，保留所有失败和未执行范围。
-
-CTX06 的 DeliveryBoundary 不新增 TLA 状态。进程内 mock payload 和 `after_provider_response` 的 2xx 仍是 logical-only，不是最终传输证明。普通 `openai-completions` 只有 Node Undici 实际发送实体与绑定摘要一致才是 wire 回执。摘要不一致时请求保持 dispatched，但不确认 active、selected 或 persisted。`contextBrokerResource` 的标量/批量结果和 effects 与主文、preparation 一样核对。`/context-broker request` 只保留哈希身份、固定 snapshot pin、copied/reused/retired、`remote_writes`/`author_content`，不保存正文或 locator。
-
-## 实际 Pi 的按需场景
-
-冻结独立安装包、CLI/SDK、Pi 和 fixture 身份后，使用同一个入口：
+先执行独立字节 oracle 和实际请求边界：
 
 ```sh
-node scripts/notion-sdk-pi.mjs run --package "$BROKER" --fixture "$FIXTURE" --scenario context-once --provider-backend in-process --out "$OUT/fast"
-node scripts/notion-sdk-pi.mjs run --package "$BROKER" --fixture "$FIXTURE" --scenario context-once --provider-backend http --out "$OUT/http"
-node scripts/notion-sdk-pi.mjs run --package "$BROKER" --fixture "$FIXTURE" --scenario context-wire-negative --provider-backend http --out "$OUT/negative"
-node scripts/notion-sdk-pi.mjs run --package "$BROKER" --fixture "$FIXTURE" --scenario session-compaction --out "$OUT/compaction"
+node --test scripts/context-once-evidence.test.mjs packages/context-broker/scripts/final-request-undici.test.ts
+bun run --cwd packages/context-broker test:consumption
 ```
 
-`context-once` 的两个 backend 共用 `list → use → read → use → read → held/abort` 决策与独立来源断言。HTTP arm 捕获实际请求实体，核对每次主文、资源、目录各一份及各次 effects；fast arm 不冒称发送 HTTP。两者都保留原始 Session、SDK 终局和工具 callId。按实际选定场景报告，不把旧all计数或历史结果写成当前门槛。
+`context-once-evidence.mjs` 只从实际 message content 的明确位置读取值，
+调用者把位置和身份绑定到独立冻结的来源原件。不能调用产品投影器制造预期，
+也不能把原始 Session details 算成模型收到的正文。
 
-`context-wire-negative` 实驱四种反例：投影后重复正文、丢失正文、修改 schema，以及先成功持久化后把恢复正文的 user 角色改成 assistant。前三者已发送但拒绝签发 wire 成功；最后一个在发送前拒绝第二次请求，保留首轮真实接受事实。所有反例都必须保留原件，且不能新增 active/selected 回执。
+native-read-session、resource-read-projection、skill-context-session、
+host-prepare、host-refresh、session-refresh 和 session-recovery 负责相关
+源码回归。final-request 的源码与真实 Node transport 负控制分别检查
+重复/缺失正文、schema、原始角色义务和实体摘要。不把这些源码测试标成
+实际 Pi 已经运行过的反例。
 
-恢复后的正文由独立的 `nativePromptSha256` 机器回执绑定，user 消息本身没有内联详情。验收必须使用真实 `deferredSourceEntries` 和原生续问，不能只用手造 `details.records`。回执留在私有检查上下文，预期输入在后续可变 hook 前固定，不发给模型。普通用户引用或同文 assistant 回答不充当该 user 角色义务。
+当前实际 Pi 使用唯一 SDK v2 driver：
 
-当前CI执行根oracle、普通消费专项和独立安装/current HTTP；不启动实际Pi。上面的实际Pi场景按受影响范围单列执行，未运行保持not_run。`check-gates`只核对当前接线，不把旧场景分母恢复为门槛。取消 SDK 结果可保留独立 effects，但不能带成功 preparation/delivery 字段。`none/retained/unknown` 不因取消被改写。
+```sh
+node scripts/notion-sdk-pi.mjs doctor --package "$BROKER" --fixture "$FIXTURE" --source-http-helper "$CLI_ROOT/scripts/sdk-source-fixture.mjs" --pi "$PI"
+node scripts/notion-sdk-pi.mjs run --package "$BROKER" --fixture "$FIXTURE" --source-http-helper "$CLI_ROOT/scripts/sdk-source-fixture.mjs" --pi "$PI" --scenario all --out "$OUT"
+node scripts/notion-sdk-pi.mjs evidence --evidence "$OUT"
+```
 
-实际服务和真实模型仍独立执行。管理编辑只能针对已有归属证明的自有对象，并通过 Pro 正式 `ntn`，保存编辑前后完整读回。普通续问保留旧 pin，显式 refresh 后完整新图才替换。真实模型用冻结短任务检查自然选路、完整内容、只读效果和原生 Session；不得把 Mock 的 OK、合成 usage 或一次改正后的答案算冷首答成功。
+`BROKER` 是独立 npm consumer 里的实际安装包；`FIXTURE` 只含当前服务事实；
+HTTP helper 与嵌入 SDK 来自同一 CLI revision。Pi entry、Node、包和源码指纹
+必须冻结。完整准备命令见 [当前候选](../../../../docs/current-context-candidate.md)。
 
-完成后沿原 `evidence → cleanup → evidence`。cleanup 只回收该次 owned scratch，不删证据。HTTP 反例使用自己的子目录，失败原件也进入 inventory。长期不同 Skill 工作集积累归 AH-1023，不阻塞本批同内容唯一性。
+| 当前场景 | 真实控制点 |
+| --- | --- |
+| default-view | Default Context 和 Enabled 元数据变化，零 source body |
+| http-cache-recovery | 来源编辑、过期 metadata、同会话旧 pin、明确 inspect/adopt、cache clear、固定对象丢失及 compaction 后连续输入 |
+| http-interruption | 实际 Notion body hold、取消、同会话继续、明确重试 |
+| working-set | 共享 Requires、释放一个 root、compaction、完整工作集预算拒绝且不驱逐旧选择 |
+
+`all` 仅指这四项。SDK v1 快照预置、旧场景和旧 backend flags 已移除，
+没有兼容入口。受控 provider 只替换决策；工具、Broker、SDK、Pi Session 和
+serializer 真实执行。引用只从模型实际可见目录或结果取得。证据和失败原件
+全部保留；本 driver 没有 cleanup action。
+
+## 结果与限制
+
+分别记录 source 请求、源正文 bytes、生成结构 bytes、HTTP entity 与模型
+usage。未测指标保持 unknown，未执行场景保持 not_run。普通 CI 不启动
+实际 Pi；受控 Pi 不证明自然选路、live Notion 或普通 `pi -ns` 入口。
+
+同 owner、scope、pin 或文件身份不一致时不能因同名或同字节合并。省略依据
+必须仍在同一最终请求中，不能引用另一省略标记或被压缩掉的内容。真实
+deferredSourceEntries 和原生续问绑定恢复正文；相同文字的 assistant 回答
+不能充当应由 user 角色承载的源正文。
+
+`after_provider_response` 的 2xx 只证明逻辑接受。普通 openai-completions
+还需 Node Undici 的实际实体与绑定摘要一致才能签发 wire 回执。实体不一致
+保留已发送事实，不新增 active、selected 或 persisted 确认。
+`/context-broker request` 不保存正文和 locator。
+
+状态语义变化必须同时审阅 observations/consumer-state、独立规则清单、
+正负配置、实际 guard mutations 和源码映射，不能只刷新 hash。
+RecoveryClosure 的有限活性以前置外部操作终止及用户继续输入为假设；
+它不证明任意 provider 必然完成或原生终端输入一定可用。
+
+真实服务修改只用归属明确的自有对象，保存前后完整读回。自然模型独立检查
+本地 Skill 负例、额外 Notion 需求正例、inspect/adopt 和失败恢复；不能把
+受控 OK、合成 usage 或纠正后的回答当冷首答通过。Pro/Mini 的 next 入口
+与实际新进程按 [交付合同](../../../../docs/next-worktree-delivery.md) 验收。

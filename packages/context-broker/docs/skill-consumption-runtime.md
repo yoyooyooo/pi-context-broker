@@ -20,6 +20,8 @@ SDK 与构建 manifest 必须具备匹配的消费能力，缺失时在操作前
 
 version-1 `effects` 只包含 `version`、`remote_writes` 和 `author_content`。确认零写时必须是 `none` 与 `unchanged`；缺失或不完整的观察保守报告 `unknown`，后续零写结果不能覆盖它。旧 `retained` 状态和 `retention` 字段均拒绝，包括空数组。`notion_use`、原生 read 和注入的效果文字保留原正文 span；多源失败与取消继续携带本轮已观察的结果。实际 SDK 写入拒绝边界、HTTP 记录和 `host-prepare.test.ts` 等回归共同验证零写，不能仅凭输出字段宣称通过。
 
+工作集控制的本地管理事实使用唯一字段 `session_effects`，包含 `notion_writes`、`history_changed` 和 `cache_reclaimed`。它不冒充消费 `effects` 或正文交付。管理 tool result 仍完整参加最终 wire 检查，丢失、改写或混入非法消费 effects 仍被拒绝；没有旧字段别名。
+
 资格、固定选择和交付的有限边界见 [consumer-state Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-consumer-state/SKILL.md)。模型不证明 SDK 的实际 HTTP、serializer 或 LLM 最终回答；这些按 [integration Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-skills-integration/SKILL.md) 单独验收。
 
 ## 当前工作集预算与显式释放
@@ -28,7 +30,7 @@ version-1 `effects` 只包含 `version`、`remote_writes` 和 `author_content`�
 
 | 操作 | 参数 | 结果 |
 | --- | --- | --- |
-| 查看 | `{"working_set":"show"}` | roots、Required-only 节点、固定 ref、正文 bytes、当前可见 bytes、历史独立版本 bytes、预算和可释放根 |
+| 查看 | `{"working_set":"show"}` | roots、Required-only 节点、固定 ref、正文 bytes、当前可见 bytes、各根 context 的 missing/complete、历史独立版本 bytes、预算和可释放根 |
 | 设置预算 | `{"working_set":"budget","max_bytes":65536}` | 后续 use 在提交前检查已有活跃图与完整新闭包的去重并集；超限整次拒绝 |
 | 关闭预算 | `{"working_set":"budget","max_bytes":null}` | 取消此分支明确设置的限制 |
 | 释放根 | `{"working_set":"release","roots":["准确固定根引用"]}` | 停止应用这些根，仅移除不再被其他根需要的闭包节点 |
@@ -55,7 +57,29 @@ version-1 `effects` 只包含 `version`、`remote_writes` 和 `author_content`�
 
 目录、ready/prepared、selected、visible与active分别判断。准备完整不代表已进入provider；session details、loaded标记和摘要也不能替代实际完整正文。普通续问复用当前有效上下文；fork/resume/rewind/compact只恢复当前分支合法绑定，只有摘要时按原固定选择恢复必要正文。
 
-取消或新epoch退休旧任务。迟到SDK结果、headers或provider响应不能复活被取消的选择。明确refresh取得完整新选择后才替换旧pin；失败不延长当前资格。元数据缓存使用原validated_at，刷新正文被拒绝后不能绕过持续权限失败。
+取消或新epoch退休旧任务。迟到SDK结果、headers或provider响应不能复活被取消的选择。元数据缓存使用原validated_at，刷新正文被拒绝后不能绕过持续权限失败。
+
+## 内容变更、明确刷新与管理开关
+
+| 事件 | 当前会话行为 |
+| --- | --- |
+| Notion 或另一个会话修改内容；metadata TTL 到期 | 目录可重新获取，已确认 root 和 Requires 的固定版本不自动替换 |
+| 用户只要求看看最新 | `read` 的 `refresh:true` 检查同一 owner 的最新主文，保留旧指令图；返回目录中的精确资源可继续检查 |
+| 用户要求采用最新继续任务 | `notion_use` 的 `refresh:true` 完整准备后，只替换明确指定的 roots；任何失败保留原图 |
+| 多个 roots 共用已变化的 Requires | 返回涉及的 roots 和可用引用；一起刷新相关 roots，或由用户任务决定释放无用根 |
+| Default Context 变化 | 改变默认目录成员资格，不自动加载、卸载或授权正文；完整目录仍可搜索 |
+| Enabled 关闭 | 阻止新的当前消费；已有完整固定原字节可继续用于旧会话，不偷偷改版 |
+| 真实认证或权限拒绝 | 对应正文从当前请求投影中移除，不能借旧缓存绕过 |
+
+刷新可以复用已返回的 `sr:C`、`sr:S` 或有本分支选择证明的固定 canonical 主文引用，包含主 File ID 时必须与该绑定完全一致。资源引用、伪造 File ID、错 owner 或错主路径不因 `refresh:true` 变成合法主入口。检查新版资源仍校验原 SDK fixed binding、hash、bytes、当前分支和权限；检查凭据不构成 active 指令。
+
+## 缓存丢失后的会话连续性
+
+清除可重建缓存不删除选择或替换任务版本。完整正文仍在当前上下文时继续复用；compaction 后需要恢复时，仅请求原固定节点和原闭包。缺失原字节不会转为读取最新版本。
+
+恢复按相连的 Required 闭包处理，失败时移除该不完整闭包的指令，保留独立能力，并给 Agent 有限 warning。旧 pins 不变，用户仍能继续普通问答、明确刷新或释放根。一次 context 恢复共享 30 秒读预算；失败有 30 秒重试间隔，避免每个工具轮次重复等待。它不保证远端原版本可重新取得。
+
+真实权限拒绝和取消仍有独立守卫。若后续 hook 在发送前丢掉必需正文或撤销权限，该次不安全请求必须被拦截；下一次移除受影响投影后仍应可继续。警告、输入可继续和实际 provider 回答分别验收，不能用 unit pass 替代真实 Pi 连续输入证据。
 
 普通openai-completions的wire结果还要求Node Undici实际发送实体与本run绑定的摘要一致。2xx只说明收到响应头，不证明流完成、模型任务或最终wire。已知摘要不一致时不能确认active/selected/persisted；已发送body仍记dispatched。in-process mock和无法归属的并发请求保持明确的logical-only/unknown边界。
 
@@ -63,4 +87,4 @@ version-1 `effects` 只包含 `version`、`remote_writes` 和 `author_content`�
 
 [Broker Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-context-broker/SKILL.md) 按变化路由到现有check、当前SDK/安装与实际Pi助手；[integration](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-skills-integration/SKILL.md) 绑定同一CLI/SDK与真实decoder；[consumer-state](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-consumer-state/SKILL.md) 维护已有模型和守卫。
 
-`bun run check:broker` 与独立安装/current HTTP不能替代AH-1063的实际日用配置、真实Notion、Pi/provider/model结果。原生终端专项本轮未验收，OMP/Tern延期。旧CLI fixture、双宿主启动与历史版本恢复流程已退出当前地图。
+`bun run check:broker` 与独立安装/current HTTP不能替代 AH-1188 当前主线下的实际日用配置、真实 Notion、Pi/provider/model 结果；AH-1063 仅为历史依据。实际受控 Pi 沿根目录 `scripts/notion-sdk-pi.mjs` 的四个当前 SDK v2 场景执行，见[当前验收复现](../../../docs/current-context-candidate.md)。原生终端专项未单独验收，OMP/Tern 延期。旧 CLI fixture、双宿主启动与远端历史恢复流程已退出当前地图。

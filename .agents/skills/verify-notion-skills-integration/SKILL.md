@@ -1,6 +1,6 @@
 ---
 name: verify-notion-skills-integration
-description: "验证当前配对 CLI/SDK 与 Broker 的消费合同、完整目录、资源和独立安装包。修改 Notion source、随包运行时或消费边界时使用；真实 Notion/Pi/provider 日用另按 AH-1063 验收。"
+description: "验证当前配对 CLI/SDK 与 Broker 的消费合同、完整目录、资源和独立安装包。修改 Notion source、随包运行时或消费边界时使用；真实 Notion/Pi/provider 与两机 next 日用沿 AH-1197/AH-637/AH-1198 验收。"
 ---
 
 # Verify Notion Skills Integration
@@ -18,6 +18,7 @@ OMP/Tern 延期；不恢复 `source.command`、CLI 正文消费、完整 export 
 可以使用 `package:check` 已独立安装的包，或依赖齐全的 checkout 中 `bun run build` 产物。
 打包目录本身未安装依赖时，不能直接作为 Broker 的构建入口；先核对已安装包与归档的字节一致。
 CI 和 publish 的 CLI pin 必须指向同一完整 commit；不要用发布版或另一工作树代替候选。
+Pro/Mini 每次交付还须按 [next 工作树交付](../../../docs/next-worktree-delivery.md) 核源码、构建回执与普通新进程；固定路径本身不保证最新产物。
 以下命令从 Broker 根目录执行。CLI 路径属于选定的完整包，decoder 源码属于同一提交：
 
 ```sh
@@ -66,8 +67,8 @@ node scripts/verify-artifacts.mjs --fixture /absolute/new/current-fixture/fixtur
 
 源码检查通过，只证明所执行的当前消费回归；安装包通过，只证明独立包与受控 HTTP 服务的交互。
 Source ready、目录完整、本地有文件、正文已交付、当前 turn 成功必须分别判断。
-真实 Notion、Pi 会话、provider/model 和日用安装一律保留 `not_run`，直到 AH-1063 实际执行。
-AH-1063 在真实表切换后选定匹配安装，核对有效配置、实际 provider/serializer 正文、资源读取与取消。
+真实 Notion、Pi 会话、provider/model 和日用安装一律保留 `not_run`，直到本次 AH-1197/AH-637/AH-1198 对当前配对实际执行。
+AH-1197 核两机实际 next 与持续同步，AH-637 独立验证 Mini，AH-1198 核当前真实时间线的配置、provider/serializer 正文、资源读取、恢复与取消。AH-1063 只保留历史范围。
 不能用旧安装、旧回执、模拟 HTTP 或一次 read 代替真实日用成功；OMP/Tern 仍记为延期。
 
 ## 5. Formal 和文档改动
@@ -88,3 +89,7 @@ node --test scripts/verification-skill-routing.test.mjs scripts/skill-consumptio
 不要重置用户缓存来制造冷读成功；需要空客户端时使用独立临时根，并记录实际缓存状态。
 清理只处理本轮进程和自有 scratch，经系统 Trash 使用绝对路径；不永久删除、不批量杀用户进程。
 缺少所需输入、能力或安全清理方式时报告具体阻断，不静默缩小覆盖，不伪造成功。
+
+## 当前合同和运行回执
+
+按上文的验证交接使用配对 CLI 的合同/场景索引与薄回执。记录 actual command、源码/dirty tree、实际加载路径/bytes、机器/runtime、初态、层级和原件 hash；首次失败与复验关系保留。fixture 或受控 provider 不作为 live/natural；结构检查不代表独立 Agent 使用成功，未做时标 instruction_evaluation:not_run。

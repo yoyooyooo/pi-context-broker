@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { decodePreparationLock, type PreparationBinding, type PreparationGraphLock, type PreparedHostGraph } from "./prepare-protocol";
 import type { AgentMessage, ExtensionAPI, ExtensionContext, SessionEntry, SkillRecord } from "./types";
 import { projectSelectedSourceMessages, sourceBodyLoaded } from "./session-source-snapshot";
@@ -18,7 +19,13 @@ export type SelectedScope = {
 };
 export type SessionSelection = { scopes: Map<string, SelectedScope> };
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
-const conflict = () => Object.assign(new Error("Conflicting selected Skill versions in the active branch"), { code: "SOURCE_SESSION_CONFLICT" });
+const conflict = (details?: { scope: string; id: string; reason: "binding" | "requires"; roots: ReleasedRoot[] }) => Object.assign(
+  new Error("Conflicting selected Skill versions in the active branch. Refresh the affected roots together or explicitly release a retained root."),
+  { code: "SOURCE_SESSION_CONFLICT", ...(details ? { details: { ...details, next: "refresh_related_roots_or_release" } } : {}) });
+const canonical = (value: unknown): string => value === null || typeof value !== "object" ? JSON.stringify(value)
+  : Array.isArray(value) ? "[" + value.map(canonical).join(",") + "]"
+    : "{" + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+      .map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
 export function decodeRootRelease(value: unknown): ReleaseEvent {
   if (!object(value) || value.version !== 1 || typeof value.release_id !== "string" || !value.release_id
     || !Array.isArray(value.roots) || !value.roots.length || value.roots.length > 64) throw Object.assign(new Error("Invalid Skill root release"), { code: "SOURCE_SESSION_RELEASE_INVALID" });
@@ -33,11 +40,85 @@ export function decodeRootRelease(value: unknown): ReleaseEvent {
  * never edits a lock or drops a node still required by another root. */
 export function selectedClosure(scope: SelectedScope, roots: Iterable<string> = scope.roots): Set<string> {
   const required = scope.graphs.flatMap(graph => graph.purpose === "use" ? graph.required : []);
+  return closure(roots, required);
+}
+function closure(roots: Iterable<string>, required: PreparationGraphLock["required"]): Set<string> {
   const closure = new Set(roots), pending = [...closure];
   for (let index = 0; index < pending.length; index++) for (const edge of required) {
     if (edge.from === pending[index] && !closure.has(edge.to)) { closure.add(edge.to); pending.push(edge.to); }
   }
   return closure;
+}
+/** Retain only roots and their complete closure from a verified lock. The
+ * original receipt stays immutable; the projected vector receives its own proof. */
+function projectGraph(graph: PreparationGraphLock, selected: ReadonlySet<string>): PreparationGraphLock | undefined {
+  const roots = graph.roots.filter(id => selected.has(id));
+  if (!roots.length) return undefined;
+  const needed = closure(roots, graph.purpose === "use" ? graph.required : []);
+  const bindings = graph.bindings.filter(binding => needed.has(binding.record.id));
+  if (bindings.length !== needed.size) throw conflict();
+  const required = graph.required.filter(edge => needed.has(edge.from));
+  const { sha256: _sha256, ...original } = graph;
+  const vector = { ...original, roots, bindings, required };
+  return decodePreparationLock({ ...vector, sha256: createHash("sha256").update(canonical(vector)).digest("hex") });
+}
+function pruneScope(scope: SelectedScope): void {
+  scope.graphs = scope.graphs.flatMap(graph => {
+    const projected = projectGraph(graph, scope.roots);
+    return projected ? [projected] : [];
+  });
+  const needed = selectedClosure(scope);
+  for (const [id, binding] of scope.bindings) if (!needed.has(id)) { scope.retired.set(id, binding); scope.bindings.delete(id); }
+}
+export function samePreparationBinding(a: PreparationBinding, b: PreparationBinding): boolean {
+  return a.scope === b.scope && a.snapshot_id === b.snapshot_id && a.version_id === b.version_id
+    && a.body_sha256 === b.body_sha256 && a.ref === b.ref && a.record.id === b.record.id
+    && a.record.kind === b.record.kind && a.record.entrypoint === b.record.entrypoint && a.record.ref === b.record.ref
+    && isDeepStrictEqual(a.record.locator, b.record.locator);
+}
+const outgoing = (graph: PreparationGraphLock, id: string) => canonical(graph.required.filter(edge => edge.from === id)
+  .map((edge): [string, string] => [edge.to, edge.ref]).sort(([a, ar], [b, br]) => a < b ? -1 : a > b ? 1 : ar < br ? -1 : ar > br ? 1 : 0));
+function graphConflict(scope: SelectedScope, graph: PreparationGraphLock, id: string, reason: "binding" | "requires") {
+  const roots = new Set([...scope.roots].filter(root => selectedClosure(scope, [root]).has(id)));
+  for (const root of graph.roots) if (closure([root], graph.purpose === "use" ? graph.required : []).has(id)) roots.add(root);
+  return conflict({ scope: scope.scope, id, reason, roots: [...roots].sort().map(id => ({ scope: scope.scope, id })) });
+}
+/** One atomic transition for selected, pending and confirmed graphs. Replacement
+ * owns only the requested roots, never every root in an authenticated scope. */
+export function applySelectionGraphs(selection: SessionSelection, transition: {
+  graphs: readonly PreparationGraphLock[]; mode: SelectionMode; selectionId: string; selectedRoots?: readonly ReleasedRoot[];
+}): SessionSelection {
+  const scopes = new Map([...selection.scopes].map(([key, scope]) => [key, { ...scope, bindings: new Map(scope.bindings),
+    retired: new Map(scope.retired), graphs: [...scope.graphs], roots: new Set(scope.roots) }]));
+  const graphs = transition.graphs.map(decodePreparationLock);
+  const roots = transition.selectedRoots ?? graphs.flatMap(graph => graph.roots.map(id => ({ scope: graph.scope, id })));
+  if (roots.some(root => !graphs.some(graph => graph.scope === root.scope && graph.roots.includes(root.id)))) throw conflict();
+  if (transition.mode === "replace") {
+    for (const root of roots) scopes.get(root.scope)?.roots.delete(root.id);
+    for (const scope of scopes.values()) pruneScope(scope);
+  }
+  for (const original of graphs) {
+    const graph = projectGraph(original, new Set(roots.filter(root => root.scope === original.scope).map(root => root.id)));
+    if (!graph) continue;
+    let scope = scopes.get(graph.scope);
+    if (!scope) {
+      scope = { scope: graph.scope, bindings: new Map(), retired: new Map(), graphs: [], roots: new Set(), selectionId: transition.selectionId };
+      scopes.set(graph.scope, scope);
+    }
+    for (const binding of graph.bindings) {
+      const previous = scope.bindings.get(binding.record.id);
+      if (previous && !samePreparationBinding(previous, binding)) throw graphConflict(scope, graph, binding.record.id, "binding");
+      if (graph.purpose === "use" && scope.graphs.some(previous => previous.purpose === "use"
+        && previous.bindings.some(value => value.record.id === binding.record.id) && outgoing(previous, binding.record.id) !== outgoing(graph, binding.record.id)))
+        throw graphConflict(scope, graph, binding.record.id, "requires");
+      scope.bindings.set(binding.record.id, binding);
+    }
+    if (!scope.graphs.some(previous => previous.sha256 === graph.sha256)) scope.graphs.push(graph);
+    for (const id of graph.roots) scope.roots.add(id);
+    scope.selectionId = transition.selectionId;
+  }
+  for (const scope of scopes.values()) pruneScope(scope);
+  return { scopes };
 }
 export function applyRootRelease(selection: SessionSelection, release: ReleaseEvent): void {
   for (const root of release.roots) {
@@ -45,9 +126,7 @@ export function applyRootRelease(selection: SessionSelection, release: ReleaseEv
     if (scope) scope.roots.delete(root.id);
   }
   for (const scope of selection.scopes.values()) {
-    const needed = selectedClosure(scope);
-    for (const [id, binding] of scope.bindings) if (!needed.has(id)) { scope.retired.set(id, binding); scope.bindings.delete(id); }
-    scope.graphs = scope.graphs.filter(graph => graph.roots.some(id => scope.roots.has(id)));
+    pruneScope(scope);
     scope.selectionId = release.release_id;
   }
 }
@@ -63,40 +142,17 @@ function event(value: unknown): SelectionEvent {
     mode: value.mode === "replace" ? "replace" : "extend", graphs, ...(selected_roots ? { selected_roots } : {}) };
 }
 export function reduceSessionSelection(branch: readonly SessionEntry[]): SessionSelection {
-  const scopes = new Map<string, SelectedScope>();
+  let selection: SessionSelection = { scopes: new Map() };
   for (const entry of branch) {
     if (entry.type === "custom" && entry.customType === SESSION_RELEASE_ENTRY) {
-      applyRootRelease({ scopes }, decodeRootRelease(entry.data));
+      applyRootRelease(selection, decodeRootRelease(entry.data));
       continue;
     }
     if (entry.type !== "custom" || entry.customType !== SESSION_GRAPH_ENTRY) continue;
     const selected = event(entry.data);
-    const replaced = new Set<string>();
-    for (const graph of selected.graphs) {
-      let scope = scopes.get(graph.scope);
-      if (!scope) {
-        scope = { scope: graph.scope, bindings: new Map(), retired: new Map(), graphs: [], roots: new Set(), selectionId: selected.selection_id };
-        scopes.set(graph.scope, scope);
-      }
-      if (selected.mode === "replace" && !replaced.has(graph.scope)) {
-        for (const [id, binding] of scope.bindings) scope.retired.set(id, binding);
-        scope.bindings.clear(); scope.graphs = []; scope.roots.clear(); replaced.add(graph.scope);
-      }
-      for (const binding of graph.bindings) {
-        const previous = scope.bindings.get(binding.record.id);
-        if (previous && (previous.snapshot_id !== binding.snapshot_id || previous.body_sha256 !== binding.body_sha256 || previous.version_id !== binding.version_id)) throw conflict();
-        scope.bindings.set(binding.record.id, binding);
-      }
-      if (!scope.graphs.some(previous => previous.sha256 === graph.sha256)) scope.graphs.push(graph);
-      for (const id of graph.roots) if (!selected.selected_roots || selected.selected_roots.some(root => root.scope === graph.scope && root.id === id)) scope.roots.add(id);
-      scope.selectionId = selected.selection_id;
-    }
-    for (const scope of scopes.values()) {
-      const needed = selectedClosure(scope);
-      for (const [id, binding] of scope.bindings) if (!needed.has(id)) { scope.retired.set(id, binding); scope.bindings.delete(id); }
-    }
+    selection = applySelectionGraphs(selection, { graphs: selected.graphs, mode: selected.mode, selectionId: selected.selection_id, selectedRoots: selected.selected_roots });
   }
-  return { scopes };
+  return selection;
 }
 /** All entries is not a branch: siblings must never supply selection state. */
 export function sessionSelection(ctx: ExtensionContext): SessionSelection {

@@ -21,7 +21,7 @@
 - 独立包：`scripts/verify-artifacts.mjs` 及其既有安装后SDK verifier；见 [installed-consumption](installed-consumption.md)。
 - 状态与反例：[consumer-state Skill](../../verify-notion-consumer-state/SKILL.md)，保留 observations与consumer-state现有映射。
 - 实际Pi：保留的 `scripts/notion-sdk-pi.mjs`，按选定场景检查实际工具与serializer。
-- 真实日用：[安装/候选助手](daily-installation-ui.md)，AH-1063在真实表切换后执行。
+- 真实日用：[安装/候选助手](daily-installation-ui.md)，AH-1197/AH-637/AH-1198在真实表切换后执行。
 
 当前 [Source发现](source-configuration-discovery.md)、[View准备](default-context-prefetch.md)、[激活/资源](activation-snapshot-resources.md)、[会话缓存](session-cache-recovery.md)、[候选选择](dollar-completion-selection.md) 分别维护自己的有限断言。旧总矩阵、CLI fixture、默认双宿主和历史证据合同不再是当前可执行地图。
 

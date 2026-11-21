@@ -178,7 +178,7 @@ test("derived batch proof requires a valid full parent and changes only chosen t
 
 test("known permission revocation derives a complete non-source batch projection and keeps native history", () => {
   const original=message("permission-batch"),before=JSON.stringify(original);
-  const projected=projectSelectedSourceMessages([original],{scopes:new Map()},(scope,owner)=>scope===selection.scope&&owner===selection.owner);
+  const projected=projectSelectedSourceMessages([original],{scopes:new Map()},(scope,owner)=>scope===selection.scope&&owner===selection.owner ? "unavailable" : undefined);
   const text=sourceMessageText(projected[0]?.content);
   expect(text).not.toContain("Exact resource");expect(text).not.toContain("第一行");
   expect(text).toContain("Source access is no longer available");

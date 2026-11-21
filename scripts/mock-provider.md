@@ -1,26 +1,43 @@
 # Mock provider
 
-这是测试辅助，不是生产 provider，也不新开一条验收 Skill。
+这是测试辅助，不是生产 provider，也不另建验收 Skill。
 
-`scripts/mock-provider-adapter.mjs` 提供两件东西。
+`scripts/mock-provider-adapter.mjs` 保留两个可独立测试的适配器：
+`createInProcessStream` 用于进程内 serializer/parser 控制；
+`startLoopbackMock` 只监听 `127.0.0.1`，由实际安装的 Pi
+`openai-completions` serializer 发送请求。辅助函数的存在不代表当前
+Pi driver 同时维护两套运行链路。
 
-- 进程内 `createInProcessStream`。生成的 Pi 插件从稳定导出导入 `selectCall`、`observe` 和 `control`，不再改写 `writeFakeProvider` 的源码。
-- `startLoopbackMock`。只监听 `127.0.0.1`。Pi 使用已安装的 `openai-completions` serializer 和 parser。服务端用同一份 `selectCall` 读取已经出现在请求里的工具文本，不补写 Notion 正文，不改去重，不伪造 active 或 receipt，也不直接调用 Broker。
+当前 `scripts/notion-sdk-pi.mjs` 只使用 HTTP provider、当前 SDK v2 和实际
+Notion HTTP 服务夹具。它只接受 `default-view`、`http-cache-recovery`、
+`http-interruption`、`working-set` 四个场景；旧 provider-backend 参数、
+旧快照夹具和旧场景直接拒绝。完整复现命令见
+[当前验收入口](../docs/current-context-candidate.md)。
 
-默认 `--provider-backend in-process` 保持原来的快速 provider 和 capture replay。`--provider-backend http` 接受显式 `--scenario context-once` 或 `context-wire-negative`。正常 HTTP 路径的公开工具顺序是 `notion_list`、`notion_use`、固定资源 `read`、再次 `notion_use`、再次 `read`，然后保持响应并 abort。引用只从已经出现在 HTTP 请求里的工具文本复制。进程内的 `native-repeat` 仍是原来的四次 read。启动参数包含 `--no-skills` 和 `--no-mcp`。
+受控 provider 只决定下一次公开工具调用。引用必须来自已在请求中出现的
+目录或工具结果；不补写 Notion 正文，不修改产品去重，不伪造 active 或
+delivery receipt，不直接调用 Broker 内部。当前 driver 启动参数包含
+`--no-skills` 和 `--no-mcp`，因此不能用它证明本地 Skill 的自然选路。
 
-HTTP 重建看不到 Pi 的 `isError` 布尔值。失败工具的判定仍以进程内 provider 为准。环回响应不使用生产地址或生产凭据。凭证只接受固定的 `fixture-no-secret`。`observer_finality` 来自现有 `sourceFinality`，不在断言里改成 true。原始 HTTP 实体、RPC 帧和 session 目录在停止进程前写入证据目录。
+建议分别执行：
 
-建议检查：
-
-```bash
-node --test scripts/mock-provider-adapter.test.mjs
-node --test scripts/notion-sdk-pi.test.mjs
-node scripts/notion-sdk-pi.mjs run --package ABSOLUTE_INSTALLED_BROKER --fixture ABSOLUTE_FIXTURE_JSON --scenario context-once --provider-backend http --out ABSOLUTE_EVIDENCE
+```sh
+node --test scripts/notion-sdk-pi.test.mjs scripts/notion-sdk-observers.test.mjs
+BROKER_TEST_PI="$PI" node --test scripts/mock-provider-adapter.test.mjs
+node scripts/notion-sdk-pi.mjs run --package "$BROKER" --fixture "$FIXTURE" --source-http-helper "$CLI_ROOT/scripts/sdk-source-fixture.mjs" --pi "$PI" --scenario all --out "$OUT"
+node scripts/notion-sdk-pi.mjs evidence --evidence "$OUT"
 ```
 
-第三条不接入根 `package.json`。它不替代 all14，也不表示全部 CTX 项已经完成。
+前两项检查解析、oracle、观察器和实际安装的适配器；第三项才启动完整
+Pi 场景。普通 CI 的轻量测试不冒充实际 Pi 或自然模型验收。
 
-两个 backend 的 `context-once` 使用相同决策、来源原件、操作序列和取消边界。HTTP backend 另证明实际安装 serializer 的发送内容。每个请求核对完整主文、资源和目录各一份，保留原操作 effects 和 Session。`context-wire-negative` 仅走 HTTP，验证后置重复、删正文、改 schema，以及持久化正文恢复后被改成 assistant 角色的拒绝路径。后置实体不匹配不能签发成功回执；已经发送的事实不清零。
+HTTP 重建没有 Pi 原生的 `isError` 布尔值，最终工具成功与失败以保存的
+原生 RPC 帧为准。每项场景保存原始 HTTP entity、RPC、Session、SDK start/end、
+服务请求和进程退出。只有实际拥有的服务夹具凭据进入隔离进程；不使用
+生产 provider 地址或凭据。取消测试必须观测真实 source hold、abort、
+终局与随后同会话输入；exit 0 本身不证明任务完成。
 
-使用既有 `evidence` 和 `cleanup` 核对原件。HTTP 服务器有请求数、并发数、字节数、header/body/hold 时间上限；不记录凭据。流中断测试明确停在已收到部分 SSE、尚无完成标记的控制点，不能用 exit0 冒充模型完成。
+重复正文、正文缺失、schema 改写与恢复后的角色义务由
+`final-request.test.ts` 和 `final-request-undici.test.ts` 等明确测试维护。
+它们是源码/实际 Node 传输层负控制，不标成已删除的 Pi 场景。实际发送的
+请求不能因校验失败被记成未发送；未知 effects 也不能改写成 none。

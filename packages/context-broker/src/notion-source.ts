@@ -34,8 +34,8 @@ export class SourceError extends Error {
   readonly sourceId: string;
   readonly exitCode?: number;
   readonly details?: ReturnType<typeof preparationFailureDetails>;
-  constructor(code: string, sourceId: string, exitCode?: number, details?: ReturnType<typeof preparationFailureDetails>) {
-    super(`context-broker source operation failed (${code})`);
+  constructor(code: string, sourceId: string, exitCode?: number, details?: ReturnType<typeof preparationFailureDetails>, options?: ErrorOptions) {
+    super(`context-broker source operation failed (${code})`, options);
     this.name = "SourceError";
     this.code = code;
     this.sourceId = sourceId;
@@ -130,7 +130,7 @@ function sdkFailure(error: unknown, source: NotionSource, operation: "prepare" |
   const code = typeof receivedCode === "string" && (CLI_CODES[receivedCode] === true
     || /^(?:CURRENT|RESOURCE)_[A-Z_]+$/.test(receivedCode) || receivedCode === "SNAPSHOT_NOT_MATERIALIZED"
     || operation === "prepare" && /^(?:PREPARE_[A-Z_]+|CONSUME_[A-Z_]+|SHARED_[A-Z_]+|NOTION_PREFETCH_(?:DEFERRED|WRITE_FORBIDDEN))$/.test(receivedCode)) ? receivedCode : "SOURCE_SDK_FAILED";
-  return new SourceError(code, source.id, undefined, { ...preparationFailureDetails(details), effects: errorConsumptionEffects(error) });
+  return new SourceError(code, source.id, undefined, { ...preparationFailureDetails(details), effects: errorConsumptionEffects(error) }, { cause: error });
 }
 
 function sourceCommand(source: NotionSource): string[] {
@@ -150,6 +150,13 @@ export function sourceFailureMessage(code: string): string {
     case "SNAPSHOT_MISSING":
     case "SNAPSHOT_NOT_MATERIALIZED": return "This selection is no longer available. Refresh the source and select its current content again.";
     case "CACHE_REFRESH_REQUIRED": return "The local selection uses an older cache contract. Refresh the source online and select its current content again.";
+    case "CACHE_INVALIDATED": return "The cache was cleared during this acquisition. Retry the fixed read, or explicitly select current content if the original snapshot is unavailable.";
+    case "STATE_BUSY": return "The local state store is busy. Let the current operation finish and retry; unrelated conversation can continue.";
+    case "STATE_RUNTIME_UNSUPPORTED": return "The current process cannot open the SDK state store. Restart Pi with a runtime supported by the bundled ntn-skills SDK.";
+    case "UPSTREAM_GIT_RUNTIME_UNSUPPORTED": return "The Git used by this process lacks --no-lazy-fetch. Select a Git with that capability before retrying upstream file acquisition; Git 2.50.1 is verified.";
+    case "SOURCE_RECOVERY_TIME_BUDGET": return "Restoring the selected Skills reached this request's total read budget. Continue independent work; retry later or explicitly select current content.";
+    case "STATE_CORRUPT":
+    case "STORAGE_ERROR": return "The local state store could not be read safely. Preserve it for diagnosis and run /context-broker doctor; unrelated conversation can continue.";
     case "STATE_CUTOVER_REQUIRED": return "The local state or configuration uses a retired contract. Choose a fresh NTN_SKILLS_HOME and, if the configuration contains retired bindings, NTN_SKILLS_CONFIG_HOME. Keep the old roots and objects intact for read-only extraction.";
     case "CURRENT_SOURCE_REQUIRED": return "This Skill selects a retired snapshot source. Migrate its current content before reading it.";
     case "SHARED_ACQUISITION_SCOPE": return "The selected content no longer matches this source and library. Refresh this source and select its current content again.";
@@ -261,7 +268,7 @@ async function privateDirectory(path: string, source: NotionSource): Promise<voi
 CLI_CODES.LIST_CURSOR_STALE = true;
 CLI_CODES.NOTION_READ_ONLY = true;
 CLI_CODES.SHARED_OBSERVATION_REQUIRED = true;
-for (const code of ["CURRENT_SOURCE_REQUIRED", "CACHE_REFRESH_REQUIRED", "STATE_CUTOVER_REQUIRED", "SHARED_ACQUISITION_SCOPE", "SHARED_SOURCE_MISSING", "SHARED_SOURCE_CONFLICT", "SOURCE_MATERIALIZATION_INCOMPLETE", "SHARED_RESOURCE_CONTENT_INVALID"])
+for (const code of ["CURRENT_SOURCE_REQUIRED", "CACHE_REFRESH_REQUIRED", "CACHE_INVALIDATED", "STATE_BUSY", "STATE_RUNTIME_UNSUPPORTED", "STATE_CUTOVER_REQUIRED", "UPSTREAM_GIT_RUNTIME_UNSUPPORTED", "SHARED_ACQUISITION_SCOPE", "SHARED_SOURCE_MISSING", "SHARED_SOURCE_CONFLICT", "SOURCE_MATERIALIZATION_INCOMPLETE", "SHARED_RESOURCE_CONTENT_INVALID"])
   CLI_CODES[code] = true;
 
 async function catalogPolicy(source: NotionSource, refresh?: boolean) {
@@ -407,7 +414,7 @@ export async function discoverNotionCatalogAndDirectory(source: NotionSource, cw
 }
 
 /** Resolve names before entering the exact owner path. This never prepares a body. */
-async function resolveNotionReferenceInSource(input: string, source: NotionSource, cwd: string, options: Pick<Options, "signal" | "refresh">): Promise<{ record: SkillRecord; ref: string }> {
+export async function resolveNotionReferenceInSource(input: string, source: NotionSource, cwd: string, options: Pick<Options, "signal" | "refresh">): Promise<{ record: SkillRecord; ref: string }> {
   if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
   const requested = parseNativeReference(input);
   if (!requested.snapshot) {

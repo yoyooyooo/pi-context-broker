@@ -141,6 +141,7 @@ test("current acquisition failures retain their next action across catalog, body
     ["SKILL_DISABLED", "CONTENT_DISABLED", "disabled"],
     ["CACHE_REFRESH_REQUIRED", "CACHE_REFRESH_REQUIRED", "Refresh the source online"],
     ["STATE_CUTOVER_REQUIRED", "STATE_CUTOVER_REQUIRED", "fresh NTN_SKILLS_HOME"],
+    ["UPSTREAM_GIT_RUNTIME_UNSUPPORTED", "UPSTREAM_GIT_RUNTIME_UNSUPPORTED", "--no-lazy-fetch"],
     ["CURRENT_SOURCE_REQUIRED", "CURRENT_SOURCE_REQUIRED", "Migrate its current content"],
     ["SHARED_ACQUISITION_SCOPE", "SHARED_ACQUISITION_SCOPE", "select its current content"],
     ["SHARED_SOURCE_MISSING", "SHARED_SOURCE_MISSING", "select its current content"],
@@ -156,6 +157,14 @@ test("current acquisition failures retain their next action across catalog, body
     await expect(f.boundary.loadNotionResource(loaded, f.files[1]!.path, f.source, f.root)).rejects.toMatchObject({ code });
     expect(sourceFailureMessage(code)).toContain(action);
   }
+  f.state.read = async () => { throw { code: "UPSTREAM_GIT_RUNTIME_UNSUPPORTED", details: {
+    required_capability: "--no-lazy-fetch", observed_version: "git version 2.39.5 (Apple Git-154)", token: "private source detail",
+  } }; };
+  const unsupported = await f.boundary.loadNotionResource(loaded, f.files[1]!.path, f.source, f.root).catch(error => error);
+  expect(unsupported).toMatchObject({ code: "UPSTREAM_GIT_RUNTIME_UNSUPPORTED", details: {
+    required_capability: "--no-lazy-fetch", observed_version: "git version 2.39.5 (Apple Git-154)",
+  } });
+  expect(unsupported.details).not.toHaveProperty("token");
   f.state.read = async () => { throw { code: "UNRECOGNIZED_ERROR", message: "private source detail" }; };
   await expect(f.boundary.loadNotionResource(loaded, f.files[1]!.path, f.source, f.root)).rejects.toMatchObject({ code: "SOURCE_SDK_FAILED" });
   expect(await exists(join(loaded.entryManifest!.root, f.files[1]!.path))).toBe(false);

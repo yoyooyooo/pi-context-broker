@@ -6,4 +6,4 @@
 
 消费从空客户端访问真实受控 HTTP：完整分页目录与 Files、主文、warm复用、use、标量/批量资源、二进制、wrong owner/scope 和取消。只允许metadata查询与读取，语义写入为零；正文消费不启动CLI子进程。随包 Skill 的主文与每个参考资源都要在独立安装目录可读。
 
-读取本次 manifest、commands、current-sdk/result 与 HTTP 日志，不只看退出码。该入口不启动真实 Pi，不能证明真实服务、模型、原生终端或日用安装。AH-1063 沿 [实际 Pi 地图](daily-installation-ui.md) 单独执行；OMP/Tern 延期。
+读取本次 manifest、commands、current-sdk/result 与 HTTP 日志，不只看退出码。该入口不启动真实 Pi，不能证明真实服务、模型、原生终端或日用安装。AH-1197/AH-637/AH-1198 沿 [实际 Pi 地图](daily-installation-ui.md) 单独执行；OMP/Tern 延期。

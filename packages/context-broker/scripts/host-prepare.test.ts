@@ -114,6 +114,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
         resourceReads.push(file.ref);
         await writeFile(output, text);
       }, signal),
+      resolveCurrentRoot: async record => ({ record, ref: record.ref! }),
       prepareGraph: async (_records, _ctx, signal, purpose, _pins, _bindings, _mode, policy) => { calls.push(purpose); return prepareGraph(purpose, signal, policy); },
       persistGraphs: discovery.persistGraphs ?? ((_graphs, _ctx, mode) => { persisted.push(mode); }),
       ...(withShortRefs ? { sessionGraph: () => ({ kind: "controlled-selected-graph", scope: identityScope }) } : {}),
@@ -172,7 +173,11 @@ test("Pi dollar acquisition discloses its own effects in provider and native his
   const observed: ConsumptionEffects = { version: 1, remote_writes: "unknown", author_content: "unchanged" };
   let effects: ConsumptionEffects = observed;
   await f.install(async purpose => [{ ...f.graph(purpose), effects }], {
-    buildPreparedPrompt: async () => buildInjectedContextMessage(f.root, "root"),
+    buildPreparedPrompt: async (_text, _ctx, _signal, records = []) => {
+      const content = records.map(record => record.body!).join("\n\n");
+      return { customType: "context-broker", content, display: false,
+        details: { records: records.map(record => sourceDeliveryReceipt(record, content)) } };
+    },
   });
   for (const [id, expected] of [["first", observed], ["second", noConsumptionWrites()]] as const) {
     effects = expected;
@@ -185,6 +190,7 @@ test("Pi dollar acquisition discloses its own effects in provider and native his
     if (!output || typeof output !== "object" || !("messages" in output) || !Array.isArray(output.messages)) throw new Error("Expected provider projection");
     const delivered: AgentMessage[] = output.messages;
     expect(sourceBodyLoaded(delivered, f.root)).toBe(true);
+    expect(sourceBodyLoaded(delivered, f.required)).toBe(true);
     expect(delivered.filter(message => message.customType === "context-broker-consumption-effects"))
       .toEqual([expect.objectContaining({ content: "<notion-effects>" + JSON.stringify(expected) + "</notion-effects>", details: { effects: expected } })]);
     const persisted = deferredSourceEntries([{ sourceEntry: { id, type: "message", message: user }, messages: [user] }], id, delivered.slice(1));
@@ -1167,7 +1173,8 @@ test("short-ref tool admission cannot turn a saved locator into authority or a d
   }
   const resource = prepared.records[0].directory.files.find((item: { path: string }) => item.path !== "SKILL.md").ref;
   await expect(tool.execute("resource-root", { ref: resource }, undefined, undefined, f.ctx)).rejects.toThrow("PREPARE_ROOT_NOT_MAIN");
-  await expect(tool.execute("refresh-fixed", { ref: fixed, refresh: true }, undefined, undefined, f.ctx)).rejects.toThrow("PREPARE_VERSION_CONFLICT");
+  const refreshed = await tool.execute("refresh-fixed", { ref: fixed, refresh: true }, undefined, undefined, f.ctx);
+  expect(preparationDetails(refreshed).purpose).toBe("use");
 });
 
 async function auditFixture() {
@@ -1323,7 +1330,7 @@ test("permission refusal prevents reprojecting a verified old body without rewri
   expect(JSON.stringify(messages)).toBe(before);
 });
 
-test("business disablement preserves delivered history but does not allow implicit restoration or fixed-pin use", async () => {
+test("business disablement permits original fixed restoration but not a new use activation", async () => {
   const f=await fixture(true);let state:"enabled"|"disabled"|"pin"="enabled";
   const h=await f.install(async purpose=>{
     if(state==="disabled")throw exactDenial(f.root);
@@ -1333,8 +1340,8 @@ test("business disablement preserves delivered history but does not allow implic
   const loaded=await h.tool.execute("first-use",{ref:f.root.ref},undefined,undefined,f.ctx);
   const messages:AgentMessage[]=[{role:"toolResult",toolName:"notion_use",toolCallId:"first-use",...loaded}];
   state="disabled";await expect(h.host.activate(f.root,f.ctx)).rejects.toMatchObject({code:"CONTENT_DISABLED"});
-  const before=JSON.stringify(messages);await f.emit("context",{messages},f.ctx);expect(JSON.stringify(messages)).toBe(before);
-  expect(()=>h.host.assertCanRestore(f.root)).toThrow();
+    const before=JSON.stringify(messages);await f.emit("context",{messages},f.ctx);expect(JSON.stringify(messages)).toBe(before);
+    expect(()=>h.host.assertCanRestore(f.root)).not.toThrow();
   state="pin";
   await expect(h.tool.execute("fixed-use",{ref:f.root.preparationBinding!.ref},undefined,undefined,f.ctx)).rejects.toMatchObject({code:"CONTENT_DISABLED"});
   const list=await h.search.execute("still-disabled",{query:"root"},undefined,undefined,f.ctx);

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { expect, test } from "bun:test";
 import type { AgentMessage } from "../src/types";
+import { exportWorkingSet } from "../src/session-working-set";
 import { deferredSourceEntries, sourceBodyLoaded, sourceDeliveryReceipt, withSessionSourceReceipts } from "../src/session-source-snapshot";
 import {
   assessFinalRequestPayload,
@@ -327,4 +328,23 @@ test("restored deferred source keeps its user-role obligation privately through 
       if (change !== "none") expect(ledger.recent().at(-1)?.errors).toContain("LOST_SOURCE_RESULT");
     } finally { await emit("session_shutdown", {}); ledger.close(); }
   }
+});
+
+
+test("working-set management replies continue through the provider gate without claiming consumption effects", () => {
+  // Same message/detail structure as the actual Pi RPC working_set show failure.
+  const report = { ...exportWorkingSet({ sessionManager: { getBranch: () => [] } }, []), action: "show", changed: false };
+  expect(report.session_effects).toEqual({ notion_writes: "none", history_changed: false, cache_reclaimed: false });
+  expect("effects" in report).toBe(false);
+  const content = JSON.stringify(report);
+  const message: AgentMessage = { role: "toolResult", toolCallId: "current-4", toolName: "notion_ctl",
+    content: [{ type: "text", text: content }], details: report };
+  const actual = payload([{ role: "tool", tool_call_id: "current-4", content }]);
+  expect(assessFinalRequestPayload([message], actual)).toBeUndefined();
+  expect(finalRequestSources([message]).sources).toEqual([]);
+  expect(assessFinalRequestPayload([message], payload([]))).toBe("LOST_SOURCE_RESULT");
+  expect(assessFinalRequestPayload([message], payload([{ role: "tool", tool_call_id: "current-4", content: "changed" }]))).toBe("MODIFIED_SOURCE_RESULT");
+  const invalid = { version: 1, remote_writes: "none" };
+  for (const details of [{ ...report, effects: invalid }, { ...report, contextBrokerPreparation: { effects: invalid } }])
+    expect(assessFinalRequestPayload([{ ...message, details }], actual)).toBe("INVALID_EFFECTS");
 });

@@ -135,7 +135,7 @@ test("Pi scalar read advertises issued Skill refs without changing the native de
   expect(f.current().description).toStartWith("For Notion introductions, summaries or inspection,");
   expect(f.current().description).toContain("without loading Requires or activating its workflow");
   expect(f.current().description).toContain("Notion reads do not write to the remote library");
-  expect(f.current().description).toContain("select the Skill again and copy its current refs");
+  expect(f.current().description).toContain("use refresh:true with the supplied main Skill ref");
   expect(f.current().description).not.toContain("readOnly");
   expect(f.current().description).not.toContain("retain history");
   expect(JSON.stringify(f.native.parameters)).toBe(before);
@@ -148,4 +148,21 @@ test("Pi preserves disabled read and never replaces a third-party read", async (
   const thirdParty = fixture("local"), owns = thirdParty.adapter.registerReadExecutor!((_input, _ctx, _signal, read) => read({ path: "unused" }))!;
   await thirdParty.start();
   expect(owns()).toBe(false); expect(thirdParty.factories).toHaveLength(0); expect(thirdParty.current().parameters).toBe(thirdParty.native.parameters);
+});
+
+
+test("explicit latest inspection is scalar Notion-only and never leaks refresh to native file I/O", async () => {
+  const f = fixture(), selected = "sr:S" + "a".repeat(22);
+  const requests: unknown[] = [];
+  f.adapter.registerReadExecutor!((input, _ctx, signal, read) => { requests.push(input); return read({ path: "/current/SKILL.md" }, signal); });
+  await f.start();
+  expect(f.current().parameters).toMatchObject({ properties: { refresh: { type: "boolean" } } });
+  await f.current().execute("latest-inspect", { path: selected, refresh: true }, undefined, undefined, f.ctx);
+  expect(requests).toEqual([{ path: selected, refresh: true }]);
+  expect(f.calls[0]).toMatchObject({ input: { path: "/current/SKILL.md" } });
+  for (const input of [{ path: "local.md", refresh: true }, { path: selected, refresh: "true" },
+    { paths: ["sr:R" + "b".repeat(22)], refresh: true }]) {
+    await expect(f.current().execute("invalid-refresh", input, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  }
+  expect(requests).toHaveLength(1);
 });

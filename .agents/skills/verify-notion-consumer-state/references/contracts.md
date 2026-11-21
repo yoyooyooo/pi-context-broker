@@ -8,7 +8,7 @@
 
 Availability/ReadRace 留在 verification/models/consumer-observations，完整配置及故意保留的缺陷反例不改写。它们约束资格一致性、有效分页 cursor、请求顺序和两代会话；F1–F7 与原两项真实守卫 mutation 继续执行。
 
-verification/models/consumer-state/coverage.json 是三模型的唯一 cases 清单，绑定真实源码和受控回归。不得在 Skill 或 CI 复制另一份配置列表。这些模型覆盖有限时间、来源、精确身份/失败目标，以及 fixed graph 和 provider/boundary 交接。
+verification/models/consumer-state/coverage.json 是当前四个模型的唯一 cases 清单，绑定真实源码和受控回归。不得在 Skill 或 CI 复制另一份配置列表。这些模型覆盖有限时间、来源、精确身份/失败目标，以及 fixed graph 和 provider/boundary 交接。
 
 ## FreshnessPublication
 
@@ -32,7 +32,7 @@ verification/models/consumer-state/coverage.json 是三模型的唯一 cases 清
 
 Prepare、InspectIdentity、InspectBudget、Commit 分开，不能将异步准备和最终发布画成一个原子写。模型覆盖 scope/snapshot/hash 不匹配、缺依赖、预算超限、取消/代次切换及未先检查的 commit。失败替换保留旧向量。
 
-源码对应 graphPreparation 的延迟 commit、prepare-protocol 完整 graph decoder、session-graph 的 validate-before-append 和逐成员 binding。Pi 的 commit 可能只暂存 pending graphs，直到 provider 2xx 才写 selected entry；此模型的 selected 表示获准的固定组合，不表示 active 或 persisted。
+源码对应 graphPreparation 的延迟 commit、prepare-protocol 完整 graph decoder、session-graph 的 validate-before-append 和逐成员 binding。当前 selected/pending/active 共用 applySelectionGraphs：仅替换指定 roots、投影保留根完整闭包，并校验共享 binding 和 outgoing Requires；这些多根组合由 session-refresh.test.ts 回放，不扩大单根模型的证明范围。Pi 的 commit 可能只暂存 pending graphs，直到 provider 2xx 才写 selected entry；此模型的 selected 表示获准的固定组合，不表示 active 或 persisted。
 
 实际回放复用 host-prepare 的 failed exact-file validation and output budget、session-active 的 pending refresh 和完整闭包、skill-context-session 的错误 hash/mapping/部分输出；新增 consumer-state 回放两个不同成员 pin 及有效 branch 的回退。提前调用 commit 与移除 budget guard 的 mutation 必须失败，而不只是 coverage hash 失配。
 
@@ -55,6 +55,24 @@ SelectionGraph 包含 retained + new closure 的有限字节预算前提及 `Rel
 模型最多两个请求，第二个只用于宿主丢弃第一次 drafts 后的重试；最多一个生命周期事件（cancel/switch/rewind）。取消或切换可以发生在 headers、turn、draft、ACK 之间。一次 2xx 后发生 stream/turn 失败，不抹去先前的真实接受事实，但不得产生完成或 projection persisted 的新证明。
 
 真实回放使用 session-active.test.ts 的 selected/partial、discarded drafts、failed/aborted/late/rewound 场景；新回归补不同 session identity 的迟到 headers 和原 user 已离开 branch、另一个 user 仍存在的情况。后者避免“找到了任意 user”冒充原请求身份。native-read-session 和 skill-context-session 保留全正文、精确 snapshot/scope/hash、独立 pins、原生历史不被修改的检查。
+
+## RecoveryClosure
+
+该切片覆盖三个连续 prompt，A、C 共用必须依赖 B，并保留独立根 D。原始字节完整或 B 缺失、远端 current 版本 1/2、业务 Enabled 关闭、一次明确权限拒绝和一次恢复 ticket 失效分别建模。恢复开始、外部返回、完整闭包/权限投影和继续提问是不同动作；不把异步读与最终发布当成原子事务。
+
+| 性质 | 实现边界与回放 |
+| --- | --- |
+| 固定原版本不偷偷变更 | index restoreActive、assertRestoredSource；新版本字节不能冒充丢失旧快照 |
+| Requires 完整才交付 | session-recovery 的闭包隔离、host 最终 assertActiveContextDelivery；缺 B 时 A/C 均不半交付，D 保留 |
+| 业务 Disabled 与访问拒绝分开 | 原固定字节可用时继续恢复；真实授权/访问拒绝仍阻止正文投影 |
+| 失效 ticket 不发布 | session epoch、取消与 release 后的 check；迟到结果不得进入当前请求 |
+| 失败后可以继续提问 | 恢复失败返回有限 warning，不抛成每轮的永久前置失败；三次连续请求回放 |
+
+ConversationCanContinue 使用局部动作的弱公平，并假定用户继续提交下一条、每次外部读取最终返回内容/失败/超时/取消。它检查有限三条 prompt 能达到 provider 请求或显式取消，不能推导无限服务可用性、provider 完成、模型质量或真实终端输入成功。
+
+实际恢复复用现有 `DEFAULT_RESOURCE_READ_BUDGET.timeBudgetMs`，一轮 context 总预算为 30 秒；不是每个根各等待 30 秒。source `requestTimeoutMs` 仍是每个网络 attempt 的预算。`session-recovery.test.ts` 另用确定性暂停验证总预算、有限退避、未完成的 producer、独立本地根与历史 pin 保留；模型不抽象任意网络调度或墙钟。
+
+源码对应 `session-recovery.ts`、`index.ts`、`host-skills.ts` 及完整闭包和 fixed-read proof。`check-consumer-state-mutations.mjs` 在隔离副本移除对应隔离、闭包、业务开关、权限和取消守卫，必须得到行为断言失败；模型通过与真实守卫检出分别报告。
 
 ## 守卫破坏与诊断
 

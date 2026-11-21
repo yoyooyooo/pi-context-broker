@@ -11,10 +11,10 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/discovery-records.ts": "3b8b8abee88e2eba5de3421e76e446de91412b7f7d4b6b71394fede5dd878bab",
-    "packages/context-broker/src/host-skills.ts": "b9146357a84aa57cc6bfdf008ac19c0e130c79d3f67cdf5c896f7a203bd8a130",
-    "packages/context-broker/src/prepare-protocol.ts": "08c95e6be4925f00ea5ab33ba0a99e997366d11a871f88f29093f98b8976a27c",
+    "packages/context-broker/src/host-skills.ts": "95d81e856596b2485a3dc8f43a3d3363f5949c0a5669387b07c266c840b05946",
+    "packages/context-broker/src/prepare-protocol.ts": "6c0229a5217726416e3bd719faaf7d922c40f479ca03d6a9ab0ef1275be903f4",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
-    "packages/context-broker/scripts/host-prepare.test.ts": "dc4116ff6294d8617aae4cfad279515dcafba115bf71df99c5c9578c2679aef4",
+    "packages/context-broker/scripts/host-prepare.test.ts": "ce17ea58dd60df728b1994142b62cf41d173c44ebf4f676905b856c2d8fd2876",
     "scripts/check-consumer-observation-mutations.mjs": "a34d906997d213187d48af500f3af0c5a61fd9233d5dd11b35268c2611f8cf51"
   },
   "models": {
@@ -183,5 +183,10 @@
       ],
       "contract": "Exact dependency failures do not deny the root. Failed replacement does not replace the graph. Known authorization denial withholds verified source spans on future requests. Explicit new selection retires old main and supporting-file spans but never edits native history."
     }
-  ]
+  ],
+  "current_review": {
+    "reviewed_from": "8cce7fa105b8df6a485fe2b8ef419fc6ab597cb0",
+    "method": "Read changed owner functions, delayed commits, exact identity guards, source projection, failed recovery isolation and actual regression assertions before binding these source hashes. Hash correspondence is not an implementation refinement proof.",
+    "unchanged_guards": "Current evidence original validation time, request order, generation, cancellation and precise source denial ownership remain intact. Business Enabled is exempted only for intact previously confirmed fixed bytes; authorization is never exempted."
+  }
 }

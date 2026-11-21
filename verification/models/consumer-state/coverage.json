@@ -11,23 +11,36 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/discovery-records.ts": "3b8b8abee88e2eba5de3421e76e446de91412b7f7d4b6b71394fede5dd878bab",
-    "packages/context-broker/src/host-skills.ts": "b9146357a84aa57cc6bfdf008ac19c0e130c79d3f67cdf5c896f7a203bd8a130",
-    "packages/context-broker/src/prepare-protocol.ts": "08c95e6be4925f00ea5ab33ba0a99e997366d11a871f88f29093f98b8976a27c",
-    "packages/context-broker/src/session-graph.ts": "4074cdfd6ef695fed633896bc780c00993b4d3014c40fee42c5095df4e8d9fc1",
-    "packages/context-broker/src/session-active.ts": "68f046a982d288162cff49f120cf3d88e1f88cb5cac8ddda14937acba8f055d8",
-    "packages/context-broker/src/session-source-snapshot.ts": "b23de4a16344620ff12e4e2bd3147d119fdfbffba37507b54434d7425d84c9a5",
+    "packages/context-broker/src/host-skills.ts": "95d81e856596b2485a3dc8f43a3d3363f5949c0a5669387b07c266c840b05946",
+    "packages/context-broker/src/prepare-protocol.ts": "6c0229a5217726416e3bd719faaf7d922c40f479ca03d6a9ab0ef1275be903f4",
+    "packages/context-broker/src/session-graph.ts": "bf707af4ea21ef0084a128b80f6359f2e7ec75665cb43c0ee4f900ce72bb12b3",
+    "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
+    "packages/context-broker/src/session-source-snapshot.ts": "43ed85889a86b3e0a708469a7be24a9ce199b8d5575b08343e313a909b74a3c8",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
-    "packages/context-broker/scripts/host-prepare.test.ts": "dc4116ff6294d8617aae4cfad279515dcafba115bf71df99c5c9578c2679aef4",
-    "packages/context-broker/scripts/session-active.test.ts": "5b1995a7c959a06d64cd3b4c3828d697795445c6f139ec0b357e007d41a5fd30",
-    "packages/context-broker/scripts/native-read-session.test.ts": "2e172ede1eaf050f5196e4c568c145b2837776577b869ac226bdefce56f688e9",
+    "packages/context-broker/scripts/host-prepare.test.ts": "ce17ea58dd60df728b1994142b62cf41d173c44ebf4f676905b856c2d8fd2876",
+    "packages/context-broker/scripts/session-active.test.ts": "8c028ee53bf86b253dee9a63ce6e15a8e27c811de25e4cc9936f37ab134e0e90",
+    "packages/context-broker/scripts/native-read-session.test.ts": "ef967d31fe6ea68167c548a75c8df69791a4001da874e0b2e034a415207a597b",
     "packages/context-broker/scripts/skill-context-session.test.ts": "71b2d3ba5d5937e164a6fa08c8ebfd0fc183019d00a8495a220a7cdee4d9c897",
     "packages/context-broker/scripts/consumer-state.test.ts": "97b19d0f3ac167bfb30cd9dd4aa6959924784dcb13c4644221334bba390c5799",
-    "scripts/check-consumer-state-mutations.mjs": "663d89b30f23b360447cc3de04ec9278858a79d732a8c75d27d61bad0b8bf564",
-    "packages/context-broker/src/final-request.ts": "e1205558f4943c6c3a11bb344e818a49129e77c9b921d708e76b9bb2e2fcdaf3",
-    "packages/context-broker/scripts/final-request.test.ts": "79d2c6c79766099d0edd2ccdb85fc62498a7c00226198ddd32ad4dde74e09608",
+    "scripts/check-consumer-state-mutations.mjs": "04b9145a777549dd074bd0902fa72318f192802ee013d842ec0ada6fdd0c862e",
+    "packages/context-broker/src/final-request.ts": "8708c3a08b9e39f828396537e4044adefc59ee2c7ba2d6a4ff694dfe4733c8f2",
+    "packages/context-broker/scripts/final-request.test.ts": "2f03a868b4e126b10a5115d94176f4babe63525cbaf8e5435ea0564e42c1dce8",
     "packages/context-broker/scripts/final-request-undici.test.ts": "df1417ddf319180c89725f188107dde9b0eb8089aa12759b17d539bfd2bd7555",
-    "packages/context-broker/src/session-working-set.ts": "83999553c4d7bcf6cf52aadd874b3f559725b6354c51be3111eb3c5ea1270d5a",
-    "packages/context-broker/scripts/session-active-session.mjs": "a0b3d76adddb20b81858d876c4fdd81c45a66360dee55a877895b1d6348a40b5"
+    "packages/context-broker/src/session-working-set.ts": "4792c1b3e1ecdbbfd77918f2f9ddf074cfe197e8fbed265a5796cd59671bd36c",
+    "packages/context-broker/scripts/session-active-session.mjs": "a0b3d76adddb20b81858d876c4fdd81c45a66360dee55a877895b1d6348a40b5",
+    "packages/context-broker/src/index.ts": "e75770694e8e9ec3d4c6b587b762caf8195a1496f4bca44380f706fda9ca670b",
+    "packages/context-broker/src/session-recovery.ts": "88dc7824f28f473974250952288312464f4385812caa83232679f7c694121c99",
+    "packages/context-broker/src/resource-read-projection.ts": "f0a338ce686cfd88c1ce564ccdec0e34b5b0b868aa617620950e9d5fb6d0a0ad",
+    "packages/context-broker/src/notion-source.ts": "f4d5f5778250dbc5335f5533cd7bc6cebb2f18acc9c9126f6eace6048f0347aa",
+    "packages/context-broker/src/pi-host-adapter.ts": "384786d28f888570bdc9ee601f20e76fef87fa483623dea33fcd8a178ad182fa",
+    "packages/context-broker/scripts/host-refresh.test.ts": "d25778872172ab5768b7bcc3de374ac48ae3b55e725cb118a32cd5c6f4faada5",
+    "packages/context-broker/scripts/session-refresh.test.ts": "9d00f8ecbe392dbd3367ef51dcaffa325cb709986f1128e90d3f542894175a89",
+    "packages/context-broker/scripts/session-recovery.test.ts": "af7ee971939db47dccb7fb107d6d3c80520cad66cc29b857aeae1d6233257931",
+    "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "858cf3fcf02255e49641af3cc4794445eaa85aca5a27c2e6fbee8dac38bd4dd1",
+    "packages/context-broker/scripts/resource-read-projection.test.ts": "e739a9e24612e40517934ac425fa33240db75303eea63b1a399e405f9d330cf0",
+    "packages/context-broker/scripts/notion-source-sdk.test.ts": "a9b4b8096f13d17fd8fcfcf6cb72bae3a3d4110e5d16cfb58742882d35c9d134",
+    "packages/context-broker/scripts/pi-read-adapter.test.ts": "0367a2128a434f0095b0bd8c5cf7aa0aa947966e5c81ad9356c7bdc912af0bb7",
+    "packages/context-broker/scripts/fixtures/active-notion-session.ts": "b92dfe89e5f86e93938639b9b07e1ea5859d68ecffc1e7651d7c32e5e8659d05"
   },
   "models": {
     "FreshnessPublication": {
@@ -49,14 +62,16 @@
         "host-skills.ts graphPreparation and its delayed commit",
         "prepare-protocol.ts decodePreparedGraph/decodePreparationLock",
         "session-graph.ts persistSessionSelection/reduceSessionSelection",
-        "session-working-set.ts assertWorkingSetBudget/releaseWorkingSetRoots; exact shared closure and ref matching are concrete replay obligations"
+        "session-working-set.ts assertWorkingSetBudget/releaseWorkingSetRoots; exact shared closure and ref matching are concrete replay obligations",
+        "host-skills.ts assertRefreshMain/currentRoot; canonical main File identity and multi-root replacement are concrete replay obligations"
       ],
       "atomicity": "Prepare, identity validation, output budget validation and final guarded commit are separate steps. Commit is synchronous. In deferred Pi the approved graph remains staged until the provider hook; this model's selected vector denotes the approved fixed selection, not provider acceptance or durable activation.",
       "replays": [
         "host-prepare.test.ts failed exact-file validation and output budget",
         "session-active.test.ts pending refreshed projection and complete root/Requires vectors",
         "skill-context-session.test.ts graph/projection identity mismatches",
-        "session-active.test.ts NXT12 complete union, shared Requires, stale fixed release; session-active-session.mjs independent installed Pi resume, compaction and branch ownership"
+        "session-active.test.ts NXT12 complete union, shared Requires, stale fixed release; session-active-session.mjs independent installed Pi resume, compaction and branch ownership",
+        "host-refresh.test.ts issued sr:S and selected canonical main refresh; invalid File/path and failed refresh preserve prior pins; session-refresh.test.ts partial roots/shared dependency conflicts"
       ]
     },
     "DeliveryBoundary": {
@@ -74,8 +89,25 @@
         "native-read-session.test.ts complete body, scope/pin/hash mismatches",
         "final-request.test.ts real deferred-drafts restoration and private role obligations",
         "final-request-undici.test.ts actual Node entity positive/rewrite/concurrency",
-        "notion-sdk-pi.mjs context-wire-negative: duplicate/lost/schema/restored-role",
-        "notion-sdk-pi.mjs --scenario working-set --provider-backend http: actual public tools and serialized release/reuse timeline"
+        "final-request.test.ts actual working_set report shape, session_effects separation, lost/modified management tool result and malformed consumption effects",
+        "notion-sdk-pi.mjs --scenario working-set: current SDK v2, actual public Pi tools, source HTTP and installed serializer; execution is separate evidence"
+      ]
+    },
+    "RecoveryClosure": {
+      "bounds": "Three sequential prompts; roots A and C share mandatory B, independent D; original bytes present or B missing; current authority revisions 1/2; business disablement, one observed access denial and one retired restore ticket. The model does not manufacture remote historical bytes.",
+      "owners": [
+        "session-recovery.ts fixed restoration, closure isolation and bounded retry",
+        "index.ts restoreActive source acquisition and original snapshot checks",
+        "host-skills.ts fixed-restoration observations and final context publication",
+        "session-graph.ts selectedClosure"
+      ],
+      "atomicity": "Restore start, SDK completion, final closure/permission projection and next prompt are separate transitions. Current Notion edits and observed denial may interleave before projection. An epoch change cancels this operation; it cannot publish old bytes. A failed fixed read becomes a local capability warning, not a persistent prompt abort.",
+      "fairness": "Weak fairness for local start/restore completion/projection and supplying the next prompt. Assumes every external acquisition terminates with bytes, failure, timeout or cancellation. ConversationCanContinue proves that all three prompts can reach a provider request or explicit cancellation under those assumptions; it does not prove arbitrary provider completion, model task quality, UI input, or eventual Notion availability.",
+      "replays": [
+        "session-recovery.test.ts: actual index hooks for missing snapshots, business-disabled originals, shared Requires and independent roots",
+        "session-recovery.test.ts: permission/cancellation during restore and repeated prompts",
+        "check-consumer-state-mutations.mjs: actual closure and isolation guards (bound after implementation review)",
+        "host-refresh.test.ts current main/resource inspection does not activate; scalar-resource-read-host.test.ts branch/file/authorization proofs for content-only inspection"
       ]
     }
   },
@@ -503,6 +535,130 @@
         "CurrentBranchOwnsProof",
         "NoDeadlock"
       ]
+    },
+    {
+      "model": "RecoveryClosure",
+      "config": "candidate",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "MandatoryClosureAtRequest",
+        "NoSilentVersionChange",
+        "NoDeniedBodyAtRequest",
+        "NoRetiredRestoration",
+        "DisabledOriginalsRemainUsable",
+        "IndependentRootSurvives",
+        "ConversationCanContinue",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RecoveryClosure",
+      "config": "continuation-negative",
+      "expected_broken": [
+        "ConversationCanContinue"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "MandatoryClosureAtRequest",
+        "NoSilentVersionChange",
+        "NoDeniedBodyAtRequest",
+        "NoRetiredRestoration",
+        "DisabledOriginalsRemainUsable",
+        "IndependentRootSurvives",
+        "ConversationCanContinue",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RecoveryClosure",
+      "config": "closure-negative",
+      "expected_broken": [
+        "MandatoryClosureAtRequest"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "MandatoryClosureAtRequest",
+        "NoSilentVersionChange",
+        "NoDeniedBodyAtRequest",
+        "NoRetiredRestoration",
+        "DisabledOriginalsRemainUsable",
+        "IndependentRootSurvives",
+        "ConversationCanContinue",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RecoveryClosure",
+      "config": "pins-negative",
+      "expected_broken": [
+        "NoSilentVersionChange"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "MandatoryClosureAtRequest",
+        "NoSilentVersionChange",
+        "NoDeniedBodyAtRequest",
+        "NoRetiredRestoration",
+        "DisabledOriginalsRemainUsable",
+        "IndependentRootSurvives",
+        "ConversationCanContinue",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RecoveryClosure",
+      "config": "disabled-negative",
+      "expected_broken": [
+        "DisabledOriginalsRemainUsable"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "MandatoryClosureAtRequest",
+        "NoSilentVersionChange",
+        "NoDeniedBodyAtRequest",
+        "NoRetiredRestoration",
+        "DisabledOriginalsRemainUsable",
+        "IndependentRootSurvives",
+        "ConversationCanContinue",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RecoveryClosure",
+      "config": "denial-negative",
+      "expected_broken": [
+        "NoDeniedBodyAtRequest"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "MandatoryClosureAtRequest",
+        "NoSilentVersionChange",
+        "NoDeniedBodyAtRequest",
+        "NoRetiredRestoration",
+        "DisabledOriginalsRemainUsable",
+        "IndependentRootSurvives",
+        "ConversationCanContinue",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RecoveryClosure",
+      "config": "epoch-negative",
+      "expected_broken": [
+        "NoRetiredRestoration"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "MandatoryClosureAtRequest",
+        "NoSilentVersionChange",
+        "NoDeniedBodyAtRequest",
+        "NoRetiredRestoration",
+        "DisabledOriginalsRemainUsable",
+        "IndependentRootSurvives",
+        "ConversationCanContinue",
+        "NoDeadlock"
+      ]
     }
   ],
   "excluded": [
@@ -517,6 +673,15 @@
     "scope": "The exact TLA/config/view bytes, model bounds, cases and expected rules are unchanged. Build/pin, user guidance, historical driver scores and unrelated producer files are not formal premises.",
     "identity_contract": "Reviewed the diff from fd7ebf718f26ec0a2b060cb8a968cb3f209061b2: remote preparation and catalog members accept only explicit shared_skill identities with current enablement. Implicit notion_page/subscription/upstream mapping is removed. Canonical raw page UUID input still qualifies against the current physical owner. Exact source, scope, locator and ref equality remain required; no changed request ordering, cancellation, graph commit, delivery or public projection guard.",
     "compiled_preparation_fixture": "Current shared_skill fixtures declare Enabled explicitly. The unchanged complete-body, exact-span, deduplication and directory-reuse assertions pass with the current binding; deleting Enabled remains a negative in the existing malformed-projection matrix. No delivery algorithm or model rule changed.",
-    "current_effects_contract": "The current SDK and host effects contract now has exactly version, remote_writes and author_content. Retained-history outcomes and retention arrays are rejected. Existing cancellation, partial-source failure, source-span retirement, exact-body and receipt-preservation cases use current none/unknown observations; unknown remains dominant and absent observations are unknown. Final-request validation rejects explicit malformed effects before payload acceptance and combines top-level/preparation observations conservatively. Actual HTTP entity and delivery guards remain in place. The effects field schema and diagnostic aggregation are concrete regression obligations outside the finite models; no model, bound, case inventory, expected rule or mutation target changed."
+    "current_effects_contract": "The current SDK and host effects contract now has exactly version, remote_writes and author_content. Retained-history outcomes and retention arrays are rejected. Existing cancellation, partial-source failure, source-span retirement, exact-body and receipt-preservation cases use current none/unknown observations; unknown remains dominant and absent observations are unknown. Final-request validation rejects explicit malformed effects before payload acceptance and combines top-level/preparation observations conservatively. Actual HTTP entity and delivery guards remain in place. The effects field schema and diagnostic aggregation are concrete regression obligations outside the finite models; no model, bound, case inventory, expected rule or mutation target changed. Working-set management now uses only session_effects, not the consumption effects field. Metadata and management results do not fabricate unknown source-body observations. Their complete actual tool results remain protected at the provider boundary; malformed consumption effects still fail. This schema separation has no legacy alias and is a concrete obligation outside the finite state variables."
+  },
+  "current_review": {
+    "reviewed_from": "8cce7fa105b8df6a485fe2b8ef419fc6ab597cb0",
+    "method": "Read changed owner functions, delayed commits, exact identity guards, source projection, failed recovery isolation and actual regression assertions before binding these source hashes. Hash correspondence is not an implementation refinement proof.",
+    "unchanged_guards": "Current evidence original validation time, request order, generation, cancellation and precise source denial ownership remain intact. Business Enabled is exempted only for intact previously confirmed fixed bytes; authorization is never exempted.",
+    "selection": "Selected, pending and active state share applySelectionGraphs. Replacement is atomic and owns only requested roots. Retained closures are projected into newly validated locks; physical bindings and outgoing Requires must agree for shared nodes. These multi-root combinations are concrete session-refresh obligations, beyond the single-root SelectionGraph bound.",
+    "inspection": "Explicit current inspection has a verified purpose and source ownership, is excluded from active instruction pins, and may route only resources in its exact complete directory on the current branch. Main and resource inspection remain subject to authorization and final wire checks. Content-only comparison is outside RecoveryClosure NoSilentVersionChange, which concerns active instructions.",
+    "recovery": "RecoveryClosure adds three prompts, shared A/C->B and independent D. Production recovers exact missing members, isolates failed complete closures, keeps pins, limits the entire context recovery to the existing 30-second read budget and backs off repeated failures. Later provider hooks recheck closure, authorization and epoch. External termination and continued user submission remain explicit liveness premises.",
+    "public_reference": "Canonical fixed main references with a File ID are accepted for explicit refresh only when the verified branch selection exactly proves that main. Wrong File ID/path and resource refs fail before acquisition. The fixture now carries actual v2 main File IDs; opaque and canonical public paths are separately replayed."
   }
 }

@@ -13,7 +13,7 @@ import { consumptionCostExtensionSource, readConsumptionCostEvents } from './ski
 import { providerTransportExtensionSource, readProviderTransport, providerApplicationCompletion } from './skill-consumption-provider.mjs';
 import { sourceObserverPreloadSource, readSourceObservation } from './skill-consumption-source-observer.mjs';
 import { observeGraphSdk } from './notion-skill-graph-model-evidence.mjs';
-import { observeOwnedObjectReads } from './notion-sdk-pi.mjs';
+import { observeOwnedObjectReads } from './notion-sdk-observers.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { createOwnedGraphProject, retainGeneratedPlan } from './notion-skill-graph-project.mjs';
 import { verifyPreparationEvidence, verifyConsumptionEffects } from './skill-preparation-evidence.mjs';
@@ -1092,7 +1092,7 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
   const harness = await Promise.all([
     'scripts/verify-pi-daily-installation.mjs', 'scripts/verify-pi-daily-candidate.mjs', 'scripts/skill-consumption-cost.mjs',
     'scripts/skill-consumption-provider.mjs', 'scripts/skill-consumption-source-observer.mjs', 'scripts/notion-skill-graph-model-evidence.mjs',
-    'scripts/notion-sdk-pi.mjs', 'scripts/notion-default-context.mjs',
+    'scripts/notion-sdk-observers.mjs', 'scripts/notion-default-context.mjs',
     'packages/context-broker/scripts/context-broker-rpc-harness.mjs', 'packages/context-broker/scripts/context-broker-e2e-fixture.mjs',
   ].map(path => fileIdentity(join(root, path))));
   await mkdir(config.evidenceRoot, { recursive: true, mode: 0o700 });

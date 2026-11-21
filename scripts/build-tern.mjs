@@ -7,7 +7,10 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { brokerInputs, fileInventory } from "./next-build-identity.mjs";
+
 const root = resolve(import.meta.dirname, "..");
+const sourceInputs = await fileInventory(root, brokerInputs);
 const args = process.argv.slice(2), options = new Map();
 for (let index = 0; index < args.length; index += 2) {
   const key = args[index], value = args[index + 1];
@@ -42,6 +45,7 @@ async function findPackage(name, entry) {
   }
 }
 const selectedCli = await findPackage("ntn-skills", ntnEntry);
+const selectedInputs = await fileInventory(selectedCli.directory, ["package.json", "dist/ntn-skills.js", "dist/sdk.js", "skills"]);
 const selectedRequire = createRequire(selectedCli.manifest);
 const sdkExport = selectedCli.metadata.exports?.["./sdk"];
 const sdkImport = typeof sdkExport === "string" ? sdkExport : sdkExport?.import;
@@ -229,4 +233,14 @@ if (buildTern) {
   const metadata = JSON.parse(await readFile(join(tern, "package.json"), "utf8"));
   if (!manifest.includes(`version = "${metadata.version}"`)) throw new Error("Tern package and manifest versions differ");
 }
+if ((await fileInventory(root, brokerInputs)).sha256 !== sourceInputs.sha256)
+  throw new Error("Broker inputs changed while building; rebuild before next delivery");
+if ((await fileInventory(selectedCli.directory, ["package.json", "dist/ntn-skills.js", "dist/sdk.js", "skills"])).sha256 !== selectedInputs.sha256)
+  throw new Error("Selected CLI/SDK changed while building; rebuild the paired candidate");
+await writeFile(join(brokerOutput, "dist/next-build.json"), JSON.stringify({
+  version: 1, kind: "broker-build", input_roots: brokerInputs, source: sourceInputs,
+  selected_cli: selectedInputs,
+  artifacts: await fileInventory(brokerOutput, ["dist/ntn-skills.mjs", "dist/ntn-skills-sdk.mjs", "dist/ntn-skills-runtime.json", "dist/completion.mjs", "dist/builtin-skills"]),
+  toolchain: { bun: Bun.version, node: process.version },
+}, null, 2) + "\n");
 console.log(buildTern ? "Built standalone broker query and Tern plugin query" : `Built standalone broker package at ${brokerOutput}`);

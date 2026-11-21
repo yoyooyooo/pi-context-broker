@@ -22,6 +22,7 @@ export type ResourceReadProofFile = Omit<ResourceReadSourceFile, "content"> & {
 };
 export type ResourceReadProof = {
   version: 2; toolCallId: string; loaded: false; selection: ResourceReadSelection;
+  purpose?: "inspect";
   files: readonly ResourceReadProofFile[];
   projection: {
     version: 1; compiler: typeof RESOURCE_READ_COMPILER; rendered: { sha256: string; bytes: number };
@@ -87,7 +88,8 @@ function parsedModel(text: string) {
 /** Validate bytes from the actual tool text. A resource receipt never grants a
  * main-body delivery, prepared graph, or active session binding. */
 export function validateResourceReadProjection(text: string, value: unknown): ResourceReadProof | undefined {
-  if (!object(value) || !keys(value, ["version", "toolCallId", "loaded", "selection", "files", "projection"])
+  if (!object(value) || !keys(value, ["version", "toolCallId", "loaded", "selection", "files", "projection", "purpose"])
+    || value.purpose !== undefined && value.purpose !== "inspect"
     || value.version !== 2 || !nonempty(value.toolCallId) || value.loaded !== false || !object(value.selection)
     || !keys(value.selection, ["scope", "owner", "snapshot_id", "version_id"])
     || !nonempty(value.selection.scope) || !nonempty(value.selection.owner) || !sha(value.selection.version_id)
@@ -136,7 +138,7 @@ export function validateResourceReadProjection(text: string, value: unknown): Re
 
 export function compileResourceRead(input: {
   toolCallId: string; batch: { selection: ResourceReadSelection; files: readonly ResourceReadSourceFile[] };
-  modelRefs: readonly string[]; maxContextBytes: number; effects?: ConsumptionEffects;
+  modelRefs: readonly string[]; maxContextBytes: number; effects?: ConsumptionEffects; purpose?: "inspect";
 }): NativeReadResult & { structuredContent: ResourceReadModel; details: { contextBrokerResource: ResourceReadProof } } {
   if (!nonempty(input.toolCallId) || input.modelRefs.length !== input.batch.files.length
     || !Number.isSafeInteger(input.maxContextBytes) || input.maxContextBytes <= 0) invalid();
@@ -159,6 +161,7 @@ export function compileResourceRead(input: {
   }
   const proof: ResourceReadProof = {
     version: 2, toolCallId: input.toolCallId, loaded: false, selection: { ...input.batch.selection },
+    ...(input.purpose ? { purpose: input.purpose } : {}),
     files: input.batch.files.map(({ content: _content, ...file }, index) => ({ ...file, index, model_ref: input.modelRefs[index]!,
       loaded: false, delivered_complete_text: file.encoding === "utf8", state: file.encoding === "utf8" ? "source" : "binary",
       ...(rendered.bodySpans[index] ? { delivery: rendered.bodySpans[index] } : {}) })),

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { spawnSync } from "node:child_process"
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -79,4 +80,46 @@ test("current verification maps resolve their links and existing executable rout
   verifyCurrentRoutes(documents)
   assert.throws(() => verifyCurrentRoutes([[skills[0], "[missing](missing-route.md)"]]))
   assert.throws(() => verifyCurrentRoutes([[skills[0], "node scripts/missing-current-route.mjs"]]))
+})
+
+test("the public daily entry exposes real read-only help with its actions and required flags", () => {
+  const result = spawnSync(process.execPath, ["scripts/verify-pi-daily-installation.mjs", "--help"], {
+    cwd: root, encoding: "utf8", timeout: 15000,
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.ok(result.stdout.trim(), "help must not silently import an implementation module")
+  for (const token of ["candidate-plan", "candidate-run", "--config", "--live"])
+    assert.ok(result.stdout.includes(token), "missing public help: " + token)
+})
+
+test("paired CLI contract owners and Broker commands resolve in this actual checkout", {
+  skip: process.env.CONTEXT_BROKER_GRAPH_CORE ? false : "Set CONTEXT_BROKER_GRAPH_CORE to the paired CLI source; cross-repository routing not run.",
+}, () => {
+  const cliRoot = resolve(process.env.CONTEXT_BROKER_GRAPH_CORE, "../../..")
+  const map = JSON.parse(readFileSync(resolve(cliRoot, "verification/skill-domains.json"), "utf8"))
+  const check = (value) => {
+    assert.equal(value.version, 2, "paired CLI must expose the current contract index")
+    assert.deepEqual(value.external_domains.map(domain => domain.skill).sort(), [...skills].sort())
+    for (const domain of value.external_domains)
+      assert.ok(statSync(resolve(root, domain.skill)).isFile(), "missing external owner")
+    for (const row of [...value.contracts, ...value.scenarios]) {
+      for (const entry of row.entrypoints) {
+        if (entry.repository !== "broker") continue
+        assert.doesNotMatch(entry.command, /^node scripts\/verify-pi-daily-candidate\.mjs(?:\s|$)/u,
+          "the candidate implementation module is not a public CLI")
+        if (entry.command.includes("/absolute/")) assert.ok(entry.required_inputs?.length,
+          "an absolute config placeholder requires explicit inputs and is not an executed result")
+        for (const match of entry.command.matchAll(/\b((?:packages|scripts|verification)\/[\w./-]+\.(?:ts|mjs|py))\b/gu))
+          assert.ok(statSync(resolve(root, match[1])).isFile(), row.id + ": missing Broker command")
+      }
+    }
+  }
+  check(map)
+  assert.throws(() => check({ ...map, external_domains: map.external_domains.slice(1) }))
+  const changed = structuredClone(map)
+  changed.contracts[0].entrypoints.push({ repository: "broker", command: "node scripts/nonexistent-current-contract.mjs" })
+  assert.throws(() => check(changed))
+  const imported = structuredClone(map)
+  imported.contracts[0].entrypoints.push({ repository: "broker", command: "node scripts/verify-pi-daily-candidate.mjs --help", required_inputs: [] })
+  assert.throws(() => check(imported), /not a public CLI/u)
 })

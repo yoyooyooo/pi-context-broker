@@ -11,7 +11,7 @@ on:
       - "bun.lock"
       - ".github/workflows/formal.yml"
   push:
-    branches: [main]
+    branches: [main, next]
     paths:
       - "packages/**"
       - "verification/**"
@@ -77,7 +77,13 @@ jobs:
         run: |
           case "${{ matrix.suite }}" in
             observations) bun test packages/context-broker/scripts/consumer-observation.test.ts packages/context-broker/scripts/host-prepare.test.ts --timeout 30000 > "${{ runner.temp }}/formal-${{ matrix.suite }}/regressions.stdout" 2> "${{ runner.temp }}/formal-${{ matrix.suite }}/regressions.stderr" ;;
-            consumer-state) bun test packages/context-broker/scripts/consumer-state.test.ts packages/context-broker/scripts/session-active.test.ts packages/context-broker/scripts/host-prepare.test.ts --timeout 30000 > "${{ runner.temp }}/formal-${{ matrix.suite }}/regressions.stdout" 2> "${{ runner.temp }}/formal-${{ matrix.suite }}/regressions.stderr" ;;
+            consumer-state) bun test packages/context-broker/scripts/consumer-state.test.ts packages/context-broker/scripts/session-active.test.ts packages/context-broker/scripts/session-refresh.test.ts packages/context-broker/scripts/session-recovery.test.ts packages/context-broker/scripts/host-prepare.test.ts packages/context-broker/scripts/host-refresh.test.ts packages/context-broker/scripts/final-request.test.ts --timeout 30000 > "${{ runner.temp }}/formal-${{ matrix.suite }}/regressions.stdout" 2> "${{ runner.temp }}/formal-${{ matrix.suite }}/regressions.stderr" ;;
+          esac
+      - name: Prove production guards detect the reviewed failures
+        run: |
+          case "${{ matrix.suite }}" in
+            observations) node scripts/check-consumer-observation-mutations.mjs --out "${{ runner.temp }}/formal-${{ matrix.suite }}/guard-mutations" ;;
+            consumer-state) node scripts/check-consumer-state-mutations.mjs --out "${{ runner.temp }}/formal-${{ matrix.suite }}/guard-mutations" ;;
           esac
       - name: Retain summaries, exact inputs, reports, TLC output and generated diagrams
         if: always()

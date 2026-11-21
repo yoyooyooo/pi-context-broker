@@ -17,7 +17,7 @@ description: "验证当前 Context Broker 的 Pi 注入、目录与资源消费�
 | 跨仓 SDK、包内运行时、安装后的 HTTP 消费 | [integration Skill](../verify-notion-skills-integration/SKILL.md)；`scripts/verify-artifacts.mjs` | 同一 CLI/SDK 候选，实际独立安装与 current HTTP |
 | 资格、固定选择、取消、provider/turn/投影状态 | [consumer-state Skill](../verify-notion-consumer-state/SKILL.md) | 审模型、受保护 guard 与反例；不刷新 hash 放行 |
 | 实际 Pi 的 SDK/工具/serializer 行为 | `scripts/notion-sdk-pi.mjs` 现有入口 | 记录所选场景与实际安装；受控 provider 不证明模型理解 |
-| 真实 Notion 与日用 Pi | `scripts/verify-pi-daily-installation.mjs`、`scripts/verify-pi-daily-candidate.mjs` | AH-1063；有效配置、实际包、正文/资源、取消与模型结果分别记录 |
+| 真实 Notion 与日用 Pi | `scripts/verify-pi-daily-installation.mjs` 的 plan/run/candidate-plan/candidate-run | AH-1197/AH-637/AH-1198；有效配置、实际包、正文/资源、取消与模型结果分别记录 |
 
 OMP/Tern 产品代码保留，当前验收延期。旧双宿主控制器、旧 CLI fixture 总入口和旧原生 UI/PTY 驱动已删除。真实 Pi 助手仍在；原生终端菜单、光标和 UI 操作没有本轮成绩，不能由源码、RPC 或安装包结果推断。
 
@@ -41,7 +41,7 @@ node scripts/notion-sdk-pi.mjs --help
 node scripts/verify-pi-daily-installation.mjs candidate-plan --config /absolute/current-candidate.json
 ```
 
-候选配置应指向有效 Pi 配置实际使用的安装、当前 Notion 库和本轮自有输出。计划结果不是执行结果。真实表切换与日用安装就绪后，按 [日用地图](../verify-notion-skills-integration/features/daily-installation-ui.md) 执行已有 candidate-run；不用旧 CLI fixture 填补缺失输入。
+命令中的绝对路径是占位，按合同索引 required_inputs 补齐自有配置。候选配置应指向有效 Pi 配置实际使用的安装、当前 Notion 库和本轮自有输出。计划结果不是执行结果。真实表切换与日用安装就绪后，按 [日用地图](../verify-notion-skills-integration/features/daily-installation-ui.md) 执行公开动作；candidate-run 仅为项目级候选，不替代每机日用 run。候选实现模块没有独立 CLI；不用旧 CLI fixture 填补缺失输入。
 
 缺失引用、取消与会话恢复分别沿 [injection](features/injection.md)、[lifecycle](features/lifecycle.md)；当前请求只保留一份必要正文沿 [context-once](features/context-once.md)。模型效果沿 [model](features/model.md)，只在已有授权覆盖的 provider/model 上运行。
 
@@ -52,3 +52,9 @@ node scripts/verify-pi-daily-installation.mjs candidate-plan --config /absolute/
 保留实际命令、候选身份、退出结果和原助手产生的必要诊断；不新增总 manifest、历史版本或统一证据平台。只用本轮自有绝对目录，不改用户全局配置、凭据或正在使用的会话。清理先确认自有进程已退出，再将对应 scratch 移入系统 Trash；保留失败结果，不执行永久删除、批量 kill 或 git clean/reset。
 
 仅改 Skill/路由时运行已有 `node --test scripts/verification-skill-routing.test.mjs scripts/skill-consumption-contract.test.mjs`。作者的结构检查与独立 agent 冷启动评估分开，后者未做时记录 `instruction_evaluation:not_run`。
+
+## 当前合同和运行回执
+
+按上文的验证交接使用配对 CLI 的合同/场景索引与薄回执。记录 actual command、源码/dirty tree、实际加载路径/bytes、机器/runtime、初态、层级和原件 hash；首次失败与复验关系保留。fixture 或受控 provider 不作为 live/natural；结构检查不代表独立 Agent 使用成功，未做时标 instruction_evaluation:not_run。
+
+本入口拥有自然任务与工具必要性。普通 Pi 的显式 local 任务若本地充分且远端 source 可见，断言不必要 notion_use 为零，失败调用也计数；另设确需远端正例。旧会话要求采用最新、只查看最新和故障后继续，使用自然提示，不预先给工具名、flag 或 opaque ref。

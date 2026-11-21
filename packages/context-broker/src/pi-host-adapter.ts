@@ -59,16 +59,19 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
         } };
         // Providers may reject root combinators. Enforce the two exclusive modes
         // before shared preparation or native I/O, including direct tool callers.
-        const parameters: Record<string, unknown> = { type: "object", properties: { ...scalarProperties, paths } };
+        const parameters: Record<string, unknown> = { type: "object", properties: { ...scalarProperties, paths,
+          refresh: { type: "boolean", description: "Explicitly inspect the current main Skill content without changing the active selection. Only for a supplied Notion Skill ref in path; fixed resources and local files keep their own versions." } } };
         const definition: PiReadDefinition = {
           ...native,
-          description: "For Notion introductions, summaries or inspection, copy a supplied Skill/resource ref into path. This reads content without loading Requires or activating its workflow. Notion reads do not write to the remote library. If an earlier selection is no longer valid, select the Skill again and copy its current refs. " + native.description + " Alternatively, paths reads fixed resources of one owner and snapshot together; choose path or paths. Batch reads exclude offset/limit and the main entrypoint.",
+          description: "For Notion introductions, summaries or inspection, copy a supplied Skill/resource ref into path. This reads content without loading Requires or activating its workflow. Notion reads do not write to the remote library. For latest content, use refresh:true with the supplied main Skill ref; the current task keeps its previous selection. To adopt the latest instructions, use notion_use with refresh:true. " + native.description + " Alternatively, paths reads fixed resources of one owner and snapshot together; choose path or paths. Batch reads exclude offset/limit and the main entrypoint.",
           parameters, defaultActive: activeTools().includes("read"),
           ...(native.outputSchema ? { outputSchema: { anyOf: [native.outputSchema, resourceOutputSchema] } } : {}),
           async execute(id, input, signal, onUpdate, context) {
             if (Object.hasOwn(input, "readOnly")) throw Object.assign(new Error("readOnly is not supported. Omit it; Notion reads do not write to the remote library."), { code: "INVALID_ARGUMENT" });
             const hasPath = Object.hasOwn(input, "path"), hasPaths = Object.hasOwn(input, "paths");
             if (hasPath === hasPaths
+              || input.refresh !== undefined && typeof input.refresh !== "boolean"
+              || input.refresh === true && (typeof input.path !== "string" || !/^(?:skill:\/\/|sr:[CS][A-Za-z0-9_-]{22}$)/.test(input.path))
               || hasPath && (typeof input.path !== "string" || [input.offset, input.limit].some(value => value !== undefined && (typeof value !== "number" || !Number.isFinite(value))))
               || hasPaths && (Object.keys(input).some(key => key !== "paths") || !Array.isArray(input.paths)
                 || input.paths.length < 1 || input.paths.length > DEFAULT_RESOURCE_READ_BUDGET.maxFiles

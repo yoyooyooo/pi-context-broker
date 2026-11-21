@@ -17,7 +17,7 @@ import { systemTempRoot } from './verification-paths.mjs';
 
 const mainRef = 'sr:S' + 'a'.repeat(22);
 const resourceRef = 'sr:R' + 'b'.repeat(22);
-const plan = { mode: 'native-repeat', owner: 'resources', resource_path: 'references/guide.md' };
+const plan = { mode: 'call', call: { type: 'toolCall', id: 'current-main', name: 'read', arguments: { path: mainRef } } };
 const selectCall = context => selectProviderCall(context, plan);
 
 function listText() {
@@ -174,8 +174,8 @@ test('the original fake provider text keeps the Tern and startup replace anchors
   assert.equal(source.includes('mock-provider-adapter'), false);
 });
 
-test('installed serializer and loopback mock share native-repeat selection across turns', async () => {
-  const host = await resolveHost('pi');
+test('installed serializer and loopback mock preserve the explicit current tool plan', async () => {
+  const host = await resolveHost(process.env.BROKER_TEST_PI ?? 'pi');
   let packageRoot = dirname(host.identity), packageInfo;
   for (;;) {
     try { packageInfo = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8')); }
@@ -190,10 +190,10 @@ test('installed serializer and loopback mock share native-repeat selection acros
   const model = { id: 'fake', name: 'Fixture', api: 'openai-completions', provider: 'openai', reasoning: false,
     baseUrl: server.baseUrl, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 100000, maxTokens: 128 };
-  const context = { messages: [{ role: 'user', content: 'Read the resources skill.' }] };
+  const context = { messages: [{ role: 'user', content: 'Read the discovered current skill.' }, { role: 'toolResult', toolCallId: 'discovery', toolName: 'notion_list', content: [{ type: 'text', text: listText() }] }] };
   try {
-    const expectedIds = ['sc10-search', 'sc15-main', 'sc15-resource', 'sc15-main-repeat', 'sc15-resource-repeat'];
-    const outputs = [listText(), mainText(), 'resource-bytes', 'main-repeat', 'resource-repeat'];
+    const expectedIds = ['current-main'];
+    const outputs = [mainText()];
     for (const [index, id] of expectedIds.entries()) {
       const expected = selectCall(context);
       assert.equal(expected.id, id);
@@ -343,7 +343,7 @@ test('real Pi loads the in-process wrapper and completes one turn', async () => 
   const env = isolatedEnv({ base: root, agentDir, TMPDIR: await systemTempRoot(),
     SC10_PI_TOOL_PLAN: planPath, SC10_PI_PROVIDER_HOOKS: join(root, 'hooks.jsonl'),
     CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: join(root, 'provider.jsonl') });
-  const rpc = await startRpc({ host: 'pi', args: ['--no-extensions', '--no-skills', '--no-mcp', '--session-dir', sessions, '--tools', 'read', '-e', provider, '--model', 'context-broker-e2e/fake'], cwd: root, env, timeoutMs: 60000 });
+  const rpc = await startRpc({ host: process.env.BROKER_TEST_PI ?? 'pi', args: ['--no-extensions', '--no-skills', '--no-mcp', '--session-dir', sessions, '--tools', 'read', '-e', provider, '--model', 'context-broker-e2e/fake'], cwd: root, env, timeoutMs: 60000 });
   try {
     const frame = await rpc.prompt('Reply with the fixture stop text.');
     const assistant = (frame.messages ?? []).filter(message => message.role === 'assistant').at(-1);

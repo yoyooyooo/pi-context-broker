@@ -16,7 +16,7 @@ import { createOwnedGraphProject, inspectOwnedGraphProject, retainGeneratedPlan,
 import { createPiHelpBoundary } from './notion-pi-help.mjs';
 import { installedBrokerIdentity } from './notion-skill-graph-session.mjs';
 import { verificationCliEnvironment, systemTempRoot } from './verification-paths.mjs';
-import { assertCatalogCancellationBoundary } from './notion-sdk-pi.mjs';
+import { assertCatalogCancellationBoundary } from './notion-sdk-observers.mjs';
 import { consumptionCostExtensionSource, readConsumptionCostEvents } from './skill-consumption-cost.mjs';
 import { dailyRouteContract, verifyDailyRouteState, verifyDailyRouteEvidence } from './verify-skill-graph-contract.mjs';
 

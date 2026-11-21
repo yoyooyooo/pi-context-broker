@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { activeSelection, activeSources } from "./session-active";
+import { activeContextClosures } from "./session-recovery";
 import { parseNativeReference } from "./native-reference";
 import type { PreparedHostGraph } from "./prepare-protocol";
 import type { ConsumptionEffects } from "./consumption-effects";
@@ -55,12 +56,13 @@ export function exportWorkingSet(ctx: ExtensionContext, messages: AgentMessage[]
       retained_as_required: remaining.has(root.id) };
   });
   return { version: 1, kind: "working_set", scope: "notion_instruction_graphs", roots: nodes.filter(node => node.root).map(node => node.ref), nodes,
+    context: activeContextClosures(ctx, projected, pending).map(root => ({ ...root, complete: root.missing.length === 0 })),
     active: { nodes: nodes.length, instruction_bytes, visible_instruction_bytes: nodes.filter(node => node.visible).reduce((sum, node) => sum + (node.instruction_bytes ?? 0), 0) },
     history: { versions: active.history.size, unique_instruction_bytes: [...active.history.values()].reduce((sum, source) => sum + source.bytes, 0) },
     budget: { max_instruction_bytes: limit, status: instruction_bytes === null ? "unknown" : limit !== null && instruction_bytes > limit ? "exceeded" : "within",
       unit: "utf8_bytes", automatic_eviction: false },
     release_candidates,
-    effects: { notion_writes: "none", history_changed: false, cache_reclaimed: false } };
+    session_effects: { notion_writes: "none", history_changed: false, cache_reclaimed: false } };
 }
 
 export class WorkingSetBudgetError extends Error {

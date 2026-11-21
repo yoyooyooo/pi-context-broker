@@ -80,7 +80,7 @@ try {
   const tasks = [
     ["observations", process.execPath, ["scripts/verify-consumer-observations.mjs", "--suite", "observations", "--out", path.join(out, "observations")]],
     ["models", process.execPath, ["scripts/verify-consumer-observations.mjs", "--suite", "consumer-state", "--out", path.join(out, "models")]],
-    ["regressions", "bun", ["test", ...["consumer-observation", "consumer-state", "host-prepare", "session-active", "native-read-session", "skill-context-session"].map(name => "packages/context-broker/scripts/" + name + ".test.ts"), "--timeout", "30000"]],
+    ["regressions", "bun", ["test", ...["consumer-observation", "consumer-state", "host-prepare", "host-refresh", "session-active", "session-refresh", "session-recovery", "native-read-session", "skill-context-session"].map(name => "packages/context-broker/scripts/" + name + ".test.ts"), "--timeout", "30000"]],
     ["observation-mutations", process.execPath, ["scripts/check-consumer-observation-mutations.mjs", "--out", path.join(out, "observation-mutations")]],
     ["mutations", process.execPath, ["scripts/check-consumer-state-mutations.mjs", "--out", path.join(out, "mutations")]],
   ];

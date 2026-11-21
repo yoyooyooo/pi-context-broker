@@ -146,15 +146,26 @@ export function decodePreparedGraph(value: unknown, input: { purpose: Preparatio
 
 /** Expose failure provenance and budgets without forwarding raw response bodies or URLs. */
 export type PreparationDenial = { scope: string; id: string; ref: string; code: "CONTENT_DISABLED" | "ACCESS_DENIED" | "AUTH_REQUIRED" };
-export function preparationFailureDetails(value: unknown): { preparation?: unknown; retry_after?: number; denials?: readonly PreparationDenial[]; effects?: ConsumptionEffects } | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const details = value as Record<string, unknown>;
+export function preparationFailureDetails(value: unknown): (Record<string, unknown> & { preparation?: unknown; retry_after?: number; denials?: readonly PreparationDenial[]; effects?: ConsumptionEffects; roots?: readonly { scope: string; id: string }[] }) | undefined {
+  if (!object(value)) return undefined;
+  const details = value, diagnostics: Record<string, unknown> & { roots?: { scope: string; id: string }[] } = {};
+  // Keep the current SDK's bounded acquisition/cache provenance. Raw response
+  // bodies and unrelated fields remain private on the Error cause.
+  for (const key of ["phase", "reason", "snapshot_id", "scope", "id", "target", "next", "cache_key", "record_identity", "required_capability", "observed_version"])
+    if (typeof details[key] === "string" && details[key].length <= 4096 && !details[key].includes("\0")) diagnostics[key] = details[key];
+  for (const key of ["generation", "retired_through"])
+    if (typeof details[key] === "number" && Number.isSafeInteger(details[key]) && details[key] >= 0) diagnostics[key] = details[key];
+  if (Array.isArray(details.paths) && details.paths.length <= 256
+    && details.paths.every(path => typeof path === "string" && path.length <= 4096 && !path.includes("\0"))) diagnostics.paths = [...details.paths];
+  if (Array.isArray(details.roots) && details.roots.length <= 64 && details.roots.every(root => object(root)
+    && typeof root.scope === "string" && /^[a-f0-9]{64}$/.test(root.scope) && typeof root.id === "string" && root.id.length <= 4096 && !root.id.includes("\0")))
+    diagnostics.roots = details.roots.map(root => ({ scope: root.scope, id: root.id }));
   const effects = details.effects === undefined ? undefined : consumptionEffects(details.effects);
   const retry = typeof details.retry_after === "number" && Number.isFinite(details.retry_after) ? details.retry_after : undefined;
   const raw = details.preparation;
-  if (!raw || typeof raw !== "object") return retry === undefined && effects === undefined ? undefined
-    : { ...(retry === undefined ? {} : { retry_after: retry }), ...(effects === undefined ? {} : { effects }) };
-  const preparation = raw as Record<string, unknown>;
+  if (!object(raw)) return retry === undefined && effects === undefined && !Object.keys(diagnostics).length ? undefined
+    : { ...diagnostics, ...(retry === undefined ? {} : { retry_after: retry }), ...(effects === undefined ? {} : { effects }) };
+  const preparation = raw;
   const nodes = Array.isArray(preparation.nodes) ? preparation.nodes.filter(object) : [];
   const denials: PreparationDenial[] = [];
   if (typeof preparation.scope === "string" && /^[a-f0-9]{64}$/.test(preparation.scope)) {
@@ -176,6 +187,7 @@ export function preparationFailureDetails(value: unknown): { preparation?: unkno
     }
   }
   return {
+    ...diagnostics,
     ...(retry === undefined ? {} : { retry_after: retry }),
     ...(effects === undefined ? {} : { effects }),
     ...(denials.length ? { denials } : {}),

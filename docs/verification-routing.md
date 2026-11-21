@@ -9,9 +9,9 @@
 | Source 配置、成员发现与接纳 | CLI `.cursor/skills/verify-notion-source-onboarding/SKILL.md` | 成员曝光、启停、依赖或当前来源绑定变化 |
 | 资格、请求顺序、固定选择、provider/turn/投影 | [consumer state](../.agents/skills/verify-notion-consumer-state/SKILL.md) | 对应 observations / consumer-state 模型与真实守卫 |
 | CLI/SDK 配对、当前消费、独立安装包 | [integration](../.agents/skills/verify-notion-skills-integration/SKILL.md) | 跨仓合同或实际安装字节变化 |
-| 当前Pi行为、生命周期和分发 | [context broker](../.agents/skills/verify-context-broker/SKILL.md) | 仅验证本次选择的宿主和功能 |
+| 当前 Pi 行为、自然任务和本地/远端选路 | [context broker](../.agents/skills/verify-context-broker/SKILL.md) | 仅验证本次选择的宿主和功能 |
 
-CLI feature 归属由其 `verification/skill-domains.json` 维护。Broker 三项入口分别是 `.agents/skills/verify-notion-consumer-state/SKILL.md`、`.agents/skills/verify-notion-skills-integration/SKILL.md`、`.agents/skills/verify-context-broker/SKILL.md`。
+C01–C11/T01–T23、单一 owner 与实际入口由 CLI `verification/skill-domains.json` 唯一维护，使用同一配对提交的 `docs/verification-contracts.md`。当前主线为 AH-1188，旧 Done 不填作当前通过。CLI feature 归属仍在同一索引中。Broker 三项入口分别是 `.agents/skills/verify-notion-consumer-state/SKILL.md`、`.agents/skills/verify-notion-skills-integration/SKILL.md`、`.agents/skills/verify-context-broker/SKILL.md`。
 
 ## 当前执行边界
 
@@ -23,12 +23,38 @@ CLI feature 归属由其 `verification/skill-domains.json` 维护。Broker 三�
 
 ## 结果交接
 
-消费资格同时遵循当前 Source 与 Skill 的 Enabled；disabled 的当前来源不能因目录缓存或本地旧 pin 被重新启用。Source ready、目录完整、本地固定字节、完整正文交付、provider 接受、turn 完成和宿主公开投影必须分开判断。本地旧 pin 不承诺远端历史恢复；明确重新选择后才获取当前内容。
+新 current 消费资格遵循当前 Source 与 Skill 的 Enabled；disabled 的当前来源不能因目录缓存或本地旧 pin 被重新启用。Default Context 随实际选定 View 决定默认候选，不 release 既有选择，也不自动注入全文。已有完整固定任务、缺字节 current acquisition 与授权拒绝分别判定；业务 Enabled 关闭不能静默拆掉原完整任务的 Required。重新启用须可信 fresh use 或新 metadata；缺行不能猜 deny。Source ready、目录完整、本地固定字节、完整正文交付、provider 接受、turn 完成和宿主公开投影必须分开判断。本地旧 pin 不承诺远端历史恢复；明确重新选择后才获取当前内容。
 
 管理结果 partial/unknown 保持原意图和实际状态；当前读取相同不能制造原ACK。消费端失效必须绑定当前 library/entry 与 operation，不按同名 Skill 猜测。模型、回执摘要和 HTTP 2xx 都不能代替实际 serializer 中的完整正文。
 
-当前源码直接运行 `bun run check:broker`；安装直接复用 `scripts/verify-artifacts.mjs` 与 `scripts/verify-notion-sdk-installed.mjs`。实际Pi保留 `scripts/notion-sdk-pi.mjs`、`scripts/verify-pi-daily-installation.mjs` 和 `scripts/verify-pi-daily-candidate.mjs`。旧双宿主controller及CLI fixture/UI/PTY入口已退役，没有新的包装runner。原生终端专项本轮未验收。
+当前源码直接运行 `bun run check:broker`；安装直接复用 `scripts/verify-artifacts.mjs` 与 `scripts/verify-notion-sdk-installed.mjs`。实际 Pi 沿 `scripts/notion-sdk-pi.mjs` 和 `scripts/verify-pi-daily-installation.mjs` 的公开动作；`scripts/verify-pi-daily-candidate.mjs` 仅是后者导入的实现模块。旧双宿主controller及CLI fixture/UI/PTY入口已退役，没有新的包装runner。原生终端专项本轮未验收。
 
-报告只记录本次实际候选、所选范围、结果和具体限制。源码测试、受控 HTTP、独立安装、真实 Notion、Pi 会话、provider/model 分别判断。安装入口不启动 Pi；真实日用沿 AH-1063 在真实表切换后执行。OMP/Tern 延期，不作为当前 Pi 主线的默认前置。
+报告绑定合同/场景/run、实际命令、源码/dirty tree、loaded CLI/SDK/Broker 路径与 hash、机器/runtime、初态及原始日志 hash。复用现有 summary/result；同一原件不因多票引用重复计数。按配对 CLI 的 `verification/run-receipt.mjs` 检查薄回执；receipt-valid 只代表字段正确，不认证底层行为。failed/blocked/not_run 保留，首败和 retest_of 分开。源码测试、受控 HTTP、独立安装、真实 Notion、Pi 会话、provider/model 分别判断。安装入口不启动 Pi；真实日用沿 AH-1197/AH-637/AH-1198 验当前配对，AH-1063 只保留历史范围。OMP/Tern 延期，不作为当前 Pi 主线的默认前置。
 
 Skill 作者执行与独立冷启动评估分开；未完成后者时标明 `instruction_evaluation:not_run`，不把结构测试称为 agent 使用成功。清理只处理本轮进程和自有绝对路径，经系统 Trash；不动用户会话、全局配置或未结清的当前 operation Store。
+
+## 当前层级与自然任务
+
+consumer-state 拥有 C01–C05/C07c 的观察、选择、恢复与实际闭包；integration 拥有 C10 的跨仓公共入口和实际安装；context-broker 拥有 C08 的自然任务与工具必要性。形式化只验证声明的组合性质，不接管产品状态。
+
+源码/真实 Store、受控 HTTP/host、独立包、live Notion+Pi+provider、natural 各自记账。自然层必须使用自然用户任务和真实模型；工具指定提示、受控 provider、observer fixture 不可填入该栏。T22 必须保留 source 可见的纯本地充分负例及必要远端正例；@local 不代表全局禁用 Notion。
+
+复用现有回执和运行命令，只增加追溯字段。校验一个现有回执使用配对 CLI checkout：
+
+```sh
+node /absolute/current/notion-skills-cli/verification/run-receipt.mjs /absolute/owned/run/receipt.json
+```
+
+空集合不通过，关键项 failed/blocked/not_run 不可收口。普通续聊、主动最新、查看不采用、compact/manifest 失败后三轮、开关切换、多根共享依赖和两机下一次同步分别有场景 owner；不能由单次安装 smoke 代替。
+
+## next worktree 日用链
+
+先在两仓目标 next worktree 分别 build，再将精确 commits 和实际 worktree roots 写入本轮日用 config 的 `worktrees.cli` / `worktrees.broker`。CLI/Broker build 的 `dist/next-build.json` 记录真实 source 与产物身份；Broker 还核 raw CLI/SDK 及 embedded 对应。
+
+```sh
+node scripts/verify-next-worktrees.mjs --config /absolute/owned/current-pair.json
+```
+
+config 的 cliRoot/brokerRoot 必须是这些 worktree 的实际 packages 路径。检查通过后使用原有 daily installation/candidate 入口，运行前后都核对同一配对。源码 dirty、HEAD 不符、旧 build/SDK 或一机落后不能 passed。这里不执行常驻自更新，也不保留旧包兼容模式。独立 package 安装继续单独验，不因 worktree smoke 通过而省略；实际两机默认入口仍要取得各机真实回执。
+
+C10/T21 的 entrypoints.required_inputs 列出各动作必需配置。`/absolute/owned/` 是占位路径，不能直接当成已运行命令。daily-installation 的 plan/candidate-plan 只生成准备信息；run 检查当前日用装载，candidate-run --live 是项目级候选运行。各自范围见 [日用地图](../.agents/skills/verify-notion-skills-integration/features/daily-installation-ui.md)。帮助输出和 import 模块退出 0 都不能记为场景通过。

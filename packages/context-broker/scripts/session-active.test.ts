@@ -265,13 +265,13 @@ async function deferredFixture(prepared?: PreparedHostGraph) {
       confirmDelivery: (records, deliveredMessages, context) => confirmActiveSources(api, context, records, deliveredMessages),
       restoreActive: async (deliveredMessages, context, _signal, pending) => {
         const missing = missingActiveSources(context, deliveredMessages, pending);
-        if (!missing.length) return undefined;
+        if (!missing.length) return { messages: deliveredMessages, restored: [], notices: [] };
         restored.push(missing.map(source => source.record.id!));
-        return sourceMessage(missing.map(source => {
+        return { messages: deliveredMessages, notices: [], restored: [sourceMessage(missing.map(source => {
           const record = prepared.records.find(record => record.id === source.record.id);
           if (!record) throw new Error("Expected the fixed fixture owner");
           return assertRestoredSource(source, record);
-        }));
+        }))] };
       },
     } satisfies Pick<HostSkillOptions, "prepareGraph" | "buildPreparedPrompt" | "persistGraphs" | "confirmDelivery" | "restoreActive"> : {}),
   }, createPiHostAdapter(api));

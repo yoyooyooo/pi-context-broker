@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { sourceObserverPreloadSource, readSourceObservation } from './skill-consumption-source-observer.mjs';
+import { verifyNextWorktreePair } from './verify-next-worktrees.mjs';
 
 // The run action is deliberately explicit. Merely importing/checking this file
 // or generating a plan never launches Pi or changes the daily installation.
@@ -28,7 +29,7 @@ function plan(config) {
     version: 1, kind: 'pi-daily-installation-readonly-diagnostics', status: 'prepared_not_executed',
     settings: join(homedir(), '.pi/agent/settings.json'), expected_package_index: config.packageIndex ?? 1,
     expected_package_count: config.packageCount ?? 21, broker_root: config.brokerRoot ?? null,
-    cli_root: config.cliRoot ?? null, required_artifacts: ['brokerRoot', 'brokerArchive', 'brokerArchiveSha256', 'embeddedCliSha256', 'embeddedSdkSha256', 'cliRoot', 'cliArchive', 'cliArchiveSha256', 'cliEntrySha256'],
+    cli_root: config.cliRoot ?? null, next_worktrees: config.worktrees ?? null, required_artifacts: ['brokerRoot', 'brokerArchive', 'brokerArchiveSha256', 'embeddedCliSha256', 'embeddedSdkSha256', 'cliRoot', 'cliArchive', 'cliArchiveSha256', 'cliEntrySha256'],
     cli_lookup: { selection: 'ntn-skills on the unchanged PATH', expected_path: config.cliShim ?? null, volta_identity: config.voltaIdentity ?? null },
     pi_arguments: ['--mode', 'rpc', '-ns', '--session-dir', '<new owned directory>'],
     rpc_commands: ['get_state', 'get_commands', '/context-broker find ' + (config.findQuery ?? 'pstack'), '/context-broker doctor', 'get_state'],
@@ -37,7 +38,7 @@ function plan(config) {
     observation: 'Actual get_commands.sourceInfo, published-file SHA closure and passive SDK/process/HTTP observation. Every host Notion request and SDK attempt needs an exact independent HTTP match. Other host HTTP remains unattributed, with failures retained separately. Startup/find/doctor read Notion metadata only; this check does not establish all Pi/plugin HTTP success or zero external traffic. No source.command substitution or target -e argument.',
     preserved: ['HOME and normal agent directory', 'all settings packages and extensions', 'source/auth/model configuration', 'existing sessions', 'PATH and source.command'],
     forbidden: ['provider or tool execution', 'Notion writes or Skill body loading', 'official ntn invocation', 'Tern execution', 'user-session restart'],
-    execution: 'Run only after root activates the final immutable package and CLI shim. Supply final package paths/hashes; run refuses an old settings package before launching Pi.',
+    execution: 'Run after both next worktrees are committed, rebuilt and selected by the ordinary daily entries. Bind the same target commits and build bytes on Pro and Mini; the source/build gate precedes a fresh pi -ns process.',
   };
 }
 
@@ -445,6 +446,7 @@ async function run(config) {
   const result = { version: 1, kind: 'actual-daily-pi-autoload-and-diagnostics', status: 'running', evidence, plan: plan(config), harness: await fileIdentity(fileURLToPath(import.meta.url)), modifications: { user_settings: 0, source_config: 0, harness_model_credential_files_read: 0, old_sessions_read: 0, target_extensions_injected: 0, source_command_overrides: 0 }, phases: [] };
   let rpc, observedRpc, before, broker;
   try {
+    result.worktrees_before = await verifyNextWorktreePair(config);
     before = await configurationSnapshot(config);
     let namespaceReview;
     if (config.namespaceDiagnosticsReview) {
@@ -567,6 +569,11 @@ async function run(config) {
       await save(join(evidence, 'rpc.json'), observedRpc.frames);
       await save(join(evidence, 'rpc-lifecycle.json'), observedRpc.lifecycle);
     }
+    if (result.worktrees_before) {
+      result.worktrees_after = await verifyNextWorktreePair(config).catch(error => ({ status: 'failed', error: error.message }));
+      result.worktrees_unchanged = JSON.stringify(result.worktrees_before) === JSON.stringify(result.worktrees_after);
+      if (!result.worktrees_unchanged) result.status = 'failed';
+    }
     if (before) {
       result.configuration_after = await configurationSnapshot(config).catch(() => ({ validation_failed: true }));
       if (JSON.stringify(before) !== JSON.stringify(result.configuration_after)) { result.status = 'failed'; result.configuration_unchanged = false; }
@@ -598,6 +605,26 @@ async function run(config) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  if (process.argv.length === 3 && ['--help', '-h'].includes(process.argv[2])) {
+    console.log(`Usage:
+  node scripts/verify-pi-daily-installation.mjs plan --config ABSOLUTE_CONFIG.json
+  node scripts/verify-pi-daily-installation.mjs run --config ABSOLUTE_CONFIG.json
+  node scripts/verify-pi-daily-installation.mjs candidate-plan --config ABSOLUTE_CONFIG.json
+  node scripts/verify-pi-daily-installation.mjs candidate-run --config ABSOLUTE_CONFIG.json --live
+
+plan: describe ordinary daily pi -ns diagnostics; does not execute Pi.
+run: verify the committed next worktree pair, current builds, existing installation and a fresh ordinary Pi process.
+candidate-plan: validate and describe the separate project-scoped candidate; does not execute Pi.
+candidate-run: execute that candidate with its specified provider/model and record actual evidence.
+
+Each action requires an explicit version:1 JSON config and owned absolute evidence paths.
+Daily runs require worktrees.cli and worktrees.broker with root and complete commit,
+plus the selected cliRoot, brokerRoot and artifact hashes. Candidate configs require
+scope:project-scoped-candidate-precheck and explicit turns. A plan is prepared_not_executed;
+a candidate does not prove the ordinary daily installation or the other machine.
+These actions do not install packages or change user settings.`);
+    process.exit(0);
+  }
   const [action, flag, input, ...extra] = process.argv.slice(2);
   const candidate = action === 'candidate-plan' || action === 'candidate-run';
   assert.ok(['plan', 'run', 'candidate-plan', 'candidate-run'].includes(action) && flag === '--config' && input

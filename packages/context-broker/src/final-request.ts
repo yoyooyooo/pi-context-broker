@@ -211,10 +211,13 @@ export function finalRequestSources(messages: readonly AgentMessage[]): { source
     if (!sourceTool(message) || !isObject(message.details)) continue;
     const details = message.details;
     const text = messageText(message.content);
-    const effects = effectFields(details);
     const resource = isObject(details.contextBrokerResource) ? details.contextBrokerResource : undefined;
     const read = isObject(details.contextBrokerRead) ? details.contextBrokerRead : undefined;
     const preparation = isObject(details.contextBrokerPreparation) ? details.contextBrokerPreparation : undefined;
+    // Metadata and working-set control results are protected tool messages, not
+    // source-body deliveries or consumption-effect receipts.
+    if (!resource && !read && !preparation && operationEffectValues(details).length === 0) continue;
+    const effects = effectFields(details);
     if (resource && Array.isArray(resource.files)) {
       const snapshot = snapshotPin(isObject(resource.selection) ? resource.selection.snapshot_id : undefined);
       for (const file of resource.files) {

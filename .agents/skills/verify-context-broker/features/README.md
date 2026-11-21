@@ -9,7 +9,7 @@
 | fork、恢复、压缩、取消和迟到结果 | [lifecycle](lifecycle.md) | 当前 session tests 与 consumer-state；实际 Pi 按现有 SDK 助手 |
 | 当前请求中的完整内容与唯一性 | [context-once](context-once.md) | provider 和最终 serializer 证据分开 |
 | Source、Views、权限和缓存 | [source](source.md) | 当前 SDK/adapter/View 测试；无 source.command |
-| 实际模型对 Skill 的使用 | [model](model.md) | AH-1063 实际 Pi/provider；不能以 mock OK 代替 |
+| 实际模型对 Skill 的使用 | [model](model.md) | AH-1196/AH-1198 实际 Pi/provider；不能以 mock OK 代替 |
 | 独立安装、随包 Skill、CLI/SDK 字节 | [distribution](distribution.md) | `verify-artifacts.mjs` 与安装后 SDK verifier |
 | 多 Skill / Requires / Members | [依赖图](../../verify-notion-skills-integration/features/skill-dependency-graph.md) | 当前固定选择与受保护状态模型 |
 

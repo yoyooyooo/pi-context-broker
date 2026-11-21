@@ -11,6 +11,6 @@
 | cancel / stop | 中断该任务；迟到结果不能激活、延长 TTL 或污染后续 epoch |
 | 远端权限收回 | 当前读取拒绝；已选离线文件的本地读取与远端资格分开 |
 
-实际 Pi 生命周期沿 `scripts/notion-sdk-pi.mjs` 已有场景执行，使用实际安装与公开宿主动作。会话文件或手造状态不能替代 fork/恢复后的实际 provider 内容。最终发送与回执沿 [context-once](context-once.md)。
+实际 Pi 生命周期沿 `scripts/notion-sdk-pi.mjs` 当前场景执行，使用实际安装与公开宿主动作；其中覆盖取消后同会话继续、compaction 后完整闭包恢复和缓存丢失降级。fork、切分支和 resume 必须另有实际公开宿主动作与 provider 内容证据；会话文件或手造状态不能替代，也不能由当前四场景推断通过。最终发送与回执沿 [context-once](context-once.md)。
 
 日用接受条件由 [Pi 安装/候选助手](../../verify-notion-skills-integration/features/daily-installation-ui.md) 执行并分层报告；OMP/Tern 延期。旧默认双宿主生命周期入口不属于当前验收地图。

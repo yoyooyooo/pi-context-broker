@@ -205,6 +205,72 @@ const cases = [
     "properties": [
       "CurrentBranchOwnsProof"
     ]
+  },
+  {
+    "name": "restore-failure-isolation",
+    "file": "src/session-recovery.ts",
+    "old": "if (error instanceof SourceError && error.code !== \"SOURCE_CANCELLED\") return { code: error.code, cause: error };",
+    "replacement": "if (error instanceof SourceError && error.code !== \"SOURCE_CANCELLED\") throw error;",
+    "test": "session-recovery.test.ts",
+    "pattern": "missing fixed snapshots leave three consecutive ordinary requests usable",
+    "properties": [
+      "ConversationCanContinue"
+    ]
+  },
+  {
+    "name": "restored-mandatory-closure",
+    "file": "src/session-recovery.ts",
+    "old": "const withheld = new Set(incomplete.flatMap(value => [...value.root.closure]).filter(identity => !available.has(identity)));",
+    "replacement": "const withheld = new Set<string>();",
+    "test": "session-recovery.test.ts",
+    "pattern": "a missing shared Required withholds incomplete roots",
+    "properties": [
+      "MandatoryClosureAtRequest"
+    ]
+  },
+  {
+    "name": "business-disabled-fixed-original",
+    "file": "src/host-skills.ts",
+    "old": "\n    if (denial && denial !== \"CONTENT_DISABLED\")",
+    "replacement": "\n    if (denial)",
+    "test": "session-recovery.test.ts",
+    "pattern": "known business Disabled permits complete fixed restoration",
+    "properties": [
+      "DisabledOriginalsRemainUsable"
+    ]
+  },
+  {
+    "name": "restored-request-permission",
+    "file": "src/host-skills.ts",
+    "old": "assertContextAccess(run.contextMessages ?? [], ctx);",
+    "replacement": "void run.contextMessages;",
+    "test": "session-recovery.test.ts",
+    "pattern": "authorization discovered after context still blocks",
+    "properties": [
+      "NoDeniedBodyAtRequest"
+    ]
+  },
+  {
+    "name": "restored-result-epoch",
+    "file": "src/host-skills.ts",
+    "old": "const result = await read(combined);\n      check();",
+    "replacement": "const result = await read(combined);",
+    "test": "session-recovery.test.ts",
+    "pattern": "cancelled or released fixed restoration cannot publish its late result",
+    "properties": [
+      "NoRetiredRestoration"
+    ]
+  },
+  {
+    "name": "restored-final-closure",
+    "file": "src/session-recovery.ts",
+    "old": "if ((expected || present(final, root.identity)) && !complete)",
+    "replacement": "if (false)",
+    "test": "session-recovery.test.ts",
+    "pattern": "a Required dropped before final system context is not accepted",
+    "properties": [
+      "MandatoryClosureAtRequest"
+    ]
   }
 ];
 const args = process.argv.slice(2);
