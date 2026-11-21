@@ -1014,13 +1014,6 @@
             "失败"
           ]
         },
-        "maintenance": {
-          "anyOf": [
-            "创建",
-            "新增",
-            "添加"
-          ]
-        },
         "description-question": {
           "anyOf": [
             "名称",
@@ -1128,13 +1121,6 @@
             "未找到",
             "不存在",
             "失败"
-          ]
-        },
-        "maintenance": {
-          "anyOf": [
-            "创建",
-            "新增",
-            "添加"
           ]
         },
         "description-question": {
@@ -4010,12 +3996,6 @@
               "kind": "no-semantic-writes"
             },
             {
-              "kind": "output",
-              "all": [
-                "maintenance"
-              ]
-            },
-            {
               "kind": "clarification",
               "topic": "description-question"
             },
@@ -4060,12 +4040,6 @@
             },
             {
               "kind": "no-semantic-writes"
-            },
-            {
-              "kind": "output",
-              "all": [
-                "maintenance"
-              ]
             },
             {
               "kind": "clarification",
