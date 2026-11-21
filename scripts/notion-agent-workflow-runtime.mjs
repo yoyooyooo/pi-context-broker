@@ -364,10 +364,18 @@ export async function runAgentWorkflow(config) {
         assert.ok(payload.branch); const actual = await identity(payload.branch.path); assert.equal(actual.sha256, payload.branch.sha256);
         observed.selectionSnapshots.push({ payloadSha256: payload.sha256, selection: selection(await json(actual.path)) });
       }
+      let readbackError;
       for (const assertion of turn.expect.filter(expect => expect.kind === 'business-readback')) {
-        const declaration = bindings.private.readbacks[assertion.receipt];
-        const readback = await runAgentFixtureEvent({ kind: 'readback', object: declaration.object, receipt: assertion.receipt }, { bindings, bindingsPath: config.bindingsFile, ownedStateRoot });
-        observed.readbacks[assertion.receipt] = readback.result;
+        try {
+          const declaration = bindings.private.readbacks[assertion.receipt];
+          const readback = await runAgentFixtureEvent({ kind: 'readback', object: declaration.object, receipt: assertion.receipt }, { bindings, bindingsPath: config.bindingsFile, ownedStateRoot });
+          observed.readbacks[assertion.receipt] = readback.result;
+        } catch (error) {
+          readbackError = error;
+          observed.readbackFailure = { receipt: assertion.receipt, code: error.code ?? error.name, message: error.message,
+            ...(error.fixtureEventArtifact ? { artifact: error.fixtureEventArtifact } : {}) };
+          break;
+        }
       }
       await writeFile(join(evidence, 'turn-' + turn.id + '-session.jsonl'), nativeText, { flag: 'wx', mode: 0o600 });
       await save(join(evidence, 'turn-' + turn.id + '-bindings.json'), bindings);
@@ -375,6 +383,7 @@ export async function runAgentWorkflow(config) {
       receipt.endedNs = endedNs;
       receipt.status = 'observed';
       await save(join(evidence, 'turn-' + turn.id + '-input.json'), turn);
+      if (readbackError) throw readbackError;
     }
     await close();
     await analyzeObserved();
