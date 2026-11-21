@@ -87,4 +87,4 @@ version-1 `effects` 只包含 `version`、`remote_writes` 和 `author_content`�
 
 [Broker Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-context-broker/SKILL.md) 按变化路由到现有check、当前SDK/安装与实际Pi助手；[integration](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-skills-integration/SKILL.md) 绑定同一CLI/SDK与真实decoder；[consumer-state](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-consumer-state/SKILL.md) 维护已有模型和守卫。
 
-`bun run check:broker` 与独立安装/current HTTP不能替代 AH-1188 当前主线下的实际日用配置、真实 Notion、Pi/provider/model 结果；AH-1063 仅为历史依据。实际受控 Pi 沿根目录 `scripts/notion-sdk-pi.mjs` 的四个当前 SDK v2 场景执行，见[当前验收复现](../../../docs/current-context-candidate.md)。原生终端专项未单独验收，OMP/Tern 延期。旧 CLI fixture、双宿主启动与远端历史恢复流程已退出当前地图。
+`bun run check:broker` 与独立安装/current HTTP不能替代 AH-1188 当前主线下的实际日用配置、真实 Notion、Pi/provider/model 结果；AH-1063 仅为历史依据。实际受控 Pi 沿根目录 `scripts/notion-sdk-pi.mjs` 的四个当前 SDK v2 场景执行，见[当前验收复现](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/current-context-candidate.md)。原生终端专项未单独验收，OMP/Tern 延期。旧 CLI fixture、双宿主启动与远端历史恢复流程已退出当前地图。
