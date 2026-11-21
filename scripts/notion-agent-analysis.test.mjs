@@ -416,3 +416,63 @@ test('a batch resource read preserves logical owner and complete source bytes', 
   proof.selection.version_id = 'e'.repeat(64);
   assert.equal((await f.run([{ kind: 'resource', object: 'remote', version: 'A', path: 'rates.md' }])).status, 'failed');
 });
+
+test('forbidden package inputs count failed actual attempts and leave other operations allowed', async () => {
+  const f = fixture({ calls: [{ name: 'bash', arguments: { command: 'ntn-skills ctl builtin show packaged-maintain' }, isError: true }] });
+  f.binding.private.facts.package = { anyOf: ['ctl builtin show'] };
+  const result = await f.run([{ kind: 'forbidden-tool-input', tool: 'bash', facts: ['package'] }]);
+  assert.equal(result.status, 'failed');
+  assert.ok(result.assertions.some(item => item.code === 'FORBIDDEN_TOOL_INPUT'));
+  assert.equal((await f.run([{ kind: 'forbidden-tool-input', tool: 'read', facts: ['package'] }])).status, 'passed');
+});
+
+test('missing native attempt evidence cannot produce passed zero or forbidden-input assertions', async () => {
+  const f = fixture(); f.observed.session = undefined;
+  f.binding.private.facts.package = { anyOf: ['/owned/package/skills'] };
+  const result = await f.run([{ kind: 'tool-attempts', tool: 'notion_use', max: 0 },
+    { kind: 'forbidden-tool-input', tool: 'read', facts: ['package'] }]);
+  for (const kind of ['tool-attempts', 'forbidden-tool-input'])
+    assert.equal(result.assertions.find(row => row.kind === kind).status, 'blocked');
+});
+
+function nativeLocalFixture({ actualPath = '/owned/global/skill/SKILL.md', isError = false, deliveryRole = 'tool' } = {}) {
+  const key = 'local@A/SKILL.md', text = 'Native global instructions; all author bytes.\n';
+  const f = fixture({ calls: [{ name: 'read', arguments: { path: actualPath }, result: text, isError }], bodies: { [key]: text } });
+  f.binding.private.objects.local = { kind: 'local', owner: 'local:/owned/global/skill/SKILL.md', path: '/owned/global/skill/SKILL.md',
+    currentVersion: 'A', versions: { A: { bodyKeys: [key] } } };
+  f.binding.private.bodies[key].observedPath = '/owned/global/skill/SKILL.md';
+  for (const [index, request] of f.observed.costs.filter(row => row.phase === 'provider_request').entries()) {
+    const task = f.observed.tasks.find(row => row.phase === 'provider_payload' && row.sha256 === request.payload.sha256);
+    const sent = f.observed.transport.find(row => row.phase === 'request_sent' && row.id === index + 1);
+    const payload = JSON.parse(f.files.get(task.payloadFile).toString('utf8'));
+    payload.messages[0].content = '';
+    if (index > 0) payload.messages.push({ role: deliveryRole, tool_call_id: 't0', content: text });
+    const bytes = Buffer.from(JSON.stringify(payload)), sha256 = hash(bytes), counts = oracle(payload, f.bodyFiles);
+    f.files.set(task.payloadFile, bytes);
+    Object.assign(task, { sha256, bytes: bytes.length, bodies: counts });
+    Object.assign(request.payload, { sha256, bytes: bytes.length, verifiedBodyOccurrences: [] });
+    Object.assign(sent, { requestBodySha256: sha256, requestBodyBytes: bytes.length });
+  }
+  return f;
+}
+
+test('native global read proves full body through actual path and exact wire tool response without a Broker receipt', async () => {
+  const f = nativeLocalFixture();
+  const result = await f.run([{ kind: 'body', body: 'local@A/SKILL.md', occurrences: 1 },
+    { kind: 'selection', object: 'local', version: 'A' }]);
+  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+  const delivery = result.assertions.find(row => row.kind === 'actual-provider-delivery').details;
+  assert.equal(delivery.last.nativeReadBodies[0].path, '/owned/global/skill/SKILL.md');
+  assert.notEqual(f.binding.private.bodies['local@A/SKILL.md'].path, delivery.last.nativeReadBodies[0].path);
+});
+
+for (const [reason, options] of [
+  ['a different physical file', { actualPath: '/owned/private/local@A_SKILL.md' }],
+  ['a failed read', { isError: true }],
+  ['body text echoed by an assistant', { deliveryRole: 'assistant' }],
+]) test('native local body rejects ' + reason + ' despite equal full bytes in the wire payload', async () => {
+  const f = nativeLocalFixture(options);
+  const result = await f.run([{ kind: 'body', body: 'local@A/SKILL.md', occurrences: 1 }]);
+  assert.equal(result.status, 'blocked');
+  assert.ok(result.assertions.some(row => row.code === 'LOCAL_BODY_DELIVERY_MISSING'));
+});
