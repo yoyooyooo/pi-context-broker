@@ -29,9 +29,11 @@ Review the design for ownership, boundaries, failure modes, and migration cost.
 
 ## 随包 Skills
 
+维护已连接库时，先通过普通原生 `read` 读取任务 source/library 中 `ntn-skills-maintain` 的 Notion 投影，使用目录返回的精确引用。默认目录尚未就绪或未包含该项时，先用同来源的 `notion_list` 发现。失败或部分发现不等于不存在。既有选中版本保留到明确刷新，读取被编辑 Skill 本身不激活其工作流。
+
 `$ntn-skills@builtin`、`$ntn-skills-maintain@builtin` 和 `$ntn-skills-sync@builtin` 是 Broker 与独立 Tern query 随包提供的普通本地 Skill。只有配置了至少一个未禁用的 `type: notion` source，才会在 `$` 发现与补全中出现；零已启用 Notion source 时文件仍随包保留，但不会显示候选。即使尚未完成 Notion 连接/认证、没有全局 `ntn-skills` executable，已启用时也能离线读取随包入口与相对参考文件。选择、草稿与加载均使用普通 `$` 链路。
 
-Notion 正文编辑使用 maintain，已连接 upstream/local 的维护使用 sync，CLI 命令及资源用法使用入口 Skill。日常 CLI 是 `ntn-skills list [--query TEXT]`、`read REF`、`use REF`；`files` 和 `export` 按需使用，管理命令收在 `ctl`。Pi 中需要执行已授权维护或同步任务时，按需发现 `notion_ctl`，用 `{cli_source:"SOURCE_ID"}` 取得所选来源的 executable 与 database scope；这条路线要求 `bash` 已启用。明确选择来源，不隐式使用第一项。OMP 和无法查询工具能力的兼容路径保留原 argv 与来源范围。
+随包维护与来源工作流供明确的初始化或离线说明使用，不能在目录发现或访问失败后静默替代 Notion 投影。日常 CLI 是 `ntn-skills list [--query TEXT]`、`read REF`、`use REF`；`files` 和 `export` 按需使用，管理命令收在 `ctl`。Pi 中需要执行已授权维护或同步任务时，按需发现 `notion_ctl`，用 `{cli_source:"SOURCE_ID"}` 取得所选来源的 executable 与 database scope；这条路线要求 `bash` 已启用。明确选择来源，不隐式使用第一项。OMP/Tern 演进延期。
 
 私有随包内容使用 `builtin:<name>` 身份，启用后使用固定 `@builtin` 选择器。同名 filesystem 或 Notion 条目保持独立身份与选择器；namespace 为 `builtin` 的配置来源也不能冒用这三个官方 token。指向同一随包文件的物理别名先去重，再处理本地名字优先级。
 
