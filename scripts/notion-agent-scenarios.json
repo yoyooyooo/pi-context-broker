@@ -5792,8 +5792,7 @@
               "kind": "completed"
             },
             {
-              "kind": "candidate-cli",
-              "min": 1
+              "kind": "single-projection-restore"
             },
             {
               "kind": "business-readback",
@@ -5903,8 +5902,7 @@
               "kind": "completed"
             },
             {
-              "kind": "candidate-cli",
-              "min": 1
+              "kind": "single-projection-restore"
             },
             {
               "kind": "business-readback",

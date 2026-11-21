@@ -5,6 +5,7 @@ import { isAbsolute, join } from 'node:path';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const pid = value => Number.isSafeInteger(value) && value > 0;
 const ns = value => typeof value === 'string' && /^\d+$/.test(value);
+const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value);
 const fileIdentity = value => value && typeof value.path === 'string' && isAbsolute(value.path)
   && typeof value.realpath === 'string' && isAbsolute(value.realpath) && /^[a-f0-9]{64}$/.test(value.sha256)
   && Number.isSafeInteger(value.bytes) && value.bytes >= 0;
@@ -76,6 +77,13 @@ function processFile({ artifact, contents }) {
       throw new Error('CLI_PROCESS_ENTRY_INVALID');
   }
   if (end && !Number.isSafeInteger(end.exitCode)) throw new Error('CLI_PROCESS_EXIT_INVALID');
+  if (start.invocation !== undefined) {
+    const invocation = start.invocation;
+    if (invocation?.version !== 1 || !digest(invocation.argvSha256) || !Array.isArray(invocation.arguments)
+      || !invocation.arguments.every(argument => digest(argument?.sha256) && typeof argument.option === 'boolean'
+        && (argument.inline === null || argument.option === true && digest(argument.inline?.nameSha256) && digest(argument.inline?.valueSha256))))
+      throw new Error('CLI_PROCESS_ARGUMENTS_INVALID');
+  }
   return { artifact, start, end, complete: Boolean(end), osAncestry: osAncestry(start) };
 }
 
@@ -173,7 +181,7 @@ export function verifyNotionAgentCliProcesses({ sourceObservation, processFiles,
     const observed = { processId: start.processId, pid: start.pid, parentPid: start.parentPid,
       startedNs: start.monotonicNs, endedNs: end?.monotonicNs ?? null, entryMode: start.entryMode, entry: start.entry,
       cli, classification: start.cli?.basis ?? (exactPath || exactBytes ? 'expected-entry' : 'other-node'),
-      exitCode: end?.exitCode ?? null, ancestry,
+      exitCode: end?.exitCode ?? null, ancestry, invocation: start.invocation ?? null,
       osAncestry: item.osAncestry ? { method: item.osAncestry.method, sha256: item.osAncestry.sha256,
         startedNs: item.osAncestry.startedNs, finishedNs: item.osAncestry.finishedNs }
         : { complete: false, reason: start.osAncestry?.reason ?? 'unobserved' },
@@ -193,6 +201,91 @@ export function verifyNotionAgentCliProcesses({ sourceObservation, processFiles,
   const matched = processes.filter(item => item.cli && item.status === 'passed').length;
   if (matched < min) report('CLI_CANDIDATE_EXECUTION_MISSING', 'blocked', { expectedMin: min, observed: matched });
   return result();
+}
+
+/** A narrow public-command proof, independent of shell spelling or tool names.
+ * Only argument fingerprints are retained. Unknown command shapes stay blocked;
+ * business readback still proves the target and complete restored projection. */
+export function verifyNotionAgentSingleProjectionRestore(proof) {
+  const commands = [], diagnostics = [];
+  const report = (code, severity, details = {}) => diagnostics.push({ code, severity, ...details });
+  const finish = () => ({ version: 1, status: diagnostics.some(row => row.severity === 'failed') ? 'failed'
+    : diagnostics.length ? 'blocked' : 'passed', diagnostics, commands,
+    restoreInvocations: commands.filter(row => row.kind === 'projection-restore').length });
+  if (proof?.status !== 'passed' || !Array.isArray(proof.processes)) {
+    report('CLI_CANDIDATE_EXECUTION_UNPROVEN', 'blocked'); return finish();
+  }
+  const words = ['ctl', 'library', 'projection', 'operation', 'read', 'files', 'list', 'use', 'export', 'schema'];
+  const literals = new Map(words.map(word => [hash(word), word]));
+  const content = {
+    list: { count: 0, bool: ['refresh', 'offline', 'metrics', 'json', 'default-view'], value: ['database', 'view', 'profile', 'query', 'limit', 'cursor', 'max-age'] },
+    read: { count: 1, bool: ['refresh', 'offline', 'metrics', 'json', 'raw'], value: ['database', 'path', 'from', 'lines', 'output', 'max-age'] },
+    files: { count: 1, bool: ['refresh', 'offline', 'metrics'], value: ['database', 'path', 'max-age'] },
+    use: { count: 1, bool: ['refresh', 'offline', 'json', 'metrics'], value: ['database', 'max-age'] },
+    export: { count: 1, bool: ['refresh', 'offline'], value: ['output', 'format', 'database', 'max-age'], required: ['output'] },
+  };
+  const projection = { bool: ['restore', 'dry-run', 'resume', 'cancel', 'daily'],
+    value: ['entry', 'include', 'exclude', 'operation', 'max-requests', 'max-bytes', 'timeout'], required: ['entry'], repeat: ['include', 'exclude'] };
+  const operation = { bool: [], value: ['kind', 'entry', 'max-requests', 'max-bytes', 'timeout'], required: ['kind', 'entry'] };
+  const libraryFiles = { bool: [], value: ['entry'], required: ['entry'] };
+  const definitions = [...Object.values(content), projection, operation, libraryFiles];
+  const valueFlags = new Map([...new Set(definitions.flatMap(command => command.value))].map(name => [hash('--' + name), name]));
+  const boolFlags = new Map([...new Set(['help', 'version', ...definitions.flatMap(command => command.bool)])].map(name => [hash('--' + name), name]));
+  boolFlags.set(hash('-h'), 'help');
+  const classify = invocation => {
+    if (!invocation) return 'unobserved';
+    const flags = new Map(), positional = [];
+    const addFlag = flag => flags.set(flag, (flags.get(flag) ?? 0) + 1);
+    let literalOnly = false;
+    for (let index = 0; index < invocation.arguments.length; index++) {
+      const argument = invocation.arguments[index];
+      if (!literalOnly && argument.sha256 === hash('--')) { literalOnly = true; continue; }
+      if (literalOnly || !argument.option) { positional.push(literals.get(argument.sha256) ?? null); continue; }
+      const valueFlag = valueFlags.get(argument.inline?.nameSha256 ?? argument.sha256);
+      if (valueFlag) {
+        if (argument.inline === null) {
+          const value = invocation.arguments[++index];
+          if (!value || value.option) return 'unknown';
+        }
+        addFlag(valueFlag); continue;
+      }
+      const flag = argument.inline === null && boolFlags.get(argument.sha256);
+      if (!flag) return 'unknown';
+      addFlag(flag);
+    }
+    if (flags.has('help') || flags.has('version')) return 'help';
+    const shape = (command, count) => (command.count === undefined || command.count === count)
+      && [...flags].every(([flag, occurrences]) => [...command.bool, ...command.value].includes(flag)
+        && (occurrences === 1 || command.repeat?.includes(flag)))
+      && (command.required ?? []).every(flag => flags.has(flag));
+    if (positional[0] === 'schema') return flags.size === 0 ? 'read-only' : 'unknown';
+    const ordinary = content[positional[0]];
+    if (ordinary) return shape(ordinary, positional.length - 1)
+      && !(positional[0] === 'use' && flags.has('metrics') && !flags.has('json')) ? 'read-only' : 'unknown';
+    if (positional[0] !== 'ctl' || positional[1] !== 'library') return 'unknown';
+    if (positional[2] === 'operation') return positional.length === 4 && shape(operation) ? 'read-only' : 'unknown';
+    if (positional[2] === 'files') return positional.length === 4 && shape(libraryFiles) ? 'read-only' : 'unknown';
+    if (positional[2] !== 'projection' || !shape(projection)
+      || positional.length !== (flags.has('daily') ? 3 : 4)) return 'unknown';
+    if (flags.has('dry-run') && !['restore', 'resume', 'cancel'].some(flag => flags.has(flag))) return 'read-only';
+    if (positional.length === 4 && flags.has('restore')
+      && !['dry-run', 'resume', 'cancel', 'daily', 'operation'].some(flag => flags.has(flag))) return 'projection-restore';
+    return 'other-projection-write';
+  };
+  for (const process of proof.processes.filter(row => row.cli)) {
+    const kind = classify(process.invocation);
+    commands.push({ processId: process.processId, kind, exitCode: process.exitCode, artifact: process.artifact,
+      argvSha256: process.invocation?.argvSha256 ?? null });
+    if (['unobserved', 'unknown'].includes(kind)) report('CLI_COMMAND_EFFECTS_UNKNOWN', 'blocked', { processId: process.processId });
+    if (kind === 'other-projection-write') report('EXTRA_PROJECTION_WRITE', 'failed', { processId: process.processId });
+  }
+  const writers = commands.filter(row => row.kind === 'projection-restore');
+  const unknown = commands.some(row => ['unobserved', 'unknown'].includes(row.kind));
+  if (writers.length > 1 || writers.length === 0 && !unknown)
+    report('RESTORE_INVOCATION_COUNT', 'failed', { expected: 1, actual: writers.length });
+  if (writers.length === 1 && writers[0].exitCode !== 0)
+    report('RESTORE_INVOCATION_FAILED', 'failed', { processId: writers[0].processId, exitCode: writers[0].exitCode });
+  return finish();
 }
 
 /** I/O adapter for the runtime. Save artifacts in observed; the analyzer reads

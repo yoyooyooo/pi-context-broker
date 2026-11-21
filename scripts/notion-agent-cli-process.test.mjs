@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { sourceObserverPreloadSource, readSourceObservation, parseSourceObservation } from './skill-consumption-source-observer.mjs';
-import { readNotionAgentCliProcesses, verifyNotionAgentCliProcesses } from './notion-agent-cli-process.mjs';
+import { readNotionAgentCliProcesses, verifyNotionAgentCliProcesses, verifyNotionAgentSingleProjectionRestore } from './notion-agent-cli-process.mjs';
 
 const sha = value => createHash('sha256').update(value).digest('hex');
 const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
@@ -16,10 +16,10 @@ const identity = async path => {
 };
 const code = 'process.stdout.write("CLI_OUTPUT\\n"); process.exitCode=7;\n';
 
-async function fixture() {
+async function fixture(executable = code) {
   const directory = await mkdtemp(join(tmpdir(), 'notion-cli-process-'));
   const processes = join(directory, 'processes'), cli = join(directory, 'ntn-skills.js'), embedded = join(directory, 'ntn-skills.mjs');
-  await mkdir(processes, { mode: 0o700 }); await writeFile(cli, code); await writeFile(embedded, code + '// embedded\n');
+  await mkdir(processes, { mode: 0o700 }); await writeFile(cli, executable); await writeFile(embedded, executable + '// embedded\n');
   const expectedEntries = await Promise.all([cli, embedded].map(identity));
   const owner = join(directory, 'owner.mjs'), preload = join(directory, 'observer.mjs'), source = join(directory, 'source.jsonl');
   async function run(command) {
@@ -171,4 +171,90 @@ test('missing terminal, unknown ancestry, changed entry and corrupt raw artifact
   assert.equal(missing.status, 'blocked'); assert.equal(missing.cliCount, null);
   const unknown = verifyNotionAgentCliProcesses({ ...actual.input, processFiles: actual.processFiles, sourceObservation: { events: [], errors: [] } });
   assert.equal(unknown.status, 'blocked'); assert.equal(unknown.cliCount, null);
+});
+
+test('one real restoration allows help and read-only checks without retaining private argument text', async () => {
+  const f = await fixture('process.exitCode=0;\n');
+  const target = 'PRIVATE_RESTORE_TARGET', entry = 'PRIVATE_LIBRARY_ENTRY';
+  const command = f.invoke(f.cli), projection = command + ' ctl library projection ' + target;
+  const actual = await f.run([command + ' ctl library projection --help',
+    projection + ' --entry=' + entry + ' --dry-run',
+    projection + ' --restore --entry ' + entry + ' --include=**/*.md --exclude ' + quote('**/tests/**'),
+    command + ' read ' + target + ' --refresh --path scripts/check.py',
+    command + ' list --query skill-name --json',
+    command + ' export ' + target + ' --output /owned/output',
+    command + ' ctl library files ' + target + ' --entry ' + entry].join('; '));
+  const proof = verifyNotionAgentSingleProjectionRestore(actual.proof);
+  assert.equal(proof.status, 'passed', JSON.stringify(proof));
+  assert.equal(proof.restoreInvocations, 1);
+  assert.deepEqual(proof.commands.map(row => row.kind), ['help', 'read-only', 'projection-restore', 'read-only', 'read-only', 'read-only', 'read-only']);
+  for (const file of actual.processFiles) {
+    assert.equal(file.contents.includes(target), false);
+    assert.equal(file.contents.includes(entry), false);
+  }
+});
+
+test('a failed restore followed by a successful retry is two invocations and never passes', async () => {
+  const f = await fixture('process.exitCode=process.argv.includes("first")?1:0;\n'), command = f.invoke(f.cli);
+  const actual = await f.run(command + ' ctl library projection first --restore --entry library; '
+    + command + ' ctl library projection second --restore --entry library');
+  const proof = verifyNotionAgentSingleProjectionRestore(actual.proof);
+  assert.equal(proof.status, 'failed'); assert.equal(proof.restoreInvocations, 2);
+  assert.deepEqual(proof.commands.map(row => row.exitCode), [1, 0]);
+  assert.ok(proof.diagnostics.some(row => row.code === 'RESTORE_INVOCATION_COUNT'));
+});
+
+test('an additional ordinary projection or explicit resume cannot hide behind one restore', async t => {
+  for (const suffix of ['', ' --operation operation-id --resume']) await t.test(suffix || 'new projection', async () => {
+    const f = await fixture('process.exitCode=0;\n'), command = f.invoke(f.cli) + ' ctl library projection target --entry library';
+    const actual = await f.run(command + ' --restore; ' + command + suffix);
+    const proof = verifyNotionAgentSingleProjectionRestore(actual.proof);
+    assert.equal(proof.status, 'failed'); assert.equal(proof.restoreInvocations, 1);
+    assert.ok(proof.diagnostics.some(row => row.code === 'EXTRA_PROJECTION_WRITE'));
+  });
+});
+
+test('a failed sole restore and a help-only invocation cannot claim completion', async t => {
+  for (const [suffix, code] of [['--restore', 'RESTORE_INVOCATION_FAILED'], ['--help', 'RESTORE_INVOCATION_COUNT']])
+    await t.test(suffix, async () => {
+      const f = await fixture(), actual = await f.run(f.invoke(f.cli) + ' ctl library projection target --entry library ' + suffix);
+      const proof = verifyNotionAgentSingleProjectionRestore(actual.proof);
+      assert.equal(proof.status, 'failed'); assert.ok(proof.diagnostics.some(row => row.code === code));
+    });
+});
+
+test('a restore-looking value or unknown command shape is not a verified restore command', async t => {
+  for (const [args, expected] of [
+    ['ctl library projection target --entry library --include=--restore', 'failed'],
+    ['ctl library projection target --entry library --include --restore', 'blocked'],
+    ['ctl library projection target --entry library --restore --future-flag', 'blocked'],
+    ['ctl library update target --entry library', 'blocked'],
+    ['read target --restore', 'blocked'],
+    ['ctl library operation target --kind skill --entry library --dry-run', 'blocked'],
+    ['list unexpected-target --query skill-name', 'blocked'],
+    ['export target', 'blocked'],
+    ['files target --json', 'blocked'],
+  ]) await t.test(args, async () => {
+    const f = await fixture('process.exitCode=0;\n'), actual = await f.run(f.invoke(f.cli) + ' ' + args);
+    const proof = verifyNotionAgentSingleProjectionRestore(actual.proof);
+    assert.equal(proof.status, expected, JSON.stringify(proof));
+    assert.equal(proof.restoreInvocations, 0);
+  });
+});
+
+test('old or damaged argument observations remain unproved without changing original process identity', async () => {
+  const f = await fixture('process.exitCode=0;\n');
+  const actual = await f.run(f.invoke(f.cli) + ' ctl library projection target --entry library --restore');
+  const childIndex = actual.processFiles.findIndex(file => JSON.parse(file.contents.toString().split('\n')[0]).cli !== null);
+  const oldFiles = [...actual.processFiles];
+  oldFiles[childIndex] = sealed(oldFiles[childIndex], rows => rows.map(row => { const { invocation, ...old } = row; return old; }));
+  const oldProof = verifyNotionAgentCliProcesses({ ...actual.input, processFiles: oldFiles });
+  assert.equal(oldProof.status, 'passed');
+  assert.equal(verifyNotionAgentSingleProjectionRestore(oldProof).status, 'blocked');
+  const damaged = [...actual.processFiles];
+  damaged[childIndex] = sealed(damaged[childIndex], rows => rows.map(row => row.phase === 'process_start'
+    ? { ...row, invocation: { ...row.invocation, arguments: [{ sha256: 'invented', option: false, inline: null }] } } : row));
+  const invalid = verifyNotionAgentCliProcesses({ ...actual.input, processFiles: damaged });
+  assert.equal(invalid.status, 'blocked');
+  assert.ok(invalid.diagnostics.some(row => row.code === 'CLI_PROCESS_ARGUMENTS_INVALID'));
 });

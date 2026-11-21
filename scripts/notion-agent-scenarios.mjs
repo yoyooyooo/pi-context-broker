@@ -130,6 +130,7 @@ export function validateAgentAssertion(assertion) {
   const shape = {
     completed: [[], []],
     'candidate-cli': [['min'], ['min']],
+    'single-projection-restore': [[], []],
     'tool-attempts': [['tool', 'min', 'max'], ['tool']],
     'forbidden-tool-input': [['tool', 'facts'], ['tool', 'facts']],
     'source-network-attempts': [['min', 'max'], []],

@@ -281,7 +281,16 @@ export function observeSourceProcess(settings) {
     row.eventSha256 = hash(JSON.stringify(row)); previous = row.eventSha256;
     fs.writeSync(fd, JSON.stringify(row) + '\n');
   };
-  record('process_start', { owner: owner === true, node: process.versions.node, ...capture(),
+  const initial = capture();
+  const args = process.argv.slice(2);
+  const invocation = initial.cli === null ? undefined : { version: 1, argvSha256: hash(JSON.stringify(args)),
+    arguments: args.map(value => {
+      const separator = value.startsWith('--') ? value.indexOf('=') : -1;
+      return { sha256: hash(value), option: value.startsWith('-'),
+        inline: separator < 0 ? null : { nameSha256: hash(value.slice(0, separator)), valueSha256: hash(value.slice(separator + 1)) } };
+    }) };
+  record('process_start', { owner: owner === true, node: process.versions.node, ...initial,
+    ...(invocation === undefined ? {} : { invocation }),
     osAncestry: captureSourceProcessAncestry({ execFileSync: settings.execFileSync, stopPid: settings.ownerParentPid }) });
   const finish = code => {
     if (closed) return;

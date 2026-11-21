@@ -28,7 +28,7 @@
     "packages/context-broker/scripts/final-request-undici.test.ts": "df1417ddf319180c89725f188107dde9b0eb8089aa12759b17d539bfd2bd7555",
     "packages/context-broker/src/session-working-set.ts": "4792c1b3e1ecdbbfd77918f2f9ddf074cfe197e8fbed265a5796cd59671bd36c",
     "packages/context-broker/scripts/session-active-session.mjs": "a0b3d76adddb20b81858d876c4fdd81c45a66360dee55a877895b1d6348a40b5",
-    "packages/context-broker/src/index.ts": "651b0a1765fbc620703b446d3557d1fef7a43a3ace2e0931734d9ac4d5b3a334",
+    "packages/context-broker/src/index.ts": "0882647f4f1b22a5f07e9736f75c612697435d77344a6a71b1de3c290e3cd8c3",
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "f0a338ce686cfd88c1ce564ccdec0e34b5b0b868aa617620950e9d5fb6d0a0ad",
     "packages/context-broker/src/notion-source.ts": "fa418e1c641b2c0a1a6ba26bd6f9a72d55561901c93656dabd30d50ea2c01d65",
@@ -751,6 +751,13 @@
       "scope": "Read buildToolGuidance and packagedMaintenanceGuidance with the native/lazy/active capability and prompt-budget tests. When bash and actual enabled Notion sources are available, an active notion_ctl exposes cli_source directly; otherwise tool_search discovers that existing tool. The returned paired command and explicit source scope are required; no PATH change or command execution is introduced.",
       "unchanged_guards": "This change only advertises the existing control route and compresses repeated text. Selection, current root roles, Requires acquisition, freshness, authorization, resource ownership, cancellation, commit and delivery guards remain unchanged. Inspection/latest adoption, exact page URLs, true source ambiguity, metadata refresh and explicit offline boundaries remain advertised.",
       "proof_limit": "Natural model route choice and actual child CLI identity need real-session evidence. No finite model rules, bounds, cases or mutation targets changed."
+    },
+    "read_only_use_guidance": {
+      "reviewed_from": "6bdef8a721fd317e6ef0a9ec888dd582e2a38df4",
+      "reviewed_change": "97d1aefacf72ffaf55c88ff39eaec2c4cec95b6e",
+      "scope": "Only buildCliGuidance/buildToolGuidance instruction text changes. Explicit use/follow selects complete Requires even for read-only tasks; no scripts/writes constrains effects, not selection. Inspection without adoption keeps pins. Other named functions, tool schemas and state guards are unchanged.",
+      "replays": "skill-guidance, notion-consumption-tools and read-intent-status: 47 tests / 784 assertions passed. Natural model compliance is checked by fresh fixed-input candidate journeys.",
+      "proof_limit": "Guidance wording is outside finite model variables. These reviewed hashes do not prove natural compliance or implementation refinement. Models, configurations, cases, bounds and guard mutation targets are unchanged."
     }
   }
 }

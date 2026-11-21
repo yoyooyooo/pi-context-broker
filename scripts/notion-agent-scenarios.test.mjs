@@ -68,6 +68,7 @@ test('typos, impossible limits and unsupported event structures fail before a mo
     { kind: 'candidate-cli' },
     { kind: 'candidate-cli', min: 0 },
     { kind: 'candidate-cli', min: 1, assume: true },
+    { kind: 'single-projection-restore', min: 1 },
     { kind: 'tool-attempts', tool: 'notion_use' },
     { kind: 'tool-attempts', tool: 'notion_use', min: 2, max: 0 },
     { kind: 'tool-attempts', tool: 'notion_use', max: -1 },
@@ -94,6 +95,7 @@ test('typos, impossible limits and unsupported event structures fail before a mo
   assert.doesNotThrow(() => validateAgentAssertion({ kind: 'tool-attempts', tool: 'notion_use', max: 0 }));
   assert.doesNotThrow(() => validateAgentAssertion({ kind: 'source-network-attempts', max: 0 }));
   assert.doesNotThrow(() => validateAgentAssertion({ kind: 'candidate-cli', min: 1 }));
+  assert.doesNotThrow(() => validateAgentAssertion({ kind: 'single-projection-restore' }));
   assert.doesNotThrow(() => validateAgentEvent({ kind: 'compact', keepRecentTokens: 128 }));
 });
 

@@ -123,6 +123,7 @@ fork 从指定先前用户 turn 之前分叉；保留此前有效分支。compac
 | --- | --- |
 | completed | 请求实际发送、provider 完成、非空有效响应 |
 | candidate-cli | 当前轮真实执行配对 CLI；以子进程入口、文件字节和父子关系核验，命令文本与已构建文件不能替代执行 |
+| single-projection-restore | 当前轮只有一次公开投影恢复命令且自然退出 0；失败后另启恢复、额外投影写入均失败。帮助与已知只读命令另计；未知命令形态保持 blocked，恢复内容仍须独立业务读回 |
 | visibility | 精确 native-discovery、当前 model-catalog 或真实 source-pending 时序 |
 | tool-attempts | 指定工具真实尝试的上下界，失败与撤回也计入 |
 | forbidden-tool-input | 实际工具参数不得触及声明的安装包路径或命令；失败尝试也计，不能按同名目录误伤合法 Notion Git 缓存 |
@@ -166,3 +167,5 @@ checkAgentContractCoverage 只读取配对 CLI 的当前索引，检查每个 C 
 报告另保留整个请求里的全文出现次数，供成本和暴露分析。`occurrences: 0` 始终检查该轮全部请求中的原始全文，无论是否有回执。只有约束本身针对原始文字计数时才使用 `receiptRequired: false`。selection 和 resource 仍各自需要精确回执及实际任务状态。
 
 管理写入轮使用 `candidate-cli` 要求实际执行冻结的配对 CLI。CLI 进程观察器只被动记录真实 Node 子进程入口，不改 PATH 或模型指令；检查入口实路径、SHA、字节数及进程归属。这个证明不代表任意 shell 的写入或网络效果都已覆盖，未知效果仍保留 blocked。已执行了别的 CLI，即使最后对象正确，也不能算当前候选通过。
+
+投影删除恢复另使用 `single-projection-restore`。观察器只保存真实 CLI 参数的逐项哈希和选项形态，不保存参数正文。分析器从已封存的进程原件判定有限公共命令形态；`--help`、读取和只读预览不算恢复写调用，两个内部 operation ID 也不算两次命令。需要第二个进程续行才成功仍不满足本场景。旧原件缺少参数观测时不可倒填为机械通过；独立审计保留自己的证据范围。

@@ -9,7 +9,7 @@ import { validateAgentAssertion, validateAgentBindings } from './notion-agent-sc
 import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer } from './notion-agent-tool-lineage.mjs';
 import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
 import { parseSourceObservation } from './skill-consumption-source-observer.mjs';
-import { verifyNotionAgentCliProcesses } from './notion-agent-cli-process.mjs';
+import { verifyNotionAgentCliProcesses, verifyNotionAgentSingleProjectionRestore } from './notion-agent-cli-process.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -905,7 +905,7 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
     return effects;
   };
 
-  if (observed.cliProcesses !== undefined || turn.expect.some(expected => expected.kind === 'candidate-cli'))
+  if (observed.cliProcesses !== undefined || turn.expect.some(expected => ['candidate-cli', 'single-projection-restore'].includes(expected.kind)))
     shared.cliCandidate = await check('actual-cli-process-identity', () => observedCandidateCli(observed, readArtifact));
 
   for (const expected of turn.expect) await check(expected.kind, async () => {
@@ -916,6 +916,15 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
           'Building the candidate or writing its command does not prove actual execution',
           { expectedMin: expected.min, observed: shared.cliCandidate.matchedCliCount });
         return { actual: shared.cliCandidate.matchedCliCount, distinctEntries: shared.cliCandidate.distinctEntries };
+      case 'single-projection-restore': {
+        need(shared.cliCandidate, 'CLI_CANDIDATE_EXECUTION_UNPROVEN', 'A completed paired CLI invocation is required');
+        const proof = verifyNotionAgentSingleProjectionRestore(shared.cliCandidate);
+        if (proof.status !== 'passed') {
+          const issue = proof.diagnostics.find(row => row.severity === proof.status) ?? proof.diagnostics[0];
+          throw new EvidenceError(proof.status, issue.code, 'Restoration must complete in one public CLI invocation', proof);
+        }
+        return proof;
+      }
       case 'completed':
         need(shared.final && shared.delivery, 'TURN_COMPLETION_UNPROVEN', 'Provider and native completion are both required');
         return { finalSha256: shared.final.sha256 };

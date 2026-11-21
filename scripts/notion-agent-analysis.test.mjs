@@ -1317,7 +1317,7 @@ test('two actual deliveries of the same logical file remain a duplicate', async 
   assert.equal(result.assertions.find(row => row.kind === 'body').details.actual, 2);
 });
 
-function attachCandidateCli(f, { actualPath, startNs = '150', endNs = '160' } = {}) {
+function attachCandidateCli(f, { actualPath, startNs = '150', endNs = '160', argv } = {}) {
   const save = (path, value) => {
     const bytes = Buffer.from(typeof value === 'string' ? value : JSON.stringify(value));
     f.files.set(path, bytes); return { path, realpath: path, sha256: hash(bytes), bytes: bytes.length };
@@ -1351,7 +1351,9 @@ function attachCandidateCli(f, { actualPath, startNs = '150', endNs = '160' } = 
     const base = { processId: id + '-actual', pid: id, parentPid: parent, owner, node: '24.20.0',
       entryMode: 'file', entry, cli: owner ? null : { basis: 'entry-name' } };
     return save('/owned/evidence/process-' + id + '.jsonl', chain([
-      { ...base, phase: 'process_start', monotonicNs: start },
+      { ...base, phase: 'process_start', monotonicNs: start,
+        ...(owner || argv === undefined ? {} : { invocation: { version: 1, argvSha256: hash(JSON.stringify(argv)),
+          arguments: argv.map(value => ({ sha256: hash(value), option: value.startsWith('-'), inline: null })) } }) },
       { ...base, phase: 'process_end', monotonicNs: end, exitCode: 0 },
     ]));
   };
@@ -1379,6 +1381,18 @@ test('a real-shaped paired CLI identity is checked against the frozen candidate 
   const outside = await f.run([{ kind: 'candidate-cli', min: 1 }]);
   assert.equal(outside.status, 'blocked');
   assert.ok(outside.assertions.some(row => row.code === 'CLI_CANDIDATE_EXECUTION_MISSING'));
+});
+
+test('the restore assertion consumes sealed process arguments rather than a claimed command count', async () => {
+  const f = fixture();
+  attachCandidateCli(f, { argv: ['ctl', 'library', 'projection', 'target', '--restore', '--entry', 'library'] });
+  const result = await f.run([{ kind: 'single-projection-restore' }]);
+  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+  assert.equal(result.assertions.find(row => row.kind === 'single-projection-restore').details.restoreInvocations, 1);
+  const old = fixture(); attachCandidateCli(old);
+  const missing = await old.run([{ kind: 'single-projection-restore' }]);
+  assert.equal(missing.status, 'blocked');
+  assert.ok(missing.assertions.some(row => row.code === 'CLI_COMMAND_EFFECTS_UNKNOWN'));
 });
 
 test('an unexpected CLI anywhere in the process segment fails even outside the current prompt', async () => {

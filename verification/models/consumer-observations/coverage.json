@@ -255,6 +255,13 @@
       ],
       "proof_limit": "URL lexical normalization and natural language choice are concrete input and usage boundaries outside finite model variables. TLA, configs, views, bounds, expected rules, cases, tool lock and mutation targets remain unchanged. Reviewed whole-file hashes do not establish refinement or natural model compliance; those require separate actual runs.",
       "concurrent_base": "Rebased onto 0336b4a, retaining the separately reviewed task-root role guards and explicit metadata refresh. URL resolution keeps role checks before resolution and after exact owner binding. Metadata refresh remains independent of selected content pins; the merged guidance retains both refresh and source-choice instructions. Concrete combined regressions and finite gates must run on the resulting candidate."
+    },
+    "read_only_use_guidance": {
+      "reviewed_from": "6bdef8a721fd317e6ef0a9ec888dd582e2a38df4",
+      "reviewed_change": "97d1aefacf72ffaf55c88ff39eaec2c4cec95b6e",
+      "scope": "Only buildCliGuidance/buildToolGuidance instruction text changes. Explicit use/follow selects complete Requires even for read-only tasks; no scripts/writes constrains effects, not selection. Inspection without adoption keeps pins. Other named functions, tool schemas and state guards are unchanged.",
+      "replays": "skill-guidance, notion-consumption-tools and read-intent-status: 47 tests / 784 assertions passed. Natural model compliance is checked by fresh fixed-input candidate journeys.",
+      "proof_limit": "Guidance wording is outside finite model variables. These reviewed hashes do not prove natural compliance or implementation refinement. Models, configurations, cases, bounds and guard mutation targets are unchanged."
     }
   }
 }
