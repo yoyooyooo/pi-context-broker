@@ -59,6 +59,42 @@ test("native capability fallback alone adds exact CLI scope without teaching una
   expect(text(["notion_list", "notion_use"])).not.toContain("<cli");
 });
 
+test("explicit Skill use keeps selection separate from read-only execution limits", () => {
+  const native = text(["read", "notion_list", "notion_use", "bash"]);
+  expect(native).toContain("Use/follow even read-only: notion_use(ref) applies with Requires");
+  expect(native).toContain("Inspection never activates");
+  expect(native).toContain("Loading authorizes no commands/writes/delegation");
+  for (const tools of [undefined, full, ["read", "skill_search", "bash"]]) {
+    const guidance = text(tools);
+    expect(guidance).toContain("read-only");
+    expect(guidance).toContain("scripts or writes");
+    expect(guidance).toContain("without adoption");
+    expect(guidance).not.toContain("For inspection or explanation, use native read");
+  }
+  const unavailable = text(["read", "notion_list"]);
+  expect(unavailable).not.toContain("notion_use(ref)");
+  expect(unavailable).toContain("Inspect only; adoption unavailable");
+});
+
+test("read-only use and inspect-only requests remain user intent, without automatic adoption", async () => {
+  for (const prompt of [
+    "Use the selected Skill to answer this question; do not run scripts or change pages.",
+    "Just view its newest instructions without adopting them.",
+  ]) {
+    const h = guidanceHarness();
+    h.tools(["read", "notion_list", "notion_use", "bash"]);
+    const user: AgentMessage = { role: "user", content: prompt };
+    const history = [user];
+    const projected = await h.project("context_with_system", history);
+    expect(projected[0]).toBe(user);
+    expect(history).toEqual([user]);
+    expect(projected).toHaveLength(2);
+    expect(guidanceText(projected)).toContain("Use/follow even read-only");
+    expect(guidanceText(projected)).toContain("Inspection never activates");
+    expect(await h.project("context_with_system", projected)).toBe(projected);
+  }
+});
+
 test("maintenance reads the connected Notion workflow before any management command", () => {
   const routed = text(["read", "notion_list", "notion_use", "bash"]);
   expect(routed).toContain("read ntn-skills-maintain's exact ref");
@@ -327,8 +363,8 @@ test("Notion source flags are scoped to native installations without rewriting s
   expect(guidance).toContain("Editor flags grant no permissions");
   expect(guidance).toContain("Local @Skills keep native availability");
   expect(guidance).toContain("Honor explicit source and prior choice");
-  expect(guidance).toContain("Equally fitting same-name local/Notion candidates: clarify; storage gives no priority");
-  expect(guidance).toContain("Clear fit or interchangeable copies: no question");
+  expect(guidance).toContain("Equal same-name local/Notion fits: clarify; storage gives no priority");
+  expect(guidance).toContain("Clear fit/equivalent copies: no question");
   expect(guidance).toContain("Loading authorizes no commands/writes/delegation");
   expect(guidance).toContain("read(path) inspects.");
   expect(guidance).toContain("Inspection never activates.");
