@@ -2043,7 +2043,11 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         for (const _part of entrypoint.split("/")) root = dirname(root);
         if (relative(root, resolve(snapshot.path)) !== entrypoint) throw hostError("SOURCE_OUTPUT_CONFLICT");
         const actualRoot = await realpath(root);
-        path = await realpath(resolve(root, reference || entrypoint));
+        const requestedPath = resolve(root, reference || entrypoint);
+        // Resources are published by hard link. Resolve directory ownership,
+        // preserving the selected leaf instead of another name for its inode.
+        // lstat below rejects a symlink leaf without following it.
+        path = join(await realpath(dirname(requestedPath)), basename(requestedPath));
         const within = relative(actualRoot, path);
         if (!within || within === ".." || within.startsWith(`..${sep}`) || isAbsolute(within) || !(await lstat(path)).isFile()) throw hostError("SOURCE_REFERENCE_INVALID");
       }

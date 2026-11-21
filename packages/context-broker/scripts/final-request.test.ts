@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { expect, test } from "bun:test";
 import type { AgentMessage } from "../src/types";
 import { exportWorkingSet } from "../src/session-working-set";
-import { deferredSourceEntries, sourceBodyLoaded, sourceDeliveryReceipt, withSessionSourceReceipts } from "../src/session-source-snapshot";
+import { deferredSourceEntries, projectSelectedSourceMessages, sourceBodyLoaded, sourceDeliveryReceipt, withSessionSourceReceipts } from "../src/session-source-snapshot";
 import {
   assessFinalRequestPayload,
   createFinalRequestLedger,
@@ -345,6 +345,44 @@ test("working-set management replies continue through the provider gate without 
   expect(assessFinalRequestPayload([message], payload([]))).toBe("LOST_SOURCE_RESULT");
   expect(assessFinalRequestPayload([message], payload([{ role: "tool", tool_call_id: "current-4", content: "changed" }]))).toBe("MODIFIED_SOURCE_RESULT");
   const invalid = { version: 1, remote_writes: "none" };
-  for (const details of [{ ...report, effects: invalid }, { ...report, contextBrokerPreparation: { effects: invalid } }])
-    expect(assessFinalRequestPayload([{ ...message, details }], actual)).toBe("INVALID_EFFECTS");
+  // Operation ownership, rather than an effect schema/version special case,
+  // decides which facts are consumption claims.
+  for (const toolName of ["notion_ctl", "skill_graph", "notion_list", "skill_search"])
+    for (const effects of [invalid, { arbitrary_management_fact: true }]) {
+      const metadata = { ...message, toolName, details: { ...report, effects } };
+      expect(assessFinalRequestPayload([metadata], actual)).toBeUndefined();
+      expect(finalRequestSources([metadata]).sources).toEqual([]);
+    }
+  for (const toolName of ["read", "notion_use", "skill_prepare"])
+    expect(assessFinalRequestPayload([{ ...message, toolName, details: { ...report, effects: invalid } }], actual)).toBe("INVALID_EFFECTS");
+  for (const details of [
+    { ...report, effects: invalid, contextBrokerRead: {} },
+    { ...report, contextBrokerPreparation: { effects: invalid } },
+    { ...report, effects: invalid, contextBrokerResource: {} },
+    { ...report, effects: invalid, contextBrokerRead: null },
+  ]) expect(assessFinalRequestPayload([{ ...message, details }], actual)).toBe("INVALID_EFFECTS");
+});
+
+
+test("historical management facts remain protected but cannot become consumption receipts on later ordinary turns", () => {
+  // Observed structure from the persisted actual Pi working_set result that
+  // originally caused INVALID_EFFECTS. These are management facts, not a
+  // second consumption-effects schema or an alternate decoder.
+  const report = { version: 1, kind: "working_set", scope: "notion_instruction_graphs", roots: [], nodes: [],
+    effects: { notion_writes: "none", history_changed: false, cache_reclaimed: false }, action: "show", changed: false };
+  const message: AgentMessage = { role: "toolResult", toolName: "notion_ctl", toolCallId: "current-4",
+    content: [{ type: "text", text: JSON.stringify(report) }], details: report };
+  const original = JSON.stringify(message);
+  for (let turn = 1; turn <= 3; turn++) {
+    const history: AgentMessage[] = [message, { role: "user", content: "Continue ordinary task " + turn }];
+    const projected = projectSelectedSourceMessages(history, { scopes: new Map() });
+    const actual = payload([{ role: "tool", tool_call_id: "current-4", content: JSON.stringify(report) },
+      { role: "user", content: "Continue ordinary task " + turn }]);
+    expect(assessFinalRequestPayload(projected, actual)).toBeUndefined();
+    expect(finalRequestSources(projected).sources).toEqual([]);
+    expect(JSON.stringify(message)).toBe(original);
+    expect(assessFinalRequestPayload(projected, payload([]))).toBe("LOST_SOURCE_RESULT");
+    expect(assessFinalRequestPayload(projected, payload([{ role: "tool", tool_call_id: "current-4", content: "changed" }]))).toBe("MODIFIED_SOURCE_RESULT");
+    expect(assessFinalRequestPayload(projected, payload([actual.messages[0], actual.messages[0]]))).toBe("DUPLICATE_SOURCE_RESULT");
+  }
 });

@@ -163,12 +163,22 @@ const SNAPSHOT_PIN = /^(?:s_|local_)[a-f0-9]{64}$/;
 const HEX_HASH = /^[a-f0-9]{64}$/;
 const snapshotPin = (value: unknown): string | null => typeof value === "string" && SNAPSHOT_PIN.test(value) ? value : null;
 const hexHash = (value: unknown): string | null => typeof value === "string" && HEX_HASH.test(value) ? value : null;
-const operationEffectValues = (details: Record<string, unknown> | undefined): unknown[] => {
-  const preparation = details && isObject(details.contextBrokerPreparation) ? details.contextBrokerPreparation : undefined;
-  return [details?.effects, preparation?.effects].filter(value => value !== undefined);
+const METADATA_TOOLS = new Set(["notion_list", "skill_search", "notion_ctl", "skill_graph"]);
+const operationEffectValues = (message: AgentMessage): unknown[] => {
+  const details = isObject(message.details) ? message.details : undefined;
+  if (!details) return [];
+  // Metadata and management operations do not acquire source bodies. Their
+  // domain facts cannot become consumption receipts merely by using the same
+  // field name. An explicit source receipt always retains strict validation,
+  // including when a metadata/control tool unexpectedly carries one.
+  const receipt = ["contextBrokerRead", "contextBrokerPreparation", "contextBrokerResource"]
+    .some(key => Object.hasOwn(details, key));
+  if (!receipt && METADATA_TOOLS.has(message.toolName ?? "")) return [];
+  const preparation = isObject(details.contextBrokerPreparation) ? details.contextBrokerPreparation : undefined;
+  return [details.effects, preparation?.effects].filter(value => value !== undefined);
 };
-const effectFields = (details: Record<string, unknown> | undefined): Pick<FinalRequestSource, "remoteWrites" | "authorContent"> => {
-  const effects = combineConsumptionEffects(operationEffectValues(details).map(consumptionEffects));
+const effectFields = (message: AgentMessage): Pick<FinalRequestSource, "remoteWrites" | "authorContent"> => {
+  const effects = combineConsumptionEffects(operationEffectValues(message).map(consumptionEffects));
   return { remoteWrites: effects.remote_writes, authorContent: effects.author_content };
 };
 
@@ -183,7 +193,7 @@ function deliveryState(text: string, bodySha: string | null, bytes: unknown, del
 }
 
 function effectsMarker(message: AgentMessage): string | undefined {
-  const values = operationEffectValues(isObject(message.details) ? message.details : undefined);
+  const values = operationEffectValues(message);
   if (!values.length) return undefined;
   return `"remote_writes":"${combineConsumptionEffects(values.map(consumptionEffects)).remote_writes}"`;
 }
@@ -216,8 +226,8 @@ export function finalRequestSources(messages: readonly AgentMessage[]): { source
     const preparation = isObject(details.contextBrokerPreparation) ? details.contextBrokerPreparation : undefined;
     // Metadata and working-set control results are protected tool messages, not
     // source-body deliveries or consumption-effect receipts.
-    if (!resource && !read && !preparation && operationEffectValues(details).length === 0) continue;
-    const effects = effectFields(details);
+    if (!resource && !read && !preparation && operationEffectValues(message).length === 0) continue;
+    const effects = effectFields(message);
     if (resource && Array.isArray(resource.files)) {
       const snapshot = snapshotPin(isObject(resource.selection) ? resource.selection.snapshot_id : undefined);
       for (const file of resource.files) {
@@ -302,7 +312,7 @@ type ToolPair = { id: string; content: string; source: boolean; effectsMarker?: 
  * captured. Identity is toolCallId, not text similarity. */
 export function assessFinalRequestPayload(messages: readonly AgentMessage[], payload: unknown): string | undefined {
   if (!isObject(payload) || !Array.isArray(payload.messages) || payload.messages.some(item => !isObject(item))) return "UNSUPPORTED_PAYLOAD";
-  if (messages.some(message => sourceTool(message) && operationEffectValues(isObject(message.details) ? message.details : undefined)
+  if (messages.some(message => sourceTool(message) && operationEffectValues(message)
     .some(value => !isConsumptionEffects(value)))) return "INVALID_EFFECTS";
   const payloadMessages = payload.messages;
   const payloadTexts = payloadMessages.filter(message => message.role === "user").map(message => messageText(message.content));

@@ -11,7 +11,7 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/discovery-records.ts": "3b8b8abee88e2eba5de3421e76e446de91412b7f7d4b6b71394fede5dd878bab",
-    "packages/context-broker/src/host-skills.ts": "95d81e856596b2485a3dc8f43a3d3363f5949c0a5669387b07c266c840b05946",
+    "packages/context-broker/src/host-skills.ts": "695e3783b76c9b8052d2a56862156a596663acd55c242628eecf4c2c6b23e06d",
     "packages/context-broker/src/prepare-protocol.ts": "6c0229a5217726416e3bd719faaf7d922c40f479ca03d6a9ab0ef1275be903f4",
     "packages/context-broker/src/session-graph.ts": "bf707af4ea21ef0084a128b80f6359f2e7ec75665cb43c0ee4f900ce72bb12b3",
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
@@ -23,8 +23,8 @@
     "packages/context-broker/scripts/skill-context-session.test.ts": "71b2d3ba5d5937e164a6fa08c8ebfd0fc183019d00a8495a220a7cdee4d9c897",
     "packages/context-broker/scripts/consumer-state.test.ts": "97b19d0f3ac167bfb30cd9dd4aa6959924784dcb13c4644221334bba390c5799",
     "scripts/check-consumer-state-mutations.mjs": "04b9145a777549dd074bd0902fa72318f192802ee013d842ec0ada6fdd0c862e",
-    "packages/context-broker/src/final-request.ts": "8708c3a08b9e39f828396537e4044adefc59ee2c7ba2d6a4ff694dfe4733c8f2",
-    "packages/context-broker/scripts/final-request.test.ts": "2f03a868b4e126b10a5115d94176f4babe63525cbaf8e5435ea0564e42c1dce8",
+    "packages/context-broker/src/final-request.ts": "84f487e79db6b9362025b2f9dfda60bf872eea27a95d32e421d4f76deaff5037",
+    "packages/context-broker/scripts/final-request.test.ts": "f3036e401ee6f2be5fd4738a2d9be9bb134db731c0c99c102e679727def54380",
     "packages/context-broker/scripts/final-request-undici.test.ts": "df1417ddf319180c89725f188107dde9b0eb8089aa12759b17d539bfd2bd7555",
     "packages/context-broker/src/session-working-set.ts": "4792c1b3e1ecdbbfd77918f2f9ddf074cfe197e8fbed265a5796cd59671bd36c",
     "packages/context-broker/scripts/session-active-session.mjs": "a0b3d76adddb20b81858d876c4fdd81c45a66360dee55a877895b1d6348a40b5",
@@ -40,7 +40,8 @@
     "packages/context-broker/scripts/resource-read-projection.test.ts": "e739a9e24612e40517934ac425fa33240db75303eea63b1a399e405f9d330cf0",
     "packages/context-broker/scripts/notion-source-sdk.test.ts": "a9b4b8096f13d17fd8fcfcf6cb72bae3a3d4110e5d16cfb58742882d35c9d134",
     "packages/context-broker/scripts/pi-read-adapter.test.ts": "0367a2128a434f0095b0bd8c5cf7aa0aa947966e5c81ad9356c7bdc912af0bb7",
-    "packages/context-broker/scripts/fixtures/active-notion-session.ts": "b92dfe89e5f86e93938639b9b07e1ea5859d68ecffc1e7651d7c32e5e8659d05"
+    "packages/context-broker/scripts/fixtures/active-notion-session.ts": "b92dfe89e5f86e93938639b9b07e1ea5859d68ecffc1e7651d7c32e5e8659d05",
+    "packages/context-broker/scripts/notion-entry.test.ts": "dfaac5e5d7d0ea7996dba91427cd16568d2933c94f5d4cd03ff3a1ad9a0c3c6f"
   },
   "models": {
     "FreshnessPublication": {
@@ -90,7 +91,8 @@
         "final-request.test.ts real deferred-drafts restoration and private role obligations",
         "final-request-undici.test.ts actual Node entity positive/rewrite/concurrency",
         "final-request.test.ts actual working_set report shape, session_effects separation, lost/modified management tool result and malformed consumption effects",
-        "notion-sdk-pi.mjs --scenario working-set: current SDK v2, actual public Pi tools, source HTTP and installed serializer; execution is separate evidence"
+        "notion-sdk-pi.mjs --scenario working-set: current SDK v2, actual public Pi tools, source HTTP and installed serializer; execution is separate evidence",
+        "final-request.test.ts: persisted management facts on three ordinary turns, exact wire protection and operation-owned consumption effects; actual 128-entry historical Pi branch replay remains separate execution evidence"
       ]
     },
     "RecoveryClosure": {
@@ -673,7 +675,7 @@
     "scope": "The exact TLA/config/view bytes, model bounds, cases and expected rules are unchanged. Build/pin, user guidance, historical driver scores and unrelated producer files are not formal premises.",
     "identity_contract": "Reviewed the diff from fd7ebf718f26ec0a2b060cb8a968cb3f209061b2: remote preparation and catalog members accept only explicit shared_skill identities with current enablement. Implicit notion_page/subscription/upstream mapping is removed. Canonical raw page UUID input still qualifies against the current physical owner. Exact source, scope, locator and ref equality remain required; no changed request ordering, cancellation, graph commit, delivery or public projection guard.",
     "compiled_preparation_fixture": "Current shared_skill fixtures declare Enabled explicitly. The unchanged complete-body, exact-span, deduplication and directory-reuse assertions pass with the current binding; deleting Enabled remains a negative in the existing malformed-projection matrix. No delivery algorithm or model rule changed.",
-    "current_effects_contract": "The current SDK and host effects contract now has exactly version, remote_writes and author_content. Retained-history outcomes and retention arrays are rejected. Existing cancellation, partial-source failure, source-span retirement, exact-body and receipt-preservation cases use current none/unknown observations; unknown remains dominant and absent observations are unknown. Final-request validation rejects explicit malformed effects before payload acceptance and combines top-level/preparation observations conservatively. Actual HTTP entity and delivery guards remain in place. The effects field schema and diagnostic aggregation are concrete regression obligations outside the finite models; no model, bound, case inventory, expected rule or mutation target changed. Working-set management now uses only session_effects, not the consumption effects field. Metadata and management results do not fabricate unknown source-body observations. Their complete actual tool results remain protected at the provider boundary; malformed consumption effects still fail. This schema separation has no legacy alias and is a concrete obligation outside the finite state variables."
+    "current_effects_contract": "The current SDK and host effects contract now has exactly version, remote_writes and author_content. Retained-history outcomes and retention arrays are rejected. Existing cancellation, partial-source failure, source-span retirement, exact-body and receipt-preservation cases use current none/unknown observations; unknown remains dominant and absent observations are unknown. Final-request validation rejects explicit malformed effects before payload acceptance and combines top-level/preparation observations conservatively. Actual HTTP entity and delivery guards remain in place. The effects field schema and diagnostic aggregation are concrete regression obligations outside the finite models; no model, bound, case inventory, expected rule or mutation target changed. Working-set management now uses only session_effects, not the consumption effects field. Metadata and management results do not fabricate unknown source-body observations. Their complete actual tool results remain protected at the provider boundary; malformed consumption effects still fail. This schema separation has no legacy alias and is a concrete obligation outside the finite state variables. Current operation ownership also applies to persisted management results: generic management effects are not consumption observations. Presence of an explicit source-receipt field cancels that exemption; any effects present are strictly decoded. Lost, modified or duplicated management tool messages still fail. Historical results remain byte-for-byte unchanged."
   },
   "current_review": {
     "reviewed_from": "8cce7fa105b8df6a485fe2b8ef419fc6ab597cb0",
@@ -682,6 +684,8 @@
     "selection": "Selected, pending and active state share applySelectionGraphs. Replacement is atomic and owns only requested roots. Retained closures are projected into newly validated locks; physical bindings and outgoing Requires must agree for shared nodes. These multi-root combinations are concrete session-refresh obligations, beyond the single-root SelectionGraph bound.",
     "inspection": "Explicit current inspection has a verified purpose and source ownership, is excluded from active instruction pins, and may route only resources in its exact complete directory on the current branch. Main and resource inspection remain subject to authorization and final wire checks. Content-only comparison is outside RecoveryClosure NoSilentVersionChange, which concerns active instructions.",
     "recovery": "RecoveryClosure adds three prompts, shared A/C->B and independent D. Production recovers exact missing members, isolates failed complete closures, keeps pins, limits the entire context recovery to the existing 30-second read budget and backs off repeated failures. Later provider hooks recheck closure, authorization and epoch. External termination and continued user submission remain explicit liveness premises.",
-    "public_reference": "Canonical fixed main references with a File ID are accepted for explicit refresh only when the verified branch selection exactly proves that main. Wrong File ID/path and resource refs fail before acquisition. The fixture now carries actual v2 main File IDs; opaque and canonical public paths are separately replayed."
+    "public_reference": "Canonical fixed main references with a File ID are accepted for explicit refresh only when the verified branch selection exactly proves that main. Wrong File ID/path and resource refs fail before acquisition. The fixture now carries actual v2 main File IDs; opaque and canonical public paths are separately replayed.",
+    "management_effects": "Reviewed c68d980 to current operationEffectValues: metadata/management generic effects do not claim consumption. An explicit source-receipt field disables that exemption so any present consumption effects remain strictly validated. This does not introduce a general receipt-structure validator. Actual management tool messages still require exact, single wire delivery; no history rewrite, version branch or alternate schema decoder.",
+    "resource_path": "Reviewed the acquisition path change against the deterministic same-inode hardlink alias reproduction. Canonical parent directory plus the selected basename preserves logical resource identity; within-root and lstat.isFile remain mandatory. Leaf/parent symlink substitution, outer alias, content hash, cancellation and concurrent reads have concrete regressions. Filesystem/runtime behavior is outside the finite models; no model rule, bound or mutation target is changed."
   }
 }
