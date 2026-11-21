@@ -277,6 +277,35 @@ async function verifiedArtifact(artifact, readArtifact) {
   demand(bytes.length === artifact.bytes && hash(bytes) === artifact.sha256, 'ARTIFACT_CHANGED', 'Observed artifact bytes changed', { path: artifact.path });
   return bytes;
 }
+
+async function retainedToolHistory(record, readArtifact) {
+  need(record?.version === 1 && Array.isArray(record.artifacts) && record.artifacts.length > 0,
+    'TOOL_HISTORY_MISSING', 'Reusing a historical local read needs its sealed actual tool observations');
+  const rows = [], sources = new Map(), paths = new Set();
+  for (const artifact of record.artifacts) {
+    need(!paths.has(artifact.path), 'TOOL_HISTORY_DUPLICATED', 'A historical observer artifact was supplied twice');
+    paths.add(artifact.path);
+    const text = (await verifiedArtifact(artifact, readArtifact)).toString('utf8');
+    need(text.endsWith('\n'), 'TOOL_HISTORY_INCOMPLETE', 'Retain the complete historical observer JSONL');
+    const events = text.trimEnd().split('\n').map(JSON.parse), first = events[0], last = events.at(-1);
+    need(first?.phase === 'task_observer_start' && last?.phase === 'task_observer_end'
+      && last.complete === true && last.errors === 0 && Number.isSafeInteger(first.pid) && first.pid > 0,
+    'TOOL_HISTORY_INCOMPLETE', 'The historical task observer did not start and finish completely');
+    let previous = null, time = 0n;
+    for (const [index, event] of events.entries()) {
+      const { eventSha256, ...body } = event;
+      demand(event.sequence === index + 1 && event.previousSha256 === previous && event.pid === first.pid
+        && digest(eventSha256) && hash(JSON.stringify(body)) === eventSha256,
+      'TOOL_HISTORY_CHANGED', 'The historical observer chain or process identity changed');
+      need(/^\d+$/u.test(event.monotonicNs ?? '') && BigInt(event.monotonicNs) >= time,
+        'TOOL_HISTORY_CLOCK_MISSING', 'Historical callbacks need their actual ordered process clock');
+      previous = eventSha256; time = BigInt(event.monotonicNs);
+      if (['tool_call', 'tool_result'].includes(event.phase)) { rows.push(event); sources.set(event, artifact); }
+    }
+  }
+  return { rows, sources };
+}
+
 async function observedCandidateCli(observed, readArtifact) {
   const record = observed.cliProcesses, implementation = observed.implementation;
   need(record?.version === 1 && Array.isArray(record.artifacts) && implementation?.version === 1,
@@ -569,6 +598,45 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
   const actualReadPath = value => typeof value === 'string'
     ? value.startsWith('~/') ? join(homedir(), value.slice(2)) : resolve(observed.session.header.cwd, value) : undefined;
 
+  // Attempt/effects counts remain current-turn-only. Historical delivery is a
+  // separate proof: retained native ancestry, original callbacks/result bytes,
+  // and this request's exact tool message. It does not infer a fresh read.
+  let history;
+  const historicalRoots = new Map();
+  const historicalReadAttempts = async (path, payload, payloadTime) => {
+    const delivered = new Set((payload.messages ?? []).filter(message => message.role === 'tool').map(message => message.tool_call_id));
+    const calls = [], session = observed.session;
+    for (const root of session.attempts.filter(call => call.active && call.userEntryId !== session.currentUserId && delivered.has(call.id))) {
+      const terminal = session.branchEntries.find(entry => entry.id === root.resultEntryId)?.message;
+      const members = terminal?.nestedCalls?.calls ?? [];
+      if (![root, ...members].some(call => call.name === 'read' && actualReadPath(call.arguments?.path) === path)) continue;
+      need(session.contributions.some(row => row.entryId === root.assistantEntryId && row.role === 'assistant')
+        && session.contributions.some(row => row.entryId === root.resultEntryId && row.role === 'toolResult'),
+      'HISTORICAL_READ_NOT_RETAINED', 'An omitted or compacted historical result cannot supply local read identity');
+      if (!historicalRoots.has(root.id)) {
+        history ??= await retainedToolHistory(observed.toolHistory, readArtifact);
+        const ids = new Set([root.id, ...members.map(call => call.id)]);
+        const correlation = correlateNotionAgentToolAttempts({ tasks: history.rows.filter(row => ids.has(row.toolCallId)),
+          session: { ...session, attempts: [root] }, currentUserId: root.userEntryId });
+        if (!correlation.complete) {
+          const problem = correlation.diagnostics.find(item => item.status === 'failed') ?? correlation.diagnostics[0];
+          throw new EvidenceError(problem?.status ?? 'blocked', problem?.code ?? 'HISTORICAL_TOOL_CORRELATION_INCOMPLETE',
+            problem?.message ?? 'Historical read callbacks do not match their native root', { rootToolCallId: root.id, diagnostics: correlation.diagnostics });
+        }
+        historicalRoots.set(root.id, correlation.attempts.map(call => ({ ...call, history: {
+          userEntryId: root.userEntryId, rootToolCallId: root.id,
+          callArtifact: history.sources.get(call.event), resultArtifact: history.sources.get(call.result),
+        } })));
+      }
+      for (const call of historicalRoots.get(root.id).filter(call => call.name === 'read' && actualReadPath(call.arguments?.path) === path)) {
+        need(/^\d+$/u.test(payloadTime ?? '') && BigInt(call.result.monotonicNs) < BigInt(payloadTime),
+          'HISTORICAL_READ_ORDER_UNPROVEN', 'A reused result must have completed before this actual provider payload');
+        calls.push(call);
+      }
+    }
+    return calls;
+  };
+
   shared.delivery = await check('actual-provider-delivery', async () => {
     const requests = costs.filter(row => row.phase === 'provider_request'), used = new Set(), payloads = [], nativeUsed = new Set();
     const nativeMessages = observed.session?.assistantMessages?.filter(row => row.active && row.userEntryId === observed.session.currentUserId);
@@ -641,13 +709,17 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
         need(shared.toolObservation, 'TOOL_OBSERVATION_UNPROVEN', 'Native local body delivery needs complete actual tool observations');
         const frozen = uniqueBodies.get(privateBindings.bodies[key].sha256);
         const calls = [];
-        for (const call of [...shared.attempts.values()].filter(call => call.name === 'read' && call.result?.isError === false &&
+        const available = [...shared.attempts.values(), ...await historicalReadAttempts(path, payload, task.monotonicNs)];
+        for (const call of available.filter(call => call.name === 'read' && call.result?.isError === false &&
           call.native?.isError === false && actualReadPath(call.arguments?.path) === path)) {
           let content;
-          if (call.provenance?.kind === 'native-nested-summary') {
-            need(call.result.contentArtifact, 'NESTED_READ_RESULT_MISSING',
-              'A composed read needs its own observed complete result, not just script-generated parent output', { toolCallId: call.id });
+          if (call.history || call.provenance?.kind === 'native-nested-summary') {
+            need(call.result.contentArtifact, call.history ? 'HISTORICAL_READ_RESULT_MISSING' : 'NESTED_READ_RESULT_MISSING',
+              'A reused or composed read needs its own observed complete result', { toolCallId: call.id });
             content = JSON.parse((await verifiedArtifact(call.result.contentArtifact, readArtifact)).toString('utf8'));
+            if (call.history && call.provenance.kind === 'native-tool-call')
+              demand(isDeepStrictEqual(content, observed.session.branchEntries.find(entry => entry.id === call.native.resultEntryId)?.message?.content),
+                'HISTORICAL_READ_RESULT_MISMATCH', 'The historical callback and native result contain different bytes', { toolCallId: call.id });
           } else content = observed.session.branchEntries.find(entry => entry.id === call.native.resultEntryId)?.message?.content;
           if (textOf(content).includes(frozen.text)) calls.push(call);
         }
@@ -656,7 +728,9 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
         const count = inspectPayload({ ...payload, messages }, [frozen])[0];
         need(count && count.sha256 === frozen.sha256 && Number.isSafeInteger(count.occurrences) && count.occurrences >= 0,
           'NATIVE_BODY_METRIC_MISSING', 'The actual native tool response requires an independent full-body count');
-        nativeReadBodies.push({ body: key, path, sha256: frozen.sha256, occurrences: count.occurrences, toolCallIds: calls.map(call => call.id), deliveryToolCallIds: [...ids] });
+        nativeReadBodies.push({ body: key, path, sha256: frozen.sha256, occurrences: count.occurrences, toolCallIds: calls.map(call => call.id), deliveryToolCallIds: [...ids],
+          provenance: calls.map(call => ({ toolCallId: call.id, resultEntryId: call.native.resultEntryId,
+            ...(call.history ? { history: call.history } : { currentTurn: true }) })) });
       }
       const notion = boundNotionDeliveries(payload, tasks, uniqueBodies);
       payloads.push({ request: request.request, wireRequestId: sent.id, sha256: task.sha256, bytes: task.bytes, bodies, bodyObservation, nativeReadBodies,
@@ -714,7 +788,7 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       { target, rejected: delivery.last.rejectedNotionReceipts });
     } else {
       const active = selection.active.some(source => ['local', 'filesystem'].includes(source.record?.source) && source.record.path === target.path && source.bodySha256 === body.sha256);
-      const read = [...shared.attempts.values()].some(call => call.name === 'read' && call.arguments?.path === target.path && call.result?.isError === false);
+      const read = delivery.last.nativeReadBodies.some(proof => proof.path === target.path && proof.sha256 === body.sha256 && proof.occurrences > 0);
       demand(active || read, 'LOCAL_OWNER_UNPROVEN', 'A matching body hash alone does not prove the selected local owner');
     }
     return { ...target, body: main, payloadSha256: delivery.last.sha256 };
