@@ -26,21 +26,21 @@ function fail(code, message, details) {
   return Object.assign(new Error(message), { code, ...(details === undefined ? {} : { details }) });
 }
 
-async function processCommand(file, args, { cwd, env, timeoutMs = 600000 }) {
+async function processCommand(file, args, { cwd, env, timeoutMs = 600000, binaryOutput = false }) {
   return new Promise((resolveResult, reject) => {
     const child = spawn(file, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
-    let stdout = '', stderr = '', timedOut = false;
+    let timedOut = false; const chunks = [], errors = [];
     const timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, timeoutMs);
     child.stdin.end();
-    child.stdout.on('data', data => { stdout += data; });
-    child.stderr.on('data', data => { stderr += data; });
+    child.stdout.on('data', data => { chunks.push(data); });
+    child.stderr.on('data', data => { errors.push(data); });
     child.once('error', error => { clearTimeout(timer); reject(error); });
-    child.once('close', (code, signal) => { clearTimeout(timer); resolveResult({ code, signal, timedOut, stdout, stderr }); });
+    child.once('close', (code, signal) => { clearTimeout(timer); resolveResult({ code, signal, timedOut, stdout: binaryOutput ? Buffer.concat(chunks) : Buffer.concat(chunks).toString('utf8'), stderr: Buffer.concat(errors).toString('utf8') }); });
   });
 }
 
 /** Only public CLI actions assembled by this module are executable. No shell or command field is accepted. */
-async function cli(context, args, label) {
+async function cli(context, args, label, { allowedFailure } = {}) {
   assert.ok(id(label));
   const started = clock(), path = join(context.root, 'commands', label + '-' + randomUUID() + '.json');
   const env = { ...process.env, ...context.env }; delete env.NTN_SKILLS_DEV_ROOT;
@@ -49,6 +49,8 @@ async function cli(context, args, label) {
   try { value = JSON.parse(result.stdout.trim()); } catch { /* retain exact output before rejecting */ }
   const receipt = { command: [context.node, context.cli, ...args], started, completed: clock(), ...result };
   await save(path, receipt);
+  if (allowedFailure && result.code !== 0 && !result.timedOut && value?.ok === false && value.error?.code === allowedFailure)
+    return { value, artifact: await artifact(path) };
   if (result.code !== 0 || result.timedOut || !value || value.ok !== true)
     throw fail('AGENT_FIXTURE_CLI_FAILED', 'The public CLI did not complete ' + label + '.', { artifact: await artifact(path), code: result.code, error: value?.error });
   return { value, artifact: await artifact(path) };
@@ -344,6 +346,7 @@ async function captureReadback(bindings, alias, { version, key = alias, state = 
       if (/\.(md|markdown)$/iu.test(resourcePath) && owned.placement !== 'source')
         assert.equal(fixtureTextMeaning(bytes.toString()), fixtureTextMeaning(planned.toString()), 'Native content changed meaning');
       else assert.equal(sha(bytes), sha(planned), 'Exact source/resource bytes changed');
+      if (owned.placement === 'source') assert.equal(file.mode, expectedInput.mode, 'Exact upstream file mode changed');
     }
     const bodyKey = alias + '@' + label + '/' + resourcePath;
     bindings.private.bodies[bodyKey] = { path: output, sha256: sha(bytes), bytes: bytes.length, object: alias, version: label, resourcePath };
@@ -362,10 +365,13 @@ async function captureReadback(bindings, alias, { version, key = alias, state = 
       if (/\.(md|markdown)$/iu.test(path)) projected.push({ path, body: blockShape(await tree(context, file.id)) });
     }
     projected.sort((a, b) => a.path.localeCompare(b.path));
-    assert.ok(projected[0] && projected.find(file => file.path === 'SKILL.md')?.body.length > 0, 'The generated main reading projection is empty');
-    observedProjection = { sha256: sha(JSON.stringify(projected)), files: projected };
-    if (!owned.projectionBaseline) owned.projectionBaseline = observedProjection;
-    if (projection === 'same-as-baseline') assert.equal(observedProjection.sha256, owned.projectionBaseline.sha256, 'Restored reading projection differs from the baseline');
+    const hasReadingBody = projected.find(file => file.path === 'SKILL.md')?.body.length > 0;
+    if (owned.projectionRequired || owned.projectionBaseline || projection) assert.ok(hasReadingBody, 'The generated main reading projection is empty');
+    if (hasReadingBody) {
+      observedProjection = { sha256: sha(JSON.stringify(projected)), files: projected };
+      if (!owned.projectionBaseline) owned.projectionBaseline = observedProjection;
+      if (projection === 'same-as-baseline') assert.equal(observedProjection.sha256, owned.projectionBaseline.sha256, 'Restored reading projection differs from the baseline');
+    }
   } else assert.equal(projection, undefined, 'Projection assertions require a source fixture');
   if (owned.wasUnmanaged && owned.unmanagedBodyShape) {
     assert.deepEqual(blockShape(body), owned.unmanagedBodyShape, 'Registration changed author content');
@@ -449,6 +455,62 @@ async function cleanupFilteredView(context) {
   return { action: 'owned-filtered-view-delete', status: 'passed', artifact: receipt };
 }
 
+
+async function prepareSourceDeclaration(context, object, owned) {
+  const declaration = structuredClone(object.source.declaration);
+  declaration.definition.source_id = 'agent-workflow-' + context.runId + '-' + object.id; declaration.definition.name = owned.name;
+  declaration.contributions = [{ member_key: object.source.memberKey, skill_id: owned.skillId, mount_path: '', mapping: {}, exclude: [] }];
+  assert.deepEqual(declaration.definition.selection.roots, [object.source.memberKey], 'Select exactly one reviewed upstream member');
+  const path = join(context.root, 'inputs', object.id + '-source.json'); await save(path, declaration);
+  owned.declarationPath = path; owned.sourceId = declaration.definition.source_id;
+  return declaration;
+}
+
+/** Freeze fixed upstream bytes in private control storage; never seed the subject Store. */
+async function prepareAbsentSourceOracle(bindings, object, declaration) {
+  const context = bindings.private.fixture, owned = context.objects[object.id], identity = bindings.private.objects[object.id];
+  const adapter = declaration.definition.adapter, url = new URL(adapter.url), member = object.source.memberKey;
+  assert.equal(adapter.type, 'git'); assert.equal(url.protocol, 'https:'); assert.equal(url.username + url.password, '');
+  assert.match(adapter.ref, /^[a-f0-9]{40}$/u, 'An absent Source oracle requires one exact pinned commit');
+  assert.ok(member && !member.startsWith('/') && !member.includes('\\') && member.split('/').every(part => part && part !== '.' && part !== '..'));
+  const version = Object.keys(owned.versionInputs)[0], input = owned.versionInputs[version];
+  assert.equal(Object.keys(owned.versionInputs).length, 1, 'Initial interrupted Source fixtures declare one frozen version');
+  assert.equal(input.files.length, 0, 'Hydrate an absent Source from its exact provider tree');
+  const repository = join(context.root, 'inputs', object.id + '-git'), env = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
+  const git = async (args, binaryOutput = false) => {
+    const result = await processCommand('/usr/bin/git', args, { cwd: context.root, env, timeoutMs: 120000, binaryOutput });
+    assert.equal(result.code, 0, 'Private upstream acquisition failed: ' + result.stderr);
+    assert.equal(result.timedOut, false); return result.stdout;
+  };
+  await git(['init', '--bare', repository]);
+  await git(['--git-dir', repository, 'fetch', '--depth=1', '--filter=blob:none', '--no-tags', url.href, adapter.ref]);
+  assert.equal((await git(['--git-dir', repository, 'rev-parse', 'FETCH_HEAD'])).trim(), adapter.ref);
+  const entries = (await git(['--git-dir', repository, 'ls-tree', '-r', '-z', adapter.ref + ':' + member])).split('\0').filter(Boolean);
+  assert.ok(entries.length > 0 && entries.length <= 1000, 'The bounded upstream fixture has an invalid file count');
+  let totalBytes = 0;
+  for (const entry of entries) {
+    const match = /^(100644|100755) blob ([a-f0-9]{40})\t(.+)$/u.exec(entry);
+    assert.ok(match, 'Only exact regular Git files can be fixture oracles');
+    const [, mode, objectId, resourcePath] = match, target = resolve(input.directory, resourcePath);
+    assert.ok(inside(input.directory, target) && !resourcePath.includes('\\') && resourcePath.split('/').every(part => part && part !== '.' && part !== '..'));
+    const size = Number((await git(['--git-dir', repository, 'cat-file', '-s', objectId])).trim());
+    assert.ok(Number.isSafeInteger(size) && size >= 0 && size <= 32 * 1024 * 1024);
+    totalBytes += size; assert.ok(totalBytes <= 128 * 1024 * 1024);
+    const bytes = await git(['--git-dir', repository, 'cat-file', 'blob', objectId], true);
+    assert.equal(bytes.length, size); await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+    await writeFile(target, bytes, { flag: 'wx', mode: mode === '100755' ? 0o700 : 0o600 });
+    const file = { path: resourcePath, input: target, sha256: sha(bytes), bytes: bytes.length, mode, gitObject: objectId };
+    input.files.push(file);
+    const key = object.id + '@' + version + '/' + resourcePath;
+    bindings.private.bodies[key] = { path: await freezeObservedBytes(context, bytes), sha256: file.sha256, bytes: file.bytes, object: object.id, version, resourcePath, source: 'fixed-upstream-control-oracle' };
+  }
+  assert.ok(input.files.some(file => file.path === 'SKILL.md'), 'Upstream oracle has no main Skill');
+  identity.versions[version] = { bodyKeys: input.files.map(file => object.id + '@' + version + '/' + file.path) };
+  owned.upstreamOracle = await capture(context, join(context.root, 'readbacks', object.id + '-upstream-oracle.json'), {
+    url: url.href, commit: adapter.ref, member, files: input.files, totalBytes, subjectStoreSeeded: false, at: clock(),
+  });
+}
+
 /** Prepare one owned real fixture. The library is never replaced and global configuration is never edited. */
 export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cliPath, node = process.execPath, globalSkillsRoot = join(homedir(), '.agents/skills'), apiVersion = '2026-03-11' }) {
   validateAgentFixtureRecipe(recipe);
@@ -526,6 +588,10 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
         await captureReadback(bindings, object.id, { version: object.initial });
         continue;
       }
+      if (object.placement === 'source') {
+        const declaration = await prepareSourceDeclaration(context, object, owned); identity.sourceId = owned.sourceId;
+        if (object.initial === 'absent') await prepareAbsentSourceOracle(bindings, object, declaration);
+      }
       if (object.initial === 'absent') {
         const matches = await pages(context, 'skills', { property: context.library.skills.property_ids.Name, title: { equals: owned.name } });
         assert.equal(matches.length, 0, 'The creation fixture name already exists');
@@ -566,17 +632,13 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
         continue;
       }
       if (object.placement === 'source') {
-        const declaration = structuredClone(object.source.declaration);
-        declaration.definition.source_id = 'agent-workflow-' + runId + '-' + object.id; declaration.definition.name = owned.name;
-        declaration.contributions = [{ member_key: object.source.memberKey, skill_id: owned.skillId, mount_path: '', mapping: {}, exclude: [] }];
-        assert.deepEqual(declaration.definition.selection.roots, [object.source.memberKey], 'Select exactly one reviewed upstream member');
-        const path = join(root, 'inputs', object.id + '-source.json'); await save(path, declaration);
+        const path = owned.declarationPath;
         const applied = await cli(context, ['ctl', 'library', 'source', 'apply', path, '--entry', entry], 'source-apply');
         const selected = applied.value.targets?.filter(target => target.skill_id === owned.skillId);
         assert.equal(selected?.length, 1); assert.equal(applied.value.targets.length, 1, 'Source discovery exceeded owned scope');
-        owned.pageId = selected[0].page_id; owned.sourceId = declaration.definition.source_id; owned.sourcePageId = applied.value.source_page_id;
+        owned.pageId = selected[0].page_id; owned.sourcePageId = applied.value.source_page_id;
         owned.declarationPath = path; identity.sourceId = owned.sourceId;
-        await cli(context, ['ctl', 'library', 'projection', owned.pageId, '--entry', entry], 'projection');
+        await cli(context, ['ctl', 'library', 'projection', owned.pageId, '--entry', entry], 'projection'); owned.projectionRequired = true;
       } else {
         const input = owned.versionInputs[object.initial]; assert.ok(input);
         const created = await cli(context, ['ctl', 'library', 'skill', 'create', input.directory, '--entry', entry, '--skill-id', owned.skillId,
@@ -616,6 +678,77 @@ async function publishVersion(bindings, event) {
   return { command: result.artifact, readback };
 }
 
+
+async function observeSourceCheckpoint(bindings, alias) {
+  const context = bindings.private.fixture, owned = context.objects[alias], identity = bindings.private.objects[alias];
+  const matches = await pages(context, 'sources', { property: context.library.sources.property_ids['Source ID'], rich_text: { equals: owned.sourceId } });
+  assert.ok(matches.length <= 1, 'Owned Source identity became ambiguous');
+  const source = matches[0];
+  if (source) {
+    assert.equal(propertyText(source, context.library.sources.property_ids, 'Source ID'), owned.sourceId);
+    if (owned.sourcePageId) assert.equal(source.id, owned.sourcePageId, 'Source physical owner changed');
+    owned.sourcePageId = source.id;
+  }
+  const skill = await actualSkill(context, owned);
+  if (skill) {
+    assert.equal(propertyText(skill, context.library.skills.property_ids, 'Skill ID'), owned.skillId);
+    identity.pageId = skill.id; identity.name = propertyText(skill, context.library.skills.property_ids, 'Name');
+    identity.owner = 'shared_skill:' + context.library.library_id + ':' + owned.skillId;
+    identity.url = skill.url; bindings.public[alias + '.url'] = skill.url; bindings.public[alias + '.name'] = identity.name;
+  }
+  return { source, skill };
+}
+
+async function interruptSourceWrite(bindings, event) {
+  const context = bindings.private.fixture, owned = context.objects[event.object], maxRequests = event.maxRequests ?? 40;
+  assert.equal(owned.placement, 'source'); assert.equal(owned.currentVersion, 'absent');
+  assert.ok(owned.declarationPath && owned.upstreamOracle, 'A cold Source interruption needs frozen provider evidence');
+  assert.ok(Number.isSafeInteger(maxRequests) && maxRequests > 0 && maxRequests <= 1000, 'Use a bounded positive request budget');
+  assert.equal(owned.sourceOperation, undefined, 'An interrupted intent must be resumed by its exact identity');
+  const before = await observeSourceCheckpoint(bindings, event.object);
+  assert.equal(before.source, undefined, 'Do not interrupt a pre-existing Source'); assert.equal(before.skill, null, 'Do not replace an existing Skill');
+  owned.sourceOperation = { id: randomUUID(), input: await artifact(owned.declarationPath), maxRequests, phase: 'planned' };
+  await persist(bindings);
+  const interrupted = await cli(context, ['ctl', 'library', 'source', 'apply', owned.declarationPath, '--entry', context.entry,
+    '--operation', owned.sourceOperation.id, '--max-requests', String(maxRequests)], 'source-interrupt', { allowedFailure: 'REQUEST_BUDGET_EXHAUSTED' });
+  owned.sourceOperation.command = interrupted.artifact;
+  const after = await observeSourceCheckpoint(bindings, event.object);
+  const observed = { state: after.source && propertyText(after.source, context.library.sources.property_ids, 'Status'),
+    operationId: after.source && propertyText(after.source, context.library.sources.property_ids, 'Operation'),
+    skillState: after.skill && propertyText(after.skill, context.library.skills.property_ids, 'Current State'),
+    skillOperation: after.skill && propertyText(after.skill, context.library.skills.property_ids, 'Operation') };
+  owned.sourceOperation.observation = await capture(context, join(context.root, 'readbacks', event.object + '-source-interrupted-' + randomUUID() + '.json'), {
+    before, after, observed, cli: interrupted.value, command: interrupted.artifact, at: clock(),
+  });
+  assert.equal(interrupted.value.ok, false, 'The writer completed before the bounded interruption');
+  assert.equal(interrupted.value.error?.code, 'REQUEST_BUDGET_EXHAUSTED');
+  assert.equal(observed.state, 'applying', 'The request limit did not leave the actual Source applying');
+  assert.equal(observed.operationId, owned.sourceOperation.id, 'The applying Source belongs to another intent');
+  assert.equal(observed.skillState, 'ready', 'Reach a ready child before testing the Source readiness gate');
+  assert.equal(observed.skillOperation, '', 'The child must not fail through its own pending operation');
+  owned.sourceOperation.phase = 'interrupted';
+  return { status: 'passed', observed, sourcePageId: owned.sourcePageId, command: interrupted.artifact, artifact: owned.sourceOperation.observation };
+}
+
+async function resumeSourceWrite(bindings, event) {
+  const context = bindings.private.fixture, owned = context.objects[event.object];
+  assert.equal(owned.placement, 'source'); assert.equal(owned.sourceOperation?.phase, 'interrupted', 'Resume requires a verified real interruption');
+  assert.deepEqual(await artifact(owned.declarationPath), owned.sourceOperation.input, 'Frozen Source intent input changed');
+  const resumed = await cli(context, ['ctl', 'library', 'source', 'apply', owned.declarationPath, '--entry', context.entry,
+    '--operation', owned.sourceOperation.id, '--resume'], 'source-resume');
+  assert.equal(resumed.value.operation_id, owned.sourceOperation.id);
+  const selected = resumed.value.targets?.filter(target => target.skill_id === owned.skillId);
+  assert.equal(selected?.length, 1); assert.equal(resumed.value.targets.length, 1, 'Resumed Source exceeded its owned member');
+  owned.pageId = selected[0].page_id; owned.sourcePageId = resumed.value.source_page_id;
+  const after = await observeSourceCheckpoint(bindings, event.object);
+  assert.equal(propertyText(after.source, context.library.sources.property_ids, 'Status'), 'ready');
+  assert.equal(propertyText(after.source, context.library.sources.property_ids, 'Operation'), '');
+  const version = Object.keys(owned.versionInputs)[0];
+  const readback = await captureReadback(bindings, event.object, { version, key: event.object + '-source-resumed' });
+  owned.sourceOperation.phase = 'resumed'; owned.sourceOperation.resume = resumed.artifact;
+  return { status: 'passed', operationId: owned.sourceOperation.id, command: resumed.artifact, readback };
+}
+
 async function injectFault(bindings, event, ownedStateRoot) {
   const context = bindings.private.fixture, owned = context.objects[event.object], object = bindings.private.objects[event.object];
   assert.ok(owned && isAbsolute(ownedStateRoot), 'Fault injection requires an owned runtime Store');
@@ -647,6 +780,8 @@ export async function runAgentFixtureEvent(event, { bindings, bindingsPath, owne
   assert.ok(event && typeof event === 'object' && !Array.isArray(event));
   const allowed = {
     'publish-version': ['kind', 'object', 'version'],
+    'interrupt-source-write': ['kind', 'object', 'maxRequests'],
+    'resume-source-write': ['kind', 'object'],
     'set-enabled': ['kind', 'object', 'enabled', 'defaultContext'],
     'remove-owned': ['kind', 'object'],
     'restore-projection': ['kind', 'object'],
@@ -662,6 +797,8 @@ export async function runAgentFixtureEvent(event, { bindings, bindingsPath, owne
   const path = join(context.root, 'event-' + randomUUID() + '.json');
   try {
     if (event.kind === 'publish-version') record.result = await publishVersion(bindings, event);
+    if (event.kind === 'interrupt-source-write') record.result = await interruptSourceWrite(bindings, event);
+    if (event.kind === 'resume-source-write') record.result = await resumeSourceWrite(bindings, event);
     if (event.kind === 'readback') {
       const declaration = bindings.private.readbacks[event.receipt];
       assert.ok(declaration && declaration.object === event.object, 'Unknown readback declaration');
@@ -746,10 +883,22 @@ export async function cleanupAgentFixtures(bindings, { subjectExited, trash = '/
       assert.equal(result.code, 0); assert.equal(await exists(owned.directory), false);
       results.push({ object: owned.id, action: 'local-trash', status: 'passed' }); continue;
     }
-    if (!owned.pageId) { const row = await actualSkill(context, owned); if (!row) continue; }
+    if (!owned.pageId) {
+      const row = await actualSkill(context, owned);
+      if (!row && owned.placement !== 'source') continue;
+    }
     if (owned.placement === 'source') {
+      if (!owned.sourcePageId) {
+        const observed = await observeSourceCheckpoint(bindings, owned.id); await persist(bindings);
+        if (!observed.source && !owned.sourceOperation) continue;
+        assert.ok(observed.source, 'An interrupted Source intent needs reconciliation before teardown');
+      }
       const sourceBefore = await request(context, 'v1/pages/' + owned.sourcePageId);
       assert.equal(propertyText(sourceBefore, context.library.sources.property_ids, 'Source ID'), owned.sourceId);
+      if (!(sourceBefore.in_trash || sourceBefore.archived)) {
+        assert.equal(propertyText(sourceBefore, context.library.sources.property_ids, 'Status'), 'ready', 'Resume the exact unfinished Source before teardown');
+        assert.equal(propertyText(sourceBefore, context.library.sources.property_ids, 'Operation'), '', 'Preserve unfinished Source evidence');
+      }
       const sourceRecords = await pages(context, 'records', { property: context.library.records.property_ids.Origin, relation: { contains: owned.sourcePageId } });
       owned.sourceRecordIds = [...new Set([...(owned.sourceRecordIds ?? []), ...sourceRecords.map(record => record.id)])];
       await persist(bindings); // Preserve exact retired identities before the first writer may trash them.
@@ -764,7 +913,7 @@ export async function cleanupAgentFixtures(bindings, { subjectExited, trash = '/
         commands.push(empty.artifact, removed.artifact);
       }
       const retired = [];
-      for (const id of [...new Set([owned.pageId, owned.sourcePageId, ...(owned.knownChildren ?? []).map(child => child.pageId), ...owned.sourceRecordIds])]) {
+      for (const id of [...new Set([owned.pageId, owned.sourcePageId, ...(owned.knownChildren ?? []).map(child => child.pageId), ...owned.sourceRecordIds].filter(Boolean))]) {
         const current = await request(context, 'v1/pages/' + id);
         assert.ok(current.in_trash || current.archived, 'Source teardown left a known owned page live'); retired.push(current);
       }
