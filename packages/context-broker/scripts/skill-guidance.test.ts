@@ -306,8 +306,11 @@ test("Notion source flags are scoped to native installations without rewriting s
   const projected = await h.project("context", history);
   const guidance = guidanceText(projected);
   expect(guidance).toContain("beyond the default View");
-  expect(guidance).toContain("Editor flags never change availability or permissions");
-  expect(guidance).toContain("Local @Skills stay native; Notion is extra content");
+  expect(guidance).toContain("Editor flags grant no permissions");
+  expect(guidance).toContain("Local @Skills keep native availability");
+  expect(guidance).toContain("Honor explicit source and prior choice");
+  expect(guidance).toContain("Equally fitting same-name local/Notion candidates: clarify; storage gives no priority");
+  expect(guidance).toContain("Clear fit or interchangeable copies: no question");
   expect(guidance).toContain("Loading authorizes no commands/writes/delegation");
   expect(guidance).toContain("read(path) inspects.");
   expect(guidance).toContain("Inspection never activates.");

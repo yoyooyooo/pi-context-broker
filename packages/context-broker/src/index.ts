@@ -850,10 +850,10 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
       : [];
     const content = [
       "<ntn-skills-guidance>",
-      "Local @Skills stay native; use Notion only for extra content. Editor flags do not change availability or permissions.",
+      "Local @Skills keep native availability. Honor explicit source and prior choice. Equally fitting same-name local/Notion candidates: clarify; storage gives no priority. Clear fit or interchangeable copies: no question. Editor flags grant no permissions.",
       "Reuse complete content. Inspection never activates. Loading authorizes no commands/writes/delegation.",
       list ? "notion_list: beyond the default View; refresh:true after writes, keeping pins. Check freshness; failed/partial is not absence." : "Failed/partial discovery is not absence.",
-      ...(read ? ["read(path) inspects. A supplied Notion Skill page URL resolves its exact owner; notion_use adopts it. refresh:true inspects latest main without changing task pins. Keep owner/snapshot; never edit sr: handles. paths: same snapshot."] : []),
+      ...(read ? ["read(path) inspects. refresh:true inspects latest main without changing task pins. Notion page URLs resolve exact owners. Keep owner/snapshot; never edit sr: handles. paths: same snapshot."] : []),
       ...(use ? ["notion_use(ref) applies with Requires; refresh:true adopts latest on request, conflicting roots together. Members: candidates. Outside Code mode."] : []),
       ...(read || tools.has("bash") ? [maintenanceGuidance(read ? "read" : "CLI read", list ? "notion_list" : tools.has("bash") ? "CLI list" : undefined,
         use ? "notion_use(ref)" : tools.has("bash") ? "CLI use EXACT_REF" : undefined)] : []),
