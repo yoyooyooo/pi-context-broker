@@ -131,6 +131,49 @@ async function request(context, path, { method = 'GET', body, fixtureMutation = 
   }
 }
 
+function normalizedNotionId(value) {
+  assert.ok(typeof value === 'string' && /^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/iu.test(value),
+    'Projection trash requires an exact Notion ID');
+  return value.replaceAll('-', '').toLowerCase();
+}
+
+function assertProjectionTrashIdentity(context, target, row) {
+  assert.equal(row?.object, target.kind, 'Projection trash readback changed object kind');
+  assert.equal(normalizedNotionId(row.id), normalizedNotionId(target.id), 'Projection trash readback changed identity');
+  if (target.kind === 'block') {
+    assert.equal(row.parent?.type, target.parent.type, 'Projection trash readback changed parent kind');
+    assert.equal(normalizedNotionId(row.parent[target.parent.type]), normalizedNotionId(target.parent[target.parent.type]),
+      'Projection trash readback changed parent identity');
+  } else assert.equal(propertyText(row, context.library.skills.property_ids, 'Skill ID'), target.skillId,
+    'Projection trash readback changed stable Skill identity');
+}
+
+/** Only this fixture precondition may establish the desired state after a lost trash acknowledgement. */
+async function trashProjectionObject(context, target, confirmations) {
+  const path = 'v1/' + (target.kind === 'block' ? 'blocks/' : 'pages/') + target.id;
+  try {
+    await request(context, path, { method: 'PATCH', body: { in_trash: true }, fixtureMutation: true });
+  } catch (error) {
+    if (error.code !== 'AGENT_FIXTURE_NOTION_TRANSPORT' || error.details?.method !== 'PATCH' || error.details.path !== path
+      || error.details.readOnly !== false || error.details.outcome !== 'unknown-no-automatic-replay') throw error;
+    const confirmation = { target, started: clock(), acknowledgement: 'unknown',
+      originalError: { code: error.code, message: error.message, details: error.details } };
+    confirmations.push(confirmation);
+    try {
+      // One logical read, using the existing bounded read-only retry policy. Never replay the PATCH.
+      const row = await request(context, path); confirmation.readback = row;
+      assertProjectionTrashIdentity(context, target, row);
+      assert.ok(row.in_trash === true || row.archived === true, 'Projection trash readback is not trashed');
+      confirmation.status = 'observed-state';
+      return row;
+    } catch (readError) {
+      confirmation.status = 'failed';
+      confirmation.error = { code: readError.code, message: readError.message, details: readError.details };
+      throw error;
+    } finally { confirmation.completed = clock(); }
+  }
+}
+
 async function pages(context, section, filter) {
   const output = []; let cursor;
   do {
@@ -973,16 +1016,28 @@ export async function runAgentFixtureEvent(event, { bindings, bindingsPath, owne
     }
     if (event.kind === 'trash-projection') {
       assert.equal(owned.placement, 'source'); assert.ok(owned.pageId);
+      const owner = { kind: 'page', id: owned.pageId, skillId: owned.skillId };
       const before = await captureReadback(bindings, event.object, { key: event.object + '-before-trash' });
       owned.projectionBeforeTrash = before;
-      const row = await request(context, 'v1/pages/' + owned.pageId);
-      assert.equal(propertyText(row, context.library.skills.property_ids, 'Skill ID'), owned.skillId);
-      const blocks = await children(context, owned.pageId);
-      for (const block of blocks) await request(context, 'v1/blocks/' + block.id, { method: 'PATCH', body: { in_trash: true }, fixtureMutation: true });
-      await request(context, 'v1/pages/' + owned.pageId, { method: 'PATCH', body: { in_trash: true }, fixtureMutation: true });
-      const readback = await request(context, 'v1/pages/' + owned.pageId);
+      const row = await request(context, 'v1/pages/' + owner.id); assertProjectionTrashIdentity(context, owner, row);
+      const blocks = await children(context, owner.id);
+      const targets = blocks.map(block => {
+        const parent = block.parent;
+        assert.ok(parent && ['page_id', 'block_id'].includes(parent.type), 'Projection trash needs a known block parent');
+        assert.equal(normalizedNotionId(parent[parent.type]), normalizedNotionId(owner.id), 'Projection trash is limited to owned top-level blocks');
+        const target = { kind: 'block', id: block.id, parent: { type: parent.type, [parent.type]: parent[parent.type] } };
+        assertProjectionTrashIdentity(context, target, block); return target;
+      });
+      record.result = { fixtureMutation: 'clear-owned-generated-main-and-trash-exact-page', before, confirmations: [], clearedBlocks: [] };
+      for (const target of targets) {
+        await trashProjectionObject(context, target, record.result.confirmations);
+        record.result.clearedBlocks.push(target.id);
+      }
+      const confirmed = await trashProjectionObject(context, owner, record.result.confirmations);
+      const readback = confirmed ?? await request(context, 'v1/pages/' + owner.id);
+      assertProjectionTrashIdentity(context, owner, readback);
       assert.ok(readback.in_trash === true || readback.archived === true);
-      record.result = { fixtureMutation: 'clear-owned-generated-main-and-trash-exact-page', before, readback, clearedBlocks: blocks.map(block => block.id) };
+      record.result.readback = readback;
     }
     if (event.kind === 'restore-projection') {
       assert.equal(owned.placement, 'source'); assert.ok(owned.projectionBeforeTrash, 'Restoration needs the before-trash comparison');

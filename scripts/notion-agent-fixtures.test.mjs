@@ -451,6 +451,169 @@ test('an unknown View CREATE outcome is recorded and never automatically replaye
 });
 
 
+// Only the control-plane trash event uses this finite API double; it is not live acceptance.
+async function projectionTrashHarness(t, { target = 'block', mode = 'lost-trashed' } = {}) {
+  const value = await fixture(t), { root, context, bindings } = value;
+  const owner = '11111111-1111-4111-8111-111111111111', first = '22222222-2222-4222-8222-222222222222';
+  const second = '33333333-3333-4333-8333-333333333333', other = '44444444-4444-4444-8444-444444444444';
+  const targetId = target === 'block' ? first : owner, calls = [], trashed = new Set();
+  const text = value => ({ rich_text: [{ plain_text: value }] });
+  const page = () => ({ object: 'page', id: owner, in_trash: trashed.has(owner), archived: trashed.has(owner),
+    properties: { 'Skill ID': text('owned-projection'), 'Current State': text('ready'), Operation: text('') } });
+  const block = id => ({ object: 'block', id, parent: { type: 'page_id', page_id: owner },
+    in_trash: trashed.has(id), archived: trashed.has(id), type: 'paragraph', has_children: false,
+    paragraph: { rich_text: [{ type: 'text', text: { content: 'Generated reading body' } }] } });
+  context.entry = other; context.apiVersion = '2026-03-11'; context.node = process.execPath;
+  context.cli = join(root, 'projection-read.mjs');
+  context.library = { skills: { property_ids: { 'Skill ID': 'skill-id', 'Current State': 'state', Operation: 'operation' } },
+    files: { data_source_id: '55555555-5555-4555-8555-555555555555', property_ids: { Skill: 'skill' } },
+    records: { data_source_id: '66666666-6666-4666-8666-666666666666', property_ids: { Skill: 'skill' } } };
+  context.objects.selected = { id: 'selected', placement: 'source', pageId: owner, skillId: 'owned-projection',
+    currentVersion: 'A', versionInputs: { A: { files: [] } } };
+  bindings.private.objects.selected = { kind: 'notion', owner: 'owned-projection', versions: {} };
+  await mkdir(join(root, 'commands'));
+  const main = { ok: true, has_more: false, path: 'SKILL.md', content: '# Source instruction\n', ref: 'unit-ref',
+    snapshot_id: 'unit-snapshot', version_id: 'unit-version', scope: 'unit-scope',
+    record: { id: 'owned-projection', name: 'Projection fixture', locator: { page_id: owner, skill_id: 'owned-projection' } },
+    effects: { remote_writes: 'none' } };
+  await writeFile(context.cli, "import assert from 'node:assert/strict';const args=process.argv.slice(2);"
+    + "assert.ok(['read','files'].includes(args[0]));console.log(JSON.stringify(args[0]==='read'?"
+    + JSON.stringify(main) + ":" + JSON.stringify({ ok: true, files: [{ path: 'SKILL.md', mode: '100644' }] }) + "));\n");
+  const previousFetch = globalThis.fetch, previousToken = process.env.NOTION_API_TOKEN;
+  process.env.NOTION_API_TOKEN = 'fixture-unit-test-token';
+  let targetPatched = false;
+  globalThis.fetch = async (url, options) => {
+    const path = new URL(url).pathname, id = path.split('/').at(-1);
+    calls.push({ method: options.method, path });
+    if (options.method === 'POST') {
+      assert.ok(path.endsWith('/query')); return Response.json({ results: [], has_more: false });
+    }
+    if (options.method === 'PATCH') {
+      assert.ok([owner, first, second].includes(id)); assert.deepEqual(JSON.parse(options.body), { in_trash: true });
+      if (id === targetId && mode.startsWith('http-'))
+        return Response.json({ code: 'controlled_rejection' }, { status: Number(mode.slice(5)) });
+      if (id !== targetId || mode !== 'lost-live') trashed.add(id);
+      if (id === targetId && mode !== 'ack') {
+        targetPatched = true;
+        throw new TypeError('controlled lost trash acknowledgement', { cause: { code: 'UND_ERR_SOCKET' } });
+      }
+      return Response.json(id === owner ? page() : block(id));
+    }
+    assert.equal(options.method, 'GET');
+    if (path === '/v1/blocks/' + owner + '/children')
+      return Response.json({ results: [first, second].filter(id => !trashed.has(id)).map(block), has_more: false });
+    assert.ok(path === '/v1/pages/' + owner || path === '/v1/blocks/' + first);
+    const row = id === owner ? page() : block(id);
+    if (targetPatched && id === targetId) {
+      if (mode === 'get-fail') throw new TypeError('controlled confirmation read failure', { cause: { code: 'UND_ERR_SOCKET' } });
+      if (mode === 'wrong-id') row.id = other;
+      if (mode === 'wrong-kind') row.object = target === 'block' ? 'page' : 'block';
+      if (mode === 'wrong-parent') row.parent.page_id = other;
+      if (mode === 'wrong-skill') row.properties['Skill ID'] = text('someone-else');
+      if (mode === 'incomplete') { delete row.in_trash; delete row.archived; }
+      if (mode === 'lost-trashed') {
+        row.id = row.id.replaceAll('-', '').toUpperCase();
+        if (row.parent) row.parent.page_id = row.parent.page_id.replaceAll('-', '').toUpperCase();
+      }
+    }
+    return Response.json(row);
+  };
+  t.after(() => { globalThis.fetch = previousFetch; if (previousToken === undefined) delete process.env.NOTION_API_TOKEN; else process.env.NOTION_API_TOKEN = previousToken; });
+  return { ...value, calls, targetId, owner, first, second };
+}
+
+test('projection trash observes a lost acknowledgement without replaying the exact mutation', async t => {
+  for (const target of ['block', 'page']) await t.test(target, async t => {
+    const { bindings, root, calls, targetId } = await projectionTrashHarness(t, { target });
+    const result = await runAgentFixtureEvent({ kind: 'trash-projection', object: 'selected' }, { bindings });
+    assert.equal(result.status, 'passed');
+    const [confirmation] = result.result.confirmations;
+    assert.equal(result.result.confirmations.length, 1); assert.equal(confirmation.status, 'observed-state');
+    assert.equal(confirmation.acknowledgement, 'unknown');
+    assert.equal(confirmation.originalError.code, 'AGENT_FIXTURE_NOTION_TRANSPORT');
+    assert.equal(confirmation.originalError.details.outcome, 'unknown-no-automatic-replay');
+    assert.equal(confirmation.readback.in_trash, true);
+    const targetCalls = calls.filter(call => call.path.endsWith('/' + targetId));
+    assert.equal(targetCalls.filter(call => call.method === 'PATCH').length, 1);
+    assert.equal(targetCalls.filter(call => call.method === 'GET').length, target === 'block' ? 1 : 3);
+    assert.equal(calls.filter(call => call.method === 'PATCH').length, 3);
+    assert.deepEqual((await json(result.artifact.path)).result.confirmations, result.result.confirmations);
+    const attempts = (await readFile(join(root, 'network-attempts.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+    const failed = attempts.filter(row => row.method === 'PATCH' && row.error);
+    assert.equal(failed.length, 1); assert.equal(failed[0].status, null); assert.equal(failed[0].retry, false);
+  });
+});
+
+test('projection trash keeps the original unknown outcome when exact readback is live', async t => {
+  for (const target of ['block', 'page']) await t.test(target, async t => {
+    const { bindings, calls, targetId } = await projectionTrashHarness(t, { target, mode: 'lost-live' });
+    let failure;
+    await assert.rejects(runAgentFixtureEvent({ kind: 'trash-projection', object: 'selected' }, { bindings }), error => {
+      failure = error; return error.code === 'AGENT_FIXTURE_NOTION_TRANSPORT' && error.details.outcome === 'unknown-no-automatic-replay';
+    });
+    const recorded = await json(failure.fixtureEventArtifact), [confirmation] = recorded.result.confirmations;
+    assert.equal(recorded.status, 'failed'); assert.deepEqual(recorded.error, confirmation.originalError);
+    assert.equal(confirmation.status, 'failed'); assert.equal(confirmation.readback.in_trash, false);
+    assert.ok(confirmation.error.message.includes('trashed'));
+    assert.equal(calls.filter(call => call.method === 'PATCH' && call.path.endsWith('/' + targetId)).length, 1);
+    assert.equal(calls.filter(call => call.method === 'PATCH').length, target === 'block' ? 1 : 3, 'Do not continue the remaining trash steps');
+  });
+});
+
+test('projection trash rejects foreign or incomplete confirmation identities', async t => {
+  const cases = [{ target: 'block', mode: 'wrong-id' }, { target: 'block', mode: 'wrong-kind' },
+    { target: 'block', mode: 'wrong-parent' }, { target: 'block', mode: 'incomplete' },
+    { target: 'page', mode: 'wrong-id' }, { target: 'page', mode: 'wrong-kind' },
+    { target: 'page', mode: 'wrong-skill' }, { target: 'page', mode: 'incomplete' }];
+  for (const options of cases) await t.test(options.target + ':' + options.mode, async t => {
+    const { bindings, calls, targetId } = await projectionTrashHarness(t, options); let failure;
+    await assert.rejects(runAgentFixtureEvent({ kind: 'trash-projection', object: 'selected' }, { bindings }), error => {
+      failure = error; return error.code === 'AGENT_FIXTURE_NOTION_TRANSPORT' && error.details.outcome === 'unknown-no-automatic-replay';
+    });
+    const recorded = await json(failure.fixtureEventArtifact), [confirmation] = recorded.result.confirmations;
+    assert.equal(recorded.status, 'failed'); assert.deepEqual(recorded.error, confirmation.originalError);
+    assert.equal(confirmation.status, 'failed'); assert.ok(confirmation.error);
+    assert.equal(calls.filter(call => call.method === 'PATCH' && call.path.endsWith('/' + targetId)).length, 1);
+  });
+});
+
+test('projection trash bounds a failed confirmation read and preserves the original write error', async t => {
+  for (const target of ['block', 'page']) await t.test(target, async t => {
+    const { bindings, root, calls, targetId } = await projectionTrashHarness(t, { target, mode: 'get-fail' }); let failure;
+    await assert.rejects(runAgentFixtureEvent({ kind: 'trash-projection', object: 'selected' }, { bindings }), error => {
+      failure = error; return error.code === 'AGENT_FIXTURE_NOTION_TRANSPORT' && error.details.readOnly === false && error.details.attempt === 1;
+    });
+    const recorded = await json(failure.fixtureEventArtifact), [confirmation] = recorded.result.confirmations;
+    assert.deepEqual(recorded.error, confirmation.originalError); assert.equal(confirmation.status, 'failed');
+    assert.equal(confirmation.error.code, 'AGENT_FIXTURE_NOTION_TRANSPORT');
+    assert.equal(confirmation.error.details.readOnly, true); assert.equal(confirmation.error.details.attempt, 3);
+    assert.equal(calls.filter(call => call.method === 'PATCH' && call.path.endsWith('/' + targetId)).length, 1);
+    const attempts = (await readFile(join(root, 'network-attempts.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.deepEqual(attempts.filter(row => row.method === 'GET' && row.error).map(row => [row.attempt, row.retry]), [[1, true], [2, true], [3, false]]);
+  });
+});
+
+test('projection trash retains the normal acknowledged path without extra block reads', async t => {
+  const { bindings, calls, owner } = await projectionTrashHarness(t, { mode: 'ack' });
+  const result = await runAgentFixtureEvent({ kind: 'trash-projection', object: 'selected' }, { bindings });
+  assert.equal(result.status, 'passed'); assert.deepEqual(result.result.confirmations, []);
+  assert.equal(calls.filter(call => call.method === 'PATCH').length, 3);
+  assert.equal(calls.filter(call => call.method === 'GET' && call.path.startsWith('/v1/blocks/') && !call.path.endsWith('/children')).length, 0);
+  assert.equal(calls.filter(call => call.method === 'GET' && call.path === '/v1/pages/' + owner).length, 3);
+});
+
+test('projection trash never reconciles a nontransport write rejection', async t => {
+  for (const mode of ['http-400', 'http-500']) await t.test(mode, async t => {
+    const { bindings, calls, targetId } = await projectionTrashHarness(t, { mode }); let failure;
+    await assert.rejects(runAgentFixtureEvent({ kind: 'trash-projection', object: 'selected' }, { bindings }), error => {
+      failure = error; return error.code === 'AGENT_FIXTURE_NOTION_READBACK' && error.details.status === Number(mode.slice(5));
+    });
+    const recorded = await json(failure.fixtureEventArtifact);
+    assert.deepEqual(recorded.result.confirmations, []); assert.equal(recorded.status, 'failed');
+    assert.deepEqual(calls.filter(call => call.path.endsWith('/' + targetId)).map(call => call.method), ['PATCH']);
+  });
+});
+
 test('Source lifecycle events require an owned Source and a verified pending intent', async t => {
   const { bindings } = await fixture(t);
   await assert.rejects(runAgentFixtureEvent({ kind: 'interrupt-source-write', object: 'selected' }, { bindings }), /source/u);
