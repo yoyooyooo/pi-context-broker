@@ -15,6 +15,8 @@ const send = frame => process.stdout.write(JSON.stringify(frame) + '\n');
 const reply = (command, data) => send({ type: 'response', id: command.id, command: command.type, success: true, data });
 const idle = { isStreaming: false, isCompacting: false, pendingMessageCount: 0 };
 let submitted = false, queries = 0, count = 0;
+let busyState, busyWaiter;
+const busyCheckpoint = command => reply(command, { submitted, queries, count, state: busyState });
 const start = () => send({ type: 'agent_start' });
 const end = (stopReason = 'stop') => send({ type: 'agent_end', messages: [
   { role: 'assistant', stopReason, content: [{ type: 'text', text: 'answer-' + (++count) }] },
@@ -43,8 +45,17 @@ lines.on('line', line => {
     return;
   }
   if (command.type === 'release') {
-    if (mode.startsWith('busy-')) { start(); end(); }
+    if (mode.startsWith('busy-')) {
+      if (!busyState) throw new Error('Release requires the actual busy state query');
+      start(); end();
+    }
     settled(); reply(command, {}); return;
+  }
+  if (command.type === 'await_busy') {
+    if (!mode.startsWith('busy-')) throw new Error('No busy state in this fixture');
+    if (busyState) busyCheckpoint(command);
+    else busyWaiter = command;
+    return;
   }
   if (command.type === 'checkpoint') { reply(command, { submitted, queries, count }); return; }
   if (command.type === 'get_state') {
@@ -69,6 +80,10 @@ lines.on('line', line => {
       // to mask an implementation that ignores the state fields.
       if (mode === 'stale-idle') { start(); end(); settled(); }
       reply(command, state);
+      if (mode.startsWith('busy-')) {
+        busyState = state;
+        if (busyWaiter) { busyCheckpoint(busyWaiter); busyWaiter = undefined; }
+      }
       return;
     }
     reply(command, idle);
@@ -118,9 +133,14 @@ for (const mode of ['busy-stream', 'busy-queue', 'busy-compaction', 'stale-idle'
     let completed = false;
     const prompt = rpc.prompt('business request').then(frame => { completed = true; return frame; });
     if (mode !== 'stale-idle') {
-      await rpc.command('checkpoint');
-      const before = await rpc.command('checkpoint');
+      // Unrelated round trips do not prove that the harness processed prompt
+      // acknowledgement and sent get_state. This reply follows that actual
+      // query and its busy response, regardless of pipe/event-loop scheduling.
+      const before = await rpc.command('await_busy');
       assert.equal(before.queries, 1);
+      assert.equal(before.count, 1);
+      assert.deepEqual(before.state, { isStreaming: mode === 'busy-stream',
+        isCompacting: mode === 'busy-compaction', pendingMessageCount: mode === 'busy-queue' ? 1 : 0 });
       assert.equal(completed, false);
       await rpc.command('release');
     }
