@@ -54,7 +54,7 @@ test("maintenance reads the connected Notion workflow before any management comm
   expect(routed).toContain("task's source/library");
   expect(routed).toContain("absent/pending: notion_list there");
   expect(routed).toContain("failed/partial is not absence");
-  expect(routed).toContain("Never activate the edited item");
+  expect(routed).toContain("Edited item: inspect only.");
   expect(routed).toContain("Builtins: explicit offline/bootstrap only");
   expect(routed).toContain("To apply: notion_use(ref), same ref + Requires");
   expect(routed).not.toContain("ctl builtin read");

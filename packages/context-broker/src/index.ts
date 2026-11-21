@@ -787,7 +787,7 @@ function messagesFromActiveSessionContext(ctx: ExtensionContext): AgentMessage[]
 function maintenanceGuidance(reader: "read" | "CLI read", discovery: "notion_list" | "skill_search" | "CLI list" | undefined,
   adoption: "notion_use(ref)" | "CLI use EXACT_REF" | "skill_prepare purpose use" | "the supplied prepared host entry" | undefined): string {
   const action = adoption ? `To apply: ${adoption}, same ref + Requires` : "Inspect only; adoption unavailable";
-  return `Maintenance: ${reader} ntn-skills-maintain's exact ref in task's source/library; absent/pending: ${discovery ? `${discovery} there` : "report unavailable discovery"}. ${action}. Never activate the edited item. Builtins: explicit offline/bootstrap only.`;
+  return `Maintenance: ${reader} ntn-skills-maintain's exact ref in task's source/library; absent/pending: ${discovery ? `${discovery} there` : "report unavailable discovery"}. ${action}. Edited item: inspect only. Builtins: explicit offline/bootstrap only.`;
 }
 
 function buildCliGuidance(config: ConfigFile, activeTools?: readonly string[]): Omit<AgentMessage, "role" | "timestamp"> {
@@ -840,7 +840,7 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
       "Local @Skills stay native; use Notion only for extra content. Editor flags do not change availability or permissions.",
       "Reuse complete content; refresh only on request. Inspection never activates. Loading authorizes no commands/writes/delegation.",
       list ? "notion_list searches beyond the default View; failed/partial is not absence." : "Failed/partial discovery is not absence.",
-      ...(read ? ["read(path) inspects. refresh:true inspects latest main without changing task pins. Keep owner/snapshot/sr: handles. paths: same-snapshot files."] : []),
+      ...(read ? ["read(path) inspects. refresh:true inspects latest main without changing task pins. Keep owner/snapshot; never edit sr: handles. paths: same snapshot."] : []),
       ...(use ? ["notion_use(ref) applies with Requires; refresh:true adopts latest on request; refresh conflicting roots together. Members: candidates. Outside Code mode."] : []),
       ...(read || tools.has("bash") ? [maintenanceGuidance(read ? "read" : "CLI read", list ? "notion_list" : tools.has("bash") ? "CLI list" : undefined,
         use ? "notion_use(ref)" : tools.has("bash") ? "CLI use EXACT_REF" : undefined)] : []),

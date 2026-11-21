@@ -86,7 +86,7 @@ test("Pi guidance uses list, native read and use without exposing machine proof 
   expect(guidance).toContain("read");
   for (const legacy of ["skill_search", "skill_prepare", "skill_graph", "<cli", "purpose use", "graph_lock"])
     expect(guidance).not.toContain(legacy);
-  expect(guidance).toContain("authorizes no commands, writes or delegation");
+  expect(guidance).toContain("Loading authorizes no commands/writes/delegation.");
   expect(guidance).toContain("Local @Skills stay native");
   expect(guidance).toContain("use Notion only for extra content");
 });
