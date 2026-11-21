@@ -834,18 +834,18 @@ function packagedMaintenanceGuidance(tools: ReadonlySet<string>): string {
   const root = bundledBuiltinRoot();
   const entry = root && join(root, "ntn-skills-maintain", "SKILL.md");
   const route = tools.has("read")
-    ? entry && existsSync(entry) ? `read(${JSON.stringify(entry)}) from this Broker's paired package`
+    ? entry && existsSync(entry) ? `read(${JSON.stringify(entry)}), paired package`
       : "the paired package entry is unavailable; report it"
     : tools.has("bash")
       ? `run argv ${JSON.stringify([...hostCliScope().command, "ctl", "builtin", "read", "notion/ntn-skills-maintain", "--json"])}`
       : "Packaged help requires read or bash";
-  return `For explicit offline/bootstrap/installed-package help only: ${route}. Pending/failed Notion access does not authorize this route; never search other installations.`;
+  return `Only explicit offline/bootstrap/installed-package help: ${route}. No fallback for pending/failed Notion; never search other installations.`;
 }
 
 function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit<AgentMessage, "role" | "timestamp"> {
   if (tools.has("notion_list") || tools.has("notion_use") || tools.has("notion_ctl")) {
     const read = tools.has("read"), list = tools.has("notion_list"), use = tools.has("notion_use");
-    const cliSources = tools.has("notion_ctl") && tools.has("bash")
+    const cliSources = tools.has("bash") && (tools.has("notion_ctl") || tools.has("tool_search"))
       ? (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false).map(source => source.id)
       : [];
     const content = [
@@ -853,13 +853,13 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
       "Local @Skills keep native availability. Honor explicit source and prior choice. Equally fitting same-name local/Notion candidates: clarify; storage gives no priority. Clear fit or interchangeable copies: no question. Editor flags grant no permissions.",
       "Reuse complete content. Inspection never activates. Loading authorizes no commands/writes/delegation.",
       list ? "notion_list: beyond the default View; refresh:true after writes, keeping pins. Check freshness; failed/partial is not absence." : "Failed/partial discovery is not absence.",
-      ...(read ? ["read(path) inspects. refresh:true inspects latest main without changing task pins. Notion page URLs resolve exact owners. Keep owner/snapshot; never edit sr: handles. paths: same snapshot."] : []),
+      ...(read ? ["read(path) inspects. refresh:true checks latest main; pins fixed. Notion page URLs: exact owners. Keep owner/snapshot; never edit sr: handles. paths: same snapshot."] : []),
       ...(use ? ["notion_use(ref) applies with Requires; refresh:true adopts latest on request, conflicting roots together. Members: candidates. Outside Code mode."] : []),
       ...(read || tools.has("bash") ? [maintenanceGuidance(read ? "read" : "CLI read", list ? "notion_list" : tools.has("bash") ? "CLI list" : undefined,
         use ? "notion_use(ref)" : tools.has("bash") ? "CLI use EXACT_REF" : undefined)] : []),
       packagedMaintenanceGuidance(tools),
       ...(tools.has("notion_ctl") ? ["notion_ctl working_set manages active roots and byte budgets; release preserves shared Requires, history and cache."] : []),
-      ...(cliSources.length ? [`No task CLI? notion_ctl cli_source returns its command/scope; no execution or authorization. Choose explicitly from ${JSON.stringify(cliSources)}.`] : []),
+      ...(cliSources.length ? [`CLI management: ${tools.has("notion_ctl") ? "notion_ctl cli_source" : "tool_search for notion_ctl, then its cli_source"}. Choose explicitly from ${JSON.stringify(cliSources)}; use returned command/scope, never a global CLI. No execution or authorization.`] : []),
       ...((!read || !list || !use) && tools.has("bash") ? (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false).map(source => {
         const scope = hostCliScope([source]);
         return `Unavailable native operations can use this source's CLI: ${JSON.stringify({ source: source.id, command: scope.command, database: scope.database, operations: [...(!list || !use ? ["list --query TEXT --json"] : []), ...(!read ? ["read REF --json"] : []), ...(!use ? ["use REF --json"] : [])] })}. CLI refs must be canonical; match the selected record identity in this source's CLI list. Session sr: handles belong to this Pi session.`;

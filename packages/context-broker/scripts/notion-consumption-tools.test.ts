@@ -59,9 +59,11 @@ test("Pi extension reinstallation recomputes Notion capabilities across disabled
 
 test("Pi exposes one Notion consumption contract and keeps use outside nested code execution", async () => {
   const registered: Parameters<NonNullable<ExtensionAPI["registerTool"]>>[0][] = [];
-  const api: ExtensionAPI = { on() {}, registerTool(tool) { registered.push(tool); } };
+  const active = ["read", "notion_list", "notion_use", "bash", "tool_search"];
+  const config: ConfigFile = { sources: [{ id: "notion", type: "notion", prefetch: false }] };
+  const api: ExtensionAPI = { on() {}, registerTool(tool) { registered.push(tool); }, getActiveTools: () => [...active] };
   await installHostSkills(api, {
-    config: { sources: [{ id: "notion", type: "notion", prefetch: false }] },
+    config,
     getRecords: async () => ({ records: [], failures: [] }),
     loadRecord: async () => { throw new Error("Metadata must not load bodies"); },
     prepareGraph: async () => { throw new Error("Registration must not prepare instructions"); },
@@ -74,7 +76,13 @@ test("Pi exposes one Notion consumption contract and keeps use outside nested co
   expect(list?.description).toContain("Skill refs for read or notion_use");
   expect(list?.description).not.toContain("read references only");
   expect(use).toMatchObject({ exposure: "model-only", defaultActive: true });
-  expect(ctl).toMatchObject({ exposure: "deferred", defaultActive: false });
+  expect(ctl).toMatchObject({ exposure: "deferred", defaultActive: false, loadMode: "discoverable", defaultInactive: true });
+  const guidance = String(buildCliGuidance(config, api.getActiveTools!()).content);
+  expect(guidance).toContain("tool_search for notion_ctl, then its cli_source");
+  expect(guidance).toContain('Choose explicitly from ["notion"]');
+  expect(guidance).toContain("use returned command/scope, never a global CLI");
+  expect(api.getActiveTools!()).toEqual(active);
+  expect(guidance).not.toContain("notion_ctl working_set");
   expect(use?.parameters).toMatchObject({ required: ["ref"], additionalProperties: false });
 });
 
