@@ -445,11 +445,13 @@ async function cleanupFilteredView(context) {
   assert.ok(!context.view.originalViewIds.includes(context.viewId), 'Never delete a pre-existing View');
   const actual = await request(context, 'v1/views/' + context.viewId);
   assert.equal(actual.name, context.view.name); assert.equal(actual.parent?.database_id?.replaceAll('-', ''), context.entry.replaceAll('-', ''));
+  // Independent fixtures may finish between preparation and teardown. Protect the inventory present at this deletion.
+  const otherViewIds = before.filter(view => view.id !== context.viewId).map(view => view.id);
   const removed = await request(context, 'v1/views/' + context.viewId, { method: 'DELETE', fixtureMutation: true });
   assert.equal(removed.id, context.viewId);
   const after = await listViews(context);
   assert.equal(after.some(view => view.id === context.viewId), false, 'The owned View is still present');
-  assert.deepEqual(after.filter(view => context.view.originalViewIds.includes(view.id)).map(view => view.id), context.view.originalViewIds, 'View cleanup changed existing view order');
+  assert.deepEqual(after.map(view => view.id), otherViewIds, 'View cleanup changed another View or its order');
   context.view.cleaned = true;
   const receipt = await capture(context, join(context.root, 'readbacks', 'filtered-view-cleaned.json'), { before, actual, removed, after, at: clock() });
   return { action: 'owned-filtered-view-delete', status: 'passed', artifact: receipt };
