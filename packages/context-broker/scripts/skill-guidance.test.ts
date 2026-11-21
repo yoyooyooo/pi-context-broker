@@ -1,9 +1,17 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { currentNotionFixture } from "./fixtures/current-notion-source";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 const runtime = await currentNotionFixture();
+const packageRoot = join(runtime.root, "src/builtin-skills");
+const packageEntry = join(packageRoot, "ntn-skills-maintain/SKILL.md");
+const privatePackageBody = "# Packaged maintenance body must not be preloaded.\n";
+await mkdir(join(packageRoot, "ntn-skills"), { recursive: true });
+await mkdir(join(packageRoot, "ntn-skills-maintain"), { recursive: true });
+await writeFile(join(packageRoot, "ntn-skills/SKILL.md"), "# Packaged consumption body.\n");
+await writeFile(packageEntry, privatePackageBody);
 const { buildCliGuidance, buildInjectedPayload, installSkillGuidance } = await import(pathToFileURL(join(runtime.root, "src/index.ts")).href);
 const { installHostSkills } = await import(pathToFileURL(join(runtime.root, "src/host-skills.ts")).href);
 const { hostCliScope } = await import(pathToFileURL(join(runtime.root, "src/host-command.ts")).href);
@@ -22,7 +30,7 @@ const guidanceText = (messages: AgentMessage[]) => String(messages.find(message 
 
 test("native Pi guidance is a bounded routing contract, not a duplicated CLI tutorial", () => {
   const guidance = text(["read", "notion_list", "notion_use", "bash"]);
-  expect(Buffer.byteLength(guidance)).toBeLessThanOrEqual(900);
+  expect(Buffer.byteLength(guidance)).toBeLessThanOrEqual(1500);
   expect(guidance).not.toContain("Zero tool calls/body reads");
   expect(guidance).toContain("refresh:true checks latest main; pins fixed");
   expect(guidance).toContain("refresh:true adopts latest on request");
@@ -115,8 +123,8 @@ test("deferred native management exposes only exact enabled source IDs when a CL
   expect(discovered).toContain("no execution or authorization");
   for (const forbidden of ["/configured", "database-a", "database-b", "disabled", "must-not-appear", '"local"'])
     expect(discovered).not.toContain(forbidden);
-  expect(Buffer.byteLength(hidden)).toBeLessThanOrEqual(900);
-  expect(Buffer.byteLength(discovered)).toBeLessThanOrEqual(1200);
+  expect(Buffer.byteLength(hidden)).toBeLessThanOrEqual(1500);
+  expect(Buffer.byteLength(discovered)).toBeLessThanOrEqual(1800);
   expect(text(native.filter(tool => tool !== "bash"))).not.toContain("cli_source");
   const h = await graphHarness();
   h.tools(native);
@@ -191,6 +199,49 @@ function guidanceHarness(host: "pi" | "omp" = "pi", known = true, settings: Conf
   }
   return { api, handlers, project, tools: (next: string[]) => { active = next; } };
 }
+
+test("cold and offline Pi guidance exposes the paired package entry without preloading it", async () => {
+  for (const offline of [false, true]) {
+    const settings: ConfigFile = { sources: [{ id: "selected", type: "notion", database: "selected-database",
+      discovery: { offline }, activation: { offline } }] };
+    const h = guidanceHarness("pi", true, settings);
+    h.tools(["read", "notion_list", "notion_use", "bash"]);
+    const before = await h.handlers.get("before_agent_start")?.({} as never, {}) as { message?: AgentMessage } | undefined;
+    expect(before?.message?.customType).toBe("ntn-skills-guidance");
+    const message = String(before?.message?.content);
+    expect(message).toContain(JSON.stringify(packageEntry));
+    expect(message).toContain("explicit offline/bootstrap/installed-package");
+    expect(message).toContain("Pending/failed Notion access does not authorize");
+    expect(message).toContain("never search other installations");
+    expect(message).toContain("task's source/library");
+    expect(message).not.toContain(privatePackageBody.trim());
+    expect(message).not.toContain("ctl builtin read");
+    expect(message).not.toContain("selected-database");
+    const history = [{ role: "user", content: "Explain packaged maintenance instructions offline." }];
+    const projected = await h.project("context_with_system", history);
+    expect(guidanceText(projected)).toBe(message);
+    expect(await h.project("context_with_system", projected)).toBe(projected);
+    expect(history).toHaveLength(1);
+  }
+});
+
+test("offline package guidance respects the active read capability", async () => {
+  const h = guidanceHarness();
+  h.tools(["read", "notion_list", "notion_use"]);
+  const native = await h.project("context_with_system", []);
+  expect(guidanceText(native)).toContain(JSON.stringify(packageEntry));
+  h.tools(["notion_list", "notion_use"]);
+  const unavailable = await h.project("context_with_system", native);
+  expect(guidanceText(unavailable)).not.toContain(packageEntry);
+  expect(guidanceText(unavailable)).toContain("Packaged help requires read or bash");
+  h.tools(["notion_list", "notion_use", "bash"]);
+  const cli = await h.project("context_with_system", unavailable);
+  expect(guidanceText(cli)).toContain("ntn-skills.mjs");
+  expect(guidanceText(cli)).toContain('"ctl","builtin","read","notion/ntn-skills-maintain","--json"');
+  expect(guidanceText(cli)).toContain("explicit offline/bootstrap/installed-package");
+  expect(guidanceText(cli)).not.toContain(packageEntry);
+  expect(guidanceText(cli)).not.toContain(privatePackageBody.trim());
+});
 
 test("Pi with no enabled Notion source omits new and stale guidance without touching local history", async () => {
   for (const known of [false, true]) for (const sources of [undefined, [], [{ id: "n", type: "notion" as const, enabled: false }], [{ id: "fs", type: "filesystem" as const, roots: [] }]]) {
