@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
 import { inspectNotionAgentSession, captureNotionAgentSelection, analyzeNotionAgentTurn } from './notion-agent-analysis.mjs';
+import { candidatePayloadBodies } from './verify-pi-daily-candidate.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const stamp = '2026-11-21T14:00:00.000Z';
@@ -113,12 +114,7 @@ test('selection capture serializes actual maps without synthesizing state', () =
 });
 
 // These are deterministic verifier fixtures, not real-model acceptance results.
-const oracle = (payload, bodies) => {
-  const texts = payload.messages.flatMap(message => typeof message.content === 'string' ? [message.content] :
-    (message.content ?? []).filter(part => part.type === 'text').map(part => part.text));
-  return bodies.map(body => ({ sha256: body.sha256, bytes: body.bytes,
-    occurrences: texts.reduce((sum, text) => sum + text.split(body.text).length - 1, 0) }));
-};
+const oracle = candidatePayloadBodies;
 function fixture({ calls = [], answerText = '合计：100 元', bodies = {}, scope = 'a'.repeat(64) } = {}) {
   const files = new Map(), bodyFiles = [];
   const bodyBindings = Object.fromEntries(Object.entries(bodies).map(([key, text]) => {
@@ -156,7 +152,7 @@ function fixture({ calls = [], answerText = '合计：100 元', bodies = {}, sco
       { phase: 'request_end', id: i + 1, category: 'model', modelApi: 'openai-completions', status: 200, outcome: 'completed',
         responseEntitySha256: 'f'.repeat(64), responseEntityBytes: 60 });
     tasks.push({ phase: 'provider_payload', sha256, bytes: bytes.length, payloadFile: path, bodies: counts });
-    if (i < calls.length) tasks.push({ phase: 'tool_call', toolCallId: 't' + i, toolName: calls[i].name, selectors: calls[i].arguments ?? {} },
+    if (i < calls.length) tasks.push({ phase: 'tool_call', toolCallId: 't' + i, toolName: calls[i].name, inputSha256: hash(JSON.stringify(calls[i].arguments ?? {})), selectors: calls[i].arguments ?? {} },
       { phase: 'tool_result', toolCallId: 't' + i, toolName: calls[i].name, isError: calls[i].isError === true });
   }
   tasks.push({ phase: 'assistant_final', text: answerText, sha256: hash(answerText), bytes: Buffer.byteLength(answerText), stopReason: 'stop', success: true });
@@ -543,4 +539,83 @@ test('complete child effects need an explicit measured network metric as well as
   assert.equal((await f.run([{ kind: 'source-network-attempts', max: 0 }, { kind: 'no-semantic-writes' }])).status, 'passed');
   bind({ ...value, notionHttpAttempts: 1 });
   assert.equal((await f.run([{ kind: 'source-network-attempts', max: 0 }])).status, 'failed');
+});
+
+function composedLocalFixture({ childName = 'read', retainResult = true } = {}) {
+  const f = nativeLocalFixture(), childId = 'opaque-child-without-parent-prefix';
+  const parent = f.entries.find(row => row.id === 'call-0').message;
+  const terminal = f.entries.find(row => row.id === 'result-0').message;
+  const childContent = terminal.content;
+  const childArgs = childName === 'read' ? { path: '/owned/global/skill/SKILL.md' } : { path: '/owned/other', content: 'changed' };
+  const parentArgs = { code: '/* The verifier must not infer effects from this script text. */' };
+  Object.assign(parent.content[0], { name: 'codemode', arguments: parentArgs });
+  Object.assign(terminal, { toolName: 'codemode', content: [{ type: 'text', text: JSON.stringify({ value: childContent[0].text }) }],
+    nestedCalls: { complete: true, calls: [{ id: childId, name: childName, arguments: childArgs, status: 'ok' }] },
+    details: { calls: [{ id: childId, name: childName, status: 'ok' }] } });
+  const start = f.observed.tasks.find(row => row.phase === 'tool_call');
+  Object.assign(start, { toolName: 'codemode', inputSha256: hash(JSON.stringify(parentArgs)), selectors: {} });
+  const resultIndex = f.observed.tasks.findIndex(row => row.phase === 'tool_result'), parentResult = f.observed.tasks[resultIndex];
+  parentResult.toolName = 'codemode';
+  const bytes = Buffer.from(JSON.stringify(childContent)), path = '/owned/private/nested-result.json';
+  f.files.set(path, bytes);
+  f.observed.tasks.splice(resultIndex, 0,
+    { phase: 'tool_call', toolCallId: childId, toolName: childName, inputSha256: hash(JSON.stringify(childArgs)), selectors: childArgs },
+    { phase: 'tool_result', toolCallId: childId, toolName: childName, isError: false,
+      ...(retainResult ? { contentArtifact: { path, sha256: hash(bytes), bytes: bytes.length } } : {}) });
+  f.observed.session = inspect(f.entries);
+  const observedResponse = f.observed.costs.find(row => row.phase === 'message_end');
+  observedResponse.message.content = { sha256: hash(JSON.stringify(parent.content)), bytes: Buffer.byteLength(JSON.stringify(parent.content)) };
+  for (const [index, request] of f.observed.costs.filter(row => row.phase === 'provider_request').entries()) {
+    const task = f.observed.tasks.find(row => row.phase === 'provider_payload' && row.sha256 === request.payload.sha256);
+    const sent = f.observed.transport.find(row => row.phase === 'request_sent' && row.id === index + 1);
+    const payload = JSON.parse(f.files.get(task.payloadFile).toString('utf8'));
+    for (const message of payload.messages.filter(row => row.role === 'tool')) message.content = terminal.content[0].text;
+    const bytes = Buffer.from(JSON.stringify(payload)), sha256 = hash(bytes), counts = oracle(payload, f.bodyFiles);
+    f.files.set(task.payloadFile, bytes);
+    Object.assign(task, { sha256, bytes: bytes.length, bodies: counts });
+    Object.assign(request.payload, { sha256, bytes: bytes.length });
+    Object.assign(sent, { requestBodySha256: sha256, requestBodyBytes: bytes.length });
+  }
+  return f;
+}
+
+test('complete code-mode reads prove their own bytes and the parent wire delivery', async () => {
+  const f = composedLocalFixture();
+  const result = await f.run([{ kind: 'body', body: 'local@A/SKILL.md', occurrences: 1 }, { kind: 'no-semantic-writes' },
+    { kind: 'source-network-attempts', max: 0 }, { kind: 'tool-attempts', tool: 'read', min: 1, max: 1 }]);
+  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+  const proof = result.assertions.find(row => row.kind === 'actual-provider-delivery').details.last.nativeReadBodies[0];
+  assert.deepEqual(proof.toolCallIds, ['opaque-child-without-parent-prefix']);
+  assert.deepEqual(proof.deliveryToolCallIds, ['t0']);
+});
+
+test('complete code-mode structure does not excuse an executed write child', async () => {
+  const f = composedLocalFixture({ childName: 'write' });
+  const result = await f.run([{ kind: 'no-semantic-writes' }]);
+  assert.equal(result.status, 'blocked');
+  assert.ok(result.assertions.some(row => row.code === 'TOOL_EFFECTS_UNKNOWN'));
+});
+
+test('script-generated parent text cannot replace a missing child read result', async () => {
+  const f = composedLocalFixture({ retainResult: false });
+  const result = await f.run([{ kind: 'body', body: 'local@A/SKILL.md', occurrences: 1 }]);
+  assert.equal(result.status, 'blocked');
+  assert.ok(result.assertions.some(row => row.code === 'NESTED_READ_RESULT_MISSING'));
+});
+
+test('retracted native proposals count toward cognition guards without inventing dispatch', async () => {
+  const f = fixture();
+  const failed = message('failed', 'u', 'assistant', [{ type: 'toolCall', id: 'proposal', name: 'read',
+    arguments: { path: 'forbidden-package-ref' } }], { stopReason: 'error' });
+  const edit = entry('discard', 'failed', 'context_edit', { targetId: 'failed', replacement: null });
+  f.entries.splice(2, 0, failed, edit); f.entries.at(-1).parentId = 'discard';
+  f.observed.session = inspect(f.entries);
+  f.binding.private.facts.package = { anyOf: ['forbidden-package-ref'] };
+  const result = await f.run([{ kind: 'tool-attempts', tool: 'read', max: 0 },
+    { kind: 'forbidden-tool-input', tool: 'read', facts: ['package'] }, { kind: 'no-semantic-writes' }]);
+  assert.equal(result.assertions.find(row => row.kind === 'tool-attempt-observation').details.actual, 0);
+  assert.equal(result.assertions.find(row => row.kind === 'tool-attempt-observation').details.retractedProposals, 1);
+  assert.equal(result.assertions.find(row => row.kind === 'tool-attempts').status, 'failed');
+  assert.equal(result.assertions.find(row => row.kind === 'forbidden-tool-input').status, 'failed');
+  assert.equal(result.assertions.find(row => row.kind === 'no-semantic-writes').status, 'passed');
 });
