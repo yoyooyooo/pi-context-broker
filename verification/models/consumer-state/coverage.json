@@ -11,7 +11,7 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/discovery-records.ts": "3b8b8abee88e2eba5de3421e76e446de91412b7f7d4b6b71394fede5dd878bab",
-    "packages/context-broker/src/host-skills.ts": "695e3783b76c9b8052d2a56862156a596663acd55c242628eecf4c2c6b23e06d",
+    "packages/context-broker/src/host-skills.ts": "bddd2b345c52df9ddd1bb83a6029258c14e628b4fc0025572a0820caa80bf81a",
     "packages/context-broker/src/prepare-protocol.ts": "6c0229a5217726416e3bd719faaf7d922c40f479ca03d6a9ab0ef1275be903f4",
     "packages/context-broker/src/session-graph.ts": "bf707af4ea21ef0084a128b80f6359f2e7ec75665cb43c0ee4f900ce72bb12b3",
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
@@ -28,18 +28,18 @@
     "packages/context-broker/scripts/final-request-undici.test.ts": "df1417ddf319180c89725f188107dde9b0eb8089aa12759b17d539bfd2bd7555",
     "packages/context-broker/src/session-working-set.ts": "4792c1b3e1ecdbbfd77918f2f9ddf074cfe197e8fbed265a5796cd59671bd36c",
     "packages/context-broker/scripts/session-active-session.mjs": "a0b3d76adddb20b81858d876c4fdd81c45a66360dee55a877895b1d6348a40b5",
-    "packages/context-broker/src/index.ts": "e75770694e8e9ec3d4c6b587b762caf8195a1496f4bca44380f706fda9ca670b",
+    "packages/context-broker/src/index.ts": "eec654c7df66d100c6731f736abe8c8f9db703c24401bacdfc3d7c7eba68fab3",
     "packages/context-broker/src/session-recovery.ts": "88dc7824f28f473974250952288312464f4385812caa83232679f7c694121c99",
     "packages/context-broker/src/resource-read-projection.ts": "f0a338ce686cfd88c1ce564ccdec0e34b5b0b868aa617620950e9d5fb6d0a0ad",
     "packages/context-broker/src/notion-source.ts": "f4d5f5778250dbc5335f5533cd7bc6cebb2f18acc9c9126f6eace6048f0347aa",
-    "packages/context-broker/src/pi-host-adapter.ts": "384786d28f888570bdc9ee601f20e76fef87fa483623dea33fcd8a178ad182fa",
+    "packages/context-broker/src/pi-host-adapter.ts": "66ceeda4564e5e9c8b76e80e7a1216aed17267f4fce1a03cf3b09fd63aaff483",
     "packages/context-broker/scripts/host-refresh.test.ts": "d25778872172ab5768b7bcc3de374ac48ae3b55e725cb118a32cd5c6f4faada5",
     "packages/context-broker/scripts/session-refresh.test.ts": "9d00f8ecbe392dbd3367ef51dcaffa325cb709986f1128e90d3f542894175a89",
     "packages/context-broker/scripts/session-recovery.test.ts": "af7ee971939db47dccb7fb107d6d3c80520cad66cc29b857aeae1d6233257931",
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "858cf3fcf02255e49641af3cc4794445eaa85aca5a27c2e6fbee8dac38bd4dd1",
     "packages/context-broker/scripts/resource-read-projection.test.ts": "e739a9e24612e40517934ac425fa33240db75303eea63b1a399e405f9d330cf0",
     "packages/context-broker/scripts/notion-source-sdk.test.ts": "a9b4b8096f13d17fd8fcfcf6cb72bae3a3d4110e5d16cfb58742882d35c9d134",
-    "packages/context-broker/scripts/pi-read-adapter.test.ts": "0367a2128a434f0095b0bd8c5cf7aa0aa947966e5c81ad9356c7bdc912af0bb7",
+    "packages/context-broker/scripts/pi-read-adapter.test.ts": "eda3dcd610b705c39603b07ab55a07ea7ca8012c69768b32e27ad7ec423f1e7d",
     "packages/context-broker/scripts/fixtures/active-notion-session.ts": "b92dfe89e5f86e93938639b9b07e1ea5859d68ecffc1e7651d7c32e5e8659d05",
     "packages/context-broker/scripts/notion-entry.test.ts": "dfaac5e5d7d0ea7996dba91427cd16568d2933c94f5d4cd03ff3a1ad9a0c3c6f"
   },
@@ -686,6 +686,7 @@
     "recovery": "RecoveryClosure adds three prompts, shared A/C->B and independent D. Production recovers exact missing members, isolates failed complete closures, keeps pins, limits the entire context recovery to the existing 30-second read budget and backs off repeated failures. Later provider hooks recheck closure, authorization and epoch. External termination and continued user submission remain explicit liveness premises.",
     "public_reference": "Canonical fixed main references with a File ID are accepted for explicit refresh only when the verified branch selection exactly proves that main. Wrong File ID/path and resource refs fail before acquisition. The fixture now carries actual v2 main File IDs; opaque and canonical public paths are separately replayed.",
     "management_effects": "Reviewed c68d980 to current operationEffectValues: metadata/management generic effects do not claim consumption. An explicit source-receipt field disables that exemption so any present consumption effects remain strictly validated. This does not introduce a general receipt-structure validator. Actual management tool messages still require exact, single wire delivery; no history rewrite, version branch or alternate schema decoder.",
-    "resource_path": "Reviewed the acquisition path change against the deterministic same-inode hardlink alias reproduction. Canonical parent directory plus the selected basename preserves logical resource identity; within-root and lstat.isFile remain mandatory. Leaf/parent symlink substitution, outer alias, content hash, cancellation and concurrent reads have concrete regressions. Filesystem/runtime behavior is outside the finite models; no model rule, bound or mutation target is changed."
+    "resource_path": "Reviewed the acquisition path change against the deterministic same-inode hardlink alias reproduction. Canonical parent directory plus the selected basename preserves logical resource identity; within-root and lstat.isFile remain mandatory. Leaf/parent symlink substitution, outer alias, content hash, cancellation and concurrent reads have concrete regressions. Filesystem/runtime behavior is outside the finite models; no model rule, bound or mutation target is changed.",
+    "natural_guidance": "Reviewed the change from bd3cb59: task application directly loads roots and automatic Requires, successful complete reads are reused, requested inspect/adopt updates remain distinct, and read(path) versus notion_use(ref) is explicit. The native read schema and executor reject unknown fields without a ref alias; every property from the actual native schema remains accepted. No selection, freshness, authorization, cancellation, recovery, delivery or commit guard changed. Natural task quality and tool necessity are separate observed regression obligations outside these finite models."
   }
 }

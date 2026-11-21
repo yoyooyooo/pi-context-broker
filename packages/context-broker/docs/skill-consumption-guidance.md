@@ -1,5 +1,13 @@
 # Pi 消费指引：按工具能力呈现与显式 CLI 范围
 
+## 当前消费约定（AH-1188 / AH-1196）
+
+本地 Skill 沿原生入口使用；任务确需额外 Notion 内容时再获取。介绍、比较或查看正文使用 `read` 的 `path` 参数；执行 Skill 使用 `notion_use` 的 `ref` 参数，直接指定任务根，Requires 自动随完整闭包加载。无需先 read 根或把依赖逐个另立为任务根。`read` 不接受 `ref` 别名，公开 schema 和执行边界共同拒绝未知参数。
+
+完整成功读出的内容直接复用。普通续聊不追加刷新；用户要求查看最新时 read refresh 保留任务 pins，要求采用最新时 use refresh 才替换所选根。该指引修正来自本轮真实模型的重复刷新、参数混用和“回答正确但没有加载必需闭包”记录。修改前的失败保留，修改后的模型行为须以相同任务另行复验；工具说明和单元检查不能代替自然任务通过。
+
+下文为较早切片的历史记录，不作为当前配对的通过凭据。
+
 归属 [AH-617](https://linear.app/yoyooyooo/issue/AH-617) 的 [SC05 / AH-622](https://linear.app/yoyooyooo/issue/AH-622)。本切片承接 [SDK、短引用与会话运行时记录](skill-consumption-runtime.md)，处理模型指引与实际工具能力不一致的问题。它不宣称完整 context compiler、批量资源读取或 SC21 四条正式 Agent 路线已经完成。
 
 后续 `skill_prepare` 的正文、模型投影与机器证明分离见 [prepare 投影记录](skill-consumption-projection.md)；本文保留本轮原包和原样本的历史结论。

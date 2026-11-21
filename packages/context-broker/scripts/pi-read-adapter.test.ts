@@ -46,7 +46,7 @@ test("Pi batch is one branch of read and retains structured results without ente
   await f.start();
   expect(await f.current().execute("batch-id", { paths: [ref] }, undefined, undefined, f.ctx)).toBe(batch);
   expect(f.calls).toHaveLength(0);
-  for (const input of [{}, { path: "one", paths: ["two"] }, { paths: ["one"], offset: 2 }, { paths: "one" }]) {
+  for (const input of [{}, { ref }, { path: "one", ref }, { path: "one", paths: ["two"] }, { paths: ["one"], offset: 2 }, { paths: "one" }]) {
     await expect(f.current().execute("invalid", input, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
   }
   expect(f.current().renderCall?.({ paths: ["one", "two"] }, {}, {})).toMatchObject({ args: { path: "one, two" } });
@@ -60,11 +60,13 @@ test("Pi read advertises an object schema without provider-rejected top-level co
   await f.start();
   const schema = f.current().parameters;
   expect(schema.type).toBe("object");
+  expect(schema.additionalProperties).toBe(false);
   // The actual provider rejects these root keywords before invoking any tool.
   expect(Object.keys(schema).filter(key => ["oneOf", "anyOf", "allOf", "enum", "const", "not"].includes(key))).toEqual([]);
   expect(schema.properties).toHaveProperty("path");
   expect(schema.properties).toHaveProperty("paths");
   expect(schema.properties).not.toHaveProperty("readOnly");
+  expect(schema.properties).not.toHaveProperty("ref");
 });
 
 test("AH639 public batch read preserves the three issued refs", async () => {

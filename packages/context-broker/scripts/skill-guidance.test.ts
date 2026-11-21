@@ -26,6 +26,9 @@ test("native Pi guidance is a bounded routing contract, not a duplicated CLI tut
   expect(guidance).not.toContain("Zero tool calls/body reads");
   expect(guidance).toContain("refresh:true inspects latest main without changing task pins");
   expect(guidance).toContain("refresh:true adopts latest on request");
+  expect(guidance).toContain("Reuse complete content; refresh only on requested updates");
+  expect(guidance).toContain("read(path) inspects");
+  expect(guidance).toContain("Apply with notion_use(ref); Requires load automatically");
   for (const boundary of ["candidates", "Local @Skills", "availability", "read", "notion_use", "Requires", "Members", "snapshot", "sr:", "authorize", "Code mode"])
     expect(guidance).toContain(boundary);
   for (const extra of ["<cli", "--query", "maxNodes", "/configured", "next_cursor", "tool_search", "doctor", "notion-skill-owner"])
@@ -209,11 +212,11 @@ test("Notion source flags are scoped to native installations without rewriting s
   const projected = await h.project("context", history);
   const guidance = guidanceText(projected);
   expect(guidance).toContain("beyond the default View");
-  expect(guidance).toContain("Source editor flags do not change Notion availability or permissions");
+  expect(guidance).toContain("Editor flags do not change Notion availability or permissions");
   expect(guidance).toContain("Local @Skills follow native routes; Use Notion only for extra content");
-  expect(guidance).toContain("loading does not authorize commands, writes or delegation");
-  expect(guidance).toContain("read inspects.");
-  expect(guidance).toContain("Inspection does not activate instructions");
+  expect(guidance).toContain("loading authorizes no commands, writes or delegation");
+  expect(guidance).toContain("read(path) inspects.");
+  expect(guidance).toContain("Inspection does not activate;");
   expect(projected[0]).toBe(system);
   expect(projected).toContain(source);
   expect(JSON.stringify(history)).toBe(original);
