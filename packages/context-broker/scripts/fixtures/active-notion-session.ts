@@ -19,7 +19,7 @@ const environmentKeys = ["CONTEXT_BROKER_CONFIG", "CONTEXT_BROKER_ROOTS", "CONTE
 
 /** Production index, adapter, graph decoder and delivery hooks. Only the external
  * SDK and Pi session manager are controlled; this is not a live Pi/Notion test. */
-export async function activeNotionSession() {
+export async function activeNotionSession(options: { catalogMaxAgeMs?: number } = {}) {
   const f = await currentNotionFixture("skill", { name: "root", body: "Complete root instructions A.\n" });
   const scope = f.selected.sourceScope;
   assert.ok(scope);
@@ -46,11 +46,16 @@ export async function activeNotionSession() {
       const found = ref.snapshot ? versions.get(ref.snapshot) : [...records.values()].find(item => item.id === ref.selector);
       assert.ok(found); assert.equal(found.id, ref.selector); return found;
     });
+    // Current relation observations may change while the root's original bytes
+    // and fixed binding stay identical. Historical targets keep their old graph.
+    const currentRoots = new Set(roots.filter((_, index) => !parseNativeReference(input.targets[index]!).snapshot).map(item => item.id));
+    const requiredFor = (owner: SkillRecord) => currentRoots.has(owner.id) && (owner.name === "root" || owner.name === "second")
+      ? [record("required")] : required(owner);
     const selected = new Map(roots.map(item => [item.id, item]));
-    if (input.purpose === "use") for (const item of roots) for (const child of required(item)) selected.set(child.id, child);
+    if (input.purpose === "use") for (const item of roots) for (const child of requiredFor(item)) selected.set(child.id, child);
     const nodes = [...selected.values()].map(item => {
       const binding = item.preparationBinding!;
-      const relations = { required: required(item).map(child => ({ id: child.id!, ref: child.ref!, kind: "skill", name: child.name,
+      const relations = { required: requiredFor(item).map(child => ({ id: child.id!, ref: child.ref!, kind: "skill", name: child.name,
         description: child.description!, availability: "available" })), candidates: [], references: [], unresolved_references: [] };
       const files = [{ path: item.entrypoint!, bytes: Buffer.byteLength(item.body!), sha256: binding.body_sha256, ref: binding.ref }];
       const fixed = input.targets.some(target => parseNativeReference(target).selector === item.id && parseNativeReference(target).snapshot);
@@ -59,7 +64,7 @@ export async function activeNotionSession() {
         files, ...relations, source: fixed ? "local_snapshot" : "notion",
         freshness: fixed ? { policy: "pinned" } : { policy: "refresh", validated_at: new Date().toISOString(), age_ms: 0, max_age_ms: 1000, stale: false } };
     });
-    const edges = [...selected.values()].flatMap(item => required(item).map(child => ({ from: item.id!, to: child.id!, ref: child.preparationBinding!.ref })));
+    const edges = [...selected.values()].flatMap(item => requiredFor(item).map(child => ({ from: item.id!, to: child.id!, ref: child.preparationBinding!.ref })));
     const vector = { version: 1, kind: "observed_version_vector", purpose: input.purpose, scope, roots: roots.map(item => item.id!).sort(),
       required: edges, bindings: nodes.map(node => node.binding) };
     const bytes = nodes.reduce((sum, node) => sum + node.bytes, 0);
@@ -83,7 +88,7 @@ export async function activeNotionSession() {
   };
   f.state.consume = async input => ready(input);
   f.state.catalog = { ...f.state.catalog, records: [...records.values()].map(item => item.preparationBinding!.record), count: records.size,
-    freshness: { policy: "max_age", validated_at: new Date().toISOString(), age_ms: 0, max_age_ms: 1_000_000, stale: false } };
+    freshness: { policy: "max_age", validated_at: new Date().toISOString(), age_ms: 0, max_age_ms: options.catalogMaxAgeMs ?? 1_000_000, stale: false } };
   f.state.directory = { ...f.state.catalog, records: [], count: 0, view: null, view_selection: "none" };
   f.state.resolve = (target, catalog) => {
     const ref = parseNativeReference(target);
@@ -150,7 +155,8 @@ export async function activeNotionSession() {
     return record;
   };
   const turn = async (text: string, bodies: readonly SkillRecord[] = [], beforeProvider?: (payload: { messages: { role: string; content: string }[] }) => Promise<void> | void,
-    beforeFinalContext?: (messages: AgentMessage[]) => AgentMessage[], previousMessages: readonly AgentMessage[] = []) => {
+    beforeFinalContext?: (messages: AgentMessage[]) => AgentMessage[], previousMessages: readonly AgentMessage[] = [],
+    delivery: { beforeContext?(): Promise<AgentMessage[]>; status?: number } = {}) => {
     controller = new AbortController(); ctx.signal = controller.signal;
     const beforeAborts = aborts, beforeCalls = f.calls.length;
     const input = await emit("input", { source: "rpc", text });
@@ -158,7 +164,9 @@ export async function activeNotionSession() {
     await emit("agent_start");
     visible = [{ role: "system", content: "Current recovery test." }, { role: "user", content: text }, ...delivered(bodies), ...previousMessages];
     let messages = visible, error: unknown, provider = false;
+    let payload: { messages: { role: string; content: string; tool_call_id?: string }[] } | undefined;
     try {
+      if (delivery.beforeContext) { visible.push(...await delivery.beforeContext()); messages = visible; }
       for (const name of ["context", "context_with_system"]) {
         if (name === "context_with_system" && beforeFinalContext) messages = beforeFinalContext(messages);
         for (const handler of handlers.get(name) ?? []) {
@@ -166,14 +174,15 @@ export async function activeNotionSession() {
           if (result && typeof result === "object" && "messages" in result && Array.isArray(result.messages)) messages = result.messages;
         }
       }
-      const payload = { messages: messages.map(message => ({ role: message.role === "custom" ? "user" : message.role === "toolResult" ? "tool" : message.role,
+      payload = { messages: messages.map(message => ({ role: message.role === "custom" ? "user" : message.role === "toolResult" ? "tool" : message.role,
         content: sourceMessageText(message.content), ...(message.role === "toolResult" ? { tool_call_id: message.toolCallId } : {}) })) };
       await beforeProvider?.(payload);
       await emit("before_provider_request", { payload });
       provider = !controller.signal.aborted;
+      if (provider && delivery.status !== undefined) await emit("after_provider_response", { type: "after_provider_response", status: delivery.status, headers: {} });
     } catch (cause) { error = cause; }
     await emit("agent_end");
-    return { input, messages, error, provider, aborted: controller.signal.aborted, aborts: aborts - beforeAborts,
+    return { input, messages, payload, error, provider, aborted: controller.signal.aborted, aborts: aborts - beforeAborts,
       calls: f.calls.slice(beforeCalls).filter(call => call.operation === "consume"), active: activeSources(ctx) };
   };
   const close = async () => {
