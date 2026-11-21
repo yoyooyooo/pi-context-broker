@@ -17,7 +17,7 @@
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
     "packages/context-broker/src/session-source-snapshot.ts": "6ac7c29f29ecc5aca851c836cbb113d5a1f611d1856b2fe268570efcd056c3b1",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
-    "packages/context-broker/scripts/host-prepare.test.ts": "ce17ea58dd60df728b1994142b62cf41d173c44ebf4f676905b856c2d8fd2876",
+    "packages/context-broker/scripts/host-prepare.test.ts": "faa35c5b2d6fb064e299f1403d9724873d5cc7d61275ca1dd3a908d7842d8993",
     "packages/context-broker/scripts/session-active.test.ts": "8c028ee53bf86b253dee9a63ce6e15a8e27c811de25e4cc9936f37ab134e0e90",
     "packages/context-broker/scripts/native-read-session.test.ts": "ef967d31fe6ea68167c548a75c8df69791a4001da874e0b2e034a415207a597b",
     "packages/context-broker/scripts/skill-context-session.test.ts": "71b2d3ba5d5937e164a6fa08c8ebfd0fc183019d00a8495a220a7cdee4d9c897",
@@ -701,6 +701,7 @@
       "read_operation": "The original full main prefix and private inspection receipt purpose are preserved. A separate per-operation public status reports inspect, unchanged activation and no Requires acquisition by this read. Historical status cannot rebuild current selection. One parser strips the exact private-bound footer for both directory projections; directory reuse retains operation facts.",
       "guard_review": "Original observation order/time, availability, graph commit, cancellation, complete closure, body/payload and provider acknowledgement guards are unchanged. Reviewed 392725 public refresh cases include unchanged root plus changed Requires and independent roots.",
       "proof_limit": "These presentation and process-result facts are deterministic implementation obligations, outside finite model variables. No model rules, bounds, expected cases or guard mutations are weakened. Natural model behaviour and real service timelines require fresh execution."
-    }
+    },
+    "complete_read_expectations": "Reviewed the two exact complete-body assertions after 8665525 formal regressions and the full consumption suite exposed stale footer expectations. Both now compare the entire original body plus the precise inspection-only operation status and effects. Partial and resource read expectations remain unchanged. No production code, model, case, guard or assertion strength changed."
   }
 }

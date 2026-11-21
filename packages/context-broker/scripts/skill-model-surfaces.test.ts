@@ -355,7 +355,7 @@ test("native main footer keeps exact v3 prefix and actionable relations while mo
 test("native reads without a short-reference session retain complete source and host directory without inventing handles", async () => {
   const root = fixture("native-fallback"), h = await hostHarness([root], nativeTools, false), message = await h.read(root);
   if (!message) throw new Error("Expected native main proof");
-  expect(sourceMessageText(message.content)).toBe(root.body + '\n\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown"}</notion-effects>');
+  expect(sourceMessageText(message.content)).toBe(root.body + '\n\n\n<notion-read-status>{"purpose":"inspect","activation_effect":"unchanged","requires_acquisition":"not_performed","use_selection":{"status":"inspection_only","roles":[]}}</notion-read-status>\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown"}</notion-effects>');
   expect(object(object(message.details).contextBrokerRead)).toMatchObject({ version: 3, directory: root.preparationDirectory,
     delivery: { start: 0, end: root.body.length, encoding: "raw" } });
   expect(sourceBodyLoaded([message], root)).toBe(true);
