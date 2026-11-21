@@ -11,13 +11,13 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/discovery-records.ts": "3b8b8abee88e2eba5de3421e76e446de91412b7f7d4b6b71394fede5dd878bab",
-    "packages/context-broker/src/host-skills.ts": "212957c884d31776fe46142f9e40b87a33a531d1300b80d795354788c973361d",
+    "packages/context-broker/src/host-skills.ts": "c4a93179f0c8d34e45afed9c5a3b90c5a4b752c1b98a5088b7d78668cadd2d84",
     "packages/context-broker/src/prepare-protocol.ts": "ae06d35b831250f1ce2cc2b818f162e69e5af3d1ed861c26c20ce103a99effe2",
     "packages/context-broker/src/session-graph.ts": "f2e1ddf48aa59ab10346f1d6327379217309e48235b644ba3bf494b3963162f0",
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
     "packages/context-broker/src/session-source-snapshot.ts": "6ac7c29f29ecc5aca851c836cbb113d5a1f611d1856b2fe268570efcd056c3b1",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
-    "packages/context-broker/scripts/host-prepare.test.ts": "7e0620a3599045eb4b96e3eb205806df0eade3dc79fc1b6b7509c3505f37e841",
+    "packages/context-broker/scripts/host-prepare.test.ts": "c632e220fd2c0493cf1f3d04ed5643edeea9ecfb9876819c353a3f5a1c9a96ad",
     "packages/context-broker/scripts/session-active.test.ts": "8c028ee53bf86b253dee9a63ce6e15a8e27c811de25e4cc9936f37ab134e0e90",
     "packages/context-broker/scripts/native-read-session.test.ts": "ef967d31fe6ea68167c548a75c8df69791a4001da874e0b2e034a415207a597b",
     "packages/context-broker/scripts/skill-context-session.test.ts": "71b2d3ba5d5937e164a6fa08c8ebfd0fc183019d00a8495a220a7cdee4d9c897",
@@ -33,14 +33,14 @@
     "packages/context-broker/src/resource-read-projection.ts": "f0a338ce686cfd88c1ce564ccdec0e34b5b0b868aa617620950e9d5fb6d0a0ad",
     "packages/context-broker/src/notion-source.ts": "022a7d72187a300fc024f4b84a394653d3ff8c9c68d7c09bf6bc4e96a4e39b68",
     "packages/context-broker/src/pi-host-adapter.ts": "934605789805d5761451a0b4e694e7255dc08f6ef330c6682ccae68d321e9045",
-    "packages/context-broker/scripts/host-refresh.test.ts": "6417d552f551b671bad08ded991d082988de0bf5ecb6b84c21aa57159eda12ec",
+    "packages/context-broker/scripts/host-refresh.test.ts": "b3b754cf8acd080a33c63ccf7f5f1fe5d9eaf364ad90737ebd2d8efbd5883029",
     "packages/context-broker/scripts/session-refresh.test.ts": "9d00f8ecbe392dbd3367ef51dcaffa325cb709986f1128e90d3f542894175a89",
     "packages/context-broker/scripts/session-recovery.test.ts": "12f639c0716c4b92031dab5cc241148377b4d5a604859078bf8daff0d748fa52",
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "858cf3fcf02255e49641af3cc4794445eaa85aca5a27c2e6fbee8dac38bd4dd1",
     "packages/context-broker/scripts/resource-read-projection.test.ts": "e739a9e24612e40517934ac425fa33240db75303eea63b1a399e405f9d330cf0",
     "packages/context-broker/scripts/notion-source-sdk.test.ts": "4c60d0ea85459d52fa443ef7df325105c3f4c1f266f7a9f0d9bee09f7d84ba97",
     "packages/context-broker/scripts/pi-read-adapter.test.ts": "5c8ff7848720a7f0e1b2205893d755addef1ed1220dc37ef3d660312b9abf128",
-    "packages/context-broker/scripts/fixtures/active-notion-session.ts": "ab84fec451c2b6f6a335ea18070b4fdc1fb4ff5ba3b694e48cba1808ea565600",
+    "packages/context-broker/scripts/fixtures/active-notion-session.ts": "49bea83c93c4d291923bf317e7358bdd8c2a44f5ee0fc523916974e734c2ee96",
     "packages/context-broker/scripts/notion-entry.test.ts": "dfaac5e5d7d0ea7996dba91427cd16568d2933c94f5d4cd03ff3a1ad9a0c3c6f",
     "packages/context-broker/src/skill-catalog-projection.ts": "6d26296f67f8fd54374ee0c3dd0078173ad1c2b5da09499fabfafaf89b584c2e",
     "packages/context-broker/scripts/read-intent-status.test.ts": "a7f9efed5d60515cfa667c1baf40d6e4dc289bd0a57731189c48d31c1a941393"
@@ -711,6 +711,13 @@
       "proof_limit": "Guidance text, capability routing and natural model compliance are not finite-model variables. TLA/config/view bytes, bounds, cases, expected_rules and guard mutations are unchanged. Hashes bind reviewed bytes and do not prove model refinement or natural task success."
     },
     "opaque_reference_instruction": "Full check after d2b286e exposed two wording expectations. Preserve the explicit never-edit-sr instruction; shorten only equivalent same-snapshot and edited-item inspection wording to retain the unchanged 900-byte limit. The tool-surface assertion now checks the complete current no-command/write/delegation sentence. No runtime owner function, model, bound, rule or mutation guard changes.",
-    "maintenance_guidance": "Reviewed c73c9d6b8990cbeb979587f542c140dfa4fa047e through 776a7cb65e593459d6e69d0013515445c9a171e5. index.ts changes only the pure maintenanceGuidance text helper and message-content selection in buildCliGuidance/buildToolGuidance; its other 91 named functions and all remaining top-level statements are byte-identical. installSkillGuidance, provider projection, createActiveSourceRestorer and its fixed-owner, authorization and cancellation checks are unchanged. The added host-prepare case exercises pending metadata, scoped discovery and the same returned catalog ref through actual Pi hooks, and asserts no preparation, selection persistence or resource-body read. Existing tests and helpers are unchanged apart from the additional guidance imports. The observation, host, graph, active-source and recovery owners retain their exact baseline bytes. Guidance quality remains an implementation and natural-task obligation outside the finite models. Model inputs, bounds, cases, independent expected_rules, tool lock and all production mutation targets are unchanged; these whole-file hashes bind the reviewed bytes without claiming that instruction text is a modeled state or a refinement proof."
+    "maintenance_guidance": "Reviewed c73c9d6b8990cbeb979587f542c140dfa4fa047e through 776a7cb65e593459d6e69d0013515445c9a171e5. index.ts changes only the pure maintenanceGuidance text helper and message-content selection in buildCliGuidance/buildToolGuidance; its other 91 named functions and all remaining top-level statements are byte-identical. installSkillGuidance, provider projection, createActiveSourceRestorer and its fixed-owner, authorization and cancellation checks are unchanged. The added host-prepare case exercises pending metadata, scoped discovery and the same returned catalog ref through actual Pi hooks, and asserts no preparation, selection persistence or resource-body read. Existing tests and helpers are unchanged apart from the additional guidance imports. The observation, host, graph, active-source and recovery owners retain their exact baseline bytes. Guidance quality remains an implementation and natural-task obligation outside the finite models. Model inputs, bounds, cases, independent expected_rules, tool lock and all production mutation targets are unchanged; these whole-file hashes bind the reviewed bytes without claiming that instruction text is a modeled state or a refinement proof.",
+    "refresh_root_role_admission": {
+      "reviewed_from": "bf5a3982aa4ffdc708894aa5ba7b3862ba7443b3",
+      "scope": "Reviewed actual host-skills refresh input admission and all twelve added host-refresh/host-prepare regressions. A same verified selection Requires-only binding cannot become an independent root through refresh; explicit ordinary use, first/new roots, released graphs and inspect remain valid. Pending selected use protects role without claiming activation.",
+      "identity": "Bare references acquire early roles only with one enabled Notion source and one confirmed current scope. Multiple current source scopes preserve original ambiguity until exact owner/scope/locator resolution. The initial two-source false-conflict reproduction is retained; current tests cover ambiguity and uniquely resolved owner.",
+      "preservation": "A bounded recoverable ROOT_ROLE_CONFLICT returns before preparation, changes no selection/active/body, grants no availability and invents no disabled or authorization fact. Original observation publication, complete closure, atomic graph replacement, cancellation, provider acceptance and projection guards are unchanged.",
+      "proof_limit": "This is host input-admission regression evidence, not a new finite-model variable or natural-language intent proof. Model/config/view bytes, bounds, independent expected_rules and existing mutation targets are unchanged. The controlled fixture does not prove actual SDK decoding, live Notion or natural routing; fresh real trials report functional, root-role and tool-necessity axes separately."
+    }
   }
 }

@@ -15,7 +15,7 @@ import { materializeNotionEntryFile, publishNotionEntry } from "../src/notion-en
 import { projectCatalogDescriptions } from "../src/skill-catalog-projection";
 import { preparationFailureDetails, type PreparedHostGraph, type PreparationPurpose } from "../src/prepare-protocol";
 import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, MessageContent, NativeReadExecutor, NativeSkillGraphDefinition, NativeSkillPrepareDefinition, NativeSkillSearchDefinition, SessionEntry, SkillRecord } from "../src/types";
-import type { SelectionMode } from "../src/session-graph";
+import { persistSessionSelection, sessionSelection, type SelectionMode } from "../src/session-graph";
 import { combineConsumptionEffects, consumptionEffects, isConsumptionEffects, noConsumptionWrites, unknownConsumptionEffects, type ConsumptionEffects, type ConsumptionPolicy } from "../src/consumption-effects";
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 function canonical(value: unknown): string {
@@ -1432,4 +1432,36 @@ test("current effects reject old retention receipts, extra fields and incomplete
     expect(isConsumptionEffects(value)).toBe(true);
     expect(consumptionEffects(value)).toBe(value);
   }
+});
+
+test("two current source scopes do not turn an ambiguous canonical ref into a Required role conflict", async () => {
+  const f = await fixture(true);
+  f.sources.push({ id: "other-source", type: "notion", prefetch: false });
+  const other = { ...f.required, sourceId: "other-source", sourceScope: "b".repeat(64), token: "other-required" };
+  persistSessionSelection(f.api, f.ctx, [f.graph("use")], "extend");
+  const before = sessionSelection(f.ctx), entries = f.session.entries.length;
+  const { tool } = await f.install(undefined, { getRecords: async () => ({ records: [...f.records, other].map(record => ({
+    ...record, body: undefined, preparationBinding: undefined,
+  })), failures: [] }) });
+  const result = await tool.execute("ambiguous-refresh", { ref: f.required.ref!, refresh: true }, undefined, undefined, f.ctx).catch(error => error);
+  expect(result.code).not.toBe("ROOT_ROLE_CONFLICT");
+  expect(result.message).toContain("ambiguous");
+  expect(f.calls).toEqual([]);
+  expect(f.session.entries.length).toBe(entries);
+  expect(sessionSelection(f.ctx)).toEqual(before);
+});
+
+test("a unique resolved owner in multiple current scopes still rejects promotion before preparation", async () => {
+  const f = await fixture(true);
+  f.sources.push({ id: "other-source", type: "notion", prefetch: false });
+  const other = { ...f.member, sourceId: "other-source", sourceScope: "b".repeat(64), token: "other-member" };
+  persistSessionSelection(f.api, f.ctx, [f.graph("use")], "extend");
+  const before = sessionSelection(f.ctx);
+  const { tool } = await f.install(undefined, { getRecords: async () => ({ records: [...f.records, other].map(record => ({
+    ...record, body: undefined, preparationBinding: undefined,
+  })), failures: [] }) });
+  const result = await tool.execute("resolved-required-refresh", { ref: f.required.ref!, refresh: true }, undefined, undefined, f.ctx).catch(error => error);
+  expect(result.code).toBe("ROOT_ROLE_CONFLICT");
+  expect(f.calls).toEqual([]);
+  expect(sessionSelection(f.ctx)).toEqual(before);
 });

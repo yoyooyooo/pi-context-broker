@@ -276,6 +276,56 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (short?.kind === "resource" || record.kind === "prompt" || reference.path && reference.path !== main)
       throw hostError("PREPARE_ROOT_NOT_MAIN");
   }
+  function assertRefreshRootRoles(references: readonly { reference: ExactNativeReference; short?: HostShortRefResolution; record?: SkillRecord }[], ctx: ExtensionContext): void {
+    let selection = sessionSelection(ctx);
+    for (const transition of gate.active ? pendingGraphs.get(gate.active) ?? [] : [])
+      selection = applySelectionGraphs(selection, { graphs: transition.graphs.map(graph => graph.lock), mode: transition.mode, selectionId: "pending-preparation" });
+    const enabledSources = options.config.sources?.filter(source => source.type === "notion" && source.enabled !== false) ?? [];
+    const currentScopes = new Set([...catalogScopes].filter(([sourceId]) => enabledSources.some(source => source.id === sourceId)).map(([, scope]) => scope));
+    const bindings = [...selection.scopes.values()].flatMap(scope => [...scope.bindings.values()]);
+    const requiredOnly = new Map<string, { scope: string; id: string; ref: string; required_by: readonly string[] }>();
+    for (const { reference, short, record } of references) {
+      const candidates = bindings.filter(binding => {
+        if (!short && !record && (enabledSources.length !== 1 || currentScopes.size !== 1 || !currentScopes.has(binding.scope))) return false;
+        const main = parseNativeReference(binding.ref);
+        if (main.selector !== reference.selector || reference.path && reference.path !== binding.record.entrypoint
+          || reference.snapshot && reference.snapshot !== binding.snapshot_id
+          || reference.fileId && reference.fileId !== main.fileId) return false;
+        if (short && (short.assertion.scope !== binding.scope || short.assertion.id !== binding.record.id
+          || short.assertion.kind !== binding.record.kind || !isDeepStrictEqual(short.assertion.locator, binding.record.locator))) return false;
+        if (record && (record.sourceScope !== binding.scope || record.id !== binding.record.id
+          || record.kind !== binding.record.kind || !isDeepStrictEqual(record.locator, binding.record.locator))) return false;
+        return true;
+      });
+      // An unscoped or ambiguous selector cannot acquire a role from another source.
+      if (candidates.length !== 1) continue;
+      const binding = candidates[0]!, role = selectedTaskRole(selection, binding);
+      if (!role || role.roles.some(value => value === "root") || !role.required_by) continue;
+      requiredOnly.set(JSON.stringify([binding.scope, binding.record.id]), {
+        scope: binding.scope, id: binding.record.id, ref: binding.ref, required_by: role.required_by,
+      });
+    }
+    if (!requiredOnly.size) return;
+    const scopes = new Set([...requiredOnly.values()].map(binding => binding.scope));
+    const roots = [...selection.scopes.values()].filter(scope => scopes.has(scope.scope)).flatMap(scope =>
+      [...scope.roots].flatMap(id => {
+        const binding = scope.bindings.get(id), role = binding && selectedTaskRole(selection, binding);
+        return binding && role?.roles.some(value => value === "root") ? [{ scope: scope.scope, id, ref: binding.ref }] : [];
+      }));
+    const diagnostic = {
+      code: "ROOT_ROLE_CONFLICT", roots: roots.slice(0, 64),
+      ...(roots.length > 64 ? { roots_truncated: true } : {}),
+      required_only: [...requiredOnly.values()].map(value => ({ ...value, required_by: value.required_by.slice(0, 64),
+        ...(value.required_by.length > 64 ? { required_by_truncated: true } : {}) })),
+      next: "refresh_task_roots_or_explicit_use",
+    };
+    const effects = noConsumptionWrites();
+    // This role error is local and recoverable. It neither grants availability
+    // nor converts other early reference failures into acquisition diagnoses.
+    throw Object.assign(new Error(JSON.stringify({ ok: false, status: "failed",
+      error: "Refresh cannot promote an existing Requires-only Skill to an independent task root. Requires load automatically. Refresh the current task roots. Only if the user independently requests that Skill as a root, use it without refresh first. Existing selections are unchanged.",
+      effects, diagnostic })), { code: diagnostic.code, details: { ...diagnostic, effects } });
+  }
   async function currentRoot(record: SkillRecord, ctx: ExtensionContext, signal: AbortSignal): Promise<ResolvedHostReference & { record: SkillRecord }> {
     const observedGeneration = generation, sessionId = ctx.sessionManager?.getSessionId?.(), sessionFile = ctx.sessionManager?.getSessionFile?.();
     const ticket = observations.begin(signal);
@@ -1631,7 +1681,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       : "Prepare exact Skill roots. Use purpose use to load complete root and Required instructions before executing a workflow; inspect reads only roots and does not activate their dependencies. Members and ordinary references remain directories.",
     parameters: piConsumption ? { type: "object", properties: {
       ref: { anyOf: [{ type: "string" }, { type: "array", minItems: 1, maxItems: 64, items: { type: "string" } }], description: "Supplied sr:C/sr:S or skill://<name-or-id>/<main> refs for task roots. Requires are included automatically. Prefer returned canonical refs for later actions." },
-      refresh: { type: "boolean", description: "Explicitly adopt current versions for only these roots after a complete successful load. Accepts the supplied sr:C/sr:S or main ref unchanged, for example {ref:[REF_A,REF_B],refresh:true} for shared roots. Failure keeps the previous selection." },
+      refresh: { type: "boolean", description: "Explicitly adopt current versions for only these roots after a complete successful load. Existing Requires-only nodes cannot become independent roots through refresh; explicitly use them without refresh first. Accepts the supplied sr:C/sr:S or main ref unchanged, for example {ref:[REF_A,REF_B],refresh:true} for shared roots. Failure keeps the previous selection." },
     }, required: ["ref"], additionalProperties: false } : { type: "object", properties: {
       roots: { type: "array", minItems: 1, maxItems: 64, items: { type: "string" }, description: "Copy exact session sr:C/sr:S references or canonical skill:// main-entry references from metadata or a previous result." },
       purpose: { type: "string", enum: ["use", "inspect"], description: "Explicit operation intent; inspection does not authorize workflow execution." },
@@ -1651,15 +1701,18 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         || requested.some(value => typeof value !== "string") || input.refresh !== undefined && typeof input.refresh !== "boolean"
         || input.readOnly !== undefined && typeof input.readOnly !== "boolean"
         || Object.keys(input).some(key => !(piConsumption ? ["ref", "refresh"] : ["roots", "purpose", "refresh", "readOnly"]).includes(key))) throw hostError("INVALID_ARGUMENT");
+      const references = requested.map(raw => resolveReference(String(raw), ctx));
+      for (const { short } of references) if (short?.kind === "resource") throw hostError("PREPARE_ROOT_NOT_MAIN");
+      checkPreparationSignal(combined);
+      if (input.refresh === true && (piConsumption || input.purpose === "use")) assertRefreshRootRoles(references, ctx);
       await ready(combined);
-      for (const raw of requested) {
-        const { reference, short } = resolveReference(String(raw), ctx);
-        if (short?.kind === "resource") throw hostError("PREPARE_ROOT_NOT_MAIN");
-      }
+      const inputs: ResolvedHostReference[] = [];
+      for (const raw of requested) inputs.push(await resolveToolReference(String(raw), ctx, combined, input.refresh === true));
+      if (input.refresh === true && (piConsumption || input.purpose === "use")) assertRefreshRootRoles(inputs, ctx);
       const roots: SkillRecord[] = [], pins = new Map<string, string>(), resolved: ResolvedHostReference[] = [];
-      for (const raw of requested) {
-        let value = await resolveToolReference(String(raw), ctx, combined, input.refresh === true);
+      for (let value of inputs) {
         let record = await exactRecord(value.reference, ctx, combined, value.short, value.record);
+        if (input.refresh === true && (piConsumption || input.purpose === "use")) assertRefreshRootRoles([{ ...value, record }], ctx);
         const main = value.short?.kind === "selected" ? value.short.selection.entrypoint : record.entrypoint;
         if (input.refresh === true) {
           assertRefreshMain(value.reference, record, ctx, value.short);

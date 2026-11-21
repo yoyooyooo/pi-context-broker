@@ -10,6 +10,8 @@
 应用任务须有 use 图和实际完整交付。工具描述存在不等于模型遵守。改结果合同后，
 确定性回归与新的自然复验分开，原失败、冻结 prompt/oracle 和阶段预算保留。
 
+刷新时间线分别判断三个结果：功能是否完成、任务根及 Requires 角色是否保持、自然调用是否必要。把已自动载入的 Requires 再列为独立刷新根，计入多余调用；即使 `ROOT_ROLE_CONFLICT` 保住旧任务且 Agent 随后完成，也不能将自然选路判为通过。新计划保留原自然提示与旧失败，只为明确的新修复追加独立预算，累计账本不重置。工具参数没有承载用户意图证明；独立选作根必须由实际任务和完整 trace 判断。
+
 现有 `notion-integration-model.mjs` 与 `notion-consumer-model.mjs` 只保留被实际观察和回归复用的 observer。它们不再包含旧 source.command、默认双宿主的运行函数。provider 正文、模型自述、assistant 引用与源原件分别计数，不能以相同文字推断实际加载。
 
 受控 Pi/provider 场景用于验证工具与序列化边界，见 [context-once](context-once.md)。真实模型结果单列，未运行记录 `not_run`。OMP/Tern 模型路径延期；不恢复旧模型总入口来补成绩。

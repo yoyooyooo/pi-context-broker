@@ -36,6 +36,12 @@ Prepare、InspectIdentity、InspectBudget、Commit 分开，不能将异步准�
 
 实际回放复用 host-prepare 的 failed exact-file validation and output budget、session-active 的 pending refresh 和完整闭包、skill-context-session 的错误 hash/mapping/部分输出；新增 consumer-state 回放两个不同成员 pin 及有效 branch 的回退。提前调用 commit 与移除 budget guard 的 mutation 必须失败，而不只是 coverage hash 失配。
 
+### 刷新时保持任务根角色
+
+`host-skills.assertRefreshRootRoles` 在 use 的刷新准入边界检查当前 selected 加本轮 pending use 图。已验证的 Requires-only 节点不能经 refresh 升为独立根；返回可恢复的 `ROOT_ROLE_CONFLICT`，保留原 selection、active 和继续提问能力。失败不说明该节点 disabled，也不授予可用性。普通 use 可以按独立任务选中该节点，已有 root+Requires 双角色随后可刷新；首次选择、新的无关根、已释放图和 inspection-only 状态仍走原路径。
+
+角色必须由精确 scope/owner/locator 和对应 fixed binding 确认。裸引用仅在唯一启用来源及唯一已确认 current scope 下提前判断；多来源先完成原身份解析和歧义处理，不能从一个已选图推断来源唯一。`host-refresh.test.ts` 和 `host-prepare.test.ts` 覆盖这些准入、原任务保留与正常路径；这是宿主回归证据，不扩张 SelectionGraph 的有限状态范围，也不证明自然语言意图。
+
 ## DeliveryBoundary
 
 SelectionGraph 包含 retained + new closure 的有限字节预算前提及 `ReleaseActiveRoot` 代次动作；DeliveryBoundary 同样建模显式释放，使有效 root 投影变为 0，但保留历史 active 接受事实。完整共享 Requires 可达性、精确 UTF-8 并集和旧 fixed ref 拒绝由 `session-active.test.ts` 与实际 Pi 回放负责，不能从这个单根有限模型推导。两模型仍使用原完整正反配置清单，源对应见 coverage 的 `nxt12_review`。

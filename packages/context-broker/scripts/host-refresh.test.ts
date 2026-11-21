@@ -300,3 +300,163 @@ test("a successful public refresh followed by provider rejection keeps selected 
     expect(h.branch.filter(entry => entry.customType === "context-broker-active-sources")).toHaveLength(activeCount);
   } finally { await h.close(); }
 });
+
+test("refresh rejects promoting an existing Required-only node before acquisition and preserves the task", async () => {
+  const h = await activeNotionSession();
+  try {
+    const old = await h.seed(), root = old.records.find(record => record.name === "root")!;
+    const required = old.records.find(record => record.name === "required")!;
+    const before = h.selected(), active = h.active(), calls = h.f.calls.length, entries = h.branch.length;
+    const result = await h.tool("notion_use").execute("refresh-original-task", {
+      ref: [root.preparationBinding!.ref, required.preparationBinding!.ref], refresh: true,
+    }, undefined, undefined, h.ctx).catch(error => error);
+    expect(result.code ?? "accepted").toBe("ROOT_ROLE_CONFLICT");
+    const failure = JSON.parse(result.message);
+    expect(failure).toMatchObject({ ok: false, status: "failed", effects: { remote_writes: "none" },
+      diagnostic: { code: "ROOT_ROLE_CONFLICT", next: "refresh_task_roots_or_explicit_use" } });
+    expect(failure.diagnostic.required_only).toEqual([{ scope: required.sourceScope, id: required.id,
+      ref: required.preparationBinding!.ref, required_by: [root.preparationBinding!.ref] }]);
+    expect(failure.diagnostic.roots).toEqual([{ scope: root.sourceScope, id: root.id, ref: root.preparationBinding!.ref }]);
+    expect(failure.error).toContain("Requires");
+    expect(failure.error).toContain("without refresh");
+    expect(h.f.calls.length).toBe(calls);
+    expect(h.branch.length).toBe(entries);
+    expect(h.selected()).toEqual(before);
+    expect(h.active()).toEqual(active);
+    const continued = await h.turn("Continue the same task with the original complete instructions.", old.records);
+    const text = payloadText(continued);
+    for (const record of old.records) expect(text).toContain(record.body!.trim());
+    expect(continued.aborts).toBe(0);
+  } finally { await h.close(); }
+});
+
+
+for (const spelling of ["current", "short"] as const) test("refresh rejects a Required-only " + spelling + " ref without new acquisition", async () => {
+  const h = await activeNotionSession();
+  try {
+    const old = await h.seed(), required = old.records.find(record => record.name === "required")!;
+    const ref = spelling === "short" ? h.fixedRef(required) : required.ref!;
+    const before = h.selected(), calls = h.f.calls.length, entries = h.branch.length;
+    const error = await h.tool("notion_use").execute("required-only", { ref, refresh: true }, undefined, undefined, h.ctx).catch(error => error);
+    expect(error.code).toBe("ROOT_ROLE_CONFLICT");
+    expect(h.f.calls.length).toBe(calls);
+    expect(h.branch.length).toBe(entries);
+    expect(h.selected()).toEqual(before);
+  } finally { await h.close(); }
+});
+
+test("refresh still accepts a first root and a new unrelated root", async () => {
+  const h = await activeNotionSession();
+  try {
+    const root = h.record("root"), independent = h.record("independent");
+    await h.tool("notion_use").execute("first-refresh", { ref: root.ref!, refresh: true }, undefined, undefined, h.ctx);
+    const before = h.selected().scopes.get(root.sourceScope!)!;
+    await h.tool("notion_use").execute("new-refresh", { ref: independent.ref!, refresh: true }, undefined, undefined, h.ctx);
+    const after = h.selected().scopes.get(root.sourceScope!)!;
+    expect([...after.roots].sort()).toEqual([root.id!, independent.id!].sort());
+    expect(after.bindings.get(root.id!)).toEqual(before.bindings.get(root.id!));
+    expect(after.bindings.get(h.record("required").id!)).toEqual(before.bindings.get(h.record("required").id!));
+  } finally { await h.close(); }
+});
+
+test("ordinary use can independently select a Required node and later refresh its existing root role", async () => {
+  const h = await activeNotionSession();
+  try {
+    const old = await h.seed(), root = old.records.find(record => record.name === "root")!;
+    const required = old.records.find(record => record.name === "required")!, ref = h.fixedRef(required);
+    await h.tool("notion_use").execute("select-independent-required", { ref }, undefined, undefined, h.ctx);
+    const selected = h.selected().scopes.get(root.sourceScope!)!;
+    expect([...selected.roots].sort()).toEqual([root.id!, required.id!].sort());
+    await h.tool("notion_use").execute("refresh-independent-required", { ref, refresh: true }, undefined, undefined, h.ctx);
+    const after = h.selected().scopes.get(root.sourceScope!)!;
+    expect([...after.roots].sort()).toEqual([root.id!, required.id!].sort());
+    expect(after.graphs.flatMap(graph => graph.required)).toContainEqual(expect.objectContaining({ from: root.id, to: required.id }));
+  } finally { await h.close(); }
+});
+
+test("released closure and inspection-only state do not block a new independent refresh", async () => {
+  const h = await activeNotionSession();
+  try {
+    const old = await h.seed(), root = old.records.find(record => record.name === "root")!;
+    const required = old.records.find(record => record.name === "required")!;
+    await h.tool("notion_ctl").execute("release-task", { working_set: "release", roots: [h.fixedRef(root)] }, undefined, undefined, h.ctx);
+    expect(h.selected().scopes.get(root.sourceScope!)?.bindings.has(required.id!) ?? false).toBe(false);
+    await h.read(required.ref!, true);
+    expect(h.selected().scopes.get(root.sourceScope!)?.roots.has(required.id!) ?? false).toBe(false);
+    await h.tool("notion_use").execute("select-after-release-inspect", { ref: required.ref!, refresh: true }, undefined, undefined, h.ctx);
+    expect([...h.selected().scopes.get(required.sourceScope!)!.roots]).toEqual([required.id!]);
+  } finally { await h.close(); }
+});
+
+test("an undelivered selected use graph still protects a Required-only role without claiming activation", async () => {
+  const h = await activeNotionSession();
+  try {
+    const root = h.record("root"), required = h.record("required");
+    await h.tool("notion_use").execute("select-without-provider", { ref: root.ref! }, undefined, undefined, h.ctx);
+    expect(h.active().sources.size).toBe(0);
+    const before = h.selected(), calls = h.f.calls.length;
+    const error = await h.tool("notion_use").execute("promote-before-delivery", { ref: required.ref!, refresh: true }, undefined, undefined, h.ctx).catch(error => error);
+    expect(error.code).toBe("ROOT_ROLE_CONFLICT");
+    expect(h.selected()).toEqual(before);
+    expect(h.f.calls.length).toBe(calls);
+    expect(h.active().sources.size).toBe(0);
+  } finally { await h.close(); }
+});
+
+test("the same owner ID in a different source scope cannot supply a refresh role", async () => {
+  const foreign = await activeNotionSession({ sourceScope: "a".repeat(64) });
+  let current: Awaited<ReturnType<typeof activeNotionSession>> | undefined;
+  try {
+    const old = await foreign.seed();
+    current = await activeNotionSession({ sourceScope: "b".repeat(64) });
+    const required = current.record("required");
+    expect(required.id).toBe(foreign.record("required").id);
+    expect(required.sourceScope).not.toBe(foreign.record("required").sourceScope);
+    current.branch.push(...structuredClone(foreign.branch.filter(entry => entry.customType === "context-broker-selected-graph")));
+    const foreignSelection = current.selected().scopes.get(old.scope);
+    expect(foreignSelection?.roots.has(required.id!)).toBe(false);
+    await current.tool("notion_use").execute("refresh-current-source", { ref: required.ref!, refresh: true }, undefined, undefined, current.ctx);
+    expect([...current.selected().scopes.get(required.sourceScope!)!.roots]).toEqual([required.id!]);
+    expect(current.selected().scopes.get(old.scope)).toEqual(foreignSelection);
+  } finally { await current?.close(); await foreign.close(); }
+});
+
+
+test("a Required omitted from fresh metadata is rejected by role before its missing-reference lookup", async () => {
+  const h = await activeNotionSession({ catalogMaxAgeMs: 0 });
+  try {
+    const old = await h.seed(), root = old.records.find(record => record.name === "root")!;
+    const required = old.records.find(record => record.name === "required")!;
+    const records = h.f.state.catalog.records.filter(record => record.id !== required.id);
+    h.f.state.catalog = { ...h.f.state.catalog, records, count: records.length };
+    await h.emit("session_switch");
+    const directory = await h.tool("notion_list").execute("fresh-without-required", {}, undefined, undefined, h.ctx);
+    expect(sourceMessageText(directory.content)).not.toContain('"name":"required"');
+    const before = h.selected(), active = h.active(), calls = h.f.calls.length;
+    const error = await h.tool("notion_use").execute("refresh-after-disabled-directory", {
+      ref: [root.preparationBinding!.ref, required.preparationBinding!.ref], refresh: true,
+    }, undefined, undefined, h.ctx).catch(error => error);
+    expect(error.code).toBe("ROOT_ROLE_CONFLICT");
+    expect(error.message).not.toContain("Enabled=false");
+    expect(error.message).not.toContain("ACCESS_DENIED");
+    expect(h.f.calls.length).toBe(calls);
+    expect(h.selected()).toEqual(before); expect(h.active()).toEqual(active);
+    const missing = await h.tool("notion_use").execute("ordinary-absent-reference", {
+      ref: "skill://shared_skill%3Acurrent-source%3Aabsent/SKILL.md",
+    }, undefined, undefined, h.ctx).catch(error => error);
+    expect(missing.code).toBe("SOURCE_REFERENCE_MISSING");
+    expect(missing.message).not.toContain("Enabled=false");
+  } finally { await h.close(); }
+});
+
+test("current inspection of a Required-only node remains read-only and preserves its role", async () => {
+  const h = await activeNotionSession();
+  try {
+    const old = await h.seed(), required = old.records.find(record => record.name === "required")!;
+    const before = h.selected(), active = h.active();
+    const result = await h.read(h.fixedRef(required), true);
+    expect(sourceMessageText(result.content)).toContain(required.body!);
+    expect(h.selected()).toEqual(before); expect(h.active()).toEqual(active);
+    expect([...h.selected().scopes.get(required.sourceScope!)!.roots]).not.toContain(required.id!);
+  } finally { await h.close(); }
+});

@@ -19,9 +19,9 @@ const environmentKeys = ["CONTEXT_BROKER_CONFIG", "CONTEXT_BROKER_ROOTS", "CONTE
 
 /** Production index, adapter, graph decoder and delivery hooks. Only the external
  * SDK and Pi session manager are controlled; this is not a live Pi/Notion test. */
-export async function activeNotionSession(options: { catalogMaxAgeMs?: number } = {}) {
+export async function activeNotionSession(options: { catalogMaxAgeMs?: number; sourceScope?: string } = {}) {
   const f = await currentNotionFixture("skill", { name: "root", body: "Complete root instructions A.\n" });
-  const scope = f.selected.sourceScope;
+  const scope = options.sourceScope ?? f.selected.sourceScope;
   assert.ok(scope);
   assert.equal(f.record.locator.type, "shared_skill");
   const records = new Map<string, SkillRecord>();
@@ -31,7 +31,7 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number } 
       ref: "skill://" + encodeURIComponent(id) + "/SKILL.md", locator: { ...f.record.locator,
         skill_id: index === 0 ? "entry" : name, page_id: "00000000-0000-4000-8000-" + String(index + 1).padStart(12, "0") } };
     const body = "Complete " + name + " instructions A.\n", snapshotId = "s_" + hash(name);
-    records.set(name, { ...f.selected, ...metadata, body, snapshotId, versionId: hash(body), normalizedName: name,
+    records.set(name, { ...f.selected, ...metadata, sourceScope: scope, body, snapshotId, versionId: hash(body), normalizedName: name,
       path: join(f.root, name, "SKILL.md"), fileBindings: [{ file_id: "main-" + name, page_id: metadata.locator.page_id, path: metadata.entrypoint }], preparationBinding: { record: metadata, scope, snapshot_id: snapshotId,
         version_id: hash(body), body_sha256: hash(body), ref: metadata.ref + "?snapshot=" + snapshotId + "&file_id=main-" + name } });
   }
@@ -87,7 +87,7 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number } 
     }), export: { status: "not_requested" }, delivery: { status: "not_observed" }, activation: { status: "not_evaluated" } };
   };
   f.state.consume = async input => ready(input);
-  f.state.catalog = { ...f.state.catalog, records: [...records.values()].map(item => item.preparationBinding!.record), count: records.size,
+  f.state.catalog = { ...f.state.catalog, scope, records: [...records.values()].map(item => item.preparationBinding!.record), count: records.size,
     freshness: { policy: "max_age", validated_at: new Date().toISOString(), age_ms: 0, max_age_ms: options.catalogMaxAgeMs ?? 1_000_000, stale: false } };
   f.state.directory = { ...f.state.catalog, records: [], count: 0, view: null, view_selection: "none" };
   f.state.resolve = (target, catalog) => {
