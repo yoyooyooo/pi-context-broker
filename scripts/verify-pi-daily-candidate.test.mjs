@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import * as candidate from './verify-pi-daily-candidate.mjs';
 import { candidatePlan, candidateProjectSettings, candidateSourceConfig, candidateProjectInspection, guardCandidateProject, candidatePayloadBodies, observeCandidateTask, validateCandidateTurn, candidateTransportCoverage, containsProof, inspectCandidatePrintSession, reviewCandidateCliCommand, candidateCliGuard } from './verify-pi-daily-candidate.mjs';
@@ -847,6 +847,46 @@ test('task observer does not transform provider input or register tools/provider
   assert.equal(handlers.get('before_provider_request')({ payload }), undefined); assert.deepEqual(payload, before);
   assert.equal(writes.at(-1).bodies[0].occurrences, 1);
   handlers.get('session_shutdown')({}); assert.equal(writes.at(-1).complete, true);
+});
+
+test('task extension reload after a real fork boundary keeps one exclusive ledger and unique payload files', async () => {
+  const root = await mkdtemp('/tmp/candidate-task-fork-'), output = join(root, 'tasks.jsonl'), payloadDirectory = join(root, 'payloads');
+  await mkdir(payloadDirectory);
+  const source = candidate.candidateTaskExtensionSource({ output, payloadDirectory, bodyFiles: [] });
+  const extension = number => import('data:text/javascript;base64,' + Buffer.from(source).toString('base64') + '#' + number);
+  const host = () => { const handlers = new Map(); return { handlers, on: (name, fn) => handlers.set(name, fn) }; };
+  const first = host(), second = host();
+  (await extension(1)).default(first);
+  assert.throws(() => (globalThis[Symbol.for('context-broker/verification-task-observers/v1')].get(output).observer.bind(second)), /WITHOUT_FORK/u);
+  first.handlers.get('input')({});
+  first.handlers.get('before_provider_request')({ payload: { messages: [{ content: 'first request' }] } });
+  first.handlers.get('session_shutdown')({ reason: 'fork' });
+  (await extension(2)).default(second);
+  first.handlers.get('input')({}); // An obsolete API must not add another input.
+  second.handlers.get('input')({});
+  second.handlers.get('before_provider_request')({ payload: { messages: [{ content: 'after fork' }] } });
+  second.handlers.get('session_shutdown')({ reason: 'quit' });
+  const rows = (await readFile(output, 'utf8')).trimEnd().split('\n').map(JSON.parse);
+  assert.equal(rows.filter(row => row.phase === 'task_observer_start').length, 1);
+  assert.equal(rows.filter(row => row.phase === 'task_observer_end').length, 1);
+  assert.equal(rows.filter(row => row.phase === 'input').length, 2);
+  assert.equal(rows.at(-1).complete, true);
+  assert.deepEqual(rows.filter(row => row.phase === 'provider_payload').map(row => row.payloadFile),
+    [join(payloadDirectory, 'payload-1.json'), join(payloadDirectory, 'payload-2.json')]);
+  let previous = null;
+  for (const [index, row] of rows.entries()) {
+    assert.equal(row.sequence, index + 1); assert.equal(row.previousSha256, previous);
+    const { eventSha256, ...value } = row; assert.equal(eventSha256, sha(JSON.stringify(value))); previous = eventSha256;
+  }
+  assert.throws(() => (globalThis[Symbol.for('context-broker/verification-task-observers/v1')].get(output).observer.bind(host())), /ALREADY_CLOSED/u);
+});
+
+test('a fork without successful observer rebinding cannot seal as complete', () => {
+  const handlers = new Map(), writes = [];
+  const fs = { openSync: () => 1, writeSync: (_fd, line) => writes.push(JSON.parse(line)), closeSync: () => {} };
+  observeCandidateTask({ on: (name, fn) => handlers.set(name, fn) }, { fs, crypto: { createHash }, output: '/owned/incomplete.jsonl', bodyFiles: [], inspectPayload: candidatePayloadBodies });
+  handlers.get('session_shutdown')({ reason: 'fork' }); handlers.get('session_shutdown')({ reason: 'quit' });
+  assert.equal(writes.at(-1).complete, false);
 });
 
 test('binary resources keep exact identity without becoming UTF-8 model text or blocking the observer', () => {

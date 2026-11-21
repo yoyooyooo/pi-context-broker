@@ -84,6 +84,8 @@ test('typos, impossible limits and unsupported event structures fail before a mo
   for (const value of [
     { kind: 'shell', command: 'echo passed' },
     { kind: 'compact', instructions: 'You should use the hidden answer' },
+    { kind: 'compact', keepRecentTokens: 0 },
+    { kind: 'compact', keepRecentTokens: 1.5 },
     { kind: 'restart', mode: 'pretend' },
     { kind: 'publish-version', object: 'remote', version: 'B', command: 'anything' },
     { kind: 'fault', object: 'remote', mode: 'disable-all-validation' },
@@ -92,6 +94,7 @@ test('typos, impossible limits and unsupported event structures fail before a mo
   assert.doesNotThrow(() => validateAgentAssertion({ kind: 'tool-attempts', tool: 'notion_use', max: 0 }));
   assert.doesNotThrow(() => validateAgentAssertion({ kind: 'source-network-attempts', max: 0 }));
   assert.doesNotThrow(() => validateAgentAssertion({ kind: 'candidate-cli', min: 1 }));
+  assert.doesNotThrow(() => validateAgentEvent({ kind: 'compact', keepRecentTokens: 128 }));
 });
 
 test('corpus checks logical references, profile preconditions and real file structure', () => {

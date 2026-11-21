@@ -735,6 +735,8 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
   const fd = fs.openSync(output, 'wx', 0o600);
   const oracleReadMs = Number(process.hrtime.bigint() - oracleStarted) / 1e6;
   let turn = 0, sequence = 0, previous = null, errors = 0, closed = false, observerWorkNs = 0n, payloadNumber = 0;
+  let awaitingRebind = false, hostRecorded = false;
+  const handlers = [];
   const record = (phase, fields = {}) => {
     const row = { sequence: ++sequence, previousSha256: previous, pid: process.pid, monotonicNs: process.hrtime.bigint().toString(), turn, phase, ...fields };
     row.eventSha256 = sha(JSON.stringify(row)); previous = row.eventSha256;
@@ -753,19 +755,22 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     record('receipt', { toolName: message.toolName, toolCallId: message.toolCallId, customType: message.customType,
       content: { bytes: Buffer.byteLength(body), sha256: sha(body) }, proofs });
   };
-  const on = (name, fn) => api.on(name, (event, ctx) => {
-    if (closed) return;
+  const attach = (target, name, fn) => target.on(name, (event, ctx) => {
+    if (closed || api !== target) return;
     const started = process.hrtime.bigint();
     try { fn(event, ctx); } catch { errors++; record('observer_error', { event: name }); }
     finally { observerWorkNs += process.hrtime.bigint() - started; }
     // Always undefined: observation cannot block, transform or choose tools.
   });
+  const on = (name, fn) => { handlers.push([name, fn]); attach(api, name, fn); };
   record('task_observer_start', { oracleReadMs, oracleSeededIntoSourceOrModel: false,
     nonTextBodies, binaryDelivery: 'not-claimed; exact resource bytes require independent file readback' });
-  if (hostOutput) api.on('session_start', (_event, ctx) => {
-    fs.writeFileSync(hostOutput, JSON.stringify({ sessionId: ctx.sessionManager.getSessionId(), sessionFile: ctx.sessionManager.getSessionFile(),
+  if (hostOutput) on('session_start', (_event, ctx) => {
+    const host = { sessionId: ctx.sessionManager.getSessionId(), sessionFile: ctx.sessionManager.getSessionFile(),
       model: { provider: ctx.model?.provider, id: ctx.model?.id }, pid: process.pid,
-      commands: api.getCommands().map(command => ({ name: command.name, source: command.source, sourceInfo: command.sourceInfo })) }) + '\n', { flag: 'wx', mode: 0o600 });
+      commands: api.getCommands().map(command => ({ name: command.name, source: command.source, sourceInfo: command.sourceInfo })) };
+    if (!hostRecorded) { fs.writeFileSync(hostOutput, JSON.stringify(host) + '\n', { flag: 'wx', mode: 0o600 }); hostRecorded = true; }
+    else record('host_session_start', host);
   });
   on('input', () => { turn++; record('input'); });
   on('context_with_system', event => { for (const message of event.messages ?? []) receipt(message); });
@@ -840,7 +845,30 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     record('assistant_final', { text: value, sha256: sha(value), bytes: Buffer.byteLength(value), stopReason: message.stopReason,
       success: message.stopReason === 'stop' && value.trim().length > 0 });
   });
-  on('session_shutdown', () => { record('task_observer_end', { errors, complete: errors === 0, observerWorkMs: Number(observerWorkNs) / 1e6 }); closed = true; fs.closeSync(fd); });
+  on('session_shutdown', event => {
+    if (event?.reason === 'fork') { record('task_observer_fork'); awaitingRebind = true; return; }
+    record('task_observer_end', { errors, complete: errors === 0 && !awaitingRebind, observerWorkMs: Number(observerWorkNs) / 1e6 }); closed = true; fs.closeSync(fd);
+  });
+  return { bind(next) {
+    if (closed) throw new Error('TASK_OBSERVER_ALREADY_CLOSED');
+    if (next === api) return;
+    if (!awaitingRebind) throw new Error('TASK_OBSERVER_REBIND_WITHOUT_FORK');
+    api = next; awaitingRebind = false;
+    for (const [name, fn] of handlers) attach(api, name, fn);
+    record('task_observer_rebind');
+  } };
+}
+
+/** Pi forks replace the extension API inside one process. Keep one exclusive
+ * ledger and payload counter, and rebind only after that real lifecycle event. */
+export function candidateTaskExtensionSource(settings) {
+  return "import fs from 'node:fs';import crypto from 'node:crypto';const inspectPayload=" + candidatePayloadBodies.toString()
+    + ';const inspectProject=' + candidateProjectInspection.toString()
+    + ';const settings=' + JSON.stringify(settings)
+    + ';const key=Symbol.for("context-broker/verification-task-observers/v1");'
+    + 'export default api=>{const registry=globalThis[key]??=new Map();const prior=registry.get(settings.output);'
+    + 'if(prior){if(prior.settings!==JSON.stringify(settings))throw new Error("TASK_OBSERVER_SETTINGS_CHANGED");prior.observer.bind(api);return;}const observer=(' + observeCandidateTask.toString()
+    + ')(api,{fs,crypto,inspectPayload,inspectProject,...settings});registry.set(settings.output,{observer,settings:JSON.stringify(settings)});};\n';
 }
 
 export function containsProof(value, expected) {
@@ -1210,7 +1238,7 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
   const costExtension = join(control, 'cost.mjs'), transportExtension = join(control, 'transport.mjs'), taskExtension = join(control, 'tasks.mjs'), sourcePreload = join(control, 'source.mjs'), sdkPreload = join(control, 'sdk.mjs');
   await writeFile(costExtension, consumptionCostExtensionSource({ output: costs, checkoutRoot: root, runId: clockId, sampleId: 'daily-candidate', clockId }), { mode: 0o600, flag: 'wx' });
   await writeFile(transportExtension, providerTransportExtensionSource({ output: transport, checkoutRoot: root, clockId }), { mode: 0o600, flag: 'wx' });
-  await writeFile(taskExtension, "import fs from 'node:fs'; import crypto from 'node:crypto';\nconst inspectPayload=" + candidatePayloadBodies.toString() + ';\nexport default api => (' + observeCandidateTask.toString() + ')(api,{fs,crypto,inspectPayload,output:' + JSON.stringify(tasks) + ',bodyFiles:' + JSON.stringify(config.expectedBodies ?? []) + '});\n', { mode: 0o600, flag: 'wx' });
+  await writeFile(taskExtension, candidateTaskExtensionSource({ output: tasks, bodyFiles: config.expectedBodies ?? [] }), { mode: 0o600, flag: 'wx' });
   await writeFile(sourcePreload, sourceObserverPreloadSource({ output: sourceLedger, checkoutRoot: root, clockId, cliPath: embedded.realpath, ownerParentPid: process.pid, ownerEntry: host.path }), { mode: 0o600, flag: 'wx' });
   const state = join(cwd, 'ntn/state');
   await writeFile(sdkPreload, "import fs from 'node:fs'; import fsPromises from 'node:fs/promises'; import {channel} from 'node:diagnostics_channel'; import {createHash} from 'node:crypto'; import {syncBuiltinESMExports} from 'node:module'; import {isMainThread} from 'node:worker_threads';\n"
@@ -1594,11 +1622,8 @@ export async function runCandidatePrint(config) {
   if (completionBudgetSource) await writeFile(completionBudgetExtension, completionBudgetSource, { flag: 'wx', mode: 0o600 });
   await writeFile(costExtension, consumptionCostExtensionSource({ output: costs, checkoutRoot: root, runId: clockId, sampleId: config.id, clockId }), { flag: 'wx', mode: 0o600 });
   await writeFile(transportExtension, providerTransportExtensionSource({ output: transport, checkoutRoot: root, clockId }), { flag: 'wx', mode: 0o600 });
-  await writeFile(taskExtension, "import fs from 'node:fs';import crypto from 'node:crypto';const inspectPayload=" + candidatePayloadBodies.toString()
-    + ';const inspectProject=' + candidateProjectInspection.toString()
-    + ';export default api => (' + observeCandidateTask.toString() + ')(api,{fs,crypto,inspectPayload,output:' + JSON.stringify(tasks)
-    + ',bodyFiles:' + JSON.stringify(config.expectedBodies ?? []) + ',payloadDirectory:' + JSON.stringify(payloads) + ',hostOutput:' + JSON.stringify(hostOutput)
-    + ',inspectProject,projectRoot:' + JSON.stringify(project?.root ?? null) + '});\n', { flag: 'wx', mode: 0o600 });
+  await writeFile(taskExtension, candidateTaskExtensionSource({ output: tasks, bodyFiles: config.expectedBodies ?? [],
+    payloadDirectory: payloads, hostOutput, projectRoot: project?.root ?? null }), { flag: 'wx', mode: 0o600 });
   await writeFile(sourcePreload, sourceObserverPreloadSource({ output: sourceLedger, checkoutRoot: root, clockId, cliPath: baselineFiles[2].realpath, ownerParentPid: process.pid, ownerEntry: host.path }), { flag: 'wx', mode: 0o600 });
   await writeFile(sdkPreload, "import fs from 'node:fs';import {channel} from 'node:diagnostics_channel';import {createHash} from 'node:crypto';import {isMainThread} from 'node:worker_threads';const hash=value=>createHash('sha256').update(value).digest('hex');\n"
     + safeRequestMetrics.toString() + '\nif(isMainThread&&process.ppid===' + process.pid + '){const sdk=(' + observeGraphSdk.toString()

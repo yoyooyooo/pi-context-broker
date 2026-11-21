@@ -16,7 +16,7 @@ import { readNotionAgentCliProcesses } from './notion-agent-cli-process.mjs';
 import { observeGraphSdk } from './notion-skill-graph-model-evidence.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { verifyBundledRuntime } from './verify-package-closure.mjs';
-import { candidateSourceConfig, inspectCandidatePackageRegistration, candidatePayloadBodies, observeCandidateTask, candidateTransportCoverage } from './verify-pi-daily-candidate.mjs';
+import { candidateSourceConfig, inspectCandidatePackageRegistration, candidatePayloadBodies, candidateTaskExtensionSource, candidateTransportCoverage } from './verify-pi-daily-candidate.mjs';
 
 // This is an implementation of the existing candidate entry, not another host
 // driver. Pi is always started and controlled by the shared native RPC helper.
@@ -82,6 +82,16 @@ export function agentWorkflowArgs(config, sessions, extensions) {
     '--provider', 'magpie', '--model', 'group/worker', '--thinking', 'high', ...extensions.flatMap(path => ['-e', path])];
 }
 
+export function agentWorkflowProjectSettings(settings, scenario) {
+  const budgets = new Set(scenario.turns.flatMap(turn => (turn.before ?? [])
+    .filter(event => event.kind === 'compact' && event.keepRecentTokens !== undefined).map(event => event.keepRecentTokens)));
+  assert.ok(budgets.size <= 1, 'A session must use one declared compaction retention budget');
+  if (!budgets.size) return structuredClone(settings);
+  const keepRecentTokens = [...budgets][0];
+  assert.ok(Number.isSafeInteger(keepRecentTokens) && keepRecentTokens > 0);
+  return { ...structuredClone(settings), compaction: { ...settings.compaction, keepRecentTokens } };
+}
+
 async function input(config) {
   assert.equal(config.version, 1); assert.equal(config.scope, 'notion-agent-workflow');
   const fields = ['version', 'scope', 'scenarioFile', 'scenarioId', 'profile', 'bindingsFile', 'brokerRoot', 'cliRoot', 'sourceId', 'database', 'packageIndex', 'evidenceRoot', 'model', 'thinkingLevel', 'timeoutMs', 'catalogTimeoutMs', 'viewId', 'retestOf'];
@@ -121,11 +131,14 @@ async function input(config) {
 
 export async function planAgentWorkflow(config) {
   const { scenario } = await input(config);
+  const projectOverrides = agentWorkflowProjectSettings({}, scenario);
   return { version: 1, scope: config.scope, status: 'prepared_not_executed', scenario: scenario.id,
     contracts: scenario.contract_ids, profile: config.profile, provider: 'magpie', model: 'group/worker', thinkingLevel: 'high',
     turns: scenario.turns.map(turn => ({ id: turn.id, promptSha256: sha(turn.prompt), events: (turn.before ?? []).map(event => event.kind), assertions: turn.expect.map(expect => expect.kind) })),
     preserved: ['normal HOME and global native roots', 'normal extensions and MCP', 'normal Broker local roots', 'original natural prompts'],
-    differences: config.profile === 'no-native-skills' ? ['-ns disables default Pi native discovery; Broker local and explicit reads remain'] : [],
+    differences: [...(config.profile === 'no-native-skills' ? ['-ns disables default Pi native discovery; Broker local and explicit reads remain'] : []),
+      ...(projectOverrides.compaction ? ['Owned project compaction.keepRecentTokens=' + projectOverrides.compaction.keepRecentTokens + '; real RPC compaction and model summarization remain unchanged'] : [])],
+    projectOverrides,
     oracle: 'controller-only files; no tools, expected answers or verification Skill inserted into subject prompts',
     scopeBoundary: 'project candidate using the real daily environment; not a two-machine installed-delivery result' };
 }
@@ -154,10 +167,8 @@ async function writeObservers(control, config, host, sourceCache, bodies, index)
   const clockId = randomUUID();
   await writeFile(extensions[0], consumptionCostExtensionSource({ output: files.cost, checkoutRoot: root, runId: config.runId, sampleId: config.scenarioId + '-' + index, clockId }), { flag: 'wx', mode: 0o600 });
   await writeFile(extensions[1], providerTransportExtensionSource({ output: files.transport, checkoutRoot: root, clockId }), { flag: 'wx', mode: 0o600 });
-  await writeFile(extensions[2], "import fs from 'node:fs';import crypto from 'node:crypto';const inspectPayload=" + candidatePayloadBodies.toString()
-    + ';export default api=>(' + observeCandidateTask.toString() + ')(api,{fs,crypto,inspectPayload,output:' + JSON.stringify(files.tasks)
-    + ',bodyFiles:' + JSON.stringify(bodies.filter(body => body.bytes > 0)) + ',payloadDirectory:' + JSON.stringify(payloads) + ',branchDirectory:' + JSON.stringify(branches)
-    + ',toolResultDirectory:' + JSON.stringify(toolResults) + '});\n', { flag: 'wx', mode: 0o600 });
+  await writeFile(extensions[2], candidateTaskExtensionSource({ output: files.tasks, bodyFiles: bodies.filter(body => body.bytes > 0),
+    payloadDirectory: payloads, branchDirectory: branches, toolResultDirectory: toolResults }), { flag: 'wx', mode: 0o600 });
   const sourcePreload = join(control, 'source.mjs'), sdkPreload = join(control, 'sdk.mjs');
   await writeFile(sourcePreload, sourceObserverPreloadSource({ output: files.source, checkoutRoot: root, clockId, processDirectory,
     cliPath: join(config.brokerRoot, 'dist/ntn-skills.mjs'), ownerParentPid: process.pid, ownerEntry: host.path }), { flag: 'wx', mode: 0o600 });
@@ -213,7 +224,7 @@ export async function runAgentWorkflow(config) {
   for (const path of [cwd, join(cwd, '.pi'), sessions, stateRoot]) await mkdir(path, { recursive: true, mode: 0o700 });
   const projectSettings = join(cwd, '.pi/settings.json');
   assert.equal(await exists(projectSettings), false, 'The owned project must not contain an earlier candidate configuration');
-  await save(projectSettings, registration.projectSettings);
+  await save(projectSettings, agentWorkflowProjectSettings(registration.projectSettings, scenario));
   const ownedStateRoot = join(stateRoot, 'state'); await mkdir(ownedStateRoot, { mode: 0o700 });
   await save(join(ownedStateRoot, 'agent-workflow-owner.json'), { runId: fixture.runId, fixtureRoot: fixture.root, token: fixture.ownership.token });
   const sourceCache = join(stateRoot, 'broker-cache'), sourceConfigPath = join(evidence, 'source-config.json');
@@ -306,6 +317,8 @@ export async function runAgentWorkflow(config) {
       observed.cliProcesses = { version: 1, artifacts: cliProcesses.artifacts,
         sourceArtifact: await identity(owner.observer.files.source),
         window: { startNs: receipt.startedNs, endNs: receipt.endedNs } };
+      observed.toolHistory = { version: 1, artifacts: await Promise.all(result.segments
+        .filter(item => item.index <= receipt.segment).map(item => identity(item.observer.files.tasks))) };
 
       const frozenBindings = await json(join(evidence, 'turn-' + receipt.id + '-bindings.json'));
       const turn = await json(join(evidence, 'turn-' + receipt.id + '-input.json'));

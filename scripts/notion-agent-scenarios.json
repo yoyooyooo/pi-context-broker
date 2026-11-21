@@ -4583,7 +4583,8 @@
           "prompt": "继续刚才那张差旅单，规则保持不变，给我最终可报销金额。",
           "before": [
             {
-              "kind": "compact"
+              "kind": "compact",
+              "keepRecentTokens": 128
             }
           ],
           "expect": [
@@ -4698,7 +4699,8 @@
           "prompt": "继续原来的报销工作。如果原规则已经无法恢复，请明确说明。",
           "before": [
             {
-              "kind": "compact"
+              "kind": "compact",
+              "keepRecentTokens": 128
             },
             {
               "kind": "fault",

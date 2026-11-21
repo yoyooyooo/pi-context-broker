@@ -206,11 +206,13 @@ export function validateAgentEvent(event) {
     readback: [['object', 'receipt'], ['object', 'receipt']],
     restart: [['mode'], ['mode']],
     fork: [['turn'], ['turn']],
-    compact: [[], []],
+    compact: [['keepRecentTokens'], []],
     fault: [['object', 'mode'], ['object', 'mode']],
   }[event.kind];
   assert.ok(shape, 'before: unsupported event ' + event.kind);
   keys(event, ['kind', ...shape[0]], ['kind', ...shape[1]], 'before.' + event.kind);
+  if (event.kind === 'compact' && event.keepRecentTokens !== undefined)
+    assert.ok(Number.isSafeInteger(event.keepRecentTokens) && event.keepRecentTokens > 0, 'Compaction retention must be a positive token budget');
   if (event.kind === 'interrupt-source-write' && event.maxRequests !== undefined)
     assert.ok(Number.isSafeInteger(event.maxRequests) && event.maxRequests > 0, 'Source interruption requires a positive request budget');
   if (event.object !== undefined) id(event.object, 'before.object');
