@@ -91,14 +91,13 @@
         },
         "source-question": {
           "anyOf": [
-            "哪一份",
-            "哪一个",
-            "本地还是",
-            "Notion 还是",
-            "需要确认",
-            "选择哪",
-            "使用哪",
-            "请确认"
+            "来源",
+            "版本",
+            "规则",
+            "本地",
+            "Notion",
+            "source",
+            "version"
           ]
         },
         "unavailable": {
@@ -157,6 +156,19 @@
             "离线",
             "本地",
             "安装包"
+          ]
+        },
+        "local-source": {
+          "anyOf": [
+            "本地",
+            "全局",
+            "local",
+            "global"
+          ]
+        },
+        "notion-source": {
+          "anyOf": [
+            "Notion"
           ]
         }
       }
@@ -3482,6 +3494,13 @@
             {
               "kind": "clarification",
               "topic": "source-question"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "local-source",
+                "notion-source"
+              ]
             }
           ]
         },
@@ -4207,9 +4226,10 @@
               "version": "A"
             },
             {
-              "kind": "body",
-              "body": "remote@A/SKILL.md",
-              "occurrences": 1
+              "kind": "resource",
+              "object": "remote",
+              "version": "A",
+              "path": "references/rates.md"
             },
             {
               "kind": "resource",
@@ -4242,9 +4262,10 @@
               "version": "A"
             },
             {
-              "kind": "body",
-              "body": "remote@A/SKILL.md",
-              "occurrences": 1
+              "kind": "resource",
+              "object": "remote",
+              "version": "A",
+              "path": "references/rates.md"
             },
             {
               "kind": "output",

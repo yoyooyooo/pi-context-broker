@@ -720,10 +720,17 @@ export function candidatePayloadBodies(value, expectedBodies) {
 export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspectPayload, payloadDirectory, branchDirectory, toolResultDirectory, hostOutput, projectRoot, inspectProject }) {
   const sha = value => crypto.createHash('sha256').update(value).digest('hex');
   const oracleStarted = process.hrtime.bigint();
-  const expectedBodies = bodyFiles.map(file => {
+  const nonTextBodies = [];
+  const expectedBodies = bodyFiles.flatMap(file => {
     const bytes = fs.readFileSync(file.path);
     if (sha(bytes) !== file.sha256 || bytes.length !== file.bytes || bytes.length === 0) throw new Error('Frozen body bytes changed');
-    return { sha256: file.sha256, bytes: file.bytes, text: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) };
+    let text;
+    try { text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); }
+    catch {
+      nonTextBodies.push({ sha256: file.sha256, bytes: file.bytes });
+      return [];
+    }
+    return [{ sha256: file.sha256, bytes: file.bytes, text }];
   });
   const fd = fs.openSync(output, 'wx', 0o600);
   const oracleReadMs = Number(process.hrtime.bigint() - oracleStarted) / 1e6;
@@ -753,7 +760,8 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     finally { observerWorkNs += process.hrtime.bigint() - started; }
     // Always undefined: observation cannot block, transform or choose tools.
   });
-  record('task_observer_start', { oracleReadMs, oracleSeededIntoSourceOrModel: false });
+  record('task_observer_start', { oracleReadMs, oracleSeededIntoSourceOrModel: false,
+    nonTextBodies, binaryDelivery: 'not-claimed; exact resource bytes require independent file readback' });
   if (hostOutput) api.on('session_start', (_event, ctx) => {
     fs.writeFileSync(hostOutput, JSON.stringify({ sessionId: ctx.sessionManager.getSessionId(), sessionFile: ctx.sessionManager.getSessionFile(),
       model: { provider: ctx.model?.provider, id: ctx.model?.id }, pid: process.pid,
