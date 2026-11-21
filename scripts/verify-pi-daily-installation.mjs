@@ -737,7 +737,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   node scripts/verify-pi-daily-installation.mjs candidate-plan --config ABSOLUTE_CONFIG.json
   node scripts/verify-pi-daily-installation.mjs candidate-run --config ABSOLUTE_CONFIG.json --live
 
-plan: describe ordinary daily pi -ns diagnostics; does not execute Pi.
+plan: describe ordinary daily Pi diagnostics; does not execute Pi.
 run: verify the committed next worktree pair, current builds, existing installation and a fresh ordinary Pi process.
 aggregate: require current passed Pro/Mini daily receipts from different machines for the same delivery and real origin/next pair.
 candidate-plan: validate and describe the separate project-scoped candidate; does not execute Pi.
@@ -748,7 +748,11 @@ Daily runs require worktrees.cli and worktrees.broker with root and complete com
 plus the selected cliRoot, brokerRoot, artifact hashes and delivery:{id:UUID,startedAt:UTC_ISO}.
 Aggregate uses the same delivery/worktree inputs and receipts:{pro:ABSOLUTE_RESULT_JSON,mini:ABSOLUTE_RESULT_JSON}.
 Only daily receipt version 2 qualifies; candidates and source/build receipts never prove daily execution. Candidate configs require
-scope:project-scoped-candidate-precheck and explicit turns. A plan is prepared_not_executed;
+scope:project-scoped-candidate-precheck and explicit turns, or scope:notion-agent-workflow
+with scenarioFile, scenarioId, bindingsFile and profile:daily|no-native-skills.
+Natural workflows use magpie/group/worker with high thinking, retain normal extensions,
+and use -ns only for the no-native-skills comparison. Broker local roots remain present.
+A plan is prepared_not_executed;
 a candidate does not prove the ordinary daily installation or the other machine.
 These actions do not install packages or change user settings.`);
     process.exit(0);
@@ -762,7 +766,7 @@ These actions do not install packages or change user settings.`);
   assert.equal(config.version, 1);
   if (candidate) {
     const { candidatePlan, runCandidate } = await import('./verify-pi-daily-candidate.mjs');
-    const result = action === 'candidate-plan' ? candidatePlan(config) : await runCandidate(config, { packageClosure, fileIdentity });
+    const result = action === 'candidate-plan' ? await candidatePlan(config) : await runCandidate(config, { packageClosure, fileIdentity });
     console.log(JSON.stringify(result, null, 2));
     if (action === 'candidate-run' && result.status !== 'passed') process.exitCode = 1;
   } else if (action === 'plan') console.log(JSON.stringify(plan(config), null, 2));

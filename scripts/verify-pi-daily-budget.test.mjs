@@ -7,7 +7,7 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 const payload = () => ({ model: 'group/worker', stream: true, stream_options: { include_usage: true }, store: false,
   max_completion_tokens: 456572, reasoning_effort: 'high', messages: [{ role: 'user', content: 'Unchanged original project task.' }],
   tools: [{ type: 'function', function: { name: 'read', parameters: { type: 'object' } } }] });
-const baseConfig = { version: 1, scope: 'project-scoped-candidate-print', id: 'budget-preflight', arm: 'notion-only',
+const baseConfig = { version: 1, scope: 'project-scoped-candidate-print', id: 'budget-preflight', arm: 'no-native-skills',
   model: 'magpie/group/worker', thinkingLevel: 'high', project: 'owned-ticket-service', prompt: 'Original task' };
 
 test('completion cap is absent by default and only explicit 32768 passes before launcher I/O', async () => {
