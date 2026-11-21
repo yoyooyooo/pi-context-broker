@@ -9,10 +9,43 @@ import { errorMonitor } from 'node:events';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { safeRequestMetrics } from './notion-default-context.mjs';
-import { observeSourceTransport, sourceObserverPreloadSource, readSourceObservation } from './skill-consumption-source-observer.mjs';
+import { observeSourceTransport, sourceObserverPreloadSource, readSourceObservation, captureSourceProcessAncestry } from './skill-consumption-source-observer.mjs';
 import { settleSource } from './skill-consumption-model-baseline.mjs';
 
 const secret = 'private-source-marker', privateUrl = 'https://private.example/secret-source';
+
+test('OS ancestry requests only selected PID relationships and confirms their unchanged start identity', () => {
+  const calls = [];
+  const execFileSync = (file, args, options) => {
+    assert.equal(file, '/bin/ps'); assert.deepEqual(args.slice(0, -1), ['-o', 'pid=', '-o', 'ppid=', '-o', 'lstart=', '-p']);
+    assert.equal(options.env.LC_ALL, 'C'); assert.equal(options.env.TZ, 'UTC');
+    const pids = args.at(-1).split(',').map(Number); calls.push(pids);
+    return pids.map(pid => pid + ' ' + (pid === process.pid ? process.ppid : 1) + ' Sat Nov 21 12:00:00 2026').join('\n') + '\n';
+  };
+  const observed = captureSourceProcessAncestry({ execFileSync, stopPid: process.ppid, platform: 'darwin' });
+  assert.equal(observed.complete, true);
+  assert.deepEqual(calls, [[process.pid], [process.ppid], [process.pid, process.ppid]]);
+  assert.equal(observed.samples.length, 2);
+  assert.ok(BigInt(observed.finishedNs) >= BigInt(observed.startedNs));
+});
+
+test('unsupported, failed and unstable OS ancestry captures retain an explicit unknown result', () => {
+  const unsupported = captureSourceProcessAncestry({ platform: 'win32', stopPid: process.ppid,
+    execFileSync() { throw new Error('The unsupported platform must not run ps'); } });
+  assert.equal(unsupported.complete, false); assert.equal(unsupported.reason, 'unsupported-platform');
+  const failed = captureSourceProcessAncestry({ platform: 'linux', stopPid: process.ppid,
+    execFileSync() { throw new Error('private argument must not enter evidence'); } });
+  assert.equal(failed.complete, false); assert.equal(failed.reason, 'os-query-failed');
+  assert.equal(JSON.stringify(failed).includes('private argument'), false);
+  const changed = captureSourceProcessAncestry({ platform: 'darwin', stopPid: process.ppid,
+    execFileSync(_file, args) {
+      const pids = args.at(-1).split(',').map(Number);
+      return pids.map(pid => pid + ' ' + (pid === process.pid ? process.ppid : 1)
+        + (pids.length > 1 ? ' Sat Nov 21 12:00:01 2026' : ' Sat Nov 21 12:00:00 2026')).join('\n') + '\n';
+    } });
+  assert.equal(changed.complete, false); assert.equal(changed.reason, 'ancestor-identity-changed');
+});
+
 function requestMetrics() {
   const attempt = (number, status, responseBytes) => ({ event: 'attempt', attempt: number, kind: 'notion_metadata', method: 'POST',
     started_ms: number * 10, duration_ms: 4, outcome: status === 200 ? 'success' : 'failure',
