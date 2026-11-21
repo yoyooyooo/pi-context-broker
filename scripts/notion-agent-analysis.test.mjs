@@ -922,6 +922,108 @@ function composedLocalFixture({ childName = 'read', retainResult = true } = {}) 
   return f;
 }
 
+function reusedLocalFixture(f = nativeLocalFixture()) {
+  const historyRows = structuredClone(f.observed.tasks.filter(row => ['tool_call', 'tool_result'].includes(row.phase)));
+  for (const row of historyRows.filter(row => row.phase === 'tool_result' && !row.contentArtifact)) {
+    const terminal = f.entries.find(entry => entry.message?.role === 'toolResult' && entry.message.toolCallId === row.toolCallId);
+    if (!terminal) continue; // A missing nested result cannot be reconstructed from its parent text.
+    const path = '/owned/private/history-result-' + row.toolCallId + '.json', bytes = Buffer.from(JSON.stringify(terminal.message.content));
+    f.files.set(path, bytes); row.contentArtifact = { path, sha256: hash(bytes), bytes: bytes.length };
+  }
+  const sealHistory = (rows = historyRows, end = { errors: 0, complete: true }) => {
+    let previous = null;
+    const events = [{ phase: 'task_observer_start' }, ...rows, { phase: 'task_observer_end', ...end }].map((row, index) => {
+      const value = { sequence: index + 1, previousSha256: previous, pid: 20, monotonicNs: String(index + 1), ...row };
+      previous = hash(JSON.stringify(value)); return { ...value, eventSha256: previous };
+    });
+    const bytes = Buffer.from(events.map(row => JSON.stringify(row)).join('\n') + '\n'), path = '/owned/evidence/history-tasks.jsonl';
+    f.files.set(path, bytes); f.observed.toolHistory = { version: 1, artifacts: [{ path, sha256: hash(bytes), bytes: bytes.length }] };
+  };
+  sealHistory();
+  f.entries.push(message('next-user', 'final', 'user', '继续使用刚才的规则。'), answer('next-final', 'next-user'));
+  f.observed.session = inspect(f.entries);
+  Object.assign(f.observed.selection, { leafId: f.observed.session.leafId, branchSha256: f.observed.session.branchSha256 });
+  f.observed.costs = f.observed.costs.slice(-2);
+  for (const row of f.observed.costs) row.request = 1;
+  f.observed.transport = f.observed.transport.slice(-3);
+  for (const row of f.observed.transport) row.id = 1;
+  f.observed.tasks = [f.observed.tasks.filter(row => row.phase === 'provider_payload').at(-1), f.observed.tasks.at(-1)];
+  f.observed.tasks[0].monotonicNs = '1000';
+  return { ...f, historyRows, sealHistory };
+}
+
+test('a retained native local read can be reused without inventing another current-turn attempt', async () => {
+  const f = reusedLocalFixture();
+  const result = await f.run([{ kind: 'body', body: 'local@A/SKILL.md', occurrences: 1 },
+    { kind: 'resource', object: 'local', version: 'A', path: 'SKILL.md' }, { kind: 'selection', object: 'local', version: 'A' },
+    { kind: 'tool-attempts', tool: 'read', max: 0 }, { kind: 'no-semantic-writes' }]);
+  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+  assert.equal(result.efficiency.actualToolAttempts, 0);
+  const proof = result.assertions.find(row => row.kind === 'actual-provider-delivery').details.last.nativeReadBodies[0];
+  assert.deepEqual(proof.toolCallIds, ['t0']);
+  assert.equal(proof.provenance[0].resultEntryId, 'result-0');
+  assert.equal(proof.provenance[0].history.userEntryId, 'u');
+  assert.deepEqual(proof.provenance[0].history.callArtifact, f.observed.toolHistory.artifacts[0]);
+});
+
+test('a retained composed read keeps its native child lineage and original child result', async () => {
+  const f = reusedLocalFixture(composedLocalFixture());
+  const result = await f.run([{ kind: 'body', body: 'local@A/SKILL.md', occurrences: 1 },
+    { kind: 'tool-attempts', tool: 'read', max: 0 }, { kind: 'tool-attempts', tool: 'codemode', max: 0 }]);
+  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+  const proof = result.assertions.find(row => row.kind === 'actual-provider-delivery').details.last.nativeReadBodies[0];
+  assert.deepEqual(proof.toolCallIds, ['opaque-child-without-parent-prefix']);
+  assert.deepEqual(proof.deliveryToolCallIds, ['t0']);
+  assert.equal(proof.provenance[0].history.rootToolCallId, 't0');
+});
+
+for (const [reason, change, code] of [
+  ['missing history', f => { delete f.observed.toolHistory; }, 'TOOL_HISTORY_MISSING'],
+  ['unfinished history', f => f.sealHistory(f.historyRows, { complete: false, errors: 1 }), 'TOOL_HISTORY_INCOMPLETE'],
+  ['missing callback', f => f.sealHistory(f.historyRows.filter(row => row.phase !== 'tool_result')), 'TOOL_RESULT_UNOBSERVED'],
+  ['missing original body', f => { delete f.historyRows.find(row => row.phase === 'tool_result').contentArtifact; f.sealHistory(); }, 'HISTORICAL_READ_RESULT_MISSING'],
+  ['changed sealed artifact', f => { const path = f.observed.toolHistory.artifacts[0].path; f.files.set(path, Buffer.from('changed\n')); }, 'ARTIFACT_CHANGED'],
+  ['result completed after the payload', f => { f.observed.tasks[0].monotonicNs = '1'; }, 'HISTORICAL_READ_ORDER_UNPROVEN'],
+  ['a different wire tool identity', f => rewritePayloads(f, payload => { for (const row of payload.messages.filter(row => row.role === 'tool')) row.tool_call_id = 'unrelated'; }), 'LOCAL_BODY_DELIVERY_MISSING'],
+]) test('historical reuse rejects ' + reason, async () => {
+  const f = reusedLocalFixture(); change(f);
+  const result = await f.run([{ kind: 'body', body: 'local@A/SKILL.md', occurrences: 1 }]);
+  assert.notEqual(result.status, 'passed');
+  assert.ok(result.assertions.some(row => row.code === code), JSON.stringify(result.assertions));
+});
+
+test('a historical result cannot borrow identical bytes from a sibling or an omitted native entry', async () => {
+  for (const omitted of [false, true]) {
+    const f = reusedLocalFixture();
+    const next = f.entries.find(row => row.id === 'next-user');
+    if (omitted) {
+      f.entries.splice(-2, 0, entry('omit-result', 'final', 'context_edit', { targetId: 'result-0', replacement: null }));
+      next.parentId = 'omit-result';
+    } else next.parentId = 'u';
+    f.observed.session = inspect(f.entries, { leafId: 'next-final' });
+    const result = await f.run([{ kind: 'body', body: 'local@A/SKILL.md', occurrences: 1 }]);
+    assert.equal(result.status, 'blocked');
+    assert.ok(result.assertions.some(row => row.code === (omitted ? 'HISTORICAL_READ_NOT_RETAINED' : 'LOCAL_BODY_DELIVERY_MISSING')));
+  }
+});
+
+test('historical callback body bytes must match the retained native result', async () => {
+  const f = reusedLocalFixture(), result = f.historyRows.find(row => row.phase === 'tool_result');
+  const bytes = Buffer.from(JSON.stringify([{ type: 'text', text: 'Different original result.' }]));
+  f.files.set(result.contentArtifact.path, bytes);
+  Object.assign(result.contentArtifact, { sha256: hash(bytes), bytes: bytes.length }); f.sealHistory();
+  const verdict = await f.run([{ kind: 'body', body: 'local@A/SKILL.md', occurrences: 1 }]);
+  assert.equal(verdict.status, 'failed');
+  assert.ok(verdict.assertions.some(row => row.code === 'HISTORICAL_READ_RESULT_MISMATCH'));
+});
+
+test('historical composition still requires its independently retained child body', async () => {
+  const f = reusedLocalFixture(composedLocalFixture({ retainResult: false }));
+  const result = await f.run([{ kind: 'body', body: 'local@A/SKILL.md', occurrences: 1 }]);
+  assert.equal(result.status, 'blocked');
+  assert.ok(result.assertions.some(row => row.code === 'HISTORICAL_READ_RESULT_MISSING'));
+});
+
 test('complete code-mode reads prove their own bytes and the parent wire delivery', async () => {
   const f = composedLocalFixture();
   const result = await f.run([{ kind: 'body', body: 'local@A/SKILL.md', occurrences: 1 }, { kind: 'no-semantic-writes' },
