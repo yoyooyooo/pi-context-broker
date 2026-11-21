@@ -185,6 +185,14 @@ async function capture(context, path, value) {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 }); await save(path, value); return artifact(path);
 }
 
+async function freezeObservedBytes(context, bytes) {
+  const directory = join(context.root, 'oracles'); await mkdir(directory, { recursive: true, mode: 0o700 });
+  const path = join(directory, sha(bytes));
+  try { await writeFile(path, bytes, { flag: 'wx', mode: 0o600 }); }
+  catch (error) { if (error.code !== 'EEXIST') throw error; assert.equal(sha(await readFile(path)), sha(bytes), 'Frozen oracle bytes changed'); }
+  return path;
+}
+
 async function sealReadback(context, key, result) {
   const rawEvidence = result.artifact, receipt = { ...result, rawEvidence }; delete receipt.artifact;
   const path = join(context.root, 'readbacks', key.replaceAll(/[^a-zA-Z0-9_-]/g, '_') + '-receipt-' + randomUUID() + '.json');
@@ -218,7 +226,7 @@ async function captureReadback(bindings, alias, { version, key = alias, state = 
       const path = join(owned.directory, entry.path), bytes = await readFile(path);
       assert.equal(sha(bytes), entry.sha256, 'Local fixture file differs from the chosen version');
       files.push({ ...entry, localPath: path, sha256: sha(bytes), bytes: bytes.length });
-      bindings.private.bodies[alias + '@' + label + '/' + entry.path] = { path, sha256: sha(bytes), bytes: bytes.length, object: alias, version: label, resourcePath: entry.path };
+      bindings.private.bodies[alias + '@' + label + '/' + entry.path] = { path: await freezeObservedBytes(context, bytes), observedPath: path, sha256: sha(bytes), bytes: bytes.length, object: alias, version: label, resourcePath: entry.path };
     }
     const captured = await capture(context, receiptPath, { kind: 'local', directory: owned.directory, files, observedAt: clock() });
     identity.versions[label] = { bodyKeys: files.map(file => alias + '@' + label + '/' + file.path), readback: key };
@@ -349,6 +357,9 @@ async function captureReadback(bindings, alias, { version, key = alias, state = 
 /** Prepare one owned real fixture. The library is never replaced and global configuration is never edited. */
 export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cliPath, node = process.execPath, globalSkillsRoot = join(homedir(), '.agents/skills'), apiVersion = '2026-03-11' }) {
   validateAgentFixtureRecipe(recipe);
+  for (const object of recipe.objects) if (['global', 'project'].includes(object.placement))
+    assert.ok(/^[a-z0-9][a-z0-9-]*$/u.test(object.name), 'Native fixture names must be safe lowercase invocation names');
+  assert.ok(isAbsolute(globalSkillsRoot), 'Use an absolute native global Skill root');
   assert.ok(id(runId) && pageId(entry) && isAbsolute(root) && isAbsolute(cliPath) && isAbsolute(node));
   assert.ok(!(await exists(root)), 'Use a fresh fixture root; resume from its bindings instead');
   await mkdir(root, { recursive: true, mode: 0o700 }); root = await realpath(root);

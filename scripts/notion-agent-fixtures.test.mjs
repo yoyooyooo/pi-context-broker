@@ -54,6 +54,9 @@ test('readback seals the actual receipt and binds local body keys to relative pa
   const result = await readAgentFixture(bindings, 'selected', { version: 'A', key: 'local-ready' });
   assert.equal(result.status, 'passed'); assert.equal(result.observed.state, 'present');
   assert.deepEqual(bindings.private.objects.selected.versions.A.bodyKeys, ['selected@A/SKILL.md']);
+  assert.ok(bindings.private.bodies['selected@A/SKILL.md'].path.startsWith(root + '/oracles/'));
+  assert.equal(bindings.private.bodies['selected@A/SKILL.md'].observedPath, join(directory, 'SKILL.md'));
+  assert.equal(await readFile(bindings.private.bodies['selected@A/SKILL.md'].path, 'utf8'), content);
   const saved = await json(result.artifact.path), { artifact, ...receipt } = result;
   assert.deepEqual(saved, receipt); assert.equal(hash(await readFile(artifact.path)), artifact.sha256);
   await writeFile(join(directory, 'SKILL.md'), '# Changed rule\n');
