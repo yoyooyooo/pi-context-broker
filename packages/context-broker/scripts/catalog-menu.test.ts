@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { notionCatalogAction, notionListExpired } from "../src/catalog-menu";
+import { notionCatalogAction, notionListExpired, notionListFreshness } from "../src/catalog-menu";
 import { createDollarSkillAutocompleteProvider } from "../src/dollar";
 import type { AutocompleteSuggestions, DiscoveryRecord, NotionListObservation } from "../src/types";
 
@@ -17,6 +17,12 @@ assert.equal(notionListExpired({ ...fresh, stale: true }, at), true);
 assert.equal(notionListExpired({ ...fresh, policy: "offline", stale: true }, at + 120_000), false);
 assert.equal(notionListExpired({ sourceId: "notion", policy: "pinned" }, at + 120_000), false);
 assert.equal(notionListExpired(undefined, at), true);
+assert.deepEqual(notionListFreshness(fresh, at + 59_999), { policy: "default", validated_at: validated, age_ms: 59_999, max_age_ms: 60_000, stale: false });
+assert.deepEqual(notionListFreshness(fresh, at + 60_000), { policy: "default", validated_at: validated, age_ms: 60_000, max_age_ms: 60_000, stale: true });
+assert.equal(notionListFreshness({ ...fresh, ageMs: 30_000 }, at + 1_000).age_ms, 30_000);
+assert.equal(notionListFreshness({ ...fresh, policy: "offline", stale: true }, at + 120_000).stale, true);
+assert.equal(notionListFreshness(fresh, at - 1).age_ms, null);
+assert.deepEqual(notionListFreshness(undefined, at), { policy: null, validated_at: null, age_ms: null, max_age_ms: null, stale: null });
 assert.equal(notionCatalogAction({ offline: false, sourceIds: ["notion"], observations: [fresh], failedSourceIds: [], now: at + 1_000 }), "use");
 assert.equal(notionCatalogAction({ offline: true, sourceIds: ["notion"], observations: [], failedSourceIds: ["notion"], now: at }), "use");
 assert.equal(notionCatalogAction({ offline: false, sourceIds: ["notion"], observations: [fresh], failedSourceIds: [], now: at + 60_000 }), "refresh");

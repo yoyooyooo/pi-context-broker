@@ -1,9 +1,19 @@
 import { expect, setSystemTime, test } from "bun:test";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { activeNotionSession } from "./fixtures/active-notion-session";
 import { sourceMessageText } from "../src/session-source-snapshot";
 import type { SkillRecord } from "../src/types";
 
 type Session = Awaited<ReturnType<typeof activeNotionSession>>;
+function addShopping(h: Session) {
+  const id = "shared_skill:current-source:shopping";
+  const record = { ...h.f.record, id, name: "shopping", alias: "shopping", description: "Shopping draft",
+    ref: "skill://" + encodeURIComponent(id) + "/SKILL.md", enabled: true, default_context: false,
+    locator: { ...h.f.record.locator, skill_id: "shopping", page_id: "00000000-0000-4000-8000-000000000099" } };
+  h.f.state.catalog = { ...h.f.state.catalog, count: h.f.state.catalog.count + 1, records: [...h.f.state.catalog.records, record] };
+  return record;
+}
 const refreshTurn = (h: Session, ref: string | string[], before: readonly SkillRecord[], prepared?: () => void, status = 200) =>
   h.turn("Continue with the explicitly refreshed instructions.", before, undefined, undefined, [], {
     beforeContext: async () => {
@@ -16,6 +26,103 @@ const payloadText = (turn: Awaited<ReturnType<Session["turn"]>>) => {
   expect(turn.error).toBeUndefined(); expect(turn.provider).toBe(true);
   return turn.payload!.messages.map(message => message.content).join("\n");
 };
+
+test("metadata refresh discovers a newly created Skill before TTL without replacing active pins or fixed refs", async () => {
+  const h = await activeNotionSession();
+  try {
+    const old = await h.seed(), root = old.records.find(record => record.name === "root")!, ref = h.fixedRef(root);
+    const selected = h.selected().scopes.get(root.sourceScope!)!.bindings;
+    const active = h.active().selection.scopes.get(root.sourceScope!)!.bindings;
+    const selections = h.branch.filter(entry => entry.customType === "context-broker-selected-graph").length;
+    const list = async (input: Record<string, unknown>) => JSON.parse(sourceMessageText((await h.tool("notion_list")
+      .execute("discovery-after-write", input, undefined, undefined, h.ctx)).content));
+    const before = await list({ limit: 1 });
+    addShopping(h);
+    expect((await list({ query: "shopping" })).count).toBe(0);
+    const start = h.f.calls.length;
+    const refreshed = await list({ query: "shopping", refresh: true });
+    expect(refreshed).toMatchObject({ count: 1, coverage: { exhaustive: true }, records: [{ name: "shopping", in_default_view: false }] });
+    expect(refreshed.freshness.sources).toEqual([expect.objectContaining({ source: "notion",
+      validated_at: h.f.state.catalog.freshness.validated_at, max_age_ms: h.f.state.catalog.freshness.max_age_ms, stale: false })]);
+    const calls = h.f.calls.slice(start);
+    expect(calls.map(call => call.operation)).toEqual(["list"]);
+    expect(calls[0]?.options).toMatchObject({ database: h.f.source.database, refresh: true, directory: {} });
+    expect(h.selected().scopes.get(root.sourceScope!)!.bindings).toEqual(selected);
+    expect(h.active().selection.scopes.get(root.sourceScope!)!.bindings).toEqual(active);
+    expect(h.branch.filter(entry => entry.customType === "context-broker-selected-graph")).toHaveLength(selections);
+    expect(h.f.calls.slice(start).some(call => call.operation === "consume" || call.operation === "read")).toBe(false);
+    await expect(list({ limit: 1, cursor: before.next_cursor })).rejects.toMatchObject({ code: "CATALOG_CURSOR_INVALID" });
+    const page = await list({ limit: 1 });
+    await list({ source: "notion", refresh: true });
+    await expect(list({ limit: 1, cursor: page.next_cursor })).rejects.toMatchObject({ code: "CATALOG_CURSOR_INVALID" });
+    const after = h.f.calls.length;
+    await expect(list({ refresh: true, cursor: page.next_cursor })).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    await expect(list({ source: "foreign", refresh: true })).rejects.toMatchObject({ code: "SOURCE_UNAVAILABLE" });
+    expect(h.f.calls).toHaveLength(after);
+    expect(sourceMessageText((await h.read(ref)).content)).toContain(root.body!);
+    const continued = await h.turn("Continue the existing task after discovering the new draft.", old.records);
+    const text = payloadText(continued);
+    for (const record of old.records) expect(text).toContain(record.body!.trim());
+    expect(text).not.toContain("Shopping draft");
+  } finally { await h.close(); }
+});
+
+test("a verified native create during a pending catalog read makes its first ordinary list follow the newer directory", async () => {
+  const h = await activeNotionSession();
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  try {
+    const original = h.f.state.list.bind(h.f.state);
+    let hold = true;
+    h.f.state.list = async options => {
+      const captured = original(options);
+      if (hold) { hold = false; entered.resolve(); await release.promise; }
+      return captured;
+    };
+    const list = async (input: Record<string, unknown>) => JSON.parse(sourceMessageText((await h.tool("notion_list")
+      .execute("write-during-discovery", input, undefined, undefined, h.ctx)).content));
+    const pending = list({ query: "shopping", refresh: true });
+    await entered.promise;
+    const shopping = addShopping(h), locator = shopping.locator;
+    if (locator.type !== "shared_skill") throw new Error("Expected native Skill identity");
+    const { hostCliScope }: typeof import("../src/host-command") = await import(pathToFileURL(join(h.f.root, "src/host-command.ts")).href);
+    const quote = (arg: string) => "'" + arg.replaceAll("'", "'\\''") + "'";
+    const input = { command: [...hostCliScope([h.f.source]).command, "ctl", "library", "skill", "create", "/staged/SKILL.md",
+      "--entry", h.f.source.database!, "--skill-id", "shopping"].map(quote).join(" ") };
+    const event = { toolName: "bash", toolCallId: "native-create", input };
+    await h.emit("tool_call", event);
+    await h.emit("tool_result", { ...event, isError: false, content: JSON.stringify({ ok: true, contract: "current", action: "create",
+      status: "created", state: "ready", skill_id: "shopping", page_id: locator.page_id, files: 1,
+      operation_id: "operation-native-create", input_sha256: "c".repeat(64), library: {
+        library_id: locator.library_id, database_id: locator.database_id, data_source_id: locator.data_source_id } }) });
+    const ordinary = list({ query: "shopping", source: "notion" });
+    release.resolve();
+    for (const result of await Promise.all([pending, ordinary])) expect(result).toMatchObject({ count: 1, records: [{ name: "shopping" }] });
+    expect(h.f.calls.filter(call => call.operation === "list" && call.options.refresh)).toHaveLength(2);
+    expect(h.f.calls.every(call => call.operation === "list")).toBe(true);
+  } finally { release.resolve(); await h.close(); }
+});
+
+test("failed or partial metadata refresh cannot report a fresh complete empty directory", async () => {
+  const h = await activeNotionSession();
+  try {
+    const list = async () => JSON.parse(sourceMessageText((await h.tool("notion_list")
+      .execute("failed-refresh", { query: "shopping", refresh: true }, undefined, undefined, h.ctx)).content));
+    h.f.state.paired = { version: 1, catalog: { ok: false, error: { code: "ACCESS_DENIED" } },
+      directory: { ok: false, error: { code: "ACCESS_DENIED" } } };
+    const failed = await list();
+    expect(failed).toMatchObject({ count: 0, coverage: { exhaustive: false },
+      freshness: { sources: [{ source: "notion", validated_at: null, age_ms: null, stale: null }] } });
+    expect(failed.failures).toContainEqual({ source: "notion", code: "ACCESS_DENIED" });
+    h.f.state.paired = undefined;
+    addShopping(h);
+    Object.assign(h.f.state.catalog.coverage, { exhaustive: false, failed_sources: [{ id: "unavailable-source", code: "ACCESS_DENIED" }] });
+    const partial = await list();
+    expect(partial).toMatchObject({ count: 1, coverage: { exhaustive: false }, records: [{ name: "shopping" }] });
+    expect(partial.failures).toContainEqual({ source: "notion", code: "CATALOG_INCOMPLETE" });
+    expect(partial.freshness.sources[0].validated_at).toBe(h.f.state.catalog.freshness.validated_at);
+    expect(h.f.calls.every(call => call.operation === "list")).toBe(true);
+  } finally { await h.close(); }
+});
 
 test("public use and read retain the exact disabled Requires diagnosis without replacing the fixed task", async () => {
   const h = await activeNotionSession();

@@ -27,7 +27,7 @@ import { reduceSessionShortRefs, resolveSessionShortRef } from "./session-short-
 import { compileResourceRead } from "./resource-read-projection";
 import { DEFAULT_RESOURCE_READ_BUDGET, RESOURCE_READ_MAX_CONTEXT_BYTES, type FixedResourceRead, type ResourceReadBatch, type ResourceReadFileIdentity } from "./resource-read-types";
 import { createConsumerObservations, type ObservationTicket } from "./consumer-observation";
-import { notionCatalogAction, notionCatalogRetryGapMs } from "./catalog-menu";
+import { notionCatalogAction, notionCatalogRetryGapMs, notionListFreshness } from "./catalog-menu";
 import { combineConsumptionEffects, consumptionEffects, errorConsumptionEffects, noConsumptionWrites, type ConsumptionEffects, type ConsumptionPolicy } from "./consumption-effects";
 import { createFinalRequestLedger, type FinalRequestLedger } from "./final-request";
 import { RECOVERY_NOTICE, assertActiveContextDelivery, type ActiveContextRestoration } from "./session-recovery";
@@ -36,7 +36,7 @@ import { assertWorkingSetBudget, exportWorkingSet, releaseWorkingSetRoots, setWo
 
 export type HostSkillOptions = {
   config: ConfigFile;
-  getRecords(ctx?: ExtensionContext, signal?: AbortSignal): Promise<DiscoveryResult<SkillRecord>>;
+  getRecords(ctx?: ExtensionContext, signal?: AbortSignal, refreshSourceIds?: readonly string[]): Promise<DiscoveryResult<SkillRecord>>;
   metadataInvalidated?(ctx: ExtensionContext): boolean;
   lookupReference?(ctx: ExtensionContext, signal?: AbortSignal): Promise<DiscoveryResult<SkillRecord>>;
   resolveNamedReference?(ref: string, ctx: ExtensionContext, signal?: AbortSignal, refresh?: boolean): Promise<{ record: SkillRecord; ref: string }>;
@@ -354,6 +354,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   let metadataController = new AbortController();
   let metadataReadiness: Promise<void> = Promise.resolve();
   let metadataPending = false;
+  let metadataRefreshSources: ReadonlySet<string> = new Set();
   let lifecycleController = new AbortController();
   let discoveryError: unknown;
   let sourceFailures: SourceFailure[] = [];
@@ -440,12 +441,30 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const abort = () => cancelled.reject(preparationCancelled());
     signal.addEventListener("abort", abort, { once: true });
     try {
-      await Promise.race([metadataReadiness, cancelled.promise]);
-      checkPreparationSignal(signal);
+      // A forced metadata request can supersede a pending cached acquisition.
+      // Every waiter follows the selected publication, never the retired result.
+      for (;;) {
+        const pending = metadataReadiness;
+        const owner = metadataController.signal;
+        const superseded = Promise.withResolvers<void>();
+        const wake = () => superseded.resolve();
+        owner.addEventListener("abort", wake, { once: true });
+        if (owner.aborted) wake();
+        try { await Promise.race([pending, cancelled.promise, superseded.promise]); }
+        finally { owner.removeEventListener("abort", wake); }
+        checkPreparationSignal(signal);
+        if (pending === metadataReadiness) break;
+      }
     } finally { signal.removeEventListener("abort", abort); }
   }
 
-  function revalidateMetadata(ctx: ExtensionContext): Promise<void> {
+  function revalidateMetadata(ctx: ExtensionContext, refreshSourceIds?: readonly string[]): Promise<void> {
+    if (refreshSourceIds?.length) {
+      if (metadataPending && refreshSourceIds.every(id => metadataRefreshSources.has(id))) return metadataReadiness;
+      const requested = [...new Set([...(metadataPending ? metadataRefreshSources : []), ...refreshSourceIds])];
+      metadataReadiness = refreshMetadata(ctx, false, true, requested);
+      return metadataReadiness;
+    }
     if (metadataPending) return metadataReadiness;
     const sourceIds = (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false
       && !source.discovery?.offline).map(source => source.id);
@@ -461,36 +480,45 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
 
   if (sourceToolsEnabled) host.registerTool?.({
     name: listToolName, label: piConsumption ? "List Notion Skills" : "Skill search",
-    description: `Search the authorized Skill metadata directory, including items outside the default View. Returns ${piConsumption ? "Skill refs for read or notion_use" : "exact read references only"}; it does not load instructions or activate workflows.`,
+    description: `Search the authorized Skill metadata directory, including items outside the default View. Returns ${piConsumption ? "Skill refs for read or notion_use" : "exact read references only"}; it does not load instructions or activate workflows.${piConsumption ? " Use refresh:true to verify discovery after a write or request the latest directory; selected Skill versions stay fixed. Check freshness separately from coverage." : ""}`,
     parameters: { type: "object", properties: {
       query: { type: "string", description: "A short name or description keyword; empty lists the directory." },
       source: { type: "string", description: "Optional configured source ID to disambiguate directories." },
       limit: { type: "integer", minimum: 1, maximum: 100, description: "Maximum metadata entries, default 20." },
-      ...(piConsumption ? { cursor: { type: "string", description: "Copy next_cursor from the previous result to continue the same query." } } : {}),
+      ...(piConsumption ? {
+        refresh: { type: "boolean", description: "Refresh metadata for source, or all configured Notion sources when source is omitted. Keeps task pins; configured offline sources remain offline. Cannot combine with cursor." },
+        cursor: { type: "string", description: "Copy next_cursor to continue the same query and metadata publication; restart after refresh." },
+      } : {}),
     }, required: piConsumption ? [] : ["query"], additionalProperties: false },
     strict: true, readsSkillUris: false, loadMode: "essential",
     approval: () => "read", approvalCacheTargets: () => undefined,
     sourcePath: import.meta.url, defaultInactive: false,
     async execute(_id, input, signal, _onUpdate, ctx) {
       const readSignal = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
-      revalidateMetadata(ctx);
-      await ready(readSignal);
-      if (discoveryError) throw discoveryError;
+      checkPreparationSignal(readSignal);
       if ((input.query !== undefined || !piConsumption) && (typeof input.query !== "string" || input.query.length > 512)
         || input.source !== undefined && typeof input.source !== "string"
         || input.limit !== undefined && (!Number.isSafeInteger(input.limit) || Number(input.limit) < 1 || Number(input.limit) > 100)
         || input.cursor !== undefined && (typeof input.cursor !== "string" || !piConsumption)
-        || Object.keys(input).some(key => !["query", "source", "limit", ...(piConsumption ? ["cursor"] : [])].includes(key))) throw hostError("INVALID_ARGUMENT");
+        || input.refresh !== undefined && (typeof input.refresh !== "boolean" || !piConsumption)
+        || input.refresh === true && input.cursor !== undefined
+        || Object.keys(input).some(key => !["query", "source", "limit", ...(piConsumption ? ["cursor", "refresh"] : [])].includes(key))) throw hostError("INVALID_ARGUMENT");
       const query = String(input.query ?? "").trim().toLocaleLowerCase();
       const sourceIds = (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false).map(source => source.id);
       if (piConsumption && input.source !== undefined && !sourceIds.includes(String(input.source))) throw hostError("SOURCE_UNAVAILABLE");
       const selectedSources = input.source === undefined ? sourceIds : [String(input.source)];
+      revalidateMetadata(ctx, input.refresh === true ? selectedSources : undefined);
+      await ready(readSignal);
+      if (discoveryError) throw discoveryError;
       const failures = sourceFailures.filter(failure => selectedSources.includes(failure.sourceId));
       const coverage = selectedSources.map(source => ({ source, exhaustive: catalogCoverage.get(source) ?? null }));
+      const now = Date.now();
+      const freshness = selectedSources.map(source => ({ source,
+        ...notionListFreshness(metadataLists.find(list => list.sourceId === source), now) }));
       const matches = [...hostRecords.values()].filter(record => record.ref && record.source === "notion"
         && (input.source === undefined || record.sourceId === input.source)
         && (!query || [record.name, record.alias, record.description].some(value => value?.toLocaleLowerCase().includes(query))));
-      const catalogKey = createHash("sha256").update(JSON.stringify([query, input.source ?? null,
+      const catalogKey = createHash("sha256").update(JSON.stringify([metadataGeneration, query, input.source ?? null,
         matches.map(record => [recordIdentity(record), record.ref, record.name, record.description, observations.state(record)]), views, coverage, failures])).digest("hex");
       let offset = 0;
       if (typeof input.cursor === "string") {
@@ -504,6 +532,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         ok: true, state: "known", count: piConsumption ? selected.length : matches.length, has_more: matches.length > offset + selected.length,
         ...(piConsumption ? { total_count: matches.length,
           next_cursor: matches.length > offset + selected.length ? `${offset + selected.length}.${catalogKey}` : null,
+          freshness: { sources: freshness },
           coverage: { exhaustive: failures.length || coverage.some(source => source.exhaustive === false) ? false
             : coverage.some(source => source.exhaustive === null) ? null : true, sources: coverage } } : {}),
         records: selected.map(record => ({
@@ -1026,12 +1055,13 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     metadataFallback = !await adapter.registerCatalog(records, signal);
   }
 
-  async function refreshMetadata(ctx?: ExtensionContext, announce = true, preserveTurn = false): Promise<void> {
+  async function refreshMetadata(ctx?: ExtensionContext, announce = true, preserveTurn = false, refreshSourceIds?: readonly string[]): Promise<void> {
     const selectedGeneration = ++metadataGeneration;
     metadataController.abort();
     metadataController = new AbortController();
     const metadataSignal = metadataController.signal;
     metadataPending = true;
+    metadataRefreshSources = new Set(refreshSourceIds);
     if (!preserveTurn) {
       generation++;
       lifecycleController.abort();
@@ -1041,7 +1071,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
     const observation = observations.begin(metadataSignal);
     try {
-      const result = await options.getRecords(ctx, metadataSignal);
+      const result = await options.getRecords(ctx, metadataSignal, refreshSourceIds);
       if (metadataGeneration !== selectedGeneration) return;
       // Shared Notion metadata indexes stay immutable; published native views belong to this host process.
       const next = result.records.filter(record => record.sourceId !== undefined).map(record => record.source === "notion" ? { ...record, metadataIndexPath: undefined } : record);
@@ -1106,7 +1136,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         // Pi projects this observation at each provider boundary; View switches do not reload the session.
       } finally { release(); }
     } catch (error) { if (metadataGeneration === selectedGeneration) { discoveryError = error; metadataRetryAt = Date.now() + notionCatalogRetryGapMs; if (ctx) notify(ctx, error); } }
-    finally { if (metadataGeneration === selectedGeneration) metadataPending = false; }
+    finally { if (metadataGeneration === selectedGeneration) { metadataPending = false; metadataRefreshSources = new Set(); } }
   }
 
   function refresh(ctx?: ExtensionContext, announce = true): Promise<void> {

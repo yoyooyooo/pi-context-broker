@@ -27,6 +27,20 @@ await f.boundary.discoverNotionSource({ ...f.source, discovery: { offline: true 
 assert.equal(f.calls.at(-1)?.options.offline, true);
 assert.equal(await stat(join(f.source.cacheDir!, "catalogs-v4")).then(() => true, () => false), false);
 
+const selectedSources = [f.source, { ...f.source, id: "other", namespace: "other" },
+  { ...f.source, id: "offline", namespace: "offline", discovery: { offline: true } }];
+f.state.directory = { ...f.state.catalog, records: [], count: 0, view: null, view_selection: "none" };
+f.calls.length = 0;
+await f.sources.discoverSourceCatalog({ sources: selectedSources }, f.root, {
+  refreshSourceIds: [f.source.id, "offline"], directorySelections: new Map(selectedSources.map(source => [source.id, {}])),
+});
+assert.equal(f.calls.length, 3);
+assert.equal(f.calls[0]?.options.refresh, true, "The selected configured source reaches the authoritative SDK refresh");
+assert.equal(f.calls[1]?.options.refresh, undefined, "Another configured source retains its normal freshness policy");
+assert.equal(f.calls[2]?.options.refresh, undefined, "Explicit metadata refresh preserves configured offline policy");
+assert.equal(f.calls[2]?.options.offline, true);
+assert.ok(f.calls.every(call => call.operation === "list" && call.options.directory));
+
 // A host entry can converge locally, but its presence never short-circuits the
 // selected operation's freshness or permission check.
 f.calls.length = 0;

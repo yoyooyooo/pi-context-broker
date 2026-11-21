@@ -70,7 +70,7 @@ CLI 目录只返回 `records`，每条必须包含 `id/kind/locator/name/alias/d
 检查选定库的来源，预览这次需要执行的同步。
 ```
 
-当前 Agent 读取选中的工作流，取得目标来源的真实 CLI argv 与数据库范围。Pi 在启用 `bash` 后，可按需发现并调用 `notion_ctl({cli_source:"SOURCE_ID"})` 获取当前机器的调用元数据；取得该信息不会执行命令或授予工作流权限。配置多个 Notion source 时须明确选择目标，不隐式取第一个。Notion 写入与同步沿用 CLI 自身的预览、精确目标和操作结果合同。通过配置的 CLI 观察到已验证的真实写入后，Broker 在下一次普通选择时刷新对应来源目录，新建或改名后的 Skill 无需人工刷新即可发现。已加载快照和已接受草稿保持原有归属。
+当前 Agent 读取选中的工作流，取得目标来源的真实 CLI argv 与数据库范围。Pi 在启用 `bash` 后，可按需发现并调用 `notion_ctl({cli_source:"SOURCE_ID"})` 获取当前机器的调用元数据；取得该信息不会执行命令或授予工作流权限。配置多个 Notion source 时须明确选择目标，不隐式取第一个。Notion 写入与同步沿用 CLI 自身的预览、精确目标和操作结果合同。同包 CLI 的 native Skill `create/update/register/remove`、import 和 Source 路由，只有被观察到的单条 literal 调用及匹配写入回执才使对应配置来源的目录失效；不推断复合 shell 或外部写入。验证刚写入的条目或查询最新目录时，调用 `notion_list({query:"名称",source:"来源ID",refresh:true})`；省略 source 则刷新所有已配置的 Notion 来源。分别检查返回的 freshness 与 coverage。配置为离线的来源保持离线；已采用的 Skill 版本、已接受草稿和固定引用保持不变。
 
 `/context-broker` 保留 View 选择、元数据刷新与诊断。旧 `/ntn-skills` 命令镜像、专用 `save` 和 Tern 管理面板已退役。把自然语言要求与附件留在普通 prompt 中；选择 Skill 只编辑草稿。
 

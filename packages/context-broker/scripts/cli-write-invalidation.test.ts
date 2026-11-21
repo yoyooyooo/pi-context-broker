@@ -499,6 +499,156 @@ for (const verb of ["enable", "disable", "remove"])
   await result(command("ctl", "library", "source", verb, managedSource, "--entry", db, "--supersede", "old"), removed);
 assert.deepEqual(changed.splice(0), [], "Source supersede requires an explicit distinct new operation");
 
+// Native Skill management allocates and resumes its own operation; its public
+// commands do not accept import/Source recovery flags or share their statuses.
+const nativeCreated = { ...current, action: "create", status: "created" };
+const nativeUpdated = { ...current, action: "update" };
+const nativeRegistered = { ...current, version: 1, action: "register", status: "registered",
+  paths: ["SKILL.md", "references/guide.md", "assets/data.bin"] };
+const nativeRemoved = { ok: true, version: 1, contract: "current", action: "remove", library,
+  operation_id: operation, input_sha256: current.input_sha256, skill_id: skill, page_id: page,
+  state: "removed", status: "removed", cleanup_verified: true,
+  files: [{ file_id: "guide", page_id: secondPage, path: "references/guide.md", content_sha256: "b".repeat(64) }],
+  resources: [{ resource_id: "resource:guide", page_id: sourcePage, payload_sha256: "c".repeat(64) }],
+  relations: [{ skill_id: secondSkill, page_id: sourceTable, field: "Requires", before: [page, secondPage], after: [secondPage] }] };
+const nativeCases = [
+  { action: "create", argv: ["ctl", "library", "skill", "create", "/staged/SKILL.md", "--skill-id", skill, "--entry", db], receipt: nativeCreated },
+  { action: "update", argv: ["ctl", "library", "skill", "update", page, "--description", "New metadata", "--entry", db], receipt: nativeUpdated },
+  { action: "register", argv: ["ctl", "library", "skill", "register", page, "--entry", db], receipt: nativeRegistered },
+  { action: "remove", argv: ["ctl", "library", "skill", "remove", page, "--entry", db], receipt: nativeRemoved },
+];
+for (const { action, argv, receipt } of nativeCases) {
+  await result(command(...argv), receipt);
+  changedLibrary("A completed native " + action + " invalidates only its exact configured library");
+  await result(command(...argv, "--no-dry-run", "--max-requests=1e2", "--max-bytes", "4096", "--timeout=1000"), receipt);
+  changedLibrary("Native management retains literal false dry-run and bounded integer options");
+  for (const entry of entryUrls) {
+    await result(command(...argv.slice(0, -1), entry), receipt);
+    changedLibrary("Native writes accept the same exact Notion library URL as the CLI");
+  }
+  for (const invalid of [
+    { ...receipt, action: "other" }, { ...receipt, action: undefined }, { ...receipt, contract: "other" },
+    { ...receipt, state: "pending" }, { ...receipt, dry_run: true }, { ...receipt, ok: false },
+    { ...receipt, operation_id: undefined }, { ...receipt, operation_id: "../bad" }, { ...receipt, input_sha256: "bad" },
+    { ...receipt, page_id: "invalid" }, { ...receipt, skill_id: "../bad" },
+    { ...receipt, library: undefined }, { ...receipt, library: { ...library, database_id: otherDb } },
+    { ...receipt, library: { ...library, library_id: "another-library" } },
+    { ...receipt, library: { ...library, data_source_id: sourceTable } },
+    current, sourceCurrent,
+  ]) await result(command(...argv), invalid);
+  for (const flags of [
+    ["--dry-run"], ["--dry-run=yes"], ["--dry-run", "true"], ["--entry", db],
+    ["--operation", operation], ["--resume"], ["--resume=false"], ["--supersede", "old"],
+    ["--native", "SKILL.md"], ["--unknown", "value"], ["--max-requests", "0"],
+    ["--timeout", "1.5"], ["--timeout", "1", "--timeout=2"], ["extra"],
+  ]) await result(command(...argv, ...flags), receipt);
+  for (const cmd of ["ntn-skills " + argv.map(quote).join(" "), "env " + command(...argv),
+    command(...argv) + " && echo done", command(...argv) + " | cat", command(...argv) + "; echo done"])
+    await result(cmd, receipt);
+  assert.deepEqual(changed.splice(0), [], "Native actions cannot borrow other receipt kinds, invalid flags, global commands or shell compounds");
+  const details = { owner: { kind: "skill", id: skill }, skill_id: skill, skill_page_id: page,
+    operation_id: operation, input_sha256: current.input_sha256, next: "reconcile_current" };
+  const failure = { ok: false, error: { code: "WRITE_OUTCOME_UNKNOWN", details } };
+  await result(command(...argv), failure, true);
+  changedLibrary("An exact unfinished native owner permits a conservative reread without claiming completion");
+  for (const invalid of [
+    { ...details, owner: { kind: "source", id: skill } }, { ...details, owner: { kind: "skill", id: "other" } },
+    { ...details, skill_id: undefined }, { ...details, operation_id: undefined }, { ...details, operation_id: "../bad" },
+    { ...details, input_sha256: undefined }, { ...details, next: undefined },
+  ]) await result(command(...argv), { ok: false, error: { code: "WRITE_OUTCOME_UNKNOWN", details: invalid } }, true);
+  await result(command(...argv), { ok: false, error: { code: "INVALID_ARGUMENT" } }, true);
+  assert.deepEqual(changed.splice(0), [], "Native preflight errors and incomplete or foreign operation owners are inert");
+  await result(command(...argv), truncated, true);
+  changedLibrary("Actual host truncation of one scoped native invocation retains conservative reread semantics");
+}
+
+await result(command("ctl", "library", "skill", "create", "/new/SKILL.md", "--entry", otherDb, "--skill-id", "first-native"),
+  { ...nativeCreated, skill_id: "first-native", page_id: secondPage, library: otherLibrary });
+assert.deepEqual(changed.splice(0), [["second"]], "First native creation invalidates an exact database before the new Skill is cached");
+await result(command("ctl", "library", "skill", "create", "/not-opened/author's input.md", "--entry", "library", "--skill-id", skill,
+  "--name", "Author name", "--description=", "--enabled", "true", "--default-context=false", "--members", secondSkill, "--requires", ""), nativeCreated);
+changedLibrary("Native create preserves explicit metadata and exact repeated relation syntax without opening its input");
+await result(command("ctl", "library", "skill", "create", "--entry", db, "--skill-id", skill, "--", "--literal-input.md"), nativeCreated);
+changedLibrary("Native creation preserves a literal operand after end-of-options");
+await result(command("ctl", "library", "skill", "update", skill, "--entry", db, "--input", "/local/main.md", "--path", "references/guide.md",
+  "--file", "assets/one.bin=/local/one.bin", "--file=assets/two.bin=/local/two.bin", "--remove-file", "references/old.md",
+  "--remove-file=assets/old.bin", "--members", secondSkill, "--members", sourcePage, "--requires=", "--enabled=false"), nativeUpdated);
+changedLibrary("Native updates accept the current repeated file and relation selections");
+for (const target of [page, page.replaceAll("-", "").toUpperCase(), "https://www.notion.so/Owned-" + page.replaceAll("-", "")]) {
+  for (const { action, receipt } of nativeCases.filter(value => value.action !== "create")) {
+    const argv = ["ctl", "library", "skill", action, target, "--entry", db,
+      ...(action === "update" ? ["--input", "/local/main.md"] : action === "register" ? ["--skill-id", skill] : [])];
+    await result(command(...argv), receipt);
+    changedLibrary("An exact native page selector must match the returned physical Skill");
+    await result(command(...argv), { ...receipt, page_id: secondPage });
+    await result(command(...argv), { ok: false, error: { details: { owner: { kind: "skill", id: skill }, skill_id: skill,
+      skill_page_id: secondPage, operation_id: operation, input_sha256: current.input_sha256, next: "reconcile_current" } } }, true);
+    assert.deepEqual(changed.splice(0), [], "A receipt or unfinished operation for another page cannot borrow the selected target");
+  }
+}
+for (const { action, receipt } of nativeCases.filter(value => value.action !== "register")) {
+  const argv = ["ctl", "library", "skill", action, action === "create" ? "/input.md" : skill, "--entry", db,
+    ...(action === "create" ? ["--skill-id", skill] : action === "update" ? ["--description", "New metadata"] : [])];
+  await result(command(...argv), receipt);
+  changedLibrary("A native stable selector binds the exact returned Skill identity");
+  await result(command(...argv), { ...receipt, skill_id: secondSkill });
+  assert.deepEqual(changed.splice(0), [], "A native stable selector never becomes a display-name match");
+}
+await result(command("ctl", "library", "skill", "register", page, "--entry", db, "--skill-id", secondSkill), nativeRegistered);
+assert.deepEqual(changed.splice(0), [], "Explicit registration identity must agree with the returned stable identity");
+
+for (const [argv, receipt] of [
+  [nativeCases[0]!.argv, { ok: true, version: 1, contract: "current", action: "create", status: "unchanged", state: "ready",
+    skill_id: skill, page_id: page, input_sha256: current.input_sha256, remote_writes: 0 }],
+  [nativeCases[1]!.argv, { ...nativeUpdated, status: "unchanged" }],
+  [nativeCases[2]!.argv, { ok: true, version: 1, contract: "current", action: "register", status: "unchanged", state: "ready",
+    library, skill_id: skill, page_id: page, files: 1, paths: ["SKILL.md"], remote_writes: 0 }],
+  [nativeCases[3]!.argv, { ok: true, version: 1, contract: "current", action: "remove", status: "already_trashed", state: "removed",
+    library, skill_id: skill, page_id: page, cleanup_verified: false, remote_writes: 0 }],
+  [["ctl", "library", "skill", "remove", skill, "--entry", db], { ok: true, version: 1, contract: "current", action: "remove",
+    library, skill_id: skill, page_id: null, state: "removed", status: "not_found", cleanup_verified: false, remote_writes: 0 }],
+] satisfies Array<[string[], Record<string, unknown>]>) await result(command(...argv), receipt);
+assert.deepEqual(changed.splice(0), [], "Ordinary native no-ops and externally missing or trashed pages do not claim a new completed write");
+
+for (const { action, argv, receipt } of nativeCases.filter(value => value.action !== "remove")) {
+  for (const invalid of [{ ...receipt, files: 0 }, { ...receipt, files: 1.5 }, { ...receipt, files: [] }])
+    await result(command(...argv), invalid);
+  if (action === "register") for (const invalid of [
+    { ...receipt, version: 2 }, { ...receipt, paths: undefined }, { ...receipt, paths: ["SKILL.md"] },
+    { ...receipt, paths: ["SKILL.md", "references/guide.md", "references/guide.md"] },
+  ]) await result(command(...argv), invalid);
+}
+for (const invalid of [
+  { ...nativeRemoved, version: 2 }, { ...nativeRemoved, cleanup_verified: false },
+  { ...nativeRemoved, cleanup_verified: undefined }, { ...nativeRemoved, files: 0 }, { ...nativeRemoved, resources: undefined },
+  { ...nativeRemoved, relations: undefined }, { ...nativeRemoved, files: [{ ...nativeRemoved.files[0], page_id: page }] },
+  { ...nativeRemoved, files: [{ ...nativeRemoved.files[0], content_sha256: "bad" }] },
+  { ...nativeRemoved, files: [nativeRemoved.files[0], nativeRemoved.files[0]] },
+  { ...nativeRemoved, resources: [{ ...nativeRemoved.resources[0], page_id: secondPage }] },
+  { ...nativeRemoved, resources: [{ ...nativeRemoved.resources[0], payload_sha256: "bad" }] },
+  { ...nativeRemoved, relations: [{ ...nativeRemoved.relations[0], field: "Other" }] },
+  { ...nativeRemoved, relations: [{ ...nativeRemoved.relations[0], after: [page, secondPage] }] },
+  { ...nativeRemoved, relations: [{ ...nativeRemoved.relations[0], before: [secondPage] }] },
+  { ...nativeRemoved, relations: [nativeRemoved.relations[0], nativeRemoved.relations[0]] },
+]) await result(command(...nativeCases[3]!.argv), invalid);
+assert.deepEqual(changed.splice(0), [], "Native completion validates its own file inventory and verified removal coordinates");
+await result(command(...nativeCases[3]!.argv), { ...nativeRemoved, files: [], resources: [], relations: [] });
+changedLibrary("Removing a native main with no supporting objects or inbound relations has an honestly empty cleanup inventory");
+
+for (const argv of [
+  ["create", "/input.md"], ["create", "/input.md", "--skill-id", "../bad"],
+  ["create", "/input.md", "--skill-id", skill, "--skill-id", skill],
+  ["create", "/input.md", "--skill-id", skill, "--input", "/other.md"],
+  ["update", skill], ["update", skill, "--path", "SKILL.md"], ["update", skill, "--file", "malformed"],
+  ["update", skill, "--file", "SKILL.md="], ["update", skill, "--file", "=local.md"],
+  ["update", skill, "--enabled", "maybe"], ["update", skill, "--default-context", "1"],
+  ["update", skill, "--description", "one", "--description", "two"],
+  ["update", skill, "--requires", "", "--requires", secondSkill], ["update", skill, "--members", secondSkill, "--members", secondSkill],
+  ["register", skill], ["register", page, "--skill-id", "../bad"], ["register", page, "--requires", secondSkill],
+  ["remove", page, "--enabled", "false"], ["remove", "https://evil.example/" + page.replaceAll("-", "")],
+]) await result(command("ctl", "library", "skill", ...argv, "--entry", db), nativeCases.find(value => value.action === argv[0])!.receipt);
+assert.deepEqual(changed.splice(0), [], "Native parsing respects each action's actual targets, selected inputs and flag grammar");
+
 records = [record("alias", { type: "notion_page", page_id: page, database_id: db, data_source_id: ds })];
 await result(currentCommand, current);
 assert.deepEqual(changed.splice(0), [["personal"]], "Old page locators cannot bind a configured alias to the current library");
@@ -509,4 +659,4 @@ await result(command("ctl", "library", "import", "/staged", "--entry", "library"
 await result(command("ctl", "library", "import", "/staged", "--entry", "library", "--skill-id", skill), pending, true);
 assert.deepEqual(changed.splice(0), [], "Conflicting current page ownership cannot authorize an alias or another source");
 assert.equal(runtime.calls.length, 0, "The observer executes no CLI or SDK calls and never injects content");
-console.log("Current CLI import and Source invalidation checks passed");
+console.log("Current CLI import, Source and native Skill invalidation checks passed");

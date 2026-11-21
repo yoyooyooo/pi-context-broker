@@ -8,9 +8,18 @@ type InvocationTarget = { route: "import"; skillId: string }
   | { route: "source-refresh" | "source-enable" | "source-disable" | "source-remove"; sourceId: string }
   | { route: "source-takeover"; sourceId: string; skillId: string; fileId: string; sourcePath: string; to: "native" | "resource" }
   | { route: "source-restore-follow"; sourceId: string; skillId: string; fileId: string; sourcePath: string };
-type Invocation = { entry: string; sources: NotionSource[] } & InvocationTarget
+type InvocationScope = { entry: string; sources: NotionSource[] };
+type OperationInvocation = InvocationScope & InvocationTarget
   & ({ kind: "apply"; operationId?: string } | { kind: "resume"; operationId: string }
     | { kind: "supersede"; operationId: string; predecessor: string });
+type NativeSkillTarget = { kind: "skill"; skillId: string } | { kind: "page"; pageId: string };
+type NativeSkillInvocation = InvocationScope & { route: "skill"; kind: "native" } & (
+  | { action: "create"; target: Extract<NativeSkillTarget, { kind: "skill" }> }
+  | { action: "update"; target: NativeSkillTarget }
+  | { action: "remove"; target: NativeSkillTarget }
+  | { action: "register"; target: Extract<NativeSkillTarget, { kind: "page" }>; skillId?: string }
+);
+type Invocation = OperationInvocation | NativeSkillInvocation;
 type Library = { libraryId: string; databaseId: string; dataSourceId: string };
 type SourceBinding = { source: NotionSource } & (
   | { kind: "unknown" }
@@ -76,6 +85,87 @@ function literalArgv(command: string): string[] | undefined {
   return result.length ? result : undefined;
 }
 
+function nativeSkillTarget(value: string): NativeSkillTarget | undefined {
+  const pageId = entryId(value);
+  return pageId ? { kind: "page", pageId } : validSharedIdentity(value) ? { kind: "skill", skillId: value } : undefined;
+}
+
+const skillPath = (value: unknown): value is string => typeof value === "string" && value.length > 0
+  && !/[\\\u0000-\u001f\u007f-\u009f]/u.test(value) && !/^[a-z]:/i.test(value)
+  && value.split("/").every(part => part !== "" && part !== "." && part !== "..");
+
+/** Native commands own their automatic operation and accept no recovery flags. */
+function nativeSkillInvocation(args: string[], sources: NotionSource[]): NativeSkillInvocation | undefined {
+  const action = args[3];
+  if (action !== "create" && action !== "update" && action !== "register" && action !== "remove") return undefined;
+  const singleton = new Set(["entry", "max-requests", "max-bytes", "timeout",
+    ...(action === "remove" ? [] : ["name", "description", "enabled", "default-context"]),
+    ...(action === "create" || action === "register" ? ["skill-id"] : []),
+    ...(action === "update" ? ["input", "path"] : [])]);
+  const repeatable = new Set([...(action === "create" || action === "update" ? ["members", "requires"] : []),
+    ...(action === "update" ? ["file", "remove-file"] : [])]);
+  const values = new Map<string, string>(), repeated = new Map<string, string[]>(), operands: string[] = [];
+  for (let index = 4; index < args.length; index++) {
+    const arg = args[index]!;
+    if (arg === "--") { operands.push(...args.slice(index + 1)); break; }
+    if (!arg.startsWith("--")) {
+      if (!arg.length || arg.startsWith("-")) return undefined;
+      operands.push(arg); continue;
+    }
+    const equal = arg.indexOf("="), rawName = arg.slice(2, equal < 0 ? undefined : equal);
+    const name = rawName === "no-dry-run" ? "dry-run" : rawName;
+    if (values.has(name)) return undefined;
+    if (name === "dry-run") {
+      const next = booleanLiteral(args[index + 1]), negated = rawName === "no-dry-run";
+      if (negated && (equal >= 0 || next !== undefined)) return undefined;
+      const value = negated ? false : equal >= 0 ? booleanLiteral(arg.slice(equal + 1)) : next ?? true;
+      if (value === undefined) return undefined;
+      if (!negated && equal < 0 && next !== undefined) index++;
+      values.set(name, String(value)); continue;
+    }
+    if (!singleton.has(name) && !repeatable.has(name)) return undefined;
+    const value = equal < 0 ? args[++index] : arg.slice(equal + 1);
+    if (value === undefined || equal < 0 && value.startsWith("--") || !value.length && !["description", "members", "requires"].includes(name)) return undefined;
+    if (["max-requests", "max-bytes", "timeout"].includes(name) && !positiveInteger(value)) return undefined;
+    if ((name === "enabled" || name === "default-context") && value !== "true" && value !== "false") return undefined;
+    if (repeatable.has(name)) repeated.set(name, [...(repeated.get(name) ?? []), value]);
+    else values.set(name, value);
+  }
+  const entry = values.get("entry"), input = operands[0];
+  if (operands.length !== 1 || !input || !entry?.trim() || /^notion_page:/i.test(entry) || values.get("dry-run") === "true") return undefined;
+  for (const name of ["members", "requires"]) {
+    const targets = repeated.get(name) ?? [];
+    if (targets.length === 1 && targets[0] === "") continue;
+    if (new Set(targets).size !== targets.length || targets.some(value => !nativeSkillTarget(value))) return undefined;
+  }
+  const paths = new Set<string>();
+  for (const file of repeated.get("file") ?? []) {
+    const at = file.indexOf("="), path = file.slice(0, at);
+    if (at < 1 || at === file.length - 1 || !skillPath(path) || paths.has(path)) return undefined;
+    paths.add(path);
+  }
+  for (const path of repeated.get("remove-file") ?? []) {
+    if (!skillPath(path) || paths.has(path)) return undefined;
+    paths.add(path);
+  }
+  const selectedPath = values.get("path");
+  if (selectedPath !== undefined && (!values.has("input") || !skillPath(selectedPath) || paths.has(selectedPath))) return undefined;
+  if (action === "update" && !["input", "name", "description", "enabled", "default-context"].some(name => values.has(name))
+      && repeated.size === 0) return undefined;
+  if (action === "create") {
+    const skillId = values.get("skill-id");
+    return validSharedIdentity(skillId) ? { route: "skill", kind: "native", action, target: { kind: "skill", skillId }, entry, sources } : undefined;
+  }
+  const target = nativeSkillTarget(input);
+  if (!target) return undefined;
+  if (action === "register") {
+    const skillId = values.get("skill-id");
+    return target.kind === "page" && (skillId === undefined || validSharedIdentity(skillId))
+      ? { route: "skill", kind: "native", action, target, skillId, entry, sources } : undefined;
+  }
+  return { route: "skill", kind: "native", action, target, entry, sources };
+}
+
 function invocation(command: string, sources: NotionSource[]): Invocation | undefined {
   const argv = literalArgv(command);
   if (!argv || !sources.length) return undefined;
@@ -84,6 +174,7 @@ function invocation(command: string, sources: NotionSource[]): Invocation | unde
   if (!prefix.every((value, index) => argv[index] === value)) return undefined;
   const args = argv.slice(prefix.length);
   if (args[0] !== "ctl" || args[1] !== "library") return undefined;
+  if (args[2] === "skill") return nativeSkillInvocation(args, sources);
   let route: InvocationTarget["route"];
   if (args[2] === "import") route = "import";
   else if (args[2] === "source") {
@@ -196,7 +287,7 @@ function sourceBinding(source: NotionSource, records: SkillRecord[]): SourceBind
   return known ? { kind: "known", source, library: known, pages } : { kind: "unknown", source };
 }
 
-function operationMatches(call: Invocation, value: Record<string, unknown>, failed = false): boolean {
+function operationMatches(call: OperationInvocation, value: Record<string, unknown>, failed = false): boolean {
   if (!validSharedIdentity(value.operation_id) || call.operationId !== undefined && value.operation_id !== call.operationId &&
       !(failed && call.kind === "supersede" && value.operation_id === call.predecessor)) return false;
   if (call.route === "import") return value.skill_id === call.skillId;
@@ -212,7 +303,7 @@ function currentSkillWrite(result: Record<string, unknown>): CurrentSkillWrite |
   return owner && pageId ? { library: owner, skillId: result.skill_id, pageId, status: result.status } : undefined;
 }
 
-function currentSourceWrite(call: Exclude<Invocation, { route: "import" }>, result: Record<string, unknown>): CurrentWrite | undefined {
+function currentSourceWrite(call: Exclude<OperationInvocation, { route: "import" }>, result: Record<string, unknown>): CurrentWrite | undefined {
   if (result.version !== 1 || result.contract !== "current" || result.dry_run === true || !sourceIdentity(result.source_id) ||
       !hash(result.input_sha256) || !hash(result.configuration_sha256) || !hash(result.revision) ||
       !Array.isArray(result.affected_skill_ids) || !Array.isArray(result.targets)) return undefined;
@@ -275,7 +366,69 @@ function currentSourceWrite(call: Exclude<Invocation, { route: "import" }>, resu
   return pages.size === affected.size ? { library: owner, pages, status: result.status } : undefined;
 }
 
+function nativeTargetMatches(call: NativeSkillInvocation, value: Record<string, unknown>, pageField: "page_id" | "skill_page_id"): boolean {
+  if (!validSharedIdentity(value.skill_id)) return false;
+  if (call.action === "register" && call.skillId !== undefined && call.skillId !== value.skill_id) return false;
+  return call.target.kind === "skill" ? value.skill_id === call.target.skillId : uuid(value[pageField]) === call.target.pageId;
+}
+
+function removalCoordinates(result: Record<string, unknown>, ownerPage: string): boolean {
+  if (!Array.isArray(result.files) || result.files.length > 10000 || !Array.isArray(result.resources) || result.resources.length > 10000
+      || !Array.isArray(result.relations) || result.relations.length > 20000) return false;
+  const pages = new Set([ownerPage]), files = new Set<string>(), paths = new Set<string>(), resources = new Set<string>();
+  for (const file of result.files) {
+    if (!isObject(file) || !validSharedIdentity(file.file_id) || !skillPath(file.path) || !hash(file.content_sha256)) return false;
+    const page = uuid(file.page_id);
+    if (!page || pages.has(page) || files.has(file.file_id) || paths.has(file.path)) return false;
+    pages.add(page); files.add(file.file_id); paths.add(file.path);
+  }
+  for (const resource of result.resources) {
+    if (!isObject(resource) || typeof resource.resource_id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/.test(resource.resource_id)
+        || !hash(resource.payload_sha256)) return false;
+    const page = uuid(resource.page_id);
+    if (!page || pages.has(page) || resources.has(resource.resource_id)) return false;
+    pages.add(page); resources.add(resource.resource_id);
+  }
+  const relationKeys = new Set<string>();
+  for (const relation of result.relations) {
+    if (!isObject(relation) || !validSharedIdentity(relation.skill_id) || relation.field !== "Members" && relation.field !== "Requires"
+        || !Array.isArray(relation.before) || relation.before.length > 10000 || !Array.isArray(relation.after) || relation.after.length > 100) return false;
+    const page = uuid(relation.page_id), before = relation.before.map(uuid), after = relation.after.map(uuid);
+    if (!page || page === ownerPage || before.includes(undefined) || after.includes(undefined)
+        || new Set(before).size !== before.length || new Set(after).size !== after.length || !before.includes(ownerPage)
+        || after.length !== before.length - 1 || after.some(value => value === ownerPage || !before.includes(value))) return false;
+    const key = page + ":" + relation.field;
+    if (relationKeys.has(key)) return false;
+    relationKeys.add(key);
+  }
+  return true;
+}
+
+function nativeSkillWrite(call: NativeSkillInvocation, result: Record<string, unknown>): CurrentWrite | undefined {
+  if (result.ok !== true || result.contract !== "current" || result.action !== call.action || result.dry_run === true
+      || !validSharedIdentity(result.operation_id) || !hash(result.input_sha256) || !nativeTargetMatches(call, result, "page_id")) return undefined;
+  const owner = library(result.library), page = uuid(result.page_id);
+  if (!owner || !page || !validSharedIdentity(result.skill_id)) return undefined;
+  if (call.action === "remove") {
+    if (result.version !== 1 || result.state !== "removed" || result.status !== "removed" || result.cleanup_verified !== true
+        || !removalCoordinates(result, page)) return undefined;
+  } else {
+    if (result.state !== "ready" || typeof result.files !== "number" || !Number.isSafeInteger(result.files) || result.files < 1) return undefined;
+    switch (call.action) {
+      case "create": if (result.status !== "created") return undefined; break;
+      case "update": if (result.status !== "applied") return undefined; break;
+      case "register":
+        if (result.version !== 1 || result.status !== "registered" || !Array.isArray(result.paths)
+            || result.paths.length !== result.files || result.paths.some(path => !skillPath(path)) || new Set(result.paths).size !== result.paths.length) return undefined;
+        break;
+      default: { const exhaustive: never = call; return exhaustive; }
+    }
+  }
+  return { library: owner, pages: new Map([[result.skill_id, page]]), status: call.action === "remove" ? "removed" : "applied" };
+}
+
 function currentWrite(call: Invocation, result: Record<string, unknown>): CurrentWrite | undefined {
+  if (call.route === "skill") return nativeSkillWrite(call, result);
   if (result.ok !== true || !operationMatches(call, result)) return undefined;
   if (call.route !== "import") return currentSourceWrite(call, result);
   const target = currentSkillWrite(result);
@@ -319,7 +472,15 @@ function affectedSources(call: Invocation, output: CliOutput, records: SkillReco
   const result = output.result;
   if (result.ok === false) {
     const error = result.error;
-    if (!isObject(error) || !isObject(error.details) || !operationMatches(call, error.details, true)) return [];
+    if (!isObject(error) || !isObject(error.details)) return [];
+    if (call.route === "skill") {
+      const details = error.details;
+      if (!isObject(details.owner) || details.owner.kind !== "skill" || details.owner.id !== details.skill_id
+          || !validSharedIdentity(details.operation_id) || !hash(details.input_sha256) || details.next !== "reconcile_current"
+          || !nativeTargetMatches(call, details, "skill_page_id")) return [];
+      return entrySources(call, bindings);
+    }
+    if (!operationMatches(call, error.details, true)) return [];
     if (call.route !== "import") {
       const details = error.details;
       if (!isObject(details.owner) || details.owner.kind !== "source" || details.owner.id !== details.source_id ||

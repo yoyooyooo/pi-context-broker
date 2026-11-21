@@ -4,7 +4,7 @@
 
 本次调用者对照、已保留失败及分层验证见[新消费入口迁移记录](notion-consumption-contract-2026-11-05.md)。
 
-Pi 注册 `notion_list({query?, source?, limit?, cursor?})`、`notion_use({ref, refresh?})` 和原生 `read`。list 只返回候选元数据，`count`/`has_more` 表示当前查询分页，`coverage` 单独报告来源完整性；未知覆盖为 null，不把空页解释为完整空目录。`ref` 可为一个返回引用或一起需要的多个根。use 一次准备根与完整 Requires，read 只检查主文或精确资源，未选 Members 不读正文。普通本地 Skill 保留 Pi 原生路径。
+Pi 注册 `notion_list({query?, source?, limit?, cursor?, refresh?})`、`notion_use({ref, refresh?})` 和原生 `read`。list 只返回候选元数据，`count`/`has_more` 表示当前查询分页；`coverage` 报告来源完整性，`freshness.sources` 独立报告原始验证时间、当前年龄、时限、策略和过期状态，未知观察为 null。完整覆盖不代表刚验证过，不把空页解释为最新完整空目录。创建后验证发现或要求最新目录时可用 `refresh:true`：指定 source 只刷新该配置来源，省略则刷新全部已启用配置来源，离线策略不变。它不改变当前回合或已采用的 root/Requires 版本；分页游标跨刷新失效，不能与 `refresh:true` 合用。`ref` 可为一个返回引用或一起需要的多个根。use 一次准备根与完整 Requires，read 只检查主文或精确资源，未选 Members 不读正文。普通本地 Skill 保留 Pi 原生路径。
 
 完整目录与 Default View 通过随包 `listCatalog` SDK 复用 core 查询和缓存。Skill/Router、Prompt 及有预算的预取统一进入 `consume`；首次物化主文并保留完整 File 目录，子文件沿准确绑定按需读取。`source.command`、CLI prepare/read 与完整 export 消费路径已删除，旧 SDK capability 缺失直接失败。管理和 doctor 保留配对 CLI。OMP/Tern 延后；本文历史结果不代表其当前可用性。
 

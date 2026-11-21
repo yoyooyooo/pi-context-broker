@@ -837,11 +837,11 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
       : [];
     const content = [
       "<ntn-skills-guidance>",
-      "Local @Skills stay native; use Notion only for extra content. Editor flags do not change availability or permissions.",
-      "Reuse complete content; refresh only on request. Inspection never activates. Loading authorizes no commands/writes/delegation.",
-      list ? "notion_list searches beyond the default View; failed/partial is not absence." : "Failed/partial discovery is not absence.",
-      ...(read ? ["read(path) inspects. refresh:true inspects latest main without changing task pins. Keep owner/snapshot; never edit sr: handles. paths: same snapshot."] : []),
-      ...(use ? ["notion_use(ref) applies with Requires; refresh:true adopts latest on request; refresh conflicting roots together. Members: candidates. Outside Code mode."] : []),
+      "Local @Skills stay native; Notion is extra content. Editor flags never change availability or permissions.",
+      "Reuse complete content. Inspection never activates. Loading authorizes no commands/writes/delegation.",
+      list ? "notion_list: beyond the default View; refresh:true after writes or for latest metadata, preserving pins. Check freshness; failed/partial is not absence." : "Failed/partial discovery is not absence.",
+      ...(read ? ["read(path) inspects. refresh:true checks latest main; pins fixed. Keep owner/snapshot; copy sr: handles unchanged."] : []),
+      ...(use ? ["notion_use(ref) applies with Requires; refresh:true adopts latest on request, conflicting roots together. Members: candidates. Outside Code mode."] : []),
       ...(read || tools.has("bash") ? [maintenanceGuidance(read ? "read" : "CLI read", list ? "notion_list" : tools.has("bash") ? "CLI list" : undefined,
         use ? "notion_use(ref)" : tools.has("bash") ? "CLI use EXACT_REF" : undefined)] : []),
       ...(tools.has("notion_ctl") ? ["notion_ctl working_set manages active roots and byte budgets; release preserves shared Requires, history and cache."] : []),
@@ -1538,19 +1538,22 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     });
     return publishCatalog(key, promise, changes);
   };
+  const invalidateCatalogSources = (sourceIds: readonly string[], ctx: ExtensionContext) => {
+    // Fence older metadata requests without cancelling an accepted draft or its pins.
+    refreshGeneration++;
+    for (const id of sourceIds) sourceChanges.set(id, refreshGeneration);
+    for (const cwd of new Set([...dollarRegistryByCwd.keys(), catalogCwd(ctx.cwd ?? process.cwd())])) {
+      dollarRegistryByCwd.delete(cwd);
+      notionRefresh.delete(cwd);
+      notionRetryAt.delete(cwd);
+    }
+  };
   installCliWriteInvalidation(pi, {
     sources: config.sources ?? [],
     records: () => [...dollarRegistryByCwd.values()].flatMap(entry => entry.status === "ready"
       ? entry.result.records.filter((record): record is SkillRecord => Boolean(record.sourceId)) : []),
     changed(sourceIds, ctx) {
-      // Current import changes fence old directory requests without cancelling an accepted draft.
-      refreshGeneration++;
-      for (const id of sourceIds) sourceChanges.set(id, refreshGeneration);
-      for (const cwd of new Set([...dollarRegistryByCwd.keys(), catalogCwd(ctx.cwd ?? process.cwd())])) {
-        dollarRegistryByCwd.delete(cwd);
-        notionRefresh.delete(cwd);
-        notionRetryAt.delete(cwd);
-      }
+      invalidateCatalogSources(sourceIds, ctx);
       sourceRuntime.forgetSources(sourceIds);
     },
   });
@@ -1684,21 +1687,28 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     config,
     finalRequests,
     metadataInvalidated: ctx => unseenChanges(catalogCwd(ctx.cwd ?? process.cwd())).size > 0,
-    getRecords: (ctx, signal) => ownCatalog(async owned => {
+    getRecords: (ctx, signal, refreshSourceIds) => ownCatalog(async owned => {
       // Pi supplies persisted View selection at session_start. Do not start a
       // context-free discovery that the first session immediately cancels.
       if (paths.host === "pi" && adapter.metadataDiscovery === "deferred" && ctx === undefined) return { records: [], failures: [] };
-      const result = await currentCatalog(ctx?.cwd, ctx);
-      // Handoff only to this discovery generation. A cancellation or a later
-      // session cannot retain a second authority for View freshness or permissions.
-      const directories = result.directories;
-      delete result.directories;
-      const pairedGeneration = pairedCatalogGenerations.get(result);
-      pairedCatalogGenerations.delete(result);
-      owned.throwIfAborted();
-      const paired = pairedGeneration?.menu === menuGeneration && pairedGeneration.refresh === refreshGeneration ? directories : undefined;
-      return resolveViewDiscovery(config, { records: result.records.filter((record): record is SkillRecord => Boolean(record.sourceId)), failures: result.failures, lists: result.lists }, ctx, owned, paired,
-        pairedGeneration?.menu === menuGeneration && pairedGeneration.refresh === refreshGeneration && pairedGeneration.forceViewRefresh === true);
+      if (refreshSourceIds?.length) invalidateCatalogSources(refreshSourceIds, ctx ?? {});
+      for (;;) {
+        const requestedGeneration = refreshGeneration;
+        const result = await currentCatalog(ctx?.cwd, ctx);
+        owned.throwIfAborted();
+        if (requestedGeneration !== refreshGeneration) continue;
+        // Handoff only to this discovery generation. Cancelled consumers cannot
+        // consume a paired View that belongs to the current discovery request.
+        const directories = result.directories;
+        delete result.directories;
+        const pairedGeneration = pairedCatalogGenerations.get(result);
+        pairedCatalogGenerations.delete(result);
+        const paired = pairedGeneration?.menu === menuGeneration && pairedGeneration.refresh === refreshGeneration ? directories : undefined;
+        const next = await resolveViewDiscovery(config, { records: result.records.filter((record): record is SkillRecord => Boolean(record.sourceId)), failures: result.failures, lists: result.lists }, ctx, owned, paired,
+          pairedGeneration?.menu === menuGeneration && pairedGeneration.refresh === refreshGeneration && pairedGeneration.forceViewRefresh === true);
+        owned.throwIfAborted();
+        if (requestedGeneration === refreshGeneration) return next;
+      }
     }, signal),
     lookupReference: (ctx, signal) => ownCatalog(owned => discoverSourceCatalog({ ...config, sources: config.sources?.filter(source => source.type === "notion") }, ctx.cwd, { signal: owned, refreshSourceIds: config.sources?.filter(source => source.type === "notion" && !source.discovery?.offline).map(source => source.id) }), signal),
     resolveNamedReference: (ref, ctx, signal, refresh) => ownCatalog(owned => resolveNotionReference(ref, notionSources(), ctx.cwd ?? process.cwd(), { signal: owned, refresh }), signal),

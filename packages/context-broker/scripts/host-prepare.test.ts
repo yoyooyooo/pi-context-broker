@@ -1318,6 +1318,68 @@ test("F6: list expiry is reached without an editor, warm access does not renew i
   } finally { setSystemTime(); }
 });
 
+test("explicit metadata refresh supersedes a blocked cached request and coalesces callers without waiting for retired work", async () => {
+  const f = await fixture();
+  const old = Promise.withResolvers<void>(), force = Promise.withResolvers<void>();
+  const normalStarted = Promise.withResolvers<void>(), forceStarted = Promise.withResolvers<void>();
+  let blockNormal = false, forceCalls = 0;
+  const data = (description: string) => ({ records: f.records.map(record => ({ ...record, description, body: undefined, preparationBinding: undefined })), failures: [] });
+  const h = await f.install(undefined, { getRecords: async (_ctx, _signal, refreshSourceIds) => {
+    if (refreshSourceIds?.length) {
+      expect(refreshSourceIds).toEqual(["controlled"]); forceCalls++; forceStarted.resolve(); await force.promise;
+      return data("current metadata");
+    }
+    if (blockNormal) { normalStarted.resolve(); await old.promise; return data("retired metadata"); }
+    return data("original metadata");
+  } });
+  await h.host.refresh(f.ctx);
+  blockNormal = true;
+  const retired = h.host.refresh(f.ctx);
+  await normalStarted.promise;
+  const cancelled = new AbortController();
+  const cancelledRead = h.search.execute("cancelled-waiter", {}, cancelled.signal, undefined, f.ctx).catch(error => error);
+  const ordinary = h.search.execute("ordinary-waiter", {}, undefined, undefined, f.ctx);
+  const forced = h.search.execute("force-a", { refresh: true }, undefined, undefined, f.ctx);
+  await forceStarted.promise;
+  const joined = h.search.execute("force-b", { source: "controlled", refresh: true }, undefined, undefined, f.ctx);
+  cancelled.abort();
+  expect(await cancelledRead).toMatchObject({ code: "SOURCE_ACTIVATION_CANCELLED" });
+  force.resolve();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const current = await Promise.race([Promise.all([ordinary, forced, joined]), new Promise<never>((_resolve, reject) => {
+      timeout = setTimeout(() => reject(new Error("Current discovery waited for a retired producer")), 1000);
+    })]);
+    expect(current.every(result => JSON.stringify(result).includes("current metadata"))).toBe(true);
+    expect(forceCalls).toBe(1);
+  } finally { clearTimeout(timeout); old.resolve(); await retired; }
+  expect(JSON.stringify(await h.search.execute("after-retired", {}, undefined, undefined, f.ctx))).toContain("current metadata");
+  expect(f.calls).toEqual([]); expect(f.persisted).toEqual([]); expect(f.resourceReads).toEqual([]);
+});
+
+test("explicit refresh unions overlapping source requests and a later session fences their publication", async () => {
+  const f = await fixture(); f.sources.push({ id: "other", type: "notion", prefetch: false });
+  const pending = Promise.withResolvers<void>();
+  const requests: Array<{ sources: readonly string[]; signal: AbortSignal | undefined }> = [];
+  let description = "initial";
+  const h = await f.install(undefined, { getRecords: async (_ctx, signal, sources) => {
+    if (sources?.length) { requests.push({ sources, signal }); await pending.promise; }
+    return { records: f.records.map(record => ({ ...record, description: sources ? "retired force" : description, body: undefined, preparationBinding: undefined })), failures: [] };
+  } });
+  await h.host.refresh(f.ctx);
+  const first = h.search.execute("one-source", { source: "controlled", refresh: true }, undefined, undefined, f.ctx).catch(error => error);
+  const second = h.search.execute("second-source", { source: "other", refresh: true }, undefined, undefined, f.ctx).catch(error => error);
+  expect(requests.map(request => request.sources)).toEqual([["controlled"], ["controlled", "other"]]);
+  expect(requests[0]!.signal?.aborted).toBe(true);
+  await f.emit("session_before_switch", {}, f.ctx);
+  description = "new session metadata";
+  await f.emit("session_start", {}, f.ctx);
+  pending.resolve();
+  for (const result of await Promise.all([first, second])) expect(result).toMatchObject({ code: "SOURCE_ACTIVATION_CANCELLED" });
+  expect(JSON.stringify(await h.search.execute("new-session", {}, undefined, undefined, f.ctx))).toContain("new session metadata");
+  expect(f.calls).toEqual([]); expect(f.persisted).toEqual([]);
+});
+
 test("fresh metadata without a body is not affected by Default Context outside an explicit View filter", async () => {
   for (const enabled of [true,false]) for (const defaultContext of [true,false]) {
     const f = await fixture(true);const {host,search} = await f.install(undefined,{getRecords:async()=>({
