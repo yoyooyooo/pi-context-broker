@@ -139,6 +139,15 @@ function bindReadDelivery(f, content, proofs, toolCallId = 't0') {
 }
 function fixture({ calls = [], answerText = '合计：100 元', bodies = {}, scope = 'a'.repeat(64) } = {}) {
   const files = new Map(), bodyFiles = [];
+  const brokerRoot = '/owned/candidate/packages/context-broker';
+  const brokerSource = { path: brokerRoot + '/src/index.ts', source: brokerRoot, scope: 'project', origin: 'package', baseDir: brokerRoot };
+  const toolSource = name => ['read', 'grep', 'find', 'ls', 'tool_search', 'codemode'].includes(name)
+    ? { path: 'builtin:' + name, source: 'builtin' }
+    : ['notion_list', 'notion_use', 'notion_ctl'].includes(name) ? { ...brokerSource } : undefined;
+  const artifact = (path, value) => {
+    const bytes = Buffer.from(typeof value === 'string' ? value : JSON.stringify(value));
+    files.set(path, bytes); return { path, bytes: bytes.length, sha256: hash(bytes) };
+  };
   const bodyBindings = Object.fromEntries(Object.entries(bodies).map(([key, text]) => {
     const bytes = Buffer.from(text), value = { path: '/owned/private/' + key.replaceAll('/', '_'), sha256: hash(bytes), bytes: bytes.length,
       resourcePath: key.split('/').slice(1).join('/') };
@@ -174,13 +183,23 @@ function fixture({ calls = [], answerText = '合计：100 元', bodies = {}, sco
       { phase: 'request_end', id: i + 1, category: 'model', modelApi: 'openai-completions', status: 200, outcome: 'completed',
         responseEntitySha256: 'f'.repeat(64), responseEntityBytes: 60 });
     tasks.push({ phase: 'provider_payload', sha256, bytes: bytes.length, payloadFile: path, bodies: counts });
-    if (i < calls.length) tasks.push({ phase: 'tool_call', toolCallId: 't' + i, toolName: calls[i].name, inputSha256: hash(JSON.stringify(calls[i].arguments ?? {})), selectors: calls[i].arguments ?? {} },
+    if (i < calls.length) tasks.push({ phase: 'tool_call', toolCallId: 't' + i, toolName: calls[i].name, toolSource: calls[i].toolSource ?? toolSource(calls[i].name), inputSha256: hash(JSON.stringify(calls[i].arguments ?? {})), selectors: calls[i].arguments ?? {} },
       { phase: 'tool_result', toolCallId: 't' + i, toolName: calls[i].name, isError: calls[i].isError === true });
   }
   tasks.push({ phase: 'assistant_final', text: answerText, sha256: hash(answerText), bytes: Buffer.byteLength(answerText), stopReason: 'stop', success: true });
   const binding = { version: 1, public: {}, private: { objects: {}, bodies: bodyBindings, facts: { total: { anyOf: ['合计：100 元', '总额是100元'] } }, readbacks: {} } };
   const observed = { costs, transport, tasks, session, source: [], sourceCoverage: true,
     selection: { version: 1, sessionId: session.sessionId, leafId: session.leafId, branchSha256: session.branchSha256, scopes: [], active: [] } };
+  const baseline = [
+    artifact(brokerSource.path, '// Frozen fixture Broker implementation\n'),
+    artifact(brokerRoot + '/package.json', { name: 'pi-context-broker', pi: { extensions: ['./src/index.ts'] } }),
+  ];
+  observed.implementation = { version: 1,
+    candidateArtifact: artifact('/owned/evidence/started.json', { version: 1, baseline,
+      sourceTuple: [{ repository: 'broker', commit: 'c'.repeat(40), dirty: false, tree_sha256: 'd'.repeat(64) }] }),
+    configArtifact: artifact('/owned/evidence/config.json', { brokerRoot }) };
+  observed.visibility = { nativeCommands: artifact('/owned/evidence/commands.json',
+    [{ name: 'context-broker', source: 'extension', sourceInfo: brokerSource }]) };
   const run = expect => analyzeNotionAgentTurn({ id: 'test-turn', expect }, observed, binding, { inspectPayload: oracle,
     readArtifact: async path => { if (!files.has(path)) throw new Error('missing artifact ' + path); return files.get(path); } });
   const bindRemote = (alias, version, textKey, owner = 'skill-' + alias, deliver = true) => {
@@ -317,6 +336,76 @@ test('a shell command is not assumed read-only because its final answer says so'
   const result = await f.run([{ kind: 'no-semantic-writes' }]);
   assert.equal(result.status, 'blocked');
   assert.ok(result.assertions.some(item => item.code === 'TOOL_EFFECTS_UNKNOWN'));
+});
+
+test('read effects bind the actual Broker override to its frozen candidate and host registration', async () => {
+  const f = fixture({ calls: [{ name: 'read', arguments: { path: '/owned/skill.md' } }] });
+  const commands = JSON.parse(f.files.get(f.observed.visibility.nativeCommands.path));
+  f.observed.tasks.find(row => row.phase === 'tool_call').toolSource = { ...commands[0].sourceInfo };
+  const result = await f.run([{ kind: 'no-semantic-writes' }, { kind: 'source-network-attempts', max: 0 }]);
+  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+  const proof = result.assertions.find(row => row.kind === 'no-semantic-writes').details.implementations;
+  assert.equal(proof[0].owner, 'broker');
+  assert.equal(proof[0].commit, 'c'.repeat(40));
+});
+
+test('a familiar read name without actual implementation provenance cannot prove zero effects', async () => {
+  for (const name of ['read', 'notion_list', 'notion_use', 'tool_search']) {
+    const f = fixture({ calls: [{ name }] });
+    delete f.observed.tasks.find(row => row.phase === 'tool_call').toolSource;
+    assert.equal((await f.run([{ kind: 'no-semantic-writes' }])).status, 'blocked', name);
+  }
+});
+
+test('a same-name Broker replacement cannot borrow the actual candidate owner', async () => {
+  const f = fixture({ calls: [{ name: 'notion_list' }] });
+  f.observed.tasks.find(row => row.phase === 'tool_call').toolSource.path = '/another/package/src/index.ts';
+  const result = await f.run([{ kind: 'no-semantic-writes' }, { kind: 'source-network-attempts', max: 0 }]);
+  assert.equal(result.status, 'blocked');
+  assert.ok(result.assertions.some(row => row.code === 'TOOL_IMPLEMENTATION_UNKNOWN'));
+});
+
+test('a changed frozen Broker entry cannot retain its earlier effects identity', async () => {
+  const f = fixture({ calls: [{ name: 'notion_list' }] });
+  const started = JSON.parse(f.files.get(f.observed.implementation.candidateArtifact.path));
+  f.files.set(started.baseline[0].path, Buffer.from('// changed candidate'));
+  const result = await f.run([{ kind: 'no-semantic-writes' }]);
+  assert.equal(result.status, 'failed');
+  assert.ok(result.assertions.some(row => row.code === 'ARTIFACT_CHANGED'));
+});
+
+test('host registration, clean candidate, and selected configuration must describe the same Broker', async () => {
+  for (const [artifactKey, mutate] of [
+    ['commands', value => { value[0].sourceInfo.baseDir = '/another/package'; }],
+    ['candidate', value => { value.sourceTuple[0].dirty = true; }],
+    ['candidate', value => { value.baseline = value.baseline.filter(row => !row.path.endsWith('/src/index.ts')); }],
+    ['config', value => { value.brokerRoot = '/different/candidate'; }],
+  ]) {
+    const f = fixture({ calls: [{ name: 'notion_list' }] });
+    const target = artifactKey === 'commands' ? f.observed.visibility.nativeCommands
+      : f.observed.implementation[artifactKey === 'candidate' ? 'candidateArtifact' : 'configArtifact'];
+    const value = JSON.parse(f.files.get(target.path)); mutate(value);
+    const bytes = Buffer.from(JSON.stringify(value)); f.files.set(target.path, bytes);
+    Object.assign(target, { sha256: hash(bytes), bytes: bytes.length });
+    assert.equal((await f.run([{ kind: 'no-semantic-writes' }])).status, 'blocked');
+  }
+});
+
+test('a transparent builtin container cannot excuse an untrusted same-name read child', async () => {
+  const f = composedLocalFixture();
+  const child = f.observed.tasks.find(row => row.phase === 'tool_call' && row.toolName === 'read');
+  child.toolSource = { path: 'mcp:other/read', source: 'other', origin: 'mcp' };
+  const result = await f.run([{ kind: 'no-semantic-writes' }]);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.efficiency.actualToolAttempts, 2);
+  assert.ok(result.assertions.some(row => row.code === 'TOOL_IMPLEMENTATION_UNKNOWN'));
+});
+
+test('a frozen Broker owner does not permit mutating or unknown notion_ctl arguments', async () => {
+  const f = fixture({ calls: [{ name: 'notion_ctl', arguments: { working_set: 'show', remove: 'all' } }] });
+  const result = await f.run([{ kind: 'no-semantic-writes' }]);
+  assert.equal(result.status, 'blocked');
+  assert.ok(result.assertions.some(row => row.code === 'TOOL_EFFECTS_UNKNOWN'));
 });
 
 function interactionFixture() {
@@ -735,13 +824,14 @@ function composedLocalFixture({ childName = 'read', retainResult = true } = {}) 
     nestedCalls: { complete: true, calls: [{ id: childId, name: childName, arguments: childArgs, status: 'ok' }] },
     details: { calls: [{ id: childId, name: childName, status: 'ok' }] } });
   const start = f.observed.tasks.find(row => row.phase === 'tool_call');
-  Object.assign(start, { toolName: 'codemode', inputSha256: hash(JSON.stringify(parentArgs)), selectors: {} });
+  Object.assign(start, { toolName: 'codemode', inputSha256: hash(JSON.stringify(parentArgs)), selectors: {},
+    toolSource: { path: 'builtin:codemode', source: 'builtin' } });
   const resultIndex = f.observed.tasks.findIndex(row => row.phase === 'tool_result'), parentResult = f.observed.tasks[resultIndex];
   parentResult.toolName = 'codemode';
   const bytes = Buffer.from(JSON.stringify(childContent)), path = '/owned/private/nested-result.json';
   f.files.set(path, bytes);
   f.observed.tasks.splice(resultIndex, 0,
-    { phase: 'tool_call', toolCallId: childId, toolName: childName, inputSha256: hash(JSON.stringify(childArgs)), selectors: childArgs },
+    { phase: 'tool_call', toolCallId: childId, toolName: childName, toolSource: { path: 'builtin:' + childName, source: 'builtin' }, inputSha256: hash(JSON.stringify(childArgs)), selectors: childArgs },
     { phase: 'tool_result', toolCallId: childId, toolName: childName, isError: false,
       ...(retainResult ? { contentArtifact: { path, sha256: hash(bytes), bytes: bytes.length } } : {}) });
   f.observed.session = inspect(f.entries);
