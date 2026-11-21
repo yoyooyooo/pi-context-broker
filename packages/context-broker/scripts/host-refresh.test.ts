@@ -17,6 +17,51 @@ const payloadText = (turn: Awaited<ReturnType<Session["turn"]>>) => {
   return turn.payload!.messages.map(message => message.content).join("\n");
 };
 
+test("public use and read retain the exact disabled Requires diagnosis without replacing the fixed task", async () => {
+  const h = await activeNotionSession();
+  try {
+    const old = await h.seed(["root", "independent"]), root = old.records.find(record => record.name === "root")!;
+    const required = old.records.find(record => record.name === "required")!, ref = h.fixedRef(root);
+    const page = "41f5636c-236e-81cb-b654-ecb578fa8c52";
+    const diagnostic = { code: "SHARED_ROUTER_MEMBER_UNAVAILABLE", field: "Requires", reason: "disabled", page_id: page };
+    h.f.state.consume = async () => h.failed(diagnostic.code, required, { ...diagnostic, token: "private-token", response_body: "private-response" });
+    const before = h.selected().scopes.get(root.sourceScope!)!;
+    const error = await h.tool("notion_use").execute("disabled-required", { ref, refresh: true }, undefined, undefined, h.ctx).catch(error => error);
+    const use = JSON.parse(error.message);
+    expect(use.diagnostic).toEqual(diagnostic);
+    expect(use.error).toContain("Requires"); expect(use.error).toContain("Enabled=false");
+    expect(use.error).not.toContain("source configuration"); expect(use.error).not.toContain("/context-broker refresh");
+    expect(use.error).not.toContain("source notion unavailable");
+    expect(error.details).toMatchObject({ field: "Requires", reason: "disabled", page_id: page });
+    const read = await h.read(ref, true).catch(error => error), blocked = JSON.parse(read.message);
+    expect(blocked.diagnostic).toEqual(diagnostic);
+    expect(blocked.admission.code).toBe(diagnostic.code);
+    for (const value of [use, blocked]) {
+      expect(JSON.stringify(value)).not.toContain("private-token"); expect(JSON.stringify(value)).not.toContain("private-response");
+    }
+    expect(h.selected().scopes.get(root.sourceScope!)!.bindings).toEqual(before.bindings);
+    expect(h.active().selection.scopes.get(root.sourceScope!)!.bindings).toEqual(before.bindings);
+    const continued = await h.turn("Continue the original task without changing its version.", old.records);
+    const text = payloadText(continued);
+    for (const record of old.records) expect(text).toContain(record.body!.trim());
+  } finally { await h.close(); }
+});
+
+test("an unavailable relation without a disabled observation stays unknown in the public diagnosis", async () => {
+  const h = await activeNotionSession();
+  try {
+    const old = await h.seed(), root = old.records.find(record => record.name === "root")!;
+    const page = "41f5636c-236e-81cb-b654-ecb578fa8c52";
+    h.f.state.consume = async () => h.failed("SHARED_ROUTER_MEMBER_UNAVAILABLE", h.record("required"), { field: "Requires", page_id: page });
+    const error = await h.tool("notion_use").execute("unavailable-required", { ref: h.fixedRef(root), refresh: true }, undefined, undefined, h.ctx).catch(error => error);
+    const result = JSON.parse(error.message);
+    expect(result.diagnostic).toEqual({ code: "SHARED_ROUTER_MEMBER_UNAVAILABLE", field: "Requires", page_id: page });
+    expect(result.error).toContain("missing, inaccessible or outside");
+    expect(result.error).not.toContain("Enabled=false");
+    expect(result.error).not.toContain("ACCESS_DENIED");
+  } finally { await h.close(); }
+});
+
 test("fresh native inspection accepts an issued fixed ref without replacing active pins", async () => {
   const h = await activeNotionSession();
   try {

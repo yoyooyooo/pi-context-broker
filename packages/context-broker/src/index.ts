@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { sessionSourceSnapshot, sessionSourceBindings, sourceContentIdentity, sourceDeliveryReceipt, sourceBodyLoaded, projectSelectedSourceMessages, withSessionSourceReceipts } from "./session-source-snapshot";
-import { sessionSelection, selectedBinding, persistSessionSelection, exportSessionSelection } from "./session-graph";
+import { sessionSelection, selectedBinding, selectedClosure, samePreparationBinding, persistSessionSelection, exportSessionSelection, type SessionSelection } from "./session-graph";
 import { activeSelection, confirmActiveSources } from "./session-active";
 import { createActiveSourceRestorer } from "./session-recovery";
 import { checkPreparationSignal, isPreparationCancelled } from "./skill-preparation";
@@ -109,6 +109,7 @@ const DEFAULT_PATH_MODE: PathMode = "home-relative";
 type SkillInjectionPresentation = Pick<HostCapabilities, "skillInstructions"> & {
   sourceReference?(record: SkillRecord): string | undefined;
   sourceFiles?(record: SkillRecord): readonly { path: string; ref: string }[] | undefined;
+  sourceTaskRole?(record: SkillRecord): { role: "root" } | { role: "required"; required_by: readonly string[] } | undefined;
 };
 const DOLLAR_SKILL_PATTERN = "(?:^|[^\\w\\\\$])\\$(?<query>[^\\s$]+?)(?=$|[\\s,，。!！？?；;、:：)）\\]】}]|\\.+(?=$|[\\s,，。!！？?；;、:：)）\\]】}]))";
 const DEFAULT_RULES: InvocationRule[] = [
@@ -1018,8 +1019,10 @@ function renderSkillRecord(injection: ContextInjection, config: ConfigFile, pres
     // materialized yet. A cache directory is neither an inventory nor an entrypoint.
     const files = (presentation.sourceFiles?.(skill) ?? skill.preparationDirectory?.files ?? [])
       .filter(file => file.path !== skill.entrypoint).map(({ path, ref }) => ({ path, ref }));
+    const taskRole = presentation.sourceTaskRole?.(skill);
     return [
       `<context-broker-record kind="${recordKind(skill)}" name="${escapeAttribute(skill.name)}" ref="${escapeAttribute(ref)}">`,
+      ...(taskRole ? [`<task-role>${escapeText(JSON.stringify(taskRole))}</task-role>`] : []),
       ...(files.length ? [`<resources>${escapeText(JSON.stringify(files))}</resources>`] : []),
       "<body>",
       escapeText(skill.body),
@@ -1646,8 +1649,17 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       await menu.followUp;
     }).catch(error => { if (generation === menuGeneration) ui?.notify?.(catalogError(error), "error"); });
   });
-  const injectionPresentation = (ctx: ExtensionContext, mode: "selected" | "restored" = "selected"): SkillInjectionPresentation => ({
+  const injectionPresentation = (ctx: ExtensionContext, mode: "selected" | "restored" = "selected", restoredSelection?: SessionSelection): SkillInjectionPresentation => ({
     ...adapter,
+    sourceTaskRole: record => {
+      if (mode !== "restored" || record.source !== "notion" || !record.preparationBinding) return undefined;
+      const scope = restoredSelection?.scopes.get(record.preparationBinding.scope), binding = scope?.bindings.get(record.id!);
+      if (!scope || !binding || !samePreparationBinding(binding, record.preparationBinding)) return undefined;
+      if (scope.roots.has(binding.record.id)) return { role: "root" };
+      const required_by = [...scope.roots].filter(root => selectedClosure(scope, [root]).has(binding.record.id))
+        .flatMap(root => { const owner = scope.bindings.get(root); return owner ? [owner.ref] : []; }).sort();
+      return required_by.length ? { role: "required", required_by } : undefined;
+    },
     sourceReference: record => {
       if (paths.host !== "pi" || record.source !== "notion" || !record.preparationBinding) return undefined;
       const directoryRedacted = configuredPathMode(config) === "hash" || configuredPathMode(config) === "basename";
@@ -1773,8 +1785,8 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
         }
         return restored;
       }),
-      render: (records, ctx) => records.length ? buildInjectedPayloadFromInjections(records.map(record => ({ record,
-        query: record.token ?? record.name, ruleIds: [] })), config, injectionPresentation(ctx, "restored")) : undefined,
+      render: (records, ctx, selection) => records.length ? buildInjectedPayloadFromInjections(records.map(record => ({ record,
+        query: record.token ?? record.name, ruleIds: [] })), config, injectionPresentation(ctx, "restored", selection)) : undefined,
     }) : undefined,
     confirmDelivery: paths.host === "pi" ? (records, messages, ctx) => confirmActiveSources(pi, ctx, records, messages) : undefined,
     isLoaded: (record, ctx) => hasLoadedRecord(projectSelectedSourceMessages(messagesFromActiveSessionContext(ctx), sessionSelection(ctx)), record),

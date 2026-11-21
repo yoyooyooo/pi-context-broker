@@ -143,6 +143,7 @@ test("current acquisition failures retain their next action across catalog, body
     ["STATE_CUTOVER_REQUIRED", "STATE_CUTOVER_REQUIRED", "fresh NTN_SKILLS_HOME"],
     ["UPSTREAM_GIT_RUNTIME_UNSUPPORTED", "UPSTREAM_GIT_RUNTIME_UNSUPPORTED", "--no-lazy-fetch"],
     ["CURRENT_SOURCE_REQUIRED", "CURRENT_SOURCE_REQUIRED", "Migrate its current content"],
+    ["CURRENT_SCHEMA_REQUIRED", "CURRENT_SCHEMA_REQUIRED", "authorized management migration"],
     ["SHARED_ACQUISITION_SCOPE", "SHARED_ACQUISITION_SCOPE", "select its current content"],
     ["SHARED_SOURCE_MISSING", "SHARED_SOURCE_MISSING", "select its current content"],
     ["SHARED_SOURCE_CONFLICT", "SHARED_SOURCE_CONFLICT", "select its current content"],

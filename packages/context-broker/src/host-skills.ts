@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from "node:util";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { InvocationError, recordIdentity } from "./discovery-records";
 import { assertSourceAvailable, formatSourceFailures, hasEnabledNotionSource } from "./sources";
-import { SourceError, SourceReferenceAmbiguity, ReferenceMiss, sourceFailureMessage } from "./notion-source";
+import { SourceError, SourceReferenceAmbiguity, ReferenceMiss, sourceFailureMessage, sourceFailureDiagnostic } from "./notion-source";
 import { createActivationFeedback, ACTIVATION_MESSAGE } from "./activation-feedback";
 import { checkPreparationSignal, createPreparationGate, preparationCancelled, type ActivePreparation } from "./skill-preparation";
 import type { AgentMessage, ConfigFile, ExtensionAPI, ExtensionContext, ImageContent, SkillRecord, DiscoveryResult, SourceFailure, NotionViewState, ProjectedSessionEntry, ToolCallEvent, ToolCallResult } from "./types";
@@ -88,7 +88,9 @@ function failure(error: unknown): string {
   if (error instanceof SourceReferenceAmbiguity) return error.message;
   if (error instanceof SourceError && error.code === "CONTENT_DISABLED")
     return `context-broker Skill disabled (CONTENT_DISABLED). ${sourceFailureMessage(error.code)}`;
-  if (error instanceof SourceError) return `context-broker source ${error.sourceId} unavailable (${error.code}). ${sourceFailureMessage(error.code)}`;
+  if (error instanceof SourceError && error.code === "SHARED_ROUTER_MEMBER_UNAVAILABLE")
+    return `context-broker preparation incomplete (${error.code}). ${sourceFailureMessage(error.code, error.details)}`;
+  if (error instanceof SourceError) return `context-broker source ${error.sourceId} unavailable (${error.code}). ${sourceFailureMessage(error.code, error.details)}`;
   if (error instanceof InvocationError) return error.message;
   return `context-broker activation failed (${typeof code === "string" && /^[A-Z_]+$/.test(code) ? code : "SOURCE_ACTIVATION_FAILED"})`;
 }
@@ -1735,6 +1737,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       } catch (error) {
         if (!acquiring) throw error;
         const effects = combineConsumptionEffects([...observedEffects, errorConsumptionEffects(error)]);
+        const diagnostic = error instanceof SourceError ? sourceFailureDiagnostic(error.code, error.details) : undefined;
         const diagnostics = error !== null && typeof error === "object" && "code" in error && error.code === "SOURCE_SESSION_CONFLICT" && "details" in error
           ? preparationFailureDetails(error.details) : undefined;
         const conflict = diagnostics ? { ...diagnostics, ...(Array.isArray(diagnostics.roots) ? { roots: diagnostics.roots.map(root => {
@@ -1743,6 +1746,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
           return { ...root, ...(record ? { ref: modelReference(record, ctx) ?? record.ref } : {}) };
         }) } : {}) } : undefined;
         const message = JSON.stringify({ ok: false, status: signal?.aborted ? "cancelled" : "failed", error: failure(error), effects,
+          ...(diagnostic ? { diagnostic } : {}),
           ...(conflict ? { conflict } : {}),
           ...(error instanceof WorkingSetBudgetError ? { working_set: error.details.working_set } : {}) });
         throw consumptionFailure(error, message, effects);
@@ -1915,8 +1919,9 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     // only the boundary facts here; a stage is not a new authority proof.
     // Reference ambiguity is already a public JSON choice response. Preserve
     // its top-level candidates; the admission remains available in details.
+    const diagnostic = error instanceof SourceError ? sourceFailureDiagnostic(error.code, error.details) : undefined;
     const reason = stage === "reference" && error instanceof SourceReferenceAmbiguity ? failure(error)
-      : JSON.stringify({ error: message ?? failure(error), ...(effects ? { effects } : {}), admission });
+      : JSON.stringify({ error: message ?? failure(error), ...(diagnostic ? { diagnostic } : {}), ...(effects ? { effects } : {}), admission });
     return { block: true, reason,
       ...(effects ? { effects } : {}), admission };
   }

@@ -6,6 +6,45 @@ import { createActiveSourceRestorer } from "../src/session-recovery";
 import { sourceDeliveryReceipt } from "../src/session-source-snapshot";
 import { DEFAULT_RESOURCE_READ_BUDGET } from "../src/resource-read-types";
 
+test("restored bodies retain active task roots and the shared Required ownership after compact", async () => {
+  const h = await activeNotionSession();
+  try {
+    const graph = await h.seed(["root", "second", "independent"]), history = JSON.stringify(h.branch);
+    const turn = await h.turn("Continue the same task after compact.");
+    expect(turn.error).toBeUndefined(); expect(turn.provider).toBe(true);
+    const text = turn.payload!.messages.map(message => message.content).join("\n");
+    const records = [...text.matchAll(/<context-broker-record[^>]* name="([^"]+)"[^>]*>([\s\S]*?)<\/context-broker-record>/g)];
+    expect(records).toHaveLength(4);
+    for (const name of ["root", "second", "independent"]) {
+      const segment = records.find(record => record[1] === name)?.[2];
+      expect(segment).toContain('<task-role>{"role":"root"}</task-role>');
+    }
+    const owners = [h.record("root"), h.record("second")].map(record => record.preparationBinding!.ref).sort();
+    const expected = JSON.stringify({ role: "required", required_by: owners }).replaceAll("&", "&amp;");
+    expect(records.find(record => record[1] === "required")?.[2]).toContain("<task-role>" + expected + "</task-role>");
+    for (const record of graph.records) expect(text).toContain(record.body!);
+    expect(JSON.stringify(h.branch)).toBe(history);
+  } finally { await h.close(); }
+});
+
+test("restoration roles follow the confirmed graph when a newer selection was not delivered", async () => {
+  const h = await activeNotionSession();
+  try {
+    const graph = await h.seed(), root = h.record("root");
+    h.revise("required", "Undelivered Required B.\n");
+    h.revise("root", "Undelivered root B.\n");
+    await h.tool("notion_use").execute("prepare-only", { ref: h.fixedRef(root), refresh: true }, undefined, undefined, h.ctx);
+    const turn = await h.turn("Continue the last confirmed task after compact.");
+    expect(turn.error).toBeUndefined(); expect(turn.provider).toBe(true);
+    const text = turn.payload!.messages.map(message => message.content).join("\n");
+    expect(text).toContain('<task-role>{"role":"root"}</task-role>');
+    const expected = JSON.stringify({ role: "required", required_by: [root.preparationBinding!.ref] }).replaceAll("&", "&amp;");
+    expect(text).toContain("<task-role>" + expected + "</task-role>");
+    for (const record of graph.records) expect(text).toContain(record.body!);
+    expect(text).not.toContain("Undelivered");
+  } finally { await h.close(); }
+});
+
 test("missing fixed snapshots leave three consecutive ordinary requests usable without changing historical pins", async () => {
   const h = await activeNotionSession();
   try {
