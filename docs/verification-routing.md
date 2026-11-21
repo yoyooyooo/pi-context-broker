@@ -55,6 +55,6 @@ node /absolute/current/notion-skills-cli/verification/run-receipt.mjs /absolute/
 node scripts/verify-next-worktrees.mjs --config /absolute/owned/current-pair.json
 ```
 
-config 的 cliRoot/brokerRoot 必须是这些 worktree 的实际 packages 路径。检查通过后使用原有 daily installation/candidate 入口，运行前后都核对同一配对。源码 dirty、HEAD 不符、旧 build/SDK 或一机落后不能 passed。这里不执行常驻自更新，也不保留旧包兼容模式。独立 package 安装继续单独验，不因 worktree smoke 通过而省略；实际两机默认入口仍要取得各机真实回执。
+config 的 cliRoot/brokerRoot 必须是这些 worktree 的实际 packages 路径。检查还核实际机器指纹和有界真实 origin/next；旧本地 tracking ref 不能证明当前远端。检查通过后使用原有 daily installation/candidate 入口，运行前后都核对同一配对。源码 dirty、HEAD 不符、旧 build/SDK 或一机落后不能 passed。这里不执行常驻自更新，也不保留旧包兼容模式。独立 package 安装继续单独验，不因 worktree smoke 通过而省略；两机日用完成必须由原 daily 入口的 `aggregate` 联合检查不同机器、同一新 delivery 的完整 version:2 日用回执，按 [next 工作树交付](next-worktree-delivery.md) 执行。
 
-C10/T21 的 entrypoints.required_inputs 列出各动作必需配置。`/absolute/owned/` 是占位路径，不能直接当成已运行命令。daily-installation 的 plan/candidate-plan 只生成准备信息；run 检查当前日用装载，candidate-run --live 是项目级候选运行。各自范围见 [日用地图](../.agents/skills/verify-notion-skills-integration/features/daily-installation-ui.md)。帮助输出和 import 模块退出 0 都不能记为场景通过。
+C10/T21 的 entrypoints.required_inputs 列出各动作必需配置。`/absolute/owned/` 是占位路径，不能直接当成已运行命令。daily-installation 的 plan/candidate-plan 只生成准备信息；run 检查当前日用装载，aggregate 只收口两机装载与 metadata，candidate-run --live 是项目级候选运行。各自范围见 [日用地图](../.agents/skills/verify-notion-skills-integration/features/daily-installation-ui.md)。帮助输出和 import 模块退出 0 都不能记为场景通过。

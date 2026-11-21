@@ -1,12 +1,27 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { cp, mkdir, mkdtemp, readFile, readdir, realpath, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { classifyDailyHttp, classifyDailyNotionRequest, dailyObserverPreloadSource, validateDailyDoctor, validateDailyFind, verifyDailyCliShim, verifyDailyPackageSource } from './verify-pi-daily-installation.mjs';
+import { fileInventory } from './next-build-identity.mjs';
+import { aggregateDailyDeliveries, classifyDailyHttp, classifyDailyNotionRequest, dailyObserverPreloadSource, validateDailyDoctor, validateDailyFind, verifyDailyCliShim, verifyDailyPackageSource } from './verify-pi-daily-installation.mjs';
+
+test('daily aggregate requires an explicit new delivery and both machine receipts before any source or Pi operation', async () => {
+  for (const config of [{}, { delivery: { id: 'old-label', startedAt: new Date().toISOString() } },
+    { delivery: { id: '12345678-1234-4234-8234-123456789abc', startedAt: new Date().toISOString() }, receipts: { pro: '/missing/pro.json' } }]) {
+    const result = await aggregateDailyDeliveries(config);
+    assert.equal(result.status, 'failed'); assert.equal(result.provider_model, 'not_run');
+    assert.equal(result.current_source_build, undefined);
+  }
+});
+test('the existing daily entry advertises aggregate and its one current receipt schema', () => {
+  const help = execFileSync(process.execPath, ['scripts/verify-pi-daily-installation.mjs', '--help'], { encoding: 'utf8' });
+  assert.match(help, /aggregate --config/); assert.match(help, /Only daily receipt version 2 qualifies/);
+  assert.match(help, /delivery:\{id:UUID,startedAt:UTC_ISO\}/);
+});
 
 test('daily HTTP observation includes retained fetch references without changing responses or double counting', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'daily-http-observer-'));
@@ -141,8 +156,8 @@ test('the production observer never parses a JSON request ID from an unrelated o
 
 async function installationFixture() {
   const root = await mkdtemp(join(tmpdir(), 'daily-installation-identity-'));
-  const agent = join(root, '.pi/agent'), broker = join(root, '.local/share/broker');
-  const cliRoot = join(root, 'cli'), bin = join(root, '.volta/bin');
+  const agent = join(root, '.pi/agent'), broker = join(root, 'broker-next/packages/context-broker');
+  const cliRoot = join(root, 'cli-next/packages/cli'), bin = join(root, '.volta/bin');
   await Promise.all([agent, broker, join(cliRoot, 'dist'), bin].map(path => mkdir(path, { recursive: true })));
   const entry = join(cliRoot, 'dist/ntn-skills.js'), content = '#!/usr/bin/env node\nthrow new Error("The CLI must not execute in identity tests");\n';
   await writeFile(entry, content, { mode: 0o755 });
@@ -183,7 +198,29 @@ test('daily plan and launched host receive -ns without replacing normal HOME or 
   await writeFile(join(f.broker, 'dist/ntn-skills-sdk.mjs'), embeddedSdk);
   await writeFile(join(f.broker, 'dist/ntn-skills-runtime.json'), JSON.stringify({ version: 1, package: 'ntn-skills', cli_sha256: digest(embeddedCli), sdk_sha256: digest(embeddedSdk) }));
   const config = { ...f.config, version: 1, packageCount: 2, packageIndex: 1, brokerRoot: f.broker,
+    delivery: { id: randomUUID(), startedAt: new Date().toISOString() },
     embeddedCliSha256: digest(embeddedCli), embeddedSdkSha256: digest(embeddedSdk), evidenceRoot: join(f.root, 'evidence') };
+  // This public run crosses the real current-worktree boundary using owned local origins.
+  // The controlled Pi still exits before any extension, RPC or service operation.
+  config.worktrees = {};
+  await mkdir(join(f.cliRoot, 'skills'));
+  await writeFile(join(f.cliRoot, 'skills/SKILL.md'), '# Controlled skill\n');
+  await writeFile(join(f.cliRoot, 'dist/sdk.js'), embeddedSdk);
+  await writeFile(join(f.cliRoot, 'package.json'), '{"type":"module"}\n');
+  for (const [name, pkg] of [['cli', f.cliRoot], ['broker', f.broker]]) {
+    const root = dirname(dirname(pkg)), origin = join(f.root, name + '-origin.git');
+    const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    await mkdir(join(root, 'src'));
+    await writeFile(join(root, 'src/current.ts'), 'export const fixture = true;\n');
+    const build = { version: 1, kind: name + '-build', input_roots: ['src'], source: await fileInventory(root, ['src']),
+      artifacts: await fileInventory(pkg, name === 'cli' ? ['dist/ntn-skills.js', 'dist/sdk.js', 'skills'] : ['dist/ntn-skills.mjs', 'dist/ntn-skills-sdk.mjs', 'dist/ntn-skills-runtime.json']) };
+    if (name === 'broker') build.selected_cli = await fileInventory(f.cliRoot, ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'skills']);
+    await writeFile(join(pkg, 'dist/next-build.json'), JSON.stringify(build));
+    git('init', '--initial-branch=next'); git('init', '--bare', '--initial-branch=next', origin); git('remote', 'add', 'origin', origin);
+    git('add', '.'); git('-c', 'user.name=Daily launch fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'controlled daily inputs');
+    git('push', 'origin', 'next');
+    config.worktrees[name] = { root, commit: git('rev-parse', 'HEAD') };
+  }
   for (const [name, root] of [['broker', f.broker], ['cli', f.cliRoot]]) {
     const staging = join(f.root, name + '-archive'), archive = join(f.root, name + '.tgz');
     await cp(root, join(staging, 'package'), { recursive: true });

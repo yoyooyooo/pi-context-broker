@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
+import { createServer } from 'node:http';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import test from 'node:test';
 import { fileInventory } from './next-build-identity.mjs';
 import { verifyCurrentBuild, verifyNextWorktreePair } from './verify-next-worktrees.mjs';
+import { aggregateDailyDeliveries, validateDailyReceipt } from './verify-pi-daily-installation.mjs';
 
 const save = (path, value) => writeFile(path, JSON.stringify(value) + '\n');
 const git = (root, ...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
@@ -19,6 +22,9 @@ async function fixture() {
     await writeFile(join(root, 'src/current.ts'), 'export const version = 1;\n');
     await writeFile(join(pkg, 'package.json'), '{"type":"module"}\n');
     git(root, 'init', '--initial-branch=next');
+    const origin = join(parent, basename(root) + '-origin.git');
+    git(parent, 'init', '--bare', '--initial-branch=next', origin);
+    git(root, 'remote', 'add', 'origin', origin);
   }
   await mkdir(join(cliRoot, 'skills'));
   await writeFile(join(cliRoot, 'skills/SKILL.md'), 'current skill\n');
@@ -36,15 +42,47 @@ async function fixture() {
   function commit(root) {
     git(root, 'add', '.');
     git(root, '-c', 'user.name=Next gate fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture');
+    git(root, 'push', 'origin', 'next');
     return git(root, 'rev-parse', 'HEAD');
   }
   const config = { cliRoot, brokerRoot, worktrees: { cli: { root: cli, commit: commit(cli) }, broker: { root: broker, commit: commit(broker) } } };
-  return { cli, broker, cliRoot, brokerRoot, config, commit, cliBuild };
+  return { parent, cli, broker, cliRoot, brokerRoot, config, commit, cliBuild };
 }
 test('source and paired builds pass without claiming a real Pi launch', async () => {
   const f = await fixture(), result = await verifyNextWorktreePair(f.config);
   assert.equal(result.status, 'passed'); assert.equal(result.actual_pi_process, 'not_run');
   assert.equal(result.cli.commit, f.config.worktrees.cli.commit);
+  assert.equal(result.version, 2);
+  assert.match(result.machine?.sha256 ?? '', /^[a-f0-9]{64}$/);
+  assert.deepEqual(Object.keys(result.machine).sort(), ['platform', 'scheme', 'sha256']);
+  assert.deepEqual(result.machine, (await verifyNextWorktreePair(f.config)).machine);
+  assert.equal(result.cli.origin_next, result.cli.commit);
+});
+test('an old target and unchanged local origin tracking ref cannot conceal a newer remote next', async () => {
+  const f = await fixture(), old = f.config.worktrees.cli.commit;
+  const actor = join(f.parent, 'other-machine');
+  git(f.parent, 'clone', '--branch', 'next', git(f.cli, 'remote', 'get-url', 'origin'), actor);
+  await writeFile(join(actor, 'src/current.ts'), 'export const version = 2;\n');
+  const latest = f.commit(actor);
+  assert.notEqual(latest, old);
+  assert.equal(git(f.cli, 'rev-parse', 'HEAD'), old);
+  assert.equal(git(f.cli, 'rev-parse', 'refs/remotes/origin/next'), old);
+  await assert.rejects(verifyNextWorktreePair(f.config), /origin\/next.*target/);
+});
+test('an unresponsive real origin query becomes blocked within the declared deadline', { timeout: 20000 }, async () => {
+  const f = await fixture(), sockets = new Set();
+  const server = createServer(() => {});
+  server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    git(f.cli, 'remote', 'set-url', 'origin', 'http://127.0.0.1:' + server.address().port + '/origin.git');
+    const started = performance.now();
+    await assert.rejects(verifyNextWorktreePair(f.config), error => error.status === 'blocked' && error.code === 'ORIGIN_NEXT_UNAVAILABLE');
+    assert.ok(performance.now() - started < 15000, 'The origin check cannot wait indefinitely on network or authentication');
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await new Promise(resolve => server.close(resolve));
+  }
 });
 test('committing new source does not make an old build current', async () => {
   const f = await fixture();
@@ -78,4 +116,99 @@ test('unfinished work cannot be reported as a completed daily delivery', async (
   await assert.rejects(verifyNextWorktreePair(f.config), /unfinished work/);
   const receipt = JSON.parse(await readFile(join(f.cliRoot, 'dist/next-build.json'), 'utf8'));
   assert.equal(receipt.kind, 'cli-build');
+});
+
+test('an unsupported host is explicitly blocked rather than identified by its hostname', () => {
+  const code = `Object.defineProperty(process, 'platform', {value: 'unsupported-fixture'});
+    const {machineFingerprint} = await import(${JSON.stringify(new URL('./verify-next-worktrees.mjs', import.meta.url).href)});
+    try { await machineFingerprint(); process.exitCode = 1; }
+    catch (error) { console.log(JSON.stringify({status:error.status,code:error.code})); }`;
+  const result = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', code], { encoding: 'utf8' }));
+  assert.deepEqual(result, { status: 'blocked', code: 'MACHINE_ID_UNAVAILABLE' });
+});
+
+// These are controlled receipt fixtures, never evidence of two real Pi runs.
+async function dailyFixture() {
+  const f = await fixture(), pair = await verifyNextWorktreePair(f.config);
+  const started = Date.now() - 5000;
+  f.config.version = 1;
+  f.config.delivery = { id: randomUUID(), startedAt: new Date(started).toISOString() };
+  const harnessSha = createHash('sha256').update(await readFile(new URL('./verify-pi-daily-installation.mjs', import.meta.url))).digest('hex');
+  function receipt(machineSha) {
+    const bound = structuredClone(pair); bound.machine.sha256 = machineSha;
+    return {
+      version: 2, kind: 'actual-daily-pi-autoload-and-diagnostics', scope: 'ordinary-pi-startup-and-metadata', status: 'passed',
+      evidence: 'controlled-receipt-fixture', delivery: { ...f.config.delivery },
+      started_at: new Date(started + 1000).toISOString(), finished_at: new Date(started + 2000).toISOString(),
+      machine: { ...bound.machine }, worktrees_before: bound, worktrees_after: structuredClone(bound),
+      worktrees_unchanged: true, configuration_unchanged: true, broker_files_unchanged: true, cli_shim_unchanged: true,
+      modifications: { user_settings: 0, source_config: 0, harness_model_credential_files_read: 0, old_sessions_read: 0,
+        target_extensions_injected: 0, source_command_overrides: 0 },
+      launch: { host: 'pi', normal_user_settings: true, args: ['--mode', 'rpc', '-ns', '--session-dir', '/controlled/session'] },
+      host: { identity: '/controlled/node_modules/@earendil-works/pi-coding-agent/dist/cli.js' },
+      autoload: { injected_by_cli: false, registration: { source: 'extension' },
+        actual_entry: { realpath: join(bound.broker.package_root, 'dist/index.js'), sha256: 'e'.repeat(64) } },
+      initial_session: { sessionId: 'controlled-session', isStreaming: false, isCompacting: false },
+      final_session: { sessionId: 'controlled-session', isStreaming: false, isCompacting: false },
+      owned_pi: [{ pid: 101, observed_close: true }],
+      actual_default_sdk: { source_observation_complete: true, source_command_overridden: false, operations: [{ operation: 'list' }], http: [{}] },
+      explicit_doctor_cli: { doctor: { ok: true, transport: 'direct_http' } }, metadata_http_requests: 1,
+      provider_invocations: 0, tool_invocations: 0, remote_mutations: 0, current_body_reads: 0, harness: { sha256: harnessSha },
+    };
+  }
+  const pro = receipt(pair.machine.sha256), mini = receipt(pair.machine.sha256 === 'a'.repeat(64) ? 'b'.repeat(64) : 'a'.repeat(64));
+  f.config.receipts = { pro: join(f.parent, 'pro.json'), mini: join(f.parent, 'mini.json') };
+  await save(f.config.receipts.pro, pro); await save(f.config.receipts.mini, mini);
+  return { ...f, pair, pro, mini };
+}
+test('the public aggregate action accepts two controlled current daily receipts without claiming body or model verification', async () => {
+  const f = await dailyFixture(), configPath = join(f.parent, 'delivery.json');
+  await save(configPath, f.config);
+  const result = JSON.parse(execFileSync(process.execPath, ['scripts/verify-pi-daily-installation.mjs', 'aggregate', '--config', configPath], { encoding: 'utf8' }));
+  assert.equal(result.status, 'passed'); assert.equal(result.provider_model, 'not_run'); assert.equal(result.skill_body_consumption, 'not_run');
+  assert.equal(result.scope, 'two-machine-ordinary-pi-startup-and-metadata');
+  assert.notEqual(result.machines.pro.machine.sha256, result.machines.mini.machine.sha256);
+});
+test('one host cannot close delivery under two labels and neither a missing nor legacy receipt qualifies', async () => {
+  const f = await dailyFixture();
+  await save(f.config.receipts.mini, f.pro);
+  assert.match((await aggregateDailyDeliveries(f.config)).error.message, /two different actual machines/);
+  f.config.receipts.mini = join(f.parent, 'missing.json');
+  assert.equal((await aggregateDailyDeliveries(f.config)).status, 'failed');
+  f.config.receipts.mini = join(f.parent, 'old.json');
+  await save(f.config.receipts.mini, { ...f.mini, version: 1 });
+  assert.equal((await aggregateDailyDeliveries(f.config)).status, 'failed');
+});
+test('old delivery, changed builds, incomplete Pi proof and failed states cannot be promoted by a passed label', async () => {
+  const f = await dailyFixture();
+  assert.doesNotThrow(() => validateDailyReceipt(f.mini, f.config, f.pair));
+  for (const change of [
+    d => { d.delivery.id = randomUUID(); },
+    d => { d.started_at = new Date(Date.parse(f.config.delivery.startedAt) - 1).toISOString(); },
+    d => { d.worktrees_before.cli.commit = '0'.repeat(40); },
+    d => { d.worktrees_after.broker.artifacts_sha256 = '0'.repeat(64); },
+    d => { d.machine.sha256 = '0'.repeat(64); },
+    d => { d.launch.normal_user_settings = false; },
+    d => { d.autoload.injected_by_cli = true; },
+    d => { d.owned_pi[0].observed_close = false; },
+    d => { d.actual_default_sdk.source_observation_complete = false; },
+    ...['failed', 'blocked', 'not_run', 'prepared_not_executed'].map(status => d => { d.status = status; }),
+  ]) {
+    const candidate = structuredClone(f.mini); change(candidate);
+    assert.throws(() => validateDailyReceipt(candidate, f.config, f.pair));
+  }
+  assert.throws(() => validateDailyReceipt(f.pair, f.config, f.pair));
+  assert.throws(() => validateDailyReceipt({ version: 1, kind: 'project-scoped-candidate-precheck', status: 'passed' }, f.config, f.pair));
+});
+test('aggregate rechecks both the current verifier and the real origin instead of trusting two passed receipts', async () => {
+  const f = await dailyFixture();
+  await save(f.config.receipts.mini, { ...f.mini, harness: { sha256: '0'.repeat(64) } });
+  assert.match((await aggregateDailyDeliveries(f.config)).error.message, /different verifier/);
+  await save(f.config.receipts.mini, f.mini);
+  const actor = join(f.parent, 'advanced-origin');
+  git(f.parent, 'clone', '--branch', 'next', git(f.cli, 'remote', 'get-url', 'origin'), actor);
+  await writeFile(join(actor, 'src/current.ts'), 'export const version = 2;\n');
+  f.commit(actor);
+  const result = await aggregateDailyDeliveries(f.config);
+  assert.equal(result.status, 'failed'); assert.match(result.error.message, /origin\/next.*target/);
 });
