@@ -181,6 +181,7 @@ export function sourceFailureMessage(code: string, details?: SourceError["detail
     case "SHARED_RESOURCE_CONTENT_INVALID": return "The selected resource failed its complete file check. Inspect the source content, then refresh and select it again.";
     case "SOURCE_SDK_UNAVAILABLE":
     case "SOURCE_SDK_INCOMPATIBLE": return "The bundled ntn-skills SDK is missing or incompatible. Reinstall the complete pi-context-broker package.";
+    case "STATE_UNAVAILABLE": return "The local ntn-skills Store is unavailable. Restore access to the existing state directory before retrying this read.";
     case "NOTION_UNAVAILABLE": return "The direct Notion API request could not complete. Check the connection and run /context-broker doctor.";
     case "SOURCE_PROTOCOL_UNSUPPORTED": return "Update the source CLI to a build with the direct Notion API doctor contract.";
     case "AUTH_REQUIRED": return "Configure the ntn-skills token with ctl config set-token --stdin or NOTION_API_TOKEN; grant access to the selected Notion database.";
@@ -283,7 +284,7 @@ async function privateDirectory(path: string, source: NotionSource): Promise<voi
 CLI_CODES.LIST_CURSOR_STALE = true;
 CLI_CODES.NOTION_READ_ONLY = true;
 CLI_CODES.SHARED_OBSERVATION_REQUIRED = true;
-for (const code of ["CURRENT_SOURCE_REQUIRED", "CACHE_REFRESH_REQUIRED", "CACHE_INVALIDATED", "STATE_BUSY", "STATE_RUNTIME_UNSUPPORTED", "STATE_CUTOVER_REQUIRED", "UPSTREAM_GIT_RUNTIME_UNSUPPORTED", "SHARED_ACQUISITION_SCOPE", "SHARED_SOURCE_MISSING", "SHARED_SOURCE_CONFLICT", "SOURCE_MATERIALIZATION_INCOMPLETE", "SHARED_RESOURCE_CONTENT_INVALID"])
+for (const code of ["CURRENT_SOURCE_REQUIRED", "CACHE_REFRESH_REQUIRED", "CACHE_INVALIDATED", "STATE_BUSY", "STATE_UNAVAILABLE", "STATE_RUNTIME_UNSUPPORTED", "STATE_CUTOVER_REQUIRED", "UPSTREAM_GIT_RUNTIME_UNSUPPORTED", "SHARED_ACQUISITION_SCOPE", "SHARED_SOURCE_MISSING", "SHARED_SOURCE_CONFLICT", "SOURCE_MATERIALIZATION_INCOMPLETE", "SHARED_RESOURCE_CONTENT_INVALID"])
   CLI_CODES[code] = true;
 
 async function catalogPolicy(source: NotionSource, refresh?: boolean) {
