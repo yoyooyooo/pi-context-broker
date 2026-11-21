@@ -194,8 +194,9 @@ export function correlateNotionAgentToolAttempts({ tasks, session, currentUserId
     if (root.native.name !== 'codemode') continue;
     const call = byId.get(id), problems = [...root.containerDiagnostics];
     const source = call?.event.toolSource;
-    if (source !== undefined && (source?.path !== 'builtin:codemode' || source.source !== 'builtin'))
-      problems.push({ status: 'blocked', code: 'CODEMODE_IMPLEMENTATION_UNREVIEWED', message: 'A replacement codemode implementation is not a reviewed transparent container' });
+    if (!object(source) || source.path !== 'builtin:codemode' || source.source !== 'builtin')
+      problems.push({ status: 'blocked', code: source === undefined ? 'CODEMODE_IMPLEMENTATION_UNOBSERVED' : 'CODEMODE_IMPLEMENTATION_UNREVIEWED',
+        message: 'Only the observed builtin codemode implementation is a reviewed transparent container' });
     const declaredComplete = root.message.nestedCalls?.complete === true
       || root.message.nestedCalls === undefined && Array.isArray(root.message.details?.calls) && root.message.details.calls.length === 0;
     const container = { id, name: 'codemode', complete: complete && declaredComplete && problems.length === 0,

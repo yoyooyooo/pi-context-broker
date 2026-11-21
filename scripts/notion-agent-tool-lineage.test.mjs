@@ -15,7 +15,8 @@ function fixture() {
     content: [{ type: 'text', text: 'actual parent output' }], nestedCalls: { complete: true, calls: [child] },
     details: { calls: [{ id: childId, name: 'read', args: 'preview only', status: 'ok' }] } };
   const tasks = [
-    { phase: 'tool_call', toolCallId: rootId, toolName: 'codemode', inputSha256: argsHash(args), selectors: {} },
+    { phase: 'tool_call', toolCallId: rootId, toolName: 'codemode', inputSha256: argsHash(args), selectors: {},
+      toolSource: { path: 'builtin:codemode', source: 'builtin' } },
     { phase: 'tool_call', toolCallId: childId, toolName: 'read', inputSha256: argsHash(child.arguments), selectors: child.arguments },
     { phase: 'tool_result', toolCallId: childId, toolName: 'read', isError: false },
     { phase: 'tool_result', toolCallId: rootId, toolName: 'codemode', isError: false },
@@ -136,4 +137,16 @@ test('complete empty builtin composition is distinct from missing census or repl
   assert.equal(inspect(value).containers[0].complete, false);
   delete value.tasks[0].toolSource; delete value.message.details;
   assert.equal(inspect(value).containers[0].complete, false);
+});
+
+test('missing implementation provenance cannot certify zero writes even when lineage is complete', () => {
+  for (const source of [undefined, null, {}, { path: 'builtin:codemode', source: 'package' }, { path: '/replacement/codemode.js', source: 'builtin' }]) {
+    const value = fixture(); value.tasks[0].toolSource = source;
+    const result = inspect(value);
+    assert.equal(result.status, 'passed', 'Actual attempt correlation is separate from implementation effects');
+    assert.equal(result.counts.actual, 2); assert.equal(result.counts.nested, 1);
+    assert.equal(result.containers[0].complete, false);
+    assert.equal(inspectNotionAgentReadOnlyContainer(result.attempts[0], result, call => call.name === 'read').readOnly, false);
+    assert.ok(result.containers[0].diagnostics.some(value => value.code.startsWith('CODEMODE_IMPLEMENTATION_')));
+  }
 });
