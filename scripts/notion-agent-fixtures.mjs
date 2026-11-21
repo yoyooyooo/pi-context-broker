@@ -119,6 +119,14 @@ async function tree(context, blockId) {
   return output;
 }
 
+export function blockShape(blocks) {
+  return blocks.map(block => {
+    assert.ok(typeof block.type === 'string' && block[block.type] && typeof block[block.type] === 'object', 'Unknown reading-projection block');
+    const content = structuredClone(block[block.type]); delete content.children;
+    return { type: block.type, content, ...(block.children ? { children: blockShape(block.children) } : {}) };
+  });
+}
+
 /** Native text is compared after the CLI's documented Markdown normalization, never as original-byte proof. */
 export function fixtureTextMeaning(value) {
   return withoutFrontmatter(value).replace(/\n{3,}/g, '\n\n');
@@ -142,7 +150,12 @@ async function prepareVersionInputs(context, object, name) {
     const files = [];
     for (const file of value.files) {
       const path = resolve(directory, file.path); assert.ok(inside(directory, path));
-      const bytes = object.placement === 'source' ? fileBytes(file) : effectiveFile(file, object, name);
+      const expanded = file.encoding === 'base64' ? file : { ...file, content: file.content.replaceAll(/\{\{([A-Za-z0-9_.-]+)\}\}/gu, (_match, key) => {
+        const names = new Map(context.recipe.objects.map(item => [item.id + '.name', item.placement === 'builtin' ? item.name : item.name + '-' + sha(context.runId).slice(0, 8)]));
+        const value = names.get(key) ?? context.recipe.public?.[key];
+        assert.equal(typeof value, 'string', 'Unknown public content substitution ' + key); return value;
+      }) };
+      const bytes = object.placement === 'source' ? fileBytes(expanded) : effectiveFile(expanded, object, name);
       await mkdir(dirname(path), { recursive: true, mode: 0o700 });
       await writeFile(path, bytes, { flag: 'wx', mode: file.mode === '100755' ? 0o700 : 0o600 });
       files.push({ path: file.path, input: path, sha256: sha(bytes), bytes: bytes.length, mode: file.mode ?? '100644' });
@@ -194,7 +207,7 @@ async function actualSkill(context, owned) {
   return rows[0];
 }
 
-async function captureReadback(bindings, alias, { version, key = alias, state = 'present', expected = state === 'absent' ? 'absent' : 'live' } = {}) {
+async function captureReadback(bindings, alias, { version, key = alias, state = 'present', properties, projection, expected = state === 'absent' ? 'absent' : 'live' } = {}) {
   const context = bindings.private.fixture; await assertOwnership(context);
   const owned = context.objects[alias]; assert.ok(owned, 'Unknown owned object: ' + alias);
   const identity = bindings.private.objects[alias], label = version ?? owned.currentVersion;
@@ -235,6 +248,12 @@ async function captureReadback(bindings, alias, { version, key = alias, state = 
   identity.url = row.url ?? 'https://www.notion.so/' + row.id.replaceAll('-', '');
   bindings.public[alias + '.url'] = identity.url;
   const ids = context.library.skills.property_ids;
+  if (properties) {
+    assert.ok(Object.keys(properties).every(key => ['description', 'enabled', 'defaultContext'].includes(key)), 'Unknown metadata readback');
+    if (properties.description !== undefined) assert.equal(propertyText(row, ids, 'Description'), properties.description);
+    if (properties.enabled !== undefined) assert.equal(pick(row, ids, 'Enabled')?.checkbox, properties.enabled);
+    if (properties.defaultContext !== undefined) assert.equal(pick(row, ids, 'Default Context')?.checkbox, properties.defaultContext);
+  }
   if (owned.pendingIdentity) {
     const stable = propertyText(row, ids, 'Skill ID'); assert.ok(stable.length > 0, 'Product did not register a stable Skill identity');
     owned.skillId = stable; identity.skillId = stable; owned.pendingIdentity = false;
@@ -245,6 +264,15 @@ async function captureReadback(bindings, alias, { version, key = alias, state = 
   const files = await pages(context, 'files', { property: context.library.files.property_ids.Skill, relation: { contains: row.id } });
   const records = await pages(context, 'records', { property: context.library.records.property_ids.Skill, relation: { contains: row.id } });
   const body = await tree(context, row.id);
+  if (pick(row, ids, 'Enabled')?.checkbox === false) {
+    assert.equal(properties?.enabled, false, 'A disabled body cannot be read as current content');
+    assert.equal(version, undefined, 'Metadata-only disabled readback cannot prove a new content version');
+    const captured = await capture(context, receiptPath, { row, files, records, body, observedAt: clock() });
+    const result = { status: 'passed', object: { owner: identity.owner }, artifact: captured,
+      observed: { state: 'present', ready: true, operationEmpty: true, properties, metadataOnly: true },
+      assertions: [{ id: 'independent-live-metadata', status: 'passed' }], externalRepair: false };
+    return sealReadback(context, key, result);
+  }
   const main = await cli(context, ['read', row.id, '--database', context.entry, '--refresh', '--json'], 'read-main');
   assert.equal(main.value.ok, true); assert.equal(main.value.has_more, false); assert.equal(typeof main.value.content, 'string');
   assert.equal(main.value.effects?.remote_writes, 'none', 'A consumption read reported semantic writes');
@@ -253,7 +281,7 @@ async function captureReadback(bindings, alias, { version, key = alias, state = 
   identity.owner = main.value.record.id; identity.scope = main.value.scope;
   if (owned.placement === 'source') { identity.name = main.value.record.name; bindings.public[alias + '.name'] = main.value.record.name; }
   const expectedVersion = owned.versionInputs[label];
-  if (expectedVersion) {
+  if (expectedVersion && owned.placement !== 'source' && owned.placement !== 'builtin') {
     for (const [name, aliases] of [['Requires', expectedVersion.requires], ['Members', expectedVersion.members]]) {
       const relation = pick(row, ids, name); assert.ok(relation && relation.has_more !== true, 'Incomplete relation readback');
       assert.deepEqual((relation.relation ?? []).map(item => item.id).sort(), aliases.map(alias => context.objects[alias].pageId).sort(), 'A required relationship differs');
@@ -272,13 +300,10 @@ async function captureReadback(bindings, alias, { version, key = alias, state = 
     assert.ok(typeof resourcePath === 'string' && resourcePath.length > 0);
     const output = resolve(outputDirectory, resourcePath); assert.ok(inside(outputDirectory, output));
     await mkdir(dirname(output), { recursive: true, mode: 0o700 });
-    const read = resourcePath === main.value.path
-      ? main
-      : await cli(context, ['read', resourcePath, '--from', main.value.ref, '--json'], 'read-resource');
     let bytes;
-    if (typeof read.value.content === 'string') bytes = Buffer.from(read.value.content);
+    if (resourcePath === main.value.path) bytes = Buffer.from(main.value.content);
     else {
-      const outputRead = await cli(context, ['read', resourcePath, '--from', main.value.ref, '--output', output, '--json'], 'read-bytes');
+      const outputRead = await cli(context, ['read', resourcePath, '--from', main.value.ref, '--output', output, '--json'], 'read-resource');
       assert.equal(outputRead.value.effects?.remote_writes, 'none'); bytes = await readFile(output);
     }
     if (!(await exists(output))) await writeFile(output, bytes, { flag: 'wx', mode: 0o600 });
@@ -298,10 +323,24 @@ async function captureReadback(bindings, alias, { version, key = alias, state = 
     bodyKeys: observedFiles.map(file => file.bodyKey), readback: key };
   identity.currentVersion = label; owned.currentVersion = label;
   owned.knownChildren = [...files.map(file => ({ pageId: file.id, kind: 'file' })), ...records.map(record => ({ pageId: record.id, kind: 'record' }))];
-  const captured = await capture(context, receiptPath, { row, files, records, body, main: main.value, directory: fileList.value, observedFiles,
+  let observedProjection;
+  if (owned.placement === 'source') {
+    const projected = [{ path: 'SKILL.md', body: blockShape(body) }];
+    for (const file of files) {
+      const path = propertyText(file, context.library.files.property_ids, 'Path');
+      if (/\.(md|markdown)$/iu.test(path)) projected.push({ path, body: blockShape(await tree(context, file.id)) });
+    }
+    projected.sort((a, b) => a.path.localeCompare(b.path));
+    assert.ok(projected[0] && projected.find(file => file.path === 'SKILL.md')?.body.length > 0, 'The generated main reading projection is empty');
+    observedProjection = { sha256: sha(JSON.stringify(projected)), files: projected };
+    if (!owned.projectionBaseline) owned.projectionBaseline = observedProjection;
+    if (projection === 'same-as-baseline') assert.equal(observedProjection.sha256, owned.projectionBaseline.sha256, 'Restored reading projection differs from the baseline');
+  } else assert.equal(projection, undefined, 'Projection assertions require a source fixture');
+  if (owned.wasUnmanaged && owned.unmanagedBodyShape) assert.deepEqual(blockShape(body), owned.unmanagedBodyShape, 'Registration changed author content');
+  const captured = await capture(context, receiptPath, { row, files, records, body, main: main.value, directory: fileList.value, observedFiles, observedProjection,
     commandArtifacts: [main.artifact, fileList.artifact], observedAt: clock() });
   const result = { status: 'passed', object: { owner: identity.owner, scope: main.value.scope, snapshot_id: main.value.snapshot_id, version_id: main.value.version_id },
-    artifact: captured, observed: { state: 'present', ready: true, operationEmpty: true, files: observedFiles },
+    artifact: captured, observed: { state: 'present', ready: true, operationEmpty: true, files: observedFiles, ...(observedProjection ? { projection: observedProjection } : {}), ...(properties ? { properties } : {}) },
     assertions: [{ id: 'independent-live-ready-state', status: 'passed' }, { id: 'complete-current-consumption', status: 'passed' }, { id: 'normal-consumption-zero-writes', status: 'passed' }],
     externalRepair: false };
   bindings.private.readbacks[key] ??= { object: alias, state: expected === 'absent' ? 'absent' : 'present', ...(expected === 'absent' ? {} : { version: label }) }; return sealReadback(context, key, result);
@@ -323,7 +362,7 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
   const bindings = { version: 1, public: { ...(recipe.public ?? {}) }, private: { fixture: context, objects: {}, bodies: {}, facts: recipe.facts ?? {}, readbacks: structuredClone(recipe.readbacks ?? {}) } };
   try {
     for (const object of recipe.objects) {
-      const suffix = sha(runId).slice(0, 8), name = object.name + '-' + suffix;
+      const suffix = sha(runId).slice(0, 8), name = object.placement === 'builtin' ? object.name : object.name + '-' + suffix;
       assert.ok(name.length <= 64, 'Fixture native names must remain bounded');
       const owned = { id: object.id, name, placement: object.placement, skillId: 'agent-workflow-' + runId + '-' + object.id,
         currentVersion: object.initial, pendingIdentity: ['absent', 'unmanaged'].includes(object.initial), wasUnmanaged: object.initial === 'unmanaged', versionInputs: await prepareVersionInputs(context, object, name), knownChildren: [] };
@@ -359,6 +398,25 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
         await captureReadback(bindings, object.id, { version: object.initial });
         continue;
       }
+      if (object.placement === 'builtin') {
+        const found = []; let cursor;
+        do {
+          const listed = await cli(context, ['list', '--database', entry, '--query', object.name, '--refresh', '--limit', '500', '--json', ...(cursor ? ['--cursor', cursor] : [])], 'find-builtin');
+          assert.equal(listed.value.coverage?.exhaustive, true, 'Builtin binding requires a complete explicit-library observation');
+          assert.deepEqual(listed.value.coverage?.failed_sources, [], 'Builtin binding cannot hide partial discovery');
+          const records = listed.value.records;
+          assert.ok(Array.isArray(records), 'Builtin discovery omitted records');
+          found.push(...records.filter(record => record.name === object.name || record.alias === object.name));
+          assert.ok(!listed.value.has_more || typeof listed.value.next_cursor === 'string');
+          cursor = listed.value.has_more ? listed.value.next_cursor : undefined;
+        } while (cursor);
+        assert.equal(found.length, 1, 'The connected builtin is absent or ambiguous');
+        const selected = found[0]; assert.equal(selected.locator?.type, 'shared_skill'); assert.ok(pageId(selected.locator.page_id));
+        owned.pageId = selected.locator.page_id; owned.skillId = selected.locator.skill_id; owned.external = true; owned.readOnly = true;
+        identity.external = true; identity.readOnly = true; identity.skillId = owned.skillId; identity.name = selected.name;
+        await captureReadback(bindings, object.id, { version: object.initial });
+        continue;
+      }
       if (object.initial === 'absent') {
         const matches = await pages(context, 'skills', { property: context.library.skills.property_ids.Name, title: { equals: owned.name } });
         assert.equal(matches.length, 0, 'The creation fixture name already exists');
@@ -376,7 +434,8 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
         } });
         owned.pageId = row.id; identity.pageId = row.id; identity.owner = 'notion_page:' + row.id;
         identity.url = row.url; bindings.public[object.id + '.url'] = row.url;
-        await capture(context, join(root, 'readbacks', object.id + '-unmanaged.json'), { row, body: await tree(context, row.id), source: 'explicit-unmanaged-test-fixture' });
+        const unmanagedBody = await tree(context, row.id); owned.unmanagedBodyShape = blockShape(unmanagedBody);
+        await capture(context, join(root, 'readbacks', object.id + '-unmanaged.json'), { row, body: unmanagedBody, source: 'explicit-unmanaged-test-fixture' });
         continue;
       }
       if (object.placement === 'source') {
@@ -470,6 +529,7 @@ export async function runAgentFixtureEvent(event, { bindings, bindingsPath, owne
   if (!allowed) throw fail('AGENT_FIXTURE_UNSUPPORTED_EVENT', 'Unsupported fixture event: ' + event.kind);
   assert.ok(Object.keys(event).every(key => allowed.includes(key)), 'Unknown fixture event field');
   const owned = context.objects[event.object]; assert.ok(owned, 'Event must select one owned fixture');
+  assert.ok(event.kind === 'readback' || !owned.external, 'External builtin bindings are read-only');
   const started = clock(), record = { event, started, actor: 'fixture-controller' };
   const path = join(context.root, 'event-' + randomUUID() + '.json');
   try {
@@ -513,7 +573,7 @@ export async function runAgentFixtureEvent(event, { bindings, bindingsPath, owne
     if (event.kind === 'restore-projection') {
       assert.equal(owned.placement, 'source'); assert.ok(owned.projectionBeforeTrash, 'Restoration needs the before-trash comparison');
       const result = await cli(context, ['ctl', 'library', 'projection', owned.pageId, '--restore', '--entry', context.entry], 'restore-projection');
-      const readback = await captureReadback(bindings, event.object, { key: event.object + '-restored' });
+      const readback = await captureReadback(bindings, event.object, { key: event.object + '-restored', projection: 'same-as-baseline' });
       assert.deepEqual(readback.observed.files.map(file => [file.path, file.sha256, file.mode]), owned.projectionBeforeTrash.observed.files.map(file => [file.path, file.sha256, file.mode]));
       record.result = { command: result.artifact, readback };
     }
@@ -548,6 +608,7 @@ export async function cleanupAgentFixtures(bindings, { subjectExited, trash = '/
     await mkdir(dirname(fault.source), { recursive: true, mode: 0o700 }); await rename(fault.target, fault.source);
   }
   for (const owned of Object.values(context.objects).reverse()) {
+    if (owned.external) { assert.equal(owned.readOnly, true); results.push({ object: owned.id, action: 'external-read-only-preserved', status: 'passed' }); continue; }
     if (owned.placement === 'global' || owned.placement === 'project') {
       if (!owned.directory || !(await exists(owned.directory))) continue;
       const marker = await json(join(owned.directory, '.agent-workflow-owner.json'));
@@ -565,6 +626,14 @@ export async function cleanupAgentFixtures(bindings, { subjectExited, trash = '/
       results.push({ object: owned.id, action: 'source-cleanup', status: 'passed', commands: [empty.artifact, removed.artifact] });
     } else {
       const row = await request(context, 'v1/pages/' + owned.pageId);
+      if (owned.wasUnmanaged && !propertyText(row, context.library.skills.property_ids, 'Current State')) {
+        assert.equal(propertyText(row, context.library.skills.property_ids, 'Operation'), '', 'Preserve unfinished registration evidence');
+        await request(context, 'v1/pages/' + owned.pageId, { method: 'PATCH', body: { in_trash: true }, fixtureMutation: true });
+        const retired = await request(context, 'v1/pages/' + owned.pageId);
+        assert.ok(retired.in_trash || retired.archived);
+        results.push({ object: owned.id, action: 'unmanaged-test-fixture-trash', status: 'passed', productRepair: false });
+        continue;
+      }
       if (row.in_trash || row.archived) { results.push({ object: owned.id, action: 'already-trashed', status: 'passed' }); continue; }
       const removed = await cli(context, ['ctl', 'library', 'skill', 'remove', owned.pageId, '--entry', context.entry], 'cleanup-owned');
       assert.equal(removed.value.cleanup_verified, true);
