@@ -40,12 +40,24 @@ export function workflowSourceSlice(events, startedNs, endedNs) {
   return events.filter(row => ids.has(row.requestId) || !row.requestId && time(row) >= BigInt(startedNs) && time(row) <= BigInt(endedNs));
 }
 
-async function awaitCatalog(file, timeoutMs) {
-  const started = performance.now();
-  while (performance.now() - started < timeoutMs) {
+async function awaitCatalog(file, timeoutMs, { pendingOnly = false, sourceId, database } = {}) {
+  const startedAt = performance.now();
+  while (performance.now() - startedAt < timeoutMs) {
     const events = await rows(file);
-    const completed = events.find(row => row.phase === 'completed' && row.kind === 'sdk' && row.operation === 'list');
-    if (completed) { assert.equal(completed.status, 'completed', 'Normal catalog preparation failed'); return { requestId: completed.requestId, completedNs: completed.monotonicNs, waitedMs: performance.now() - started }; }
+    const starts = events.filter(row => row.phase === 'started' && row.kind === 'sdk' && row.operation === 'list' &&
+      row.source_id === sourceId && typeof row.database === 'string' && row.database.replaceAll('-', '') === database.replaceAll('-', ''));
+    if (pendingOnly) {
+      const started = starts[0];
+      if (started) {
+        assert.ok(!events.some(row => row.phase === 'completed' && row.requestId === started.requestId),
+          'The real pending catalog window ended before the first user input');
+        return { mode: 'pending', requestId: started.requestId, startedNs: started.monotonicNs, waitedMs: performance.now() - startedAt };
+      }
+      await new Promise(resolveDelay => setTimeout(resolveDelay, 25));
+      continue;
+    }
+    const completed = events.find(row => row.phase === 'completed' && starts.some(start => start.requestId === row.requestId));
+    if (completed) { assert.equal(completed.status, 'completed', 'Normal catalog preparation failed'); return { requestId: completed.requestId, completedNs: completed.monotonicNs, waitedMs: performance.now() - startedAt }; }
     await new Promise(resolveDelay => setTimeout(resolveDelay, 100));
   }
   throw new Error('Normal source catalog did not finish within its bounded startup window');
@@ -212,6 +224,7 @@ export async function runAgentWorkflow(config) {
     selected.activation = { ...selected.activation, offline: true };
   }
   await save(sourceConfigPath, candidateSource);
+  const sourceObservation = { sourceId: config.sourceId, database: config.database, configArtifact: await identity(sourceConfigPath) };
   const env = { ...process.env, CONTEXT_BROKER_CONFIG: sourceConfigPath, NTN_SKILLS_HOME: ownedStateRoot,
     NTN_SKILLS_CONFIG_HOME: join(stateRoot, 'config'), NTN_SKILLS_CACHE_HOME: join(stateRoot, 'cache'), NTN_SKILLS_DATA_HOME: join(stateRoot, 'data'),
     NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000', BROKER_E2E_PROCESS_LEDGER: join(evidence, 'owned-processes.jsonl') };
@@ -256,7 +269,10 @@ export async function runAgentWorkflow(config) {
     segment.commandsArtifact = await identity(join(control, 'commands.json'));
     const catalogMode = scenario.fixture.environment?.catalog ?? 'normal';
     if (['normal', 'filtered-view'].includes(catalogMode) && !scenario.fixture.environment?.offline)
-      segment.catalogBarrier = await awaitCatalog(observer.files.source, config.catalogTimeoutMs ?? 90000);
+      segment.catalogBarrier = await awaitCatalog(observer.files.source, config.catalogTimeoutMs ?? 90000, { sourceId: config.sourceId, database: config.database });
+    else if (catalogMode === 'pending')
+      segment.catalogBarrier = await awaitCatalog(observer.files.source, config.catalogTimeoutMs ?? 90000,
+        { pendingOnly: true, sourceId: config.sourceId, database: config.database });
     else segment.catalogBarrier = { mode: catalogMode, waited: false };
   };
   const close = async () => {
@@ -343,7 +359,7 @@ export async function runAgentWorkflow(config) {
       const observed = { costs: slice(await rows(segment.observer.files.cost), startedNs, endedNs), transport: slice(await rows(segment.observer.files.transport), startedNs, endedNs),
         tasks: slice(await rows(segment.observer.files.tasks), startedNs, endedNs), source: await rows(segment.observer.files.source),
         session: native, selection: snapshot, selectionSnapshots: [], readbacks: {}, sourceCoverage: false,
-        visibility: { nativeCommands: segment.commandsArtifact } };
+        visibility: { nativeCommands: segment.commandsArtifact, source: sourceObservation } };
       for (const payload of observed.tasks.filter(event => event.phase === 'provider_payload')) {
         assert.ok(payload.branch); const actual = await identity(payload.branch.path); assert.equal(actual.sha256, payload.branch.sha256);
         observed.selectionSnapshots.push({ payloadSha256: payload.sha256, selection: selection(await json(actual.path)) });

@@ -849,6 +849,24 @@ test('task observer does not transform provider input or register tools/provider
   handlers.get('session_shutdown')({}); assert.equal(writes.at(-1).complete, true);
 });
 
+test('binary resources keep exact identity without becoming UTF-8 model text or blocking the observer', () => {
+  const handlers = new Map(), writes = [], png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const binary = { path: '/owned/image.png', sha256: sha(png), bytes: png.length };
+  const fs = { openSync: () => 1, readFileSync: path => path === binary.path ? png : Buffer.from(body),
+    writeSync: (_fd, line) => writes.push(JSON.parse(line)), closeSync: () => {} };
+  const api = { on(name, fn) { handlers.set(name, fn); } };
+  const options = { fs, crypto: { createHash }, output: '/owned/task.jsonl', bodyFiles: [file, binary], inspectPayload: candidatePayloadBodies };
+  observeCandidateTask(api, options);
+  assert.deepEqual(writes[0].nonTextBodies, [{ sha256: binary.sha256, bytes: binary.bytes }]);
+  const payload = { messages: [{ content: body }] }, before = structuredClone(payload);
+  handlers.get('before_provider_request')({ payload });
+  assert.deepEqual(payload, before);
+  assert.equal(writes.at(-1).bodies.length, 1);
+  assert.equal(writes.at(-1).bodies[0].occurrences, 1);
+  handlers.get('session_shutdown')({}); assert.equal(writes.at(-1).complete, true);
+  assert.throws(() => observeCandidateTask(api, { ...options, bodyFiles: [{ ...binary, sha256: '0'.repeat(64) }] }), /Frozen body bytes changed/u);
+});
+
 test('normal-management state reuses only the existing process roots and never transfers cleanup or resume ownership', async t => {
   const scratch = await mkdtemp('/tmp/notion-existing-state-proof-');
   t.diagnostic(JSON.stringify({ ownedScratch: [scratch], cleanup: 'Retained for evidence-first system Trash cleanup.' }));
