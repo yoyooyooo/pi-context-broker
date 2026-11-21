@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
-import { loadAgentCorpus, bindAgentScenario, bindAgentTurn } from './notion-agent-scenarios.mjs';
+import { loadAgentCorpus, bindAgentScenario, bindAgentTurn, checkAgentContractCoverage } from './notion-agent-scenarios.mjs';
 import { consumptionCostExtensionSource, readConsumptionCostEvents } from './skill-consumption-cost.mjs';
 import { providerTransportExtensionSource, readProviderTransport } from './skill-consumption-provider.mjs';
 import { sourceObserverPreloadSource, readSourceObservation } from './skill-consumption-source-observer.mjs';
@@ -77,6 +77,15 @@ async function input(config) {
   assert.ok(!inside(root, config.evidenceRoot), 'Keep run evidence outside the checkout');
   agentWorkflowArgs(config, '/sessions', []);
   const corpus = await loadAgentCorpus(config.scenarioFile), bindings = await json(config.bindingsFile);
+  const cliCheckout = await command(['git', '-C', config.cliRoot, 'rev-parse', '--show-toplevel'], root);
+  checkAgentContractCoverage(corpus, await json(join(cliCheckout, 'verification/skill-domains.json')));
+  // Package paths are controller facts. A connected Notion projection may have
+  // identical bytes or a similar Git path, so a basename is not package proof.
+  const packagePaths = [join(cliCheckout, 'skills/notion/ntn-skills-maintain'),
+    join(config.brokerRoot, 'dist/builtin-skills/ntn-skills-maintain')];
+  const actualPackagePaths = [];
+  for (const path of packagePaths) if (await exists(join(path, 'SKILL.md'))) actualPackagePaths.push(path, await realpath(path));
+  if (actualPackagePaths.length) bindings.private.facts['package-maintenance-path'] = { anyOf: [...new Set(actualPackagePaths)] };
   const scenario = bindAgentScenario(corpus, config.scenarioId, bindings, { profile: config.profile });
   assert.ok(bindings.private.fixture?.root && bindings.private.fixture?.runId, 'Use a real owned fixture binding');
   assert.equal(bindings.private.fixture.entry.replaceAll('-', ''), config.database.replaceAll('-', ''), 'The fixture and candidate must use the same library');
@@ -170,15 +179,21 @@ export async function runAgentWorkflow(config) {
   const ownedStateRoot = join(stateRoot, 'state'); await mkdir(ownedStateRoot, { mode: 0o700 });
   await save(join(ownedStateRoot, 'agent-workflow-owner.json'), { runId: fixture.runId, fixtureRoot: fixture.root, token: fixture.ownership.token });
   const sourceCache = join(stateRoot, 'broker-cache'), sourceConfigPath = join(evidence, 'source-config.json');
-  const candidateSource = candidateSourceConfig(source, { sourceId: config.sourceId, database: config.database, cacheDir: sourceCache, viewId: config.viewId });
-  if (scenario.fixture.environment?.offline === true) candidateSource.sources.find(item => item.id === config.sourceId).discovery = { ...candidateSource.sources.find(item => item.id === config.sourceId).discovery, offline: true };
+  const viewId = fixture.viewId ?? config.viewId;
+  if (fixture.viewId && config.viewId) assert.equal(config.viewId, fixture.viewId, 'Use the owned fixture View');
+  const candidateSource = candidateSourceConfig(source, { sourceId: config.sourceId, database: config.database, cacheDir: sourceCache, viewId });
+  if (scenario.fixture.environment?.offline === true) {
+    const selected = candidateSource.sources.find(item => item.id === config.sourceId);
+    selected.discovery = { ...selected.discovery, offline: true };
+    selected.activation = { ...selected.activation, offline: true };
+  }
   await save(sourceConfigPath, candidateSource);
   const env = { ...process.env, CONTEXT_BROKER_CONFIG: sourceConfigPath, NTN_SKILLS_HOME: ownedStateRoot,
     NTN_SKILLS_CONFIG_HOME: join(stateRoot, 'config'), NTN_SKILLS_CACHE_HOME: join(stateRoot, 'cache'), NTN_SKILLS_DATA_HOME: join(stateRoot, 'data'),
     NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000', BROKER_E2E_PROCESS_LEDGER: join(evidence, 'owned-processes.jsonl') };
   delete env.NTN_SKILLS_DEV_ROOT;
   if (scenario.fixture.environment?.catalog === 'unauthorized') env.NOTION_API_TOKEN = 'secret_owned_agent_workflow_invalid_identity';
-  if (scenario.fixture.environment?.catalog === 'partial-view') assert.ok(config.viewId, 'A partial-view scenario requires a real owned Notion View binding');
+  if (scenario.fixture.environment?.catalog === 'filtered-view') assert.ok(fixture.viewId, 'A filtered-view scenario requires a real owned Notion View binding');
   const host = await resolveHost('pi'), { createJiti } = createRequire(host.identity)('jiti');
   const jiti = createJiti(import.meta.url, { fsCache: false, moduleCache: false });
   const { reduceSessionSelection } = await jiti.import(join(config.brokerRoot, 'src/session-graph.ts'));
@@ -216,7 +231,7 @@ export async function runAgentWorkflow(config) {
     await save(join(control, 'commands.json'), segment.commands);
     segment.commandsArtifact = await identity(join(control, 'commands.json'));
     const catalogMode = scenario.fixture.environment?.catalog ?? 'normal';
-    if (catalogMode === 'normal' && !scenario.fixture.environment?.offline)
+    if (['normal', 'filtered-view'].includes(catalogMode) && !scenario.fixture.environment?.offline)
       segment.catalogBarrier = await awaitCatalog(observer.files.source, config.catalogTimeoutMs ?? 90000);
     else segment.catalogBarrier = { mode: catalogMode, waited: false };
   };
@@ -231,6 +246,24 @@ export async function runAgentWorkflow(config) {
     assert.ok(segment.cost.events.at(-1)?.complete);
     assert.ok((await rows(segment.observer.files.tasks)).at(-1)?.complete);
     rpc = undefined;
+  };
+  const analyzeObserved = async () => {
+    for (const receipt of result.turns.filter(turn => turn.status === 'observed')) {
+      const observed = await json(join(evidence, 'turn-' + receipt.id + '-observed.json'));
+      const owner = result.segments.find(item => item.index === receipt.segment);
+      const first = result.turns.find(turn => turn.segment === receipt.segment) === receipt;
+      const started = first ? owner.source?.events[0]?.monotonicNs ?? receipt.startedNs : receipt.startedNs;
+      observed.source = workflowSourceSlice(owner.source?.events ?? [], started, receipt.endedNs);
+      observed.sourceObservationWindow = { startedNs: started, endedNs: receipt.endedNs, includesStartup: first };
+      observed.backgroundSource = (owner.source?.events ?? []).filter(event => !observed.source.includes(event));
+      observed.sourceCoverage = owner.source?.complete === true && owner.source.errors.length === 0;
+      const frozenBindings = await json(join(evidence, 'turn-' + receipt.id + '-bindings.json'));
+      const turn = await json(join(evidence, 'turn-' + receipt.id + '-input.json'));
+      receipt.analysis = await analyzeNotionAgentTurn(turn, observed, frozenBindings, { inspectPayload: candidatePayloadBodies });
+      receipt.status = receipt.analysis.status;
+      await save(join(evidence, 'turn-' + receipt.id + '-analysis.json'), { observed, analysis: receipt.analysis });
+      await save(join(evidence, 'turn-' + receipt.id + '-verdict.json'), receipt);
+    }
   };
   try {
     await start();
@@ -252,6 +285,7 @@ export async function runAgentWorkflow(config) {
           retained.reverse(); assert.ok(retained.length, 'Use a fork with an actual prior history');
           const fork = await rpc.command('fork', { entryId: prior.userEntryId }); assert.equal(fork.cancelled, false);
           const old = currentSession; currentSession = await rpc.command('get_state'); assert.notEqual(currentSession.sessionId, old.sessionId);
+          (segment.forkedSessions ??= []).push({ sessionId: currentSession.sessionId, sessionFile: currentSession.sessionFile });
           const forkLines = (await readFile(currentSession.sessionFile, 'utf8')).trimEnd().split('\n');
           const header = JSON.parse(forkLines[0]), historyLines = forkLines.slice(1, 1 + retained.length);
           assert.deepEqual(historyLines.map(JSON.parse), retained, 'Public fork retained a different ancestor branch');
@@ -303,26 +337,24 @@ export async function runAgentWorkflow(config) {
       await save(join(evidence, 'turn-' + turn.id + '-input.json'), turn);
     }
     await close();
-    for (const receipt of result.turns) {
-      const observed = await json(join(evidence, 'turn-' + receipt.id + '-observed.json'));
-      const owner = result.segments.find(item => item.index === receipt.segment);
-      observed.source = workflowSourceSlice(owner.source.events, receipt.startedNs, receipt.endedNs);
-      observed.backgroundSource = owner.source.events.filter(event => !observed.source.includes(event));
-      observed.sourceCoverage = owner.source.complete && owner.source.errors.length === 0;
-      const frozenBindings = await json(join(evidence, 'turn-' + receipt.id + '-bindings.json'));
-      const turn = await json(join(evidence, 'turn-' + receipt.id + '-input.json'));
-      receipt.analysis = await analyzeNotionAgentTurn(turn, observed, frozenBindings, { inspectPayload: candidatePayloadBodies });
-      receipt.status = receipt.analysis.status;
-      await save(join(evidence, 'turn-' + receipt.id + '-analysis.json'), { observed, analysis: receipt.analysis });
-      await save(join(evidence, 'turn-' + receipt.id + '-verdict.json'), receipt);
-    }
+    await analyzeObserved();
     result.status = result.turns.every(turn => turn.status === 'passed') ? 'passed'
       : result.turns.some(turn => turn.status === 'failed') ? 'failed' : 'blocked';
   } catch (error) {
     result.status = 'failed'; result.error = { code: error.code ?? error.name, message: error.message };
     const active = result.turns.find(turn => turn.status === 'running'); if (active) { active.status = 'failed'; active.error = result.error; }
   } finally {
-    if (rpc) { await rpc.stop().catch(error => { result.shutdownError = error.message; }); rpc = undefined; }
+    if (rpc) {
+      try { await close(); }
+      catch (error) {
+        result.shutdownError = error.message;
+        await rpc?.stop().catch(() => {}); rpc = undefined;
+        if (segment) segment.source = await readSourceObservation(segment.observer.files.source);
+      }
+    }
+    // A later external event failure must not erase already completed turns.
+    try { await analyzeObserved(); }
+    catch (error) { result.analysisError = { code: error.code ?? error.name, message: error.message }; result.status = 'failed'; }
     result.normalConfigurationUnchanged = (await identity(settingsPath)).sha256 === before.settings.sha256 && (await identity(sourcePath)).sha256 === before.source.sha256;
     result.loadedFilesUnchanged = (await Promise.all([...baseline, ...cliFiles].map(async file => (await identity(file.path)).sha256 === file.sha256))).every(Boolean);
     result.sourceTupleAfter = await Promise.all([sourceIdentity(config.brokerRoot, 'broker'), sourceIdentity(config.cliRoot, 'cli')]);
@@ -330,6 +362,7 @@ export async function runAgentWorkflow(config) {
     if (!result.normalConfigurationUnchanged || !result.loadedFilesUnchanged || !result.sourceUnchanged) result.status = 'failed';
     for (const item of result.segments) {
       if (await exists(item.sessionFile)) item.sessionArtifact = await identity(item.sessionFile);
+      for (const fork of item.forkedSessions ?? []) if (await exists(fork.sessionFile)) fork.artifact = await identity(fork.sessionFile);
       await save(join(item.control, 'lifecycle.json'), item.lifecycle);
     }
     result.finishedAt = new Date().toISOString(); await save(join(evidence, 'result.json'), result);
