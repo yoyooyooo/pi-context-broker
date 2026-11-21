@@ -59,7 +59,7 @@ import { installCliWriteInvalidation } from "./cli-write-invalidation";
 import { createOmpHostAdapter } from "./omp-host-adapter";
 import { createPiHostAdapter } from "./pi-host-adapter";
 import { hostCliScope } from "./host-command";
-import { configuredBundledBuiltinRecords, isBundledBuiltin, isBundledBuiltinToken } from "./bundled-builtins";
+import { bundledBuiltinRoot, configuredBundledBuiltinRecords, isBundledBuiltin, isBundledBuiltinToken } from "./bundled-builtins";
 import { createAcceptedSelections } from "./accepted-selections";
 import { notifyUnavailableReferences, renderUnavailableReferences, unavailableReferenceDetails, type UnavailableReference } from "./unavailable-references";
 import {
@@ -829,6 +829,19 @@ function hasCliGuidance(messages: AgentMessage[], guidance: Omit<AgentMessage, "
   return messages.some(message => message.role === "custom" && message.customType === CLI_GUIDANCE_TYPE && textFromContent(message.content) === guidance.content);
 }
 
+/** Package locations are metadata; this route never loads a body or changes source authority. */
+function packagedMaintenanceGuidance(tools: ReadonlySet<string>): string {
+  const root = bundledBuiltinRoot();
+  const entry = root && join(root, "ntn-skills-maintain", "SKILL.md");
+  const route = tools.has("read")
+    ? entry && existsSync(entry) ? `read(${JSON.stringify(entry)}) from this Broker's paired package`
+      : "the paired package entry is unavailable; report it"
+    : tools.has("bash")
+      ? `run argv ${JSON.stringify([...hostCliScope().command, "ctl", "builtin", "read", "notion/ntn-skills-maintain", "--json"])}`
+      : "Packaged help requires read or bash";
+  return `For explicit offline/bootstrap/installed-package help only: ${route}. Pending/failed Notion access does not authorize this route; never search other installations.`;
+}
+
 function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit<AgentMessage, "role" | "timestamp"> {
   if (tools.has("notion_list") || tools.has("notion_use") || tools.has("notion_ctl")) {
     const read = tools.has("read"), list = tools.has("notion_list"), use = tools.has("notion_use");
@@ -844,6 +857,7 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
       ...(use ? ["notion_use(ref) applies with Requires; refresh:true adopts latest on request, conflicting roots together. Members: candidates. Outside Code mode."] : []),
       ...(read || tools.has("bash") ? [maintenanceGuidance(read ? "read" : "CLI read", list ? "notion_list" : tools.has("bash") ? "CLI list" : undefined,
         use ? "notion_use(ref)" : tools.has("bash") ? "CLI use EXACT_REF" : undefined)] : []),
+      packagedMaintenanceGuidance(tools),
       ...(tools.has("notion_ctl") ? ["notion_ctl working_set manages active roots and byte budgets; release preserves shared Requires, history and cache."] : []),
       ...(cliSources.length ? [`No task CLI? notion_ctl cli_source returns its command/scope; no execution or authorization. Choose explicitly from ${JSON.stringify(cliSources)}.`] : []),
       ...((!read || !list || !use) && tools.has("bash") ? (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false).map(source => {
