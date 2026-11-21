@@ -860,11 +860,17 @@ export async function readAgentFixture(bindings, object, options = {}) {
 }
 
 /** Cleanup only declared fixture ownership, after subject processes have exited. Keep all evidence. */
-export async function cleanupAgentFixtures(bindings, { subjectExited, trash = '/usr/bin/trash' } = {}) {
+export async function cleanupAgentFixtures(bindings, { subjectExited, trash = '/usr/bin/trash', preserveBindings = false } = {}) {
   assert.equal(subjectExited, true, 'Stop the owned subject before fixture cleanup');
+  assert.equal(typeof preserveBindings, 'boolean');
   const context = bindings.private.fixture; await assertOwnership(context);
   assert.ok(isAbsolute(trash) && await exists(trash), 'A verified system Trash executable is required');
-  const results = [];
+  const results = [], bindingsArtifacts = [];
+  const persistCleanup = async () => {
+    if (!preserveBindings) return persist(bindings);
+    const checkpoint = await capture(context, join(context.root, 'cleanup-bindings-' + randomUUID() + '.json'), bindings);
+    bindingsArtifacts.push(checkpoint); return checkpoint;
+  };
   const viewCleanup = await cleanupFilteredView(context); if (viewCleanup) results.push(viewCleanup);
   for (const fault of [...(context.faults ?? [])].reverse()) {
     if (!(await exists(fault.target))) continue;
@@ -891,7 +897,7 @@ export async function cleanupAgentFixtures(bindings, { subjectExited, trash = '/
     }
     if (owned.placement === 'source') {
       if (!owned.sourcePageId) {
-        const observed = await observeSourceCheckpoint(bindings, owned.id); await persist(bindings);
+        const observed = await observeSourceCheckpoint(bindings, owned.id); await persistCleanup();
         if (!observed.source && !owned.sourceOperation) continue;
         assert.ok(observed.source, 'An interrupted Source intent needs reconciliation before teardown');
       }
@@ -903,7 +909,7 @@ export async function cleanupAgentFixtures(bindings, { subjectExited, trash = '/
       }
       const sourceRecords = await pages(context, 'records', { property: context.library.records.property_ids.Origin, relation: { contains: owned.sourcePageId } });
       owned.sourceRecordIds = [...new Set([...(owned.sourceRecordIds ?? []), ...sourceRecords.map(record => record.id)])];
-      await persist(bindings); // Preserve exact retired identities before the first writer may trash them.
+      await persistCleanup(); // Preserve exact retired identities before the first writer may trash them.
       const commands = [];
       if (!(sourceBefore.in_trash || sourceBefore.archived)) {
         const declaration = await json(owned.declarationPath);
@@ -943,7 +949,9 @@ export async function cleanupAgentFixtures(bindings, { subjectExited, trash = '/
       results.push({ object: owned.id, action: 'native-cleanup', status: 'passed', command: removed.artifact, readback });
     }
   }
-  const path = join(context.root, 'cleanup-' + randomUUID() + '.json'); await save(path, { results, at: clock(), semantics: 'owned-fixture-teardown-not-product-repair' });
-  await persist(bindings);
-  return { results, artifact: await artifact(path) };
+  if (preserveBindings) await persistCleanup();
+  const retained = preserveBindings ? { bindingsArtifacts } : {};
+  const path = join(context.root, 'cleanup-' + randomUUID() + '.json'); await save(path, { results, at: clock(), semantics: 'owned-fixture-teardown-not-product-repair', ...retained });
+  if (!preserveBindings) await persist(bindings);
+  return { results, artifact: await artifact(path), ...retained };
 }

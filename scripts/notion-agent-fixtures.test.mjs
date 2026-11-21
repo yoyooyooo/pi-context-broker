@@ -110,6 +110,25 @@ test('external builtin bindings cannot be mutated or included in cleanup writes'
   assert.deepEqual(cleanup.results, [{ object: 'selected', action: 'external-read-only-preserved', status: 'passed' }]);
 });
 
+test('historical teardown can preserve its original binding bytes while recording new control state', async t => {
+  if (!(await exists('/usr/bin/trash'))) return;
+  const { root, bindings, context } = await fixture(t), directory = join(root, 'owned-project-skill');
+  await mkdir(directory); await writeFile(join(directory, 'SKILL.md'), '# Original rule\n');
+  await writeJson(join(directory, '.agent-workflow-owner.json'), { runId: context.runId, token: context.ownership.token });
+  context.objects.selected = { id: 'selected', placement: 'project', directory };
+  await writeJson(join(root, 'bindings.json'), bindings);
+  const before = await readFile(join(root, 'bindings.json'));
+  context.cli = join(root, 'frozen-selected-cli.js');
+  const cleanup = await cleanupAgentFixtures(bindings, { subjectExited: true, preserveBindings: true });
+  assert.equal(await exists(directory), false);
+  assert.equal(hash(await readFile(join(root, 'bindings.json'))), hash(before), 'The original evidence must not be rewritten');
+  assert.ok(cleanup.bindingsArtifacts.length > 0);
+  const recorded = await json(cleanup.bindingsArtifacts.at(-1).path);
+  assert.equal(recorded.private.fixture.cli, context.cli);
+  assert.equal(hash(await readFile(cleanup.bindingsArtifacts.at(-1).path)), cleanup.bindingsArtifacts.at(-1).sha256);
+  assert.deepEqual((await json(cleanup.artifact.path)).bindingsArtifacts, cleanup.bindingsArtifacts);
+});
+
 
 test('bounded reader retries and repeated teardown do not resurrect a retired Source', async t => {
   if (!(await exists('/usr/bin/trash'))) return;
@@ -147,6 +166,33 @@ test('bounded reader retries and repeated teardown do not resurrect a retired So
     assert.equal(reads.length, 10);
     const attempts = (await readFile(join(context.root, 'network-attempts.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
     assert.deepEqual(attempts.slice(0, 3).map(value => [value.attempt, value.retry]), [[1, true], [2, true], [3, false]]);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousToken === undefined) delete process.env.NOTION_API_TOKEN; else process.env.NOTION_API_TOKEN = previousToken;
+  }
+});
+
+test('preserved historical Source bindings stay immutable through its ownership checkpoint', async t => {
+  if (!(await exists('/usr/bin/trash'))) return;
+  const { root, bindings, context } = await fixture(t);
+  context.objects.selected = { id: 'selected', placement: 'source', sourceId: 'owned-source', skillId: 'owned-skill', currentVersion: 'absent' };
+  context.library = {
+    skills: { data_source_id: '11111111-1111-1111-1111-111111111111', property_ids: { 'Skill ID': 'skill-id' } },
+    sources: { data_source_id: '22222222-2222-2222-2222-222222222222', property_ids: { 'Source ID': 'source-id' } },
+  };
+  await writeJson(join(root, 'bindings.json'), bindings); const originalHash = hash(await readFile(join(root, 'bindings.json')));
+  context.cli = join(root, 'frozen-selected-cli.js');
+  const previousFetch = globalThis.fetch, previousToken = process.env.NOTION_API_TOKEN;
+  process.env.NOTION_API_TOKEN = 'fixture-unit-test-token';
+  globalThis.fetch = async (url, options) => {
+    assert.equal(options.method, 'POST'); assert.ok(new URL(url).pathname.endsWith('/query'));
+    return Response.json({ results: [], has_more: false });
+  };
+  try {
+    const result = await cleanupAgentFixtures(bindings, { subjectExited: true, preserveBindings: true });
+    assert.equal(result.bindingsArtifacts.length, 2, 'Keep both the ownership checkpoint and final state');
+    assert.equal(hash(await readFile(join(root, 'bindings.json'))), originalHash);
+    for (const checkpoint of result.bindingsArtifacts) assert.equal((await json(checkpoint.path)).private.fixture.cli, context.cli);
   } finally {
     globalThis.fetch = previousFetch;
     if (previousToken === undefined) delete process.env.NOTION_API_TOKEN; else process.env.NOTION_API_TOKEN = previousToken;
