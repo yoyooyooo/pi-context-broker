@@ -434,6 +434,41 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
     return fact.anyOf.some(value => normalized(shared.final.text).includes(normalized(value)));
   };
 
+  const sourceRequests = () => {
+    need(shared.toolObservation, 'TOOL_OBSERVATION_UNPROVEN', 'Source effects require complete actual tool observations');
+    need(observed.sourceCoverage === true && Array.isArray(observed.source), 'SOURCE_COVERAGE_MISSING', 'Complete source observation is required for source effects');
+    const source = observed.source, starts = source.filter(row => row.phase === 'started'), attempts = source.filter(row => row.phase === 'attempt');
+    const ids = new Set(starts.map(row => row.requestId));
+    need(ids.size === starts.length && attempts.every(row => ids.has(row.requestId)),
+      'SOURCE_OPERATION_CORRELATION_MISSING', 'Source attempts need unique observed operations');
+    for (const start of starts) {
+      const metric = source.filter(row => row.phase === 'metrics' && row.requestId === start.requestId);
+      need(metric.length === 1 && metric[0].observed === true && metric[0].complete === true &&
+        Number.isSafeInteger(metric[0].total_requests) && metric[0].total_requests >= 0 &&
+        metric[0].total_requests === attempts.filter(row => row.requestId === start.requestId).length,
+      'SOURCE_METRICS_UNKNOWN', 'Missing or incomplete metrics cannot prove a source request count');
+      need(source.filter(row => row.phase === 'completed' && row.requestId === start.requestId).length === 1,
+        'SOURCE_OPERATION_INCOMPLETE', 'Source operation did not finish exactly once');
+    }
+    for (const call of shared.attempts.values()) {
+      const readOnly = ['read', 'grep', 'find', 'ls', 'notion_list', 'notion_use', 'tool_search'].includes(call.name) ||
+        call.name === 'notion_ctl' && object(call.arguments) && (call.arguments.working_set === 'show' || nonempty(call.arguments.cli_source)) &&
+        Object.keys(call.arguments).every(key => ['working_set', 'cli_source'].includes(key));
+      need(readOnly, 'TOOL_EFFECTS_UNKNOWN', 'An executed tool has effects outside the observed SDK boundary', { tool: call.name, toolCallId: call.id });
+    }
+    return { source, attempts, coverage: 'subject-tool-operations-with-complete-SDK-metrics',
+      backgroundChildren: source.filter(row => row.phase === 'unmatched_child_start').map(row => ({ childId: row.childId, transport: 'unknown' })),
+      notClaimed: 'all-host/plugin/descendant traffic; any subject execution tool still requires complete independent effects evidence' };
+  };
+  const subjectEffects = async () => {
+    const effects = observed.effects, raw = JSON.parse((await verifiedArtifact(effects.artifact, readArtifact)).toString('utf8'));
+    const { artifact: _artifact, ...value } = effects;
+    demand(isDeepStrictEqual(raw, value), 'EFFECTS_RECEIPT_CHANGED', 'Effects summary differs from its original observation');
+    need(effects.coverage === 'all-subject-notion-operations' && effects.complete === true,
+      'EFFECTS_COVERAGE_MISSING', 'Unknown child-process effects cannot be treated as zero');
+    return effects;
+  };
+
   for (const expected of turn.expect) await check(expected.kind, async () => {
     switch (expected.kind) {
       case 'completed':
@@ -598,37 +633,38 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
         }
         return { receipt: expected.receipt, artifact: receipt.artifact, checks: receipt.assertions.length };
       }
+      case 'source-network-attempts': {
+        let count, details;
+        if (observed.effects) {
+          const effects = await subjectEffects();
+          need(Number.isSafeInteger(effects.notionHttpAttempts) && effects.notionHttpAttempts >= 0,
+            'SOURCE_NETWORK_METRIC_MISSING', 'The complete effects observation must explicitly measure Notion HTTP attempts');
+          count = effects.notionHttpAttempts;
+          details = { coverage: effects.coverage, artifact: effects.artifact };
+        } else {
+          const observedRequests = sourceRequests();
+          count = observedRequests.attempts.length;
+          const { source: _source, attempts: _attempts, ...scope } = observedRequests;
+          details = scope;
+        }
+        demand(expected.min === undefined || count >= expected.min, 'SOURCE_NETWORK_ATTEMPTS_TOO_FEW', 'Required source network attempts are missing');
+        demand(expected.max === undefined || count <= expected.max, 'SOURCE_NETWORK_ATTEMPTS_TOO_MANY', 'The source attempted forbidden network access', { actual: count });
+        return { actual: count, ...details, counting: 'actual-attempts-including-failures' };
+      }
       case 'no-semantic-writes': {
         if (observed.effects) {
-          const effects = observed.effects, raw = JSON.parse((await verifiedArtifact(effects.artifact, readArtifact)).toString('utf8'));
-          const { artifact: _artifact, ...value } = effects;
-          demand(isDeepStrictEqual(raw, value), 'EFFECTS_RECEIPT_CHANGED', 'Effects summary differs from its original observation');
-          need(effects.coverage === 'all-subject-notion-operations' && effects.complete === true && Number.isSafeInteger(effects.semanticWrites) &&
-            effects.semanticWrites >= 0 && typeof effects.externalRepair === 'boolean', 'EFFECTS_COVERAGE_MISSING', 'Unknown child-process effects cannot be treated as zero');
+          const effects = await subjectEffects();
+          need(Number.isSafeInteger(effects.semanticWrites) && effects.semanticWrites >= 0 && typeof effects.externalRepair === 'boolean',
+            'EFFECTS_COVERAGE_MISSING', 'Unknown child-process effects cannot be treated as zero');
           demand(effects.semanticWrites === 0 && effects.externalRepair === false, 'UNAUTHORIZED_SEMANTIC_WRITE', 'A read-only task changed Notion semantics or required repair');
           return { semanticWrites: 0, coverage: effects.coverage, artifact: effects.artifact };
         }
-        need(observed.sourceCoverage === true && Array.isArray(observed.source), 'SOURCE_COVERAGE_MISSING', 'Complete source observation is required for zero writes');
-        const source = observed.source;
-        demand(source.filter(row => row.phase === 'attempt').every(row => row.request_kind !== 'notion_write' && !['PATCH', 'PUT', 'DELETE'].includes(row.method)),
+        demand((observed.source ?? []).filter(row => row.phase === 'attempt')
+          .every(row => row.request_kind !== 'notion_write' && !['PATCH', 'PUT', 'DELETE'].includes(row.method)),
           'UNAUTHORIZED_SEMANTIC_WRITE', 'Source transport attempted a Notion mutation');
-        for (const start of source.filter(row => row.phase === 'started')) {
-          const metric = source.filter(row => row.phase === 'metrics' && row.requestId === start.requestId);
-          need(metric.length === 1 && metric[0].observed === true && metric[0].complete === true &&
-            Number.isSafeInteger(metric[0].total_requests) && metric[0].total_requests === source.filter(row => row.phase === 'attempt' && row.requestId === start.requestId).length,
-          'SOURCE_METRICS_UNKNOWN', 'Missing or incomplete metrics cannot prove zero writes');
-          need(source.some(row => row.phase === 'completed' && row.requestId === start.requestId), 'SOURCE_OPERATION_INCOMPLETE', 'Source operation did not finish');
-        }
-        for (const call of shared.attempts.values()) {
-          const readOnly = ['read', 'grep', 'find', 'ls', 'notion_list', 'notion_use', 'tool_search'].includes(call.name) ||
-            call.name === 'notion_ctl' && object(call.arguments) && (call.arguments.working_set === 'show' || nonempty(call.arguments.cli_source)) &&
-            Object.keys(call.arguments).every(key => ['working_set', 'cli_source'].includes(key));
-          need(readOnly, 'TOOL_EFFECTS_UNKNOWN', 'An executed tool can write but its effects were not independently observed', { tool: call.name, toolCallId: call.id });
-        }
-        return { semanticWrites: 0, coverage: 'subject-tool-operations-with-complete-SDK-metrics',
-          backgroundCatalogRequests: source.filter(row => row.phase === 'started' && row.operation === 'list').length,
-          backgroundChildren: source.filter(row => row.phase === 'unmatched_child_start').map(row => ({ childId: row.childId, transport: 'unknown' })),
-          notClaimed: 'all-host/plugin/descendant traffic; any subject execution tool still requires complete independent effects evidence' };
+        const { source, attempts: _attempts, ...details } = sourceRequests();
+        return { semanticWrites: 0, ...details,
+          backgroundCatalogRequests: source.filter(row => row.phase === 'started' && row.operation === 'list').length };
       }
       default: throw new EvidenceError('blocked', 'ASSERTION_UNSUPPORTED', 'Unsupported assertion ' + expected.kind);
     }
