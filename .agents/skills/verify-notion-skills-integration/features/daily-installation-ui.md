@@ -16,8 +16,8 @@ node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/c
 | --- | --- |
 | plan/run | version:1；同一新 delivery:{id:UUID,startedAt:UTC_ISO}；实际日用包注册、source 配置、配对 roots/archive/hash、embedded CLI/SDK 和 entry hash、自有 evidenceRoot。run 还核正常 PATH、expectedFindRecord 和适用的 namespace review；plan 只输出准备信息。 |
 | aggregate | version:1；同一 delivery、worktrees、cliRoot/brokerRoot；receipts.pro/mini 为两份本次日用 result.json 的绝对路径。重验真实 origin/next、当前构建、不同机器与完整 version:2 日用回执；单机、旧回执、候选、source-only 或缺项不通过。 |
-| candidate-plan | version:1；scope:project-scoped-candidate-precheck；非空 turns 含唯一 id/自然 prompt；body 断言对应冻结 expectedBodies。输出 prepared_not_executed。 |
-| candidate-run --live | 以上候选输入及当前包/归档 hashes、oldBrokerRoot、localSkill、ownershipReceipt、artifactReceipt、自有 evidenceRoot、sourceId/database 和已授权凭据环境。当前实现要求 model:magpie/group/flash、thinkingLevel:high。 |
+| candidate-plan | version:1；自然旅程使用 scope:notion-agent-workflow 及 scenarioFile/scenarioId/profile/bindingsFile；原项目预检 scope 保留其 turns/expectedBodies。输出 prepared_not_executed。 |
+| candidate-run --live | 自然旅程按 [工作流 Skill](../../verify-notion-agent-workflows/SKILL.md) 绑定实际 fixture、配对包、source/database、注册位置与 evidenceRoot；原项目预检按其现有包/归档/所有权输入。正式模型为 magpie/group/worker、thinkingLevel:high。 |
 
 ## 准备普通日用配置
 
@@ -130,9 +130,9 @@ Doctor 无 namespace 失败时，省略 `namespaceDiagnosticsReview`。只有已
 
 沿配对 CLI 合同索引 C10/T21 检查每个入口的 required_inputs；双机交付以 [next 工作树交付](../../../../docs/next-worktree-delivery.md) 的同一流程收口。run 与 aggregate 验普通日用装载和 metadata，仍将正文与模型任务记为 not_run；candidate-run 是项目级候选，不能代替两机普通日用入口。计划和帮助都不算执行成绩。运行前阅读实际输出并消除配置/字节/协议不匹配，不把旧 source.command 或旧 selector 加回产品。
 
-T16/T17 还须冻结 turns[].prompt/bodies/proofs/requireUse 与对应 expectedBodies；自然提示不预给工具或 ref。现有 candidate-run 连续执行 turns，没有轮间暂停、等待远端编辑再恢复的编排。它不能独立证明“原会话采用 A、远端改为 B、同会话查看或采用最新”的完整时序。该部分使用公开 Pi 人工驱动并保留编辑前后原件，未取得则保持 not_run，不能由既有 unit 或候选结果代填。
+T16/T17 沿 [工作流 Skill](../../verify-notion-agent-workflows/SKILL.md) 的自然 scope 使用同进程有限事件：采用 A、真实发布 B 并独立读回、继续 A、只看 B、继续 A、明确采用 B。普通继续保持原进程；restart/fork/compact 各有真实入口和分支证据。源码或受控结果不代填，未执行项仍为 not_run。
 
-T22 在普通 Pi 不带 -ns、Notion source 可见且本地充分的条件下执行。必须由独立人工逐条审核完整 tool_call/tool_result/provider trace，失败 notion_use 也计入不必要调用。现有 toolCallCount 计全部工具；requireUse:false 也不构成零误调断言。另保留确需远端的正例，分别判断任务与实际正文。
+T22 的本地充分负例在 daily 普通 Pi 中证明目标由原生全局发现加载、远端目标在实际模型目录可见，再用 tool-attempts 断言 notion_use 尝试为零（含失败与撤回）。全工具 toolCallCount 不能替代专门计数。适用远端任务增加 no-native-skills 对照；-ns 不清除 Broker local。保留必要远端、真正歧义、等价与互补等独立判据。
 
 分别观察：当前 Source可发现；目录完整；实际选择绑定；完整正文/资源进入实际provider/serializer；取消不产生迟到激活；turn完成；后续会话按固定选择恢复。真实模型需要成功响应及实际任务证据，不由 mock、receipt 或模型自述代填。
 

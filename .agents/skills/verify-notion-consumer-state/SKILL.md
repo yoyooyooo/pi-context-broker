@@ -63,7 +63,7 @@ mutation 输出目录本身须不存在。按实际变化选择 `FreshnessPublic
 
 资格、已选择、已准备、provider 接受、turn 完成和公开投影回执分别判断。HTTP 2xx 不代表模型任务完成，返回 draft 不代表宿主已持久化；本地固定内容也不表示当前授权。
 
-本入口不访问真实 Notion、启动真实 Pi 会话或调用模型。不证明服务线性一致性、跨机权限/墙钟竞态、实际 serializer、任意宿主或模型最终描述。独立安装与真实日用沿 integration，其他宿主沿 [verify-context-broker](../verify-context-broker/SKILL.md)；OMP/Tern 延期。
+本入口不访问真实 Notion、启动真实 Pi 会话或调用模型。不证明服务线性一致性、跨机权限/墙钟竞态、实际 serializer、任意宿主或模型最终描述。独立安装与安装身份沿 integration，自然版本/恢复旅程沿 [工作流验证 Skill](../verify-notion-agent-workflows/SKILL.md)，宿主实现沿 [verify-context-broker](../verify-context-broker/SKILL.md)；OMP/Tern 延期。
 
 只清理本轮进程和自有绝对路径，经系统 Trash；不动用户现有会话、全局配置、日用安装或未结清 operation Store。运行结果放仓库外，不在源码中累计历史图册或成绩账本。
 

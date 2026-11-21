@@ -181,7 +181,7 @@ same-name local Skill whose bytes the run must preserve.
 	"packageIndex": 1,
 	"sourceId": "REPLACE_WITH_EXISTING_NOTION_SOURCE_ID",
 	"database": "REPLACE_WITH_AUTHORIZED_SKILLS_DATABASE_UUID",
-	"model": "magpie/group/flash",
+	"model": "magpie/group/worker",
 	"thinkingLevel": "high",
 	"localSkill": {
 		"name": "release-checklist",
@@ -219,7 +219,7 @@ assertion references a frozen hash and uses a nonnegative integer occurrence
 count. `proofs` contains the nonempty partial objects that must occur in actual
 tool receipts. `requireUse:true` requires a successful use call and its matching
 preparation receipt. It does not replace an independent review of task success.
-`requireUse:false` does not assert zero unnecessary calls.
+`requireUse:false` asserts zero actual notion_use attempts, including failed or guarded calls. Use the natural workflow tool-attempts assertion when binding a reusable user journey.
 
 The live action requires the already-authorized `NOTION_API_TOKEN` in the
 inherited environment and the normal provider configuration. Do not put secrets
@@ -228,7 +228,7 @@ directory outside this repository. `candidate-plan` only validates the turn
 plan; `candidate-run --live` checks the actual installation and inputs before
 starting its project session. Neither action changes the ordinary daily package
 registration. Follow the [daily map](../.agents/skills/verify-notion-skills-integration/features/daily-installation-ui.md)
-for the public commands and the T16/T17 manual timeline and T22 trace review.
+for the public commands. Natural T16/T17 timelines and T22 tool-necessity checks use the [workflow Skill](../.agents/skills/verify-notion-agent-workflows/SKILL.md) and its `scope:notion-agent-workflow` configuration; it provides finite real events, private assertions and independent business readback.
 
 ### Freeze file identities
 

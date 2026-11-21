@@ -11,6 +11,7 @@ const skills = [
   ".agents/skills/verify-context-broker/SKILL.md",
   ".agents/skills/verify-notion-consumer-state/SKILL.md",
   ".agents/skills/verify-notion-skills-integration/SKILL.md",
+  ".agents/skills/verify-notion-agent-workflows/SKILL.md",
 ]
 const routes = [
   "verify-notion-management",
@@ -60,6 +61,7 @@ function currentDocuments() {
     for (const file of readdirSync(resolve(root, directory)))
       if (file.endsWith(".md")) documents.push(`${directory}/${file}`)
   }
+  documents.push(".agents/skills/verify-notion-agent-workflows/references/running.md")
   return documents.map(path => [path, read(path)])
 }
 
@@ -122,4 +124,18 @@ test("paired CLI contract owners and Broker commands resolve in this actual chec
   const imported = structuredClone(map)
   imported.contracts[0].entrypoints.push({ repository: "broker", command: "node scripts/verify-pi-daily-candidate.mjs --help", required_inputs: [] })
   assert.throws(() => check(imported), /not a public CLI/u)
+})
+
+test("natural workflow ownership has one executable route and keeps the subject free of private instructions", () => {
+  const skill = read(".agents/skills/verify-notion-agent-workflows/SKILL.md")
+  const guide = read(".agents/skills/verify-notion-agent-workflows/references/running.md")
+  const map = read("docs/verification-routing.md")
+  for (const token of ["magpie/group/worker", "no-native-skills", "candidate-plan", "candidate-run", "notion-agent-workflow", "holdout-", "instruction_evaluation:not_run"])
+    assert.ok(skill.includes(token), "missing workflow boundary: " + token)
+  for (const token of ["prepareAgentFixtures", "checkAgentContractCoverage", "bindingsFile", "cleanupAgentFixtures", "subjectExited", "external"])
+    assert.ok(guide.includes(token), "missing executable preparation/cleanup step: " + token)
+  assert.ok(skill.includes("被测 Pi 只收到自然 prompt"))
+  assert.ok(skill.includes("外部扫尾"))
+  assert.ok(map.includes("agent-workflows 拥有 C08"))
+  assert.ok(!map.includes("context-broker 拥有 C08"))
 })

@@ -9,7 +9,7 @@ description: "验证当前 Context Broker 的 Pi 注入、目录与资源消费�
 
 从 [功能地图](features/README.md) 选择受影响的范围，复用已有测试和实际宿主助手。当前只有 `next` 协议：远端身份是 `shared_skill`，消费经同包 SDK v2。`source.command`、旧 CLI 正文消费和 export 回退都不属于有效验证输入。
 
-[验证交接表](../../../docs/verification-routing.md) 指定 CLI 管理、消费、Source 接手与 Broker 的职责。本文负责 Broker 用户行为与集成边界；作者正文和 Notion 四表治理交给 CLI 原有领域 Skill。
+[验证交接表](../../../docs/verification-routing.md) 指定 CLI 管理、消费、Source 接手与 Broker 的职责。本文负责 Broker 实现与集成边界；自然用户旅程与 Agent 认知交给 [工作流验证 Skill](../verify-notion-agent-workflows/SKILL.md)，作者正文和 Notion 多表治理交给 CLI 原有领域 Skill。
 
 | 变化 | 现有入口 | 必须保留的结论边界 |
 | --- | --- | --- |
@@ -17,6 +17,7 @@ description: "验证当前 Context Broker 的 Pi 注入、目录与资源消费�
 | 跨仓 SDK、包内运行时、安装后的 HTTP 消费 | [integration Skill](../verify-notion-skills-integration/SKILL.md)；`scripts/verify-artifacts.mjs` | 同一 CLI/SDK 候选，实际独立安装与 current HTTP |
 | 资格、固定选择、取消、provider/turn/投影状态 | [consumer-state Skill](../verify-notion-consumer-state/SKILL.md) | 审模型、受保护 guard 与反例；不刷新 hash 放行 |
 | 实际 Pi 的 SDK/工具/serializer 行为 | `scripts/notion-sdk-pi.mjs` 现有入口 | 记录所选场景与实际安装；受控 provider 不证明模型理解 |
+| 自然用户旅程与 Agent 选路 | [工作流验证 Skill](../verify-notion-agent-workflows/SKILL.md) | 真实 worker、当前请求和独立业务读回；不以结构检查代填 |
 | 真实 Notion 与日用 Pi | `scripts/verify-pi-daily-installation.mjs` 的 plan/run/aggregate/candidate-plan/candidate-run | 两机 aggregate 只证明本次普通入口与 metadata；正文、取消与模型结果分别记录 |
 
 OMP/Tern 产品代码保留，当前验收延期。旧双宿主控制器、旧 CLI fixture 总入口和旧原生 UI/PTY 驱动已删除。真实 Pi 助手仍在；原生终端菜单、光标和 UI 操作须有对应实测，不能由源码、RPC 或安装包结果推断。
@@ -57,4 +58,4 @@ node scripts/verify-pi-daily-installation.mjs candidate-plan --config /absolute/
 
 按上文的验证交接使用配对 CLI 的合同/场景索引与薄回执。记录 actual command、源码/dirty tree、实际加载路径/bytes、机器/runtime、初态、层级和原件 hash；首次失败与复验关系保留。fixture 或受控 provider 不作为 live/natural；结构检查不代表独立 Agent 使用成功，未做时标 instruction_evaluation:not_run。
 
-本入口拥有自然任务与工具必要性。普通 Pi 的显式 local 任务若本地充分且远端 source 可见，断言不必要 notion_use 为零，失败调用也计数；另设确需远端正例。旧会话要求采用最新、只查看最新和故障后继续，使用自然提示，不预先给工具名、flag 或 opaque ref。
+自然任务与工具必要性由 [工作流验证 Skill](../verify-notion-agent-workflows/SKILL.md) 单独负责；本入口承接实际 adapter、注入和工具实现修复。复验保留普通 Pi 与适用的 -ns 对照、真实 worker、零不必要 notion_use（含失败）、查看与采用边界及故障后继续，不给被测 Agent 预填工具路线。

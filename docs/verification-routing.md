@@ -9,9 +9,10 @@
 | Source 配置、成员发现与接纳 | CLI `.cursor/skills/verify-notion-source-onboarding/SKILL.md` | 成员曝光、启停、依赖或当前来源绑定变化 |
 | 资格、请求顺序、固定选择、provider/turn/投影 | [consumer state](../.agents/skills/verify-notion-consumer-state/SKILL.md) | 对应 observations / consumer-state 模型与真实守卫 |
 | CLI/SDK 配对、当前消费、独立安装包 | [integration](../.agents/skills/verify-notion-skills-integration/SKILL.md) | 跨仓合同或实际安装字节变化 |
-| 当前 Pi 行为、自然任务和本地/远端选路 | [context broker](../.agents/skills/verify-context-broker/SKILL.md) | 仅验证本次选择的宿主和功能 |
+| 当前 Pi adapter、目录、注入与资源实现 | [context broker](../.agents/skills/verify-context-broker/SKILL.md) | 仅验证本次选择的宿主和功能 |
+| 自然用户旅程、本地/Notion 选路及日常管理 | [agent workflows](../.agents/skills/verify-notion-agent-workflows/SKILL.md) | 真实 worker 的有效 session、实际请求与独立业务读回 |
 
-C01–C11/T01–T23、单一 owner 与实际入口由 CLI `verification/skill-domains.json` 唯一维护，使用同一配对提交的 `docs/verification-contracts.md`。当前主线为 AH-1188，旧 Done 不填作当前通过。CLI feature 归属仍在同一索引中。Broker 三项入口分别是 `.agents/skills/verify-notion-consumer-state/SKILL.md`、`.agents/skills/verify-notion-skills-integration/SKILL.md`、`.agents/skills/verify-context-broker/SKILL.md`。
+C01–C11/T01–T23、单一 owner 与实际入口由 CLI `verification/skill-domains.json` 唯一维护，使用同一配对提交的 `docs/verification-contracts.md`。当前主线为 AH-1188，旧 Done 不填作当前通过。CLI feature 归属仍在同一索引中。Broker 四项入口分别是 `.agents/skills/verify-notion-consumer-state/SKILL.md`、`.agents/skills/verify-notion-skills-integration/SKILL.md`、`.agents/skills/verify-context-broker/SKILL.md`、`.agents/skills/verify-notion-agent-workflows/SKILL.md`。
 
 ## 当前执行边界
 
@@ -35,7 +36,7 @@ Skill 作者执行与独立冷启动评估分开；未完成后者时标明 `ins
 
 ## 当前层级与自然任务
 
-consumer-state 拥有 C01–C05/C07c 的观察、选择、恢复与实际闭包；integration 拥有 C10 的跨仓公共入口和实际安装；context-broker 拥有 C08 的自然任务与工具必要性。形式化只验证声明的组合性质，不接管产品状态。
+consumer-state 拥有 C01–C05/C07c 的观察、选择、恢复与实际闭包；integration 拥有 C10 的跨仓公共入口和实际安装；agent-workflows 拥有 C08 的自然任务与工具必要性；context-broker 保留 Pi adapter、注入和工具实现。形式化只验证声明的组合性质，不接管产品状态。
 
 源码/真实 Store、受控 HTTP/host、独立包、live Notion+Pi+provider、natural 各自记账。自然层必须使用自然用户任务和真实模型；工具指定提示、受控 provider、observer fixture 不可填入该栏。T22 必须保留 source 可见的纯本地充分负例及必要远端正例；@local 不代表全局禁用 Notion。
 
@@ -58,3 +59,13 @@ node scripts/verify-next-worktrees.mjs --config /absolute/owned/current-pair.jso
 config 的 cliRoot/brokerRoot 必须是这些 worktree 的实际 packages 路径。检查还核实际机器指纹和有界真实 origin/next；旧本地 tracking ref 不能证明当前远端。检查通过后使用原有 daily installation/candidate 入口，运行前后都核对同一配对。源码 dirty、HEAD 不符、旧 build/SDK 或一机落后不能 passed。这里不执行常驻自更新，也不保留旧包兼容模式。独立 package 安装继续单独验，不因 worktree smoke 通过而省略；两机日用完成必须由原 daily 入口的 `aggregate` 联合检查不同机器、同一新 delivery 的完整 version:2 日用回执，按 [next 工作树交付](next-worktree-delivery.md) 执行。
 
 C10/T21 的 entrypoints.required_inputs 列出各动作必需配置。`/absolute/owned/` 是占位路径，不能直接当成已运行命令。daily-installation 的 plan/candidate-plan 只生成准备信息；run 检查当前日用装载，aggregate 只收口两机装载与 metadata，candidate-run --live 是项目级候选运行。各自范围见 [日用地图](../.agents/skills/verify-notion-skills-integration/features/daily-installation-ui.md)。帮助输出和 import 模块退出 0 都不能记为场景通过。
+
+## 自然用户旅程
+
+[工作流验证 Skill](../.agents/skills/verify-notion-agent-workflows/SKILL.md) 是自然输入、真实 Agent 选路和管理闭环的唯一入口，数据正本为 `scripts/notion-agent-scenarios.json`。它沿同一 candidate-plan / candidate-run --live，使用 `scope:notion-agent-workflow`；不新增宿主驱动或证据平台。`scripts/notion-agent-scenarios.mjs` 校验长期语料与私有绑定，fixtures 准备真实对象，analysis 关联 session、实际请求和独立读回。CLI 写入与内部多表关系仍由原管理入口实现。
+
+普通 daily 保留全局本地与 Notion 的日常混合环境；no-native-skills 只添加 -ns，不表示 Broker local 或显式路径消失。两种正式环境都固定真实 magpie/group/worker。按场景前提选择适用 profile，不能将原生命令计数当成目标可见性，也不能靠关闭 Notion source 获得零误用。
+
+普通续聊保持原进程；发布新版、restart/resume、fork、compact 和故障各有有限事件与真实完成屏障。公开用户文本不携带私有 oracle、工具名或修复路线。只读查看与采用分别断言；失败的 notion_use 也计入实际尝试，已有完整正文允许复用。输出正确不抵消错误来源、混版、缺依赖、管理残留或外部扫尾。
+
+每个自然 case 是所声明 C/T 的明确切片。checkAgentContractCoverage 从配对 CLI 单一索引检查映射；一个真实运行可被多个 T 薄回执引用，详细 scope 放原始证据，不能重复计成本或将局部通过扩成整个 T。必选组合、留出输入、首败、复验与独立 Skill 使用评价分别保留。
