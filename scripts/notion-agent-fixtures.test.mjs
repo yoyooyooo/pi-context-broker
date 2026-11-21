@@ -331,6 +331,80 @@ test('View teardown preserves the immediate non-owned inventory across independe
   });
 });
 
+test('fixture mutations retry an explicit rate-limit rejection within one budget', async t => {
+  for (const mode of ['recover', 'server-error', 'exhausted', 'long-delay']) await t.test(mode, async t => {
+    const { root, bindings, context } = await fixture(t);
+    const databaseId = '11111111-1111-1111-1111-111111111111', ownedId = '22222222-2222-2222-2222-222222222222';
+    const originalId = '33333333-3333-3333-3333-333333333333';
+    context.entry = databaseId;
+    context.library = { skills: { database_id: databaseId, data_source_id: '44444444-4444-4444-4444-444444444444', property_ids: { 'Skill ID': 'skill-id' } } };
+    context.node = process.execPath; context.cli = join(root, 'filtered-list.mjs');
+    await mkdir(join(root, 'commands'));
+    await writeFile(context.cli, 'console.log(JSON.stringify({ok:true,has_more:false,coverage:{exhaustive:true,failed_sources:[]},records:[]}));\n');
+    const previousFetch = globalThis.fetch, previousToken = process.env.NOTION_API_TOKEN, calls = [];
+    process.env.NOTION_API_TOKEN = 'fixture-unit-test-token'; let created = false;
+    globalThis.fetch = async (url, options) => {
+      const pathname = new URL(url).pathname;
+      if (options.method === 'GET' && pathname === '/v1/views')
+        return Response.json({ results: [originalId, ...(created ? [ownedId] : [])].map(id => ({ id })), has_more: false });
+      if (options.method === 'GET') {
+        assert.equal(pathname, '/v1/views/' + ownedId);
+        return Response.json({ id: ownedId, name: context.view.name, parent: { database_id: databaseId } });
+      }
+      assert.equal(options.method, 'POST'); assert.equal(pathname, '/v1/views');
+      calls.push({ at: performance.now(), body: options.body });
+      if (mode === 'server-error') return Response.json({ code: 'internal_server_error' }, { status: 500 });
+      if (mode !== 'recover' || calls.length === 1)
+        return Response.json({ code: 'rate_limited' }, { status: 429, headers: { 'Retry-After': mode === 'long-delay' ? '181' : mode === 'recover' ? '2.01' : '0.001' } });
+      created = true; return Response.json({ id: ownedId });
+    };
+    try {
+      if (mode === 'recover') {
+        const result = await prepareAgentFilteredView(bindings);
+        assert.equal(result.status, 'passed'); assert.equal(result.id, ownedId);
+        assert.equal(calls.length, 2); assert.equal(calls[0].body, calls[1].body);
+        assert.ok(calls[1].at - calls[0].at >= 2005, 'Honor the server delay instead of capping it at two seconds');
+      } else {
+        await assert.rejects(prepareAgentFilteredView(bindings), error => error.code === 'AGENT_FIXTURE_NOTION_READBACK');
+        assert.equal(calls.length, mode === 'exhausted' ? 3 : 1);
+      }
+      const attempts = (await readFile(join(root, 'network-attempts.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse).filter(row => !row.readOnly);
+      assert.equal(attempts.length, calls.length);
+      assert.deepEqual(attempts.map(row => row.retry), mode === 'recover' ? [true, false] : mode === 'exhausted' ? [true, true, false] : [false]);
+      if (mode === 'recover') assert.equal(attempts[0].retryDelayMs, 2010);
+    } finally {
+      globalThis.fetch = previousFetch;
+      if (previousToken === undefined) delete process.env.NOTION_API_TOKEN; else process.env.NOTION_API_TOKEN = previousToken;
+    }
+  });
+});
+
+test('a rate-limit wait cannot dispatch another fixture write after the total deadline', async t => {
+  const { bindings, context } = await fixture(t), databaseId = '11111111-1111-1111-1111-111111111111';
+  context.entry = databaseId;
+  context.library = { skills: { database_id: databaseId, data_source_id: '22222222-2222-2222-2222-222222222222', property_ids: { 'Skill ID': 'skill-id' } } };
+  const previousFetch = globalThis.fetch, previousToken = process.env.NOTION_API_TOKEN, originalTimeout = setTimeout;
+  process.env.NOTION_API_TOKEN = 'fixture-unit-test-token'; let now = 0, creates = 0;
+  const time = t.mock.method(performance, 'now', () => now);
+  const wait = t.mock.method(globalThis, 'setTimeout', (callback, delay, ...args) => {
+    if (delay === 1000) { now = 180001; return originalTimeout(callback, 0, ...args); }
+    return originalTimeout(callback, delay, ...args);
+  });
+  globalThis.fetch = async (_url, options) => {
+    if (options.method === 'GET') return Response.json({ results: [{ id: '33333333-3333-3333-3333-333333333333' }], has_more: false });
+    creates++;
+    if (creates > 1) throw new Error('A late fixture write escaped the total deadline');
+    return Response.json({ code: 'rate_limited' }, { status: 429, headers: { 'Retry-After': '1' } });
+  };
+  try {
+    await assert.rejects(prepareAgentFilteredView(bindings), error => error.code === 'AGENT_FIXTURE_NOTION_BUDGET');
+    assert.equal(creates, 1);
+  } finally {
+    time.mock.restore(); wait.mock.restore(); globalThis.fetch = previousFetch;
+    if (previousToken === undefined) delete process.env.NOTION_API_TOKEN; else process.env.NOTION_API_TOKEN = previousToken;
+  }
+});
+
 test('an unknown View CREATE outcome is recorded and never automatically replayed', async t => {
   const { bindings, context } = await fixture(t), databaseId = '11111111-1111-1111-1111-111111111111';
   context.entry = databaseId;

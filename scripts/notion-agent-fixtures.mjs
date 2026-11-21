@@ -81,26 +81,37 @@ async function request(context, path, { method = 'GET', body, fixtureMutation = 
   const configRoot = process.env.NTN_SKILLS_CONFIG_HOME ?? join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'ntn-skills');
   const token = process.env.NOTION_API_TOKEN ?? (await json(join(configRoot, 'config.json'))).token;
   assert.ok(typeof token === 'string' && token.length > 0, 'Notion credentials are unavailable');
-  const readOnly = method === 'GET' || isQuery, maximumAttempts = readOnly ? 3 : 1;
+  const readOnly = method === 'GET' || isQuery, maximumAttempts = 3;
+  const deadline = performance.now() + 180000;
   for (let attempt = 1; attempt <= maximumAttempts; attempt++) {
+    const remaining = Math.floor(deadline - performance.now());
+    if (remaining <= 0) throw fail('AGENT_FIXTURE_NOTION_BUDGET', 'Independent Notion request exceeded its total retry budget.', { method, path, attempt, readOnly });
     const started = clock(); let result, value, failure;
     try {
       result = await fetch('https://api.notion.com/' + path, {
-        method, signal: AbortSignal.timeout(60000),
+        method, signal: AbortSignal.timeout(Math.min(60000, remaining)),
         headers: { authorization: 'Bearer ' + token, 'Notion-Version': context.apiVersion, 'Content-Type': 'application/json' },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
       value = await result.json();
     } catch (error) { failure = error; }
-    const transient = failure !== undefined || result.status === 429 || result.status >= 500;
-    const retry = readOnly && transient && attempt < maximumAttempts;
+    const rejected = failure === undefined && result?.status === 429 && value?.code === 'rate_limited';
+    const transient = failure !== undefined || result?.status === 429 || result?.status >= 500;
+    const retryAfter = result?.headers.get('retry-after');
+    const seconds = retryAfter == null || retryAfter.trim() === '' ? NaN : Number(retryAfter);
+    const date = retryAfter == null ? NaN : Date.parse(retryAfter);
+    const delay = Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds * 1000)
+      : Number.isFinite(date) ? Math.max(0, date - Date.now()) : attempt * 250;
+    // A rate-limit rejection establishes that a fixture write was not accepted.
+    // Transport/5xx failures do not, so only read-only requests may replay those.
+    const retry = (rejected || readOnly && transient) && attempt < maximumAttempts && delay < deadline - performance.now();
     await appendFile(join(context.root, 'network-attempts.jsonl'), JSON.stringify({
       method, path, attempt, maximumAttempts, started, completed: clock(), readOnly, retry,
+      retryDelayMs: retry ? delay : null, rateLimitRejected: rejected,
       status: result?.status ?? null, ...(failure ? { error: { name: failure.name, message: failure.message, cause: failure.cause?.code } } : {}),
     }) + '\n', { mode: 0o600 });
     if (retry) {
-      const retryAfter = Number(result?.headers.get('retry-after'));
-      await new Promise(resolve => setTimeout(resolve, Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(2000, retryAfter * 1000) : attempt * 250));
+      await new Promise(resolve => setTimeout(resolve, delay));
       continue;
     }
     if (failure) throw fail('AGENT_FIXTURE_NOTION_TRANSPORT', 'Independent Notion request transport failed.', {
