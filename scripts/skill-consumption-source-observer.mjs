@@ -174,6 +174,54 @@ export function observeSourceTransport(settings) {
   return { finish };
 }
 
+/** Read only this process's OS ancestor chain. No command lines are requested.
+ * A second selected-PID snapshot rejects chains that changed while traversing. */
+export function captureSourceProcessAncestry({ execFileSync, stopPid, platform = process.platform }) {
+  const result = { version: 1, method: 'unix-ps-pid-ppid-lstart-v1', platform, stopPid,
+    startedNs: process.hrtime.bigint().toString(), finishedNs: null, complete: false, samples: [], confirmation: null };
+  const parse = text => text.trim().split('\n').map(line => {
+    const match = /^\s*(\d+)\s+(\d+)\s+([A-Z][a-z]{2} [A-Z][a-z]{2}\s+\d{1,2} \d{2}:\d{2}:\d{2} \d{4})\s*$/u.exec(line);
+    if (!match) throw new Error('invalid-ps-row');
+    return { pid: Number(match[1]), parentPid: Number(match[2]), startedAt: match[3].replace(/\s+/gu, ' ') };
+  });
+  const query = pids => {
+    const startedNs = process.hrtime.bigint().toString();
+    const stdout = execFileSync('/bin/ps', ['-o', 'pid=', '-o', 'ppid=', '-o', 'lstart=', '-p', pids.join(',')],
+      { encoding: 'utf8', timeout: 1000, maxBuffer: 4096, stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, LC_ALL: 'C', TZ: 'UTC' } });
+    return { pids, startedNs, finishedNs: process.hrtime.bigint().toString(), stdout };
+  };
+  try {
+    if (!['darwin', 'linux'].includes(platform)) { result.reason = 'unsupported-platform'; return result; }
+    if (typeof execFileSync !== 'function' || !Number.isSafeInteger(stopPid) || stopPid < 1) {
+      result.reason = 'collector-unavailable'; return result;
+    }
+    const chain = [], seen = new Set(); let current = process.pid;
+    for (let depth = 0; depth < 32; depth++) {
+      if (seen.has(current) || current < 1) throw new Error('ancestor-chain-ended');
+      if (process.hrtime.bigint() - BigInt(result.startedNs) > 2000000000n) throw new Error('capture-budget-exceeded');
+      seen.add(current); const sample = query([current]); result.samples.push(sample);
+      const rows = parse(sample.stdout);
+      if (rows.length !== 1 || rows[0].pid !== current || depth === 0 && rows[0].parentPid !== process.ppid)
+        throw new Error('ancestor-identity-changed');
+      chain.push(rows[0]);
+      if (current === stopPid) break;
+      current = rows[0].parentPid;
+    }
+    if (chain.at(-1)?.pid !== stopPid) throw new Error('ancestor-anchor-unreached');
+    result.confirmation = query(chain.map(row => row.pid));
+    const confirmed = parse(result.confirmation.stdout);
+    if (confirmed.length !== chain.length || chain.some(row => !confirmed.some(other =>
+      other.pid === row.pid && other.parentPid === row.parentPid && other.startedAt === row.startedAt)))
+      throw new Error('ancestor-identity-changed');
+    result.complete = true;
+  } catch (error) {
+    result.reason = ['invalid-ps-row', 'ancestor-chain-ended', 'capture-budget-exceeded', 'ancestor-identity-changed', 'ancestor-anchor-unreached'].includes(error?.message)
+      ? error.message : 'os-query-failed';
+  } finally { result.finishedNs = process.hrtime.bigint().toString(); }
+  return result;
+}
+
 /** A child reports its own Node entry. This observes inherited NODE_OPTIONS;
  * it neither wraps process creation nor claims coverage of other descendants. */
 export function observeSourceProcess(settings) {
@@ -230,7 +278,8 @@ export function observeSourceProcess(settings) {
     row.eventSha256 = hash(JSON.stringify(row)); previous = row.eventSha256;
     fs.writeSync(fd, JSON.stringify(row) + '\n');
   };
-  record('process_start', { owner: owner === true, node: process.versions.node, ...capture() });
+  record('process_start', { owner: owner === true, node: process.versions.node, ...capture(),
+    osAncestry: captureSourceProcessAncestry({ execFileSync: settings.execFileSync, stopPid: settings.ownerParentPid }) });
   const finish = code => {
     if (closed) return;
     try { record('process_end', { exitCode: code, ...capture() }); }
@@ -244,11 +293,12 @@ export function observeSourceProcess(settings) {
 /** The transport observer stays in the driver-owned Pi. Optional per-process
  * identity records include real Node descendants without changing their env. */
 export function sourceObserverPreloadSource(settings) {
-  return "import diagnostics from 'node:diagnostics_channel';\nimport fs from 'node:fs';\nimport crypto from 'node:crypto';\nimport path from 'node:path';\nimport {errorMonitor} from 'node:events';\nimport {isMainThread} from 'node:worker_threads';\n"
+  return "import diagnostics from 'node:diagnostics_channel';\nimport fs from 'node:fs';\nimport crypto from 'node:crypto';\nimport path from 'node:path';\nimport {errorMonitor} from 'node:events';\nimport {isMainThread} from 'node:worker_threads';\nimport {execFileSync} from 'node:child_process';\n"
     + 'const settings = ' + JSON.stringify(settings) + ';\n'
     + 'let owned=false; try { owned=isMainThread && process.ppid===settings.ownerParentPid && fs.realpathSync(process.argv[1])===fs.realpathSync(settings.ownerEntry); } catch {}\n'
     + 'if(owned) { try { const safeRequestMetrics = (' + safeRequestMetrics.toString() + '); (' + observeSourceTransport.toString() + ')( {...settings,diagnostics,fs,crypto,path,errorMonitor,safeRequestMetrics} ); } catch { /* Missing observation is reported by the driver. */ } }\n'
-    + 'if(isMainThread&&settings.processDirectory) { try { (' + observeSourceProcess.toString() + ')({...settings,fs,crypto,path,owner:owned}); } catch { /* Missing process identity remains unknown. */ } }\n';
+    + 'const captureSourceProcessAncestry = (' + captureSourceProcessAncestry.toString() + ');\n'
+    + 'if(isMainThread&&settings.processDirectory) { try { (' + observeSourceProcess.toString() + ')({...settings,fs,crypto,path,execFileSync,owner:owned}); } catch { /* Missing process identity remains unknown. */ } }\n';
 }
 
 /** Invalid or partial observations remain available to the driver, but never

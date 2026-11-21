@@ -10,6 +10,42 @@ const fileIdentity = value => value && typeof value.path === 'string' && isAbsol
   && Number.isSafeInteger(value.bytes) && value.bytes >= 0;
 const sameEntry = (left, right) => left?.realpath === right?.realpath && left?.sha256 === right?.sha256 && left?.bytes === right?.bytes;
 
+function osAncestry(start) {
+  const value = start.osAncestry;
+  if (!value || value.complete !== true) return null;
+  const require = condition => { if (!condition) throw new Error('CLI_OS_ANCESTRY_INVALID'); };
+  require(value.version === 1 && value.method === 'unix-ps-pid-ppid-lstart-v1' && ['darwin', 'linux'].includes(value.platform)
+    && pid(value.stopPid) && ns(value.startedNs) && ns(value.finishedNs)
+    && BigInt(value.startedNs) <= BigInt(value.finishedNs) && BigInt(value.finishedNs) <= BigInt(start.monotonicNs)
+    && Array.isArray(value.samples) && value.samples.length > 0 && value.samples.length <= 32);
+  let time = BigInt(value.startedNs);
+  const read = sample => {
+    require(sample && Array.isArray(sample.pids) && sample.pids.length > 0 && sample.pids.every(pid)
+      && new Set(sample.pids).size === sample.pids.length && typeof sample.stdout === 'string'
+      && Buffer.byteLength(sample.stdout) <= 4096 && ns(sample.startedNs) && ns(sample.finishedNs)
+      && BigInt(sample.startedNs) >= time && BigInt(sample.finishedNs) >= BigInt(sample.startedNs)
+      && BigInt(sample.finishedNs) <= BigInt(value.finishedNs));
+    time = BigInt(sample.finishedNs);
+    const rows = sample.stdout.trim().split('\n').map(line => {
+      const match = /^\s*(\d+)\s+(\d+)\s+([A-Z][a-z]{2} [A-Z][a-z]{2}\s+\d{1,2} \d{2}:\d{2}:\d{2} \d{4})\s*$/u.exec(line);
+      require(match);
+      return { pid: Number(match[1]), parentPid: Number(match[2]), startedAt: match[3].replace(/\s+/gu, ' ') };
+    });
+    require(rows.length === sample.pids.length && new Set(rows.map(row => row.pid)).size === rows.length
+      && rows.every(row => pid(row.pid) && Number.isSafeInteger(row.parentPid) && row.parentPid >= 0 && sample.pids.includes(row.pid)));
+    return rows;
+  };
+  const chain = value.samples.map(sample => { require(sample.pids?.length === 1); return read(sample)[0]; });
+  require(chain[0].pid === start.pid && chain[0].parentPid === start.parentPid && chain.at(-1).pid === value.stopPid
+    && new Set(chain.map(row => row.pid)).size === chain.length
+    && chain.every((row, index) => index === 0 || chain[index - 1].parentPid === row.pid));
+  const confirmed = read(value.confirmation);
+  require(confirmed.length === chain.length && chain.every(row => confirmed.some(other =>
+    row.pid === other.pid && row.parentPid === other.parentPid && row.startedAt === other.startedAt)));
+  return { rows: chain, method: value.method, sha256: hash(JSON.stringify(value)),
+    startedNs: value.startedNs, finishedNs: value.finishedNs, stopPid: value.stopPid };
+}
+
 function processFile({ artifact, contents }) {
   const raw = typeof contents === 'string' || contents instanceof Uint8Array ? Buffer.from(contents) : null;
   if (!raw || !artifact || typeof artifact.path !== 'string' || !isAbsolute(artifact.path)
@@ -40,7 +76,7 @@ function processFile({ artifact, contents }) {
       throw new Error('CLI_PROCESS_ENTRY_INVALID');
   }
   if (end && !Number.isSafeInteger(end.exitCode)) throw new Error('CLI_PROCESS_EXIT_INVALID');
-  return { artifact, start, end, complete: Boolean(end) };
+  return { artifact, start, end, complete: Boolean(end), osAncestry: osAncestry(start) };
 }
 
 /** Pure identity proof. Inputs are sealed raw artifacts, not controller status.
@@ -88,11 +124,28 @@ export function verifyNotionAgentCliProcesses({ sourceObservation, processFiles,
     const begin = row.phase === 'child-started' ? cliStarts.get(row.requestId) : starts.get(row.childId);
     const end = source.find(item => row.phase === 'child-started' ? item.phase === 'completed' && item.requestId === row.requestId
       : item.phase === 'unmatched_child_close' && item.childId === row.childId);
+    const exit = row.phase === 'unmatched_child_spawn'
+      ? source.find(item => item.phase === 'unmatched_child_exit' && item.childId === row.childId) : undefined;
     return begin && pid(row.childPid) ? [{ pid: row.childPid, begin: begin.monotonicNs, end: end?.monotonicNs,
+      spawned: row.monotonicNs, aliveUntil: exit?.monotonicNs ?? end?.monotonicNs,
       childId: row.childId ?? row.requestId }] : [];
   });
   const within = (time, begin, end) => ns(time) && ns(begin) && BigInt(time) >= BigInt(begin) && (end === undefined || ns(end) && BigInt(time) <= BigInt(end));
   const direct = (childPid, time) => edges.filter(edge => edge.pid === childPid && within(time, edge.begin, edge.end));
+  const osLineage = item => {
+    const captured = item.osAncestry, ownerRecord = ownerRecords.length === 1 ? ownerRecords[0] : undefined;
+    const ownerIdentity = ownerRecord?.osAncestry?.rows[0];
+    if (!captured || !ownerIdentity || captured.stopPid !== ownerRecord.start.parentPid) return null;
+    const ownerIndex = captured.rows.findIndex(row => row.pid === owner.pid), observedOwner = captured.rows[ownerIndex];
+    if (ownerIndex < 2 || observedOwner.parentPid !== ownerIdentity.parentPid || observedOwner.startedAt !== ownerIdentity.startedAt) return null;
+    const ancestor = captured.rows[ownerIndex - 1];
+    const matches = edges.filter(edge => edge.pid === ancestor.pid && ns(edge.aliveUntil) && ns(edge.end)
+      && within(captured.startedNs, edge.spawned, edge.aliveUntil) && within(captured.finishedNs, edge.spawned, edge.aliveUntil));
+    if (matches.length !== 1) return null;
+    return [...captured.rows.slice(0, ownerIndex - 1).map(row => ({ pid: row.pid, basis: 'os-ppid', parentPid: row.parentPid, osStartedAt: row.startedAt })),
+      { pid: ancestor.pid, basis: 'source-child', childId: matches[0].childId, osStartedAt: ancestor.startedAt },
+      { pid: owner.pid, basis: 'source-owner', osStartedAt: observedOwner.startedAt }];
+  };
   const lineage = (item, visited = new Set()) => {
     const start = item.start;
     if (visited.has(start.processId) || start.clockId !== owner.clockId || !within(start.monotonicNs, owner.monotonicNs)) return null;
@@ -106,9 +159,9 @@ export function verifyNotionAgentCliProcesses({ sourceObservation, processFiles,
     if (parentEdges.length === 1) return [{ pid: start.pid, basis: 'observed-ppid' },
       { pid: start.parentPid, basis: 'source-child', childId: parentEdges[0].childId }, { pid: owner.pid, basis: 'source-owner' }];
     const parents = parsed.filter(parent => parent.start.pid === start.parentPid && within(start.monotonicNs, parent.start.monotonicNs, parent.end?.monotonicNs));
-    if (parents.length !== 1) return null;
+    if (parents.length !== 1) return osLineage(item);
     const chain = lineage(parents[0], visited);
-    return chain && [{ pid: start.pid, basis: 'observed-ppid' }, ...chain];
+    return chain ? [{ pid: start.pid, basis: 'observed-ppid' }, ...chain] : osLineage(item);
   };
   for (const item of parsed) {
     const { start, end } = item;
@@ -120,7 +173,11 @@ export function verifyNotionAgentCliProcesses({ sourceObservation, processFiles,
     const observed = { processId: start.processId, pid: start.pid, parentPid: start.parentPid,
       startedNs: start.monotonicNs, endedNs: end?.monotonicNs ?? null, entryMode: start.entryMode, entry: start.entry,
       cli, classification: start.cli?.basis ?? (exactPath || exactBytes ? 'expected-entry' : 'other-node'),
-      exitCode: end?.exitCode ?? null, ancestry, status: cli ? 'passed' : 'unknown', artifact: item.artifact };
+      exitCode: end?.exitCode ?? null, ancestry,
+      osAncestry: item.osAncestry ? { method: item.osAncestry.method, sha256: item.osAncestry.sha256,
+        startedNs: item.osAncestry.startedNs, finishedNs: item.osAncestry.finishedNs }
+        : { complete: false, reason: start.osAncestry?.reason ?? 'unobserved' },
+      status: cli ? 'passed' : 'unknown', artifact: item.artifact };
     processes.push(observed);
     if (!cli) { unknownProcesses.push(observed); continue; }
     if (!ancestry) { observed.status = 'blocked'; report('CLI_PROCESS_ANCESTRY_UNKNOWN', 'blocked', { processId: start.processId }); }

@@ -81,6 +81,46 @@ test('standalone and embedded entries are distinct accepted actual processes, wi
   assert.equal(isolated.status, 'passed'); assert.equal(isolated.cliCount, 1); assert.equal(isolated.distinctEntries[0].realpath, f.expectedEntries[1].realpath);
 });
 
+test('real OS ancestry bridges an intermediate shell to its observed source child lifetime', async t => {
+  const f = await fixture();
+  const nested = '/bin/bash -c ' + quote(f.invoke(f.cli) + '; status=$?; exit $status');
+  const actual = await f.run(nested), observed = actual.proof.processes.find(row => row.cli);
+  assert.equal(actual.stdout, 'CLI_OUTPUT\n'); assert.equal(actual.exitCode, 7); assert.equal(actual.stderr, '');
+  assert.equal(actual.proof.status, 'passed', JSON.stringify(actual.proof.diagnostics));
+  assert.deepEqual(observed.ancestry.map(row => row.basis), ['os-ppid', 'os-ppid', 'source-child', 'source-owner']);
+  assert.equal(observed.osAncestry.method, 'unix-ps-pid-ppid-lstart-v1');
+  const childIndex = actual.processFiles.findIndex(file => JSON.parse(file.contents.toString().split('\n')[0]).cli !== null);
+  const ownerPid = actual.input.sourceObservation.events[0].pid;
+  const changeStart = transform => file => sealed(file, rows => rows.map(row => row.phase === 'process_start' ? transform(row) : row));
+  for (const [name, change, code] of [
+    ['legacy evidence has no observed intermediate edge', changeStart(row => { const { osAncestry, ...old } = row; return old; }), 'CLI_PROCESS_ANCESTRY_UNKNOWN'],
+    ['unsupported platform stays unknown', changeStart(row => ({ ...row, osAncestry: { complete: false, reason: 'unsupported-platform' } })), 'CLI_PROCESS_ANCESTRY_UNKNOWN'],
+    ['changed confirmation', changeStart(row => { row.osAncestry.confirmation.stdout = row.osAncestry.confirmation.stdout.replace(/^\s*\d+/u, '2147483647'); return row; }), 'CLI_OS_ANCESTRY_INVALID'],
+    ['capture after process start', changeStart(row => { row.osAncestry.finishedNs = String(BigInt(row.monotonicNs) + 1n); return row; }), 'CLI_OS_ANCESTRY_INVALID'],
+    ['another owner process incarnation', changeStart(row => {
+      for (const sample of [...row.osAncestry.samples, row.osAncestry.confirmation])
+        sample.stdout = sample.stdout.split('\n').map(line => Number(/^\s*(\d+)/u.exec(line)?.[1]) === ownerPid ? line.replace(/\d{4}(\s*)$/u, '1900$1') : line).join('\n');
+      return row;
+    }), 'CLI_PROCESS_ANCESTRY_UNKNOWN'],
+  ]) await t.test(name, () => {
+    const files = [...actual.processFiles]; files[childIndex] = change(files[childIndex]);
+    const proof = verifyNotionAgentCliProcesses({ ...actual.input, processFiles: files });
+    assert.equal(proof.status, 'blocked'); assert.ok(proof.diagnostics.some(row => row.code === code), JSON.stringify(proof.diagnostics));
+  });
+  await t.test('matching PIDs cannot borrow a source child lifetime that ended before the OS capture', () => {
+    const childId = observed.ancestry.find(row => row.basis === 'source-child').childId;
+    const source = actual.input.sourceObservation.events;
+    const spawn = source.find(row => row.childId === childId && row.phase === 'unmatched_child_spawn');
+    const changed = sealed({ artifact: { path: '/owned/source.jsonl' }, contents: Buffer.from(source.map(row => JSON.stringify(row)).join('\n') + '\n') }, rows => rows.map(row =>
+      row.childId === childId && row.phase === 'unmatched_child_exit' ? { ...row, monotonicNs: spawn.monotonicNs }
+        : row.childId === childId && row.phase === 'unmatched_child_close' ? { ...row, monotonicNs: spawn.monotonicNs } : row));
+    const sourceObservation = parseSourceObservation(changed.contents.toString());
+    assert.deepEqual(sourceObservation.errors, []);
+    const proof = verifyNotionAgentCliProcesses({ ...actual.input, processFiles: actual.processFiles, sourceObservation });
+    assert.equal(proof.status, 'blocked'); assert.ok(proof.diagnostics.some(row => row.code === 'CLI_PROCESS_ANCESTRY_UNKNOWN'));
+  });
+});
+
 test('an actual unselected CLI is a hard failure even without a required invocation assertion', async () => {
   const f = await fixture(), other = join(f.directory, 'other'); await mkdir(other);
   const actualCli = join(other, 'renamed.js');
@@ -118,7 +158,7 @@ test('missing terminal, unknown ancestry, changed entry and corrupt raw artifact
   const childIndex = actual.processFiles.findIndex(file => JSON.parse(file.contents.toString().split('\n')[0]).cli !== null);
   const cases = [
     ['terminal', file => sealed(file, rows => rows.slice(0, 1)), 'CLI_PROCESS_TERMINAL_MISSING'],
-    ['ancestry', file => sealed(file, rows => rows.map(row => ({ ...row, parentPid: 2147483647 }))), 'CLI_PROCESS_ANCESTRY_UNKNOWN'],
+    ['ancestry', file => sealed(file, rows => rows.map(row => ({ ...row, parentPid: 2147483647 }))), 'CLI_OS_ANCESTRY_INVALID'],
     ['changed entry', file => sealed(file, rows => rows.map(row => row.phase === 'process_end' ? { ...row, entry: { ...row.entry, sha256: 'a'.repeat(64) } } : row)), 'CLI_PROCESS_ENTRY_CHANGED'],
     ['corrupt artifact', file => ({ ...file, contents: Buffer.concat([file.contents, Buffer.from(' ')]) }), 'CLI_PROCESS_ARTIFACT_INVALID'],
   ];
