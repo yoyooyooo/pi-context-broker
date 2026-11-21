@@ -4,7 +4,7 @@ import { recordIdentity } from "./discovery-records";
 import { parseNativeReference, type ExactNativeReference } from "./native-reference";
 import type { AgentMessage, MessageContent, ProjectedSessionEntry, SessionBoundaryDraft, SkillRecord } from "./types";
 import { decodePreparationLock, isPreparationBinding, isPreparationDirectory, type PreparationBinding, type PreparationDirectory } from "./prepare-protocol";
-import type { SessionSelection } from "./session-graph";
+import type { SessionSelection, SelectedTaskRole } from "./session-graph";
 import { deriveSkillPrepareProjection, validateSkillPrepareProjection } from "./skill-context-projection-proof";
 import { deriveResourceReadProjection, validateResourceReadProjection } from "./resource-read-projection";
 import { isConsumptionEffects } from "./consumption-effects";
@@ -23,6 +23,27 @@ function escaped(value: string): string { return value.replaceAll("&", "&amp;").
 function unescaped(value: string): string { return value.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&"); }
 export function sourceMessageText(content: MessageContent | undefined): string {
   return typeof content === "string" ? content : (content ?? []).filter(part => part.type === "text").map(part => String(part.text ?? "")).join("\n");
+}
+
+export type NotionReadStatus = {
+  purpose: "inspect"; activation_effect: "unchanged"; requires_acquisition: "not_performed";
+  use_selection: { status: "inspection_only"; roles: readonly [] }
+    | { status: "already_selected_for_use"; roles: SelectedTaskRole["roles"] };
+};
+export function notionReadStatusFooter(status: NotionReadStatus): string {
+  return "\n\n<notion-read-status>" + JSON.stringify(status) + "</notion-read-status>";
+}
+/** Operation facts survive directory reuse. They never supply graph authority. */
+export function withoutNotionReadStatus(suffix: string, status: unknown): string | undefined {
+  if (status === undefined) return suffix;
+  if (!object(status) || Object.keys(status).length !== 4 || status.purpose !== "inspect" || status.activation_effect !== "unchanged"
+    || status.requires_acquisition !== "not_performed" || !object(status.use_selection) || Object.keys(status.use_selection).length !== 2
+    || !Array.isArray(status.use_selection.roles)) return undefined;
+  const roles = JSON.stringify(status.use_selection.roles);
+  if (status.use_selection.status === "inspection_only" ? roles !== "[]"
+    : status.use_selection.status !== "already_selected_for_use" || !['["root"]', '["required"]', '["root","required"]'].includes(roles)) return undefined;
+  const footer = "\n\n<notion-read-status>" + JSON.stringify(status) + "</notion-read-status>";
+  return suffix.endsWith(footer) ? suffix.slice(0, -footer.length) : undefined;
 }
 
 /** Machine entries have no model message. Reattach their existing delivery
@@ -418,6 +439,9 @@ function nativeDirectory(message: AgentMessage, proof: Record<string, unknown>) 
     if (!suffix.endsWith(footer)) return undefined;
     suffix = suffix.slice(0, -footer.length);
   }
+  const directorySuffix = withoutNotionReadStatus(suffix, proof.readStatus);
+  if (directorySuffix === undefined) return undefined;
+  suffix = directorySuffix;
   const match = /^\n{2,3}<skill-directory>\n([\s\S]*)\n<\/skill-directory>$/.exec(suffix);
   if (!match) return undefined;
   try {

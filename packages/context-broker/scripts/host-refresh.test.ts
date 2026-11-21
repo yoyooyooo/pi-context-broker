@@ -1,6 +1,66 @@
-import { expect, test } from "bun:test";
+import { expect, setSystemTime, test } from "bun:test";
 import { activeNotionSession } from "./fixtures/active-notion-session";
 import { sourceMessageText } from "../src/session-source-snapshot";
+import type { SkillRecord } from "../src/types";
+
+type Session = Awaited<ReturnType<typeof activeNotionSession>>;
+const refreshTurn = (h: Session, ref: string | string[], before: readonly SkillRecord[], prepared?: () => void, status = 200) =>
+  h.turn("Continue with the explicitly refreshed instructions.", before, undefined, undefined, [], {
+    beforeContext: async () => {
+      const result = await h.tool("notion_use").execute("refresh-in-turn", { ref, refresh: true }, undefined, undefined, h.ctx);
+      prepared?.();
+      return [{ role: "toolResult", toolName: "notion_use", toolCallId: "refresh-in-turn", ...result }];
+    }, status,
+  });
+const payloadText = (turn: Awaited<ReturnType<Session["turn"]>>) => {
+  expect(turn.error).toBeUndefined(); expect(turn.provider).toBe(true);
+  return turn.payload!.messages.map(message => message.content).join("\n");
+};
+
+test("public use and read retain the exact disabled Requires diagnosis without replacing the fixed task", async () => {
+  const h = await activeNotionSession();
+  try {
+    const old = await h.seed(["root", "independent"]), root = old.records.find(record => record.name === "root")!;
+    const required = old.records.find(record => record.name === "required")!, ref = h.fixedRef(root);
+    const page = "41f5636c-236e-81cb-b654-ecb578fa8c52";
+    const diagnostic = { code: "SHARED_ROUTER_MEMBER_UNAVAILABLE", field: "Requires", reason: "disabled", page_id: page };
+    h.f.state.consume = async () => h.failed(diagnostic.code, required, { ...diagnostic, token: "private-token", response_body: "private-response" });
+    const before = h.selected().scopes.get(root.sourceScope!)!;
+    const error = await h.tool("notion_use").execute("disabled-required", { ref, refresh: true }, undefined, undefined, h.ctx).catch(error => error);
+    const use = JSON.parse(error.message);
+    expect(use.diagnostic).toEqual(diagnostic);
+    expect(use.error).toContain("Requires"); expect(use.error).toContain("Enabled=false");
+    expect(use.error).not.toContain("source configuration"); expect(use.error).not.toContain("/context-broker refresh");
+    expect(use.error).not.toContain("source notion unavailable");
+    expect(error.details).toMatchObject({ field: "Requires", reason: "disabled", page_id: page });
+    const read = await h.read(ref, true).catch(error => error), blocked = JSON.parse(read.message);
+    expect(blocked.diagnostic).toEqual(diagnostic);
+    expect(blocked.admission.code).toBe(diagnostic.code);
+    for (const value of [use, blocked]) {
+      expect(JSON.stringify(value)).not.toContain("private-token"); expect(JSON.stringify(value)).not.toContain("private-response");
+    }
+    expect(h.selected().scopes.get(root.sourceScope!)!.bindings).toEqual(before.bindings);
+    expect(h.active().selection.scopes.get(root.sourceScope!)!.bindings).toEqual(before.bindings);
+    const continued = await h.turn("Continue the original task without changing its version.", old.records);
+    const text = payloadText(continued);
+    for (const record of old.records) expect(text).toContain(record.body!.trim());
+  } finally { await h.close(); }
+});
+
+test("an unavailable relation without a disabled observation stays unknown in the public diagnosis", async () => {
+  const h = await activeNotionSession();
+  try {
+    const old = await h.seed(), root = old.records.find(record => record.name === "root")!;
+    const page = "41f5636c-236e-81cb-b654-ecb578fa8c52";
+    h.f.state.consume = async () => h.failed("SHARED_ROUTER_MEMBER_UNAVAILABLE", h.record("required"), { field: "Requires", page_id: page });
+    const error = await h.tool("notion_use").execute("unavailable-required", { ref: h.fixedRef(root), refresh: true }, undefined, undefined, h.ctx).catch(error => error);
+    const result = JSON.parse(error.message);
+    expect(result.diagnostic).toEqual({ code: "SHARED_ROUTER_MEMBER_UNAVAILABLE", field: "Requires", page_id: page });
+    expect(result.error).toContain("missing, inaccessible or outside");
+    expect(result.error).not.toContain("Enabled=false");
+    expect(result.error).not.toContain("ACCESS_DENIED");
+  } finally { await h.close(); }
+});
 
 test("fresh native inspection accepts an issued fixed ref without replacing active pins", async () => {
   const h = await activeNotionSession();
@@ -64,11 +124,18 @@ test("shared Requires rejects a partial refresh atomically and accepts the issue
       expect.objectContaining({ id: second.id, ref: expect.stringMatching(/^sr:C/) }),
     ]));
     expect(h.selected().scopes.get(root.sourceScope!)?.bindings.get(root.id!)?.snapshot_id).toBe(root.snapshotId);
-    const result = await h.tool("notion_use").execute("together", { ref: refs, refresh: true }, undefined, undefined, h.ctx);
-    expect(JSON.parse(sourceMessageText(result.content)).records.map((record: { content: string }) => record.content)).toContain(required.body!);
+    const retained = await h.turn("Continue after the rejected partial refresh.", old.records);
+    const retainedText = payloadText(retained);
+    for (const record of old.records) expect(retainedText).toContain(record.body!.trim());
+    expect(retainedText).not.toContain(required.body!.trim());
+    const together = await refreshTurn(h, refs, old.records);
+    const text = payloadText(together);
+    for (const name of ["root", "second", "required"]) expect(text).toContain(h.record(name).body!.trim());
+    for (const record of old.records) expect(text).not.toContain(record.body!.trim());
     const selected = h.selected().scopes.get(root.sourceScope!)!;
     expect(selected.bindings.get(required.id!)?.snapshot_id).toBe(required.snapshotId);
     expect([...selected.roots].sort()).toEqual([root.id!, second.id!].sort());
+    expect(h.active().selection.scopes.get(root.sourceScope!)?.bindings).toEqual(selected.bindings);
   } finally { await h.close(); }
 });
 
@@ -146,5 +213,90 @@ test("the canonical fixed main emitted by working_set supports inspect and adopt
     const adopted = await h.tool("notion_use").execute("canonical-adopt", { ref: fixed, refresh: true }, undefined, undefined, h.ctx);
     expect(sourceMessageText(adopted.content)).toContain("Current canonical-root comparison B.");
     expect(h.selected().scopes.get(root.sourceScope!)?.bindings.get(root.id!)?.snapshot_id).toBe(h.record("root").snapshotId);
+  } finally { await h.close(); }
+});
+
+
+for (const changeRoot of [false, true]) test(`public refresh preserves independent roots when the main body ${changeRoot ? "changes" : "is unchanged"} and Requires changes`, async () => {
+  const h = await activeNotionSession();
+  try {
+    const old = await h.seed(["root", "independent"]);
+    const root = old.records.find(record => record.name === "root")!, independent = old.records.find(record => record.name === "independent")!;
+    const oldRequired = old.records.find(record => record.name === "required")!, ref = h.fixedRef(root);
+    const required = h.revise("required", "Updated Required instructions B.\n");
+    const current = changeRoot ? h.revise("root", "Updated root instructions B.\n") : h.record("root");
+    if (!changeRoot) {
+      expect(current.body).toBe(root.body); expect(current.snapshotId).toBe(root.snapshotId);
+      expect(current.preparationBinding).toEqual(root.preparationBinding);
+    }
+    const roots = [root.id!, independent.id!].sort();
+    const turn = await refreshTurn(h, ref, old.records, () => {
+      const selected = h.selected().scopes.get(root.sourceScope!)!;
+      expect([...selected.roots].sort()).toEqual(roots);
+      expect(selected.bindings.get(root.id!)).toEqual(current.preparationBinding);
+      expect(selected.bindings.get(required.id!)).toEqual(required.preparationBinding);
+      expect(selected.bindings.get(independent.id!)).toEqual(independent.preparationBinding);
+      const active = h.active().selection.scopes.get(root.sourceScope!)!;
+      expect([...active.roots].sort()).toEqual(roots);
+      expect(active.bindings.get(root.id!)).toEqual(root.preparationBinding);
+      expect(active.bindings.get(oldRequired.id!)).toEqual(oldRequired.preparationBinding);
+    });
+    const text = payloadText(turn);
+    for (const record of [current, required, independent]) expect(text).toContain(record.body!.trim());
+    expect(text).not.toContain(oldRequired.body!.trim());
+    if (changeRoot) expect(text).not.toContain(root.body!.trim());
+    const selected = h.selected().scopes.get(root.sourceScope!)!;
+    expect(h.active().selection.scopes.get(root.sourceScope!)?.bindings).toEqual(selected.bindings);
+    expect([...h.active().selection.scopes.get(root.sourceScope!)!.roots].sort()).toEqual(roots);
+    expect(h.f.calls.filter(call => call.operation === "consume").at(-1)?.input).toMatchObject({ purpose: "use", targets: [current.ref], freshness: { policy: "refresh" } });
+  } finally { await h.close(); }
+});
+
+for (const age of [999, 1000]) test(`an unchanged session keeps the complete old closure at TTL age ${age}ms until public refresh`, async () => {
+  const start = Date.now(); setSystemTime(start);
+  const h = await activeNotionSession({ catalogMaxAgeMs: 1000 });
+  try {
+    const old = await h.seed(), root = old.records.find(record => record.name === "root")!, ref = h.fixedRef(root);
+    const required = h.revise("required", "TTL current Required B.\n"), current = h.revise("root", "TTL current root B.\n");
+    const before = h.f.calls.length;
+    setSystemTime(start + age);
+    const ordinary = await h.turn("Continue the same task without updating its instructions.", old.records);
+    const text = payloadText(ordinary);
+    for (const record of old.records) expect(text).toContain(record.body!.trim());
+    for (const record of [current, required]) expect(text).not.toContain(record.body!.trim());
+    expect(h.selected().scopes.get(root.sourceScope!)?.bindings.get(root.id!)).toEqual(root.preparationBinding);
+    expect(h.active().selection.scopes.get(root.sourceScope!)?.bindings.get(root.id!)).toEqual(root.preparationBinding);
+    expect(h.f.calls.slice(before).filter(call => call.operation === "consume")).toHaveLength(0);
+    const adopted = await refreshTurn(h, ref, old.records);
+    const freshText = payloadText(adopted);
+    for (const record of [current, required]) expect(freshText).toContain(record.body!.trim());
+    for (const record of old.records) expect(freshText).not.toContain(record.body!.trim());
+    expect(h.active().selection.scopes.get(root.sourceScope!)?.bindings.get(root.id!)).toEqual(current.preparationBinding);
+    expect(h.active().selection.scopes.get(root.sourceScope!)?.bindings.get(required.id!)).toEqual(required.preparationBinding);
+    expect(h.f.calls.filter(call => call.operation === "consume").at(-1)?.input?.freshness).toEqual({ policy: "refresh" });
+  } finally { setSystemTime(); await h.close(); }
+});
+
+test("a successful public refresh followed by provider rejection keeps selected pending and active old without losing independent roots", async () => {
+  const h = await activeNotionSession();
+  try {
+    const old = await h.seed(["root", "independent"]), root = old.records.find(record => record.name === "root")!;
+    const independent = old.records.find(record => record.name === "independent")!, oldRequired = old.records.find(record => record.name === "required")!;
+    const required = h.revise("required", "Rejected provider Required B.\n"), current = h.revise("root", "Rejected provider root B.\n");
+    const activeCount = h.branch.filter(entry => entry.customType === "context-broker-active-sources").length;
+    const rejected = await refreshTurn(h, h.fixedRef(root), old.records, undefined, 503);
+    const text = payloadText(rejected);
+    for (const record of [current, required, independent]) expect(text).toContain(record.body!.trim());
+    for (const record of [root, oldRequired]) expect(text).not.toContain(record.body!.trim());
+    const selected = h.selected().scopes.get(root.sourceScope!)!, active = h.active().selection.scopes.get(root.sourceScope!)!;
+    expect([...selected.roots].sort()).toEqual([root.id!, independent.id!].sort());
+    expect([...active.roots].sort()).toEqual([...selected.roots].sort());
+    expect(selected.bindings.get(root.id!)).toEqual(current.preparationBinding);
+    expect(selected.bindings.get(required.id!)).toEqual(required.preparationBinding);
+    expect(selected.bindings.get(independent.id!)).toEqual(independent.preparationBinding);
+    expect(active.bindings.get(root.id!)).toEqual(root.preparationBinding);
+    expect(active.bindings.get(oldRequired.id!)).toEqual(oldRequired.preparationBinding);
+    expect(active.bindings.get(independent.id!)).toEqual(independent.preparationBinding);
+    expect(h.branch.filter(entry => entry.customType === "context-broker-active-sources")).toHaveLength(activeCount);
   } finally { await h.close(); }
 });

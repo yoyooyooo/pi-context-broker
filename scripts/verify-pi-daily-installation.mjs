@@ -26,10 +26,10 @@ const inside = (root, path) => { const local = relative(root, path); return loca
 
 function plan(config) {
   return {
-    version: 1, kind: 'pi-daily-installation-readonly-diagnostics', status: 'prepared_not_executed',
+    version: 2, kind: 'pi-daily-installation-readonly-diagnostics', status: 'prepared_not_executed', delivery: config.delivery ?? null,
     settings: join(homedir(), '.pi/agent/settings.json'), expected_package_index: config.packageIndex ?? 1,
     expected_package_count: config.packageCount ?? 21, broker_root: config.brokerRoot ?? null,
-    cli_root: config.cliRoot ?? null, next_worktrees: config.worktrees ?? null, required_artifacts: ['brokerRoot', 'brokerArchive', 'brokerArchiveSha256', 'embeddedCliSha256', 'embeddedSdkSha256', 'cliRoot', 'cliArchive', 'cliArchiveSha256', 'cliEntrySha256'],
+    cli_root: config.cliRoot ?? null, next_worktrees: config.worktrees ?? null, required_artifacts: ['delivery', 'brokerRoot', 'brokerArchive', 'brokerArchiveSha256', 'embeddedCliSha256', 'embeddedSdkSha256', 'cliRoot', 'cliArchive', 'cliArchiveSha256', 'cliEntrySha256'],
     cli_lookup: { selection: 'ntn-skills on the unchanged PATH', expected_path: config.cliShim ?? null, volta_identity: config.voltaIdentity ?? null },
     pi_arguments: ['--mode', 'rpc', '-ns', '--session-dir', '<new owned directory>'],
     rpc_commands: ['get_state', 'get_commands', '/context-broker find ' + (config.findQuery ?? 'pstack'), '/context-broker doctor', 'get_state'],
@@ -40,6 +40,121 @@ function plan(config) {
     forbidden: ['provider or tool execution', 'Notion writes or Skill body loading', 'official ntn invocation', 'Tern execution', 'user-session restart'],
     execution: 'Run after both next worktrees are committed, rebuilt and selected by the ordinary daily entries. Bind the same target commits and build bytes on Pro and Mini; the source/build gate precedes a fresh pi -ns process.',
   };
+}
+
+function deliveryIntent(config) {
+  const delivery = config.delivery;
+  assert.ok(delivery && typeof delivery.id === 'string'
+    && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(delivery.id), 'Bind this delivery to one new UUID shared by Pro and Mini');
+  const started = Date.parse(delivery.startedAt);
+  assert.ok(Number.isFinite(started) && new Date(started).toISOString() === delivery.startedAt && started <= Date.now(),
+    'delivery.startedAt must be the UTC start of this delivery, not a future time');
+  assert.deepEqual(Object.keys(delivery).sort(), ['id', 'startedAt']);
+  return { id: delivery.id, startedAt: delivery.startedAt };
+}
+function machineIdentity(machine) {
+  assert.ok(machine && machine.scheme === 'machine-id-sha256-v1' && ['darwin', 'linux'].includes(machine.platform)
+    && /^[a-f0-9]{64}$/.test(machine.sha256), 'A real stable machine fingerprint is required');
+  assert.deepEqual(Object.keys(machine).sort(), ['platform', 'scheme', 'sha256']);
+  return machine;
+}
+function buildIdentity(pair) {
+  assert.ok(pair && pair.version === 2 && pair.scope === 'next-worktree-source-and-build' && pair.status === 'passed'
+    && pair.actual_pi_process === 'not_run', 'Use the current source/build receipt without promoting it to Pi acceptance');
+  machineIdentity(pair.machine);
+  const identity = {};
+  for (const name of ['cli', 'broker']) {
+    const source = pair[name];
+    assert.ok(source && source.branch === 'next' && /^[a-f0-9]{40}$/.test(source.commit)
+      && source.origin_next === source.commit, 'Each target must have matched the real origin/next');
+    identity[name] = { commit: source.commit, source_sha256: source.source_sha256, artifacts_sha256: source.artifacts_sha256 };
+    if (name === 'broker') identity[name].selected_cli_sha256 = source.selected_cli_sha256;
+    for (const [key, value] of Object.entries(identity[name])) if (key !== 'commit') assert.match(value, /^[a-f0-9]{64}$/);
+  }
+  return identity;
+}
+
+function assertCompletedDaily(receipt) {
+  assert.ok(receipt && receipt.version === 2 && receipt.kind === 'actual-daily-pi-autoload-and-diagnostics'
+    && receipt.scope === 'ordinary-pi-startup-and-metadata' && receipt.status === 'passed',
+    'A current passed ordinary-daily receipt is required; plans, candidates and source-only results do not qualify');
+}
+/** This is the sole completed-daily receipt contract, also used by the producer. */
+export function validateDailyReceipt(receipt, config, currentPair) {
+  const delivery = deliveryIntent(config);
+  assertCompletedDaily(receipt);
+  const current = buildIdentity(currentPair);
+  for (const name of ['cli', 'broker']) assert.equal(current[name].commit, config.worktrees?.[name]?.commit, 'The declared target differs from the verified current pair');
+  assert.deepEqual(receipt.delivery, delivery, 'The daily receipt belongs to another delivery');
+  const started = Date.parse(receipt.started_at), finished = Date.parse(receipt.finished_at);
+  assert.ok(Number.isFinite(started) && Number.isFinite(finished) && started >= Date.parse(delivery.startedAt)
+    && finished >= started && finished <= Date.now(), 'A stale or incomplete daily execution cannot close this delivery');
+  assert.deepEqual(buildIdentity(receipt.worktrees_before), current, 'The daily receipt uses a different target or build');
+  assert.deepEqual(receipt.worktrees_after, receipt.worktrees_before, 'The daily source/build identity changed during execution');
+  assert.deepEqual(machineIdentity(receipt.machine), receipt.worktrees_before.machine);
+  for (const name of ['worktrees_unchanged', 'configuration_unchanged', 'broker_files_unchanged', 'cli_shim_unchanged'])
+    assert.equal(receipt[name], true, `Daily proof is incomplete: ${name}`);
+  assert.ok(!receipt.error && !receipt.shutdown_error, 'An errored or unfinished process is not a passed daily receipt');
+  for (const name of ['user_settings', 'source_config', 'harness_model_credential_files_read', 'old_sessions_read', 'target_extensions_injected', 'source_command_overrides'])
+    assert.equal(receipt.modifications?.[name], 0, `The ordinary daily boundary was modified: ${name}`);
+  assert.ok(receipt.launch?.host === 'pi' && receipt.launch.normal_user_settings === true
+    && Array.isArray(receipt.launch.args) && receipt.launch.args[0] === '--mode' && receipt.launch.args[1] === 'rpc'
+    && receipt.launch.args.includes('-ns') && !receipt.launch.args.includes('-e'), 'A fresh ordinary pi -ns launch is required');
+  assert.ok(typeof receipt.host?.identity === 'string' && receipt.host.identity.includes('/@earendil-works/pi-coding-agent/'));
+  assert.ok(receipt.autoload?.injected_by_cli === false && receipt.autoload.registration?.source === 'extension'
+    && typeof receipt.autoload.actual_entry?.realpath === 'string'
+    && inside(receipt.worktrees_before.broker.package_root, receipt.autoload.actual_entry.realpath), 'The actual ordinary Broker registration is missing');
+  assert.match(receipt.autoload.actual_entry.sha256, /^[a-f0-9]{64}$/);
+  assert.ok(typeof receipt.initial_session?.sessionId === 'string' && receipt.initial_session.sessionId
+    && receipt.final_session?.sessionId === receipt.initial_session.sessionId, 'The fresh session identity is missing');
+  for (const state of [receipt.initial_session, receipt.final_session]) assert.ok(state.isStreaming === false && state.isCompacting === false);
+  assert.ok(Array.isArray(receipt.owned_pi) && receipt.owned_pi.length > 0
+    && receipt.owned_pi.every(process => Number.isInteger(process.pid) && process.pid > 0 && process.observed_close === true),
+    'Every owned ordinary Pi process must have a witnessed exit');
+  assert.ok(receipt.actual_default_sdk?.source_observation_complete === true && receipt.actual_default_sdk.source_command_overridden === false
+    && Array.isArray(receipt.actual_default_sdk.operations) && receipt.actual_default_sdk.operations.length > 0
+    && receipt.actual_default_sdk.operations.every(operation => operation.operation === 'list')
+    && Array.isArray(receipt.actual_default_sdk.http) && receipt.actual_default_sdk.http.length > 0, 'Actual default SDK metadata evidence is required');
+  assert.ok(receipt.explicit_doctor_cli?.doctor?.ok === true && receipt.explicit_doctor_cli.doctor.transport === 'direct_http');
+  assert.ok(Number.isInteger(receipt.metadata_http_requests) && receipt.metadata_http_requests > 0);
+  for (const name of ['provider_invocations', 'tool_invocations', 'remote_mutations', 'current_body_reads']) assert.equal(receipt[name], 0);
+  assert.match(receipt.harness?.sha256 ?? '', /^[a-f0-9]{64}$/);
+  return { machine: receipt.machine, delivery, builds: current, started_at: receipt.started_at, finished_at: receipt.finished_at,
+    actual_entry: receipt.autoload.actual_entry, session_id: receipt.initial_session.sessionId };
+}
+
+export async function aggregateDailyDeliveries(config) {
+  const result = { version: 2, kind: 'paired-daily-next-delivery', scope: 'two-machine-ordinary-pi-startup-and-metadata', status: 'running',
+    provider_model: 'not_run', skill_body_consumption: 'not_run' };
+  try {
+    result.delivery = deliveryIntent(config);
+    assert.ok(config.receipts && Object.keys(config.receipts).sort().join(',') === 'mini,pro', 'Both pro and mini daily receipt paths are required');
+    const inputs = {};
+    for (const name of ['pro', 'mini']) {
+      const path = config.receipts[name];
+      assert.ok(typeof path === 'string' && isAbsolute(path), `Missing absolute ${name} daily receipt path`);
+      const bytes = await readFile(path), receipt = JSON.parse(bytes.toString('utf8'));
+      assertCompletedDaily(receipt);
+      inputs[name] = { receipt, reference: { path, sha256: hash(bytes) } };
+    }
+    const current = await verifyNextWorktreePair(config);
+    result.current_source_build = current;
+    const harnessSha = hash(await readFile(fileURLToPath(import.meta.url)));
+    result.machines = {};
+    for (const name of ['pro', 'mini']) {
+      const { receipt, reference } = inputs[name];
+      const proof = validateDailyReceipt(receipt, config, current);
+      assert.equal(receipt.harness.sha256, harnessSha, 'The daily receipt was produced by a different verifier');
+      result.machines[name] = { receipt: reference, ...proof };
+    }
+    assert.notEqual(result.machines.pro.machine.sha256, result.machines.mini.machine.sha256,
+      'Pro and Mini must be two different actual machines, not two labels for the same host');
+    result.status = 'passed';
+  } catch (error) {
+    result.status = error.status === 'blocked' ? 'blocked' : 'failed';
+    result.error = { code: error.code ?? 'PAIRED_DAILY_VERIFICATION_FAILED', message: error.message };
+  }
+  return result;
 }
 
 // This recorder observes the real child and HTTP calls without replacing any
@@ -437,16 +552,20 @@ export function classifyDailyNotionRequest(request) {
 
 async function run(config) {
   for (const key of ['brokerRoot', 'brokerArchive', 'embeddedCliSha256', 'embeddedSdkSha256', 'brokerArchiveSha256', 'cliRoot', 'cliArchive', 'cliArchiveSha256', 'cliEntrySha256', 'evidenceRoot']) assert.equal(typeof config[key], 'string', `Missing final artifact: ${key}`);
+  const delivery = deliveryIntent(config), startedAt = new Date().toISOString();
   const findQuery = config.findQuery ?? 'pstack';
   assert.ok(typeof findQuery === 'string' && findQuery.length && !/[\r\n]/u.test(findQuery));
   await mkdir(config.evidenceRoot, { recursive: true });
   const evidence = await mkdtemp(join(config.evidenceRoot, 'daily-pi-'));
   const sessions = join(evidence, 'sessions'), cwd = join(evidence, 'workspace'), observerDir = join(evidence, 'observation');
   await Promise.all([sessions, cwd, observerDir].map(path => mkdir(path)));
-  const result = { version: 1, kind: 'actual-daily-pi-autoload-and-diagnostics', status: 'running', evidence, plan: plan(config), harness: await fileIdentity(fileURLToPath(import.meta.url)), modifications: { user_settings: 0, source_config: 0, harness_model_credential_files_read: 0, old_sessions_read: 0, target_extensions_injected: 0, source_command_overrides: 0 }, phases: [] };
+  const result = { version: 2, kind: 'actual-daily-pi-autoload-and-diagnostics', scope: 'ordinary-pi-startup-and-metadata', status: 'running',
+    delivery, started_at: startedAt, evidence, plan: plan(config), harness: await fileIdentity(fileURLToPath(import.meta.url)),
+    modifications: { user_settings: 0, source_config: 0, harness_model_credential_files_read: 0, old_sessions_read: 0, target_extensions_injected: 0, source_command_overrides: 0 }, phases: [] };
   let rpc, observedRpc, before, broker;
   try {
     result.worktrees_before = await verifyNextWorktreePair(config);
+    result.machine = result.worktrees_before.machine;
     before = await configurationSnapshot(config);
     let namespaceReview;
     if (config.namespaceDiagnosticsReview) {
@@ -562,7 +681,7 @@ async function run(config) {
     result.current_body_reads = 0;
     result.status = 'passed';
   } catch (error) {
-    result.status = 'failed'; result.error = { code: error.code ?? 'DAILY_VERIFICATION_FAILED', message: error.message };
+    result.status = error.status === 'blocked' ? 'blocked' : 'failed'; result.error = { code: error.code ?? 'DAILY_VERIFICATION_FAILED', message: error.message };
   } finally {
     if (rpc) await rpc.stop().catch(error => { result.shutdown_error = error.message; });
     if (observedRpc) {
@@ -599,6 +718,11 @@ async function run(config) {
       result.owned_pi = owned.filter(row => row.event === 'spawn').map(row => ({ pid: row.pid, file: row.file, args: row.args, cwd: row.cwd, observed_close: owned.some(end => end.event === 'close' && end.pid === row.pid && end.observedExit) }));
       if (result.owned_pi.some(row => !row.observed_close)) result.status = 'failed';
     }
+    result.finished_at = new Date().toISOString();
+    if (result.status === 'passed') {
+      try { validateDailyReceipt(result, config, result.worktrees_before); }
+      catch (error) { result.status = 'failed'; result.error = { code: error.code ?? 'DAILY_RECEIPT_INCOMPLETE', message: error.message }; }
+    }
     await save(join(evidence, 'result.json'), result);
   }
   return result;
@@ -609,17 +733,21 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.log(`Usage:
   node scripts/verify-pi-daily-installation.mjs plan --config ABSOLUTE_CONFIG.json
   node scripts/verify-pi-daily-installation.mjs run --config ABSOLUTE_CONFIG.json
+  node scripts/verify-pi-daily-installation.mjs aggregate --config ABSOLUTE_CONFIG.json
   node scripts/verify-pi-daily-installation.mjs candidate-plan --config ABSOLUTE_CONFIG.json
   node scripts/verify-pi-daily-installation.mjs candidate-run --config ABSOLUTE_CONFIG.json --live
 
 plan: describe ordinary daily pi -ns diagnostics; does not execute Pi.
 run: verify the committed next worktree pair, current builds, existing installation and a fresh ordinary Pi process.
+aggregate: require current passed Pro/Mini daily receipts from different machines for the same delivery and real origin/next pair.
 candidate-plan: validate and describe the separate project-scoped candidate; does not execute Pi.
 candidate-run: execute that candidate with its specified provider/model and record actual evidence.
 
 Each action requires an explicit version:1 JSON config and owned absolute evidence paths.
 Daily runs require worktrees.cli and worktrees.broker with root and complete commit,
-plus the selected cliRoot, brokerRoot and artifact hashes. Candidate configs require
+plus the selected cliRoot, brokerRoot, artifact hashes and delivery:{id:UUID,startedAt:UTC_ISO}.
+Aggregate uses the same delivery/worktree inputs and receipts:{pro:ABSOLUTE_RESULT_JSON,mini:ABSOLUTE_RESULT_JSON}.
+Only daily receipt version 2 qualifies; candidates and source/build receipts never prove daily execution. Candidate configs require
 scope:project-scoped-candidate-precheck and explicit turns. A plan is prepared_not_executed;
 a candidate does not prove the ordinary daily installation or the other machine.
 These actions do not install packages or change user settings.`);
@@ -627,9 +755,9 @@ These actions do not install packages or change user settings.`);
   }
   const [action, flag, input, ...extra] = process.argv.slice(2);
   const candidate = action === 'candidate-plan' || action === 'candidate-run';
-  assert.ok(['plan', 'run', 'candidate-plan', 'candidate-run'].includes(action) && flag === '--config' && input
+  assert.ok(['plan', 'run', 'aggregate', 'candidate-plan', 'candidate-run'].includes(action) && flag === '--config' && input
     && (action === 'candidate-run' ? extra.length === 1 && extra[0] === '--live' : !extra.length),
-  'Usage: node scripts/verify-pi-daily-installation.mjs plan|run|candidate-plan --config ABSOLUTE_CONFIG.json; candidate-run --config ABSOLUTE_CONFIG.json --live');
+  'Usage: node scripts/verify-pi-daily-installation.mjs plan|run|aggregate|candidate-plan --config ABSOLUTE_CONFIG.json; candidate-run --config ABSOLUTE_CONFIG.json --live');
   const config = await json(resolve(input));
   assert.equal(config.version, 1);
   if (candidate) {
@@ -638,6 +766,11 @@ These actions do not install packages or change user settings.`);
     console.log(JSON.stringify(result, null, 2));
     if (action === 'candidate-run' && result.status !== 'passed') process.exitCode = 1;
   } else if (action === 'plan') console.log(JSON.stringify(plan(config), null, 2));
+  else if (action === 'aggregate') {
+    const result = await aggregateDailyDeliveries(config);
+    console.log(JSON.stringify(result, null, 2));
+    if (result.status !== 'passed') process.exitCode = 1;
+  }
   else {
     const result = await run(config);
     console.log(JSON.stringify({ status: result.status, evidence: result.evidence, error: result.error }));

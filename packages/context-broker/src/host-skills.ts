@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from "node:util";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { InvocationError, recordIdentity } from "./discovery-records";
 import { assertSourceAvailable, formatSourceFailures, hasEnabledNotionSource } from "./sources";
-import { SourceError, SourceReferenceAmbiguity, ReferenceMiss, sourceFailureMessage } from "./notion-source";
+import { SourceError, SourceReferenceAmbiguity, ReferenceMiss, sourceFailureMessage, sourceFailureDiagnostic } from "./notion-source";
 import { createActivationFeedback, ACTIVATION_MESSAGE } from "./activation-feedback";
 import { checkPreparationSignal, createPreparationGate, preparationCancelled, type ActivePreparation } from "./skill-preparation";
 import type { AgentMessage, ConfigFile, ExtensionAPI, ExtensionContext, ImageContent, SkillRecord, DiscoveryResult, SourceFailure, NotionViewState, ProjectedSessionEntry, ToolCallEvent, ToolCallResult } from "./types";
@@ -15,10 +15,10 @@ import { invocationText } from "./invocation-text";
 import { viewSystemPrompt, withoutViewMetadata } from "./view-prompt";
 import { hostCliScope } from "./host-command";
 import { notifyUnavailableReferences, renderUnavailableReferences } from "./unavailable-references";
-import { deduplicateSourceReads, deferredSourceEntries, nativeReadReceipt, sourceDeliveryReceipt, sourceMessageText, contextSourceIdentities, inspectedResource, projectSelectedSourceMessages, withSessionSourceReceipts } from "./session-source-snapshot";
+import { deduplicateSourceReads, deferredSourceEntries, nativeReadReceipt, notionReadStatusFooter, type NotionReadStatus, sourceDeliveryReceipt, sourceMessageText, contextSourceIdentities, inspectedResource, projectSelectedSourceMessages, withSessionSourceReceipts } from "./session-source-snapshot";
 import { parseNativeReference, nativeResourcePath, type ExactNativeReference } from "./native-reference";
 import { preparationFailureDetails, type PreparedHostGraph, type PreparationPurpose, type PreparationBinding, type PreparationDirectory } from "./prepare-protocol";
-import { applySelectionGraphs, samePreparationBinding, sessionSelection, type SelectionMode } from "./session-graph";
+import { applySelectionGraphs, samePreparationBinding, sessionSelection, selectedTaskRole, type SelectionMode } from "./session-graph";
 import { publicEntryMaterialization } from "./notion-entry";
 import { createSessionShortRefHost, isSessionShortRefInput, matchesShortRefSource, assertShortRefSource, assertShortRefSnapshot, assertShortRefResource, type HostShortRefResolution } from "./session-short-ref-host";
 import { compileSkillPreparation, projectSkillDirectory } from "./skill-context-projection";
@@ -31,7 +31,7 @@ import { notionCatalogAction, notionCatalogRetryGapMs } from "./catalog-menu";
 import { combineConsumptionEffects, consumptionEffects, errorConsumptionEffects, noConsumptionWrites, type ConsumptionEffects, type ConsumptionPolicy } from "./consumption-effects";
 import { createFinalRequestLedger, type FinalRequestLedger } from "./final-request";
 import { RECOVERY_NOTICE, assertActiveContextDelivery, type ActiveContextRestoration } from "./session-recovery";
-import { activeSources } from "./session-active";
+import { activeSources, activeSelection } from "./session-active";
 import { assertWorkingSetBudget, exportWorkingSet, releaseWorkingSetRoots, setWorkingSetBudget, WorkingSetBudgetError } from "./session-working-set";
 
 export type HostSkillOptions = {
@@ -88,7 +88,9 @@ function failure(error: unknown): string {
   if (error instanceof SourceReferenceAmbiguity) return error.message;
   if (error instanceof SourceError && error.code === "CONTENT_DISABLED")
     return `context-broker Skill disabled (CONTENT_DISABLED). ${sourceFailureMessage(error.code)}`;
-  if (error instanceof SourceError) return `context-broker source ${error.sourceId} unavailable (${error.code}). ${sourceFailureMessage(error.code)}`;
+  if (error instanceof SourceError && error.code === "SHARED_ROUTER_MEMBER_UNAVAILABLE")
+    return `context-broker preparation incomplete (${error.code}). ${sourceFailureMessage(error.code, error.details)}`;
+  if (error instanceof SourceError) return `context-broker source ${error.sourceId} unavailable (${error.code}). ${sourceFailureMessage(error.code, error.details)}`;
   if (error instanceof InvocationError) return error.message;
   return `context-broker activation failed (${typeof code === "string" && /^[A-Z_]+$/.test(code) ? code : "SOURCE_ACTIVATION_FAILED"})`;
 }
@@ -1735,6 +1737,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       } catch (error) {
         if (!acquiring) throw error;
         const effects = combineConsumptionEffects([...observedEffects, errorConsumptionEffects(error)]);
+        const diagnostic = error instanceof SourceError ? sourceFailureDiagnostic(error.code, error.details) : undefined;
         const diagnostics = error !== null && typeof error === "object" && "code" in error && error.code === "SOURCE_SESSION_CONFLICT" && "details" in error
           ? preparationFailureDetails(error.details) : undefined;
         const conflict = diagnostics ? { ...diagnostics, ...(Array.isArray(diagnostics.roots) ? { roots: diagnostics.roots.map(root => {
@@ -1743,6 +1746,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
           return { ...root, ...(record ? { ref: modelReference(record, ctx) ?? record.ref } : {}) };
         }) } : {}) } : undefined;
         const message = JSON.stringify({ ok: false, status: signal?.aborted ? "cancelled" : "failed", error: failure(error), effects,
+          ...(diagnostic ? { diagnostic } : {}),
           ...(conflict ? { conflict } : {}),
           ...(error instanceof WorkingSetBudgetError ? { working_set: error.details.working_set } : {}) });
         throw consumptionFailure(error, message, effects);
@@ -1915,8 +1919,9 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     // only the boundary facts here; a stage is not a new authority proof.
     // Reference ambiguity is already a public JSON choice response. Preserve
     // its top-level candidates; the admission remains available in details.
+    const diagnostic = error instanceof SourceError ? sourceFailureDiagnostic(error.code, error.details) : undefined;
     const reason = stage === "reference" && error instanceof SourceReferenceAmbiguity ? failure(error)
-      : JSON.stringify({ error: message ?? failure(error), ...(effects ? { effects } : {}), admission });
+      : JSON.stringify({ error: message ?? failure(error), ...(diagnostic ? { diagnostic } : {}), ...(effects ? { effects } : {}), admission });
     return { block: true, reason,
       ...(effects ? { effects } : {}), admission };
   }
@@ -2236,14 +2241,21 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     // This records no availability grant, active binding or loaded instruction.
     if (pending.purpose === "inspect") readRecords.set(resolve(pending.record.path), pending.record);
     const ref = modelReference(pending.record, ctx, true);
+    const useRole = pending.record.preparationBinding ? selectedTaskRole(activeSelection(ctx, piRun?.graphs), pending.record.preparationBinding) : undefined;
+    const readStatus: NotionReadStatus | undefined = pending.record.source === "notion" ? {
+      purpose: "inspect", activation_effect: "unchanged", requires_acquisition: "not_performed",
+      use_selection: useRole ? { status: "already_selected_for_use", roles: useRole.roles } : { status: "inspection_only", roles: [] },
+    } : undefined;
     if (ref || effects) {
       // The original native result has already proved a complete main read. Keep
       // those exact bytes as the prefix and append only a directory of fixed refs.
-      const footer = (ref ? "\n\n<skill-directory>\n" + JSON.stringify({ ref, directory: projectSkillDirectory(modelDirectory(pending.record, [pending.record], ctx)) }) + "\n</skill-directory>" : "") + effectsFooter;
+      const footer = (ref ? "\n\n<skill-directory>\n" + JSON.stringify({ ref, directory: projectSkillDirectory(modelDirectory(pending.record, [pending.record], ctx)) }) + "\n</skill-directory>" : "")
+        + (readStatus ? notionReadStatusFooter(readStatus) : "") + effectsFooter;
       const content = typeof event.content === "string" ? event.content + footer : [...event.content ?? [], { type: "text" as const, text: footer }];
       const delivered = nativeReadReceipt(pending.record, event.toolCallId, content, pending.purpose);
       if (!delivered) throw hostError("SOURCE_PREPARATION_INVALID");
-      return { content, details: { ...existing, ...(effects === undefined ? {} : { effects }), contextBrokerRead: { ...delivered, directory: pending.record.preparationDirectory } } };
+      return { content, details: { ...existing, ...(effects === undefined ? {} : { effects }), contextBrokerRead: { ...delivered,
+        ...(readStatus ? { readStatus } : {}), directory: pending.record.preparationDirectory } } };
     }
     return { details: { ...existing, contextBrokerRead: { ...proof, directory: pending.record.preparationDirectory } } };
   });

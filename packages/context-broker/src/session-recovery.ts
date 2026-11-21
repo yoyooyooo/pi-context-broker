@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { recordIdentity } from "./discovery-records";
 import { SourceError, sourceFailureMessage } from "./notion-source";
 import { activeSelection, activeSources, assertRestoredSource, type ActiveSource } from "./session-active";
-import { selectedClosure, type SelectionMode } from "./session-graph";
+import { selectedClosure, type SelectionMode, type SessionSelection } from "./session-graph";
 import { projectSelectedSourceMessages, sourceContentIdentity, sourceDeliveryLoaded } from "./session-source-snapshot";
 import { checkPreparationSignal } from "./skill-preparation";
 import type { PreparedHostGraph } from "./prepare-protocol";
@@ -69,7 +69,7 @@ function contextPlan(ctx: ExtensionContext, pending: Pending) {
   }
   for (const source of sources.values()) if (source.record.source !== "notion")
     roots.push({ identity: source.contentIdentity, name: source.record.name, ref: source.record.path, closure: new Set([source.contentIdentity]) });
-  return { roots, sources };
+  return { roots, sources, selection };
 }
 
 /** Complete means exact bytes in this context, never historical activation. */
@@ -102,7 +102,7 @@ export function assertActiveContextDelivery(ctx: ExtensionContext, prepared: Age
 export function createActiveSourceRestorer(options: {
   assertAvailable(record: SkillRecord): void;
   load(sources: readonly ActiveSource[], missing: readonly ActiveSource[], ctx: ExtensionContext, signal: AbortSignal): Promise<SkillRecord[]>;
-  render(records: readonly SkillRecord[], ctx: ExtensionContext): Message | undefined;
+  render(records: readonly SkillRecord[], ctx: ExtensionContext, selection: SessionSelection): Message | undefined;
   now?: () => number;
   timeout?: (milliseconds: number) => AbortSignal;
 }) {
@@ -116,7 +116,7 @@ export function createActiveSourceRestorer(options: {
     const deadline = (options.timeout ?? (milliseconds => AbortSignal.timeout(milliseconds)))(DEFAULT_RESOURCE_READ_BUDGET.timeBudgetMs);
     const recoverySignal = AbortSignal.any([signal, deadline]);
     const exhausted = (cause?: unknown): Failure => ({ code: "SOURCE_RECOVERY_TIME_BUDGET", cause });
-    const { roots, sources } = contextPlan(ctx, pending), groups: Group[] = [];
+    const { roots, sources, selection } = contextPlan(ctx, pending), groups: Group[] = [];
     for (const root of roots) {
       const joined = groups.filter(group => [...root.closure].some(identity => group.identities.has(identity)));
       const group: Group = { roots: [root, ...joined.flatMap(value => value.roots)],
@@ -166,7 +166,7 @@ export function createActiveSourceRestorer(options: {
       }
     }
     checkPreparationSignal(signal);
-    const candidate = options.render([...restored.values()], ctx);
+    const candidate = options.render([...restored.values()], ctx, selection);
     const completeMessages = candidate ? [...messages, { ...candidate, role: "custom" }] : messages;
     const available = new Set<string>();
     const incomplete: Array<{ root: Root; missing: string[]; code: string }> = [];
@@ -181,7 +181,7 @@ export function createActiveSourceRestorer(options: {
     const withheld = new Set(incomplete.flatMap(value => [...value.root.closure]).filter(identity => !available.has(identity)));
     const projected = projectSelectedSourceMessages(messages, { scopes: new Map() },
       (scope, id) => withheld.has(JSON.stringify([scope, id])) ? "incomplete" : undefined);
-    const accepted = options.render([...restored].filter(([identity]) => !withheld.has(identity)).map(([, record]) => record), ctx);
+    const accepted = options.render([...restored].filter(([identity]) => !withheld.has(identity)).map(([, record]) => record), ctx, selection);
     const recovery = incomplete.map(({ root, missing, code }) => ({ name: root.name, ref: root.ref, code, missing,
       reason: code === "SOURCE_CONTEXT_INCOMPLETE" ? "The selected mandatory instructions are not present in this request." : sourceFailureMessage(code) }));
     const notices: Message[] = recovery.length ? [{ customType: RECOVERY_NOTICE, display: false,

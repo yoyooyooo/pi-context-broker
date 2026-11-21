@@ -76,6 +76,19 @@ export function samePreparationBinding(a: PreparationBinding, b: PreparationBind
     && a.record.kind === b.record.kind && a.record.entrypoint === b.record.entrypoint && a.record.ref === b.record.ref
     && isDeepStrictEqual(a.record.locator, b.record.locator);
 }
+export type SelectedTaskRole = { roles: readonly ["root"]; required_by?: never }
+  | { roles: readonly ["required"] | readonly ["root", "required"]; required_by: readonly string[] };
+/** Presentation of the supplied verified use graph, never a new selection or
+ * delivery authority. Inspect locks and same-owner different versions do not qualify. */
+export function selectedTaskRole(selection: SessionSelection, binding: PreparationBinding): SelectedTaskRole | undefined {
+  const scope = selection.scopes.get(binding.scope), selected = scope?.bindings.get(binding.record.id);
+  if (!scope || !selected || !samePreparationBinding(selected, binding)) return undefined;
+  const roots = [...scope.roots].filter(root => scope.graphs.some(graph => graph.purpose === "use" && graph.roots.includes(root)));
+  const required_by = roots.filter(root => root !== binding.record.id && selectedClosure(scope, [root]).has(binding.record.id))
+    .flatMap(root => { const owner = scope.bindings.get(root); return owner ? [owner.ref] : []; }).sort();
+  if (roots.includes(binding.record.id)) return required_by.length ? { roles: ["root", "required"], required_by } : { roles: ["root"] };
+  return required_by.length ? { roles: ["required"], required_by } : undefined;
+}
 const outgoing = (graph: PreparationGraphLock, id: string) => canonical(graph.required.filter(edge => edge.from === id)
   .map((edge): [string, string] => [edge.to, edge.ref]).sort(([a, ar], [b, br]) => a < b ? -1 : a > b ? 1 : ar < br ? -1 : ar > br ? 1 : 0));
 function graphConflict(scope: SelectedScope, graph: PreparationGraphLock, id: string, reason: "binding" | "requires") {

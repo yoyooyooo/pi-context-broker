@@ -12,7 +12,7 @@
 | 资源 | scope、owner、snapshot、File ID 或精确路径、hash | 按需完整读取；同一来源版本只保留一份 |
 | 明确检查最新版 | 完整主文证明及其精确目录 | 可以与旧 pin 共存；不成为 active 指令，也不绕过真实权限 |
 | 生成目录与关系 | owner、snapshot、完整目录内容 | 对象描述一份，关系保留引用 |
-| 操作结果 | toolCallId、原 operation | 各次结果独立保留；未知消费 effects 不改成 none |
+| 操作结果 | toolCallId、原 operation | 各次 effects 与 read status 独立保留；未知 effects 不改成 none |
 | 指引 | 本次实际可用工具集合 | 一份当前指引；本地 Skill 走原生入口，不诱导额外 notion_use |
 
 重复 ref 字符串和真实工具调用不算重复正文。用户明确要求再 read 或 use 时
@@ -23,6 +23,12 @@ Notion 内容变动、metadata TTL 到期和 Default Context 变动不替换旧�
 `read refresh:true` 只检查当前内容；`notion_use refresh:true` 在完整成功后
 替换指定 roots。共享 Requires 冲突必须给出相关 roots，失败保留旧图。
 Enabled=false 不抹掉已有完整固定正文；真实认证或权限拒绝仍移除对应投影。
+
+完整 main read 的公开状态须说明本次为 inspect、未改变 activation、未由本次
+read 取得 Requires。use membership 从本次有效 use 图和完整 binding 派生，
+区分仅查看、root、Required 与双角色；pending use 不宣称已获 provider 确认。
+这是当次操作事实，后续不能用历史 footer 重建 selection。目录/描述去重保留
+该事实；公开状态与私有证明不一致时不得获得完整目录的复用资格。
 
 压缩后全文仍在则复用；只剩摘要或 loaded 标记时尝试恢复原固定版本。恢复
 缺失按完整 Required 闭包降级，保留独立 roots。总恢复预算限制一次请求的等待，
@@ -42,7 +48,7 @@ bun run --cwd packages/context-broker test:consumption
 也不能把原始 Session details 算成模型收到的正文。
 
 native-read-session、resource-read-projection、skill-context-session、
-host-prepare、host-refresh、session-refresh 和 session-recovery 负责相关
+host-prepare、host-refresh、session-refresh、session-recovery 和 read-intent-status 负责相关
 源码回归。final-request 的源码与真实 Node transport 负控制分别检查
 重复/缺失正文、schema、原始角色义务和实体摘要。不把这些源码测试标成
 实际 Pi 已经运行过的反例。

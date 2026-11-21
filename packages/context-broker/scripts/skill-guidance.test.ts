@@ -50,18 +50,39 @@ test("native capability fallback alone adds exact CLI scope without teaching una
 
 test("maintenance reads the connected Notion workflow before any management command", () => {
   const routed = text(["read", "notion_list", "notion_use", "bash"]);
-  expect(routed).toContain("read ntn-skills-maintain's supplied Notion ref");
+  expect(routed).toContain("read ntn-skills-maintain's exact ref");
   expect(routed).toContain("task's source/library");
   expect(routed).toContain("absent/pending: notion_list there");
   expect(routed).toContain("failed/partial is not absence");
-  expect(routed).toContain("Never activate the edited item");
+  expect(routed).toContain("Edited item: inspect only.");
   expect(routed).toContain("Builtins: explicit offline/bootstrap only");
+  expect(routed).toContain("To apply: notion_use(ref), same ref + Requires");
   expect(routed).not.toContain("ctl builtin read");
   expect(routed).not.toContain("/configured");
   expect(routed).not.toContain("/must-not-appear");
   const readonly = text(["read", "notion_list", "notion_use"]);
-  expect(readonly).toContain("read ntn-skills-maintain's supplied Notion ref");
+  expect(readonly).toContain("read ntn-skills-maintain's exact ref");
   expect(readonly).not.toContain("ctl builtin read");
+});
+
+test("maintenance adoption advertises only an available closure-loading route", () => {
+  const inspect = text(["read", "notion_list"]);
+  expect(inspect).toContain("Inspect only; adoption unavailable");
+  expect(inspect).not.toContain("notion_use(ref)");
+  expect(inspect).not.toContain("CLI use EXACT_REF");
+  const cli = text(["read", "notion_list", "bash"]);
+  expect(cli).toContain("To apply: CLI use EXACT_REF");
+  expect(cli).toContain("use REF --json");
+  expect(cli).toContain("list --query TEXT --json");
+  expect(cli).toContain("match the selected record identity");
+  expect(cli).toContain("same ref + Requires");
+  expect(cli).not.toContain("notion_use(ref)");
+  expect(text(full)).toContain("To apply: skill_prepare purpose use");
+  const generic = text(["read", "skill_search", "bash"]);
+  expect(generic).toContain("To apply: CLI use EXACT_REF");
+  expect(generic).toContain("<use-args>");
+  expect(generic).toContain("<list-args>");
+  expect(text(["read", "skill_search"])).toContain("Inspect only; adoption unavailable");
 });
 
 test("maintenance preserves native capability limits and explicit offline/bootstrap fallback", () => {
@@ -76,7 +97,7 @@ test("maintenance preserves native capability limits and explicit offline/bootst
     expect(bootstrap).toContain("bootstrap");
     expect(bootstrap).toContain("offline");
     expect(bootstrap).toContain("ctl builtin read notion/ntn-skills-maintain");
-    expect(bootstrap).not.toContain("ntn-skills-maintain's supplied Notion ref");
+    expect(bootstrap).not.toContain("ntn-skills-maintain's exact ref");
   }
 });
 
@@ -233,9 +254,9 @@ test("Notion source flags are scoped to native installations without rewriting s
   expect(guidance).toContain("beyond the default View");
   expect(guidance).toContain("Editor flags do not change availability or permissions");
   expect(guidance).toContain("Local @Skills stay native; use Notion only for extra content");
-  expect(guidance).toContain("loading authorizes no commands, writes or delegation");
+  expect(guidance).toContain("Loading authorizes no commands/writes/delegation");
   expect(guidance).toContain("read(path) inspects.");
-  expect(guidance).toContain("Inspection does not activate;");
+  expect(guidance).toContain("Inspection never activates.");
   expect(projected[0]).toBe(system);
   expect(projected).toContain(source);
   expect(JSON.stringify(history)).toBe(original);

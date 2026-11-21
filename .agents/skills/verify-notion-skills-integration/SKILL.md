@@ -18,7 +18,7 @@ OMP/Tern 延期；不恢复 `source.command`、CLI 正文消费、完整 export 
 可以使用 `package:check` 已独立安装的包，或依赖齐全的 checkout 中 `bun run build` 产物。
 打包目录本身未安装依赖时，不能直接作为 Broker 的构建入口；先核对已安装包与归档的字节一致。
 CI 和 publish 的 CLI pin 必须指向同一完整 commit；不要用发布版或另一工作树代替候选。
-Pro/Mini 每次交付还须按 [next 工作树交付](../../../docs/next-worktree-delivery.md) 核源码、构建回执与普通新进程；固定路径本身不保证最新产物。
+Pro/Mini 每次交付还须按 [next 工作树交付](../../../docs/next-worktree-delivery.md) 核真实 origin/next、机器指纹、构建与普通新进程，再由日用入口 `aggregate` 联合检查同一新 delivery 的两份 version:2 回执。单机、旧回执或 source/build-only 不能完成双机交付；固定路径本身不保证最新产物。
 以下命令从 Broker 根目录执行。CLI 路径属于选定的完整包，decoder 源码属于同一提交：
 
 ```sh

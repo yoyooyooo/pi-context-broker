@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { sessionSourceSnapshot, sessionSourceBindings, sourceContentIdentity, sourceDeliveryReceipt, sourceBodyLoaded, projectSelectedSourceMessages, withSessionSourceReceipts } from "./session-source-snapshot";
-import { sessionSelection, selectedBinding, persistSessionSelection, exportSessionSelection } from "./session-graph";
+import { sessionSelection, selectedBinding, selectedTaskRole, persistSessionSelection, exportSessionSelection, type SessionSelection } from "./session-graph";
 import { activeSelection, confirmActiveSources } from "./session-active";
 import { createActiveSourceRestorer } from "./session-recovery";
 import { checkPreparationSignal, isPreparationCancelled } from "./skill-preparation";
@@ -109,6 +109,7 @@ const DEFAULT_PATH_MODE: PathMode = "home-relative";
 type SkillInjectionPresentation = Pick<HostCapabilities, "skillInstructions"> & {
   sourceReference?(record: SkillRecord): string | undefined;
   sourceFiles?(record: SkillRecord): readonly { path: string; ref: string }[] | undefined;
+  sourceTaskRole?(record: SkillRecord): { role: "root"; required_by?: readonly string[] } | { role: "required"; required_by: readonly string[] } | undefined;
 };
 const DOLLAR_SKILL_PATTERN = "(?:^|[^\\w\\\\$])\\$(?<query>[^\\s$]+?)(?=$|[\\s,，。!！？?；;、:：)）\\]】}]|\\.+(?=$|[\\s,，。!！？?；;、:：)）\\]】}]))";
 const DEFAULT_RULES: InvocationRule[] = [
@@ -783,8 +784,10 @@ function messagesFromActiveSessionContext(ctx: ExtensionContext): AgentMessage[]
   return Array.isArray(activeMessages) ? activeMessages : [];
 }
 
-function maintenanceGuidance(reader: "read" | "CLI read", discovery: "notion_list" | "skill_search" | "CLI list" | undefined): string {
-  return `Maintenance: ${reader} ntn-skills-maintain's supplied Notion ref in the task's source/library; absent/pending: ${discovery ? `${discovery} there` : "report unavailable discovery"}. Never activate the edited item. Builtins: explicit offline/bootstrap only.`;
+function maintenanceGuidance(reader: "read" | "CLI read", discovery: "notion_list" | "skill_search" | "CLI list" | undefined,
+  adoption: "notion_use(ref)" | "CLI use EXACT_REF" | "skill_prepare purpose use" | "the supplied prepared host entry" | undefined): string {
+  const action = adoption ? `To apply: ${adoption}, same ref + Requires` : "Inspect only; adoption unavailable";
+  return `Maintenance: ${reader} ntn-skills-maintain's exact ref in task's source/library; absent/pending: ${discovery ? `${discovery} there` : "report unavailable discovery"}. ${action}. Edited item: inspect only. Builtins: explicit offline/bootstrap only.`;
 }
 
 function buildCliGuidance(config: ConfigFile, activeTools?: readonly string[]): Omit<AgentMessage, "role" | "timestamp"> {
@@ -811,7 +814,7 @@ function buildCliGuidance(config: ConfigFile, activeTools?: readonly string[]): 
     }),
     "Append an argument array to its cli executable argv, replacing TERM/EXACT_REF/SNAPSHOT/RELATIVE with task values. Keep the supplied database scope on list/read/files.",
     "Each cli scope belongs to the named source and database. Use the scope matching the selected content or explicitly requested target; never choose the first source implicitly. Keep maintenance instruction discovery, reads and authorized writes in that scope. Failed or partial discovery does not prove absence.",
-    ...(sources.length ? [maintenanceGuidance("read", "CLI list")] : ["For explicitly requested bootstrap or offline help without a connected source, use the supplied CLI with ctl builtin read notion/ntn-skills-maintain. This reads packaged instructions, not a Notion projection."]),
+    ...(sources.length ? [maintenanceGuidance("read", "CLI list", "the supplied prepared host entry")] : ["For explicitly requested bootstrap or offline help without a connected source, use the supplied CLI with ctl builtin read notion/ntn-skills-maintain. This reads packaged instructions, not a Notion projection."]),
     "A successful read returns top-level content (the body), pinned ref, and snapshot_id (the files/resource-read target). The record field is metadata. Keep JSON output so ok/error and snapshot identity can be checked.",
     "Choose from supplied metadata; otherwise search with a short name or keyword, broadening an empty query. Select one suitable record before reading its body. Discover through metadata or the CLI, not cache directories.",
     "A complete Skill body supplied by the host/Broker or a successful read is already read. Use it directly. For introductions and summaries, do not reread the entry, list its cache directory, or inspect package/agent metadata.",
@@ -835,16 +838,17 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
     const content = [
       "<ntn-skills-guidance>",
       "Local @Skills stay native; use Notion only for extra content. Editor flags do not change availability or permissions.",
-      "Reuse complete content; refresh only on request. Inspection does not activate; loading authorizes no commands, writes or delegation.",
+      "Reuse complete content; refresh only on request. Inspection never activates. Loading authorizes no commands/writes/delegation.",
       list ? "notion_list searches beyond the default View; failed/partial is not absence." : "Failed/partial discovery is not absence.",
-      ...(read ? ["read(path) inspects. refresh:true inspects latest main without changing task pins. Keep owner/snapshot; never edit sr: handles. paths reads same-snapshot files."] : []),
-      ...(use ? ["notion_use(ref) applies with Requires; refresh:true adopts latest on request; refresh conflicting roots together. Members are candidates. Outside Code mode."] : []),
-      ...(read || tools.has("bash") ? [maintenanceGuidance(read ? "read" : "CLI read", list ? "notion_list" : tools.has("bash") ? "CLI list" : undefined)] : []),
+      ...(read ? ["read(path) inspects. refresh:true inspects latest main without changing task pins. Keep owner/snapshot; never edit sr: handles. paths: same snapshot."] : []),
+      ...(use ? ["notion_use(ref) applies with Requires; refresh:true adopts latest on request; refresh conflicting roots together. Members: candidates. Outside Code mode."] : []),
+      ...(read || tools.has("bash") ? [maintenanceGuidance(read ? "read" : "CLI read", list ? "notion_list" : tools.has("bash") ? "CLI list" : undefined,
+        use ? "notion_use(ref)" : tools.has("bash") ? "CLI use EXACT_REF" : undefined)] : []),
       ...(tools.has("notion_ctl") ? ["notion_ctl working_set manages active roots and byte budgets; release preserves shared Requires, history and cache."] : []),
       ...(cliSources.length ? [`No task CLI? notion_ctl cli_source returns its command/scope; no execution or authorization. Choose explicitly from ${JSON.stringify(cliSources)}.`] : []),
-      ...((!read || !list) && tools.has("bash") ? (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false).map(source => {
+      ...((!read || !list || !use) && tools.has("bash") ? (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false).map(source => {
         const scope = hostCliScope([source]);
-        return `Unavailable native operations can use this source's CLI: ${JSON.stringify({ source: source.id, command: scope.command, database: scope.database, operations: [...(!list ? ["list --query TEXT --json"] : []), ...(!read ? ["read REF --json"] : [])] })}. CLI refs must be canonical; session sr: handles belong to this Pi session.`;
+        return `Unavailable native operations can use this source's CLI: ${JSON.stringify({ source: source.id, command: scope.command, database: scope.database, operations: [...(!list || !use ? ["list --query TEXT --json"] : []), ...(!read ? ["read REF --json"] : []), ...(!use ? ["use REF --json"] : [])] })}. CLI refs must be canonical; match the selected record identity in this source's CLI list. Session sr: handles belong to this Pi session.`;
       }) : []),
       ...(!read && !tools.has("bash") ? ["Inspection and resource reading are unavailable; report missing content rather than claiming it was read."] : []),
       "</ntn-skills-guidance>",
@@ -853,8 +857,8 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
   }
   const read = tools.has("read"), search = tools.has("skill_search"), prepare = tools.has("skill_prepare"), graph = tools.has("skill_graph"), bash = tools.has("bash");
   const sources = (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false);
-  const fallback = bash && (!read || !search);
-  const cliList = !search || !read && !prepare;
+  const fallback = bash && (!read || !search || !prepare);
+  const cliList = !search || !prepare;
   const content = [
     "<ntn-skills-guidance>",
     "Skill directories describe candidates, not loaded bodies. Reuse a complete body already supplied by the host or a successful read for ordinary follow-up questions, without rereading it or probing packages, executables, prerequisites or cache directories. Still perform discovery, read, inspect or use operations explicitly requested by the current user through an available, authorized route.",
@@ -864,12 +868,13 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
     ...(prepare ? ["Use skill_prepare with exact roots and purpose inspect to inspect only those roots, or purpose use to prepare the complete Required closure for an authorized workflow. An existing preparation does not replace a skill_prepare operation explicitly requested by the current user. Members remain candidates until selected; inspection does not activate Requires or authorize execution."] : ["An explicit host Skill selection may already supply its prepared Required closure. Do not infer that inspecting one entry prepared its dependencies."]),
     ...(graph ? ["skill_graph exports this branch's fixed identities and delivery evidence. Selected versions persist across restart and compaction; use existing supplied bodies and resource refs."] : []),
     ...(prepare ? ["An explicit skill_prepare refresh:true with unfixed roots starts a new selection only after complete preparation; it does not rewrite original tool history."] : []),
-    ...(sources.length && (read || bash) ? [maintenanceGuidance(read ? "read" : "CLI read", search ? "skill_search" : bash ? "CLI list" : undefined)] : []),
+    ...(sources.length && (read || bash) ? [maintenanceGuidance(read ? "read" : "CLI read", search ? "skill_search" : bash ? "CLI list" : undefined,
+      prepare ? "skill_prepare purpose use" : bash ? "CLI use EXACT_REF" : undefined)] : []),
     ...(bash && graph && sources.length ? [
       `For a user-requested maintenance or sync action that requires the CLI, request skill_graph with cli_source set to the exact configured source ID. Available source IDs: ${JSON.stringify(sources.map(source => source.id))}. This returns the host-local command prefix and database scope without executing anything or granting authorization. Append the requested command's arguments to that prefix; do not assume a global ntn-skills command is installed or probe package paths. Choose the intended target source explicitly, never the first source.`,
     ] : []),
     ...(fallback ? [
-      "The following CLI fallback covers currently unavailable native discovery/read operations. It is not a request to run commands or check the environment. Use only the selected source and its supplied database scope; keep JSON output and check ok/error.",
+      "The following CLI fallback covers currently unavailable native discovery/read/use operations. It is not a request to run commands or check the environment. Use only the selected source and its supplied database scope; keep JSON output and check ok/error.",
       "Failed or partial discovery does not prove absence. Packaged maintenance instructions are only an explicit offline/bootstrap route, not a response to discovery failure.",
       ...(!sources.length ? ["With no connected source, explicitly requested bootstrap/offline help can use the supplied CLI with ctl builtin read notion/ntn-skills-maintain."] : []),
       "CLI commands cannot resolve session sr: handles. Use a canonical ref returned by that source's CLI metadata or a fixed snapshot/path from a successful preparation. If native read and prepare are unavailable, use this source's list command to obtain the same candidate's canonical ref, matching its exact record identity rather than guessing a name.",
@@ -878,6 +883,7 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
         return [
           `<cli${scope.sourceId ? ` source="${escapeAttribute(scope.sourceId)}"` : ""}${scope.database ? ` database="${escapeAttribute(scope.database)}"` : ""}>${escapeText(JSON.stringify(scope.command))}`,
           ...(cliList ? [`<list-args>${escapeText(JSON.stringify(["list", ...database, "--query", "TERM"]))}</list-args>`] : []),
+          ...(!prepare ? [`<use-args>${escapeText(JSON.stringify(["use", "EXACT_REF", ...database, "--json"]))}</use-args>`] : []),
           ...(!read ? [
             `<read-args>${escapeText(JSON.stringify(["read", "EXACT_REF", ...database]))}</read-args>`,
             `<files-args>${escapeText(JSON.stringify(["files", "SNAPSHOT", ...database]))}</files-args>`,
@@ -1026,8 +1032,10 @@ function renderSkillRecord(injection: ContextInjection, config: ConfigFile, pres
     // materialized yet. A cache directory is neither an inventory nor an entrypoint.
     const files = (presentation.sourceFiles?.(skill) ?? skill.preparationDirectory?.files ?? [])
       .filter(file => file.path !== skill.entrypoint).map(({ path, ref }) => ({ path, ref }));
+    const taskRole = presentation.sourceTaskRole?.(skill);
     return [
       `<context-broker-record kind="${recordKind(skill)}" name="${escapeAttribute(skill.name)}" ref="${escapeAttribute(ref)}">`,
+      ...(taskRole ? [`<task-role>${escapeText(JSON.stringify(taskRole))}</task-role>`] : []),
       ...(files.length ? [`<resources>${escapeText(JSON.stringify(files))}</resources>`] : []),
       "<body>",
       escapeText(skill.body),
@@ -1654,8 +1662,14 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       await menu.followUp;
     }).catch(error => { if (generation === menuGeneration) ui?.notify?.(catalogError(error), "error"); });
   });
-  const injectionPresentation = (ctx: ExtensionContext, mode: "selected" | "restored" = "selected"): SkillInjectionPresentation => ({
+  const injectionPresentation = (ctx: ExtensionContext, mode: "selected" | "restored" = "selected", restoredSelection?: SessionSelection): SkillInjectionPresentation => ({
     ...adapter,
+    sourceTaskRole: record => {
+      if (mode !== "restored" || record.source !== "notion" || !record.preparationBinding || !restoredSelection) return undefined;
+      const selected = selectedTaskRole(restoredSelection, record.preparationBinding);
+      if (!selected) return undefined;
+      return selected.required_by ? { role: selected.roles[0], required_by: selected.required_by } : { role: "root" };
+    },
     sourceReference: record => {
       if (paths.host !== "pi" || record.source !== "notion" || !record.preparationBinding) return undefined;
       const directoryRedacted = configuredPathMode(config) === "hash" || configuredPathMode(config) === "basename";
@@ -1781,8 +1795,8 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
         }
         return restored;
       }),
-      render: (records, ctx) => records.length ? buildInjectedPayloadFromInjections(records.map(record => ({ record,
-        query: record.token ?? record.name, ruleIds: [] })), config, injectionPresentation(ctx, "restored")) : undefined,
+      render: (records, ctx, selection) => records.length ? buildInjectedPayloadFromInjections(records.map(record => ({ record,
+        query: record.token ?? record.name, ruleIds: [] })), config, injectionPresentation(ctx, "restored", selection)) : undefined,
     }) : undefined,
     confirmDelivery: paths.host === "pi" ? (records, messages, ctx) => confirmActiveSources(pi, ctx, records, messages) : undefined,
     isLoaded: (record, ctx) => hasLoadedRecord(projectSelectedSourceMessages(messagesFromActiveSessionContext(ctx), sessionSelection(ctx)), record),

@@ -17,9 +17,9 @@ description: "验证当前 Context Broker 的 Pi 注入、目录与资源消费�
 | 跨仓 SDK、包内运行时、安装后的 HTTP 消费 | [integration Skill](../verify-notion-skills-integration/SKILL.md)；`scripts/verify-artifacts.mjs` | 同一 CLI/SDK 候选，实际独立安装与 current HTTP |
 | 资格、固定选择、取消、provider/turn/投影状态 | [consumer-state Skill](../verify-notion-consumer-state/SKILL.md) | 审模型、受保护 guard 与反例；不刷新 hash 放行 |
 | 实际 Pi 的 SDK/工具/serializer 行为 | `scripts/notion-sdk-pi.mjs` 现有入口 | 记录所选场景与实际安装；受控 provider 不证明模型理解 |
-| 真实 Notion 与日用 Pi | `scripts/verify-pi-daily-installation.mjs` 的 plan/run/candidate-plan/candidate-run | AH-1197/AH-637/AH-1198；有效配置、实际包、正文/资源、取消与模型结果分别记录 |
+| 真实 Notion 与日用 Pi | `scripts/verify-pi-daily-installation.mjs` 的 plan/run/aggregate/candidate-plan/candidate-run | 两机 aggregate 只证明本次普通入口与 metadata；正文、取消与模型结果分别记录 |
 
-OMP/Tern 产品代码保留，当前验收延期。旧双宿主控制器、旧 CLI fixture 总入口和旧原生 UI/PTY 驱动已删除。真实 Pi 助手仍在；原生终端菜单、光标和 UI 操作没有本轮成绩，不能由源码、RPC 或安装包结果推断。
+OMP/Tern 产品代码保留，当前验收延期。旧双宿主控制器、旧 CLI fixture 总入口和旧原生 UI/PTY 驱动已删除。真实 Pi 助手仍在；原生终端菜单、光标和 UI 操作须有对应实测，不能由源码、RPC 或安装包结果推断。
 
 ## 构建和源码检查
 

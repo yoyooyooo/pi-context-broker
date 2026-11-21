@@ -942,7 +942,7 @@ test("native metadata search stays known; explicit inspect and use deliver compl
   const inspected = await nativeRead(f, f.root.ref!, "inspect");
   expect(sourceMessageText(inspected.content).startsWith(f.root.body!)).toBe(true);
   expect(sourceMessageText(inspected.content)).not.toContain(f.required.body!);
-  expect(sourceMessageText(inspected.content)).toBe(f.root.body + '\n\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown"}</notion-effects>');
+  expect(sourceMessageText(inspected.content)).toBe(f.root.body + '\n\n\n<notion-read-status>{"purpose":"inspect","activation_effect":"unchanged","requires_acquisition":"not_performed","use_selection":{"status":"inspection_only","roles":[]}}</notion-read-status>\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown"}</notion-effects>');
   const used = await tool.execute("use", { ref: f.root.ref }, undefined, undefined, f.ctx);
   const usage = JSON.parse(String(used.content[0]?.type === "text" ? used.content[0].text : ""));
   expect(usage.records.map((record: { name: string }) => record.name)).toEqual([f.root.name, f.required.name]);

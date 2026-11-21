@@ -146,13 +146,18 @@ export function decodePreparedGraph(value: unknown, input: { purpose: Preparatio
 
 /** Expose failure provenance and budgets without forwarding raw response bodies or URLs. */
 export type PreparationDenial = { scope: string; id: string; ref: string; code: "CONTENT_DISABLED" | "ACCESS_DENIED" | "AUTH_REQUIRED" };
-export function preparationFailureDetails(value: unknown): (Record<string, unknown> & { preparation?: unknown; retry_after?: number; denials?: readonly PreparationDenial[]; effects?: ConsumptionEffects; roots?: readonly { scope: string; id: string }[] }) | undefined {
+type PreparationFailureDetails = Record<string, unknown> & { preparation?: unknown; retry_after?: number; denials?: readonly PreparationDenial[]; effects?: ConsumptionEffects; roots?: readonly { scope: string; id: string }[];
+  field?: "Requires" | "Members"; page_id?: string };
+export function preparationFailureDetails(value: unknown): PreparationFailureDetails | undefined {
   if (!object(value)) return undefined;
-  const details = value, diagnostics: Record<string, unknown> & { roots?: { scope: string; id: string }[] } = {};
+  const details = value, diagnostics: PreparationFailureDetails = {};
   // Keep the current SDK's bounded acquisition/cache provenance. Raw response
   // bodies and unrelated fields remain private on the Error cause.
   for (const key of ["phase", "reason", "snapshot_id", "scope", "id", "target", "next", "cache_key", "record_identity", "required_capability", "observed_version"])
     if (typeof details[key] === "string" && details[key].length <= 4096 && !details[key].includes("\0")) diagnostics[key] = details[key];
+  if (details.field === "Requires" || details.field === "Members") diagnostics.field = details.field;
+  if (typeof details.page_id === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(details.page_id))
+    diagnostics.page_id = details.page_id;
   for (const key of ["generation", "retired_through"])
     if (typeof details[key] === "number" && Number.isSafeInteger(details[key]) && details[key] >= 0) diagnostics[key] = details[key];
   if (Array.isArray(details.paths) && details.paths.length <= 256

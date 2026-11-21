@@ -723,6 +723,84 @@ test('candidate plan is nonexecuting and rejects unfrozen body claims', () => {
   assert.throws(() => candidatePlan({ version: 1, scope: 'project-scoped-candidate-precheck', turns: [{ id: 'inspect', prompt: 'Original task', bodies: [{ sha256: file.sha256, occurrences: 1 }] }] }));
 });
 
+// Controlled producer-shaped data, never evidence of a real installation.
+function currentArtifactReceiptFixture() {
+  const identity = (path, bytes) => ({ path, bytes: Buffer.byteLength(bytes), sha256: sha(bytes) });
+  const rawCli = identity('/owned/cli/dist/ntn-skills.js', 'raw CLI'), rawSdk = identity('/owned/cli/dist/sdk.js', 'raw SDK');
+  const embeddedCli = identity('/owned/installed/dist/ntn-skills.mjs', 'embedded CLI');
+  const embeddedSdk = identity('/owned/installed/dist/ntn-skills-sdk.mjs', 'embedded SDK');
+  const runtime = { version: 1, package: 'ntn-skills', package_version: '0.1.0', sdk_version: 2,
+    consumer_contract_version: 1, resource_read_contract_version: 1, read_output_proof_version: 1,
+    catalog_directory_contract_version: 1, command_output_proof_version: 1, consumption_effects_version: 1,
+    resource_read_effects_version: 1, cli_sha256: embeddedCli.sha256, sdk_sha256: embeddedSdk.sha256 };
+  const actual = {
+    buildInput: { package: 'ntn-skills', version: '0.1.0', manifest: identity('/owned/cli/package.json', '{"name":"ntn-skills"}'), cli: rawCli, sdk: rawSdk },
+    package: { name: 'pi-context-broker', version: '0.1.0', installed: '/owned/installed', archive: identity('/owned/broker.tgz', 'archive bytes') },
+    runtime: { ...runtime, hashes: { cli: embeddedCli.sha256, sdk: embeddedSdk.sha256 } },
+  };
+  const notRun = ['Pi session', 'provider/model', 'live Notion', 'OMP', 'Tern'];
+  const artifact = { version: 2, status: 'passed', startedAt: '2026-01-01T00:00:00.000Z', finishedAt: '2026-01-01T00:00:01.000Z',
+    boundary: 'Independently installed Broker and SDK v2 with controlled current Notion HTTP.', ...structuredClone(actual), notRun,
+    currentSdk: { status: 'passed', node: process.version, cases: [{ name: 'controlled-current-case', status: 'passed' }],
+      sdk_calls: 3, child_starts: 0, runtime, package_unchanged: true, http_requests: 5, semantic_writes: 0,
+      fixture: '/owned/fixture.json', not_run: [...notRun] } };
+  return { artifact, actual };
+}
+
+test('candidate accepts the current v2 artifact receipt without claiming Pi acceptance', () => {
+  const { artifact, actual } = currentArtifactReceiptFixture();
+  candidate.validateCandidateArtifactReceipt(artifact, actual);
+  assert.equal(artifact.host, undefined); assert.equal(artifact.buildInput.mode, undefined);
+  assert.ok(artifact.notRun.includes('Pi session'));
+});
+
+test('candidate rejects retired artifact receipts instead of translating their fields', () => {
+  const { artifact, actual } = currentArtifactReceiptFixture();
+  for (const mutate of [
+    value => { value.version = 1; },
+    value => { value.host = 'pi'; value.buildInput.mode = 'explicit'; value.runtime = { cli: { sha256: actual.runtime.cli_sha256 }, sdk: { sha256: actual.runtime.sdk_sha256 } }; },
+    value => { value.host = 'pi'; },
+  ]) {
+    const changed = structuredClone(artifact); mutate(changed);
+    assert.throws(() => candidate.validateCandidateArtifactReceipt(changed, actual));
+  }
+});
+
+test('candidate rejects incomplete or altered current source, archive, runtime and installed SDK proof', () => {
+  const { artifact, actual } = currentArtifactReceiptFixture();
+  const mutations = [
+    ['status', value => { value.status = 'failed'; }],
+    ['missing build input', value => { delete value.buildInput; }],
+    ['manifest hash', value => { value.buildInput.manifest.sha256 = '0'.repeat(64); }],
+    ['raw CLI hash', value => { value.buildInput.cli.sha256 = '0'.repeat(64); }],
+    ['raw SDK hash', value => { value.buildInput.sdk.sha256 = '0'.repeat(64); }],
+    ['raw CLI bytes', value => { value.buildInput.cli.bytes++; }],
+    ['source path', value => { value.buildInput.manifest.path = '/another/package.json'; }],
+    ['archive hash', value => { value.package.archive.sha256 = '0'.repeat(64); }],
+    ['installed path', value => { value.package.installed = '/another/installed'; }],
+    ['runtime hash', value => { value.runtime.sdk_sha256 = '0'.repeat(64); }],
+    ['runtime verified hash', value => { value.runtime.hashes.cli = '0'.repeat(64); }],
+    ['runtime capability', value => { delete value.runtime.consumer_contract_version; }],
+    ['missing SDK proof', value => { delete value.currentSdk; }],
+    ['failed SDK', value => { value.currentSdk.status = 'failed'; }],
+    ['altered installed package', value => { value.currentSdk.package_unchanged = false; }],
+    ['wrong installed runtime', value => { value.currentSdk.runtime.cli_sha256 = '0'.repeat(64); }],
+    ['missing cases', value => { value.currentSdk.cases = []; }],
+    ['failed case', value => { value.currentSdk.cases[0].status = 'failed'; }],
+    ['no HTTP evidence', value => { value.currentSdk.http_requests = 0; }],
+    ['no SDK calls', value => { value.currentSdk.sdk_calls = 0; }],
+    ['CLI consumption child', value => { value.currentSdk.child_starts = 1; }],
+    ['semantic mutation', value => { value.currentSdk.semantic_writes = 1; }],
+    ['promoted execution layer', value => { value.notRun = []; }],
+    ['promoted SDK layer', value => { value.currentSdk.not_run = []; }],
+    ['incomplete producer', value => { delete value.finishedAt; }],
+  ];
+  for (const [name, mutate] of mutations) {
+    const changed = structuredClone(artifact); mutate(changed);
+    assert.throws(() => candidate.validateCandidateArtifactReceipt(changed, actual), name);
+  }
+});
+
 test('owned project inspection admits only its finite inventory vocabulary and exact cwd', () => {
   const root = '/private/tmp/notion-candidate-print-abc123';
   for (const command of ['pwd', 'ls -la', 'ls -la ' + root, "ls -la '" + root + "'", 'find . -maxdepth 3 -type f', 'ls -la && pwd && find . -maxdepth 3 -type d -o -type f | head -200'])

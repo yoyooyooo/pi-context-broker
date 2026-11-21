@@ -142,7 +142,15 @@ function sourceCommand(source: NotionSource): string[] {
   } catch { throw new SourceError("SOURCE_COMMAND_UNAVAILABLE", source.id); }
 }
 
-export function sourceFailureMessage(code: string): string {
+export function sourceFailureDiagnostic(code: string, details?: SourceError["details"]): {
+  code: "SHARED_ROUTER_MEMBER_UNAVAILABLE"; field: "Requires" | "Members"; reason?: "disabled"; page_id?: string;
+} | undefined {
+  if (code !== "SHARED_ROUTER_MEMBER_UNAVAILABLE" || !details?.field) return undefined;
+  return { code, field: details.field, ...(details.reason === "disabled" ? { reason: "disabled" } : {}),
+    ...(details.page_id ? { page_id: details.page_id } : {}) };
+}
+
+export function sourceFailureMessage(code: string, details?: SourceError["details"]): string {
   switch (code) {
     case "SOURCE_COMMAND_UNAVAILABLE": return "Cannot start the bundled management CLI. Reinstall the complete paired pi-context-broker package and check Node.js 22.22.3+ within 22.x or 24.20.0+.";
     case "SOURCE_COMMAND_UNSUPPORTED": return "Notion source.command is no longer supported. Remove that override and upgrade the complete paired CLI/SDK and pi-context-broker package; keep the source database and access configuration.";
@@ -159,6 +167,13 @@ export function sourceFailureMessage(code: string): string {
     case "STORAGE_ERROR": return "The local state store could not be read safely. Preserve it for diagnosis and run /context-broker doctor; unrelated conversation can continue.";
     case "STATE_CUTOVER_REQUIRED": return "The local state or configuration uses a retired contract. Choose a fresh NTN_SKILLS_HOME and, if the configuration contains retired bindings, NTN_SKILLS_CONFIG_HOME. Keep the old roots and objects intact for read-only extraction.";
     case "CURRENT_SOURCE_REQUIRED": return "This Skill selects a retired snapshot source. Migrate its current content before reading it.";
+    case "CURRENT_SCHEMA_REQUIRED": return "This entry lacks the current content schema. An authorized management migration must finish before it can be consumed; reading or refreshing does not perform that migration.";
+    case "SHARED_ROUTER_MEMBER_UNAVAILABLE": {
+      const relation = sourceFailureDiagnostic(code, details), field = relation?.field ?? "relation";
+      return relation?.reason === "disabled"
+        ? `The selected ${field} target is disabled (Enabled=false) in Notion. This acquisition did not complete; existing fixed selections are unchanged. Enable that target before explicitly requesting latest content again.`
+        : `A selected ${field} target is missing, inaccessible or outside the configured library. Verify that target and its relation before retrying; existing fixed selections are unchanged.`;
+    }
     case "SHARED_ACQUISITION_SCOPE": return "The selected content no longer matches this source and library. Refresh this source and select its current content again.";
     case "SHARED_SOURCE_MISSING":
     case "SHARED_SOURCE_CONFLICT": return "The selected source is unavailable or has changed. Refresh the source and select its current content again.";
