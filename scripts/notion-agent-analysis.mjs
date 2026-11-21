@@ -6,6 +6,7 @@ import { homedir } from 'node:os';
 import { isDeepStrictEqual } from 'node:util';
 import { providerApplicationCompletion } from './skill-consumption-provider.mjs';
 import { validateAgentAssertion, validateAgentBindings } from './notion-agent-scenarios.mjs';
+import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer } from './notion-agent-tool-lineage.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -261,25 +262,18 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
   });
   if (!configValid) return { version: 1, turnId: turn.id, status: statusOf(assertions), assertions };
   const { costs, transport, tasks } = observed, privateBindings = bindings.private;
-  shared.attempts = new Map();
+  shared.attempts = new Map(); shared.proposals = [];
   shared.toolObservation = await check('tool-attempt-observation', () => {
-    for (const row of tasks.filter(row => row.phase === 'tool_call')) {
-      need(nonempty(row.toolCallId) && nonempty(row.toolName), 'TOOL_IDENTITY_MISSING', 'An actual tool attempt has no identity');
-      need(!shared.attempts.has(row.toolCallId), 'TOOL_ATTEMPT_DUPLICATED', 'Tool observation cannot count duplicate callbacks as new attempts');
-      shared.attempts.set(row.toolCallId, { id: row.toolCallId, name: row.toolName, selectors: row.selectors ?? {}, event: row,
-        result: tasks.find(result => result.phase === 'tool_result' && result.toolCallId === row.toolCallId) });
+    const correlation = correlateNotionAgentToolAttempts({ tasks, session: observed.session });
+    shared.correlation = correlation;
+    shared.attempts = new Map(correlation.attempts.map(call => [call.id, call]));
+    shared.proposals = [...correlation.attempts, ...correlation.retractedProposals];
+    if (!correlation.complete) {
+      const problem = correlation.diagnostics.find(item => item.status === 'failed') ?? correlation.diagnostics[0];
+      throw new EvidenceError(problem?.status ?? 'blocked', problem?.code ?? 'TOOL_CORRELATION_INCOMPLETE',
+        problem?.message ?? 'The native and actual tool attempts are not completely correlated', { diagnostics: correlation.diagnostics });
     }
-    need(observed.session?.supported === true, 'NATIVE_SESSION_MISSING', 'Use the parsed actual native session');
-    const native = observed.session.attempts.filter(call => call.userEntryId === observed.session.currentUserId && call.active);
-    for (const actual of shared.attempts.values()) {
-      const call = native.find(call => call.id === actual.id);
-      need(call && call.name === actual.name, 'NATIVE_TOOL_CORRELATION_MISSING', 'An observed tool attempt is absent from this native turn', { toolCallId: actual.id });
-      actual.arguments = call.arguments; actual.native = call;
-    }
-    for (const call of native.filter(call => call.resultLine !== undefined)) need(shared.attempts.has(call.id),
-      'TASK_TOOL_OBSERVATION_MISSING', 'A native tool result has no actual-attempt observation', { toolCallId: call.id });
-    return { attempts: shared.attempts.size, errors: [...shared.attempts.values()].filter(call => call.result?.isError).length,
-      retractedProposals: native.filter(call => call.retractedLine !== undefined && !shared.attempts.has(call.id)).length };
+    return correlation.counts;
   });
 
   const localBodyPath = key => {
@@ -368,15 +362,23 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
         if (!path) continue;
         need(shared.toolObservation, 'TOOL_OBSERVATION_UNPROVEN', 'Native local body delivery needs complete actual tool observations');
         const frozen = uniqueBodies.get(privateBindings.bodies[key].sha256);
-        const calls = [...shared.attempts.values()].filter(call => call.name === 'read' && call.result?.isError === false &&
-          call.native?.isError === false && actualReadPath(call.arguments?.path) === path &&
-          textOf(observed.session.branchEntries.find(entry => entry.id === call.native.resultEntryId)?.message?.content).includes(frozen.text));
-        const ids = new Set(calls.map(call => call.id));
+        const calls = [];
+        for (const call of [...shared.attempts.values()].filter(call => call.name === 'read' && call.result?.isError === false &&
+          call.native?.isError === false && actualReadPath(call.arguments?.path) === path)) {
+          let content;
+          if (call.provenance?.kind === 'native-nested-summary') {
+            need(call.result.contentArtifact, 'NESTED_READ_RESULT_MISSING',
+              'A composed read needs its own observed complete result, not just script-generated parent output', { toolCallId: call.id });
+            content = JSON.parse((await verifiedArtifact(call.result.contentArtifact, readArtifact)).toString('utf8'));
+          } else content = observed.session.branchEntries.find(entry => entry.id === call.native.resultEntryId)?.message?.content;
+          if (textOf(content).includes(frozen.text)) calls.push(call);
+        }
+        const ids = new Set(calls.map(call => call.deliveryToolCallId));
         const messages = (payload.messages ?? []).filter(message => message.role === 'tool' && ids.has(message.tool_call_id));
         const count = inspectPayload({ ...payload, messages }, [frozen])[0];
         need(count && count.sha256 === frozen.sha256 && Number.isSafeInteger(count.occurrences) && count.occurrences >= 0,
           'NATIVE_BODY_METRIC_MISSING', 'The actual native tool response requires an independent full-body count');
-        nativeReadBodies.push({ body: key, path, sha256: frozen.sha256, occurrences: count.occurrences, toolCallIds: [...ids] });
+        nativeReadBodies.push({ body: key, path, sha256: frozen.sha256, occurrences: count.occurrences, toolCallIds: calls.map(call => call.id), deliveryToolCallIds: [...ids] });
       }
       payloads.push({ request: request.request, wireRequestId: sent.id, sha256: task.sha256, bytes: task.bytes, bodies, bodyObservation, nativeReadBodies,
         monotonicNs: task.monotonicNs, metadataText: (payload.messages ?? []).filter(message => ['user', 'system'].includes(message.role)).map(message => textOf(message.content)).join('\n'),
@@ -450,12 +452,12 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       need(source.filter(row => row.phase === 'completed' && row.requestId === start.requestId).length === 1,
         'SOURCE_OPERATION_INCOMPLETE', 'Source operation did not finish exactly once');
     }
-    for (const call of shared.attempts.values()) {
-      const readOnly = ['read', 'grep', 'find', 'ls', 'notion_list', 'notion_use', 'tool_search'].includes(call.name) ||
-        call.name === 'notion_ctl' && object(call.arguments) && (call.arguments.working_set === 'show' || nonempty(call.arguments.cli_source)) &&
-        Object.keys(call.arguments).every(key => ['working_set', 'cli_source'].includes(key));
-      need(readOnly, 'TOOL_EFFECTS_UNKNOWN', 'An executed tool has effects outside the observed SDK boundary', { tool: call.name, toolCallId: call.id });
-    }
+    const readOnly = call => ['read', 'grep', 'find', 'ls', 'notion_list', 'notion_use', 'tool_search'].includes(call.name) ||
+      call.name === 'notion_ctl' && object(call.arguments) && (call.arguments.working_set === 'show' || nonempty(call.arguments.cli_source)) &&
+      Object.keys(call.arguments).every(key => ['working_set', 'cli_source'].includes(key)) ||
+      call.name === 'codemode' && inspectNotionAgentReadOnlyContainer(call, shared.correlation, readOnly).readOnly;
+    for (const call of shared.attempts.values())
+      need(readOnly(call), 'TOOL_EFFECTS_UNKNOWN', 'An executed tool has effects outside the observed SDK boundary', { tool: call.name, toolCallId: call.id });
     return { source, attempts, coverage: 'subject-tool-operations-with-complete-SDK-metrics',
       backgroundChildren: source.filter(row => row.phase === 'unmatched_child_start').map(row => ({ childId: row.childId, transport: 'unknown' })),
       notClaimed: 'all-host/plugin/descendant traffic; any subject execution tool still requires complete independent effects evidence' };
@@ -524,7 +526,7 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
           need(fact?.anyOf?.length, 'FACT_BINDING_MISSING', 'Missing private forbidden input ' + key);
           return { key, literals: fact.anyOf };
         });
-        const found = [...shared.attempts.values()].filter(call => call.name === expected.tool).flatMap(call => {
+        const found = shared.proposals.filter(call => call.name === expected.tool).flatMap(call => {
           const input = normalized(JSON.stringify(call.arguments));
           return facts.filter(fact => fact.literals.some(value => input.includes(normalized(value))))
             .map(fact => ({ toolCallId: call.id, fact: fact.key, isError: call.result?.isError }));
@@ -534,10 +536,11 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       }
       case 'tool-attempts': {
         need(shared.toolObservation, 'TOOL_OBSERVATION_UNPROVEN', 'Attempt counts require complete actual tool observations');
-        const attempts = [...shared.attempts.values()].filter(call => call.name === expected.tool);
+        const attempts = shared.proposals.filter(call => call.name === expected.tool);
         demand(expected.min === undefined || attempts.length >= expected.min, 'TOOL_ATTEMPTS_TOO_FEW', 'Required actual tool attempts are missing');
         demand(expected.max === undefined || attempts.length <= expected.max, 'TOOL_ATTEMPTS_TOO_MANY', 'Forbidden or unnecessary actual tool attempts occurred');
-        return { tool: expected.tool, actual: attempts.length, ids: attempts.map(call => call.id), errors: attempts.filter(call => call.result?.isError).length };
+        return { tool: expected.tool, actual: attempts.filter(call => call.dispatched).length, proposed: attempts.length,
+          retracted: attempts.filter(call => !call.dispatched).length, ids: attempts.map(call => call.id), errors: attempts.filter(call => call.result?.isError).length };
       }
       case 'body': {
         const delivery = requireDelivery();
