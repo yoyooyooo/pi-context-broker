@@ -5078,6 +5078,10 @@
               "kind": "completed"
             },
             {
+              "kind": "candidate-cli",
+              "min": 1
+            },
+            {
               "kind": "business-readback",
               "receipt": "created"
             },
@@ -5121,6 +5125,10 @@
           "expect": [
             {
               "kind": "completed"
+            },
+            {
+              "kind": "candidate-cli",
+              "min": 1
             },
             {
               "kind": "business-readback",
@@ -5218,6 +5226,10 @@
               "kind": "completed"
             },
             {
+              "kind": "candidate-cli",
+              "min": 1
+            },
+            {
               "kind": "business-readback",
               "receipt": "removed"
             },
@@ -5233,6 +5245,10 @@
           "expect": [
             {
               "kind": "completed"
+            },
+            {
+              "kind": "candidate-cli",
+              "min": 1
             },
             {
               "kind": "business-readback",
@@ -5265,6 +5281,10 @@
           "expect": [
             {
               "kind": "completed"
+            },
+            {
+              "kind": "candidate-cli",
+              "min": 1
             },
             {
               "kind": "business-readback",
@@ -5428,6 +5448,10 @@
               "kind": "completed"
             },
             {
+              "kind": "candidate-cli",
+              "min": 1
+            },
+            {
               "kind": "business-readback",
               "receipt": "created"
             }
@@ -5467,6 +5491,10 @@
           "expect": [
             {
               "kind": "completed"
+            },
+            {
+              "kind": "candidate-cli",
+              "min": 1
             },
             {
               "kind": "business-readback",
@@ -5539,6 +5567,10 @@
           "expect": [
             {
               "kind": "completed"
+            },
+            {
+              "kind": "candidate-cli",
+              "min": 1
             },
             {
               "kind": "business-readback",
@@ -5648,6 +5680,10 @@
               "kind": "completed"
             },
             {
+              "kind": "candidate-cli",
+              "min": 1
+            },
+            {
               "kind": "business-readback",
               "receipt": "restored"
             }
@@ -5716,6 +5752,10 @@
               "kind": "completed"
             },
             {
+              "kind": "candidate-cli",
+              "min": 1
+            },
+            {
               "kind": "business-readback",
               "receipt": "description"
             },
@@ -5733,6 +5773,10 @@
               "kind": "completed"
             },
             {
+              "kind": "candidate-cli",
+              "min": 1
+            },
+            {
               "kind": "business-readback",
               "receipt": "disabled"
             }
@@ -5746,6 +5790,10 @@
               "kind": "completed"
             },
             {
+              "kind": "candidate-cli",
+              "min": 1
+            },
+            {
               "kind": "business-readback",
               "receipt": "enabled"
             }
@@ -5757,6 +5805,10 @@
           "expect": [
             {
               "kind": "completed"
+            },
+            {
+              "kind": "candidate-cli",
+              "min": 1
             },
             {
               "kind": "business-readback",

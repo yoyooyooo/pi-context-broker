@@ -972,3 +972,86 @@ test('two actual deliveries of the same logical file remain a duplicate', async 
   assert.equal(result.status, 'failed');
   assert.equal(result.assertions.find(row => row.kind === 'body').details.actual, 2);
 });
+
+function attachCandidateCli(f, { actualPath, startNs = '150', endNs = '160' } = {}) {
+  const save = (path, value) => {
+    const bytes = Buffer.from(typeof value === 'string' ? value : JSON.stringify(value));
+    f.files.set(path, bytes); return { path, realpath: path, sha256: hash(bytes), bytes: bytes.length };
+  };
+  const embedded = save('/owned/candidate/packages/context-broker/dist/ntn-skills.mjs', 'frozen executable bytes');
+  const standalone = save('/owned/cli/packages/cli/dist/ntn-skills.js', 'frozen executable bytes');
+  const candidatePath = f.observed.implementation.candidateArtifact.path;
+  const candidate = JSON.parse(f.files.get(candidatePath));
+  candidate.baseline.push(embedded); candidate.cliFiles = [standalone];
+  candidate.sourceTuple.push({ repository: 'cli', commit: 'e'.repeat(40), dirty: false, tree_sha256: 'f'.repeat(64) });
+  f.observed.implementation.candidateArtifact = save(candidatePath, candidate);
+  const configPath = f.observed.implementation.configArtifact.path;
+  f.observed.implementation.configArtifact = save(configPath, {
+    ...JSON.parse(f.files.get(configPath)), cliRoot: '/owned/cli/packages/cli',
+  });
+  const chain = rows => {
+    let previous = null;
+    return rows.map((row, index) => {
+      const event = { version: 1, sequence: index + 1, previousSha256: previous, clockId: 'clock-actual', ...row };
+      event.eventSha256 = hash(JSON.stringify(event)); previous = event.eventSha256;
+      return JSON.stringify(event);
+    }).join('\n') + '\n';
+  };
+  const source = save('/owned/evidence/source.jsonl', chain([
+    { phase: 'source_observer_start', kind: 'observer', pid: 100, monotonicNs: '1', unmatchedChildLifecycleVersion: 1 },
+    { phase: 'source_observer_end', kind: 'observer', monotonicNs: '400', complete: true, errors: 0,
+      operations: 0, sdkStarts: 0, cliStarts: 0, unmatchedChildren: 0, unmatchedChildCloses: 0,
+      pendingChildIds: [], pendingRequestIds: [] },
+  ]));
+  const process = (id, parent, owner, entry, start, end) => {
+    const base = { processId: id + '-actual', pid: id, parentPid: parent, owner, node: '24.20.0',
+      entryMode: 'file', entry, cli: owner ? null : { basis: 'entry-name' } };
+    return save('/owned/evidence/process-' + id + '.jsonl', chain([
+      { ...base, phase: 'process_start', monotonicNs: start },
+      { ...base, phase: 'process_end', monotonicNs: end, exitCode: 0 },
+    ]));
+  };
+  const entry = actualPath ? { ...standalone, path: actualPath, realpath: actualPath } : standalone;
+  f.observed.cliProcesses = { version: 1, sourceArtifact: source, window: { startNs: '100', endNs: '200' },
+    artifacts: [process(100, 99, true, embedded, '1', '400'), process(101, 100, false, entry, startNs, endNs)] };
+  return f.observed.cliProcesses;
+}
+
+test('a claimed CLI success without independently sealed process evidence stays blocked', async () => {
+  const f = fixture();
+  f.observed.cliProcesses = { status: 'passed', cliCount: 99, matchedCliCount: 99 };
+  const result = await f.run([{ kind: 'candidate-cli', min: 1 }]);
+  assert.equal(result.status, 'blocked');
+  assert.ok(result.assertions.some(row => row.code === 'CLI_PROCESS_OBSERVATION_MISSING'));
+});
+
+test('a real-shaped paired CLI identity is checked against the frozen candidate and exact turn', async () => {
+  const f = fixture();
+  attachCandidateCli(f);
+  const result = await f.run([{ kind: 'candidate-cli', min: 1 }]);
+  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+  assert.equal(result.assertions.find(row => row.kind === 'candidate-cli').details.actual, 1);
+  f.observed.cliProcesses.window = { startNs: '200', endNs: '300' };
+  const outside = await f.run([{ kind: 'candidate-cli', min: 1 }]);
+  assert.equal(outside.status, 'blocked');
+  assert.ok(outside.assertions.some(row => row.code === 'CLI_CANDIDATE_EXECUTION_MISSING'));
+});
+
+test('an unexpected CLI anywhere in the process segment fails even outside the current prompt', async () => {
+  const f = fixture();
+  attachCandidateCli(f, { actualPath: '/unselected/ntn-skills.js', startNs: '50', endNs: '60' });
+  const result = await f.run([{ kind: 'completed' }]);
+  assert.equal(result.status, 'failed');
+  assert.ok(result.assertions.some(row => row.code === 'CLI_CANDIDATE_MISMATCH'));
+});
+
+test('CLI process or parent artifact tampering cannot retain an earlier candidate identity', async () => {
+  for (const parent of [false, true]) {
+    const f = fixture(), observed = attachCandidateCli(f);
+    const artifact = parent ? observed.sourceArtifact : observed.artifacts[1];
+    f.files.set(artifact.path, Buffer.concat([f.files.get(artifact.path), Buffer.from(' ') ]));
+    const result = await f.run([{ kind: 'candidate-cli', min: 1 }]);
+    assert.equal(result.status, 'failed');
+    assert.ok(result.assertions.some(row => row.code === 'ARTIFACT_CHANGED'));
+  }
+});

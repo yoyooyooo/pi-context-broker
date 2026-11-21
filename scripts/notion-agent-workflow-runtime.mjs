@@ -12,6 +12,7 @@ import { loadAgentCorpus, bindAgentScenario, bindAgentTurn, checkAgentContractCo
 import { consumptionCostExtensionSource, readConsumptionCostEvents } from './skill-consumption-cost.mjs';
 import { providerTransportExtensionSource, readProviderTransport } from './skill-consumption-provider.mjs';
 import { sourceObserverPreloadSource, readSourceObservation } from './skill-consumption-source-observer.mjs';
+import { readNotionAgentCliProcesses } from './notion-agent-cli-process.mjs';
 import { observeGraphSdk } from './notion-skill-graph-model-evidence.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { verifyBundledRuntime } from './verify-package-closure.mjs';
@@ -147,6 +148,7 @@ async function writeObservers(control, config, host, sourceCache, bodies, index)
   await mkdir(control, { recursive: true, mode: 0o700 });
   const payloads = join(control, 'payloads'), branches = join(control, 'branches'), responses = join(control, 'sdk-responses'), toolResults = join(control, 'tool-results');
   for (const path of [payloads, branches, responses, toolResults]) await mkdir(path, { mode: 0o700 });
+  const processDirectory = join(control, 'node-processes'); await mkdir(processDirectory, { mode: 0o700 });
   const files = Object.fromEntries(['cost', 'transport', 'tasks', 'source', 'sdk'].map(name => [name, join(control, name + '.jsonl')]));
   const extensions = ['cost', 'transport', 'tasks'].map(name => join(control, name + '.mjs'));
   const clockId = randomUUID();
@@ -157,13 +159,13 @@ async function writeObservers(control, config, host, sourceCache, bodies, index)
     + ',bodyFiles:' + JSON.stringify(bodies.filter(body => body.bytes > 0)) + ',payloadDirectory:' + JSON.stringify(payloads) + ',branchDirectory:' + JSON.stringify(branches)
     + ',toolResultDirectory:' + JSON.stringify(toolResults) + '});\n', { flag: 'wx', mode: 0o600 });
   const sourcePreload = join(control, 'source.mjs'), sdkPreload = join(control, 'sdk.mjs');
-  await writeFile(sourcePreload, sourceObserverPreloadSource({ output: files.source, checkoutRoot: root, clockId,
+  await writeFile(sourcePreload, sourceObserverPreloadSource({ output: files.source, checkoutRoot: root, clockId, processDirectory,
     cliPath: join(config.brokerRoot, 'dist/ntn-skills.mjs'), ownerParentPid: process.pid, ownerEntry: host.path }), { flag: 'wx', mode: 0o600 });
   await writeFile(sdkPreload, "import fs from 'node:fs';import {channel} from 'node:diagnostics_channel';import {createHash} from 'node:crypto';import {isMainThread} from 'node:worker_threads';const hash=value=>createHash('sha256').update(value).digest('hex');\n"
     + safeRequestMetrics.toString() + '\nif(isMainThread&&process.ppid===' + process.pid + '){const sdk=(' + observeGraphSdk.toString()
     + ')({channel,fs,safeMetrics:safeRequestMetrics,paths:' + JSON.stringify({ ledger: files.sdk, responses, outputRoot: sourceCache })
     + '});let done=false;const finish=()=>{if(!done){done=true;sdk.close();}};process.once("beforeExit",finish);process.once("exit",finish);}\n', { flag: 'wx', mode: 0o600 });
-  return { files, extensions, preloads: [sourcePreload, sdkPreload] };
+  return { files, extensions, processDirectory, preloads: [sourcePreload, sdkPreload] };
 }
 
 /** Invoke through candidate-run --live. All private event handling stays here. */
@@ -299,6 +301,12 @@ export async function runAgentWorkflow(config) {
       observed.sourceObservationWindow = { startedNs: started, endedNs: receipt.endedNs, includesStartup: first };
       observed.backgroundSource = (owner.source?.events ?? []).filter(event => !observed.source.includes(event));
       observed.sourceCoverage = owner.source?.complete === true && owner.source.errors.length === 0;
+      const cliProcesses = await readNotionAgentCliProcesses({ directory: owner.observer.processDirectory,
+        sourceObservation: owner.source, expectedEntries: [result.baseline[2], result.cliFiles[1]] });
+      observed.cliProcesses = { version: 1, artifacts: cliProcesses.artifacts,
+        sourceArtifact: await identity(owner.observer.files.source),
+        window: { startNs: receipt.startedNs, endNs: receipt.endedNs } };
+
       const frozenBindings = await json(join(evidence, 'turn-' + receipt.id + '-bindings.json'));
       const turn = await json(join(evidence, 'turn-' + receipt.id + '-input.json'));
       receipt.analysis = await analyzeNotionAgentTurn(turn, observed, frozenBindings, { inspectPayload: candidatePayloadBodies });

@@ -8,6 +8,8 @@ import { providerApplicationCompletion } from './skill-consumption-provider.mjs'
 import { validateAgentAssertion, validateAgentBindings } from './notion-agent-scenarios.mjs';
 import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer } from './notion-agent-tool-lineage.mjs';
 import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
+import { parseSourceObservation } from './skill-consumption-source-observer.mjs';
+import { verifyNotionAgentCliProcesses } from './notion-agent-cli-process.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -224,6 +226,58 @@ async function verifiedArtifact(artifact, readArtifact) {
   demand(bytes.length === artifact.bytes && hash(bytes) === artifact.sha256, 'ARTIFACT_CHANGED', 'Observed artifact bytes changed', { path: artifact.path });
   return bytes;
 }
+async function observedCandidateCli(observed, readArtifact) {
+  const record = observed.cliProcesses, implementation = observed.implementation;
+  need(record?.version === 1 && Array.isArray(record.artifacts) && implementation?.version === 1,
+    'CLI_PROCESS_OBSERVATION_MISSING', 'Actual CLI execution requires sealed process and candidate artifacts');
+  const candidate = JSON.parse((await verifiedArtifact(implementation.candidateArtifact, readArtifact)).toString('utf8'));
+  const config = JSON.parse((await verifiedArtifact(implementation.configArtifact, readArtifact)).toString('utf8'));
+  need(candidate?.version === 1 && Array.isArray(candidate.baseline) && Array.isArray(candidate.cliFiles) &&
+    Array.isArray(candidate.sourceTuple) && isAbsolute(config.brokerRoot ?? '') && isAbsolute(config.cliRoot ?? ''),
+    'CLI_CANDIDATE_IDENTITY_MISSING', 'The actual candidate must bind its paired standalone and embedded CLI');
+  for (const name of ['broker', 'cli']) {
+    const owners = candidate.sourceTuple.filter(item => item.repository === name);
+    need(owners.length === 1 && /^[a-f0-9]{40}$/u.test(owners[0].commit ?? '') &&
+      owners[0].dirty === false && digest(owners[0].tree_sha256), 'CLI_CANDIDATE_IDENTITY_MISSING',
+    'Both paired source trees must be clean and frozen');
+  }
+  const expectedEntries = [];
+  for (const [files, path] of [[candidate.baseline, join(config.brokerRoot, 'dist/ntn-skills.mjs')],
+    [candidate.cliFiles, join(config.cliRoot, 'dist/ntn-skills.js')]]) {
+    const matches = files.filter(file => file.path === path);
+    need(matches.length === 1 && isAbsolute(matches[0].realpath ?? ''), 'CLI_CANDIDATE_IDENTITY_MISSING',
+      'Each actual CLI package must identify its precise executable entry');
+    await verifiedArtifact(matches[0], readArtifact); expectedEntries.push(matches[0]);
+  }
+  const window = record.window, validNs = value => typeof value === 'string' && /^\d+$/u.test(value);
+  need(validNs(window?.startNs) && validNs(window?.endNs) && BigInt(window.endNs) >= BigInt(window.startNs),
+    'CLI_TURN_WINDOW_MISSING', 'CLI execution needs the actual completed turn interval');
+  need(observed.tasks.filter(row => validNs(row.monotonicNs)).every(row =>
+    BigInt(row.monotonicNs) >= BigInt(window.startNs) && BigInt(row.monotonicNs) <= BigInt(window.endNs)),
+    'CLI_TURN_WINDOW_MISMATCH', 'The process interval must cover this turn’s actual tool and provider observations');
+  const sourceObservation = parseSourceObservation((await verifiedArtifact(record.sourceArtifact, readArtifact)).toString('utf8'));
+  need(sourceObservation.complete === true && sourceObservation.errors.length === 0,
+    'CLI_PARENT_SOURCE_UNVERIFIED', 'The complete parent source ledger must be independently verified');
+  const processFiles = await Promise.all(record.artifacts.map(async artifact =>
+    ({ artifact, contents: await verifiedArtifact(artifact, readArtifact) })));
+  const input = { sourceObservation, processFiles, expectedEntries };
+  // Check the whole real process segment before counting this turn. A wrong
+  // candidate outside a prompt window cannot disappear from the run’s identity.
+  const segment = verifyNotionAgentCliProcesses(input);
+  if (segment.status !== 'passed') {
+    const issue = segment.diagnostics.find(item => item.severity === segment.status) ?? segment.diagnostics[0];
+    throw new EvidenceError(segment.status, issue?.code ?? 'CLI_PROCESS_UNPROVEN',
+      'Actual CLI process identity differs or remains unproved', segment);
+  }
+  const current = verifyNotionAgentCliProcesses({ ...input, window });
+  if (current.status !== 'passed') {
+    const issue = current.diagnostics.find(item => item.severity === current.status) ?? current.diagnostics[0];
+    throw new EvidenceError(current.status, issue?.code ?? 'CLI_PROCESS_UNPROVEN',
+      'This turn’s actual CLI process identity remains unproved', current);
+  }
+  return { ...current, window, segmentCliCount: segment.cliCount, sourceArtifact: record.sourceArtifact };
+}
+
 async function observedBrokerToolOwner(observed, readArtifact) {
   const implementation = observed.implementation;
   need(implementation?.version === 1, 'TOOL_IMPLEMENTATION_UNKNOWN', 'Broker effects need the actual frozen candidate identity');
@@ -674,8 +728,17 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
     return effects;
   };
 
+  if (observed.cliProcesses !== undefined || turn.expect.some(expected => expected.kind === 'candidate-cli'))
+    shared.cliCandidate = await check('actual-cli-process-identity', () => observedCandidateCli(observed, readArtifact));
+
   for (const expected of turn.expect) await check(expected.kind, async () => {
     switch (expected.kind) {
+      case 'candidate-cli':
+        need(shared.cliCandidate, 'CLI_CANDIDATE_EXECUTION_UNPROVEN', 'An actual paired CLI process is required');
+        need(shared.cliCandidate.matchedCliCount >= expected.min, 'CLI_CANDIDATE_EXECUTION_MISSING',
+          'Building the candidate or writing its command does not prove actual execution',
+          { expectedMin: expected.min, observed: shared.cliCandidate.matchedCliCount });
+        return { actual: shared.cliCandidate.matchedCliCount, distinctEntries: shared.cliCandidate.distinctEntries };
       case 'completed':
         need(shared.final && shared.delivery, 'TURN_COMPLETION_UNPROVEN', 'Provider and native completion are both required');
         return { finalSha256: shared.final.sha256 };

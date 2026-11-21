@@ -65,6 +65,9 @@ test('planning a future revision never invents its snapshot; each turn binds aga
 
 test('typos, impossible limits and unsupported event structures fail before a model request', () => {
   for (const value of [
+    { kind: 'candidate-cli' },
+    { kind: 'candidate-cli', min: 0 },
+    { kind: 'candidate-cli', min: 1, assume: true },
     { kind: 'tool-attempts', tool: 'notion_use' },
     { kind: 'tool-attempts', tool: 'notion_use', min: 2, max: 0 },
     { kind: 'tool-attempts', tool: 'notion_use', max: -1 },
@@ -88,6 +91,7 @@ test('typos, impossible limits and unsupported event structures fail before a mo
   ]) assert.throws(() => validateAgentEvent(value));
   assert.doesNotThrow(() => validateAgentAssertion({ kind: 'tool-attempts', tool: 'notion_use', max: 0 }));
   assert.doesNotThrow(() => validateAgentAssertion({ kind: 'source-network-attempts', max: 0 }));
+  assert.doesNotThrow(() => validateAgentAssertion({ kind: 'candidate-cli', min: 1 }));
 });
 
 test('corpus checks logical references, profile preconditions and real file structure', () => {
