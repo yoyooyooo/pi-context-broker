@@ -1,0 +1,5531 @@
+{
+  "version": 1,
+  "fixtures": {
+    "travel": {
+      "kind": "mixed-rules",
+      "objects": [
+        {
+          "id": "local",
+          "name": "travel-claims",
+          "description": "核算差旅费用",
+          "placement": "global",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{local.name}}\ndescription: 按本机个人约定核算市内差旅报销\n---\n\n# 市内差旅个人约定\n\n交通按票面金额报销，单笔餐费最高报销50元。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 本机标准\n\n单笔餐费最高报销50元。"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "remote",
+          "name": "travel-claims",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{remote.name}}\ndescription: 按团队规则核算市内差旅报销\n---\n\n# 团队差旅规则\n\n交通按票面金额报销。餐费以 [金额标准](references/rates.md) 为准。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 金额标准\n\n单笔餐费最高报销80元。"
+                }
+              ],
+              "defaultContext": true
+            },
+            "B": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{remote.name}}\ndescription: 按团队规则核算市内差旅报销\n---\n\n# 团队差旅规则\n\n交通按票面金额报销。餐费以 [金额标准](references/rates.md) 为准。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 金额标准\n\n单笔餐费最高报销60元。"
+                }
+              ],
+              "defaultContext": true
+            }
+          }
+        }
+      ],
+      "public": {
+        "business.receipts": "出租车30元；午餐70元。"
+      },
+      "facts": {
+        "total-local": {
+          "anyOf": [
+            "合计：80元",
+            "合计：80 元",
+            "合计:80元",
+            "合计: 80元"
+          ]
+        },
+        "total-remote-a": {
+          "anyOf": [
+            "合计：100元",
+            "合计：100 元",
+            "合计:100元",
+            "合计: 100元"
+          ]
+        },
+        "total-remote-b": {
+          "anyOf": [
+            "合计：90元",
+            "合计：90 元",
+            "合计:90元",
+            "合计: 90元"
+          ]
+        },
+        "source-question": {
+          "anyOf": [
+            "哪一份",
+            "哪一个",
+            "本地还是",
+            "Notion 还是",
+            "需要确认",
+            "选择哪",
+            "使用哪",
+            "请确认"
+          ]
+        },
+        "unavailable": {
+          "anyOf": [
+            "无法",
+            "不可用",
+            "不能",
+            "缺失",
+            "未找到",
+            "不存在",
+            "失败"
+          ]
+        },
+        "maintenance": {
+          "anyOf": [
+            "创建",
+            "新增",
+            "添加"
+          ]
+        },
+        "description-question": {
+          "anyOf": [
+            "名称",
+            "用途",
+            "内容",
+            "做什么"
+          ]
+        },
+        "rate-a": {
+          "anyOf": [
+            "80元",
+            "80 元"
+          ]
+        },
+        "rate-b": {
+          "anyOf": [
+            "60元",
+            "60 元"
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            "12"
+          ]
+        },
+        "dependency-question": {
+          "anyOf": [
+            "共享",
+            "共同",
+            "依赖",
+            "两份"
+          ]
+        },
+        "offline": {
+          "anyOf": [
+            "离线",
+            "本地",
+            "安装包"
+          ]
+        }
+      }
+    },
+    "pending-travel": {
+      "kind": "mixed-rules",
+      "objects": [
+        {
+          "id": "local",
+          "name": "travel-claims",
+          "description": "核算差旅费用",
+          "placement": "global",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{local.name}}\ndescription: 按本机个人约定核算市内差旅报销\n---\n\n# 市内差旅个人约定\n\n交通按票面金额报销，单笔餐费最高报销50元。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 本机标准\n\n单笔餐费最高报销50元。"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "remote",
+          "name": "travel-claims",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{remote.name}}\ndescription: 按团队规则核算市内差旅报销\n---\n\n# 团队差旅规则\n\n交通按票面金额报销。餐费以 [金额标准](references/rates.md) 为准。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 金额标准\n\n单笔餐费最高报销80元。"
+                }
+              ],
+              "defaultContext": true
+            },
+            "B": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{remote.name}}\ndescription: 按团队规则核算市内差旅报销\n---\n\n# 团队差旅规则\n\n交通按票面金额报销。餐费以 [金额标准](references/rates.md) 为准。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 金额标准\n\n单笔餐费最高报销60元。"
+                }
+              ],
+              "defaultContext": true
+            }
+          }
+        }
+      ],
+      "public": {
+        "business.receipts": "出租车30元；午餐70元。"
+      },
+      "facts": {
+        "total-local": {
+          "anyOf": [
+            "合计：80元",
+            "合计：80 元",
+            "合计:80元",
+            "合计: 80元"
+          ]
+        },
+        "total-remote-a": {
+          "anyOf": [
+            "合计：100元",
+            "合计：100 元",
+            "合计:100元",
+            "合计: 100元"
+          ]
+        },
+        "total-remote-b": {
+          "anyOf": [
+            "合计：90元",
+            "合计：90 元",
+            "合计:90元",
+            "合计: 90元"
+          ]
+        },
+        "source-question": {
+          "anyOf": [
+            "哪一份",
+            "哪一个",
+            "本地还是",
+            "Notion 还是",
+            "需要确认",
+            "选择哪",
+            "使用哪",
+            "请确认"
+          ]
+        },
+        "unavailable": {
+          "anyOf": [
+            "无法",
+            "不可用",
+            "不能",
+            "缺失",
+            "未找到",
+            "不存在",
+            "失败"
+          ]
+        },
+        "maintenance": {
+          "anyOf": [
+            "创建",
+            "新增",
+            "添加"
+          ]
+        },
+        "description-question": {
+          "anyOf": [
+            "名称",
+            "用途",
+            "内容",
+            "做什么"
+          ]
+        },
+        "rate-a": {
+          "anyOf": [
+            "80元",
+            "80 元"
+          ]
+        },
+        "rate-b": {
+          "anyOf": [
+            "60元",
+            "60 元"
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            "12"
+          ]
+        },
+        "dependency-question": {
+          "anyOf": [
+            "共享",
+            "共同",
+            "依赖",
+            "两份"
+          ]
+        },
+        "offline": {
+          "anyOf": [
+            "离线",
+            "本地",
+            "安装包"
+          ]
+        }
+      },
+      "environment": {
+        "catalog": "pending"
+      }
+    },
+    "unauthorized-travel": {
+      "kind": "mixed-rules",
+      "objects": [
+        {
+          "id": "local",
+          "name": "travel-claims",
+          "description": "核算差旅费用",
+          "placement": "global",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{local.name}}\ndescription: 按本机个人约定核算市内差旅报销\n---\n\n# 市内差旅个人约定\n\n交通按票面金额报销，单笔餐费最高报销50元。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 本机标准\n\n单笔餐费最高报销50元。"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "remote",
+          "name": "travel-claims",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{remote.name}}\ndescription: 按团队规则核算市内差旅报销\n---\n\n# 团队差旅规则\n\n交通按票面金额报销。餐费以 [金额标准](references/rates.md) 为准。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 金额标准\n\n单笔餐费最高报销80元。"
+                }
+              ],
+              "defaultContext": true
+            },
+            "B": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{remote.name}}\ndescription: 按团队规则核算市内差旅报销\n---\n\n# 团队差旅规则\n\n交通按票面金额报销。餐费以 [金额标准](references/rates.md) 为准。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 金额标准\n\n单笔餐费最高报销60元。"
+                }
+              ],
+              "defaultContext": true
+            }
+          }
+        }
+      ],
+      "public": {
+        "business.receipts": "出租车30元；午餐70元。"
+      },
+      "facts": {
+        "total-local": {
+          "anyOf": [
+            "合计：80元",
+            "合计：80 元",
+            "合计:80元",
+            "合计: 80元"
+          ]
+        },
+        "total-remote-a": {
+          "anyOf": [
+            "合计：100元",
+            "合计：100 元",
+            "合计:100元",
+            "合计: 100元"
+          ]
+        },
+        "total-remote-b": {
+          "anyOf": [
+            "合计：90元",
+            "合计：90 元",
+            "合计:90元",
+            "合计: 90元"
+          ]
+        },
+        "source-question": {
+          "anyOf": [
+            "哪一份",
+            "哪一个",
+            "本地还是",
+            "Notion 还是",
+            "需要确认",
+            "选择哪",
+            "使用哪",
+            "请确认"
+          ]
+        },
+        "unavailable": {
+          "anyOf": [
+            "无法",
+            "不可用",
+            "不能",
+            "缺失",
+            "未找到",
+            "不存在",
+            "失败"
+          ]
+        },
+        "maintenance": {
+          "anyOf": [
+            "创建",
+            "新增",
+            "添加"
+          ]
+        },
+        "description-question": {
+          "anyOf": [
+            "名称",
+            "用途",
+            "内容",
+            "做什么"
+          ]
+        },
+        "rate-a": {
+          "anyOf": [
+            "80元",
+            "80 元"
+          ]
+        },
+        "rate-b": {
+          "anyOf": [
+            "60元",
+            "60 元"
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            "12"
+          ]
+        },
+        "dependency-question": {
+          "anyOf": [
+            "共享",
+            "共同",
+            "依赖",
+            "两份"
+          ]
+        },
+        "offline": {
+          "anyOf": [
+            "离线",
+            "本地",
+            "安装包"
+          ]
+        }
+      },
+      "environment": {
+        "catalog": "unauthorized"
+      }
+    },
+    "semantic-fit": {
+      "kind": "mixed-rules",
+      "objects": [
+        {
+          "id": "local",
+          "name": "trip-notes",
+          "description": "整理出差行李与会议材料的清单，不计算报销",
+          "placement": "global",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{local.name}}\ndescription: 整理出差行李与会议材料\n---\n\n# 出差材料\n\n生成行李清单和会议资料目录。此能力不定义财务报销政策。\n"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "remote",
+          "name": "travel-reimbursement",
+          "description": "整理出差交通、餐费票据，依团队金额标准计算财务报销",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{remote.name}}\ndescription: 按团队规则核算市内差旅报销\n---\n\n# 团队差旅规则\n\n交通按票面金额报销。餐费以 [金额标准](references/rates.md) 为准。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 金额标准\n\n单笔餐费最高报销80元。"
+                }
+              ],
+              "defaultContext": true
+            },
+            "B": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{remote.name}}\ndescription: 按团队规则核算市内差旅报销\n---\n\n# 团队差旅规则\n\n交通按票面金额报销。餐费以 [金额标准](references/rates.md) 为准。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 金额标准\n\n单笔餐费最高报销60元。"
+                }
+              ],
+              "defaultContext": true
+            }
+          }
+        }
+      ],
+      "public": {
+        "business.receipts": "出租车30元；午餐70元。"
+      },
+      "facts": {
+        "total-local": {
+          "anyOf": [
+            "合计：80元",
+            "合计：80 元",
+            "合计:80元",
+            "合计: 80元"
+          ]
+        },
+        "total-remote-a": {
+          "anyOf": [
+            "合计：100元",
+            "合计：100 元",
+            "合计:100元",
+            "合计: 100元"
+          ]
+        },
+        "total-remote-b": {
+          "anyOf": [
+            "合计：90元",
+            "合计：90 元",
+            "合计:90元",
+            "合计: 90元"
+          ]
+        },
+        "source-question": {
+          "anyOf": [
+            "哪一份",
+            "哪一个",
+            "本地还是",
+            "Notion 还是",
+            "需要确认",
+            "选择哪",
+            "使用哪",
+            "请确认"
+          ]
+        },
+        "unavailable": {
+          "anyOf": [
+            "无法",
+            "不可用",
+            "不能",
+            "缺失",
+            "未找到",
+            "不存在",
+            "失败"
+          ]
+        },
+        "maintenance": {
+          "anyOf": [
+            "创建",
+            "新增",
+            "添加"
+          ]
+        },
+        "description-question": {
+          "anyOf": [
+            "名称",
+            "用途",
+            "内容",
+            "做什么"
+          ]
+        },
+        "rate-a": {
+          "anyOf": [
+            "80元",
+            "80 元"
+          ]
+        },
+        "rate-b": {
+          "anyOf": [
+            "60元",
+            "60 元"
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            "12"
+          ]
+        },
+        "dependency-question": {
+          "anyOf": [
+            "共享",
+            "共同",
+            "依赖",
+            "两份"
+          ]
+        },
+        "offline": {
+          "anyOf": [
+            "离线",
+            "本地",
+            "安装包"
+          ]
+        }
+      }
+    },
+    "equivalent": {
+      "kind": "mixed-rules",
+      "objects": [
+        {
+          "id": "local",
+          "name": "travel-claims",
+          "description": "核算差旅费用",
+          "placement": "global",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{local.name}}\ndescription: 核算市内差旅报销\n---\n\n# 市内差旅统一规则\n\n交通按票面金额报销，单笔餐费最高报销50元。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "remote",
+          "name": "travel-claims",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{local.name}}\ndescription: 核算市内差旅报销\n---\n\n# 市内差旅统一规则\n\n交通按票面金额报销，单笔餐费最高报销50元。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                }
+              ],
+              "defaultContext": true
+            }
+          }
+        }
+      ],
+      "public": {
+        "business.receipts": "出租车30元；午餐70元。"
+      },
+      "facts": {
+        "total-local": {
+          "anyOf": [
+            "合计：80元",
+            "合计：80 元",
+            "合计:80元",
+            "合计: 80元"
+          ]
+        },
+        "total-remote-a": {
+          "anyOf": [
+            "合计：100元",
+            "合计：100 元",
+            "合计:100元",
+            "合计: 100元"
+          ]
+        },
+        "total-remote-b": {
+          "anyOf": [
+            "合计：90元",
+            "合计：90 元",
+            "合计:90元",
+            "合计: 90元"
+          ]
+        },
+        "source-question": {
+          "anyOf": [
+            "哪一份",
+            "哪一个",
+            "本地还是",
+            "Notion 还是",
+            "需要确认",
+            "选择哪",
+            "使用哪",
+            "请确认"
+          ]
+        },
+        "unavailable": {
+          "anyOf": [
+            "无法",
+            "不可用",
+            "不能",
+            "缺失",
+            "未找到",
+            "不存在",
+            "失败"
+          ]
+        },
+        "maintenance": {
+          "anyOf": [
+            "创建",
+            "新增",
+            "添加"
+          ]
+        },
+        "description-question": {
+          "anyOf": [
+            "名称",
+            "用途",
+            "内容",
+            "做什么"
+          ]
+        },
+        "rate-a": {
+          "anyOf": [
+            "80元",
+            "80 元"
+          ]
+        },
+        "rate-b": {
+          "anyOf": [
+            "60元",
+            "60 元"
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            "12"
+          ]
+        },
+        "dependency-question": {
+          "anyOf": [
+            "共享",
+            "共同",
+            "依赖",
+            "两份"
+          ]
+        },
+        "offline": {
+          "anyOf": [
+            "离线",
+            "本地",
+            "安装包"
+          ]
+        }
+      }
+    },
+    "complementary": {
+      "kind": "mixed-rules",
+      "objects": [
+        {
+          "id": "local",
+          "name": "receipt-normalizer",
+          "description": "把用户口语票据整理为规范的交通/餐费金额，不决定报销阈值",
+          "placement": "global",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{local.name}}\ndescription: 整理口语票据金额\n---\n\n# 票据整理\n\n把“打车三十、午饭七十”整理为交通30元、餐费70元；所有中文数字转阿拉伯数字。需要报销阈值时使用用户指定的团队政策。\n"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "remote",
+          "name": "travel-claims",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{remote.name}}\ndescription: 按团队规则核算市内差旅报销\n---\n\n# 团队差旅规则\n\n交通按票面金额报销。餐费以 [金额标准](references/rates.md) 为准。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 金额标准\n\n单笔餐费最高报销80元。"
+                }
+              ],
+              "defaultContext": true
+            },
+            "B": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{remote.name}}\ndescription: 按团队规则核算市内差旅报销\n---\n\n# 团队差旅规则\n\n交通按票面金额报销。餐费以 [金额标准](references/rates.md) 为准。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 金额标准\n\n单笔餐费最高报销60元。"
+                }
+              ],
+              "defaultContext": true
+            }
+          }
+        }
+      ],
+      "public": {
+        "business.receipts": "打车三十，午饭七十。"
+      },
+      "facts": {
+        "total-local": {
+          "anyOf": [
+            "合计：80元",
+            "合计：80 元",
+            "合计:80元",
+            "合计: 80元"
+          ]
+        },
+        "total-remote-a": {
+          "anyOf": [
+            "合计：100元",
+            "合计：100 元",
+            "合计:100元",
+            "合计: 100元"
+          ]
+        },
+        "total-remote-b": {
+          "anyOf": [
+            "合计：90元",
+            "合计：90 元",
+            "合计:90元",
+            "合计: 90元"
+          ]
+        },
+        "source-question": {
+          "anyOf": [
+            "哪一份",
+            "哪一个",
+            "本地还是",
+            "Notion 还是",
+            "需要确认",
+            "选择哪",
+            "使用哪",
+            "请确认"
+          ]
+        },
+        "unavailable": {
+          "anyOf": [
+            "无法",
+            "不可用",
+            "不能",
+            "缺失",
+            "未找到",
+            "不存在",
+            "失败"
+          ]
+        },
+        "maintenance": {
+          "anyOf": [
+            "创建",
+            "新增",
+            "添加"
+          ]
+        },
+        "description-question": {
+          "anyOf": [
+            "名称",
+            "用途",
+            "内容",
+            "做什么"
+          ]
+        },
+        "rate-a": {
+          "anyOf": [
+            "80元",
+            "80 元"
+          ]
+        },
+        "rate-b": {
+          "anyOf": [
+            "60元",
+            "60 元"
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            "12"
+          ]
+        },
+        "dependency-question": {
+          "anyOf": [
+            "共享",
+            "共同",
+            "依赖",
+            "两份"
+          ]
+        },
+        "offline": {
+          "anyOf": [
+            "离线",
+            "本地",
+            "安装包"
+          ]
+        }
+      }
+    },
+    "consultation": {
+      "kind": "native-management",
+      "objects": [
+        {
+          "id": "maintain",
+          "name": "ntn-skills-maintain",
+          "description": "Connected library maintenance guidance",
+          "placement": "builtin",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": []
+            }
+          }
+        }
+      ],
+      "facts": {
+        "total-local": {
+          "anyOf": [
+            "合计：80元",
+            "合计：80 元",
+            "合计:80元",
+            "合计: 80元"
+          ]
+        },
+        "total-remote-a": {
+          "anyOf": [
+            "合计：100元",
+            "合计：100 元",
+            "合计:100元",
+            "合计: 100元"
+          ]
+        },
+        "total-remote-b": {
+          "anyOf": [
+            "合计：90元",
+            "合计：90 元",
+            "合计:90元",
+            "合计: 90元"
+          ]
+        },
+        "source-question": {
+          "anyOf": [
+            "哪一份",
+            "哪一个",
+            "本地还是",
+            "Notion 还是",
+            "需要确认",
+            "选择哪",
+            "使用哪",
+            "请确认"
+          ]
+        },
+        "unavailable": {
+          "anyOf": [
+            "无法",
+            "不可用",
+            "不能",
+            "缺失",
+            "未找到",
+            "不存在",
+            "失败"
+          ]
+        },
+        "maintenance": {
+          "anyOf": [
+            "创建",
+            "新增",
+            "添加"
+          ]
+        },
+        "description-question": {
+          "anyOf": [
+            "名称",
+            "用途",
+            "内容",
+            "做什么"
+          ]
+        },
+        "rate-a": {
+          "anyOf": [
+            "80元",
+            "80 元"
+          ]
+        },
+        "rate-b": {
+          "anyOf": [
+            "60元",
+            "60 元"
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            "12"
+          ]
+        },
+        "dependency-question": {
+          "anyOf": [
+            "共享",
+            "共同",
+            "依赖",
+            "两份"
+          ]
+        },
+        "offline": {
+          "anyOf": [
+            "离线",
+            "本地",
+            "安装包"
+          ]
+        }
+      },
+      "environment": {
+        "catalog": "pending"
+      }
+    },
+    "consultation-partial-view": {
+      "kind": "native-management",
+      "objects": [
+        {
+          "id": "maintain",
+          "name": "ntn-skills-maintain",
+          "description": "Connected library maintenance guidance",
+          "placement": "builtin",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": []
+            }
+          }
+        }
+      ],
+      "facts": {
+        "total-local": {
+          "anyOf": [
+            "合计：80元",
+            "合计：80 元",
+            "合计:80元",
+            "合计: 80元"
+          ]
+        },
+        "total-remote-a": {
+          "anyOf": [
+            "合计：100元",
+            "合计：100 元",
+            "合计:100元",
+            "合计: 100元"
+          ]
+        },
+        "total-remote-b": {
+          "anyOf": [
+            "合计：90元",
+            "合计：90 元",
+            "合计:90元",
+            "合计: 90元"
+          ]
+        },
+        "source-question": {
+          "anyOf": [
+            "哪一份",
+            "哪一个",
+            "本地还是",
+            "Notion 还是",
+            "需要确认",
+            "选择哪",
+            "使用哪",
+            "请确认"
+          ]
+        },
+        "unavailable": {
+          "anyOf": [
+            "无法",
+            "不可用",
+            "不能",
+            "缺失",
+            "未找到",
+            "不存在",
+            "失败"
+          ]
+        },
+        "maintenance": {
+          "anyOf": [
+            "创建",
+            "新增",
+            "添加"
+          ]
+        },
+        "description-question": {
+          "anyOf": [
+            "名称",
+            "用途",
+            "内容",
+            "做什么"
+          ]
+        },
+        "rate-a": {
+          "anyOf": [
+            "80元",
+            "80 元"
+          ]
+        },
+        "rate-b": {
+          "anyOf": [
+            "60元",
+            "60 元"
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            "12"
+          ]
+        },
+        "dependency-question": {
+          "anyOf": [
+            "共享",
+            "共同",
+            "依赖",
+            "两份"
+          ]
+        },
+        "offline": {
+          "anyOf": [
+            "离线",
+            "本地",
+            "安装包"
+          ]
+        }
+      },
+      "environment": {
+        "catalog": "partial-view"
+      }
+    },
+    "consultation-offline": {
+      "kind": "native-management",
+      "objects": [],
+      "facts": {
+        "total-local": {
+          "anyOf": [
+            "合计：80元",
+            "合计：80 元",
+            "合计:80元",
+            "合计: 80元"
+          ]
+        },
+        "total-remote-a": {
+          "anyOf": [
+            "合计：100元",
+            "合计：100 元",
+            "合计:100元",
+            "合计: 100元"
+          ]
+        },
+        "total-remote-b": {
+          "anyOf": [
+            "合计：90元",
+            "合计：90 元",
+            "合计:90元",
+            "合计: 90元"
+          ]
+        },
+        "source-question": {
+          "anyOf": [
+            "哪一份",
+            "哪一个",
+            "本地还是",
+            "Notion 还是",
+            "需要确认",
+            "选择哪",
+            "使用哪",
+            "请确认"
+          ]
+        },
+        "unavailable": {
+          "anyOf": [
+            "无法",
+            "不可用",
+            "不能",
+            "缺失",
+            "未找到",
+            "不存在",
+            "失败"
+          ]
+        },
+        "maintenance": {
+          "anyOf": [
+            "创建",
+            "新增",
+            "添加"
+          ]
+        },
+        "description-question": {
+          "anyOf": [
+            "名称",
+            "用途",
+            "内容",
+            "做什么"
+          ]
+        },
+        "rate-a": {
+          "anyOf": [
+            "80元",
+            "80 元"
+          ]
+        },
+        "rate-b": {
+          "anyOf": [
+            "60元",
+            "60 元"
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            "12"
+          ]
+        },
+        "dependency-question": {
+          "anyOf": [
+            "共享",
+            "共同",
+            "依赖",
+            "两份"
+          ]
+        },
+        "offline": {
+          "anyOf": [
+            "离线",
+            "本地",
+            "安装包"
+          ]
+        }
+      },
+      "environment": {
+        "catalog": "normal",
+        "offline": true
+      }
+    },
+    "versions": {
+      "kind": "versioned-graph",
+      "objects": [
+        {
+          "id": "local",
+          "name": "travel-claims",
+          "description": "核算差旅费用",
+          "placement": "global",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{local.name}}\ndescription: 按本机个人约定核算市内差旅报销\n---\n\n# 市内差旅个人约定\n\n交通按票面金额报销，单笔餐费最高报销50元。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 本机标准\n\n单笔餐费最高报销50元。"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "remote",
+          "name": "travel-claims",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{remote.name}}\ndescription: 按团队规则核算市内差旅报销\n---\n\n# 团队差旅规则\n\n交通按票面金额报销。餐费以 [金额标准](references/rates.md) 为准。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 金额标准\n\n单笔餐费最高报销80元。"
+                }
+              ],
+              "defaultContext": true
+            },
+            "B": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{remote.name}}\ndescription: 按团队规则核算市内差旅报销\n---\n\n# 团队差旅规则\n\n交通按票面金额报销。餐费以 [金额标准](references/rates.md) 为准。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 金额标准\n\n单笔餐费最高报销60元。"
+                }
+              ],
+              "defaultContext": true
+            }
+          }
+        }
+      ],
+      "public": {
+        "business.receipts": "出租车30元；午餐70元。"
+      },
+      "facts": {
+        "total-local": {
+          "anyOf": [
+            "合计：80元",
+            "合计：80 元",
+            "合计:80元",
+            "合计: 80元"
+          ]
+        },
+        "total-remote-a": {
+          "anyOf": [
+            "合计：100元",
+            "合计：100 元",
+            "合计:100元",
+            "合计: 100元"
+          ]
+        },
+        "total-remote-b": {
+          "anyOf": [
+            "合计：90元",
+            "合计：90 元",
+            "合计:90元",
+            "合计: 90元"
+          ]
+        },
+        "source-question": {
+          "anyOf": [
+            "哪一份",
+            "哪一个",
+            "本地还是",
+            "Notion 还是",
+            "需要确认",
+            "选择哪",
+            "使用哪",
+            "请确认"
+          ]
+        },
+        "unavailable": {
+          "anyOf": [
+            "无法",
+            "不可用",
+            "不能",
+            "缺失",
+            "未找到",
+            "不存在",
+            "失败"
+          ]
+        },
+        "maintenance": {
+          "anyOf": [
+            "创建",
+            "新增",
+            "添加"
+          ]
+        },
+        "description-question": {
+          "anyOf": [
+            "名称",
+            "用途",
+            "内容",
+            "做什么"
+          ]
+        },
+        "rate-a": {
+          "anyOf": [
+            "80元",
+            "80 元"
+          ]
+        },
+        "rate-b": {
+          "anyOf": [
+            "60元",
+            "60 元"
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            "12"
+          ]
+        },
+        "dependency-question": {
+          "anyOf": [
+            "共享",
+            "共同",
+            "依赖",
+            "两份"
+          ]
+        },
+        "offline": {
+          "anyOf": [
+            "离线",
+            "本地",
+            "安装包"
+          ]
+        }
+      }
+    },
+    "shared-requires": {
+      "kind": "versioned-graph",
+      "objects": [
+        {
+          "id": "rates",
+          "name": "shared-allowance",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{rates.name}}\ndescription: 两类差旅共同使用的财务金额标准\n---\n\n# 共用金额标准\n\n交通按票面金额报销，餐费最多80元。输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                }
+              ],
+              "defaultContext": true
+            },
+            "B": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{rates.name}}\ndescription: 两类差旅共同使用的财务金额标准\n---\n\n# 共用金额标准\n\n交通按票面金额报销，餐费最多60元。输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                }
+              ],
+              "defaultContext": true
+            }
+          }
+        },
+        {
+          "id": "first",
+          "name": "travel-report",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{first.name}}\ndescription: 核算第一张差旅单\n---\n\n# 差旅核算\n\n按 Required 共用金额标准核算票据，不得另猜上限。\n"
+                }
+              ],
+              "requires": [
+                "rates"
+              ],
+              "members": [
+                "optional"
+              ],
+              "defaultContext": true
+            },
+            "B": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{first.name}}\ndescription: 核算第一张差旅单\n---\n\n# 差旅核算\n\n按 Required 共用金额标准核算票据，并在输出中说明金额标准来自共用规则。\n"
+                }
+              ],
+              "requires": [
+                "rates"
+              ],
+              "members": [
+                "optional"
+              ],
+              "defaultContext": true
+            }
+          }
+        },
+        {
+          "id": "second",
+          "name": "travel-review",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{second.name}}\ndescription: 独立复核第二张差旅单\n---\n\n# 差旅复核\n\n按 Required 共用金额标准核算票据，不得另猜上限。\n"
+                }
+              ],
+              "requires": [
+                "rates"
+              ],
+              "defaultContext": true
+            },
+            "B": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{second.name}}\ndescription: 独立复核第二张差旅单\n---\n\n# 差旅复核\n\n按 Required 共用金额标准核算票据，不得另猜上限。\n"
+                }
+              ],
+              "requires": [
+                "rates"
+              ],
+              "defaultContext": true
+            }
+          }
+        },
+        {
+          "id": "optional",
+          "name": "travel-style",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{optional.name}}\ndescription: 可选的报告润色风格，不是计算前提\n---\n\n# 报告润色\n\n只在用户明确要求润色时使用。采用正式书面语。\n"
+                }
+              ],
+              "defaultContext": true
+            }
+          }
+        }
+      ],
+      "public": {
+        "business.receipts": "出租车30元；午餐70元。"
+      },
+      "facts": {
+        "total-local": {
+          "anyOf": [
+            "合计：80元",
+            "合计：80 元",
+            "合计:80元",
+            "合计: 80元"
+          ]
+        },
+        "total-remote-a": {
+          "anyOf": [
+            "合计：100元",
+            "合计：100 元",
+            "合计:100元",
+            "合计: 100元"
+          ]
+        },
+        "total-remote-b": {
+          "anyOf": [
+            "合计：90元",
+            "合计：90 元",
+            "合计:90元",
+            "合计: 90元"
+          ]
+        },
+        "source-question": {
+          "anyOf": [
+            "哪一份",
+            "哪一个",
+            "本地还是",
+            "Notion 还是",
+            "需要确认",
+            "选择哪",
+            "使用哪",
+            "请确认"
+          ]
+        },
+        "unavailable": {
+          "anyOf": [
+            "无法",
+            "不可用",
+            "不能",
+            "缺失",
+            "未找到",
+            "不存在",
+            "失败"
+          ]
+        },
+        "maintenance": {
+          "anyOf": [
+            "创建",
+            "新增",
+            "添加"
+          ]
+        },
+        "description-question": {
+          "anyOf": [
+            "名称",
+            "用途",
+            "内容",
+            "做什么"
+          ]
+        },
+        "rate-a": {
+          "anyOf": [
+            "80元",
+            "80 元"
+          ]
+        },
+        "rate-b": {
+          "anyOf": [
+            "60元",
+            "60 元"
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            "12"
+          ]
+        },
+        "dependency-question": {
+          "anyOf": [
+            "共享",
+            "共同",
+            "依赖",
+            "两份"
+          ]
+        },
+        "offline": {
+          "anyOf": [
+            "离线",
+            "本地",
+            "安装包"
+          ]
+        }
+      }
+    },
+    "availability": {
+      "kind": "versioned-graph",
+      "objects": [
+        {
+          "id": "on-on",
+          "name": "availability-on-on",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{on-on.name}}\ndescription: 按票据输出固定财务格式\n---\n\n# 可用性检查\n\n交通按票面报销，餐费最高80元。输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                }
+              ],
+              "enabled": true,
+              "defaultContext": true
+            }
+          }
+        },
+        {
+          "id": "on-off",
+          "name": "availability-on-off",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{on-off.name}}\ndescription: 按票据输出固定财务格式\n---\n\n# 可用性检查\n\n交通按票面报销，餐费最高80元。输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                }
+              ],
+              "enabled": true,
+              "defaultContext": false
+            }
+          }
+        },
+        {
+          "id": "off-on",
+          "name": "availability-off-on",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{off-on.name}}\ndescription: 按票据输出固定财务格式\n---\n\n# 可用性检查\n\n交通按票面报销，餐费最高80元。输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                }
+              ],
+              "enabled": false,
+              "defaultContext": true
+            }
+          }
+        },
+        {
+          "id": "off-off",
+          "name": "availability-off-off",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{off-off.name}}\ndescription: 按票据输出固定财务格式\n---\n\n# 可用性检查\n\n交通按票面报销，餐费最高80元。输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                }
+              ],
+              "enabled": false,
+              "defaultContext": false
+            }
+          }
+        }
+      ],
+      "public": {
+        "business.receipts": "出租车30元；午餐70元。"
+      },
+      "facts": {
+        "total-local": {
+          "anyOf": [
+            "合计：80元",
+            "合计：80 元",
+            "合计:80元",
+            "合计: 80元"
+          ]
+        },
+        "total-remote-a": {
+          "anyOf": [
+            "合计：100元",
+            "合计：100 元",
+            "合计:100元",
+            "合计: 100元"
+          ]
+        },
+        "total-remote-b": {
+          "anyOf": [
+            "合计：90元",
+            "合计：90 元",
+            "合计:90元",
+            "合计: 90元"
+          ]
+        },
+        "source-question": {
+          "anyOf": [
+            "哪一份",
+            "哪一个",
+            "本地还是",
+            "Notion 还是",
+            "需要确认",
+            "选择哪",
+            "使用哪",
+            "请确认"
+          ]
+        },
+        "unavailable": {
+          "anyOf": [
+            "无法",
+            "不可用",
+            "不能",
+            "缺失",
+            "未找到",
+            "不存在",
+            "失败"
+          ]
+        },
+        "maintenance": {
+          "anyOf": [
+            "创建",
+            "新增",
+            "添加"
+          ]
+        },
+        "description-question": {
+          "anyOf": [
+            "名称",
+            "用途",
+            "内容",
+            "做什么"
+          ]
+        },
+        "rate-a": {
+          "anyOf": [
+            "80元",
+            "80 元"
+          ]
+        },
+        "rate-b": {
+          "anyOf": [
+            "60元",
+            "60 元"
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            "12"
+          ]
+        },
+        "dependency-question": {
+          "anyOf": [
+            "共享",
+            "共同",
+            "依赖",
+            "两份"
+          ]
+        },
+        "offline": {
+          "anyOf": [
+            "离线",
+            "本地",
+            "安装包"
+          ]
+        }
+      }
+    },
+    "native-crud": {
+      "kind": "native-management",
+      "objects": [
+        {
+          "id": "native",
+          "name": "release-checklist",
+          "description": "检查发布材料是否齐全",
+          "placement": "notion",
+          "initial": "absent",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{native.name}}\ndescription: 检查发布材料是否齐全\n---\n\n# 发布材料检查\n\n## 人工保留说明\n\n这段由负责人维护：发布评审须保留原始讨论链接。\n\n## 检查规则\n\n发布前核对负责人、回滚方案和检查日期。遗漏任何一项时输出「结论：补充材料」，三项齐全时输出「结论：可以评审」。\n\n详细口径在 [说明](references/checklist.md)。\n"
+                },
+                {
+                  "path": "references/checklist.md",
+                  "content": "# 保留口径\n\n检查日期必须明确到自然日。保持审计附件内容，不主动删除其他材料。"
+                }
+              ]
+            },
+            "B": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{native.name}}\ndescription: 检查发布材料是否齐全\n---\n\n# 发布材料检查\n\n## 人工保留说明\n\n这段由负责人维护：发布评审须保留原始讨论链接。\n\n## 检查规则\n\n发布前核对负责人、回滚方案、检查日期和影响范围。遗漏任何一项时输出「结论：补充材料」，四项齐全时输出「结论：可以评审」。\n\n详细口径在 [说明](references/checklist.md)。\n"
+                },
+                {
+                  "path": "references/checklist.md",
+                  "content": "# 保留口径\n\n检查日期必须明确到自然日。保持审计附件内容，不主动删除其他材料。"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "protected",
+          "name": "other-release-notes",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{protected.name}}\ndescription: 独立的发布备注，不属于检查清单\n---\n\n# 独立备注\n\n此页不参与本次清单管理，正文应保持不变。\n"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "public": {
+        "business.release": "负责人：林；回滚方案：恢复上一版本；检查日期：2026-11-21。"
+      },
+      "facts": {
+        "total-local": {
+          "anyOf": [
+            "合计：80元",
+            "合计：80 元",
+            "合计:80元",
+            "合计: 80元"
+          ]
+        },
+        "total-remote-a": {
+          "anyOf": [
+            "合计：100元",
+            "合计：100 元",
+            "合计:100元",
+            "合计: 100元"
+          ]
+        },
+        "total-remote-b": {
+          "anyOf": [
+            "合计：90元",
+            "合计：90 元",
+            "合计:90元",
+            "合计: 90元"
+          ]
+        },
+        "source-question": {
+          "anyOf": [
+            "哪一份",
+            "哪一个",
+            "本地还是",
+            "Notion 还是",
+            "需要确认",
+            "选择哪",
+            "使用哪",
+            "请确认"
+          ]
+        },
+        "unavailable": {
+          "anyOf": [
+            "无法",
+            "不可用",
+            "不能",
+            "缺失",
+            "未找到",
+            "不存在",
+            "失败"
+          ]
+        },
+        "maintenance": {
+          "anyOf": [
+            "创建",
+            "新增",
+            "添加"
+          ]
+        },
+        "description-question": {
+          "anyOf": [
+            "名称",
+            "用途",
+            "内容",
+            "做什么"
+          ]
+        },
+        "rate-a": {
+          "anyOf": [
+            "80元",
+            "80 元"
+          ]
+        },
+        "rate-b": {
+          "anyOf": [
+            "60元",
+            "60 元"
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            "12"
+          ]
+        },
+        "dependency-question": {
+          "anyOf": [
+            "共享",
+            "共同",
+            "依赖",
+            "两份"
+          ]
+        },
+        "offline": {
+          "anyOf": [
+            "离线",
+            "本地",
+            "安装包"
+          ]
+        },
+        "release-ok": {
+          "anyOf": [
+            "结论：可以评审",
+            "结论:可以评审",
+            "结论： 可以评审"
+          ]
+        },
+        "release-incomplete": {
+          "anyOf": [
+            "结论：补充材料",
+            "结论:补充材料",
+            "结论： 补充材料"
+          ]
+        }
+      },
+      "readbacks": {
+        "created": {
+          "object": "native",
+          "version": "A",
+          "state": "present"
+        },
+        "updated": {
+          "object": "native",
+          "version": "B",
+          "state": "present"
+        },
+        "protected": {
+          "object": "protected",
+          "version": "A",
+          "state": "present"
+        },
+        "removed": {
+          "object": "native",
+          "state": "absent"
+        }
+      }
+    },
+    "native-register": {
+      "kind": "native-management",
+      "objects": [
+        {
+          "id": "native",
+          "name": "release-checklist",
+          "description": "检查发布材料是否齐全",
+          "placement": "notion",
+          "initial": "unmanaged",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{native.name}}\ndescription: 检查发布材料是否齐全\n---\n\n# 发布材料检查\n\n## 人工保留说明\n\n这段由负责人维护：发布评审须保留原始讨论链接。\n\n## 检查规则\n\n发布前核对负责人、回滚方案和检查日期。遗漏任何一项时输出「结论：补充材料」，三项齐全时输出「结论：可以评审」。\n\n详细口径在 [说明](references/checklist.md)。\n"
+                },
+                {
+                  "path": "references/checklist.md",
+                  "content": "# 保留口径\n\n检查日期必须明确到自然日。保持审计附件内容，不主动删除其他材料。"
+                }
+              ]
+            },
+            "B": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{native.name}}\ndescription: 检查发布材料是否齐全\n---\n\n# 发布材料检查\n\n## 人工保留说明\n\n这段由负责人维护：发布评审须保留原始讨论链接。\n\n## 检查规则\n\n发布前核对负责人、回滚方案、检查日期和影响范围。遗漏任何一项时输出「结论：补充材料」，四项齐全时输出「结论：可以评审」。\n\n详细口径在 [说明](references/checklist.md)。\n"
+                },
+                {
+                  "path": "references/checklist.md",
+                  "content": "# 保留口径\n\n检查日期必须明确到自然日。保持审计附件内容，不主动删除其他材料。"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "protected",
+          "name": "other-release-notes",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{protected.name}}\ndescription: 独立的发布备注，不属于检查清单\n---\n\n# 独立备注\n\n此页不参与本次清单管理，正文应保持不变。\n"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "public": {
+        "business.release": "负责人：林；回滚方案：恢复上一版本；检查日期：2026-11-21。"
+      },
+      "facts": {
+        "total-local": {
+          "anyOf": [
+            "合计：80元",
+            "合计：80 元",
+            "合计:80元",
+            "合计: 80元"
+          ]
+        },
+        "total-remote-a": {
+          "anyOf": [
+            "合计：100元",
+            "合计：100 元",
+            "合计:100元",
+            "合计: 100元"
+          ]
+        },
+        "total-remote-b": {
+          "anyOf": [
+            "合计：90元",
+            "合计：90 元",
+            "合计:90元",
+            "合计: 90元"
+          ]
+        },
+        "source-question": {
+          "anyOf": [
+            "哪一份",
+            "哪一个",
+            "本地还是",
+            "Notion 还是",
+            "需要确认",
+            "选择哪",
+            "使用哪",
+            "请确认"
+          ]
+        },
+        "unavailable": {
+          "anyOf": [
+            "无法",
+            "不可用",
+            "不能",
+            "缺失",
+            "未找到",
+            "不存在",
+            "失败"
+          ]
+        },
+        "maintenance": {
+          "anyOf": [
+            "创建",
+            "新增",
+            "添加"
+          ]
+        },
+        "description-question": {
+          "anyOf": [
+            "名称",
+            "用途",
+            "内容",
+            "做什么"
+          ]
+        },
+        "rate-a": {
+          "anyOf": [
+            "80元",
+            "80 元"
+          ]
+        },
+        "rate-b": {
+          "anyOf": [
+            "60元",
+            "60 元"
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            "12"
+          ]
+        },
+        "dependency-question": {
+          "anyOf": [
+            "共享",
+            "共同",
+            "依赖",
+            "两份"
+          ]
+        },
+        "offline": {
+          "anyOf": [
+            "离线",
+            "本地",
+            "安装包"
+          ]
+        },
+        "release-ok": {
+          "anyOf": [
+            "结论：可以评审",
+            "结论:可以评审",
+            "结论： 可以评审"
+          ]
+        },
+        "release-incomplete": {
+          "anyOf": [
+            "结论：补充材料",
+            "结论:补充材料",
+            "结论： 补充材料"
+          ]
+        }
+      },
+      "readbacks": {
+        "created": {
+          "object": "native",
+          "version": "A",
+          "state": "present"
+        },
+        "updated": {
+          "object": "native",
+          "version": "B",
+          "state": "present"
+        },
+        "protected": {
+          "object": "protected",
+          "version": "A",
+          "state": "present"
+        },
+        "removed": {
+          "object": "native",
+          "state": "absent"
+        }
+      }
+    },
+    "holdout-travel": {
+      "kind": "mixed-rules",
+      "objects": [
+        {
+          "id": "local",
+          "name": "travel-claims",
+          "description": "核算差旅费用",
+          "placement": "global",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{local.name}}\ndescription: 按本机个人约定核算市内差旅报销\n---\n\n# 市内差旅个人约定\n\n交通按票面金额报销，单笔餐费最高报销50元。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 本机标准\n\n单笔餐费最高报销50元。"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "remote",
+          "name": "team-trip-policy",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{remote.name}}\ndescription: 把多张交通和餐费票据归并成团队报销单\n---\n\n# 团队差旅核算\n\n先把全部交通票据求和。餐费标准见 [核算表](reference/limits.md)。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "reference/limits.md",
+                  "content": "# 餐费核算表\n\n| 费用 | 可报销上限 |\n| --- | --- |\n| 餐费 | 单张80元 |\n\n超出上限的部分不纳入报销合计。"
+                }
+              ],
+              "defaultContext": true
+            },
+            "B": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{remote.name}}\ndescription: 按团队规则核算市内差旅报销\n---\n\n# 团队差旅规则\n\n交通按票面金额报销。餐费以 [金额标准](references/rates.md) 为准。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 金额标准\n\n单笔餐费最高报销60元。"
+                }
+              ],
+              "defaultContext": true
+            }
+          }
+        }
+      ],
+      "public": {
+        "business.receipts": "交通票据两张：13元、17元。餐费一张：96元。"
+      },
+      "facts": {
+        "total-local": {
+          "anyOf": [
+            "合计：80元",
+            "合计：80 元",
+            "合计:80元",
+            "合计: 80元"
+          ]
+        },
+        "total-remote-a": {
+          "anyOf": [
+            "合计：100元",
+            "合计：100 元",
+            "合计:100元",
+            "合计: 100元"
+          ]
+        },
+        "total-remote-b": {
+          "anyOf": [
+            "合计：90元",
+            "合计：90 元",
+            "合计:90元",
+            "合计: 90元"
+          ]
+        },
+        "source-question": {
+          "anyOf": [
+            "哪一份",
+            "哪一个",
+            "本地还是",
+            "Notion 还是",
+            "需要确认",
+            "选择哪",
+            "使用哪",
+            "请确认"
+          ]
+        },
+        "unavailable": {
+          "anyOf": [
+            "无法",
+            "不可用",
+            "不能",
+            "缺失",
+            "未找到",
+            "不存在",
+            "失败"
+          ]
+        },
+        "maintenance": {
+          "anyOf": [
+            "创建",
+            "新增",
+            "添加"
+          ]
+        },
+        "description-question": {
+          "anyOf": [
+            "名称",
+            "用途",
+            "内容",
+            "做什么"
+          ]
+        },
+        "rate-a": {
+          "anyOf": [
+            "80元",
+            "80 元"
+          ]
+        },
+        "rate-b": {
+          "anyOf": [
+            "60元",
+            "60 元"
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            "12"
+          ]
+        },
+        "dependency-question": {
+          "anyOf": [
+            "共享",
+            "共同",
+            "依赖",
+            "两份"
+          ]
+        },
+        "offline": {
+          "anyOf": [
+            "离线",
+            "本地",
+            "安装包"
+          ]
+        },
+        "holdout-total": {
+          "anyOf": [
+            "合计：110元",
+            "合计：110 元",
+            "合计:110元",
+            "合计: 110元"
+          ]
+        }
+      }
+    },
+    "holdout-local": {
+      "kind": "mixed-rules",
+      "objects": [
+        {
+          "id": "local",
+          "name": "travel-claims",
+          "description": "核算差旅费用",
+          "placement": "global",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{local.name}}\ndescription: 按本机个人约定核算市内差旅报销\n---\n\n# 市内差旅个人约定\n\n交通按票面金额报销，单笔餐费最高报销50元。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 本机标准\n\n单笔餐费最高报销50元。"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "remote",
+          "name": "travel-claims",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{remote.name}}\ndescription: 按团队规则核算市内差旅报销\n---\n\n# 团队差旅规则\n\n交通按票面金额报销。餐费以 [金额标准](references/rates.md) 为准。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 金额标准\n\n单笔餐费最高报销80元。"
+                }
+              ],
+              "defaultContext": true
+            },
+            "B": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{remote.name}}\ndescription: 按团队规则核算市内差旅报销\n---\n\n# 团队差旅规则\n\n交通按票面金额报销。餐费以 [金额标准](references/rates.md) 为准。\n\n输出「交通：N元」「餐费：N元」「合计：N元」三项；金额使用十进制数。仅计算本次提交的票据。\n"
+                },
+                {
+                  "path": "references/rates.md",
+                  "content": "# 金额标准\n\n单笔餐费最高报销60元。"
+                }
+              ],
+              "defaultContext": true
+            }
+          }
+        }
+      ],
+      "public": {
+        "business.receipts": "先记录餐费93元，后记录出租车19元和公交11元。"
+      },
+      "facts": {
+        "total-local": {
+          "anyOf": [
+            "合计：80元",
+            "合计：80 元",
+            "合计:80元",
+            "合计: 80元"
+          ]
+        },
+        "total-remote-a": {
+          "anyOf": [
+            "合计：100元",
+            "合计：100 元",
+            "合计:100元",
+            "合计: 100元"
+          ]
+        },
+        "total-remote-b": {
+          "anyOf": [
+            "合计：90元",
+            "合计：90 元",
+            "合计:90元",
+            "合计: 90元"
+          ]
+        },
+        "source-question": {
+          "anyOf": [
+            "哪一份",
+            "哪一个",
+            "本地还是",
+            "Notion 还是",
+            "需要确认",
+            "选择哪",
+            "使用哪",
+            "请确认"
+          ]
+        },
+        "unavailable": {
+          "anyOf": [
+            "无法",
+            "不可用",
+            "不能",
+            "缺失",
+            "未找到",
+            "不存在",
+            "失败"
+          ]
+        },
+        "maintenance": {
+          "anyOf": [
+            "创建",
+            "新增",
+            "添加"
+          ]
+        },
+        "description-question": {
+          "anyOf": [
+            "名称",
+            "用途",
+            "内容",
+            "做什么"
+          ]
+        },
+        "rate-a": {
+          "anyOf": [
+            "80元",
+            "80 元"
+          ]
+        },
+        "rate-b": {
+          "anyOf": [
+            "60元",
+            "60 元"
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            "12"
+          ]
+        },
+        "dependency-question": {
+          "anyOf": [
+            "共享",
+            "共同",
+            "依赖",
+            "两份"
+          ]
+        },
+        "offline": {
+          "anyOf": [
+            "离线",
+            "本地",
+            "安装包"
+          ]
+        }
+      }
+    },
+    "holdout-native": {
+      "kind": "native-management",
+      "objects": [
+        {
+          "id": "native",
+          "name": "handover-review",
+          "description": "检查交接说明是否齐全",
+          "placement": "notion",
+          "initial": "absent",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{native.name}}\ndescription: 检查交接说明是否齐全\n---\n\n# 交接复核\n\n## 负责人保留的提示\n\n原始讨论链接必须留在交接说明中。\n\n## 判定表\n\n| 要素 | 要求 |\n| --- | --- |\n| 交接负责人 | 姓名明确 |\n| 验收日期 | 自然日 |\n\n两项齐全时输出「结论：可以交接」；否则输出「结论：补充材料」。\n"
+                },
+                {
+                  "path": "resources/readme.md",
+                  "content": "# 说明\n\n只检查材料完整性，不执行任何发布动作。"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "protected",
+          "name": "other-release-notes",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{protected.name}}\ndescription: 独立的发布备注，不属于检查清单\n---\n\n# 独立备注\n\n此页不参与本次清单管理，正文应保持不变。\n"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "public": {
+        "business.release": "负责人：林；回滚方案：恢复上一版本；检查日期：2026-11-21。"
+      },
+      "facts": {
+        "total-local": {
+          "anyOf": [
+            "合计：80元",
+            "合计：80 元",
+            "合计:80元",
+            "合计: 80元"
+          ]
+        },
+        "total-remote-a": {
+          "anyOf": [
+            "合计：100元",
+            "合计：100 元",
+            "合计:100元",
+            "合计: 100元"
+          ]
+        },
+        "total-remote-b": {
+          "anyOf": [
+            "合计：90元",
+            "合计：90 元",
+            "合计:90元",
+            "合计: 90元"
+          ]
+        },
+        "source-question": {
+          "anyOf": [
+            "哪一份",
+            "哪一个",
+            "本地还是",
+            "Notion 还是",
+            "需要确认",
+            "选择哪",
+            "使用哪",
+            "请确认"
+          ]
+        },
+        "unavailable": {
+          "anyOf": [
+            "无法",
+            "不可用",
+            "不能",
+            "缺失",
+            "未找到",
+            "不存在",
+            "失败"
+          ]
+        },
+        "maintenance": {
+          "anyOf": [
+            "创建",
+            "新增",
+            "添加"
+          ]
+        },
+        "description-question": {
+          "anyOf": [
+            "名称",
+            "用途",
+            "内容",
+            "做什么"
+          ]
+        },
+        "rate-a": {
+          "anyOf": [
+            "80元",
+            "80 元"
+          ]
+        },
+        "rate-b": {
+          "anyOf": [
+            "60元",
+            "60 元"
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            "12"
+          ]
+        },
+        "dependency-question": {
+          "anyOf": [
+            "共享",
+            "共同",
+            "依赖",
+            "两份"
+          ]
+        },
+        "offline": {
+          "anyOf": [
+            "离线",
+            "本地",
+            "安装包"
+          ]
+        },
+        "release-ok": {
+          "anyOf": [
+            "结论：可以评审",
+            "结论:可以评审",
+            "结论： 可以评审"
+          ]
+        },
+        "release-incomplete": {
+          "anyOf": [
+            "结论：补充材料",
+            "结论:补充材料",
+            "结论： 补充材料"
+          ]
+        },
+        "handover-ok": {
+          "anyOf": [
+            "结论：可以交接",
+            "结论:可以交接",
+            "结论： 可以交接"
+          ]
+        }
+      },
+      "readbacks": {
+        "created": {
+          "object": "native",
+          "version": "A",
+          "state": "present"
+        },
+        "removed": {
+          "object": "native",
+          "state": "absent"
+        },
+        "protected": {
+          "object": "protected",
+          "version": "A",
+          "state": "present"
+        }
+      }
+    },
+    "upstream-pdf": {
+      "kind": "upstream-projection",
+      "objects": [
+        {
+          "id": "upstream",
+          "name": "upstream-pdf",
+          "description": "Read and review a fixed upstream Skill",
+          "placement": "source",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": []
+            }
+          },
+          "source": {
+            "declaration": {
+              "version": 1,
+              "definition": {
+                "version": 1,
+                "source_id": "fixture-upstream-pdf",
+                "name": "upstream-pdf",
+                "description": "Read and review a Skill from its fixed upstream repository.",
+                "enabled": true,
+                "policy": "pinned",
+                "adapter": {
+                  "type": "git",
+                  "url": "https://github.com/openai/skills.git",
+                  "ref": "49f948faa9258a0c61caceaf225e179651397431"
+                },
+                "selection": {
+                  "roots": [
+                    "skills/.curated/pdf"
+                  ],
+                  "include": [],
+                  "exclude": [],
+                  "mapping": {}
+                },
+                "options": {}
+              },
+              "contributions": []
+            },
+            "memberKey": "skills/.curated/pdf"
+          }
+        }
+      ],
+      "readbacks": {
+        "restored": {
+          "object": "upstream",
+          "version": "A",
+          "state": "present",
+          "projection": "same-as-baseline"
+        },
+        "tree": {
+          "object": "upstream",
+          "version": "A",
+          "state": "present"
+        }
+      },
+      "facts": {
+        "pdf-check": {
+          "anyOf": [
+            "渲染",
+            "PNG",
+            "图片"
+          ]
+        },
+        "name-lowercase": {
+          "anyOf": [
+            "小写",
+            "lowercase"
+          ]
+        },
+        "name-length": {
+          "anyOf": [
+            "64"
+          ]
+        },
+        "description-length": {
+          "anyOf": [
+            "1024",
+            "1,024"
+          ]
+        }
+      }
+    },
+    "upstream-authoring": {
+      "kind": "upstream-projection",
+      "objects": [
+        {
+          "id": "upstream",
+          "name": "upstream-skill-authoring",
+          "description": "Read and review a fixed upstream Skill",
+          "placement": "source",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": []
+            }
+          },
+          "source": {
+            "declaration": {
+              "version": 1,
+              "definition": {
+                "version": 1,
+                "source_id": "fixture-upstream-skill-authoring",
+                "name": "upstream-skill-authoring",
+                "description": "Read and review a Skill from its fixed upstream repository.",
+                "enabled": true,
+                "policy": "pinned",
+                "adapter": {
+                  "type": "git",
+                  "url": "https://github.com/anthropics/skills.git",
+                  "ref": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba"
+                },
+                "selection": {
+                  "roots": [
+                    "skills/skill-creator"
+                  ],
+                  "include": [],
+                  "exclude": [],
+                  "mapping": {}
+                },
+                "options": {}
+              },
+              "contributions": []
+            },
+            "memberKey": "skills/skill-creator"
+          }
+        }
+      ],
+      "readbacks": {
+        "restored": {
+          "object": "upstream",
+          "version": "A",
+          "state": "present",
+          "projection": "same-as-baseline"
+        },
+        "tree": {
+          "object": "upstream",
+          "version": "A",
+          "state": "present"
+        }
+      },
+      "facts": {
+        "pdf-check": {
+          "anyOf": [
+            "渲染",
+            "PNG",
+            "图片"
+          ]
+        },
+        "name-lowercase": {
+          "anyOf": [
+            "小写",
+            "lowercase"
+          ]
+        },
+        "name-length": {
+          "anyOf": [
+            "64"
+          ]
+        },
+        "description-length": {
+          "anyOf": [
+            "1024",
+            "1,024"
+          ]
+        }
+      }
+    },
+    "native-metadata": {
+      "kind": "native-management",
+      "objects": [
+        {
+          "id": "native",
+          "name": "release-checklist",
+          "description": "检查发布材料是否齐全",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{native.name}}\ndescription: 检查发布材料是否齐全\n---\n\n# 发布材料检查\n\n## 人工保留说明\n\n这段由负责人维护：发布评审须保留原始讨论链接。\n\n## 检查规则\n\n发布前核对负责人、回滚方案和检查日期。遗漏任何一项时输出「结论：补充材料」，三项齐全时输出「结论：可以评审」。\n\n详细口径在 [说明](references/checklist.md)。\n"
+                },
+                {
+                  "path": "references/checklist.md",
+                  "content": "# 保留口径\n\n检查日期必须明确到自然日。保持审计附件内容，不主动删除其他材料。"
+                }
+              ]
+            },
+            "B": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{native.name}}\ndescription: 检查发布材料是否齐全\n---\n\n# 发布材料检查\n\n## 人工保留说明\n\n这段由负责人维护：发布评审须保留原始讨论链接。\n\n## 检查规则\n\n发布前核对负责人、回滚方案和检查日期。遗漏任何一项时输出「结论：补充材料」，三项齐全时输出「结论：可以评审」。\n\n详细口径在 [说明](references/checklist.md)。\n"
+                },
+                {
+                  "path": "references/checklist.md",
+                  "content": "# 保留口径\n\n检查日期必须明确到自然日。保持审计附件内容，不主动删除其他材料。\n\n影响范围必须写明涉及的服务和用户群。\n"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "protected",
+          "name": "other-release-notes",
+          "description": "核算差旅费用",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "---\nname: {{protected.name}}\ndescription: 独立的发布备注，不属于检查清单\n---\n\n# 独立备注\n\n此页不参与本次清单管理，正文应保持不变。\n"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "public": {
+        "business.release": "负责人：林；回滚方案：恢复上一版本；检查日期：2026-11-21。"
+      },
+      "facts": {
+        "total-local": {
+          "anyOf": [
+            "合计：80元",
+            "合计：80 元",
+            "合计:80元",
+            "合计: 80元"
+          ]
+        },
+        "total-remote-a": {
+          "anyOf": [
+            "合计：100元",
+            "合计：100 元",
+            "合计:100元",
+            "合计: 100元"
+          ]
+        },
+        "total-remote-b": {
+          "anyOf": [
+            "合计：90元",
+            "合计：90 元",
+            "合计:90元",
+            "合计: 90元"
+          ]
+        },
+        "source-question": {
+          "anyOf": [
+            "哪一份",
+            "哪一个",
+            "本地还是",
+            "Notion 还是",
+            "需要确认",
+            "选择哪",
+            "使用哪",
+            "请确认"
+          ]
+        },
+        "unavailable": {
+          "anyOf": [
+            "无法",
+            "不可用",
+            "不能",
+            "缺失",
+            "未找到",
+            "不存在",
+            "失败"
+          ]
+        },
+        "maintenance": {
+          "anyOf": [
+            "创建",
+            "新增",
+            "添加"
+          ]
+        },
+        "description-question": {
+          "anyOf": [
+            "名称",
+            "用途",
+            "内容",
+            "做什么"
+          ]
+        },
+        "rate-a": {
+          "anyOf": [
+            "80元",
+            "80 元"
+          ]
+        },
+        "rate-b": {
+          "anyOf": [
+            "60元",
+            "60 元"
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            "12"
+          ]
+        },
+        "dependency-question": {
+          "anyOf": [
+            "共享",
+            "共同",
+            "依赖",
+            "两份"
+          ]
+        },
+        "offline": {
+          "anyOf": [
+            "离线",
+            "本地",
+            "安装包"
+          ]
+        },
+        "release-ok": {
+          "anyOf": [
+            "结论：可以评审",
+            "结论:可以评审",
+            "结论： 可以评审"
+          ]
+        },
+        "release-incomplete": {
+          "anyOf": [
+            "结论：补充材料",
+            "结论:补充材料",
+            "结论： 补充材料"
+          ]
+        }
+      },
+      "readbacks": {
+        "description": {
+          "object": "native",
+          "state": "present",
+          "properties": {
+            "description": "检查发布材料中的负责人、回滚方案与影响范围"
+          }
+        },
+        "disabled": {
+          "object": "native",
+          "state": "present",
+          "properties": {
+            "enabled": false
+          }
+        },
+        "enabled": {
+          "object": "native",
+          "state": "present",
+          "properties": {
+            "enabled": true
+          }
+        },
+        "attachment": {
+          "object": "native",
+          "state": "present",
+          "version": "B"
+        },
+        "protected": {
+          "object": "protected",
+          "version": "A",
+          "state": "present"
+        }
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "id": "mixed-explicit-global",
+      "fixture": "travel",
+      "contract_ids": [
+        "C08",
+        "T22"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "local",
+          "prompt": "请使用我全局本地安装的 {{local.name}}，按照个人约定核算这张差旅单：{{business.receipts}}",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "tool-attempts",
+              "tool": "notion_use",
+              "max": 0
+            },
+            {
+              "kind": "selection",
+              "object": "local",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "local@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-local"
+              ]
+            },
+            {
+              "kind": "visibility",
+              "object": "local",
+              "stage": "native-discovery"
+            },
+            {
+              "kind": "visibility",
+              "object": "remote",
+              "stage": "model-catalog"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mixed-explicit-notion",
+      "fixture": "travel",
+      "contract_ids": [
+        "C08",
+        "T22"
+      ],
+      "profiles": [
+        "daily",
+        "no-native-skills"
+      ],
+      "turns": [
+        {
+          "id": "notion",
+          "prompt": "请按 Notion 上的 {{remote.name}} 团队规则核算这张差旅单：{{business.receipts}}",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "remote@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "resource",
+              "object": "remote",
+              "version": "A",
+              "path": "references/rates.md"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-a"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mixed-notion-url",
+      "fixture": "travel",
+      "contract_ids": [
+        "C08",
+        "C06",
+        "T22"
+      ],
+      "profiles": [
+        "daily",
+        "no-native-skills"
+      ],
+      "turns": [
+        {
+          "id": "url",
+          "prompt": "请使用这个 Notion 页面里的规则处理差旅报销：{{remote.url}}\n票据：{{business.receipts}}",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "remote@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "resource",
+              "object": "remote",
+              "version": "A",
+              "path": "references/rates.md"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-a"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mixed-ambiguous-source",
+      "fixture": "travel",
+      "contract_ids": [
+        "C08",
+        "T22"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "ask",
+          "prompt": "用 {{remote.name}} 算一下报销金额：{{business.receipts}}",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "clarification",
+              "topic": "source-question"
+            }
+          ]
+        },
+        {
+          "id": "business-clarification",
+          "prompt": "这次按 Notion 团队那份规则处理。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "remote@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "resource",
+              "object": "remote",
+              "version": "A",
+              "path": "references/rates.md"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-a"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mixed-resource-owner",
+      "fixture": "travel",
+      "contract_ids": [
+        "C06",
+        "C08",
+        "T06"
+      ],
+      "profiles": [
+        "daily",
+        "no-native-skills"
+      ],
+      "turns": [
+        {
+          "id": "resource",
+          "prompt": "Notion 的 {{remote.name}} 和我本地那份的附件名称相同。这次按 Notion 那份金额标准核算：{{business.receipts}}",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "remote@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "resource",
+              "object": "remote",
+              "version": "A",
+              "path": "references/rates.md"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-a"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mixed-native-slash",
+      "fixture": "travel",
+      "contract_ids": [
+        "C08",
+        "T22"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "slash",
+          "prompt": "/skill:{{local.name}} 请核算这张差旅单：{{business.receipts}}",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "tool-attempts",
+              "tool": "notion_use",
+              "max": 0
+            },
+            {
+              "kind": "body",
+              "body": "local@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-local"
+              ]
+            },
+            {
+              "kind": "visibility",
+              "object": "local",
+              "stage": "native-discovery"
+            },
+            {
+              "kind": "visibility",
+              "object": "remote",
+              "stage": "model-catalog"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mixed-broker-explicit",
+      "fixture": "travel",
+      "contract_ids": [
+        "C08",
+        "T22"
+      ],
+      "profiles": [
+        "daily",
+        "no-native-skills"
+      ],
+      "turns": [
+        {
+          "id": "explicit",
+          "prompt": "${{remote.name}}@notion 请核算这张差旅单：{{business.receipts}}",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "remote@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "resource",
+              "object": "remote",
+              "version": "A",
+              "path": "references/rates.md"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-a"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mixed-pending-local",
+      "fixture": "pending-travel",
+      "contract_ids": [
+        "C08",
+        "C09",
+        "T22"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "cold-local",
+          "prompt": "请用全局本地的 {{local.name}} 直接核算这张个人报销单：{{business.receipts}}",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "tool-attempts",
+              "tool": "notion_use",
+              "max": 0
+            },
+            {
+              "kind": "body",
+              "body": "local@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-local"
+              ]
+            },
+            {
+              "kind": "visibility",
+              "object": "local",
+              "stage": "native-discovery"
+            },
+            {
+              "kind": "visibility",
+              "object": "remote",
+              "stage": "source-pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mixed-unavailable-local",
+      "fixture": "unauthorized-travel",
+      "contract_ids": [
+        "C08",
+        "C03",
+        "T22"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "local",
+          "prompt": "按全局本地的 {{local.name}} 核算，不需要团队规则：{{business.receipts}}",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "tool-attempts",
+              "tool": "notion_use",
+              "max": 0
+            },
+            {
+              "kind": "body",
+              "body": "local@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-local"
+              ]
+            },
+            {
+              "kind": "visibility",
+              "object": "local",
+              "stage": "native-discovery"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mixed-unavailable-required-remote",
+      "fixture": "unauthorized-travel",
+      "contract_ids": [
+        "C08",
+        "C03",
+        "T22"
+      ],
+      "profiles": [
+        "daily",
+        "no-native-skills"
+      ],
+      "turns": [
+        {
+          "id": "remote",
+          "prompt": "公司要求必须采用 Notion 的 {{remote.name}}。请据此核算：{{business.receipts}}；如果无法取得它，请说明。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "unavailable"
+              ]
+            },
+            {
+              "kind": "output",
+              "none": [
+                "total-local"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mixed-semantic-fit",
+      "fixture": "semantic-fit",
+      "contract_ids": [
+        "C08",
+        "T22"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "fit",
+          "prompt": "整理一下这次出差的交通和餐费票据，按团队标准给我可报销金额：{{business.receipts}}",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "remote@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "resource",
+              "object": "remote",
+              "version": "A",
+              "path": "references/rates.md"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-a"
+              ]
+            },
+            {
+              "kind": "visibility",
+              "object": "local",
+              "stage": "native-discovery"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mixed-equivalent-copies",
+      "fixture": "equivalent",
+      "contract_ids": [
+        "C08",
+        "T22"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "equivalent",
+          "prompt": "用 {{local.name}} 核算这张差旅单：{{business.receipts}}。两份规则内容一致，任选可用的一份即可。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection-any",
+              "objects": [
+                {
+                  "object": "local",
+                  "version": "A"
+                },
+                {
+                  "object": "remote",
+                  "version": "A"
+                }
+              ]
+            },
+            {
+              "kind": "body",
+              "body": "local@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-local"
+              ]
+            },
+            {
+              "kind": "visibility",
+              "object": "local",
+              "stage": "native-discovery"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mixed-complementary",
+      "fixture": "complementary",
+      "contract_ids": [
+        "C08",
+        "T22"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "combine",
+          "prompt": "先用我本地的 {{local.name}} 整理这些口述票据，再按 Notion 的 {{remote.name}} 核算团队报销金额：{{business.receipts}}",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "body",
+              "body": "local@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "remote@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "resource",
+              "object": "remote",
+              "version": "A",
+              "path": "references/rates.md"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-a"
+              ]
+            },
+            {
+              "kind": "visibility",
+              "object": "local",
+              "stage": "native-discovery"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cold-maintenance-consultation",
+      "fixture": "consultation",
+      "contract_ids": [
+        "C08",
+        "T22"
+      ],
+      "profiles": [
+        "daily",
+        "no-native-skills"
+      ],
+      "turns": [
+        {
+          "id": "first",
+          "prompt": "我想在 Notion 加一个 Skill，知道怎么加么？",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "maintenance"
+              ]
+            },
+            {
+              "kind": "clarification",
+              "topic": "description-question"
+            },
+            {
+              "kind": "resource",
+              "object": "maintain",
+              "version": "A",
+              "path": "SKILL.md"
+            },
+            {
+              "kind": "tool-attempts",
+              "tool": "notion_use",
+              "max": 0
+            },
+            {
+              "kind": "visibility",
+              "object": "maintain",
+              "stage": "source-pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "connected-maintenance-partial-view",
+      "fixture": "consultation-partial-view",
+      "contract_ids": [
+        "C08",
+        "C05",
+        "T22"
+      ],
+      "profiles": [
+        "daily",
+        "no-native-skills"
+      ],
+      "turns": [
+        {
+          "id": "first",
+          "prompt": "我想在 Notion 创建一个 Skill。先说说你还需要我提供什么信息。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "maintenance"
+              ]
+            },
+            {
+              "kind": "clarification",
+              "topic": "description-question"
+            },
+            {
+              "kind": "resource",
+              "object": "maintain",
+              "version": "A",
+              "path": "SKILL.md"
+            },
+            {
+              "kind": "tool-attempts",
+              "tool": "notion_use",
+              "max": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "explicit-offline-bootstrap",
+      "fixture": "consultation-offline",
+      "contract_ids": [
+        "C08",
+        "C10"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "offline",
+          "prompt": "我现在明确要离线检查本机安装包里自带的 Notion Skill 管理说明，不连接 Notion，也不要创建任何页面。请概括创建 Skill 需要哪些业务输入。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "offline",
+                "maintenance"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lifecycle-inspect-adopt",
+      "fixture": "versions",
+      "contract_ids": [
+        "C01",
+        "C02",
+        "C04",
+        "T16",
+        "T17"
+      ],
+      "profiles": [
+        "daily",
+        "no-native-skills"
+      ],
+      "turns": [
+        {
+          "id": "adopt-a",
+          "prompt": "按 Notion 的 {{remote.name}} 团队规则核算：{{business.receipts}}",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "remote@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "resource",
+              "object": "remote",
+              "version": "A",
+              "path": "references/rates.md"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-a"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "continue-a",
+          "prompt": "继续刚才这项工作，再核一遍相同票据，沿用已经选定的规则。",
+          "before": [
+            {
+              "kind": "publish-version",
+              "object": "remote",
+              "version": "B"
+            }
+          ],
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "remote@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-a"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "inspect-b",
+          "prompt": "我刚刚改了 Notion 里的金额标准。先查看最新版本，告诉我餐费上限有什么变化；这项工作暂时继续沿用原规则。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "remote@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "resource",
+              "object": "remote",
+              "version": "B",
+              "path": "references/rates.md"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "rate-a",
+                "rate-b"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "still-a",
+          "prompt": "现在继续核算原来那张差旅单，仍按这项工作原先采用的规则。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "remote@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-a"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "adopt-b",
+          "prompt": "现在把这项工作切换到 Notion 上最新的整套规则，附件也采用对应版本，重新核算原来那张差旅单。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "B"
+            },
+            {
+              "kind": "body",
+              "body": "remote@B/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "resource",
+              "object": "remote",
+              "version": "B",
+              "path": "references/rates.md"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-b"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lifecycle-source-switch",
+      "fixture": "versions",
+      "contract_ids": [
+        "C01",
+        "C02",
+        "C08",
+        "T16",
+        "T22"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "local",
+          "prompt": "先按全局本地的 {{local.name}} 核算：{{business.receipts}}",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "body",
+              "body": "local@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-local"
+              ]
+            },
+            {
+              "kind": "tool-attempts",
+              "tool": "notion_use",
+              "max": 0
+            },
+            {
+              "kind": "visibility",
+              "object": "local",
+              "stage": "native-discovery"
+            }
+          ]
+        },
+        {
+          "id": "continue-local",
+          "prompt": "继续使用本次已经采用的个人规则，再核一次相同票据。",
+          "before": [
+            {
+              "kind": "publish-version",
+              "object": "remote",
+              "version": "B"
+            }
+          ],
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "body",
+              "body": "local@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-local"
+              ]
+            },
+            {
+              "kind": "tool-attempts",
+              "tool": "notion_use",
+              "max": 0
+            }
+          ]
+        },
+        {
+          "id": "switch-notion",
+          "prompt": "这次改按 Notion 团队的 {{remote.name}} 最新规则，重新核算。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "B"
+            },
+            {
+              "kind": "body",
+              "body": "remote@B/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "resource",
+              "object": "remote",
+              "version": "B",
+              "path": "references/rates.md"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-b"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "switch-local",
+          "prompt": "现在切回我全局本地的 {{local.name}} 个人规则，再核算相同票据。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "body",
+              "body": "local@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-local"
+              ]
+            },
+            {
+              "kind": "tool-attempts",
+              "tool": "notion_use",
+              "max": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lifecycle-resume-fork-compact",
+      "fixture": "versions",
+      "contract_ids": [
+        "C01",
+        "C04",
+        "C07c",
+        "T13"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "adopt-a",
+          "prompt": "按 Notion 的 {{remote.name}} 处理这张差旅单：{{business.receipts}}",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "remote@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "resource",
+              "object": "remote",
+              "version": "A",
+              "path": "references/rates.md"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-a"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "adopt-b",
+          "prompt": "现在改用 Notion 的最新规则，再算一次。",
+          "before": [
+            {
+              "kind": "publish-version",
+              "object": "remote",
+              "version": "B"
+            }
+          ],
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "B"
+            },
+            {
+              "kind": "body",
+              "body": "remote@B/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "resource",
+              "object": "remote",
+              "version": "B",
+              "path": "references/rates.md"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-b"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "fork-before-b",
+          "prompt": "继续这项原来的工作，按照它已经采用的规则，再核算原始票据。",
+          "before": [
+            {
+              "kind": "fork",
+              "turn": "adopt-b"
+            }
+          ],
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "remote@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-a"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "after-compact",
+          "prompt": "继续刚才那张差旅单，规则保持不变，给我最终可报销金额。",
+          "before": [
+            {
+              "kind": "compact"
+            }
+          ],
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "remote@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-a"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "after-resume",
+          "prompt": "接着这项工作，按既定规则复核原始票据。",
+          "before": [
+            {
+              "kind": "restart",
+              "mode": "resume"
+            }
+          ],
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "remote@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-a"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lifecycle-recovery-failure",
+      "fixture": "versions",
+      "contract_ids": [
+        "C03",
+        "C04",
+        "T18"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "adopt",
+          "prompt": "按 Notion 的 {{remote.name}} 核算：{{business.receipts}}",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "remote@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "resource",
+              "object": "remote",
+              "version": "A",
+              "path": "references/rates.md"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-a"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "after-loss",
+          "prompt": "继续原来的报销工作。如果原规则已经无法恢复，请明确说明。",
+          "before": [
+            {
+              "kind": "compact"
+            },
+            {
+              "kind": "fault",
+              "object": "remote",
+              "mode": "missing-manifest"
+            },
+            {
+              "kind": "restart",
+              "mode": "resume"
+            }
+          ],
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "unavailable"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "refresh",
+          "prompt": "那请重新获取 Notion 的最新规则，能取得就继续，取不到就说明原因。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            }
+          ]
+        },
+        {
+          "id": "ordinary",
+          "prompt": "先暂停报销。只回答这个普通问题：7 加 5 等于多少？",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "chat"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lifecycle-shared-requires",
+      "fixture": "shared-requires",
+      "contract_ids": [
+        "C02",
+        "C04",
+        "T03",
+        "T20"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "two-roots",
+          "prompt": "在 Notion 中采用 {{first.name}} 和 {{second.name}}，分别核算与复核这些票据：{{business.receipts}}。不需要报告润色。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "first",
+              "version": "A"
+            },
+            {
+              "kind": "selection",
+              "object": "second",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "first@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "body",
+              "body": "second@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "body",
+              "body": "rates@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "body",
+              "body": "optional@A/SKILL.md",
+              "occurrences": 0
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-a"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "selective-refresh",
+          "prompt": "只把第一项 {{first.name}} 更新到最新版，第二项仍需保留。若共用规则冲突，先说明，不要偷偷丢弃第二项或混用版本。",
+          "before": [
+            {
+              "kind": "publish-version",
+              "object": "rates",
+              "version": "B"
+            },
+            {
+              "kind": "publish-version",
+              "object": "first",
+              "version": "B"
+            }
+          ],
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "second",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "second@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "dependency-question"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "adopt-both",
+          "prompt": "我确认两项工作一起采用最新的共用规则，现在重新核算和复核。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "first",
+              "version": "B"
+            },
+            {
+              "kind": "selection",
+              "object": "second",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "rates@B/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-b"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lifecycle-enabled-default-context",
+      "fixture": "availability",
+      "contract_ids": [
+        "C05",
+        "T19"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "on-on",
+          "prompt": "请采用 Notion 上 {{on-on.name}} 的当前规则核算：{{business.receipts}}",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "on-on",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "on-on@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-a"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "on-off",
+          "prompt": "请采用 Notion 上 {{on-off.name}} 的当前规则核算：{{business.receipts}}",
+          "before": [
+            {
+              "kind": "restart",
+              "mode": "fresh"
+            }
+          ],
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "on-off",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "on-off@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-a"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "off-on",
+          "prompt": "请采用 Notion 上 {{off-on.name}} 的当前规则核算：{{business.receipts}}。不能使用时请说明，不改用其他Skill。",
+          "before": [
+            {
+              "kind": "restart",
+              "mode": "fresh"
+            }
+          ],
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "unavailable"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "off-off",
+          "prompt": "请采用 Notion 上 {{off-off.name}} 的当前规则核算：{{business.receipts}}。不能使用时请说明，不改用其他Skill。",
+          "before": [
+            {
+              "kind": "restart",
+              "mode": "fresh"
+            }
+          ],
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "unavailable"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "re-enabled",
+          "prompt": "我已重新启用 {{off-on.name}}。请重新获取它当前可用的规则并核算。",
+          "before": [
+            {
+              "kind": "set-enabled",
+              "object": "off-on",
+              "enabled": true,
+              "defaultContext": false
+            }
+          ],
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "off-on",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "off-on@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-remote-a"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "management-native-crud",
+      "fixture": "native-crud",
+      "contract_ids": [
+        "C06",
+        "C07b",
+        "C08",
+        "T06",
+        "T16",
+        "T17"
+      ],
+      "profiles": [
+        "daily",
+        "no-native-skills"
+      ],
+      "turns": [
+        {
+          "id": "create",
+          "prompt": "请把 {{native.path}} 目录中的正文和附件原样创建成 Notion 原生 Skill，名称为 {{native.name}}，用途是检查发布材料。之后直接读回确认它可以正常被使用。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "created"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "protected"
+            }
+          ]
+        },
+        {
+          "id": "consume-a",
+          "prompt": "现在采用 Notion 的 {{native.name}} 检查这些发布材料：{{business.release}}",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "native",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "native@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "release-ok"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "update",
+          "prompt": "请修改 Notion 的 {{native.name}}：检查规则新增“影响范围”一项，并把“三项齐全”改为“四项齐全”。保留人工说明、附件和其他内容原样，不改其他 Skill。修改后确认结果。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "updated"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "protected"
+            }
+          ]
+        },
+        {
+          "id": "inspect-only",
+          "prompt": "先查看最新的检查清单，说明增加了什么；原来这项检查暂时沿用原版本。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "native",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "native@A/SKILL.md",
+              "occurrences": 1
+            }
+          ]
+        },
+        {
+          "id": "continue-a",
+          "prompt": "接着原来的检查，仍用这项工作先前采用的规则复核同一份材料。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "native",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "native@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "release-ok"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "adopt-b",
+          "prompt": "现在明确改用 Notion 最新的整份 {{native.name}}，重新检查同一份材料。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "native",
+              "version": "B"
+            },
+            {
+              "kind": "body",
+              "body": "native@B/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "release-incomplete"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "remove",
+          "prompt": "这份 {{native.name}} 是我本次临时建立的检查清单，现在请删除它及其所属内容，保留其他 Skill，完成后确认。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "removed"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "protected"
+            }
+          ]
+        },
+        {
+          "id": "remove-again",
+          "prompt": "对刚才那份临时 {{native.name}} 再实际执行一次删除，确认重复操作已收敛且不会影响其他 Skill。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "removed"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "protected"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "management-register-existing",
+      "fixture": "native-register",
+      "contract_ids": [
+        "C06",
+        "C08",
+        "T06"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "register",
+          "prompt": "这是我之前让另一个 Agent 临时写的 Notion Skill 页面：{{native.url}}。请把它登记成可正常管理和使用的 {{native.name}}，保留已有正文和附件，不要让我手工填写底层关系；有无法确定的身份冲突再问我。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "created"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "protected"
+            }
+          ]
+        },
+        {
+          "id": "consume",
+          "prompt": "采用 Notion 上刚登记的 {{native.name}} 检查：{{business.release}}",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "native",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "native@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "release-ok"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "holdout-notion-business-layout",
+      "fixture": "holdout-travel",
+      "contract_ids": [
+        "C08",
+        "C06",
+        "T22"
+      ],
+      "profiles": [
+        "daily",
+        "no-native-skills"
+      ],
+      "turns": [
+        {
+          "id": "notion",
+          "prompt": "我把报销材料重排了一下：{{business.receipts}}\n请依 Notion 的 {{remote.name}} 整理成财务可用的结算结果。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "remote",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "remote@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "resource",
+              "object": "remote",
+              "version": "A",
+              "path": "reference/limits.md"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "holdout-total"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "holdout-global-rephrasing",
+      "fixture": "holdout-local",
+      "contract_ids": [
+        "C08",
+        "T22"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "local",
+          "prompt": "这是一份个人差旅单，不采用团队标准。请依据机器上全局安装的 {{local.name}} 整理：{{business.receipts}}",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "tool-attempts",
+              "tool": "notion_use",
+              "max": 0
+            },
+            {
+              "kind": "body",
+              "body": "local@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "total-local"
+              ]
+            },
+            {
+              "kind": "visibility",
+              "object": "local",
+              "stage": "native-discovery"
+            },
+            {
+              "kind": "visibility",
+              "object": "remote",
+              "stage": "model-catalog"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "holdout-native-handover",
+      "fixture": "holdout-native",
+      "contract_ids": [
+        "C06",
+        "C08",
+        "T06"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "create",
+          "prompt": "把 {{native.path}} 中现成的交接检查说明和资源放到 Notion，作为由 Notion 管理的 {{native.name}} 使用。请保持正文原意和文件内容，并完成读回确认。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "created"
+            }
+          ]
+        },
+        {
+          "id": "use",
+          "prompt": "现在用 Notion 的 {{native.name}} 检查：交接负责人是周，验收日期为2026-11-22。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "native",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "native@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "handover-ok"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "remove",
+          "prompt": "这次交接已经结束，请移除临时的 {{native.name}} 以及它自己的内容，其他页面保留。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "removed"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "protected"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "management-upstream-delete-restore",
+      "fixture": "upstream-pdf",
+      "contract_ids": [
+        "C06",
+        "C07b",
+        "C08",
+        "T07",
+        "T15"
+      ],
+      "profiles": [
+        "daily",
+        "no-native-skills"
+      ],
+      "turns": [
+        {
+          "id": "consume",
+          "prompt": "请使用 Notion 上的 {{upstream.name}}，概括生成 PDF 后如何检查版面。先只给检查步骤，不处理真实文件、不修改页面。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "upstream",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "upstream@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "pdf-check"
+              ]
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "tree"
+            }
+          ]
+        },
+        {
+          "id": "restore",
+          "prompt": "我刚把 {{upstream.name}} 在 Notion 上供人阅读的投影删掉了。请从它已登记的上游把这份投影完整恢复，完成读回；保持上游内容和消费能力不变。",
+          "before": [
+            {
+              "kind": "trash-projection",
+              "object": "upstream"
+            }
+          ],
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "restored"
+            }
+          ]
+        },
+        {
+          "id": "consume-restored",
+          "prompt": "继续使用恢复后的 Notion {{upstream.name}}，再次给我 PDF 输出前的版面检查步骤。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "upstream",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "upstream@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "output",
+              "all": [
+                "pdf-check"
+              ]
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "tree"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "holdout-upstream-scripts-restore",
+      "fixture": "upstream-authoring",
+      "contract_ids": [
+        "C06",
+        "C07b",
+        "C08",
+        "T07",
+        "T15"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "inspect-script",
+          "prompt": "请使用 Notion 上的 {{upstream.name}}。根据随它发布的 scripts/quick_validate.py，说明 Skill 名称与描述有哪些硬性约束。只阅读，不运行代码或改页面。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "upstream",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "upstream@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "resource",
+              "object": "upstream",
+              "version": "A",
+              "path": "scripts/quick_validate.py"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "name-lowercase",
+                "name-length",
+                "description-length"
+              ]
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "tree"
+            }
+          ]
+        },
+        {
+          "id": "restore",
+          "prompt": "这份 {{upstream.name}} 的 Notion 阅读投影已被删除。请用它的上游重新恢复，确认正文、阅读目录和完整资源树都可用，不改上游文件。",
+          "before": [
+            {
+              "kind": "trash-projection",
+              "object": "upstream"
+            }
+          ],
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "restored"
+            }
+          ]
+        },
+        {
+          "id": "reuse",
+          "prompt": "按恢复后的 {{upstream.name}} 再检查一下：名为 'New_Tool' 的 Skill 名称是否满足它附带校验脚本的命名规则？说明原因，仍然不执行脚本。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "selection",
+              "object": "upstream",
+              "version": "A"
+            },
+            {
+              "kind": "body",
+              "body": "upstream@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "resource",
+              "object": "upstream",
+              "version": "A",
+              "path": "scripts/quick_validate.py"
+            },
+            {
+              "kind": "output",
+              "all": [
+                "name-lowercase"
+              ]
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "tree"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "management-description-flags-resource",
+      "fixture": "native-metadata",
+      "contract_ids": [
+        "C05",
+        "C06",
+        "C08",
+        "T06",
+        "T19"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "description",
+          "prompt": "把 Notion 上 {{native.name}} 的简短说明改成“检查发布材料中的负责人、回滚方案与影响范围”，不要改正文、附件或名称。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "description"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "protected"
+            }
+          ]
+        },
+        {
+          "id": "disable",
+          "prompt": "暂时停用 {{native.name}}，让新的使用请求不能采用它；保留内容。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "disabled"
+            }
+          ]
+        },
+        {
+          "id": "enable",
+          "prompt": "重新启用刚才的 {{native.name}}。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "enabled"
+            }
+          ]
+        },
+        {
+          "id": "resource",
+          "prompt": "在 {{native.name}} 的 references/checklist.md 末尾追加一段：“影响范围必须写明涉及的服务和用户群。”只修改这个附件，保留原有文字和主文。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "attachment"
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "protected"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
