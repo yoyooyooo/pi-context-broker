@@ -1,0 +1,4873 @@
+{
+  "version": 1,
+  "scope": "sanitized-actual-run-coverage-matrix",
+  "createdAt": "2026-11-21T19:51:36.136Z",
+  "coverageEvidence": {
+    "sha256": "7111dcb85b96fb3ecea2d06cc3f7a512e04777c9cc16ef4051a08b4369b94ee8",
+    "bytes": 724324
+  },
+  "corpus": {
+    "commit": "677404efb1e333e72dfc5012f7e38568e37a2c38",
+    "artifact": {
+      "sha256": "1202f1c208257053b78cbc6b9adcea4db9f98945356203291cc3c29dbac165b9",
+      "bytes": 164825
+    }
+  },
+  "counts": {
+    "scenarios": 32,
+    "combinations": 45,
+    "selectedActualRuns": 45,
+    "selectedTurns": 98,
+    "original": 38,
+    "reanalysis": 7,
+    "historicalReinterpretedActualRuns": 7,
+    "historicalRevisedReceipts": 8
+  },
+  "rows": [
+    {
+      "scenario": "mixed-explicit-global",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "24692095-df75-4636-aacc-962108a0cd11",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "7264bd4287809dbe56379c4244713184316e7ab4",
+            "dirty": false,
+            "treeSha256": "f824098f8bd141e787ac61b9b78704fa3a3bcbcc7f004ab8b0e84476d28327a2"
+          },
+          {
+            "repository": "cli",
+            "commit": "cce376ed2a1b83141b89e8492d1b0ae0c0bd082f",
+            "dirty": false,
+            "treeSha256": "60d9ade4cde4c98e8535a9fc789634df5f2ea8aa41ed6284e19cf71db4789357"
+          }
+        ],
+        "result": {
+          "sha256": "622c344530e9e5ef611466583e210c4846b78735eba67b952446d8253d5da9de",
+          "bytes": 695669
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "24692095-df75-4636-aacc-962108a0cd11-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "ff3df3a7003a6c0d1fa544e2ada3bc817d400cc0e8a955b1d61f0b466d79ce59",
+              "bytes": 4000
+            },
+            "selected": {
+              "sha256": "ff3df3a7003a6c0d1fa544e2ada3bc817d400cc0e8a955b1d61f0b466d79ce59",
+              "bytes": 4000
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "03cdd92f-67a6-4e86-9afc-a8dd930e8ee0",
+      "history": [
+        {
+          "runId": "03cdd92f-67a6-4e86-9afc-a8dd930e8ee0",
+          "status": "blocked",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "208d223104b5a98840be87a531390b5cb8a38de0",
+              "dirty": false,
+              "treeSha256": "bf3a21e9912c2dc91ec68eb56b30f45a182de18c7e61a9a1bf1bb47ce7502029"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "3872cac20bbdfbb50700306d0530fdfe8ebde4eb8649fab6bf1b7df3ffabcbbb",
+            "bytes": 697958
+          }
+        },
+        {
+          "runId": "dbc4cb87-0e9a-47de-a8b0-3902e16a6ff0",
+          "status": "passed",
+          "retestOf": "03cdd92f-67a6-4e86-9afc-a8dd930e8ee0",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "43063c019b0bab497916ca0e62a399d6e04ed349",
+              "dirty": false,
+              "treeSha256": "a6af37d1a02fcc79a25a49221b9f41aee0dfc5b627d10b7ac38eb5f25399dfe6"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "468be14f26e2cfd559d117bf2fe0dda7b3dd77e29a9034224c5babb44674d65f",
+            "bytes": 704561
+          }
+        },
+        {
+          "runId": "235d49af-113f-4af9-9186-1a7196ed327b",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "4665ec20c61820e8c620cfb8d4893a5f0e50eb2d02d76af256b1207b85523eb6",
+            "bytes": 739583
+          }
+        },
+        {
+          "runId": "24692095-df75-4636-aacc-962108a0cd11",
+          "status": "passed",
+          "retestOf": "235d49af-113f-4af9-9186-1a7196ed327b",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "7264bd4287809dbe56379c4244713184316e7ab4",
+              "dirty": false,
+              "treeSha256": "f824098f8bd141e787ac61b9b78704fa3a3bcbcc7f004ab8b0e84476d28327a2"
+            },
+            {
+              "repository": "cli",
+              "commit": "cce376ed2a1b83141b89e8492d1b0ae0c0bd082f",
+              "dirty": false,
+              "treeSha256": "60d9ade4cde4c98e8535a9fc789634df5f2ea8aa41ed6284e19cf71db4789357"
+            }
+          ],
+          "result": {
+            "sha256": "622c344530e9e5ef611466583e210c4846b78735eba67b952446d8253d5da9de",
+            "bytes": 695669
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "mixed-explicit-notion",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "2f8a4303-79c3-4fc7-8f4b-2c08f3e28ff0",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "92868c1044a8c661f9626e1147b03674a3225f511f5cf9eef115ad43172e3031",
+          "bytes": 1335957
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "2f8a4303-79c3-4fc7-8f4b-2c08f3e28ff0-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "d65fa08ff9a6b8c95a1d02d9a431f25756b3d758e033b732f2910fa1263219d6",
+              "bytes": 3922
+            },
+            "selected": {
+              "sha256": "d65fa08ff9a6b8c95a1d02d9a431f25756b3d758e033b732f2910fa1263219d6",
+              "bytes": 3922
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": null,
+      "history": [
+        {
+          "runId": "77e713f8-158b-4391-8733-82d7ea661453",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "208d223104b5a98840be87a531390b5cb8a38de0",
+              "dirty": false,
+              "treeSha256": "bf3a21e9912c2dc91ec68eb56b30f45a182de18c7e61a9a1bf1bb47ce7502029"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "734f8a393809ed77419d0c5789a1ad7a01adde7c46e20580210ea50f4ff92c41",
+            "bytes": 1252353
+          }
+        },
+        {
+          "runId": "2f8a4303-79c3-4fc7-8f4b-2c08f3e28ff0",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "92868c1044a8c661f9626e1147b03674a3225f511f5cf9eef115ad43172e3031",
+            "bytes": 1335957
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "mixed-explicit-notion",
+      "profile": "no-native-skills",
+      "status": "covered-original",
+      "selected": {
+        "runId": "f6825e5c-52bf-436a-adc1-f63a0237f5da",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "4b0894d1c688a2752b75f15d2ae6b032df7d24d60715a8a9e7dc4c4470ce5412",
+          "bytes": 1169944
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "f6825e5c-52bf-436a-adc1-f63a0237f5da-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "ca028568d9ae7329c20ee3f301286743e739b91df5d93d4dd4aad7ee4f3b39bf",
+              "bytes": 3955
+            },
+            "selected": {
+              "sha256": "ca028568d9ae7329c20ee3f301286743e739b91df5d93d4dd4aad7ee4f3b39bf",
+              "bytes": 3955
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": null,
+      "history": [
+        {
+          "runId": "36eb6fd0-1ac0-41a6-9122-5740ecb06035",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "208d223104b5a98840be87a531390b5cb8a38de0",
+              "dirty": false,
+              "treeSha256": "bf3a21e9912c2dc91ec68eb56b30f45a182de18c7e61a9a1bf1bb47ce7502029"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "4fb7a7b73044c3d448befd95a888d562abbb6aa82072767c7831e29845570707",
+            "bytes": 1062975
+          }
+        },
+        {
+          "runId": "f6825e5c-52bf-436a-adc1-f63a0237f5da",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "4b0894d1c688a2752b75f15d2ae6b032df7d24d60715a8a9e7dc4c4470ce5412",
+            "bytes": 1169944
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "mixed-notion-url",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "ba9188bb-79e5-4ab8-bf38-c731f35a8fd8",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "9141f95e1e8ee197765be878c1052c401458892f86ed6272b7f28d9b9f21a27b",
+          "bytes": 1131146
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "ba9188bb-79e5-4ab8-bf38-c731f35a8fd8-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "02493843f7d57c09fef55ac0681f1356ed78f3af2e5fd05edb46113db63e45a7",
+              "bytes": 3907
+            },
+            "selected": {
+              "sha256": "02493843f7d57c09fef55ac0681f1356ed78f3af2e5fd05edb46113db63e45a7",
+              "bytes": 3907
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": null,
+      "history": [
+        {
+          "runId": "e3cf5e1e-f705-4052-b1f3-b1747fa826ea",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "208d223104b5a98840be87a531390b5cb8a38de0",
+              "dirty": false,
+              "treeSha256": "bf3a21e9912c2dc91ec68eb56b30f45a182de18c7e61a9a1bf1bb47ce7502029"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "09410c7b6443b3a138b2113c6ee6095dfef69766ac904a3f251d4545658460f1",
+            "bytes": 1242681
+          }
+        },
+        {
+          "runId": "ba9188bb-79e5-4ab8-bf38-c731f35a8fd8",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "9141f95e1e8ee197765be878c1052c401458892f86ed6272b7f28d9b9f21a27b",
+            "bytes": 1131146
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "mixed-notion-url",
+      "profile": "no-native-skills",
+      "status": "covered-original",
+      "selected": {
+        "runId": "fb950618-5a25-4a7c-91c0-9bf80df21798",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "2153c28d48776238399533e1144a56942aa4090aa8ff32b0907662886f1c6038",
+          "bytes": 997057
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "fb950618-5a25-4a7c-91c0-9bf80df21798-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "0d99ed1219386458ab2d2a5f297dbb7c96f6b8ee607943cc7e746adf23fc1e94",
+              "bytes": 3940
+            },
+            "selected": {
+              "sha256": "0d99ed1219386458ab2d2a5f297dbb7c96f6b8ee607943cc7e746adf23fc1e94",
+              "bytes": 3940
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": null,
+      "history": [
+        {
+          "runId": "5bd1a6a5-ad47-43df-8dbb-309dadbe9031",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "43063c019b0bab497916ca0e62a399d6e04ed349",
+              "dirty": false,
+              "treeSha256": "a6af37d1a02fcc79a25a49221b9f41aee0dfc5b627d10b7ac38eb5f25399dfe6"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "1980382397d2d7bc17433364f10b6676076a6f71cc849eae42ec125b67b031fc",
+            "bytes": 923582
+          }
+        },
+        {
+          "runId": "fb950618-5a25-4a7c-91c0-9bf80df21798",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "2153c28d48776238399533e1144a56942aa4090aa8ff32b0907662886f1c6038",
+            "bytes": 997057
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "mixed-ambiguous-source",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "786040f4-9f35-40eb-93e1-2bc8d2c83d10",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "5605d2d67e00c90cd059dda6e29d6eaa94871e2c8905bdaac5a26ec99b824ca9",
+          "bytes": 2435224
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "786040f4-9f35-40eb-93e1-2bc8d2c83d10-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "6973adfbaf03874a45c704e3cc9c05eced5191c247ecea6e17ec02b482a30067",
+              "bytes": 3988
+            },
+            "selected": {
+              "sha256": "6973adfbaf03874a45c704e3cc9c05eced5191c247ecea6e17ec02b482a30067",
+              "bytes": 3988
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "842feda2-fda1-4495-9390-48c5be4452fb",
+      "history": [
+        {
+          "runId": "842feda2-fda1-4495-9390-48c5be4452fb",
+          "status": "failed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "43063c019b0bab497916ca0e62a399d6e04ed349",
+              "dirty": false,
+              "treeSha256": "a6af37d1a02fcc79a25a49221b9f41aee0dfc5b627d10b7ac38eb5f25399dfe6"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "130dd754664286eb69fe8fc259a6f0005a6587e148ff8fc2bddda4504bcf392a",
+            "bytes": 1693893
+          }
+        },
+        {
+          "runId": "26489391-3e0c-4546-9fc4-a4e3fda645c9",
+          "status": "failed",
+          "retestOf": "842feda2-fda1-4495-9390-48c5be4452fb",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "abd07da2f4b85b00e255f3d076686a1d449e17df",
+              "dirty": false,
+              "treeSha256": "e69abc8678507892a037334d85e04737a5c84662ba96f2891464de79c760b43a"
+            },
+            {
+              "repository": "cli",
+              "commit": "78165f022541959c06aaf8d81dda10df375155e9",
+              "dirty": false,
+              "treeSha256": "b44abe8e4f9368ff03b5d60b68542176b947c0a6174aeb5c7eae195fd01f76f2"
+            }
+          ],
+          "result": {
+            "sha256": "f82119ce70e2029949f5ef7c114011448221b814b566c98b892287334c3a100d",
+            "bytes": 2098627
+          }
+        },
+        {
+          "runId": "786040f4-9f35-40eb-93e1-2bc8d2c83d10",
+          "status": "passed",
+          "retestOf": "26489391-3e0c-4546-9fc4-a4e3fda645c9",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "5605d2d67e00c90cd059dda6e29d6eaa94871e2c8905bdaac5a26ec99b824ca9",
+            "bytes": 2435224
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "mixed-resource-owner",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "5728cfea-bd26-481a-a23d-0c6a106611d8",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "7fe4ee7ff18098d49ffc0edc075debed0534c1a4d77fc9a573b843dae2f3ae55",
+          "bytes": 1357954
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "5728cfea-bd26-481a-a23d-0c6a106611d8-T06",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "10a2b6f90796de97e3a9bcd85caabaeea37fd7eb02ca54c8d207f8afa6889f3d",
+              "bytes": 3919
+            },
+            "selected": {
+              "sha256": "10a2b6f90796de97e3a9bcd85caabaeea37fd7eb02ca54c8d207f8afa6889f3d",
+              "bytes": 3919
+            }
+          },
+          {
+            "id": "5728cfea-bd26-481a-a23d-0c6a106611d8-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "4fc0917c3d54353a6c4e587a0094261a7ba5ac50fd8440c7ca77691cc8531c1e",
+              "bytes": 3919
+            },
+            "selected": {
+              "sha256": "4fc0917c3d54353a6c4e587a0094261a7ba5ac50fd8440c7ca77691cc8531c1e",
+              "bytes": 3919
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": null,
+      "history": [
+        {
+          "runId": "3228c19b-23ac-4f79-ae3e-585e146d5aba",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "43063c019b0bab497916ca0e62a399d6e04ed349",
+              "dirty": false,
+              "treeSha256": "a6af37d1a02fcc79a25a49221b9f41aee0dfc5b627d10b7ac38eb5f25399dfe6"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "79b10260a78944ab6a3daf2cae5161a990a4ed086b593e340956ca26e25708d2",
+            "bytes": 1307725
+          }
+        },
+        {
+          "runId": "5728cfea-bd26-481a-a23d-0c6a106611d8",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "7fe4ee7ff18098d49ffc0edc075debed0534c1a4d77fc9a573b843dae2f3ae55",
+            "bytes": 1357954
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "mixed-resource-owner",
+      "profile": "no-native-skills",
+      "status": "covered-original",
+      "selected": {
+        "runId": "29c84f4f-e93e-4422-bed0-d9552fcf4db5",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "f3486af1a98cc9eeff82b42d87b1b3db0f473097f7e218881404aaf2fba16e56",
+          "bytes": 1209650
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "29c84f4f-e93e-4422-bed0-d9552fcf4db5-T06",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "4ac53bf563c036cccfca3afadd76ceb782752ec6279c7138d42e562917c5f0e8",
+              "bytes": 3952
+            },
+            "selected": {
+              "sha256": "4ac53bf563c036cccfca3afadd76ceb782752ec6279c7138d42e562917c5f0e8",
+              "bytes": 3952
+            }
+          },
+          {
+            "id": "29c84f4f-e93e-4422-bed0-d9552fcf4db5-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "35828b80043e248a07505ff1f8c9e74099c99070baf00242cc5628152146895d",
+              "bytes": 3952
+            },
+            "selected": {
+              "sha256": "35828b80043e248a07505ff1f8c9e74099c99070baf00242cc5628152146895d",
+              "bytes": 3952
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": null,
+      "history": [
+        {
+          "runId": "25abf501-de53-4838-8790-f7ecc422f25d",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "43063c019b0bab497916ca0e62a399d6e04ed349",
+              "dirty": false,
+              "treeSha256": "a6af37d1a02fcc79a25a49221b9f41aee0dfc5b627d10b7ac38eb5f25399dfe6"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "d526471d0102a50653fee16bb296f47d86d36b03cc67c345748d7bff2686465c",
+            "bytes": 1132599
+          }
+        },
+        {
+          "runId": "29c84f4f-e93e-4422-bed0-d9552fcf4db5",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "f3486af1a98cc9eeff82b42d87b1b3db0f473097f7e218881404aaf2fba16e56",
+            "bytes": 1209650
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "mixed-native-slash",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "05c8c5ce-0870-4b9a-a1a9-7035cd9d4c1d",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "979fb37e4a1163e93fa6d65ae84ac109a2d490da2fc042fed3f262a3b3425ea7",
+          "bytes": 920213
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "05c8c5ce-0870-4b9a-a1a9-7035cd9d4c1d-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "c4781b1570eb83e77f8c6fdd28587677bd3232d5b99ee551091b9e0023230851",
+              "bytes": 3913
+            },
+            "selected": {
+              "sha256": "c4781b1570eb83e77f8c6fdd28587677bd3232d5b99ee551091b9e0023230851",
+              "bytes": 3913
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": null,
+      "history": [
+        {
+          "runId": "602efbff-4a19-458f-9e89-27adcae2f163",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "43063c019b0bab497916ca0e62a399d6e04ed349",
+              "dirty": false,
+              "treeSha256": "a6af37d1a02fcc79a25a49221b9f41aee0dfc5b627d10b7ac38eb5f25399dfe6"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "1ac8fa9571b3e1cb867d3b45e2830d058b27150855f4799dcaf94bb5d9e007ba",
+            "bytes": 856536
+          }
+        },
+        {
+          "runId": "05c8c5ce-0870-4b9a-a1a9-7035cd9d4c1d",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "979fb37e4a1163e93fa6d65ae84ac109a2d490da2fc042fed3f262a3b3425ea7",
+            "bytes": 920213
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "mixed-broker-explicit",
+      "profile": "daily",
+      "status": "covered-reanalysis",
+      "selected": {
+        "runId": "58ae3d1b-eaa9-4a15-a194-df741be2764a",
+        "originalStatus": "blocked",
+        "interpretation": "independent-reanalysis",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "f2cbffa2aa552495868ac83d9280c6d60e352e026c4f1d2791be5db364a11590",
+          "bytes": 1058496
+        },
+        "reanalysis": {
+          "sha256": "11b1b21aed4362d99892621135c0a5a0beebee0d9293cf22d799dc7051a44313",
+          "bytes": 1323354
+        },
+        "receipts": [
+          {
+            "id": "58ae3d1b-eaa9-4a15-a194-df741be2764a-T22",
+            "originalStatus": "blocked",
+            "selectedStatus": "passed",
+            "interpretation": "revised",
+            "original": {
+              "sha256": "fa63eb46a048c3b8eeac87161ef38283a7741271518f1efb7ed35d3b14a432f8",
+              "bytes": 3994
+            },
+            "selected": {
+              "sha256": "c0d0cf57b6cbf3a0f0a8a42cd74183f988e9b7430f1547634219bf7749d97569",
+              "bytes": 4891
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "58ae3d1b-eaa9-4a15-a194-df741be2764a",
+      "history": [
+        {
+          "runId": "20f8dc89-7458-417c-939b-7edba8f6bcbe",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "43063c019b0bab497916ca0e62a399d6e04ed349",
+              "dirty": false,
+              "treeSha256": "a6af37d1a02fcc79a25a49221b9f41aee0dfc5b627d10b7ac38eb5f25399dfe6"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "4ebe3727bd607c313d3ef1baa193eec0ab47d78ea5bae458291fc1bb86706e18",
+            "bytes": 990414
+          }
+        },
+        {
+          "runId": "58ae3d1b-eaa9-4a15-a194-df741be2764a",
+          "status": "blocked",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "f2cbffa2aa552495868ac83d9280c6d60e352e026c4f1d2791be5db364a11590",
+            "bytes": 1058496
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "mixed-broker-explicit",
+      "profile": "no-native-skills",
+      "status": "covered-reanalysis",
+      "selected": {
+        "runId": "b86ec8ee-1b09-4ac6-a7f3-046a4e49b837",
+        "originalStatus": "blocked",
+        "interpretation": "independent-reanalysis",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "eff9e7a60daeb109fc4fbd3131c81fcf7e2264c7dda14f6b17579bcfb64f6158",
+          "bytes": 937601
+        },
+        "reanalysis": {
+          "sha256": "11b1b21aed4362d99892621135c0a5a0beebee0d9293cf22d799dc7051a44313",
+          "bytes": 1323354
+        },
+        "receipts": [
+          {
+            "id": "b86ec8ee-1b09-4ac6-a7f3-046a4e49b837-T22",
+            "originalStatus": "blocked",
+            "selectedStatus": "passed",
+            "interpretation": "revised",
+            "original": {
+              "sha256": "a53ba6921626c18452175ee1d5fc9807386b524958939cf55e4e8cc19e75d71f",
+              "bytes": 4028
+            },
+            "selected": {
+              "sha256": "9a353f230936b27f265b1cb9ec0ed4b4598cdad0e6750fa201d739d0bafe0fb4",
+              "bytes": 4936
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "b86ec8ee-1b09-4ac6-a7f3-046a4e49b837",
+      "history": [
+        {
+          "runId": "6777cf6c-b177-433e-983d-ac9ac25b5a34",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "43063c019b0bab497916ca0e62a399d6e04ed349",
+              "dirty": false,
+              "treeSha256": "a6af37d1a02fcc79a25a49221b9f41aee0dfc5b627d10b7ac38eb5f25399dfe6"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "dfce021f00a75dda253742424a81f494cdcfe07b34d22cfddfbe0942262b8b45",
+            "bytes": 866503
+          }
+        },
+        {
+          "runId": "b86ec8ee-1b09-4ac6-a7f3-046a4e49b837",
+          "status": "blocked",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "eff9e7a60daeb109fc4fbd3131c81fcf7e2264c7dda14f6b17579bcfb64f6158",
+            "bytes": 937601
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "mixed-pending-local",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "a1454863-903b-4a37-8b6f-7adc077af554",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "3c5c45ee7eb450d3b8921eb2d0456125a689a302a2908f21416b874a32696af9",
+          "bytes": 427782
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "a1454863-903b-4a37-8b6f-7adc077af554-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "ac82fc197b375b879cf9113d218baf5e72a0eb8eb59d3a820cfc15fb0ecd751d",
+              "bytes": 3917
+            },
+            "selected": {
+              "sha256": "ac82fc197b375b879cf9113d218baf5e72a0eb8eb59d3a820cfc15fb0ecd751d",
+              "bytes": 3917
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "1e604d9a-27d9-4af5-9aa5-877049546a34",
+      "history": [
+        {
+          "runId": "1e604d9a-27d9-4af5-9aa5-877049546a34",
+          "status": "failed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "76cf3c9b14e937c4150bc9dee416ec4621cfda89",
+              "dirty": false,
+              "treeSha256": "c694d12f5c9729f1b6cb79e64e2d2fca87474e839e1cafda6f09af4296d3f019"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "8ad0513a651d7484efb4e74ca893dfd7791a03dc3291c071dda1b7a1fca6e42e",
+            "bytes": 414996
+          }
+        },
+        {
+          "runId": "167ecda7-2d75-40f4-b816-1e896a4b0031",
+          "status": "passed",
+          "retestOf": "1e604d9a-27d9-4af5-9aa5-877049546a34",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "bbd88eff21d3ca69fd8d822d3cfe26917a4b51b5",
+              "dirty": false,
+              "treeSha256": "91db7b205589550ee1cc332bc4d908b51c10071928130dffbda06bb54e5e4791"
+            },
+            {
+              "repository": "cli",
+              "commit": "78165f022541959c06aaf8d81dda10df375155e9",
+              "dirty": false,
+              "treeSha256": "b44abe8e4f9368ff03b5d60b68542176b947c0a6174aeb5c7eae195fd01f76f2"
+            }
+          ],
+          "result": {
+            "sha256": "1ad8de390f7be713d117acd078bf0e2b52337a546c6cb383cf22d473958b32cf",
+            "bytes": 422470
+          }
+        },
+        {
+          "runId": "a1454863-903b-4a37-8b6f-7adc077af554",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "3c5c45ee7eb450d3b8921eb2d0456125a689a302a2908f21416b874a32696af9",
+            "bytes": 427782
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "mixed-unavailable-local",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "4a3e7bb4-f86f-44bd-9aa8-5cc11613f860",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "ea259dd59ecf00f1d6bbd28195dc1b54700442ddc7bbb34822998ddf1bbeda8c",
+          "bytes": 444123
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "4a3e7bb4-f86f-44bd-9aa8-5cc11613f860-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "004efb94f8bdfae152dfc64af12ad5bd2ab559fe3898086a54571245d3d9eefb",
+              "bytes": 3929
+            },
+            "selected": {
+              "sha256": "004efb94f8bdfae152dfc64af12ad5bd2ab559fe3898086a54571245d3d9eefb",
+              "bytes": 3929
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": null,
+      "history": [
+        {
+          "runId": "5615b7f6-efe5-4eef-9a51-e79a9eb9788e",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "76cf3c9b14e937c4150bc9dee416ec4621cfda89",
+              "dirty": false,
+              "treeSha256": "c694d12f5c9729f1b6cb79e64e2d2fca87474e839e1cafda6f09af4296d3f019"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "fe43efd7bb1e6e740af131d726b166a7531993cfc4e9a06f39f51b678e6511b6",
+            "bytes": 415475
+          }
+        },
+        {
+          "runId": "4a3e7bb4-f86f-44bd-9aa8-5cc11613f860",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "ea259dd59ecf00f1d6bbd28195dc1b54700442ddc7bbb34822998ddf1bbeda8c",
+            "bytes": 444123
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "mixed-unavailable-required-remote",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "c885d52f-6d20-4f35-b3c4-1a9e14b67af4",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "5018e20da078c9c1529a531415ff62ac3b87136028ba0eb2a16c463e1519f3d5",
+          "bytes": 488272
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "c885d52f-6d20-4f35-b3c4-1a9e14b67af4-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "4ce303b00dea2e18a8fdb858e33a34de96e80e95c9f9cbd158d159c60b9150ec",
+              "bytes": 3959
+            },
+            "selected": {
+              "sha256": "4ce303b00dea2e18a8fdb858e33a34de96e80e95c9f9cbd158d159c60b9150ec",
+              "bytes": 3959
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": null,
+      "history": [
+        {
+          "runId": "02271c03-8de9-43d9-af8d-16f1346eb87e",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "76cf3c9b14e937c4150bc9dee416ec4621cfda89",
+              "dirty": false,
+              "treeSha256": "c694d12f5c9729f1b6cb79e64e2d2fca87474e839e1cafda6f09af4296d3f019"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "2b6ba665f8dc1e4705553274c6981ef66fb2da054a6159a844991bf8fe493e83",
+            "bytes": 457443
+          }
+        },
+        {
+          "runId": "c885d52f-6d20-4f35-b3c4-1a9e14b67af4",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "5018e20da078c9c1529a531415ff62ac3b87136028ba0eb2a16c463e1519f3d5",
+            "bytes": 488272
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "mixed-unavailable-required-remote",
+      "profile": "no-native-skills",
+      "status": "covered-original",
+      "selected": {
+        "runId": "60b54e4f-5a48-463d-8d67-8f5486cca4a5",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "2ae8c9e31e53d1c2ff712d825376b96b851910da9b0a70193b791d2677e4bac2",
+          "bytes": 352145
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "60b54e4f-5a48-463d-8d67-8f5486cca4a5-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "8149b6da3d034baf381dc1e7cfbf436af8694b2b08074068378a6ec4835ffcdf",
+              "bytes": 3992
+            },
+            "selected": {
+              "sha256": "8149b6da3d034baf381dc1e7cfbf436af8694b2b08074068378a6ec4835ffcdf",
+              "bytes": 3992
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": null,
+      "history": [
+        {
+          "runId": "0674a0c8-8e7a-4920-b686-9da38b746931",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "abd07da2f4b85b00e255f3d076686a1d449e17df",
+              "dirty": false,
+              "treeSha256": "e69abc8678507892a037334d85e04737a5c84662ba96f2891464de79c760b43a"
+            },
+            {
+              "repository": "cli",
+              "commit": "78165f022541959c06aaf8d81dda10df375155e9",
+              "dirty": false,
+              "treeSha256": "b44abe8e4f9368ff03b5d60b68542176b947c0a6174aeb5c7eae195fd01f76f2"
+            }
+          ],
+          "result": {
+            "sha256": "05cf6f78735e9ce8494b8f0dfd691577d0211e3a36975164d254651234812baf",
+            "bytes": 340149
+          }
+        },
+        {
+          "runId": "60b54e4f-5a48-463d-8d67-8f5486cca4a5",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "2ae8c9e31e53d1c2ff712d825376b96b851910da9b0a70193b791d2677e4bac2",
+            "bytes": 352145
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "mixed-semantic-fit",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "29d3cccc-4348-4ae3-8fcd-89525440af6c",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "ff4f97a4587db8969c2bee3f9c7c45087332fcb5",
+            "dirty": false,
+            "treeSha256": "89efde6d0131d3d54b91bef486acb46b2f019d9af4272d2b5afd29860cf041b5"
+          },
+          {
+            "repository": "cli",
+            "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+            "dirty": false,
+            "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+          }
+        ],
+        "result": {
+          "sha256": "2470a72ec3308580436ac8a3cf518ca5d919eb2a4b9c7da96352e07f53177235",
+          "bytes": 1265345
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "29d3cccc-4348-4ae3-8fcd-89525440af6c-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "7c7c570efdf0893e8b34f2e22c11ff3d39b9b56c33ac75ac4002ccf3118a20f6",
+              "bytes": 3955
+            },
+            "selected": {
+              "sha256": "7c7c570efdf0893e8b34f2e22c11ff3d39b9b56c33ac75ac4002ccf3118a20f6",
+              "bytes": 3955
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "6fa71eeb-12c9-4e77-8a72-9d5554c6d083",
+      "history": [
+        {
+          "runId": "6fa71eeb-12c9-4e77-8a72-9d5554c6d083",
+          "status": "blocked",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "43063c019b0bab497916ca0e62a399d6e04ed349",
+              "dirty": false,
+              "treeSha256": "a6af37d1a02fcc79a25a49221b9f41aee0dfc5b627d10b7ac38eb5f25399dfe6"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "de3852974bbc4786b878f8042814f7d1dd05b70c8c849b4b45514b4df5e71a50",
+            "bytes": 1490197
+          }
+        },
+        {
+          "runId": "29d3cccc-4348-4ae3-8fcd-89525440af6c",
+          "status": "passed",
+          "retestOf": "6fa71eeb-12c9-4e77-8a72-9d5554c6d083",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "ff4f97a4587db8969c2bee3f9c7c45087332fcb5",
+              "dirty": false,
+              "treeSha256": "89efde6d0131d3d54b91bef486acb46b2f019d9af4272d2b5afd29860cf041b5"
+            },
+            {
+              "repository": "cli",
+              "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+              "dirty": false,
+              "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+            }
+          ],
+          "result": {
+            "sha256": "2470a72ec3308580436ac8a3cf518ca5d919eb2a4b9c7da96352e07f53177235",
+            "bytes": 1265345
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "mixed-equivalent-copies",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "71380cf1-2ceb-46b5-91ae-0bf78d7877dd",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "1ecf22a63e79995de8efc8112b2165eee8a564b86fad82ae0db9648aba2cff3a",
+          "bytes": 800265
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "71380cf1-2ceb-46b5-91ae-0bf78d7877dd-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "0a70d66f3f7ad2d5b1ec07f19055a4c825ff0ecaf49f4064085e48293d391cb9",
+              "bytes": 3929
+            },
+            "selected": {
+              "sha256": "0a70d66f3f7ad2d5b1ec07f19055a4c825ff0ecaf49f4064085e48293d391cb9",
+              "bytes": 3929
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": null,
+      "history": [
+        {
+          "runId": "070c8708-0a4e-42ea-b3e7-7d4f5147def9",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "43063c019b0bab497916ca0e62a399d6e04ed349",
+              "dirty": false,
+              "treeSha256": "a6af37d1a02fcc79a25a49221b9f41aee0dfc5b627d10b7ac38eb5f25399dfe6"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "cd922c9b5b54629e57f527f58078ee4eb1808723b8022a282ae84cb042d6398d",
+            "bytes": 715667
+          }
+        },
+        {
+          "runId": "71380cf1-2ceb-46b5-91ae-0bf78d7877dd",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "1ecf22a63e79995de8efc8112b2165eee8a564b86fad82ae0db9648aba2cff3a",
+            "bytes": 800265
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "mixed-complementary",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "9123309c-ab87-4700-b4e4-5397b1fecdff",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "fb87f8743e9c0e3cf31e7c7c3a5c5d0d0f250b66a45d760139625b12a5cc45a4",
+          "bytes": 1467845
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "9123309c-ab87-4700-b4e4-5397b1fecdff-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "cb1d976d054253f0e548a84f5dda872af30bacdd26827b0af38b67e6ba79b1fa",
+              "bytes": 3917
+            },
+            "selected": {
+              "sha256": "cb1d976d054253f0e548a84f5dda872af30bacdd26827b0af38b67e6ba79b1fa",
+              "bytes": 3917
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": null,
+      "history": [
+        {
+          "runId": "2d95647e-abfb-4c32-aada-57dcabc512d3",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "43063c019b0bab497916ca0e62a399d6e04ed349",
+              "dirty": false,
+              "treeSha256": "a6af37d1a02fcc79a25a49221b9f41aee0dfc5b627d10b7ac38eb5f25399dfe6"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "24f707029b4ecac5304a3d537c95ef2c4f4a321eeec816476851b0161442ac54",
+            "bytes": 1329493
+          }
+        },
+        {
+          "runId": "9123309c-ab87-4700-b4e4-5397b1fecdff",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "fb87f8743e9c0e3cf31e7c7c3a5c5d0d0f250b66a45d760139625b12a5cc45a4",
+            "bytes": 1467845
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "cold-maintenance-consultation",
+      "profile": "daily",
+      "status": "covered-reanalysis",
+      "selected": {
+        "runId": "74a87fdf-3122-4a17-956f-27073ea92f39",
+        "originalStatus": "blocked",
+        "interpretation": "independent-reanalysis",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "4db44ad62592476adffa6c77053be9b334fee592",
+            "dirty": false,
+            "treeSha256": "810a8a7a9754fc17bcfe3af168f88e5b1664dbe6aea8263d9f64a422c0cd0ad1"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "d24669ebf7acff66b9db21d48215c0758d247a983c874dfcaf39f39f1fef5b27",
+          "bytes": 1469693
+        },
+        "reanalysis": {
+          "sha256": "64d5ce4a9485ddfdd9133f37dd89575c094e8e0d4472dcc52fcc564b71e7e777",
+          "bytes": 1799949
+        },
+        "receipts": [
+          {
+            "id": "74a87fdf-3122-4a17-956f-27073ea92f39-T22",
+            "originalStatus": "blocked",
+            "selectedStatus": "passed",
+            "interpretation": "revised",
+            "original": {
+              "sha256": "4a16f94f8c54d66d338af236a671da8411bad03ce6f43bb7e08c5cdb39d714c9",
+              "bytes": 3978
+            },
+            "selected": {
+              "sha256": "0bcd9eb7858b868457a43787ac06a4ad45739382d3c786392e678db336fae050",
+              "bytes": 4854
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "74a87fdf-3122-4a17-956f-27073ea92f39",
+      "history": [
+        {
+          "runId": "74a87fdf-3122-4a17-956f-27073ea92f39",
+          "status": "blocked",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "4db44ad62592476adffa6c77053be9b334fee592",
+              "dirty": false,
+              "treeSha256": "810a8a7a9754fc17bcfe3af168f88e5b1664dbe6aea8263d9f64a422c0cd0ad1"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "d24669ebf7acff66b9db21d48215c0758d247a983c874dfcaf39f39f1fef5b27",
+            "bytes": 1469693
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "cold-maintenance-consultation",
+      "profile": "no-native-skills",
+      "status": "covered-reanalysis",
+      "selected": {
+        "runId": "d2ab7936-719a-40c8-b9da-e0df91a61974",
+        "originalStatus": "failed",
+        "interpretation": "independent-reanalysis",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "4db44ad62592476adffa6c77053be9b334fee592",
+            "dirty": false,
+            "treeSha256": "810a8a7a9754fc17bcfe3af168f88e5b1664dbe6aea8263d9f64a422c0cd0ad1"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "53d5361f5efab240a3449ca28481131a5382962b50c9d1b4333424876436b92d",
+          "bytes": 1653308
+        },
+        "reanalysis": {
+          "sha256": "64d5ce4a9485ddfdd9133f37dd89575c094e8e0d4472dcc52fcc564b71e7e777",
+          "bytes": 1799949
+        },
+        "receipts": [
+          {
+            "id": "d2ab7936-719a-40c8-b9da-e0df91a61974-T22",
+            "originalStatus": "failed",
+            "selectedStatus": "passed",
+            "interpretation": "revised",
+            "original": {
+              "sha256": "816bb2c4f27a0faa11c18eca07aedba865b6470d4b32d356f11b2ce18d9d52c6",
+              "bytes": 4010
+            },
+            "selected": {
+              "sha256": "a99e287f5dc94ceceb50a3940981403776e4c237974dcd0d03fa3b0d110a5e80",
+              "bytes": 4898
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "d2ab7936-719a-40c8-b9da-e0df91a61974",
+      "history": [
+        {
+          "runId": "d2ab7936-719a-40c8-b9da-e0df91a61974",
+          "status": "failed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "4db44ad62592476adffa6c77053be9b334fee592",
+              "dirty": false,
+              "treeSha256": "810a8a7a9754fc17bcfe3af168f88e5b1664dbe6aea8263d9f64a422c0cd0ad1"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "53d5361f5efab240a3449ca28481131a5382962b50c9d1b4333424876436b92d",
+            "bytes": 1653308
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "connected-maintenance-filtered-view",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "63262cfd-1116-4c47-9984-f2a9fdfed0ec",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "303d3e2a1359107a30e17be4ffeb79407e88e1fc",
+            "dirty": false,
+            "treeSha256": "98f287d001e577a95f9033c0d32fbd21efeb4e181dca94a4e9e035c630d20ffe"
+          },
+          {
+            "repository": "cli",
+            "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+            "dirty": false,
+            "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+          }
+        ],
+        "result": {
+          "sha256": "83bdfec581c18284beec65f4c0b98a338b9f7482822d7a3ba992b382b9db7760",
+          "bytes": 771665
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "63262cfd-1116-4c47-9984-f2a9fdfed0ec-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "3a36e5ea3f51c75fa349f12e57edbd0f12c79063656f49afd3e409b000156a7c",
+              "bytes": 4058
+            },
+            "selected": {
+              "sha256": "3a36e5ea3f51c75fa349f12e57edbd0f12c79063656f49afd3e409b000156a7c",
+              "bytes": 4058
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "9b34b0ec-1793-47e6-adc4-d25f9f5d3812",
+      "history": [
+        {
+          "runId": "9b34b0ec-1793-47e6-adc4-d25f9f5d3812",
+          "status": "failed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "5ba0c6276f150f0663038a78be0e61be52b7d4abeb1810eff9655ac9b64eb57b",
+            "bytes": 869692
+          }
+        },
+        {
+          "runId": "63262cfd-1116-4c47-9984-f2a9fdfed0ec",
+          "status": "passed",
+          "retestOf": "9b34b0ec-1793-47e6-adc4-d25f9f5d3812",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "303d3e2a1359107a30e17be4ffeb79407e88e1fc",
+              "dirty": false,
+              "treeSha256": "98f287d001e577a95f9033c0d32fbd21efeb4e181dca94a4e9e035c630d20ffe"
+            },
+            {
+              "repository": "cli",
+              "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+              "dirty": false,
+              "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+            }
+          ],
+          "result": {
+            "sha256": "83bdfec581c18284beec65f4c0b98a338b9f7482822d7a3ba992b382b9db7760",
+            "bytes": 771665
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "connected-maintenance-filtered-view",
+      "profile": "no-native-skills",
+      "status": "covered-reanalysis",
+      "selected": {
+        "runId": "85a65ef2-387c-4d69-a332-bf4129bd5881",
+        "originalStatus": "failed",
+        "interpretation": "independent-reanalysis",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "303d3e2a1359107a30e17be4ffeb79407e88e1fc",
+            "dirty": false,
+            "treeSha256": "98f287d001e577a95f9033c0d32fbd21efeb4e181dca94a4e9e035c630d20ffe"
+          },
+          {
+            "repository": "cli",
+            "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+            "dirty": false,
+            "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+          }
+        ],
+        "result": {
+          "sha256": "311f9882a9adfd370dda24c03ad7ab6035c1121e221a1ceccc92e035150f86b8",
+          "bytes": 695079
+        },
+        "reanalysis": {
+          "sha256": "2ab165853e3c41b7348e7a08e45718fe9edf3b73c041e1b6d9a22092796d085d",
+          "bytes": 144811
+        },
+        "receipts": [
+          {
+            "id": "85a65ef2-387c-4d69-a332-bf4129bd5881-T22",
+            "originalStatus": "failed",
+            "selectedStatus": "passed",
+            "interpretation": "revised",
+            "original": {
+              "sha256": "ca893e74298d290b3bc0f214c7e490d3e2e0ebd2c15090cc4527960aefe42e70",
+              "bytes": 4162
+            },
+            "selected": {
+              "sha256": "a5e8b6324240eda44948627e3e71ef8d8db03d4b6afd37a5181ebfdbd049829c",
+              "bytes": 5350
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "74630caa-a2fd-4ae8-9d72-b343ed33346c",
+      "history": [
+        {
+          "runId": "74630caa-a2fd-4ae8-9d72-b343ed33346c",
+          "status": "failed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "d8925e6e8d08223f49bc9fc20e052852481cceacd883190ed430e09ad5721874",
+            "bytes": 694244
+          }
+        },
+        {
+          "runId": "85a65ef2-387c-4d69-a332-bf4129bd5881",
+          "status": "failed",
+          "retestOf": "74630caa-a2fd-4ae8-9d72-b343ed33346c",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "303d3e2a1359107a30e17be4ffeb79407e88e1fc",
+              "dirty": false,
+              "treeSha256": "98f287d001e577a95f9033c0d32fbd21efeb4e181dca94a4e9e035c630d20ffe"
+            },
+            {
+              "repository": "cli",
+              "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+              "dirty": false,
+              "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+            }
+          ],
+          "result": {
+            "sha256": "311f9882a9adfd370dda24c03ad7ab6035c1121e221a1ceccc92e035150f86b8",
+            "bytes": 695079
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "explicit-offline-bootstrap",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "8f151961-1351-408a-9ce0-a3c8fe3818db",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "4db44ad62592476adffa6c77053be9b334fee592",
+            "dirty": false,
+            "treeSha256": "810a8a7a9754fc17bcfe3af168f88e5b1664dbe6aea8263d9f64a422c0cd0ad1"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "fdb8c62190fc12f9c05004b483aa9884a8d355b2eac5eb7786afab2e7fac631f",
+          "bytes": 615352
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "8f151961-1351-408a-9ce0-a3c8fe3818db-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "cee2f7b64f579a3b9dea936e7fcbfc955de29702781f190a52c224bd0057a2a4",
+              "bytes": 3897
+            },
+            "selected": {
+              "sha256": "cee2f7b64f579a3b9dea936e7fcbfc955de29702781f190a52c224bd0057a2a4",
+              "bytes": 3897
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "70c5c43a-77a6-4a45-b30a-b4a5bd2ed67b",
+      "history": [
+        {
+          "runId": "70c5c43a-77a6-4a45-b30a-b4a5bd2ed67b",
+          "status": "blocked",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "43063c019b0bab497916ca0e62a399d6e04ed349",
+              "dirty": false,
+              "treeSha256": "a6af37d1a02fcc79a25a49221b9f41aee0dfc5b627d10b7ac38eb5f25399dfe6"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "abf8b8cfd69e1b1df78fd2e18dd641c689aca56008234cc5d399fb3a767ab9c3",
+            "bytes": 1045839
+          }
+        },
+        {
+          "runId": "dff9f6dc-4c86-4e79-864c-e6a8fddba026",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "abd07da2f4b85b00e255f3d076686a1d449e17df",
+              "dirty": false,
+              "treeSha256": "e69abc8678507892a037334d85e04737a5c84662ba96f2891464de79c760b43a"
+            },
+            {
+              "repository": "cli",
+              "commit": "78165f022541959c06aaf8d81dda10df375155e9",
+              "dirty": false,
+              "treeSha256": "b44abe8e4f9368ff03b5d60b68542176b947c0a6174aeb5c7eae195fd01f76f2"
+            }
+          ],
+          "result": {
+            "sha256": "08bd9ded3ec8703f8ea5ad805861bc7377dec250ce42b1de84b298007ed24032",
+            "bytes": 600271
+          }
+        },
+        {
+          "runId": "8f151961-1351-408a-9ce0-a3c8fe3818db",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "4db44ad62592476adffa6c77053be9b334fee592",
+              "dirty": false,
+              "treeSha256": "810a8a7a9754fc17bcfe3af168f88e5b1664dbe6aea8263d9f64a422c0cd0ad1"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "fdb8c62190fc12f9c05004b483aa9884a8d355b2eac5eb7786afab2e7fac631f",
+            "bytes": 615352
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "lifecycle-inspect-adopt",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "f7225998-5044-42ab-bbca-18378ade93fd",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "7264bd4287809dbe56379c4244713184316e7ab4",
+            "dirty": false,
+            "treeSha256": "f824098f8bd141e787ac61b9b78704fa3a3bcbcc7f004ab8b0e84476d28327a2"
+          },
+          {
+            "repository": "cli",
+            "commit": "cce376ed2a1b83141b89e8492d1b0ae0c0bd082f",
+            "dirty": false,
+            "treeSha256": "60d9ade4cde4c98e8535a9fc789634df5f2ea8aa41ed6284e19cf71db4789357"
+          }
+        ],
+        "result": {
+          "sha256": "b308a87064fe6d21de24ce01ce455476459b111a25ccdc0ad5ced20f2ef5cee6",
+          "bytes": 4146049
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "f7225998-5044-42ab-bbca-18378ade93fd-T16",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "44cbd77ed6dec4479b9890a5dd22286d9175ad929e93de67cc8b6db3f3b8540f",
+              "bytes": 4017
+            },
+            "selected": {
+              "sha256": "44cbd77ed6dec4479b9890a5dd22286d9175ad929e93de67cc8b6db3f3b8540f",
+              "bytes": 4017
+            }
+          },
+          {
+            "id": "f7225998-5044-42ab-bbca-18378ade93fd-T17",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "d6067be72e7310a02dca8390d7c558dd5685a58394b75bbfe18f849a05945db5",
+              "bytes": 4006
+            },
+            "selected": {
+              "sha256": "d6067be72e7310a02dca8390d7c558dd5685a58394b75bbfe18f849a05945db5",
+              "bytes": 4006
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "1b3bbf20-b016-4b49-ae69-923f142b68ec",
+      "history": [
+        {
+          "runId": "1b3bbf20-b016-4b49-ae69-923f142b68ec",
+          "status": "failed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "208d223104b5a98840be87a531390b5cb8a38de0",
+              "dirty": false,
+              "treeSha256": "bf3a21e9912c2dc91ec68eb56b30f45a182de18c7e61a9a1bf1bb47ce7502029"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "bbf23dd3fbc0b5983aa18e46e88921592d03277d06b6111522305afa41df0ae0",
+            "bytes": 81294
+          }
+        },
+        {
+          "runId": "74aa2cc0-4ac5-448c-b5fc-a8c602163dab",
+          "status": "failed",
+          "retestOf": "1b3bbf20-b016-4b49-ae69-923f142b68ec",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "43063c019b0bab497916ca0e62a399d6e04ed349",
+              "dirty": false,
+              "treeSha256": "a6af37d1a02fcc79a25a49221b9f41aee0dfc5b627d10b7ac38eb5f25399dfe6"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "8a489a4bfae44c31194c9f5f9d0b97ddd31bd4ec9419ac21e6467be8f5a4043a",
+            "bytes": 4397568
+          }
+        },
+        {
+          "runId": "aa56f9b4-4f4e-4fcb-823a-1846e18f8dfe",
+          "status": "passed",
+          "retestOf": "74aa2cc0-4ac5-448c-b5fc-a8c602163dab",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "f89069cdc89655b6034e4be08a4f9900404fb5acfd9ec69bfa2d3e3f3d99d8a1",
+            "bytes": 4519677
+          }
+        },
+        {
+          "runId": "f7225998-5044-42ab-bbca-18378ade93fd",
+          "status": "passed",
+          "retestOf": "aa56f9b4-4f4e-4fcb-823a-1846e18f8dfe",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "7264bd4287809dbe56379c4244713184316e7ab4",
+              "dirty": false,
+              "treeSha256": "f824098f8bd141e787ac61b9b78704fa3a3bcbcc7f004ab8b0e84476d28327a2"
+            },
+            {
+              "repository": "cli",
+              "commit": "cce376ed2a1b83141b89e8492d1b0ae0c0bd082f",
+              "dirty": false,
+              "treeSha256": "60d9ade4cde4c98e8535a9fc789634df5f2ea8aa41ed6284e19cf71db4789357"
+            }
+          ],
+          "result": {
+            "sha256": "b308a87064fe6d21de24ce01ce455476459b111a25ccdc0ad5ced20f2ef5cee6",
+            "bytes": 4146049
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "lifecycle-inspect-adopt",
+      "profile": "no-native-skills",
+      "status": "covered-original",
+      "selected": {
+        "runId": "e2b3b215-1319-428a-9450-8385a5e10bc2",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "3f5a810e9392c3425b146d757ea0e0725f864014cb2be4ef95dfdae15bf34d5b",
+          "bytes": 4021407
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "e2b3b215-1319-428a-9450-8385a5e10bc2-T16",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "54ca3adc916313aa61346866fe04b35c1cbcd14e16f8bedd44687f6a3901f323",
+              "bytes": 4034
+            },
+            "selected": {
+              "sha256": "54ca3adc916313aa61346866fe04b35c1cbcd14e16f8bedd44687f6a3901f323",
+              "bytes": 4034
+            }
+          },
+          {
+            "id": "e2b3b215-1319-428a-9450-8385a5e10bc2-T17",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "85824167067aeb5ae1cfc96a1a3670a161faf03656deaa51a015936ecd94623b",
+              "bytes": 4023
+            },
+            "selected": {
+              "sha256": "85824167067aeb5ae1cfc96a1a3670a161faf03656deaa51a015936ecd94623b",
+              "bytes": 4023
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "ad4cf294-1409-4ea9-9741-e9d5dcf3ec8b",
+      "history": [
+        {
+          "runId": "ad4cf294-1409-4ea9-9741-e9d5dcf3ec8b",
+          "status": "failed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "43063c019b0bab497916ca0e62a399d6e04ed349",
+              "dirty": false,
+              "treeSha256": "a6af37d1a02fcc79a25a49221b9f41aee0dfc5b627d10b7ac38eb5f25399dfe6"
+            },
+            {
+              "repository": "cli",
+              "commit": "414a9ec9ba63a12e4f604f04687984854a4c629e",
+              "dirty": false,
+              "treeSha256": "52bc8411e1a6bc2b2bf045c1c1e749a48c3e8bcabcee4f681b6f805143593e6f"
+            }
+          ],
+          "result": {
+            "sha256": "3d17a3e9f64995f169d9f6a9d90f9d0361d2499c6362cd297aa715ae67d1ebe3",
+            "bytes": 1148720
+          }
+        },
+        {
+          "runId": "e2b3b215-1319-428a-9450-8385a5e10bc2",
+          "status": "passed",
+          "retestOf": "ad4cf294-1409-4ea9-9741-e9d5dcf3ec8b",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "3f5a810e9392c3425b146d757ea0e0725f864014cb2be4ef95dfdae15bf34d5b",
+            "bytes": 4021407
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "lifecycle-source-switch",
+      "profile": "daily",
+      "status": "covered-reanalysis",
+      "selected": {
+        "runId": "e6c5a171-1a2d-40da-84a3-42224e026692",
+        "originalStatus": "blocked",
+        "interpretation": "independent-reanalysis",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "f7d683499ea2c581c3d07b16c2e80eaf041480c8bf0a4b78978b705d32bed71c",
+          "bytes": 2810698
+        },
+        "reanalysis": {
+          "sha256": "9ac4630ea52d0dfe28aeba9e11c0cb971cac4c18942bae6e9324c9c8258d069b",
+          "bytes": 2189400
+        },
+        "receipts": [
+          {
+            "id": "e6c5a171-1a2d-40da-84a3-42224e026692-T16",
+            "originalStatus": "blocked",
+            "selectedStatus": "passed",
+            "interpretation": "revised",
+            "original": {
+              "sha256": "3fe1a1ed261c27e21147237e76e0a5b101901cb272aacfba82749fa547ae1327",
+              "bytes": 4035
+            },
+            "selected": {
+              "sha256": "2bdec9787767e01c98b36954719bcbb262fb6087a63d1e3035bdb41da2114d4a",
+              "bytes": 4920
+            }
+          },
+          {
+            "id": "e6c5a171-1a2d-40da-84a3-42224e026692-T22",
+            "originalStatus": "blocked",
+            "selectedStatus": "passed",
+            "interpretation": "revised",
+            "original": {
+              "sha256": "8cec0adafbca52383a1c8b6fb09356f6b24758da233ed775f54fb51ccb3631f7",
+              "bytes": 4024
+            },
+            "selected": {
+              "sha256": "b3ff28d0e552d0c670cb46bad097629cc9610e9fdfd7529f6ea733d9b7b70169",
+              "bytes": 4909
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "e6c5a171-1a2d-40da-84a3-42224e026692",
+      "history": [
+        {
+          "runId": "e6c5a171-1a2d-40da-84a3-42224e026692",
+          "status": "blocked",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "f7d683499ea2c581c3d07b16c2e80eaf041480c8bf0a4b78978b705d32bed71c",
+            "bytes": 2810698
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "lifecycle-resume-fork-compact",
+      "profile": "daily",
+      "status": "covered-reanalysis",
+      "selected": {
+        "runId": "f3f4d2e5-fd45-4422-813c-c52d65f6a0aa",
+        "originalStatus": "blocked",
+        "interpretation": "independent-reanalysis",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "0e13f85a9bff1d2e85a8e935b5378524896fe714",
+            "dirty": false,
+            "treeSha256": "3cce33f0e51776ad489dcd8223864c0c01a309a1102b5324de4c53802311a240"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "e55d2fa35431ed32a1e1d3f735dfc204938dd1e7c33fafabb62512b7870d654d",
+          "bytes": 4573087
+        },
+        "reanalysis": {
+          "sha256": "bd6a6cea5142a2dd3dc9a4e30b680573560664f875e6d61aa223260ba1803529",
+          "bytes": 3379117
+        },
+        "receipts": [
+          {
+            "id": "f3f4d2e5-fd45-4422-813c-c52d65f6a0aa-T13",
+            "originalStatus": "blocked",
+            "selectedStatus": "passed",
+            "interpretation": "revised",
+            "original": {
+              "sha256": "af40bd60108387274f01ed2f68585375d46cf7f1cbc1bba33e851163a703d1e2",
+              "bytes": 4076
+            },
+            "selected": {
+              "sha256": "e1112a229ab7dbb870e54ef45ec086b1ddc984b52107a733ad0e27b0ab3d3510",
+              "bytes": 4974
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "dc875872-6d3f-4201-b397-ae594f9291cd",
+      "history": [
+        {
+          "runId": "dc875872-6d3f-4201-b397-ae594f9291cd",
+          "status": "failed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "74f55cb7d1bc0e1f49f4c7b7304d46ac1ed0c4be6c9d039d3aa4283f47faa63d",
+            "bytes": 2602789
+          }
+        },
+        {
+          "runId": "f3f4d2e5-fd45-4422-813c-c52d65f6a0aa",
+          "status": "blocked",
+          "retestOf": "dc875872-6d3f-4201-b397-ae594f9291cd",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "0e13f85a9bff1d2e85a8e935b5378524896fe714",
+              "dirty": false,
+              "treeSha256": "3cce33f0e51776ad489dcd8223864c0c01a309a1102b5324de4c53802311a240"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "e55d2fa35431ed32a1e1d3f735dfc204938dd1e7c33fafabb62512b7870d654d",
+            "bytes": 4573087
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "lifecycle-recovery-failure",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "cafdd825-93c3-427a-b54b-822b8ef849eb",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "303d3e2a1359107a30e17be4ffeb79407e88e1fc",
+            "dirty": false,
+            "treeSha256": "98f287d001e577a95f9033c0d32fbd21efeb4e181dca94a4e9e035c630d20ffe"
+          },
+          {
+            "repository": "cli",
+            "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+            "dirty": false,
+            "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+          }
+        ],
+        "result": {
+          "sha256": "0b54b84e794ad13d6c472ed015fac3edb937455607bd1eebf120ea25cc893780",
+          "bytes": 3497684
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "cafdd825-93c3-427a-b54b-822b8ef849eb-T18",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "24c565f7676ce6c66a49b34e9815242da4ba3937ff385cb1095362772e113b08",
+              "bytes": 4042
+            },
+            "selected": {
+              "sha256": "24c565f7676ce6c66a49b34e9815242da4ba3937ff385cb1095362772e113b08",
+              "bytes": 4042
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "dd572049-5059-4319-be73-3e8b9460ae03",
+      "history": [
+        {
+          "runId": "dd572049-5059-4319-be73-3e8b9460ae03",
+          "status": "failed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "98188463db8902e520d93c4bee54662d3a119f91661aaa894c79dd56812afe77",
+            "bytes": 1346402
+          }
+        },
+        {
+          "runId": "f3e1f6fd-c36c-44e0-898c-5d821628d29f",
+          "status": "failed",
+          "retestOf": "dd572049-5059-4319-be73-3e8b9460ae03",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "0e13f85a9bff1d2e85a8e935b5378524896fe714",
+              "dirty": false,
+              "treeSha256": "3cce33f0e51776ad489dcd8223864c0c01a309a1102b5324de4c53802311a240"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "89d6d4580debe624a7a19b94eaa7fcee0c24d64962f4fb59a3ade36c648b2f79",
+            "bytes": 3455045
+          }
+        },
+        {
+          "runId": "cafdd825-93c3-427a-b54b-822b8ef849eb",
+          "status": "passed",
+          "retestOf": "f3e1f6fd-c36c-44e0-898c-5d821628d29f",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "303d3e2a1359107a30e17be4ffeb79407e88e1fc",
+              "dirty": false,
+              "treeSha256": "98f287d001e577a95f9033c0d32fbd21efeb4e181dca94a4e9e035c630d20ffe"
+            },
+            {
+              "repository": "cli",
+              "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+              "dirty": false,
+              "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+            }
+          ],
+          "result": {
+            "sha256": "0b54b84e794ad13d6c472ed015fac3edb937455607bd1eebf120ea25cc893780",
+            "bytes": 3497684
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "lifecycle-shared-requires",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "87130baa-76b3-4730-add7-53b588f73a49",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "0e13f85a9bff1d2e85a8e935b5378524896fe714",
+            "dirty": false,
+            "treeSha256": "3cce33f0e51776ad489dcd8223864c0c01a309a1102b5324de4c53802311a240"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "7963cc413e1ff70fba835304da19adb774dc368bd30139e729cf03ebdac17779",
+          "bytes": 3712272
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "87130baa-76b3-4730-add7-53b588f73a49-T03",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "b8caa890ba2912e1067147539f1a2542ed8efd57094fb7135b094a8600398f1f",
+              "bytes": 3953
+            },
+            "selected": {
+              "sha256": "b8caa890ba2912e1067147539f1a2542ed8efd57094fb7135b094a8600398f1f",
+              "bytes": 3953
+            }
+          },
+          {
+            "id": "87130baa-76b3-4730-add7-53b588f73a49-T20",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "09ca48cb59c6a1a6a99de730d178fd82e0c24a6eeb99a94b85b7d3794074c342",
+              "bytes": 3953
+            },
+            "selected": {
+              "sha256": "09ca48cb59c6a1a6a99de730d178fd82e0c24a6eeb99a94b85b7d3794074c342",
+              "bytes": 3953
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": null,
+      "history": [
+        {
+          "runId": "87130baa-76b3-4730-add7-53b588f73a49",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "0e13f85a9bff1d2e85a8e935b5378524896fe714",
+              "dirty": false,
+              "treeSha256": "3cce33f0e51776ad489dcd8223864c0c01a309a1102b5324de4c53802311a240"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "7963cc413e1ff70fba835304da19adb774dc368bd30139e729cf03ebdac17779",
+            "bytes": 3712272
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "lifecycle-enabled-default-context",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "01e048b7-f449-4128-8811-36295457a157",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "303d3e2a1359107a30e17be4ffeb79407e88e1fc",
+            "dirty": false,
+            "treeSha256": "98f287d001e577a95f9033c0d32fbd21efeb4e181dca94a4e9e035c630d20ffe"
+          },
+          {
+            "repository": "cli",
+            "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+            "dirty": false,
+            "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+          }
+        ],
+        "result": {
+          "sha256": "b80dd86a7bce22181b938035b61cfd5f15871f05d013153e3838da20fe64e1f4",
+          "bytes": 5026226
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "01e048b7-f449-4128-8811-36295457a157-T19",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "17818ce3820e332af23f16fd21d89349104bbf64e4703df4e8244e14dc8f9be7",
+              "bytes": 4052
+            },
+            "selected": {
+              "sha256": "17818ce3820e332af23f16fd21d89349104bbf64e4703df4e8244e14dc8f9be7",
+              "bytes": 4052
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "43b94268-48fa-4c10-b8b3-0e73ba97a8ca",
+      "history": [
+        {
+          "runId": "43b94268-48fa-4c10-b8b3-0e73ba97a8ca",
+          "status": "blocked",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "0e13f85a9bff1d2e85a8e935b5378524896fe714",
+              "dirty": false,
+              "treeSha256": "3cce33f0e51776ad489dcd8223864c0c01a309a1102b5324de4c53802311a240"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "a6a70bb8ca5bd4ca0d8a3aeb736e9e2eff84e89555432b2b5409a32cca1be56d",
+            "bytes": 5619654
+          }
+        },
+        {
+          "runId": "01e048b7-f449-4128-8811-36295457a157",
+          "status": "passed",
+          "retestOf": "43b94268-48fa-4c10-b8b3-0e73ba97a8ca",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "303d3e2a1359107a30e17be4ffeb79407e88e1fc",
+              "dirty": false,
+              "treeSha256": "98f287d001e577a95f9033c0d32fbd21efeb4e181dca94a4e9e035c630d20ffe"
+            },
+            {
+              "repository": "cli",
+              "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+              "dirty": false,
+              "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+            }
+          ],
+          "result": {
+            "sha256": "b80dd86a7bce22181b938035b61cfd5f15871f05d013153e3838da20fe64e1f4",
+            "bytes": 5026226
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "management-native-crud",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "c7e365c0-5641-4643-b5f0-ec2f6bfb30f2",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "677404efb1e333e72dfc5012f7e38568e37a2c38",
+            "dirty": false,
+            "treeSha256": "449bd9565d3697418d8ba6694bf812342cc961ffaf5f396909708a3e85b7cf0e"
+          },
+          {
+            "repository": "cli",
+            "commit": "724f9dbddbbd9ce7128ad4c9a483110b33174122",
+            "dirty": false,
+            "treeSha256": "55da9e273eff6a26a34c5ba4d6db84a4d3f6ba828f7ff242ca5409418aad69d3"
+          }
+        ],
+        "result": {
+          "sha256": "8c70898a7b4d14cac47759e0b7812ff883287c90e7b624cdc7d58092de555a17",
+          "bytes": 15067231
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "c7e365c0-5641-4643-b5f0-ec2f6bfb30f2-T06",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "05743c2a929ff755497c72fc87d88e27f2d72ed6d0d061c2b7b1abfb42090db7",
+              "bytes": 3959
+            },
+            "selected": {
+              "sha256": "05743c2a929ff755497c72fc87d88e27f2d72ed6d0d061c2b7b1abfb42090db7",
+              "bytes": 3959
+            }
+          },
+          {
+            "id": "c7e365c0-5641-4643-b5f0-ec2f6bfb30f2-T16",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "7482db7fda2f6aedb6889bc1ec9a3be7caf931d8f9bf0f29f8173d5323b2a9f6",
+              "bytes": 3970
+            },
+            "selected": {
+              "sha256": "7482db7fda2f6aedb6889bc1ec9a3be7caf931d8f9bf0f29f8173d5323b2a9f6",
+              "bytes": 3970
+            }
+          },
+          {
+            "id": "c7e365c0-5641-4643-b5f0-ec2f6bfb30f2-T17",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "26db6448ee482966b5a64e31b6866a3a353bb3ec0fec6eeed812fc63a8033c41",
+              "bytes": 3959
+            },
+            "selected": {
+              "sha256": "26db6448ee482966b5a64e31b6866a3a353bb3ec0fec6eeed812fc63a8033c41",
+              "bytes": 3959
+            }
+          },
+          {
+            "id": "c7e365c0-5641-4643-b5f0-ec2f6bfb30f2-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "e433bf2211f2efe3c4018bacf84eb49790c19ba2fda1baddc1715995cb9f9906",
+              "bytes": 3959
+            },
+            "selected": {
+              "sha256": "e433bf2211f2efe3c4018bacf84eb49790c19ba2fda1baddc1715995cb9f9906",
+              "bytes": 3959
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "d34936ae-4931-44ae-9f1d-ccdae77a938a",
+      "history": [
+        {
+          "runId": "d34936ae-4931-44ae-9f1d-ccdae77a938a",
+          "status": "failed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "abd07da2f4b85b00e255f3d076686a1d449e17df",
+              "dirty": false,
+              "treeSha256": "e69abc8678507892a037334d85e04737a5c84662ba96f2891464de79c760b43a"
+            },
+            {
+              "repository": "cli",
+              "commit": "78165f022541959c06aaf8d81dda10df375155e9",
+              "dirty": false,
+              "treeSha256": "b44abe8e4f9368ff03b5d60b68542176b947c0a6174aeb5c7eae195fd01f76f2"
+            }
+          ],
+          "result": {
+            "sha256": "e7fcd26a0617b1f3e2b72188a479121a954d66741e4e739f7872d89b41df5903",
+            "bytes": 889632
+          }
+        },
+        {
+          "runId": "9cf826a4-2854-4d40-a105-4e3a1728d4ba",
+          "status": "blocked",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "134c1dca3a36e9b5a25f5dba6ff0e3cf29e66cf0d54d763f013c1b2751ffec20",
+            "bytes": 18684658
+          }
+        },
+        {
+          "runId": "a3883a1f-dd6d-48f2-b7d8-ddf67b0a1ffb",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "303d3e2a1359107a30e17be4ffeb79407e88e1fc",
+              "dirty": false,
+              "treeSha256": "98f287d001e577a95f9033c0d32fbd21efeb4e181dca94a4e9e035c630d20ffe"
+            },
+            {
+              "repository": "cli",
+              "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+              "dirty": false,
+              "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+            }
+          ],
+          "result": {
+            "sha256": "5e76d6821f67f19b85682905760d408233c640d55a40901df14c31fb43c50e27",
+            "bytes": 20689741
+          }
+        },
+        {
+          "runId": "c7e365c0-5641-4643-b5f0-ec2f6bfb30f2",
+          "status": "passed",
+          "retestOf": "a3883a1f-dd6d-48f2-b7d8-ddf67b0a1ffb",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "677404efb1e333e72dfc5012f7e38568e37a2c38",
+              "dirty": false,
+              "treeSha256": "449bd9565d3697418d8ba6694bf812342cc961ffaf5f396909708a3e85b7cf0e"
+            },
+            {
+              "repository": "cli",
+              "commit": "724f9dbddbbd9ce7128ad4c9a483110b33174122",
+              "dirty": false,
+              "treeSha256": "55da9e273eff6a26a34c5ba4d6db84a4d3f6ba828f7ff242ca5409418aad69d3"
+            }
+          ],
+          "result": {
+            "sha256": "8c70898a7b4d14cac47759e0b7812ff883287c90e7b624cdc7d58092de555a17",
+            "bytes": 15067231
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "management-native-crud",
+      "profile": "no-native-skills",
+      "status": "covered-original",
+      "selected": {
+        "runId": "2f4c8af6-a145-44af-88cd-be285087dc3f",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "303d3e2a1359107a30e17be4ffeb79407e88e1fc",
+            "dirty": false,
+            "treeSha256": "98f287d001e577a95f9033c0d32fbd21efeb4e181dca94a4e9e035c630d20ffe"
+          },
+          {
+            "repository": "cli",
+            "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+            "dirty": false,
+            "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+          }
+        ],
+        "result": {
+          "sha256": "0de2fdcb4a9dc11a2f28036263b43cf4fc3d66af141b99e635ef5cd908658102",
+          "bytes": 22432383
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "2f4c8af6-a145-44af-88cd-be285087dc3f-T06",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "49399eff2589331a8db0fbc0c352ff76045b3c93a7b8e33952df245632ffdc45",
+              "bytes": 4004
+            },
+            "selected": {
+              "sha256": "49399eff2589331a8db0fbc0c352ff76045b3c93a7b8e33952df245632ffdc45",
+              "bytes": 4004
+            }
+          },
+          {
+            "id": "2f4c8af6-a145-44af-88cd-be285087dc3f-T16",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "3e555501eef965d8f746df8edb3220e5a800bc26a57faed074e55a26c5cc8220",
+              "bytes": 4015
+            },
+            "selected": {
+              "sha256": "3e555501eef965d8f746df8edb3220e5a800bc26a57faed074e55a26c5cc8220",
+              "bytes": 4015
+            }
+          },
+          {
+            "id": "2f4c8af6-a145-44af-88cd-be285087dc3f-T17",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "8d3d4f5cf210a12bb2d5acae6657ee79e6db46849b0b99b03ead1d2a2a129810",
+              "bytes": 4004
+            },
+            "selected": {
+              "sha256": "8d3d4f5cf210a12bb2d5acae6657ee79e6db46849b0b99b03ead1d2a2a129810",
+              "bytes": 4004
+            }
+          },
+          {
+            "id": "2f4c8af6-a145-44af-88cd-be285087dc3f-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "62000d9f3565746624a1d1dc35cf57f71fa0e6568d59cbed299816d62502a1b6",
+              "bytes": 4004
+            },
+            "selected": {
+              "sha256": "62000d9f3565746624a1d1dc35cf57f71fa0e6568d59cbed299816d62502a1b6",
+              "bytes": 4004
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "2d39be7f-151b-4de8-82a5-4761b0c4bf9e",
+      "history": [
+        {
+          "runId": "2d39be7f-151b-4de8-82a5-4761b0c4bf9e",
+          "status": "failed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "abd07da2f4b85b00e255f3d076686a1d449e17df",
+              "dirty": false,
+              "treeSha256": "e69abc8678507892a037334d85e04737a5c84662ba96f2891464de79c760b43a"
+            },
+            {
+              "repository": "cli",
+              "commit": "78165f022541959c06aaf8d81dda10df375155e9",
+              "dirty": false,
+              "treeSha256": "b44abe8e4f9368ff03b5d60b68542176b947c0a6174aeb5c7eae195fd01f76f2"
+            }
+          ],
+          "result": {
+            "sha256": "a4dfe93f4247c38892d2e29fa41a139c0fd9b1988ac3b0b66aa762dd571da469",
+            "bytes": 698406
+          }
+        },
+        {
+          "runId": "3fc8be85-f4b4-4ec1-9f41-fdd2d817841e",
+          "status": "blocked",
+          "retestOf": "2d39be7f-151b-4de8-82a5-4761b0c4bf9e",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "49256637e71851d23e1a242dc0b87c4b7d67beec1f95ae517c598caaedb527f2",
+            "bytes": 14647823
+          }
+        },
+        {
+          "runId": "63dba4ae-7b97-459c-a1ad-2f0e7e876520",
+          "status": "failed",
+          "retestOf": "3fc8be85-f4b4-4ec1-9f41-fdd2d817841e",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "b0f224fe9dfc63593c7ef8a27fa7b6a7bf7f48ab",
+              "dirty": false,
+              "treeSha256": "b0546d8442250bf1209118f843e6c13f6aec4e15f14e555abd59540939aba490"
+            },
+            {
+              "repository": "cli",
+              "commit": "c0eb1b4eedc2499a93d8cdcfc80f4624f4555d5d",
+              "dirty": false,
+              "treeSha256": "3c2e24a187b90097ba26336ee673052fb7441697416f7d6f80ac6f9e8a1a9760"
+            }
+          ],
+          "result": {
+            "sha256": "c2f96fd9109e74b78107cc7508255058bbf2e483398c7ed64c05af457c639014",
+            "bytes": 7722298
+          }
+        },
+        {
+          "runId": "2f4c8af6-a145-44af-88cd-be285087dc3f",
+          "status": "passed",
+          "retestOf": "63dba4ae-7b97-459c-a1ad-2f0e7e876520",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "303d3e2a1359107a30e17be4ffeb79407e88e1fc",
+              "dirty": false,
+              "treeSha256": "98f287d001e577a95f9033c0d32fbd21efeb4e181dca94a4e9e035c630d20ffe"
+            },
+            {
+              "repository": "cli",
+              "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+              "dirty": false,
+              "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+            }
+          ],
+          "result": {
+            "sha256": "0de2fdcb4a9dc11a2f28036263b43cf4fc3d66af141b99e635ef5cd908658102",
+            "bytes": 22432383
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "management-register-existing",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "0567d47a-d387-4da6-999a-687c38bb8971",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "d8e2219bb7080e808211b00147bdc5f23c165a00ec92b9d26383cc5249c20f2f",
+          "bytes": 4703249
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "0567d47a-d387-4da6-999a-687c38bb8971-T06",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "11390063a8973c7df4dd1642c5daf1663908ae139bf6a59e3033d8c56fef4f82",
+              "bytes": 4005
+            },
+            "selected": {
+              "sha256": "11390063a8973c7df4dd1642c5daf1663908ae139bf6a59e3033d8c56fef4f82",
+              "bytes": 4005
+            }
+          },
+          {
+            "id": "0567d47a-d387-4da6-999a-687c38bb8971-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "89bd844200298a704e4a70f8b1c838460c288742594c4fb3815c6b3d2f554408",
+              "bytes": 4005
+            },
+            "selected": {
+              "sha256": "89bd844200298a704e4a70f8b1c838460c288742594c4fb3815c6b3d2f554408",
+              "bytes": 4005
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "eb649538-7567-442c-a27f-c51ce5910213",
+      "history": [
+        {
+          "runId": "eb649538-7567-442c-a27f-c51ce5910213",
+          "status": "failed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "abd07da2f4b85b00e255f3d076686a1d449e17df",
+              "dirty": false,
+              "treeSha256": "e69abc8678507892a037334d85e04737a5c84662ba96f2891464de79c760b43a"
+            },
+            {
+              "repository": "cli",
+              "commit": "78165f022541959c06aaf8d81dda10df375155e9",
+              "dirty": false,
+              "treeSha256": "b44abe8e4f9368ff03b5d60b68542176b947c0a6174aeb5c7eae195fd01f76f2"
+            }
+          ],
+          "result": {
+            "sha256": "9e3d8d8e395d2ddb5418a62d31507ffff75ccfe7507c9a4fe8db4fe57623e68a",
+            "bytes": 514539
+          }
+        },
+        {
+          "runId": "0567d47a-d387-4da6-999a-687c38bb8971",
+          "status": "passed",
+          "retestOf": "eb649538-7567-442c-a27f-c51ce5910213",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "d8e2219bb7080e808211b00147bdc5f23c165a00ec92b9d26383cc5249c20f2f",
+            "bytes": 4703249
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "holdout-notion-business-layout",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "14783f24-0ec7-4310-a28a-5fff2d61c2b1",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "b7487190b8cf80374fdf9595b4d50b159f7d28f60ccfe3cf3d647bfe256df4f6",
+          "bytes": 1483056
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "14783f24-0ec7-4310-a28a-5fff2d61c2b1-T06",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "f28d1f8b6c93c4641bb14f8efb131993fe95d20891b09ca3471030363e296ce1",
+              "bytes": 3950
+            },
+            "selected": {
+              "sha256": "f28d1f8b6c93c4641bb14f8efb131993fe95d20891b09ca3471030363e296ce1",
+              "bytes": 3950
+            }
+          },
+          {
+            "id": "14783f24-0ec7-4310-a28a-5fff2d61c2b1-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "027367a387bfa229035dfa447a33bef29a2a9f8b8e5a1d916e58b2c88ad02ce3",
+              "bytes": 3950
+            },
+            "selected": {
+              "sha256": "027367a387bfa229035dfa447a33bef29a2a9f8b8e5a1d916e58b2c88ad02ce3",
+              "bytes": 3950
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": null,
+      "history": [
+        {
+          "runId": "14783f24-0ec7-4310-a28a-5fff2d61c2b1",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "b7487190b8cf80374fdf9595b4d50b159f7d28f60ccfe3cf3d647bfe256df4f6",
+            "bytes": 1483056
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "holdout-notion-business-layout",
+      "profile": "no-native-skills",
+      "status": "covered-original",
+      "selected": {
+        "runId": "e6c0076d-df1d-4e53-b087-c0bc99d17b68",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "421accbe2c35997af6599a06a9773d64ca68b3692e6cbe8b68618c3e7c4bacf2",
+          "bytes": 1255270
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "e6c0076d-df1d-4e53-b087-c0bc99d17b68-T06",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "3d48ae3aca820b711c9d73da5440d5ba750c2233fa7a01e2b68901ad725e5f84",
+              "bytes": 3983
+            },
+            "selected": {
+              "sha256": "3d48ae3aca820b711c9d73da5440d5ba750c2233fa7a01e2b68901ad725e5f84",
+              "bytes": 3983
+            }
+          },
+          {
+            "id": "e6c0076d-df1d-4e53-b087-c0bc99d17b68-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "314aa29924190e585cf0ed8412d215d9eb0c39769f9b2ec41b60fbf0a11487bd",
+              "bytes": 3983
+            },
+            "selected": {
+              "sha256": "314aa29924190e585cf0ed8412d215d9eb0c39769f9b2ec41b60fbf0a11487bd",
+              "bytes": 3983
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": null,
+      "history": [
+        {
+          "runId": "e6c0076d-df1d-4e53-b087-c0bc99d17b68",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "421accbe2c35997af6599a06a9773d64ca68b3692e6cbe8b68618c3e7c4bacf2",
+            "bytes": 1255270
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "holdout-global-rephrasing",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "f3a8f68f-bfad-4a64-aa39-38b876fa8b2b",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "ff4f97a4587db8969c2bee3f9c7c45087332fcb5",
+            "dirty": false,
+            "treeSha256": "89efde6d0131d3d54b91bef486acb46b2f019d9af4272d2b5afd29860cf041b5"
+          },
+          {
+            "repository": "cli",
+            "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+            "dirty": false,
+            "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+          }
+        ],
+        "result": {
+          "sha256": "ccc36b73b830be38e029d8e2290976ece88244f0b180df395a5c5f1193fd1d46",
+          "bytes": 720715
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "f3a8f68f-bfad-4a64-aa39-38b876fa8b2b-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "d3f3dfbd65fff7a5fc12073ee5d3b066dad23971785db2580b192771e88cf153",
+              "bytes": 3938
+            },
+            "selected": {
+              "sha256": "d3f3dfbd65fff7a5fc12073ee5d3b066dad23971785db2580b192771e88cf153",
+              "bytes": 3938
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": null,
+      "history": [
+        {
+          "runId": "f3a8f68f-bfad-4a64-aa39-38b876fa8b2b",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "ff4f97a4587db8969c2bee3f9c7c45087332fcb5",
+              "dirty": false,
+              "treeSha256": "89efde6d0131d3d54b91bef486acb46b2f019d9af4272d2b5afd29860cf041b5"
+            },
+            {
+              "repository": "cli",
+              "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+              "dirty": false,
+              "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+            }
+          ],
+          "result": {
+            "sha256": "ccc36b73b830be38e029d8e2290976ece88244f0b180df395a5c5f1193fd1d46",
+            "bytes": 720715
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "holdout-native-handover",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "ee2e939e-1de4-4477-9c99-12fe7b5c4405",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "303d3e2a1359107a30e17be4ffeb79407e88e1fc",
+            "dirty": false,
+            "treeSha256": "98f287d001e577a95f9033c0d32fbd21efeb4e181dca94a4e9e035c630d20ffe"
+          },
+          {
+            "repository": "cli",
+            "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+            "dirty": false,
+            "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+          }
+        ],
+        "result": {
+          "sha256": "41dee137fee723005c95f255018faae31a9566d5c023e92213f2fbfe271a6da3",
+          "bytes": 7058705
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "ee2e939e-1de4-4477-9c99-12fe7b5c4405-T06",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "65996abd18f3c92f46bfb041c7466cf0857b982bed5f6591c65b6514fe1d4842",
+              "bytes": 3974
+            },
+            "selected": {
+              "sha256": "65996abd18f3c92f46bfb041c7466cf0857b982bed5f6591c65b6514fe1d4842",
+              "bytes": 3974
+            }
+          },
+          {
+            "id": "ee2e939e-1de4-4477-9c99-12fe7b5c4405-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "6e7561f088a7c6b4038846837653091a2e1d623602f84d328aca2a6a5612df7f",
+              "bytes": 3974
+            },
+            "selected": {
+              "sha256": "6e7561f088a7c6b4038846837653091a2e1d623602f84d328aca2a6a5612df7f",
+              "bytes": 3974
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "be0ff259-b6f9-49b6-b3bc-a1d5e09f0052",
+      "history": [
+        {
+          "runId": "be0ff259-b6f9-49b6-b3bc-a1d5e09f0052",
+          "status": "failed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "abd07da2f4b85b00e255f3d076686a1d449e17df",
+              "dirty": false,
+              "treeSha256": "e69abc8678507892a037334d85e04737a5c84662ba96f2891464de79c760b43a"
+            },
+            {
+              "repository": "cli",
+              "commit": "78165f022541959c06aaf8d81dda10df375155e9",
+              "dirty": false,
+              "treeSha256": "b44abe8e4f9368ff03b5d60b68542176b947c0a6174aeb5c7eae195fd01f76f2"
+            }
+          ],
+          "result": {
+            "sha256": "071cbe0e48aff418e3a2c4a7d11275677fac24bdb65d6b47cffa3c5e68eb005e",
+            "bytes": 15121225
+          }
+        },
+        {
+          "runId": "063606b8-bdb3-41ea-adc5-b29bec67a845",
+          "status": "failed",
+          "retestOf": "be0ff259-b6f9-49b6-b3bc-a1d5e09f0052",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "0b631d9b88361415b19ffabb1037f669f0022c1631ddf14b411d30c1e5370406",
+            "bytes": 3720225
+          }
+        },
+        {
+          "runId": "ee2e939e-1de4-4477-9c99-12fe7b5c4405",
+          "status": "passed",
+          "retestOf": "063606b8-bdb3-41ea-adc5-b29bec67a845",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "303d3e2a1359107a30e17be4ffeb79407e88e1fc",
+              "dirty": false,
+              "treeSha256": "98f287d001e577a95f9033c0d32fbd21efeb4e181dca94a4e9e035c630d20ffe"
+            },
+            {
+              "repository": "cli",
+              "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+              "dirty": false,
+              "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+            }
+          ],
+          "result": {
+            "sha256": "41dee137fee723005c95f255018faae31a9566d5c023e92213f2fbfe271a6da3",
+            "bytes": 7058705
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "management-upstream-delete-restore",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "a00216ba-8f41-4353-9964-21f7c6baeaec",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "eea7d9838d9639d58a82598f63bac4ad73e30b14",
+            "dirty": false,
+            "treeSha256": "db21b8a02ad5928126d535b607dcf762a276a06db32f3a8799461dd4265791c3"
+          },
+          {
+            "repository": "cli",
+            "commit": "cce376ed2a1b83141b89e8492d1b0ae0c0bd082f",
+            "dirty": false,
+            "treeSha256": "60d9ade4cde4c98e8535a9fc789634df5f2ea8aa41ed6284e19cf71db4789357"
+          }
+        ],
+        "result": {
+          "sha256": "d073313d588e722c23bec85f0c121cb31e07d01f4eb3f8f65b6f33e8f37321f8",
+          "bytes": 10806408
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "a00216ba-8f41-4353-9964-21f7c6baeaec-T06",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "4f2fe4031694c394af9e3b33b5d9413e66f866851905dde3ea47c21a1d7bd36c",
+              "bytes": 4011
+            },
+            "selected": {
+              "sha256": "4f2fe4031694c394af9e3b33b5d9413e66f866851905dde3ea47c21a1d7bd36c",
+              "bytes": 4011
+            }
+          },
+          {
+            "id": "a00216ba-8f41-4353-9964-21f7c6baeaec-T07",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "4da163e99cb7c84cfe082033fa6951eeeb26374c30e581d7645809ce02a84ac1",
+              "bytes": 4011
+            },
+            "selected": {
+              "sha256": "4da163e99cb7c84cfe082033fa6951eeeb26374c30e581d7645809ce02a84ac1",
+              "bytes": 4011
+            }
+          },
+          {
+            "id": "a00216ba-8f41-4353-9964-21f7c6baeaec-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "885fa0d9ca34a01f228b30bc4596126876179ae0812f6c7e3ccd9c3ae6bf4c8d",
+              "bytes": 4011
+            },
+            "selected": {
+              "sha256": "885fa0d9ca34a01f228b30bc4596126876179ae0812f6c7e3ccd9c3ae6bf4c8d",
+              "bytes": 4011
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "d4f5d42f-b449-48c2-b33a-f9d0bd49867f",
+      "history": [
+        {
+          "runId": "d4f5d42f-b449-48c2-b33a-f9d0bd49867f",
+          "status": "failed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "303d3e2a1359107a30e17be4ffeb79407e88e1fc",
+              "dirty": false,
+              "treeSha256": "98f287d001e577a95f9033c0d32fbd21efeb4e181dca94a4e9e035c630d20ffe"
+            },
+            {
+              "repository": "cli",
+              "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+              "dirty": false,
+              "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+            }
+          ],
+          "result": {
+            "sha256": "2d25eb5d854d7732b4fc2a89739f12bc81824e03bb4e1bcaecee381fff56d0c7",
+            "bytes": 1285497
+          }
+        },
+        {
+          "runId": "7f27ffab-4ae7-4832-b95a-26f9e77cbfb8",
+          "status": "passed",
+          "retestOf": "d4f5d42f-b449-48c2-b33a-f9d0bd49867f",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "ff4f97a4587db8969c2bee3f9c7c45087332fcb5",
+              "dirty": false,
+              "treeSha256": "89efde6d0131d3d54b91bef486acb46b2f019d9af4272d2b5afd29860cf041b5"
+            },
+            {
+              "repository": "cli",
+              "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+              "dirty": false,
+              "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+            }
+          ],
+          "result": {
+            "sha256": "3a1f8db4a037ec1892a6c424d8a5c028efbf79848345893df19197ba486b972d",
+            "bytes": 6738708
+          }
+        },
+        {
+          "runId": "a00216ba-8f41-4353-9964-21f7c6baeaec",
+          "status": "passed",
+          "retestOf": "7f27ffab-4ae7-4832-b95a-26f9e77cbfb8",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "eea7d9838d9639d58a82598f63bac4ad73e30b14",
+              "dirty": false,
+              "treeSha256": "db21b8a02ad5928126d535b607dcf762a276a06db32f3a8799461dd4265791c3"
+            },
+            {
+              "repository": "cli",
+              "commit": "cce376ed2a1b83141b89e8492d1b0ae0c0bd082f",
+              "dirty": false,
+              "treeSha256": "60d9ade4cde4c98e8535a9fc789634df5f2ea8aa41ed6284e19cf71db4789357"
+            }
+          ],
+          "result": {
+            "sha256": "d073313d588e722c23bec85f0c121cb31e07d01f4eb3f8f65b6f33e8f37321f8",
+            "bytes": 10806408
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "management-upstream-delete-restore",
+      "profile": "no-native-skills",
+      "status": "covered-original",
+      "selected": {
+        "runId": "c80db9b7-048e-4644-ad62-bc4e36b685b4",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "677404efb1e333e72dfc5012f7e38568e37a2c38",
+            "dirty": false,
+            "treeSha256": "449bd9565d3697418d8ba6694bf812342cc961ffaf5f396909708a3e85b7cf0e"
+          },
+          {
+            "repository": "cli",
+            "commit": "724f9dbddbbd9ce7128ad4c9a483110b33174122",
+            "dirty": false,
+            "treeSha256": "55da9e273eff6a26a34c5ba4d6db84a4d3f6ba828f7ff242ca5409418aad69d3"
+          }
+        ],
+        "result": {
+          "sha256": "40c6a1fe52d526f1da8fb5f9f52cb555833e6ee88a01c581d69b50731943df59",
+          "bytes": 7312223
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "c80db9b7-048e-4644-ad62-bc4e36b685b4-T06",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "847b272e48ccdb646251ce930fbe88595afa4ad70bbf65d8cd2daf7858480ffe",
+              "bytes": 4044
+            },
+            "selected": {
+              "sha256": "847b272e48ccdb646251ce930fbe88595afa4ad70bbf65d8cd2daf7858480ffe",
+              "bytes": 4044
+            }
+          },
+          {
+            "id": "c80db9b7-048e-4644-ad62-bc4e36b685b4-T07",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "786aa94bf405cfbb65af9ec2a175ef5ce4330a43422c2149868a14a3d56a2452",
+              "bytes": 4044
+            },
+            "selected": {
+              "sha256": "786aa94bf405cfbb65af9ec2a175ef5ce4330a43422c2149868a14a3d56a2452",
+              "bytes": 4044
+            }
+          },
+          {
+            "id": "c80db9b7-048e-4644-ad62-bc4e36b685b4-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "36e3ee80d1c04e03683f67587d394f4932cef45423f4d46a5510863d2d26cf99",
+              "bytes": 4044
+            },
+            "selected": {
+              "sha256": "36e3ee80d1c04e03683f67587d394f4932cef45423f4d46a5510863d2d26cf99",
+              "bytes": 4044
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "aa1aa826-d42b-4406-be6b-dd7cb2d9ef0e",
+      "history": [
+        {
+          "runId": "e3ba8dcc-38d4-41ba-abda-6603dade0c54",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "ff4f97a4587db8969c2bee3f9c7c45087332fcb5",
+              "dirty": false,
+              "treeSha256": "89efde6d0131d3d54b91bef486acb46b2f019d9af4272d2b5afd29860cf041b5"
+            },
+            {
+              "repository": "cli",
+              "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+              "dirty": false,
+              "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+            }
+          ],
+          "result": {
+            "sha256": "81eb698adfe5e5ff14e6eb1dc6abc85215f8f76171644327c1144862898c57fc",
+            "bytes": 8107965
+          }
+        },
+        {
+          "runId": "aa1aa826-d42b-4406-be6b-dd7cb2d9ef0e",
+          "status": "failed",
+          "retestOf": "e3ba8dcc-38d4-41ba-abda-6603dade0c54",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "eea7d9838d9639d58a82598f63bac4ad73e30b14",
+              "dirty": false,
+              "treeSha256": "db21b8a02ad5928126d535b607dcf762a276a06db32f3a8799461dd4265791c3"
+            },
+            {
+              "repository": "cli",
+              "commit": "cce376ed2a1b83141b89e8492d1b0ae0c0bd082f",
+              "dirty": false,
+              "treeSha256": "60d9ade4cde4c98e8535a9fc789634df5f2ea8aa41ed6284e19cf71db4789357"
+            }
+          ],
+          "result": {
+            "sha256": "731f39bb5ad39b79eb41eb4d40f01027b3a9d1ffa5668e07ad7f6da6ef8120f1",
+            "bytes": 10928705
+          }
+        },
+        {
+          "runId": "c80db9b7-048e-4644-ad62-bc4e36b685b4",
+          "status": "passed",
+          "retestOf": "aa1aa826-d42b-4406-be6b-dd7cb2d9ef0e",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "677404efb1e333e72dfc5012f7e38568e37a2c38",
+              "dirty": false,
+              "treeSha256": "449bd9565d3697418d8ba6694bf812342cc961ffaf5f396909708a3e85b7cf0e"
+            },
+            {
+              "repository": "cli",
+              "commit": "724f9dbddbbd9ce7128ad4c9a483110b33174122",
+              "dirty": false,
+              "treeSha256": "55da9e273eff6a26a34c5ba4d6db84a4d3f6ba828f7ff242ca5409418aad69d3"
+            }
+          ],
+          "result": {
+            "sha256": "40c6a1fe52d526f1da8fb5f9f52cb555833e6ee88a01c581d69b50731943df59",
+            "bytes": 7312223
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "holdout-upstream-scripts-restore",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "7bf23fe7-f66c-4fa4-9f55-bab625889010",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "eea7d9838d9639d58a82598f63bac4ad73e30b14",
+            "dirty": false,
+            "treeSha256": "db21b8a02ad5928126d535b607dcf762a276a06db32f3a8799461dd4265791c3"
+          },
+          {
+            "repository": "cli",
+            "commit": "cce376ed2a1b83141b89e8492d1b0ae0c0bd082f",
+            "dirty": false,
+            "treeSha256": "60d9ade4cde4c98e8535a9fc789634df5f2ea8aa41ed6284e19cf71db4789357"
+          }
+        ],
+        "result": {
+          "sha256": "a7f5f48bae9f4937576a1d75484de78991e67ecc74db7532dde158f0649b4278",
+          "bytes": 14404408
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "7bf23fe7-f66c-4fa4-9f55-bab625889010-T06",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "13f99c0e378061673c2e0d147dfb29257395f5ef54c811856500c14780e90c59",
+              "bytes": 4005
+            },
+            "selected": {
+              "sha256": "13f99c0e378061673c2e0d147dfb29257395f5ef54c811856500c14780e90c59",
+              "bytes": 4005
+            }
+          },
+          {
+            "id": "7bf23fe7-f66c-4fa4-9f55-bab625889010-T07",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "e0ab13da5c6d5160b8e695d40a0eab2f3f5499b9f10999135cd0f6ed7104227e",
+              "bytes": 4005
+            },
+            "selected": {
+              "sha256": "e0ab13da5c6d5160b8e695d40a0eab2f3f5499b9f10999135cd0f6ed7104227e",
+              "bytes": 4005
+            }
+          },
+          {
+            "id": "7bf23fe7-f66c-4fa4-9f55-bab625889010-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "b33b1da68464a6a7e5b833b746b00205373b1e26f6eb8715b9d9acffcf0474b9",
+              "bytes": 4005
+            },
+            "selected": {
+              "sha256": "b33b1da68464a6a7e5b833b746b00205373b1e26f6eb8715b9d9acffcf0474b9",
+              "bytes": 4005
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "dc78f5e8-5899-4619-aaa0-3172ddcd999d",
+      "history": [
+        {
+          "runId": "dc78f5e8-5899-4619-aaa0-3172ddcd999d",
+          "status": "failed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "ff4f97a4587db8969c2bee3f9c7c45087332fcb5",
+              "dirty": false,
+              "treeSha256": "89efde6d0131d3d54b91bef486acb46b2f019d9af4272d2b5afd29860cf041b5"
+            },
+            {
+              "repository": "cli",
+              "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+              "dirty": false,
+              "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+            }
+          ],
+          "result": {
+            "sha256": "67c577c4ae232790101544010d8a8917ca7b6cff92928a19433a8db5e2a4ad8b",
+            "bytes": 13272328
+          }
+        },
+        {
+          "runId": "3b454612-c939-4fb3-8fac-7ac2441b2ca7",
+          "status": "failed",
+          "retestOf": "dc78f5e8-5899-4619-aaa0-3172ddcd999d",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "7264bd4287809dbe56379c4244713184316e7ab4",
+              "dirty": false,
+              "treeSha256": "f824098f8bd141e787ac61b9b78704fa3a3bcbcc7f004ab8b0e84476d28327a2"
+            },
+            {
+              "repository": "cli",
+              "commit": "cce376ed2a1b83141b89e8492d1b0ae0c0bd082f",
+              "dirty": false,
+              "treeSha256": "60d9ade4cde4c98e8535a9fc789634df5f2ea8aa41ed6284e19cf71db4789357"
+            }
+          ],
+          "result": {
+            "sha256": "a83742f7705022c70ea4d11db909f40be0c1534926cf62b55a6cd05749b88250",
+            "bytes": 1594525
+          }
+        },
+        {
+          "runId": "7bf23fe7-f66c-4fa4-9f55-bab625889010",
+          "status": "passed",
+          "retestOf": "3b454612-c939-4fb3-8fac-7ac2441b2ca7",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "eea7d9838d9639d58a82598f63bac4ad73e30b14",
+              "dirty": false,
+              "treeSha256": "db21b8a02ad5928126d535b607dcf762a276a06db32f3a8799461dd4265791c3"
+            },
+            {
+              "repository": "cli",
+              "commit": "cce376ed2a1b83141b89e8492d1b0ae0c0bd082f",
+              "dirty": false,
+              "treeSha256": "60d9ade4cde4c98e8535a9fc789634df5f2ea8aa41ed6284e19cf71db4789357"
+            }
+          ],
+          "result": {
+            "sha256": "a7f5f48bae9f4937576a1d75484de78991e67ecc74db7532dde158f0649b4278",
+            "bytes": 14404408
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "management-description-flags-resource",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "84f642e4-5dc5-42c7-b84c-b9d3cc95f7de",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "303d3e2a1359107a30e17be4ffeb79407e88e1fc",
+            "dirty": false,
+            "treeSha256": "98f287d001e577a95f9033c0d32fbd21efeb4e181dca94a4e9e035c630d20ffe"
+          },
+          {
+            "repository": "cli",
+            "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+            "dirty": false,
+            "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+          }
+        ],
+        "result": {
+          "sha256": "6f6514b5998e638acda986061c80acbf961f7bdaf6a0dcadbcf7d12c0a06a568",
+          "bytes": 12562743
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "84f642e4-5dc5-42c7-b84c-b9d3cc95f7de-T06",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "b1f5600fa0dd7a16b1548e733be76e6cddcf811ad2c9d81362d2f3a12141f5a3",
+              "bytes": 4016
+            },
+            "selected": {
+              "sha256": "b1f5600fa0dd7a16b1548e733be76e6cddcf811ad2c9d81362d2f3a12141f5a3",
+              "bytes": 4016
+            }
+          },
+          {
+            "id": "84f642e4-5dc5-42c7-b84c-b9d3cc95f7de-T19",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "c266370cc9acb5827dd90a56730b809078d79151ccaa2e41ba603dff3f995560",
+              "bytes": 4016
+            },
+            "selected": {
+              "sha256": "c266370cc9acb5827dd90a56730b809078d79151ccaa2e41ba603dff3f995560",
+              "bytes": 4016
+            }
+          },
+          {
+            "id": "84f642e4-5dc5-42c7-b84c-b9d3cc95f7de-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "d96ce7e44bc03f76edddd0a115bdb2f4777485deb312b1535b1f6b8de4fec5b0",
+              "bytes": 4016
+            },
+            "selected": {
+              "sha256": "d96ce7e44bc03f76edddd0a115bdb2f4777485deb312b1535b1f6b8de4fec5b0",
+              "bytes": 4016
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "cdf072c6-c25c-4007-ae02-6f90c0e9d7e5",
+      "history": [
+        {
+          "runId": "dbc5f9e8-8118-4bf3-87c6-c91c897a8d12",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "abd07da2f4b85b00e255f3d076686a1d449e17df",
+              "dirty": false,
+              "treeSha256": "e69abc8678507892a037334d85e04737a5c84662ba96f2891464de79c760b43a"
+            },
+            {
+              "repository": "cli",
+              "commit": "78165f022541959c06aaf8d81dda10df375155e9",
+              "dirty": false,
+              "treeSha256": "b44abe8e4f9368ff03b5d60b68542176b947c0a6174aeb5c7eae195fd01f76f2"
+            }
+          ],
+          "result": {
+            "sha256": "5b67b8df06a08d34326042d5ea3a5eced2be00b6182628f3c8d9cb6c625d9005",
+            "bytes": 10771199
+          }
+        },
+        {
+          "runId": "cdf072c6-c25c-4007-ae02-6f90c0e9d7e5",
+          "status": "blocked",
+          "retestOf": "dbc5f9e8-8118-4bf3-87c6-c91c897a8d12",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "1c0d9b02d463b6732bc7a3c54c81e72ead7d513e1778a045add4d1b6ee5190ab",
+            "bytes": 24603468
+          }
+        },
+        {
+          "runId": "84f642e4-5dc5-42c7-b84c-b9d3cc95f7de",
+          "status": "passed",
+          "retestOf": "cdf072c6-c25c-4007-ae02-6f90c0e9d7e5",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "303d3e2a1359107a30e17be4ffeb79407e88e1fc",
+              "dirty": false,
+              "treeSha256": "98f287d001e577a95f9033c0d32fbd21efeb4e181dca94a4e9e035c630d20ffe"
+            },
+            {
+              "repository": "cli",
+              "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+              "dirty": false,
+              "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+            }
+          ],
+          "result": {
+            "sha256": "6f6514b5998e638acda986061c80acbf961f7bdaf6a0dcadbcf7d12c0a06a568",
+            "bytes": 12562743
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "cold-maintenance-unauthorized",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "bcb8561b-ef37-4c1e-b2f0-55b37f18e7a1",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "4db44ad62592476adffa6c77053be9b334fee592",
+            "dirty": false,
+            "treeSha256": "810a8a7a9754fc17bcfe3af168f88e5b1664dbe6aea8263d9f64a422c0cd0ad1"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "c92ad5571b522d1eec9473454afc9fc27fc7b3294222133c0cdfb28daec03805",
+          "bytes": 467550
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "bcb8561b-ef37-4c1e-b2f0-55b37f18e7a1-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "7ed41409f35d182a9499df7c7775e3d6ae4ba06bccd17c49a299d7de2d96a023",
+              "bytes": 3906
+            },
+            "selected": {
+              "sha256": "7ed41409f35d182a9499df7c7775e3d6ae4ba06bccd17c49a299d7de2d96a023",
+              "bytes": 3906
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": null,
+      "history": [
+        {
+          "runId": "bcb8561b-ef37-4c1e-b2f0-55b37f18e7a1",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "4db44ad62592476adffa6c77053be9b334fee592",
+              "dirty": false,
+              "treeSha256": "810a8a7a9754fc17bcfe3af168f88e5b1664dbe6aea8263d9f64a422c0cd0ad1"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "c92ad5571b522d1eec9473454afc9fc27fc7b3294222133c0cdfb28daec03805",
+            "bytes": 467550
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "cold-maintenance-unauthorized",
+      "profile": "no-native-skills",
+      "status": "covered-original",
+      "selected": {
+        "runId": "1c51c86f-ae84-4cb7-8545-2362d9a821c3",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "4db44ad62592476adffa6c77053be9b334fee592",
+            "dirty": false,
+            "treeSha256": "810a8a7a9754fc17bcfe3af168f88e5b1664dbe6aea8263d9f64a422c0cd0ad1"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "e8065cba196a0348c0ff44762610c8b0e8180316e15b1c6f0f6e616e45e0a5d5",
+          "bytes": 356858
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "1c51c86f-ae84-4cb7-8545-2362d9a821c3-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "ef36152665852625c168c33009c7bd6254d625210f5a8988a2b34dfe38398e19",
+              "bytes": 3939
+            },
+            "selected": {
+              "sha256": "ef36152665852625c168c33009c7bd6254d625210f5a8988a2b34dfe38398e19",
+              "bytes": 3939
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": null,
+      "history": [
+        {
+          "runId": "1c51c86f-ae84-4cb7-8545-2362d9a821c3",
+          "status": "passed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "4db44ad62592476adffa6c77053be9b334fee592",
+              "dirty": false,
+              "treeSha256": "810a8a7a9754fc17bcfe3af168f88e5b1664dbe6aea8263d9f64a422c0cd0ad1"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "e8065cba196a0348c0ff44762610c8b0e8180316e15b1c6f0f6e616e45e0a5d5",
+            "bytes": 356858
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "management-source-applying-resume",
+      "profile": "daily",
+      "status": "covered-original",
+      "selected": {
+        "runId": "5208510f-610e-4711-a2de-8e7ba7819ead",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+            "dirty": false,
+            "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+          },
+          {
+            "repository": "cli",
+            "commit": "c903514626abb903f68310a2c477de305a414465",
+            "dirty": false,
+            "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+          }
+        ],
+        "result": {
+          "sha256": "af29b5217943902337824cd11094ed1afc10d85bd23dccb7a5127e52f0214134",
+          "bytes": 2534978
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "5208510f-610e-4711-a2de-8e7ba7819ead-T09",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "ba0d5aa6d176220944e68a555124f7cda8d51285c9decd53c9c5d918eb3bfdcb",
+              "bytes": 4020
+            },
+            "selected": {
+              "sha256": "ba0d5aa6d176220944e68a555124f7cda8d51285c9decd53c9c5d918eb3bfdcb",
+              "bytes": 4020
+            }
+          },
+          {
+            "id": "5208510f-610e-4711-a2de-8e7ba7819ead-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "fa633d78753ca7b3c7ba6d7133ac293c0d149f57dfdde6927828968b4b24d6bf",
+              "bytes": 4008
+            },
+            "selected": {
+              "sha256": "fa633d78753ca7b3c7ba6d7133ac293c0d149f57dfdde6927828968b4b24d6bf",
+              "bytes": 4008
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "277128a9-3227-4e65-8353-289325510113",
+      "history": [
+        {
+          "runId": "277128a9-3227-4e65-8353-289325510113",
+          "status": "failed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "abd07da2f4b85b00e255f3d076686a1d449e17df",
+              "dirty": false,
+              "treeSha256": "e69abc8678507892a037334d85e04737a5c84662ba96f2891464de79c760b43a"
+            },
+            {
+              "repository": "cli",
+              "commit": "78165f022541959c06aaf8d81dda10df375155e9",
+              "dirty": false,
+              "treeSha256": "b44abe8e4f9368ff03b5d60b68542176b947c0a6174aeb5c7eae195fd01f76f2"
+            }
+          ],
+          "result": {
+            "sha256": "418da827de8f49b44ccbaa89e5b49fd0781073272d3f8b60e3422923442d0cbe",
+            "bytes": 33540
+          }
+        },
+        {
+          "runId": "60150749-7bcd-47ce-91a2-ddf858f08b43",
+          "status": "blocked",
+          "retestOf": "277128a9-3227-4e65-8353-289325510113",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "bbd88eff21d3ca69fd8d822d3cfe26917a4b51b5",
+              "dirty": false,
+              "treeSha256": "91db7b205589550ee1cc332bc4d908b51c10071928130dffbda06bb54e5e4791"
+            },
+            {
+              "repository": "cli",
+              "commit": "78165f022541959c06aaf8d81dda10df375155e9",
+              "dirty": false,
+              "treeSha256": "b44abe8e4f9368ff03b5d60b68542176b947c0a6174aeb5c7eae195fd01f76f2"
+            }
+          ],
+          "result": {
+            "sha256": "982c6c5b629d807c2b4fecc3e52105e1ce0a1b24cdfb69d2c67186fc7615041a",
+            "bytes": 1724362
+          }
+        },
+        {
+          "runId": "5208510f-610e-4711-a2de-8e7ba7819ead",
+          "status": "passed",
+          "retestOf": "60150749-7bcd-47ce-91a2-ddf858f08b43",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "db104fb85b4196dfb66420e2a9c13bd1587309c5",
+              "dirty": false,
+              "treeSha256": "e1693f93fd61543fcaeb16d1517036202055fe32458e54fb910fe2b891af7299"
+            },
+            {
+              "repository": "cli",
+              "commit": "c903514626abb903f68310a2c477de305a414465",
+              "dirty": false,
+              "treeSha256": "0d00092c1144383d65d7267e849fae6dbd80678e778b3cdeabaa819f5c90f306"
+            }
+          ],
+          "result": {
+            "sha256": "af29b5217943902337824cd11094ed1afc10d85bd23dccb7a5127e52f0214134",
+            "bytes": 2534978
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "management-source-applying-resume",
+      "profile": "no-native-skills",
+      "status": "covered-original",
+      "selected": {
+        "runId": "e8cadfa9-a49e-4e4b-ac81-6143c7b48f96",
+        "originalStatus": "passed",
+        "interpretation": "original-result",
+        "sourcePins": [
+          {
+            "repository": "broker",
+            "commit": "303d3e2a1359107a30e17be4ffeb79407e88e1fc",
+            "dirty": false,
+            "treeSha256": "98f287d001e577a95f9033c0d32fbd21efeb4e181dca94a4e9e035c630d20ffe"
+          },
+          {
+            "repository": "cli",
+            "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+            "dirty": false,
+            "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+          }
+        ],
+        "result": {
+          "sha256": "3f192c521153c00aa101637558e330a366b04ce37a05a7b4103339cad4ac7090",
+          "bytes": 2382080
+        },
+        "reanalysis": null,
+        "receipts": [
+          {
+            "id": "e8cadfa9-a49e-4e4b-ac81-6143c7b48f96-T09",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "b0c7f520ee573e83976a1b0b1d00b84b2c1a0fd7972b2ea4cde0724ce359dffa",
+              "bytes": 4053
+            },
+            "selected": {
+              "sha256": "b0c7f520ee573e83976a1b0b1d00b84b2c1a0fd7972b2ea4cde0724ce359dffa",
+              "bytes": 4053
+            }
+          },
+          {
+            "id": "e8cadfa9-a49e-4e4b-ac81-6143c7b48f96-T22",
+            "originalStatus": "passed",
+            "selectedStatus": "passed",
+            "interpretation": "original",
+            "original": {
+              "sha256": "c15105566de9f20c23902988d6d8e319110ccace2321bd8fb0deebafd6f6a062",
+              "bytes": 4041
+            },
+            "selected": {
+              "sha256": "c15105566de9f20c23902988d6d8e319110ccace2321bd8fb0deebafd6f6a062",
+              "bytes": 4041
+            }
+          }
+        ]
+      },
+      "firstFailureRunId": "f272024b-ed79-46d6-818d-befdb08b2b89",
+      "history": [
+        {
+          "runId": "f272024b-ed79-46d6-818d-befdb08b2b89",
+          "status": "failed",
+          "retestOf": null,
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "abd07da2f4b85b00e255f3d076686a1d449e17df",
+              "dirty": false,
+              "treeSha256": "e69abc8678507892a037334d85e04737a5c84662ba96f2891464de79c760b43a"
+            },
+            {
+              "repository": "cli",
+              "commit": "78165f022541959c06aaf8d81dda10df375155e9",
+              "dirty": false,
+              "treeSha256": "b44abe8e4f9368ff03b5d60b68542176b947c0a6174aeb5c7eae195fd01f76f2"
+            }
+          ],
+          "result": {
+            "sha256": "41c3443ab5c72b890037ac447568415fefdd32d92df7781253607bdaffb52d5b",
+            "bytes": 33678
+          }
+        },
+        {
+          "runId": "9b7b3f06-3aef-4b31-9b16-f3ff89d2c278",
+          "status": "failed",
+          "retestOf": "f272024b-ed79-46d6-818d-befdb08b2b89",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "bbd88eff21d3ca69fd8d822d3cfe26917a4b51b5",
+              "dirty": false,
+              "treeSha256": "91db7b205589550ee1cc332bc4d908b51c10071928130dffbda06bb54e5e4791"
+            },
+            {
+              "repository": "cli",
+              "commit": "78165f022541959c06aaf8d81dda10df375155e9",
+              "dirty": false,
+              "treeSha256": "b44abe8e4f9368ff03b5d60b68542176b947c0a6174aeb5c7eae195fd01f76f2"
+            }
+          ],
+          "result": {
+            "sha256": "0f0a2b78b7863b014f87d41652bd32df52059e99189568885edc5252c01f77b6",
+            "bytes": 1704099
+          }
+        },
+        {
+          "runId": "e8cadfa9-a49e-4e4b-ac81-6143c7b48f96",
+          "status": "passed",
+          "retestOf": "9b7b3f06-3aef-4b31-9b16-f3ff89d2c278",
+          "sourcePins": [
+            {
+              "repository": "broker",
+              "commit": "303d3e2a1359107a30e17be4ffeb79407e88e1fc",
+              "dirty": false,
+              "treeSha256": "98f287d001e577a95f9033c0d32fbd21efeb4e181dca94a4e9e035c630d20ffe"
+            },
+            {
+              "repository": "cli",
+              "commit": "e95f813163c6c5fcbc12aa7b2c238206e0e077fd",
+              "dirty": false,
+              "treeSha256": "381788f4939473d7fb44107061546749da47dd809662f3d8d1486721ae550617"
+            }
+          ],
+          "result": {
+            "sha256": "3f192c521153c00aa101637558e330a366b04ce37a05a7b4103339cad4ac7090",
+            "bytes": 2382080
+          }
+        }
+      ]
+    }
+  ]
+}

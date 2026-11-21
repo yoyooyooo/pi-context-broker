@@ -1,0 +1,534 @@
+{
+  "version": 1,
+  "scope": "sanitized-actual-run-request-and-tool-accounting",
+  "createdAt": "2026-11-21T19:52:19.116Z",
+  "privateEvidence": {
+    "sha256": "5486ac8e7195103c7caa25165acef93c96e8209bf46ba873052b736829f4e26c",
+    "bytes": 1747463
+  },
+  "coverageEvidence": {
+    "sha256": "7111dcb85b96fb3ecea2d06cc3f7a512e04777c9cc16ef4051a08b4369b94ee8",
+    "bytes": 724324
+  },
+  "accounting": {
+    "requestKey": "actual observer clockId + monotonically allocated request number",
+    "toolUnit": "Actual dispatched callbacks, including nested Code mode children and failed attempts",
+    "usage": "One usable assistant terminal per logical request; copies in native/stdout/reanalysis are not charged twice",
+    "newModelExecutionsByAggregation": 0,
+    "reanalysisExecutions": 0,
+    "monetaryEstimate": null,
+    "groupViews": "accepted45 plus journeyHistoryOutsideAccepted45 partitions journeys. Explicitly linked retests plus attempts without an explicit retest link is a second partition of the same journeys and overlaps the first view; do not add the two views. Outer evaluations and short-followup scopes each count their own ledger exactly once.",
+    "normalizedCategories": {
+      "input": "prompt_tokens minus cacheRead and cacheWrite, bounded below by zero",
+      "output": "completion_tokens including reasoning",
+      "cacheRead": "Repeated cached-context reads reported by Pi",
+      "cacheWrite": "Separate cache writes reported by Pi",
+      "totalTokens": "input + output + cacheRead + cacheWrite",
+      "upstreamMissingFieldPresence": "Not retained. In particular, normalized zero cache fields can mean explicit upstream zero or adapter defaults."
+    },
+    "completeTotalPolicy": "Missing or ambiguous usage and unbound model HTTP attempts remain unknown; known subtotals are not a complete bill or newly generated-token total.",
+    "partitionReference": {
+      "sha256": "1c03215f7eaeeb501cb06ebe0957116556ed16b7a67db02d1f9d30f59db2be3e",
+      "bytes": 65140,
+      "currentReferenceOnly": true
+    }
+  },
+  "totals": {
+    "registeredRunRecords": 105,
+    "runsWithObservedProviderRequests": 103,
+    "observerSegments": 112,
+    "hookRequests": 1268,
+    "actualModelHttpAttempts": 1273,
+    "knownUsageRequests": 1263,
+    "unknownUsageRequests": 5,
+    "unboundModelAttempts": 6,
+    "actualToolDispatches": 1263,
+    "toolResultsWithError": 44,
+    "toolResultUnknown": 0,
+    "reportedUsageKnownSubtotal": {
+      "input": 17656438,
+      "output": 153860,
+      "cacheRead": 35373952,
+      "cacheWrite": 0,
+      "totalTokens": 53184250
+    },
+    "reportedUsageCompleteTotal": null,
+    "hookReportedUsageComplete": false,
+    "modelHttpMappingComplete": false
+  },
+  "journeys": {
+    "registeredRunRecords": 100,
+    "runsWithObservedProviderRequests": 98,
+    "observerSegments": 107,
+    "hookRequests": 1049,
+    "actualModelHttpAttempts": 1054,
+    "knownUsageRequests": 1046,
+    "unknownUsageRequests": 3,
+    "unboundModelAttempts": 5,
+    "actualToolDispatches": 1000,
+    "toolResultsWithError": 41,
+    "toolResultUnknown": 0,
+    "reportedUsageKnownSubtotal": {
+      "input": 15964503,
+      "output": 99300,
+      "cacheRead": 21036160,
+      "cacheWrite": 0,
+      "totalTokens": 37099963
+    },
+    "reportedUsageCompleteTotal": null,
+    "hookReportedUsageComplete": false,
+    "modelHttpMappingComplete": false
+  },
+  "outerEvaluations": {
+    "registeredRunRecords": 2,
+    "runsWithObservedProviderRequests": 2,
+    "observerSegments": 2,
+    "hookRequests": 175,
+    "actualModelHttpAttempts": 175,
+    "knownUsageRequests": 173,
+    "unknownUsageRequests": 2,
+    "unboundModelAttempts": 1,
+    "actualToolDispatches": 205,
+    "toolResultsWithError": 3,
+    "toolResultUnknown": 0,
+    "reportedUsageKnownSubtotal": {
+      "input": 1220504,
+      "output": 40079,
+      "cacheRead": 12717056,
+      "cacheWrite": 0,
+      "totalTokens": 13977639
+    },
+    "reportedUsageCompleteTotal": null,
+    "hookReportedUsageComplete": false,
+    "modelHttpMappingComplete": false
+  },
+  "diagnostics": {
+    "registeredRunRecords": 1,
+    "runsWithObservedProviderRequests": 1,
+    "observerSegments": 1,
+    "hookRequests": 6,
+    "actualModelHttpAttempts": 6,
+    "knownUsageRequests": 6,
+    "unknownUsageRequests": 0,
+    "unboundModelAttempts": 0,
+    "actualToolDispatches": 4,
+    "toolResultsWithError": 0,
+    "toolResultUnknown": 0,
+    "reportedUsageKnownSubtotal": {
+      "input": 93876,
+      "output": 240,
+      "cacheRead": 38400,
+      "cacheWrite": 0,
+      "totalTokens": 132516
+    },
+    "reportedUsageCompleteTotal": {
+      "input": 93876,
+      "output": 240,
+      "cacheRead": 38400,
+      "cacheWrite": 0,
+      "totalTokens": 132516
+    },
+    "hookReportedUsageComplete": true,
+    "modelHttpMappingComplete": true
+  },
+  "shortFollowup": {
+    "total": {
+      "registeredRunRecords": 2,
+      "runsWithObservedProviderRequests": 2,
+      "observerSegments": 2,
+      "hookRequests": 38,
+      "actualModelHttpAttempts": 38,
+      "knownUsageRequests": 38,
+      "unknownUsageRequests": 0,
+      "unboundModelAttempts": 0,
+      "actualToolDispatches": 54,
+      "toolResultsWithError": 0,
+      "toolResultUnknown": 0,
+      "reportedUsageKnownSubtotal": {
+        "input": 377555,
+        "output": 14241,
+        "cacheRead": 1582336,
+        "cacheWrite": 0,
+        "totalTokens": 1974132
+      },
+      "reportedUsageCompleteTotal": {
+        "input": 377555,
+        "output": 14241,
+        "cacheRead": 1582336,
+        "cacheWrite": 0,
+        "totalTokens": 1974132
+      },
+      "hookReportedUsageComplete": true,
+      "modelHttpMappingComplete": true
+    },
+    "outer": {
+      "registeredRunRecords": 1,
+      "runsWithObservedProviderRequests": 1,
+      "observerSegments": 1,
+      "hookRequests": 35,
+      "actualModelHttpAttempts": 35,
+      "knownUsageRequests": 35,
+      "unknownUsageRequests": 0,
+      "unboundModelAttempts": 0,
+      "actualToolDispatches": 52,
+      "toolResultsWithError": 0,
+      "toolResultUnknown": 0,
+      "reportedUsageKnownSubtotal": {
+        "input": 347999,
+        "output": 13880,
+        "cacheRead": 1562624,
+        "cacheWrite": 0,
+        "totalTokens": 1924503
+      },
+      "reportedUsageCompleteTotal": {
+        "input": 347999,
+        "output": 13880,
+        "cacheRead": 1562624,
+        "cacheWrite": 0,
+        "totalTokens": 1924503
+      },
+      "hookReportedUsageComplete": true,
+      "modelHttpMappingComplete": true
+    },
+    "inner": {
+      "registeredRunRecords": 1,
+      "runsWithObservedProviderRequests": 1,
+      "observerSegments": 1,
+      "hookRequests": 3,
+      "actualModelHttpAttempts": 3,
+      "knownUsageRequests": 3,
+      "unknownUsageRequests": 0,
+      "unboundModelAttempts": 0,
+      "actualToolDispatches": 2,
+      "toolResultsWithError": 0,
+      "toolResultUnknown": 0,
+      "reportedUsageKnownSubtotal": {
+        "input": 29556,
+        "output": 361,
+        "cacheRead": 19712,
+        "cacheWrite": 0,
+        "totalTokens": 49629
+      },
+      "reportedUsageCompleteTotal": {
+        "input": 29556,
+        "output": 361,
+        "cacheRead": 19712,
+        "cacheWrite": 0,
+        "totalTokens": 49629
+      },
+      "hookReportedUsageComplete": true,
+      "modelHttpMappingComplete": true
+    },
+    "fillsCoverageMatrix": false
+  },
+  "accepted45": {
+    "registeredRunRecords": 45,
+    "runsWithObservedProviderRequests": 45,
+    "observerSegments": 50,
+    "hookRequests": 407,
+    "actualModelHttpAttempts": 410,
+    "knownUsageRequests": 407,
+    "unknownUsageRequests": 0,
+    "unboundModelAttempts": 3,
+    "actualToolDispatches": 376,
+    "toolResultsWithError": 14,
+    "toolResultUnknown": 0,
+    "reportedUsageKnownSubtotal": {
+      "input": 6044928,
+      "output": 37112,
+      "cacheRead": 7432960,
+      "cacheWrite": 0,
+      "totalTokens": 13515000
+    },
+    "reportedUsageCompleteTotal": null,
+    "hookReportedUsageComplete": true,
+    "modelHttpMappingComplete": false
+  },
+  "journeyHistoryOutsideAccepted45": {
+    "registeredRunRecords": 55,
+    "runsWithObservedProviderRequests": 53,
+    "observerSegments": 57,
+    "hookRequests": 642,
+    "actualModelHttpAttempts": 644,
+    "knownUsageRequests": 639,
+    "unknownUsageRequests": 3,
+    "unboundModelAttempts": 2,
+    "actualToolDispatches": 624,
+    "toolResultsWithError": 27,
+    "toolResultUnknown": 0,
+    "reportedUsageKnownSubtotal": {
+      "input": 9919575,
+      "output": 62188,
+      "cacheRead": 13603200,
+      "cacheWrite": 0,
+      "totalTokens": 23584963
+    },
+    "reportedUsageCompleteTotal": null,
+    "hookReportedUsageComplete": false,
+    "modelHttpMappingComplete": false
+  },
+  "explicitlyLinkedJourneyRetests": {
+    "registeredRunRecords": 35,
+    "runsWithObservedProviderRequests": 35,
+    "observerSegments": 41,
+    "hookRequests": 633,
+    "actualModelHttpAttempts": 638,
+    "knownUsageRequests": 630,
+    "unknownUsageRequests": 3,
+    "unboundModelAttempts": 5,
+    "actualToolDispatches": 625,
+    "toolResultsWithError": 24,
+    "toolResultUnknown": 0,
+    "reportedUsageKnownSubtotal": {
+      "input": 9086889,
+      "output": 60269,
+      "cacheRead": 14069248,
+      "cacheWrite": 0,
+      "totalTokens": 23216406
+    },
+    "reportedUsageCompleteTotal": null,
+    "hookReportedUsageComplete": false,
+    "modelHttpMappingComplete": false
+  },
+  "journeyAttemptsWithoutExplicitRetestLink": {
+    "registeredRunRecords": 65,
+    "runsWithObservedProviderRequests": 63,
+    "observerSegments": 66,
+    "hookRequests": 416,
+    "actualModelHttpAttempts": 416,
+    "knownUsageRequests": 416,
+    "unknownUsageRequests": 0,
+    "unboundModelAttempts": 0,
+    "actualToolDispatches": 375,
+    "toolResultsWithError": 17,
+    "toolResultUnknown": 0,
+    "reportedUsageKnownSubtotal": {
+      "input": 6877614,
+      "output": 39031,
+      "cacheRead": 6966912,
+      "cacheWrite": 0,
+      "totalTokens": 13883557
+    },
+    "reportedUsageCompleteTotal": null,
+    "hookReportedUsageComplete": false,
+    "modelHttpMappingComplete": false
+  },
+  "originalJourneyStatuses": {
+    "blocked": {
+      "registeredRunRecords": 13,
+      "runsWithObservedProviderRequests": 13,
+      "observerSegments": 17,
+      "hookRequests": 211,
+      "actualModelHttpAttempts": 212,
+      "knownUsageRequests": 210,
+      "unknownUsageRequests": 1,
+      "unboundModelAttempts": 1,
+      "actualToolDispatches": 205,
+      "toolResultsWithError": 5,
+      "toolResultUnknown": 0,
+      "reportedUsageKnownSubtotal": {
+        "input": 3837309,
+        "output": 19809,
+        "cacheRead": 4242688,
+        "cacheWrite": 0,
+        "totalTokens": 8099806
+      },
+      "reportedUsageCompleteTotal": null,
+      "hookReportedUsageComplete": false,
+      "modelHttpMappingComplete": false
+    },
+    "passed": {
+      "registeredRunRecords": 61,
+      "runsWithObservedProviderRequests": 61,
+      "observerSegments": 65,
+      "hookRequests": 549,
+      "actualModelHttpAttempts": 551,
+      "knownUsageRequests": 549,
+      "unknownUsageRequests": 0,
+      "unboundModelAttempts": 2,
+      "actualToolDispatches": 512,
+      "toolResultsWithError": 21,
+      "toolResultUnknown": 0,
+      "reportedUsageKnownSubtotal": {
+        "input": 8263657,
+        "output": 52334,
+        "cacheRead": 10187136,
+        "cacheWrite": 0,
+        "totalTokens": 18503127
+      },
+      "reportedUsageCompleteTotal": null,
+      "hookReportedUsageComplete": true,
+      "modelHttpMappingComplete": false
+    },
+    "failed": {
+      "registeredRunRecords": 26,
+      "runsWithObservedProviderRequests": 24,
+      "observerSegments": 25,
+      "hookRequests": 289,
+      "actualModelHttpAttempts": 291,
+      "knownUsageRequests": 287,
+      "unknownUsageRequests": 2,
+      "unboundModelAttempts": 2,
+      "actualToolDispatches": 283,
+      "toolResultsWithError": 15,
+      "toolResultUnknown": 0,
+      "reportedUsageKnownSubtotal": {
+        "input": 3863537,
+        "output": 27157,
+        "cacheRead": 6606336,
+        "cacheWrite": 0,
+        "totalTokens": 10497030
+      },
+      "reportedUsageCompleteTotal": null,
+      "hookReportedUsageComplete": false,
+      "modelHttpMappingComplete": false
+    }
+  },
+  "unknownRequests": [
+    {
+      "executionId": "60150749-7bcd-47ce-91a2-ddf858f08b43",
+      "segment": 1,
+      "request": 15,
+      "reason": "unavailable-reported-usage"
+    },
+    {
+      "executionId": "063606b8-bdb3-41ea-adc5-b29bec67a845",
+      "segment": 1,
+      "request": 48,
+      "reason": "ambiguous-terminal"
+    },
+    {
+      "executionId": "63dba4ae-7b97-459c-a1ad-2f0e7e876520",
+      "segment": 1,
+      "request": 42,
+      "reason": "unavailable-reported-usage"
+    },
+    {
+      "executionId": "outer-skill-eval-01-yg6ix8em",
+      "segment": 1,
+      "request": 113,
+      "reason": "unavailable-reported-usage"
+    },
+    {
+      "executionId": "outer-skill-eval-01-yg6ix8em",
+      "segment": 1,
+      "request": 114,
+      "reason": "missing-terminal"
+    }
+  ],
+  "unboundModelHttpAttempts": [
+    {
+      "executionId": "f3f4d2e5-fd45-4422-813c-c52d65f6a0aa",
+      "segment": 1,
+      "ids": [
+        76
+      ]
+    },
+    {
+      "executionId": "f3e1f6fd-c36c-44e0-898c-5d821628d29f",
+      "segment": 1,
+      "ids": [
+        41,
+        42
+      ]
+    },
+    {
+      "executionId": "cafdd825-93c3-427a-b54b-822b8ef849eb",
+      "segment": 1,
+      "ids": [
+        41,
+        42
+      ]
+    },
+    {
+      "executionId": "outer-skill-eval-01-yg6ix8em",
+      "segment": 1,
+      "ids": [
+        119
+      ]
+    }
+  ],
+  "compactOperationUsage": [
+    {
+      "executionId": "f3f4d2e5-fd45-4422-813c-c52d65f6a0aa",
+      "reportedUsage": {
+        "input": 1305,
+        "output": 488,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 1793
+      },
+      "includedInMainRequestSubtotal": false,
+      "relatedHttpAttempts": [
+        {
+          "segment": 1,
+          "id": 76
+        }
+      ]
+    },
+    {
+      "executionId": "f3e1f6fd-c36c-44e0-898c-5d821628d29f",
+      "reportedUsage": {
+        "input": 1454,
+        "output": 623,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 2077
+      },
+      "includedInMainRequestSubtotal": false,
+      "relatedHttpAttempts": [
+        {
+          "segment": 1,
+          "id": 41
+        },
+        {
+          "segment": 1,
+          "id": 42
+        }
+      ]
+    },
+    {
+      "executionId": "cafdd825-93c3-427a-b54b-822b8ef849eb",
+      "reportedUsage": {
+        "input": 1450,
+        "output": 619,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 2069
+      },
+      "includedInMainRequestSubtotal": false,
+      "relatedHttpAttempts": [
+        {
+          "segment": 1,
+          "id": 41
+        },
+        {
+          "segment": 1,
+          "id": 42
+        }
+      ]
+    }
+  ],
+  "toolsByName": {
+    "read": 277,
+    "notion_list": 154,
+    "notion_use": 114,
+    "bash": 357,
+    "codemode": 77,
+    "ask_user": 2,
+    "tool_search": 23,
+    "bg_start": 24,
+    "bg_wait": 18,
+    "bg_status": 135,
+    "edit": 8,
+    "notion_ctl": 60,
+    "write": 9,
+    "ast_grep_outline": 5
+  },
+  "recordsWithoutObserverSegments": [
+    "277128a9-3227-4e65-8353-289325510113",
+    "f272024b-ed79-46d6-818d-befdb08b2b89"
+  ],
+  "hashOrIdentityDiagnostics": 0,
+  "duplicateLedgerCopiesExcluded": 0
+}
